@@ -287,3 +287,116 @@
 
             <!-- Main Content Block -->
             <div class="flex-1 overflow-auto p-6">
+                <!-- Page Content Goes Here -->
+                {% block content %}{% endblock %}
+            </div>
+            
+            <!-- Footer Bar -->
+            <div class="h-12 border-t border-zinc-800 bg-zinc-900 px-6 flex items-center justify-between text-xs text-zinc-500">
+                <div>
+                    Last synced: <span id="lastSyncTime">just now</span>
+                </div>
+                <div class="flex items-center gap-4">
+                    <div class="flex items-center gap-1.5">
+                        <div class="w-2 h-2 bg-emerald-500 rounded-full status-dot"></div>
+                        <span>Connected</span>
+                    </div>
+                    <span>Case PM v56.0</span>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- ==================== QUICK ADD MODAL ==================== -->
+    <dialog id="quickAddMenu" class="bg-zinc-900 border border-zinc-700 rounded-3xl p-0 w-full max-w-md shadow-2xl">
+        <div class="p-6">
+            <div class="flex items-center justify-between mb-4">
+                <div>
+                    <div class="font-semibold text-lg">Quick Add</div>
+                    <div class="text-xs text-zinc-500">Create new record</div>
+                </div>
+                <button onclick="document.getElementById('quickAddMenu').close()" class="text-zinc-400 hover:text-white">
+                    <i class="fa-solid fa-times text-xl"></i>
+                </button>
+            </div>
+
+            <div class="grid grid-cols-2 gap-3">
+                <button onclick="quickAddAction('daily_log')" class="flex flex-col items-center justify-center gap-2 p-4 bg-zinc-800 hover:bg-zinc-700 rounded-2xl transition-colors text-left">
+                    <i class="fa-solid fa-clipboard-list text-2xl text-emerald-400"></i>
+                    <span class="font-medium text-sm">Daily Log</span>
+                </button>
+
+                <button onclick="quickAddAction('rfi')" class="flex flex-col items-center justify-center gap-2 p-4 bg-zinc-800 hover:bg-zinc-700 rounded-2xl transition-colors text-left">
+                    <i class="fa-solid fa-question-circle text-2xl text-emerald-400"></i>
+                    <span class="font-medium text-sm">RFI</span>
+                </button>
+
+                <button onclick="quickAddAction('change_order')" class="flex flex-col items-center justify-center gap-2 p-4 bg-zinc-800 hover:bg-zinc-700 rounded-2xl transition-colors text-left">
+                    <i class="fa-solid fa-exchange-alt text-2xl text-emerald-400"></i>
+                    <span class="font-medium text-sm">Change Order</span>
+                </button>
+
+                <button onclick="quickAddAction('submittal')" class="flex flex-col items-center justify-center gap-2 p-4 bg-zinc-800 hover:bg-zinc-700 rounded-2xl transition-colors text-left">
+                    <i class="fa-solid fa-file-upload text-2xl text-emerald-400"></i>
+                    <span class="font-medium text-sm">Submittal</span>
+                </button>
+
+                <button onclick="quickAddAction('punch_list')" class="flex flex-col items-center justify-center gap-2 p-4 bg-zinc-800 hover:bg-zinc-700 rounded-2xl transition-colors text-left">
+                    <i class="fa-solid fa-tasks text-2xl text-emerald-400"></i>
+                    <span class="font-medium text-sm">Punch List Item</span>
+                </button>
+
+                <button onclick="quickAddAction('safety')" class="flex flex-col items-center justify-center gap-2 p-4 bg-zinc-800 hover:bg-zinc-700 rounded-2xl transition-colors text-left">
+                    <i class="fa-solid fa-shield-alt text-2xl text-emerald-400"></i>
+                    <span class="font-medium text-sm">Safety Observation</span>
+                </button>
+
+                <button onclick="quickAddAction('budget')" class="flex flex-col items-center justify-center gap-2 p-4 bg-zinc-800 hover:bg-zinc-700 rounded-2xl transition-colors text-left">
+                    <i class="fa-solid fa-chart-pie text-2xl text-emerald-400"></i>
+                    <span class="font-medium text-sm">Budget Line</span>
+                </button>
+
+                <button onclick="quickAddAction('pay_app')" class="flex flex-col items-center justify-center gap-2 p-4 bg-zinc-800 hover:bg-zinc-700 rounded-2xl transition-colors text-left">
+                    <i class="fa-solid fa-file-invoice-dollar text-2xl text-emerald-400"></i>
+                    <span class="font-medium text-sm">Pay Application</span>
+                </button>
+            </div>
+        </div>
+    </dialog>
+
+    <!-- ==================== PROJECT SWITCHER MODAL ==================== -->
+    <dialog id="projectSwitcherModal" class="bg-zinc-900 border border-zinc-700 rounded-3xl p-0 w-full max-w-md shadow-2xl">
+        <div class="p-6">
+            <div class="flex items-center justify-between mb-4">
+                <div class="font-semibold text-lg">Switch Project</div>
+                <button onclick="document.getElementById('projectSwitcherModal').close()" class="text-zinc-400 hover:text-white">
+                    <i class="fa-solid fa-times text-xl"></i>
+                </button>
+            </div>
+
+            <div class="space-y-1 max-h-80 overflow-auto">
+                <div onclick="switchProject(1)" class="flex items-center justify-between p-3 hover:bg-zinc-800 rounded-2xl cursor-pointer">
+                    <div>
+                        <div class="font-medium">ALDI Lakeland</div>
+                        <div class="text-xs text-zinc-500">Job #2024-0847 • Active</div>
+                    </div>
+                    <i class="fa-solid fa-check text-emerald-400"></i>
+                </div>
+                
+                <div onclick="switchProject(2)" class="flex items-center justify-between p-3 hover:bg-zinc-800 rounded-2xl cursor-pointer">
+                    <div>
+                        <div class="font-medium">Wesley Chapel Retail</div>
+                        <div class="text-xs text-zinc-500">Job #2025-0123 • Active</div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="mt-4 pt-4 border-t border-zinc-800">
+                <button onclick="document.getElementById('projectSwitcherModal').close(); window.location.href='{{ url_for('projects_page') }}'" 
+                        class="w-full py-2.5 text-sm bg-zinc-800 hover:bg-zinc-700 rounded-2xl flex items-center justify-center gap-2">
+                    <i class="fa-solid fa-folder-plus"></i>
+                    <span>Manage All Projects</span>
+                </button>
+            </div>
+        </div>
+    </dialog>
