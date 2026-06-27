@@ -128,3 +128,171 @@
                 </form>
             </div>
         </dialog>
+        <!-- JavaScript -->
+        <script>
+            // Sample data (will be replaced with backend later)
+            let punchItems = [
+                {
+                    id: 1,
+                    number: "PL-001",
+                    description: "Drywall damage in corridor near elevator",
+                    location: "2nd Floor Corridor",
+                    assigned_to: "Drywall Pros Inc.",
+                    due_date: "2025-04-05",
+                    status: "Open"
+                },
+                {
+                    id: 2,
+                    number: "PL-002",
+                    description: "Light fixture not working in lobby",
+                    location: "Main Lobby",
+                    assigned_to: "PowerTech Electric",
+                    due_date: "2025-04-02",
+                    status: "In Progress"
+                }
+            ];
+
+            function filterPunchList() {
+                const searchTerm = document.getElementById('punchSearch').value.toLowerCase();
+                const statusFilter = document.getElementById('statusFilter').value;
+
+                const filtered = punchItems.filter(item => {
+                    const matchesSearch = item.description.toLowerCase().includes(searchTerm) || 
+                                        item.location.toLowerCase().includes(searchTerm);
+                    const matchesStatus = !statusFilter || item.status === statusFilter;
+                    return matchesSearch && matchesStatus;
+                });
+
+                renderPunchTable(filtered);
+            }
+
+            function clearPunchFilters() {
+                document.getElementById('punchSearch').value = '';
+                document.getElementById('statusFilter').value = '';
+                renderPunchTable(punchItems);
+            }
+
+            function renderPunchTable(items) {
+                const tbody = document.getElementById('punchTableBody');
+                tbody.innerHTML = '';
+
+                if (items.length === 0) {
+                    tbody.innerHTML = `
+                        <tr>
+                            <td colspan="8" class="px-6 py-8 text-center text-zinc-400">
+                                No punch items found.
+                            </td>
+                        </tr>
+                    `;
+                    return;
+                }
+
+                items.forEach(item => {
+                    const statusColor = 
+                        item.status === 'Completed' ? 'bg-emerald-600/20 text-emerald-400' :
+                        item.status === 'In Progress' ? 'bg-amber-600/20 text-amber-400' :
+                        item.status === 'Rejected' ? 'bg-red-600/20 text-red-400' :
+                        'bg-zinc-600/20 text-zinc-400';
+
+                    const row = document.createElement('tr');
+                    row.className = 'hover:bg-zinc-800/60 transition-colors';
+                    row.innerHTML = `
+                        <td class="px-6 py-4 font-mono text-sm text-zinc-400">${item.number}</td>
+                        <td class="px-6 py-4">${item.description}</td>
+                        <td class="px-6 py-4 text-sm text-zinc-400">${item.location}</td>
+                        <td class="px-6 py-4 text-sm">${item.assigned_to}</td>
+                        <td class="px-6 py-4 text-sm text-zinc-400">${item.due_date}</td>
+                        <td class="px-6 py-4 text-center">
+                            <span class="inline-block px-3 py-1 rounded-full text-xs font-medium ${statusColor}">
+                                ${item.status}
+                            </span>
+                        </td>
+                        <td class="px-6 py-4 text-center">
+                            <button class="text-emerald-400 hover:text-emerald-300 text-sm">
+                                <i class="fa-solid fa-camera"></i>
+                            </button>
+                        </td>
+                        <td class="px-4 py-4">
+                            <div class="flex items-center gap-1">
+                                <button onclick="editPunchItem(${item.id})" class="p-2 hover:bg-zinc-700 rounded-xl text-zinc-400 hover:text-white">
+                                    <i class="fa-solid fa-edit"></i>
+                                </button>
+                                <button onclick="deletePunchItem(${item.id})" class="p-2 hover:bg-zinc-700 rounded-xl text-zinc-400 hover:text-red-400">
+                                    <i class="fa-solid fa-trash"></i>
+                                </button>
+                            </div>
+                        </td>
+                    `;
+                    tbody.appendChild(row);
+                });
+            }
+
+            function showAddPunchModal() {
+                document.getElementById('modalTitle').innerText = 'Add Punch Item';
+                document.getElementById('punchForm').reset();
+                document.getElementById('punchId').value = '';
+                document.getElementById('punchModal').showModal();
+            }
+
+            function editPunchItem(id) {
+                const item = punchItems.find(i => i.id === id);
+                if (!item) return;
+
+                document.getElementById('modalTitle').innerText = 'Edit Punch Item';
+                document.getElementById('punchId').value = item.id;
+                document.getElementById('description').value = item.description;
+                document.getElementById('location').value = item.location;
+                document.getElementById('due_date').value = item.due_date;
+                document.getElementById('assigned_to').value = item.assigned_to;
+                document.getElementById('status').value = item.status;
+
+                document.getElementById('punchModal').showModal();
+            }
+
+            function savePunchItem(e) {
+                e.preventDefault();
+
+                const id = document.getElementById('punchId').value;
+                const newItem = {
+                    id: id ? parseInt(id) : Date.now(),
+                    number: id ? punchItems.find(i => i.id == id).number : `PL-${String(punchItems.length + 1).padStart(3, '0')}`,
+                    description: document.getElementById('description').value,
+                    location: document.getElementById('location').value,
+                    assigned_to: document.getElementById('assigned_to').value,
+                    due_date: document.getElementById('due_date').value,
+                    status: document.getElementById('status').value
+                };
+
+                if (id) {
+                    // Edit existing
+                    const index = punchItems.findIndex(i => i.id == id);
+                    punchItems[index] = newItem;
+                } else {
+                    // Add new
+                    punchItems.push(newItem);
+                }
+
+                renderPunchTable(punchItems);
+                document.getElementById('punchModal').close();
+            }
+
+            function deletePunchItem(id) {
+                if (!confirm('Delete this punch item?')) return;
+                punchItems = punchItems.filter(i => i.id !== id);
+                renderPunchTable(punchItems);
+            }
+
+            function initializePunchList() {
+                renderPunchTable(punchItems);
+            }
+
+            // Initialize on load
+            window.onload = function() {
+                initializePunchList();
+            };
+        </script>
+
+{% endblock %}
+
+</div>
+</div>
