@@ -293,3 +293,174 @@
         </form>
     </div>
 </div>
+                <!-- PHOTO UPLOAD SECTION -->
+                <div>
+                    <label class="block text-sm text-zinc-400 mb-2">Photos</label>
+                    
+                    <div class="bg-zinc-950 border border-zinc-800 rounded-2xl p-4">
+                        
+                        <!-- Upload Area -->
+                        <div id="photoDropZone"
+                             class="border-2 border-dashed border-zinc-700 hover:border-emerald-600 transition-colors rounded-2xl p-8 text-center cursor-pointer"
+                             onclick="document.getElementById('photoUploadInput').click()">
+                            <i class="fa-solid fa-cloud-upload-alt text-3xl text-zinc-500 mb-2"></i>
+                            <div class="text-sm text-zinc-400">
+                                Drag & drop photos here, or <span class="text-emerald-400">click to browse</span>
+                            </div>
+                            <div class="text-xs text-zinc-500 mt-1">PNG, JPG up to 10MB each</div>
+                        </div>
+
+                        <input type="file" id="photoUploadInput" multiple accept="image/*" class="hidden" onchange="handlePhotoUpload(event)">
+
+                        <!-- Photo Preview Grid -->
+                        <div id="photoPreviewGrid" class="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-3 mt-4">
+                            <!-- Photo thumbnails will be added here dynamically by JavaScript -->
+                        </div>
+
+                    </div>
+                </div>
+
+            </div> <!-- End of scrollable content -->
+
+        </form>
+    </div>
+</div>
+
+<!-- ==================== JAVASCRIPT ==================== -->
+<script>
+    // ==================== MODAL CONTROLS ====================
+    function showCreateDailyLogModal() {
+        const modal = document.getElementById('createDailyLogModal');
+        modal.classList.remove('hidden');
+        modal.classList.add('flex');
+
+        // Clear previous dynamic rows when opening new modal
+        clearDynamicRows();
+    }
+
+    function closeCreateDailyLogModal() {
+        const modal = document.getElementById('createDailyLogModal');
+        modal.classList.remove('flex');
+        modal.classList.add('hidden');
+    }
+
+    function clearDynamicRows() {
+        const manpowerTbody = document.querySelector('#manpowerTable tbody');
+        const equipmentTbody = document.querySelector('#equipmentTable tbody');
+        if (manpowerTbody) manpowerTbody.innerHTML = '';
+        if (equipmentTbody) equipmentTbody.innerHTML = '';
+        
+        // Clear photo previews
+        const photoGrid = document.getElementById('photoPreviewGrid');
+        if (photoGrid) photoGrid.innerHTML = '';
+    }
+
+    // ==================== MANPOWER ROWS ====================
+    let manpowerRowCount = 0;
+
+    function addManpowerRow() {
+        const tbody = document.querySelector('#manpowerTable tbody');
+        const row = document.createElement('tr');
+        row.innerHTML = `
+            <td class="px-2 py-1.5">
+                <input type="text" name="manpower_company[]" placeholder="Company name" 
+                       class="w-full bg-zinc-900 border border-zinc-700 rounded-xl px-3 py-1.5 text-sm">
+            </td>
+            <td class="px-2 py-1.5">
+                <input type="number" name="manpower_personnel[]" value="1" min="1"
+                       class="w-full bg-zinc-900 border border-zinc-700 rounded-xl px-3 py-1.5 text-sm text-center">
+            </td>
+            <td class="px-2 py-1.5">
+                <input type="number" name="manpower_hours[]" value="8" step="0.5" min="0"
+                       class="w-full bg-zinc-900 border border-zinc-700 rounded-xl px-3 py-1.5 text-sm text-center">
+            </td>
+            <td class="px-2 py-1.5 text-center">
+                <button type="button" onclick="this.closest('tr').remove()" 
+                        class="text-red-400 hover:text-red-500 px-2">
+                    <i class="fa-solid fa-trash text-sm"></i>
+                </button>
+            </td>
+        `;
+        tbody.appendChild(row);
+        manpowerRowCount++;
+    }
+
+    // ==================== EQUIPMENT ROWS ====================
+    let equipmentRowCount = 0;
+
+    function addEquipmentRow() {
+        const tbody = document.querySelector('#equipmentTable tbody');
+        const row = document.createElement('tr');
+        row.innerHTML = `
+            <td class="px-2 py-1.5">
+                <input type="text" name="equipment_name[]" placeholder="Equipment name" 
+                       class="w-full bg-zinc-900 border border-zinc-700 rounded-xl px-3 py-1.5 text-sm">
+            </td>
+            <td class="px-2 py-1.5">
+                <input type="number" name="equipment_qty[]" value="1" min="1"
+                       class="w-full bg-zinc-900 border border-zinc-700 rounded-xl px-3 py-1.5 text-sm text-center">
+            </td>
+            <td class="px-2 py-1.5">
+                <input type="text" name="equipment_condition[]" placeholder="Good / Needs repair" 
+                       class="w-full bg-zinc-900 border border-zinc-700 rounded-xl px-3 py-1.5 text-sm">
+            </td>
+            <td class="px-2 py-1.5 text-center">
+                <button type="button" onclick="this.closest('tr').remove()" 
+                        class="text-red-400 hover:text-red-500 px-2">
+                    <i class="fa-solid fa-trash text-sm"></i>
+                </button>
+            </td>
+        `;
+        tbody.appendChild(row);
+        equipmentRowCount++;
+    }
+
+    // ==================== PHOTO HANDLING ====================
+    let uploadedPhotos = [];
+
+    function handlePhotoUpload(event) {
+        const files = event.target.files;
+        const previewGrid = document.getElementById('photoPreviewGrid');
+
+        for (let file of files) {
+            if (!file.type.startsWith('image/')) continue;
+
+            const reader = new FileReader();
+            reader.onload = function(e) {
+                const photoId = Date.now() + Math.random();
+                uploadedPhotos.push({ id: photoId, file: file });
+
+                const div = document.createElement('div');
+                div.className = 'relative group';
+                div.innerHTML = `
+                    <img src="${e.target.result}" class="w-full h-24 object-cover rounded-xl border border-zinc-700">
+                    <button type="button" onclick="removePhoto(this, ${photoId})"
+                            class="absolute top-1 right-1 bg-black/70 text-white w-6 h-6 rounded-full flex items-center justify-center text-xs opacity-0 group-hover:opacity-100 transition-opacity">
+                        <i class="fa-solid fa-times"></i>
+                    </button>
+                `;
+                previewGrid.appendChild(div);
+            };
+            reader.readAsDataURL(file);
+        }
+
+        // Reset input so same file can be selected again if needed
+        event.target.value = '';
+    }
+
+    function removePhoto(element, photoId) {
+        element.parentElement.remove();
+        uploadedPhotos = uploadedPhotos.filter(p => p.id !== photoId);
+    }
+
+    // ==================== FILTER FUNCTION ====================
+    function filterDailyLogs() {
+        // Basic client-side filtering (can be improved later)
+        const searchTerm = document.getElementById('dailyLogSearch').value.toLowerCase();
+        const rows = document.querySelectorAll('#dailyLogTableBody tr');
+
+        rows.forEach(row => {
+            const text = row.textContent.toLowerCase();
+            row.style.display = text.includes(searchTerm) ? '' : 'none';
+        });
+    }
