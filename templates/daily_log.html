@@ -74,3 +74,133 @@
                 </tr>
             </thead>
             <tbody>
+                {% if logs %}
+                    {% for log in logs %}
+                    <tr class="border-b border-zinc-800 hover:bg-zinc-950 transition-colors">
+                        <td class="px-6 py-4 font-medium">
+                            {{ log.date.strftime('%b %d, %Y') if log.date else '—' }}
+                        </td>
+                        <td class="px-6 py-4 text-zinc-300">
+                            {{ log.weather or '—' }}
+                        </td>
+                        <td class="px-6 py-4 text-zinc-300">
+                            {{ log.man_hours or '—' }}
+                        </td>
+                        <td class="px-6 py-4 text-zinc-300 max-w-md truncate">
+                            {{ log.work_performed[:80] + '...' if log.work_performed and log.work_performed|length > 80 else log.work_performed or '—' }}
+                        </td>
+                        <td class="px-6 py-4 text-center">
+                            <span class="inline-flex items-center justify-center w-8 h-8 bg-zinc-800 rounded-xl text-xs">
+                                {{ log.photos|length if log.photos else 0 }}
+                            </span>
+                        </td>
+                        <td class="px-6 py-4 text-center">
+                            {% if log.status == 'Submitted' %}
+                                <span class="px-3 py-1 text-xs rounded-full bg-emerald-500/10 text-emerald-400">Submitted</span>
+                            {% elif log.status == 'Reviewed' %}
+                                <span class="px-3 py-1 text-xs rounded-full bg-blue-500/10 text-blue-400">Reviewed</span>
+                            {% else %}
+                                <span class="px-3 py-1 text-xs rounded-full bg-zinc-700 text-zinc-400">Draft</span>
+                            {% endif %}
+                        </td>
+                        <td class="px-6 py-4">
+                            <div class="flex items-center justify-center gap-2">
+                                <button onclick="viewDailyLog({{ log.id }})"
+                                        class="px-3 py-1.5 text-xs bg-zinc-800 hover:bg-zinc-700 rounded-xl transition-colors">
+                                    View
+                                </button>
+                                <button onclick="editDailyLog({{ log.id }})"
+                                        class="px-3 py-1.5 text-xs bg-zinc-800 hover:bg-zinc-700 rounded-xl transition-colors">
+                                    Edit
+                                </button>
+                            </div>
+                        </td>
+                    </tr>
+                    {% endfor %}
+                {% else %}
+                    <tr>
+                        <td colspan="7" class="px-6 py-12 text-center text-zinc-500">
+                            <i class="fa-solid fa-clipboard-list text-4xl mb-3 block"></i>
+                            No daily logs found.<br>
+                            <span class="text-sm">Click “New Daily Log” to create the first one.</span>
+                        </td>
+                    </tr>
+                {% endif %}
+            </tbody>
+        </table>
+    </div>
+
+</div>
+
+<!-- ==================== CREATE DAILY LOG MODAL ==================== -->
+<div id="createDailyLogModal" class="hidden fixed inset-0 bg-black/70 flex items-center justify-center z-50">
+    <div class="bg-zinc-900 border border-zinc-700 rounded-3xl w-full max-w-2xl mx-4">
+        
+        <!-- Modal Header -->
+        <div class="flex items-center justify-between px-6 py-4 border-b border-zinc-700">
+            <h3 class="text-lg font-semibold">Create New Daily Log</h3>
+            <button onclick="closeCreateDailyLogModal()" class="text-zinc-400 hover:text-white">
+                <i class="fa-solid fa-times text-xl"></i>
+            </button>
+        </div>
+
+        <form id="createDailyLogForm" method="POST" action="{{ url_for('create_daily_log') }}">
+            <div class="p-6 space-y-5">
+
+                <!-- Project -->
+                <div>
+                    <label class="block text-sm text-zinc-400 mb-1.5">Project</label>
+                    <select name="project_id" required
+                            class="w-full bg-zinc-800 border border-zinc-700 rounded-2xl px-4 py-2.5 text-sm">
+                        {% for project in projects %}
+                        <option value="{{ project.id }}">{{ project.name }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+
+                <!-- Date + Weather -->
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div>
+                        <label class="block text-sm text-zinc-400 mb-1.5">Date</label>
+                        <input type="date" name="date" value="{{ today }}" required
+                               class="w-full bg-zinc-800 border border-zinc-700 rounded-2xl px-4 py-2.5 text-sm">
+                    </div>
+                    <div>
+                        <label class="block text-sm text-zinc-400 mb-1.5">Weather</label>
+                        <input type="text" name="weather" placeholder="Sunny, 72°F"
+                               class="w-full bg-zinc-800 border border-zinc-700 rounded-2xl px-4 py-2.5 text-sm">
+                    </div>
+                </div>
+
+                <!-- Work Performed -->
+                <div>
+                    <label class="block text-sm text-zinc-400 mb-1.5">Work Performed Today</label>
+                    <textarea name="work_performed" rows="4" required
+                              class="w-full bg-zinc-800 border border-zinc-700 rounded-2xl px-4 py-3 text-sm resize-y"
+                              placeholder="Describe the main activities completed today..."></textarea>
+                </div>
+
+                <!-- Notes -->
+                <div>
+                    <label class="block text-sm text-zinc-400 mb-1.5">Additional Notes / Issues</label>
+                    <textarea name="notes" rows="3"
+                              class="w-full bg-zinc-800 border border-zinc-700 rounded-2xl px-4 py-3 text-sm resize-y"
+                              placeholder="Any delays, safety concerns, or other notes..."></textarea>
+                </div>
+
+            </div>
+
+            <!-- Modal Footer -->
+            <div class="flex justify-end gap-3 px-6 py-4 border-t border-zinc-700">
+                <button type="button" onclick="closeCreateDailyLogModal()"
+                        class="px-5 py-2.5 text-sm rounded-2xl border border-zinc-700 hover:bg-zinc-800 transition-colors">
+                    Cancel
+                </button>
+                <button type="submit"
+                        class="px-6 py-2.5 text-sm bg-emerald-600 hover:bg-emerald-500 rounded-2xl font-medium transition-colors">
+                    Save Daily Log
+                </button>
+            </div>
+        </form>
+    </div>
+</div>
