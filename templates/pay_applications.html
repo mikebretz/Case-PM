@@ -137,3 +137,172 @@
                 </form>
             </div>
         </dialog>
+        <!-- JavaScript -->
+        <script>
+            // Sample data (will be replaced with backend data later)
+            let payApplications = [
+                {
+                    id: 1,
+                    app_number: "APP-004",
+                    period_ending: "2025-03-31",
+                    contractor: "ABC Concrete LLC",
+                    current_amount: 87500,
+                    retainage_percent: 10,
+                    status: "Approved"
+                },
+                {
+                    id: 2,
+                    app_number: "APP-005",
+                    period_ending: "2025-04-30",
+                    contractor: "Steel Dynamics LLC",
+                    current_amount: 124300,
+                    retainage_percent: 10,
+                    status: "Submitted"
+                }
+            ];
+
+            function filterPayApps() {
+                const searchTerm = document.getElementById('payAppSearch').value.toLowerCase();
+                const statusFilter = document.getElementById('statusFilter').value;
+
+                const filtered = payApplications.filter(app => {
+                    const matchesSearch = app.app_number.toLowerCase().includes(searchTerm) || 
+                                        app.contractor.toLowerCase().includes(searchTerm);
+                    const matchesStatus = !statusFilter || app.status === statusFilter;
+                    return matchesSearch && matchesStatus;
+                });
+
+                renderPayAppTable(filtered);
+            }
+
+            function clearPayAppFilters() {
+                document.getElementById('payAppSearch').value = '';
+                document.getElementById('statusFilter').value = '';
+                renderPayAppTable(payApplications);
+            }
+
+            function renderPayAppTable(apps) {
+                const tbody = document.getElementById('payAppTableBody');
+                tbody.innerHTML = '';
+
+                if (apps.length === 0) {
+                    tbody.innerHTML = `
+                        <tr>
+                            <td colspan="7" class="px-6 py-8 text-center text-zinc-400">
+                                No pay applications found.
+                            </td>
+                        </tr>
+                    `;
+                    return;
+                }
+
+                apps.forEach(app => {
+                    const statusColor = 
+                        app.status === 'Paid' ? 'bg-emerald-600/20 text-emerald-400' :
+                        app.status === 'Approved' ? 'bg-blue-600/20 text-blue-400' :
+                        app.status === 'Submitted' ? 'bg-amber-600/20 text-amber-400' :
+                        'bg-zinc-600/20 text-zinc-400';
+
+                    const retainageAmount = (app.current_amount * (app.retainage_percent / 100)).toFixed(2);
+                    const totalDue = (app.current_amount - retainageAmount).toFixed(2);
+
+                    const row = document.createElement('tr');
+                    row.className = 'hover:bg-zinc-800/60 transition-colors';
+                    row.innerHTML = `
+                        <td class="px-6 py-4 font-mono text-sm">${app.app_number}</td>
+                        <td class="px-6 py-4 text-sm text-zinc-400">${app.period_ending}</td>
+                        <td class="px-6 py-4">${app.contractor}</td>
+                        <td class="px-6 py-4 text-right font-medium">$${app.current_amount.toLocaleString()}</td>
+                        <td class="px-6 py-4 text-center">
+                            <span class="inline-block px-3 py-1 rounded-full text-xs font-medium ${statusColor}">
+                                ${app.status}
+                            </span>
+                        </td>
+                        <td class="px-6 py-4 text-center text-sm text-zinc-400">
+                            ${app.retainage_percent}% ($${retainageAmount})
+                        </td>
+                        <td class="px-4 py-4">
+                            <div class="flex items-center gap-1">
+                                <button onclick="editPayApplication(${app.id})" class="p-2 hover:bg-zinc-700 rounded-xl text-zinc-400 hover:text-white">
+                                    <i class="fa-solid fa-edit"></i>
+                                </button>
+                                <button onclick="deletePayApplication(${app.id})" class="p-2 hover:bg-zinc-700 rounded-xl text-zinc-400 hover:text-red-400">
+                                    <i class="fa-solid fa-trash"></i>
+                                </button>
+                            </div>
+                        </td>
+                    `;
+                    tbody.appendChild(row);
+                });
+            }
+
+            function showAddPayAppModal() {
+                document.getElementById('modalTitle').innerText = 'New Pay Application';
+                document.getElementById('payAppForm').reset();
+                document.getElementById('payAppId').value = '';
+                document.getElementById('payAppModal').showModal();
+            }
+
+            function editPayApplication(id) {
+                const app = payApplications.find(a => a.id === id);
+                if (!app) return;
+
+                document.getElementById('modalTitle').innerText = 'Edit Pay Application';
+                document.getElementById('payAppId').value = app.id;
+                document.getElementById('app_number').value = app.app_number;
+                document.getElementById('period_ending').value = app.period_ending;
+                document.getElementById('contractor').value = app.contractor;
+                document.getElementById('current_amount').value = app.current_amount;
+                document.getElementById('retainage_percent').value = app.retainage_percent;
+                document.getElementById('notes').value = app.notes || '';
+
+                document.getElementById('payAppModal').showModal();
+            }
+
+            function savePayApplication(e) {
+                e.preventDefault();
+
+                const id = document.getElementById('payAppId').value;
+
+                const newApp = {
+                    id: id ? parseInt(id) : Date.now(),
+                    app_number: document.getElementById('app_number').value,
+                    period_ending: document.getElementById('period_ending').value,
+                    contractor: document.getElementById('contractor').value,
+                    current_amount: parseFloat(document.getElementById('current_amount').value),
+                    retainage_percent: parseFloat(document.getElementById('retainage_percent').value),
+                    status: id ? payApplications.find(a => a.id == id).status : 'Draft',
+                    notes: document.getElementById('notes').value
+                };
+
+                if (id) {
+                    const index = payApplications.findIndex(a => a.id == id);
+                    payApplications[index] = newApp;
+                } else {
+                    payApplications.push(newApp);
+                }
+
+                renderPayAppTable(payApplications);
+                document.getElementById('payAppModal').close();
+            }
+
+            function deletePayApplication(id) {
+                if (!confirm('Delete this pay application?')) return;
+                payApplications = payApplications.filter(a => a.id !== id);
+                renderPayAppTable(payApplications);
+            }
+
+            function initializePayApplications() {
+                renderPayAppTable(payApplications);
+            }
+
+            // Initialize on load
+            window.onload = function() {
+                initializePayApplications();
+            };
+        </script>
+
+{% endblock %}
+
+</div>
+</div>
