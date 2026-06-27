@@ -1,486 +1,71 @@
-
 {% extends "base.html" %}
 
 {% block content %}
-<div class="p-8 max-w-[1600px] mx-auto">
-
-    <!-- Header -->
-    <div class="flex items-center justify-between mb-8">
+<div class="max-w-[1600px] mx-auto">
+    
+    <!-- Page Header -->
+    <div class="flex items-center justify-between mb-6">
         <div>
             <h1 class="text-3xl font-semibold tracking-tight">Companies / Vendors</h1>
-            <p class="text-zinc-400 mt-1">Vendor & Subcontractor Directory • Case PM</p>
+            <p class="text-zinc-400 mt-1">Manage subcontractors, suppliers, and vendors</p>
         </div>
         
-        <button onclick="showAddCompanyModal()"
-                class="flex items-center gap-2 px-5 py-2.5 bg-emerald-600 hover:bg-emerald-500 transition-colors rounded-2xl text-sm font-medium">
+        <button onclick="showAddCompanyModal()" 
+                class="flex items-center gap-2 px-5 py-2.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded-2xl text-sm font-medium transition-colors">
             <i class="fa-solid fa-plus"></i>
             <span>Add Company</span>
         </button>
     </div>
 
-    <!-- Summary Cards -->
-    <div class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-4 mb-8">
-        <div class="bg-zinc-900 border border-zinc-800 rounded-3xl p-5">
-            <div class="text-sm text-zinc-400">Total Companies</div>
-            <div class="text-3xl font-semibold mt-1">{{ companies|length }}</div>
-        </div>
-        <div class="bg-zinc-900 border border-zinc-800 rounded-3xl p-5">
-            <div class="text-sm text-zinc-400">Active</div>
-            <div class="text-3xl font-semibold mt-1 text-emerald-400">47</div>
-        </div>
-        <div class="bg-zinc-900 border border-zinc-800 rounded-3xl p-5">
-            <div class="text-sm text-zinc-400">COI Expiring Soon</div>
-            <div class="text-3xl font-semibold mt-1 text-yellow-400">6</div>
-        </div>
-        <div class="bg-zinc-900 border border-zinc-800 rounded-3xl p-5">
-            <div class="text-sm text-zinc-400">Expired COIs</div>
-            <div class="text-3xl font-semibold mt-1 text-red-400">3</div>
-        </div>
-        <div class="bg-zinc-900 border border-zinc-800 rounded-3xl p-5">
-            <div class="text-sm text-zinc-400">Blacklisted</div>
-            <div class="text-3xl font-semibold mt-1 text-zinc-400">2</div>
-        </div>
-    </div>
-
     <!-- Filters -->
-    <div class="flex flex-col lg:flex-row gap-3 mb-4">
-        <input type="text" id="companySearch" placeholder="Search company name, contact, or license..." 
-               onkeyup="filterCompanies()"
-               class="flex-1 bg-zinc-900 border border-zinc-700 rounded-2xl px-4 py-2.5 text-sm">
+    <div class="flex flex-wrap items-center gap-3 mb-6 bg-zinc-900 border border-zinc-800 rounded-3xl p-4">
+        <div class="flex-1 min-w-[220px]">
+            <input type="text" id="companySearch" placeholder="Search companies..." 
+                   class="w-full bg-zinc-800 border border-zinc-700 rounded-2xl px-4 py-2.5 text-sm focus:outline-none focus:border-emerald-600"
+                   onkeyup="filterCompanies()">
+        </div>
 
-        <select id="companyTypeFilter" onchange="filterCompanies()"
-                class="bg-zinc-900 border border-zinc-700 rounded-2xl px-4 py-2.5 text-sm min-w-[180px]">
+        <select id="typeFilter" onchange="filterCompanies()" 
+                class="bg-zinc-800 border border-zinc-700 rounded-2xl px-4 py-2.5 text-sm focus:outline-none focus:border-emerald-600">
             <option value="">All Types</option>
             <option value="Subcontractor">Subcontractor</option>
             <option value="Supplier">Supplier</option>
+            <option value="Vendor">Vendor</option>
             <option value="Consultant">Consultant</option>
-            <option value="Owner">Owner</option>
-            <option value="Architect">Architect / Engineer</option>
         </select>
 
-        <select id="coiStatusFilter" onchange="filterCompanies()"
-                class="bg-zinc-900 border border-zinc-700 rounded-2xl px-4 py-2.5 text-sm min-w-[180px]">
-            <option value="">All COI Status</option>
-            <option value="Valid">Valid COI</option>
-            <option value="Expiring">Expiring Soon</option>
-            <option value="Expired">Expired</option>
-            <option value="None">No COI on File</option>
+        <select id="statusFilter" onchange="filterCompanies()" 
+                class="bg-zinc-800 border border-zinc-700 rounded-2xl px-4 py-2.5 text-sm focus:outline-none focus:border-emerald-600">
+            <option value="">All Statuses</option>
+            <option value="Active">Active</option>
+            <option value="Inactive">Inactive</option>
+            <option value="Pending">Pending</option>
         </select>
+
+        <button onclick="clearCompanyFilters()" 
+                class="px-4 py-2.5 text-sm bg-zinc-800 hover:bg-zinc-700 border border-zinc-700 rounded-2xl transition-colors">
+            Clear Filters
+        </button>
     </div>
 
     <!-- Companies Table -->
     <div class="bg-zinc-900 border border-zinc-800 rounded-3xl overflow-hidden">
-        <table class="w-full text-sm">
+        <table class="w-full">
             <thead>
-                <tr class="bg-zinc-950 border-b border-zinc-800">
-                    <th class="px-6 py-4 text-left font-medium text-zinc-400">Company Name</th>
-                    <th class="px-6 py-4 text-left font-medium text-zinc-400">Type</th>
-                    <th class="px-6 py-4 text-left font-medium text-zinc-400">Primary Contact</th>
-                    <th class="px-6 py-4 text-left font-medium text-zinc-400">Phone / Email</th>
-                    <th class="px-6 py-4 text-center font-medium text-zinc-400">COI Status</th>
-                    <th class="px-6 py-4 text-center font-medium text-zinc-400">Status</th>
-                    <th class="px-6 py-4 text-center font-medium text-zinc-400">Actions</th>
+                <tr class="border-b border-zinc-800 bg-zinc-950">
+                    <th class="text-left px-6 py-4 text-sm font-medium text-zinc-400">Company Name</th>
+                    <th class="text-left px-6 py-4 text-sm font-medium text-zinc-400">Type</th>
+                    <th class="text-left px-6 py-4 text-sm font-medium text-zinc-400">Primary Contact</th>
+                    <th class="text-left px-6 py-4 text-sm font-medium text-zinc-400">Phone</th>
+                    <th class="text-left px-6 py-4 text-sm font-medium text-zinc-400">Email</th>
+                    <th class="text-center px-6 py-4 text-sm font-medium text-zinc-400">COI Status</th>
+                    <th class="w-20"></th>
                 </tr>
             </thead>
-            <tbody>
-
-                {% for company in companies %}
-                <tr class="border-b border-zinc-800 hover:bg-zinc-800/60 transition-colors">
-                    <td class="px-6 py-4">
-                        <div class="font-medium">{{ company.name }}</div>
-                        {% if company.license_number %}
-                        <div class="text-xs text-zinc-500 font-mono">{{ company.license_number }}</div>
-                        {% endif %}
-                    </td>
-                    <td class="px-6 py-4">
-                        <span class="px-3 py-1 text-xs rounded-full bg-zinc-800 text-zinc-300">{{ company.type }}</span>
-                    </td>
-                    <td class="px-6 py-4">
-                        {{ company.primary_contact or '—' }}
-                    </td>
-                    <td class="px-6 py-4 text-sm">
-                        {% if company.phone %}
-                            <div>{{ company.phone }}</div>
-                        {% endif %}
-                        {% if company.email %}
-                            <div class="text-emerald-400">{{ company.email }}</div>
-                        {% endif %}
-                    </td>
-
-                    <!-- COI Status -->
-                    <td class="px-6 py-4 text-center">
-                        {% if company.coi_status == 'Valid' %}
-                            <span class="px-3 py-1 text-xs rounded-full bg-emerald-500/10 text-emerald-400">Valid</span>
-                        {% elif company.coi_status == 'Expiring' %}
-                            <span class="px-3 py-1 text-xs rounded-full bg-yellow-500/10 text-yellow-400">Expiring Soon</span>
-                        {% elif company.coi_status == 'Expired' %}
-                            <span class="px-3 py-1 text-xs rounded-full bg-red-500/10 text-red-400">Expired</span>
-                        {% else %}
-                            <span class="px-3 py-1 text-xs rounded-full bg-zinc-700 text-zinc-400">No COI</span>
-                        {% endif %}
-                    </td>
-
-                    <td class="px-6 py-4 text-center">
-                        {% if company.status == 'Active' %}
-                            <span class="px-3 py-1 text-xs rounded-full bg-emerald-500/10 text-emerald-400">Active</span>
-                        {% elif company.status == 'Inactive' %}
-                            <span class="px-3 py-1 text-xs rounded-full bg-zinc-700 text-zinc-400">Inactive</span>
-                        {% else %}
-                            <span class="px-3 py-1 text-xs rounded-full bg-red-500/10 text-red-400">Blacklisted</span>
-                        {% endif %}
-                    </td>
-
-                    <td class="px-6 py-4 text-center">
-                        <div class="flex items-center justify-center gap-1">
-                            <button onclick="viewCompany({{ company.id }})" 
-                                    class="p-2 text-emerald-400 hover:text-emerald-300 hover:bg-zinc-800 rounded-xl transition-colors" title="View Details">
-                                <i class="fa-solid fa-eye"></i>
-                            </button>
-                            
-                            <button onclick="editCompany({{ company.id }})" 
-                                    class="p-2 text-emerald-400 hover:text-emerald-300 hover:bg-zinc-800 rounded-xl transition-colors" title="Edit">
-                                <i class="fa-solid fa-edit"></i>
-                            </button>
-
-                            <button onclick="uploadCOI({{ company.id }})" 
-                                    class="p-2 text-emerald-400 hover:text-emerald-300 hover:bg-zinc-800 rounded-xl transition-colors" title="Upload COI">
-                                <i class="fa-solid fa-file-upload"></i>
-                            </button>
-
-                            <button onclick="viewCOIs({{ company.id }})" 
-                                    class="p-2 text-emerald-400 hover:text-emerald-300 hover:bg-zinc-800 rounded-xl transition-colors" title="View COIs">
-                                <i class="fa-solid fa-folder-open"></i>
-                            </button>
-                        </div>
-                    </td>
-                </tr>
-                {% else %}
-                <tr>
-                    <td colspan="7" class="px-6 py-12 text-center text-zinc-400">
-                        No companies found.
-                    </td>
-                </tr>
-                {% endfor %}
+            <tbody id="companiesTableBody" class="divide-y divide-zinc-800">
+                <!-- Populated by JavaScript -->
             </tbody>
         </table>
     </div>
 
 </div>
-
-<!-- ==================== ADD / EDIT COMPANY MODAL ==================== -->
-<dialog id="companyModal" class="bg-zinc-900 border border-zinc-700 rounded-3xl p-0 w-full max-w-3xl">
-    <div class="p-6">
-        <div class="flex items-center justify-between mb-6">
-            <h2 class="text-xl font-semibold" id="companyModalTitle">Add New Company</h2>
-            <button onclick="closeCompanyModal()" class="text-zinc-400 hover:text-white text-2xl leading-none">×</button>
-        </div>
-
-        <form id="companyForm" onsubmit="saveCompany(event)">
-            <input type="hidden" id="companyId">
-
-            <!-- Company Name & Type -->
-            <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
-                <div>
-                    <label class="block text-sm text-zinc-400 mb-1.5">Company Name <span class="text-red-400">*</span></label>
-                    <input type="text" id="companyName" class="w-full bg-zinc-800 border border-zinc-700 rounded-2xl px-4 py-2.5 text-sm" required>
-                </div>
-                <div>
-                    <label class="block text-sm text-zinc-400 mb-1.5">Company Type</label>
-                    <select id="companyType" class="w-full bg-zinc-800 border border-zinc-700 rounded-2xl px-4 py-2.5 text-sm">
-                        <option value="Subcontractor">Subcontractor</option>
-                        <option value="Supplier">Supplier</option>
-                        <option value="Consultant">Consultant</option>
-                        <option value="Architect">Architect / Engineer</option>
-                        <option value="Owner">Owner</option>
-                        <option value="Other">Other</option>
-                    </select>
-                </div>
-            </div>
-
-            <!-- Primary Contact -->
-            <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
-                <div>
-                    <label class="block text-sm text-zinc-400 mb-1.5">Primary Contact First Name <span class="text-red-400">*</span></label>
-                    <input type="text" id="contactFirstName" class="w-full bg-zinc-800 border border-zinc-700 rounded-2xl px-4 py-2.5 text-sm" required>
-                </div>
-                <div>
-                    <label class="block text-sm text-zinc-400 mb-1.5">Primary Contact Last Name <span class="text-red-400">*</span></label>
-                    <input type="text" id="contactLastName" class="w-full bg-zinc-800 border border-zinc-700 rounded-2xl px-4 py-2.5 text-sm" required>
-                </div>
-            </div>
-
-            <!-- Contact Info -->
-            <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
-                <div>
-                    <label class="block text-sm text-zinc-400 mb-1.5">Phone Number</label>
-                    <input type="tel" id="companyPhone" class="w-full bg-zinc-800 border border-zinc-700 rounded-2xl px-4 py-2.5 text-sm" placeholder="(412) 555-0199">
-                </div>
-                <div>
-                    <label class="block text-sm text-zinc-400 mb-1.5">Email <span class="text-red-400">*</span></label>
-                    <input type="email" id="companyEmail" class="w-full bg-zinc-800 border border-zinc-700 rounded-2xl px-4 py-2.5 text-sm" required>
-                </div>
-            </div>
-
-            <!-- Address -->
-            <div class="mb-4">
-                <label class="block text-sm text-zinc-400 mb-1.5">Address</label>
-                <input type="text" id="companyAddress" class="w-full bg-zinc-800 border border-zinc-700 rounded-2xl px-4 py-2.5 text-sm" placeholder="Street, City, State, ZIP">
-            </div>
-
-            <!-- License & Tax ID -->
-            <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
-                <div>
-                    <label class="block text-sm text-zinc-400 mb-1.5">License #</label>
-                    <input type="text" id="licenseNumber" class="w-full bg-zinc-800 border border-zinc-700 rounded-2xl px-4 py-2.5 text-sm font-mono">
-                </div>
-                <div>
-                    <label class="block text-sm text-zinc-400 mb-1.5">Tax ID / EIN</label>
-                    <input type="text" id="taxId" class="w-full bg-zinc-800 border border-zinc-700 rounded-2xl px-4 py-2.5 text-sm font-mono">
-                </div>
-            </div>
-
-            <!-- COI Upload Section -->
-            <div class="mb-6">
-                <label class="block text-sm text-zinc-400 mb-2">Certificates of Insurance (COI)</label>
-                
-                <div class="border border-zinc-700 rounded-2xl p-4 bg-zinc-950">
-                    <div id="coiList" class="space-y-3 mb-4">
-                        <!-- Dynamically added COI rows will appear here -->
-                    </div>
-
-                    <button type="button" onclick="addCOIRow()" 
-                            class="text-sm flex items-center gap-2 text-emerald-400 hover:text-emerald-300">
-                        <i class="fa-solid fa-plus"></i>
-                        <span>Add COI</span>
-                    </button>
-                </div>
-            </div>
-
-            <!-- Status -->
-            <div class="mb-6">
-                <label class="block text-sm text-zinc-400 mb-1.5">Status</label>
-                <select id="companyStatus" class="w-full bg-zinc-800 border border-zinc-700 rounded-2xl px-4 py-2.5 text-sm">
-                    <option value="Active">Active</option>
-                    <option value="Inactive">Inactive</option>
-                    <option value="Blacklisted">Blacklisted</option>
-                </select>
-            </div>
-
-            <!-- Notes -->
-            <div class="mb-6">
-                <label class="block text-sm text-zinc-400 mb-1.5">Notes</label>
-                <textarea id="companyNotes" rows="2" class="w-full bg-zinc-800 border border-zinc-700 rounded-2xl px-4 py-3 text-sm" placeholder="Any important notes about this company..."></textarea>
-            </div>
-
-            <!-- Buttons -->
-            <div class="flex gap-3 mt-8">
-                <button type="button" onclick="closeCompanyModal()" 
-                        class="flex-1 bg-zinc-800 hover:bg-zinc-700 rounded-2xl py-3 text-sm font-medium transition-colors">
-                    Cancel
-                </button>
-                <button type="submit" 
-                        class="flex-1 bg-emerald-600 hover:bg-emerald-500 rounded-2xl py-3 text-sm font-medium transition-colors">
-                    Save Company
-                </button>
-            </div>
-        </form>
-    </div>
-</dialog>
-
-<!-- ==================== JAVASCRIPT ==================== -->
-<script>
-    // ==================== FILTERING ====================
-    function filterCompanies() {
-        const search = document.getElementById('companySearch').value.toLowerCase();
-        const type = document.getElementById('companyTypeFilter').value;
-        const coiStatus = document.getElementById('coiStatusFilter').value;
-
-        const rows = document.querySelectorAll('table tbody tr');
-
-        rows.forEach(row => {
-            const text = row.textContent.toLowerCase();
-            const rowType = row.cells[1] ? row.cells[1].textContent : '';
-            const rowCOI = row.cells[4] ? row.cells[4].textContent : '';
-
-            let show = true;
-
-            if (search && !text.includes(search)) show = false;
-            if (type && !rowType.includes(type)) show = false;
-            if (coiStatus && !rowCOI.includes(coiStatus)) show = false;
-
-            row.style.display = show ? '' : 'none';
-        });
-    }
-
-    // ==================== MODAL FUNCTIONS ====================
-    function showAddCompanyModal() {
-        const modal = document.getElementById('companyModal');
-        const form = document.getElementById('companyForm');
-
-        form.reset();
-        document.getElementById('companyId').value = '';
-        document.getElementById('companyModalTitle').innerText = 'Add New Company';
-        document.getElementById('coiList').innerHTML = ''; // Clear previous COIs
-
-        modal.showModal();
-    }
-
-    function closeCompanyModal() {
-        document.getElementById('companyModal').close();
-    }
-
-    function editCompany(id) {
-        const modal = document.getElementById('companyModal');
-        document.getElementById('companyModalTitle').innerText = 'Edit Company';
-        document.getElementById('companyId').value = id;
-
-        // In a real app, you would fetch the company data from the backend here.
-        // For now, we populate with example data:
-        document.getElementById('companyName').value = 'Titan Electric LLC';
-        document.getElementById('companyType').value = 'Subcontractor';
-        document.getElementById('contactFirstName').value = 'James';
-        document.getElementById('contactLastName').value = 'Rodriguez';
-        document.getElementById('companyPhone').value = '(863) 555-0142';
-        document.getElementById('companyEmail').value = 'j.rodriguez@titanelectric.com';
-        document.getElementById('companyAddress').value = '2450 Industrial Blvd, Lakeland, FL 33801';
-        document.getElementById('licenseNumber').value = 'EC-1300456';
-        document.getElementById('companyStatus').value = 'Active';
-
-        // Clear and add sample COI
-        document.getElementById('coiList').innerHTML = '';
-        addCOIRow('General Liability', '2027-03-15');
-
-        modal.showModal();
-    }
-
-    function saveCompany(e) {
-        e.preventDefault();
-
-        const id = document.getElementById('companyId').value;
-        const isEdit = id !== '';
-
-        const data = {
-            name: document.getElementById('companyName').value,
-            type: document.getElementById('companyType').value,
-            contact_first_name: document.getElementById('contactFirstName').value,
-            contact_last_name: document.getElementById('contactLastName').value,
-            email: document.getElementById('companyEmail').value,
-            status: document.getElementById('companyStatus').value
-        };
-
-        console.log(isEdit ? 'Updating company:' : 'Creating company:', data);
-
-        closeCompanyModal();
-
-        if (isEdit) {
-            showToast('Company updated successfully');
-        } else {
-            showToast('New company added successfully');
-        }
-
-        // In real version: refresh the table
-        setTimeout(() => {
-            location.reload();
-        }, 900);
-    }
-
-    // ==================== COI FUNCTIONS ====================
-    function addCOIRow(type = '', expiration = '') {
-        const container = document.getElementById('coiList');
-        const row = document.createElement('div');
-        row.className = 'flex items-center gap-3 bg-zinc-900 border border-zinc-700 rounded-2xl px-4 py-3';
-
-        row.innerHTML = `
-            <div class="flex-1 grid grid-cols-1 md:grid-cols-3 gap-3">
-                <div>
-                    <select class="w-full bg-zinc-800 border border-zinc-700 rounded-xl px-3 py-2 text-sm">
-                        <option value="General Liability">General Liability</option>
-                        <option value="Workers Comp">Workers Compensation</option>
-                        <option value="Auto">Auto Liability</option>
-                        <option value="Umbrella">Umbrella / Excess</option>
-                    </select>
-                </div>
-                <div>
-                    <input type="date" value="${expiration}" class="w-full bg-zinc-800 border border-zinc-700 rounded-xl px-3 py-2 text-sm">
-                </div>
-                <div>
-                    <input type="file" class="text-sm file:mr-2 file:py-1 file:px-3 file:rounded-xl file:border-0 file:bg-zinc-700 file:text-white">
-                </div>
-            </div>
-            <button type="button" onclick="this.closest('.flex').remove()" 
-                    class="text-red-400 hover:text-red-300 p-2">
-                <i class="fa-solid fa-trash"></i>
-            </button>
-        `;
-
-        container.appendChild(row);
-    }
-
-    // ==================== ACTION FUNCTIONS ====================
-    function viewCompany(id) {
-        alert(`Opening detailed view for Company #${id}\n(Will show full profile, all COIs, contracts, and performance history)`);
-    }
-
-    function uploadCOI(companyId) {
-        alert(`Opening COI upload for Company #${companyId}`);
-        // In real version: open a dedicated COI upload modal
-    }
-
-    function viewCOIs(companyId) {
-        alert(`Viewing all COIs for Company #${companyId}`);
-        // In real version: open a modal listing all COIs with expiration warnings
-    }
-
-    // ==================== INITIALIZATION ====================
-    function initializeCompaniesPage() {
-        console.log('%c[Case PM] Companies / Vendors page initialized with full features.', 'color:#10b981');
-    }
-
-    window.addEventListener('load', initializeCompaniesPage);
-</script>
-
-{% endblock %}
-
-<!-- ==================== FINAL ENHANCEMENTS & POLISH ==================== -->
-<script>
-    // ==================== BULK ACTIONS (Future-ready) ====================
-    function selectAllCompanies(checked) {
-        const checkboxes = document.querySelectorAll('table tbody input[type="checkbox"]');
-        checkboxes.forEach(cb => cb.checked = checked);
-    }
-
-    // ==================== QUICK COI EXPIRY CHECK ====================
-    function checkExpiringCOIs() {
-        // This would normally be done server-side.
-        // For now, we show a helpful toast if needed.
-        console.log('%c[Case PM] COI expiry check would run here in production.', 'color:#52525b');
-    }
-
-    // ==================== ENHANCED KEYBOARD SUPPORT ====================
-    document.addEventListener('keydown', function(e) {
-        // Press "/" to focus search bar
-        if (e.key === "/" && document.activeElement.tagName === "BODY") {
-            e.preventDefault();
-            const search = document.getElementById('companySearch');
-            if (search) search.focus();
-        }
-    });
-
-    // ==================== FINAL INITIALIZATION ====================
-    function finalCompaniesInitialization() {
-        // Run COI expiry warning check on page load (demo)
-        setTimeout(() => {
-            const expiring = document.querySelectorAll('.text-yellow-400');
-            if (expiring.length > 0) {
-                console.log(`%c[Case PM] ${expiring.length} companies have COIs expiring soon.`, 'color:#eab308');
-            }
-        }, 1500);
-
-        console.log('%c[Case PM] companies.html fully loaded with maximum features.', 'color:#10b981');
-    }
-
-    // Run final initialization
-    window.addEventListener('load', finalCompaniesInitialization);
-</script>
-
-{% endblock %}
