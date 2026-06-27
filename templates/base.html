@@ -5,16 +5,12 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Case PM • {{ project_name if project_name else 'ALDI Lakeland' }}</title>
     
-    <!-- Tailwind CSS -->
+    <!-- Tailwind CSS + Font Awesome -->
     <script src="https://cdn.tailwindcss.com"></script>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
     
     <style>
-        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600&amp;family=Space+Grotesk:wght@500;600&amp;display=swap');
-        
-        :root {
-            --primary: #10b981;
-        }
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600&family=Space+Grotesk:wght@500;600&display=swap');
         
         body {
             font-family: 'Inter', system_ui, sans-serif;
@@ -48,16 +44,6 @@
             color: #71717a;
         }
 
-        .modern-card {
-            transition: transform 0.2s cubic-bezier(0.4, 0.0, 0.2, 1), 
-                       box-shadow 0.2s cubic-bezier(0.4, 0.0, 0.2, 1);
-        }
-        
-        .modern-card:hover {
-            transform: translateY(-2px);
-            box-shadow: 0 20px 25px -5px rgb(0 0 0 / 0.1), 0 8px 10px -6px rgb(0 0 0 / 0.1);
-        }
-
         .sidebar {
             scrollbar-width: thin;
             scrollbar-color: #3f3f46 #18181b;
@@ -77,20 +63,16 @@
                 transform: scale(1) translateY(0);
             }
         }
-
-        .status-dot {
-            animation: pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
-        }
     </style>
 </head>
 <body class="bg-zinc-950 text-zinc-200">
-    
+
     {% if current_user.is_authenticated %}
     
-    <!-- ==================== MAIN APP LAYOUT ==================== -->
+    <!-- ==================== MAIN LAYOUT ==================== -->
     <div class="flex h-screen overflow-hidden">
         
-        <!-- ==================== SIDEBAR ==================== -->
+        <!-- SIDEBAR -->
         <div class="w-64 bg-zinc-900 border-r border-zinc-800 flex flex-col">
             
             <!-- Logo -->
@@ -253,7 +235,7 @@
             </div>
         </div>
 
-        <!-- ==================== MAIN CONTENT AREA ==================== -->
+        <!-- MAIN CONTENT AREA -->
         <div class="flex-1 flex flex-col overflow-hidden">
             
             <!-- Top Header -->
@@ -270,13 +252,12 @@
                 <div class="flex items-center gap-3">
                     <!-- Search -->
                     <div class="relative w-80">
-                        <input type="text" id="globalSearch" 
-                               placeholder="Search everything... (Ctrl+K)" 
+                        <input type="text" id="globalSearch" placeholder="Search everything... (Ctrl+K)" 
                                class="w-full bg-zinc-800 border border-zinc-700 rounded-2xl pl-10 pr-4 py-2 text-sm focus:outline-none focus:border-emerald-600">
                         <i class="fa-solid fa-search absolute left-4 top-3 text-zinc-400"></i>
                     </div>
 
-                    <!-- Quick Add Button -->
+                    <!-- Quick Add -->
                     <button onclick="showQuickAddMenu()" 
                             class="flex items-center gap-2 px-4 py-2 bg-emerald-600 hover:bg-emerald-500 text-white rounded-2xl text-sm font-medium transition-colors">
                         <i class="fa-solid fa-plus"></i>
@@ -284,603 +265,25 @@
                     </button>
 
                     <!-- Notifications -->
-                    <button onclick="showNotifications()" 
-                            class="w-10 h-10 flex items-center justify-center text-zinc-400 hover:text-white hover:bg-zinc-800 rounded-2xl relative transition-colors">
+                    <button onclick="showNotifications()" class="w-10 h-10 flex items-center justify-center text-zinc-400 hover:text-white hover:bg-zinc-800 rounded-2xl relative transition-colors">
                         <i class="fa-solid fa-bell text-lg"></i>
                         <span class="absolute top-2 right-2 w-2 h-2 bg-red-500 rounded-full"></span>
                     </button>
 
-                    <!-- User Menu -->
-                    <div class="relative">
-                        <div onclick="showUserMenu()" class="flex items-center gap-2 cursor-pointer">
-                            <div class="w-8 h-8 bg-zinc-700 rounded-full overflow-hidden">
-                                {% if current_user.profile_pic %}
-                                    <img src="{{ current_user.profile_pic }}" class="w-full h-full object-cover">
-                                {% else %}
-                                    <div class="w-full h-full flex items-center justify-center bg-emerald-600 text-white text-sm font-bold">
-                                        {{ current_user.first_name[0] }}{{ current_user.last_name[0] if current_user.last_name else '' }}
-                                    </div>
-                                {% endif %}
-                            </div>
-                            <div class="hidden md:block">
-                                <div class="text-sm font-medium">{{ current_user.full_name }}</div>
-                                <div class="text-[10px] text-zinc-500">{{ current_user.role }}</div>
-                            </div>
+                    <!-- User -->
+                    <div onclick="showUserMenu()" class="flex items-center gap-2 cursor-pointer">
+                        <div class="w-8 h-8 bg-zinc-700 rounded-full overflow-hidden">
+                            {% if current_user.profile_pic %}
+                                <img src="{{ current_user.profile_pic }}" class="w-full h-full object-cover">
+                            {% else %}
+                                <div class="w-full h-full flex items-center justify-center bg-emerald-600 text-white text-sm font-bold">
+                                    {{ current_user.first_name[0] }}{{ current_user.last_name[0] if current_user.last_name else '' }}
+                                </div>
+                            {% endif %}
                         </div>
                     </div>
                 </div>
             </div>
 
-            <!-- Main Content -->
+            <!-- Main Content Block -->
             <div class="flex-1 overflow-auto p-6">
-                <!-- Page Content Goes Here -->
-                {% block content %}{% endblock %}
-            </div>
-            
-            <!-- Footer -->
-            <div class="h-12 border-t border-zinc-800 bg-zinc-900 px-6 flex items-center justify-between text-xs text-zinc-500">
-                <div>
-                    Last synced: <span id="lastSyncTime">just now</span>
-                </div>
-                <div class="flex items-center gap-4">
-                    <div class="flex items-center gap-1.5">
-                        <div class="w-2 h-2 bg-emerald-500 rounded-full status-dot"></div>
-                        <span>Connected</span>
-                    </div>
-                    <span>Case PM v56.0</span>
-                </div>
-            </div>
-        </div>
-    </div>
-
-    <!-- ==================== QUICK ADD MODAL ==================== -->
-    <dialog id="quickAddMenu" class="bg-zinc-900 border border-zinc-700 rounded-3xl p-0 w-full max-w-md shadow-2xl">
-        <div class="p-6">
-            <div class="flex items-center justify-between mb-4">
-                <div>
-                    <div class="font-semibold text-lg">Quick Add</div>
-                    <div class="text-xs text-zinc-500">Create new record</div>
-                </div>
-                <button onclick="document.getElementById('quickAddMenu').close()" class="text-zinc-400 hover:text-white">
-                    <i class="fa-solid fa-times text-xl"></i>
-                </button>
-            </div>
-
-            <div class="grid grid-cols-2 gap-3">
-                <!-- Daily Log -->
-                <button onclick="quickAddAction('daily_log')" class="flex flex-col items-center justify-center gap-2 p-4 bg-zinc-800 hover:bg-zinc-700 rounded-2xl transition-colors text-left">
-                    <i class="fa-solid fa-clipboard-list text-2xl text-emerald-400"></i>
-                    <span class="font-medium text-sm">Daily Log</span>
-                </button>
-
-                <!-- RFI -->
-                <button onclick="quickAddAction('rfi')" class="flex flex-col items-center justify-center gap-2 p-4 bg-zinc-800 hover:bg-zinc-700 rounded-2xl transition-colors text-left">
-                    <i class="fa-solid fa-question-circle text-2xl text-emerald-400"></i>
-                    <span class="font-medium text-sm">RFI</span>
-                </button>
-
-                <!-- Change Order -->
-                <button onclick="quickAddAction('change_order')" class="flex flex-col items-center justify-center gap-2 p-4 bg-zinc-800 hover:bg-zinc-700 rounded-2xl transition-colors text-left">
-                    <i class="fa-solid fa-exchange-alt text-2xl text-emerald-400"></i>
-                    <span class="font-medium text-sm">Change Order</span>
-                </button>
-
-                <!-- Submittal -->
-                <button onclick="quickAddAction('submittal')" class="flex flex-col items-center justify-center gap-2 p-4 bg-zinc-800 hover:bg-zinc-700 rounded-2xl transition-colors text-left">
-                    <i class="fa-solid fa-file-upload text-2xl text-emerald-400"></i>
-                    <span class="font-medium text-sm">Submittal</span>
-                </button>
-
-                <!-- Punch List -->
-                <button onclick="quickAddAction('punch_list')" class="flex flex-col items-center justify-center gap-2 p-4 bg-zinc-800 hover:bg-zinc-700 rounded-2xl transition-colors text-left">
-                    <i class="fa-solid fa-tasks text-2xl text-emerald-400"></i>
-                    <span class="font-medium text-sm">Punch List Item</span>
-                </button>
-
-                <!-- Safety Observation -->
-                <button onclick="quickAddAction('safety')" class="flex flex-col items-center justify-center gap-2 p-4 bg-zinc-800 hover:bg-zinc-700 rounded-2xl transition-colors text-left">
-                    <i class="fa-solid fa-shield-alt text-2xl text-emerald-400"></i>
-                    <span class="font-medium text-sm">Safety Observation</span>
-                </button>
-
-                <!-- Budget -->
-                <button onclick="quickAddAction('budget')" class="flex flex-col items-center justify-center gap-2 p-4 bg-zinc-800 hover:bg-zinc-700 rounded-2xl transition-colors text-left">
-                    <i class="fa-solid fa-chart-pie text-2xl text-emerald-400"></i>
-                    <span class="font-medium text-sm">Budget Line</span>
-                </button>
-
-                <!-- Pay Application -->
-                <button onclick="quickAddAction('pay_app')" class="flex flex-col items-center justify-center gap-2 p-4 bg-zinc-800 hover:bg-zinc-700 rounded-2xl transition-colors text-left">
-                    <i class="fa-solid fa-file-invoice-dollar text-2xl text-emerald-400"></i>
-                    <span class="font-medium text-sm">Pay Application</span>
-                </button>
-            </div>
-        </div>
-    </dialog>
-
-    <!-- ==================== PROJECT SWITCHER MODAL ==================== -->
-    <dialog id="projectSwitcherModal" class="bg-zinc-900 border border-zinc-700 rounded-3xl p-0 w-full max-w-md shadow-2xl">
-        <div class="p-6">
-            <div class="flex items-center justify-between mb-4">
-                <div class="font-semibold text-lg">Switch Project</div>
-                <button onclick="document.getElementById('projectSwitcherModal').close()" class="text-zinc-400 hover:text-white">
-                    <i class="fa-solid fa-times text-xl"></i>
-                </button>
-            </div>
-
-            <div class="space-y-1 max-h-80 overflow-auto">
-                <!-- Projects will be populated by JavaScript -->
-                <div onclick="switchProject(1)" class="flex items-center justify-between p-3 hover:bg-zinc-800 rounded-2xl cursor-pointer">
-                    <div>
-                        <div class="font-medium">ALDI Lakeland</div>
-                        <div class="text-xs text-zinc-500">Job #2024-0847 • Active</div>
-                    </div>
-                    <i class="fa-solid fa-check text-emerald-400"></i>
-                </div>
-                
-                <div onclick="switchProject(2)" class="flex items-center justify-between p-3 hover:bg-zinc-800 rounded-2xl cursor-pointer">
-                    <div>
-                        <div class="font-medium">Wesley Chapel Retail</div>
-                        <div class="text-xs text-zinc-500">Job #2025-0123 • Active</div>
-                    </div>
-                </div>
-            </div>
-
-            <div class="mt-4 pt-4 border-t border-zinc-800">
-                <button onclick="document.getElementById('projectSwitcherModal').close(); window.location.href='{{ url_for('projects_page') }}'" 
-                        class="w-full py-2.5 text-sm bg-zinc-800 hover:bg-zinc-700 rounded-2xl flex items-center justify-center gap-2">
-                    <i class="fa-solid fa-folder-plus"></i>
-                    <span>Manage All Projects</span>
-                </button>
-            </div>
-        </div>
-    </dialog>
-    <!-- ==================== NOTIFICATIONS PANEL ==================== -->
-    <dialog id="notificationsPanel" class="bg-zinc-900 border border-zinc-700 rounded-3xl p-0 w-full max-w-md shadow-2xl">
-        <div class="p-6">
-            <div class="flex items-center justify-between mb-4">
-                <div>
-                    <div class="font-semibold text-lg">Notifications</div>
-                    <div class="text-xs text-zinc-500">3 new updates</div>
-                </div>
-                <button onclick="document.getElementById('notificationsPanel').close()" class="text-zinc-400 hover:text-white">
-                    <i class="fa-solid fa-times text-xl"></i>
-                </button>
-            </div>
-
-            <div class="space-y-3 max-h-96 overflow-auto pr-2">
-                <!-- Notification Items -->
-                <div class="flex gap-3 p-3 bg-zinc-800 rounded-2xl">
-                    <div class="w-8 h-8 bg-emerald-600/20 text-emerald-400 rounded-xl flex items-center justify-center flex-shrink-0">
-                        <i class="fa-solid fa-exclamation-triangle"></i>
-                    </div>
-                    <div class="flex-1 min-w-0">
-                        <div class="font-medium text-sm">RFI #RFI-047 requires response</div>
-                        <div class="text-xs text-zinc-500">From: Architect • 2 hours ago</div>
-                    </div>
-                </div>
-
-                <div class="flex gap-3 p-3 bg-zinc-800 rounded-2xl">
-                    <div class="w-8 h-8 bg-amber-600/20 text-amber-400 rounded-xl flex items-center justify-center flex-shrink-0">
-                        <i class="fa-solid fa-file-invoice-dollar"></i>
-                    </div>
-                    <div class="flex-1 min-w-0">
-                        <div class="font-medium text-sm">Pay App #PA-012 ready for review</div>
-                        <div class="text-xs text-zinc-500">Due in 3 days • Just now</div>
-                    </div>
-                </div>
-
-                <div class="flex gap-3 p-3 bg-zinc-800 rounded-2xl">
-                    <div class="w-8 h-8 bg-blue-600/20 text-blue-400 rounded-xl flex items-center justify-center flex-shrink-0">
-                        <i class="fa-solid fa-shield-alt"></i>
-                    </div>
-                    <div class="flex-1 min-w-0">
-                        <div class="font-medium text-sm">Safety observation submitted</div>
-                        <div class="text-xs text-zinc-500">By: Mike B. • Yesterday</div>
-                    </div>
-                </div>
-            </div>
-
-            <div class="mt-4 pt-4 border-t border-zinc-800">
-                <button onclick="document.getElementById('notificationsPanel').close()" 
-                        class="w-full py-2 text-sm text-emerald-400 hover:text-emerald-300 font-medium">
-                    View all notifications
-                </button>
-            </div>
-        </div>
-    </dialog>
-
-    <!-- ==================== USER MENU ==================== -->
-    <dialog id="userMenu" class="bg-zinc-900 border border-zinc-700 rounded-3xl p-0 w-72 shadow-2xl">
-        <div class="p-2">
-            <div class="px-4 py-3 border-b border-zinc-800">
-                <div class="flex items-center gap-3">
-                    <div class="w-10 h-10 bg-zinc-700 rounded-full overflow-hidden flex-shrink-0">
-                        {% if current_user.profile_pic %}
-                            <img src="{{ current_user.profile_pic }}" class="w-full h-full object-cover">
-                        {% else %}
-                            <div class="w-full h-full flex items-center justify-center bg-emerald-600 text-white font-bold">
-                                {{ current_user.first_name[0] }}{{ current_user.last_name[0] if current_user.last_name else '' }}
-                            </div>
-                        {% endif %}
-                    </div>
-                    <div class="min-w-0">
-                        <div class="font-semibold">{{ current_user.full_name }}</div>
-                        <div class="text-xs text-zinc-500">{{ current_user.email }}</div>
-                        <div class="text-[10px] mt-0.5 px-2 py-0.5 bg-emerald-600/20 text-emerald-400 rounded inline-block">{{ current_user.role }}</div>
-                    </div>
-                </div>
-            </div>
-
-            <div class="py-1">
-                <a href="{{ url_for('profile') }}" class="flex items-center gap-3 px-4 py-2.5 hover:bg-zinc-800 rounded-2xl text-sm">
-                    <i class="fa-solid fa-user w-4"></i>
-                    <span>View Profile</span>
-                </a>
-                <a href="{{ url_for('program_settings') }}" class="flex items-center gap-3 px-4 py-2.5 hover:bg-zinc-800 rounded-2xl text-sm">
-                    <i class="fa-solid fa-cog w-4"></i>
-                    <span>Program Settings</span>
-                </a>
-                <a href="{{ url_for('user_management') }}" class="flex items-center gap-3 px-4 py-2.5 hover:bg-zinc-800 rounded-2xl text-sm">
-                    <i class="fa-solid fa-users w-4"></i>
-                    <span>User Management</span>
-                </a>
-                
-                <div class="my-1 border-t border-zinc-800"></div>
-                
-                <a href="{{ url_for('logout') }}" class="flex items-center gap-3 px-4 py-2.5 hover:bg-red-950/40 text-red-400 rounded-2xl text-sm">
-                    <i class="fa-solid fa-sign-out-alt w-4"></i>
-                    <span>Sign Out</span>
-                </a>
-            </div>
-        </div>
-    </dialog>
-
-    <!-- ==================== JAVASCRIPT ==================== -->
-    <script>
-        // Tailwind script
-        function initializeTailwind() {
-            document.documentElement.style.setProperty('--accent', '#10b981');
-        }
-
-        // Show Quick Add Menu
-        function showQuickAddMenu() {
-            const modal = document.getElementById('quickAddMenu');
-            modal.showModal();
-        }
-
-        // Quick Add Action
-        function quickAddAction(type) {
-            document.getElementById('quickAddMenu').close();
-            
-            const routes = {
-                'daily_log': "{{ url_for('daily_log') }}?action=new",
-                'rfi': "{{ url_for('rfis_page') }}?action=new",
-                'change_order': "{{ url_for('change_orders_page') }}?action=new",
-                'submittal': "{{ url_for('submittals_page') }}?action=new",
-                'punch_list': "{{ url_for('punch_list_page') }}?action=new",
-                'safety': "{{ url_for('safety_page') }}?action=new",
-                'budget': "{{ url_for('budget_page') }}?action=new",
-                'pay_app': "{{ url_for('pay_applications_page') }}?action=new"
-            };
-            
-            if (routes[type]) {
-                window.location.href = routes[type];
-            }
-        }
-
-        // Show Notifications
-        function showNotifications() {
-            const panel = document.getElementById('notificationsPanel');
-            panel.showModal();
-        }
-
-        // Show User Menu
-        function showUserMenu() {
-            const menu = document.getElementById('userMenu');
-            menu.showModal();
-        }
-
-        // Show Project Switcher
-        function showProjectSwitcher() {
-            const modal = document.getElementById('projectSwitcherModal');
-            modal.showModal();
-        }
-
-        function switchProject(projectId) {
-            document.getElementById('projectSwitcherModal').close();
-            // In real app this would change the active project via backend
-            showToast('Project switched successfully', 'success');
-            setTimeout(() => {
-                window.location.reload();
-            }, 800);
-        }
-
-        // Toast Notification System
-        function showToast(message, type = 'success') {
-            const toast = document.createElement('div');
-            toast.className = `fixed bottom-6 right-6 px-6 py-3 rounded-2xl shadow-xl flex items-center gap-3 z-[9999] ${
-                type === 'success' ? 'bg-emerald-600' : 
-                type === 'error' ? 'bg-red-600' : 'bg-zinc-700'
-            }`;
-            
-            toast.innerHTML = `
-                <div class="flex items-center gap-3">
-                    <i class="fa-solid ${type === 'success' ? 'fa-check-circle' : type === 'error' ? 'fa-exclamation-circle' : 'fa-info-circle'}"></i>
-                    <span>${message}</span>
-                </div>
-            `;
-            
-            document.body.appendChild(toast);
-            
-            setTimeout(() => {
-                toast.style.transition = 'all 0.3s ease';
-                toast.style.opacity = '0';
-                setTimeout(() => toast.remove(), 300);
-            }, 3200);
-        }
-
-        // Keyboard Shortcuts
-        document.addEventListener('keydown', function(e) {
-            if (e.ctrlKey && e.key === 'k') {
-                e.preventDefault();
-                const search = document.getElementById('globalSearch');
-                if (search) search.focus();
-            }
-            
-            if (e.key === 'Escape') {
-                document.querySelectorAll('dialog[open]').forEach(d => d.close());
-            }
-            
-            if (e.key.toLowerCase() === 'n' && document.activeElement.tagName === 'BODY') {
-                e.preventDefault();
-                showQuickAddMenu();
-            }
-        });
-
-        // Global Search
-        const globalSearch = document.getElementById('globalSearch');
-        if (globalSearch) {
-            globalSearch.addEventListener('keypress', function(e) {
-                if (e.key === 'Enter') {
-                    const term = this.value.trim();
-                    if (term.length > 2) {
-                        window.location.href = `{{ url_for('dashboard') }}?search=${encodeURIComponent(term)}`;
-                    }
-                }
-            });
-        }
-
-        // Offline Detection
-        function updateOnlineStatus() {
-            const statusEls = document.querySelectorAll('.status-dot');
-            if (navigator.onLine) {
-                statusEls.forEach(el => el.style.backgroundColor = '#10b981');
-            } else {
-                statusEls.forEach(el => el.style.backgroundColor = '#f59e0b');
-                showToast('You are currently offline. Changes will sync when connection returns.', 'warning');
-            }
-        }
-
-        window.addEventListener('online', updateOnlineStatus);
-        window.addEventListener('offline', updateOnlineStatus);
-
-        // Initialize everything
-        function initializeApp() {
-            initializeTailwind();
-            updateOnlineStatus();
-            
-            // Update last sync time
-            const syncEl = document.getElementById('lastSyncTime');
-            if (syncEl) {
-                syncEl.textContent = new Date().toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'});
-            }
-
-            // Welcome toast on first load (optional)
-            // showToast('Welcome back, {{ current_user.first_name }}!', 'success');
-        }
-
-        // Boot app
-        window.onload = initializeApp;
-    </script>
-    <!-- ==================== MOBILE BOTTOM NAVIGATION ==================== -->
-    <div class="md:hidden fixed bottom-0 left-0 right-0 bg-zinc-900 border-t border-zinc-800 z-50">
-        <div class="flex justify-around items-center px-1 py-2 text-xs">
-            
-            <a href="{{ url_for('dashboard') }}" 
-               class="flex flex-col items-center justify-center w-14 text-zinc-400 hover:text-white active:text-emerald-400 transition-colors">
-                <i class="fa-solid fa-home text-xl mb-0.5"></i>
-                <span class="text-[10px]">Dashboard</span>
-            </a>
-
-            <a href="{{ url_for('daily_log') }}" 
-               class="flex flex-col items-center justify-center w-14 text-zinc-400 hover:text-white active:text-emerald-400 transition-colors">
-                <i class="fa-solid fa-clipboard-list text-xl mb-0.5"></i>
-                <span class="text-[10px]">Daily Log</span>
-            </a>
-
-            <a href="{{ url_for('rfis_page') }}" 
-               class="flex flex-col items-center justify-center w-14 text-zinc-400 hover:text-white active:text-emerald-400 transition-colors">
-                <i class="fa-solid fa-question-circle text-xl mb-0.5"></i>
-                <span class="text-[10px]">RFIs</span>
-            </a>
-
-            <a href="{{ url_for('photos_page') }}" 
-               class="flex flex-col items-center justify-center w-14 text-zinc-400 hover:text-white active:text-emerald-400 transition-colors">
-                <i class="fa-solid fa-camera text-xl mb-0.5"></i>
-                <span class="text-[10px]">Photos</span>
-            </a>
-
-            <!-- More Button -->
-            <button onclick="showMobileMoreMenu()" 
-                    class="flex flex-col items-center justify-center w-14 text-zinc-400 hover:text-white active:text-emerald-400 transition-colors">
-                <i class="fa-solid fa-ellipsis-h text-xl mb-0.5"></i>
-                <span class="text-[10px]">More</span>
-            </button>
-        </div>
-    </div>
-
-    <!-- ==================== MOBILE MORE MENU ==================== -->
-    <dialog id="mobileMoreMenu" class="bg-zinc-900 border border-zinc-700 rounded-3xl p-0 w-full max-w-[320px] shadow-2xl md:hidden">
-        <div class="p-4">
-            <div class="flex items-center justify-between mb-3 px-2">
-                <div class="font-semibold">More Options</div>
-                <button onclick="document.getElementById('mobileMoreMenu').close()" class="text-zinc-400 hover:text-white text-xl leading-none">&times;</button>
-            </div>
-
-            <div class="grid grid-cols-3 gap-2 text-sm">
-                <a href="{{ url_for('projects_page') }}" class="flex flex-col items-center p-3 hover:bg-zinc-800 rounded-2xl text-center">
-                    <i class="fa-solid fa-folder text-xl mb-1 text-emerald-400"></i>
-                    <span>Projects</span>
-                </a>
-                <a href="{{ url_for('change_orders_page') }}" class="flex flex-col items-center p-3 hover:bg-zinc-800 rounded-2xl text-center">
-                    <i class="fa-solid fa-exchange-alt text-xl mb-1 text-emerald-400"></i>
-                    <span>Change Orders</span>
-                </a>
-                <a href="{{ url_for('submittals_page') }}" class="flex flex-col items-center p-3 hover:bg-zinc-800 rounded-2xl text-center">
-                    <i class="fa-solid fa-file-upload text-xl mb-1 text-emerald-400"></i>
-                    <span>Submittals</span>
-                </a>
-                <a href="{{ url_for('punch_list_page') }}" class="flex flex-col items-center p-3 hover:bg-zinc-800 rounded-2xl text-center">
-                    <i class="fa-solid fa-tasks text-xl mb-1 text-emerald-400"></i>
-                    <span>Punch List</span>
-                </a>
-                <a href="{{ url_for('safety_page') }}" class="flex flex-col items-center p-3 hover:bg-zinc-800 rounded-2xl text-center">
-                    <i class="fa-solid fa-shield-alt text-xl mb-1 text-emerald-400"></i>
-                    <span>Safety</span>
-                </a>
-                <a href="{{ url_for('schedule_page') }}" class="flex flex-col items-center p-3 hover:bg-zinc-800 rounded-2xl text-center">
-                    <i class="fa-solid fa-calendar-alt text-xl mb-1 text-emerald-400"></i>
-                    <span>Schedule</span>
-                </a>
-                <a href="{{ url_for('budget_page') }}" class="flex flex-col items-center p-3 hover:bg-zinc-800 rounded-2xl text-center">
-                    <i class="fa-solid fa-chart-pie text-xl mb-1 text-emerald-400"></i>
-                    <span>Budget</span>
-                </a>
-                <a href="{{ url_for('companies_page') }}" class="flex flex-col items-center p-3 hover:bg-zinc-800 rounded-2xl text-center">
-                    <i class="fa-solid fa-building text-xl mb-1 text-emerald-400"></i>
-                    <span>Companies</span>
-                </a>
-                <a href="{{ url_for('program_settings') }}" class="flex flex-col items-center p-3 hover:bg-zinc-800 rounded-2xl text-center">
-                    <i class="fa-solid fa-cog text-xl mb-1 text-emerald-400"></i>
-                    <span>Settings</span>
-                </a>
-            </div>
-        </div>
-    </dialog>
-
-</body>
-</html>
-    <!-- ==================== FINAL POLISH & ENHANCEMENTS ==================== -->
-    <script>
-        // Force dark mode (prevent light mode flash)
-        (function() {
-            document.documentElement.classList.add('dark');
-            document.body.style.backgroundColor = '#09090b';
-        })();
-
-        // Enhanced keyboard shortcuts
-        document.addEventListener('keydown', function(e) {
-            // Ctrl + /  → Focus global search
-            if (e.ctrlKey && e.key === '/') {
-                e.preventDefault();
-                const search = document.getElementById('globalSearch');
-                if (search) search.focus();
-            }
-
-            // Ctrl + N → Quick Add
-            if (e.ctrlKey && e.key.toLowerCase() === 'n') {
-                e.preventDefault();
-                const quickAdd = document.getElementById('quickAddMenu');
-                if (quickAdd) quickAdd.showModal();
-            }
-
-            // Ctrl + P → Project Switcher
-            if (e.ctrlKey && e.key.toLowerCase() === 'p') {
-                e.preventDefault();
-                const switcher = document.getElementById('projectSwitcherModal');
-                if (switcher) switcher.showModal();
-            }
-        });
-
-        // Improve mobile menu closing behavior
-        function showMobileMoreMenu() {
-            const menu = document.getElementById('mobileMoreMenu');
-            menu.showModal();
-        }
-
-        // Auto-close mobile menu when clicking outside
-        document.getElementById('mobileMoreMenu')?.addEventListener('click', function(e) {
-            if (e.target === this) {
-                this.close();
-            }
-        });
-
-        // Better toast positioning on mobile
-        function showToast(message, type = 'success') {
-            const toast = document.createElement('div');
-            toast.className = `fixed bottom-20 md:bottom-6 right-4 md:right-6 px-5 py-3 rounded-2xl shadow-2xl flex items-center gap-3 z-[99999] text-sm max-w-[90%] md:max-w-md ${
-                type === 'success' ? 'bg-emerald-600' : 
-                type === 'error' ? 'bg-red-600' : 'bg-zinc-700'
-            }`;
-            
-            toast.innerHTML = `
-                <div class="flex items-center gap-3">
-                    <i class="fa-solid ${type === 'success' ? 'fa-check-circle' : type === 'error' ? 'fa-exclamation-circle' : 'fa-info-circle'} text-lg"></i>
-                    <span class="leading-tight">${message}</span>
-                </div>
-            `;
-            
-            document.body.appendChild(toast);
-            
-            setTimeout(() => {
-                toast.style.transition = 'all 0.35s cubic-bezier(0.4, 0, 1, 1)';
-                toast.style.opacity = '0';
-                toast.style.transform = 'translateY(10px)';
-                setTimeout(() => toast.remove(), 300);
-            }, 3800);
-        }
-
-        // Optional: Show a subtle welcome toast once per session
-        if (!sessionStorage.getItem('welcomeShown')) {
-            setTimeout(() => {
-                // Uncomment the line below if you want a welcome toast on every login
-                // showToast('Welcome back! Everything is synced.', 'success');
-                sessionStorage.setItem('welcomeShown', 'true');
-            }, 1200);
-        }
-
-        // Make sure all dialogs are properly styled on mobile
-        document.querySelectorAll('dialog').forEach(dialog => {
-            dialog.addEventListener('show', () => {
-                document.body.style.overflow = 'hidden';
-            });
-            dialog.addEventListener('close', () => {
-                document.body.style.overflow = '';
-            });
-        });
-
-        console.log('%c[Case PM] Ultimate base.html v56.0 loaded successfully', 'color:#10b981; font-size: 10px');
-    </script>
-    <!-- ==================== FINAL VERIFICATION ==================== -->
-    <script>
-        // Final safety check - ensure only one content block exists
-        console.log('%c[Case PM] Full Ultimate base.html v56.0 loaded successfully with all sidebar sections.', 'color:#10b981');
-
-        // Optional: Highlight any missing routes in console (for development)
-        const expectedRoutes = [
-            'dashboard', 'projects_page', 'daily_log', 'weekly_report', 'schedule_page',
-            'rfis_page', 'change_orders_page', 'submittals_page', 'punch_list_page', 'safety_page',
-            'budget_page', 'commitments_page', 'pay_applications_page',
-            'photos_page', 'documents_page', 'drawings_page', 'deliveries_page',
-            'inspections_page', 'meeting_minutes_page',
-            'companies_page', 'user_management', 'program_settings'
-        ];
-
-        // This helps during development if a route is missing
-        if (window.location.hostname === '127.0.0.1' || window.location.hostname === 'localhost') {
-            console.log('%c[Case PM] Sidebar contains all expected routes. Ready for testing.', 'color:#71717a');
-        }
-    </script>
-</body>
-</html>
