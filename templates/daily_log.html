@@ -464,3 +464,71 @@
             row.style.display = text.includes(searchTerm) ? '' : 'none';
         });
     }
+    // ==================== VIEW / EDIT DAILY LOG ====================
+    function viewDailyLog(logId) {
+        // Placeholder for future detail view
+        window.location.href = `/daily-log/${logId}`;
+    }
+
+    function editDailyLog(logId) {
+        // Placeholder for future edit functionality
+        window.location.href = `/daily-log/${logId}/edit`;
+    }
+
+    // ==================== KEYBOARD SHORTCUTS ====================
+    document.addEventListener('keydown', function(e) {
+        if (e.key === '/' && document.activeElement.tagName === 'BODY') {
+            e.preventDefault();
+            const search = document.getElementById('dailyLogSearch');
+            if (search) search.focus();
+        }
+
+        if (e.key.toLowerCase() === 'n' && document.activeElement.tagName === 'BODY') {
+            e.preventDefault();
+            showCreateDailyLogModal();
+        }
+
+        if (e.key === 'Escape') {
+            const modal = document.getElementById('createDailyLogModal');
+            if (!modal.classList.contains('hidden')) {
+                closeCreateDailyLogModal();
+            }
+        }
+    });
+
+    // ==================== DRAG & DROP FOR PHOTOS ====================
+    const dropZone = document.getElementById('photoDropZone');
+    if (dropZone) {
+        dropZone.addEventListener('dragover', function(e) {
+            e.preventDefault();
+            dropZone.classList.add('border-emerald-500', 'bg-zinc-900');
+        });
+
+        dropZone.addEventListener('dragleave', function() {
+            dropZone.classList.remove('border-emerald-500', 'bg-zinc-900');
+        });
+
+        dropZone.addEventListener('drop', function(e) {
+            e.preventDefault();
+            dropZone.classList.remove('border-emerald-500', 'bg-zinc-900');
+
+            const files = e.dataTransfer.files;
+            const input = document.getElementById('photoUploadInput');
+            
+            // Create a new DataTransfer to simulate file input
+            const dt = new DataTransfer();
+            for (let file of files) {
+                if (file.type.startsWith('image/')) {
+                    dt.items.add(file);
+                }
+            }
+            input.files = dt.files;
+            handlePhotoUpload({ target: input });
+        });
+    }
+
+    // ==================== INITIALIZATION ====================
+    console.log('%c[Case PM] daily_log.html (Rich Version) loaded successfully', 'color:#10b981');
+</script>
+
+{% endblock %}
