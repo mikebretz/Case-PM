@@ -204,3 +204,67 @@
         </form>
     </div>
 </div>
+<!-- ==================== JAVASCRIPT ==================== -->
+<script>
+    // ==================== MODAL CONTROLS ====================
+    function showCreateDailyLogModal() {
+        document.getElementById('createDailyLogModal').classList.remove('hidden');
+        document.getElementById('createDailyLogModal').classList.add('flex');
+    }
+
+    function closeCreateDailyLogModal() {
+        document.getElementById('createDailyLogModal').classList.remove('flex');
+        document.getElementById('createDailyLogModal').classList.add('hidden');
+    }
+
+    // ==================== FILTER DAILY LOGS ====================
+    function filterDailyLogs() {
+        const searchTerm = document.getElementById('dailyLogSearch').value.toLowerCase();
+        const dateFilter = document.getElementById('dailyLogDateFilter').value;
+        const statusFilter = document.getElementById('dailyLogStatusFilter').value.toLowerCase();
+
+        const rows = document.querySelectorAll('tbody tr');
+
+        rows.forEach(row => {
+            const text = row.textContent.toLowerCase();
+            const dateCell = row.cells[0]?.textContent || '';
+            const statusCell = row.cells[5]?.textContent.toLowerCase() || '';
+
+            const matchesSearch = text.includes(searchTerm);
+            const matchesDate = !dateFilter || dateCell.includes(dateFilter);
+            const matchesStatus = !statusFilter || statusCell.includes(statusFilter);
+
+            row.style.display = (matchesSearch && matchesDate && matchesStatus) ? '' : 'none';
+        });
+    }
+
+    // ==================== VIEW DAILY LOG ====================
+    function viewDailyLog(logId) {
+        // TODO: Open a detailed view modal or navigate to detail page
+        window.location.href = `/daily-log/${logId}`;
+    }
+
+    // ==================== EDIT DAILY LOG ====================
+    function editDailyLog(logId) {
+        // TODO: Open edit modal or navigate to edit page
+        window.location.href = `/daily-log/${logId}/edit`;
+    }
+
+    // ==================== KEYBOARD SHORTCUTS ====================
+    document.addEventListener('keydown', function(e) {
+        if (e.key === '/' && document.activeElement.tagName === 'BODY') {
+            e.preventDefault();
+            document.getElementById('dailyLogSearch')?.focus();
+        }
+
+        if (e.key.toLowerCase() === 'n' && document.activeElement.tagName === 'BODY') {
+            e.preventDefault();
+            showCreateDailyLogModal();
+        }
+    });
+
+    // ==================== INITIALIZATION ====================
+    console.log('%c[Case PM] daily_log.html loaded successfully', 'color:#10b981');
+</script>
+
+{% endblock %}
