@@ -92,3 +92,180 @@
                 </div>
             </div>
         </dialog>
+        <!-- JavaScript -->
+        <script>
+            // Sample photo data (will be replaced with backend later)
+            let photos = [
+                {
+                    id: 1,
+                    url: "https://picsum.photos/id/1015/600/400",
+                    caption: "Foundation pour - South side",
+                    location: "Site - South Elevation",
+                    date: "2025-03-12",
+                    uploaded_by: "Mike B."
+                },
+                {
+                    id: 2,
+                    url: "https://picsum.photos/id/1016/600/400",
+                    caption: "Steel delivery",
+                    location: "Loading Dock",
+                    date: "2025-03-15",
+                    uploaded_by: "John D."
+                },
+                {
+                    id: 3,
+                    url: "https://picsum.photos/id/160/600/400",
+                    caption: "Electrical rough-in - 2nd floor",
+                    location: "2nd Floor - Electrical Room",
+                    date: "2025-03-18",
+                    uploaded_by: "Mike B."
+                }
+            ];
+
+            function filterPhotos() {
+                const searchTerm = document.getElementById('photoSearch').value.toLowerCase();
+                const locationFilter = document.getElementById('locationFilter').value.toLowerCase();
+
+                const filtered = photos.filter(photo => {
+                    const matchesSearch = photo.caption.toLowerCase().includes(searchTerm) || 
+                                        photo.location.toLowerCase().includes(searchTerm);
+                    const matchesLocation = !locationFilter || photo.location.toLowerCase().includes(locationFilter);
+                    return matchesSearch && matchesLocation;
+                });
+
+                renderPhotos(filtered);
+            }
+
+            function clearPhotoFilters() {
+                document.getElementById('photoSearch').value = '';
+                document.getElementById('locationFilter').value = '';
+                document.getElementById('dateFilter').value = '';
+                renderPhotos(photos);
+            }
+
+            function renderPhotos(photoList) {
+                const grid = document.getElementById('photosGrid');
+                const emptyState = document.getElementById('emptyState');
+                grid.innerHTML = '';
+
+                if (photoList.length === 0) {
+                    emptyState.classList.remove('hidden');
+                    return;
+                } else {
+                    emptyState.classList.add('hidden');
+                }
+
+                photoList.forEach(photo => {
+                    const card = document.createElement('div');
+                    card.className = 'group relative bg-zinc-900 border border-zinc-800 rounded-3xl overflow-hidden cursor-pointer';
+                    card.innerHTML = `
+                        <div class="aspect-video bg-zinc-800">
+                            <img src="${photo.url}" class="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300" alt="${photo.caption}">
+                        </div>
+                        <div class="p-3">
+                            <div class="font-medium text-sm line-clamp-2">${photo.caption}</div>
+                            <div class="flex items-center justify-between mt-2 text-xs text-zinc-400">
+                                <span>${photo.location}</span>
+                                <span>${photo.date}</span>
+                            </div>
+                        </div>
+                    `;
+                    card.onclick = () => showPhotoDetail(photo);
+                    grid.appendChild(card);
+                });
+            }
+
+            function showUploadModal() {
+                document.getElementById('uploadModal').showModal();
+                document.getElementById('selectedFiles').innerHTML = '';
+                document.getElementById('selectedFiles').classList.add('hidden');
+            }
+
+            function handleFileSelect(event) {
+                const files = event.target.files;
+                const container = document.getElementById('selectedFiles');
+                container.innerHTML = '';
+                container.classList.remove('hidden');
+
+                Array.from(files).forEach(file => {
+                    const div = document.createElement('div');
+                    div.className = 'flex items-center justify-between bg-zinc-800 px-3 py-2 rounded-2xl mb-2 text-sm';
+                    div.innerHTML = `
+                        <span class="truncate">${file.name}</span>
+                        <button type="button" class="text-red-400 hover:text-red-500" onclick="this.parentElement.remove()">×</button>
+                    `;
+                    container.appendChild(div);
+                });
+            }
+
+            function uploadPhotos() {
+                // Placeholder for actual upload logic
+                alert('Photo upload functionality will be connected to the backend in a future update.');
+                document.getElementById('uploadModal').close();
+                
+                // For now, just add a dummy photo
+                const newPhoto = {
+                    id: Date.now(),
+                    url: "https://picsum.photos/id/201/600/400",
+                    caption: "Newly uploaded photo",
+                    location: "Site - General",
+                    date: new Date().toISOString().split('T')[0],
+                    uploaded_by: "You"
+                };
+                photos.unshift(newPhoto);
+                renderPhotos(photos);
+            }
+
+            function showPhotoDetail(photo) {
+                const modal = document.createElement('dialog');
+                modal.className = 'bg-zinc-900 border border-zinc-700 rounded-3xl p-0 w-full max-w-4xl shadow-2xl';
+                modal.innerHTML = `
+                    <div class="p-6">
+                        <div class="flex justify-between items-start mb-4">
+                            <div>
+                                <div class="font-semibold text-xl">${photo.caption}</div>
+                                <div class="text-sm text-zinc-400">${photo.location} • ${photo.date} • Uploaded by ${photo.uploaded_by}</div>
+                            </div>
+                            <button onclick="this.closest('dialog').close()" class="text-zinc-400 hover:text-white text-2xl leading-none">&times;</button>
+                        </div>
+                        
+                        <img src="${photo.url}" class="w-full rounded-2xl max-h-[70vh] object-contain bg-black">
+                        
+                        <div class="flex gap-3 mt-4">
+                            <button onclick="this.closest('dialog').close()" 
+                                    class="flex-1 py-2.5 bg-zinc-800 hover:bg-zinc-700 rounded-2xl text-sm font-medium">
+                                Close
+                            </button>
+                            <button onclick="deletePhoto(${photo.id}, this.closest('dialog'))" 
+                                    class="px-6 py-2.5 bg-red-600/90 hover:bg-red-600 rounded-2xl text-sm font-medium flex items-center gap-2">
+                                <i class="fa-solid fa-trash"></i>
+                                <span>Delete</span>
+                            </button>
+                        </div>
+                    </div>
+                `;
+                document.body.appendChild(modal);
+                modal.showModal();
+            }
+
+            function deletePhoto(id, modal) {
+                if (!confirm('Delete this photo?')) return;
+                photos = photos.filter(p => p.id !== id);
+                renderPhotos(photos);
+                modal.close();
+            }
+
+            function initializePhotos() {
+                renderPhotos(photos);
+            }
+
+            // Initialize on load
+            window.onload = function() {
+                initializePhotos();
+            };
+        </script>
+
+{% endblock %}
+
+</div>
+</div>
