@@ -1,55 +1,48 @@
 {% extends "base.html" %}
 
 {% block content %}
-<div class="p-8 max-w-[1600px] mx-auto">
-
-    <!-- Header -->
-    <div class="flex items-center justify-between mb-8">
+<div class="max-w-[1600px] mx-auto">
+    
+    <!-- Page Header -->
+    <div class="flex items-center justify-between mb-6">
         <div>
             <h1 class="text-3xl font-semibold tracking-tight">Schedule</h1>
-            <p class="text-zinc-400 mt-1">ALDI Lakeland • Project Schedule & Gantt Overview</p>
+            <p class="text-zinc-400 mt-1">Project timeline and task management</p>
         </div>
-        <button onclick="showCreateTaskModal()"
-                class="flex items-center gap-2 bg-emerald-600 hover:bg-emerald-500 transition-colors px-5 py-2.5 rounded-2xl text-sm font-medium">
-            <i class="fa-solid fa-plus"></i>
-            <span>New Task</span>
-        </button>
-    </div>
+        
+        <div class="flex items-center gap-3">
+            <!-- View Toggle -->
+            <div class="flex bg-zinc-900 border border-zinc-800 rounded-2xl p-1">
+                <button onclick="switchView('list')" id="listViewBtn"
+                        class="px-4 py-2 text-sm rounded-xl bg-zinc-800 flex items-center gap-2 active-view">
+                    <i class="fa-solid fa-list"></i>
+                    <span>List</span>
+                </button>
+                <button onclick="switchView('gantt')" id="ganttViewBtn"
+                        class="px-4 py-2 text-sm rounded-xl hover:bg-zinc-800 flex items-center gap-2">
+                    <i class="fa-solid fa-chart-gantt"></i>
+                    <span>Gantt</span>
+                </button>
+            </div>
 
-    <!-- KPI Summary Cards -->
-    <div class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-4 mb-8">
-        <div class="bg-zinc-900 border border-zinc-800 rounded-3xl p-5">
-            <div class="text-zinc-400 text-sm">Total Tasks</div>
-            <div class="text-3xl font-semibold mt-1">248</div>
-        </div>
-        <div class="bg-zinc-900 border border-zinc-800 rounded-3xl p-5">
-            <div class="text-zinc-400 text-sm">In Progress</div>
-            <div class="text-3xl font-semibold mt-1 text-yellow-400">87</div>
-        </div>
-        <div class="bg-zinc-900 border border-zinc-800 rounded-3xl p-5">
-            <div class="text-zinc-400 text-sm">Completed</div>
-            <div class="text-3xl font-semibold mt-1 text-emerald-400">132</div>
-        </div>
-        <div class="bg-zinc-900 border border-zinc-800 rounded-3xl p-5">
-            <div class="text-zinc-400 text-sm">Delayed / At Risk</div>
-            <div class="text-3xl font-semibold mt-1 text-red-400">19</div>
-        </div>
-        <div class="bg-zinc-900 border border-zinc-800 rounded-3xl p-5">
-            <div class="text-zinc-400 text-sm">Overall Progress</div>
-            <div class="text-3xl font-semibold mt-1">68%</div>
+            <button onclick="showAddTaskModal()" 
+                    class="flex items-center gap-2 px-5 py-2.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded-2xl text-sm font-medium transition-colors">
+                <i class="fa-solid fa-plus"></i>
+                <span>Add Task</span>
+            </button>
         </div>
     </div>
 
     <!-- Filters -->
-    <div class="flex flex-col md:flex-row gap-3 mb-6">
-        <div class="flex-1">
-            <input type="text" id="scheduleSearch" onkeyup="filterSchedule()"
-                   placeholder="Search tasks, descriptions, or phases..." 
-                   class="w-full bg-zinc-900 border border-zinc-700 rounded-2xl px-4 py-2.5 text-sm focus:outline-none focus:border-emerald-600">
+    <div class="flex flex-wrap items-center gap-3 mb-6 bg-zinc-900 border border-zinc-800 rounded-3xl p-4">
+        <div class="flex-1 min-w-[220px]">
+            <input type="text" id="scheduleSearch" placeholder="Search tasks..." 
+                   class="w-full bg-zinc-800 border border-zinc-700 rounded-2xl px-4 py-2.5 text-sm focus:outline-none focus:border-emerald-600"
+                   onkeyup="filterSchedule()">
         </div>
-        
-        <select id="scheduleStatusFilter" onchange="filterSchedule()"
-                class="bg-zinc-900 border border-zinc-700 rounded-2xl px-4 py-2.5 text-sm">
+
+        <select id="statusFilter" onchange="filterSchedule()" 
+                class="bg-zinc-800 border border-zinc-700 rounded-2xl px-4 py-2.5 text-sm focus:outline-none focus:border-emerald-600">
             <option value="">All Statuses</option>
             <option value="Not Started">Not Started</option>
             <option value="In Progress">In Progress</option>
@@ -57,449 +50,51 @@
             <option value="Delayed">Delayed</option>
         </select>
 
-        <select id="schedulePhaseFilter" onchange="filterSchedule()"
-                class="bg-zinc-900 border border-zinc-700 rounded-2xl px-4 py-2.5 text-sm">
-            <option value="">All Phases</option>
-            <option value="Pre-Construction">Pre-Construction</option>
-            <option value="Site Work">Site Work</option>
-            <option value="Foundation">Foundation</option>
-            <option value="Framing">Framing</option>
-            <option value="MEP">MEP</option>
-            <option value="Finishes">Finishes</option>
+        <select id="assigneeFilter" onchange="filterSchedule()" 
+                class="bg-zinc-800 border border-zinc-700 rounded-2xl px-4 py-2.5 text-sm focus:outline-none focus:border-emerald-600">
+            <option value="">All Assignees</option>
+            <!-- Populated dynamically via JS or backend -->
         </select>
 
-        <button onclick="exportSchedule()"
-                class="flex items-center gap-2 px-4 py-2.5 bg-zinc-800 hover:bg-zinc-700 rounded-2xl text-sm transition-colors">
-            <i class="fa-solid fa-download"></i>
-            <span>Export</span>
+        <button onclick="clearFilters()" 
+                class="px-4 py-2.5 text-sm bg-zinc-800 hover:bg-zinc-700 border border-zinc-700 rounded-2xl transition-colors">
+            Clear Filters
         </button>
     </div>
 
-    <!-- Schedule Table -->
-    <div class="bg-zinc-900 border border-zinc-800 rounded-3xl overflow-hidden">
-        <table class="w-full">
-            <thead class="bg-zinc-950 border-b border-zinc-800">
-                <tr>
-                    <th class="text-left px-6 py-4 text-sm font-medium text-zinc-400 w-24">Task #</th>
-                    <th class="text-left px-6 py-4 text-sm font-medium text-zinc-400">Task Description</th>
-                    <th class="text-left px-6 py-4 text-sm font-medium text-zinc-400 w-32">Phase</th>
-                    <th class="text-center px-6 py-4 text-sm font-medium text-zinc-400 w-24">Start</th>
-                    <th class="text-center px-6 py-4 text-sm font-medium text-zinc-400 w-24">End</th>
-                    <th class="text-center px-6 py-4 text-sm font-medium text-zinc-400 w-20">Duration</th>
-                    <th class="text-center px-6 py-4 text-sm font-medium text-zinc-400 w-24">% Complete</th>
-                    <th class="text-center px-6 py-4 text-sm font-medium text-zinc-400 w-28">Status</th>
-                    <th class="text-center px-6 py-4 text-sm font-medium text-zinc-400 w-28">Actions</th>
-                </tr>
-            </thead>
-            <tbody class="divide-y divide-zinc-800 text-sm">
-
-                {% for task in schedule_tasks %}
-                <tr class="border-b border-zinc-800 hover:bg-zinc-800/60 transition-colors">
-                    <td class="px-6 py-4 font-mono text-emerald-400">{{ task.number }}</td>
-                    <td class="px-6 py-4">
-                        <div class="font-medium">{{ task.description }}</div>
-                        {% if task.predecessor %}
-                        <div class="text-xs text-zinc-500 mt-0.5">Predecessor: {{ task.predecessor }}</div>
-                        {% endif %}
-                    </td>
-                    <td class="px-6 py-4 text-zinc-300">{{ task.phase }}</td>
-                    <td class="px-6 py-4 text-center text-sm">{{ task.start_date.strftime('%m/%d/%Y') if task.start_date else '—' }}</td>
-                    <td class="px-6 py-4 text-center text-sm">{{ task.end_date.strftime('%m/%d/%Y') if task.end_date else '—' }}</td>
-                    <td class="px-6 py-4 text-center text-sm">{{ task.duration_days }} days</td>
-
-                    <!-- Progress -->
-                    <td class="px-6 py-4 text-center">
-                        <div class="flex items-center justify-center gap-2">
-                            <div class="w-16 bg-zinc-800 rounded-full h-2">
-                                <div class="bg-emerald-500 h-2 rounded-full" style="width: {{ task.percent_complete or 0 }}%"></div>
-                            </div>
-                            <span class="text-xs text-zinc-400 w-8">{{ task.percent_complete or 0 }}%</span>
-                        </div>
-                    </td>
-
-                    <!-- Status -->
-                    <td class="px-6 py-4 text-center">
-                        <select onchange="updateTaskStatus({{ task.id }}, this.value)"
-                                class="bg-zinc-800 border border-zinc-700 rounded-xl px-3 py-1 text-xs">
-                            <option value="Not Started" {% if task.status == 'Not Started' %}selected{% endif %}>Not Started</option>
-                            <option value="In Progress" {% if task.status == 'In Progress' %}selected{% endif %}>In Progress</option>
-                            <option value="Completed" {% if task.status == 'Completed' %}selected{% endif %}>Completed</option>
-                            <option value="Delayed" {% if task.status == 'Delayed' %}selected{% endif %}>Delayed</option>
-                        </select>
-                    </td>
-
-                    <td class="px-6 py-4 text-center">
-                        <div class="flex items-center justify-center gap-1">
-                            <button onclick="viewTask({{ task.id }})" 
-                                    class="p-2 text-emerald-400 hover:text-emerald-300 hover:bg-zinc-800 rounded-xl transition-colors" title="View Details">
-                                <i class="fa-solid fa-eye"></i>
-                            </button>
-                            
-                            <button onclick="editTask({{ task.id }})" 
-                                    class="p-2 text-emerald-400 hover:text-emerald-300 hover:bg-zinc-800 rounded-xl transition-colors" title="Edit">
-                                <i class="fa-solid fa-edit"></i>
-                            </button>
-
-                            <button onclick="viewDependencies({{ task.id }})" 
-                                    class="p-2 text-emerald-400 hover:text-emerald-300 hover:bg-zinc-800 rounded-xl transition-colors" title="View Dependencies">
-                                <i class="fa-solid fa-link"></i>
-                            </button>
-
-                            <button onclick="updateProgress({{ task.id }})" 
-                                    class="p-2 text-emerald-400 hover:text-emerald-300 hover:bg-zinc-800 rounded-xl transition-colors" title="Update Progress">
-                                <i class="fa-solid fa-chart-line"></i>
-                            </button>
-                        </div>
-                    </td>
-                </tr>
-                {% else %}
-                <tr>
-                    <td colspan="9" class="px-6 py-12 text-center text-zinc-400">
-                        No tasks found in the schedule.
-                    </td>
-                </tr>
-                {% endfor %}
-            </tbody>
-        </table>
-    </div>
-
-</div>
-
-<!-- ==================== CREATE / EDIT TASK MODAL ==================== -->
-<dialog id="taskModal" class="bg-zinc-900 border border-zinc-700 rounded-3xl p-0 w-full max-w-4xl">
-    <div class="p-6">
-        <div class="flex items-center justify-between mb-6">
-            <h2 id="taskModalTitle" class="text-xl font-semibold">New Schedule Task</h2>
-            <button onclick="closeTaskModal()" class="text-zinc-400 hover:text-white">
-                <i class="fa-solid fa-times text-xl"></i>
-            </button>
+    <!-- Schedule Content -->
+    <div id="scheduleContent">
+        
+        <!-- List View -->
+        <div id="listView">
+            <div class="bg-zinc-900 border border-zinc-800 rounded-3xl overflow-hidden">
+                <table class="w-full">
+                    <thead>
+                        <tr class="border-b border-zinc-800 bg-zinc-950">
+                            <th class="text-left px-6 py-4 text-sm font-medium text-zinc-400">Task</th>
+                            <th class="text-left px-6 py-4 text-sm font-medium text-zinc-400">Start Date</th>
+                            <th class="text-left px-6 py-4 text-sm font-medium text-zinc-400">End Date</th>
+                            <th class="text-left px-6 py-4 text-sm font-medium text-zinc-400">Assigned To</th>
+                            <th class="text-center px-6 py-4 text-sm font-medium text-zinc-400">Status</th>
+                            <th class="text-center px-6 py-4 text-sm font-medium text-zinc-400">Progress</th>
+                            <th class="w-12"></th>
+                        </tr>
+                    </thead>
+                    <tbody id="scheduleTableBody" class="divide-y divide-zinc-800">
+                        <!-- Tasks will be populated here via JavaScript or Jinja loop -->
+                    </tbody>
+                </table>
+            </div>
         </div>
 
-        <form id="taskForm" method="POST" action="{{ url_for('create_task') }}">
-            <input type="hidden" id="taskId" name="task_id">
-
-            <div class="grid grid-cols-1 md:grid-cols-4 gap-4 mb-4">
-                <!-- Task Number -->
-                <div class="md:col-span-1">
-                    <label class="block text-sm text-zinc-400 mb-1.5">Task #</label>
-                    <input type="text" id="taskNumber" name="number" 
-                           class="w-full bg-zinc-800 border border-zinc-700 rounded-2xl px-4 py-2.5 text-sm font-mono" readonly>
-                </div>
-
-                <!-- Phase -->
-                <div>
-                    <label class="block text-sm text-zinc-400 mb-1.5">Phase</label>
-                    <select id="taskPhase" name="phase" class="w-full bg-zinc-800 border border-zinc-700 rounded-2xl px-4 py-2.5 text-sm">
-                        <option value="Pre-Construction">Pre-Construction</option>
-                        <option value="Site Work">Site Work</option>
-                        <option value="Foundation">Foundation</option>
-                        <option value="Framing">Framing</option>
-                        <option value="MEP">MEP</option>
-                        <option value="Finishes">Finishes</option>
-                        <option value="Closeout">Closeout</option>
-                    </select>
-                </div>
-
-                <!-- Status -->
-                <div>
-                    <label class="block text-sm text-zinc-400 mb-1.5">Status</label>
-                    <select id="taskStatus" name="status" class="w-full bg-zinc-800 border border-zinc-700 rounded-2xl px-4 py-2.5 text-sm">
-                        <option value="Not Started">Not Started</option>
-                        <option value="In Progress">In Progress</option>
-                        <option value="Completed">Completed</option>
-                        <option value="Delayed">Delayed</option>
-                    </select>
-                </div>
-
-                <!-- % Complete -->
-                <div>
-                    <label class="block text-sm text-zinc-400 mb-1.5">% Complete</label>
-                    <div class="flex items-center gap-2">
-                        <input type="range" id="taskProgressSlider" name="percent_complete" min="0" max="100" step="5" value="0"
-                               class="flex-1 accent-emerald-600" oninput="updateProgressDisplay()">
-                        <span id="taskProgressValue" class="w-10 text-right text-sm font-mono">0%</span>
-                    </div>
-                </div>
+        <!-- Gantt View (Placeholder for now) -->
+        <div id="ganttView" class="hidden">
+            <div class="bg-zinc-900 border border-zinc-800 rounded-3xl p-8 text-center">
+                <i class="fa-solid fa-chart-gantt text-5xl text-zinc-600 mb-4"></i>
+                <h3 class="text-xl font-semibold mb-2">Gantt Chart View</h3>
+                <p class="text-zinc-400 max-w-md mx-auto">Gantt chart view is coming soon. For now, please use the List view.</p>
             </div>
+        </div>
 
-            <!-- Description -->
-            <div class="mb-4">
-                <label class="block text-sm text-zinc-400 mb-1.5">Task Description <span class="text-red-400">*</span></label>
-                <input type="text" id="taskDescription" name="description" 
-                       class="w-full bg-zinc-800 border border-zinc-700 rounded-2xl px-4 py-2.5 text-sm" required
-                       placeholder="e.g. Install electrical rough-in - Sales Floor">
-            </div>
-
-            <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
-                <!-- Start Date -->
-                <div>
-                    <label class="block text-sm text-zinc-400 mb-1.5">Start Date</label>
-                    <input type="date" id="taskStartDate" name="start_date" 
-                           class="w-full bg-zinc-800 border border-zinc-700 rounded-2xl px-4 py-2.5 text-sm">
-                </div>
-
-                <!-- End Date -->
-                <div>
-                    <label class="block text-sm text-zinc-400 mb-1.5">End Date</label>
-                    <input type="date" id="taskEndDate" name="end_date" 
-                           class="w-full bg-zinc-800 border border-zinc-700 rounded-2xl px-4 py-2.5 text-sm">
-                </div>
-
-                <!-- Duration (Days) -->
-                <div>
-                    <label class="block text-sm text-zinc-400 mb-1.5">Duration (Days)</label>
-                    <input type="number" id="taskDuration" name="duration_days" 
-                           class="w-full bg-zinc-800 border border-zinc-700 rounded-2xl px-4 py-2.5 text-sm" readonly>
-                </div>
-            </div>
-
-            <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
-                <!-- Predecessor -->
-                <div>
-                    <label class="block text-sm text-zinc-400 mb-1.5">Predecessor Task</label>
-                    <select id="taskPredecessor" name="predecessor" class="w-full bg-zinc-800 border border-zinc-700 rounded-2xl px-4 py-2.5 text-sm">
-                        <option value="">None</option>
-                        <!-- In production this would be dynamically populated with existing tasks -->
-                        <option value="FRM-012">FRM-012 - Complete Framing</option>
-                        <option value="MEP-045">MEP-045 - Rough-in HVAC</option>
-                        <option value="SITE-003">SITE-003 - Site Grading Complete</option>
-                    </select>
-                </div>
-
-                <!-- Assigned To -->
-                <div>
-                    <label class="block text-sm text-zinc-400 mb-1.5">Responsible / Assigned To</label>
-                    <select id="taskAssignedTo" name="assigned_to" class="w-full bg-zinc-800 border border-zinc-700 rounded-2xl px-4 py-2.5 text-sm">
-                        <option value="">Unassigned</option>
-                        <option value="Mike Bretz">Mike Bretz</option>
-                        <option value="Sarah Kline">Sarah Kline</option>
-                        <option value="Tom Rivera">Tom Rivera</option>
-                        <option value="Electrical Sub">Electrical Subcontractor</option>
-                        <option value="Framing Crew">Framing Crew</option>
-                    </select>
-                </div>
-            </div>
-
-            <!-- Notes -->
-            <div class="mb-6">
-                <label class="block text-sm text-zinc-400 mb-1.5">Notes / Comments</label>
-                <textarea id="taskNotes" name="notes" rows="3" 
-                          class="w-full bg-zinc-800 border border-zinc-700 rounded-2xl px-4 py-3 text-sm resize-y"
-                          placeholder="Any additional notes, constraints, or dependencies..."></textarea>
-            </div>
-
-            <div class="flex gap-3 mt-8">
-                <button type="button" onclick="closeTaskModal()"
-                        class="flex-1 bg-zinc-800 hover:bg-zinc-700 rounded-2xl py-3 text-sm font-medium transition-colors">
-                    Cancel
-                </button>
-                <button type="submit"
-                        class="flex-1 bg-emerald-600 hover:bg-emerald-500 rounded-2xl py-3 text-sm font-medium transition-colors">
-                    Save Task
-                </button>
-            </div>
-        </form>
     </div>
-</dialog>
-
-<!-- ==================== JAVASCRIPT ==================== -->
-<script>
-    // ==================== FILTERING ====================
-    function filterSchedule() {
-        const search = document.getElementById('scheduleSearch').value.toLowerCase();
-        const statusFilter = document.getElementById('scheduleStatusFilter').value;
-        const phaseFilter = document.getElementById('schedulePhaseFilter').value;
-
-        document.querySelectorAll('tbody tr').forEach(row => {
-            const text = row.textContent.toLowerCase();
-            const statusSelect = row.querySelector('select');
-            const rowStatus = statusSelect ? statusSelect.value : '';
-            const rowPhase = row.textContent;
-
-            let show = true;
-
-            if (search && !text.includes(search)) show = false;
-            if (statusFilter && rowStatus !== statusFilter) show = false;
-            if (phaseFilter && !rowPhase.includes(phaseFilter)) show = false;
-
-            row.style.display = show ? '' : 'none';
-        });
-    }
-
-    // ==================== MODAL FUNCTIONS ====================
-    function showCreateTaskModal() {
-        const modal = document.getElementById('taskModal');
-        const form = document.getElementById('taskForm');
-
-        form.reset();
-        document.getElementById('taskId').value = '';
-        document.getElementById('taskModalTitle').textContent = 'New Schedule Task';
-        document.getElementById('taskProgressValue').textContent = '0%';
-        document.getElementById('taskProgressSlider').value = 0;
-
-        // Auto-generate next task number
-        const nextNumber = 'TSK-' + String({{ (schedule_tasks|length + 1) }}).padStart(3, '0');
-        document.getElementById('taskNumber').value = nextNumber;
-
-        modal.showModal();
-    }
-
-    function closeTaskModal() {
-        document.getElementById('taskModal').close();
-    }
-
-    // ==================== PROGRESS SLIDER ====================
-    function updateProgressDisplay() {
-        const slider = document.getElementById('taskProgressSlider');
-        const valueSpan = document.getElementById('taskProgressValue');
-        if (slider && valueSpan) {
-            valueSpan.textContent = slider.value + '%';
-        }
-    }
-
-    // Auto-calculate duration when dates change
-    function setupDateListeners() {
-        const startInput = document.getElementById('taskStartDate');
-        const endInput = document.getElementById('taskEndDate');
-        const durationInput = document.getElementById('taskDuration');
-
-        function calculateDuration() {
-            if (startInput.value && endInput.value) {
-                const start = new Date(startInput.value);
-                const end = new Date(endInput.value);
-                const diffTime = Math.abs(end - start);
-                const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24)) + 1;
-                durationInput.value = diffDays;
-            }
-        }
-
-        if (startInput) startInput.addEventListener('change', calculateDuration);
-        if (endInput) endInput.addEventListener('change', calculateDuration);
-    }
-
-    // ==================== ACTION FUNCTIONS ====================
-    function updateTaskStatus(id, newStatus) {
-        console.log(`Updating Task #${id} to status: ${newStatus}`);
-        showToast(`Task status updated to ${newStatus}`);
-    }
-
-    function viewTask(id) {
-        alert(`Viewing full details for Task #${id}\n(Gantt chart view and notes will be shown here in a future update)`);
-    }
-
-    function editTask(id) {
-        const modal = document.getElementById('taskModal');
-        document.getElementById('taskModalTitle').textContent = `Edit Task #${id}`;
-        document.getElementById('taskId').value = id;
-
-        // TODO: In production, fetch task data and populate the form
-        modal.showModal();
-    }
-
-    function viewDependencies(id) {
-        alert(`Showing dependencies and predecessors for Task #${id}\n(Dependency graph / Gantt linking coming soon)`);
-    }
-
-    function updateProgress(id) {
-        const newProgress = prompt("Enter new completion percentage (0-100):");
-        if (newProgress !== null && !isNaN(newProgress)) {
-            console.log(`Updating progress for Task #${id} to ${newProgress}%`);
-            showToast(`Progress updated to ${newProgress}%`);
-            // TODO: Send update to backend
-        }
-    }
-
-    // ==================== TOAST NOTIFICATION ====================
-    function showToast(message) {
-        const toast = document.createElement('div');
-        toast.className = `fixed bottom-6 right-6 bg-zinc-800 border border-zinc-700 text-white px-5 py-3 rounded-2xl shadow-xl flex items-center gap-3 z-[9999]`;
-        toast.innerHTML = `
-            <i class="fa-solid fa-check-circle text-emerald-400"></i>
-            <span>${message}</span>
-        `;
-        document.body.appendChild(toast);
-
-        setTimeout(() => {
-            toast.style.transition = 'all 0.3s ease';
-            toast.style.opacity = '0';
-            setTimeout(() => toast.remove(), 300);
-        }, 2800);
-    }
-
-    // ==================== KEYBOARD SHORTCUTS ====================
-    document.addEventListener('keydown', function(e) {
-        if (e.key === "/" && document.activeElement.tagName === "BODY") {
-            e.preventDefault();
-            const search = document.getElementById('scheduleSearch');
-            if (search) search.focus();
-        }
-
-        if (e.key.toLowerCase() === "n" && e.target.tagName === "BODY") {
-            e.preventDefault();
-            showCreateTaskModal();
-        }
-    });
-
-    // ==================== INITIALIZATION ====================
-    function initializeSchedulePage() {
-        console.log('%c[Case PM] Schedule page initialized with full features.', 'color:#10b981');
-        setupDateListeners();
-    }
-
-    window.addEventListener('load', initializeSchedulePage);
-</script>
-
-<!-- ==================== FINAL ENHANCEMENTS ==================== -->
-<script>
-    // ==================== EXPORT SCHEDULE TO CSV ====================
-    function exportSchedule() {
-        const table = document.querySelector('table');
-        if (!table) return;
-
-        let csv = [];
-        const rows = table.querySelectorAll('tr');
-
-        rows.forEach(row => {
-            const cols = row.querySelectorAll('th, td');
-            let rowData = [];
-            cols.forEach(col => {
-                let text = col.innerText.trim().replace(/"/g, '""');
-                rowData.push(`"${text}"`);
-            });
-            csv.push(rowData.join(','));
-        });
-
-        const csvContent = csv.join('\n');
-        const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
-        const link = document.createElement('a');
-        const url = URL.createObjectURL(blob);
-        
-        link.setAttribute('href', url);
-        link.setAttribute('download', `schedule_${new Date().toISOString().split('T')[0]}.csv`);
-        link.style.visibility = 'hidden';
-        document.body.appendChild(link);
-        link.click();
-        document.body.removeChild(link);
-
-        showToast('Schedule exported successfully');
-    }
-
-    // ==================== BULK ACTIONS (Future Ready) ====================
-    function bulkUpdateTaskStatus() {
-        const selected = document.querySelectorAll('table tbody input[type="checkbox"]:checked');
-        if (selected.length === 0) {
-            alert("Please select tasks to update.");
-            return;
-        }
-        alert(`Bulk status update for ${selected.length} tasks will be available here.`);
-    }
-
-    // ==================== FINAL INITIALIZATION ====================
-    function finalScheduleInitialization() {
-        console.log('%c[Case PM] schedule.html fully loaded with maximum features.', 'color:#10b981');
-    }
-
-    window.addEventListener('load', finalScheduleInitialization);
-</script>
-
-{% endblock %}
+</div>
