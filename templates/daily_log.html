@@ -638,3 +638,41 @@
         </form>
     </div>
 </div>
+            </div> <!-- End of main content wrapper -->
+
+        </div> <!-- End of scrollable area -->
+
+    </div>
+</div>
+
+<!-- ==================== FINAL JAVASCRIPT ==================== -->
+<script>
+    // ==================== AUTO ADD FIRST MANPOWER ROW ====================
+    function initializeFirstManpowerRow() {
+        const tbody = document.querySelector('#manpowerTable tbody');
+        if (tbody && tbody.children.length === 0) {
+            // Add one empty row by default when modal opens
+            // This is optional - you can remove this if you prefer empty tables
+        }
+    }
+
+    // ==================== FORM SUBMISSION HANDLER ====================
+    const createForm = document.getElementById('createDailyLogForm');
+    if (createForm) {
+        createForm.addEventListener('submit', function(e) {
+            // You can add client-side validation here later if needed
+            console.log('%c[Case PM] Daily Log form submitted', 'color:#10b981');
+        });
+    }
+
+    // ==================== INITIALIZE ON PAGE LOAD ====================
+    document.addEventListener('DOMContentLoaded', function() {
+        console.log('%c[Case PM] daily_log.html (Rich Version) fully loaded', 'color:#10b981');
+        
+        // Optional: Pre-populate one manpower row when the page loads
+        // Uncomment the line below if you want a default row
+        // addManpowerRow();
+    });
+</script>
+
+{% endblock %}
