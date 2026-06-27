@@ -141,3 +141,173 @@
                 </form>
             </div>
         </dialog>
+        <!-- JavaScript -->
+        <script>
+            // Sample data (will be replaced with backend later)
+            let meetings = [
+                {
+                    id: 1,
+                    meeting_number: "MM-023",
+                    date: "2025-04-01",
+                    type: "Owner-Architect",
+                    subject: "Weekly Progress Review",
+                    location: "Job Site Trailer",
+                    attendees: "Mike B., John A., Sarah K.",
+                    status: "Completed",
+                    action_items: 4
+                },
+                {
+                    id: 2,
+                    meeting_number: "MM-024",
+                    date: "2025-04-08",
+                    type: "Subcontractor",
+                    subject: "Electrical & Plumbing Coordination",
+                    location: "Conference Room",
+                    attendees: "Mike B., PowerTech, ABC Plumbing",
+                    status: "Scheduled",
+                    action_items: 0
+                }
+            ];
+
+            function filterMeetings() {
+                const searchTerm = document.getElementById('meetingSearch').value.toLowerCase();
+                const typeFilter = document.getElementById('typeFilter').value;
+
+                const filtered = meetings.filter(meeting => {
+                    const matchesSearch = meeting.subject.toLowerCase().includes(searchTerm) || 
+                                        meeting.meeting_number.toLowerCase().includes(searchTerm);
+                    const matchesType = !typeFilter || meeting.type === typeFilter;
+                    return matchesSearch && matchesType;
+                });
+
+                renderMeetingsTable(filtered);
+            }
+
+            function clearMeetingFilters() {
+                document.getElementById('meetingSearch').value = '';
+                document.getElementById('typeFilter').value = '';
+                document.getElementById('projectFilter').value = '';
+                renderMeetingsTable(meetings);
+            }
+
+            function renderMeetingsTable(meetingList) {
+                const tbody = document.getElementById('meetingsTableBody');
+                tbody.innerHTML = '';
+
+                if (meetingList.length === 0) {
+                    tbody.innerHTML = `
+                        <tr>
+                            <td colspan="7" class="px-6 py-8 text-center text-zinc-400">
+                                No meetings found.
+                            </td>
+                        </tr>
+                    `;
+                    return;
+                }
+
+                meetingList.forEach(meeting => {
+                    const row = document.createElement('tr');
+                    row.className = 'hover:bg-zinc-800/60 transition-colors';
+                    row.innerHTML = `
+                        <td class="px-6 py-4 font-mono text-sm">${meeting.meeting_number}</td>
+                        <td class="px-6 py-4 text-sm text-zinc-400">${meeting.date}</td>
+                        <td class="px-6 py-4">
+                            <span class="inline-block px-3 py-1 rounded-full text-xs font-medium bg-zinc-700 text-zinc-300">
+                                ${meeting.type}
+                            </span>
+                        </td>
+                        <td class="px-6 py-4">${meeting.subject}</td>
+                        <td class="px-6 py-4 text-sm text-zinc-400">${meeting.location}</td>
+                        <td class="px-6 py-4 text-center">
+                            <span class="inline-block px-3 py-1 rounded-full text-xs font-medium bg-blue-600/20 text-blue-400">
+                                ${meeting.action_items} items
+                            </span>
+                        </td>
+                        <td class="px-4 py-4">
+                            <div class="flex items-center gap-1">
+                                <button onclick="editMeeting(${meeting.id})" class="p-2 hover:bg-zinc-700 rounded-xl text-zinc-400 hover:text-white">
+                                    <i class="fa-solid fa-edit"></i>
+                                </button>
+                                <button onclick="deleteMeeting(${meeting.id})" class="p-2 hover:bg-zinc-700 rounded-xl text-zinc-400 hover:text-red-400">
+                                    <i class="fa-solid fa-trash"></i>
+                                </button>
+                            </div>
+                        </td>
+                    `;
+                    tbody.appendChild(row);
+                });
+            }
+
+            function showAddMeetingModal() {
+                document.getElementById('modalTitle').innerText = 'New Meeting Minutes';
+                document.getElementById('meetingForm').reset();
+                document.getElementById('meetingId').value = '';
+                document.getElementById('meetingModal').showModal();
+            }
+
+            function editMeeting(id) {
+                const meeting = meetings.find(m => m.id === id);
+                if (!meeting) return;
+
+                document.getElementById('modalTitle').innerText = 'Edit Meeting Minutes';
+                document.getElementById('meetingId').value = meeting.id;
+                document.getElementById('meeting_number').value = meeting.meeting_number;
+                document.getElementById('meeting_date').value = meeting.date;
+                document.getElementById('meeting_type').value = meeting.type;
+                document.getElementById('subject').value = meeting.subject;
+                document.getElementById('location').value = meeting.location;
+                document.getElementById('attendees').value = meeting.attendees || '';
+                document.getElementById('notes').value = meeting.notes || '';
+
+                document.getElementById('meetingModal').showModal();
+            }
+
+            function saveMeeting(e) {
+                e.preventDefault();
+
+                const id = document.getElementById('meetingId').value;
+
+                const newMeeting = {
+                    id: id ? parseInt(id) : Date.now(),
+                    meeting_number: document.getElementById('meeting_number').value,
+                    date: document.getElementById('meeting_date').value,
+                    type: document.getElementById('meeting_type').value,
+                    subject: document.getElementById('subject').value,
+                    location: document.getElementById('location').value,
+                    attendees: document.getElementById('attendees').value,
+                    notes: document.getElementById('notes').value,
+                    status: id ? meetings.find(m => m.id == id).status : 'Completed',
+                    action_items: id ? meetings.find(m => m.id == id).action_items : 0
+                };
+
+                if (id) {
+                    const index = meetings.findIndex(m => m.id == id);
+                    meetings[index] = newMeeting;
+                } else {
+                    meetings.push(newMeeting);
+                }
+
+                renderMeetingsTable(meetings);
+                document.getElementById('meetingModal').close();
+            }
+
+            function deleteMeeting(id) {
+                if (!confirm('Delete these meeting minutes?')) return;
+                meetings = meetings.filter(m => m.id !== id);
+                renderMeetingsTable(meetings);
+            }
+
+            function initializeMeetings() {
+                renderMeetingsTable(meetings);
+            }
+
+            // Initialize on load
+            window.onload = function() {
+                initializeMeetings();
+            };
+        </script>
+
+{% endblock %}
+
+</div>
+</div>
