@@ -1,495 +1,69 @@
 {% extends "base.html" %}
 
 {% block content %}
-<div class="p-8 max-w-[1600px] mx-auto">
-
-    <!-- Header -->
-    <div class="flex items-center justify-between mb-8">
+<div class="max-w-[1600px] mx-auto">
+    
+    <!-- Page Header -->
+    <div class="flex items-center justify-between mb-6">
         <div>
             <h1 class="text-3xl font-semibold tracking-tight">Punch List</h1>
-            <p class="text-zinc-400 mt-1">ALDI Lakeland • Track and resolve outstanding items</p>
+            <p class="text-zinc-400 mt-1">Track and manage outstanding items</p>
         </div>
-        <button onclick="showCreatePunchModal()"
-                class="flex items-center gap-2 bg-emerald-600 hover:bg-emerald-500 transition-colors px-5 py-2.5 rounded-2xl text-sm font-medium">
+        
+        <button onclick="showAddPunchModal()" 
+                class="flex items-center gap-2 px-5 py-2.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded-2xl text-sm font-medium transition-colors">
             <i class="fa-solid fa-plus"></i>
-            <span>New Punch Item</span>
+            <span>Add Punch Item</span>
         </button>
     </div>
 
-    <!-- KPI Summary Cards -->
-    <div class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-4 mb-8">
-        <div class="bg-zinc-900 border border-zinc-800 rounded-3xl p-5">
-            <div class="text-zinc-400 text-sm">Total Items</div>
-            <div class="text-3xl font-semibold mt-1">87</div>
-        </div>
-        <div class="bg-zinc-900 border border-zinc-800 rounded-3xl p-5">
-            <div class="text-zinc-400 text-sm">Open</div>
-            <div class="text-3xl font-semibold mt-1 text-red-400">34</div>
-        </div>
-        <div class="bg-zinc-900 border border-zinc-800 rounded-3xl p-5">
-            <div class="text-zinc-400 text-sm">In Progress</div>
-            <div class="text-3xl font-semibold mt-1 text-yellow-400">21</div>
-        </div>
-        <div class="bg-zinc-900 border border-zinc-800 rounded-3xl p-5">
-            <div class="text-zinc-400 text-sm">Completed</div>
-            <div class="text-3xl font-semibold mt-1 text-emerald-400">32</div>
-        </div>
-        <div class="bg-zinc-900 border border-zinc-800 rounded-3xl p-5">
-            <div class="text-zinc-400 text-sm">Overdue</div>
-            <div class="text-3xl font-semibold mt-1 text-red-500">12</div>
-        </div>
-    </div>
-
     <!-- Filters -->
-    <div class="flex flex-col md:flex-row gap-3 mb-6">
-        <div class="flex-1">
-            <input type="text" id="punchSearch" onkeyup="filterPunchList()"
-                   placeholder="Search punch items..." 
-                   class="w-full bg-zinc-900 border border-zinc-700 rounded-2xl px-4 py-2.5 text-sm focus:outline-none focus:border-emerald-600">
+    <div class="flex flex-wrap items-center gap-3 mb-6 bg-zinc-900 border border-zinc-800 rounded-3xl p-4">
+        <div class="flex-1 min-w-[220px]">
+            <input type="text" id="punchSearch" placeholder="Search punch items..." 
+                   class="w-full bg-zinc-800 border border-zinc-700 rounded-2xl px-4 py-2.5 text-sm focus:outline-none focus:border-emerald-600"
+                   onkeyup="filterPunchList()">
         </div>
-        
-        <select id="punchStatusFilter" onchange="filterPunchList()"
-                class="bg-zinc-900 border border-zinc-700 rounded-2xl px-4 py-2.5 text-sm">
+
+        <select id="statusFilter" onchange="filterPunchList()" 
+                class="bg-zinc-800 border border-zinc-700 rounded-2xl px-4 py-2.5 text-sm focus:outline-none focus:border-emerald-600">
             <option value="">All Statuses</option>
             <option value="Open">Open</option>
             <option value="In Progress">In Progress</option>
             <option value="Completed">Completed</option>
+            <option value="Rejected">Rejected</option>
         </select>
 
-        <select id="punchPriorityFilter" onchange="filterPunchList()"
-                class="bg-zinc-900 border border-zinc-700 rounded-2xl px-4 py-2.5 text-sm">
-            <option value="">All Priorities</option>
-            <option value="High">High</option>
-            <option value="Medium">Medium</option>
-            <option value="Low">Low</option>
+        <select id="locationFilter" onchange="filterPunchList()" 
+                class="bg-zinc-800 border border-zinc-700 rounded-2xl px-4 py-2.5 text-sm focus:outline-none focus:border-emerald-600">
+            <option value="">All Locations</option>
         </select>
 
-        <button onclick="exportPunchList()"
-                class="flex items-center gap-2 px-4 py-2.5 bg-zinc-800 hover:bg-zinc-700 rounded-2xl text-sm transition-colors">
-            <i class="fa-solid fa-download"></i>
-            <span>Export</span>
+        <button onclick="clearPunchFilters()" 
+                class="px-4 py-2.5 text-sm bg-zinc-800 hover:bg-zinc-700 border border-zinc-700 rounded-2xl transition-colors">
+            Clear Filters
         </button>
     </div>
 
     <!-- Punch List Table -->
     <div class="bg-zinc-900 border border-zinc-800 rounded-3xl overflow-hidden">
         <table class="w-full">
-            <thead class="bg-zinc-950 border-b border-zinc-800">
-                <tr>
-                    <th class="text-left px-6 py-4 text-sm font-medium text-zinc-400 w-20">Item #</th>
+            <thead>
+                <tr class="border-b border-zinc-800 bg-zinc-950">
+                    <th class="text-left px-6 py-4 text-sm font-medium text-zinc-400 w-16">#</th>
                     <th class="text-left px-6 py-4 text-sm font-medium text-zinc-400">Description</th>
-                    <th class="text-left px-6 py-4 text-sm font-medium text-zinc-400 w-36">Location</th>
-                    <th class="text-left px-6 py-4 text-sm font-medium text-zinc-400 w-28">Trade</th>
-                    <th class="text-center px-6 py-4 text-sm font-medium text-zinc-400 w-24">Priority</th>
-                    <th class="text-center px-6 py-4 text-sm font-medium text-zinc-400 w-28">Status</th>
-                    <th class="text-center px-6 py-4 text-sm font-medium text-zinc-400 w-28">Due Date</th>
-                    <th class="text-center px-6 py-4 text-sm font-medium text-zinc-400 w-32">Actions</th>
+                    <th class="text-left px-6 py-4 text-sm font-medium text-zinc-400">Location</th>
+                    <th class="text-left px-6 py-4 text-sm font-medium text-zinc-400">Assigned To</th>
+                    <th class="text-left px-6 py-4 text-sm font-medium text-zinc-400">Due Date</th>
+                    <th class="text-center px-6 py-4 text-sm font-medium text-zinc-400">Status</th>
+                    <th class="text-center px-6 py-4 text-sm font-medium text-zinc-400">Photo</th>
+                    <th class="w-20"></th>
                 </tr>
             </thead>
-            <tbody class="divide-y divide-zinc-800 text-sm">
-
-                {% for item in punch_items %}
-                <tr class="border-b border-zinc-800 hover:bg-zinc-800/60 transition-colors">
-                    <td class="px-6 py-4 font-mono text-emerald-400">{{ item.number }}</td>
-                    <td class="px-6 py-4">
-                        <div class="font-medium">{{ item.description }}</div>
-                        {% if item.notes %}
-                        <div class="text-xs text-zinc-500 mt-0.5">{{ item.notes }}</div>
-                        {% endif %}
-                    </td>
-                    <td class="px-6 py-4 text-zinc-300">{{ item.location }}</td>
-                    <td class="px-6 py-4 text-zinc-300">{{ item.trade }}</td>
-                    
-                    <!-- Priority -->
-                    <td class="px-6 py-4 text-center">
-                        {% if item.priority == 'High' %}
-                            <span class="inline-flex items-center px-3 py-1 rounded-full text-xs font-medium bg-red-500/20 text-red-400">High</span>
-                        {% elif item.priority == 'Medium' %}
-                            <span class="inline-flex items-center px-3 py-1 rounded-full text-xs font-medium bg-yellow-500/20 text-yellow-400">Medium</span>
-                        {% else %}
-                            <span class="inline-flex items-center px-3 py-1 rounded-full text-xs font-medium bg-zinc-700 text-zinc-300">Low</span>
-                        {% endif %}
-                    </td>
-
-                    <!-- Status -->
-                    <td class="px-6 py-4 text-center">
-                        <select onchange="updatePunchStatus({{ item.id }}, this.value)"
-                                class="bg-zinc-800 border border-zinc-700 rounded-xl px-3 py-1 text-xs">
-                            <option value="Open" {% if item.status == 'Open' %}selected{% endif %}>Open</option>
-                            <option value="In Progress" {% if item.status == 'In Progress' %}selected{% endif %}>In Progress</option>
-                            <option value="Completed" {% if item.status == 'Completed' %}selected{% endif %}>Completed</option>
-                        </select>
-                    </td>
-
-                    <td class="px-6 py-4 text-center text-sm {% if item.due_date and item.due_date < current_date %}text-red-400 font-medium{% endif %}">
-                        {{ item.due_date.strftime('%m/%d/%Y') if item.due_date else '—' }}
-                    </td>
-
-                    <td class="px-6 py-4 text-center">
-                        <div class="flex items-center justify-center gap-1">
-                            <button onclick="viewPunchItem({{ item.id }})" 
-                                    class="p-2 text-emerald-400 hover:text-emerald-300 hover:bg-zinc-800 rounded-xl transition-colors" title="View Details">
-                                <i class="fa-solid fa-eye"></i>
-                            </button>
-                            
-                            <button onclick="editPunchItem({{ item.id }})" 
-                                    class="p-2 text-emerald-400 hover:text-emerald-300 hover:bg-zinc-800 rounded-xl transition-colors" title="Edit">
-                                <i class="fa-solid fa-edit"></i>
-                            </button>
-
-                            <button onclick="attachPhotoToPunch({{ item.id }})" 
-                                    class="p-2 text-emerald-400 hover:text-emerald-300 hover:bg-zinc-800 rounded-xl transition-colors" title="Attach Photo">
-                                <i class="fa-solid fa-camera"></i>
-                            </button>
-
-                            {% if item.status != 'Completed' %}
-                            <button onclick="markPunchComplete({{ item.id }})" 
-                                    class="p-2 text-emerald-400 hover:text-emerald-300 hover:bg-zinc-800 rounded-xl transition-colors" title="Mark Complete">
-                                <i class="fa-solid fa-check"></i>
-                            </button>
-                            {% endif %}
-                        </div>
-                    </td>
-                </tr>
-                {% else %}
-                <tr>
-                    <td colspan="8" class="px-6 py-12 text-center text-zinc-400">
-                        No punch items found. Create your first one!
-                    </td>
-                </tr>
-                {% endfor %}
+            <tbody id="punchTableBody" class="divide-y divide-zinc-800">
+                <!-- Rows will be populated by JavaScript -->
             </tbody>
         </table>
     </div>
 
 </div>
-
-<!-- ==================== CREATE / EDIT PUNCH ITEM MODAL ==================== -->
-<dialog id="punchModal" class="bg-zinc-900 border border-zinc-700 rounded-3xl p-0 w-full max-w-3xl">
-    <div class="p-6">
-        <div class="flex items-center justify-between mb-6">
-            <h2 id="punchModalTitle" class="text-xl font-semibold">New Punch Item</h2>
-            <button onclick="closePunchModal()" class="text-zinc-400 hover:text-white">
-                <i class="fa-solid fa-times text-xl"></i>
-            </button>
-        </div>
-
-        <form id="punchForm" method="POST" action="{{ url_for('create_punch') }}">
-            <input type="hidden" id="punchId" name="punch_id">
-
-            <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
-                <div>
-                    <label class="block text-sm text-zinc-400 mb-1.5">Punch Item #</label>
-                    <input type="text" id="punchNumber" name="number" 
-                           class="w-full bg-zinc-800 border border-zinc-700 rounded-2xl px-4 py-2.5 text-sm font-mono" readonly>
-                </div>
-                <div>
-                    <label class="block text-sm text-zinc-400 mb-1.5">Priority <span class="text-red-400">*</span></label>
-                    <select id="punchPriority" name="priority" class="w-full bg-zinc-800 border border-zinc-700 rounded-2xl px-4 py-2.5 text-sm" required>
-                        <option value="High">High</option>
-                        <option value="Medium" selected>Medium</option>
-                        <option value="Low">Low</option>
-                    </select>
-                </div>
-            </div>
-
-            <div class="mb-4">
-                <label class="block text-sm text-zinc-400 mb-1.5">Description <span class="text-red-400">*</span></label>
-                <textarea id="punchDescription" name="description" rows="3" 
-                          class="w-full bg-zinc-800 border border-zinc-700 rounded-2xl px-4 py-3 text-sm resize-y" required
-                          placeholder="Describe the punch item in detail..."></textarea>
-            </div>
-
-            <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
-                <div>
-                    <label class="block text-sm text-zinc-400 mb-1.5">Location / Area</label>
-                    <input type="text" id="punchLocation" name="location" 
-                           class="w-full bg-zinc-800 border border-zinc-700 rounded-2xl px-4 py-2.5 text-sm"
-                           placeholder="e.g. Sales Floor - Column Line B">
-                </div>
-                <div>
-                    <label class="block text-sm text-zinc-400 mb-1.5">Trade / Responsibility</label>
-                    <select id="punchTrade" name="trade" class="w-full bg-zinc-800 border border-zinc-700 rounded-2xl px-4 py-2.5 text-sm">
-                        <option value="">Select Trade...</option>
-                        <option value="Electrical">Electrical</option>
-                        <option value="Plumbing">Plumbing</option>
-                        <option value="HVAC">HVAC</option>
-                        <option value="Drywall">Drywall</option>
-                        <option value="Painting">Painting</option>
-                        <option value="Flooring">Flooring</option>
-                        <option value="General">General / GC</option>
-                        <option value="Other">Other</option>
-                    </select>
-                </div>
-                <div>
-                    <label class="block text-sm text-zinc-400 mb-1.5">Assigned To</label>
-                    <select id="punchAssignedTo" name="assigned_to" class="w-full bg-zinc-800 border border-zinc-700 rounded-2xl px-4 py-2.5 text-sm">
-                        <option value="">Unassigned</option>
-                        <option value="Mike Bretz">Mike Bretz</option>
-                        <option value="Sarah Kline">Sarah Kline</option>
-                        <option value="Tom Rivera">Tom Rivera</option>
-                        <option value="Electrical Sub">Electrical Subcontractor</option>
-                        <option value="Plumbing Sub">Plumbing Subcontractor</option>
-                    </select>
-                </div>
-            </div>
-
-            <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
-                <div>
-                    <label class="block text-sm text-zinc-400 mb-1.5">Due Date</label>
-                    <input type="date" id="punchDueDate" name="due_date" 
-                           class="w-full bg-zinc-800 border border-zinc-700 rounded-2xl px-4 py-2.5 text-sm">
-                </div>
-                <div>
-                    <label class="block text-sm text-zinc-400 mb-1.5">Status</label>
-                    <select id="punchStatus" name="status" class="w-full bg-zinc-800 border border-zinc-700 rounded-2xl px-4 py-2.5 text-sm">
-                        <option value="Open">Open</option>
-                        <option value="In Progress">In Progress</option>
-                        <option value="Completed">Completed</option>
-                    </select>
-                </div>
-                <div>
-                    <label class="block text-sm text-zinc-400 mb-1.5">Related To</label>
-                    <select id="punchRelatedTo" name="related_to" class="w-full bg-zinc-800 border border-zinc-700 rounded-2xl px-4 py-2.5 text-sm">
-                        <option value="">None</option>
-                        <option value="RFI">RFI</option>
-                        <option value="Submittal">Submittal</option>
-                        <option value="Drawing">Drawing / Spec</option>
-                        <option value="Daily Log">Daily Log</option>
-                    </select>
-                </div>
-            </div>
-
-            <div class="mb-4">
-                <label class="block text-sm text-zinc-400 mb-1.5">Notes / Comments</label>
-                <textarea id="punchNotes" name="notes" rows="2" 
-                          class="w-full bg-zinc-800 border border-zinc-700 rounded-2xl px-4 py-3 text-sm resize-y"
-                          placeholder="Additional notes or resolution details..."></textarea>
-            </div>
-
-            <!-- Photo Attachment -->
-            <div class="mb-6">
-                <label class="block text-sm text-zinc-400 mb-1.5">Attach Photo(s)</label>
-                <div class="border border-dashed border-zinc-700 rounded-2xl p-6 text-center hover:border-emerald-600 transition-colors cursor-pointer"
-                     onclick="document.getElementById('punchPhotoUpload').click()">
-                    <i class="fa-solid fa-camera text-2xl text-zinc-500 mb-2"></i>
-                    <p class="text-sm text-zinc-400">Click to upload or drag photos here</p>
-                    <input type="file" id="punchPhotoUpload" name="photos" multiple accept="image/*" class="hidden">
-                </div>
-                <div id="punchPhotoPreview" class="mt-3 flex flex-wrap gap-2"></div>
-            </div>
-
-            <div class="flex gap-3 mt-8">
-                <button type="button" onclick="closePunchModal()"
-                        class="flex-1 bg-zinc-800 hover:bg-zinc-700 rounded-2xl py-3 text-sm font-medium transition-colors">
-                    Cancel
-                </button>
-                <button type="submit"
-                        class="flex-1 bg-emerald-600 hover:bg-emerald-500 rounded-2xl py-3 text-sm font-medium transition-colors">
-                    Save Punch Item
-                </button>
-            </div>
-        </form>
-    </div>
-</dialog>
-
-<!-- ==================== JAVASCRIPT ==================== -->
-<script>
-    // ==================== FILTERING ====================
-    function filterPunchList() {
-        const search = document.getElementById('punchSearch').value.toLowerCase();
-        const statusFilter = document.getElementById('punchStatusFilter').value;
-        const priorityFilter = document.getElementById('punchPriorityFilter').value;
-
-        document.querySelectorAll('tbody tr').forEach(row => {
-            const text = row.textContent.toLowerCase();
-            const statusSelect = row.querySelector('select');
-            const rowStatus = statusSelect ? statusSelect.value : '';
-            const rowPriority = row.textContent;
-
-            let show = true;
-
-            if (search && !text.includes(search)) show = false;
-            if (statusFilter && rowStatus !== statusFilter) show = false;
-            if (priorityFilter && !rowPriority.includes(priorityFilter)) show = false;
-
-            row.style.display = show ? '' : 'none';
-        });
-    }
-
-    // ==================== MODAL FUNCTIONS ====================
-    function showCreatePunchModal() {
-        const modal = document.getElementById('punchModal');
-        const form = document.getElementById('punchForm');
-
-        // Reset form
-        form.reset();
-        document.getElementById('punchId').value = '';
-        document.getElementById('punchModalTitle').textContent = 'New Punch Item';
-        document.getElementById('punchPhotoPreview').innerHTML = '';
-
-        // Auto-generate next punch number
-        const nextNumber = 'PL-' + String({{ (punch_items|length + 1) }}).padStart(3, '0');
-        document.getElementById('punchNumber').value = nextNumber;
-
-        modal.showModal();
-    }
-
-    function closePunchModal() {
-        document.getElementById('punchModal').close();
-    }
-
-    // ==================== ACTION FUNCTIONS ====================
-    function updatePunchStatus(id, newStatus) {
-        console.log(`Updating Punch Item #${id} to status: ${newStatus}`);
-        showToast(`Punch item status updated to ${newStatus}`);
-
-        // If marked complete, optionally trigger UI update
-        if (newStatus === 'Completed') {
-            // Optional: reload or update row styling
-        }
-    }
-
-    function viewPunchItem(id) {
-        // In a full implementation, this would open a detailed view modal or navigate to a detail page
-        alert(`Viewing details for Punch Item #${id}\n(Detail view modal will be added in a future update)`);
-    }
-
-    function editPunchItem(id) {
-        const modal = document.getElementById('punchModal');
-        document.getElementById('punchModalTitle').textContent = `Edit Punch Item #${id}`;
-        document.getElementById('punchId').value = id;
-
-        // In production: fetch data via API and populate fields
-        // For now, we simulate by opening the modal
-        modal.showModal();
-    }
-
-    function markPunchComplete(id) {
-        if (confirm('Mark this punch item as completed?')) {
-            console.log(`Marking Punch Item #${id} as Completed`);
-            showToast('Punch item marked as completed');
-            // TODO: Send update to backend and refresh list
-            location.reload(); // temporary until real backend
-        }
-    }
-
-    function attachPhotoToPunch(id) {
-        alert(`Photo upload for Punch Item #${id} will open here.\n(Photo attachment modal coming soon)`);
-    }
-
-    // ==================== PHOTO PREVIEW IN MODAL ====================
-    document.getElementById('punchPhotoUpload').addEventListener('change', function() {
-        const preview = document.getElementById('punchPhotoPreview');
-        preview.innerHTML = '';
-
-        Array.from(this.files).forEach(file => {
-            const reader = new FileReader();
-            reader.onload = function(e) {
-                const div = document.createElement('div');
-                div.className = 'relative w-20 h-20 rounded-xl overflow-hidden border border-zinc-700';
-                div.innerHTML = `
-                    <img src="${e.target.result}" class="w-full h-full object-cover">
-                    <button type="button" onclick="this.parentElement.remove()" 
-                            class="absolute top-1 right-1 bg-black/70 text-white rounded-full w-5 h-5 flex items-center justify-center text-xs">
-                        ×
-                    </button>
-                `;
-                preview.appendChild(div);
-            };
-            reader.readAsDataURL(file);
-        });
-    });
-
-    // ==================== TOAST NOTIFICATION (if not in base) ====================
-    function showToast(message) {
-        const toast = document.createElement('div');
-        toast.className = `fixed bottom-6 right-6 bg-zinc-800 border border-zinc-700 text-white px-5 py-3 rounded-2xl shadow-xl flex items-center gap-3 z-[9999]`;
-        toast.innerHTML = `
-            <i class="fa-solid fa-check-circle text-emerald-400"></i>
-            <span>${message}</span>
-        `;
-        document.body.appendChild(toast);
-
-        setTimeout(() => {
-            toast.style.transition = 'all 0.3s ease';
-            toast.style.opacity = '0';
-            setTimeout(() => toast.remove(), 300);
-        }, 2800);
-    }
-
-    // ==================== KEYBOARD SHORTCUTS ====================
-    document.addEventListener('keydown', function(e) {
-        if (e.key === "/" && document.activeElement.tagName === "BODY") {
-            e.preventDefault();
-            const search = document.getElementById('punchSearch');
-            if (search) search.focus();
-        }
-    });
-
-    // ==================== INITIALIZATION ====================
-    function initializePunchListPage() {
-        console.log('%c[Case PM] Punch List page initialized with full features.', 'color:#10b981');
-    }
-
-    window.addEventListener('load', initializePunchListPage);
-</script>
-
-<!-- ==================== FINAL ENHANCEMENTS & BULK ACTIONS ==================== -->
-<script>
-    // ==================== EXPORT PUNCH LIST ====================
-    function exportPunchList() {
-        const table = document.querySelector('table');
-        if (!table) return;
-
-        let csv = [];
-        const rows = table.querySelectorAll('tr');
-
-        rows.forEach(row => {
-            const cols = row.querySelectorAll('th, td');
-            let rowData = [];
-            cols.forEach(col => {
-                // Get text content, clean it up
-                let text = col.innerText.trim().replace(/"/g, '""');
-                rowData.push(`"${text}"`);
-            });
-            csv.push(rowData.join(','));
-        });
-
-        const csvContent = csv.join('\n');
-        const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
-        const link = document.createElement('a');
-        const url = URL.createObjectURL(blob);
-        
-        link.setAttribute('href', url);
-        link.setAttribute('download', `punch_list_${new Date().toISOString().split('T')[0]}.csv`);
-        link.style.visibility = 'hidden';
-        document.body.appendChild(link);
-        link.click();
-        document.body.removeChild(link);
-
-        showToast('Punch list exported successfully');
-    }
-
-    // ==================== BULK ACTIONS (Future Ready) ====================
-    function bulkUpdatePunchStatus() {
-        const selected = document.querySelectorAll('table tbody input[type="checkbox"]:checked');
-        if (selected.length === 0) {
-            alert("Please select punch items to update.");
-            return;
-        }
-        alert(`Bulk status update for ${selected.length} punch items will be available here.`);
-    }
-
-    // ==================== FINAL INITIALIZATION ====================
-    function finalPunchListInitialization() {
-        console.log('%c[Case PM] punch_list.html fully loaded with maximum features.', 'color:#10b981');
-
-        // Optional: Auto-focus search on page load for power users
-        // document.getElementById('punchSearch')?.focus();
-    }
-
-    window.addEventListener('load', finalPunchListInitialization);
-</script>
-
-{% endblock %}
