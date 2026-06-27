@@ -1,416 +1,68 @@
-
 {% extends "base.html" %}
 
 {% block content %}
-<div class="p-8 max-w-[1600px] mx-auto">
-
-    <!-- Header -->
-    <div class="flex items-center justify-between mb-8">
+<div class="max-w-[1600px] mx-auto">
+    
+    <!-- Page Header -->
+    <div class="flex items-center justify-between mb-6">
         <div>
             <h1 class="text-3xl font-semibold tracking-tight">Deliveries</h1>
-            <p class="text-zinc-400 mt-1">Material & Equipment Delivery Log • ALDI Lakeland</p>
+            <p class="text-zinc-400 mt-1">Track material and equipment deliveries</p>
         </div>
         
-        <button onclick="showCreateDeliveryModal()"
-                class="flex items-center gap-2 px-5 py-2.5 bg-emerald-600 hover:bg-emerald-500 transition-colors rounded-2xl text-sm font-medium">
-            <i class="fa-solid fa-truck"></i>
-            <span>Log New Delivery</span>
+        <button onclick="showAddDeliveryModal()" 
+                class="flex items-center gap-2 px-5 py-2.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded-2xl text-sm font-medium transition-colors">
+            <i class="fa-solid fa-plus"></i>
+            <span>Log Delivery</span>
         </button>
     </div>
 
-    <!-- Summary Cards -->
-    <div class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-4 mb-8">
-        <div class="bg-zinc-900 border border-zinc-800 rounded-3xl p-5">
-            <div class="text-sm text-zinc-400">Total Deliveries</div>
-            <div class="text-3xl font-semibold mt-1">{{ deliveries|length }}</div>
-        </div>
-        <div class="bg-zinc-900 border border-zinc-800 rounded-3xl p-5">
-            <div class="text-sm text-zinc-400">Received Today</div>
-            <div class="text-3xl font-semibold mt-1 text-emerald-400">7</div>
-        </div>
-        <div class="bg-zinc-900 border border-zinc-800 rounded-3xl p-5">
-            <div class="text-sm text-zinc-400">Pending / In Transit</div>
-            <div class="text-3xl font-semibold mt-1 text-yellow-400">4</div>
-        </div>
-        <div class="bg-zinc-900 border border-zinc-800 rounded-3xl p-5">
-            <div class="text-sm text-zinc-400">Damaged / Short</div>
-            <div class="text-3xl font-semibold mt-1 text-red-400">2</div>
-        </div>
-        <div class="bg-zinc-900 border border-zinc-800 rounded-3xl p-5">
-            <div class="text-sm text-zinc-400">This Week</div>
-            <div class="text-3xl font-semibold mt-1">31</div>
-        </div>
-    </div>
-
     <!-- Filters -->
-    <div class="flex flex-col lg:flex-row gap-3 mb-4">
-        <input type="text" id="deliverySearch" placeholder="Search PO #, vendor, or description..." 
-               onkeyup="filterDeliveries()"
-               class="flex-1 bg-zinc-900 border border-zinc-700 rounded-2xl px-4 py-2.5 text-sm">
+    <div class="flex flex-wrap items-center gap-3 mb-6 bg-zinc-900 border border-zinc-800 rounded-3xl p-4">
+        <div class="flex-1 min-w-[220px]">
+            <input type="text" id="deliverySearch" placeholder="Search deliveries..." 
+                   class="w-full bg-zinc-800 border border-zinc-700 rounded-2xl px-4 py-2.5 text-sm focus:outline-none focus:border-emerald-600"
+                   onkeyup="filterDeliveries()">
+        </div>
 
-        <select id="deliveryStatusFilter" onchange="filterDeliveries()"
-                class="bg-zinc-900 border border-zinc-700 rounded-2xl px-4 py-2.5 text-sm min-w-[180px]">
+        <select id="statusFilter" onchange="filterDeliveries()" 
+                class="bg-zinc-800 border border-zinc-700 rounded-2xl px-4 py-2.5 text-sm focus:outline-none focus:border-emerald-600">
             <option value="">All Statuses</option>
             <option value="Pending">Pending</option>
-            <option value="In Transit">In Transit</option>
             <option value="Received">Received</option>
-            <option value="Partial">Partial Delivery</option>
-            <option value="Damaged">Damaged / Issue</option>
+            <option value="Partial">Partial</option>
+            <option value="Delayed">Delayed</option>
         </select>
 
-        <input type="date" id="deliveryDateFilter" onchange="filterDeliveries()"
-               class="bg-zinc-900 border border-zinc-700 rounded-2xl px-4 py-2.5 text-sm">
+        <select id="supplierFilter" onchange="filterDeliveries()" 
+                class="bg-zinc-800 border border-zinc-700 rounded-2xl px-4 py-2.5 text-sm focus:outline-none focus:border-emerald-600">
+            <option value="">All Suppliers</option>
+        </select>
+
+        <button onclick="clearDeliveryFilters()" 
+                class="px-4 py-2.5 text-sm bg-zinc-800 hover:bg-zinc-700 border border-zinc-700 rounded-2xl transition-colors">
+            Clear Filters
+        </button>
     </div>
 
     <!-- Deliveries Table -->
     <div class="bg-zinc-900 border border-zinc-800 rounded-3xl overflow-hidden">
-        <table class="w-full text-sm">
+        <table class="w-full">
             <thead>
-                <tr class="bg-zinc-950 border-b border-zinc-800">
-                    <th class="px-6 py-4 text-left font-medium text-zinc-400">Delivery #</th>
-                    <th class="px-6 py-4 text-left font-medium text-zinc-400">Date</th>
-                    <th class="px-6 py-4 text-left font-medium text-zinc-400">Vendor / Supplier</th>
-                    <th class="px-6 py-4 text-left font-medium text-zinc-400">PO / Ref #</th>
-                    <th class="px-6 py-4 text-left font-medium text-zinc-400">Description</th>
-                    <th class="px-6 py-4 text-center font-medium text-zinc-400">Status</th>
-                    <th class="px-6 py-4 text-center font-medium text-zinc-400">Actions</th>
+                <tr class="border-b border-zinc-800 bg-zinc-950">
+                    <th class="text-left px-6 py-4 text-sm font-medium text-zinc-400">Delivery #</th>
+                    <th class="text-left px-6 py-4 text-sm font-medium text-zinc-400">Date</th>
+                    <th class="text-left px-6 py-4 text-sm font-medium text-zinc-400">Supplier</th>
+                    <th class="text-left px-6 py-4 text-sm font-medium text-zinc-400">Description</th>
+                    <th class="text-center px-6 py-4 text-sm font-medium text-zinc-400">Status</th>
+                    <th class="text-center px-6 py-4 text-sm font-medium text-zinc-400">Received By</th>
+                    <th class="w-20"></th>
                 </tr>
             </thead>
-            <tbody>
-
-                {% for delivery in deliveries %}
-                <tr class="border-b border-zinc-800 hover:bg-zinc-800/60 transition-colors">
-                    <td class="px-6 py-4 font-mono text-emerald-400">{{ delivery.number }}</td>
-                    <td class="px-6 py-4">{{ delivery.date.strftime('%m/%d/%Y') if delivery.date else '—' }}</td>
-                    <td class="px-6 py-4">{{ delivery.vendor }}</td>
-                    <td class="px-6 py-4 font-mono">{{ delivery.po_number or '—' }}</td>
-                    <td class="px-6 py-4 max-w-[300px] truncate">{{ delivery.description }}</td>
-                    
-                    <td class="px-6 py-4 text-center">
-                        <select onchange="updateDeliveryStatus({{ delivery.id }}, this.value)"
-                                class="bg-zinc-800 border border-zinc-700 rounded-xl px-3 py-1 text-xs">
-                            <option value="Pending" {% if delivery.status == 'Pending' %}selected{% endif %}>Pending</option>
-                            <option value="In Transit" {% if delivery.status == 'In Transit' %}selected{% endif %}>In Transit</option>
-                            <option value="Received" {% if delivery.status == 'Received' %}selected{% endif %}>Received</option>
-                            <option value="Partial" {% if delivery.status == 'Partial' %}selected{% endif %}>Partial Delivery</option>
-                            <option value="Damaged" {% if delivery.status == 'Damaged' %}selected{% endif %}>Damaged / Issue</option>
-                        </select>
-                    </td>
-
-                    <td class="px-6 py-4 text-center">
-                        <div class="flex items-center justify-center gap-1">
-                            <button onclick="viewDelivery({{ delivery.id }})" 
-                                    class="p-2 text-emerald-400 hover:text-emerald-300 hover:bg-zinc-800 rounded-xl transition-colors" title="View Details">
-                                <i class="fa-solid fa-eye"></i>
-                            </button>
-                            
-                            <button onclick="editDelivery({{ delivery.id }})" 
-                                    class="p-2 text-emerald-400 hover:text-emerald-300 hover:bg-zinc-800 rounded-xl transition-colors" title="Edit">
-                                <i class="fa-solid fa-edit"></i>
-                            </button>
-
-                            {% if delivery.status != 'Received' %}
-                            <button onclick="markAsReceived({{ delivery.id }})" 
-                                    class="p-2 text-emerald-400 hover:text-emerald-300 hover:bg-zinc-800 rounded-xl transition-colors" title="Mark as Received">
-                                <i class="fa-solid fa-check"></i>
-                            </button>
-                            {% endif %}
-
-                            <button onclick="reportDeliveryIssue({{ delivery.id }})" 
-                                    class="p-2 text-emerald-400 hover:text-emerald-300 hover:bg-zinc-800 rounded-xl transition-colors" title="Report Issue">
-                                <i class="fa-solid fa-exclamation-triangle"></i>
-                            </button>
-                        </div>
-                    </td>
-                </tr>
-                {% else %}
-                <tr>
-                    <td colspan="7" class="px-6 py-12 text-center text-zinc-400">
-                        No deliveries logged yet.
-                    </td>
-                </tr>
-                {% endfor %}
+            <tbody id="deliveriesTableBody" class="divide-y divide-zinc-800">
+                <!-- Populated by JavaScript -->
             </tbody>
         </table>
     </div>
 
 </div>
-
-<!-- ==================== CREATE / EDIT DELIVERY MODAL ==================== -->
-<dialog id="deliveryModal" class="bg-zinc-900 border border-zinc-700 rounded-3xl p-0 w-full max-w-4xl">
-    <div class="p-6">
-        <div class="flex items-center justify-between mb-6">
-            <h2 class="text-xl font-semibold" id="deliveryModalTitle">Log New Delivery</h2>
-            <button onclick="closeDeliveryModal()" class="text-zinc-400 hover:text-white text-2xl leading-none">×</button>
-        </div>
-
-        <form id="deliveryForm" onsubmit="saveDelivery(event)">
-            <input type="hidden" id="deliveryId">
-
-            <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
-                <div>
-                    <label class="block text-sm text-zinc-400 mb-1.5">Delivery #</label>
-                    <input type="text" id="deliveryNumber" class="w-full bg-zinc-800 border border-zinc-700 rounded-2xl px-4 py-2.5 text-sm font-mono" readonly>
-                </div>
-                <div>
-                    <label class="block text-sm text-zinc-400 mb-1.5">Delivery Date <span class="text-red-400">*</span></label>
-                    <input type="date" id="deliveryDate" class="w-full bg-zinc-800 border border-zinc-700 rounded-2xl px-4 py-2.5 text-sm" required>
-                </div>
-                <div>
-                    <label class="block text-sm text-zinc-400 mb-1.5">Status</label>
-                    <select id="deliveryStatus" class="w-full bg-zinc-800 border border-zinc-700 rounded-2xl px-4 py-2.5 text-sm">
-                        <option value="Pending">Pending</option>
-                        <option value="In Transit">In Transit</option>
-                        <option value="Received">Received</option>
-                        <option value="Partial">Partial Delivery</option>
-                        <option value="Damaged">Damaged / Issue</option>
-                    </select>
-                </div>
-            </div>
-
-            <div class="mb-4">
-                <label class="block text-sm text-zinc-400 mb-1.5">Vendor / Supplier <span class="text-red-400">*</span></label>
-                <select id="deliveryVendor" class="w-full bg-zinc-800 border border-zinc-700 rounded-2xl px-4 py-2.5 text-sm" required>
-                    <option value="">Select Vendor...</option>
-                    {% for company in companies %}
-                    <option value="{{ company.name }}">{{ company.name }}</option>
-                    {% endfor %}
-                </select>
-            </div>
-
-            <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
-                <div>
-                    <label class="block text-sm text-zinc-400 mb-1.5">PO / Reference #</label>
-                    <input type="text" id="poNumber" class="w-full bg-zinc-800 border border-zinc-700 rounded-2xl px-4 py-2.5 text-sm font-mono">
-                </div>
-                <div>
-                    <label class="block text-sm text-zinc-400 mb-1.5">Tracking / BOL #</label>
-                    <input type="text" id="trackingNumber" class="w-full bg-zinc-800 border border-zinc-700 rounded-2xl px-4 py-2.5 text-sm">
-                </div>
-            </div>
-
-            <div class="mb-4">
-                <label class="block text-sm text-zinc-400 mb-1.5">Description of Materials <span class="text-red-400">*</span></label>
-                <textarea id="deliveryDescription" rows="3" class="w-full bg-zinc-800 border border-zinc-700 rounded-2xl px-4 py-3 text-sm" placeholder="Describe what was delivered..." required></textarea>
-            </div>
-
-            <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
-                <div>
-                    <label class="block text-sm text-zinc-400 mb-1.5">Quantity Received</label>
-                    <input type="number" id="quantityReceived" class="w-full bg-zinc-800 border border-zinc-700 rounded-2xl px-4 py-2.5 text-sm" value="1">
-                </div>
-                <div>
-                    <label class="block text-sm text-zinc-400 mb-1.5">Condition</label>
-                    <select id="deliveryCondition" class="w-full bg-zinc-800 border border-zinc-700 rounded-2xl px-4 py-2.5 text-sm">
-                        <option value="Good">Good Condition</option>
-                        <option value="Damaged">Damaged</option>
-                        <option value="Short">Short / Incomplete</option>
-                        <option value="Wrong Item">Wrong Item</option>
-                    </select>
-                </div>
-                <div>
-                    <label class="block text-sm text-zinc-400 mb-1.5">Received By</label>
-                    <input type="text" id="receivedBy" class="w-full bg-zinc-800 border border-zinc-700 rounded-2xl px-4 py-2.5 text-sm" value="{{ current_user.first_name }} {{ current_user.last_name }}">
-                </div>
-            </div>
-
-            <div class="mb-4">
-                <label class="block text-sm text-zinc-400 mb-1.5">Notes / Issues</label>
-                <textarea id="deliveryNotes" rows="2" class="w-full bg-zinc-800 border border-zinc-700 rounded-2xl px-4 py-3 text-sm" placeholder="Any damage, shortages, or special notes..."></textarea>
-            </div>
-
-            <!-- Attachments -->
-            <div class="mb-6">
-                <label class="block text-sm text-zinc-400 mb-2">Attachments (Delivery Ticket, Photos, etc.)</label>
-                <div class="border-2 border-dashed border-zinc-700 rounded-2xl p-5 text-center">
-                    <i class="fa-solid fa-file-upload text-2xl text-zinc-500 mb-2"></i>
-                    <p class="text-sm text-zinc-400">Upload delivery ticket or photos of condition</p>
-                    <label class="inline-block mt-3 px-5 py-2 bg-zinc-800 hover:bg-zinc-700 rounded-2xl text-sm cursor-pointer">
-                        Select Files
-                        <input type="file" id="deliveryAttachments" multiple class="hidden">
-                    </label>
-                </div>
-            </div>
-
-            <div class="flex gap-3 mt-8">
-                <button type="button" onclick="closeDeliveryModal()" 
-                        class="flex-1 bg-zinc-800 hover:bg-zinc-700 rounded-2xl py-3 text-sm font-medium transition-colors">
-                    Cancel
-                </button>
-                <button type="submit" 
-                        class="flex-1 bg-emerald-600 hover:bg-emerald-500 rounded-2xl py-3 text-sm font-medium transition-colors">
-                    Save Delivery
-                </button>
-            </div>
-        </form>
-    </div>
-</dialog>
-
-<!-- ==================== JAVASCRIPT ==================== -->
-<script>
-    // ==================== FILTERING ====================
-    function filterDeliveries() {
-        const search = document.getElementById('deliverySearch').value.toLowerCase();
-        const status = document.getElementById('deliveryStatusFilter').value;
-        const dateFilter = document.getElementById('deliveryDateFilter').value;
-
-        const rows = document.querySelectorAll('table tbody tr');
-
-        rows.forEach(row => {
-            const text = row.textContent.toLowerCase();
-            const rowStatus = row.querySelector('select') ? row.querySelector('select').value : '';
-            const rowDate = row.cells[1] ? row.cells[1].textContent : '';
-
-            let show = true;
-
-            if (search && !text.includes(search)) show = false;
-            if (status && rowStatus !== status) show = false;
-            if (dateFilter && !rowDate.includes(dateFilter)) show = false;
-
-            row.style.display = show ? '' : 'none';
-        });
-    }
-
-    // ==================== MODAL FUNCTIONS ====================
-    function showCreateDeliveryModal() {
-        const modal = document.getElementById('deliveryModal');
-        const form = document.getElementById('deliveryForm');
-
-        form.reset();
-        document.getElementById('deliveryId').value = '';
-        document.getElementById('deliveryModalTitle').innerText = 'Log New Delivery';
-
-        // Auto-generate delivery number
-        const nextNumber = 'DEL-' + String(87).padStart(3, '0');
-        document.getElementById('deliveryNumber').value = nextNumber;
-
-        // Set today's date
-        const today = new Date().toISOString().split('T')[0];
-        document.getElementById('deliveryDate').value = today;
-
-        modal.showModal();
-    }
-
-    function closeDeliveryModal() {
-        document.getElementById('deliveryModal').close();
-    }
-
-    function editDelivery(id) {
-        const modal = document.getElementById('deliveryModal');
-        document.getElementById('deliveryModalTitle').innerText = 'Edit Delivery';
-        document.getElementById('deliveryId').value = id;
-
-        // In real version: fetch data from backend
-        document.getElementById('deliveryNumber').value = 'DEL-084';
-        document.getElementById('deliveryDate').value = '2026-06-24';
-        document.getElementById('deliveryVendor').value = 'ABC Supply Co.';
-        document.getElementById('poNumber').value = 'PO-4521';
-        document.getElementById('deliveryDescription').value = 'Drywall, metal studs, and insulation';
-        document.getElementById('deliveryStatus').value = 'Received';
-
-        modal.showModal();
-    }
-
-    function saveDelivery(e) {
-        e.preventDefault();
-
-        const id = document.getElementById('deliveryId').value;
-        const isEdit = id !== '';
-
-        const data = {
-            number: document.getElementById('deliveryNumber').value,
-            date: document.getElementById('deliveryDate').value,
-            vendor: document.getElementById('deliveryVendor').value,
-            po_number: document.getElementById('poNumber').value,
-            description: document.getElementById('deliveryDescription').value,
-            status: document.getElementById('deliveryStatus').value
-        };
-
-        console.log(isEdit ? 'Updating Delivery:' : 'Creating Delivery:', data);
-
-        closeDeliveryModal();
-
-        if (isEdit) {
-            showToast('Delivery updated successfully');
-        } else {
-            showToast('New delivery logged successfully');
-        }
-
-        setTimeout(() => {
-            location.reload();
-        }, 900);
-    }
-
-    // ==================== ACTION FUNCTIONS ====================
-    function updateDeliveryStatus(id, newStatus) {
-        console.log(`Updating Delivery #${id} to status: ${newStatus}`);
-        showToast(`Status updated to ${newStatus}`);
-        // TODO: Send update to backend
-    }
-
-    function viewDelivery(id) {
-        alert(`Opening detailed view for Delivery #${id}\n(Will show full details, photos, delivery ticket, and any issues reported)`);
-    }
-
-    function markAsReceived(id) {
-        if (confirm('Mark this delivery as fully received?')) {
-            console.log(`Marking Delivery #${id} as Received`);
-            showToast('Delivery marked as received');
-            // TODO: Update status via backend and refresh
-        }
-    }
-
-    function reportDeliveryIssue(id) {
-        const issue = prompt('Describe the issue with this delivery:');
-        if (issue) {
-            console.log(`Issue reported for Delivery #${id}: ${issue}`);
-            showToast('Issue reported. A ticket has been created.');
-        }
-    }
-
-    // ==================== INITIALIZATION ====================
-    function initializeDeliveriesPage() {
-        console.log('%c[Case PM] Deliveries page initialized with full features.', 'color:#10b981');
-    }
-
-    window.addEventListener('load', initializeDeliveriesPage);
-</script>
-
-{% endblock %}
-
-<!-- ==================== FINAL ENHANCEMENTS ==================== -->
-<script>
-    // ==================== BULK ACTIONS (Future Enhancement) ====================
-    function bulkUpdateDeliveries() {
-        const selected = document.querySelectorAll('table tbody input[type="checkbox"]:checked');
-        if (selected.length === 0) {
-            alert("Please select at least one delivery.");
-            return;
-        }
-        alert(`Bulk update feature for ${selected.length} deliveries will be implemented here.`);
-    }
-
-    // ==================== QUICK FILTER SHORTCUTS ====================
-    function filterByToday() {
-        const today = new Date().toISOString().split('T')[0];
-        document.getElementById('deliveryDateFilter').value = today;
-        filterDeliveries();
-    }
-
-    // Add a small helper button in the header if needed (can be triggered from console or future UI)
-    function enableQuickFilters() {
-        console.log('%c[Case PM] Quick filter functions ready (filterByToday, etc.)', 'color:#52525b');
-    }
-
-    // ==================== FINAL INITIALIZATION ====================
-    function finalDeliveriesInitialization() {
-        enableQuickFilters();
-
-        // Optional: Auto-highlight overdue or problematic deliveries
-        console.log('%c[Case PM] deliveries.html fully loaded with maximum features.', 'color:#10b981');
-    }
-
-    window.addEventListener('load', finalDeliveriesInitialization);
-</script>
-
-{% endblock %}
