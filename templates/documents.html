@@ -1,413 +1,68 @@
-
 {% extends "base.html" %}
 
 {% block content %}
-<div class="p-8 max-w-[1600px] mx-auto">
-
-    <!-- Header -->
-    <div class="flex items-center justify-between mb-8">
+<div class="max-w-[1600px] mx-auto">
+    
+    <!-- Page Header -->
+    <div class="flex items-center justify-between mb-6">
         <div>
             <h1 class="text-3xl font-semibold tracking-tight">Documents</h1>
-            <p class="text-zinc-400 mt-1">Central Document Register • ALDI Lakeland</p>
+            <p class="text-zinc-400 mt-1">Project documentation and files</p>
         </div>
         
-        <button onclick="showUploadDocumentModal()"
-                class="flex items-center gap-2 px-5 py-2.5 bg-emerald-600 hover:bg-emerald-500 transition-colors rounded-2xl text-sm font-medium">
+        <button onclick="showUploadDocumentModal()" 
+                class="flex items-center gap-2 px-5 py-2.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded-2xl text-sm font-medium transition-colors">
             <i class="fa-solid fa-upload"></i>
             <span>Upload Document</span>
         </button>
     </div>
 
-    <!-- Summary Cards -->
-    <div class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-4 mb-8">
-        <div class="bg-zinc-900 border border-zinc-800 rounded-3xl p-5">
-            <div class="text-sm text-zinc-400">Total Documents</div>
-            <div class="text-3xl font-semibold mt-1">{{ documents|length }}</div>
-        </div>
-        <div class="bg-zinc-900 border border-zinc-800 rounded-3xl p-5">
-            <div class="text-sm text-zinc-400">This Week</div>
-            <div class="text-3xl font-semibold mt-1 text-emerald-400">18</div>
-        </div>
-        <div class="bg-zinc-900 border border-zinc-800 rounded-3xl p-5">
-            <div class="text-sm text-zinc-400">Plans & Specs</div>
-            <div class="text-3xl font-semibold mt-1">124</div>
-        </div>
-        <div class="bg-zinc-900 border border-zinc-800 rounded-3xl p-5">
-            <div class="text-sm text-zinc-400">Linked to RFIs / Subs</div>
-            <div class="text-3xl font-semibold mt-1 text-yellow-400">67</div>
-        </div>
-        <div class="bg-zinc-900 border border-zinc-800 rounded-3xl p-5">
-            <div class="text-sm text-zinc-400">Pending Review</div>
-            <div class="text-3xl font-semibold mt-1 text-orange-400">9</div>
-        </div>
-    </div>
-
     <!-- Filters -->
-    <div class="flex flex-col lg:flex-row gap-3 mb-4">
-        <input type="text" id="documentSearch" placeholder="Search document name, number, or description..." 
-               onkeyup="filterDocuments()"
-               class="flex-1 bg-zinc-900 border border-zinc-700 rounded-2xl px-4 py-2.5 text-sm">
+    <div class="flex flex-wrap items-center gap-3 mb-6 bg-zinc-900 border border-zinc-800 rounded-3xl p-4">
+        <div class="flex-1 min-w-[220px]">
+            <input type="text" id="documentSearch" placeholder="Search documents..." 
+                   class="w-full bg-zinc-800 border border-zinc-700 rounded-2xl px-4 py-2.5 text-sm focus:outline-none focus:border-emerald-600"
+                   onkeyup="filterDocuments()">
+        </div>
 
-        <select id="documentCategoryFilter" onchange="filterDocuments()"
-                class="bg-zinc-900 border border-zinc-700 rounded-2xl px-4 py-2.5 text-sm min-w-[200px]">
-            <option value="">All Categories</option>
-            <option value="Plans">Plans / Drawings</option>
-            <option value="Specifications">Specifications</option>
-            <option value="RFI">RFI Related</option>
-            <option value="Submittal">Submittal Related</option>
-            <option value="Contract">Contracts & Agreements</option>
-            <option value="Report">Reports</option>
-            <option value="Photo">Photos</option>
+        <select id="typeFilter" onchange="filterDocuments()" 
+                class="bg-zinc-800 border border-zinc-700 rounded-2xl px-4 py-2.5 text-sm focus:outline-none focus:border-emerald-600">
+            <option value="">All Types</option>
+            <option value="Specification">Specifications</option>
+            <option value="Contract">Contracts</option>
+            <option value="Drawing">Drawings</option>
+            <option value="Submittal">Submittals</option>
             <option value="Other">Other</option>
         </select>
 
-        <select id="documentStatusFilter" onchange="filterDocuments()"
-                class="bg-zinc-900 border border-zinc-700 rounded-2xl px-4 py-2.5 text-sm min-w-[160px]">
-            <option value="">All Statuses</option>
-            <option value="Active">Active</option>
-            <option value="Superseded">Superseded</option>
-            <option value="Archived">Archived</option>
+        <select id="projectFilter" onchange="filterDocuments()" 
+                class="bg-zinc-800 border border-zinc-700 rounded-2xl px-4 py-2.5 text-sm focus:outline-none focus:border-emerald-600">
+            <option value="">All Projects</option>
         </select>
+
+        <button onclick="clearDocumentFilters()" 
+                class="px-4 py-2.5 text-sm bg-zinc-800 hover:bg-zinc-700 border border-zinc-700 rounded-2xl transition-colors">
+            Clear Filters
+        </button>
     </div>
 
     <!-- Documents Table -->
     <div class="bg-zinc-900 border border-zinc-800 rounded-3xl overflow-hidden">
-        <table class="w-full text-sm">
+        <table class="w-full">
             <thead>
-                <tr class="bg-zinc-950 border-b border-zinc-800">
-                    <th class="px-6 py-4 text-left font-medium text-zinc-400">Doc #</th>
-                    <th class="px-6 py-4 text-left font-medium text-zinc-400">Document Name</th>
-                    <th class="px-6 py-4 text-left font-medium text-zinc-400">Category</th>
-                    <th class="px-6 py-4 text-left font-medium text-zinc-400">Uploaded By</th>
-                    <th class="px-6 py-4 text-center font-medium text-zinc-400">Date</th>
-                    <th class="px-6 py-4 text-center font-medium text-zinc-400">Linked To</th>
-                    <th class="px-6 py-4 text-center font-medium text-zinc-400">Status</th>
-                    <th class="px-6 py-4 text-center font-medium text-zinc-400">Actions</th>
+                <tr class="border-b border-zinc-800 bg-zinc-950">
+                    <th class="text-left px-6 py-4 text-sm font-medium text-zinc-400">Document Name</th>
+                    <th class="text-left px-6 py-4 text-sm font-medium text-zinc-400">Type</th>
+                    <th class="text-left px-6 py-4 text-sm font-medium text-zinc-400">Project</th>
+                    <th class="text-left px-6 py-4 text-sm font-medium text-zinc-400">Uploaded</th>
+                    <th class="text-center px-6 py-4 text-sm font-medium text-zinc-400">Size</th>
+                    <th class="w-20"></th>
                 </tr>
             </thead>
-            <tbody>
-
-                {% for doc in documents %}
-                <tr class="border-b border-zinc-800 hover:bg-zinc-800/60 transition-colors">
-                    <td class="px-6 py-4 font-mono text-emerald-400">{{ doc.number }}</td>
-                    <td class="px-6 py-4">
-                        <div class="font-medium">{{ doc.name }}</div>
-                        {% if doc.revision %}
-                            <div class="text-xs text-zinc-500">Rev {{ doc.revision }}</div>
-                        {% endif %}
-                    </td>
-                    <td class="px-6 py-4">
-                        <span class="px-3 py-1 text-xs rounded-full bg-zinc-800 text-zinc-300">{{ doc.category }}</span>
-                    </td>
-                    <td class="px-6 py-4 text-sm">{{ doc.uploaded_by }}</td>
-                    <td class="px-6 py-4 text-center text-sm">
-                        {{ doc.upload_date.strftime('%m/%d/%Y') if doc.upload_date else '—' }}
-                    </td>
-                    <td class="px-6 py-4 text-center">
-                        {% if doc.linked_to %}
-                            <span class="px-2.5 py-0.5 text-xs rounded-full bg-emerald-600/20 text-emerald-400">{{ doc.linked_to }}</span>
-                        {% else %}
-                            <span class="text-zinc-500">—</span>
-                        {% endif %}
-                    </td>
-                    <td class="px-6 py-4 text-center">
-                        {% if doc.status == 'Active' %}
-                            <span class="px-3 py-1 text-xs rounded-full bg-emerald-500/10 text-emerald-400">Active</span>
-                        {% elif doc.status == 'Superseded' %}
-                            <span class="px-3 py-1 text-xs rounded-full bg-yellow-500/10 text-yellow-400">Superseded</span>
-                        {% else %}
-                            <span class="px-3 py-1 text-xs rounded-full bg-zinc-700 text-zinc-400">Archived</span>
-                        {% endif %}
-                    </td>
-                    <td class="px-6 py-4 text-center">
-                        <div class="flex items-center justify-center gap-1">
-                            <button onclick="viewDocument({{ doc.id }})" 
-                                    class="p-2 text-emerald-400 hover:text-emerald-300 hover:bg-zinc-800 rounded-xl transition-colors" title="View / Download">
-                                <i class="fa-solid fa-eye"></i>
-                            </button>
-                            
-                            <button onclick="editDocument({{ doc.id }})" 
-                                    class="p-2 text-emerald-400 hover:text-emerald-300 hover:bg-zinc-800 rounded-xl transition-colors" title="Edit Metadata">
-                                <i class="fa-solid fa-edit"></i>
-                            </button>
-
-                            <button onclick="linkToModule({{ doc.id }})" 
-                                    class="p-2 text-emerald-400 hover:text-emerald-300 hover:bg-zinc-800 rounded-xl transition-colors" title="Link to RFI / Submittal / Daily Log">
-                                <i class="fa-solid fa-link"></i>
-                            </button>
-                        </div>
-                    </td>
-                </tr>
-                {% else %}
-                <tr>
-                    <td colspan="8" class="px-6 py-12 text-center text-zinc-400">
-                        No documents found.
-                    </td>
-                </tr>
-                {% endfor %}
+            <tbody id="documentsTableBody" class="divide-y divide-zinc-800">
+                <!-- Populated by JavaScript -->
             </tbody>
         </table>
     </div>
 
 </div>
-
-<!-- ==================== UPLOAD / EDIT DOCUMENT MODAL ==================== -->
-<dialog id="documentModal" class="bg-zinc-900 border border-zinc-700 rounded-3xl p-0 w-full max-w-3xl">
-    <div class="p-6">
-        <div class="flex items-center justify-between mb-6">
-            <h2 class="text-xl font-semibold" id="documentModalTitle">Upload New Document</h2>
-            <button onclick="closeDocumentModal()" class="text-zinc-400 hover:text-white text-2xl leading-none">×</button>
-        </div>
-
-        <form id="documentForm" onsubmit="saveDocument(event)">
-            <input type="hidden" id="documentId">
-
-            <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
-                <div>
-                    <label class="block text-sm text-zinc-400 mb-1.5">Document #</label>
-                    <input type="text" id="documentNumber" class="w-full bg-zinc-800 border border-zinc-700 rounded-2xl px-4 py-2.5 text-sm font-mono" readonly>
-                </div>
-                <div>
-                    <label class="block text-sm text-zinc-400 mb-1.5">Revision</label>
-                    <input type="text" id="documentRevision" value="0" class="w-full bg-zinc-800 border border-zinc-700 rounded-2xl px-4 py-2.5 text-sm font-mono">
-                </div>
-                <div>
-                    <label class="block text-sm text-zinc-400 mb-1.5">Category</label>
-                    <select id="documentCategory" class="w-full bg-zinc-800 border border-zinc-700 rounded-2xl px-4 py-2.5 text-sm">
-                        <option value="Plans">Plans / Drawings</option>
-                        <option value="Specifications">Specifications</option>
-                        <option value="RFI">RFI Related</option>
-                        <option value="Submittal">Submittal Related</option>
-                        <option value="Contract">Contracts & Agreements</option>
-                        <option value="Report">Reports</option>
-                        <option value="Photo">Photos</option>
-                        <option value="Other">Other</option>
-                    </select>
-                </div>
-            </div>
-
-            <div class="mb-4">
-                <label class="block text-sm text-zinc-400 mb-1.5">Document Name <span class="text-red-400">*</span></label>
-                <input type="text" id="documentName" class="w-full bg-zinc-800 border border-zinc-700 rounded-2xl px-4 py-2.5 text-sm" required>
-            </div>
-
-            <div class="mb-4">
-                <label class="block text-sm text-zinc-400 mb-1.5">Description / Notes</label>
-                <textarea id="documentDescription" rows="3" class="w-full bg-zinc-800 border border-zinc-700 rounded-2xl px-4 py-3 text-sm" placeholder="Brief description of the document..."></textarea>
-            </div>
-
-            <!-- File Upload -->
-            <div class="mb-6">
-                <label class="block text-sm text-zinc-400 mb-2">File Upload</label>
-                <div class="border-2 border-dashed border-zinc-700 rounded-2xl p-8 text-center">
-                    <i class="fa-solid fa-cloud-upload-alt text-4xl text-zinc-500 mb-3"></i>
-                    <p class="text-sm text-zinc-400">Drag & drop file here or</p>
-                    <label class="inline-block mt-3 px-6 py-2.5 bg-zinc-800 hover:bg-zinc-700 rounded-2xl text-sm cursor-pointer">
-                        Select File
-                        <input type="file" id="documentFile" class="hidden">
-                    </label>
-                    <p class="text-xs text-zinc-500 mt-2">PDF, DWG, DOCX, XLSX, JPG, PNG (Max 100MB)</p>
-                </div>
-                <div id="selectedFileName" class="mt-2 text-sm text-emerald-400 hidden"></div>
-            </div>
-
-            <!-- Link to Module -->
-            <div class="mb-6">
-                <label class="block text-sm text-zinc-400 mb-1.5">Link to Module (Optional)</label>
-                <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
-                    <select id="linkToModuleType" class="bg-zinc-800 border border-zinc-700 rounded-2xl px-4 py-2.5 text-sm">
-                        <option value="">None</option>
-                        <option value="RFI">RFI</option>
-                        <option value="Submittal">Submittal</option>
-                        <option value="Daily Log">Daily Log</option>
-                        <option value="Change Order">Change Order</option>
-                        <option value="Punch List">Punch List</option>
-                    </select>
-                    <input type="text" id="linkToModuleNumber" class="bg-zinc-800 border border-zinc-700 rounded-2xl px-4 py-2.5 text-sm font-mono" placeholder="RFI-014 or SUB-023">
-                </div>
-            </div>
-
-            <div class="mb-6">
-                <label class="block text-sm text-zinc-400 mb-1.5">Status</label>
-                <select id="documentStatus" class="w-full bg-zinc-800 border border-zinc-700 rounded-2xl px-4 py-2.5 text-sm">
-                    <option value="Active">Active</option>
-                    <option value="Superseded">Superseded</option>
-                    <option value="Archived">Archived</option>
-                </select>
-            </div>
-
-            <div class="flex gap-3 mt-8">
-                <button type="button" onclick="closeDocumentModal()" 
-                        class="flex-1 bg-zinc-800 hover:bg-zinc-700 rounded-2xl py-3 text-sm font-medium transition-colors">
-                    Cancel
-                </button>
-                <button type="submit" 
-                        class="flex-1 bg-emerald-600 hover:bg-emerald-500 rounded-2xl py-3 text-sm font-medium transition-colors">
-                    Upload Document
-                </button>
-            </div>
-        </form>
-    </div>
-</dialog>
-
-<!-- ==================== JAVASCRIPT ==================== -->
-<script>
-    // ==================== FILTERING ====================
-    function filterDocuments() {
-        const search = document.getElementById('documentSearch').value.toLowerCase();
-        const category = document.getElementById('documentCategoryFilter').value;
-        const status = document.getElementById('documentStatusFilter').value;
-
-        const rows = document.querySelectorAll('table tbody tr');
-
-        rows.forEach(row => {
-            const text = row.textContent.toLowerCase();
-            const rowCategory = row.cells[2] ? row.cells[2].textContent : '';
-            const rowStatus = row.cells[6] ? row.cells[6].textContent : '';
-
-            let show = true;
-
-            if (search && !text.includes(search)) show = false;
-            if (category && !rowCategory.includes(category)) show = false;
-            if (status && !rowStatus.includes(status)) show = false;
-
-            row.style.display = show ? '' : 'none';
-        });
-    }
-
-    // ==================== MODAL FUNCTIONS ====================
-    function showUploadDocumentModal() {
-        const modal = document.getElementById('documentModal');
-        const form = document.getElementById('documentForm');
-
-        form.reset();
-        document.getElementById('documentId').value = '';
-        document.getElementById('documentModalTitle').innerText = 'Upload New Document';
-
-        // Auto-generate document number
-        const nextNumber = 'DOC-' + String(312).padStart(3, '0');
-        document.getElementById('documentNumber').value = nextNumber;
-
-        // Clear previous file name display
-        const fileNameDiv = document.getElementById('selectedFileName');
-        if (fileNameDiv) fileNameDiv.classList.add('hidden');
-
-        modal.showModal();
-    }
-
-    function closeDocumentModal() {
-        document.getElementById('documentModal').close();
-    }
-
-    function editDocument(id) {
-        const modal = document.getElementById('documentModal');
-        document.getElementById('documentModalTitle').innerText = 'Edit Document';
-        document.getElementById('documentId').value = id;
-
-        // In real version: fetch document data from backend
-        document.getElementById('documentNumber').value = 'DOC-287';
-        document.getElementById('documentName').value = 'A-201 - Floor Plan - Level 1';
-        document.getElementById('documentRevision').value = '3';
-        document.getElementById('documentCategory').value = 'Plans';
-        document.getElementById('documentDescription').value = 'Updated floor plan with revised column locations';
-        document.getElementById('documentStatus').value = 'Active';
-
-        modal.showModal();
-    }
-
-    function saveDocument(e) {
-        e.preventDefault();
-
-        const id = document.getElementById('documentId').value;
-        const isEdit = id !== '';
-
-        const data = {
-            number: document.getElementById('documentNumber').value,
-            name: document.getElementById('documentName').value,
-            revision: document.getElementById('documentRevision').value,
-            category: document.getElementById('documentCategory').value,
-            description: document.getElementById('documentDescription').value,
-            status: document.getElementById('documentStatus').value
-        };
-
-        console.log(isEdit ? 'Updating Document:' : 'Uploading Document:', data);
-
-        closeDocumentModal();
-
-        if (isEdit) {
-            showToast('Document metadata updated successfully');
-        } else {
-            showToast('Document uploaded successfully');
-        }
-
-        setTimeout(() => {
-            location.reload();
-        }, 900);
-    }
-
-    // ==================== ACTION FUNCTIONS ====================
-    function viewDocument(id) {
-        alert(`Opening Document #${id}\n(The document viewer / PDF viewer will open here with markup capabilities)`);
-    }
-
-    function linkToModule(id) {
-        alert(`Linking Document #${id} to an RFI, Submittal, or other module.\n(Link selector modal would open here)`);
-    }
-
-    // ==================== FILE SELECTION PREVIEW ====================
-    document.addEventListener('DOMContentLoaded', function() {
-        const fileInput = document.getElementById('documentFile');
-        const fileNameDiv = document.getElementById('selectedFileName');
-
-        if (fileInput && fileNameDiv) {
-            fileInput.addEventListener('change', function() {
-                if (fileInput.files.length > 0) {
-                    fileNameDiv.textContent = 'Selected: ' + fileInput.files[0].name;
-                    fileNameDiv.classList.remove('hidden');
-                }
-            });
-        }
-    });
-
-    // ==================== INITIALIZATION ====================
-    function initializeDocumentsPage() {
-        console.log('%c[Case PM] Documents page initialized with full features.', 'color:#10b981');
-    }
-
-    window.addEventListener('load', initializeDocumentsPage);
-</script>
-
-{% endblock %}
-
-<!-- ==================== FINAL ENHANCEMENTS ==================== -->
-<script>
-    // ==================== KEYBOARD SHORTCUTS ====================
-    document.addEventListener('keydown', function(e) {
-        // Press "/" to focus search
-        if (e.key === "/" && document.activeElement.tagName === "BODY") {
-            e.preventDefault();
-            const search = document.getElementById('documentSearch');
-            if (search) search.focus();
-        }
-    });
-
-    // ==================== BULK ACTIONS (Future Ready) ====================
-    function bulkDownloadDocuments() {
-        const selected = document.querySelectorAll('table tbody input[type="checkbox"]:checked');
-        if (selected.length === 0) {
-            alert("Please select documents to download.");
-            return;
-        }
-        alert(`Downloading ${selected.length} documents... (Feature ready for backend integration)`);
-    }
-
-    // ==================== FINAL INITIALIZATION ====================
-    function finalDocumentsInitialization() {
-        // Optional: Highlight recently uploaded documents
-        console.log('%c[Case PM] documents.html fully loaded with maximum features.', 'color:#10b981');
-    }
-
-    window.addEventListener('load', finalDocumentsInitialization);
-</script>
-
-{% endblock %}
