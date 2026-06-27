@@ -66,3 +66,65 @@
     </div>
 
 </div>
+        <!-- Add / Edit Delivery Modal -->
+        <dialog id="deliveryModal" class="bg-zinc-900 border border-zinc-700 rounded-3xl p-0 w-full max-w-lg shadow-2xl">
+            <div class="p-6">
+                <div class="flex items-center justify-between mb-5">
+                    <div class="font-semibold text-xl" id="modalTitle">Log New Delivery</div>
+                    <button onclick="document.getElementById('deliveryModal').close()" class="text-zinc-400 hover:text-white text-2xl leading-none">&times;</button>
+                </div>
+
+                <form id="deliveryForm" onsubmit="saveDelivery(event)">
+                    <input type="hidden" id="deliveryId">
+
+                    <div class="space-y-4">
+                        <div>
+                            <label class="block text-sm text-zinc-400 mb-1.5">Supplier / Vendor</label>
+                            <input type="text" id="supplier" required
+                                   class="w-full bg-zinc-800 border border-zinc-700 rounded-2xl px-4 py-2.5 text-sm focus:outline-none focus:border-emerald-600">
+                        </div>
+
+                        <div>
+                            <label class="block text-sm text-zinc-400 mb-1.5">Description</label>
+                            <textarea id="description" rows="2" required
+                                      class="w-full bg-zinc-800 border border-zinc-700 rounded-2xl px-4 py-2.5 text-sm focus:outline-none focus:border-emerald-600"></textarea>
+                        </div>
+
+                        <div class="grid grid-cols-2 gap-4">
+                            <div>
+                                <label class="block text-sm text-zinc-400 mb-1.5">Delivery Date</label>
+                                <input type="date" id="delivery_date" required
+                                       class="w-full bg-zinc-800 border border-zinc-700 rounded-2xl px-4 py-2.5 text-sm focus:outline-none focus:border-emerald-600">
+                            </div>
+                            <div>
+                                <label class="block text-sm text-zinc-400 mb-1.5">Status</label>
+                                <select id="status" required
+                                        class="w-full bg-zinc-800 border border-zinc-700 rounded-2xl px-4 py-2.5 text-sm focus:outline-none focus:border-emerald-600">
+                                    <option value="Pending">Pending</option>
+                                    <option value="Received">Received</option>
+                                    <option value="Partial">Partial</option>
+                                    <option value="Delayed">Delayed</option>
+                                </select>
+                            </div>
+                        </div>
+
+                        <div>
+                            <label class="block text-sm text-zinc-400 mb-1.5">Received By</label>
+                            <input type="text" id="received_by"
+                                   class="w-full bg-zinc-800 border border-zinc-700 rounded-2xl px-4 py-2.5 text-sm focus:outline-none focus:border-emerald-600">
+                        </div>
+                    </div>
+
+                    <div class="flex gap-3 mt-6">
+                        <button type="button" onclick="document.getElementById('deliveryModal').close()"
+                                class="flex-1 py-2.5 bg-zinc-800 hover:bg-zinc-700 rounded-2xl text-sm font-medium transition-colors">
+                            Cancel
+                        </button>
+                        <button type="submit"
+                                class="flex-1 py-2.5 bg-emerald-600 hover:bg-emerald-500 rounded-2xl text-sm font-medium transition-colors">
+                            Save Delivery
+                        </button>
+                    </div>
+                </form>
+            </div>
+        </dialog>
