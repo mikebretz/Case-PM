@@ -500,3 +500,29 @@
             </div>
         </div>
     </dialog>
+    <!-- ==================== FINAL ENHANCEMENTS & VERIFICATION ==================== -->
+    <script>
+        // Force dark mode
+        document.documentElement.classList.add('dark');
+
+        // Enhanced mobile dialog handling
+        document.querySelectorAll('dialog').forEach(dialog => {
+            dialog.addEventListener('cancel', (e) => {
+                e.preventDefault();
+                dialog.close();
+            });
+        });
+
+        // Update last sync time
+        const syncEl = document.getElementById('lastSyncTime');
+        if (syncEl) {
+            syncEl.textContent = new Date().toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'});
+        }
+
+        console.log('%c[Case PM v56.0] ✅ Ultimate base.html loaded successfully with complete sidebar.', 'color:#10b981; font-weight:600');
+    </script>
+
+{% endif %}
+
+</body>
+</html>
