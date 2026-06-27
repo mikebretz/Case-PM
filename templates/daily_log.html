@@ -103,3 +103,68 @@
             </thead>
             <tbody id="dailyLogTableBody">
                 <!-- Rows will be populated here -->
+                {% if logs %}
+                    {% for log in logs %}
+                    <tr class="border-b border-zinc-800 hover:bg-zinc-950 transition-colors">
+                        <td class="px-6 py-4 font-medium whitespace-nowrap">
+                            {{ log.date.strftime('%b %d, %Y') if log.date else '—' }}
+                        </td>
+                        <td class="px-6 py-4 text-zinc-300">
+                            {{ log.project.name if log.project else '—' }}
+                        </td>
+                        <td class="px-6 py-4 text-zinc-300">
+                            {{ log.weather or '—' }}
+                        </td>
+                        <td class="px-6 py-4 text-center text-zinc-300">
+                            {{ log.total_personnel or '—' }}
+                        </td>
+                        <td class="px-6 py-4 text-center text-zinc-300">
+                            {{ log.total_man_hours or '—' }}
+                        </td>
+                        <td class="px-6 py-4 text-zinc-300 max-w-[420px] truncate">
+                            {{ log.work_performed[:100] + '...' if log.work_performed and log.work_performed|length > 100 else log.work_performed or '—' }}
+                        </td>
+                        <td class="px-6 py-4 text-center">
+                            <span class="inline-flex items-center justify-center px-2.5 py-1 text-xs bg-zinc-800 rounded-xl">
+                                {{ log.photo_count or 0 }}
+                            </span>
+                        </td>
+                        <td class="px-6 py-4 text-center">
+                            {% if log.status == 'Submitted' %}
+                                <span class="px-3 py-1 text-xs rounded-full bg-emerald-500/10 text-emerald-400">Submitted</span>
+                            {% elif log.status == 'Reviewed' %}
+                                <span class="px-3 py-1 text-xs rounded-full bg-blue-500/10 text-blue-400">Reviewed</span>
+                            {% else %}
+                                <span class="px-3 py-1 text-xs rounded-full bg-zinc-700 text-zinc-400">Draft</span>
+                            {% endif %}
+                        </td>
+                        <td class="px-6 py-4">
+                            <div class="flex items-center justify-center gap-2">
+                                <button onclick="viewDailyLog({{ log.id }})"
+                                        class="px-3 py-1.5 text-xs bg-zinc-800 hover:bg-zinc-700 rounded-xl transition-colors">
+                                    View
+                                </button>
+                                <button onclick="editDailyLog({{ log.id }})"
+                                        class="px-3 py-1.5 text-xs bg-zinc-800 hover:bg-zinc-700 rounded-xl transition-colors">
+                                    Edit
+                                </button>
+                            </div>
+                        </td>
+                    </tr>
+                    {% endfor %}
+                {% else %}
+                    <tr>
+                        <td colspan="9" class="px-6 py-16 text-center">
+                            <div class="flex flex-col items-center justify-center text-zinc-500">
+                                <i class="fa-solid fa-clipboard-list text-5xl mb-4"></i>
+                                <div class="text-lg font-medium text-zinc-400">No daily logs found</div>
+                                <p class="text-sm mt-1">Click the "New Daily Log" button to create the first report.</p>
+                            </div>
+                        </td>
+                    </tr>
+                {% endif %}
+            </tbody>
+        </table>
+    </div>
+
+</div>
