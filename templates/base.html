@@ -771,3 +771,94 @@
 
 </body>
 </html>
+    <!-- ==================== FINAL POLISH & ENHANCEMENTS ==================== -->
+    <script>
+        // Force dark mode (prevent light mode flash)
+        (function() {
+            document.documentElement.classList.add('dark');
+            document.body.style.backgroundColor = '#09090b';
+        })();
+
+        // Enhanced keyboard shortcuts
+        document.addEventListener('keydown', function(e) {
+            // Ctrl + /  → Focus global search
+            if (e.ctrlKey && e.key === '/') {
+                e.preventDefault();
+                const search = document.getElementById('globalSearch');
+                if (search) search.focus();
+            }
+
+            // Ctrl + N → Quick Add
+            if (e.ctrlKey && e.key.toLowerCase() === 'n') {
+                e.preventDefault();
+                const quickAdd = document.getElementById('quickAddMenu');
+                if (quickAdd) quickAdd.showModal();
+            }
+
+            // Ctrl + P → Project Switcher
+            if (e.ctrlKey && e.key.toLowerCase() === 'p') {
+                e.preventDefault();
+                const switcher = document.getElementById('projectSwitcherModal');
+                if (switcher) switcher.showModal();
+            }
+        });
+
+        // Improve mobile menu closing behavior
+        function showMobileMoreMenu() {
+            const menu = document.getElementById('mobileMoreMenu');
+            menu.showModal();
+        }
+
+        // Auto-close mobile menu when clicking outside
+        document.getElementById('mobileMoreMenu')?.addEventListener('click', function(e) {
+            if (e.target === this) {
+                this.close();
+            }
+        });
+
+        // Better toast positioning on mobile
+        function showToast(message, type = 'success') {
+            const toast = document.createElement('div');
+            toast.className = `fixed bottom-20 md:bottom-6 right-4 md:right-6 px-5 py-3 rounded-2xl shadow-2xl flex items-center gap-3 z-[99999] text-sm max-w-[90%] md:max-w-md ${
+                type === 'success' ? 'bg-emerald-600' : 
+                type === 'error' ? 'bg-red-600' : 'bg-zinc-700'
+            }`;
+            
+            toast.innerHTML = `
+                <div class="flex items-center gap-3">
+                    <i class="fa-solid ${type === 'success' ? 'fa-check-circle' : type === 'error' ? 'fa-exclamation-circle' : 'fa-info-circle'} text-lg"></i>
+                    <span class="leading-tight">${message}</span>
+                </div>
+            `;
+            
+            document.body.appendChild(toast);
+            
+            setTimeout(() => {
+                toast.style.transition = 'all 0.35s cubic-bezier(0.4, 0, 1, 1)';
+                toast.style.opacity = '0';
+                toast.style.transform = 'translateY(10px)';
+                setTimeout(() => toast.remove(), 300);
+            }, 3800);
+        }
+
+        // Optional: Show a subtle welcome toast once per session
+        if (!sessionStorage.getItem('welcomeShown')) {
+            setTimeout(() => {
+                // Uncomment the line below if you want a welcome toast on every login
+                // showToast('Welcome back! Everything is synced.', 'success');
+                sessionStorage.setItem('welcomeShown', 'true');
+            }, 1200);
+        }
+
+        // Make sure all dialogs are properly styled on mobile
+        document.querySelectorAll('dialog').forEach(dialog => {
+            dialog.addEventListener('show', () => {
+                document.body.style.overflow = 'hidden';
+            });
+            dialog.addEventListener('close', () => {
+                document.body.style.overflow = '';
+            });
+        });
+
+        console.log('%c[Case PM] Ultimate base.html v56.0 loaded successfully', 'color:#10b981; font-size: 10px');
+    </script>
