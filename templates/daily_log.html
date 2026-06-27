@@ -1,1 +1,105 @@
+{% extends "base.html" %}
 
+{% block content %}
+<div class="p-8 max-w-[1700px] mx-auto">
+
+    <!-- Page Header -->
+    <div class="flex items-center justify-between mb-8">
+        <div>
+            <h1 class="text-3xl font-semibold tracking-tight">Daily Log</h1>
+            <p class="text-zinc-400 mt-1">Daily construction reports with manpower, equipment & photos</p>
+        </div>
+
+        <button onclick="showCreateDailyLogModal()"
+                class="flex items-center gap-2 px-6 py-2.5 bg-emerald-600 hover:bg-emerald-500 transition-colors rounded-2xl text-sm font-medium">
+            <i class="fa-solid fa-plus mr-1"></i>
+            <span>New Daily Log</span>
+        </button>
+    </div>
+
+    <!-- Summary Cards -->
+    <div class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 xl:grid-cols-6 gap-4 mb-8">
+        
+        <div class="bg-zinc-900 border border-zinc-800 rounded-3xl p-5">
+            <div class="text-sm text-zinc-400">Total Reports</div>
+            <div class="text-3xl font-semibold mt-1">{{ logs|length if logs else 0 }}</div>
+        </div>
+
+        <div class="bg-zinc-900 border border-zinc-800 rounded-3xl p-5">
+            <div class="text-sm text-zinc-400">This Week</div>
+            <div class="text-3xl font-semibold mt-1 text-emerald-400">18</div>
+        </div>
+
+        <div class="bg-zinc-900 border border-zinc-800 rounded-3xl p-5">
+            <div class="text-sm text-zinc-400">Total Man Hours</div>
+            <div class="text-3xl font-semibold mt-1">1,284</div>
+        </div>
+
+        <div class="bg-zinc-900 border border-zinc-800 rounded-3xl p-5">
+            <div class="text-sm text-zinc-400">Avg. Crew Size</div>
+            <div class="text-3xl font-semibold mt-1">14</div>
+        </div>
+
+        <div class="bg-zinc-900 border border-zinc-800 rounded-3xl p-5">
+            <div class="text-sm text-zinc-400">Photos Uploaded</div>
+            <div class="text-3xl font-semibold mt-1 text-emerald-400">312</div>
+        </div>
+
+        <div class="bg-zinc-900 border border-zinc-800 rounded-3xl p-5">
+            <div class="text-sm text-zinc-400">Open Safety Items</div>
+            <div class="text-3xl font-semibold mt-1 text-yellow-400">7</div>
+        </div>
+    </div>
+
+    <!-- Filters -->
+    <div class="flex flex-col lg:flex-row gap-3 mb-4">
+        <div class="flex-1">
+            <input type="text" id="dailyLogSearch" placeholder="Search date, weather, work performed..." 
+                   onkeyup="filterDailyLogs()"
+                   class="w-full bg-zinc-900 border border-zinc-700 rounded-2xl px-4 py-2.5 text-sm">
+        </div>
+
+        <div>
+            <input type="date" id="dailyLogDateFilter" onchange="filterDailyLogs()"
+                   class="bg-zinc-900 border border-zinc-700 rounded-2xl px-4 py-2.5 text-sm">
+        </div>
+
+        <div>
+            <select id="dailyLogProjectFilter" onchange="filterDailyLogs()"
+                    class="bg-zinc-900 border border-zinc-700 rounded-2xl px-4 py-2.5 text-sm min-w-[180px]">
+                <option value="">All Projects</option>
+                {% for project in projects %}
+                <option value="{{ project.id }}">{{ project.name }}</option>
+                {% endfor %}
+            </select>
+        </div>
+
+        <div>
+            <select id="dailyLogStatusFilter" onchange="filterDailyLogs()"
+                    class="bg-zinc-900 border border-zinc-700 rounded-2xl px-4 py-2.5 text-sm min-w-[140px]">
+                <option value="">All Statuses</option>
+                <option value="Draft">Draft</option>
+                <option value="Submitted">Submitted</option>
+                <option value="Reviewed">Reviewed</option>
+            </select>
+        </div>
+    </div>
+
+    <!-- Main Daily Logs Table -->
+    <div class="bg-zinc-900 border border-zinc-800 rounded-3xl overflow-hidden">
+        <table class="w-full text-sm">
+            <thead>
+                <tr class="bg-zinc-950 border-b border-zinc-800">
+                    <th class="px-6 py-4 text-left font-medium text-zinc-400 w-36">Date</th>
+                    <th class="px-6 py-4 text-left font-medium text-zinc-400">Project</th>
+                    <th class="px-6 py-4 text-left font-medium text-zinc-400">Weather</th>
+                    <th class="px-6 py-4 text-center font-medium text-zinc-400 w-24">Crew</th>
+                    <th class="px-6 py-4 text-center font-medium text-zinc-400 w-24">Man Hours</th>
+                    <th class="px-6 py-4 text-left font-medium text-zinc-400">Work Performed</th>
+                    <th class="px-6 py-4 text-center font-medium text-zinc-400 w-20">Photos</th>
+                    <th class="px-6 py-4 text-center font-medium text-zinc-400 w-28">Status</th>
+                    <th class="px-6 py-4 text-center font-medium text-zinc-400 w-32">Actions</th>
+                </tr>
+            </thead>
+            <tbody id="dailyLogTableBody">
+                <!-- Rows will be populated here -->
