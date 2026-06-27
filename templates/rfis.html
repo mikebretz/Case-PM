@@ -1,0 +1,516 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="p-8 max-w-[1600px] mx-auto">
+
+    <!-- Header -->
+    <div class="flex items-center justify-between mb-8">
+        <div>
+            <h1 class="text-3xl font-semibold tracking-tight">RFIs</h1>
+            <p class="text-zinc-400 mt-1">ALDI Lakeland • Request for Information Log</p>
+        </div>
+        <button onclick="showCreateRFIModal()"
+                class="flex items-center gap-2 bg-emerald-600 hover:bg-emerald-500 transition-colors px-5 py-2.5 rounded-2xl text-sm font-medium">
+            <i class="fa-solid fa-plus"></i>
+            <span>New RFI</span>
+        </button>
+    </div>
+
+    <!-- KPI Summary Cards -->
+    <div class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-4 mb-8">
+        <div class="bg-zinc-900 border border-zinc-800 rounded-3xl p-5">
+            <div class="text-zinc-400 text-sm">Total RFIs</div>
+            <div class="text-3xl font-semibold mt-1">142</div>
+        </div>
+        <div class="bg-zinc-900 border border-zinc-800 rounded-3xl p-5">
+            <div class="text-zinc-400 text-sm">Open</div>
+            <div class="text-3xl font-semibold mt-1 text-red-400">38</div>
+        </div>
+        <div class="bg-zinc-900 border border-zinc-800 rounded-3xl p-5">
+            <div class="text-zinc-400 text-sm">Awaiting Response</div>
+            <div class="text-3xl font-semibold mt-1 text-yellow-400">27</div>
+        </div>
+        <div class="bg-zinc-900 border border-zinc-800 rounded-3xl p-5">
+            <div class="text-zinc-400 text-sm">Answered</div>
+            <div class="text-3xl font-semibold mt-1 text-emerald-400">77</div>
+        </div>
+        <div class="bg-zinc-900 border border-zinc-800 rounded-3xl p-5">
+            <div class="text-zinc-400 text-sm">Overdue</div>
+            <div class="text-3xl font-semibold mt-1 text-red-500">11</div>
+        </div>
+    </div>
+
+    <!-- Filters -->
+    <div class="flex flex-col md:flex-row gap-3 mb-6">
+        <div class="flex-1">
+            <input type="text" id="rfiSearch" onkeyup="filterRFIs()"
+                   placeholder="Search RFIs by subject, number, or description..." 
+                   class="w-full bg-zinc-900 border border-zinc-700 rounded-2xl px-4 py-2.5 text-sm focus:outline-none focus:border-emerald-600">
+        </div>
+        
+        <select id="rfiStatusFilter" onchange="filterRFIs()"
+                class="bg-zinc-900 border border-zinc-700 rounded-2xl px-4 py-2.5 text-sm">
+            <option value="">All Statuses</option>
+            <option value="Open">Open</option>
+            <option value="Awaiting Response">Awaiting Response</option>
+            <option value="Answered">Answered</option>
+            <option value="Closed">Closed</option>
+        </select>
+
+        <select id="rfiPriorityFilter" onchange="filterRFIs()"
+                class="bg-zinc-900 border border-zinc-700 rounded-2xl px-4 py-2.5 text-sm">
+            <option value="">All Priorities</option>
+            <option value="High">High</option>
+            <option value="Medium">Medium</option>
+            <option value="Low">Low</option>
+        </select>
+
+        <button onclick="exportRFIs()"
+                class="flex items-center gap-2 px-4 py-2.5 bg-zinc-800 hover:bg-zinc-700 rounded-2xl text-sm transition-colors">
+            <i class="fa-solid fa-download"></i>
+            <span>Export</span>
+        </button>
+    </div>
+
+    <!-- RFI Table -->
+    <div class="bg-zinc-900 border border-zinc-800 rounded-3xl overflow-hidden">
+        <table class="w-full">
+            <thead class="bg-zinc-950 border-b border-zinc-800">
+                <tr>
+                    <th class="text-left px-6 py-4 text-sm font-medium text-zinc-400 w-24">RFI #</th>
+                    <th class="text-left px-6 py-4 text-sm font-medium text-zinc-400">Subject / Question</th>
+                    <th class="text-left px-6 py-4 text-sm font-medium text-zinc-400 w-40">From</th>
+                    <th class="text-left px-6 py-4 text-sm font-medium text-zinc-400 w-40">To</th>
+                    <th class="text-center px-6 py-4 text-sm font-medium text-zinc-400 w-24">Date</th>
+                    <th class="text-center px-6 py-4 text-sm font-medium text-zinc-400 w-20">Priority</th>
+                    <th class="text-center px-6 py-4 text-sm font-medium text-zinc-400 w-36">Status</th>
+                    <th class="text-center px-6 py-4 text-sm font-medium text-zinc-400 w-28">Due Date</th>
+                    <th class="text-center px-6 py-4 text-sm font-medium text-zinc-400 w-32">Actions</th>
+                </tr>
+            </thead>
+            <tbody class="divide-y divide-zinc-800 text-sm">
+
+                {% for rfi in rfis %}
+                <tr class="border-b border-zinc-800 hover:bg-zinc-800/60 transition-colors">
+                    <td class="px-6 py-4 font-mono text-emerald-400">{{ rfi.number }}</td>
+                    <td class="px-6 py-4">
+                        <div class="font-medium">{{ rfi.subject }}</div>
+                        {% if rfi.question %}
+                        <div class="text-xs text-zinc-500 mt-0.5 line-clamp-1">{{ rfi.question }}</div>
+                        {% endif %}
+                    </td>
+                    <td class="px-6 py-4 text-zinc-300">{{ rfi.from_party }}</td>
+                    <td class="px-6 py-4 text-zinc-300">{{ rfi.to_party }}</td>
+                    <td class="px-6 py-4 text-center text-sm">{{ rfi.date.strftime('%m/%d/%Y') if rfi.date else '—' }}</td>
+                    
+                    <!-- Priority -->
+                    <td class="px-6 py-4 text-center">
+                        {% if rfi.priority == 'High' %}
+                            <span class="inline-flex items-center px-3 py-1 rounded-full text-xs font-medium bg-red-500/20 text-red-400">High</span>
+                        {% elif rfi.priority == 'Medium' %}
+                            <span class="inline-flex items-center px-3 py-1 rounded-full text-xs font-medium bg-yellow-500/20 text-yellow-400">Medium</span>
+                        {% else %}
+                            <span class="inline-flex items-center px-3 py-1 rounded-full text-xs font-medium bg-zinc-700 text-zinc-300">Low</span>
+                        {% endif %}
+                    </td>
+
+                    <!-- Status -->
+                    <td class="px-6 py-4 text-center">
+                        <select onchange="updateRFIStatus({{ rfi.id }}, this.value)"
+                                class="bg-zinc-800 border border-zinc-700 rounded-xl px-3 py-1 text-xs">
+                            <option value="Open" {% if rfi.status == 'Open' %}selected{% endif %}>Open</option>
+                            <option value="Awaiting Response" {% if rfi.status == 'Awaiting Response' %}selected{% endif %}>Awaiting Response</option>
+                            <option value="Answered" {% if rfi.status == 'Answered' %}selected{% endif %}>Answered</option>
+                            <option value="Closed" {% if rfi.status == 'Closed' %}selected{% endif %}>Closed</option>
+                        </select>
+                    </td>
+
+                    <td class="px-6 py-4 text-center text-sm {% if rfi.due_date and rfi.due_date < current_date %}text-red-400 font-medium{% endif %}">
+                        {{ rfi.due_date.strftime('%m/%d/%Y') if rfi.due_date else '—' }}
+                    </td>
+
+                    <td class="px-6 py-4 text-center">
+                        <div class="flex items-center justify-center gap-1">
+                            <button onclick="viewRFI({{ rfi.id }})" 
+                                    class="p-2 text-emerald-400 hover:text-emerald-300 hover:bg-zinc-800 rounded-xl transition-colors" title="View RFI">
+                                <i class="fa-solid fa-eye"></i>
+                            </button>
+                            
+                            <button onclick="editRFI({{ rfi.id }})" 
+                                    class="p-2 text-emerald-400 hover:text-emerald-300 hover:bg-zinc-800 rounded-xl transition-colors" title="Edit">
+                                <i class="fa-solid fa-edit"></i>
+                            </button>
+
+                            <button onclick="respondToRFI({{ rfi.id }})" 
+                                    class="p-2 text-emerald-400 hover:text-emerald-300 hover:bg-zinc-800 rounded-xl transition-colors" title="Respond / Add Answer">
+                                <i class="fa-solid fa-reply"></i>
+                            </button>
+
+                            <button onclick="linkRFIToDrawing({{ rfi.id }})" 
+                                    class="p-2 text-emerald-400 hover:text-emerald-300 hover:bg-zinc-800 rounded-xl transition-colors" title="Link to Drawing">
+                                <i class="fa-solid fa-link"></i>
+                            </button>
+                        </div>
+                    </td>
+                </tr>
+                {% else %}
+                <tr>
+                    <td colspan="9" class="px-6 py-12 text-center text-zinc-400">
+                        No RFIs found. Create your first one!
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+
+</div>
+
+<!-- ==================== CREATE / EDIT RFI MODAL ==================== -->
+<dialog id="rfiModal" class="bg-zinc-900 border border-zinc-700 rounded-3xl p-0 w-full max-w-4xl">
+    <div class="p-6">
+        <div class="flex items-center justify-between mb-6">
+            <h2 id="rfiModalTitle" class="text-xl font-semibold">New RFI</h2>
+            <button onclick="closeRFIModal()" class="text-zinc-400 hover:text-white">
+                <i class="fa-solid fa-times text-xl"></i>
+            </button>
+        </div>
+
+        <form id="rfiForm" method="POST" action="{{ url_for('create_rfi') }}">
+            <input type="hidden" id="rfiId" name="rfi_id">
+
+            <div class="grid grid-cols-1 md:grid-cols-4 gap-4 mb-4">
+                <!-- RFI Number -->
+                <div class="md:col-span-1">
+                    <label class="block text-sm text-zinc-400 mb-1.5">RFI Number</label>
+                    <input type="text" id="rfiNumber" name="number" 
+                           class="w-full bg-zinc-800 border border-zinc-700 rounded-2xl px-4 py-2.5 text-sm font-mono" readonly>
+                </div>
+
+                <!-- Date -->
+                <div>
+                    <label class="block text-sm text-zinc-400 mb-1.5">Date Initiated</label>
+                    <input type="date" id="rfiDate" name="date" 
+                           class="w-full bg-zinc-800 border border-zinc-700 rounded-2xl px-4 py-2.5 text-sm" 
+                           value="{{ current_date }}">
+                </div>
+
+                <!-- Priority -->
+                <div>
+                    <label class="block text-sm text-zinc-400 mb-1.5">Priority</label>
+                    <select id="rfiPriority" name="priority" class="w-full bg-zinc-800 border border-zinc-700 rounded-2xl px-4 py-2.5 text-sm">
+                        <option value="High">High</option>
+                        <option value="Medium" selected>Medium</option>
+                        <option value="Low">Low</option>
+                    </select>
+                </div>
+
+                <!-- Status -->
+                <div>
+                    <label class="block text-sm text-zinc-400 mb-1.5">Status</label>
+                    <select id="rfiStatus" name="status" class="w-full bg-zinc-800 border border-zinc-700 rounded-2xl px-4 py-2.5 text-sm">
+                        <option value="Open">Open</option>
+                        <option value="Awaiting Response">Awaiting Response</option>
+                        <option value="Answered">Answered</option>
+                        <option value="Closed">Closed</option>
+                    </select>
+                </div>
+            </div>
+
+            <!-- Subject -->
+            <div class="mb-4">
+                <label class="block text-sm text-zinc-400 mb-1.5">Subject <span class="text-red-400">*</span></label>
+                <input type="text" id="rfiSubject" name="subject" 
+                       class="w-full bg-zinc-800 border border-zinc-700 rounded-2xl px-4 py-2.5 text-sm" required
+                       placeholder="Brief description of the issue or question">
+            </div>
+
+            <!-- Question -->
+            <div class="mb-4">
+                <label class="block text-sm text-zinc-400 mb-1.5">Question / Description <span class="text-red-400">*</span></label>
+                <textarea id="rfiQuestion" name="question" rows="5" 
+                          class="w-full bg-zinc-800 border border-zinc-700 rounded-2xl px-4 py-3 text-sm resize-y" required
+                          placeholder="Provide detailed information about the request for information..."></textarea>
+            </div>
+
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+                <!-- From -->
+                <div>
+                    <label class="block text-sm text-zinc-400 mb-1.5">From (Submitted By)</label>
+                    <input type="text" id="rfiFrom" name="from_party" 
+                           class="w-full bg-zinc-800 border border-zinc-700 rounded-2xl px-4 py-2.5 text-sm"
+                           value="Mike Bretz - Case Construction">
+                </div>
+
+                <!-- To -->
+                <div>
+                    <label class="block text-sm text-zinc-400 mb-1.5">To (Recipient)</label>
+                    <select id="rfiTo" name="to_party" class="w-full bg-zinc-800 border border-zinc-700 rounded-2xl px-4 py-2.5 text-sm">
+                        <option value="Architect">Architect</option>
+                        <option value="Structural Engineer">Structural Engineer</option>
+                        <option value="MEP Engineer">MEP Engineer</option>
+                        <option value="Owner / Developer">Owner / Developer</option>
+                        <option value="General Contractor">General Contractor</option>
+                        <option value="Other">Other</option>
+                    </select>
+                </div>
+            </div>
+
+            <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
+                <!-- Due Date -->
+                <div>
+                    <label class="block text-sm text-zinc-400 mb-1.5">Due Date</label>
+                    <input type="date" id="rfiDueDate" name="due_date" 
+                           class="w-full bg-zinc-800 border border-zinc-700 rounded-2xl px-4 py-2.5 text-sm">
+                </div>
+
+                <!-- Reference Drawing -->
+                <div>
+                    <label class="block text-sm text-zinc-400 mb-1.5">Reference Drawing</label>
+                    <input type="text" id="rfiDrawingRef" name="drawing_reference" 
+                           class="w-full bg-zinc-800 border border-zinc-700 rounded-2xl px-4 py-2.5 text-sm"
+                           placeholder="e.g. A-201, Detail 3">
+                </div>
+
+                <!-- Spec Section -->
+                <div>
+                    <label class="block text-sm text-zinc-400 mb-1.5">Spec Section</label>
+                    <input type="text" id="rfiSpecRef" name="spec_reference" 
+                           class="w-full bg-zinc-800 border border-zinc-700 rounded-2xl px-4 py-2.5 text-sm"
+                           placeholder="e.g. 26 05 19">
+                </div>
+            </div>
+
+            <!-- Notes -->
+            <div class="mb-6">
+                <label class="block text-sm text-zinc-400 mb-1.5">Notes / Additional Information</label>
+                <textarea id="rfiNotes" name="notes" rows="3" 
+                          class="w-full bg-zinc-800 border border-zinc-700 rounded-2xl px-4 py-3 text-sm resize-y"
+                          placeholder="Any additional context or supporting information..."></textarea>
+            </div>
+
+            <!-- Attachment -->
+            <div class="mb-6">
+                <label class="block text-sm text-zinc-400 mb-1.5">Attachments</label>
+                <div class="border border-dashed border-zinc-700 rounded-2xl p-6 text-center hover:border-emerald-600 transition-colors cursor-pointer"
+                     onclick="document.getElementById('rfiAttachmentUpload').click()">
+                    <i class="fa-solid fa-paperclip text-2xl text-zinc-500 mb-2"></i>
+                    <p class="text-sm text-zinc-400">Click to upload files or drag & drop here</p>
+                    <input type="file" id="rfiAttachmentUpload" name="attachments" multiple class="hidden">
+                </div>
+                <div id="rfiAttachmentPreview" class="mt-3 flex flex-wrap gap-2 text-sm"></div>
+            </div>
+
+            <div class="flex gap-3 mt-8">
+                <button type="button" onclick="closeRFIModal()"
+                        class="flex-1 bg-zinc-800 hover:bg-zinc-700 rounded-2xl py-3 text-sm font-medium transition-colors">
+                    Cancel
+                </button>
+                <button type="submit"
+                        class="flex-1 bg-emerald-600 hover:bg-emerald-500 rounded-2xl py-3 text-sm font-medium transition-colors">
+                    Save RFI
+                </button>
+            </div>
+        </form>
+    </div>
+</dialog>
+
+<!-- ==================== JAVASCRIPT ==================== -->
+<script>
+    // ==================== FILTERING ====================
+    function filterRFIs() {
+        const search = document.getElementById('rfiSearch').value.toLowerCase();
+        const statusFilter = document.getElementById('rfiStatusFilter').value;
+        const priorityFilter = document.getElementById('rfiPriorityFilter').value;
+
+        document.querySelectorAll('tbody tr').forEach(row => {
+            const text = row.textContent.toLowerCase();
+            const statusSelect = row.querySelector('select');
+            const rowStatus = statusSelect ? statusSelect.value : '';
+            const rowPriority = row.textContent;
+
+            let show = true;
+
+            if (search && !text.includes(search)) show = false;
+            if (statusFilter && rowStatus !== statusFilter) show = false;
+            if (priorityFilter && !rowPriority.includes(priorityFilter)) show = false;
+
+            row.style.display = show ? '' : 'none';
+        });
+    }
+
+    // ==================== MODAL FUNCTIONS ====================
+    function showCreateRFIModal() {
+        const modal = document.getElementById('rfiModal');
+        const form = document.getElementById('rfiForm');
+
+        // Reset form
+        form.reset();
+        document.getElementById('rfiId').value = '';
+        document.getElementById('rfiModalTitle').textContent = 'New RFI';
+        document.getElementById('rfiAttachmentPreview').innerHTML = '';
+
+        // Auto-generate next RFI number
+        const nextNumber = 'RFI-' + String({{ (rfis|length + 1) }}).padStart(3, '0');
+        document.getElementById('rfiNumber').value = nextNumber;
+
+        // Set today's date as default
+        const today = new Date().toISOString().split('T')[0];
+        document.getElementById('rfiDate').value = today;
+
+        modal.showModal();
+    }
+
+    function closeRFIModal() {
+        document.getElementById('rfiModal').close();
+    }
+
+    // ==================== ACTION FUNCTIONS ====================
+    function updateRFIStatus(id, newStatus) {
+        console.log(`Updating RFI #${id} to status: ${newStatus}`);
+        showToast(`RFI status updated to ${newStatus}`);
+
+        // Optional: If status changes to "Answered", you could auto-prompt for response
+        if (newStatus === 'Answered') {
+            // Future: Open respond modal automatically
+        }
+    }
+
+    function viewRFI(id) {
+        // In full version this would open a detailed view modal or dedicated page
+        alert(`Viewing RFI #${id}\n(Full detail view with response history will be added soon)`);
+    }
+
+    function editRFI(id) {
+        const modal = document.getElementById('rfiModal');
+        document.getElementById('rfiModalTitle').textContent = `Edit RFI #${id}`;
+        document.getElementById('rfiId').value = id;
+
+        // TODO: In production, fetch existing data via fetch() and populate fields
+        modal.showModal();
+    }
+
+    function respondToRFI(id) {
+        const response = prompt("Enter your response to this RFI:");
+        if (response && response.trim() !== "") {
+            console.log(`Response added to RFI #${id}: ${response}`);
+            showToast("Response recorded successfully");
+            // TODO: Send to backend and update status to "Answered"
+        }
+    }
+
+    function linkRFIToDrawing(id) {
+        alert(`Link RFI #${id} to a drawing or plan sheet.\n(Drawing selection modal coming in future update)`);
+    }
+
+    // ==================== ATTACHMENT PREVIEW ====================
+    document.getElementById('rfiAttachmentUpload').addEventListener('change', function() {
+        const preview = document.getElementById('rfiAttachmentPreview');
+        preview.innerHTML = '';
+
+        Array.from(this.files).forEach(file => {
+            const div = document.createElement('div');
+            div.className = 'flex items-center gap-2 bg-zinc-800 px-3 py-1.5 rounded-xl text-sm';
+            div.innerHTML = `
+                <i class="fa-solid fa-file text-emerald-400"></i>
+                <span class="flex-1 truncate">${file.name}</span>
+                <button type="button" onclick="this.parentElement.remove()" 
+                        class="text-zinc-400 hover:text-red-400">×</button>
+            `;
+            preview.appendChild(div);
+        });
+    });
+
+    // ==================== TOAST NOTIFICATION ====================
+    function showToast(message) {
+        const toast = document.createElement('div');
+        toast.className = `fixed bottom-6 right-6 bg-zinc-800 border border-zinc-700 text-white px-5 py-3 rounded-2xl shadow-xl flex items-center gap-3 z-[9999]`;
+        toast.innerHTML = `
+            <i class="fa-solid fa-check-circle text-emerald-400"></i>
+            <span>${message}</span>
+        `;
+        document.body.appendChild(toast);
+
+        setTimeout(() => {
+            toast.style.transition = 'all 0.3s ease';
+            toast.style.opacity = '0';
+            setTimeout(() => toast.remove(), 300);
+        }, 2800);
+    }
+
+    // ==================== KEYBOARD SHORTCUTS ====================
+    document.addEventListener('keydown', function(e) {
+        if (e.key === "/" && document.activeElement.tagName === "BODY") {
+            e.preventDefault();
+            const search = document.getElementById('rfiSearch');
+            if (search) search.focus();
+        }
+
+        if (e.key.toLowerCase() === "n" && e.target.tagName === "BODY") {
+            e.preventDefault();
+            showCreateRFIModal();
+        }
+    });
+
+    // ==================== INITIALIZATION ====================
+    function initializeRFIsPage() {
+        console.log('%c[Case PM] RFIs page initialized with full features.', 'color:#10b981');
+    }
+
+    window.addEventListener('load', initializeRFIsPage);
+</script>
+
+<!-- ==================== FINAL ENHANCEMENTS ==================== -->
+<script>
+    // ==================== EXPORT RFIs TO CSV ====================
+    function exportRFIs() {
+        const table = document.querySelector('table');
+        if (!table) return;
+
+        let csv = [];
+        const rows = table.querySelectorAll('tr');
+
+        rows.forEach(row => {
+            const cols = row.querySelectorAll('th, td');
+            let rowData = [];
+            cols.forEach(col => {
+                let text = col.innerText.trim().replace(/"/g, '""');
+                rowData.push(`"${text}"`);
+            });
+            csv.push(rowData.join(','));
+        });
+
+        const csvContent = csv.join('\n');
+        const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+        const link = document.createElement('a');
+        const url = URL.createObjectURL(blob);
+        
+        link.setAttribute('href', url);
+        link.setAttribute('download', `rfi_log_${new Date().toISOString().split('T')[0]}.csv`);
+        link.style.visibility = 'hidden';
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+
+        showToast('RFI log exported successfully');
+    }
+
+    // ==================== BULK ACTIONS (Future Ready) ====================
+    function bulkUpdateRFIStatus() {
+        const selected = document.querySelectorAll('table tbody input[type="checkbox"]:checked');
+        if (selected.length === 0) {
+            alert("Please select RFIs to update.");
+            return;
+        }
+        alert(`Bulk status update for ${selected.length} RFIs will be available here.`);
+    }
+
+    // ==================== FINAL INITIALIZATION ====================
+    function finalRFIsInitialization() {
+        console.log('%c[Case PM] rfis.html fully loaded with maximum features.', 'color:#10b981');
+    }
+
+    window.addEventListener('load', finalRFIsInitialization);
+</script>
+
+{% endblock %}

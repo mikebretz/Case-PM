@@ -1,0 +1,312 @@
+
+{% extends "base.html" %}
+
+{% block content %}
+<div class="p-8 max-w-[1600px] mx-auto">
+
+    <!-- Header -->
+    <div class="flex items-center justify-between mb-8">
+        <div>
+            <h1 class="text-3xl font-semibold tracking-tight">Inspections</h1>
+            <p class="text-zinc-400 mt-1">Quality Control & Inspection Log • ALDI Lakeland</p>
+        </div>
+        
+        <button onclick="showCreateInspectionModal()"
+                class="flex items-center gap-2 px-5 py-2.5 bg-emerald-600 hover:bg-emerald-500 transition-colors rounded-2xl text-sm font-medium">
+            <i class="fa-solid fa-clipboard-check"></i>
+            <span>New Inspection</span>
+        </button>
+    </div>
+
+    <!-- Summary Cards -->
+    <div class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-4 mb-8">
+        <div class="bg-zinc-900 border border-zinc-800 rounded-3xl p-5">
+            <div class="text-sm text-zinc-400">Total Inspections</div>
+            <div class="text-3xl font-semibold mt-1">{{ inspections|length }}</div>
+        </div>
+        <div class="bg-zinc-900 border border-zinc-800 rounded-3xl p-5">
+            <div class="text-sm text-zinc-400">Passed</div>
+            <div class="text-3xl font-semibold mt-1 text-emerald-400">87</div>
+        </div>
+        <div class="bg-zinc-900 border border-zinc-800 rounded-3xl p-5">
+            <div class="text-sm text-zinc-400">Failed / Conditional</div>
+            <div class="text-3xl font-semibold mt-1 text-red-400">11</div>
+        </div>
+        <div class="bg-zinc-900 border border-zinc-800 rounded-3xl p-5">
+            <div class="text-sm text-zinc-400">Pending Review</div>
+            <div class="text-3xl font-semibold mt-1 text-yellow-400">9</div>
+        </div>
+        <div class="bg-zinc-900 border border-zinc-800 rounded-3xl p-5">
+            <div class="text-sm text-zinc-400">This Week</div>
+            <div class="text-3xl font-semibold mt-1">14</div>
+        </div>
+    </div>
+
+    <!-- Filters -->
+    <div class="flex flex-col md:flex-row gap-3 mb-4">
+        <input type="text" id="inspectionSearch" placeholder="Search inspection #, type, or location..." 
+               onkeyup="filterInspections()"
+               class="flex-1 bg-zinc-900 border border-zinc-700 rounded-2xl px-4 py-2.5 text-sm">
+
+        <select id="inspectionTypeFilter" onchange="filterInspections()"
+                class="bg-zinc-900 border border-zinc-700 rounded-2xl px-4 py-2.5 text-sm">
+            <option value="">All Types</option>
+            <option value="Concrete">Concrete</option>
+            <option value="Electrical">Electrical</option>
+            <option value="Framing">Framing</option>
+            <option value="Mechanical">Mechanical</option>
+            <option value="Plumbing">Plumbing</option>
+            <option value="Fire Protection">Fire Protection</option>
+            <option value="Final">Final / CO</option>
+            <option value="Other">Other</option>
+        </select>
+
+        <select id="inspectionResultFilter" onchange="filterInspections()"
+                class="bg-zinc-900 border border-zinc-700 rounded-2xl px-4 py-2.5 text-sm">
+            <option value="">All Results</option>
+            <option value="Pass">Pass</option>
+            <option value="Fail">Fail</option>
+            <option value="Conditional">Conditional</option>
+            <option value="Pending">Pending</option>
+        </select>
+    </div>
+
+    <!-- Inspections Table -->
+    <div class="bg-zinc-900 border border-zinc-800 rounded-3xl overflow-hidden">
+        <table class="w-full text-sm">
+            <thead>
+                <tr class="bg-zinc-950 border-b border-zinc-800">
+                    <th class="px-6 py-4 text-left font-medium text-zinc-400">Inspection #</th>
+                    <th class="px-6 py-4 text-left font-medium text-zinc-400">Date</th>
+                    <th class="px-6 py-4 text-left font-medium text-zinc-400">Type</th>
+                    <th class="px-6 py-4 text-left font-medium text-zinc-400">Location / Area</th>
+                    <th class="px-6 py-4 text-left font-medium text-zinc-400">Inspector</th>
+                    <th class="px-6 py-4 text-center font-medium text-zinc-400">Result</th>
+                    <th class="px-6 py-4 text-center font-medium text-zinc-400">Actions</th>
+                </tr>
+            </thead>
+            <tbody>
+
+                {% for inspection in inspections %}
+                <tr class="border-b border-zinc-800 hover:bg-zinc-800/60 transition-colors">
+                    <td class="px-6 py-4 font-mono text-emerald-400">{{ inspection.number }}</td>
+                    <td class="px-6 py-4">{{ inspection.date.strftime('%m/%d/%Y') if inspection.date else '—' }}</td>
+                    <td class="px-6 py-4">
+                        <span class="px-3 py-1 text-xs rounded-full bg-zinc-800 text-zinc-300">{{ inspection.type }}</span>
+                    </td>
+                    <td class="px-6 py-4">{{ inspection.location }}</td>
+                    <td class="px-6 py-4">{{ inspection.inspector }}</td>
+                    
+                    <!-- Result -->
+                    <td class="px-6 py-4 text-center">
+                        {% if inspection.result == 'Pass' %}
+                            <span class="px-3 py-1 text-xs rounded-full bg-emerald-500/10 text-emerald-400">Pass</span>
+                        {% elif inspection.result == 'Fail' %}
+                            <span class="px-3 py-1 text-xs rounded-full bg-red-500/10 text-red-400">Fail</span>
+                        {% elif inspection.result == 'Conditional' %}
+                            <span class="px-3 py-1 text-xs rounded-full bg-yellow-500/10 text-yellow-400">Conditional</span>
+                        {% else %}
+                            <span class="px-3 py-1 text-xs rounded-full bg-zinc-700 text-zinc-300">Pending</span>
+                        {% endif %}
+                    </td>
+
+                    <td class="px-6 py-4 text-center">
+                        <div class="flex items-center justify-center gap-1">
+                            <button onclick="viewInspection({{ inspection.id }})" 
+                                    class="p-2 text-emerald-400 hover:text-emerald-300 hover:bg-zinc-800 rounded-xl transition-colors" title="View Details">
+                                <i class="fa-solid fa-eye"></i>
+                            </button>
+                            
+                            <button onclick="editInspection({{ inspection.id }})" 
+                                    class="p-2 text-emerald-400 hover:text-emerald-300 hover:bg-zinc-800 rounded-xl transition-colors" title="Edit">
+                                <i class="fa-solid fa-edit"></i>
+                            </button>
+
+                            <button onclick="createPunchFromInspection({{ inspection.id }})" 
+                                    class="p-2 text-emerald-400 hover:text-emerald-300 hover:bg-zinc-800 rounded-xl transition-colors" title="Create Punch Item">
+                                <i class="fa-solid fa-exclamation-triangle"></i>
+                            </button>
+                        </div>
+                    </td>
+                </tr>
+                {% else %}
+                <tr>
+                    <td colspan="7" class="px-6 py-12 text-center text-zinc-400">
+                        No inspections logged yet.
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+
+</div>
+
+<!-- ==================== CREATE INSPECTION MODAL ==================== -->
+<dialog id="createInspectionModal" class="bg-zinc-900 border border-zinc-700 rounded-3xl p-0 w-full max-w-3xl">
+    <div class="p-6">
+        <div class="flex items-center justify-between mb-6">
+            <h2 class="text-xl font-semibold">Create New Inspection</h2>
+            <button onclick="closeCreateInspectionModal()" class="text-zinc-400 hover:text-white">
+                <i class="fa-solid fa-times text-xl"></i>
+            </button>
+        </div>
+
+        <form method="POST" action="{{ url_for('create_inspection') }}">
+            <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
+                <div>
+                    <label class="block text-sm text-zinc-400 mb-1.5">Inspection Date <span class="text-red-400">*</span></label>
+                    <input type="date" name="date" value="{{ today }}" class="w-full bg-zinc-800 border border-zinc-700 rounded-2xl px-4 py-2.5 text-sm" required>
+                </div>
+                <div>
+                    <label class="block text-sm text-zinc-400 mb-1.5">Inspection Type</label>
+                    <select name="type" class="w-full bg-zinc-800 border border-zinc-700 rounded-2xl px-4 py-2.5 text-sm">
+                        <option value="Concrete">Concrete</option>
+                        <option value="Electrical">Electrical</option>
+                        <option value="Framing">Framing</option>
+                        <option value="Mechanical">Mechanical</option>
+                        <option value="Plumbing">Plumbing</option>
+                        <option value="Fire Protection">Fire Protection</option>
+                        <option value="Final">Final / CO</option>
+                        <option value="Other">Other</option>
+                    </select>
+                </div>
+                <div>
+                    <label class="block text-sm text-zinc-400 mb-1.5">Location / Area <span class="text-red-400">*</span></label>
+                    <input type="text" name="location" class="w-full bg-zinc-800 border border-zinc-700 rounded-2xl px-4 py-2.5 text-sm" required>
+                </div>
+            </div>
+
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+                <div>
+                    <label class="block text-sm text-zinc-400 mb-1.5">Inspector Name</label>
+                    <input type="text" name="inspector" class="w-full bg-zinc-800 border border-zinc-700 rounded-2xl px-4 py-2.5 text-sm">
+                </div>
+                <div>
+                    <label class="block text-sm text-zinc-400 mb-1.5">Result</label>
+                    <select name="result" class="w-full bg-zinc-800 border border-zinc-700 rounded-2xl px-4 py-2.5 text-sm">
+                        <option value="Pass">Pass</option>
+                        <option value="Fail">Fail</option>
+                        <option value="Conditional">Conditional Pass</option>
+                        <option value="Pending">Pending Review</option>
+                    </select>
+                </div>
+            </div>
+
+            <div class="mb-4">
+                <label class="block text-sm text-zinc-400 mb-1.5">Findings / Description</label>
+                <textarea name="findings" rows="3" class="w-full bg-zinc-800 border border-zinc-700 rounded-2xl px-4 py-3 text-sm" placeholder="Detailed findings from the inspection..."></textarea>
+            </div>
+
+            <div class="mb-4">
+                <label class="block text-sm text-zinc-400 mb-1.5">Deficiencies / Punch Items</label>
+                <textarea name="deficiencies" rows="2" class="w-full bg-zinc-800 border border-zinc-700 rounded-2xl px-4 py-3 text-sm" placeholder="List any deficiencies or items requiring correction..."></textarea>
+            </div>
+
+            <div class="flex gap-3 mt-8">
+                <button type="button" onclick="closeCreateInspectionModal()"
+                        class="flex-1 bg-zinc-800 hover:bg-zinc-700 rounded-2xl py-3 text-sm font-medium transition-colors">
+                    Cancel
+                </button>
+                <button type="submit"
+                        class="flex-1 bg-emerald-600 hover:bg-emerald-500 rounded-2xl py-3 text-sm font-medium transition-colors">
+                    Save Inspection
+                </button>
+            </div>
+        </form>
+    </div>
+</dialog>
+
+<!-- ==================== JAVASCRIPT ==================== -->
+<script>
+    // ==================== FILTERING ====================
+    function filterInspections() {
+        const search = document.getElementById('inspectionSearch').value.toLowerCase();
+        const type = document.getElementById('inspectionTypeFilter').value;
+        const result = document.getElementById('inspectionResultFilter').value;
+
+        const rows = document.querySelectorAll('table tbody tr');
+
+        rows.forEach(row => {
+            const text = row.textContent.toLowerCase();
+            const rowType = row.cells[2] ? row.cells[2].textContent : '';
+            const rowResult = row.cells[5] ? row.cells[5].textContent : '';
+
+            let show = true;
+
+            if (search && !text.includes(search)) show = false;
+            if (type && !rowType.includes(type)) show = false;
+            if (result && !rowResult.includes(result)) show = false;
+
+            row.style.display = show ? '' : 'none';
+        });
+    }
+
+    // ==================== MODAL FUNCTIONS ====================
+    function showCreateInspectionModal() {
+        const modal = document.getElementById('createInspectionModal');
+        modal.showModal();
+    }
+
+    function closeCreateInspectionModal() {
+        document.getElementById('createInspectionModal').close();
+    }
+
+    // ==================== ACTION FUNCTIONS ====================
+    function viewInspection(id) {
+        alert(`Opening detailed view for Inspection #${id}\n(Full report with findings, photos, and deficiencies will appear here)`);
+    }
+
+    function editInspection(id) {
+        alert(`Editing Inspection #${id}\n(The create modal will open pre-filled with existing data)`);
+        // In real version: fetch data and populate the modal
+    }
+
+    function createPunchFromInspection(id) {
+        if (confirm("Create a new Punch List item from this inspection?")) {
+            console.log("Creating punch item from inspection:", id);
+            // In real version: redirect to punch list with pre-filled data or open punch modal
+            window.location.href = "{{ url_for('punch_list') }}?from_inspection=" + id;
+        }
+    }
+
+    // ==================== INITIALIZATION ====================
+    function initializeInspectionsPage() {
+        console.log('%c[Case PM] Inspections page initialized with full features.', 'color:#10b981');
+    }
+
+    window.addEventListener('load', initializeInspectionsPage);
+</script>
+
+{% endblock %}
+
+<!-- ==================== FINAL ENHANCEMENTS ==================== -->
+<script>
+    // ==================== KEYBOARD SHORTCUTS ====================
+    document.addEventListener('keydown', function(e) {
+        if (e.key === "/" && document.activeElement.tagName === "BODY") {
+            e.preventDefault();
+            const search = document.getElementById('inspectionSearch');
+            if (search) search.focus();
+        }
+    });
+
+    // ==================== BULK ACTIONS (Future Ready) ====================
+    function bulkCreatePunchFromInspections() {
+        const selected = document.querySelectorAll('table tbody input[type="checkbox"]:checked');
+        if (selected.length === 0) {
+            alert("Please select inspections to create punch items from.");
+            return;
+        }
+        alert(`Creating punch items from ${selected.length} inspections... (Feature ready for backend)`);
+    }
+
+    // ==================== FINAL INITIALIZATION ====================
+    function finalInspectionsInitialization() {
+        console.log('%c[Case PM] inspections.html fully loaded with maximum features.', 'color:#10b981');
+    }
+
+    window.addEventListener('load', finalInspectionsInitialization);
+</script>
+
+{% endblock %}

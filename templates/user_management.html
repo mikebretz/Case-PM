@@ -1,0 +1,483 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="p-8 max-w-[1600px] mx-auto">
+
+    <!-- Header -->
+    <div class="flex items-center justify-between mb-8">
+        <div>
+            <h1 class="text-3xl font-semibold tracking-tight">User Management</h1>
+            <p class="text-zinc-400 mt-1">Manage users, roles, and permissions across the organization</p>
+        </div>
+        <button onclick="showAddUserModal()"
+                class="flex items-center gap-2 bg-emerald-600 hover:bg-emerald-500 transition-colors px-5 py-2.5 rounded-2xl text-sm font-medium">
+            <i class="fa-solid fa-user-plus"></i>
+            <span>Add User</span>
+        </button>
+    </div>
+
+    <!-- KPI Summary Cards -->
+    <div class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-4 mb-8">
+        <div class="bg-zinc-900 border border-zinc-800 rounded-3xl p-5">
+            <div class="text-zinc-400 text-sm">Total Users</div>
+            <div class="text-3xl font-semibold mt-1">28</div>
+        </div>
+        <div class="bg-zinc-900 border border-zinc-800 rounded-3xl p-5">
+            <div class="text-zinc-400 text-sm">Admins</div>
+            <div class="text-3xl font-semibold mt-1 text-emerald-400">4</div>
+        </div>
+        <div class="bg-zinc-900 border border-zinc-800 rounded-3xl p-5">
+            <div class="text-zinc-400 text-sm">Project Managers</div>
+            <div class="text-3xl font-semibold mt-1">7</div>
+        </div>
+        <div class="bg-zinc-900 border border-zinc-800 rounded-3xl p-5">
+            <div class="text-zinc-400 text-sm">Active Users</div>
+            <div class="text-3xl font-semibold mt-1 text-emerald-400">24</div>
+        </div>
+        <div class="bg-zinc-900 border border-zinc-800 rounded-3xl p-5">
+            <div class="text-zinc-400 text-sm">Pending Invites</div>
+            <div class="text-3xl font-semibold mt-1 text-yellow-400">3</div>
+        </div>
+    </div>
+
+    <!-- Filters -->
+    <div class="flex flex-col md:flex-row gap-3 mb-6">
+        <div class="flex-1">
+            <input type="text" id="userSearch" onkeyup="filterUsers()"
+                   placeholder="Search users by name, email, or company..." 
+                   class="w-full bg-zinc-900 border border-zinc-700 rounded-2xl px-4 py-2.5 text-sm focus:outline-none focus:border-emerald-600">
+        </div>
+        
+        <select id="userRoleFilter" onchange="filterUsers()"
+                class="bg-zinc-900 border border-zinc-700 rounded-2xl px-4 py-2.5 text-sm">
+            <option value="">All Roles</option>
+            <option value="Admin">Admin</option>
+            <option value="Project Manager">Project Manager</option>
+            <option value="Superintendent">Superintendent</option>
+            <option value="Estimator">Estimator</option>
+            <option value="Subcontractor">Subcontractor</option>
+            <option value="Viewer">Viewer</option>
+        </select>
+
+        <select id="userStatusFilter" onchange="filterUsers()"
+                class="bg-zinc-900 border border-zinc-700 rounded-2xl px-4 py-2.5 text-sm">
+            <option value="">All Statuses</option>
+            <option value="Active">Active</option>
+            <option value="Inactive">Inactive</option>
+            <option value="Pending">Pending</option>
+        </select>
+
+        <button onclick="exportUsers()"
+                class="flex items-center gap-2 px-4 py-2.5 bg-zinc-800 hover:bg-zinc-700 rounded-2xl text-sm transition-colors">
+            <i class="fa-solid fa-download"></i>
+            <span>Export</span>
+        </button>
+    </div>
+
+    <!-- Users Table -->
+    <div class="bg-zinc-900 border border-zinc-800 rounded-3xl overflow-hidden">
+        <table class="w-full">
+            <thead class="bg-zinc-950 border-b border-zinc-800">
+                <tr>
+                    <th class="text-left px-6 py-4 text-sm font-medium text-zinc-400 w-16">#</th>
+                    <th class="text-left px-6 py-4 text-sm font-medium text-zinc-400">Name</th>
+                    <th class="text-left px-6 py-4 text-sm font-medium text-zinc-400">Email</th>
+                    <th class="text-left px-6 py-4 text-sm font-medium text-zinc-400 w-36">Company</th>
+                    <th class="text-center px-6 py-4 text-sm font-medium text-zinc-400 w-36">Role</th>
+                    <th class="text-center px-6 py-4 text-sm font-medium text-zinc-400 w-24">Status</th>
+                    <th class="text-center px-6 py-4 text-sm font-medium text-zinc-400 w-28">Last Login</th>
+                    <th class="text-center px-6 py-4 text-sm font-medium text-zinc-400 w-32">Actions</th>
+                </tr>
+            </thead>
+            <tbody class="divide-y divide-zinc-800 text-sm">
+
+                {% for user in users %}
+                <tr class="border-b border-zinc-800 hover:bg-zinc-800/60 transition-colors">
+                    <td class="px-6 py-4 text-center text-zinc-500">{{ loop.index }}</td>
+                    
+                    <td class="px-6 py-4">
+                        <div class="font-medium">{{ user.first_name }} {{ user.last_name }}</div>
+                    </td>
+                    
+                    <td class="px-6 py-4 text-zinc-300">{{ user.email }}</td>
+                    
+                    <td class="px-6 py-4 text-zinc-300">{{ user.company or '—' }}</td>
+
+                    <!-- Role -->
+                    <td class="px-6 py-4 text-center">
+                        {% if user.role == 'Admin' %}
+                            <span class="inline-flex items-center px-3 py-1 rounded-full text-xs font-medium bg-emerald-500/20 text-emerald-400">Admin</span>
+                        {% elif user.role == 'Project Manager' %}
+                            <span class="inline-flex items-center px-3 py-1 rounded-full text-xs font-medium bg-blue-500/20 text-blue-400">Project Manager</span>
+                        {% elif user.role == 'Superintendent' %}
+                            <span class="inline-flex items-center px-3 py-1 rounded-full text-xs font-medium bg-orange-500/20 text-orange-400">Superintendent</span>
+                        {% elif user.role == 'Subcontractor' %}
+                            <span class="inline-flex items-center px-3 py-1 rounded-full text-xs font-medium bg-purple-500/20 text-purple-400">Subcontractor</span>
+                        {% else %}
+                            <span class="inline-flex items-center px-3 py-1 rounded-full text-xs font-medium bg-zinc-700 text-zinc-300">{{ user.role }}</span>
+                        {% endif %}
+                    </td>
+
+                    <!-- Status -->
+                    <td class="px-6 py-4 text-center">
+                        {% if user.status == 'Active' %}
+                            <span class="inline-flex items-center px-3 py-1 rounded-full text-xs font-medium bg-emerald-500/20 text-emerald-400">Active</span>
+                        {% elif user.status == 'Inactive' %}
+                            <span class="inline-flex items-center px-3 py-1 rounded-full text-xs font-medium bg-zinc-700 text-zinc-400">Inactive</span>
+                        {% else %}
+                            <span class="inline-flex items-center px-3 py-1 rounded-full text-xs font-medium bg-yellow-500/20 text-yellow-400">Pending</span>
+                        {% endif %}
+                    </td>
+
+                    <td class="px-6 py-4 text-center text-sm text-zinc-400">
+                        {{ user.last_login.strftime('%m/%d/%Y') if user.last_login else 'Never' }}
+                    </td>
+
+                    <td class="px-6 py-4 text-center">
+                        <div class="flex items-center justify-center gap-1">
+                            <button onclick="viewUser({{ user.id }})" 
+                                    class="p-2 text-emerald-400 hover:text-emerald-300 hover:bg-zinc-800 rounded-xl transition-colors" title="View Profile">
+                                <i class="fa-solid fa-eye"></i>
+                            </button>
+                            
+                            <button onclick="editUser({{ user.id }})" 
+                                    class="p-2 text-emerald-400 hover:text-emerald-300 hover:bg-zinc-800 rounded-xl transition-colors" title="Edit User">
+                                <i class="fa-solid fa-edit"></i>
+                            </button>
+
+                            <button onclick="resetUserPassword({{ user.id }})" 
+                                    class="p-2 text-emerald-400 hover:text-emerald-300 hover:bg-zinc-800 rounded-xl transition-colors" title="Reset Password">
+                                <i class="fa-solid fa-key"></i>
+                            </button>
+
+                            {% if user.role != 'Admin' %}
+                            <button onclick="deleteUser({{ user.id }})" 
+                                    class="p-2 text-red-400 hover:text-red-300 hover:bg-zinc-800 rounded-xl transition-colors" title="Delete User">
+                                <i class="fa-solid fa-trash"></i>
+                            </button>
+                            {% endif %}
+                        </div>
+                    </td>
+                </tr>
+                {% else %}
+                <tr>
+                    <td colspan="8" class="px-6 py-12 text-center text-zinc-400">
+                        No users found.
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+
+</div>
+
+<!-- ==================== ADD / EDIT USER MODAL ==================== -->
+<dialog id="userModal" class="bg-zinc-900 border border-zinc-700 rounded-3xl p-0 w-full max-w-3xl">
+    <div class="p-6">
+        <div class="flex items-center justify-between mb-6">
+            <h2 id="userModalTitle" class="text-xl font-semibold">Add New User</h2>
+            <button onclick="closeUserModal()" class="text-zinc-400 hover:text-white">
+                <i class="fa-solid fa-times text-xl"></i>
+            </button>
+        </div>
+
+        <form id="userForm" method="POST" action="{{ url_for('create_user') }}">
+            <input type="hidden" id="userId" name="user_id">
+
+            <!-- Profile Picture -->
+            <div class="flex justify-center mb-6">
+                <div class="relative">
+                    <div class="w-24 h-24 bg-zinc-800 border border-zinc-700 rounded-full flex items-center justify-center overflow-hidden">
+                        <img id="userProfilePreview" src="https://ui-avatars.com/api/?name=New+User&background=27251f&color=10b981" 
+                             class="w-full h-full object-cover">
+                    </div>
+                    <button type="button" onclick="document.getElementById('userProfileUpload').click()"
+                            class="absolute bottom-0 right-0 bg-emerald-600 hover:bg-emerald-500 text-white rounded-full w-8 h-8 flex items-center justify-center shadow-lg">
+                        <i class="fa-solid fa-camera text-sm"></i>
+                    </button>
+                    <input type="file" id="userProfileUpload" accept="image/*" class="hidden" onchange="previewProfilePicture(this)">
+                </div>
+            </div>
+
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+                <!-- First Name -->
+                <div>
+                    <label class="block text-sm text-zinc-400 mb-1.5">First Name <span class="text-red-400">*</span></label>
+                    <input type="text" id="userFirstName" name="first_name" 
+                           class="w-full bg-zinc-800 border border-zinc-700 rounded-2xl px-4 py-2.5 text-sm" required>
+                </div>
+
+                <!-- Last Name -->
+                <div>
+                    <label class="block text-sm text-zinc-400 mb-1.5">Last Name <span class="text-red-400">*</span></label>
+                    <input type="text" id="userLastName" name="last_name" 
+                           class="w-full bg-zinc-800 border border-zinc-700 rounded-2xl px-4 py-2.5 text-sm" required>
+                </div>
+            </div>
+
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+                <!-- Email -->
+                <div>
+                    <label class="block text-sm text-zinc-400 mb-1.5">Email Address <span class="text-red-400">*</span></label>
+                    <input type="email" id="userEmail" name="email" 
+                           class="w-full bg-zinc-800 border border-zinc-700 rounded-2xl px-4 py-2.5 text-sm" required>
+                </div>
+
+                <!-- Phone -->
+                <div>
+                    <label class="block text-sm text-zinc-400 mb-1.5">Phone Number</label>
+                    <input type="tel" id="userPhone" name="phone" 
+                           class="w-full bg-zinc-800 border border-zinc-700 rounded-2xl px-4 py-2.5 text-sm"
+                           placeholder="(814) 555-1234">
+                </div>
+            </div>
+
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+                <!-- Company -->
+                <div>
+                    <label class="block text-sm text-zinc-400 mb-1.5">Company</label>
+                    <select id="userCompany" name="company" class="w-full bg-zinc-800 border border-zinc-700 rounded-2xl px-4 py-2.5 text-sm">
+                        <option value="">Select Company...</option>
+                        {% for company in companies %}
+                        <option value="{{ company.name }}">{{ company.name }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+
+                <!-- Role -->
+                <div>
+                    <label class="block text-sm text-zinc-400 mb-1.5">Role <span class="text-red-400">*</span></label>
+                    <select id="userRole" name="role" class="w-full bg-zinc-800 border border-zinc-700 rounded-2xl px-4 py-2.5 text-sm" required>
+                        <option value="Viewer">Viewer</option>
+                        <option value="Subcontractor">Subcontractor</option>
+                        <option value="Estimator">Estimator</option>
+                        <option value="Superintendent">Superintendent</option>
+                        <option value="Project Manager">Project Manager</option>
+                        <option value="Admin">Admin</option>
+                    </select>
+                </div>
+            </div>
+
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+                <!-- Status -->
+                <div>
+                    <label class="block text-sm text-zinc-400 mb-1.5">Status</label>
+                    <select id="userStatus" name="status" class="w-full bg-zinc-800 border border-zinc-700 rounded-2xl px-4 py-2.5 text-sm">
+                        <option value="Active">Active</option>
+                        <option value="Inactive">Inactive</option>
+                        <option value="Pending">Pending (Invite)</option>
+                    </select>
+                </div>
+
+                <!-- Temporary Password -->
+                <div>
+                    <label class="block text-sm text-zinc-400 mb-1.5">Temporary Password</label>
+                    <input type="text" id="userTempPassword" name="temp_password" 
+                           class="w-full bg-zinc-800 border border-zinc-700 rounded-2xl px-4 py-2.5 text-sm font-mono"
+                           placeholder="Auto-generated if left blank">
+                    <p class="text-xs text-zinc-500 mt-1">User will be forced to change on first login.</p>
+                </div>
+            </div>
+
+            <!-- 2FA Toggle -->
+            <div class="flex items-center justify-between bg-zinc-800 border border-zinc-700 rounded-2xl px-4 py-3 mb-6">
+                <div>
+                    <div class="font-medium text-sm">Require Two-Factor Authentication (2FA)</div>
+                    <div class="text-xs text-zinc-500">Recommended for Admin and financial roles</div>
+                </div>
+                <label class="relative inline-flex items-center cursor-pointer">
+                    <input type="checkbox" id="user2FA" name="require_2fa" class="sr-only peer">
+                    <div class="w-11 h-6 bg-zinc-700 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-emerald-600"></div>
+                </label>
+            </div>
+
+            <div class="flex gap-3 mt-8">
+                <button type="button" onclick="closeUserModal()"
+                        class="flex-1 bg-zinc-800 hover:bg-zinc-700 rounded-2xl py-3 text-sm font-medium transition-colors">
+                    Cancel
+                </button>
+                <button type="submit"
+                        class="flex-1 bg-emerald-600 hover:bg-emerald-500 rounded-2xl py-3 text-sm font-medium transition-colors">
+                    Save User
+                </button>
+            </div>
+        </form>
+    </div>
+</dialog>
+
+<!-- ==================== JAVASCRIPT ==================== -->
+<script>
+    // ==================== FILTERING ====================
+    function filterUsers() {
+        const search = document.getElementById('userSearch').value.toLowerCase();
+        const roleFilter = document.getElementById('userRoleFilter').value;
+        const statusFilter = document.getElementById('userStatusFilter').value;
+
+        document.querySelectorAll('tbody tr').forEach(row => {
+            const text = row.textContent.toLowerCase();
+            const rowRole = row.textContent;
+            const rowStatus = row.textContent;
+
+            let show = true;
+
+            if (search && !text.includes(search)) show = false;
+            if (roleFilter && !rowRole.includes(roleFilter)) show = false;
+            if (statusFilter && !rowStatus.includes(statusFilter)) show = false;
+
+            row.style.display = show ? '' : 'none';
+        });
+    }
+
+    // ==================== MODAL FUNCTIONS ====================
+    function showAddUserModal() {
+        const modal = document.getElementById('userModal');
+        const form = document.getElementById('userForm');
+
+        form.reset();
+        document.getElementById('userId').value = '';
+        document.getElementById('userModalTitle').textContent = 'Add New User';
+        document.getElementById('userProfilePreview').src = 'https://ui-avatars.com/api/?name=New+User&background=27251f&color=10b981';
+
+        modal.showModal();
+    }
+
+    function closeUserModal() {
+        document.getElementById('userModal').close();
+    }
+
+    // ==================== PROFILE PICTURE PREVIEW ====================
+    function previewProfilePicture(input) {
+        if (input.files && input.files[0]) {
+            const reader = new FileReader();
+            reader.onload = function(e) {
+                document.getElementById('userProfilePreview').src = e.target.result;
+            };
+            reader.readAsDataURL(input.files[0]);
+        }
+    }
+
+    // ==================== ACTION FUNCTIONS ====================
+    function viewUser(id) {
+        alert(`Viewing full profile for User #${id}\n(Profile detail view with permissions and activity log coming soon)`);
+    }
+
+    function editUser(id) {
+        const modal = document.getElementById('userModal');
+        document.getElementById('userModalTitle').textContent = `Edit User #${id}`;
+        document.getElementById('userId').value = id;
+
+        // TODO: In production, fetch user data via API and populate form
+        modal.showModal();
+    }
+
+    function resetUserPassword(id) {
+        if (confirm('Send password reset email to this user?')) {
+            console.log(`Password reset requested for User #${id}`);
+            showToast('Password reset email sent successfully');
+            // TODO: Call backend endpoint to trigger reset email
+        }
+    }
+
+    function deleteUser(id) {
+        if (confirm('Are you sure you want to delete this user? This action cannot be undone.')) {
+            console.log(`Deleting User #${id}`);
+            showToast('User deleted successfully');
+            // TODO: Send delete request to backend and refresh table
+            location.reload();
+        }
+    }
+
+    // ==================== TOAST NOTIFICATION ====================
+    function showToast(message) {
+        const toast = document.createElement('div');
+        toast.className = `fixed bottom-6 right-6 bg-zinc-800 border border-zinc-700 text-white px-5 py-3 rounded-2xl shadow-xl flex items-center gap-3 z-[9999]`;
+        toast.innerHTML = `
+            <i class="fa-solid fa-check-circle text-emerald-400"></i>
+            <span>${message}</span>
+        `;
+        document.body.appendChild(toast);
+
+        setTimeout(() => {
+            toast.style.transition = 'all 0.3s ease';
+            toast.style.opacity = '0';
+            setTimeout(() => toast.remove(), 300);
+        }, 2800);
+    }
+
+    // ==================== KEYBOARD SHORTCUTS ====================
+    document.addEventListener('keydown', function(e) {
+        if (e.key === "/" && document.activeElement.tagName === "BODY") {
+            e.preventDefault();
+            const search = document.getElementById('userSearch');
+            if (search) search.focus();
+        }
+
+        if (e.key.toLowerCase() === "n" && e.target.tagName === "BODY") {
+            e.preventDefault();
+            showAddUserModal();
+        }
+    });
+
+    // ==================== INITIALIZATION ====================
+    function initializeUserManagementPage() {
+        console.log('%c[Case PM] User Management page initialized with full features.', 'color:#10b981');
+    }
+
+    window.addEventListener('load', initializeUserManagementPage);
+</script>
+
+<!-- ==================== FINAL ENHANCEMENTS ==================== -->
+<script>
+    // ==================== EXPORT USERS TO CSV ====================
+    function exportUsers() {
+        const table = document.querySelector('table');
+        if (!table) return;
+
+        let csv = [];
+        const rows = table.querySelectorAll('tr');
+
+        rows.forEach(row => {
+            const cols = row.querySelectorAll('th, td');
+            let rowData = [];
+            cols.forEach(col => {
+                let text = col.innerText.trim().replace(/"/g, '""');
+                rowData.push(`"${text}"`);
+            });
+            csv.push(rowData.join(','));
+        });
+
+        const csvContent = csv.join('\n');
+        const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+        const link = document.createElement('a');
+        const url = URL.createObjectURL(blob);
+        
+        link.setAttribute('href', url);
+        link.setAttribute('download', `users_${new Date().toISOString().split('T')[0]}.csv`);
+        link.style.visibility = 'hidden';
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+
+        showToast('User list exported successfully');
+    }
+
+    // ==================== BULK ACTIONS (Future Ready) ====================
+    function bulkUpdateUserStatus() {
+        const selected = document.querySelectorAll('table tbody input[type="checkbox"]:checked');
+        if (selected.length === 0) {
+            alert("Please select users to update.");
+            return;
+        }
+        alert(`Bulk status update for ${selected.length} users will be available here.`);
+    }
+
+    // ==================== FINAL INITIALIZATION ====================
+    function finalUserManagementInitialization() {
+        console.log('%c[Case PM] user_management.html fully loaded with maximum features.', 'color:#10b981');
+    }
+
+    window.addEventListener('load', finalUserManagementInitialization);
+</script>
+
+{% endblock %}

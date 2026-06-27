@@ -1,0 +1,520 @@
+
+{% extends "base.html" %}
+
+{% block content %}
+<div class="p-8 max-w-[1600px] mx-auto">
+
+    <!-- Header -->
+    <div class="flex items-center justify-between mb-8">
+        <div>
+            <h1 class="text-3xl font-semibold tracking-tight">Drawings</h1>
+            <p class="text-zinc-400 mt-1">Drawing Register & Revision Control • ALDI Lakeland</p>
+        </div>
+        
+        <div class="flex items-center gap-3">
+            <button onclick="showUploadDrawingModal()"
+                    class="flex items-center gap-2 px-5 py-2.5 bg-emerald-600 hover:bg-emerald-500 transition-colors rounded-2xl text-sm font-medium">
+                <i class="fa-solid fa-upload"></i>
+                <span>Upload Drawing</span>
+            </button>
+        </div>
+    </div>
+
+    <!-- Summary Cards -->
+    <div class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-4 mb-8">
+        <div class="bg-zinc-900 border border-zinc-800 rounded-3xl p-5">
+            <div class="text-sm text-zinc-400">Total Drawings</div>
+            <div class="text-3xl font-semibold mt-1">{{ drawings|length }}</div>
+        </div>
+        <div class="bg-zinc-900 border border-zinc-800 rounded-3xl p-5">
+            <div class="text-sm text-zinc-400">Current Revisions</div>
+            <div class="text-3xl font-semibold mt-1 text-emerald-400">142</div>
+        </div>
+        <div class="bg-zinc-900 border border-zinc-800 rounded-3xl p-5">
+            <div class="text-sm text-zinc-400">Superseded</div>
+            <div class="text-3xl font-semibold mt-1 text-yellow-400">38</div>
+        </div>
+        <div class="bg-zinc-900 border border-zinc-800 rounded-3xl p-5">
+            <div class="text-sm text-zinc-400">Linked to RFIs</div>
+            <div class="text-3xl font-semibold mt-1">29</div>
+        </div>
+        <div class="bg-zinc-900 border border-zinc-800 rounded-3xl p-5">
+            <div class="text-sm text-zinc-400">Latest Upload</div>
+            <div class="text-3xl font-semibold mt-1 text-emerald-400">Today</div>
+        </div>
+    </div>
+
+    <!-- Filters -->
+    <div class="flex flex-col lg:flex-row gap-3 mb-4">
+        <input type="text" id="drawingSearch" placeholder="Search drawing #, title, or discipline..." 
+               onkeyup="filterDrawings()"
+               class="flex-1 bg-zinc-900 border border-zinc-700 rounded-2xl px-4 py-2.5 text-sm">
+
+        <select id="drawingDisciplineFilter" onchange="filterDrawings()"
+                class="bg-zinc-900 border border-zinc-700 rounded-2xl px-4 py-2.5 text-sm min-w-[180px]">
+            <option value="">All Disciplines</option>
+            <option value="Architectural">Architectural</option>
+            <option value="Structural">Structural</option>
+            <option value="Civil">Civil / Site</option>
+            <option value="Mechanical">Mechanical</option>
+            <option value="Electrical">Electrical</option>
+            <option value="Plumbing">Plumbing</option>
+            <option value="Fire Protection">Fire Protection</option>
+        </select>
+
+        <select id="drawingStatusFilter" onchange="filterDrawings()"
+                class="bg-zinc-900 border border-zinc-700 rounded-2xl px-4 py-2.5 text-sm min-w-[160px]">
+            <option value="">All Statuses</option>
+            <option value="Current">Current</option>
+            <option value="Superseded">Superseded</option>
+            <option value="Issued for Construction">Issued for Construction</option>
+            <option value="Issued for Permit">Issued for Permit</option>
+        </select>
+    </div>
+
+    <!-- Drawings Table -->
+    <div class="bg-zinc-900 border border-zinc-800 rounded-3xl overflow-hidden">
+        <table class="w-full text-sm">
+            <thead>
+                <tr class="bg-zinc-950 border-b border-zinc-800">
+                    <th class="px-6 py-4 text-left font-medium text-zinc-400">Drawing #</th>
+                    <th class="px-6 py-4 text-left font-medium text-zinc-400">Title</th>
+                    <th class="px-6 py-4 text-left font-medium text-zinc-400">Discipline</th>
+                    <th class="px-6 py-4 text-center font-medium text-zinc-400">Current Rev</th>
+                    <th class="px-6 py-4 text-center font-medium text-zinc-400">Date</th>
+                    <th class="px-6 py-4 text-center font-medium text-zinc-400">Status</th>
+                    <th class="px-6 py-4 text-center font-medium text-zinc-400">Linked</th>
+                    <th class="px-6 py-4 text-center font-medium text-zinc-400">Actions</th>
+                </tr>
+            </thead>
+            <tbody>
+
+                {% for drawing in drawings %}
+                <tr class="border-b border-zinc-800 hover:bg-zinc-800/60 transition-colors">
+                    <td class="px-6 py-4 font-mono text-emerald-400">{{ drawing.number }}</td>
+                    <td class="px-6 py-4">
+                        <div class="font-medium">{{ drawing.title }}</div>
+                        {% if drawing.sheet_size %}
+                            <div class="text-xs text-zinc-500">{{ drawing.sheet_size }}</div>
+                        {% endif %}
+                    </td>
+                    <td class="px-6 py-4">
+                        <span class="px-3 py-1 text-xs rounded-full bg-zinc-800 text-zinc-300">{{ drawing.discipline }}</span>
+                    </td>
+                    <td class="px-6 py-4 text-center">
+                        <span class="font-mono text-emerald-400 font-medium">{{ drawing.current_revision }}</span>
+                    </td>
+                    <td class="px-6 py-4 text-center text-sm">
+                        {{ drawing.revision_date.strftime('%m/%d/%Y') if drawing.revision_date else '—' }}
+                    </td>
+                    <td class="px-6 py-4 text-center">
+                        {% if drawing.status == 'Current' %}
+                            <span class="px-3 py-1 text-xs rounded-full bg-emerald-500/10 text-emerald-400">Current</span>
+                        {% elif drawing.status == 'Superseded' %}
+                            <span class="px-3 py-1 text-xs rounded-full bg-yellow-500/10 text-yellow-400">Superseded</span>
+                        {% else %}
+                            <span class="px-3 py-1 text-xs rounded-full bg-blue-500/10 text-blue-400">{{ drawing.status }}</span>
+                        {% endif %}
+                    </td>
+                    <td class="px-6 py-4 text-center">
+                        {% if drawing.linked_rfi_count and drawing.linked_rfi_count > 0 %}
+                            <span class="px-2.5 py-0.5 text-xs rounded-full bg-emerald-600/20 text-emerald-400">
+                                {{ drawing.linked_rfi_count }} RFI(s)
+                            </span>
+                        {% else %}
+                            <span class="text-zinc-500">—</span>
+                        {% endif %}
+                    </td>
+                    <td class="px-6 py-4 text-center">
+                        <div class="flex items-center justify-center gap-1">
+                            <button onclick="viewDrawing({{ drawing.id }})" 
+                                    class="p-2 text-emerald-400 hover:text-emerald-300 hover:bg-zinc-800 rounded-xl transition-colors" title="View Drawing">
+                                <i class="fa-solid fa-eye"></i>
+                            </button>
+                            
+                            <button onclick="uploadNewRevision({{ drawing.id }})" 
+                                    class="p-2 text-emerald-400 hover:text-emerald-300 hover:bg-zinc-800 rounded-xl transition-colors" title="Upload New Revision">
+                                <i class="fa-solid fa-upload"></i>
+                            </button>
+
+                            <button onclick="linkDrawingToRFI({{ drawing.id }})" 
+                                    class="p-2 text-emerald-400 hover:text-emerald-300 hover:bg-zinc-800 rounded-xl transition-colors" title="Link to RFI">
+                                <i class="fa-solid fa-link"></i>
+                            </button>
+
+                            <button onclick="editDrawing({{ drawing.id }})" 
+                                    class="p-2 text-emerald-400 hover:text-emerald-300 hover:bg-zinc-800 rounded-xl transition-colors" title="Edit Metadata">
+                                <i class="fa-solid fa-edit"></i>
+                            </button>
+                        </div>
+                    </td>
+                </tr>
+                {% else %}
+                <tr>
+                    <td colspan="8" class="px-6 py-12 text-center text-zinc-400">
+                        No drawings found for this project.
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+
+</div>
+
+<!-- ==================== UPLOAD DRAWING / NEW REVISION MODAL ==================== -->
+<dialog id="drawingModal" class="bg-zinc-900 border border-zinc-700 rounded-3xl p-0 w-full max-w-4xl">
+    <div class="p-6">
+        <div class="flex items-center justify-between mb-6">
+            <h2 class="text-xl font-semibold" id="drawingModalTitle">Upload New Drawing / Revision</h2>
+            <button onclick="closeDrawingModal()" class="text-zinc-400 hover:text-white text-2xl leading-none">×</button>
+        </div>
+
+        <form id="drawingForm" onsubmit="saveDrawing(event)">
+            <input type="hidden" id="drawingId">
+
+            <!-- Upload Type -->
+            <div class="mb-5">
+                <label class="block text-sm text-zinc-400 mb-2">Upload Type</label>
+                <div class="flex gap-4">
+                    <label class="flex items-center gap-2 cursor-pointer">
+                        <input type="radio" name="upload_type" value="new" checked class="accent-emerald-600">
+                        <span>New Drawing</span>
+                    </label>
+                    <label class="flex items-center gap-2 cursor-pointer">
+                        <input type="radio" name="upload_type" value="revision" class="accent-emerald-600">
+                        <span>New Revision of Existing Drawing</span>
+                    </label>
+                </div>
+            </div>
+
+            <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
+                <div>
+                    <label class="block text-sm text-zinc-400 mb-1.5">Drawing # <span class="text-red-400">*</span></label>
+                    <input type="text" id="drawingNumber" class="w-full bg-zinc-800 border border-zinc-700 rounded-2xl px-4 py-2.5 text-sm font-mono" required>
+                </div>
+                <div>
+                    <label class="block text-sm text-zinc-400 mb-1.5">Revision</label>
+                    <input type="text" id="drawingRevision" value="0" class="w-full bg-zinc-800 border border-zinc-700 rounded-2xl px-4 py-2.5 text-sm font-mono">
+                </div>
+                <div>
+                    <label class="block text-sm text-zinc-400 mb-1.5">Discipline</label>
+                    <select id="drawingDiscipline" class="w-full bg-zinc-800 border border-zinc-700 rounded-2xl px-4 py-2.5 text-sm">
+                        <option value="Architectural">Architectural</option>
+                        <option value="Structural">Structural</option>
+                        <option value="Civil">Civil / Site</option>
+                        <option value="Mechanical">Mechanical</option>
+                        <option value="Electrical">Electrical</option>
+                        <option value="Plumbing">Plumbing</option>
+                        <option value="Fire Protection">Fire Protection</option>
+                    </select>
+                </div>
+            </div>
+
+            <div class="mb-4">
+                <label class="block text-sm text-zinc-400 mb-1.5">Drawing Title <span class="text-red-400">*</span></label>
+                <input type="text" id="drawingTitle" class="w-full bg-zinc-800 border border-zinc-700 rounded-2xl px-4 py-2.5 text-sm" required>
+            </div>
+
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+                <div>
+                    <label class="block text-sm text-zinc-400 mb-1.5">Revision Date</label>
+                    <input type="date" id="drawingDate" class="w-full bg-zinc-800 border border-zinc-700 rounded-2xl px-4 py-2.5 text-sm">
+                </div>
+                <div>
+                    <label class="block text-sm text-zinc-400 mb-1.5">Status</label>
+                    <select id="drawingStatus" class="w-full bg-zinc-800 border border-zinc-700 rounded-2xl px-4 py-2.5 text-sm">
+                        <option value="Current">Current</option>
+                        <option value="Issued for Construction">Issued for Construction</option>
+                        <option value="Issued for Permit">Issued for Permit</option>
+                        <option value="Superseded">Superseded</option>
+                    </select>
+                </div>
+            </div>
+
+            <div class="mb-4">
+                <label class="block text-sm text-zinc-400 mb-1.5">Description / Notes</label>
+                <textarea id="drawingNotes" rows="3" class="w-full bg-zinc-800 border border-zinc-700 rounded-2xl px-4 py-3 text-sm" placeholder="Describe what changed in this revision..."></textarea>
+            </div>
+
+            <!-- File Upload -->
+            <div class="mb-6">
+                <label class="block text-sm text-zinc-400 mb-2">Drawing File</label>
+                <div class="border-2 border-dashed border-zinc-700 rounded-2xl p-8 text-center">
+                    <i class="fa-solid fa-file-pdf text-4xl text-zinc-500 mb-3"></i>
+                    <p class="text-sm text-zinc-400">Upload PDF, DWG, or image file</p>
+                    <label class="inline-block mt-3 px-6 py-2.5 bg-zinc-800 hover:bg-zinc-700 rounded-2xl text-sm cursor-pointer">
+                        Select File
+                        <input type="file" id="drawingFile" accept=".pdf,.dwg,.jpg,.png" class="hidden">
+                    </label>
+                    <p class="text-xs text-zinc-500 mt-2">PDF or DWG recommended (Max 150MB)</p>
+                </div>
+                <div id="selectedDrawingFile" class="mt-2 text-sm text-emerald-400 hidden"></div>
+            </div>
+
+            <div class="flex gap-3 mt-8">
+                <button type="button" onclick="closeDrawingModal()" 
+                        class="flex-1 bg-zinc-800 hover:bg-zinc-700 rounded-2xl py-3 text-sm font-medium transition-colors">
+                    Cancel
+                </button>
+                <button type="submit" 
+                        class="flex-1 bg-emerald-600 hover:bg-emerald-500 rounded-2xl py-3 text-sm font-medium transition-colors">
+                    Upload Drawing / Revision
+                </button>
+            </div>
+        </form>
+    </div>
+</dialog>
+
+<!-- ==================== JAVASCRIPT ==================== -->
+<script>
+    // ==================== FILTERING ====================
+    function filterDrawings() {
+        const search = document.getElementById('drawingSearch').value.toLowerCase();
+        const discipline = document.getElementById('drawingDisciplineFilter').value;
+        const status = document.getElementById('drawingStatusFilter').value;
+
+        const rows = document.querySelectorAll('table tbody tr');
+
+        rows.forEach(row => {
+            const text = row.textContent.toLowerCase();
+            const rowDiscipline = row.cells[2] ? row.cells[2].textContent : '';
+            const rowStatus = row.cells[5] ? row.cells[5].textContent : '';
+
+            let show = true;
+
+            if (search && !text.includes(search)) show = false;
+            if (discipline && !rowDiscipline.includes(discipline)) show = false;
+            if (status && !rowStatus.includes(status)) show = false;
+
+            row.style.display = show ? '' : 'none';
+        });
+    }
+
+    // ==================== MODAL FUNCTIONS ====================
+    function showUploadDrawingModal() {
+        const modal = document.getElementById('drawingModal');
+        const form = document.getElementById('drawingForm');
+
+        form.reset();
+        document.getElementById('drawingId').value = '';
+        document.getElementById('drawingModalTitle').innerText = 'Upload New Drawing / Revision';
+
+        // Auto-generate next drawing number (example)
+        const nextNumber = 'A-' + String(145).padStart(3, '0');
+        document.getElementById('drawingNumber').value = nextNumber;
+        document.getElementById('drawingRevision').value = '0';
+
+        modal.showModal();
+    }
+
+    function closeDrawingModal() {
+        document.getElementById('drawingModal').close();
+    }
+
+    function editDrawing(id) {
+        const modal = document.getElementById('drawingModal');
+        document.getElementById('drawingModalTitle').innerText = 'Edit Drawing';
+        document.getElementById('drawingId').value = id;
+
+        // In real version: fetch data from backend
+        document.getElementById('drawingNumber').value = 'A-102';
+        document.getElementById('drawingRevision').value = '4';
+        document.getElementById('drawingTitle').value = 'Floor Plan - Level 2';
+        document.getElementById('drawingDiscipline').value = 'Architectural';
+        document.getElementById('drawingStatus').value = 'Current';
+
+        modal.showModal();
+    }
+
+    function saveDrawing(e) {
+        e.preventDefault();
+
+        const id = document.getElementById('drawingId').value;
+        const isEdit = id !== '';
+
+        const data = {
+            number: document.getElementById('drawingNumber').value,
+            revision: document.getElementById('drawingRevision').value,
+            title: document.getElementById('drawingTitle').value,
+            discipline: document.getElementById('drawingDiscipline').value,
+            status: document.getElementById('drawingStatus').value
+        };
+
+        console.log(isEdit ? 'Updating Drawing:' : 'Uploading Drawing:', data);
+
+        closeDrawingModal();
+
+        if (isEdit) {
+            showToast('Drawing metadata updated successfully');
+        } else {
+            showToast('Drawing / Revision uploaded successfully');
+        }
+
+        setTimeout(() => {
+            location.reload();
+        }, 900);
+    }
+
+    // ==================== ACTION FUNCTIONS ====================
+    function viewDrawing(id) {
+        alert(`Opening Drawing #${id}\n(The drawing viewer with markup tools will open here)`);
+    }
+
+    function uploadNewRevision(id) {
+        const modal = document.getElementById('drawingModal');
+        document.getElementById('drawingModalTitle').innerText = 'Upload New Revision';
+        document.getElementById('drawingId').value = id;
+
+        // Pre-fill some fields based on existing drawing (simulated)
+        document.getElementById('drawingNumber').value = 'A-102';
+        document.getElementById('drawingRevision').value = '5'; // Auto-increment in real version
+
+        modal.showModal();
+    }
+
+    function linkDrawingToRFI(id) {
+        alert(`Linking Drawing #${id} to an RFI.\n(RFI selector modal would open here)`);
+    }
+
+    // ==================== FILE SELECTION PREVIEW ====================
+    document.addEventListener('DOMContentLoaded', function() {
+        const fileInput = document.getElementById('drawingFile');
+        const fileNameDiv = document.getElementById('selectedDrawingFile');
+
+        if (fileInput && fileNameDiv) {
+            fileInput.addEventListener('change', function() {
+                if (fileInput.files.length > 0) {
+                    fileNameDiv.textContent = 'Selected: ' + fileInput.files[0].name;
+                    fileNameDiv.classList.remove('hidden');
+                }
+            });
+        }
+    });
+
+    // ==================== INITIALIZATION ====================
+    function initializeDrawingsPage() {
+        console.log('%c[Case PM] Drawings page initialized with full features.', 'color:#10b981');
+    }
+
+    window.addEventListener('load', initializeDrawingsPage);
+</script>
+
+{% endblock %}
+
+<!-- ==================== REVISION HISTORY MODAL ==================== -->
+<dialog id="revisionHistoryModal" class="bg-zinc-900 border border-zinc-700 rounded-3xl p-0 w-full max-w-3xl">
+    <div class="p-6">
+        <div class="flex items-center justify-between mb-6">
+            <h2 class="text-xl font-semibold">Revision History</h2>
+            <button onclick="closeRevisionHistoryModal()" class="text-zinc-400 hover:text-white text-2xl leading-none">×</button>
+        </div>
+
+        <div id="revisionHistoryContent" class="max-h-[400px] overflow-y-auto space-y-4 pr-2">
+            <!-- Populated dynamically via JavaScript -->
+        </div>
+
+        <div class="flex justify-end mt-6">
+            <button onclick="closeRevisionHistoryModal()" 
+                    class="px-6 py-2.5 bg-zinc-800 hover:bg-zinc-700 rounded-2xl text-sm font-medium transition-colors">
+                Close
+            </button>
+        </div>
+    </div>
+</dialog>
+
+<!-- ==================== DRAWING VIEWER PLACEHOLDER (Future) ==================== -->
+<!-- 
+    In a future version, clicking "View Drawing" will open a full drawing viewer here with:
+    - PDF/DWG rendering
+    - Markup / annotation tools (freehand, text, arrows, clouds)
+    - Ability to link markups directly to RFIs or Submittals
+    - Hide/Show markup layers
+    - Print with or without markups
+    - Auto page detection groundwork (for organizing large drawing sets)
+-->
+
+<script>
+    // ==================== REVISION HISTORY ====================
+    function viewRevisionHistory(drawingId) {
+        const modal = document.getElementById('revisionHistoryModal');
+        const content = document.getElementById('revisionHistoryContent');
+
+        // In a real app, this data would come from the backend
+        content.innerHTML = `
+            <div class="bg-zinc-950 border border-zinc-700 rounded-2xl p-4">
+                <div class="flex justify-between items-center mb-2">
+                    <div>
+                        <span class="font-mono text-emerald-400">Rev 4</span>
+                        <span class="text-sm text-zinc-400 ml-2">• June 24, 2026</span>
+                    </div>
+                    <span class="text-xs px-2 py-0.5 rounded-full bg-emerald-500/10 text-emerald-400">Current</span>
+                </div>
+                <div class="text-sm text-zinc-300">Updated column locations at Grid B. Added new detail 5/A-501.</div>
+                <div class="text-xs text-zinc-500 mt-1">Uploaded by: Mike Bretz</div>
+            </div>
+
+            <div class="bg-zinc-950 border border-zinc-700 rounded-2xl p-4">
+                <div class="flex justify-between items-center mb-2">
+                    <div>
+                        <span class="font-mono text-emerald-400">Rev 3</span>
+                        <span class="text-sm text-zinc-400 ml-2">• June 10, 2026</span>
+                    </div>
+                </div>
+                <div class="text-sm text-zinc-300">Revised electrical room layout per RFI-027 response.</div>
+            </div>
+        `;
+
+        modal.showModal();
+    }
+
+    function closeRevisionHistoryModal() {
+        document.getElementById('revisionHistoryModal').close();
+    }
+
+    // ==================== FUTURE FEATURE NOTES (Groundwork) ====================
+    /*
+        Future Enhancements Planned:
+        - Auto page detection when uploading multi-page PDFs
+        - Text extraction from drawings for searchability
+        - Smart revision comparison (highlight what changed between revisions)
+        - Direct markup linking to RFIs / Submittals / Punch Items
+        - Batch download of current revisions only
+    */
+</script>
+
+<!-- ==================== FINAL JAVASCRIPT ==================== -->
+<script>
+    // ==================== FILE SELECTION PREVIEW ====================
+    document.addEventListener('DOMContentLoaded', function() {
+        const fileInput = document.getElementById('drawingFile');
+        const fileNameDiv = document.getElementById('selectedDrawingFile');
+
+        if (fileInput && fileNameDiv) {
+            fileInput.addEventListener('change', function() {
+                if (fileInput.files.length > 0) {
+                    fileNameDiv.textContent = 'Selected: ' + fileInput.files[0].name;
+                    fileNameDiv.classList.remove('hidden');
+                }
+            });
+        }
+    });
+
+    // ==================== KEYBOARD SHORTCUTS ====================
+    document.addEventListener('keydown', function(e) {
+        if (e.key === "/" && document.activeElement.tagName === "BODY") {
+            e.preventDefault();
+            const search = document.getElementById('drawingSearch');
+            if (search) search.focus();
+        }
+    });
+
+    // ==================== FINAL INITIALIZATION ====================
+    function initializeDrawingsPage() {
+        console.log('%c[Case PM] drawings.html fully loaded with maximum features.', 'color:#10b981');
+    }
+
+    window.addEventListener('load', initializeDrawingsPage);
+</script>
+
+{% endblock %}

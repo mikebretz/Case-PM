@@ -1,0 +1,113 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Login • Case PM</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+    <style>
+        body {
+            font-family: 'Inter', system_ui, sans-serif;
+        }
+    </style>
+</head>
+<body class="bg-zinc-950 flex items-center justify-center min-h-screen">
+
+    <div class="w-full max-w-md mx-auto px-6">
+        
+        <!-- Logo -->
+        <div class="flex justify-center mb-8">
+            <div class="flex items-center gap-3">
+                <div class="w-11 h-11 bg-emerald-600 rounded-2xl flex items-center justify-center">
+                    <i class="fa-solid fa-hard-hat text-white text-3xl"></i>
+                </div>
+                <div>
+                    <div class="text-3xl font-semibold tracking-tighter text-white">Case PM</div>
+                    <div class="text-[10px] text-zinc-500 -mt-1">CONSTRUCTION OS</div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Login Card -->
+        <div class="bg-zinc-900 border border-zinc-700 rounded-3xl p-8 shadow-2xl">
+            
+            <div class="text-center mb-8">
+                <h1 class="text-2xl font-semibold text-white">Welcome Back</h1>
+                <p class="text-zinc-400 mt-1 text-sm">Sign in to your account</p>
+            </div>
+
+            <!-- Flash Messages -->
+            {% with messages = get_flashed_messages(with_categories=true) %}
+                {% if messages %}
+                    {% for category, message in messages %}
+                        <div class="mb-4 px-4 py-3 rounded-2xl text-sm flex items-center gap-3
+                            {% if category == 'error' %}bg-red-600 text-white
+                            {% elif category == 'success' %}bg-emerald-600 text-white
+                            {% elif category == 'warning' %}bg-yellow-600 text-white
+                            {% else %}bg-zinc-700 text-white{% endif %}">
+                            
+                            {% if category == 'error' %}
+                                <i class="fa-solid fa-exclamation-circle"></i>
+                            {% elif category == 'success' %}
+                                <i class="fa-solid fa-check-circle"></i>
+                            {% elif category == 'warning' %}
+                                <i class="fa-solid fa-exclamation-triangle"></i>
+                            {% else %}
+                                <i class="fa-solid fa-info-circle"></i>
+                            {% endif %}
+                            
+                            <span>{{ message }}</span>
+                        </div>
+                    {% endfor %}
+                {% endif %}
+            {% endwith %}
+
+            <!-- Login Form -->
+            <form method="POST" action="{{ url_for('login') }}">
+                
+                <div class="mb-5">
+                    <label class="block text-sm text-zinc-400 mb-1.5">Email Address</label>
+                    <input type="email" name="email" required
+                           class="w-full bg-zinc-800 border border-zinc-700 rounded-2xl px-4 py-3 text-sm focus:outline-none focus:border-emerald-600"
+                           placeholder="you@company.com">
+                </div>
+
+                <div class="mb-5">
+                    <label class="block text-sm text-zinc-400 mb-1.5">Password</label>
+                    <input type="password" name="password" required
+                           class="w-full bg-zinc-800 border border-zinc-700 rounded-2xl px-4 py-3 text-sm focus:outline-none focus:border-emerald-600"
+                           placeholder="Enter your password">
+                </div>
+
+                <div class="flex items-center justify-between mb-6">
+                    <label class="flex items-center gap-2 text-sm text-zinc-400 cursor-pointer">
+                        <input type="checkbox" name="remember" class="accent-emerald-600">
+                        <span>Remember me</span>
+                    </label>
+                    
+                    <a href="#" class="text-sm text-emerald-400 hover:text-emerald-300">Forgot password?</a>
+                </div>
+
+                <button type="submit"
+                        class="w-full bg-emerald-600 hover:bg-emerald-500 transition-colors text-white font-medium py-3 rounded-2xl text-sm">
+                    Sign In
+                </button>
+            </form>
+
+            <div class="mt-6 text-center">
+                <p class="text-xs text-zinc-500">
+                    Default login: <span class="text-emerald-400">admin@casepm.local</span> / <span class="text-emerald-400">admin123</span>
+                </p>
+            </div>
+
+        </div>
+
+        <p class="text-center text-xs text-zinc-500 mt-6">
+            © 2026 Case PM • Construction Project Management
+        </p>
+
+    </div>
+
+</body>
+</html>

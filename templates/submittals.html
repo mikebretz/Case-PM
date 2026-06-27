@@ -1,0 +1,499 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="p-8 max-w-[1600px] mx-auto">
+
+    <!-- Header -->
+    <div class="flex items-center justify-between mb-8">
+        <div>
+            <h1 class="text-3xl font-semibold tracking-tight">Submittals</h1>
+            <p class="text-zinc-400 mt-1">ALDI Lakeland • Submittal Log & Approval Tracking</p>
+        </div>
+        <button onclick="showCreateSubmittalModal()"
+                class="flex items-center gap-2 bg-emerald-600 hover:bg-emerald-500 transition-colors px-5 py-2.5 rounded-2xl text-sm font-medium">
+            <i class="fa-solid fa-plus"></i>
+            <span>New Submittal</span>
+        </button>
+    </div>
+
+    <!-- KPI Summary Cards -->
+    <div class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-4 mb-8">
+        <div class="bg-zinc-900 border border-zinc-800 rounded-3xl p-5">
+            <div class="text-zinc-400 text-sm">Total Submittals</div>
+            <div class="text-3xl font-semibold mt-1">189</div>
+        </div>
+        <div class="bg-zinc-900 border border-zinc-800 rounded-3xl p-5">
+            <div class="text-zinc-400 text-sm">Open / Pending</div>
+            <div class="text-3xl font-semibold mt-1 text-yellow-400">47</div>
+        </div>
+        <div class="bg-zinc-900 border border-zinc-800 rounded-3xl p-5">
+            <div class="text-zinc-400 text-sm">Approved</div>
+            <div class="text-3xl font-semibold mt-1 text-emerald-400">112</div>
+        </div>
+        <div class="bg-zinc-900 border border-zinc-800 rounded-3xl p-5">
+            <div class="text-zinc-400 text-sm">Revise & Resubmit</div>
+            <div class="text-3xl font-semibold mt-1 text-orange-400">21</div>
+        </div>
+        <div class="bg-zinc-900 border border-zinc-800 rounded-3xl p-5">
+            <div class="text-zinc-400 text-sm">Overdue</div>
+            <div class="text-3xl font-semibold mt-1 text-red-500">9</div>
+        </div>
+    </div>
+
+    <!-- Filters -->
+    <div class="flex flex-col md:flex-row gap-3 mb-6">
+        <div class="flex-1">
+            <input type="text" id="submittalSearch" onkeyup="filterSubmittals()"
+                   placeholder="Search submittals by description, number, or spec section..." 
+                   class="w-full bg-zinc-900 border border-zinc-700 rounded-2xl px-4 py-2.5 text-sm focus:outline-none focus:border-emerald-600">
+        </div>
+        
+        <select id="submittalStatusFilter" onchange="filterSubmittals()"
+                class="bg-zinc-900 border border-zinc-700 rounded-2xl px-4 py-2.5 text-sm">
+            <option value="">All Statuses</option>
+            <option value="Pending">Pending</option>
+            <option value="Under Review">Under Review</option>
+            <option value="Approved">Approved</option>
+            <option value="Revise & Resubmit">Revise & Resubmit</option>
+            <option value="Rejected">Rejected</option>
+        </select>
+
+        <select id="submittalSpecFilter" onchange="filterSubmittals()"
+                class="bg-zinc-900 border border-zinc-700 rounded-2xl px-4 py-2.5 text-sm">
+            <option value="">All Spec Sections</option>
+            <option value="03">03 - Concrete</option>
+            <option value="05">05 - Metals</option>
+            <option value="06">06 - Wood & Plastics</option>
+            <option value="08">08 - Openings</option>
+            <option value="09">09 - Finishes</option>
+            <option value="26">26 - Electrical</option>
+            <option value="23">23 - HVAC</option>
+        </select>
+
+        <button onclick="exportSubmittals()"
+                class="flex items-center gap-2 px-4 py-2.5 bg-zinc-800 hover:bg-zinc-700 rounded-2xl text-sm transition-colors">
+            <i class="fa-solid fa-download"></i>
+            <span>Export</span>
+        </button>
+    </div>
+
+    <!-- Submittals Table -->
+    <div class="bg-zinc-900 border border-zinc-800 rounded-3xl overflow-hidden">
+        <table class="w-full">
+            <thead class="bg-zinc-950 border-b border-zinc-800">
+                <tr>
+                    <th class="text-left px-6 py-4 text-sm font-medium text-zinc-400 w-24">Submittal #</th>
+                    <th class="text-left px-6 py-4 text-sm font-medium text-zinc-400">Description</th>
+                    <th class="text-left px-6 py-4 text-sm font-medium text-zinc-400 w-28">Spec Section</th>
+                    <th class="text-left px-6 py-4 text-sm font-medium text-zinc-400 w-36">Submitted By</th>
+                    <th class="text-center px-6 py-4 text-sm font-medium text-zinc-400 w-24">Date</th>
+                    <th class="text-center px-6 py-4 text-sm font-medium text-zinc-400 w-28">Due Date</th>
+                    <th class="text-center px-6 py-4 text-sm font-medium text-zinc-400 w-32">Status</th>
+                    <th class="text-center px-6 py-4 text-sm font-medium text-zinc-400 w-28">Actions</th>
+                </tr>
+            </thead>
+            <tbody class="divide-y divide-zinc-800 text-sm">
+
+                {% for submittal in submittals %}
+                <tr class="border-b border-zinc-800 hover:bg-zinc-800/60 transition-colors">
+                    <td class="px-6 py-4 font-mono text-emerald-400">{{ submittal.number }}</td>
+                    <td class="px-6 py-4">
+                        <div class="font-medium">{{ submittal.description }}</div>
+                        {% if submittal.spec_section %}
+                        <div class="text-xs text-zinc-500 mt-0.5">Spec {{ submittal.spec_section }}</div>
+                        {% endif %}
+                    </td>
+                    <td class="px-6 py-4 text-zinc-300">{{ submittal.spec_section }}</td>
+                    <td class="px-6 py-4 text-zinc-300">{{ submittal.submitted_by }}</td>
+                    <td class="px-6 py-4 text-center text-sm">{{ submittal.date.strftime('%m/%d/%Y') if submittal.date else '—' }}</td>
+                    
+                    <!-- Due Date with overdue highlighting -->
+                    <td class="px-6 py-4 text-center text-sm {% if submittal.due_date and submittal.due_date < current_date and submittal.status not in ['Approved', 'Rejected'] %}text-red-400 font-medium{% endif %}">
+                        {{ submittal.due_date.strftime('%m/%d/%Y') if submittal.due_date else '—' }}
+                    </td>
+
+                    <!-- Status -->
+                    <td class="px-6 py-4 text-center">
+                        <select onchange="updateSubmittalStatus({{ submittal.id }}, this.value)"
+                                class="bg-zinc-800 border border-zinc-700 rounded-xl px-3 py-1 text-xs">
+                            <option value="Pending" {% if submittal.status == 'Pending' %}selected{% endif %}>Pending</option>
+                            <option value="Under Review" {% if submittal.status == 'Under Review' %}selected{% endif %}>Under Review</option>
+                            <option value="Approved" {% if submittal.status == 'Approved' %}selected{% endif %}>Approved</option>
+                            <option value="Revise & Resubmit" {% if submittal.status == 'Revise & Resubmit' %}selected{% endif %}>Revise & Resubmit</option>
+                            <option value="Rejected" {% if submittal.status == 'Rejected' %}selected{% endif %}>Rejected</option>
+                        </select>
+                    </td>
+
+                    <td class="px-6 py-4 text-center">
+                        <div class="flex items-center justify-center gap-1">
+                            <button onclick="viewSubmittal({{ submittal.id }})" 
+                                    class="p-2 text-emerald-400 hover:text-emerald-300 hover:bg-zinc-800 rounded-xl transition-colors" title="View Submittal">
+                                <i class="fa-solid fa-eye"></i>
+                            </button>
+                            
+                            <button onclick="editSubmittal({{ submittal.id }})" 
+                                    class="p-2 text-emerald-400 hover:text-emerald-300 hover:bg-zinc-800 rounded-xl transition-colors" title="Edit">
+                                <i class="fa-solid fa-edit"></i>
+                            </button>
+
+                            <button onclick="reviewSubmittal({{ submittal.id }})" 
+                                    class="p-2 text-emerald-400 hover:text-emerald-300 hover:bg-zinc-800 rounded-xl transition-colors" title="Review / Respond">
+                                <i class="fa-solid fa-reply"></i>
+                            </button>
+
+                            <button onclick="linkSubmittalToDrawing({{ submittal.id }})" 
+                                    class="p-2 text-emerald-400 hover:text-emerald-300 hover:bg-zinc-800 rounded-xl transition-colors" title="Link to Drawing / Spec">
+                                <i class="fa-solid fa-link"></i>
+                            </button>
+                        </div>
+                    </td>
+                </tr>
+                {% else %}
+                <tr>
+                    <td colspan="8" class="px-6 py-12 text-center text-zinc-400">
+                        No submittals found. Create your first one!
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+
+</div>
+
+<!-- ==================== CREATE / EDIT SUBMITTAL MODAL ==================== -->
+<dialog id="submittalModal" class="bg-zinc-900 border border-zinc-700 rounded-3xl p-0 w-full max-w-4xl">
+    <div class="p-6">
+        <div class="flex items-center justify-between mb-6">
+            <h2 id="submittalModalTitle" class="text-xl font-semibold">New Submittal</h2>
+            <button onclick="closeSubmittalModal()" class="text-zinc-400 hover:text-white">
+                <i class="fa-solid fa-times text-xl"></i>
+            </button>
+        </div>
+
+        <form id="submittalForm" method="POST" action="{{ url_for('create_submittal') }}">
+            <input type="hidden" id="submittalId" name="submittal_id">
+
+            <div class="grid grid-cols-1 md:grid-cols-4 gap-4 mb-4">
+                <!-- Submittal Number -->
+                <div class="md:col-span-1">
+                    <label class="block text-sm text-zinc-400 mb-1.5">Submittal #</label>
+                    <input type="text" id="submittalNumber" name="number" 
+                           class="w-full bg-zinc-800 border border-zinc-700 rounded-2xl px-4 py-2.5 text-sm font-mono" readonly>
+                </div>
+
+                <!-- Spec Section -->
+                <div>
+                    <label class="block text-sm text-zinc-400 mb-1.5">Spec Section <span class="text-red-400">*</span></label>
+                    <input type="text" id="submittalSpecSection" name="spec_section" 
+                           class="w-full bg-zinc-800 border border-zinc-700 rounded-2xl px-4 py-2.5 text-sm" required
+                           placeholder="e.g. 26 05 19">
+                </div>
+
+                <!-- Status -->
+                <div>
+                    <label class="block text-sm text-zinc-400 mb-1.5">Status</label>
+                    <select id="submittalStatus" name="status" class="w-full bg-zinc-800 border border-zinc-700 rounded-2xl px-4 py-2.5 text-sm">
+                        <option value="Pending">Pending</option>
+                        <option value="Under Review">Under Review</option>
+                        <option value="Approved">Approved</option>
+                        <option value="Revise & Resubmit">Revise & Resubmit</option>
+                        <option value="Rejected">Rejected</option>
+                    </select>
+                </div>
+
+                <!-- Priority -->
+                <div>
+                    <label class="block text-sm text-zinc-400 mb-1.5">Priority</label>
+                    <select id="submittalPriority" name="priority" class="w-full bg-zinc-800 border border-zinc-700 rounded-2xl px-4 py-2.5 text-sm">
+                        <option value="High">High</option>
+                        <option value="Medium" selected>Medium</option>
+                        <option value="Low">Low</option>
+                    </select>
+                </div>
+            </div>
+
+            <!-- Description -->
+            <div class="mb-4">
+                <label class="block text-sm text-zinc-400 mb-1.5">Description <span class="text-red-400">*</span></label>
+                <input type="text" id="submittalDescription" name="description" 
+                       class="w-full bg-zinc-800 border border-zinc-700 rounded-2xl px-4 py-2.5 text-sm" required
+                       placeholder="e.g. LED High Bay Lighting Fixtures - Sales Floor">
+            </div>
+
+            <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
+                <!-- Submitted By -->
+                <div>
+                    <label class="block text-sm text-zinc-400 mb-1.5">Submitted By</label>
+                    <input type="text" id="submittalSubmittedBy" name="submitted_by" 
+                           class="w-full bg-zinc-800 border border-zinc-700 rounded-2xl px-4 py-2.5 text-sm"
+                           value="Electrical Subcontractor">
+                </div>
+
+                <!-- Date Submitted -->
+                <div>
+                    <label class="block text-sm text-zinc-400 mb-1.5">Date Submitted</label>
+                    <input type="date" id="submittalDate" name="date" 
+                           class="w-full bg-zinc-800 border border-zinc-700 rounded-2xl px-4 py-2.5 text-sm">
+                </div>
+
+                <!-- Due Date -->
+                <div>
+                    <label class="block text-sm text-zinc-400 mb-1.5">Due Date</label>
+                    <input type="date" id="submittalDueDate" name="due_date" 
+                           class="w-full bg-zinc-800 border border-zinc-700 rounded-2xl px-4 py-2.5 text-sm">
+                </div>
+            </div>
+
+            <!-- Review Comments -->
+            <div class="mb-4">
+                <label class="block text-sm text-zinc-400 mb-1.5">Review Comments / Response</label>
+                <textarea id="submittalReviewComments" name="review_comments" rows="4" 
+                          class="w-full bg-zinc-800 border border-zinc-700 rounded-2xl px-4 py-3 text-sm resize-y"
+                          placeholder="Architect / Engineer comments or required revisions..."></textarea>
+            </div>
+
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+                <!-- Ball In Court -->
+                <div>
+                    <label class="block text-sm text-zinc-400 mb-1.5">Ball In Court</label>
+                    <select id="submittalBallInCourt" name="ball_in_court" class="w-full bg-zinc-800 border border-zinc-700 rounded-2xl px-4 py-2.5 text-sm">
+                        <option value="Contractor">Contractor</option>
+                        <option value="Architect">Architect</option>
+                        <option value="Engineer">Engineer</option>
+                        <option value="Owner">Owner</option>
+                    </select>
+                </div>
+
+                <!-- Linked Drawing / Spec -->
+                <div>
+                    <label class="block text-sm text-zinc-400 mb-1.5">Linked Drawing / Detail</label>
+                    <input type="text" id="submittalLinkedDrawing" name="linked_drawing" 
+                           class="w-full bg-zinc-800 border border-zinc-700 rounded-2xl px-4 py-2.5 text-sm"
+                           placeholder="e.g. E-201, Detail 4">
+                </div>
+            </div>
+
+            <!-- Attachments -->
+            <div class="mb-6">
+                <label class="block text-sm text-zinc-400 mb-1.5">Attachments (Shop Drawings, Cut Sheets, etc.)</label>
+                <div class="border border-dashed border-zinc-700 rounded-2xl p-6 text-center hover:border-emerald-600 transition-colors cursor-pointer"
+                     onclick="document.getElementById('submittalAttachmentUpload').click()">
+                    <i class="fa-solid fa-paperclip text-2xl text-zinc-500 mb-2"></i>
+                    <p class="text-sm text-zinc-400">Click to upload files or drag & drop here</p>
+                    <input type="file" id="submittalAttachmentUpload" name="attachments" multiple class="hidden">
+                </div>
+                <div id="submittalAttachmentPreview" class="mt-3 flex flex-wrap gap-2 text-sm"></div>
+            </div>
+
+            <div class="flex gap-3 mt-8">
+                <button type="button" onclick="closeSubmittalModal()"
+                        class="flex-1 bg-zinc-800 hover:bg-zinc-700 rounded-2xl py-3 text-sm font-medium transition-colors">
+                    Cancel
+                </button>
+                <button type="submit"
+                        class="flex-1 bg-emerald-600 hover:bg-emerald-500 rounded-2xl py-3 text-sm font-medium transition-colors">
+                    Save Submittal
+                </button>
+            </div>
+        </form>
+    </div>
+</dialog>
+
+<!-- ==================== JAVASCRIPT ==================== -->
+<script>
+    // ==================== FILTERING ====================
+    function filterSubmittals() {
+        const search = document.getElementById('submittalSearch').value.toLowerCase();
+        const statusFilter = document.getElementById('submittalStatusFilter').value;
+        const specFilter = document.getElementById('submittalSpecFilter').value;
+
+        document.querySelectorAll('tbody tr').forEach(row => {
+            const text = row.textContent.toLowerCase();
+            const statusSelect = row.querySelector('select');
+            const rowStatus = statusSelect ? statusSelect.value : '';
+            const rowSpec = row.textContent;
+
+            let show = true;
+
+            if (search && !text.includes(search)) show = false;
+            if (statusFilter && rowStatus !== statusFilter) show = false;
+            if (specFilter && !rowSpec.includes(specFilter)) show = false;
+
+            row.style.display = show ? '' : 'none';
+        });
+    }
+
+    // ==================== MODAL FUNCTIONS ====================
+    function showCreateSubmittalModal() {
+        const modal = document.getElementById('submittalModal');
+        const form = document.getElementById('submittalForm');
+
+        form.reset();
+        document.getElementById('submittalId').value = '';
+        document.getElementById('submittalModalTitle').textContent = 'New Submittal';
+        document.getElementById('submittalAttachmentPreview').innerHTML = '';
+
+        // Auto-generate next submittal number
+        const nextNumber = 'SUB-' + String({{ (submittals|length + 1) }}).padStart(3, '0');
+        document.getElementById('submittalNumber').value = nextNumber;
+
+        // Set today's date
+        const today = new Date().toISOString().split('T')[0];
+        document.getElementById('submittalDate').value = today;
+
+        modal.showModal();
+    }
+
+    function closeSubmittalModal() {
+        document.getElementById('submittalModal').close();
+    }
+
+    // ==================== ACTION FUNCTIONS ====================
+    function updateSubmittalStatus(id, newStatus) {
+        console.log(`Updating Submittal #${id} to status: ${newStatus}`);
+        showToast(`Submittal status updated to ${newStatus}`);
+
+        // Optional: If status changes to Approved or Rejected, you could trigger additional logic here
+        if (newStatus === 'Approved' || newStatus === 'Rejected') {
+            // Future enhancement: auto-close or notify
+        }
+    }
+
+    function viewSubmittal(id) {
+        alert(`Viewing full details for Submittal #${id}\n(Detail view with attachments and revision history coming soon)`);
+    }
+
+    function editSubmittal(id) {
+        const modal = document.getElementById('submittalModal');
+        document.getElementById('submittalModalTitle').textContent = `Edit Submittal #${id}`;
+        document.getElementById('submittalId').value = id;
+
+        // TODO: In production, fetch existing data via API and populate the form
+        modal.showModal();
+    }
+
+    function reviewSubmittal(id) {
+        const response = prompt("Enter your review response or comments for this submittal:");
+        if (response && response.trim() !== "") {
+            console.log(`Review added to Submittal #${id}: ${response}`);
+            showToast("Review response recorded successfully");
+            // TODO: Send to backend and possibly update status
+        }
+    }
+
+    function linkSubmittalToDrawing(id) {
+        alert(`Link Submittal #${id} to a drawing, detail, or specification section.\n(Drawing/Spec linking modal coming in a future update)`);
+    }
+
+    // ==================== ATTACHMENT PREVIEW ====================
+    document.getElementById('submittalAttachmentUpload').addEventListener('change', function() {
+        const preview = document.getElementById('submittalAttachmentPreview');
+        preview.innerHTML = '';
+
+        Array.from(this.files).forEach(file => {
+            const div = document.createElement('div');
+            div.className = 'flex items-center gap-2 bg-zinc-800 px-3 py-1.5 rounded-xl text-sm';
+            div.innerHTML = `
+                <i class="fa-solid fa-file text-emerald-400"></i>
+                <span class="flex-1 truncate">${file.name}</span>
+                <button type="button" onclick="this.parentElement.remove()" 
+                        class="text-zinc-400 hover:text-red-400">×</button>
+            `;
+            preview.appendChild(div);
+        });
+    });
+
+    // ==================== TOAST NOTIFICATION ====================
+    function showToast(message) {
+        const toast = document.createElement('div');
+        toast.className = `fixed bottom-6 right-6 bg-zinc-800 border border-zinc-700 text-white px-5 py-3 rounded-2xl shadow-xl flex items-center gap-3 z-[9999]`;
+        toast.innerHTML = `
+            <i class="fa-solid fa-check-circle text-emerald-400"></i>
+            <span>${message}</span>
+        `;
+        document.body.appendChild(toast);
+
+        setTimeout(() => {
+            toast.style.transition = 'all 0.3s ease';
+            toast.style.opacity = '0';
+            setTimeout(() => toast.remove(), 300);
+        }, 2800);
+    }
+
+    // ==================== KEYBOARD SHORTCUTS ====================
+    document.addEventListener('keydown', function(e) {
+        if (e.key === "/" && document.activeElement.tagName === "BODY") {
+            e.preventDefault();
+            const search = document.getElementById('submittalSearch');
+            if (search) search.focus();
+        }
+
+        if (e.key.toLowerCase() === "n" && e.target.tagName === "BODY") {
+            e.preventDefault();
+            showCreateSubmittalModal();
+        }
+    });
+
+    // ==================== INITIALIZATION ====================
+    function initializeSubmittalsPage() {
+        console.log('%c[Case PM] Submittals page initialized with full features.', 'color:#10b981');
+    }
+
+    window.addEventListener('load', initializeSubmittalsPage);
+</script>
+
+<!-- ==================== FINAL ENHANCEMENTS ==================== -->
+<script>
+    // ==================== EXPORT SUBMITTALS TO CSV ====================
+    function exportSubmittals() {
+        const table = document.querySelector('table');
+        if (!table) return;
+
+        let csv = [];
+        const rows = table.querySelectorAll('tr');
+
+        rows.forEach(row => {
+            const cols = row.querySelectorAll('th, td');
+            let rowData = [];
+            cols.forEach(col => {
+                let text = col.innerText.trim().replace(/"/g, '""');
+                rowData.push(`"${text}"`);
+            });
+            csv.push(rowData.join(','));
+        });
+
+        const csvContent = csv.join('\n');
+        const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+        const link = document.createElement('a');
+        const url = URL.createObjectURL(blob);
+        
+        link.setAttribute('href', url);
+        link.setAttribute('download', `submittals_log_${new Date().toISOString().split('T')[0]}.csv`);
+        link.style.visibility = 'hidden';
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+
+        showToast('Submittals log exported successfully');
+    }
+
+    // ==================== BULK ACTIONS (Future Ready) ====================
+    function bulkUpdateSubmittalStatus() {
+        const selected = document.querySelectorAll('table tbody input[type="checkbox"]:checked');
+        if (selected.length === 0) {
+            alert("Please select submittals to update.");
+            return;
+        }
+        alert(`Bulk status update for ${selected.length} submittals will be available here.`);
+    }
+
+    // ==================== FINAL INITIALIZATION ====================
+    function finalSubmittalsInitialization() {
+        console.log('%c[Case PM] submittals.html fully loaded with maximum features.', 'color:#10b981');
+    }
+
+    window.addEventListener('load', finalSubmittalsInitialization);
+</script>
+
+{% endblock %}

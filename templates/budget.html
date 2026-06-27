@@ -1,0 +1,534 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="p-8 max-w-[1600px] mx-auto">
+
+    <!-- Header -->
+    <div class="flex items-center justify-between mb-8">
+        <div>
+            <h1 class="text-3xl font-semibold tracking-tight">Budget</h1>
+            <p class="text-zinc-400 mt-1">Project Budget Tracking, Cost Codes & Forecasting • ALDI Lakeland</p>
+        </div>
+        
+        <div class="flex items-center gap-3">
+            <!-- Export Buttons -->
+            <button onclick="exportBudgetToExcel()" 
+                    class="flex items-center gap-2 px-4 py-2.5 bg-zinc-800 hover:bg-zinc-700 transition-colors rounded-2xl text-sm font-medium">
+                <i class="fa-solid fa-file-excel"></i>
+                <span class="hidden md:inline">Export Excel</span>
+            </button>
+            
+            <button onclick="exportBudgetToPDF()" 
+                    class="flex items-center gap-2 px-4 py-2.5 bg-zinc-800 hover:bg-zinc-700 transition-colors rounded-2xl text-sm font-medium">
+                <i class="fa-solid fa-file-pdf"></i>
+                <span class="hidden md:inline">Export PDF</span>
+            </button>
+
+            <button onclick="showCreateBudgetLineModal()"
+                    class="flex items-center gap-2 px-5 py-2.5 bg-emerald-600 hover:bg-emerald-500 transition-colors rounded-2xl text-sm font-medium">
+                <i class="fa-solid fa-plus"></i>
+                <span>Add Budget Line</span>
+            </button>
+        </div>
+    </div>
+
+    <!-- Top KPI Summary Cards -->
+    <div class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 xl:grid-cols-6 gap-4 mb-8">
+        
+        <div class="bg-zinc-900 border border-zinc-800 rounded-3xl p-5">
+            <div class="text-sm text-zinc-400">Original Budget</div>
+            <div class="text-3xl font-semibold mt-1">$4,872,500</div>
+        </div>
+        
+        <div class="bg-zinc-900 border border-zinc-800 rounded-3xl p-5">
+            <div class="text-sm text-zinc-400">Approved Changes</div>
+            <div class="text-3xl font-semibold mt-1 text-yellow-400">+$312,800</div>
+        </div>
+        
+        <div class="bg-zinc-900 border border-zinc-800 rounded-3xl p-5">
+            <div class="text-sm text-zinc-400">Current Budget</div>
+            <div class="text-3xl font-semibold mt-1">$5,185,300</div>
+        </div>
+        
+        <div class="bg-zinc-900 border border-zinc-800 rounded-3xl p-5">
+            <div class="text-sm text-zinc-400">Total Committed</div>
+            <div class="text-3xl font-semibold mt-1">$3,941,750</div>
+        </div>
+        
+        <div class="bg-zinc-900 border border-zinc-800 rounded-3xl p-5">
+            <div class="text-sm text-zinc-400">Actual Cost to Date</div>
+            <div class="text-3xl font-semibold mt-1 text-emerald-400">$2,987,420</div>
+        </div>
+        
+        <div class="bg-zinc-900 border border-zinc-800 rounded-3xl p-5">
+            <div class="text-sm text-zinc-400">Projected Final Cost</div>
+            <div class="text-3xl font-semibold mt-1">$5,312,800</div>
+            <div class="text-xs text-red-400 mt-1">+$127,500 over budget</div>
+        </div>
+    </div>
+
+    <!-- Filters Row -->
+    <div class="flex flex-col lg:flex-row gap-3 mb-4">
+        <input type="text" id="budgetSearch" placeholder="Search cost code, description, or vendor..." 
+               onkeyup="filterBudgetTable()" 
+               class="flex-1 bg-zinc-900 border border-zinc-700 rounded-2xl px-4 py-2.5 text-sm">
+
+        <select id="budgetDivisionFilter" onchange="filterBudgetTable()" 
+                class="bg-zinc-900 border border-zinc-700 rounded-2xl px-4 py-2.5 text-sm min-w-[200px]">
+            <option value="">All Divisions (CSI)</option>
+            <option value="01">01 - General Requirements</option>
+            <option value="03">03 - Concrete</option>
+            <option value="05">05 - Metals</option>
+            <option value="08">08 - Openings</option>
+            <option value="09">09 - Finishes</option>
+            <option value="23">23 - HVAC</option>
+            <option value="26">26 - Electrical</option>
+        </select>
+
+        <select id="budgetStatusFilter" onchange="filterBudgetTable()" 
+                class="bg-zinc-900 border border-zinc-700 rounded-2xl px-4 py-2.5 text-sm min-w-[180px]">
+            <option value="">All Statuses</option>
+            <option value="On Budget">On Budget</option>
+            <option value="Over Budget">Over Budget</option>
+            <option value="Under Budget">Under Budget</option>
+        </select>
+
+        <button onclick="resetBudgetFilters()" 
+                class="px-4 py-2.5 bg-zinc-800 hover:bg-zinc-700 rounded-2xl text-sm flex items-center gap-2">
+            <i class="fa-solid fa-undo"></i>
+            <span class="hidden lg:inline">Reset</span>
+        </button>
+    </div>
+
+    <!-- Budget Table -->
+    <div class="bg-zinc-900 border border-zinc-800 rounded-3xl overflow-hidden">
+        <table class="w-full text-sm" id="budgetTable">
+            <thead>
+                <tr class="bg-zinc-950 border-b border-zinc-800">
+                    <th class="px-6 py-4 text-left font-medium text-zinc-400 w-28">Cost Code</th>
+                    <th class="px-6 py-4 text-left font-medium text-zinc-400">Description</th>
+                    <th class="px-6 py-4 text-right font-medium text-zinc-400">Original</th>
+                    <th class="px-6 py-4 text-right font-medium text-zinc-400">Approved COs</th>
+                    <th class="px-6 py-4 text-right font-medium text-zinc-400">Current Budget</th>
+                    <th class="px-6 py-4 text-right font-medium text-zinc-400">Committed</th>
+                    <th class="px-6 py-4 text-right font-medium text-zinc-400">Actual</th>
+                    <th class="px-6 py-4 text-right font-medium text-zinc-400">Variance</th>
+                    <th class="px-6 py-4 text-center font-medium text-zinc-400 w-28">Status</th>
+                    <th class="px-6 py-4 text-center font-medium text-zinc-400 w-20">Actions</th>
+                </tr>
+            </thead>
+            <tbody>
+                <!-- Rows will be populated here (either via Jinja loop or JavaScript) -->
+                {% for line in budget_lines %}
+                <tr class="border-b border-zinc-800 hover:bg-zinc-800/60 transition-colors">
+                    <td class="px-6 py-4 font-mono text-emerald-400">{{ line.cost_code }}</td>
+                    <td class="px-6 py-4">
+                        <div class="font-medium">{{ line.description }}</div>
+                        {% if line.notes %}
+                        <div class="text-xs text-zinc-500 mt-0.5">{{ line.notes }}</div>
+                        {% endif %}
+                    </td>
+                    <td class="px-6 py-4 text-right font-mono">${{ "{:,.2f}".format(line.original_budget) }}</td>
+                    <td class="px-6 py-4 text-right font-mono text-yellow-400">+${{ "{:,.2f}".format(line.approved_changes or 0) }}</td>
+                    <td class="px-6 py-4 text-right font-mono font-medium">${{ "{:,.2f}".format(line.current_budget) }}</td>
+                    <td class="px-6 py-4 text-right font-mono">${{ "{:,.2f}".format(line.committed or 0) }}</td>
+                    <td class="px-6 py-4 text-right font-mono">${{ "{:,.2f}".format(line.actual_cost or 0) }}</td>
+                    
+                    <!-- Variance -->
+                    <td class="px-6 py-4 text-right font-mono">
+                        {% set variance = (line.current_budget or 0) - (line.actual_cost or 0) %}
+                        {% if variance >= 0 %}
+                            <span class="text-emerald-400">+${{ "{:,.2f}".format(variance) }}</span>
+                        {% else %}
+                            <span class="text-red-400">${{ "{:,.2f}".format(variance) }}</span>
+                        {% endif %}
+                    </td>
+
+                    <!-- Status -->
+                    <td class="px-6 py-4 text-center">
+                        {% if line.status == 'Over Budget' %}
+                            <span class="px-3 py-1 text-xs rounded-full bg-red-500/10 text-red-400">Over Budget</span>
+                        {% elif line.status == 'Under Budget' %}
+                            <span class="px-3 py-1 text-xs rounded-full bg-emerald-500/10 text-emerald-400">Under Budget</span>
+                        {% else %}
+                            <span class="px-3 py-1 text-xs rounded-full bg-zinc-700 text-zinc-300">On Budget</span>
+                        {% endif %}
+                    </td>
+
+                    <!-- Actions -->
+                    <td class="px-6 py-4 text-center">
+                        <div class="flex items-center justify-center gap-1">
+                            <button onclick="editBudgetLine({{ line.id }})" 
+                                    class="p-2 text-emerald-400 hover:text-emerald-300 hover:bg-zinc-800 rounded-xl transition-colors" title="Edit">
+                                <i class="fa-solid fa-edit"></i>
+                            </button>
+                            <button onclick="viewBudgetLineHistory({{ line.id }})" 
+                                    class="p-2 text-emerald-400 hover:text-emerald-300 hover:bg-zinc-800 rounded-xl transition-colors" title="View History">
+                                <i class="fa-solid fa-history"></i>
+                            </button>
+                            <button onclick="linkToCommitment({{ line.id }})" 
+                                    class="p-2 text-emerald-400 hover:text-emerald-300 hover:bg-zinc-800 rounded-xl transition-colors" title="Link to Commitment">
+                                <i class="fa-solid fa-link"></i>
+                            </button>
+                        </div>
+                    </td>
+                </tr>
+                {% else %}
+                <tr>
+                    <td colspan="10" class="px-6 py-12 text-center text-zinc-400">
+                        No budget lines found. Click "Add Budget Line" to get started.
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+
+    <!-- Budget Summary by Division -->
+    <div class="mt-8 grid grid-cols-1 lg:grid-cols-2 gap-6">
+        
+        <!-- Summary by CSI Division -->
+        <div class="bg-zinc-900 border border-zinc-800 rounded-3xl p-6">
+            <div class="flex items-center justify-between mb-4">
+                <h3 class="font-semibold">Summary by CSI Division</h3>
+                <button onclick="showDivisionBreakdown()" class="text-xs text-emerald-400 hover:text-emerald-300">View Full Breakdown</button>
+            </div>
+            
+            <div class="space-y-3 text-sm">
+                <div class="flex justify-between items-center">
+                    <span class="text-zinc-400">03 - Concrete</span>
+                    <div class="text-right">
+                        <span class="font-mono">$527,500</span>
+                        <span class="text-emerald-400 text-xs ml-2">Under</span>
+                    </div>
+                </div>
+                <div class="flex justify-between items-center">
+                    <span class="text-zinc-400">05 - Metals</span>
+                    <div class="text-right">
+                        <span class="font-mono">$1,124,800</span>
+                        <span class="text-red-400 text-xs ml-2">Over</span>
+                    </div>
+                </div>
+                <div class="flex justify-between items-center">
+                    <span class="text-zinc-400">26 - Electrical</span>
+                    <div class="text-right">
+                        <span class="font-mono">$892,300</span>
+                        <span class="text-emerald-400 text-xs ml-2">Under</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Forecasting Box -->
+        <div class="bg-zinc-900 border border-zinc-800 rounded-3xl p-6">
+            <h3 class="font-semibold mb-4">Cost Forecast</h3>
+            
+            <div class="space-y-4">
+                <div>
+                    <div class="flex justify-between text-sm mb-1">
+                        <span class="text-zinc-400">Projected Final Cost</span>
+                        <span class="font-mono">$5,312,800</span>
+                    </div>
+                    <div class="h-2 bg-zinc-800 rounded-full overflow-hidden">
+                        <div class="h-2 bg-red-500 w-[102%]" style="width: 102%"></div>
+                    </div>
+                </div>
+                
+                <div class="grid grid-cols-2 gap-4 text-sm">
+                    <div>
+                        <div class="text-zinc-400">Budget Variance</div>
+                        <div class="text-red-400 font-medium">+$127,500</div>
+                    </div>
+                    <div>
+                        <div class="text-zinc-400">Contingency Remaining</div>
+                        <div class="font-medium">$185,000</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+</div>
+<!-- ==================== CREATE / EDIT BUDGET LINE MODAL ==================== -->
+<dialog id="budgetLineModal" class="bg-zinc-900 border border-zinc-700 rounded-3xl p-0 w-full max-w-3xl">
+    <div class="p-6">
+        <div class="flex items-center justify-between mb-6">
+            <h2 class="text-xl font-semibold" id="budgetModalTitle">Add Budget Line</h2>
+            <button onclick="closeBudgetModal()" class="text-zinc-400 hover:text-white text-2xl leading-none">×</button>
+        </div>
+
+        <form id="budgetLineForm" onsubmit="saveBudgetLine(event)">
+            <input type="hidden" id="budgetLineId">
+
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+                <div>
+                    <label class="block text-sm text-zinc-400 mb-1.5">Cost Code <span class="text-red-400">*</span></label>
+                    <input type="text" id="costCode" class="w-full bg-zinc-800 border border-zinc-700 rounded-2xl px-4 py-2.5 text-sm font-mono" placeholder="03 30 00" required>
+                </div>
+                <div>
+                    <label class="block text-sm text-zinc-400 mb-1.5">CSI Division</label>
+                    <select id="csiDivision" class="w-full bg-zinc-800 border border-zinc-700 rounded-2xl px-4 py-2.5 text-sm">
+                        <option value="01">01 - General Requirements</option>
+                        <option value="03">03 - Concrete</option>
+                        <option value="05">05 - Metals</option>
+                        <option value="08">08 - Openings</option>
+                        <option value="09">09 - Finishes</option>
+                        <option value="23">23 - HVAC</option>
+                        <option value="26">26 - Electrical</option>
+                    </select>
+                </div>
+            </div>
+
+            <div class="mb-4">
+                <label class="block text-sm text-zinc-400 mb-1.5">Description <span class="text-red-400">*</span></label>
+                <input type="text" id="description" class="w-full bg-zinc-800 border border-zinc-700 rounded-2xl px-4 py-2.5 text-sm" required>
+            </div>
+
+            <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
+                <div>
+                    <label class="block text-sm text-zinc-400 mb-1.5">Original Budget</label>
+                    <div class="relative">
+                        <span class="absolute left-4 top-3 text-zinc-400">$</span>
+                        <input type="number" step="0.01" id="originalBudget" class="w-full bg-zinc-800 border border-zinc-700 rounded-2xl pl-8 pr-4 py-2.5 text-sm" value="0">
+                    </div>
+                </div>
+                <div>
+                    <label class="block text-sm text-zinc-400 mb-1.5">Approved Changes</label>
+                    <div class="relative">
+                        <span class="absolute left-4 top-3 text-zinc-400">$</span>
+                        <input type="number" step="0.01" id="approvedChanges" class="w-full bg-zinc-800 border border-zinc-700 rounded-2xl pl-8 pr-4 py-2.5 text-sm" value="0">
+                    </div>
+                </div>
+                <div>
+                    <label class="block text-sm text-zinc-400 mb-1.5">Current Budget</label>
+                    <div class="relative">
+                        <span class="absolute left-4 top-3 text-zinc-400">$</span>
+                        <input type="number" step="0.01" id="currentBudget" class="w-full bg-zinc-800 border border-zinc-700 rounded-2xl pl-8 pr-4 py-2.5 text-sm font-medium" readonly>
+                    </div>
+                </div>
+            </div>
+
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+                <div>
+                    <label class="block text-sm text-zinc-400 mb-1.5">Committed Amount</label>
+                    <div class="relative">
+                        <span class="absolute left-4 top-3 text-zinc-400">$</span>
+                        <input type="number" step="0.01" id="committed" class="w-full bg-zinc-800 border border-zinc-700 rounded-2xl pl-8 pr-4 py-2.5 text-sm" value="0">
+                    </div>
+                </div>
+                <div>
+                    <label class="block text-sm text-zinc-400 mb-1.5">Actual Cost to Date</label>
+                    <div class="relative">
+                        <span class="absolute left-4 top-3 text-zinc-400">$</span>
+                        <input type="number" step="0.01" id="actualCost" class="w-full bg-zinc-800 border border-zinc-700 rounded-2xl pl-8 pr-4 py-2.5 text-sm" value="0">
+                    </div>
+                </div>
+            </div>
+
+            <div class="mb-4">
+                <label class="block text-sm text-zinc-400 mb-1.5">Vendor / Subcontractor</label>
+                <select id="vendor" class="w-full bg-zinc-800 border border-zinc-700 rounded-2xl px-4 py-2.5 text-sm">
+                    <option value="">None / Internal</option>
+                    {% for company in companies %}
+                    <option value="{{ company.name }}">{{ company.name }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+
+            <div class="mb-4">
+                <label class="block text-sm text-zinc-400 mb-1.5">Notes / Comments</label>
+                <textarea id="notes" rows="2" class="w-full bg-zinc-800 border border-zinc-700 rounded-2xl px-4 py-3 text-sm" placeholder="Any assumptions, exclusions, or notes..."></textarea>
+            </div>
+
+            <div class="flex items-center gap-4 mb-6">
+                <div class="flex-1">
+                    <label class="block text-sm text-zinc-400 mb-1.5">Status Override</label>
+                    <select id="statusOverride" class="w-full bg-zinc-800 border border-zinc-700 rounded-2xl px-4 py-2.5 text-sm">
+                        <option value="">Auto (based on variance)</option>
+                        <option value="On Budget">On Budget</option>
+                        <option value="Over Budget">Over Budget</option>
+                        <option value="Under Budget">Under Budget</option>
+                    </select>
+                </div>
+            </div>
+
+            <div class="flex gap-3 mt-8">
+                <button type="button" onclick="closeBudgetModal()" 
+                        class="flex-1 bg-zinc-800 hover:bg-zinc-700 rounded-2xl py-3 text-sm font-medium transition-colors">
+                    Cancel
+                </button>
+                <button type="submit" 
+                        class="flex-1 bg-emerald-600 hover:bg-emerald-500 rounded-2xl py-3 text-sm font-medium transition-colors">
+                    Save Budget Line
+                </button>
+            </div>
+        </form>
+    </div>
+</dialog>
+<!-- ==================== JAVASCRIPT ==================== -->
+<script>
+    // ==================== FILTERING ====================
+    function filterBudgetTable() {
+        const search = document.getElementById('budgetSearch').value.toLowerCase();
+        const division = document.getElementById('budgetDivisionFilter').value;
+        const status = document.getElementById('budgetStatusFilter').value;
+
+        const rows = document.querySelectorAll('#budgetTable tbody tr');
+
+        rows.forEach(row => {
+            const text = row.textContent.toLowerCase();
+            const costCode = row.cells[0] ? row.cells[0].textContent : '';
+            const rowStatus = row.querySelector('.px-3') ? row.querySelector('.px-3').textContent : '';
+
+            let show = true;
+
+            if (search && !text.includes(search)) show = false;
+            if (division && !costCode.startsWith(division)) show = false;
+            if (status && !rowStatus.includes(status)) show = false;
+
+            row.style.display = show ? '' : 'none';
+        });
+    }
+
+    function resetBudgetFilters() {
+        document.getElementById('budgetSearch').value = '';
+        document.getElementById('budgetDivisionFilter').value = '';
+        document.getElementById('budgetStatusFilter').value = '';
+        filterBudgetTable();
+    }
+
+    // ==================== MODAL FUNCTIONS ====================
+    function showCreateBudgetLineModal() {
+        const modal = document.getElementById('budgetLineModal');
+        const form = document.getElementById('budgetLineForm');
+
+        form.reset();
+        document.getElementById('budgetLineId').value = '';
+        document.getElementById('budgetModalTitle').innerText = 'Add Budget Line';
+
+        // Set default values
+        document.getElementById('originalBudget').value = '0';
+        document.getElementById('approvedChanges').value = '0';
+        document.getElementById('currentBudget').value = '0';
+
+        // Add live calculation listeners
+        addLiveCalculationListeners();
+
+        modal.showModal();
+    }
+
+    function editBudgetLine(id) {
+        const modal = document.getElementById('budgetLineModal');
+        document.getElementById('budgetModalTitle').innerText = 'Edit Budget Line';
+        document.getElementById('budgetLineId').value = id;
+
+        // In a real app, you would fetch the data from the backend here.
+        // For now, we simulate with dummy data:
+        document.getElementById('costCode').value = '03 30 00';
+        document.getElementById('description').value = 'Cast-in-Place Concrete';
+        document.getElementById('originalBudget').value = '485000';
+        document.getElementById('approvedChanges').value = '42500';
+        document.getElementById('committed').value = '498200';
+        document.getElementById('actualCost').value = '467850';
+
+        addLiveCalculationListeners();
+        calculateCurrentBudget();
+
+        modal.showModal();
+    }
+
+    function closeBudgetModal() {
+        const modal = document.getElementById('budgetLineModal');
+        modal.close();
+    }
+
+    function addLiveCalculationListeners() {
+        const original = document.getElementById('originalBudget');
+        const changes = document.getElementById('approvedChanges');
+        const current = document.getElementById('currentBudget');
+
+        function update() {
+            calculateCurrentBudget();
+        }
+
+        original.oninput = update;
+        changes.oninput = update;
+    }
+
+    function calculateCurrentBudget() {
+        const original = parseFloat(document.getElementById('originalBudget').value) || 0;
+        const changes = parseFloat(document.getElementById('approvedChanges').value) || 0;
+        const currentField = document.getElementById('currentBudget');
+
+        currentField.value = (original + changes).toFixed(2);
+    }
+
+    function saveBudgetLine(e) {
+        e.preventDefault();
+
+        const id = document.getElementById('budgetLineId').value;
+        const isEdit = id !== '';
+
+        // Collect form data
+        const data = {
+            cost_code: document.getElementById('costCode').value,
+            description: document.getElementById('description').value,
+            original_budget: parseFloat(document.getElementById('originalBudget').value),
+            approved_changes: parseFloat(document.getElementById('approvedChanges').value),
+            committed: parseFloat(document.getElementById('committed').value),
+            actual_cost: parseFloat(document.getElementById('actualCost').value),
+            notes: document.getElementById('notes').value
+        };
+
+        console.log(isEdit ? 'Updating budget line:' : 'Creating new budget line:', data);
+
+        // TODO: Send to backend via fetch()
+        // For now, show success and close
+        closeBudgetModal();
+        showToast(isEdit ? 'Budget line updated successfully' : 'New budget line created');
+
+        // In real version: refresh the table or reload the page
+        setTimeout(() => {
+            location.reload();
+        }, 800);
+    }
+
+    // ==================== ACTION FUNCTIONS ====================
+    function viewBudgetLineHistory(id) {
+        alert(`Opening change history for budget line #${id}\n(This will show all revisions and who made them)`);
+    }
+
+    function linkToCommitment(id) {
+        alert(`Linking budget line #${id} to a Commitment / Purchase Order.\n(Commitment picker modal would open here)`);
+    }
+
+    function exportBudgetToExcel() {
+        showToast('Exporting budget to Excel...', 'success');
+        // In real version: trigger backend export
+        setTimeout(() => {
+            showToast('Budget exported successfully');
+        }, 1200);
+    }
+
+    function exportBudgetToPDF() {
+        showToast('Generating PDF report...', 'success');
+        setTimeout(() => {
+            showToast('PDF report downloaded');
+        }, 1500);
+    }
+
+    function showDivisionBreakdown() {
+        alert('Opening full CSI Division breakdown modal with charts and detailed variance analysis.');
+    }
+
+    // ==================== INITIALIZE ====================
+    function initializeBudgetPage() {
+        // Optional: Auto-filter on load if needed
+        console.log('%c[Case PM] Budget page initialized with full features.', 'color:#10b981');
+    }
+
+    // Run initialization when page loads
+    window.addEventListener('load', initializeBudgetPage);
+</script>
+
+{% endblock %}

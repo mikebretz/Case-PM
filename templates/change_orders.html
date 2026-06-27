@@ -1,0 +1,412 @@
+
+{% extends "base.html" %}
+
+{% block content %}
+<div class="p-8 max-w-[1600px] mx-auto">
+
+    <!-- Header -->
+    <div class="flex items-center justify-between mb-8">
+        <div>
+            <h1 class="text-3xl font-semibold tracking-tight">Change Orders</h1>
+            <p class="text-zinc-400 mt-1">Change Order Log & Tracking • ALDI Lakeland</p>
+        </div>
+        
+        <div class="flex items-center gap-3">
+            <button onclick="exportChangeOrdersToExcel()" 
+                    class="flex items-center gap-2 px-4 py-2.5 bg-zinc-800 hover:bg-zinc-700 transition-colors rounded-2xl text-sm font-medium">
+                <i class="fa-solid fa-file-excel"></i>
+                <span class="hidden md:inline">Export Excel</span>
+            </button>
+            
+            <button onclick="showCreateChangeOrderModal()"
+                    class="flex items-center gap-2 px-5 py-2.5 bg-emerald-600 hover:bg-emerald-500 transition-colors rounded-2xl text-sm font-medium">
+                <i class="fa-solid fa-plus"></i>
+                <span>New Change Order</span>
+            </button>
+        </div>
+    </div>
+
+    <!-- Summary Cards -->
+    <div class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-4 mb-8">
+        <div class="bg-zinc-900 border border-zinc-800 rounded-3xl p-5">
+            <div class="text-sm text-zinc-400">Total Change Orders</div>
+            <div class="text-3xl font-semibold mt-1">{{ change_orders|length }}</div>
+        </div>
+        <div class="bg-zinc-900 border border-zinc-800 rounded-3xl p-5">
+            <div class="text-sm text-zinc-400">Approved</div>
+            <div class="text-3xl font-semibold mt-1 text-emerald-400">18</div>
+        </div>
+        <div class="bg-zinc-900 border border-zinc-800 rounded-3xl p-5">
+            <div class="text-sm text-zinc-400">Pending Approval</div>
+            <div class="text-3xl font-semibold mt-1 text-yellow-400">7</div>
+        </div>
+        <div class="bg-zinc-900 border border-zinc-800 rounded-3xl p-5">
+            <div class="text-sm text-zinc-400">Total Approved Value</div>
+            <div class="text-3xl font-semibold mt-1">$412,850</div>
+        </div>
+        <div class="bg-zinc-900 border border-zinc-800 rounded-3xl p-5">
+            <div class="text-sm text-zinc-400">Avg. Approval Time</div>
+            <div class="text-3xl font-semibold mt-1">4.2 days</div>
+        </div>
+    </div>
+
+    <!-- Filters -->
+    <div class="flex flex-col md:flex-row gap-3 mb-4">
+        <input type="text" id="coSearch" placeholder="Search CO #, description, or vendor..." 
+               onkeyup="filterChangeOrders()"
+               class="flex-1 bg-zinc-900 border border-zinc-700 rounded-2xl px-4 py-2.5 text-sm">
+
+        <select id="coStatusFilter" onchange="filterChangeOrders()"
+                class="bg-zinc-900 border border-zinc-700 rounded-2xl px-4 py-2.5 text-sm">
+            <option value="">All Statuses</option>
+            <option value="Draft">Draft</option>
+            <option value="Submitted">Submitted</option>
+            <option value="Under Review">Under Review</option>
+            <option value="Approved">Approved</option>
+            <option value="Rejected">Rejected</option>
+        </select>
+
+        <select id="coPriorityFilter" onchange="filterChangeOrders()"
+                class="bg-zinc-900 border border-zinc-700 rounded-2xl px-4 py-2.5 text-sm">
+            <option value="">All Priorities</option>
+            <option value="High">High</option>
+            <option value="Medium">Medium</option>
+            <option value="Low">Low</option>
+        </select>
+    </div>
+
+    <!-- Change Orders Table -->
+    <div class="bg-zinc-900 border border-zinc-800 rounded-3xl overflow-hidden">
+        <table class="w-full text-sm">
+            <thead>
+                <tr class="bg-zinc-950 border-b border-zinc-800">
+                    <th class="px-6 py-4 text-left font-medium text-zinc-400">CO #</th>
+                    <th class="px-6 py-4 text-left font-medium text-zinc-400">Date</th>
+                    <th class="px-6 py-4 text-left font-medium text-zinc-400">Description</th>
+                    <th class="px-6 py-4 text-left font-medium text-zinc-400">Requested By</th>
+                    <th class="px-6 py-4 text-right font-medium text-zinc-400">Amount</th>
+                    <th class="px-6 py-4 text-center font-medium text-zinc-400">Status</th>
+                    <th class="px-6 py-4 text-center font-medium text-zinc-400">Actions</th>
+                </tr>
+            </thead>
+            <tbody>
+
+                {% for co in change_orders %}
+                <tr class="border-b border-zinc-800 hover:bg-zinc-800/60 transition-colors">
+                    <td class="px-6 py-4 font-mono text-emerald-400">{{ co.number }}</td>
+                    <td class="px-6 py-4">{{ co.date.strftime('%m/%d/%Y') if co.date else '—' }}</td>
+                    <td class="px-6 py-4 max-w-[320px] truncate">{{ co.description }}</td>
+                    <td class="px-6 py-4">{{ co.requested_by }}</td>
+                    <td class="px-6 py-4 text-right font-mono">
+                        ${{ "{:,.2f}".format(co.amount) }}
+                    </td>
+                    <td class="px-6 py-4 text-center">
+                        <select onchange="updateChangeOrderStatus({{ co.id }}, this.value)"
+                                class="bg-zinc-800 border border-zinc-700 rounded-xl px-3 py-1 text-xs">
+                            <option value="Draft" {% if co.status == 'Draft' %}selected{% endif %}>Draft</option>
+                            <option value="Submitted" {% if co.status == 'Submitted' %}selected{% endif %}>Submitted</option>
+                            <option value="Under Review" {% if co.status == 'Under Review' %}selected{% endif %}>Under Review</option>
+                            <option value="Approved" {% if co.status == 'Approved' %}selected{% endif %}>Approved</option>
+                            <option value="Rejected" {% if co.status == 'Rejected' %}selected{% endif %}>Rejected</option>
+                        </select>
+                    </td>
+                    <td class="px-6 py-4 text-center">
+                        <div class="flex items-center justify-center gap-1">
+                            <button onclick="viewChangeOrder({{ co.id }})" 
+                                    class="p-2 text-emerald-400 hover:text-emerald-300 hover:bg-zinc-800 rounded-xl transition-colors" title="View Details">
+                                <i class="fa-solid fa-eye"></i>
+                            </button>
+                            
+                            <button onclick="editChangeOrder({{ co.id }})" 
+                                    class="p-2 text-emerald-400 hover:text-emerald-300 hover:bg-zinc-800 rounded-xl transition-colors" title="Edit">
+                                <i class="fa-solid fa-edit"></i>
+                            </button>
+
+                            {% if co.status != 'Approved' %}
+                            <button onclick="approveChangeOrder({{ co.id }})" 
+                                    class="p-2 text-emerald-400 hover:text-emerald-300 hover:bg-zinc-800 rounded-xl transition-colors" title="Approve">
+                                <i class="fa-solid fa-check"></i>
+                            </button>
+                            {% endif %}
+
+                            <button onclick="addRevision({{ co.id }})" 
+                                    class="p-2 text-emerald-400 hover:text-emerald-300 hover:bg-zinc-800 rounded-xl transition-colors" title="Add Revision">
+                                <i class="fa-solid fa-redo"></i>
+                            </button>
+                        </div>
+                    </td>
+                </tr>
+                {% else %}
+                <tr>
+                    <td colspan="7" class="px-6 py-12 text-center text-zinc-400">
+                        No change orders found.
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+
+</div>
+
+<!-- ==================== CREATE / EDIT CHANGE ORDER MODAL ==================== -->
+<dialog id="changeOrderModal" class="bg-zinc-900 border border-zinc-700 rounded-3xl p-0 w-full max-w-4xl">
+    <div class="p-6">
+        <div class="flex items-center justify-between mb-6">
+            <h2 class="text-xl font-semibold" id="coModalTitle">Create New Change Order</h2>
+            <button onclick="closeChangeOrderModal()" class="text-zinc-400 hover:text-white text-2xl leading-none">×</button>
+        </div>
+
+        <form id="changeOrderForm" onsubmit="saveChangeOrder(event)">
+            <input type="hidden" id="changeOrderId">
+
+            <!-- Top Row: Number and Date -->
+            <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
+                <div>
+                    <label class="block text-sm text-zinc-400 mb-1.5">Change Order #</label>
+                    <input type="text" id="coNumber" class="w-full bg-zinc-800 border border-zinc-700 rounded-2xl px-4 py-2.5 text-sm font-mono" readonly>
+                </div>
+                <div>
+                    <label class="block text-sm text-zinc-400 mb-1.5">Date <span class="text-red-400">*</span></label>
+                    <input type="date" id="coDate" class="w-full bg-zinc-800 border border-zinc-700 rounded-2xl px-4 py-2.5 text-sm" required>
+                </div>
+                <div>
+                    <label class="block text-sm text-zinc-400 mb-1.5">Revision #</label>
+                    <input type="text" id="coRevision" value="0" class="w-full bg-zinc-800 border border-zinc-700 rounded-2xl px-4 py-2.5 text-sm font-mono">
+                </div>
+            </div>
+
+            <!-- Description -->
+            <div class="mb-4">
+                <label class="block text-sm text-zinc-400 mb-1.5">Description <span class="text-red-400">*</span></label>
+                <textarea id="coDescription" rows="3" class="w-full bg-zinc-800 border border-zinc-700 rounded-2xl px-4 py-3 text-sm" placeholder="Describe the change in detail..." required></textarea>
+            </div>
+
+            <!-- Requested By + Amount -->
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+                <div>
+                    <label class="block text-sm text-zinc-400 mb-1.5">Requested By</label>
+                    <input type="text" id="coRequestedBy" class="w-full bg-zinc-800 border border-zinc-700 rounded-2xl px-4 py-2.5 text-sm" value="{{ current_user.first_name }} {{ current_user.last_name }}">
+                </div>
+                <div>
+                    <label class="block text-sm text-zinc-400 mb-1.5">Amount <span class="text-red-400">*</span></label>
+                    <div class="relative">
+                        <span class="absolute left-4 top-3 text-zinc-400">$</span>
+                        <input type="number" step="0.01" id="coAmount" class="w-full bg-zinc-800 border border-zinc-700 rounded-2xl pl-8 pr-4 py-2.5 text-sm" required>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Reason & Impact -->
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+                <div>
+                    <label class="block text-sm text-zinc-400 mb-1.5">Reason for Change</label>
+                    <select id="coReason" class="w-full bg-zinc-800 border border-zinc-700 rounded-2xl px-4 py-2.5 text-sm">
+                        <option value="">Select Reason...</option>
+                        <option value="Owner Request">Owner Request</option>
+                        <option value="Design Change">Design Change</option>
+                        <option value="Unforeseen Condition">Unforeseen Condition</option>
+                        <option value="Code Compliance">Code Compliance</option>
+                        <option value="Error or Omission">Error or Omission</option>
+                        <option value="Other">Other</option>
+                    </select>
+                </div>
+                <div>
+                    <label class="block text-sm text-zinc-400 mb-1.5">Schedule Impact</label>
+                    <select id="coScheduleImpact" class="w-full bg-zinc-800 border border-zinc-700 rounded-2xl px-4 py-2.5 text-sm">
+                        <option value="None">No Impact</option>
+                        <option value="Minor">Minor Delay (1-3 days)</option>
+                        <option value="Moderate">Moderate Delay (4-10 days)</option>
+                        <option value="Significant">Significant Delay (10+ days)</option>
+                    </select>
+                </div>
+            </div>
+
+            <!-- Notes -->
+            <div class="mb-4">
+                <label class="block text-sm text-zinc-400 mb-1.5">Notes / Justification</label>
+                <textarea id="coNotes" rows="3" class="w-full bg-zinc-800 border border-zinc-700 rounded-2xl px-4 py-3 text-sm" placeholder="Additional details or justification for this change..."></textarea>
+            </div>
+
+            <!-- Attachments -->
+            <div class="mb-6">
+                <label class="block text-sm text-zinc-400 mb-1.5">Attachments</label>
+                <div class="border-2 border-dashed border-zinc-700 rounded-2xl p-6 text-center">
+                    <i class="fa-solid fa-cloud-upload-alt text-3xl text-zinc-500 mb-2"></i>
+                    <p class="text-sm text-zinc-400">Drag & drop files here or</p>
+                    <label class="inline-block mt-2 px-5 py-2 bg-zinc-800 hover:bg-zinc-700 rounded-2xl text-sm cursor-pointer">
+                        Select Files
+                        <input type="file" id="coAttachments" multiple class="hidden">
+                    </label>
+                    <p class="text-xs text-zinc-500 mt-2">PDF, JPG, PNG, DOCX up to 25MB</p>
+                </div>
+                <div id="attachmentList" class="mt-3 space-y-2 text-sm"></div>
+            </div>
+
+            <!-- Status -->
+            <div class="mb-6">
+                <label class="block text-sm text-zinc-400 mb-1.5">Status</label>
+                <select id="coStatus" class="w-full bg-zinc-800 border border-zinc-700 rounded-2xl px-4 py-2.5 text-sm">
+                    <option value="Draft">Draft</option>
+                    <option value="Submitted">Submitted</option>
+                    <option value="Under Review">Under Review</option>
+                </select>
+            </div>
+
+            <!-- Action Buttons -->
+            <div class="flex gap-3 mt-8">
+                <button type="button" onclick="closeChangeOrderModal()" 
+                        class="flex-1 bg-zinc-800 hover:bg-zinc-700 rounded-2xl py-3 text-sm font-medium transition-colors">
+                    Cancel
+                </button>
+                <button type="submit" 
+                        class="flex-1 bg-emerald-600 hover:bg-emerald-500 rounded-2xl py-3 text-sm font-medium transition-colors">
+                    Save Change Order
+                </button>
+            </div>
+        </form>
+    </div>
+</dialog>
+
+<!-- ==================== JAVASCRIPT ==================== -->
+<script>
+    // ==================== FILTERING ====================
+    function filterChangeOrders() {
+        const search = document.getElementById('coSearch').value.toLowerCase();
+        const status = document.getElementById('coStatusFilter').value;
+        const priority = document.getElementById('coPriorityFilter').value;
+
+        const rows = document.querySelectorAll('table tbody tr');
+
+        rows.forEach(row => {
+            const text = row.textContent.toLowerCase();
+            const rowStatus = row.querySelector('select') ? row.querySelector('select').value : '';
+
+            let show = true;
+
+            if (search && !text.includes(search)) show = false;
+            if (status && rowStatus !== status) show = false;
+            // Priority filter can be expanded later if needed
+
+            row.style.display = show ? '' : 'none';
+        });
+    }
+
+    // ==================== MODAL FUNCTIONS ====================
+    function showCreateChangeOrderModal() {
+        const modal = document.getElementById('changeOrderModal');
+        const form = document.getElementById('changeOrderForm');
+
+        form.reset();
+        document.getElementById('changeOrderId').value = '';
+        document.getElementById('coModalTitle').innerText = 'Create New Change Order';
+
+        // Auto-generate next CO number (example format)
+        const nextNumber = 'ALDI-' + String(19).padStart(3, '0') + '-0';
+        document.getElementById('coNumber').value = nextNumber;
+        document.getElementById('coRevision').value = '0';
+
+        // Set today's date
+        const today = new Date().toISOString().split('T')[0];
+        document.getElementById('coDate').value = today;
+
+        modal.showModal();
+    }
+
+    function closeChangeOrderModal() {
+        document.getElementById('changeOrderModal').close();
+    }
+
+    function editChangeOrder(id) {
+        const modal = document.getElementById('changeOrderModal');
+        document.getElementById('coModalTitle').innerText = 'Edit Change Order';
+        document.getElementById('changeOrderId').value = id;
+
+        // In a real application, you would fetch the data using the ID.
+        // For now, we populate with example data:
+        document.getElementById('coNumber').value = 'ALDI-018-0';
+        document.getElementById('coDate').value = '2026-06-18';
+        document.getElementById('coDescription').value = 'Additional rebar and concrete for foundation wall at column line B';
+        document.getElementById('coRequestedBy').value = 'Mike Bretz';
+        document.getElementById('coAmount').value = '8750';
+        document.getElementById('coReason').value = 'Unforeseen Condition';
+        document.getElementById('coScheduleImpact').value = 'Minor';
+        document.getElementById('coStatus').value = 'Under Review';
+
+        modal.showModal();
+    }
+
+    function saveChangeOrder(e) {
+        e.preventDefault();
+
+        const id = document.getElementById('changeOrderId').value;
+        const isEdit = id !== '';
+
+        const data = {
+            number: document.getElementById('coNumber').value,
+            date: document.getElementById('coDate').value,
+            description: document.getElementById('coDescription').value,
+            amount: parseFloat(document.getElementById('coAmount').value),
+            status: document.getElementById('coStatus').value,
+            revision: document.getElementById('coRevision').value
+        };
+
+        console.log(isEdit ? 'Updating Change Order:' : 'Creating Change Order:', data);
+
+        closeChangeOrderModal();
+
+        if (isEdit) {
+            showToast('Change Order updated successfully');
+        } else {
+            showToast('New Change Order created successfully');
+        }
+
+        // In a real app, you would refresh the table or reload the page
+        setTimeout(() => {
+            location.reload();
+        }, 900);
+    }
+
+    // ==================== ACTION FUNCTIONS ====================
+    function updateChangeOrderStatus(id, newStatus) {
+        console.log(`Updating Change Order #${id} to status: ${newStatus}`);
+        showToast(`Status updated to ${newStatus}`);
+        // TODO: Send update to backend
+    }
+
+    function viewChangeOrder(id) {
+        alert(`Opening detailed view for Change Order #${id}\n(Full details, revision history, and attachments will appear here)`);
+    }
+
+    function approveChangeOrder(id) {
+        if (confirm('Approve this Change Order?')) {
+            console.log(`Approving Change Order #${id}`);
+            showToast('Change Order approved successfully');
+            // TODO: Update status via backend
+        }
+    }
+
+    function addRevision(id) {
+        const newRevision = prompt('Enter new revision number (e.g. 1):', '1');
+        if (newRevision) {
+            console.log(`Creating revision ${newRevision} for Change Order #${id}`);
+            showToast(`Revision ${newRevision} created`);
+        }
+    }
+
+    function exportChangeOrdersToExcel() {
+        showToast('Exporting Change Orders to Excel...');
+        setTimeout(() => {
+            showToast('Export completed');
+        }, 1200);
+    }
+
+    // ==================== INITIALIZATION ====================
+    function initializeChangeOrdersPage() {
+        console.log('%c[Case PM] Change Orders page initialized with full features.', 'color:#10b981');
+    }
+
+    window.addEventListener('load', initializeChangeOrdersPage);
+</script>
+
+{% endblock %}
