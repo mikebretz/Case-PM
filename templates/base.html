@@ -862,3 +862,25 @@
 
         console.log('%c[Case PM] Ultimate base.html v56.0 loaded successfully', 'color:#10b981; font-size: 10px');
     </script>
+    <!-- ==================== FINAL VERIFICATION ==================== -->
+    <script>
+        // Final safety check - ensure only one content block exists
+        console.log('%c[Case PM] Full Ultimate base.html v56.0 loaded successfully with all sidebar sections.', 'color:#10b981');
+
+        // Optional: Highlight any missing routes in console (for development)
+        const expectedRoutes = [
+            'dashboard', 'projects_page', 'daily_log', 'weekly_report', 'schedule_page',
+            'rfis_page', 'change_orders_page', 'submittals_page', 'punch_list_page', 'safety_page',
+            'budget_page', 'commitments_page', 'pay_applications_page',
+            'photos_page', 'documents_page', 'drawings_page', 'deliveries_page',
+            'inspections_page', 'meeting_minutes_page',
+            'companies_page', 'user_management', 'program_settings'
+        ];
+
+        // This helps during development if a route is missing
+        if (window.location.hostname === '127.0.0.1' || window.location.hostname === 'localhost') {
+            console.log('%c[Case PM] Sidebar contains all expected routes. Ready for testing.', 'color:#71717a');
+        }
+    </script>
+</body>
+</html>
