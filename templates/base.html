@@ -737,16 +737,10 @@
             });
         });
 
-        // Final console confirmation
-        console.log('%c[Case PM v56.0] ✅ Ultimate base.html loaded successfully. All sidebar sections active.', 'color:#10b981; font-weight:600');
-
-        // Global debug helper
-        window.CasePM = {
-            version: '56.0',
-            showQuickAdd: () => document.getElementById('quickAddMenu')?.showModal(),
-            showNotifications: () => document.getElementById('notificationsPanel')?.showModal()
-        };
+        console.log('%c[Case PM v56.0] ✅ Ultimate base.html loaded successfully.', 'color:#10b981; font-weight:600');
     </script>
+
+    {% endif %}   <!-- ← This closes the main {% if current_user.is_authenticated %} block -->
 
 </body>
 </html>
