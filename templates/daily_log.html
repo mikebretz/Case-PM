@@ -579,3 +579,62 @@
         </form>
     </div>
 </div>
+                <!-- FUTURE FEATURES PLACEHOLDER -->
+                <div class="pt-4 border-t border-zinc-800">
+                    <div class="flex items-center gap-2 text-xs text-zinc-500 mb-2">
+                        <i class="fa-solid fa-tools"></i>
+                        <span class="font-medium">Advanced Features (Coming Soon)</span>
+                    </div>
+                    <div class="grid grid-cols-1 md:grid-cols-3 gap-3 text-xs">
+                        <div class="bg-zinc-950 border border-zinc-800 rounded-2xl p-3">
+                            <div class="flex items-center gap-2 text-emerald-400">
+                                <i class="fa-solid fa-pencil-alt"></i>
+                                <span class="font-medium">Drawing on Photos</span>
+                            </div>
+                            <div class="text-zinc-500 mt-1">Mark up photos with annotations, dimensions, and notes.</div>
+                        </div>
+                        <div class="bg-zinc-950 border border-zinc-800 rounded-2xl p-3">
+                            <div class="flex items-center gap-2 text-emerald-400">
+                                <i class="fa-solid fa-robot"></i>
+                                <span class="font-medium">Auto-Filing</span>
+                            </div>
+                            <div class="text-zinc-500 mt-1">Automatically organize uploaded plans and documents into the correct folders.</div>
+                        </div>
+                        <div class="bg-zinc-950 border border-zinc-800 rounded-2xl p-3">
+                            <div class="flex items-center gap-2 text-emerald-400">
+                                <i class="fa-solid fa-magic"></i>
+                                <span class="font-medium">Smart Suggestions</span>
+                            </div>
+                            <div class="text-zinc-500 mt-1">AI-assisted work descriptions and safety observations based on previous logs.</div>
+                        </div>
+                    </div>
+                </div>
+
+            </div> <!-- End of scrollable form content -->
+
+            <!-- Modal Footer -->
+            <div class="flex justify-between items-center gap-3 px-6 py-4 border-t border-zinc-700 flex-shrink-0 bg-zinc-900 rounded-b-3xl">
+                <div>
+                    <button type="button" onclick="saveAsDraft()"
+                            class="px-5 py-2.5 text-sm rounded-2xl border border-zinc-700 hover:bg-zinc-800 transition-colors flex items-center gap-2">
+                        <i class="fa-solid fa-save"></i>
+                        <span>Save Draft</span>
+                    </button>
+                </div>
+
+                <div class="flex gap-3">
+                    <button type="button" onclick="closeCreateDailyLogModal()"
+                            class="px-5 py-2.5 text-sm rounded-2xl border border-zinc-700 hover:bg-zinc-800 transition-colors">
+                        Cancel
+                    </button>
+                    <button type="submit"
+                            class="px-8 py-2.5 text-sm bg-emerald-600 hover:bg-emerald-500 rounded-2xl font-medium transition-colors flex items-center gap-2">
+                        <i class="fa-solid fa-check"></i>
+                        <span>Submit Daily Log</span>
+                    </button>
+                </div>
+            </div>
+
+        </form>
+    </div>
+</div>
