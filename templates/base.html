@@ -740,7 +740,7 @@
         console.log('%c[Case PM v56.0] ✅ Ultimate base.html loaded successfully.', 'color:#10b981; font-weight:600');
     </script>
 
-    {% endif %}   <!-- ← This closes the main {% if current_user.is_authenticated %} block -->
+{% endif %}   <!-- This MUST be here to close the main {% if current_user.is_authenticated %} block -->
 
 </body>
 </html>
