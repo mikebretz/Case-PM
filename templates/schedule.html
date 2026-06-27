@@ -362,3 +362,21 @@
         initializeSchedule();
     };
 </script>
+    <!-- ==================== FINAL POLISH ==================== -->
+    <script>
+        // Additional safety: Re-render table if needed after full load
+        document.addEventListener('DOMContentLoaded', function() {
+            const tbody = document.getElementById('scheduleTableBody');
+            if (tbody && tbody.children.length === 0) {
+                // Only re-render if table is empty (in case of timing issues)
+                if (typeof scheduleTasks !== 'undefined' && scheduleTasks.length > 0) {
+                    renderScheduleTable(scheduleTasks);
+                }
+            }
+        });
+
+        console.log('%c[Case PM] Schedule page loaded successfully.', 'color:#10b981');
+    </script>
+
+</div>
+</div>
