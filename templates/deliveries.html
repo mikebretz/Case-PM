@@ -128,3 +128,175 @@
                 </form>
             </div>
         </dialog>
+        <!-- JavaScript -->
+        <script>
+            // Sample data (will be replaced with backend later)
+            let deliveries = [
+                {
+                    id: 1,
+                    delivery_number: "DEL-008",
+                    date: "2025-04-02",
+                    supplier: "ABC Concrete LLC",
+                    description: "4000 PSI Concrete - 12 yards",
+                    status: "Received",
+                    received_by: "Mike B."
+                },
+                {
+                    id: 2,
+                    delivery_number: "DEL-009",
+                    date: "2025-04-05",
+                    supplier: "Steel Dynamics LLC",
+                    description: "Rebar #4 & #5 - Various lengths",
+                    status: "Pending",
+                    received_by: ""
+                },
+                {
+                    id: 3,
+                    delivery_number: "DEL-010",
+                    date: "2025-04-03",
+                    supplier: "PowerTech Electric",
+                    description: "Conduit and wire - 2nd floor",
+                    status: "Partial",
+                    received_by: "John D."
+                }
+            ];
+
+            function filterDeliveries() {
+                const searchTerm = document.getElementById('deliverySearch').value.toLowerCase();
+                const statusFilter = document.getElementById('statusFilter').value;
+
+                const filtered = deliveries.filter(delivery => {
+                    const matchesSearch = delivery.supplier.toLowerCase().includes(searchTerm) || 
+                                        delivery.description.toLowerCase().includes(searchTerm);
+                    const matchesStatus = !statusFilter || delivery.status === statusFilter;
+                    return matchesSearch && matchesStatus;
+                });
+
+                renderDeliveriesTable(filtered);
+            }
+
+            function clearDeliveryFilters() {
+                document.getElementById('deliverySearch').value = '';
+                document.getElementById('statusFilter').value = '';
+                document.getElementById('supplierFilter').value = '';
+                renderDeliveriesTable(deliveries);
+            }
+
+            function renderDeliveriesTable(deliveryList) {
+                const tbody = document.getElementById('deliveriesTableBody');
+                tbody.innerHTML = '';
+
+                if (deliveryList.length === 0) {
+                    tbody.innerHTML = `
+                        <tr>
+                            <td colspan="7" class="px-6 py-8 text-center text-zinc-400">
+                                No deliveries found.
+                            </td>
+                        </tr>
+                    `;
+                    return;
+                }
+
+                deliveryList.forEach(delivery => {
+                    const statusColor = 
+                        delivery.status === 'Received' ? 'bg-emerald-600/20 text-emerald-400' :
+                        delivery.status === 'Partial' ? 'bg-amber-600/20 text-amber-400' :
+                        delivery.status === 'Delayed' ? 'bg-red-600/20 text-red-400' :
+                        'bg-zinc-600/20 text-zinc-400';
+
+                    const row = document.createElement('tr');
+                    row.className = 'hover:bg-zinc-800/60 transition-colors';
+                    row.innerHTML = `
+                        <td class="px-6 py-4 font-mono text-sm">${delivery.delivery_number}</td>
+                        <td class="px-6 py-4 text-sm text-zinc-400">${delivery.date}</td>
+                        <td class="px-6 py-4">${delivery.supplier}</td>
+                        <td class="px-6 py-4">${delivery.description}</td>
+                        <td class="px-6 py-4 text-center">
+                            <span class="inline-block px-3 py-1 rounded-full text-xs font-medium ${statusColor}">
+                                ${delivery.status}
+                            </span>
+                        </td>
+                        <td class="px-6 py-4 text-center text-sm text-zinc-400">${delivery.received_by || '-'}</td>
+                        <td class="px-4 py-4">
+                            <div class="flex items-center gap-1">
+                                <button onclick="editDelivery(${delivery.id})" class="p-2 hover:bg-zinc-700 rounded-xl text-zinc-400 hover:text-white">
+                                    <i class="fa-solid fa-edit"></i>
+                                </button>
+                                <button onclick="deleteDelivery(${delivery.id})" class="p-2 hover:bg-zinc-700 rounded-xl text-zinc-400 hover:text-red-400">
+                                    <i class="fa-solid fa-trash"></i>
+                                </button>
+                            </div>
+                        </td>
+                    `;
+                    tbody.appendChild(row);
+                });
+            }
+
+            function showAddDeliveryModal() {
+                document.getElementById('modalTitle').innerText = 'Log New Delivery';
+                document.getElementById('deliveryForm').reset();
+                document.getElementById('deliveryId').value = '';
+                document.getElementById('deliveryModal').showModal();
+            }
+
+            function editDelivery(id) {
+                const delivery = deliveries.find(d => d.id === id);
+                if (!delivery) return;
+
+                document.getElementById('modalTitle').innerText = 'Edit Delivery';
+                document.getElementById('deliveryId').value = delivery.id;
+                document.getElementById('supplier').value = delivery.supplier;
+                document.getElementById('description').value = delivery.description;
+                document.getElementById('delivery_date').value = delivery.date;
+                document.getElementById('status').value = delivery.status;
+                document.getElementById('received_by').value = delivery.received_by || '';
+
+                document.getElementById('deliveryModal').showModal();
+            }
+
+            function saveDelivery(e) {
+                e.preventDefault();
+
+                const id = document.getElementById('deliveryId').value;
+
+                const newDelivery = {
+                    id: id ? parseInt(id) : Date.now(),
+                    delivery_number: id ? deliveries.find(d => d.id == id).delivery_number : `DEL-${String(deliveries.length + 1).padStart(3, '0')}`,
+                    date: document.getElementById('delivery_date').value,
+                    supplier: document.getElementById('supplier').value,
+                    description: document.getElementById('description').value,
+                    status: document.getElementById('status').value,
+                    received_by: document.getElementById('received_by').value
+                };
+
+                if (id) {
+                    const index = deliveries.findIndex(d => d.id == id);
+                    deliveries[index] = newDelivery;
+                } else {
+                    deliveries.push(newDelivery);
+                }
+
+                renderDeliveriesTable(deliveries);
+                document.getElementById('deliveryModal').close();
+            }
+
+            function deleteDelivery(id) {
+                if (!confirm('Delete this delivery record?')) return;
+                deliveries = deliveries.filter(d => d.id !== id);
+                renderDeliveriesTable(deliveries);
+            }
+
+            function initializeDeliveries() {
+                renderDeliveriesTable(deliveries);
+            }
+
+            // Initialize on load
+            window.onload = function() {
+                initializeDeliveries();
+            };
+        </script>
+
+{% endblock %}
+
+</div>
+</div>
