@@ -1,335 +1,68 @@
-
 {% extends "base.html" %}
 
 {% block content %}
-<div class="p-8 max-w-[1600px] mx-auto">
-
-    <!-- Header -->
-    <div class="flex items-center justify-between mb-8">
+<div class="max-w-[1600px] mx-auto">
+    
+    <!-- Page Header -->
+    <div class="flex items-center justify-between mb-6">
         <div>
             <h1 class="text-3xl font-semibold tracking-tight">Pay Applications</h1>
-            <p class="text-zinc-400 mt-1">AIA-Style Payment Applications • ALDI Lakeland</p>
+            <p class="text-zinc-400 mt-1">Manage AIA-format progress billing</p>
         </div>
-        <button onclick="showCreatePayAppModal()"
-                class="flex items-center gap-2 px-5 py-2.5 bg-emerald-600 hover:bg-emerald-500 transition-colors rounded-2xl text-sm font-medium">
-            <i class="fa-solid fa-file-invoice-dollar"></i>
+        
+        <button onclick="showAddPayAppModal()" 
+                class="flex items-center gap-2 px-5 py-2.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded-2xl text-sm font-medium transition-colors">
+            <i class="fa-solid fa-plus"></i>
             <span>New Pay Application</span>
         </button>
     </div>
 
-    <!-- Summary Cards -->
-    <div class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-4 mb-8">
-        <div class="bg-zinc-900 border border-zinc-800 rounded-3xl p-5">
-            <div class="text-sm text-zinc-400">Total Submitted</div>
-            <div class="text-3xl font-semibold mt-1">$2,847,650</div>
-        </div>
-        <div class="bg-zinc-900 border border-zinc-800 rounded-3xl p-5">
-            <div class="text-sm text-zinc-400">Approved This Period</div>
-            <div class="text-3xl font-semibold mt-1 text-emerald-400">$412,300</div>
-        </div>
-        <div class="bg-zinc-900 border border-zinc-800 rounded-3xl p-5">
-            <div class="text-sm text-zinc-400">Pending Approval</div>
-            <div class="text-3xl font-semibold mt-1 text-yellow-400">$187,450</div>
-        </div>
-        <div class="bg-zinc-900 border border-zinc-800 rounded-3xl p-5">
-            <div class="text-sm text-zinc-400">Total Retainage Held</div>
-            <div class="text-3xl font-semibold mt-1">$142,382</div>
-        </div>
-        <div class="bg-zinc-900 border border-zinc-800 rounded-3xl p-5">
-            <div class="text-sm text-zinc-400">Applications YTD</div>
-            <div class="text-3xl font-semibold mt-1">14</div>
-        </div>
-    </div>
-
     <!-- Filters -->
-    <div class="flex flex-col md:flex-row gap-3 mb-4">
-        <input type="text" id="payAppSearch" placeholder="Search app #, contractor, or period..." 
-               onkeyup="filterPayApps()"
-               class="flex-1 bg-zinc-900 border border-zinc-700 rounded-2xl px-4 py-2.5 text-sm">
+    <div class="flex flex-wrap items-center gap-3 mb-6 bg-zinc-900 border border-zinc-800 rounded-3xl p-4">
+        <div class="flex-1 min-w-[220px]">
+            <input type="text" id="payAppSearch" placeholder="Search by number or contractor..." 
+                   class="w-full bg-zinc-800 border border-zinc-700 rounded-2xl px-4 py-2.5 text-sm focus:outline-none focus:border-emerald-600"
+                   onkeyup="filterPayApps()">
+        </div>
 
-        <select id="payAppStatusFilter" onchange="filterPayApps()"
-                class="bg-zinc-900 border border-zinc-700 rounded-2xl px-4 py-2.5 text-sm">
+        <select id="statusFilter" onchange="filterPayApps()" 
+                class="bg-zinc-800 border border-zinc-700 rounded-2xl px-4 py-2.5 text-sm focus:outline-none focus:border-emerald-600">
             <option value="">All Statuses</option>
             <option value="Draft">Draft</option>
             <option value="Submitted">Submitted</option>
-            <option value="Under Review">Under Review</option>
             <option value="Approved">Approved</option>
             <option value="Paid">Paid</option>
-            <option value="Rejected">Rejected</option>
         </select>
 
-        <input type="month" id="payAppPeriodFilter" onchange="filterPayApps()"
-               class="bg-zinc-900 border border-zinc-700 rounded-2xl px-4 py-2.5 text-sm">
+        <select id="projectFilter" onchange="filterPayApps()" 
+                class="bg-zinc-800 border border-zinc-700 rounded-2xl px-4 py-2.5 text-sm focus:outline-none focus:border-emerald-600">
+            <option value="">All Projects</option>
+        </select>
+
+        <button onclick="clearPayAppFilters()" 
+                class="px-4 py-2.5 text-sm bg-zinc-800 hover:bg-zinc-700 border border-zinc-700 rounded-2xl transition-colors">
+            Clear Filters
+        </button>
     </div>
 
     <!-- Pay Applications Table -->
     <div class="bg-zinc-900 border border-zinc-800 rounded-3xl overflow-hidden">
-        <table class="w-full text-sm">
+        <table class="w-full">
             <thead>
-                <tr class="bg-zinc-950 border-b border-zinc-800">
-                    <th class="px-6 py-4 text-left font-medium text-zinc-400">App #</th>
-                    <th class="px-6 py-4 text-left font-medium text-zinc-400">Period Ending</th>
-                    <th class="px-6 py-4 text-left font-medium text-zinc-400">Contractor / Vendor</th>
-                    <th class="px-6 py-4 text-right font-medium text-zinc-400">Amount Requested</th>
-                    <th class="px-6 py-4 text-right font-medium text-zinc-400">Approved</th>
-                    <th class="px-6 py-4 text-right font-medium text-zinc-400">Retainage</th>
-                    <th class="px-6 py-4 text-center font-medium text-zinc-400">Status</th>
-                    <th class="px-6 py-4 text-center font-medium text-zinc-400">Actions</th>
+                <tr class="border-b border-zinc-800 bg-zinc-950">
+                    <th class="text-left px-6 py-4 text-sm font-medium text-zinc-400">App #</th>
+                    <th class="text-left px-6 py-4 text-sm font-medium text-zinc-400">Period Ending</th>
+                    <th class="text-left px-6 py-4 text-sm font-medium text-zinc-400">Contractor</th>
+                    <th class="text-right px-6 py-4 text-sm font-medium text-zinc-400">Amount</th>
+                    <th class="text-center px-6 py-4 text-sm font-medium text-zinc-400">Status</th>
+                    <th class="text-center px-6 py-4 text-sm font-medium text-zinc-400">Retainage</th>
+                    <th class="w-20"></th>
                 </tr>
             </thead>
-            <tbody>
-
-                {% for app in pay_applications %}
-                <tr class="border-b border-zinc-800 hover:bg-zinc-800/60 transition-colors">
-                    <td class="px-6 py-4 font-mono text-emerald-400">{{ app.number }}</td>
-                    <td class="px-6 py-4">{{ app.period_ending.strftime('%m/%d/%Y') if app.period_ending else '—' }}</td>
-                    <td class="px-6 py-4">{{ app.contractor }}</td>
-                    
-                    <td class="px-6 py-4 text-right font-mono">
-                        ${{ "{:,.2f}".format(app.amount_requested) }}
-                    </td>
-                    <td class="px-6 py-4 text-right font-mono">
-                        ${{ "{:,.2f}".format(app.amount_approved or 0) }}
-                    </td>
-                    <td class="px-6 py-4 text-right font-mono text-yellow-400">
-                        ${{ "{:,.2f}".format(app.retainage or 0) }}
-                    </td>
-
-                    <!-- Status -->
-                    <td class="px-6 py-4 text-center">
-                        <select onchange="updatePayAppStatus({{ app.id }}, this.value)"
-                                class="bg-zinc-800 border border-zinc-700 rounded-xl px-3 py-1 text-xs">
-                            <option value="Draft" {% if app.status == 'Draft' %}selected{% endif %}>Draft</option>
-                            <option value="Submitted" {% if app.status == 'Submitted' %}selected{% endif %}>Submitted</option>
-                            <option value="Under Review" {% if app.status == 'Under Review' %}selected{% endif %}>Under Review</option>
-                            <option value="Approved" {% if app.status == 'Approved' %}selected{% endif %}>Approved</option>
-                            <option value="Paid" {% if app.status == 'Paid' %}selected{% endif %}>Paid</option>
-                            <option value="Rejected" {% if app.status == 'Rejected' %}selected{% endif %}>Rejected</option>
-                        </select>
-                    </td>
-
-                    <td class="px-6 py-4 text-center">
-                        <div class="flex items-center justify-center gap-1">
-                            <button onclick="viewPayApp({{ app.id }})" 
-                                    class="p-2 text-emerald-400 hover:text-emerald-300 hover:bg-zinc-800 rounded-xl transition-colors" title="View / Print">
-                                <i class="fa-solid fa-eye"></i>
-                            </button>
-                            
-                            <button onclick="downloadPayAppPDF({{ app.id }})" 
-                                    class="p-2 text-emerald-400 hover:text-emerald-300 hover:bg-zinc-800 rounded-xl transition-colors" title="Download PDF">
-                                <i class="fa-solid fa-file-pdf"></i>
-                            </button>
-                        </div>
-                    </td>
-                </tr>
-                {% else %}
-                <tr>
-                    <td colspan="8" class="px-6 py-12 text-center text-zinc-400">
-                        No pay applications found.
-                    </td>
-                </tr>
-                {% endfor %}
+            <tbody id="payAppTableBody" class="divide-y divide-zinc-800">
+                <!-- Rows populated by JavaScript -->
             </tbody>
         </table>
     </div>
 
 </div>
-
-<!-- ==================== CREATE PAY APPLICATION MODAL ==================== -->
-<dialog id="createPayAppModal" class="bg-zinc-900 border border-zinc-700 rounded-3xl p-0 w-full max-w-4xl">
-    <div class="p-6">
-        <div class="flex items-center justify-between mb-6">
-            <h2 class="text-xl font-semibold">Create New Pay Application</h2>
-            <button onclick="closeCreatePayAppModal()" class="text-zinc-400 hover:text-white">
-                <i class="fa-solid fa-times text-xl"></i>
-            </button>
-        </div>
-
-        <form method="POST" action="{{ url_for('create_pay_application') }}">
-            <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
-                <div>
-                    <label class="block text-sm text-zinc-400 mb-1.5">Period Start <span class="text-red-400">*</span></label>
-                    <input type="date" name="period_start" class="w-full bg-zinc-800 border border-zinc-700 rounded-2xl px-4 py-2.5 text-sm" required>
-                </div>
-                <div>
-                    <label class="block text-sm text-zinc-400 mb-1.5">Period Ending <span class="text-red-400">*</span></label>
-                    <input type="date" name="period_ending" class="w-full bg-zinc-800 border border-zinc-700 rounded-2xl px-4 py-2.5 text-sm" required>
-                </div>
-                <div>
-                    <label class="block text-sm text-zinc-400 mb-1.5">Application #</label>
-                    <input type="text" name="number" value="PAY-{{ (pay_applications|length + 1) | string.zfill(3) if pay_applications else '001' }}" 
-                           class="w-full bg-zinc-800 border border-zinc-700 rounded-2xl px-4 py-2.5 text-sm font-mono" readonly>
-                </div>
-            </div>
-
-            <div class="mb-4">
-                <label class="block text-sm text-zinc-400 mb-1.5">Contractor / Vendor <span class="text-red-400">*</span></label>
-                <select name="contractor" class="w-full bg-zinc-800 border border-zinc-700 rounded-2xl px-4 py-2.5 text-sm" required>
-                    <option value="">Select Contractor...</option>
-                    {% for company in companies %}
-                    <option value="{{ company.name }}">{{ company.name }}</option>
-                    {% endfor %}
-                </select>
-            </div>
-
-            <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
-                <div>
-                    <label class="block text-sm text-zinc-400 mb-1.5">Amount Requested <span class="text-red-400">*</span></label>
-                    <div class="relative">
-                        <span class="absolute left-4 top-3 text-zinc-400">$</span>
-                        <input type="number" step="0.01" name="amount_requested" class="w-full bg-zinc-800 border border-zinc-700 rounded-2xl pl-8 pr-4 py-2.5 text-sm" required>
-                    </div>
-                </div>
-                <div>
-                    <label class="block text-sm text-zinc-400 mb-1.5">Retainage %</label>
-                    <input type="number" step="0.1" name="retainage_percent" value="10" class="w-full bg-zinc-800 border border-zinc-700 rounded-2xl px-4 py-2.5 text-sm">
-                </div>
-                <div>
-                    <label class="block text-sm text-zinc-400 mb-1.5">Previous Payments</label>
-                    <div class="relative">
-                        <span class="absolute left-4 top-3 text-zinc-400">$</span>
-                        <input type="number" step="0.01" name="previous_payments" class="w-full bg-zinc-800 border border-zinc-700 rounded-2xl pl-8 pr-4 py-2.5 text-sm">
-                    </div>
-                </div>
-            </div>
-
-            <div class="mb-4">
-                <label class="block text-sm text-zinc-400 mb-1.5">Description / Work Performed This Period</label>
-                <textarea name="description" rows="3" class="w-full bg-zinc-800 border border-zinc-700 rounded-2xl px-4 py-3 text-sm" placeholder="Summary of work completed during this billing period..."></textarea>
-            </div>
-
-            <div class="mb-4">
-                <label class="block text-sm text-zinc-400 mb-1.5">Status</label>
-                <select name="status" class="w-full bg-zinc-800 border border-zinc-700 rounded-2xl px-4 py-2.5 text-sm">
-                    <option value="Draft">Draft</option>
-                    <option value="Submitted">Submitted</option>
-                    <option value="Under Review">Under Review</option>
-                </select>
-            </div>
-
-            <div class="flex gap-3 mt-8">
-                <button type="button" onclick="closeCreatePayAppModal()"
-                        class="flex-1 bg-zinc-800 hover:bg-zinc-700 rounded-2xl py-3 text-sm font-medium transition-colors">
-                    Cancel
-                </button>
-                <button type="submit"
-                        class="flex-1 bg-emerald-600 hover:bg-emerald-500 rounded-2xl py-3 text-sm font-medium transition-colors">
-                    Create Pay Application
-                </button>
-            </div>
-        </form>
-    </div>
-</dialog>
-
-<!-- ==================== JAVASCRIPT ==================== -->
-<script>
-    // ==================== FILTERING ====================
-    function filterPayApps() {
-        const search = document.getElementById('payAppSearch').value.toLowerCase();
-        const status = document.getElementById('payAppStatusFilter').value;
-        const period = document.getElementById('payAppPeriodFilter').value;
-
-        const rows = document.querySelectorAll('table tbody tr');
-
-        rows.forEach(row => {
-            const text = row.textContent.toLowerCase();
-            const rowStatus = row.querySelector('select') ? row.querySelector('select').value : '';
-            const rowDate = row.cells[1] ? row.cells[1].textContent : '';
-
-            let show = true;
-
-            if (search && !text.includes(search)) show = false;
-            if (status && rowStatus !== status) show = false;
-            if (period && !rowDate.includes(period)) show = false;
-
-            row.style.display = show ? '' : 'none';
-        });
-    }
-
-    // ==================== MODAL FUNCTIONS ====================
-    function showCreatePayAppModal() {
-        const modal = document.getElementById('createPayAppModal');
-        modal.showModal();
-    }
-
-    function closeCreatePayAppModal() {
-        document.getElementById('createPayAppModal').close();
-    }
-
-    // ==================== SAVE PAY APPLICATION ====================
-    function savePayApp(e) {
-        e.preventDefault();
-
-        const formData = new FormData(e.target);
-        
-        // In a real application, you would send this via fetch() to the backend
-        console.log("Creating Pay Application with data:", Object.fromEntries(formData));
-
-        closeCreatePayAppModal();
-        showToast('Pay Application created successfully');
-
-        // Refresh the page or table after creation
-        setTimeout(() => {
-            location.reload();
-        }, 900);
-    }
-
-    // ==================== ACTION FUNCTIONS ====================
-    function updatePayAppStatus(id, newStatus) {
-        console.log(`Updating Pay Application #${id} to status: ${newStatus}`);
-        showToast(`Status updated to ${newStatus}`);
-        // TODO: Send update to backend via fetch()
-    }
-
-    function viewPayApp(id) {
-        alert(`Opening Pay Application #${id}\n(Full AIA-style pay app with schedule of values will open here)`);
-    }
-
-    function downloadPayAppPDF(id) {
-        showToast('Generating PDF...');
-        setTimeout(() => {
-            showToast('PDF downloaded successfully');
-            // In real version: trigger actual PDF download from backend
-        }, 1200);
-    }
-
-    // ==================== INITIALIZATION ====================
-    function initializePayAppsPage() {
-        console.log('%c[Case PM] Pay Applications page initialized with full features.', 'color:#10b981');
-    }
-
-    window.addEventListener('load', initializePayAppsPage);
-</script>
-
-{% endblock %}
-
-<!-- ==================== FINAL ENHANCEMENTS ==================== -->
-<script>
-    // ==================== KEYBOARD SHORTCUTS ====================
-    document.addEventListener('keydown', function(e) {
-        if (e.key === "/" && document.activeElement.tagName === "BODY") {
-            e.preventDefault();
-            const search = document.getElementById('payAppSearch');
-            if (search) search.focus();
-        }
-    });
-
-    // ==================== BULK ACTIONS (Future Ready) ====================
-    function bulkApprovePayApps() {
-        const selected = document.querySelectorAll('table tbody input[type="checkbox"]:checked');
-        if (selected.length === 0) {
-            alert("Please select pay applications to approve.");
-            return;
-        }
-        alert(`Approving ${selected.length} pay applications... (Feature ready for backend)`);
-    }
-
-    // ==================== FINAL INITIALIZATION ====================
-    function finalPayAppsInitialization() {
-        console.log('%c[Case PM] pay_applications.html fully loaded with maximum features.', 'color:#10b981');
-    }
-
-    window.addEventListener('load', finalPayAppsInitialization);
-</script>
-
-{% endblock %}
