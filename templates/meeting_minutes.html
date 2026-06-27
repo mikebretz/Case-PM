@@ -67,3 +67,77 @@
     </div>
 
 </div>
+        <!-- Add / Edit Meeting Modal -->
+        <dialog id="meetingModal" class="bg-zinc-900 border border-zinc-700 rounded-3xl p-0 w-full max-w-2xl shadow-2xl">
+            <div class="p-6">
+                <div class="flex items-center justify-between mb-5">
+                    <div class="font-semibold text-xl" id="modalTitle">New Meeting Minutes</div>
+                    <button onclick="document.getElementById('meetingModal').close()" class="text-zinc-400 hover:text-white text-2xl leading-none">&times;</button>
+                </div>
+
+                <form id="meetingForm" onsubmit="saveMeeting(event)">
+                    <input type="hidden" id="meetingId">
+
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <div>
+                            <label class="block text-sm text-zinc-400 mb-1.5">Meeting Number</label>
+                            <input type="text" id="meeting_number" placeholder="e.g. MM-024" required
+                                   class="w-full bg-zinc-800 border border-zinc-700 rounded-2xl px-4 py-2.5 text-sm focus:outline-none focus:border-emerald-600">
+                        </div>
+
+                        <div>
+                            <label class="block text-sm text-zinc-400 mb-1.5">Date</label>
+                            <input type="date" id="meeting_date" required
+                                   class="w-full bg-zinc-800 border border-zinc-700 rounded-2xl px-4 py-2.5 text-sm focus:outline-none focus:border-emerald-600">
+                        </div>
+
+                        <div>
+                            <label class="block text-sm text-zinc-400 mb-1.5">Meeting Type</label>
+                            <select id="meeting_type" required
+                                    class="w-full bg-zinc-800 border border-zinc-700 rounded-2xl px-4 py-2.5 text-sm focus:outline-none focus:border-emerald-600">
+                                <option value="Owner-Architect">Owner-Architect</option>
+                                <option value="Subcontractor">Subcontractor</option>
+                                <option value="Internal">Internal</option>
+                                <option value="Safety">Safety</option>
+                                <option value="Other">Other</option>
+                            </select>
+                        </div>
+
+                        <div>
+                            <label class="block text-sm text-zinc-400 mb-1.5">Location</label>
+                            <input type="text" id="location" required
+                                   class="w-full bg-zinc-800 border border-zinc-700 rounded-2xl px-4 py-2.5 text-sm focus:outline-none focus:border-emerald-600">
+                        </div>
+                    </div>
+
+                    <div class="mt-4">
+                        <label class="block text-sm text-zinc-400 mb-1.5">Subject / Purpose</label>
+                        <input type="text" id="subject" required
+                               class="w-full bg-zinc-800 border border-zinc-700 rounded-2xl px-4 py-2.5 text-sm focus:outline-none focus:border-emerald-600">
+                    </div>
+
+                    <div class="mt-4">
+                        <label class="block text-sm text-zinc-400 mb-1.5">Attendees</label>
+                        <textarea id="attendees" rows="2" placeholder="List attendees separated by commas"
+                                  class="w-full bg-zinc-800 border border-zinc-700 rounded-2xl px-4 py-2.5 text-sm focus:outline-none focus:border-emerald-600"></textarea>
+                    </div>
+
+                    <div class="mt-4">
+                        <label class="block text-sm text-zinc-400 mb-1.5">Notes / Discussion Points</label>
+                        <textarea id="notes" rows="4"
+                                  class="w-full bg-zinc-800 border border-zinc-700 rounded-2xl px-4 py-2.5 text-sm focus:outline-none focus:border-emerald-600"></textarea>
+                    </div>
+
+                    <div class="flex gap-3 mt-6">
+                        <button type="button" onclick="document.getElementById('meetingModal').close()"
+                                class="flex-1 py-2.5 bg-zinc-800 hover:bg-zinc-700 rounded-2xl text-sm font-medium transition-colors">
+                            Cancel
+                        </button>
+                        <button type="submit"
+                                class="flex-1 py-2.5 bg-emerald-600 hover:bg-emerald-500 rounded-2xl text-sm font-medium transition-colors">
+                            Save Meeting Minutes
+                        </button>
+                    </div>
+                </form>
+            </div>
+        </dialog>
