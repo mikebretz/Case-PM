@@ -683,3 +683,91 @@
         // Boot app
         window.onload = initializeApp;
     </script>
+    <!-- ==================== MOBILE BOTTOM NAVIGATION ==================== -->
+    <div class="md:hidden fixed bottom-0 left-0 right-0 bg-zinc-900 border-t border-zinc-800 z-50">
+        <div class="flex justify-around items-center px-1 py-2 text-xs">
+            
+            <a href="{{ url_for('dashboard') }}" 
+               class="flex flex-col items-center justify-center w-14 text-zinc-400 hover:text-white active:text-emerald-400 transition-colors">
+                <i class="fa-solid fa-home text-xl mb-0.5"></i>
+                <span class="text-[10px]">Dashboard</span>
+            </a>
+
+            <a href="{{ url_for('daily_log') }}" 
+               class="flex flex-col items-center justify-center w-14 text-zinc-400 hover:text-white active:text-emerald-400 transition-colors">
+                <i class="fa-solid fa-clipboard-list text-xl mb-0.5"></i>
+                <span class="text-[10px]">Daily Log</span>
+            </a>
+
+            <a href="{{ url_for('rfis_page') }}" 
+               class="flex flex-col items-center justify-center w-14 text-zinc-400 hover:text-white active:text-emerald-400 transition-colors">
+                <i class="fa-solid fa-question-circle text-xl mb-0.5"></i>
+                <span class="text-[10px]">RFIs</span>
+            </a>
+
+            <a href="{{ url_for('photos_page') }}" 
+               class="flex flex-col items-center justify-center w-14 text-zinc-400 hover:text-white active:text-emerald-400 transition-colors">
+                <i class="fa-solid fa-camera text-xl mb-0.5"></i>
+                <span class="text-[10px]">Photos</span>
+            </a>
+
+            <!-- More Button -->
+            <button onclick="showMobileMoreMenu()" 
+                    class="flex flex-col items-center justify-center w-14 text-zinc-400 hover:text-white active:text-emerald-400 transition-colors">
+                <i class="fa-solid fa-ellipsis-h text-xl mb-0.5"></i>
+                <span class="text-[10px]">More</span>
+            </button>
+        </div>
+    </div>
+
+    <!-- ==================== MOBILE MORE MENU ==================== -->
+    <dialog id="mobileMoreMenu" class="bg-zinc-900 border border-zinc-700 rounded-3xl p-0 w-full max-w-[320px] shadow-2xl md:hidden">
+        <div class="p-4">
+            <div class="flex items-center justify-between mb-3 px-2">
+                <div class="font-semibold">More Options</div>
+                <button onclick="document.getElementById('mobileMoreMenu').close()" class="text-zinc-400 hover:text-white text-xl leading-none">&times;</button>
+            </div>
+
+            <div class="grid grid-cols-3 gap-2 text-sm">
+                <a href="{{ url_for('projects_page') }}" class="flex flex-col items-center p-3 hover:bg-zinc-800 rounded-2xl text-center">
+                    <i class="fa-solid fa-folder text-xl mb-1 text-emerald-400"></i>
+                    <span>Projects</span>
+                </a>
+                <a href="{{ url_for('change_orders_page') }}" class="flex flex-col items-center p-3 hover:bg-zinc-800 rounded-2xl text-center">
+                    <i class="fa-solid fa-exchange-alt text-xl mb-1 text-emerald-400"></i>
+                    <span>Change Orders</span>
+                </a>
+                <a href="{{ url_for('submittals_page') }}" class="flex flex-col items-center p-3 hover:bg-zinc-800 rounded-2xl text-center">
+                    <i class="fa-solid fa-file-upload text-xl mb-1 text-emerald-400"></i>
+                    <span>Submittals</span>
+                </a>
+                <a href="{{ url_for('punch_list_page') }}" class="flex flex-col items-center p-3 hover:bg-zinc-800 rounded-2xl text-center">
+                    <i class="fa-solid fa-tasks text-xl mb-1 text-emerald-400"></i>
+                    <span>Punch List</span>
+                </a>
+                <a href="{{ url_for('safety_page') }}" class="flex flex-col items-center p-3 hover:bg-zinc-800 rounded-2xl text-center">
+                    <i class="fa-solid fa-shield-alt text-xl mb-1 text-emerald-400"></i>
+                    <span>Safety</span>
+                </a>
+                <a href="{{ url_for('schedule_page') }}" class="flex flex-col items-center p-3 hover:bg-zinc-800 rounded-2xl text-center">
+                    <i class="fa-solid fa-calendar-alt text-xl mb-1 text-emerald-400"></i>
+                    <span>Schedule</span>
+                </a>
+                <a href="{{ url_for('budget_page') }}" class="flex flex-col items-center p-3 hover:bg-zinc-800 rounded-2xl text-center">
+                    <i class="fa-solid fa-chart-pie text-xl mb-1 text-emerald-400"></i>
+                    <span>Budget</span>
+                </a>
+                <a href="{{ url_for('companies_page') }}" class="flex flex-col items-center p-3 hover:bg-zinc-800 rounded-2xl text-center">
+                    <i class="fa-solid fa-building text-xl mb-1 text-emerald-400"></i>
+                    <span>Companies</span>
+                </a>
+                <a href="{{ url_for('program_settings') }}" class="flex flex-col items-center p-3 hover:bg-zinc-800 rounded-2xl text-center">
+                    <i class="fa-solid fa-cog text-xl mb-1 text-emerald-400"></i>
+                    <span>Settings</span>
+                </a>
+            </div>
+        </div>
+    </dialog>
+
+</body>
+</html>
