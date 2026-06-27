@@ -400,3 +400,233 @@
             </div>
         </div>
     </dialog>
+    <!-- ==================== NOTIFICATIONS PANEL ==================== -->
+    <dialog id="notificationsPanel" class="bg-zinc-900 border border-zinc-700 rounded-3xl p-0 w-full max-w-md shadow-2xl">
+        <div class="p-6">
+            <div class="flex items-center justify-between mb-4">
+                <div>
+                    <div class="font-semibold text-lg">Notifications</div>
+                    <div class="text-xs text-zinc-500">3 new updates</div>
+                </div>
+                <button onclick="document.getElementById('notificationsPanel').close()" class="text-zinc-400 hover:text-white">
+                    <i class="fa-solid fa-times text-xl"></i>
+                </button>
+            </div>
+
+            <div class="space-y-3 max-h-96 overflow-auto pr-2">
+                <div class="flex gap-3 p-3 bg-zinc-800 rounded-2xl">
+                    <div class="w-8 h-8 bg-emerald-600/20 text-emerald-400 rounded-xl flex items-center justify-center flex-shrink-0">
+                        <i class="fa-solid fa-exclamation-triangle"></i>
+                    </div>
+                    <div class="flex-1 min-w-0">
+                        <div class="font-medium text-sm">RFI #RFI-047 requires response</div>
+                        <div class="text-xs text-zinc-500">From: Architect • 2 hours ago</div>
+                    </div>
+                </div>
+
+                <div class="flex gap-3 p-3 bg-zinc-800 rounded-2xl">
+                    <div class="w-8 h-8 bg-amber-600/20 text-amber-400 rounded-xl flex items-center justify-center flex-shrink-0">
+                        <i class="fa-solid fa-file-invoice-dollar"></i>
+                    </div>
+                    <div class="flex-1 min-w-0">
+                        <div class="font-medium text-sm">Pay App #PA-012 ready for review</div>
+                        <div class="text-xs text-zinc-500">Due in 3 days • Just now</div>
+                    </div>
+                </div>
+
+                <div class="flex gap-3 p-3 bg-zinc-800 rounded-2xl">
+                    <div class="w-8 h-8 bg-blue-600/20 text-blue-400 rounded-xl flex items-center justify-center flex-shrink-0">
+                        <i class="fa-solid fa-shield-alt"></i>
+                    </div>
+                    <div class="flex-1 min-w-0">
+                        <div class="font-medium text-sm">Safety observation submitted</div>
+                        <div class="text-xs text-zinc-500">By: Mike B. • Yesterday</div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="mt-4 pt-4 border-t border-zinc-800">
+                <button onclick="document.getElementById('notificationsPanel').close()" 
+                        class="w-full py-2 text-sm text-emerald-400 hover:text-emerald-300 font-medium">
+                    View all notifications
+                </button>
+            </div>
+        </div>
+    </dialog>
+
+    <!-- ==================== USER MENU ==================== -->
+    <dialog id="userMenu" class="bg-zinc-900 border border-zinc-700 rounded-3xl p-0 w-72 shadow-2xl">
+        <div class="p-2">
+            <div class="px-4 py-3 border-b border-zinc-800">
+                <div class="flex items-center gap-3">
+                    <div class="w-10 h-10 bg-zinc-700 rounded-full overflow-hidden flex-shrink-0">
+                        {% if current_user.profile_pic %}
+                            <img src="{{ current_user.profile_pic }}" class="w-full h-full object-cover">
+                        {% else %}
+                            <div class="w-full h-full flex items-center justify-center bg-emerald-600 text-white font-bold">
+                                {{ current_user.first_name[0] }}{{ current_user.last_name[0] if current_user.last_name else '' }}
+                            </div>
+                        {% endif %}
+                    </div>
+                    <div class="min-w-0">
+                        <div class="font-semibold">{{ current_user.full_name }}</div>
+                        <div class="text-xs text-zinc-500">{{ current_user.email }}</div>
+                        <div class="text-[10px] mt-0.5 px-2 py-0.5 bg-emerald-600/20 text-emerald-400 rounded inline-block">{{ current_user.role }}</div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="py-1">
+                <a href="{{ url_for('profile') }}" class="flex items-center gap-3 px-4 py-2.5 hover:bg-zinc-800 rounded-2xl text-sm">
+                    <i class="fa-solid fa-user w-4"></i>
+                    <span>View Profile</span>
+                </a>
+                <a href="{{ url_for('program_settings') }}" class="flex items-center gap-3 px-4 py-2.5 hover:bg-zinc-800 rounded-2xl text-sm">
+                    <i class="fa-solid fa-cog w-4"></i>
+                    <span>Program Settings</span>
+                </a>
+                <a href="{{ url_for('user_management') }}" class="flex items-center gap-3 px-4 py-2.5 hover:bg-zinc-800 rounded-2xl text-sm">
+                    <i class="fa-solid fa-users w-4"></i>
+                    <span>User Management</span>
+                </a>
+                
+                <div class="my-1 border-t border-zinc-800"></div>
+                
+                <a href="{{ url_for('logout') }}" class="flex items-center gap-3 px-4 py-2.5 hover:bg-red-950/40 text-red-400 rounded-2xl text-sm">
+                    <i class="fa-solid fa-sign-out-alt w-4"></i>
+                    <span>Sign Out</span>
+                </a>
+            </div>
+        </div>
+    </dialog>
+
+    <!-- ==================== JAVASCRIPT ==================== -->
+    <script>
+        // Tailwind + Core Functions
+        function initializeTailwind() {
+            document.documentElement.style.setProperty('--accent', '#10b981');
+        }
+
+        function showQuickAddMenu() {
+            document.getElementById('quickAddMenu').showModal();
+        }
+
+        function quickAddAction(type) {
+            document.getElementById('quickAddMenu').close();
+            
+            const routes = {
+                'daily_log': "{{ url_for('daily_log') }}?action=new",
+                'rfi': "{{ url_for('rfis_page') }}?action=new",
+                'change_order': "{{ url_for('change_orders_page') }}?action=new",
+                'submittal': "{{ url_for('submittals_page') }}?action=new",
+                'punch_list': "{{ url_for('punch_list_page') }}?action=new",
+                'safety': "{{ url_for('safety_page') }}?action=new",
+                'budget': "{{ url_for('budget_page') }}?action=new",
+                'pay_app': "{{ url_for('pay_applications_page') }}?action=new"
+            };
+            
+            if (routes[type]) {
+                window.location.href = routes[type];
+            }
+        }
+
+        function showNotifications() {
+            document.getElementById('notificationsPanel').showModal();
+        }
+
+        function showUserMenu() {
+            document.getElementById('userMenu').showModal();
+        }
+
+        function showProjectSwitcher() {
+            document.getElementById('projectSwitcherModal').showModal();
+        }
+
+        function switchProject(projectId) {
+            document.getElementById('projectSwitcherModal').close();
+            showToast('Project switched successfully', 'success');
+            setTimeout(() => {
+                window.location.reload();
+            }, 800);
+        }
+
+        function showToast(message, type = 'success') {
+            const toast = document.createElement('div');
+            toast.className = `fixed bottom-6 right-6 px-6 py-3 rounded-2xl shadow-xl flex items-center gap-3 z-[9999] ${
+                type === 'success' ? 'bg-emerald-600' : 
+                type === 'error' ? 'bg-red-600' : 'bg-zinc-700'
+            }`;
+            
+            toast.innerHTML = `
+                <div class="flex items-center gap-3">
+                    <i class="fa-solid ${type === 'success' ? 'fa-check-circle' : type === 'error' ? 'fa-exclamation-circle' : 'fa-info-circle'}"></i>
+                    <span>${message}</span>
+                </div>
+            `;
+            
+            document.body.appendChild(toast);
+            
+            setTimeout(() => {
+                toast.style.transition = 'all 0.3s ease';
+                toast.style.opacity = '0';
+                setTimeout(() => toast.remove(), 300);
+            }, 3200);
+        }
+
+        // Keyboard Shortcuts
+        document.addEventListener('keydown', function(e) {
+            if (e.ctrlKey && e.key === 'k') {
+                e.preventDefault();
+                const search = document.getElementById('globalSearch');
+                if (search) search.focus();
+            }
+            
+            if (e.key === 'Escape') {
+                document.querySelectorAll('dialog[open]').forEach(d => d.close());
+            }
+            
+            if (e.key.toLowerCase() === 'n' && document.activeElement.tagName === 'BODY') {
+                e.preventDefault();
+                showQuickAddMenu();
+            }
+        });
+
+        // Global Search
+        const globalSearch = document.getElementById('globalSearch');
+        if (globalSearch) {
+            globalSearch.addEventListener('keypress', function(e) {
+                if (e.key === 'Enter') {
+                    const term = this.value.trim();
+                    if (term.length > 2) {
+                        window.location.href = `{{ url_for('dashboard') }}?search=${encodeURIComponent(term)}`;
+                    }
+                }
+            });
+        }
+
+        // Online/Offline Status
+        function updateOnlineStatus() {
+            const statusEls = document.querySelectorAll('.status-dot');
+            if (navigator.onLine) {
+                statusEls.forEach(el => el.style.backgroundColor = '#10b981');
+            } else {
+                statusEls.forEach(el => el.style.backgroundColor = '#f59e0b');
+            }
+        }
+
+        window.addEventListener('online', updateOnlineStatus);
+        window.addEventListener('offline', updateOnlineStatus);
+
+        // Initialize App
+        function initializeApp() {
+            initializeTailwind();
+            updateOnlineStatus();
+            
+            const syncEl = document.getElementById('lastSyncTime');
+            if (syncEl) {
+                syncEl.textContent = new Date().toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'});
+            }
+        }
+
+        window.onload = initializeApp;
+    </script>
