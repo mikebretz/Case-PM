@@ -72,3 +72,73 @@
     </div>
 
 </div>
+        <!-- Add / Edit Inspection Modal -->
+        <dialog id="inspectionModal" class="bg-zinc-900 border border-zinc-700 rounded-3xl p-0 w-full max-w-lg shadow-2xl">
+            <div class="p-6">
+                <div class="flex items-center justify-between mb-5">
+                    <div class="font-semibold text-xl" id="modalTitle">Schedule Inspection</div>
+                    <button onclick="document.getElementById('inspectionModal').close()" class="text-zinc-400 hover:text-white text-2xl leading-none">&times;</button>
+                </div>
+
+                <form id="inspectionForm" onsubmit="saveInspection(event)">
+                    <input type="hidden" id="inspectionId">
+
+                    <div class="space-y-4">
+                        <div>
+                            <label class="block text-sm text-zinc-400 mb-1.5">Inspection Type</label>
+                            <select id="inspection_type" required
+                                    class="w-full bg-zinc-800 border border-zinc-700 rounded-2xl px-4 py-2.5 text-sm focus:outline-none focus:border-emerald-600">
+                                <option value="Building">Building</option>
+                                <option value="Electrical">Electrical</option>
+                                <option value="Plumbing">Plumbing</option>
+                                <option value="Mechanical">Mechanical</option>
+                                <option value="Fire">Fire</option>
+                                <option value="Other">Other</option>
+                            </select>
+                        </div>
+
+                        <div class="grid grid-cols-2 gap-4">
+                            <div>
+                                <label class="block text-sm text-zinc-400 mb-1.5">Scheduled Date</label>
+                                <input type="date" id="scheduled_date" required
+                                       class="w-full bg-zinc-800 border border-zinc-700 rounded-2xl px-4 py-2.5 text-sm focus:outline-none focus:border-emerald-600">
+                            </div>
+                            <div>
+                                <label class="block text-sm text-zinc-400 mb-1.5">Time</label>
+                                <input type="time" id="scheduled_time"
+                                       class="w-full bg-zinc-800 border border-zinc-700 rounded-2xl px-4 py-2.5 text-sm focus:outline-none focus:border-emerald-600">
+                            </div>
+                        </div>
+
+                        <div>
+                            <label class="block text-sm text-zinc-400 mb-1.5">Inspector / Agency</label>
+                            <input type="text" id="inspector" required
+                                   class="w-full bg-zinc-800 border border-zinc-700 rounded-2xl px-4 py-2.5 text-sm focus:outline-none focus:border-emerald-600">
+                        </div>
+
+                        <div>
+                            <label class="block text-sm text-zinc-400 mb-1.5">Location / Area</label>
+                            <input type="text" id="location" required
+                                   class="w-full bg-zinc-800 border border-zinc-700 rounded-2xl px-4 py-2.5 text-sm focus:outline-none focus:border-emerald-600">
+                        </div>
+
+                        <div>
+                            <label class="block text-sm text-zinc-400 mb-1.5">Notes</label>
+                            <textarea id="notes" rows="2"
+                                      class="w-full bg-zinc-800 border border-zinc-700 rounded-2xl px-4 py-2.5 text-sm focus:outline-none focus:border-emerald-600"></textarea>
+                        </div>
+                    </div>
+
+                    <div class="flex gap-3 mt-6">
+                        <button type="button" onclick="document.getElementById('inspectionModal').close()"
+                                class="flex-1 py-2.5 bg-zinc-800 hover:bg-zinc-700 rounded-2xl text-sm font-medium transition-colors">
+                            Cancel
+                        </button>
+                        <button type="submit"
+                                class="flex-1 py-2.5 bg-emerald-600 hover:bg-emerald-500 rounded-2xl text-sm font-medium transition-colors">
+                            Save Inspection
+                        </button>
+                    </div>
+                </form>
+            </div>
+        </dialog>
