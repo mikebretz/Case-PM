@@ -1,336 +1,69 @@
-
 {% extends "base.html" %}
 
 {% block content %}
-<div class="p-8 max-w-[1600px] mx-auto">
-
-    <!-- Header -->
-    <div class="flex items-center justify-between mb-8">
+<div class="max-w-[1600px] mx-auto">
+    
+    <!-- Page Header -->
+    <div class="flex items-center justify-between mb-6">
         <div>
             <h1 class="text-3xl font-semibold tracking-tight">Meeting Minutes</h1>
-            <p class="text-zinc-400 mt-1">Meeting Records & Action Items • ALDI Lakeland</p>
+            <p class="text-zinc-400 mt-1">Record and track project meetings</p>
         </div>
-        <button onclick="showCreateMeetingModal()"
-                class="flex items-center gap-2 px-5 py-2.5 bg-emerald-600 hover:bg-emerald-500 transition-colors rounded-2xl text-sm font-medium">
-            <i class="fa-solid fa-users"></i>
+        
+        <button onclick="showAddMeetingModal()" 
+                class="flex items-center gap-2 px-5 py-2.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded-2xl text-sm font-medium transition-colors">
+            <i class="fa-solid fa-plus"></i>
             <span>New Meeting Minutes</span>
         </button>
     </div>
 
-    <!-- Summary Cards -->
-    <div class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-4 mb-8">
-        <div class="bg-zinc-900 border border-zinc-800 rounded-3xl p-5">
-            <div class="text-sm text-zinc-400">Total Meetings</div>
-            <div class="text-3xl font-semibold mt-1">{{ meetings|length }}</div>
-        </div>
-        <div class="bg-zinc-900 border border-zinc-800 rounded-3xl p-5">
-            <div class="text-sm text-zinc-400">Action Items Open</div>
-            <div class="text-3xl font-semibold mt-1 text-yellow-400">27</div>
-        </div>
-        <div class="bg-zinc-900 border border-zinc-800 rounded-3xl p-5">
-            <div class="text-sm text-zinc-400">Action Items Closed</div>
-            <div class="text-3xl font-semibold mt-1 text-emerald-400">84</div>
-        </div>
-        <div class="bg-zinc-900 border border-zinc-800 rounded-3xl p-5">
-            <div class="text-sm text-zinc-400">This Week</div>
-            <div class="text-3xl font-semibold mt-1">6</div>
-        </div>
-        <div class="bg-zinc-900 border border-zinc-800 rounded-3xl p-5">
-            <div class="text-sm text-zinc-400">Overdue Actions</div>
-            <div class="text-3xl font-semibold mt-1 text-red-400">4</div>
-        </div>
-    </div>
-
     <!-- Filters -->
-    <div class="flex flex-col md:flex-row gap-3 mb-4">
-        <input type="text" id="meetingSearch" placeholder="Search meeting title or attendees..." 
-               onkeyup="filterMeetings()"
-               class="flex-1 bg-zinc-900 border border-zinc-700 rounded-2xl px-4 py-2.5 text-sm">
+    <div class="flex flex-wrap items-center gap-3 mb-6 bg-zinc-900 border border-zinc-800 rounded-3xl p-4">
+        <div class="flex-1 min-w-[220px]">
+            <input type="text" id="meetingSearch" placeholder="Search meetings..." 
+                   class="w-full bg-zinc-800 border border-zinc-700 rounded-2xl px-4 py-2.5 text-sm focus:outline-none focus:border-emerald-600"
+                   onkeyup="filterMeetings()">
+        </div>
 
-        <select id="meetingTypeFilter" onchange="filterMeetings()"
-                class="bg-zinc-900 border border-zinc-700 rounded-2xl px-4 py-2.5 text-sm">
+        <select id="typeFilter" onchange="filterMeetings()" 
+                class="bg-zinc-800 border border-zinc-700 rounded-2xl px-4 py-2.5 text-sm focus:outline-none focus:border-emerald-600">
             <option value="">All Types</option>
-            <option value="Owner / Architect / Contractor">Owner / Architect / Contractor</option>
-            <option value="Subcontractor Coordination">Subcontractor Coordination</option>
-            <option value="Safety Meeting">Safety Meeting</option>
-            <option value="Pre-Construction">Pre-Construction</option>
-            <option value="Progress Meeting">Progress Meeting</option>
+            <option value="Owner-Architect">Owner-Architect</option>
+            <option value="Subcontractor">Subcontractor</option>
+            <option value="Internal">Internal</option>
+            <option value="Safety">Safety</option>
             <option value="Other">Other</option>
         </select>
 
-        <input type="date" id="meetingDateFilter" onchange="filterMeetings()"
-               class="bg-zinc-900 border border-zinc-700 rounded-2xl px-4 py-2.5 text-sm">
+        <select id="projectFilter" onchange="filterMeetings()" 
+                class="bg-zinc-800 border border-zinc-700 rounded-2xl px-4 py-2.5 text-sm focus:outline-none focus:border-emerald-600">
+            <option value="">All Projects</option>
+        </select>
+
+        <button onclick="clearMeetingFilters()" 
+                class="px-4 py-2.5 text-sm bg-zinc-800 hover:bg-zinc-700 border border-zinc-700 rounded-2xl transition-colors">
+            Clear Filters
+        </button>
     </div>
 
     <!-- Meeting Minutes Table -->
     <div class="bg-zinc-900 border border-zinc-800 rounded-3xl overflow-hidden">
-        <table class="w-full text-sm">
+        <table class="w-full">
             <thead>
-                <tr class="bg-zinc-950 border-b border-zinc-800">
-                    <th class="px-6 py-4 text-left font-medium text-zinc-400">Meeting #</th>
-                    <th class="px-6 py-4 text-left font-medium text-zinc-400">Date</th>
-                    <th class="px-6 py-4 text-left font-medium text-zinc-400">Type</th>
-                    <th class="px-6 py-4 text-left font-medium text-zinc-400">Title / Subject</th>
-                    <th class="px-6 py-4 text-center font-medium text-zinc-400">Attendees</th>
-                    <th class="px-6 py-4 text-center font-medium text-zinc-400">Open Actions</th>
-                    <th class="px-6 py-4 text-center font-medium text-zinc-400">Actions</th>
+                <tr class="border-b border-zinc-800 bg-zinc-950">
+                    <th class="text-left px-6 py-4 text-sm font-medium text-zinc-400">Meeting #</th>
+                    <th class="text-left px-6 py-4 text-sm font-medium text-zinc-400">Date</th>
+                    <th class="text-left px-6 py-4 text-sm font-medium text-zinc-400">Type</th>
+                    <th class="text-left px-6 py-4 text-sm font-medium text-zinc-400">Subject</th>
+                    <th class="text-left px-6 py-4 text-sm font-medium text-zinc-400">Location</th>
+                    <th class="text-center px-6 py-4 text-sm font-medium text-zinc-400">Action Items</th>
+                    <th class="w-20"></th>
                 </tr>
             </thead>
-            <tbody>
-
-                {% for meeting in meetings %}
-                <tr class="border-b border-zinc-800 hover:bg-zinc-800/60 transition-colors">
-                    <td class="px-6 py-4 font-mono text-emerald-400">{{ meeting.number }}</td>
-                    <td class="px-6 py-4">{{ meeting.date.strftime('%m/%d/%Y') if meeting.date else '—' }}</td>
-                    <td class="px-6 py-4">
-                        <span class="px-3 py-1 text-xs rounded-full bg-zinc-800 text-zinc-300">{{ meeting.type }}</span>
-                    </td>
-                    <td class="px-6 py-4 max-w-[320px] truncate">{{ meeting.title }}</td>
-                    <td class="px-6 py-4 text-center">{{ meeting.attendees_count or 0 }}</td>
-                    <td class="px-6 py-4 text-center">
-                        {% if meeting.open_actions and meeting.open_actions > 0 %}
-                            <span class="px-3 py-1 text-xs rounded-full bg-yellow-500/10 text-yellow-400">{{ meeting.open_actions }}</span>
-                        {% else %}
-                            <span class="px-3 py-1 text-xs rounded-full bg-emerald-500/10 text-emerald-400">0</span>
-                        {% endif %}
-                    </td>
-                    <td class="px-6 py-4 text-center">
-                        <div class="flex items-center justify-center gap-1">
-                            <button onclick="viewMeeting({{ meeting.id }})" 
-                                    class="p-2 text-emerald-400 hover:text-emerald-300 hover:bg-zinc-800 rounded-xl transition-colors" title="View Minutes">
-                                <i class="fa-solid fa-eye"></i>
-                            </button>
-                            
-                            <button onclick="addActionItem({{ meeting.id }})" 
-                                    class="p-2 text-emerald-400 hover:text-emerald-300 hover:bg-zinc-800 rounded-xl transition-colors" title="Add Action Item">
-                                <i class="fa-solid fa-tasks"></i>
-                            </button>
-
-                            <button onclick="editMeeting({{ meeting.id }})" 
-                                    class="p-2 text-emerald-400 hover:text-emerald-300 hover:bg-zinc-800 rounded-xl transition-colors" title="Edit">
-                                <i class="fa-solid fa-edit"></i>
-                            </button>
-                        </div>
-                    </td>
-                </tr>
-                {% else %}
-                <tr>
-                    <td colspan="7" class="px-6 py-12 text-center text-zinc-400">
-                        No meeting minutes found.
-                    </td>
-                </tr>
-                {% endfor %}
+            <tbody id="meetingsTableBody" class="divide-y divide-zinc-800">
+                <!-- Populated by JavaScript -->
             </tbody>
         </table>
     </div>
 
 </div>
-
-<!-- ==================== CREATE MEETING MINUTES MODAL ==================== -->
-<dialog id="createMeetingModal" class="bg-zinc-900 border border-zinc-700 rounded-3xl p-0 w-full max-w-4xl">
-    <div class="p-6">
-        <div class="flex items-center justify-between mb-6">
-            <h2 class="text-xl font-semibold">Create Meeting Minutes</h2>
-            <button onclick="closeCreateMeetingModal()" class="text-zinc-400 hover:text-white">
-                <i class="fa-solid fa-times text-xl"></i>
-            </button>
-        </div>
-
-        <form method="POST" action="{{ url_for('create_meeting_minutes') }}">
-            <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
-                <div>
-                    <label class="block text-sm text-zinc-400 mb-1.5">Meeting Date <span class="text-red-400">*</span></label>
-                    <input type="date" name="date" value="{{ today }}" class="w-full bg-zinc-800 border border-zinc-700 rounded-2xl px-4 py-2.5 text-sm" required>
-                </div>
-                <div>
-                    <label class="block text-sm text-zinc-400 mb-1.5">Meeting Type</label>
-                    <select name="type" class="w-full bg-zinc-800 border border-zinc-700 rounded-2xl px-4 py-2.5 text-sm">
-                        <option value="Owner / Architect / Contractor">Owner / Architect / Contractor</option>
-                        <option value="Subcontractor Coordination">Subcontractor Coordination</option>
-                        <option value="Safety Meeting">Safety Meeting</option>
-                        <option value="Pre-Construction">Pre-Construction</option>
-                        <option value="Progress Meeting">Progress Meeting</option>
-                        <option value="Other">Other</option>
-                    </select>
-                </div>
-                <div>
-                    <label class="block text-sm text-zinc-400 mb-1.5">Location</label>
-                    <input type="text" name="location" class="w-full bg-zinc-800 border border-zinc-700 rounded-2xl px-4 py-2.5 text-sm">
-                </div>
-            </div>
-
-            <div class="mb-4">
-                <label class="block text-sm text-zinc-400 mb-1.5">Meeting Title / Subject <span class="text-red-400">*</span></label>
-                <input type="text" name="title" class="w-full bg-zinc-800 border border-zinc-700 rounded-2xl px-4 py-2.5 text-sm" required>
-            </div>
-
-            <div class="mb-4">
-                <label class="block text-sm text-zinc-400 mb-1.5">Attendees</label>
-                <textarea name="attendees" rows="2" class="w-full bg-zinc-800 border border-zinc-700 rounded-2xl px-4 py-3 text-sm" placeholder="List attendees (one per line or comma separated)"></textarea>
-            </div>
-
-            <!-- Action Items Section -->
-            <div class="mb-6">
-                <label class="block text-sm text-zinc-400 mb-2">Action Items / Decisions</label>
-                <div id="actionItemsContainer">
-                    <div class="grid grid-cols-1 md:grid-cols-12 gap-3 mb-2 items-end">
-                        <div class="md:col-span-5">
-                            <input type="text" name="action_description[]" placeholder="Action / Decision" class="w-full bg-zinc-800 border border-zinc-700 rounded-2xl px-4 py-2 text-sm">
-                        </div>
-                        <div class="md:col-span-3">
-                            <input type="text" name="action_responsible[]" placeholder="Responsible Party" class="w-full bg-zinc-800 border border-zinc-700 rounded-2xl px-4 py-2 text-sm">
-                        </div>
-                        <div class="md:col-span-3">
-                            <input type="date" name="action_due_date[]" class="w-full bg-zinc-800 border border-zinc-700 rounded-2xl px-4 py-2 text-sm">
-                        </div>
-                        <div class="md:col-span-1">
-                            <button type="button" onclick="removeActionItemRow(this)" class="text-red-400 hover:text-red-300">
-                                <i class="fa-solid fa-trash"></i>
-                            </button>
-                        </div>
-                    </div>
-                </div>
-                <button type="button" onclick="addActionItemRow()" 
-                        class="text-emerald-400 text-sm flex items-center gap-2 mt-2">
-                    <i class="fa-solid fa-plus"></i> Add Action Item
-                </button>
-            </div>
-
-            <div class="mb-4">
-                <label class="block text-sm text-zinc-400 mb-1.5">General Notes / Discussion Summary</label>
-                <textarea name="notes" rows="3" class="w-full bg-zinc-800 border border-zinc-700 rounded-2xl px-4 py-3 text-sm" placeholder="Key discussion points and decisions..."></textarea>
-            </div>
-
-            <div class="flex gap-3 mt-8">
-                <button type="button" onclick="closeCreateMeetingModal()"
-                        class="flex-1 bg-zinc-800 hover:bg-zinc-700 rounded-2xl py-3 text-sm font-medium transition-colors">
-                    Cancel
-                </button>
-                <button type="submit"
-                        class="flex-1 bg-emerald-600 hover:bg-emerald-500 rounded-2xl py-3 text-sm font-medium transition-colors">
-                    Save Meeting Minutes
-                </button>
-            </div>
-        </form>
-    </div>
-</dialog>
-
-<!-- ==================== JAVASCRIPT ==================== -->
-<script>
-    // ==================== FILTERING ====================
-    function filterMeetings() {
-        const search = document.getElementById('meetingSearch').value.toLowerCase();
-        const type = document.getElementById('meetingTypeFilter').value;
-        const dateFilter = document.getElementById('meetingDateFilter').value;
-
-        const rows = document.querySelectorAll('table tbody tr');
-
-        rows.forEach(row => {
-            const text = row.textContent.toLowerCase();
-            const rowType = row.cells[2] ? row.cells[2].textContent : '';
-            const rowDate = row.cells[1] ? row.cells[1].textContent : '';
-
-            let show = true;
-
-            if (search && !text.includes(search)) show = false;
-            if (type && !rowType.includes(type)) show = false;
-            if (dateFilter && !rowDate.includes(dateFilter)) show = false;
-
-            row.style.display = show ? '' : 'none';
-        });
-    }
-
-    // ==================== MODAL FUNCTIONS ====================
-    function showCreateMeetingModal() {
-        const modal = document.getElementById('createMeetingModal');
-        modal.showModal();
-    }
-
-    function closeCreateMeetingModal() {
-        document.getElementById('createMeetingModal').close();
-    }
-
-    // ==================== DYNAMIC ACTION ITEMS ====================
-    function addActionItemRow() {
-        const container = document.getElementById('actionItemsContainer');
-        const newRow = document.createElement('div');
-        newRow.className = 'grid grid-cols-1 md:grid-cols-12 gap-3 mb-2 items-end';
-
-        newRow.innerHTML = `
-            <div class="md:col-span-5">
-                <input type="text" name="action_description[]" placeholder="Action / Decision" class="w-full bg-zinc-800 border border-zinc-700 rounded-2xl px-4 py-2 text-sm">
-            </div>
-            <div class="md:col-span-3">
-                <input type="text" name="action_responsible[]" placeholder="Responsible Party" class="w-full bg-zinc-800 border border-zinc-700 rounded-2xl px-4 py-2 text-sm">
-            </div>
-            <div class="md:col-span-3">
-                <input type="date" name="action_due_date[]" class="w-full bg-zinc-800 border border-zinc-700 rounded-2xl px-4 py-2 text-sm">
-            </div>
-            <div class="md:col-span-1">
-                <button type="button" onclick="removeActionItemRow(this)" class="text-red-400 hover:text-red-300">
-                    <i class="fa-solid fa-trash"></i>
-                </button>
-            </div>
-        `;
-        container.appendChild(newRow);
-    }
-
-    function removeActionItemRow(button) {
-        button.closest('.grid').remove();
-    }
-
-    // ==================== ACTION FUNCTIONS ====================
-    function viewMeeting(id) {
-        alert(`Opening Meeting Minutes #${id}\n(Full minutes with all action items, decisions, and notes will appear here)`);
-    }
-
-    function addActionItem(meetingId) {
-        alert(`Adding new action item to Meeting #${meetingId}\n(Action item modal or inline form would open here)`);
-        // In real version: open a small modal or redirect with pre-filled meeting ID
-    }
-
-    function editMeeting(id) {
-        alert(`Editing Meeting Minutes #${id}`);
-        // In real version: fetch data and open the create modal in edit mode
-    }
-
-    // ==================== INITIALIZATION ====================
-    function initializeMeetingMinutesPage() {
-        console.log('%c[Case PM] Meeting Minutes page initialized with full features.', 'color:#10b981');
-    }
-
-    window.addEventListener('load', initializeMeetingMinutesPage);
-</script>
-
-{% endblock %}
-
-<!-- ==================== FINAL ENHANCEMENTS ==================== -->
-<script>
-    // ==================== KEYBOARD SHORTCUTS ====================
-    document.addEventListener('keydown', function(e) {
-        if (e.key === "/" && document.activeElement.tagName === "BODY") {
-            e.preventDefault();
-            const search = document.getElementById('meetingSearch');
-            if (search) search.focus();
-        }
-    });
-
-    // ==================== BULK ACTIONS (Future Ready) ====================
-    function bulkCloseActionItems() {
-        const selected = document.querySelectorAll('table tbody input[type="checkbox"]:checked');
-        if (selected.length === 0) {
-            alert("Please select meetings to close action items for.");
-            return;
-        }
-        alert(`Closing action items for ${selected.length} meetings... (Feature ready for backend)`);
-    }
-
-    // ==================== FINAL INITIALIZATION ====================
-    function finalMeetingMinutesInitialization() {
-        console.log('%c[Case PM] meeting_minutes.html fully loaded with maximum features.', 'color:#10b981');
-    }
-
-    window.addEventListener('load', finalMeetingMinutesInitialization);
-</script>
-
-{% endblock %}
