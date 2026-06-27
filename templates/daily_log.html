@@ -168,3 +168,128 @@
     </div>
 
 </div>
+<!-- ==================== CREATE DAILY LOG MODAL ==================== -->
+<div id="createDailyLogModal" class="hidden fixed inset-0 bg-black/70 flex items-center justify-center z-50">
+    <div class="bg-zinc-900 border border-zinc-700 rounded-3xl w-full max-w-4xl mx-4 max-h-[90vh] flex flex-col">
+        
+        <!-- Modal Header -->
+        <div class="flex items-center justify-between px-6 py-4 border-b border-zinc-700 flex-shrink-0">
+            <h3 class="text-xl font-semibold">Create New Daily Log</h3>
+            <button onclick="closeCreateDailyLogModal()" class="text-zinc-400 hover:text-white text-2xl leading-none">
+                &times;
+            </button>
+        </div>
+
+        <form id="createDailyLogForm" method="POST" action="{{ url_for('create_daily_log') }}" class="flex flex-col flex-1 overflow-hidden">
+            
+            <div class="p-6 overflow-auto flex-1 space-y-6">
+
+                <!-- Project + Date + Weather -->
+                <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+                    <div>
+                        <label class="block text-sm text-zinc-400 mb-1.5">Project</label>
+                        <select name="project_id" required class="w-full bg-zinc-800 border border-zinc-700 rounded-2xl px-4 py-2.5 text-sm">
+                            {% for project in projects %}
+                            <option value="{{ project.id }}">{{ project.name }}</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                    <div>
+                        <label class="block text-sm text-zinc-400 mb-1.5">Date</label>
+                        <input type="date" name="date" value="{{ today }}" required 
+                               class="w-full bg-zinc-800 border border-zinc-700 rounded-2xl px-4 py-2.5 text-sm">
+                    </div>
+                    <div>
+                        <label class="block text-sm text-zinc-400 mb-1.5">Weather</label>
+                        <input type="text" name="weather" placeholder="Sunny, 68°F" 
+                               class="w-full bg-zinc-800 border border-zinc-700 rounded-2xl px-4 py-2.5 text-sm">
+                    </div>
+                </div>
+
+                <!-- Work Performed -->
+                <div>
+                    <label class="block text-sm text-zinc-400 mb-1.5">Work Performed Today</label>
+                    <textarea name="work_performed" rows="4" required
+                              class="w-full bg-zinc-800 border border-zinc-700 rounded-2xl px-4 py-3 text-sm resize-y"
+                              placeholder="Describe the main construction activities completed today..."></textarea>
+                </div>
+
+                <!-- Notes -->
+                <div>
+                    <label class="block text-sm text-zinc-400 mb-1.5">Additional Notes / Issues / Observations</label>
+                    <textarea name="notes" rows="3"
+                              class="w-full bg-zinc-800 border border-zinc-700 rounded-2xl px-4 py-3 text-sm resize-y"
+                              placeholder="Any delays, safety concerns, visitor notes, or other observations..."></textarea>
+                </div>
+
+                <!-- MANPOWER SECTION -->
+                <div>
+                    <div class="flex items-center justify-between mb-2">
+                        <label class="text-sm text-zinc-400">Manpower</label>
+                        <button type="button" onclick="addManpowerRow()"
+                                class="text-xs px-3 py-1.5 bg-zinc-800 hover:bg-zinc-700 rounded-xl flex items-center gap-1">
+                            <i class="fa-solid fa-plus text-xs"></i>
+                            <span>Add Row</span>
+                        </button>
+                    </div>
+                    <div class="bg-zinc-950 border border-zinc-800 rounded-2xl p-3">
+                        <table class="w-full text-sm" id="manpowerTable">
+                            <thead>
+                                <tr class="text-zinc-400 text-xs">
+                                    <th class="text-left pb-2 px-2">Company / Subcontractor</th>
+                                    <th class="text-center pb-2 px-2 w-24">Personnel</th>
+                                    <th class="text-center pb-2 px-2 w-24">Hours</th>
+                                    <th class="w-8"></th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <!-- Dynamic rows added by JavaScript -->
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+
+                <!-- EQUIPMENT SECTION -->
+                <div>
+                    <div class="flex items-center justify-between mb-2">
+                        <label class="text-sm text-zinc-400">Equipment On Site</label>
+                        <button type="button" onclick="addEquipmentRow()"
+                                class="text-xs px-3 py-1.5 bg-zinc-800 hover:bg-zinc-700 rounded-xl flex items-center gap-1">
+                            <i class="fa-solid fa-plus text-xs"></i>
+                            <span>Add Equipment</span>
+                        </button>
+                    </div>
+                    <div class="bg-zinc-950 border border-zinc-800 rounded-2xl p-3">
+                        <table class="w-full text-sm" id="equipmentTable">
+                            <thead>
+                                <tr class="text-zinc-400 text-xs">
+                                    <th class="text-left pb-2 px-2">Equipment</th>
+                                    <th class="text-center pb-2 px-2 w-20">Qty</th>
+                                    <th class="text-left pb-2 px-2">Condition / Notes</th>
+                                    <th class="w-8"></th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <!-- Dynamic rows added by JavaScript -->
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+
+            </div>
+
+            <!-- Modal Footer -->
+            <div class="flex justify-end gap-3 px-6 py-4 border-t border-zinc-700 flex-shrink-0">
+                <button type="button" onclick="closeCreateDailyLogModal()"
+                        class="px-5 py-2.5 text-sm rounded-2xl border border-zinc-700 hover:bg-zinc-800 transition-colors">
+                    Cancel
+                </button>
+                <button type="submit"
+                        class="px-8 py-2.5 text-sm bg-emerald-600 hover:bg-emerald-500 rounded-2xl font-medium transition-colors">
+                    Save Daily Log
+                </button>
+            </div>
+
+        </form>
+    </div>
+</div>
