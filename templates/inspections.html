@@ -142,3 +142,186 @@
                 </form>
             </div>
         </dialog>
+        <!-- JavaScript -->
+        <script>
+            // Sample data (will be replaced with backend later)
+            let inspections = [
+                {
+                    id: 1,
+                    inspection_number: "INSP-014",
+                    type: "Electrical",
+                    scheduled_date: "2025-04-08",
+                    scheduled_time: "09:00",
+                    inspector: "County Electrical Inspector",
+                    location: "2nd Floor Electrical Room",
+                    status: "Scheduled",
+                    notes: "Rough-in inspection"
+                },
+                {
+                    id: 2,
+                    inspection_number: "INSP-013",
+                    type: "Plumbing",
+                    scheduled_date: "2025-04-03",
+                    scheduled_time: "14:00",
+                    inspector: "City Plumbing Dept.",
+                    location: "Main Restrooms",
+                    status: "Passed",
+                    notes: "All fixtures installed correctly"
+                },
+                {
+                    id: 3,
+                    inspection_number: "INSP-015",
+                    type: "Building",
+                    scheduled_date: "2025-04-10",
+                    scheduled_time: "10:30",
+                    inspector: "Building Official",
+                    location: "Entire Building",
+                    status: "Pending",
+                    notes: "Final building inspection"
+                }
+            ];
+
+            function filterInspections() {
+                const searchTerm = document.getElementById('inspectionSearch').value.toLowerCase();
+                const typeFilter = document.getElementById('typeFilter').value;
+                const statusFilter = document.getElementById('statusFilter').value;
+
+                const filtered = inspections.filter(inspection => {
+                    const matchesSearch = inspection.inspection_number.toLowerCase().includes(searchTerm) || 
+                                        inspection.inspector.toLowerCase().includes(searchTerm);
+                    const matchesType = !typeFilter || inspection.type === typeFilter;
+                    const matchesStatus = !statusFilter || inspection.status === statusFilter;
+                    return matchesSearch && matchesType && matchesStatus;
+                });
+
+                renderInspectionsTable(filtered);
+            }
+
+            function clearInspectionFilters() {
+                document.getElementById('inspectionSearch').value = '';
+                document.getElementById('typeFilter').value = '';
+                document.getElementById('statusFilter').value = '';
+                renderInspectionsTable(inspections);
+            }
+
+            function renderInspectionsTable(inspectionList) {
+                const tbody = document.getElementById('inspectionsTableBody');
+                tbody.innerHTML = '';
+
+                if (inspectionList.length === 0) {
+                    tbody.innerHTML = `
+                        <tr>
+                            <td colspan="7" class="px-6 py-8 text-center text-zinc-400">
+                                No inspections found.
+                            </td>
+                        </tr>
+                    `;
+                    return;
+                }
+
+                inspectionList.forEach(inspection => {
+                    const statusColor = 
+                        inspection.status === 'Passed' ? 'bg-emerald-600/20 text-emerald-400' :
+                        inspection.status === 'Failed' ? 'bg-red-600/20 text-red-400' :
+                        inspection.status === 'Scheduled' ? 'bg-blue-600/20 text-blue-400' :
+                        'bg-amber-600/20 text-amber-400';
+
+                    const row = document.createElement('tr');
+                    row.className = 'hover:bg-zinc-800/60 transition-colors';
+                    row.innerHTML = `
+                        <td class="px-6 py-4 font-mono text-sm">${inspection.inspection_number}</td>
+                        <td class="px-6 py-4">${inspection.type}</td>
+                        <td class="px-6 py-4 text-sm text-zinc-400">${inspection.scheduled_date} ${inspection.scheduled_time || ''}</td>
+                        <td class="px-6 py-4">${inspection.inspector}</td>
+                        <td class="px-6 py-4 text-sm text-zinc-400">${inspection.location}</td>
+                        <td class="px-6 py-4 text-center">
+                            <span class="inline-block px-3 py-1 rounded-full text-xs font-medium ${statusColor}">
+                                ${inspection.status}
+                            </span>
+                        </td>
+                        <td class="px-4 py-4">
+                            <div class="flex items-center gap-1">
+                                <button onclick="editInspection(${inspection.id})" class="p-2 hover:bg-zinc-700 rounded-xl text-zinc-400 hover:text-white">
+                                    <i class="fa-solid fa-edit"></i>
+                                </button>
+                                <button onclick="deleteInspection(${inspection.id})" class="p-2 hover:bg-zinc-700 rounded-xl text-zinc-400 hover:text-red-400">
+                                    <i class="fa-solid fa-trash"></i>
+                                </button>
+                            </div>
+                        </td>
+                    `;
+                    tbody.appendChild(row);
+                });
+            }
+
+            function showAddInspectionModal() {
+                document.getElementById('modalTitle').innerText = 'Schedule Inspection';
+                document.getElementById('inspectionForm').reset();
+                document.getElementById('inspectionId').value = '';
+                document.getElementById('inspectionModal').showModal();
+            }
+
+            function editInspection(id) {
+                const inspection = inspections.find(i => i.id === id);
+                if (!inspection) return;
+
+                document.getElementById('modalTitle').innerText = 'Edit Inspection';
+                document.getElementById('inspectionId').value = inspection.id;
+                document.getElementById('inspection_type').value = inspection.type;
+                document.getElementById('scheduled_date').value = inspection.scheduled_date;
+                document.getElementById('scheduled_time').value = inspection.scheduled_time || '';
+                document.getElementById('inspector').value = inspection.inspector;
+                document.getElementById('location').value = inspection.location;
+                document.getElementById('notes').value = inspection.notes || '';
+
+                document.getElementById('inspectionModal').showModal();
+            }
+
+            function saveInspection(e) {
+                e.preventDefault();
+
+                const id = document.getElementById('inspectionId').value;
+
+                const newInspection = {
+                    id: id ? parseInt(id) : Date.now(),
+                    inspection_number: id ? inspections.find(i => i.id == id).inspection_number : `INSP-${String(inspections.length + 1).padStart(3, '0')}`,
+                    type: document.getElementById('inspection_type').value,
+                    scheduled_date: document.getElementById('scheduled_date').value,
+                    scheduled_time: document.getElementById('scheduled_time').value,
+                    inspector: document.getElementById('inspector').value,
+                    location: document.getElementById('location').value,
+                    status: id ? inspections.find(i => i.id == id).status : 'Scheduled',
+                    notes: document.getElementById('notes').value
+                };
+
+                if (id) {
+                    const index = inspections.findIndex(i => i.id == id);
+                    inspections[index] = newInspection;
+                } else {
+                    inspections.push(newInspection);
+                }
+
+                renderInspectionsTable(inspections);
+                document.getElementById('inspectionModal').close();
+            }
+
+            function deleteInspection(id) {
+                if (!confirm('Delete this inspection?')) return;
+                inspections = inspections.filter(i => i.id !== id);
+                renderInspectionsTable(inspections);
+            }
+
+            function initializeInspections() {
+                renderInspectionsTable(inspections);
+            }
+
+            // Initialize on load
+            window.onload = function() {
+                initializeInspections();
+            };
+        </script>
+
+{% endblock %}
+
+</div>
+</div>
