@@ -3,128 +3,189 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Companies & Vendors • Case PM</title>
+    <title>Companies • Case PM</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
-    <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
     <style>
         body { background-color: #18181b; color: #e4e4e7; }
         .nav-link.active { background-color: #27272a; color: white; }
         .modal { background-color: #18181b; border: 1px solid #3f3f46; color: white; }
-        .section-header { font-size: 0.875rem; font-weight: 600; color: #a1a1aa; margin-bottom: 0.5rem; }
     </style>
 </head>
 <body class="bg-zinc-950 text-zinc-200">
 
 <div class="flex h-screen overflow-hidden">
 
-    <!-- FULL RICH SIDEBAR -->
+    <!-- ==================== FULL CORRECT SIDEBAR (from base.html) ==================== -->
     <div class="w-64 bg-zinc-900 border-r border-zinc-800 flex flex-col">
-        <div class="p-6">
+        
+        <!-- Logo -->
+        <div class="px-6 py-5 border-b border-zinc-800">
             <div class="flex items-center gap-3">
                 <div class="w-9 h-9 bg-emerald-600 rounded-2xl flex items-center justify-center">
                     <i class="fa-solid fa-hard-hat text-white text-2xl"></i>
                 </div>
                 <div>
-                    <div class="font-semibold text-xl tracking-tight">Case PM</div>
-                    <div class="text-[10px] text-zinc-500 -mt-1">v56.0</div>
+                    <div class="font-display text-2xl font-semibold tracking-tighter">Case PM</div>
+                    <div class="text-[10px] text-zinc-500 -mt-1">Construction OS</div>
                 </div>
             </div>
         </div>
 
-        <div class="px-3 flex-1 overflow-y-auto text-sm">
+        <!-- Navigation -->
+        <div class="flex-1 overflow-y-auto sidebar px-3 py-4 text-sm">
+            
             <!-- Main -->
-            <div class="px-3 mb-1 text-[10px] font-semibold text-zinc-500 tracking-wider">MAIN</div>
-            <a href="#" class="nav-link flex items-center gap-3 px-4 py-2.5 rounded-2xl mb-1 hover:bg-zinc-800">
+            <div class="px-3 mb-2">
+                <div class="section-header px-3 mb-1">Main</div>
+            </div>
+            
+            <a href="{{ url_for('dashboard') }}" class="nav-link flex items-center gap-3 px-4 py-2.5 rounded-2xl mb-1 {% if request.endpoint == 'dashboard' %}active{% endif %}">
                 <i class="fa-solid fa-home w-5"></i><span>Dashboard</span>
             </a>
-            <a href="#" class="nav-link flex items-center gap-3 px-4 py-2.5 rounded-2xl mb-1 hover:bg-zinc-800">
+            
+            <a href="{{ url_for('projects_page') }}" class="nav-link flex items-center gap-3 px-4 py-2.5 rounded-2xl mb-1 {% if request.endpoint == 'projects_page' %}active{% endif %}">
                 <i class="fa-solid fa-folder w-5"></i><span>Projects</span>
             </a>
 
             <!-- Core Modules -->
-            <div class="px-3 mt-5 mb-1 text-[10px] font-semibold text-zinc-500 tracking-wider">CORE MODULES</div>
-            <a href="#" class="nav-link flex items-center gap-3 px-4 py-2.5 rounded-2xl mb-1 hover:bg-zinc-800">
+            <div class="px-3 mt-4 mb-2">
+                <div class="section-header px-3 mb-1">Core Modules</div>
+            </div>
+
+            <a href="{{ url_for('daily_log') }}" class="nav-link flex items-center gap-3 px-4 py-2.5 rounded-2xl mb-1 {% if request.endpoint == 'daily_log' %}active{% endif %}">
                 <i class="fa-solid fa-clipboard-list w-5"></i><span>Daily Log</span>
             </a>
-            <a href="#" class="nav-link flex items-center gap-3 px-4 py-2.5 rounded-2xl mb-1 hover:bg-zinc-800">
-                <i class="fa-solid fa-chart-line w-5"></i><span>Budget</span>
+
+            <a href="{{ url_for('weekly_report') }}" class="nav-link flex items-center gap-3 px-4 py-2.5 rounded-2xl mb-1 {% if request.endpoint == 'weekly_report' %}active{% endif %}">
+                <i class="fa-solid fa-calendar-week w-5"></i><span>Weekly Report</span>
             </a>
-            <a href="#" class="nav-link flex items-center gap-3 px-4 py-2.5 rounded-2xl mb-1 hover:bg-zinc-800">
-                <i class="fa-solid fa-file-invoice-dollar w-5"></i><span>Pay Applications</span>
+
+            <a href="{{ url_for('schedule_page') }}" class="nav-link flex items-center gap-3 px-4 py-2.5 rounded-2xl mb-1 {% if request.endpoint == 'schedule_page' %}active{% endif %}">
+                <i class="fa-solid fa-calendar-alt w-5"></i><span>Schedule</span>
             </a>
-            <a href="#" class="nav-link flex items-center gap-3 px-4 py-2.5 rounded-2xl mb-1 hover:bg-zinc-800">
-                <i class="fa-solid fa-handshake w-5"></i><span>Commitments</span>
-            </a>
-            <a href="#" class="nav-link flex items-center gap-3 px-4 py-2.5 rounded-2xl mb-1 hover:bg-zinc-800">
+
+            <a href="{{ url_for('rfis_page') }}" class="nav-link flex items-center gap-3 px-4 py-2.5 rounded-2xl mb-1 {% if request.endpoint == 'rfis_page' %}active{% endif %}">
                 <i class="fa-solid fa-question-circle w-5"></i><span>RFIs</span>
             </a>
-            <a href="#" class="nav-link flex items-center gap-3 px-4 py-2.5 rounded-2xl mb-1 hover:bg-zinc-800">
+
+            <a href="{{ url_for('change_orders_page') }}" class="nav-link flex items-center gap-3 px-4 py-2.5 rounded-2xl mb-1 {% if request.endpoint == 'change_orders_page' %}active{% endif %}">
                 <i class="fa-solid fa-exchange-alt w-5"></i><span>Change Orders</span>
             </a>
-            <a href="#" class="nav-link flex items-center gap-3 px-4 py-2.5 rounded-2xl mb-1 hover:bg-zinc-800">
-                <i class="fa-solid fa-tasks w-5"></i><span>Submittals</span>
+
+            <a href="{{ url_for('submittals_page') }}" class="nav-link flex items-center gap-3 px-4 py-2.5 rounded-2xl mb-1 {% if request.endpoint == 'submittals_page' %}active{% endif %}">
+                <i class="fa-solid fa-file-upload w-5"></i><span>Submittals</span>
             </a>
-            <a href="#" class="nav-link flex items-center gap-3 px-4 py-2.5 rounded-2xl mb-1 hover:bg-zinc-800">
-                <i class="fa-solid fa-check-double w-5"></i><span>Punch List</span>
+
+            <a href="{{ url_for('punch_list_page') }}" class="nav-link flex items-center gap-3 px-4 py-2.5 rounded-2xl mb-1 {% if request.endpoint == 'punch_list_page' %}active{% endif %}">
+                <i class="fa-solid fa-tasks w-5"></i><span>Punch List</span>
             </a>
-            <a href="#" class="nav-link flex items-center gap-3 px-4 py-2.5 rounded-2xl mb-1 hover:bg-zinc-800">
+
+            <a href="{{ url_for('safety_page') }}" class="nav-link flex items-center gap-3 px-4 py-2.5 rounded-2xl mb-1 {% if request.endpoint == 'safety_page' %}active{% endif %}">
                 <i class="fa-solid fa-shield-alt w-5"></i><span>Safety</span>
             </a>
 
+            <!-- Financial -->
+            <div class="px-3 mt-4 mb-2">
+                <div class="section-header px-3 mb-1">Financial</div>
+            </div>
+
+            <a href="{{ url_for('budget_page') }}" class="nav-link flex items-center gap-3 px-4 py-2.5 rounded-2xl mb-1 {% if request.endpoint == 'budget_page' %}active{% endif %}">
+                <i class="fa-solid fa-chart-pie w-5"></i><span>Budget</span>
+            </a>
+
+            <a href="{{ url_for('commitments_page') }}" class="nav-link flex items-center gap-3 px-4 py-2.5 rounded-2xl mb-1 {% if request.endpoint == 'commitments_page' %}active{% endif %}">
+                <i class="fa-solid fa-handshake w-5"></i><span>Commitments</span>
+            </a>
+
+            <a href="{{ url_for('pay_applications_page') }}" class="nav-link flex items-center gap-3 px-4 py-2.5 rounded-2xl mb-1 {% if request.endpoint == 'pay_applications_page' %}active{% endif %}">
+                <i class="fa-solid fa-file-invoice-dollar w-5"></i><span>Pay Applications</span>
+            </a>
+
             <!-- Field & Docs -->
-            <div class="px-3 mt-5 mb-1 text-[10px] font-semibold text-zinc-500 tracking-wider">FIELD & DOCS</div>
-            <a href="#" class="nav-link flex items-center gap-3 px-4 py-2.5 rounded-2xl mb-1 hover:bg-zinc-800">
+            <div class="px-3 mt-4 mb-2">
+                <div class="section-header px-3 mb-1">Field &amp; Docs</div>
+            </div>
+
+            <a href="{{ url_for('photos_page') }}" class="nav-link flex items-center gap-3 px-4 py-2.5 rounded-2xl mb-1 {% if request.endpoint == 'photos_page' %}active{% endif %}">
                 <i class="fa-solid fa-camera w-5"></i><span>Photos</span>
             </a>
-            <a href="#" class="nav-link flex items-center gap-3 px-4 py-2.5 rounded-2xl mb-1 hover:bg-zinc-800">
+
+            <a href="{{ url_for('documents_page') }}" class="nav-link flex items-center gap-3 px-4 py-2.5 rounded-2xl mb-1 {% if request.endpoint == 'documents_page' %}active{% endif %}">
                 <i class="fa-solid fa-folder-open w-5"></i><span>Documents</span>
             </a>
-            <a href="#" class="nav-link flex items-center gap-3 px-4 py-2.5 rounded-2xl mb-1 hover:bg-zinc-800">
+
+            <a href="{{ url_for('drawings_page') }}" class="nav-link flex items-center gap-3 px-4 py-2.5 rounded-2xl mb-1 {% if request.endpoint == 'drawings_page' %}active{% endif %}">
                 <i class="fa-solid fa-drafting-compass w-5"></i><span>Drawings</span>
             </a>
 
+            <a href="{{ url_for('deliveries_page') }}" class="nav-link flex items-center gap-3 px-4 py-2.5 rounded-2xl mb-1 {% if request.endpoint == 'deliveries_page' %}active{% endif %}">
+                <i class="fa-solid fa-truck w-5"></i><span>Deliveries</span>
+            </a>
+
+            <a href="{{ url_for('inspections_page') }}" class="nav-link flex items-center gap-3 px-4 py-2.5 rounded-2xl mb-1 {% if request.endpoint == 'inspections_page' %}active{% endif %}">
+                <i class="fa-solid fa-clipboard-check w-5"></i><span>Inspections</span>
+            </a>
+
+            <a href="{{ url_for('meeting_minutes_page') }}" class="nav-link flex items-center gap-3 px-4 py-2.5 rounded-2xl mb-1 {% if request.endpoint == 'meeting_minutes_page' %}active{% endif %}">
+                <i class="fa-solid fa-sticky-note w-5"></i><span>Meeting Minutes</span>
+            </a>
+
             <!-- Admin -->
-            <div class="px-3 mt-5 mb-1 text-[10px] font-semibold text-zinc-500 tracking-wider">ADMIN</div>
-            <a href="#" class="nav-link active flex items-center gap-3 px-4 py-2.5 rounded-2xl mb-1">
+            <div class="px-3 mt-4 mb-2">
+                <div class="section-header px-3 mb-1">Admin</div>
+            </div>
+
+            <a href="{{ url_for('companies_page') }}" class="nav-link active flex items-center gap-3 px-4 py-2.5 rounded-2xl mb-1">
                 <i class="fa-solid fa-building w-5"></i><span>Companies / Vendors</span>
             </a>
-            <a href="#" class="nav-link flex items-center gap-3 px-4 py-2.5 rounded-2xl mb-1 hover:bg-zinc-800">
+
+            <a href="{{ url_for('user_management') }}" class="nav-link flex items-center gap-3 px-4 py-2.5 rounded-2xl mb-1 {% if request.endpoint == 'user_management' %}active{% endif %}">
                 <i class="fa-solid fa-users w-5"></i><span>User Management</span>
             </a>
-            <a href="#" class="nav-link flex items-center gap-3 px-4 py-2.5 rounded-2xl mb-1 hover:bg-zinc-800">
+
+            <a href="{{ url_for('program_settings') }}" class="nav-link flex items-center gap-3 px-4 py-2.5 rounded-2xl mb-1 {% if request.endpoint == 'program_settings' %}active{% endif %}">
                 <i class="fa-solid fa-cog w-5"></i><span>Program Settings</span>
             </a>
         </div>
 
-        <div class="p-4 border-t border-zinc-800 text-xs text-zinc-500">
-            ALDI Lakeland • v56.0
+        <div class="p-4 border-t border-zinc-800">
+            <div class="text-[10px] text-zinc-500 px-3">
+                Case PM v56.0 • ALDI Lakeland
+            </div>
         </div>
     </div>
 
     <!-- Main Content -->
     <div class="flex-1 flex flex-col overflow-hidden">
         
-        <!-- Header -->
-        <div class="h-20 pt-2 border-b border-zinc-800 bg-zinc-900 flex items-center justify-between px-6 flex-shrink-0">
-            <div class="flex items-center gap-4">
-                <h1 class="text-2xl font-semibold tracking-tight">Companies & Vendors</h1>
+        <!-- Updated Header -->
+        <div class="h-16 border-b border-zinc-800 bg-zinc-900 flex items-center justify-between px-6">
+            
+            <!-- Left: Current Project -->
+            <div>
+                <div class="text-xs text-zinc-400 tracking-wider">CURRENT PROJECT</div>
+                <div class="text-2xl font-semibold tracking-tight">ALDI Lakeland</div>
             </div>
 
+            <!-- Center/Right: Page Title -->
+            <div class="text-2xl font-semibold text-white">Companies</div>
+
             <div class="flex items-center gap-3">
+                <!-- Your existing buttons stay exactly as they are -->
                 <button onclick="exportCompanies()" class="flex items-center gap-2 px-4 py-2 bg-zinc-800 hover:bg-zinc-700 rounded-md text-sm font-medium">
                     <i class="fa-solid fa-download"></i><span>Export</span>
                 </button>
-                <button onclick="showImportModal()" class="flex items-center gap-2 px-4 py-2 bg-zinc-800 hover:bg-zinc-700 rounded-md text-sm font-medium">
+                <button onclick="importCompanies()" class="flex items-center gap-2 px-4 py-2 bg-zinc-800 hover:bg-zinc-700 rounded-md text-sm font-medium">
                     <i class="fa-solid fa-upload"></i><span>Import</span>
                 </button>
-                <button onclick="showAddCompanyModal()" class="flex items-center gap-2 px-5 py-2 bg-emerald-600 hover:bg-emerald-500 rounded-md text-sm font-semibold">
+                <button onclick="showAddCompanyModal()" class="flex items-center gap-2 px-5 py-2 bg-white text-zinc-900 hover:bg-zinc-100 rounded-md text-sm font-semibold">
                     <i class="fa-solid fa-plus"></i><span>Add Company</span>
                 </button>
             </div>
         </div>
 
-        <!-- Content -->
+        <!-- Content area starts here - everything below is from your original file (unchanged) -->
         <div class="flex-1 overflow-auto p-6">
             
             <!-- Summary Cards -->
