@@ -51,24 +51,32 @@
     <!-- Summary Cards -->
     <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4 mb-6">
         <div class="bg-zinc-900 border border-emerald-600 rounded-2xl p-5">
-            <div class="text-xs text-zinc-400 mb-1">CONTRACT AMOUNT</div>
-            <div class="text-3xl font-semibold" id="contractAmount">$0.00</div>
-            <button onclick="editContractAmount()" class="text-xs text-emerald-400 hover:text-emerald-300 mt-1">Edit</button>
+            <div class="text-xs text-emerald-400 mb-1 flex items-center justify-between">
+                <span>CONTRACT AMOUNT</span>
+                <button onclick="editContractAmount()" class="text-emerald-400 hover:text-white"><i class="fa-solid fa-edit text-xs"></i></button>
+            </div>
+            <div class="text-3xl font-semibold text-emerald-400" id="contractAmount">$0.00</div>
+            <div class="text-[10px] text-zinc-500 mt-1">From Commitments</div>
         </div>
+
         <div class="bg-zinc-900 border border-zinc-800 rounded-2xl p-5">
             <div class="text-xs text-zinc-400 mb-1">ORIGINAL BUDGET</div>
             <div class="text-3xl font-semibold" id="originalBudgetTotal">$0.00</div>
         </div>
+        
         <div class="bg-zinc-900 border border-zinc-800 rounded-2xl p-5">
             <div class="text-xs text-zinc-400 mb-1">APPROVED CHANGES</div>
             <div class="text-3xl font-semibold text-amber-400" id="approvedChangesTotal">$0.00</div>
+            <div class="text-[10px] text-zinc-500 mt-1">From Change Orders (future)</div>
         </div>
+        
         <div class="bg-zinc-900 border border-zinc-800 rounded-2xl p-5">
             <div class="text-xs text-zinc-400 mb-1">CURRENT BUDGET</div>
             <div class="text-3xl font-semibold text-emerald-400" id="currentBudgetTotal">$0.00</div>
         </div>
+        
         <div class="bg-zinc-900 border border-zinc-800 rounded-2xl p-5">
-            <div class="text-xs text-zinc-400 mb-1">REMAINING TO BUDGET</div>
+            <div class="text-xs text-zinc-400 mb-1">REMAINING</div>
             <div class="text-3xl font-semibold" id="remainingBudgetTotal">$0.00</div>
         </div>
     </div>
@@ -265,7 +273,6 @@
     </div>
 </dialog>
 
-{% endblock %}
 <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
 
 <script>
@@ -638,3 +645,4 @@
         initializeBudget();
     };
 </script>
+{% endblock %}
