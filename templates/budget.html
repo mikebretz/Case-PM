@@ -109,3 +109,126 @@
     </div>
 
 </div>
+        <!-- Add / Edit Budget Line Modal -->
+        <dialog id="budgetLineModal" class="bg-zinc-900 border border-zinc-700 rounded-3xl p-0 w-full max-w-3xl shadow-2xl">
+            <div class="p-6">
+                <div class="flex items-center justify-between mb-5">
+                    <div class="font-semibold text-xl" id="modalTitle">Add Budget Line</div>
+                    <button onclick="document.getElementById('budgetLineModal').close()" class="text-zinc-400 hover:text-white text-2xl leading-none">&times;</button>
+                </div>
+
+                <form id="budgetLineForm" onsubmit="saveBudgetLine(event)">
+                    <input type="hidden" id="budgetLineId">
+
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <!-- Cost Code -->
+                        <div class="md:col-span-2">
+                            <label class="block text-sm text-zinc-400 mb-1.5">Cost Code</label>
+                            <div class="flex gap-2">
+                                <input type="text" id="cost_code" required placeholder="e.g. 03-3000 or 033000"
+                                       class="flex-1 bg-zinc-800 border border-zinc-700 rounded-2xl px-4 py-2.5 text-sm focus:outline-none focus:border-emerald-600">
+                                <button type="button" onclick="showCreateCustomCodeModal()"
+                                        class="px-4 py-2.5 bg-zinc-700 hover:bg-zinc-600 rounded-2xl text-sm whitespace-nowrap">
+                                    + Custom Code
+                                </button>
+                            </div>
+                            <p class="text-xs text-zinc-500 mt-1">Use 6-digit CSI format (e.g. 03-3000) or create a custom code</p>
+                        </div>
+
+                        <!-- Description -->
+                        <div class="md:col-span-2">
+                            <label class="block text-sm text-zinc-400 mb-1.5">Description</label>
+                            <input type="text" id="description" required
+                                   class="w-full bg-zinc-800 border border-zinc-700 rounded-2xl px-4 py-2.5 text-sm focus:outline-none focus:border-emerald-600">
+                        </div>
+
+                        <!-- Cost Type -->
+                        <div>
+                            <label class="block text-sm text-zinc-400 mb-1.5">Cost Type</label>
+                            <select id="cost_type" required
+                                    class="w-full bg-zinc-800 border border-zinc-700 rounded-2xl px-4 py-2.5 text-sm focus:outline-none focus:border-emerald-600">
+                                <option value="Labor">Labor</option>
+                                <option value="Material">Material</option>
+                                <option value="Subcontract">Subcontract</option>
+                                <option value="Equipment">Equipment</option>
+                                <option value="General Conditions">General Conditions</option>
+                                <option value="Other">Other</option>
+                            </select>
+                        </div>
+
+                        <!-- Original Budget -->
+                        <div>
+                            <label class="block text-sm text-zinc-400 mb-1.5">Original Budget</label>
+                            <input type="number" id="original_budget" step="0.01" required
+                                   class="w-full bg-zinc-800 border border-zinc-700 rounded-2xl px-4 py-2.5 text-sm focus:outline-none focus:border-emerald-600">
+                        </div>
+
+                        <!-- Notes -->
+                        <div class="md:col-span-2">
+                            <label class="block text-sm text-zinc-400 mb-1.5">Notes</label>
+                            <textarea id="notes" rows="2"
+                                      class="w-full bg-zinc-800 border border-zinc-700 rounded-2xl px-4 py-2.5 text-sm focus:outline-none focus:border-emerald-600"></textarea>
+                        </div>
+                    </div>
+
+                    <div class="flex gap-3 mt-6">
+                        <button type="button" onclick="document.getElementById('budgetLineModal').close()"
+                                class="flex-1 py-2.5 bg-zinc-800 hover:bg-zinc-700 rounded-2xl text-sm font-medium transition-colors">
+                            Cancel
+                        </button>
+                        <button type="submit"
+                                class="flex-1 py-2.5 bg-emerald-600 hover:bg-emerald-500 rounded-2xl text-sm font-medium transition-colors">
+                            Save Budget Line
+                        </button>
+                    </div>
+                </form>
+            </div>
+        </dialog>
+
+        <!-- Create Custom Cost Code Modal -->
+        <dialog id="customCodeModal" class="bg-zinc-900 border border-zinc-700 rounded-3xl p-0 w-full max-w-md shadow-2xl">
+            <div class="p-6">
+                <div class="flex items-center justify-between mb-5">
+                    <div class="font-semibold text-xl">Create Custom Cost Code</div>
+                    <button onclick="document.getElementById('customCodeModal').close()" class="text-zinc-400 hover:text-white text-2xl leading-none">&times;</button>
+                </div>
+
+                <form id="customCodeForm" onsubmit="createCustomCode(event)">
+                    <div class="space-y-4">
+                        <div>
+                            <label class="block text-sm text-zinc-400 mb-1.5">Cost Code</label>
+                            <input type="text" id="custom_cost_code" placeholder="e.g. 99-9999 or CUSTOM-001" required
+                                   class="w-full bg-zinc-800 border border-zinc-700 rounded-2xl px-4 py-2.5 text-sm focus:outline-none focus:border-emerald-600">
+                        </div>
+                        <div>
+                            <label class="block text-sm text-zinc-400 mb-1.5">Description</label>
+                            <input type="text" id="custom_description" required
+                                   class="w-full bg-zinc-800 border border-zinc-700 rounded-2xl px-4 py-2.5 text-sm focus:outline-none focus:border-emerald-600">
+                        </div>
+                        <div>
+                            <label class="block text-sm text-zinc-400 mb-1.5">Cost Type</label>
+                            <select id="custom_cost_type" required
+                                    class="w-full bg-zinc-800 border border-zinc-700 rounded-2xl px-4 py-2.5 text-sm focus:outline-none focus:border-emerald-600">
+                                <option value="Labor">Labor</option>
+                                <option value="Material">Material</option>
+                                <option value="Subcontract">Subcontract</option>
+                                <option value="Equipment">Equipment</option>
+                                <option value="General Conditions">General Conditions</option>
+                                <option value="Other">Other</option>
+                            </select>
+                        </div>
+                    </div>
+
+                    <div class="flex gap-3 mt-6">
+                        <button type="button" onclick="document.getElementById('customCodeModal').close()"
+                                class="flex-1 py-2.5 bg-zinc-800 hover:bg-zinc-700 rounded-2xl text-sm font-medium transition-colors">
+                            Cancel
+                        </button>
+                        <button type="submit"
+                                class="flex-1 py-2.5 bg-emerald-600 hover:bg-emerald-500 rounded-2xl text-sm font-medium transition-colors">
+                            Create & Use
+                        </button>
+                    </div>
+                </form>
+            </div>
+        </dialog>
