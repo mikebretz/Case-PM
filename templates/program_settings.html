@@ -127,3 +127,143 @@
     </div>
 
 </div>
+    <!-- User Permissions Tab -->
+    <div id="tab-content-permissions" class="hidden">
+        <div class="bg-zinc-900 border border-zinc-800 rounded-3xl p-8">
+            <div class="flex items-center justify-between mb-6">
+                <div>
+                    <h2 class="text-xl font-semibold">User Permissions</h2>
+                    <p class="text-sm text-zinc-400 mt-1">Manage role-based access and granular permissions</p>
+                </div>
+                <button onclick="showAddRoleModal()" 
+                        class="px-4 py-2 bg-emerald-600 hover:bg-emerald-500 rounded-2xl text-sm font-medium flex items-center gap-2">
+                    <i class="fa-solid fa-plus"></i>
+                    <span>Add Custom Role</span>
+                </button>
+            </div>
+
+            <!-- Roles Table -->
+            <div class="overflow-x-auto">
+                <table class="w-full">
+                    <thead>
+                        <tr class="border-b border-zinc-800">
+                            <th class="text-left px-4 py-3 text-sm font-medium text-zinc-400">Role</th>
+                            <th class="text-left px-4 py-3 text-sm font-medium text-zinc-400">Description</th>
+                            <th class="text-center px-4 py-3 text-sm font-medium text-zinc-400">Users</th>
+                            <th class="text-center px-4 py-3 text-sm font-medium text-zinc-400">Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody class="divide-y divide-zinc-800">
+                        <tr>
+                            <td class="px-4 py-4 font-medium">Admin</td>
+                            <td class="px-4 py-4 text-sm text-zinc-400">Full access to all modules and settings</td>
+                            <td class="px-4 py-4 text-center"><span class="text-emerald-400">2</span></td>
+                            <td class="px-4 py-4 text-center">
+                                <button class="text-xs px-3 py-1 bg-zinc-800 hover:bg-zinc-700 rounded-xl">Edit</button>
+                            </td>
+                        </tr>
+                        <tr>
+                            <td class="px-4 py-4 font-medium">Project Manager</td>
+                            <td class="px-4 py-4 text-sm text-zinc-400">Can manage projects, RFIs, COs, Daily Logs</td>
+                            <td class="px-4 py-4 text-center"><span class="text-emerald-400">4</span></td>
+                            <td class="px-4 py-4 text-center">
+                                <button class="text-xs px-3 py-1 bg-zinc-800 hover:bg-zinc-700 rounded-xl">Edit</button>
+                            </td>
+                        </tr>
+                        <tr>
+                            <td class="px-4 py-4 font-medium">Superintendent</td>
+                            <td class="px-4 py-4 text-sm text-zinc-400">Daily logs, punch list, safety, photos</td>
+                            <td class="px-4 py-4 text-center"><span class="text-emerald-400">3</span></td>
+                            <td class="px-4 py-4 text-center">
+                                <button class="text-xs px-3 py-1 bg-zinc-800 hover:bg-zinc-700 rounded-xl">Edit</button>
+                            </td>
+                        </tr>
+                        <tr>
+                            <td class="px-4 py-4 font-medium">Viewer</td>
+                            <td class="px-4 py-4 text-sm text-zinc-400">Read-only access across all modules</td>
+                            <td class="px-4 py-4 text-center"><span class="text-emerald-400">5</span></td>
+                            <td class="px-4 py-4 text-center">
+                                <button class="text-xs px-3 py-1 bg-zinc-800 hover:bg-zinc-700 rounded-xl">Edit</button>
+                            </td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+
+    <!-- Backup & Maintenance Tab -->
+    <div id="tab-content-backup" class="hidden">
+        <div class="bg-zinc-900 border border-zinc-800 rounded-3xl p-8">
+            <h2 class="text-xl font-semibold mb-6">Backup & Maintenance</h2>
+            
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                <div class="bg-zinc-800 border border-zinc-700 rounded-2xl p-5">
+                    <h3 class="font-medium mb-3">Automatic Backups</h3>
+                    <div class="flex items-center justify-between">
+                        <span class="text-sm text-zinc-400">Enable daily automatic backups</span>
+                        <label class="relative inline-flex items-center cursor-pointer">
+                            <input type="checkbox" checked class="sr-only peer">
+                            <div class="w-11 h-6 bg-zinc-700 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-emerald-600"></div>
+                        </label>
+                    </div>
+                    <div class="mt-4">
+                        <label class="block text-xs text-zinc-400 mb-1">Backup Frequency</label>
+                        <select class="w-full bg-zinc-700 border border-zinc-600 rounded-xl px-3 py-2 text-sm">
+                            <option>Daily</option>
+                            <option>Every 12 hours</option>
+                            <option>Weekly</option>
+                        </select>
+                    </div>
+                </div>
+
+                <div class="bg-zinc-800 border border-zinc-700 rounded-2xl p-5">
+                    <h3 class="font-medium mb-3">Manual Backup</h3>
+                    <p class="text-sm text-zinc-400 mb-4">Create a full backup of all program data right now.</p>
+                    <button onclick="createManualBackup()"
+                            class="w-full py-2.5 bg-emerald-600 hover:bg-emerald-500 rounded-2xl text-sm font-medium transition-colors">
+                        Create Backup Now
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Email Settings Tab -->
+    <div id="tab-content-email" class="hidden">
+        <div class="bg-zinc-900 border border-zinc-800 rounded-3xl p-8">
+            <h2 class="text-xl font-semibold mb-6">Email / SMTP Settings</h2>
+            
+            <form>
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                    <div>
+                        <label class="block text-sm text-zinc-400 mb-1.5">SMTP Server</label>
+                        <input type="text" placeholder="smtp.gmail.com" 
+                               class="w-full bg-zinc-800 border border-zinc-700 rounded-2xl px-4 py-2.5 text-sm focus:outline-none focus:border-emerald-600">
+                    </div>
+                    <div>
+                        <label class="block text-sm text-zinc-400 mb-1.5">Port</label>
+                        <input type="number" value="587"
+                               class="w-full bg-zinc-800 border border-zinc-700 rounded-2xl px-4 py-2.5 text-sm focus:outline-none focus:border-emerald-600">
+                    </div>
+                    <div>
+                        <label class="block text-sm text-zinc-400 mb-1.5">Username / Email</label>
+                        <input type="email" 
+                               class="w-full bg-zinc-800 border border-zinc-700 rounded-2xl px-4 py-2.5 text-sm focus:outline-none focus:border-emerald-600">
+                    </div>
+                    <div>
+                        <label class="block text-sm text-zinc-400 mb-1.5">Password / App Password</label>
+                        <input type="password" 
+                               class="w-full bg-zinc-800 border border-zinc-700 rounded-2xl px-4 py-2.5 text-sm focus:outline-none focus:border-emerald-600">
+                    </div>
+                </div>
+
+                <div class="mt-6 flex justify-end">
+                    <button type="button"
+                            class="px-8 py-2.5 bg-emerald-600 hover:bg-emerald-500 rounded-2xl text-sm font-medium transition-colors">
+                        Save Email Settings
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
