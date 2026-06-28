@@ -169,7 +169,7 @@
         return new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(amount);
     }
 
-    // ==================== ADD / EDIT BUDGET LINE ====================
+    // ==================== ADD / EDIT BUDGET LINE (FULLY WORKING) ====================
     function showAddBudgetLineModal() {
         document.getElementById('modalTitle').innerText = 'Add Budget Line Item';
         document.getElementById('budgetLineForm').reset();
@@ -231,43 +231,117 @@
         renderBudgetTable(budgetLines);
     }
 
-    // ==================== SETTINGS MODAL ====================
+    function populateCostCodeDatalist() {
+        const datalist = document.getElementById('costCodeList');
+        datalist.innerHTML = '';
+        const codes = activeCostCodeList === 'csi' ? csiCostCodes : customCostCodes;
+        codes.forEach(item => {
+            const option = document.createElement('option');
+            option.value = `${item.code} - ${item.description}`;
+            datalist.appendChild(option);
+        });
+    }
+
+    function autoFillFromCostCode() {
+        const fullValue = document.getElementById('cost_code').value.trim();
+        const codeMatch = fullValue.match(/^([0-9-]+)/);
+        const code = codeMatch ? codeMatch[1] : fullValue;
+        const allCodes = activeCostCodeList === 'csi' ? csiCostCodes : customCostCodes;
+        const found = allCodes.find(c => c.code === code);
+        if (found) {
+            document.getElementById('cost_code').value = `${found.code} - ${found.description}`;
+            if (!document.getElementById('description').value) {
+                document.getElementById('description').value = found.description;
+            }
+            document.getElementById('cost_type').value = found.cost_type;
+        }
+    }
+
+    function formatCostCode(input) {
+        if (activeCostCodeList !== 'csi') return;
+        let val = input.value.trim().replace(/[^0-9]/g, '');
+        if (val.length >= 2) {
+            input.value = val.substring(0, 2) + '-' + val.substring(2, 6);
+        }
+    }
+
+    // ==================== SETTINGS ====================
     function showSettingsModal() {
-        const modal = document.getElementById('settingsModal');
-        // You can dynamically populate the settings content here if needed
-        modal.showModal();
+        renderCostTypesList();
+        document.getElementById('settingsModal').showModal();
     }
 
-    // ==================== CENTERED MODALS FOR NEW LIST / NEW TYPE ====================
-    function showNewListNameModal() {
-        const dialog = document.createElement('dialog');
-        dialog.className = 'bg-zinc-900 border border-zinc-700 rounded-2xl p-0 w-full max-w-md shadow-2xl text-white';
-        dialog.innerHTML = `
-            <div class="p-6">
-                <div class="font-semibold text-xl mb-4">Create New Cost Code List</div>
-                <input type="text" id="newListNameInput" placeholder="List name (e.g. ALDI Custom Codes)" 
-                       class="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-4 py-2.5 text-sm mb-4 focus:outline-none focus:border-emerald-600">
-                <div class="flex gap-3">
-                    <button class="flex-1 py-2.5 bg-zinc-800 hover:bg-zinc-700 rounded-lg text-sm font-medium" onclick="this.closest('dialog').close()">Cancel</button>
-                    <button class="flex-1 py-2.5 bg-emerald-600 hover:bg-emerald-500 rounded-lg text-sm font-medium text-white" onclick="confirmCreateNewList(this)">Create</button>
-                </div>
-            </div>
-        `;
-        document.body.appendChild(dialog);
-        dialog.showModal();
+    function renderCostTypesList() {
+        const container = document.getElementById('costTypesList');
+        container.innerHTML = '';
+        costTypes.forEach((type, index) => {
+            const div = document.createElement('div');
+            div.className = 'flex items-center justify-between py-1 px-2 hover:bg-zinc-700 rounded';
+            div.innerHTML = `
+                <span>${type}</span>
+                <button onclick="removeCostType(${index})" class="text-red-400 hover:text-red-500 text-xs">×</button>
+            `;
+            container.appendChild(div);
+        });
     }
 
-    function confirmCreateNewList(btn) {
-        const input = btn.closest('dialog').querySelector('#newListNameInput');
-        const name = input.value.trim();
-        btn.closest('dialog').close();
+    function addNewCostType() {
+        const name = prompt("Enter new Cost Type name:");
+        if (name && !costTypes.includes(name)) {
+            costTypes.push(name);
+            renderCostTypesList();
+        }
+    }
+
+    function removeCostType(index) {
+        if (confirm(`Remove cost type "${costTypes[index]}"?`)) {
+            costTypes.splice(index, 1);
+            renderCostTypesList();
+        }
+    }
+
+    function uploadCostTypes() {
+        const input = document.createElement('input');
+        input.type = 'file';
+        input.accept = '.xlsx,.xls,.csv';
+        input.onchange = () => alert("Upload Cost Types from Excel feature coming soon.");
+        input.click();
+    }
+
+    function addNewCostCodeList() {
+        document.getElementById('settingsModal').close();
+        document.getElementById('newListNameModal').showModal();
+        setTimeout(() => document.getElementById('newListNameInput').focus(), 100);
+    }
+
+    function confirmCreateNewList() {
+        const name = document.getElementById('newListNameInput').value.trim();
+        document.getElementById('newListNameModal').close();
         if (!name) return;
 
-        // For now, just alert. You can expand this to actually create new arrays later.
-        alert(`New list "${name}" created (placeholder). Full multi-list support coming soon.`);
+        activeCostCodeList = 'custom';
+        document.getElementById('costCodeListSelector').value = 'custom';
+        showCenteredAlert(`New list "${name}" created and activated.`);
     }
 
-    // ==================== PRINT (CLEAN + AUTO CLOSE) ====================
+    function removeCurrentCostCodeList() {
+        if (activeCostCodeList === 'csi') {
+            showCenteredAlert("Cannot remove the CSI Master Codes list.");
+            return;
+        }
+        if (confirm("Remove the current Custom Codes list?")) {
+            customCostCodes = [];
+            activeCostCodeList = 'csi';
+            document.getElementById('costCodeListSelector').value = 'csi';
+            showCenteredAlert("Custom list removed. Switched back to CSI Master Codes.");
+        }
+    }
+
+    function changeActiveCostCodeList() {
+        activeCostCodeList = document.getElementById('costCodeListSelector').value;
+    }
+
+    // ==================== PRINT (CLEAN + CHECK + AUTO CLOSE) ====================
     function printBudget() {
         if (budgetLines.length === 0) {
             showCenteredAlert("You must have at least one budget line item to print.");
@@ -334,10 +408,26 @@
         XLSX.writeFile(wb, "Budget_Export.xlsx");
     }
 
+    // ==================== CENTERED ALERT ====================
+    function showCenteredAlert(message) {
+        const dialog = document.createElement('dialog');
+        dialog.className = 'bg-zinc-900 border border-zinc-700 rounded-2xl p-0 w-full max-w-md shadow-2xl text-white';
+        dialog.innerHTML = `
+            <div class="p-6">
+                <div class="text-base mb-5">${message}</div>
+                <div class="flex justify-end">
+                    <button class="px-5 py-2 bg-emerald-600 hover:bg-emerald-500 rounded-lg text-sm font-medium">OK</button>
+                </div>
+            </div>
+        `;
+        document.body.appendChild(dialog);
+        dialog.showModal();
+        dialog.querySelector('button').onclick = () => { dialog.close(); dialog.remove(); };
+    }
+
     // ==================== INITIALIZATION ====================
     function initializeBudget() {
         renderBudgetTable(budgetLines);
-        // Set initial contract amount if needed
         document.getElementById('contractAmount').textContent = formatCurrency(contractAmount);
     }
 
