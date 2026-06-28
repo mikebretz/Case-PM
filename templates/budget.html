@@ -480,3 +480,20 @@
                 initializeBudget();
             };
         </script>
+    <!-- ==================== FINAL POLISH ==================== -->
+    <script>
+        // Additional safety: Re-render if needed after full load
+        document.addEventListener('DOMContentLoaded', function() {
+            const tbody = document.getElementById('budgetTableBody');
+            if (tbody && tbody.children.length === 0 && typeof budgetLines !== 'undefined') {
+                renderBudgetTable(budgetLines);
+            }
+        });
+
+        console.log('%c[Case PM] Advanced Budget page loaded successfully.', 'color:#10b981');
+    </script>
+
+{% endblock %}
+
+</div>
+</div>
