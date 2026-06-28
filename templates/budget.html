@@ -36,7 +36,7 @@
             <button onclick="showAddBudgetLineModal()" 
                     class="flex items-center gap-2 px-5 py-2.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg text-sm font-medium transition-colors">
                 <i class="fa-solid fa-plus"></i>
-                <span>Add Line</span>
+                <span>Add Budget Line Item</span>
             </button>
 
             <!-- Settings -->
@@ -314,15 +314,15 @@
 
     function removeCurrentCostCodeList() {
         if (activeCostCodeList === 'csi') {
-            alert("Cannot remove the CSI Master Codes list.");
+            showCenteredAlert("Cannot remove the CSI Master Codes list. Please switch to a Custom list first if you want to remove it.");
             return;
         }
-        if (confirm("Remove the current custom cost code list?")) {
-            // Logic to switch back to CSI or handle removal
+        showCenteredConfirm("Remove the current custom cost code list? This cannot be undone.", () => {
             activeCostCodeList = 'csi';
             document.getElementById('costCodeListSelector').value = 'csi';
             renderCostCodeListManagement();
-        }
+            showCenteredAlert("Custom list removed. Switched back to CSI Master Codes.");
+        });
     }
 
     // ==================== PRINT (CLEAN + AUTO CLOSE) ====================
@@ -371,11 +371,14 @@
         `);
         printWindow.document.close();
         printWindow.focus();
+        printWindow.print();
         
-        // Auto close after print dialog is closed
-        printWindow.onafterprint = function() {
-            printWindow.close();
-        };
+        // Close the window after a short delay (user may cancel or finish printing)
+        setTimeout(() => {
+            if (!printWindow.closed) {
+                printWindow.close();
+            }
+        }, 1500);
         
         // Fallback for browsers that don't support onafterprint well
         setTimeout(() => {
