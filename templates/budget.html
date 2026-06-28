@@ -234,7 +234,7 @@
         </dialog>
         <!-- JavaScript -->
         <script>
-            // Sample budget data (will be replaced with backend later)
+            // ==================== DATA ====================
             let budgetLines = [
                 {
                     id: 1,
@@ -265,64 +265,47 @@
                 }
             ];
 
-            // Master list of cost codes (CSI + custom)
             let costCodeLibrary = [
                 { code: "03-3000", description: "Concrete - Structural", cost_type: "Subcontract" },
                 { code: "09-9000", description: "Painting & Wall Coverings", cost_type: "Subcontract" },
                 { code: "26-1000", description: "Electrical - Rough In", cost_type: "Subcontract" }
             ];
 
-            function filterBudget() {
-                const searchTerm = document.getElementById('budgetSearch').value.toLowerCase();
-                const costTypeFilter = document.getElementById('costTypeFilter').value;
-                const divisionFilter = document.getElementById('divisionFilter').value;
-
-                const filtered = budgetLines.filter(line => {
-                    const matchesSearch = line.cost_code.toLowerCase().includes(searchTerm) || 
-                                        line.description.toLowerCase().includes(searchTerm);
-                    const matchesCostType = !costTypeFilter || line.cost_type === costTypeFilter;
-                    const matchesDivision = !divisionFilter || line.cost_code.startsWith(divisionFilter);
-                    return matchesSearch && matchesCostType && matchesDivision;
-                });
-
-                renderBudgetTable(filtered);
-            }
-
-            function clearBudgetFilters() {
-                document.getElementById('budgetSearch').value = '';
-                document.getElementById('costTypeFilter').value = '';
-                document.getElementById('divisionFilter').value = '';
-                renderBudgetTable(budgetLines);
-            }
-
+            // ==================== HELPER FUNCTIONS ====================
             function formatCurrency(amount) {
                 return new Intl.NumberFormat('en-US', {
                     style: 'currency',
                     currency: 'USD',
-                    minimumFractionDigits: 0
+                    minimumFractionDigits: 2
                 }).format(amount);
             }
 
+            function sortBudgetLines(lines) {
+                return lines.sort((a, b) => {
+                    // Sort numerically by cost code (handles both 03-3000 and 033000 formats)
+                    const codeA = a.cost_code.replace(/[^0-9]/g, '');
+                    const codeB = b.cost_code.replace(/[^0-9]/g, '');
+                    return codeA.localeCompare(codeB, undefined, { numeric: true });
+                });
+            }
+
+            // ==================== RENDERING ====================
             function renderBudgetTable(lines) {
                 const tbody = document.getElementById('budgetTableBody');
                 tbody.innerHTML = '';
 
+                const sortedLines = sortBudgetLines([...lines]); // sort copy
+
                 let originalTotal = 0;
                 let changesTotal = 0;
 
-                if (lines.length === 0) {
-                    tbody.innerHTML = `
-                        <tr>
-                            <td colspan="8" class="px-6 py-8 text-center text-zinc-400">
-                                No budget lines found.
-                            </td>
-                        </tr>
-                    `;
+                if (sortedLines.length === 0) {
+                    tbody.innerHTML = `<tr><td colspan="8" class="px-6 py-8 text-center text-zinc-400">No budget lines found.</td></tr>`;
                     updateTotals(0, 0);
                     return;
                 }
 
-                lines.forEach(line => {
+                sortedLines.forEach(line => {
                     const currentBudget = line.original_budget + line.approved_changes;
                     originalTotal += line.original_budget;
                     changesTotal += line.approved_changes;
@@ -360,7 +343,6 @@
 
             function updateTotals(original, changes) {
                 const current = original + changes;
-
                 document.getElementById('originalBudgetTotal').textContent = formatCurrency(original);
                 document.getElementById('approvedChangesTotal').textContent = formatCurrency(changes);
                 document.getElementById('currentBudgetTotal').textContent = formatCurrency(current);
@@ -371,6 +353,7 @@
                 document.getElementById('footerCurrentTotal').textContent = formatCurrency(current);
             }
 
+            // ==================== MODAL & FORM HANDLING ====================
             function showAddBudgetLineModal() {
                 document.getElementById('modalTitle').innerText = 'Add Budget Line';
                 document.getElementById('budgetLineForm').reset();
@@ -425,6 +408,7 @@
                 renderBudgetTable(budgetLines);
             }
 
+            // ==================== CUSTOM COST CODE ====================
             function showCreateCustomCodeModal() {
                 document.getElementById('budgetLineModal').close();
                 document.getElementById('customCodeForm').reset();
@@ -440,42 +424,60 @@
                     cost_type: document.getElementById('custom_cost_type').value
                 };
 
-                // Add to library
                 costCodeLibrary.push(newCode);
 
-                // Close custom modal and reopen budget line modal with values pre-filled
                 document.getElementById('customCodeModal').close();
                 document.getElementById('budgetLineModal').showModal();
 
-                // Pre-fill the cost code and description
                 document.getElementById('cost_code').value = newCode.code;
                 document.getElementById('description').value = newCode.description;
                 document.getElementById('cost_type').value = newCode.cost_type;
             }
 
-            function populateDivisionFilter() {
-                const select = document.getElementById('divisionFilter');
-                const divisions = new Set();
+            // ==================== CURRENCY FORMATTING ON INPUT ====================
+            function setupCurrencyFormatting() {
+                const input = document.getElementById('original_budget');
+                if (!input) return;
 
-                budgetLines.forEach(line => {
-                    const div = line.cost_code.substring(0, 2);
-                    if (div) divisions.add(div);
-                });
+                input.addEventListener('input', function(e) {
+                    let value = e.target.value.replace(/[^0-9.]/g, '');
+                    if (value === '') return;
 
-                divisions.forEach(div => {
-                    const option = document.createElement('option');
-                    option.value = div;
-                    option.textContent = `Division ${div}`;
-                    select.appendChild(option);
+                    // Format with commas while typing
+                    const parts = value.split('.');
+                    parts[0] = parts[0].replace(/\B(?=(\d{3})+(?!\d))/g, ',');
+                    e.target.value = parts.join('.');
                 });
             }
 
+            // ==================== FILTERING ====================
+            function filterBudget() {
+                const searchTerm = document.getElementById('budgetSearch').value.toLowerCase();
+                const costTypeFilter = document.getElementById('costTypeFilter').value;
+
+                const filtered = budgetLines.filter(line => {
+                    const matchesSearch = line.cost_code.toLowerCase().includes(searchTerm) || 
+                                        line.description.toLowerCase().includes(searchTerm);
+                    const matchesCostType = !costTypeFilter || line.cost_type === costTypeFilter;
+                    return matchesSearch && matchesCostType;
+                });
+
+                renderBudgetTable(filtered);
+            }
+
+            function clearBudgetFilters() {
+                document.getElementById('budgetSearch').value = '';
+                document.getElementById('costTypeFilter').value = '';
+                document.getElementById('divisionFilter').value = '';
+                renderBudgetTable(budgetLines);
+            }
+
+            // ==================== INITIALIZATION ====================
             function initializeBudget() {
                 renderBudgetTable(budgetLines);
-                populateDivisionFilter();
+                setupCurrencyFormatting();
             }
 
-            // Initialize on load
             window.onload = function() {
                 initializeBudget();
             };
