@@ -178,3 +178,68 @@
 
         <!-- Content area starts here -->
         <div class="flex-1 overflow-auto p-6">
+            <!-- Header Row -->
+            <div class="flex items-center justify-between mb-6">
+                <div>
+                    <h2 class="text-2xl font-semibold tracking-tight">Companies & Vendors</h2>
+                    <p class="text-sm text-zinc-400 mt-1">Manage subcontractors, suppliers, and vendors for ALDI Lakeland</p>
+                </div>
+                <div class="flex items-center gap-3">
+                    <div class="relative">
+                        <input type="text" id="searchInput" placeholder="Search companies..." 
+                               class="bg-zinc-800 border border-zinc-700 rounded-md px-4 py-2 text-sm w-72 pl-10"
+                               onkeyup="filterCompanies()">
+                        <i class="fa-solid fa-search absolute left-3.5 top-3 text-zinc-500"></i>
+                    </div>
+                    <button onclick="showAddCompanyModal()" 
+                            class="flex items-center gap-2 px-5 py-2 bg-white text-zinc-900 hover:bg-zinc-100 rounded-md text-sm font-semibold">
+                        <i class="fa-solid fa-plus"></i>
+                        <span>Add Company</span>
+                    </button>
+                </div>
+            </div>
+
+            <!-- Summary Cards -->
+            <div class="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
+                <div class="bg-zinc-900 border border-zinc-800 rounded-md p-5">
+                    <div class="text-sm text-zinc-400">Total Companies</div>
+                    <div id="totalCompanies" class="text-3xl font-semibold mt-1">47</div>
+                </div>
+                <div class="bg-zinc-900 border border-zinc-800 rounded-md p-5">
+                    <div class="text-sm text-zinc-400">Active Vendors</div>
+                    <div id="activeVendors" class="text-3xl font-semibold mt-1 text-emerald-400">38</div>
+                </div>
+                <div class="bg-zinc-900 border border-zinc-800 rounded-md p-5">
+                    <div class="text-sm text-zinc-400">Pending Approval</div>
+                    <div id="pendingApproval" class="text-3xl font-semibold mt-1 text-amber-400">6</div>
+                </div>
+                <div class="bg-zinc-900 border border-zinc-800 rounded-md p-5">
+                    <div class="text-sm text-zinc-400">Recently Added</div>
+                    <div id="recentlyAdded" class="text-3xl font-semibold mt-1">4</div>
+                </div>
+            </div>
+
+            <!-- Companies Table -->
+            <div class="bg-zinc-900 border border-zinc-800 rounded-md overflow-hidden">
+                <div class="px-6 py-4 border-b border-zinc-800 flex items-center justify-between">
+                    <div class="font-semibold">All Companies</div>
+                    <div class="text-sm text-zinc-400" id="companyCount">47 companies</div>
+                </div>
+                
+                <table class="w-full">
+                    <thead class="bg-zinc-950 text-sm">
+                        <tr>
+                            <th class="px-6 py-3 text-left font-medium text-zinc-400">Company Name</th>
+                            <th class="px-6 py-3 text-left font-medium text-zinc-400">Type</th>
+                            <th class="px-6 py-3 text-left font-medium text-zinc-400">Primary Contact</th>
+                            <th class="px-6 py-3 text-left font-medium text-zinc-400">Phone</th>
+                            <th class="px-6 py-3 text-left font-medium text-zinc-400">Email</th>
+                            <th class="px-6 py-3 text-center font-medium text-zinc-400 w-24">Status</th>
+                            <th class="px-6 py-3 w-20"></th>
+                        </tr>
+                    </thead>
+                    <tbody id="companiesTableBody" class="text-sm divide-y divide-zinc-800">
+                        <!-- Populated by JavaScript -->
+                    </tbody>
+                </table>
+            </div>
