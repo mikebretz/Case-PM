@@ -330,3 +330,429 @@
         </div>
     </div>
 </dialog>
+<script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+
+<script>
+    // ==================== DATA & STATE ====================
+    let budgetLines = [];
+    let csiCostCodes = [
+        { code: "01-1000", description: "Summary", cost_type: "General Conditions" },
+        { code: "03-3000", description: "Concrete - Structural", cost_type: "Subcontract" },
+        { code: "04-2000", description: "Unit Masonry", cost_type: "Subcontract" },
+        { code: "05-1200", description: "Structural Steel Framing", cost_type: "Subcontract" },
+        { code: "06-1000", description: "Rough Carpentry", cost_type: "Subcontract" },
+        { code: "07-5000", description: "Membrane Roofing", cost_type: "Subcontract" },
+        { code: "08-1000", description: "Doors and Frames", cost_type: "Material" },
+        { code: "09-9000", description: "Painting and Coating", cost_type: "Subcontract" },
+        { code: "22-1000", description: "Plumbing - General", cost_type: "Subcontract" },
+        { code: "23-3000", description: "HVAC Air Distribution", cost_type: "Subcontract" },
+        { code: "26-1000", description: "Electrical - Rough In", cost_type: "Subcontract" },
+        { code: "31-1000", description: "Earthwork", cost_type: "Subcontract" }
+    ];
+    let customCostCodes = [];
+    let costTypes = ["Labor", "Material", "Subcontract", "Equipment", "General Conditions", "Other"];
+    let activeCostCodeList = 'csi';
+    let budgetPublished = false;
+    let contractAmount = 2450000;
+    let currentProject = "ALDI Lakeland";
+
+    function formatCurrency(amount) {
+        return new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(amount || 0);
+    }
+
+    // ==================== RENDER TABLE ====================
+    function renderBudgetTable(lines) {
+        const tbody = document.getElementById('budgetTableBody');
+        tbody.innerHTML = '';
+
+        if (lines.length === 0) {
+            tbody.innerHTML = `<tr><td colspan="8" class="px-6 py-8 text-center text-zinc-500">No budget line items yet. Click "Add Budget Line Item" to begin.</td></tr>`;
+            updateTotals();
+            return;
+        }
+
+        const sorted = [...lines].sort((a, b) => a.cost_code.localeCompare(b.cost_code, undefined, { numeric: true }));
+
+        let currentDivision = null;
+        const divisionNames = {
+            '01': 'General Requirements', '03': 'Concrete', '04': 'Masonry',
+            '05': 'Metals', '06': 'Wood, Plastics, and Composites',
+            '07': 'Thermal and Moisture Protection', '08': 'Openings',
+            '09': 'Finishes', '22': 'Plumbing', '23': 'HVAC',
+            '26': 'Electrical', '31': 'Earthwork'
+        };
+
+        sorted.forEach(line => {
+            const division = line.cost_code.substring(0, 2);
+
+            if (division !== currentDivision) {
+                currentDivision = division;
+                const header = document.createElement('tr');
+                header.className = 'bg-zinc-800';
+                header.innerHTML = `
+                    <td colspan="8" class="px-6 py-2 text-emerald-400 font-semibold text-base">
+                        Division ${division} — ${divisionNames[division] || 'Other'}
+                    </td>
+                `;
+                tbody.appendChild(header);
+            }
+
+            const row = document.createElement('tr');
+            row.className = 'hover:bg-zinc-800/60 transition-colors';
+            row.innerHTML = `
+                <td class="px-6 py-3 font-mono text-sm">${line.cost_code}</td>
+                <td class="px-6 py-3">${line.description}</td>
+                <td class="px-6 py-3">
+                    <span class="inline-block px-2.5 py-0.5 rounded-full text-xs font-medium bg-zinc-700 text-zinc-300">
+                        ${line.cost_type}
+                    </span>
+                </td>
+                <td class="px-6 py-3 text-right">${formatCurrency(line.original_budget)}</td>
+                <td class="px-6 py-3 text-right text-amber-400">${formatCurrency(line.approved_changes)}</td>
+                <td class="px-6 py-3 text-right font-semibold text-emerald-400">
+                    ${formatCurrency(line.original_budget + line.approved_changes)}
+                </td>
+                <td class="px-6 py-3 text-sm text-zinc-400">${line.notes || ''}</td>
+                <td class="px-4 py-3">
+                    <div class="flex gap-2">
+                        <button onclick="editBudgetLine(${line.id})" class="text-zinc-400 hover:text-white"><i class="fa-solid fa-edit"></i></button>
+                        <button onclick="deleteBudgetLine(${line.id})" class="text-zinc-400 hover:text-red-400"><i class="fa-solid fa-trash"></i></button>
+                    </div>
+                </td>
+            `;
+            tbody.appendChild(row);
+        });
+
+        updateTotals();
+        document.getElementById('lineCount').textContent = `${lines.length} lines`;
+    }
+
+    function updateTotals() {
+        let original = 0, changes = 0;
+        budgetLines.forEach(l => {
+            original += l.original_budget;
+            changes += l.approved_changes;
+        });
+        document.getElementById('originalBudgetTotal').textContent = formatCurrency(original);
+        document.getElementById('approvedChangesTotal').textContent = formatCurrency(changes);
+        document.getElementById('currentBudgetTotal').textContent = formatCurrency(original + changes);
+    }
+
+    // ==================== ADD / EDIT BUDGET LINE ====================
+    function showAddBudgetLineModal() {
+        document.getElementById('budgetLineForm').reset();
+        document.getElementById('budgetLineId').value = '';
+        populateCostCodeDatalist();
+        document.getElementById('budgetLineModal').showModal();
+    }
+
+    function editBudgetLine(id) {
+        const line = budgetLines.find(l => l.id === id);
+        if (!line) return;
+
+        document.getElementById('budgetLineId').value = line.id;
+        document.getElementById('cost_code').value = `${line.cost_code} - ${line.description}`;
+        document.getElementById('description').value = line.description;
+        document.getElementById('cost_type').value = line.cost_type;
+        document.getElementById('original_budget').value = line.original_budget;
+        document.getElementById('notes').value = line.notes || '';
+
+        populateCostCodeDatalist();
+        document.getElementById('budgetLineModal').showModal();
+    }
+
+    function saveBudgetLine(e) {
+        e.preventDefault();
+
+        const id = document.getElementById('budgetLineId').value;
+        const fullValue = document.getElementById('cost_code').value.trim();
+        const codeMatch = fullValue.match(/^([0-9-]+)/);
+        const codeOnly = codeMatch ? codeMatch[1] : fullValue;
+
+        const newLine = {
+            id: id ? parseInt(id) : Date.now(),
+            cost_code: codeOnly,
+            description: document.getElementById('description').value.trim(),
+            cost_type: document.getElementById('cost_type').value,
+            original_budget: parseFloat(document.getElementById('original_budget').value) || 0,
+            approved_changes: id ? (budgetLines.find(l => l.id == id)?.approved_changes || 0) : 0,
+            notes: document.getElementById('notes').value.trim()
+        };
+
+        if (id) {
+            const index = budgetLines.findIndex(l => l.id == id);
+            budgetLines[index] = newLine;
+        } else {
+            budgetLines.push(newLine);
+        }
+
+        renderBudgetTable(budgetLines);
+        document.getElementById('budgetLineModal').close();
+    }
+
+    function deleteBudgetLine(id) {
+        if (!confirm('Delete this budget line item?')) return;
+        budgetLines = budgetLines.filter(l => l.id !== id);
+        renderBudgetTable(budgetLines);
+    }
+
+    function populateCostCodeDatalist() {
+        const datalist = document.getElementById('costCodeList');
+        datalist.innerHTML = '';
+        const list = activeCostCodeList === 'csi' ? csiCostCodes : customCostCodes;
+        list.forEach(item => {
+            const option = document.createElement('option');
+            option.value = `${item.code} - ${item.description}`;
+            datalist.appendChild(option);
+        });
+    }
+
+    function autoFillFromCostCode() {
+        const fullValue = document.getElementById('cost_code').value.trim();
+        const codeMatch = fullValue.match(/^([0-9-]+)/);
+        const code = codeMatch ? codeMatch[1] : fullValue;
+
+        const list = activeCostCodeList === 'csi' ? csiCostCodes : customCostCodes;
+        const found = list.find(c => c.code === code);
+        if (found) {
+            document.getElementById('cost_code').value = `${found.code} - ${found.description}`;
+            if (!document.getElementById('description').value) {
+                document.getElementById('description').value = found.description;
+            }
+            document.getElementById('cost_type').value = found.cost_type;
+        }
+    }
+
+    // ==================== SETTINGS MODAL ====================
+    function showSettingsModal() {
+        renderCostTypesList();
+        document.getElementById('settingsModal').showModal();
+    }
+
+    function renderCostTypesList() {
+        const container = document.getElementById('costTypesList');
+        container.innerHTML = '';
+        costTypes.forEach((type, index) => {
+            const div = document.createElement('div');
+            div.className = 'flex justify-between items-center px-3 py-1 text-sm hover:bg-zinc-700 rounded text-white';
+            div.innerHTML = `
+                <span>${type}</span>
+                <button onclick="removeCostType(${index})" class="text-red-400 hover:text-red-500">×</button>
+            `;
+            container.appendChild(div);
+        });
+    }
+
+    function addNewCostTypeModal() {
+        document.getElementById('newCostTypeModal').showModal();
+    }
+
+    function confirmAddNewCostType() {
+        const input = document.getElementById('newCostTypeInput');
+        const val = input.value.trim();
+        if (val && !costTypes.includes(val)) {
+            costTypes.push(val);
+        }
+        document.getElementById('newCostTypeModal').close();
+        renderCostTypesList();
+        input.value = '';
+    }
+
+    function removeCostType(index) {
+        if (confirm(`Remove cost type "${costTypes[index]}"?`)) {
+            costTypes.splice(index, 1);
+            renderCostTypesList();
+        }
+    }
+
+    function addNewCostCodeList() {
+        document.getElementById('settingsModal').close();
+        document.getElementById('newListNameModal').showModal();
+        setTimeout(() => document.getElementById('newListNameInput').focus(), 100);
+    }
+
+    function confirmCreateNewList() {
+        const name = document.getElementById('newListNameInput').value.trim();
+        document.getElementById('newListNameModal').close();
+
+        if (!name) return;
+
+        // Actually add the new list to the dropdown
+        const selector = document.getElementById('costCodeListSelector');
+        const newOption = document.createElement('option');
+        newOption.value = 'custom_' + Date.now();
+        newOption.textContent = name;
+        selector.appendChild(newOption);
+
+        // Switch to the new list
+        activeCostCodeList = newOption.value;
+        selector.value = newOption.value;
+
+        // Re-open Settings so user stays inside
+        setTimeout(() => {
+            showSettingsModal();
+            showCenteredAlert(`New list "${name}" created and activated.`);
+        }, 250);
+    }
+
+    function uploadCostCodes() {
+        const input = document.createElement('input');
+        input.type = 'file';
+        input.accept = '.xlsx,.xls,.csv';
+        input.onchange = () => {
+            showCenteredAlert("Excel upload for cost codes will be connected when backend is ready.");
+        };
+        input.click();
+    }
+
+    function syncWithSage300() {
+        showCenteredAlert("Budget settings synced with Sage 300 (placeholder).");
+    }
+
+    function changeActiveCostCodeList() {
+        activeCostCodeList = document.getElementById('costCodeListSelector').value;
+    }
+
+    // ==================== PUBLISH BUDGET ====================
+    function publishBudget() {
+        if (budgetLines.length === 0) {
+            showCenteredAlert("Add at least one budget line item before publishing.");
+            return;
+        }
+        budgetPublished = true;
+        showCenteredAlert("Budget successfully published to Sage 300.");
+    }
+
+    // ==================== PRINT (CLEAN SPREADSHEET) ====================
+    function printBudget() {
+        if (budgetLines.length === 0) {
+            showCenteredAlert("You must have at least one budget line item to print.");
+            return;
+        }
+
+        const printWin = window.open('', '_blank');
+        printWin.document.write(`
+            <html>
+            <head>
+                <title>Budget - ${currentProject}</title>
+                <style>
+                    body { font-family: Arial, sans-serif; padding: 20px; }
+                    table { width: 100%; border-collapse: collapse; font-size: 12px; }
+                    th, td { border: 1px solid #ccc; padding: 8px; text-align: left; }
+                    th { background: #f3f4f6; }
+                    .right { text-align: right; }
+                </style>
+            </head>
+            <body>
+                <h2>Budget — ${currentProject}</h2>
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Cost Code</th>
+                            <th>Description</th>
+                            <th>Cost Type</th>
+                            <th class="right">Original</th>
+                            <th class="right">Changes</th>
+                            <th class="right">Current</th>
+                            <th>Notes</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        ${budgetLines.map(line => `
+                            <tr>
+                                <td>${line.cost_code}</td>
+                                <td>${line.description}</td>
+                                <td>${line.cost_type}</td>
+                                <td class="right">${formatCurrency(line.original_budget)}</td>
+                                <td class="right">${formatCurrency(line.approved_changes)}</td>
+                                <td class="right">${formatCurrency(line.original_budget + line.approved_changes)}</td>
+                                <td>${line.notes || ''}</td>
+                            </tr>
+                        `).join('')}
+                    </tbody>
+                </table>
+            </body>
+            </html>
+        `);
+        printWin.document.close();
+        printWin.focus();
+
+        setTimeout(() => {
+            printWin.print();
+            printWin.close();
+        }, 600);
+    }
+
+    // ==================== EXPORT ====================
+    function exportBudget() {
+        const data = budgetLines.map(line => ({
+            "Cost Code": line.cost_code,
+            "Description": line.description,
+            "Cost Type": line.cost_type,
+            "Original Budget": line.original_budget,
+            "Approved Changes": line.approved_changes,
+            "Current Budget": line.original_budget + line.approved_changes,
+            "Notes": line.notes
+        }));
+
+        const ws = XLSX.utils.json_to_sheet(data);
+        const wb = XLSX.utils.book_new();
+        XLSX.utils.book_append_sheet(wb, ws, "Budget");
+        XLSX.writeFile(wb, "Budget_Export.xlsx");
+    }
+
+    // ==================== CENTERED ALERT ====================
+    function showCenteredAlert(message) {
+        const dialog = document.createElement('dialog');
+        dialog.className = 'bg-zinc-900 border border-zinc-700 rounded-2xl p-0 w-full max-w-md shadow-2xl text-white';
+        dialog.innerHTML = `
+            <div class="p-6">
+                <div class="text-base mb-5">${message}</div>
+                <div class="flex justify-end">
+                    <button class="px-6 py-2 bg-emerald-600 hover:bg-emerald-500 rounded-xl text-sm font-medium">OK</button>
+                </div>
+            </div>
+        `;
+        document.body.appendChild(dialog);
+        dialog.showModal();
+        dialog.querySelector('button').onclick = () => {
+            dialog.close();
+            dialog.remove();
+        };
+    }
+
+    function showUserProfileModal() {
+        document.getElementById('userProfileModal').showModal();
+    }
+
+    // ==================== PROJECT FOCUS ====================
+    function changeProjectFocus() {
+        const selector = document.getElementById('projectSelector');
+        currentProject = selector.value;
+        showCenteredAlert(`Now working on: ${currentProject}`);
+        // In a full version this would reload all data for the selected project
+    }
+
+    // ==================== INITIALIZE ====================
+    function initializeBudget() {
+        document.getElementById('contractAmount').textContent = formatCurrency(contractAmount);
+        renderBudgetTable(budgetLines);
+
+        // Pre-populate cost type dropdown
+        const costTypeSelect = document.getElementById('cost_type');
+        costTypes.forEach(type => {
+            const option = document.createElement('option');
+            option.value = type;
+            option.textContent = type;
+            costTypeSelect.appendChild(option);
+        });
+
+        // Set initial project
+        const projectSelector = document.getElementById('projectSelector');
+        if (projectSelector) projectSelector.value = currentProject;
+    }
+
+    window.onload = function() {
+        initializeBudget();
+    };
+</script>
