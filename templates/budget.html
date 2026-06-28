@@ -17,7 +17,7 @@
 
 <div class="flex h-screen overflow-hidden">
 
-    <!-- ==================== FULL RICH SIDEBAR ==================== -->
+    <!-- FULL RICH SIDEBAR -->
     <div class="w-64 bg-zinc-900 border-r border-zinc-800 flex flex-col">
         <div class="p-6">
             <div class="flex items-center gap-3">
@@ -328,6 +328,7 @@
         </div>
     </div>
 </dialog>
+
 <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
 
 <script>
@@ -460,7 +461,7 @@
         if (varEl) varEl.textContent = formatCurrency(variance);
     }
 
-    // ==================== ADD / EDIT WITH DUPLICATE DETECTION ====================
+    // ==================== ADD / EDIT WITH SMART DUPLICATE DETECTION ====================
     function showAddBudgetLineModal() {
         document.getElementById('budgetLineForm').reset();
         document.getElementById('budgetLineId').value = '';
@@ -502,9 +503,12 @@
         const description = document.getElementById('description').value.trim();
         const costType = document.getElementById('cost_type').value;
 
-        // DUPLICATE DETECTION
+        // SMART DUPLICATE CHECK: Only trigger if BOTH code AND description match
         if (!id) {
-            const existing = budgetLines.find(l => l.cost_code === codeOnly);
+            const existing = budgetLines.find(l => 
+                l.cost_code === codeOnly && 
+                l.description.toLowerCase().trim() === description.toLowerCase().trim()
+            );
             if (existing) {
                 showDuplicateChoiceModal(existing, codeOnly, description, costType, originalBudget);
                 return;
@@ -536,7 +540,7 @@
         const dialog = document.createElement('dialog');
         dialog.className = 'modal rounded-xl p-6 w-full max-w-md text-white';
         dialog.innerHTML = `
-            <div class="text-base mb-4">A line item with cost code <strong>${codeOnly}</strong> already exists.</div>
+            <div class="text-base mb-4">A line item with cost code <strong>${codeOnly}</strong> and the same description already exists.</div>
             <div class="text-sm text-zinc-400 mb-6">What would you like to do?</div>
             <div class="flex flex-col gap-3">
                 <button id="btnAddToExisting" class="w-full px-5 py-3 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-sm font-semibold">
@@ -725,7 +729,40 @@
         const input = document.createElement('input');
         input.type = 'file';
         input.accept = '.xlsx,.xls,.csv';
-        input.onchange = () => showCenteredAlert("Excel upload for cost codes will be connected when backend is ready.");
+        input.onchange = function(e) {
+            const file = e.target.files[0];
+            if (!file) return;
+
+            const reader = new FileReader();
+            reader.onload = function(ev) {
+                try {
+                    const data = new Uint8Array(ev.target.result);
+                    const workbook = XLSX.read(data, { type: 'array' });
+                    const sheet = workbook.Sheets[workbook.SheetNames[0]];
+                    const json = XLSX.utils.sheet_to_json(sheet, { header: 1 });
+
+                    if (json.length < 2) {
+                        showCenteredAlert("Invalid file. The Excel file appears to be empty.");
+                        return;
+                    }
+
+                    const headers = json[0].map(h => String(h).trim().toLowerCase());
+                    const hasCode = headers.includes('code') || headers.includes('cost code');
+                    const hasDesc = headers.includes('description');
+                    const hasType = headers.includes('cost type') || headers.includes('type');
+
+                    if (!hasCode || !hasDesc || !hasType) {
+                        showCenteredAlert("Invalid format. The file must have columns: Code, Description, and Cost Type.");
+                        return;
+                    }
+
+                    showCenteredAlert("Cost Code List uploaded successfully (format validated). Backend connection coming soon.");
+                } catch (err) {
+                    showCenteredAlert("Error reading Excel file. Please make sure it is a valid .xlsx or .xls file.");
+                }
+            };
+            reader.readAsArrayBuffer(file);
+        };
         input.click();
     }
 
@@ -733,7 +770,38 @@
         const input = document.createElement('input');
         input.type = 'file';
         input.accept = '.xlsx,.xls,.csv';
-        input.onchange = () => showCenteredAlert("Excel upload for cost types will be connected when backend is ready.");
+        input.onchange = function(e) {
+            const file = e.target.files[0];
+            if (!file) return;
+
+            const reader = new FileReader();
+            reader.onload = function(ev) {
+                try {
+                    const data = new Uint8Array(ev.target.result);
+                    const workbook = XLSX.read(data, { type: 'array' });
+                    const sheet = workbook.Sheets[workbook.SheetNames[0]];
+                    const json = XLSX.utils.sheet_to_json(sheet, { header: 1 });
+
+                    if (json.length < 2) {
+                        showCenteredAlert("Invalid file. The Excel file appears to be empty.");
+                        return;
+                    }
+
+                    const headers = json[0].map(h => String(h).trim().toLowerCase());
+                    const hasName = headers.includes('name') || headers.includes('cost type') || headers.includes('type');
+
+                    if (!hasName) {
+                        showCenteredAlert("Invalid format. The file must have a column for Cost Type Name.");
+                        return;
+                    }
+
+                    showCenteredAlert("Cost Types uploaded successfully (format validated). Backend connection coming soon.");
+                } catch (err) {
+                    showCenteredAlert("Error reading Excel file. Please make sure it is a valid .xlsx or .xls file.");
+                }
+            };
+            reader.readAsArrayBuffer(file);
+        };
         input.click();
     }
 
@@ -861,13 +929,17 @@
         document.getElementById('userProfileModal').showModal();
     }
 
-    // ==================== NAVIGATION WARNING ====================
+    // ==================== NAVIGATION WARNING WITH X BUTTON ====================
     function warnBeforeLeaving() {
         if (budgetLines.length > 0 && !budgetPublished) {
             const dialog = document.createElement('dialog');
             dialog.className = 'modal rounded-xl p-6 w-full max-w-md text-white';
             dialog.innerHTML = `
-                <div class="text-base mb-5">You have unsaved budget line items. Would you like to publish the current budget before leaving this page?</div>
+                <div class="flex justify-between items-start mb-4">
+                    <div class="text-base">You have unsaved budget line items.</div>
+                    <button class="text-zinc-400 hover:text-white text-xl leading-none">×</button>
+                </div>
+                <div class="text-sm text-zinc-400 mb-6">Would you like to publish the current budget before leaving this page?</div>
                 <div class="flex justify-end gap-3">
                     <button class="px-5 py-2 rounded-lg bg-zinc-700">Stay and Edit</button>
                     <button class="px-5 py-2 rounded-lg bg-emerald-600">Publish & Leave</button>
@@ -877,8 +949,9 @@
             dialog.showModal();
 
             const buttons = dialog.querySelectorAll('button');
-            buttons[0].onclick = () => { dialog.close(); dialog.remove(); };
-            buttons[1].onclick = () => {
+            buttons[0].onclick = () => { dialog.close(); dialog.remove(); }; // X button
+            buttons[1].onclick = () => { dialog.close(); dialog.remove(); }; // Stay and Edit
+            buttons[2].onclick = () => {
                 publishBudget();
                 dialog.close();
                 dialog.remove();
@@ -913,3 +986,6 @@
         initializeBudget();
     };
 </script>
+
+</body>
+</html>
