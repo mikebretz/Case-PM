@@ -243,3 +243,94 @@
                     </tbody>
                 </table>
             </div>
+<!-- ==================== MODALS ==================== -->
+
+<!-- Add / Edit Company Modal -->
+<dialog id="companyModal" class="modal rounded-md p-0 w-full max-w-2xl">
+    <div class="p-6">
+        <div class="flex justify-between items-center mb-6">
+            <h3 id="modalTitle" class="text-xl font-semibold">Add New Company</h3>
+            <button onclick="closeCompanyModal()" class="text-zinc-400 hover:text-white text-xl">×</button>
+        </div>
+
+        <form id="companyForm" onsubmit="saveCompany(event)">
+            <input type="hidden" id="companyId">
+
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div class="md:col-span-2">
+                    <label class="block text-sm text-zinc-400 mb-1">Company Name</label>
+                    <input type="text" id="companyName" class="w-full bg-zinc-800 border border-zinc-700 rounded-md px-4 py-2.5 text-sm" required>
+                </div>
+
+                <div>
+                    <label class="block text-sm text-zinc-400 mb-1">Company Type</label>
+                    <select id="companyType" class="w-full bg-zinc-800 border border-zinc-700 rounded-md px-4 py-2.5 text-sm">
+                        <option value="Subcontractor">Subcontractor</option>
+                        <option value="Supplier">Supplier</option>
+                        <option value="Vendor">Vendor</option>
+                        <option value="Consultant">Consultant</option>
+                        <option value="Other">Other</option>
+                    </select>
+                </div>
+
+                <div>
+                    <label class="block text-sm text-zinc-400 mb-1">Status</label>
+                    <select id="companyStatus" class="w-full bg-zinc-800 border border-zinc-700 rounded-md px-4 py-2.5 text-sm">
+                        <option value="Active">Active</option>
+                        <option value="Pending Approval">Pending Approval</option>
+                        <option value="Inactive">Inactive</option>
+                    </select>
+                </div>
+
+                <div>
+                    <label class="block text-sm text-zinc-400 mb-1">Primary Contact</label>
+                    <input type="text" id="primaryContact" class="w-full bg-zinc-800 border border-zinc-700 rounded-md px-4 py-2.5 text-sm">
+                </div>
+
+                <div>
+                    <label class="block text-sm text-zinc-400 mb-1">Phone</label>
+                    <input type="text" id="phone" class="w-full bg-zinc-800 border border-zinc-700 rounded-md px-4 py-2.5 text-sm">
+                </div>
+
+                <div class="md:col-span-2">
+                    <label class="block text-sm text-zinc-400 mb-1">Email</label>
+                    <input type="email" id="email" class="w-full bg-zinc-800 border border-zinc-700 rounded-md px-4 py-2.5 text-sm">
+                </div>
+
+                <div class="md:col-span-2">
+                    <label class="block text-sm text-zinc-400 mb-1">Address</label>
+                    <input type="text" id="address" class="w-full bg-zinc-800 border border-zinc-700 rounded-md px-4 py-2.5 text-sm">
+                </div>
+
+                <div class="md:col-span-2">
+                    <label class="block text-sm text-zinc-400 mb-1">Notes</label>
+                    <textarea id="notes" rows="3" class="w-full bg-zinc-800 border border-zinc-700 rounded-md px-4 py-2.5 text-sm"></textarea>
+                </div>
+            </div>
+
+            <div class="flex justify-end gap-3 mt-6">
+                <button type="button" onclick="closeCompanyModal()" class="px-5 py-2.5 rounded-md bg-zinc-800 hover:bg-zinc-700 text-sm">Cancel</button>
+                <button type="submit" class="px-6 py-2.5 rounded-md bg-emerald-600 hover:bg-emerald-500 text-sm font-semibold">Save Company</button>
+            </div>
+        </form>
+    </div>
+</dialog>
+
+<!-- View Company Modal -->
+<dialog id="viewCompanyModal" class="modal rounded-md p-0 w-full max-w-lg">
+    <div class="p-6">
+        <div class="flex justify-between items-center mb-6">
+            <h3 class="text-xl font-semibold">Company Details</h3>
+            <button onclick="closeViewCompanyModal()" class="text-zinc-400 hover:text-white text-xl">×</button>
+        </div>
+
+        <div id="viewCompanyContent" class="space-y-4 text-sm">
+            <!-- Populated by JavaScript -->
+        </div>
+
+        <div class="flex justify-end gap-3 mt-6">
+            <button onclick="closeViewCompanyModal()" class="px-5 py-2.5 rounded-md bg-zinc-800 hover:bg-zinc-700 text-sm">Close</button>
+            <button onclick="editFromViewModal()" class="px-5 py-2.5 rounded-md bg-emerald-600 hover:bg-emerald-500 text-sm font-semibold">Edit</button>
+        </div>
+    </div>
+</dialog>
