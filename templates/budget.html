@@ -27,49 +27,48 @@
         </div>
     </div>
 
-    <!-- Summary Totals -->
-    <div class="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
+    <!-- Summary Cards -->
+    <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
         <div class="bg-zinc-900 border border-zinc-800 rounded-3xl p-5">
             <div class="text-xs text-zinc-400 mb-1">ORIGINAL BUDGET</div>
-            <div class="text-3xl font-semibold" id="originalBudgetTotal">$0</div>
+            <div class="text-3xl font-semibold" id="originalBudgetTotal">$0.00</div>
         </div>
         <div class="bg-zinc-900 border border-zinc-800 rounded-3xl p-5">
             <div class="text-xs text-zinc-400 mb-1">APPROVED CHANGES</div>
-            <div class="text-3xl font-semibold text-amber-400" id="approvedChangesTotal">$0</div>
+            <div class="text-3xl font-semibold text-amber-400" id="approvedChangesTotal">$0.00</div>
         </div>
         <div class="bg-zinc-900 border border-zinc-800 rounded-3xl p-5">
             <div class="text-xs text-zinc-400 mb-1">CURRENT BUDGET</div>
-            <div class="text-3xl font-semibold text-emerald-400" id="currentBudgetTotal">$0</div>
+            <div class="text-3xl font-semibold text-emerald-400" id="currentBudgetTotal">$0.00</div>
         </div>
         <div class="bg-zinc-900 border border-zinc-800 rounded-3xl p-5">
             <div class="text-xs text-zinc-400 mb-1">REMAINING TO BUDGET</div>
-            <div class="text-3xl font-semibold" id="remainingBudgetTotal">$0</div>
+            <div class="text-3xl font-semibold" id="remainingBudgetTotal">$0.00</div>
         </div>
     </div>
 
     <!-- Filters -->
     <div class="flex flex-wrap items-center gap-3 mb-6 bg-zinc-900 border border-zinc-800 rounded-3xl p-4">
-        <div class="flex-1 min-w-[220px]">
+        <div class="flex-1 min-w-[240px]">
             <input type="text" id="budgetSearch" placeholder="Search cost codes or descriptions..." 
                    class="w-full bg-zinc-800 border border-zinc-700 rounded-2xl px-4 py-2.5 text-sm focus:outline-none focus:border-emerald-600"
                    onkeyup="filterBudget()">
         </div>
 
         <select id="costTypeFilter" onchange="filterBudget()" 
-                class="bg-zinc-800 border border-zinc-700 rounded-2xl px-4 py-2.5 text-sm focus:outline-none focus:border-emerald-600">
+                class="bg-zinc-800 border border-zinc-700 rounded-2xl px-4 py-2.5 text-sm focus:outline-none focus:border-emerald-600 min-w-[160px]">
             <option value="">All Cost Types</option>
             <option value="Labor">Labor</option>
             <option value="Material">Material</option>
             <option value="Subcontract">Subcontract</option>
             <option value="Equipment">Equipment</option>
-            <option value="Other">Other</option>
             <option value="General Conditions">General Conditions</option>
+            <option value="Other">Other</option>
         </select>
 
         <select id="divisionFilter" onchange="filterBudget()" 
-                class="bg-zinc-800 border border-zinc-700 rounded-2xl px-4 py-2.5 text-sm focus:outline-none focus:border-emerald-600">
+                class="bg-zinc-800 border border-zinc-700 rounded-2xl px-4 py-2.5 text-sm focus:outline-none focus:border-emerald-600 min-w-[160px]">
             <option value="">All Divisions</option>
-            <!-- Populated dynamically by JavaScript -->
         </select>
 
         <button onclick="clearBudgetFilters()" 
@@ -97,405 +96,15 @@
                 <!-- Populated by JavaScript -->
             </tbody>
             <tfoot class="bg-zinc-950 border-t border-zinc-800">
-                <tr>
-                    <td colspan="3" class="px-6 py-4 font-semibold text-sm">TOTALS</td>
-                    <td class="px-6 py-4 text-right font-semibold" id="footerOriginalTotal">$0</td>
-                    <td class="px-6 py-4 text-right font-semibold" id="footerChangesTotal">$0</td>
-                    <td class="px-6 py-4 text-right font-semibold text-emerald-400" id="footerCurrentTotal">$0</td>
+                <tr class="font-semibold">
+                    <td colspan="3" class="px-6 py-4 text-sm">TOTALS</td>
+                    <td class="px-6 py-4 text-right" id="footerOriginalTotal">$0.00</td>
+                    <td class="px-6 py-4 text-right" id="footerChangesTotal">$0.00</td>
+                    <td class="px-6 py-4 text-right text-emerald-400" id="footerCurrentTotal">$0.00</td>
                     <td colspan="2"></td>
                 </tr>
             </tfoot>
         </table>
     </div>
 
-</div>
-        <!-- Add / Edit Budget Line Modal -->
-        <dialog id="budgetLineModal" class="bg-zinc-900 border border-zinc-700 rounded-3xl p-0 w-full max-w-3xl shadow-2xl">
-            <div class="p-6">
-                <div class="flex items-center justify-between mb-5">
-                    <div class="font-semibold text-xl" id="modalTitle">Add Budget Line</div>
-                    <button onclick="document.getElementById('budgetLineModal').close()" class="text-zinc-400 hover:text-white text-2xl leading-none">&times;</button>
-                </div>
-
-                <form id="budgetLineForm" onsubmit="saveBudgetLine(event)">
-                    <input type="hidden" id="budgetLineId">
-
-                    <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-                        <!-- Cost Code -->
-                        <div class="md:col-span-2">
-                            <label class="block text-sm text-zinc-400 mb-1.5">Cost Code</label>
-                            <div class="flex gap-2">
-                                <input type="text" id="cost_code" required placeholder="e.g. 03-3000 or 033000"
-                                       class="flex-1 bg-zinc-800 border border-zinc-700 rounded-2xl px-4 py-2.5 text-sm focus:outline-none focus:border-emerald-600">
-                                <button type="button" onclick="showCreateCustomCodeModal()"
-                                        class="px-4 py-2.5 bg-zinc-700 hover:bg-zinc-600 rounded-2xl text-sm whitespace-nowrap">
-                                    + Custom Code
-                                </button>
-                            </div>
-                            <p class="text-xs text-zinc-500 mt-1">Use 6-digit CSI format (e.g. 03-3000) or create a custom code</p>
-                        </div>
-
-                        <!-- Description -->
-                        <div class="md:col-span-2">
-                            <label class="block text-sm text-zinc-400 mb-1.5">Description</label>
-                            <input type="text" id="description" required
-                                   class="w-full bg-zinc-800 border border-zinc-700 rounded-2xl px-4 py-2.5 text-sm focus:outline-none focus:border-emerald-600">
-                        </div>
-
-                        <!-- Cost Type -->
-                        <div>
-                            <label class="block text-sm text-zinc-400 mb-1.5">Cost Type</label>
-                            <select id="cost_type" required
-                                    class="w-full bg-zinc-800 border border-zinc-700 rounded-2xl px-4 py-2.5 text-sm focus:outline-none focus:border-emerald-600">
-                                <option value="Labor">Labor</option>
-                                <option value="Material">Material</option>
-                                <option value="Subcontract">Subcontract</option>
-                                <option value="Equipment">Equipment</option>
-                                <option value="General Conditions">General Conditions</option>
-                                <option value="Other">Other</option>
-                            </select>
-                        </div>
-
-                        <!-- Original Budget -->
-                        <div>
-                            <label class="block text-sm text-zinc-400 mb-1.5">Original Budget</label>
-                            <input type="number" id="original_budget" step="0.01" required
-                                   class="w-full bg-zinc-800 border border-zinc-700 rounded-2xl px-4 py-2.5 text-sm focus:outline-none focus:border-emerald-600">
-                        </div>
-
-                        <!-- Notes -->
-                        <div class="md:col-span-2">
-                            <label class="block text-sm text-zinc-400 mb-1.5">Notes</label>
-                            <textarea id="notes" rows="2"
-                                      class="w-full bg-zinc-800 border border-zinc-700 rounded-2xl px-4 py-2.5 text-sm focus:outline-none focus:border-emerald-600"></textarea>
-                        </div>
-                    </div>
-
-                    <div class="flex gap-3 mt-6">
-                        <button type="button" onclick="document.getElementById('budgetLineModal').close()"
-                                class="flex-1 py-2.5 bg-zinc-800 hover:bg-zinc-700 rounded-2xl text-sm font-medium transition-colors">
-                            Cancel
-                        </button>
-                        <button type="submit"
-                                class="flex-1 py-2.5 bg-emerald-600 hover:bg-emerald-500 rounded-2xl text-sm font-medium transition-colors">
-                            Save Budget Line
-                        </button>
-                    </div>
-                </form>
-            </div>
-        </dialog>
-
-        <!-- Create Custom Cost Code Modal -->
-        <dialog id="customCodeModal" class="bg-zinc-900 border border-zinc-700 rounded-3xl p-0 w-full max-w-md shadow-2xl">
-            <div class="p-6">
-                <div class="flex items-center justify-between mb-5">
-                    <div class="font-semibold text-xl">Create Custom Cost Code</div>
-                    <button onclick="document.getElementById('customCodeModal').close()" class="text-zinc-400 hover:text-white text-2xl leading-none">&times;</button>
-                </div>
-
-                <form id="customCodeForm" onsubmit="createCustomCode(event)">
-                    <div class="space-y-4">
-                        <div>
-                            <label class="block text-sm text-zinc-400 mb-1.5">Cost Code</label>
-                            <input type="text" id="custom_cost_code" placeholder="e.g. 99-9999 or CUSTOM-001" required
-                                   class="w-full bg-zinc-800 border border-zinc-700 rounded-2xl px-4 py-2.5 text-sm focus:outline-none focus:border-emerald-600">
-                        </div>
-                        <div>
-                            <label class="block text-sm text-zinc-400 mb-1.5">Description</label>
-                            <input type="text" id="custom_description" required
-                                   class="w-full bg-zinc-800 border border-zinc-700 rounded-2xl px-4 py-2.5 text-sm focus:outline-none focus:border-emerald-600">
-                        </div>
-                        <div>
-                            <label class="block text-sm text-zinc-400 mb-1.5">Cost Type</label>
-                            <select id="custom_cost_type" required
-                                    class="w-full bg-zinc-800 border border-zinc-700 rounded-2xl px-4 py-2.5 text-sm focus:outline-none focus:border-emerald-600">
-                                <option value="Labor">Labor</option>
-                                <option value="Material">Material</option>
-                                <option value="Subcontract">Subcontract</option>
-                                <option value="Equipment">Equipment</option>
-                                <option value="General Conditions">General Conditions</option>
-                                <option value="Other">Other</option>
-                            </select>
-                        </div>
-                    </div>
-
-                    <div class="flex gap-3 mt-6">
-                        <button type="button" onclick="document.getElementById('customCodeModal').close()"
-                                class="flex-1 py-2.5 bg-zinc-800 hover:bg-zinc-700 rounded-2xl text-sm font-medium transition-colors">
-                            Cancel
-                        </button>
-                        <button type="submit"
-                                class="flex-1 py-2.5 bg-emerald-600 hover:bg-emerald-500 rounded-2xl text-sm font-medium transition-colors">
-                            Create & Use
-                        </button>
-                    </div>
-                </form>
-            </div>
-        </dialog>
-        <!-- JavaScript -->
-        <script>
-            // ==================== DATA ====================
-            let budgetLines = [
-                {
-                    id: 1,
-                    cost_code: "03-3000",
-                    description: "Concrete - Structural",
-                    cost_type: "Subcontract",
-                    original_budget: 285000,
-                    approved_changes: 12500,
-                    notes: "Includes 4000 PSI mix"
-                },
-                {
-                    id: 2,
-                    cost_code: "09-9000",
-                    description: "Painting & Wall Coverings",
-                    cost_type: "Subcontract",
-                    original_budget: 87500,
-                    approved_changes: 0,
-                    notes: ""
-                },
-                {
-                    id: 3,
-                    cost_code: "26-1000",
-                    description: "Electrical - Rough In",
-                    cost_type: "Subcontract",
-                    original_budget: 142000,
-                    approved_changes: 8750,
-                    notes: "Includes lighting package"
-                }
-            ];
-
-            let costCodeLibrary = [
-                { code: "03-3000", description: "Concrete - Structural", cost_type: "Subcontract" },
-                { code: "09-9000", description: "Painting & Wall Coverings", cost_type: "Subcontract" },
-                { code: "26-1000", description: "Electrical - Rough In", cost_type: "Subcontract" }
-            ];
-
-            // ==================== HELPER FUNCTIONS ====================
-            function formatCurrency(amount) {
-                return new Intl.NumberFormat('en-US', {
-                    style: 'currency',
-                    currency: 'USD',
-                    minimumFractionDigits: 2
-                }).format(amount);
-            }
-
-            function sortBudgetLines(lines) {
-                return lines.sort((a, b) => {
-                    // Sort numerically by cost code (handles both 03-3000 and 033000 formats)
-                    const codeA = a.cost_code.replace(/[^0-9]/g, '');
-                    const codeB = b.cost_code.replace(/[^0-9]/g, '');
-                    return codeA.localeCompare(codeB, undefined, { numeric: true });
-                });
-            }
-
-            // ==================== RENDERING ====================
-            function renderBudgetTable(lines) {
-                const tbody = document.getElementById('budgetTableBody');
-                tbody.innerHTML = '';
-
-                const sortedLines = sortBudgetLines([...lines]); // sort copy
-
-                let originalTotal = 0;
-                let changesTotal = 0;
-
-                if (sortedLines.length === 0) {
-                    tbody.innerHTML = `<tr><td colspan="8" class="px-6 py-8 text-center text-zinc-400">No budget lines found.</td></tr>`;
-                    updateTotals(0, 0);
-                    return;
-                }
-
-                sortedLines.forEach(line => {
-                    const currentBudget = line.original_budget + line.approved_changes;
-                    originalTotal += line.original_budget;
-                    changesTotal += line.approved_changes;
-
-                    const row = document.createElement('tr');
-                    row.className = 'hover:bg-zinc-800/60 transition-colors';
-                    row.innerHTML = `
-                        <td class="px-6 py-4 font-mono text-sm">${line.cost_code}</td>
-                        <td class="px-6 py-4">${line.description}</td>
-                        <td class="px-6 py-4">
-                            <span class="inline-block px-3 py-1 rounded-full text-xs font-medium bg-zinc-700 text-zinc-300">
-                                ${line.cost_type}
-                            </span>
-                        </td>
-                        <td class="px-6 py-4 text-right font-medium">${formatCurrency(line.original_budget)}</td>
-                        <td class="px-6 py-4 text-right text-amber-400">${formatCurrency(line.approved_changes)}</td>
-                        <td class="px-6 py-4 text-right font-semibold text-emerald-400">${formatCurrency(currentBudget)}</td>
-                        <td class="px-6 py-4 text-sm text-zinc-400">${line.notes || ''}</td>
-                        <td class="px-4 py-4">
-                            <div class="flex items-center gap-1">
-                                <button onclick="editBudgetLine(${line.id})" class="p-2 hover:bg-zinc-700 rounded-xl text-zinc-400 hover:text-white">
-                                    <i class="fa-solid fa-edit"></i>
-                                </button>
-                                <button onclick="deleteBudgetLine(${line.id})" class="p-2 hover:bg-zinc-700 rounded-xl text-zinc-400 hover:text-red-400">
-                                    <i class="fa-solid fa-trash"></i>
-                                </button>
-                            </div>
-                        </td>
-                    `;
-                    tbody.appendChild(row);
-                });
-
-                updateTotals(originalTotal, changesTotal);
-            }
-
-            function updateTotals(original, changes) {
-                const current = original + changes;
-                document.getElementById('originalBudgetTotal').textContent = formatCurrency(original);
-                document.getElementById('approvedChangesTotal').textContent = formatCurrency(changes);
-                document.getElementById('currentBudgetTotal').textContent = formatCurrency(current);
-                document.getElementById('remainingBudgetTotal').textContent = formatCurrency(current);
-
-                document.getElementById('footerOriginalTotal').textContent = formatCurrency(original);
-                document.getElementById('footerChangesTotal').textContent = formatCurrency(changes);
-                document.getElementById('footerCurrentTotal').textContent = formatCurrency(current);
-            }
-
-            // ==================== MODAL & FORM HANDLING ====================
-            function showAddBudgetLineModal() {
-                document.getElementById('modalTitle').innerText = 'Add Budget Line';
-                document.getElementById('budgetLineForm').reset();
-                document.getElementById('budgetLineId').value = '';
-                document.getElementById('budgetLineModal').showModal();
-            }
-
-            function editBudgetLine(id) {
-                const line = budgetLines.find(l => l.id === id);
-                if (!line) return;
-
-                document.getElementById('modalTitle').innerText = 'Edit Budget Line';
-                document.getElementById('budgetLineId').value = line.id;
-                document.getElementById('cost_code').value = line.cost_code;
-                document.getElementById('description').value = line.description;
-                document.getElementById('cost_type').value = line.cost_type;
-                document.getElementById('original_budget').value = line.original_budget;
-                document.getElementById('notes').value = line.notes || '';
-
-                document.getElementById('budgetLineModal').showModal();
-            }
-
-            function saveBudgetLine(e) {
-                e.preventDefault();
-
-                const id = document.getElementById('budgetLineId').value;
-
-                const newLine = {
-                    id: id ? parseInt(id) : Date.now(),
-                    cost_code: document.getElementById('cost_code').value.trim(),
-                    description: document.getElementById('description').value.trim(),
-                    cost_type: document.getElementById('cost_type').value,
-                    original_budget: parseFloat(document.getElementById('original_budget').value) || 0,
-                    approved_changes: id ? (budgetLines.find(l => l.id == id)?.approved_changes || 0) : 0,
-                    notes: document.getElementById('notes').value.trim()
-                };
-
-                if (id) {
-                    const index = budgetLines.findIndex(l => l.id == id);
-                    budgetLines[index] = newLine;
-                } else {
-                    budgetLines.push(newLine);
-                }
-
-                renderBudgetTable(budgetLines);
-                document.getElementById('budgetLineModal').close();
-            }
-
-            function deleteBudgetLine(id) {
-                if (!confirm('Delete this budget line?')) return;
-                budgetLines = budgetLines.filter(l => l.id !== id);
-                renderBudgetTable(budgetLines);
-            }
-
-            // ==================== CUSTOM COST CODE ====================
-            function showCreateCustomCodeModal() {
-                document.getElementById('budgetLineModal').close();
-                document.getElementById('customCodeForm').reset();
-                document.getElementById('customCodeModal').showModal();
-            }
-
-            function createCustomCode(e) {
-                e.preventDefault();
-
-                const newCode = {
-                    code: document.getElementById('custom_cost_code').value.trim(),
-                    description: document.getElementById('custom_description').value.trim(),
-                    cost_type: document.getElementById('custom_cost_type').value
-                };
-
-                costCodeLibrary.push(newCode);
-
-                document.getElementById('customCodeModal').close();
-                document.getElementById('budgetLineModal').showModal();
-
-                document.getElementById('cost_code').value = newCode.code;
-                document.getElementById('description').value = newCode.description;
-                document.getElementById('cost_type').value = newCode.cost_type;
-            }
-
-            // ==================== CURRENCY FORMATTING ON INPUT ====================
-            function setupCurrencyFormatting() {
-                const input = document.getElementById('original_budget');
-                if (!input) return;
-
-                input.addEventListener('input', function(e) {
-                    let value = e.target.value.replace(/[^0-9.]/g, '');
-                    if (value === '') return;
-
-                    // Format with commas while typing
-                    const parts = value.split('.');
-                    parts[0] = parts[0].replace(/\B(?=(\d{3})+(?!\d))/g, ',');
-                    e.target.value = parts.join('.');
-                });
-            }
-
-            // ==================== FILTERING ====================
-            function filterBudget() {
-                const searchTerm = document.getElementById('budgetSearch').value.toLowerCase();
-                const costTypeFilter = document.getElementById('costTypeFilter').value;
-
-                const filtered = budgetLines.filter(line => {
-                    const matchesSearch = line.cost_code.toLowerCase().includes(searchTerm) || 
-                                        line.description.toLowerCase().includes(searchTerm);
-                    const matchesCostType = !costTypeFilter || line.cost_type === costTypeFilter;
-                    return matchesSearch && matchesCostType;
-                });
-
-                renderBudgetTable(filtered);
-            }
-
-            function clearBudgetFilters() {
-                document.getElementById('budgetSearch').value = '';
-                document.getElementById('costTypeFilter').value = '';
-                document.getElementById('divisionFilter').value = '';
-                renderBudgetTable(budgetLines);
-            }
-
-            // ==================== INITIALIZATION ====================
-            function initializeBudget() {
-                renderBudgetTable(budgetLines);
-                setupCurrencyFormatting();
-            }
-
-            window.onload = function() {
-                initializeBudget();
-            };
-        </script>
-    <!-- ==================== FINAL POLISH ==================== -->
-    <script>
-        // Additional safety: Re-render if needed after full load
-        document.addEventListener('DOMContentLoaded', function() {
-            const tbody = document.getElementById('budgetTableBody');
-            if (tbody && tbody.children.length === 0 && typeof budgetLines !== 'undefined') {
-                renderBudgetTable(budgetLines);
-            }
-        });
-
-        console.log('%c[Case PM] Advanced Budget page loaded successfully.', 'color:#10b981');
-    </script>
-
-{% endblock %}
-
-</div>
 </div>
