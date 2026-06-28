@@ -1,406 +1,129 @@
-
 {% extends "base.html" %}
 
 {% block content %}
-<div class="p-8 max-w-[1600px] mx-auto">
-
-    <!-- Header -->
-    <div class="flex items-center justify-between mb-8">
-        <div>
-            <h1 class="text-3xl font-semibold tracking-tight">Program Settings</h1>
-            <p class="text-zinc-400 mt-1">Company Configuration, Numbering, Backups & Security • Case PM</p>
-        </div>
-        <button onclick="saveAllSettings()"
-                class="flex items-center gap-2 px-5 py-2.5 bg-emerald-600 hover:bg-emerald-500 transition-colors rounded-2xl text-sm font-medium">
-            <i class="fa-solid fa-save"></i>
-            <span>Save All Settings</span>
-        </button>
+<div class="max-w-[1200px] mx-auto">
+    
+    <!-- Page Header -->
+    <div class="mb-8">
+        <h1 class="text-3xl font-semibold tracking-tight">Program Settings</h1>
+        <p class="text-zinc-400 mt-1">Configure company information, permissions, and system preferences</p>
     </div>
 
-    <!-- Summary Cards -->
-    <div class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-4 mb-8">
-        <div class="bg-zinc-900 border border-zinc-800 rounded-3xl p-5">
-            <div class="text-sm text-zinc-400">Company</div>
-            <div class="text-xl font-semibold mt-1">Case Construction LLC</div>
-        </div>
-        <div class="bg-zinc-900 border border-zinc-800 rounded-3xl p-5">
-            <div class="text-sm text-zinc-400">Total Users</div>
-            <div class="text-3xl font-semibold mt-1">18</div>
-        </div>
-        <div class="bg-zinc-900 border border-zinc-800 rounded-3xl p-5">
-            <div class="text-sm text-zinc-400">Last Backup</div>
-            <div class="text-xl font-semibold mt-1">Today 02:14 AM</div>
-        </div>
-        <div class="bg-zinc-900 border border-zinc-800 rounded-3xl p-5">
-            <div class="text-sm text-zinc-400">Storage Used</div>
-            <div class="text-3xl font-semibold mt-1">4.2 GB</div>
-        </div>
-        <div class="bg-zinc-900 border border-zinc-800 rounded-3xl p-5">
-            <div class="text-sm text-zinc-400">Active Projects</div>
-            <div class="text-3xl font-semibold mt-1">7</div>
+    <!-- Tabs -->
+    <div class="flex border-b border-zinc-800 mb-6">
+        <button onclick="switchSettingsTab('company')" id="tab-company"
+                class="px-6 py-3 text-sm font-medium border-b-2 border-emerald-500 text-white">Company Info</button>
+        <button onclick="switchSettingsTab('permissions')" id="tab-permissions"
+                class="px-6 py-3 text-sm font-medium text-zinc-400 hover:text-white">User Permissions</button>
+        <button onclick="switchSettingsTab('backup')" id="tab-backup"
+                class="px-6 py-3 text-sm font-medium text-zinc-400 hover:text-white">Backup & Maintenance</button>
+        <button onclick="switchSettingsTab('email')" id="tab-email"
+                class="px-6 py-3 text-sm font-medium text-zinc-400 hover:text-white">Email Settings</button>
+    </div>
+
+    <!-- Company Info Tab -->
+    <div id="tab-content-company">
+        <div class="bg-zinc-900 border border-zinc-800 rounded-3xl p-8">
+            <h2 class="text-xl font-semibold mb-6">Company Information</h2>
+
+            <form id="companyInfoForm" onsubmit="saveCompanyInfo(event)">
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                    <div class="md:col-span-2">
+                        <label class="block text-sm text-zinc-400 mb-1.5">Company Name</label>
+                        <input type="text" id="company_name" value="Case Construction" required
+                               class="w-full bg-zinc-800 border border-zinc-700 rounded-2xl px-4 py-2.5 text-sm focus:outline-none focus:border-emerald-600">
+                    </div>
+
+                    <div>
+                        <label class="block text-sm text-zinc-400 mb-1.5">Tax ID / EIN</label>
+                        <input type="text" id="tax_id" placeholder="XX-XXXXXXX"
+                               class="w-full bg-zinc-800 border border-zinc-700 rounded-2xl px-4 py-2.5 text-sm focus:outline-none focus:border-emerald-600">
+                    </div>
+
+                    <div>
+                        <label class="block text-sm text-zinc-400 mb-1.5">Phone Number</label>
+                        <input type="tel" id="company_phone"
+                               class="w-full bg-zinc-800 border border-zinc-700 rounded-2xl px-4 py-2.5 text-sm focus:outline-none focus:border-emerald-600">
+                    </div>
+
+                    <div class="md:col-span-2">
+                        <label class="block text-sm text-zinc-400 mb-1.5">Address</label>
+                        <input type="text" id="company_address"
+                               class="w-full bg-zinc-800 border border-zinc-700 rounded-2xl px-4 py-2.5 text-sm focus:outline-none focus:border-emerald-600">
+                    </div>
+
+                    <div>
+                        <label class="block text-sm text-zinc-400 mb-1.5">City</label>
+                        <input type="text" id="company_city"
+                               class="w-full bg-zinc-800 border border-zinc-700 rounded-2xl px-4 py-2.5 text-sm focus:outline-none focus:border-emerald-600">
+                    </div>
+
+                    <div class="grid grid-cols-2 gap-4">
+                        <div>
+                            <label class="block text-sm text-zinc-400 mb-1.5">State</label>
+                            <input type="text" id="company_state"
+                                   class="w-full bg-zinc-800 border border-zinc-700 rounded-2xl px-4 py-2.5 text-sm focus:outline-none focus:border-emerald-600">
+                        </div>
+                        <div>
+                            <label class="block text-sm text-zinc-400 mb-1.5">ZIP Code</label>
+                            <input type="text" id="company_zip"
+                                   class="w-full bg-zinc-800 border border-zinc-700 rounded-2xl px-4 py-2.5 text-sm focus:outline-none focus:border-emerald-600">
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Logo Upload -->
+                <div class="mt-8">
+                    <label class="block text-sm text-zinc-400 mb-2">Company Logo</label>
+                    <div class="flex items-center gap-6">
+                        <div class="w-24 h-24 bg-zinc-800 border border-zinc-700 rounded-2xl flex items-center justify-center overflow-hidden">
+                            <img id="logoPreview" src="" class="max-h-full max-w-full object-contain hidden">
+                            <div id="logoPlaceholder" class="text-center">
+                                <i class="fa-solid fa-image text-3xl text-zinc-500"></i>
+                                <p class="text-xs text-zinc-500 mt-1">No logo</p>
+                            </div>
+                        </div>
+                        <div>
+                            <input type="file" id="logoUpload" accept="image/*" class="hidden" onchange="previewLogo(event)">
+                            <button type="button" onclick="document.getElementById('logoUpload').click()"
+                                    class="px-4 py-2 bg-zinc-800 hover:bg-zinc-700 border border-zinc-700 rounded-2xl text-sm">
+                                Upload Logo
+                            </button>
+                            <p class="text-xs text-zinc-500 mt-1">Recommended: 200×200px PNG or JPG</p>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="mt-8 flex justify-end">
+                    <button type="submit"
+                            class="px-8 py-2.5 bg-emerald-600 hover:bg-emerald-500 rounded-2xl text-sm font-medium transition-colors">
+                        Save Company Info
+                    </button>
+                </div>
+            </form>
         </div>
     </div>
 
-    <!-- Company Profile Section -->
-    <div class="bg-zinc-900 border border-zinc-800 rounded-3xl p-6 mb-8">
-        <div class="flex items-center justify-between mb-6">
-            <h2 class="text-xl font-semibold">Company Profile</h2>
-            <button onclick="showEditCompanyModal()" class="text-emerald-400 hover:text-emerald-300 text-sm flex items-center gap-2">
-                <i class="fa-solid fa-edit"></i> Edit
-            </button>
-        </div>
-
-        <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
-            <!-- Logo -->
-            <div>
-                <label class="block text-sm text-zinc-400 mb-2">Company Logo</label>
-                <div class="bg-zinc-950 border border-zinc-700 rounded-2xl p-4 flex flex-col items-center justify-center h-40">
-                    <img id="companyLogoPreview" src="https://picsum.photos/id/1015/200/80" class="max-h-16 mb-3 rounded">
-                    <button onclick="uploadCompanyLogo()" class="text-xs px-4 py-1.5 bg-zinc-800 hover:bg-zinc-700 rounded-2xl">Change Logo</button>
-                </div>
-            </div>
-
-            <div class="md:col-span-2 grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div>
-                    <label class="block text-sm text-zinc-400 mb-1">Company Name</label>
-                    <div class="bg-zinc-950 border border-zinc-700 rounded-2xl px-4 py-2.5 text-sm">Case Construction LLC</div>
-                </div>
-                <div>
-                    <label class="block text-sm text-zinc-400 mb-1">License #</label>
-                    <div class="bg-zinc-950 border border-zinc-700 rounded-2xl px-4 py-2.5 text-sm">CGC-1234567</div>
-                </div>
-                <div>
-                    <label class="block text-sm text-zinc-400 mb-1">Tax ID / EIN</label>
-                    <div class="bg-zinc-950 border border-zinc-700 rounded-2xl px-4 py-2.5 text-sm">82-4567891</div>
-                </div>
-                <div>
-                    <label class="block text-sm text-zinc-400 mb-1">Phone</label>
-                    <div class="bg-zinc-950 border border-zinc-700 rounded-2xl px-4 py-2.5 text-sm">(412) 555-0199</div>
-                </div>
-                <div class="md:col-span-2">
-                    <label class="block text-sm text-zinc-400 mb-1">Address</label>
-                    <div class="bg-zinc-950 border border-zinc-700 rounded-2xl px-4 py-2.5 text-sm">1247 Industrial Parkway, Monroeville, PA 15146</div>
-                </div>
-            </div>
+    <!-- Other tabs will be added in Part 2 and 3 -->
+    <div id="tab-content-permissions" class="hidden">
+        <div class="bg-zinc-900 border border-zinc-800 rounded-3xl p-8">
+            <h2 class="text-xl font-semibold mb-4">User Permissions</h2>
+            <p class="text-zinc-400">Permission settings will be available here.</p>
         </div>
     </div>
 
-    <!-- Numbering Formats -->
-    <div class="bg-zinc-900 border border-zinc-800 rounded-3xl p-6 mb-8">
-        <h2 class="text-xl font-semibold mb-6">Numbering Formats</h2>
+    <div id="tab-content-backup" class="hidden">
+        <div class="bg-zinc-900 border border-zinc-800 rounded-3xl p-8">
+            <h2 class="text-xl font-semibold mb-4">Backup & Maintenance</h2>
+            <p class="text-zinc-400">Backup settings will be available here.</p>
+        </div>
+    </div>
 
-        <div class="space-y-6">
-            <!-- CO Numbering -->
-            <div class="grid grid-cols-1 md:grid-cols-12 gap-4 items-end">
-                <div class="md:col-span-3">
-                    <label class="block text-sm text-zinc-400 mb-1.5">Change Order Format</label>
-                    <div class="bg-zinc-950 border border-zinc-700 rounded-2xl px-4 py-2.5 text-sm font-mono">ALDI-001-0</div>
-                </div>
-                <div class="md:col-span-3 flex items-center gap-4 pt-6">
-                    <label class="flex items-center gap-2 text-sm">
-                        <input type="checkbox" checked class="accent-emerald-600"> Include Project #
-                    </label>
-                    <label class="flex items-center gap-2 text-sm">
-                        <input type="checkbox" checked class="accent-emerald-600"> Include Revision #
-                    </label>
-                </div>
-                <div class="md:col-span-3">
-                    <label class="block text-sm text-zinc-400 mb-1.5">Next CO #</label>
-                    <input type="text" value="002" class="w-full bg-zinc-800 border border-zinc-700 rounded-2xl px-4 py-2.5 text-sm font-mono">
-                </div>
-                <div class="md:col-span-3">
-                    <button onclick="resetNumbering('co')" class="text-xs px-4 py-2 bg-zinc-800 hover:bg-zinc-700 rounded-2xl">Reset Sequence</button>
-                </div>
-            </div>
-
-            <!-- RFI Numbering -->
-            <div class="grid grid-cols-1 md:grid-cols-12 gap-4 items-end">
-                <div class="md:col-span-3">
-                    <label class="block text-sm text-zinc-400 mb-1.5">RFI Format</label>
-                    <div class="bg-zinc-950 border border-zinc-700 rounded-2xl px-4 py-2.5 text-sm font-mono">RFI-014</div>
-                </div>
-                <div class="md:col-span-3 flex items-center gap-4 pt-6">
-                    <label class="flex items-center gap-2 text-sm">
-                        <input type="checkbox" checked class="accent-emerald-600"> Include Project #
-                    </label>
-                </div>
-                <div class="md:col-span-3">
-                    <label class="block text-sm text-zinc-400 mb-1.5">Next RFI #</label>
-                    <input type="text" value="015" class="w-full bg-zinc-800 border border-zinc-700 rounded-2xl px-4 py-2.5 text-sm font-mono">
-                </div>
-            </div>
+    <div id="tab-content-email" class="hidden">
+        <div class="bg-zinc-900 border border-zinc-800 rounded-3xl p-8">
+            <h2 class="text-xl font-semibold mb-4">Email Settings</h2>
+            <p class="text-zinc-400">Email / SMTP configuration will be available here.</p>
         </div>
     </div>
 
 </div>
-
-    <!-- Backup & Maintenance -->
-    <div class="bg-zinc-900 border border-zinc-800 rounded-3xl p-6 mb-8">
-        <h2 class="text-xl font-semibold mb-6">Backup & Maintenance</h2>
-
-        <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
-            <div>
-                <label class="block text-sm text-zinc-400 mb-1.5">Backup Frequency</label>
-                <select class="w-full bg-zinc-800 border border-zinc-700 rounded-2xl px-4 py-2.5 text-sm">
-                    <option>Every 6 hours</option>
-                    <option selected>Daily at 2:00 AM</option>
-                    <option>Every 12 hours</option>
-                    <option>Weekly (Sunday)</option>
-                </select>
-            </div>
-            <div>
-                <label class="block text-sm text-zinc-400 mb-1.5">Retention Period</label>
-                <select class="w-full bg-zinc-800 border border-zinc-700 rounded-2xl px-4 py-2.5 text-sm">
-                    <option>30 days</option>
-                    <option selected>90 days</option>
-                    <option>1 year</option>
-                    <option>Forever</option>
-                </select>
-            </div>
-            <div class="md:col-span-2">
-                <label class="block text-sm text-zinc-400 mb-1.5">Backup Destination</label>
-                <div class="flex gap-3">
-                    <input type="text" value="C:\CasePM\Backups" class="flex-1 bg-zinc-800 border border-zinc-700 rounded-2xl px-4 py-2.5 text-sm font-mono">
-                    <button onclick="browseBackupFolder()" class="px-5 bg-zinc-800 hover:bg-zinc-700 rounded-2xl text-sm">Browse</button>
-                </div>
-            </div>
-        </div>
-
-        <div class="flex gap-3 mt-6">
-            <button onclick="runBackupNow()" class="flex-1 bg-emerald-600 hover:bg-emerald-500 rounded-2xl py-3 text-sm font-medium">Backup Now</button>
-            <button onclick="viewBackupHistory()" class="flex-1 bg-zinc-800 hover:bg-zinc-700 rounded-2xl py-3 text-sm font-medium">View Backup History</button>
-        </div>
-    </div>
-
-    <!-- Email & Notifications -->
-    <div class="bg-zinc-900 border border-zinc-800 rounded-3xl p-6 mb-8">
-        <h2 class="text-xl font-semibold mb-6">Email & Notifications</h2>
-
-        <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <div>
-                <label class="block text-sm text-zinc-400 mb-1.5">SMTP Host</label>
-                <input type="text" value="smtp.gmail.com" class="w-full bg-zinc-800 border border-zinc-700 rounded-2xl px-4 py-2.5 text-sm">
-            </div>
-            <div>
-                <label class="block text-sm text-zinc-400 mb-1.5">SMTP Port</label>
-                <input type="text" value="465" class="w-full bg-zinc-800 border border-zinc-700 rounded-2xl px-4 py-2.5 text-sm">
-            </div>
-            <div>
-                <label class="block text-sm text-zinc-400 mb-1.5">SMTP Username</label>
-                <input type="text" value="alerts@casepm.local" class="w-full bg-zinc-800 border border-zinc-700 rounded-2xl px-4 py-2.5 text-sm">
-            </div>
-            <div>
-                <label class="block text-sm text-zinc-400 mb-1.5">SMTP Password</label>
-                <input type="password" value="••••••••••••" class="w-full bg-zinc-800 border border-zinc-700 rounded-2xl px-4 py-2.5 text-sm">
-            </div>
-        </div>
-
-        <div class="flex gap-3 mt-6">
-            <button onclick="testEmailSettings()" class="flex-1 bg-zinc-800 hover:bg-zinc-700 rounded-2xl py-3 text-sm font-medium">Send Test Email</button>
-            <button onclick="saveEmailSettings()" class="flex-1 bg-emerald-600 hover:bg-emerald-500 rounded-2xl py-3 text-sm font-medium">Save Email Settings</button>
-        </div>
-    </div>
-
-    <!-- Security Settings -->
-    <div class="bg-zinc-900 border border-zinc-800 rounded-3xl p-6">
-        <h2 class="text-xl font-semibold mb-6">Security</h2>
-
-        <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
-            <div>
-                <label class="block text-sm text-zinc-400 mb-1.5">Session Timeout</label>
-                <select class="w-full bg-zinc-800 border border-zinc-700 rounded-2xl px-4 py-2.5 text-sm">
-                    <option>30 minutes</option>
-                    <option selected>2 hours</option>
-                    <option>8 hours</option>
-                    <option>24 hours</option>
-                </select>
-            </div>
-            <div>
-                <label class="block text-sm text-zinc-400 mb-1.5">Password Policy</label>
-                <select class="w-full bg-zinc-800 border border-zinc-700 rounded-2xl px-4 py-2.5 text-sm">
-                    <option>Standard (8+ characters)</option>
-                    <option selected>Strong (12+ characters + special)</option>
-                    <option>Very Strong (16+ characters + 2FA)</option>
-                </select>
-            </div>
-        </div>
-
-        <div class="mt-6">
-            <label class="flex items-center gap-3 text-sm cursor-pointer">
-                <input type="checkbox" checked class="accent-emerald-600 w-4 h-4">
-                <span>Require 2FA for all admin users</span>
-            </label>
-        </div>
-    </div>
-
-</div>
-
-<!-- ==================== EDIT COMPANY MODAL ==================== -->
-<dialog id="editCompanyModal" class="bg-zinc-900 border border-zinc-700 rounded-3xl p-0 w-full max-w-2xl">
-    <div class="p-6">
-        <div class="flex justify-between items-center mb-6">
-            <h2 class="text-xl font-semibold">Edit Company Profile</h2>
-            <button onclick="closeEditCompanyModal()" class="text-zinc-400 hover:text-white text-2xl">×</button>
-        </div>
-
-        <form>
-            <div class="mb-4">
-                <label class="block text-sm text-zinc-400 mb-1.5">Company Name</label>
-                <input type="text" value="Case Construction LLC" class="w-full bg-zinc-800 border border-zinc-700 rounded-2xl px-4 py-2.5 text-sm">
-            </div>
-
-            <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
-                <div>
-                    <label class="block text-sm text-zinc-400 mb-1.5">License #</label>
-                    <input type="text" value="CGC-1234567" class="w-full bg-zinc-800 border border-zinc-700 rounded-2xl px-4 py-2.5 text-sm">
-                </div>
-                <div>
-                    <label class="block text-sm text-zinc-400 mb-1.5">Tax ID / EIN</label>
-                    <input type="text" value="82-4567891" class="w-full bg-zinc-800 border border-zinc-700 rounded-2xl px-4 py-2.5 text-sm">
-                </div>
-            </div>
-
-            <div class="mb-4">
-                <label class="block text-sm text-zinc-400 mb-1.5">Address</label>
-                <textarea class="w-full bg-zinc-800 border border-zinc-700 rounded-2xl px-4 py-3 text-sm" rows="2">1247 Industrial Parkway, Monroeville, PA 15146</textarea>
-            </div>
-
-            <div class="mb-4">
-                <label class="block text-sm text-zinc-400 mb-1.5">Phone</label>
-                <input type="text" value="(412) 555-0199" class="w-full bg-zinc-800 border border-zinc-700 rounded-2xl px-4 py-2.5 text-sm">
-            </div>
-
-            <div class="flex gap-3 mt-8">
-                <button type="button" onclick="closeEditCompanyModal()" 
-                        class="flex-1 bg-zinc-800 hover:bg-zinc-700 rounded-2xl py-3 text-sm font-medium transition-colors">
-                    Cancel
-                </button>
-                <button type="button" onclick="saveCompanyProfile()" 
-                        class="flex-1 bg-emerald-600 hover:bg-emerald-500 rounded-2xl py-3 text-sm font-medium transition-colors">
-                    Save Changes
-                </button>
-            </div>
-        </form>
-    </div>
-</dialog>
-
-<!-- ==================== JAVASCRIPT ==================== -->
-<script>
-    // ==================== MODAL FUNCTIONS ====================
-    function showEditCompanyModal() {
-        document.getElementById('editCompanyModal').showModal();
-    }
-
-    function closeEditCompanyModal() {
-        document.getElementById('editCompanyModal').close();
-    }
-
-    // ==================== COMPANY PROFILE ====================
-    function saveCompanyProfile() {
-        closeEditCompanyModal();
-        showToast("Company profile updated successfully");
-        // In real version: send data to backend via fetch()
-    }
-
-    function uploadCompanyLogo() {
-        const input = document.createElement('input');
-        input.type = 'file';
-        input.accept = 'image/*';
-        
-        input.onchange = function() {
-            if (input.files.length > 0) {
-                const reader = new FileReader();
-                reader.onload = function(e) {
-                    document.getElementById('companyLogoPreview').src = e.target.result;
-                    showToast("Logo updated (not saved yet)");
-                };
-                reader.readAsDataURL(input.files[0]);
-            }
-        };
-        input.click();
-    }
-
-    // ==================== GENERAL SETTINGS ====================
-    function saveAllSettings() {
-        showToast("All settings have been saved successfully");
-        // In real version: collect all form values and POST to backend
-    }
-
-    function resetNumbering(type) {
-        if (confirm(`Reset the ${type.toUpperCase()} numbering sequence?`)) {
-            showToast(`${type.toUpperCase()} numbering has been reset to 001`);
-        }
-    }
-
-    // ==================== BACKUP FUNCTIONS ====================
-    function browseBackupFolder() {
-        alert("File browser would open here (simulated).\nIn production this would use a native file picker or server-side path selector.");
-    }
-
-    function runBackupNow() {
-        showToast("Backup started... This may take a moment.");
-        
-        setTimeout(() => {
-            showToast("Backup completed successfully to C:\\CasePM\\Backups");
-        }, 1800);
-    }
-
-    function viewBackupHistory() {
-        alert("Opening Backup History modal (to be implemented in next round)");
-    }
-
-    // ==================== EMAIL FUNCTIONS ====================
-    function testEmailSettings() {
-        showToast("Test email sent to admin@casepm.local");
-    }
-
-    function saveEmailSettings() {
-        showToast("Email settings saved successfully");
-    }
-
-    // ==================== TOAST NOTIFICATION ====================
-    function showToast(message) {
-        const toast = document.createElement('div');
-        toast.className = `fixed bottom-6 right-6 bg-zinc-800 border border-zinc-700 text-white px-6 py-3 rounded-2xl shadow-xl flex items-center gap-3 z-[9999]`;
-        toast.innerHTML = `
-            <i class="fa-solid fa-check-circle text-emerald-400"></i>
-            <span>${message}</span>
-        `;
-        document.body.appendChild(toast);
-
-        setTimeout(() => {
-            toast.style.transition = 'all 0.3s ease';
-            toast.style.opacity = '0';
-            setTimeout(() => toast.remove(), 300);
-        }, 2800);
-    }
-
-    // ==================== INITIALIZATION ====================
-    function initializeProgramSettingsPage() {
-        console.log('%c[Case PM] Program Settings page initialized with full features.', 'color:#10b981');
-    }
-
-    window.addEventListener('load', initializeProgramSettingsPage);
-</script>
-
-{% endblock %}
-
-<!-- ==================== FINAL POLISH ==================== -->
-<script>
-    // ==================== KEYBOARD SHORTCUTS ====================
-    document.addEventListener('keydown', function(e) {
-        if (e.key === "s" && (e.ctrlKey || e.metaKey)) {
-            e.preventDefault();
-            saveAllSettings();
-        }
-    });
-
-    // ==================== FINAL INITIALIZATION ====================
-    function finalProgramSettingsInitialization() {
-        console.log('%c[Case PM] program_settings.html fully loaded with maximum features.', 'color:#10b981');
-    }
-
-    window.addEventListener('load', finalProgramSettingsInitialization);
-</script>
-
-{% endblock %}
