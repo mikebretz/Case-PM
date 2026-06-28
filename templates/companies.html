@@ -152,3 +152,185 @@
                 </form>
             </div>
         </dialog>
+        <!-- JavaScript -->
+        <script>
+            // Sample data (will be replaced with backend later)
+            let companies = [
+                {
+                    id: 1,
+                    name: "ABC Concrete LLC",
+                    type: "Subcontractor",
+                    contact_first_name: "Robert",
+                    contact_last_name: "Miller",
+                    phone: "813-555-0192",
+                    email: "rmiller@abcconcrete.com",
+                    status: "Active"
+                },
+                {
+                    id: 2,
+                    name: "PowerTech Electric Inc.",
+                    type: "Subcontractor",
+                    contact_first_name: "James",
+                    contact_last_name: "Torres",
+                    phone: "727-555-0187",
+                    email: "jtorres@powertech.com",
+                    status: "Active"
+                },
+                {
+                    id: 3,
+                    name: "Gulf Coast Supplies",
+                    type: "Supplier",
+                    contact_first_name: "Maria",
+                    contact_last_name: "Santos",
+                    phone: "941-555-0144",
+                    email: "msantos@gulfcoastsupplies.com",
+                    status: "Active"
+                }
+            ];
+
+            function filterCompanies() {
+                const searchTerm = document.getElementById('companySearch').value.toLowerCase();
+                const typeFilter = document.getElementById('typeFilter').value;
+                const statusFilter = document.getElementById('statusFilter').value;
+
+                const filtered = companies.filter(company => {
+                    const matchesSearch = company.name.toLowerCase().includes(searchTerm);
+                    const matchesType = !typeFilter || company.type === typeFilter;
+                    const matchesStatus = !statusFilter || company.status === statusFilter;
+                    return matchesSearch && matchesType && matchesStatus;
+                });
+
+                renderCompaniesTable(filtered);
+            }
+
+            function clearCompanyFilters() {
+                document.getElementById('companySearch').value = '';
+                document.getElementById('typeFilter').value = '';
+                document.getElementById('statusFilter').value = '';
+                renderCompaniesTable(companies);
+            }
+
+            function renderCompaniesTable(companyList) {
+                const tbody = document.getElementById('companiesTableBody');
+                tbody.innerHTML = '';
+
+                if (companyList.length === 0) {
+                    tbody.innerHTML = `
+                        <tr>
+                            <td colspan="7" class="px-6 py-8 text-center text-zinc-400">
+                                No companies found.
+                            </td>
+                        </tr>
+                    `;
+                    return;
+                }
+
+                companyList.forEach(company => {
+                    const statusColor = 
+                        company.status === 'Active' ? 'bg-emerald-600/20 text-emerald-400' :
+                        company.status === 'Inactive' ? 'bg-zinc-600/20 text-zinc-400' :
+                        'bg-amber-600/20 text-amber-400';
+
+                    const row = document.createElement('tr');
+                    row.className = 'hover:bg-zinc-800/60 transition-colors';
+                    row.innerHTML = `
+                        <td class="px-6 py-4 font-medium">${company.name}</td>
+                        <td class="px-6 py-4">
+                            <span class="inline-block px-3 py-1 rounded-full text-xs font-medium bg-zinc-700 text-zinc-300">
+                                ${company.type}
+                            </span>
+                        </td>
+                        <td class="px-6 py-4">${company.contact_first_name} ${company.contact_last_name}</td>
+                        <td class="px-6 py-4 text-sm text-zinc-400">${company.phone}</td>
+                        <td class="px-6 py-4 text-sm text-zinc-400">${company.email}</td>
+                        <td class="px-6 py-4 text-center">
+                            <span class="inline-block px-3 py-1 rounded-full text-xs font-medium ${statusColor}">
+                                ${company.status}
+                            </span>
+                        </td>
+                        <td class="px-4 py-4">
+                            <div class="flex items-center gap-1">
+                                <button onclick="editCompany(${company.id})" class="p-2 hover:bg-zinc-700 rounded-xl text-zinc-400 hover:text-white">
+                                    <i class="fa-solid fa-edit"></i>
+                                </button>
+                                <button onclick="deleteCompany(${company.id})" class="p-2 hover:bg-zinc-700 rounded-xl text-zinc-400 hover:text-red-400">
+                                    <i class="fa-solid fa-trash"></i>
+                                </button>
+                            </div>
+                        </td>
+                    `;
+                    tbody.appendChild(row);
+                });
+            }
+
+            function showAddCompanyModal() {
+                document.getElementById('modalTitle').innerText = 'Add New Company';
+                document.getElementById('companyForm').reset();
+                document.getElementById('companyId').value = '';
+                document.getElementById('companyModal').showModal();
+            }
+
+            function editCompany(id) {
+                const company = companies.find(c => c.id === id);
+                if (!company) return;
+
+                document.getElementById('modalTitle').innerText = 'Edit Company';
+                document.getElementById('companyId').value = company.id;
+                document.getElementById('company_name').value = company.name;
+                document.getElementById('company_type').value = company.type;
+                document.getElementById('status').value = company.status;
+                document.getElementById('contact_first_name').value = company.contact_first_name;
+                document.getElementById('contact_last_name').value = company.contact_last_name;
+                document.getElementById('phone').value = company.phone || '';
+                document.getElementById('email').value = company.email;
+
+                document.getElementById('companyModal').showModal();
+            }
+
+            function saveCompany(e) {
+                e.preventDefault();
+
+                const id = document.getElementById('companyId').value;
+
+                const newCompany = {
+                    id: id ? parseInt(id) : Date.now(),
+                    name: document.getElementById('company_name').value,
+                    type: document.getElementById('company_type').value,
+                    status: document.getElementById('status').value,
+                    contact_first_name: document.getElementById('contact_first_name').value,
+                    contact_last_name: document.getElementById('contact_last_name').value,
+                    phone: document.getElementById('phone').value,
+                    email: document.getElementById('email').value
+                };
+
+                if (id) {
+                    const index = companies.findIndex(c => c.id == id);
+                    companies[index] = newCompany;
+                } else {
+                    companies.push(newCompany);
+                }
+
+                renderCompaniesTable(companies);
+                document.getElementById('companyModal').close();
+            }
+
+            function deleteCompany(id) {
+                if (!confirm('Delete this company?')) return;
+                companies = companies.filter(c => c.id !== id);
+                renderCompaniesTable(companies);
+            }
+
+            function initializeCompanies() {
+                renderCompaniesTable(companies);
+            }
+
+            // Initialize on load
+            window.onload = function() {
+                initializeCompanies();
+            };
+        </script>
+
+{% endblock %}
+
+</div>
+</div>
