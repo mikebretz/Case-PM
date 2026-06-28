@@ -182,3 +182,65 @@
                     <div id="insuranceAlertCount" class="text-3xl font-semibold mt-1 text-orange-400">0</div>
                 </div>
             </div>
+            <!-- Search + Filters -->
+            <div class="flex flex-col md:flex-row gap-3 mb-6">
+                <div class="flex-1">
+                    <div class="relative">
+                        <input type="text" id="searchInput" placeholder="Search companies, trade, or email..." 
+                               class="w-full bg-zinc-900 border border-zinc-700 rounded-md px-4 py-2.5 pl-10 text-sm focus:outline-none focus:border-emerald-500"
+                               onkeyup="filterCompanies()">
+                        <i class="fa-solid fa-search absolute left-3.5 top-3 text-zinc-500"></i>
+                    </div>
+                </div>
+                
+                <select id="typeFilter" onchange="filterCompanies()" 
+                        class="bg-zinc-900 border border-zinc-700 rounded-md px-4 py-2.5 text-sm focus:outline-none focus:border-emerald-500 min-w-[160px]">
+                    <option value="">All Types</option>
+                    <option value="Subcontractor">Subcontractor</option>
+                    <option value="Supplier">Supplier / Vendor</option>
+                    <option value="Client">Client / Owner</option>
+                    <option value="Architect">Architect</option>
+                    <option value="Engineer">Engineer</option>
+                    <option value="Consultant">Consultant</option>
+                    <option value="Other">Other</option>
+                </select>
+
+                <select id="statusFilter" onchange="filterCompanies()" 
+                        class="bg-zinc-900 border border-zinc-700 rounded-md px-4 py-2.5 text-sm focus:outline-none focus:border-emerald-500 min-w-[140px]">
+                    <option value="">All Statuses</option>
+                    <option value="Active">Active</option>
+                    <option value="Inactive">Inactive</option>
+                    <option value="Pending">Pending</option>
+                </select>
+
+                <button onclick="clearCompanyFilters()" 
+                        class="px-5 py-2.5 text-sm bg-zinc-800 hover:bg-zinc-700 border border-zinc-700 rounded-md transition-colors">
+                    Clear Filters
+                </button>
+            </div>
+
+            <!-- Companies Table (Improved column justification + single-line phone + Address column) -->
+            <div class="bg-zinc-900 border border-zinc-800 rounded-md overflow-hidden">
+                <div class="px-6 py-4 border-b border-zinc-800 flex items-center justify-between">
+                    <div class="font-semibold">All Companies</div>
+                    <div class="text-sm text-zinc-400" id="companyCount">0 companies</div>
+                </div>
+                
+                <table class="w-full table-fixed">
+                    <thead class="bg-zinc-950 text-sm">
+                        <tr>
+                            <th class="px-6 py-3 text-left font-medium text-zinc-400 w-[28%]">Company Name</th>
+                            <th class="px-6 py-3 text-left font-medium text-zinc-400 w-[12%]">Type</th>
+                            <th class="px-6 py-3 text-left font-medium text-zinc-400 w-[18%]">Primary Contact</th>
+                            <th class="px-6 py-3 text-left font-medium text-zinc-400 w-[14%]">Phone</th>
+                            <th class="px-6 py-3 text-left font-medium text-zinc-400 w-[18%]">Address</th>
+                            <th class="px-6 py-3 text-center font-medium text-zinc-400 w-[10%]">License</th>
+                            <th class="px-6 py-3 text-center font-medium text-zinc-400 w-[10%]">Insurance</th>
+                            <th class="px-4 py-3 w-12"></th>
+                        </tr>
+                    </thead>
+                    <tbody id="companiesTableBody" class="text-sm divide-y divide-zinc-800">
+                        <!-- Populated by JavaScript -->
+                    </tbody>
+                </table>
+            </div>
