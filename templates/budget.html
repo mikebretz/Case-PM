@@ -17,7 +17,7 @@
 
 <div class="flex h-screen overflow-hidden">
 
-    <!-- FULL SIDEBAR (unchanged as requested) -->
+    <!-- FULL RICH SIDEBAR -->
     <div class="w-64 bg-zinc-900 border-r border-zinc-800 flex flex-col">
         <div class="p-6">
             <div class="flex items-center gap-3">
@@ -196,7 +196,7 @@
 </div>
 
 <!-- Add/Edit Budget Line Modal -->
-<dialog id="budgetLineModal" class="modal rounded-2xl w-full max-w-2xl p-0 text-white">
+<dialog id="budgetLineModal" class="modal rounded-xl w-full max-w-2xl p-0 text-white">
     <div class="p-6">
         <div class="flex justify-between items-center mb-6">
             <h3 id="modalTitle" class="text-xl font-semibold text-white">Add Budget Line Item</h3>
@@ -210,36 +210,36 @@
             <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div class="md:col-span-2">
                     <label class="block text-sm mb-1.5 text-zinc-300">Cost Code</label>
-                    <input type="text" id="cost_code" list="costCodeList" onblur="autoFillFromCostCode()" class="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-4 py-2.5 text-sm text-white" required>
+                    <input type="text" id="cost_code" list="costCodeList" onblur="autoFillFromCostCode()" class="w-full bg-zinc-800 border border-zinc-700 rounded-md px-4 py-2.5 text-sm text-white" required>
                     <datalist id="costCodeList"></datalist>
                 </div>
                 <div>
                     <label class="block text-sm mb-1.5 text-zinc-300">Description</label>
-                    <input type="text" id="description" class="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-4 py-2.5 text-sm text-white">
+                    <input type="text" id="description" class="w-full bg-zinc-800 border border-zinc-700 rounded-md px-4 py-2.5 text-sm text-white">
                 </div>
                 <div>
                     <label class="block text-sm mb-1.5 text-zinc-300">Cost Type</label>
-                    <select id="cost_type" class="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-4 py-2.5 text-sm text-white"></select>
+                    <select id="cost_type" class="w-full bg-zinc-800 border border-zinc-700 rounded-md px-4 py-2.5 text-sm text-white"></select>
                 </div>
                 <div>
                     <label class="block text-sm mb-1.5 text-zinc-300">Original Budget</label>
-                    <input type="text" id="original_budget" class="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-4 py-2.5 text-sm text-white" required>
+                    <input type="text" id="original_budget" class="w-full bg-zinc-800 border border-zinc-700 rounded-md px-4 py-2.5 text-sm text-white" required>
                 </div>
                 <div class="md:col-span-2">
                     <label class="block text-sm mb-1.5 text-zinc-300">Notes</label>
-                    <input type="text" id="notes" class="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-4 py-2.5 text-sm text-white">
+                    <input type="text" id="notes" class="w-full bg-zinc-800 border border-zinc-700 rounded-md px-4 py-2.5 text-sm text-white">
                 </div>
             </div>
             <div class="flex justify-end gap-3 mt-8">
-                <button type="button" onclick="document.getElementById('budgetLineModal').close()" class="px-6 py-2.5 rounded-lg bg-zinc-800 hover:bg-zinc-700 text-sm">Cancel</button>
-                <button type="submit" class="px-8 py-2.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-sm font-semibold">Save Line Item</button>
+                <button type="button" onclick="document.getElementById('budgetLineModal').close()" class="px-6 py-2.5 rounded-md bg-zinc-800 hover:bg-zinc-700 text-sm">Cancel</button>
+                <button type="submit" class="px-8 py-2.5 rounded-md bg-emerald-600 hover:bg-emerald-500 text-sm font-semibold">Save Line Item</button>
             </div>
         </form>
     </div>
 </dialog>
 
 <!-- Settings Modal -->
-<dialog id="settingsModal" class="modal rounded-2xl w-full max-w-2xl p-0 text-white">
+<dialog id="settingsModal" class="modal rounded-xl w-full max-w-2xl p-0 text-white">
     <div class="p-6">
         <div class="flex justify-between items-center mb-6">
             <h3 class="text-xl font-semibold">Budget Settings</h3>
@@ -251,18 +251,18 @@
             <div class="flex items-center justify-between mb-3">
                 <div class="font-medium">Cost Code Lists</div>
                 <div class="flex gap-2">
-                    <button onclick="addNewCostCodeList()" class="px-4 py-1.5 text-xs bg-zinc-800 hover:bg-zinc-700 rounded-lg flex items-center gap-2">
+                    <button onclick="addNewCostCodeList()" class="px-4 py-1.5 text-xs bg-zinc-800 hover:bg-zinc-700 rounded-md flex items-center gap-2">
                         <i class="fa-solid fa-plus"></i> New List
                     </button>
-                    <button onclick="uploadCostCodes()" class="px-4 py-1.5 text-xs bg-zinc-800 hover:bg-zinc-700 rounded-lg flex items-center gap-2">
+                    <button onclick="uploadCostCodes()" class="px-4 py-1.5 text-xs bg-zinc-800 hover:bg-zinc-700 rounded-md flex items-center gap-2">
                         <i class="fa-solid fa-upload"></i> Upload Excel
                     </button>
-                    <button onclick="deleteSelectedCostCodeList()" class="px-4 py-1.5 text-xs bg-red-900/70 hover:bg-red-900 text-red-300 rounded-lg flex items-center gap-2">
+                    <button onclick="deleteSelectedCostCodeList()" class="px-4 py-1.5 text-xs bg-red-900/70 hover:bg-red-900 text-red-300 rounded-md flex items-center gap-2">
                         <i class="fa-solid fa-trash"></i> Delete Selected
                     </button>
                 </div>
             </div>
-            <select id="costCodeListSelector" onchange="changeActiveCostCodeList()" class="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-4 py-2 text-sm text-white">
+            <select id="costCodeListSelector" onchange="changeActiveCostCodeList()" class="w-full bg-zinc-800 border border-zinc-700 rounded-md px-4 py-2 text-sm text-white">
                 <option value="csi">CSI Master Codes</option>
                 <option value="custom">Custom Codes</option>
             </select>
@@ -273,19 +273,19 @@
             <div class="flex items-center justify-between mb-3">
                 <div class="font-medium">Cost Types</div>
                 <div class="flex gap-2">
-                    <button onclick="addNewCostTypeModal()" class="px-4 py-1.5 text-xs bg-zinc-800 hover:bg-zinc-700 rounded-lg flex items-center gap-2">
+                    <button onclick="addNewCostTypeModal()" class="px-4 py-1.5 text-xs bg-zinc-800 hover:bg-zinc-700 rounded-md flex items-center gap-2">
                         <i class="fa-solid fa-plus"></i> New Item
                     </button>
-                    <button onclick="uploadCostTypes()" class="px-4 py-1.5 text-xs bg-zinc-800 hover:bg-zinc-700 rounded-lg flex items-center gap-2">
+                    <button onclick="uploadCostTypes()" class="px-4 py-1.5 text-xs bg-zinc-800 hover:bg-zinc-700 rounded-md flex items-center gap-2">
                         <i class="fa-solid fa-upload"></i> Upload Excel
                     </button>
                 </div>
             </div>
-            <div id="costTypesList" class="bg-zinc-800 rounded-lg p-2 text-sm max-h-32 overflow-auto text-white"></div>
+            <div id="costTypesList" class="bg-zinc-800 rounded-md p-2 text-sm max-h-32 overflow-auto text-white"></div>
         </div>
 
         <div class="pt-4 border-t border-zinc-700">
-            <button onclick="syncWithSage300()" class="w-full flex items-center justify-center gap-2 px-5 py-3 bg-emerald-600 hover:bg-emerald-500 rounded-lg text-sm font-semibold">
+            <button onclick="syncWithSage300()" class="w-full flex items-center justify-center gap-2 px-5 py-3 bg-emerald-600 hover:bg-emerald-500 rounded-md text-sm font-semibold">
                 <i class="fa-solid fa-sync"></i>
                 <span>Sync All Budget Settings with Sage 300</span>
             </button>
@@ -294,536 +294,37 @@
     </div>
 </dialog>
 
-<!-- New List Name Modal (nested on top of Settings) -->
-<dialog id="newListNameModal" class="modal rounded-2xl w-full max-w-md p-0 text-white">
+<!-- New List Name Modal (nested) -->
+<dialog id="newListNameModal" class="modal rounded-xl w-full max-w-md p-0 text-white">
     <div class="p-6">
         <h3 class="text-lg font-semibold mb-4">Create New Cost Code List</h3>
-        <input type="text" id="newListNameInput" placeholder="List name (e.g. Client Custom Codes)" class="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-4 py-2.5 text-sm mb-6 text-white">
+        <input type="text" id="newListNameInput" placeholder="List name (e.g. Client Custom Codes)" class="w-full bg-zinc-800 border border-zinc-700 rounded-md px-4 py-2.5 text-sm mb-6 text-white">
         <div class="flex justify-end gap-3">
-            <button onclick="closeNewListModal()" class="px-5 py-2 rounded-lg bg-zinc-700">Cancel</button>
-            <button onclick="confirmCreateNewList()" class="px-6 py-2 rounded-lg bg-emerald-600">Create & Activate</button>
+            <button onclick="closeNewListModal()" class="px-5 py-2 rounded-md bg-zinc-700">Cancel</button>
+            <button onclick="confirmCreateNewList()" class="px-6 py-2 rounded-md bg-emerald-600">Create & Activate</button>
         </div>
     </div>
 </dialog>
 
 <!-- New Cost Type Modal -->
-<dialog id="newCostTypeModal" class="modal rounded-2xl w-full max-w-md p-0 text-white">
+<dialog id="newCostTypeModal" class="modal rounded-xl w-full max-w-md p-0 text-white">
     <div class="p-6">
         <h3 class="text-lg font-semibold mb-4">Enter New Cost Type Name</h3>
-        <input type="text" id="newCostTypeInput" placeholder="e.g. Owner Direct Purchase" class="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-4 py-2.5 text-sm mb-6 text-white">
+        <input type="text" id="newCostTypeInput" placeholder="e.g. Owner Direct Purchase" class="w-full bg-zinc-800 border border-zinc-700 rounded-md px-4 py-2.5 text-sm mb-6 text-white">
         <div class="flex justify-end gap-3">
-            <button onclick="document.getElementById('newCostTypeModal').close()" class="px-5 py-2 rounded-lg bg-zinc-700">Cancel</button>
-            <button onclick="confirmAddNewCostType()" class="px-6 py-2 rounded-lg bg-emerald-600">Add Cost Type</button>
+            <button onclick="document.getElementById('newCostTypeModal').close()" class="px-5 py-2 rounded-md bg-zinc-700">Cancel</button>
+            <button onclick="confirmAddNewCostType()" class="px-6 py-2 rounded-md bg-emerald-600">Add Cost Type</button>
         </div>
     </div>
 </dialog>
 
 <!-- User Profile Modal -->
-<dialog id="userProfileModal" class="modal rounded-2xl w-full max-w-md p-0 text-white">
+<dialog id="userProfileModal" class="modal rounded-xl w-full max-w-md p-0 text-white">
     <div class="p-6">
         <h3 class="text-lg font-semibold mb-4">User Profile</h3>
         <p class="text-sm text-zinc-400">Profile settings coming soon.</p>
         <div class="mt-6 text-right">
-            <button onclick="document.getElementById('userProfileModal').close()" class="px-5 py-2 rounded-lg bg-zinc-700">Close</button>
+            <button onclick="document.getElementById('userProfileModal').close()" class="px-5 py-2 rounded-md bg-zinc-700">Close</button>
         </div>
     </div>
 </dialog>
-<script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
-
-<script>
-    // ==================== DATA & STATE ====================
-    let budgetLines = [];
-    let csiCostCodes = [
-        { code: "01-1000", description: "Summary", cost_type: "General Conditions" },
-        { code: "03-3000", description: "Concrete - Structural", cost_type: "Subcontract" },
-        { code: "04-2000", description: "Unit Masonry", cost_type: "Subcontract" },
-        { code: "05-1200", description: "Structural Steel Framing", cost_type: "Subcontract" },
-        { code: "06-1000", description: "Rough Carpentry", cost_type: "Subcontract" },
-        { code: "07-5000", description: "Membrane Roofing", cost_type: "Subcontract" },
-        { code: "08-1000", description: "Doors and Frames", cost_type: "Material" },
-        { code: "09-9000", description: "Painting and Coating", cost_type: "Subcontract" },
-        { code: "22-1000", description: "Plumbing - General", cost_type: "Subcontract" },
-        { code: "23-3000", description: "HVAC Air Distribution", cost_type: "Subcontract" },
-        { code: "26-1000", description: "Electrical - Rough In", cost_type: "Subcontract" },
-        { code: "31-1000", description: "Earthwork", cost_type: "Subcontract" }
-    ];
-    let customCostCodes = [];
-    let costTypes = ["Labor", "Material", "Subcontract", "Equipment", "General Conditions", "Other"];
-    let activeCostCodeList = 'csi';
-    let budgetPublished = false;
-    let contractAmount = 2450000;
-    let currentProject = "ALDI Lakeland";
-
-    function formatCurrency(amount) {
-        return new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(amount || 0);
-    }
-
-    // ==================== ACCOUNTING FORMAT (FIXED - STICKS PROPERLY) ====================
-    function setupAccountingFormat(inputId) {
-        const input = document.getElementById(inputId);
-        if (!input) return;
-
-        input.addEventListener('focus', function() {
-            const raw = parseFloat(this.value.replace(/[^0-9.-]+/g, "")) || 0;
-            this.value = raw.toFixed(2);
-            this.select();
-        });
-
-        input.addEventListener('blur', function() {
-            const val = parseFloat(this.value) || 0;
-            this.value = formatCurrency(val);
-        });
-    }
-
-    // ==================== RENDER TABLE ====================
-    function renderBudgetTable(lines) {
-        const tbody = document.getElementById('budgetTableBody');
-        tbody.innerHTML = '';
-
-        if (lines.length === 0) {
-            tbody.innerHTML = `<tr><td colspan="8" class="px-6 py-8 text-center text-zinc-500">No budget line items yet. Click "Add Budget Line Item" to begin.</td></tr>`;
-            updateTotals();
-            return;
-        }
-
-        const sorted = [...lines].sort((a, b) => a.cost_code.localeCompare(b.cost_code, undefined, { numeric: true }));
-
-        let currentDivision = null;
-        const divisionNames = {
-            '01': 'General Requirements', '03': 'Concrete', '04': 'Masonry',
-            '05': 'Metals', '06': 'Wood, Plastics, and Composites',
-            '07': 'Thermal and Moisture Protection', '08': 'Openings',
-            '09': 'Finishes', '22': 'Plumbing', '23': 'HVAC',
-            '26': 'Electrical', '31': 'Earthwork'
-        };
-
-        sorted.forEach(line => {
-            const division = line.cost_code.substring(0, 2);
-
-            if (division !== currentDivision) {
-                currentDivision = division;
-                const header = document.createElement('tr');
-                header.className = 'bg-zinc-800';
-                header.innerHTML = `
-                    <td colspan="8" class="px-6 py-2 text-emerald-400 font-semibold text-base">
-                        Division ${division} — ${divisionNames[division] || 'Other'}
-                    </td>
-                `;
-                tbody.appendChild(header);
-            }
-
-            const row = document.createElement('tr');
-            row.className = 'hover:bg-zinc-800/60 transition-colors';
-            row.innerHTML = `
-                <td class="px-6 py-3 font-mono text-sm">${line.cost_code}</td>
-                <td class="px-6 py-3">${line.description}</td>
-                <td class="px-6 py-3">
-                    <span class="inline-block px-2.5 py-0.5 rounded-full text-xs font-medium bg-zinc-700 text-zinc-300">
-                        ${line.cost_type}
-                    </span>
-                </td>
-                <td class="px-6 py-3 text-right">${formatCurrency(line.original_budget)}</td>
-                <td class="px-6 py-3 text-right text-amber-400">${formatCurrency(line.approved_changes)}</td>
-                <td class="px-6 py-3 text-right font-semibold text-emerald-400">
-                    ${formatCurrency(line.original_budget + line.approved_changes)}
-                </td>
-                <td class="px-6 py-3 text-sm text-zinc-400">${line.notes || ''}</td>
-                <td class="px-4 py-3">
-                    <div class="flex gap-2">
-                        <button onclick="editBudgetLine(${line.id})" class="text-zinc-400 hover:text-white"><i class="fa-solid fa-edit"></i></button>
-                        <button onclick="deleteBudgetLine(${line.id})" class="text-zinc-400 hover:text-red-400"><i class="fa-solid fa-trash"></i></button>
-                    </div>
-                </td>
-            `;
-            tbody.appendChild(row);
-        });
-
-        updateTotals();
-        document.getElementById('lineCount').textContent = `${lines.length} lines`;
-    }
-
-    function updateTotals() {
-        let original = 0, changes = 0;
-        budgetLines.forEach(l => {
-            original += l.original_budget;
-            changes += l.approved_changes;
-        });
-        document.getElementById('originalBudgetTotal').textContent = formatCurrency(original);
-        document.getElementById('approvedChangesTotal').textContent = formatCurrency(changes);
-        document.getElementById('currentBudgetTotal').textContent = formatCurrency(original + changes);
-
-        const variance = contractAmount - (original + changes);
-        const varEl = document.getElementById('varianceTotal');
-        if (varEl) varEl.textContent = formatCurrency(variance);
-    }
-
-    // ==================== ADD / EDIT BUDGET LINE ====================
-    function showAddBudgetLineModal() {
-        document.getElementById('budgetLineForm').reset();
-        document.getElementById('budgetLineId').value = '';
-        populateCostCodeDatalist();
-        document.getElementById('budgetLineModal').showModal();
-        setTimeout(() => setupAccountingFormat('original_budget'), 100);
-    }
-
-    function editBudgetLine(id) {
-        const line = budgetLines.find(l => l.id === id);
-        if (!line) return;
-
-        document.getElementById('budgetLineId').value = line.id;
-        document.getElementById('cost_code').value = `${line.cost_code} - ${line.description}`;
-        document.getElementById('description').value = line.description;
-        document.getElementById('cost_type').value = line.cost_type;
-        document.getElementById('original_budget').value = line.original_budget;
-        document.getElementById('notes').value = line.notes || '';
-
-        populateCostCodeDatalist();
-        document.getElementById('budgetLineModal').showModal();
-        setTimeout(() => setupAccountingFormat('original_budget'), 100);
-    }
-
-    function saveBudgetLine(e) {
-        e.preventDefault();
-
-        const id = document.getElementById('budgetLineId').value;
-        const fullValue = document.getElementById('cost_code').value.trim();
-        const codeMatch = fullValue.match(/^([0-9-]+)/);
-        const codeOnly = codeMatch ? codeMatch[1] : fullValue;
-
-        // Fixed parsing so value never clears
-        let originalBudgetStr = document.getElementById('original_budget').value || "0";
-        originalBudgetStr = originalBudgetStr.replace(/[^0-9.-]+/g, "");
-        const originalBudget = parseFloat(originalBudgetStr) || 0;
-
-        const newLine = {
-            id: id ? parseInt(id) : Date.now(),
-            cost_code: codeOnly,
-            description: document.getElementById('description').value.trim(),
-            cost_type: document.getElementById('cost_type').value,
-            original_budget: originalBudget,
-            approved_changes: id ? (budgetLines.find(l => l.id == id)?.approved_changes || 0) : 0,
-            notes: document.getElementById('notes').value.trim()
-        };
-
-        if (id) {
-            const index = budgetLines.findIndex(l => l.id == id);
-            budgetLines[index] = newLine;
-        } else {
-            budgetLines.push(newLine);
-        }
-
-        renderBudgetTable(budgetLines);
-        document.getElementById('budgetLineModal').close();
-    }
-
-    function deleteBudgetLine(id) {
-        if (!confirm('Delete this budget line item?')) return;
-        budgetLines = budgetLines.filter(l => l.id !== id);
-        renderBudgetTable(budgetLines);
-    }
-
-    function populateCostCodeDatalist() {
-        const datalist = document.getElementById('costCodeList');
-        datalist.innerHTML = '';
-        const list = activeCostCodeList === 'csi' ? csiCostCodes : customCostCodes;
-        list.forEach(item => {
-            const option = document.createElement('option');
-            option.value = `${item.code} - ${item.description}`;
-            datalist.appendChild(option);
-        });
-    }
-
-    function autoFillFromCostCode() {
-        const fullValue = document.getElementById('cost_code').value.trim();
-        const codeMatch = fullValue.match(/^([0-9-]+)/);
-        const code = codeMatch ? codeMatch[1] : fullValue;
-
-        const list = activeCostCodeList === 'csi' ? csiCostCodes : customCostCodes;
-        const found = list.find(c => c.code === code);
-        if (found) {
-            document.getElementById('cost_code').value = `${found.code} - ${found.description}`;
-            if (!document.getElementById('description').value) {
-                document.getElementById('description').value = found.description;
-            }
-            document.getElementById('cost_type').value = found.cost_type;
-        }
-    }
-
-    // ==================== SETTINGS + DELETE COST CODE LIST ====================
-    function showSettingsModal() {
-        renderCostTypesList();
-        document.getElementById('settingsModal').showModal();
-    }
-
-    function renderCostTypesList() {
-        const container = document.getElementById('costTypesList');
-        container.innerHTML = '';
-        costTypes.forEach((type, index) => {
-            const div = document.createElement('div');
-            div.className = 'flex justify-between items-center px-3 py-1 text-sm hover:bg-zinc-700 rounded text-white';
-            div.innerHTML = `
-                <span>${type}</span>
-                <button onclick="removeCostType(${index})" class="text-red-400 hover:text-red-500">×</button>
-            `;
-            container.appendChild(div);
-        });
-    }
-
-    function addNewCostTypeModal() {
-        document.getElementById('newCostTypeModal').showModal();
-    }
-
-    function confirmAddNewCostType() {
-        const input = document.getElementById('newCostTypeInput');
-        const val = input.value.trim();
-        if (val && !costTypes.includes(val)) costTypes.push(val);
-        document.getElementById('newCostTypeModal').close();
-        renderCostTypesList();
-        input.value = '';
-    }
-
-    function removeCostType(index) {
-        // Centered popup as requested
-        const dialog = document.createElement('dialog');
-        dialog.className = 'modal rounded-2xl p-6 w-full max-w-md text-white';
-        dialog.innerHTML = `
-            <div class="text-base mb-5">Remove cost type "${costTypes[index]}"?</div>
-            <div class="flex justify-end gap-3">
-                <button class="px-5 py-2 rounded-lg bg-zinc-700">Cancel</button>
-                <button class="px-5 py-2 rounded-lg bg-red-600">Remove</button>
-            </div>
-        `;
-        document.body.appendChild(dialog);
-        dialog.showModal();
-
-        const buttons = dialog.querySelectorAll('button');
-        buttons[0].onclick = () => { dialog.close(); dialog.remove(); };
-        buttons[1].onclick = () => {
-            costTypes.splice(index, 1);
-            renderCostTypesList();
-            dialog.close();
-            dialog.remove();
-        };
-    }
-
-    function addNewCostCodeList() {
-        document.getElementById('settingsModal').close();
-        document.getElementById('newListNameModal').showModal();
-        setTimeout(() => document.getElementById('newListNameInput').focus(), 100);
-    }
-
-    function confirmCreateNewList() {
-        const name = document.getElementById('newListNameInput').value.trim();
-        document.getElementById('newListNameModal').close();
-
-        if (!name) return;
-
-        const selector = document.getElementById('costCodeListSelector');
-        const newOption = document.createElement('option');
-        newOption.value = 'custom_' + Date.now();
-        newOption.textContent = name;
-        selector.appendChild(newOption);
-
-        activeCostCodeList = newOption.value;
-        selector.value = newOption.value;
-
-        setTimeout(() => {
-            showSettingsModal();
-            showCenteredAlert(`New list "${name}" created and activated.`);
-        }, 250);
-    }
-
-    function deleteSelectedCostCodeList() {
-        const selector = document.getElementById('costCodeListSelector');
-        const selectedValue = selector.value;
-
-        if (selectedValue === 'csi') {
-            showCenteredAlert("Cannot delete the CSI Master Codes list.");
-            return;
-        }
-
-        // Centered popup as requested
-        const dialog = document.createElement('dialog');
-        dialog.className = 'modal rounded-2xl p-6 w-full max-w-md text-white';
-        dialog.innerHTML = `
-            <div class="text-base mb-5">Delete the selected cost code list?</div>
-            <div class="flex justify-end gap-3">
-                <button class="px-5 py-2 rounded-lg bg-zinc-700">Cancel</button>
-                <button class="px-5 py-2 rounded-lg bg-red-600">Delete</button>
-            </div>
-        `;
-        document.body.appendChild(dialog);
-        dialog.showModal();
-
-        const buttons = dialog.querySelectorAll('button');
-        buttons[0].onclick = () => { dialog.close(); dialog.remove(); };
-        buttons[1].onclick = () => {
-            selector.remove(selector.selectedIndex);
-            activeCostCodeList = 'csi';
-            selector.value = 'csi';
-            dialog.close();
-            dialog.remove();
-            showCenteredAlert("Custom list deleted.");
-        };
-    }
-
-    function uploadCostCodes() {
-        const input = document.createElement('input');
-        input.type = 'file';
-        input.accept = '.xlsx,.xls,.csv';
-        input.onchange = () => showCenteredAlert("Excel upload for cost codes will be connected when backend is ready.");
-        input.click();
-    }
-
-    function uploadCostTypes() {
-        const input = document.createElement('input');
-        input.type = 'file';
-        input.accept = '.xlsx,.xls,.csv';
-        input.onchange = () => showCenteredAlert("Excel upload for cost types will be connected when backend is ready.");
-        input.click();
-    }
-
-    function syncWithSage300() {
-        showCenteredAlert("Budget settings synced with Sage 300 (placeholder).");
-    }
-
-    function changeActiveCostCodeList() {
-        activeCostCodeList = document.getElementById('costCodeListSelector').value;
-    }
-
-    // ==================== PUBLISH ====================
-    function publishBudget() {
-        if (budgetLines.length === 0) {
-            showCenteredAlert("Add at least one budget line item before publishing.");
-            return;
-        }
-        budgetPublished = true;
-        showCenteredAlert("Budget successfully published to Sage 300.");
-    }
-
-    // ==================== PRINT (CLEAN SPREADSHEET) ====================
-    function printBudget() {
-        if (budgetLines.length === 0) {
-            showCenteredAlert("You must have at least one budget line item to print.");
-            return;
-        }
-
-        const printWin = window.open('', '_blank');
-        printWin.document.write(`
-            <html>
-            <head><title>Budget - ${currentProject}</title>
-            <style>body{font-family:Arial,sans-serif;padding:20px}table{width:100%;border-collapse:collapse;font-size:12px}th,td{border:1px solid #ccc;padding:8px;text-align:left}th{background:#f3f4f6}.right{text-align:right}</style>
-            </head>
-            <body>
-                <h2>Budget — ${currentProject}</h2>
-                <table>
-                    <thead><tr><th>Cost Code</th><th>Description</th><th>Cost Type</th><th class="right">Original</th><th class="right">Changes</th><th class="right">Current</th><th>Notes</th></tr></thead>
-                    <tbody>
-                        ${budgetLines.map(line => `
-                            <tr>
-                                <td>${line.cost_code}</td>
-                                <td>${line.description}</td>
-                                <td>${line.cost_type}</td>
-                                <td class="right">${formatCurrency(line.original_budget)}</td>
-                                <td class="right">${formatCurrency(line.approved_changes)}</td>
-                                <td class="right">${formatCurrency(line.original_budget + line.approved_changes)}</td>
-                                <td>${line.notes || ''}</td>
-                            </tr>`).join('')}
-                    </tbody>
-                </table>
-            </body></html>
-        `);
-        printWin.document.close();
-        printWin.focus();
-        setTimeout(() => { printWin.print(); printWin.close(); }, 600);
-    }
-
-    // ==================== EXPORT ====================
-    function exportBudget() {
-        const data = budgetLines.map(line => ({
-            "Cost Code": line.cost_code,
-            "Description": line.description,
-            "Cost Type": line.cost_type,
-            "Original Budget": line.original_budget,
-            "Approved Changes": line.approved_changes,
-            "Current Budget": line.original_budget + line.approved_changes,
-            "Notes": line.notes
-        }));
-        const ws = XLSX.utils.json_to_sheet(data);
-        const wb = XLSX.utils.book_new();
-        XLSX.utils.book_append_sheet(wb, ws, "Budget");
-        XLSX.writeFile(wb, "Budget_Export.xlsx");
-    }
-
-    // ==================== CENTERED ALERT (STANDARD FOR ALL POPUPS) ====================
-    function showCenteredAlert(message) {
-        const dialog = document.createElement('dialog');
-        dialog.className = 'modal rounded-2xl p-6 w-full max-w-md text-white';
-        dialog.innerHTML = `
-            <div class="text-base mb-5">${message}</div>
-            <div class="flex justify-end">
-                <button class="px-6 py-2 bg-emerald-600 hover:bg-emerald-500 rounded-lg text-sm font-medium">OK</button>
-            </div>
-        `;
-        document.body.appendChild(dialog);
-        dialog.showModal();
-        dialog.querySelector('button').onclick = () => { dialog.close(); dialog.remove(); };
-    }
-
-    function showUserProfileModal() {
-        document.getElementById('userProfileModal').showModal();
-    }
-
-    // ==================== NAVIGATION WARNING (when leaving with unsaved lines) ====================
-    function warnBeforeLeaving() {
-        if (budgetLines.length > 0 && !budgetPublished) {
-            const dialog = document.createElement('dialog');
-            dialog.className = 'modal rounded-2xl p-6 w-full max-w-md text-white';
-            dialog.innerHTML = `
-                <div class="text-base mb-5">You have unsaved budget line items. Would you like to publish the current budget before leaving this page?</div>
-                <div class="flex justify-end gap-3">
-                    <button class="px-5 py-2 rounded-lg bg-zinc-700">Leave without publishing</button>
-                    <button class="px-5 py-2 rounded-lg bg-emerald-600">Publish & Leave</button>
-                </div>
-            `;
-            document.body.appendChild(dialog);
-            dialog.showModal();
-
-            const buttons = dialog.querySelectorAll('button');
-            buttons[0].onclick = () => { dialog.close(); dialog.remove(); };
-            buttons[1].onclick = () => {
-                publishBudget();
-                dialog.close();
-                dialog.remove();
-            };
-        }
-    }
-
-    // ==================== INITIALIZE ====================
-    function initializeBudget() {
-        document.getElementById('contractAmount').textContent = formatCurrency(contractAmount);
-        renderBudgetTable(budgetLines);
-
-        const costTypeSelect = document.getElementById('cost_type');
-        costTypes.forEach(type => {
-            const option = document.createElement('option');
-            option.value = type;
-            option.textContent = type;
-            costTypeSelect.appendChild(option);
-        });
-
-        // Attach warning to sidebar links (placeholder until we update base/dashboard)
-        document.querySelectorAll('.nav-link').forEach(link => {
-            link.addEventListener('click', function(e) {
-                if (budgetLines.length > 0 && !budgetPublished) {
-                    e.preventDefault();
-                    warnBeforeLeaving();
-                }
-            });
-        });
-    }
-
-    window.onload = function() {
-        initializeBudget();
-    };
-</script>
