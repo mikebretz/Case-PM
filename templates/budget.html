@@ -272,3 +272,156 @@
                     </tbody>
                 </table>
             </div>
+<!-- ==================== MODALS (from your original file - unchanged) ==================== -->
+
+<!-- Add/Edit Budget Line Modal -->
+<dialog id="budgetLineModal" class="modal rounded-md w-full max-w-2xl p-0 text-white">
+    <div class="p-6">
+        <div class="flex justify-between items-center mb-6">
+            <h3 id="modalTitle" class="text-xl font-semibold text-white">Add Budget Line Item</h3>
+            <button onclick="document.getElementById('budgetLineModal').close()" class="text-zinc-400 hover:text-white">
+                <i class="fa-solid fa-times text-xl"></i>
+            </button>
+        </div>
+
+        <form id="budgetLineForm" onsubmit="saveBudgetLine(event)">
+            <input type="hidden" id="budgetLineId">
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div class="md:col-span-2">
+                    <label class="block text-sm mb-1.5 text-zinc-300">Cost Code</label>
+                    <input type="text" id="cost_code" list="costCodeList" onblur="autoFillFromCostCode()" class="w-full bg-zinc-800 border border-zinc-700 rounded-md px-4 py-2.5 text-sm text-white" required>
+                    <datalist id="costCodeList"></datalist>
+                </div>
+                <div>
+                    <label class="block text-sm mb-1.5 text-zinc-300">Description</label>
+                    <input type="text" id="description" class="w-full bg-zinc-800 border border-zinc-700 rounded-md px-4 py-2.5 text-sm text-white">
+                </div>
+                <div>
+                    <label class="block text-sm mb-1.5 text-zinc-300">Cost Type</label>
+                    <select id="cost_type" class="w-full bg-zinc-800 border border-zinc-700 rounded-md px-4 py-2.5 text-sm text-white"></select>
+                </div>
+                <div>
+                    <label class="block text-sm mb-1.5 text-zinc-300">Original Budget</label>
+                    <input type="text" id="original_budget" class="w-full bg-zinc-800 border border-zinc-700 rounded-md px-4 py-2.5 text-sm text-white" required>
+                </div>
+                <div class="md:col-span-2">
+                    <label class="block text-sm mb-1.5 text-zinc-300">Notes</label>
+                    <input type="text" id="notes" class="w-full bg-zinc-800 border border-zinc-700 rounded-md px-4 py-2.5 text-sm text-white">
+                </div>
+            </div>
+            <div class="flex justify-end gap-3 mt-8">
+                <button type="button" onclick="document.getElementById('budgetLineModal').close()" class="px-6 py-2.5 rounded-md bg-zinc-800 hover:bg-zinc-700 text-sm">Cancel</button>
+                <button type="submit" class="px-8 py-2.5 rounded-md bg-emerald-600 hover:bg-emerald-500 text-sm font-semibold">Save Line Item</button>
+            </div>
+        </form>
+    </div>
+</dialog>
+
+<!-- Pending Changes Modal -->
+<dialog id="pendingChangesModal" class="modal rounded-md w-full max-w-3xl p-0 text-white">
+    <div class="p-6">
+        <div class="flex justify-between items-center mb-6">
+            <h3 class="text-xl font-semibold">Pending Change Orders</h3>
+            <button onclick="document.getElementById('pendingChangesModal').close()" class="text-zinc-400 hover:text-white">
+                <i class="fa-solid fa-times text-xl"></i>
+            </button>
+        </div>
+        <div id="pendingChangesContent" class="max-h-[400px] overflow-auto">
+            <!-- Populated by JavaScript -->
+        </div>
+        <div class="mt-6 text-right">
+            <button onclick="document.getElementById('pendingChangesModal').close()" class="px-6 py-2.5 rounded-md bg-zinc-700 hover:bg-zinc-600 text-sm">Close</button>
+        </div>
+    </div>
+</dialog>
+
+<!-- Settings Modal -->
+<dialog id="settingsModal" class="modal rounded-md w-full max-w-2xl p-0 text-white">
+    <div class="p-6">
+        <div class="flex justify-between items-center mb-6">
+            <h3 class="text-xl font-semibold">Budget Settings</h3>
+            <button onclick="document.getElementById('settingsModal').close()" class="text-zinc-400 hover:text-white"><i class="fa-solid fa-times text-xl"></i></button>
+        </div>
+
+        <!-- Cost Code Lists -->
+        <div class="mb-6">
+            <div class="flex items-center justify-between mb-3">
+                <div class="font-medium">Cost Code Lists</div>
+                <div class="flex gap-2">
+                    <button onclick="addNewCostCodeList()" class="px-4 py-1.5 text-xs bg-zinc-800 hover:bg-zinc-700 rounded-md flex items-center gap-2">
+                        <i class="fa-solid fa-plus"></i> New List
+                    </button>
+                    <button onclick="uploadCostCodes()" class="px-4 py-1.5 text-xs bg-zinc-800 hover:bg-zinc-700 rounded-md flex items-center gap-2">
+                        <i class="fa-solid fa-upload"></i> Upload Excel
+                    </button>
+                    <button onclick="deleteSelectedCostCodeList()" class="px-4 py-1.5 text-xs bg-red-900/70 hover:bg-red-900 text-red-300 rounded-md flex items-center gap-2">
+                        <i class="fa-solid fa-trash"></i> Delete Selected
+                    </button>
+                </div>
+            </div>
+            <select id="costCodeListSelector" onchange="changeActiveCostCodeList()" class="w-full bg-zinc-800 border border-zinc-700 rounded-md px-4 py-2 text-sm text-white">
+                <option value="csi">CSI Master Codes</option>
+                <option value="custom">Custom Codes</option>
+            </select>
+        </div>
+
+        <!-- Cost Types -->
+        <div class="mb-6">
+            <div class="flex items-center justify-between mb-3">
+                <div class="font-medium">Cost Types</div>
+                <div class="flex gap-2">
+                    <button onclick="addNewCostTypeModal()" class="px-4 py-1.5 text-xs bg-zinc-800 hover:bg-zinc-700 rounded-md flex items-center gap-2">
+                        <i class="fa-solid fa-plus"></i> New Item
+                    </button>
+                    <button onclick="uploadCostTypes()" class="px-4 py-1.5 text-xs bg-zinc-800 hover:bg-zinc-700 rounded-md flex items-center gap-2">
+                        <i class="fa-solid fa-upload"></i> Upload Excel
+                    </button>
+                </div>
+            </div>
+            <div id="costTypesList" class="bg-zinc-800 rounded-md p-2 text-sm max-h-32 overflow-auto text-white"></div>
+        </div>
+
+        <div class="pt-4 border-t border-zinc-700">
+            <button onclick="syncWithSage300()" class="w-full flex items-center justify-center gap-2 px-5 py-3 bg-emerald-600 hover:bg-emerald-500 rounded-md text-sm font-semibold">
+                <i class="fa-solid fa-sync"></i>
+                <span>Sync All Budget Settings with Sage 300</span>
+            </button>
+            <p class="text-[10px] text-center text-zinc-500 mt-2">Placeholder — connects when backend is ready.</p>
+        </div>
+    </div>
+</dialog>
+
+<!-- New List Name Modal -->
+<dialog id="newListNameModal" class="modal rounded-md w-full max-w-md p-0 text-white">
+    <div class="p-6">
+        <h3 class="text-lg font-semibold mb-4">Create New Cost Code List</h3>
+        <input type="text" id="newListNameInput" placeholder="List name (e.g. Client Custom Codes)" class="w-full bg-zinc-800 border border-zinc-700 rounded-md px-4 py-2.5 text-sm mb-6 text-white">
+        <div class="flex justify-end gap-3">
+            <button onclick="closeNewListModal()" class="px-5 py-2 rounded-md bg-zinc-700">Cancel</button>
+            <button onclick="confirmCreateNewList()" class="px-6 py-2 rounded-md bg-emerald-600">Create & Activate</button>
+        </div>
+    </div>
+</dialog>
+
+<!-- New Cost Type Modal -->
+<dialog id="newCostTypeModal" class="modal rounded-md w-full max-w-md p-0 text-white">
+    <div class="p-6">
+        <h3 class="text-lg font-semibold mb-4">Enter New Cost Type Name</h3>
+        <input type="text" id="newCostTypeInput" placeholder="e.g. Owner Direct Purchase" class="w-full bg-zinc-800 border border-zinc-700 rounded-md px-4 py-2.5 text-sm mb-6 text-white">
+        <div class="flex justify-end gap-3">
+            <button onclick="document.getElementById('newCostTypeModal').close()" class="px-5 py-2 rounded-md bg-zinc-700">Cancel</button>
+            <button onclick="confirmAddNewCostType()" class="px-6 py-2 rounded-md bg-emerald-600">Add Cost Type</button>
+        </div>
+    </div>
+</dialog>
+
+<!-- User Profile Modal -->
+<dialog id="userProfileModal" class="modal rounded-md w-full max-w-md p-0 text-white">
+    <div class="p-6">
+        <h3 class="text-lg font-semibold mb-4">User Profile</h3>
+        <p class="text-sm text-zinc-400">Profile settings coming soon.</p>
+        <div class="mt-6 text-right">
+            <button onclick="document.getElementById('userProfileModal').close()" class="px-5 py-2 rounded-md bg-zinc-700">Close</button>
+        </div>
+    </div>
+</dialog>
