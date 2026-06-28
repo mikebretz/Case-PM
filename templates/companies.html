@@ -244,3 +244,27 @@
                     </tbody>
                 </table>
             </div>
+<!-- ==================== VIEW COMPANY MODAL (Read-Only) ==================== -->
+<dialog id="viewCompanyModal" class="modal rounded-md w-full max-w-5xl p-0 text-white">
+    <div class="p-6 max-h-[90vh] overflow-auto">
+        <div class="flex justify-between items-center mb-6 sticky top-0 bg-zinc-900 pb-4 z-10">
+            <h3 class="text-2xl font-semibold" id="viewCompanyTitle">Company Details</h3>
+            <button onclick="closeViewCompanyModal()" class="text-zinc-400 hover:text-white text-2xl leading-none">×</button>
+        </div>
+
+        <div id="viewCompanyContent" class="space-y-6 text-sm">
+            <!-- Populated dynamically by JavaScript -->
+        </div>
+
+        <!-- Bottom action bar -->
+        <div class="flex justify-end gap-3 pt-6 mt-6 border-t border-zinc-700 sticky bottom-0 bg-zinc-900">
+            <button onclick="closeViewCompanyModal()" 
+                    class="px-6 py-2.5 rounded-md bg-zinc-700 hover:bg-zinc-600 text-sm">Close</button>
+            <button onclick="editFromViewModal()" 
+                    class="px-8 py-2.5 rounded-md bg-emerald-600 hover:bg-emerald-500 text-sm font-semibold flex items-center gap-2">
+                <i class="fa-solid fa-edit"></i>
+                <span>Edit Information</span>
+            </button>
+        </div>
+    </div>
+</dialog>
