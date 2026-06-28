@@ -111,25 +111,29 @@
             </div>
 
             <div class="flex items-center gap-3">
-                <button onclick="exportBudget()" class="flex items-center gap-2 px-4 py-2 bg-zinc-800 hover:bg-zinc-700 rounded-lg text-sm font-medium">
+                <button onclick="exportBudget()" class="flex items-center gap-2 px-4 py-2 bg-zinc-800 hover:bg-zinc-700 rounded-md text-sm font-medium">
                     <i class="fa-solid fa-download"></i><span>Export</span>
                 </button>
-                <button onclick="printBudget()" class="flex items-center gap-2 px-4 py-2 bg-zinc-800 hover:bg-zinc-700 rounded-lg text-sm font-medium">
+                <button onclick="printBudget()" class="flex items-center gap-2 px-4 py-2 bg-zinc-800 hover:bg-zinc-700 rounded-md text-sm font-medium">
                     <i class="fa-solid fa-print"></i><span>Print</span>
                 </button>
 
-                <button onclick="saveBudget()" class="flex items-center gap-2 px-5 py-2 bg-zinc-700 hover:bg-zinc-600 rounded-lg text-sm font-medium">
+                <button onclick="viewPendingChanges()" class="flex items-center gap-2 px-4 py-2 bg-amber-600 hover:bg-amber-500 rounded-md text-sm font-medium">
+                    <i class="fa-solid fa-clock"></i><span>View Pending Changes</span>
+                </button>
+
+                <button onclick="saveBudget()" class="flex items-center gap-2 px-5 py-2 bg-zinc-700 hover:bg-zinc-600 rounded-md text-sm font-medium">
                     <i class="fa-solid fa-save"></i><span>Save Budget</span>
                 </button>
 
-                <button onclick="publishBudget()" class="flex items-center gap-2 px-5 py-2 bg-emerald-600 hover:bg-emerald-500 rounded-lg text-sm font-semibold">
+                <button onclick="publishBudget()" class="flex items-center gap-2 px-5 py-2 bg-emerald-600 hover:bg-emerald-500 rounded-md text-sm font-semibold">
                     <i class="fa-solid fa-upload"></i><span>Publish Budget</span>
                 </button>
-                <button onclick="showAddBudgetLineModal()" class="flex items-center gap-2 px-5 py-2 bg-white text-zinc-900 hover:bg-zinc-100 rounded-lg text-sm font-semibold">
+                <button onclick="showAddBudgetLineModal()" class="flex items-center gap-2 px-5 py-2 bg-white text-zinc-900 hover:bg-zinc-100 rounded-md text-sm font-semibold">
                     <i class="fa-solid fa-plus"></i><span>Add Budget Line Item</span>
                 </button>
 
-                <button onclick="showSettingsModal()" class="w-10 h-10 flex items-center justify-center bg-zinc-800 hover:bg-zinc-700 rounded-lg">
+                <button onclick="showSettingsModal()" class="w-10 h-10 flex items-center justify-center bg-zinc-800 hover:bg-zinc-700 rounded-md">
                     <i class="fa-solid fa-cog"></i>
                 </button>
 
@@ -149,31 +153,39 @@
         <div class="flex-1 overflow-auto p-6">
             
             <!-- Summary Cards -->
-            <div class="grid grid-cols-1 md:grid-cols-5 gap-4 mb-6">
-                <div class="bg-zinc-900 border border-zinc-800 rounded-lg p-5">
+            <div class="grid grid-cols-1 md:grid-cols-7 gap-4 mb-6">
+                <div class="bg-zinc-900 border border-zinc-800 rounded-md p-5">
                     <div class="text-sm text-zinc-400">Contract Amount</div>
                     <div id="contractAmount" class="text-3xl font-semibold mt-1">$2,450,000</div>
                 </div>
-                <div class="bg-zinc-900 border border-zinc-800 rounded-lg p-5">
+                <div class="bg-zinc-900 border border-zinc-800 rounded-md p-5">
                     <div class="text-sm text-zinc-400">Original Budget</div>
                     <div id="originalBudgetTotal" class="text-3xl font-semibold mt-1">$0</div>
                 </div>
-                <div class="bg-zinc-900 border border-zinc-800 rounded-lg p-5">
+                <div class="bg-zinc-900 border border-zinc-800 rounded-md p-5">
                     <div class="text-sm text-zinc-400">Approved Changes</div>
                     <div id="approvedChangesTotal" class="text-3xl font-semibold mt-1 text-amber-400">$0</div>
                 </div>
-                <div class="bg-zinc-900 border border-zinc-800 rounded-lg p-5">
+                <div class="bg-zinc-900 border border-zinc-800 rounded-md p-5">
+                    <div class="text-sm text-zinc-400">Pending Changes</div>
+                    <div id="pendingChangesTotal" class="text-3xl font-semibold mt-1 text-orange-400">$0</div>
+                </div>
+                <div class="bg-zinc-900 border border-zinc-800 rounded-md p-5">
                     <div class="text-sm text-zinc-400">Current Budget</div>
                     <div id="currentBudgetTotal" class="text-3xl font-semibold mt-1 text-emerald-400">$0</div>
                 </div>
-                <div class="bg-zinc-900 border border-zinc-800 rounded-lg p-5">
+                <div class="bg-zinc-900 border border-zinc-800 rounded-md p-5">
+                    <div class="text-sm text-zinc-400">Projected Final Cost</div>
+                    <div id="projectedFinalTotal" class="text-3xl font-semibold mt-1 text-emerald-400">$0</div>
+                </div>
+                <div class="bg-zinc-900 border border-zinc-800 rounded-md p-5">
                     <div class="text-sm text-zinc-400">Variance</div>
                     <div id="varianceTotal" class="text-3xl font-semibold mt-1 text-emerald-400">$0</div>
                 </div>
             </div>
 
             <!-- Budget Table -->
-            <div class="bg-zinc-900 border border-zinc-800 rounded-lg overflow-hidden">
+            <div class="bg-zinc-900 border border-zinc-800 rounded-md overflow-hidden">
                 <div class="px-6 py-4 border-b border-zinc-800 flex items-center justify-between">
                     <div class="font-semibold">Budget Line Items</div>
                     <div class="text-sm text-zinc-400" id="lineCount">0 lines</div>
@@ -186,7 +198,9 @@
                             <th class="px-6 py-3 text-center font-medium text-zinc-400 w-32 whitespace-nowrap">Cost Type</th>
                             <th class="px-6 py-3 text-center font-medium text-zinc-400 w-28">Original</th>
                             <th class="px-6 py-3 text-center font-medium text-zinc-400 w-24">Changes</th>
+                            <th class="px-6 py-3 text-center font-medium text-zinc-400 w-24">Pending</th>
                             <th class="px-6 py-3 text-center font-medium text-zinc-400 w-28">Current</th>
+                            <th class="px-6 py-3 text-center font-medium text-zinc-400 w-28">Forecast</th>
                             <th class="px-6 py-3 text-left font-medium text-zinc-400 w-[420px]">Notes</th>
                             <th class="px-6 py-3 w-20"></th>
                         </tr>
@@ -201,7 +215,7 @@
 </div>
 
 <!-- Add/Edit Budget Line Modal -->
-<dialog id="budgetLineModal" class="modal rounded-lg w-full max-w-2xl p-0 text-white">
+<dialog id="budgetLineModal" class="modal rounded-md w-full max-w-2xl p-0 text-white">
     <div class="p-6">
         <div class="flex justify-between items-center mb-6">
             <h3 id="modalTitle" class="text-xl font-semibold text-white">Add Budget Line Item</h3>
@@ -215,36 +229,54 @@
             <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div class="md:col-span-2">
                     <label class="block text-sm mb-1.5 text-zinc-300">Cost Code</label>
-                    <input type="text" id="cost_code" list="costCodeList" onblur="autoFillFromCostCode()" class="w-full bg-zinc-800 border border-zinc-700 rounded px-4 py-2.5 text-sm text-white" required>
+                    <input type="text" id="cost_code" list="costCodeList" onblur="autoFillFromCostCode()" class="w-full bg-zinc-800 border border-zinc-700 rounded-md px-4 py-2.5 text-sm text-white" required>
                     <datalist id="costCodeList"></datalist>
                 </div>
                 <div>
                     <label class="block text-sm mb-1.5 text-zinc-300">Description</label>
-                    <input type="text" id="description" class="w-full bg-zinc-800 border border-zinc-700 rounded px-4 py-2.5 text-sm text-white">
+                    <input type="text" id="description" class="w-full bg-zinc-800 border border-zinc-700 rounded-md px-4 py-2.5 text-sm text-white">
                 </div>
                 <div>
                     <label class="block text-sm mb-1.5 text-zinc-300">Cost Type</label>
-                    <select id="cost_type" class="w-full bg-zinc-800 border border-zinc-700 rounded px-4 py-2.5 text-sm text-white"></select>
+                    <select id="cost_type" class="w-full bg-zinc-800 border border-zinc-700 rounded-md px-4 py-2.5 text-sm text-white"></select>
                 </div>
                 <div>
                     <label class="block text-sm mb-1.5 text-zinc-300">Original Budget</label>
-                    <input type="text" id="original_budget" class="w-full bg-zinc-800 border border-zinc-700 rounded px-4 py-2.5 text-sm text-white" required>
+                    <input type="text" id="original_budget" class="w-full bg-zinc-800 border border-zinc-700 rounded-md px-4 py-2.5 text-sm text-white" required>
                 </div>
                 <div class="md:col-span-2">
                     <label class="block text-sm mb-1.5 text-zinc-300">Notes</label>
-                    <input type="text" id="notes" class="w-full bg-zinc-800 border border-zinc-700 rounded px-4 py-2.5 text-sm text-white">
+                    <input type="text" id="notes" class="w-full bg-zinc-800 border border-zinc-700 rounded-md px-4 py-2.5 text-sm text-white">
                 </div>
             </div>
             <div class="flex justify-end gap-3 mt-8">
-                <button type="button" onclick="document.getElementById('budgetLineModal').close()" class="px-6 py-2.5 rounded bg-zinc-800 hover:bg-zinc-700 text-sm">Cancel</button>
-                <button type="submit" class="px-8 py-2.5 rounded bg-emerald-600 hover:bg-emerald-500 text-sm font-semibold">Save Line Item</button>
+                <button type="button" onclick="document.getElementById('budgetLineModal').close()" class="px-6 py-2.5 rounded-md bg-zinc-800 hover:bg-zinc-700 text-sm">Cancel</button>
+                <button type="submit" class="px-8 py-2.5 rounded-md bg-emerald-600 hover:bg-emerald-500 text-sm font-semibold">Save Line Item</button>
             </div>
         </form>
     </div>
 </dialog>
 
+<!-- Pending Changes Modal -->
+<dialog id="pendingChangesModal" class="modal rounded-md w-full max-w-3xl p-0 text-white">
+    <div class="p-6">
+        <div class="flex justify-between items-center mb-6">
+            <h3 class="text-xl font-semibold">Pending Change Orders</h3>
+            <button onclick="document.getElementById('pendingChangesModal').close()" class="text-zinc-400 hover:text-white">
+                <i class="fa-solid fa-times text-xl"></i>
+            </button>
+        </div>
+        <div id="pendingChangesContent" class="max-h-[400px] overflow-auto">
+            <!-- Populated by JavaScript -->
+        </div>
+        <div class="mt-6 text-right">
+            <button onclick="document.getElementById('pendingChangesModal').close()" class="px-6 py-2.5 rounded-md bg-zinc-700 hover:bg-zinc-600 text-sm">Close</button>
+        </div>
+    </div>
+</dialog>
+
 <!-- Settings Modal -->
-<dialog id="settingsModal" class="modal rounded-lg w-full max-w-2xl p-0 text-white">
+<dialog id="settingsModal" class="modal rounded-md w-full max-w-2xl p-0 text-white">
     <div class="p-6">
         <div class="flex justify-between items-center mb-6">
             <h3 class="text-xl font-semibold">Budget Settings</h3>
@@ -256,18 +288,18 @@
             <div class="flex items-center justify-between mb-3">
                 <div class="font-medium">Cost Code Lists</div>
                 <div class="flex gap-2">
-                    <button onclick="addNewCostCodeList()" class="px-4 py-1.5 text-xs bg-zinc-800 hover:bg-zinc-700 rounded flex items-center gap-2">
+                    <button onclick="addNewCostCodeList()" class="px-4 py-1.5 text-xs bg-zinc-800 hover:bg-zinc-700 rounded-md flex items-center gap-2">
                         <i class="fa-solid fa-plus"></i> New List
                     </button>
-                    <button onclick="uploadCostCodes()" class="px-4 py-1.5 text-xs bg-zinc-800 hover:bg-zinc-700 rounded flex items-center gap-2">
+                    <button onclick="uploadCostCodes()" class="px-4 py-1.5 text-xs bg-zinc-800 hover:bg-zinc-700 rounded-md flex items-center gap-2">
                         <i class="fa-solid fa-upload"></i> Upload Excel
                     </button>
-                    <button onclick="deleteSelectedCostCodeList()" class="px-4 py-1.5 text-xs bg-red-900/70 hover:bg-red-900 text-red-300 rounded flex items-center gap-2">
+                    <button onclick="deleteSelectedCostCodeList()" class="px-4 py-1.5 text-xs bg-red-900/70 hover:bg-red-900 text-red-300 rounded-md flex items-center gap-2">
                         <i class="fa-solid fa-trash"></i> Delete Selected
                     </button>
                 </div>
             </div>
-            <select id="costCodeListSelector" onchange="changeActiveCostCodeList()" class="w-full bg-zinc-800 border border-zinc-700 rounded px-4 py-2 text-sm text-white">
+            <select id="costCodeListSelector" onchange="changeActiveCostCodeList()" class="w-full bg-zinc-800 border border-zinc-700 rounded-md px-4 py-2 text-sm text-white">
                 <option value="csi">CSI Master Codes</option>
                 <option value="custom">Custom Codes</option>
             </select>
@@ -278,19 +310,19 @@
             <div class="flex items-center justify-between mb-3">
                 <div class="font-medium">Cost Types</div>
                 <div class="flex gap-2">
-                    <button onclick="addNewCostTypeModal()" class="px-4 py-1.5 text-xs bg-zinc-800 hover:bg-zinc-700 rounded flex items-center gap-2">
+                    <button onclick="addNewCostTypeModal()" class="px-4 py-1.5 text-xs bg-zinc-800 hover:bg-zinc-700 rounded-md flex items-center gap-2">
                         <i class="fa-solid fa-plus"></i> New Item
                     </button>
-                    <button onclick="uploadCostTypes()" class="px-4 py-1.5 text-xs bg-zinc-800 hover:bg-zinc-700 rounded flex items-center gap-2">
+                    <button onclick="uploadCostTypes()" class="px-4 py-1.5 text-xs bg-zinc-800 hover:bg-zinc-700 rounded-md flex items-center gap-2">
                         <i class="fa-solid fa-upload"></i> Upload Excel
                     </button>
                 </div>
             </div>
-            <div id="costTypesList" class="bg-zinc-800 rounded p-2 text-sm max-h-32 overflow-auto text-white"></div>
+            <div id="costTypesList" class="bg-zinc-800 rounded-md p-2 text-sm max-h-32 overflow-auto text-white"></div>
         </div>
 
         <div class="pt-4 border-t border-zinc-700">
-            <button onclick="syncWithSage300()" class="w-full flex items-center justify-center gap-2 px-5 py-3 bg-emerald-600 hover:bg-emerald-500 rounded text-sm font-semibold">
+            <button onclick="syncWithSage300()" class="w-full flex items-center justify-center gap-2 px-5 py-3 bg-emerald-600 hover:bg-emerald-500 rounded-md text-sm font-semibold">
                 <i class="fa-solid fa-sync"></i>
                 <span>Sync All Budget Settings with Sage 300</span>
             </button>
@@ -300,36 +332,36 @@
 </dialog>
 
 <!-- New List Name Modal -->
-<dialog id="newListNameModal" class="modal rounded-lg w-full max-w-md p-0 text-white">
+<dialog id="newListNameModal" class="modal rounded-md w-full max-w-md p-0 text-white">
     <div class="p-6">
         <h3 class="text-lg font-semibold mb-4">Create New Cost Code List</h3>
-        <input type="text" id="newListNameInput" placeholder="List name (e.g. Client Custom Codes)" class="w-full bg-zinc-800 border border-zinc-700 rounded px-4 py-2.5 text-sm mb-6 text-white">
+        <input type="text" id="newListNameInput" placeholder="List name (e.g. Client Custom Codes)" class="w-full bg-zinc-800 border border-zinc-700 rounded-md px-4 py-2.5 text-sm mb-6 text-white">
         <div class="flex justify-end gap-3">
-            <button onclick="closeNewListModal()" class="px-5 py-2 rounded bg-zinc-700">Cancel</button>
-            <button onclick="confirmCreateNewList()" class="px-6 py-2 rounded bg-emerald-600">Create & Activate</button>
+            <button onclick="closeNewListModal()" class="px-5 py-2 rounded-md bg-zinc-700">Cancel</button>
+            <button onclick="confirmCreateNewList()" class="px-6 py-2 rounded-md bg-emerald-600">Create & Activate</button>
         </div>
     </div>
 </dialog>
 
 <!-- New Cost Type Modal -->
-<dialog id="newCostTypeModal" class="modal rounded-lg w-full max-w-md p-0 text-white">
+<dialog id="newCostTypeModal" class="modal rounded-md w-full max-w-md p-0 text-white">
     <div class="p-6">
         <h3 class="text-lg font-semibold mb-4">Enter New Cost Type Name</h3>
-        <input type="text" id="newCostTypeInput" placeholder="e.g. Owner Direct Purchase" class="w-full bg-zinc-800 border border-zinc-700 rounded px-4 py-2.5 text-sm mb-6 text-white">
+        <input type="text" id="newCostTypeInput" placeholder="e.g. Owner Direct Purchase" class="w-full bg-zinc-800 border border-zinc-700 rounded-md px-4 py-2.5 text-sm mb-6 text-white">
         <div class="flex justify-end gap-3">
-            <button onclick="document.getElementById('newCostTypeModal').close()" class="px-5 py-2 rounded bg-zinc-700">Cancel</button>
-            <button onclick="confirmAddNewCostType()" class="px-6 py-2 rounded bg-emerald-600">Add Cost Type</button>
+            <button onclick="document.getElementById('newCostTypeModal').close()" class="px-5 py-2 rounded-md bg-zinc-700">Cancel</button>
+            <button onclick="confirmAddNewCostType()" class="px-6 py-2 rounded-md bg-emerald-600">Add Cost Type</button>
         </div>
     </div>
 </dialog>
 
 <!-- User Profile Modal -->
-<dialog id="userProfileModal" class="modal rounded-lg w-full max-w-md p-0 text-white">
+<dialog id="userProfileModal" class="modal rounded-md w-full max-w-md p-0 text-white">
     <div class="p-6">
         <h3 class="text-lg font-semibold mb-4">User Profile</h3>
         <p class="text-sm text-zinc-400">Profile settings coming soon.</p>
         <div class="mt-6 text-right">
-            <button onclick="document.getElementById('userProfileModal').close()" class="px-5 py-2 rounded bg-zinc-700">Close</button>
+            <button onclick="document.getElementById('userProfileModal').close()" class="px-5 py-2 rounded-md bg-zinc-700">Close</button>
         </div>
     </div>
 </dialog>
@@ -339,6 +371,10 @@
 <script>
     // ==================== DATA & STATE ====================
     let budgetLines = [];
+    let pendingChanges = [
+        { id: 101, number: "CO-003", description: "Additional rebar in foundation", amount: 12450, status: "Pending Owner Approval" },
+        { id: 102, number: "CO-004", description: "Electrical upgrade for new equipment", amount: 8750, status: "Pending Owner Approval" }
+    ];
     let csiCostCodes = [
         { code: "01-1000", description: "Summary", cost_type: "General Conditions" },
         { code: "03-3000", description: "Concrete - Structural", cost_type: "Subcontract" },
@@ -391,7 +427,7 @@
         tbody.innerHTML = '';
 
         if (lines.length === 0) {
-            tbody.innerHTML = `<tr><td colspan="8" class="px-6 py-8 text-center text-zinc-500">No budget line items yet. Click "Add Budget Line Item" to begin.</td></tr>`;
+            tbody.innerHTML = `<tr><td colspan="10" class="px-6 py-8 text-center text-zinc-500">No budget line items yet. Click "Add Budget Line Item" to begin.</td></tr>`;
             updateTotals();
             return;
         }
@@ -415,12 +451,15 @@
                 const header = document.createElement('tr');
                 header.className = 'bg-zinc-800';
                 header.innerHTML = `
-                    <td colspan="8" class="px-6 py-2 text-emerald-400 font-semibold text-base">
+                    <td colspan="10" class="px-6 py-2 text-emerald-400 font-semibold text-base">
                         Division ${division} — ${divisionNames[division] || 'Other'}
                     </td>
                 `;
                 tbody.appendChild(header);
             }
+
+            const pending = line.pending || 0;
+            const forecast = line.original_budget + line.approved_changes + pending;
 
             const row = document.createElement('tr');
             row.className = 'hover:bg-zinc-800/60 transition-colors cursor-pointer';
@@ -435,8 +474,12 @@
                 </td>
                 <td class="px-6 py-3 text-center w-28">${formatCurrency(line.original_budget)}</td>
                 <td class="px-6 py-3 text-center text-amber-400 w-24">${formatCurrency(line.approved_changes)}</td>
+                <td class="px-6 py-3 text-center text-orange-400 w-24">${formatCurrency(pending)}</td>
                 <td class="px-6 py-3 text-center font-semibold text-emerald-400 w-28">
                     ${formatCurrency(line.original_budget + line.approved_changes)}
+                </td>
+                <td class="px-6 py-3 text-center font-semibold text-emerald-400 w-28">
+                    ${formatCurrency(forecast)}
                 </td>
                 <td class="px-6 py-3 text-sm text-zinc-400 w-[420px]">${line.notes || ''}</td>
                 <td class="px-4 py-3 w-20">
@@ -454,21 +497,26 @@
     }
 
     function updateTotals() {
-        let original = 0, changes = 0;
+        let original = 0, changes = 0, pending = 0;
         budgetLines.forEach(l => {
             original += l.original_budget;
             changes += l.approved_changes;
+            pending += (l.pending || 0);
         });
+        const current = original + changes;
+        const forecast = current + pending;
+
         document.getElementById('originalBudgetTotal').textContent = formatCurrency(original);
         document.getElementById('approvedChangesTotal').textContent = formatCurrency(changes);
-        document.getElementById('currentBudgetTotal').textContent = formatCurrency(original + changes);
+        document.getElementById('pendingChangesTotal').textContent = formatCurrency(pending);
+        document.getElementById('currentBudgetTotal').textContent = formatCurrency(current);
+        document.getElementById('projectedFinalTotal').textContent = formatCurrency(forecast);
 
-        const variance = contractAmount - (original + changes);
+        const variance = contractAmount - forecast;
         const varEl = document.getElementById('varianceTotal');
         if (varEl) varEl.textContent = formatCurrency(variance);
 
-        // Warning if current budget exceeds contract amount
-        if ((original + changes) > contractAmount) {
+        if (current > contractAmount) {
             showCenteredAlert("Warning: Current Budget exceeds the Contract Amount.");
         }
     }
@@ -533,6 +581,7 @@
             cost_type: costType,
             original_budget: originalBudget,
             approved_changes: id ? (budgetLines.find(l => l.id == id)?.approved_changes || 0) : 0,
+            pending: id ? (budgetLines.find(l => l.id == id)?.pending || 0) : 0,
             notes: document.getElementById('notes').value.trim()
         };
 
@@ -549,15 +598,15 @@
 
     function showDuplicateChoiceModal(existingLine, codeOnly, newDescription, costType, newAmount) {
         const dialog = document.createElement('dialog');
-        dialog.className = 'modal rounded-lg p-6 w-full max-w-md text-white';
+        dialog.className = 'modal rounded-md p-6 w-full max-w-md text-white';
         dialog.innerHTML = `
             <div class="text-base mb-4">A line item with cost code <strong>${codeOnly}</strong> and the same description already exists.</div>
             <div class="text-sm text-zinc-400 mb-6">What would you like to do?</div>
             <div class="flex flex-col gap-3">
-                <button id="btnAddToExisting" class="w-full px-5 py-3 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-sm font-semibold">
+                <button id="btnAddToExisting" class="w-full px-5 py-3 rounded-md bg-emerald-600 hover:bg-emerald-500 text-sm font-semibold">
                     Add this amount to the existing line item
                 </button>
-                <button id="btnCreateNew" class="w-full px-5 py-3 rounded-lg bg-zinc-700 hover:bg-zinc-600 text-sm font-semibold">
+                <button id="btnCreateNew" class="w-full px-5 py-3 rounded-md bg-zinc-700 hover:bg-zinc-600 text-sm font-semibold">
                     Create a new line item (must change Description)
                 </button>
             </div>
@@ -585,12 +634,12 @@
 
     function deleteBudgetLine(id) {
         const dialog = document.createElement('dialog');
-        dialog.className = 'modal rounded-lg p-6 w-full max-w-md text-white';
+        dialog.className = 'modal rounded-md p-6 w-full max-w-md text-white';
         dialog.innerHTML = `
             <div class="text-base mb-5">Delete this budget line item?</div>
             <div class="flex justify-end gap-3">
-                <button class="px-5 py-2 rounded bg-zinc-700">Cancel</button>
-                <button class="px-5 py-2 rounded bg-red-600">Delete</button>
+                <button class="px-5 py-2 rounded-md bg-zinc-700">Cancel</button>
+                <button class="px-5 py-2 rounded-md bg-red-600">Delete</button>
             </div>
         `;
         document.body.appendChild(dialog);
@@ -644,7 +693,7 @@
         container.innerHTML = '';
         costTypes.forEach((type, index) => {
             const div = document.createElement('div');
-            div.className = 'flex justify-between items-center px-3 py-1 text-sm hover:bg-zinc-700 rounded text-white';
+            div.className = 'flex justify-between items-center px-3 py-1 text-sm hover:bg-zinc-700 rounded-md text-white';
             div.innerHTML = `
                 <span>${type}</span>
                 <button onclick="removeCostType(${index})" class="text-red-400 hover:text-red-500">×</button>
@@ -668,12 +717,12 @@
 
     function removeCostType(index) {
         const dialog = document.createElement('dialog');
-        dialog.className = 'modal rounded-lg p-6 w-full max-w-md text-white';
+        dialog.className = 'modal rounded-md p-6 w-full max-w-md text-white';
         dialog.innerHTML = `
             <div class="text-base mb-5">Remove cost type "${costTypes[index]}"?</div>
             <div class="flex justify-end gap-3">
-                <button class="px-5 py-2 rounded bg-zinc-700">Cancel</button>
-                <button class="px-5 py-2 rounded bg-red-600">Remove</button>
+                <button class="px-5 py-2 rounded-md bg-zinc-700">Cancel</button>
+                <button class="px-5 py-2 rounded-md bg-red-600">Remove</button>
             </div>
         `;
         document.body.appendChild(dialog);
@@ -730,12 +779,12 @@
         }
 
         const dialog = document.createElement('dialog');
-        dialog.className = 'modal rounded-lg p-6 w-full max-w-md text-white';
+        dialog.className = 'modal rounded-md p-6 w-full max-w-md text-white';
         dialog.innerHTML = `
             <div class="text-base mb-5">Delete the selected cost code list?</div>
             <div class="flex justify-end gap-3">
-                <button class="px-5 py-2 rounded bg-zinc-700">Cancel</button>
-                <button class="px-5 py-2 rounded bg-red-600">Delete</button>
+                <button class="px-5 py-2 rounded-md bg-zinc-700">Cancel</button>
+                <button class="px-5 py-2 rounded-md bg-red-600">Delete</button>
             </div>
         `;
         document.body.appendChild(dialog);
@@ -860,6 +909,35 @@
         showCenteredAlert("Budget successfully saved to project and published to Sage 300.");
     }
 
+    // ==================== VIEW PENDING CHANGES ====================
+    function viewPendingChanges() {
+        const container = document.getElementById('pendingChangesContent');
+        container.innerHTML = '';
+
+        if (pendingChanges.length === 0) {
+            container.innerHTML = `<div class="text-center py-8 text-zinc-400">No pending change orders at this time.</div>`;
+        } else {
+            pendingChanges.forEach(change => {
+                const div = document.createElement('div');
+                div.className = 'border border-zinc-700 rounded-md p-4 mb-3';
+                div.innerHTML = `
+                    <div class="flex justify-between">
+                        <div>
+                            <div class="font-semibold">${change.number}</div>
+                            <div class="text-sm text-zinc-400">${change.description}</div>
+                        </div>
+                        <div class="text-right">
+                            <div class="font-semibold text-orange-400">${formatCurrency(change.amount)}</div>
+                            <div class="text-xs text-zinc-400">${change.status}</div>
+                        </div>
+                    </div>
+                `;
+                container.appendChild(div);
+            });
+        }
+        document.getElementById('pendingChangesModal').showModal();
+    }
+
     // ==================== PRINT ====================
     function printBudget() {
         if (budgetLines.length === 0) {
@@ -882,12 +960,14 @@
 
         sorted.forEach(line => {
             const division = line.cost_code.substring(0, 2);
+            const pending = line.pending || 0;
+            const forecast = line.original_budget + line.approved_changes + pending;
 
             if (division !== currentDivision) {
                 currentDivision = division;
                 tableRows += `
                     <tr style="background:#f3f4f6; font-weight:600;">
-                        <td colspan="7" style="padding:8px; border:1px solid #ccc;">Division ${division} — ${divisionNames[division] || 'Other'}</td>
+                        <td colspan="8" style="padding:8px; border:1px solid #ccc;">Division ${division} — ${divisionNames[division] || 'Other'}</td>
                     </tr>
                 `;
             }
@@ -899,8 +979,9 @@
                     <td style="border:1px solid #ccc; padding:6px;">${line.cost_type}</td>
                     <td style="border:1px solid #ccc; padding:6px; text-align:right;">${formatCurrency(line.original_budget)}</td>
                     <td style="border:1px solid #ccc; padding:6px; text-align:right;">${formatCurrency(line.approved_changes)}</td>
+                    <td style="border:1px solid #ccc; padding:6px; text-align:right;">${formatCurrency(pending)}</td>
                     <td style="border:1px solid #ccc; padding:6px; text-align:right;">${formatCurrency(line.original_budget + line.approved_changes)}</td>
-                    <td style="border:1px solid #ccc; padding:6px;">${line.notes || ''}</td>
+                    <td style="border:1px solid #ccc; padding:6px; text-align:right;">${formatCurrency(forecast)}</td>
                 </tr>
             `;
         });
@@ -918,7 +999,8 @@
                         <tr>
                             <th>Cost Code</th><th>Description</th><th>Cost Type</th>
                             <th style="text-align:right">Original</th><th style="text-align:right">Changes</th>
-                            <th style="text-align:right">Current</th><th>Notes</th>
+                            <th style="text-align:right">Pending</th><th style="text-align:right">Current</th>
+                            <th style="text-align:right">Forecast</th>
                         </tr>
                     </thead>
                     <tbody>${tableRows}</tbody>
@@ -938,7 +1020,9 @@
             "Cost Type": line.cost_type,
             "Original Budget": line.original_budget,
             "Approved Changes": line.approved_changes,
+            "Pending Changes": line.pending || 0,
             "Current Budget": line.original_budget + line.approved_changes,
+            "Forecast": line.original_budget + line.approved_changes + (line.pending || 0),
             "Notes": line.notes
         }));
         const ws = XLSX.utils.json_to_sheet(data);
@@ -950,11 +1034,11 @@
     // ==================== CENTERED ALERT ====================
     function showCenteredAlert(message) {
         const dialog = document.createElement('dialog');
-        dialog.className = 'modal rounded-lg p-6 w-full max-w-md text-white';
+        dialog.className = 'modal rounded-md p-6 w-full max-w-md text-white';
         dialog.innerHTML = `
             <div class="text-base mb-5">${message}</div>
             <div class="flex justify-end">
-                <button class="px-6 py-2 bg-emerald-600 hover:bg-emerald-500 rounded text-sm font-medium">OK</button>
+                <button class="px-6 py-2 bg-emerald-600 hover:bg-emerald-500 rounded-md text-sm font-medium">OK</button>
             </div>
         `;
         document.body.appendChild(dialog);
@@ -970,25 +1054,23 @@
     function warnBeforeLeaving() {
         if (budgetLines.length > 0 && !budgetPublished) {
             const dialog = document.createElement('dialog');
-            dialog.className = 'modal rounded-lg p-6 w-full max-w-md text-white';
+            dialog.className = 'modal rounded-md p-6 w-full max-w-md text-white';
             
             let buttonsHTML = '';
             
             if (budgetSaved) {
-                // Already saved → show Publish & Leave instead of Save options
                 buttonsHTML = `
-                    <button id="btnStay" class="w-full px-5 py-3 rounded-lg bg-zinc-700 hover:bg-zinc-600 text-sm font-semibold">Stay and Edit</button>
-                    <button id="btnPublishLeave" class="w-full px-5 py-3 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-sm font-semibold">Publish & Leave</button>
-                    <button id="btnLeaveNoPublish" class="w-full px-5 py-3 rounded-lg bg-zinc-700 hover:bg-zinc-600 text-sm font-semibold">Leave without Publishing</button>
+                    <button id="btnStay" class="w-full px-5 py-3 rounded-md bg-zinc-700 hover:bg-zinc-600 text-sm font-semibold">Stay and Edit</button>
+                    <button id="btnPublishLeave" class="w-full px-5 py-3 rounded-md bg-emerald-600 hover:bg-emerald-500 text-sm font-semibold">Publish & Leave</button>
+                    <button id="btnLeaveNoPublish" class="w-full px-5 py-3 rounded-md bg-zinc-700 hover:bg-zinc-600 text-sm font-semibold">Leave without Publishing</button>
                 `;
             } else {
-                // Never saved → full options
                 buttonsHTML = `
-                    <button id="btnStay" class="w-full px-5 py-3 rounded-lg bg-zinc-700 hover:bg-zinc-600 text-sm font-semibold">Stay and Edit</button>
-                    <button id="btnPublishLeave" class="w-full px-5 py-3 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-sm font-semibold">Publish & Leave</button>
-                    <button id="btnSaveLeave" class="w-full px-5 py-3 rounded-lg bg-blue-600 hover:bg-blue-500 text-sm font-semibold">Save & Leave</button>
-                    <button id="btnLeaveNoPublish" class="w-full px-5 py-3 rounded-lg bg-zinc-700 hover:bg-zinc-600 text-sm font-semibold">Leave without Publishing</button>
-                    <button id="btnLeaveNoSave" class="w-full px-5 py-3 rounded-lg bg-red-600 hover:bg-red-500 text-sm font-semibold">Leave without Saving</button>
+                    <button id="btnStay" class="w-full px-5 py-3 rounded-md bg-zinc-700 hover:bg-zinc-600 text-sm font-semibold">Stay and Edit</button>
+                    <button id="btnPublishLeave" class="w-full px-5 py-3 rounded-md bg-emerald-600 hover:bg-emerald-500 text-sm font-semibold">Publish & Leave</button>
+                    <button id="btnSaveLeave" class="w-full px-5 py-3 rounded-md bg-blue-600 hover:bg-blue-500 text-sm font-semibold">Save & Leave</button>
+                    <button id="btnLeaveNoPublish" class="w-full px-5 py-3 rounded-md bg-zinc-700 hover:bg-zinc-600 text-sm font-semibold">Leave without Publishing</button>
+                    <button id="btnLeaveNoSave" class="w-full px-5 py-3 rounded-md bg-red-600 hover:bg-red-500 text-sm font-semibold">Leave without Saving</button>
                 `;
             }
 
@@ -1005,7 +1087,6 @@
             document.body.appendChild(dialog);
             dialog.showModal();
 
-            // Attach listeners
             const btnStay = dialog.querySelector('#btnStay');
             const btnPublish = dialog.querySelector('#btnPublishLeave');
             const btnSave = dialog.querySelector('#btnSaveLeave');
