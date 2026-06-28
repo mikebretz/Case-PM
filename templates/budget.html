@@ -253,33 +253,24 @@
     </div>
 </dialog>
 
-<!-- Print Choice Modal -->
-<dialog id="printChoiceModal" class="bg-zinc-900 border border-zinc-700 rounded-2xl p-0 w-full max-w-md shadow-2xl">
-    <div class="p-6">
-        <div class="font-semibold text-xl mb-4">How would you like to print?</div>
-        
-        <div class="space-y-3">
-            <button onclick="printBudget('all')" 
-                    class="w-full py-3 bg-zinc-800 hover:bg-zinc-700 rounded-lg text-left px-4 flex items-center gap-3">
-                <i class="fa-solid fa-list w-5"></i>
-                <div>
-                    <div class="font-medium">All Fields (Detailed)</div>
-                    <div class="text-xs text-zinc-400">Full export-style view</div>
-                </div>
-            </button>
-            
-            <button onclick="printBudget('aia')" 
-                    class="w-full py-3 bg-emerald-600 hover:bg-emerald-500 rounded-lg text-left px-4 flex items-center gap-3 text-white">
-                <i class="fa-solid fa-file-invoice w-5"></i>
-                <div>
-                    <div class="font-medium">AIA G703 Format</div>
-                    <div class="text-xs text-emerald-200">Clean construction budget</div>
-                </div>
-            </button>
+<!-- Print Preview Modal (Document Viewer Style) -->
+<dialog id="printPreviewModal" class="bg-white text-black p-0 w-full max-w-[1100px] shadow-2xl">
+    <div class="p-8">
+        <div class="flex justify-between items-center mb-6 border-b pb-4">
+            <div>
+                <h2 class="text-2xl font-bold">Budget Preview</h2>
+            </div>
+            <div class="flex gap-3">
+                <button onclick="document.getElementById('printPreviewModal').close()" 
+                        class="px-5 py-2 border border-gray-300 rounded-lg text-sm">Close</button>
+                <button onclick="triggerPrintFromPreview()" 
+                        class="px-5 py-2 bg-emerald-600 text-white rounded-lg text-sm">Print</button>
+            </div>
         </div>
-        
-        <button onclick="document.getElementById('printChoiceModal').close()" 
-                class="mt-4 w-full py-2.5 text-sm text-zinc-400 hover:text-white">Cancel</button>
+
+        <div id="printContent">
+            <!-- Populated by JavaScript -->
+        </div>
     </div>
 </dialog>
 
@@ -288,12 +279,12 @@
 <script>
     // ==================== DATA ====================
     let budgetLines = [];
-    let csiCostCodes = [ /* same list as before */ ];
+    let csiCostCodes = [ /* full list as before */ ];
     let customCostCodes = [];
     let activeCostCodeList = 'csi';
     let budgetPublished = localStorage.getItem('budgetPublished') === 'true';
 
-    // ==================== COST CODES DROPDOWN (CLICK ONLY) ====================
+    // ==================== COST CODES DROPDOWN ====================
     function toggleCostCodesDropdown(button) {
         const dropdown = document.getElementById('costCodesDropdown');
         dropdown.classList.toggle('hidden');
@@ -410,7 +401,7 @@
         return new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(amount);
     }
 
-    // ==================== COST CODE AUTO-FILL (FIXED) ====================
+    // ==================== COST CODE AUTO-FILL ====================
     function autoFillFromCostCode() {
         const fullValue = document.getElementById('cost_code').value.trim();
         const codeMatch = fullValue.match(/^([0-9-]+)/);
@@ -582,7 +573,7 @@
         });
     }
 
-    // ==================== PUBLISH BUDGET (FIXED) ====================
+    // ==================== PUBLISH BUDGET ====================
     function publishBudget() {
         if (budgetLines.length === 0) {
             showCenteredAlert("You must add at least one budget line before publishing.");
@@ -625,7 +616,6 @@
     }
 
     function createNewCostCodeList() {
-        // Only shown when not locked
         document.getElementById('uploadCodesModal').close();
         const listName = prompt("Enter name for the new cost code list:");
         if (!listName) return;
@@ -644,7 +634,7 @@
         alert(`File selected: ${file.name}\nMode: ${mode}\n\nFull Excel/CSV parsing will be implemented in the next update.`);
     }
 
-    // ==================== EXPORT & PRINT (FIXED - CLEAN OUTPUT) ====================
+    // ==================== EXPORT & PRINT (DOCUMENT VIEWER STYLE) ====================
     function exportBudget() {
         const data = budgetLines.map(line => ({
             "Cost Code": line.cost_code,
@@ -683,66 +673,64 @@
     function printBudget(type) {
         document.getElementById('printChoiceModal').close();
 
-        const printArea = document.createElement('div');
-        printArea.style.position = 'absolute';
-        printArea.style.left = '-9999px';
-
-        let html = '';
-
+        const content = document.getElementById('printContent');
+        
         if (type === 'aia') {
-            html = `
-                <h1 style="text-align:center; font-size:22px; margin-bottom:4px;">Budget</h1>
-                <p style="text-align:center; font-size:12px; color:#666; margin-bottom:20px;">AIA G703 Format</p>
-                <table style="width:100%; border-collapse:collapse; font-size:12px;">
+            content.innerHTML = `
+                <div class="text-center mb-8">
+                    <h1 class="text-3xl font-bold">Budget</h1>
+                    <p class="text-sm text-gray-600">AIA G703 Format</p>
+                </div>
+                <table class="w-full border text-sm">
                     <thead>
-                        <tr style="background:#f3f4f6;">
-                            <th style="border:1px solid #ccc; padding:6px; text-align:left;">Cost Code</th>
-                            <th style="border:1px solid #ccc; padding:6px; text-align:left;">Description</th>
-                            <th style="border:1px solid #ccc; padding:6px; text-align:left;">Cost Type</th>
-                            <th style="border:1px solid #ccc; padding:6px; text-align:right;">Original Budget</th>
-                            <th style="border:1px solid #ccc; padding:6px; text-align:right;">Approved Changes</th>
-                            <th style="border:1px solid #ccc; padding:6px; text-align:right;">Current Budget</th>
+                        <tr class="bg-gray-100">
+                            <th class="border p-2">Cost Code</th>
+                            <th class="border p-2">Description</th>
+                            <th class="border p-2">Cost Type</th>
+                            <th class="border p-2 text-right">Original Budget</th>
+                            <th class="border p-2 text-right">Approved Changes</th>
+                            <th class="border p-2 text-right">Current Budget</th>
                         </tr>
                     </thead>
                     <tbody>
                         ${budgetLines.map(line => `
                             <tr>
-                                <td style="border:1px solid #ccc; padding:6px; font-family:monospace;">${line.cost_code}</td>
-                                <td style="border:1px solid #ccc; padding:6px;">${line.description}</td>
-                                <td style="border:1px solid #ccc; padding:6px;">${line.cost_type}</td>
-                                <td style="border:1px solid #ccc; padding:6px; text-align:right;">${formatCurrency(line.original_budget)}</td>
-                                <td style="border:1px solid #ccc; padding:6px; text-align:right;">${formatCurrency(line.approved_changes)}</td>
-                                <td style="border:1px solid #ccc; padding:6px; text-align:right; font-weight:600;">${formatCurrency(line.original_budget + line.approved_changes)}</td>
+                                <td class="border p-2 font-mono">${line.cost_code}</td>
+                                <td class="border p-2">${line.description}</td>
+                                <td class="border p-2">${line.cost_type}</td>
+                                <td class="border p-2 text-right">${formatCurrency(line.original_budget)}</td>
+                                <td class="border p-2 text-right">${formatCurrency(line.approved_changes)}</td>
+                                <td class="border p-2 text-right font-semibold">${formatCurrency(line.original_budget + line.approved_changes)}</td>
                             </tr>
                         `).join('')}
                     </tbody>
                 </table>
             `;
         } else {
-            html = `
-                <h2 style="font-size:18px; margin-bottom:12px;">Budget - Full Detail</h2>
-                <table style="width:100%; border-collapse:collapse; font-size:11px;">
+            content.innerHTML = `
+                <h2 class="text-2xl font-bold mb-4">Budget - Full Detail</h2>
+                <table class="w-full border text-sm">
                     <thead>
-                        <tr style="background:#f3f4f6;">
-                            <th style="border:1px solid #ccc; padding:5px;">Cost Code</th>
-                            <th style="border:1px solid #ccc; padding:5px;">Description</th>
-                            <th style="border:1px solid #ccc; padding:5px;">Cost Type</th>
-                            <th style="border:1px solid #ccc; padding:5px; text-align:right;">Original</th>
-                            <th style="border:1px solid #ccc; padding:5px; text-align:right;">Changes</th>
-                            <th style="border:1px solid #ccc; padding:5px; text-align:right;">Current</th>
-                            <th style="border:1px solid #ccc; padding:5px;">Notes</th>
+                        <tr class="bg-gray-100">
+                            <th class="border p-2">Cost Code</th>
+                            <th class="border p-2">Description</th>
+                            <th class="border p-2">Cost Type</th>
+                            <th class="border p-2 text-right">Original</th>
+                            <th class="border p-2 text-right">Changes</th>
+                            <th class="border p-2 text-right">Current</th>
+                            <th class="border p-2">Notes</th>
                         </tr>
                     </thead>
                     <tbody>
                         ${budgetLines.map(line => `
                             <tr>
-                                <td style="border:1px solid #ccc; padding:5px; font-family:monospace;">${line.cost_code}</td>
-                                <td style="border:1px solid #ccc; padding:5px;">${line.description}</td>
-                                <td style="border:1px solid #ccc; padding:5px;">${line.cost_type}</td>
-                                <td style="border:1px solid #ccc; padding:5px; text-align:right;">${formatCurrency(line.original_budget)}</td>
-                                <td style="border:1px solid #ccc; padding:5px; text-align:right;">${formatCurrency(line.approved_changes)}</td>
-                                <td style="border:1px solid #ccc; padding:5px; text-align:right;">${formatCurrency(line.original_budget + line.approved_changes)}</td>
-                                <td style="border:1px solid #ccc; padding:5px;">${line.notes || ''}</td>
+                                <td class="border p-2 font-mono">${line.cost_code}</td>
+                                <td class="border p-2">${line.description}</td>
+                                <td class="border p-2">${line.cost_type}</td>
+                                <td class="border p-2 text-right">${formatCurrency(line.original_budget)}</td>
+                                <td class="border p-2 text-right">${formatCurrency(line.approved_changes)}</td>
+                                <td class="border p-2 text-right">${formatCurrency(line.original_budget + line.approved_changes)}</td>
+                                <td class="border p-2">${line.notes || ''}</td>
                             </tr>
                         `).join('')}
                     </tbody>
@@ -750,13 +738,14 @@
             `;
         }
 
-        printArea.innerHTML = html;
-        document.body.appendChild(printArea);
-        window.print();
+        document.getElementById('printPreviewModal').showModal();
+    }
 
+    function triggerPrintFromPreview() {
+        document.getElementById('printPreviewModal').close();
         setTimeout(() => {
-            printArea.remove();
-        }, 100);
+            window.print();
+        }, 300);
     }
 
     // ==================== INITIALIZATION ====================
