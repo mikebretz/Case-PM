@@ -211,3 +211,69 @@
 
         <!-- Your existing Budget content starts here -->
         <div class="flex-1 overflow-auto p-6">
+            <!-- Summary Cards -->
+            <div class="grid grid-cols-1 md:grid-cols-7 gap-4 mb-6">
+                
+                <div class="bg-zinc-900 border border-zinc-800 rounded-md p-5">
+                    <div class="text-sm text-zinc-400">Contract Amount</div>
+                    <div id="contractAmount" class="text-3xl font-semibold mt-1">$2,450,000</div>
+                </div>
+                
+                <div class="bg-zinc-900 border border-zinc-800 rounded-md p-5">
+                    <div class="text-sm text-zinc-400">Original Budget</div>
+                    <div id="originalBudgetTotal" class="text-3xl font-semibold mt-1">$0</div>
+                </div>
+                
+                <div class="bg-zinc-900 border border-zinc-800 rounded-md p-5">
+                    <div class="text-sm text-zinc-400">Approved Changes</div>
+                    <div id="approvedChangesTotal" class="text-3xl font-semibold mt-1 text-amber-400">$0</div>
+                </div>
+                
+                <div class="bg-zinc-900 border border-zinc-800 rounded-md p-5">
+                    <div class="text-sm text-zinc-400">Pending Changes</div>
+                    <div id="pendingChangesTotal" class="text-3xl font-semibold mt-1 text-orange-400">$0</div>
+                </div>
+                
+                <div class="bg-zinc-900 border border-zinc-800 rounded-md p-5">
+                    <div class="text-sm text-zinc-400">Current Budget</div>
+                    <div id="currentBudgetTotal" class="text-3xl font-semibold mt-1 text-emerald-400">$0</div>
+                </div>
+                
+                <div class="bg-zinc-900 border border-zinc-800 rounded-md p-5">
+                    <div class="text-sm text-zinc-400">Projected Final Cost</div>
+                    <div id="projectedFinalTotal" class="text-3xl font-semibold mt-1 text-emerald-400">$0</div>
+                </div>
+                
+                <div class="bg-zinc-900 border border-zinc-800 rounded-md p-5">
+                    <div class="text-sm text-zinc-400">Variance</div>
+                    <div id="varianceTotal" class="text-3xl font-semibold mt-1 text-emerald-400">$0</div>
+                </div>
+            </div>
+
+            <!-- Budget Table -->
+            <div class="bg-zinc-900 border border-zinc-800 rounded-md overflow-hidden">
+                <div class="px-6 py-4 border-b border-zinc-800 flex items-center justify-between">
+                    <div class="font-semibold">Budget Line Items</div>
+                    <div class="text-sm text-zinc-400" id="lineCount">0 lines</div>
+                </div>
+                
+                <table class="w-full">
+                    <thead class="bg-zinc-950 text-sm">
+                        <tr>
+                            <th class="px-6 py-3 text-left font-medium text-zinc-400 w-24 whitespace-nowrap">Cost Code</th>
+                            <th class="px-6 py-3 text-left font-medium text-zinc-400 min-w-[280px]">Description</th>
+                            <th class="px-6 py-3 text-center font-medium text-zinc-400 w-28 whitespace-nowrap">Cost Type</th>
+                            <th class="px-6 py-3 text-right font-medium text-zinc-400 w-28">Original</th>
+                            <th class="px-6 py-3 text-right font-medium text-zinc-400 w-24">Changes</th>
+                            <th class="px-6 py-3 text-right font-medium text-zinc-400 w-24">Pending</th>
+                            <th class="px-6 py-3 text-right font-medium text-zinc-400 w-28">Current</th>
+                            <th class="px-6 py-3 text-right font-medium text-zinc-400 w-28">Forecast</th>
+                            <th class="px-6 py-3 text-left font-medium text-zinc-400 min-w-[320px]">Notes</th>
+                            <th class="px-6 py-3 w-20"></th>
+                        </tr>
+                    </thead>
+                    <tbody id="budgetTableBody" class="text-sm divide-y divide-zinc-800">
+                        <!-- Populated by JavaScript -->
+                    </tbody>
+                </table>
+            </div>
