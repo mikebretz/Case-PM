@@ -843,3 +843,18 @@
 
 </body>
 </html>
+    // ==================== NAVIGATION WARNING (like Budget page) ====================
+    let hasUnsavedChanges = false;
+
+    function warnBeforeLeaving(e) {
+        if (hasUnsavedChanges) {
+            e.preventDefault();
+            e.returnValue = "You have unsaved changes on the Companies page. Are you sure you want to leave?";
+            return e.returnValue;
+        }
+    }
+
+    // Optional: You can set hasUnsavedChanges = true inside saveCompany if you want stricter behavior
+    // For now we keep it simple and only warn on actual navigation
+
+    window.addEventListener('beforeunload', warnBeforeLeaving);
