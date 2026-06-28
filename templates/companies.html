@@ -11,17 +11,15 @@
         body { background-color: #18181b; color: #e4e4e7; }
         .nav-link.active { background-color: #27272a; color: white; }
         .modal { background-color: #18181b; border: 1px solid #3f3f46; color: white; }
-        .section-header { font-size: 10px; text-transform: uppercase; letter-spacing: 0.5px; color: #71717a; }
+        .section-header { font-size: 10px; text-transform: uppercase; letter-spacing: 0.5px; color: #71717a; margin-bottom: 8px; }
     </style>
 </head>
 <body class="bg-zinc-950 text-zinc-200">
 
 <div class="flex h-screen overflow-hidden">
 
-    <!-- ==================== FULL CORRECT SIDEBAR (from base.html) ==================== -->
+    <!-- ==================== FULL CORRECT SIDEBAR ==================== -->
     <div class="w-64 bg-zinc-900 border-r border-zinc-800 flex flex-col">
-        
-        <!-- Logo -->
         <div class="px-6 py-5 border-b border-zinc-800">
             <div class="flex items-center gap-3">
                 <div class="w-9 h-9 bg-emerald-600 rounded-2xl flex items-center justify-center">
@@ -34,18 +32,14 @@
             </div>
         </div>
 
-        <!-- Navigation -->
         <div class="flex-1 overflow-y-auto sidebar px-3 py-4 text-sm">
-            
             <!-- Main -->
             <div class="px-3 mb-2">
                 <div class="section-header px-3 mb-1">Main</div>
             </div>
-            
             <a href="{{ url_for('dashboard') }}" class="nav-link flex items-center gap-3 px-4 py-2.5 rounded-2xl mb-1 {% if request.endpoint == 'dashboard' %}active{% endif %}">
                 <i class="fa-solid fa-home w-5"></i><span>Dashboard</span>
             </a>
-            
             <a href="{{ url_for('projects_page') }}" class="nav-link flex items-center gap-3 px-4 py-2.5 rounded-2xl mb-1 {% if request.endpoint == 'projects_page' %}active{% endif %}">
                 <i class="fa-solid fa-folder w-5"></i><span>Projects</span>
             </a>
@@ -54,35 +48,27 @@
             <div class="px-3 mt-4 mb-2">
                 <div class="section-header px-3 mb-1">Core Modules</div>
             </div>
-
             <a href="{{ url_for('daily_log') }}" class="nav-link flex items-center gap-3 px-4 py-2.5 rounded-2xl mb-1 {% if request.endpoint == 'daily_log' %}active{% endif %}">
                 <i class="fa-solid fa-clipboard-list w-5"></i><span>Daily Log</span>
             </a>
-
             <a href="{{ url_for('weekly_report') }}" class="nav-link flex items-center gap-3 px-4 py-2.5 rounded-2xl mb-1 {% if request.endpoint == 'weekly_report' %}active{% endif %}">
                 <i class="fa-solid fa-calendar-week w-5"></i><span>Weekly Report</span>
             </a>
-
             <a href="{{ url_for('schedule_page') }}" class="nav-link flex items-center gap-3 px-4 py-2.5 rounded-2xl mb-1 {% if request.endpoint == 'schedule_page' %}active{% endif %}">
                 <i class="fa-solid fa-calendar-alt w-5"></i><span>Schedule</span>
             </a>
-
             <a href="{{ url_for('rfis_page') }}" class="nav-link flex items-center gap-3 px-4 py-2.5 rounded-2xl mb-1 {% if request.endpoint == 'rfis_page' %}active{% endif %}">
                 <i class="fa-solid fa-question-circle w-5"></i><span>RFIs</span>
             </a>
-
             <a href="{{ url_for('change_orders_page') }}" class="nav-link flex items-center gap-3 px-4 py-2.5 rounded-2xl mb-1 {% if request.endpoint == 'change_orders_page' %}active{% endif %}">
                 <i class="fa-solid fa-exchange-alt w-5"></i><span>Change Orders</span>
             </a>
-
             <a href="{{ url_for('submittals_page') }}" class="nav-link flex items-center gap-3 px-4 py-2.5 rounded-2xl mb-1 {% if request.endpoint == 'submittals_page' %}active{% endif %}">
                 <i class="fa-solid fa-file-upload w-5"></i><span>Submittals</span>
             </a>
-
             <a href="{{ url_for('punch_list_page') }}" class="nav-link flex items-center gap-3 px-4 py-2.5 rounded-2xl mb-1 {% if request.endpoint == 'punch_list_page' %}active{% endif %}">
                 <i class="fa-solid fa-tasks w-5"></i><span>Punch List</span>
             </a>
-
             <a href="{{ url_for('safety_page') }}" class="nav-link flex items-center gap-3 px-4 py-2.5 rounded-2xl mb-1 {% if request.endpoint == 'safety_page' %}active{% endif %}">
                 <i class="fa-solid fa-shield-alt w-5"></i><span>Safety</span>
             </a>
@@ -91,15 +77,12 @@
             <div class="px-3 mt-4 mb-2">
                 <div class="section-header px-3 mb-1">Financial</div>
             </div>
-
             <a href="{{ url_for('budget_page') }}" class="nav-link flex items-center gap-3 px-4 py-2.5 rounded-2xl mb-1 {% if request.endpoint == 'budget_page' %}active{% endif %}">
                 <i class="fa-solid fa-chart-pie w-5"></i><span>Budget</span>
             </a>
-
             <a href="{{ url_for('commitments_page') }}" class="nav-link flex items-center gap-3 px-4 py-2.5 rounded-2xl mb-1 {% if request.endpoint == 'commitments_page' %}active{% endif %}">
                 <i class="fa-solid fa-handshake w-5"></i><span>Commitments</span>
             </a>
-
             <a href="{{ url_for('pay_applications_page') }}" class="nav-link flex items-center gap-3 px-4 py-2.5 rounded-2xl mb-1 {% if request.endpoint == 'pay_applications_page' %}active{% endif %}">
                 <i class="fa-solid fa-file-invoice-dollar w-5"></i><span>Pay Applications</span>
             </a>
@@ -108,27 +91,21 @@
             <div class="px-3 mt-4 mb-2">
                 <div class="section-header px-3 mb-1">Field &amp; Docs</div>
             </div>
-
             <a href="{{ url_for('photos_page') }}" class="nav-link flex items-center gap-3 px-4 py-2.5 rounded-2xl mb-1 {% if request.endpoint == 'photos_page' %}active{% endif %}">
                 <i class="fa-solid fa-camera w-5"></i><span>Photos</span>
             </a>
-
             <a href="{{ url_for('documents_page') }}" class="nav-link flex items-center gap-3 px-4 py-2.5 rounded-2xl mb-1 {% if request.endpoint == 'documents_page' %}active{% endif %}">
                 <i class="fa-solid fa-folder-open w-5"></i><span>Documents</span>
             </a>
-
             <a href="{{ url_for('drawings_page') }}" class="nav-link flex items-center gap-3 px-4 py-2.5 rounded-2xl mb-1 {% if request.endpoint == 'drawings_page' %}active{% endif %}">
                 <i class="fa-solid fa-drafting-compass w-5"></i><span>Drawings</span>
             </a>
-
             <a href="{{ url_for('deliveries_page') }}" class="nav-link flex items-center gap-3 px-4 py-2.5 rounded-2xl mb-1 {% if request.endpoint == 'deliveries_page' %}active{% endif %}">
                 <i class="fa-solid fa-truck w-5"></i><span>Deliveries</span>
             </a>
-
             <a href="{{ url_for('inspections_page') }}" class="nav-link flex items-center gap-3 px-4 py-2.5 rounded-2xl mb-1 {% if request.endpoint == 'inspections_page' %}active{% endif %}">
                 <i class="fa-solid fa-clipboard-check w-5"></i><span>Inspections</span>
             </a>
-
             <a href="{{ url_for('meeting_minutes_page') }}" class="nav-link flex items-center gap-3 px-4 py-2.5 rounded-2xl mb-1 {% if request.endpoint == 'meeting_minutes_page' %}active{% endif %}">
                 <i class="fa-solid fa-sticky-note w-5"></i><span>Meeting Minutes</span>
             </a>
@@ -137,43 +114,36 @@
             <div class="px-3 mt-4 mb-2">
                 <div class="section-header px-3 mb-1">Admin</div>
             </div>
-
             <a href="{{ url_for('companies_page') }}" class="nav-link active flex items-center gap-3 px-4 py-2.5 rounded-2xl mb-1">
                 <i class="fa-solid fa-building w-5"></i><span>Companies / Vendors</span>
             </a>
-
             <a href="{{ url_for('user_management') }}" class="nav-link flex items-center gap-3 px-4 py-2.5 rounded-2xl mb-1 {% if request.endpoint == 'user_management' %}active{% endif %}">
                 <i class="fa-solid fa-users w-5"></i><span>User Management</span>
             </a>
-
             <a href="{{ url_for('program_settings') }}" class="nav-link flex items-center gap-3 px-4 py-2.5 rounded-2xl mb-1 {% if request.endpoint == 'program_settings' %}active{% endif %}">
                 <i class="fa-solid fa-cog w-5"></i><span>Program Settings</span>
             </a>
         </div>
 
         <div class="p-4 border-t border-zinc-800">
-            <div class="text-[10px] text-zinc-500 px-3">
-                Case PM v56.0 • ALDI Lakeland
-            </div>
+            <div class="text-[10px] text-zinc-500 px-3">Case PM v56.0 • ALDI Lakeland</div>
         </div>
     </div>
 
     <!-- Main Content -->
     <div class="flex-1 flex flex-col overflow-hidden">
         
-        <!-- Updated Header -->
+        <!-- Header (Companies title moved more toward center) -->
         <div class="h-16 border-b border-zinc-800 bg-zinc-900 flex items-center justify-between px-6">
-            
-            <!-- Left: Current Project -->
             <div>
                 <div class="text-xs text-zinc-400 tracking-wider">CURRENT PROJECT</div>
                 <div class="text-2xl font-semibold tracking-tight">ALDI Lakeland</div>
             </div>
 
-            <!-- Center/Right: Page Title + Actions -->
-            <div class="flex items-center gap-3">
-                <div class="text-2xl font-semibold text-white mr-4">Companies</div>
+            <!-- Companies title - moved more toward center -->
+            <div class="text-2xl font-semibold text-white absolute left-1/2 transform -translate-x-1/2">Companies</div>
 
+            <div class="flex items-center gap-3">
                 <button onclick="exportCompanies()" class="flex items-center gap-2 px-4 py-2 bg-zinc-800 hover:bg-zinc-700 rounded-md text-sm font-medium">
                     <i class="fa-solid fa-download"></i><span>Export</span>
                 </button>
@@ -186,7 +156,7 @@
             </div>
         </div>
 
-        <!-- Content area starts here -->
+        <!-- Content -->
         <div class="flex-1 overflow-auto p-6">
             
             <!-- Summary Cards -->
@@ -212,649 +182,3 @@
                     <div id="insuranceAlertCount" class="text-3xl font-semibold mt-1 text-orange-400">0</div>
                 </div>
             </div>
-            <!-- Search + Filters -->
-            <div class="flex flex-col md:flex-row gap-3 mb-6">
-                <div class="flex-1">
-                    <div class="relative">
-                        <input type="text" id="searchInput" placeholder="Search companies, trade, or email..." 
-                               class="w-full bg-zinc-900 border border-zinc-700 rounded-md px-4 py-2.5 pl-10 text-sm focus:outline-none focus:border-emerald-500"
-                               onkeyup="filterCompanies()">
-                        <i class="fa-solid fa-search absolute left-3.5 top-3 text-zinc-500"></i>
-                    </div>
-                </div>
-                
-                <select id="typeFilter" onchange="filterCompanies()" 
-                        class="bg-zinc-900 border border-zinc-700 rounded-md px-4 py-2.5 text-sm focus:outline-none focus:border-emerald-500 min-w-[160px]">
-                    <option value="">All Types</option>
-                    <option value="Subcontractor">Subcontractor</option>
-                    <option value="Supplier">Supplier / Vendor</option>
-                    <option value="Client">Client / Owner</option>
-                    <option value="Architect">Architect</option>
-                    <option value="Engineer">Engineer</option>
-                    <option value="Consultant">Consultant</option>
-                    <option value="Other">Other</option>
-                </select>
-
-                <select id="statusFilter" onchange="filterCompanies()" 
-                        class="bg-zinc-900 border border-zinc-700 rounded-md px-4 py-2.5 text-sm focus:outline-none focus:border-emerald-500 min-w-[140px]">
-                    <option value="">All Statuses</option>
-                    <option value="Active">Active</option>
-                    <option value="Inactive">Inactive</option>
-                    <option value="Pending">Pending</option>
-                </select>
-
-                <button onclick="clearCompanyFilters()" 
-                        class="px-5 py-2.5 text-sm bg-zinc-800 hover:bg-zinc-700 border border-zinc-700 rounded-md transition-colors">
-                    Clear Filters
-                </button>
-            </div>
-
-            <!-- Companies Table -->
-            <div class="bg-zinc-900 border border-zinc-800 rounded-md overflow-hidden">
-                <div class="px-6 py-4 border-b border-zinc-800 flex items-center justify-between">
-                    <div class="font-semibold">All Companies</div>
-                    <div class="text-sm text-zinc-400" id="companyCount">0 companies</div>
-                </div>
-                
-                <table class="w-full">
-                    <thead class="bg-zinc-950 text-sm">
-                        <tr>
-                            <th class="px-6 py-3 text-left font-medium text-zinc-400">Company Name</th>
-                            <th class="px-6 py-3 text-left font-medium text-zinc-400 w-28">Type</th>
-                            <th class="px-6 py-3 text-left font-medium text-zinc-400">Primary Contact</th>
-                            <th class="px-6 py-3 text-left font-medium text-zinc-400 w-36">Phone</th>
-                            <th class="px-6 py-3 text-left font-medium text-zinc-400">Email</th>
-                            <th class="px-6 py-3 text-center font-medium text-zinc-400 w-20">License</th>
-                            <th class="px-6 py-3 text-center font-medium text-zinc-400 w-20">Insurance</th>
-                            <th class="px-6 py-3 w-16"></th>
-                        </tr>
-                    </thead>
-                    <tbody id="companiesTableBody" class="text-sm divide-y divide-zinc-800">
-                        <!-- Populated by JavaScript -->
-                    </tbody>
-                </table>
-            </div>
-<!-- ==================== RICH ADD/EDIT COMPANY MODAL ==================== -->
-<dialog id="companyModal" class="modal rounded-md w-full max-w-4xl p-0 text-white">
-    <div class="p-6 max-h-[92vh] overflow-auto">
-        <div class="flex justify-between items-center mb-6 sticky top-0 bg-zinc-900 pb-4 z-10">
-            <h3 id="modalTitle" class="text-2xl font-semibold">Add Company</h3>
-            <button onclick="document.getElementById('companyModal').close()" class="text-zinc-400 hover:text-white text-2xl leading-none">×</button>
-        </div>
-
-        <form id="companyForm" onsubmit="saveCompany(event)">
-            <input type="hidden" id="companyId">
-
-            <!-- COMPANY PROFILE -->
-            <div class="mb-8">
-                <div class="section-header mb-3">COMPANY PROFILE</div>
-                <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    <div class="md:col-span-2">
-                        <label class="block text-sm text-zinc-300 mb-1.5">Company Name *</label>
-                        <input type="text" id="company_name" class="w-full bg-zinc-800 border border-zinc-700 rounded-md px-4 py-2.5 text-sm" required>
-                    </div>
-                    <div>
-                        <label class="block text-sm text-zinc-300 mb-1.5">Company Type *</label>
-                        <select id="company_type" class="w-full bg-zinc-800 border border-zinc-700 rounded-md px-4 py-2.5 text-sm" required>
-                            <option value="Subcontractor">Subcontractor</option>
-                            <option value="Supplier">Supplier / Vendor</option>
-                            <option value="Client">Client / Owner</option>
-                            <option value="Architect">Architect</option>
-                            <option value="Engineer">Engineer</option>
-                            <option value="Consultant">Consultant</option>
-                            <option value="Other">Other</option>
-                        </select>
-                    </div>
-                    <div>
-                        <label class="block text-sm text-zinc-300 mb-1.5">Trade / Specialty</label>
-                        <input type="text" id="trade" class="w-full bg-zinc-800 border border-zinc-700 rounded-md px-4 py-2.5 text-sm" placeholder="e.g. Electrical, HVAC, Concrete">
-                    </div>
-                    <div>
-                        <label class="block text-sm text-zinc-300 mb-1.5">Website</label>
-                        <input type="text" id="website" class="w-full bg-zinc-800 border border-zinc-700 rounded-md px-4 py-2.5 text-sm">
-                    </div>
-                    <div>
-                        <label class="block text-sm text-zinc-300 mb-1.5">Primary Phone</label>
-                        <input type="text" id="primary_phone" class="w-full bg-zinc-800 border border-zinc-700 rounded-md px-4 py-2.5 text-sm">
-                    </div>
-                    <div>
-                        <label class="block text-sm text-zinc-300 mb-1.5">Primary Email</label>
-                        <input type="email" id="primary_email" class="w-full bg-zinc-800 border border-zinc-700 rounded-md px-4 py-2.5 text-sm">
-                    </div>
-                    <div>
-                        <label class="block text-sm text-zinc-300 mb-1.5">Tax ID / EIN</label>
-                        <input type="text" id="tax_id" class="w-full bg-zinc-800 border border-zinc-700 rounded-md px-4 py-2.5 text-sm">
-                    </div>
-                    <div>
-                        <label class="block text-sm text-zinc-300 mb-1.5">W9 on File</label>
-                        <select id="w9_status" class="w-full bg-zinc-800 border border-zinc-700 rounded-md px-4 py-2.5 text-sm">
-                            <option value="Yes">Yes</option>
-                            <option value="No">No</option>
-                            <option value="Requested">Requested</option>
-                        </select>
-                    </div>
-                    <div class="md:col-span-2">
-                        <label class="block text-sm text-zinc-300 mb-1.5">Status</label>
-                        <select id="status" class="w-full bg-zinc-800 border border-zinc-700 rounded-md px-4 py-2.5 text-sm">
-                            <option value="Active">Active</option>
-                            <option value="Inactive">Inactive</option>
-                            <option value="Pending">Pending</option>
-                        </select>
-                    </div>
-                </div>
-            </div>
-
-            <!-- ADDRESSES -->
-            <div class="mb-8">
-                <div class="section-header mb-3">ADDRESSES</div>
-                <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    <div>
-                        <label class="block text-sm text-zinc-300 mb-1.5">Billing Address</label>
-                        <textarea id="billing_address" rows="3" class="w-full bg-zinc-800 border border-zinc-700 rounded-md px-4 py-2.5 text-sm"></textarea>
-                    </div>
-                    <div>
-                        <label class="block text-sm text-zinc-300 mb-1.5">Shipping / Job Address</label>
-                        <textarea id="shipping_address" rows="3" class="w-full bg-zinc-800 border border-zinc-700 rounded-md px-4 py-2.5 text-sm"></textarea>
-                    </div>
-                </div>
-            </div>
-
-            <!-- CONTACTS -->
-            <div class="mb-8">
-                <div class="flex items-center justify-between mb-3">
-                    <div class="section-header">CONTACTS</div>
-                    <button type="button" onclick="addContactRow()" class="text-xs px-3 py-1.5 bg-zinc-700 hover:bg-zinc-600 rounded-md flex items-center gap-1.5">
-                        <i class="fa-solid fa-plus text-xs"></i> Add Contact
-                    </button>
-                </div>
-                <div id="contactsContainer" class="space-y-3"></div>
-            </div>
-
-            <!-- LICENSES & CERTIFICATIONS -->
-            <div class="mb-8">
-                <div class="section-header mb-3">LICENSES & CERTIFICATIONS</div>
-                <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
-                    <div>
-                        <label class="block text-sm text-zinc-300 mb-1.5">Contractor License #</label>
-                        <input type="text" id="license_number" class="w-full bg-zinc-800 border border-zinc-700 rounded-md px-4 py-2.5 text-sm">
-                    </div>
-                    <div>
-                        <label class="block text-sm text-zinc-300 mb-1.5">License State</label>
-                        <input type="text" id="license_state" class="w-full bg-zinc-800 border border-zinc-700 rounded-md px-4 py-2.5 text-sm">
-                    </div>
-                    <div>
-                        <label class="block text-sm text-zinc-300 mb-1.5">License Expiration</label>
-                        <input type="date" id="license_expiration" class="w-full bg-zinc-800 border border-zinc-700 rounded-md px-4 py-2.5 text-sm">
-                    </div>
-                    <div class="md:col-span-3">
-                        <label class="block text-sm text-zinc-300 mb-1.5">Additional Certifications / Notes</label>
-                        <textarea id="license_notes" rows="2" class="w-full bg-zinc-800 border border-zinc-700 rounded-md px-4 py-2.5 text-sm"></textarea>
-                    </div>
-                </div>
-            </div>
-
-            <!-- INSURANCE & COMPLIANCE -->
-            <div class="mb-8">
-                <div class="section-header mb-3">INSURANCE & COMPLIANCE</div>
-                <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    <div>
-                        <label class="block text-sm text-zinc-300 mb-1.5">General Liability Carrier</label>
-                        <input type="text" id="gl_carrier" class="w-full bg-zinc-800 border border-zinc-700 rounded-md px-4 py-2.5 text-sm">
-                    </div>
-                    <div>
-                        <label class="block text-sm text-zinc-300 mb-1.5">GL Policy # / Expiration</label>
-                        <div class="flex gap-2">
-                            <input type="text" id="gl_policy" class="flex-1 bg-zinc-800 border border-zinc-700 rounded-md px-4 py-2.5 text-sm" placeholder="Policy #">
-                            <input type="date" id="gl_expiration" class="flex-1 bg-zinc-800 border border-zinc-700 rounded-md px-4 py-2.5 text-sm">
-                        </div>
-                    </div>
-                    <div>
-                        <label class="block text-sm text-zinc-300 mb-1.5">Workers Comp Carrier</label>
-                        <input type="text" id="wc_carrier" class="w-full bg-zinc-800 border border-zinc-700 rounded-md px-4 py-2.5 text-sm">
-                    </div>
-                    <div>
-                        <label class="block text-sm text-zinc-300 mb-1.5">WC Policy # / Expiration</label>
-                        <div class="flex gap-2">
-                            <input type="text" id="wc_policy" class="flex-1 bg-zinc-800 border border-zinc-700 rounded-md px-4 py-2.5 text-sm" placeholder="Policy #">
-                            <input type="date" id="wc_expiration" class="flex-1 bg-zinc-800 border border-zinc-700 rounded-md px-4 py-2.5 text-sm">
-                        </div>
-                    </div>
-                    <div class="md:col-span-2">
-                        <label class="block text-sm text-zinc-300 mb-1.5">COI Status</label>
-                        <div class="flex items-center gap-4">
-                            <select id="coi_status" class="bg-zinc-800 border border-zinc-700 rounded-md px-4 py-2.5 text-sm">
-                                <option value="Yes">Yes - On File</option>
-                                <option value="No">No</option>
-                                <option value="Expired">Expired</option>
-                            </select>
-                            <div class="flex items-center gap-2">
-                                <input type="date" id="coi_last_updated" class="bg-zinc-800 border border-zinc-700 rounded-md px-4 py-2 text-sm">
-                                <span class="text-xs text-zinc-400">Last Updated</span>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-            </div>
-
-            <!-- NOTES -->
-            <div class="mb-6">
-                <div class="section-header mb-3">NOTES / INTERNAL COMMENTS</div>
-                <textarea id="notes" rows="4" class="w-full bg-zinc-800 border border-zinc-700 rounded-md px-4 py-2.5 text-sm"></textarea>
-            </div>
-
-            <div class="flex justify-end gap-3 pt-4 border-t border-zinc-700 sticky bottom-0 bg-zinc-900">
-                <button type="button" onclick="document.getElementById('companyModal').close()" class="px-6 py-2.5 rounded-md bg-zinc-700 hover:bg-zinc-600 text-sm">Cancel</button>
-                <button type="submit" class="px-8 py-2.5 rounded-md bg-emerald-600 hover:bg-emerald-500 text-sm font-semibold">Save Company</button>
-            </div>
-        </form>
-    </div>
-</dialog>
-<script>
-    // ==================== RICH DATA & STATE ====================
-    let companies = [
-        {
-            id: 1,
-            company_name: "Titan Electric LLC",
-            company_type: "Subcontractor",
-            trade: "Electrical",
-            website: "https://titanelectric.com",
-            primary_phone: "(813) 555-0192",
-            primary_email: "info@titanelectric.com",
-            tax_id: "59-XXXXXXX",
-            w9_status: "Yes",
-            status: "Active",
-            billing_address: "4520 N 56th St, Tampa, FL 33610",
-            shipping_address: "Same as billing",
-            contacts: [
-                { name: "Mike Torres", title: "Project Manager", phone: "(813) 555-0192", email: "mtorres@titanelectric.com", mobile: "(813) 555-8841", is_primary: true },
-                { name: "Sarah Kline", title: "Estimator", phone: "(813) 555-0193", email: "skline@titanelectric.com", mobile: "", is_primary: false }
-            ],
-            license_number: "EC-13004567",
-            license_state: "FL",
-            license_expiration: "2027-06-30",
-            license_notes: "Unlimited Electrical Contractor",
-            gl_carrier: "Travelers",
-            gl_policy: "GL-9847321",
-            gl_expiration: "2026-12-31",
-            wc_carrier: "Liberty Mutual",
-            wc_policy: "WC-449201",
-            wc_expiration: "2026-11-15",
-            coi_status: "Yes",
-            coi_last_updated: "2026-05-12",
-            notes: "Preferred electrical subcontractor for ALDI projects. Fast and clean work."
-        },
-        {
-            id: 2,
-            company_name: "Precision Concrete Solutions",
-            company_type: "Subcontractor",
-            trade: "Concrete",
-            website: "",
-            primary_phone: "(727) 555-3389",
-            primary_email: "bids@precisionconcretefl.com",
-            tax_id: "",
-            w9_status: "Yes",
-            status: "Active",
-            billing_address: "1987 4th St N, St. Petersburg, FL 33704",
-            shipping_address: "",
-            contacts: [
-                { name: "David Ramirez", title: "Owner", phone: "(727) 555-3389", email: "dramirez@precisionconcretefl.com", mobile: "(727) 555-9912", is_primary: true }
-            ],
-            license_number: "CBC-1256789",
-            license_state: "FL",
-            license_expiration: "2026-09-30",
-            license_notes: "",
-            gl_carrier: "CNA",
-            gl_policy: "GL-7729103",
-            gl_expiration: "2026-08-15",
-            wc_carrier: "Zenith",
-            wc_policy: "WC-882103",
-            wc_expiration: "2026-10-01",
-            coi_status: "Yes",
-            coi_last_updated: "2026-04-28",
-            notes: "Excellent on ALDI Lakeland. Very responsive on RFIs."
-        },
-        {
-            id: 3,
-            company_name: "ALDI US Real Estate",
-            company_type: "Client",
-            trade: "",
-            website: "https://www.aldi.us",
-            primary_phone: "(630) 555-1000",
-            primary_email: "construction@aldi.us",
-            tax_id: "",
-            w9_status: "N/A",
-            status: "Active",
-            billing_address: "1200 N Kirk Rd, Batavia, IL 60510",
-            shipping_address: "",
-            contacts: [
-                { name: "Jennifer Walsh", title: "Director of Construction - Southeast", phone: "(630) 555-2147", email: "jwalsh@aldi.us", mobile: "", is_primary: true }
-            ],
-            license_number: "",
-            license_state: "",
-            license_expiration: "",
-            license_notes: "",
-            gl_carrier: "",
-            gl_policy: "",
-            gl_expiration: "",
-            wc_carrier: "",
-            wc_policy: "",
-            wc_expiration: "",
-            coi_status: "N/A",
-            coi_last_updated: "",
-            notes: "Owner for all ALDI Florida projects."
-        }
-    ];
-
-    function formatDate(dateStr) {
-        if (!dateStr) return '—';
-        const d = new Date(dateStr);
-        return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
-    }
-
-    function updateSummaryCards() {
-        document.getElementById('totalCompanies').textContent = companies.length;
-        document.getElementById('subcontractorCount').textContent = companies.filter(c => c.company_type === 'Subcontractor').length;
-        document.getElementById('supplierCount').textContent = companies.filter(c => c.company_type === 'Supplier').length;
-        document.getElementById('clientCount').textContent = companies.filter(c => c.company_type === 'Client').length;
-
-        const now = new Date();
-        const sixtyDays = new Date(now.getTime() + (60 * 24 * 60 * 60 * 1000));
-        let expiring = 0;
-        companies.forEach(c => {
-            if (c.gl_expiration && new Date(c.gl_expiration) < sixtyDays) expiring++;
-            if (c.wc_expiration && new Date(c.wc_expiration) < sixtyDays) expiring++;
-        });
-        document.getElementById('insuranceAlertCount').textContent = expiring;
-    }
-
-    function renderCompaniesTable(filteredCompanies = null) {
-        const tbody = document.getElementById('companiesTableBody');
-        if (!tbody) return;
-        tbody.innerHTML = '';
-
-        const data = filteredCompanies || companies;
-
-        if (data.length === 0) {
-            tbody.innerHTML = `<tr><td colspan="8" class="px-6 py-8 text-center text-zinc-500">No companies found.</td></tr>`;
-            return;
-        }
-
-        data.forEach(company => {
-            const primaryContact = company.contacts && company.contacts.length > 0 
-                ? company.contacts.find(c => c.is_primary) || company.contacts[0] 
-                : null;
-
-            const licenseStatus = company.license_expiration 
-                ? (new Date(company.license_expiration) < new Date() ? 'Expired' : 'Valid') 
-                : 'N/A';
-
-            const insuranceStatus = company.coi_status === 'Yes' ? 'Current' : 
-                                   (company.coi_status === 'Expired' ? 'Expired' : 'N/A');
-
-            const row = document.createElement('tr');
-            row.className = 'hover:bg-zinc-800/60 transition-colors cursor-pointer';
-            row.onclick = () => editCompany(company.id);
-
-            row.innerHTML = `
-                <td class="px-6 py-3 font-medium">${company.company_name}</td>
-                <td class="px-6 py-3">
-                    <span class="inline-block px-2.5 py-0.5 rounded-full text-xs font-medium bg-zinc-700 text-zinc-300">
-                        ${company.company_type}
-                    </span>
-                </td>
-                <td class="px-6 py-3 text-sm">${primaryContact ? primaryContact.name : '<span class="text-zinc-500">—</span>'}</td>
-                <td class="px-6 py-3 text-sm font-mono">${company.primary_phone || '<span class="text-zinc-500">—</span>'}</td>
-                <td class="px-6 py-3 text-sm">${company.primary_email || '<span class="text-zinc-500">—</span>'}</td>
-                <td class="px-6 py-3 text-center">
-                    <span class="text-xs px-2 py-0.5 rounded ${licenseStatus === 'Valid' ? 'bg-emerald-900/60 text-emerald-400' : licenseStatus === 'Expired' ? 'bg-red-900/60 text-red-400' : 'bg-zinc-700 text-zinc-400'}">
-                        ${licenseStatus}
-                    </span>
-                </td>
-                <td class="px-6 py-3 text-center">
-                    <span class="text-xs px-2 py-0.5 rounded ${insuranceStatus === 'Current' ? 'bg-emerald-900/60 text-emerald-400' : insuranceStatus === 'Expired' ? 'bg-red-900/60 text-red-400' : 'bg-zinc-700 text-zinc-400'}">
-                        ${insuranceStatus}
-                    </span>
-                </td>
-                <td class="px-4 py-3">
-                    <div class="flex gap-2 justify-end">
-                        <button onclick="event.stopImmediatePropagation(); editCompany(${company.id})" class="text-zinc-400 hover:text-white"><i class="fa-solid fa-edit"></i></button>
-                        <button onclick="event.stopImmediatePropagation(); deleteCompany(${company.id})" class="text-zinc-400 hover:text-red-400"><i class="fa-solid fa-trash"></i></button>
-                    </div>
-                </td>
-            `;
-            tbody.appendChild(row);
-        });
-
-        document.getElementById('companyCount').textContent = `${data.length} companies`;
-        updateSummaryCards();
-    }
-
-    function filterCompanies() {
-        const searchTerm = document.getElementById('searchInput').value.toLowerCase().trim();
-        const typeFilter = document.getElementById('typeFilter').value;
-        const statusFilter = document.getElementById('statusFilter').value;
-
-        const filtered = companies.filter(company => {
-            const matchesSearch = company.company_name.toLowerCase().includes(searchTerm) ||
-                                (company.trade && company.trade.toLowerCase().includes(searchTerm)) ||
-                                (company.primary_email && company.primary_email.toLowerCase().includes(searchTerm));
-            const matchesType = !typeFilter || company.company_type === typeFilter;
-            const matchesStatus = !statusFilter || company.status === statusFilter;
-            return matchesSearch && matchesType && matchesStatus;
-        });
-
-        renderCompaniesTable(filtered);
-    }
-
-    function clearCompanyFilters() {
-        document.getElementById('searchInput').value = '';
-        document.getElementById('typeFilter').value = '';
-        document.getElementById('statusFilter').value = '';
-        renderCompaniesTable(companies);
-    }
-
-    function addContactRow(contact = null) {
-        const container = document.getElementById('contactsContainer');
-        const div = document.createElement('div');
-        div.className = 'bg-zinc-800 border border-zinc-700 rounded-md p-4';
-        div.innerHTML = `
-            <div class="grid grid-cols-1 md:grid-cols-6 gap-3">
-                <div class="md:col-span-2">
-                    <input type="text" placeholder="Full Name" class="contact-name w-full bg-zinc-900 border border-zinc-600 rounded px-3 py-1.5 text-sm" value="${contact ? contact.name : ''}">
-                </div>
-                <div>
-                    <input type="text" placeholder="Title" class="contact-title w-full bg-zinc-900 border border-zinc-600 rounded px-3 py-1.5 text-sm" value="${contact ? contact.title : ''}">
-                </div>
-                <div>
-                    <input type="text" placeholder="Phone" class="contact-phone w-full bg-zinc-900 border border-zinc-600 rounded px-3 py-1.5 text-sm" value="${contact ? contact.phone : ''}">
-                </div>
-                <div>
-                    <input type="email" placeholder="Email" class="contact-email w-full bg-zinc-900 border border-zinc-600 rounded px-3 py-1.5 text-sm" value="${contact ? contact.email : ''}">
-                </div>
-                <div class="flex items-end gap-2">
-                    <input type="text" placeholder="Mobile" class="contact-mobile flex-1 bg-zinc-900 border border-zinc-600 rounded px-3 py-1.5 text-sm" value="${contact ? contact.mobile : ''}">
-                    <label class="flex items-center gap-1 text-xs whitespace-nowrap cursor-pointer">
-                        <input type="checkbox" class="contact-primary accent-emerald-600" ${contact && contact.is_primary ? 'checked' : ''}> Primary
-                    </label>
-                    <button type="button" onclick="this.closest('.bg-zinc-800').remove()" class="text-red-400 hover:text-red-500 px-2"><i class="fa-solid fa-times"></i></button>
-                </div>
-            </div>
-        `;
-        container.appendChild(div);
-    }
-
-    function showAddCompanyModal() {
-        document.getElementById('companyForm').reset();
-        document.getElementById('companyId').value = '';
-        document.getElementById('modalTitle').innerText = 'Add Company';
-        document.getElementById('contactsContainer').innerHTML = '';
-        addContactRow();
-        document.getElementById('companyModal').showModal();
-    }
-
-    function editCompany(id) {
-        const company = companies.find(c => c.id === id);
-        if (!company) return;
-
-        document.getElementById('companyId').value = company.id;
-        document.getElementById('modalTitle').innerText = 'Edit Company';
-
-        document.getElementById('company_name').value = company.company_name || '';
-        document.getElementById('company_type').value = company.company_type || 'Subcontractor';
-        document.getElementById('trade').value = company.trade || '';
-        document.getElementById('website').value = company.website || '';
-        document.getElementById('primary_phone').value = company.primary_phone || '';
-        document.getElementById('primary_email').value = company.primary_email || '';
-        document.getElementById('tax_id').value = company.tax_id || '';
-        document.getElementById('w9_status').value = company.w9_status || 'Yes';
-        document.getElementById('status').value = company.status || 'Active';
-        document.getElementById('billing_address').value = company.billing_address || '';
-        document.getElementById('shipping_address').value = company.shipping_address || '';
-        document.getElementById('license_number').value = company.license_number || '';
-        document.getElementById('license_state').value = company.license_state || '';
-        document.getElementById('license_expiration').value = company.license_expiration || '';
-        document.getElementById('license_notes').value = company.license_notes || '';
-        document.getElementById('gl_carrier').value = company.gl_carrier || '';
-        document.getElementById('gl_policy').value = company.gl_policy || '';
-        document.getElementById('gl_expiration').value = company.gl_expiration || '';
-        document.getElementById('wc_carrier').value = company.wc_carrier || '';
-        document.getElementById('wc_policy').value = company.wc_policy || '';
-        document.getElementById('wc_expiration').value = company.wc_expiration || '';
-        document.getElementById('coi_status').value = company.coi_status || 'Yes';
-        document.getElementById('coi_last_updated').value = company.coi_last_updated || '';
-        document.getElementById('notes').value = company.notes || '';
-
-        const container = document.getElementById('contactsContainer');
-        container.innerHTML = '';
-        if (company.contacts && company.contacts.length > 0) {
-            company.contacts.forEach(c => addContactRow(c));
-        } else {
-            addContactRow();
-        }
-
-        document.getElementById('companyModal').showModal();
-    }
-
-    function saveCompany(e) {
-        e.preventDefault();
-
-        const id = document.getElementById('companyId').value;
-        const contacts = [];
-        document.querySelectorAll('#contactsContainer > div').forEach(row => {
-            const name = row.querySelector('.contact-name').value.trim();
-            if (!name) return;
-            contacts.push({
-                name: name,
-                title: row.querySelector('.contact-title').value.trim(),
-                phone: row.querySelector('.contact-phone').value.trim(),
-                email: row.querySelector('.contact-email').value.trim(),
-                mobile: row.querySelector('.contact-mobile').value.trim(),
-                is_primary: row.querySelector('.contact-primary').checked
-            });
-        });
-
-        const newCompany = {
-            id: id ? parseInt(id) : Date.now(),
-            company_name: document.getElementById('company_name').value.trim(),
-            company_type: document.getElementById('company_type').value,
-            trade: document.getElementById('trade').value.trim(),
-            website: document.getElementById('website').value.trim(),
-            primary_phone: document.getElementById('primary_phone').value.trim(),
-            primary_email: document.getElementById('primary_email').value.trim(),
-            tax_id: document.getElementById('tax_id').value.trim(),
-            w9_status: document.getElementById('w9_status').value,
-            status: document.getElementById('status').value,
-            billing_address: document.getElementById('billing_address').value.trim(),
-            shipping_address: document.getElementById('shipping_address').value.trim(),
-            contacts: contacts,
-            license_number: document.getElementById('license_number').value.trim(),
-            license_state: document.getElementById('license_state').value.trim(),
-            license_expiration: document.getElementById('license_expiration').value,
-            license_notes: document.getElementById('license_notes').value.trim(),
-            gl_carrier: document.getElementById('gl_carrier').value.trim(),
-            gl_policy: document.getElementById('gl_policy').value.trim(),
-            gl_expiration: document.getElementById('gl_expiration').value,
-            wc_carrier: document.getElementById('wc_carrier').value.trim(),
-            wc_policy: document.getElementById('wc_policy').value.trim(),
-            wc_expiration: document.getElementById('wc_expiration').value,
-            coi_status: document.getElementById('coi_status').value,
-            coi_last_updated: document.getElementById('coi_last_updated').value,
-            notes: document.getElementById('notes').value.trim()
-        };
-
-        if (id) {
-            const index = companies.findIndex(c => c.id == id);
-            companies[index] = newCompany;
-        } else {
-            companies.push(newCompany);
-        }
-
-        document.getElementById('companyModal').close();
-        renderCompaniesTable(companies);
-    }
-
-    function deleteCompany(id) {
-        if (!confirm('Delete this company? This cannot be undone.')) return;
-        companies = companies.filter(c => c.id !== id);
-        renderCompaniesTable(companies);
-    }
-
-    function exportCompanies() {
-        const data = companies.map(c => ({
-            "Company Name": c.company_name,
-            "Type": c.company_type,
-            "Trade": c.trade,
-            "Primary Phone": c.primary_phone,
-            "Primary Email": c.primary_email,
-            "Tax ID": c.tax_id,
-            "W9 Status": c.w9_status,
-            "Status": c.status,
-            "License #": c.license_number,
-            "License State": c.license_state,
-            "License Expiration": c.license_expiration,
-            "GL Carrier": c.gl_carrier,
-            "GL Expiration": c.gl_expiration,
-            "WC Carrier": c.wc_carrier,
-            "WC Expiration": c.wc_expiration,
-            "COI Status": c.coi_status,
-            "Notes": c.notes
-        }));
-        const ws = XLSX.utils.json_to_sheet(data);
-        const wb = XLSX.utils.book_new();
-        XLSX.utils.book_append_sheet(wb, ws, "Companies");
-        XLSX.writeFile(wb, "Companies_Export.xlsx");
-    }
-
-    function showImportModal() {
-        alert("Import from Excel/CSV coming in a future update.");
-    }
-
-    function initializeCompaniesPage() {
-        renderCompaniesTable(companies);
-        console.log('%c[Case PM] Rich Companies page initialized', 'color:#10b981');
-    }
-
-    window.onload = initializeCompaniesPage;
-</script>
-
-        </div> <!-- Closes p-6 content area -->
-    </div> <!-- Closes main content flex -->
-</div> <!-- Closes outer flex h-screen -->
-
-</body>
-</html>
-    // ==================== NAVIGATION WARNING (like Budget page) ====================
-    let hasUnsavedChanges = false;
-
-    function warnBeforeLeaving(e) {
-        if (hasUnsavedChanges) {
-            e.preventDefault();
-            e.returnValue = "You have unsaved changes on the Companies page. Are you sure you want to leave?";
-            return e.returnValue;
-        }
-    }
-
-    // Optional: You can set hasUnsavedChanges = true inside saveCompany if you want stricter behavior
-    // For now we keep it simple and only warn on actual navigation
-
-    window.addEventListener('beforeunload', warnBeforeLeaving);
