@@ -6,10 +6,12 @@
     <title>Companies • Case PM</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+    <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
     <style>
         body { background-color: #18181b; color: #e4e4e7; }
         .nav-link.active { background-color: #27272a; color: white; }
         .modal { background-color: #18181b; border: 1px solid #3f3f46; color: white; }
+        .section-header { font-size: 10px; text-transform: uppercase; letter-spacing: 0.5px; color: #71717a; }
     </style>
 </head>
 <body class="bg-zinc-950 text-zinc-200">
@@ -168,372 +170,45 @@
                 <div class="text-2xl font-semibold tracking-tight">ALDI Lakeland</div>
             </div>
 
-            <!-- Center/Right: Page Title -->
-            <div class="text-2xl font-semibold text-white">Companies</div>
-
+            <!-- Center/Right: Page Title + Actions -->
             <div class="flex items-center gap-3">
-                <!-- Your existing buttons will go here in Part 2 -->
+                <div class="text-2xl font-semibold text-white mr-4">Companies</div>
+
+                <button onclick="exportCompanies()" class="flex items-center gap-2 px-4 py-2 bg-zinc-800 hover:bg-zinc-700 rounded-md text-sm font-medium">
+                    <i class="fa-solid fa-download"></i><span>Export</span>
+                </button>
+                <button onclick="showImportModal()" class="flex items-center gap-2 px-4 py-2 bg-zinc-800 hover:bg-zinc-700 rounded-md text-sm font-medium">
+                    <i class="fa-solid fa-upload"></i><span>Import</span>
+                </button>
+                <button onclick="showAddCompanyModal()" class="flex items-center gap-2 px-5 py-2 bg-white text-zinc-900 hover:bg-zinc-100 rounded-md text-sm font-semibold">
+                    <i class="fa-solid fa-plus"></i><span>Add Company</span>
+                </button>
             </div>
         </div>
 
         <!-- Content area starts here -->
         <div class="flex-1 overflow-auto p-6">
-            <!-- Header Row -->
-            <div class="flex items-center justify-between mb-6">
-                <div>
-                    <h2 class="text-2xl font-semibold tracking-tight">Companies & Vendors</h2>
-                    <p class="text-sm text-zinc-400 mt-1">Manage subcontractors, suppliers, and vendors for ALDI Lakeland</p>
-                </div>
-                <div class="flex items-center gap-3">
-                    <div class="relative">
-                        <input type="text" id="searchInput" placeholder="Search companies..." 
-                               class="bg-zinc-800 border border-zinc-700 rounded-md px-4 py-2 text-sm w-72 pl-10"
-                               onkeyup="filterCompanies()">
-                        <i class="fa-solid fa-search absolute left-3.5 top-3 text-zinc-500"></i>
-                    </div>
-                    <button onclick="showAddCompanyModal()" 
-                            class="flex items-center gap-2 px-5 py-2 bg-white text-zinc-900 hover:bg-zinc-100 rounded-md text-sm font-semibold">
-                        <i class="fa-solid fa-plus"></i>
-                        <span>Add Company</span>
-                    </button>
-                </div>
-            </div>
-
+            
             <!-- Summary Cards -->
-            <div class="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
+            <div class="grid grid-cols-2 md:grid-cols-5 gap-4 mb-6">
                 <div class="bg-zinc-900 border border-zinc-800 rounded-md p-5">
                     <div class="text-sm text-zinc-400">Total Companies</div>
-                    <div id="totalCompanies" class="text-3xl font-semibold mt-1">47</div>
+                    <div id="totalCompanies" class="text-3xl font-semibold mt-1">0</div>
                 </div>
                 <div class="bg-zinc-900 border border-zinc-800 rounded-md p-5">
-                    <div class="text-sm text-zinc-400">Active Vendors</div>
-                    <div id="activeVendors" class="text-3xl font-semibold mt-1 text-emerald-400">38</div>
+                    <div class="text-sm text-zinc-400">Subcontractors</div>
+                    <div id="subcontractorCount" class="text-3xl font-semibold mt-1 text-emerald-400">0</div>
                 </div>
                 <div class="bg-zinc-900 border border-zinc-800 rounded-md p-5">
-                    <div class="text-sm text-zinc-400">Pending Approval</div>
-                    <div id="pendingApproval" class="text-3xl font-semibold mt-1 text-amber-400">6</div>
+                    <div class="text-sm text-zinc-400">Suppliers / Vendors</div>
+                    <div id="supplierCount" class="text-3xl font-semibold mt-1">0</div>
                 </div>
                 <div class="bg-zinc-900 border border-zinc-800 rounded-md p-5">
-                    <div class="text-sm text-zinc-400">Recently Added</div>
-                    <div id="recentlyAdded" class="text-3xl font-semibold mt-1">4</div>
+                    <div class="text-sm text-zinc-400">Clients / Owners</div>
+                    <div id="clientCount" class="text-3xl font-semibold mt-1">0</div>
+                </div>
+                <div class="bg-zinc-900 border border-zinc-800 rounded-md p-5">
+                    <div class="text-sm text-zinc-400">Insurance Expiring (60 days)</div>
+                    <div id="insuranceAlertCount" class="text-3xl font-semibold mt-1 text-orange-400">0</div>
                 </div>
             </div>
-
-            <!-- Companies Table -->
-            <div class="bg-zinc-900 border border-zinc-800 rounded-md overflow-hidden">
-                <div class="px-6 py-4 border-b border-zinc-800 flex items-center justify-between">
-                    <div class="font-semibold">All Companies</div>
-                    <div class="text-sm text-zinc-400" id="companyCount">47 companies</div>
-                </div>
-                
-                <table class="w-full">
-                    <thead class="bg-zinc-950 text-sm">
-                        <tr>
-                            <th class="px-6 py-3 text-left font-medium text-zinc-400">Company Name</th>
-                            <th class="px-6 py-3 text-left font-medium text-zinc-400">Type</th>
-                            <th class="px-6 py-3 text-left font-medium text-zinc-400">Primary Contact</th>
-                            <th class="px-6 py-3 text-left font-medium text-zinc-400">Phone</th>
-                            <th class="px-6 py-3 text-left font-medium text-zinc-400">Email</th>
-                            <th class="px-6 py-3 text-center font-medium text-zinc-400 w-24">Status</th>
-                            <th class="px-6 py-3 w-20"></th>
-                        </tr>
-                    </thead>
-                    <tbody id="companiesTableBody" class="text-sm divide-y divide-zinc-800">
-                        <!-- Populated by JavaScript -->
-                    </tbody>
-                </table>
-            </div>
-<!-- ==================== MODALS ==================== -->
-
-<!-- Add / Edit Company Modal -->
-<dialog id="companyModal" class="modal rounded-md p-0 w-full max-w-2xl">
-    <div class="p-6">
-        <div class="flex justify-between items-center mb-6">
-            <h3 id="modalTitle" class="text-xl font-semibold">Add New Company</h3>
-            <button onclick="closeCompanyModal()" class="text-zinc-400 hover:text-white text-xl">×</button>
-        </div>
-
-        <form id="companyForm" onsubmit="saveCompany(event)">
-            <input type="hidden" id="companyId">
-
-            <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div class="md:col-span-2">
-                    <label class="block text-sm text-zinc-400 mb-1">Company Name</label>
-                    <input type="text" id="companyName" class="w-full bg-zinc-800 border border-zinc-700 rounded-md px-4 py-2.5 text-sm" required>
-                </div>
-
-                <div>
-                    <label class="block text-sm text-zinc-400 mb-1">Company Type</label>
-                    <select id="companyType" class="w-full bg-zinc-800 border border-zinc-700 rounded-md px-4 py-2.5 text-sm">
-                        <option value="Subcontractor">Subcontractor</option>
-                        <option value="Supplier">Supplier</option>
-                        <option value="Vendor">Vendor</option>
-                        <option value="Consultant">Consultant</option>
-                        <option value="Other">Other</option>
-                    </select>
-                </div>
-
-                <div>
-                    <label class="block text-sm text-zinc-400 mb-1">Status</label>
-                    <select id="companyStatus" class="w-full bg-zinc-800 border border-zinc-700 rounded-md px-4 py-2.5 text-sm">
-                        <option value="Active">Active</option>
-                        <option value="Pending Approval">Pending Approval</option>
-                        <option value="Inactive">Inactive</option>
-                    </select>
-                </div>
-
-                <div>
-                    <label class="block text-sm text-zinc-400 mb-1">Primary Contact</label>
-                    <input type="text" id="primaryContact" class="w-full bg-zinc-800 border border-zinc-700 rounded-md px-4 py-2.5 text-sm">
-                </div>
-
-                <div>
-                    <label class="block text-sm text-zinc-400 mb-1">Phone</label>
-                    <input type="text" id="phone" class="w-full bg-zinc-800 border border-zinc-700 rounded-md px-4 py-2.5 text-sm">
-                </div>
-
-                <div class="md:col-span-2">
-                    <label class="block text-sm text-zinc-400 mb-1">Email</label>
-                    <input type="email" id="email" class="w-full bg-zinc-800 border border-zinc-700 rounded-md px-4 py-2.5 text-sm">
-                </div>
-
-                <div class="md:col-span-2">
-                    <label class="block text-sm text-zinc-400 mb-1">Address</label>
-                    <input type="text" id="address" class="w-full bg-zinc-800 border border-zinc-700 rounded-md px-4 py-2.5 text-sm">
-                </div>
-
-                <div class="md:col-span-2">
-                    <label class="block text-sm text-zinc-400 mb-1">Notes</label>
-                    <textarea id="notes" rows="3" class="w-full bg-zinc-800 border border-zinc-700 rounded-md px-4 py-2.5 text-sm"></textarea>
-                </div>
-            </div>
-
-            <div class="flex justify-end gap-3 mt-6">
-                <button type="button" onclick="closeCompanyModal()" class="px-5 py-2.5 rounded-md bg-zinc-800 hover:bg-zinc-700 text-sm">Cancel</button>
-                <button type="submit" class="px-6 py-2.5 rounded-md bg-emerald-600 hover:bg-emerald-500 text-sm font-semibold">Save Company</button>
-            </div>
-        </form>
-    </div>
-</dialog>
-
-<!-- View Company Modal -->
-<dialog id="viewCompanyModal" class="modal rounded-md p-0 w-full max-w-lg">
-    <div class="p-6">
-        <div class="flex justify-between items-center mb-6">
-            <h3 class="text-xl font-semibold">Company Details</h3>
-            <button onclick="closeViewCompanyModal()" class="text-zinc-400 hover:text-white text-xl">×</button>
-        </div>
-
-        <div id="viewCompanyContent" class="space-y-4 text-sm">
-            <!-- Populated by JavaScript -->
-        </div>
-
-        <div class="flex justify-end gap-3 mt-6">
-            <button onclick="closeViewCompanyModal()" class="px-5 py-2.5 rounded-md bg-zinc-800 hover:bg-zinc-700 text-sm">Close</button>
-            <button onclick="editFromViewModal()" class="px-5 py-2.5 rounded-md bg-emerald-600 hover:bg-emerald-500 text-sm font-semibold">Edit</button>
-        </div>
-    </div>
-</dialog>
-<script>
-    // ==================== DATA & STATE ====================
-    let companies = [
-        { id: 1, name: "ABC Concrete LLC", type: "Subcontractor", contact: "John Ramirez", phone: "(813) 555-0142", email: "john@abcconcrete.com", status: "Active", address: "1245 Industrial Way, Lakeland, FL", notes: "Primary concrete supplier for slab work" },
-        { id: 2, name: "Sunstate Steel Inc.", type: "Subcontractor", contact: "Maria Torres", phone: "(407) 555-0198", email: "maria@sunstatesteel.com", status: "Active", address: "8900 Tradeport Dr, Orlando, FL", notes: "" },
-        { id: 3, name: "Gulf Coast Electrical", type: "Subcontractor", contact: "David Chen", phone: "(727) 555-0234", email: "david@gulfcoast.com", status: "Pending Approval", address: "4500 34th St N, St. Petersburg, FL", notes: "Waiting on insurance certificate" },
-        { id: 4, name: "Precision Plumbing Co.", type: "Subcontractor", contact: "Sarah Kline", phone: "(941) 555-0177", email: "sarah@precisionplumb.com", status: "Active", address: "2100 Main St, Sarasota, FL", notes: "" },
-        { id: 5, name: "Titan Fire Protection", type: "Subcontractor", contact: "Mike Delgado", phone: "(863) 555-0091", email: "mike@titanfire.com", status: "Active", address: "7800 Park Blvd, Largo, FL", notes: "Fire alarm & suppression systems" }
-    ];
-
-    // ==================== RENDER TABLE ====================
-    function renderCompaniesTable(filteredCompanies = null) {
-        const tbody = document.getElementById('companiesTableBody');
-        if (!tbody) return;
-
-        tbody.innerHTML = '';
-        const data = filteredCompanies || companies;
-
-        if (data.length === 0) {
-            tbody.innerHTML = `<tr><td colspan="7" class="px-6 py-8 text-center text-zinc-500">No companies found.</td></tr>`;
-            return;
-        }
-
-        data.forEach(company => {
-            const row = document.createElement('tr');
-            row.className = 'hover:bg-zinc-800/60 cursor-pointer';
-            row.ondblclick = () => viewCompany(company.id);
-
-            const statusColor = company.status === 'Active' ? 'bg-emerald-500/20 text-emerald-400' :
-                                company.status === 'Pending Approval' ? 'bg-amber-500/20 text-amber-400' :
-                                'bg-zinc-600 text-zinc-300';
-
-            row.innerHTML = `
-                <td class="px-6 py-3 font-medium">${company.name}</td>
-                <td class="px-6 py-3 text-zinc-400">${company.type}</td>
-                <td class="px-6 py-3">${company.contact}</td>
-                <td class="px-6 py-3 text-zinc-400">${company.phone}</td>
-                <td class="px-6 py-3 text-zinc-400">${company.email}</td>
-                <td class="px-6 py-3 text-center">
-                    <span class="inline-block px-3 py-0.5 rounded-full text-xs font-medium ${statusColor}">
-                        ${company.status}
-                    </span>
-                </td>
-                <td class="px-6 py-3 text-right">
-                    <button onclick="event.stopImmediatePropagation(); editCompany(${company.id})" class="text-zinc-400 hover:text-white px-2">
-                        <i class="fa-solid fa-edit"></i>
-                    </button>
-                    <button onclick="event.stopImmediatePropagation(); deleteCompany(${company.id})" class="text-zinc-400 hover:text-red-400 px-2 ml-1">
-                        <i class="fa-solid fa-trash"></i>
-                    </button>
-                </td>
-            `;
-            tbody.appendChild(row);
-        });
-
-        document.getElementById('companyCount').textContent = `${data.length} companies`;
-        updateSummaryCards();
-    }
-
-    function updateSummaryCards() {
-        const total = companies.length;
-        const active = companies.filter(c => c.status === 'Active').length;
-        const pending = companies.filter(c => c.status === 'Pending Approval').length;
-        const recent = Math.min(4, companies.length); // placeholder
-
-        const totalEl = document.getElementById('totalCompanies');
-        const activeEl = document.getElementById('activeVendors');
-        const pendingEl = document.getElementById('pendingApproval');
-        const recentEl = document.getElementById('recentlyAdded');
-
-        if (totalEl) totalEl.textContent = total;
-        if (activeEl) activeEl.textContent = active;
-        if (pendingEl) pendingEl.textContent = pending;
-        if (recentEl) recentEl.textContent = recent;
-    }
-
-    function filterCompanies() {
-        const searchTerm = document.getElementById('searchInput').value.toLowerCase().trim();
-        if (!searchTerm) {
-            renderCompaniesTable(companies);
-            return;
-        }
-
-        const filtered = companies.filter(c =>
-            c.name.toLowerCase().includes(searchTerm) ||
-            c.contact.toLowerCase().includes(searchTerm) ||
-            c.type.toLowerCase().includes(searchTerm)
-        );
-        renderCompaniesTable(filtered);
-    }
-
-    // ==================== MODAL FUNCTIONS ====================
-    function showAddCompanyModal() {
-        document.getElementById('companyForm').reset();
-        document.getElementById('companyId').value = '';
-        document.getElementById('modalTitle').textContent = 'Add New Company';
-        document.getElementById('companyModal').showModal();
-    }
-
-    function editCompany(id) {
-        const company = companies.find(c => c.id === id);
-        if (!company) return;
-
-        document.getElementById('companyId').value = company.id;
-        document.getElementById('companyName').value = company.name;
-        document.getElementById('companyType').value = company.type;
-        document.getElementById('companyStatus').value = company.status;
-        document.getElementById('primaryContact').value = company.contact;
-        document.getElementById('phone').value = company.phone;
-        document.getElementById('email').value = company.email;
-        document.getElementById('address').value = company.address || '';
-        document.getElementById('notes').value = company.notes || '';
-
-        document.getElementById('modalTitle').textContent = 'Edit Company';
-        document.getElementById('companyModal').showModal();
-    }
-
-    function closeCompanyModal() {
-        document.getElementById('companyModal').close();
-    }
-
-    function saveCompany(e) {
-        e.preventDefault();
-
-        const id = parseInt(document.getElementById('companyId').value) || Date.now();
-
-        const newCompany = {
-            id: id,
-            name: document.getElementById('companyName').value.trim(),
-            type: document.getElementById('companyType').value,
-            status: document.getElementById('companyStatus').value,
-            contact: document.getElementById('primaryContact').value.trim(),
-            phone: document.getElementById('phone').value.trim(),
-            email: document.getElementById('email').value.trim(),
-            address: document.getElementById('address').value.trim(),
-            notes: document.getElementById('notes').value.trim()
-        };
-
-        const existingIndex = companies.findIndex(c => c.id === id);
-
-        if (existingIndex !== -1) {
-            companies[existingIndex] = newCompany;
-        } else {
-            companies.push(newCompany);
-        }
-
-        closeCompanyModal();
-        renderCompaniesTable();
-    }
-
-    function deleteCompany(id) {
-        if (!confirm('Delete this company?')) return;
-        companies = companies.filter(c => c.id !== id);
-        renderCompaniesTable();
-    }
-
-    function viewCompany(id) {
-        const company = companies.find(c => c.id === id);
-        if (!company) return;
-
-        const content = document.getElementById('viewCompanyContent');
-        content.innerHTML = `
-            <div><span class="text-zinc-400">Company:</span> <span class="font-semibold">${company.name}</span></div>
-            <div><span class="text-zinc-400">Type:</span> ${company.type}</div>
-            <div><span class="text-zinc-400">Status:</span> ${company.status}</div>
-            <div><span class="text-zinc-400">Primary Contact:</span> ${company.contact}</div>
-            <div><span class="text-zinc-400">Phone:</span> ${company.phone}</div>
-            <div><span class="text-zinc-400">Email:</span> ${company.email}</div>
-            ${company.address ? `<div><span class="text-zinc-400">Address:</span> ${company.address}</div>` : ''}
-            ${company.notes ? `<div class="pt-2 border-t border-zinc-700"><span class="text-zinc-400">Notes:</span><br>${company.notes}</div>` : ''}
-        `;
-
-        // Store current company id for edit button
-        content.dataset.currentId = company.id;
-
-        document.getElementById('viewCompanyModal').showModal();
-    }
-
-    function closeViewCompanyModal() {
-        document.getElementById('viewCompanyModal').close();
-    }
-
-    function editFromViewModal() {
-        const id = parseInt(document.getElementById('viewCompanyContent').dataset.currentId);
-        closeViewCompanyModal();
-        setTimeout(() => editCompany(id), 150);
-    }
-
-    // ==================== INITIALIZE ====================
-    function initializeCompaniesPage() {
-        renderCompaniesTable();
-        console.log('%c[Case PM] Companies page initialized', 'color:#10b981');
-    }
-
-    window.onload = initializeCompaniesPage;
-</script>
-
-        </div> <!-- Closes p-6 content -->
-    </div> <!-- Closes main content flex -->
-</div> <!-- Closes outer flex layout -->
-
-</body>
-</html>
