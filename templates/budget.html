@@ -18,7 +18,7 @@
                 <option value="custom">Custom Codes</option>
             </select>
 
-            <!-- Cost Codes Tools Dropdown (Click to open) -->
+            <!-- Cost Codes Tools Dropdown -->
             <div class="relative">
                 <button onclick="toggleCostCodesDropdown(this)" 
                         class="flex items-center gap-2 px-4 py-2.5 bg-zinc-800 hover:bg-zinc-700 border border-zinc-700 rounded-lg text-sm font-medium transition-colors">
@@ -159,6 +159,7 @@
                        class="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-4 py-2.5 text-sm focus:outline-none focus:border-emerald-600 font-mono"
                        onchange="autoFillFromCostCode()">
                 <datalist id="costCodeList"></datalist>
+                <p class="text-xs text-zinc-500 mt-1">Select from list or type new code</p>
             </div>
 
             <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -209,34 +210,44 @@
 </dialog>
 
 <!-- Upload Cost Codes Modal -->
-<dialog id="uploadCodesModal" class="bg-zinc-900 border border-zinc-700 rounded-2xl p-0 w-full max-w-lg shadow-2xl">
+<dialog id="uploadCodesModal" class="bg-zinc-900 border border-zinc-700 rounded-2xl p-0 w-full max-w-md shadow-2xl">
     <div class="p-6">
         <div class="flex items-center justify-between mb-5">
             <div class="font-semibold text-xl">Upload Cost Codes</div>
             <button onclick="document.getElementById('uploadCodesModal').close()" class="text-zinc-400 hover:text-white text-2xl leading-none">&times;</button>
         </div>
 
-        <div class="border-2 border-dashed border-zinc-700 rounded-2xl p-8 text-center mb-4">
-            <i class="fa-solid fa-file-excel text-4xl text-zinc-500 mb-3"></i>
-            <p class="text-zinc-300">Upload Excel or CSV file</p>
-            <p class="text-xs text-zinc-500 mt-1">Columns: Cost Code, Description, Cost Type</p>
+        <div class="mb-4">
+            <p class="text-sm text-zinc-300 mb-3">Where would you like to add these codes?</p>
             
-            <input type="file" id="costCodeFile" accept=".xlsx,.xls,.csv" class="hidden" onchange="handleCostCodeFile(event)">
-            <button type="button" onclick="document.getElementById('costCodeFile').click()"
-                    class="mt-4 px-4 py-2 bg-zinc-800 hover:bg-zinc-700 rounded-lg text-sm">
-                Choose File
-            </button>
+            <div class="space-y-2">
+                <button onclick="uploadToCurrentList()" 
+                        class="w-full py-3 bg-zinc-800 hover:bg-zinc-700 rounded-lg text-left px-4 flex items-center gap-3">
+                    <i class="fa-solid fa-plus w-5"></i>
+                    <div>
+                        <div class="font-medium">Add to Current List</div>
+                        <div class="text-xs text-zinc-400">Add to {{ 'CSI Master Codes' if activeCostCodeList == 'csi' else 'Custom Codes' }}</div>
+                    </div>
+                </button>
+                
+                <button onclick="createNewCostCodeList()" 
+                        class="w-full py-3 bg-zinc-800 hover:bg-zinc-700 rounded-lg text-left px-4 flex items-center gap-3">
+                    <i class="fa-solid fa-folder-plus w-5"></i>
+                    <div>
+                        <div class="font-medium">Create New List</div>
+                        <div class="text-xs text-zinc-400">Start a fresh cost code list</div>
+                    </div>
+                </button>
+            </div>
         </div>
 
-        <div class="flex gap-3">
-            <button onclick="document.getElementById('uploadCodesModal').close()"
-                    class="flex-1 py-2.5 bg-zinc-800 hover:bg-zinc-700 rounded-lg text-sm font-medium transition-colors">
-                Cancel
+        <div class="border-2 border-dashed border-zinc-700 rounded-2xl p-6 text-center">
+            <input type="file" id="costCodeFile" accept=".xlsx,.xls,.csv" class="hidden" onchange="handleCostCodeFile(event)">
+            <button type="button" onclick="document.getElementById('costCodeFile').click()"
+                    class="px-4 py-2 bg-zinc-800 hover:bg-zinc-700 rounded-lg text-sm">
+                Choose Excel or CSV File
             </button>
-            <button onclick="processUploadedCodes()"
-                    class="flex-1 py-2.5 bg-emerald-600 hover:bg-emerald-500 rounded-lg text-sm font-medium transition-colors">
-                Upload
-            </button>
+            <p class="text-xs text-zinc-500 mt-2">Columns: Cost Code, Description, Cost Type</p>
         </div>
     </div>
 </dialog>
@@ -276,17 +287,30 @@
 <script>
     // ==================== DATA ====================
     let budgetLines = [];
-    let csiCostCodes = [ /* ... same as before ... */ ];
+    let csiCostCodes = [
+        { code: "01-1000", description: "Summary", cost_type: "General Conditions" },
+        { code: "03-3000", description: "Concrete - Structural", cost_type: "Subcontract" },
+        { code: "04-2000", description: "Unit Masonry", cost_type: "Subcontract" },
+        { code: "05-1200", description: "Structural Steel Framing", cost_type: "Subcontract" },
+        { code: "06-1000", description: "Rough Carpentry", cost_type: "Subcontract" },
+        { code: "07-5000", description: "Membrane Roofing", cost_type: "Subcontract" },
+        { code: "08-1000", description: "Doors and Frames", cost_type: "Material" },
+        { code: "09-9000", description: "Painting and Coating", cost_type: "Subcontract" },
+        { code: "22-1000", description: "Plumbing - General", cost_type: "Subcontract" },
+        { code: "23-3000", description: "HVAC Air Distribution", cost_type: "Subcontract" },
+        { code: "26-1000", description: "Electrical - Rough In", cost_type: "Subcontract" },
+        { code: "31-1000", description: "Earthwork", cost_type: "Subcontract" }
+    ];
     let customCostCodes = [];
     let activeCostCodeList = 'csi';
     let budgetPublished = localStorage.getItem('budgetPublished') === 'true';
+    let pendingUploadFile = null;
 
     // ==================== COST CODES DROPDOWN (CLICK ONLY) ====================
     function toggleCostCodesDropdown(button) {
         const dropdown = document.getElementById('costCodesDropdown');
         dropdown.classList.toggle('hidden');
         
-        // Close when clicking outside
         setTimeout(() => {
             document.addEventListener('click', function handler(e) {
                 if (!button.contains(e.target) && !dropdown.contains(e.target)) {
@@ -335,7 +359,13 @@
         let originalTotal = 0;
         let changesTotal = 0;
 
-        const divisionNames = { /* ... same as before ... */ };
+        const divisionNames = {
+            '01': 'General Requirements', '03': 'Concrete', '04': 'Masonry',
+            '05': 'Metals', '06': 'Wood, Plastics, and Composites',
+            '07': 'Thermal and Moisture Protection', '08': 'Openings',
+            '09': 'Finishes', '22': 'Plumbing', '23': 'HVAC',
+            '26': 'Electrical', '31': 'Earthwork'
+        };
 
         sorted.forEach(line => {
             const division = line.cost_code.substring(0, 2);
@@ -399,7 +429,7 @@
         return new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(amount);
     }
 
-    // ==================== COST CODE AUTO-FILL ====================
+    // ==================== COST CODE AUTO-FILL (FIXED) ====================
     function autoFillFromCostCode() {
         const fullValue = document.getElementById('cost_code').value.trim();
         const codeMatch = fullValue.match(/^([0-9-]+)/);
@@ -409,17 +439,19 @@
         const found = allCodes.find(c => c.code === code);
 
         if (found) {
+            // Code exists in current list - fill normally, no warning
             document.getElementById('cost_code').value = `${found.code} - ${found.description}`;
             if (!document.getElementById('description').value) {
                 document.getElementById('description').value = found.description;
             }
             document.getElementById('cost_type').value = found.cost_type;
         } else if (code.length > 3) {
+            // New code being entered
             if (budgetPublished) {
                 showCenteredAlert("Budget is published. New codes must follow the existing format of the locked list.");
                 return;
             }
-            if (confirm(`Cost code "${code}" not found. Add it to the current list?`)) {
+            if (confirm(`Cost code "${code}" is not in the current list. Add it?`)) {
                 const desc = prompt("Enter description for this new cost code:");
                 if (desc) {
                     const newCode = { code: code, description: desc, cost_type: "Other" };
@@ -521,7 +553,6 @@
 
         renderBudgetTable(budgetLines);
 
-        // If already published and we added a new line → revert button but keep selector locked
         if (!id && budgetPublished) {
             const btn = document.getElementById('publishBtn');
             btn.innerHTML = `<i class="fa-solid fa-check-double"></i> <span>Publish Budget</span>`;
@@ -537,7 +568,6 @@
         budgetLines = budgetLines.filter(l => l.id !== id);
         renderBudgetTable(budgetLines);
 
-        // If all lines are deleted, unlock everything
         if (budgetLines.length === 0 && budgetPublished) {
             budgetPublished = false;
             localStorage.setItem('budgetPublished', 'false');
@@ -593,6 +623,62 @@
         };
     }
 
+    // ==================== UPLOAD CODES ====================
+    function showUploadCodesModal() {
+        pendingUploadFile = null;
+        document.getElementById('uploadCodesModal').showModal();
+    }
+
+    function uploadToCurrentList() {
+        document.getElementById('uploadCodesModal').close();
+        const input = document.createElement('input');
+        input.type = 'file';
+        input.accept = '.xlsx,.xls,.csv';
+        input.onchange = function(e) {
+            handleCostCodeFile(e, 'current');
+        };
+        input.click();
+    }
+
+    function createNewCostCodeList() {
+        document.getElementById('uploadCodesModal').close();
+        const listName = prompt("Enter name for the new cost code list:");
+        if (!listName) return;
+
+        const input = document.createElement('input');
+        input.type = 'file';
+        input.accept = '.xlsx,.xls,.csv';
+        input.onchange = function(e) {
+            handleCostCodeFile(e, 'new', listName);
+        };
+        input.click();
+    }
+
+    function handleCostCodeFile(event, mode = 'current', newListName = '') {
+        const file = event.target.files[0];
+        if (!file) return;
+
+        const reader = new FileReader();
+        reader.onload = function(e) {
+            // For now, simple alert. Full parsing can be added later.
+            alert(`File selected: ${file.name}\nMode: ${mode}\n\nFull Excel/CSV parsing will be implemented in the next update.`);
+            
+            // Placeholder: You can expand this with XLSX parsing later
+            if (mode === 'current') {
+                // Add to current list (placeholder)
+            } else {
+                // Create new list (placeholder)
+            }
+        };
+        reader.readAsArrayBuffer(file);
+    }
+
+    function processUploadedCodes() {
+        // Placeholder for future full implementation
+        alert("Upload processing will be fully implemented soon.");
+        document.getElementById('uploadCodesModal').close();
+    }
+
     // ==================== EXPORT & PRINT (FIXED) ====================
     function exportBudget() {
         const data = budgetLines.map(line => ({
@@ -635,12 +721,11 @@
         const printArea = document.createElement('div');
         printArea.style.position = 'absolute';
         printArea.style.left = '-9999px';
-        printArea.style.width = '100%';
 
-        let html = '';
+        let content = '';
 
         if (type === 'aia') {
-            html = `
+            content = `
                 <h1 style="text-align:center; font-size:22px; margin-bottom:4px;">Budget</h1>
                 <p style="text-align:center; font-size:12px; color:#666; margin-bottom:20px;">AIA G703 Format</p>
                 <table style="width:100%; border-collapse:collapse; font-size:12px;">
@@ -669,7 +754,7 @@
                 </table>
             `;
         } else {
-            html = `
+            content = `
                 <h2 style="font-size:18px; margin-bottom:12px;">Budget - Full Detail</h2>
                 <table style="width:100%; border-collapse:collapse; font-size:11px;">
                     <thead>
@@ -700,25 +785,12 @@
             `;
         }
 
-        printArea.innerHTML = html;
+        printArea.innerHTML = content;
         document.body.appendChild(printArea);
-
-        // Force clean print
-        const style = document.createElement('style');
-        style.innerHTML = `
-            @media print {
-                body * { visibility: hidden; }
-                #printArea, #printArea * { visibility: visible; }
-                #printArea { position: absolute; left: 0; top: 0; width: 100%; }
-            }
-        `;
-        document.head.appendChild(style);
-
         window.print();
 
         setTimeout(() => {
             printArea.remove();
-            style.remove();
         }, 100);
     }
 
