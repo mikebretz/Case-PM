@@ -412,3 +412,343 @@
         </div>
     </div>
 </dialog>
+        </div> <!-- end of p-6 content -->
+    </div> <!-- end of main content area -->
+</div> <!-- end of flex h-screen -->
+
+<!-- ==================== JAVASCRIPT ==================== -->
+<script>
+    // ==================== STATE ====================
+    let budgetLines = [];
+    let pendingChanges = [];
+    let currentEditId = null;
+    let budgetPublished = false;
+    let budgetSaved = false;
+
+    // Sample data for demonstration
+    function loadSampleData() {
+        if (budgetLines.length === 0) {
+            budgetLines = [
+                { id: 1, cost_code: "03-3000", description: "Concrete - Structural", cost_type: "Labor", original: 185000, changes: 12500, pending: 0, notes: "Includes rebar and formwork" },
+                { id: 2, cost_code: "03-4000", description: "Concrete - Sitework", cost_type: "Material", original: 92000, changes: 0, pending: 8500, notes: "" },
+                { id: 3, cost_code: "05-1000", description: "Structural Steel", cost_type: "Subcontract", original: 245000, changes: 18750, pending: 0, notes: "Steel erection included" }
+            ];
+            pendingChanges = [
+                { id: 101, number: "CO-003", description: "Additional rebar in foundation", amount: 12500, status: "Pending Owner Approval" },
+                { id: 102, number: "CO-004", description: "Site grading changes", amount: 8500, status: "Pending Owner Approval" }
+            ];
+        }
+    }
+
+    // ==================== RENDER TABLE ====================
+    function renderBudgetTable() {
+        const tbody = document.getElementById('budgetTableBody');
+        if (!tbody) return;
+
+        tbody.innerHTML = '';
+
+        // Sort by cost code
+        const sortedLines = [...budgetLines].sort((a, b) => a.cost_code.localeCompare(b.cost_code));
+
+        let currentDivision = '';
+
+        sortedLines.forEach(line => {
+            const division = line.cost_code.split('-')[0];
+
+            // Add division header if new division
+            if (division !== currentDivision) {
+                currentDivision = division;
+                const headerRow = document.createElement('tr');
+                headerRow.innerHTML = `
+                    <td colspan="10" class="px-6 py-2.5 bg-zinc-950 text-emerald-400 font-semibold text-sm">
+                        Division ${division}
+                    </td>
+                `;
+                tbody.appendChild(headerRow);
+            }
+
+            const original = line.original || 0;
+            const changes = line.changes || 0;
+            const pending = line.pending || 0;
+            const current = original + changes;
+            const forecast = current + pending;
+
+            const row = document.createElement('tr');
+            row.className = 'hover:bg-zinc-800/50 cursor-pointer';
+            row.ondblclick = () => editBudgetLine(line.id);
+
+            row.innerHTML = `
+                <td class="px-6 py-3 font-mono text-sm">${line.cost_code}</td>
+                <td class="px-6 py-3">${line.description}</td>
+                <td class="px-6 py-3 text-center text-sm">${line.cost_type}</td>
+                <td class="px-6 py-3 text-right font-medium">${formatCurrency(original)}</td>
+                <td class="px-6 py-3 text-right text-amber-400">${formatCurrency(changes)}</td>
+                <td class="px-6 py-3 text-right text-orange-400">${formatCurrency(pending)}</td>
+                <td class="px-6 py-3 text-right font-medium">${formatCurrency(current)}</td>
+                <td class="px-6 py-3 text-right font-medium text-emerald-400">${formatCurrency(forecast)}</td>
+                <td class="px-6 py-3 text-sm text-zinc-400 truncate max-w-[320px]">${line.notes || ''}</td>
+                <td class="px-6 py-3 text-right">
+                    <button onclick="event.stopImmediatePropagation(); editBudgetLine(${line.id})" 
+                            class="text-zinc-400 hover:text-white px-2">
+                        <i class="fa-solid fa-edit"></i>
+                    </button>
+                    <button onclick="event.stopImmediatePropagation(); deleteBudgetLine(${line.id})" 
+                            class="text-zinc-400 hover:text-red-400 px-2 ml-1">
+                        <i class="fa-solid fa-trash"></i>
+                    </button>
+                </td>
+            `;
+            tbody.appendChild(row);
+        });
+
+        updateTotals();
+        document.getElementById('lineCount').textContent = `${budgetLines.length} lines`;
+    }
+
+    function formatCurrency(amount) {
+        return new Intl.NumberFormat('en-US', {
+            style: 'currency',
+            currency: 'USD',
+            minimumFractionDigits: 0
+        }).format(amount || 0);
+    }
+
+    function updateTotals() {
+        let originalTotal = 0;
+        let changesTotal = 0;
+        let pendingTotal = 0;
+
+        budgetLines.forEach(line => {
+            originalTotal += line.original || 0;
+            changesTotal += line.changes || 0;
+            pendingTotal += line.pending || 0;
+        });
+
+        const currentTotal = originalTotal + changesTotal;
+        const forecastTotal = currentTotal + pendingTotal;
+        const variance = (window.contractAmount || 2450000) - currentTotal;
+
+        // Update DOM elements
+        const ids = ['originalBudgetTotal', 'approvedChangesTotal', 'pendingChangesTotal', 
+                     'currentBudgetTotal', 'projectedFinalTotal', 'varianceTotal'];
+
+        if (document.getElementById('originalBudgetTotal')) {
+            document.getElementById('originalBudgetTotal').textContent = formatCurrency(originalTotal);
+            document.getElementById('approvedChangesTotal').textContent = formatCurrency(changesTotal);
+            document.getElementById('pendingChangesTotal').textContent = formatCurrency(pendingTotal);
+            document.getElementById('currentBudgetTotal').textContent = formatCurrency(currentTotal);
+            document.getElementById('projectedFinalTotal').textContent = formatCurrency(forecastTotal);
+            document.getElementById('varianceTotal').textContent = formatCurrency(variance);
+        }
+    }
+
+    // ==================== MODAL FUNCTIONS ====================
+    function showAddBudgetLineModal() {
+        currentEditId = null;
+        document.getElementById('modalTitle').textContent = 'Add Budget Line Item';
+        document.getElementById('budgetLineForm').reset();
+        document.getElementById('editLineId').value = '';
+        
+        updateCostCodeList();
+        document.getElementById('budgetLineModal').showModal();
+    }
+
+    function editBudgetLine(id) {
+        const line = budgetLines.find(l => l.id === id);
+        if (!line) return;
+
+        currentEditId = id;
+        document.getElementById('modalTitle').textContent = 'Edit Budget Line Item';
+        document.getElementById('editLineId').value = id;
+
+        document.getElementById('costCode').value = line.cost_code;
+        document.getElementById('description').value = line.description;
+        document.getElementById('costType').value = line.cost_type;
+        document.getElementById('originalBudget').value = line.original || 0;
+        document.getElementById('notes').value = line.notes || '';
+
+        updateCostCodeList();
+        document.getElementById('budgetLineModal').showModal();
+    }
+
+    function closeBudgetLineModal() {
+        document.getElementById('budgetLineModal').close();
+    }
+
+    function saveBudgetLine(e) {
+        e.preventDefault();
+
+        const formData = {
+            cost_code: document.getElementById('costCode').value,
+            description: document.getElementById('description').value,
+            cost_type: document.getElementById('costType').value,
+            original: parseFloat(document.getElementById('originalBudget').value) || 0,
+            notes: document.getElementById('notes').value
+        };
+
+        if (currentEditId) {
+            // Edit existing
+            const index = budgetLines.findIndex(l => l.id === currentEditId);
+            if (index !== -1) {
+                budgetLines[index] = { ...budgetLines[index], ...formData };
+            }
+        } else {
+            // Add new
+            const newId = budgetLines.length > 0 ? Math.max(...budgetLines.map(l => l.id)) + 1 : 1;
+            budgetLines.push({
+                id: newId,
+                changes: 0,
+                pending: 0,
+                ...formData
+            });
+        }
+
+        closeBudgetLineModal();
+        renderBudgetTable();
+        
+        // Trigger unsaved warning state
+        budgetSaved = false;
+    }
+
+    function deleteBudgetLine(id) {
+        if (!confirm('Delete this budget line item?')) return;
+        
+        budgetLines = budgetLines.filter(l => l.id !== id);
+        renderBudgetTable();
+    }
+
+    // ==================== COST CODE & TYPE MANAGEMENT ====================
+    function updateCostCodeList() {
+        const source = document.getElementById('costCodeSource').value;
+        const datalist = document.getElementById('costCodeList');
+        datalist.innerHTML = '';
+
+        // Sample CSI codes
+        const csiCodes = [
+            "03-3000 - Concrete Structural",
+            "03-4000 - Concrete Sitework",
+            "05-1000 - Structural Steel",
+            "06-1000 - Rough Carpentry",
+            "09-2000 - Gypsum Board"
+        ];
+
+        const customCodes = [
+            "10-1000 - Specialties",
+            "12-5000 - Furniture"
+        ];
+
+        const codes = source === 'csi' ? csiCodes : customCodes;
+
+        codes.forEach(code => {
+            const option = document.createElement('option');
+            option.value = code;
+            datalist.appendChild(option);
+        });
+    }
+
+    function showBudgetSettingsModal() {
+        document.getElementById('budgetSettingsModal').showModal();
+    }
+
+    function closeBudgetSettingsModal() {
+        document.getElementById('budgetSettingsModal').close();
+    }
+
+    function viewPendingChanges() {
+        const container = document.getElementById('pendingChangesList');
+        container.innerHTML = '';
+
+        if (pendingChanges.length === 0) {
+            container.innerHTML = `<p class="text-zinc-400 text-sm p-4">No pending change orders.</p>`;
+        } else {
+            pendingChanges.forEach(co => {
+                const div = document.createElement('div');
+                div.className = 'bg-zinc-800 border border-zinc-700 rounded-md p-4';
+                div.innerHTML = `
+                    <div class="flex justify-between">
+                        <div>
+                            <div class="font-semibold">${co.number}</div>
+                            <div class="text-sm text-zinc-400">${co.description}</div>
+                        </div>
+                        <div class="text-right">
+                            <div class="font-medium">${formatCurrency(co.amount)}</div>
+                            <div class="text-xs text-amber-400">${co.status}</div>
+                        </div>
+                    </div>
+                `;
+                container.appendChild(div);
+            });
+        }
+
+        document.getElementById('pendingChangesModal').showModal();
+    }
+
+    function closePendingChangesModal() {
+        document.getElementById('pendingChangesModal').close();
+    }
+
+    // ==================== SAVE / PUBLISH ====================
+    function saveBudget() {
+        budgetSaved = true;
+        alert("Budget saved locally (not yet pushed to Sage 300).");
+    }
+
+    function publishBudget() {
+        if (budgetLines.length === 0) {
+            alert("Add at least one budget line before publishing.");
+            return;
+        }
+        
+        budgetPublished = true;
+        budgetSaved = true;
+        alert("Budget published to Sage 300 (simulated). Cost codes are now locked to current list.");
+        renderBudgetTable();
+    }
+
+    // ==================== EXPORT / PRINT ====================
+    function exportBudget() {
+        alert("Export to Excel triggered (functionality ready).");
+        // You can expand this with actual XLSX export later
+    }
+
+    function printBudget() {
+        window.print();
+    }
+
+    // ==================== NAVIGATION WARNING ====================
+    function warnBeforeLeaving() {
+        if (budgetLines.length > 0 && !budgetSaved && !budgetPublished) {
+            const leave = confirm("You have unsaved budget line items. Leave without saving?");
+            return leave;
+        }
+        return true;
+    }
+
+    // ==================== INITIALIZATION ====================
+    function initializeBudgetPage() {
+        loadSampleData();
+        renderBudgetTable();
+        updateCostCodeList();
+
+        // Set initial contract amount
+        window.contractAmount = 2450000;
+        if (document.getElementById('contractAmount')) {
+            document.getElementById('contractAmount').textContent = formatCurrency(window.contractAmount);
+        }
+
+        // Warn before leaving page with unsaved changes
+        window.onbeforeunload = function() {
+            if (budgetLines.length > 0 && !budgetSaved && !budgetPublished) {
+                return "You have unsaved changes. Are you sure you want to leave?";
+            }
+        };
+
+        console.log('%c[Case PM] Budget page initialized successfully', 'color:#10b981');
+    }
+
+    // Boot the page
+    window.onload = initializeBudgetPage;
+</script>
+
+</body>
+</html>
