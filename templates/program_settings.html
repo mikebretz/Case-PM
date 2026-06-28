@@ -267,3 +267,83 @@
             </form>
         </div>
     </div>
+        <!-- JavaScript -->
+        <script>
+            function switchSettingsTab(tab) {
+                // Hide all tab contents
+                document.querySelectorAll('[id^="tab-content-"]').forEach(el => {
+                    el.classList.add('hidden');
+                });
+
+                // Show selected tab content
+                const content = document.getElementById('tab-content-' + tab);
+                if (content) content.classList.remove('hidden');
+
+                // Update active tab styling
+                document.querySelectorAll('[id^="tab-"]').forEach(el => {
+                    el.classList.remove('border-b-2', 'border-emerald-500', 'text-white');
+                    el.classList.add('text-zinc-400');
+                });
+
+                const activeTab = document.getElementById('tab-' + tab);
+                if (activeTab) {
+                    activeTab.classList.add('border-b-2', 'border-emerald-500', 'text-white');
+                    activeTab.classList.remove('text-zinc-400');
+                }
+            }
+
+            function previewLogo(event) {
+                const file = event.target.files[0];
+                if (!file) return;
+
+                const reader = new FileReader();
+                reader.onload = function(e) {
+                    const preview = document.getElementById('logoPreview');
+                    const placeholder = document.getElementById('logoPlaceholder');
+                    
+                    preview.src = e.target.result;
+                    preview.classList.remove('hidden');
+                    placeholder.classList.add('hidden');
+                };
+                reader.readAsDataURL(file);
+            }
+
+            function saveCompanyInfo(e) {
+                e.preventDefault();
+                // Placeholder - will connect to backend later
+                alert('Company information saved successfully! (Backend integration coming soon)');
+            }
+
+            function createManualBackup() {
+                if (confirm('Create a full backup of all program data now?')) {
+                    alert('Backup process started. You will be notified when it completes.');
+                    // Backend call would go here
+                }
+            }
+
+            function showAddRoleModal() {
+                alert('Custom role creation modal will be implemented in a future update.');
+            }
+
+            // Initialize default tab on load
+            function initializeSettings() {
+                // Show Company tab by default
+                const companyContent = document.getElementById('tab-content-company');
+                if (companyContent) companyContent.classList.remove('hidden');
+
+                const companyTab = document.getElementById('tab-company');
+                if (companyTab) {
+                    companyTab.classList.add('border-b-2', 'border-emerald-500', 'text-white');
+                }
+            }
+
+            // Initialize on page load
+            window.onload = function() {
+                initializeSettings();
+            };
+        </script>
+
+{% endblock %}
+
+</div>
+</div>
