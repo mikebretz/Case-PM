@@ -277,3 +277,138 @@
                     </tbody>
                 </table>
             </div>
+<!-- ==================== MODALS ==================== -->
+
+<!-- Add / Edit Budget Line Modal -->
+<dialog id="budgetLineModal" class="modal rounded-md p-0 w-full max-w-2xl">
+    <div class="p-6">
+        <div class="flex justify-between items-center mb-5">
+            <h3 id="modalTitle" class="text-xl font-semibold">Add Budget Line Item</h3>
+            <button onclick="closeBudgetLineModal()" class="text-zinc-400 hover:text-white">
+                <i class="fa-solid fa-times text-xl"></i>
+            </button>
+        </div>
+
+        <form id="budgetLineForm" onsubmit="saveBudgetLine(event)">
+            <input type="hidden" id="editLineId">
+
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                
+                <!-- Cost Code -->
+                <div class="md:col-span-2">
+                    <label class="block text-sm text-zinc-400 mb-1">Cost Code</label>
+                    <div class="flex gap-2">
+                        <input type="text" id="costCode" list="costCodeList" 
+                               class="flex-1 bg-zinc-800 border border-zinc-700 rounded-md px-4 py-2.5 text-sm"
+                               placeholder="03-3000" required>
+                        
+                        <select id="costCodeSource" onchange="updateCostCodeList()"
+                                class="bg-zinc-800 border border-zinc-700 rounded-md px-3 text-sm">
+                            <option value="csi">CSI Master Codes</option>
+                            <option value="custom">Custom Codes</option>
+                        </select>
+                    </div>
+                    <datalist id="costCodeList"></datalist>
+                </div>
+
+                <!-- Description -->
+                <div class="md:col-span-2">
+                    <label class="block text-sm text-zinc-400 mb-1">Description</label>
+                    <input type="text" id="description" 
+                           class="w-full bg-zinc-800 border border-zinc-700 rounded-md px-4 py-2.5 text-sm" required>
+                </div>
+
+                <!-- Cost Type -->
+                <div>
+                    <label class="block text-sm text-zinc-400 mb-1">Cost Type</label>
+                    <select id="costType" class="w-full bg-zinc-800 border border-zinc-700 rounded-md px-4 py-2.5 text-sm">
+                        <!-- Populated by JavaScript -->
+                    </select>
+                </div>
+
+                <!-- Original Budget -->
+                <div>
+                    <label class="block text-sm text-zinc-400 mb-1">Original Budget</label>
+                    <input type="text" id="originalBudget" 
+                           class="w-full bg-zinc-800 border border-zinc-700 rounded-md px-4 py-2.5 text-sm text-right"
+                           placeholder="0.00">
+                </div>
+
+                <!-- Notes -->
+                <div class="md:col-span-2">
+                    <label class="block text-sm text-zinc-400 mb-1">Notes</label>
+                    <textarea id="notes" rows="2"
+                              class="w-full bg-zinc-800 border border-zinc-700 rounded-md px-4 py-2.5 text-sm"></textarea>
+                </div>
+            </div>
+
+            <div class="flex justify-end gap-3 mt-6">
+                <button type="button" onclick="closeBudgetLineModal()"
+                        class="px-5 py-2.5 rounded-md bg-zinc-800 hover:bg-zinc-700 text-sm">Cancel</button>
+                <button type="submit"
+                        class="px-6 py-2.5 rounded-md bg-emerald-600 hover:bg-emerald-500 text-sm font-semibold">Save Line Item</button>
+            </div>
+        </form>
+    </div>
+</dialog>
+
+<!-- Budget Settings Modal -->
+<dialog id="budgetSettingsModal" class="modal rounded-md p-0 w-full max-w-3xl">
+    <div class="p-6">
+        <div class="flex justify-between items-center mb-6">
+            <h3 class="text-xl font-semibold">Budget Settings</h3>
+            <button onclick="closeBudgetSettingsModal()" class="text-zinc-400 hover:text-white text-xl">×</button>
+        </div>
+
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+            
+            <!-- Cost Code Lists -->
+            <div>
+                <div class="flex justify-between items-center mb-2">
+                    <div class="font-medium">Cost Code Lists</div>
+                    <button onclick="showNewCostCodeListModal()" 
+                            class="text-xs px-3 py-1 bg-emerald-600 hover:bg-emerald-500 rounded">+ New List</button>
+                </div>
+                <div id="costCodeListsContainer" class="bg-zinc-800 border border-zinc-700 rounded-md p-3 min-h-[120px]">
+                    <!-- Populated by JavaScript -->
+                </div>
+            </div>
+
+            <!-- Cost Types -->
+            <div>
+                <div class="flex justify-between items-center mb-2">
+                    <div class="font-medium">Cost Types</div>
+                    <button onclick="showNewCostTypeModal()" 
+                            class="text-xs px-3 py-1 bg-emerald-600 hover:bg-emerald-500 rounded">+ New Type</button>
+                </div>
+                <div id="costTypesContainer" class="bg-zinc-800 border border-zinc-700 rounded-md p-3 min-h-[120px]">
+                    <!-- Populated by JavaScript -->
+                </div>
+            </div>
+        </div>
+
+        <div class="flex justify-end mt-6">
+            <button onclick="closeBudgetSettingsModal()" 
+                    class="px-5 py-2.5 rounded-md bg-zinc-700 hover:bg-zinc-600 text-sm">Close</button>
+        </div>
+    </div>
+</dialog>
+
+<!-- Pending Changes Modal -->
+<dialog id="pendingChangesModal" class="modal rounded-md p-0 w-full max-w-2xl">
+    <div class="p-6">
+        <div class="flex justify-between items-center mb-4">
+            <h3 class="text-xl font-semibold">Pending Change Orders</h3>
+            <button onclick="closePendingChangesModal()" class="text-zinc-400 hover:text-white text-xl">×</button>
+        </div>
+        
+        <div id="pendingChangesList" class="space-y-3 max-h-[400px] overflow-auto pr-2">
+            <!-- Populated by JavaScript -->
+        </div>
+
+        <div class="flex justify-end mt-6">
+            <button onclick="closePendingChangesModal()" 
+                    class="px-5 py-2.5 rounded-md bg-zinc-700 hover:bg-zinc-600 text-sm">Close</button>
+        </div>
+    </div>
+</dialog>
