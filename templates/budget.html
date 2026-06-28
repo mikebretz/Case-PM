@@ -11,6 +11,14 @@
         </div>
         
         <div class="flex items-center gap-3">
+            <!-- View Toggle: Budget vs Schedule of Values -->
+            <div class="flex items-center bg-zinc-800 border border-zinc-700 rounded-lg p-1">
+                <button onclick="switchView('budget')" id="viewBudgetBtn"
+                        class="px-4 py-1.5 text-sm font-medium rounded-md bg-emerald-600 text-white">Budget</button>
+                <button onclick="switchView('sov')" id="viewSovBtn"
+                        class="px-4 py-1.5 text-sm font-medium rounded-md text-zinc-300 hover:text-white">Schedule of Values</button>
+            </div>
+
             <!-- Cost Code List Selector -->
             <select id="costCodeListSelector" onchange="changeActiveCostCodeList()" 
                     class="bg-zinc-800 border border-zinc-700 rounded-lg px-4 py-2.5 text-sm focus:outline-none focus:border-emerald-600 min-w-[200px]">
@@ -38,12 +46,12 @@
 
             <button onclick="exportBudget()" class="flex items-center gap-2 px-4 py-2.5 bg-zinc-800 hover:bg-zinc-700 border border-zinc-700 rounded-lg text-sm font-medium transition-colors">
                 <i class="fa-solid fa-file-export"></i>
-                <span>Export Budget</span>
+                <span>Export</span>
             </button>
 
             <button onclick="showPrintOptions()" class="flex items-center gap-2 px-4 py-2.5 bg-zinc-800 hover:bg-zinc-700 border border-zinc-700 rounded-lg text-sm font-medium transition-colors">
                 <i class="fa-solid fa-print"></i>
-                <span>Print Budget</span>
+                <span>Print</span>
             </button>
 
             <button onclick="publishBudget()" id="publishBtn"
@@ -55,35 +63,42 @@
             <button onclick="showAddBudgetLineModal()" 
                     class="flex items-center gap-2 px-5 py-2.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg text-sm font-medium transition-colors">
                 <i class="fa-solid fa-plus"></i>
-                <span>Add Budget Line</span>
+                <span>Add Line</span>
             </button>
         </div>
     </div>
 
     <!-- Summary Cards -->
     <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4 mb-6">
-        <!-- CONTRACT AMOUNT -->
+        <!-- Contract Amount -->
         <div class="bg-zinc-900 border border-emerald-600 rounded-2xl p-5">
-            <div class="text-xs text-emerald-400 mb-1">CONTRACT AMOUNT (from Commitments)</div>
-            <div class="text-3xl font-semibold text-emerald-400" id="contractAmount">$1,250,000.00</div>
-            <button onclick="editContractAmount()" class="text-xs text-emerald-400 hover:text-emerald-300 mt-1">Edit (from Commitments)</button>
+            <div class="text-xs text-emerald-400 mb-1 flex items-center justify-between">
+                <span>CONTRACT AMOUNT</span>
+                <button onclick="editContractAmount()" class="text-emerald-400 hover:text-white"><i class="fa-solid fa-edit text-xs"></i></button>
+            </div>
+            <div class="text-3xl font-semibold text-emerald-400" id="contractAmount">$0.00</div>
+            <div class="text-[10px] text-zinc-500 mt-1">From Commitments</div>
         </div>
-        
+
         <div class="bg-zinc-900 border border-zinc-800 rounded-2xl p-5">
             <div class="text-xs text-zinc-400 mb-1">ORIGINAL BUDGET</div>
             <div class="text-3xl font-semibold" id="originalBudgetTotal">$0.00</div>
         </div>
+        
         <div class="bg-zinc-900 border border-zinc-800 rounded-2xl p-5">
             <div class="text-xs text-zinc-400 mb-1">APPROVED CHANGES</div>
             <div class="text-3xl font-semibold text-amber-400" id="approvedChangesTotal">$0.00</div>
+            <div class="text-[10px] text-zinc-500 mt-1">From Change Orders (future)</div>
         </div>
+        
         <div class="bg-zinc-900 border border-zinc-800 rounded-2xl p-5">
-            <div class="text-xs text-zinc-400 mb-1">CURRENT BUDGET (SOV)</div>
+            <div class="text-xs text-zinc-400 mb-1">CURRENT BUDGET</div>
             <div class="text-3xl font-semibold text-emerald-400" id="currentBudgetTotal">$0.00</div>
         </div>
+        
         <div class="bg-zinc-900 border border-zinc-800 rounded-2xl p-5">
-            <div class="text-xs text-zinc-400 mb-1">VARIANCE</div>
-            <div class="text-3xl font-semibold" id="varianceTotal">$0.00</div>
+            <div class="text-xs text-zinc-400 mb-1">REMAINING</div>
+            <div class="text-3xl font-semibold" id="remainingBudgetTotal">$0.00</div>
         </div>
     </div>
 
@@ -122,7 +137,7 @@
                     <th class="text-left px-5 py-3 text-sm font-medium text-zinc-400 w-36">Cost Type</th>
                     <th class="text-right px-5 py-3 text-sm font-medium text-zinc-400 w-32">Original Budget</th>
                     <th class="text-right px-5 py-3 text-sm font-medium text-zinc-400 w-32">Approved Changes</th>
-                    <th class="text-right px-5 py-3 text-sm font-medium text-zinc-400 w-32">Current (SOV)</th>
+                    <th class="text-right px-5 py-3 text-sm font-medium text-zinc-400 w-32" id="sovHeader">Current (SOV)</th>
                     <th class="text-left px-5 py-3 text-sm font-medium text-zinc-400">Notes</th>
                     <th class="w-16"></th>
                 </tr>
@@ -135,7 +150,7 @@
                     <td colspan="3" class="px-5 py-3">TOTALS</td>
                     <td class="px-5 py-3 text-right" id="footerOriginalTotal">$0.00</td>
                     <td class="px-5 py-3 text-right" id="footerChangesTotal">$0.00</td>
-                    <td class="px-5 py-3 text-right text-emerald-400" id="footerCurrentTotal">$0.00</td>
+                    <td class="px-5 py-3 text-right text-emerald-400" id="footerSovTotal">$0.00</td>
                     <td colspan="2"></td>
                 </tr>
             </tfoot>
@@ -172,8 +187,7 @@
 
                 <div>
                     <label class="block text-sm text-zinc-400 mb-1.5">Cost Type</label>
-                    <select id="cost_type" required
-                            class="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-4 py-2.5 text-sm focus:outline-none focus:border-emerald-600">
+                    <select id="cost_type" required class="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-4 py-2.5 text-sm focus:outline-none focus:border-emerald-600">
                         <option value="Labor">Labor</option>
                         <option value="Material">Material</option>
                         <option value="Subcontract">Subcontract</option>
@@ -186,7 +200,15 @@
                 <div>
                     <label class="block text-sm text-zinc-400 mb-1.5">Original Budget</label>
                     <input type="text" id="original_budget" required placeholder="0.00"
-                           class="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-4 py-2.5 text-sm focus:outline-none focus:border-emerald-600 text-right">
+                           class="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-4 py-2.5 text-sm focus:outline-none focus:border-emerald-600 text-right"
+                           onblur="formatAccountingInput(this)">
+                </div>
+
+                <div>
+                    <label class="block text-sm text-zinc-400 mb-1.5">Schedule of Values (SOV) Spent</label>
+                    <input type="text" id="sov_amount" placeholder="0.00"
+                           class="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-4 py-2.5 text-sm focus:outline-none focus:border-emerald-600 text-right"
+                           onblur="formatAccountingInput(this)">
                 </div>
 
                 <div class="md:col-span-2">
@@ -222,8 +244,7 @@
             <p class="text-sm text-zinc-300 mb-3">Where would you like to add these codes?</p>
             
             <div class="space-y-2">
-                <button onclick="uploadToCurrentList()" 
-                        class="w-full py-3 bg-zinc-800 hover:bg-zinc-700 rounded-lg text-left px-4 flex items-center gap-3">
+                <button onclick="uploadToCurrentList()" class="w-full py-3 bg-zinc-800 hover:bg-zinc-700 rounded-lg text-left px-4 flex items-center gap-3">
                     <i class="fa-solid fa-plus w-5"></i>
                     <div>
                         <div class="font-medium">Add to Current List</div>
@@ -232,8 +253,7 @@
                 </button>
                 
                 {% if not budgetPublished %}
-                <button onclick="showCreateNewListModal()" 
-                        class="w-full py-3 bg-zinc-800 hover:bg-zinc-700 rounded-lg text-left px-4 flex items-center gap-3">
+                <button onclick="showCreateNewListModal()" class="w-full py-3 bg-zinc-800 hover:bg-zinc-700 rounded-lg text-left px-4 flex items-center gap-3">
                     <i class="fa-solid fa-folder-plus w-5"></i>
                     <div>
                         <div class="font-medium">Create New List</div>
@@ -246,8 +266,7 @@
 
         <div class="border-2 border-dashed border-zinc-700 rounded-2xl p-6 text-center">
             <input type="file" id="costCodeFile" accept=".xlsx,.xls,.csv" class="hidden" onchange="handleCostCodeFile(event)">
-            <button type="button" onclick="document.getElementById('costCodeFile').click()"
-                    class="px-4 py-2 bg-zinc-800 hover:bg-zinc-700 rounded-lg text-sm">
+            <button type="button" onclick="document.getElementById('costCodeFile').click()" class="px-4 py-2 bg-zinc-800 hover:bg-zinc-700 rounded-lg text-sm">
                 Choose Excel or CSV File
             </button>
             <p class="text-xs text-zinc-500 mt-2">Columns: Cost Code, Description, Cost Type</p>
@@ -255,7 +274,7 @@
     </div>
 </dialog>
 
-<!-- Create New Cost Code List Modal -->
+<!-- Create New List Modal -->
 <dialog id="createNewListModal" class="bg-zinc-900 border border-zinc-700 rounded-2xl p-0 w-full max-w-md shadow-2xl text-white">
     <div class="p-6">
         <div class="font-semibold text-xl mb-4">Create New Cost Code List</div>
@@ -274,42 +293,37 @@
         <div class="font-semibold text-xl mb-4">How would you like to print?</div>
         
         <div class="space-y-3">
-            <button onclick="printBudget('all')" 
-                    class="w-full py-3 bg-zinc-800 hover:bg-zinc-700 rounded-lg text-left px-4 flex items-center gap-3">
+            <button onclick="printBudget('all')" class="w-full py-3 bg-zinc-800 hover:bg-zinc-700 rounded-lg text-left px-4 flex items-center gap-3">
                 <i class="fa-solid fa-list w-5"></i>
                 <div>
-                    <div class="font-medium">All Fields (Detailed)</div>
-                    <div class="text-xs text-zinc-400">Full export-style view</div>
+                    <div class="font-medium">Budget Detail</div>
+                    <div class="text-xs text-zinc-400">Full columns with all amounts</div>
                 </div>
             </button>
             
-            <button onclick="printBudget('aia')" 
-                    class="w-full py-3 bg-emerald-600 hover:bg-emerald-500 rounded-lg text-left px-4 flex items-center gap-3 text-white">
+            <button onclick="printBudget('aia')" class="w-full py-3 bg-emerald-600 hover:bg-emerald-500 rounded-lg text-left px-4 flex items-center gap-3 text-white">
                 <i class="fa-solid fa-file-invoice w-5"></i>
                 <div>
-                    <div class="font-medium">AIA G703 Format</div>
-                    <div class="text-xs text-emerald-200">Clean construction budget</div>
+                    <div class="font-medium">AIA G703 Style</div>
+                    <div class="text-xs text-emerald-200">Clean continuation sheet format</div>
                 </div>
             </button>
         </div>
         
-        <button onclick="document.getElementById('printChoiceModal').close()" 
-                class="mt-4 w-full py-2.5 text-sm text-zinc-400 hover:text-white">Cancel</button>
+        <button onclick="document.getElementById('printChoiceModal').close()" class="mt-4 w-full py-2.5 text-sm text-zinc-400 hover:text-white">Cancel</button>
     </div>
 </dialog>
 
-<!-- Print Preview Modal (Document Viewer) -->
+<!-- Print Preview Modal -->
 <dialog id="printPreviewModal" class="bg-white text-black p-0 w-full max-w-[1100px] shadow-2xl">
     <div class="p-8">
-        <div class="flex justify-between items-center mb-6 border-b pb-4">
+        <div class="flex justify-between items-center mb-6 border-b pb-4 print:hidden">
             <div>
-                <h2 class="text-2xl font-bold">Budget Preview</h2>
+                <h2 class="text-2xl font-bold">Print Preview</h2>
             </div>
             <div class="flex gap-3">
-                <button onclick="document.getElementById('printPreviewModal').close()" 
-                        class="px-5 py-2 border border-gray-300 rounded-lg text-sm">Close</button>
-                <button onclick="triggerPrintFromPreview()" 
-                        class="px-5 py-2 bg-emerald-600 text-white rounded-lg text-sm">Print</button>
+                <button onclick="document.getElementById('printPreviewModal').close()" class="px-5 py-2 border border-gray-300 rounded-lg text-sm">Close</button>
+                <button onclick="triggerPrintFromPreview()" class="px-5 py-2 bg-emerald-600 text-white rounded-lg text-sm">Print</button>
             </div>
         </div>
 
@@ -322,614 +336,670 @@
 <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
 
 <script>
-// ==================== DATA ====================
-let budgetLines = [];
-let csiCostCodes = [
-    { code: "01-1000", description: "Summary", cost_type: "General Conditions" },
-    { code: "03-3000", description: "Concrete - Structural", cost_type: "Subcontract" },
-    { code: "04-2000", description: "Unit Masonry", cost_type: "Subcontract" },
-    { code: "05-1200", description: "Structural Steel Framing", cost_type: "Subcontract" },
-    { code: "06-1000", description: "Rough Carpentry", cost_type: "Subcontract" },
-    { code: "07-5000", description: "Membrane Roofing", cost_type: "Subcontract" },
-    { code: "08-1000", description: "Doors and Frames", cost_type: "Material" },
-    { code: "09-9000", description: "Painting and Coating", cost_type: "Subcontract" },
-    { code: "22-1000", description: "Plumbing - General", cost_type: "Subcontract" },
-    { code: "23-3000", description: "HVAC Air Distribution", cost_type: "Subcontract" },
-    { code: "26-1000", description: "Electrical - Rough In", cost_type: "Subcontract" },
-    { code: "31-1000", description: "Earthwork", cost_type: "Subcontract" }
-];
-let customCostCodes = [];
-let activeCostCodeList = 'csi';
-let budgetPublished = localStorage.getItem('budgetPublished') === 'true';
-let contractAmount = 1250000; // TODO: Load from Commitments / Program Settings
+    // ==================== DATA ====================
+    let budgetLines = [];
+    let csiCostCodes = [
+        { code: "01-1000", description: "Summary", cost_type: "General Conditions" },
+        { code: "03-3000", description: "Concrete - Structural", cost_type: "Subcontract" },
+        { code: "04-2000", description: "Unit Masonry", cost_type: "Subcontract" },
+        { code: "05-1200", description: "Structural Steel Framing", cost_type: "Subcontract" },
+        { code: "06-1000", description: "Rough Carpentry", cost_type: "Subcontract" },
+        { code: "07-5000", description: "Membrane Roofing", cost_type: "Subcontract" },
+        { code: "08-1000", description: "Doors and Frames", cost_type: "Material" },
+        { code: "09-9000", description: "Painting and Coating", cost_type: "Subcontract" },
+        { code: "22-1000", description: "Plumbing - General", cost_type: "Subcontract" },
+        { code: "23-3000", description: "HVAC Air Distribution", cost_type: "Subcontract" },
+        { code: "26-1000", description: "Electrical - Rough In", cost_type: "Subcontract" },
+        { code: "31-1000", description: "Earthwork", cost_type: "Subcontract" }
+    ];
+    let customCostCodes = [];
+    let activeCostCodeList = 'csi';
+    let budgetPublished = localStorage.getItem('budgetPublished') === 'true';
+    let currentView = 'budget';
+    let contractAmount = parseFloat(localStorage.getItem('contractAmount')) || 0;
 
-// ==================== COST CODES DROPDOWN ====================
-function toggleCostCodesDropdown(button) {
-    const dropdown = document.getElementById('costCodesDropdown');
-    dropdown.classList.toggle('hidden');
-    setTimeout(() => {
-        document.addEventListener('click', function handler(e) {
-            if (!button.contains(e.target) && !dropdown.contains(e.target)) {
-                dropdown.classList.add('hidden');
-                document.removeEventListener('click', handler);
-            }
-        }, { once: true });
-    }, 10);
-}
-
-function hideCostCodesDropdown() {
-    document.getElementById('costCodesDropdown').classList.add('hidden');
-}
-
-// ==================== COST CODE LIST SWITCHING ====================
-function changeActiveCostCodeList() {
-    if (budgetPublished) {
-        showCenteredAlert("Budget has been published. You can no longer switch between CSI and Custom code lists.");
-        document.getElementById('costCodeListSelector').value = activeCostCodeList;
-        return;
+    // ==================== VIEW TOGGLE ====================
+    function switchView(view) {
+        currentView = view;
+        document.getElementById('viewBudgetBtn').classList.toggle('bg-emerald-600', view === 'budget');
+        document.getElementById('viewBudgetBtn').classList.toggle('text-white', view === 'budget');
+        document.getElementById('viewSovBtn').classList.toggle('bg-emerald-600', view === 'sov');
+        document.getElementById('viewSovBtn').classList.toggle('text-white', view === 'sov');
+        
+        renderBudgetTable(budgetLines);
     }
-    activeCostCodeList = document.getElementById('costCodeListSelector').value;
-    const modal = document.getElementById('budgetLineModal');
-    if (modal.open) populateCostCodeDatalist();
-}
 
-function populateCostCodeDatalist() {
-    const datalist = document.getElementById('costCodeList');
-    datalist.innerHTML = '';
-    const codes = activeCostCodeList === 'csi' ? csiCostCodes : customCostCodes;
-    codes.forEach(item => {
-        const option = document.createElement('option');
-        option.value = `${item.code} - ${item.description}`;
-        datalist.appendChild(option);
-    });
-}
-
-// ==================== FORCE CSI FORMAT ====================
-function formatCostCode(input) {
-    if (activeCostCodeList !== 'csi') return;
-    let val = input.value.trim().replace(/[^0-9]/g, '');
-    if (val.length >= 2) {
-        val = val.substring(0, 2) + '-' + val.substring(2, 6);
-        input.value = val;
+    // ==================== COST CODES DROPDOWN ====================
+    function toggleCostCodesDropdown(button) {
+        const dropdown = document.getElementById('costCodesDropdown');
+        dropdown.classList.toggle('hidden');
+        setTimeout(() => {
+            document.addEventListener('click', function handler(e) {
+                if (!button.contains(e.target) && !dropdown.contains(e.target)) {
+                    dropdown.classList.add('hidden');
+                    document.removeEventListener('click', handler);
+                }
+            }, { once: true });
+        }, 10);
     }
-}
+    function hideCostCodesDropdown() {
+        document.getElementById('costCodesDropdown').classList.add('hidden');
+    }
 
-// ==================== COST CODE AUTO-FILL ====================
-function autoFillFromCostCode() {
-    const input = document.getElementById('cost_code');
-    const fullValue = input.value.trim();
-    const codeMatch = fullValue.match(/^([0-9-]+)/);
-    const code = codeMatch ? codeMatch[1] : fullValue;
-
-    const allCodes = activeCostCodeList === 'csi' ? csiCostCodes : customCostCodes;
-    const found = allCodes.find(c => c.code === code);
-
-    if (found) {
-        input.value = `${found.code} - ${found.description}`;
-        if (!document.getElementById('description').value) {
-            document.getElementById('description').value = found.description;
+    // ==================== COST CODE LIST SWITCHING ====================
+    function changeActiveCostCodeList() {
+        if (budgetPublished) {
+            showCenteredAlert("Budget has been published. You can no longer switch between CSI and Custom code lists.");
+            document.getElementById('costCodeListSelector').value = activeCostCodeList;
+            return;
         }
-        document.getElementById('cost_type').value = found.cost_type;
-        return;
+        activeCostCodeList = document.getElementById('costCodeListSelector').value;
+        const modal = document.getElementById('budgetLineModal');
+        if (modal.open) populateCostCodeDatalist();
     }
 
-    if (code.length < 4) return;
+    function populateCostCodeDatalist() {
+        const datalist = document.getElementById('costCodeList');
+        datalist.innerHTML = '';
+        const codes = activeCostCodeList === 'csi' ? csiCostCodes : customCostCodes;
+        codes.forEach(item => {
+            const option = document.createElement('option');
+            option.value = `${item.code} - ${item.description}`;
+            datalist.appendChild(option);
+        });
+    }
 
-    if (budgetPublished) {
-        const isValidCSIFormat = /^\d{2}-\d{4}$/.test(code) && activeCostCodeList === 'csi';
-        if (isValidCSIFormat) {
-            if (confirm(`Cost code "${code}" is not in the current list. Add it to the CSI Master Codes?`)) {
-                const desc = prompt("Enter description for this new cost code:");
-                if (desc) {
-                    csiCostCodes.push({ code: code, description: desc, cost_type: "Other" });
-                    populateCostCodeDatalist();
-                    input.value = `${code} - ${desc}`;
+    function formatCostCode(input) {
+        if (activeCostCodeList !== 'csi') return;
+        let val = input.value.trim().replace(/[^0-9]/g, '');
+        if (val.length >= 2) {
+            val = val.substring(0, 2) + '-' + val.substring(2, 6);
+            input.value = val;
+        }
+    }
+
+    // ==================== ACCOUNTING FORMAT ====================
+    function formatAccountingInput(input) {
+        let value = parseFloat(input.value.replace(/[^0-9.-]+/g, "")) || 0;
+        input.value = value.toFixed(2);
+    }
+
+    // ==================== RENDER TABLE ====================
+    function renderBudgetTable(lines) {
+        const tbody = document.getElementById('budgetTableBody');
+        tbody.innerHTML = '';
+
+        const sorted = [...lines].sort((a, b) => a.cost_code.localeCompare(b.cost_code, undefined, { numeric: true }));
+
+        let currentDivision = null;
+        let originalTotal = 0;
+        let changesTotal = 0;
+        let sovTotal = 0;
+
+        const divisionNames = {
+            '01': 'General Requirements', '03': 'Concrete', '04': 'Masonry',
+            '05': 'Metals', '06': 'Wood, Plastics, and Composites',
+            '07': 'Thermal and Moisture Protection', '08': 'Openings',
+            '09': 'Finishes', '22': 'Plumbing', '23': 'HVAC',
+            '26': 'Electrical', '31': 'Earthwork'
+        };
+
+        sorted.forEach(line => {
+            const division = line.cost_code.substring(0, 2);
+
+            if (division !== currentDivision) {
+                currentDivision = division;
+                const headerRow = document.createElement('tr');
+                headerRow.className = 'bg-zinc-800';
+                headerRow.innerHTML = `
+                    <td colspan="8" class="px-5 py-1.5 text-emerald-400 font-semibold text-base">
+                        Division ${division} — ${divisionNames[division] || 'Other'}
+                    </td>
+                `;
+                tbody.appendChild(headerRow);
+            }
+
+            const current = line.original_budget + line.approved_changes;
+            originalTotal += line.original_budget;
+            changesTotal += line.approved_changes;
+            sovTotal += (line.sov_amount || 0);
+
+            const row = document.createElement('tr');
+            row.className = 'hover:bg-zinc-800/60 transition-colors';
+            
+            if (currentView === 'sov') {
+                const overBudget = (line.sov_amount || 0) > current;
+                row.innerHTML = `
+                    <td class="px-5 py-1.5 font-mono text-sm">${line.cost_code}</td>
+                    <td class="px-5 py-1.5">${line.description}</td>
+                    <td class="px-5 py-1.5">
+                        <span class="inline-block px-2.5 py-0.5 rounded-full text-xs font-medium bg-zinc-700 text-zinc-300">
+                            ${line.cost_type}
+                        </span>
+                    </td>
+                    <td class="px-5 py-1.5 text-right font-medium">${formatCurrency(line.original_budget)}</td>
+                    <td class="px-5 py-1.5 text-right text-amber-400">${formatCurrency(line.approved_changes)}</td>
+                    <td class="px-5 py-1.5 text-right font-semibold ${overBudget ? 'text-red-400' : 'text-emerald-400'}">
+                        ${formatCurrency(line.sov_amount || 0)}
+                        ${overBudget ? '<span class="text-red-400 text-xs ml-1">(Over)</span>' : ''}
+                    </td>
+                    <td class="px-5 py-1.5 text-sm text-zinc-400">${line.notes || ''}</td>
+                    <td class="px-3 py-1.5">
+                        <div class="flex gap-1">
+                            <button onclick="editBudgetLine(${line.id})" class="p-1 hover:bg-zinc-700 rounded text-zinc-400 hover:text-white"><i class="fa-solid fa-edit text-sm"></i></button>
+                            <button onclick="deleteBudgetLine(${line.id})" class="p-1 hover:bg-zinc-700 rounded text-zinc-400 hover:text-red-400"><i class="fa-solid fa-trash text-sm"></i></button>
+                        </div>
+                    </td>
+                `;
+            } else {
+                row.innerHTML = `
+                    <td class="px-5 py-1.5 font-mono text-sm">${line.cost_code}</td>
+                    <td class="px-5 py-1.5">${line.description}</td>
+                    <td class="px-5 py-1.5">
+                        <span class="inline-block px-2.5 py-0.5 rounded-full text-xs font-medium bg-zinc-700 text-zinc-300">
+                            ${line.cost_type}
+                        </span>
+                    </td>
+                    <td class="px-5 py-1.5 text-right font-medium">${formatCurrency(line.original_budget)}</td>
+                    <td class="px-5 py-1.5 text-right text-amber-400">${formatCurrency(line.approved_changes)}</td>
+                    <td class="px-5 py-1.5 text-right font-semibold text-emerald-400">${formatCurrency(line.sov_amount || 0)}</td>
+                    <td class="px-5 py-1.5 text-sm text-zinc-400">${line.notes || ''}</td>
+                    <td class="px-3 py-1.5">
+                        <div class="flex gap-1">
+                            <button onclick="editBudgetLine(${line.id})" class="p-1 hover:bg-zinc-700 rounded text-zinc-400 hover:text-white"><i class="fa-solid fa-edit text-sm"></i></button>
+                            <button onclick="deleteBudgetLine(${line.id})" class="p-1 hover:bg-zinc-700 rounded text-zinc-400 hover:text-red-400"><i class="fa-solid fa-trash text-sm"></i></button>
+                        </div>
+                    </td>
+                `;
+            }
+            tbody.appendChild(row);
+        });
+
+        updateTotals(originalTotal, changesTotal, sovTotal);
+    }
+
+    function updateTotals(original, changes, sov) {
+        const current = original + changes;
+        document.getElementById('originalBudgetTotal').textContent = formatCurrency(original);
+        document.getElementById('approvedChangesTotal').textContent = formatCurrency(changes);
+        document.getElementById('currentBudgetTotal').textContent = formatCurrency(current);
+        
+        const remaining = contractAmount - current;
+        document.getElementById('remainingBudgetTotal').textContent = formatCurrency(remaining);
+
+        document.getElementById('footerOriginalTotal').textContent = formatCurrency(original);
+        document.getElementById('footerChangesTotal').textContent = formatCurrency(changes);
+        document.getElementById('footerSovTotal').textContent = formatCurrency(sov);
+
+        document.getElementById('contractAmount').textContent = formatCurrency(contractAmount);
+    }
+
+    function formatCurrency(amount) {
+        return new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(amount || 0);
+    }
+
+    // ==================== COST CODE AUTO-FILL ====================
+    function autoFillFromCostCode() {
+        const fullValue = document.getElementById('cost_code').value.trim();
+        const codeMatch = fullValue.match(/^([0-9-]+)/);
+        const code = codeMatch ? codeMatch[1] : fullValue;
+
+        const allCodes = activeCostCodeList === 'csi' ? csiCostCodes : customCostCodes;
+        const found = allCodes.find(c => c.code === code);
+
+        if (found) {
+            document.getElementById('cost_code').value = `${found.code} - ${found.description}`;
+            if (!document.getElementById('description').value) {
+                document.getElementById('description').value = found.description;
+            }
+            document.getElementById('cost_type').value = found.cost_type;
+        } else if (code.length > 3) {
+            if (budgetPublished) {
+                const isValidFormat = /^\d{2}-\d{4}$/.test(code);
+                if (isValidFormat && activeCostCodeList === 'csi') {
+                    if (confirm(`Cost code "${code}" is not in the list. Add it?`)) {
+                        const desc = prompt("Enter description:");
+                        if (desc) {
+                            csiCostCodes.push({ code, description: desc, cost_type: "Other" });
+                            populateCostCodeDatalist();
+                            document.getElementById('cost_code').value = `${code} - ${desc}`;
+                        } else {
+                            document.getElementById('cost_code').value = '';
+                        }
+                    } else {
+                        document.getElementById('cost_code').value = '';
+                    }
                 } else {
-                    input.value = '';
+                    showCenteredAlert("Budget is published. New codes must follow CSI format (e.g. 03-3000).");
+                    document.getElementById('cost_code').value = '';
                 }
             } else {
-                input.value = '';
+                if (confirm(`Cost code "${code}" not found. Add it?`)) {
+                    const desc = prompt("Enter description:");
+                    if (desc) {
+                        const newCode = { code, description: desc, cost_type: "Other" };
+                        if (activeCostCodeList === 'custom') customCostCodes.push(newCode);
+                        else csiCostCodes.push(newCode);
+                        populateCostCodeDatalist();
+                        document.getElementById('cost_code').value = `${code} - ${desc}`;
+                    } else {
+                        document.getElementById('cost_code').value = '';
+                    }
+                } else {
+                    document.getElementById('cost_code').value = '';
+                }
             }
-        } else {
-            showCenteredAlert("Budget is published. New codes must follow the existing format (e.g. 03-3000).");
-            input.value = '';
         }
-    } else {
-        if (confirm(`Cost code "${code}" is not in the current list. Add it?`)) {
-            const desc = prompt("Enter description for this new cost code:");
-            if (desc) {
-                const newCode = { code: code, description: desc, cost_type: "Other" };
-                if (activeCostCodeList === 'custom') customCostCodes.push(newCode);
-                else csiCostCodes.push(newCode);
-                populateCostCodeDatalist();
-                input.value = `${code} - ${desc}`;
+    }
+
+    // ==================== CENTERED MODALS ====================
+    function showCenteredAlert(message) {
+        const dialog = document.createElement('dialog');
+        dialog.className = 'bg-zinc-900 border border-zinc-700 rounded-2xl p-0 w-full max-w-md shadow-2xl text-white';
+        dialog.innerHTML = `<div class="p-6"><div class="text-base mb-5">${message}</div><div class="flex justify-end"><button class="px-5 py-2 bg-emerald-600 hover:bg-emerald-500 rounded-lg text-sm font-medium">OK</button></div></div>`;
+        document.body.appendChild(dialog);
+        dialog.showModal();
+        dialog.querySelector('button').onclick = () => { dialog.close(); dialog.remove(); };
+    }
+
+    function showCenteredConfirm(message, onConfirm) {
+        const dialog = document.createElement('dialog');
+        dialog.className = 'bg-zinc-900 border border-zinc-700 rounded-2xl p-0 w-full max-w-md shadow-2xl text-white';
+        dialog.innerHTML = `<div class="p-6"><div class="text-base mb-5">${message}</div><div class="flex gap-3"><button class="flex-1 py-2.5 bg-zinc-800 hover:bg-zinc-700 rounded-lg text-sm font-medium" id="cancelBtn">Cancel</button><button class="flex-1 py-2.5 bg-emerald-600 hover:bg-emerald-500 rounded-lg text-sm font-medium" id="confirmBtn">Confirm</button></div></div>`;
+        document.body.appendChild(dialog);
+        dialog.showModal();
+        dialog.querySelector('#cancelBtn').onclick = () => { dialog.close(); dialog.remove(); };
+        dialog.querySelector('#confirmBtn').onclick = () => { dialog.close(); dialog.remove(); onConfirm(); };
+    }
+
+    // ==================== MODALS ====================
+    function showAddBudgetLineModal() {
+        document.getElementById('modalTitle').innerText = 'Add Budget Line';
+        document.getElementById('budgetLineForm').reset();
+        document.getElementById('budgetLineId').value = '';
+        populateCostCodeDatalist();
+        document.getElementById('budgetLineModal').showModal();
+    }
+
+    function editBudgetLine(id) {
+        const line = budgetLines.find(l => l.id === id);
+        if (!line) return;
+
+        document.getElementById('modalTitle').innerText = 'Edit Budget Line';
+        document.getElementById('budgetLineId').value = line.id;
+        document.getElementById('cost_code').value = `${line.cost_code} - ${line.description}`;
+        document.getElementById('description').value = line.description;
+        document.getElementById('cost_type').value = line.cost_type;
+        document.getElementById('original_budget').value = line.original_budget;
+        document.getElementById('sov_amount').value = line.sov_amount || 0;
+        document.getElementById('notes').value = line.notes || '';
+
+        populateCostCodeDatalist();
+        document.getElementById('budgetLineModal').showModal();
+    }
+
+    function saveBudgetLine(e) {
+        e.preventDefault();
+
+        const id = document.getElementById('budgetLineId').value;
+        const fullCodeValue = document.getElementById('cost_code').value.trim();
+        const codeMatch = fullCodeValue.match(/^([0-9-]+)/);
+        const codeOnly = codeMatch ? codeMatch[1] : fullCodeValue;
+
+        const originalBudget = parseFloat(document.getElementById('original_budget').value) || 0;
+        const sovAmount = parseFloat(document.getElementById('sov_amount').value) || 0;
+
+        if (sovAmount > originalBudget) {
+            showCenteredAlert("Schedule of Values amount cannot exceed the Original Budget on this line.");
+            return;
+        }
+
+        const newLine = {
+            id: id ? parseInt(id) : Date.now(),
+            cost_code: codeOnly,
+            description: document.getElementById('description').value.trim(),
+            cost_type: document.getElementById('cost_type').value,
+            original_budget: originalBudget,
+            approved_changes: id ? (budgetLines.find(l => l.id == id)?.approved_changes || 0) : 0,
+            sov_amount: sovAmount,
+            notes: document.getElementById('notes').value.trim()
+        };
+
+        // Calculate projected total
+        let projectedTotal = 0;
+        budgetLines.forEach(l => {
+            if (id && l.id == id) {
+                projectedTotal += newLine.original_budget;
             } else {
-                input.value = '';
+                projectedTotal += l.original_budget;
             }
+        });
+        if (!id) projectedTotal += newLine.original_budget;
+
+        if (projectedTotal > contractAmount) {
+            showReallocationPrompt(newLine, id);
+            return;
+        }
+
+        if (id) {
+            const index = budgetLines.findIndex(l => l.id == id);
+            budgetLines[index] = newLine;
         } else {
-            input.value = '';
-        }
-    }
-}
-
-// ==================== RENDER TABLE ====================
-function renderBudgetTable(lines) {
-    const tbody = document.getElementById('budgetTableBody');
-    tbody.innerHTML = '';
-
-    const sorted = [...lines].sort((a, b) => a.cost_code.localeCompare(b.cost_code, undefined, { numeric: true }));
-
-    let currentDivision = null;
-    let originalTotal = 0;
-    let changesTotal = 0;
-    let currentTotal = 0;
-
-    const divisionNames = {
-        '01': 'General Requirements', '03': 'Concrete', '04': 'Masonry',
-        '05': 'Metals', '06': 'Wood, Plastics, and Composites',
-        '07': 'Thermal and Moisture Protection', '08': 'Openings',
-        '09': 'Finishes', '22': 'Plumbing', '23': 'HVAC',
-        '26': 'Electrical', '31': 'Earthwork'
-    };
-
-    sorted.forEach(line => {
-        const division = line.cost_code.substring(0, 2);
-
-        if (division !== currentDivision) {
-            currentDivision = division;
-            const headerRow = document.createElement('tr');
-            headerRow.className = 'bg-zinc-800';
-            headerRow.innerHTML = `
-                <td colspan="8" class="px-5 py-1.5 text-emerald-400 font-semibold text-base">
-                    Division ${division} — ${divisionNames[division] || 'Other'}
-                </td>
-            `;
-            tbody.appendChild(headerRow);
+            budgetLines.push(newLine);
         }
 
-        const current = (line.original_budget || 0) + (line.approved_changes || 0);
-        originalTotal += (line.original_budget || 0);
-        changesTotal += (line.approved_changes || 0);
-        currentTotal += current;
-
-        const row = document.createElement('tr');
-        row.className = 'hover:bg-zinc-800/60 transition-colors';
-        row.innerHTML = `
-            <td class="px-5 py-1.5 font-mono text-sm">${line.cost_code}</td>
-            <td class="px-5 py-1.5">${line.description}</td>
-            <td class="px-5 py-1.5">
-                <span class="inline-block px-2.5 py-0.5 rounded-full text-xs font-medium bg-zinc-700 text-zinc-300">
-                    ${line.cost_type}
-                </span>
-            </td>
-            <td class="px-5 py-1.5 text-right font-medium">${formatCurrency(line.original_budget || 0)}</td>
-            <td class="px-5 py-1.5 text-right text-amber-400">${formatCurrency(line.approved_changes || 0)}</td>
-            <td class="px-5 py-1.5 text-right font-semibold text-emerald-400">${formatCurrency(current)}</td>
-            <td class="px-5 py-1.5 text-sm text-zinc-400">${line.notes || ''}</td>
-            <td class="px-3 py-1.5">
-                <div class="flex gap-1">
-                    <button onclick="editBudgetLine(${line.id})" class="p-1 hover:bg-zinc-700 rounded text-zinc-400 hover:text-white"><i class="fa-solid fa-edit text-sm"></i></button>
-                    <button onclick="deleteBudgetLine(${line.id})" class="p-1 hover:bg-zinc-700 rounded text-zinc-400 hover:text-red-400"><i class="fa-solid fa-trash text-sm"></i></button>
-                </div>
-            </td>
-        `;
-        tbody.appendChild(row);
-    });
-
-    updateTotals(originalTotal, changesTotal, currentTotal);
-}
-
-function updateTotals(original, changes, current) {
-    const variance = contractAmount - original;
-    
-    document.getElementById('originalBudgetTotal').textContent = formatCurrency(original);
-    document.getElementById('approvedChangesTotal').textContent = formatCurrency(changes);
-    document.getElementById('currentBudgetTotal').textContent = formatCurrency(current);
-    document.getElementById('varianceTotal').textContent = formatCurrency(variance);
-
-    document.getElementById('footerOriginalTotal').textContent = formatCurrency(original);
-    document.getElementById('footerChangesTotal').textContent = formatCurrency(changes);
-    document.getElementById('footerCurrentTotal').textContent = formatCurrency(current);
-}
-
-function formatCurrency(amount) {
-    return new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(amount || 0);
-}
-
-// ==================== CURRENCY FORMATTING ====================
-function setupCurrencyFormatting() {
-    const input = document.getElementById('original_budget');
-    if (!input) return;
-
-    input.addEventListener('blur', function() {
-        let value = parseFloat(this.value.replace(/[^0-9.-]+/g, "")) || 0;
-        this.value = formatCurrency(value).replace('$', '');
-    });
-
-    input.addEventListener('focus', function() {
-        if (this.value) this.value = this.value.replace(/[^0-9.-]+/g, "");
-    });
-}
-
-// ==================== CENTERED MODALS ====================
-function showCenteredAlert(message) {
-    const dialog = document.createElement('dialog');
-    dialog.className = 'bg-zinc-900 border border-zinc-700 rounded-2xl p-0 w-full max-w-md shadow-2xl text-white';
-    dialog.innerHTML = `
-        <div class="p-6">
-            <div class="text-base mb-5">${message}</div>
-            <div class="flex justify-end">
-                <button class="px-5 py-2 bg-emerald-600 hover:bg-emerald-500 rounded-lg text-sm font-medium">OK</button>
-            </div>
-        </div>
-    `;
-    document.body.appendChild(dialog);
-    dialog.showModal();
-    dialog.querySelector('button').onclick = () => { dialog.close(); dialog.remove(); };
-}
-
-function showCenteredConfirm(message, onConfirm) {
-    const dialog = document.createElement('dialog');
-    dialog.className = 'bg-zinc-900 border border-zinc-700 rounded-2xl p-0 w-full max-w-md shadow-2xl text-white';
-    dialog.innerHTML = `
-        <div class="p-6">
-            <div class="text-base mb-5">${message}</div>
-            <div class="flex gap-3">
-                <button class="flex-1 py-2.5 bg-zinc-800 hover:bg-zinc-700 rounded-lg text-sm font-medium" id="cancelBtn">Cancel</button>
-                <button class="flex-1 py-2.5 bg-emerald-600 hover:bg-emerald-500 rounded-lg text-sm font-medium" id="confirmBtn">Confirm</button>
-            </div>
-        </div>
-    `;
-    document.body.appendChild(dialog);
-    dialog.showModal();
-
-    dialog.querySelector('#cancelBtn').onclick = () => { dialog.close(); dialog.remove(); };
-    dialog.querySelector('#confirmBtn').onclick = () => {
-        dialog.close();
-        dialog.remove();
-        onConfirm();
-    };
-}
-
-// ==================== MODALS ====================
-function showAddBudgetLineModal() {
-    document.getElementById('modalTitle').innerText = 'Add Budget Line';
-    document.getElementById('budgetLineForm').reset();
-    document.getElementById('budgetLineId').value = '';
-    populateCostCodeDatalist();
-    document.getElementById('budgetLineModal').showModal();
-}
-
-function editBudgetLine(id) {
-    const line = budgetLines.find(l => l.id === id);
-    if (!line) return;
-
-    document.getElementById('modalTitle').innerText = 'Edit Budget Line';
-    document.getElementById('budgetLineId').value = line.id;
-    document.getElementById('cost_code').value = `${line.cost_code} - ${line.description}`;
-    document.getElementById('description').value = line.description;
-    document.getElementById('cost_type').value = line.cost_type;
-    document.getElementById('original_budget').value = formatCurrency(line.original_budget || 0).replace('$', '');
-    document.getElementById('notes').value = line.notes || '';
-
-    populateCostCodeDatalist();
-    document.getElementById('budgetLineModal').showModal();
-}
-
-function saveBudgetLine(e) {
-    e.preventDefault();
-
-    const id = document.getElementById('budgetLineId').value;
-    const fullCodeValue = document.getElementById('cost_code').value.trim();
-    const codeMatch = fullCodeValue.match(/^([0-9-]+)/);
-    const codeOnly = codeMatch ? codeMatch[1] : fullCodeValue;
-
-    const rawBudget = document.getElementById('original_budget').value;
-    const newOriginal = parseFloat(rawBudget.replace(/[^0-9.-]+/g, "")) || 0;
-
-    // Calculate what the new total would be
-    let currentOriginalTotal = budgetLines.reduce((sum, l) => sum + (l.original_budget || 0), 0);
-    
-    if (id) {
-        const existing = budgetLines.find(l => l.id == id);
-        currentOriginalTotal -= (existing.original_budget || 0);
-    }
-    
-    const projectedTotal = currentOriginalTotal + newOriginal;
-
-    // Validation
-    if (projectedTotal > contractAmount) {
-        showCenteredAlert(`This change would make Original Budget ($${projectedTotal.toLocaleString()}) exceed Contract Amount ($${contractAmount.toLocaleString()}). Please reduce the amount or reallocate from another line item.`);
-        return;
-    }
-
-    const newLine = {
-        id: id ? parseInt(id) : Date.now(),
-        cost_code: codeOnly,
-        description: document.getElementById('description').value.trim(),
-        cost_type: document.getElementById('cost_type').value,
-        original_budget: newOriginal,
-        approved_changes: id ? (budgetLines.find(l => l.id == id)?.approved_changes || 0) : 0,
-        notes: document.getElementById('notes').value.trim()
-    };
-
-    if (id) {
-        const index = budgetLines.findIndex(l => l.id == id);
-        budgetLines[index] = newLine;
-    } else {
-        budgetLines.push(newLine);
-    }
-
-    renderBudgetTable(budgetLines);
-    document.getElementById('budgetLineModal').close();
-}
-
-function deleteBudgetLine(id) {
-    showCenteredConfirm("Delete this budget line item?", () => {
-        budgetLines = budgetLines.filter(l => l.id !== id);
         renderBudgetTable(budgetLines);
-    });
-}
 
-// ==================== PUBLISH BUDGET ====================
-function publishBudget() {
-    if (budgetLines.length === 0) {
-        showCenteredAlert("You must add at least one budget line before publishing.");
-        return;
+        // Revert publish button after any change
+        if (budgetPublished) {
+            budgetPublished = false;
+            localStorage.setItem('budgetPublished', 'false');
+            const btn = document.getElementById('publishBtn');
+            btn.innerHTML = `<i class="fa-solid fa-check-double"></i> <span>Publish Budget</span>`;
+            btn.disabled = false;
+            btn.classList.remove('!bg-emerald-700');
+        }
+
+        document.getElementById('budgetLineModal').close();
     }
 
-    let message = "Are you sure you want to publish the current budget?";
-    if (!budgetPublished) {
-        message = "This will lock all cost codes under the current cost code list. You will only be able to add new codes that follow the same format. Is that okay?";
+    function showReallocationPrompt(newLine, editingId) {
+        const dialog = document.createElement('dialog');
+        dialog.className = 'bg-zinc-900 border border-zinc-700 rounded-2xl p-0 w-full max-w-lg shadow-2xl text-white';
+        
+        let optionsHtml = '<option value="">-- Select line to move money from --</option>';
+        budgetLines.forEach(l => {
+            const current = l.original_budget + l.approved_changes;
+            if ((l.sov_amount || 0) === 0 && (!editingId || l.id != editingId)) {
+                optionsHtml += `<option value="${l.id}">${l.cost_code} - ${l.description} | Orig: ${formatCurrency(l.original_budget)} | Current: ${formatCurrency(current)} | SOV: ${formatCurrency(l.sov_amount || 0)}</option>`;
+            }
+        });
+
+        dialog.innerHTML = `
+            <div class="p-6">
+                <div class="font-semibold text-xl mb-2">This would exceed the Contract Amount</div>
+                <div class="text-sm text-zinc-300 mb-4">Would you like to move money from another budget line item?</div>
+                
+                <select id="reallocSource" class="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-4 py-2.5 text-sm mb-4">
+                    ${optionsHtml}
+                </select>
+                
+                <div class="flex gap-3">
+                    <button class="flex-1 py-2.5 bg-zinc-800 hover:bg-zinc-700 rounded-lg text-sm font-medium" id="cancelBtn">Cancel</button>
+                    <button class="flex-1 py-2.5 bg-emerald-600 hover:bg-emerald-500 rounded-lg text-sm font-medium text-white" id="confirmBtn">Move &amp; Save</button>
+                </div>
+            </div>
+        `;
+        document.body.appendChild(dialog);
+        dialog.showModal();
+
+        dialog.querySelector('#cancelBtn').onclick = () => { dialog.close(); dialog.remove(); };
+        dialog.querySelector('#confirmBtn').onclick = () => {
+            const sourceId = parseInt(dialog.querySelector('#reallocSource').value);
+            if (!sourceId) {
+                showCenteredAlert("Please select a line item to move money from.");
+                return;
+            }
+            dialog.close();
+            dialog.remove();
+            performReallocation(newLine, sourceId, editingId);
+        };
     }
 
-    showCenteredConfirm(message, () => {
-        budgetPublished = true;
-        localStorage.setItem('budgetPublished', 'true');
-        document.getElementById('costCodeListSelector').disabled = true;
+    function performReallocation(newLine, sourceId, editingId) {
+        const sourceLine = budgetLines.find(l => l.id === sourceId);
+        if (!sourceLine) return;
 
-        const btn = document.getElementById('publishBtn');
-        btn.innerHTML = `<i class="fa-solid fa-check-double"></i> <span>Published</span>`;
-        btn.disabled = true;
-        btn.classList.add('!bg-emerald-700');
+        const currentProjected = budgetLines.reduce((sum, l) => {
+            if (editingId && l.id == editingId) return sum + newLine.original_budget;
+            return sum + l.original_budget;
+        }, 0) + (editingId ? 0 : newLine.original_budget);
 
-        setTimeout(() => {
-            showCenteredAlert("Budget published and pushed to Sage 300 (simulated).");
-        }, 600);
-    });
-}
+        const excess = currentProjected - contractAmount;
+        if (excess <= 0) {
+            saveBudgetLineDirect(newLine, editingId);
+            return;
+        }
 
-// ==================== UPLOAD CODES ====================
-function showUploadCodesModal() {
-    document.getElementById('uploadCodesModal').showModal();
-}
-
-function uploadToCurrentList() {
-    document.getElementById('uploadCodesModal').close();
-    const input = document.createElement('input');
-    input.type = 'file';
-    input.accept = '.xlsx,.xls,.csv';
-    input.onchange = (e) => handleCostCodeFile(e, 'current');
-    input.click();
-}
-
-function showCreateNewListModal() {
-    document.getElementById('uploadCodesModal').close();
-    document.getElementById('createNewListModal').showModal();
-}
-
-function confirmCreateNewList() {
-    const name = document.getElementById('newListName').value.trim();
-    document.getElementById('createNewListModal').close();
-    if (!name) return;
-    alert(`New list "${name}" created (placeholder). Full multi-list support coming soon.`);
-}
-
-function handleCostCodeFile(event, mode = 'current', newListName = '') {
-    const file = event.target.files[0];
-    if (!file) return;
-    alert(`File selected: ${file.name}\nMode: ${mode}\n\nFull Excel/CSV parsing will be implemented in the next update.`);
-}
-
-// ==================== EXPORT & PRINT ====================
-function exportBudget() {
-    const data = budgetLines.map(line => ({
-        "Cost Code": line.cost_code,
-        "Description": line.description,
-        "Cost Type": line.cost_type,
-        "Original Budget": line.original_budget,
-        "Approved Changes": line.approved_changes,
-        "Current Budget": line.original_budget + line.approved_changes,
-        "Notes": line.notes
-    }));
-
-    const ws = XLSX.utils.json_to_sheet(data);
-    const wb = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(wb, ws, "Budget");
-    XLSX.writeFile(wb, "Budget_Export.xlsx");
-}
-
-function exportCostCodes() {
-    const codes = activeCostCodeList === 'csi' ? csiCostCodes : customCostCodes;
-    const data = codes.map(c => ({
-        "Cost Code": c.code,
-        "Description": c.description,
-        "Cost Type": c.cost_type
-    }));
-
-    const ws = XLSX.utils.json_to_sheet(data);
-    const wb = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(wb, ws, "Cost Codes");
-    XLSX.writeFile(wb, `${activeCostCodeList}_Cost_Codes.xlsx`);
-}
-
-function showPrintOptions() {
-    document.getElementById('printChoiceModal').showModal();
-}
-
-function printBudget(type) {
-    document.getElementById('printChoiceModal').close();
-
-    const printWindow = window.open('', '_blank');
-    if (!printWindow) {
-        alert("Please allow pop-ups to print.");
-        return;
+        sourceLine.original_budget = Math.max(0, sourceLine.original_budget - excess);
+        saveBudgetLineDirect(newLine, editingId);
     }
 
-    let html = '';
+    function saveBudgetLineDirect(newLine, editingId) {
+        if (editingId) {
+            const index = budgetLines.findIndex(l => l.id == editingId);
+            budgetLines[index] = newLine;
+        } else {
+            budgetLines.push(newLine);
+        }
+        renderBudgetTable(budgetLines);
 
-    if (type === 'aia') {
-        html = `
-            <html>
-            <head>
-                <title>Budget - AIA G703</title>
-                <style>
-                    body { font-family: Arial, sans-serif; margin: 40px; }
-                    h1 { text-align: center; font-size: 22px; margin-bottom: 4px; }
-                    .subtitle { text-align: center; font-size: 12px; color: #666; margin-bottom: 20px; }
-                    table { width: 100%; border-collapse: collapse; font-size: 11px; }
-                    th, td { border: 1px solid #333; padding: 6px; text-align: left; }
-                    th { background: #f0f0f0; }
-                    .right { text-align: right; }
-                    .mono { font-family: monospace; }
-                </style>
-            </head>
-            <body>
-                <h1>APPLICATION AND CERTIFICATE FOR PAYMENT</h1>
-                <p class="subtitle">AIA G702 / G703 Continuation Sheet</p>
-                <table>
+        if (budgetPublished) {
+            budgetPublished = false;
+            localStorage.setItem('budgetPublished', 'false');
+            const btn = document.getElementById('publishBtn');
+            btn.innerHTML = `<i class="fa-solid fa-check-double"></i> <span>Publish Budget</span>`;
+            btn.disabled = false;
+            btn.classList.remove('!bg-emerald-700');
+        }
+        document.getElementById('budgetLineModal').close();
+    }
+
+    function deleteBudgetLine(id) {
+        showCenteredConfirm("Delete this budget line item?", () => {
+            budgetLines = budgetLines.filter(l => l.id !== id);
+            renderBudgetTable(budgetLines);
+            
+            if (budgetLines.length === 0 && budgetPublished) {
+                budgetPublished = false;
+                localStorage.setItem('budgetPublished', 'false');
+                document.getElementById('costCodeListSelector').disabled = false;
+                const btn = document.getElementById('publishBtn');
+                btn.innerHTML = `<i class="fa-solid fa-check-double"></i> <span>Publish Budget</span>`;
+                btn.disabled = false;
+                btn.classList.remove('!bg-emerald-700');
+            }
+        });
+    }
+
+    // ==================== PUBLISH ====================
+    function publishBudget() {
+        if (budgetLines.length === 0) {
+            showCenteredAlert("You must add at least one budget line before publishing.");
+            return;
+        }
+
+        let message = "Are you sure you want to publish the current budget?";
+        if (!budgetPublished) {
+            message = "This will lock all cost codes under the current list. You will only be able to add new codes that follow the same format. Is that okay?";
+        }
+
+        showCenteredConfirm(message, () => {
+            budgetPublished = true;
+            localStorage.setItem('budgetPublished', 'true');
+            document.getElementById('costCodeListSelector').disabled = true;
+
+            const btn = document.getElementById('publishBtn');
+            btn.innerHTML = `<i class="fa-solid fa-check-double"></i> <span>Published</span>`;
+            btn.disabled = true;
+            btn.classList.add('!bg-emerald-700');
+
+            setTimeout(() => {
+                showCenteredAlert("Budget published and pushed to Sage 300 (simulated).");
+            }, 600);
+        });
+    }
+
+    // ==================== CONTRACT AMOUNT ====================
+    function editContractAmount() {
+        const newAmount = prompt("Enter Contract Amount:", contractAmount);
+        if (newAmount === null) return;
+        contractAmount = parseFloat(newAmount) || 0;
+        localStorage.setItem('contractAmount', contractAmount);
+        renderBudgetTable(budgetLines);
+    }
+
+    // ==================== UPLOAD ====================
+    function showUploadCodesModal() {
+        document.getElementById('uploadCodesModal').showModal();
+    }
+
+    function uploadToCurrentList() {
+        document.getElementById('uploadCodesModal').close();
+        const input = document.createElement('input');
+        input.type = 'file';
+        input.accept = '.xlsx,.xls,.csv';
+        input.onchange = (e) => handleCostCodeFile(e, 'current');
+        input.click();
+    }
+
+    function showCreateNewListModal() {
+        document.getElementById('uploadCodesModal').close();
+        document.getElementById('createNewListModal').showModal();
+    }
+
+    function confirmCreateNewList() {
+        const name = document.getElementById('newListName').value.trim();
+        document.getElementById('createNewListModal').close();
+        if (!name) return;
+        alert(`New list "${name}" created (placeholder). Full implementation coming soon.`);
+    }
+
+    function handleCostCodeFile(event, mode = 'current') {
+        const file = event.target.files[0];
+        if (!file) return;
+        alert(`File selected: ${file.name}\nMode: ${mode}\n\nFull parsing will be added later.`);
+    }
+
+    // ==================== EXPORT & PRINT ====================
+    function exportBudget() {
+        const data = budgetLines.map(line => ({
+            "Cost Code": line.cost_code,
+            "Description": line.description,
+            "Cost Type": line.cost_type,
+            "Original Budget": line.original_budget,
+            "Approved Changes": line.approved_changes,
+            "SOV Spent": line.sov_amount || 0,
+            "Notes": line.notes
+        }));
+        const ws = XLSX.utils.json_to_sheet(data);
+        const wb = XLSX.utils.book_new();
+        XLSX.utils.book_append_sheet(wb, ws, "Budget");
+        XLSX.writeFile(wb, "Budget_Export.xlsx");
+    }
+
+    function showPrintOptions() {
+        document.getElementById('printChoiceModal').showModal();
+    }
+
+    function printBudget(type) {
+        document.getElementById('printChoiceModal').close();
+
+        const printArea = document.createElement('div');
+        printArea.style.position = 'absolute';
+        printArea.style.left = '-9999px';
+
+        let html = '';
+
+        if (type === 'aia') {
+            html = `
+                <h1 style="text-align:center; font-size:20px; margin-bottom:16px; font-weight:600;">Budget</h1>
+                <table style="width:100%; border-collapse:collapse; font-size:11px;">
                     <thead>
-                        <tr>
-                            <th>Cost Code</th>
-                            <th>Description</th>
-                            <th>Cost Type</th>
-                            <th class="right">Original Budget</th>
-                            <th class="right">Approved Changes</th>
-                            <th class="right">Current Budget</th>
+                        <tr style="background:#f3f4f6; border-bottom:2px solid #333;">
+                            <th style="border:1px solid #ccc; padding:6px; text-align:left;">Cost Code</th>
+                            <th style="border:1px solid #ccc; padding:6px; text-align:left;">Description</th>
+                            <th style="border:1px solid #ccc; padding:6px; text-align:left;">Cost Type</th>
+                            <th style="border:1px solid #ccc; padding:6px; text-align:right;">Original Budget</th>
+                            <th style="border:1px solid #ccc; padding:6px; text-align:right;">Approved Changes</th>
+                            <th style="border:1px solid #ccc; padding:6px; text-align:right;">Current Budget</th>
                         </tr>
                     </thead>
                     <tbody>
                         ${budgetLines.map(line => `
                             <tr>
-                                <td class="mono">${line.cost_code}</td>
-                                <td>${line.description}</td>
-                                <td>${line.cost_type}</td>
-                                <td class="right">${formatCurrency(line.original_budget)}</td>
-                                <td class="right">${formatCurrency(line.approved_changes)}</td>
-                                <td class="right"><strong>${formatCurrency(line.original_budget + line.approved_changes)}</strong></td>
+                                <td style="border:1px solid #ccc; padding:5px; font-family:monospace;">${line.cost_code}</td>
+                                <td style="border:1px solid #ccc; padding:5px;">${line.description}</td>
+                                <td style="border:1px solid #ccc; padding:5px;">${line.cost_type}</td>
+                                <td style="border:1px solid #ccc; padding:5px; text-align:right;">${formatCurrency(line.original_budget)}</td>
+                                <td style="border:1px solid #ccc; padding:5px; text-align:right;">${formatCurrency(line.approved_changes)}</td>
+                                <td style="border:1px solid #ccc; padding:5px; text-align:right; font-weight:600;">${formatCurrency(line.original_budget + line.approved_changes)}</td>
                             </tr>
                         `).join('')}
                     </tbody>
                 </table>
-            </body>
-            </html>
-        `;
-    } else {
-        html = `
-            <html>
-            <head>
-                <title>Budget - Full Detail</title>
-                <style>
-                    body { font-family: Arial, sans-serif; margin: 40px; }
-                    h2 { font-size: 18px; margin-bottom: 12px; }
-                    table { width: 100%; border-collapse: collapse; font-size: 10px; }
-                    th, td { border: 1px solid #333; padding: 5px; text-align: left; }
-                    th { background: #f0f0f0; }
-                    .right { text-align: right; }
-                    .mono { font-family: monospace; }
-                </style>
-            </head>
-            <body>
-                <h2>Budget - Full Detail</h2>
-                <table>
+            `;
+        } else {
+            html = `
+                <h2 style="font-size:18px; margin-bottom:12px;">Budget Detail</h2>
+                <table style="width:100%; border-collapse:collapse; font-size:11px;">
                     <thead>
-                        <tr>
-                            <th>Cost Code</th>
-                            <th>Description</th>
-                            <th>Cost Type</th>
-                            <th class="right">Original</th>
-                            <th class="right">Changes</th>
-                            <th class="right">Current</th>
-                            <th>Notes</th>
+                        <tr style="background:#f3f4f6;">
+                            <th style="border:1px solid #ccc; padding:5px;">Cost Code</th>
+                            <th style="border:1px solid #ccc; padding:5px;">Description</th>
+                            <th style="border:1px solid #ccc; padding:5px;">Cost Type</th>
+                            <th style="border:1px solid #ccc; padding:5px; text-align:right;">Original</th>
+                            <th style="border:1px solid #ccc; padding:5px; text-align:right;">Changes</th>
+                            <th style="border:1px solid #ccc; padding:5px; text-align:right;">Current</th>
+                            <th style="border:1px solid #ccc; padding:5px; text-align:right;">SOV</th>
+                            <th style="border:1px solid #ccc; padding:5px;">Notes</th>
                         </tr>
                     </thead>
                     <tbody>
                         ${budgetLines.map(line => `
                             <tr>
-                                <td class="mono">${line.cost_code}</td>
-                                <td>${line.description}</td>
-                                <td>${line.cost_type}</td>
-                                <td class="right">${formatCurrency(line.original_budget)}</td>
-                                <td class="right">${formatCurrency(line.approved_changes)}</td>
-                                <td class="right">${formatCurrency(line.original_budget + line.approved_changes)}</td>
-                                <td>${line.notes || ''}</td>
+                                <td style="border:1px solid #ccc; padding:5px; font-family:monospace;">${line.cost_code}</td>
+                                <td style="border:1px solid #ccc; padding:5px;">${line.description}</td>
+                                <td style="border:1px solid #ccc; padding:5px;">${line.cost_type}</td>
+                                <td style="border:1px solid #ccc; padding:5px; text-align:right;">${formatCurrency(line.original_budget)}</td>
+                                <td style="border:1px solid #ccc; padding:5px; text-align:right;">${formatCurrency(line.approved_changes)}</td>
+                                <td style="border:1px solid #ccc; padding:5px; text-align:right;">${formatCurrency(line.original_budget + line.approved_changes)}</td>
+                                <td style="border:1px solid #ccc; padding:5px; text-align:right;">${formatCurrency(line.sov_amount || 0)}</td>
+                                <td style="border:1px solid #ccc; padding:5px;">${line.notes || ''}</td>
                             </tr>
                         `).join('')}
                     </tbody>
                 </table>
-            </body>
-            </html>
-        `;
-    }
+            `;
+        }
 
-    printWindow.document.write(html);
-    printWindow.document.close();
-
-    setTimeout(() => {
-        printWindow.print();
-        printWindow.close();
-    }, 500);
-}
-
-function triggerPrintFromPreview() {
-    document.getElementById('printPreviewModal').close();
-    setTimeout(() => {
+        printArea.innerHTML = html;
+        document.body.appendChild(printArea);
         window.print();
-    }, 300);
-}
-
-// ==================== CONTRACT AMOUNT ====================
-function editContractAmount() {
-    const newAmount = prompt("Enter new Contract Amount (from Commitments):", contractAmount);
-    if (newAmount === null) return;
-    
-    const parsed = parseFloat(newAmount.replace(/[^0-9.-]+/g, ""));
-    if (isNaN(parsed) || parsed < 0) {
-        showCenteredAlert("Invalid amount entered.");
-        return;
-    }
-    
-    contractAmount = parsed;
-    document.getElementById('contractAmount').textContent = formatCurrency(contractAmount);
-    renderBudgetTable(budgetLines); // Refresh variance
-}
-
-// ==================== INITIALIZATION ====================
-function initializeBudget() {
-    // Load sample data if empty
-    if (budgetLines.length === 0) {
-        budgetLines = [
-            { id: 1, cost_code: "03-3000", description: "Concrete - Structural", cost_type: "Subcontract", original_budget: 285000, approved_changes: 12500, notes: "Includes 4000 PSI mix" },
-            { id: 2, cost_code: "09-9000", description: "Painting & Wall Coverings", cost_type: "Subcontract", original_budget: 87500, approved_changes: 0, notes: "" }
-        ];
+        setTimeout(() => printArea.remove(), 100);
     }
 
-    renderBudgetTable(budgetLines);
-    setupCurrencyFormatting();
-    document.getElementById('costCodeListSelector').value = activeCostCodeList;
-    document.getElementById('contractAmount').textContent = formatCurrency(contractAmount);
-
-    if (budgetPublished) {
-        document.getElementById('costCodeListSelector').disabled = true;
-        const btn = document.getElementById('publishBtn');
-        btn.innerHTML = `<i class="fa-solid fa-check-double"></i> <span>Published</span>`;
-        btn.disabled = true;
-        btn.classList.add('!bg-emerald-700');
+    function triggerPrintFromPreview() {
+        document.getElementById('printPreviewModal').close();
+        setTimeout(() => window.print(), 300);
     }
-}
 
-window.onload = function() {
-    initializeBudget();
-};
+    // ==================== INITIALIZATION ====================
+    function initializeBudget() {
+        if (budgetLines.length === 0) {
+            budgetLines = [
+                { id: 1, cost_code: "03-3000", description: "Concrete - Structural", cost_type: "Subcontract", original_budget: 185000, approved_changes: 0, sov_amount: 45000, notes: "" },
+                { id: 2, cost_code: "09-9000", description: "Painting & Wall Coverings", cost_type: "Subcontract", original_budget: 87500, approved_changes: 12500, sov_amount: 32000, notes: "" }
+            ];
+        }
+
+        document.getElementById('contractAmount').textContent = formatCurrency(contractAmount);
+        renderBudgetTable(budgetLines);
+        document.getElementById('costCodeListSelector').value = activeCostCodeList;
+
+        if (budgetPublished) {
+            document.getElementById('costCodeListSelector').disabled = true;
+            const btn = document.getElementById('publishBtn');
+            btn.innerHTML = `<i class="fa-solid fa-check-double"></i> <span>Published</span>`;
+            btn.disabled = true;
+            btn.classList.add('!bg-emerald-700');
+        }
+
+        document.getElementById('viewBudgetBtn').classList.add('bg-emerald-600', 'text-white');
+    }
+
+    window.onload = function() {
+        initializeBudget();
+    };
 </script>
 {% endblock %}
