@@ -90,3 +90,26 @@
         </tbody>
     </table>
 </div>
+<!-- ==================== VIEW COMPANY MODAL (Read Only) ==================== -->
+<dialog id="viewCompanyModal" class="bg-zinc-900 border border-zinc-700 rounded-3xl w-full max-w-4xl p-0 shadow-2xl">
+    <div class="flex items-center justify-between px-6 py-4 border-b border-zinc-700">
+        <h2 class="text-xl font-semibold">Company Details</h2>
+        <button onclick="closeViewCompanyModal()" class="text-zinc-400 hover:text-white text-2xl leading-none">&times;</button>
+    </div>
+
+    <div class="p-6 max-h-[70vh] overflow-auto" id="viewCompanyContent">
+        <!-- Populated dynamically by JavaScript -->
+    </div>
+
+    <div class="flex justify-end gap-3 px-6 py-4 border-t border-zinc-700 bg-zinc-950 rounded-b-3xl">
+        <button onclick="closeViewCompanyModal()" 
+                class="px-6 py-2.5 rounded-2xl border border-zinc-600 hover:bg-zinc-800 text-sm">
+            Close
+        </button>
+        <button onclick="editFromViewModal()" 
+                class="px-6 py-2.5 bg-emerald-600 hover:bg-emerald-700 rounded-2xl text-sm font-medium flex items-center gap-2">
+            <i class="fa-solid fa-edit"></i>
+            <span>Edit Information</span>
+        </button>
+    </div>
+</dialog>
