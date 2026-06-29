@@ -37,3 +37,56 @@
     </div>
 
 </div>
+<!-- ==================== SEARCH + FILTERS ==================== -->
+<div class="flex flex-col md:flex-row gap-3 mb-4">
+    <div class="flex-1 relative">
+        <i class="fa-solid fa-search absolute left-4 top-3.5 text-zinc-400"></i>
+        <input 
+            type="text" 
+            id="searchInput" 
+            placeholder="Search companies..." 
+            onkeyup="filterCompanies()"
+            class="w-full bg-zinc-900 border border-zinc-700 rounded-2xl pl-11 pr-4 py-2.5 text-sm focus:outline-none focus:border-emerald-600">
+    </div>
+
+    <select id="typeFilter" onchange="filterCompanies()" class="bg-zinc-900 border border-zinc-700 rounded-2xl px-4 py-2.5 text-sm focus:outline-none focus:border-emerald-600">
+        <option value="">All Types</option>
+        <option value="Subcontractor">Subcontractor</option>
+        <option value="Supplier">Supplier / Vendor</option>
+        <option value="Client">Client / Owner</option>
+    </select>
+
+    <select id="statusFilter" onchange="filterCompanies()" class="bg-zinc-900 border border-zinc-700 rounded-2xl px-4 py-2.5 text-sm focus:outline-none focus:border-emerald-600">
+        <option value="">All Status</option>
+        <option value="Active">Active</option>
+        <option value="Inactive">Inactive</option>
+        <option value="Blacklisted">Blacklisted</option>
+    </select>
+
+    <button onclick="clearCompanyFilters()" 
+            class="px-5 py-2.5 bg-zinc-800 hover:bg-zinc-700 rounded-2xl text-sm flex items-center gap-2">
+        <i class="fa-solid fa-times"></i>
+        <span>Clear</span>
+    </button>
+</div>
+
+<!-- ==================== COMPANIES TABLE ==================== -->
+<div class="bg-zinc-900 border border-zinc-800 rounded-3xl overflow-hidden">
+    <table class="w-full">
+        <thead class="bg-zinc-950 text-sm">
+            <tr>
+                <th class="px-6 py-4 text-left font-medium text-zinc-400">Company Name</th>
+                <th class="px-6 py-4 text-left font-medium text-zinc-400">Type</th>
+                <th class="px-6 py-4 text-left font-medium text-zinc-400">Primary Contact</th>
+                <th class="px-6 py-4 text-left font-medium text-zinc-400">Phone</th>
+                <th class="px-6 py-4 text-left font-medium text-zinc-400">Address</th>
+                <th class="px-6 py-4 text-center font-medium text-zinc-400">License</th>
+                <th class="px-6 py-4 text-center font-medium text-zinc-400">COI</th>
+                <th class="px-6 py-4 text-right font-medium text-zinc-400 w-24">Actions</th>
+            </tr>
+        </thead>
+        <tbody id="companiesTableBody" class="divide-y divide-zinc-800 text-sm">
+            <!-- Populated by JavaScript -->
+        </tbody>
+    </table>
+</div>
