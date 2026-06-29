@@ -1,6 +1,9 @@
 {% extends "base.html" %}
 
 {% block content %}
+<!-- Load XLSX library for Export CSV/Excel -->
+<script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+
 <style>
     /* Force all inputs in Add/Edit Company to stay dark with white text */
     #companyModal input,
@@ -28,7 +31,7 @@
 
 <div class="flex-1 flex flex-col overflow-hidden">
 
-    <!-- Budget-style Header (LOCKED - DO NOT CHANGE) -->
+    <!-- Budget-style Header (LOCKED) -->
     <div class="h-16 border-b border-zinc-800 bg-zinc-900 flex items-center justify-between px-6 flex-shrink-0">
         <div>
             <div class="text-xs text-zinc-400 tracking-wider">CURRENT PROJECT</div>
@@ -83,33 +86,33 @@
     <!-- Main Content -->
     <div class="flex-1 overflow-auto p-6">
 
-        <!-- SUMMARY CARDS (All 7 clickable) -->
+        <!-- SUMMARY CARDS -->
         <div class="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-7 gap-4 mb-6">
-            <div onclick="filterAll()" class="bg-zinc-900 border border-zinc-700 rounded-lg p-4 cursor-pointer hover:border-emerald-600 transition-colors">
+            <div onclick="filterAll()" class="bg-zinc-900 border border-zinc-700 rounded-md p-4 cursor-pointer hover:border-emerald-600 transition-colors">
                 <div class="text-xs text-zinc-400">Total Companies</div>
                 <div id="totalCompanies" class="text-3xl font-semibold mt-1">0</div>
             </div>
-            <div onclick="filterByType('Subcontractor')" class="bg-zinc-900 border border-zinc-700 rounded-lg p-4 cursor-pointer hover:border-emerald-600 transition-colors">
+            <div onclick="filterByType('Subcontractor')" class="bg-zinc-900 border border-zinc-700 rounded-md p-4 cursor-pointer hover:border-emerald-600 transition-colors">
                 <div class="text-xs text-zinc-400">Subcontractors</div>
                 <div id="subcontractorCount" class="text-3xl font-semibold mt-1">0</div>
             </div>
-            <div onclick="filterByType('Supplier')" class="bg-zinc-900 border border-zinc-700 rounded-lg p-4 cursor-pointer hover:border-emerald-600 transition-colors">
+            <div onclick="filterByType('Supplier')" class="bg-zinc-900 border border-zinc-700 rounded-md p-4 cursor-pointer hover:border-emerald-600 transition-colors">
                 <div class="text-xs text-zinc-400">Suppliers / Vendors</div>
                 <div id="supplierCount" class="text-3xl font-semibold mt-1">0</div>
             </div>
-            <div onclick="filterByType('Client')" class="bg-zinc-900 border border-zinc-700 rounded-lg p-4 cursor-pointer hover:border-emerald-600 transition-colors">
+            <div onclick="filterByType('Client')" class="bg-zinc-900 border border-zinc-700 rounded-md p-4 cursor-pointer hover:border-emerald-600 transition-colors">
                 <div class="text-xs text-zinc-400">Clients / Owners</div>
                 <div id="clientCount" class="text-3xl font-semibold mt-1">0</div>
             </div>
-            <div onclick="filterExpiringInsurance()" class="bg-zinc-900 border border-zinc-700 rounded-lg p-4 cursor-pointer hover:border-yellow-600 transition-colors">
+            <div onclick="filterExpiringInsurance()" class="bg-zinc-900 border border-zinc-700 rounded-md p-4 cursor-pointer hover:border-yellow-600 transition-colors">
                 <div class="text-xs text-zinc-400">Insurance Expiring (60d)</div>
                 <div id="insuranceAlertCount" class="text-3xl font-semibold mt-1 text-yellow-400">0</div>
             </div>
-            <div onclick="filterExpiredInsurance()" class="bg-zinc-900 border border-zinc-700 rounded-lg p-4 cursor-pointer hover:border-red-600 transition-colors">
+            <div onclick="filterExpiredInsurance()" class="bg-zinc-900 border border-zinc-700 rounded-md p-4 cursor-pointer hover:border-red-600 transition-colors">
                 <div class="text-xs text-zinc-400">Expired Insurance</div>
                 <div id="expiredInsuranceCount" class="text-3xl font-semibold mt-1 text-red-400">0</div>
             </div>
-            <div onclick="filterExpiredLicense()" class="bg-zinc-900 border border-zinc-700 rounded-lg p-4 cursor-pointer hover:border-red-600 transition-colors">
+            <div onclick="filterExpiredLicense()" class="bg-zinc-900 border border-zinc-700 rounded-md p-4 cursor-pointer hover:border-red-600 transition-colors">
                 <div class="text-xs text-zinc-400">Expired Licenses</div>
                 <div id="expiredLicenseCount" class="text-3xl font-semibold mt-1 text-red-400">0</div>
             </div>
@@ -134,7 +137,7 @@
         </div>
 
         <!-- Table -->
-        <div class="bg-zinc-900 border border-zinc-700 rounded-lg overflow-hidden">
+        <div class="bg-zinc-900 border border-zinc-700 rounded-md overflow-hidden">
             <table class="w-full text-sm">
                 <thead class="bg-zinc-800 text-zinc-400">
                     <tr>
@@ -157,13 +160,13 @@
 </div>
 
 <!-- View Company Modal -->
-<dialog id="viewCompanyModal" class="bg-zinc-900 border border-zinc-700 text-white rounded-lg w-full max-w-5xl p-0 shadow-2xl">
+<dialog id="viewCompanyModal" class="bg-zinc-900 border border-zinc-700 text-white rounded-md w-full max-w-5xl p-0 shadow-2xl">
     <div class="flex items-center justify-between px-6 py-4 border-b border-zinc-700">
         <h2 class="text-xl font-semibold">Company Details</h2>
         <button onclick="document.getElementById('viewCompanyModal').close()" class="text-zinc-400 hover:text-white text-2xl leading-none">&times;</button>
     </div>
     <div class="p-6 max-h-[70vh] overflow-auto" id="viewCompanyContent"></div>
-    <div class="flex justify-end gap-3 px-6 py-4 border-t border-zinc-700 bg-zinc-950 rounded-b-lg">
+    <div class="flex justify-end gap-3 px-6 py-4 border-t border-zinc-700 bg-zinc-950 rounded-b-md">
         <button onclick="printCompanyDetails()" class="px-5 py-2.5 rounded-md border border-zinc-600 hover:bg-zinc-800 text-sm flex items-center gap-2">
             <i class="fa-solid fa-print"></i> <span>Print</span>
         </button>
@@ -175,7 +178,7 @@
 </dialog>
 
 <!-- Add/Edit Company Modal -->
-<dialog id="companyModal" class="bg-zinc-900 border border-zinc-700 text-white rounded-lg w-full max-w-6xl p-0 shadow-2xl">
+<dialog id="companyModal" class="bg-zinc-900 border border-zinc-700 text-white rounded-md w-full max-w-6xl p-0 shadow-2xl">
     <div class="flex flex-col max-h-[82vh]">
         <div class="flex items-center justify-between px-6 py-4 border-b border-zinc-700 flex-shrink-0">
             <h2 id="modalTitle" class="text-xl font-semibold">Add Company</h2>
@@ -187,16 +190,35 @@
                 <input type="hidden" id="companyId">
 
                 <!-- Company Profile -->
-                <div class="mb-6">
+                <div class="mb-4">
                     <h3 class="font-semibold text-emerald-400 mb-3">Company Profile</h3>
+
+                    <!-- LOGO - Moved here, small 0.75" x 0.75" -->
+                    <div class="mb-4">
+                        <label class="text-xs text-zinc-400 block mb-1.5">Company Logo</label>
+                        <div class="flex items-center gap-3">
+                            <div id="logo_preview" 
+                                 onclick="document.getElementById('company_logo').click()"
+                                 class="w-16 h-16 bg-zinc-800 border border-zinc-700 rounded flex-shrink-0 flex items-center justify-center text-[10px] text-zinc-500 overflow-hidden cursor-pointer hover:border-emerald-600 transition-colors">
+                                No Logo
+                            </div>
+                            <div>
+                                <input type="file" id="company_logo" class="hidden" onchange="previewLogo(this)">
+                                <button type="button" onclick="document.getElementById('company_logo').click()" 
+                                        class="text-xs px-3 py-1.5 bg-zinc-700 hover:bg-zinc-600 rounded text-white">Upload Logo</button>
+                                <div class="text-[10px] text-zinc-500 mt-1">PNG/JPG • Recommended 200×200</div>
+                            </div>
+                        </div>
+                    </div>
+
                     <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
                         <div class="md:col-span-2">
                             <label class="text-xs text-zinc-400">Company Name *</label>
-                            <input type="text" id="company_name" required class="w-full bg-zinc-800 text-white border border-zinc-700 rounded-md px-4 py-2.5 text-sm focus:border-emerald-600">
+                            <input type="text" id="company_name" required class="w-full bg-zinc-800 text-white border border-zinc-700 rounded px-4 py-2.5 text-sm focus:border-emerald-600">
                         </div>
                         <div>
                             <label class="text-xs text-zinc-400">Company Type</label>
-                            <select id="company_type" class="w-full bg-zinc-800 text-white border border-zinc-700 rounded-md px-4 py-2.5 text-sm focus:border-emerald-600">
+                            <select id="company_type" class="w-full bg-zinc-800 text-white border border-zinc-700 rounded px-4 py-2.5 text-sm focus:border-emerald-600">
                                 <option value="Subcontractor">Subcontractor</option>
                                 <option value="Supplier">Supplier / Vendor</option>
                                 <option value="Client">Client / Owner</option>
@@ -205,57 +227,45 @@
 
                         <div>
                             <label class="text-xs text-zinc-400">Vendor Number</label>
-                            <input type="text" id="vendor_number" class="w-full bg-zinc-800 text-white border border-zinc-700 rounded-md px-4 py-2.5 text-sm focus:border-emerald-600">
+                            <input type="text" id="vendor_number" class="w-full bg-zinc-800 text-white border border-zinc-700 rounded px-4 py-2.5 text-sm focus:border-emerald-600">
                         </div>
                         <div>
                             <label class="text-xs text-zinc-400">Customer Number</label>
-                            <input type="text" id="customer_number" class="w-full bg-zinc-800 text-white border border-zinc-700 rounded-md px-4 py-2.5 text-sm focus:border-emerald-600">
+                            <input type="text" id="customer_number" class="w-full bg-zinc-800 text-white border border-zinc-700 rounded px-4 py-2.5 text-sm focus:border-emerald-600">
                         </div>
                         <div>
                             <label class="text-xs text-zinc-400">External / Sage ID</label>
-                            <input type="text" id="external_id" class="w-full bg-zinc-800 text-white border border-zinc-700 rounded-md px-4 py-2.5 text-sm focus:border-emerald-600">
+                            <input type="text" id="external_id" class="w-full bg-zinc-800 text-white border border-zinc-700 rounded px-4 py-2.5 text-sm focus:border-emerald-600">
                         </div>
 
                         <div>
                             <label class="text-xs text-zinc-400">Trade / Specialty</label>
-                            <input type="text" id="trade" class="w-full bg-zinc-800 text-white border border-zinc-700 rounded-md px-4 py-2.5 text-sm focus:border-emerald-600">
+                            <input type="text" id="trade" class="w-full bg-zinc-800 text-white border border-zinc-700 rounded px-4 py-2.5 text-sm focus:border-emerald-600">
                         </div>
                         <div>
                             <label class="text-xs text-zinc-400">Website</label>
-                            <input type="text" id="website" class="w-full bg-zinc-800 text-white border border-zinc-700 rounded-md px-4 py-2.5 text-sm focus:border-emerald-600">
+                            <input type="text" id="website" class="w-full bg-zinc-800 text-white border border-zinc-700 rounded px-4 py-2.5 text-sm focus:border-emerald-600">
                         </div>
                         <div>
                             <label class="text-xs text-zinc-400">Primary Phone</label>
-                            <input type="text" id="primary_phone" class="w-full bg-zinc-800 text-white border border-zinc-700 rounded-md px-4 py-2.5 text-sm focus:border-emerald-600">
+                            <input type="text" id="primary_phone" class="w-full bg-zinc-800 text-white border border-zinc-700 rounded px-4 py-2.5 text-sm focus:border-emerald-600">
                         </div>
                         <div>
                             <label class="text-xs text-zinc-400">Primary Email</label>
-                            <input type="email" id="primary_email" class="w-full bg-zinc-800 text-white border border-zinc-700 rounded-md px-4 py-2.5 text-sm focus:border-emerald-600">
+                            <input type="email" id="primary_email" class="w-full bg-zinc-800 text-white border border-zinc-700 rounded px-4 py-2.5 text-sm focus:border-emerald-600">
                         </div>
                         <div>
                             <label class="text-xs text-zinc-400">Tax ID / EIN</label>
-                            <input type="text" id="tax_id" class="w-full bg-zinc-800 text-white border border-zinc-700 rounded-md px-4 py-2.5 text-sm focus:border-emerald-600">
+                            <input type="text" id="tax_id" class="w-full bg-zinc-800 text-white border border-zinc-700 rounded px-4 py-2.5 text-sm focus:border-emerald-600">
                         </div>
 
-                        <!-- Status + Logo -->
                         <div>
                             <label class="text-xs text-zinc-400">Status</label>
-                            <div class="flex gap-3 items-end">
-                                <select id="status" class="flex-1 bg-zinc-800 text-white border border-zinc-700 rounded-md px-4 py-2.5 text-sm focus:border-emerald-600">
-                                    <option value="Active">Active</option>
-                                    <option value="Inactive">Inactive</option>
-                                    <option value="Blacklisted">Blacklisted</option>
-                                </select>
-
-                                <div class="w-24">
-                                    <label class="text-xs text-zinc-400 block mb-1">Logo</label>
-                                    <div class="flex items-center gap-2">
-                                        <input type="file" id="company_logo" class="hidden" onchange="previewLogo(this)">
-                                        <button type="button" onclick="document.getElementById('company_logo').click()" class="text-xs px-3 py-1.5 bg-zinc-700 hover:bg-zinc-600 rounded-md">Upload</button>
-                                        <div id="logo_preview" class="w-8 h-8 bg-zinc-800 border border-zinc-700 rounded flex items-center justify-center text-[10px] text-zinc-500 overflow-hidden">No</div>
-                                    </div>
-                                </div>
-                            </div>
+                            <select id="status" class="w-full bg-zinc-800 text-white border border-zinc-700 rounded px-4 py-2.5 text-sm focus:border-emerald-600">
+                                <option value="Active">Active</option>
+                                <option value="Inactive">Inactive</option>
+                                <option value="Blacklisted">Blacklisted</option>
+                            </select>
                         </div>
                     </div>
                 </div>
@@ -266,11 +276,11 @@
                     <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
                         <div>
                             <label class="text-xs text-zinc-400">Billing Address</label>
-                            <textarea id="billing_address" rows="3" class="w-full bg-zinc-800 text-white border border-zinc-700 rounded-md px-4 py-2.5 text-sm focus:border-emerald-600"></textarea>
+                            <textarea id="billing_address" rows="3" class="w-full bg-zinc-800 text-white border border-zinc-700 rounded px-4 py-2.5 text-sm focus:border-emerald-600"></textarea>
                         </div>
                         <div>
                             <label class="text-xs text-zinc-400">Shipping Address</label>
-                            <textarea id="shipping_address" rows="3" class="w-full bg-zinc-800 text-white border border-zinc-700 rounded-md px-4 py-2.5 text-sm focus:border-emerald-600"></textarea>
+                            <textarea id="shipping_address" rows="3" class="w-full bg-zinc-800 text-white border border-zinc-700 rounded px-4 py-2.5 text-sm focus:border-emerald-600"></textarea>
                         </div>
                     </div>
                 </div>
@@ -279,7 +289,7 @@
                 <div class="mb-6">
                     <div class="flex items-center justify-between mb-3">
                         <h3 class="font-semibold text-emerald-400">Contacts</h3>
-                        <button type="button" onclick="addContactRow()" class="text-xs px-3 py-1.5 bg-zinc-800 hover:bg-zinc-700 rounded-md flex items-center gap-1">
+                        <button type="button" onclick="addContactRow()" class="text-xs px-3 py-1.5 bg-zinc-800 hover:bg-zinc-700 rounded flex items-center gap-1">
                             <i class="fa-solid fa-plus"></i> Add Contact
                         </button>
                     </div>
@@ -292,19 +302,19 @@
                     <div class="grid grid-cols-1 md:grid-cols-4 gap-4">
                         <div>
                             <label class="text-xs text-zinc-400">License Number</label>
-                            <input type="text" id="license_number" class="w-full bg-zinc-800 text-white border border-zinc-700 rounded-md px-4 py-2.5 text-sm focus:border-emerald-600">
+                            <input type="text" id="license_number" class="w-full bg-zinc-800 text-white border border-zinc-700 rounded px-4 py-2.5 text-sm focus:border-emerald-600">
                         </div>
                         <div>
                             <label class="text-xs text-zinc-400">State</label>
-                            <input type="text" id="license_state" class="w-full bg-zinc-800 text-white border border-zinc-700 rounded-md px-4 py-2.5 text-sm focus:border-emerald-600">
+                            <input type="text" id="license_state" class="w-full bg-zinc-800 text-white border border-zinc-700 rounded px-4 py-2.5 text-sm focus:border-emerald-600">
                         </div>
                         <div>
                             <label class="text-xs text-zinc-400">Expiration Date</label>
-                            <input type="date" id="license_expiration" class="w-full bg-zinc-800 text-white border border-zinc-700 rounded-md px-4 py-2.5 text-sm focus:border-emerald-600">
+                            <input type="date" id="license_expiration" class="w-full bg-zinc-800 text-white border border-zinc-700 rounded px-4 py-2.5 text-sm focus:border-emerald-600">
                         </div>
                         <div>
                             <label class="text-xs text-zinc-400">Notes</label>
-                            <input type="text" id="license_notes" class="w-full bg-zinc-800 text-white border border-zinc-700 rounded-md px-4 py-2.5 text-sm focus:border-emerald-600">
+                            <input type="text" id="license_notes" class="w-full bg-zinc-800 text-white border border-zinc-700 rounded px-4 py-2.5 text-sm focus:border-emerald-600">
                         </div>
                     </div>
                 </div>
@@ -316,37 +326,37 @@
                     <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
                         <div>
                             <label class="text-xs text-zinc-400">GL Carrier</label>
-                            <input type="text" id="gl_carrier" class="w-full bg-zinc-800 text-white border border-zinc-700 rounded-md px-4 py-2.5 text-sm focus:border-emerald-600">
+                            <input type="text" id="gl_carrier" class="w-full bg-zinc-800 text-white border border-zinc-700 rounded px-4 py-2.5 text-sm focus:border-emerald-600">
                         </div>
                         <div>
                             <label class="text-xs text-zinc-400">GL Policy #</label>
-                            <input type="text" id="gl_policy" class="w-full bg-zinc-800 text-white border border-zinc-700 rounded-md px-4 py-2.5 text-sm focus:border-emerald-600">
+                            <input type="text" id="gl_policy" class="w-full bg-zinc-800 text-white border border-zinc-700 rounded px-4 py-2.5 text-sm focus:border-emerald-600">
                         </div>
                         <div>
                             <label class="text-xs text-zinc-400">GL Expiration</label>
-                            <input type="date" id="gl_expiration" class="w-full bg-zinc-800 text-white border border-zinc-700 rounded-md px-4 py-2.5 text-sm focus:border-emerald-600">
+                            <input type="date" id="gl_expiration" class="w-full bg-zinc-800 text-white border border-zinc-700 rounded px-4 py-2.5 text-sm focus:border-emerald-600">
                         </div>
                     </div>
 
                     <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
                         <div>
                             <label class="text-xs text-zinc-400">WC Carrier</label>
-                            <input type="text" id="wc_carrier" class="w-full bg-zinc-800 text-white border border-zinc-700 rounded-md px-4 py-2.5 text-sm focus:border-emerald-600">
+                            <input type="text" id="wc_carrier" class="w-full bg-zinc-800 text-white border border-zinc-700 rounded px-4 py-2.5 text-sm focus:border-emerald-600">
                         </div>
                         <div>
                             <label class="text-xs text-zinc-400">WC Policy #</label>
-                            <input type="text" id="wc_policy" class="w-full bg-zinc-800 text-white border border-zinc-700 rounded-md px-4 py-2.5 text-sm focus:border-emerald-600">
+                            <input type="text" id="wc_policy" class="w-full bg-zinc-800 text-white border border-zinc-700 rounded px-4 py-2.5 text-sm focus:border-emerald-600">
                         </div>
                         <div>
                             <label class="text-xs text-zinc-400">WC Expiration</label>
-                            <input type="date" id="wc_expiration" class="w-full bg-zinc-800 text-white border border-zinc-700 rounded-md px-4 py-2.5 text-sm focus:border-emerald-600">
+                            <input type="date" id="wc_expiration" class="w-full bg-zinc-800 text-white border border-zinc-700 rounded px-4 py-2.5 text-sm focus:border-emerald-600">
                         </div>
                     </div>
 
                     <div class="mt-4">
                         <div class="flex items-center justify-between mb-2">
                             <label class="text-xs text-zinc-400">Certificates of Insurance (COIs)</label>
-                            <button type="button" onclick="addCOIRow()" class="text-xs px-3 py-1 bg-zinc-800 hover:bg-zinc-700 rounded-md flex items-center gap-1">
+                            <button type="button" onclick="addCOIRow()" class="text-xs px-3 py-1 bg-zinc-800 hover:bg-zinc-700 rounded flex items-center gap-1">
                                 <i class="fa-solid fa-plus"></i> Add Another COI
                             </button>
                         </div>
@@ -356,51 +366,48 @@
 
                 <div class="mb-6">
                     <label class="text-xs text-zinc-400">Notes</label>
-                    <textarea id="notes" rows="3" class="w-full bg-zinc-800 text-white border border-zinc-700 rounded-md px-4 py-2.5 text-sm focus:border-emerald-600"></textarea>
+                    <textarea id="notes" rows="3" class="w-full bg-zinc-800 text-white border border-zinc-700 rounded px-4 py-2.5 text-sm focus:border-emerald-600"></textarea>
                 </div>
             </form>
         </div>
 
         <!-- STATIONARY FOOTER -->
         <div class="flex justify-end gap-3 px-6 py-4 border-t border-zinc-700 bg-zinc-900 flex-shrink-0 sticky bottom-0">
-            <button type="button" onclick="document.getElementById('companyModal').close()" class="px-6 py-2.5 rounded-md border border-zinc-600 hover:bg-zinc-800 text-sm">Cancel</button>
-            <button type="submit" form="companyForm" class="px-8 py-2.5 bg-emerald-600 hover:bg-emerald-700 rounded-md text-sm font-medium">Save Company</button>
+            <button type="button" onclick="document.getElementById('companyModal').close()" class="px-6 py-2.5 rounded border border-zinc-600 hover:bg-zinc-800 text-sm">Cancel</button>
+            <button type="submit" form="companyForm" class="px-8 py-2.5 bg-emerald-600 hover:bg-emerald-700 rounded text-sm font-medium">Save Company</button>
         </div>
     </div>
 </dialog>
 
-<!-- Success / Alert Modal (Centered - used for all pop-ups) -->
-<dialog id="successModal" class="bg-zinc-900 border border-zinc-700 text-white rounded-lg w-full max-w-md p-0 shadow-2xl">
+<!-- Success / Alert Modal (Centered) -->
+<dialog id="successModal" class="bg-zinc-900 border border-zinc-700 text-white rounded-md w-full max-w-md p-0 shadow-2xl">
     <div class="p-6 text-center">
         <div class="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-emerald-900/60 mb-4">
             <i class="fa-solid fa-check text-emerald-400 text-2xl"></i>
         </div>
         <h3 id="successTitle" class="text-lg font-semibold mb-2"></h3>
         <p id="successMessage" class="text-zinc-400 text-sm mb-6 whitespace-pre-line"></p>
-        <button onclick="document.getElementById('successModal').close()" class="px-8 py-2.5 bg-emerald-600 hover:bg-emerald-700 rounded-md text-sm font-medium">OK</button>
+        <button onclick="document.getElementById('successModal').close()" class="px-8 py-2.5 bg-emerald-600 hover:bg-emerald-700 rounded text-sm font-medium">OK</button>
     </div>
 </dialog>
 
 <!-- Sage 300 Sync Modal -->
-<dialog id="sageSyncModal" class="bg-zinc-900 border border-zinc-700 text-white rounded-lg w-full max-w-5xl p-0 shadow-2xl">
+<dialog id="sageSyncModal" class="bg-zinc-900 border border-zinc-700 text-white rounded-md w-full max-w-5xl p-0 shadow-2xl">
     <div class="flex items-center justify-between px-6 py-4 border-b border-zinc-700">
         <h2 class="text-xl font-semibold">Sync with Sage 300</h2>
         <button onclick="document.getElementById('sageSyncModal').close()" class="text-zinc-400 hover:text-white text-2xl leading-none">&times;</button>
     </div>
     <div class="p-6" id="sageSyncContent"></div>
-    <div class="flex justify-end gap-3 px-6 py-4 border-t border-zinc-700 bg-zinc-950 rounded-b-lg">
-        <button onclick="document.getElementById('sageSyncModal').close()" class="px-6 py-2.5 rounded-md border border-zinc-600 hover:bg-zinc-800 text-sm">Cancel</button>
-        <button onclick="importSelectedFromSage()" class="px-6 py-2.5 bg-emerald-600 hover:bg-emerald-700 rounded-md text-sm font-medium">Import Selected</button>
+    <div class="flex justify-end gap-3 px-6 py-4 border-t border-zinc-700 bg-zinc-950 rounded-b-md">
+        <button onclick="document.getElementById('sageSyncModal').close()" class="px-6 py-2.5 rounded border border-zinc-600 hover:bg-zinc-800 text-sm">Cancel</button>
+        <button onclick="importSelectedFromSage()" class="px-6 py-2.5 bg-emerald-600 hover:bg-emerald-700 rounded text-sm font-medium">Import Selected</button>
     </div>
 </dialog>
 <script>
     // ============================================================
-    // COMPANIES / VENDORS PAGE - FULL ULTIMATE VERSION
-    // All bugs fixed: Add/Edit, Export, Print (hidden iframe), 
-    // Centered pop-ups, Sage Select All, Filters, Authorized User, etc.
+    // COMPANIES / VENDORS PAGE - ULTIMATE FIXED VERSION
     // ============================================================
 
-    // ==================== DATA MODEL ====================
     let companies = [
         {
             id: 1,
@@ -434,55 +441,19 @@
             wc_expiration: "2026-11-15",
             cois: [{ id: 1, name: "General Liability 2026", expiration: "2026-12-31" }],
             notes: "Preferred electrical subcontractor for ALDI projects."
-        },
-        {
-            id: 2,
-            company_name: "Precision Concrete Solutions",
-            company_type: "Subcontractor",
-            vendor_number: "V-10087",
-            customer_number: "C-3341",
-            external_id: "",
-            trade: "Concrete",
-            website: "",
-            primary_phone: "(727) 555-3389",
-            primary_email: "bids@precisionconcretefl.com",
-            tax_id: "",
-            w9_status: "Yes",
-            status: "Active",
-            billing_address: "1987 4th St N, St. Petersburg, FL 33704",
-            shipping_address: "",
-            contacts: [
-                { name: "David Ramirez", title: "Owner", phone: "(727) 555-3389", email: "dramirez@precisionconcretefl.com", authorized_user: false }
-            ],
-            license_number: "CBC-1256789",
-            license_state: "FL",
-            license_expiration: "2026-09-30",
-            license_notes: "",
-            gl_carrier: "CNA",
-            gl_policy: "GL-7729103",
-            gl_expiration: "2026-08-15",
-            wc_carrier: "Zenith",
-            wc_policy: "WC-882103",
-            wc_expiration: "2026-10-01",
-            cois: [],
-            notes: "Excellent on ALDI Lakeland. Very responsive."
         }
     ];
 
-    // ==================== REUSABLE CENTERED ALERT MODAL ====================
-    function showAlertModal(title, message, isConfirm = false, onConfirm = null) {
+    // ==================== CENTERED ALERT MODAL ====================
+    function showAlertModal(title, message) {
         const modal = document.createElement('dialog');
-        modal.className = 'bg-zinc-900 border border-zinc-700 text-white rounded-lg w-full max-w-md p-0 shadow-2xl';
+        modal.className = 'bg-zinc-900 border border-zinc-700 text-white rounded-md w-full max-w-md p-0 shadow-2xl';
         modal.innerHTML = `
             <div class="p-6">
                 <h3 class="text-lg font-semibold mb-2">${title}</h3>
                 <p class="text-zinc-400 text-sm mb-6 whitespace-pre-line">${message}</p>
-                <div class="flex justify-end gap-3">
-                    <button class="px-6 py-2.5 rounded-md border border-zinc-600 hover:bg-zinc-800 text-sm" onclick="this.closest('dialog').close()">Cancel</button>
-                    ${isConfirm ? 
-                        `<button class="px-6 py-2.5 bg-red-600 hover:bg-red-700 rounded-md text-sm font-medium" onclick="this.closest('dialog').close(); (${onConfirm})()">Delete</button>` : 
-                        `<button class="px-6 py-2.5 bg-emerald-600 hover:bg-emerald-700 rounded-md text-sm font-medium" onclick="this.closest('dialog').close()">OK</button>`
-                    }
+                <div class="flex justify-end">
+                    <button class="px-8 py-2.5 bg-emerald-600 hover:bg-emerald-700 rounded text-sm font-medium" onclick="this.closest('dialog').close()">OK</button>
                 </div>
             </div>
         `;
@@ -490,11 +461,14 @@
         modal.showModal();
     }
 
-    // ==================== PHONE FORMATTER ====================
+    // ==================== PHONE FORMATTER (onblur - no lag) ====================
     function formatPhoneNumber(input) {
         let value = input.value.replace(/\D/g, '');
         if (value.length > 10) value = value.substring(0, 10);
-        if (value.length > 6) {
+
+        if (value.length === 10) {
+            input.value = `(${value.substring(0,3)}) ${value.substring(3,6)}-${value.substring(6)}`;
+        } else if (value.length > 6) {
             input.value = `(${value.substring(0,3)}) ${value.substring(3,6)}-${value.substring(6)}`;
         } else if (value.length > 3) {
             input.value = `(${value.substring(0,3)}) ${value.substring(3)}`;
@@ -574,7 +548,7 @@
         document.getElementById('expiredLicenseCount').textContent = expiredLic;
     }
 
-    // ==================== FILTERS (ALL FIXED) ====================
+    // ==================== FILTERS ====================
     function filterAll() { renderCompaniesTable(companies); }
     function filterByType(type) { renderCompaniesTable(companies.filter(c => c.company_type === type)); }
 
@@ -621,7 +595,7 @@
         renderCompaniesTable(companies);
     }
 
-    // ==================== EXPORT (FIXED - NO HARD REFRESH MESSAGE) ====================
+    // ==================== EXPORT (NOW WORKS) ====================
     function exportCompanies(format) {
         if (!companies.length) {
             showAlertModal("No Companies", "There are no companies to export.");
@@ -636,7 +610,7 @@
             XLSX.writeFile(wb, filename);
         } catch (err) {
             console.error(err);
-            showAlertModal("Export Error", "Export failed. Please check that XLSX library is loaded and try again.");
+            showAlertModal("Export Error", "Export failed. Please hard refresh the page (Ctrl + Shift + R) and try again.");
         }
     }
 
@@ -667,7 +641,7 @@
                     renderCompaniesTable(companies);
                     showAlertModal("Import Successful", `${imported.length} companies imported.`);
                 } catch (err) {
-                    showAlertModal("Import Failed", "Please check the file format and try again.");
+                    showAlertModal("Import Failed", "Please check the file format.");
                 }
             };
             reader.readAsBinaryString(file);
@@ -675,7 +649,7 @@
         input.click();
     }
 
-    // ==================== ADD COMPANY (NOW WORKS) ====================
+    // ==================== ADD COMPANY ====================
     function showAddCompanyModal() {
         document.getElementById('companyForm').reset();
         document.getElementById('companyId').value = '';
@@ -686,7 +660,7 @@
         document.getElementById('companyModal').showModal();
     }
 
-    // ==================== SAVE COMPANY (CLOSES MODAL) ====================
+    // ==================== SAVE COMPANY (NOW WORKS + CLOSES) ====================
     function saveCompany(e) {
         e.preventDefault();
         const id = document.getElementById('companyId').value;
@@ -744,7 +718,7 @@
 
         if (id) {
             const index = companies.findIndex(c => c.id == id);
-            companies[index] = newCompany;
+            if (index !== -1) companies[index] = newCompany;
         } else {
             companies.push(newCompany);
         }
@@ -753,11 +727,11 @@
         renderCompaniesTable(companies);
     }
 
-    // ==================== CONTACT & COI ROWS ====================
+    // ==================== CONTACT ROW (onblur for phone) ====================
     function addContactRow(contact = null) {
         const container = document.getElementById('contactsContainer');
         const div = document.createElement('div');
-        div.className = 'bg-zinc-800 border border-zinc-700 rounded-md p-4 mb-3';
+        div.className = 'bg-zinc-800 border border-zinc-700 rounded p-4 mb-3';
         const checked = contact && contact.authorized_user ? 'checked' : '';
         div.innerHTML = `
             <div class="grid grid-cols-1 md:grid-cols-12 gap-3 items-end">
@@ -769,7 +743,7 @@
                 </div>
                 <div class="md:col-span-2">
                     <input type="text" placeholder="(813) 555-0192" class="contact-phone w-full bg-zinc-900 text-white border border-zinc-600 rounded px-3 py-1.5 text-sm" 
-                           value="${contact ? contact.phone : ''}" oninput="formatPhoneNumber(this)">
+                           value="${contact ? contact.phone : ''}" onblur="formatPhoneNumber(this)">
                 </div>
                 <div class="md:col-span-3">
                     <input type="email" placeholder="Email" class="contact-email w-full bg-zinc-900 text-white border border-zinc-600 rounded px-3 py-1.5 text-sm" value="${contact ? contact.email : ''}">
@@ -791,7 +765,7 @@
     function addCOIRow(coi = null) {
         const container = document.getElementById('coiContainer');
         const div = document.createElement('div');
-        div.className = 'bg-zinc-800 border border-zinc-700 rounded-md p-4 mb-3';
+        div.className = 'bg-zinc-800 border border-zinc-700 rounded p-4 mb-3';
         div.innerHTML = `
             <div class="grid grid-cols-1 md:grid-cols-12 gap-3 items-end">
                 <div class="md:col-span-5">
@@ -857,15 +831,31 @@
         document.getElementById('companyModal').showModal();
     }
 
-    // ==================== DELETE (CENTERED) ====================
+    // ==================== DELETE ====================
     function confirmDeleteCompany(id) {
-        showAlertModal("Delete Company?", "This action cannot be undone. All associated data will be removed.", true, () => {
-            companies = companies.filter(c => c.id !== id);
-            renderCompaniesTable(companies);
-        });
+        const modal = document.createElement('dialog');
+        modal.className = 'bg-zinc-900 border border-zinc-700 text-white rounded-md w-full max-w-md p-0 shadow-2xl';
+        modal.innerHTML = `
+            <div class="p-6">
+                <h3 class="text-lg font-semibold mb-2">Delete Company?</h3>
+                <p class="text-zinc-400 text-sm mb-6">This action cannot be undone.</p>
+                <div class="flex justify-end gap-3">
+                    <button class="px-6 py-2.5 rounded border border-zinc-600 hover:bg-zinc-800 text-sm" onclick="this.closest('dialog').close()">Cancel</button>
+                    <button class="px-6 py-2.5 bg-red-600 hover:bg-red-700 rounded text-sm font-medium" onclick="deleteCompanyConfirmed(${id}, this)">Delete</button>
+                </div>
+            </div>
+        `;
+        document.body.appendChild(modal);
+        modal.showModal();
     }
 
-    // ==================== AUTHORIZED CASE PM USER ====================
+    function deleteCompanyConfirmed(id, btn) {
+        companies = companies.filter(c => c.id !== id);
+        btn.closest('dialog').close();
+        renderCompaniesTable(companies);
+    }
+
+    // ==================== AUTHORIZED USER ====================
     function createAuthorizedCasePMUser(contact, companyId) {
         let users = [];
         try {
@@ -893,7 +883,7 @@
         showAlertModal("User Account Created", `User "${contact.name}" has been added to User Management with "No Access" role.`);
     }
 
-    // ==================== PRINT - HIDDEN IFRAME (NO NEW WINDOW) ====================
+    // ==================== PRINT (KEEP EXACTLY AS APPROVED) ====================
     function printCompanyDetails() {
         const content = document.getElementById('viewCompanyContent');
         if (!content) return;
@@ -954,7 +944,7 @@
 
         let contactsHTML = (company.contacts && company.contacts.length > 0)
             ? company.contacts.map(c => `
-                <div class="bg-zinc-800 rounded-md p-4 mb-3">
+                <div class="bg-zinc-800 rounded p-4 mb-3">
                     <div class="flex justify-between">
                         <div>
                             <div class="font-medium">${c.name}</div>
@@ -996,7 +986,7 @@
         document.getElementById('viewCompanyModal').showModal();
     }
 
-    // ==================== SAGE 300 (WITH SELECT ALL) ====================
+    // ==================== SAGE 300 ====================
     function syncWithSage300() {
         const modal = document.getElementById('sageSyncModal');
         const content = document.getElementById('sageSyncContent');
@@ -1008,14 +998,14 @@
         ];
 
         content.innerHTML = `
-            <div class="mb-4 text-sm text-zinc-400">This simulates pulling companies from Sage 300 via API.</div>
+            <div class="mb-4 text-sm text-zinc-400">This simulates pulling companies from Sage 300.</div>
             <div class="flex gap-2 mb-3">
                 <button onclick="selectAllSage(true)" class="text-xs px-3 py-1.5 bg-zinc-700 hover:bg-zinc-600 rounded">Select All</button>
                 <button onclick="selectAllSage(false)" class="text-xs px-3 py-1.5 bg-zinc-700 hover:bg-zinc-600 rounded">Deselect All</button>
             </div>
             <div class="space-y-2 max-h-[420px] overflow-auto pr-2">
                 ${sageData.map(item => `
-                    <div class="flex items-center gap-3 bg-zinc-800 border border-zinc-700 rounded-md p-3">
+                    <div class="flex items-center gap-3 bg-zinc-800 border border-zinc-700 rounded p-3">
                         <input type="checkbox" class="sage-checkbox accent-emerald-600" data-id="${item.id}">
                         <div class="flex-1 text-sm">
                             <div class="font-medium">${item.company_name}</div>
@@ -1076,7 +1066,6 @@
         if (saved) {
             companies = JSON.parse(saved);
         }
-        // If no companies exist, the sample data above is already loaded
 
         renderCompaniesTable(companies);
         updateSummaryCards();
