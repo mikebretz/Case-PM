@@ -3,7 +3,7 @@
 {% block content %}
 <div class="flex-1 flex flex-col overflow-hidden">
 
-    <!-- Budget-style Header -->
+    <!-- Budget-style Header (LOCKED) -->
     <div class="h-16 border-b border-zinc-800 bg-zinc-900 flex items-center justify-between px-6 flex-shrink-0">
         
         <!-- LEFT: Project Info -->
@@ -15,20 +15,20 @@
         <!-- CENTER: Page Title -->
         <div class="text-2xl font-semibold text-white">Companies / Vendors</div>
 
-        <!-- RIGHT: Action Buttons + User Profile -->
+        <!-- RIGHT: Export CSV first + Import + Add + Profile -->
         <div class="flex items-center gap-3">
             
-            <!-- Export -->
+            <!-- Export (CSV first) -->
             <div class="flex gap-2">
-                <button onclick="exportCompanies('excel')" 
-                        class="flex items-center gap-2 px-4 py-2 bg-zinc-800 hover:bg-zinc-700 rounded-md text-sm font-medium transition-colors">
-                    <i class="fa-solid fa-file-excel"></i>
-                    <span>Export</span>
-                </button>
                 <button onclick="exportCompanies('csv')" 
                         class="flex items-center gap-2 px-4 py-2 bg-zinc-800 hover:bg-zinc-700 rounded-md text-sm font-medium transition-colors">
                     <i class="fa-solid fa-file-csv"></i>
-                    <span>CSV</span>
+                    <span>Export CSV</span>
+                </button>
+                <button onclick="exportCompanies('excel')" 
+                        class="flex items-center gap-2 px-4 py-2 bg-zinc-800 hover:bg-zinc-700 rounded-md text-sm font-medium transition-colors">
+                    <i class="fa-solid fa-file-excel"></i>
+                    <span>Export Excel</span>
                 </button>
             </div>
 
@@ -48,7 +48,7 @@
             </button>
 
             <!-- User Profile -->
-            <div class="flex items-center gap-3 pl-3 border-l border-zinc-700 cursor-pointer" onclick="showUserProfileModal()">
+            <div class="flex items-center gap-3 pl-3 border-l border-zinc-700 cursor-pointer">
                 <div class="w-8 h-8 bg-zinc-700 rounded-full overflow-hidden">
                     <img src="https://i.pravatar.cc/32?img=68" class="w-full h-full object-cover">
                 </div>
@@ -60,7 +60,7 @@
         </div>
     </div>
 
-    <!-- Main Content Area -->
+    <!-- Main Content -->
     <div class="flex-1 overflow-auto p-6">
 
         <!-- Summary Cards -->
@@ -97,7 +97,8 @@
 
         <!-- Search & Filters -->
         <div class="flex flex-col md:flex-row gap-4 mb-4">
-            <input type="text" id="searchInput" placeholder="Search companies..." class="flex-1 bg-zinc-900 border border-zinc-700 rounded-lg px-4 py-2.5 text-sm focus:border-emerald-600">
+            <input type="text" id="searchInput" placeholder="Search companies..." 
+                   class="flex-1 bg-zinc-900 border border-zinc-700 rounded-lg px-4 py-2.5 text-sm focus:border-emerald-600">
             <select id="typeFilter" class="bg-zinc-900 border border-zinc-700 rounded-lg px-4 py-2.5 text-sm focus:border-emerald-600">
                 <option value="">All Types</option>
                 <option value="Subcontractor">Subcontractor</option>
@@ -114,7 +115,7 @@
         </div>
 
         <!-- Table -->
-        <div class="bg-zinc-900 border border-zinc-700 rounded-2xl overflow-hidden">
+        <div class="bg-zinc-900 border border-zinc-700 rounded-xl overflow-hidden">
             <table class="w-full text-sm">
                 <thead class="bg-zinc-800 text-zinc-400">
                     <tr>
@@ -137,13 +138,13 @@
 </div>
 
 <!-- View Company Modal -->
-<dialog id="viewCompanyModal" class="bg-zinc-900 border border-zinc-700 text-white rounded-2xl w-full max-w-4xl p-0 shadow-2xl">
+<dialog id="viewCompanyModal" class="bg-zinc-900 border border-zinc-700 text-white rounded-xl w-full max-w-4xl p-0 shadow-2xl">
     <div class="flex items-center justify-between px-6 py-4 border-b border-zinc-700">
         <h2 class="text-xl font-semibold">Company Details</h2>
         <button onclick="document.getElementById('viewCompanyModal').close()" class="text-zinc-400 hover:text-white text-2xl leading-none">&times;</button>
     </div>
     <div class="p-6 max-h-[70vh] overflow-auto" id="viewCompanyContent"></div>
-    <div class="flex justify-end gap-3 px-6 py-4 border-t border-zinc-700 bg-zinc-950 rounded-b-2xl">
+    <div class="flex justify-end gap-3 px-6 py-4 border-t border-zinc-700 bg-zinc-950 rounded-b-xl">
         <button onclick="document.getElementById('viewCompanyModal').close()" class="px-6 py-2.5 rounded-lg border border-zinc-600 hover:bg-zinc-800 text-sm">Close</button>
         <button onclick="editFromViewModal()" class="px-6 py-2.5 bg-emerald-600 hover:bg-emerald-700 rounded-lg text-sm font-medium flex items-center gap-2">
             <i class="fa-solid fa-edit"></i> <span>Edit Information</span>
@@ -152,7 +153,7 @@
 </dialog>
 
 <!-- Add/Edit Company Modal -->
-<dialog id="companyModal" class="bg-zinc-900 border border-zinc-700 text-white rounded-2xl w-full max-w-6xl p-0 shadow-2xl">
+<dialog id="companyModal" class="bg-zinc-900 border border-zinc-700 text-white rounded-xl w-full max-w-6xl p-0 shadow-2xl">
     <div class="flex flex-col max-h-[82vh]">
         <div class="flex items-center justify-between px-6 py-4 border-b border-zinc-700 flex-shrink-0">
             <h2 id="modalTitle" class="text-xl font-semibold">Add Company</h2>
@@ -169,11 +170,13 @@
                     <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
                         <div class="md:col-span-2">
                             <label class="text-xs text-zinc-400">Company Name *</label>
-                            <input type="text" id="company_name" required class="w-full bg-zinc-800 text-white border border-zinc-700 rounded-lg px-4 py-2.5 text-sm focus:border-emerald-600">
+                            <input type="text" id="company_name" required 
+                                   class="w-full bg-zinc-800 text-white border border-zinc-700 rounded-lg px-4 py-2.5 text-sm focus:border-emerald-600 focus:bg-zinc-800 focus:text-white">
                         </div>
                         <div>
                             <label class="text-xs text-zinc-400">Company Type</label>
-                            <select id="company_type" class="w-full bg-zinc-800 text-white border border-zinc-700 rounded-lg px-4 py-2.5 text-sm focus:border-emerald-600">
+                            <select id="company_type" 
+                                    class="w-full bg-zinc-800 text-white border border-zinc-700 rounded-lg px-4 py-2.5 text-sm focus:border-emerald-600 focus:bg-zinc-800 focus:text-white">
                                 <option value="Subcontractor">Subcontractor</option>
                                 <option value="Supplier">Supplier / Vendor</option>
                                 <option value="Client">Client / Owner</option>
@@ -182,40 +185,49 @@
 
                         <div>
                             <label class="text-xs text-zinc-400">Vendor Number</label>
-                            <input type="text" id="vendor_number" class="w-full bg-zinc-800 text-white border border-zinc-700 rounded-lg px-4 py-2.5 text-sm focus:border-emerald-600">
+                            <input type="text" id="vendor_number" 
+                                   class="w-full bg-zinc-800 text-white border border-zinc-700 rounded-lg px-4 py-2.5 text-sm focus:border-emerald-600 focus:bg-zinc-800 focus:text-white">
                         </div>
                         <div>
                             <label class="text-xs text-zinc-400">Customer Number</label>
-                            <input type="text" id="customer_number" class="w-full bg-zinc-800 text-white border border-zinc-700 rounded-lg px-4 py-2.5 text-sm focus:border-emerald-600">
+                            <input type="text" id="customer_number" 
+                                   class="w-full bg-zinc-800 text-white border border-zinc-700 rounded-lg px-4 py-2.5 text-sm focus:border-emerald-600 focus:bg-zinc-800 focus:text-white">
                         </div>
                         <div>
                             <label class="text-xs text-zinc-400">External / Sage ID</label>
-                            <input type="text" id="external_id" class="w-full bg-zinc-800 text-white border border-zinc-700 rounded-lg px-4 py-2.5 text-sm focus:border-emerald-600">
+                            <input type="text" id="external_id" 
+                                   class="w-full bg-zinc-800 text-white border border-zinc-700 rounded-lg px-4 py-2.5 text-sm focus:border-emerald-600 focus:bg-zinc-800 focus:text-white">
                         </div>
 
                         <div>
                             <label class="text-xs text-zinc-400">Trade / Specialty</label>
-                            <input type="text" id="trade" class="w-full bg-zinc-800 text-white border border-zinc-700 rounded-lg px-4 py-2.5 text-sm focus:border-emerald-600">
+                            <input type="text" id="trade" 
+                                   class="w-full bg-zinc-800 text-white border border-zinc-700 rounded-lg px-4 py-2.5 text-sm focus:border-emerald-600 focus:bg-zinc-800 focus:text-white">
                         </div>
                         <div>
                             <label class="text-xs text-zinc-400">Website</label>
-                            <input type="text" id="website" class="w-full bg-zinc-800 text-white border border-zinc-700 rounded-lg px-4 py-2.5 text-sm focus:border-emerald-600">
+                            <input type="text" id="website" 
+                                   class="w-full bg-zinc-800 text-white border border-zinc-700 rounded-lg px-4 py-2.5 text-sm focus:border-emerald-600 focus:bg-zinc-800 focus:text-white">
                         </div>
                         <div>
                             <label class="text-xs text-zinc-400">Primary Phone</label>
-                            <input type="text" id="primary_phone" class="w-full bg-zinc-800 text-white border border-zinc-700 rounded-lg px-4 py-2.5 text-sm focus:border-emerald-600">
+                            <input type="text" id="primary_phone" 
+                                   class="w-full bg-zinc-800 text-white border border-zinc-700 rounded-lg px-4 py-2.5 text-sm focus:border-emerald-600 focus:bg-zinc-800 focus:text-white">
                         </div>
                         <div>
                             <label class="text-xs text-zinc-400">Primary Email</label>
-                            <input type="email" id="primary_email" class="w-full bg-zinc-800 text-white border border-zinc-700 rounded-lg px-4 py-2.5 text-sm focus:border-emerald-600">
+                            <input type="email" id="primary_email" 
+                                   class="w-full bg-zinc-800 text-white border border-zinc-700 rounded-lg px-4 py-2.5 text-sm focus:border-emerald-600 focus:bg-zinc-800 focus:text-white">
                         </div>
                         <div>
                             <label class="text-xs text-zinc-400">Tax ID / EIN</label>
-                            <input type="text" id="tax_id" class="w-full bg-zinc-800 text-white border border-zinc-700 rounded-lg px-4 py-2.5 text-sm focus:border-emerald-600">
+                            <input type="text" id="tax_id" 
+                                   class="w-full bg-zinc-800 text-white border border-zinc-700 rounded-lg px-4 py-2.5 text-sm focus:border-emerald-600 focus:bg-zinc-800 focus:text-white">
                         </div>
                         <div>
                             <label class="text-xs text-zinc-400">W-9 on File</label>
-                            <select id="w9_status" class="w-full bg-zinc-800 text-white border border-zinc-700 rounded-lg px-4 py-2.5 text-sm focus:border-emerald-600">
+                            <select id="w9_status" 
+                                    class="w-full bg-zinc-800 text-white border border-zinc-700 rounded-lg px-4 py-2.5 text-sm focus:border-emerald-600 focus:bg-zinc-800 focus:text-white">
                                 <option value="Yes">Yes</option>
                                 <option value="No">No</option>
                                 <option value="Requested">Requested</option>
@@ -223,7 +235,8 @@
                         </div>
                         <div>
                             <label class="text-xs text-zinc-400">Status</label>
-                            <select id="status" class="w-full bg-zinc-800 text-white border border-zinc-700 rounded-lg px-4 py-2.5 text-sm focus:border-emerald-600">
+                            <select id="status" 
+                                    class="w-full bg-zinc-800 text-white border border-zinc-700 rounded-lg px-4 py-2.5 text-sm focus:border-emerald-600 focus:bg-zinc-800 focus:text-white">
                                 <option value="Active">Active</option>
                                 <option value="Inactive">Inactive</option>
                                 <option value="Blacklisted">Blacklisted</option>
@@ -238,11 +251,13 @@
                     <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
                         <div>
                             <label class="text-xs text-zinc-400">Billing Address</label>
-                            <textarea id="billing_address" rows="3" class="w-full bg-zinc-800 text-white border border-zinc-700 rounded-lg px-4 py-2.5 text-sm focus:border-emerald-600"></textarea>
+                            <textarea id="billing_address" rows="3" 
+                                      class="w-full bg-zinc-800 text-white border border-zinc-700 rounded-lg px-4 py-2.5 text-sm focus:border-emerald-600 focus:bg-zinc-800 focus:text-white"></textarea>
                         </div>
                         <div>
                             <label class="text-xs text-zinc-400">Shipping Address</label>
-                            <textarea id="shipping_address" rows="3" class="w-full bg-zinc-800 text-white border border-zinc-700 rounded-lg px-4 py-2.5 text-sm focus:border-emerald-600"></textarea>
+                            <textarea id="shipping_address" rows="3" 
+                                      class="w-full bg-zinc-800 text-white border border-zinc-700 rounded-lg px-4 py-2.5 text-sm focus:border-emerald-600 focus:bg-zinc-800 focus:text-white"></textarea>
                         </div>
                     </div>
                 </div>
@@ -264,19 +279,23 @@
                     <div class="grid grid-cols-1 md:grid-cols-4 gap-4">
                         <div>
                             <label class="text-xs text-zinc-400">License Number</label>
-                            <input type="text" id="license_number" class="w-full bg-zinc-800 text-white border border-zinc-700 rounded-lg px-4 py-2.5 text-sm focus:border-emerald-600">
+                            <input type="text" id="license_number" 
+                                   class="w-full bg-zinc-800 text-white border border-zinc-700 rounded-lg px-4 py-2.5 text-sm focus:border-emerald-600 focus:bg-zinc-800 focus:text-white">
                         </div>
                         <div>
                             <label class="text-xs text-zinc-400">State</label>
-                            <input type="text" id="license_state" class="w-full bg-zinc-800 text-white border border-zinc-700 rounded-lg px-4 py-2.5 text-sm focus:border-emerald-600">
+                            <input type="text" id="license_state" 
+                                   class="w-full bg-zinc-800 text-white border border-zinc-700 rounded-lg px-4 py-2.5 text-sm focus:border-emerald-600 focus:bg-zinc-800 focus:text-white">
                         </div>
                         <div>
                             <label class="text-xs text-zinc-400">Expiration Date</label>
-                            <input type="date" id="license_expiration" class="w-full bg-zinc-800 text-white border border-zinc-700 rounded-lg px-4 py-2.5 text-sm focus:border-emerald-600">
+                            <input type="date" id="license_expiration" 
+                                   class="w-full bg-zinc-800 text-white border border-zinc-700 rounded-lg px-4 py-2.5 text-sm focus:border-emerald-600 focus:bg-zinc-800 focus:text-white">
                         </div>
                         <div>
                             <label class="text-xs text-zinc-400">Notes</label>
-                            <input type="text" id="license_notes" class="w-full bg-zinc-800 text-white border border-zinc-700 rounded-lg px-4 py-2.5 text-sm focus:border-emerald-600">
+                            <input type="text" id="license_notes" 
+                                   class="w-full bg-zinc-800 text-white border border-zinc-700 rounded-lg px-4 py-2.5 text-sm focus:border-emerald-600 focus:bg-zinc-800 focus:text-white">
                         </div>
                     </div>
                 </div>
@@ -288,30 +307,36 @@
                     <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
                         <div>
                             <label class="text-xs text-zinc-400">GL Carrier</label>
-                            <input type="text" id="gl_carrier" class="w-full bg-zinc-800 text-white border border-zinc-700 rounded-lg px-4 py-2.5 text-sm focus:border-emerald-600">
+                            <input type="text" id="gl_carrier" 
+                                   class="w-full bg-zinc-800 text-white border border-zinc-700 rounded-lg px-4 py-2.5 text-sm focus:border-emerald-600 focus:bg-zinc-800 focus:text-white">
                         </div>
                         <div>
                             <label class="text-xs text-zinc-400">GL Policy #</label>
-                            <input type="text" id="gl_policy" class="w-full bg-zinc-800 text-white border border-zinc-700 rounded-lg px-4 py-2.5 text-sm focus:border-emerald-600">
+                            <input type="text" id="gl_policy" 
+                                   class="w-full bg-zinc-800 text-white border border-zinc-700 rounded-lg px-4 py-2.5 text-sm focus:border-emerald-600 focus:bg-zinc-800 focus:text-white">
                         </div>
                         <div>
                             <label class="text-xs text-zinc-400">GL Expiration</label>
-                            <input type="date" id="gl_expiration" class="w-full bg-zinc-800 text-white border border-zinc-700 rounded-lg px-4 py-2.5 text-sm focus:border-emerald-600">
+                            <input type="date" id="gl_expiration" 
+                                   class="w-full bg-zinc-800 text-white border border-zinc-700 rounded-lg px-4 py-2.5 text-sm focus:border-emerald-600 focus:bg-zinc-800 focus:text-white">
                         </div>
                     </div>
 
                     <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
                         <div>
                             <label class="text-xs text-zinc-400">WC Carrier</label>
-                            <input type="text" id="wc_carrier" class="w-full bg-zinc-800 text-white border border-zinc-700 rounded-lg px-4 py-2.5 text-sm focus:border-emerald-600">
+                            <input type="text" id="wc_carrier" 
+                                   class="w-full bg-zinc-800 text-white border border-zinc-700 rounded-lg px-4 py-2.5 text-sm focus:border-emerald-600 focus:bg-zinc-800 focus:text-white">
                         </div>
                         <div>
                             <label class="text-xs text-zinc-400">WC Policy #</label>
-                            <input type="text" id="wc_policy" class="w-full bg-zinc-800 text-white border border-zinc-700 rounded-lg px-4 py-2.5 text-sm focus:border-emerald-600">
+                            <input type="text" id="wc_policy" 
+                                   class="w-full bg-zinc-800 text-white border border-zinc-700 rounded-lg px-4 py-2.5 text-sm focus:border-emerald-600 focus:bg-zinc-800 focus:text-white">
                         </div>
                         <div>
                             <label class="text-xs text-zinc-400">WC Expiration</label>
-                            <input type="date" id="wc_expiration" class="w-full bg-zinc-800 text-white border border-zinc-700 rounded-lg px-4 py-2.5 text-sm focus:border-emerald-600">
+                            <input type="date" id="wc_expiration" 
+                                   class="w-full bg-zinc-800 text-white border border-zinc-700 rounded-lg px-4 py-2.5 text-sm focus:border-emerald-600 focus:bg-zinc-800 focus:text-white">
                         </div>
                     </div>
 
@@ -328,7 +353,8 @@
 
                 <div class="mb-6">
                     <label class="text-xs text-zinc-400">Notes</label>
-                    <textarea id="notes" rows="3" class="w-full bg-zinc-800 text-white border border-zinc-700 rounded-lg px-4 py-2.5 text-sm focus:border-emerald-600"></textarea>
+                    <textarea id="notes" rows="3" 
+                              class="w-full bg-zinc-800 text-white border border-zinc-700 rounded-lg px-4 py-2.5 text-sm focus:border-emerald-600 focus:bg-zinc-800 focus:text-white"></textarea>
                 </div>
             </form>
         </div>
@@ -342,7 +368,7 @@
 </dialog>
 
 <!-- Success Modal -->
-<dialog id="successModal" class="bg-zinc-900 border border-zinc-700 text-white rounded-2xl w-full max-w-md p-0 shadow-2xl">
+<dialog id="successModal" class="bg-zinc-900 border border-zinc-700 text-white rounded-xl w-full max-w-md p-0 shadow-2xl">
     <div class="p-6 text-center">
         <div class="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-emerald-900/60 mb-4">
             <i class="fa-solid fa-check text-emerald-400 text-2xl"></i>
@@ -352,7 +378,6 @@
         <button onclick="document.getElementById('successModal').close()" class="px-8 py-2.5 bg-emerald-600 hover:bg-emerald-700 rounded-lg text-sm font-medium">OK</button>
     </div>
 </dialog>
-
 <script>
     // ==================== DATA MODEL ====================
     let companies = [
@@ -489,7 +514,7 @@
         renderCompaniesTable(companies);
     }
 
-    // ==================== WORKING EXPORT ====================
+    // ==================== WORKING EXPORT (CSV FIRST) ====================
     function exportCompanies(format) {
         if (!companies.length) {
             alert("No companies to export.");
@@ -499,10 +524,10 @@
         const wb = XLSX.utils.book_new();
         XLSX.utils.book_append_sheet(wb, ws, "Companies");
 
-        if (format === 'excel') {
-            XLSX.writeFile(wb, "companies_export.xlsx");
-        } else {
+        if (format === 'csv') {
             XLSX.writeFile(wb, "companies_export.csv", { bookType: "csv" });
+        } else {
+            XLSX.writeFile(wb, "companies_export.xlsx");
         }
     }
 
@@ -553,7 +578,7 @@
         input.click();
     }
 
-    // ==================== ADD / EDIT / SAVE ====================
+    // ==================== ADD / EDIT / SAVE (WITH AUTHORIZED USER CREATION) ====================
     function showAddCompanyModal() {
         document.getElementById('companyForm').reset();
         document.getElementById('companyId').value = '';
@@ -625,6 +650,7 @@
             });
         });
 
+        // === CREATE AUTHORIZED USERS IN USER MANAGEMENT ===
         contacts.forEach(contact => {
             if (contact.authorized_user && contact.email) {
                 createAuthorizedCasePMUser(contact, id ? parseInt(id) : Date.now());
@@ -762,6 +788,7 @@
         renderCompaniesTable(companies);
     }
 
+    // ==================== AUTHORIZED CASE PM USER → USER MANAGEMENT ====================
     function createAuthorizedCasePMUser(contact, companyId) {
         let users = [];
         try {
