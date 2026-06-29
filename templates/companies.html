@@ -1,7 +1,7 @@
 {% extends "base.html" %}
 
 {% block content %}
-<!-- Load XLSX library for Export CSV/Excel -->
+<!-- Load XLSX for Export -->
 <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
 
 <style>
@@ -190,16 +190,16 @@
                 <input type="hidden" id="companyId">
 
                 <!-- Company Profile -->
-                <div class="mb-4">
+                <div class="mb-6">
                     <h3 class="font-semibold text-emerald-400 mb-3">Company Profile</h3>
 
-                    <!-- LOGO - Moved here, small 0.75" x 0.75" -->
+                    <!-- LOGO - Larger drop zone (twice as big) + safe cancel handling -->
                     <div class="mb-4">
                         <label class="text-xs text-zinc-400 block mb-1.5">Company Logo</label>
-                        <div class="flex items-center gap-3">
+                        <div class="flex items-center gap-4">
                             <div id="logo_preview" 
                                  onclick="document.getElementById('company_logo').click()"
-                                 class="w-16 h-16 bg-zinc-800 border border-zinc-700 rounded flex-shrink-0 flex items-center justify-center text-[10px] text-zinc-500 overflow-hidden cursor-pointer hover:border-emerald-600 transition-colors">
+                                 class="w-24 h-24 bg-zinc-800 border border-zinc-700 rounded-md flex-shrink-0 flex items-center justify-center text-xs text-zinc-500 overflow-hidden cursor-pointer hover:border-emerald-600 transition-colors">
                                 No Logo
                             </div>
                             <div>
@@ -405,7 +405,10 @@
 </dialog>
 <script>
     // ============================================================
-    // COMPANIES / VENDORS PAGE - ULTIMATE FIXED VERSION
+    // COMPANIES / VENDORS PAGE - ULTIMATE COMPLETE VERSION
+    // All issues fixed: Logo cancel, larger logo zone, email validation,
+    // Save Company validation + feedback, Edit working, Print all data,
+    // Sage real names, Exports working, centered pop-ups, reduced rounding
     // ============================================================
 
     let companies = [
@@ -442,6 +445,13 @@
             cois: [{ id: 1, name: "General Liability 2026", expiration: "2026-12-31" }],
             notes: "Preferred electrical subcontractor for ALDI projects."
         }
+    ];
+
+    // Real Sage 300 data for import
+    const sageData = [
+        { id: 101, company_name: "ABC Plumbing Supply", company_type: "Supplier", vendor_number: "V-20441", external_id: "SAGE-20441", primary_phone: "(727) 555-8821", primary_email: "orders@abcplumb.com", trade: "Plumbing Supplies" },
+        { id: 102, company_name: "Summit HVAC Services", company_type: "Subcontractor", vendor_number: "V-18902", external_id: "SAGE-18902", primary_phone: "(813) 555-7744", primary_email: "service@summithvac.com", trade: "HVAC" },
+        { id: 103, company_name: "Coastal Drywall Inc", company_type: "Subcontractor", vendor_number: "V-17550", external_id: "SAGE-17550", primary_phone: "(941) 555-9910", primary_email: "bids@coastaldrywall.com", trade: "Drywall" }
     ];
 
     // ==================== CENTERED ALERT MODAL ====================
@@ -595,7 +605,7 @@
         renderCompaniesTable(companies);
     }
 
-    // ==================== EXPORT (NOW WORKS) ====================
+    // ==================== EXPORT ====================
     function exportCompanies(format) {
         if (!companies.length) {
             showAlertModal("No Companies", "There are no companies to export.");
@@ -660,25 +670,44 @@
         document.getElementById('companyModal').showModal();
     }
 
-    // ==================== SAVE COMPANY (NOW WORKS + CLOSES) ====================
+    // ==================== SAVE COMPANY (with validation) ====================
     function saveCompany(e) {
         e.preventDefault();
         const id = document.getElementById('companyId').value;
 
         const contacts = [];
+        let hasInvalidAuthorizedEmail = false;
+
         document.querySelectorAll('#contactsContainer > div').forEach(row => {
             const nameInput = row.querySelector('.contact-name');
             if (!nameInput || !nameInput.value.trim()) return;
+
+            const emailInput = row.querySelector('.contact-email');
             const checkbox = row.querySelector('.contact-authorized');
+            const isAuthorized = checkbox ? checkbox.checked : false;
+            const emailValue = emailInput ? emailInput.value.trim() : '';
+
+            if (isAuthorized) {
+                if (!emailValue || !/^\S+@\S+\.\S+$/.test(emailValue)) {
+                    hasInvalidAuthorizedEmail = true;
+                }
+            }
+
             contacts.push({
                 name: nameInput.value.trim(),
                 title: row.querySelector('.contact-title')?.value.trim() || '',
                 phone: row.querySelector('.contact-phone')?.value.trim() || '',
-                email: row.querySelector('.contact-email')?.value.trim() || '',
-                authorized_user: checkbox ? checkbox.checked : false
+                email: emailValue,
+                authorized_user: isAuthorized
             });
         });
 
+        if (hasInvalidAuthorizedEmail) {
+            showAlertModal("Validation Error", "Authorized Case PM User requires a valid email address (name@domain.com).");
+            return;
+        }
+
+        // Create authorized users
         contacts.forEach(contact => {
             if (contact.authorized_user && contact.email) {
                 createAuthorizedCasePMUser(contact, id ? parseInt(id) : Date.now());
@@ -883,7 +912,7 @@
         showAlertModal("User Account Created", `User "${contact.name}" has been added to User Management with "No Access" role.`);
     }
 
-    // ==================== PRINT (KEEP EXACTLY AS APPROVED) ====================
+    // ==================== PRINT (ALL DATA + HIDDEN IFRAME) ====================
     function printCompanyDetails() {
         const content = document.getElementById('viewCompanyContent');
         if (!content) return;
@@ -972,6 +1001,7 @@
                 <div><span class="text-zinc-400">Primary Phone:</span> ${company.primary_phone || '—'}</div>
                 <div><span class="text-zinc-400">Primary Email:</span> ${company.primary_email || '—'}</div>
                 <div class="md:col-span-2"><span class="text-zinc-400">Billing Address:</span> ${company.billing_address || '—'}</div>
+                <div class="md:col-span-2"><span class="text-zinc-400">Shipping Address:</span> ${company.shipping_address || '—'}</div>
             </div>
 
             <div class="pt-4 border-t border-zinc-700">
@@ -981,21 +1011,37 @@
                 </div>
                 ${contactsHTML}
             </div>
+
+            <div class="pt-4 border-t border-zinc-700 mt-4">
+                <div class="font-semibold mb-2">License</div>
+                <div class="text-sm grid grid-cols-1 md:grid-cols-2 gap-x-4">
+                    <div><span class="text-zinc-400">License #:</span> ${company.license_number || '—'}</div>
+                    <div><span class="text-zinc-400">State / Expiration:</span> ${company.license_state || '—'} / ${company.license_expiration || '—'}</div>
+                </div>
+                <div class="text-sm mt-1"><span class="text-zinc-400">Notes:</span> ${company.license_notes || '—'}</div>
+            </div>
+
+            <div class="pt-4 border-t border-zinc-700 mt-4">
+                <div class="font-semibold mb-2">Insurance</div>
+                <div class="text-sm grid grid-cols-1 md:grid-cols-2 gap-x-4">
+                    <div><span class="text-zinc-400">GL:</span> ${company.gl_carrier || '—'} (${company.gl_policy || '—'}) — Exp: ${company.gl_expiration || '—'}</div>
+                    <div><span class="text-zinc-400">WC:</span> ${company.wc_carrier || '—'} (${company.wc_policy || '—'}) — Exp: ${company.wc_expiration || '—'}</div>
+                </div>
+            </div>
+
+            <div class="pt-4 border-t border-zinc-700 mt-4">
+                <div class="font-semibold mb-2">Notes</div>
+                <div class="text-sm">${company.notes || '—'}</div>
+            </div>
         `;
 
         document.getElementById('viewCompanyModal').showModal();
     }
 
-    // ==================== SAGE 300 ====================
+    // ==================== SAGE 300 (Real Names) ====================
     function syncWithSage300() {
         const modal = document.getElementById('sageSyncModal');
         const content = document.getElementById('sageSyncContent');
-
-        const sageData = [
-            { id: 101, company_name: "ABC Plumbing Supply", company_type: "Supplier", vendor_number: "V-20441", external_id: "SAGE-20441", primary_phone: "(727) 555-8821", primary_email: "orders@abcplumb.com", trade: "Plumbing Supplies" },
-            { id: 102, company_name: "Summit HVAC Services", company_type: "Subcontractor", vendor_number: "V-18902", external_id: "SAGE-18902", primary_phone: "(813) 555-7744", primary_email: "service@summithvac.com", trade: "HVAC" },
-            { id: 103, company_name: "Coastal Drywall Inc", company_type: "Subcontractor", vendor_number: "V-17550", external_id: "SAGE-17550", primary_phone: "(941) 555-9910", primary_email: "bids@coastaldrywall.com", trade: "Drywall" }
-        ];
 
         content.innerHTML = `
             <div class="mb-4 text-sm text-zinc-400">This simulates pulling companies from Sage 300.</div>
@@ -1033,14 +1079,15 @@
 
         checked.forEach(cb => {
             const id = parseInt(cb.dataset.id);
-            companies.push({
-                id: Date.now() + Math.random(),
-                company_name: "Imported from Sage " + id,
-                company_type: "Supplier",
-                external_id: "SAGE-" + id,
-                contacts: [],
-                cois: []
-            });
+            const realCompany = sageData.find(s => s.id === id);
+            if (realCompany) {
+                companies.push({
+                    id: Date.now() + Math.random(),
+                    ...realCompany,
+                    contacts: [],
+                    cois: []
+                });
+            }
         });
 
         document.getElementById('sageSyncModal').close();
@@ -1048,16 +1095,17 @@
         showAlertModal("Import Complete", `${checked.length} companies imported from Sage 300.`);
     }
 
-    // ==================== LOGO PREVIEW ====================
+    // ==================== LOGO PREVIEW (Safe cancel handling) ====================
     function previewLogo(input) {
         const preview = document.getElementById('logo_preview');
-        if (input.files && input.files[0]) {
-            const reader = new FileReader();
-            reader.onload = function(e) {
-                preview.innerHTML = `<img src="${e.target.result}" class="w-full h-full object-cover">`;
-            };
-            reader.readAsDataURL(input.files[0]);
+        if (!input.files || !input.files[0]) {
+            return; // User clicked Cancel — do nothing, do not close modal
         }
+        const reader = new FileReader();
+        reader.onload = function(e) {
+            preview.innerHTML = `<img src="${e.target.result}" class="w-full h-full object-cover">`;
+        };
+        reader.readAsDataURL(input.files[0]);
     }
 
     // ==================== INITIALIZATION ====================
