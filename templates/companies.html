@@ -532,3 +532,427 @@
         document.getElementById('statusFilter').value = '';
         renderCompaniesTable(companies);
     }
+    // ==================== MODAL & CRUD FUNCTIONS ====================
+
+    function showAddCompanyModal() {
+        console.log('%c[Case PM] showAddCompanyModal called', 'color:#10b981');
+        document.getElementById('companyForm').reset();
+        document.getElementById('companyId').value = '';
+        document.getElementById('modalTitle').innerText = 'Add Company';
+        document.getElementById('contactsContainer').innerHTML = '';
+        document.getElementById('coiContainer').innerHTML = '';
+        addContactRow();
+        document.getElementById('companyModal').showModal();
+    }
+
+    function editCompany(id) {
+        const company = companies.find(c => c.id === id);
+        if (!company) return;
+
+        document.getElementById('companyId').value = company.id;
+        document.getElementById('modalTitle').innerText = 'Edit Company';
+
+        // Populate all fields
+        document.getElementById('company_name').value = company.company_name || '';
+        document.getElementById('company_type').value = company.company_type || 'Subcontractor';
+        document.getElementById('trade').value = company.trade || '';
+        document.getElementById('website').value = company.website || '';
+        document.getElementById('primary_phone').value = company.primary_phone || '';
+        document.getElementById('primary_email').value = company.primary_email || '';
+        document.getElementById('tax_id').value = company.tax_id || '';
+        document.getElementById('w9_status').value = company.w9_status || 'Yes';
+        document.getElementById('status').value = company.status || 'Active';
+        document.getElementById('billing_address').value = company.billing_address || '';
+        document.getElementById('shipping_address').value = company.shipping_address || '';
+        document.getElementById('license_number').value = company.license_number || '';
+        document.getElementById('license_state').value = company.license_state || '';
+        document.getElementById('license_expiration').value = company.license_expiration || '';
+        document.getElementById('license_notes').value = company.license_notes || '';
+        document.getElementById('gl_carrier').value = company.gl_carrier || '';
+        document.getElementById('gl_policy').value = company.gl_policy || '';
+        document.getElementById('gl_expiration').value = company.gl_expiration || '';
+        document.getElementById('wc_carrier').value = company.wc_carrier || '';
+        document.getElementById('wc_policy').value = company.wc_policy || '';
+        document.getElementById('wc_expiration').value = company.wc_expiration || '';
+        document.getElementById('notes').value = company.notes || '';
+
+        // Populate contacts
+        const contactsContainer = document.getElementById('contactsContainer');
+        contactsContainer.innerHTML = '';
+        if (company.contacts && company.contacts.length > 0) {
+            company.contacts.forEach(c => addContactRow(c));
+        } else {
+            addContactRow();
+        }
+
+        // Populate COIs
+        const coiContainer = document.getElementById('coiContainer');
+        coiContainer.innerHTML = '';
+        if (company.cois && company.cois.length > 0) {
+            company.cois.forEach(c => addCOIRow(c));
+        }
+
+        document.getElementById('companyModal').showModal();
+    }
+
+    function saveCompany(e) {
+        e.preventDefault();
+        const id = document.getElementById('companyId').value;
+
+        // Collect contacts
+        const contacts = [];
+        document.querySelectorAll('#contactsContainer > div').forEach(row => {
+            const name = row.querySelector('.contact-name')?.value.trim();
+            if (!name) return;
+            contacts.push({
+                name: name,
+                title: row.querySelector('.contact-title')?.value.trim() || '',
+                phone: row.querySelector('.contact-phone')?.value.trim() || '',
+                email: row.querySelector('.contact-email')?.value.trim() || '',
+                authorized_user: row.querySelector('.contact-authorized')?.checked || false
+            });
+        });
+
+        // Collect COIs
+        const cois = [];
+        document.querySelectorAll('#coiContainer > div').forEach(row => {
+            const name = row.querySelector('.coi-name')?.value.trim();
+            if (!name) return;
+            cois.push({
+                id: Date.now(),
+                name: name,
+                expiration: row.querySelector('.coi-expiration')?.value || ''
+            });
+        });
+
+        const newCompany = {
+            id: id ? parseInt(id) : Date.now(),
+            company_name: document.getElementById('company_name').value.trim(),
+            company_type: document.getElementById('company_type').value,
+            trade: document.getElementById('trade').value.trim(),
+            website: document.getElementById('website').value.trim(),
+            primary_phone: document.getElementById('primary_phone').value.trim(),
+            primary_email: document.getElementById('primary_email').value.trim(),
+            tax_id: document.getElementById('tax_id').value.trim(),
+            w9_status: document.getElementById('w9_status').value,
+            status: document.getElementById('status').value,
+            billing_address: document.getElementById('billing_address').value.trim(),
+            shipping_address: document.getElementById('shipping_address').value.trim(),
+            contacts: contacts,
+            license_number: document.getElementById('license_number').value.trim(),
+            license_state: document.getElementById('license_state').value.trim(),
+            license_expiration: document.getElementById('license_expiration').value,
+            license_notes: document.getElementById('license_notes').value.trim(),
+            gl_carrier: document.getElementById('gl_carrier').value.trim(),
+            gl_policy: document.getElementById('gl_policy').value.trim(),
+            gl_expiration: document.getElementById('gl_expiration').value,
+            wc_carrier: document.getElementById('wc_carrier').value.trim(),
+            wc_policy: document.getElementById('wc_policy').value.trim(),
+            wc_expiration: document.getElementById('wc_expiration').value,
+            cois: cois,
+            notes: document.getElementById('notes').value.trim()
+        };
+
+        // Authorized user notification
+        contacts.forEach(contact => {
+            if (contact.authorized_user) {
+                const alreadyExists = companies.some(c => 
+                    c.contacts?.some(ct => ct.email === contact.email && ct.authorized_user)
+                );
+                if (!alreadyExists) {
+                    showCenteredSuccess(
+                        "User Account Created", 
+                        `User account created for ${contact.name} with "No Access" permissions.\nPlease go to User Management to set their access level and password.`
+                    );
+                }
+            }
+        });
+
+        if (id) {
+            const index = companies.findIndex(c => c.id == id);
+            companies[index] = newCompany;
+        } else {
+            companies.push(newCompany);
+        }
+
+        document.getElementById('companyModal').close();
+        renderCompaniesTable(companies);
+    }
+
+    function addContactRow(contact = null) {
+        const container = document.getElementById('contactsContainer');
+        const div = document.createElement('div');
+        div.className = 'bg-zinc-800 border border-zinc-700 rounded-md p-4 mb-3';
+        div.innerHTML = `
+            <div class="grid grid-cols-1 md:grid-cols-12 gap-3 items-end">
+                <div class="md:col-span-3">
+                    <input type="text" placeholder="Full Name" class="contact-name w-full bg-zinc-900 border border-zinc-600 rounded px-3 py-1.5 text-sm" value="${contact ? contact.name : ''}">
+                </div>
+                <div class="md:col-span-2">
+                    <input type="text" placeholder="Title" class="contact-title w-full bg-zinc-900 border border-zinc-600 rounded px-3 py-1.5 text-sm" value="${contact ? contact.title : ''}">
+                </div>
+                <div class="md:col-span-2">
+                    <input type="text" placeholder="Phone" class="contact-phone w-full bg-zinc-900 border border-zinc-600 rounded px-3 py-1.5 text-sm" value="${contact ? contact.phone : ''}">
+                </div>
+                <div class="md:col-span-3">
+                    <input type="email" placeholder="Email" class="contact-email w-full bg-zinc-900 border border-zinc-600 rounded px-3 py-1.5 text-sm" value="${contact ? contact.email : ''}">
+                </div>
+                <div class="md:col-span-2 flex items-center gap-2">
+                    <label class="flex items-center gap-1 text-xs cursor-pointer">
+                        <input type="checkbox" class="contact-authorized accent-emerald-600" ${contact && contact.authorized_user ? 'checked' : ''}> Authorized
+                    </label>
+                    <button type="button" onclick="this.closest('.bg-zinc-800').remove()" class="text-red-400 hover:text-red-500 ml-auto">
+                        <i class="fa-solid fa-times"></i>
+                    </button>
+                </div>
+            </div>
+        `;
+        container.appendChild(div);
+    }
+
+    function addCOIRow(coi = null) {
+        const container = document.getElementById('coiContainer');
+        const div = document.createElement('div');
+        div.className = 'bg-zinc-800 border border-zinc-700 rounded-md p-4 mb-3';
+        div.innerHTML = `
+            <div class="grid grid-cols-1 md:grid-cols-12 gap-3 items-end">
+                <div class="md:col-span-5">
+                    <input type="text" placeholder="COI Description" class="coi-name w-full bg-zinc-900 border border-zinc-600 rounded px-3 py-1.5 text-sm" value="${coi ? coi.name : ''}">
+                </div>
+                <div class="md:col-span-3">
+                    <input type="date" class="coi-expiration w-full bg-zinc-900 border border-zinc-600 rounded px-3 py-1.5 text-sm" value="${coi ? coi.expiration : ''}">
+                </div>
+                <div class="md:col-span-3">
+                    <input type="file" class="coi-file text-xs w-full">
+                </div>
+                <div class="md:col-span-1">
+                    <button type="button" onclick="this.closest('.bg-zinc-800').remove()" class="text-red-400 hover:text-red-500">
+                        <i class="fa-solid fa-times"></i>
+                    </button>
+                </div>
+            </div>
+        `;
+        container.appendChild(div);
+    }
+
+    function showViewCompanyModal(id) {
+        const company = companies.find(c => c.id === id);
+        if (!company) return;
+
+        const content = document.getElementById('viewCompanyContent');
+        content.innerHTML = `
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-x-8 gap-y-4 text-sm">
+                <div><span class="text-zinc-400">Company:</span> <span class="font-semibold">${company.company_name}</span></div>
+                <div><span class="text-zinc-400">Type:</span> ${company.company_type}</div>
+                <div><span class="text-zinc-400">Trade:</span> ${company.trade || '—'}</div>
+                <div><span class="text-zinc-400">Status:</span> ${company.status}</div>
+                <div><span class="text-zinc-400">Phone:</span> ${company.primary_phone || '—'}</div>
+                <div><span class="text-zinc-400">Email:</span> ${company.primary_email || '—'}</div>
+                <div class="md:col-span-2"><span class="text-zinc-400">Address:</span> ${company.billing_address || '—'}</div>
+            </div>
+            <div class="pt-4 border-t border-zinc-700 mt-4">
+                <div class="font-semibold mb-2">Contacts</div>
+                ${(company.contacts || []).map(c => `
+                    <div class="bg-zinc-800 rounded p-3 mb-2">
+                        <div><strong>${c.name}</strong> ${c.title ? '— ' + c.title : ''}</div>
+                        <div class="text-xs text-zinc-400">${c.phone || ''} ${c.email || ''}</div>
+                        ${c.authorized_user ? '<span class="text-xs bg-emerald-900/60 text-emerald-400 px-2 py-0.5 rounded">Authorized User for Case PM</span>' : ''}
+                    </div>
+                `).join('') || '<div class="text-zinc-500">No contacts added.</div>'}
+            </div>
+        `;
+        content.dataset.currentId = company.id;
+        document.getElementById('viewCompanyModal').showModal();
+    }
+
+    function editFromViewModal() {
+        const id = parseInt(document.getElementById('viewCompanyContent').dataset.currentId);
+        document.getElementById('viewCompanyModal').close();
+        setTimeout(() => editCompany(id), 150);
+    }
+
+    function deleteCompany(id) {
+        if (!confirm('Delete this company? This cannot be undone.')) return;
+        companies = companies.filter(c => c.id !== id);
+        renderCompaniesTable(companies);
+    }
+        // ==================== EXPORT / IMPORT (REAL FUNCTIONALITY) ====================
+
+    function exportCompanies(format = 'excel') {
+        console.log('%c[Case PM] exportCompanies called with format:', format);
+
+        if (companies.length === 0) {
+            showCenteredSuccess("Nothing to Export", "There are no companies to export.");
+            return;
+        }
+
+        const exportData = companies.map(c => ({
+            "Company Name": c.company_name,
+            "Type": c.company_type,
+            "Trade": c.trade || "",
+            "Primary Phone": c.primary_phone || "",
+            "Primary Email": c.primary_email || "",
+            "Status": c.status,
+            "Tax ID": c.tax_id || "",
+            "W-9 on File": c.w9_status || "",
+            "License Number": c.license_number || "",
+            "License State": c.license_state || "",
+            "License Expiration": c.license_expiration || "",
+            "GL Carrier": c.gl_carrier || "",
+            "GL Policy": c.gl_policy || "",
+            "GL Expiration": c.gl_expiration || "",
+            "WC Carrier": c.wc_carrier || "",
+            "WC Policy": c.wc_policy || "",
+            "WC Expiration": c.wc_expiration || "",
+            "Notes": c.notes || ""
+        }));
+
+        const ws = XLSX.utils.json_to_sheet(exportData);
+        const wb = XLSX.utils.book_new();
+        XLSX.utils.book_append_sheet(wb, ws, "Companies");
+
+        const date = new Date().toISOString().slice(0, 10);
+        const filename = `Companies_Export_${date}.${format === 'csv' ? 'csv' : 'xlsx'}`;
+
+        XLSX.writeFile(wb, filename, { bookType: format === 'csv' ? 'csv' : 'xlsx' });
+
+        showCenteredSuccess(
+            "Export Successful", 
+            `File downloaded: ${filename}\n\n${companies.length} companies exported.`
+        );
+    }
+
+    function importCompanies(type = 'excel') {
+        console.log('%c[Case PM] importCompanies called with type:', type);
+
+        const input = document.createElement('input');
+        input.type = 'file';
+        input.accept = type === 'excel' ? '.xlsx,.xls' : '.csv';
+
+        input.onchange = function(e) {
+            const file = e.target.files[0];
+            if (!file) return;
+
+            const reader = new FileReader();
+
+            reader.onload = function(ev) {
+                try {
+                    let importedData = [];
+
+                    if (type === 'csv' || file.name.endsWith('.csv')) {
+                        const text = ev.target.result;
+                        const lines = text.split('\n').filter(line => line.trim() !== '');
+                        if (lines.length < 2) throw new Error("CSV file is empty or invalid");
+
+                        const headers = lines[0].split(',').map(h => h.trim().replace(/"/g, ''));
+                        
+                        for (let i = 1; i < lines.length; i++) {
+                            const values = lines[i].split(',').map(v => v.trim().replace(/"/g, ''));
+                            const obj = {};
+                            headers.forEach((header, index) => {
+                                obj[header] = values[index] || '';
+                            });
+                            importedData.push(obj);
+                        }
+                    } else {
+                        const data = new Uint8Array(ev.target.result);
+                        const workbook = XLSX.read(data, { type: 'array' });
+                        const sheetName = workbook.SheetNames[0];
+                        const worksheet = workbook.Sheets[sheetName];
+                        importedData = XLSX.utils.sheet_to_json(worksheet);
+                    }
+
+                    let addedCount = 0;
+
+                    importedData.forEach(row => {
+                        if (!row["Company Name"] && !row.company_name) return;
+
+                        const newCompany = {
+                            id: Date.now() + Math.floor(Math.random() * 10000),
+                            company_name: row["Company Name"] || row.company_name || "Unnamed Company",
+                            company_type: row["Type"] || row.company_type || "Subcontractor",
+                            trade: row["Trade"] || row.trade || "",
+                            primary_phone: row["Primary Phone"] || row.primary_phone || "",
+                            primary_email: row["Primary Email"] || row.primary_email || "",
+                            status: row["Status"] || row.status || "Active",
+                            tax_id: row["Tax ID"] || row.tax_id || "",
+                            w9_status: row["W-9 on File"] || row.w9_status || "Yes",
+                            billing_address: row["Billing Address"] || row.billing_address || "",
+                            shipping_address: row["Shipping Address"] || row.shipping_address || "",
+                            contacts: [],
+                            cois: [],
+                            notes: row["Notes"] || row.notes || ""
+                        };
+
+                        companies.push(newCompany);
+                        addedCount++;
+                    });
+
+                    renderCompaniesTable(companies);
+                    showCenteredSuccess(
+                        "Import Successful", 
+                        `${addedCount} companies imported successfully.`
+                    );
+
+                } catch (error) {
+                    console.error(error);
+                    showCenteredSuccess("Import Failed", "There was a problem reading the file. Please check the format.");
+                }
+            };
+
+            if (type === 'csv' || file.name.endsWith('.csv')) {
+                reader.readAsText(file);
+            } else {
+                reader.readAsArrayBuffer(file);
+            }
+        };
+
+        input.click();
+    }
+
+    // ==================== CENTERED SUCCESS MODAL ====================
+    function showCenteredSuccess(title, message) {
+        // Create modal if it doesn't exist
+        let modal = document.getElementById('successModal');
+        
+        if (!modal) {
+            modal = document.createElement('dialog');
+            modal.id = 'successModal';
+            modal.className = 'bg-zinc-900 border border-zinc-700 rounded-3xl w-full max-w-md p-0 shadow-2xl';
+            modal.innerHTML = `
+                <div class="p-6 text-center">
+                    <div class="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-emerald-900/60 mb-4">
+                        <i class="fa-solid fa-check text-emerald-400 text-2xl"></i>
+                    </div>
+                    <h3 id="successTitle" class="text-lg font-semibold mb-2"></h3>
+                    <p id="successMessage" class="text-zinc-400 text-sm mb-6 whitespace-pre-line"></p>
+                    <button onclick="document.getElementById('successModal').close()" 
+                            class="px-8 py-2.5 bg-emerald-600 hover:bg-emerald-700 rounded-2xl text-sm font-medium">OK</button>
+                </div>
+            `;
+            document.body.appendChild(modal);
+        }
+
+        document.getElementById('successTitle').innerText = title;
+        document.getElementById('successMessage').innerText = message;
+        modal.showModal();
+    }
+        // ==================== INITIALIZE PAGE ====================
+    function initializeCompaniesPage() {
+        console.log('%c[Case PM] Companies page initialized successfully', 'color:#10b981');
+        
+        // Render the table with all companies
+        renderCompaniesTable(companies);
+        
+        // Update the summary cards at the top
+        updateSummaryCards();
+        
+        // Optional: You can add any other startup logic here later
+        // (e.g. loading data from backend when we connect it)
+    }
+
+    // Start the page when everything is loaded
+    window.onload = initializeCompaniesPage;
+</script>
+
+{% endblock %}
