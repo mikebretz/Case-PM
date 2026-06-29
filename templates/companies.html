@@ -784,3 +784,46 @@
 
     window.onload = initializeCompaniesPage;
 </script>
+<!-- ==================== HEADER ==================== -->
+<div class="flex items-center justify-between mb-8">
+    <div>
+        <h1 class="text-3xl font-semibold tracking-tight">Companies / Vendors</h1>
+        <p class="text-zinc-400 mt-1">Vendor & Subcontractor Directory • Case PM</p>
+    </div>
+
+    <div class="flex items-center gap-3">
+        <!-- Export Button with Dropdown -->
+        <div class="relative group">
+            <button class="flex items-center gap-2 px-4 py-2.5 bg-zinc-800 hover:bg-zinc-700 rounded-2xl text-sm transition-colors">
+                <i class="fa-solid fa-download"></i>
+                <span>Export</span>
+            </button>
+            <div class="absolute right-0 mt-1 hidden group-hover:block bg-zinc-900 border border-zinc-700 rounded-xl shadow-xl z-50 w-44">
+                <button onclick="exportCompanies('excel')" 
+                        class="w-full text-left px-4 py-2.5 text-sm hover:bg-zinc-800 rounded-t-xl flex items-center gap-2">
+                    <i class="fa-solid fa-file-excel text-emerald-400"></i>
+                    <span>Export to Excel (.xlsx)</span>
+                </button>
+                <button onclick="exportCompanies('csv')" 
+                        class="w-full text-left px-4 py-2.5 text-sm hover:bg-zinc-800 rounded-b-xl flex items-center gap-2">
+                    <i class="fa-solid fa-file-csv text-emerald-400"></i>
+                    <span>Export to CSV</span>
+                </button>
+            </div>
+        </div>
+
+        <!-- Import Button -->
+        <button onclick="importCompanies()" 
+                class="flex items-center gap-2 px-4 py-2.5 bg-zinc-800 hover:bg-zinc-700 rounded-2xl text-sm transition-colors">
+            <i class="fa-solid fa-upload"></i>
+            <span>Import</span>
+        </button>
+
+        <!-- Add Company Button -->
+        <button onclick="showAddCompanyModal()" 
+                class="flex items-center gap-2 px-5 py-2.5 bg-emerald-600 hover:bg-emerald-500 rounded-2xl text-sm font-medium transition-colors">
+            <i class="fa-solid fa-plus"></i>
+            <span>Add Company</span>
+        </button>
+    </div>
+</div>
