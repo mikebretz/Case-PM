@@ -23,11 +23,6 @@
         border-color: #10b981;
         background-color: #1f2a1f;
     }
-    .action-btn {
-        font-size: 1.15rem;
-        padding: 6px 10px;
-        line-height: 1;
-    }
 </style>
 
 <div class="flex-1 flex flex-col overflow-hidden">
@@ -179,7 +174,7 @@
                     <h3 class="font-semibold text-emerald-400 mb-3">Company Profile</h3>
 
                     <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
-                        <!-- Row 1: Company Name + Type -->
+                        <!-- Row 1 -->
                         <div class="md:col-span-2">
                             <label class="text-xs text-zinc-400">Company Name *</label>
                             <input type="text" id="company_name" required class="w-full bg-zinc-800 text-white border border-zinc-700 rounded px-4 py-2.5 text-sm focus:border-emerald-600">
@@ -209,11 +204,11 @@
                             <input type="email" id="primary_email" class="w-full bg-zinc-800 text-white border border-zinc-700 rounded px-4 py-2.5 text-sm focus:border-emerald-600">
                         </div>
 
-                        <!-- Logo -->
+                        <!-- COMPANY LOGO - TALLER to reach bottom of Status/Tax ID -->
                         <div class="flex flex-col justify-end">
                             <label class="text-xs text-zinc-400 block mb-1">Company Logo</label>
                             <div id="logo_drop_zone"
-                                 class="w-full h-[92px] border-2 border-dashed border-zinc-600 rounded-md flex flex-col items-center justify-center text-center cursor-pointer hover:border-emerald-600 transition-colors bg-zinc-800">
+                                 class="w-full h-[118px] border-2 border-dashed border-zinc-600 rounded-md flex flex-col items-center justify-center text-center cursor-pointer hover:border-emerald-600 transition-colors bg-zinc-800">
                                 <div id="logo_preview" class="w-14 h-14 flex items-center justify-center text-xs text-zinc-500 overflow-hidden">
                                     No Logo
                                 </div>
@@ -222,7 +217,7 @@
                             <input type="file" id="company_logo" class="hidden" accept="image/*">
                         </div>
 
-                        <!-- Tax ID + Status (moved up as requested) -->
+                        <!-- Tax ID + Status -->
                         <div>
                             <label class="text-xs text-zinc-400">Tax ID / EIN</label>
                             <input type="text" id="tax_id" class="w-full bg-zinc-800 text-white border border-zinc-700 rounded px-4 py-2.5 text-sm focus:border-emerald-600">
@@ -375,7 +370,7 @@
 </dialog>
 
 <script>
-// ==================== FULL JAVASCRIPT (from your GitHub + requested fixes) ====================
+// ==================== FULL JAVASCRIPT (GitHub base + your exact requested changes) ====================
 
 let companies = [];
 let originalCompanyData = null;
@@ -446,8 +441,8 @@ function renderCompaniesTable(filteredCompanies = null) {
             <td class="px-4 py-4 text-center">${wcStatus}</td>
             <td class="px-4 py-4 text-center">${coiStatus}</td>
             <td class="px-4 py-4 text-right">
-                <button onclick="event.stopImmediatePropagation(); editCompany(${company.id});" class="action-btn text-emerald-400 hover:text-emerald-300 mr-2"><i class="fa-solid fa-edit"></i></button>
-                <button onclick="event.stopImmediatePropagation(); confirmDeleteCompany(${company.id}, this);" class="action-btn text-red-400 hover:text-red-300"><i class="fa-solid fa-trash"></i></button>
+                <button onclick="event.stopImmediatePropagation(); editCompany(${company.id});" class="text-emerald-400 hover:text-emerald-300 mr-3"><i class="fa-solid fa-edit"></i></button>
+                <button onclick="event.stopImmediatePropagation(); confirmDeleteCompany(${company.id}, this);" class="text-red-400 hover:text-red-300"><i class="fa-solid fa-trash"></i></button>
             </td>
         `;
         tbody.appendChild(row);
@@ -503,7 +498,6 @@ function updateSummaryCards() {
     document.getElementById('expiredLicenseCount').innerText = expiredLic;
 }
 
-// ==================== CORRECTED FILTERS ====================
 function filterAll() { renderCompaniesTable(companies); }
 function filterByType(type) { renderCompaniesTable(companies.filter(c => c.company_type === type)); }
 
@@ -632,6 +626,7 @@ function showAddCompanyModal() {
     if (preview) preview.innerHTML = '<span class="text-xs text-zinc-500">No Logo</span>';
     document.getElementById('companyModal').showModal();
     setupLogoDropZone();
+    originalCompanyData = null;
 }
 
 function saveCompanyWrapper() {
@@ -657,7 +652,7 @@ function saveCompany(e) {
         }
     });
     if (hasInvalidEmail) {
-        showAlertModal("Invalid Email", "Please enter a valid email for any Authorized Case PM User.");
+        showAlertModal("Invalid Email", "Please enter a valid email address for any Authorized Case PM User.");
         return;
     }
 
@@ -691,13 +686,18 @@ function saveCompany(e) {
     contactRows.forEach(row => {
         const name = row.querySelector('.contact-name').value.trim();
         if (name) {
-            newCompany.contacts.push({
+            const contact = {
                 name: name,
                 title: row.querySelector('.contact-title').value.trim(),
                 phone: row.querySelector('.contact-phone').value.trim(),
                 email: row.querySelector('.contact-email').value.trim(),
                 authorized_user: row.querySelector('.authorized-check').checked
-            });
+            };
+            newCompany.contacts.push(contact);
+
+            if (contact.authorized_user && contact.email) {
+                createAuthorizedCasePMUser(contact, id);
+            }
         }
     });
 
@@ -723,7 +723,7 @@ function saveCompany(e) {
     localStorage.setItem('casepm_companies', JSON.stringify(companies));
     document.getElementById('companyModal').close();
     renderCompaniesTable(companies);
-    showAlertModal("Success", "Company saved successfully.");
+    showAlertModal("Success", "Company saved successfully. Authorized users added to User Management.");
 }
 
 function addContactRow(contact = null) {
@@ -749,7 +749,7 @@ function addContactRow(contact = null) {
         </div>
         <div class="col-span-2 flex items-center gap-2">
             <label class="flex items-center gap-2 text-xs text-zinc-400 cursor-pointer">
-                <input type="checkbox" class="authorized-check accent-emerald-600" ${contact && contact.authorized_user ? 'checked' : ''}> 
+                <input type="checkbox" class="authorized-check accent-emerald-600" ${contact && contact.authorized_user ? 'checked' : ''} onchange="if(this.checked){ const email=this.closest('.contact-row').querySelector('.contact-email'); if(email && !email.value) email.focus(); }"> 
                 <span>Authorized Case PM User</span>
             </label>
             <button type="button" onclick="this.closest('.contact-row').remove()" class="text-red-400 hover:text-red-300 ml-auto"><i class="fa-solid fa-times"></i></button>
@@ -786,7 +786,6 @@ function editCompany(id) {
     const company = companies.find(c => c.id === id);
     if (!company) return;
 
-    // Store original data for unsaved changes detection
     originalCompanyData = JSON.parse(JSON.stringify(company));
 
     document.getElementById('companyId').value = company.id;
@@ -851,64 +850,119 @@ function deleteCompanyConfirmed(id, btn) {
 
 function createAuthorizedCasePMUser(contact, companyId) {
     let users = JSON.parse(localStorage.getItem('casepm_users') || '[]');
-    users.push({
-        id: Date.now(),
-        name: contact.name,
-        email: contact.email,
-        company_id: companyId,
-        role: "No Access",
-        authorized: true
-    });
-    localStorage.setItem('casepm_users', JSON.stringify(users));
+    if (!users.some(u => u.email === contact.email)) {
+        users.push({
+            id: Date.now(),
+            name: contact.name,
+            email: contact.email,
+            company_id: companyId,
+            role: "No Access",
+            authorized: true,
+            created_at: new Date().toISOString()
+        });
+        localStorage.setItem('casepm_users', JSON.stringify(users));
+    }
 }
 
 function printCompanyDetails() {
     const content = document.getElementById('viewCompanyContent').innerHTML;
-    const printWin = window.open('', '_blank');
-    printWin.document.write(`<html><head><title>Company Details</title></head><body>${content}</body></html>`);
-    printWin.document.close();
-    printWin.focus();
+
+    const iframe = document.createElement('iframe');
+    iframe.style.position = 'absolute';
+    iframe.style.width = '0';
+    iframe.style.height = '0';
+    iframe.style.border = 'none';
+    document.body.appendChild(iframe);
+
+    const doc = iframe.contentWindow.document;
+    doc.open();
+    doc.write(`
+        <html>
+        <head>
+            <title>Company Details - Print</title>
+            <style>
+                body { font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; padding: 30px; color: #222; line-height: 1.5; }
+                .print-header {
+                    display: flex;
+                    align-items: center;
+                    justify-content: space-between;
+                    border-bottom: 4px solid #10b981;
+                    padding-bottom: 15px;
+                    margin-bottom: 25px;
+                }
+                .print-header .logo-text {
+                    font-size: 32px;
+                    font-weight: 800;
+                    color: #10b981;
+                    letter-spacing: -1.5px;
+                }
+                h2 { color: #111; border-bottom: 1px solid #ddd; padding-bottom: 8px; margin-top: 0; }
+            </style>
+        </head>
+        <body>
+            <div class="print-header">
+                <div>
+                    <div class="logo-text">CASE PM</div>
+                    <div style="font-size:13px; color:#555; margin-top:2px;">Professional Construction Management</div>
+                </div>
+                <div style="text-align:right; font-size:14px;">
+                    <strong>ALDI Lakeland</strong><br>
+                    <span style="color:#666;">Project Documentation</span>
+                </div>
+            </div>
+            ${content}
+        </body>
+        </html>
+    `);
+    doc.close();
+
+    iframe.contentWindow.focus();
     setTimeout(() => {
-        printWin.print();
-        printWin.close();
-    }, 250);
+        iframe.contentWindow.print();
+        setTimeout(() => {
+            document.body.removeChild(iframe);
+        }, 600);
+    }, 350);
 }
 
 function closeCompanyModalSafely() {
     const modal = document.getElementById('companyModal');
     if (!modal) return;
 
-    if (!originalCompanyData) {
+    const companyName = document.getElementById('company_name') ? document.getElementById('company_name').value.trim() : '';
+
+    if (!companyName && !originalCompanyData) {
         modal.close();
         return;
     }
 
-    // Compare key fields to detect actual changes
-    const current = {
-        company_name: document.getElementById('company_name').value.trim(),
-        primary_phone: document.getElementById('primary_phone').value.trim(),
-        primary_email: document.getElementById('primary_email').value.trim(),
-        external_id: document.getElementById('external_id').value.trim(),
-        tax_id: document.getElementById('tax_id').value.trim(),
-        status: document.getElementById('status').value
-    };
+    if (originalCompanyData) {
+        const currentName = document.getElementById('company_name').value.trim();
+        const currentPhone = document.getElementById('primary_phone').value.trim();
+        const currentEmail = document.getElementById('primary_email').value.trim();
 
-    const changed = 
-        current.company_name !== (originalCompanyData.company_name || '') ||
-        current.primary_phone !== (originalCompanyData.primary_phone || '') ||
-        current.primary_email !== (originalCompanyData.primary_email || '') ||
-        current.external_id !== (originalCompanyData.external_id || '') ||
-        current.tax_id !== (originalCompanyData.tax_id || '') ||
-        current.status !== (originalCompanyData.status || '');
+        const changed = currentName !== (originalCompanyData.company_name || '') ||
+                        currentPhone !== (originalCompanyData.primary_phone || '') ||
+                        currentEmail !== (originalCompanyData.primary_email || '');
 
-    if (changed) {
-        showConfirmModal("Unsaved Changes", "You have unsaved changes. Discard changes and close?", () => {
+        if (changed) {
+            showConfirmModal("Unsaved Changes", "You have entered new information. Discard changes and close?", () => {
+                modal.close();
+                originalCompanyData = null;
+            });
+        } else {
             modal.close();
             originalCompanyData = null;
+        }
+        return;
+    }
+
+    if (companyName) {
+        showConfirmModal("Unsaved Changes", "You have entered new information. Discard changes and close?", () => {
+            modal.close();
         });
     } else {
         modal.close();
-        originalCompanyData = null;
     }
 }
 
@@ -998,7 +1052,6 @@ function syncWithSage300() {
 
     html += `</div>`;
 
-    // Add the three buttons at the bottom as requested
     html += `
         <div class="flex flex-wrap gap-2 mt-4">
             <button onclick="selectAllSage(true)" class="px-4 py-2 bg-zinc-700 hover:bg-zinc-600 rounded text-sm">Select All</button>
