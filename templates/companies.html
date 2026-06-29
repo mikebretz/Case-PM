@@ -66,7 +66,7 @@
 
     <div class="flex-1 overflow-auto p-6">
 
-        <!-- Summary Cards -->
+        <!-- Summary Cards (kept exactly as you confirmed working) -->
         <div class="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-7 gap-4 mb-6">
             <div onclick="filterAll()" class="bg-zinc-900 border border-zinc-700 rounded-md p-4 cursor-pointer hover:border-emerald-600 transition-colors">
                 <div class="text-xs text-zinc-400">Total Companies</div>
@@ -211,6 +211,7 @@
                             <label class="text-xs text-zinc-400">Primary Email</label>
                             <input type="email" id="primary_email" class="w-full bg-zinc-800 text-white border border-zinc-700 rounded px-4 py-2.5 text-sm focus:border-emerald-600">
                         </div>
+                        <div></div>
 
                         <!-- Tax ID | Status | Logo (bottom right) -->
                         <div>
@@ -226,7 +227,7 @@
                             </select>
                         </div>
 
-                        <!-- COMPANY LOGO - positioned bottom right of Company Profile -->
+                        <!-- COMPANY LOGO - Bottom right of Company Profile -->
                         <div class="flex flex-col justify-end">
                             <label class="text-xs text-zinc-400 block mb-1">Company Logo</label>
                             <div id="logo_drop_zone"
@@ -343,7 +344,7 @@
             </form>
         </div>
 
-        <!-- Footer -->
+        <!-- STATIONARY FOOTER -->
         <div class="flex justify-end gap-3 px-6 py-4 border-t border-zinc-700 bg-zinc-900 flex-shrink-0 sticky bottom-0">
             <button type="button" onclick="closeCompanyModalSafely()" class="px-6 py-2.5 rounded border border-zinc-600 hover:bg-zinc-800 text-sm">Cancel</button>
             <button type="button" onclick="saveCompanyWrapper()" class="px-8 py-2.5 bg-emerald-600 hover:bg-emerald-700 rounded text-sm font-medium">Save Company</button>
@@ -377,7 +378,7 @@
 </dialog>
 
 <script>
-// ==================== COMPLETE JAVASCRIPT ====================
+// ==================== FULL JAVASCRIPT - EVERYTHING INCLUDED ====================
 
 let companies = [
     {
@@ -392,7 +393,6 @@ let companies = [
         primary_phone: "(813) 555-0192",
         primary_email: "info@titanelectric.com",
         tax_id: "59-XXXXXXX",
-        w9_status: "Yes",
         status: "Active",
         billing_address: "4520 N 56th St, Tampa, FL 33610",
         shipping_address: "Same as billing",
@@ -434,6 +434,28 @@ function showAlertModal(title, message) {
     `;
     document.body.appendChild(modal);
     modal.showModal();
+}
+
+function showConfirmModal(message, onConfirm) {
+    const modal = document.createElement('dialog');
+    modal.className = 'bg-zinc-900 border border-zinc-700 text-white rounded-md w-full max-w-md p-0 shadow-2xl';
+    modal.innerHTML = `
+        <div class="p-6">
+            <h3 class="text-lg font-semibold mb-2">Unsaved Changes</h3>
+            <p class="text-zinc-400 text-sm mb-6">${message}</p>
+            <div class="flex justify-end gap-3">
+                <button class="px-6 py-2.5 rounded border border-zinc-600 hover:bg-zinc-800 text-sm" onclick="this.closest('dialog').close()">Keep Editing</button>
+                <button class="px-6 py-2.5 bg-red-600 hover:bg-red-700 rounded text-sm font-medium" id="confirmBtn">Discard Changes</button>
+            </div>
+        </div>
+    `;
+    document.body.appendChild(modal);
+    modal.showModal();
+
+    modal.querySelector('#confirmBtn').onclick = () => {
+        modal.close();
+        onConfirm();
+    };
 }
 
 function formatAndValidatePhone(input) {
@@ -693,7 +715,6 @@ function saveCompany(e) {
         primary_phone: document.getElementById('primary_phone').value.trim(),
         primary_email: document.getElementById('primary_email').value.trim(),
         tax_id: document.getElementById('tax_id').value.trim(),
-        w9_status: document.getElementById('w9_status').value,
         status: document.getElementById('status').value,
         billing_address: document.getElementById('billing_address').value.trim(),
         shipping_address: document.getElementById('shipping_address').value.trim(),
@@ -799,7 +820,6 @@ function editCompany(id) {
     document.getElementById('primary_phone').value = company.primary_phone || '';
     document.getElementById('primary_email').value = company.primary_email || '';
     document.getElementById('tax_id').value = company.tax_id || '';
-    document.getElementById('w9_status').value = company.w9_status || 'Yes';
     document.getElementById('status').value = company.status || 'Active';
     document.getElementById('billing_address').value = company.billing_address || '';
     document.getElementById('shipping_address').value = company.shipping_address || '';
@@ -930,9 +950,9 @@ function closeCompanyModalSafely() {
 
     const companyName = document.getElementById('company_name') ? document.getElementById('company_name').value.trim() : '';
     if (companyName) {
-        if (confirm("You have unsaved changes. Discard changes and close?")) {
+        showConfirmModal("You have unsaved changes. Discard changes and close?", () => {
             modal.close();
-        }
+        });
     } else {
         modal.close();
     }
