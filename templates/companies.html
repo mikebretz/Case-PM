@@ -204,7 +204,7 @@
                             <input type="email" id="primary_email" class="w-full bg-zinc-800 text-white border border-zinc-700 rounded px-4 py-2.5 text-sm focus:border-emerald-600">
                         </div>
 
-                        <!-- COMPANY LOGO - positioned right below External/Sage ID and aligned with bottom of Status -->
+                        <!-- COMPANY LOGO -->
                         <div class="flex flex-col justify-end">
                             <label class="text-xs text-zinc-400 block mb-1">Company Logo</label>
                             <div id="logo_drop_zone"
@@ -369,27 +369,6 @@
     </div>
 </dialog>
 
-<script>
-// ==================== JAVASCRIPT STARTS HERE ====================
-// (Full script will be in Part 2)
-
-let companies = [];
-
-function initializeCompaniesPage() {
-    const saved = localStorage.getItem('casepm_companies');
-    if (saved) companies = JSON.parse(saved);
-    else {
-        // Seed data will be in Part 2
-        companies = [];
-    }
-    renderCompaniesTable(companies);
-    updateSummaryCards();
-}
-
-window.onload = initializeCompaniesPage;
-</script>
-
-{% endblock %}
 <script>
 // ==================== FULL DETAILED JAVASCRIPT ====================
 
@@ -649,7 +628,6 @@ function saveCompany(e) {
         return;
     }
 
-    // Email validation for authorized users
     const contactRows = document.querySelectorAll('#contactsContainer .contact-row');
     let hasInvalidEmail = false;
     contactRows.forEach(row => {
@@ -691,7 +669,6 @@ function saveCompany(e) {
         cois: []
     };
 
-    // Collect contacts
     contactRows.forEach(row => {
         const name = row.querySelector('.contact-name').value.trim();
         if (name) {
@@ -705,7 +682,6 @@ function saveCompany(e) {
         }
     });
 
-    // Collect COIs
     const coiRows = document.querySelectorAll('#coiContainer .coi-row');
     coiRows.forEach(row => {
         const carrier = row.querySelector('.coi-carrier').value.trim();
@@ -814,7 +790,6 @@ function editCompany(id) {
     document.getElementById('wc_expiration').value = company.wc_expiration || '';
     document.getElementById('notes').value = company.notes || '';
 
-    // Contacts
     document.getElementById('contactsContainer').innerHTML = '';
     if (company.contacts && company.contacts.length > 0) {
         company.contacts.forEach(c => addContactRow(c));
@@ -822,7 +797,6 @@ function editCompany(id) {
         addContactRow();
     }
 
-    // COIs
     document.getElementById('coiContainer').innerHTML = '';
     if (company.cois && company.cois.length > 0) {
         company.cois.forEach(c => addCOIRow(c));
@@ -854,7 +828,6 @@ function deleteCompanyConfirmed(id, btn) {
 }
 
 function createAuthorizedCasePMUser(contact, companyId) {
-    // Placeholder - creates entry in localStorage users
     let users = JSON.parse(localStorage.getItem('casepm_users') || '[]');
     users.push({
         id: Date.now(),
@@ -1030,13 +1003,14 @@ function initializeCompaniesPage() {
     renderCompaniesTable(companies);
     updateSummaryCards();
 
-    const search = document.getElementById('searchInput');
-    if (search) search.addEventListener('input', filterCompanies);
-    const typeF = document.getElementById('typeFilter');
-    if (typeF) typeF.addEventListener('change', filterCompanies);
-    const statusF = document.getElementById('statusFilter');
-    if (statusF) statusF.addEventListener('change', filterCompanies);
+    const searchInput = document.getElementById('searchInput');
+    if (searchInput) searchInput.addEventListener('input', filterCompanies);
+    const typeFilter = document.getElementById('typeFilter');
+    if (typeFilter) typeFilter.addEventListener('change', filterCompanies);
+    const statusFilter = document.getElementById('statusFilter');
+    if (statusFilter) statusFilter.addEventListener('change', filterCompanies);
 }
 
 window.onload = initializeCompaniesPage;
 </script>
+{% endblock %}
