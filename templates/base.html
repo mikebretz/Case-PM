@@ -237,53 +237,6 @@
 
         <!-- MAIN CONTENT AREA -->
         <div class="flex-1 flex flex-col overflow-hidden">
-            
-            <!-- Top Header -->
-            <div class="h-16 border-b border-zinc-800 bg-zinc-900 flex items-center justify-between px-6">
-                <div class="flex items-center gap-4">
-                    <!-- Project Switcher -->
-                    <div onclick="showProjectSwitcher()" class="flex items-center gap-2 px-4 py-2 bg-zinc-800 hover:bg-zinc-700 rounded-2xl cursor-pointer transition-colors">
-                        <i class="fa-solid fa-folder text-emerald-400"></i>
-                        <span class="font-medium text-sm">{{ current_project.name if current_project else 'ALDI Lakeland' }}</span>
-                        <i class="fa-solid fa-chevron-down text-xs ml-1"></i>
-                    </div>
-                </div>
-
-                <div class="flex items-center gap-3">
-                    <!-- Search -->
-                    <div class="relative w-80">
-                        <input type="text" id="globalSearch" placeholder="Search everything... (Ctrl+K)" 
-                               class="w-full bg-zinc-800 border border-zinc-700 rounded-2xl pl-10 pr-4 py-2 text-sm focus:outline-none focus:border-emerald-600">
-                        <i class="fa-solid fa-search absolute left-4 top-3 text-zinc-400"></i>
-                    </div>
-
-                    <!-- Quick Add -->
-                    <button onclick="showQuickAddMenu()" 
-                            class="flex items-center gap-2 px-4 py-2 bg-emerald-600 hover:bg-emerald-500 text-white rounded-2xl text-sm font-medium transition-colors">
-                        <i class="fa-solid fa-plus"></i>
-                        <span>Quick Add</span>
-                    </button>
-
-                    <!-- Notifications -->
-                    <button onclick="showNotifications()" class="w-10 h-10 flex items-center justify-center text-zinc-400 hover:text-white hover:bg-zinc-800 rounded-2xl relative transition-colors">
-                        <i class="fa-solid fa-bell text-lg"></i>
-                        <span class="absolute top-2 right-2 w-2 h-2 bg-red-500 rounded-full"></span>
-                    </button>
-
-                    <!-- User -->
-                    <div onclick="showUserMenu()" class="flex items-center gap-2 cursor-pointer">
-                        <div class="w-8 h-8 bg-zinc-700 rounded-full overflow-hidden">
-                            {% if current_user.profile_pic %}
-                                <img src="{{ current_user.profile_pic }}" class="w-full h-full object-cover">
-                            {% else %}
-                                <div class="w-full h-full flex items-center justify-center bg-emerald-600 text-white text-sm font-bold">
-                                    {{ current_user.first_name[0] }}{{ current_user.last_name[0] if current_user.last_name else '' }}
-                                </div>
-                            {% endif %}
-                        </div>
-                    </div>
-                </div>
-            </div>
 
             <!-- Main Content Block -->
             <div class="flex-1 overflow-auto p-6">
