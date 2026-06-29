@@ -4,16 +4,27 @@
 <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
 
 <style>
-    #companyModal input, #companyModal select, #companyModal textarea {
+    /* Force ALL inputs in Add/Edit Company modal to stay dark with white text */
+    #companyModal input,
+    #companyModal select,
+    #companyModal textarea {
         background-color: #27251f !important;
         color: #ffffff !important;
         border-color: #3f3e3a !important;
     }
-    #companyModal input:focus, #companyModal select:focus, #companyModal textarea:focus {
+    #companyModal input:focus,
+    #companyModal select:focus,
+    #companyModal textarea:focus {
         background-color: #27251f !important;
         color: #ffffff !important;
         border-color: #10b981 !important;
         box-shadow: none !important;
+    }
+    #companyModal input:-webkit-autofill,
+    #companyModal input:-webkit-autofill:hover,
+    #companyModal input:-webkit-autofill:focus {
+        -webkit-box-shadow: 0 0 0px 1000px #27251f inset !important;
+        -webkit-text-fill-color: #ffffff !important;
     }
     #logo_drop_zone.dragover {
         border-color: #10b981;
@@ -170,7 +181,7 @@
                     <h3 class="font-semibold text-emerald-400 mb-3">Company Profile</h3>
 
                     <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
-                        <!-- Company Name + Type -->
+                        <!-- Row 1: Company Name + Type -->
                         <div class="md:col-span-2">
                             <label class="text-xs text-zinc-400">Company Name *</label>
                             <input type="text" id="company_name" required class="w-full bg-zinc-800 text-white border border-zinc-700 rounded px-4 py-2.5 text-sm focus:border-emerald-600">
@@ -184,7 +195,7 @@
                             </select>
                         </div>
 
-                        <!-- Vendor # | Customer # | External/Sage ID -->
+                        <!-- Row 2: Vendor # | Customer # | External/Sage ID -->
                         <div>
                             <label class="text-xs text-zinc-400">Vendor Number</label>
                             <input type="text" id="vendor_number" class="w-full bg-zinc-800 text-white border border-zinc-700 rounded px-4 py-2.5 text-sm focus:border-emerald-600">
@@ -198,7 +209,7 @@
                             <input type="text" id="external_id" class="w-full bg-zinc-800 text-white border border-zinc-700 rounded px-4 py-2.5 text-sm focus:border-emerald-600">
                         </div>
 
-                        <!-- Primary Phone then Primary Email below it -->
+                        <!-- Row 3: Primary Phone | Primary Email | (Logo will go here in bottom right) -->
                         <div>
                             <label class="text-xs text-zinc-400">Primary Phone</label>
                             <input type="text" id="primary_phone" class="w-full bg-zinc-800 text-white border border-zinc-700 rounded px-4 py-2.5 text-sm focus:border-emerald-600" onblur="formatAndValidatePhone(this)">
@@ -209,7 +220,7 @@
                         </div>
                         <div></div>
 
-                        <!-- Tax ID then Status below it -->
+                        <!-- Row 4: Tax ID | Status | (Logo positioned here in bottom right) -->
                         <div>
                             <label class="text-xs text-zinc-400">Tax ID / EIN</label>
                             <input type="text" id="tax_id" class="w-full bg-zinc-800 text-white border border-zinc-700 rounded px-4 py-2.5 text-sm focus:border-emerald-600">
@@ -222,19 +233,16 @@
                                 <option value="Blacklisted">Blacklisted</option>
                             </select>
                         </div>
-                        <div></div>
-                    </div>
 
-                    <!-- COMPANY LOGO (bottom right of Company Profile) -->
-                    <div class="mt-5 flex justify-end">
-                        <div>
+                        <!-- COMPANY LOGO - Bottom right of Company Profile, right of Primary Email/Status, below External/Sage ID -->
+                        <div class="flex flex-col justify-end">
                             <label class="text-xs text-zinc-400 block mb-1.5">Company Logo</label>
                             <div id="logo_drop_zone"
-                                 class="w-40 h-28 border-2 border-dashed border-zinc-600 rounded-md flex flex-col items-center justify-center text-center cursor-pointer hover:border-emerald-600 transition-colors bg-zinc-800">
-                                <div id="logo_preview" class="w-16 h-16 flex items-center justify-center text-xs text-zinc-500 overflow-hidden">
+                                 class="w-36 h-24 border-2 border-dashed border-zinc-600 rounded-md flex flex-col items-center justify-center text-center cursor-pointer hover:border-emerald-600 transition-colors bg-zinc-800">
+                                <div id="logo_preview" class="w-12 h-12 flex items-center justify-center text-xs text-zinc-500 overflow-hidden">
                                     No Logo
                                 </div>
-                                <div class="text-[10px] text-zinc-400 mt-1">Drag & drop or click</div>
+                                <div class="text-[10px] text-zinc-400 mt-0.5">Drag & drop or click</div>
                             </div>
                             <input type="file" id="company_logo" class="hidden" accept="image/*">
                         </div>
@@ -377,7 +385,7 @@
 </dialog>
 
 <script>
-// ==================== FULL JAVASCRIPT ====================
+// ==================== FULL JAVASCRIPT - EVERYTHING INCLUDED ====================
 
 let companies = [
     {
@@ -548,7 +556,7 @@ function filterExpiredInsurance() {
 }
 function filterExpiredLicense() {
     const now = new Date();
-    const filtered = companies.filter(c => c.license_expiration && new Date(c.license_expiration) < now);
+    const filtered = companies.filter(c => c.license_expiration && new Date(c.license_expiration) < now));
     renderCompaniesTable(filtered);
 }
 function filterCompanies() {
@@ -634,7 +642,9 @@ function showAddCompanyModal() {
 
 function saveCompanyWrapper() {
     const form = document.getElementById('companyForm');
-    if (form) form.dispatchEvent(new Event('submit', { cancelable: true }));
+    if (form) {
+        form.dispatchEvent(new Event('submit', { cancelable: true }));
+    }
 }
 
 function saveCompany(e) {
@@ -658,7 +668,9 @@ function saveCompany(e) {
         const isAuthorized = checkbox ? checkbox.checked : false;
         const emailValue = emailInput ? emailInput.value.trim() : '';
 
-        if (isAuthorized && (!emailValue || !/^\S+@\S+\.\S+$/.test(emailValue))) {
+        // Strict email format check for Authorized Case PM User
+        const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+        if (isAuthorized && (!emailValue || !emailRegex.test(emailValue))) {
             hasInvalidAuthorizedEmail = true;
         }
 
@@ -672,7 +684,7 @@ function saveCompany(e) {
     });
 
     if (hasInvalidAuthorizedEmail) {
-        showAlertModal("Validation Error", "Authorized Case PM User requires a valid email address.");
+        showAlertModal("Validation Error", "Authorized Case PM User requires a valid email address (example@domain.com).");
         return;
     }
 
@@ -835,7 +847,7 @@ function editFromViewModal() {
     if (!content || !content.dataset.currentId) return;
     const id = parseInt(content.dataset.currentId);
     document.getElementById('viewCompanyModal').close();
-    setTimeout(() => editCompany(id), 200);
+    setTimeout(() => editCompany(id), 180);
 }
 
 function confirmDeleteCompany(id) {
