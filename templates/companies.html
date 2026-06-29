@@ -298,484 +298,484 @@
     </form>
 </dialog>
 <script>
-    let companies = [
-        {
-            id: 1,
-            company_name: "Titan Electric LLC",
-            company_type: "Subcontractor",
-            trade: "Electrical",
-            website: "https://titanelectric.com",
-            primary_phone: "(813) 555-0192",
-            primary_email: "info@titanelectric.com",
-            tax_id: "59-XXXXXXX",
-            w9_status: "Yes",
-            status: "Active",
-            billing_address: "4520 N 56th St, Tampa, FL 33610",
-            shipping_address: "Same as billing",
-            contacts: [
-                { name: "Mike Torres", title: "Project Manager", phone: "(813) 555-0192", email: "mtorres@titanelectric.com", mobile: "(813) 555-8841", is_primary: true, authorized_user: true },
-                { name: "Sarah Kline", title: "Estimator", phone: "(813) 555-0193", email: "skline@titanelectric.com", mobile: "", is_primary: false, authorized_user: false }
-            ],
-            license_number: "EC-13004567",
-            license_state: "FL",
-            license_expiration: "2027-06-30",
-            license_notes: "Unlimited Electrical Contractor",
-            gl_carrier: "Travelers",
-            gl_policy: "GL-9847321",
-            gl_expiration: "2026-12-31",
-            wc_carrier: "Liberty Mutual",
-            wc_policy: "WC-449201",
-            wc_expiration: "2026-11-15",
-            cois: [{ id: 1, name: "General Liability 2026", expiration: "2026-12-31" }],
-            notes: "Preferred electrical subcontractor for ALDI projects."
-        },
-        {
-            id: 2,
-            company_name: "Precision Concrete Solutions",
-            company_type: "Subcontractor",
-            trade: "Concrete",
-            website: "",
-            primary_phone: "(727) 555-3389",
-            primary_email: "bids@precisionconcretefl.com",
-            tax_id: "",
-            w9_status: "Yes",
-            status: "Active",
-            billing_address: "1987 4th St N, St. Petersburg, FL 33704",
-            shipping_address: "",
-            contacts: [
-                { name: "David Ramirez", title: "Owner", phone: "(727) 555-3389", email: "dramirez@precisionconcretefl.com", mobile: "(727) 555-9912", is_primary: true, authorized_user: false }
-            ],
-            license_number: "CBC-1256789",
-            license_state: "FL",
-            license_expiration: "2026-09-30",
-            license_notes: "",
-            gl_carrier: "CNA",
-            gl_policy: "GL-7729103",
-            gl_expiration: "2026-08-15",
-            wc_carrier: "Zenith",
-            wc_policy: "WC-882103",
-            wc_expiration: "2026-10-01",
-            cois: [],
-            notes: "Excellent on ALDI Lakeland. Very responsive."
-        }
-    ];
+let companies = [
+    {
+        id: 1,
+        company_name: "Titan Electric LLC",
+        company_type: "Subcontractor",
+        trade: "Electrical",
+        website: "https://titanelectric.com",
+        primary_phone: "(813) 555-0192",
+        primary_email: "info@titanelectric.com",
+        tax_id: "59-XXXXXXX",
+        w9_status: "Yes",
+        status: "Active",
+        billing_address: "4520 N 56th St, Tampa, FL 33610",
+        shipping_address: "Same as billing",
+        contacts: [
+            { name: "Mike Torres", title: "Project Manager", phone: "(813) 555-0192", email: "mtorres@titanelectric.com", mobile: "(813) 555-8841", is_primary: true, authorized_user: true },
+            { name: "Sarah Kline", title: "Estimator", phone: "(813) 555-0193", email: "skline@titanelectric.com", mobile: "", is_primary: false, authorized_user: false }
+        ],
+        license_number: "EC-13004567",
+        license_state: "FL",
+        license_expiration: "2027-06-30",
+        license_notes: "Unlimited Electrical Contractor",
+        gl_carrier: "Travelers",
+        gl_policy: "GL-9847321",
+        gl_expiration: "2026-12-31",
+        wc_carrier: "Liberty Mutual",
+        wc_policy: "WC-449201",
+        wc_expiration: "2026-11-15",
+        cois: [{ id: 1, name: "General Liability 2026", expiration: "2026-12-31" }],
+        notes: "Preferred electrical subcontractor for ALDI projects."
+    },
+    {
+        id: 2,
+        company_name: "Precision Concrete Solutions",
+        company_type: "Subcontractor",
+        trade: "Concrete",
+        website: "",
+        primary_phone: "(727) 555-3389",
+        primary_email: "bids@precisionconcretefl.com",
+        tax_id: "",
+        w9_status: "Yes",
+        status: "Active",
+        billing_address: "1987 4th St N, St. Petersburg, FL 33704",
+        shipping_address: "",
+        contacts: [
+            { name: "David Ramirez", title: "Owner", phone: "(727) 555-3389", email: "dramirez@precisionconcretefl.com", mobile: "(727) 555-9912", is_primary: true, authorized_user: false }
+        ],
+        license_number: "CBC-1256789",
+        license_state: "FL",
+        license_expiration: "2026-09-30",
+        license_notes: "",
+        gl_carrier: "CNA",
+        gl_policy: "GL-7729103",
+        gl_expiration: "2026-08-15",
+        wc_carrier: "Zenith",
+        wc_policy: "WC-882103",
+        wc_expiration: "2026-10-01",
+        cois: [],
+        notes: "Excellent on ALDI Lakeland. Very responsive."
+    }
+];
 
-    function renderCompaniesTable(filteredCompanies = null) {
-        const tbody = document.getElementById('companiesTableBody');
-        if (!tbody) return;
-        tbody.innerHTML = '';
+function renderCompaniesTable(filteredCompanies = null) {
+    const tbody = document.getElementById('companiesTableBody');
+    if (!tbody) return;
+    tbody.innerHTML = '';
 
-        const data = filteredCompanies || companies;
+    const data = filteredCompanies || companies;
 
-        if (data.length === 0) {
-            tbody.innerHTML = `<tr><td colspan="9" class="px-6 py-8 text-center text-zinc-500">No companies found.</td></tr>`;
-            return;
-        }
-
-        data.forEach(company => {
-            const primaryContact = company.contacts?.find(c => c.is_primary) || company.contacts?.[0];
-            let licenseStatus = company.license_expiration ? (new Date(company.license_expiration) < new Date() ? 'Expired' : 'Current') : 'N/A';
-            let coiStatus = 'N/A';
-            if (company.cois?.length > 0) {
-                coiStatus = company.cois.some(coi => new Date(coi.expiration) < new Date()) ? 'Expired' : 'Current';
-            }
-
-            const row = document.createElement('tr');
-            row.className = 'hover:bg-zinc-800/60 transition-colors cursor-pointer';
-            row.onclick = () => showViewCompanyModal(company.id);
-
-            row.innerHTML = `
-                <td class="px-6 py-3 font-medium truncate">${company.company_name}</td>
-                <td class="px-6 py-3"><span class="inline-block px-2.5 py-0.5 rounded-full text-xs font-medium bg-zinc-700 text-zinc-300">${company.company_type}</span></td>
-                <td class="px-6 py-3 text-sm truncate">${primaryContact ? primaryContact.name : '—'}</td>
-                <td class="px-6 py-3 text-sm font-mono whitespace-nowrap">${company.primary_phone || '—'}</td>
-                <td class="px-6 py-3 text-sm truncate">${company.billing_address || '—'}</td>
-                <td class="px-6 py-3 text-center"><span class="text-xs px-2.5 py-0.5 rounded-full font-medium ${licenseStatus === 'Current' ? 'bg-emerald-900/60 text-emerald-400' : licenseStatus === 'Expired' ? 'bg-red-900/60 text-red-400' : 'bg-zinc-700 text-zinc-400'}">${licenseStatus}</span></td>
-                <td class="px-6 py-3 text-center"><span class="text-xs px-2.5 py-0.5 rounded-full font-medium ${coiStatus === 'Current' ? 'bg-emerald-900/60 text-emerald-400' : coiStatus === 'Expired' ? 'bg-red-900/60 text-red-400' : 'bg-zinc-700 text-zinc-400'}">${coiStatus}</span></td>
-                <td class="px-4 py-3">
-                    <div class="flex gap-2 justify-end">
-                        <button onclick="event.stopImmediatePropagation(); editCompany(${company.id})" class="text-zinc-400 hover:text-white"><i class="fa-solid fa-edit"></i></button>
-                        <button onclick="event.stopImmediatePropagation(); deleteCompany(${company.id})" class="text-zinc-400 hover:text-red-400"><i class="fa-solid fa-trash"></i></button>
-                    </div>
-                </td>
-            `;
-            tbody.appendChild(row);
-        });
-
-        document.getElementById('companyCount').textContent = `${data.length} companies`;
-        updateSummaryCards();
+    if (data.length === 0) {
+        tbody.innerHTML = `<tr><td colspan="9" class="px-6 py-8 text-center text-zinc-500">No companies found.</td></tr>`;
+        return;
     }
 
-    function updateSummaryCards() {
-        const total = companies.length;
-        const subs = companies.filter(c => c.company_type === 'Subcontractor').length;
-        const suppliers = companies.filter(c => c.company_type === 'Supplier').length;
-        const clients = companies.filter(c => c.company_type === 'Client').length;
-
-        let expiring60 = 0, expiredIns = 0, expiredLic = 0;
-        const now = new Date();
-        const sixtyDays = new Date(now.getTime() + (60 * 24 * 60 * 60 * 1000));
-
-        companies.forEach(c => {
-            if (c.license_expiration && new Date(c.license_expiration) < now) expiredLic++;
-            if (c.cois?.length > 0) {
-                c.cois.forEach(coi => {
-                    const exp = new Date(coi.expiration);
-                    if (exp < now) expiredIns++;
-                    else if (exp < sixtyDays) expiring60++;
-                });
-            }
-        });
-
-        document.getElementById('totalCompanies').textContent = total;
-        document.getElementById('subcontractorCount').textContent = subs;
-        document.getElementById('supplierCount').textContent = suppliers;
-        document.getElementById('clientCount').textContent = clients;
-        document.getElementById('insuranceAlertCount').textContent = expiring60;
-
-        const ei = document.getElementById('expiredInsuranceCount');
-        if (ei) ei.textContent = expiredIns;
-        const el = document.getElementById('expiredLicenseCount');
-        if (el) el.textContent = expiredLic;
-    }
-
-    function filterAll() { renderCompaniesTable(companies); }
-    function filterByType(type) { renderCompaniesTable(companies.filter(c => c.company_type === type)); }
-    function filterExpiringInsurance() {
-        const now = new Date();
-        const sixty = new Date(now.getTime() + (60*24*60*60*1000));
-        const filtered = companies.filter(c => c.cois?.some(coi => { const d = new Date(coi.expiration); return d > now && d < sixty; }));
-        renderCompaniesTable(filtered);
-    }
-    function filterExpiredInsurance() {
-        const now = new Date();
-        const filtered = companies.filter(c => c.cois?.some(coi => new Date(coi.expiration) < now));
-        renderCompaniesTable(filtered);
-    }
-    function filterExpiredLicense() {
-        const now = new Date();
-        const filtered = companies.filter(c => c.license_expiration && new Date(c.license_expiration) < now));
-        renderCompaniesTable(filtered);
-    }
-
-    function filterCompanies() {
-        const search = document.getElementById('searchInput').value.toLowerCase().trim();
-        const type = document.getElementById('typeFilter').value;
-        const status = document.getElementById('statusFilter').value;
-        const filtered = companies.filter(c => {
-            const matchSearch = c.company_name.toLowerCase().includes(search) || (c.trade && c.trade.toLowerCase().includes(search));
-            const matchType = !type || c.company_type === type;
-            const matchStatus = !status || c.status === status;
-            return matchSearch && matchType && matchStatus;
-        });
-        renderCompaniesTable(filtered);
-    }
-
-    function clearCompanyFilters() {
-        document.getElementById('searchInput').value = '';
-        document.getElementById('typeFilter').value = '';
-        document.getElementById('statusFilter').value = '';
-        renderCompaniesTable(companies);
-    }
-
-    function showViewCompanyModal(id) {
-        const company = companies.find(c => c.id === id);
-        if (!company) return;
-        const content = document.getElementById('viewCompanyContent');
-        content.innerHTML = `
-            <div class="grid grid-cols-1 md:grid-cols-2 gap-x-8 gap-y-4 text-sm">
-                <div><span class="text-zinc-400">Company:</span> <span class="font-semibold">${company.company_name}</span></div>
-                <div><span class="text-zinc-400">Type:</span> ${company.company_type}</div>
-                <div><span class="text-zinc-400">Trade:</span> ${company.trade || '—'}</div>
-                <div><span class="text-zinc-400">Status:</span> ${company.status}</div>
-                <div><span class="text-zinc-400">Phone:</span> ${company.primary_phone || '—'}</div>
-                <div><span class="text-zinc-400">Email:</span> ${company.primary_email || '—'}</div>
-                <div class="md:col-span-2"><span class="text-zinc-400">Address:</span> ${company.billing_address || '—'}</div>
-            </div>
-            <div class="pt-4 border-t border-zinc-700 mt-4">
-                <div class="font-semibold mb-2">Contacts</div>
-                ${(company.contacts || []).map(c => `
-                    <div class="bg-zinc-800 rounded p-3 mb-2">
-                        <div><strong>${c.name}</strong> ${c.title ? '— ' + c.title : ''}</div>
-                        <div class="text-xs text-zinc-400">${c.phone || ''} ${c.email || ''}</div>
-                        ${c.authorized_user ? '<span class="text-xs bg-emerald-900/60 text-emerald-400 px-2 py-0.5 rounded">Authorized User for Case PM</span>' : ''}
-                    </div>
-                `).join('') || '<div class="text-zinc-500">No contacts added.</div>'}
-            </div>
-        `;
-        content.dataset.currentId = company.id;
-        document.getElementById('viewCompanyModal').showModal();
-    }
-
-    function closeViewCompanyModal() {
-        document.getElementById('viewCompanyModal').close();
-    }
-
-    function editFromViewModal() {
-        const id = parseInt(document.getElementById('viewCompanyContent').dataset.currentId);
-        closeViewCompanyModal();
-        setTimeout(() => editCompany(id), 150);
-    }
-
-    function showAddCompanyModal() {
-        document.getElementById('companyForm').reset();
-        document.getElementById('companyId').value = '';
-        document.getElementById('modalTitle').innerText = 'Add Company';
-        document.getElementById('contactsContainer').innerHTML = '';
-        document.getElementById('coiContainer').innerHTML = '';
-        addContactRow();
-        document.getElementById('companyModal').showModal();
-    }
-
-    function editCompany(id) {
-        const company = companies.find(c => c.id === id);
-        if (!company) return;
-
-        document.getElementById('companyId').value = company.id;
-        document.getElementById('modalTitle').innerText = 'Edit Company';
-
-        document.getElementById('company_name').value = company.company_name || '';
-        document.getElementById('company_type').value = company.company_type || 'Subcontractor';
-        document.getElementById('trade').value = company.trade || '';
-        document.getElementById('website').value = company.website || '';
-        document.getElementById('primary_phone').value = company.primary_phone || '';
-        document.getElementById('primary_email').value = company.primary_email || '';
-        document.getElementById('tax_id').value = company.tax_id || '';
-        document.getElementById('w9_status').value = company.w9_status || 'Yes';
-        document.getElementById('status').value = company.status || 'Active';
-        document.getElementById('billing_address').value = company.billing_address || '';
-        document.getElementById('shipping_address').value = company.shipping_address || '';
-        document.getElementById('license_number').value = company.license_number || '';
-        document.getElementById('license_state').value = company.license_state || '';
-        document.getElementById('license_expiration').value = company.license_expiration || '';
-        document.getElementById('license_notes').value = company.license_notes || '';
-        document.getElementById('gl_carrier').value = company.gl_carrier || '';
-        document.getElementById('gl_policy').value = company.gl_policy || '';
-        document.getElementById('gl_expiration').value = company.gl_expiration || '';
-        document.getElementById('wc_carrier').value = company.wc_carrier || '';
-        document.getElementById('wc_policy').value = company.wc_policy || '';
-        document.getElementById('wc_expiration').value = company.wc_expiration || '';
-        document.getElementById('notes').value = company.notes || '';
-
-        const contactsContainer = document.getElementById('contactsContainer');
-        contactsContainer.innerHTML = '';
-        if (company.contacts && company.contacts.length > 0) {
-            company.contacts.forEach(c => addContactRow(c));
-        } else {
-            addContactRow();
+    data.forEach(company => {
+        const primaryContact = company.contacts?.find(c => c.is_primary) || company.contacts?.[0];
+        let licenseStatus = company.license_expiration ? (new Date(company.license_expiration) < new Date() ? 'Expired' : 'Current') : 'N/A';
+        let coiStatus = 'N/A';
+        if (company.cois?.length > 0) {
+            coiStatus = company.cois.some(coi => new Date(coi.expiration) < new Date()) ? 'Expired' : 'Current';
         }
 
-        const coiContainer = document.getElementById('coiContainer');
-        coiContainer.innerHTML = '';
-        if (company.cois && company.cois.length > 0) {
-            company.cois.forEach(c => addCOIRow(c));
-        }
+        const row = document.createElement('tr');
+        row.className = 'hover:bg-zinc-800/60 transition-colors cursor-pointer';
+        row.onclick = () => showViewCompanyModal(company.id);
 
-        document.getElementById('companyModal').showModal();
-    }
-
-    function addContactRow(contact = null) {
-        const container = document.getElementById('contactsContainer');
-        const div = document.createElement('div');
-        div.className = 'bg-zinc-800 border border-zinc-700 rounded-md p-4 mb-3';
-        div.innerHTML = `
-            <div class="grid grid-cols-1 md:grid-cols-12 gap-3 items-end">
-                <div class="md:col-span-3"><input type="text" placeholder="Full Name" class="contact-name w-full bg-zinc-900 border border-zinc-600 rounded px-3 py-1.5 text-sm" value="${contact ? contact.name : ''}"></div>
-                <div class="md:col-span-2"><input type="text" placeholder="Title" class="contact-title w-full bg-zinc-900 border border-zinc-600 rounded px-3 py-1.5 text-sm" value="${contact ? contact.title : ''}"></div>
-                <div class="md:col-span-2"><input type="text" placeholder="Phone" class="contact-phone w-full bg-zinc-900 border border-zinc-600 rounded px-3 py-1.5 text-sm" value="${contact ? contact.phone : ''}"></div>
-                <div class="md:col-span-3"><input type="email" placeholder="Email" class="contact-email w-full bg-zinc-900 border border-zinc-600 rounded px-3 py-1.5 text-sm" value="${contact ? contact.email : ''}"></div>
-                <div class="md:col-span-2 flex items-center gap-2">
-                    <label class="flex items-center gap-1 text-xs cursor-pointer">
-                        <input type="checkbox" class="contact-authorized accent-emerald-600" ${contact && contact.authorized_user ? 'checked' : ''}> Authorized
-                    </label>
-                    <button type="button" onclick="this.closest('.bg-zinc-800').remove()" class="text-red-400 hover:text-red-500 ml-auto"><i class="fa-solid fa-times"></i></button>
+        row.innerHTML = `
+            <td class="px-6 py-3 font-medium truncate">${company.company_name}</td>
+            <td class="px-6 py-3"><span class="inline-block px-2.5 py-0.5 rounded-full text-xs font-medium bg-zinc-700 text-zinc-300">${company.company_type}</span></td>
+            <td class="px-6 py-3 text-sm truncate">${primaryContact ? primaryContact.name : '—'}</td>
+            <td class="px-6 py-3 text-sm font-mono whitespace-nowrap">${company.primary_phone || '—'}</td>
+            <td class="px-6 py-3 text-sm truncate">${company.billing_address || '—'}</td>
+            <td class="px-6 py-3 text-center"><span class="text-xs px-2.5 py-0.5 rounded-full font-medium ${licenseStatus === 'Current' ? 'bg-emerald-900/60 text-emerald-400' : licenseStatus === 'Expired' ? 'bg-red-900/60 text-red-400' : 'bg-zinc-700 text-zinc-400'}">${licenseStatus}</span></td>
+            <td class="px-6 py-3 text-center"><span class="text-xs px-2.5 py-0.5 rounded-full font-medium ${coiStatus === 'Current' ? 'bg-emerald-900/60 text-emerald-400' : coiStatus === 'Expired' ? 'bg-red-900/60 text-red-400' : 'bg-zinc-700 text-zinc-400'}">${coiStatus}</span></td>
+            <td class="px-4 py-3">
+                <div class="flex gap-2 justify-end">
+                    <button onclick="event.stopImmediatePropagation(); editCompany(${company.id})" class="text-zinc-400 hover:text-white"><i class="fa-solid fa-edit"></i></button>
+                    <button onclick="event.stopImmediatePropagation(); deleteCompany(${company.id})" class="text-zinc-400 hover:text-red-400"><i class="fa-solid fa-trash"></i></button>
                 </div>
-            </div>
+            </td>
         `;
-        container.appendChild(div);
-    }
+        tbody.appendChild(row);
+    });
 
-    function addCOIRow(coi = null) {
-        const container = document.getElementById('coiContainer');
-        const div = document.createElement('div');
-        div.className = 'bg-zinc-800 border border-zinc-700 rounded-md p-4 mb-3';
-        div.innerHTML = `
-            <div class="grid grid-cols-1 md:grid-cols-12 gap-3 items-end">
-                <div class="md:col-span-5"><input type="text" placeholder="COI Description" class="coi-name w-full bg-zinc-900 border border-zinc-600 rounded px-3 py-1.5 text-sm" value="${coi ? coi.name : ''}"></div>
-                <div class="md:col-span-3"><input type="date" class="coi-expiration w-full bg-zinc-900 border border-zinc-600 rounded px-3 py-1.5 text-sm" value="${coi ? coi.expiration : ''}"></div>
-                <div class="md:col-span-3"><input type="file" class="coi-file text-xs w-full"></div>
-                <div class="md:col-span-1"><button type="button" onclick="this.closest('.bg-zinc-800').remove()" class="text-red-400 hover:text-red-500"><i class="fa-solid fa-times"></i></button></div>
-            </div>
-        `;
-        container.appendChild(div);
-    }
+    document.getElementById('companyCount').textContent = `${data.length} companies`;
+    updateSummaryCards();
+}
 
-    function saveCompany(e) {
-        e.preventDefault();
-        const id = document.getElementById('companyId').value;
+function updateSummaryCards() {
+    const total = companies.length;
+    const subs = companies.filter(c => c.company_type === 'Subcontractor').length;
+    const suppliers = companies.filter(c => c.company_type === 'Supplier').length;
+    const clients = companies.filter(c => c.company_type === 'Client').length;
 
-        const contacts = [];
-        document.querySelectorAll('#contactsContainer > div').forEach(row => {
-            const name = row.querySelector('.contact-name').value.trim();
-            if (!name) return;
-            contacts.push({
-                name,
-                title: row.querySelector('.contact-title').value.trim(),
-                phone: row.querySelector('.contact-phone').value.trim(),
-                email: row.querySelector('.contact-email').value.trim(),
-                authorized_user: row.querySelector('.contact-authorized').checked
+    let expiring60 = 0, expiredIns = 0, expiredLic = 0;
+    const now = new Date();
+    const sixtyDays = new Date(now.getTime() + (60 * 24 * 60 * 60 * 1000));
+
+    companies.forEach(c => {
+        if (c.license_expiration && new Date(c.license_expiration) < now) expiredLic++;
+        if (c.cois?.length > 0) {
+            c.cois.forEach(coi => {
+                const exp = new Date(coi.expiration);
+                if (exp < now) expiredIns++;
+                else if (exp < sixtyDays) expiring60++;
             });
+        }
+    });
+
+    document.getElementById('totalCompanies').textContent = total;
+    document.getElementById('subcontractorCount').textContent = subs;
+    document.getElementById('supplierCount').textContent = suppliers;
+    document.getElementById('clientCount').textContent = clients;
+    document.getElementById('insuranceAlertCount').textContent = expiring60;
+
+    const ei = document.getElementById('expiredInsuranceCount');
+    if (ei) ei.textContent = expiredIns;
+    const el = document.getElementById('expiredLicenseCount');
+    if (el) el.textContent = expiredLic;
+}
+
+function filterAll() { renderCompaniesTable(companies); }
+function filterByType(type) { renderCompaniesTable(companies.filter(c => c.company_type === type)); }
+function filterExpiringInsurance() {
+    const now = new Date();
+    const sixty = new Date(now.getTime() + (60*24*60*60*1000));
+    const filtered = companies.filter(c => c.cois?.some(coi => { const d = new Date(coi.expiration); return d > now && d < sixty; }));
+    renderCompaniesTable(filtered);
+}
+function filterExpiredInsurance() {
+    const now = new Date();
+    const filtered = companies.filter(c => c.cois?.some(coi => new Date(coi.expiration) < now));
+    renderCompaniesTable(filtered);
+}
+function filterExpiredLicense() {
+    const now = new Date();
+    const filtered = companies.filter(c => c.license_expiration && new Date(c.license_expiration) < now));
+    renderCompaniesTable(filtered);
+}
+
+function filterCompanies() {
+    const search = document.getElementById('searchInput').value.toLowerCase().trim();
+    const type = document.getElementById('typeFilter').value;
+    const status = document.getElementById('statusFilter').value;
+    const filtered = companies.filter(c => {
+        const matchSearch = c.company_name.toLowerCase().includes(search) || (c.trade && c.trade.toLowerCase().includes(search));
+        const matchType = !type || c.company_type === type;
+        const matchStatus = !status || c.status === status;
+        return matchSearch && matchType && matchStatus;
+    });
+    renderCompaniesTable(filtered);
+}
+
+function clearCompanyFilters() {
+    document.getElementById('searchInput').value = '';
+    document.getElementById('typeFilter').value = '';
+    document.getElementById('statusFilter').value = '';
+    renderCompaniesTable(companies);
+}
+
+function showViewCompanyModal(id) {
+    const company = companies.find(c => c.id === id);
+    if (!company) return;
+    const content = document.getElementById('viewCompanyContent');
+    content.innerHTML = `
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-x-8 gap-y-4 text-sm">
+            <div><span class="text-zinc-400">Company:</span> <span class="font-semibold">${company.company_name}</span></div>
+            <div><span class="text-zinc-400">Type:</span> ${company.company_type}</div>
+            <div><span class="text-zinc-400">Trade:</span> ${company.trade || '—'}</div>
+            <div><span class="text-zinc-400">Status:</span> ${company.status}</div>
+            <div><span class="text-zinc-400">Phone:</span> ${company.primary_phone || '—'}</div>
+            <div><span class="text-zinc-400">Email:</span> ${company.primary_email || '—'}</div>
+            <div class="md:col-span-2"><span class="text-zinc-400">Address:</span> ${company.billing_address || '—'}</div>
+        </div>
+        <div class="pt-4 border-t border-zinc-700 mt-4">
+            <div class="font-semibold mb-2">Contacts</div>
+            ${(company.contacts || []).map(c => `
+                <div class="bg-zinc-800 rounded p-3 mb-2">
+                    <div><strong>${c.name}</strong> ${c.title ? '— ' + c.title : ''}</div>
+                    <div class="text-xs text-zinc-400">${c.phone || ''} ${c.email || ''}</div>
+                    ${c.authorized_user ? '<span class="text-xs bg-emerald-900/60 text-emerald-400 px-2 py-0.5 rounded">Authorized User for Case PM</span>' : ''}
+                </div>
+            `).join('') || '<div class="text-zinc-500">No contacts added.</div>'}
+        </div>
+    `;
+    content.dataset.currentId = company.id;
+    document.getElementById('viewCompanyModal').showModal();
+}
+
+function closeViewCompanyModal() {
+    document.getElementById('viewCompanyModal').close();
+}
+
+function editFromViewModal() {
+    const id = parseInt(document.getElementById('viewCompanyContent').dataset.currentId);
+    closeViewCompanyModal();
+    setTimeout(() => editCompany(id), 150);
+}
+
+function showAddCompanyModal() {
+    document.getElementById('companyForm').reset();
+    document.getElementById('companyId').value = '';
+    document.getElementById('modalTitle').innerText = 'Add Company';
+    document.getElementById('contactsContainer').innerHTML = '';
+    document.getElementById('coiContainer').innerHTML = '';
+    addContactRow();
+    document.getElementById('companyModal').showModal();
+}
+
+function editCompany(id) {
+    const company = companies.find(c => c.id === id);
+    if (!company) return;
+
+    document.getElementById('companyId').value = company.id;
+    document.getElementById('modalTitle').innerText = 'Edit Company';
+
+    document.getElementById('company_name').value = company.company_name || '';
+    document.getElementById('company_type').value = company.company_type || 'Subcontractor';
+    document.getElementById('trade').value = company.trade || '';
+    document.getElementById('website').value = company.website || '';
+    document.getElementById('primary_phone').value = company.primary_phone || '';
+    document.getElementById('primary_email').value = company.primary_email || '';
+    document.getElementById('tax_id').value = company.tax_id || '';
+    document.getElementById('w9_status').value = company.w9_status || 'Yes';
+    document.getElementById('status').value = company.status || 'Active';
+    document.getElementById('billing_address').value = company.billing_address || '';
+    document.getElementById('shipping_address').value = company.shipping_address || '';
+    document.getElementById('license_number').value = company.license_number || '';
+    document.getElementById('license_state').value = company.license_state || '';
+    document.getElementById('license_expiration').value = company.license_expiration || '';
+    document.getElementById('license_notes').value = company.license_notes || '';
+    document.getElementById('gl_carrier').value = company.gl_carrier || '';
+    document.getElementById('gl_policy').value = company.gl_policy || '';
+    document.getElementById('gl_expiration').value = company.gl_expiration || '';
+    document.getElementById('wc_carrier').value = company.wc_carrier || '';
+    document.getElementById('wc_policy').value = company.wc_policy || '';
+    document.getElementById('wc_expiration').value = company.wc_expiration || '';
+    document.getElementById('notes').value = company.notes || '';
+
+    const contactsContainer = document.getElementById('contactsContainer');
+    contactsContainer.innerHTML = '';
+    if (company.contacts && company.contacts.length > 0) {
+        company.contacts.forEach(c => addContactRow(c));
+    } else {
+        addContactRow();
+    }
+
+    const coiContainer = document.getElementById('coiContainer');
+    coiContainer.innerHTML = '';
+    if (company.cois && company.cois.length > 0) {
+        company.cois.forEach(c => addCOIRow(c));
+    }
+
+    document.getElementById('companyModal').showModal();
+}
+
+function addContactRow(contact = null) {
+    const container = document.getElementById('contactsContainer');
+    const div = document.createElement('div');
+    div.className = 'bg-zinc-800 border border-zinc-700 rounded-md p-4 mb-3';
+    div.innerHTML = `
+        <div class="grid grid-cols-1 md:grid-cols-12 gap-3 items-end">
+            <div class="md:col-span-3"><input type="text" placeholder="Full Name" class="contact-name w-full bg-zinc-900 border border-zinc-600 rounded px-3 py-1.5 text-sm" value="${contact ? contact.name : ''}"></div>
+            <div class="md:col-span-2"><input type="text" placeholder="Title" class="contact-title w-full bg-zinc-900 border border-zinc-600 rounded px-3 py-1.5 text-sm" value="${contact ? contact.title : ''}"></div>
+            <div class="md:col-span-2"><input type="text" placeholder="Phone" class="contact-phone w-full bg-zinc-900 border border-zinc-600 rounded px-3 py-1.5 text-sm" value="${contact ? contact.phone : ''}"></div>
+            <div class="md:col-span-3"><input type="email" placeholder="Email" class="contact-email w-full bg-zinc-900 border border-zinc-600 rounded px-3 py-1.5 text-sm" value="${contact ? contact.email : ''}"></div>
+            <div class="md:col-span-2 flex items-center gap-2">
+                <label class="flex items-center gap-1 text-xs cursor-pointer">
+                    <input type="checkbox" class="contact-authorized accent-emerald-600" ${contact && contact.authorized_user ? 'checked' : ''}> Authorized
+                </label>
+                <button type="button" onclick="this.closest('.bg-zinc-800').remove()" class="text-red-400 hover:text-red-500 ml-auto"><i class="fa-solid fa-times"></i></button>
+            </div>
+        </div>
+    `;
+    container.appendChild(div);
+}
+
+function addCOIRow(coi = null) {
+    const container = document.getElementById('coiContainer');
+    const div = document.createElement('div');
+    div.className = 'bg-zinc-800 border border-zinc-700 rounded-md p-4 mb-3';
+    div.innerHTML = `
+        <div class="grid grid-cols-1 md:grid-cols-12 gap-3 items-end">
+            <div class="md:col-span-5"><input type="text" placeholder="COI Description" class="coi-name w-full bg-zinc-900 border border-zinc-600 rounded px-3 py-1.5 text-sm" value="${coi ? coi.name : ''}"></div>
+            <div class="md:col-span-3"><input type="date" class="coi-expiration w-full bg-zinc-900 border border-zinc-600 rounded px-3 py-1.5 text-sm" value="${coi ? coi.expiration : ''}"></div>
+            <div class="md:col-span-3"><input type="file" class="coi-file text-xs w-full"></div>
+            <div class="md:col-span-1"><button type="button" onclick="this.closest('.bg-zinc-800').remove()" class="text-red-400 hover:text-red-500"><i class="fa-solid fa-times"></i></button></div>
+        </div>
+    `;
+    container.appendChild(div);
+}
+
+function saveCompany(e) {
+    e.preventDefault();
+    const id = document.getElementById('companyId').value;
+
+    const contacts = [];
+    document.querySelectorAll('#contactsContainer > div').forEach(row => {
+        const name = row.querySelector('.contact-name').value.trim();
+        if (!name) return;
+        contacts.push({
+            name,
+            title: row.querySelector('.contact-title').value.trim(),
+            phone: row.querySelector('.contact-phone').value.trim(),
+            email: row.querySelector('.contact-email').value.trim(),
+            authorized_user: row.querySelector('.contact-authorized').checked
         });
+    });
 
-        const cois = [];
-        document.querySelectorAll('#coiContainer > div').forEach(row => {
-            const name = row.querySelector('.coi-name').value.trim();
-            if (!name) return;
-            cois.push({ id: Date.now(), name, expiration: row.querySelector('.coi-expiration').value });
-        });
+    const cois = [];
+    document.querySelectorAll('#coiContainer > div').forEach(row => {
+        const name = row.querySelector('.coi-name').value.trim();
+        if (!name) return;
+        cois.push({ id: Date.now(), name, expiration: row.querySelector('.coi-expiration').value });
+    });
 
-        const newCompany = {
-            id: id ? parseInt(id) : Date.now(),
-            company_name: document.getElementById('company_name').value.trim(),
-            company_type: document.getElementById('company_type').value,
-            trade: document.getElementById('trade').value.trim(),
-            website: document.getElementById('website').value.trim(),
-            primary_phone: document.getElementById('primary_phone').value.trim(),
-            primary_email: document.getElementById('primary_email').value.trim(),
-            tax_id: document.getElementById('tax_id').value.trim(),
-            w9_status: document.getElementById('w9_status').value,
-            status: document.getElementById('status').value,
-            billing_address: document.getElementById('billing_address').value.trim(),
-            shipping_address: document.getElementById('shipping_address').value.trim(),
-            contacts: contacts,
-            license_number: document.getElementById('license_number').value.trim(),
-            license_state: document.getElementById('license_state').value.trim(),
-            license_expiration: document.getElementById('license_expiration').value,
-            license_notes: document.getElementById('license_notes').value.trim(),
-            gl_carrier: document.getElementById('gl_carrier').value.trim(),
-            gl_policy: document.getElementById('gl_policy').value.trim(),
-            gl_expiration: document.getElementById('gl_expiration').value,
-            wc_carrier: document.getElementById('wc_carrier').value.trim(),
-            wc_policy: document.getElementById('wc_policy').value.trim(),
-            wc_expiration: document.getElementById('wc_expiration').value,
-            cois: cois,
-            notes: document.getElementById('notes').value.trim()
-        };
+    const newCompany = {
+        id: id ? parseInt(id) : Date.now(),
+        company_name: document.getElementById('company_name').value.trim(),
+        company_type: document.getElementById('company_type').value,
+        trade: document.getElementById('trade').value.trim(),
+        website: document.getElementById('website').value.trim(),
+        primary_phone: document.getElementById('primary_phone').value.trim(),
+        primary_email: document.getElementById('primary_email').value.trim(),
+        tax_id: document.getElementById('tax_id').value.trim(),
+        w9_status: document.getElementById('w9_status').value,
+        status: document.getElementById('status').value,
+        billing_address: document.getElementById('billing_address').value.trim(),
+        shipping_address: document.getElementById('shipping_address').value.trim(),
+        contacts: contacts,
+        license_number: document.getElementById('license_number').value.trim(),
+        license_state: document.getElementById('license_state').value.trim(),
+        license_expiration: document.getElementById('license_expiration').value,
+        license_notes: document.getElementById('license_notes').value.trim(),
+        gl_carrier: document.getElementById('gl_carrier').value.trim(),
+        gl_policy: document.getElementById('gl_policy').value.trim(),
+        gl_expiration: document.getElementById('gl_expiration').value,
+        wc_carrier: document.getElementById('wc_carrier').value.trim(),
+        wc_policy: document.getElementById('wc_policy').value.trim(),
+        wc_expiration: document.getElementById('wc_expiration').value,
+        cois: cois,
+        notes: document.getElementById('notes').value.trim()
+    };
 
-        contacts.forEach(contact => {
-            if (contact.authorized_user) {
-                const alreadyExists = companies.some(c => c.contacts?.some(ct => ct.email === contact.email && ct.authorized_user));
-                if (!alreadyExists) {
-                    showCenteredToast(`User account created for ${contact.name} with "No Access" permissions. Please go to User Management to set access level and password.`);
-                }
+    contacts.forEach(contact => {
+        if (contact.authorized_user) {
+            const alreadyExists = companies.some(c => c.contacts?.some(ct => ct.email === contact.email && ct.authorized_user));
+            if (!alreadyExists) {
+                showCenteredToast(`User account created for ${contact.name} with "No Access" permissions. Please go to User Management to set access level and password.`);
             }
-        });
-
-        if (id) {
-            const index = companies.findIndex(c => c.id == id);
-            companies[index] = newCompany;
-        } else {
-            companies.push(newCompany);
         }
+    });
 
-        document.getElementById('companyModal').close();
-        renderCompaniesTable(companies);
+    if (id) {
+        const index = companies.findIndex(c => c.id == id);
+        companies[index] = newCompany;
+    } else {
+        companies.push(newCompany);
     }
 
-    function showCenteredToast(message) {
-        const toast = document.createElement('div');
-        toast.className = `fixed top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 bg-zinc-900 border border-zinc-700 rounded-2xl p-6 shadow-2xl z-[9999] max-w-md text-center`;
-        toast.innerHTML = `
-            <div class="text-white mb-4">${message}</div>
-            <button onclick="this.parentElement.remove()" class="px-8 py-2 bg-emerald-600 hover:bg-emerald-700 rounded-xl text-sm font-medium">OK</button>
-        `;
-        document.body.appendChild(toast);
-    }
+    document.getElementById('companyModal').close();
+    renderCompaniesTable(companies);
+}
 
-    function deleteCompany(id) {
-        if (!confirm('Delete this company? This cannot be undone.')) return;
-        companies = companies.filter(c => c.id !== id);
-        renderCompaniesTable(companies);
-    }
+function showCenteredToast(message) {
+    const toast = document.createElement('div');
+    toast.className = `fixed top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 bg-zinc-900 border border-zinc-700 rounded-2xl p-6 shadow-2xl z-[9999] max-w-md text-center`;
+    toast.innerHTML = `
+        <div class="text-white mb-4">${message}</div>
+        <button onclick="this.parentElement.remove()" class="px-8 py-2 bg-emerald-600 hover:bg-emerald-700 rounded-xl text-sm font-medium">OK</button>
+    `;
+    document.body.appendChild(toast);
+}
 
-    function exportCompanies(format = 'excel') {
-        const data = companies.map(c => ({
-            "Company Name": c.company_name,
-            "Type": c.company_type,
-            "Trade": c.trade || '',
-            "Primary Phone": c.primary_phone || '',
-            "Primary Email": c.primary_email || '',
-            "Status": c.status
-        }));
-        const ws = XLSX.utils.json_to_sheet(data);
-        const wb = XLSX.utils.book_new();
-        XLSX.utils.book_append_sheet(wb, ws, "Companies");
-        if (format === 'csv') {
-            XLSX.writeFile(wb, "Companies_Export.csv", { bookType: "csv" });
-        } else {
-            XLSX.writeFile(wb, "Companies_Export.xlsx");
-        }
-    }
+function deleteCompany(id) {
+    if (!confirm('Delete this company? This cannot be undone.')) return;
+    companies = companies.filter(c => c.id !== id);
+    renderCompaniesTable(companies);
+}
 
-    function importCompanies() {
-        const input = document.createElement('input');
-        input.type = 'file';
-        input.accept = '.xlsx,.xls,.csv';
-        input.onchange = function(e) {
-            const file = e.target.files[0];
-            const reader = new FileReader();
-            reader.onload = function(ev) {
-                try {
-                    let imported = [];
-                    if (file.name.endsWith('.csv')) {
-                        const text = ev.target.result;
-                        const lines = text.split('\n').filter(l => l.trim());
-                        const headers = lines[0].split(',').map(h => h.trim());
-                        for (let i = 1; i < lines.length; i++) {
-                            const values = lines[i].split(',');
-                            const obj = {};
-                            headers.forEach((h, idx) => obj[h] = values[idx]?.trim() || '');
-                            imported.push(obj);
-                        }
-                    } else {
-                        const data = new Uint8Array(ev.target.result);
-                        const workbook = XLSX.read(data, { type: 'array' });
-                        const sheet = workbook.Sheets[workbook.SheetNames[0]];
-                        imported = XLSX.utils.sheet_to_json(sheet);
+function exportCompanies(format = 'excel') {
+    const data = companies.map(c => ({
+        "Company Name": c.company_name,
+        "Type": c.company_type,
+        "Trade": c.trade || '',
+        "Primary Phone": c.primary_phone || '',
+        "Primary Email": c.primary_email || '',
+        "Status": c.status
+    }));
+    const ws = XLSX.utils.json_to_sheet(data);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, "Companies");
+    if (format === 'csv') {
+        XLSX.writeFile(wb, "Companies_Export.csv", { bookType: "csv" });
+    } else {
+        XLSX.writeFile(wb, "Companies_Export.xlsx");
+    }
+}
+
+function importCompanies() {
+    const input = document.createElement('input');
+    input.type = 'file';
+    input.accept = '.xlsx,.xls,.csv';
+    input.onchange = function(e) {
+        const file = e.target.files[0];
+        const reader = new FileReader();
+        reader.onload = function(ev) {
+            try {
+                let imported = [];
+                if (file.name.endsWith('.csv')) {
+                    const text = ev.target.result;
+                    const lines = text.split('\n').filter(l => l.trim());
+                    const headers = lines[0].split(',').map(h => h.trim());
+                    for (let i = 1; i < lines.length; i++) {
+                        const values = lines[i].split(',');
+                        const obj = {};
+                        headers.forEach((h, idx) => obj[h] = values[idx]?.trim() || '');
+                        imported.push(obj);
                     }
-                    imported.forEach(row => {
-                        if (row["Company Name"]) {
-                            companies.push({
-                                id: Date.now() + Math.random(),
-                                company_name: row["Company Name"],
-                                company_type: row["Type"] || "Subcontractor",
-                                trade: row["Trade"] || "",
-                                primary_phone: row["Primary Phone"] || "",
-                                primary_email: row["Primary Email"] || "",
-                                status: row["Status"] || "Active",
-                                contacts: [],
-                                cois: []
-                            });
-                        }
-                    });
-                    renderCompaniesTable(companies);
-                    showCenteredToast(`Successfully imported ${imported.length} companies.`);
-                } catch (err) {
-                    alert("Import failed. Please check the file format.");
+                } else {
+                    const data = new Uint8Array(ev.target.result);
+                    const workbook = XLSX.read(data, { type: 'array' });
+                    const sheet = workbook.Sheets[workbook.SheetNames[0]];
+                    imported = XLSX.utils.sheet_to_json(sheet);
                 }
-            };
-            if (file.name.endsWith('.csv')) reader.readAsText(file);
-            else reader.readAsArrayBuffer(file);
+                imported.forEach(row => {
+                    if (row["Company Name"]) {
+                        companies.push({
+                            id: Date.now() + Math.random(),
+                            company_name: row["Company Name"],
+                            company_type: row["Type"] || "Subcontractor",
+                            trade: row["Trade"] || "",
+                            primary_phone: row["Primary Phone"] || "",
+                            primary_email: row["Primary Email"] || "",
+                            status: row["Status"] || "Active",
+                            contacts: [],
+                            cois: []
+                        });
+                    }
+                });
+                renderCompaniesTable(companies);
+                showCenteredToast(`Successfully imported ${imported.length} companies.`);
+            } catch (err) {
+                alert("Import failed. Please check the file format.");
+            }
         };
-        input.click();
-    }
+        if (file.name.endsWith('.csv')) reader.readAsText(file);
+        else reader.readAsArrayBuffer(file);
+    };
+    input.click();
+}
 
-    function initializeCompaniesPage() {
-        renderCompaniesTable(companies);
-        console.log('%c[Case PM] Companies page initialized successfully', 'color:#10b981');
-    }
+function initializeCompaniesPage() {
+    renderCompaniesTable(companies);
+    console.log('%c[Case PM] Companies page initialized successfully', 'color:#10b981');
+}
 
-    window.onload = initializeCompaniesPage;
+window.onload = initializeCompaniesPage;
 </script>
 <!-- ==================== HEADER ==================== -->
 <div class="h-16 border-b border-zinc-800 bg-zinc-900 flex items-center justify-between px-6">
