@@ -1,9 +1,35 @@
 {% extends "base.html" %}
 
 {% block content %}
+<style>
+    /* Force all inputs inside company modal to stay dark with white text */
+    #companyModal input,
+    #companyModal select,
+    #companyModal textarea {
+        background-color: #27251f !important;
+        color: #ffffff !important;
+        border-color: #3f3e3a !important;
+    }
+    #companyModal input:focus,
+    #companyModal select:focus,
+    #companyModal textarea:focus {
+        background-color: #27251f !important;
+        color: #ffffff !important;
+        border-color: #10b981 !important;
+        box-shadow: none !important;
+    }
+    /* Also fix autofill */
+    #companyModal input:-webkit-autofill,
+    #companyModal input:-webkit-autofill:hover,
+    #companyModal input:-webkit-autofill:focus {
+        -webkit-box-shadow: 0 0 0px 1000px #27251f inset !important;
+        -webkit-text-fill-color: #ffffff !important;
+    }
+</style>
+
 <div class="flex-1 flex flex-col overflow-hidden">
 
-    <!-- Budget-style Header (LOCKED) -->
+    <!-- Budget-style Header (LOCKED - DO NOT CHANGE) -->
     <div class="h-16 border-b border-zinc-800 bg-zinc-900 flex items-center justify-between px-6 flex-shrink-0">
         
         <!-- LEFT: Project Info -->
@@ -15,10 +41,10 @@
         <!-- CENTER: Page Title -->
         <div class="text-2xl font-semibold text-white">Companies / Vendors</div>
 
-        <!-- RIGHT: Export CSV first + Import + Add + Profile -->
+        <!-- RIGHT: Export CSV first + Import + Sync Sage 300 + Add + Profile -->
         <div class="flex items-center gap-3">
             
-            <!-- Export (CSV first) -->
+            <!-- Export (CSV first as requested) -->
             <div class="flex gap-2">
                 <button onclick="exportCompanies('csv')" 
                         class="flex items-center gap-2 px-4 py-2 bg-zinc-800 hover:bg-zinc-700 rounded-md text-sm font-medium transition-colors">
@@ -41,6 +67,13 @@
                 </button>
             </div>
 
+            <!-- NEW: Sync with Sage 300 -->
+            <button onclick="syncWithSage300()" 
+                    class="flex items-center gap-2 px-4 py-2 bg-blue-600 hover:bg-blue-700 rounded-md text-sm font-medium transition-colors">
+                <i class="fa-solid fa-sync"></i>
+                <span>Sync Sage 300</span>
+            </button>
+
             <button onclick="showAddCompanyModal()" 
                     class="flex items-center gap-2 px-5 py-2 bg-emerald-600 hover:bg-emerald-700 rounded-md text-sm font-semibold transition-colors">
                 <i class="fa-solid fa-plus"></i>
@@ -60,7 +93,7 @@
         </div>
     </div>
 
-    <!-- Main Content -->
+    <!-- Main Content Area -->
     <div class="flex-1 overflow-auto p-6">
 
         <!-- Summary Cards -->
@@ -137,8 +170,8 @@
     </div>
 </div>
 
-<!-- View Company Modal -->
-<dialog id="viewCompanyModal" class="bg-zinc-900 border border-zinc-700 text-white rounded-xl w-full max-w-4xl p-0 shadow-2xl">
+<!-- View Company Modal (UPDATED - shows contacts + primary info) -->
+<dialog id="viewCompanyModal" class="bg-zinc-900 border border-zinc-700 text-white rounded-xl w-full max-w-5xl p-0 shadow-2xl">
     <div class="flex items-center justify-between px-6 py-4 border-b border-zinc-700">
         <h2 class="text-xl font-semibold">Company Details</h2>
         <button onclick="document.getElementById('viewCompanyModal').close()" class="text-zinc-400 hover:text-white text-2xl leading-none">&times;</button>
@@ -170,13 +203,11 @@
                     <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
                         <div class="md:col-span-2">
                             <label class="text-xs text-zinc-400">Company Name *</label>
-                            <input type="text" id="company_name" required 
-                                   class="w-full bg-zinc-800 text-white border border-zinc-700 rounded-lg px-4 py-2.5 text-sm focus:border-emerald-600 focus:bg-zinc-800 focus:text-white">
+                            <input type="text" id="company_name" required class="w-full bg-zinc-800 text-white border border-zinc-700 rounded-lg px-4 py-2.5 text-sm focus:border-emerald-600">
                         </div>
                         <div>
                             <label class="text-xs text-zinc-400">Company Type</label>
-                            <select id="company_type" 
-                                    class="w-full bg-zinc-800 text-white border border-zinc-700 rounded-lg px-4 py-2.5 text-sm focus:border-emerald-600 focus:bg-zinc-800 focus:text-white">
+                            <select id="company_type" class="w-full bg-zinc-800 text-white border border-zinc-700 rounded-lg px-4 py-2.5 text-sm focus:border-emerald-600">
                                 <option value="Subcontractor">Subcontractor</option>
                                 <option value="Supplier">Supplier / Vendor</option>
                                 <option value="Client">Client / Owner</option>
@@ -185,49 +216,40 @@
 
                         <div>
                             <label class="text-xs text-zinc-400">Vendor Number</label>
-                            <input type="text" id="vendor_number" 
-                                   class="w-full bg-zinc-800 text-white border border-zinc-700 rounded-lg px-4 py-2.5 text-sm focus:border-emerald-600 focus:bg-zinc-800 focus:text-white">
+                            <input type="text" id="vendor_number" class="w-full bg-zinc-800 text-white border border-zinc-700 rounded-lg px-4 py-2.5 text-sm focus:border-emerald-600">
                         </div>
                         <div>
                             <label class="text-xs text-zinc-400">Customer Number</label>
-                            <input type="text" id="customer_number" 
-                                   class="w-full bg-zinc-800 text-white border border-zinc-700 rounded-lg px-4 py-2.5 text-sm focus:border-emerald-600 focus:bg-zinc-800 focus:text-white">
+                            <input type="text" id="customer_number" class="w-full bg-zinc-800 text-white border border-zinc-700 rounded-lg px-4 py-2.5 text-sm focus:border-emerald-600">
                         </div>
                         <div>
                             <label class="text-xs text-zinc-400">External / Sage ID</label>
-                            <input type="text" id="external_id" 
-                                   class="w-full bg-zinc-800 text-white border border-zinc-700 rounded-lg px-4 py-2.5 text-sm focus:border-emerald-600 focus:bg-zinc-800 focus:text-white">
+                            <input type="text" id="external_id" class="w-full bg-zinc-800 text-white border border-zinc-700 rounded-lg px-4 py-2.5 text-sm focus:border-emerald-600">
                         </div>
 
                         <div>
                             <label class="text-xs text-zinc-400">Trade / Specialty</label>
-                            <input type="text" id="trade" 
-                                   class="w-full bg-zinc-800 text-white border border-zinc-700 rounded-lg px-4 py-2.5 text-sm focus:border-emerald-600 focus:bg-zinc-800 focus:text-white">
+                            <input type="text" id="trade" class="w-full bg-zinc-800 text-white border border-zinc-700 rounded-lg px-4 py-2.5 text-sm focus:border-emerald-600">
                         </div>
                         <div>
                             <label class="text-xs text-zinc-400">Website</label>
-                            <input type="text" id="website" 
-                                   class="w-full bg-zinc-800 text-white border border-zinc-700 rounded-lg px-4 py-2.5 text-sm focus:border-emerald-600 focus:bg-zinc-800 focus:text-white">
+                            <input type="text" id="website" class="w-full bg-zinc-800 text-white border border-zinc-700 rounded-lg px-4 py-2.5 text-sm focus:border-emerald-600">
                         </div>
                         <div>
                             <label class="text-xs text-zinc-400">Primary Phone</label>
-                            <input type="text" id="primary_phone" 
-                                   class="w-full bg-zinc-800 text-white border border-zinc-700 rounded-lg px-4 py-2.5 text-sm focus:border-emerald-600 focus:bg-zinc-800 focus:text-white">
+                            <input type="text" id="primary_phone" class="w-full bg-zinc-800 text-white border border-zinc-700 rounded-lg px-4 py-2.5 text-sm focus:border-emerald-600">
                         </div>
                         <div>
                             <label class="text-xs text-zinc-400">Primary Email</label>
-                            <input type="email" id="primary_email" 
-                                   class="w-full bg-zinc-800 text-white border border-zinc-700 rounded-lg px-4 py-2.5 text-sm focus:border-emerald-600 focus:bg-zinc-800 focus:text-white">
+                            <input type="email" id="primary_email" class="w-full bg-zinc-800 text-white border border-zinc-700 rounded-lg px-4 py-2.5 text-sm focus:border-emerald-600">
                         </div>
                         <div>
                             <label class="text-xs text-zinc-400">Tax ID / EIN</label>
-                            <input type="text" id="tax_id" 
-                                   class="w-full bg-zinc-800 text-white border border-zinc-700 rounded-lg px-4 py-2.5 text-sm focus:border-emerald-600 focus:bg-zinc-800 focus:text-white">
+                            <input type="text" id="tax_id" class="w-full bg-zinc-800 text-white border border-zinc-700 rounded-lg px-4 py-2.5 text-sm focus:border-emerald-600">
                         </div>
                         <div>
                             <label class="text-xs text-zinc-400">W-9 on File</label>
-                            <select id="w9_status" 
-                                    class="w-full bg-zinc-800 text-white border border-zinc-700 rounded-lg px-4 py-2.5 text-sm focus:border-emerald-600 focus:bg-zinc-800 focus:text-white">
+                            <select id="w9_status" class="w-full bg-zinc-800 text-white border border-zinc-700 rounded-lg px-4 py-2.5 text-sm focus:border-emerald-600">
                                 <option value="Yes">Yes</option>
                                 <option value="No">No</option>
                                 <option value="Requested">Requested</option>
@@ -235,8 +257,7 @@
                         </div>
                         <div>
                             <label class="text-xs text-zinc-400">Status</label>
-                            <select id="status" 
-                                    class="w-full bg-zinc-800 text-white border border-zinc-700 rounded-lg px-4 py-2.5 text-sm focus:border-emerald-600 focus:bg-zinc-800 focus:text-white">
+                            <select id="status" class="w-full bg-zinc-800 text-white border border-zinc-700 rounded-lg px-4 py-2.5 text-sm focus:border-emerald-600">
                                 <option value="Active">Active</option>
                                 <option value="Inactive">Inactive</option>
                                 <option value="Blacklisted">Blacklisted</option>
@@ -251,13 +272,11 @@
                     <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
                         <div>
                             <label class="text-xs text-zinc-400">Billing Address</label>
-                            <textarea id="billing_address" rows="3" 
-                                      class="w-full bg-zinc-800 text-white border border-zinc-700 rounded-lg px-4 py-2.5 text-sm focus:border-emerald-600 focus:bg-zinc-800 focus:text-white"></textarea>
+                            <textarea id="billing_address" rows="3" class="w-full bg-zinc-800 text-white border border-zinc-700 rounded-lg px-4 py-2.5 text-sm focus:border-emerald-600"></textarea>
                         </div>
                         <div>
                             <label class="text-xs text-zinc-400">Shipping Address</label>
-                            <textarea id="shipping_address" rows="3" 
-                                      class="w-full bg-zinc-800 text-white border border-zinc-700 rounded-lg px-4 py-2.5 text-sm focus:border-emerald-600 focus:bg-zinc-800 focus:text-white"></textarea>
+                            <textarea id="shipping_address" rows="3" class="w-full bg-zinc-800 text-white border border-zinc-700 rounded-lg px-4 py-2.5 text-sm focus:border-emerald-600"></textarea>
                         </div>
                     </div>
                 </div>
@@ -279,23 +298,19 @@
                     <div class="grid grid-cols-1 md:grid-cols-4 gap-4">
                         <div>
                             <label class="text-xs text-zinc-400">License Number</label>
-                            <input type="text" id="license_number" 
-                                   class="w-full bg-zinc-800 text-white border border-zinc-700 rounded-lg px-4 py-2.5 text-sm focus:border-emerald-600 focus:bg-zinc-800 focus:text-white">
+                            <input type="text" id="license_number" class="w-full bg-zinc-800 text-white border border-zinc-700 rounded-lg px-4 py-2.5 text-sm focus:border-emerald-600">
                         </div>
                         <div>
                             <label class="text-xs text-zinc-400">State</label>
-                            <input type="text" id="license_state" 
-                                   class="w-full bg-zinc-800 text-white border border-zinc-700 rounded-lg px-4 py-2.5 text-sm focus:border-emerald-600 focus:bg-zinc-800 focus:text-white">
+                            <input type="text" id="license_state" class="w-full bg-zinc-800 text-white border border-zinc-700 rounded-lg px-4 py-2.5 text-sm focus:border-emerald-600">
                         </div>
                         <div>
                             <label class="text-xs text-zinc-400">Expiration Date</label>
-                            <input type="date" id="license_expiration" 
-                                   class="w-full bg-zinc-800 text-white border border-zinc-700 rounded-lg px-4 py-2.5 text-sm focus:border-emerald-600 focus:bg-zinc-800 focus:text-white">
+                            <input type="date" id="license_expiration" class="w-full bg-zinc-800 text-white border border-zinc-700 rounded-lg px-4 py-2.5 text-sm focus:border-emerald-600">
                         </div>
                         <div>
                             <label class="text-xs text-zinc-400">Notes</label>
-                            <input type="text" id="license_notes" 
-                                   class="w-full bg-zinc-800 text-white border border-zinc-700 rounded-lg px-4 py-2.5 text-sm focus:border-emerald-600 focus:bg-zinc-800 focus:text-white">
+                            <input type="text" id="license_notes" class="w-full bg-zinc-800 text-white border border-zinc-700 rounded-lg px-4 py-2.5 text-sm focus:border-emerald-600">
                         </div>
                     </div>
                 </div>
@@ -307,36 +322,30 @@
                     <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
                         <div>
                             <label class="text-xs text-zinc-400">GL Carrier</label>
-                            <input type="text" id="gl_carrier" 
-                                   class="w-full bg-zinc-800 text-white border border-zinc-700 rounded-lg px-4 py-2.5 text-sm focus:border-emerald-600 focus:bg-zinc-800 focus:text-white">
+                            <input type="text" id="gl_carrier" class="w-full bg-zinc-800 text-white border border-zinc-700 rounded-lg px-4 py-2.5 text-sm focus:border-emerald-600">
                         </div>
                         <div>
                             <label class="text-xs text-zinc-400">GL Policy #</label>
-                            <input type="text" id="gl_policy" 
-                                   class="w-full bg-zinc-800 text-white border border-zinc-700 rounded-lg px-4 py-2.5 text-sm focus:border-emerald-600 focus:bg-zinc-800 focus:text-white">
+                            <input type="text" id="gl_policy" class="w-full bg-zinc-800 text-white border border-zinc-700 rounded-lg px-4 py-2.5 text-sm focus:border-emerald-600">
                         </div>
                         <div>
                             <label class="text-xs text-zinc-400">GL Expiration</label>
-                            <input type="date" id="gl_expiration" 
-                                   class="w-full bg-zinc-800 text-white border border-zinc-700 rounded-lg px-4 py-2.5 text-sm focus:border-emerald-600 focus:bg-zinc-800 focus:text-white">
+                            <input type="date" id="gl_expiration" class="w-full bg-zinc-800 text-white border border-zinc-700 rounded-lg px-4 py-2.5 text-sm focus:border-emerald-600">
                         </div>
                     </div>
 
                     <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
                         <div>
                             <label class="text-xs text-zinc-400">WC Carrier</label>
-                            <input type="text" id="wc_carrier" 
-                                   class="w-full bg-zinc-800 text-white border border-zinc-700 rounded-lg px-4 py-2.5 text-sm focus:border-emerald-600 focus:bg-zinc-800 focus:text-white">
+                            <input type="text" id="wc_carrier" class="w-full bg-zinc-800 text-white border border-zinc-700 rounded-lg px-4 py-2.5 text-sm focus:border-emerald-600">
                         </div>
                         <div>
                             <label class="text-xs text-zinc-400">WC Policy #</label>
-                            <input type="text" id="wc_policy" 
-                                   class="w-full bg-zinc-800 text-white border border-zinc-700 rounded-lg px-4 py-2.5 text-sm focus:border-emerald-600 focus:bg-zinc-800 focus:text-white">
+                            <input type="text" id="wc_policy" class="w-full bg-zinc-800 text-white border border-zinc-700 rounded-lg px-4 py-2.5 text-sm focus:border-emerald-600">
                         </div>
                         <div>
                             <label class="text-xs text-zinc-400">WC Expiration</label>
-                            <input type="date" id="wc_expiration" 
-                                   class="w-full bg-zinc-800 text-white border border-zinc-700 rounded-lg px-4 py-2.5 text-sm focus:border-emerald-600 focus:bg-zinc-800 focus:text-white">
+                            <input type="date" id="wc_expiration" class="w-full bg-zinc-800 text-white border border-zinc-700 rounded-lg px-4 py-2.5 text-sm focus:border-emerald-600">
                         </div>
                     </div>
 
@@ -353,8 +362,7 @@
 
                 <div class="mb-6">
                     <label class="text-xs text-zinc-400">Notes</label>
-                    <textarea id="notes" rows="3" 
-                              class="w-full bg-zinc-800 text-white border border-zinc-700 rounded-lg px-4 py-2.5 text-sm focus:border-emerald-600 focus:bg-zinc-800 focus:text-white"></textarea>
+                    <textarea id="notes" rows="3" class="w-full bg-zinc-800 text-white border border-zinc-700 rounded-lg px-4 py-2.5 text-sm focus:border-emerald-600"></textarea>
                 </div>
             </form>
         </div>
@@ -376,6 +384,21 @@
         <h3 id="successTitle" class="text-lg font-semibold mb-2"></h3>
         <p id="successMessage" class="text-zinc-400 text-sm mb-6 whitespace-pre-line"></p>
         <button onclick="document.getElementById('successModal').close()" class="px-8 py-2.5 bg-emerald-600 hover:bg-emerald-700 rounded-lg text-sm font-medium">OK</button>
+    </div>
+</dialog>
+
+<!-- Sage 300 Sync Modal -->
+<dialog id="sageSyncModal" class="bg-zinc-900 border border-zinc-700 text-white rounded-xl w-full max-w-5xl p-0 shadow-2xl">
+    <div class="flex items-center justify-between px-6 py-4 border-b border-zinc-700">
+        <h2 class="text-xl font-semibold">Sync with Sage 300</h2>
+        <button onclick="document.getElementById('sageSyncModal').close()" class="text-zinc-400 hover:text-white text-2xl leading-none">&times;</button>
+    </div>
+    <div class="p-6" id="sageSyncContent">
+        <!-- Populated dynamically by JavaScript -->
+    </div>
+    <div class="flex justify-end gap-3 px-6 py-4 border-t border-zinc-700 bg-zinc-950 rounded-b-xl">
+        <button onclick="document.getElementById('sageSyncModal').close()" class="px-6 py-2.5 rounded-lg border border-zinc-600 hover:bg-zinc-800 text-sm">Cancel</button>
+        <button onclick="importSelectedFromSage()" class="px-6 py-2.5 bg-emerald-600 hover:bg-emerald-700 rounded-lg text-sm font-medium">Import Selected</button>
     </div>
 </dialog>
 <script>
@@ -514,20 +537,27 @@
         renderCompaniesTable(companies);
     }
 
-    // ==================== WORKING EXPORT (CSV FIRST) ====================
+    // ==================== WORKING EXPORT ====================
     function exportCompanies(format) {
+        if (typeof XLSX === 'undefined') {
+            alert("Export library (SheetJS) not loaded. Please hard refresh the page (Ctrl + Shift + R).");
+            return;
+        }
         if (!companies.length) {
             alert("No companies to export.");
             return;
         }
-        const ws = XLSX.utils.json_to_sheet(companies);
-        const wb = XLSX.utils.book_new();
-        XLSX.utils.book_append_sheet(wb, ws, "Companies");
 
-        if (format === 'csv') {
-            XLSX.writeFile(wb, "companies_export.csv", { bookType: "csv" });
-        } else {
-            XLSX.writeFile(wb, "companies_export.xlsx");
+        try {
+            const ws = XLSX.utils.json_to_sheet(companies);
+            const wb = XLSX.utils.book_new();
+            XLSX.utils.book_append_sheet(wb, ws, "Companies");
+
+            const filename = format === 'csv' ? "companies_export.csv" : "companies_export.xlsx";
+            XLSX.writeFile(wb, filename);
+        } catch (err) {
+            console.error(err);
+            alert("Export failed. Please try again.");
         }
     }
 
@@ -564,7 +594,7 @@
                     renderCompaniesTable(companies);
                     alert(`${imported.length} companies imported successfully!`);
                 } catch (err) {
-                    alert("Import failed. Check file format.");
+                    alert("Import failed. Check the file format.");
                     console.error(err);
                 }
             };
@@ -578,7 +608,7 @@
         input.click();
     }
 
-    // ==================== ADD / EDIT / SAVE (WITH AUTHORIZED USER CREATION) ====================
+    // ==================== ADD / EDIT / SAVE ====================
     function showAddCompanyModal() {
         document.getElementById('companyForm').reset();
         document.getElementById('companyId').value = '';
@@ -650,7 +680,7 @@
             });
         });
 
-        // === CREATE AUTHORIZED USERS IN USER MANAGEMENT ===
+        // Create authorized users in User Management
         contacts.forEach(contact => {
             if (contact.authorized_user && contact.email) {
                 createAuthorizedCasePMUser(contact, id ? parseInt(id) : Date.now());
@@ -757,12 +787,14 @@
         container.appendChild(div);
     }
 
+    // ==================== VIEW COMPANY MODAL (WITH CONTACTS + PRIMARY INFO) ====================
     function showViewCompanyModal(id) {
         const company = companies.find(c => c.id === id);
         if (!company) return;
+
         const content = document.getElementById('viewCompanyContent');
         content.innerHTML = `
-            <div class="grid grid-cols-1 md:grid-cols-2 gap-x-8 gap-y-4 text-sm">
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-x-8 gap-y-4 text-sm mb-6">
                 <div><span class="text-zinc-400">Company:</span> <span class="font-semibold">${company.company_name}</span></div>
                 <div><span class="text-zinc-400">Type:</span> ${company.company_type}</div>
                 <div><span class="text-zinc-400">Vendor #:</span> ${company.vendor_number || '—'}</div>
@@ -770,6 +802,35 @@
                 <div><span class="text-zinc-400">External / Sage ID:</span> ${company.external_id || '—'}</div>
                 <div><span class="text-zinc-400">Trade:</span> ${company.trade || '—'}</div>
                 <div><span class="text-zinc-400">Status:</span> ${company.status}</div>
+                <div><span class="text-zinc-400">Primary Phone:</span> ${company.primary_phone || '—'}</div>
+                <div><span class="text-zinc-400">Primary Email:</span> ${company.primary_email || '—'}</div>
+                <div class="md:col-span-2"><span class="text-zinc-400">Billing Address:</span> ${company.billing_address || '—'}</div>
+            </div>
+
+            <div class="pt-4 border-t border-zinc-700">
+                <div class="font-semibold mb-3 flex items-center gap-2">
+                    <span>Contacts</span>
+                    <span class="text-xs bg-zinc-700 px-2 py-0.5 rounded">${company.contacts?.length || 0}</span>
+                </div>
+                ${(company.contacts || []).length > 0 ? 
+                    company.contacts.map(c => `
+                        <div class="bg-zinc-800 rounded-lg p-4 mb-3">
+                            <div class="flex justify-between">
+                                <div>
+                                    <div class="font-medium">${c.name}</div>
+                                    <div class="text-xs text-zinc-400">${c.title || ''}</div>
+                                </div>
+                                ${c.authorized_user ? 
+                                    `<span class="text-xs bg-emerald-900/60 text-emerald-400 px-2 py-0.5 rounded self-start">Authorized Case PM User</span>` : ''}
+                            </div>
+                            <div class="mt-2 text-sm grid grid-cols-1 md:grid-cols-2 gap-x-4">
+                                <div><span class="text-zinc-400">Phone:</span> ${c.phone || '—'}</div>
+                                <div><span class="text-zinc-400">Email:</span> ${c.email || '—'}</div>
+                            </div>
+                        </div>
+                    `).join('') : 
+                    `<div class="text-zinc-500 text-sm">No contacts added for this company.</div>`
+                }
             </div>
         `;
         content.dataset.currentId = company.id;
@@ -783,7 +844,7 @@
     }
 
     function deleteCompany(id) {
-        if (!confirm('Delete this company?')) return;
+        if (!confirm('Delete this company? This cannot be undone.')) return;
         companies = companies.filter(c => c.id !== id);
         renderCompaniesTable(companies);
     }
@@ -821,6 +882,91 @@
         }
     }
 
+    // ==================== SAGE 300 SYNC (SIMULATED) ====================
+    function syncWithSage300() {
+        const modal = document.getElementById('sageSyncModal');
+        const content = document.getElementById('sageSyncContent');
+
+        // Simulated data from Sage 300
+        const sageData = [
+            { id: 101, company_name: "ABC Plumbing Supply", company_type: "Supplier", vendor_number: "V-20441", external_id: "SAGE-20441", primary_phone: "(727) 555-8821", primary_email: "orders@abcplumb.com", trade: "Plumbing Supplies" },
+            { id: 102, company_name: "Summit HVAC Services", company_type: "Subcontractor", vendor_number: "V-18902", external_id: "SAGE-18902", primary_phone: "(813) 555-7744", primary_email: "service@summithvac.com", trade: "HVAC" },
+            { id: 103, company_name: "Coastal Drywall Inc", company_type: "Subcontractor", vendor_number: "V-17550", external_id: "SAGE-17550", primary_phone: "(941) 555-9910", primary_email: "bids@coastaldrywall.com", trade: "Drywall" }
+        ];
+
+        content.innerHTML = `
+            <div class="mb-4 text-sm text-zinc-400">
+                This simulates pulling companies/vendors from Sage 300 via Web API.<br>
+                In production, this would query the AP Vendor / AR Customer tables and pull fields like Vendor Number, Name, Address, Phone, Email, Tax ID, Status, etc.
+            </div>
+            <div class="mb-3 text-sm font-medium">Companies found in Sage 300 (${sageData.length})</div>
+            <div class="space-y-2 max-h-[420px] overflow-auto pr-2">
+                ${sageData.map(item => `
+                    <div class="flex items-center gap-3 bg-zinc-800 border border-zinc-700 rounded-lg p-3">
+                        <input type="checkbox" class="sage-checkbox accent-emerald-600" data-id="${item.id}">
+                        <div class="flex-1 text-sm">
+                            <div class="font-medium">${item.company_name}</div>
+                            <div class="text-xs text-zinc-400">${item.company_type} • ${item.trade || ''}</div>
+                        </div>
+                        <div class="text-xs text-zinc-400 font-mono">${item.external_id}</div>
+                        <button onclick="editSageCompany(${item.id})" class="text-xs px-3 py-1 bg-zinc-700 hover:bg-zinc-600 rounded">Edit</button>
+                    </div>
+                `).join('')}
+            </div>
+            <div class="mt-4 flex gap-2">
+                <button onclick="selectAllSage(true)" class="text-xs px-3 py-1.5 bg-zinc-700 hover:bg-zinc-600 rounded">Select All</button>
+                <button onclick="selectAllSage(false)" class="text-xs px-3 py-1.5 bg-zinc-700 hover:bg-zinc-600 rounded">Deselect All</button>
+            </div>
+        `;
+
+        modal.showModal();
+    }
+
+    function selectAllSage(checked) {
+        document.querySelectorAll('.sage-checkbox').forEach(cb => cb.checked = checked);
+    }
+
+    function editSageCompany(sageId) {
+        // Close sync modal and open edit/add modal pre-filled
+        document.getElementById('sageSyncModal').close();
+        setTimeout(() => {
+            showAddCompanyModal();
+            // Pre-fill some fields from simulated Sage data
+            const company = { company_name: "Summit HVAC Services", company_type: "Subcontractor", external_id: "SAGE-18902", trade: "HVAC" };
+            document.getElementById('company_name').value = company.company_name;
+            document.getElementById('company_type').value = company.company_type;
+            document.getElementById('external_id').value = company.external_id;
+            document.getElementById('trade').value = company.trade;
+        }, 300);
+    }
+
+    function importSelectedFromSage() {
+        const checked = document.querySelectorAll('.sage-checkbox:checked');
+        if (!checked.length) {
+            alert("No companies selected.");
+            return;
+        }
+
+        checked.forEach(cb => {
+            const id = parseInt(cb.dataset.id);
+            // In real system this would come from the actual Sage pull
+            const newCompany = {
+                id: Date.now() + Math.random(),
+                company_name: "Imported from Sage " + id,
+                company_type: "Supplier",
+                external_id: "SAGE-" + id,
+                contacts: [],
+                cois: []
+            };
+            companies.push(newCompany);
+        });
+
+        document.getElementById('sageSyncModal').close();
+        renderCompaniesTable(companies);
+        alert(`${checked.length} companies imported from Sage 300 simulation.`);
+    }
+
+    // ==================== INITIALIZATION ====================
     function initializeCompaniesPage() {
         renderCompaniesTable(companies);
         updateSummaryCards();
