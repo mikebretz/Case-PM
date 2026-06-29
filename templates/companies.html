@@ -23,6 +23,11 @@
         border-color: #10b981;
         background-color: #1f2a1f;
     }
+    .action-btn {
+        font-size: 1.15rem;
+        padding: 6px 10px;
+        line-height: 1;
+    }
 </style>
 
 <div class="flex-1 flex flex-col overflow-hidden">
@@ -174,7 +179,7 @@
                     <h3 class="font-semibold text-emerald-400 mb-3">Company Profile</h3>
 
                     <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
-                        <!-- Row 1 -->
+                        <!-- Row 1: Company Name + Type -->
                         <div class="md:col-span-2">
                             <label class="text-xs text-zinc-400">Company Name *</label>
                             <input type="text" id="company_name" required class="w-full bg-zinc-800 text-white border border-zinc-700 rounded px-4 py-2.5 text-sm focus:border-emerald-600">
@@ -194,7 +199,7 @@
                             <input type="text" id="external_id" class="w-full bg-zinc-800 text-white border border-zinc-700 rounded px-4 py-2.5 text-sm focus:border-emerald-600">
                         </div>
 
-                        <!-- Primary Phone | Primary Email | Logo (right below External ID, aligned with Status) -->
+                        <!-- Primary Phone + Primary Email -->
                         <div>
                             <label class="text-xs text-zinc-400">Primary Phone</label>
                             <input type="text" id="primary_phone" class="w-full bg-zinc-800 text-white border border-zinc-700 rounded px-4 py-2.5 text-sm focus:border-emerald-600" onblur="formatAndValidatePhone(this)">
@@ -204,7 +209,7 @@
                             <input type="email" id="primary_email" class="w-full bg-zinc-800 text-white border border-zinc-700 rounded px-4 py-2.5 text-sm focus:border-emerald-600">
                         </div>
 
-                        <!-- COMPANY LOGO -->
+                        <!-- Logo -->
                         <div class="flex flex-col justify-end">
                             <label class="text-xs text-zinc-400 block mb-1">Company Logo</label>
                             <div id="logo_drop_zone"
@@ -217,7 +222,7 @@
                             <input type="file" id="company_logo" class="hidden" accept="image/*">
                         </div>
 
-                        <!-- Tax ID | Status -->
+                        <!-- Tax ID + Status (moved up as requested) -->
                         <div>
                             <label class="text-xs text-zinc-400">Tax ID / EIN</label>
                             <input type="text" id="tax_id" class="w-full bg-zinc-800 text-white border border-zinc-700 rounded px-4 py-2.5 text-sm focus:border-emerald-600">
@@ -370,9 +375,10 @@
 </dialog>
 
 <script>
-// ==================== FULL DETAILED JAVASCRIPT ====================
+// ==================== FULL JAVASCRIPT (from your GitHub + requested fixes) ====================
 
 let companies = [];
+let originalCompanyData = null;
 
 const sageData = [
     { id: 101, company_name: "ABC Plumbing", company_type: "Subcontractor", trade: "Plumbing", primary_phone: "813-555-0101", primary_email: "info@abcplumbing.com", external_id: "SAGE-101", license_number: "PL-98765", license_expiration: "2027-06-30", license_status: "Current", gl_carrier: "Travelers", gl_policy: "GL-123456", gl_expiration: "2026-12-31", wc_carrier: "Liberty Mutual", wc_policy: "WC-789012", wc_expiration: "2026-12-31" },
@@ -392,10 +398,7 @@ function showConfirmModal(title, message, onConfirm) {
     document.getElementById('confirmTitle').innerText = title;
     document.getElementById('confirmMessage').innerText = message;
     const btn = document.getElementById('confirmBtn');
-    btn.onclick = () => {
-        modal.close();
-        onConfirm();
-    };
+    btn.onclick = () => { modal.close(); onConfirm(); };
     modal.showModal();
 }
 
@@ -443,8 +446,8 @@ function renderCompaniesTable(filteredCompanies = null) {
             <td class="px-4 py-4 text-center">${wcStatus}</td>
             <td class="px-4 py-4 text-center">${coiStatus}</td>
             <td class="px-4 py-4 text-right">
-                <button onclick="event.stopImmediatePropagation(); editCompany(${company.id});" class="text-emerald-400 hover:text-emerald-300 mr-3"><i class="fa-solid fa-edit"></i></button>
-                <button onclick="event.stopImmediatePropagation(); confirmDeleteCompany(${company.id}, this);" class="text-red-400 hover:text-red-300"><i class="fa-solid fa-trash"></i></button>
+                <button onclick="event.stopImmediatePropagation(); editCompany(${company.id});" class="action-btn text-emerald-400 hover:text-emerald-300 mr-2"><i class="fa-solid fa-edit"></i></button>
+                <button onclick="event.stopImmediatePropagation(); confirmDeleteCompany(${company.id}, this);" class="action-btn text-red-400 hover:text-red-300"><i class="fa-solid fa-trash"></i></button>
             </td>
         `;
         tbody.appendChild(row);
@@ -500,27 +503,42 @@ function updateSummaryCards() {
     document.getElementById('expiredLicenseCount').innerText = expiredLic;
 }
 
+// ==================== CORRECTED FILTERS ====================
 function filterAll() { renderCompaniesTable(companies); }
 function filterByType(type) { renderCompaniesTable(companies.filter(c => c.company_type === type)); }
+
 function filterExpiringInsurance() {
     const now = new Date();
-    const sixty = new Date(now.getTime() + (60*24*60*60*1000));
-    const filtered = companies.filter(c => (c.cois || []).some(coi => {
-        const d = new Date(coi.expiration);
-        return d > now && d < sixty;
-    }));
+    const sixty = new Date(now.getTime() + (60 * 24 * 60 * 60 * 1000));
+    const filtered = companies.filter(c => {
+        const gl = c.gl_expiration && new Date(c.gl_expiration) > now && new Date(c.gl_expiration) < sixty;
+        const wc = c.wc_expiration && new Date(c.wc_expiration) > now && new Date(c.wc_expiration) < sixty;
+        const coi = (c.cois || []).some(coi => {
+            const d = new Date(coi.expiration);
+            return d > now && d < sixty;
+        });
+        return gl || wc || coi;
+    });
     renderCompaniesTable(filtered);
 }
+
 function filterExpiredInsurance() {
     const now = new Date();
-    const filtered = companies.filter(c => (c.cois || []).some(coi => new Date(coi.expiration) < now));
+    const filtered = companies.filter(c => {
+        const glExpired = c.gl_expiration && new Date(c.gl_expiration) < now;
+        const wcExpired = c.wc_expiration && new Date(c.wc_expiration) < now;
+        const coiExpired = (c.cois || []).some(coi => new Date(coi.expiration) < now);
+        return glExpired || wcExpired || coiExpired;
+    });
     renderCompaniesTable(filtered);
 }
+
 function filterExpiredLicense() {
     const now = new Date();
     const filtered = companies.filter(c => c.license_expiration && new Date(c.license_expiration) < now);
     renderCompaniesTable(filtered);
 }
+
 function filterCompanies() {
     const search = document.getElementById('searchInput').value.toLowerCase().trim();
     const type = document.getElementById('typeFilter').value;
@@ -535,6 +553,7 @@ function filterCompanies() {
     });
     renderCompaniesTable(filtered);
 }
+
 function clearCompanyFilters() {
     document.getElementById('searchInput').value = '';
     document.getElementById('typeFilter').value = '';
@@ -767,6 +786,9 @@ function editCompany(id) {
     const company = companies.find(c => c.id === id);
     if (!company) return;
 
+    // Store original data for unsaved changes detection
+    originalCompanyData = JSON.parse(JSON.stringify(company));
+
     document.getElementById('companyId').value = company.id;
     document.getElementById('modalTitle').innerText = 'Edit Company';
 
@@ -842,28 +864,51 @@ function createAuthorizedCasePMUser(contact, companyId) {
 
 function printCompanyDetails() {
     const content = document.getElementById('viewCompanyContent').innerHTML;
-    const printWindow = window.open('', '', 'height=600,width=800');
-    printWindow.document.write('<html><head><title>Company Details</title></head><body>');
-    printWindow.document.write(content);
-    printWindow.document.write('</body></html>');
-    printWindow.document.close();
-    printWindow.focus();
+    const printWin = window.open('', '_blank');
+    printWin.document.write(`<html><head><title>Company Details</title></head><body>${content}</body></html>`);
+    printWin.document.close();
+    printWin.focus();
     setTimeout(() => {
-        printWindow.print();
-        printWindow.close();
-    }, 500);
+        printWin.print();
+        printWin.close();
+    }, 250);
 }
 
 function closeCompanyModalSafely() {
     const modal = document.getElementById('companyModal');
     if (!modal) return;
-    const companyName = document.getElementById('company_name') ? document.getElementById('company_name').value.trim() : '';
-    if (companyName) {
+
+    if (!originalCompanyData) {
+        modal.close();
+        return;
+    }
+
+    // Compare key fields to detect actual changes
+    const current = {
+        company_name: document.getElementById('company_name').value.trim(),
+        primary_phone: document.getElementById('primary_phone').value.trim(),
+        primary_email: document.getElementById('primary_email').value.trim(),
+        external_id: document.getElementById('external_id').value.trim(),
+        tax_id: document.getElementById('tax_id').value.trim(),
+        status: document.getElementById('status').value
+    };
+
+    const changed = 
+        current.company_name !== (originalCompanyData.company_name || '') ||
+        current.primary_phone !== (originalCompanyData.primary_phone || '') ||
+        current.primary_email !== (originalCompanyData.primary_email || '') ||
+        current.external_id !== (originalCompanyData.external_id || '') ||
+        current.tax_id !== (originalCompanyData.tax_id || '') ||
+        current.status !== (originalCompanyData.status || '');
+
+    if (changed) {
         showConfirmModal("Unsaved Changes", "You have unsaved changes. Discard changes and close?", () => {
             modal.close();
+            originalCompanyData = null;
         });
     } else {
         modal.close();
+        originalCompanyData = null;
     }
 }
 
@@ -952,8 +997,31 @@ function syncWithSage300() {
     });
 
     html += `</div>`;
+
+    // Add the three buttons at the bottom as requested
+    html += `
+        <div class="flex flex-wrap gap-2 mt-4">
+            <button onclick="selectAllSage(true)" class="px-4 py-2 bg-zinc-700 hover:bg-zinc-600 rounded text-sm">Select All</button>
+            <button onclick="selectAllSage(false)" class="px-4 py-2 bg-zinc-700 hover:bg-zinc-600 rounded text-sm">Deselect All</button>
+            <button onclick="selectNonExistingSage()" class="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 rounded text-sm">Select all that are not existing</button>
+        </div>
+    `;
+
     contentDiv.innerHTML = html;
     modal.showModal();
+}
+
+function selectAllSage(checked) {
+    document.querySelectorAll('.sage-checkbox').forEach(cb => cb.checked = checked);
+}
+
+function selectNonExistingSage() {
+    document.querySelectorAll('.sage-checkbox').forEach(cb => {
+        const id = parseInt(cb.dataset.id);
+        const item = sageData.find(s => s.id === id);
+        const exists = companies.some(c => c.external_id === item.external_id);
+        cb.checked = !exists;
+    });
 }
 
 function importSelectedFromSage() {
