@@ -5,7 +5,7 @@
 <!-- SheetJS -->
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 
-<!-- Force all inputs to stay dark with white text -->
+<!-- Force dark inputs + hide default header -->
 <style>
     input, select, textarea {
         background-color: #27251f !important;
@@ -24,6 +24,11 @@
         -webkit-box-shadow: 0 0 0px 1000px #27251f inset !important;
         -webkit-text-fill-color: #ffffff !important;
         transition: background-color 5000s ease-in-out 0s;
+    }
+
+    /* Hide default base/dashboard header so our custom header takes full control */
+    .navbar, header, .top-bar, nav, .dashboard-header {
+        display: none !important;
     }
 </style>
 
@@ -72,7 +77,7 @@
             <span>Add Company</span>
         </button>
 
-        <!-- User Profile (matches Budget) -->
+        <!-- User Profile -->
         <div class="flex items-center gap-3 pl-3 border-l border-zinc-700 cursor-pointer" onclick="showUserProfileModal()">
             <div class="w-8 h-8 bg-zinc-700 rounded-full overflow-hidden">
                 <img src="https://i.pravatar.cc/32?img=68" class="w-full h-full object-cover">
@@ -179,7 +184,7 @@
     </div>
 </dialog>
 
-<!-- ==================== ADD / EDIT COMPANY MODAL (Stationary Footer) ==================== -->
+<!-- ==================== ADD / EDIT COMPANY MODAL (with stationary footer) ==================== -->
 <dialog id="companyModal" class="bg-zinc-900 border border-zinc-700 text-white rounded-2xl w-full max-w-6xl p-0 shadow-2xl">
     <div class="flex flex-col max-h-[82vh]">
         
@@ -213,6 +218,27 @@
                                 <option value="Client">Client / Owner</option>
                             </select>
                         </div>
+
+                        <!-- NEW: Designation Fields for Sage / ERP -->
+                        <div>
+                            <label class="text-xs text-zinc-400">Vendor Number</label>
+                            <input type="text" id="vendor_number" 
+                                   class="w-full bg-zinc-800 text-white border border-zinc-700 rounded-lg px-4 py-2.5 text-sm focus:border-emerald-600"
+                                   placeholder="e.g. V-10045">
+                        </div>
+                        <div>
+                            <label class="text-xs text-zinc-400">Customer Number</label>
+                            <input type="text" id="customer_number" 
+                                   class="w-full bg-zinc-800 text-white border border-zinc-700 rounded-lg px-4 py-2.5 text-sm focus:border-emerald-600"
+                                   placeholder="e.g. C-8721">
+                        </div>
+                        <div>
+                            <label class="text-xs text-zinc-400">External / Sage ID</label>
+                            <input type="text" id="external_id" 
+                                   class="w-full bg-zinc-800 text-white border border-zinc-700 rounded-lg px-4 py-2.5 text-sm focus:border-emerald-600"
+                                   placeholder="Sage 300 or other ERP ID">
+                        </div>
+
                         <div>
                             <label class="text-xs text-zinc-400">Trade / Specialty</label>
                             <input type="text" id="trade" 
@@ -374,7 +400,7 @@
             </form>
         </div>
 
-        <!-- STATIONARY FOOTER (Buttons stay fixed) -->
+        <!-- STATIONARY FOOTER -->
         <div class="flex justify-end gap-3 px-6 py-4 border-t border-zinc-700 bg-zinc-900 flex-shrink-0 sticky bottom-0">
             <button type="button" onclick="document.getElementById('companyModal').close()" 
                     class="px-6 py-2.5 rounded-lg border border-zinc-600 hover:bg-zinc-800 text-sm">Cancel</button>
@@ -403,6 +429,9 @@
             id: 1,
             company_name: "Titan Electric LLC",
             company_type: "Subcontractor",
+            vendor_number: "V-10045",
+            customer_number: "",
+            external_id: "SAGE-8721",
             trade: "Electrical",
             website: "https://titanelectric.com",
             primary_phone: "(813) 555-0192",
@@ -433,6 +462,9 @@
             id: 2,
             company_name: "Precision Concrete Solutions",
             company_type: "Subcontractor",
+            vendor_number: "V-10087",
+            customer_number: "C-3341",
+            external_id: "",
             trade: "Concrete",
             website: "",
             primary_phone: "(727) 555-3389",
@@ -637,17 +669,22 @@
         renderCompaniesTable(companies);
     }
 
-    // ==================== AUTO CREATE USER IN USER MANAGEMENT ====================
+    // ==================== RELIABLE USER CREATION IN USER MANAGEMENT ====================
     function createAuthorizedCasePMUser(contact, companyId) {
         let users = [];
         try {
-            users = JSON.parse(localStorage.getItem('casepm_users') || '[]');
+            const stored = localStorage.getItem('casepm_users');
+            users = stored ? JSON.parse(stored) : [];
         } catch (e) {
             users = [];
         }
 
+        // Check if user already exists
         const exists = users.find(u => u.email && u.email.toLowerCase() === contact.email.toLowerCase());
-        if (exists) return; // already exists
+        if (exists) {
+            console.log('%c[Case PM] User already exists in User Management:', 'color:#f59e0b', contact.email);
+            return;
+        }
 
         const newUser = {
             id: Date.now(),
@@ -663,6 +700,8 @@
         users.push(newUser);
         localStorage.setItem('casepm_users', JSON.stringify(users));
 
+        console.log('%c[Case PM] Created new user in User Management:', 'color:#10b981', newUser);
+
         showCenteredSuccess(
             "User Account Created",
             `User "${contact.name}" has been added to User Management with "No Access" role.\n\nGo to User Management to assign permissions and set a password.`
@@ -675,9 +714,14 @@
         document.getElementById('companyForm').reset();
         document.getElementById('companyId').value = '';
         document.getElementById('modalTitle').innerText = 'Add Company';
+
+        // Clear dynamic sections
         document.getElementById('contactsContainer').innerHTML = '';
         document.getElementById('coiContainer').innerHTML = '';
+
+        // Add one empty contact row by default
         addContactRow();
+
         document.getElementById('companyModal').showModal();
     }
 
@@ -688,8 +732,12 @@
         document.getElementById('companyId').value = company.id;
         document.getElementById('modalTitle').innerText = 'Edit Company';
 
+        // Populate all fields (including new designation fields)
         document.getElementById('company_name').value = company.company_name || '';
         document.getElementById('company_type').value = company.company_type || 'Subcontractor';
+        document.getElementById('vendor_number').value = company.vendor_number || '';
+        document.getElementById('customer_number').value = company.customer_number || '';
+        document.getElementById('external_id').value = company.external_id || '';
         document.getElementById('trade').value = company.trade || '';
         document.getElementById('website').value = company.website || '';
         document.getElementById('primary_phone').value = company.primary_phone || '';
@@ -711,6 +759,7 @@
         document.getElementById('wc_expiration').value = company.wc_expiration || '';
         document.getElementById('notes').value = company.notes || '';
 
+        // Populate contacts
         const contactsContainer = document.getElementById('contactsContainer');
         contactsContainer.innerHTML = '';
         if (company.contacts && company.contacts.length > 0) {
@@ -719,6 +768,7 @@
             addContactRow();
         }
 
+        // Populate COIs
         const coiContainer = document.getElementById('coiContainer');
         coiContainer.innerHTML = '';
         if (company.cois && company.cois.length > 0) {
@@ -762,6 +812,9 @@
             id: id ? parseInt(id) : Date.now(),
             company_name: document.getElementById('company_name').value.trim(),
             company_type: document.getElementById('company_type').value,
+            vendor_number: document.getElementById('vendor_number').value.trim(),
+            customer_number: document.getElementById('customer_number').value.trim(),
+            external_id: document.getElementById('external_id').value.trim(),
             trade: document.getElementById('trade').value.trim(),
             website: document.getElementById('website').value.trim(),
             primary_phone: document.getElementById('primary_phone').value.trim(),
@@ -786,7 +839,7 @@
             notes: document.getElementById('notes').value.trim()
         };
 
-        // Auto-create authorized Case PM users in User Management
+        // === RELIABLE: Create authorized users in User Management ===
         contacts.forEach(contact => {
             if (contact.authorized_user && contact.email) {
                 createAuthorizedCasePMUser(contact, newCompany.id);
@@ -870,6 +923,9 @@
             <div class="grid grid-cols-1 md:grid-cols-2 gap-x-8 gap-y-4 text-sm">
                 <div><span class="text-zinc-400">Company:</span> <span class="font-semibold">${company.company_name}</span></div>
                 <div><span class="text-zinc-400">Type:</span> ${company.company_type}</div>
+                <div><span class="text-zinc-400">Vendor #:</span> ${company.vendor_number || '—'}</div>
+                <div><span class="text-zinc-400">Customer #:</span> ${company.customer_number || '—'}</div>
+                <div><span class="text-zinc-400">External / Sage ID:</span> ${company.external_id || '—'}</div>
                 <div><span class="text-zinc-400">Trade:</span> ${company.trade || '—'}</div>
                 <div><span class="text-zinc-400">Status:</span> ${company.status}</div>
                 <div><span class="text-zinc-400">Phone:</span> ${company.primary_phone || '—'}</div>
@@ -903,7 +959,7 @@
         companies = companies.filter(c => c.id !== id);
         renderCompaniesTable(companies);
     }
-        // ==================== EXPORT / IMPORT (FULLY WORKING) ====================
+        // ==================== EXPORT / IMPORT ====================
 
     function exportCompanies(format = 'excel') {
         console.log('%c[Case PM] exportCompanies called with format:', format);
@@ -916,6 +972,9 @@
         const exportData = companies.map(c => ({
             "Company Name": c.company_name,
             "Type": c.company_type,
+            "Vendor Number": c.vendor_number || "",
+            "Customer Number": c.customer_number || "",
+            "External / Sage ID": c.external_id || "",
             "Trade": c.trade || "",
             "Primary Phone": c.primary_phone || "",
             "Primary Email": c.primary_email || "",
@@ -998,6 +1057,9 @@
                             id: Date.now() + Math.floor(Math.random() * 10000),
                             company_name: row["Company Name"] || row.company_name || "Unnamed Company",
                             company_type: row["Type"] || row.company_type || "Subcontractor",
+                            vendor_number: row["Vendor Number"] || row.vendor_number || "",
+                            customer_number: row["Customer Number"] || row.customer_number || "",
+                            external_id: row["External / Sage ID"] || row.external_id || "",
                             trade: row["Trade"] || row.trade || "",
                             primary_phone: row["Primary Phone"] || row.primary_phone || "",
                             primary_email: row["Primary Email"] || row.primary_email || "",
