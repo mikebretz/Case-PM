@@ -1,149 +1,121 @@
 {% extends "base.html" %}
 
 {% block content %}
-
-<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
-
-<style>
-    input, select, textarea {
-        background-color: #27251f !important;
-        color: #ffffff !important;
-        border-color: #3f3f46 !important;
-    }
-    input:focus, select:focus, textarea:focus {
-        background-color: #27251f !important;
-        border-color: #10b981 !important;
-    }
-    input:-webkit-autofill,
-    input:-webkit-autofill:hover,
-    input:-webkit-autofill:focus,
-    textarea:-webkit-autofill,
-    select:-webkit-autofill {
-        -webkit-box-shadow: 0 0 0px 1000px #27251f inset !important;
-        -webkit-text-fill-color: #ffffff !important;
-    }
-    .navbar, header, .top-bar, nav, .dashboard-header {
-        display: none !important;
-    }
-</style>
-
-<!-- Budget-style Header -->
-<div class="h-20 pt-2 border-b border-zinc-800 bg-zinc-900 flex items-center justify-between px-6 flex-shrink-0 mb-6">
-    <div class="flex items-center gap-4">
-        <div>
-            <div class="text-xs text-emerald-400 font-medium tracking-wider">CURRENT PROJECT FOCUS</div>
-            <div class="text-xl font-semibold">ALDI Lakeland</div>
-        </div>
-        <div class="h-8 w-px bg-zinc-700"></div>
-        <div>
-            <h1 class="text-2xl font-semibold tracking-tight">Companies / Vendors</h1>
-        </div>
-    </div>
-
-    <div class="flex items-center gap-3">
-        <button onclick="exportCompanies('excel')" class="flex items-center gap-2 px-4 py-2 bg-zinc-800 hover:bg-zinc-700 rounded-lg text-sm font-medium">
-            <i class="fa-solid fa-file-excel text-emerald-400"></i><span>Export Excel</span>
-        </button>
-        <button onclick="exportCompanies('csv')" class="flex items-center gap-2 px-4 py-2 bg-zinc-800 hover:bg-zinc-700 rounded-lg text-sm font-medium">
-            <i class="fa-solid fa-file-csv text-emerald-400"></i><span>Export CSV</span>
-        </button>
-        <button onclick="importCompanies('excel')" class="flex items-center gap-2 px-4 py-2 bg-zinc-800 hover:bg-zinc-700 rounded-lg text-sm font-medium">
-            <i class="fa-solid fa-upload"></i><span>Import Excel</span>
-        </button>
-        <button onclick="importCompanies('csv')" class="flex items-center gap-2 px-4 py-2 bg-zinc-800 hover:bg-zinc-700 rounded-lg text-sm font-medium">
-            <i class="fa-solid fa-upload"></i><span>Import CSV</span>
-        </button>
-        <button onclick="showAddCompanyModal()" class="flex items-center gap-2 px-5 py-2 bg-emerald-600 hover:bg-emerald-500 rounded-lg text-sm font-semibold">
-            <i class="fa-solid fa-plus"></i><span>Add Company</span>
-        </button>
-
-        <div class="flex items-center gap-3 pl-3 border-l border-zinc-700 cursor-pointer" onclick="showUserProfileModal()">
-            <div class="w-8 h-8 bg-zinc-700 rounded-full overflow-hidden">
-                <img src="https://i.pravatar.cc/32?img=68" class="w-full h-full object-cover">
-            </div>
-            <div class="text-sm">
-                <div class="font-medium">Michael Bretz</div>
-                <div class="text-[10px] text-zinc-500">Project Manager</div>
+<div class="p-6 max-w-[1600px] mx-auto">
+    <!-- Header matching Budget page style -->
+    <div class="flex items-center justify-between mb-6">
+        <div class="flex items-center gap-4">
+            <div>
+                <h1 class="text-3xl font-semibold tracking-tight">Companies / Vendors</h1>
+                <p class="text-zinc-400 mt-1">ALDI Lakeland • Vendor & Subcontractor Directory</p>
             </div>
         </div>
-    </div>
-</div>
 
-<!-- Summary Cards (Quick Search Tabs) -->
-<div class="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-7 gap-4 mb-6">
-    <div onclick="filterAll()" class="bg-zinc-900 border border-zinc-800 rounded-lg p-4 cursor-pointer hover:border-zinc-700 transition-colors">
-        <div class="text-xs text-zinc-400">TOTAL COMPANIES</div>
-        <div id="totalCompanies" class="text-3xl font-semibold mt-1">0</div>
-    </div>
-    <div onclick="filterByType('Subcontractor')" class="bg-zinc-900 border border-zinc-800 rounded-lg p-4 cursor-pointer hover:border-zinc-700 transition-colors">
-        <div class="text-xs text-zinc-400">SUBCONTRACTORS</div>
-        <div id="subcontractorCount" class="text-3xl font-semibold mt-1">0</div>
-    </div>
-    <div onclick="filterByType('Supplier')" class="bg-zinc-900 border border-zinc-800 rounded-lg p-4 cursor-pointer hover:border-zinc-700 transition-colors">
-        <div class="text-xs text-zinc-400">SUPPLIERS / VENDORS</div>
-        <div id="supplierCount" class="text-3xl font-semibold mt-1">0</div>
-    </div>
-    <div onclick="filterByType('Client')" class="bg-zinc-900 border border-zinc-800 rounded-lg p-4 cursor-pointer hover:border-zinc-700 transition-colors">
-        <div class="text-xs text-zinc-400">CLIENTS / OWNERS</div>
-        <div id="clientCount" class="text-3xl font-semibold mt-1">0</div>
-    </div>
-    <div onclick="filterExpiringInsurance()" class="bg-zinc-900 border border-zinc-800 rounded-lg p-4 cursor-pointer hover:border-zinc-700 transition-colors">
-        <div class="text-xs text-zinc-400">INSURANCE EXPIRING (60 DAYS)</div>
-        <div id="insuranceAlertCount" class="text-3xl font-semibold mt-1">0</div>
-    </div>
-    <div onclick="filterExpiredInsurance()" class="bg-zinc-900 border border-zinc-800 rounded-lg p-4 cursor-pointer hover:border-zinc-700 transition-colors">
-        <div class="text-xs text-zinc-400">EXPIRED INSURANCE</div>
-        <div id="expiredInsuranceCount" class="text-3xl font-semibold mt-1">0</div>
-    </div>
-    <div onclick="filterExpiredLicense()" class="bg-zinc-900 border border-zinc-800 rounded-lg p-4 cursor-pointer hover:border-zinc-700 transition-colors">
-        <div class="text-xs text-zinc-400">EXPIRED LICENSE</div>
-        <div id="expiredLicenseCount" class="text-3xl font-semibold mt-1">0</div>
-    </div>
-</div>
+        <div class="flex items-center gap-3">
+            <!-- Export -->
+            <div class="flex gap-2">
+                <button onclick="exportCompanies('excel')" class="flex items-center gap-2 px-4 py-2 bg-zinc-800 hover:bg-zinc-700 rounded-lg text-sm transition-colors">
+                    <i class="fa-solid fa-file-excel"></i>
+                    <span>Export Excel</span>
+                </button>
+                <button onclick="exportCompanies('csv')" class="flex items-center gap-2 px-4 py-2 bg-zinc-800 hover:bg-zinc-700 rounded-lg text-sm transition-colors">
+                    <i class="fa-solid fa-file-csv"></i>
+                    <span>Export CSV</span>
+                </button>
+            </div>
 
-<!-- Search + Filters -->
-<div class="flex flex-col md:flex-row gap-3 mb-4">
-    <div class="flex-1 relative">
-        <i class="fa-solid fa-search absolute left-4 top-3.5 text-zinc-400"></i>
-        <input type="text" id="searchInput" placeholder="Search companies..." onkeyup="filterCompanies()"
-               class="w-full bg-zinc-900 border border-zinc-700 rounded-lg pl-11 pr-4 py-2.5 text-sm focus:outline-none focus:border-emerald-600">
-    </div>
-    <select id="typeFilter" onchange="filterCompanies()" class="bg-zinc-900 border border-zinc-700 rounded-lg px-4 py-2.5 text-sm">
-        <option value="">All Types</option>
-        <option value="Subcontractor">Subcontractor</option>
-        <option value="Supplier">Supplier / Vendor</option>
-        <option value="Client">Client / Owner</option>
-    </select>
-    <select id="statusFilter" onchange="filterCompanies()" class="bg-zinc-900 border border-zinc-700 rounded-lg px-4 py-2.5 text-sm">
-        <option value="">All Status</option>
-        <option value="Active">Active</option>
-        <option value="Inactive">Inactive</option>
-        <option value="Blacklisted">Blacklisted</option>
-    </select>
-    <button onclick="clearCompanyFilters()" class="px-5 py-2.5 bg-zinc-800 hover:bg-zinc-700 rounded-lg text-sm flex items-center gap-2">
-        <i class="fa-solid fa-times"></i> <span>Clear</span>
-    </button>
-</div>
+            <!-- Import -->
+            <div class="flex gap-2">
+                <button onclick="importCompanies('excel')" class="flex items-center gap-2 px-4 py-2 bg-zinc-800 hover:bg-zinc-700 rounded-lg text-sm transition-colors">
+                    <i class="fa-solid fa-upload"></i>
+                    <span>Import Excel</span>
+                </button>
+                <button onclick="importCompanies('csv')" class="flex items-center gap-2 px-4 py-2 bg-zinc-800 hover:bg-zinc-700 rounded-lg text-sm transition-colors">
+                    <i class="fa-solid fa-upload"></i>
+                    <span>Import CSV</span>
+                </button>
+            </div>
 
-<!-- Companies Table -->
-<div class="bg-zinc-900 border border-zinc-800 rounded-xl overflow-hidden">
-    <table class="w-full">
-        <thead class="bg-zinc-950 text-sm">
-            <tr>
-                <th class="px-6 py-4 text-left font-medium text-zinc-400">Company Name</th>
-                <th class="px-6 py-4 text-left font-medium text-zinc-400">Type</th>
-                <th class="px-6 py-4 text-left font-medium text-zinc-400">Primary Contact</th>
-                <th class="px-6 py-4 text-left font-medium text-zinc-400">Phone</th>
-                <th class="px-6 py-4 text-left font-medium text-zinc-400">Address</th>
-                <th class="px-4 py-4 text-center font-medium text-zinc-400 w-20">License</th>
-                <th class="px-4 py-4 text-center font-medium text-zinc-400 w-20">GL</th>
-                <th class="px-4 py-4 text-center font-medium text-zinc-400 w-20">WC</th>
-                <th class="px-4 py-4 text-center font-medium text-zinc-400 w-20">COI</th>
-                <th class="px-4 py-4 text-right font-medium text-zinc-400 w-16">Actions</th>
-            </tr>
-        </thead>
-        <tbody id="companiesTableBody" class="divide-y divide-zinc-800 text-sm"></tbody>
-    </table>
+            <button onclick="showAddCompanyModal()" class="flex items-center gap-2 px-5 py-2 bg-emerald-600 hover:bg-emerald-700 rounded-lg text-sm font-medium transition-colors">
+                <i class="fa-solid fa-plus"></i>
+                <span>Add Company</span>
+            </button>
+        </div>
+    </div>
+
+    <!-- Summary Cards -->
+    <div class="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-7 gap-4 mb-6">
+        <div onclick="filterAll()" class="bg-zinc-900 border border-zinc-700 rounded-2xl p-4 cursor-pointer hover:border-emerald-600 transition-colors">
+            <div class="text-xs text-zinc-400">Total Companies</div>
+            <div id="totalCompanies" class="text-3xl font-semibold mt-1">0</div>
+        </div>
+        <div onclick="filterByType('Subcontractor')" class="bg-zinc-900 border border-zinc-700 rounded-2xl p-4 cursor-pointer hover:border-emerald-600 transition-colors">
+            <div class="text-xs text-zinc-400">Subcontractors</div>
+            <div id="subcontractorCount" class="text-3xl font-semibold mt-1">0</div>
+        </div>
+        <div onclick="filterByType('Supplier')" class="bg-zinc-900 border border-zinc-700 rounded-2xl p-4 cursor-pointer hover:border-emerald-600 transition-colors">
+            <div class="text-xs text-zinc-400">Suppliers / Vendors</div>
+            <div id="supplierCount" class="text-3xl font-semibold mt-1">0</div>
+        </div>
+        <div onclick="filterByType('Client')" class="bg-zinc-900 border border-zinc-700 rounded-2xl p-4 cursor-pointer hover:border-emerald-600 transition-colors">
+            <div class="text-xs text-zinc-400">Clients / Owners</div>
+            <div id="clientCount" class="text-3xl font-semibold mt-1">0</div>
+        </div>
+        <div onclick="filterExpiringInsurance()" class="bg-zinc-900 border border-zinc-700 rounded-2xl p-4 cursor-pointer hover:border-yellow-600 transition-colors">
+            <div class="text-xs text-zinc-400">Insurance Expiring (60 days)</div>
+            <div id="insuranceAlertCount" class="text-3xl font-semibold mt-1 text-yellow-400">0</div>
+        </div>
+        <div onclick="filterExpiredInsurance()" class="bg-zinc-900 border border-zinc-700 rounded-2xl p-4 cursor-pointer hover:border-red-600 transition-colors">
+            <div class="text-xs text-zinc-400">Expired Insurance</div>
+            <div id="expiredInsuranceCount" class="text-3xl font-semibold mt-1 text-red-400">0</div>
+        </div>
+        <div onclick="filterExpiredLicense()" class="bg-zinc-900 border border-zinc-700 rounded-2xl p-4 cursor-pointer hover:border-red-600 transition-colors">
+            <div class="text-xs text-zinc-400">Expired Licenses</div>
+            <div id="expiredLicenseCount" class="text-3xl font-semibold mt-1 text-red-400">0</div>
+        </div>
+    </div>
+
+    <!-- Search & Filters -->
+    <div class="flex flex-col md:flex-row gap-4 mb-4">
+        <input type="text" id="searchInput" placeholder="Search companies..." class="flex-1 bg-zinc-900 border border-zinc-700 rounded-lg px-4 py-2.5 text-sm focus:border-emerald-600">
+        
+        <select id="typeFilter" class="bg-zinc-900 border border-zinc-700 rounded-lg px-4 py-2.5 text-sm focus:border-emerald-600">
+            <option value="">All Types</option>
+            <option value="Subcontractor">Subcontractor</option>
+            <option value="Supplier">Supplier / Vendor</option>
+            <option value="Client">Client / Owner</option>
+        </select>
+        
+        <select id="statusFilter" class="bg-zinc-900 border border-zinc-700 rounded-lg px-4 py-2.5 text-sm focus:border-emerald-600">
+            <option value="">All Status</option>
+            <option value="Active">Active</option>
+            <option value="Inactive">Inactive</option>
+            <option value="Blacklisted">Blacklisted</option>
+        </select>
+        
+        <button onclick="clearCompanyFilters()" class="px-4 py-2 bg-zinc-800 hover:bg-zinc-700 rounded-lg text-sm">Clear Filters</button>
+    </div>
+
+    <!-- Table -->
+    <div class="bg-zinc-900 border border-zinc-700 rounded-2xl overflow-hidden">
+        <table class="w-full text-sm">
+            <thead class="bg-zinc-800 text-zinc-400">
+                <tr>
+                    <th class="px-6 py-4 text-left font-medium">Company Name</th>
+                    <th class="px-6 py-4 text-left font-medium">Type</th>
+                    <th class="px-6 py-4 text-left font-medium">Primary Contact</th>
+                    <th class="px-6 py-4 text-left font-medium">Phone</th>
+                    <th class="px-6 py-4 text-left font-medium">Address</th>
+                    <th class="px-4 py-4 text-center font-medium w-20">License</th>
+                    <th class="px-4 py-4 text-center font-medium w-20">GL</th>
+                    <th class="px-4 py-4 text-center font-medium w-20">WC</th>
+                    <th class="px-4 py-4 text-center font-medium w-20">COI</th>
+                    <th class="px-4 py-4 w-20"></th>
+                </tr>
+            </thead>
+            <tbody id="companiesTableBody" class="divide-y divide-zinc-800"></tbody>
+        </table>
+    </div>
 </div>
 <!-- ==================== VIEW COMPANY MODAL ==================== -->
 <dialog id="viewCompanyModal" class="bg-zinc-900 border border-zinc-700 text-white rounded-2xl w-full max-w-4xl p-0 shadow-2xl">
@@ -163,7 +135,7 @@
     </div>
 </dialog>
 
-<!-- ==================== ADD / EDIT COMPANY MODAL (Stationary Footer) ==================== -->
+<!-- ==================== ADD / EDIT COMPANY MODAL ==================== -->
 <dialog id="companyModal" class="bg-zinc-900 border border-zinc-700 text-white rounded-2xl w-full max-w-6xl p-0 shadow-2xl">
     <div class="flex flex-col max-h-[82vh]">
         
@@ -174,7 +146,7 @@
                     class="text-zinc-400 hover:text-white text-2xl leading-none">&times;</button>
         </div>
 
-        <!-- Scrolling Form Content -->
+        <!-- Scrollable Form Content -->
         <div class="flex-1 overflow-auto p-6">
             <form id="companyForm" onsubmit="saveCompany(event)">
                 <input type="hidden" id="companyId">
@@ -190,8 +162,7 @@
                         </div>
                         <div>
                             <label class="text-xs text-zinc-400">Company Type</label>
-                            <select id="company_type" 
-                                    class="w-full bg-zinc-800 text-white border border-zinc-700 rounded-lg px-4 py-2.5 text-sm focus:border-emerald-600">
+                            <select id="company_type" class="w-full bg-zinc-800 text-white border border-zinc-700 rounded-lg px-4 py-2.5 text-sm focus:border-emerald-600">
                                 <option value="Subcontractor">Subcontractor</option>
                                 <option value="Supplier">Supplier / Vendor</option>
                                 <option value="Client">Client / Owner</option>
@@ -201,52 +172,40 @@
                         <!-- Designation Fields -->
                         <div>
                             <label class="text-xs text-zinc-400">Vendor Number</label>
-                            <input type="text" id="vendor_number" 
-                                   class="w-full bg-zinc-800 text-white border border-zinc-700 rounded-lg px-4 py-2.5 text-sm focus:border-emerald-600"
-                                   placeholder="e.g. V-10045">
+                            <input type="text" id="vendor_number" class="w-full bg-zinc-800 text-white border border-zinc-700 rounded-lg px-4 py-2.5 text-sm focus:border-emerald-600" placeholder="e.g. V-10045">
                         </div>
                         <div>
                             <label class="text-xs text-zinc-400">Customer Number</label>
-                            <input type="text" id="customer_number" 
-                                   class="w-full bg-zinc-800 text-white border border-zinc-700 rounded-lg px-4 py-2.5 text-sm focus:border-emerald-600"
-                                   placeholder="e.g. C-8721">
+                            <input type="text" id="customer_number" class="w-full bg-zinc-800 text-white border border-zinc-700 rounded-lg px-4 py-2.5 text-sm focus:border-emerald-600" placeholder="e.g. C-3341">
                         </div>
                         <div>
                             <label class="text-xs text-zinc-400">External / Sage ID</label>
-                            <input type="text" id="external_id" 
-                                   class="w-full bg-zinc-800 text-white border border-zinc-700 rounded-lg px-4 py-2.5 text-sm focus:border-emerald-600"
-                                   placeholder="Sage 300 or other ERP ID">
+                            <input type="text" id="external_id" class="w-full bg-zinc-800 text-white border border-zinc-700 rounded-lg px-4 py-2.5 text-sm focus:border-emerald-600" placeholder="Sage 300 or other ERP ID">
                         </div>
 
                         <div>
                             <label class="text-xs text-zinc-400">Trade / Specialty</label>
-                            <input type="text" id="trade" 
-                                   class="w-full bg-zinc-800 text-white border border-zinc-700 rounded-lg px-4 py-2.5 text-sm focus:border-emerald-600">
+                            <input type="text" id="trade" class="w-full bg-zinc-800 text-white border border-zinc-700 rounded-lg px-4 py-2.5 text-sm focus:border-emerald-600">
                         </div>
                         <div>
                             <label class="text-xs text-zinc-400">Website</label>
-                            <input type="text" id="website" 
-                                   class="w-full bg-zinc-800 text-white border border-zinc-700 rounded-lg px-4 py-2.5 text-sm focus:border-emerald-600">
+                            <input type="text" id="website" class="w-full bg-zinc-800 text-white border border-zinc-700 rounded-lg px-4 py-2.5 text-sm focus:border-emerald-600">
                         </div>
                         <div>
                             <label class="text-xs text-zinc-400">Primary Phone</label>
-                            <input type="text" id="primary_phone" 
-                                   class="w-full bg-zinc-800 text-white border border-zinc-700 rounded-lg px-4 py-2.5 text-sm focus:border-emerald-600">
+                            <input type="text" id="primary_phone" class="w-full bg-zinc-800 text-white border border-zinc-700 rounded-lg px-4 py-2.5 text-sm focus:border-emerald-600">
                         </div>
                         <div>
                             <label class="text-xs text-zinc-400">Primary Email</label>
-                            <input type="email" id="primary_email" 
-                                   class="w-full bg-zinc-800 text-white border border-zinc-700 rounded-lg px-4 py-2.5 text-sm focus:border-emerald-600">
+                            <input type="email" id="primary_email" class="w-full bg-zinc-800 text-white border border-zinc-700 rounded-lg px-4 py-2.5 text-sm focus:border-emerald-600">
                         </div>
                         <div>
                             <label class="text-xs text-zinc-400">Tax ID / EIN</label>
-                            <input type="text" id="tax_id" 
-                                   class="w-full bg-zinc-800 text-white border border-zinc-700 rounded-lg px-4 py-2.5 text-sm focus:border-emerald-600">
+                            <input type="text" id="tax_id" class="w-full bg-zinc-800 text-white border border-zinc-700 rounded-lg px-4 py-2.5 text-sm focus:border-emerald-600">
                         </div>
                         <div>
                             <label class="text-xs text-zinc-400">W-9 on File</label>
-                            <select id="w9_status" 
-                                    class="w-full bg-zinc-800 text-white border border-zinc-700 rounded-lg px-4 py-2.5 text-sm focus:border-emerald-600">
+                            <select id="w9_status" class="w-full bg-zinc-800 text-white border border-zinc-700 rounded-lg px-4 py-2.5 text-sm focus:border-emerald-600">
                                 <option value="Yes">Yes</option>
                                 <option value="No">No</option>
                                 <option value="Requested">Requested</option>
@@ -254,8 +213,7 @@
                         </div>
                         <div>
                             <label class="text-xs text-zinc-400">Status</label>
-                            <select id="status" 
-                                    class="w-full bg-zinc-800 text-white border border-zinc-700 rounded-lg px-4 py-2.5 text-sm focus:border-emerald-600">
+                            <select id="status" class="w-full bg-zinc-800 text-white border border-zinc-700 rounded-lg px-4 py-2.5 text-sm focus:border-emerald-600">
                                 <option value="Active">Active</option>
                                 <option value="Inactive">Inactive</option>
                                 <option value="Blacklisted">Blacklisted</option>
@@ -270,13 +228,11 @@
                     <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
                         <div>
                             <label class="text-xs text-zinc-400">Billing Address</label>
-                            <textarea id="billing_address" rows="3" 
-                                      class="w-full bg-zinc-800 text-white border border-zinc-700 rounded-lg px-4 py-2.5 text-sm focus:border-emerald-600"></textarea>
+                            <textarea id="billing_address" rows="3" class="w-full bg-zinc-800 text-white border border-zinc-700 rounded-lg px-4 py-2.5 text-sm focus:border-emerald-600"></textarea>
                         </div>
                         <div>
                             <label class="text-xs text-zinc-400">Shipping Address</label>
-                            <textarea id="shipping_address" rows="3" 
-                                      class="w-full bg-zinc-800 text-white border border-zinc-700 rounded-lg px-4 py-2.5 text-sm focus:border-emerald-600"></textarea>
+                            <textarea id="shipping_address" rows="3" class="w-full bg-zinc-800 text-white border border-zinc-700 rounded-lg px-4 py-2.5 text-sm focus:border-emerald-600"></textarea>
                         </div>
                     </div>
                 </div>
@@ -285,8 +241,7 @@
                 <div class="mb-6">
                     <div class="flex items-center justify-between mb-3">
                         <h3 class="font-semibold text-emerald-400">Contacts</h3>
-                        <button type="button" onclick="addContactRow()" 
-                                class="text-xs px-3 py-1.5 bg-zinc-800 hover:bg-zinc-700 rounded-lg flex items-center gap-1">
+                        <button type="button" onclick="addContactRow()" class="text-xs px-3 py-1.5 bg-zinc-800 hover:bg-zinc-700 rounded-lg flex items-center gap-1">
                             <i class="fa-solid fa-plus"></i> Add Contact
                         </button>
                     </div>
@@ -299,23 +254,19 @@
                     <div class="grid grid-cols-1 md:grid-cols-4 gap-4">
                         <div>
                             <label class="text-xs text-zinc-400">License Number</label>
-                            <input type="text" id="license_number" 
-                                   class="w-full bg-zinc-800 text-white border border-zinc-700 rounded-lg px-4 py-2.5 text-sm focus:border-emerald-600">
+                            <input type="text" id="license_number" class="w-full bg-zinc-800 text-white border border-zinc-700 rounded-lg px-4 py-2.5 text-sm focus:border-emerald-600">
                         </div>
                         <div>
                             <label class="text-xs text-zinc-400">State</label>
-                            <input type="text" id="license_state" 
-                                   class="w-full bg-zinc-800 text-white border border-zinc-700 rounded-lg px-4 py-2.5 text-sm focus:border-emerald-600">
+                            <input type="text" id="license_state" class="w-full bg-zinc-800 text-white border border-zinc-700 rounded-lg px-4 py-2.5 text-sm focus:border-emerald-600">
                         </div>
                         <div>
                             <label class="text-xs text-zinc-400">Expiration Date</label>
-                            <input type="date" id="license_expiration" 
-                                   class="w-full bg-zinc-800 text-white border border-zinc-700 rounded-lg px-4 py-2.5 text-sm focus:border-emerald-600">
+                            <input type="date" id="license_expiration" class="w-full bg-zinc-800 text-white border border-zinc-700 rounded-lg px-4 py-2.5 text-sm focus:border-emerald-600">
                         </div>
                         <div>
                             <label class="text-xs text-zinc-400">Notes</label>
-                            <input type="text" id="license_notes" 
-                                   class="w-full bg-zinc-800 text-white border border-zinc-700 rounded-lg px-4 py-2.5 text-sm focus:border-emerald-600">
+                            <input type="text" id="license_notes" class="w-full bg-zinc-800 text-white border border-zinc-700 rounded-lg px-4 py-2.5 text-sm focus:border-emerald-600">
                         </div>
                     </div>
                 </div>
@@ -323,46 +274,44 @@
                 <!-- Insurance + COIs -->
                 <div class="mb-6">
                     <h3 class="font-semibold text-emerald-400 mb-3">Insurance</h3>
+                    
+                    <!-- GL -->
                     <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
                         <div>
                             <label class="text-xs text-zinc-400">GL Carrier</label>
-                            <input type="text" id="gl_carrier" 
-                                   class="w-full bg-zinc-800 text-white border border-zinc-700 rounded-lg px-4 py-2.5 text-sm focus:border-emerald-600">
+                            <input type="text" id="gl_carrier" class="w-full bg-zinc-800 text-white border border-zinc-700 rounded-lg px-4 py-2.5 text-sm focus:border-emerald-600">
                         </div>
                         <div>
                             <label class="text-xs text-zinc-400">GL Policy #</label>
-                            <input type="text" id="gl_policy" 
-                                   class="w-full bg-zinc-800 text-white border border-zinc-700 rounded-lg px-4 py-2.5 text-sm focus:border-emerald-600">
+                            <input type="text" id="gl_policy" class="w-full bg-zinc-800 text-white border border-zinc-700 rounded-lg px-4 py-2.5 text-sm focus:border-emerald-600">
                         </div>
                         <div>
                             <label class="text-xs text-zinc-400">GL Expiration</label>
-                            <input type="date" id="gl_expiration" 
-                                   class="w-full bg-zinc-800 text-white border border-zinc-700 rounded-lg px-4 py-2.5 text-sm focus:border-emerald-600">
-                        </div>
-                    </div>
-                    <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
-                        <div>
-                            <label class="text-xs text-zinc-400">WC Carrier</label>
-                            <input type="text" id="wc_carrier" 
-                                   class="w-full bg-zinc-800 text-white border border-zinc-700 rounded-lg px-4 py-2.5 text-sm focus:border-emerald-600">
-                        </div>
-                        <div>
-                            <label class="text-xs text-zinc-400">WC Policy #</label>
-                            <input type="text" id="wc_policy" 
-                                   class="w-full bg-zinc-800 text-white border border-zinc-700 rounded-lg px-4 py-2.5 text-sm focus:border-emerald-600">
-                        </div>
-                        <div>
-                            <label class="text-xs text-zinc-400">WC Expiration</label>
-                            <input type="date" id="wc_expiration" 
-                                   class="w-full bg-zinc-800 text-white border border-zinc-700 rounded-lg px-4 py-2.5 text-sm focus:border-emerald-600">
+                            <input type="date" id="gl_expiration" class="w-full bg-zinc-800 text-white border border-zinc-700 rounded-lg px-4 py-2.5 text-sm focus:border-emerald-600">
                         </div>
                     </div>
 
+                    <!-- WC -->
+                    <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
+                        <div>
+                            <label class="text-xs text-zinc-400">WC Carrier</label>
+                            <input type="text" id="wc_carrier" class="w-full bg-zinc-800 text-white border border-zinc-700 rounded-lg px-4 py-2.5 text-sm focus:border-emerald-600">
+                        </div>
+                        <div>
+                            <label class="text-xs text-zinc-400">WC Policy #</label>
+                            <input type="text" id="wc_policy" class="w-full bg-zinc-800 text-white border border-zinc-700 rounded-lg px-4 py-2.5 text-sm focus:border-emerald-600">
+                        </div>
+                        <div>
+                            <label class="text-xs text-zinc-400">WC Expiration</label>
+                            <input type="date" id="wc_expiration" class="w-full bg-zinc-800 text-white border border-zinc-700 rounded-lg px-4 py-2.5 text-sm focus:border-emerald-600">
+                        </div>
+                    </div>
+
+                    <!-- COIs -->
                     <div class="mt-4">
                         <div class="flex items-center justify-between mb-2">
                             <label class="text-xs text-zinc-400">Certificates of Insurance (COIs)</label>
-                            <button type="button" onclick="addCOIRow()" 
-                                    class="text-xs px-3 py-1 bg-zinc-800 hover:bg-zinc-700 rounded-lg flex items-center gap-1">
+                            <button type="button" onclick="addCOIRow()" class="text-xs px-3 py-1 bg-zinc-800 hover:bg-zinc-700 rounded-lg flex items-center gap-1">
                                 <i class="fa-solid fa-plus"></i> Add Another COI
                             </button>
                         </div>
@@ -373,8 +322,7 @@
                 <!-- Notes -->
                 <div class="mb-6">
                     <label class="text-xs text-zinc-400">Notes</label>
-                    <textarea id="notes" rows="3" 
-                              class="w-full bg-zinc-800 text-white border border-zinc-700 rounded-lg px-4 py-2.5 text-sm focus:border-emerald-600"></textarea>
+                    <textarea id="notes" rows="3" class="w-full bg-zinc-800 text-white border border-zinc-700 rounded-lg px-4 py-2.5 text-sm focus:border-emerald-600"></textarea>
                 </div>
             </form>
         </div>
@@ -421,8 +369,8 @@
             billing_address: "4520 N 56th St, Tampa, FL 33610",
             shipping_address: "Same as billing",
             contacts: [
-                { name: "Mike Torres", title: "Project Manager", phone: "(813) 555-0192", email: "mtorres@titanelectric.com", mobile: "(813) 555-8841", is_primary: true, authorized_user: true },
-                { name: "Sarah Kline", title: "Estimator", phone: "(813) 555-0193", email: "skline@titanelectric.com", mobile: "", is_primary: false, authorized_user: false }
+                { name: "Mike Torres", title: "Project Manager", phone: "(813) 555-0192", email: "mtorres@titanelectric.com", authorized_user: true },
+                { name: "Sarah Kline", title: "Estimator", phone: "(813) 555-0193", email: "skline@titanelectric.com", authorized_user: false }
             ],
             license_number: "EC-13004567",
             license_state: "FL",
@@ -454,7 +402,7 @@
             billing_address: "1987 4th St N, St. Petersburg, FL 33704",
             shipping_address: "",
             contacts: [
-                { name: "David Ramirez", title: "Owner", phone: "(727) 555-3389", email: "dramirez@precisionconcretefl.com", mobile: "(727) 555-9912", is_primary: true, authorized_user: false }
+                { name: "David Ramirez", title: "Owner", phone: "(727) 555-3389", email: "dramirez@precisionconcretefl.com", authorized_user: false }
             ],
             license_number: "CBC-1256789",
             license_state: "FL",
@@ -484,7 +432,7 @@
         }
 
         data.forEach(company => {
-            const primary = company.contacts?.find(c => c.is_primary) || company.contacts?.[0];
+            const primary = company.contacts?.find(c => c.authorized_user) || company.contacts?.[0];
 
             let licenseStatus = 'N/A';
             if (company.license_expiration) {
@@ -554,16 +502,20 @@
     // ==================== UPDATE SUMMARY CARDS ====================
     function updateSummaryCards() {
         const total = companies.length;
-        document.getElementById('totalCompanies').textContent = total;
+        const totalEl = document.getElementById('totalCompanies');
+        if (totalEl) totalEl.textContent = total;
 
         const subs = companies.filter(c => c.company_type === 'Subcontractor').length;
-        document.getElementById('subcontractorCount').textContent = subs;
+        const subEl = document.getElementById('subcontractorCount');
+        if (subEl) subEl.textContent = subs;
 
         const suppliers = companies.filter(c => c.company_type === 'Supplier').length;
-        document.getElementById('supplierCount').textContent = suppliers;
+        const supEl = document.getElementById('supplierCount');
+        if (supEl) supEl.textContent = suppliers;
 
         const clients = companies.filter(c => c.company_type === 'Client').length;
-        document.getElementById('clientCount').textContent = clients;
+        const cliEl = document.getElementById('clientCount');
+        if (cliEl) cliEl.textContent = clients;
 
         const now = new Date();
         const sixtyDays = new Date(now.getTime() + (60 * 24 * 60 * 60 * 1000));
@@ -582,9 +534,14 @@
             }
         });
 
-        document.getElementById('insuranceAlertCount').textContent = expiring60;
-        document.getElementById('expiredInsuranceCount').textContent = expiredIns;
-        document.getElementById('expiredLicenseCount').textContent = expiredLic;
+        const insEl = document.getElementById('insuranceAlertCount');
+        if (insEl) insEl.textContent = expiring60;
+
+        const expInsEl = document.getElementById('expiredInsuranceCount');
+        if (expInsEl) expInsEl.textContent = expiredIns;
+
+        const expLicEl = document.getElementById('expiredLicenseCount');
+        if (expLicEl) expLicEl.textContent = expiredLic;
     }
 
     // ==================== FILTER FUNCTIONS ====================
@@ -648,7 +605,7 @@
         renderCompaniesTable(companies);
     }
 
-    // ==================== RELIABLE USER CREATION IN USER MANAGEMENT ====================
+    // ==================== RELIABLE USER CREATION ====================
     function createAuthorizedCasePMUser(contact, companyId) {
         console.log('%c[Case PM] Attempting to create authorized user:', 'color:#10b981', contact);
 
@@ -687,7 +644,17 @@
             `User "${contact.name}" has been added to User Management with "No Access" role.\n\nGo to User Management to assign permissions and set a password.`
         );
     }
-        // ==================== MODAL & CRUD FUNCTIONS ====================
+        // ==================== HELPER: CENTERED SUCCESS MODAL ====================
+    function showCenteredSuccess(title, message) {
+        const modal = document.getElementById('successModal');
+        if (!modal) return;
+
+        document.getElementById('successTitle').innerText = title;
+        document.getElementById('successMessage').innerHTML = message.replace(/\n/g, '<br>');
+        modal.showModal();
+    }
+
+    // ==================== MODAL & CRUD FUNCTIONS ====================
 
     function showAddCompanyModal() {
         console.log('%c[Case PM] showAddCompanyModal called', 'color:#10b981');
@@ -948,16 +915,17 @@
     function initializeCompaniesPage() {
         console.log('%c[Case PM] Companies page initialized successfully', 'color:#10b981');
 
-        // Render initial data
+        // Render initial table and summary cards
         renderCompaniesTable(companies);
         updateSummaryCards();
 
-        // Attach search & filter listeners (defensive)
+        // Attach search input listener
         const searchInput = document.getElementById('searchInput');
         if (searchInput) {
             searchInput.addEventListener('input', filterCompanies);
         }
 
+        // Attach filter dropdown listeners
         const typeFilter = document.getElementById('typeFilter');
         if (typeFilter) {
             typeFilter.addEventListener('change', filterCompanies);
@@ -968,7 +936,7 @@
             statusFilter.addEventListener('change', filterCompanies);
         }
 
-        // Optional: Keyboard escape for modals
+        // Optional: Close modals with Escape key
         document.addEventListener('keydown', function(e) {
             if (e.key === "Escape") {
                 const openModals = document.querySelectorAll('dialog[open]');
@@ -978,14 +946,10 @@
             }
         });
 
-        console.log('%c[Case PM v56.0] Companies / Vendors module ready.', 'color:#10b981');
+        console.log('%c[Case PM v56.0] Companies / Vendors module fully loaded.', 'color:#10b981');
     }
 
-    // Boot the page
-    window.onload = initializeCompaniesPage;
-</script>
-{% endblock %}
-    // Boot the page
+    // ==================== BOOT THE PAGE ====================
     window.onload = initializeCompaniesPage;
 </script>
 
