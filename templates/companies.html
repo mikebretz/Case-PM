@@ -113,3 +113,187 @@
         </button>
     </div>
 </dialog>
+<!-- ==================== ADD / EDIT COMPANY MODAL ==================== -->
+<dialog id="companyModal" class="bg-zinc-900 border border-zinc-700 rounded-3xl w-full max-w-6xl p-0 shadow-2xl">
+    <div class="flex items-center justify-between px-6 py-4 border-b border-zinc-700">
+        <h2 id="modalTitle" class="text-xl font-semibold">Add Company</h2>
+        <button onclick="document.getElementById('companyModal').close()" 
+                class="text-zinc-400 hover:text-white text-2xl leading-none">&times;</button>
+    </div>
+
+    <form id="companyForm" onsubmit="saveCompany(event)" class="p-6 max-h-[75vh] overflow-auto">
+        <input type="hidden" id="companyId">
+
+        <!-- Company Profile -->
+        <div class="mb-6">
+            <h3 class="font-semibold text-emerald-400 mb-3">Company Profile</h3>
+            <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+                <div class="md:col-span-2">
+                    <label class="text-xs text-zinc-400">Company Name *</label>
+                    <input type="text" id="company_name" required class="w-full bg-zinc-800 border border-zinc-700 rounded-xl px-4 py-2.5 text-sm">
+                </div>
+                <div>
+                    <label class="text-xs text-zinc-400">Company Type</label>
+                    <select id="company_type" class="w-full bg-zinc-800 border border-zinc-700 rounded-xl px-4 py-2.5 text-sm">
+                        <option value="Subcontractor">Subcontractor</option>
+                        <option value="Supplier">Supplier / Vendor</option>
+                        <option value="Client">Client / Owner</option>
+                    </select>
+                </div>
+
+                <div>
+                    <label class="text-xs text-zinc-400">Trade / Specialty</label>
+                    <input type="text" id="trade" class="w-full bg-zinc-800 border border-zinc-700 rounded-xl px-4 py-2.5 text-sm">
+                </div>
+                <div>
+                    <label class="text-xs text-zinc-400">Website</label>
+                    <input type="text" id="website" class="w-full bg-zinc-800 border border-zinc-700 rounded-xl px-4 py-2.5 text-sm">
+                </div>
+                <div>
+                    <label class="text-xs text-zinc-400">Primary Phone</label>
+                    <input type="text" id="primary_phone" class="w-full bg-zinc-800 border border-zinc-700 rounded-xl px-4 py-2.5 text-sm">
+                </div>
+
+                <div>
+                    <label class="text-xs text-zinc-400">Primary Email</label>
+                    <input type="email" id="primary_email" class="w-full bg-zinc-800 border border-zinc-700 rounded-xl px-4 py-2.5 text-sm">
+                </div>
+                <div>
+                    <label class="text-xs text-zinc-400">Tax ID / EIN</label>
+                    <input type="text" id="tax_id" class="w-full bg-zinc-800 border border-zinc-700 rounded-xl px-4 py-2.5 text-sm">
+                </div>
+                <div>
+                    <label class="text-xs text-zinc-400">W-9 on File</label>
+                    <select id="w9_status" class="w-full bg-zinc-800 border border-zinc-700 rounded-xl px-4 py-2.5 text-sm">
+                        <option value="Yes">Yes</option>
+                        <option value="No">No</option>
+                        <option value="Requested">Requested</option>
+                    </select>
+                </div>
+                <div>
+                    <label class="text-xs text-zinc-400">Status</label>
+                    <select id="status" class="w-full bg-zinc-800 border border-zinc-700 rounded-xl px-4 py-2.5 text-sm">
+                        <option value="Active">Active</option>
+                        <option value="Inactive">Inactive</option>
+                        <option value="Blacklisted">Blacklisted</option>
+                    </select>
+                </div>
+            </div>
+        </div>
+
+        <!-- Addresses -->
+        <div class="mb-6">
+            <h3 class="font-semibold text-emerald-400 mb-3">Addresses</h3>
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div>
+                    <label class="text-xs text-zinc-400">Billing Address</label>
+                    <textarea id="billing_address" rows="3" class="w-full bg-zinc-800 border border-zinc-700 rounded-xl px-4 py-2.5 text-sm"></textarea>
+                </div>
+                <div>
+                    <label class="text-xs text-zinc-400">Shipping Address</label>
+                    <textarea id="shipping_address" rows="3" class="w-full bg-zinc-800 border border-zinc-700 rounded-xl px-4 py-2.5 text-sm"></textarea>
+                </div>
+            </div>
+        </div>
+
+        <!-- Contacts -->
+        <div class="mb-6">
+            <div class="flex items-center justify-between mb-3">
+                <h3 class="font-semibold text-emerald-400">Contacts</h3>
+                <button type="button" onclick="addContactRow()" 
+                        class="text-xs px-3 py-1.5 bg-zinc-800 hover:bg-zinc-700 rounded-lg flex items-center gap-1">
+                    <i class="fa-solid fa-plus"></i> Add Contact
+                </button>
+            </div>
+            <div id="contactsContainer" class="space-y-3"></div>
+        </div>
+
+        <!-- Licenses -->
+        <div class="mb-6">
+            <h3 class="font-semibold text-emerald-400 mb-3">Licenses</h3>
+            <div class="grid grid-cols-1 md:grid-cols-4 gap-4">
+                <div>
+                    <label class="text-xs text-zinc-400">License Number</label>
+                    <input type="text" id="license_number" class="w-full bg-zinc-800 border border-zinc-700 rounded-xl px-4 py-2.5 text-sm">
+                </div>
+                <div>
+                    <label class="text-xs text-zinc-400">State</label>
+                    <input type="text" id="license_state" class="w-full bg-zinc-800 border border-zinc-700 rounded-xl px-4 py-2.5 text-sm">
+                </div>
+                <div>
+                    <label class="text-xs text-zinc-400">Expiration Date</label>
+                    <input type="date" id="license_expiration" class="w-full bg-zinc-800 border border-zinc-700 rounded-xl px-4 py-2.5 text-sm">
+                </div>
+                <div>
+                    <label class="text-xs text-zinc-400">Notes</label>
+                    <input type="text" id="license_notes" class="w-full bg-zinc-800 border border-zinc-700 rounded-xl px-4 py-2.5 text-sm">
+                </div>
+            </div>
+        </div>
+
+        <!-- Insurance + COIs -->
+        <div class="mb-6">
+            <h3 class="font-semibold text-emerald-400 mb-3">Insurance</h3>
+            
+            <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
+                <div>
+                    <label class="text-xs text-zinc-400">GL Carrier</label>
+                    <input type="text" id="gl_carrier" class="w-full bg-zinc-800 border border-zinc-700 rounded-xl px-4 py-2.5 text-sm">
+                </div>
+                <div>
+                    <label class="text-xs text-zinc-400">GL Policy #</label>
+                    <input type="text" id="gl_policy" class="w-full bg-zinc-800 border border-zinc-700 rounded-xl px-4 py-2.5 text-sm">
+                </div>
+                <div>
+                    <label class="text-xs text-zinc-400">GL Expiration</label>
+                    <input type="date" id="gl_expiration" class="w-full bg-zinc-800 border border-zinc-700 rounded-xl px-4 py-2.5 text-sm">
+                </div>
+            </div>
+
+            <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
+                <div>
+                    <label class="text-xs text-zinc-400">WC Carrier</label>
+                    <input type="text" id="wc_carrier" class="w-full bg-zinc-800 border border-zinc-700 rounded-xl px-4 py-2.5 text-sm">
+                </div>
+                <div>
+                    <label class="text-xs text-zinc-400">WC Policy #</label>
+                    <input type="text" id="wc_policy" class="w-full bg-zinc-800 border border-zinc-700 rounded-xl px-4 py-2.5 text-sm">
+                </div>
+                <div>
+                    <label class="text-xs text-zinc-400">WC Expiration</label>
+                    <input type="date" id="wc_expiration" class="w-full bg-zinc-800 border border-zinc-700 rounded-xl px-4 py-2.5 text-sm">
+                </div>
+            </div>
+
+            <!-- Multiple COIs -->
+            <div class="mt-4">
+                <div class="flex items-center justify-between mb-2">
+                    <label class="text-xs text-zinc-400">Certificates of Insurance (COIs)</label>
+                    <button type="button" onclick="addCOIRow()" 
+                            class="text-xs px-3 py-1 bg-zinc-800 hover:bg-zinc-700 rounded-lg flex items-center gap-1">
+                        <i class="fa-solid fa-plus"></i> Add Another COI
+                    </button>
+                </div>
+                <div id="coiContainer" class="space-y-3"></div>
+            </div>
+        </div>
+
+        <!-- Notes -->
+        <div class="mb-6">
+            <label class="text-xs text-zinc-400">Notes</label>
+            <textarea id="notes" rows="3" class="w-full bg-zinc-800 border border-zinc-700 rounded-xl px-4 py-2.5 text-sm"></textarea>
+        </div>
+
+        <!-- Buttons -->
+        <div class="flex justify-end gap-3 pt-4 border-t border-zinc-700">
+            <button type="button" onclick="document.getElementById('companyModal').close()" 
+                    class="px-6 py-2.5 rounded-2xl border border-zinc-600 hover:bg-zinc-800 text-sm">
+                Cancel
+            </button>
+            <button type="submit" 
+                    class="px-8 py-2.5 bg-emerald-600 hover:bg-emerald-700 rounded-2xl text-sm font-medium">
+                Save Company
+            </button>
+        </div>
+    </form>
+</dialog>
