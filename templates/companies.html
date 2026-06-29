@@ -204,7 +204,7 @@
                             <input type="email" id="primary_email" class="w-full bg-zinc-800 text-white border border-zinc-700 rounded px-4 py-2.5 text-sm focus:border-emerald-600">
                         </div>
 
-                        <!-- COMPANY LOGO - SQUARE -->
+                        <!-- COMPANY LOGO (square) -->
                         <div class="flex flex-col justify-end">
                             <label class="text-xs text-zinc-400 block mb-1">Company Logo</label>
                             <div id="logo_drop_zone"
@@ -373,7 +373,7 @@
 </dialog>
 
 <script>
-// ==================== FULL JAVASCRIPT ====================
+// ==================== FULL JAVASCRIPT (GitHub base + only your requested fixes) ====================
 
 let companies = [];
 let originalCompanyData = null;
@@ -501,7 +501,6 @@ function updateSummaryCards() {
     document.getElementById('expiredLicenseCount').innerText = expiredLic;
 }
 
-// ==================== QUICK SEARCH TABS CLEAR FILTERS ====================
 function filterAll() {
     document.getElementById('searchInput').value = '';
     document.getElementById('typeFilter').value = '';
@@ -514,7 +513,6 @@ function filterByType(type) {
     document.getElementById('statusFilter').value = '';
     renderCompaniesTable(companies.filter(c => c.company_type === type));
 }
-
 function filterExpiringInsurance() {
     document.getElementById('searchInput').value = '';
     document.getElementById('typeFilter').value = '';
@@ -532,7 +530,6 @@ function filterExpiringInsurance() {
     });
     renderCompaniesTable(filtered);
 }
-
 function filterExpiredInsurance() {
     document.getElementById('searchInput').value = '';
     document.getElementById('typeFilter').value = '';
@@ -546,7 +543,6 @@ function filterExpiredInsurance() {
     });
     renderCompaniesTable(filtered);
 }
-
 function filterExpiredLicense() {
     document.getElementById('searchInput').value = '';
     document.getElementById('typeFilter').value = '';
@@ -555,7 +551,6 @@ function filterExpiredLicense() {
     const filtered = companies.filter(c => c.license_expiration && new Date(c.license_expiration) < now);
     renderCompaniesTable(filtered);
 }
-
 function filterCompanies() {
     const search = document.getElementById('searchInput').value.toLowerCase().trim();
     const type = document.getElementById('typeFilter').value;
@@ -570,7 +565,6 @@ function filterCompanies() {
     });
     renderCompaniesTable(filtered);
 }
-
 function clearCompanyFilters() {
     document.getElementById('searchInput').value = '';
     document.getElementById('typeFilter').value = '';
@@ -1017,6 +1011,8 @@ function setupLogoDropZone() {
         if (fileInput.files.length > 0) {
             previewLogo(fileInput.files[0]);
         }
+        // Reset value so selecting the same file again works and cancel doesn't leave bad state
+        fileInput.value = '';
     };
 }
 
@@ -1032,7 +1028,6 @@ function previewLogo(file) {
     reader.readAsDataURL(file);
 }
 
-// ==================== FULL COMPANY DETAILS VIEW ====================
 function showViewCompanyModal(id) {
     const company = companies.find(c => c.id === id);
     if (!company) return;
@@ -1042,13 +1037,11 @@ function showViewCompanyModal(id) {
 
     let html = `<div class="space-y-8">`;
 
-    // Header
     html += `<div>
         <h3 class="text-2xl font-semibold">${company.company_name}</h3>
         <p class="text-zinc-400">${company.company_type || ''} ${company.trade ? '• ' + company.trade : ''}</p>
     </div>`;
 
-    // Profile
     html += `<div class="grid grid-cols-1 md:grid-cols-2 gap-x-8 gap-y-4 text-sm">
         <div><span class="text-zinc-400">External / Sage ID:</span> <span class="font-mono">${company.external_id || '—'}</span></div>
         <div><span class="text-zinc-400">Tax ID / EIN:</span> ${company.tax_id || '—'}</div>
@@ -1057,7 +1050,6 @@ function showViewCompanyModal(id) {
         <div><span class="text-zinc-400">Status:</span> <span class="px-2 py-0.5 rounded text-xs ${company.status === 'Active' ? 'bg-emerald-900/60 text-emerald-400' : 'bg-zinc-700'}">${company.status || 'Active'}</span></div>
     </div>`;
 
-    // Addresses
     if (company.billing_address || company.shipping_address) {
         html += `<div>
             <h4 class="font-semibold text-emerald-400 mb-2">Addresses</h4>
@@ -1068,7 +1060,6 @@ function showViewCompanyModal(id) {
         </div>`;
     }
 
-    // Contacts
     if (company.contacts && company.contacts.length > 0) {
         html += `<div>
             <h4 class="font-semibold text-emerald-400 mb-2">Contacts</h4>
@@ -1085,7 +1076,6 @@ function showViewCompanyModal(id) {
         html += `</div></div>`;
     }
 
-    // License
     if (company.license_number || company.license_expiration) {
         html += `<div>
             <h4 class="font-semibold text-emerald-400 mb-2">License</h4>
@@ -1097,7 +1087,6 @@ function showViewCompanyModal(id) {
         </div>`;
     }
 
-    // Insurance
     if (company.gl_carrier || company.wc_carrier || (company.cois && company.cois.length > 0)) {
         html += `<div>
             <h4 class="font-semibold text-emerald-400 mb-2">Insurance</h4>
@@ -1124,7 +1113,6 @@ function showViewCompanyModal(id) {
         html += `</div>`;
     }
 
-    // Notes
     if (company.notes) {
         html += `<div>
             <h4 class="font-semibold text-emerald-400 mb-2">Notes</h4>
