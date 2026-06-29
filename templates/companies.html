@@ -298,7 +298,6 @@
     </form>
 </dialog>
 <script>
-    // ==================== DATA ====================
     let companies = [
         {
             id: 1,
@@ -327,9 +326,7 @@
             wc_carrier: "Liberty Mutual",
             wc_policy: "WC-449201",
             wc_expiration: "2026-11-15",
-            cois: [
-                { id: 1, name: "General Liability 2026", expiration: "2026-12-31" }
-            ],
+            cois: [{ id: 1, name: "General Liability 2026", expiration: "2026-12-31" }],
             notes: "Preferred electrical subcontractor for ALDI projects."
         },
         {
@@ -363,7 +360,6 @@
         }
     ];
 
-    // ==================== RENDER TABLE ====================
     function renderCompaniesTable(filteredCompanies = null) {
         const tbody = document.getElementById('companiesTableBody');
         if (!tbody) return;
@@ -378,16 +374,10 @@
 
         data.forEach(company => {
             const primaryContact = company.contacts?.find(c => c.is_primary) || company.contacts?.[0];
-            
-            let licenseStatus = 'N/A';
-            if (company.license_expiration) {
-                licenseStatus = new Date(company.license_expiration) < new Date() ? 'Expired' : 'Current';
-            }
-
+            let licenseStatus = company.license_expiration ? (new Date(company.license_expiration) < new Date() ? 'Expired' : 'Current') : 'N/A';
             let coiStatus = 'N/A';
             if (company.cois?.length > 0) {
-                const hasExpired = company.cois.some(coi => new Date(coi.expiration) < new Date());
-                coiStatus = hasExpired ? 'Expired' : 'Current';
+                coiStatus = company.cois.some(coi => new Date(coi.expiration) < new Date()) ? 'Expired' : 'Current';
             }
 
             const row = document.createElement('tr');
@@ -396,18 +386,12 @@
 
             row.innerHTML = `
                 <td class="px-6 py-3 font-medium truncate">${company.company_name}</td>
-                <td class="px-6 py-3">
-                    <span class="inline-block px-2.5 py-0.5 rounded-full text-xs font-medium bg-zinc-700 text-zinc-300">${company.company_type}</span>
-                </td>
+                <td class="px-6 py-3"><span class="inline-block px-2.5 py-0.5 rounded-full text-xs font-medium bg-zinc-700 text-zinc-300">${company.company_type}</span></td>
                 <td class="px-6 py-3 text-sm truncate">${primaryContact ? primaryContact.name : '—'}</td>
                 <td class="px-6 py-3 text-sm font-mono whitespace-nowrap">${company.primary_phone || '—'}</td>
                 <td class="px-6 py-3 text-sm truncate">${company.billing_address || '—'}</td>
-                <td class="px-6 py-3 text-center">
-                    <span class="text-xs px-2.5 py-0.5 rounded-full font-medium ${licenseStatus === 'Current' ? 'bg-emerald-900/60 text-emerald-400' : licenseStatus === 'Expired' ? 'bg-red-900/60 text-red-400' : 'bg-zinc-700 text-zinc-400'}">${licenseStatus}</span>
-                </td>
-                <td class="px-6 py-3 text-center">
-                    <span class="text-xs px-2.5 py-0.5 rounded-full font-medium ${coiStatus === 'Current' ? 'bg-emerald-900/60 text-emerald-400' : coiStatus === 'Expired' ? 'bg-red-900/60 text-red-400' : 'bg-zinc-700 text-zinc-400'}">${coiStatus}</span>
-                </td>
+                <td class="px-6 py-3 text-center"><span class="text-xs px-2.5 py-0.5 rounded-full font-medium ${licenseStatus === 'Current' ? 'bg-emerald-900/60 text-emerald-400' : licenseStatus === 'Expired' ? 'bg-red-900/60 text-red-400' : 'bg-zinc-700 text-zinc-400'}">${licenseStatus}</span></td>
+                <td class="px-6 py-3 text-center"><span class="text-xs px-2.5 py-0.5 rounded-full font-medium ${coiStatus === 'Current' ? 'bg-emerald-900/60 text-emerald-400' : coiStatus === 'Expired' ? 'bg-red-900/60 text-red-400' : 'bg-zinc-700 text-zinc-400'}">${coiStatus}</span></td>
                 <td class="px-4 py-3">
                     <div class="flex gap-2 justify-end">
                         <button onclick="event.stopImmediatePropagation(); editCompany(${company.id})" class="text-zinc-400 hover:text-white"><i class="fa-solid fa-edit"></i></button>
@@ -428,9 +412,7 @@
         const suppliers = companies.filter(c => c.company_type === 'Supplier').length;
         const clients = companies.filter(c => c.company_type === 'Client').length;
 
-        let expiring60 = 0;
-        let expiredIns = 0;
-        let expiredLic = 0;
+        let expiring60 = 0, expiredIns = 0, expiredLic = 0;
         const now = new Date();
         const sixtyDays = new Date(now.getTime() + (60 * 24 * 60 * 60 * 1000));
 
@@ -451,23 +433,18 @@
         document.getElementById('clientCount').textContent = clients;
         document.getElementById('insuranceAlertCount').textContent = expiring60;
 
-        const expiredInsEl = document.getElementById('expiredInsuranceCount');
-        if (expiredInsEl) expiredInsEl.textContent = expiredIns;
-
-        const expiredLicEl = document.getElementById('expiredLicenseCount');
-        if (expiredLicEl) expiredLicEl.textContent = expiredLic;
+        const ei = document.getElementById('expiredInsuranceCount');
+        if (ei) ei.textContent = expiredIns;
+        const el = document.getElementById('expiredLicenseCount');
+        if (el) el.textContent = expiredLic;
     }
 
-    // ==================== FILTERS ====================
     function filterAll() { renderCompaniesTable(companies); }
     function filterByType(type) { renderCompaniesTable(companies.filter(c => c.company_type === type)); }
     function filterExpiringInsurance() {
         const now = new Date();
         const sixty = new Date(now.getTime() + (60*24*60*60*1000));
-        const filtered = companies.filter(c => c.cois?.some(coi => {
-            const d = new Date(coi.expiration);
-            return d > now && d < sixty;
-        }));
+        const filtered = companies.filter(c => c.cois?.some(coi => { const d = new Date(coi.expiration); return d > now && d < sixty; }));
         renderCompaniesTable(filtered);
     }
     function filterExpiredInsurance() {
@@ -485,7 +462,6 @@
         const search = document.getElementById('searchInput').value.toLowerCase().trim();
         const type = document.getElementById('typeFilter').value;
         const status = document.getElementById('statusFilter').value;
-
         const filtered = companies.filter(c => {
             const matchSearch = c.company_name.toLowerCase().includes(search) || (c.trade && c.trade.toLowerCase().includes(search));
             const matchType = !type || c.company_type === type;
@@ -502,11 +478,9 @@
         renderCompaniesTable(companies);
     }
 
-    // ==================== VIEW MODAL ====================
     function showViewCompanyModal(id) {
         const company = companies.find(c => c.id === id);
         if (!company) return;
-
         const content = document.getElementById('viewCompanyContent');
         content.innerHTML = `
             <div class="grid grid-cols-1 md:grid-cols-2 gap-x-8 gap-y-4 text-sm">
@@ -518,7 +492,6 @@
                 <div><span class="text-zinc-400">Email:</span> ${company.primary_email || '—'}</div>
                 <div class="md:col-span-2"><span class="text-zinc-400">Address:</span> ${company.billing_address || '—'}</div>
             </div>
-
             <div class="pt-4 border-t border-zinc-700 mt-4">
                 <div class="font-semibold mb-2">Contacts</div>
                 ${(company.contacts || []).map(c => `
@@ -544,7 +517,6 @@
         setTimeout(() => editCompany(id), 150);
     }
 
-    // ==================== ADD/EDIT MODAL ====================
     function showAddCompanyModal() {
         document.getElementById('companyForm').reset();
         document.getElementById('companyId').value = '';
@@ -562,7 +534,6 @@
         document.getElementById('companyId').value = company.id;
         document.getElementById('modalTitle').innerText = 'Edit Company';
 
-        // Fill ALL fields properly
         document.getElementById('company_name').value = company.company_name || '';
         document.getElementById('company_type').value = company.company_type || 'Subcontractor';
         document.getElementById('trade').value = company.trade || '';
@@ -586,7 +557,6 @@
         document.getElementById('wc_expiration').value = company.wc_expiration || '';
         document.getElementById('notes').value = company.notes || '';
 
-        // Contacts
         const contactsContainer = document.getElementById('contactsContainer');
         contactsContainer.innerHTML = '';
         if (company.contacts && company.contacts.length > 0) {
@@ -595,7 +565,6 @@
             addContactRow();
         }
 
-        // COIs
         const coiContainer = document.getElementById('coiContainer');
         coiContainer.innerHTML = '';
         if (company.cois && company.cois.length > 0) {
@@ -741,7 +710,6 @@
         const ws = XLSX.utils.json_to_sheet(data);
         const wb = XLSX.utils.book_new();
         XLSX.utils.book_append_sheet(wb, ws, "Companies");
-
         if (format === 'csv') {
             XLSX.writeFile(wb, "Companies_Export.csv", { bookType: "csv" });
         } else {
@@ -775,7 +743,6 @@
                         const sheet = workbook.Sheets[workbook.SheetNames[0]];
                         imported = XLSX.utils.sheet_to_json(sheet);
                     }
-
                     imported.forEach(row => {
                         if (row["Company Name"]) {
                             companies.push({
@@ -791,18 +758,14 @@
                             });
                         }
                     });
-
                     renderCompaniesTable(companies);
                     showCenteredToast(`Successfully imported ${imported.length} companies.`);
                 } catch (err) {
                     alert("Import failed. Please check the file format.");
                 }
             };
-            if (file.name.endsWith('.csv')) {
-                reader.readAsText(file);
-            } else {
-                reader.readAsArrayBuffer(file);
-            }
+            if (file.name.endsWith('.csv')) reader.readAsText(file);
+            else reader.readAsArrayBuffer(file);
         };
         input.click();
     }
