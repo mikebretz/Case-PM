@@ -2,21 +2,21 @@
 
 {% block content %}
 
-<!-- ==================== HEADER (ALDI Lakeland left • Budget centered • Original button style) ==================== -->
+<!-- ==================== HEADER (Budget shifted left, centered roughly above Approved Changes start) ==================== -->
 <div class="h-16 border-b border-zinc-800 bg-zinc-900 flex items-center px-6 flex-shrink-0">
     <!-- Left: Project -->
-    <div class="w-1/3">
+    <div class="flex-shrink-0 w-72">
         <div class="text-[10px] text-zinc-400 tracking-[1px] font-medium">CURRENT PROJECT</div>
         <div class="text-xl font-semibold tracking-tight text-white">ALDI Lakeland</div>
     </div>
 
-    <!-- Center: Budget title (properly centered) -->
-    <div class="w-1/3 text-center">
+    <!-- Budget title - shifted left to be roughly above the start of Approved Changes card -->
+    <div class="flex-shrink-0 ml-12">
         <div class="text-2xl font-semibold text-white">Budget</div>
     </div>
 
-    <!-- Right: Action buttons (original wide/high compact style) -->
-    <div class="w-1/3 flex items-center justify-end gap-3">
+    <!-- Right: Action buttons (one row of text high, original compact style) -->
+    <div class="flex-1 flex items-center justify-end gap-3">
         <button onclick="exportBudget()" class="flex items-center gap-2 px-4 py-2.5 bg-zinc-800 hover:bg-zinc-700 rounded-md text-sm font-medium transition-colors">
             <i class="fa-solid fa-download"></i><span>Export</span>
         </button>
@@ -61,7 +61,7 @@
     </div>
 </div>
 
-<!-- ==================== SUMMARY CARDS (Bordered like companies.html) ==================== -->
+<!-- ==================== SUMMARY CARDS (Bordered) ==================== -->
 <div class="bg-zinc-900 border border-zinc-700 mx-6 mt-4 rounded-md p-4 flex-shrink-0 sticky top-0 z-30">
     <div class="grid grid-cols-1 md:grid-cols-7 gap-4">
         <div class="bg-zinc-800 border border-zinc-700 rounded-md p-5">
@@ -109,11 +109,11 @@
     <button onclick="clearBudgetFilters()" class="px-4 py-2.5 bg-zinc-800 hover:bg-zinc-700 rounded-md text-sm">Clear Filters</button>
 </div>
 
-<!-- ==================== TABLE (Properly anchored sticky header + thin bottom bar) ==================== -->
+<!-- ==================== TABLE (Proper sticky header + thin bottom bar) ==================== -->
 <div class="mx-6 mb-6 flex-1 overflow-hidden flex flex-col border border-zinc-700 rounded-md bg-zinc-900">
     <div class="flex-1 overflow-auto" id="tableScrollContainer">
         <table class="w-full text-sm min-w-[1600px]">
-            <thead class="bg-zinc-800 sticky z-20 border-b border-zinc-700" style="top: 0; position: sticky;">
+            <thead class="bg-zinc-800 sticky z-20 border-b border-zinc-700" style="top: 0;">
                 <tr>
                     <th class="px-4 py-3 text-center font-medium text-zinc-400 w-12">#</th>
                     <th class="px-6 py-3 text-left font-medium text-zinc-400 w-28">Cost Code</th>
@@ -137,8 +137,8 @@
     <div class="h-px bg-zinc-700 flex-shrink-0"></div>
 </div>
 
-<!-- ==================== FIXED BOTTOM STATUS BAR (Always visible, anchored at bottom) ==================== -->
-<div class="fixed bottom-0 left-64 right-0 bg-zinc-900 border-t border-zinc-700 px-6 py-2 text-xs text-zinc-400 flex items-center justify-between z-[60]">
+<!-- ==================== FIXED BOTTOM STATUS BAR (Always visible) ==================== -->
+<div class="fixed bottom-0 left-64 right-0 bg-zinc-900 border-t border-zinc-700 px-6 py-2 text-xs text-zinc-400 flex items-center justify-between z-50">
     <div>Last synced with Sage 300 • Connected • ALDI Lakeland</div>
     <div class="text-emerald-400">● Online</div>
 </div>
@@ -685,14 +685,103 @@
         document.getElementById('pendingChangesModal').showModal();
     }
 
-    // ==================== PRINT ====================
+    // ==================== PRINT (Fixed - with proper header) ====================
     function printBudget() {
-        if (budgetLines.length === 0) { showCenteredAlert("You must have at least one budget line item to print."); return; }
-        alert("Print preview opened (full layout from original file preserved).");
+        if (budgetLines.length === 0) {
+            showCenteredAlert("You must have at least one budget line item to print.");
+            return;
+        }
+
+        const sorted = [...budgetLines].sort((a, b) => a.cost_code.localeCompare(b.cost_code, undefined, { numeric: true }));
+
+        let currentDivision = null;
+        const divisionNames = {
+            '01': 'General Requirements', '03': 'Concrete', '04': 'Masonry',
+            '05': 'Metals', '06': 'Wood, Plastics, and Composites',
+            '07': 'Thermal and Moisture Protection', '08': 'Openings',
+            '09': 'Finishes', '22': 'Plumbing', '23': 'HVAC',
+            '26': 'Electrical', '31': 'Earthwork'
+        };
+
+        let tableRows = '';
+
+        sorted.forEach(line => {
+            const division = line.cost_code.substring(0, 2);
+            const pending = line.pending || 0;
+            const forecast = line.original_budget + line.approved_changes + pending;
+
+            if (division !== currentDivision) {
+                currentDivision = division;
+                tableRows += `
+                    <tr style="background:#f3f4f6; font-weight:600; color:#111827;">
+                        <td colspan="8" style="padding:8px; border:1px solid #ccc;">Division ${division} — ${divisionNames[division] || 'Other'}</td>
+                    </tr>
+                `;
+            }
+
+            tableRows += `
+                <tr>
+                    <td style="border:1px solid #ccc; padding:6px; font-family:monospace;">${line.cost_code}</td>
+                    <td style="border:1px solid #ccc; padding:6px;">${line.description}</td>
+                    <td style="border:1px solid #ccc; padding:6px;">${line.cost_type}</td>
+                    <td style="border:1px solid #ccc; padding:6px; text-align:right;">${formatCurrency(line.original_budget)}</td>
+                    <td style="border:1px solid #ccc; padding:6px; text-align:right;">${formatCurrency(line.approved_changes)}</td>
+                    <td style="border:1px solid #ccc; padding:6px; text-align:right;">${formatCurrency(pending)}</td>
+                    <td style="border:1px solid #ccc; padding:6px; text-align:right;">${formatCurrency(line.original_budget + line.approved_changes)}</td>
+                    <td style="border:1px solid #ccc; padding:6px; text-align:right;">${formatCurrency(forecast)}</td>
+                </tr>
+            `;
+        });
+
+        const printWin = window.open('', '_blank');
+        printWin.document.write(`
+            <html>
+            <head>
+                <title>Budget - ALDI Lakeland</title>
+                <style>
+                    body { font-family: Arial, sans-serif; padding: 20px; color: #111827; }
+                    h1 { margin-bottom: 4px; }
+                    .sub { color: #4b5563; margin-bottom: 20px; }
+                    table { width: 100%; border-collapse: collapse; font-size: 11px; }
+                    th, td { border: 1px solid #ccc; padding: 6px; text-align: left; }
+                    th { background: #f3f4f6; }
+                    .header { border-bottom: 2px solid #111827; padding-bottom: 10px; margin-bottom: 20px; }
+                </style>
+            </head>
+            <body>
+                <div class="header">
+                    <h1>ALDI Lakeland</h1>
+                    <div class="sub">Budget Report • Generated ${new Date().toLocaleDateString()}</div>
+                </div>
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Cost Code</th>
+                            <th>Description</th>
+                            <th>Cost Type</th>
+                            <th style="text-align:right">Original</th>
+                            <th style="text-align:right">Changes</th>
+                            <th style="text-align:right">Pending</th>
+                            <th style="text-align:right">Current</th>
+                            <th style="text-align:right">Forecast</th>
+                        </tr>
+                    </thead>
+                    <tbody>${tableRows}</tbody>
+                </table>
+            </body>
+            </html>
+        `);
+        printWin.document.close();
+        printWin.focus();
+        setTimeout(() => { printWin.print(); printWin.close(); }, 600);
     }
 
-    // ==================== EXPORT (Fixed) ====================
+    // ==================== EXPORT (Fixed & Working) ====================
     function exportBudget() {
+        if (budgetLines.length === 0) {
+            showCenteredAlert("Nothing to export yet.");
+            return;
+        }
         const data = budgetLines.map(line => ({
             "Cost Code": line.cost_code,
             "Description": line.description,
@@ -710,7 +799,7 @@
         XLSX.writeFile(wb, "Budget_Export.xlsx");
     }
 
-    // ==================== IMPORT (Full Excel/CSV) ====================
+    // ==================== IMPORT ====================
     function importBudget() {
         const input = document.createElement('input');
         input.type = 'file';
@@ -810,7 +899,7 @@
         document.getElementById('userProfileModal').showModal();
     }
 
-    // ==================== UPDATED NAVIGATION WARNING (Dark + 5 buttons + reliable navigation to original link) ====================
+    // ==================== NAVIGATION WARNING (Preserved exactly as working) ====================
     function warnBeforeLeaving() {
         if (budgetLines.length === 0 || budgetPublished) return;
 
@@ -820,26 +909,28 @@
         dialog.style.border = '1px solid #3f3f46';
         dialog.style.color = 'white';
 
-        let html = `
-            <div class="text-base mb-4">You have unsaved budget line items.</div>
-            <div class="flex flex-col gap-3">
-                <button id="btnStay" class="w-full px-5 py-3 rounded-md bg-zinc-700 hover:bg-zinc-600 text-sm font-semibold">Stay and Edit</button>
-                <button id="btnPublishLeave" class="w-full px-5 py-3 rounded-md bg-emerald-600 hover:bg-emerald-500 text-sm font-semibold">Publish & Leave</button>
+        let buttonsHTML = `
+            <button id="btnStay" class="w-full px-5 py-3 rounded-md bg-zinc-700 hover:bg-zinc-600 text-sm font-semibold">Stay and Edit</button>
+            <button id="btnPublishLeave" class="w-full px-5 py-3 rounded-md bg-emerald-600 hover:bg-emerald-500 text-sm font-semibold">Publish & Leave</button>
         `;
 
         if (!budgetSaved) {
-            html += `
+            buttonsHTML += `
                 <button id="btnSaveLeave" class="w-full px-5 py-3 rounded-md bg-blue-600 hover:bg-blue-500 text-sm font-semibold">Save & Leave</button>
                 <button id="btnLeaveNoSave" class="w-full px-5 py-3 rounded-md bg-red-600 hover:bg-red-500 text-sm font-semibold">Leave without Saving</button>
             `;
         }
 
-        html += `
-                <button id="btnLeaveNoPublish" class="w-full px-5 py-3 rounded-md bg-zinc-700 hover:bg-zinc-600 text-sm font-semibold">Leave without Publishing</button>
-            </div>
+        buttonsHTML += `
+            <button id="btnLeaveNoPublish" class="w-full px-5 py-3 rounded-md bg-zinc-700 hover:bg-zinc-600 text-sm font-semibold">Leave without Publishing</button>
         `;
 
-        dialog.innerHTML = html;
+        dialog.innerHTML = `
+            <div class="text-base mb-4">You have unsaved budget line items.</div>
+            <div class="flex flex-col gap-3">
+                ${buttonsHTML}
+            </div>
+        `;
         document.body.appendChild(dialog);
         dialog.showModal();
 
@@ -896,7 +987,7 @@
             });
         }
 
-        // Robust navigation warning using event delegation
+        // Robust navigation warning
         document.addEventListener('click', function(e) {
             const link = e.target.closest('.nav-link');
             if (link && budgetLines.length > 0 && !budgetPublished) {
