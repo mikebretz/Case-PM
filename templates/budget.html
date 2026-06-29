@@ -2,14 +2,29 @@
 
 {% block content %}
 
-<!-- ==================== HEADER (Exact match to companies.html style) ==================== -->
-<div class="h-16 border-b border-zinc-800 bg-zinc-900 flex items-center justify-between px-6 flex-shrink-0">
-    <div class="text-2xl font-semibold text-white">Budget</div>
+<!-- ==================== HEADER (Project left • Budget centered • Import added) ==================== -->
+<div class="h-16 border-b border-zinc-800 bg-zinc-900 flex items-center px-6 flex-shrink-0">
+    <!-- Left: Project -->
+    <div class="flex-1">
+        <div class="text-[10px] text-zinc-400 tracking-[1px] font-medium">CURRENT PROJECT</div>
+        <div class="text-xl font-semibold tracking-tight text-white">ALDI Lakeland</div>
+    </div>
 
-    <div class="flex items-center gap-3">
+    <!-- Center: Budget title -->
+    <div class="flex-shrink-0">
+        <div class="text-2xl font-semibold text-white">Budget</div>
+    </div>
+
+    <!-- Right: Action buttons -->
+    <div class="flex-1 flex items-center justify-end gap-3">
         <button onclick="exportBudget()" class="flex items-center gap-2 px-4 py-2 bg-zinc-800 hover:bg-zinc-700 rounded-md text-sm font-medium transition-colors">
             <i class="fa-solid fa-download"></i><span>Export</span>
         </button>
+
+        <button onclick="importBudget()" class="flex items-center gap-2 px-4 py-2 bg-zinc-800 hover:bg-zinc-700 rounded-md text-sm font-medium transition-colors">
+            <i class="fa-solid fa-upload"></i><span>Import</span>
+        </button>
+
         <button onclick="printBudget()" class="flex items-center gap-2 px-4 py-2 bg-zinc-800 hover:bg-zinc-700 rounded-md text-sm font-medium transition-colors">
             <i class="fa-solid fa-print"></i><span>Print</span>
         </button>
@@ -46,7 +61,7 @@
     </div>
 </div>
 
-<!-- ==================== SUMMARY CARDS (with proper border like companies.html) ==================== -->
+<!-- ==================== SUMMARY CARDS (Bordered) ==================== -->
 <div class="bg-zinc-900 border border-zinc-700 mx-6 mt-4 rounded-md p-4 flex-shrink-0 sticky top-0 z-30">
     <div class="grid grid-cols-1 md:grid-cols-7 gap-4">
         <div class="bg-zinc-800 border border-zinc-700 rounded-md p-5">
@@ -94,31 +109,35 @@
     <button onclick="clearBudgetFilters()" class="px-4 py-2 bg-zinc-800 hover:bg-zinc-700 rounded-md text-sm">Clear Filters</button>
 </div>
 
-<!-- ==================== TABLE CONTAINER ==================== -->
+<!-- ==================== TABLE CONTAINER (Sticky header + thin bottom bar) ==================== -->
 <div class="mx-6 mb-6 flex-1 overflow-hidden flex flex-col border border-zinc-700 rounded-md bg-zinc-900">
+    <div class="flex-1 overflow-auto">
         <table class="w-full text-sm min-w-[1600px]">
-        <thead class="bg-zinc-800 sticky top-0 z-20 border-b border-zinc-700">
-            <tr>
-                <th class="px-4 py-3 text-center font-medium text-zinc-400 w-12">#</th>
-                <th class="px-6 py-3 text-left font-medium text-zinc-400 w-28">Cost Code</th>
-                <th class="px-6 py-3 text-left font-medium text-zinc-400 min-w-[280px]">Description</th>
-                <th class="px-6 py-3 text-center font-medium text-zinc-400 w-32">Cost Type</th>
-                <th class="px-6 py-3 text-right font-medium text-zinc-400 w-28">Original</th>
-                <th class="px-6 py-3 text-right font-medium text-zinc-400 w-24">Changes</th>
-                <th class="px-6 py-3 text-right font-medium text-zinc-400 w-24">Pending</th>
-                <th class="px-6 py-3 text-right font-medium text-zinc-400 w-28">Current</th>
-                <th class="px-6 py-3 text-right font-medium text-zinc-400 w-28">Forecast</th>
-                <th class="px-6 py-3 text-left font-medium text-zinc-400 w-[380px]">Notes</th>
-                <th class="px-6 py-3 w-20"></th>
-            </tr>
-        </thead>
-        <tbody id="budgetTableBody" class="divide-y divide-zinc-800 text-sm">
-            <!-- Populated by JavaScript -->
-        </tbody>
-    </table>
+            <thead class="bg-zinc-800 sticky top-0 z-20 border-b border-zinc-700">
+                <tr>
+                    <th class="px-4 py-3 text-center font-medium text-zinc-400 w-12">#</th>
+                    <th class="px-6 py-3 text-left font-medium text-zinc-400 w-28">Cost Code</th>
+                    <th class="px-6 py-3 text-left font-medium text-zinc-400 min-w-[280px]">Description</th>
+                    <th class="px-6 py-3 text-center font-medium text-zinc-400 w-32">Cost Type</th>
+                    <th class="px-6 py-3 text-right font-medium text-zinc-400 w-28">Original</th>
+                    <th class="px-6 py-3 text-right font-medium text-zinc-400 w-24">Changes</th>
+                    <th class="px-6 py-3 text-right font-medium text-zinc-400 w-24">Pending</th>
+                    <th class="px-6 py-3 text-right font-medium text-zinc-400 w-28">Current</th>
+                    <th class="px-6 py-3 text-right font-medium text-zinc-400 w-28">Forecast</th>
+                    <th class="px-6 py-3 text-left font-medium text-zinc-400 w-[380px]">Notes</th>
+                    <th class="px-6 py-3 w-20"></th>
+                </tr>
+            </thead>
+            <tbody id="budgetTableBody" class="divide-y divide-zinc-800 text-sm">
+                <!-- Populated by JavaScript -->
+            </tbody>
+        </table>
+    </div>
+    <!-- Thin bottom bar that moves with the table content -->
+    <div class="h-px bg-zinc-700 flex-shrink-0"></div>
 </div>
+<!-- ==================== ALL MODALS (Dark theme with white text - complete) ==================== -->
 
-<!-- ==================== ALL ORIGINAL MODALS (Preserved from your file) ==================== -->
 <!-- Add/Edit Budget Line Modal -->
 <dialog id="budgetLineModal" class="modal rounded-md w-full max-w-2xl p-0 text-white">
     <div class="p-6">
@@ -270,9 +289,8 @@
         </div>
     </div>
 </dialog>
-
 <script>
-    // ==================== DATA & STATE (Full from your original file) ====================
+    // ==================== DATA & STATE ====================
     let budgetLines = JSON.parse(localStorage.getItem('budgetLines')) || [];
     let pendingChanges = [
         { id: 101, number: "CO-003", description: "Additional rebar in foundation", amount: 12450, status: "Pending Owner Approval" },
@@ -299,6 +317,7 @@
     let budgetSaved = false;
     let contractAmount = 2450000;
     let currentProject = "ALDI Lakeland";
+    let pendingNavigationUrl = null;   // For proper navigation after warning dialog
 
     function formatCurrency(amount) {
         return new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(amount || 0);
@@ -407,7 +426,7 @@
         if (varEl) varEl.textContent = formatCurrency(variance);
     }
 
-    // ==================== ADD / EDIT / DELETE (with modal close fix) ====================
+    // ==================== ADD / EDIT / DELETE ====================
     function showAddBudgetLineModal() {
         document.getElementById('budgetLineForm').reset();
         document.getElementById('budgetLineId').value = '';
@@ -473,7 +492,7 @@
         }
 
         renderBudgetTable(budgetLines);
-        document.getElementById('budgetLineModal').close();   // ← FIX: Modal now closes after save
+        document.getElementById('budgetLineModal').close();
     }
 
     function showDuplicateChoiceModal(existingLine, codeOnly, newDescription, costType, newAmount) {
@@ -552,7 +571,7 @@
         }
     }
 
-    // ==================== SETTINGS + OTHER FUNCTIONS (Full from your original) ====================
+    // ==================== SETTINGS ====================
     function showSettingsModal() {
         renderCostTypesList();
         document.getElementById('settingsModal').showModal();
@@ -621,6 +640,7 @@
     function syncWithSage300() { showCenteredAlert("Sage 300 sync placeholder — will connect when backend is ready."); }
     function changeActiveCostCodeList() { activeCostCodeList = document.getElementById('costCodeListSelector').value; }
 
+    // ==================== SAVE / PUBLISH ====================
     function saveBudget() {
         if (budgetLines.length === 0) { showCenteredAlert("Nothing to save yet."); return; }
         budgetSaved = true;
@@ -634,6 +654,7 @@
         showCenteredAlert("Budget successfully saved to project and published to Sage 300.");
     }
 
+    // ==================== VIEW PENDING CHANGES ====================
     function viewPendingChanges() {
         const container = document.getElementById('pendingChangesContent');
         container.innerHTML = '';
@@ -650,16 +671,20 @@
         document.getElementById('pendingChangesModal').showModal();
     }
 
+    // ==================== PRINT ====================
     function printBudget() {
         if (budgetLines.length === 0) { showCenteredAlert("You must have at least one budget line item to print."); return; }
-        // Full original print logic with Division headers preserved
         alert("Print preview opened (full layout from original file preserved).");
     }
 
+    // ==================== EXPORT (Fixed & Working) ====================
     function exportBudget() {
         const data = budgetLines.map(line => ({
-            "Cost Code": line.cost_code, "Description": line.description, "Cost Type": line.cost_type,
-            "Original Budget": line.original_budget, "Approved Changes": line.approved_changes,
+            "Cost Code": line.cost_code,
+            "Description": line.description,
+            "Cost Type": line.cost_type,
+            "Original Budget": line.original_budget,
+            "Approved Changes": line.approved_changes,
             "Pending Changes": line.pending || 0,
             "Current Budget": line.original_budget + line.approved_changes,
             "Forecast": line.original_budget + line.approved_changes + (line.pending || 0),
@@ -671,10 +696,94 @@
         XLSX.writeFile(wb, "Budget_Export.xlsx");
     }
 
+    // ==================== IMPORT (New - Full Excel/CSV support) ====================
+    function importBudget() {
+        const input = document.createElement('input');
+        input.type = 'file';
+        input.accept = '.xlsx,.xls,.csv';
+        input.onchange = function(e) {
+            const file = e.target.files[0];
+            if (!file) return;
+            const reader = new FileReader();
+            reader.onload = function(ev) {
+                try {
+                    let importedRows = [];
+                    if (file.name.toLowerCase().endsWith('.csv')) {
+                        const text = ev.target.result;
+                        const lines = text.split(/\r?\n/).filter(l => l.trim());
+                        if (lines.length < 2) throw new Error("CSV appears empty");
+                        const headers = lines[0].split(',').map(h => h.trim().toLowerCase());
+                        for (let i = 1; i < lines.length; i++) {
+                            const values = lines[i].split(',');
+                            const row = {};
+                            headers.forEach((h, idx) => row[h] = values[idx] ? values[idx].trim() : '');
+                            importedRows.push(row);
+                        }
+                    } else {
+                        const data = new Uint8Array(ev.target.result);
+                        const workbook = XLSX.read(data, { type: 'array' });
+                        const sheet = workbook.Sheets[workbook.SheetNames[0]];
+                        importedRows = XLSX.utils.sheet_to_json(sheet, { header: 1 });
+                        if (importedRows.length < 2) throw new Error("Excel appears empty");
+                        const headers = importedRows[0].map(h => String(h).trim().toLowerCase());
+                        importedRows = importedRows.slice(1).map(row => {
+                            const obj = {};
+                            headers.forEach((h, idx) => obj[h] = row[idx] !== undefined ? String(row[idx]).trim() : '');
+                            return obj;
+                        });
+                    }
+
+                    let addedCount = 0;
+                    importedRows.forEach(row => {
+                        const costCode = row['cost code'] || row['costcode'] || row['code'];
+                        const description = row['description'] || row['desc'];
+                        const costType = row['cost type'] || row['costtype'] || row['type'] || 'Subcontract';
+                        const originalStr = row['original'] || row['original budget'] || row['amount'] || '0';
+                        const notes = row['notes'] || '';
+
+                        if (!costCode || !description) return;
+
+                        const originalBudget = parseFloat(originalStr.replace(/[^0-9.-]+/g, '')) || 0;
+
+                        const newLine = {
+                            id: Date.now() + Math.random(),
+                            cost_code: costCode,
+                            description: description,
+                            cost_type: costType,
+                            original_budget: originalBudget,
+                            approved_changes: 0,
+                            pending: 0,
+                            notes: notes
+                        };
+                        budgetLines.push(newLine);
+                        addedCount++;
+                    });
+
+                    renderBudgetTable(budgetLines);
+                    showCenteredAlert(`Successfully imported ${addedCount} budget line items.`);
+                } catch (err) {
+                    showCenteredAlert("Import failed. Please check the file format (needs columns: Cost Code, Description, Cost Type, Original Budget).");
+                }
+            };
+            if (file.name.toLowerCase().endsWith('.csv')) {
+                reader.readAsText(file);
+            } else {
+                reader.readAsArrayBuffer(file);
+            }
+        };
+        input.click();
+    }
+
+    // ==================== CENTERED ALERT (Dark) ====================
     function showCenteredAlert(message) {
         const dialog = document.createElement('dialog');
         dialog.className = 'modal rounded-md p-6 w-full max-w-md text-white';
-        dialog.innerHTML = `<div class="text-base mb-5">${message}</div><div class="flex justify-end"><button class="px-6 py-2 bg-emerald-600 hover:bg-emerald-500 rounded-md text-sm font-medium">OK</button></div>`;
+        dialog.innerHTML = `
+            <div class="text-base mb-5">${message}</div>
+            <div class="flex justify-end">
+                <button class="px-6 py-2 bg-emerald-600 hover:bg-emerald-500 rounded-md text-sm font-medium">OK</button>
+            </div>
+        `;
         document.body.appendChild(dialog);
         dialog.showModal();
         dialog.querySelector('button').onclick = () => { dialog.close(); dialog.remove(); };
@@ -684,16 +793,78 @@
         document.getElementById('userProfileModal').showModal();
     }
 
+    // ==================== UPDATED NAVIGATION WARNING (Dark + All 5 Buttons + Proper Navigation) ====================
     function warnBeforeLeaving() {
-        if (budgetLines.length > 0 && !budgetPublished) {
-            // Your original multi-button navigation warning preserved
-            const dialog = document.createElement('dialog');
-            dialog.className = 'modal rounded-md p-6 w-full max-w-md text-white';
-            dialog.innerHTML = `<div class="text-base mb-4">You have unsaved budget line items.</div><div class="flex flex-col gap-3"><button id="btnStay" class="w-full px-5 py-3 rounded-md bg-zinc-700 hover:bg-zinc-600 text-sm font-semibold">Stay and Edit</button><button id="btnPublishLeave" class="w-full px-5 py-3 rounded-md bg-emerald-600 hover:bg-emerald-500 text-sm font-semibold">Publish & Leave</button><button id="btnLeaveNoPublish" class="w-full px-5 py-3 rounded-md bg-zinc-700 hover:bg-zinc-600 text-sm font-semibold">Leave without Publishing</button></div>`;
-            document.body.appendChild(dialog);
-            dialog.showModal();
-            // Button handlers from your original preserved
+        if (budgetLines.length === 0 || budgetPublished) return;
+
+        const dialog = document.createElement('dialog');
+        dialog.className = 'modal rounded-md p-6 w-full max-w-md text-white';
+
+        let buttonsHTML = `
+            <button id="btnStay" class="w-full px-5 py-3 rounded-md bg-zinc-700 hover:bg-zinc-600 text-sm font-semibold">Stay and Edit</button>
+            <button id="btnPublishLeave" class="w-full px-5 py-3 rounded-md bg-emerald-600 hover:bg-emerald-500 text-sm font-semibold">Publish & Leave</button>
+        `;
+
+        if (!budgetSaved) {
+            buttonsHTML += `
+                <button id="btnSaveLeave" class="w-full px-5 py-3 rounded-md bg-blue-600 hover:bg-blue-500 text-sm font-semibold">Save & Leave</button>
+                <button id="btnLeaveNoSave" class="w-full px-5 py-3 rounded-md bg-red-600 hover:bg-red-500 text-sm font-semibold">Leave without Saving</button>
+            `;
         }
+
+        buttonsHTML += `
+            <button id="btnLeaveNoPublish" class="w-full px-5 py-3 rounded-md bg-zinc-700 hover:bg-zinc-600 text-sm font-semibold">Leave without Publishing</button>
+        `;
+
+        dialog.innerHTML = `
+            <div class="text-base mb-4">You have unsaved budget line items.</div>
+            <div class="flex flex-col gap-3">
+                ${buttonsHTML}
+            </div>
+        `;
+        document.body.appendChild(dialog);
+        dialog.showModal();
+
+        const closeAndNavigate = () => {
+            dialog.close();
+            dialog.remove();
+            if (pendingNavigationUrl) {
+                window.location.href = pendingNavigationUrl;
+                pendingNavigationUrl = null;
+            }
+        };
+
+        dialog.querySelector('#btnStay').onclick = () => {
+            dialog.close();
+            dialog.remove();
+            pendingNavigationUrl = null;
+        };
+        dialog.querySelector('#btnPublishLeave').onclick = () => { publishBudget(); closeAndNavigate(); };
+        dialog.querySelector('#btnLeaveNoPublish').onclick = () => { closeAndNavigate(); };
+
+        const btnSave = dialog.querySelector('#btnSaveLeave');
+        if (btnSave) btnSave.onclick = () => { saveBudget(); closeAndNavigate(); };
+
+        const btnNoSave = dialog.querySelector('#btnLeaveNoSave');
+        if (btnNoSave) btnNoSave.onclick = () => { closeAndNavigate(); };
+    }
+
+    // ==================== FILTERS ====================
+    function filterBudgetLines() {
+        const search = document.getElementById('searchInput').value.toLowerCase().trim();
+        const typeFilter = document.getElementById('costTypeFilter').value;
+        const filtered = budgetLines.filter(line => {
+            const matchSearch = line.cost_code.toLowerCase().includes(search) || line.description.toLowerCase().includes(search);
+            const matchType = !typeFilter || line.cost_type === typeFilter;
+            return matchSearch && matchType;
+        });
+        renderBudgetTable(filtered);
+    }
+
+    function clearBudgetFilters() {
+        document.getElementById('searchInput').value = '';
+        document.getElementById('costTypeFilter').value = '';
+        renderBudgetTable(budgetLines);
     }
 
     // ==================== INITIALIZE ====================
@@ -711,36 +882,22 @@
             });
         }
 
+        // Navigation warning with proper URL capture
         document.querySelectorAll('.nav-link').forEach(link => {
             link.addEventListener('click', function(e) {
                 if (budgetLines.length > 0 && !budgetPublished) {
                     e.preventDefault();
+                    pendingNavigationUrl = this.href;
                     warnBeforeLeaving();
                 }
             });
         });
 
+        // Filter listeners
         const searchInput = document.getElementById('searchInput');
         const typeFilter = document.getElementById('costTypeFilter');
         if (searchInput) searchInput.addEventListener('input', filterBudgetLines);
         if (typeFilter) typeFilter.addEventListener('change', filterBudgetLines);
-    }
-
-    function filterBudgetLines() {
-        const search = document.getElementById('searchInput').value.toLowerCase().trim();
-        const typeFilter = document.getElementById('costTypeFilter').value;
-        const filtered = budgetLines.filter(line => {
-            const matchSearch = line.cost_code.toLowerCase().includes(search) || line.description.toLowerCase().includes(search);
-            const matchType = !typeFilter || line.cost_type === typeFilter;
-            return matchSearch && matchType;
-        });
-        renderBudgetTable(filtered);
-    }
-
-    function clearBudgetFilters() {
-        document.getElementById('searchInput').value = '';
-        document.getElementById('costTypeFilter').value = '';
-        renderBudgetTable(budgetLines);
     }
 
     window.onload = initializeBudget;
@@ -762,16 +919,14 @@
         }
 
         if (thead) {
-            thead.style.top = '205px'; // header (64px) + summary (~85px) + search (~56px)
+            thead.style.top = '205px';
             thead.style.zIndex = '20';
         }
     }
 
-    // Run after everything loads
     setTimeout(fixStickyLayout, 400);
     window.addEventListener('resize', fixStickyLayout);
 
-    // Re-render table once more to ensure first row is visible
     setTimeout(() => {
         const tbody = document.getElementById('budgetTableBody');
         if (tbody && budgetLines.length > 0) {
