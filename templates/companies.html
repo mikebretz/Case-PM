@@ -397,7 +397,7 @@
     // ==================== DATA MODEL ====================
     let companies = [];
 
-    // ==================== PHONE NUMBER FORMATTER ====================
+    // ==================== PHONE FORMATTER ====================
     function formatPhoneNumber(input) {
         let value = input.value.replace(/\D/g, '');
         if (value.length > 10) value = value.substring(0, 10);
@@ -416,7 +416,6 @@
         const tbody = document.getElementById('companiesTableBody');
         if (!tbody) return;
         tbody.innerHTML = '';
-
         const data = filteredCompanies || companies;
 
         if (data.length === 0) {
@@ -483,7 +482,7 @@
         document.getElementById('expiredLicenseCount').textContent = expiredLic;
     }
 
-    // ==================== FILTERS (FIXED) ====================
+    // ==================== FILTERS ====================
     function filterAll() { renderCompaniesTable(companies); }
     function filterByType(type) { renderCompaniesTable(companies.filter(c => c.company_type === type)); }
 
@@ -530,7 +529,7 @@
         renderCompaniesTable(companies);
     }
 
-    // ==================== EXPORT (NOW WORKS) ====================
+    // ==================== EXPORT (FIXED) ====================
     function exportCompanies(format) {
         if (!companies.length) {
             alert("No companies to export.");
@@ -561,9 +560,8 @@
 
             reader.onload = function(ev) {
                 try {
-                    let imported = [];
                     const wb = XLSX.read(ev.target.result, { type: 'binary' });
-                    imported = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]]);
+                    const imported = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]]);
 
                     imported.forEach(item => {
                         companies.push({
@@ -577,7 +575,7 @@
                     renderCompaniesTable(companies);
                     showSuccessModal("Import Successful", `${imported.length} companies imported.`);
                 } catch (err) {
-                    alert("Import failed. Please check the file format.");
+                    alert("Import failed. Check the file format.");
                 }
             };
             reader.readAsBinaryString(file);
@@ -604,7 +602,6 @@
             });
         });
 
-        // Create authorized users
         contacts.forEach(contact => {
             if (contact.authorized_user && contact.email) {
                 createAuthorizedCasePMUser(contact, id ? parseInt(id) : Date.now());
@@ -649,7 +646,6 @@
             companies.push(newCompany);
         }
 
-        // CLOSE THE MODAL
         document.getElementById('companyModal').close();
         renderCompaniesTable(companies);
     }
@@ -722,7 +718,6 @@
         document.getElementById('companyId').value = company.id;
         document.getElementById('modalTitle').innerText = 'Edit Company';
 
-        // Fill fields
         document.getElementById('company_name').value = company.company_name || '';
         document.getElementById('company_type').value = company.company_type || 'Subcontractor';
         document.getElementById('vendor_number').value = company.vendor_number || '';
@@ -749,22 +744,17 @@
         document.getElementById('wc_expiration').value = company.wc_expiration || '';
         document.getElementById('notes').value = company.notes || '';
 
-        // Contacts
         document.getElementById('contactsContainer').innerHTML = '';
-        if (company.contacts?.length) {
-            company.contacts.forEach(c => addContactRow(c));
-        } else {
-            addContactRow();
-        }
+        if (company.contacts?.length) company.contacts.forEach(c => addContactRow(c));
+        else addContactRow();
 
-        // COIs
         document.getElementById('coiContainer').innerHTML = '';
         if (company.cois?.length) company.cois.forEach(c => addCOIRow(c));
 
         document.getElementById('companyModal').showModal();
     }
 
-    // ==================== DELETE CONFIRMATION (CENTERED) ====================
+    // ==================== DELETE (CENTERED) ====================
     function confirmDeleteCompany(id) {
         const modal = document.createElement('dialog');
         modal.className = 'bg-zinc-900 border border-zinc-700 text-white rounded-lg w-full max-w-md p-0 shadow-2xl';
@@ -788,7 +778,7 @@
         renderCompaniesTable(companies);
     }
 
-    // ==================== AUTHORIZED USER CREATION (FIXED) ====================
+    // ==================== AUTHORIZED USER ====================
     function createAuthorizedCasePMUser(contact, companyId) {
         let users = [];
         try {
@@ -816,7 +806,6 @@
         showSuccessModal("User Account Created", `User "${contact.name}" has been added to User Management with "No Access" role.`);
     }
 
-    // ==================== SUCCESS MODAL ====================
     function showSuccessModal(title, message) {
         const modal = document.getElementById('successModal');
         if (!modal) return;
@@ -834,7 +823,7 @@
         printWindow.document.write(`
             <html>
                 <head><title>Company Details</title>
-                <style>body { font-family: system-ui; padding: 40px; } .section { margin-bottom: 20px; }</style>
+                <style>body { font-family: system-ui; padding: 40px; }</style>
                 </head>
                 <body>
                     <h1>Company Details</h1>
@@ -849,7 +838,6 @@
         }, 300);
     }
 
-    // ==================== EDIT FROM VIEW MODAL ====================
     function editFromViewModal() {
         const content = document.getElementById('viewCompanyContent');
         const id = parseInt(content.dataset.currentId);
@@ -857,7 +845,6 @@
         setTimeout(() => editCompany(id), 150);
     }
 
-    // ==================== VIEW COMPANY MODAL ====================
     function showViewCompanyModal(id) {
         const company = companies.find(c => c.id === id);
         if (!company) return;
@@ -865,11 +852,10 @@
         const content = document.getElementById('viewCompanyContent');
         content.dataset.currentId = company.id;
 
-        let contactsHTML = '';
-        if (company.contacts && company.contacts.length > 0) {
-            contactsHTML = company.contacts.map(c => `
+        let contactsHTML = (company.contacts && company.contacts.length > 0)
+            ? company.contacts.map(c => `
                 <div class="bg-zinc-800 rounded-md p-4 mb-3">
-                    <div class="flex justify-between items-start">
+                    <div class="flex justify-between">
                         <div>
                             <div class="font-medium">${c.name}</div>
                             <div class="text-xs text-zinc-400">${c.title || ''}</div>
@@ -881,10 +867,8 @@
                         <div><span class="text-zinc-400">Email:</span> ${c.email || '—'}</div>
                     </div>
                 </div>
-            `).join('');
-        } else {
-            contactsHTML = `<div class="text-zinc-500 text-sm">No contacts added.</div>`;
-        }
+            `).join('')
+            : `<div class="text-zinc-500 text-sm">No contacts added.</div>`;
 
         content.innerHTML = `
             <div class="grid grid-cols-1 md:grid-cols-2 gap-x-8 gap-y-4 text-sm mb-6">
@@ -912,7 +896,7 @@
         document.getElementById('viewCompanyModal').showModal();
     }
 
-    // ==================== SAGE 300 SYNC ====================
+    // ==================== SAGE 300 ====================
     function syncWithSage300() {
         const modal = document.getElementById('sageSyncModal');
         const content = document.getElementById('sageSyncContent');
@@ -980,13 +964,9 @@
 
     // ==================== INITIALIZATION ====================
     function initializeCompaniesPage() {
-        // Load from localStorage if available
         const saved = localStorage.getItem('casepm_companies');
         if (saved) {
             companies = JSON.parse(saved);
-        } else {
-            // Default sample data (only on first load)
-            companies = [ /* your sample data here if needed */ ];
         }
 
         renderCompaniesTable(companies);
@@ -1004,3 +984,5 @@
 
     window.onload = initializeCompaniesPage;
 </script>
+
+{% endblock %}
