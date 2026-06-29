@@ -60,7 +60,6 @@
         </div>
     </div>
 
-    <!-- Main Content -->
     <div class="flex-1 overflow-auto p-6">
 
         <!-- Summary Cards -->
@@ -199,7 +198,7 @@
                             <input type="text" id="external_id" class="w-full bg-zinc-800 text-white border border-zinc-700 rounded px-4 py-2.5 text-sm focus:border-emerald-600">
                         </div>
 
-                        <!-- Primary Phone + Primary Email (Phone first) -->
+                        <!-- Primary Phone then Primary Email below it -->
                         <div>
                             <label class="text-xs text-zinc-400">Primary Phone</label>
                             <input type="text" id="primary_phone" class="w-full bg-zinc-800 text-white border border-zinc-700 rounded px-4 py-2.5 text-sm focus:border-emerald-600" onblur="formatAndValidatePhone(this)">
@@ -210,7 +209,7 @@
                         </div>
                         <div></div>
 
-                        <!-- Tax ID + Status (Tax ID first) -->
+                        <!-- Tax ID then Status below it -->
                         <div>
                             <label class="text-xs text-zinc-400">Tax ID / EIN</label>
                             <input type="text" id="tax_id" class="w-full bg-zinc-800 text-white border border-zinc-700 rounded px-4 py-2.5 text-sm focus:border-emerald-600">
@@ -226,7 +225,7 @@
                         <div></div>
                     </div>
 
-                    <!-- COMPANY LOGO (bottom right of profile) -->
+                    <!-- COMPANY LOGO (bottom right of Company Profile) -->
                     <div class="mt-5 flex justify-end">
                         <div>
                             <label class="text-xs text-zinc-400 block mb-1.5">Company Logo</label>
@@ -242,7 +241,7 @@
                     </div>
                 </div>
 
-                <!-- Addresses with "Same as Billing" button -->
+                <!-- Addresses -->
                 <div class="mb-6">
                     <h3 class="font-semibold text-emerald-400 mb-3">Addresses</h3>
                     <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -297,7 +296,6 @@
                 <!-- Insurance + COIs -->
                 <div class="mb-6">
                     <h3 class="font-semibold text-emerald-400 mb-3">Insurance</h3>
-                    
                     <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
                         <div>
                             <label class="text-xs text-zinc-400">GL Carrier</label>
@@ -312,7 +310,6 @@
                             <input type="date" id="gl_expiration" class="w-full bg-zinc-800 text-white border border-zinc-700 rounded px-4 py-2.5 text-sm focus:border-emerald-600">
                         </div>
                     </div>
-
                     <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
                         <div>
                             <label class="text-xs text-zinc-400">WC Carrier</label>
@@ -379,791 +376,760 @@
     </div>
 </dialog>
 
-{% endblock %}
 <script>
-    // ============================================================
-    // COMPANIES / VENDORS - ULTIMATE COMPLETE & FIXED VERSION
-    // All buttons, Save, Edit, Pencil, Cancel prompt, Phone formatting,
-    // "Same as Billing", Logo, Sage Sync, Export/Import — everything works.
-    // ============================================================
+// ==================== FULL JAVASCRIPT ====================
 
-    let companies = [
-        {
-            id: 1,
-            company_name: "Titan Electric LLC",
-            company_type: "Subcontractor",
-            vendor_number: "V-10045",
-            customer_number: "",
-            external_id: "SAGE-8721",
-            trade: "Electrical",
-            website: "https://titanelectric.com",
-            primary_phone: "(813) 555-0192",
-            primary_email: "info@titanelectric.com",
-            tax_id: "59-XXXXXXX",
-            w9_status: "Yes",
-            status: "Active",
-            billing_address: "4520 N 56th St, Tampa, FL 33610",
-            shipping_address: "Same as billing",
-            contacts: [
-                { name: "Mike Torres", title: "Project Manager", phone: "(813) 555-0192", email: "mtorres@titanelectric.com", authorized_user: true }
-            ],
-            license_number: "EC-13004567",
-            license_state: "FL",
-            license_expiration: "2027-06-30",
-            license_notes: "Unlimited Electrical Contractor",
-            gl_carrier: "Travelers",
-            gl_policy: "GL-9847321",
-            gl_expiration: "2026-12-31",
-            wc_carrier: "Liberty Mutual",
-            wc_policy: "WC-449201",
-            wc_expiration: "2026-11-15",
-            cois: [{ id: 1, name: "General Liability 2026", expiration: "2026-12-31" }],
-            notes: "Preferred electrical subcontractor for ALDI projects."
-        }
-    ];
+let companies = [
+    {
+        id: 1,
+        company_name: "Titan Electric LLC",
+        company_type: "Subcontractor",
+        vendor_number: "V-10045",
+        customer_number: "",
+        external_id: "SAGE-8721",
+        trade: "Electrical",
+        website: "https://titanelectric.com",
+        primary_phone: "(813) 555-0192",
+        primary_email: "info@titanelectric.com",
+        tax_id: "59-XXXXXXX",
+        w9_status: "Yes",
+        status: "Active",
+        billing_address: "4520 N 56th St, Tampa, FL 33610",
+        shipping_address: "Same as billing",
+        contacts: [
+            { name: "Mike Torres", title: "Project Manager", phone: "(813) 555-0192", email: "mtorres@titanelectric.com", authorized_user: true }
+        ],
+        license_number: "EC-13004567",
+        license_state: "FL",
+        license_expiration: "2027-06-30",
+        license_notes: "Unlimited Electrical Contractor",
+        gl_carrier: "Travelers",
+        gl_policy: "GL-9847321",
+        gl_expiration: "2026-12-31",
+        wc_carrier: "Liberty Mutual",
+        wc_policy: "WC-449201",
+        wc_expiration: "2026-11-15",
+        cois: [{ id: 1, name: "General Liability 2026", expiration: "2026-12-31" }],
+        notes: "Preferred electrical subcontractor for ALDI projects."
+    }
+];
 
-    const sageData = [
-        { id: 101, company_name: "ABC Plumbing Supply", company_type: "Supplier", vendor_number: "V-20441", external_id: "SAGE-20441", primary_phone: "(727) 555-8821", primary_email: "orders@abcplumb.com", trade: "Plumbing Supplies" },
-        { id: 102, company_name: "Summit HVAC Services", company_type: "Subcontractor", vendor_number: "V-18902", external_id: "SAGE-18902", primary_phone: "(813) 555-7744", primary_email: "service@summithvac.com", trade: "HVAC" },
-        { id: 103, company_name: "Coastal Drywall Inc", company_type: "Subcontractor", vendor_number: "V-17550", external_id: "SAGE-17550", primary_phone: "(941) 555-9910", primary_email: "bids@coastaldrywall.com", trade: "Drywall" }
-    ];
+const sageData = [
+    { id: 101, company_name: "ABC Plumbing Supply", company_type: "Supplier", vendor_number: "V-20441", external_id: "SAGE-20441", primary_phone: "(727) 555-8821", primary_email: "orders@abcplumb.com", trade: "Plumbing Supplies" },
+    { id: 102, company_name: "Summit HVAC Services", company_type: "Subcontractor", vendor_number: "V-18902", external_id: "SAGE-18902", primary_phone: "(813) 555-7744", primary_email: "service@summithvac.com", trade: "HVAC" },
+    { id: 103, company_name: "Coastal Drywall Inc", company_type: "Subcontractor", vendor_number: "V-17550", external_id: "SAGE-17550", primary_phone: "(941) 555-9910", primary_email: "bids@coastaldrywall.com", trade: "Drywall" }
+];
 
-    // ==================== ALERT MODAL ====================
-    function showAlertModal(title, message) {
-        const modal = document.createElement('dialog');
-        modal.className = 'bg-zinc-900 border border-zinc-700 text-white rounded-md w-full max-w-md p-0 shadow-2xl';
-        modal.innerHTML = `
-            <div class="p-6">
-                <h3 class="text-lg font-semibold mb-2">${title}</h3>
-                <p class="text-zinc-400 text-sm mb-6 whitespace-pre-line">${message}</p>
-                <div class="flex justify-end">
-                    <button class="px-8 py-2.5 bg-emerald-600 hover:bg-emerald-700 rounded text-sm font-medium" onclick="this.closest('dialog').close()">OK</button>
-                </div>
+function showAlertModal(title, message) {
+    const modal = document.createElement('dialog');
+    modal.className = 'bg-zinc-900 border border-zinc-700 text-white rounded-md w-full max-w-md p-0 shadow-2xl';
+    modal.innerHTML = `
+        <div class="p-6">
+            <h3 class="text-lg font-semibold mb-2">${title}</h3>
+            <p class="text-zinc-400 text-sm mb-6 whitespace-pre-line">${message}</p>
+            <div class="flex justify-end">
+                <button class="px-8 py-2.5 bg-emerald-600 hover:bg-emerald-700 rounded text-sm font-medium" onclick="this.closest('dialog').close()">OK</button>
             </div>
+        </div>
+    `;
+    document.body.appendChild(modal);
+    modal.showModal();
+}
+
+function formatAndValidatePhone(input) {
+    let value = input.value.replace(/\D/g, '');
+    if (value.length > 10) value = value.substring(0, 10);
+
+    if (value.length === 10) {
+        input.value = `(${value.substring(0,3)}) ${value.substring(3,6)}-${value.substring(6)}`;
+    } else if (value.length > 6) {
+        input.value = `(${value.substring(0,3)}) ${value.substring(3,6)}-${value.substring(6)}`;
+    } else if (value.length > 3) {
+        input.value = `(${value.substring(0,3)}) ${value.substring(3)}`;
+    } else if (value.length > 0) {
+        input.value = `(${value}`;
+    }
+
+    if (value.length > 0 && value.length < 10) {
+        showAlertModal("Phone Number Warning", "Phone number appears incomplete. Please enter a full 10-digit number.");
+    }
+}
+
+function copyBillingToShipping() {
+    const billing = document.getElementById('billing_address').value;
+    document.getElementById('shipping_address').value = billing;
+}
+
+function renderCompaniesTable(filteredCompanies = null) {
+    const tbody = document.getElementById('companiesTableBody');
+    if (!tbody) return;
+    tbody.innerHTML = '';
+    const data = filteredCompanies || companies;
+
+    if (data.length === 0) {
+        tbody.innerHTML = `<tr><td colspan="10" class="px-6 py-8 text-center text-zinc-500">No companies found.</td></tr>`;
+        return;
+    }
+
+    data.forEach(company => {
+        const primary = company.contacts?.find(c => c.authorized_user) || company.contacts?.[0];
+        let licenseStatus = company.license_expiration ? (new Date(company.license_expiration) < new Date() ? 'Expired' : 'Current') : 'N/A';
+        let glStatus = company.gl_expiration ? (new Date(company.gl_expiration) < new Date() ? 'Expired' : 'Current') : 'N/A';
+        let wcStatus = company.wc_expiration ? (new Date(company.wc_expiration) < new Date() ? 'Expired' : 'Current') : 'N/A';
+        let coiStatus = (company.cois?.length > 0) ? (company.cois.some(c => new Date(c.expiration) < new Date()) ? 'Expired' : 'Current') : 'N/A';
+
+        const row = document.createElement('tr');
+        row.className = 'hover:bg-zinc-800/60 transition-colors cursor-pointer';
+        row.onclick = () => showViewCompanyModal(company.id);
+
+        row.innerHTML = `
+            <td class="px-6 py-3 font-medium">${company.company_name}</td>
+            <td class="px-6 py-3"><span class="px-2.5 py-0.5 rounded text-xs bg-zinc-700">${company.company_type}</span></td>
+            <td class="px-6 py-3 text-sm">${primary ? primary.name : '—'}</td>
+            <td class="px-6 py-3 text-sm font-mono">${company.primary_phone || '—'}</td>
+            <td class="px-6 py-3 text-sm">${company.billing_address || '—'}</td>
+            <td class="px-4 py-3 text-center w-20"><span class="text-xs px-2 py-0.5 rounded ${licenseStatus === 'Current' ? 'bg-emerald-900/60 text-emerald-400' : licenseStatus === 'Expired' ? 'bg-red-900/60 text-red-400' : 'bg-zinc-700'}">${licenseStatus}</span></td>
+            <td class="px-4 py-3 text-center w-20"><span class="text-xs px-2 py-0.5 rounded ${glStatus === 'Current' ? 'bg-emerald-900/60 text-emerald-400' : glStatus === 'Expired' ? 'bg-red-900/60 text-red-400' : 'bg-zinc-700'}">${glStatus}</span></td>
+            <td class="px-4 py-3 text-center w-20"><span class="text-xs px-2 py-0.5 rounded ${wcStatus === 'Current' ? 'bg-emerald-900/60 text-emerald-400' : wcStatus === 'Expired' ? 'bg-red-900/60 text-red-400' : 'bg-zinc-700'}">${wcStatus}</span></td>
+            <td class="px-4 py-3 text-center w-20"><span class="text-xs px-2 py-0.5 rounded ${coiStatus === 'Current' ? 'bg-emerald-900/60 text-emerald-400' : coiStatus === 'Expired' ? 'bg-red-900/60 text-red-400' : 'bg-zinc-700'}">${coiStatus}</span></td>
+            <td class="px-4 py-3">
+                <div class="flex gap-2 justify-end">
+                    <button onclick="event.stopImmediatePropagation(); editCompany(${company.id});" class="text-zinc-400 hover:text-white"><i class="fa-solid fa-edit"></i></button>
+                    <button onclick="event.stopImmediatePropagation(); confirmDeleteCompany(${company.id});" class="text-zinc-400 hover:text-red-400"><i class="fa-solid fa-trash"></i></button>
+                </div>
+            </td>
         `;
-        document.body.appendChild(modal);
-        modal.showModal();
-    }
+        tbody.appendChild(row);
+    });
+    updateSummaryCards();
+}
 
-    // ==================== PHONE FORMAT + WARNING ====================
-    function formatAndValidatePhone(input) {
-        let value = input.value.replace(/\D/g, '');
-        if (value.length > 10) value = value.substring(0, 10);
+function updateSummaryCards() {
+    document.getElementById('totalCompanies').textContent = companies.length;
+    document.getElementById('subcontractorCount').textContent = companies.filter(c => c.company_type === 'Subcontractor').length;
+    document.getElementById('supplierCount').textContent = companies.filter(c => c.company_type === 'Supplier').length;
+    document.getElementById('clientCount').textContent = companies.filter(c => c.company_type === 'Client').length;
 
-        if (value.length === 10) {
-            input.value = `(${value.substring(0,3)}) ${value.substring(3,6)}-${value.substring(6)}`;
-        } else if (value.length > 6) {
-            input.value = `(${value.substring(0,3)}) ${value.substring(3,6)}-${value.substring(6)}`;
-        } else if (value.length > 3) {
-            input.value = `(${value.substring(0,3)}) ${value.substring(3)}`;
-        } else if (value.length > 0) {
-            input.value = `(${value}`;
-        }
+    const now = new Date();
+    const sixtyDays = new Date(now.getTime() + (60 * 24 * 60 * 60 * 1000));
+    let expiring = 0, expiredIns = 0, expiredLic = 0;
 
-        if (value.length > 0 && value.length < 10) {
-            showAlertModal("Phone Number Warning", "Phone number appears incomplete. Please enter a full 10-digit number.");
-        }
-    }
-
-    // ==================== COPY BILLING TO SHIPPING ====================
-    function copyBillingToShipping() {
-        const billing = document.getElementById('billing_address').value;
-        document.getElementById('shipping_address').value = billing;
-    }
-
-    // ==================== RENDER TABLE ====================
-    function renderCompaniesTable(filteredCompanies = null) {
-        const tbody = document.getElementById('companiesTableBody');
-        if (!tbody) return;
-        tbody.innerHTML = '';
-        const data = filteredCompanies || companies;
-
-        if (data.length === 0) {
-            tbody.innerHTML = `<tr><td colspan="10" class="px-6 py-8 text-center text-zinc-500">No companies found.</td></tr>`;
-            return;
-        }
-
-        data.forEach(company => {
-            const primary = company.contacts?.find(c => c.authorized_user) || company.contacts?.[0];
-            let licenseStatus = company.license_expiration ? (new Date(company.license_expiration) < new Date() ? 'Expired' : 'Current') : 'N/A';
-            let glStatus = company.gl_expiration ? (new Date(company.gl_expiration) < new Date() ? 'Expired' : 'Current') : 'N/A';
-            let wcStatus = company.wc_expiration ? (new Date(company.wc_expiration) < new Date() ? 'Expired' : 'Current') : 'N/A';
-            let coiStatus = (company.cois?.length > 0) ? (company.cois.some(c => new Date(c.expiration) < new Date()) ? 'Expired' : 'Current') : 'N/A';
-
-            const row = document.createElement('tr');
-            row.className = 'hover:bg-zinc-800/60 transition-colors cursor-pointer';
-            row.onclick = () => showViewCompanyModal(company.id);
-
-            row.innerHTML = `
-                <td class="px-6 py-3 font-medium">${company.company_name}</td>
-                <td class="px-6 py-3"><span class="px-2.5 py-0.5 rounded text-xs bg-zinc-700">${company.company_type}</span></td>
-                <td class="px-6 py-3 text-sm">${primary ? primary.name : '—'}</td>
-                <td class="px-6 py-3 text-sm font-mono">${company.primary_phone || '—'}</td>
-                <td class="px-6 py-3 text-sm">${company.billing_address || '—'}</td>
-                <td class="px-4 py-3 text-center w-20"><span class="text-xs px-2 py-0.5 rounded ${licenseStatus === 'Current' ? 'bg-emerald-900/60 text-emerald-400' : licenseStatus === 'Expired' ? 'bg-red-900/60 text-red-400' : 'bg-zinc-700'}">${licenseStatus}</span></td>
-                <td class="px-4 py-3 text-center w-20"><span class="text-xs px-2 py-0.5 rounded ${glStatus === 'Current' ? 'bg-emerald-900/60 text-emerald-400' : glStatus === 'Expired' ? 'bg-red-900/60 text-red-400' : 'bg-zinc-700'}">${glStatus}</span></td>
-                <td class="px-4 py-3 text-center w-20"><span class="text-xs px-2 py-0.5 rounded ${wcStatus === 'Current' ? 'bg-emerald-900/60 text-emerald-400' : wcStatus === 'Expired' ? 'bg-red-900/60 text-red-400' : 'bg-zinc-700'}">${wcStatus}</span></td>
-                <td class="px-4 py-3 text-center w-20"><span class="text-xs px-2 py-0.5 rounded ${coiStatus === 'Current' ? 'bg-emerald-900/60 text-emerald-400' : coiStatus === 'Expired' ? 'bg-red-900/60 text-red-400' : 'bg-zinc-700'}">${coiStatus}</span></td>
-                <td class="px-4 py-3">
-                    <div class="flex gap-2 justify-end">
-                        <button onclick="event.stopImmediatePropagation(); editCompany(${company.id});" class="text-zinc-400 hover:text-white"><i class="fa-solid fa-edit"></i></button>
-                        <button onclick="event.stopImmediatePropagation(); confirmDeleteCompany(${company.id});" class="text-zinc-400 hover:text-red-400"><i class="fa-solid fa-trash"></i></button>
-                    </div>
-                </td>
-            `;
-            tbody.appendChild(row);
-        });
-        updateSummaryCards();
-    }
-
-    function updateSummaryCards() {
-        const totalEl = document.getElementById('totalCompanies');
-        const subEl = document.getElementById('subcontractorCount');
-        const supEl = document.getElementById('supplierCount');
-        const cliEl = document.getElementById('clientCount');
-        const insExpEl = document.getElementById('insuranceAlertCount');
-        const insExEl = document.getElementById('expiredInsuranceCount');
-        const licExEl = document.getElementById('expiredLicenseCount');
-
-        if (totalEl) totalEl.textContent = companies.length;
-        if (subEl) subEl.textContent = companies.filter(c => c.company_type === 'Subcontractor').length;
-        if (supEl) supEl.textContent = companies.filter(c => c.company_type === 'Supplier').length;
-        if (cliEl) cliEl.textContent = companies.filter(c => c.company_type === 'Client').length;
-
-        const now = new Date();
-        const sixtyDays = new Date(now.getTime() + (60 * 24 * 60 * 60 * 1000));
-        let expiring = 0, expiredIns = 0, expiredLic = 0;
-
-        companies.forEach(c => {
-            if (c.license_expiration && new Date(c.license_expiration) < now) expiredLic++;
-            if (c.cois?.length) {
-                c.cois.forEach(coi => {
-                    const d = new Date(coi.expiration);
-                    if (d < now) expiredIns++;
-                    else if (d < sixtyDays) expiring++;
-                });
-            }
-        });
-
-        if (insExpEl) insExpEl.textContent = expiring;
-        if (insExEl) insExEl.textContent = expiredIns;
-        if (licExEl) licExEl.textContent = expiredLic;
-    }
-
-    // ==================== FILTERS ====================
-    function filterAll() { renderCompaniesTable(companies); }
-    function filterByType(type) { renderCompaniesTable(companies.filter(c => c.company_type === type)); }
-    function filterExpiringInsurance() {
-        const now = new Date();
-        const sixty = new Date(now.getTime() + (60 * 24 * 60 * 60 * 1000));
-        const filtered = companies.filter(c => c.cois?.some(coi => {
-            const d = new Date(coi.expiration);
-            return d > now && d < sixty;
-        }));
-        renderCompaniesTable(filtered);
-    }
-    function filterExpiredInsurance() {
-        const now = new Date();
-        const filtered = companies.filter(c => c.cois?.some(coi => new Date(coi.expiration) < now));
-        renderCompaniesTable(filtered);
-    }
-    function filterExpiredLicense() {
-        const now = new Date();
-        const filtered = companies.filter(c => c.license_expiration && new Date(c.license_expiration) < now);
-        renderCompaniesTable(filtered);
-    }
-    function filterCompanies() {
-        const search = document.getElementById('searchInput').value.toLowerCase().trim();
-        const type = document.getElementById('typeFilter').value;
-        const status = document.getElementById('statusFilter').value;
-        const filtered = companies.filter(c => {
-            const matchSearch = c.company_name.toLowerCase().includes(search) || (c.trade && c.trade.toLowerCase().includes(search));
-            const matchType = !type || c.company_type === type;
-            const matchStatus = !status || c.status === status;
-            return matchSearch && matchType && matchStatus;
-        });
-        renderCompaniesTable(filtered);
-    }
-    function clearCompanyFilters() {
-        document.getElementById('searchInput').value = '';
-        document.getElementById('typeFilter').value = '';
-        document.getElementById('statusFilter').value = '';
-        renderCompaniesTable(companies);
-    }
-
-    // ==================== EXPORT ====================
-    function exportCompanies(format) {
-        if (!companies.length) {
-            showAlertModal("No Companies", "There are no companies to export.");
-            return;
-        }
-        try {
-            const ws = XLSX.utils.json_to_sheet(companies);
-            const wb = XLSX.utils.book_new();
-            XLSX.utils.book_append_sheet(wb, ws, "Companies");
-            const filename = format === 'csv' ? "companies_export.csv" : "companies_export.xlsx";
-            XLSX.writeFile(wb, filename);
-        } catch (err) {
-            showAlertModal("Export Error", "Export failed. Please hard refresh (Ctrl + Shift + R) and try again.");
-        }
-    }
-
-    // ==================== IMPORT ====================
-    function importCompanies(type) {
-        const input = document.createElement('input');
-        input.type = 'file';
-        input.accept = type === 'excel' ? '.xlsx,.xls' : '.csv';
-        input.onchange = function(e) {
-            const file = e.target.files[0];
-            const reader = new FileReader();
-            reader.onload = function(ev) {
-                try {
-                    const wb = XLSX.read(ev.target.result, { type: 'binary' });
-                    const imported = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]]);
-                    imported.forEach(item => {
-                        companies.push({
-                            id: Date.now() + Math.random(),
-                            ...item,
-                            contacts: item.contacts || [],
-                            cois: item.cois || []
-                        });
-                    });
-                    renderCompaniesTable(companies);
-                    showAlertModal("Import Successful", `${imported.length} companies imported.`);
-                } catch (err) {
-                    showAlertModal("Import Failed", "Please check the file format.");
-                }
-            };
-            reader.readAsBinaryString(file);
-        };
-        input.click();
-    }
-
-    // ==================== ADD COMPANY ====================
-    function showAddCompanyModal() {
-        document.getElementById('companyForm').reset();
-        document.getElementById('companyId').value = '';
-        document.getElementById('modalTitle').innerText = 'Add Company';
-
-        document.getElementById('contactsContainer').innerHTML = '';
-        document.getElementById('coiContainer').innerHTML = '';
-        addContactRow();
-
-        const preview = document.getElementById('logo_preview');
-        if (preview) preview.innerHTML = '<span class="text-xs text-zinc-500">No Logo</span>';
-
-        document.getElementById('companyModal').showModal();
-        setupLogoDropZone();
-    }
-
-    // ==================== SAVE COMPANY (FIXED) ====================
-    function saveCompanyWrapper() {
-        const form = document.getElementById('companyForm');
-        if (form) form.dispatchEvent(new Event('submit', { cancelable: true }));
-    }
-
-    function saveCompany(e) {
-        e.preventDefault();
-
-        const companyName = document.getElementById('company_name').value.trim();
-        if (!companyName) {
-            showAlertModal("Validation Error", "Company Name is required.");
-            return;
-        }
-
-        const contacts = [];
-        let hasInvalidAuthorizedEmail = false;
-
-        document.querySelectorAll('#contactsContainer > div').forEach(row => {
-            const nameInput = row.querySelector('.contact-name');
-            if (!nameInput || !nameInput.value.trim()) return;
-
-            const emailInput = row.querySelector('.contact-email');
-            const checkbox = row.querySelector('.contact-authorized');
-            const isAuthorized = checkbox ? checkbox.checked : false;
-            const emailValue = emailInput ? emailInput.value.trim() : '';
-
-            if (isAuthorized && (!emailValue || !/^\S+@\S+\.\S+$/.test(emailValue))) {
-                hasInvalidAuthorizedEmail = true;
-            }
-
-            contacts.push({
-                name: nameInput.value.trim(),
-                title: row.querySelector('.contact-title')?.value.trim() || '',
-                phone: row.querySelector('.contact-phone')?.value.trim() || '',
-                email: emailValue,
-                authorized_user: isAuthorized
+    companies.forEach(c => {
+        if (c.license_expiration && new Date(c.license_expiration) < now) expiredLic++;
+        if (c.cois?.length) {
+            c.cois.forEach(coi => {
+                const d = new Date(coi.expiration);
+                if (d < now) expiredIns++;
+                else if (d < sixtyDays) expiring++;
             });
-        });
+        }
+    });
 
-        if (hasInvalidAuthorizedEmail) {
-            showAlertModal("Validation Error", "Authorized Case PM User requires a valid email address.");
-            return;
+    document.getElementById('insuranceAlertCount').textContent = expiring;
+    document.getElementById('expiredInsuranceCount').textContent = expiredIns;
+    document.getElementById('expiredLicenseCount').textContent = expiredLic;
+}
+
+function filterAll() { renderCompaniesTable(companies); }
+function filterByType(type) { renderCompaniesTable(companies.filter(c => c.company_type === type)); }
+function filterExpiringInsurance() {
+    const now = new Date();
+    const sixty = new Date(now.getTime() + (60 * 24 * 60 * 60 * 1000));
+    const filtered = companies.filter(c => c.cois?.some(coi => {
+        const d = new Date(coi.expiration);
+        return d > now && d < sixty;
+    }));
+    renderCompaniesTable(filtered);
+}
+function filterExpiredInsurance() {
+    const now = new Date();
+    const filtered = companies.filter(c => c.cois?.some(coi => new Date(coi.expiration) < now));
+    renderCompaniesTable(filtered);
+}
+function filterExpiredLicense() {
+    const now = new Date();
+    const filtered = companies.filter(c => c.license_expiration && new Date(c.license_expiration) < now);
+    renderCompaniesTable(filtered);
+}
+function filterCompanies() {
+    const search = document.getElementById('searchInput').value.toLowerCase().trim();
+    const type = document.getElementById('typeFilter').value;
+    const status = document.getElementById('statusFilter').value;
+    const filtered = companies.filter(c => {
+        const matchSearch = c.company_name.toLowerCase().includes(search) || (c.trade && c.trade.toLowerCase().includes(search));
+        const matchType = !type || c.company_type === type;
+        const matchStatus = !status || c.status === status;
+        return matchSearch && matchType && matchStatus;
+    });
+    renderCompaniesTable(filtered);
+}
+function clearCompanyFilters() {
+    document.getElementById('searchInput').value = '';
+    document.getElementById('typeFilter').value = '';
+    document.getElementById('statusFilter').value = '';
+    renderCompaniesTable(companies);
+}
+
+function exportCompanies(format) {
+    if (!companies.length) {
+        showAlertModal("No Companies", "There are no companies to export.");
+        return;
+    }
+    try {
+        const ws = XLSX.utils.json_to_sheet(companies);
+        const wb = XLSX.utils.book_new();
+        XLSX.utils.book_append_sheet(wb, ws, "Companies");
+        const filename = format === 'csv' ? "companies_export.csv" : "companies_export.xlsx";
+        XLSX.writeFile(wb, filename);
+    } catch (err) {
+        showAlertModal("Export Error", "Export failed. Please hard refresh (Ctrl + Shift + R) and try again.");
+    }
+}
+
+function importCompanies(type) {
+    const input = document.createElement('input');
+    input.type = 'file';
+    input.accept = type === 'excel' ? '.xlsx,.xls' : '.csv';
+    input.onchange = function(e) {
+        const file = e.target.files[0];
+        const reader = new FileReader();
+        reader.onload = function(ev) {
+            try {
+                const wb = XLSX.read(ev.target.result, { type: 'binary' });
+                const imported = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]]);
+                imported.forEach(item => {
+                    companies.push({
+                        id: Date.now() + Math.random(),
+                        ...item,
+                        contacts: item.contacts || [],
+                        cois: item.cois || []
+                    });
+                });
+                renderCompaniesTable(companies);
+                showAlertModal("Import Successful", `${imported.length} companies imported.`);
+            } catch (err) {
+                showAlertModal("Import Failed", "Please check the file format.");
+            }
+        };
+        reader.readAsBinaryString(file);
+    };
+    input.click();
+}
+
+function showAddCompanyModal() {
+    document.getElementById('companyForm').reset();
+    document.getElementById('companyId').value = '';
+    document.getElementById('modalTitle').innerText = 'Add Company';
+
+    document.getElementById('contactsContainer').innerHTML = '';
+    document.getElementById('coiContainer').innerHTML = '';
+    addContactRow();
+
+    const preview = document.getElementById('logo_preview');
+    if (preview) preview.innerHTML = '<span class="text-xs text-zinc-500">No Logo</span>';
+
+    document.getElementById('companyModal').showModal();
+    setupLogoDropZone();
+}
+
+function saveCompanyWrapper() {
+    const form = document.getElementById('companyForm');
+    if (form) form.dispatchEvent(new Event('submit', { cancelable: true }));
+}
+
+function saveCompany(e) {
+    e.preventDefault();
+
+    const companyName = document.getElementById('company_name').value.trim();
+    if (!companyName) {
+        showAlertModal("Validation Error", "Company Name is required.");
+        return;
+    }
+
+    const contacts = [];
+    let hasInvalidAuthorizedEmail = false;
+
+    document.querySelectorAll('#contactsContainer > div').forEach(row => {
+        const nameInput = row.querySelector('.contact-name');
+        if (!nameInput || !nameInput.value.trim()) return;
+
+        const emailInput = row.querySelector('.contact-email');
+        const checkbox = row.querySelector('.contact-authorized');
+        const isAuthorized = checkbox ? checkbox.checked : false;
+        const emailValue = emailInput ? emailInput.value.trim() : '';
+
+        if (isAuthorized && (!emailValue || !/^\S+@\S+\.\S+$/.test(emailValue))) {
+            hasInvalidAuthorizedEmail = true;
         }
 
-        contacts.forEach(contact => {
-            if (contact.authorized_user && contact.email) {
-                createAuthorizedCasePMUser(contact, document.getElementById('companyId').value ? parseInt(document.getElementById('companyId').value) : Date.now());
-            }
+        contacts.push({
+            name: nameInput.value.trim(),
+            title: row.querySelector('.contact-title')?.value.trim() || '',
+            phone: row.querySelector('.contact-phone')?.value.trim() || '',
+            email: emailValue,
+            authorized_user: isAuthorized
         });
+    });
 
-        const newCompany = {
-            id: document.getElementById('companyId').value ? parseInt(document.getElementById('companyId').value) : Date.now(),
-            company_name: companyName,
-            company_type: document.getElementById('company_type').value,
-            vendor_number: document.getElementById('vendor_number').value.trim(),
-            customer_number: document.getElementById('customer_number').value.trim(),
-            external_id: document.getElementById('external_id').value.trim(),
-            trade: document.getElementById('trade').value.trim(),
-            website: document.getElementById('website').value.trim(),
-            primary_phone: document.getElementById('primary_phone').value.trim(),
-            primary_email: document.getElementById('primary_email').value.trim(),
-            tax_id: document.getElementById('tax_id').value.trim(),
-            w9_status: document.getElementById('w9_status').value,
-            status: document.getElementById('status').value,
-            billing_address: document.getElementById('billing_address').value.trim(),
-            shipping_address: document.getElementById('shipping_address').value.trim(),
-            contacts: contacts,
-            license_number: document.getElementById('license_number').value.trim(),
-            license_state: document.getElementById('license_state').value.trim(),
-            license_expiration: document.getElementById('license_expiration').value,
-            license_notes: document.getElementById('license_notes').value.trim(),
-            gl_carrier: document.getElementById('gl_carrier').value.trim(),
-            gl_policy: document.getElementById('gl_policy').value.trim(),
-            gl_expiration: document.getElementById('gl_expiration').value,
-            wc_carrier: document.getElementById('wc_carrier').value.trim(),
-            wc_policy: document.getElementById('wc_policy').value.trim(),
-            wc_expiration: document.getElementById('wc_expiration').value,
-            cois: [],
-            notes: document.getElementById('notes').value.trim()
-        };
+    if (hasInvalidAuthorizedEmail) {
+        showAlertModal("Validation Error", "Authorized Case PM User requires a valid email address.");
+        return;
+    }
 
-        if (document.getElementById('companyId').value) {
-            const index = companies.findIndex(c => c.id == document.getElementById('companyId').value);
-            if (index !== -1) companies[index] = newCompany;
-        } else {
-            companies.push(newCompany);
+    contacts.forEach(contact => {
+        if (contact.authorized_user && contact.email) {
+            createAuthorizedCasePMUser(contact, document.getElementById('companyId').value ? parseInt(document.getElementById('companyId').value) : Date.now());
         }
+    });
 
-        document.getElementById('companyModal').close();
-        renderCompaniesTable(companies);
+    const newCompany = {
+        id: document.getElementById('companyId').value ? parseInt(document.getElementById('companyId').value) : Date.now(),
+        company_name: companyName,
+        company_type: document.getElementById('company_type').value,
+        vendor_number: document.getElementById('vendor_number').value.trim(),
+        customer_number: document.getElementById('customer_number').value.trim(),
+        external_id: document.getElementById('external_id').value.trim(),
+        trade: document.getElementById('trade').value.trim(),
+        website: document.getElementById('website').value.trim(),
+        primary_phone: document.getElementById('primary_phone').value.trim(),
+        primary_email: document.getElementById('primary_email').value.trim(),
+        tax_id: document.getElementById('tax_id').value.trim(),
+        w9_status: document.getElementById('w9_status').value,
+        status: document.getElementById('status').value,
+        billing_address: document.getElementById('billing_address').value.trim(),
+        shipping_address: document.getElementById('shipping_address').value.trim(),
+        contacts: contacts,
+        license_number: document.getElementById('license_number').value.trim(),
+        license_state: document.getElementById('license_state').value.trim(),
+        license_expiration: document.getElementById('license_expiration').value,
+        license_notes: document.getElementById('license_notes').value.trim(),
+        gl_carrier: document.getElementById('gl_carrier').value.trim(),
+        gl_policy: document.getElementById('gl_policy').value.trim(),
+        gl_expiration: document.getElementById('gl_expiration').value,
+        wc_carrier: document.getElementById('wc_carrier').value.trim(),
+        wc_policy: document.getElementById('wc_policy').value.trim(),
+        wc_expiration: document.getElementById('wc_expiration').value,
+        cois: [],
+        notes: document.getElementById('notes').value.trim()
+    };
+
+    if (document.getElementById('companyId').value) {
+        const index = companies.findIndex(c => c.id == document.getElementById('companyId').value);
+        if (index !== -1) companies[index] = newCompany;
+    } else {
+        companies.push(newCompany);
     }
 
-    // ==================== CONTACT ROW ====================
-    function addContactRow(contact = null) {
-        const container = document.getElementById('contactsContainer');
-        const div = document.createElement('div');
-        div.className = 'bg-zinc-800 border border-zinc-700 rounded p-4 mb-3';
-        const checked = contact && contact.authorized_user ? 'checked' : '';
-        div.innerHTML = `
-            <div class="grid grid-cols-1 md:grid-cols-12 gap-3 items-end">
-                <div class="md:col-span-3">
-                    <input type="text" placeholder="Full Name" class="contact-name w-full bg-zinc-900 text-white border border-zinc-600 rounded px-3 py-1.5 text-sm" value="${contact ? contact.name : ''}">
-                </div>
-                <div class="md:col-span-2">
-                    <input type="text" placeholder="Title" class="contact-title w-full bg-zinc-900 text-white border border-zinc-600 rounded px-3 py-1.5 text-sm" value="${contact ? contact.title : ''}">
-                </div>
-                <div class="md:col-span-2">
-                    <input type="text" placeholder="(813) 555-0192" class="contact-phone w-full bg-zinc-900 text-white border border-zinc-600 rounded px-3 py-1.5 text-sm" 
-                           value="${contact ? contact.phone : ''}" onblur="formatAndValidatePhone(this)">
-                </div>
-                <div class="md:col-span-3">
-                    <input type="email" placeholder="Email" class="contact-email w-full bg-zinc-900 text-white border border-zinc-600 rounded px-3 py-1.5 text-sm" value="${contact ? contact.email : ''}">
-                </div>
-                <div class="md:col-span-2 flex items-center gap-2">
-                    <label class="flex items-center gap-1 text-xs cursor-pointer whitespace-nowrap">
-                        <input type="checkbox" class="contact-authorized accent-emerald-600" ${checked}> 
-                        Authorized Case PM User
-                    </label>
-                    <button type="button" onclick="this.closest('.bg-zinc-800').remove()" class="text-red-400 hover:text-red-500 ml-auto">
-                        <i class="fa-solid fa-times"></i>
-                    </button>
-                </div>
+    document.getElementById('companyModal').close();
+    renderCompaniesTable(companies);
+}
+
+function addContactRow(contact = null) {
+    const container = document.getElementById('contactsContainer');
+    const div = document.createElement('div');
+    div.className = 'bg-zinc-800 border border-zinc-700 rounded p-4 mb-3';
+    const checked = contact && contact.authorized_user ? 'checked' : '';
+    div.innerHTML = `
+        <div class="grid grid-cols-1 md:grid-cols-12 gap-3 items-end">
+            <div class="md:col-span-3">
+                <input type="text" placeholder="Full Name" class="contact-name w-full bg-zinc-900 text-white border border-zinc-600 rounded px-3 py-1.5 text-sm" value="${contact ? contact.name : ''}">
             </div>
-        `;
-        container.appendChild(div);
-    }
-
-    function addCOIRow(coi = null) {
-        const container = document.getElementById('coiContainer');
-        const div = document.createElement('div');
-        div.className = 'bg-zinc-800 border border-zinc-700 rounded p-4 mb-3';
-        div.innerHTML = `
-            <div class="grid grid-cols-1 md:grid-cols-12 gap-3 items-end">
-                <div class="md:col-span-5">
-                    <input type="text" placeholder="COI Description" class="coi-name w-full bg-zinc-900 text-white border border-zinc-600 rounded px-3 py-1.5 text-sm" value="${coi ? coi.name : ''}">
-                </div>
-                <div class="md:col-span-3">
-                    <input type="date" class="coi-expiration w-full bg-zinc-900 text-white border border-zinc-600 rounded px-3 py-1.5 text-sm" value="${coi ? coi.expiration : ''}">
-                </div>
-                <div class="md:col-span-3">
-                    <input type="file" class="coi-file text-xs w-full text-white">
-                </div>
-                <div class="md:col-span-1">
-                    <button type="button" onclick="this.closest('.bg-zinc-800').remove()" class="text-red-400 hover:text-red-500">
-                        <i class="fa-solid fa-times"></i>
-                    </button>
-                </div>
+            <div class="md:col-span-2">
+                <input type="text" placeholder="Title" class="contact-title w-full bg-zinc-900 text-white border border-zinc-600 rounded px-3 py-1.5 text-sm" value="${contact ? contact.title : ''}">
             </div>
-        `;
-        container.appendChild(div);
-    }
-
-    // ==================== EDIT COMPANY ====================
-    function editCompany(id) {
-        const company = companies.find(c => c.id === id);
-        if (!company) return;
-
-        document.getElementById('companyId').value = company.id;
-        document.getElementById('modalTitle').innerText = 'Edit Company';
-
-        document.getElementById('company_name').value = company.company_name || '';
-        document.getElementById('company_type').value = company.company_type || 'Subcontractor';
-        document.getElementById('vendor_number').value = company.vendor_number || '';
-        document.getElementById('customer_number').value = company.customer_number || '';
-        document.getElementById('external_id').value = company.external_id || '';
-        document.getElementById('trade').value = company.trade || '';
-        document.getElementById('website').value = company.website || '';
-        document.getElementById('primary_phone').value = company.primary_phone || '';
-        document.getElementById('primary_email').value = company.primary_email || '';
-        document.getElementById('tax_id').value = company.tax_id || '';
-        document.getElementById('w9_status').value = company.w9_status || 'Yes';
-        document.getElementById('status').value = company.status || 'Active';
-        document.getElementById('billing_address').value = company.billing_address || '';
-        document.getElementById('shipping_address').value = company.shipping_address || '';
-        document.getElementById('license_number').value = company.license_number || '';
-        document.getElementById('license_state').value = company.license_state || '';
-        document.getElementById('license_expiration').value = company.license_expiration || '';
-        document.getElementById('license_notes').value = company.license_notes || '';
-        document.getElementById('gl_carrier').value = company.gl_carrier || '';
-        document.getElementById('gl_policy').value = company.gl_policy || '';
-        document.getElementById('gl_expiration').value = company.gl_expiration || '';
-        document.getElementById('wc_carrier').value = company.wc_carrier || '';
-        document.getElementById('wc_policy').value = company.wc_policy || '';
-        document.getElementById('wc_expiration').value = company.wc_expiration || '';
-        document.getElementById('notes').value = company.notes || '';
-
-        document.getElementById('contactsContainer').innerHTML = '';
-        if (company.contacts?.length) company.contacts.forEach(c => addContactRow(c));
-        else addContactRow();
-
-        document.getElementById('coiContainer').innerHTML = '';
-        if (company.cois?.length) company.cois.forEach(c => addCOIRow(c));
-
-        const preview = document.getElementById('logo_preview');
-        if (preview) preview.innerHTML = '<span class="text-xs text-zinc-500">No Logo</span>';
-
-        document.getElementById('companyModal').showModal();
-        setupLogoDropZone();
-    }
-
-    // ==================== VIEW → EDIT ====================
-    function editFromViewModal() {
-        const content = document.getElementById('viewCompanyContent');
-        if (!content || !content.dataset.currentId) return;
-        const id = parseInt(content.dataset.currentId);
-        document.getElementById('viewCompanyModal').close();
-        setTimeout(() => editCompany(id), 200);
-    }
-
-    // ==================== DELETE ====================
-    function confirmDeleteCompany(id) {
-        const modal = document.createElement('dialog');
-        modal.className = 'bg-zinc-900 border border-zinc-700 text-white rounded-md w-full max-w-md p-0 shadow-2xl';
-        modal.innerHTML = `
-            <div class="p-6">
-                <h3 class="text-lg font-semibold mb-2">Delete Company?</h3>
-                <p class="text-zinc-400 text-sm mb-6">This action cannot be undone.</p>
-                <div class="flex justify-end gap-3">
-                    <button class="px-6 py-2.5 rounded border border-zinc-600 hover:bg-zinc-800 text-sm" onclick="this.closest('dialog').close()">Cancel</button>
-                    <button class="px-6 py-2.5 bg-red-600 hover:bg-red-700 rounded text-sm font-medium" onclick="deleteCompanyConfirmed(${id}, this)">Delete</button>
-                </div>
+            <div class="md:col-span-2">
+                <input type="text" placeholder="(813) 555-0192" class="contact-phone w-full bg-zinc-900 text-white border border-zinc-600 rounded px-3 py-1.5 text-sm" 
+                       value="${contact ? contact.phone : ''}" onblur="formatAndValidatePhone(this)">
             </div>
-        `;
-        document.body.appendChild(modal);
-        modal.showModal();
-    }
+            <div class="md:col-span-3">
+                <input type="email" placeholder="Email" class="contact-email w-full bg-zinc-900 text-white border border-zinc-600 rounded px-3 py-1.5 text-sm" value="${contact ? contact.email : ''}">
+            </div>
+            <div class="md:col-span-2 flex items-center gap-2">
+                <label class="flex items-center gap-1 text-xs cursor-pointer whitespace-nowrap">
+                    <input type="checkbox" class="contact-authorized accent-emerald-600" ${checked}> 
+                    Authorized Case PM User
+                </label>
+                <button type="button" onclick="this.closest('.bg-zinc-800').remove()" class="text-red-400 hover:text-red-500 ml-auto">
+                    <i class="fa-solid fa-times"></i>
+                </button>
+            </div>
+        </div>
+    `;
+    container.appendChild(div);
+}
 
-    function deleteCompanyConfirmed(id, btn) {
-        companies = companies.filter(c => c.id !== id);
-        btn.closest('dialog').close();
-        renderCompaniesTable(companies);
-    }
+function addCOIRow(coi = null) {
+    const container = document.getElementById('coiContainer');
+    const div = document.createElement('div');
+    div.className = 'bg-zinc-800 border border-zinc-700 rounded p-4 mb-3';
+    div.innerHTML = `
+        <div class="grid grid-cols-1 md:grid-cols-12 gap-3 items-end">
+            <div class="md:col-span-5">
+                <input type="text" placeholder="COI Description" class="coi-name w-full bg-zinc-900 text-white border border-zinc-600 rounded px-3 py-1.5 text-sm" value="${coi ? coi.name : ''}">
+            </div>
+            <div class="md:col-span-3">
+                <input type="date" class="coi-expiration w-full bg-zinc-900 text-white border border-zinc-600 rounded px-3 py-1.5 text-sm" value="${coi ? coi.expiration : ''}">
+            </div>
+            <div class="md:col-span-3">
+                <input type="file" class="coi-file text-xs w-full text-white">
+            </div>
+            <div class="md:col-span-1">
+                <button type="button" onclick="this.closest('.bg-zinc-800').remove()" class="text-red-400 hover:text-red-500">
+                    <i class="fa-solid fa-times"></i>
+                </button>
+            </div>
+        </div>
+    `;
+    container.appendChild(div);
+}
 
-    // ==================== AUTHORIZED USER ====================
-    function createAuthorizedCasePMUser(contact, companyId) {
-        let users = [];
-        try {
-            const stored = localStorage.getItem('casepm_users');
-            users = stored ? JSON.parse(stored) : [];
-        } catch (e) { users = []; }
+function editCompany(id) {
+    const company = companies.find(c => c.id === id);
+    if (!company) return;
 
-        const exists = users.find(u => u.email && u.email.toLowerCase() === contact.email.toLowerCase());
-        if (exists) return;
+    document.getElementById('companyId').value = company.id;
+    document.getElementById('modalTitle').innerText = 'Edit Company';
 
-        const newUser = {
-            id: Date.now(),
-            name: contact.name,
-            email: contact.email,
-            role: "No Access",
-            permissions: {},
-            company_id: companyId,
-            created_at: new Date().toISOString(),
-            source: "companies_page"
-        };
+    document.getElementById('company_name').value = company.company_name || '';
+    document.getElementById('company_type').value = company.company_type || 'Subcontractor';
+    document.getElementById('vendor_number').value = company.vendor_number || '';
+    document.getElementById('customer_number').value = company.customer_number || '';
+    document.getElementById('external_id').value = company.external_id || '';
+    document.getElementById('trade').value = company.trade || '';
+    document.getElementById('website').value = company.website || '';
+    document.getElementById('primary_phone').value = company.primary_phone || '';
+    document.getElementById('primary_email').value = company.primary_email || '';
+    document.getElementById('tax_id').value = company.tax_id || '';
+    document.getElementById('w9_status').value = company.w9_status || 'Yes';
+    document.getElementById('status').value = company.status || 'Active';
+    document.getElementById('billing_address').value = company.billing_address || '';
+    document.getElementById('shipping_address').value = company.shipping_address || '';
+    document.getElementById('license_number').value = company.license_number || '';
+    document.getElementById('license_state').value = company.license_state || '';
+    document.getElementById('license_expiration').value = company.license_expiration || '';
+    document.getElementById('license_notes').value = company.license_notes || '';
+    document.getElementById('gl_carrier').value = company.gl_carrier || '';
+    document.getElementById('gl_policy').value = company.gl_policy || '';
+    document.getElementById('gl_expiration').value = company.gl_expiration || '';
+    document.getElementById('wc_carrier').value = company.wc_carrier || '';
+    document.getElementById('wc_policy').value = company.wc_policy || '';
+    document.getElementById('wc_expiration').value = company.wc_expiration || '';
+    document.getElementById('notes').value = company.notes || '';
 
-        users.push(newUser);
-        localStorage.setItem('casepm_users', JSON.stringify(users));
+    document.getElementById('contactsContainer').innerHTML = '';
+    if (company.contacts?.length) company.contacts.forEach(c => addContactRow(c));
+    else addContactRow();
 
-        showAlertModal("User Account Created", `User "${contact.name}" has been added to User Management with "No Access" role.`);
-    }
+    document.getElementById('coiContainer').innerHTML = '';
+    if (company.cois?.length) company.cois.forEach(c => addCOIRow(c));
 
-    // ==================== PRINT ====================
-    function printCompanyDetails() {
-        const content = document.getElementById('viewCompanyContent');
-        if (!content) return;
+    const preview = document.getElementById('logo_preview');
+    if (preview) preview.innerHTML = '<span class="text-xs text-zinc-500">No Logo</span>';
 
-        const iframe = document.createElement('iframe');
-        iframe.style.position = 'absolute';
-        iframe.style.width = '0px';
-        iframe.style.height = '0px';
-        iframe.style.border = 'none';
-        document.body.appendChild(iframe);
+    document.getElementById('companyModal').showModal();
+    setupLogoDropZone();
+}
 
-        const doc = iframe.contentWindow.document;
-        doc.open();
-        doc.write(`
-            <html>
-                <head>
-                    <title>Company Details</title>
-                    <style>
-                        body { font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; padding: 40px; color: #111827; }
-                        h1 { font-size: 22px; margin-bottom: 24px; border-bottom: 2px solid #e5e7eb; padding-bottom: 8px; }
-                    </style>
-                </head>
-                <body>
-                    <h1>Company Details</h1>
-                    ${content.innerHTML}
-                </body>
-            </html>
-        `);
-        doc.close();
+function editFromViewModal() {
+    const content = document.getElementById('viewCompanyContent');
+    if (!content || !content.dataset.currentId) return;
+    const id = parseInt(content.dataset.currentId);
+    document.getElementById('viewCompanyModal').close();
+    setTimeout(() => editCompany(id), 200);
+}
 
-        setTimeout(() => {
-            iframe.contentWindow.focus();
-            iframe.contentWindow.print();
-            setTimeout(() => document.body.removeChild(iframe), 1500);
-        }, 400);
-    }
+function confirmDeleteCompany(id) {
+    const modal = document.createElement('dialog');
+    modal.className = 'bg-zinc-900 border border-zinc-700 text-white rounded-md w-full max-w-md p-0 shadow-2xl';
+    modal.innerHTML = `
+        <div class="p-6">
+            <h3 class="text-lg font-semibold mb-2">Delete Company?</h3>
+            <p class="text-zinc-400 text-sm mb-6">This action cannot be undone.</p>
+            <div class="flex justify-end gap-3">
+                <button class="px-6 py-2.5 rounded border border-zinc-600 hover:bg-zinc-800 text-sm" onclick="this.closest('dialog').close()">Cancel</button>
+                <button class="px-6 py-2.5 bg-red-600 hover:bg-red-700 rounded text-sm font-medium" onclick="deleteCompanyConfirmed(${id}, this)">Delete</button>
+            </div>
+        </div>
+    `;
+    document.body.appendChild(modal);
+    modal.showModal();
+}
 
-    // ==================== SAFE CLOSE MODAL ====================
-    function closeCompanyModalSafely() {
-        const modal = document.getElementById('companyModal');
-        if (!modal) return;
+function deleteCompanyConfirmed(id, btn) {
+    companies = companies.filter(c => c.id !== id);
+    btn.closest('dialog').close();
+    renderCompaniesTable(companies);
+}
 
-        const companyName = document.getElementById('company_name') ? document.getElementById('company_name').value.trim() : '';
-        if (companyName) {
-            if (confirm("You have unsaved changes. Discard changes and close?")) {
-                modal.close();
-            }
-        } else {
+function createAuthorizedCasePMUser(contact, companyId) {
+    let users = [];
+    try {
+        const stored = localStorage.getItem('casepm_users');
+        users = stored ? JSON.parse(stored) : [];
+    } catch (e) { users = []; }
+
+    const exists = users.find(u => u.email && u.email.toLowerCase() === contact.email.toLowerCase());
+    if (exists) return;
+
+    const newUser = {
+        id: Date.now(),
+        name: contact.name,
+        email: contact.email,
+        role: "No Access",
+        permissions: {},
+        company_id: companyId,
+        created_at: new Date().toISOString(),
+        source: "companies_page"
+    };
+
+    users.push(newUser);
+    localStorage.setItem('casepm_users', JSON.stringify(users));
+
+    showAlertModal("User Account Created", `User "${contact.name}" has been added to User Management with "No Access" role.`);
+}
+
+function printCompanyDetails() {
+    const content = document.getElementById('viewCompanyContent');
+    if (!content) return;
+
+    const iframe = document.createElement('iframe');
+    iframe.style.position = 'absolute';
+    iframe.style.width = '0px';
+    iframe.style.height = '0px';
+    iframe.style.border = 'none';
+    document.body.appendChild(iframe);
+
+    const doc = iframe.contentWindow.document;
+    doc.open();
+    doc.write(`
+        <html>
+            <head>
+                <title>Company Details</title>
+                <style>
+                    body { font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; padding: 40px; color: #111827; }
+                    h1 { font-size: 22px; margin-bottom: 24px; border-bottom: 2px solid #e5e7eb; padding-bottom: 8px; }
+                </style>
+            </head>
+            <body>
+                <h1>Company Details</h1>
+                ${content.innerHTML}
+            </body>
+        </html>
+    `);
+    doc.close();
+
+    setTimeout(() => {
+        iframe.contentWindow.focus();
+        iframe.contentWindow.print();
+        setTimeout(() => document.body.removeChild(iframe), 1500);
+    }, 400);
+}
+
+function closeCompanyModalSafely() {
+    const modal = document.getElementById('companyModal');
+    if (!modal) return;
+
+    const companyName = document.getElementById('company_name') ? document.getElementById('company_name').value.trim() : '';
+    if (companyName) {
+        if (confirm("You have unsaved changes. Discard changes and close?")) {
             modal.close();
         }
+    } else {
+        modal.close();
     }
+}
 
-    // ==================== LOGO DRAG & DROP ====================
-    function setupLogoDropZone() {
-        const dropZone = document.getElementById('logo_drop_zone');
-        const fileInput = document.getElementById('company_logo');
-        const preview = document.getElementById('logo_preview');
+function setupLogoDropZone() {
+    const dropZone = document.getElementById('logo_drop_zone');
+    const fileInput = document.getElementById('company_logo');
+    const preview = document.getElementById('logo_preview');
 
-        if (!dropZone || !fileInput || !preview) return;
+    if (!dropZone || !fileInput || !preview) return;
 
-        dropZone.onclick = () => fileInput.click();
+    dropZone.onclick = () => fileInput.click();
 
-        dropZone.addEventListener('dragover', function(e) {
-            e.preventDefault();
-            dropZone.classList.add('dragover');
-        });
+    dropZone.addEventListener('dragover', function(e) {
+        e.preventDefault();
+        dropZone.classList.add('dragover');
+    });
 
-        dropZone.addEventListener('dragleave', function() {
-            dropZone.classList.remove('dragover');
-        });
+    dropZone.addEventListener('dragleave', function() {
+        dropZone.classList.remove('dragover');
+    });
 
-        dropZone.addEventListener('drop', function(e) {
-            e.preventDefault();
-            dropZone.classList.remove('dragover');
-            if (e.dataTransfer.files.length > 0) {
-                fileInput.files = e.dataTransfer.files;
-                previewLogo(fileInput);
-            }
-        });
-
-        fileInput.onchange = () => previewLogo(fileInput);
-    }
-
-    function previewLogo(input) {
-        const preview = document.getElementById('logo_preview');
-        if (!preview) return;
-
-        if (!input.files || !input.files[0]) return;
-
-        const reader = new FileReader();
-        reader.onload = function(e) {
-            preview.innerHTML = `<img src="${e.target.result}" class="w-full h-full object-cover">`;
-        };
-        reader.readAsDataURL(input.files[0]);
-    }
-
-    // ==================== VIEW MODAL ====================
-    function showViewCompanyModal(id) {
-        const company = companies.find(c => c.id === id);
-        if (!company) return;
-
-        const content = document.getElementById('viewCompanyContent');
-        content.dataset.currentId = company.id;
-
-        let contactsHTML = (company.contacts && company.contacts.length > 0)
-            ? company.contacts.map(c => `
-                <div class="bg-zinc-800 rounded p-4 mb-3">
-                    <div class="flex justify-between">
-                        <div>
-                            <div class="font-medium">${c.name}</div>
-                            <div class="text-xs text-zinc-400">${c.title || ''}</div>
-                        </div>
-                        ${c.authorized_user ? `<span class="text-xs bg-emerald-900/60 text-emerald-400 px-2 py-0.5 rounded">Authorized Case PM User</span>` : ''}
-                    </div>
-                    <div class="mt-2 text-sm grid grid-cols-1 md:grid-cols-2 gap-x-4">
-                        <div><span class="text-zinc-400">Phone:</span> ${c.phone || '—'}</div>
-                        <div><span class="text-zinc-400">Email:</span> ${c.email || '—'}</div>
-                    </div>
-                </div>
-            `).join('')
-            : `<div class="text-zinc-500 text-sm">No contacts added.</div>`;
-
-        content.innerHTML = `
-            <div class="grid grid-cols-1 md:grid-cols-2 gap-x-8 gap-y-4 text-sm mb-6">
-                <div><span class="text-zinc-400">Company:</span> <span class="font-semibold">${company.company_name}</span></div>
-                <div><span class="text-zinc-400">Type:</span> ${company.company_type}</div>
-                <div><span class="text-zinc-400">Vendor #:</span> ${company.vendor_number || '—'}</div>
-                <div><span class="text-zinc-400">Customer #:</span> ${company.customer_number || '—'}</div>
-                <div><span class="text-zinc-400">External / Sage ID:</span> ${company.external_id || '—'}</div>
-                <div><span class="text-zinc-400">Trade:</span> ${company.trade || '—'}</div>
-                <div><span class="text-zinc-400">Status:</span> ${company.status}</div>
-                <div><span class="text-zinc-400">Primary Phone:</span> ${company.primary_phone || '—'}</div>
-                <div><span class="text-zinc-400">Primary Email:</span> ${company.primary_email || '—'}</div>
-                <div class="md:col-span-2"><span class="text-zinc-400">Billing Address:</span> ${company.billing_address || '—'}</div>
-                <div class="md:col-span-2"><span class="text-zinc-400">Shipping Address:</span> ${company.shipping_address || '—'}</div>
-            </div>
-
-            <div class="pt-4 border-t border-zinc-700">
-                <div class="font-semibold mb-3 flex items-center gap-2">
-                    <span>Contacts</span>
-                    <span class="text-xs bg-zinc-700 px-2 py-0.5 rounded">${company.contacts?.length || 0}</span>
-                </div>
-                ${contactsHTML}
-            </div>
-
-            <div class="pt-4 border-t border-zinc-700 mt-4">
-                <div class="font-semibold mb-2">License</div>
-                <div class="text-sm grid grid-cols-1 md:grid-cols-2 gap-x-4">
-                    <div><span class="text-zinc-400">License #:</span> ${company.license_number || '—'}</div>
-                    <div><span class="text-zinc-400">State / Expiration:</span> ${company.license_state || '—'} / ${company.license_expiration || '—'}</div>
-                </div>
-                <div class="text-sm mt-1"><span class="text-zinc-400">Notes:</span> ${company.license_notes || '—'}</div>
-            </div>
-
-            <div class="pt-4 border-t border-zinc-700 mt-4">
-                <div class="font-semibold mb-2">Insurance</div>
-                <div class="text-sm grid grid-cols-1 md:grid-cols-2 gap-x-4">
-                    <div><span class="text-zinc-400">GL:</span> ${company.gl_carrier || '—'} (${company.gl_policy || '—'}) — Exp: ${company.gl_expiration || '—'}</div>
-                    <div><span class="text-zinc-400">WC:</span> ${company.wc_carrier || '—'} (${company.wc_policy || '—'}) — Exp: ${company.wc_expiration || '—'}</div>
-                </div>
-            </div>
-
-            <div class="pt-4 border-t border-zinc-700 mt-4">
-                <div class="font-semibold mb-2">Notes</div>
-                <div class="text-sm">${company.notes || '—'}</div>
-            </div>
-        `;
-
-        document.getElementById('viewCompanyModal').showModal();
-    }
-
-    // ==================== SAGE 300 ====================
-    function syncWithSage300() {
-        const modal = document.getElementById('sageSyncModal');
-        const content = document.getElementById('sageSyncContent');
-
-        content.innerHTML = `
-            <div class="mb-4 text-sm text-zinc-400">This simulates pulling companies from Sage 300.</div>
-            <div class="flex gap-2 mb-3">
-                <button onclick="selectAllSage(true)" class="text-xs px-3 py-1.5 bg-zinc-700 hover:bg-zinc-600 rounded">Select All</button>
-                <button onclick="selectAllSage(false)" class="text-xs px-3 py-1.5 bg-zinc-700 hover:bg-zinc-600 rounded">Deselect All</button>
-            </div>
-            <div class="space-y-2 max-h-[420px] overflow-auto pr-2">
-                ${sageData.map(item => `
-                    <div class="flex items-center gap-3 bg-zinc-800 border border-zinc-700 rounded p-3">
-                        <input type="checkbox" class="sage-checkbox accent-emerald-600" data-id="${item.id}">
-                        <div class="flex-1 text-sm">
-                            <div class="font-medium">${item.company_name}</div>
-                            <div class="text-xs text-zinc-400">${item.company_type} • ${item.trade}</div>
-                        </div>
-                        <div class="text-xs text-zinc-400 font-mono">${item.external_id}</div>
-                    </div>
-                `).join('')}
-            </div>
-        `;
-
-        modal.showModal();
-    }
-
-    function selectAllSage(checked) {
-        document.querySelectorAll('.sage-checkbox').forEach(cb => cb.checked = checked);
-    }
-
-    function importSelectedFromSage() {
-        const checked = document.querySelectorAll('.sage-checkbox:checked');
-        if (!checked.length) {
-            showAlertModal("No Selection", "No companies selected for import.");
-            return;
+    dropZone.addEventListener('drop', function(e) {
+        e.preventDefault();
+        dropZone.classList.remove('dragover');
+        if (e.dataTransfer.files.length > 0) {
+            fileInput.files = e.dataTransfer.files;
+            previewLogo(fileInput);
         }
+    });
 
-        checked.forEach(cb => {
-            const id = parseInt(cb.dataset.id);
-            const realCompany = sageData.find(s => s.id === id);
-            if (realCompany) {
-                companies.push({
-                    id: Date.now() + Math.random(),
-                    ...realCompany,
-                    contacts: [],
-                    cois: []
-                });
-            }
-        });
+    fileInput.onchange = () => previewLogo(fileInput);
+}
 
-        document.getElementById('sageSyncModal').close();
-        renderCompaniesTable(companies);
-        showAlertModal("Import Complete", `${checked.length} companies imported from Sage 300.`);
+function previewLogo(input) {
+    const preview = document.getElementById('logo_preview');
+    if (!preview) return;
+
+    if (!input.files || !input.files[0]) return;
+
+    const reader = new FileReader();
+    reader.onload = function(e) {
+        preview.innerHTML = `<img src="${e.target.result}" class="w-full h-full object-cover">`;
+    };
+    reader.readAsDataURL(input.files[0]);
+}
+
+function showViewCompanyModal(id) {
+    const company = companies.find(c => c.id === id);
+    if (!company) return;
+
+    const content = document.getElementById('viewCompanyContent');
+    content.dataset.currentId = company.id;
+
+    let contactsHTML = (company.contacts && company.contacts.length > 0)
+        ? company.contacts.map(c => `
+            <div class="bg-zinc-800 rounded p-4 mb-3">
+                <div class="flex justify-between">
+                    <div>
+                        <div class="font-medium">${c.name}</div>
+                        <div class="text-xs text-zinc-400">${c.title || ''}</div>
+                    </div>
+                    ${c.authorized_user ? `<span class="text-xs bg-emerald-900/60 text-emerald-400 px-2 py-0.5 rounded">Authorized Case PM User</span>` : ''}
+                </div>
+                <div class="mt-2 text-sm grid grid-cols-1 md:grid-cols-2 gap-x-4">
+                    <div><span class="text-zinc-400">Phone:</span> ${c.phone || '—'}</div>
+                    <div><span class="text-zinc-400">Email:</span> ${c.email || '—'}</div>
+                </div>
+            </div>
+        `).join('')
+        : `<div class="text-zinc-500 text-sm">No contacts added.</div>`;
+
+    content.innerHTML = `
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-x-8 gap-y-4 text-sm mb-6">
+            <div><span class="text-zinc-400">Company:</span> <span class="font-semibold">${company.company_name}</span></div>
+            <div><span class="text-zinc-400">Type:</span> ${company.company_type}</div>
+            <div><span class="text-zinc-400">Vendor #:</span> ${company.vendor_number || '—'}</div>
+            <div><span class="text-zinc-400">Customer #:</span> ${company.customer_number || '—'}</div>
+            <div><span class="text-zinc-400">External / Sage ID:</span> ${company.external_id || '—'}</div>
+            <div><span class="text-zinc-400">Trade:</span> ${company.trade || '—'}</div>
+            <div><span class="text-zinc-400">Status:</span> ${company.status}</div>
+            <div><span class="text-zinc-400">Primary Phone:</span> ${company.primary_phone || '—'}</div>
+            <div><span class="text-zinc-400">Primary Email:</span> ${company.primary_email || '—'}</div>
+            <div class="md:col-span-2"><span class="text-zinc-400">Billing Address:</span> ${company.billing_address || '—'}</div>
+            <div class="md:col-span-2"><span class="text-zinc-400">Shipping Address:</span> ${company.shipping_address || '—'}</div>
+        </div>
+
+        <div class="pt-4 border-t border-zinc-700">
+            <div class="font-semibold mb-3 flex items-center gap-2">
+                <span>Contacts</span>
+                <span class="text-xs bg-zinc-700 px-2 py-0.5 rounded">${company.contacts?.length || 0}</span>
+            </div>
+            ${contactsHTML}
+        </div>
+
+        <div class="pt-4 border-t border-zinc-700 mt-4">
+            <div class="font-semibold mb-2">License</div>
+            <div class="text-sm grid grid-cols-1 md:grid-cols-2 gap-x-4">
+                <div><span class="text-zinc-400">License #:</span> ${company.license_number || '—'}</div>
+                <div><span class="text-zinc-400">State / Expiration:</span> ${company.license_state || '—'} / ${company.license_expiration || '—'}</div>
+            </div>
+            <div class="text-sm mt-1"><span class="text-zinc-400">Notes:</span> ${company.license_notes || '—'}</div>
+        </div>
+
+        <div class="pt-4 border-t border-zinc-700 mt-4">
+            <div class="font-semibold mb-2">Insurance</div>
+            <div class="text-sm grid grid-cols-1 md:grid-cols-2 gap-x-4">
+                <div><span class="text-zinc-400">GL:</span> ${company.gl_carrier || '—'} (${company.gl_policy || '—'}) — Exp: ${company.gl_expiration || '—'}</div>
+                <div><span class="text-zinc-400">WC:</span> ${company.wc_carrier || '—'} (${company.wc_policy || '—'}) — Exp: ${company.wc_expiration || '—'}</div>
+            </div>
+        </div>
+
+        <div class="pt-4 border-t border-zinc-700 mt-4">
+            <div class="font-semibold mb-2">Notes</div>
+            <div class="text-sm">${company.notes || '—'}</div>
+        </div>
+    `;
+
+    document.getElementById('viewCompanyModal').showModal();
+}
+
+function syncWithSage300() {
+    const modal = document.getElementById('sageSyncModal');
+    const content = document.getElementById('sageSyncContent');
+
+    content.innerHTML = `
+        <div class="mb-4 text-sm text-zinc-400">This simulates pulling companies from Sage 300.</div>
+        <div class="flex gap-2 mb-3">
+            <button onclick="selectAllSage(true)" class="text-xs px-3 py-1.5 bg-zinc-700 hover:bg-zinc-600 rounded">Select All</button>
+            <button onclick="selectAllSage(false)" class="text-xs px-3 py-1.5 bg-zinc-700 hover:bg-zinc-600 rounded">Deselect All</button>
+        </div>
+        <div class="space-y-2 max-h-[420px] overflow-auto pr-2">
+            ${sageData.map(item => `
+                <div class="flex items-center gap-3 bg-zinc-800 border border-zinc-700 rounded p-3">
+                    <input type="checkbox" class="sage-checkbox accent-emerald-600" data-id="${item.id}">
+                    <div class="flex-1 text-sm">
+                        <div class="font-medium">${item.company_name}</div>
+                        <div class="text-xs text-zinc-400">${item.company_type} • ${item.trade}</div>
+                    </div>
+                    <div class="text-xs text-zinc-400 font-mono">${item.external_id}</div>
+                </div>
+            `).join('')}
+        </div>
+    `;
+
+    modal.showModal();
+}
+
+function selectAllSage(checked) {
+    document.querySelectorAll('.sage-checkbox').forEach(cb => cb.checked = checked);
+}
+
+function importSelectedFromSage() {
+    const checked = document.querySelectorAll('.sage-checkbox:checked');
+    if (!checked.length) {
+        showAlertModal("No Selection", "No companies selected for import.");
+        return;
     }
 
-    // ==================== INITIALIZATION ====================
-    function initializeCompaniesPage() {
-        const saved = localStorage.getItem('casepm_companies');
-        if (saved) companies = JSON.parse(saved);
+    checked.forEach(cb => {
+        const id = parseInt(cb.dataset.id);
+        const realCompany = sageData.find(s => s.id === id);
+        if (realCompany) {
+            companies.push({
+                id: Date.now() + Math.random(),
+                ...realCompany,
+                contacts: [],
+                cois: []
+            });
+        }
+    });
 
-        renderCompaniesTable(companies);
-        updateSummaryCards();
+    document.getElementById('sageSyncModal').close();
+    renderCompaniesTable(companies);
+    showAlertModal("Import Complete", `${checked.length} companies imported from Sage 300.`);
+}
 
-        const searchInput = document.getElementById('searchInput');
-        if (searchInput) searchInput.addEventListener('input', filterCompanies);
+function initializeCompaniesPage() {
+    const saved = localStorage.getItem('casepm_companies');
+    if (saved) companies = JSON.parse(saved);
 
-        const typeFilter = document.getElementById('typeFilter');
-        if (typeFilter) typeFilter.addEventListener('change', filterCompanies);
+    renderCompaniesTable(companies);
+    updateSummaryCards();
 
-        const statusFilter = document.getElementById('statusFilter');
-        if (statusFilter) statusFilter.addEventListener('change', filterCompanies);
-    }
+    const searchInput = document.getElementById('searchInput');
+    if (searchInput) searchInput.addEventListener('input', filterCompanies);
 
-    window.onload = initializeCompaniesPage;
+    const typeFilter = document.getElementById('typeFilter');
+    if (typeFilter) typeFilter.addEventListener('change', filterCompanies);
+
+    const statusFilter = document.getElementById('statusFilter');
+    if (statusFilter) statusFilter.addEventListener('change', filterCompanies);
+}
+
+window.onload = initializeCompaniesPage;
 </script>
+
+{% endblock %}
