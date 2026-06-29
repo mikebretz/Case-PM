@@ -37,7 +37,7 @@
 
 <div class="flex-1 flex flex-col overflow-hidden">
 
-    <!-- Budget-style Header (LOCKED) -->
+    <!-- Budget-style Header -->
     <div class="h-16 border-b border-zinc-800 bg-zinc-900 flex items-center justify-between px-6 flex-shrink-0">
         <div>
             <div class="text-xs text-zinc-400 tracking-wider">CURRENT PROJECT</div>
@@ -47,7 +47,6 @@
         <div class="text-2xl font-semibold text-white">Companies / Vendors</div>
 
         <div class="flex items-center gap-3">
-            <!-- Export -->
             <div class="flex gap-2">
                 <button onclick="exportCompanies('csv')" class="flex items-center gap-2 px-4 py-2 bg-zinc-800 hover:bg-zinc-700 rounded-md text-sm font-medium transition-colors">
                     <i class="fa-solid fa-file-csv"></i>
@@ -59,13 +58,11 @@
                 </button>
             </div>
 
-            <!-- Import -->
             <button onclick="importCompanies('excel')" class="flex items-center gap-2 px-4 py-2 bg-zinc-800 hover:bg-zinc-700 rounded-md text-sm font-medium transition-colors">
                 <i class="fa-solid fa-upload"></i>
                 <span>Import Excel</span>
             </button>
 
-            <!-- Sync Sage 300 -->
             <button onclick="syncWithSage300()" class="flex items-center gap-2 px-4 py-2 bg-blue-600 hover:bg-blue-700 rounded-md text-sm font-medium transition-colors">
                 <i class="fa-solid fa-sync"></i>
                 <span>Sync Sage 300</span>
@@ -76,7 +73,6 @@
                 <span>Add Company</span>
             </button>
 
-            <!-- User Profile -->
             <div class="flex items-center gap-3 pl-3 border-l border-zinc-700 cursor-pointer">
                 <div class="w-8 h-8 bg-zinc-700 rounded-full overflow-hidden">
                     <img src="https://i.pravatar.cc/32?img=68" class="w-full h-full object-cover">
@@ -200,6 +196,7 @@
                     <h3 class="font-semibold text-emerald-400 mb-3">Company Profile</h3>
 
                     <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+                        <!-- Row 1 -->
                         <div class="md:col-span-2">
                             <label class="text-xs text-zinc-400">Company Name *</label>
                             <input type="text" id="company_name" required class="w-full bg-zinc-800 text-white border border-zinc-700 rounded px-4 py-2.5 text-sm focus:border-emerald-600">
@@ -213,6 +210,7 @@
                             </select>
                         </div>
 
+                        <!-- Row 2 -->
                         <div>
                             <label class="text-xs text-zinc-400">Vendor Number</label>
                             <input type="text" id="vendor_number" class="w-full bg-zinc-800 text-white border border-zinc-700 rounded px-4 py-2.5 text-sm focus:border-emerald-600">
@@ -226,6 +224,7 @@
                             <input type="text" id="external_id" class="w-full bg-zinc-800 text-white border border-zinc-700 rounded px-4 py-2.5 text-sm focus:border-emerald-600">
                         </div>
 
+                        <!-- Row 3 -->
                         <div>
                             <label class="text-xs text-zinc-400">Trade / Specialty</label>
                             <input type="text" id="trade" class="w-full bg-zinc-800 text-white border border-zinc-700 rounded px-4 py-2.5 text-sm focus:border-emerald-600">
@@ -234,26 +233,24 @@
                             <label class="text-xs text-zinc-400">Website</label>
                             <input type="text" id="website" class="w-full bg-zinc-800 text-white border border-zinc-700 rounded px-4 py-2.5 text-sm focus:border-emerald-600">
                         </div>
+                        <div></div>
 
-                        <!-- Primary Email -->
+                        <!-- Primary Email + Primary Phone -->
                         <div>
                             <label class="text-xs text-zinc-400">Primary Email</label>
                             <input type="email" id="primary_email" class="w-full bg-zinc-800 text-white border border-zinc-700 rounded px-4 py-2.5 text-sm focus:border-emerald-600">
                         </div>
-
-                        <!-- Primary Phone (moved under Primary Email) -->
                         <div>
                             <label class="text-xs text-zinc-400">Primary Phone</label>
                             <input type="text" id="primary_phone" class="w-full bg-zinc-800 text-white border border-zinc-700 rounded px-4 py-2.5 text-sm focus:border-emerald-600">
                         </div>
+                        <div></div>
 
-                        <!-- Tax ID -->
+                        <!-- Tax ID + Status -->
                         <div>
                             <label class="text-xs text-zinc-400">Tax ID / EIN</label>
                             <input type="text" id="tax_id" class="w-full bg-zinc-800 text-white border border-zinc-700 rounded px-4 py-2.5 text-sm focus:border-emerald-600">
                         </div>
-
-                        <!-- Status (moved under Tax ID) -->
                         <div>
                             <label class="text-xs text-zinc-400">Status</label>
                             <select id="status" class="w-full bg-zinc-800 text-white border border-zinc-700 rounded px-4 py-2.5 text-sm focus:border-emerald-600">
@@ -262,9 +259,10 @@
                                 <option value="Blacklisted">Blacklisted</option>
                             </select>
                         </div>
+                        <div></div>
                     </div>
 
-                    <!-- LOGO DROP ZONE (moved to where Primary Phone + Status used to be) -->
+                    <!-- COMPANY LOGO (Bottom Right of Company Profile) -->
                     <div class="mt-5">
                         <label class="text-xs text-zinc-400 block mb-1.5">Company Logo</label>
                         <div id="logo_drop_zone"
@@ -387,7 +385,7 @@
     </div>
 </dialog>
 
-<!-- Success / Alert Modal (Centered) -->
+<!-- Success / Alert Modal -->
 <dialog id="successModal" class="bg-zinc-900 border border-zinc-700 text-white rounded-md w-full max-w-md p-0 shadow-2xl">
     <div class="p-6 text-center">
         <div class="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-emerald-900/60 mb-4">
@@ -413,9 +411,10 @@
 </dialog>
 <script>
     // ============================================================
-    // COMPANIES / VENDORS PAGE - ULTIMATE CLEAN VERSION
-    // Fixes: Logo cancel, unsaved changes confirmation, Edit working,
-    // Save Company with clear validation, layout re-order, drag & drop logo
+    // COMPANIES / VENDORS PAGE - ULTIMATE CLEAN & FIXED VERSION
+    // Layout: Primary Email above Primary Phone, Tax ID above Status,
+    // Logo drop zone in bottom-right of Company Profile section.
+    // All bugs fixed: Save, Edit, Pencil, Logo cancel safe, Unsaved changes prompt.
     // ============================================================
 
     let companies = [
@@ -674,7 +673,7 @@
         setupLogoDropZone();
     }
 
-    // ==================== SAVE COMPANY (with clear validation) ====================
+    // ==================== SAVE COMPANY (Robust + Validation) ====================
     function saveCompany(e) {
         e.preventDefault();
 
@@ -822,7 +821,7 @@
         container.appendChild(div);
     }
 
-    // ==================== EDIT COMPANY (FIXED) ====================
+    // ==================== EDIT COMPANY (FULLY FIXED) ====================
     function editCompany(id) {
         const company = companies.find(c => c.id === id);
         if (!company) return;
@@ -1105,7 +1104,7 @@
         showAlertModal("Import Complete", `${checked.length} companies imported from Sage 300.`);
     }
 
-    // ==================== LOGO DRAG & DROP (Safe cancel) ====================
+    // ==================== LOGO DRAG & DROP (Safe on Cancel) ====================
     function setupLogoDropZone() {
         const dropZone = document.getElementById('logo_drop_zone');
         const fileInput = document.getElementById('company_logo');
@@ -1141,7 +1140,7 @@
         if (!preview) return;
 
         if (!input.files || !input.files[0]) {
-            return; // User clicked Cancel in file explorer — do nothing
+            return; // User clicked Cancel — do nothing, modal stays open
         }
 
         const reader = new FileReader();
@@ -1151,15 +1150,14 @@
         reader.readAsDataURL(input.files[0]);
     }
 
-    // ==================== UNSAVED CHANGES CONFIRMATION ====================
-    function safeCloseCompanyModal() {
+    // ==================== UNSAVED CHANGES PROMPT ====================
+    function closeCompanyModalSafely() {
         const modal = document.getElementById('companyModal');
         if (!modal) return;
 
-        // Simple check: if company name has value, ask for confirmation
         const companyName = document.getElementById('company_name') ? document.getElementById('company_name').value.trim() : '';
         if (companyName) {
-            if (confirm("You have unsaved changes. Discard and close?")) {
+            if (confirm("You have unsaved changes. Discard changes and close?")) {
                 modal.close();
             }
         } else {
