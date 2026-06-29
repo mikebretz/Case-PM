@@ -454,7 +454,7 @@ function filterExpiredInsurance() {
 }
 function filterExpiredLicense() {
     const now = new Date();
-    const filtered = companies.filter(c => c.license_expiration && new Date(c.license_expiration) < now));
+    const filtered = companies.filter(c => c.license_expiration && new Date(c.license_expiration) < now);
     renderCompaniesTable(filtered);
 }
 
