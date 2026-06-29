@@ -2,44 +2,49 @@
 
 {% block content %}
 
-<!-- ==================== HEADER ==================== -->
-<div class="flex items-center justify-between mb-8">
+<!-- ==================== HEADER (Budget Style) ==================== -->
+<div class="h-16 border-b border-zinc-800 bg-zinc-900 flex items-center justify-between px-6">
+    
+    <!-- Left: Current Project -->
     <div>
-        <h1 class="text-3xl font-semibold tracking-tight">Companies / Vendors</h1>
-        <p class="text-zinc-400 mt-1">Vendor & Subcontractor Directory • Case PM</p>
+        <div class="text-xs text-zinc-400">CURRENT PROJECT FOCUS</div>
+        <div class="font-semibold text-lg">ALDI Lakeland</div>
     </div>
 
+    <!-- Center: Page Title -->
+    <div class="text-2xl font-semibold tracking-tight">Companies / Vendors</div>
+
+    <!-- Right: Action Buttons -->
     <div class="flex items-center gap-3">
-        <!-- Export Button with Dropdown -->
+        
+        <!-- Export -->
         <div class="relative group">
-            <button class="flex items-center gap-2 px-4 py-2.5 bg-zinc-800 hover:bg-zinc-700 rounded-2xl text-sm transition-colors">
+            <button class="flex items-center gap-2 px-4 py-2 bg-zinc-800 hover:bg-zinc-700 rounded-2xl text-sm transition-colors">
                 <i class="fa-solid fa-download"></i>
                 <span>Export</span>
             </button>
             <div class="absolute right-0 mt-1 hidden group-hover:block bg-zinc-900 border border-zinc-700 rounded-xl shadow-xl z-50 w-44">
-                <button onclick="exportCompanies('excel')" 
-                        class="w-full text-left px-4 py-2.5 text-sm hover:bg-zinc-800 rounded-t-xl flex items-center gap-2">
+                <button onclick="exportCompanies('excel')" class="w-full text-left px-4 py-2.5 text-sm hover:bg-zinc-800 rounded-t-xl flex items-center gap-2">
                     <i class="fa-solid fa-file-excel text-emerald-400"></i>
                     <span>Export to Excel (.xlsx)</span>
                 </button>
-                <button onclick="exportCompanies('csv')" 
-                        class="w-full text-left px-4 py-2.5 text-sm hover:bg-zinc-800 rounded-b-xl flex items-center gap-2">
+                <button onclick="exportCompanies('csv')" class="w-full text-left px-4 py-2.5 text-sm hover:bg-zinc-800 rounded-b-xl flex items-center gap-2">
                     <i class="fa-solid fa-file-csv text-emerald-400"></i>
                     <span>Export to CSV</span>
                 </button>
             </div>
         </div>
 
-        <!-- Import Button -->
+        <!-- Import -->
         <button onclick="importCompanies()" 
-                class="flex items-center gap-2 px-4 py-2.5 bg-zinc-800 hover:bg-zinc-700 rounded-2xl text-sm transition-colors">
+                class="flex items-center gap-2 px-4 py-2 bg-zinc-800 hover:bg-zinc-700 rounded-2xl text-sm transition-colors">
             <i class="fa-solid fa-upload"></i>
             <span>Import</span>
         </button>
 
-        <!-- Add Company Button -->
+        <!-- Add Company -->
         <button onclick="showAddCompanyModal()" 
-                class="flex items-center gap-2 px-5 py-2.5 bg-emerald-600 hover:bg-emerald-500 rounded-2xl text-sm font-medium transition-colors">
+                class="flex items-center gap-2 px-5 py-2 bg-emerald-600 hover:bg-emerald-500 rounded-2xl text-sm font-medium transition-colors">
             <i class="fa-solid fa-plus"></i>
             <span>Add Company</span>
         </button>
@@ -121,7 +126,7 @@
     </table>
 </div>
 
-<!-- View Modal -->
+<!-- View Company Modal -->
 <dialog id="viewCompanyModal" class="bg-zinc-900 border border-zinc-700 rounded-3xl w-full max-w-4xl p-0 shadow-2xl">
     <div class="flex items-center justify-between px-6 py-4 border-b border-zinc-700">
         <h2 class="text-xl font-semibold">Company Details</h2>
@@ -136,7 +141,7 @@
     </div>
 </dialog>
 
-<!-- Add/Edit Modal -->
+<!-- Add/Edit Company Modal -->
 <dialog id="companyModal" class="bg-zinc-900 border border-zinc-700 rounded-3xl w-full max-w-6xl p-0 shadow-2xl">
     <div class="flex items-center justify-between px-6 py-4 border-b border-zinc-700">
         <h2 id="modalTitle" class="text-xl font-semibold">Add Company</h2>
@@ -693,6 +698,7 @@
         renderCompaniesTable(companies);
     }
 
+    // ==================== EXPORT / IMPORT ====================
     function exportCompanies(format = 'excel') {
         const data = companies.map(c => ({
             "Company Name": c.company_name,
@@ -765,6 +771,7 @@
         input.click();
     }
 
+    // ==================== INITIALIZE ====================
     function initializeCompaniesPage() {
         renderCompaniesTable(companies);
         console.log('%c[Case PM] Companies page initialized successfully', 'color:#10b981');
