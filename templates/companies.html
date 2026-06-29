@@ -2,11 +2,11 @@
 
 {% block content %}
 <div class="p-6 max-w-[1600px] mx-auto">
-    
+
     <!-- Budget-style Header -->
     <div class="flex items-center justify-between mb-6 relative">
         <!-- Left: Project Focus -->
-        <div class="flex items-center gap-3">
+        <div>
             <span class="px-3 py-1 bg-emerald-900/60 text-emerald-400 rounded-lg text-sm font-medium">ALDI Lakeland</span>
         </div>
 
@@ -15,7 +15,7 @@
             <h1 class="text-3xl font-semibold tracking-tight">Companies / Vendors</h1>
         </div>
 
-        <!-- Right: Action Buttons + Profile -->
+        <!-- Right: Export / Import / Add + User Profile -->
         <div class="flex items-center gap-3">
             <!-- Export -->
             <div class="flex gap-2">
@@ -53,7 +53,7 @@
 
             <!-- User Profile -->
             <div class="w-9 h-9 bg-zinc-700 rounded-full overflow-hidden cursor-pointer border border-zinc-600">
-                <img src="https://i.pravatar.cc/36?img=68" alt="User Profile">
+                <img src="https://i.pravatar.cc/36?img=68" alt="User">
             </div>
         </div>
     </div>
@@ -161,13 +161,169 @@
                 <div class="mb-6">
                     <h3 class="font-semibold text-emerald-400 mb-3">Company Profile</h3>
                     <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
-                        <!-- All input fields will be in the full version -->
+                        <div class="md:col-span-2">
+                            <label class="text-xs text-zinc-400">Company Name *</label>
+                            <input type="text" id="company_name" required class="w-full bg-zinc-800 text-white border border-zinc-700 rounded-lg px-4 py-2.5 text-sm focus:border-emerald-600">
+                        </div>
+                        <div>
+                            <label class="text-xs text-zinc-400">Company Type</label>
+                            <select id="company_type" class="w-full bg-zinc-800 text-white border border-zinc-700 rounded-lg px-4 py-2.5 text-sm focus:border-emerald-600">
+                                <option value="Subcontractor">Subcontractor</option>
+                                <option value="Supplier">Supplier / Vendor</option>
+                                <option value="Client">Client / Owner</option>
+                            </select>
+                        </div>
+
+                        <div>
+                            <label class="text-xs text-zinc-400">Vendor Number</label>
+                            <input type="text" id="vendor_number" class="w-full bg-zinc-800 text-white border border-zinc-700 rounded-lg px-4 py-2.5 text-sm focus:border-emerald-600">
+                        </div>
+                        <div>
+                            <label class="text-xs text-zinc-400">Customer Number</label>
+                            <input type="text" id="customer_number" class="w-full bg-zinc-800 text-white border border-zinc-700 rounded-lg px-4 py-2.5 text-sm focus:border-emerald-600">
+                        </div>
+                        <div>
+                            <label class="text-xs text-zinc-400">External / Sage ID</label>
+                            <input type="text" id="external_id" class="w-full bg-zinc-800 text-white border border-zinc-700 rounded-lg px-4 py-2.5 text-sm focus:border-emerald-600">
+                        </div>
+
+                        <div>
+                            <label class="text-xs text-zinc-400">Trade / Specialty</label>
+                            <input type="text" id="trade" class="w-full bg-zinc-800 text-white border border-zinc-700 rounded-lg px-4 py-2.5 text-sm focus:border-emerald-600">
+                        </div>
+                        <div>
+                            <label class="text-xs text-zinc-400">Website</label>
+                            <input type="text" id="website" class="w-full bg-zinc-800 text-white border border-zinc-700 rounded-lg px-4 py-2.5 text-sm focus:border-emerald-600">
+                        </div>
+                        <div>
+                            <label class="text-xs text-zinc-400">Primary Phone</label>
+                            <input type="text" id="primary_phone" class="w-full bg-zinc-800 text-white border border-zinc-700 rounded-lg px-4 py-2.5 text-sm focus:border-emerald-600">
+                        </div>
+                        <div>
+                            <label class="text-xs text-zinc-400">Primary Email</label>
+                            <input type="email" id="primary_email" class="w-full bg-zinc-800 text-white border border-zinc-700 rounded-lg px-4 py-2.5 text-sm focus:border-emerald-600">
+                        </div>
+                        <div>
+                            <label class="text-xs text-zinc-400">Tax ID / EIN</label>
+                            <input type="text" id="tax_id" class="w-full bg-zinc-800 text-white border border-zinc-700 rounded-lg px-4 py-2.5 text-sm focus:border-emerald-600">
+                        </div>
+                        <div>
+                            <label class="text-xs text-zinc-400">W-9 on File</label>
+                            <select id="w9_status" class="w-full bg-zinc-800 text-white border border-zinc-700 rounded-lg px-4 py-2.5 text-sm focus:border-emerald-600">
+                                <option value="Yes">Yes</option>
+                                <option value="No">No</option>
+                                <option value="Requested">Requested</option>
+                            </select>
+                        </div>
+                        <div>
+                            <label class="text-xs text-zinc-400">Status</label>
+                            <select id="status" class="w-full bg-zinc-800 text-white border border-zinc-700 rounded-lg px-4 py-2.5 text-sm focus:border-emerald-600">
+                                <option value="Active">Active</option>
+                                <option value="Inactive">Inactive</option>
+                                <option value="Blacklisted">Blacklisted</option>
+                            </select>
+                        </div>
                     </div>
                 </div>
 
-                <!-- Addresses, Contacts, Licenses, Insurance, COIs, Notes sections -->
-                <!-- (Full content from previous working versions will be included in the complete file) -->
+                <!-- Addresses -->
+                <div class="mb-6">
+                    <h3 class="font-semibold text-emerald-400 mb-3">Addresses</h3>
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <div>
+                            <label class="text-xs text-zinc-400">Billing Address</label>
+                            <textarea id="billing_address" rows="3" class="w-full bg-zinc-800 text-white border border-zinc-700 rounded-lg px-4 py-2.5 text-sm focus:border-emerald-600"></textarea>
+                        </div>
+                        <div>
+                            <label class="text-xs text-zinc-400">Shipping Address</label>
+                            <textarea id="shipping_address" rows="3" class="w-full bg-zinc-800 text-white border border-zinc-700 rounded-lg px-4 py-2.5 text-sm focus:border-emerald-600"></textarea>
+                        </div>
+                    </div>
+                </div>
 
+                <!-- Contacts -->
+                <div class="mb-6">
+                    <div class="flex items-center justify-between mb-3">
+                        <h3 class="font-semibold text-emerald-400">Contacts</h3>
+                        <button type="button" onclick="addContactRow()" class="text-xs px-3 py-1.5 bg-zinc-800 hover:bg-zinc-700 rounded-lg flex items-center gap-1">
+                            <i class="fa-solid fa-plus"></i> Add Contact
+                        </button>
+                    </div>
+                    <div id="contactsContainer" class="space-y-3"></div>
+                </div>
+
+                <!-- Licenses -->
+                <div class="mb-6">
+                    <h3 class="font-semibold text-emerald-400 mb-3">Licenses</h3>
+                    <div class="grid grid-cols-1 md:grid-cols-4 gap-4">
+                        <div>
+                            <label class="text-xs text-zinc-400">License Number</label>
+                            <input type="text" id="license_number" class="w-full bg-zinc-800 text-white border border-zinc-700 rounded-lg px-4 py-2.5 text-sm focus:border-emerald-600">
+                        </div>
+                        <div>
+                            <label class="text-xs text-zinc-400">State</label>
+                            <input type="text" id="license_state" class="w-full bg-zinc-800 text-white border border-zinc-700 rounded-lg px-4 py-2.5 text-sm focus:border-emerald-600">
+                        </div>
+                        <div>
+                            <label class="text-xs text-zinc-400">Expiration Date</label>
+                            <input type="date" id="license_expiration" class="w-full bg-zinc-800 text-white border border-zinc-700 rounded-lg px-4 py-2.5 text-sm focus:border-emerald-600">
+                        </div>
+                        <div>
+                            <label class="text-xs text-zinc-400">Notes</label>
+                            <input type="text" id="license_notes" class="w-full bg-zinc-800 text-white border border-zinc-700 rounded-lg px-4 py-2.5 text-sm focus:border-emerald-600">
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Insurance + COIs -->
+                <div class="mb-6">
+                    <h3 class="font-semibold text-emerald-400 mb-3">Insurance</h3>
+                    
+                    <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
+                        <div>
+                            <label class="text-xs text-zinc-400">GL Carrier</label>
+                            <input type="text" id="gl_carrier" class="w-full bg-zinc-800 text-white border border-zinc-700 rounded-lg px-4 py-2.5 text-sm focus:border-emerald-600">
+                        </div>
+                        <div>
+                            <label class="text-xs text-zinc-400">GL Policy #</label>
+                            <input type="text" id="gl_policy" class="w-full bg-zinc-800 text-white border border-zinc-700 rounded-lg px-4 py-2.5 text-sm focus:border-emerald-600">
+                        </div>
+                        <div>
+                            <label class="text-xs text-zinc-400">GL Expiration</label>
+                            <input type="date" id="gl_expiration" class="w-full bg-zinc-800 text-white border border-zinc-700 rounded-lg px-4 py-2.5 text-sm focus:border-emerald-600">
+                        </div>
+                    </div>
+
+                    <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
+                        <div>
+                            <label class="text-xs text-zinc-400">WC Carrier</label>
+                            <input type="text" id="wc_carrier" class="w-full bg-zinc-800 text-white border border-zinc-700 rounded-lg px-4 py-2.5 text-sm focus:border-emerald-600">
+                        </div>
+                        <div>
+                            <label class="text-xs text-zinc-400">WC Policy #</label>
+                            <input type="text" id="wc_policy" class="w-full bg-zinc-800 text-white border border-zinc-700 rounded-lg px-4 py-2.5 text-sm focus:border-emerald-600">
+                        </div>
+                        <div>
+                            <label class="text-xs text-zinc-400">WC Expiration</label>
+                            <input type="date" id="wc_expiration" class="w-full bg-zinc-800 text-white border border-zinc-700 rounded-lg px-4 py-2.5 text-sm focus:border-emerald-600">
+                        </div>
+                    </div>
+
+                    <div class="mt-4">
+                        <div class="flex items-center justify-between mb-2">
+                            <label class="text-xs text-zinc-400">Certificates of Insurance (COIs)</label>
+                            <button type="button" onclick="addCOIRow()" class="text-xs px-3 py-1 bg-zinc-800 hover:bg-zinc-700 rounded-lg flex items-center gap-1">
+                                <i class="fa-solid fa-plus"></i> Add Another COI
+                            </button>
+                        </div>
+                        <div id="coiContainer" class="space-y-3"></div>
+                    </div>
+                </div>
+
+                <div class="mb-6">
+                    <label class="text-xs text-zinc-400">Notes</label>
+                    <textarea id="notes" rows="3" class="w-full bg-zinc-800 text-white border border-zinc-700 rounded-lg px-4 py-2.5 text-sm focus:border-emerald-600"></textarea>
+                </div>
             </form>
         </div>
 
@@ -190,6 +346,7 @@
         <button onclick="document.getElementById('successModal').close()" class="px-8 py-2.5 bg-emerald-600 hover:bg-emerald-700 rounded-lg text-sm font-medium">OK</button>
     </div>
 </dialog>
+
 <script>
     // ==================== DATA MODEL ====================
     let companies = [
@@ -242,7 +399,6 @@
 
         data.forEach(company => {
             const primary = company.contacts?.find(c => c.authorized_user) || company.contacts?.[0];
-
             let licenseStatus = company.license_expiration ? (new Date(company.license_expiration) < new Date() ? 'Expired' : 'Current') : 'N/A';
             let glStatus = company.gl_expiration ? (new Date(company.gl_expiration) < new Date() ? 'Expired' : 'Current') : 'N/A';
             let wcStatus = company.wc_expiration ? (new Date(company.wc_expiration) < new Date() ? 'Expired' : 'Current') : 'N/A';
@@ -333,15 +489,14 @@
             alert("No companies to export.");
             return;
         }
-
-        const worksheet = XLSX.utils.json_to_sheet(companies);
-        const workbook = XLSX.utils.book_new();
-        XLSX.utils.book_append_sheet(workbook, worksheet, "Companies");
+        const ws = XLSX.utils.json_to_sheet(companies);
+        const wb = XLSX.utils.book_new();
+        XLSX.utils.book_append_sheet(wb, ws, "Companies");
 
         if (format === 'excel') {
-            XLSX.writeFile(workbook, "companies_export.xlsx");
+            XLSX.writeFile(wb, "companies_export.xlsx");
         } else {
-            XLSX.writeFile(workbook, "companies_export.csv", { bookType: "csv" });
+            XLSX.writeFile(wb, "companies_export.csv", { bookType: "csv" });
         }
     }
 
@@ -357,16 +512,16 @@
 
             reader.onload = function(ev) {
                 try {
-                    let importedData = [];
+                    let imported = [];
                     if (type === 'excel') {
-                        const workbook = XLSX.read(ev.target.result, { type: 'binary' });
-                        importedData = XLSX.utils.sheet_to_json(workbook.Sheets[workbook.SheetNames[0]]);
+                        const wb = XLSX.read(ev.target.result, { type: 'binary' });
+                        imported = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]]);
                     } else {
-                        const workbook = XLSX.read(ev.target.result, { type: 'binary' });
-                        importedData = XLSX.utils.sheet_to_json(workbook.Sheets[workbook.SheetNames[0]]);
+                        const wb = XLSX.read(ev.target.result, { type: 'binary' });
+                        imported = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]]);
                     }
 
-                    importedData.forEach(item => {
+                    imported.forEach(item => {
                         companies.push({
                             id: Date.now() + Math.random(),
                             ...item,
@@ -376,9 +531,9 @@
                     });
 
                     renderCompaniesTable(companies);
-                    alert(`${importedData.length} companies imported successfully!`);
+                    alert(`${imported.length} companies imported successfully!`);
                 } catch (err) {
-                    alert("Import failed. Please check the file format.");
+                    alert("Import failed. Check file format.");
                     console.error(err);
                 }
             };
@@ -437,16 +592,11 @@
         document.getElementById('notes').value = company.notes || '';
 
         document.getElementById('contactsContainer').innerHTML = '';
-        if (company.contacts?.length) {
-            company.contacts.forEach(c => addContactRow(c));
-        } else {
-            addContactRow();
-        }
+        if (company.contacts?.length) company.contacts.forEach(c => addContactRow(c));
+        else addContactRow();
 
         document.getElementById('coiContainer').innerHTML = '';
-        if (company.cois?.length) {
-            company.cois.forEach(c => addCOIRow(c));
-        }
+        if (company.cois?.length) company.cois.forEach(c => addCOIRow(c));
 
         document.getElementById('companyModal').showModal();
     }
@@ -459,7 +609,6 @@
         document.querySelectorAll('#contactsContainer > div').forEach(row => {
             const nameInput = row.querySelector('.contact-name');
             if (!nameInput || !nameInput.value.trim()) return;
-
             const checkbox = row.querySelector('.contact-authorized');
             contacts.push({
                 name: nameInput.value.trim(),
@@ -522,9 +671,7 @@
         const container = document.getElementById('contactsContainer');
         const div = document.createElement('div');
         div.className = 'bg-zinc-800 border border-zinc-700 rounded-lg p-4 mb-3';
-
         const checked = contact && contact.authorized_user ? 'checked' : '';
-
         div.innerHTML = `
             <div class="grid grid-cols-1 md:grid-cols-12 gap-3 items-end">
                 <div class="md:col-span-3">
@@ -581,7 +728,6 @@
     function showViewCompanyModal(id) {
         const company = companies.find(c => c.id === id);
         if (!company) return;
-
         const content = document.getElementById('viewCompanyContent');
         content.innerHTML = `
             <div class="grid grid-cols-1 md:grid-cols-2 gap-x-8 gap-y-4 text-sm">
@@ -634,308 +780,12 @@
         users.push(newUser);
         localStorage.setItem('casepm_users', JSON.stringify(users));
 
-        showCenteredSuccess("User Account Created", `User "${contact.name}" has been added to User Management with "No Access" role.`);
-    }
-
-    function initializeCompaniesPage() {
-        renderCompaniesTable(companies);
-        updateSummaryCards();
-
-        const searchInput = document.getElementById('searchInput');
-        if (searchInput) searchInput.addEventListener('input', filterCompanies);
-
-        const typeFilter = document.getElementById('typeFilter');
-        if (typeFilter) typeFilter.addEventListener('change', filterCompanies);
-
-        const statusFilter = document.getElementById('statusFilter');
-        if (statusFilter) statusFilter.addEventListener('change', filterCompanies);
-    }
-
-    window.onload = initializeCompaniesPage;
-</script>
-
-{% endblock %}
-    // ==================== FULLY EXPANDED FUNCTIONS ====================
-
-    function showAddCompanyModal() {
-        console.log('%c[Case PM] showAddCompanyModal called', 'color:#10b981');
-        document.getElementById('companyForm').reset();
-        document.getElementById('companyId').value = '';
-        document.getElementById('modalTitle').innerText = 'Add Company';
-
-        document.getElementById('contactsContainer').innerHTML = '';
-        document.getElementById('coiContainer').innerHTML = '';
-
-        addContactRow();
-
-        document.getElementById('companyModal').showModal();
-    }
-
-    function editCompany(id) {
-        const company = companies.find(c => c.id === id);
-        if (!company) return;
-
-        document.getElementById('companyId').value = company.id;
-        document.getElementById('modalTitle').innerText = 'Edit Company';
-
-        // Populate all main fields
-        document.getElementById('company_name').value = company.company_name || '';
-        document.getElementById('company_type').value = company.company_type || 'Subcontractor';
-        document.getElementById('vendor_number').value = company.vendor_number || '';
-        document.getElementById('customer_number').value = company.customer_number || '';
-        document.getElementById('external_id').value = company.external_id || '';
-        document.getElementById('trade').value = company.trade || '';
-        document.getElementById('website').value = company.website || '';
-        document.getElementById('primary_phone').value = company.primary_phone || '';
-        document.getElementById('primary_email').value = company.primary_email || '';
-        document.getElementById('tax_id').value = company.tax_id || '';
-        document.getElementById('w9_status').value = company.w9_status || 'Yes';
-        document.getElementById('status').value = company.status || 'Active';
-        document.getElementById('billing_address').value = company.billing_address || '';
-        document.getElementById('shipping_address').value = company.shipping_address || '';
-        document.getElementById('license_number').value = company.license_number || '';
-        document.getElementById('license_state').value = company.license_state || '';
-        document.getElementById('license_expiration').value = company.license_expiration || '';
-        document.getElementById('license_notes').value = company.license_notes || '';
-        document.getElementById('gl_carrier').value = company.gl_carrier || '';
-        document.getElementById('gl_policy').value = company.gl_policy || '';
-        document.getElementById('gl_expiration').value = company.gl_expiration || '';
-        document.getElementById('wc_carrier').value = company.wc_carrier || '';
-        document.getElementById('wc_policy').value = company.wc_policy || '';
-        document.getElementById('wc_expiration').value = company.wc_expiration || '';
-        document.getElementById('notes').value = company.notes || '';
-
-        // Populate contacts
-        document.getElementById('contactsContainer').innerHTML = '';
-        if (company.contacts && company.contacts.length > 0) {
-            company.contacts.forEach(c => addContactRow(c));
-        } else {
-            addContactRow();
+        const successModal = document.getElementById('successModal');
+        if (successModal) {
+            document.getElementById('successTitle').innerText = "User Account Created";
+            document.getElementById('successMessage').innerHTML = `User "${contact.name}" has been added to User Management with "No Access" role.<br><br>Go to User Management to assign permissions and set a password.`;
+            successModal.showModal();
         }
-
-        // Populate COIs
-        document.getElementById('coiContainer').innerHTML = '';
-        if (company.cois && company.cois.length > 0) {
-            company.cois.forEach(c => addCOIRow(c));
-        }
-
-        document.getElementById('companyModal').showModal();
-    }
-
-    function saveCompany(e) {
-        e.preventDefault();
-        const id = document.getElementById('companyId').value;
-
-        // Collect contacts with authorized_user flag
-        const contacts = [];
-        document.querySelectorAll('#contactsContainer > div').forEach(row => {
-            const nameInput = row.querySelector('.contact-name');
-            if (!nameInput || !nameInput.value.trim()) return;
-
-            const checkbox = row.querySelector('.contact-authorized');
-            contacts.push({
-                name: nameInput.value.trim(),
-                title: row.querySelector('.contact-title')?.value.trim() || '',
-                phone: row.querySelector('.contact-phone')?.value.trim() || '',
-                email: row.querySelector('.contact-email')?.value.trim() || '',
-                authorized_user: checkbox ? checkbox.checked : false
-            });
-        });
-
-        // Create authorized users in User Management
-        contacts.forEach(contact => {
-            if (contact.authorized_user && contact.email) {
-                createAuthorizedCasePMUser(contact, id ? parseInt(id) : Date.now());
-            }
-        });
-
-        // Collect COIs
-        const cois = [];
-        document.querySelectorAll('#coiContainer > div').forEach(row => {
-            const name = row.querySelector('.coi-name')?.value.trim();
-            if (!name) return;
-            cois.push({
-                id: Date.now(),
-                name: name,
-                expiration: row.querySelector('.coi-expiration')?.value || ''
-            });
-        });
-
-        const newCompany = {
-            id: id ? parseInt(id) : Date.now(),
-            company_name: document.getElementById('company_name').value.trim(),
-            company_type: document.getElementById('company_type').value,
-            vendor_number: document.getElementById('vendor_number').value.trim(),
-            customer_number: document.getElementById('customer_number').value.trim(),
-            external_id: document.getElementById('external_id').value.trim(),
-            trade: document.getElementById('trade').value.trim(),
-            website: document.getElementById('website').value.trim(),
-            primary_phone: document.getElementById('primary_phone').value.trim(),
-            primary_email: document.getElementById('primary_email').value.trim(),
-            tax_id: document.getElementById('tax_id').value.trim(),
-            w9_status: document.getElementById('w9_status').value,
-            status: document.getElementById('status').value,
-            billing_address: document.getElementById('billing_address').value.trim(),
-            shipping_address: document.getElementById('shipping_address').value.trim(),
-            contacts: contacts,
-            license_number: document.getElementById('license_number').value.trim(),
-            license_state: document.getElementById('license_state').value.trim(),
-            license_expiration: document.getElementById('license_expiration').value,
-            license_notes: document.getElementById('license_notes').value.trim(),
-            gl_carrier: document.getElementById('gl_carrier').value.trim(),
-            gl_policy: document.getElementById('gl_policy').value.trim(),
-            gl_expiration: document.getElementById('gl_expiration').value,
-            wc_carrier: document.getElementById('wc_carrier').value.trim(),
-            wc_policy: document.getElementById('wc_policy').value.trim(),
-            wc_expiration: document.getElementById('wc_expiration').value,
-            cois: cois,
-            notes: document.getElementById('notes').value.trim()
-        };
-
-        if (id) {
-            const index = companies.findIndex(c => c.id == id);
-            companies[index] = newCompany;
-        } else {
-            companies.push(newCompany);
-        }
-
-        document.getElementById('companyModal').close();
-        renderCompaniesTable(companies);
-    }
-
-    function addContactRow(contact = null) {
-        const container = document.getElementById('contactsContainer');
-        const div = document.createElement('div');
-        div.className = 'bg-zinc-800 border border-zinc-700 rounded-lg p-4 mb-3';
-
-        const isAuthorized = contact && contact.authorized_user === true;
-
-        div.innerHTML = `
-            <div class="grid grid-cols-1 md:grid-cols-12 gap-3 items-end">
-                <div class="md:col-span-3">
-                    <input type="text" placeholder="Full Name" class="contact-name w-full bg-zinc-900 text-white border border-zinc-600 rounded px-3 py-1.5 text-sm" value="${contact ? contact.name : ''}">
-                </div>
-                <div class="md:col-span-2">
-                    <input type="text" placeholder="Title" class="contact-title w-full bg-zinc-900 text-white border border-zinc-600 rounded px-3 py-1.5 text-sm" value="${contact ? contact.title : ''}">
-                </div>
-                <div class="md:col-span-2">
-                    <input type="text" placeholder="Phone" class="contact-phone w-full bg-zinc-900 text-white border border-zinc-600 rounded px-3 py-1.5 text-sm" value="${contact ? contact.phone : ''}">
-                </div>
-                <div class="md:col-span-3">
-                    <input type="email" placeholder="Email" class="contact-email w-full bg-zinc-900 text-white border border-zinc-600 rounded px-3 py-1.5 text-sm" value="${contact ? contact.email : ''}">
-                </div>
-                <div class="md:col-span-2 flex items-center gap-2">
-                    <label class="flex items-center gap-1 text-xs cursor-pointer whitespace-nowrap">
-                        <input type="checkbox" class="contact-authorized accent-emerald-600" ${isAuthorized ? 'checked' : ''}> 
-                        Authorized Case PM User
-                    </label>
-                    <button type="button" onclick="this.closest('.bg-zinc-800').remove()" class="text-red-400 hover:text-red-500 ml-auto">
-                        <i class="fa-solid fa-times"></i>
-                    </button>
-                </div>
-            </div>
-        `;
-        container.appendChild(div);
-    }
-
-    function addCOIRow(coi = null) {
-        const container = document.getElementById('coiContainer');
-        const div = document.createElement('div');
-        div.className = 'bg-zinc-800 border border-zinc-700 rounded-lg p-4 mb-3';
-        div.innerHTML = `
-            <div class="grid grid-cols-1 md:grid-cols-12 gap-3 items-end">
-                <div class="md:col-span-5">
-                    <input type="text" placeholder="COI Description" class="coi-name w-full bg-zinc-900 text-white border border-zinc-600 rounded px-3 py-1.5 text-sm" value="${coi ? coi.name : ''}">
-                </div>
-                <div class="md:col-span-3">
-                    <input type="date" class="coi-expiration w-full bg-zinc-900 text-white border border-zinc-600 rounded px-3 py-1.5 text-sm" value="${coi ? coi.expiration : ''}">
-                </div>
-                <div class="md:col-span-3">
-                    <input type="file" class="coi-file text-xs w-full text-white">
-                </div>
-                <div class="md:col-span-1">
-                    <button type="button" onclick="this.closest('.bg-zinc-800').remove()" class="text-red-400 hover:text-red-500">
-                        <i class="fa-solid fa-times"></i>
-                    </button>
-                </div>
-            </div>
-        `;
-        container.appendChild(div);
-    }
-
-    function showViewCompanyModal(id) {
-        const company = companies.find(c => c.id === id);
-        if (!company) return;
-
-        const content = document.getElementById('viewCompanyContent');
-        content.innerHTML = `
-            <div class="grid grid-cols-1 md:grid-cols-2 gap-x-8 gap-y-4 text-sm">
-                <div><span class="text-zinc-400">Company:</span> <span class="font-semibold">${company.company_name}</span></div>
-                <div><span class="text-zinc-400">Type:</span> ${company.company_type}</div>
-                <div><span class="text-zinc-400">Vendor #:</span> ${company.vendor_number || '—'}</div>
-                <div><span class="text-zinc-400">Customer #:</span> ${company.customer_number || '—'}</div>
-                <div><span class="text-zinc-400">External / Sage ID:</span> ${company.external_id || '—'}</div>
-                <div><span class="text-zinc-400">Trade:</span> ${company.trade || '—'}</div>
-                <div><span class="text-zinc-400">Status:</span> ${company.status}</div>
-            </div>
-
-            <div class="pt-4 border-t border-zinc-700 mt-4">
-                <div class="font-semibold mb-2">Contacts</div>
-                ${(company.contacts || []).map(c => `
-                    <div class="bg-zinc-800 rounded p-3 mb-2">
-                        <div><strong>${c.name}</strong> ${c.title ? '— ' + c.title : ''}</div>
-                        <div class="text-xs text-zinc-400">${c.phone || ''} ${c.email || ''}</div>
-                        ${c.authorized_user ? '<span class="text-xs bg-emerald-900/60 text-emerald-400 px-2 py-0.5 rounded">Authorized Case PM User</span>' : ''}
-                    </div>
-                `).join('') || '<div class="text-zinc-500">No contacts added.</div>'}
-            </div>
-        `;
-        content.dataset.currentId = company.id;
-        document.getElementById('viewCompanyModal').showModal();
-    }
-
-    function editFromViewModal() {
-        const id = parseInt(document.getElementById('viewCompanyContent').dataset.currentId);
-        document.getElementById('viewCompanyModal').close();
-        setTimeout(() => editCompany(id), 150);
-    }
-
-    function deleteCompany(id) {
-        if (!confirm('Delete this company? This cannot be undone.')) return;
-        companies = companies.filter(c => c.id !== id);
-        renderCompaniesTable(companies);
-    }
-
-    function createAuthorizedCasePMUser(contact, companyId) {
-        let users = [];
-        try {
-            const stored = localStorage.getItem('casepm_users');
-            users = stored ? JSON.parse(stored) : [];
-        } catch (e) {
-            users = [];
-        }
-
-        const exists = users.find(u => u.email && u.email.toLowerCase() === contact.email.toLowerCase());
-        if (exists) return;
-
-        const newUser = {
-            id: Date.now(),
-            name: contact.name,
-            email: contact.email,
-            role: "No Access",
-            permissions: {},
-            company_id: companyId,
-            created_at: new Date().toISOString(),
-            source: "companies_page"
-        };
-
-        users.push(newUser);
-        localStorage.setItem('casepm_users', JSON.stringify(users));
-
-        showCenteredSuccess(
-            "User Account Created",
-            `User "${contact.name}" has been added to User Management with "No Access" role.<br><br>Go to User Management to assign permissions and set a password.`
-        );
     }
 
     function initializeCompaniesPage() {
