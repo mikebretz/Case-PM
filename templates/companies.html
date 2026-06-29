@@ -28,7 +28,7 @@
         -webkit-text-fill-color: #ffffff !important;
     }
 
-    /* Logo Drop Zone Styling */
+    /* Logo Drop Zone */
     #logo_drop_zone.dragover {
         border-color: #10b981;
         background-color: #1f2a1f;
@@ -199,19 +199,6 @@
                 <div class="mb-6">
                     <h3 class="font-semibold text-emerald-400 mb-3">Company Profile</h3>
 
-                    <!-- LOGO - Drag & Drop Zone (larger + clean) -->
-                    <div class="mb-5">
-                        <label class="text-xs text-zinc-400 block mb-1.5">Company Logo</label>
-                        <div id="logo_drop_zone"
-                             class="w-32 h-32 border-2 border-dashed border-zinc-600 rounded-md flex flex-col items-center justify-center text-center cursor-pointer hover:border-emerald-600 transition-colors bg-zinc-800">
-                            <div id="logo_preview" class="w-20 h-20 flex items-center justify-center text-xs text-zinc-500 overflow-hidden">
-                                No Logo
-                            </div>
-                            <div class="text-[10px] text-zinc-400 mt-1">Drag & drop or click to upload</div>
-                        </div>
-                        <input type="file" id="company_logo" class="hidden" accept="image/*">
-                    </div>
-
                     <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
                         <div class="md:col-span-2">
                             <label class="text-xs text-zinc-400">Company Name *</label>
@@ -247,19 +234,26 @@
                             <label class="text-xs text-zinc-400">Website</label>
                             <input type="text" id="website" class="w-full bg-zinc-800 text-white border border-zinc-700 rounded px-4 py-2.5 text-sm focus:border-emerald-600">
                         </div>
-                        <div>
-                            <label class="text-xs text-zinc-400">Primary Phone</label>
-                            <input type="text" id="primary_phone" class="w-full bg-zinc-800 text-white border border-zinc-700 rounded px-4 py-2.5 text-sm focus:border-emerald-600">
-                        </div>
+
+                        <!-- Primary Email -->
                         <div>
                             <label class="text-xs text-zinc-400">Primary Email</label>
                             <input type="email" id="primary_email" class="w-full bg-zinc-800 text-white border border-zinc-700 rounded px-4 py-2.5 text-sm focus:border-emerald-600">
                         </div>
+
+                        <!-- Primary Phone (moved under Primary Email) -->
+                        <div>
+                            <label class="text-xs text-zinc-400">Primary Phone</label>
+                            <input type="text" id="primary_phone" class="w-full bg-zinc-800 text-white border border-zinc-700 rounded px-4 py-2.5 text-sm focus:border-emerald-600">
+                        </div>
+
+                        <!-- Tax ID -->
                         <div>
                             <label class="text-xs text-zinc-400">Tax ID / EIN</label>
                             <input type="text" id="tax_id" class="w-full bg-zinc-800 text-white border border-zinc-700 rounded px-4 py-2.5 text-sm focus:border-emerald-600">
                         </div>
 
+                        <!-- Status (moved under Tax ID) -->
                         <div>
                             <label class="text-xs text-zinc-400">Status</label>
                             <select id="status" class="w-full bg-zinc-800 text-white border border-zinc-700 rounded px-4 py-2.5 text-sm focus:border-emerald-600">
@@ -268,6 +262,19 @@
                                 <option value="Blacklisted">Blacklisted</option>
                             </select>
                         </div>
+                    </div>
+
+                    <!-- LOGO DROP ZONE (moved to where Primary Phone + Status used to be) -->
+                    <div class="mt-5">
+                        <label class="text-xs text-zinc-400 block mb-1.5">Company Logo</label>
+                        <div id="logo_drop_zone"
+                             class="w-40 h-28 border-2 border-dashed border-zinc-600 rounded-md flex flex-col items-center justify-center text-center cursor-pointer hover:border-emerald-600 transition-colors bg-zinc-800">
+                            <div id="logo_preview" class="w-16 h-16 flex items-center justify-center text-xs text-zinc-500 overflow-hidden">
+                                No Logo
+                            </div>
+                            <div class="text-[10px] text-zinc-400 mt-1">Drag & drop or click</div>
+                        </div>
+                        <input type="file" id="company_logo" class="hidden" accept="image/*">
                     </div>
                 </div>
 
@@ -406,9 +413,9 @@
 </dialog>
 <script>
     // ============================================================
-    // COMPANIES / VENDORS PAGE - ULTIMATE COMPLETE & CLEAN VERSION
-    // All fixes included: Drag & Drop Logo, Edit working, Save with clear validation,
-    // Email validation for Authorized users, Print all data, Sage real names, etc.
+    // COMPANIES / VENDORS PAGE - ULTIMATE CLEAN VERSION
+    // Fixes: Logo cancel, unsaved changes confirmation, Edit working,
+    // Save Company with clear validation, layout re-order, drag & drop logo
     // ============================================================
 
     let companies = [
@@ -429,8 +436,7 @@
             billing_address: "4520 N 56th St, Tampa, FL 33610",
             shipping_address: "Same as billing",
             contacts: [
-                { name: "Mike Torres", title: "Project Manager", phone: "(813) 555-0192", email: "mtorres@titanelectric.com", authorized_user: true },
-                { name: "Sarah Kline", title: "Estimator", phone: "(813) 555-0193", email: "skline@titanelectric.com", authorized_user: false }
+                { name: "Mike Torres", title: "Project Manager", phone: "(813) 555-0192", email: "mtorres@titanelectric.com", authorized_user: true }
             ],
             license_number: "EC-13004567",
             license_state: "FL",
@@ -470,7 +476,7 @@
         modal.showModal();
     }
 
-    // ==================== PHONE FORMAT (onblur) ====================
+    // ==================== PHONE FORMAT ====================
     function formatPhoneNumber(input) {
         let value = input.value.replace(/\D/g, '');
         if (value.length > 10) value = value.substring(0, 10);
@@ -661,7 +667,6 @@
         document.getElementById('coiContainer').innerHTML = '';
         addContactRow();
 
-        // Clear logo preview
         const preview = document.getElementById('logo_preview');
         if (preview) preview.innerHTML = '<span class="text-xs text-zinc-500">No Logo</span>';
 
@@ -709,7 +714,6 @@
             return;
         }
 
-        // Create authorized users
         contacts.forEach(contact => {
             if (contact.authorized_user && contact.email) {
                 createAuthorizedCasePMUser(contact, document.getElementById('companyId').value ? parseInt(document.getElementById('companyId').value) : Date.now());
@@ -859,7 +863,6 @@
         document.getElementById('coiContainer').innerHTML = '';
         if (company.cois?.length) company.cois.forEach(c => addCOIRow(c));
 
-        // Clear logo preview for now (logo not persisted yet)
         const preview = document.getElementById('logo_preview');
         if (preview) preview.innerHTML = '<span class="text-xs text-zinc-500">No Logo</span>';
 
@@ -1102,7 +1105,7 @@
         showAlertModal("Import Complete", `${checked.length} companies imported from Sage 300.`);
     }
 
-    // ==================== LOGO DRAG & DROP + PREVIEW ====================
+    // ==================== LOGO DRAG & DROP (Safe cancel) ====================
     function setupLogoDropZone() {
         const dropZone = document.getElementById('logo_drop_zone');
         const fileInput = document.getElementById('company_logo');
@@ -1110,10 +1113,8 @@
 
         if (!dropZone || !fileInput || !preview) return;
 
-        // Click to upload
         dropZone.onclick = () => fileInput.click();
 
-        // Drag events
         dropZone.addEventListener('dragover', function(e) {
             e.preventDefault();
             dropZone.classList.add('dragover');
@@ -1132,7 +1133,6 @@
             }
         });
 
-        // File input change
         fileInput.onchange = () => previewLogo(fileInput);
     }
 
@@ -1140,12 +1140,30 @@
         const preview = document.getElementById('logo_preview');
         if (!preview) return;
 
-        if (input.files && input.files[0]) {
-            const reader = new FileReader();
-            reader.onload = function(e) {
-                preview.innerHTML = `<img src="${e.target.result}" class="w-full h-full object-cover">`;
-            };
-            reader.readAsDataURL(input.files[0]);
+        if (!input.files || !input.files[0]) {
+            return; // User clicked Cancel in file explorer — do nothing
+        }
+
+        const reader = new FileReader();
+        reader.onload = function(e) {
+            preview.innerHTML = `<img src="${e.target.result}" class="w-full h-full object-cover">`;
+        };
+        reader.readAsDataURL(input.files[0]);
+    }
+
+    // ==================== UNSAVED CHANGES CONFIRMATION ====================
+    function safeCloseCompanyModal() {
+        const modal = document.getElementById('companyModal');
+        if (!modal) return;
+
+        // Simple check: if company name has value, ask for confirmation
+        const companyName = document.getElementById('company_name') ? document.getElementById('company_name').value.trim() : '';
+        if (companyName) {
+            if (confirm("You have unsaved changes. Discard and close?")) {
+                modal.close();
+            }
+        } else {
+            modal.close();
         }
     }
 
