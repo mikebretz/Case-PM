@@ -204,11 +204,11 @@
                             <input type="email" id="primary_email" class="w-full bg-zinc-800 text-white border border-zinc-700 rounded px-4 py-2.5 text-sm focus:border-emerald-600">
                         </div>
 
-                        <!-- COMPANY LOGO - TALLER to reach bottom of Status/Tax ID -->
+                        <!-- COMPANY LOGO - SQUARE -->
                         <div class="flex flex-col justify-end">
                             <label class="text-xs text-zinc-400 block mb-1">Company Logo</label>
                             <div id="logo_drop_zone"
-                                 class="w-full h-[118px] border-2 border-dashed border-zinc-600 rounded-md flex flex-col items-center justify-center text-center cursor-pointer hover:border-emerald-600 transition-colors bg-zinc-800">
+                                 class="w-[120px] h-[120px] border-2 border-dashed border-zinc-600 rounded-md flex flex-col items-center justify-center text-center cursor-pointer hover:border-emerald-600 transition-colors bg-zinc-800">
                                 <div id="logo_preview" class="w-14 h-14 flex items-center justify-center text-xs text-zinc-500 overflow-hidden">
                                     No Logo
                                 </div>
@@ -363,14 +363,17 @@
         <button onclick="document.getElementById('sageSyncModal').close()" class="text-zinc-400 hover:text-white text-2xl leading-none">&times;</button>
     </div>
     <div class="p-6" id="sageSyncContent"></div>
-    <div class="flex justify-end gap-3 px-6 py-4 border-t border-zinc-700 bg-zinc-950 rounded-b-md">
-        <button onclick="document.getElementById('sageSyncModal').close()" class="px-6 py-2.5 rounded border border-zinc-600 hover:bg-zinc-800 text-sm">Cancel</button>
+    <div class="flex justify-end gap-3 px-6 py-4 border-t border-zinc-700 bg-zinc-950 rounded-b-md flex-wrap">
+        <button onclick="selectAllSage(true)" class="px-3 py-2 bg-zinc-700 hover:bg-zinc-600 rounded text-sm">Select All</button>
+        <button onclick="selectAllSage(false)" class="px-3 py-2 bg-zinc-700 hover:bg-zinc-600 rounded text-sm">Deselect All</button>
+        <button onclick="selectNonExistingSage()" class="px-3 py-2 bg-emerald-600 hover:bg-emerald-700 rounded text-sm">Select all that are not existing</button>
+        <button onclick="document.getElementById('sageSyncModal').close()" class="px-6 py-2.5 rounded border border-zinc-600 hover:bg-zinc-800 text-sm ml-auto">Cancel</button>
         <button onclick="importSelectedFromSage()" class="px-6 py-2.5 bg-emerald-600 hover:bg-emerald-700 rounded text-sm font-medium">Import Selected</button>
     </div>
 </dialog>
 
 <script>
-// ==================== FULL JAVASCRIPT (GitHub base + your exact requested changes) ====================
+// ==================== FULL JAVASCRIPT ====================
 
 let companies = [];
 let originalCompanyData = null;
@@ -498,10 +501,24 @@ function updateSummaryCards() {
     document.getElementById('expiredLicenseCount').innerText = expiredLic;
 }
 
-function filterAll() { renderCompaniesTable(companies); }
-function filterByType(type) { renderCompaniesTable(companies.filter(c => c.company_type === type)); }
+// ==================== QUICK SEARCH TABS CLEAR FILTERS ====================
+function filterAll() {
+    document.getElementById('searchInput').value = '';
+    document.getElementById('typeFilter').value = '';
+    document.getElementById('statusFilter').value = '';
+    renderCompaniesTable(companies);
+}
+function filterByType(type) {
+    document.getElementById('searchInput').value = '';
+    document.getElementById('typeFilter').value = '';
+    document.getElementById('statusFilter').value = '';
+    renderCompaniesTable(companies.filter(c => c.company_type === type));
+}
 
 function filterExpiringInsurance() {
+    document.getElementById('searchInput').value = '';
+    document.getElementById('typeFilter').value = '';
+    document.getElementById('statusFilter').value = '';
     const now = new Date();
     const sixty = new Date(now.getTime() + (60 * 24 * 60 * 60 * 1000));
     const filtered = companies.filter(c => {
@@ -517,6 +534,9 @@ function filterExpiringInsurance() {
 }
 
 function filterExpiredInsurance() {
+    document.getElementById('searchInput').value = '';
+    document.getElementById('typeFilter').value = '';
+    document.getElementById('statusFilter').value = '';
     const now = new Date();
     const filtered = companies.filter(c => {
         const glExpired = c.gl_expiration && new Date(c.gl_expiration) < now;
@@ -528,6 +548,9 @@ function filterExpiredInsurance() {
 }
 
 function filterExpiredLicense() {
+    document.getElementById('searchInput').value = '';
+    document.getElementById('typeFilter').value = '';
+    document.getElementById('statusFilter').value = '';
     const now = new Date();
     const filtered = companies.filter(c => c.license_expiration && new Date(c.license_expiration) < now);
     renderCompaniesTable(filtered);
@@ -647,12 +670,14 @@ function saveCompany(e) {
     contactRows.forEach(row => {
         const authCheck = row.querySelector('.authorized-check');
         const emailInput = row.querySelector('.contact-email');
-        if (authCheck && authCheck.checked && emailInput && emailInput.value.trim() && !/^\S+@\S+\.\S+$/.test(emailInput.value.trim())) {
-            hasInvalidEmail = true;
+        if (authCheck && authCheck.checked) {
+            if (!emailInput || !emailInput.value.trim() || !/^\S+@\S+\.\S+$/.test(emailInput.value.trim())) {
+                hasInvalidEmail = true;
+            }
         }
     });
     if (hasInvalidEmail) {
-        showAlertModal("Invalid Email", "Please enter a valid email address for any Authorized Case PM User.");
+        showAlertModal("Invalid Email", "Authorized Case PM User requires a valid email address.");
         return;
     }
 
@@ -749,7 +774,7 @@ function addContactRow(contact = null) {
         </div>
         <div class="col-span-2 flex items-center gap-2">
             <label class="flex items-center gap-2 text-xs text-zinc-400 cursor-pointer">
-                <input type="checkbox" class="authorized-check accent-emerald-600" ${contact && contact.authorized_user ? 'checked' : ''} onchange="if(this.checked){ const email=this.closest('.contact-row').querySelector('.contact-email'); if(email && !email.value) email.focus(); }"> 
+                <input type="checkbox" class="authorized-check accent-emerald-600" ${contact && contact.authorized_user ? 'checked' : ''} onchange="if(this.checked){ const email=this.closest('.contact-row').querySelector('.contact-email'); if(email && !email.value.trim()) { email.focus(); showAlertModal('Email Required', 'Authorized Case PM User requires a valid email.'); } }"> 
                 <span>Authorized Case PM User</span>
             </label>
             <button type="button" onclick="this.closest('.contact-row').remove()" class="text-red-400 hover:text-red-300 ml-auto"><i class="fa-solid fa-times"></i></button>
@@ -1007,6 +1032,7 @@ function previewLogo(file) {
     reader.readAsDataURL(file);
 }
 
+// ==================== FULL COMPANY DETAILS VIEW ====================
 function showViewCompanyModal(id) {
     const company = companies.find(c => c.id === id);
     if (!company) return;
@@ -1014,15 +1040,96 @@ function showViewCompanyModal(id) {
     const content = document.getElementById('viewCompanyContent');
     content.dataset.currentId = id;
 
-    let html = `<div class="space-y-6">`;
-    html += `<div><h3 class="font-semibold text-lg">${company.company_name}</h3><p class="text-zinc-400">${company.company_type} • ${company.trade || ''}</p></div>`;
+    let html = `<div class="space-y-8">`;
 
+    // Header
+    html += `<div>
+        <h3 class="text-2xl font-semibold">${company.company_name}</h3>
+        <p class="text-zinc-400">${company.company_type || ''} ${company.trade ? '• ' + company.trade : ''}</p>
+    </div>`;
+
+    // Profile
+    html += `<div class="grid grid-cols-1 md:grid-cols-2 gap-x-8 gap-y-4 text-sm">
+        <div><span class="text-zinc-400">External / Sage ID:</span> <span class="font-mono">${company.external_id || '—'}</span></div>
+        <div><span class="text-zinc-400">Tax ID / EIN:</span> ${company.tax_id || '—'}</div>
+        <div><span class="text-zinc-400">Primary Phone:</span> ${company.primary_phone || '—'}</div>
+        <div><span class="text-zinc-400">Primary Email:</span> ${company.primary_email || '—'}</div>
+        <div><span class="text-zinc-400">Status:</span> <span class="px-2 py-0.5 rounded text-xs ${company.status === 'Active' ? 'bg-emerald-900/60 text-emerald-400' : 'bg-zinc-700'}">${company.status || 'Active'}</span></div>
+    </div>`;
+
+    // Addresses
+    if (company.billing_address || company.shipping_address) {
+        html += `<div>
+            <h4 class="font-semibold text-emerald-400 mb-2">Addresses</h4>
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm">
+                <div><span class="text-zinc-400 block text-xs">Billing</span>${company.billing_address ? company.billing_address.replace(/\n/g, '<br>') : '—'}</div>
+                <div><span class="text-zinc-400 block text-xs">Shipping</span>${company.shipping_address ? company.shipping_address.replace(/\n/g, '<br>') : '—'}</div>
+            </div>
+        </div>`;
+    }
+
+    // Contacts
     if (company.contacts && company.contacts.length > 0) {
-        html += `<div><h4 class="font-medium mb-2">Contacts</h4>`;
+        html += `<div>
+            <h4 class="font-semibold text-emerald-400 mb-2">Contacts</h4>
+            <div class="space-y-1 text-sm">`;
         company.contacts.forEach(c => {
-            html += `<div class="text-sm mb-1">${c.name} — ${c.title || ''} ${c.phone ? '• ' + c.phone : ''} ${c.email ? '• ' + c.email : ''}</div>`;
+            html += `<div class="flex items-center gap-2">
+                <span class="font-medium">${c.name}</span>
+                ${c.title ? '<span class="text-zinc-400">• ' + c.title + '</span>' : ''}
+                ${c.phone ? '<span class="text-zinc-400">• ' + c.phone + '</span>' : ''}
+                ${c.email ? '<span class="text-zinc-400">• ' + c.email + '</span>' : ''}
+                ${c.authorized_user ? '<span class="ml-2 text-[10px] px-1.5 py-0.5 bg-emerald-900/60 text-emerald-400 rounded">Authorized Case PM User</span>' : ''}
+            </div>`;
         });
+        html += `</div></div>`;
+    }
+
+    // License
+    if (company.license_number || company.license_expiration) {
+        html += `<div>
+            <h4 class="font-semibold text-emerald-400 mb-2">License</h4>
+            <div class="text-sm grid grid-cols-2 md:grid-cols-3 gap-x-6">
+                <div><span class="text-zinc-400">Number:</span> ${company.license_number || '—'}</div>
+                <div><span class="text-zinc-400">Expiration:</span> ${company.license_expiration || '—'}</div>
+                <div><span class="text-zinc-400">Status:</span> ${company.license_status || '—'}</div>
+            </div>
+        </div>`;
+    }
+
+    // Insurance
+    if (company.gl_carrier || company.wc_carrier || (company.cois && company.cois.length > 0)) {
+        html += `<div>
+            <h4 class="font-semibold text-emerald-400 mb-2">Insurance</h4>
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-x-8 gap-y-4 text-sm">
+                <div>
+                    <div class="text-xs text-zinc-400 mb-0.5">General Liability</div>
+                    <div>${company.gl_carrier || '—'} ${company.gl_policy ? '• ' + company.gl_policy : ''}</div>
+                    <div class="text-xs text-zinc-400">Expires: ${company.gl_expiration || '—'}</div>
+                </div>
+                <div>
+                    <div class="text-xs text-zinc-400 mb-0.5">Workers Comp</div>
+                    <div>${company.wc_carrier || '—'} ${company.wc_policy ? '• ' + company.wc_policy : ''}</div>
+                    <div class="text-xs text-zinc-400">Expires: ${company.wc_expiration || '—'}</div>
+                </div>
+            </div>`;
+
+        if (company.cois && company.cois.length > 0) {
+            html += `<div class="mt-3"><div class="text-xs text-zinc-400 mb-1">Certificates of Insurance</div>`;
+            company.cois.forEach(coi => {
+                html += `<div class="text-sm">${coi.carrier} • ${coi.policy || '—'} • Expires ${coi.expiration || '—'}</div>`;
+            });
+            html += `</div>`;
+        }
         html += `</div>`;
+    }
+
+    // Notes
+    if (company.notes) {
+        html += `<div>
+            <h4 class="font-semibold text-emerald-400 mb-2">Notes</h4>
+            <div class="text-sm whitespace-pre-wrap">${company.notes}</div>
+        </div>`;
     }
 
     html += `</div>`;
@@ -1051,14 +1158,6 @@ function syncWithSage300() {
     });
 
     html += `</div>`;
-
-    html += `
-        <div class="flex flex-wrap gap-2 mt-4">
-            <button onclick="selectAllSage(true)" class="px-4 py-2 bg-zinc-700 hover:bg-zinc-600 rounded text-sm">Select All</button>
-            <button onclick="selectAllSage(false)" class="px-4 py-2 bg-zinc-700 hover:bg-zinc-600 rounded text-sm">Deselect All</button>
-            <button onclick="selectNonExistingSage()" class="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 rounded text-sm">Select all that are not existing</button>
-        </div>
-    `;
 
     contentDiv.innerHTML = html;
     modal.showModal();
