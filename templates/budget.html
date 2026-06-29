@@ -17,7 +17,7 @@
 
 <div class="flex h-screen overflow-hidden">
 
-    <!-- ==================== FULL CORRECT SIDEBAR (from base.html - matches all other pages) ==================== -->
+    <!-- ==================== FULL SIDEBAR (kept exactly as you had it) ==================== -->
     <div class="w-64 bg-zinc-900 border-r border-zinc-800 flex flex-col">
         
         <!-- Logo -->
@@ -157,23 +157,24 @@
         </div>
     </div>
 
-    <!-- Main Content -->
+    <!-- ==================== MAIN CONTENT AREA ==================== -->
     <div class="flex-1 flex flex-col overflow-hidden">
         
-        <!-- Header - Updated: Project name on left, Budget moved right -->
-        <div class="h-16 border-b border-zinc-800 bg-zinc-900 flex items-center justify-between px-6">
+        <!-- ==================== NEW HEADER (Exact match to Companies.html style) ==================== -->
+        <div class="h-16 border-b border-zinc-800 bg-zinc-900 flex items-center justify-between px-6 flex-shrink-0">
             
-            <!-- Left: Current Project -->
-            <div>
-                <div class="text-xs text-zinc-400 tracking-wider">CURRENT PROJECT</div>
-                <div class="text-2xl font-semibold tracking-tight">ALDI Lakeland</div>
+            <!-- Left: Current Project Focus -->
+            <div onclick="showProjectSwitcher()" class="flex items-center gap-2 px-4 py-2 bg-zinc-800 hover:bg-zinc-700 rounded-2xl cursor-pointer transition-colors">
+                <i class="fa-solid fa-folder text-emerald-400"></i>
+                <span class="font-medium text-sm">{{ current_project.name if current_project else 'ALDI Lakeland' }}</span>
+                <i class="fa-solid fa-chevron-down text-xs ml-1"></i>
             </div>
 
-            <!-- Center/Right: Page Title -->
+            <!-- Center: Page Title -->
             <div class="text-2xl font-semibold text-white">Budget</div>
 
+            <!-- Right: All Original Buttons + User -->
             <div class="flex items-center gap-3">
-                <!-- All your original buttons stay exactly as they were -->
                 <button onclick="exportBudget()" class="flex items-center gap-2 px-4 py-2 bg-zinc-800 hover:bg-zinc-700 rounded-md text-sm font-medium">
                     <i class="fa-solid fa-download"></i><span>Export</span>
                 </button>
@@ -212,67 +213,65 @@
             </div>
         </div>
 
-        <!-- Content area starts here - everything below is from your original file (unchanged) -->
-        <div class="flex-1 overflow-auto p-6">
-            <!-- Summary Cards -->
-            <div class="grid grid-cols-1 md:grid-cols-7 gap-4 mb-6">
-                <div class="bg-zinc-900 border border-zinc-800 rounded-md p-5">
+        <!-- ==================== FIXED SUMMARY SECTION ==================== -->
+        <div class="bg-zinc-900 border-b border-zinc-800 px-6 py-4 flex-shrink-0 sticky top-0 z-30">
+            <div class="grid grid-cols-1 md:grid-cols-7 gap-4">
+                <div class="bg-zinc-800 border border-zinc-700 rounded-md p-5">
                     <div class="text-sm text-zinc-400">Contract Amount</div>
                     <div id="contractAmount" class="text-3xl font-semibold mt-1">$2,450,000</div>
                 </div>
-                <div class="bg-zinc-900 border border-zinc-800 rounded-md p-5">
+                <div class="bg-zinc-800 border border-zinc-700 rounded-md p-5">
                     <div class="text-sm text-zinc-400">Original Budget</div>
                     <div id="originalBudgetTotal" class="text-3xl font-semibold mt-1">$0</div>
                 </div>
-                <div class="bg-zinc-900 border border-zinc-800 rounded-md p-5">
+                <div class="bg-zinc-800 border border-zinc-700 rounded-md p-5">
                     <div class="text-sm text-zinc-400">Approved Changes</div>
                     <div id="approvedChangesTotal" class="text-3xl font-semibold mt-1 text-amber-400">$0</div>
                 </div>
-                <div class="bg-zinc-900 border border-zinc-800 rounded-md p-5">
+                <div class="bg-zinc-800 border border-zinc-700 rounded-md p-5">
                     <div class="text-sm text-zinc-400">Pending Changes</div>
                     <div id="pendingChangesTotal" class="text-3xl font-semibold mt-1 text-orange-400">$0</div>
                 </div>
-                <div class="bg-zinc-900 border border-zinc-800 rounded-md p-5">
+                <div class="bg-zinc-800 border border-zinc-700 rounded-md p-5">
                     <div class="text-sm text-zinc-400">Current Budget</div>
                     <div id="currentBudgetTotal" class="text-3xl font-semibold mt-1 text-emerald-400">$0</div>
                 </div>
-                <div class="bg-zinc-900 border border-zinc-800 rounded-md p-5">
+                <div class="bg-zinc-800 border border-zinc-700 rounded-md p-5">
                     <div class="text-sm text-zinc-400">Projected Final Cost</div>
                     <div id="projectedFinalTotal" class="text-3xl font-semibold mt-1 text-emerald-400">$0</div>
                 </div>
-                <div class="bg-zinc-900 border border-zinc-800 rounded-md p-5">
+                <div class="bg-zinc-800 border border-zinc-700 rounded-md p-5">
                     <div class="text-sm text-zinc-400">Variance</div>
                     <div id="varianceTotal" class="text-3xl font-semibold mt-1 text-emerald-400">$0</div>
                 </div>
             </div>
+        </div>
+        <!-- ==================== SCROLLABLE TABLE SECTION ==================== -->
+<div class="flex-1 overflow-hidden flex flex-col">
+    <div class="overflow-auto flex-1">
+        <table class="w-full text-sm min-w-[1400px]">
+            <thead class="bg-zinc-900 sticky top-0 z-20 border-b border-zinc-700">
+                <tr>
+                    <th class="px-6 py-3 text-left font-medium text-zinc-400 w-20 whitespace-nowrap">Cost Code</th>
+                    <th class="px-6 py-3 text-left font-medium text-zinc-400 min-w-[260px]">Description</th>
+                    <th class="px-6 py-3 text-center font-medium text-zinc-400 w-32 whitespace-nowrap">Cost Type</th>
+                    <th class="px-6 py-3 text-center font-medium text-zinc-400 w-28">Original</th>
+                    <th class="px-6 py-3 text-center font-medium text-zinc-400 w-24">Changes</th>
+                    <th class="px-6 py-3 text-center font-medium text-zinc-400 w-24">Pending</th>
+                    <th class="px-6 py-3 text-center font-medium text-zinc-400 w-28">Current</th>
+                    <th class="px-6 py-3 text-center font-medium text-zinc-400 w-28">Forecast</th>
+                    <th class="px-6 py-3 text-left font-medium text-zinc-400 w-[420px]">Notes</th>
+                    <th class="px-6 py-3 w-20"></th>
+                </tr>
+            </thead>
+            <tbody id="budgetTableBody" class="text-sm divide-y divide-zinc-800">
+                <!-- Populated by JavaScript -->
+            </tbody>
+        </table>
+    </div>
+</div>
 
-            <!-- Budget Table -->
-            <div class="bg-zinc-900 border border-zinc-800 rounded-md overflow-hidden">
-                <div class="px-6 py-4 border-b border-zinc-800 flex items-center justify-between">
-                    <div class="font-semibold">Budget Line Items</div>
-                    <div class="text-sm text-zinc-400" id="lineCount">0 lines</div>
-                </div>
-                <table class="w-full">
-                    <thead class="bg-zinc-950 text-sm">
-                        <tr>
-                            <th class="px-6 py-3 text-left font-medium text-zinc-400 w-20 whitespace-nowrap">Cost Code</th>
-                            <th class="px-6 py-3 text-left font-medium text-zinc-400 min-w-[260px]">Description</th>
-                            <th class="px-6 py-3 text-center font-medium text-zinc-400 w-32 whitespace-nowrap">Cost Type</th>
-                            <th class="px-6 py-3 text-center font-medium text-zinc-400 w-28">Original</th>
-                            <th class="px-6 py-3 text-center font-medium text-zinc-400 w-24">Changes</th>
-                            <th class="px-6 py-3 text-center font-medium text-zinc-400 w-24">Pending</th>
-                            <th class="px-6 py-3 text-center font-medium text-zinc-400 w-28">Current</th>
-                            <th class="px-6 py-3 text-center font-medium text-zinc-400 w-28">Forecast</th>
-                            <th class="px-6 py-3 text-left font-medium text-zinc-400 w-[420px]">Notes</th>
-                            <th class="px-6 py-3 w-20"></th>
-                        </tr>
-                    </thead>
-                    <tbody id="budgetTableBody" class="text-sm divide-y divide-zinc-800">
-                        <!-- Populated by JavaScript -->
-                    </tbody>
-                </table>
-            </div>
-<!-- ==================== MODALS (from your original file - unchanged) ==================== -->
+<!-- ==================== ALL MODALS (kept exactly from your original file) ==================== -->
 
 <!-- Add/Edit Budget Line Modal -->
 <dialog id="budgetLineModal" class="modal rounded-md w-full max-w-2xl p-0 text-white">
@@ -1185,9 +1184,40 @@
         initializeBudget();
     };
 </script>
-        </div> <!-- Closes the flex-1 overflow-auto p-6 content area -->
+        </div> <!-- Closes the flex-1 overflow-auto p-6 content area (if needed) -->
     </div> <!-- Closes the flex-1 flex flex-col main content area -->
+
 </div> <!-- Closes the outer flex h-screen layout -->
+
+<script>
+    // ==================== FINAL STICKY BEHAVIOR FIX ====================
+    // This ensures the summary bar stays fixed below the header
+    // and the table header stays fixed below the summary bar.
+    
+    function fixStickyPositions() {
+        const header = document.querySelector('.h-16.border-b.border-zinc-800.bg-zinc-900');
+        const summaryBar = document.querySelector('.bg-zinc-900.border-b.border-zinc-800.px-6.py-4.sticky');
+        const tableHead = document.querySelector('thead.sticky');
+
+        if (header && summaryBar) {
+            // Make summary bar stick right below the header (64px)
+            summaryBar.style.top = '64px';
+            summaryBar.style.zIndex = '30';
+        }
+
+        if (tableHead) {
+            // Make table header stick below the summary bar (64px header + ~80px summary)
+            tableHead.style.top = '144px';   // 64 + 80 = 144px
+            tableHead.style.zIndex = '20';
+        }
+    }
+
+    // Run the fix after everything loads
+    setTimeout(fixStickyPositions, 300);
+
+    // Re-run on window resize in case layout shifts
+    window.addEventListener('resize', fixStickyPositions);
+</script>
 
 </body>
 </html>
