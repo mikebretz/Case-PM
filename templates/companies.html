@@ -562,7 +562,7 @@
         document.getElementById('companyId').value = company.id;
         document.getElementById('modalTitle').innerText = 'Edit Company';
 
-        // Fill all fields properly
+        // Fill ALL fields properly
         document.getElementById('company_name').value = company.company_name || '';
         document.getElementById('company_type').value = company.company_type || 'Subcontractor';
         document.getElementById('trade').value = company.trade || '';
@@ -693,7 +693,6 @@
             notes: document.getElementById('notes').value.trim()
         };
 
-        // Only show message for NEW authorized users
         contacts.forEach(contact => {
             if (contact.authorized_user) {
                 const alreadyExists = companies.some(c => c.contacts?.some(ct => ct.email === contact.email && ct.authorized_user));
@@ -730,7 +729,6 @@
         renderCompaniesTable(companies);
     }
 
-    // ==================== EXPORT ====================
     function exportCompanies(format = 'excel') {
         const data = companies.map(c => ({
             "Company Name": c.company_name,
@@ -751,7 +749,6 @@
         }
     }
 
-    // ==================== IMPORT ====================
     function importCompanies() {
         const input = document.createElement('input');
         input.type = 'file';
@@ -810,7 +807,6 @@
         input.click();
     }
 
-    // ==================== INITIALIZE ====================
     function initializeCompaniesPage() {
         renderCompaniesTable(companies);
         console.log('%c[Case PM] Companies page initialized successfully', 'color:#10b981');
