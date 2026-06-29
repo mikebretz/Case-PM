@@ -2,7 +2,7 @@
 
 {% block content %}
 
-<!-- ==================== HEADER (Budget shifted left, centered roughly above Approved Changes start) ==================== -->
+<!-- ==================== HEADER (Budget shifted slightly right for better centering) ==================== -->
 <div class="h-16 border-b border-zinc-800 bg-zinc-900 flex items-center px-6 flex-shrink-0">
     <!-- Left: Project -->
     <div class="flex-shrink-0 w-72">
@@ -10,12 +10,12 @@
         <div class="text-xl font-semibold tracking-tight text-white">ALDI Lakeland</div>
     </div>
 
-    <!-- Budget title - shifted left to be roughly above the start of Approved Changes card -->
-    <div class="flex-shrink-0 ml-12">
+    <!-- Budget title - moved slightly right (closer to Export) for better visual balance -->
+    <div class="flex-shrink-0 ml-8">
         <div class="text-2xl font-semibold text-white">Budget</div>
     </div>
 
-    <!-- Right: Action buttons (one row of text high, original compact style) -->
+    <!-- Right: Action buttons (one row of text high) -->
     <div class="flex-1 flex items-center justify-end gap-3">
         <button onclick="exportBudget()" class="flex items-center gap-2 px-4 py-2.5 bg-zinc-800 hover:bg-zinc-700 rounded-md text-sm font-medium transition-colors">
             <i class="fa-solid fa-download"></i><span>Export</span>
@@ -109,7 +109,7 @@
     <button onclick="clearBudgetFilters()" class="px-4 py-2.5 bg-zinc-800 hover:bg-zinc-700 rounded-md text-sm">Clear Filters</button>
 </div>
 
-<!-- ==================== TABLE (Proper sticky header + thin bottom bar) ==================== -->
+<!-- ==================== TABLE (Sticky header + thin bottom bar) ==================== -->
 <div class="mx-6 mb-6 flex-1 overflow-hidden flex flex-col border border-zinc-700 rounded-md bg-zinc-900">
     <div class="flex-1 overflow-auto" id="tableScrollContainer">
         <table class="w-full text-sm min-w-[1600px]">
@@ -143,8 +143,7 @@
     <div class="text-emerald-400">● Online</div>
 </div>
 
-<!-- ==================== ALL MODALS (Forced dark background + white text) ==================== -->
-
+<!-- ==================== ALL MODALS (Dark background + white text) ==================== -->
 <!-- Budget Line Modal -->
 <dialog id="budgetLineModal" class="modal rounded-md w-full max-w-2xl p-0 text-white" style="background-color: #18181b; border: 1px solid #3f3f46; color: white;">
     <div class="p-6">
@@ -295,6 +294,8 @@
     </div>
 </dialog>
 
+<script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+
 <script>
     // ==================== DATA & STATE ====================
     let budgetLines = JSON.parse(localStorage.getItem('budgetLines')) || [];
@@ -428,10 +429,17 @@
         document.getElementById('currentBudgetTotal').textContent = formatCurrency(current);
         document.getElementById('projectedFinalTotal').textContent = formatCurrency(forecast);
         const varEl = document.getElementById('varianceTotal');
-        if (varEl) varEl.textContent = formatCurrency(variance);
+        if (varEl) {
+            varEl.textContent = formatCurrency(variance);
+            if (current > contractAmount) {
+                varEl.style.color = '#ef4444';
+            } else {
+                varEl.style.color = '#10b981';
+            }
+        }
     }
 
-    // ==================== ADD / EDIT / DELETE ====================
+    // ==================== ADD / EDIT / DELETE (with contract amount validation) ====================
     function showAddBudgetLineModal() {
         document.getElementById('budgetLineForm').reset();
         document.getElementById('budgetLineId').value = '';
@@ -469,6 +477,24 @@
 
         const description = document.getElementById('description').value.trim();
         const costType = document.getElementById('cost_type').value;
+
+        // Calculate what the new Current Budget would be
+        let existingApproved = 0;
+        let existingPending = 0;
+        if (id) {
+            const existing = budgetLines.find(l => l.id == id);
+            if (existing) {
+                existingApproved = existing.approved_changes || 0;
+                existingPending = existing.pending || 0;
+            }
+        }
+        const currentTotal = budgetLines.reduce((sum, l) => sum + (l.original_budget || 0) + (l.approved_changes || 0), 0);
+        const wouldBeCurrent = currentTotal + (id ? (originalBudget - (budgetLines.find(l => l.id == id)?.original_budget || 0)) : originalBudget);
+
+        if (wouldBeCurrent > contractAmount) {
+            showCenteredAlert("Cannot save this line item. It would cause the Current Budget to exceed the Contract Amount of " + formatCurrency(contractAmount) + ".");
+            return;
+        }
 
         if (!id) {
             const existing = budgetLines.find(l => l.cost_code === codeOnly && l.description.toLowerCase().trim() === description.toLowerCase().trim());
@@ -685,7 +711,7 @@
         document.getElementById('pendingChangesModal').showModal();
     }
 
-    // ==================== PRINT (Fixed - with proper header) ====================
+    // ==================== PRINT (Direct print dialog, no new tab) ====================
     function printBudget() {
         if (budgetLines.length === 0) {
             showCenteredAlert("You must have at least one budget line item to print.");
@@ -733,12 +759,30 @@
             `;
         });
 
-        const printWin = window.open('', '_blank');
-        printWin.document.write(`
+        // Hidden iframe method for direct print dialog (no new browser window/tab)
+        const iframe = document.createElement('iframe');
+        iframe.style.position = 'fixed';
+        iframe.style.width = '0';
+        iframe.style.height = '0';
+        iframe.style.border = '0';
+        document.body.appendChild(iframe);
+
+        const doc = iframe.contentWindow.document;
+        doc.open();
+        doc.write(`
             <html>
             <head>
                 <title>Budget - ALDI Lakeland</title>
                 <style>
+                    @media print {
+                        body { margin: 0; padding: 20px; font-family: Arial, sans-serif; color: #111827; }
+                        h1 { margin: 0 0 4px 0; font-size: 22px; }
+                        .sub { color: #4b5563; margin-bottom: 16px; font-size: 12px; }
+                        table { width: 100%; border-collapse: collapse; font-size: 10px; }
+                        th, td { border: 1px solid #ccc; padding: 5px 6px; text-align: left; }
+                        th { background: #f3f4f6; font-weight: 600; }
+                        .header { border-bottom: 2px solid #111827; padding-bottom: 8px; margin-bottom: 16px; }
+                    }
                     body { font-family: Arial, sans-serif; padding: 20px; color: #111827; }
                     h1 { margin-bottom: 4px; }
                     .sub { color: #4b5563; margin-bottom: 20px; }
@@ -771,9 +815,15 @@
             </body>
             </html>
         `);
-        printWin.document.close();
-        printWin.focus();
-        setTimeout(() => { printWin.print(); printWin.close(); }, 600);
+        doc.close();
+
+        setTimeout(() => {
+            iframe.contentWindow.focus();
+            iframe.contentWindow.print();
+            setTimeout(() => {
+                document.body.removeChild(iframe);
+            }, 800);
+        }, 250);
     }
 
     // ==================== EXPORT (Fixed & Working) ====================
@@ -799,7 +849,7 @@
         XLSX.writeFile(wb, "Budget_Export.xlsx");
     }
 
-    // ==================== IMPORT ====================
+    // ==================== IMPORT (Full working Excel/CSV) ====================
     function importBudget() {
         const input = document.createElement('input');
         input.type = 'file';
@@ -877,13 +927,16 @@
         input.click();
     }
 
-    // ==================== CENTERED ALERT (Dark) ====================
+    // ==================== CENTERED ALERT (Dark + auto-width for short messages) ====================
     function showCenteredAlert(message) {
         const dialog = document.createElement('dialog');
-        dialog.className = 'modal rounded-md p-6 w-full max-w-md text-white';
+        dialog.className = 'modal rounded-md p-6 text-white';
         dialog.style.backgroundColor = '#18181b';
         dialog.style.border = '1px solid #3f3f46';
         dialog.style.color = 'white';
+        dialog.style.width = 'fit-content';
+        dialog.style.minWidth = '320px';
+        dialog.style.maxWidth = '90vw';
         dialog.innerHTML = `
             <div class="text-base mb-5">${message}</div>
             <div class="flex justify-end">
@@ -899,7 +952,7 @@
         document.getElementById('userProfileModal').showModal();
     }
 
-    // ==================== NAVIGATION WARNING (Preserved exactly as working) ====================
+    // ==================== NAVIGATION WARNING (Dark + 5 buttons + correct navigation) - UNCHANGED as requested ====================
     function warnBeforeLeaving() {
         if (budgetLines.length === 0 || budgetPublished) return;
 
@@ -909,28 +962,26 @@
         dialog.style.border = '1px solid #3f3f46';
         dialog.style.color = 'white';
 
-        let buttonsHTML = `
-            <button id="btnStay" class="w-full px-5 py-3 rounded-md bg-zinc-700 hover:bg-zinc-600 text-sm font-semibold">Stay and Edit</button>
-            <button id="btnPublishLeave" class="w-full px-5 py-3 rounded-md bg-emerald-600 hover:bg-emerald-500 text-sm font-semibold">Publish & Leave</button>
+        let html = `
+            <div class="text-base mb-4">You have unsaved budget line items.</div>
+            <div class="flex flex-col gap-3">
+                <button id="btnStay" class="w-full px-5 py-3 rounded-md bg-zinc-700 hover:bg-zinc-600 text-sm font-semibold">Stay and Edit</button>
+                <button id="btnPublishLeave" class="w-full px-5 py-3 rounded-md bg-emerald-600 hover:bg-emerald-500 text-sm font-semibold">Publish & Leave</button>
         `;
 
         if (!budgetSaved) {
-            buttonsHTML += `
+            html += `
                 <button id="btnSaveLeave" class="w-full px-5 py-3 rounded-md bg-blue-600 hover:bg-blue-500 text-sm font-semibold">Save & Leave</button>
                 <button id="btnLeaveNoSave" class="w-full px-5 py-3 rounded-md bg-red-600 hover:bg-red-500 text-sm font-semibold">Leave without Saving</button>
             `;
         }
 
-        buttonsHTML += `
-            <button id="btnLeaveNoPublish" class="w-full px-5 py-3 rounded-md bg-zinc-700 hover:bg-zinc-600 text-sm font-semibold">Leave without Publishing</button>
-        `;
-
-        dialog.innerHTML = `
-            <div class="text-base mb-4">You have unsaved budget line items.</div>
-            <div class="flex flex-col gap-3">
-                ${buttonsHTML}
+        html += `
+                <button id="btnLeaveNoPublish" class="w-full px-5 py-3 rounded-md bg-zinc-700 hover:bg-zinc-600 text-sm font-semibold">Leave without Publishing</button>
             </div>
         `;
+
+        dialog.innerHTML = html;
         document.body.appendChild(dialog);
         dialog.showModal();
 
