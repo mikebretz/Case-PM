@@ -350,6 +350,9 @@
         </div>
         <div id="versionHistoryContent" class="max-h-80 overflow-auto mb-4"></div>
         <div class="flex justify-end gap-3">
+            <button onclick="exportVersionHistory()" class="px-4 py-2 bg-zinc-700 hover:bg-zinc-600 rounded-md text-sm flex items-center gap-2">
+                <i class="fa-solid fa-file-excel"></i> <span>Export History</span>
+            </button>
             <button onclick="createNewRevision()" class="px-5 py-2.5 bg-emerald-600 hover:bg-emerald-500 rounded-md text-sm font-semibold">Create New Revision</button>
         </div>
     </div>
@@ -533,23 +536,23 @@
                 row.className = 'hover:bg-zinc-800/60 transition-colors cursor-pointer';
                 row.ondblclick = () => editBudgetLine(line.id);
                 row.innerHTML = `
-                    <td class="px-4 py-3 text-center font-mono text-xs text-zinc-500">${index + 1}</td>
-                    <td class="px-6 py-3 font-mono text-emerald-400">${line.cost_code}</td>
-                    <td class="px-6 py-3">${line.description}</td>
-                    <td class="px-6 py-3 text-center w-32 whitespace-nowrap">
+                    <td class="px-4 py-1.5 text-center font-mono text-xs text-zinc-500">${index + 1}</td>
+                    <td class="px-6 py-1.5 font-mono text-emerald-400">${line.cost_code}</td>
+                    <td class="px-6 py-1.5">${line.description}</td>
+                    <td class="px-6 py-1.5 text-center w-32 whitespace-nowrap">
                         <span class="inline-block px-2.5 py-0.5 rounded-full text-xs font-medium bg-zinc-700 text-zinc-300">${line.cost_type}</span>
                     </td>
-                    <td class="px-6 py-3 text-center w-28">${formatCurrency(line.original_budget)}</td>
-                    <td class="px-6 py-3 text-center text-amber-400 w-24">${formatCurrency(line.approved_changes)}</td>
-                    <td class="px-6 py-3 text-center text-orange-400 w-24">${formatCurrency(pending)}</td>
-                    <td class="px-6 py-3 text-center font-semibold text-emerald-400 w-28">${formatCurrency(line.original_budget + line.approved_changes)}</td>
-                    <td class="px-6 py-3 text-center font-semibold text-emerald-400 w-28">${formatCurrency(forecast)}</td>
-                    <td class="px-6 py-3 text-center font-semibold text-sky-400 w-28">${formatCurrency(actual)}</td>
-                    <td class="px-6 py-3 text-center w-20 font-mono text-xs">${percentComplete}%</td>
-                    <td class="px-6 py-3 text-center w-24">${syncBadge}</td>
-                    <td class="px-6 py-3 text-center w-24">${healthBadge}</td>
-                    <td class="px-6 py-3 text-sm text-zinc-400 w-[320px]">${line.notes || ''}</td>
-                    <td class="px-4 py-3 w-24">
+                    <td class="px-6 py-1.5 text-center w-28">${formatCurrency(line.original_budget)}</td>
+                    <td class="px-6 py-1.5 text-center text-amber-400 w-24">${formatCurrency(line.approved_changes)}</td>
+                    <td class="px-6 py-1.5 text-center text-orange-400 w-24">${formatCurrency(pending)}</td>
+                    <td class="px-6 py-1.5 text-center font-semibold text-emerald-400 w-28">${formatCurrency(line.original_budget + line.approved_changes)}</td>
+                    <td class="px-6 py-1.5 text-center font-semibold text-emerald-400 w-28">${formatCurrency(forecast)}</td>
+                    <td class="px-6 py-1.5 text-center font-semibold text-sky-400 w-28">${formatCurrency(actual)}</td>
+                    <td class="px-6 py-1.5 text-center w-20 font-mono text-xs">${percentComplete}%</td>
+                    <td class="px-6 py-1.5 text-center w-24">${syncBadge}</td>
+                    <td class="px-6 py-1.5 text-center w-24">${healthBadge}</td>
+                    <td class="px-6 py-1.5 text-sm text-zinc-400 w-[320px]">${line.notes || ''}</td>
+                    <td class="px-4 py-1.5 w-24">
                         <div class="flex gap-1">
                             <button onclick="event.stopImmediatePropagation(); editBudgetLine(${line.id})" class="text-zinc-400 hover:text-white p-1"><i class="fa-solid fa-edit"></i></button>
                             <button onclick="event.stopImmediatePropagation(); showLineHistory(${line.id})" class="text-zinc-400 hover:text-sky-400 p-1" title="View Line History"><i class="fa-solid fa-history"></i></button>
@@ -841,7 +844,8 @@
 
         const lineEvents = budgetAuditLog.filter(e => 
             (e.action === 'LINE_ADDED' || e.action === 'LINE_EDITED' || e.action === 'LINE_DELETED') && 
-            e.details.cost_code === line.cost_code
+            e.details.cost_code === line.cost_code &&
+            e.details.cost_type === line.cost_type
         );
 
         if (lineEvents.length === 0) {
@@ -1425,6 +1429,32 @@
         document.getElementById('versionHistoryModal').showModal();
     }
 
+    function exportVersionHistory() {
+        if (typeof XLSX === 'undefined') {
+            showCenteredAlert("Excel library not loaded. Please hard refresh.");
+            return;
+        }
+        const snapshots = JSON.parse(localStorage.getItem('budgetSnapshots') || '[]');
+        if (snapshots.length === 0) {
+            showCenteredAlert("No version history to export.");
+            return;
+        }
+        try {
+            const data = snapshots.map(s => ({
+                Revision: s.revision,
+                Timestamp: new Date(s.timestamp).toLocaleString(),
+                Line_Items: s.lines.length,
+                Total_Budget: s.lines.reduce((sum, l) => sum + (l.original_budget || 0), 0)
+            }));
+            const ws = XLSX.utils.json_to_sheet(data);
+            const wb = XLSX.utils.book_new();
+            XLSX.utils.book_append_sheet(wb, ws, "Version History");
+            XLSX.writeFile(wb, `Budget_Version_History_ALDI_Lakeland.xlsx`);
+        } catch (e) {
+            showCenteredAlert("Failed to export version history.");
+        }
+    }
+
     function showRevisionDetails(rev) {
         document.getElementById('versionHistoryModal').close();
 
@@ -1953,8 +1983,8 @@
         modal.className = 'modal rounded-md p-0 text-white';
         modal.style.backgroundColor = '#18181b';
         modal.style.border = '1px solid #3f3f46';
-        modal.style.width = 'min(420px, 92vw)';
-        modal.style.maxHeight = '70vh';
+        modal.style.width = 'min(620px, 95vw)';
+        modal.style.maxHeight = '72vh';
 
         const colSpan = hideCostType ? 2 : 3;
 
@@ -1966,7 +1996,7 @@
                         <i class="fa-solid fa-times text-lg"></i>
                     </button>
                 </div>
-                <div class="max-h-[380px] overflow-auto border border-zinc-700 rounded-md">
+                <div class="max-h-[420px] overflow-auto border border-zinc-700 rounded-md">
                     <table class="w-full text-sm">
                         <thead class="bg-zinc-800 sticky top-0">
                             <tr>
@@ -1999,7 +2029,10 @@
                         </tbody>
                     </table>
                 </div>
-                <div class="mt-3 text-right">
+                <div class="mt-4 flex justify-between items-center">
+                    <button onclick="exportCurrentCostCodeList('${listName}', this)" class="px-4 py-1.5 bg-emerald-600 hover:bg-emerald-500 rounded text-sm flex items-center gap-2">
+                        <i class="fa-solid fa-file-excel"></i> <span>Export to Excel</span>
+                    </button>
                     <button onclick="this.closest('dialog').close(); this.closest('dialog').remove()" class="px-4 py-1.5 bg-zinc-700 hover:bg-zinc-600 rounded text-sm">Close</button>
                 </div>
             </div>
@@ -2023,6 +2056,32 @@
                     modal.style.zIndex = '100000';
                 }
             }, 60);
+        }
+    }
+
+    function exportCurrentCostCodeList(listName, btn) {
+        if (typeof XLSX === 'undefined') {
+            showCenteredAlert("Excel library not loaded.");
+            return;
+        }
+        const list = activeCostCodeList === 'csi' ? csiCostCodes : customCostCodes;
+        if (!list || list.length === 0) {
+            showCenteredAlert("No codes to export in this list.");
+            return;
+        }
+        try {
+            const data = list.map(item => ({
+                "Cost Code": item.code,
+                "Description": item.description,
+                "Cost Type": item.cost_type || ''
+            }));
+            const ws = XLSX.utils.json_to_sheet(data);
+            const wb = XLSX.utils.book_new();
+            XLSX.utils.book_append_sheet(wb, ws, "Cost Codes");
+            const filename = `${listName.replace(/[^a-z0-9]/gi, '_')}_Cost_Codes.xlsx`;
+            XLSX.writeFile(wb, filename);
+        } catch (e) {
+            showCenteredAlert("Failed to export cost code list.");
         }
     }
 
