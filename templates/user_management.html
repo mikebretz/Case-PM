@@ -116,10 +116,12 @@
                 <tr>
                     <th class="px-6 py-3 text-left font-medium text-zinc-400">Name</th>
                     <th class="px-6 py-3 text-left font-medium text-zinc-400">Email</th>
+                    <th class="px-6 py-3 text-left font-medium text-zinc-400">Phone</th>
+                    <th class="px-6 py-3 text-left font-medium text-zinc-400">Address</th>
                     <th class="px-6 py-3 text-left font-medium text-zinc-400">Role / Title</th>
                     <th class="px-6 py-3 text-center font-medium text-zinc-400">Status</th>
                     <th class="px-6 py-3 text-center font-medium text-zinc-400">Access</th>
-                    <th class="px-6 py-3 text-center font-medium text-zinc-400 w-40">Actions</th>
+                    <th class="px-6 py-3 text-center font-medium text-zinc-400 min-w-[160px]">Actions</th>
                 </tr>
             </thead>
             <tbody id="usersTableBody" class="divide-y divide-zinc-800 text-sm">
@@ -127,6 +129,15 @@
             </tbody>
         </table>
     </div>
+</div>
+
+<!-- FIXED BOTTOM USER ACTIVITY LOG FOOTER (matches budget.html style) -->
+<div class="fixed bottom-0 left-64 right-0 bg-zinc-900 border-t border-zinc-700 px-6 py-2 text-xs text-zinc-400 flex items-center justify-between z-[60]">
+    <div class="flex items-center gap-4">
+        <div>User activity is logged for compliance and audit purposes.</div>
+        <button onclick="showFullUserAuditLog()" class="text-emerald-400 hover:text-emerald-300 underline font-medium">View Full User Activity Log</button>
+    </div>
+    <div class="text-emerald-400">● System Online</div>
 </div>
 
 <!-- ADD / EDIT USER MODAL -->
@@ -143,8 +154,7 @@
         <div class="flex border-b border-zinc-700 mb-6">
             <button onclick="switchTab('general')" id="tab-general" class="px-6 py-3 text-sm font-medium border-b-2 border-emerald-500 text-white">General</button>
             <button onclick="switchTab('permissions')" id="tab-permissions" class="px-6 py-3 text-sm font-medium text-zinc-400 hover:text-white">Permissions</button>
-            <button onclick="switchTab('signature')" id="tab-signature" class="px-6 py-3 text-sm font-medium text-zinc-400 hover:text-white">Signature</button>
-            <button onclick="switchTab('certificate')" id="tab-certificate" class="px-6 py-3 text-sm font-medium text-zinc-400 hover:text-white">Certificate</button>
+            <button onclick="switchTab('signature')" id="tab-signature" class="px-6 py-3 text-sm font-medium text-zinc-400 hover:text-white">Signature &amp; Certificate</button>
         </div>
 
         <form id="userForm" onsubmit="saveUser(event)" novalidate>
@@ -214,7 +224,7 @@
                             <label class="block text-sm mb-1.5 text-zinc-300">Temporary Password</label>
                             <div class="flex gap-2">
                                 <input type="password" id="tempPassword" class="flex-1 bg-zinc-800 border border-zinc-700 rounded-md px-4 py-2 text-sm" placeholder="Set initial password (masked)">
-                                <button type="button" onclick="resetUserPassword()" class="px-4 py-2 text-xs bg-amber-600 hover:bg-amber-500 rounded whitespace-nowrap">Reset Password</button>
+                                <button type="button" onclick="resetUserPassword()" class="px-4 py-2 text-xs bg-amber-600 hover:bg-amber-500 rounded whitespace-nowrap text-white font-medium">Reset Password</button>
                             </div>
                             <div id="passwordResetNote" class="text-[10px] text-amber-400 mt-1 hidden">New temporary password generated. User should change on first login.</div>
                         </div>
@@ -272,7 +282,7 @@
                 <div class="mb-4">
                     <label class="block text-sm mb-2 text-zinc-300">Draw Signature Below</label>
                     <div class="border border-zinc-700 rounded-md bg-white p-1 inline-block">
-                        <canvas id="signatureCanvas" width="520" height="160" class="cursor-crosshair rounded"></canvas>
+                        <canvas id="signatureCanvas" width="560" height="160" class="cursor-crosshair rounded"></canvas>
                     </div>
                     <div class="flex gap-2 mt-2">
                         <button type="button" onclick="clearSignature()" class="px-4 py-1.5 text-xs bg-zinc-700 hover:bg-zinc-600 rounded">Clear Canvas</button>
@@ -284,16 +294,14 @@
                     <input type="file" id="signatureUpload" accept="image/*" class="text-sm file:mr-3 file:px-3 file:py-1.5 file:rounded file:border-0 file:bg-zinc-700 file:text-white hover:file:bg-zinc-600">
                     <div id="signatureUploadStatus" class="text-xs text-emerald-400 mt-1"></div>
                 </div>
-            </div>
 
-            <!-- CERTIFICATE TAB -->
-            <div id="tab-content-certificate" class="hidden">
-                <div class="mb-4">
-                    <label class="block text-sm mb-2 text-zinc-300">Upload Digital Signature Certificate</label>
+                <!-- Certificate Upload (combined under Signature tab) -->
+                <div class="mt-6 pt-4 border-t border-zinc-700">
+                    <label class="block text-sm mb-2 text-zinc-300">Upload Digital Signature Certificate (optional)</label>
                     <input type="file" id="certificateUpload" accept=".pdf,.pfx,.p12,image/*" class="text-sm file:mr-3 file:px-3 file:py-1.5 file:rounded file:border-0 file:bg-zinc-700 file:text-white hover:file:bg-zinc-600">
-                    <div id="certificateStatus" class="text-xs text-emerald-400 mt-2"></div>
+                    <div id="certificateStatus" class="text-xs text-emerald-400 mt-1"></div>
+                    <div class="text-[10px] text-zinc-500 mt-1">Accepted: PDF, PFX, P12, or image. Stored securely with profile.</div>
                 </div>
-                <div class="text-xs text-zinc-500">Accepted formats: PDF, PFX, P12, or image of certificate. Stored securely with the user profile.</div>
             </div>
 
             <div class="flex justify-end gap-3 mt-8 pt-6 border-t border-zinc-700">
@@ -936,16 +944,27 @@
 
             const roleTitle = user.jobTitle ? `${user.role || 'User'}<br><span class="text-xs text-zinc-500">${user.jobTitle}</span>` : (user.role || 'User');
 
+            // Primary phone and address for table display
+            let primaryPhone = '';
+            if (user.phoneNumbers && user.phoneNumbers.length > 0) {
+                primaryPhone = user.phoneNumbers[0].number || '';
+            } else if (user.phone) {
+                primaryPhone = user.phone;
+            }
+            const displayAddress = user.address || (user.company && user.company.address ? user.company.address : '');
+
             row.innerHTML = `
                 <td class="px-6 py-2 font-medium">${user.firstName || ''} ${user.lastName || ''}</td>
                 <td class="px-6 py-2 text-zinc-400">${user.email || ''}</td>
+                <td class="px-6 py-2 text-zinc-400 text-sm">${primaryPhone}</td>
+                <td class="px-6 py-2 text-zinc-400 text-sm">${displayAddress}</td>
                 <td class="px-6 py-2 text-sm">${roleTitle}</td>
                 <td class="px-6 py-2 text-center">
                     <span class="px-3 py-0.5 text-xs rounded-full ${user.status === 'Active' ? 'bg-emerald-900/60 text-emerald-400' : 'bg-zinc-700 text-zinc-400'}">${user.status || 'Active'}</span>
                 </td>
                 <td class="px-6 py-2 text-center">${hasAccess}</td>
                 <td class="px-6 py-2 text-center">
-                    <div class="flex justify-center gap-1 flex-wrap">
+                    <div class="flex justify-center gap-1.5 flex-nowrap">
                         <button onclick="event.stopImmediatePropagation(); editUser(${user.id})" class="px-3 py-1 text-xs bg-zinc-700 hover:bg-emerald-600 rounded">Edit</button>
                         <button onclick="event.stopImmediatePropagation(); showUserLog(${user.id})" class="px-3 py-1 text-xs bg-zinc-700 hover:bg-sky-600 rounded">Log</button>
                         <button onclick="event.stopImmediatePropagation(); deleteUser(${user.id})" class="px-3 py-1 text-xs bg-zinc-700 hover:bg-red-600 rounded">Delete</button>
