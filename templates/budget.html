@@ -637,7 +637,7 @@
         showCenteredAlert(`New Revision ${String(currentRevision).padStart(2, '0')} created. Budget is now unlocked.`, 'success');
     }
 
-    // ==================== BUDGET AUDIT LOG VIEWER (with Print button + Revision column) ====================
+    // ==================== BUDGET AUDIT LOG VIEWER (Print button moved to bottom + Direct print) ====================
     function showBudgetAuditLog() {
         const modal = document.createElement('dialog');
         modal.className = 'modal rounded-md p-0 text-white w-full max-w-6xl';
@@ -648,14 +648,9 @@
             <div class="p-6">
                 <div class="flex justify-between items-center mb-4">
                     <h3 class="text-xl font-semibold">Budget Audit Log</h3>
-                    <div class="flex gap-2">
-                        <button onclick="printAuditLog(this)" class="px-4 py-1.5 text-xs bg-zinc-700 hover:bg-zinc-600 rounded-md flex items-center gap-1">
-                            <i class="fa-solid fa-print"></i> <span>Print</span>
-                        </button>
-                        <button onclick="this.closest('dialog').close(); this.closest('dialog').remove()" class="text-zinc-400 hover:text-white">
-                            <i class="fa-solid fa-times text-xl"></i>
-                        </button>
-                    </div>
+                    <button onclick="this.closest('dialog').close(); this.closest('dialog').remove()" class="text-zinc-400 hover:text-white">
+                        <i class="fa-solid fa-times text-xl"></i>
+                    </button>
                 </div>
                 <div class="text-xs text-zinc-400 mb-3">Showing last ${Math.min(budgetAuditLog.length, 200)} events • Newest first</div>
                 <div class="max-h-[520px] overflow-auto border border-zinc-700 rounded-md" id="auditLogPrintArea">
@@ -724,8 +719,13 @@
                         </tbody>
                     </table>
                 </div>
-                <div class="mt-4 text-right">
-                    <button onclick="this.closest('dialog').close(); this.closest('dialog').remove()" class="px-5 py-2 bg-zinc-700 hover:bg-zinc-600 rounded-md text-sm">Close</button>
+
+                <!-- Print and Close buttons at the BOTTOM -->
+                <div class="mt-4 flex justify-end gap-3">
+                    <button onclick="printAuditLog(this)" class="px-5 py-2 bg-zinc-700 hover:bg-zinc-600 rounded-md text-sm flex items-center gap-2">
+                        <i class="fa-solid fa-print"></i> <span>Print Audit Log</span>
+                    </button>
+                    <button onclick="this.closest('dialog').close(); this.closest('dialog').remove()" class="px-5 py-2 bg-emerald-600 hover:bg-emerald-500 rounded-md text-sm">Close</button>
                 </div>
             </div>
         `;
@@ -735,22 +735,46 @@
         modal.showModal();
     }
 
+    // Direct print (no new browser tab) - uses hidden iframe
     function printAuditLog(btn) {
         const printArea = document.getElementById('auditLogPrintArea');
         if (!printArea) return;
 
-        const printWindow = window.open('', '', 'height=600,width=900');
-        printWindow.document.write('<html><head><title>Budget Audit Log</title>');
-        printWindow.document.write('<style>body{font-family:Arial,sans-serif;padding:20px}table{width:100%;border-collapse:collapse;font-size:11px}th,td{border:1px solid #ccc;padding:6px;text-align:left}th{background:#f3f4f6}</style>');
-        printWindow.document.write('</head><body>');
-        printWindow.document.write(printArea.innerHTML);
-        printWindow.document.write('</body></html>');
-        printWindow.document.close();
-        printWindow.focus();
+        const iframe = document.createElement('iframe');
+        iframe.style.position = 'fixed';
+        iframe.style.width = '0';
+        iframe.style.height = '0';
+        iframe.style.border = 'none';
+        document.body.appendChild(iframe);
+
+        const doc = iframe.contentWindow.document;
+        doc.open();
+        doc.write(`
+            <html>
+            <head>
+                <title>Budget Audit Log</title>
+                <style>
+                    body { font-family: Arial, sans-serif; padding: 20px; }
+                    table { width: 100%; border-collapse: collapse; font-size: 11px; }
+                    th, td { border: 1px solid #ccc; padding: 6px; text-align: left; }
+                    th { background: #f3f4f6; }
+                </style>
+            </head>
+            <body>
+                <h2>Budget Audit Log - ALDI Lakeland (Rev ${currentRevision})</h2>
+                ${printArea.innerHTML}
+            </body>
+            </html>
+        `);
+        doc.close();
+
         setTimeout(() => {
-            printWindow.print();
-            printWindow.close();
-        }, 500);
+            iframe.contentWindow.focus();
+            iframe.contentWindow.print();
+            setTimeout(() => {
+                document.body.removeChild(iframe);
+            }, 1000);
+        }, 600);
     }
 
     // ==================== LINE ITEM HISTORY ====================
@@ -1009,35 +1033,46 @@
         }
     }
 
-    // ==================== EXPORT (Fixed) ====================
+    // ==================== EXPORT (Fixed & Reliable) ====================
     function exportBudget() {
         if (typeof XLSX === 'undefined') {
-            showCenteredAlert("Excel library not loaded. Please hard refresh the page (Ctrl+Shift+R).");
+            showCenteredAlert("Excel library not loaded. Please hard refresh the page (Ctrl + Shift + R).");
+            console.error("XLSX library is not available.");
             return;
         }
+
         if (!budgetLines || budgetLines.length === 0) {
             showCenteredAlert("No budget lines to export.");
             return;
         }
-        const data = budgetLines.map((line, i) => ({
-            "#": i + 1,
-            "Cost Code": line.cost_code,
-            "Description": line.description,
-            "Cost Type": line.cost_type,
-            "Original Budget": line.original_budget || 0,
-            "Approved Changes": line.approved_changes || 0,
-            "Pending Changes": line.pending || 0,
-            "Current Budget": (line.original_budget || 0) + (line.approved_changes || 0),
-            "Forecast": (line.original_budget || 0) + (line.approved_changes || 0) + (line.pending || 0),
-            "Actual Cost": line.actual || 0,
-            "% Complete": line.percent_complete || 0,
-            "Sync Status": line.syncStatus || "Not Synced",
-            "Notes": line.notes || ""
-        }));
-        const ws = XLSX.utils.json_to_sheet(data);
-        const wb = XLSX.utils.book_new();
-        XLSX.utils.book_append_sheet(wb, ws, "Budget");
-        XLSX.writeFile(wb, `Budget_ALDI_Lakeland_Rev${String(currentRevision).padStart(2,'0')}.xlsx`);
+
+        try {
+            const data = budgetLines.map((line, i) => ({
+                "#": i + 1,
+                "Cost Code": line.cost_code,
+                "Description": line.description,
+                "Cost Type": line.cost_type,
+                "Original Budget": line.original_budget || 0,
+                "Approved Changes": line.approved_changes || 0,
+                "Pending Changes": line.pending || 0,
+                "Current Budget": (line.original_budget || 0) + (line.approved_changes || 0),
+                "Forecast": (line.original_budget || 0) + (line.approved_changes || 0) + (line.pending || 0),
+                "Actual Cost": line.actual || 0,
+                "% Complete": line.percent_complete || 0,
+                "Sync Status": line.syncStatus || "Not Synced",
+                "Notes": line.notes || ""
+            }));
+
+            const ws = XLSX.utils.json_to_sheet(data);
+            const wb = XLSX.utils.book_new();
+            XLSX.utils.book_append_sheet(wb, ws, "Budget");
+
+            const filename = `Budget_ALDI_Lakeland_Rev${String(currentRevision).padStart(2, '0')}.xlsx`;
+            XLSX.writeFile(wb, filename);
+        } catch (err) {
+            console.error("Export failed:", err);
+            showCenteredAlert("Export failed. Please try again or hard refresh the page.");
+        }
     }
 
     // ==================== IMPORT ====================
@@ -1802,7 +1837,7 @@
             }
         }, 300);
 
-        console.log('%c[Case PM] Budget page fully initialized (ULTIMATE v12 - All fixes applied)', 'color:#10b981');
+        console.log('%c[Case PM] Budget page fully initialized (ULTIMATE v13 - Final version)', 'color:#10b981');
     }
 
     window.onload = initializeBudget;
