@@ -4,45 +4,37 @@
 <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
 
 <style>
-  /* Ensure all inputs/selects/textarea in User modal stay dark with white text (prevent autofill white flash) */
+  /* Ensure all form inputs in modals stay dark with white text - no white flash on autofill or focus */
   #userModal input,
   #userModal select,
   #userModal textarea {
     background-color: #27272a !important;
-    color: #ffffff !important;
-    border-color: #3f3f46;
+    color: #fff !important;
+    border-color: #3f3f46 !important;
   }
-  #userModal input:focus,
-  #userModal select:focus,
-  #userModal textarea:focus {
-    background-color: #27272a !important;
-    color: #ffffff !important;
-    border-color: #10b981;
-    box-shadow: 0 0 0 1px #10b981;
-  }
-  /* Autofill override for Chrome/Safari */
   #userModal input:-webkit-autofill,
   #userModal input:-webkit-autofill:hover,
-  #userModal input:-webkit-autofill:focus,
-  #userModal textarea:-webkit-autofill {
-    -webkit-text-fill-color: #ffffff !important;
-    -webkit-box-shadow: 0 0 0px 1000px #27272a inset !important;
-    background-color: #27272a !important;
-    color: #ffffff !important;
+  #userModal input:-webkit-autofill:focus {
+    -webkit-box-shadow: 0 0 0 1000px #27272a inset !important;
+    -webkit-text-fill-color: #fff !important;
+    transition: background-color 5000s ease-in-out 0s;
+  }
+  /* Shrink table rows for better fit */
+  #usersTableBody tr td {
+    padding-top: 6px !important;
+    padding-bottom: 6px !important;
   }
 </style>
 
-<!-- HEADER - Exact match to budget.html structure and styling -->
+<!-- HEADER - Clean, no duplicate title in center, no project designation (global page) -->
 <div class="h-16 border-b border-zinc-800 bg-zinc-900 flex items-center px-6 flex-shrink-0">
     <div class="w-1/3">
-        <div class="text-[10px] text-zinc-400 tracking-[1px] font-medium">GLOBAL ADMIN</div>
+        <div class="text-[10px] text-zinc-400 tracking-[1px] font-medium">GLOBAL ADMINISTRATION</div>
         <div class="text-xl font-semibold tracking-tight text-white">User Management</div>
     </div>
 
     <div class="w-1/3 flex justify-center">
-        <div class="flex items-center gap-3">
-            <div class="text-2xl font-semibold text-white">User Management</div>
-        </div>
+        <!-- Center kept minimal for balance - no duplicate "User Management" label -->
     </div>
 
     <div class="w-1/3 flex items-center justify-end gap-2 flex-nowrap">
@@ -116,7 +108,7 @@
     <button onclick="clearUserFilters()" class="px-4 py-2.5 bg-zinc-800 hover:bg-zinc-700 rounded-md text-sm">Clear Filters</button>
 </div>
 
-<!-- USERS TABLE -->
+<!-- USERS TABLE (rows shrunk) -->
 <div class="mx-6 mb-6 flex-1 overflow-hidden flex flex-col border border-zinc-700 rounded-md bg-zinc-900">
     <div class="flex-1 overflow-auto" style="max-height: calc(100vh - 380px);">
         <table class="w-full text-sm">
@@ -124,10 +116,10 @@
                 <tr>
                     <th class="px-6 py-3 text-left font-medium text-zinc-400">Name</th>
                     <th class="px-6 py-3 text-left font-medium text-zinc-400">Email</th>
-                    <th class="px-6 py-3 text-left font-medium text-zinc-400">Role</th>
+                    <th class="px-6 py-3 text-left font-medium text-zinc-400">Role / Title</th>
                     <th class="px-6 py-3 text-center font-medium text-zinc-400">Status</th>
-                    <th class="px-6 py-3 text-center font-medium text-zinc-400">2FA</th>
-                    <th class="px-6 py-3 text-center font-medium text-zinc-400 w-32">Actions</th>
+                    <th class="px-6 py-3 text-center font-medium text-zinc-400">Access</th>
+                    <th class="px-6 py-3 text-center font-medium text-zinc-400 w-40">Actions</th>
                 </tr>
             </thead>
             <tbody id="usersTableBody" class="divide-y divide-zinc-800 text-sm">
@@ -137,7 +129,7 @@
     </div>
 </div>
 
-<!-- ADD / EDIT USER MODAL - Beautiful profile pic top + Tabs -->
+<!-- ADD / EDIT USER MODAL -->
 <dialog id="userModal" class="modal rounded-md w-full max-w-3xl p-0 text-white" style="background-color: #18181b; border: 1px solid #3f3f46;">
     <div class="p-6">
         <div class="flex justify-between items-center mb-6">
@@ -149,92 +141,98 @@
 
         <!-- TABS -->
         <div class="flex border-b border-zinc-700 mb-6">
-            <button onclick="switchTab('general')" id="tab-general" 
-                    class="px-6 py-3 text-sm font-medium border-b-2 border-emerald-500 text-white">General</button>
-            <button onclick="switchTab('permissions')" id="tab-permissions" 
-                    class="px-6 py-3 text-sm font-medium text-zinc-400 hover:text-white">Permissions</button>
-            <button onclick="switchTab('signature')" id="tab-signature" 
-                    class="px-6 py-3 text-sm font-medium text-zinc-400 hover:text-white">Signature</button>
-            <button onclick="switchTab('certificate')" id="tab-certificate" 
-                    class="px-6 py-3 text-sm font-medium text-zinc-400 hover:text-white">Certificate</button>
+            <button onclick="switchTab('general')" id="tab-general" class="px-6 py-3 text-sm font-medium border-b-2 border-emerald-500 text-white">General</button>
+            <button onclick="switchTab('permissions')" id="tab-permissions" class="px-6 py-3 text-sm font-medium text-zinc-400 hover:text-white">Permissions</button>
+            <button onclick="switchTab('signature')" id="tab-signature" class="px-6 py-3 text-sm font-medium text-zinc-400 hover:text-white">Signature</button>
+            <button onclick="switchTab('certificate')" id="tab-certificate" class="px-6 py-3 text-sm font-medium text-zinc-400 hover:text-white">Certificate</button>
         </div>
 
-        <form id="userForm" onsubmit="saveUser(event)">
+        <form id="userForm" onsubmit="saveUser(event)" novalidate>
             <input type="hidden" id="userId">
 
             <!-- GENERAL TAB -->
             <div id="tab-content-general">
                 <div class="flex gap-6">
-                    <!-- Profile Picture Section (kept exactly as user liked) -->
+                    <!-- Profile Picture -->
                     <div class="flex-shrink-0">
                         <div class="w-24 h-24 bg-zinc-700 rounded-full overflow-hidden border-2 border-zinc-600" id="profilePreview">
                             <img id="profileImg" src="https://i.pravatar.cc/96?img=68" class="w-full h-full object-cover">
                         </div>
                         <input type="file" id="profileUpload" accept="image/*" class="hidden" onchange="previewProfileImage(this)">
-                        <button type="button" onclick="document.getElementById('profileUpload').click()" 
-                                class="mt-2 text-xs text-emerald-400 hover:text-emerald-300">Upload Photo</button>
+                        <button type="button" onclick="document.getElementById('profileUpload').click()" class="mt-2 text-xs text-emerald-400 hover:text-emerald-300">Upload Photo</button>
                     </div>
 
                     <div class="flex-1 grid grid-cols-1 md:grid-cols-2 gap-4">
                         <div>
-                            <label class="block text-sm mb-1.5 text-zinc-300">First Name</label>
-                            <input type="text" id="firstName" class="w-full bg-zinc-800 border border-zinc-700 rounded-md px-4 py-2.5 text-sm" required>
+                            <label class="block text-sm mb-1.5 text-zinc-300">First Name <span class="text-red-400">*</span></label>
+                            <input type="text" id="firstName" class="w-full bg-zinc-800 border border-zinc-700 rounded-md px-4 py-2 text-sm" required>
                         </div>
                         <div>
-                            <label class="block text-sm mb-1.5 text-zinc-300">Last Name</label>
-                            <input type="text" id="lastName" class="w-full bg-zinc-800 border border-zinc-700 rounded-md px-4 py-2.5 text-sm" required>
-                        </div>
-                        <div>
-                            <label class="block text-sm mb-1.5 text-zinc-300">Job Title</label>
-                            <input type="text" id="jobTitle" class="w-full bg-zinc-800 border border-zinc-700 rounded-md px-4 py-2.5 text-sm" placeholder="e.g. Project Manager">
-                        </div>
-                        <div>
-                            <label class="block text-sm mb-1.5 text-zinc-300">Company</label>
-                            <select id="company" class="w-full bg-zinc-800 border border-zinc-700 rounded-md px-4 py-2.5 text-sm">
-                                <option value="">-- Select Company (from Companies page) --</option>
-                            </select>
-                            <div class="text-[10px] text-zinc-500 mt-0.5">Selecting adds/updates this user as a contact in that company.</div>
+                            <label class="block text-sm mb-1.5 text-zinc-300">Last Name <span class="text-red-400">*</span></label>
+                            <input type="text" id="lastName" class="w-full bg-zinc-800 border border-zinc-700 rounded-md px-4 py-2 text-sm" required>
                         </div>
                         <div class="md:col-span-2">
-                            <label class="block text-sm mb-1.5 text-zinc-300">Email Address</label>
-                            <input type="email" id="email" class="w-full bg-zinc-800 border border-zinc-700 rounded-md px-4 py-2.5 text-sm" required>
+                            <label class="block text-sm mb-1.5 text-zinc-300">Email Address <span class="text-red-400">*</span> <span class="text-[10px] text-zinc-500">(required for software access)</span></label>
+                            <input type="email" id="email" class="w-full bg-zinc-800 border border-zinc-700 rounded-md px-4 py-2 text-sm" required>
                         </div>
 
-                        <!-- Phone Numbers Section (dynamic add) -->
+                        <!-- Job Title -->
+                        <div>
+                            <label class="block text-sm mb-1.5 text-zinc-300">Job Title</label>
+                            <input type="text" id="jobTitle" class="w-full bg-zinc-800 border border-zinc-700 rounded-md px-4 py-2 text-sm" placeholder="e.g. Senior Estimator">
+                        </div>
+
+                        <!-- Company Dropdown (connected to Companies page) -->
+                        <div>
+                            <label class="block text-sm mb-1.5 text-zinc-300">Company</label>
+                            <select id="companySelect" class="w-full bg-zinc-800 border border-zinc-700 rounded-md px-4 py-2 text-sm">
+                                <option value="">-- No Company / Internal --</option>
+                            </select>
+                            <div class="text-[10px] text-zinc-500 mt-0.5">Companies from your Companies page</div>
+                        </div>
+
+                        <!-- Address with Use Company button -->
+                        <div class="md:col-span-2">
+                            <label class="block text-sm mb-1.5 text-zinc-300 flex items-center justify-between">
+                                <span>Address</span>
+                                <button type="button" onclick="useCompanyAddress()" class="text-xs px-2 py-0.5 bg-zinc-700 hover:bg-zinc-600 rounded">Use Company Address</button>
+                            </label>
+                            <input type="text" id="address" class="w-full bg-zinc-800 border border-zinc-700 rounded-md px-4 py-2 text-sm" placeholder="123 Main St, City, ST 12345">
+                        </div>
+
+                        <!-- Dynamic Phone Numbers -->
                         <div class="md:col-span-2">
                             <label class="block text-sm mb-1.5 text-zinc-300">Phone Numbers</label>
-                            <div id="phonesContainer" class="space-y-2 mb-2"></div>
-                            <button type="button" onclick="addPhoneNumberRow()" 
-                                    class="px-3 py-1 text-xs bg-zinc-700 hover:bg-zinc-600 rounded flex items-center gap-1">
+                            <div id="phoneNumbersContainer" class="space-y-2 mb-2"></div>
+                            <button type="button" onclick="addPhoneNumberRow()" class="text-xs px-3 py-1 bg-zinc-700 hover:bg-zinc-600 rounded flex items-center gap-1">
                                 <i class="fa-solid fa-plus"></i> <span>Add Another Phone</span>
                             </button>
                         </div>
 
+                        <!-- Temporary Password + Reset Button -->
                         <div class="md:col-span-2">
-                            <label class="block text-sm mb-1.5 text-zinc-300">Address</label>
+                            <label class="block text-sm mb-1.5 text-zinc-300">Temporary Password</label>
                             <div class="flex gap-2">
-                                <textarea id="address" rows="2" class="flex-1 bg-zinc-800 border border-zinc-700 rounded-md px-4 py-2 text-sm" placeholder="Street, City, State, ZIP"></textarea>
-                                <button type="button" onclick="useCompanyAddress()" 
-                                        class="px-3 py-1 text-xs bg-zinc-700 hover:bg-zinc-600 rounded self-start mt-1" title="Copy address from selected company if available">
-                                    Use Company Address
-                                </button>
+                                <input type="password" id="tempPassword" class="flex-1 bg-zinc-800 border border-zinc-700 rounded-md px-4 py-2 text-sm" placeholder="Set initial password (masked)">
+                                <button type="button" onclick="resetUserPassword()" class="px-4 py-2 text-xs bg-amber-600 hover:bg-amber-500 rounded whitespace-nowrap">Reset Password</button>
                             </div>
+                            <div id="passwordResetNote" class="text-[10px] text-amber-400 mt-1 hidden">New temporary password generated. User should change on first login.</div>
                         </div>
 
                         <div>
-                            <label class="block text-sm mb-1.5 text-zinc-300">Temporary Password</label>
-                            <div class="flex gap-2">
-                                <input type="password" id="password" class="flex-1 bg-zinc-800 border border-zinc-700 rounded-md px-4 py-2.5 text-sm" placeholder="Set initial password">
-                                <button type="button" onclick="togglePasswordVisibility('password')" class="px-3 text-xs bg-zinc-700 hover:bg-zinc-600 rounded">Show</button>
-                            </div>
-                            <div class="text-[10px] text-zinc-500">User will be prompted to change on first login (demo).</div>
+                            <label class="block text-sm mb-1.5 text-zinc-300">Status</label>
+                            <select id="status" class="w-full bg-zinc-800 border border-zinc-700 rounded-md px-4 py-2 text-sm">
+                                <option value="Active">Active</option>
+                                <option value="Inactive">Inactive</option>
+                            </select>
                         </div>
+
                         <div>
-                            <label class="block text-sm mb-1.5 text-zinc-300">Access to Software</label>
-                            <label class="flex items-center gap-2 text-sm text-zinc-300 mt-2">
-                                <input type="checkbox" id="accessEnabled" class="accent-emerald-600" checked>
-                                <span>Enabled (toggle off to disable login & sync to company contact)</span>
+                            <label class="flex items-center gap-2 text-sm text-zinc-300 mt-6">
+                                <input type="checkbox" id="accessEnabled" class="accent-emerald-600" checked onchange="syncAccessToCompany()">
+                                <span>Grant Access to Software</span>
                             </label>
+                            <div class="text-[10px] text-zinc-500">Turning off also disables in linked company contact.</div>
                         </div>
 
                         <div class="md:col-span-2">
@@ -244,19 +242,20 @@
                             </label>
                         </div>
 
+                        <!-- Notes -->
                         <div class="md:col-span-2">
-                            <label class="block text-sm mb-1.5 text-zinc-300">Notes / User Log Notes</label>
+                            <label class="block text-sm mb-1.5 text-zinc-300">Notes / Internal Log</label>
                             <textarea id="notes" rows="3" class="w-full bg-zinc-800 border border-zinc-700 rounded-md px-4 py-2 text-sm" placeholder="Internal notes about this user, access history, etc."></textarea>
                         </div>
                     </div>
                 </div>
             </div>
 
-            <!-- PERMISSIONS TAB - Cleaner Dropdown Style from early versions -->
+            <!-- PERMISSIONS TAB -->
             <div id="tab-content-permissions" class="hidden">
                 <div class="text-sm text-zinc-400 mb-4">Set module access levels and approval rights. Use Role Templates for quick setup.</div>
                 
-                <div class="flex gap-2 mb-4">
+                <div class="flex gap-2 mb-4 flex-wrap">
                     <button type="button" onclick="applyRoleTemplate('Admin')" class="px-3 py-1 text-xs bg-zinc-700 hover:bg-zinc-600 rounded">Admin Template</button>
                     <button type="button" onclick="applyRoleTemplate('Project Manager')" class="px-3 py-1 text-xs bg-zinc-700 hover:bg-zinc-600 rounded">PM Template</button>
                     <button type="button" onclick="applyRoleTemplate('Company User')" class="px-3 py-1 text-xs bg-zinc-700 hover:bg-zinc-600 rounded">Company User Template</button>
@@ -264,11 +263,11 @@
                 </div>
 
                 <div id="permissionsContainer" class="space-y-2 max-h-[380px] overflow-auto pr-2">
-                    <!-- Dynamically populated with dropdowns by JavaScript -->
+                    <!-- Dynamically populated -->
                 </div>
             </div>
 
-            <!-- SIGNATURE TAB -->
+            <!-- SIGNATURE TAB (widened canvas) -->
             <div id="tab-content-signature" class="hidden">
                 <div class="mb-4">
                     <label class="block text-sm mb-2 text-zinc-300">Draw Signature Below</label>
@@ -294,9 +293,7 @@
                     <input type="file" id="certificateUpload" accept=".pdf,.pfx,.p12,image/*" class="text-sm file:mr-3 file:px-3 file:py-1.5 file:rounded file:border-0 file:bg-zinc-700 file:text-white hover:file:bg-zinc-600">
                     <div id="certificateStatus" class="text-xs text-emerald-400 mt-2"></div>
                 </div>
-                <div class="text-xs text-zinc-500">
-                    Accepted formats: PDF, PFX, P12, or image of certificate. This will be stored securely with the user profile.
-                </div>
+                <div class="text-xs text-zinc-500">Accepted formats: PDF, PFX, P12, or image of certificate. Stored securely with the user profile.</div>
             </div>
 
             <div class="flex justify-end gap-3 mt-8 pt-6 border-t border-zinc-700">
@@ -307,7 +304,7 @@
     </div>
 </dialog>
 
-<!-- View User Modal (simple) -->
+<!-- View User Modal -->
 <dialog id="viewUserModal" class="modal rounded-md w-full max-w-2xl p-0 text-white" style="background-color: #18181b; border: 1px solid #3f3f46;">
     <div class="p-6">
         <div class="flex justify-between items-center mb-4">
@@ -323,24 +320,39 @@
     </div>
 </dialog>
 
+<!-- User Log Modal -->
+<dialog id="userLogModal" class="modal rounded-md w-full max-w-2xl p-0 text-white" style="background-color: #18181b; border: 1px solid #3f3f46;">
+    <div class="p-6">
+        <div class="flex justify-between items-center mb-4">
+            <h3 class="text-xl font-semibold">Access Log for <span id="logUserName"></span></h3>
+            <button onclick="document.getElementById('userLogModal').close()" class="text-zinc-400 hover:text-white">
+                <i class="fa-solid fa-times text-xl"></i>
+            </button>
+        </div>
+        <div id="userLogContent" class="max-h-[400px] overflow-auto text-sm"></div>
+        <div class="mt-6 text-right">
+            <button onclick="document.getElementById('userLogModal').close()" class="px-5 py-2 bg-zinc-700 rounded-md text-sm">Close</button>
+        </div>
+    </div>
+</dialog>
+
 <script>
     // ==================== DATA & STATE ====================
     let users = JSON.parse(localStorage.getItem('users')) || [];
     let companies = JSON.parse(localStorage.getItem('companies')) || [];
     let currentSignatureDataURL = null;
     let currentCertificateFileName = null;
+    let currentEditingUserId = null;
+    let phoneNumbers = []; // For dynamic phone rows
 
-    // ==================== MODULES & PERMISSIONS (Dropdown Style from Early Versions) ====================
     const modules = [
         "Dashboard", "Projects", "Budget", "Commitments", "Pay Applications",
         "Daily Log", "Weekly Reports", "RFIs", "Submittals", "Change Orders",
         "Punch List", "Safety", "Schedule", "Documents", "Drawings", "Photos",
         "Companies / Vendors", "User Management", "Program Settings"
     ];
-
     const workflowModules = ["Submittals", "RFIs", "Change Orders", "Budget", "Daily Reports", "Documents"];
 
-    // Role Templates (used by applyRoleTemplate)
     const roleTemplates = {
         "Admin": { access: "Edit", approve: "Approve & Reject" },
         "Project Manager": { access: "Edit", approve: "Approve & Reject" },
@@ -351,7 +363,84 @@
         "Viewer": { access: "View", approve: "None" }
     };
 
-    // ==================== PERMISSIONS DROPDOWN RENDERING (Cleaner Early Style) ====================
+    // ==================== COMPANY DROPDOWN (connected to Companies page) ====================
+    function populateCompanyDropdown(selectedCompanyName = '') {
+        const select = document.getElementById('companySelect');
+        if (!select) return;
+        select.innerHTML = '<option value="">-- No Company / Internal --</option>';
+
+        companies.forEach(company => {
+            const opt = document.createElement('option');
+            opt.value = company.name || company.companyName || '';
+            opt.textContent = company.name || company.companyName || 'Unnamed Company';
+            if (opt.value === selectedCompanyName) opt.selected = true;
+            select.appendChild(opt);
+        });
+    }
+
+    function useCompanyAddress() {
+        const companyName = document.getElementById('companySelect').value;
+        if (!companyName) {
+            showCenteredAlert("Please select a company first.");
+            return;
+        }
+        const company = companies.find(c => (c.name || c.companyName) === companyName);
+        if (company && company.address) {
+            document.getElementById('address').value = company.address;
+            showCenteredAlert("Address copied from company.", 'success');
+        } else {
+            showCenteredAlert("No address found for this company in Companies page.");
+        }
+    }
+
+    // ==================== DYNAMIC PHONE NUMBERS ====================
+    function addPhoneNumberRow(type = 'Mobile', number = '') {
+        const container = document.getElementById('phoneNumbersContainer');
+        if (!container) return;
+
+        const rowId = 'phone-' + Date.now();
+        const div = document.createElement('div');
+        div.className = 'flex gap-2 items-center';
+        div.id = rowId;
+        div.innerHTML = `
+            <select class="bg-zinc-800 border border-zinc-700 rounded px-3 py-1.5 text-sm w-28" data-phone-type>
+                <option value="Mobile" ${type === 'Mobile' ? 'selected' : ''}>Mobile</option>
+                <option value="Office" ${type === 'Office' ? 'selected' : ''}>Office</option>
+                <option value="Home" ${type === 'Home' ? 'selected' : ''}>Home</option>
+            </select>
+            <input type="tel" value="${number}" class="flex-1 bg-zinc-800 border border-zinc-700 rounded px-3 py-1.5 text-sm" placeholder="(555) 123-4567" data-phone-number>
+            <button type="button" onclick="removePhoneRow('${rowId}')" class="text-red-400 hover:text-red-500 px-2">×</button>
+        `;
+        container.appendChild(div);
+    }
+
+    function removePhoneRow(rowId) {
+        const row = document.getElementById(rowId);
+        if (row) row.remove();
+    }
+
+    function getPhoneNumbersFromUI() {
+        const phones = [];
+        document.querySelectorAll('#phoneNumbersContainer > div').forEach(row => {
+            const type = row.querySelector('[data-phone-type]').value;
+            const number = row.querySelector('[data-phone-number]').value.trim();
+            if (number) phones.push({ type, number });
+        });
+        return phones;
+    }
+
+    function setPhoneNumbersToUI(phones = []) {
+        const container = document.getElementById('phoneNumbersContainer');
+        if (!container) return;
+        container.innerHTML = '';
+        if (phones.length === 0) {
+            addPhoneNumberRow('Mobile', ''); // default empty row
+        } else {
+            phones.forEach(p => addPhoneNumberRow(p.type, p.number));
+        }
+    }
+
+    // ==================== PERMISSIONS ====================
     function renderPermissionsDropdowns(containerId, existingPermissions = {}) {
         const container = document.getElementById(containerId);
         if (!container) return;
@@ -384,7 +473,6 @@
                     </select>
                 `;
             }
-
             html += `</div>`;
             row.innerHTML = html;
             container.appendChild(row);
@@ -412,31 +500,24 @@
         });
     }
 
-    // ==================== ROLE TEMPLATES ====================
     function applyRoleTemplate(templateRole = null) {
         const roleSelect = document.getElementById('role');
-        const role = templateRole || roleSelect.value;
+        const role = templateRole || (roleSelect ? roleSelect.value : 'Viewer');
         const template = roleTemplates[role] || roleTemplates["Viewer"];
 
         document.querySelectorAll('#permissionsContainer select').forEach(select => {
             const type = select.dataset.type;
-            if (type === 'access') {
-                select.value = template.access || 'View';
-            } else if (type === 'approve') {
-                select.value = template.approve || 'None';
-            }
+            if (type === 'access') select.value = template.access || 'View';
+            else if (type === 'approve') select.value = template.approve || 'None';
         });
     }
 
     // ==================== TABS ====================
     function switchTab(tab) {
-        // Hide all tab contents
         document.querySelectorAll('[id^="tab-content-"]').forEach(el => el.classList.add('hidden'));
-        // Show selected
         const content = document.getElementById('tab-content-' + tab);
         if (content) content.classList.remove('hidden');
 
-        // Update tab button styles
         document.querySelectorAll('[id^="tab-"]').forEach(el => {
             el.classList.remove('border-b-2', 'border-emerald-500', 'text-white');
             el.classList.add('text-zinc-400');
@@ -446,9 +527,18 @@
             activeTab.classList.add('border-b-2', 'border-emerald-500', 'text-white');
             activeTab.classList.remove('text-zinc-400');
         }
+
+        // Render permissions when tab is opened
+        if (tab === 'permissions') {
+            const container = document.getElementById('permissionsContainer');
+            if (container && container.children.length === 0) {
+                const currentPerms = currentEditingUserId ? (users.find(u => u.id == currentEditingUserId)?.permissions || {}) : {};
+                renderPermissionsDropdowns('permissionsContainer', currentPerms);
+            }
+        }
     }
 
-    // ==================== SIGNATURE CANVAS ====================
+    // ==================== SIGNATURE CANVAS (widened) ====================
     let signatureCanvas = null;
     let signatureCtx = null;
 
@@ -465,22 +555,14 @@
         let lastX = 0;
         let lastY = 0;
 
-        signatureCanvas.onmousedown = function(e) {
+        const startDrawing = (x, y) => {
             drawing = true;
-            const rect = signatureCanvas.getBoundingClientRect();
-            lastX = e.clientX - rect.left;
-            lastY = e.clientY - rect.top;
+            lastX = x;
+            lastY = y;
         };
 
-        signatureCanvas.onmouseup = function() { drawing = false; };
-        signatureCanvas.onmouseout = function() { drawing = false; };
-
-        signatureCanvas.onmousemove = function(e) {
+        const draw = (x, y) => {
             if (!drawing) return;
-            const rect = signatureCanvas.getBoundingClientRect();
-            const x = e.clientX - rect.left;
-            const y = e.clientY - rect.top;
-
             signatureCtx.beginPath();
             signatureCtx.moveTo(lastX, lastY);
             signatureCtx.lineTo(x, y);
@@ -489,28 +571,32 @@
             lastY = y;
         };
 
-        // Touch support
-        signatureCanvas.ontouchstart = function(e) {
-            e.preventDefault();
-            drawing = true;
+        const endDrawing = () => { drawing = false; };
+
+        // Mouse
+        signatureCanvas.onmousedown = e => {
             const rect = signatureCanvas.getBoundingClientRect();
-            lastX = e.touches[0].clientX - rect.left;
-            lastY = e.touches[0].clientY - rect.top;
+            startDrawing(e.clientX - rect.left, e.clientY - rect.top);
         };
-        signatureCanvas.ontouchend = function() { drawing = false; };
-        signatureCanvas.ontouchmove = function(e) {
-            e.preventDefault();
-            if (!drawing) return;
+        signatureCanvas.onmousemove = e => {
             const rect = signatureCanvas.getBoundingClientRect();
-            const x = e.touches[0].clientX - rect.left;
-            const y = e.touches[0].clientY - rect.top;
-            signatureCtx.beginPath();
-            signatureCtx.moveTo(lastX, lastY);
-            signatureCtx.lineTo(x, y);
-            signatureCtx.stroke();
-            lastX = x;
-            lastY = y;
+            draw(e.clientX - rect.left, e.clientY - rect.top);
         };
+        signatureCanvas.onmouseup = endDrawing;
+        signatureCanvas.onmouseout = endDrawing;
+
+        // Touch
+        signatureCanvas.ontouchstart = e => {
+            e.preventDefault();
+            const rect = signatureCanvas.getBoundingClientRect();
+            startDrawing(e.touches[0].clientX - rect.left, e.touches[0].clientY - rect.top);
+        };
+        signatureCanvas.ontouchmove = e => {
+            e.preventDefault();
+            const rect = signatureCanvas.getBoundingClientRect();
+            draw(e.touches[0].clientX - rect.left, e.touches[0].clientY - rect.top);
+        };
+        signatureCanvas.ontouchend = endDrawing;
     }
 
     function clearSignature() {
@@ -524,15 +610,17 @@
         if (!signatureCanvas) return;
         currentSignatureDataURL = signatureCanvas.toDataURL('image/png');
         const status = document.getElementById('signatureUploadStatus');
-        if (status) status.textContent = 'Signature saved to profile (will be stored on save).';
-        setTimeout(() => { if (status) status.textContent = ''; }, 2500);
+        if (status) {
+            status.textContent = 'Signature saved to profile.';
+            setTimeout(() => { status.textContent = ''; }, 2000);
+        }
     }
 
-    // ==================== PROFILE IMAGE PREVIEW ====================
+    // ==================== PROFILE IMAGE ====================
     function previewProfileImage(input) {
         if (input.files && input.files[0]) {
             const reader = new FileReader();
-            reader.onload = function(e) {
+            reader.onload = e => {
                 const img = document.getElementById('profileImg');
                 if (img) img.src = e.target.result;
             };
@@ -540,112 +628,123 @@
         }
     }
 
-    // ==================== SHOW ADD USER MODAL ====================
+    // ==================== PASSWORD RESET ====================
+    function resetUserPassword() {
+        const newPass = 'Temp' + Math.random().toString(36).slice(2, 10) + '!';
+        const passInput = document.getElementById('tempPassword');
+        if (passInput) passInput.value = newPass;
+        
+        const note = document.getElementById('passwordResetNote');
+        if (note) note.classList.remove('hidden');
+        
+        showCenteredAlert('New temporary password generated: ' + newPass + '\n\nUser must change it on first login. (Demo only - not stored securely yet)', 'warning');
+        
+        // In real system: call backend to set temp password and force change flag
+    }
+
+    // ==================== ACCESS TOGGLE SYNC ====================
+    function syncAccessToCompany() {
+        // This runs on checkbox change - real sync happens on Save
+        // For immediate visual feedback if needed
+    }
+
+    // ==================== SHOW ADD / EDIT ====================
     function showAddUserModal() {
-        // Reset form
         document.getElementById('userForm').reset();
         document.getElementById('userId').value = '';
         document.getElementById('modalTitle').textContent = 'Add New User';
         
-        // Reset profile image
         const profileImg = document.getElementById('profileImg');
         if (profileImg) profileImg.src = 'https://i.pravatar.cc/96?img=68';
         
         currentSignatureDataURL = null;
         currentCertificateFileName = null;
+        currentEditingUserId = null;
+        phoneNumbers = [];
+
+        // Populate company dropdown from Companies page
+        populateCompanyDropdown();
+
+        // Permissions fresh
+        const permContainer = document.getElementById('permissionsContainer');
+        if (permContainer) permContainer.innerHTML = '';
         
-        // Render clean permissions dropdowns
-        renderPermissionsDropdowns('permissionsContainer', {});
-        
-        // Populate company dropdown from Companies page data
-        populateCompanyDropdown('');
-        
-        // Clear phones container and add one empty row
-        const phonesCont = document.getElementById('phonesContainer');
-        if (phonesCont) phonesCont.innerHTML = '';
-        addPhoneNumberRow(); // start with one phone row
-        
-        // Default access enabled
+        // Phones
+        setPhoneNumbersToUI([]);
+
+        // Default access on
         const accessChk = document.getElementById('accessEnabled');
         if (accessChk) accessChk.checked = true;
-        
-        // Default to General tab
+
         switchTab('general');
-        
-        // Show modal
         document.getElementById('userModal').showModal();
-        
-        // Init canvas after modal is visible
+
         setTimeout(() => {
             initSignatureCanvas();
-            // Setup certificate upload listener
             setupCertificateUpload();
+            // Add one default phone row
+            const phoneContainer = document.getElementById('phoneNumbersContainer');
+            if (phoneContainer && phoneContainer.children.length === 0) {
+                addPhoneNumberRow('Mobile', '');
+            }
         }, 150);
     }
 
-    // ==================== EDIT USER ====================
     function editUser(id) {
         const user = users.find(u => u.id == id);
-        if (!user) return;
+        if (!user) {
+            console.error("User not found for edit:", id);
+            return;
+        }
 
+        currentEditingUserId = id;
         document.getElementById('userId').value = user.id;
         document.getElementById('modalTitle').textContent = 'Edit User';
+        
         document.getElementById('firstName').value = user.firstName || '';
         document.getElementById('lastName').value = user.lastName || '';
         document.getElementById('email').value = user.email || '';
-        document.getElementById('role').value = user.role || 'Company User';
+        document.getElementById('jobTitle').value = user.jobTitle || '';
+        document.getElementById('address').value = user.address || '';
         document.getElementById('status').value = user.status || 'Active';
-        const jobTitleEl = document.getElementById('jobTitle');
-        if (jobTitleEl) jobTitleEl.value = user.jobTitle || '';
-        const companyEl = document.getElementById('company');
-        if (companyEl) {
-            populateCompanyDropdown(user.company || '');
-            companyEl.value = user.company || '';
-        }
-        const addressEl = document.getElementById('address');
-        if (addressEl) addressEl.value = user.address || '';
-        const notesEl = document.getElementById('notes');
-        if (notesEl) notesEl.value = user.notes || '';
-        const accessEl = document.getElementById('accessEnabled');
-        if (accessEl) accessEl.checked = user.accessEnabled !== false;
-        
+        document.getElementById('tempPassword').value = ''; // Never show existing password
+        document.getElementById('notes').value = user.notes || '';
+
         const twoFA = document.getElementById('twoFactorEnabled');
         if (twoFA) twoFA.checked = user.twoFactorEnabled || false;
 
-        // Phones (dynamic)
-        const phonesCont = document.getElementById('phonesContainer');
-        if (phonesCont) {
-            phonesCont.innerHTML = '';
-            if (user.phones && user.phones.length > 0) {
-                user.phones.forEach(p => addPhoneNumberRow(p));
-            } else {
-                addPhoneNumberRow(); // at least one empty
-            }
-        }
+        const accessChk = document.getElementById('accessEnabled');
+        if (accessChk) accessChk.checked = user.accessEnabled !== false; // default true if missing
 
         // Profile image
         const profileImg = document.getElementById('profileImg');
-        if (profileImg && user.profileImage) {
-            profileImg.src = user.profileImage;
-        } else if (profileImg) {
-            profileImg.src = 'https://i.pravatar.cc/96?img=68';
-        }
+        if (profileImg) profileImg.src = user.profileImage || 'https://i.pravatar.cc/96?img=68';
+
+        // Company dropdown
+        populateCompanyDropdown(user.company || '');
+
+        // Phones
+        setPhoneNumbersToUI(user.phones || []);
 
         // Permissions
+        const permContainer = document.getElementById('permissionsContainer');
+        if (permContainer) permContainer.innerHTML = '';
         renderPermissionsDropdowns('permissionsContainer', user.permissions || {});
-        setTimeout(() => {
-            setPermissionsToDropdowns(user.permissions || {});
-        }, 50);
+        setTimeout(() => setPermissionsToDropdowns(user.permissions || {}), 80);
 
         // Signature
         currentSignatureDataURL = user.signatureDataURL || null;
-        if (currentSignatureDataURL && signatureCanvas && signatureCtx) {
-            const img = new Image();
-            img.onload = function() {
-                signatureCtx.clearRect(0, 0, signatureCanvas.width, signatureCanvas.height);
-                signatureCtx.drawImage(img, 0, 0, signatureCanvas.width, signatureCanvas.height);
-            };
-            img.src = currentSignatureDataURL;
+        if (currentSignatureDataURL) {
+            setTimeout(() => {
+                if (signatureCanvas && signatureCtx) {
+                    const img = new Image();
+                    img.onload = () => {
+                        signatureCtx.clearRect(0, 0, signatureCanvas.width, signatureCanvas.height);
+                        signatureCtx.drawImage(img, 0, 0, signatureCanvas.width, signatureCanvas.height);
+                    };
+                    img.src = currentSignatureDataURL;
+                }
+            }, 200);
         }
 
         // Certificate
@@ -664,88 +763,138 @@
         }, 150);
     }
 
-    // ==================== DELETE USER ====================
+    // ==================== DELETE ====================
     function deleteUser(id) {
-        if (!confirm('Delete this user? This cannot be undone.')) return;
-
+        if (!confirm('Delete this user permanently?')) return;
         users = users.filter(u => u.id != id);
         localStorage.setItem('users', JSON.stringify(users));
         renderUsersTable();
         showCenteredAlert('User deleted.', 'success');
     }
 
-    // ==================== SAVE USER (Fully Fixed) ====================
+    // ==================== SAVE USER (FIXED + VALIDATION) ====================
     function saveUser(e) {
         e.preventDefault();
 
-        const id = document.getElementById('userId').value;
-        const permissions = getPermissionsFromDropdowns();
+        try {
+            const id = document.getElementById('userId').value;
+            const email = document.getElementById('email').value.trim();
+            const accessEnabled = document.getElementById('accessEnabled').checked;
 
-        // Collect certificate file name if uploaded
-        const certInput = document.getElementById('certificateUpload');
-        if (certInput && certInput.files.length > 0) {
-            currentCertificateFileName = certInput.files[0].name;
-        }
-
-        // Collect phones from dynamic rows
-        const phones = [];
-        document.querySelectorAll('#phonesContainer .flex').forEach(row => {
-            const inputs = row.querySelectorAll('input, select');
-            if (inputs.length >= 2 && inputs[0].value.trim()) {
-                phones.push({ number: inputs[0].value.trim(), type: inputs[1].value });
+            // Require email if granting software access
+            if (accessEnabled && !email) {
+                showCenteredAlert("Email address is required when granting software access.", 'warning');
+                switchTab('general');
+                document.getElementById('email').focus();
+                return;
             }
-        });
 
-        const companyVal = document.getElementById('company') ? document.getElementById('company').value : '';
-        const accessEnabledVal = document.getElementById('accessEnabled') ? document.getElementById('accessEnabled').checked : true;
+            // Basic email format check if provided
+            if (email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+                showCenteredAlert("Please enter a valid email address.");
+                return;
+            }
 
-        const userData = {
-            id: id ? parseInt(id) : Date.now(),
-            firstName: document.getElementById('firstName').value.trim(),
-            lastName: document.getElementById('lastName').value.trim(),
-            email: document.getElementById('email').value.trim(),
-            role: document.getElementById('role').value,
-            status: document.getElementById('status').value,
-            jobTitle: document.getElementById('jobTitle') ? document.getElementById('jobTitle').value.trim() : '',
-            company: companyVal,
-            address: document.getElementById('address') ? document.getElementById('address').value.trim() : '',
-            phones: phones,
-            password: document.getElementById('password') ? document.getElementById('password').value : '', // demo only
-            accessEnabled: accessEnabledVal,
-            notes: document.getElementById('notes') ? document.getElementById('notes').value.trim() : '',
-            twoFactorEnabled: document.getElementById('twoFactorEnabled') ? document.getElementById('twoFactorEnabled').checked : false,
-            permissions: permissions,
-            signatureDataURL: currentSignatureDataURL,
-            certificateFileName: currentCertificateFileName,
-            profileImage: document.getElementById('profileImg').src,
+            const permissions = getPermissionsFromDropdowns();
+            const phones = getPhoneNumbersFromUI();
+            const companyName = document.getElementById('companySelect').value;
+
+            // Certificate
+            const certInput = document.getElementById('certificateUpload');
+            if (certInput && certInput.files.length > 0) {
+                currentCertificateFileName = certInput.files[0].name;
+            }
+
+            const userData = {
+                id: id ? parseInt(id) : Date.now(),
+                firstName: document.getElementById('firstName').value.trim(),
+                lastName: document.getElementById('lastName').value.trim(),
+                email: email,
+                jobTitle: document.getElementById('jobTitle').value.trim(),
+                company: companyName,
+                address: document.getElementById('address').value.trim(),
+                phones: phones,
+                status: document.getElementById('status').value,
+                accessEnabled: accessEnabled,
+                twoFactorEnabled: document.getElementById('twoFactorEnabled') ? document.getElementById('twoFactorEnabled').checked : false,
+                permissions: permissions,
+                signatureDataURL: currentSignatureDataURL,
+                certificateFileName: currentCertificateFileName,
+                profileImage: document.getElementById('profileImg').src,
+                notes: document.getElementById('notes').value.trim(),
+                lastUpdated: new Date().toISOString()
+            };
+
+            // Password handling (never store plain if possible, but for demo we store temp only if newly set)
+            const tempPass = document.getElementById('tempPassword').value.trim();
+            if (tempPass) {
+                userData.tempPassword = tempPass; // In real app: hash + force change flag
+            }
+
+            const existingIndex = users.findIndex(u => u.id == userData.id);
+            if (existingIndex > -1) {
+                users[existingIndex] = { ...users[existingIndex], ...userData };
+            } else {
+                users.push(userData);
+            }
+
+            // === COMPANIES SYNC: Add/Update contact in selected company ===
+            if (companyName) {
+                syncUserToCompany(userData, companyName);
+            }
+
+            localStorage.setItem('users', JSON.stringify(users));
+            closeUserModal();
+            renderUsersTable();
+            updateSummaryCards();
+            showCenteredAlert(id ? 'User updated successfully!' : 'New user created successfully!', 'success');
+
+        } catch (err) {
+            console.error("Save User Error:", err);
+            showCenteredAlert("Failed to save user. Check console for details.");
+        }
+    }
+
+    function syncUserToCompany(userData, companyName) {
+        let company = companies.find(c => (c.name || c.companyName) === companyName);
+        if (!company) {
+            // Create minimal company if not exists (edge case)
+            company = { id: Date.now(), name: companyName, contacts: [] };
+            companies.push(company);
+        }
+        if (!company.contacts) company.contacts = [];
+
+        const contactData = {
+            name: `${userData.firstName} ${userData.lastName}`.trim(),
+            email: userData.email,
+            phone: (userData.phones && userData.phones[0]) ? userData.phones[0].number : '',
+            jobTitle: userData.jobTitle || '',
+            accessEnabled: userData.accessEnabled,
             lastUpdated: new Date().toISOString()
         };
 
-        // If company selected, sync as contact (adds or updates in Companies page data)
-        if (companyVal) {
-            syncUserContactToCompany(userData, companyVal);
-        }
+        // Find existing contact by email or name
+        const existingIdx = company.contacts.findIndex(c => 
+            (c.email && c.email.toLowerCase() === (userData.email || '').toLowerCase()) ||
+            (c.name && c.name.toLowerCase() === contactData.name.toLowerCase())
+        );
 
-        const existingIndex = users.findIndex(u => u.id == userData.id);
-        if (existingIndex > -1) {
-            users[existingIndex] = { ...users[existingIndex], ...userData };
+        if (existingIdx > -1) {
+            company.contacts[existingIdx] = { ...company.contacts[existingIdx], ...contactData };
         } else {
-            users.push(userData);
+            company.contacts.push(contactData);
         }
 
-        localStorage.setItem('users', JSON.stringify(users));
-        closeUserModal();
-        renderUsersTable();
-        updateSummaryCards();
-        showCenteredAlert(id ? 'User updated successfully!' : 'New user created successfully!', 'success');
+        localStorage.setItem('companies', JSON.stringify(companies));
     }
 
     function closeUserModal() {
         const modal = document.getElementById('userModal');
         if (modal) modal.close();
+        currentEditingUserId = null;
     }
 
-    // ==================== CERTIFICATE UPLOAD HANDLER ====================
+    // ==================== CERTIFICATE UPLOAD ====================
     function setupCertificateUpload() {
         const input = document.getElementById('certificateUpload');
         const status = document.getElementById('certificateStatus');
@@ -760,7 +909,7 @@
         };
     }
 
-    // ==================== RENDER USERS TABLE ====================
+    // ==================== RENDER TABLE (double-click fixed) ====================
     function renderUsersTable(filtered = null) {
         const tbody = document.getElementById('usersTableBody');
         if (!tbody) return;
@@ -777,26 +926,28 @@
         data.forEach(user => {
             const row = document.createElement('tr');
             row.className = 'hover:bg-zinc-800/60 transition-colors cursor-pointer';
+            
+            // Double-click to edit - FIXED
             row.ondblclick = () => editUser(user.id);
 
-            const has2FA = user.twoFactorEnabled ? 
+            const hasAccess = user.accessEnabled !== false ? 
                 `<span class="px-2.5 py-0.5 text-xs rounded-full bg-emerald-900/60 text-emerald-400">Enabled</span>` : 
-                `<span class="px-2.5 py-0.5 text-xs rounded-full bg-zinc-700 text-zinc-400">Off</span>`;
+                `<span class="px-2.5 py-0.5 text-xs rounded-full bg-red-900/60 text-red-400">Disabled</span>`;
+
+            const roleTitle = user.jobTitle ? `${user.role || 'User'}<br><span class="text-xs text-zinc-500">${user.jobTitle}</span>` : (user.role || 'User');
 
             row.innerHTML = `
-                <td class="px-6 py-3 font-medium">${user.firstName || ''} ${user.lastName || ''}</td>
-                <td class="px-6 py-3 text-zinc-400">${user.email || ''}</td>
-                <td class="px-6 py-3">
-                    <span class="inline-block px-3 py-0.5 text-xs rounded-full bg-zinc-700 text-zinc-300">${user.role || 'User'}</span>
-                </td>
-                <td class="px-6 py-3 text-center">
+                <td class="px-6 py-2 font-medium">${user.firstName || ''} ${user.lastName || ''}</td>
+                <td class="px-6 py-2 text-zinc-400">${user.email || ''}</td>
+                <td class="px-6 py-2 text-sm">${roleTitle}</td>
+                <td class="px-6 py-2 text-center">
                     <span class="px-3 py-0.5 text-xs rounded-full ${user.status === 'Active' ? 'bg-emerald-900/60 text-emerald-400' : 'bg-zinc-700 text-zinc-400'}">${user.status || 'Active'}</span>
                 </td>
-                <td class="px-6 py-3 text-center">${has2FA}</td>
-                <td class="px-6 py-3 text-center">
-                    <div class="flex justify-center gap-1">
+                <td class="px-6 py-2 text-center">${hasAccess}</td>
+                <td class="px-6 py-2 text-center">
+                    <div class="flex justify-center gap-1 flex-wrap">
                         <button onclick="event.stopImmediatePropagation(); editUser(${user.id})" class="px-3 py-1 text-xs bg-zinc-700 hover:bg-emerald-600 rounded">Edit</button>
-                        <button onclick="event.stopImmediatePropagation(); showUserLog(${user.id})" class="px-2 py-1 text-xs bg-zinc-700 hover:bg-sky-600 rounded" title="View User Access Log">Log</button>
+                        <button onclick="event.stopImmediatePropagation(); showUserLog(${user.id})" class="px-3 py-1 text-xs bg-zinc-700 hover:bg-sky-600 rounded">Log</button>
                         <button onclick="event.stopImmediatePropagation(); deleteUser(${user.id})" class="px-3 py-1 text-xs bg-zinc-700 hover:bg-red-600 rounded">Delete</button>
                     </div>
                 </td>
@@ -807,7 +958,42 @@
         updateSummaryCards();
     }
 
-    // ==================== SUMMARY CARDS ====================
+    // ==================== USER LOG ====================
+    function showUserLog(userId) {
+        const user = users.find(u => u.id == userId);
+        if (!user) return;
+
+        document.getElementById('logUserName').textContent = `${user.firstName} ${user.lastName}`;
+        const content = document.getElementById('userLogContent');
+        content.innerHTML = '';
+
+        let logHtml = `<div class="text-xs text-zinc-400 mb-3">Showing recent access events for this user (demo data)</div>`;
+
+        // Demo log entries + any notes as manual entries
+        const demoLogs = [
+            { ts: new Date(Date.now() - 86400000 * 2), action: 'Logged in', ip: '192.168.1.45' },
+            { ts: new Date(Date.now() - 86400000), action: 'Viewed Budget', ip: '192.168.1.45' },
+            { ts: new Date(), action: 'Updated profile', ip: '10.0.0.12' }
+        ];
+
+        demoLogs.forEach(log => {
+            logHtml += `
+                <div class="flex justify-between border-b border-zinc-700 py-1.5 text-sm">
+                    <div class="text-zinc-400">${log.ts.toLocaleString()}</div>
+                    <div>${log.action} <span class="text-xs text-zinc-500">(${log.ip})</span></div>
+                </div>
+            `;
+        });
+
+        if (user.notes) {
+            logHtml += `<div class="mt-3 text-xs text-zinc-400">Latest note: ${user.notes}</div>`;
+        }
+
+        content.innerHTML = logHtml;
+        document.getElementById('userLogModal').showModal();
+    }
+
+    // ==================== SUMMARY & FILTERS ====================
     function updateSummaryCards() {
         const totalEl = document.getElementById('totalUsers');
         const adminEl = document.getElementById('adminCount');
@@ -817,10 +1003,9 @@
         if (totalEl) totalEl.textContent = users.length;
         if (adminEl) adminEl.textContent = users.filter(u => u.role === 'Admin').length;
         if (activeEl) activeEl.textContent = users.filter(u => u.status === 'Active').length;
-        if (companyEl) companyEl.textContent = users.filter(u => u.role === 'Company User').length;
+        if (companyEl) companyEl.textContent = users.filter(u => u.role === 'Company User' || u.company).length;
     }
 
-    // ==================== FILTERS ====================
     function filterUsers() {
         const search = (document.getElementById('searchInput').value || '').toLowerCase().trim();
         const role = document.getElementById('roleFilter').value;
@@ -846,10 +1031,10 @@
         renderUsersTable();
     }
 
-    // ==================== EXPORT USERS ====================
+    // ==================== EXPORT / IMPORT ====================
     function exportUsers() {
         if (typeof XLSX === 'undefined') {
-            showCenteredAlert('Excel library not loaded. Hard refresh the page (Ctrl + Shift + R).');
+            showCenteredAlert('Excel library not loaded. Hard refresh (Ctrl + Shift + R).');
             return;
         }
         if (!users.length) {
@@ -857,28 +1042,24 @@
             return;
         }
 
-        try {
-            const data = users.map(u => ({
-                'First Name': u.firstName || '',
-                'Last Name': u.lastName || '',
-                'Email': u.email || '',
-                'Role': u.role || '',
-                'Status': u.status || '',
-                '2FA Enabled': u.twoFactorEnabled ? 'Yes' : 'No',
-                'Last Updated': u.lastUpdated ? new Date(u.lastUpdated).toLocaleString() : ''
-            }));
+        const data = users.map(u => ({
+            'First Name': u.firstName || '',
+            'Last Name': u.lastName || '',
+            'Email': u.email || '',
+            'Job Title': u.jobTitle || '',
+            'Company': u.company || '',
+            'Status': u.status || '',
+            'Access Enabled': u.accessEnabled !== false ? 'Yes' : 'No',
+            '2FA': u.twoFactorEnabled ? 'Yes' : 'No',
+            'Last Updated': u.lastUpdated ? new Date(u.lastUpdated).toLocaleString() : ''
+        }));
 
-            const ws = XLSX.utils.json_to_sheet(data);
-            const wb = XLSX.utils.book_new();
-            XLSX.utils.book_append_sheet(wb, ws, 'Users');
-            XLSX.writeFile(wb, 'CasePM_Users_Export.xlsx');
-        } catch (err) {
-            console.error(err);
-            showCenteredAlert('Export failed. Please try again.');
-        }
+        const ws = XLSX.utils.json_to_sheet(data);
+        const wb = XLSX.utils.book_new();
+        XLSX.utils.book_append_sheet(wb, ws, 'Users');
+        XLSX.writeFile(wb, 'CasePM_Users_Export.xlsx');
     }
 
-    // ==================== IMPORT USERS (Smart mapping for Add New User fields) ====================
     function importUsers() {
         const input = document.createElement('input');
         input.type = 'file';
@@ -886,6 +1067,7 @@
         input.onchange = function(e) {
             const file = e.target.files[0];
             if (!file) return;
+
             const reader = new FileReader();
             reader.onload = function(ev) {
                 try {
@@ -893,7 +1075,6 @@
                     if (file.name.toLowerCase().endsWith('.csv')) {
                         const text = ev.target.result;
                         const lines = text.split(/\r?\n/).filter(l => l.trim());
-                        if (lines.length < 2) throw new Error("Empty or invalid CSV");
                         const headers = lines[0].split(',').map(h => h.trim().toLowerCase());
                         for (let i = 1; i < lines.length; i++) {
                             const values = lines[i].split(',');
@@ -915,59 +1096,36 @@
                         });
                     }
 
-                    let added = 0, skipped = 0;
+                    let added = 0;
                     rows.forEach(row => {
-                        // Smart mapping for core fields + new ones (job title, company, phone, notes)
-                        const firstName = row['first name'] || row['firstname'] || row['first'] || row['given name'] || '';
-                        const lastName = row['last name'] || row['lastname'] || row['last'] || row['surname'] || '';
-                        const email = row['email'] || row['email address'] || row['e-mail'] || '';
-                        if (!email || !firstName) { skipped++; return; }
-
-                        const role = row['role'] || row['user role'] || 'Company User';
-                        const status = row['status'] || 'Active';
-                        const jobTitle = row['job title'] || row['title'] || row['position'] || '';
-                        const company = row['company'] || row['company name'] || row['organization'] || '';
-                        const phone = row['phone'] || row['phone number'] || row['mobile'] || row['telephone'] || '';
-                        const phoneType = row['phone type'] || row['phone_type'] || 'Mobile';
-                        const notes = row['notes'] || row['note'] || row['comments'] || '';
-
-                        // Check duplicate
-                        const exists = users.some(u => u.email && u.email.toLowerCase() === email.toLowerCase());
-                        if (exists) { skipped++; return; }
+                        const first = row['first name'] || row['firstname'] || row['first'] || '';
+                        const last = row['last name'] || row['lastname'] || row['last'] || '';
+                        const email = row['email'] || row['e-mail'] || '';
+                        if (!first || !last || !email) return;
 
                         const newUser = {
                             id: Date.now() + Math.random(),
-                            firstName: firstName,
-                            lastName: lastName,
+                            firstName: first,
+                            lastName: last,
                             email: email,
-                            role: role,
-                            status: status,
-                            jobTitle: jobTitle,
-                            company: company,
-                            phones: phone ? [{ number: phone, type: phoneType }] : [],
-                            notes: notes,
-                            twoFactorEnabled: false,
-                            accessEnabled: true,
-                            permissions: {},
+                            jobTitle: row['job title'] || row['title'] || '',
+                            company: row['company'] || '',
+                            status: row['status'] || 'Active',
+                            accessEnabled: (row['access'] || 'yes').toLowerCase() !== 'no',
+                            phones: row['phone'] ? [{ type: 'Mobile', number: row['phone'] }] : [],
+                            notes: row['notes'] || '',
                             lastUpdated: new Date().toISOString()
                         };
-
-                        // If company specified, sync to companies list as contact
-                        if (company) {
-                            syncUserContactToCompany(newUser, company);
-                        }
-
                         users.push(newUser);
                         added++;
                     });
 
                     localStorage.setItem('users', JSON.stringify(users));
                     renderUsersTable();
-                    updateSummaryCards();
-                    showCenteredAlert(`Import complete: ${added} users added, ${skipped} skipped (duplicates or missing email/name).`);
+                    showCenteredAlert(`Imported ${added} users successfully.`);
                 } catch (err) {
                     console.error(err);
-                    showCenteredAlert('Import failed. Check file format and columns (First Name, Last Name, Email recommended).');
+                    showCenteredAlert("Import failed. Check file format (needs First Name, Last Name, Email columns).");
                 }
             };
             if (file.name.toLowerCase().endsWith('.csv')) reader.readAsText(file);
@@ -976,200 +1134,7 @@
         input.click();
     }
 
-    function syncUserContactToCompany(user, companyName) {
-        try {
-            let comps = JSON.parse(localStorage.getItem('companies') || '[]');
-            const comp = comps.find(c => (c.name || c.companyName || '').toLowerCase() === companyName.toLowerCase());
-            if (!comp) {
-                // Create minimal company if not exists (for demo)
-                const newComp = {
-                    id: Date.now(),
-                    name: companyName,
-                    contacts: []
-                };
-                comps.push(newComp);
-                comp = newComp;
-            }
-            if (!comp.contacts) comp.contacts = [];
-            const contactExists = comp.contacts.findIndex(ct => ct.email && ct.email.toLowerCase() === (user.email || '').toLowerCase());
-            const contactData = {
-                id: user.id,
-                name: `${user.firstName} ${user.lastName}`.trim(),
-                firstName: user.firstName,
-                lastName: user.lastName,
-                email: user.email,
-                phone: (user.phones && user.phones[0]) ? user.phones[0].number : '',
-                jobTitle: user.jobTitle || '',
-                role: user.role,
-                accessEnabled: user.accessEnabled !== false,
-                userId: user.id
-            };
-            if (contactExists > -1) {
-                comp.contacts[contactExists] = { ...comp.contacts[contactExists], ...contactData };
-            } else {
-                comp.contacts.push(contactData);
-            }
-            localStorage.setItem('companies', JSON.stringify(comps));
-        } catch(e) { console.warn('Company sync skipped:', e); }
-    }
-
-    // ==================== NEW HELPERS: Phones, Company Dropdown, Address, Password, Access Toggle ====================
-    function addPhoneNumberRow(phoneData = null) {
-        const container = document.getElementById('phonesContainer');
-        if (!container) return;
-
-        const row = document.createElement('div');
-        row.className = 'flex gap-2 items-center';
-        row.innerHTML = `
-            <input type="text" placeholder="Phone number" class="flex-1 bg-zinc-800 border border-zinc-700 rounded-md px-3 py-1.5 text-sm" value="${phoneData ? phoneData.number : ''}">
-            <select class="bg-zinc-800 border border-zinc-700 rounded-md px-3 py-1.5 text-sm">
-                <option value="Mobile" ${phoneData && phoneData.type === 'Mobile' ? 'selected' : ''}>Mobile</option>
-                <option value="Office" ${phoneData && phoneData.type === 'Office' ? 'selected' : ''}>Office</option>
-                <option value="Home" ${phoneData && phoneData.type === 'Home' ? 'selected' : ''}>Home</option>
-            </select>
-            <button type="button" onclick="this.closest('.flex').remove()" class="px-2 py-1 text-xs bg-red-900/70 hover:bg-red-900 rounded text-red-300">×</button>
-        `;
-        container.appendChild(row);
-    }
-
-    function populateCompanyDropdown(selectedCompany = '') {
-        const select = document.getElementById('company');
-        if (!select) return;
-        select.innerHTML = '<option value="">-- Select Company (from Companies page) --</option>';
-
-        try {
-            const comps = JSON.parse(localStorage.getItem('companies') || '[]');
-            comps.forEach(c => {
-                const name = c.name || c.companyName || c.title || '';
-                if (name) {
-                    const opt = document.createElement('option');
-                    opt.value = name;
-                    opt.textContent = name;
-                    if (name === selectedCompany) opt.selected = true;
-                    select.appendChild(opt);
-                }
-            });
-        } catch(e) {}
-    }
-
-    function useCompanyAddress() {
-        const companySelect = document.getElementById('company');
-        if (!companySelect || !companySelect.value) {
-            showCenteredAlert('Select a company first to copy its address.');
-            return;
-        }
-        try {
-            const comps = JSON.parse(localStorage.getItem('companies') || '[]');
-            const comp = comps.find(c => (c.name || c.companyName || '') === companySelect.value);
-            if (comp && comp.address) {
-                document.getElementById('address').value = comp.address;
-            } else {
-                showCenteredAlert('No address stored for that company yet (add it in Companies page).');
-            }
-        } catch(e) {
-            showCenteredAlert('Could not load company address.');
-        }
-    }
-
-    function togglePasswordVisibility(inputId) {
-        const input = document.getElementById(inputId);
-        if (!input) return;
-        input.type = input.type === 'password' ? 'text' : 'password';
-    }
-
-    function toggleUserAccess(userId, enable) {
-        const user = users.find(u => u.id == userId);
-        if (!user) return;
-        user.accessEnabled = !!enable;
-        if (!enable) user.status = 'Inactive';
-        localStorage.setItem('users', JSON.stringify(users));
-
-        // Sync to company contact if linked
-        if (user.company) {
-            try {
-                let comps = JSON.parse(localStorage.getItem('companies') || '[]');
-                const comp = comps.find(c => (c.name || c.companyName || '') === user.company);
-                if (comp && comp.contacts) {
-                    const ct = comp.contacts.find(c => c.email === user.email);
-                    if (ct) ct.accessEnabled = !!enable;
-                    localStorage.setItem('companies', JSON.stringify(comps));
-                }
-            } catch(e){}
-        }
-        renderUsersTable();
-        showCenteredAlert(`Access ${enable ? 'enabled' : 'disabled'} for ${user.firstName}. Company contact updated.`);
-    }
-
-    function showUserLog(userId) {
-        const user = users.find(u => u.id == userId);
-        if (!user) return;
-
-        const modal = document.createElement('dialog');
-        modal.className = 'modal rounded-md p-0 text-white w-full max-w-2xl';
-        modal.style.backgroundColor = '#18181b';
-        modal.style.border = '1px solid #3f3f46';
-
-        let logHtml = user.accessLog && user.accessLog.length 
-            ? user.accessLog.map(l => `<div class="px-3 py-1 border-b border-zinc-700 text-xs"><span class="text-zinc-400">${new Date(l.time).toLocaleString()}</span> — ${l.action}</div>`).join('')
-            : `<div class="p-4 text-zinc-400">No access log entries yet for this user.</div>`;
-
-        modal.innerHTML = `
-            <div class="p-6">
-                <div class="flex justify-between items-center mb-4">
-                    <h3 class="text-lg font-semibold">Access Log for ${user.firstName} ${user.lastName}</h3>
-                    <button onclick="this.closest('dialog').close(); this.closest('dialog').remove()" class="text-zinc-400 hover:text-white">
-                        <i class="fa-solid fa-times text-xl"></i>
-                    </button>
-                </div>
-                <div class="max-h-[320px] overflow-auto border border-zinc-700 rounded-md mb-4 text-sm">
-                    ${logHtml}
-                </div>
-                <div class="text-xs text-zinc-500 mb-4">Logs are captured automatically on login/view actions (demo stub). Add notes in the Notes field for manual entries.</div>
-                <div class="text-right">
-                    <button onclick="this.closest('dialog').close(); this.closest('dialog').remove()" class="px-5 py-2 bg-zinc-700 rounded-md text-sm">Close</button>
-                </div>
-            </div>
-        `;
-        document.body.appendChild(modal);
-        modal.showModal();
-    }
-
-    // ==================== COMPANIES INTEGRATION (from earlier versions) ====================
-    function createUserFromCompany(contact, companyName) {
-        // Self-audit for duplicate email
-        const existing = users.find(u => u.email && u.email.toLowerCase() === (contact.email || '').toLowerCase());
-        if (existing) {
-            if (!confirm(`A user with email ${contact.email} already exists. Is this the same person? Click OK to update their role to Company User.`)) {
-                return;
-            }
-            existing.role = 'Company User';
-            existing.status = 'Active';
-            if (!existing.permissions) existing.permissions = {};
-            localStorage.setItem('users', JSON.stringify(users));
-            renderUsersTable();
-            return;
-        }
-
-        const newUser = {
-            id: Date.now(),
-            firstName: contact.firstName || (contact.name ? contact.name.split(' ')[0] : ''),
-            lastName: contact.lastName || (contact.name ? contact.name.split(' ').slice(1).join(' ') : ''),
-            email: contact.email,
-            role: 'Company User',
-            status: 'Active',
-            permissions: {}, // All permissions off by default - admin must grant later
-            twoFactorEnabled: false,
-            source: 'Company: ' + companyName,
-            lastUpdated: new Date().toISOString()
-        };
-
-        users.push(newUser);
-        localStorage.setItem('users', JSON.stringify(users));
-        renderUsersTable();
-        showCenteredAlert('Company user created with permissions turned off by default.', 'success');
-    }
-
-    // ==================== CENTERED ALERT (matches budget.html style) ====================
+    // ==================== CENTERED ALERT ====================
     function showCenteredAlert(message, type = 'info') {
         const dialog = document.createElement('dialog');
         dialog.className = 'modal rounded-md p-6 text-white';
@@ -1194,10 +1159,7 @@
         `;
         document.body.appendChild(dialog);
         dialog.showModal();
-        dialog.querySelector('button').onclick = () => {
-            dialog.close();
-            dialog.remove();
-        };
+        dialog.querySelector('button').onclick = () => { dialog.close(); dialog.remove(); };
     }
 
     function showUserProfileModal() {
@@ -1207,7 +1169,7 @@
         modal.style.border = '1px solid #3f3f46';
         modal.innerHTML = `
             <h3 class="text-lg font-semibold mb-4">User Profile</h3>
-            <p class="text-sm text-zinc-400">Profile settings and preferences coming in a future update.</p>
+            <p class="text-sm text-zinc-400">Profile settings coming soon.</p>
             <div class="mt-6 text-right">
                 <button class="px-5 py-2 bg-zinc-700 rounded-md text-sm">Close</button>
             </div>
@@ -1223,7 +1185,6 @@
             e.preventDefault();
             const modal = document.getElementById('userModal');
             if (modal && modal.open) {
-                // Trigger save if modal open
                 const form = document.getElementById('userForm');
                 if (form) form.dispatchEvent(new Event('submit', { cancelable: true }));
             }
@@ -1236,20 +1197,29 @@
 
     // ==================== INITIALIZATION ====================
     function initializeUserManagement() {
-        // Seed demo data if empty (for first run)
+        // Seed demo data if empty
         if (users.length === 0) {
             users = [
-                { id: 1, firstName: "Michael", lastName: "Bretz", email: "michael.bretz@casepm.com", role: "Admin", status: "Active", twoFactorEnabled: true, permissions: {} },
-                { id: 2, firstName: "Sarah", lastName: "Chen", email: "sarah.chen@casepm.com", role: "Project Manager", status: "Active", twoFactorEnabled: false, permissions: {} },
-                { id: 3, firstName: "David", lastName: "Rodriguez", email: "david@aluminumfab.com", role: "Company User", status: "Active", twoFactorEnabled: false, permissions: {} }
+                { id: 1, firstName: "Michael", lastName: "Bretz", email: "michael.bretz@casepm.com", role: "Admin", status: "Active", accessEnabled: true, twoFactorEnabled: true, jobTitle: "Project Manager", phones: [{type:"Mobile", number:"(412) 555-0101"}], permissions: {} },
+                { id: 2, firstName: "Sarah", lastName: "Chen", email: "sarah.chen@casepm.com", role: "Project Manager", status: "Active", accessEnabled: true, jobTitle: "Senior Estimator", company: "RDJ Construction", permissions: {} },
+                { id: 3, firstName: "David", lastName: "Rodriguez", email: "david@aluminumfab.com", role: "Company User", status: "Active", accessEnabled: true, company: "Aluminum Fabricators Inc", jobTitle: "Project Manager", phones: [{type:"Office", number:"(727) 555-9876"}], permissions: {} }
             ];
             localStorage.setItem('users', JSON.stringify(users));
+        }
+
+        // Load companies if not present (demo)
+        if (companies.length === 0) {
+            companies = [
+                { id: 101, name: "RDJ Construction", address: "4500 Lakeland Blvd, Lakeland, FL 33801", contacts: [] },
+                { id: 102, name: "Aluminum Fabricators Inc", address: "1200 Industrial Way, Tampa, FL 33619", contacts: [] }
+            ];
+            localStorage.setItem('companies', JSON.stringify(companies));
         }
 
         renderUsersTable();
         updateSummaryCards();
 
-        // Make sure filters work
+        // Filter listeners
         const searchInput = document.getElementById('searchInput');
         const roleFilter = document.getElementById('roleFilter');
         const statusFilter = document.getElementById('statusFilter');
@@ -1257,153 +1227,8 @@
         if (roleFilter) roleFilter.addEventListener('change', filterUsers);
         if (statusFilter) statusFilter.addEventListener('change', filterUsers);
 
-        console.log('%c[Case PM] User Management fully initialized (v4 - dropdown permissions + tabs + signature + certificate + save fixed)', 'color:#10b981');
+        console.log('%c[Case PM] User Management FIXED v5 - Edit working, company dropdown connected, password reset, email required for access, rows shrunk, save fixed, import added', 'color:#10b981');
     }
-
-    // ==================== ADDITIONAL ROBUST HELPERS & AUDIT STUB (to match budget.html depth) ====================
-    // These functions provide extra production-grade behavior and bring total line count to required level.
-
-    function logUserAudit(action, userId, details = {}) {
-        // Simple audit stub - expands in future backend integration
-        const entry = {
-            timestamp: new Date().toISOString(),
-            action: action,
-            userId: userId,
-            performedBy: "Michael Bretz",
-            details: details
-        };
-        let auditLog = JSON.parse(localStorage.getItem('userAuditLog') || '[]');
-        auditLog.unshift(entry);
-        if (auditLog.length > 500) auditLog.length = 500;
-        localStorage.setItem('userAuditLog', JSON.stringify(auditLog));
-    }
-
-    function showUserAuditLog() {
-        const auditLog = JSON.parse(localStorage.getItem('userAuditLog') || '[]');
-        const modal = document.createElement('dialog');
-        modal.className = 'modal rounded-md p-0 text-white w-full max-w-4xl';
-        modal.style.backgroundColor = '#18181b';
-        modal.style.border = '1px solid #3f3f46';
-
-        let html = `
-            <div class="p-6">
-                <div class="flex justify-between items-center mb-4">
-                    <h3 class="text-xl font-semibold">User Management Audit Log</h3>
-                    <button onclick="this.closest('dialog').close(); this.closest('dialog').remove()" class="text-zinc-400 hover:text-white">
-                        <i class="fa-solid fa-times text-xl"></i>
-                    </button>
-                </div>
-                <div class="max-h-[420px] overflow-auto border border-zinc-700 rounded-md">
-                    <table class="w-full text-sm">
-                        <thead class="bg-zinc-800 sticky top-0">
-                            <tr>
-                                <th class="px-4 py-2 text-left text-zinc-400">Timestamp</th>
-                                <th class="px-4 py-2 text-left text-zinc-400">Action</th>
-                                <th class="px-4 py-2 text-left text-zinc-400">User ID</th>
-                                <th class="px-4 py-2 text-left text-zinc-400">Performed By</th>
-                            </tr>
-                        </thead>
-                        <tbody class="divide-y divide-zinc-800">
-        `;
-
-        if (auditLog.length === 0) {
-            html += `<tr><td colspan="4" class="px-4 py-8 text-center text-zinc-500">No audit events recorded yet.</td></tr>`;
-        } else {
-            auditLog.slice(0, 100).forEach(entry => {
-                const time = new Date(entry.timestamp).toLocaleString();
-                html += `
-                    <tr class="hover:bg-zinc-800/60">
-                        <td class="px-4 py-2 text-xs text-zinc-400 font-mono">${time}</td>
-                        <td class="px-4 py-2"><span class="px-2 py-0.5 text-xs rounded-full bg-emerald-900/60 text-emerald-400">${entry.action}</span></td>
-                        <td class="px-4 py-2 font-mono text-xs">${entry.userId}</td>
-                        <td class="px-4 py-2 text-sm text-zinc-400">${entry.performedBy}</td>
-                    </tr>
-                `;
-            });
-        }
-
-        html += `</tbody></table></div>
-            <div class="mt-4 text-right">
-                <button onclick="this.closest('dialog').close(); this.closest('dialog').remove()" class="px-5 py-2 bg-zinc-700 rounded-md text-sm">Close</button>
-            </div>
-        </div>`;
-
-        modal.innerHTML = html;
-        document.body.appendChild(modal);
-        modal.showModal();
-    }
-
-    // Extra helper: bulk status change (future use)
-    function bulkUpdateUserStatus(newStatus) {
-        if (!confirm(`Set ALL users to "${newStatus}" status?`)) return;
-        users.forEach(u => u.status = newStatus);
-        localStorage.setItem('users', JSON.stringify(users));
-        renderUsersTable();
-        showCenteredAlert(`All users updated to ${newStatus}.`);
-    }
-
-    // Extra: Reset all permissions for a role (admin helper)
-    function resetAllPermissionsForRole(role) {
-        if (!confirm(`Reset permissions for all ${role} users?`)) return;
-        users.forEach(u => {
-            if (u.role === role) u.permissions = {};
-        });
-        localStorage.setItem('users', JSON.stringify(users));
-        renderUsersTable();
-        showCenteredAlert(`Permissions cleared for all ${role} users.`);
-    }
-
-    window.showUserAuditLog = showUserAuditLog; // expose for console/debug
-
-    // ==================== FINAL PRODUCTION NOTES & FUTURE HOOKS ====================
-    // This file is now locked to match budget.html visual density, header treatment,
-    // summary cards, sticky elements, modal patterns, and overall polish.
-    // Sidebar remains 100% controlled by base.html (never touched here).
-    // All permissions use the clean early-version dropdown style the user requested.
-    // Signature canvas + upload, Certificate upload, Role Templates, and Save button are fully functional.
-    // Companies integration creates users with permissions OFF by default.
-    // Ready for backend wiring (Django/Flask endpoints for real persistence).
-
-    // ==================== EXTENDED DOCUMENTATION (for maintainability - adds line depth) ====================
-    /*
-        USER MANAGEMENT MODULE - COMPLETE SPECIFICATION
-        ===============================================
-
-        FEATURES IMPLEMENTED:
-        - Header: Exact 3-column layout matching budget.html (Current Project | Title | Actions + Compact Profile)
-        - Sidebar: 100% untouched (controlled exclusively by base.html template)
-        - Summary Cards: Total Users, Admins, Active, Company Users (with live counts)
-        - Search + Role + Status Filters with real-time table filtering
-        - Large sticky-header table with hover states and double-click to edit
-        - Add/Edit User Modal with 4 tabs:
-            1. General: Profile picture upload/preview, First/Last Name, Email, Role (with live template apply), Status, 2FA toggle
-            2. Permissions: Clean dropdown style from early versions
-               - Access Level: No Access / View / Edit
-               - For workflow modules (Submittals, RFIs, Change Orders, Budget, Daily Reports, Documents): separate Approve/Reject dropdown
-               - One-click Role Templates (Admin, PM, Superintendent, Architect, Owner, Company User, Viewer)
-            3. Signature: Full canvas drawing (mouse + touch) + Clear + Save to profile + Upload image fallback
-            4. Certificate: File upload (PDF/PFX/P12/Image) with status display
-        - Save User: Fully functional - collects ALL tab data, updates/creates user, persists to localStorage, refreshes table, shows success toast
-        - Delete User with confirmation
-        - Export to Excel (XLSX) matching budget.html export style
-        - Companies integration hook: createUserFromCompany() with self-audit duplicate email check and permissions OFF by default
-        - Keyboard shortcuts: Ctrl/Cmd+S to save when modal open, Escape to close modals
-        - Centered alert system matching budget.html exactly
-        - Audit log stub + viewer modal (expandable for backend)
-        - Bulk helpers for future admin tools
-
-        LINE COUNT TARGET: This version exceeds 1000 lines with comments, helpers, and production structure.
-        VISUAL PARITY: Zinc palette, emerald accents, rounded-md cards, professional density identical to budget.html
-        NO SIDEBAR CHANGES: Confirmed - base.html controls all navigation.
-
-        NEXT STEPS (when backend ready):
-        - Replace localStorage with real API calls (fetch to /api/users/)
-        - Add server-side permission enforcement
-        - Wire Companies page "Authorized Case PM User" checkbox to call createUserFromCompany()
-        - Add real digital signature validation for Certificate tab
-    */
-
-    console.log('%c[Case PM] User Management v4 COMPLETE - Full dropdown permissions, tabs, signature/certificate, save fixed, audit helpers, extended docs. Production ready and over 1000 lines.', 'color:#10b981');
 
     window.onload = initializeUserManagement;
 </script>
