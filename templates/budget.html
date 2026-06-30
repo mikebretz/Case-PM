@@ -10,8 +10,8 @@
         <div class="text-xl font-semibold tracking-tight text-white">ALDI Lakeland</div>
     </div>
 
-    <!-- Center: Budget + Revision (moved LEFT even more, close to 1 inch, between project and buttons) -->
-    <div class="w-1/3 flex justify-start pl-0 -ml-8">
+    <!-- Center: Budget + Revision (pushed further LEFT, stable between project name and buttons) -->
+    <div class="w-1/3 flex justify-start pl-0 -ml-10">
         <div class="flex items-center gap-3">
             <div class="text-2xl font-semibold text-white">Budget</div>
             <div id="revisionBadge" onclick="showVersionHistory()" 
@@ -22,8 +22,8 @@
         </div>
     </div>
 
-    <!-- Right: Action buttons (slightly wider so text fits perfectly on one line) -->
-    <div class="w-1/3 flex items-center justify-end gap-3">
+    <!-- Right: Action buttons (tight, nowrap for zoom stability, pushed left with header) -->
+    <div class="w-1/3 flex items-center justify-end gap-2 flex-nowrap">
         <button onclick="exportBudget()" class="flex items-center gap-2 px-4 py-2 bg-zinc-800 hover:bg-zinc-700 rounded-md text-sm font-medium transition-colors h-[38px]">
             <i class="fa-solid fa-download"></i><span>Export</span>
         </button>
@@ -533,6 +533,7 @@
     function updateButtonStates() {
         const addBtn = document.getElementById('addLineBtn');
         const publishBtn = document.getElementById('publishBtn');
+        const saveBtn = document.querySelector('button[onclick="saveBudget()"]');
 
         if (budgetLocked) {
             if (addBtn) {
@@ -545,6 +546,11 @@
                 publishBtn.classList.add('opacity-50', 'cursor-not-allowed');
                 publishBtn.title = "Create a new revision first to publish again.";
             }
+            if (saveBtn) {
+                saveBtn.disabled = true;
+                saveBtn.classList.add('opacity-50', 'cursor-not-allowed');
+                saveBtn.title = "Budget is locked after publishing. Create a new revision to edit.";
+            }
         } else {
             if (addBtn) {
                 addBtn.disabled = false;
@@ -555,6 +561,11 @@
                 publishBtn.disabled = false;
                 publishBtn.classList.remove('opacity-50', 'cursor-not-allowed');
                 publishBtn.title = "";
+            }
+            if (saveBtn) {
+                saveBtn.disabled = false;
+                saveBtn.classList.remove('opacity-50', 'cursor-not-allowed');
+                saveBtn.title = "";
             }
         }
     }
@@ -1055,23 +1066,73 @@
 
     function showRevisionDetails(rev) {
         document.getElementById('versionHistoryModal').close();
+
         const snapshots = JSON.parse(localStorage.getItem('budgetSnapshots') || '[]');
-        const snap = snapshots.find(s => s.revision === rev);
+        const sorted = snapshots.slice().sort((a, b) => a.revision - b.revision);
+        const currentIndex = sorted.findIndex(s => s.revision === rev);
+        const snap = sorted[currentIndex];
         if (!snap) return;
 
-        let html = `<div class="text-lg font-semibold mb-2">Revision ${rev} — Line Items</div>`;
-        html += `<div class="text-xs text-zinc-400 mb-4">${new Date(snap.timestamp).toLocaleString()} • ${snap.lines.length} lines</div>`;
-        html += `<div class="max-h-[420px] overflow-auto border border-zinc-700 rounded">`;
-        snap.lines.forEach(line => {
-            html += `
-                <div class="flex justify-between px-4 py-2 border-b border-zinc-700 text-sm">
-                    <div class="font-mono text-emerald-400">${line.cost_code}</div>
-                    <div class="flex-1 px-3">${line.description}</div>
-                    <div class="text-right font-mono">${formatCurrency(line.original_budget)}</div>
-                </div>
-            `;
+        const prevSnap = currentIndex > 0 ? sorted[currentIndex - 1] : null;
+
+        // Build maps for comparison (key = cost_code + cost_type for Sage compatibility)
+        const currentMap = new Map();
+        snap.lines.forEach(l => currentMap.set(`${l.cost_code}|${l.cost_type}`, l));
+
+        const prevMap = new Map();
+        if (prevSnap) prevSnap.lines.forEach(l => prevMap.set(`${l.cost_code}|${l.cost_type}`, l));
+
+        let added = [], modified = [], removed = [];
+
+        // Added or Modified
+        currentMap.forEach((line, key) => {
+            if (!prevMap.has(key)) {
+                added.push(line);
+            } else {
+                const prevLine = prevMap.get(key);
+                if (prevLine.original_budget !== line.original_budget || prevLine.notes !== line.notes) {
+                    modified.push({ current: line, previous: prevLine });
+                }
+            }
         });
-        html += `</div><div class="mt-4 text-right"><button onclick="this.closest('dialog').close(); this.closest('dialog').remove()" class="px-5 py-2 bg-zinc-700 rounded">Close</button></div>`;
+
+        // Removed
+        prevMap.forEach((line, key) => {
+            if (!currentMap.has(key)) {
+                removed.push(line);
+            }
+        });
+
+        let html = `<div class="text-lg font-semibold mb-2">Revision ${rev} — Changes</div>`;
+        html += `<div class="text-xs text-zinc-400 mb-4">${new Date(snap.timestamp).toLocaleString()}</div>`;
+
+        if (added.length === 0 && modified.length === 0 && removed.length === 0) {
+            html += `<div class="text-sm text-zinc-400">No changes from previous revision.</div>`;
+        } else {
+            if (added.length > 0) {
+                html += `<div class="text-emerald-400 font-semibold mb-1">Added (${added.length})</div>`;
+                added.forEach(l => {
+                    html += `<div class="flex justify-between px-3 py-1 text-sm border-b border-zinc-700"><div class="font-mono text-emerald-400">${l.cost_code}</div><div class="flex-1 px-2">${l.description}</div><div class="text-right font-mono">${formatCurrency(l.original_budget)}</div></div>`;
+                });
+            }
+            if (modified.length > 0) {
+                html += `<div class="text-amber-400 font-semibold mt-3 mb-1">Modified (${modified.length})</div>`;
+                modified.forEach(m => {
+                    html += `<div class="px-3 py-1 text-sm border-b border-zinc-700">
+                        <div class="font-mono text-emerald-400">${m.current.cost_code} — ${m.current.description}</div>
+                        <div class="text-xs text-zinc-400">Budget: <span class="line-through">${formatCurrency(m.previous.original_budget)}</span> → <span class="text-white">${formatCurrency(m.current.original_budget)}</span></div>
+                    </div>`;
+                });
+            }
+            if (removed.length > 0) {
+                html += `<div class="text-red-400 font-semibold mt-3 mb-1">Removed (${removed.length})</div>`;
+                removed.forEach(l => {
+                    html += `<div class="flex justify-between px-3 py-1 text-sm border-b border-zinc-700 opacity-60"><div class="font-mono">${l.cost_code}</div><div class="flex-1 px-2">${l.description}</div><div class="text-right font-mono">${formatCurrency(l.original_budget)}</div></div>`;
+                });
+            }
+        }
+
+        html += `<div class="mt-4 text-right"><button onclick="this.closest('dialog').close(); this.closest('dialog').remove()" class="px-5 py-2 bg-zinc-700 rounded">Close</button></div>`;
 
         const d = document.createElement('dialog');
         d.className = 'modal rounded-md p-6 w-full max-w-2xl text-white';
