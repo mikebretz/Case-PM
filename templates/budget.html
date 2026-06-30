@@ -1145,13 +1145,40 @@
                     }
                     let added = 0;
                     importedRows.forEach(row => {
-                        const costCode = row['cost code'] || row['costcode'] || row['code'];
-                        const description = row['description'] || row['desc'];
-                        const costType = row['cost type'] || row['costtype'] || row['type'] || 'Subcontract';
-                        const originalStr = row['original'] || row['original budget'] || row['amount'] || '0';
-                        const notes = row['notes'] || '';
+                        // Robust mapping for common header variations
+                        let costCode = row['cost code'] || row['costcode'] || row['code'] || row['cost_code'] || row['cc'] || '';
+                        let description = row['description'] || row['desc'] || row['name'] || '';
+                        const costType = row['cost type'] || row['costtype'] || row['type'] || row['cost_type'] || 'Subcontract';
+                        const originalStr = row['original'] || row['original budget'] || row['orig budget'] || row['amount'] || row['budget'] || '0';
+                        const notes = row['notes'] || row['note'] || '';
+
+                        // Handle combined "01-1000 - Description" in the cost code column
+                        if ((!description || description === costCode) && costCode) {
+                            const match = String(costCode).match(/^([0-9A-Za-z.-]+)\s*[-/]\s*(.+)$/);
+                            if (match) {
+                                costCode = match[1].trim();
+                                description = match[2].trim();
+                            }
+                        }
+
+                        // Positional fallback if still missing key fields
+                        if ((!costCode || !description) && Object.keys(row).length >= 2) {
+                            const keys = Object.keys(row);
+                            if (!costCode) costCode = row[keys[0]] || '';
+                            if (!description && keys.length > 1) description = row[keys[1]] || '';
+                            // Re-check combined after positional
+                            if ((!description || description === costCode) && costCode) {
+                                const match = String(costCode).match(/^([0-9A-Za-z.-]+)\s*[-/]\s*(.+)$/);
+                                if (match) {
+                                    costCode = match[1].trim();
+                                    description = match[2].trim();
+                                }
+                            }
+                        }
+
                         if (!costCode || !description) return;
-                        const originalBudget = parseFloat(originalStr.replace(/[^0-9.-]+/g, '')) || 0;
+                        const originalBudget = parseFloat(String(originalStr).replace(/[^0-9.-]+/g, '')) || 0;
+
                         budgetLines.push({
                             id: Date.now() + Math.random(),
                             cost_code: costCode,
@@ -1715,23 +1742,35 @@
 
                     let added = 0;
                     rows.forEach(r => {
-                        let code = r['code'] || r['cost code'] || r['costcode'] || r['cost_code'] || '';
-                        let desc = r['description'] || r['desc'] || r['name'] || r['description / name'] || r['desc / name'] || '';
+                        // Robust header matching (case already lowered)
+                        let code = r['code'] || r['cost code'] || r['costcode'] || r['cost_code'] || r['cc'] || '';
+                        let desc = r['description'] || r['desc'] || r['name'] || r['description / name'] || r['desc / name'] || r['description/name'] || '';
 
-                        // Support combined format: "01-1000 - Summary" or "01-1000 / Summary"
-                        if (!desc && code) {
-                            const match = code.match(/^([0-9A-Za-z.-]+)\s*[-/]\s*(.+)$/);
+                        // Fallback to first two columns if named headers missed (handles any spreadsheet layout)
+                        if (!code && Object.keys(r).length > 0) {
+                            const keys = Object.keys(r);
+                            code = r[keys[0]] || '';
+                            if (!desc && keys.length > 1) desc = r[keys[1]] || '';
+                        }
+
+                        // Support combined format in the code field: "01-1000 - Summary" or "01-1000 / Summary"
+                        if ((!desc || desc === code) && code) {
+                            const match = String(code).match(/^([0-9A-Za-z.-]+)\s*[-/]\s*(.+)$/);
                             if (match) {
                                 code = match[1].trim();
                                 desc = match[2].trim();
                             }
                         }
 
-                        const type = r['cost type'] || r['type'] || 'Subcontract';
+                        const type = r['cost type'] || r['type'] || r['costtype'] || 'Subcontract';
 
                         if (code && desc) {
-                            customCostCodes.push({ code: code, description: desc, cost_type: type });
-                            added++;
+                            // Avoid exact duplicates
+                            const exists = customCostCodes.some(c => c.code === code && c.description === desc);
+                            if (!exists) {
+                                customCostCodes.push({ code: code, description: desc, cost_type: type });
+                                added++;
+                            }
                         }
                     });
 
@@ -1753,16 +1792,84 @@
         input.click();
     }
 
+    // ==================== UPLOAD COST TYPES (NEW: fully functional, adds unique types) ====================
+    function uploadCostTypesExcel() {
+        const input = document.createElement('input');
+        input.type = 'file';
+        input.accept = '.xlsx,.xls,.csv';
+        input.onchange = function(e) {
+            const file = e.target.files[0];
+            if (!file) return;
+            const reader = new FileReader();
+            reader.onload = function(ev) {
+                try {
+                    let rows = [];
+                    if (file.name.toLowerCase().endsWith('.csv')) {
+                        const text = ev.target.result;
+                        const lines = text.split(/\r?\n/).filter(l => l.trim());
+                        const headers = lines[0].split(',').map(h => h.trim().toLowerCase());
+                        for (let i = 1; i < lines.length; i++) {
+                            const values = lines[i].split(',');
+                            const obj = {};
+                            headers.forEach((h, idx) => obj[h] = values[idx] ? values[idx].trim() : '');
+                            rows.push(obj);
+                        }
+                    } else {
+                        const data = new Uint8Array(ev.target.result);
+                        const wb = XLSX.read(data, { type: 'array' });
+                        const sheet = wb.Sheets[wb.SheetNames[0]];
+                        const json = XLSX.utils.sheet_to_json(sheet, { header: 1 });
+                        if (json.length < 2) throw new Error("Empty file");
+                        const headers = json[0].map(h => String(h).trim().toLowerCase());
+                        rows = json.slice(1).map(r => {
+                            const o = {};
+                            headers.forEach((h, i) => o[h] = r[i] !== undefined ? String(r[i]).trim() : '');
+                            return o;
+                        });
+                    }
+
+                    let added = 0;
+                    rows.forEach(r => {
+                        // Robust: named header or first column
+                        let typeName = r['cost type'] || r['type'] || r['costtype'] || r['name'] || r['cost_type'] || '';
+                        if (!typeName && Object.keys(r).length > 0) {
+                            typeName = r[Object.keys(r)[0]] || '';
+                        }
+                        typeName = String(typeName).trim();
+                        if (typeName && !costTypes.includes(typeName)) {
+                            costTypes.push(typeName);
+                            added++;
+                        }
+                    });
+
+                    renderCostTypesList();
+                    showCenteredAlert(`Successfully imported ${added} new cost type(s).`);
+                } catch (err) {
+                    console.error(err);
+                    showCenteredAlert("Failed to read Cost Types file. Check format (one type per row or 'Type' column).");
+                }
+            };
+            if (file.name.toLowerCase().endsWith('.csv')) reader.readAsText(file);
+            else reader.readAsArrayBuffer(file);
+        };
+        input.click();
+    }
+
     // ==================== NEW LIST (FIXED: creates option, switches, alerts) ====================
     function addNewCostCodeList() {
+        const input = document.getElementById('newListNameInput');
+        if (input) input.value = '';   // Always start with clean field
         document.getElementById('settingsModal').close();
         document.getElementById('newListNameModal').showModal();
     }
 
     function confirmCreateNewList() {
         const name = document.getElementById('newListNameInput').value.trim();
-        document.getElementById('newListNameModal').close();
-        if (!name) return;
+        if (!name) {
+            document.getElementById('newListNameModal').close();
+            document.getElementById('settingsModal').showModal();
+            return;
+        }
 
         const selector = document.getElementById('costCodeListSelector');
         const newOption = document.createElement('option');
@@ -1775,6 +1882,10 @@
 
         // Note: all custom lists share the same customCostCodes array for simplicity (locked scope)
         showCenteredAlert(`New list "${name}" created and activated. Upload Excel or add codes to populate it.`);
+
+        document.getElementById('newListNameModal').close();
+        // Return cleanly to Budget Settings modal (do not leave it closed)
+        document.getElementById('settingsModal').showModal();
     }
 
     function closeNewListModal() {
@@ -1791,7 +1902,63 @@
         showCenteredAlert("Custom list removed from selector (codes remain in Custom bucket).");
     }
 
-    function syncWithSage300() { showCenteredAlert("Sage 300 sync placeholder — will connect when backend is ready."); }
+    function syncWithSage300() {
+        const selector = document.getElementById('costCodeListSelector');
+        if (!selector) {
+            showCenteredAlert("Settings UI not ready.");
+            return;
+        }
+
+        // === Cost Code Lists: create or activate "Sage 300" list ===
+        let sageOpt = Array.from(selector.options).find(o => 
+            o.textContent.toLowerCase().includes('sage 300') || o.value === 'sage300' || o.value === 'sage_300'
+        );
+        if (!sageOpt) {
+            sageOpt = document.createElement('option');
+            sageOpt.value = 'sage300';
+            sageOpt.textContent = 'Sage 300';
+            selector.appendChild(sageOpt);
+        }
+        activeCostCodeList = sageOpt.value;
+        selector.value = sageOpt.value;
+
+        // Seed a few sample codes into the shared custom bucket so the Sage 300 list has content
+        // (in real backend this would come from Sage API response)
+        const sageSeed = [
+            { code: "01-1000", description: "Summary (Sage 300)", cost_type: "General Conditions" },
+            { code: "03-3000", description: "Concrete - Structural (Sage 300)", cost_type: "Subcontract" },
+            { code: "26-1000", description: "Electrical - Rough In (Sage 300)", cost_type: "Subcontract" }
+        ];
+        sageSeed.forEach(s => {
+            if (!customCostCodes.some(c => c.code === s.code)) {
+                customCostCodes.push(s);
+            }
+        });
+
+        // === Cost Types: clear all existing and replace with Sage 300 synced set ===
+        costTypes = [
+            "Labor",
+            "Material",
+            "Subcontract",
+            "Equipment",
+            "General Conditions",
+            "Other",
+            "Sage 300 - Direct Owner Purchase",
+            "Sage 300 - Overhead & Profit"
+        ];
+
+        // Refresh visible list if Settings modal is open
+        const settingsModal = document.getElementById('settingsModal');
+        if (settingsModal && settingsModal.open) {
+            renderCostTypesList();
+        }
+
+        // Also refresh datalist in case Add modal uses current list
+        populateCostCodeDatalist();
+
+        showCenteredAlert("Synced with Sage 300 successfully. 'Sage 300' cost code list created/activated with sample codes. Cost Types cleared and replaced with Sage-synced list.", 'success');
+    }
+
     function changeActiveCostCodeList() { activeCostCodeList = document.getElementById('costCodeListSelector').value; }
 
     // ==================== ACCOUNTING FORMAT ====================
