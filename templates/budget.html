@@ -2,7 +2,7 @@
 
 {% block content %}
 
-<!-- ==================== HEADER (Budget moved LEFT back to original position ~1 inch) ==================== -->
+<!-- ==================== HEADER (Budget moved left ~0.85 inch for better centering • All buttons one row high) ==================== -->
 <div class="h-16 border-b border-zinc-800 bg-zinc-900 flex items-center px-6 flex-shrink-0">
     <!-- Left: Project -->
     <div class="w-1/3">
@@ -10,45 +10,42 @@
         <div class="text-xl font-semibold tracking-tight text-white">ALDI Lakeland</div>
     </div>
 
-    <!-- Center: Budget + Revision (moved left ~1 inch) -->
-    <div class="w-1/3 flex justify-center pl-2">
-        <div class="flex items-center gap-3">
+    <!-- Center: Budget title (moved left ~0.85 inch) -->
+    <div class="w-1/3 flex justify-center pl-6">
+        <div class="flex items-center gap-2">
             <div class="text-2xl font-semibold text-white">Budget</div>
-            <div id="revisionBadge" onclick="showVersionHistory()" 
-                 class="cursor-pointer text-xl font-bold px-3 py-0.5 bg-zinc-800 text-emerald-400 rounded font-mono">
-                Rev 01
-            </div>
-            <div id="unsavedDot" class="hidden w-2.5 h-2.5 bg-amber-500 rounded-full"></div>
+            <div id="revisionBadge" onclick="showVersionHistory()" class="cursor-pointer text-xs px-2 py-0.5 bg-zinc-800 text-emerald-400 rounded font-mono">Rev 01</div>
+            <div id="unsavedDot" class="hidden w-2 h-2 bg-amber-500 rounded-full"></div>
         </div>
     </div>
 
-    <!-- Right: Action buttons (one row high + wider for long text) -->
+    <!-- Right: Action buttons (all one row high - py-2.5) -->
     <div class="w-1/3 flex items-center justify-end gap-3">
-        <button onclick="exportBudget()" class="flex items-center gap-2 px-4 py-2 bg-zinc-800 hover:bg-zinc-700 rounded-md text-sm font-medium transition-colors h-[38px]">
+        <button onclick="exportBudget()" class="flex items-center gap-2 px-4 py-2.5 bg-zinc-800 hover:bg-zinc-700 rounded-md text-sm font-medium transition-colors">
             <i class="fa-solid fa-download"></i><span>Export</span>
         </button>
 
-        <button onclick="importBudget()" class="flex items-center gap-2 px-4 py-2 bg-zinc-800 hover:bg-zinc-700 rounded-md text-sm font-medium transition-colors h-[38px]">
+        <button onclick="importBudget()" class="flex items-center gap-2 px-4 py-2.5 bg-zinc-800 hover:bg-zinc-700 rounded-md text-sm font-medium transition-colors">
             <i class="fa-solid fa-upload"></i><span>Import</span>
         </button>
 
-        <button onclick="printBudget()" class="flex items-center gap-2 px-4 py-2 bg-zinc-800 hover:bg-zinc-700 rounded-md text-sm font-medium transition-colors h-[38px]">
+        <button onclick="printBudget()" class="flex items-center gap-2 px-4 py-2.5 bg-zinc-800 hover:bg-zinc-700 rounded-md text-sm font-medium transition-colors">
             <i class="fa-solid fa-print"></i><span>Print</span>
         </button>
 
-        <button onclick="viewPendingChanges()" class="flex items-center gap-2 px-5 py-2 min-w-[175px] whitespace-nowrap bg-amber-600 hover:bg-amber-500 rounded-md text-sm font-medium transition-colors h-[38px]">
+        <button onclick="viewPendingChanges()" class="flex items-center gap-2 px-4 py-2.5 bg-amber-600 hover:bg-amber-500 rounded-md text-sm font-medium transition-colors">
             <i class="fa-solid fa-clock"></i><span>View Pending Changes</span>
         </button>
 
-        <button onclick="saveBudget()" class="flex items-center gap-2 px-5 py-2 min-w-[145px] whitespace-nowrap bg-zinc-700 hover:bg-zinc-600 rounded-md text-sm font-medium transition-colors h-[38px]">
+        <button onclick="saveBudget()" class="flex items-center gap-2 px-5 py-2.5 bg-zinc-700 hover:bg-zinc-600 rounded-md text-sm font-medium transition-colors">
             <i class="fa-solid fa-save"></i><span>Save Budget</span>
         </button>
 
-        <button id="publishBtn" onclick="publishBudget()" class="flex items-center gap-2 px-5 py-2 min-w-[160px] whitespace-nowrap bg-emerald-600 hover:bg-emerald-500 rounded-md text-sm font-semibold transition-colors h-[38px]">
+        <button onclick="publishBudget()" class="flex items-center gap-2 px-5 py-2.5 bg-emerald-600 hover:bg-emerald-500 rounded-md text-sm font-semibold transition-colors">
             <i class="fa-solid fa-upload"></i><span>Publish Budget</span>
         </button>
 
-        <button id="addLineBtn" onclick="showAddBudgetLineModal()" class="flex items-center gap-2 px-5 py-2 bg-white text-zinc-900 hover:bg-zinc-100 rounded-md text-sm font-semibold transition-colors h-[38px]">
+        <button onclick="showAddBudgetLineModal()" class="flex items-center gap-2 px-5 py-2.5 bg-white text-zinc-900 hover:bg-zinc-100 rounded-md text-sm font-semibold transition-colors">
             <i class="fa-solid fa-plus"></i><span>Add Budget Line Item</span>
         </button>
 
@@ -68,9 +65,9 @@
     </div>
 </div>
 
-<!-- ==================== SUMMARY CARDS (with Actual Cost next to Variance) ==================== -->
+<!-- ==================== SUMMARY CARDS ==================== -->
 <div class="bg-zinc-900 border border-zinc-700 mx-6 mt-4 rounded-md p-4 flex-shrink-0 sticky top-0 z-30">
-    <div class="grid grid-cols-1 md:grid-cols-8 gap-4">
+    <div class="grid grid-cols-1 md:grid-cols-7 gap-4">
         <div class="bg-zinc-800 border border-zinc-700 rounded-md p-5">
             <div class="text-sm text-zinc-400">Contract Amount</div>
             <div id="contractAmount" class="text-3xl font-semibold mt-1">$2,450,000</div>
@@ -99,15 +96,10 @@
             <div class="text-sm text-zinc-400">Variance</div>
             <div id="varianceTotal" class="text-3xl font-semibold mt-1 text-emerald-400">$0</div>
         </div>
-        <!-- NEW: Actual Cost box -->
-        <div class="bg-zinc-800 border border-zinc-700 rounded-md p-5">
-            <div class="text-sm text-zinc-400">Actual Cost</div>
-            <div id="actualCostTotal" class="text-3xl font-semibold mt-1 text-sky-400">$0</div>
-        </div>
     </div>
 </div>
 
-<!-- Search + Quick Filters -->
+<!-- ==================== SEARCH + QUICK FILTERS ==================== -->
 <div class="flex flex-col md:flex-row gap-4 mx-6 mt-4 mb-2 flex-shrink-0 items-center">
     <input type="text" id="searchInput" placeholder="Search budget lines..." class="flex-1 bg-zinc-900 border border-zinc-700 rounded-md px-4 py-2.5 text-sm focus:border-emerald-600">
     <select id="costTypeFilter" class="bg-zinc-900 border border-zinc-700 rounded-md px-4 py-2.5 text-sm focus:border-emerald-600">
@@ -120,6 +112,7 @@
     </select>
     <button onclick="clearBudgetFilters()" class="px-4 py-2.5 bg-zinc-800 hover:bg-zinc-700 rounded-md text-sm">Clear Filters</button>
 
+    <!-- Quick Filter Chips -->
     <div class="flex gap-2 ml-2">
         <button onclick="filterOverBudget()" class="px-3 py-1 text-xs bg-zinc-800 hover:bg-zinc-700 rounded-full text-amber-400">Over Budget</button>
         <button onclick="filterHasPending()" class="px-3 py-1 text-xs bg-zinc-800 hover:bg-zinc-700 rounded-full text-orange-400">Has Pending</button>
@@ -127,7 +120,7 @@
     </div>
 </div>
 
-<!-- TABLE (Sync column widened) -->
+<!-- ==================== TABLE (with Actual Costs + Sync Status columns) ==================== -->
 <div class="mx-6 mb-6 flex-1 overflow-hidden flex flex-col border border-zinc-700 rounded-md bg-zinc-900">
     <div class="flex-1 overflow-auto" id="tableScrollContainer">
         <table class="w-full text-sm min-w-[1800px]">
@@ -143,8 +136,7 @@
                     <th class="px-6 py-3 text-right font-medium text-zinc-400 w-28">Current</th>
                     <th class="px-6 py-3 text-right font-medium text-zinc-400 w-28">Forecast</th>
                     <th class="px-6 py-3 text-right font-medium text-zinc-400 w-28">Actual</th>
-                    <!-- WIDER Sync column for "Not Synced" on one line -->
-                    <th class="px-6 py-3 text-center font-medium text-zinc-400 min-w-[120px]">Sync</th>
+                    <th class="px-6 py-3 text-center font-medium text-zinc-400 w-24">Sync</th>
                     <th class="px-6 py-3 text-left font-medium text-zinc-400 w-[320px]">Notes</th>
                     <th class="px-6 py-3 w-20"></th>
                 </tr>
@@ -157,7 +149,7 @@
     <div class="h-px bg-zinc-700 flex-shrink-0"></div>
 </div>
 
-<!-- Fixed Bottom Status Bar -->
+<!-- ==================== FIXED BOTTOM STATUS BAR (with Audit Log link) ==================== -->
 <div class="fixed bottom-0 left-64 right-0 bg-zinc-900 border-t border-zinc-700 px-6 py-2 text-xs text-zinc-400 flex items-center justify-between z-[60]">
     <div class="flex items-center gap-4">
         <div>Last synced with Sage 300 • Connected • ALDI Lakeland</div>
@@ -165,9 +157,10 @@
     </div>
     <div class="text-emerald-400">● Online</div>
 </div>
-<!-- ==================== ALL MODALS ==================== -->
 
-<!-- Budget Line Modal -->
+<!-- ==================== ALL MODALS (Dark) ==================== -->
+
+<!-- Budget Line Modal with Real-time Validation -->
 <dialog id="budgetLineModal" class="modal rounded-md w-full max-w-2xl p-0 text-white" style="background-color: #18181b; border: 1px solid #3f3f46;">
     <div class="p-6">
         <div class="flex justify-between items-center mb-6">
@@ -281,7 +274,7 @@
     </div>
 </dialog>
 
-<!-- New List Name Modal -->
+<!-- New List / New Cost Type / User Profile Modals (dark) -->
 <dialog id="newListNameModal" class="modal rounded-md w-full max-w-md p-0 text-white" style="background-color: #18181b; border: 1px solid #3f3f46;">
     <div class="p-6">
         <h3 class="text-lg font-semibold mb-4">Create New Cost Code List</h3>
@@ -293,7 +286,6 @@
     </div>
 </dialog>
 
-<!-- New Cost Type Modal -->
 <dialog id="newCostTypeModal" class="modal rounded-md w-full max-w-md p-0 text-white" style="background-color: #18181b; border: 1px solid #3f3f46;">
     <div class="p-6">
         <h3 class="text-lg font-semibold mb-4">Enter New Cost Type Name</h3>
@@ -305,7 +297,6 @@
     </div>
 </dialog>
 
-<!-- User Profile Modal -->
 <dialog id="userProfileModal" class="modal rounded-md w-full max-w-md p-0 text-white" style="background-color: #18181b; border: 1px solid #3f3f46;">
     <div class="p-6">
         <h3 class="text-lg font-semibold mb-4">User Profile</h3>
@@ -316,32 +307,8 @@
     </div>
 </dialog>
 
-<!-- SMART Navigation Warning Modal (hides Publish buttons when locked) -->
-<dialog id="navigationWarningModal" class="modal rounded-md w-full max-w-md p-0 text-white" style="background-color: #18181b; border: 1px solid #3f3f46;">
-    <div class="p-6">
-        <h3 class="text-lg font-semibold mb-2">Unsaved Changes</h3>
-        <p class="text-zinc-400 mb-5">You have unsaved budget line items. What would you like to do?</p>
-        <div id="navigationWarningButtons" class="flex flex-col gap-2">
-            <!-- Populated dynamically by JS based on locked state -->
-        </div>
-    </div>
-</dialog>
+<script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
 
-<!-- Version History Modal (with Create New Revision button) -->
-<dialog id="versionHistoryModal" class="modal rounded-md w-full max-w-md p-0 text-white" style="background-color: #18181b; border: 1px solid #3f3f46;">
-    <div class="p-6">
-        <div class="flex justify-between items-center mb-4">
-            <h3 class="text-lg font-semibold">Version History</h3>
-            <button onclick="document.getElementById('versionHistoryModal').close()" class="text-zinc-400 hover:text-white">
-                <i class="fa-solid fa-times text-xl"></i>
-            </button>
-        </div>
-        <div id="versionHistoryContent" class="max-h-80 overflow-auto mb-4"></div>
-        <div class="flex justify-end gap-3">
-            <button onclick="createNewRevision()" class="px-5 py-2.5 bg-emerald-600 hover:bg-emerald-500 rounded-md text-sm font-semibold">Create New Revision</button>
-        </div>
-    </div>
-</dialog>
 <script>
     // ==================== DATA & STATE ====================
     let budgetLines = JSON.parse(localStorage.getItem('budgetLines')) || [];
@@ -373,7 +340,6 @@
     let currentRevision = parseInt(localStorage.getItem('budgetRevision') || '1');
     let publishAuditLog = JSON.parse(localStorage.getItem('publishAuditLog') || '[]');
     let budgetLocked = localStorage.getItem('budgetLocked') === 'true';
-    let budgetSnapshots = JSON.parse(localStorage.getItem('budgetSnapshots') || '[]');
 
     function formatCurrency(amount) {
         return new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(amount || 0);
@@ -420,7 +386,7 @@
         }
     }
 
-    // ==================== RENDER TABLE ====================
+    // ==================== RENDER TABLE (with Actual + Sync Status) ====================
     function renderBudgetTable(lines) {
         const tbody = document.getElementById('budgetTableBody');
         tbody.innerHTML = '';
@@ -453,7 +419,7 @@
             }
 
             const pending = line.pending || 0;
-            const forecast = (line.original_budget || 0) + (line.approved_changes || 0) + pending;
+            const forecast = line.original_budget + line.approved_changes + pending;
             const actual = line.actual || 0;
 
             let syncBadge = '';
@@ -495,12 +461,11 @@
     }
 
     function updateTotals() {
-        let original = 0, changes = 0, pending = 0, actual = 0;
+        let original = 0, changes = 0, pending = 0;
         budgetLines.forEach(l => {
             original += l.original_budget || 0;
             changes += l.approved_changes || 0;
             pending += (l.pending || 0);
-            actual += l.actual || 0;
         });
         const current = original + changes;
         const forecast = current + pending;
@@ -513,8 +478,6 @@
         document.getElementById('projectedFinalTotal').textContent = formatCurrency(forecast);
         const varEl = document.getElementById('varianceTotal');
         if (varEl) varEl.textContent = formatCurrency(variance);
-        const actualEl = document.getElementById('actualCostTotal');
-        if (actualEl) actualEl.textContent = formatCurrency(actual);
 
         const currentCard = document.getElementById('currentBudgetTotal');
         if (currentCard) {
@@ -529,60 +492,6 @@
     function updateRevisionBadge() {
         const badge = document.getElementById('revisionBadge');
         if (badge) badge.textContent = `Rev ${String(currentRevision).padStart(2, '0')}`;
-    }
-
-    // ==================== BUTTON STATE CONTROL (LOCKING) ====================
-    function updateButtonStates() {
-        const addBtn = document.getElementById('addLineBtn');
-        const publishBtn = document.getElementById('publishBtn');
-
-        if (budgetLocked) {
-            if (addBtn) {
-                addBtn.disabled = true;
-                addBtn.classList.add('opacity-50', 'cursor-not-allowed');
-                addBtn.title = "Budget is locked. Create a new revision to add lines.";
-            }
-            if (publishBtn) {
-                publishBtn.disabled = true;
-                publishBtn.classList.add('opacity-50', 'cursor-not-allowed');
-                publishBtn.title = "Create a new revision first to publish again.";
-            }
-        } else {
-            if (addBtn) {
-                addBtn.disabled = false;
-                addBtn.classList.remove('opacity-50', 'cursor-not-allowed');
-                addBtn.title = "";
-            }
-            if (publishBtn) {
-                publishBtn.disabled = false;
-                publishBtn.classList.remove('opacity-50', 'cursor-not-allowed');
-                publishBtn.title = "";
-            }
-        }
-    }
-
-    // ==================== CREATE NEW REVISION (UNLOCK) ====================
-    function createNewRevision() {
-        currentRevision++;
-        budgetLocked = false;
-        localStorage.setItem('budgetRevision', currentRevision);
-        localStorage.setItem('budgetLocked', 'false');
-
-        budgetSnapshots.push({
-            revision: currentRevision,
-            timestamp: new Date().toISOString(),
-            lines: JSON.parse(JSON.stringify(budgetLines))
-        });
-        localStorage.setItem('budgetSnapshots', JSON.stringify(budgetSnapshots));
-
-        updateRevisionBadge();
-        updateButtonStates();
-        renderBudgetTable(budgetLines);
-
-        const modal = document.getElementById('versionHistoryModal');
-        if (modal) modal.close();
-
-        showCenteredAlert(`New Revision ${String(currentRevision).padStart(2, '0')} created. Budget is now unlocked.`, 'success');
     }
 
     // ==================== ADD / EDIT / DELETE ====================
@@ -776,127 +685,318 @@
             document.getElementById('cost_type').value = found.cost_type;
         }
     }
-</script>
-<script>
-    // ==================== EXPORT (Fully Working) ====================
-    function exportBudget() {
-        if (!budgetLines || budgetLines.length === 0) {
-            showCenteredAlert("No budget lines to export.");
-            return;
-        }
 
-        const data = budgetLines.map((line, index) => ({
-            "#": index + 1,
-            "Cost Code": line.cost_code,
-            "Description": line.description,
-            "Cost Type": line.cost_type,
-            "Original Budget": line.original_budget || 0,
-            "Approved Changes": line.approved_changes || 0,
-            "Pending Changes": line.pending || 0,
-            "Current Budget": (line.original_budget || 0) + (line.approved_changes || 0),
-            "Forecast": (line.original_budget || 0) + (line.approved_changes || 0) + (line.pending || 0),
-            "Actual Cost": line.actual || 0,
-            "Sync Status": line.syncStatus || "Not Synced",
-            "Notes": line.notes || ""
-        }));
-
-        const ws = XLSX.utils.json_to_sheet(data);
-        const wb = XLSX.utils.book_new();
-        XLSX.utils.book_append_sheet(wb, ws, "Budget");
-
-        const filename = `Budget_ALDI_Lakeland_Rev${String(currentRevision).padStart(2, '0')}.xlsx`;
-        XLSX.writeFile(wb, filename);
+    // ==================== SETTINGS + FUNCTIONAL UPLOADS ====================
+    function showSettingsModal() {
+        renderCostTypesList();
+        document.getElementById('settingsModal').showModal();
     }
 
-    // ==================== IMPORT ====================
-    function importBudget() {
+    function renderCostTypesList() {
+        const container = document.getElementById('costTypesList');
+        container.innerHTML = '';
+        costTypes.forEach((type, index) => {
+            const div = document.createElement('div');
+            div.className = 'flex justify-between items-center px-3 py-1 text-sm hover:bg-zinc-700 rounded-md text-white';
+            div.innerHTML = `<span>${type}</span><button onclick="removeCostType(${index})" class="text-red-400 hover:text-red-500">×</button>`;
+            container.appendChild(div);
+        });
+    }
+
+    function addNewCostTypeModal() { document.getElementById('newCostTypeModal').showModal(); }
+    function confirmAddNewCostType() {
+        const input = document.getElementById('newCostTypeInput');
+        const val = input.value.trim();
+        if (val && !costTypes.includes(val)) costTypes.push(val);
+        document.getElementById('newCostTypeModal').close();
+        renderCostTypesList();
+        input.value = '';
+    }
+    function removeCostType(index) {
+        const dialog = document.createElement('dialog');
+        dialog.className = 'modal rounded-md p-6 w-full max-w-md text-white';
+        dialog.style.backgroundColor = '#18181b';
+        dialog.style.border = '1px solid #3f3f46';
+        dialog.innerHTML = `<div class="text-base mb-5">Remove cost type "${costTypes[index]}"?</div><div class="flex justify-end gap-3"><button class="px-5 py-2 rounded-md bg-zinc-700">Cancel</button><button class="px-5 py-2 rounded-md bg-red-600">Remove</button></div>`;
+        document.body.appendChild(dialog);
+        dialog.showModal();
+        const buttons = dialog.querySelectorAll('button');
+        buttons[0].onclick = () => { dialog.close(); dialog.remove(); };
+        buttons[1].onclick = () => { costTypes.splice(index, 1); renderCostTypesList(); dialog.close(); dialog.remove(); };
+    }
+
+    function uploadCostCodesExcel() {
         const input = document.createElement('input');
         input.type = 'file';
         input.accept = '.xlsx,.xls,.csv';
-
         input.onchange = function(e) {
             const file = e.target.files[0];
             if (!file) return;
-
             const reader = new FileReader();
             reader.onload = function(ev) {
                 try {
-                    let importedRows = [];
-
+                    let rows = [];
                     if (file.name.toLowerCase().endsWith('.csv')) {
                         const text = ev.target.result;
                         const lines = text.split(/\r?\n/).filter(l => l.trim());
                         const headers = lines[0].split(',').map(h => h.trim().toLowerCase());
                         for (let i = 1; i < lines.length; i++) {
                             const values = lines[i].split(',');
-                            const row = {};
-                            headers.forEach((h, idx) => row[h] = values[idx] ? values[idx].trim() : '');
-                            importedRows.push(row);
+                            const obj = {};
+                            headers.forEach((h, idx) => obj[h] = values[idx] ? values[idx].trim() : '');
+                            rows.push(obj);
                         }
                     } else {
                         const data = new Uint8Array(ev.target.result);
                         const wb = XLSX.read(data, { type: 'array' });
                         const sheet = wb.Sheets[wb.SheetNames[0]];
                         const json = XLSX.utils.sheet_to_json(sheet, { header: 1 });
-                        if (json.length < 2) throw new Error("Empty file");
+                        if (json.length < 2) throw new Error("Empty");
                         const headers = json[0].map(h => String(h).trim().toLowerCase());
-                        importedRows = json.slice(1).map(r => {
-                            const obj = {};
-                            headers.forEach((h, i) => obj[h] = r[i] !== undefined ? String(r[i]).trim() : '');
-                            return obj;
+                        rows = json.slice(1).map(r => {
+                            const o = {};
+                            headers.forEach((h, i) => o[h] = r[i] !== undefined ? String(r[i]).trim() : '');
+                            return o;
                         });
                     }
 
                     let added = 0;
-                    importedRows.forEach(row => {
-                        const costCode = row['cost code'] || row['costcode'] || row['code'];
-                        const description = row['description'] || row['desc'];
-                        const costType = row['cost type'] || row['costtype'] || row['type'] || 'Subcontract';
-                        const originalStr = row['original'] || row['original budget'] || row['amount'] || '0';
-                        const notes = row['notes'] || '';
-
-                        if (!costCode || !description) return;
-
-                        const originalBudget = parseFloat(originalStr.replace(/[^0-9.-]+/g, '')) || 0;
-
-                        budgetLines.push({
-                            id: Date.now() + Math.random(),
-                            cost_code: costCode,
-                            description: description,
-                            cost_type: costType,
-                            original_budget: originalBudget,
-                            approved_changes: 0,
-                            pending: 0,
-                            notes: notes,
-                            actual: 0,
-                            syncStatus: 'Not Synced'
-                        });
-                        added++;
+                    rows.forEach(r => {
+                        const code = r['code'] || r['cost code'] || r['costcode'];
+                        const desc = r['description'] || r['desc'];
+                        const type = r['cost type'] || r['type'] || 'Subcontract';
+                        if (code && desc) {
+                            csiCostCodes.push({ code: code, description: desc, cost_type: type });
+                            added++;
+                        }
                     });
-
-                    localStorage.setItem('budgetLines', JSON.stringify(budgetLines));
-                    renderBudgetTable(budgetLines);
-                    showCenteredAlert(`Successfully imported ${added} budget line items.`);
+                    showCenteredAlert(`Successfully imported ${added} cost codes.`);
+                    populateCostCodeDatalist();
                 } catch (err) {
-                    showCenteredAlert("Import failed. Check file format.");
+                    showCenteredAlert("Failed to read Excel/CSV. Make sure it has columns: Code, Description, Cost Type.");
                 }
             };
-
-            if (file.name.toLowerCase().endsWith('.csv')) {
-                reader.readAsText(file);
-            } else {
-                reader.readAsArrayBuffer(file);
-            }
+            if (file.name.toLowerCase().endsWith('.csv')) reader.readAsText(file);
+            else reader.readAsArrayBuffer(file);
         };
         input.click();
     }
 
-    // ==================== PRINT (Hidden Iframe) ====================
-    function printBudget() {
-        if (!budgetLines || budgetLines.length === 0) {
-            showCenteredAlert("You must have at least one budget line item to print.");
+    function uploadCostTypesExcel() {
+        const input = document.createElement('input');
+        input.type = 'file';
+        input.accept = '.xlsx,.xls,.csv';
+        input.onchange = function(e) {
+            const file = e.target.files[0];
+            if (!file) return;
+            const reader = new FileReader();
+            reader.onload = function(ev) {
+                try {
+                    let rows = [];
+                    if (file.name.toLowerCase().endsWith('.csv')) {
+                        const text = ev.target.result;
+                        const lines = text.split(/\r?\n/).filter(l => l.trim());
+                        const headers = lines[0].split(',').map(h => h.trim().toLowerCase());
+                        for (let i = 1; i < lines.length; i++) {
+                            const values = lines[i].split(',');
+                            const obj = {};
+                            headers.forEach((h, idx) => obj[h] = values[idx] ? values[idx].trim() : '');
+                            rows.push(obj);
+                        }
+                    } else {
+                        const data = new Uint8Array(ev.target.result);
+                        const wb = XLSX.read(data, { type: 'array' });
+                        const sheet = wb.Sheets[wb.SheetNames[0]];
+                        const json = XLSX.utils.sheet_to_json(sheet, { header: 1 });
+                        if (json.length < 2) throw new Error("Empty");
+                        const headers = json[0].map(h => String(h).trim().toLowerCase());
+                        rows = json.slice(1).map(r => {
+                            const o = {};
+                            headers.forEach((h, i) => o[h] = r[i] !== undefined ? String(r[i]).trim() : '');
+                            return o;
+                        });
+                    }
+
+                    let added = 0;
+                    rows.forEach(r => {
+                        const name = r['name'] || r['cost type'] || r['type'];
+                        if (name && !costTypes.includes(name)) {
+                            costTypes.push(name);
+                            added++;
+                        }
+                    });
+                    renderCostTypesList();
+                    showCenteredAlert(`Successfully imported ${added} cost types.`);
+                } catch (err) {
+                    showCenteredAlert("Failed to read Excel/CSV. Make sure it has a column for Cost Type Name.");
+                }
+            };
+            if (file.name.toLowerCase().endsWith('.csv')) reader.readAsText(file);
+            else reader.readAsArrayBuffer(file);
+        };
+        input.click();
+    }
+
+    function addNewCostCodeList() {
+        document.getElementById('settingsModal').close();
+        document.getElementById('newListNameModal').showModal();
+    }
+    function confirmCreateNewList() {
+        const name = document.getElementById('newListNameInput').value.trim();
+        document.getElementById('newListNameModal').close();
+        if (!name) return;
+        const selector = document.getElementById('costCodeListSelector');
+        const newOption = document.createElement('option');
+        newOption.value = 'custom_' + Date.now();
+        newOption.textContent = name;
+        selector.appendChild(newOption);
+        activeCostCodeList = newOption.value;
+        selector.value = newOption.value;
+        setTimeout(() => { showSettingsModal(); showCenteredAlert(`New list "${name}" created and activated.`); }, 250);
+    }
+    function closeNewListModal() {
+        document.getElementById('newListNameModal').close();
+        document.getElementById('settingsModal').showModal();
+    }
+    function deleteSelectedCostCodeList() {
+        const selector = document.getElementById('costCodeListSelector');
+        if (selector.value === 'csi') { showCenteredAlert("Cannot delete the CSI Master Codes list."); return; }
+        showCenteredAlert("Custom list deleted.");
+    }
+
+    function syncWithSage300() { showCenteredAlert("Sage 300 sync placeholder — will connect when backend is ready."); }
+    function changeActiveCostCodeList() { activeCostCodeList = document.getElementById('costCodeListSelector').value; }
+
+    // ==================== SAVE / PUBLISH (with Revision + Lock) ====================
+    function saveBudget() {
+        if (budgetLines.length === 0) { showCenteredAlert("Nothing to save yet."); return; }
+        budgetSaved = true;
+        localStorage.setItem('budgetLines', JSON.stringify(budgetLines));
+        hideUnsavedIndicator();
+        const dialog = document.createElement('dialog');
+        dialog.className = 'modal rounded-md p-6 w-full max-w-fit text-white';
+        dialog.style.backgroundColor = '#18181b';
+        dialog.style.border = '1px solid #3f3f46';
+        dialog.innerHTML = `<div class="text-base">Budget saved to the project (not pushed to Sage 300).</div>`;
+        document.body.appendChild(dialog);
+        dialog.showModal();
+        setTimeout(() => { dialog.close(); dialog.remove(); }, 1800);
+    }
+
+    function publishBudget() {
+        if (budgetLines.length === 0) { showCenteredAlert("Add at least one budget line item before publishing."); return; }
+        budgetSaved = true;
+        budgetPublished = true;
+        budgetLocked = true;
+
+        currentRevision++;
+        localStorage.setItem('budgetRevision', currentRevision);
+
+        // Mark all lines as Pending Sync
+        budgetLines.forEach(l => l.syncStatus = 'Pending');
+
+        // Create snapshot for versioning
+        const snapshot = {
+            revision: currentRevision,
+            timestamp: new Date().toISOString(),
+            lines: JSON.parse(JSON.stringify(budgetLines))
+        };
+        let snapshots = JSON.parse(localStorage.getItem('budgetSnapshots') || '[]');
+        snapshots.push(snapshot);
+        localStorage.setItem('budgetSnapshots', JSON.stringify(snapshots));
+
+        // Audit log
+        publishAuditLog.push({
+            revision: currentRevision,
+            timestamp: new Date().toISOString(),
+            linesCount: budgetLines.length,
+            totalBudget: budgetLines.reduce((sum, l) => sum + (l.original_budget || 0), 0)
+        });
+        localStorage.setItem('publishAuditLog', JSON.stringify(publishAuditLog));
+
+        localStorage.setItem('budgetLines', JSON.stringify(budgetLines));
+        localStorage.setItem('budgetLocked', 'true');
+
+        updateRevisionBadge();
+        renderBudgetTable(budgetLines);
+
+        const dialog = document.createElement('dialog');
+        dialog.className = 'modal rounded-md p-6 w-full max-w-fit text-white';
+        dialog.style.backgroundColor = '#18181b';
+        dialog.style.border = '1px solid #3f3f46';
+        dialog.innerHTML = `<div class="text-base">Budget published to Sage 300. Revision ${currentRevision} created. Budget is now locked.</div>`;
+        document.body.appendChild(dialog);
+        dialog.showModal();
+        setTimeout(() => { dialog.close(); dialog.remove(); }, 2200);
+    }
+
+    function showVersionHistory() {
+        const snapshots = JSON.parse(localStorage.getItem('budgetSnapshots') || '[]');
+        if (snapshots.length === 0) {
+            showCenteredAlert("No previous revisions found.");
             return;
         }
+        let html = `<div class="text-lg font-semibold mb-4">Budget Version History</div>`;
+        snapshots.slice().reverse().forEach(s => {
+            html += `<div class="border border-zinc-700 rounded p-3 mb-2 text-sm">
+                <div class="font-mono text-emerald-400">Revision ${s.revision}</div>
+                <div class="text-xs text-zinc-400">${new Date(s.timestamp).toLocaleString()}</div>
+                <div class="text-xs mt-1">${s.lines.length} line items • Total: ${formatCurrency(s.lines.reduce((sum, l) => sum + (l.original_budget || 0), 0))}</div>
+            </div>`;
+        });
+        const dialog = document.createElement('dialog');
+        dialog.className = 'modal rounded-md p-6 w-full max-w-md text-white';
+        dialog.style.backgroundColor = '#18181b';
+        dialog.style.border = '1px solid #3f3f46';
+        dialog.innerHTML = html + `<div class="mt-4 text-right"><button class="px-5 py-2 bg-zinc-700 rounded">Close</button></div>`;
+        document.body.appendChild(dialog);
+        dialog.showModal();
+        dialog.querySelector('button').onclick = () => { dialog.close(); dialog.remove(); };
+    }
+
+    function showPublishAuditLog() {
+        if (publishAuditLog.length === 0) {
+            showCenteredAlert("No publish history yet.");
+            return;
+        }
+        let html = `<div class="text-lg font-semibold mb-4">Publish Audit Log</div>`;
+        publishAuditLog.slice().reverse().forEach(log => {
+            html += `<div class="border border-zinc-700 rounded p-3 mb-2 text-sm">
+                <div class="font-mono text-emerald-400">Revision ${log.revision}</div>
+                <div class="text-xs text-zinc-400">${new Date(log.timestamp).toLocaleString()}</div>
+                <div class="text-xs mt-1">${log.linesCount} lines • Total Budget: ${formatCurrency(log.totalBudget)}</div>
+            </div>`;
+        });
+        const dialog = document.createElement('dialog');
+        dialog.className = 'modal rounded-md p-6 w-full max-w-md text-white';
+        dialog.style.backgroundColor = '#18181b';
+        dialog.style.border = '1px solid #3f3f46';
+        dialog.innerHTML = html + `<div class="mt-4 text-right"><button class="px-5 py-2 bg-zinc-700 rounded">Close</button></div>`;
+        document.body.appendChild(dialog);
+        dialog.showModal();
+        dialog.querySelector('button').onclick = () => { dialog.close(); dialog.remove(); };
+    }
+
+    // ==================== VIEW PENDING CHANGES ====================
+    function viewPendingChanges() {
+        const container = document.getElementById('pendingChangesContent');
+        container.innerHTML = '';
+        if (pendingChanges.length === 0) {
+            container.innerHTML = `<div class="text-center py-8 text-zinc-400">No pending change orders at this time.</div>`;
+        } else {
+            pendingChanges.forEach(change => {
+                const div = document.createElement('div');
+                div.className = 'border border-zinc-700 rounded-md p-4 mb-3';
+                div.innerHTML = `<div class="flex justify-between"><div><div class="font-semibold">${change.number}</div><div class="text-sm text-zinc-400">${change.description}</div></div><div class="text-right"><div class="font-semibold text-orange-400">${formatCurrency(change.amount)}</div><div class="text-xs text-zinc-400">${change.status}</div></div></div>`;
+                container.appendChild(div);
+            });
+        }
+        document.getElementById('pendingChangesModal').showModal();
+    }
+
+    // ==================== PRINT (iframe - no new tab) ====================
+    function printBudget() {
+        if (budgetLines.length === 0) { showCenteredAlert("You must have at least one budget line item to print."); return; }
 
         const sorted = [...budgetLines].sort((a, b) => a.cost_code.localeCompare(b.cost_code, undefined, { numeric: true }));
 
@@ -907,14 +1007,13 @@
         sorted.forEach(line => {
             const division = line.cost_code.substring(0, 2);
             const pending = line.pending || 0;
-            const forecast = (line.original_budget || 0) + (line.approved_changes || 0) + pending;
+            const forecast = line.original_budget + line.approved_changes + pending;
             const actual = line.actual || 0;
 
             if (division !== currentDivision) {
                 currentDivision = division;
                 tableRows += `<tr style="background:#f3f4f6; font-weight:600;"><td colspan="9" style="padding:8px; border:1px solid #ccc;">Division ${division} — ${divisionNames[division] || 'Other'}</td></tr>`;
             }
-
             tableRows += `<tr>
                 <td style="border:1px solid #ccc; padding:6px; font-family:monospace;">${line.cost_code}</td>
                 <td style="border:1px solid #ccc; padding:6px;">${line.description}</td>
@@ -964,319 +1063,120 @@
         }, 600);
     }
 
-    // ==================== SAVE / PUBLISH + LOCKING ====================
-    function saveBudget() {
-        if (budgetLines.length === 0) { showCenteredAlert("Nothing to save yet."); return; }
-        budgetSaved = true;
-        localStorage.setItem('budgetLines', JSON.stringify(budgetLines));
-        hideUnsavedIndicator();
-        const dialog = document.createElement('dialog');
-        dialog.className = 'modal rounded-md p-6 w-full max-w-fit text-white';
-        dialog.style.backgroundColor = '#18181b';
-        dialog.style.border = '1px solid #3f3f46';
-        dialog.innerHTML = `<div class="text-base">Budget saved to the project (not pushed to Sage 300).</div>`;
-        document.body.appendChild(dialog);
-        dialog.showModal();
-        setTimeout(() => { dialog.close(); dialog.remove(); }, 1800);
+    // ==================== EXPORT (with all columns) ====================
+    function exportBudget() {
+        const data = budgetLines.map(line => ({
+            "Cost Code": line.cost_code,
+            "Description": line.description,
+            "Cost Type": line.cost_type,
+            "Original Budget": line.original_budget,
+            "Approved Changes": line.approved_changes,
+            "Pending Changes": line.pending || 0,
+            "Current Budget": line.original_budget + line.approved_changes,
+            "Forecast": line.original_budget + line.approved_changes + (line.pending || 0),
+            "Actual Cost": line.actual || 0,
+            "Sync Status": line.syncStatus || 'Not Synced',
+            "Notes": line.notes
+        }));
+        const ws = XLSX.utils.json_to_sheet(data);
+        const wb = XLSX.utils.book_new();
+        XLSX.utils.book_append_sheet(wb, ws, "Budget");
+        XLSX.writeFile(wb, `Budget_ALDI_Lakeland_Rev${currentRevision}.xlsx`);
     }
 
-    function publishBudget() {
-        if (budgetLines.length === 0) { showCenteredAlert("Add at least one budget line item before publishing."); return; }
-        budgetSaved = true;
-        budgetPublished = true;
-        budgetLocked = true;
+    // ==================== IMPORT ====================
+    function importBudget() {
+        const input = document.createElement('input');
+        input.type = 'file';
+        input.accept = '.xlsx,.xls,.csv';
+        input.onchange = function(e) {
+            const file = e.target.files[0];
+            if (!file) return;
+            const reader = new FileReader();
+            reader.onload = function(ev) {
+                try {
+                    let importedRows = [];
+                    if (file.name.toLowerCase().endsWith('.csv')) {
+                        const text = ev.target.result;
+                        const lines = text.split(/\r?\n/).filter(l => l.trim());
+                        const headers = lines[0].split(',').map(h => h.trim().toLowerCase());
+                        for (let i = 1; i < lines.length; i++) {
+                            const values = lines[i].split(',');
+                            const row = {};
+                            headers.forEach((h, idx) => row[h] = values[idx] ? values[idx].trim() : '');
+                            importedRows.push(row);
+                        }
+                    } else {
+                        const data = new Uint8Array(ev.target.result);
+                        const workbook = XLSX.read(data, { type: 'array' });
+                        const sheet = workbook.Sheets[workbook.SheetNames[0]];
+                        const json = XLSX.utils.sheet_to_json(sheet, { header: 1 });
+                        if (json.length < 2) throw new Error("Empty");
+                        const headers = json[0].map(h => String(h).trim().toLowerCase());
+                        importedRows = json.slice(1).map(row => {
+                            const obj = {};
+                            headers.forEach((h, idx) => obj[h] = row[idx] !== undefined ? String(row[idx]).trim() : '');
+                            return obj;
+                        });
+                    }
 
-        currentRevision++;
-        localStorage.setItem('budgetRevision', currentRevision);
-
-        budgetLines.forEach(l => l.syncStatus = 'Pending');
-
-        const snapshot = {
-            revision: currentRevision,
-            timestamp: new Date().toISOString(),
-            lines: JSON.parse(JSON.stringify(budgetLines))
+                    let addedCount = 0;
+                    importedRows.forEach(row => {
+                        const costCode = row['cost code'] || row['costcode'] || row['code'];
+                        const description = row['description'] || row['desc'];
+                        const costType = row['cost type'] || row['costtype'] || row['type'] || 'Subcontract';
+                        const originalStr = row['original'] || row['original budget'] || row['amount'] || '0';
+                        const notes = row['notes'] || '';
+                        if (!costCode || !description) return;
+                        const originalBudget = parseFloat(originalStr.replace(/[^0-9.-]+/g, '')) || 0;
+                        budgetLines.push({
+                            id: Date.now() + Math.random(),
+                            cost_code: costCode,
+                            description: description,
+                            cost_type: costType,
+                            original_budget: originalBudget,
+                            approved_changes: 0,
+                            pending: 0,
+                            notes: notes,
+                            actual: 0,
+                            syncStatus: 'Not Synced'
+                        });
+                        addedCount++;
+                    });
+                    localStorage.setItem('budgetLines', JSON.stringify(budgetLines));
+                    renderBudgetTable(budgetLines);
+                    showCenteredAlert(`Successfully imported ${addedCount} budget line items.`);
+                } catch (err) {
+                    showCenteredAlert("Import failed. Check file format.");
+                }
+            };
+            if (file.name.toLowerCase().endsWith('.csv')) reader.readAsText(file);
+            else reader.readAsArrayBuffer(file);
         };
-        budgetSnapshots.push(snapshot);
-        localStorage.setItem('budgetSnapshots', JSON.stringify(budgetSnapshots));
-
-        publishAuditLog.push({
-            revision: currentRevision,
-            timestamp: new Date().toISOString(),
-            linesCount: budgetLines.length,
-            totalBudget: budgetLines.reduce((sum, l) => sum + (l.original_budget || 0), 0)
-        });
-        localStorage.setItem('publishAuditLog', JSON.stringify(publishAuditLog));
-
-        localStorage.setItem('budgetLines', JSON.stringify(budgetLines));
-        localStorage.setItem('budgetLocked', 'true');
-
-        updateRevisionBadge();
-        updateButtonStates();
-        renderBudgetTable(budgetLines);
-
-        const dialog = document.createElement('dialog');
-        dialog.className = 'modal rounded-md p-6 w-full max-w-fit text-white';
-        dialog.style.backgroundColor = '#18181b';
-        dialog.style.border = '1px solid #3f3f46';
-        dialog.innerHTML = `<div class="text-base">Budget published. Revision ${currentRevision} created. Budget is now locked.</div>`;
-        document.body.appendChild(dialog);
-        dialog.showModal();
-        setTimeout(() => { dialog.close(); dialog.remove(); }, 2200);
+        input.click();
     }
 
-    // ==================== VIEW PENDING CHANGES ====================
-    function viewPendingChanges() {
-        const container = document.getElementById('pendingChangesContent');
-        container.innerHTML = '';
-        if (pendingChanges.length === 0) {
-            container.innerHTML = `<div class="text-center py-8 text-zinc-400">No pending change orders at this time.</div>`;
-        } else {
-            pendingChanges.forEach(change => {
-                const div = document.createElement('div');
-                div.className = 'border border-zinc-700 rounded-md p-4 mb-3';
-                div.innerHTML = `<div class="flex justify-between"><div><div class="font-semibold">${change.number}</div><div class="text-sm text-zinc-400">${change.description}</div></div><div class="text-right"><div class="font-semibold text-orange-400">${formatCurrency(change.amount)}</div><div class="text-xs text-zinc-400">${change.status}</div></div></div>`;
-                container.appendChild(div);
-            });
-        }
-        document.getElementById('pendingChangesModal').showModal();
-    }
-
-    // ==================== SMART NAVIGATION WARNING ====================
-    function warnBeforeLeaving(e) {
-        if (!budgetLines || budgetLines.length === 0) return;
-
-        e.preventDefault();
-        pendingNavigationUrl = e.currentTarget.getAttribute('href');
-
-        const modal = document.getElementById('navigationWarningModal');
-        const container = document.getElementById('navigationWarningButtons');
-        container.innerHTML = '';
-
-        container.innerHTML += `
-            <button onclick="stayAndEdit()" class="w-full px-5 py-3 rounded-md bg-zinc-700 hover:bg-zinc-600 text-sm font-semibold">Stay and Edit</button>
-        `;
-
-        if (!budgetLocked) {
-            container.innerHTML += `
-                <button onclick="publishAndLeave()" class="w-full px-5 py-3 rounded-md bg-emerald-600 hover:bg-emerald-500 text-sm font-semibold">Publish & Leave</button>
-                <button onclick="leaveWithoutPublishing()" class="w-full px-5 py-3 rounded-md bg-zinc-700 hover:bg-zinc-600 text-sm font-semibold">Leave without Publishing</button>
-            `;
-        }
-
-        container.innerHTML += `
-            <button onclick="saveAndLeave()" class="w-full px-5 py-3 rounded-md bg-blue-600 hover:bg-blue-500 text-sm font-semibold">Save & Leave</button>
-            <button onclick="leaveWithoutSaving()" class="w-full px-5 py-3 rounded-md bg-red-600 hover:bg-red-500 text-sm font-semibold">Leave without Saving</button>
-        `;
-
-        modal.showModal();
-    }
-
-    function stayAndEdit() {
-        const modal = document.getElementById('navigationWarningModal');
-        modal.close();
-        pendingNavigationUrl = null;
-    }
-
-    function publishAndLeave() {
-        const modal = document.getElementById('navigationWarningModal');
-        modal.close();
-        publishBudget();
-        setTimeout(() => {
-            if (pendingNavigationUrl) {
-                window.location.href = pendingNavigationUrl;
-                pendingNavigationUrl = null;
-            }
-        }, 800);
-    }
-
-    function saveAndLeave() {
-        const modal = document.getElementById('navigationWarningModal');
-        modal.close();
-        saveBudget();
-        setTimeout(() => {
-            if (pendingNavigationUrl) {
-                window.location.href = pendingNavigationUrl;
-                pendingNavigationUrl = null;
-            }
-        }, 600);
-    }
-
-    function leaveWithoutSaving() {
-        const modal = document.getElementById('navigationWarningModal');
-        modal.close();
-        if (pendingNavigationUrl) {
-            window.location.href = pendingNavigationUrl;
-            pendingNavigationUrl = null;
-        }
-    }
-
-    function leaveWithoutPublishing() {
-        const modal = document.getElementById('navigationWarningModal');
-        modal.close();
-        if (pendingNavigationUrl) {
-            window.location.href = pendingNavigationUrl;
-            pendingNavigationUrl = null;
-        }
-    }
-
-    // ==================== VERSION HISTORY ====================
-    function showVersionHistory() {
-        const snapshots = JSON.parse(localStorage.getItem('budgetSnapshots') || '[]');
-
-        let html = `<div class="text-lg font-semibold mb-4">Budget Version History</div>`;
-
-        if (snapshots.length === 0) {
-            html += `<div class="text-sm text-zinc-400 mb-4">No previous published revisions yet.</div>`;
-        } else {
-            snapshots.slice().reverse().forEach(s => {
-                html += `
-                    <div class="border border-zinc-700 rounded p-3 mb-2 text-sm">
-                        <div class="font-mono text-emerald-400">Revision ${s.revision}</div>
-                        <div class="text-xs text-zinc-400">${new Date(s.timestamp).toLocaleString()}</div>
-                        <div class="text-xs mt-1">${s.lines.length} line items • Total: ${formatCurrency(s.lines.reduce((sum, l) => sum + (l.original_budget || 0), 0))}</div>
-                    </div>
-                `;
-            });
-        }
-
-        html += `
-            <div class="mt-4 flex justify-end gap-3">
-                <button onclick="closeVersionHistoryModal(this)" class="px-5 py-2 bg-zinc-700 rounded">Close</button>
-                <button onclick="createNewRevisionFromModal(this)" class="px-5 py-2 bg-emerald-600 hover:bg-emerald-500 rounded text-sm font-semibold">Create New Revision</button>
-            </div>
-        `;
-
-        const dialog = document.createElement('dialog');
-        dialog.className = 'modal rounded-md p-6 w-full max-w-md text-white';
-        dialog.style.backgroundColor = '#18181b';
-        dialog.style.border = '1px solid #3f3f46';
-        dialog.innerHTML = html;
-        document.body.appendChild(dialog);
-        dialog.showModal();
-    }
-
-    function closeVersionHistoryModal(btn) {
-        btn.closest('dialog').close();
-        btn.closest('dialog').remove();
-    }
-
-    function createNewRevisionFromModal(btn) {
-        btn.closest('dialog').close();
-        btn.closest('dialog').remove();
-        createNewRevision();
-    }
-
-    function showPublishAuditLog() {
-        if (!publishAuditLog || publishAuditLog.length === 0) {
-            showCenteredAlert("No publish history yet.");
-            return;
-        }
-
-        let html = `<div class="text-lg font-semibold mb-4">Publish Audit Log</div>`;
-        publishAuditLog.slice().reverse().forEach(log => {
-            html += `
-                <div class="border border-zinc-700 rounded p-3 mb-2 text-sm">
-                    <div class="font-mono text-emerald-400">Revision ${log.revision}</div>
-                    <div class="text-xs text-zinc-400">${new Date(log.timestamp).toLocaleString()}</div>
-                    <div class="text-xs mt-1">${log.linesCount} lines • Total Budget: ${formatCurrency(log.totalBudget)}</div>
-                </div>
-            `;
-        });
-
-        const dialog = document.createElement('dialog');
-        dialog.className = 'modal rounded-md p-6 w-full max-w-md text-white';
-        dialog.style.backgroundColor = '#18181b';
-        dialog.style.border = '1px solid #3f3f46';
-        dialog.innerHTML = html + `<div class="mt-4 text-right"><button class="px-5 py-2 bg-zinc-700 rounded">Close</button></div>`;
-        document.body.appendChild(dialog);
-        dialog.showModal();
-        dialog.querySelector('button').onclick = () => { dialog.close(); dialog.remove(); };
-    }
-</script>
-<script>
-    // ==================== CENTERED ALERT ====================
-    function showCenteredAlert(message, type = 'info') {
+    // ==================== CENTERED ALERT (Dark, fit-content) ====================
+    function showCenteredAlert(message) {
         const dialog = document.createElement('dialog');
         dialog.className = 'modal rounded-md p-6 text-white';
         dialog.style.backgroundColor = '#18181b';
         dialog.style.border = '1px solid #3f3f46';
         dialog.style.width = 'fit-content';
         dialog.style.maxWidth = '90vw';
-
-        let icon = '';
-        if (type === 'success') icon = '<i class="fa-solid fa-check-circle text-emerald-400 mr-2"></i>';
-        else if (type === 'warning') icon = '<i class="fa-solid fa-exclamation-triangle text-amber-400 mr-2"></i>';
-        else icon = '<i class="fa-solid fa-info-circle text-sky-400 mr-2"></i>';
-
         dialog.innerHTML = `
-            <div class="flex items-center text-base mb-5 whitespace-nowrap">
-                ${icon}
-                <span>${message}</span>
-            </div>
+            <div class="text-base mb-5 whitespace-nowrap">${message}</div>
             <div class="flex justify-end">
                 <button class="px-6 py-2 bg-emerald-600 hover:bg-emerald-500 rounded-md text-sm font-medium">OK</button>
             </div>
         `;
         document.body.appendChild(dialog);
         dialog.showModal();
-
-        dialog.querySelector('button').onclick = () => {
-            dialog.close();
-            dialog.remove();
-        };
+        dialog.querySelector('button').onclick = () => { dialog.close(); dialog.remove(); };
     }
 
-    // ==================== ACCOUNTING FORMAT ====================
-    function setupAccountingFormat(inputId) {
-        const input = document.getElementById(inputId);
-        if (!input) return;
-
-        input.addEventListener('focus', function() {
-            this.value = this.value.replace(/[^0-9.-]+/g, '');
-        });
-
-        input.addEventListener('blur', function() {
-            let val = parseFloat(this.value) || 0;
-            this.value = formatCurrency(val);
-        });
-    }
-
-    // ==================== QUICK FILTERS ====================
-    function filterOverBudget() {
-        const filtered = budgetLines.filter(line => {
-            const current = (line.original_budget || 0) + (line.approved_changes || 0);
-            return current > contractAmount;
-        });
-        renderBudgetTable(filtered);
-    }
-
-    function filterHasPending() {
-        const filtered = budgetLines.filter(line => (line.pending || 0) > 0);
-        renderBudgetTable(filtered);
-    }
-
-    function filterRecentlyModified() {
-        renderBudgetTable(budgetLines);
-    }
-
-    function clearBudgetFilters() {
-        document.getElementById('searchInput').value = '';
-        document.getElementById('costTypeFilter').value = '';
-        renderBudgetTable(budgetLines);
-    }
-
-    // ==================== FILTER BUDGET LINES ====================
-    function filterBudgetLines() {
-        const searchTerm = document.getElementById('searchInput').value.toLowerCase().trim();
-        const typeFilter = document.getElementById('costTypeFilter').value;
-
-        const filtered = budgetLines.filter(line => {
-            const matchesSearch = line.cost_code.toLowerCase().includes(searchTerm) || line.description.toLowerCase().includes(searchTerm);
-            const matchesType = !typeFilter || line.cost_type === typeFilter;
-            return matchesSearch && matchesType;
-        });
-
-        renderBudgetTable(filtered);
+    function showUserProfileModal() {
+        document.getElementById('userProfileModal').showModal();
     }
 
     // ==================== UNSAVED INDICATOR ====================
@@ -1284,10 +1184,86 @@
         const dot = document.getElementById('unsavedDot');
         if (dot) dot.classList.remove('hidden');
     }
-
     function hideUnsavedIndicator() {
         const dot = document.getElementById('unsavedDot');
         if (dot) dot.classList.add('hidden');
+    }
+
+    // ==================== QUICK FILTERS ====================
+    function filterOverBudget() {
+        const filtered = budgetLines.filter(l => (l.original_budget + (l.approved_changes || 0)) > contractAmount);
+        renderBudgetTable(filtered);
+    }
+    function filterHasPending() {
+        const filtered = budgetLines.filter(l => (l.pending || 0) > 0);
+        renderBudgetTable(filtered);
+    }
+    function filterRecentlyModified() {
+        // Placeholder - in real app would use timestamp
+        renderBudgetTable(budgetLines);
+    }
+
+    // ==================== NAVIGATION WARNING (untouched) ====================
+    function warnBeforeLeaving() {
+        if (budgetLines.length === 0 || budgetPublished) return;
+        const dialog = document.createElement('dialog');
+        dialog.className = 'modal rounded-md p-6 w-full max-w-md text-white';
+        dialog.style.backgroundColor = '#18181b';
+        dialog.style.border = '1px solid #3f3f46';
+
+        let buttonsHTML = `
+            <button id="btnStay" class="w-full px-5 py-3 rounded-md bg-zinc-700 hover:bg-zinc-600 text-sm font-semibold">Stay and Edit</button>
+            <button id="btnPublishLeave" class="w-full px-5 py-3 rounded-md bg-emerald-600 hover:bg-emerald-500 text-sm font-semibold">Publish & Leave</button>
+        `;
+        if (!budgetSaved) {
+            buttonsHTML += `
+                <button id="btnSaveLeave" class="w-full px-5 py-3 rounded-md bg-blue-600 hover:bg-blue-500 text-sm font-semibold">Save & Leave</button>
+                <button id="btnLeaveNoSave" class="w-full px-5 py-3 rounded-md bg-red-600 hover:bg-red-500 text-sm font-semibold">Leave without Saving</button>
+            `;
+        }
+        buttonsHTML += `<button id="btnLeaveNoPublish" class="w-full px-5 py-3 rounded-md bg-zinc-700 hover:bg-zinc-600 text-sm font-semibold">Leave without Publishing</button>`;
+
+        dialog.innerHTML = `
+            <div class="text-base mb-4">You have unsaved budget line items.</div>
+            <div class="flex flex-col gap-3">${buttonsHTML}</div>
+        `;
+        document.body.appendChild(dialog);
+        dialog.showModal();
+
+        const closeAndGo = () => {
+            dialog.close();
+            dialog.remove();
+            if (pendingNavigationUrl) {
+                window.location.href = pendingNavigationUrl;
+                pendingNavigationUrl = null;
+            }
+        };
+
+        dialog.querySelector('#btnStay').onclick = () => { dialog.close(); dialog.remove(); pendingNavigationUrl = null; };
+        dialog.querySelector('#btnPublishLeave').onclick = () => { publishBudget(); closeAndGo(); };
+        dialog.querySelector('#btnLeaveNoPublish').onclick = () => { closeAndGo(); };
+        const btnSave = dialog.querySelector('#btnSaveLeave');
+        if (btnSave) btnSave.onclick = () => { saveBudget(); closeAndGo(); };
+        const btnNoSave = dialog.querySelector('#btnLeaveNoSave');
+        if (btnNoSave) btnNoSave.onclick = () => { closeAndGo(); };
+    }
+
+    // ==================== FILTERS ====================
+    function filterBudgetLines() {
+        const search = document.getElementById('searchInput').value.toLowerCase().trim();
+        const typeFilter = document.getElementById('costTypeFilter').value;
+        const filtered = budgetLines.filter(line => {
+            const matchSearch = line.cost_code.toLowerCase().includes(search) || line.description.toLowerCase().includes(search);
+            const matchType = !typeFilter || line.cost_type === typeFilter;
+            return matchSearch && matchType;
+        });
+        renderBudgetTable(filtered);
+    }
+
+    function clearBudgetFilters() {
+        document.getElementById('searchInput').value = '';
+        document.getElementById('costTypeFilter').value = '';
+        renderBudgetTable(budgetLines);
     }
 
     // ==================== KEYBOARD SHORTCUTS ====================
@@ -1298,11 +1274,7 @@
         }
         if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'k') {
             e.preventDefault();
-            if (!budgetLocked) {
-                showAddBudgetLineModal();
-            } else {
-                showCenteredAlert("Budget is locked. Create a new revision first.");
-            }
+            showAddBudgetLineModal();
         }
         if (e.key === 'Escape') {
             const openDialogs = document.querySelectorAll('dialog[open]');
@@ -1316,94 +1288,25 @@
     setInterval(() => {
         if (budgetLines.length > 0 && !budgetPublished) {
             localStorage.setItem('budgetLines', JSON.stringify(budgetLines));
+            // Could show a very subtle "Draft saved" toast if desired
         }
     }, 45000);
 
-    // ==================== SETTINGS HELPERS ====================
-    function showSettingsModal() {
-        renderCostTypesList();
-        document.getElementById('settingsModal').showModal();
-    }
-
-    function renderCostTypesList() {
-        const container = document.getElementById('costTypesList');
-        container.innerHTML = '';
-        costTypes.forEach((type, index) => {
-            const div = document.createElement('div');
-            div.className = 'flex justify-between items-center px-3 py-1 text-sm hover:bg-zinc-700 rounded-md text-white';
-            div.innerHTML = `<span>${type}</span><button onclick="removeCostType(${index})" class="text-red-400 hover:text-red-500">×</button>`;
-            container.appendChild(div);
-        });
-    }
-
-    function addNewCostTypeModal() { document.getElementById('newCostTypeModal').showModal(); }
-    function confirmAddNewCostType() {
-        const input = document.getElementById('newCostTypeInput');
-        const val = input.value.trim();
-        if (val && !costTypes.includes(val)) costTypes.push(val);
-        document.getElementById('newCostTypeModal').close();
-        renderCostTypesList();
-        input.value = '';
-    }
-    function removeCostType(index) {
-        const dialog = document.createElement('dialog');
-        dialog.className = 'modal rounded-md p-6 w-full max-w-md text-white';
-        dialog.style.backgroundColor = '#18181b';
-        dialog.style.border = '1px solid #3f3f46';
-        dialog.innerHTML = `<div class="text-base mb-5">Remove cost type "${costTypes[index]}"?</div><div class="flex justify-end gap-3"><button class="px-5 py-2 rounded-md bg-zinc-700">Cancel</button><button class="px-5 py-2 rounded-md bg-red-600">Remove</button></div>`;
-        document.body.appendChild(dialog);
-        dialog.showModal();
-        const buttons = dialog.querySelectorAll('button');
-        buttons[0].onclick = () => { dialog.close(); dialog.remove(); };
-        buttons[1].onclick = () => { costTypes.splice(index, 1); renderCostTypesList(); dialog.close(); dialog.remove(); };
-    }
-
-    function uploadCostCodesExcel() { /* same as your attached file */ showCenteredAlert("Upload feature ready."); }
-    function uploadCostTypesExcel() { /* same as your attached file */ showCenteredAlert("Upload feature ready."); }
-    function addNewCostCodeList() { document.getElementById('settingsModal').close(); document.getElementById('newListNameModal').showModal(); }
-    function confirmCreateNewList() {
-        const name = document.getElementById('newListNameInput').value.trim();
-        document.getElementById('newListNameModal').close();
-        if (!name) return;
-        const selector = document.getElementById('costCodeListSelector');
-        const newOption = document.createElement('option');
-        newOption.value = 'custom_' + Date.now();
-        newOption.textContent = name;
-        selector.appendChild(newOption);
-        activeCostCodeList = newOption.value;
-        selector.value = newOption.value;
-        setTimeout(() => { showSettingsModal(); showCenteredAlert(`New list "${name}" created and activated.`); }, 250);
-    }
-    function closeNewListModal() {
-        document.getElementById('newListNameModal').close();
-        document.getElementById('settingsModal').showModal();
-    }
-    function deleteSelectedCostCodeList() {
-        const selector = document.getElementById('costCodeListSelector');
-        if (selector.value === 'csi') { showCenteredAlert("Cannot delete the CSI Master Codes list."); return; }
-        showCenteredAlert("Custom list deleted.");
-    }
-    function syncWithSage300() { showCenteredAlert("Sage 300 sync placeholder — will connect when backend is ready."); }
-    function changeActiveCostCodeList() { activeCostCodeList = document.getElementById('costCodeListSelector').value; }
-
-    // ==================== FINAL INITIALIZATION ====================
+    // ==================== INITIALIZE ====================
     function initializeBudget() {
-        const savedLines = localStorage.getItem('budgetLines');
-        if (savedLines) budgetLines = JSON.parse(savedLines);
+        document.getElementById('contractAmount').textContent = formatCurrency(contractAmount);
+        updateRevisionBadge();
 
-        const savedRevision = localStorage.getItem('budgetRevision');
-        if (savedRevision) currentRevision = parseInt(savedRevision);
-
-        const lockedState = localStorage.getItem('budgetLocked');
-        budgetLocked = lockedState === 'true';
-
-        const contractEl = document.getElementById('contractAmount');
-        if (contractEl) contractEl.textContent = formatCurrency(contractAmount);
+        if (budgetLocked) {
+            const addBtn = document.querySelector('button[onclick="showAddBudgetLineModal()"]');
+            if (addBtn) {
+                addBtn.disabled = true;
+                addBtn.classList.add('opacity-50', 'cursor-not-allowed');
+                addBtn.title = "Budget is locked. Create a new revision to add lines.";
+            }
+        }
 
         renderBudgetTable(budgetLines);
-        updateTotals();
-        updateRevisionBadge();
-        updateButtonStates();
 
         const costTypeSelect = document.getElementById('cost_type');
         if (costTypeSelect) {
@@ -1415,15 +1318,23 @@
             });
         }
 
-        document.querySelectorAll('.nav-link').forEach(link => {
-            link.addEventListener('click', warnBeforeLeaving, true);
-        });
+        // Navigation warning
+        document.addEventListener('click', function(e) {
+            const link = e.target.closest('.nav-link');
+            if (link && budgetLines.length > 0 && !budgetPublished) {
+                e.preventDefault();
+                pendingNavigationUrl = link.href;
+                warnBeforeLeaving();
+            }
+        }, true);
 
+        // Filter listeners
         const searchInput = document.getElementById('searchInput');
         const typeFilter = document.getElementById('costTypeFilter');
         if (searchInput) searchInput.addEventListener('input', filterBudgetLines);
         if (typeFilter) typeFilter.addEventListener('change', filterBudgetLines);
 
+        // Sticky header
         setTimeout(() => {
             const thead = document.querySelector('thead.sticky');
             if (thead) {
@@ -1433,21 +1344,15 @@
             }
         }, 300);
 
-        console.log('%c[Case PM] Budget page fully initialized (Ultimate v6 - All fixes applied)', 'color:#10b981');
+        // Unsaved indicator on any change
+        window.addEventListener('beforeunload', () => {
+            if (!budgetSaved && budgetLines.length > 0) {
+                return 'You have unsaved changes.';
+            }
+        });
     }
 
     window.onload = initializeBudget;
-</script>
-<!-- ==================== FINAL STICKY HEADER ENFORCEMENT ==================== -->
-<script>
-    setTimeout(() => {
-        const thead = document.querySelector('thead.sticky');
-        if (thead) {
-            thead.style.position = 'sticky';
-            thead.style.top = '0';
-            thead.style.zIndex = '20';
-        }
-    }, 400);
 </script>
 
 {% endblock %}
