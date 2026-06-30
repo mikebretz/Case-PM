@@ -195,10 +195,11 @@
                 <div class="md:col-span-2">
                     <label class="block text-sm mb-1.5 text-zinc-300 flex items-center justify-between">
                         <span>Cost Code</span>
-                        <span onclick="viewActiveCostCodeList(true, true); event.stopImmediatePropagation();" class="text-[10px] text-emerald-400 hover:text-emerald-300 cursor-pointer underline">view all codes</span>
+                        <button type="button" onclick="viewActiveCostCodeList(true, true); event.stopImmediatePropagation();" 
+                                class="ml-2 px-2.5 py-0.5 text-[10px] bg-zinc-700 hover:bg-zinc-600 text-emerald-400 rounded">View All Codes</button>
                     </label>
-                    <input type="text" id="cost_code" list="costCodeList" onblur="autoFillFromCostCode()" autocomplete="off" class="w-full bg-zinc-800 border border-zinc-700 rounded-md px-4 py-2.5 text-sm text-white" required>
-                    <datalist id="costCodeList"></datalist>
+                    <input type="text" id="cost_code" onblur="autoFillFromCostCode()" autocomplete="off" class="w-full bg-zinc-800 border border-zinc-700 rounded-md px-4 py-2.5 text-sm text-white" required>
+                    <!-- No datalist - we use the View All Codes modal for selection and strict validation -->
                 </div>
                 <div>
                     <label class="block text-sm mb-1.5 text-zinc-300">Cost Type</label>
@@ -554,9 +555,9 @@
                     <td class="px-6 py-1.5 text-sm text-zinc-400 w-[320px]">${line.notes || ''}</td>
                     <td class="px-4 py-1.5 w-24">
                         <div class="flex gap-1">
-                            <button onclick="event.stopImmediatePropagation(); editBudgetLine(${line.id})" class="text-emerald-400 hover:text-emerald-300 p-1"><i class="fa-solid fa-edit"></i></button>
+                            <button onclick="event.stopImmediatePropagation(); editBudgetLine(${line.id})" class="text-emerald-400 hover:text-emerald-300 p-1" title="Edit"><i class="fa-solid fa-edit"></i></button>
                             <button onclick="event.stopImmediatePropagation(); showLineHistory(${line.id})" class="text-sky-400 hover:text-sky-300 p-1" title="View Line History"><i class="fa-solid fa-history"></i></button>
-                            <button onclick="event.stopImmediatePropagation(); deleteBudgetLine(${line.id})" class="text-red-400 hover:text-red-300 p-1"><i class="fa-solid fa-trash"></i></button>
+                            <button onclick="event.stopImmediatePropagation(); deleteBudgetLine(${line.id})" class="text-red-400 hover:text-red-300 p-1" title="Delete"><i class="fa-solid fa-trash"></i></button>
                         </div>
                     </td>
                 `;
@@ -666,7 +667,7 @@
 
     // ==================== BUDGET AUDIT LOG VIEWER ====================
     function showBudgetAuditLog() {
-        // Reload from storage to ensure latest data (fixes potential sync issues)
+        // Always reload latest from storage
         budgetAuditLog = JSON.parse(localStorage.getItem('budgetAuditLog') || '[]');
 
         const modal = document.createElement('dialog');
@@ -725,9 +726,6 @@
                 } else if (entry.action === 'BUDGET_PRINTED') {
                     actionBadge = `<span class="px-2 py-0.5 text-xs rounded-full bg-sky-900/60 text-sky-400">Printed</span>`;
                     detailText = `Budget printed`;
-                } else if (entry.action === 'BUDGET_SAVED') {
-                    actionBadge = `<span class="px-2 py-0.5 text-xs rounded-full bg-blue-900/60 text-blue-400">Saved</span>`;
-                    detailText = `${entry.details.linesCount} lines • Total ${formatCurrency(entry.details.totalOriginal || 0)}`;
                 } else {
                     actionBadge = `<span class="px-2 py-0.5 text-xs rounded-full bg-zinc-700 text-zinc-400">${entry.action}</span>`;
                     detailText = JSON.stringify(entry.details);
@@ -844,7 +842,7 @@
         const line = budgetLines.find(l => l.id == id);
         if (!line) return;
 
-        // Reload from storage to ensure latest audit data
+        // Always reload latest audit log
         budgetAuditLog = JSON.parse(localStorage.getItem('budgetAuditLog') || '[]');
 
         const modal = document.getElementById('lineHistoryModal');
@@ -864,9 +862,21 @@
             lineEvents.slice(0, 20).forEach(e => {
                 const time = new Date(e.timestamp).toLocaleString([], { month:'short', day:'numeric', hour:'2-digit', minute:'2-digit' });
                 let text = '';
-                if (e.action === 'LINE_ADDED') text = `Added with budget ${formatCurrency(e.details.original_budget)} by ${e.user || 'Unknown'}`;
-                else if (e.action === 'LINE_EDITED') text = `Budget changed: ${formatCurrency(e.details.old_original_budget)} → ${formatCurrency(e.details.new_original_budget)} by ${e.user || 'Unknown'}`;
-                else if (e.action === 'LINE_DELETED') text = `Deleted by ${e.user || 'Unknown'}`;
+                const user = e.user || 'System';
+                if (e.action === 'LINE_ADDED') text = `Added with budget ${formatCurrency(e.details.original_budget)} by ${user}`;
+                else if (e.action === 'LINE_EDITED') {
+                    let changeText = '';
+                    if (e.details.old_original_budget !== e.details.new_original_budget) {
+                        changeText = `Budget: ${formatCurrency(e.details.old_original_budget)} → ${formatCurrency(e.details.new_original_budget)}`;
+                    }
+                    if (e.details.old_cost_type && e.details.old_cost_type !== e.details.new_cost_type) {
+                        changeText += changeText ? ' | ' : '';
+                        changeText += `Cost Type: ${e.details.old_cost_type} → ${e.details.new_cost_type}`;
+                    }
+                    if (!changeText && e.details.old_notes !== e.details.new_notes) changeText = 'Notes updated';
+                    text = `${changeText || 'Updated'} by ${user}`;
+                }
+                else if (e.action === 'LINE_DELETED') text = `Deleted by ${user}`;
                 html += `<div class="flex justify-between px-3 py-1 text-xs border-b border-zinc-700"><div class="text-zinc-400">${time}</div><div>${text}</div></div>`;
             });
             content.innerHTML = html;
@@ -933,14 +943,19 @@
         const codeOnly = codeMatch ? codeMatch[1] : fullValue;
 
         let originalBudgetStr = document.getElementById('original_budget').value || "0";
-        originalBudgetStr = originalBudgetStr.replace(/[^0-9.-]+/g, "");
+        // Robust parsing: remove $, commas, and any non-numeric except minus and dot
+        originalBudgetStr = originalBudgetStr.replace(/[^0-9.-]/g, '');
         const originalBudget = parseFloat(originalBudgetStr) || 0;
 
         const costType = document.getElementById('cost_type').value;
 
         const list = activeCostCodeList === 'csi' ? csiCostCodes : customCostCodes;
         const foundCode = list.find(c => c.code === codeOnly);
-        const description = foundCode ? foundCode.description : codeOnly;
+        if (!foundCode) {
+            showCenteredAlert("Cost Code must exactly match one from the active list. Please click 'View All Codes' and select a valid code.");
+            return;
+        }
+        const description = foundCode.description;
 
         let otherOriginals = 0;
         budgetLines.forEach(l => {
@@ -979,14 +994,17 @@
             const oldLine = { ...budgetLines[index] };
             budgetLines[index] = newLine;
 
-            logBudgetAudit("LINE_EDITED", {
+            const changes = {
                 cost_code: codeOnly,
                 cost_type: costType,
                 old_original_budget: oldLine.original_budget,
                 new_original_budget: originalBudget,
+                old_cost_type: oldLine.cost_type,
+                new_cost_type: costType,
                 old_notes: oldLine.notes,
                 new_notes: newLine.notes
-            });
+            };
+            logBudgetAudit("LINE_EDITED", changes);
         } else {
             budgetLines.push(newLine);
             logBudgetAudit("LINE_ADDED", {
@@ -1321,8 +1339,11 @@
         hideUnsavedIndicator();
         hasUnsavedChanges = false;
 
-        // Log the manual save for audit trail
-        logBudgetAudit("BUDGET_SAVED", { linesCount: budgetLines.length, totalOriginal: budgetLines.reduce((s, l) => s + (l.original_budget || 0), 0) });
+        logBudgetAudit("BUDGET_SAVED", {
+            linesCount: budgetLines.length,
+            totalOriginal: budgetLines.reduce((sum, l) => sum + (l.original_budget || 0), 0)
+        });
+
         const dialog = document.createElement('dialog');
         dialog.className = 'modal rounded-md p-6 w-full max-w-fit text-white';
         dialog.style.backgroundColor = '#18181b';
@@ -1344,7 +1365,7 @@
         });
 
         if (invalidLines.length > 0) {
-            showCenteredAlert(`Cannot publish. ${invalidLines.length} line(s) have invalid Cost Code or Cost Type. Please fix before publishing.`);
+            showInvalidLinesForPublish(invalidLines);
             return;
         }
 
@@ -2172,6 +2193,116 @@
     }
 
     function changeActiveCostCodeList() { activeCostCodeList = document.getElementById('costCodeListSelector').value; }
+
+    // ==================== RICH INVALID LINES MODAL FOR PUBLISH (restored) ====================
+    function showInvalidLinesForPublish(invalidLines) {
+        const modal = document.createElement('dialog');
+        modal.className = 'modal rounded-md p-0 text-white w-full max-w-5xl';
+        modal.style.backgroundColor = '#18181b';
+        modal.style.border = '1px solid #3f3f46';
+
+        const list = activeCostCodeList === 'csi' ? csiCostCodes : customCostCodes;
+
+        let rowsHtml = '';
+        const invalidLineIds = [];
+
+        invalidLines.forEach((line, idx) => {
+            const validCode = list.some(c => c.code === line.cost_code);
+            const validType = costTypes.includes(line.cost_type);
+            let issue = '';
+            if (!validCode && !validType) issue = 'Invalid Cost Code + Invalid Cost Type';
+            else if (!validCode) issue = 'Invalid Cost Code (not in active list)';
+            else if (!validType) issue = 'Invalid Cost Type (not in current types)';
+            else issue = 'Unknown issue';
+
+            invalidLineIds.push(line.id);
+
+            rowsHtml += `
+                <tr data-id="${line.id}">
+                    <td class="px-3 py-1.5 text-center text-xs text-zinc-500">${idx + 1}</td>
+                    <td class="px-3 py-1.5 font-mono text-emerald-400">${line.cost_code}</td>
+                    <td class="px-3 py-1.5">${line.description}</td>
+                    <td class="px-3 py-1.5">
+                        <span class="inline-block px-2 py-0.5 rounded-full text-xs bg-zinc-700 text-zinc-300">${line.cost_type}</span>
+                    </td>
+                    <td class="px-3 py-1.5">
+                        <span class="inline-block px-2.5 py-0.5 rounded-full text-xs font-medium ${!validCode || !validType ? 'bg-red-900/60 text-red-400' : 'bg-amber-900/60 text-amber-400'}">${issue}</span>
+                    </td>
+                </tr>
+            `;
+        });
+
+        modal.innerHTML = `
+            <div class="p-6">
+                <div class="flex justify-between items-center mb-4">
+                    <div>
+                        <h3 class="text-xl font-semibold">Cannot Publish — ${invalidLines.length} Invalid Line Item(s)</h3>
+                        <p class="text-sm text-zinc-400 mt-1">Fix the Cost Code and/or Cost Type below, then try Publish again.</p>
+                    </div>
+                    <button onclick="this.closest('dialog').close(); this.closest('dialog').remove()" class="text-zinc-400 hover:text-white">
+                        <i class="fa-solid fa-times text-xl"></i>
+                    </button>
+                </div>
+
+                <div class="mb-3">
+                    <input type="text" id="invalidSearchInput" placeholder="Search invalid lines..." 
+                           class="w-full bg-zinc-800 border border-zinc-700 rounded-md px-4 py-2 text-sm focus:border-emerald-600"
+                           oninput="filterInvalidLinesTable(this)">
+                </div>
+
+                <div class="max-h-[420px] overflow-auto border border-zinc-700 rounded-md mb-4">
+                    <table class="w-full text-sm" id="invalidLinesTable">
+                        <thead class="bg-zinc-800 sticky top-0">
+                            <tr>
+                                <th class="px-3 py-2 text-center w-10">#</th>
+                                <th class="px-3 py-2 text-left w-32">Cost Code</th>
+                                <th class="px-3 py-2 text-left">Description</th>
+                                <th class="px-3 py-2 text-left w-40">Cost Type</th>
+                                <th class="px-3 py-2 text-left">Issue</th>
+                            </tr>
+                        </thead>
+                        <tbody class="divide-y divide-zinc-800">
+                            ${rowsHtml}
+                        </tbody>
+                    </table>
+                </div>
+
+                <div class="flex justify-end gap-3">
+                    <button onclick="this.closest('dialog').close(); this.closest('dialog').remove()" 
+                            class="px-6 py-2.5 rounded-md bg-zinc-700 hover:bg-zinc-600 text-sm">Close</button>
+                    <button onclick="window._tempInvalidIds = ${JSON.stringify(invalidLineIds)}; closeAndFilterToInvalidLines(window._tempInvalidIds, this)" 
+                            class="px-6 py-2.5 rounded-md bg-emerald-600 hover:bg-emerald-500 text-sm font-semibold flex items-center gap-2">
+                        <i class="fa-solid fa-filter"></i>
+                        <span>Close & Filter to Invalid Lines</span>
+                    </button>
+                </div>
+            </div>
+        `;
+
+        document.body.appendChild(modal);
+        modal.showModal();
+    }
+
+    function filterInvalidLinesTable(inputEl) {
+        const q = (inputEl.value || '').toLowerCase().trim();
+        const tbody = inputEl.closest('dialog').querySelector('#invalidLinesTable tbody');
+        if (!tbody) return;
+        tbody.querySelectorAll('tr').forEach(row => {
+            const text = row.textContent.toLowerCase();
+            row.style.display = text.includes(q) ? '' : 'none';
+        });
+    }
+
+    function closeAndFilterToInvalidLines(invalidLineIds, btn) {
+        const modal = btn.closest('dialog');
+        if (modal) {
+            modal.close();
+            modal.remove();
+        }
+        const filtered = budgetLines.filter(l => invalidLineIds.includes(l.id));
+        renderBudgetTable(filtered);
+        showCenteredAlert(`Showing only ${filtered.length} line(s) with invalid Cost Code or Cost Type. Fix them, then try Publish again.`, 'info');
+    }
 
     // ==================== COST CODE INPUT BEHAVIOR (show all on arrow/click even with value) ====================
     function setupCostCodeInputBehavior() {
