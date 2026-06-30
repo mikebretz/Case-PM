@@ -248,13 +248,13 @@
                     </div>
                 </div>
 
-                <!-- Contacts -->
+                <!-- Associated Users from User Management (replaces manual Contacts entry) -->
                 <div class="mb-6">
-                    <div class="flex items-center justify-between mb-3">
-                        <h3 class="font-semibold text-emerald-400">Contacts</h3>
-                        <button type="button" onclick="addContactRow()" class="text-xs px-3 py-1 bg-zinc-700 hover:bg-zinc-600 rounded">+ Add Contact</button>
+                    <h3 class="font-semibold text-emerald-400 mb-3">Associated Users (from User Management)</h3>
+                    <div id="linkedUsersContainer" class="bg-zinc-800 border border-zinc-700 rounded-md p-3 min-h-[70px] text-sm space-y-2">
+                        <!-- Populated dynamically by renderLinkedUsersForCompany() -->
                     </div>
-                    <div id="contactsContainer" class="space-y-3"></div>
+                    <p class="text-[10px] text-zinc-500 mt-1.5">Team members and contacts are managed exclusively in the User Management page. Assign this company to a user there to link them. Click "Set as Primary Contact" to update the Primary Phone/Email fields above for this company.</p>
                 </div>
 
                 <!-- Licenses & Insurance -->
@@ -375,8 +375,112 @@
 
 let companies = [];
 let originalCompanyData = null;
+let companyAuditLog = JSON.parse(localStorage.getItem('companyAuditLog') || '[]');
 
 const sageData = [ /* paste your sageData array here if you have it, or leave empty for now */ ];
+
+function logCompanyAudit(action, companyId, details = {}) {
+    const entry = {
+        id: Date.now() + Math.random(),
+        timestamp: new Date().toISOString(),
+        action: action,
+        targetCompanyId: companyId,
+        performedBy: "Michael Bretz",
+        details: details
+    };
+    companyAuditLog.unshift(entry);
+    if (companyAuditLog.length > 1000) companyAuditLog.length = 1000;
+    localStorage.setItem('companyAuditLog', JSON.stringify(companyAuditLog));
+}
+
+// Render linked users from User Management in the company modal (replaces old contacts section)
+function renderLinkedUsersForCompany(companyName) {
+    const container = document.getElementById('linkedUsersContainer');
+    if (!container) return;
+    container.innerHTML = '';
+
+    const nameToMatch = (companyName || '').toLowerCase().trim();
+    if (!nameToMatch) {
+        container.innerHTML = '<div class="text-zinc-500 text-xs px-2">Save this company first, then assign users to it in User Management to see them linked here.</div>';
+        return;
+    }
+
+    const allUsers = JSON.parse(localStorage.getItem('users') || '[]');
+    const linked = allUsers.filter(u => 
+        u.status === 'Active' && 
+        (u.company || '').toLowerCase().trim() === nameToMatch
+    );
+
+    if (linked.length === 0) {
+        container.innerHTML = '<div class="text-zinc-500 text-xs px-2">No active users currently assigned to this company in User Management.</div>';
+        return;
+    }
+
+    const currentCompanyId = document.getElementById('companyId') ? parseInt(document.getElementById('companyId').value) : null;
+    const currentCompany = currentCompanyId ? companies.find(c => c.id === currentCompanyId) : null;
+
+    linked.forEach(user => {
+        const phone = (user.phones && user.phones.length > 0) ? user.phones[0].number : (user.phone || '—');
+        const isPrimary = currentCompany && currentCompany.primary_contact_user_id === user.id;
+
+        const div = document.createElement('div');
+        div.className = `flex items-center justify-between px-3 py-2 rounded ${isPrimary ? 'bg-emerald-900/30 border border-emerald-600' : 'bg-zinc-900 border border-zinc-700'}`;
+        div.innerHTML = `
+            <div class="min-w-0">
+                <div class="font-medium text-white">${user.firstName || ''} ${user.lastName || ''}</div>
+                <div class="text-xs text-zinc-400">${user.jobTitle || '—'} • ${phone} • ${user.email || ''}</div>
+            </div>
+            <div class="flex items-center gap-2 flex-shrink-0">
+                ${isPrimary ? '<span class="px-2.5 py-0.5 text-xs rounded-full bg-emerald-600 text-white font-medium">Primary Contact</span>' : ''}
+                <button type="button" onclick="designatePrimaryContact(${user.id}, '${(companyName || '').replace(/'/g, "\\'")}')" 
+                        class="px-3 py-1 text-xs bg-zinc-700 hover:bg-emerald-600 hover:text-white rounded transition-colors">
+                    Set as Primary Contact
+                </button>
+            </div>
+        `;
+        container.appendChild(div);
+    });
+}
+
+function designatePrimaryContact(userId, companyName) {
+    const allUsers = JSON.parse(localStorage.getItem('users') || '[]');
+    const user = allUsers.find(u => u.id == userId);
+    if (!user) return;
+
+    const companyIdEl = document.getElementById('companyId');
+    const companyId = companyIdEl ? parseInt(companyIdEl.value) : null;
+    if (!companyId) {
+        showAlertModal("Save Company First", "Please save the new company before designating a primary contact.");
+        return;
+    }
+
+    const company = companies.find(c => c.id === companyId);
+    if (!company) return;
+
+    // Update primary fields on the company from this user
+    const phone = (user.phones && user.phones.length > 0) ? user.phones[0].number : (user.phone || '');
+    company.primary_phone = phone || company.primary_phone;
+    company.primary_email = user.email || company.primary_email;
+    company.primary_contact_user_id = userId;
+
+    localStorage.setItem('casepm_companies', JSON.stringify(companies));
+
+    logCompanyAudit('PRIMARY_CONTACT_SET', companyId, { 
+        user: `${user.firstName} ${user.lastName}`, 
+        email: user.email 
+    });
+
+    // Refresh form inputs
+    const phoneInput = document.getElementById('primary_phone');
+    const emailInput = document.getElementById('primary_email');
+    if (phoneInput) phoneInput.value = company.primary_phone || '';
+    if (emailInput) emailInput.value = company.primary_email || '';
+
+    // Re-render the linked list with new Primary badge
+    renderLinkedUsersForCompany(companyName);
+
+    showAlertModal("Primary Contact Set", `${user.firstName} ${user.lastName} is now the primary contact for this company.`);
+}
 
 function showAlertModal(title, message) {
     const modal = document.getElementById('successModal');
@@ -421,6 +525,10 @@ function renderCompaniesTable(filteredCompanies = null) {
         row.onclick = (e) => {
             if (!e.target.closest('button')) showViewCompanyModal(company.id);
         };
+        row.ondblclick = (e) => {
+            e.stopImmediatePropagation();
+            editCompany(company.id);
+        };
 
         const licenseStatus = getStatusBadge(company.license_status, company.license_expiration);
         const glStatus = getStatusBadge('Current', company.gl_expiration);
@@ -438,8 +546,10 @@ function renderCompaniesTable(filteredCompanies = null) {
             <td class="px-4 py-4 text-center">${wcStatus}</td>
             <td class="px-4 py-4 text-center">${coiStatus}</td>
             <td class="px-4 py-4 text-right">
-                <button onclick="event.stopImmediatePropagation(); editCompany(${company.id});" class="text-emerald-400 hover:text-emerald-300 mr-3"><i class="fa-solid fa-edit"></i></button>
-                <button onclick="event.stopImmediatePropagation(); confirmDeleteCompany(${company.id}, this);" class="text-red-400 hover:text-red-300"><i class="fa-solid fa-trash"></i></button>
+                <div class="flex justify-end gap-2 items-center">
+                    <button onclick="event.stopImmediatePropagation(); showCompanyHistory(${company.id});" class="text-sky-400 hover:text-sky-300 p-1" title="View Change Log"><i class="fa-solid fa-history"></i></button>
+                    <button onclick="event.stopImmediatePropagation(); confirmDeleteCompany(${company.id}, this);" class="text-red-400 hover:text-red-300 p-1" title="Delete"><i class="fa-solid fa-trash"></i></button>
+                </div>
             </td>
         `;
         tbody.appendChild(row);
@@ -636,14 +746,14 @@ function showAddCompanyModal() {
     form.reset();
     document.getElementById('companyId').value = '';
     document.getElementById('modalTitle').innerText = 'Add Company';
-    document.getElementById('contactsContainer').innerHTML = '';
     document.getElementById('coiContainer').innerHTML = '';
-    addContactRow();
     const preview = document.getElementById('logo_preview');
     if (preview) preview.innerHTML = '<span class="text-xs text-zinc-500">No Logo</span>';
     document.getElementById('companyModal').showModal();
     setupLogoDropZone();
     originalCompanyData = null;
+    // Show linked users section (empty for new company)
+    setTimeout(() => renderLinkedUsersForCompany(''), 120);
 }
 
 function saveCompanyWrapper() {
@@ -656,25 +766,6 @@ function saveCompany(e) {
     const companyName = document.getElementById('company_name').value.trim();
     if (!companyName) {
         showAlertModal("Validation Error", "Company Name is required.");
-        return;
-    }
-
-    const contactRows = document.querySelectorAll('#contactsContainer .contact-row');
-    let hasInvalidAuthorized = false;
-    contactRows.forEach(row => {
-        const authCheck = row.querySelector('.authorized-check');
-        const nameInput = row.querySelector('.contact-name');
-        const emailInput = row.querySelector('.contact-email');
-        if (authCheck && authCheck.checked) {
-            const nameVal = nameInput ? nameInput.value.trim() : '';
-            const emailVal = emailInput ? emailInput.value.trim() : '';
-            if (!nameVal || !emailVal || !/^\S+@\S+\.\S+$/.test(emailVal)) {
-                hasInvalidAuthorized = true;
-            }
-        }
-    });
-    if (hasInvalidAuthorized) {
-        showAlertModal("Invalid Authorized User", "Authorized Case PM User requires both a Name and a valid Email address.");
         return;
     }
 
@@ -705,24 +796,6 @@ function saveCompany(e) {
         cois: []
     };
 
-    contactRows.forEach(row => {
-        const name = row.querySelector('.contact-name').value.trim();
-        if (name) {
-            const contact = {
-                name: name,
-                title: row.querySelector('.contact-title').value.trim(),
-                phone: row.querySelector('.contact-phone').value.trim(),
-                email: row.querySelector('.contact-email').value.trim(),
-                authorized_user: row.querySelector('.authorized-check').checked
-            };
-            newCompany.contacts.push(contact);
-
-            if (contact.authorized_user && contact.email) {
-                createAuthorizedCasePMUser(contact, id);
-            }
-        }
-    });
-
     const coiRows = document.querySelectorAll('#coiContainer .coi-row');
     coiRows.forEach(row => {
         const carrier = row.querySelector('.coi-carrier').value.trim();
@@ -738,8 +811,24 @@ function saveCompany(e) {
     const index = companies.findIndex(c => c.id === id);
     if (index !== -1) {
         companies[index] = newCompany;
+        // Detailed audit log for edits
+        if (originalCompanyData) {
+            let changeList = [];
+            const fields = ['company_name','company_type','primary_phone','primary_email','external_id','tax_id','status','billing_address','shipping_address','license_number','license_expiration','license_status','gl_carrier','gl_policy','gl_expiration','wc_carrier','wc_policy','wc_expiration','notes'];
+            fields.forEach(f => {
+                const oldV = (originalCompanyData[f] || '').toString().trim();
+                const newV = (newCompany[f] || '').toString().trim();
+                if (oldV !== newV) {
+                    changeList.push(`${f}: ${oldV || '—'} → ${newV || '—'}`);
+                }
+            });
+            if (changeList.length > 0) {
+                logCompanyAudit('COMPANY_EDITED', id, { changes: changeList.join(' | ') });
+            }
+        }
     } else {
         companies.push(newCompany);
+        logCompanyAudit('COMPANY_CREATED', newCompany.id, { name: newCompany.company_name, type: newCompany.company_type });
     }
 
     localStorage.setItem('casepm_companies', JSON.stringify(companies));
@@ -833,13 +922,6 @@ function editCompany(id) {
     document.getElementById('wc_expiration').value = company.wc_expiration || '';
     document.getElementById('notes').value = company.notes || '';
 
-    document.getElementById('contactsContainer').innerHTML = '';
-    if (company.contacts && company.contacts.length > 0) {
-        company.contacts.forEach(c => addContactRow(c));
-    } else {
-        addContactRow();
-    }
-
     document.getElementById('coiContainer').innerHTML = '';
     if (company.cois && company.cois.length > 0) {
         company.cois.forEach(c => addCOIRow(c));
@@ -847,6 +929,11 @@ function editCompany(id) {
 
     document.getElementById('companyModal').showModal();
     setupLogoDropZone();
+
+    // Populate linked users from User Management (replaces old contacts section)
+    setTimeout(() => {
+        renderLinkedUsersForCompany(company.company_name || '');
+    }, 150);
 }
 
 function editFromViewModal() {
@@ -864,7 +951,11 @@ function confirmDeleteCompany(id, btn) {
 }
 
 function deleteCompanyConfirmed(id, btn) {
+    const deleted = companies.find(c => c.id === id);
     companies = companies.filter(c => c.id !== id);
+    if (deleted) {
+        logCompanyAudit('COMPANY_DELETED', id, { name: deleted.company_name || 'Unknown' });
+    }
     localStorage.setItem('casepm_companies', JSON.stringify(companies));
     if (btn) btn.closest('tr').remove();
     else renderCompaniesTable(companies);
@@ -1356,6 +1447,187 @@ function performSageImport(checkedCheckboxes) {
     document.getElementById('sageSyncModal').close();
     renderCompaniesTable(companies);
     showAlertModal("Import Complete", "Companies processed from Sage 300.");
+}
+
+// Per-company change history (like budget line item history)
+function showCompanyHistory(companyId) {
+    const company = companies.find(c => c.id === companyId);
+    if (!company) return;
+
+    companyAuditLog = JSON.parse(localStorage.getItem('companyAuditLog') || '[]');
+
+    const modal = document.createElement('dialog');
+    modal.className = 'modal rounded-md p-0 text-white w-full max-w-3xl';
+    modal.style.backgroundColor = '#18181b';
+    modal.style.border = '1px solid #3f3f46';
+
+    const events = companyAuditLog.filter(e => e.targetCompanyId === companyId);
+
+    let html = `
+        <div class="p-6">
+            <div class="flex justify-between items-center mb-4">
+                <h3 class="text-lg font-semibold">Change Log — ${company.company_name}</h3>
+                <button onclick="this.closest('dialog').close(); this.closest('dialog').remove()" class="text-zinc-400 hover:text-white">
+                    <i class="fa-solid fa-times text-xl"></i>
+                </button>
+            </div>
+            <div class="max-h-[420px] overflow-auto border border-zinc-700 rounded-md">
+    `;
+
+    if (events.length === 0) {
+        html += `<div class="p-4 text-sm text-zinc-400">No changes recorded yet for this company.</div>`;
+    } else {
+        html += `<div class="divide-y divide-zinc-800 text-sm">`;
+        events.slice(0, 30).forEach(e => {
+            const time = new Date(e.timestamp).toLocaleString([], {month:'short', day:'numeric', hour:'2-digit', minute:'2-digit'});
+            let detail = '';
+            if (e.action === 'COMPANY_CREATED') detail = `Created (${e.details.type || ''})`;
+            else if (e.action === 'COMPANY_EDITED') detail = e.details.changes || 'Fields updated';
+            else if (e.action === 'COMPANY_DELETED') detail = 'Company deleted';
+            else if (e.action === 'PRIMARY_CONTACT_SET') detail = `Primary contact set to ${e.details.user || ''}`;
+            else detail = JSON.stringify(e.details).substring(0, 80);
+
+            html += `
+                <div class="px-4 py-2 flex gap-3">
+                    <div class="w-36 text-xs text-zinc-400 font-mono flex-shrink-0">${time}</div>
+                    <div class="flex-1">
+                        <span class="font-medium">${e.action}</span>
+                        <div class="text-xs text-zinc-300 mt-0.5">${detail}</div>
+                    </div>
+                    <div class="text-xs text-zinc-500">${e.performedBy}</div>
+                </div>
+            `;
+        });
+        html += `</div>`;
+    }
+
+    html += `
+            </div>
+            <div class="mt-4 text-right">
+                <button onclick="this.closest('dialog').close(); this.closest('dialog').remove()" class="px-5 py-2 bg-zinc-700 hover:bg-zinc-600 rounded text-sm">Close</button>
+            </div>
+        </div>
+    `;
+
+    modal.innerHTML = html;
+    document.body.appendChild(modal);
+    modal.showModal();
+}
+
+// Full Companies & Vendors Audit Log (like budget and user management)
+function showFullCompanyAuditLog() {
+    companyAuditLog = JSON.parse(localStorage.getItem('companyAuditLog') || '[]');
+
+    const modal = document.createElement('dialog');
+    modal.className = 'modal rounded-md p-0 text-white w-full max-w-6xl';
+    modal.style.backgroundColor = '#18181b';
+    modal.style.border = '1px solid #3f3f46';
+
+    let html = `
+        <div class="p-6">
+            <div class="flex justify-between items-center mb-4">
+                <div>
+                    <h3 class="text-xl font-semibold">Companies & Vendors Audit Log</h3>
+                    <div class="text-xs text-zinc-400">All creations, edits (field-by-field), deletes, and primary contact changes</div>
+                </div>
+                <button onclick="this.closest('dialog').close(); this.closest('dialog').remove()" class="text-zinc-400 hover:text-white">
+                    <i class="fa-solid fa-times text-xl"></i>
+                </button>
+            </div>
+
+            <div class="flex gap-3 mb-3">
+                <input type="text" id="companyAuditSearch" placeholder="Search by company or change..." class="flex-1 bg-zinc-800 border border-zinc-700 rounded px-3 py-1.5 text-sm" oninput="filterCompanyAuditTable(this)">
+                <button onclick="exportCompanyAuditLog()" class="px-4 py-1.5 bg-emerald-600 hover:bg-emerald-500 rounded text-sm flex items-center gap-2">
+                    <i class="fa-solid fa-file-excel"></i> <span>Export Excel</span>
+                </button>
+            </div>
+
+            <div class="max-h-[520px] overflow-auto border border-zinc-700 rounded-md" id="companyAuditTableContainer">
+                <table class="w-full text-sm">
+                    <thead class="bg-zinc-800 sticky top-0">
+                        <tr>
+                            <th class="px-4 py-2 text-left text-zinc-400 w-44">Timestamp</th>
+                            <th class="px-4 py-2 text-left text-zinc-400">Action</th>
+                            <th class="px-4 py-2 text-left text-zinc-400">Company</th>
+                            <th class="px-4 py-2 text-left text-zinc-400">Details / Changes</th>
+                            <th class="px-4 py-2 text-left text-zinc-400 w-32">Performed By</th>
+                        </tr>
+                    </thead>
+                    <tbody class="divide-y divide-zinc-800" id="companyAuditTableBody">
+    `;
+
+    if (companyAuditLog.length === 0) {
+        html += `<tr><td colspan="5" class="px-4 py-8 text-center text-zinc-500">No company activity logged yet.</td></tr>`;
+    } else {
+        companyAuditLog.slice(0, 300).forEach(entry => {
+            const comp = companies.find(c => c.id === entry.targetCompanyId);
+            const compName = comp ? comp.company_name : `Company #${entry.targetCompanyId}`;
+            const time = new Date(entry.timestamp).toLocaleString();
+
+            let actionBadge = '';
+            if (entry.action === 'COMPANY_CREATED') actionBadge = `<span class="px-2 py-0.5 text-xs rounded-full bg-emerald-900/60 text-emerald-400">Created</span>`;
+            else if (entry.action === 'COMPANY_EDITED') actionBadge = `<span class="px-2 py-0.5 text-xs rounded-full bg-amber-900/60 text-amber-400">Edited</span>`;
+            else if (entry.action === 'COMPANY_DELETED') actionBadge = `<span class="px-2 py-0.5 text-xs rounded-full bg-red-900/60 text-red-400">Deleted</span>`;
+            else if (entry.action === 'PRIMARY_CONTACT_SET') actionBadge = `<span class="px-2 py-0.5 text-xs rounded-full bg-sky-900/60 text-sky-400">Primary Set</span>`;
+            else actionBadge = `<span class="px-2 py-0.5 text-xs rounded-full bg-zinc-700 text-zinc-300">${entry.action}</span>`;
+
+            const details = entry.details.changes || entry.details.name || JSON.stringify(entry.details || {}).substring(0, 100);
+
+            html += `
+                <tr>
+                    <td class="px-4 py-2 text-xs text-zinc-400 font-mono">${time}</td>
+                    <td class="px-4 py-2">${actionBadge}</td>
+                    <td class="px-4 py-2 font-medium">${compName}</td>
+                    <td class="px-4 py-2 text-xs text-zinc-300">${details}</td>
+                    <td class="px-4 py-2 text-sm text-zinc-400">${entry.performedBy}</td>
+                </tr>
+            `;
+        });
+    }
+
+    html += `</tbody></table></div>
+            <div class="mt-4 text-right">
+                <button onclick="this.closest('dialog').close(); this.closest('dialog').remove()" class="px-5 py-2 bg-zinc-700 rounded-md text-sm">Close</button>
+            </div>
+        </div>`;
+
+    modal.innerHTML = html;
+    document.body.appendChild(modal);
+    modal.showModal();
+
+    window._currentCompanyAuditModal = modal;
+}
+
+function filterCompanyAuditTable(inputEl) {
+    const modal = window._currentCompanyAuditModal;
+    if (!modal) return;
+    const tbody = modal.querySelector('#companyAuditTableBody');
+    if (!tbody) return;
+    const q = (inputEl.value || '').toLowerCase().trim();
+    tbody.querySelectorAll('tr').forEach(row => {
+        row.style.display = row.textContent.toLowerCase().includes(q) ? '' : 'none';
+    });
+}
+
+function exportCompanyAuditLog() {
+    if (typeof XLSX === 'undefined') {
+        showAlertModal('Excel library not loaded.');
+        return;
+    }
+    const data = companyAuditLog.map(entry => {
+        const comp = companies.find(c => c.id === entry.targetCompanyId);
+        return {
+            Timestamp: new Date(entry.timestamp).toLocaleString(),
+            Action: entry.action,
+            Company: comp ? comp.company_name : entry.targetCompanyId,
+            Details: JSON.stringify(entry.details || {}),
+            Performed_By: entry.performedBy
+        };
+    });
+    const ws = XLSX.utils.json_to_sheet(data);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, 'Companies Audit Log');
+    XLSX.writeFile(wb, 'Companies_Vendors_Audit_Log.xlsx');
 }
 
 function initializeCompaniesPage() {
