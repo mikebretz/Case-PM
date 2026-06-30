@@ -129,8 +129,8 @@
                     <th class="px-5 py-2 text-left font-medium text-zinc-400 flex-1 min-w-[200px]">Address</th>
                     <th class="px-3 py-2 text-center font-medium text-zinc-400 w-16">Status</th>
                     <th class="px-3 py-2 text-center font-medium text-zinc-400 w-16">Access</th>
-                    <th class="px-3 py-2 text-center font-medium text-zinc-400 w-24">Permissions</th>
-                    <th class="px-3 py-2 text-center font-medium text-zinc-400 min-w-[160px]">Actions</th>
+                    <th class="px-3 py-2 text-center font-medium text-zinc-400 min-w-[130px]">Permissions</th>
+                    <th class="px-2 py-2 text-center font-medium text-zinc-400 w-[90px]">Actions</th>
                 </tr>
             </thead>
             <tbody id="usersTableBody" class="divide-y divide-zinc-800 text-sm">
@@ -199,6 +199,20 @@
                         <div>
                             <label class="block text-sm mb-1.5 text-zinc-300">Job Title</label>
                             <input type="text" id="jobTitle" class="w-full bg-zinc-800 border border-zinc-700 rounded-md px-4 py-2 text-sm" placeholder="e.g. Senior Estimator">
+                        </div>
+
+                        <!-- Role Dropdown -->
+                        <div>
+                            <label class="block text-sm mb-1.5 text-zinc-300">Role</label>
+                            <select id="role" class="w-full bg-zinc-800 border border-zinc-700 rounded-md px-4 py-2 text-sm" onchange="applyRoleTemplate()">
+                                <option value="Admin">Admin</option>
+                                <option value="Project Manager">Project Manager</option>
+                                <option value="Superintendent">Superintendent</option>
+                                <option value="Architect">Architect</option>
+                                <option value="Owner">Owner</option>
+                                <option value="Company User" selected>Company User</option>
+                                <option value="Viewer">Viewer</option>
+                            </select>
                         </div>
 
                         <!-- Company Dropdown (connected to Companies page) -->
@@ -755,11 +769,21 @@
         const accessChk = document.getElementById('accessEnabled');
         if (accessChk) accessChk.checked = true;
 
+        // Default Role for new user
+        const roleSelect = document.getElementById('role');
+        if (roleSelect) roleSelect.value = 'Company User';
+
         switchTab('general');
         document.getElementById('userModal').showModal();
 
         setTimeout(() => {
             initSignatureCanvas();
+            // Explicitly clear canvas for new user
+            if (signatureCtx && signatureCanvas) {
+                signatureCtx.clearRect(0, 0, signatureCanvas.width, signatureCanvas.height);
+            }
+            currentSignatureDataURL = null;
+
             setupCertificateUpload();
             // Add one default phone row
             const phoneContainer = document.getElementById('phoneNumbersContainer');
@@ -788,6 +812,10 @@
         document.getElementById('status').value = user.status || 'Active';
         document.getElementById('tempPassword').value = ''; // Never show existing password
         document.getElementById('notes').value = user.notes || '';
+
+        // Set Role
+        const roleSelect = document.getElementById('role');
+        if (roleSelect) roleSelect.value = user.role || 'Company User';
 
         const twoFA = document.getElementById('twoFactorEnabled');
         if (twoFA) twoFA.checked = user.twoFactorEnabled || false;
@@ -948,6 +976,7 @@
                 lastName: document.getElementById('lastName').value.trim(),
                 email: email,
                 jobTitle: document.getElementById('jobTitle').value.trim(),
+                role: document.getElementById('role') ? document.getElementById('role').value : 'Company User',
                 company: companyName,
                 address: document.getElementById('address').value.trim(),
                 phones: phones,
@@ -1131,11 +1160,14 @@
                 <td class="px-3 py-2 text-center">${statusHtml}</td>
                 <td class="px-3 py-2 text-center">${hasAccessHtml}</td>
                 <td class="px-3 py-2 text-center">${permHtml}</td>
-                <td class="px-3 py-2 text-center">
-                    <div class="flex justify-center gap-1 flex-nowrap">
-                        <button onclick="event.stopImmediatePropagation(); editUser(${user.id})" class="px-2.5 py-0.5 text-[10px] bg-zinc-700 hover:bg-emerald-600 rounded">Edit</button>
-                        <button onclick="event.stopImmediatePropagation(); showUserLog(${user.id})" class="px-2.5 py-0.5 text-[10px] bg-zinc-700 hover:bg-sky-600 rounded">Log</button>
-                        <button onclick="event.stopImmediatePropagation(); deleteUser(${user.id})" class="px-2.5 py-0.5 text-[10px] bg-zinc-700 hover:bg-red-600 rounded">Del</button>
+                <td class="px-2 py-2 text-center">
+                    <div class="flex justify-center gap-2 flex-nowrap items-center">
+                        <button onclick="event.stopImmediatePropagation(); showUserLog(${user.id})" class="text-sky-400 hover:text-sky-300 p-1" title="View Log">
+                            <i class="fa-solid fa-history fa-fw"></i>
+                        </button>
+                        <button onclick="event.stopImmediatePropagation(); deleteUser(${user.id})" class="text-red-400 hover:text-red-300 p-1" title="Delete User">
+                            <i class="fa-solid fa-trash fa-fw"></i>
+                        </button>
                     </div>
                 </td>
             `;
