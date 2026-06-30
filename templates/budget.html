@@ -1101,6 +1101,7 @@
 
     function populateCostCodeDatalist() {
         const datalist = document.getElementById('costCodeList');
+        if (!datalist) return; // Guard: native datalist was removed; we use "View All Codes" modal instead
         datalist.innerHTML = '';
         const list = activeCostCodeList === 'csi' ? csiCostCodes : customCostCodes;
         list.forEach(item => {
