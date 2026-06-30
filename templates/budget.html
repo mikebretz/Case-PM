@@ -128,10 +128,10 @@
     </div>
 </div>
 
-<!-- TABLE (Sync column slightly wider for "Not Synced" on one line) -->
+<!-- TABLE (Sync column slightly wider for "Not Synced" on one line + Health + % Complete) -->
 <div class="mx-6 mb-6 flex-1 overflow-hidden flex flex-col border border-zinc-700 rounded-md bg-zinc-900">
     <div class="flex-1 overflow-auto" id="tableScrollContainer">
-        <table class="w-full text-sm min-w-[1800px]">
+        <table class="w-full text-sm min-w-[2000px]">
             <thead class="bg-zinc-800 sticky z-20 border-b border-zinc-700" style="top: 0; position: sticky;">
                 <tr>
                     <th class="px-4 py-3 text-center font-medium text-zinc-400 w-12">#</th>
@@ -144,10 +144,12 @@
                     <th class="px-6 py-3 text-right font-medium text-zinc-400 w-28">Current</th>
                     <th class="px-6 py-3 text-right font-medium text-zinc-400 w-28">Forecast</th>
                     <th class="px-6 py-3 text-right font-medium text-zinc-400 w-28">Actual</th>
+                    <th class="px-6 py-3 text-center font-medium text-zinc-400 w-20">% Complete</th>
                     <!-- Slightly wider Sync column -->
                     <th class="px-6 py-3 text-center font-medium text-zinc-400 min-w-[140px]">Sync</th>
+                    <th class="px-6 py-3 text-center font-medium text-zinc-400 w-24">Health</th>
                     <th class="px-6 py-3 text-left font-medium text-zinc-400 w-[320px]">Notes</th>
-                    <th class="px-6 py-3 w-20"></th>
+                    <th class="px-6 py-3 w-24"></th>
                 </tr>
             </thead>
             <tbody id="budgetTableBody" class="divide-y divide-zinc-800 text-sm">
@@ -340,6 +342,22 @@
     </div>
 </dialog>
 
+<!-- Line Item History Modal -->
+<dialog id="lineHistoryModal" class="modal rounded-md w-full max-w-2xl p-0 text-white" style="background-color: #18181b; border: 1px solid #3f3f46;">
+    <div class="p-6">
+        <div class="flex justify-between items-center mb-4">
+            <h3 class="text-lg font-semibold">Line Item History</h3>
+            <button onclick="document.getElementById('lineHistoryModal').close()" class="text-zinc-400 hover:text-white">
+                <i class="fa-solid fa-times text-xl"></i>
+            </button>
+        </div>
+        <div id="lineHistoryContent" class="max-h-[400px] overflow-auto"></div>
+        <div class="mt-4 text-right">
+            <button onclick="document.getElementById('lineHistoryModal').close()" class="px-5 py-2 bg-zinc-700 hover:bg-zinc-600 rounded-md text-sm">Close</button>
+        </div>
+    </div>
+</dialog>
+
 <script>
     // ==================== DATA & STATE ====================
     let budgetLines = JSON.parse(localStorage.getItem('budgetLines')) || [];
@@ -373,6 +391,7 @@
     let budgetLocked = localStorage.getItem('budgetLocked') === 'true';
     let budgetSnapshots = JSON.parse(localStorage.getItem('budgetSnapshots') || '[]');
     let budgetAuditLog = JSON.parse(localStorage.getItem('budgetAuditLog') || '[]');
+    let collapsedDivisions = new Set(); // For collapsible divisions
 
     function formatCurrency(amount) {
         return new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(amount || 0);
@@ -389,7 +408,6 @@
             details: details
         };
         budgetAuditLog.unshift(entry);
-        // Keep only last 1000 entries to prevent localStorage bloat
         if (budgetAuditLog.length > 1000) budgetAuditLog.length = 1000;
         localStorage.setItem('budgetAuditLog', JSON.stringify(budgetAuditLog));
     }
@@ -435,13 +453,13 @@
         }
     }
 
-    // ==================== RENDER TABLE ====================
+    // ==================== RENDER TABLE (with collapsible divisions, health, % complete) ====================
     function renderBudgetTable(lines) {
         const tbody = document.getElementById('budgetTableBody');
         tbody.innerHTML = '';
 
         if (!lines || lines.length === 0) {
-            tbody.innerHTML = `<tr><td colspan="13" class="px-6 py-8 text-center text-zinc-500">No budget line items yet. Click "Add Budget Line Item" to begin.</td></tr>`;
+            tbody.innerHTML = `<tr><td colspan="15" class="px-6 py-8 text-center text-zinc-500">No budget line items yet. Click "Add Budget Line Item" to begin.</td></tr>`;
             updateTotals();
             return;
         }
@@ -461,15 +479,34 @@
             const division = line.cost_code.substring(0, 2);
             if (division !== currentDivision) {
                 currentDivision = division;
+                const isCollapsed = collapsedDivisions.has(division);
                 const header = document.createElement('tr');
-                header.className = 'bg-zinc-800';
-                header.innerHTML = `<td colspan="13" class="px-6 py-2 text-emerald-400 font-semibold text-base">Division ${division} — ${divisionNames[division] || 'Other'}</td>`;
+                header.className = 'bg-zinc-800 cursor-pointer hover:bg-zinc-700';
+                header.onclick = () => toggleDivision(division);
+                header.innerHTML = `
+                    <td colspan="15" class="px-6 py-2 text-emerald-400 font-semibold text-base">
+                        <i class="fa-solid fa-chevron-${isCollapsed ? 'right' : 'down'} mr-2 transition-transform"></i>
+                        Division ${division} — ${divisionNames[division] || 'Other'}
+                    </td>
+                `;
                 tbody.appendChild(header);
             }
 
             const pending = line.pending || 0;
             const forecast = (line.original_budget || 0) + (line.approved_changes || 0) + pending;
             const actual = line.actual || 0;
+            const percentComplete = line.percent_complete || 0;
+
+            // Budget Health
+            let healthBadge = '';
+            const currentBudget = (line.original_budget || 0) + (line.approved_changes || 0);
+            if (pending > 50000 || currentBudget > contractAmount * 0.9) {
+                healthBadge = `<span class="px-2 py-0.5 text-xs rounded-full bg-red-900/60 text-red-400">Over</span>`;
+            } else if (pending > 10000) {
+                healthBadge = `<span class="px-2 py-0.5 text-xs rounded-full bg-amber-900/60 text-amber-400">High Pending</span>`;
+            } else {
+                healthBadge = `<span class="px-2 py-0.5 text-xs rounded-full bg-emerald-900/60 text-emerald-400">OK</span>`;
+            }
 
             let syncBadge = '';
             const status = line.syncStatus || 'Not Synced';
@@ -493,12 +530,19 @@
                 <td class="px-6 py-3 text-center font-semibold text-emerald-400 w-28">${formatCurrency(line.original_budget + line.approved_changes)}</td>
                 <td class="px-6 py-3 text-center font-semibold text-emerald-400 w-28">${formatCurrency(forecast)}</td>
                 <td class="px-6 py-3 text-center font-semibold text-sky-400 w-28">${formatCurrency(actual)}</td>
+                <td class="px-6 py-3 text-center w-20">
+                    <input type="number" value="${percentComplete}" min="0" max="100" step="1"
+                           class="w-16 bg-zinc-800 border border-zinc-700 rounded px-2 py-0.5 text-center text-xs"
+                           onchange="updatePercentComplete(${line.id}, this.value)">
+                </td>
                 <td class="px-6 py-3 text-center w-24">${syncBadge}</td>
+                <td class="px-6 py-3 text-center w-24">${healthBadge}</td>
                 <td class="px-6 py-3 text-sm text-zinc-400 w-[320px]">${line.notes || ''}</td>
-                <td class="px-4 py-3 w-20">
-                    <div class="flex gap-2">
-                        <button onclick="event.stopImmediatePropagation(); editBudgetLine(${line.id})" class="text-zinc-400 hover:text-white"><i class="fa-solid fa-edit"></i></button>
-                        <button onclick="event.stopImmediatePropagation(); deleteBudgetLine(${line.id})" class="text-zinc-400 hover:text-red-400"><i class="fa-solid fa-trash"></i></button>
+                <td class="px-4 py-3 w-24">
+                    <div class="flex gap-1">
+                        <button onclick="event.stopImmediatePropagation(); editBudgetLine(${line.id})" class="text-zinc-400 hover:text-white p-1"><i class="fa-solid fa-edit"></i></button>
+                        <button onclick="event.stopImmediatePropagation(); showLineHistory(${line.id})" class="text-zinc-400 hover:text-sky-400 p-1" title="View Line History"><i class="fa-solid fa-history"></i></button>
+                        <button onclick="event.stopImmediatePropagation(); deleteBudgetLine(${line.id})" class="text-zinc-400 hover:text-red-400 p-1"><i class="fa-solid fa-trash"></i></button>
                     </div>
                 </td>
             `;
@@ -507,6 +551,24 @@
 
         updateTotals();
         updateRevisionBadge();
+    }
+
+    function toggleDivision(division) {
+        if (collapsedDivisions.has(division)) {
+            collapsedDivisions.delete(division);
+        } else {
+            collapsedDivisions.add(division);
+        }
+        renderBudgetTable(budgetLines);
+    }
+
+    function updatePercentComplete(id, value) {
+        const line = budgetLines.find(l => l.id == id);
+        if (line) {
+            line.percent_complete = parseInt(value) || 0;
+            localStorage.setItem('budgetLines', JSON.stringify(budgetLines));
+            // Optionally log audit
+        }
     }
 
     function updateTotals() {
@@ -553,37 +615,13 @@
         const saveBtn = document.querySelector('button[onclick="saveBudget()"]');
 
         if (budgetLocked) {
-            if (addBtn) {
-                addBtn.disabled = true;
-                addBtn.classList.add('opacity-50', 'cursor-not-allowed');
-                addBtn.title = "Budget is locked. Create a new revision to add lines.";
-            }
-            if (publishBtn) {
-                publishBtn.disabled = true;
-                publishBtn.classList.add('opacity-50', 'cursor-not-allowed');
-                publishBtn.title = "Create a new revision first to publish again.";
-            }
-            if (saveBtn) {
-                saveBtn.disabled = true;
-                saveBtn.classList.add('opacity-50', 'cursor-not-allowed');
-                saveBtn.title = "Budget is locked after publishing. Create a new revision to edit.";
-            }
+            if (addBtn) { addBtn.disabled = true; addBtn.classList.add('opacity-50', 'cursor-not-allowed'); }
+            if (publishBtn) { publishBtn.disabled = true; publishBtn.classList.add('opacity-50', 'cursor-not-allowed'); }
+            if (saveBtn) { saveBtn.disabled = true; saveBtn.classList.add('opacity-50', 'cursor-not-allowed'); }
         } else {
-            if (addBtn) {
-                addBtn.disabled = false;
-                addBtn.classList.remove('opacity-50', 'cursor-not-allowed');
-                addBtn.title = "";
-            }
-            if (publishBtn) {
-                publishBtn.disabled = false;
-                publishBtn.classList.remove('opacity-50', 'cursor-not-allowed');
-                publishBtn.title = "";
-            }
-            if (saveBtn) {
-                saveBtn.disabled = false;
-                saveBtn.classList.remove('opacity-50', 'cursor-not-allowed');
-                saveBtn.title = "";
-            }
+            if (addBtn) { addBtn.disabled = false; addBtn.classList.remove('opacity-50', 'cursor-not-allowed'); }
+            if (publishBtn) { publishBtn.disabled = false; publishBtn.classList.remove('opacity-50', 'cursor-not-allowed'); }
+            if (saveBtn) { saveBtn.disabled = false; saveBtn.classList.remove('opacity-50', 'cursor-not-allowed'); }
         }
     }
 
@@ -601,9 +639,7 @@
         });
         localStorage.setItem('budgetSnapshots', JSON.stringify(budgetSnapshots));
 
-        logBudgetAudit("REVISION_CREATED", {
-            newRevision: currentRevision
-        });
+        logBudgetAudit("REVISION_CREATED", { newRevision: currentRevision });
 
         updateRevisionBadge();
         updateButtonStates();
@@ -646,7 +682,7 @@
         `;
 
         if (budgetAuditLog.length === 0) {
-            html += `<tr><td colspan="5" class="px-4 py-8 text-center text-zinc-500">No audit events yet. Changes to budget lines, publishes, and revisions will appear here.</td></tr>`;
+            html += `<tr><td colspan="5" class="px-4 py-8 text-center text-zinc-500">No audit events yet.</td></tr>`;
         } else {
             budgetAuditLog.slice(0, 200).forEach(entry => {
                 let actionBadge = '';
@@ -670,6 +706,9 @@
                 } else if (entry.action === 'REVISION_CREATED') {
                     actionBadge = `<span class="px-2 py-0.5 text-xs rounded-full bg-purple-900/60 text-purple-400">Revision Created</span>`;
                     detailText = `New revision: ${entry.details.newRevision}`;
+                } else if (entry.action === 'BUDGET_PRINTED') {
+                    actionBadge = `<span class="px-2 py-0.5 text-xs rounded-full bg-sky-900/60 text-sky-400">Printed</span>`;
+                    detailText = `Budget printed for revision ${entry.revision}`;
                 } else {
                     actionBadge = `<span class="px-2 py-0.5 text-xs rounded-full bg-zinc-700 text-zinc-400">${entry.action}</span>`;
                     detailText = JSON.stringify(entry.details);
@@ -701,6 +740,37 @@
 
         modal.innerHTML = html;
         document.body.appendChild(modal);
+        modal.showModal();
+    }
+
+    // ==================== LINE ITEM HISTORY ====================
+    function showLineHistory(id) {
+        const line = budgetLines.find(l => l.id == id);
+        if (!line) return;
+
+        const modal = document.getElementById('lineHistoryModal');
+        const content = document.getElementById('lineHistoryContent');
+        content.innerHTML = '';
+
+        const lineEvents = budgetAuditLog.filter(e => 
+            (e.action === 'LINE_ADDED' || e.action === 'LINE_EDITED' || e.action === 'LINE_DELETED') && 
+            e.details.cost_code === line.cost_code
+        );
+
+        if (lineEvents.length === 0) {
+            content.innerHTML = `<div class="text-sm text-zinc-400 p-4">No history for this line item yet.</div>`;
+        } else {
+            let html = `<div class="text-sm mb-2">History for <span class="font-mono text-emerald-400">${line.cost_code}</span> — ${line.description}</div>`;
+            lineEvents.slice(0, 20).forEach(e => {
+                const time = new Date(e.timestamp).toLocaleString([], { month:'short', day:'numeric', hour:'2-digit', minute:'2-digit' });
+                let text = '';
+                if (e.action === 'LINE_ADDED') text = `Added with budget ${formatCurrency(e.details.original_budget)}`;
+                else if (e.action === 'LINE_EDITED') text = `Budget changed: ${formatCurrency(e.details.old_original_budget)} → ${formatCurrency(e.details.new_original_budget)}`;
+                else if (e.action === 'LINE_DELETED') text = `Deleted`;
+                html += `<div class="flex justify-between px-3 py-1 text-xs border-b border-zinc-700"><div class="text-zinc-400">${time}</div><div>${text}</div></div>`;
+            });
+            content.innerHTML = html;
+        }
         modal.showModal();
     }
 
@@ -736,7 +806,6 @@
         document.getElementById('budgetLineId').value = line.id;
         document.getElementById('cost_code').value = `${line.cost_code} - ${line.description}`;
         document.getElementById('cost_type').value = line.cost_type;
-        // Set resolved description display
         const resolvedEl = document.getElementById('resolvedDescription');
         if (resolvedEl) resolvedEl.textContent = line.description;
         document.getElementById('original_budget').value = formatCurrency(line.original_budget);
@@ -769,10 +838,9 @@
 
         const costType = document.getElementById('cost_type').value;
 
-        // Lookup clean description from cost code list (Sage 300 friendly - no free-text description override)
         const list = activeCostCodeList === 'csi' ? csiCostCodes : customCostCodes;
         const foundCode = list.find(c => c.code === codeOnly);
-        const description = foundCode ? foundCode.description : codeOnly;  // Fallback to code if not found
+        const description = foundCode ? foundCode.description : codeOnly;
 
         let otherOriginals = 0;
         budgetLines.forEach(l => {
@@ -785,7 +853,6 @@
         }
 
         if (!id) {
-            // Sage 300 tight: duplicate check on Cost Code + Cost Type (not free-text description)
             const existing = budgetLines.find(l => l.cost_code === codeOnly && l.cost_type === costType);
             if (existing) {
                 showDuplicateChoiceModal(existing, codeOnly, description, costType, originalBudget);
@@ -803,7 +870,8 @@
             pending: id ? (budgetLines.find(l => l.id == id)?.pending || 0) : 0,
             notes: document.getElementById('notes').value.trim(),
             actual: id ? (budgetLines.find(l => l.id == id)?.actual || 0) : 0,
-            syncStatus: id ? (budgetLines.find(l => l.id == id)?.syncStatus || 'Not Synced') : 'Not Synced'
+            syncStatus: id ? (budgetLines.find(l => l.id == id)?.syncStatus || 'Not Synced') : 'Not Synced',
+            percent_complete: id ? (budgetLines.find(l => l.id == id)?.percent_complete || 0) : 0
         };
 
         if (id) {
@@ -926,7 +994,6 @@
         if (found) {
             document.getElementById('cost_code').value = `${found.code} - ${found.description}`;
             document.getElementById('cost_type').value = found.cost_type;
-            // Show resolved description for user feedback (no editable field)
             const resolvedEl = document.getElementById('resolvedDescription');
             if (resolvedEl) resolvedEl.textContent = found.description;
         }
@@ -953,6 +1020,7 @@
             "Current Budget": (line.original_budget || 0) + (line.approved_changes || 0),
             "Forecast": (line.original_budget || 0) + (line.approved_changes || 0) + (line.pending || 0),
             "Actual Cost": line.actual || 0,
+            "% Complete": line.percent_complete || 0,
             "Sync Status": line.syncStatus || "Not Synced",
             "Notes": line.notes || ""
         }));
@@ -1016,7 +1084,8 @@
                             pending: 0,
                             notes: notes,
                             actual: 0,
-                            syncStatus: 'Not Synced'
+                            syncStatus: 'Not Synced',
+                            percent_complete: 0
                         });
                         added++;
                     });
@@ -1033,7 +1102,7 @@
         input.click();
     }
 
-    // ==================== PRINT (Hidden Iframe) ====================
+    // ==================== PRINT (Hidden Iframe + Audit Log) ====================
     function printBudget() {
         if (!budgetLines || budgetLines.length === 0) {
             showCenteredAlert("You must have at least one budget line item to print.");
@@ -1068,7 +1137,15 @@
             <html><head><title>Budget Report - ALDI Lakeland (Rev ${currentRevision})</title>
             <style>body{font-family:Arial,sans-serif;padding:20px}table{width:100%;border-collapse:collapse;font-size:11px}th,td{border:1px solid #ccc;padding:6px;text-align:left}th{background:#f3f4f6}</style>
             </head><body>
-                <h2>Budget Report — ALDI Lakeland (Revision ${currentRevision})</h2>
+                <div style="display:flex;align-items:center;gap:12px;margin-bottom:16px;">
+                    <div style="width:40px;height:40px;background:#10b981;border-radius:10px;display:flex;align-items:center;justify-content:center;">
+                        <i class="fa-solid fa-building text-white text-2xl"></i>
+                    </div>
+                    <div>
+                        <h2 style="margin:0;font-size:20px;">Budget Report — ALDI Lakeland</h2>
+                        <div style="font-size:12px;color:#666;">Revision ${currentRevision} • Case PM</div>
+                    </div>
+                </div>
                 <table>
                     <thead><tr>
                         <th>Cost Code</th><th>Description</th><th>Cost Type</th>
@@ -1095,9 +1172,12 @@
             iframe.contentWindow.print();
             setTimeout(() => document.body.removeChild(iframe), 1000);
         }, 600);
+
+        // Log to audit
+        logBudgetAudit("BUDGET_PRINTED", { revision: currentRevision });
     }
 
-    // ==================== SAVE / PUBLISH (Publish also saves) ====================
+    // ==================== SAVE / PUBLISH (with Sage pre-publish validation) ====================
     function saveBudget() {
         if (budgetLines.length === 0) { showCenteredAlert("Nothing to save yet."); return; }
         budgetSaved = true;
@@ -1115,6 +1195,20 @@
 
     function publishBudget() {
         if (budgetLines.length === 0) { showCenteredAlert("Add at least one budget line item before publishing."); return; }
+
+        // Sage pre-publish validation
+        const list = activeCostCodeList === 'csi' ? csiCostCodes : customCostCodes;
+        const invalidLines = budgetLines.filter(line => {
+            const validCode = list.some(c => c.code === line.cost_code);
+            const validType = costTypes.includes(line.cost_type);
+            return !validCode || !validType;
+        });
+
+        if (invalidLines.length > 0) {
+            showCenteredAlert(`Cannot publish. ${invalidLines.length} line(s) have invalid Cost Code or Cost Type. Please fix before publishing.`);
+            return;
+        }
+
         budgetSaved = true;
         localStorage.setItem('budgetLines', JSON.stringify(budgetLines));
         hideUnsavedIndicator();
@@ -1179,7 +1273,7 @@
         document.getElementById('pendingChangesModal').showModal();
     }
 
-    // ==================== VERSION HISTORY (clickable) ====================
+    // ==================== VERSION HISTORY (clickable diff) ====================
     function showVersionHistory() {
         const snapshots = JSON.parse(localStorage.getItem('budgetSnapshots') || '[]');
         const container = document.getElementById('versionHistoryContent');
@@ -1195,7 +1289,7 @@
                     <div class="font-mono text-emerald-400">Revision ${s.revision}</div>
                     <div class="text-xs text-zinc-400">${new Date(s.timestamp).toLocaleString()}</div>
                     <div class="text-xs mt-1">${s.lines.length} line items • Total: ${formatCurrency(s.lines.reduce((sum, l) => sum + (l.original_budget || 0), 0))}</div>
-                    <div class="text-[10px] text-emerald-400 mt-1">Click to view line items at this revision →</div>
+                    <div class="text-[10px] text-emerald-400 mt-1">Click to view changes →</div>
                 `;
                 div.onclick = () => showRevisionDetails(s.revision);
                 container.appendChild(div);
@@ -1215,7 +1309,6 @@
 
         const prevSnap = currentIndex > 0 ? sorted[currentIndex - 1] : null;
 
-        // Build maps for comparison (key = cost_code + cost_type for Sage compatibility)
         const currentMap = new Map();
         snap.lines.forEach(l => currentMap.set(`${l.cost_code}|${l.cost_type}`, l));
 
@@ -1224,7 +1317,6 @@
 
         let added = [], modified = [], removed = [];
 
-        // Added or Modified
         currentMap.forEach((line, key) => {
             if (!prevMap.has(key)) {
                 added.push(line);
@@ -1236,7 +1328,6 @@
             }
         });
 
-        // Removed
         prevMap.forEach((line, key) => {
             if (!currentMap.has(key)) {
                 removed.push(line);
@@ -1589,8 +1680,7 @@
                         const headers = json[0].map(h => String(h).trim().toLowerCase());
                         rows = json.slice(1).map(r => {
                             const o = {};
-                            headers.forEach((h, i) => o[h] = r[i] !== undefined ? String(r[i]).trim() : '');
-                            return o;
+                            headers.forEach((h, i) => o[h] = r[i] !== undefined ? String(r[i]).trim() : '');return o;
                         });
                     }
                     let added = 0;
@@ -1702,7 +1792,7 @@
             }
         }, 300);
 
-        console.log('%c[Case PM] Budget page fully initialized (ULTIMATE v10 - All fixes applied)', 'color:#10b981');
+        console.log('%c[Case PM] Budget page fully initialized (ULTIMATE v11 - All enhancements applied)', 'color:#10b981');
     }
 
     window.onload = initializeBudget;
