@@ -19,10 +19,10 @@
     -webkit-text-fill-color: #fff !important;
     transition: background-color 5000s ease-in-out 0s;
   }
-  /* Slightly taller rows for better readability (tiny increase as requested) */
+  /* Slightly taller rows for better readability (tiny increase) */
   #usersTableBody tr td {
-    padding-top: 8px !important;
-    padding-bottom: 8px !important;
+    padding-top: 9px !important;
+    padding-bottom: 9px !important;
   }
 </style>
 
@@ -103,6 +103,12 @@
         <option value="">All Statuses</option>
         <option value="Active">Active</option>
         <option value="Inactive">Inactive</option>
+    </select>
+
+    <select id="accessFilter" class="bg-zinc-900 border border-zinc-700 rounded-md px-4 py-2.5 text-sm focus:border-emerald-600" onchange="filterUsers()">
+        <option value="">All Access</option>
+        <option value="on">Access On</option>
+        <option value="off">Access Off</option>
     </select>
 
     <button onclick="clearUserFilters()" class="px-4 py-2.5 bg-zinc-800 hover:bg-zinc-700 rounded-md text-sm">Clear Filters</button>
@@ -1207,6 +1213,7 @@
         const search = (document.getElementById('searchInput').value || '').toLowerCase().trim();
         const role = document.getElementById('roleFilter').value;
         const status = document.getElementById('statusFilter').value;
+        const access = document.getElementById('accessFilter').value;
 
         const filtered = users.filter(u => {
             const matchesSearch = !search || 
@@ -1215,7 +1222,15 @@
                 (u.email && u.email.toLowerCase().includes(search));
             const matchesRole = !role || u.role === role;
             const matchesStatus = !status || u.status === status;
-            return matchesSearch && matchesRole && matchesStatus;
+
+            let matchesAccess = true;
+            if (access === 'on') {
+                matchesAccess = u.accessEnabled !== false;
+            } else if (access === 'off') {
+                matchesAccess = u.accessEnabled === false;
+            }
+
+            return matchesSearch && matchesRole && matchesStatus && matchesAccess;
         });
 
         renderUsersTable(filtered);
@@ -1225,6 +1240,7 @@
         document.getElementById('searchInput').value = '';
         document.getElementById('roleFilter').value = '';
         document.getElementById('statusFilter').value = '';
+        document.getElementById('accessFilter').value = '';
         renderUsersTable();
     }
 
@@ -1372,7 +1388,7 @@
         const canEditSignature = isSelf; // Only the user themselves can change signature
 
         const modal = document.createElement('dialog');
-        modal.className = 'modal rounded-md p-0 text-white w-full max-w-lg';
+        modal.className = 'modal rounded-md p-0 text-white w-full max-w-2xl';
         modal.style.backgroundColor = '#18181b';
         modal.style.border = '1px solid #3f3f46';
 
@@ -1423,10 +1439,8 @@
                             <div class="px-4 py-2 bg-zinc-800 border border-zinc-700 rounded-md text-sm text-zinc-300">${currentUser.role}</div>
                         </div>
                         <div>
-                            <label class="block text-xs text-zinc-400 mb-1">Status</label>
-                            <div class="px-4 py-2 bg-zinc-800 border border-zinc-700 rounded-md text-sm">
-                                <span class="px-2.5 py-0.5 text-xs rounded-full ${currentUser.status === 'Active' ? 'bg-emerald-900/60 text-emerald-400' : 'bg-zinc-700 text-zinc-400'}">${currentUser.status || 'Active'}</span>
-                            </div>
+                            <label class="block text-xs text-zinc-400 mb-1">Company</label>
+                            <div class="px-4 py-2 bg-zinc-800 border border-zinc-700 rounded-md text-sm text-zinc-300">${currentUser.company || '— (set by Admin)'}</div>
                         </div>
                         <div>
                             <label class="block text-xs text-zinc-400 mb-1">Two-Factor Authentication</label>
@@ -1434,12 +1448,6 @@
                                 ${currentUser.twoFactorEnabled ? 'Enabled' : 'Disabled'}
                             </div>
                         </div>
-                    </div>
-
-                    <div class="mt-4">
-                        <label class="block text-xs text-zinc-400 mb-1">Notes (Internal / Admin only)</label>
-                        <textarea class="w-full bg-zinc-800 border border-zinc-700 rounded-md px-4 py-2 text-sm h-20" readonly placeholder="Only admins can edit notes.">${currentUser.notes || ''}</textarea>
-                        <div class="text-[10px] text-zinc-500 mt-1">You cannot edit notes. Contact an administrator if changes are needed.</div>
                     </div>
                 </div>
 
@@ -1466,8 +1474,15 @@
                         <input type="file" id="profileSignatureUpload" accept="image/*" class="text-sm file:mr-3 file:px-3 file:py-1.5 file:rounded file:border-0 file:bg-zinc-700 file:text-white hover:file:bg-zinc-600">
                         <div id="profileSignatureUploadStatus" class="text-xs text-emerald-400 mt-1"></div>
                     </div>
+
+                    <div class="mt-6 pt-4 border-t border-zinc-700">
+                        <label class="block text-sm mb-2 text-zinc-300">Upload Digital Signature Certificate (optional)</label>
+                        <input type="file" id="profileCertificateUpload" accept=".pdf,.pfx,.p12,image/*" class="text-sm file:mr-3 file:px-3 file:py-1.5 file:rounded file:border-0 file:bg-zinc-700 file:text-white hover:file:bg-zinc-600">
+                        <div id="profileCertificateStatus" class="text-xs text-emerald-400 mt-1"></div>
+                        <div class="text-[10px] text-zinc-500 mt-1">Accepted: PDF, PFX, P12, or image. Only you can update this.</div>
+                    </div>
                     ` : `
-                    <div class="mt-4 text-xs text-zinc-500">Signature upload is only available when viewing your own profile.</div>
+                    <div class="mt-4 text-xs text-zinc-500">Signature and certificate uploads are only available when viewing your own profile.</div>
                     `}
                 </div>
 
@@ -1485,6 +1500,7 @@
         setTimeout(() => {
             initProfileSignatureCanvas(currentUser);
             setupProfileSignatureUpload(currentUser.id);
+            setupProfileCertificateUpload(currentUser.id);
         }, 200);
     }
 
@@ -1591,6 +1607,28 @@
         };
     }
 
+    function setupProfileCertificateUpload(userId) {
+        const input = document.getElementById('profileCertificateUpload');
+        const status = document.getElementById('profileCertificateStatus');
+        if (!input || !status) return;
+
+        input.onchange = function() {
+            if (input.files.length > 0) {
+                const reader = new FileReader();
+                reader.onload = function(ev) {
+                    const user = users.find(u => u.id == userId);
+                    if (user) {
+                        user.certificateData = ev.target.result; // store base64 or file info
+                        user.certificateFileName = input.files[0].name;
+                        localStorage.setItem('users', JSON.stringify(users));
+                        status.textContent = 'Certificate uploaded and saved: ' + input.files[0].name;
+                    }
+                };
+                reader.readAsDataURL(input.files[0]);
+            }
+        };
+    }
+
     function saveSelfProfile(userId, btn) {
         const user = users.find(u => u.id == userId);
         if (!user) return;
@@ -1659,8 +1697,37 @@
         if (searchInput) searchInput.addEventListener('input', filterUsers);
         if (roleFilter) roleFilter.addEventListener('change', filterUsers);
         if (statusFilter) statusFilter.addEventListener('change', filterUsers);
+        const accessFilter = document.getElementById('accessFilter');
+        if (accessFilter) accessFilter.addEventListener('change', filterUsers);
 
-        console.log('%c[Case PM] User Management FIXED v5 - Edit working, company dropdown connected, password reset, email required for access, rows shrunk, save fixed, import added', 'color:#10b981');
+        // Self-auditing: If a user's company is deleted or inactive, turn off their software access automatically
+        runCompanyAccessSelfAudit();
+
+        console.log('%c[Case PM] User Management updated - wider self-profile, company shown (admin-only), notes removed from profile, certificate upload added, status/access filters, self-audit for company changes', 'color:#10b981');
+    }
+
+    function runCompanyAccessSelfAudit() {
+        const freshCompanies = JSON.parse(localStorage.getItem('casepm_companies')) || [];
+        let changed = false;
+
+        users.forEach(user => {
+            if (user.company && user.accessEnabled !== false) {
+                const company = freshCompanies.find(c => 
+                    (c.company_name || c.name || c.companyName || c.Company_Name) === user.company
+                );
+                const isInactive = !company || company.status === 'Inactive' || company.active === false;
+                if (isInactive) {
+                    user.accessEnabled = false;
+                    if (user.status !== 'Inactive') user.status = 'Inactive';
+                    changed = true;
+                    logUserAudit('ACCESS_AUTO_DISABLED', user.id, { reason: 'Company deleted or set inactive', company: user.company });
+                }
+            }
+        });
+
+        if (changed) {
+            localStorage.setItem('users', JSON.stringify(users));
+        }
     }
 
     window.onload = initializeUserManagement;
