@@ -1066,6 +1066,7 @@
 
     function populateCostCodeDatalist() {
         const datalist = document.getElementById('costCodeList');
+        if (!datalist) return; // Guard: element was removed when native datalist filtering was disabled
         datalist.innerHTML = '';
         const list = activeCostCodeList === 'csi' ? csiCostCodes : customCostCodes;
         list.forEach(item => {
