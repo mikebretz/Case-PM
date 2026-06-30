@@ -553,9 +553,8 @@
                     <td class="px-6 py-1.5 text-center w-24">${syncBadge}</td>
                     <td class="px-6 py-1.5 text-center w-24">${healthBadge}</td>
                     <td class="px-6 py-1.5 text-sm text-zinc-400 w-[320px]">${line.notes || ''}</td>
-                    <td class="px-4 py-1.5 w-24">
-                        <div class="flex gap-1">
-                            <button onclick="event.stopImmediatePropagation(); editBudgetLine(${line.id})" class="text-emerald-400 hover:text-emerald-300 p-1" title="Edit"><i class="fa-solid fa-edit"></i></button>
+                    <td class="px-4 py-1.5 w-20">
+                        <div class="flex gap-1 justify-center">
                             <button onclick="event.stopImmediatePropagation(); showLineHistory(${line.id})" class="text-sky-400 hover:text-sky-300 p-1" title="View Line History"><i class="fa-solid fa-history"></i></button>
                             <button onclick="event.stopImmediatePropagation(); deleteBudgetLine(${line.id})" class="text-red-400 hover:text-red-300 p-1" title="Delete"><i class="fa-solid fa-trash"></i></button>
                         </div>
@@ -939,18 +938,27 @@
         e.preventDefault();
         const id = document.getElementById('budgetLineId').value;
         const fullValue = document.getElementById('cost_code').value.trim();
-        const codeMatch = fullValue.match(/^([0-9-]+)/);
-        const codeOnly = codeMatch ? codeMatch[1] : fullValue;
+
+        // Robust code extraction: take everything before the first " - " or just the leading code-like part
+        let codeOnly = fullValue;
+        const dashIndex = fullValue.indexOf(' - ');
+        if (dashIndex > 0) {
+            codeOnly = fullValue.substring(0, dashIndex).trim();
+        } else {
+            const codeMatch = fullValue.match(/^([0-9A-Za-z.-]+)/);
+            if (codeMatch) codeOnly = codeMatch[1];
+        }
+        codeOnly = codeOnly.trim();
 
         let originalBudgetStr = document.getElementById('original_budget').value || "0";
-        // Robust parsing: remove $, commas, and any non-numeric except minus and dot
         originalBudgetStr = originalBudgetStr.replace(/[^0-9.-]/g, '');
         const originalBudget = parseFloat(originalBudgetStr) || 0;
 
         const costType = document.getElementById('cost_type').value;
 
         const list = activeCostCodeList === 'csi' ? csiCostCodes : customCostCodes;
-        const foundCode = list.find(c => c.code === codeOnly);
+        // Case-insensitive match to be tolerant of how the modal returns the code
+        const foundCode = list.find(c => c.code.toLowerCase() === codeOnly.toLowerCase());
         if (!foundCode) {
             showCenteredAlert("Cost Code must exactly match one from the active list. Please click 'View All Codes' and select a valid code.");
             return;
