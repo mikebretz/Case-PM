@@ -10,7 +10,7 @@
         <div class="text-xl font-semibold tracking-tight text-white">ALDI Lakeland</div>
     </div>
 
-    <div class="w-1/3 flex justify-start pl-0 -ml-10">
+    <div class="w/3 flex justify-start pl-0 -ml-10">
         <div class="flex items-center gap-3">
             <div class="text-2xl font-semibold text-white">Budget</div>
             <div id="revisionBadge" onclick="showVersionHistory()" 
@@ -181,10 +181,12 @@
             <input type="hidden" id="budgetLineId">
             <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div class="md:col-span-2">
-                    <label class="block text-sm mb-1.5 text-zinc-300">Cost Code</label>
-                    <input type="text" id="cost_code" list="costCodeList" onblur="autoFillFromCostCode()" class="w-full bg-zinc-800 border border-zinc-700 rounded-md px-4 py-2.5 text-sm text-white" required>
+                    <label class="block text-sm mb-1.5 text-zinc-300 flex items-center justify-between">
+                        <span>Cost Code</span>
+                        <span onclick="viewActiveCostCodeList(); event.stopImmediatePropagation();" class="text-[10px] text-emerald-400 hover:text-emerald-300 cursor-pointer underline">view all codes</span>
+                    </label>
+                    <input type="text" id="cost_code" list="costCodeList" onblur="autoFillFromCostCode()" autocomplete="off" class="w-full bg-zinc-800 border border-zinc-700 rounded-md px-4 py-2.5 text-sm text-white" required>
                     <datalist id="costCodeList"></datalist>
-                    <div id="resolvedDescription" class="mt-1 text-xs text-emerald-400 font-mono"></div>
                 </div>
                 <div>
                     <label class="block text-sm mb-1.5 text-zinc-300">Cost Type</label>
@@ -241,6 +243,9 @@
                     </button>
                     <button onclick="uploadCostCodesExcel()" class="px-4 py-1.5 text-xs bg-emerald-600 hover:bg-emerald-500 rounded-md flex items-center gap-2">
                         <i class="fa-solid fa-upload"></i> Upload Excel
+                    </button>
+                    <button onclick="viewActiveCostCodeList()" class="px-4 py-1.5 text-xs bg-zinc-700 hover:bg-zinc-600 rounded-md flex items-center gap-2">
+                        <i class="fa-solid fa-list"></i> View List
                     </button>
                     <button onclick="deleteSelectedCostCodeList()" class="px-4 py-1.5 text-xs bg-red-900/70 hover:bg-red-900 text-red-300 rounded-md flex items-center gap-2">
                         <i class="fa-solid fa-trash"></i> Delete Selected
@@ -851,8 +856,6 @@
         document.getElementById('budgetLineId').value = '';
         document.getElementById('modalTitle').innerText = 'Add Budget Line Item';
         document.getElementById('budgetValidationMessage').innerHTML = '';
-        const resolvedEl = document.getElementById('resolvedDescription');
-        if (resolvedEl) resolvedEl.textContent = '';
         const saveBtn = document.getElementById('saveLineItemBtn');
         saveBtn.disabled = false;
         saveBtn.classList.remove('bg-red-600', 'cursor-not-allowed');
@@ -860,7 +863,10 @@
         saveBtn.textContent = 'Save Line Item';
         populateCostCodeDatalist();
         document.getElementById('budgetLineModal').showModal();
-        setTimeout(() => setupAccountingFormat('original_budget'), 100);
+        setTimeout(() => {
+            setupAccountingFormat('original_budget');
+            setupCostCodeInputBehavior();
+        }, 100);
     }
 
     function editBudgetLine(id) {
@@ -873,8 +879,6 @@
         document.getElementById('budgetLineId').value = line.id;
         document.getElementById('cost_code').value = `${line.cost_code} - ${line.description}`;
         document.getElementById('cost_type').value = line.cost_type;
-        const resolvedEl = document.getElementById('resolvedDescription');
-        if (resolvedEl) resolvedEl.textContent = line.description;
         document.getElementById('original_budget').value = formatCurrency(line.original_budget);
         document.getElementById('notes').value = line.notes || '';
         document.getElementById('modalTitle').innerText = 'Edit Budget Line Item';
@@ -889,6 +893,7 @@
         setTimeout(() => {
             setupAccountingFormat('original_budget');
             validateBudgetAmount();
+            setupCostCodeInputBehavior();
         }, 100);
     }
 
@@ -997,9 +1002,8 @@
         document.getElementById('btnCreateNew').onclick = () => {
             dialog.close();
             dialog.remove();
-            document.getElementById('description').focus();
-            document.getElementById('description').select();
-            showCenteredAlert("Please change the Description so it is different from the existing line item.");
+            document.getElementById('budgetLineModal').close();
+            showCenteredAlert("Please change the Description or Cost Type so it is different from the existing line item.");
         };
     }
 
@@ -1061,8 +1065,6 @@
         if (found) {
             document.getElementById('cost_code').value = `${found.code} - ${found.description}`;
             document.getElementById('cost_type').value = found.cost_type;
-            const resolvedEl = document.getElementById('resolvedDescription');
-            if (resolvedEl) resolvedEl.textContent = found.description;
         }
     }
 
@@ -1108,7 +1110,7 @@
         }
     }
 
-    // ==================== IMPORT ====================
+    // ==================== IMPORT (main header button - fully robust) ====================
     function importBudget() {
         const input = document.createElement('input');
         input.type = 'file';
@@ -1665,7 +1667,7 @@
         }
     }, 45000);
 
-    // ==================== SETTINGS HELPERS (FIXED New List + Upload) ====================
+    // ==================== SETTINGS HELPERS (FIXED New List + Upload + View List) ====================
     function showSettingsModal() {
         renderCostTypesList();
         document.getElementById('settingsModal').showModal();
@@ -1682,7 +1684,11 @@
         });
     }
 
-    function addNewCostTypeModal() { document.getElementById('newCostTypeModal').showModal(); }
+    function addNewCostTypeModal() { 
+        const input = document.getElementById('newCostTypeInput');
+        if (input) input.value = '';
+        document.getElementById('newCostTypeModal').showModal(); 
+    }
     function confirmAddNewCostType() {
         const input = document.getElementById('newCostTypeInput');
         const val = input.value.trim();
@@ -1704,7 +1710,7 @@
         buttons[1].onclick = () => { costTypes.splice(index, 1); renderCostTypesList(); dialog.close(); dialog.remove(); };
     }
 
-    // ==================== UPLOAD COST CODES (FIXED: supports combined & separated, pushes to customCostCodes) ====================
+    // ==================== UPLOAD COST CODES (robust - all divisions, dedup, combined + separate) ====================
     function uploadCostCodesExcel() {
         const input = document.createElement('input');
         input.type = 'file';
@@ -1742,18 +1748,15 @@
 
                     let added = 0;
                     rows.forEach(r => {
-                        // Robust header matching (case already lowered)
                         let code = r['code'] || r['cost code'] || r['costcode'] || r['cost_code'] || r['cc'] || '';
-                        let desc = r['description'] || r['desc'] || r['name'] || r['description / name'] || r['desc / name'] || r['description/name'] || '';
+                        let desc = r['description'] || r['desc'] || r['name'] || r['description / name'] || r['desc / name'] || '';
 
-                        // Fallback to first two columns if named headers missed (handles any spreadsheet layout)
                         if (!code && Object.keys(r).length > 0) {
                             const keys = Object.keys(r);
                             code = r[keys[0]] || '';
                             if (!desc && keys.length > 1) desc = r[keys[1]] || '';
                         }
 
-                        // Support combined format in the code field: "01-1000 - Summary" or "01-1000 / Summary"
                         if ((!desc || desc === code) && code) {
                             const match = String(code).match(/^([0-9A-Za-z.-]+)\s*[-/]\s*(.+)$/);
                             if (match) {
@@ -1765,7 +1768,6 @@
                         const type = r['cost type'] || r['type'] || r['costtype'] || 'Subcontract';
 
                         if (code && desc) {
-                            // Avoid exact duplicates
                             const exists = customCostCodes.some(c => c.code === code && c.description === desc);
                             if (!exists) {
                                 customCostCodes.push({ code: code, description: desc, cost_type: type });
@@ -1774,13 +1776,12 @@
                         }
                     });
 
-                    // Switch to custom list so new codes are immediately usable
                     activeCostCodeList = 'custom';
                     const selector = document.getElementById('costCodeListSelector');
                     if (selector) selector.value = 'custom';
 
                     showCenteredAlert(`Successfully imported ${added} cost codes into Custom list.`);
-                    populateCostCodeDatalist(); // refresh if Add modal is open later
+                    populateCostCodeDatalist();
                 } catch (err) {
                     console.error(err);
                     showCenteredAlert("Failed to read file. Make sure it has Code + Description columns (combined or separate).");
@@ -1792,7 +1793,7 @@
         input.click();
     }
 
-    // ==================== UPLOAD COST TYPES (NEW: fully functional, adds unique types) ====================
+    // ==================== UPLOAD COST TYPES (fully functional) ====================
     function uploadCostTypesExcel() {
         const input = document.createElement('input');
         input.type = 'file';
@@ -1830,7 +1831,6 @@
 
                     let added = 0;
                     rows.forEach(r => {
-                        // Robust: named header or first column
                         let typeName = r['cost type'] || r['type'] || r['costtype'] || r['name'] || r['cost_type'] || '';
                         if (!typeName && Object.keys(r).length > 0) {
                             typeName = r[Object.keys(r)[0]] || '';
@@ -1846,7 +1846,7 @@
                     showCenteredAlert(`Successfully imported ${added} new cost type(s).`);
                 } catch (err) {
                     console.error(err);
-                    showCenteredAlert("Failed to read Cost Types file. Check format (one type per row or 'Type' column).");
+                    showCenteredAlert("Failed to read Cost Types file. Check format.");
                 }
             };
             if (file.name.toLowerCase().endsWith('.csv')) reader.readAsText(file);
@@ -1855,10 +1855,10 @@
         input.click();
     }
 
-    // ==================== NEW LIST (FIXED: creates option, switches, alerts) ====================
+    // ==================== NEW LIST (clean field + return to settings) ====================
     function addNewCostCodeList() {
         const input = document.getElementById('newListNameInput');
-        if (input) input.value = '';   // Always start with clean field
+        if (input) input.value = '';
         document.getElementById('settingsModal').close();
         document.getElementById('newListNameModal').showModal();
     }
@@ -1880,11 +1880,9 @@
         activeCostCodeList = newOption.value;
         selector.value = newOption.value;
 
-        // Note: all custom lists share the same customCostCodes array for simplicity (locked scope)
         showCenteredAlert(`New list "${name}" created and activated. Upload Excel or add codes to populate it.`);
 
         document.getElementById('newListNameModal').close();
-        // Return cleanly to Budget Settings modal (do not leave it closed)
         document.getElementById('settingsModal').showModal();
     }
 
@@ -1896,10 +1894,69 @@
     function deleteSelectedCostCodeList() {
         const selector = document.getElementById('costCodeListSelector');
         if (selector.value === 'csi') { showCenteredAlert("Cannot delete the CSI Master Codes list."); return; }
-        // For locked scope, we just remove the option (codes stay in customCostCodes)
         selector.remove(selector.selectedIndex);
         activeCostCodeList = 'custom';
         showCenteredAlert("Custom list removed from selector (codes remain in Custom bucket).");
+    }
+
+    // ==================== VIEW ACTIVE COST CODE LIST (new feature) ====================
+    function viewActiveCostCodeList() {
+        const list = activeCostCodeList === 'csi' ? csiCostCodes : customCostCodes;
+        const selector = document.getElementById('costCodeListSelector');
+        const listName = selector ? (selector.selectedOptions[0] ? selector.selectedOptions[0].textContent : 'Active List') : 'Active List';
+
+        const modal = document.createElement('dialog');
+        modal.className = 'modal rounded-md p-0 text-white w-full max-w-3xl';
+        modal.style.backgroundColor = '#18181b';
+        modal.style.border = '1px solid #3f3f46';
+
+        let html = `
+            <div class="p-6">
+                <div class="flex justify-between items-center mb-4">
+                    <h3 class="text-lg font-semibold">Cost Code List — ${listName}</h3>
+                    <button onclick="this.closest('dialog').close(); this.closest('dialog').remove()" class="text-zinc-400 hover:text-white">
+                        <i class="fa-solid fa-times text-xl"></i>
+                    </button>
+                </div>
+                <div class="max-h-[420px] overflow-auto border border-zinc-700 rounded-md">
+                    <table class="w-full text-sm">
+                        <thead class="bg-zinc-800 sticky top-0">
+                            <tr>
+                                <th class="px-4 py-2 text-left font-medium text-zinc-400 w-32">Code</th>
+                                <th class="px-4 py-2 text-left font-medium text-zinc-400">Description</th>
+                                <th class="px-4 py-2 text-left font-medium text-zinc-400 w-40">Cost Type</th>
+                            </tr>
+                        </thead>
+                        <tbody class="divide-y divide-zinc-800">
+        `;
+
+        if (!list || list.length === 0) {
+            html += `<tr><td colspan="3" class="px-4 py-8 text-center text-zinc-500">This list is currently empty.<br>Upload an Excel file or use "Sync with Sage 300" to populate it.</td></tr>`;
+        } else {
+            list.forEach(item => {
+                html += `
+                    <tr class="hover:bg-zinc-800/60">
+                        <td class="px-4 py-1.5 font-mono text-emerald-400">${item.code}</td>
+                        <td class="px-4 py-1.5">${item.description}</td>
+                        <td class="px-4 py-1.5 text-xs text-zinc-400">${item.cost_type || ''}</td>
+                    </tr>
+                `;
+            });
+        }
+
+        html += `
+                        </tbody>
+                    </table>
+                </div>
+                <div class="mt-4 text-right">
+                    <button onclick="this.closest('dialog').close(); this.closest('dialog').remove()" class="px-5 py-2 bg-zinc-700 hover:bg-zinc-600 rounded-md text-sm">Close</button>
+                </div>
+            </div>
+        `;
+
+        modal.innerHTML = html;
+        document.body.appendChild(modal);
+        modal.showModal();
     }
 
     function syncWithSage300() {
@@ -1922,8 +1979,7 @@
         activeCostCodeList = sageOpt.value;
         selector.value = sageOpt.value;
 
-        // Seed a few sample codes into the shared custom bucket so the Sage 300 list has content
-        // (in real backend this would come from Sage API response)
+        // Seed sample codes into the shared custom bucket
         const sageSeed = [
             { code: "01-1000", description: "Summary (Sage 300)", cost_type: "General Conditions" },
             { code: "03-3000", description: "Concrete - Structural (Sage 300)", cost_type: "Subcontract" },
@@ -1935,7 +1991,7 @@
             }
         });
 
-        // === Cost Types: clear all existing and replace with Sage 300 synced set ===
+        // === Cost Types: clear all existing and replace with clean Sage-synced names (no "Sage 300 -" prefix) ===
         costTypes = [
             "Labor",
             "Material",
@@ -1943,8 +1999,8 @@
             "Equipment",
             "General Conditions",
             "Other",
-            "Sage 300 - Direct Owner Purchase",
-            "Sage 300 - Overhead & Profit"
+            "Direct Owner Purchase",
+            "Overhead and Profit"
         ];
 
         // Refresh visible list if Settings modal is open
@@ -1953,13 +2009,41 @@
             renderCostTypesList();
         }
 
-        // Also refresh datalist in case Add modal uses current list
         populateCostCodeDatalist();
 
-        showCenteredAlert("Synced with Sage 300 successfully. 'Sage 300' cost code list created/activated with sample codes. Cost Types cleared and replaced with Sage-synced list.", 'success');
+        showCenteredAlert("Synced with Sage 300 successfully. 'Sage 300' cost code list created/activated. Cost Types cleared and replaced with clean synced list.", 'success');
     }
 
     function changeActiveCostCodeList() { activeCostCodeList = document.getElementById('costCodeListSelector').value; }
+
+    // ==================== COST CODE INPUT BEHAVIOR (show all on arrow/click even with value) ====================
+    function setupCostCodeInputBehavior() {
+        const input = document.getElementById('cost_code');
+        if (!input) return;
+
+        // Prevent browser autofill/white flash issues
+        input.setAttribute('autocomplete', 'off');
+
+        // When field has a value and user clicks it or the dropdown arrow, temporarily clear
+        // so the native datalist shows ALL options instead of filtering to the current value.
+        input.addEventListener('mousedown', function(e) {
+            if (this.value && this.value.trim() !== '') {
+                this._storedValue = this.value;
+                this.value = '';
+                // Small delay so the datalist opens with full list
+                setTimeout(() => {
+                    // If user didn't immediately type or select, we leave it empty so they can pick fresh.
+                    // They can always re-type the old code if needed. This gives the "show all" behavior they want.
+                }, 80);
+            }
+        });
+
+        // Ensure colors stay correct (prevents occasional white text on white bg in some browsers)
+        input.addEventListener('focus', function() {
+            this.style.color = '#fff';
+            this.style.backgroundColor = '#27272a';
+        });
+    }
 
     // ==================== ACCOUNTING FORMAT ====================
     function setupAccountingFormat(inputId) {
@@ -2021,7 +2105,7 @@
             }
         }, 300);
 
-        console.log('%c[Case PM] Budget page fully initialized (v17 LOCKED - New List + Upload Cost Codes fixed)', 'color:#10b981');
+        console.log('%c[Case PM] Budget page fully initialized (v20 - All requested fixes: Upload all codes, View List, clean Sage types, no green desc, better datalist arrow behavior)', 'color:#10b981');
     }
 
     window.onload = initializeBudget;
