@@ -554,9 +554,9 @@
                     <td class="px-6 py-1.5 text-sm text-zinc-400 w-[320px]">${line.notes || ''}</td>
                     <td class="px-4 py-1.5 w-24">
                         <div class="flex gap-1">
-                            <button onclick="event.stopImmediatePropagation(); editBudgetLine(${line.id})" class="text-emerald-400 hover:text-emerald-300 p-1"><i class="fa-solid fa-edit"></i></button>
-                            <button onclick="event.stopImmediatePropagation(); showLineHistory(${line.id})" class="text-sky-400 hover:text-sky-300 p-1" title="View Line History"><i class="fa-solid fa-history"></i></button>
-                            <button onclick="event.stopImmediatePropagation(); deleteBudgetLine(${line.id})" class="text-red-400 hover:text-red-300 p-1"><i class="fa-solid fa-trash"></i></button>
+                            <button onclick="event.stopImmediatePropagation(); editBudgetLine(${line.id})" class="text-zinc-400 hover:text-white p-1"><i class="fa-solid fa-edit"></i></button>
+                            <button onclick="event.stopImmediatePropagation(); showLineHistory(${line.id})" class="text-zinc-400 hover:text-sky-400 p-1" title="View Line History"><i class="fa-solid fa-history"></i></button>
+                            <button onclick="event.stopImmediatePropagation(); deleteBudgetLine(${line.id})" class="text-zinc-400 hover:text-red-400 p-1"><i class="fa-solid fa-trash"></i></button>
                         </div>
                     </td>
                 `;
@@ -666,9 +666,6 @@
 
     // ==================== BUDGET AUDIT LOG VIEWER ====================
     function showBudgetAuditLog() {
-        // Reload from storage to ensure latest data (fixes potential sync issues)
-        budgetAuditLog = JSON.parse(localStorage.getItem('budgetAuditLog') || '[]');
-
         const modal = document.createElement('dialog');
         modal.className = 'modal rounded-md p-0 text-white w-full max-w-6xl';
         modal.style.backgroundColor = '#18181b';
@@ -725,9 +722,6 @@
                 } else if (entry.action === 'BUDGET_PRINTED') {
                     actionBadge = `<span class="px-2 py-0.5 text-xs rounded-full bg-sky-900/60 text-sky-400">Printed</span>`;
                     detailText = `Budget printed`;
-                } else if (entry.action === 'BUDGET_SAVED') {
-                    actionBadge = `<span class="px-2 py-0.5 text-xs rounded-full bg-blue-900/60 text-blue-400">Saved</span>`;
-                    detailText = `${entry.details.linesCount} lines • Total ${formatCurrency(entry.details.totalOriginal || 0)}`;
                 } else {
                     actionBadge = `<span class="px-2 py-0.5 text-xs rounded-full bg-zinc-700 text-zinc-400">${entry.action}</span>`;
                     detailText = JSON.stringify(entry.details);
@@ -844,9 +838,6 @@
         const line = budgetLines.find(l => l.id == id);
         if (!line) return;
 
-        // Reload from storage to ensure latest audit data
-        budgetAuditLog = JSON.parse(localStorage.getItem('budgetAuditLog') || '[]');
-
         const modal = document.getElementById('lineHistoryModal');
         const content = document.getElementById('lineHistoryContent');
         content.innerHTML = '';
@@ -864,9 +855,9 @@
             lineEvents.slice(0, 20).forEach(e => {
                 const time = new Date(e.timestamp).toLocaleString([], { month:'short', day:'numeric', hour:'2-digit', minute:'2-digit' });
                 let text = '';
-                if (e.action === 'LINE_ADDED') text = `Added with budget ${formatCurrency(e.details.original_budget)} by ${e.user || 'Unknown'}`;
-                else if (e.action === 'LINE_EDITED') text = `Budget changed: ${formatCurrency(e.details.old_original_budget)} → ${formatCurrency(e.details.new_original_budget)} by ${e.user || 'Unknown'}`;
-                else if (e.action === 'LINE_DELETED') text = `Deleted by ${e.user || 'Unknown'}`;
+                if (e.action === 'LINE_ADDED') text = `Added with budget ${formatCurrency(e.details.original_budget)}`;
+                else if (e.action === 'LINE_EDITED') text = `Budget changed: ${formatCurrency(e.details.old_original_budget)} → ${formatCurrency(e.details.new_original_budget)}`;
+                else if (e.action === 'LINE_DELETED') text = `Deleted`;
                 html += `<div class="flex justify-between px-3 py-1 text-xs border-b border-zinc-700"><div class="text-zinc-400">${time}</div><div>${text}</div></div>`;
             });
             content.innerHTML = html;
@@ -1320,9 +1311,6 @@
         localStorage.setItem('budgetLines', JSON.stringify(budgetLines));
         hideUnsavedIndicator();
         hasUnsavedChanges = false;
-
-        // Log the manual save for audit trail
-        logBudgetAudit("BUDGET_SAVED", { linesCount: budgetLines.length, totalOriginal: budgetLines.reduce((s, l) => s + (l.original_budget || 0), 0) });
         const dialog = document.createElement('dialog');
         dialog.className = 'modal rounded-md p-6 w-full max-w-fit text-white';
         dialog.style.backgroundColor = '#18181b';
