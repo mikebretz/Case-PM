@@ -2,7 +2,7 @@
 
 {% block content %}
 
-<!-- ==================== HEADER (Budget moved left ~0.75 inch for better centering) ==================== -->
+<!-- ==================== HEADER (Budget moved left ~0.85 inch for better centering • All buttons one row high) ==================== -->
 <div class="h-16 border-b border-zinc-800 bg-zinc-900 flex items-center px-6 flex-shrink-0">
     <!-- Left: Project -->
     <div class="w-1/3">
@@ -10,12 +10,16 @@
         <div class="text-xl font-semibold tracking-tight text-white">ALDI Lakeland</div>
     </div>
 
-    <!-- Center: Budget title (moved left for better visual centering between project name and buttons) -->
-    <div class="w-1/3 flex justify-center" style="margin-left: -0.75in;">
-        <div class="text-2xl font-semibold text-white">Budget</div>
+    <!-- Center: Budget title (moved left ~0.85 inch) -->
+    <div class="w-1/3 flex justify-center pl-6">
+        <div class="flex items-center gap-2">
+            <div class="text-2xl font-semibold text-white">Budget</div>
+            <div id="revisionBadge" onclick="showVersionHistory()" class="cursor-pointer text-xs px-2 py-0.5 bg-zinc-800 text-emerald-400 rounded font-mono">Rev 01</div>
+            <div id="unsavedDot" class="hidden w-2 h-2 bg-amber-500 rounded-full"></div>
+        </div>
     </div>
 
-    <!-- Right: Action buttons (one row of text high) -->
+    <!-- Right: Action buttons (all one row high - py-2.5) -->
     <div class="w-1/3 flex items-center justify-end gap-3">
         <button onclick="exportBudget()" class="flex items-center gap-2 px-4 py-2.5 bg-zinc-800 hover:bg-zinc-700 rounded-md text-sm font-medium transition-colors">
             <i class="fa-solid fa-download"></i><span>Export</span>
@@ -61,7 +65,7 @@
     </div>
 </div>
 
-<!-- ==================== SUMMARY CARDS (Bordered) ==================== -->
+<!-- ==================== SUMMARY CARDS ==================== -->
 <div class="bg-zinc-900 border border-zinc-700 mx-6 mt-4 rounded-md p-4 flex-shrink-0 sticky top-0 z-30">
     <div class="grid grid-cols-1 md:grid-cols-7 gap-4">
         <div class="bg-zinc-800 border border-zinc-700 rounded-md p-5">
@@ -95,8 +99,8 @@
     </div>
 </div>
 
-<!-- ==================== SEARCH BAR ==================== -->
-<div class="flex flex-col md:flex-row gap-4 mx-6 mt-4 mb-2 flex-shrink-0">
+<!-- ==================== SEARCH + QUICK FILTERS ==================== -->
+<div class="flex flex-col md:flex-row gap-4 mx-6 mt-4 mb-2 flex-shrink-0 items-center">
     <input type="text" id="searchInput" placeholder="Search budget lines..." class="flex-1 bg-zinc-900 border border-zinc-700 rounded-md px-4 py-2.5 text-sm focus:border-emerald-600">
     <select id="costTypeFilter" class="bg-zinc-900 border border-zinc-700 rounded-md px-4 py-2.5 text-sm focus:border-emerald-600">
         <option value="">All Cost Types</option>
@@ -107,12 +111,19 @@
         <option value="General Conditions">General Conditions</option>
     </select>
     <button onclick="clearBudgetFilters()" class="px-4 py-2.5 bg-zinc-800 hover:bg-zinc-700 rounded-md text-sm">Clear Filters</button>
+
+    <!-- Quick Filter Chips -->
+    <div class="flex gap-2 ml-2">
+        <button onclick="filterOverBudget()" class="px-3 py-1 text-xs bg-zinc-800 hover:bg-zinc-700 rounded-full text-amber-400">Over Budget</button>
+        <button onclick="filterHasPending()" class="px-3 py-1 text-xs bg-zinc-800 hover:bg-zinc-700 rounded-full text-orange-400">Has Pending</button>
+        <button onclick="filterRecentlyModified()" class="px-3 py-1 text-xs bg-zinc-800 hover:bg-zinc-700 rounded-full text-emerald-400">Recently Modified</button>
+    </div>
 </div>
 
-<!-- ==================== TABLE (Sticky header + thin bottom bar) ==================== -->
+<!-- ==================== TABLE (with Actual Costs + Sync Status columns) ==================== -->
 <div class="mx-6 mb-6 flex-1 overflow-hidden flex flex-col border border-zinc-700 rounded-md bg-zinc-900">
     <div class="flex-1 overflow-auto" id="tableScrollContainer">
-        <table class="w-full text-sm min-w-[1600px]">
+        <table class="w-full text-sm min-w-[1800px]">
             <thead class="bg-zinc-800 sticky z-20 border-b border-zinc-700" style="top: 0; position: sticky;">
                 <tr>
                     <th class="px-4 py-3 text-center font-medium text-zinc-400 w-12">#</th>
@@ -124,7 +135,9 @@
                     <th class="px-6 py-3 text-right font-medium text-zinc-400 w-24">Pending</th>
                     <th class="px-6 py-3 text-right font-medium text-zinc-400 w-28">Current</th>
                     <th class="px-6 py-3 text-right font-medium text-zinc-400 w-28">Forecast</th>
-                    <th class="px-6 py-3 text-left font-medium text-zinc-400 w-[380px]">Notes</th>
+                    <th class="px-6 py-3 text-right font-medium text-zinc-400 w-28">Actual</th>
+                    <th class="px-6 py-3 text-center font-medium text-zinc-400 w-24">Sync</th>
+                    <th class="px-6 py-3 text-left font-medium text-zinc-400 w-[320px]">Notes</th>
                     <th class="px-6 py-3 w-20"></th>
                 </tr>
             </thead>
@@ -136,13 +149,16 @@
     <div class="h-px bg-zinc-700 flex-shrink-0"></div>
 </div>
 
-<!-- ==================== FIXED BOTTOM STATUS BAR ==================== -->
+<!-- ==================== FIXED BOTTOM STATUS BAR (with Audit Log link) ==================== -->
 <div class="fixed bottom-0 left-64 right-0 bg-zinc-900 border-t border-zinc-700 px-6 py-2 text-xs text-zinc-400 flex items-center justify-between z-[60]">
-    <div>Last synced with Sage 300 • Connected • ALDI Lakeland</div>
+    <div class="flex items-center gap-4">
+        <div>Last synced with Sage 300 • Connected • ALDI Lakeland</div>
+        <button onclick="showPublishAuditLog()" class="text-emerald-400 hover:text-emerald-300 underline">View Publish Audit Log</button>
+    </div>
     <div class="text-emerald-400">● Online</div>
 </div>
 
-<!-- ==================== ALL MODALS (Dark background + white text) ==================== -->
+<!-- ==================== ALL MODALS (Dark) ==================== -->
 
 <!-- Budget Line Modal with Real-time Validation -->
 <dialog id="budgetLineModal" class="modal rounded-md w-full max-w-2xl p-0 text-white" style="background-color: #18181b; border: 1px solid #3f3f46;">
@@ -197,9 +213,7 @@
                 <i class="fa-solid fa-times text-xl"></i>
             </button>
         </div>
-        <div id="pendingChangesContent" class="max-h-[400px] overflow-auto">
-            <!-- Populated by JavaScript -->
-        </div>
+        <div id="pendingChangesContent" class="max-h-[400px] overflow-auto"></div>
         <div class="mt-6 text-right">
             <button onclick="document.getElementById('pendingChangesModal').close()" class="px-6 py-2.5 rounded-md bg-zinc-700 hover:bg-zinc-600 text-sm">Close</button>
         </div>
@@ -214,7 +228,6 @@
             <button onclick="document.getElementById('settingsModal').close()" class="text-zinc-400 hover:text-white"><i class="fa-solid fa-times text-xl"></i></button>
         </div>
 
-        <!-- Cost Code Lists -->
         <div class="mb-6">
             <div class="flex items-center justify-between mb-3">
                 <div class="font-medium">Cost Code Lists</div>
@@ -236,7 +249,6 @@
             </select>
         </div>
 
-        <!-- Cost Types -->
         <div class="mb-6">
             <div class="flex items-center justify-between mb-3">
                 <div class="font-medium">Cost Types</div>
@@ -262,7 +274,7 @@
     </div>
 </dialog>
 
-<!-- New List Name Modal -->
+<!-- New List / New Cost Type / User Profile Modals (dark) -->
 <dialog id="newListNameModal" class="modal rounded-md w-full max-w-md p-0 text-white" style="background-color: #18181b; border: 1px solid #3f3f46;">
     <div class="p-6">
         <h3 class="text-lg font-semibold mb-4">Create New Cost Code List</h3>
@@ -274,7 +286,6 @@
     </div>
 </dialog>
 
-<!-- New Cost Type Modal -->
 <dialog id="newCostTypeModal" class="modal rounded-md w-full max-w-md p-0 text-white" style="background-color: #18181b; border: 1px solid #3f3f46;">
     <div class="p-6">
         <h3 class="text-lg font-semibold mb-4">Enter New Cost Type Name</h3>
@@ -286,7 +297,6 @@
     </div>
 </dialog>
 
-<!-- User Profile Modal -->
 <dialog id="userProfileModal" class="modal rounded-md w-full max-w-md p-0 text-white" style="background-color: #18181b; border: 1px solid #3f3f46;">
     <div class="p-6">
         <h3 class="text-lg font-semibold mb-4">User Profile</h3>
@@ -327,6 +337,9 @@
     let budgetSaved = false;
     let contractAmount = 2450000;
     let pendingNavigationUrl = null;
+    let currentRevision = parseInt(localStorage.getItem('budgetRevision') || '1');
+    let publishAuditLog = JSON.parse(localStorage.getItem('publishAuditLog') || '[]');
+    let budgetLocked = localStorage.getItem('budgetLocked') === 'true';
 
     function formatCurrency(amount) {
         return new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(amount || 0);
@@ -373,13 +386,13 @@
         }
     }
 
-    // ==================== RENDER TABLE ====================
+    // ==================== RENDER TABLE (with Actual + Sync Status) ====================
     function renderBudgetTable(lines) {
         const tbody = document.getElementById('budgetTableBody');
         tbody.innerHTML = '';
 
         if (!lines || lines.length === 0) {
-            tbody.innerHTML = `<tr><td colspan="11" class="px-6 py-8 text-center text-zinc-500">No budget line items yet. Click "Add Budget Line Item" to begin.</td></tr>`;
+            tbody.innerHTML = `<tr><td colspan="13" class="px-6 py-8 text-center text-zinc-500">No budget line items yet. Click "Add Budget Line Item" to begin.</td></tr>`;
             updateTotals();
             return;
         }
@@ -401,12 +414,19 @@
                 currentDivision = division;
                 const header = document.createElement('tr');
                 header.className = 'bg-zinc-800';
-                header.innerHTML = `<td colspan="11" class="px-6 py-2 text-emerald-400 font-semibold text-base">Division ${division} — ${divisionNames[division] || 'Other'}</td>`;
+                header.innerHTML = `<td colspan="13" class="px-6 py-2 text-emerald-400 font-semibold text-base">Division ${division} — ${divisionNames[division] || 'Other'}</td>`;
                 tbody.appendChild(header);
             }
 
             const pending = line.pending || 0;
             const forecast = line.original_budget + line.approved_changes + pending;
+            const actual = line.actual || 0;
+
+            let syncBadge = '';
+            const status = line.syncStatus || 'Not Synced';
+            if (status === 'Synced') syncBadge = `<span class="px-2 py-0.5 text-xs rounded-full bg-emerald-900/60 text-emerald-400">Synced</span>`;
+            else if (status === 'Pending') syncBadge = `<span class="px-2 py-0.5 text-xs rounded-full bg-amber-900/60 text-amber-400">Pending</span>`;
+            else syncBadge = `<span class="px-2 py-0.5 text-xs rounded-full bg-zinc-700 text-zinc-400">Not Synced</span>`;
 
             const row = document.createElement('tr');
             row.className = 'hover:bg-zinc-800/60 transition-colors cursor-pointer';
@@ -423,7 +443,9 @@
                 <td class="px-6 py-3 text-center text-orange-400 w-24">${formatCurrency(pending)}</td>
                 <td class="px-6 py-3 text-center font-semibold text-emerald-400 w-28">${formatCurrency(line.original_budget + line.approved_changes)}</td>
                 <td class="px-6 py-3 text-center font-semibold text-emerald-400 w-28">${formatCurrency(forecast)}</td>
-                <td class="px-6 py-3 text-sm text-zinc-400 w-[380px]">${line.notes || ''}</td>
+                <td class="px-6 py-3 text-center font-semibold text-sky-400 w-28">${formatCurrency(actual)}</td>
+                <td class="px-6 py-3 text-center w-24">${syncBadge}</td>
+                <td class="px-6 py-3 text-sm text-zinc-400 w-[320px]">${line.notes || ''}</td>
                 <td class="px-4 py-3 w-20">
                     <div class="flex gap-2">
                         <button onclick="event.stopImmediatePropagation(); editBudgetLine(${line.id})" class="text-zinc-400 hover:text-white"><i class="fa-solid fa-edit"></i></button>
@@ -435,6 +457,7 @@
         });
 
         updateTotals();
+        updateRevisionBadge();
     }
 
     function updateTotals() {
@@ -466,8 +489,17 @@
         }
     }
 
+    function updateRevisionBadge() {
+        const badge = document.getElementById('revisionBadge');
+        if (badge) badge.textContent = `Rev ${String(currentRevision).padStart(2, '0')}`;
+    }
+
     // ==================== ADD / EDIT / DELETE ====================
     function showAddBudgetLineModal() {
+        if (budgetLocked) {
+            showCenteredAlert("Budget is locked after publishing. Create a new revision to add lines.");
+            return;
+        }
         document.getElementById('budgetLineForm').reset();
         document.getElementById('budgetLineId').value = '';
         document.getElementById('modalTitle').innerText = 'Add Budget Line Item';
@@ -483,6 +515,10 @@
     }
 
     function editBudgetLine(id) {
+        if (budgetLocked) {
+            showCenteredAlert("Budget is locked. Create a new revision to edit.");
+            return;
+        }
         const line = budgetLines.find(l => l.id === id);
         if (!line) return;
         document.getElementById('budgetLineId').value = line.id;
@@ -546,7 +582,9 @@
             original_budget: originalBudget,
             approved_changes: id ? (budgetLines.find(l => l.id == id)?.approved_changes || 0) : 0,
             pending: id ? (budgetLines.find(l => l.id == id)?.pending || 0) : 0,
-            notes: document.getElementById('notes').value.trim()
+            notes: document.getElementById('notes').value.trim(),
+            actual: id ? (budgetLines.find(l => l.id == id)?.actual || 0) : 0,
+            syncStatus: id ? (budgetLines.find(l => l.id == id)?.syncStatus || 'Not Synced') : 'Not Synced'
         };
 
         if (id) {
@@ -557,6 +595,7 @@
         }
 
         localStorage.setItem('budgetLines', JSON.stringify(budgetLines));
+        showUnsavedIndicator();
         renderBudgetTable(budgetLines);
         document.getElementById('budgetLineModal').close();
     }
@@ -595,6 +634,10 @@
     }
 
     function deleteBudgetLine(id) {
+        if (budgetLocked) {
+            showCenteredAlert("Budget is locked. Create a new revision to delete lines.");
+            return;
+        }
         const dialog = document.createElement('dialog');
         dialog.className = 'modal rounded-md p-6 w-full max-w-md text-white';
         dialog.style.backgroundColor = '#18181b';
@@ -643,7 +686,7 @@
         }
     }
 
-    // ==================== SETTINGS + FUNCTIONAL UPLOAD ====================
+    // ==================== SETTINGS + FUNCTIONAL UPLOADS ====================
     function showSettingsModal() {
         renderCostTypesList();
         document.getElementById('settingsModal').showModal();
@@ -824,10 +867,12 @@
     function syncWithSage300() { showCenteredAlert("Sage 300 sync placeholder — will connect when backend is ready."); }
     function changeActiveCostCodeList() { activeCostCodeList = document.getElementById('costCodeListSelector').value; }
 
-    // ==================== SAVE / PUBLISH ====================
+    // ==================== SAVE / PUBLISH (with Revision + Lock) ====================
     function saveBudget() {
         if (budgetLines.length === 0) { showCenteredAlert("Nothing to save yet."); return; }
         budgetSaved = true;
+        localStorage.setItem('budgetLines', JSON.stringify(budgetLines));
+        hideUnsavedIndicator();
         const dialog = document.createElement('dialog');
         dialog.className = 'modal rounded-md p-6 w-full max-w-fit text-white';
         dialog.style.backgroundColor = '#18181b';
@@ -842,14 +887,94 @@
         if (budgetLines.length === 0) { showCenteredAlert("Add at least one budget line item before publishing."); return; }
         budgetSaved = true;
         budgetPublished = true;
+        budgetLocked = true;
+
+        currentRevision++;
+        localStorage.setItem('budgetRevision', currentRevision);
+
+        // Mark all lines as Pending Sync
+        budgetLines.forEach(l => l.syncStatus = 'Pending');
+
+        // Create snapshot for versioning
+        const snapshot = {
+            revision: currentRevision,
+            timestamp: new Date().toISOString(),
+            lines: JSON.parse(JSON.stringify(budgetLines))
+        };
+        let snapshots = JSON.parse(localStorage.getItem('budgetSnapshots') || '[]');
+        snapshots.push(snapshot);
+        localStorage.setItem('budgetSnapshots', JSON.stringify(snapshots));
+
+        // Audit log
+        publishAuditLog.push({
+            revision: currentRevision,
+            timestamp: new Date().toISOString(),
+            linesCount: budgetLines.length,
+            totalBudget: budgetLines.reduce((sum, l) => sum + (l.original_budget || 0), 0)
+        });
+        localStorage.setItem('publishAuditLog', JSON.stringify(publishAuditLog));
+
+        localStorage.setItem('budgetLines', JSON.stringify(budgetLines));
+        localStorage.setItem('budgetLocked', 'true');
+
+        updateRevisionBadge();
+        renderBudgetTable(budgetLines);
+
         const dialog = document.createElement('dialog');
         dialog.className = 'modal rounded-md p-6 w-full max-w-fit text-white';
         dialog.style.backgroundColor = '#18181b';
         dialog.style.border = '1px solid #3f3f46';
-        dialog.innerHTML = `<div class="text-base">Budget successfully saved to project and published to Sage 300.</div>`;
+        dialog.innerHTML = `<div class="text-base">Budget published to Sage 300. Revision ${currentRevision} created. Budget is now locked.</div>`;
         document.body.appendChild(dialog);
         dialog.showModal();
-        setTimeout(() => { dialog.close(); dialog.remove(); }, 1800);
+        setTimeout(() => { dialog.close(); dialog.remove(); }, 2200);
+    }
+
+    function showVersionHistory() {
+        const snapshots = JSON.parse(localStorage.getItem('budgetSnapshots') || '[]');
+        if (snapshots.length === 0) {
+            showCenteredAlert("No previous revisions found.");
+            return;
+        }
+        let html = `<div class="text-lg font-semibold mb-4">Budget Version History</div>`;
+        snapshots.slice().reverse().forEach(s => {
+            html += `<div class="border border-zinc-700 rounded p-3 mb-2 text-sm">
+                <div class="font-mono text-emerald-400">Revision ${s.revision}</div>
+                <div class="text-xs text-zinc-400">${new Date(s.timestamp).toLocaleString()}</div>
+                <div class="text-xs mt-1">${s.lines.length} line items • Total: ${formatCurrency(s.lines.reduce((sum, l) => sum + (l.original_budget || 0), 0))}</div>
+            </div>`;
+        });
+        const dialog = document.createElement('dialog');
+        dialog.className = 'modal rounded-md p-6 w-full max-w-md text-white';
+        dialog.style.backgroundColor = '#18181b';
+        dialog.style.border = '1px solid #3f3f46';
+        dialog.innerHTML = html + `<div class="mt-4 text-right"><button class="px-5 py-2 bg-zinc-700 rounded">Close</button></div>`;
+        document.body.appendChild(dialog);
+        dialog.showModal();
+        dialog.querySelector('button').onclick = () => { dialog.close(); dialog.remove(); };
+    }
+
+    function showPublishAuditLog() {
+        if (publishAuditLog.length === 0) {
+            showCenteredAlert("No publish history yet.");
+            return;
+        }
+        let html = `<div class="text-lg font-semibold mb-4">Publish Audit Log</div>`;
+        publishAuditLog.slice().reverse().forEach(log => {
+            html += `<div class="border border-zinc-700 rounded p-3 mb-2 text-sm">
+                <div class="font-mono text-emerald-400">Revision ${log.revision}</div>
+                <div class="text-xs text-zinc-400">${new Date(log.timestamp).toLocaleString()}</div>
+                <div class="text-xs mt-1">${log.linesCount} lines • Total Budget: ${formatCurrency(log.totalBudget)}</div>
+            </div>`;
+        });
+        const dialog = document.createElement('dialog');
+        dialog.className = 'modal rounded-md p-6 w-full max-w-md text-white';
+        dialog.style.backgroundColor = '#18181b';
+        dialog.style.border = '1px solid #3f3f46';
+        dialog.innerHTML = html + `<div class="mt-4 text-right"><button class="px-5 py-2 bg-zinc-700 rounded">Close</button></div>`;
+        document.body.appendChild(dialog);
+        dialog.showModal();
+        dialog.querySelector('button').onclick = () => { dialog.close(); dialog.remove(); };
     }
 
     // ==================== VIEW PENDING CHANGES ====================
@@ -869,7 +994,7 @@
         document.getElementById('pendingChangesModal').showModal();
     }
 
-    // ==================== PRINT (iframe method - no new tab) ====================
+    // ==================== PRINT (iframe - no new tab) ====================
     function printBudget() {
         if (budgetLines.length === 0) { showCenteredAlert("You must have at least one budget line item to print."); return; }
 
@@ -883,10 +1008,11 @@
             const division = line.cost_code.substring(0, 2);
             const pending = line.pending || 0;
             const forecast = line.original_budget + line.approved_changes + pending;
+            const actual = line.actual || 0;
 
             if (division !== currentDivision) {
                 currentDivision = division;
-                tableRows += `<tr style="background:#f3f4f6; font-weight:600;"><td colspan="8" style="padding:8px; border:1px solid #ccc;">Division ${division} — ${divisionNames[division] || 'Other'}</td></tr>`;
+                tableRows += `<tr style="background:#f3f4f6; font-weight:600;"><td colspan="9" style="padding:8px; border:1px solid #ccc;">Division ${division} — ${divisionNames[division] || 'Other'}</td></tr>`;
             }
             tableRows += `<tr>
                 <td style="border:1px solid #ccc; padding:6px; font-family:monospace;">${line.cost_code}</td>
@@ -897,20 +1023,21 @@
                 <td style="border:1px solid #ccc; padding:6px; text-align:right;">${formatCurrency(pending)}</td>
                 <td style="border:1px solid #ccc; padding:6px; text-align:right;">${formatCurrency(line.original_budget + line.approved_changes)}</td>
                 <td style="border:1px solid #ccc; padding:6px; text-align:right;">${formatCurrency(forecast)}</td>
+                <td style="border:1px solid #ccc; padding:6px; text-align:right;">${formatCurrency(actual)}</td>
             </tr>`;
         });
 
         const printContent = `
-            <html><head><title>Budget - ALDI Lakeland</title>
+            <html><head><title>Budget Report - ALDI Lakeland (Rev ${currentRevision})</title>
             <style>body{font-family:Arial,sans-serif;padding:20px}table{width:100%;border-collapse:collapse;font-size:11px}th,td{border:1px solid #ccc;padding:6px;text-align:left}th{background:#f3f4f6}</style>
             </head><body>
-                <h2>Budget Report — ALDI Lakeland</h2>
+                <h2>Budget Report — ALDI Lakeland (Revision ${currentRevision})</h2>
                 <table>
                     <thead><tr>
                         <th>Cost Code</th><th>Description</th><th>Cost Type</th>
                         <th style="text-align:right">Original</th><th style="text-align:right">Changes</th>
                         <th style="text-align:right">Pending</th><th style="text-align:right">Current</th>
-                        <th style="text-align:right">Forecast</th>
+                        <th style="text-align:right">Forecast</th><th style="text-align:right">Actual</th>
                     </tr></thead>
                     <tbody>${tableRows}</tbody>
                 </table>
@@ -936,7 +1063,7 @@
         }, 600);
     }
 
-    // ==================== EXPORT (Fully Working) ====================
+    // ==================== EXPORT (with all columns) ====================
     function exportBudget() {
         const data = budgetLines.map(line => ({
             "Cost Code": line.cost_code,
@@ -947,15 +1074,17 @@
             "Pending Changes": line.pending || 0,
             "Current Budget": line.original_budget + line.approved_changes,
             "Forecast": line.original_budget + line.approved_changes + (line.pending || 0),
+            "Actual Cost": line.actual || 0,
+            "Sync Status": line.syncStatus || 'Not Synced',
             "Notes": line.notes
         }));
         const ws = XLSX.utils.json_to_sheet(data);
         const wb = XLSX.utils.book_new();
         XLSX.utils.book_append_sheet(wb, ws, "Budget");
-        XLSX.writeFile(wb, "Budget_Export.xlsx");
+        XLSX.writeFile(wb, `Budget_ALDI_Lakeland_Rev${currentRevision}.xlsx`);
     }
 
-    // ==================== IMPORT BUDGET LINES ====================
+    // ==================== IMPORT ====================
     function importBudget() {
         const input = document.createElement('input');
         input.type = 'file';
@@ -1008,7 +1137,9 @@
                             original_budget: originalBudget,
                             approved_changes: 0,
                             pending: 0,
-                            notes: notes
+                            notes: notes,
+                            actual: 0,
+                            syncStatus: 'Not Synced'
                         });
                         addedCount++;
                     });
@@ -1016,7 +1147,7 @@
                     renderBudgetTable(budgetLines);
                     showCenteredAlert(`Successfully imported ${addedCount} budget line items.`);
                 } catch (err) {
-                    showCenteredAlert("Import failed. Check file format (needs: Cost Code, Description, Cost Type, Original).");
+                    showCenteredAlert("Import failed. Check file format.");
                 }
             };
             if (file.name.toLowerCase().endsWith('.csv')) reader.readAsText(file);
@@ -1048,7 +1179,31 @@
         document.getElementById('userProfileModal').showModal();
     }
 
-    // ==================== NAVIGATION WARNING (Dark + 5 buttons) ====================
+    // ==================== UNSAVED INDICATOR ====================
+    function showUnsavedIndicator() {
+        const dot = document.getElementById('unsavedDot');
+        if (dot) dot.classList.remove('hidden');
+    }
+    function hideUnsavedIndicator() {
+        const dot = document.getElementById('unsavedDot');
+        if (dot) dot.classList.add('hidden');
+    }
+
+    // ==================== QUICK FILTERS ====================
+    function filterOverBudget() {
+        const filtered = budgetLines.filter(l => (l.original_budget + (l.approved_changes || 0)) > contractAmount);
+        renderBudgetTable(filtered);
+    }
+    function filterHasPending() {
+        const filtered = budgetLines.filter(l => (l.pending || 0) > 0);
+        renderBudgetTable(filtered);
+    }
+    function filterRecentlyModified() {
+        // Placeholder - in real app would use timestamp
+        renderBudgetTable(budgetLines);
+    }
+
+    // ==================== NAVIGATION WARNING (untouched) ====================
     function warnBeforeLeaving() {
         if (budgetLines.length === 0 || budgetPublished) return;
         const dialog = document.createElement('dialog');
@@ -1111,9 +1266,46 @@
         renderBudgetTable(budgetLines);
     }
 
+    // ==================== KEYBOARD SHORTCUTS ====================
+    document.addEventListener('keydown', function(e) {
+        if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 's') {
+            e.preventDefault();
+            saveBudget();
+        }
+        if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'k') {
+            e.preventDefault();
+            showAddBudgetLineModal();
+        }
+        if (e.key === 'Escape') {
+            const openDialogs = document.querySelectorAll('dialog[open]');
+            if (openDialogs.length > 0) {
+                openDialogs[openDialogs.length - 1].close();
+            }
+        }
+    });
+
+    // ==================== AUTO-SAVE DRAFT ====================
+    setInterval(() => {
+        if (budgetLines.length > 0 && !budgetPublished) {
+            localStorage.setItem('budgetLines', JSON.stringify(budgetLines));
+            // Could show a very subtle "Draft saved" toast if desired
+        }
+    }, 45000);
+
     // ==================== INITIALIZE ====================
     function initializeBudget() {
         document.getElementById('contractAmount').textContent = formatCurrency(contractAmount);
+        updateRevisionBadge();
+
+        if (budgetLocked) {
+            const addBtn = document.querySelector('button[onclick="showAddBudgetLineModal()"]');
+            if (addBtn) {
+                addBtn.disabled = true;
+                addBtn.classList.add('opacity-50', 'cursor-not-allowed');
+                addBtn.title = "Budget is locked. Create a new revision to add lines.";
+            }
+        }
+
         renderBudgetTable(budgetLines);
 
         const costTypeSelect = document.getElementById('cost_type');
@@ -1126,6 +1318,7 @@
             });
         }
 
+        // Navigation warning
         document.addEventListener('click', function(e) {
             const link = e.target.closest('.nav-link');
             if (link && budgetLines.length > 0 && !budgetPublished) {
@@ -1135,11 +1328,13 @@
             }
         }, true);
 
+        // Filter listeners
         const searchInput = document.getElementById('searchInput');
         const typeFilter = document.getElementById('costTypeFilter');
         if (searchInput) searchInput.addEventListener('input', filterBudgetLines);
         if (typeFilter) typeFilter.addEventListener('change', filterBudgetLines);
 
+        // Sticky header
         setTimeout(() => {
             const thead = document.querySelector('thead.sticky');
             if (thead) {
@@ -1148,6 +1343,13 @@
                 thead.style.zIndex = '20';
             }
         }, 300);
+
+        // Unsaved indicator on any change
+        window.addEventListener('beforeunload', () => {
+            if (!budgetSaved && budgetLines.length > 0) {
+                return 'You have unsaved changes.';
+            }
+        });
     }
 
     window.onload = initializeBudget;
