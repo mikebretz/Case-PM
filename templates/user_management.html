@@ -114,14 +114,16 @@
         <table class="w-full text-sm">
             <thead class="bg-zinc-800 sticky top-0 z-20 border-b border-zinc-700">
                 <tr>
-                    <th class="px-6 py-3 text-left font-medium text-zinc-400">Name</th>
-                    <th class="px-6 py-3 text-left font-medium text-zinc-400">Email</th>
-                    <th class="px-6 py-3 text-left font-medium text-zinc-400">Phone</th>
-                    <th class="px-6 py-3 text-left font-medium text-zinc-400">Address</th>
-                    <th class="px-6 py-3 text-left font-medium text-zinc-400">Role / Title</th>
-                    <th class="px-6 py-3 text-center font-medium text-zinc-400">Status</th>
-                    <th class="px-6 py-3 text-center font-medium text-zinc-400">Access</th>
-                    <th class="px-6 py-3 text-center font-medium text-zinc-400 min-w-[160px]">Actions</th>
+                    <th class="px-5 py-2 text-left font-medium text-zinc-400">Name</th>
+                    <th class="px-5 py-2 text-left font-medium text-zinc-400">Email</th>
+                    <th class="px-4 py-2 text-left font-medium text-zinc-400">Phone</th>
+                    <th class="px-4 py-2 text-left font-medium text-zinc-400">Job Title</th>
+                    <th class="px-4 py-2 text-left font-medium text-zinc-400">Role</th>
+                    <th class="px-4 py-2 text-left font-medium text-zinc-400">Company</th>
+                    <th class="px-5 py-2 text-left font-medium text-zinc-400 flex-1 min-w-[220px]">Address</th>
+                    <th class="px-3 py-2 text-center font-medium text-zinc-400 w-20">Status</th>
+                    <th class="px-3 py-2 text-center font-medium text-zinc-400 w-20">Access</th>
+                    <th class="px-3 py-2 text-center font-medium text-zinc-400 min-w-[170px]">Actions</th>
                 </tr>
             </thead>
             <tbody id="usersTableBody" class="divide-y divide-zinc-800 text-sm">
@@ -352,6 +354,22 @@
     let currentCertificateFileName = null;
     let currentEditingUserId = null;
     let phoneNumbers = []; // For dynamic phone rows
+    let userAuditLog = JSON.parse(localStorage.getItem('userAuditLog')) || [];
+
+    // ==================== AUDIT LOGGING (operable user activity logs) ====================
+    function logUserAudit(action, targetUserId, details = {}) {
+        const entry = {
+            id: Date.now() + Math.random(),
+            timestamp: new Date().toISOString(),
+            action: action,
+            targetUserId: targetUserId,
+            performedBy: "Michael Bretz",
+            details: details
+        };
+        userAuditLog.unshift(entry);
+        if (userAuditLog.length > 2000) userAuditLog.length = 2000;
+        localStorage.setItem('userAuditLog', JSON.stringify(userAuditLog));
+    }
 
     const modules = [
         "Dashboard", "Projects", "Budget", "Commitments", "Pay Applications",
@@ -375,13 +393,20 @@
     function populateCompanyDropdown(selectedCompanyName = '') {
         const select = document.getElementById('companySelect');
         if (!select) return;
+
+        // Always read fresh from localStorage in case Companies page was updated in another tab
+        const freshCompanies = JSON.parse(localStorage.getItem('companies')) || [];
+        companies = freshCompanies; // keep global in sync
+
         select.innerHTML = '<option value="">-- No Company / Internal --</option>';
 
-        companies.forEach(company => {
+        freshCompanies.forEach(company => {
+            const name = company.name || company.companyName || company.company_name || '';
+            if (!name) return;
             const opt = document.createElement('option');
-            opt.value = company.name || company.companyName || '';
-            opt.textContent = company.name || company.companyName || 'Unnamed Company';
-            if (opt.value === selectedCompanyName) opt.selected = true;
+            opt.value = name;
+            opt.textContent = name;
+            if (name === selectedCompanyName) opt.selected = true;
             select.appendChild(opt);
         });
     }
@@ -774,8 +799,10 @@
     // ==================== DELETE ====================
     function deleteUser(id) {
         if (!confirm('Delete this user permanently?')) return;
+        const deletedUser = users.find(u => u.id == id);
         users = users.filter(u => u.id != id);
         localStorage.setItem('users', JSON.stringify(users));
+        logUserAudit('USER_DELETED', id, { name: deletedUser ? `${deletedUser.firstName} ${deletedUser.lastName}` : 'Unknown' });
         renderUsersTable();
         showCenteredAlert('User deleted.', 'success');
     }
@@ -852,6 +879,12 @@
             }
 
             localStorage.setItem('users', JSON.stringify(users));
+
+            // Log the action
+            const actionType = id ? 'USER_EDITED' : 'USER_CREATED';
+            const changedFields = id ? 'Profile fields updated' : 'New user profile created';
+            logUserAudit(actionType, userData.id, { changedFields: changedFields, company: companyName || 'None' });
+
             closeUserModal();
             renderUsersTable();
             updateSummaryCards();
@@ -946,28 +979,34 @@
 
             // Primary phone and address for table display
             let primaryPhone = '';
-            if (user.phoneNumbers && user.phoneNumbers.length > 0) {
-                primaryPhone = user.phoneNumbers[0].number || '';
+            if (user.phones && user.phones.length > 0) {
+                primaryPhone = user.phones[0].number || user.phones[0] || '';
             } else if (user.phone) {
                 primaryPhone = user.phone;
             }
-            const displayAddress = user.address || (user.company && user.company.address ? user.company.address : '');
+            const displayAddress = user.address || '';
+
+            const roleTitleHtml = `<div class="text-xs"><div class="font-medium">${user.role || 'User'}</div><div class="text-[10px] text-zinc-500">${user.jobTitle || ''}</div></div>`;
+            const hasAccessHtml = user.accessEnabled !== false 
+                ? `<span class="px-2 py-0.5 text-[10px] rounded-full bg-emerald-900/60 text-emerald-400">On</span>` 
+                : `<span class="px-2 py-0.5 text-[10px] rounded-full bg-zinc-700 text-zinc-400">Off</span>`;
+            const statusHtml = `<span class="px-2 py-0.5 text-[10px] rounded-full ${user.status === 'Active' ? 'bg-emerald-900/60 text-emerald-400' : 'bg-zinc-700 text-zinc-400'}">${user.status || 'Active'}</span>`;
 
             row.innerHTML = `
-                <td class="px-6 py-2 font-medium">${user.firstName || ''} ${user.lastName || ''}</td>
-                <td class="px-6 py-2 text-zinc-400">${user.email || ''}</td>
-                <td class="px-6 py-2 text-zinc-400 text-sm">${primaryPhone}</td>
-                <td class="px-6 py-2 text-zinc-400 text-sm">${displayAddress}</td>
-                <td class="px-6 py-2 text-sm">${roleTitle}</td>
-                <td class="px-6 py-2 text-center">
-                    <span class="px-3 py-0.5 text-xs rounded-full ${user.status === 'Active' ? 'bg-emerald-900/60 text-emerald-400' : 'bg-zinc-700 text-zinc-400'}">${user.status || 'Active'}</span>
-                </td>
-                <td class="px-6 py-2 text-center">${hasAccess}</td>
-                <td class="px-6 py-2 text-center">
-                    <div class="flex justify-center gap-1.5 flex-nowrap">
-                        <button onclick="event.stopImmediatePropagation(); editUser(${user.id})" class="px-3 py-1 text-xs bg-zinc-700 hover:bg-emerald-600 rounded">Edit</button>
-                        <button onclick="event.stopImmediatePropagation(); showUserLog(${user.id})" class="px-3 py-1 text-xs bg-zinc-700 hover:bg-sky-600 rounded">Log</button>
-                        <button onclick="event.stopImmediatePropagation(); deleteUser(${user.id})" class="px-3 py-1 text-xs bg-zinc-700 hover:bg-red-600 rounded">Delete</button>
+                <td class="px-5 py-2 font-medium">${user.firstName || ''} ${user.lastName || ''}</td>
+                <td class="px-5 py-2 text-zinc-400 text-sm">${user.email || ''}</td>
+                <td class="px-4 py-2 text-zinc-400 text-sm">${primaryPhone}</td>
+                <td class="px-4 py-2 text-zinc-300 text-sm">${user.jobTitle || ''}</td>
+                <td class="px-4 py-2 text-sm"><span class="px-2.5 py-0.5 text-xs rounded-full bg-zinc-700 text-zinc-300">${user.role || 'User'}</span></td>
+                <td class="px-4 py-2 text-sm text-zinc-400">${user.company || ''}</td>
+                <td class="px-5 py-2 text-zinc-400 text-sm">${displayAddress}</td>
+                <td class="px-3 py-2 text-center">${statusHtml}</td>
+                <td class="px-3 py-2 text-center">${hasAccessHtml}</td>
+                <td class="px-3 py-2 text-center">
+                    <div class="flex justify-center gap-1 flex-nowrap">
+                        <button onclick="event.stopImmediatePropagation(); editUser(${user.id})" class="px-2.5 py-0.5 text-[10px] bg-zinc-700 hover:bg-emerald-600 rounded">Edit</button>
+                        <button onclick="event.stopImmediatePropagation(); showUserLog(${user.id})" class="px-2.5 py-0.5 text-[10px] bg-zinc-700 hover:bg-sky-600 rounded">Log</button>
+                        <button onclick="event.stopImmediatePropagation(); deleteUser(${user.id})" class="px-2.5 py-0.5 text-[10px] bg-zinc-700 hover:bg-red-600 rounded">Del</button>
                     </div>
                 </td>
             `;
@@ -986,30 +1025,168 @@
         const content = document.getElementById('userLogContent');
         content.innerHTML = '';
 
-        let logHtml = `<div class="text-xs text-zinc-400 mb-3">Showing recent access events for this user (demo data)</div>`;
+        // Filter real audit log for this user
+        const userLogs = userAuditLog.filter(entry => entry.targetUserId == userId);
 
-        // Demo log entries + any notes as manual entries
-        const demoLogs = [
-            { ts: new Date(Date.now() - 86400000 * 2), action: 'Logged in', ip: '192.168.1.45' },
-            { ts: new Date(Date.now() - 86400000), action: 'Viewed Budget', ip: '192.168.1.45' },
-            { ts: new Date(), action: 'Updated profile', ip: '10.0.0.12' }
-        ];
+        let logHtml = `<div class="text-xs text-zinc-400 mb-3">Activity log for this user (${userLogs.length} events)</div>`;
 
-        demoLogs.forEach(log => {
-            logHtml += `
-                <div class="flex justify-between border-b border-zinc-700 py-1.5 text-sm">
-                    <div class="text-zinc-400">${log.ts.toLocaleString()}</div>
-                    <div>${log.action} <span class="text-xs text-zinc-500">(${log.ip})</span></div>
-                </div>
-            `;
-        });
+        if (userLogs.length === 0) {
+            logHtml += `<div class="text-sm text-zinc-500 py-4">No recorded activity yet for this user.</div>`;
+        } else {
+            userLogs.slice(0, 50).forEach(entry => {
+                const time = new Date(entry.timestamp).toLocaleString();
+                let detailText = '';
+                if (entry.action === 'USER_CREATED') detailText = 'User profile created';
+                else if (entry.action === 'USER_EDITED') detailText = entry.details?.changedFields ? `Profile updated: ${entry.details.changedFields}` : 'Profile updated';
+                else if (entry.action === 'ACCESS_TOGGLED') detailText = `Access ${entry.details?.enabled ? 'granted' : 'revoked'}`;
+                else if (entry.action === 'PASSWORD_RESET') detailText = 'Temporary password was reset';
+                else detailText = entry.action;
+
+                logHtml += `
+                    <div class="flex justify-between border-b border-zinc-700 py-1.5 text-sm">
+                        <div class="text-zinc-400 font-mono text-xs w-40 flex-shrink-0">${time}</div>
+                        <div class="flex-1">${detailText}</div>
+                        <div class="text-xs text-zinc-500">${entry.performedBy}</div>
+                    </div>
+                `;
+            });
+        }
 
         if (user.notes) {
-            logHtml += `<div class="mt-3 text-xs text-zinc-400">Latest note: ${user.notes}</div>`;
+            logHtml += `<div class="mt-4 p-3 bg-zinc-800 rounded text-xs"><span class="text-emerald-400">Latest Note:</span> ${user.notes}</div>`;
         }
 
         content.innerHTML = logHtml;
         document.getElementById('userLogModal').showModal();
+    }
+
+    // ==================== FULL SYSTEM USER ACTIVITY LOG (operable) ====================
+    function showFullUserAuditLog() {
+        const modal = document.createElement('dialog');
+        modal.className = 'modal rounded-md p-0 text-white w-full max-w-6xl';
+        modal.style.backgroundColor = '#18181b';
+        modal.style.border = '1px solid #3f3f46';
+
+        let html = `
+            <div class="p-6">
+                <div class="flex justify-between items-center mb-4">
+                    <div>
+                        <h3 class="text-xl font-semibold">Full User Activity Log</h3>
+                        <div class="text-xs text-zinc-400">All profile changes, access grants/revokes, creations, and password resets</div>
+                    </div>
+                    <button onclick="this.closest('dialog').close(); this.closest('dialog').remove()" class="text-zinc-400 hover:text-white">
+                        <i class="fa-solid fa-times text-xl"></i>
+                    </button>
+                </div>
+
+                <div class="flex gap-3 mb-3">
+                    <input type="text" id="auditSearch" placeholder="Search by user name or action..." 
+                           class="flex-1 bg-zinc-800 border border-zinc-700 rounded px-3 py-1.5 text-sm" oninput="filterAuditLogTable(this)">
+                    <select id="auditActionFilter" class="bg-zinc-800 border border-zinc-700 rounded px-3 py-1.5 text-sm" onchange="filterAuditLogTable()">
+                        <option value="">All Actions</option>
+                        <option value="USER_CREATED">Created</option>
+                        <option value="USER_EDITED">Edited</option>
+                        <option value="ACCESS_TOGGLED">Access Changed</option>
+                        <option value="PASSWORD_RESET">Password Reset</option>
+                    </select>
+                    <button onclick="exportAuditLog()" class="px-4 py-1.5 bg-emerald-600 hover:bg-emerald-500 rounded text-sm flex items-center gap-2">
+                        <i class="fa-solid fa-file-excel"></i> <span>Export</span>
+                    </button>
+                </div>
+
+                <div class="max-h-[520px] overflow-auto border border-zinc-700 rounded-md" id="auditLogTableContainer">
+                    <table class="w-full text-sm">
+                        <thead class="bg-zinc-800 sticky top-0">
+                            <tr>
+                                <th class="px-4 py-2 text-left text-zinc-400 w-44">Timestamp</th>
+                                <th class="px-4 py-2 text-left text-zinc-400">Action</th>
+                                <th class="px-4 py-2 text-left text-zinc-400">Target User</th>
+                                <th class="px-4 py-2 text-left text-zinc-400">Details / Changes</th>
+                                <th class="px-4 py-2 text-left text-zinc-400 w-32">Performed By</th>
+                            </tr>
+                        </thead>
+                        <tbody class="divide-y divide-zinc-800" id="auditLogTableBody">
+        `;
+
+        if (userAuditLog.length === 0) {
+            html += `<tr><td colspan="5" class="px-4 py-8 text-center text-zinc-500">No user activity recorded yet. Actions like creating or editing users will appear here.</td></tr>`;
+        } else {
+            userAuditLog.slice(0, 300).forEach(entry => {
+                const user = users.find(u => u.id == entry.targetUserId);
+                const userName = user ? `${user.firstName} ${user.lastName}` : `User #${entry.targetUserId}`;
+                const time = new Date(entry.timestamp).toLocaleString();
+
+                let actionBadge = '';
+                if (entry.action === 'USER_CREATED') actionBadge = `<span class="px-2 py-0.5 text-xs rounded-full bg-emerald-900/60 text-emerald-400">Created</span>`;
+                else if (entry.action === 'USER_EDITED') actionBadge = `<span class="px-2 py-0.5 text-xs rounded-full bg-amber-900/60 text-amber-400">Edited</span>`;
+                else if (entry.action === 'ACCESS_TOGGLED') actionBadge = `<span class="px-2 py-0.5 text-xs rounded-full bg-sky-900/60 text-sky-400">Access</span>`;
+                else if (entry.action === 'PASSWORD_RESET') actionBadge = `<span class="px-2 py-0.5 text-xs rounded-full bg-purple-900/60 text-purple-400">Password Reset</span>`;
+                else actionBadge = `<span class="px-2 py-0.5 text-xs rounded-full bg-zinc-700 text-zinc-300">${entry.action}</span>`;
+
+                const details = entry.details?.changedFields || entry.details?.note || JSON.stringify(entry.details || {}).substring(0, 120);
+
+                html += `
+                    <tr>
+                        <td class="px-4 py-2 text-xs text-zinc-400 font-mono">${time}</td>
+                        <td class="px-4 py-2">${actionBadge}</td>
+                        <td class="px-4 py-2 font-medium">${userName}</td>
+                        <td class="px-4 py-2 text-xs text-zinc-300">${details}</td>
+                        <td class="px-4 py-2 text-sm text-zinc-400">${entry.performedBy}</td>
+                    </tr>
+                `;
+            });
+        }
+
+        html += `</tbody></table></div>
+            <div class="mt-4 text-right">
+                <button onclick="this.closest('dialog').close(); this.closest('dialog').remove()" class="px-5 py-2 bg-zinc-700 rounded-md text-sm">Close</button>
+            </div>
+        </div>`;
+
+        modal.innerHTML = html;
+        document.body.appendChild(modal);
+        modal.showModal();
+
+        // Store reference for filtering
+        window._currentAuditModal = modal;
+    }
+
+    function filterAuditLogTable(inputEl) {
+        const modal = window._currentAuditModal;
+        if (!modal) return;
+        const tbody = modal.querySelector('#auditLogTableBody');
+        if (!tbody) return;
+
+        const search = (inputEl ? inputEl.value : document.getElementById('auditSearch')?.value || '').toLowerCase();
+        const actionFilter = document.getElementById('auditActionFilter')?.value || '';
+
+        tbody.querySelectorAll('tr').forEach(row => {
+            const text = row.textContent.toLowerCase();
+            const matchesSearch = !search || text.includes(search);
+            const matchesAction = !actionFilter || row.innerHTML.includes(actionFilter);
+            row.style.display = (matchesSearch && matchesAction) ? '' : 'none';
+        });
+    }
+
+    function exportAuditLog() {
+        if (typeof XLSX === 'undefined') {
+            showCenteredAlert('Excel library not loaded.');
+            return;
+        }
+        const data = userAuditLog.map(entry => {
+            const user = users.find(u => u.id == entry.targetUserId);
+            return {
+                Timestamp: new Date(entry.timestamp).toLocaleString(),
+                Action: entry.action,
+                Target_User: user ? `${user.firstName} ${user.lastName}` : entry.targetUserId,
+                Details: JSON.stringify(entry.details || {}),
+                Performed_By: entry.performedBy
+            };
+        });
+        const ws = XLSX.utils.json_to_sheet(data);
+        const wb = XLSX.utils.book_new();
+        XLSX.utils.book_append_sheet(wb, ws, 'User Activity Log');
+        XLSX.writeFile(wb, 'User_Activity_Log.xlsx');
     }
 
     // ==================== SUMMARY & FILTERS ====================
