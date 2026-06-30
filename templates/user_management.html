@@ -21,8 +21,8 @@
   }
   /* Slightly taller rows for better readability (tiny increase) */
   #usersTableBody tr td {
-    padding-top: 9px !important;
-    padding-bottom: 9px !important;
+    padding-top: 10px !important;
+    padding-bottom: 10px !important;
   }
 </style>
 
@@ -362,6 +362,9 @@
     let phoneNumbers = []; // For dynamic phone rows
     let userAuditLog = JSON.parse(localStorage.getItem('userAuditLog')) || [];
 
+    // Demo: Current logged-in user email (matches header avatar). Determines if the viewer can edit signature/certificate in the admin modal.
+    let currentUserEmail = "michael.bretz@casepm.com";
+
     // ==================== AUDIT LOGGING (operable user activity logs) ====================
     function logUserAudit(action, targetUserId, details = {}) {
         const entry = {
@@ -582,7 +585,7 @@
     let signatureCanvas = null;
     let signatureCtx = null;
 
-    function initSignatureCanvas() {
+    function initSignatureCanvas(viewOnly = false) {
         signatureCanvas = document.getElementById('signatureCanvas');
         if (!signatureCanvas) return;
         signatureCtx = signatureCanvas.getContext('2d', { alpha: true });
@@ -591,6 +594,28 @@
         signatureCtx.lineJoin = 'round';
         signatureCtx.lineCap = 'round';
 
+        // If viewOnly (admin viewing another user's signature), disable all drawing and show watermark
+        if (viewOnly) {
+            signatureCanvas.style.cursor = 'not-allowed';
+            signatureCanvas.onmousedown = null;
+            signatureCanvas.onmousemove = null;
+            signatureCanvas.onmouseup = null;
+            signatureCanvas.onmouseout = null;
+            signatureCanvas.ontouchstart = null;
+            signatureCanvas.ontouchmove = null;
+            signatureCanvas.ontouchend = null;
+
+            // Apply watermark immediately if a signature is already loaded
+            setTimeout(() => {
+                if (currentSignatureDataURL && signatureCtx && signatureCanvas) {
+                    drawSignatureWatermark();
+                }
+            }, 50);
+            return;
+        }
+
+        // Normal editable mode (owner)
+        signatureCanvas.style.cursor = 'crosshair';
         let drawing = false;
         let lastX = 0;
         let lastY = 0;
@@ -637,6 +662,19 @@
             draw(e.touches[0].clientX - rect.left, e.touches[0].clientY - rect.top);
         };
         signatureCanvas.ontouchend = endDrawing;
+    }
+
+    // Draw a clear "VIEW ONLY" watermark diagonally across the signature (for admins)
+    function drawSignatureWatermark() {
+        if (!signatureCtx || !signatureCanvas) return;
+        signatureCtx.save();
+        signatureCtx.font = 'bold 28px Arial';
+        signatureCtx.fillStyle = 'rgba(220, 38, 38, 0.35)'; // Light red, semi-transparent
+        signatureCtx.textAlign = 'center';
+        signatureCtx.translate(signatureCanvas.width / 2, signatureCanvas.height / 2);
+        signatureCtx.rotate(-Math.PI / 6); // Diagonal
+        signatureCtx.fillText('VIEW ONLY — ADMIN', 0, 8);
+        signatureCtx.restore();
     }
 
     function clearSignature() {
@@ -772,7 +810,11 @@
         renderPermissionsDropdowns('permissionsContainer', user.permissions || {});
         setTimeout(() => setPermissionsToDropdowns(user.permissions || {}), 80);
 
-        // Signature
+        // Determine if the current viewer is the owner of this profile (can edit signature/certificate)
+        const isOwner = (user.email && user.email.toLowerCase() === currentUserEmail.toLowerCase());
+        window.currentEditIsOwner = isOwner; // Expose for other functions
+
+        // Signature (load with watermark if admin viewing someone else's signature)
         currentSignatureDataURL = user.signatureDataURL || null;
         if (currentSignatureDataURL) {
             setTimeout(() => {
@@ -781,10 +823,15 @@
                     img.onload = () => {
                         signatureCtx.clearRect(0, 0, signatureCanvas.width, signatureCanvas.height);
                         signatureCtx.drawImage(img, 0, 0, signatureCanvas.width, signatureCanvas.height);
+                        
+                        // If admin (not owner) is viewing, apply a visible watermark
+                        if (!isOwner) {
+                            drawSignatureWatermark();
+                        }
                     };
                     img.src = currentSignatureDataURL;
                 }
-            }, 200);
+            }, 220);
         }
 
         // Certificate
@@ -798,9 +845,26 @@
         document.getElementById('userModal').showModal();
 
         setTimeout(() => {
-            initSignatureCanvas();
-            setupCertificateUpload();
-        }, 150);
+            initSignatureCanvas(!isOwner); // Pass viewOnly flag
+            setupCertificateUpload(!isOwner);
+
+            // Hide/disable signature editing controls for non-owners (admins viewing others)
+            const clearBtn = document.querySelector('#tab-content-signature button[onclick*="clearSignature"]');
+            const saveSigBtn = document.querySelector('#tab-content-signature button[onclick*="saveSignatureToUser"]');
+            const sigUpload = document.getElementById('signatureUpload');
+            const sigStatus = document.getElementById('signatureUploadStatus');
+
+            if (!isOwner) {
+                if (clearBtn) { clearBtn.style.display = 'none'; }
+                if (saveSigBtn) { saveSigBtn.style.display = 'none'; }
+                if (sigUpload) { sigUpload.style.display = 'none'; }
+                if (sigStatus) { sigStatus.textContent = 'View Only — Only the user themselves can draw or upload a new signature.'; }
+            } else {
+                if (clearBtn) { clearBtn.style.display = ''; }
+                if (saveSigBtn) { saveSigBtn.style.display = ''; }
+                if (sigUpload) { sigUpload.style.display = ''; }
+            }
+        }, 160);
     }
 
     // ==================== DELETE ====================
@@ -943,10 +1007,26 @@
     }
 
     // ==================== CERTIFICATE UPLOAD ====================
-    function setupCertificateUpload() {
+    function setupCertificateUpload(viewOnly = false) {
         const input = document.getElementById('certificateUpload');
         const status = document.getElementById('certificateStatus');
         if (!input || !status) return;
+
+        if (viewOnly) {
+            input.disabled = true;
+            input.style.opacity = '0.5';
+            input.style.cursor = 'not-allowed';
+            // Show a note that only the user can change certificate
+            if (!status.textContent.includes('View Only')) {
+                status.textContent = (status.textContent || '') + ' (View Only — only the user can upload a new certificate)';
+                status.className = 'text-xs text-amber-400 mt-2';
+            }
+            return;
+        }
+
+        input.disabled = false;
+        input.style.opacity = '1';
+        input.style.cursor = '';
 
         input.onchange = function() {
             if (input.files.length > 0) {
@@ -1727,6 +1807,7 @@
 
         if (changed) {
             localStorage.setItem('users', JSON.stringify(users));
+            renderUsersTable(); // Refresh main table so Status and Access columns update immediately
         }
     }
 
