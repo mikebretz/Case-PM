@@ -413,41 +413,6 @@
         return new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(amount || 0);
     }
 
-    function populateCostTypeSelect() {
-        const select = document.getElementById('cost_type');
-        if (!select) return;
-        const currentVal = select.value;
-        select.innerHTML = '';
-        costTypes.forEach(type => {
-            const opt = document.createElement('option');
-            opt.value = type;
-            opt.textContent = type;
-            select.appendChild(opt);
-        });
-        if (costTypes.includes(currentVal)) {
-            select.value = currentVal;
-        } else if (costTypes.length > 0) {
-            select.value = costTypes[0];
-        }
-    }
-
-    function populateMainCostTypeFilter() {
-        const filter = document.getElementById('costTypeFilter');
-        if (!filter) return;
-        const currentVal = filter.value;
-        // keep the "All Cost Types" option
-        filter.innerHTML = '<option value="">All Cost Types</option>';
-        costTypes.forEach(type => {
-            const opt = document.createElement('option');
-            opt.value = type;
-            opt.textContent = type;
-            filter.appendChild(opt);
-        });
-        if (costTypes.includes(currentVal)) {
-            filter.value = currentVal;
-        }
-    }
-
     // ==================== BUDGET AUDIT LOGGING ====================
     function logBudgetAudit(action, details = {}) {
         const entry = {
@@ -916,7 +881,6 @@
         saveBtn.classList.add('bg-emerald-600', 'hover:bg-emerald-500');
         saveBtn.textContent = 'Save Line Item';
         populateCostCodeDatalist();
-        populateCostTypeSelect();
         document.getElementById('budgetLineModal').showModal();
         setTimeout(() => {
             setupAccountingFormat('original_budget');
@@ -944,7 +908,6 @@
         saveBtn.classList.add('bg-emerald-600', 'hover:bg-emerald-500');
         saveBtn.textContent = 'Save Line Item';
         populateCostCodeDatalist();
-        populateCostTypeSelect();
         document.getElementById('budgetLineModal').showModal();
         setTimeout(() => {
             setupAccountingFormat('original_budget');
@@ -968,11 +931,7 @@
 
         const list = activeCostCodeList === 'csi' ? csiCostCodes : customCostCodes;
         const foundCode = list.find(c => c.code === codeOnly);
-        if (!foundCode) {
-            showCenteredAlert(`Cost Code "${codeOnly}" is not in the currently active list (${activeCostCodeList === 'csi' ? 'CSI Master Codes' : 'Custom Codes'}). Please click "Select Cost Code" button to choose a valid code from the list.`);
-            return;
-        }
-        const description = foundCode.description;
+        const description = foundCode ? foundCode.description : codeOnly;
 
         let otherOriginals = 0;
         budgetLines.forEach(l => {
@@ -1107,7 +1066,7 @@
 
     function populateCostCodeDatalist() {
         const datalist = document.getElementById('costCodeList');
-        if (!datalist) return; // datalist removed - selection now via Select Cost Code button
+        if (!datalist) return; // Guard for when datalist was removed
         datalist.innerHTML = '';
         const list = activeCostCodeList === 'csi' ? csiCostCodes : customCostCodes;
         list.forEach(item => {
@@ -1115,6 +1074,23 @@
             option.value = `${item.code} - ${item.description}`;
             datalist.appendChild(option);
         });
+    }
+
+    function populateMainCostTypeFilter() {
+        const select = document.getElementById('costTypeFilter');
+        if (!select) return;
+        const currentVal = select.value;
+        select.innerHTML = '<option value="">All Cost Types</option>';
+        costTypes.forEach(type => {
+            const opt = document.createElement('option');
+            opt.value = type;
+            opt.textContent = type;
+            select.appendChild(opt);
+        });
+        // Restore previous selection if still valid
+        if (costTypes.includes(currentVal)) {
+            select.value = currentVal;
+        }
     }
 
     function autoFillFromCostCode() {
@@ -1374,7 +1350,7 @@
         });
 
         if (invalidLines.length > 0) {
-            showInvalidLinesForPublish(invalidLines, list);
+            showInvalidPublishModal(invalidLines);
             return;
         }
 
@@ -1427,89 +1403,6 @@
         document.body.appendChild(dialog);
         dialog.showModal();
         setTimeout(() => { dialog.close(); dialog.remove(); }, 2200);
-    }
-
-    function showInvalidLinesForPublish(invalidLines, activeList) {
-        const modal = document.createElement('dialog');
-        modal.className = 'modal rounded-md p-0 text-white w-full max-w-4xl';
-        modal.style.backgroundColor = '#18181b';
-        modal.style.border = '1px solid #3f3f46';
-
-        let html = `
-            <div class="p-6">
-                <div class="flex justify-between items-center mb-4">
-                    <div>
-                        <h3 class="text-xl font-semibold text-red-400">Cannot Publish — Invalid Line Items</h3>
-                        <div class="text-sm text-zinc-400">${invalidLines.length} line(s) have issues with Cost Code or Cost Type</div>
-                    </div>
-                    <button onclick="this.closest('dialog').close(); this.closest('dialog').remove()" class="text-zinc-400 hover:text-white">
-                        <i class="fa-solid fa-times text-xl"></i>
-                    </button>
-                </div>
-
-                <div class="mb-3">
-                    <input type="text" id="invalidSearchInput" placeholder="Search by cost code or description..." 
-                           class="w-full bg-zinc-800 border border-zinc-700 rounded-md px-4 py-2 text-sm focus:border-red-500"
-                           oninput="filterInvalidLinesTable(this)">
-                    <div class="text-[10px] text-zinc-500 mt-1">Type to filter the list below. Fix these lines then try Publish again.</div>
-                </div>
-
-                <div class="max-h-[420px] overflow-auto border border-zinc-700 rounded-md" id="invalidLinesTableContainer">
-                    <table class="w-full text-sm">
-                        <thead class="bg-zinc-800 sticky top-0">
-                            <tr>
-                                <th class="px-3 py-2 text-left font-medium text-zinc-400 w-28">Cost Code</th>
-                                <th class="px-3 py-2 text-left font-medium text-zinc-400">Description</th>
-                                <th class="px-3 py-2 text-left font-medium text-zinc-400 w-40">Cost Type</th>
-                                <th class="px-3 py-2 text-center font-medium text-zinc-400 w-32">Issue</th>
-                            </tr>
-                        </thead>
-                        <tbody class="divide-y divide-zinc-800" id="invalidLinesTableBody">
-        `;
-
-        invalidLines.forEach((line, idx) => {
-            const codeValid = activeList.some(c => c.code === line.cost_code);
-            const typeValid = costTypes.includes(line.cost_type);
-            let issue = '';
-            if (!codeValid && !typeValid) issue = 'Bad Code + Type';
-            else if (!codeValid) issue = 'Invalid Cost Code';
-            else issue = 'Invalid Cost Type';
-
-            html += `
-                <tr data-idx="${idx}">
-                    <td class="px-3 py-1.5 font-mono text-emerald-400 text-xs">${line.cost_code}</td>
-                    <td class="px-3 py-1.5">${line.description}</td>
-                    <td class="px-3 py-1.5"><span class="px-2 py-0.5 rounded text-xs bg-zinc-700">${line.cost_type}</span></td>
-                    <td class="px-3 py-1.5 text-center"><span class="px-2 py-0.5 text-xs rounded-full bg-red-900/60 text-red-400">${issue}</span></td>
-                </tr>
-            `;
-        });
-
-        html += `
-                        </tbody>
-                    </table>
-                </div>
-
-                <div class="mt-5 flex justify-end gap-3">
-                    <button onclick="this.closest('dialog').close(); this.closest('dialog').remove()" class="px-5 py-2 rounded-md bg-zinc-700 hover:bg-zinc-600 text-sm">Close & Fix Lines</button>
-                </div>
-            </div>
-        `;
-
-        modal.innerHTML = html;
-        document.body.appendChild(modal);
-        modal.showModal();
-
-        // Attach filter function to window for the oninput to work
-        window.filterInvalidLinesTable = function(inputEl) {
-            const q = (inputEl.value || '').toLowerCase().trim();
-            const tbody = modal.querySelector('#invalidLinesTableBody');
-            if (!tbody) return;
-            tbody.querySelectorAll('tr').forEach(row => {
-                const text = row.textContent.toLowerCase();
-                row.style.display = text.includes(q) ? '' : 'none';
-            });
-        };
     }
 
     // ==================== VIEW PENDING CHANGES ====================
@@ -1565,18 +1458,92 @@
             return;
         }
         try {
-            const data = snapshots.map(s => ({
+            const sorted = snapshots.slice().sort((a, b) => a.revision - b.revision);
+
+            // Sheet 1: Summary (same as before)
+            const summaryData = sorted.map(s => ({
                 Revision: s.revision,
                 Timestamp: new Date(s.timestamp).toLocaleString(),
                 Line_Items: s.lines.length,
                 Total_Budget: s.lines.reduce((sum, l) => sum + (l.original_budget || 0), 0)
             }));
-            const ws = XLSX.utils.json_to_sheet(data);
+            const wsSummary = XLSX.utils.json_to_sheet(summaryData);
             const wb = XLSX.utils.book_new();
-            XLSX.utils.book_append_sheet(wb, ws, "Version History");
+            XLSX.utils.book_append_sheet(wb, wsSummary, "Revision Summary");
+
+            // Sheet 2: Detailed Changes (what you see when you click "Click to view changes")
+            let changeRows = [];
+            for (let i = 0; i < sorted.length; i++) {
+                const snap = sorted[i];
+                const prevSnap = i > 0 ? sorted[i - 1] : null;
+
+                const currentMap = new Map();
+                snap.lines.forEach(l => currentMap.set(`${l.cost_code}|${l.cost_type}`, l));
+
+                const prevMap = new Map();
+                if (prevSnap) prevSnap.lines.forEach(l => prevMap.set(`${l.cost_code}|${l.cost_type}`, l));
+
+                let added = [], modified = [], removed = [];
+
+                currentMap.forEach((line, key) => {
+                    if (!prevMap.has(key)) {
+                        added.push(line);
+                    } else {
+                        const prevLine = prevMap.get(key);
+                        if (prevLine.original_budget !== line.original_budget || prevLine.notes !== line.notes) {
+                            modified.push({ current: line, previous: prevLine });
+                        }
+                    }
+                });
+                prevMap.forEach((line, key) => {
+                    if (!currentMap.has(key)) removed.push(line);
+                });
+
+                const revLabel = `Rev ${snap.revision}`;
+                added.forEach(l => {
+                    changeRows.push({
+                        Revision: revLabel,
+                        Change_Type: "Added",
+                        Cost_Code: l.cost_code,
+                        Description: l.description,
+                        Cost_Type: l.cost_type,
+                        Original_Budget: l.original_budget,
+                        Notes: l.notes || ""
+                    });
+                });
+                modified.forEach(m => {
+                    changeRows.push({
+                        Revision: revLabel,
+                        Change_Type: "Modified",
+                        Cost_Code: m.current.cost_code,
+                        Description: m.current.description,
+                        Cost_Type: m.current.cost_type,
+                        Original_Budget: `${m.previous.original_budget} → ${m.current.original_budget}`,
+                        Notes: m.current.notes || ""
+                    });
+                });
+                removed.forEach(l => {
+                    changeRows.push({
+                        Revision: revLabel,
+                        Change_Type: "Removed",
+                        Cost_Code: l.cost_code,
+                        Description: l.description,
+                        Cost_Type: l.cost_type,
+                        Original_Budget: l.original_budget,
+                        Notes: l.notes || ""
+                    });
+                });
+            }
+
+            if (changeRows.length > 0) {
+                const wsChanges = XLSX.utils.json_to_sheet(changeRows);
+                XLSX.utils.book_append_sheet(wb, wsChanges, "Detailed Changes");
+            }
+
             XLSX.writeFile(wb, `Budget_Version_History_ALDI_Lakeland.xlsx`);
         } catch (e) {
-            showCenteredAlert("Failed to export version history.");
+            console.error(e);
+            showCenteredAlert("Failed to export version history with details.");
         }
     }
 
@@ -1868,7 +1835,6 @@
         if (val && !costTypes.includes(val)) costTypes.push(val);
         document.getElementById('newCostTypeModal').close();
         renderCostTypesList();
-        populateCostTypeSelect();
         populateMainCostTypeFilter();
         input.value = '';
     }
@@ -2018,7 +1984,6 @@
                     });
 
                     renderCostTypesList();
-                    populateCostTypeSelect();
                     populateMainCostTypeFilter();
                     showCenteredAlert(`Successfully imported ${added} new cost type(s).`);
                 } catch (err) {
@@ -2295,9 +2260,8 @@
             renderCostTypesList();
         }
 
-        populateCostCodeDatalist();
-        populateCostTypeSelect();
         populateMainCostTypeFilter();
+        populateCostCodeDatalist();
 
         showCenteredAlert("Synced with Sage 300 successfully. 'Sage 300' cost code list created/activated. Cost Types cleared and replaced with clean synced list.", 'success');
     }
@@ -2335,6 +2299,119 @@
         });
     }
 
+    // ==================== INVALID LINES PUBLISH MODAL + FILTER ====================
+    function showInvalidPublishModal(invalidLines) {
+        const modal = document.createElement('dialog');
+        modal.className = 'modal rounded-md p-0 text-white w-full max-w-4xl';
+        modal.style.backgroundColor = '#18181b';
+        modal.style.border = '1px solid #3f3f46';
+
+        const list = activeCostCodeList === 'csi' ? csiCostCodes : customCostCodes;
+
+        let rowsHtml = '';
+        invalidLines.forEach(line => {
+            const validCode = list.some(c => c.code === line.cost_code);
+            const validType = costTypes.includes(line.cost_type);
+            let issue = '';
+            if (!validCode && !validType) issue = 'Invalid Code + Type';
+            else if (!validCode) issue = 'Invalid Cost Code';
+            else issue = 'Invalid Cost Type';
+
+            rowsHtml += `
+                <tr class="hover:bg-zinc-800/60">
+                    <td class="px-3 py-1.5 font-mono text-emerald-400">${line.cost_code}</td>
+                    <td class="px-3 py-1.5">${line.description}</td>
+                    <td class="px-3 py-1.5">${line.cost_type}</td>
+                    <td class="px-3 py-1.5 text-center"><span class="px-2.5 py-0.5 text-xs rounded-full bg-red-900/60 text-red-400">${issue}</span></td>
+                </tr>
+            `;
+        });
+
+        modal.innerHTML = `
+            <div class="p-6">
+                <div class="flex justify-between items-center mb-4">
+                    <h3 class="text-xl font-semibold text-red-400">Cannot Publish — ${invalidLines.length} Invalid Line(s)</h3>
+                    <button onclick="this.closest('dialog').close(); this.closest('dialog').remove()" class="text-zinc-400 hover:text-white">
+                        <i class="fa-solid fa-times text-xl"></i>
+                    </button>
+                </div>
+                <p class="text-sm text-zinc-400 mb-3">These line items have Cost Codes or Cost Types that are not valid in the currently active list. Use the button below to filter the budget table and fix them quickly.</p>
+
+                <input type="text" placeholder="Search invalid lines by code, description or type..." 
+                       class="w-full bg-zinc-800 border border-zinc-700 rounded-md px-3 py-1.5 text-sm mb-3"
+                       oninput="filterInvalidLinesTable(this)">
+
+                <div class="max-h-[380px] overflow-auto border border-zinc-700 rounded-md mb-4">
+                    <table class="w-full text-sm" id="invalidLinesTable">
+                        <thead class="bg-zinc-800 sticky top-0">
+                            <tr>
+                                <th class="px-3 py-1.5 text-left font-medium text-zinc-400 w-28">Cost Code</th>
+                                <th class="px-3 py-1.5 text-left font-medium text-zinc-400">Description</th>
+                                <th class="px-3 py-1.5 text-left font-medium text-zinc-400 w-40">Cost Type</th>
+                                <th class="px-3 py-1.5 text-center font-medium text-zinc-400 w-36">Issue</th>
+                            </tr>
+                        </thead>
+                        <tbody class="divide-y divide-zinc-800">
+                            ${rowsHtml}
+                        </tbody>
+                    </table>
+                </div>
+
+                <div class="flex justify-end gap-3">
+                    <button onclick="this.closest('dialog').close(); this.closest('dialog').remove()" 
+                            class="px-5 py-2 bg-zinc-700 hover:bg-zinc-600 rounded-md text-sm">Close</button>
+                    <button onclick="closeAndFilterInvalidLines(this)" 
+                            class="px-5 py-2 bg-amber-600 hover:bg-amber-500 rounded-md text-sm font-semibold flex items-center gap-2">
+                        <i class="fa-solid fa-filter"></i> <span>Close &amp; Filter to Invalid Lines</span>
+                    </button>
+                </div>
+            </div>
+        `;
+        document.body.appendChild(modal);
+        modal.showModal();
+    }
+
+    function filterInvalidLinesTable(inputEl) {
+        const q = (inputEl.value || '').toLowerCase().trim();
+        const modal = inputEl.closest('dialog');
+        const tbody = modal ? modal.querySelector('#invalidLinesTable tbody') : null;
+        if (!tbody) return;
+        Array.from(tbody.rows).forEach(row => {
+            const text = row.textContent.toLowerCase();
+            row.style.display = text.includes(q) ? '' : 'none';
+        });
+    }
+
+    function closeAndFilterInvalidLines(btn) {
+        const modal = btn.closest('dialog');
+        if (modal) {
+            modal.close();
+            modal.remove();
+        }
+        filterToInvalidLines();
+    }
+
+    function filterToInvalidLines() {
+        const list = activeCostCodeList === 'csi' ? csiCostCodes : customCostCodes;
+        const invalid = budgetLines.filter(line => {
+            const validCode = list.some(c => c.code === line.cost_code);
+            const validType = costTypes.includes(line.cost_type);
+            return !validCode || !validType;
+        });
+        if (invalid.length === 0) {
+            renderBudgetTable(budgetLines);
+            showCenteredAlert("No invalid lines found.");
+            return;
+        }
+        renderBudgetTable(invalid);
+        // Clear other filters for clarity
+        const searchInput = document.getElementById('searchInput');
+        const typeFilter = document.getElementById('costTypeFilter');
+        if (searchInput) searchInput.value = '';
+        if (typeFilter) typeFilter.value = '';
+        showCenteredAlert(`Filtered to ${invalid.length} invalid line(s). Edit the Cost Code or Cost Type to fix, then Publish again.`, 'warning');
+    }
+
     // ==================== FINAL INITIALIZATION ====================
     function initializeBudget() {
         const savedLines = localStorage.getItem('budgetLines');
@@ -2354,8 +2431,18 @@
         updateRevisionBadge();
         updateButtonStates();
 
-        populateCostTypeSelect();
-        populateMainCostTypeFilter(); // ensure top filter reflects current cost types
+        const costTypeSelect = document.getElementById('cost_type');
+        if (costTypeSelect) {
+            costTypes.forEach(type => {
+                const option = document.createElement('option');
+                option.value = type;
+                option.textContent = type;
+                costTypeSelect.appendChild(option);
+            });
+        }
+
+        // Also populate the main page Cost Type filter with any newly added types
+        populateMainCostTypeFilter();
 
         document.querySelectorAll('.nav-link').forEach(link => {
             link.addEventListener('click', warnBeforeLeaving, true);
