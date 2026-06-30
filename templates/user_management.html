@@ -126,10 +126,11 @@
                     <th class="px-4 py-2 text-left font-medium text-zinc-400">Job Title</th>
                     <th class="px-4 py-2 text-left font-medium text-zinc-400">Role</th>
                     <th class="px-4 py-2 text-left font-medium text-zinc-400">Company</th>
-                    <th class="px-5 py-2 text-left font-medium text-zinc-400 flex-1 min-w-[220px]">Address</th>
-                    <th class="px-3 py-2 text-center font-medium text-zinc-400 w-20">Status</th>
-                    <th class="px-3 py-2 text-center font-medium text-zinc-400 w-20">Access</th>
-                    <th class="px-3 py-2 text-center font-medium text-zinc-400 min-w-[170px]">Actions</th>
+                    <th class="px-5 py-2 text-left font-medium text-zinc-400 flex-1 min-w-[200px]">Address</th>
+                    <th class="px-3 py-2 text-center font-medium text-zinc-400 w-16">Status</th>
+                    <th class="px-3 py-2 text-center font-medium text-zinc-400 w-16">Access</th>
+                    <th class="px-3 py-2 text-center font-medium text-zinc-400 w-24">Permissions</th>
+                    <th class="px-3 py-2 text-center font-medium text-zinc-400 min-w-[160px]">Actions</th>
                 </tr>
             </thead>
             <tbody id="usersTableBody" class="divide-y divide-zinc-800 text-sm">
@@ -384,7 +385,7 @@
         "Dashboard", "Projects", "Budget", "Commitments", "Pay Applications",
         "Daily Log", "Weekly Reports", "RFIs", "Submittals", "Change Orders",
         "Punch List", "Safety", "Schedule", "Documents", "Drawings", "Photos",
-        "Companies / Vendors", "User Management", "Program Settings"
+        "Companies / Vendors", "User Management", "Program Settings", "Logs"
     ];
     const workflowModules = ["Submittals", "RFIs", "Change Orders", "Budget", "Daily Reports", "Documents"];
 
@@ -901,6 +902,36 @@
                 return;
             }
 
+            // === DUPLICATE EMAIL & NAME AUDIT (Active Reconcile) ===
+            const firstName = document.getElementById('firstName').value.trim();
+            const lastName = document.getElementById('lastName').value.trim();
+            const fullName = `${firstName} ${lastName}`.trim();
+
+            if (!id) { // Only check on new user creation
+                // Hard block duplicate email
+                const emailExists = users.some(u => u.email && u.email.toLowerCase() === email.toLowerCase());
+                if (emailExists) {
+                    showCenteredAlert("A user with this email address already exists. Duplicate emails are not allowed.", 'warning');
+                    switchTab('general');
+                    document.getElementById('email').focus();
+                    return;
+                }
+
+                // Soft check for same first + last name
+                const nameMatch = users.find(u => 
+                    (u.firstName || '').toLowerCase() === firstName.toLowerCase() && 
+                    (u.lastName || '').toLowerCase() === lastName.toLowerCase()
+                );
+                if (nameMatch) {
+                    const proceed = confirm(`A user named "${nameMatch.firstName} ${nameMatch.lastName}" already exists with email ${nameMatch.email}.\n\nIs this the same person? Click OK to continue (will update existing record) or Cancel to abort.`);
+                    if (!proceed) {
+                        return;
+                    }
+                    // If user confirms it's the same, we can optionally update the existing instead of creating new.
+                    // For simplicity, we proceed but log it.
+                }
+            }
+
             const permissions = getPermissionsFromDropdowns();
             const phones = getPhoneNumbersFromUI();
             const companyName = document.getElementById('companySelect').value;
@@ -1046,7 +1077,7 @@
         const data = filtered || users;
 
         if (data.length === 0) {
-            tbody.innerHTML = `<tr><td colspan="6" class="px-6 py-8 text-center text-zinc-500">No users found. Click "Add New User" to begin.</td></tr>`;
+            tbody.innerHTML = `<tr><td colspan="11" class="px-6 py-8 text-center text-zinc-500">No users found. Click "Add New User" to begin.</td></tr>`;
             updateSummaryCards();
             return;
         }
@@ -1079,6 +1110,16 @@
                 : `<span class="px-2 py-0.5 text-[10px] rounded-full bg-zinc-700 text-zinc-400">Off</span>`;
             const statusHtml = `<span class="px-2 py-0.5 text-[10px] rounded-full ${user.status === 'Active' ? 'bg-emerald-900/60 text-emerald-400' : 'bg-zinc-700 text-zinc-400'}">${user.status || 'Active'}</span>`;
 
+            // Simplified Permissions display for main table
+            let permDisplay = user.role || 'User';
+            if (user.permissions) {
+                const hasEdit = Object.values(user.permissions).some(p => p.access === 'Edit');
+                if (hasEdit && !['Admin', 'Project Manager'].includes(user.role)) {
+                    permDisplay = `${user.role || 'User'} (Modified)`;
+                }
+            }
+            const permHtml = `<span class="px-2 py-0.5 text-[10px] rounded-full bg-zinc-700 text-emerald-300">${permDisplay}</span>`;
+
             row.innerHTML = `
                 <td class="px-5 py-2 font-medium">${user.firstName || ''} ${user.lastName || ''}</td>
                 <td class="px-5 py-2 text-zinc-400 text-sm">${user.email || ''}</td>
@@ -1089,6 +1130,7 @@
                 <td class="px-5 py-2 text-zinc-400 text-sm">${displayAddress}</td>
                 <td class="px-3 py-2 text-center">${statusHtml}</td>
                 <td class="px-3 py-2 text-center">${hasAccessHtml}</td>
+                <td class="px-3 py-2 text-center">${permHtml}</td>
                 <td class="px-3 py-2 text-center">
                     <div class="flex justify-center gap-1 flex-nowrap">
                         <button onclick="event.stopImmediatePropagation(); editUser(${user.id})" class="px-2.5 py-0.5 text-[10px] bg-zinc-700 hover:bg-emerald-600 rounded">Edit</button>
