@@ -1,6 +1,7 @@
 {% extends "base.html" %}
 
 {% block content %}
+<script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
 
 <!-- ==================== HEADER (Budget moved LEFT ~1 inch more • Larger Rev badge • Wider buttons • Compact 2-line profile matching Companies page) ==================== -->
 <div class="h-16 border-b border-zinc-800 bg-zinc-900 flex items-center px-6 flex-shrink-0">
@@ -453,7 +454,7 @@
         }
     }
 
-    // ==================== RENDER TABLE (with collapsible divisions, health, % complete as display) ====================
+    // ==================== RENDER TABLE (FIXED: collapsible divisions now actually hide rows) ====================
     function renderBudgetTable(lines) {
         const tbody = document.getElementById('budgetTableBody');
         tbody.innerHTML = '';
@@ -477,6 +478,8 @@
 
         sorted.forEach((line, index) => {
             const division = line.cost_code.substring(0, 2);
+
+            // Create division header whenever we enter a new division
             if (division !== currentDivision) {
                 currentDivision = division;
                 const isCollapsed = collapsedDivisions.has(division);
@@ -492,57 +495,60 @@
                 tbody.appendChild(header);
             }
 
-            const pending = line.pending || 0;
-            const forecast = (line.original_budget || 0) + (line.approved_changes || 0) + pending;
-            const actual = line.actual || 0;
-            const percentComplete = line.percent_complete || 0;
+            // ONLY render data rows if this division is NOT collapsed
+            if (!collapsedDivisions.has(division)) {
+                const pending = line.pending || 0;
+                const forecast = (line.original_budget || 0) + (line.approved_changes || 0) + pending;
+                const actual = line.actual || 0;
+                const percentComplete = line.percent_complete || 0;
 
-            // Budget Health
-            let healthBadge = '';
-            const currentBudget = (line.original_budget || 0) + (line.approved_changes || 0);
-            if (pending > 50000 || currentBudget > contractAmount * 0.9) {
-                healthBadge = `<span class="px-2 py-0.5 text-xs rounded-full bg-red-900/60 text-red-400">Over</span>`;
-            } else if (pending > 10000) {
-                healthBadge = `<span class="px-2 py-0.5 text-xs rounded-full bg-amber-900/60 text-amber-400">High Pending</span>`;
-            } else {
-                healthBadge = `<span class="px-2 py-0.5 text-xs rounded-full bg-emerald-900/60 text-emerald-400">OK</span>`;
+                // Budget Health
+                let healthBadge = '';
+                const currentBudget = (line.original_budget || 0) + (line.approved_changes || 0);
+                if (pending > 50000 || currentBudget > contractAmount * 0.9) {
+                    healthBadge = `<span class="px-2 py-0.5 text-xs rounded-full bg-red-900/60 text-red-400">Over</span>`;
+                } else if (pending > 10000) {
+                    healthBadge = `<span class="px-2 py-0.5 text-xs rounded-full bg-amber-900/60 text-amber-400">High Pending</span>`;
+                } else {
+                    healthBadge = `<span class="px-2 py-0.5 text-xs rounded-full bg-emerald-900/60 text-emerald-400">OK</span>`;
+                }
+
+                let syncBadge = '';
+                const status = line.syncStatus || 'Not Synced';
+                if (status === 'Synced') syncBadge = `<span class="px-2 py-0.5 text-xs rounded-full bg-emerald-900/60 text-emerald-400">Synced</span>`;
+                else if (status === 'Pending') syncBadge = `<span class="px-2 py-0.5 text-xs rounded-full bg-amber-900/60 text-amber-400">Pending</span>`;
+                else syncBadge = `<span class="px-2 py-0.5 text-xs rounded-full bg-zinc-700 text-zinc-400">Not Synced</span>`;
+
+                const row = document.createElement('tr');
+                row.className = 'hover:bg-zinc-800/60 transition-colors cursor-pointer';
+                row.ondblclick = () => editBudgetLine(line.id);
+                row.innerHTML = `
+                    <td class="px-4 py-3 text-center font-mono text-xs text-zinc-500">${index + 1}</td>
+                    <td class="px-6 py-3 font-mono text-emerald-400">${line.cost_code}</td>
+                    <td class="px-6 py-3">${line.description}</td>
+                    <td class="px-6 py-3 text-center w-32 whitespace-nowrap">
+                        <span class="inline-block px-2.5 py-0.5 rounded-full text-xs font-medium bg-zinc-700 text-zinc-300">${line.cost_type}</span>
+                    </td>
+                    <td class="px-6 py-3 text-center w-28">${formatCurrency(line.original_budget)}</td>
+                    <td class="px-6 py-3 text-center text-amber-400 w-24">${formatCurrency(line.approved_changes)}</td>
+                    <td class="px-6 py-3 text-center text-orange-400 w-24">${formatCurrency(pending)}</td>
+                    <td class="px-6 py-3 text-center font-semibold text-emerald-400 w-28">${formatCurrency(line.original_budget + line.approved_changes)}</td>
+                    <td class="px-6 py-3 text-center font-semibold text-emerald-400 w-28">${formatCurrency(forecast)}</td>
+                    <td class="px-6 py-3 text-center font-semibold text-sky-400 w-28">${formatCurrency(actual)}</td>
+                    <td class="px-6 py-3 text-center w-20 font-mono text-xs">${percentComplete}%</td>
+                    <td class="px-6 py-3 text-center w-24">${syncBadge}</td>
+                    <td class="px-6 py-3 text-center w-24">${healthBadge}</td>
+                    <td class="px-6 py-3 text-sm text-zinc-400 w-[320px]">${line.notes || ''}</td>
+                    <td class="px-4 py-3 w-24">
+                        <div class="flex gap-1">
+                            <button onclick="event.stopImmediatePropagation(); editBudgetLine(${line.id})" class="text-zinc-400 hover:text-white p-1"><i class="fa-solid fa-edit"></i></button>
+                            <button onclick="event.stopImmediatePropagation(); showLineHistory(${line.id})" class="text-zinc-400 hover:text-sky-400 p-1" title="View Line History"><i class="fa-solid fa-history"></i></button>
+                            <button onclick="event.stopImmediatePropagation(); deleteBudgetLine(${line.id})" class="text-zinc-400 hover:text-red-400 p-1"><i class="fa-solid fa-trash"></i></button>
+                        </div>
+                    </td>
+                `;
+                tbody.appendChild(row);
             }
-
-            let syncBadge = '';
-            const status = line.syncStatus || 'Not Synced';
-            if (status === 'Synced') syncBadge = `<span class="px-2 py-0.5 text-xs rounded-full bg-emerald-900/60 text-emerald-400">Synced</span>`;
-            else if (status === 'Pending') syncBadge = `<span class="px-2 py-0.5 text-xs rounded-full bg-amber-900/60 text-amber-400">Pending</span>`;
-            else syncBadge = `<span class="px-2 py-0.5 text-xs rounded-full bg-zinc-700 text-zinc-400">Not Synced</span>`;
-
-            const row = document.createElement('tr');
-            row.className = 'hover:bg-zinc-800/60 transition-colors cursor-pointer';
-            row.ondblclick = () => editBudgetLine(line.id);
-            row.innerHTML = `
-                <td class="px-4 py-3 text-center font-mono text-xs text-zinc-500">${index + 1}</td>
-                <td class="px-6 py-3 font-mono text-emerald-400">${line.cost_code}</td>
-                <td class="px-6 py-3">${line.description}</td>
-                <td class="px-6 py-3 text-center w-32 whitespace-nowrap">
-                    <span class="inline-block px-2.5 py-0.5 rounded-full text-xs font-medium bg-zinc-700 text-zinc-300">${line.cost_type}</span>
-                </td>
-                <td class="px-6 py-3 text-center w-28">${formatCurrency(line.original_budget)}</td>
-                <td class="px-6 py-3 text-center text-amber-400 w-24">${formatCurrency(line.approved_changes)}</td>
-                <td class="px-6 py-3 text-center text-orange-400 w-24">${formatCurrency(pending)}</td>
-                <td class="px-6 py-3 text-center font-semibold text-emerald-400 w-28">${formatCurrency(line.original_budget + line.approved_changes)}</td>
-                <td class="px-6 py-3 text-center font-semibold text-emerald-400 w-28">${formatCurrency(forecast)}</td>
-                <td class="px-6 py-3 text-center font-semibold text-sky-400 w-28">${formatCurrency(actual)}</td>
-                <td class="px-6 py-3 text-center w-20 font-mono text-xs">${percentComplete}%</td>
-                <td class="px-6 py-3 text-center w-24">${syncBadge}</td>
-                <td class="px-6 py-3 text-center w-24">${healthBadge}</td>
-                <td class="px-6 py-3 text-sm text-zinc-400 w-[320px]">${line.notes || ''}</td>
-                <td class="px-4 py-3 w-24">
-                    <div class="flex gap-1">
-                        <button onclick="event.stopImmediatePropagation(); editBudgetLine(${line.id})" class="text-zinc-400 hover:text-white p-1"><i class="fa-solid fa-edit"></i></button>
-                        <button onclick="event.stopImmediatePropagation(); showLineHistory(${line.id})" class="text-zinc-400 hover:text-sky-400 p-1" title="View Line History"><i class="fa-solid fa-history"></i></button>
-                        <button onclick="event.stopImmediatePropagation(); deleteBudgetLine(${line.id})" class="text-zinc-400 hover:text-red-400 p-1"><i class="fa-solid fa-trash"></i></button>
-                    </div>
-                </td>
-            `;
-            tbody.appendChild(row);
         });
 
         updateTotals();
@@ -785,7 +791,7 @@
         }, 600);
     }
 
-    // ==================== EXPORT AUDIT LOG TO EXCEL ====================
+    // ==================== EXPORT AUDIT LOG TO EXCEL (now works because XLSX is loaded) ====================
     function exportAuditLog() {
         if (typeof XLSX === 'undefined') {
             showCenteredAlert("Excel library not loaded. Please hard refresh the page (Ctrl + Shift + R).");
@@ -941,7 +947,7 @@
             pending: id ? (budgetLines.find(l => l.id == id)?.pending || 0) : 0,
             notes: document.getElementById('notes').value.trim(),
             actual: id ? (budgetLines.find(l => l.id == id)?.actual || 0) : 0,
-            syncStatus: 'Not Synced',
+            syncStatus: 'Not Synced',   // Force to Not Synced on any edit (as requested)
             percent_complete: id ? (budgetLines.find(l => l.id == id)?.percent_complete || 0) : 0
         };
 
@@ -1070,7 +1076,7 @@
         }
     }
 
-    // ==================== EXPORT (Fixed & Reliable) ====================
+    // ==================== EXPORT (Now works - XLSX loaded via CDN like Companies page) ====================
     function exportBudget() {
         if (typeof XLSX === 'undefined') {
             showCenteredAlert("Excel library not loaded. Please hard refresh the page (Ctrl + Shift + R).");
@@ -1184,7 +1190,7 @@
         input.click();
     }
 
-    // ==================== PRINT (Hidden Iframe + Audit Log) ====================
+    // ==================== PRINT (Hidden Iframe + % Complete column added) ====================
     function printBudget() {
         if (!budgetLines || budgetLines.length === 0) {
             showCenteredAlert("You must have at least one budget line item to print.");
@@ -1878,7 +1884,7 @@
             }
         }, 300);
 
-        console.log('%c[Case PM] Budget page fully initialized (ULTIMATE v13 - Final version)', 'color:#10b981');
+        console.log('%c[Case PM] Budget page fully initialized (ULTIMATE v15 - Division collapse fixed + XLSX export working)', 'color:#10b981');
     }
 
     window.onload = initializeBudget;
