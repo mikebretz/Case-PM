@@ -186,10 +186,7 @@
                     <label class="block text-sm mb-1.5 text-zinc-300">Cost Code</label>
                     <input type="text" id="cost_code" list="costCodeList" onblur="autoFillFromCostCode()" class="w-full bg-zinc-800 border border-zinc-700 rounded-md px-4 py-2.5 text-sm text-white" required>
                     <datalist id="costCodeList"></datalist>
-                </div>
-                <div>
-                    <label class="block text-sm mb-1.5 text-zinc-300">Description</label>
-                    <input type="text" id="description" class="w-full bg-zinc-800 border border-zinc-700 rounded-md px-4 py-2.5 text-sm text-white">
+                    <div id="resolvedDescription" class="mt-1 text-xs text-emerald-400 font-mono"></div>
                 </div>
                 <div>
                     <label class="block text-sm mb-1.5 text-zinc-300">Cost Type</label>
@@ -596,6 +593,8 @@
         document.getElementById('budgetLineId').value = '';
         document.getElementById('modalTitle').innerText = 'Add Budget Line Item';
         document.getElementById('budgetValidationMessage').innerHTML = '';
+        const resolvedEl = document.getElementById('resolvedDescription');
+        if (resolvedEl) resolvedEl.textContent = '';
         const saveBtn = document.getElementById('saveLineItemBtn');
         saveBtn.disabled = false;
         saveBtn.classList.remove('bg-red-600', 'cursor-not-allowed');
@@ -615,8 +614,10 @@
         if (!line) return;
         document.getElementById('budgetLineId').value = line.id;
         document.getElementById('cost_code').value = `${line.cost_code} - ${line.description}`;
-        document.getElementById('description').value = line.description;
         document.getElementById('cost_type').value = line.cost_type;
+        // Set resolved description display
+        const resolvedEl = document.getElementById('resolvedDescription');
+        if (resolvedEl) resolvedEl.textContent = line.description;
         document.getElementById('original_budget').value = formatCurrency(line.original_budget);
         document.getElementById('notes').value = line.notes || '';
         document.getElementById('modalTitle').innerText = 'Edit Budget Line Item';
@@ -645,8 +646,12 @@
         originalBudgetStr = originalBudgetStr.replace(/[^0-9.-]+/g, "");
         const originalBudget = parseFloat(originalBudgetStr) || 0;
 
-        const description = document.getElementById('description').value.trim();
         const costType = document.getElementById('cost_type').value;
+
+        // Lookup clean description from cost code list (Sage 300 friendly - no free-text description override)
+        const list = activeCostCodeList === 'csi' ? csiCostCodes : customCostCodes;
+        const foundCode = list.find(c => c.code === codeOnly);
+        const description = foundCode ? foundCode.description : codeOnly;  // Fallback to code if not found
 
         let otherOriginals = 0;
         budgetLines.forEach(l => {
@@ -659,7 +664,8 @@
         }
 
         if (!id) {
-            const existing = budgetLines.find(l => l.cost_code === codeOnly && l.description.toLowerCase().trim() === description.toLowerCase().trim());
+            // Sage 300 tight: duplicate check on Cost Code + Cost Type (not free-text description)
+            const existing = budgetLines.find(l => l.cost_code === codeOnly && l.cost_type === costType);
             if (existing) {
                 showDuplicateChoiceModal(existing, codeOnly, description, costType, originalBudget);
                 return;
@@ -698,11 +704,11 @@
         dialog.style.backgroundColor = '#18181b';
         dialog.style.border = '1px solid #3f3f46';
         dialog.innerHTML = `
-            <div class="text-base mb-4">A line item with cost code <strong>${codeOnly}</strong> and the same description already exists.</div>
+            <div class="text-base mb-4">A line item with cost code <strong>${codeOnly}</strong> and the same Cost Type already exists in this budget.</div>
             <div class="text-sm text-zinc-400 mb-6">What would you like to do?</div>
             <div class="flex flex-col gap-3">
                 <button id="btnAddToExisting" class="w-full px-5 py-3 rounded-md bg-emerald-600 hover:bg-emerald-500 text-sm font-semibold">Add this amount to the existing line item</button>
-                <button id="btnCreateNew" class="w-full px-5 py-3 rounded-md bg-zinc-700 hover:bg-zinc-600 text-sm font-semibold">Create a new line item (must change Description)</button>
+                <button id="btnCreateNew" class="w-full px-5 py-3 rounded-md bg-zinc-700 hover:bg-zinc-600 text-sm font-semibold">Create a new line item (change Cost Type or use different Cost Code)</button>
             </div>
         `;
         document.body.appendChild(dialog);
@@ -773,8 +779,10 @@
         const found = list.find(c => c.code === code);
         if (found) {
             document.getElementById('cost_code').value = `${found.code} - ${found.description}`;
-            if (!document.getElementById('description').value) document.getElementById('description').value = found.description;
             document.getElementById('cost_type').value = found.cost_type;
+            // Show resolved description for user feedback (no editable field)
+            const resolvedEl = document.getElementById('resolvedDescription');
+            if (resolvedEl) resolvedEl.textContent = found.description;
         }
     }
 
