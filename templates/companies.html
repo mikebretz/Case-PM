@@ -133,6 +133,15 @@
             </table>
         </div>
     </div>
+
+    <!-- FIXED BOTTOM COMPANIES ACTIVITY LOG FOOTER (matches budget.html + user_management.html style) -->
+    <div class="fixed bottom-0 left-64 right-0 bg-zinc-900 border-t border-zinc-700 px-6 py-2 text-xs text-zinc-400 flex items-center justify-between z-[60]">
+        <div class="flex items-center gap-4">
+            <div>Companies & Vendors activity is logged for compliance and audit purposes.</div>
+            <button onclick="showFullCompanyAuditLog()" class="text-emerald-400 hover:text-emerald-300 underline font-medium">View Full Companies Activity Log</button>
+        </div>
+        <div class="text-emerald-400">● Online</div>
+    </div>
 </div>
 
 <!-- View Company Modal -->
@@ -405,11 +414,17 @@ function renderLinkedUsersForCompany(companyName) {
         return;
     }
 
+    const currentCompanyId = document.getElementById('companyId') ? parseInt(document.getElementById('companyId').value) : null;
+
     const allUsers = JSON.parse(localStorage.getItem('users') || '[]');
-    const linked = allUsers.filter(u => 
-        u.status === 'Active' && 
-        (u.company || '').toLowerCase().trim() === nameToMatch
-    );
+    const linked = allUsers.filter(u => {
+        if (u.status !== 'Active') return false;
+        const userCompany = (u.company || u.companyName || '').toLowerCase().trim();
+        if (userCompany === nameToMatch) return true;
+        // Also support matching by company_id if set in User Management
+        if (u.company_id && currentCompanyId && u.company_id === currentCompanyId) return true;
+        return false;
+    });
 
     if (linked.length === 0) {
         container.innerHTML = '<div class="text-zinc-500 text-xs px-2">No active users currently assigned to this company in User Management.</div>';
@@ -962,7 +977,7 @@ function deleteCompanyConfirmed(id, btn) {
 }
 
 function createAuthorizedCasePMUser(contact, companyId) {
-    let users = JSON.parse(localStorage.getItem('casepm_users') || '[]');
+    let users = JSON.parse(localStorage.getItem('users') || '[]');
     const existingUser = users.find(u => u.email && u.email.toLowerCase() === contact.email.toLowerCase());
 
     if (existingUser) {
