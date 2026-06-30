@@ -660,18 +660,21 @@ function saveCompany(e) {
     }
 
     const contactRows = document.querySelectorAll('#contactsContainer .contact-row');
-    let hasInvalidEmail = false;
+    let hasInvalidAuthorized = false;
     contactRows.forEach(row => {
         const authCheck = row.querySelector('.authorized-check');
+        const nameInput = row.querySelector('.contact-name');
         const emailInput = row.querySelector('.contact-email');
         if (authCheck && authCheck.checked) {
-            if (!emailInput || !emailInput.value.trim() || !/^\S+@\S+\.\S+$/.test(emailInput.value.trim())) {
-                hasInvalidEmail = true;
+            const nameVal = nameInput ? nameInput.value.trim() : '';
+            const emailVal = emailInput ? emailInput.value.trim() : '';
+            if (!nameVal || !emailVal || !/^\S+@\S+\.\S+$/.test(emailVal)) {
+                hasInvalidAuthorized = true;
             }
         }
     });
-    if (hasInvalidEmail) {
-        showAlertModal("Invalid Email", "Authorized Case PM User requires a valid email address.");
+    if (hasInvalidAuthorized) {
+        showAlertModal("Invalid Authorized User", "Authorized Case PM User requires both a Name and a valid Email address.");
         return;
     }
 
@@ -869,7 +872,26 @@ function deleteCompanyConfirmed(id, btn) {
 
 function createAuthorizedCasePMUser(contact, companyId) {
     let users = JSON.parse(localStorage.getItem('casepm_users') || '[]');
-    if (!users.some(u => u.email === contact.email)) {
+    const existingUser = users.find(u => u.email && u.email.toLowerCase() === contact.email.toLowerCase());
+
+    if (existingUser) {
+        // Self-audit: User already exists
+        showConfirmModal(
+            "User Already Exists",
+            `A user with email "${contact.email}" already exists as "${existingUser.name}". Is this the same person you want to authorize for Case PM access?`,
+            () => {
+                // Yes - update existing user
+                existingUser.company_id = companyId;
+                existingUser.authorized = true;
+                existingUser.name = contact.name || existingUser.name;
+                localStorage.setItem('casepm_users', JSON.stringify(users));
+                showAlertModal("User Linked", `Existing user "${existingUser.name}" has been linked to this company and marked as authorized. You can manage their permissions in User Management.`);
+            }
+        );
+        // Note: If user clicks "No" in confirm, we still proceed to create below in some flows,
+        // but for simplicity we let the Yes path update. If they want a duplicate, they can create manually in User Mgmt.
+    } else {
+        // No existing user - create new one
         users.push({
             id: Date.now(),
             name: contact.name,
@@ -1205,7 +1227,105 @@ function importSelectedFromSage() {
         return;
     }
 
+    const validTypes = ["Subcontractor", "Supplier", "Client"];
+    const invalidImports = [];
+
     checked.forEach(cb => {
+        const id = parseInt(cb.dataset.id);
+        const real = sageData.find(s => s.id === id);
+        if (!real) return;
+
+        if (!validTypes.includes(real.company_type)) {
+            invalidImports.push(real);
+        }
+    });
+
+    if (invalidImports.length > 0) {
+        // Show warning modal with list + search + filter option
+        showInvalidSageCompaniesModal(invalidImports, checked);
+        return;
+    }
+
+    // Proceed with normal import if all are valid
+    performSageImport(checked);
+}
+
+function showInvalidSageCompaniesModal(invalidList, checkedCheckboxes) {
+    const modal = document.createElement('dialog');
+    modal.className = 'modal rounded-md p-0 text-white w-full max-w-3xl';
+    modal.style.backgroundColor = '#18181b';
+    modal.style.border = '1px solid #3f3f46';
+
+    let rows = '';
+    invalidList.forEach((item, idx) => {
+        rows += `
+            <tr>
+                <td class="px-3 py-1.5 font-mono text-emerald-400">${item.external_id || ''}</td>
+                <td class="px-3 py-1.5">${item.company_name}</td>
+                <td class="px-3 py-1.5"><span class="px-2 py-0.5 text-xs rounded bg-red-900/60 text-red-400">${item.company_type || 'Missing'}</span></td>
+            </tr>
+        `;
+    });
+
+    modal.innerHTML = `
+        <div class="p-6">
+            <h3 class="text-xl font-semibold mb-2">Invalid Company Type(s) Detected</h3>
+            <p class="text-sm text-zinc-400 mb-4">The following companies have a company_type that is not recognized (Subcontractor / Supplier / Client). Please fix the type in Sage 300 or map it manually after import.</p>
+
+            <input type="text" placeholder="Search invalid companies..." class="w-full bg-zinc-800 border border-zinc-700 rounded px-3 py-2 text-sm mb-3" oninput="filterInvalidSageTable(this)">
+
+            <div class="max-h-[280px] overflow-auto border border-zinc-700 rounded mb-4">
+                <table class="w-full text-sm">
+                    <thead class="bg-zinc-800 sticky top-0">
+                        <tr>
+                            <th class="px-3 py-2 text-left">Sage ID</th>
+                            <th class="px-3 py-2 text-left">Company Name</th>
+                            <th class="px-3 py-2 text-left">Invalid Type</th>
+                        </tr>
+                    </thead>
+                    <tbody id="invalidSageTableBody">
+                        ${rows}
+                    </tbody>
+                </table>
+            </div>
+
+            <div class="flex justify-end gap-3">
+                <button onclick="this.closest('dialog').close(); this.closest('dialog').remove()" class="px-6 py-2.5 rounded border border-zinc-600 hover:bg-zinc-800 text-sm">Close</button>
+                <button onclick="closeAndFilterInvalidSage(this, ${JSON.stringify(invalidList.map(i => i.external_id))})" class="px-6 py-2.5 bg-emerald-600 hover:bg-emerald-700 rounded text-sm font-semibold flex items-center gap-2">
+                    <i class="fa-solid fa-filter"></i>
+                    <span>Close & Filter to Companies with Errors</span>
+                </button>
+            </div>
+        </div>
+    `;
+
+    document.body.appendChild(modal);
+    modal.showModal();
+}
+
+function filterInvalidSageTable(inputEl) {
+    const q = inputEl.value.toLowerCase().trim();
+    const tbody = inputEl.closest('dialog').querySelector('#invalidSageTableBody');
+    if (!tbody) return;
+    tbody.querySelectorAll('tr').forEach(row => {
+        row.style.display = row.textContent.toLowerCase().includes(q) ? '' : 'none';
+    });
+}
+
+function closeAndFilterInvalidSage(btn, invalidExternalIds) {
+    const modal = btn.closest('dialog');
+    if (modal) {
+        modal.close();
+        modal.remove();
+    }
+    // Filter main companies table to show only companies with bad types (or the ones being imported that are bad)
+    const filtered = companies.filter(c => !["Subcontractor","Supplier","Client"].includes(c.company_type));
+    renderCompaniesTable(filtered);
+    showAlertModal("Filtered View", `Showing companies with invalid types. Fix the Company Type field, then try Sync Sage 300 import again.`);
+}
+
+function performSageImport(checkedCheckboxes) {
+    checkedCheckboxes.forEach(cb => {
         const id = parseInt(cb.dataset.id);
         const real = sageData.find(s => s.id === id);
         if (!real) return;
