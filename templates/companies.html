@@ -48,7 +48,7 @@
             <button onclick="showAddCompanyModal()" class="flex items-center gap-2 px-5 py-2 bg-emerald-600 hover:bg-emerald-700 rounded-md text-sm font-semibold transition-colors">
                 <i class="fa-solid fa-plus"></i><span>Add Company</span>
             </button>
-            <div class="flex items-center gap-3 pl-3 border-l border-zinc-700 cursor-pointer">
+            <div class="flex items-center gap-3 pl-3 border-l border-zinc-700 cursor-pointer" onclick="showUserProfileModal()">
                 <div class="w-8 h-8 bg-zinc-700 rounded-full overflow-hidden">
                     <img src="https://i.pravatar.cc/32?img=68" class="w-full h-full object-cover">
                 </div>
@@ -118,10 +118,10 @@
                 <thead class="bg-zinc-800 text-zinc-400">
                     <tr>
                         <th class="px-6 py-4 text-left font-medium">Company Name</th>
-                        <th class="px-6 py-4 text-left font-medium">Type</th>
+                        <th class="px-3 py-4 text-left font-medium w-24">Type</th>
                         <th class="px-6 py-4 text-left font-medium">Primary Contact</th>
-                        <th class="px-6 py-4 text-left font-medium">Phone</th>
-                        <th class="px-6 py-4 text-left font-medium">Address</th>
+                        <th class="px-3 py-4 text-left font-medium w-20">Phone</th>
+                        <th class="px-6 py-4 text-left font-medium flex-1 min-w-[200px]">Address</th>
                         <th class="px-4 py-4 text-center font-medium w-20">License</th>
                         <th class="px-4 py-4 text-center font-medium w-20">GL</th>
                         <th class="px-4 py-4 text-center font-medium w-20">WC</th>
@@ -551,10 +551,10 @@ function renderCompaniesTable(filteredCompanies = null) {
 
         row.innerHTML = `
             <td class="px-6 py-4 font-medium">${company.company_name}</td>
-            <td class="px-6 py-4 text-zinc-400">${company.company_type || ''}</td>
+            <td class="px-3 py-4 text-zinc-400 w-24">${company.company_type || ''}</td>
             <td class="px-6 py-4 text-zinc-400">${(company.contacts && company.contacts[0]) ? company.contacts[0].name : '—'}</td>
-            <td class="px-6 py-4 text-zinc-400">${company.primary_phone || '—'}</td>
-            <td class="px-6 py-4 text-zinc-400 text-sm">${(company.billing_address || '').split('\n')[0] || '—'}</td>
+            <td class="px-3 py-4 text-zinc-400 w-20">${company.primary_phone || '—'}</td>
+            <td class="px-6 py-4 text-zinc-400 text-sm flex-1 min-w-[200px]">${(company.billing_address || '').split('\n')[0] || '—'}</td>
             <td class="px-4 py-4 text-center">${licenseStatus}</td>
             <td class="px-4 py-4 text-center">${glStatus}</td>
             <td class="px-4 py-4 text-center">${wcStatus}</td>
@@ -807,8 +807,15 @@ function saveCompany(e) {
         wc_expiration: document.getElementById('wc_expiration').value,
         notes: document.getElementById('notes').value.trim(),
         contacts: [],
-        cois: []
+        cois: [],
+        primary_contact_user_id: null
     };
+
+    // Preserve primary contact designation when editing (set via "Set as Primary Contact" button)
+    const existingIndex = companies.findIndex(c => c.id === id);
+    if (existingIndex !== -1 && companies[existingIndex].primary_contact_user_id) {
+        newCompany.primary_contact_user_id = companies[existingIndex].primary_contact_user_id;
+    }
 
     const coiRows = document.querySelectorAll('#coiContainer .coi-row');
     coiRows.forEach(row => {
@@ -1198,17 +1205,30 @@ function showViewCompanyModal(id) {
         </div>`;
     }
 
-    if (company.contacts && company.contacts.length > 0) {
+    // Live linked users from User Management + Primary Contact designation
+    const allUsersForView = JSON.parse(localStorage.getItem('users') || '[]');
+    const linkedUsers = allUsersForView.filter(u => {
+        if (u.status !== 'Active') return false;
+        const uc = (u.company || u.companyName || '').toLowerCase().trim();
+        const cname = (company.company_name || '').toLowerCase().trim();
+        if (uc === cname) return true;
+        if (u.company_id && u.company_id === company.id) return true;
+        return false;
+    });
+
+    if (linkedUsers.length > 0) {
         html += `<div>
-            <h4 class="font-semibold text-emerald-400 mb-2">Contacts</h4>
+            <h4 class="font-semibold text-emerald-400 mb-2">Team Contacts (from User Management)</h4>
             <div class="space-y-1 text-sm">`;
-        company.contacts.forEach(c => {
-            html += `<div class="flex items-center gap-2">
-                <span class="font-medium">${c.name}</span>
-                ${c.title ? '<span class="text-zinc-400">• ' + c.title + '</span>' : ''}
-                ${c.phone ? '<span class="text-zinc-400">• ' + c.phone + '</span>' : ''}
-                ${c.email ? '<span class="text-zinc-400">• ' + c.email + '</span>' : ''}
-                ${c.authorized_user ? '<span class="ml-2 text-[10px] px-1.5 py-0.5 bg-emerald-900/60 text-emerald-400 rounded">Authorized Case PM User</span>' : ''}
+        linkedUsers.forEach(u => {
+            const phone = (u.phones && u.phones.length > 0) ? u.phones[0].number : (u.phone || '—');
+            const isPrimary = company.primary_contact_user_id && company.primary_contact_user_id === u.id;
+            html += `<div class="flex items-center gap-2 py-0.5">
+                <span class="font-medium">${u.firstName || ''} ${u.lastName || ''}</span>
+                <span class="text-zinc-400">• ${u.jobTitle || '—'}</span>
+                <span class="text-zinc-400">• ${phone}</span>
+                <span class="text-zinc-400">• ${u.email || ''}</span>
+                ${isPrimary ? '<span class="ml-2 px-2 py-0.5 text-[10px] rounded-full bg-emerald-600 text-white font-medium">Primary Contact</span>' : ''}
             </div>`;
         });
         html += `</div></div>`;
