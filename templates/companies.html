@@ -431,7 +431,6 @@ function renderLinkedUsersForCompany(companyName) {
         return;
     }
 
-    const currentCompanyId = document.getElementById('companyId') ? parseInt(document.getElementById('companyId').value) : null;
     const currentCompany = currentCompanyId ? companies.find(c => c.id === currentCompanyId) : null;
 
     linked.forEach(user => {
