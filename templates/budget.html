@@ -709,9 +709,17 @@
                     detailText = `${entry.details.cost_code} — ${entry.details.description} (${entry.details.cost_type}) • ${formatCurrency(entry.details.original_budget)}`;
                 } else if (entry.action === 'LINE_EDITED') {
                     actionBadge = `<span class="px-2 py-0.5 text-xs rounded-full bg-amber-900/60 text-amber-400">Edited</span>`;
-                    const change = entry.details.new_original_budget !== entry.details.old_original_budget 
-                        ? `Budget: ${formatCurrency(entry.details.old_original_budget)} → ${formatCurrency(entry.details.new_original_budget)}` 
-                        : 'Notes updated';
+                    let changeParts = [];
+                    if (entry.details.old_original_budget !== entry.details.new_original_budget) {
+                        changeParts.push(`Budget: ${formatCurrency(entry.details.old_original_budget)} → ${formatCurrency(entry.details.new_original_budget)}`);
+                    }
+                    if (entry.details.old_cost_type && entry.details.old_cost_type !== entry.details.new_cost_type) {
+                        changeParts.push(`Cost Type: ${entry.details.old_cost_type} → ${entry.details.new_cost_type}`);
+                    }
+                    if (entry.details.old_notes !== entry.details.new_notes) {
+                        changeParts.push('Notes updated');
+                    }
+                    const change = changeParts.length > 0 ? changeParts.join(' | ') : 'Updated';
                     detailText = `${entry.details.cost_code} — ${change}`;
                 } else if (entry.action === 'LINE_DELETED') {
                     actionBadge = `<span class="px-2 py-0.5 text-xs rounded-full bg-red-900/60 text-red-400">Deleted</span>`;
@@ -2038,6 +2046,14 @@
                         <i class="fa-solid fa-times text-lg"></i>
                     </button>
                 </div>
+
+                <!-- Search bar for cost code list (especially useful when selecting from Add/Edit modal) -->
+                <div class="mb-3">
+                    <input type="text" id="costCodeSearchInput" placeholder="Search cost codes or descriptions..." 
+                           class="w-full bg-zinc-800 border border-zinc-700 rounded-md px-4 py-2 text-sm focus:border-emerald-600"
+                           oninput="filterCostCodeListTable(this)">
+                </div>
+
                 <div class="max-h-[420px] overflow-auto border border-zinc-700 rounded-md">
                     <table class="w-full text-sm">
                         <thead class="bg-zinc-800 sticky top-0">
@@ -2083,6 +2099,14 @@
         modal.innerHTML = html;
         document.body.appendChild(modal);
         modal.showModal();
+
+        // Auto-focus search input when opened from Add/Edit modal for quick filtering
+        if (selectMode) {
+            setTimeout(() => {
+                const searchInput = modal.querySelector('#costCodeSearchInput');
+                if (searchInput) searchInput.focus();
+            }, 80);
+        }
 
         // Position to the right of the Budget Line modal when in selectMode
         if (selectMode) {
@@ -2302,6 +2326,16 @@
         });
     }
 
+    function filterCostCodeListTable(inputEl) {
+        const q = (inputEl.value || '').toLowerCase().trim();
+        const tbody = inputEl.closest('dialog').querySelector('tbody');
+        if (!tbody) return;
+        tbody.querySelectorAll('tr').forEach(row => {
+            const text = row.textContent.toLowerCase();
+            row.style.display = text.includes(q) ? '' : 'none';
+        });
+    }
+
     function closeAndFilterToInvalidLines(invalidLineIds, btn) {
         const modal = btn.closest('dialog');
         if (modal) {
@@ -2335,8 +2369,15 @@
     function setupAccountingFormat(inputId) {
         const input = document.getElementById(inputId);
         if (!input) return;
+        // Prevent adding duplicate listeners every time modal opens (causes reset-to-zero bugs)
+        if (input.dataset.accountingSetup === 'true') return;
+        input.dataset.accountingSetup = 'true';
+
         input.addEventListener('focus', function() {
-            this.value = this.value.replace(/[^0-9.-]+/g, '');
+            // Only strip formatting if it looks like a formatted currency value
+            if (this.value.includes('$') || this.value.includes(',')) {
+                this.value = this.value.replace(/[^0-9.-]+/g, '');
+            }
         });
         input.addEventListener('blur', function() {
             let val = parseFloat(this.value) || 0;
