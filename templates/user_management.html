@@ -3,11 +3,40 @@
 {% block content %}
 <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
 
+<style>
+  /* Ensure all inputs/selects/textarea in User modal stay dark with white text (prevent autofill white flash) */
+  #userModal input,
+  #userModal select,
+  #userModal textarea {
+    background-color: #27272a !important;
+    color: #ffffff !important;
+    border-color: #3f3f46;
+  }
+  #userModal input:focus,
+  #userModal select:focus,
+  #userModal textarea:focus {
+    background-color: #27272a !important;
+    color: #ffffff !important;
+    border-color: #10b981;
+    box-shadow: 0 0 0 1px #10b981;
+  }
+  /* Autofill override for Chrome/Safari */
+  #userModal input:-webkit-autofill,
+  #userModal input:-webkit-autofill:hover,
+  #userModal input:-webkit-autofill:focus,
+  #userModal textarea:-webkit-autofill {
+    -webkit-text-fill-color: #ffffff !important;
+    -webkit-box-shadow: 0 0 0px 1000px #27272a inset !important;
+    background-color: #27272a !important;
+    color: #ffffff !important;
+  }
+</style>
+
 <!-- HEADER - Exact match to budget.html structure and styling -->
 <div class="h-16 border-b border-zinc-800 bg-zinc-900 flex items-center px-6 flex-shrink-0">
     <div class="w-1/3">
-        <div class="text-[10px] text-zinc-400 tracking-[1px] font-medium">CURRENT PROJECT</div>
-        <div class="text-xl font-semibold tracking-tight text-white">ALDI Lakeland</div>
+        <div class="text-[10px] text-zinc-400 tracking-[1px] font-medium">GLOBAL ADMIN</div>
+        <div class="text-xl font-semibold tracking-tight text-white">User Management</div>
     </div>
 
     <div class="w-1/3 flex justify-center">
@@ -19,6 +48,10 @@
     <div class="w-1/3 flex items-center justify-end gap-2 flex-nowrap">
         <button onclick="exportUsers()" class="flex items-center gap-2 px-4 py-2 bg-zinc-800 hover:bg-zinc-700 rounded-md text-sm font-medium transition-colors h-[38px]">
             <i class="fa-solid fa-download"></i><span>Export</span>
+        </button>
+
+        <button onclick="importUsers()" class="flex items-center gap-2 px-4 py-2 bg-zinc-800 hover:bg-zinc-700 rounded-md text-sm font-medium transition-colors h-[38px]">
+            <i class="fa-solid fa-upload"></i><span>Import</span>
         </button>
 
         <button onclick="showAddUserModal()" class="flex items-center gap-2 px-5 py-2 min-w-[160px] whitespace-nowrap bg-emerald-600 hover:bg-emerald-500 rounded-md text-sm font-semibold transition-colors h-[38px]">
@@ -151,33 +184,69 @@
                             <label class="block text-sm mb-1.5 text-zinc-300">Last Name</label>
                             <input type="text" id="lastName" class="w-full bg-zinc-800 border border-zinc-700 rounded-md px-4 py-2.5 text-sm" required>
                         </div>
+                        <div>
+                            <label class="block text-sm mb-1.5 text-zinc-300">Job Title</label>
+                            <input type="text" id="jobTitle" class="w-full bg-zinc-800 border border-zinc-700 rounded-md px-4 py-2.5 text-sm" placeholder="e.g. Project Manager">
+                        </div>
+                        <div>
+                            <label class="block text-sm mb-1.5 text-zinc-300">Company</label>
+                            <select id="company" class="w-full bg-zinc-800 border border-zinc-700 rounded-md px-4 py-2.5 text-sm">
+                                <option value="">-- Select Company (from Companies page) --</option>
+                            </select>
+                            <div class="text-[10px] text-zinc-500 mt-0.5">Selecting adds/updates this user as a contact in that company.</div>
+                        </div>
                         <div class="md:col-span-2">
                             <label class="block text-sm mb-1.5 text-zinc-300">Email Address</label>
                             <input type="email" id="email" class="w-full bg-zinc-800 border border-zinc-700 rounded-md px-4 py-2.5 text-sm" required>
                         </div>
+
+                        <!-- Phone Numbers Section (dynamic add) -->
+                        <div class="md:col-span-2">
+                            <label class="block text-sm mb-1.5 text-zinc-300">Phone Numbers</label>
+                            <div id="phonesContainer" class="space-y-2 mb-2"></div>
+                            <button type="button" onclick="addPhoneNumberRow()" 
+                                    class="px-3 py-1 text-xs bg-zinc-700 hover:bg-zinc-600 rounded flex items-center gap-1">
+                                <i class="fa-solid fa-plus"></i> <span>Add Another Phone</span>
+                            </button>
+                        </div>
+
+                        <div class="md:col-span-2">
+                            <label class="block text-sm mb-1.5 text-zinc-300">Address</label>
+                            <div class="flex gap-2">
+                                <textarea id="address" rows="2" class="flex-1 bg-zinc-800 border border-zinc-700 rounded-md px-4 py-2 text-sm" placeholder="Street, City, State, ZIP"></textarea>
+                                <button type="button" onclick="useCompanyAddress()" 
+                                        class="px-3 py-1 text-xs bg-zinc-700 hover:bg-zinc-600 rounded self-start mt-1" title="Copy address from selected company if available">
+                                    Use Company Address
+                                </button>
+                            </div>
+                        </div>
+
                         <div>
-                            <label class="block text-sm mb-1.5 text-zinc-300">Role</label>
-                            <select id="role" class="w-full bg-zinc-800 border border-zinc-700 rounded-md px-4 py-2.5 text-sm" onchange="applyRoleTemplate()">
-                                <option value="Admin">Admin</option>
-                                <option value="Project Manager">Project Manager</option>
-                                <option value="Superintendent">Superintendent</option>
-                                <option value="Architect">Architect</option>
-                                <option value="Owner">Owner</option>
-                                <option value="Company User">Company User</option>
-                            </select>
+                            <label class="block text-sm mb-1.5 text-zinc-300">Temporary Password</label>
+                            <div class="flex gap-2">
+                                <input type="password" id="password" class="flex-1 bg-zinc-800 border border-zinc-700 rounded-md px-4 py-2.5 text-sm" placeholder="Set initial password">
+                                <button type="button" onclick="togglePasswordVisibility('password')" class="px-3 text-xs bg-zinc-700 hover:bg-zinc-600 rounded">Show</button>
+                            </div>
+                            <div class="text-[10px] text-zinc-500">User will be prompted to change on first login (demo).</div>
                         </div>
                         <div>
-                            <label class="block text-sm mb-1.5 text-zinc-300">Status</label>
-                            <select id="status" class="w-full bg-zinc-800 border border-zinc-700 rounded-md px-4 py-2.5 text-sm">
-                                <option value="Active">Active</option>
-                                <option value="Inactive">Inactive</option>
-                            </select>
+                            <label class="block text-sm mb-1.5 text-zinc-300">Access to Software</label>
+                            <label class="flex items-center gap-2 text-sm text-zinc-300 mt-2">
+                                <input type="checkbox" id="accessEnabled" class="accent-emerald-600" checked>
+                                <span>Enabled (toggle off to disable login & sync to company contact)</span>
+                            </label>
                         </div>
+
                         <div class="md:col-span-2">
                             <label class="flex items-center gap-2 text-sm text-zinc-300">
                                 <input type="checkbox" id="twoFactorEnabled" class="accent-emerald-600">
                                 Enable Two-Factor Authentication (2FA)
                             </label>
+                        </div>
+
+                        <div class="md:col-span-2">
+                            <label class="block text-sm mb-1.5 text-zinc-300">Notes / User Log Notes</label>
+                            <textarea id="notes" rows="3" class="w-full bg-zinc-800 border border-zinc-700 rounded-md px-4 py-2 text-sm" placeholder="Internal notes about this user, access history, etc."></textarea>
                         </div>
                     </div>
                 </div>
@@ -204,7 +273,7 @@
                 <div class="mb-4">
                     <label class="block text-sm mb-2 text-zinc-300">Draw Signature Below</label>
                     <div class="border border-zinc-700 rounded-md bg-white p-1 inline-block">
-                        <canvas id="signatureCanvas" width="420" height="160" class="cursor-crosshair rounded"></canvas>
+                        <canvas id="signatureCanvas" width="520" height="160" class="cursor-crosshair rounded"></canvas>
                     </div>
                     <div class="flex gap-2 mt-2">
                         <button type="button" onclick="clearSignature()" class="px-4 py-1.5 text-xs bg-zinc-700 hover:bg-zinc-600 rounded">Clear Canvas</button>
@@ -488,6 +557,18 @@
         // Render clean permissions dropdowns
         renderPermissionsDropdowns('permissionsContainer', {});
         
+        // Populate company dropdown from Companies page data
+        populateCompanyDropdown('');
+        
+        // Clear phones container and add one empty row
+        const phonesCont = document.getElementById('phonesContainer');
+        if (phonesCont) phonesCont.innerHTML = '';
+        addPhoneNumberRow(); // start with one phone row
+        
+        // Default access enabled
+        const accessChk = document.getElementById('accessEnabled');
+        if (accessChk) accessChk.checked = true;
+        
         // Default to General tab
         switchTab('general');
         
@@ -514,9 +595,33 @@
         document.getElementById('email').value = user.email || '';
         document.getElementById('role').value = user.role || 'Company User';
         document.getElementById('status').value = user.status || 'Active';
+        const jobTitleEl = document.getElementById('jobTitle');
+        if (jobTitleEl) jobTitleEl.value = user.jobTitle || '';
+        const companyEl = document.getElementById('company');
+        if (companyEl) {
+            populateCompanyDropdown(user.company || '');
+            companyEl.value = user.company || '';
+        }
+        const addressEl = document.getElementById('address');
+        if (addressEl) addressEl.value = user.address || '';
+        const notesEl = document.getElementById('notes');
+        if (notesEl) notesEl.value = user.notes || '';
+        const accessEl = document.getElementById('accessEnabled');
+        if (accessEl) accessEl.checked = user.accessEnabled !== false;
         
         const twoFA = document.getElementById('twoFactorEnabled');
         if (twoFA) twoFA.checked = user.twoFactorEnabled || false;
+
+        // Phones (dynamic)
+        const phonesCont = document.getElementById('phonesContainer');
+        if (phonesCont) {
+            phonesCont.innerHTML = '';
+            if (user.phones && user.phones.length > 0) {
+                user.phones.forEach(p => addPhoneNumberRow(p));
+            } else {
+                addPhoneNumberRow(); // at least one empty
+            }
+        }
 
         // Profile image
         const profileImg = document.getElementById('profileImg');
@@ -582,6 +687,18 @@
             currentCertificateFileName = certInput.files[0].name;
         }
 
+        // Collect phones from dynamic rows
+        const phones = [];
+        document.querySelectorAll('#phonesContainer .flex').forEach(row => {
+            const inputs = row.querySelectorAll('input, select');
+            if (inputs.length >= 2 && inputs[0].value.trim()) {
+                phones.push({ number: inputs[0].value.trim(), type: inputs[1].value });
+            }
+        });
+
+        const companyVal = document.getElementById('company') ? document.getElementById('company').value : '';
+        const accessEnabledVal = document.getElementById('accessEnabled') ? document.getElementById('accessEnabled').checked : true;
+
         const userData = {
             id: id ? parseInt(id) : Date.now(),
             firstName: document.getElementById('firstName').value.trim(),
@@ -589,6 +706,13 @@
             email: document.getElementById('email').value.trim(),
             role: document.getElementById('role').value,
             status: document.getElementById('status').value,
+            jobTitle: document.getElementById('jobTitle') ? document.getElementById('jobTitle').value.trim() : '',
+            company: companyVal,
+            address: document.getElementById('address') ? document.getElementById('address').value.trim() : '',
+            phones: phones,
+            password: document.getElementById('password') ? document.getElementById('password').value : '', // demo only
+            accessEnabled: accessEnabledVal,
+            notes: document.getElementById('notes') ? document.getElementById('notes').value.trim() : '',
             twoFactorEnabled: document.getElementById('twoFactorEnabled') ? document.getElementById('twoFactorEnabled').checked : false,
             permissions: permissions,
             signatureDataURL: currentSignatureDataURL,
@@ -596,6 +720,11 @@
             profileImage: document.getElementById('profileImg').src,
             lastUpdated: new Date().toISOString()
         };
+
+        // If company selected, sync as contact (adds or updates in Companies page data)
+        if (companyVal) {
+            syncUserContactToCompany(userData, companyVal);
+        }
 
         const existingIndex = users.findIndex(u => u.id == userData.id);
         if (existingIndex > -1) {
@@ -667,6 +796,7 @@
                 <td class="px-6 py-3 text-center">
                     <div class="flex justify-center gap-1">
                         <button onclick="event.stopImmediatePropagation(); editUser(${user.id})" class="px-3 py-1 text-xs bg-zinc-700 hover:bg-emerald-600 rounded">Edit</button>
+                        <button onclick="event.stopImmediatePropagation(); showUserLog(${user.id})" class="px-2 py-1 text-xs bg-zinc-700 hover:bg-sky-600 rounded" title="View User Access Log">Log</button>
                         <button onclick="event.stopImmediatePropagation(); deleteUser(${user.id})" class="px-3 py-1 text-xs bg-zinc-700 hover:bg-red-600 rounded">Delete</button>
                     </div>
                 </td>
@@ -746,6 +876,262 @@
             console.error(err);
             showCenteredAlert('Export failed. Please try again.');
         }
+    }
+
+    // ==================== IMPORT USERS (Smart mapping for Add New User fields) ====================
+    function importUsers() {
+        const input = document.createElement('input');
+        input.type = 'file';
+        input.accept = '.xlsx,.xls,.csv';
+        input.onchange = function(e) {
+            const file = e.target.files[0];
+            if (!file) return;
+            const reader = new FileReader();
+            reader.onload = function(ev) {
+                try {
+                    let rows = [];
+                    if (file.name.toLowerCase().endsWith('.csv')) {
+                        const text = ev.target.result;
+                        const lines = text.split(/\r?\n/).filter(l => l.trim());
+                        if (lines.length < 2) throw new Error("Empty or invalid CSV");
+                        const headers = lines[0].split(',').map(h => h.trim().toLowerCase());
+                        for (let i = 1; i < lines.length; i++) {
+                            const values = lines[i].split(',');
+                            const obj = {};
+                            headers.forEach((h, idx) => obj[h] = values[idx] ? values[idx].trim() : '');
+                            rows.push(obj);
+                        }
+                    } else {
+                        const data = new Uint8Array(ev.target.result);
+                        const wb = XLSX.read(data, { type: 'array' });
+                        const sheet = wb.Sheets[wb.SheetNames[0]];
+                        const json = XLSX.utils.sheet_to_json(sheet, { header: 1 });
+                        if (json.length < 2) throw new Error("Empty file");
+                        const headers = json[0].map(h => String(h).trim().toLowerCase());
+                        rows = json.slice(1).map(r => {
+                            const o = {};
+                            headers.forEach((h, i) => o[h] = r[i] !== undefined ? String(r[i]).trim() : '');
+                            return o;
+                        });
+                    }
+
+                    let added = 0, skipped = 0;
+                    rows.forEach(row => {
+                        // Smart mapping for core fields + new ones (job title, company, phone, notes)
+                        const firstName = row['first name'] || row['firstname'] || row['first'] || row['given name'] || '';
+                        const lastName = row['last name'] || row['lastname'] || row['last'] || row['surname'] || '';
+                        const email = row['email'] || row['email address'] || row['e-mail'] || '';
+                        if (!email || !firstName) { skipped++; return; }
+
+                        const role = row['role'] || row['user role'] || 'Company User';
+                        const status = row['status'] || 'Active';
+                        const jobTitle = row['job title'] || row['title'] || row['position'] || '';
+                        const company = row['company'] || row['company name'] || row['organization'] || '';
+                        const phone = row['phone'] || row['phone number'] || row['mobile'] || row['telephone'] || '';
+                        const phoneType = row['phone type'] || row['phone_type'] || 'Mobile';
+                        const notes = row['notes'] || row['note'] || row['comments'] || '';
+
+                        // Check duplicate
+                        const exists = users.some(u => u.email && u.email.toLowerCase() === email.toLowerCase());
+                        if (exists) { skipped++; return; }
+
+                        const newUser = {
+                            id: Date.now() + Math.random(),
+                            firstName: firstName,
+                            lastName: lastName,
+                            email: email,
+                            role: role,
+                            status: status,
+                            jobTitle: jobTitle,
+                            company: company,
+                            phones: phone ? [{ number: phone, type: phoneType }] : [],
+                            notes: notes,
+                            twoFactorEnabled: false,
+                            accessEnabled: true,
+                            permissions: {},
+                            lastUpdated: new Date().toISOString()
+                        };
+
+                        // If company specified, sync to companies list as contact
+                        if (company) {
+                            syncUserContactToCompany(newUser, company);
+                        }
+
+                        users.push(newUser);
+                        added++;
+                    });
+
+                    localStorage.setItem('users', JSON.stringify(users));
+                    renderUsersTable();
+                    updateSummaryCards();
+                    showCenteredAlert(`Import complete: ${added} users added, ${skipped} skipped (duplicates or missing email/name).`);
+                } catch (err) {
+                    console.error(err);
+                    showCenteredAlert('Import failed. Check file format and columns (First Name, Last Name, Email recommended).');
+                }
+            };
+            if (file.name.toLowerCase().endsWith('.csv')) reader.readAsText(file);
+            else reader.readAsArrayBuffer(file);
+        };
+        input.click();
+    }
+
+    function syncUserContactToCompany(user, companyName) {
+        try {
+            let comps = JSON.parse(localStorage.getItem('companies') || '[]');
+            const comp = comps.find(c => (c.name || c.companyName || '').toLowerCase() === companyName.toLowerCase());
+            if (!comp) {
+                // Create minimal company if not exists (for demo)
+                const newComp = {
+                    id: Date.now(),
+                    name: companyName,
+                    contacts: []
+                };
+                comps.push(newComp);
+                comp = newComp;
+            }
+            if (!comp.contacts) comp.contacts = [];
+            const contactExists = comp.contacts.findIndex(ct => ct.email && ct.email.toLowerCase() === (user.email || '').toLowerCase());
+            const contactData = {
+                id: user.id,
+                name: `${user.firstName} ${user.lastName}`.trim(),
+                firstName: user.firstName,
+                lastName: user.lastName,
+                email: user.email,
+                phone: (user.phones && user.phones[0]) ? user.phones[0].number : '',
+                jobTitle: user.jobTitle || '',
+                role: user.role,
+                accessEnabled: user.accessEnabled !== false,
+                userId: user.id
+            };
+            if (contactExists > -1) {
+                comp.contacts[contactExists] = { ...comp.contacts[contactExists], ...contactData };
+            } else {
+                comp.contacts.push(contactData);
+            }
+            localStorage.setItem('companies', JSON.stringify(comps));
+        } catch(e) { console.warn('Company sync skipped:', e); }
+    }
+
+    // ==================== NEW HELPERS: Phones, Company Dropdown, Address, Password, Access Toggle ====================
+    function addPhoneNumberRow(phoneData = null) {
+        const container = document.getElementById('phonesContainer');
+        if (!container) return;
+
+        const row = document.createElement('div');
+        row.className = 'flex gap-2 items-center';
+        row.innerHTML = `
+            <input type="text" placeholder="Phone number" class="flex-1 bg-zinc-800 border border-zinc-700 rounded-md px-3 py-1.5 text-sm" value="${phoneData ? phoneData.number : ''}">
+            <select class="bg-zinc-800 border border-zinc-700 rounded-md px-3 py-1.5 text-sm">
+                <option value="Mobile" ${phoneData && phoneData.type === 'Mobile' ? 'selected' : ''}>Mobile</option>
+                <option value="Office" ${phoneData && phoneData.type === 'Office' ? 'selected' : ''}>Office</option>
+                <option value="Home" ${phoneData && phoneData.type === 'Home' ? 'selected' : ''}>Home</option>
+            </select>
+            <button type="button" onclick="this.closest('.flex').remove()" class="px-2 py-1 text-xs bg-red-900/70 hover:bg-red-900 rounded text-red-300">×</button>
+        `;
+        container.appendChild(row);
+    }
+
+    function populateCompanyDropdown(selectedCompany = '') {
+        const select = document.getElementById('company');
+        if (!select) return;
+        select.innerHTML = '<option value="">-- Select Company (from Companies page) --</option>';
+
+        try {
+            const comps = JSON.parse(localStorage.getItem('companies') || '[]');
+            comps.forEach(c => {
+                const name = c.name || c.companyName || c.title || '';
+                if (name) {
+                    const opt = document.createElement('option');
+                    opt.value = name;
+                    opt.textContent = name;
+                    if (name === selectedCompany) opt.selected = true;
+                    select.appendChild(opt);
+                }
+            });
+        } catch(e) {}
+    }
+
+    function useCompanyAddress() {
+        const companySelect = document.getElementById('company');
+        if (!companySelect || !companySelect.value) {
+            showCenteredAlert('Select a company first to copy its address.');
+            return;
+        }
+        try {
+            const comps = JSON.parse(localStorage.getItem('companies') || '[]');
+            const comp = comps.find(c => (c.name || c.companyName || '') === companySelect.value);
+            if (comp && comp.address) {
+                document.getElementById('address').value = comp.address;
+            } else {
+                showCenteredAlert('No address stored for that company yet (add it in Companies page).');
+            }
+        } catch(e) {
+            showCenteredAlert('Could not load company address.');
+        }
+    }
+
+    function togglePasswordVisibility(inputId) {
+        const input = document.getElementById(inputId);
+        if (!input) return;
+        input.type = input.type === 'password' ? 'text' : 'password';
+    }
+
+    function toggleUserAccess(userId, enable) {
+        const user = users.find(u => u.id == userId);
+        if (!user) return;
+        user.accessEnabled = !!enable;
+        if (!enable) user.status = 'Inactive';
+        localStorage.setItem('users', JSON.stringify(users));
+
+        // Sync to company contact if linked
+        if (user.company) {
+            try {
+                let comps = JSON.parse(localStorage.getItem('companies') || '[]');
+                const comp = comps.find(c => (c.name || c.companyName || '') === user.company);
+                if (comp && comp.contacts) {
+                    const ct = comp.contacts.find(c => c.email === user.email);
+                    if (ct) ct.accessEnabled = !!enable;
+                    localStorage.setItem('companies', JSON.stringify(comps));
+                }
+            } catch(e){}
+        }
+        renderUsersTable();
+        showCenteredAlert(`Access ${enable ? 'enabled' : 'disabled'} for ${user.firstName}. Company contact updated.`);
+    }
+
+    function showUserLog(userId) {
+        const user = users.find(u => u.id == userId);
+        if (!user) return;
+
+        const modal = document.createElement('dialog');
+        modal.className = 'modal rounded-md p-0 text-white w-full max-w-2xl';
+        modal.style.backgroundColor = '#18181b';
+        modal.style.border = '1px solid #3f3f46';
+
+        let logHtml = user.accessLog && user.accessLog.length 
+            ? user.accessLog.map(l => `<div class="px-3 py-1 border-b border-zinc-700 text-xs"><span class="text-zinc-400">${new Date(l.time).toLocaleString()}</span> — ${l.action}</div>`).join('')
+            : `<div class="p-4 text-zinc-400">No access log entries yet for this user.</div>`;
+
+        modal.innerHTML = `
+            <div class="p-6">
+                <div class="flex justify-between items-center mb-4">
+                    <h3 class="text-lg font-semibold">Access Log for ${user.firstName} ${user.lastName}</h3>
+                    <button onclick="this.closest('dialog').close(); this.closest('dialog').remove()" class="text-zinc-400 hover:text-white">
+                        <i class="fa-solid fa-times text-xl"></i>
+                    </button>
+                </div>
+                <div class="max-h-[320px] overflow-auto border border-zinc-700 rounded-md mb-4 text-sm">
+                    ${logHtml}
+                </div>
+                <div class="text-xs text-zinc-500 mb-4">Logs are captured automatically on login/view actions (demo stub). Add notes in the Notes field for manual entries.</div>
+                <div class="text-right">
+                    <button onclick="this.closest('dialog').close(); this.closest('dialog').remove()" class="px-5 py-2 bg-zinc-700 rounded-md text-sm">Close</button>
+                </div>
+            </div>
+        `;
+        document.body.appendChild(modal);
+        modal.showModal();
     }
 
     // ==================== COMPANIES INTEGRATION (from earlier versions) ====================
