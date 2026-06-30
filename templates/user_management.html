@@ -997,6 +997,12 @@
                 userData.tempPassword = tempPass; // In real app: hash + force change flag
             }
 
+            // Capture old user BEFORE updating array so we can compute detailed diff for audit log
+            let oldUserForLog = null;
+            if (id) {
+                oldUserForLog = users.find(u => u.id == id);
+            }
+
             const existingIndex = users.findIndex(u => u.id == userData.id);
             if (existingIndex > -1) {
                 users[existingIndex] = { ...users[existingIndex], ...userData };
@@ -1011,10 +1017,59 @@
 
             localStorage.setItem('users', JSON.stringify(users));
 
-            // Log the action
+            // Log the action with DETAILED field-by-field changes (old → new)
             const actionType = id ? 'USER_EDITED' : 'USER_CREATED';
-            const changedFields = id ? 'Profile fields updated' : 'New user profile created';
-            logUserAudit(actionType, userData.id, { changedFields: changedFields, company: companyName || 'None' });
+            let logDetails = { company: companyName || 'None' };
+
+            if (id && oldUserForLog) {
+                const changes = {};
+                const fieldsToCheck = ['firstName', 'lastName', 'email', 'jobTitle', 'role', 'company', 'address', 'status', 'notes'];
+                
+                fieldsToCheck.forEach(field => {
+                    const oldVal = oldUserForLog[field] != null ? String(oldUserForLog[field]) : '';
+                    const newVal = userData[field] != null ? String(userData[field]) : '';
+                    if (oldVal !== newVal) {
+                        changes[field] = { old: oldVal, new: newVal };
+                    }
+                });
+
+                // Boolean / toggle fields
+                if (oldUserForLog.accessEnabled !== userData.accessEnabled) {
+                    changes.accessEnabled = { old: !!oldUserForLog.accessEnabled, new: !!userData.accessEnabled };
+                }
+                if (oldUserForLog.twoFactorEnabled !== userData.twoFactorEnabled) {
+                    changes.twoFactorEnabled = { old: !!oldUserForLog.twoFactorEnabled, new: !!userData.twoFactorEnabled };
+                }
+
+                // Complex fields - note that they changed (full diff would be too noisy for phones/permissions)
+                const oldPhonesStr = JSON.stringify(oldUserForLog.phones || []);
+                const newPhonesStr = JSON.stringify(userData.phones || []);
+                if (oldPhonesStr !== newPhonesStr) {
+                    changes.phones = 'updated';
+                }
+
+                const oldPermsStr = JSON.stringify(oldUserForLog.permissions || {});
+                const newPermsStr = JSON.stringify(userData.permissions || {});
+                if (oldPermsStr !== newPermsStr) {
+                    changes.permissions = 'updated';
+                }
+
+                if (userData.signatureDataURL && userData.signatureDataURL !== oldUserForLog.signatureDataURL) {
+                    changes.signature = 'updated';
+                }
+                if (userData.certificateFileName && userData.certificateFileName !== oldUserForLog.certificateFileName) {
+                    changes.certificate = userData.certificateFileName;
+                }
+                if (userData.profileImage && userData.profileImage !== oldUserForLog.profileImage) {
+                    changes.profileImage = 'updated';
+                }
+
+                logDetails.changes = changes;
+            } else {
+                logDetails.changedFields = 'New user profile created';
+            }
+
+            logUserAudit(actionType, userData.id, logDetails);
 
             closeUserModal();
             renderUsersTable();
@@ -1197,11 +1252,34 @@
             userLogs.slice(0, 50).forEach(entry => {
                 const time = new Date(entry.timestamp).toLocaleString();
                 let detailText = '';
-                if (entry.action === 'USER_CREATED') detailText = 'User profile created';
-                else if (entry.action === 'USER_EDITED') detailText = entry.details?.changedFields ? `Profile updated: ${entry.details.changedFields}` : 'Profile updated';
-                else if (entry.action === 'ACCESS_TOGGLED') detailText = `Access ${entry.details?.enabled ? 'granted' : 'revoked'}`;
-                else if (entry.action === 'PASSWORD_RESET') detailText = 'Temporary password was reset';
-                else detailText = entry.action;
+                if (entry.action === 'USER_CREATED') {
+                    detailText = 'User profile created';
+                } else if (entry.action === 'USER_EDITED') {
+                    if (entry.details && entry.details.changes) {
+                        const ch = entry.details.changes;
+                        const parts = [];
+                        Object.keys(ch).forEach(key => {
+                            if (key === 'phones' || key === 'permissions' || key === 'signature' || key === 'profileImage') {
+                                parts.push(`${key} updated`);
+                            } else if (ch[key] && typeof ch[key] === 'object' && 'old' in ch[key]) {
+                                const o = ch[key].old || '(empty)';
+                                const n = ch[key].new || '(empty)';
+                                parts.push(`${key}: ${o} → ${n}`);
+                            }
+                        });
+                        detailText = parts.length ? parts.join(' | ') : 'Profile updated';
+                    } else if (entry.details?.changedFields) {
+                        detailText = `Profile updated: ${entry.details.changedFields}`;
+                    } else {
+                        detailText = 'Profile updated';
+                    }
+                } else if (entry.action === 'ACCESS_TOGGLED') {
+                    detailText = `Access ${entry.details?.enabled ? 'granted' : 'revoked'}`;
+                } else if (entry.action === 'PASSWORD_RESET') {
+                    detailText = 'Temporary password was reset';
+                } else {
+                    detailText = entry.action;
+                }
 
                 logHtml += `
                     <div class="flex justify-between border-b border-zinc-700 py-1.5 text-sm">
@@ -1284,7 +1362,23 @@
                 else if (entry.action === 'PASSWORD_RESET') actionBadge = `<span class="px-2 py-0.5 text-xs rounded-full bg-purple-900/60 text-purple-400">Password Reset</span>`;
                 else actionBadge = `<span class="px-2 py-0.5 text-xs rounded-full bg-zinc-700 text-zinc-300">${entry.action}</span>`;
 
-                const details = entry.details?.changedFields || entry.details?.note || JSON.stringify(entry.details || {}).substring(0, 120);
+                let details = '';
+                if (entry.action === 'USER_EDITED' && entry.details && entry.details.changes) {
+                    const ch = entry.details.changes;
+                    const parts = [];
+                    Object.keys(ch).forEach(key => {
+                        if (key === 'phones' || key === 'permissions' || key === 'signature' || key === 'profileImage') {
+                            parts.push(`${key} updated`);
+                        } else if (ch[key] && typeof ch[key] === 'object' && 'old' in ch[key]) {
+                            const o = ch[key].old || '(empty)';
+                            const n = ch[key].new || '(empty)';
+                            parts.push(`${key}: ${o} → ${n}`);
+                        }
+                    });
+                    details = parts.length ? parts.join(' | ') : (entry.details.changedFields || 'Profile updated');
+                } else {
+                    details = entry.details?.changedFields || entry.details?.note || JSON.stringify(entry.details || {}).substring(0, 120);
+                }
 
                 html += `
                     <tr>
