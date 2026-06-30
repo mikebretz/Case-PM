@@ -118,10 +118,10 @@
                 <thead class="bg-zinc-800 text-zinc-400">
                     <tr>
                         <th class="px-6 py-4 text-left font-medium">Company Name</th>
-                        <th class="px-3 py-4 text-left font-medium w-24">Type</th>
+                        <th class="px-4 py-4 text-left font-medium w-28">Type</th>
                         <th class="px-6 py-4 text-left font-medium">Primary Contact</th>
-                        <th class="px-3 py-4 text-left font-medium w-20">Phone</th>
-                        <th class="px-6 py-4 text-left font-medium flex-1 min-w-[200px]">Address</th>
+                        <th class="px-4 py-4 text-left font-medium w-28 whitespace-nowrap">Phone</th>
+                        <th class="px-6 py-4 text-left font-medium flex-1 min-w-[220px]">Address</th>
                         <th class="px-4 py-4 text-center font-medium w-20">License</th>
                         <th class="px-4 py-4 text-center font-medium w-20">GL</th>
                         <th class="px-4 py-4 text-center font-medium w-20">WC</th>
@@ -549,12 +549,24 @@ function renderCompaniesTable(filteredCompanies = null) {
         const wcStatus = getStatusBadge('Current', company.wc_expiration);
         const coiStatus = getCOIStatus(company.cois || []);
 
+        // Determine correct Primary Contact name from designated primary_contact_user_id (live from User Management)
+        let primaryContactName = '—';
+        if (company.primary_contact_user_id) {
+            const allUsers = JSON.parse(localStorage.getItem('users') || '[]');
+            const pu = allUsers.find(u => u.id == company.primary_contact_user_id);
+            if (pu) {
+                primaryContactName = `${pu.firstName || ''} ${pu.lastName || ''}`.trim() || '—';
+            }
+        } else if (company.contacts && company.contacts.length > 0 && company.contacts[0].name) {
+            primaryContactName = company.contacts[0].name; // fallback for legacy data
+        }
+
         row.innerHTML = `
             <td class="px-6 py-4 font-medium">${company.company_name}</td>
-            <td class="px-3 py-4 text-zinc-400 w-24">${company.company_type || ''}</td>
-            <td class="px-6 py-4 text-zinc-400">${(company.contacts && company.contacts[0]) ? company.contacts[0].name : '—'}</td>
-            <td class="px-3 py-4 text-zinc-400 w-20">${company.primary_phone || '—'}</td>
-            <td class="px-6 py-4 text-zinc-400 text-sm flex-1 min-w-[200px]">${(company.billing_address || '').split('\n')[0] || '—'}</td>
+            <td class="px-4 py-4 text-zinc-400 w-28">${company.company_type || ''}</td>
+            <td class="px-6 py-4 text-zinc-400">${primaryContactName}</td>
+            <td class="px-4 py-4 text-zinc-400 w-28 whitespace-nowrap">${company.primary_phone || '—'}</td>
+            <td class="px-6 py-4 text-zinc-400 text-sm flex-1 min-w-[220px]">${(company.billing_address || '').split('\n')[0] || '—'}</td>
             <td class="px-4 py-4 text-center">${licenseStatus}</td>
             <td class="px-4 py-4 text-center">${glStatus}</td>
             <td class="px-4 py-4 text-center">${wcStatus}</td>
@@ -812,9 +824,19 @@ function saveCompany(e) {
     };
 
     // Preserve primary contact designation when editing (set via "Set as Primary Contact" button)
+    // Check both the original array and the live company object (in case designatePrimaryContact updated it during this edit session)
     const existingIndex = companies.findIndex(c => c.id === id);
+    let preservedPrimaryId = null;
     if (existingIndex !== -1 && companies[existingIndex].primary_contact_user_id) {
-        newCompany.primary_contact_user_id = companies[existingIndex].primary_contact_user_id;
+        preservedPrimaryId = companies[existingIndex].primary_contact_user_id;
+    }
+    // Also check live in-memory company (updated by designatePrimaryContact)
+    const liveCompanyCheck = companies.find(c => c.id === id);
+    if (liveCompanyCheck && liveCompanyCheck.primary_contact_user_id) {
+        preservedPrimaryId = liveCompanyCheck.primary_contact_user_id;
+    }
+    if (preservedPrimaryId) {
+        newCompany.primary_contact_user_id = preservedPrimaryId;
     }
 
     const coiRows = document.querySelectorAll('#coiContainer .coi-row');
