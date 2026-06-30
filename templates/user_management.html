@@ -349,7 +349,7 @@
 <script>
     // ==================== DATA & STATE ====================
     let users = JSON.parse(localStorage.getItem('users')) || [];
-    let companies = JSON.parse(localStorage.getItem('companies')) || [];
+    let companies = JSON.parse(localStorage.getItem('casepm_companies')) || [];
     let currentSignatureDataURL = null;
     let currentCertificateFileName = null;
     let currentEditingUserId = null;
@@ -395,13 +395,14 @@
         if (!select) return;
 
         // Always read fresh from localStorage in case Companies page was updated in another tab
-        const freshCompanies = JSON.parse(localStorage.getItem('companies')) || [];
+        const freshCompanies = JSON.parse(localStorage.getItem('casepm_companies')) || [];
         companies = freshCompanies; // keep global in sync
 
         select.innerHTML = '<option value="">-- No Company / Internal --</option>';
 
         freshCompanies.forEach(company => {
-            const name = company.name || company.companyName || company.company_name || '';
+            // Companies page primarily uses "company_name"
+            const name = company.company_name || company.name || company.companyName || company.Company_Name || '';
             if (!name) return;
             const opt = document.createElement('option');
             opt.value = name;
@@ -417,7 +418,7 @@
             showCenteredAlert("Please select a company first.");
             return;
         }
-        const company = companies.find(c => (c.name || c.companyName) === companyName);
+        const company = companies.find(c => (c.company_name || c.name || c.companyName) === companyName);
         if (company && company.address) {
             document.getElementById('address').value = company.address;
             showCenteredAlert("Address copied from company.", 'success');
@@ -897,7 +898,7 @@
     }
 
     function syncUserToCompany(userData, companyName) {
-        let company = companies.find(c => (c.name || c.companyName) === companyName);
+        let company = companies.find(c => (c.company_name || c.name || c.companyName) === companyName);
         if (!company) {
             // Create minimal company if not exists (edge case)
             company = { id: Date.now(), name: companyName, contacts: [] };
@@ -926,7 +927,7 @@
             company.contacts.push(contactData);
         }
 
-        localStorage.setItem('companies', JSON.stringify(companies));
+        localStorage.setItem('casepm_companies', JSON.stringify(companies));
     }
 
     function closeUserModal() {
@@ -1409,7 +1410,7 @@
                 { id: 101, name: "RDJ Construction", address: "4500 Lakeland Blvd, Lakeland, FL 33801", contacts: [] },
                 { id: 102, name: "Aluminum Fabricators Inc", address: "1200 Industrial Way, Tampa, FL 33619", contacts: [] }
             ];
-            localStorage.setItem('companies', JSON.stringify(companies));
+            localStorage.setItem('casepm_companies', JSON.stringify(companies));
         }
 
         renderUsersTable();
