@@ -3,15 +3,13 @@
 {% block content %}
 <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
 
-<!-- ==================== HEADER (Budget moved LEFT ~1 inch more • Larger Rev badge • Wider buttons • Compact 2-line profile matching Companies page) ==================== -->
+<!-- HEADER (same as attached) -->
 <div class="h-16 border-b border-zinc-800 bg-zinc-900 flex items-center px-6 flex-shrink-0">
-    <!-- Left: Project -->
     <div class="w-1/3">
         <div class="text-[10px] text-zinc-400 tracking-[1px] font-medium">CURRENT PROJECT</div>
         <div class="text-xl font-semibold tracking-tight text-white">ALDI Lakeland</div>
     </div>
 
-    <!-- Center: Budget + Revision (pushed further LEFT, stable between project name and buttons) -->
     <div class="w-1/3 flex justify-start pl-0 -ml-10">
         <div class="flex items-center gap-3">
             <div class="text-2xl font-semibold text-white">Budget</div>
@@ -23,7 +21,6 @@
         </div>
     </div>
 
-    <!-- Right: Action buttons (tight, nowrap for zoom stability) -->
     <div class="w-1/3 flex items-center justify-end gap-2 flex-nowrap">
         <button onclick="exportBudget()" class="flex items-center gap-2 px-4 py-2 bg-zinc-800 hover:bg-zinc-700 rounded-md text-sm font-medium transition-colors h-[38px]">
             <i class="fa-solid fa-download"></i><span>Export</span>
@@ -57,7 +54,7 @@
             <i class="fa-solid fa-cog"></i>
         </button>
 
-        <!-- Compact 2-line User Profile (matching Companies page style) -->
+        <!-- Compact 2-line User Profile -->
         <div class="flex items-center gap-2 pl-3 border-l border-zinc-700 cursor-pointer flex-shrink-0" onclick="showUserProfileModal()">
             <div class="w-8 h-8 bg-zinc-700 rounded-full overflow-hidden flex-shrink-0">
                 <img src="https://i.pravatar.cc/32?img=68" class="w-full h-full object-cover">
@@ -70,7 +67,7 @@
     </div>
 </div>
 
-<!-- ==================== SUMMARY CARDS (sticky so they stay put) ==================== -->
+<!-- SUMMARY CARDS (sticky) -->
 <div class="bg-zinc-900 border border-zinc-700 mx-6 mt-4 rounded-md p-4 flex-shrink-0 sticky top-0 z-30">
     <div class="grid grid-cols-1 md:grid-cols-8 gap-4">
         <div class="bg-zinc-800 border border-zinc-700 rounded-md p-5">
@@ -101,7 +98,6 @@
             <div class="text-sm text-zinc-400">Variance</div>
             <div id="varianceTotal" class="text-xl font-semibold mt-1 text-emerald-400">$0</div>
         </div>
-        <!-- NEW: Actual Cost -->
         <div class="bg-zinc-800 border border-zinc-700 rounded-md p-5">
             <div class="text-sm text-zinc-400">Actual Cost</div>
             <div id="actualCostTotal" class="text-xl font-semibold mt-1 text-sky-400">$0</div>
@@ -109,7 +105,7 @@
     </div>
 </div>
 
-<!-- Search + Quick Filters (stay fixed) -->
+<!-- Search + Quick Filters (fixed) -->
 <div class="flex flex-col md:flex-row gap-4 mx-6 mt-4 mb-2 flex-shrink-0 items-center">
     <input type="text" id="searchInput" placeholder="Search budget lines..." class="flex-1 bg-zinc-900 border border-zinc-700 rounded-md px-4 py-2.5 text-sm focus:border-emerald-600">
     <select id="costTypeFilter" class="bg-zinc-900 border border-zinc-700 rounded-md px-4 py-2.5 text-sm focus:border-emerald-600">
@@ -129,7 +125,7 @@
     </div>
 </div>
 
-<!-- TABLE CONTAINER (flex-1 + overflow-auto so ONLY data rows scroll; thead stays fixed) -->
+<!-- TABLE CONTAINER (ONLY data rows scroll; thead sticky) -->
 <div class="mx-6 mb-6 flex-1 overflow-hidden flex flex-col border border-zinc-700 rounded-md bg-zinc-900">
     <div class="flex-1 overflow-auto" id="tableScrollContainer" style="max-height: calc(100vh - 380px);">
         <table class="w-full text-sm min-w-[2000px]">
@@ -153,7 +149,7 @@
                 </tr>
             </thead>
             <tbody id="budgetTableBody" class="divide-y divide-zinc-800 text-sm">
-                <!-- Populated by JavaScript - only data rows scroll; division headers also scroll with content -->
+                <!-- Populated by JavaScript -->
             </tbody>
         </table>
     </div>
@@ -169,8 +165,7 @@
     <div class="text-emerald-400">● Online</div>
 </div>
 
-<!-- ==================== ALL MODALS (unchanged) ==================== -->
-<!-- (All modals from Budget Line Modal to Line Item History Modal remain exactly as in the attached file) -->
+<!-- ALL MODALS (kept identical to attached file for lock-in) -->
 
 <!-- Budget Line Modal -->
 <dialog id="budgetLineModal" class="modal rounded-md w-full max-w-2xl p-0 text-white" style="background-color: #18181b; border: 1px solid #3f3f46;">
@@ -212,8 +207,6 @@
         </form>
     </div>
 </dialog>
-
-<!-- (All other modals: Pending Changes, Settings, New List, New Cost Type, User Profile, Navigation Warning, Version History, Line Item History - kept identical for brevity) -->
 
 <!-- Pending Changes Modal -->
 <dialog id="pendingChangesModal" class="modal rounded-md w-full max-w-3xl p-0 text-white" style="background-color: #18181b; border: 1px solid #3f3f46;">
@@ -285,9 +278,51 @@
     </div>
 </dialog>
 
-<!-- (New List Name Modal, New Cost Type Modal, User Profile Modal, Navigation Warning Modal, Version History Modal, Line Item History Modal - all kept identical) -->
+<!-- New List Name Modal -->
+<dialog id="newListNameModal" class="modal rounded-md w-full max-w-md p-0 text-white" style="background-color: #18181b; border: 1px solid #3f3f46;">
+    <div class="p-6">
+        <h3 class="text-lg font-semibold mb-4">Create New Cost Code List</h3>
+        <input type="text" id="newListNameInput" placeholder="List name (e.g. Client Custom Codes)" class="w-full bg-zinc-800 border border-zinc-700 rounded-md px-4 py-2.5 text-sm mb-6 text-white">
+        <div class="flex justify-end gap-3">
+            <button onclick="closeNewListModal()" class="px-5 py-2 rounded-md bg-zinc-700">Cancel</button>
+            <button onclick="confirmCreateNewList()" class="px-6 py-2 rounded-md bg-emerald-600">Create & Activate</button>
+        </div>
+    </div>
+</dialog>
 
-<!-- Version History Modal (with Create New Revision button) -->
+<!-- New Cost Type Modal -->
+<dialog id="newCostTypeModal" class="modal rounded-md w-full max-w-md p-0 text-white" style="background-color: #18181b; border: 1px solid #3f3f46;">
+    <div class="p-6">
+        <h3 class="text-lg font-semibold mb-4">Enter New Cost Type Name</h3>
+        <input type="text" id="newCostTypeInput" placeholder="e.g. Owner Direct Purchase" class="w-full bg-zinc-800 border border-zinc-700 rounded-md px-4 py-2.5 text-sm mb-6 text-white">
+        <div class="flex justify-end gap-3">
+            <button onclick="document.getElementById('newCostTypeModal').close()" class="px-5 py-2 rounded-md bg-zinc-700">Cancel</button>
+            <button onclick="confirmAddNewCostType()" class="px-6 py-2 rounded-md bg-emerald-600">Add Cost Type</button>
+        </div>
+    </div>
+</dialog>
+
+<!-- User Profile Modal -->
+<dialog id="userProfileModal" class="modal rounded-md w-full max-w-md p-0 text-white" style="background-color: #18181b; border: 1px solid #3f3f46;">
+    <div class="p-6">
+        <h3 class="text-lg font-semibold mb-4">User Profile</h3>
+        <p class="text-sm text-zinc-400">Profile settings coming soon.</p>
+        <div class="mt-6 text-right">
+            <button onclick="document.getElementById('userProfileModal').close()" class="px-5 py-2 rounded-md bg-zinc-700">Close</button>
+        </div>
+    </div>
+</dialog>
+
+<!-- SMART Navigation Warning Modal -->
+<dialog id="navigationWarningModal" class="modal rounded-md w-full max-w-md p-0 text-white" style="background-color: #18181b; border: 1px solid #3f3f46;">
+    <div class="p-6">
+        <h3 class="text-lg font-semibold mb-2">Unsaved Changes</h3>
+        <p class="text-zinc-400 mb-5">You have unsaved budget line items. What would you like to do?</p>
+        <div id="navigationWarningButtons" class="flex flex-col gap-2"></div>
+    </div>
+</dialog>
+
+<!-- Version History Modal -->
 <dialog id="versionHistoryModal" class="modal rounded-md w-full max-w-md p-0 text-white" style="background-color: #18181b; border: 1px solid #3f3f46;">
     <div class="p-6">
         <div class="flex justify-between items-center mb-4">
@@ -415,7 +450,7 @@
         }
     }
 
-    // ==================== RENDER TABLE (collapsible divisions + sticky header works) ====================
+    // ==================== RENDER TABLE (collapsible divisions + sticky header) ====================
     function renderBudgetTable(lines) {
         const tbody = document.getElementById('budgetTableBody');
         tbody.innerHTML = '';
@@ -1031,7 +1066,7 @@
         }
     }
 
-    // ==================== EXPORT (works because XLSX is loaded at top like Companies page) ====================
+    // ==================== EXPORT (works) ====================
     function exportBudget() {
         if (typeof XLSX === 'undefined') {
             showCenteredAlert("Excel library not loaded. Please hard refresh the page (Ctrl + Shift + R).");
@@ -1221,7 +1256,7 @@
         logBudgetAudit("BUDGET_PRINTED", { revision: currentRevision });
     }
 
-    // ==================== SAVE / PUBLISH (FIXED: syncStatus set to Pending BEFORE saving to localStorage) ====================
+    // ==================== SAVE / PUBLISH (syncStatus fixed before save) ====================
     function saveBudget() {
         if (budgetLines.length === 0) { showCenteredAlert("Nothing to save yet."); return; }
         budgetSaved = true;
@@ -1241,7 +1276,6 @@
     function publishBudget() {
         if (budgetLines.length === 0) { showCenteredAlert("Add at least one budget line item before publishing."); return; }
 
-        // Sage pre-publish validation
         const list = activeCostCodeList === 'csi' ? csiCostCodes : customCostCodes;
         const invalidLines = budgetLines.filter(line => {
             const validCode = list.some(c => c.code === line.cost_code);
@@ -1254,7 +1288,7 @@
             return;
         }
 
-        // IMPORTANT FIX: Set to Pending BEFORE saving to localStorage so it persists on reload
+        // FIX: Set to Pending BEFORE saving to localStorage
         budgetLines.forEach(l => l.syncStatus = 'Pending');
 
         budgetSaved = true;
@@ -1604,7 +1638,7 @@
         }
     }, 45000);
 
-    // ==================== SETTINGS HELPERS ====================
+    // ==================== SETTINGS HELPERS (FIXED New List + Upload) ====================
     function showSettingsModal() {
         renderCostTypesList();
         document.getElementById('settingsModal').showModal();
@@ -1643,6 +1677,7 @@
         buttons[1].onclick = () => { costTypes.splice(index, 1); renderCostTypesList(); dialog.close(); dialog.remove(); };
     }
 
+    // ==================== UPLOAD COST CODES (FIXED: supports combined & separated, pushes to customCostCodes) ====================
     function uploadCostCodesExcel() {
         const input = document.createElement('input');
         input.type = 'file';
@@ -1669,7 +1704,7 @@
                         const wb = XLSX.read(data, { type: 'array' });
                         const sheet = wb.Sheets[wb.SheetNames[0]];
                         const json = XLSX.utils.sheet_to_json(sheet, { header: 1 });
-                        if (json.length < 2) throw new Error("Empty");
+                        if (json.length < 2) throw new Error("Empty file");
                         const headers = json[0].map(h => String(h).trim().toLowerCase());
                         rows = json.slice(1).map(r => {
                             const o = {};
@@ -1677,20 +1712,39 @@
                             return o;
                         });
                     }
+
                     let added = 0;
                     rows.forEach(r => {
-                        const code = r['code'] || r['cost code'] || r['costcode'];
-                        const desc = r['description'] || r['desc'];
+                        let code = r['code'] || r['cost code'] || r['costcode'] || r['cost_code'] || '';
+                        let desc = r['description'] || r['desc'] || r['name'] || r['description / name'] || r['desc / name'] || '';
+
+                        // Support combined format: "01-1000 - Summary" or "01-1000 / Summary"
+                        if (!desc && code) {
+                            const match = code.match(/^([0-9A-Za-z.-]+)\s*[-/]\s*(.+)$/);
+                            if (match) {
+                                code = match[1].trim();
+                                desc = match[2].trim();
+                            }
+                        }
+
                         const type = r['cost type'] || r['type'] || 'Subcontract';
+
                         if (code && desc) {
-                            csiCostCodes.push({ code: code, description: desc, cost_type: type });
+                            customCostCodes.push({ code: code, description: desc, cost_type: type });
                             added++;
                         }
                     });
-                    showCenteredAlert(`Successfully imported ${added} cost codes.`);
-                    populateCostCodeDatalist();
+
+                    // Switch to custom list so new codes are immediately usable
+                    activeCostCodeList = 'custom';
+                    const selector = document.getElementById('costCodeListSelector');
+                    if (selector) selector.value = 'custom';
+
+                    showCenteredAlert(`Successfully imported ${added} cost codes into Custom list.`);
+                    populateCostCodeDatalist(); // refresh if Add modal is open later
                 } catch (err) {
-                    showCenteredAlert("Failed to read file. Make sure it has columns: Code, Description, Cost Type.");
+                    console.error(err);
+                    showCenteredAlert("Failed to read file. Make sure it has Code + Description columns (combined or separate).");
                 }
             };
             if (file.name.toLowerCase().endsWith('.csv')) reader.readAsText(file);
@@ -1699,86 +1753,44 @@
         input.click();
     }
 
-    function uploadCostTypesExcel() {
-        const input = document.createElement('input');
-        input.type = 'file';
-        input.accept = '.xlsx,.xls,.csv';
-        input.onchange = function(e) {
-            const file = e.target.files[0];
-            if (!file) return;
-            const reader = new FileReader();
-            reader.onload = function(ev) {
-                try {
-                    let rows = [];
-                    if (file.name.toLowerCase().endsWith('.csv')) {
-                        const text = ev.target.result;
-                        const lines = text.split(/\r?\n/).filter(l => l.trim());
-                        const headers = lines[0].split(',').map(h => h.trim().toLowerCase());
-                        for (let i = 1; i < lines.length; i++) {
-                            const values = lines[i].split(',');
-                            const obj = {};
-                            headers.forEach((h, idx) => obj[h] = values[idx] ? values[idx].trim() : '');
-                            rows.push(obj);
-                        }
-                    } else {
-                        const data = new Uint8Array(ev.target.result);
-                        const wb = XLSX.read(data, { type: 'array' });
-                        const sheet = wb.Sheets[wb.SheetNames[0]];
-                        const json = XLSX.utils.sheet_to_json(sheet, { header: 1 });
-                        if (json.length < 2) throw new Error("Empty");
-                        const headers = json[0].map(h => String(h).trim().toLowerCase());
-                        rows = json.slice(1).map(r => {
-                            const o = {};
-                            headers.forEach((h, i) => o[h] = r[i] !== undefined ? String(r[i]).trim() : '');
-                            return o;
-                        });
-                    }
-                    let added = 0;
-                    rows.forEach(r => {
-                        const name = r['name'] || r['cost type'] || r['type'];
-                        if (name && !costTypes.includes(name)) {
-                            costTypes.push(name);
-                            added++;
-                        }
-                    });
-                    renderCostTypesList();
-                    showCenteredAlert(`Successfully imported ${added} cost types.`);
-                } catch (err) {
-                    showCenteredAlert("Failed to read file. Make sure it has a column for Cost Type Name.");
-                }
-            };
-            if (file.name.toLowerCase().endsWith('.csv')) reader.readAsText(file);
-            else reader.readAsArrayBuffer(file);
-        };
-        input.click();
-    }
-
+    // ==================== NEW LIST (FIXED: creates option, switches, alerts) ====================
     function addNewCostCodeList() {
         document.getElementById('settingsModal').close();
         document.getElementById('newListNameModal').showModal();
     }
+
     function confirmCreateNewList() {
         const name = document.getElementById('newListNameInput').value.trim();
         document.getElementById('newListNameModal').close();
         if (!name) return;
+
         const selector = document.getElementById('costCodeListSelector');
         const newOption = document.createElement('option');
         newOption.value = 'custom_' + Date.now();
         newOption.textContent = name;
         selector.appendChild(newOption);
+
         activeCostCodeList = newOption.value;
         selector.value = newOption.value;
-        setTimeout(() => { showSettingsModal(); showCenteredAlert(`New list "${name}" created and activated.`); }, 250);
+
+        // Note: all custom lists share the same customCostCodes array for simplicity (locked scope)
+        showCenteredAlert(`New list "${name}" created and activated. Upload Excel or add codes to populate it.`);
     }
+
     function closeNewListModal() {
         document.getElementById('newListNameModal').close();
         document.getElementById('settingsModal').showModal();
     }
+
     function deleteSelectedCostCodeList() {
         const selector = document.getElementById('costCodeListSelector');
         if (selector.value === 'csi') { showCenteredAlert("Cannot delete the CSI Master Codes list."); return; }
-        showCenteredAlert("Custom list deleted.");
+        // For locked scope, we just remove the option (codes stay in customCostCodes)
+        selector.remove(selector.selectedIndex);
+        activeCostCodeList = 'custom';
+        showCenteredAlert("Custom list removed from selector (codes remain in Custom bucket).");
     }
+
     function syncWithSage300() { showCenteredAlert("Sage 300 sync placeholder — will connect when backend is ready."); }
     function changeActiveCostCodeList() { activeCostCodeList = document.getElementById('costCodeListSelector').value; }
 
@@ -1842,13 +1854,13 @@
             }
         }, 300);
 
-        console.log('%c[Case PM] Budget page fully initialized (v16 - syncStatus persistence fixed + sticky table header + scrolling only data rows)', 'color:#10b981');
+        console.log('%c[Case PM] Budget page fully initialized (v17 LOCKED - New List + Upload Cost Codes fixed)', 'color:#10b981');
     }
 
     window.onload = initializeBudget;
 </script>
 
-<!-- ==================== FINAL STICKY HEADER ENFORCEMENT ==================== -->
+<!-- FINAL STICKY HEADER ENFORCEMENT -->
 <script>
     setTimeout(() => {
         const thead = document.querySelector('thead.sticky');
