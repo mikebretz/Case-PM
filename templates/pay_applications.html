@@ -3,11 +3,16 @@
 {% block content %}
 <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
 
-<!-- Pay Applications Module - Final Verified Build v58.0 | All requested live running totals (Work+Materials+CO), CO backing-out support, Approved Sub SOV billing modal, G703 CO bottom row, Sub SOV card fixes, styled delete modal, and pixel-perfect form-structured Excel export with conditional formatting | Updated 2026-07-01 22:30 -->
+<!-- Pay Applications Module - Final Verified Build v59.0 | Centered pop-ups, Unlock Sub SOV fixed, Edit Billing layout (Previously/Remaining moved under Materials, both Work+Mat affect Remaining), Approved Sub SOV trash hidden + billing modal, Export context-aware form-structured G702/G703/SubG703 | Updated 2026-07-01 -->
 <style>
   /* Exact match to budget.html aesthetics */
   .modal {
     border-radius: 6px !important;
+    margin: auto !important;
+    position: fixed !important;
+    top: 50% !important;
+    left: 50% !important;
+    transform: translate(-50%, -50%) !important;
   }
   .payapp-summary-card {
     transition: all 0.2s ease;
@@ -2150,13 +2155,13 @@ let subSOVStatus = JSON.parse(localStorage.getItem('subSOVStatus') || '{}'); // 
                     <label class="block text-xs text-zinc-400 mb-1">Work Completed This Period</label>
                     <input type="number" id="subWorkThisPeriodInput" value="${line.work_this_period || 0}" step="0.01"
                            class="w-full bg-zinc-800 border border-zinc-700 rounded-md px-4 py-2.5 text-sm">
-                    <div class="text-[10px] text-zinc-500 mt-0.5">Amount Previously Billed: <span class="font-mono">${formatCurrency(previousBilled)}</span></div>
-                    <div id="subRemainingToBill" class="text-[10px] text-emerald-400 mt-0.5">Remaining after this entry: ${formatCurrency(remaining)}</div>
                 </div>
                 <div>
                     <label class="block text-xs text-zinc-400 mb-1">Materials Stored This Period</label>
                     <input type="number" id="subMaterialsStoredInput" value="${line.materials_stored || 0}" step="0.01"
                            class="w-full bg-zinc-800 border border-zinc-700 rounded-md px-4 py-2.5 text-sm">
+                    <div class="text-[10px] text-zinc-500 mt-1">Amount Previously Billed: <span class="font-mono">${formatCurrency(previousBilled)}</span></div>
+                    <div id="subRemainingToBill" class="text-[10px] text-emerald-400 mt-0.5">Remaining after this entry: ${formatCurrency(remaining)}</div>
                 </div>
 
                 ${(line.change_orders || 0) > 0 ? `
@@ -2318,7 +2323,7 @@ let subSOVStatus = JSON.parse(localStorage.getItem('subSOVStatus') || '{}'); // 
     function unlockSubSOV(companyId) {
         if (!confirm("Unlock this Subcontractor's SOV for revision? This will allow changes to Original Commitment and structure. Only do this if absolutely necessary.")) return;
         const company = companies.find(c => c.id == companyId);
-        setSubSOVStatus(companyId, 'Draft', { unlockedBy: 'Michael Bretz', unlockedDate: new Date().toISOString() });
+        updateSubSOVStatus(companyId, 'Draft', { unlockedBy: 'Michael Bretz', unlockedDate: new Date().toISOString() });
         logPayAppAudit('SUB_SOV_UNLOCKED', { company: company ? (company.name || company.company_name) : companyId, by: 'Michael Bretz' });
         showCenteredAlert("SOV unlocked for revision. Admin can now edit structural fields.", 'success');
         renderPayAppContent();
