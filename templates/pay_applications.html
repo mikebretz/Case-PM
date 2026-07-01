@@ -214,8 +214,29 @@
 <dialog id="userProfileModal" class="modal rounded-md w-full max-w-md p-0 text-white" style="background-color: #18181b; border: 1px solid #3f3f46;">
     <div class="p-6">
         <h3 class="text-lg font-semibold mb-4">User Profile</h3>
-        <p class="text-sm text-zinc-400">Profile settings coming soon.</p>
-        <div class="mt-6 text-right">
+        
+        <div class="mb-4">
+            <div class="flex items-center gap-3 mb-3">
+                <div class="w-12 h-12 bg-zinc-700 rounded-full overflow-hidden flex-shrink-0">
+                    <img src="https://i.pravatar.cc/48?img=68" class="w-full h-full object-cover">
+                </div>
+                <div>
+                    <div class="font-semibold">Michael Bretz</div>
+                    <div class="text-xs text-zinc-400">Project Manager • Case Contracting</div>
+                </div>
+            </div>
+        </div>
+
+        <div class="mb-4">
+            <label class="block text-sm text-zinc-300 mb-1.5">Signature Line (for G702 prints)</label>
+            <input type="text" id="userSignatureInput" class="w-full bg-zinc-800 border border-zinc-700 rounded-md px-4 py-2.5 text-sm" 
+                   placeholder="e.g. Michael Bretz, Project Manager">
+            <div class="text-[10px] text-zinc-500 mt-1">This appears in the signature block on printed G702 forms.</div>
+        </div>
+
+        <div class="flex justify-end gap-3 mt-6">
+            <button onclick="saveUserSignature(); document.getElementById('userProfileModal').close()" 
+                    class="px-5 py-2 rounded-md bg-emerald-600 hover:bg-emerald-500 text-sm font-medium">Save Signature</button>
             <button onclick="document.getElementById('userProfileModal').close()" class="px-5 py-2 rounded-md bg-zinc-700">Close</button>
         </div>
     </div>
@@ -540,13 +561,13 @@
                     <td class="px-3 py-2 text-center font-mono text-xs text-zinc-500">${index + 1}</td>
                     <td class="px-4 py-2 font-mono text-emerald-400 text-sm">${line.cost_code || ''}</td>
                     <td class="px-4 py-2 text-sm">${line.description || ''}</td>
-                    <td class="px-4 py-2 text-right font-mono text-sm">${formatCurrency(currentAmount)}</td>
+                    <td class="px-4 py-2 text-right font-mono text-[15px]">${formatCurrency(currentAmount)}</td>
                     <td class="px-3 py-2 text-center font-mono text-xs">${percentComplete}%</td>
-                    <td class="px-4 py-2 text-right text-emerald-400 font-mono text-sm">${formatCurrency(totalBilled)}</td>
-                    <td class="px-4 py-2 text-right text-emerald-400 font-semibold font-mono text-sm">${formatCurrency(workThis)}</td>
-                    <td class="px-3 py-2 text-right text-sky-400 font-mono text-sm">${formatCurrency(materials)}</td>
-                    <td class="px-3 py-2 text-right text-red-400 font-mono text-sm">${formatCurrency(retainage)}</td>
-                    <td class="px-4 py-2 text-sm text-zinc-400">${line.notes || ''}</td>
+                    <td class="px-4 py-2 text-right text-emerald-400 font-mono text-[15px]">${formatCurrency(totalBilled)}</td>
+                    <td class="px-4 py-2 text-right text-emerald-400 font-semibold font-mono text-[15px]">${formatCurrency(workThis)}</td>
+                    <td class="px-3 py-2 text-right text-sky-400 font-mono text-[15px]">${formatCurrency(materials)}</td>
+                    <td class="px-3 py-2 text-right text-red-400 font-mono text-[15px]">${formatCurrency(retainage)}</td>
+                    <td class="px-4 py-2 text-[15px] text-zinc-400">${line.notes || ''}</td>
                     <td class="px-3 py-2.5 text-center">
                         <div class="inline-flex items-center gap-1.5">
                             <button onclick="event.stopImmediatePropagation(); showPayAppLineHistory(${line.id})" class="text-sky-400 hover:text-sky-300 p-1" title="Line Audit Log"><i class="fa-solid fa-history"></i></button>
@@ -849,13 +870,13 @@
                 <td class="px-3 py-2 text-center font-mono text-xs text-zinc-500">${visibleIndex}</td>
                 <td class="px-4 py-2 font-mono text-emerald-400 text-sm">${line.cost_code}</td>
                 <td class="px-4 py-2 text-sm">${line.description}</td>
-                <td class="px-4 py-2 text-right font-mono text-sm">${formatCurrency(line.original || 0)}</td>
-                <td class="px-3 py-2 text-right text-amber-400 font-mono text-sm">${formatCurrency(line.co_amount || 0)}</td>
-                <td class="px-4 py-2 text-right font-semibold text-emerald-400 font-mono text-sm">${formatCurrency(current)}</td>
+                <td class="px-4 py-2 text-right font-mono text-[15px]">${formatCurrency(line.original || 0)}</td>
+                <td class="px-3 py-2 text-right text-amber-400 font-mono text-[15px]">${formatCurrency(line.co_amount || 0)}</td>
+                <td class="px-4 py-2 text-right font-semibold text-emerald-400 font-mono text-[15px]">${formatCurrency(current)}</td>
                 <td class="px-3 py-2 text-center font-mono text-xs">${pct}%</td>
-                <td class="px-4 py-2 text-right text-emerald-400 font-mono text-sm">${formatCurrency(billed)}</td>
-                <td class="px-4 py-2 text-right font-mono text-sm">${formatCurrency(balance)}</td>
-                <td class="px-4 py-2 text-sm text-zinc-400">${line.notes || ''}</td>
+                <td class="px-4 py-2 text-right text-emerald-400 font-mono text-[15px]">${formatCurrency(billed)}</td>
+                <td class="px-4 py-2 text-right font-mono text-[15px]">${formatCurrency(balance)}</td>
+                <td class="px-4 py-2 text-[15px] text-zinc-400">${line.notes || ''}</td>
                 <td class="px-3 py-2 text-center">
                     <button onclick="event.stopImmediatePropagation(); showSOVLineAudit(${line.id}, 'contractor')" class="text-sky-400 hover:text-sky-300 p-1" title="Line Audit Log"><i class="fa-solid fa-history"></i></button>
                     <button onclick="event.stopImmediatePropagation(); deleteContractorSOVLine(${line.id})" class="text-red-400 hover:text-red-300 p-1 ml-1" title="Delete"><i class="fa-solid fa-trash"></i></button>
@@ -1537,13 +1558,13 @@
                 <td class="px-3 py-2 text-center font-mono text-xs text-zinc-500">${visibleIdxSub}</td>
                 <td class="px-4 py-2 font-mono text-emerald-400 text-sm">${line.cost_code || ''}</td>
                 <td class="px-4 py-2 text-sm">${line.description || ''}</td>
-                <td class="px-4 py-2 text-right font-mono text-sm">${formatCurrency(current)}</td>
+                <td class="px-4 py-2 text-right font-mono text-[15px]">${formatCurrency(current)}</td>
                 <td class="px-3 py-2 text-center font-mono text-xs">${pct}%</td>
-                <td class="px-4 py-2 text-right text-emerald-400 font-mono text-sm">${formatCurrency(billed)}</td>
+                <td class="px-4 py-2 text-right text-emerald-400 font-mono text-[15px]">${formatCurrency(billed)}</td>
                 <td class="px-3 py-2 text-right text-emerald-400 font-mono text-sm">${formatCurrency(thisPeriod)}</td>
                 <td class="px-3 py-2 text-right text-sky-400 font-mono text-sm">${formatCurrency(line.materials_stored || 0)}</td>
                 <td class="px-3 py-2 text-right text-red-400 font-mono text-sm">${formatCurrency(thisPeriod * 0.10)}</td>
-                <td class="px-4 py-2 text-sm text-zinc-400">${line.notes || ''}</td>
+                <td class="px-4 py-2 text-[15px] text-zinc-400">${line.notes || ''}</td>
                 <td class="px-3 py-2 text-center">
                     <button onclick="event.stopImmediatePropagation(); showSOVLineAudit(${line.id}, 'sub', ${selectedSubCompanyId})" class="text-sky-400 hover:text-sky-300 p-1" title="Line Audit Log"><i class="fa-solid fa-history"></i></button>
                     <button onclick="event.stopImmediatePropagation(); deleteSubSOVLine(${selectedSubCompanyId}, ${line.id})" class="text-red-400 hover:text-red-300 p-1 ml-1" title="Delete"><i class="fa-solid fa-trash"></i></button>
@@ -1790,7 +1811,7 @@
             <head>
                 <title>AIA G702 - Application and Certificate for Payment #${period.periodNumber}</title>
                 <style>
-                    @page { size: letter; margin: 0.4in; }
+                    @page { size: letter landscape; margin: 0.35in; }
                     @media print { body { -webkit-print-color-adjust: exact; print-color-adjust: exact; } }
                     body { font-family: "Times New Roman", Times, serif; padding: 8px 12px; font-size: 9.5px; line-height: 1.2; color: #000; }
                     .main-header { border: 2px solid #000; padding: 4px 8px; margin-bottom: 4px; }
@@ -1908,7 +1929,7 @@
                                 <strong>CONTRACTOR:</strong><br>
                                 _________________________________<br>
                                 Signature / Date<br>
-                                <span class="small">Michael Bretz, Project Manager — Case Contracting</span>
+                                <span class="small" id="contractorSignatureLine">${(localStorage.getItem('userSignature') || 'Michael Bretz, Project Manager — Case Contracting')}</span>
                             </div>
                             <div class="sig-line" style="margin-top:12px;">
                                 <strong>OWNER:</strong><br>
@@ -2243,7 +2264,24 @@
     }
 
     function showUserProfileModal() {
-        document.getElementById('userProfileModal').showModal();
+        const modal = document.getElementById('userProfileModal');
+        modal.showModal();
+        
+        // Load existing signature
+        setTimeout(() => {
+            const input = document.getElementById('userSignatureInput');
+            if (input) {
+                input.value = localStorage.getItem('userSignature') || 'Michael Bretz, Project Manager — Case Contracting';
+            }
+        }, 50);
+    }
+
+    function saveUserSignature() {
+        const input = document.getElementById('userSignatureInput');
+        if (input && input.value.trim()) {
+            localStorage.setItem('userSignature', input.value.trim());
+            showCenteredAlert("Signature saved. It will appear on future G702 prints.", 'success');
+        }
     }
 
     function showPayAppVersionHistory() {
