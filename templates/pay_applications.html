@@ -541,6 +541,8 @@ let subSOVStatus = JSON.parse(localStorage.getItem('subSOVStatus') || '{}'); // 
                 <th class="px-4 py-3 text-left font-medium text-zinc-400 w-28">Cost Code</th>
                 <th class="px-4 py-3 text-left font-medium text-zinc-400 min-w-[80px]">Description</th>
                 <th class="px-4 py-3 text-center font-medium text-zinc-400 w-44">Original</th>
+                <th class="px-4 py-3 text-center font-medium text-zinc-400 w-36">Change Orders</th>
+                <th class="px-4 py-3 text-center font-medium text-zinc-400 w-44">Current</th>
                 <th class="px-3 py-3 text-center font-medium text-zinc-400 w-20">% Complete</th>
                 <th class="px-4 py-3 text-center font-medium text-zinc-400 w-44">Billed to Date</th>
                 <th class="px-4 py-3 text-center font-medium text-zinc-400 w-44">Work This Period</th>
@@ -586,7 +588,7 @@ let subSOVStatus = JSON.parse(localStorage.getItem('subSOVStatus') || '{}'); // 
                     renderPayAppContent();
                 };
                 headerRow.innerHTML = `
-                    <td colspan="10" class="px-4 py-2 text-emerald-400 font-semibold text-sm">
+                    <td colspan="12" class="px-4 py-2 text-emerald-400 font-semibold text-sm">
                         <i class="fa-solid fa-chevron-${isCollapsed ? 'right' : 'down'} mr-2 transition-transform"></i>
                         Division ${division} — ${divisionNames[division] || 'Other'}
                     </td>
@@ -616,6 +618,8 @@ let subSOVStatus = JSON.parse(localStorage.getItem('subSOVStatus') || '{}'); // 
                     <td class="px-4 py-2 font-mono text-emerald-400 text-sm">${line.cost_code || ''}</td>
                     <td class="px-4 py-2 text-sm">${line.description || ''}</td>
                     <td class="px-4 py-2 text-right font-mono text-[15px]">${formatCurrency(currentAmount)}</td>
+                    <td class="px-4 py-2 text-right font-mono text-amber-400 text-[15px]">${formatCurrency(line.co_amount || 0)}</td>
+                    <td class="px-4 py-2 text-right font-mono text-emerald-400 text-[15px] font-semibold">${formatCurrency(currentAmount)}</td>
                     <td class="px-3 py-2 text-center font-mono text-xs">${percentComplete}%</td>
                     <td class="px-4 py-2 text-right text-emerald-400 font-mono text-[15px]">${formatCurrency(totalBilled)}</td>
                     <td class="px-4 py-2 text-right text-emerald-400 font-semibold font-mono text-[15px]">${formatCurrency(workThis)}</td>
