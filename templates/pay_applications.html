@@ -307,6 +307,9 @@
     let defaultRetainagePercent = parseFloat(localStorage.getItem('payAppRetainagePercent') || '10');
 let subSOVStatus = JSON.parse(localStorage.getItem('subSOVStatus') || '{}'); // { [companyId]: { status: 'Draft'|'Pending Approval'|'Approved'|'Rejected', submittedDate?, approvedBy?, approvedDate? } }
 
+    // Budget Contract Amount (from Budget page top-left card)
+    const budgetContractAmount = 2450000;
+
     // Demo: Seed some data on first load if empty
     function seedDemoDataIfNeeded() {
         if (contractorSOV.length === 0) {
@@ -489,11 +492,17 @@ let subSOVStatus = JSON.parse(localStorage.getItem('subSOVStatus') || '{}'); // 
         const contractSumToDate = totalOriginal + totalCO;
 
         // Summary Cards
+        const sovTotalForComparison = totalOriginal + totalCO;
+        const mismatchWarning = (sovTotalForComparison !== budgetContractAmount) 
+            ? `<div class="text-[10px] text-amber-400 mt-1">⚠️ Current Schedule of Values total does not match the Budget Contract Amount (${formatCurrency(budgetContractAmount)})</div>` 
+            : '';
+
         cardsContainer.innerHTML = `
             <div class="grid grid-cols-2 md:grid-cols-6 gap-4">
                 <div class="bg-zinc-800 border border-zinc-700 rounded-md p-5">
                     <div class="text-xs text-zinc-400">Original Contract</div>
-                    <div class="text-2xl font-semibold mt-1">${formatCurrency(totalOriginal)}</div>
+                    <div class="text-2xl font-semibold mt-1">${formatCurrency(budgetContractAmount)}</div>
+                    ${mismatchWarning}
                 </div>
                 <div class="bg-zinc-800 border border-zinc-700 rounded-md p-5">
                     <div class="text-xs text-zinc-400">Net Change Orders</div>
@@ -508,7 +517,7 @@ let subSOVStatus = JSON.parse(localStorage.getItem('subSOVStatus') || '{}'); // 
                     <div class="text-2xl font-semibold mt-1">${formatCurrency(totalBilledToDate)}</div>
                 </div>
                 <div class="bg-zinc-800 border border-zinc-700 rounded-md p-5">
-                    <div class="text-xs text-zinc-400">Current Payment Due (after 10% retainage)</div>
+                    <div class="text-xs text-zinc-400">Current Payment Due (after ${defaultRetainagePercent}% retainage)</div>
                     <div class="text-2xl font-semibold mt-1 text-emerald-400">${formatCurrency(amountDue)}</div>
                 </div>
                 <div class="bg-zinc-800 border border-zinc-700 rounded-md p-5 flex flex-col justify-between">
@@ -802,24 +811,15 @@ let subSOVStatus = JSON.parse(localStorage.getItem('subSOVStatus') || '{}'); // 
     function lockContractorSOV() {
         localStorage.setItem('contractorSOVLocked', 'true');
         showCenteredAlert("Contractor Schedule of Values has been locked. Only Admin can unlock for revision.", "success");
-        renderContractorSOVTab(
-            document.getElementById('contractorSOVCards'),
-            document.getElementById('contractorSOVThead'),
-            document.getElementById('contractorSOVTbody'),
-            document.getElementById('contractorSOVWorkflow')
-        );
+        // Immediate re-render of current tab
+        renderPayAppContent();
     }
 
     function unlockContractorSOV() {
-        // In a real app, you would check user role here. For now, we allow it.
         localStorage.setItem('contractorSOVLocked', 'false');
         showCenteredAlert("Contractor Schedule of Values unlocked for revision.", "success");
-        renderContractorSOVTab(
-            document.getElementById('contractorSOVCards'),
-            document.getElementById('contractorSOVThead'),
-            document.getElementById('contractorSOVTbody'),
-            document.getElementById('contractorSOVWorkflow')
-        );
+        // Immediate re-render of current tab
+        renderPayAppContent();
     }
 
     // ==================== CONTRACTOR SOV TAB ====================
@@ -1495,7 +1495,7 @@ let subSOVStatus = JSON.parse(localStorage.getItem('subSOVStatus') || '{}'); // 
         companies = JSON.parse(localStorage.getItem('casepm_companies')) || [];
         let currentStatus = 'Draft'; // Declare early to avoid TDZ errors in template literals
 
-        // Summary cards - reorganized: Add Line moved next to status, middle card now shows key totals for selected sub
+        // Summary cards - reorganized with Current Contract Value and Change Orders to Date
         cardsContainer.innerHTML = `
             <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
                 <div class="bg-zinc-800 border border-zinc-700 rounded-md p-5">
@@ -1512,13 +1512,27 @@ let subSOVStatus = JSON.parse(localStorage.getItem('subSOVStatus') || '{}'); // 
                     <div id="subStatusBadgeContainer" class="mt-2 flex items-center gap-2 min-h-[22px]"></div>
                 </div>
                 <div class="bg-zinc-800 border border-zinc-700 rounded-md p-5">
-                    <div class="text-xs text-zinc-400">Original Contract Amount</div>
-                    <div id="subOriginalTotal" class="text-2xl font-semibold mt-1 text-emerald-400">$0</div>
-                    <div class="mt-3 text-xs text-zinc-400">Billed to Date</div>
-                    <div id="subBilledTotal" class="text-xl font-semibold text-sky-400">$0</div>
+                    <div class="grid grid-cols-2 gap-x-4 gap-y-1">
+                        <div>
+                            <div class="text-xs text-zinc-400">Original Contract Amount</div>
+                            <div id="subOriginalTotal" class="text-xl font-semibold mt-0.5 text-emerald-400">$0</div>
+                        </div>
+                        <div>
+                            <div class="text-xs text-zinc-400">Current Contract Value</div>
+                            <div id="subCurrentTotal" class="text-xl font-semibold mt-0.5 text-emerald-400">$0</div>
+                        </div>
+                        <div>
+                            <div class="text-xs text-zinc-400">Billed to Date</div>
+                            <div id="subBilledTotal" class="text-xl font-semibold mt-0.5 text-sky-400">$0</div>
+                        </div>
+                        <div>
+                            <div class="text-xs text-zinc-400">Change Orders to Date</div>
+                            <div id="subCOsTotal" class="text-xl font-semibold mt-0.5 text-amber-400">$0</div>
+                        </div>
+                    </div>
                 </div>
                 <div class="bg-zinc-800 border border-zinc-700 rounded-md p-5 flex items-end justify-end">
-                    <!-- Add Line button moved to workflow bar area next to status -->
+                    <!-- Add Line button is in the workflow bar next to status -->
                 </div>
             </div>
         `;
@@ -1583,15 +1597,21 @@ let subSOVStatus = JSON.parse(localStorage.getItem('subSOVStatus') || '{}'); // 
 
             // Populate the new summary totals for the selected sub
             const subLines = subcontractorSOV[selectedSubCompanyId] || [];
-            let origTotal = 0, billedTotal = 0;
+            let origTotal = 0, billedTotal = 0, coTotal = 0;
             subLines.forEach(l => {
-                origTotal += (l.original_commitment || 0); // Original Contract Amount
+                origTotal += (l.original_commitment || 0);
                 billedTotal += (l.billed_to_date || 0);
+                coTotal += (l.change_orders || 0);
             });
+            const currentTotal = origTotal + coTotal;
             const origEl = document.getElementById('subOriginalTotal');
+            const currentEl = document.getElementById('subCurrentTotal');
             const billedEl = document.getElementById('subBilledTotal');
+            const coEl = document.getElementById('subCOsTotal');
             if (origEl) origEl.textContent = formatCurrency(origTotal);
+            if (currentEl) currentEl.textContent = formatCurrency(currentTotal);
             if (billedEl) billedEl.textContent = formatCurrency(billedTotal);
+            if (coEl) coEl.textContent = formatCurrency(coTotal);
         }
 
         // Workflow bar - dynamic based on SOV Status
