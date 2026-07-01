@@ -117,7 +117,7 @@
 
 <!-- TABLE CONTAINER -->
 <div class="mx-6 mb-6 flex-1 overflow-hidden flex flex-col border border-zinc-700 rounded-md bg-zinc-900">
-    <div class="flex-1 overflow-auto" id="payAppTableScrollContainer" style="max-height: calc(100vh - 380px);">
+    <div class="flex-1 overflow-auto" id="payAppTableScrollContainer" style="height: calc(100vh - 300px); overflow-y: auto;">
         <table class="w-full text-sm min-w-[1900px]">
             <thead class="bg-zinc-800 sticky z-20 border-b border-zinc-700" style="top: 0; position: sticky;" id="payAppTableHead">
                 <!-- Populated dynamically -->
@@ -447,7 +447,7 @@
             <tr>
                 <th class="px-3 py-3 text-center font-medium text-zinc-400 w-8">#</th>
                 <th class="px-4 py-3 text-left font-medium text-zinc-400 w-28">Cost Code</th>
-                <th class="px-4 py-3 text-left font-medium text-zinc-400 min-w-[320px]">Description</th>
+                <th class="px-4 py-3 text-left font-medium text-zinc-400 min-w-[260px]">Description</th>
                 <th class="px-4 py-3 text-right font-medium text-zinc-400 w-28">Original</th>
                 <th class="px-3 py-3 text-center font-medium text-zinc-400 w-16">% Complete</th>
                 <th class="px-4 py-3 text-right font-medium text-zinc-400 w-28">Billed to Date</th>
@@ -529,8 +529,7 @@
                     <td class="px-3 py-2 text-right text-red-400 font-mono text-sm">${formatCurrency(retainage)}</td>
                     <td class="px-3 py-2.5 text-center">
                         <div class="inline-flex items-center gap-1.5">
-                            <button onclick="event.stopImmediatePropagation(); editPayAppBillingLine(${line.id})" class="text-emerald-400 hover:text-emerald-300 p-1" title="Edit Billing"><i class="fa-solid fa-edit"></i></button>
-                            <button onclick="event.stopImmediatePropagation(); showPayAppLineHistory(${line.id})" class="text-sky-400 hover:text-sky-300 p-1" title="View History"><i class="fa-solid fa-history"></i></button>
+                            <button onclick="event.stopImmediatePropagation(); showPayAppLineHistory(${line.id})" class="text-sky-400 hover:text-sky-300 p-1" title="Line Audit Log"><i class="fa-solid fa-history"></i></button>
                         </div>
                     </td>
                 `;
@@ -744,7 +743,7 @@
             <tr>
                 <th class="px-3 py-3 text-center font-medium text-zinc-400 w-8">#</th>
                 <th class="px-4 py-3 text-left font-medium text-zinc-400 w-28">Cost Code</th>
-                <th class="px-4 py-3 text-left font-medium text-zinc-400 min-w-[320px]">Description</th>
+                <th class="px-4 py-3 text-left font-medium text-zinc-400 min-w-[260px]">Description</th>
                 <th class="px-4 py-3 text-right font-medium text-zinc-400 w-28">Original</th>
                 <th class="px-3 py-3 text-right font-medium text-zinc-400 w-24">COs</th>
                 <th class="px-4 py-3 text-right font-medium text-zinc-400 w-28">Current</th>
@@ -824,8 +823,8 @@
                 <td class="px-4 py-2 text-right text-emerald-400 font-mono text-sm">${formatCurrency(billed)}</td>
                 <td class="px-4 py-2 text-right font-mono text-sm">${formatCurrency(balance)}</td>
                 <td class="px-3 py-2 text-center">
-                    <button onclick="event.stopImmediatePropagation(); editContractorSOVLine(${line.id})" class="text-emerald-400 hover:text-emerald-300 p-1"><i class="fa-solid fa-edit"></i></button>
-                    <button onclick="event.stopImmediatePropagation(); deleteContractorSOVLine(${line.id})" class="text-red-400 hover:text-red-300 p-1 ml-1"><i class="fa-solid fa-trash"></i></button>
+                    <button onclick="event.stopImmediatePropagation(); showSOVLineAudit(${line.id}, 'contractor')" class="text-sky-400 hover:text-sky-300 p-1" title="Line Audit Log"><i class="fa-solid fa-history"></i></button>
+                    <button onclick="event.stopImmediatePropagation(); deleteContractorSOVLine(${line.id})" class="text-red-400 hover:text-red-300 p-1 ml-1" title="Delete"><i class="fa-solid fa-trash"></i></button>
                 </td>
             `;
             tbody.appendChild(row);
@@ -1062,7 +1061,7 @@
                     <table class="w-full text-sm" id="seedTable">
                         <thead class="bg-zinc-800 sticky top-0">
                             <tr>
-                                <th class="px-3 py-2 w-8"><input type="checkbox" id="seedSelectAll" onchange="toggleAllSeed(this)"></th>
+                                <th class="px-3 py-2 w-8"><input type="checkbox" id="seedSelectAll"></th>
                                 <th class="px-3 py-2 text-left font-medium text-zinc-400 w-28">Cost Code</th>
                                 <th class="px-3 py-2 text-left font-medium text-zinc-400">Description</th>
                                 <th class="px-3 py-2 text-right font-medium text-zinc-400 w-28">Original Budget</th>
@@ -1104,35 +1103,46 @@
         // Store budgetLines temporarily for confirm
         window._seedBudgetLines = budgetLines;
 
-        // Robust interactivity: row clicks + direct checkbox support + reliable select all
+        // Robust interactivity: row clicks + direct checkbox support + reliable select all + dblclick
         setTimeout(() => {
             const table = modal.querySelector('#seedTable');
             if (!table) return;
 
-            // Make entire row clickable (except when clicking the checkbox directly)
-            table.querySelectorAll('tr[data-idx]').forEach(row => {
-                row.style.cursor = 'pointer';
-                row.onclick = function(e) {
-                    if (e.target.tagName === 'INPUT' || e.target.closest('input[type="checkbox"]')) {
-                        return; // Let the checkbox handle its own change
-                    }
-                    const cb = row.querySelector('.seed-checkbox');
-                    if (cb && !cb.disabled) {
-                        cb.checked = !cb.checked;
-                        // Trigger change event for any listeners
-                        cb.dispatchEvent(new Event('change', { bubbles: true }));
-                    }
-                };
+            // Event delegation for row clicks (more reliable than per-row handlers)
+            table.addEventListener('click', function(e) {
+                const row = e.target.closest('tr[data-idx]');
+                if (!row) return;
+                const cb = row.querySelector('.seed-checkbox');
+                if (!cb || cb.disabled) return;
+
+                // If user clicked directly on checkbox or its label area, let native behavior happen
+                if (e.target.tagName === 'INPUT' || e.target.closest('input[type="checkbox"]')) {
+                    return;
+                }
+                // Otherwise toggle
+                cb.checked = !cb.checked;
+                cb.dispatchEvent(new Event('change', { bubbles: true }));
             });
 
-            // Make sure individual checkboxes work and update any state
+            // Also support double-click on row to toggle (user requested)
+            table.addEventListener('dblclick', function(e) {
+                const row = e.target.closest('tr[data-idx]');
+                if (!row) return;
+                const cb = row.querySelector('.seed-checkbox');
+                if (cb && !cb.disabled) {
+                    cb.checked = !cb.checked;
+                    cb.dispatchEvent(new Event('change', { bubbles: true }));
+                }
+            });
+
+            // Individual checkbox change (native toggle works; we can add visual if needed later)
             table.querySelectorAll('.seed-checkbox').forEach(cb => {
                 cb.onchange = function() {
-                    // Optional: could add visual feedback here if needed
+                    // Keep native checked state; no extra logic needed
                 };
             });
 
-            // Reliable Select All
+            // Reliable Select All (only affects non-disabled; works even after filter because hidden rows stay in DOM)
             const selectAllCb = modal.querySelector('#seedSelectAll');
             if (selectAllCb) {
                 selectAllCb.onchange = function() {
@@ -1142,12 +1152,20 @@
                     });
                 };
             }
-        }, 80);
+
+            // Bonus: clicking the header "Cost Code" or "Description" text also toggles if on a data row
+            // (already covered by delegation above)
+        }, 100);
     }
 
     function filterSeedTable(inputEl) {
         const q = (inputEl.value || '').toLowerCase().trim();
-        const tbody = document.getElementById('seedTable').querySelector('tbody');
+        // Find the table inside the currently open modal for robustness
+        const activeModal = inputEl.closest('dialog');
+        const table = activeModal ? activeModal.querySelector('#seedTable') : document.getElementById('seedTable');
+        if (!table) return;
+        const tbody = table.querySelector('tbody');
+        if (!tbody) return;
         tbody.querySelectorAll('tr').forEach(row => {
             const text = row.textContent.toLowerCase();
             row.style.display = text.includes(q) ? '' : 'none';
@@ -1155,8 +1173,11 @@
     }
 
     function toggleAllSeed(checkbox) {
+        // Fallback for any legacy calls; main handler is now in seed modal setTimeout
         const table = document.getElementById('seedTable');
-        table.querySelectorAll('.seed-checkbox:not(:disabled)').forEach(cb => cb.checked = checkbox.checked);
+        if (table) {
+            table.querySelectorAll('.seed-checkbox:not(:disabled)').forEach(cb => cb.checked = checkbox.checked);
+        }
     }
 
     function confirmSeedFromBudget(btn) {
@@ -1296,7 +1317,7 @@
             <tr>
                 <th class="px-3 py-3 text-center font-medium text-zinc-400 w-8">#</th>
                 <th class="px-4 py-3 text-left font-medium text-zinc-400 w-28">Cost Code</th>
-                <th class="px-4 py-3 text-left font-medium text-zinc-400 min-w-[320px]">Description</th>
+                <th class="px-4 py-3 text-left font-medium text-zinc-400 min-w-[260px]">Description</th>
                 <th class="px-4 py-3 text-right font-medium text-zinc-400 w-28">Original Commitment</th>
                 <th class="px-3 py-3 text-center font-medium text-zinc-400 w-16">% Complete</th>
                 <th class="px-4 py-3 text-right font-medium text-zinc-400 w-28">Billed to Date</th>
@@ -1387,8 +1408,8 @@
                 <td class="px-3 py-2 text-right text-sky-400 font-mono text-sm">${formatCurrency(line.materials_stored || 0)}</td>
                 <td class="px-3 py-2 text-right text-red-400 font-mono text-sm">${formatCurrency(thisPeriod * 0.10)}</td>
                 <td class="px-3 py-2 text-center">
-                    <button onclick="event.stopImmediatePropagation(); editSubSOVLine(${selectedSubCompanyId}, ${line.id})" class="text-emerald-400 hover:text-emerald-300 p-1"><i class="fa-solid fa-edit"></i></button>
-                    <button onclick="event.stopImmediatePropagation(); deleteSubSOVLine(${selectedSubCompanyId}, ${line.id})" class="text-red-400 hover:text-red-300 p-1 ml-1"><i class="fa-solid fa-trash"></i></button>
+                    <button onclick="event.stopImmediatePropagation(); showSOVLineAudit(${line.id}, 'sub', ${selectedSubCompanyId})" class="text-sky-400 hover:text-sky-300 p-1" title="Line Audit Log"><i class="fa-solid fa-history"></i></button>
+                    <button onclick="event.stopImmediatePropagation(); deleteSubSOVLine(${selectedSubCompanyId}, ${line.id})" class="text-red-400 hover:text-red-300 p-1 ml-1" title="Delete"><i class="fa-solid fa-trash"></i></button>
                 </td>
             `;
             tbody.appendChild(row);
@@ -1952,6 +1973,67 @@
                 <div class="max-h-[280px] overflow-auto">${logs}</div>
                 <div class="mt-4 text-right">
                     <button onclick="this.closest('dialog').close()" class="px-5 py-2 bg-zinc-700 rounded-md text-sm">Close</button>
+                </div>
+            </div>
+        `;
+        document.body.appendChild(modal);
+        modal.showModal();
+    }
+
+    function showSOVLineAudit(lineId, type = 'contractor', companyId = null) {
+        const modal = document.createElement('dialog');
+        modal.className = 'modal rounded-md w-full max-w-lg p-0 text-white';
+        modal.style.backgroundColor = '#18181b';
+        modal.style.border = '1px solid #3f3f46';
+
+        let targetCostCode = '';
+        let lineDesc = '';
+
+        if (type === 'contractor') {
+            const line = contractorSOV.find(l => l.id === lineId);
+            if (line) { targetCostCode = line.cost_code; lineDesc = line.description; }
+        } else if (type === 'sub' && companyId) {
+            const lines = subcontractorSOV[companyId] || [];
+            const line = lines.find(l => l.id === lineId);
+            if (line) { targetCostCode = line.cost_code; lineDesc = line.description; }
+        }
+
+        const relevant = payAppAuditLog.filter(e => {
+            if (!e.details) return false;
+            const d = e.details;
+            return (d.cost_code && d.cost_code === targetCostCode) || 
+                   (d.sovLineId && d.sovLineId === lineId) ||
+                   (typeof d === 'string' && d.includes(targetCostCode));
+        }).slice(0, 12);
+
+        let logsHtml = relevant.length > 0 ? relevant.map(e => {
+            const time = new Date(e.timestamp).toLocaleString([], {month:'short', day:'numeric', hour:'2-digit', minute:'2-digit'});
+            let detail = e.action;
+            if (e.details && e.details.oldOriginal !== undefined) {
+                detail += ` — Original: ${formatCurrency(e.details.oldOriginal)} → ${formatCurrency(e.details.newOriginal || e.details.original)}`;
+            } else if (e.details && e.details.workThisPeriod !== undefined) {
+                detail += ` — This Period: ${formatCurrency(e.details.workThisPeriod)}`;
+            }
+            return `<div class="flex justify-between text-xs border-b border-zinc-700 py-1.5 px-1">
+                <div class="font-mono text-emerald-400 w-28 flex-shrink-0">${time}</div>
+                <div class="flex-1 text-zinc-300">${detail}</div>
+            </div>`;
+        }).join('') : `<div class="text-zinc-400 py-6 text-center">No audit events for ${targetCostCode || 'this line'} yet.<br>Changes will appear here after edits or billing.</div>`;
+
+        modal.innerHTML = `
+            <div class="p-6">
+                <div class="flex justify-between items-center mb-3">
+                    <div>
+                        <h3 class="text-lg font-semibold">Line Audit Log</h3>
+                        <div class="text-xs text-emerald-400 font-mono">${targetCostCode} — ${lineDesc || ''}</div>
+                    </div>
+                    <button onclick="this.closest('dialog').close(); this.closest('dialog').remove()" class="text-zinc-400 hover:text-white">
+                        <i class="fa-solid fa-times text-xl"></i>
+                    </button>
+                </div>
+                <div class="max-h-[320px] overflow-auto border border-zinc-700 rounded-md p-2 bg-zinc-900/50">${logsHtml}</div>
+                <div class="mt-4 text-right">
+                    <button onclick="this.closest('dialog').close(); this.closest('dialog').remove()" class="px-5 py-2 bg-zinc-700 hover:bg-zinc-600 rounded-md text-sm">Close</button>
                 </div>
             </div>
         `;
