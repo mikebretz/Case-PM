@@ -1515,9 +1515,13 @@ let subSOVStatus = JSON.parse(localStorage.getItem('subSOVStatus') || '{}'); // 
 
             const infoDiv = document.createElement('div');
             infoDiv.className = 'mt-2 flex items-center gap-2';
+            const payAppLabel = (currentStatus === 'Approved') 
+                ? `Pay App #${currentNum} (Current)` 
+                : `Pay App Creation • ${currentStatus}`;
+
             infoDiv.innerHTML = `
                 <div class="text-xs px-3 py-1 bg-emerald-900/40 text-emerald-400 rounded inline-flex items-center gap-1">
-                    <i class="fa-solid fa-file-invoice-dollar"></i> <span>Pay App #${currentNum} (Current)</span>
+                    <i class="fa-solid fa-file-invoice-dollar"></i> <span>${payAppLabel}</span>
                 </div>
                 <div class="text-xs px-3 py-1 ${statusColor} rounded inline-flex items-center gap-1 font-medium">
                     <i class="fa-solid fa-check-circle"></i> <span>${currentStatus}</span>
@@ -1669,16 +1673,24 @@ let subSOVStatus = JSON.parse(localStorage.getItem('subSOVStatus') || '{}'); // 
             row.className = 'sov-line-row hover:bg-zinc-800/60 cursor-pointer';
             row.ondblclick = () => editSubSOVLine(selectedSubCompanyId, line.id);
 
+            // Calculate Current = Original + Change Orders
+            const coAmount = line.change_orders || 0;
+            const currentTotal = current + coAmount;
+            // Retainage: use 10% of (This Period + Stored Materials) for display, or a stored field if available
+            const retainageAmount = (thisPeriod + (line.materials_stored || 0)) * 0.10;
+
             row.innerHTML = `
                 <td class="px-3 py-2 text-center font-mono text-xs text-zinc-500">${visibleIdxSub}</td>
                 <td class="px-4 py-2 font-mono text-emerald-400 text-sm">${line.cost_code || ''}</td>
                 <td class="px-4 py-2 text-sm">${line.description || ''}</td>
                 <td class="px-4 py-2 text-right font-mono text-[15px]">${formatCurrency(current)}</td>
+                <td class="px-3 py-2 text-right font-mono text-amber-400 text-[15px]">${formatCurrency(coAmount)}</td>
+                <td class="px-3 py-2 text-right font-mono text-emerald-400 text-[15px]">${formatCurrency(currentTotal)}</td>
                 <td class="px-3 py-2 text-center font-mono text-xs">${pct}%</td>
                 <td class="px-4 py-2 text-right text-emerald-400 font-mono text-[15px]">${formatCurrency(billed)}</td>
-                <td class="px-3 py-2 text-right text-emerald-400 font-mono text-sm">${formatCurrency(thisPeriod)}</td>
+                <td class="px-3 py-2 text-right text-emerald-400 font-mono text-sm">${formatCurrency(line.work_this_period || 0)}</td>
                 <td class="px-3 py-2 text-right text-sky-400 font-mono text-sm">${formatCurrency(line.materials_stored || 0)}</td>
-                <td class="px-3 py-2 text-right text-red-400 font-mono text-sm">${formatCurrency(thisPeriod * 0.10)}</td>
+                <td class="px-3 py-2 text-right text-red-400 font-mono text-sm">${formatCurrency(retainageAmount)}</td>
                 <td class="px-4 py-2 text-[15px] text-zinc-400 notes-cell" title="${(line.notes || '').replace(/"/g, '&quot;')}">${line.notes || ''}</td>
                 <td class="px-3 py-2 text-center">
                     <button onclick="event.stopImmediatePropagation(); showSOVLineAudit(${line.id}, 'sub', ${selectedSubCompanyId})" class="text-sky-400 hover:text-sky-300 p-1" title="Line Audit Log"><i class="fa-solid fa-history"></i></button>
