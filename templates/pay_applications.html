@@ -467,11 +467,14 @@ let subSOVStatus = JSON.parse(localStorage.getItem('subSOVStatus') || '{}'); // 
         }
 
         // Calculate live totals
-        let totalOriginal = 0, totalBilledToDate = 0, totalCurrentBilling = 0, totalRetainage = 0;
+        let totalOriginal = 0, totalCO = 0, totalCurrent = 0, totalBilledToDate = 0, totalCurrentBilling = 0, totalRetainage = 0;
 
         contractorSOV.forEach(line => {
+            totalOriginal += (line.original || 0);
+            totalCO += (line.co_amount || 0);
             const currentAmount = (line.original || 0) + (line.co_amount || 0);
-            totalOriginal += currentAmount;
+            totalCurrent += currentAmount;
+
             const billing = payAppBillingLines[line.id] || { workThisPeriod: 0, materialsStored: 0 };
             const thisPeriod = (billing.workThisPeriod || 0) + (billing.materialsStored || 0);
             totalCurrentBilling += thisPeriod;
@@ -482,6 +485,7 @@ let subSOVStatus = JSON.parse(localStorage.getItem('subSOVStatus') || '{}'); // 
         });
 
         const amountDue = totalCurrentBilling * 0.90;
+        const contractSumToDate = totalOriginal + totalCO;
 
         // Summary Cards
         cardsContainer.innerHTML = `
@@ -492,11 +496,11 @@ let subSOVStatus = JSON.parse(localStorage.getItem('subSOVStatus') || '{}'); // 
                 </div>
                 <div class="bg-zinc-800 border border-zinc-700 rounded-md p-5">
                     <div class="text-xs text-zinc-400">Net Change Orders</div>
-                    <div class="text-2xl font-semibold mt-1 text-amber-400">${formatCurrency(0)}</div>
+                    <div class="text-2xl font-semibold mt-1 text-amber-400">${formatCurrency(totalCO)}</div>
                 </div>
                 <div class="bg-zinc-800 border border-zinc-700 rounded-md p-5">
                     <div class="text-xs text-zinc-400">Contract Sum to Date</div>
-                    <div class="text-2xl font-semibold mt-1 text-emerald-400">${formatCurrency(totalOriginal)}</div>
+                    <div class="text-2xl font-semibold mt-1 text-emerald-400">${formatCurrency(contractSumToDate)}</div>
                 </div>
                 <div class="bg-zinc-800 border border-zinc-700 rounded-md p-5">
                     <div class="text-xs text-zinc-400">Total Completed &amp; Stored</div>
@@ -791,6 +795,30 @@ let subSOVStatus = JSON.parse(localStorage.getItem('subSOVStatus') || '{}'); // 
         localStorage.setItem('currentPayAppPeriod', JSON.stringify(currentPayAppPeriod));
         logPayAppAudit('REVISION_REQUESTED', { periodNumber: currentPayAppPeriod.periodNumber });
         renderPayAppContent();
+    }
+
+    // ==================== CONTRACTOR SOV LOCK / UNLOCK (Admin Only) ====================
+    function lockContractorSOV() {
+        localStorage.setItem('contractorSOVLocked', 'true');
+        showCenteredAlert("Contractor Schedule of Values has been locked. Only Admin can unlock for revision.", "success");
+        renderContractorSOVTab(
+            document.getElementById('contractorSOVCards'),
+            document.getElementById('contractorSOVThead'),
+            document.getElementById('contractorSOVTbody'),
+            document.getElementById('contractorSOVWorkflow')
+        );
+    }
+
+    function unlockContractorSOV() {
+        // In a real app, you would check user role here. For now, we allow it.
+        localStorage.setItem('contractorSOVLocked', 'false');
+        showCenteredAlert("Contractor Schedule of Values unlocked for revision.", "success");
+        renderContractorSOVTab(
+            document.getElementById('contractorSOVCards'),
+            document.getElementById('contractorSOVThead'),
+            document.getElementById('contractorSOVTbody'),
+            document.getElementById('contractorSOVWorkflow')
+        );
     }
 
     // ==================== CONTRACTOR SOV TAB ====================
@@ -1090,6 +1118,11 @@ let subSOVStatus = JSON.parse(localStorage.getItem('subSOVStatus') || '{}'); // 
     }
 
     function showAddContractorSOVLine() {
+        const isLocked = localStorage.getItem('contractorSOVLocked') === 'true';
+        if (isLocked) {
+            showCenteredAlert("Schedule of Values is locked. Only Admin can unlock for revision.");
+            return;
+        }
         const modal = document.getElementById('contractorSOVModal');
         const content = document.getElementById('contractorSOVModalContent');
         content.innerHTML = `
