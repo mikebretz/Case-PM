@@ -13,6 +13,15 @@
     top: 50% !important;
     left: 50% !important;
     transform: translate(-50%, -50%) !important;
+    z-index: 100000 !important;
+  }
+  /* Ensure all dynamic dialogs created via JS also center correctly */
+  dialog[open] {
+    margin: auto !important;
+    position: fixed !important;
+    top: 50% !important;
+    left: 50% !important;
+    transform: translate(-50%, -50%) !important;
   }
   .payapp-summary-card {
     transition: all 0.2s ease;
@@ -709,12 +718,12 @@ let subSOVStatus = JSON.parse(localStorage.getItem('subSOVStatus') || '{}'); // 
         const workVal = parseFloat(newValue) || 0;
         const matInput = document.getElementById('materialsStoredInput');
         const matVal = matInput ? (parseFloat(matInput.value) || 0) : 0;
-        const coInput = document.getElementById('coWorkThisPeriodInput');
-        const coVal = coInput ? (parseFloat(coInput.value) || 0) : 0;
+        // NOTE: CO is handled in its own separate live function (updateCOLiveCalculations).
+        // The main "Remaining to Bill after this entry" (under Materials) is ONLY affected by Work + Materials (Original contract bucket).
 
-        const currentAmount = (line.original || 0) + (line.co_amount || 0);
+        const currentAmount = (line.original || 0); // Use only Original for this remaining bucket
         const previousBilled = line.billed_to_date || Math.round(currentAmount * 0.55);
-        const totalThis = workVal + matVal + coVal;
+        const totalThis = workVal + matVal;
         const newRemaining = Math.max(0, currentAmount - previousBilled - totalThis);
 
         const remDisplay = document.getElementById('remainingToBillDisplay');
@@ -895,19 +904,18 @@ let subSOVStatus = JSON.parse(localStorage.getItem('subSOVStatus') || '{}'); // 
     function submitPayApplication() {
         if (!currentPayAppPeriod) return;
 
-        // === ORIGINAL CONTRACT AMOUNT VALIDATION (blocks processing if SOV does not match Budget) ===
-        let sovTotalOriginalPlusCO = 0;
+        // === ORIGINAL CONTRACT AMOUNT VALIDATION (Only checks Original column, NOT Change Orders) ===
+        let sovTotalOriginal = 0;
         contractorSOV.forEach(l => {
-            sovTotalOriginalPlusCO += (l.original || 0) + (l.co_amount || 0);
+            sovTotalOriginal += (l.original || 0);
         });
 
-        if (Math.abs(sovTotalOriginalPlusCO - budgetContractAmount) > 0.99) {
-            const mismatch = formatCurrency(Math.abs(sovTotalOriginalPlusCO - budgetContractAmount));
+        if (Math.abs(sovTotalOriginal - budgetContractAmount) > 0.99) {
+            const mismatch = formatCurrency(Math.abs(sovTotalOriginal - budgetContractAmount));
             showCenteredAlert(
-                `BLOCKED: Cannot submit Pay Application. The current Schedule of Values total (Original + Change Orders = ${formatCurrency(sovTotalOriginalPlusCO)}) does NOT match the Budget Contract Amount (${formatCurrency(budgetContractAmount)}). Difference: ${mismatch}. Please reconcile the SOV first (Contractor Schedule of Values tab).`,
+                `BLOCKED: Cannot submit Pay Application. The sum of the Original column in the Schedule of Values (${formatCurrency(sovTotalOriginal)}) does NOT match the Budget Contract Amount (${formatCurrency(budgetContractAmount)}). Difference: ${mismatch}. Change Orders are tracked separately and do not affect this check. Please reconcile the Original amounts on the Contractor Schedule of Values tab.`,
                 'warning'
             );
-            // Also flash the mismatch warning in the cards
             const cards = document.getElementById('payAppSummaryCards');
             if (cards) cards.style.boxShadow = '0 0 0 3px #f59e0b';
             setTimeout(() => { if (cards) cards.style.boxShadow = 'none'; }, 2200);
