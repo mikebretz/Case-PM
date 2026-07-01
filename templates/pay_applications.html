@@ -1447,6 +1447,7 @@ let subSOVStatus = JSON.parse(localStorage.getItem('subSOVStatus') || '{}'); // 
     // ==================== SUBCONTRACTOR SOV TAB ====================
     function renderSubcontractorSOVTab(cardsContainer, thead, tbody, workflowBar) {
         companies = JSON.parse(localStorage.getItem('casepm_companies')) || [];
+        let currentStatus = 'Draft'; // Declare early to avoid TDZ errors in template literals
 
         // Summary cards - reorganized per user request
         cardsContainer.innerHTML = `
@@ -1502,7 +1503,7 @@ let subSOVStatus = JSON.parse(localStorage.getItem('subSOVStatus') || '{}'); // 
         if (selectedSubCompanyId) {
             let subPayApps = JSON.parse(localStorage.getItem('subPayAppNumbers') || '{}');
             const currentNum = subPayApps[selectedSubCompanyId] || 1;
-            const currentStatus = getSubSOVStatus(selectedSubCompanyId);
+            currentStatus = getSubSOVStatus(selectedSubCompanyId);
 
             const statusColors = {
                 'Draft': 'bg-amber-900/40 text-amber-400',
@@ -1527,7 +1528,7 @@ let subSOVStatus = JSON.parse(localStorage.getItem('subSOVStatus') || '{}'); // 
         }
 
         // Workflow bar - dynamic based on SOV Status
-        const currentStatus = getSubSOVStatus(selectedSubCompanyId);
+        currentStatus = getSubSOVStatus(selectedSubCompanyId);
         let workflowHTML = '';
 
         if (currentStatus === 'Draft' || currentStatus === 'Rejected') {
