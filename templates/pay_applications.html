@@ -24,8 +24,11 @@
     font-weight: 600;
   }
   #payAppTableBody tr td {
-    padding-top: 6px !important;
-    padding-bottom: 6px !important;
+    padding-top: 8px !important;
+    padding-bottom: 8px !important;
+  }
+  .division-header {
+    background-color: #27272a;
   }
   .sov-line-row {
     transition: background-color 0.1s ease;
@@ -252,6 +255,7 @@
     let payAppBillingLines = JSON.parse(localStorage.getItem('payAppBillingLines')) || {}; // { sovLineId: {workThisPeriod, materialsStored} }
     let selectedSubCompanyId = null;
     let hasUnsavedChanges = false;
+    let payAppCollapsedDivisions = new Set();
 
     // Demo: Seed some data on first load if empty
     function seedDemoDataIfNeeded() {
@@ -462,40 +466,76 @@
         }
 
         contractorSOV.sort((a, b) => (a.cost_code || '').localeCompare(b.cost_code || '', undefined, { numeric: true }));
+
+        const divisionNames = {
+            '01': 'General Requirements', '03': 'Concrete', '04': 'Masonry',
+            '05': 'Metals', '06': 'Wood, Plastics, and Composites',
+            '07': 'Thermal and Moisture Protection', '08': 'Openings',
+            '09': 'Finishes', '22': 'Plumbing', '23': 'HVAC',
+            '26': 'Electrical', '31': 'Earthwork'
+        };
+
+        let currentDivision = null;
         contractorSOV.forEach((line, index) => {
-            const currentAmount = (line.original || 0) + (line.co_amount || 0);
-            const billing = payAppBillingLines[line.id] || { workThisPeriod: 0, materialsStored: 0 };
-            const workThis = billing.workThisPeriod || 0;
-            const materials = billing.materialsStored || 0;
-            const thisPeriodTotal = workThis + materials;
+            const division = (line.cost_code || '').substring(0, 2);
 
-            const previousBilled = line.billed_to_date || Math.round(currentAmount * 0.55);
-            const totalBilled = previousBilled + thisPeriodTotal;
-            const percentComplete = currentAmount > 0 ? Math.min(100, Math.round((totalBilled / currentAmount) * 100)) : 0;
-            const retainage = thisPeriodTotal * 0.10;
+            if (division !== currentDivision) {
+                currentDivision = division;
+                const isCollapsed = payAppCollapsedDivisions.has(division);
+                const headerRow = document.createElement('tr');
+                headerRow.className = 'bg-zinc-800 cursor-pointer hover:bg-zinc-700';
+                headerRow.onclick = () => {
+                    if (payAppCollapsedDivisions.has(division)) {
+                        payAppCollapsedDivisions.delete(division);
+                    } else {
+                        payAppCollapsedDivisions.add(division);
+                    }
+                    renderPayAppContent();
+                };
+                headerRow.innerHTML = `
+                    <td colspan="10" class="px-4 py-2 text-emerald-400 font-semibold text-sm">
+                        <i class="fa-solid fa-chevron-${isCollapsed ? 'right' : 'down'} mr-2 transition-transform"></i>
+                        Division ${division} — ${divisionNames[division] || 'Other'}
+                    </td>
+                `;
+                tbody.appendChild(headerRow);
+            }
 
-            const row = document.createElement('tr');
-            row.className = 'sov-line-row hover:bg-zinc-800/60 cursor-pointer';
-            row.ondblclick = () => editPayAppBillingLine(line.id);
+            if (!payAppCollapsedDivisions.has(division)) {
+                const currentAmount = (line.original || 0) + (line.co_amount || 0);
+                const billing = payAppBillingLines[line.id] || { workThisPeriod: 0, materialsStored: 0 };
+                const workThis = billing.workThisPeriod || 0;
+                const materials = billing.materialsStored || 0;
+                const thisPeriodTotal = workThis + materials;
 
-            row.innerHTML = `
-                <td class="px-3 py-2 text-center font-mono text-xs text-zinc-500">${index + 1}</td>
-                <td class="px-4 py-2 font-mono text-emerald-400 text-sm">${line.cost_code || ''}</td>
-                <td class="px-4 py-2 text-sm">${line.description || ''}</td>
-                <td class="px-4 py-2 text-right font-mono text-sm">${formatCurrency(currentAmount)}</td>
-                <td class="px-3 py-2 text-center font-mono text-xs">${percentComplete}%</td>
-                <td class="px-4 py-2 text-right text-emerald-400 font-mono text-sm">${formatCurrency(totalBilled)}</td>
-                <td class="px-4 py-2 text-right text-amber-400 font-semibold font-mono text-sm">${formatCurrency(workThis)}</td>
-                <td class="px-3 py-2 text-right text-sky-400 font-mono text-sm">${formatCurrency(materials)}</td>
-                <td class="px-3 py-2 text-right text-red-400 font-mono text-sm">${formatCurrency(retainage)}</td>
-                <td class="px-3 py-2.5 text-center">
-                    <div class="inline-flex items-center gap-1.5">
-                        <button onclick="event.stopImmediatePropagation(); editPayAppBillingLine(${line.id})" class="text-emerald-400 hover:text-emerald-300 p-1" title="Edit Billing"><i class="fa-solid fa-edit"></i></button>
-                        <button onclick="event.stopImmediatePropagation(); showPayAppLineHistory(${line.id})" class="text-sky-400 hover:text-sky-300 p-1" title="View History"><i class="fa-solid fa-history"></i></button>
-                    </div>
-                </td>
-            `;
-            tbody.appendChild(row);
+                const previousBilled = line.billed_to_date || Math.round(currentAmount * 0.55);
+                const totalBilled = previousBilled + thisPeriodTotal;
+                const percentComplete = currentAmount > 0 ? Math.min(100, Math.round((totalBilled / currentAmount) * 100)) : 0;
+                const retainage = thisPeriodTotal * 0.10;
+
+                const row = document.createElement('tr');
+                row.className = 'sov-line-row hover:bg-zinc-800/60 cursor-pointer';
+                row.ondblclick = () => editPayAppBillingLine(line.id);
+
+                row.innerHTML = `
+                    <td class="px-3 py-2 text-center font-mono text-xs text-zinc-500">${index + 1}</td>
+                    <td class="px-4 py-2 font-mono text-emerald-400 text-sm">${line.cost_code || ''}</td>
+                    <td class="px-4 py-2 text-sm">${line.description || ''}</td>
+                    <td class="px-4 py-2 text-right font-mono text-sm">${formatCurrency(currentAmount)}</td>
+                    <td class="px-3 py-2 text-center font-mono text-xs">${percentComplete}%</td>
+                    <td class="px-4 py-2 text-right text-emerald-400 font-mono text-sm">${formatCurrency(totalBilled)}</td>
+                    <td class="px-4 py-2 text-right text-amber-400 font-semibold font-mono text-sm">${formatCurrency(workThis)}</td>
+                    <td class="px-3 py-2 text-right text-sky-400 font-mono text-sm">${formatCurrency(materials)}</td>
+                    <td class="px-3 py-2 text-right text-red-400 font-mono text-sm">${formatCurrency(retainage)}</td>
+                    <td class="px-3 py-2.5 text-center">
+                        <div class="inline-flex items-center gap-1.5">
+                            <button onclick="event.stopImmediatePropagation(); editPayAppBillingLine(${line.id})" class="text-emerald-400 hover:text-emerald-300 p-1" title="Edit Billing"><i class="fa-solid fa-edit"></i></button>
+                            <button onclick="event.stopImmediatePropagation(); showPayAppLineHistory(${line.id})" class="text-sky-400 hover:text-sky-300 p-1" title="View History"><i class="fa-solid fa-history"></i></button>
+                        </div>
+                    </td>
+                `;
+                tbody.appendChild(row);
+            }
         });
     }
 
