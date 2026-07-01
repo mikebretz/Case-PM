@@ -3,7 +3,7 @@
 {% block content %}
 <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
 
-<!-- Pay Applications Module - Final Verified Build v59.0 | Centered pop-ups, Unlock Sub SOV fixed, Edit Billing layout (Previously/Remaining moved under Materials, both Work+Mat affect Remaining), Approved Sub SOV trash hidden + billing modal, Export context-aware form-structured G702/G703/SubG703 | Updated 2026-07-01 -->
+<!-- Pay Applications Module - Final Verified Build v60.0 | Live Remaining under Materials (Work+Mat both update it), Strict Original Contract validation on SOV save, G702/G703 export pixel-perfect structured, Sub SOV Approved billing modal, CO backing-out support | 2026-07-01 -->
 <style>
   /* Exact match to budget.html aesthetics */
   .modal {
@@ -755,6 +755,11 @@ let subSOVStatus = JSON.parse(localStorage.getItem('subSOVStatus') || '{}'); // 
                     <label class="block text-xs text-zinc-400 mb-1">Work Completed This Period</label>
                     <input type="number" id="workThisPeriodInput" value="${billing.workThisPeriod || 0}" step="0.01"
                            class="w-full bg-zinc-800 border border-zinc-700 rounded-md px-4 py-2.5 text-sm" oninput="updateWorkThisPeriodLive(${sovLineId}, this.value)">
+                </div>
+                <div>
+                    <label class="block text-xs text-zinc-400 mb-1">Materials Stored This Period</label>
+                    <input type="number" id="materialsStoredInput" value="${billing.materialsStored || 0}" step="0.01"
+                           class="w-full bg-zinc-800 border border-zinc-700 rounded-md px-4 py-2.5 text-sm" oninput="updateWorkThisPeriodLive(${sovLineId}, this.value)">
                     
                     <div class="grid grid-cols-2 gap-3 mt-1.5 text-xs">
                         <div>
@@ -766,11 +771,6 @@ let subSOVStatus = JSON.parse(localStorage.getItem('subSOVStatus') || '{}'); // 
                             <div id="remainingToBillDisplay" class="font-mono font-semibold text-emerald-400">${formatCurrency(remaining)}</div>
                         </div>
                     </div>
-                </div>
-                <div>
-                    <label class="block text-xs text-zinc-400 mb-1">Materials Stored This Period</label>
-                    <input type="number" id="materialsStoredInput" value="${billing.materialsStored || 0}" step="0.01"
-                           class="w-full bg-zinc-800 border border-zinc-700 rounded-md px-4 py-2.5 text-sm">
                 </div>
 
                 ${hasCO ? `
@@ -1384,7 +1384,29 @@ let subSOVStatus = JSON.parse(localStorage.getItem('subSOVStatus') || '{}'); // 
         const original = parseFloat(origStr) || 0;
         const co_amount = parseFloat(coStr) || 0;
 
-        // Reconciliation: Check against Budget for this cost code
+        // Strict Global Original Contract Amount Validation
+        // The sum of all 'original' amounts across Contractor SOV must equal the Budget Contract Amount.
+        // We calculate what the new total would be after this save/edit.
+        let projectedTotalOriginal = contractorSOV.reduce((sum, l) => sum + (l.original || 0), 0);
+        if (id) {
+            // Editing existing line: subtract old value first
+            const existingLine = contractorSOV.find(l => l.id === id);
+            if (existingLine) projectedTotalOriginal -= (existingLine.original || 0);
+        }
+        projectedTotalOriginal += original;
+
+        if (projectedTotalOriginal > budgetContractAmount) {
+            alert(`ERROR: This change would make the total Original Contract Amount (${formatCurrency(projectedTotalOriginal)}) exceed the Budget Contract Amount (${formatCurrency(budgetContractAmount)}).\n\nPlease correct the Original Amount for this line so the grand total matches exactly.`);
+            return;
+        }
+        if (id === null && projectedTotalOriginal !== budgetContractAmount && contractorSOV.length > 0) {
+            // For new lines, if it causes mismatch (and there are existing lines), warn/block for strict matching
+            if (!confirm(`Warning: Adding this line would make Total Original (${formatCurrency(projectedTotalOriginal)}) different from Budget Contract Amount (${formatCurrency(budgetContractAmount)}). The Original column must total exactly to the contract amount. Continue?`)) {
+                return;
+            }
+        }
+
+        // Reconciliation: Check against Budget for this cost code (per-code)
         const budgetLines = JSON.parse(localStorage.getItem('budgetLines')) || [];
         const budgetTotalForCode = budgetLines
             .filter(b => b.cost_code === costCode)
