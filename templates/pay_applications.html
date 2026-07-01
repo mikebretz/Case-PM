@@ -548,7 +548,7 @@ let subSOVStatus = JSON.parse(localStorage.getItem('subSOVStatus') || '{}'); // 
                 <th class="px-4 py-3 text-center font-medium text-zinc-400 w-44">Work This Period</th>
                 <th class="px-3 py-3 text-center font-medium text-zinc-400 w-36">Materials</th>
                 <th class="px-3 py-3 text-center font-medium text-zinc-400 w-36">Retainage</th>
-                <th class="px-4 py-3 text-left font-medium text-zinc-400 w-[30rem]">Notes</th>
+                <th class="px-4 py-3 text-left font-medium text-zinc-400 w-[21rem]">Notes</th>
                 <th class="px-3 py-3 text-center font-medium text-zinc-400 w-20">Actions</th>
             </tr>
         `;
@@ -617,7 +617,7 @@ let subSOVStatus = JSON.parse(localStorage.getItem('subSOVStatus') || '{}'); // 
                     <td class="px-3 py-2 text-center font-mono text-xs text-zinc-500">${index + 1}</td>
                     <td class="px-4 py-2 font-mono text-emerald-400 text-sm">${line.cost_code || ''}</td>
                     <td class="px-4 py-2 text-sm">${line.description || ''}</td>
-                    <td class="px-4 py-2 text-right font-mono text-[15px]">${formatCurrency(currentAmount)}</td>
+                    <td class="px-4 py-2 text-right font-mono text-[15px]">${formatCurrency(line.original || 0)}</td>
                     <td class="px-4 py-2 text-right font-mono text-amber-400 text-[15px]">${formatCurrency(line.co_amount || 0)}</td>
                     <td class="px-4 py-2 text-right font-mono text-emerald-400 text-[15px] font-semibold">${formatCurrency(currentAmount)}</td>
                     <td class="px-3 py-2 text-center font-mono text-xs">${percentComplete}%</td>
@@ -832,15 +832,28 @@ let subSOVStatus = JSON.parse(localStorage.getItem('subSOVStatus') || '{}'); // 
             </div>
         `;
 
-        // Workflow bar
+        // Workflow bar - with Lock/Unlock for Admin control
+        const isLocked = localStorage.getItem('contractorSOVLocked') === 'true';
+        let lockBtnHTML = '';
+        if (isLocked) {
+            lockBtnHTML = `<button onclick="unlockContractorSOV()" class="px-4 py-2 bg-amber-600 hover:bg-amber-500 rounded-md text-sm font-medium flex items-center gap-2 ml-auto">
+                <i class="fa-solid fa-unlock"></i> <span>Unlock Schedule Values (Admin)</span>
+            </button>`;
+        } else {
+            lockBtnHTML = `<button onclick="lockContractorSOV()" class="px-4 py-2 bg-zinc-700 hover:bg-zinc-600 rounded-md text-sm flex items-center gap-2 ml-auto">
+                <i class="fa-solid fa-lock"></i> <span>Lock Schedule Values</span>
+            </button>`;
+        }
+
         workflowBar.innerHTML = `
             <div class="workflow-bar px-4 py-3 flex items-center gap-3">
                 <button onclick="seedContractorSOVFromBudget()" class="px-4 py-2 bg-zinc-700 hover:bg-zinc-600 rounded-md text-sm flex items-center gap-2">
                     <i class="fa-solid fa-download"></i> <span>Seed from Budget</span>
                 </button>
-                <button onclick="showAddContractorSOVLine()" class="px-5 py-2 bg-emerald-600 hover:bg-emerald-500 rounded-md text-sm font-medium flex items-center gap-2">
+                <button onclick="showAddContractorSOVLine()" class="px-5 py-2 bg-emerald-600 hover:bg-emerald-500 rounded-md text-sm font-medium flex items-center gap-2 ${isLocked ? 'opacity-50 cursor-not-allowed' : ''}" ${isLocked ? 'disabled' : ''}>
                     <i class="fa-solid fa-plus"></i> <span>Add SOV Line</span>
                 </button>
+                ${lockBtnHTML}
             </div>
         `;
 
