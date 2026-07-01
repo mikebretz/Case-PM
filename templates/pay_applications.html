@@ -1896,6 +1896,8 @@ let subSOVStatus = JSON.parse(localStorage.getItem('subSOVStatus') || '{}'); // 
         const subLines = subcontractorSOV[selectedSubCompanyId] || [];
         const company = companies.find(c => c.id == selectedSubCompanyId);
         const isPrimaryContact = company && isUserPrimaryContactForCompany(company);
+        const subStatus = getSubSOVStatus(selectedSubCompanyId);
+        const isSubApprovedLocked = (subStatus === 'Approved') && !(subSOVStatus[selectedSubCompanyId] && subSOVStatus[selectedSubCompanyId].unlockedBy);
 
         // Header
         thead.innerHTML = `
@@ -1983,7 +1985,11 @@ let subSOVStatus = JSON.parse(localStorage.getItem('subSOVStatus') || '{}'); // 
 
             const row = document.createElement('tr');
             row.className = 'sov-line-row hover:bg-zinc-800/60 cursor-pointer';
-            row.ondblclick = () => editSubSOVLine(selectedSubCompanyId, line.id);
+            if (isSubApprovedLocked) {
+                row.ondblclick = () => editSubSOVBillingLine(selectedSubCompanyId, line.id);
+            } else {
+                row.ondblclick = () => editSubSOVLine(selectedSubCompanyId, line.id);
+            }
 
             // Calculate Current = Original + Change Orders
             const coAmount = line.change_orders || 0;
@@ -2006,7 +2012,7 @@ let subSOVStatus = JSON.parse(localStorage.getItem('subSOVStatus') || '{}'); // 
                 <td class="px-4 py-2 text-[15px] text-zinc-400 notes-cell" title="${(line.notes || '').replace(/"/g, '&quot;')}">${line.notes || ''}</td>
                 <td class="px-3 py-2 text-center">
                     <button onclick="event.stopImmediatePropagation(); showSOVLineAudit(${line.id}, 'sub', ${selectedSubCompanyId})" class="text-sky-400 hover:text-sky-300 p-1" title="Line Audit Log"><i class="fa-solid fa-history"></i></button>
-                    <button onclick="event.stopImmediatePropagation(); deleteSubSOVLine(${selectedSubCompanyId}, ${line.id})" class="text-red-400 hover:text-red-300 p-1 ml-1" title="Delete"><i class="fa-solid fa-trash"></i></button>
+                    ${!isSubApprovedLocked ? `<button onclick="event.stopImmediatePropagation(); deleteSubSOVLine(${selectedSubCompanyId}, ${line.id})" class="text-red-400 hover:text-red-300 p-1 ml-1" title="Delete"><i class="fa-solid fa-trash"></i></button>` : ''}
                 </td>
             `;
             tbody.appendChild(row);
@@ -2117,6 +2123,116 @@ let subSOVStatus = JSON.parse(localStorage.getItem('subSOVStatus') || '{}'); // 
 
     function editSubSOVLine(companyId, lineId) {
         showAddEditSubSOVLine(companyId, lineId);
+    }
+
+    // NEW: Billing modal for Approved/Locked Sub SOV (same as G702 Pay Application edit billing)
+    function editSubSOVBillingLine(companyId, lineId) {
+        const line = (subcontractorSOV[companyId] || []).find(l => l.id === lineId);
+        if (!line) return;
+
+        const modal = document.getElementById('editBillingModal');
+        const content = document.getElementById('editBillingContent');
+        const company = companies.find(c => c.id == companyId);
+        const previousBilled = line.billed_to_date || 0;
+        const currentCommitment = (line.original_commitment || 0) + (line.change_orders || 0);
+        const remaining = currentCommitment - previousBilled;
+
+        content.innerHTML = `
+            <div class="mb-4">
+                <div class="font-mono text-emerald-400">${line.cost_code}</div>
+                <div class="text-sm">${line.description}</div>
+                <div class="text-xs text-zinc-400 mt-1">For Subcontractor: <span class="font-medium text-white">${company ? (company.name || company.company_name) : ''}</span></div>
+                <div class="text-xs text-zinc-400 mt-1">Remaining to bill (Original + CO): <span class="font-semibold text-emerald-400">${formatCurrency(remaining)}</span></div>
+            </div>
+
+            <div class="space-y-4">
+                <div>
+                    <label class="block text-xs text-zinc-400 mb-1">Work Completed This Period</label>
+                    <input type="number" id="subWorkThisPeriodInput" value="${line.work_this_period || 0}" step="0.01"
+                           class="w-full bg-zinc-800 border border-zinc-700 rounded-md px-4 py-2.5 text-sm">
+                    <div class="text-[10px] text-zinc-500 mt-0.5">Amount Previously Billed: <span class="font-mono">${formatCurrency(previousBilled)}</span></div>
+                    <div id="subRemainingToBill" class="text-[10px] text-emerald-400 mt-0.5">Remaining after this entry: ${formatCurrency(remaining)}</div>
+                </div>
+                <div>
+                    <label class="block text-xs text-zinc-400 mb-1">Materials Stored This Period</label>
+                    <input type="number" id="subMaterialsStoredInput" value="${line.materials_stored || 0}" step="0.01"
+                           class="w-full bg-zinc-800 border border-zinc-700 rounded-md px-4 py-2.5 text-sm">
+                </div>
+
+                ${(line.change_orders || 0) > 0 ? `
+                <div class="pt-2 border-t border-zinc-700">
+                    <label class="block text-xs text-amber-400 mb-1 font-medium">Change Order Work This Period</label>
+                    <input type="number" id="subCoWorkThisPeriodInput" value="${line.co_billed_this_period || 0}" step="0.01"
+                           class="w-full bg-zinc-800 border border-amber-600 rounded-md px-4 py-2.5 text-sm">
+                    <div class="text-[10px] text-amber-400 mt-1">Remaining CO to bill: <span id="subRemainingCO">${formatCurrency((line.change_orders || 0) - (line.co_billed_to_date || 0))}</span></div>
+                </div>
+                ` : ''}
+            </div>
+
+            <div class="flex justify-end gap-3 mt-6">
+                <button onclick="document.getElementById('editBillingModal').close()" class="px-6 py-2.5 bg-zinc-700 hover:bg-zinc-600 rounded-md text-sm">Cancel</button>
+                <button onclick="saveSubSOVBillingLine(${companyId}, ${lineId}, this)" class="px-8 py-2.5 bg-emerald-600 hover:bg-emerald-500 rounded-md text-sm font-semibold">Save Billing</button>
+            </div>
+        `;
+
+        modal.showModal();
+
+        // Live update for remaining (Work + Materials affect the same remaining bucket)
+        setTimeout(() => {
+            const workInput = document.getElementById('subWorkThisPeriodInput');
+            const matInput = document.getElementById('subMaterialsStoredInput');
+            const remainingEl = document.getElementById('subRemainingToBill');
+            if (workInput && matInput && remainingEl) {
+                const updateRemaining = () => {
+                    const w = parseFloat(workInput.value) || 0;
+                    const m = parseFloat(matInput.value) || 0;
+                    const newRemaining = remaining - w - m;
+                    remainingEl.innerHTML = `Remaining after this entry: <span class="${newRemaining < 0 ? 'text-red-400' : 'text-emerald-400'}">${formatCurrency(newRemaining)}</span>`;
+                };
+                workInput.oninput = updateRemaining;
+                matInput.oninput = updateRemaining;
+            }
+        }, 100);
+    }
+
+    function saveSubSOVBillingLine(companyId, lineId, btn) {
+        const workInput = document.getElementById('subWorkThisPeriodInput');
+        const matInput = document.getElementById('subMaterialsStoredInput');
+        const coWorkInput = document.getElementById('subCoWorkThisPeriodInput');
+        if (!workInput || !matInput) return;
+
+        const workThis = parseFloat(workInput.value) || 0;
+        const mats = parseFloat(matInput.value) || 0;
+        const coWork = coWorkInput ? (parseFloat(coWorkInput.value) || 0) : 0;
+
+        const lines = subcontractorSOV[companyId] || [];
+        const line = lines.find(l => l.id === lineId);
+        if (!line) return;
+
+        const currentCommitment = (line.original_commitment || 0) + (line.change_orders || 0);
+        const previousBilled = line.billed_to_date || 0;
+        const totalThis = workThis + mats + coWork;
+
+        if (totalThis > (currentCommitment - previousBilled) + 0.01) {
+            alert(`Cannot save. This would over-bill. Remaining available: ${formatCurrency(currentCommitment - previousBilled)}`);
+            return;
+        }
+
+        // Update billing fields
+        line.work_this_period = workThis;
+        line.materials_stored = mats;
+        if (coWorkInput) line.co_billed_this_period = coWork;
+
+        // Update billed_to_date (cumulative for original + CO)
+        line.billed_to_date = previousBilled + totalThis;
+        if (coWork > 0) {
+            line.co_billed_to_date = (line.co_billed_to_date || 0) + coWork;
+        }
+
+        localStorage.setItem('subcontractorSOV', JSON.stringify(subcontractorSOV));
+        showUnsavedIndicator();
+        btn.closest('dialog').close();
+        renderPayAppContent();
     }
 
     function saveSubSOVLine(companyId, lineId, btn) {
