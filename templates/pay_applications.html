@@ -471,7 +471,7 @@
                 <th class="px-4 py-3 text-right font-medium text-zinc-400 w-28">Work This Period</th>
                 <th class="px-3 py-3 text-right font-medium text-zinc-400 w-24">Materials</th>
                 <th class="px-3 py-3 text-right font-medium text-zinc-400 w-24">Retainage</th>
-                <th class="px-4 py-3 text-left font-medium text-zinc-400 w-36">Notes</th>
+                <th class="px-4 py-3 text-left font-medium text-zinc-400 w-72">Notes</th>
                 <th class="px-3 py-3 text-center font-medium text-zinc-400 w-20">Actions</th>
             </tr>
         `;
@@ -782,7 +782,7 @@
                 <th class="px-3 py-3 text-center font-medium text-zinc-400 w-16">% Billed</th>
                 <th class="px-4 py-3 text-right font-medium text-zinc-400 w-28">Billed to Date</th>
                 <th class="px-4 py-3 text-right font-medium text-zinc-400 w-28">Balance</th>
-                <th class="px-4 py-3 text-left font-medium text-zinc-400 w-36">Notes</th>
+                <th class="px-4 py-3 text-left font-medium text-zinc-400 w-72">Notes</th>
                 <th class="px-3 py-3 text-center font-medium text-zinc-400 w-20">Actions</th>
             </tr>
         `;
@@ -1459,7 +1459,7 @@
                 <th class="px-3 py-3 text-right font-medium text-zinc-400 w-24">This Period</th>
                 <th class="px-3 py-3 text-right font-medium text-zinc-400 w-24">Stored Materials</th>
                 <th class="px-3 py-3 text-right font-medium text-zinc-400 w-20">Retainage</th>
-                <th class="px-4 py-3 text-left font-medium text-zinc-400 w-36">Notes</th>
+                <th class="px-4 py-3 text-left font-medium text-zinc-400 w-72">Notes</th>
                 <th class="px-3 py-3 text-center font-medium text-zinc-400 w-20">Actions</th>
             </tr>
         `;
@@ -1758,114 +1758,200 @@
     function printG702() {
         const period = currentPayAppPeriod || { periodNumber: 1, periodStart: '2026-07-01', periodEnd: '2026-07-31', status: 'Draft' };
         const retainageRate = (typeof defaultRetainagePercent !== 'undefined' ? defaultRetainagePercent : 10) / 100;
+        const retainagePct = Math.round(retainageRate * 100);
 
+        // Calculate totals from live data
         let totalOriginal = 0, totalCO = 0, totalCurrent = 0, totalRetainage = 0, totalPrevious = 0;
+        let totalWorkThisPeriod = 0, totalMaterials = 0;
 
         contractorSOV.forEach(line => {
             totalOriginal += (line.original || 0);
             totalCO += (line.co_amount || 0);
             const billing = payAppBillingLines[line.id] || { workThisPeriod: 0, materialsStored: 0 };
-            const thisPeriod = (billing.workThisPeriod || 0) + (billing.materialsStored || 0);
-            totalCurrent += thisPeriod;
-            totalRetainage += thisPeriod * retainageRate;
+            const thisPeriod = (billing.workThisPeriod || 0);
+            const mats = (billing.materialsStored || 0);
+            totalWorkThisPeriod += thisPeriod;
+            totalMaterials += mats;
+            totalCurrent += (thisPeriod + mats);
+            totalRetainage += (thisPeriod + mats) * retainageRate;
         });
 
         const contractSumToDate = totalOriginal + totalCO;
         const earnedLessRetainage = totalCurrent - totalRetainage;
         const currentDue = earnedLessRetainage - totalPrevious;
         const balanceToFinish = contractSumToDate - totalCurrent;
-        const retainagePct = Math.round(retainageRate * 100);
+
+        // Completed work for retainage split (simplified: use totalCurrent for both a & b in this preview)
+        const retainageCompleted = totalCurrent * retainageRate;
+        const retainageStored = totalMaterials * retainageRate;
 
         const printHTML = `
             <html>
             <head>
-                <title>AIA G702 Application and Certificate for Payment #${period.periodNumber}</title>
+                <title>AIA G702 - Application and Certificate for Payment #${period.periodNumber}</title>
                 <style>
-                    @page { size: letter; margin: 0.5in; }
+                    @page { size: letter; margin: 0.4in; }
                     @media print { body { -webkit-print-color-adjust: exact; print-color-adjust: exact; } }
-                    body { font-family: "Times New Roman", Times, serif; padding: 12px 20px; font-size: 10.5px; line-height: 1.25; color: #000; }
-                    .form-header { border: 2px solid #000; padding: 6px 10px; margin-bottom: 8px; }
-                    .form-title { font-size: 15px; font-weight: bold; text-align: center; letter-spacing: 0.5px; }
-                    .form-subtitle { font-size: 11px; text-align: center; margin-top: 1px; }
-                    .info-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin: 6px 0 4px; }
-                    .info-box { border: 1px solid #000; padding: 6px 8px; font-size: 9.5px; line-height: 1.3; }
-                    .info-box strong { display: block; font-size: 8.5px; margin-bottom: 2px; font-weight: 600; }
-                    table.summary { width: 100%; border-collapse: collapse; margin: 6px 0; font-size: 10.5px; }
-                    table.summary td, table.summary th { border: 1px solid #000; padding: 5px 7px; vertical-align: top; }
-                    table.summary th { background: #f0f0f0; text-align: left; font-weight: 600; }
+                    body { font-family: "Times New Roman", Times, serif; padding: 8px 12px; font-size: 9.5px; line-height: 1.2; color: #000; }
+                    .main-header { border: 2px solid #000; padding: 4px 8px; margin-bottom: 4px; }
+                    .header-top { display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid #000; padding-bottom: 3px; margin-bottom: 4px; }
+                    .header-title { font-size: 13px; font-weight: bold; letter-spacing: 0.5px; }
+                    .header-subtitle { font-size: 10px; font-weight: bold; }
+                    .info-row { display: flex; margin-bottom: 2px; font-size: 9px; }
+                    .info-label { font-weight: bold; width: 95px; flex-shrink: 0; }
+                    .info-value { flex: 1; }
+                    .two-col { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin: 4px 0; }
+                    .box { border: 1px solid #000; padding: 5px 7px; font-size: 8.5px; line-height: 1.25; }
+                    .box-title { font-weight: bold; font-size: 9px; margin-bottom: 3px; border-bottom: 1px solid #000; padding-bottom: 2px; }
+                    table.summary { width: 100%; border-collapse: collapse; font-size: 9px; margin: 4px 0; }
+                    table.summary td, table.summary th { border: 1px solid #000; padding: 3px 5px; vertical-align: top; }
                     .right { text-align: right; font-family: "Courier New", monospace; }
                     .bold { font-weight: bold; }
-                    .cert-text { font-size: 9px; margin: 8px 0 6px; line-height: 1.35; text-align: justify; }
-                    .sig-row { display: flex; justify-content: space-between; margin-top: 18px; gap: 8px; }
-                    .sig-col { width: 31%; border-top: 1px solid #000; padding-top: 5px; font-size: 9.5px; }
-                    .footer-note { font-size: 7.5px; color: #555; margin-top: 12px; text-align: center; }
-                    .small { font-size: 8.5px; }
+                    .section-title { font-weight: bold; font-size: 9.5px; margin: 6px 0 3px; }
+                    .cert-text { font-size: 8px; margin: 4px 0; line-height: 1.3; text-align: justify; }
+                    .sig-line { border-top: 1px solid #000; margin-top: 20px; padding-top: 3px; font-size: 8.5px; }
+                    .small { font-size: 7.5px; }
+                    .change-order-table { width: 100%; border-collapse: collapse; font-size: 8.5px; margin-top: 6px; }
+                    .change-order-table td, .change-order-table th { border: 1px solid #000; padding: 2px 4px; text-align: center; }
+                    .footer-note { font-size: 7px; color: #555; margin-top: 8px; text-align: center; }
                 </style>
             </head>
             <body>
-                <div class="form-header">
-                    <div class="form-title">APPLICATION AND CERTIFICATE FOR PAYMENT</div>
-                    <div class="form-subtitle">AIA Document G702 — 1992 Edition</div>
-                </div>
-
-                <div class="info-grid">
-                    <div class="info-box">
-                        <strong>TO OWNER:</strong> ALDI Inc.<br>
-                        <strong>PROJECT:</strong> ALDI Lakeland<br>
-                        <strong>CONTRACT FOR:</strong> Commercial Construction - Tenant Improvement
+                <!-- Top Header -->
+                <div class="main-header">
+                    <div class="header-top">
+                        <div class="header-title">APPLICATION AND CERTIFICATE FOR PAYMENT</div>
+                        <div class="header-subtitle">AIA DOCUMENT G702</div>
+                        <div style="font-size:8px; text-align:right;">PAGE 1 OF 2 PAGES</div>
                     </div>
-                    <div class="info-box" style="text-align:right;">
-                        <strong>APPLICATION NO:</strong> ${period.periodNumber}<br>
-                        <strong>PERIOD TO:</strong> ${period.periodEnd || '—'}<br>
-                        <strong>PROJECT NO:</strong> ALD-LAK-2026<br>
-                        <strong>CONTRACT DATE:</strong> 2026-03-15
+
+                    <!-- TO / PROJECT / APPLICATION INFO -->
+                    <div class="info-row">
+                        <div style="flex:1;">
+                            <span class="info-label">TO GC:</span> <span class="info-value">Case Contracting</span><br>
+                            <span class="info-label">PROJECT:</span> <span class="info-value">Aldi #640</span><br>
+                            <span class="info-label">ADDRESS:</span> <span class="info-value">1296 County Rd 1, Dunedin, FL 34698</span>
+                        </div>
+                        <div style="flex:1; text-align:right;">
+                            <span class="info-label">APPLICATION NO:</span> <span class="info-value">${period.periodNumber}</span><br>
+                            <span class="info-label">PERIOD TO:</span> <span class="info-value">${period.periodEnd || '—'}</span><br>
+                            <span class="info-label">PROJECT NO:</span> <span class="info-value">640 / 366</span><br>
+                            <span class="info-label">CONTRACT DATE:</span> <span class="info-value">2026-03-15</span>
+                        </div>
                     </div>
-                </div>
 
-                <div style="margin: 4px 0 6px; font-size:9.5px;">
-                    Application is made for payment, as shown below, in connection with the Contract. 
-                    Continuation Sheet, AIA Document G703, is attached.
-                </div>
-
-                <table class="summary">
-                    <tr><th colspan="2" style="text-align:center; background:#e8e8e8; font-size:10.5px;">CONTRACTOR'S APPLICATION FOR PAYMENT</th></tr>
-                    <tr><td>1. ORIGINAL CONTRACT SUM</td><td class="right">${formatCurrency(totalOriginal)}</td></tr>
-                    <tr><td>2. NET CHANGE BY CHANGE ORDERS</td><td class="right">${formatCurrency(totalCO)}</td></tr>
-                    <tr><td class="bold">3. CONTRACT SUM TO DATE (Line 1 ± 2)</td><td class="right bold">${formatCurrency(contractSumToDate)}</td></tr>
-                    <tr><td>4. TOTAL COMPLETED &amp; STORED TO DATE (Column G on G703)</td><td class="right">${formatCurrency(totalCurrent)}</td></tr>
-                    <tr><td>5. RETAINAGE (${retainagePct}% of Completed Work)</td><td class="right">${formatCurrency(totalRetainage)}</td></tr>
-                    <tr><td class="bold">6. TOTAL EARNED LESS RETAINAGE (Line 4 - 5)</td><td class="right bold">${formatCurrency(earnedLessRetainage)}</td></tr>
-                    <tr><td>7. LESS PREVIOUS CERTIFICATES FOR PAYMENT</td><td class="right">${formatCurrency(totalPrevious)}</td></tr>
-                    <tr style="background:#f4f4f4;"><td class="bold" style="font-size:11px;">8. CURRENT PAYMENT DUE</td><td class="right bold" style="font-size:11px;">${formatCurrency(currentDue)}</td></tr>
-                    <tr><td>9. BALANCE TO FINISH, INCLUDING RETAINAGE (Line 3 - 4)</td><td class="right">${formatCurrency(balanceToFinish)}</td></tr>
-                </table>
-
-                <div class="cert-text">
-                    The undersigned Contractor certifies that to the best of the Contractor's knowledge, information and belief the Work covered by this Application for Payment has been completed in accordance with the Contract Documents, that all amounts have been paid by the Contractor for Work for which previous Certificates for Payment were issued and payments received from the Owner, and that current payment shown herein is now due.
-                </div>
-
-                <div class="sig-row">
-                    <div class="sig-col">
-                        <strong>CONTRACTOR:</strong><br><br>
-                        _________________________________<br>
-                        Signature / Date<br>
-                        <span class="small">Michael Bretz, Project Manager</span>
-                    </div>
-                    <div class="sig-col">
-                        <strong>ARCHITECT:</strong><br><br>
-                        _________________________________<br>
-                        Signature / Date<br>
-                        <span class="small">(Certificate for Payment)</span>
-                    </div>
-                    <div class="sig-col">
-                        <strong>OWNER:</strong><br><br>
-                        _________________________________<br>
-                        Signature / Date
+                    <div class="info-row" style="margin-top:4px;">
+                        <div style="flex:1;">
+                            <span class="info-label">FROM SUB-CONTRACTOR:</span> <span class="info-value">Case Contracting, 2311 Turkey Creek Rd, Plant City, FL 33566</span>
+                        </div>
+                        <div style="flex:1; text-align:right;">
+                            <span class="info-label">VIA ARCHITECT:</span> <span class="info-value">_______________________________</span>
+                        </div>
                     </div>
                 </div>
 
-                <div style="margin-top:10px;font-size:8px;color:#666;text-align:center;">
-                    Preview matching AIA G702-1992 layout • Retainage from Settings • Case PM
+                <!-- CONTRACT FOR -->
+                <div style="margin: 4px 0 6px; font-size:9px;">
+                    <span class="info-label">CONTRACT FOR:</span> Commercial Construction - Tenant Improvement (ALDI Lakeland)
+                </div>
+
+                <!-- Main Two-Column Content -->
+                <div class="two-col">
+                    <!-- LEFT: Contractor's Application + Summary Lines 1-9 -->
+                    <div>
+                        <div class="section-title">CONTRACTOR'S APPLICATION FOR PAYMENT</div>
+                        <div class="cert-text">
+                            The undersigned Contractor certifies that to the best of the Contractor's knowledge, information and belief, the Work covered by this Application for Payment has been completed in accordance with the Contract Documents, that all amounts have been paid by the Contractor for Work for which previous Certificates for Payment were issued and payments received from the Owner, and that current payment shown herein is now due.
+                        </div>
+
+                        <div style="margin:4px 0 2px; font-size:8.5px;">Application is made for payment, as shown below, in connection with the contract. Continuation Sheet, AIA Document G703, is attached.</div>
+
+                        <table class="summary">
+                            <tr><td>1. ORIGINAL CONTRACT SUM</td><td class="right">${formatCurrency(totalOriginal)}</td></tr>
+                            <tr><td>2. Net change by Change Orders</td><td class="right">${formatCurrency(totalCO)}</td></tr>
+                            <tr><td class="bold">3. CONTRACT SUM TO DATE (Line 1 + 2)</td><td class="right bold">${formatCurrency(contractSumToDate)}</td></tr>
+                            <tr><td>4. TOTAL COMPLETED &amp; STORED TO DATE (Column G on G703)</td><td class="right">${formatCurrency(totalCurrent)}</td></tr>
+                            <tr><td>5. RETAINAGE:</td><td class="right"></td></tr>
+                            <tr><td style="padding-left:12px;">a. ${retainagePct}% of Completed Work (Columns D + E on G703)</td><td class="right">${formatCurrency(retainageCompleted)}</td></tr>
+                            <tr><td style="padding-left:12px;">b. ${retainagePct}% of Stored Material (Column F on G703)</td><td class="right">${formatCurrency(retainageStored)}</td></tr>
+                            <tr><td>Total Retainage (Line 5a + 5b)</td><td class="right">${formatCurrency(totalRetainage)}</td></tr>
+                            <tr><td class="bold">6. TOTAL EARNED LESS RETAINAGE (Line 4 less Line 5)</td><td class="right bold">${formatCurrency(earnedLessRetainage)}</td></tr>
+                            <tr><td>7. LESS PREVIOUS CERTIFICATES FOR PAYMENT (Line 6 from prior Certificate)</td><td class="right">${formatCurrency(totalPrevious)}</td></tr>
+                            <tr style="background:#f0f0f0;"><td class="bold" style="font-size:10px;">8. CURRENT PAYMENT DUE</td><td class="right bold" style="font-size:10px;">${formatCurrency(currentDue)}</td></tr>
+                            <tr><td>9. BALANCE TO FINISH, INCLUDING RETAINAGE (Line 3 less Line 6)</td><td class="right">${formatCurrency(balanceToFinish)}</td></tr>
+                        </table>
+                    </div>
+
+                    <!-- RIGHT: Notary + Architect Certificate + Signatures -->
+                    <div>
+                        <div class="box" style="margin-bottom:6px;">
+                            <div class="box-title">NOTARY</div>
+                            State of ________________<br>
+                            County of ______________<br><br>
+                            Subscribed and Sworn to before me this _____ day of ________________, 20___<br><br>
+                            Notary Public: _________________________________<br>
+                            My Commission expires: _________________________
+                        </div>
+
+                        <div class="box">
+                            <div class="box-title">ARCHITECT'S CERTIFICATE FOR PAYMENT</div>
+                            In accordance with the Contract Documents, based on on-site observations and the data comprising this application, the Architect certifies to the Owner that to the best of the Architect's knowledge, information and belief, the Work has progressed as indicated, the quality of the Work is in accordance with the Contract Documents, and the Contractor is entitled to payment of the AMOUNT CERTIFIED.<br><br>
+                            AMOUNT CERTIFIED: $ _______________________________<br><br>
+                            <div class="sig-line">
+                                ARCHITECT: _________________________________<br>
+                                By: ___________________________ Date: ___________
+                            </div>
+                        </div>
+
+                        <div style="margin-top:10px;">
+                            <div class="sig-line">
+                                <strong>CONTRACTOR:</strong><br>
+                                _________________________________<br>
+                                Signature / Date<br>
+                                <span class="small">Michael Bretz, Project Manager — Case Contracting</span>
+                            </div>
+                            <div class="sig-line" style="margin-top:12px;">
+                                <strong>OWNER:</strong><br>
+                                _________________________________<br>
+                                Signature / Date
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Change Order Summary -->
+                <div style="margin-top:10px;">
+                    <div class="section-title">CHANGE ORDER SUMMARY</div>
+                    <table class="change-order-table">
+                        <tr>
+                            <th></th>
+                            <th>ADDITIONS</th>
+                            <th>DEDUCTIONS</th>
+                        </tr>
+                        <tr>
+                            <td style="text-align:left;">Total changes approved in previous months by Owner</td>
+                            <td>${formatCurrency(0)}</td>
+                            <td>${formatCurrency(0)}</td>
+                        </tr>
+                        <tr>
+                            <td style="text-align:left;">Total approved this Month</td>
+                            <td>${formatCurrency(totalCO)}</td>
+                            <td>${formatCurrency(0)}</td>
+                        </tr>
+                        <tr class="bold">
+                            <td style="text-align:left;">TOTALS</td>
+                            <td>${formatCurrency(totalCO)}</td>
+                            <td>${formatCurrency(0)}</td>
+                        </tr>
+                        <tr class="bold">
+                            <td style="text-align:left;">NET CHANGES by Change Order</td>
+                            <td colspan="2">${formatCurrency(totalCO)}</td>
+                        </tr>
+                    </table>
+                </div>
+
+                <div class="footer-note">
+                    This Certificate is not negotiable. The AMOUNT CERTIFIED is payable only to the Contractor named herein. Issuance, payment and acceptance of payment are without prejudice to any rights of the Owner or Contractor under this Contract.
                 </div>
             </body>
             </html>
