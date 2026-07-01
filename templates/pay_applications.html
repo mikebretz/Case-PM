@@ -497,9 +497,10 @@ let subSOVStatus = JSON.parse(localStorage.getItem('subSOVStatus') || '{}'); // 
         const contractSumToDate = totalOriginal + totalCO;
 
         // Summary Cards
-        const sovTotalForComparison = totalOriginal + totalCO;
-        const mismatchWarning = (sovTotalForComparison !== budgetContractAmount) 
-            ? `<div class="text-[10px] text-amber-400 mt-1">⚠️ Current Schedule of Values total does not match the Budget Contract Amount (${formatCurrency(budgetContractAmount)})</div>` 
+        // Warning only triggers if the ORIGINAL column total mismatches the Budget.
+        // Change Orders are tracked separately and do NOT trigger this warning on the Original Contract card.
+        const mismatchWarning = (totalOriginal !== budgetContractAmount) 
+            ? `<div class="text-[10px] text-amber-400 mt-1">⚠️ Original Contract Amount in SOV does not match the Budget Contract Amount (${formatCurrency(budgetContractAmount)})</div>` 
             : '';
 
         cardsContainer.innerHTML = `
