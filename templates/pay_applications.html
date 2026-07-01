@@ -471,6 +471,7 @@
                 <th class="px-4 py-3 text-right font-medium text-zinc-400 w-28">Work This Period</th>
                 <th class="px-3 py-3 text-right font-medium text-zinc-400 w-24">Materials</th>
                 <th class="px-3 py-3 text-right font-medium text-zinc-400 w-24">Retainage</th>
+                <th class="px-4 py-3 text-left font-medium text-zinc-400 w-36">Notes</th>
                 <th class="px-3 py-3 text-center font-medium text-zinc-400 w-20">Actions</th>
             </tr>
         `;
@@ -545,6 +546,7 @@
                     <td class="px-4 py-2 text-right text-emerald-400 font-semibold font-mono text-sm">${formatCurrency(workThis)}</td>
                     <td class="px-3 py-2 text-right text-sky-400 font-mono text-sm">${formatCurrency(materials)}</td>
                     <td class="px-3 py-2 text-right text-red-400 font-mono text-sm">${formatCurrency(retainage)}</td>
+                    <td class="px-4 py-2 text-sm text-zinc-400">${line.notes || ''}</td>
                     <td class="px-3 py-2.5 text-center">
                         <div class="inline-flex items-center gap-1.5">
                             <button onclick="event.stopImmediatePropagation(); showPayAppLineHistory(${line.id})" class="text-sky-400 hover:text-sky-300 p-1" title="Line Audit Log"><i class="fa-solid fa-history"></i></button>
@@ -780,6 +782,7 @@
                 <th class="px-3 py-3 text-center font-medium text-zinc-400 w-16">% Billed</th>
                 <th class="px-4 py-3 text-right font-medium text-zinc-400 w-28">Billed to Date</th>
                 <th class="px-4 py-3 text-right font-medium text-zinc-400 w-28">Balance</th>
+                <th class="px-4 py-3 text-left font-medium text-zinc-400 w-36">Notes</th>
                 <th class="px-3 py-3 text-center font-medium text-zinc-400 w-20">Actions</th>
             </tr>
         `;
@@ -852,6 +855,7 @@
                 <td class="px-3 py-2 text-center font-mono text-xs">${pct}%</td>
                 <td class="px-4 py-2 text-right text-emerald-400 font-mono text-sm">${formatCurrency(billed)}</td>
                 <td class="px-4 py-2 text-right font-mono text-sm">${formatCurrency(balance)}</td>
+                <td class="px-4 py-2 text-sm text-zinc-400">${line.notes || ''}</td>
                 <td class="px-3 py-2 text-center">
                     <button onclick="event.stopImmediatePropagation(); showSOVLineAudit(${line.id}, 'contractor')" class="text-sky-400 hover:text-sky-300 p-1" title="Line Audit Log"><i class="fa-solid fa-history"></i></button>
                     <button onclick="event.stopImmediatePropagation(); deleteContractorSOVLine(${line.id})" class="text-red-400 hover:text-red-300 p-1 ml-1" title="Delete"><i class="fa-solid fa-trash"></i></button>
@@ -1455,6 +1459,7 @@
                 <th class="px-3 py-3 text-right font-medium text-zinc-400 w-24">This Period</th>
                 <th class="px-3 py-3 text-right font-medium text-zinc-400 w-24">Stored Materials</th>
                 <th class="px-3 py-3 text-right font-medium text-zinc-400 w-20">Retainage</th>
+                <th class="px-4 py-3 text-left font-medium text-zinc-400 w-36">Notes</th>
                 <th class="px-3 py-3 text-center font-medium text-zinc-400 w-20">Actions</th>
             </tr>
         `;
@@ -1538,6 +1543,7 @@
                 <td class="px-3 py-2 text-right text-emerald-400 font-mono text-sm">${formatCurrency(thisPeriod)}</td>
                 <td class="px-3 py-2 text-right text-sky-400 font-mono text-sm">${formatCurrency(line.materials_stored || 0)}</td>
                 <td class="px-3 py-2 text-right text-red-400 font-mono text-sm">${formatCurrency(thisPeriod * 0.10)}</td>
+                <td class="px-4 py-2 text-sm text-zinc-400">${line.notes || ''}</td>
                 <td class="px-3 py-2 text-center">
                     <button onclick="event.stopImmediatePropagation(); showSOVLineAudit(${line.id}, 'sub', ${selectedSubCompanyId})" class="text-sky-400 hover:text-sky-300 p-1" title="Line Audit Log"><i class="fa-solid fa-history"></i></button>
                     <button onclick="event.stopImmediatePropagation(); deleteSubSOVLine(${selectedSubCompanyId}, ${line.id})" class="text-red-400 hover:text-red-300 p-1 ml-1" title="Delete"><i class="fa-solid fa-trash"></i></button>
@@ -1887,67 +1893,121 @@
     function printG703() {
         const period = currentPayAppPeriod || { periodNumber: 1, periodStart: '2026-07-01', periodEnd: '2026-07-31' };
         const retainageRate = (typeof defaultRetainagePercent !== 'undefined' ? defaultRetainagePercent : 10) / 100;
-        const retainagePct = Math.round(retainageRate * 100);
 
         let rows = '';
         let totalScheduled = 0, totalPrev = 0, totalThis = 0, totalMat = 0, totalCompleted = 0, totalRet = 0, totalBalance = 0;
 
         contractorSOV.forEach((line, idx) => {
             const billing = payAppBillingLines[line.id] || { workThisPeriod: 0, materialsStored: 0 };
-            const work = billing.workThisPeriod || 0;
+            const scheduled = (line.original || 0) + (line.co_amount || 0);
+            const workThis = billing.workThisPeriod || 0;
+            // Approximate "From Previous" as cumulative billed minus this period (simple model)
+            const prevWork = Math.max(0, (line.billed_to_date || 0) - workThis);
             const mat = billing.materialsStored || 0;
-            const ret = (work + mat) * retainageRate;
-            totalThis += work;
+            const completedToDate = prevWork + workThis + mat;
+            const pct = scheduled > 0 ? Math.round((completedToDate / scheduled) * 100) : 0;
+            const balance = scheduled - completedToDate;
+            const ret = (workThis + mat) * retainageRate;
+
+            totalScheduled += scheduled;
+            totalPrev += prevWork;
+            totalThis += workThis;
             totalMat += mat;
+            totalCompleted += completedToDate;
             totalRet += ret;
+            totalBalance += balance;
 
             rows += `<tr>
-                <td style="border:1px solid #333;padding:5px;font-family:monospace;">${line.cost_code}</td>
-                <td style="border:1px solid #333;padding:5px;">${line.description}</td>
-                <td style="border:1px solid #333;padding:5px;text-align:right;">${formatCurrency((line.original||0)+(line.co_amount||0))}</td>
-                <td style="border:1px solid #333;padding:5px;text-align:right;">${formatCurrency(work)}</td>
-                <td style="border:1px solid #333;padding:5px;text-align:right;">${formatCurrency(mat)}</td>
-                <td style="border:1px solid #333;padding:5px;text-align:right;">${formatCurrency(ret)}</td>
+                <td style="border:1px solid #333;padding:4px 6px;font-family:monospace;font-size:9px;">${idx + 1}</td>
+                <td style="border:1px solid #333;padding:4px 6px;font-size:9px;">${line.description || line.cost_code}</td>
+                <td style="border:1px solid #333;padding:4px 6px;text-align:right;font-family:monospace;font-size:9px;">${formatCurrency(scheduled)}</td>
+                <td style="border:1px solid #333;padding:4px 6px;text-align:right;font-family:monospace;font-size:9px;">${formatCurrency(prevWork)}</td>
+                <td style="border:1px solid #333;padding:4px 6px;text-align:right;font-family:monospace;font-size:9px;">${formatCurrency(workThis)}</td>
+                <td style="border:1px solid #333;padding:4px 6px;text-align:right;font-family:monospace;font-size:9px;">${formatCurrency(mat)}</td>
+                <td style="border:1px solid #333;padding:4px 6px;text-align:right;font-family:monospace;font-size:9px;">${formatCurrency(completedToDate)}</td>
+                <td style="border:1px solid #333;padding:4px 6px;text-align:center;font-size:9px;">${pct}%</td>
+                <td style="border:1px solid #333;padding:4px 6px;text-align:right;font-family:monospace;font-size:9px;">${formatCurrency(balance)}</td>
+                <td style="border:1px solid #333;padding:4px 6px;text-align:right;font-family:monospace;font-size:9px;">${formatCurrency(ret)}</td>
             </tr>`;
         });
 
         const printHTML = `
             <html><head><title>AIA G703 Continuation Sheet - Period ${period.periodNumber}</title>
             <style>
-                @page { size: letter landscape; margin: 0.5in; }
-                @media print { body { -webkit-print-color-adjust: exact; print-color-adjust: exact; } }
-                body { font-family: Arial, sans-serif; padding: 20px; font-size: 10px; }
-                table { width:100%; border-collapse:collapse; }
-                th, td { border:1px solid #333; padding:5px 6px; }
-                th { background:#f0f0f0; font-weight:600; font-size: 9.5px; }
+                @page { size: letter landscape; margin: 0.4in; }
+                @media print { body { -webkit-print-color-adjust: exact; print-color-adjust: exact; } body::before, body::after { display: none !important; } }
+                body { font-family: Arial, sans-serif; padding: 12px 16px; font-size: 9px; }
+                table { width:100%; border-collapse:collapse; font-size: 8.5px; }
+                th, td { border:1px solid #222; padding:3px 4px; vertical-align: top; }
+                th { background:#e8e8e8; font-weight:700; font-size: 8px; text-align:center; }
                 .right { text-align:right; font-family: "Courier New", monospace; }
-                .no-print-header { display: none; }
+                .center { text-align:center; }
+                .section-header { font-weight:700; background:#f3f4f6; }
             </style>
             </head><body>
-                <h2 style="margin:0 0 10px 0;">AIA G703 — Continuation Sheet</h2>
-                <div style="margin-bottom:15px;">Project: ALDI Lakeland &nbsp;&nbsp;|&nbsp;&nbsp; Period ${period.periodNumber} &nbsp;&nbsp;|&nbsp;&nbsp; ${period.periodStart || ''} to ${period.periodEnd || ''}</div>
+                <div style="display:flex; justify-content:space-between; align-items:flex-start; margin-bottom:8px; border-bottom:2px solid #222; padding-bottom:6px;">
+                    <div>
+                        <div style="font-size:14px; font-weight:700;">CONTINUATION SHEET</div>
+                        <div style="font-size:10px;">AIA DOCUMENT G703 &nbsp;&nbsp; PAGE 2 OF 2 PAGES</div>
+                    </div>
+                    <div style="text-align:right; font-size:9px;">
+                        <div><strong>AIA Document G702</strong> APPLICATION AND CERTIFICATION OF PAYMENT containing</div>
+                        <div>Contractor's signed certification is attached.</div>
+                        <div style="margin-top:4px;">APPLICATION NO: <strong>${period.periodNumber}</strong> &nbsp;&nbsp; APPLICATION DATE: ${new Date().toLocaleDateString()} &nbsp;&nbsp; PERIOD TO: ${period.periodEnd || ''}</div>
+                        <div>PROJECT NO: 640 / 366 &nbsp;&nbsp; NAME OF PROJECT: ALDI Lakeland</div>
+                    </div>
+                </div>
+
+                <div style="margin-bottom:6px; font-size:8.5px;">In Tabulations below, amounts are stated to the nearest dollar. Use Column I where variable retainage for line items may apply.</div>
+
                 <table>
                     <thead>
                         <tr>
-                            <th>Cost Code</th>
-                            <th>Description</th>
-                            <th class="right">Scheduled Value</th>
-                            <th class="right">Work Completed</th>
-                            <th class="right">Materials Stored</th>
-                            <th class="right">Retainage</th>
+                            <th style="width:6%;">A<br>ITEM No.</th>
+                            <th style="width:22%;">B<br>DESCRIPTION OF WORK</th>
+                            <th style="width:11%;">C<br>SCHEDULED VALUE</th>
+                            <th style="width:11%;">D<br>WORK COMPLETED<br>FROM PREVIOUS APPLICATION<br>(D+E)</th>
+                            <th style="width:10%;">E<br>WORK COMPLETED<br>THIS PERIOD</th>
+                            <th style="width:11%;">F<br>MATERIALS PRESENTLY STORED<br>(NOT IN D or E)</th>
+                            <th style="width:11%;">G<br>TOTAL COMPLETED AND STORED<br>TO DATE (D+E+F)</th>
+                            <th style="width:5%;">H<br>%<br>(G/C)</th>
+                            <th style="width:8%;">I<br>BALANCE TO FINISH<br>(C-G)</th>
+                            <th style="width:5%;">J<br>RETAINAGE<br>IF VARIABLE RATE</th>
                         </tr>
                     </thead>
-                    <tbody>${rows}</tbody>
-                    <tfoot>
-                        <tr style="font-weight:600;background:#f3f4f6;">
-                            <td colspan="3" style="text-align:right;">TOTALS</td>
+                    <tbody>
+                        ${rows}
+                        <tr class="section-header">
+                            <td colspan="2" style="text-align:right; font-weight:700;">Total Contract Work</td>
+                            <td class="right">${formatCurrency(totalScheduled)}</td>
+                            <td class="right">${formatCurrency(totalPrev)}</td>
                             <td class="right">${formatCurrency(totalThis)}</td>
                             <td class="right">${formatCurrency(totalMat)}</td>
+                            <td class="right">${formatCurrency(totalCompleted)}</td>
+                            <td class="center">${totalScheduled > 0 ? Math.round((totalCompleted / totalScheduled) * 100) : 0}%</td>
+                            <td class="right">${formatCurrency(totalBalance)}</td>
                             <td class="right">${formatCurrency(totalRet)}</td>
                         </tr>
-                    </tfoot>
+                        <tr>
+                            <td colspan="10" style="height:8px;"></td>
+                        </tr>
+                        <tr style="font-weight:700; background:#f8f9fa;">
+                            <td colspan="2" style="text-align:right;">GRAND TOTALS</td>
+                            <td class="right">${formatCurrency(totalScheduled)}</td>
+                            <td class="right">${formatCurrency(totalPrev)}</td>
+                            <td class="right">${formatCurrency(totalThis)}</td>
+                            <td class="right">${formatCurrency(totalMat)}</td>
+                            <td class="right">${formatCurrency(totalCompleted)}</td>
+                            <td class="center">${totalScheduled > 0 ? Math.round((totalCompleted / totalScheduled) * 100) : 0}%</td>
+                            <td class="right">${formatCurrency(totalBalance)}</td>
+                            <td class="right">${formatCurrency(totalRet)}</td>
+                        </tr>
+                    </tbody>
                 </table>
-                <div style="margin-top:12px;font-size:8.5px;color:#666;text-align:center;">Preview only — Match to official AIA G703 Continuation Sheet. Retainage rate applied from project settings.</div>
+
+                <div style="margin-top:10px; font-size:8px; color:#555; text-align:center;">
+                    This is a system-generated preview matching AIA G703 layout. Retainage calculated at ${Math.round(retainageRate*100)}% from project settings.
+                </div>
             </body></html>
         `;
 
