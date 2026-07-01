@@ -495,12 +495,12 @@
                 <th class="px-3 py-3 text-center font-medium text-zinc-400 w-8">#</th>
                 <th class="px-4 py-3 text-left font-medium text-zinc-400 w-28">Cost Code</th>
                 <th class="px-4 py-3 text-left font-medium text-zinc-400 min-w-[80px]">Description</th>
-                <th class="px-4 py-3 text-right font-medium text-zinc-400 w-28">Original</th>
-                <th class="px-3 py-3 text-center font-medium text-zinc-400 w-16">% Complete</th>
-                <th class="px-4 py-3 text-right font-medium text-zinc-400 w-28">Billed to Date</th>
-                <th class="px-4 py-3 text-right font-medium text-zinc-400 w-28">Work This Period</th>
-                <th class="px-3 py-3 text-right font-medium text-zinc-400 w-24">Materials</th>
-                <th class="px-3 py-3 text-right font-medium text-zinc-400 w-24">Retainage</th>
+                <th class="px-4 py-3 text-right font-medium text-zinc-400 w-56">Original</th>
+                <th class="px-3 py-3 text-center font-medium text-zinc-400 w-24">% Complete</th>
+                <th class="px-4 py-3 text-right font-medium text-zinc-400 w-56">Billed to Date</th>
+                <th class="px-4 py-3 text-right font-medium text-zinc-400 w-56">Work This Period</th>
+                <th class="px-3 py-3 text-right font-medium text-zinc-400 w-48">Materials</th>
+                <th class="px-3 py-3 text-right font-medium text-zinc-400 w-48">Retainage</th>
                 <th class="px-4 py-3 text-left font-medium text-zinc-400 w-[22rem]">Notes</th>
                 <th class="px-3 py-3 text-center font-medium text-zinc-400 w-20">Actions</th>
             </tr>
@@ -806,12 +806,12 @@
                 <th class="px-3 py-3 text-center font-medium text-zinc-400 w-8">#</th>
                 <th class="px-4 py-3 text-left font-medium text-zinc-400 w-28">Cost Code</th>
                 <th class="px-4 py-3 text-left font-medium text-zinc-400 min-w-[80px]">Description</th>
-                <th class="px-4 py-3 text-right font-medium text-zinc-400 w-28">Original</th>
-                <th class="px-3 py-3 text-right font-medium text-zinc-400 w-24">COs</th>
-                <th class="px-4 py-3 text-right font-medium text-zinc-400 w-28">Current</th>
-                <th class="px-3 py-3 text-center font-medium text-zinc-400 w-16">% Billed</th>
-                <th class="px-4 py-3 text-right font-medium text-zinc-400 w-28">Billed to Date</th>
-                <th class="px-4 py-3 text-right font-medium text-zinc-400 w-28">Balance</th>
+                <th class="px-4 py-3 text-right font-medium text-zinc-400 w-56">Original</th>
+                <th class="px-3 py-3 text-right font-medium text-zinc-400 w-48">COs</th>
+                <th class="px-4 py-3 text-right font-medium text-zinc-400 w-56">Current</th>
+                <th class="px-3 py-3 text-center font-medium text-zinc-400 w-24">% Billed</th>
+                <th class="px-4 py-3 text-right font-medium text-zinc-400 w-56">Billed to Date</th>
+                <th class="px-4 py-3 text-right font-medium text-zinc-400 w-56">Balance</th>
                 <th class="px-4 py-3 text-left font-medium text-zinc-400 w-[22rem]">Notes</th>
                 <th class="px-3 py-3 text-center font-medium text-zinc-400 w-20">Actions</th>
             </tr>
@@ -1483,12 +1483,12 @@
                 <th class="px-3 py-3 text-center font-medium text-zinc-400 w-8">#</th>
                 <th class="px-4 py-3 text-left font-medium text-zinc-400 w-28">Cost Code</th>
                 <th class="px-4 py-3 text-left font-medium text-zinc-400 min-w-[80px]">Description</th>
-                <th class="px-4 py-3 text-right font-medium text-zinc-400 w-28">Original Commitment</th>
-                <th class="px-3 py-3 text-center font-medium text-zinc-400 w-16">% Complete</th>
-                <th class="px-4 py-3 text-right font-medium text-zinc-400 w-28">Billed to Date</th>
-                <th class="px-3 py-3 text-right font-medium text-zinc-400 w-24">This Period</th>
-                <th class="px-3 py-3 text-right font-medium text-zinc-400 w-24">Stored Materials</th>
-                <th class="px-3 py-3 text-right font-medium text-zinc-400 w-20">Retainage</th>
+                <th class="px-4 py-3 text-right font-medium text-zinc-400 w-56">Original Commitment</th>
+                <th class="px-3 py-3 text-center font-medium text-zinc-400 w-24">% Complete</th>
+                <th class="px-4 py-3 text-right font-medium text-zinc-400 w-56">Billed to Date</th>
+                <th class="px-3 py-3 text-right font-medium text-zinc-400 w-48">This Period</th>
+                <th class="px-3 py-3 text-right font-medium text-zinc-400 w-48">Stored Materials</th>
+                <th class="px-3 py-3 text-right font-medium text-zinc-400 w-40">Retainage</th>
                 <th class="px-4 py-3 text-left font-medium text-zinc-400 w-[22rem]">Notes</th>
                 <th class="px-3 py-3 text-center font-medium text-zinc-400 w-20">Actions</th>
             </tr>
@@ -1757,23 +1757,98 @@
     }
 
     function showAddNewSubcontractorQuick() {
-        const name = prompt("Enter new subcontractor company name:");
-        if (!name) return;
+        // Create a styled modal consistent with the rest of the application (budget.html style)
+        const modal = document.createElement('dialog');
+        modal.className = 'modal rounded-md w-full max-w-md p-0 text-white';
+        modal.style.backgroundColor = '#18181b';
+        modal.style.border = '1px solid #3f3f46';
+
+        modal.innerHTML = `
+            <div class="p-6">
+                <div class="flex justify-between items-center mb-6">
+                    <h3 class="text-xl font-semibold">Add New Subcontractor</h3>
+                    <button onclick="this.closest('dialog').close(); this.closest('dialog').remove()" class="text-zinc-400 hover:text-white">
+                        <i class="fa-solid fa-times text-xl"></i>
+                    </button>
+                </div>
+
+                <div class="space-y-4">
+                    <div>
+                        <label class="block text-sm mb-1.5 text-zinc-300">Company Name</label>
+                        <input type="text" id="newSubName" class="w-full bg-zinc-800 border border-zinc-700 rounded-md px-4 py-2.5 text-sm" placeholder="ABC Electrical LLC" required>
+                    </div>
+                    <div class="grid grid-cols-2 gap-4">
+                        <div>
+                            <label class="block text-sm mb-1.5 text-zinc-300">Primary Contact Name</label>
+                            <input type="text" id="newSubContactName" class="w-full bg-zinc-800 border border-zinc-700 rounded-md px-4 py-2.5 text-sm">
+                        </div>
+                        <div>
+                            <label class="block text-sm mb-1.5 text-zinc-300">Primary Contact Email</label>
+                            <input type="email" id="newSubContactEmail" class="w-full bg-zinc-800 border border-zinc-700 rounded-md px-4 py-2.5 text-sm">
+                        </div>
+                    </div>
+                    <div>
+                        <label class="block text-sm mb-1.5 text-zinc-300">Phone (optional)</label>
+                        <input type="text" id="newSubPhone" class="w-full bg-zinc-800 border border-zinc-700 rounded-md px-4 py-2.5 text-sm">
+                    </div>
+                </div>
+
+                <div class="flex justify-end gap-3 mt-8">
+                    <button onclick="this.closest('dialog').close(); this.closest('dialog').remove()" class="px-6 py-2.5 rounded-md bg-zinc-700 hover:bg-zinc-600 text-sm">Cancel</button>
+                    <button onclick="confirmAddNewSubcontractor(this)" class="px-8 py-2.5 rounded-md bg-emerald-600 hover:bg-emerald-500 text-sm font-semibold">Add Subcontractor</button>
+                </div>
+            </div>
+        `;
+
+        document.body.appendChild(modal);
+        modal.showModal();
+
+        // Auto-focus first input
+        setTimeout(() => {
+            const nameInput = modal.querySelector('#newSubName');
+            if (nameInput) nameInput.focus();
+        }, 100);
+    }
+
+    function confirmAddNewSubcontractor(btn) {
+        const modal = btn.closest('dialog');
+        const name = document.getElementById('newSubName').value.trim();
+        if (!name) {
+            alert("Company name is required.");
+            return;
+        }
+
         const newId = Date.now();
         const newCompany = {
             id: newId,
             name: name,
+            company_name: name,
             type: "Subcontractor",
             company_type: "Subcontractor",
-            primary_contact_name: "",
-            primary_contact_email: ""
+            primary_contact_name: document.getElementById('newSubContactName').value.trim(),
+            primary_contact_email: document.getElementById('newSubContactEmail').value.trim(),
+            phone: document.getElementById('newSubPhone').value.trim(),
+            status: "Active"
         };
+
         companies.push(newCompany);
         localStorage.setItem('casepm_companies', JSON.stringify(companies));
+
+        // Initialize empty SOV for this sub
+        if (!subcontractorSOV[newId]) {
+            subcontractorSOV[newId] = [];
+            localStorage.setItem('subcontractorSOV', JSON.stringify(subcontractorSOV));
+        }
+
         selectedSubCompanyId = newId;
-        subcontractorSOV[newId] = [];
-        localStorage.setItem('subcontractorSOV', JSON.stringify(subcontractorSOV));
+
+        modal.close();
+        modal.remove();
+
+        // Refresh the entire Pay Applications content to update the dropdown and view
         renderPayAppContent();
+
+        showCenteredAlert(`Subcontractor "${name}" added successfully. You can now add lines to their Schedule of Values.`, 'success');
     }
 
     // ==================== PRINT AIA G702 / G703 ====================
