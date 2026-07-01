@@ -115,7 +115,7 @@
 
 <!-- TABLE CONTAINER -->
 <div class="mx-6 mb-6 flex-1 overflow-hidden flex flex-col border border-zinc-700 rounded-md bg-zinc-900">
-    <div class="flex-1 overflow-auto" id="payAppTableScrollContainer" style="max-height: calc(100vh - 340px);">
+    <div class="flex-1 overflow-auto min-h-0" id="payAppTableScrollContainer" style="max-height: calc(100vh - 420px); height: calc(100vh - 420px);">
         <table class="w-full text-sm min-w-[1900px]">
             <thead class="bg-zinc-800 sticky z-20 border-b border-zinc-700" style="top: 0; position: sticky;" id="payAppTableHead">
                 <!-- Populated dynamically -->
@@ -228,12 +228,30 @@
             <h3 class="text-xl font-semibold">Pay Applications Settings</h3>
             <button onclick="document.getElementById('settingsModal').close()" class="text-zinc-400 hover:text-white"><i class="fa-solid fa-times text-xl"></i></button>
         </div>
-        <div class="text-sm text-zinc-400">
-            Retainage default: 10%<br>
-            Workflow: Draft → Submitted → Under Review → Approved / Revise &amp; Resubmit<br><br>
-            Primary Contact Mode restricts subs to editing only their billing fields.
+        <div class="space-y-5 text-sm">
+            <div>
+                <label class="block text-zinc-300 mb-1.5 font-medium">Default Retainage Percentage</label>
+                <select id="retainagePercentSelect" class="w-full bg-zinc-800 border border-zinc-700 rounded-md px-4 py-2 text-sm text-white">
+                    <option value="5">5%</option>
+                    <option value="10" selected>10% (Standard)</option>
+                    <option value="15">15%</option>
+                </select>
+                <p class="text-[10px] text-zinc-500 mt-1">Applied to current period billing for all pay applications.</p>
+            </div>
+
+            <div class="pt-3 border-t border-zinc-700">
+                <div class="text-xs text-zinc-400">Workflow</div>
+                <div class="text-emerald-400 text-xs mt-0.5">Draft → Submitted → Under Review → Approved / Revise &amp; Resubmit</div>
+            </div>
+
+            <div>
+                <div class="text-xs text-zinc-400">Primary Contact Mode</div>
+                <div class="text-xs mt-0.5 text-zinc-300">Subs can only edit billing fields (Work This Period, Materials, Notes) for their own lines.</div>
+            </div>
         </div>
-        <div class="mt-6 text-right">
+
+        <div class="mt-6 flex justify-end gap-3">
+            <button onclick="savePayAppSettings()" class="px-6 py-2 rounded-md bg-emerald-600 hover:bg-emerald-500 text-sm font-semibold">Save Settings</button>
             <button onclick="document.getElementById('settingsModal').close()" class="px-5 py-2 rounded-md bg-zinc-700">Close</button>
         </div>
     </div>
@@ -254,6 +272,7 @@
     let selectedSubCompanyId = null;
     let hasUnsavedChanges = false;
     let payAppCollapsedDivisions = new Set();
+    let defaultRetainagePercent = parseFloat(localStorage.getItem('payAppRetainagePercent') || '10');
 
     // Demo: Seed some data on first load if empty
     function seedDemoDataIfNeeded() {
@@ -445,7 +464,7 @@
             <tr>
                 <th class="px-3 py-3 text-center font-medium text-zinc-400 w-8">#</th>
                 <th class="px-4 py-3 text-left font-medium text-zinc-400 w-28">Cost Code</th>
-                <th class="px-4 py-3 text-left font-medium text-zinc-400 min-w-[160px]">Description</th>
+                <th class="px-4 py-3 text-left font-medium text-zinc-400 min-w-[100px]">Description</th>
                 <th class="px-4 py-3 text-right font-medium text-zinc-400 w-28">Original</th>
                 <th class="px-3 py-3 text-center font-medium text-zinc-400 w-16">% Complete</th>
                 <th class="px-4 py-3 text-right font-medium text-zinc-400 w-28">Billed to Date</th>
@@ -509,7 +528,8 @@
                 const previousBilled = line.billed_to_date || Math.round(currentAmount * 0.55);
                 const totalBilled = previousBilled + thisPeriodTotal;
                 const percentComplete = currentAmount > 0 ? Math.min(100, Math.round((totalBilled / currentAmount) * 100)) : 0;
-                const retainage = thisPeriodTotal * 0.10;
+                const retainageRate = defaultRetainagePercent / 100;
+                const retainage = thisPeriodTotal * retainageRate;
 
                 const row = document.createElement('tr');
                 row.className = 'sov-line-row hover:bg-zinc-800/60 cursor-pointer';
@@ -539,6 +559,18 @@
     function showNewPeriodModal() {
         const modal = document.getElementById('newPeriodModal');
         if (!modal) return;
+
+        // Enforce AIA-style sequential periods: previous must be Approved
+        if (currentPayAppPeriod && currentPayAppPeriod.status !== 'Approved') {
+            const status = currentPayAppPeriod.status;
+            if (status === 'Rejected' || status === 'Revise & Resubmit') {
+                showCenteredAlert("Previous period was rejected/returned. Please revise the current application first (use workflow buttons). You cannot create a new period until it is resolved or approved.", 'warning');
+            } else {
+                showCenteredAlert("Cannot create new period. Previous period must be fully Approved first. Current status: " + status, 'warning');
+            }
+            return;
+        }
+
         // Pre-fill next period number
         const numInput = document.getElementById('newPeriodNumber');
         if (numInput && currentPayAppPeriod) numInput.value = (currentPayAppPeriod.periodNumber || 7) + 1;
@@ -741,7 +773,7 @@
             <tr>
                 <th class="px-3 py-3 text-center font-medium text-zinc-400 w-8">#</th>
                 <th class="px-4 py-3 text-left font-medium text-zinc-400 w-28">Cost Code</th>
-                <th class="px-4 py-3 text-left font-medium text-zinc-400 min-w-[160px]">Description</th>
+                <th class="px-4 py-3 text-left font-medium text-zinc-400 min-w-[100px]">Description</th>
                 <th class="px-4 py-3 text-right font-medium text-zinc-400 w-28">Original</th>
                 <th class="px-3 py-3 text-right font-medium text-zinc-400 w-24">COs</th>
                 <th class="px-4 py-3 text-right font-medium text-zinc-400 w-28">Current</th>
@@ -1416,7 +1448,7 @@
             <tr>
                 <th class="px-3 py-3 text-center font-medium text-zinc-400 w-8">#</th>
                 <th class="px-4 py-3 text-left font-medium text-zinc-400 w-28">Cost Code</th>
-                <th class="px-4 py-3 text-left font-medium text-zinc-400 min-w-[160px]">Description</th>
+                <th class="px-4 py-3 text-left font-medium text-zinc-400 min-w-[100px]">Description</th>
                 <th class="px-4 py-3 text-right font-medium text-zinc-400 w-28">Original Commitment</th>
                 <th class="px-3 py-3 text-center font-medium text-zinc-400 w-16">% Complete</th>
                 <th class="px-4 py-3 text-right font-medium text-zinc-400 w-28">Billed to Date</th>
@@ -2012,7 +2044,26 @@
     }
 
     function showSettingsModal() {
-        document.getElementById('settingsModal').showModal();
+        const modal = document.getElementById('settingsModal');
+        const select = document.getElementById('retainagePercentSelect');
+        if (select) {
+            select.value = String(defaultRetainagePercent);
+        }
+        modal.showModal();
+    }
+
+    function savePayAppSettings() {
+        const select = document.getElementById('retainagePercentSelect');
+        if (select) {
+            defaultRetainagePercent = parseFloat(select.value) || 10;
+            localStorage.setItem('payAppRetainagePercent', defaultRetainagePercent);
+        }
+        document.getElementById('settingsModal').close();
+        showCenteredAlert(`Pay Application settings saved. Retainage set to ${defaultRetainagePercent}%.`, 'success');
+        // Re-render current tab to apply new retainage immediately if on G702
+        if (currentPayAppTab === 'payapp') {
+            renderPayAppContent();
+        }
     }
 
     function showUserProfileModal() {
