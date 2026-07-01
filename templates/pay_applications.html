@@ -1457,6 +1457,8 @@ let subSOVStatus = JSON.parse(localStorage.getItem('subSOVStatus') || '{}'); // 
                             <i class="fa-solid fa-user-plus"></i> <span class="hidden md:inline">Add New</span>
                         </button>
                     </div>
+                    <!-- Status badge moved BELOW the dropdown as requested -->
+                    <div id="subStatusBadgeContainer" class="mt-2 flex items-center gap-2 min-h-[22px]"></div>
                 </div>
                 <div class="bg-zinc-800 border border-zinc-700 rounded-md p-5">
                     <div class="text-xs text-zinc-400">Original Contract Amount</div>
@@ -1508,7 +1510,7 @@ let subSOVStatus = JSON.parse(localStorage.getItem('subSOVStatus') || '{}'); // 
             const statusColor = statusColors[currentStatus] || 'bg-zinc-700 text-zinc-400';
 
             const infoDiv = document.createElement('div');
-            infoDiv.className = 'mt-2 flex items-center gap-2';
+            infoDiv.className = 'flex items-center gap-2';
             const payAppLabel = (currentStatus === 'Approved') 
                 ? `Pay App #${currentNum} (Current)` 
                 : `Schedule of Values Creation`;
@@ -1521,8 +1523,12 @@ let subSOVStatus = JSON.parse(localStorage.getItem('subSOVStatus') || '{}'); // 
                     <i class="fa-solid fa-sync fa-spin-pulse"></i> <span>${currentStatus}</span>
                 </div>
             `;
-            const selCard = selector ? selector.parentElement : null;
-            if (selCard) selCard.appendChild(infoDiv);
+            // Append to the new container below the dropdown
+            const badgeContainer = document.getElementById('subStatusBadgeContainer');
+            if (badgeContainer) {
+                badgeContainer.innerHTML = '';
+                badgeContainer.appendChild(infoDiv);
+            }
 
             // Populate the new summary totals for the selected sub
             const subLines = subcontractorSOV[selectedSubCompanyId] || [];
