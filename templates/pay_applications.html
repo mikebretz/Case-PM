@@ -446,7 +446,7 @@
         thead.innerHTML = `
             <tr>
                 <th class="px-3 py-3 text-center font-medium text-zinc-400 w-8">#</th>
-                <th class="px-4 py-3 text-left font-medium text-zinc-400 w-24">Cost Code</th>
+                <th class="px-4 py-3 text-left font-medium text-zinc-400 w-28">Cost Code</th>
                 <th class="px-4 py-3 text-left font-medium text-zinc-400 min-w-[320px]">Description</th>
                 <th class="px-4 py-3 text-right font-medium text-zinc-400 w-28">Original</th>
                 <th class="px-3 py-3 text-center font-medium text-zinc-400 w-16">% Complete</th>
@@ -524,7 +524,7 @@
                     <td class="px-4 py-2 text-right font-mono text-sm">${formatCurrency(currentAmount)}</td>
                     <td class="px-3 py-2 text-center font-mono text-xs">${percentComplete}%</td>
                     <td class="px-4 py-2 text-right text-emerald-400 font-mono text-sm">${formatCurrency(totalBilled)}</td>
-                    <td class="px-4 py-2 text-right text-amber-400 font-semibold font-mono text-sm">${formatCurrency(workThis)}</td>
+                    <td class="px-4 py-2 text-right text-emerald-400 font-semibold font-mono text-sm">${formatCurrency(workThis)}</td>
                     <td class="px-3 py-2 text-right text-sky-400 font-mono text-sm">${formatCurrency(materials)}</td>
                     <td class="px-3 py-2 text-right text-red-400 font-mono text-sm">${formatCurrency(retainage)}</td>
                     <td class="px-3 py-2.5 text-center">
@@ -743,7 +743,7 @@
         thead.innerHTML = `
             <tr>
                 <th class="px-3 py-3 text-center font-medium text-zinc-400 w-8">#</th>
-                <th class="px-4 py-3 text-left font-medium text-zinc-400 w-24">Cost Code</th>
+                <th class="px-4 py-3 text-left font-medium text-zinc-400 w-28">Cost Code</th>
                 <th class="px-4 py-3 text-left font-medium text-zinc-400 min-w-[320px]">Description</th>
                 <th class="px-4 py-3 text-right font-medium text-zinc-400 w-28">Original</th>
                 <th class="px-3 py-3 text-right font-medium text-zinc-400 w-24">COs</th>
@@ -832,14 +832,69 @@
         });
     }
 
+    function populateSOVCostCodeDatalist() {
+        const datalist = document.getElementById('sovCostCodeList');
+        if (!datalist) return;
+        datalist.innerHTML = '';
+        const budgetLinesData = JSON.parse(localStorage.getItem('budgetLines')) || [];
+        // Unique by cost_code
+        const seen = new Set();
+        budgetLinesData.forEach(b => {
+            if (b.cost_code && !seen.has(b.cost_code)) {
+                seen.add(b.cost_code);
+                const opt = document.createElement('option');
+                opt.value = `${b.cost_code} - ${b.description}`;
+                datalist.appendChild(opt);
+            }
+        });
+    }
+
+    function viewBudgetCostCodesForSOV() {
+        // Reuse the nice searchable list from budget style if possible, or simple alert with list
+        const budgetLinesData = JSON.parse(localStorage.getItem('budgetLines')) || [];
+        if (budgetLinesData.length === 0) {
+            showCenteredAlert("No budget cost codes found. Add lines in the Budget page first.");
+            return;
+        }
+        const modal = document.createElement('dialog');
+        modal.className = 'modal rounded-md p-0 text-white w-full max-w-lg';
+        modal.style.backgroundColor = '#18181b';
+        modal.style.border = '1px solid #3f3f46';
+        let html = `<div class="p-5"><div class="flex justify-between mb-3"><h3 class="font-semibold">Budget Cost Codes</h3><button onclick="this.closest('dialog').close();this.closest('dialog').remove()" class="text-zinc-400"><i class="fa-solid fa-times"></i></button></div>`;
+        html += `<div class="max-h-[320px] overflow-auto border border-zinc-700 rounded"><table class="w-full text-sm"><thead class="bg-zinc-800"><tr><th class="px-3 py-1 text-left">Code</th><th class="px-3 py-1 text-left">Description</th></tr></thead><tbody>`;
+        const seen = new Set();
+        budgetLinesData.forEach(b => {
+            if (b.cost_code && !seen.has(b.cost_code)) {
+                seen.add(b.cost_code);
+                html += `<tr class="hover:bg-zinc-800 cursor-pointer" onclick="selectSOVCodeFromList('${b.cost_code}', '${b.description.replace(/'/g, "\\'")}', this.closest('dialog'))"><td class="px-3 py-1 font-mono text-emerald-400">${b.cost_code}</td><td class="px-3 py-1">${b.description}</td></tr>`;
+            }
+        });
+        html += `</tbody></table></div></div>`;
+        modal.innerHTML = html;
+        document.body.appendChild(modal);
+        modal.showModal();
+    }
+
+    function selectSOVCodeFromList(code, desc, listModal) {
+        const codeInput = document.getElementById('sovCostCode');
+        const descInput = document.getElementById('sovDescription');
+        if (codeInput) codeInput.value = code;
+        if (descInput) descInput.value = desc;
+        if (listModal) { listModal.close(); listModal.remove(); }
+    }
+
     function showAddContractorSOVLine() {
         const modal = document.getElementById('contractorSOVModal');
         const content = document.getElementById('contractorSOVModalContent');
         content.innerHTML = `
             <div class="space-y-4">
                 <div>
-                    <label class="block text-sm mb-1.5 text-zinc-300">Cost Code</label>
-                    <input type="text" id="sovCostCode" class="w-full bg-zinc-800 border border-zinc-700 rounded-md px-4 py-2.5 text-sm" placeholder="03-3000">
+                    <label class="block text-sm mb-1.5 text-zinc-300 flex items-center justify-between">
+                        <span>Cost Code</span>
+                        <button type="button" onclick="viewBudgetCostCodesForSOV()" class="ml-2 px-2.5 py-0.5 text-[10px] bg-zinc-700 hover:bg-zinc-600 text-emerald-400 rounded">View All Codes</button>
+                    </label>
+                    <input type="text" id="sovCostCode" list="sovCostCodeList" class="w-full bg-zinc-800 border border-zinc-700 rounded-md px-4 py-2.5 text-sm" placeholder="03-3000">
+                    <datalist id="sovCostCodeList"></datalist>
                 </div>
                 <div>
                     <label class="block text-sm mb-1.5 text-zinc-300">Description</label>
@@ -866,6 +921,11 @@
             </div>
         `;
         modal.showModal();
+        setTimeout(() => {
+            populateSOVCostCodeDatalist();
+            setupAccountingFormat('sovOriginal');
+            setupAccountingFormat('sovCO');
+        }, 80);
     }
 
     function editContractorSOVLine(id) {
@@ -1044,33 +1104,45 @@
         // Store budgetLines temporarily for confirm
         window._seedBudgetLines = budgetLines;
 
-        // Robust interactivity: row clicks + ensure select all works
+        // Robust interactivity: row clicks + direct checkbox support + reliable select all
         setTimeout(() => {
             const table = modal.querySelector('#seedTable');
-            if (table) {
-                // Make entire row clickable (except checkbox itself)
-                table.querySelectorAll('tr[data-idx]').forEach(row => {
-                    row.style.cursor = 'pointer';
-                    row.onclick = function(e) {
-                        if (e.target.tagName === 'INPUT' || e.target.closest('input')) return;
-                        const cb = row.querySelector('.seed-checkbox');
-                        if (cb && !cb.disabled) {
-                            cb.checked = !cb.checked;
-                        }
-                    };
-                });
+            if (!table) return;
 
-                // Ensure select all checkbox works reliably
-                const selectAllCb = modal.querySelector('#seedSelectAll');
-                if (selectAllCb) {
-                    selectAllCb.onchange = function() {
-                        table.querySelectorAll('.seed-checkbox:not(:disabled)').forEach(cb => {
-                            cb.checked = selectAllCb.checked;
-                        });
-                    };
-                }
+            // Make entire row clickable (except when clicking the checkbox directly)
+            table.querySelectorAll('tr[data-idx]').forEach(row => {
+                row.style.cursor = 'pointer';
+                row.onclick = function(e) {
+                    if (e.target.tagName === 'INPUT' || e.target.closest('input[type="checkbox"]')) {
+                        return; // Let the checkbox handle its own change
+                    }
+                    const cb = row.querySelector('.seed-checkbox');
+                    if (cb && !cb.disabled) {
+                        cb.checked = !cb.checked;
+                        // Trigger change event for any listeners
+                        cb.dispatchEvent(new Event('change', { bubbles: true }));
+                    }
+                };
+            });
+
+            // Make sure individual checkboxes work and update any state
+            table.querySelectorAll('.seed-checkbox').forEach(cb => {
+                cb.onchange = function() {
+                    // Optional: could add visual feedback here if needed
+                };
+            });
+
+            // Reliable Select All
+            const selectAllCb = modal.querySelector('#seedSelectAll');
+            if (selectAllCb) {
+                selectAllCb.onchange = function() {
+                    const isChecked = selectAllCb.checked;
+                    table.querySelectorAll('.seed-checkbox:not(:disabled)').forEach(cb => {
+                        cb.checked = isChecked;
+                    });
+                };
             }
-        }, 50);
+        }, 80);
     }
 
     function filterSeedTable(inputEl) {
@@ -1095,21 +1167,38 @@
             selectedIdxs.push(parseInt(cb.value));
         });
 
-        let added = 0;
+        // Group by cost_code (ignore Cost Type) and consolidate amounts
+        const grouped = new Map();
         selectedIdxs.forEach(idx => {
             const b = budgetLines[idx];
             if (!b) return;
-            const exists = contractorSOV.some(s => s.cost_code === b.cost_code);
+            const key = b.cost_code;
+            if (!grouped.has(key)) {
+                grouped.set(key, {
+                    cost_code: b.cost_code,
+                    description: b.description,
+                    original_budget: 0,
+                    notes: b.notes || ''
+                });
+            }
+            const g = grouped.get(key);
+            g.original_budget += (b.original_budget || 0);
+            // Keep first description; if needed could append but single is fine for SOV
+        });
+
+        let added = 0;
+        grouped.forEach((g, key) => {
+            const exists = contractorSOV.some(s => s.cost_code === key);
             if (!exists) {
                 contractorSOV.push({
                     id: Date.now() + Math.random(),
-                    cost_code: b.cost_code,
-                    description: b.description,
-                    original: b.original_budget || 0,
+                    cost_code: g.cost_code,
+                    description: g.description,
+                    original: g.original_budget,
                     co_amount: 0,
                     billed_to_date: 0,
                     percent_complete: 0,
-                    notes: b.notes || ''
+                    notes: g.notes
                 });
                 added++;
             }
@@ -1120,7 +1209,7 @@
         modal.remove();
         delete window._seedBudgetLines;
 
-        showCenteredAlert(`Seeded ${added} new lines from Budget into Contractor SOV.`, 'success');
+        showCenteredAlert(`Seeded ${added} consolidated cost code(s) from Budget into Contractor SOV.`, 'success');
         renderPayAppContent();
     }
 
@@ -1206,12 +1295,14 @@
         thead.innerHTML = `
             <tr>
                 <th class="px-3 py-3 text-center font-medium text-zinc-400 w-8">#</th>
-                <th class="px-4 py-3 text-left font-medium text-zinc-400 w-24">Cost Code</th>
+                <th class="px-4 py-3 text-left font-medium text-zinc-400 w-28">Cost Code</th>
                 <th class="px-4 py-3 text-left font-medium text-zinc-400 min-w-[320px]">Description</th>
                 <th class="px-4 py-3 text-right font-medium text-zinc-400 w-28">Original Commitment</th>
                 <th class="px-3 py-3 text-center font-medium text-zinc-400 w-16">% Complete</th>
                 <th class="px-4 py-3 text-right font-medium text-zinc-400 w-28">Billed to Date</th>
                 <th class="px-3 py-3 text-right font-medium text-zinc-400 w-24">This Period</th>
+                <th class="px-3 py-3 text-right font-medium text-zinc-400 w-24">Stored Materials</th>
+                <th class="px-3 py-3 text-right font-medium text-zinc-400 w-20">Retainage</th>
                 <th class="px-3 py-3 text-center font-medium text-zinc-400 w-20">Actions</th>
             </tr>
         `;
@@ -1219,7 +1310,7 @@
         tbody.innerHTML = '';
 
         if (subLines.length === 0) {
-            tbody.innerHTML = `<tr><td colspan="8" class="px-6 py-10 text-center text-zinc-500">No SOV lines for this subcontractor yet. Click "Add Line to this Sub's SOV".</td></tr>`;
+            tbody.innerHTML = `<tr><td colspan="10" class="px-6 py-10 text-center text-zinc-500">No SOV lines for this subcontractor yet. Click "Add Line to this Sub's SOV".</td></tr>`;
             return;
         }
 
@@ -1227,7 +1318,7 @@
         if (isPrimaryContact) {
             const banner = document.createElement('tr');
             banner.innerHTML = `
-                <td colspan="8" class="px-4 py-2 bg-emerald-900/30 text-emerald-400 text-xs font-medium">
+                <td colspan="10" class="px-4 py-2 bg-emerald-900/30 text-emerald-400 text-xs font-medium">
                     <i class="fa-solid fa-user-shield mr-2"></i> Primary Contact Mode — You can only edit billing fields for your company. Original Commitment is locked.
                 </td>
             `;
@@ -1265,7 +1356,7 @@
                     renderPayAppContent();
                 };
                 headerRow.innerHTML = `
-                    <td colspan="8" class="px-4 py-2 text-emerald-400 font-semibold text-sm">
+                    <td colspan="10" class="px-4 py-2 text-emerald-400 font-semibold text-sm">
                         <i class="fa-solid fa-chevron-${isCollapsed ? 'right' : 'down'} mr-2 transition-transform"></i>
                         Division ${division} — ${divisionNamesSub[division] || 'Other'}
                     </td>
@@ -1292,7 +1383,9 @@
                 <td class="px-4 py-2 text-right font-mono text-sm">${formatCurrency(current)}</td>
                 <td class="px-3 py-2 text-center font-mono text-xs">${pct}%</td>
                 <td class="px-4 py-2 text-right text-emerald-400 font-mono text-sm">${formatCurrency(billed)}</td>
-                <td class="px-3 py-2 text-right text-amber-400 font-mono text-sm">${formatCurrency(thisPeriod)}</td>
+                <td class="px-3 py-2 text-right text-emerald-400 font-mono text-sm">${formatCurrency(thisPeriod)}</td>
+                <td class="px-3 py-2 text-right text-sky-400 font-mono text-sm">${formatCurrency(line.materials_stored || 0)}</td>
+                <td class="px-3 py-2 text-right text-red-400 font-mono text-sm">${formatCurrency(thisPeriod * 0.10)}</td>
                 <td class="px-3 py-2 text-center">
                     <button onclick="event.stopImmediatePropagation(); editSubSOVLine(${selectedSubCompanyId}, ${line.id})" class="text-emerald-400 hover:text-emerald-300 p-1"><i class="fa-solid fa-edit"></i></button>
                     <button onclick="event.stopImmediatePropagation(); deleteSubSOVLine(${selectedSubCompanyId}, ${line.id})" class="text-red-400 hover:text-red-300 p-1 ml-1"><i class="fa-solid fa-trash"></i></button>
