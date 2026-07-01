@@ -115,7 +115,7 @@
 
 <!-- TABLE CONTAINER -->
 <div class="mx-6 mb-6 flex-1 overflow-hidden flex flex-col border border-zinc-700 rounded-md bg-zinc-900">
-    <div class="flex-1 overflow-auto" id="payAppTableScrollContainer" style="height: calc(100vh - 420px); max-height: calc(100vh - 420px); overflow-y: auto;">
+    <div class="flex-1 overflow-auto" id="payAppTableScrollContainer" style="max-height: calc(100vh - 340px);">
         <table class="w-full text-sm min-w-[1900px]">
             <thead class="bg-zinc-800 sticky z-20 border-b border-zinc-700" style="top: 0; position: sticky;" id="payAppTableHead">
                 <!-- Populated dynamically -->
@@ -445,7 +445,7 @@
             <tr>
                 <th class="px-3 py-3 text-center font-medium text-zinc-400 w-8">#</th>
                 <th class="px-4 py-3 text-left font-medium text-zinc-400 w-28">Cost Code</th>
-                <th class="px-4 py-3 text-left font-medium text-zinc-400 min-w-[220px]">Description</th>
+                <th class="px-4 py-3 text-left font-medium text-zinc-400 min-w-[160px]">Description</th>
                 <th class="px-4 py-3 text-right font-medium text-zinc-400 w-28">Original</th>
                 <th class="px-3 py-3 text-center font-medium text-zinc-400 w-16">% Complete</th>
                 <th class="px-4 py-3 text-right font-medium text-zinc-400 w-28">Billed to Date</th>
@@ -741,7 +741,7 @@
             <tr>
                 <th class="px-3 py-3 text-center font-medium text-zinc-400 w-8">#</th>
                 <th class="px-4 py-3 text-left font-medium text-zinc-400 w-28">Cost Code</th>
-                <th class="px-4 py-3 text-left font-medium text-zinc-400 min-w-[220px]">Description</th>
+                <th class="px-4 py-3 text-left font-medium text-zinc-400 min-w-[160px]">Description</th>
                 <th class="px-4 py-3 text-right font-medium text-zinc-400 w-28">Original</th>
                 <th class="px-3 py-3 text-right font-medium text-zinc-400 w-24">COs</th>
                 <th class="px-4 py-3 text-right font-medium text-zinc-400 w-28">Current</th>
@@ -846,30 +846,113 @@
         });
     }
 
-    function viewBudgetCostCodesForSOV() {
-        // Reuse the nice searchable list from budget style if possible, or simple alert with list
-        const budgetLinesData = JSON.parse(localStorage.getItem('budgetLines')) || [];
-        if (budgetLinesData.length === 0) {
-            showCenteredAlert("No budget cost codes found. Add lines in the Budget page first.");
+    function viewBudgetCostCodesForSOV(source = 'budget') {
+        let sourceData = [];
+        let title = 'Select Cost Code';
+        if (source === 'contractor-sov') {
+            sourceData = JSON.parse(localStorage.getItem('contractorSOV')) || [];
+            title = 'Select from Contractor SOV (G703)';
+        } else {
+            sourceData = JSON.parse(localStorage.getItem('budgetLines')) || [];
+            title = 'Select from Budget Cost Codes';
+        }
+        if (sourceData.length === 0) {
+            showCenteredAlert(source === 'contractor-sov' ? "No Contractor SOV lines yet. Add lines in G703 tab first." : "No budget cost codes found. Add lines in the Budget page first.");
             return;
         }
+
         const modal = document.createElement('dialog');
-        modal.className = 'modal rounded-md p-0 text-white w-full max-w-lg';
+        modal.className = 'modal rounded-md p-0 text-white';
         modal.style.backgroundColor = '#18181b';
         modal.style.border = '1px solid #3f3f46';
-        let html = `<div class="p-5"><div class="flex justify-between mb-3"><h3 class="font-semibold">Budget Cost Codes</h3><button onclick="this.closest('dialog').close();this.closest('dialog').remove()" class="text-zinc-400"><i class="fa-solid fa-times"></i></button></div>`;
-        html += `<div class="max-h-[320px] overflow-auto border border-zinc-700 rounded"><table class="w-full text-sm"><thead class="bg-zinc-800"><tr><th class="px-3 py-1 text-left">Code</th><th class="px-3 py-1 text-left">Description</th></tr></thead><tbody>`;
+        modal.style.width = 'min(520px, 95vw)';
+        modal.style.maxHeight = '70vh';
+
+        let html = `
+            <div class="p-5">
+                <div class="flex justify-between items-center mb-3">
+                    <h3 class="font-semibold">${title}</h3>
+                    <button onclick="this.closest('dialog').close(); this.closest('dialog').remove()" class="text-zinc-400 hover:text-white">
+                        <i class="fa-solid fa-times text-lg"></i>
+                    </button>
+                </div>
+
+                <input type="text" id="sovCodeSearch" placeholder="Search cost codes or descriptions..." 
+                       class="w-full bg-zinc-800 border border-zinc-700 rounded-md px-4 py-2 text-sm mb-3 focus:border-emerald-600"
+                       oninput="filterSOVCodeList(this)">
+
+                <div class="max-h-[380px] overflow-auto border border-zinc-700 rounded-md">
+                    <table class="w-full text-sm" id="sovCodePickerTable">
+                        <thead class="bg-zinc-800 sticky top-0">
+                            <tr>
+                                <th class="px-3 py-1.5 text-left font-medium text-zinc-400 w-28">Code</th>
+                                <th class="px-3 py-1.5 text-left font-medium text-zinc-400">Description</th>
+                            </tr>
+                        </thead>
+                        <tbody class="divide-y divide-zinc-800">
+        `;
+
         const seen = new Set();
-        budgetLinesData.forEach(b => {
-            if (b.cost_code && !seen.has(b.cost_code)) {
-                seen.add(b.cost_code);
-                html += `<tr class="hover:bg-zinc-800 cursor-pointer" onclick="selectSOVCodeFromList('${b.cost_code}', '${b.description.replace(/'/g, "\\'")}', this.closest('dialog'))"><td class="px-3 py-1 font-mono text-emerald-400">${b.cost_code}</td><td class="px-3 py-1">${b.description}</td></tr>`;
+        sourceData.forEach(item => {
+            const code = item.cost_code || item.code || '';
+            const desc = item.description || item.desc || '';
+            if (code && !seen.has(code)) {
+                seen.add(code);
+                const safeDesc = desc.replace(/'/g, "\\'");
+                html += `
+                    <tr class="hover:bg-zinc-800/70 cursor-pointer" onclick="selectSOVCodeFromList('${code}', '${safeDesc}', this.closest('dialog'))">
+                        <td class="px-3 py-1.5 font-mono text-emerald-400 text-xs">${code}</td>
+                        <td class="px-3 py-1.5 text-sm">${desc}</td>
+                    </tr>
+                `;
             }
         });
-        html += `</tbody></table></div></div>`;
+
+        html += `
+                        </tbody>
+                    </table>
+                </div>
+                <div class="mt-3 text-[10px] text-zinc-500">Click a row to select • Use search to filter</div>
+            </div>
+        `;
+
         modal.innerHTML = html;
         document.body.appendChild(modal);
         modal.showModal();
+
+        // Position to the right of the active SOV modal (Contractor or Sub)
+        setTimeout(() => {
+            const contractorModal = document.getElementById('contractorSOVModal');
+            const subModal = document.getElementById('editSubSOVModal');
+            let refModal = contractorModal && contractorModal.open ? contractorModal : (subModal && subModal.open ? subModal : null);
+            if (refModal) {
+                const rect = refModal.getBoundingClientRect();
+                modal.style.position = 'fixed';
+                modal.style.top = Math.max(80, rect.top) + 'px';
+                modal.style.left = (rect.right + 12) + 'px';
+                modal.style.transform = 'none';
+                modal.style.margin = '0';
+                modal.style.zIndex = '100001';
+            }
+        }, 60);
+
+        // Focus search
+        setTimeout(() => {
+            const search = modal.querySelector('#sovCodeSearch');
+            if (search) search.focus();
+        }, 120);
+    }
+
+    function filterSOVCodeList(inputEl) {
+        const q = (inputEl.value || '').toLowerCase().trim();
+        const table = inputEl.closest('dialog').querySelector('#sovCodePickerTable');
+        if (!table) return;
+        const tbody = table.querySelector('tbody');
+        if (!tbody) return;
+        tbody.querySelectorAll('tr').forEach(row => {
+            const text = row.textContent.toLowerCase();
+            row.style.display = text.includes(q) ? '' : 'none';
+        });
     }
 
     function selectSOVCodeFromList(code, desc, listModal) {
@@ -893,8 +976,7 @@
                         <span>Cost Code</span>
                         <button type="button" onclick="viewBudgetCostCodesForSOV()" class="ml-2 px-2.5 py-0.5 text-[10px] bg-zinc-700 hover:bg-zinc-600 text-emerald-400 rounded">View All Codes</button>
                     </label>
-                    <input type="text" id="sovCostCode" list="sovCostCodeList" class="w-full bg-zinc-800 border border-zinc-700 rounded-md px-4 py-2.5 text-sm" placeholder="03-3000">
-                    <datalist id="sovCostCodeList"></datalist>
+                    <input type="text" id="sovCostCode" class="w-full bg-zinc-800 border border-zinc-700 rounded-md px-4 py-2.5 text-sm" placeholder="03-3000 (use View All Codes)">
                 </div>
                 <div>
                     <label class="block text-sm mb-1.5 text-zinc-300">Description</label>
@@ -922,7 +1004,6 @@
         `;
         modal.showModal();
         setTimeout(() => {
-            populateSOVCostCodeDatalist();
             setupAccountingFormat('sovOriginal');
             setupAccountingFormat('sovCO');
         }, 80);
@@ -940,8 +1021,7 @@
                         <span>Cost Code</span>
                         <button type="button" onclick="viewBudgetCostCodesForSOV()" class="ml-2 px-2.5 py-0.5 text-[10px] bg-zinc-700 hover:bg-zinc-600 text-emerald-400 rounded">View All Codes</button>
                     </label>
-                    <input type="text" id="sovCostCode" list="sovCostCodeList" class="w-full bg-zinc-800 border border-zinc-700 rounded-md px-4 py-2.5 text-sm" value="${line.cost_code}">
-                    <datalist id="sovCostCodeList"></datalist>
+                    <input type="text" id="sovCostCode" class="w-full bg-zinc-800 border border-zinc-700 rounded-md px-4 py-2.5 text-sm" value="${line.cost_code}" placeholder="03-3000 (use View All Codes)">
                 </div>
                 <div>
                     <label class="block text-sm mb-1.5 text-zinc-300">Description</label>
@@ -969,7 +1049,7 @@
         `;
         modal.showModal();
         setTimeout(() => {
-            populateSOVCostCodeDatalist();
+            // No datalist population - use View All Codes popup instead
         }, 80);
     }
 
@@ -1336,7 +1416,7 @@
             <tr>
                 <th class="px-3 py-3 text-center font-medium text-zinc-400 w-8">#</th>
                 <th class="px-4 py-3 text-left font-medium text-zinc-400 w-28">Cost Code</th>
-                <th class="px-4 py-3 text-left font-medium text-zinc-400 min-w-[220px]">Description</th>
+                <th class="px-4 py-3 text-left font-medium text-zinc-400 min-w-[160px]">Description</th>
                 <th class="px-4 py-3 text-right font-medium text-zinc-400 w-28">Original Commitment</th>
                 <th class="px-3 py-3 text-center font-medium text-zinc-400 w-16">% Complete</th>
                 <th class="px-4 py-3 text-right font-medium text-zinc-400 w-28">Billed to Date</th>
@@ -1483,7 +1563,7 @@
                     <div>
                         <label class="block text-sm mb-1.5 text-zinc-300 flex items-center justify-between">
                             <span>Cost Code</span>
-                            ${(!isPrimary || !line) ? `<button type="button" onclick="viewBudgetCostCodesForSOV()" class="ml-2 px-2.5 py-0.5 text-[10px] bg-zinc-700 hover:bg-zinc-600 text-emerald-400 rounded">View All Codes</button>` : ''}
+                            ${(!isPrimary || !line) ? `<button type="button" onclick="viewBudgetCostCodesForSOV('contractor-sov')" class="ml-2 px-2.5 py-0.5 text-[10px] bg-zinc-700 hover:bg-zinc-600 text-emerald-400 rounded">View Codes from G703</button>` : ''}
                         </label>
                         <input type="text" id="subCostCode" class="w-full bg-zinc-800 border border-zinc-700 rounded-md px-4 py-2.5 text-sm" value="${line ? line.cost_code : ''}" ${isPrimary && line ? 'readonly' : ''}>
                     </div>
