@@ -708,6 +708,9 @@ let subSOVStatus = JSON.parse(localStorage.getItem('subSOVStatus') || '{}'); // 
         const modal = document.getElementById('editBillingModal');
         const content = document.getElementById('editBillingContent');
 
+        const hasCO = (line.co_amount || 0) > 0;
+        const coWorkThis = billing.coWorkThisPeriod || 0;
+
         content.innerHTML = `
             <div class="mb-4">
                 <div class="font-mono text-emerald-400">${line.cost_code}</div>
@@ -726,6 +729,14 @@ let subSOVStatus = JSON.parse(localStorage.getItem('subSOVStatus') || '{}'); // 
                     <input type="number" id="materialsStoredInput" value="${billing.materialsStored || 0}" step="0.01"
                            class="w-full bg-zinc-800 border border-zinc-700 rounded-md px-4 py-2.5 text-sm">
                 </div>
+                ${hasCO ? `
+                <div class="pt-2 border-t border-zinc-700">
+                    <label class="block text-xs text-amber-400 mb-1 font-medium">Change Order Work This Period</label>
+                    <input type="number" id="coWorkThisPeriodInput" value="${coWorkThis}" step="0.01"
+                           class="w-full bg-zinc-800 border border-amber-600 rounded-md px-4 py-2.5 text-sm">
+                    <div class="text-[10px] text-amber-400 mt-1">This amount will appear under Change Orders on the printed G703.</div>
+                </div>
+                ` : ''}
             </div>
 
             <div class="flex justify-end gap-3 mt-6">
@@ -740,11 +751,13 @@ let subSOVStatus = JSON.parse(localStorage.getItem('subSOVStatus') || '{}'); // 
     function savePayAppBillingLine(sovLineId, btn) {
         const workInput = document.getElementById('workThisPeriodInput');
         const matInput = document.getElementById('materialsStoredInput');
+        const coWorkInput = document.getElementById('coWorkThisPeriodInput'); // New CO field
         if (!workInput || !matInput) return;
 
         const workThisPeriod = parseFloat(workInput.value) || 0;
         const materialsStored = parseFloat(matInput.value) || 0;
-        const totalThis = workThisPeriod + materialsStored;
+        const coWorkThisPeriod = coWorkInput ? (parseFloat(coWorkInput.value) || 0) : 0;
+        const totalThis = workThisPeriod + materialsStored + coWorkThisPeriod;
 
         const line = contractorSOV.find(l => l.id === sovLineId);
         if (!line) return;
