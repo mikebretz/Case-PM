@@ -781,29 +781,21 @@ let subSOVStatus = JSON.parse(localStorage.getItem('subSOVStatus') || '{}'); // 
                         <span>CHANGE ORDER BILLING THIS PERIOD</span>
                     </div>
                     
-                    <div class="grid grid-cols-1 gap-3">
-                        <div>
-                            <label class="block text-xs text-amber-300 mb-1">Change Order Work This Period</label>
-                            <input type="number" id="coWorkThisPeriodInput" value="${coWorkThis}" step="0.01"
-                                   class="w-full bg-zinc-800 border border-amber-500 rounded-md px-4 py-2 text-sm font-mono"
-                                   oninput="updateCOLiveCalculations(${sovLineId}, this.value)">
-                            <div class="text-[10px] text-amber-400 mt-0.5">Enter amount to bill against this line's Change Order this period.</div>
-                        </div>
+                    <div>
+                        <label class="block text-xs text-amber-300 mb-1">Change Order Work This Period</label>
+                        <input type="number" id="coWorkThisPeriodInput" value="${coWorkThis}" step="0.01"
+                               class="w-full bg-zinc-800 border border-amber-500 rounded-md px-4 py-2 text-sm font-mono"
+                               oninput="updateCOLiveCalculations(${sovLineId}, this.value)">
+                        <div class="text-[10px] text-amber-400 mt-0.5">Enter amount to bill against this line's Change Order this period. Affects CO remaining only.</div>
                         
-                        <div class="grid grid-cols-2 gap-3">
+                        <div class="grid grid-cols-2 gap-3 mt-2">
                             <div>
-                                <label class="block text-xs text-zinc-400 mb-1">Remaining Change Order Amount</label>
-                                <div id="coRemainingDisplay" class="w-full bg-zinc-950 border border-zinc-700 rounded-md px-4 py-2 text-sm font-mono text-emerald-400">
-                                    ${formatCurrency(coRemaining)}
-                                </div>
-                                <div class="text-[10px] text-zinc-500 mt-0.5">CO total minus previously billed CO.</div>
+                                <div class="text-xs text-zinc-500">Amount Previously Billed (CO)</div>
+                                <div id="coPreviouslyBilledDisplay" class="font-mono text-emerald-300 text-sm">${formatCurrency(coBilledPreviously)}</div>
                             </div>
                             <div>
-                                <label class="block text-xs text-zinc-400 mb-1">Amount Left to Bill (CO)</label>
-                                <div id="coLeftToBillDisplay" class="w-full bg-zinc-950 border border-zinc-700 rounded-md px-4 py-2 text-sm font-mono text-amber-400 font-semibold">
-                                    ${formatCurrency(coLeftToBill)}
-                                </div>
-                                <div class="text-[10px] text-amber-500 mt-0.5">What remains after this entry (live).</div>
+                                <div class="text-xs text-zinc-500">Remaining to Bill (CO after this entry)</div>
+                                <div id="coRemainingToBillDisplay" class="font-mono font-semibold text-amber-400 text-sm">${formatCurrency(coLeftToBill)}</div>
                             </div>
                         </div>
                     </div>
@@ -830,30 +822,28 @@ let subSOVStatus = JSON.parse(localStorage.getItem('subSOVStatus') || '{}'); // 
         }, 80);
     }
 
-    // Live calculation helper for CO remaining / left to bill in the modal
+    // Live calculation helper for CO Previously Billed + Remaining to Bill (live as you type, mirrors Work/Materials behavior)
     function updateCOLiveCalculations(sovLineId, newCoWorkValue) {
         const line = contractorSOV.find(l => l.id === sovLineId);
         if (!line) return;
 
         const coTotal = line.co_amount || 0;
         const coBilledPreviously = (line.co_billed_to_date || Math.round(coTotal * 0.6));
-        const coRemaining = Math.max(0, coTotal - coBilledPreviously);
-        
         const coWorkThis = parseFloat(newCoWorkValue) || 0;
-        const coLeft = Math.max(0, coRemaining - coWorkThis);
+        const coRemainingAfter = Math.max(0, coTotal - coBilledPreviously - coWorkThis);
 
-        const remEl = document.getElementById('coRemainingDisplay');
-        const leftEl = document.getElementById('coLeftToBillDisplay');
+        const prevEl = document.getElementById('coPreviouslyBilledDisplay');
+        const remEl = document.getElementById('coRemainingToBillDisplay');
 
-        if (remEl) remEl.textContent = formatCurrency(coRemaining);
-        if (leftEl) {
-            leftEl.textContent = formatCurrency(coLeft);
-            if (coLeft < 0) {
-                leftEl.style.color = '#f87171';
-                leftEl.style.fontWeight = '700';
+        if (prevEl) prevEl.textContent = formatCurrency(coBilledPreviously);
+        if (remEl) {
+            remEl.textContent = formatCurrency(coRemainingAfter);
+            if (coRemainingAfter < 0) {
+                remEl.style.color = '#f87171';
+                remEl.style.fontWeight = '700';
             } else {
-                leftEl.style.color = '#fbbf24';
-                leftEl.style.fontWeight = '600';
+                remEl.style.color = '#fbbf24';
+                remEl.style.fontWeight = '600';
             }
         }
     }
@@ -2188,11 +2178,30 @@ let subSOVStatus = JSON.parse(localStorage.getItem('subSOVStatus') || '{}'); // 
                 </div>
 
                 ${(line.change_orders || 0) > 0 ? `
-                <div class="pt-2 border-t border-zinc-700">
-                    <label class="block text-xs text-amber-400 mb-1 font-medium">Change Order Work This Period</label>
-                    <input type="number" id="subCoWorkThisPeriodInput" value="${line.co_billed_this_period || 0}" step="0.01"
-                           class="w-full bg-zinc-800 border border-amber-600 rounded-md px-4 py-2.5 text-sm">
-                    <div class="text-[10px] text-amber-400 mt-1">Remaining CO to bill: <span id="subRemainingCO">${formatCurrency((line.change_orders || 0) - (line.co_billed_to_date || 0))}</span></div>
+                <div class="pt-3 border-t border-amber-600 bg-zinc-900/60 p-3 rounded-md mt-2">
+                    <div class="text-amber-400 text-xs font-semibold mb-2 flex items-center gap-2">
+                        <i class="fa-solid fa-exchange-alt"></i> 
+                        <span>CHANGE ORDERS (This Period)</span>
+                    </div>
+                    
+                    <div>
+                        <label class="block text-xs text-amber-300 mb-1">Change Order Work This Period</label>
+                        <input type="number" id="subCoWorkThisPeriodInput" value="${line.co_billed_this_period || 0}" step="0.01"
+                               class="w-full bg-zinc-800 border border-amber-500 rounded-md px-4 py-2 text-sm font-mono"
+                               oninput="updateSubCOLiveCalculations(${companyId}, ${lineId}, this.value)">
+                        <div class="text-[10px] text-amber-400 mt-0.5">Affects CO remaining only. Does not affect Original Contract remaining.</div>
+                        
+                        <div class="grid grid-cols-2 gap-3 mt-2">
+                            <div>
+                                <div class="text-xs text-zinc-500">Amount Previously Billed (CO)</div>
+                                <div id="subCoPreviouslyBilledDisplay" class="font-mono text-emerald-300 text-sm">${formatCurrency(line.co_billed_to_date || 0)}</div>
+                            </div>
+                            <div>
+                                <div class="text-xs text-zinc-500">Remaining to Bill (CO after this entry)</div>
+                                <div id="subCoRemainingToBillDisplay" class="font-mono font-semibold text-amber-400 text-sm">${formatCurrency(Math.max(0, (line.change_orders || 0) - (line.co_billed_to_date || 0)))}</div>
+                            </div>
+                        </div>
+                    </div>
                 </div>
                 ` : ''}
             </div>
@@ -2221,6 +2230,33 @@ let subSOVStatus = JSON.parse(localStorage.getItem('subSOVStatus') || '{}'); // 
                 matInput.oninput = updateRemaining;
             }
         }, 100);
+    }
+
+    // Live calculation for Subcontractor CO Previously Billed + Remaining (mirrors G702 CO behavior)
+    function updateSubCOLiveCalculations(companyId, lineId, newCoWorkValue) {
+        const lines = subcontractorSOV[companyId] || [];
+        const line = lines.find(l => l.id === lineId);
+        if (!line) return;
+
+        const coTotal = line.change_orders || 0;
+        const coBilledPreviously = line.co_billed_to_date || 0;
+        const coWorkThis = parseFloat(newCoWorkValue) || 0;
+        const coRemainingAfter = Math.max(0, coTotal - coBilledPreviously - coWorkThis);
+
+        const prevEl = document.getElementById('subCoPreviouslyBilledDisplay');
+        const remEl = document.getElementById('subCoRemainingToBillDisplay');
+
+        if (prevEl) prevEl.textContent = formatCurrency(coBilledPreviously);
+        if (remEl) {
+            remEl.textContent = formatCurrency(coRemainingAfter);
+            if (coRemainingAfter < 0) {
+                remEl.style.color = '#f87171';
+                remEl.style.fontWeight = '700';
+            } else {
+                remEl.style.color = '#fbbf24';
+                remEl.style.fontWeight = '600';
+            }
+        }
     }
 
     function saveSubSOVBillingLine(companyId, lineId, btn) {
@@ -2344,12 +2380,42 @@ let subSOVStatus = JSON.parse(localStorage.getItem('subSOVStatus') || '{}'); // 
     }
 
     function unlockSubSOV(companyId) {
-        if (!confirm("Unlock this Subcontractor's SOV for revision? This will allow changes to Original Commitment and structure. Only do this if absolutely necessary.")) return;
-        const company = companies.find(c => c.id == companyId);
-        updateSubSOVStatus(companyId, 'Draft', { unlockedBy: 'Michael Bretz', unlockedDate: new Date().toISOString() });
-        logPayAppAudit('SUB_SOV_UNLOCKED', { company: company ? (company.name || company.company_name) : companyId, by: 'Michael Bretz' });
-        showCenteredAlert("SOV unlocked for revision. Admin can now edit structural fields.", 'success');
-        renderPayAppContent();
+        // Styled centered confirmation modal (replaces native confirm which appears at top)
+        const confirmModal = document.createElement('dialog');
+        confirmModal.className = 'modal rounded-md w-full max-w-md p-0 text-white';
+        confirmModal.style.backgroundColor = '#18181b';
+        confirmModal.style.border = '1px solid #3f3f46';
+        confirmModal.innerHTML = `
+            <div class="p-6">
+                <div class="flex items-start gap-3 mb-4">
+                    <i class="fa-solid fa-unlock text-amber-400 text-xl mt-0.5"></i>
+                    <div>
+                        <h3 class="text-lg font-semibold">Unlock Subcontractor SOV for Revision?</h3>
+                        <p class="text-sm text-zinc-400 mt-1">This will allow changes to Original Commitment and structure. Only do this if absolutely necessary. The subcontractor will need to resubmit for approval afterward.</p>
+                    </div>
+                </div>
+                <div class="flex justify-end gap-3 mt-6">
+                    <button id="cancelUnlockBtn" class="px-6 py-2.5 rounded-md bg-zinc-700 hover:bg-zinc-600 text-sm">Cancel</button>
+                    <button id="confirmUnlockBtn" class="px-8 py-2.5 rounded-md bg-amber-600 hover:bg-amber-500 text-sm font-semibold">Yes, Unlock for Revision</button>
+                </div>
+            </div>
+        `;
+        document.body.appendChild(confirmModal);
+        confirmModal.showModal();
+
+        confirmModal.querySelector('#cancelUnlockBtn').onclick = () => {
+            confirmModal.close();
+            confirmModal.remove();
+        };
+        confirmModal.querySelector('#confirmUnlockBtn').onclick = () => {
+            confirmModal.close();
+            confirmModal.remove();
+            const company = companies.find(c => c.id == companyId);
+            updateSubSOVStatus(companyId, 'Draft', { unlockedBy: 'Michael Bretz', unlockedDate: new Date().toISOString() });
+            logPayAppAudit('SUB_SOV_UNLOCKED', { company: company ? (company.name || company.company_name) : companyId, by: 'Michael Bretz' });
+            showCenteredAlert("SOV unlocked for revision. Admin can now edit structural fields.", 'success');
+            renderPayAppContent();
+        };
     }
 
     function showAddNewSubcontractorQuick() {
