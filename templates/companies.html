@@ -393,6 +393,22 @@ let companyAuditLog = JSON.parse(localStorage.getItem('companyAuditLog') || '[]'
 
 const sageData = [ /* paste your sageData array here if you have it, or leave empty for now */ ];
 
+// ==================== PRIMARY CONTACT PERMISSION LOGIC (Clean & Robust) ====================
+function getCurrentUser() {
+    const allUsers = JSON.parse(localStorage.getItem('users') || '[]');
+    // Demo: Michael Bretz is the currently logged-in user (matches header avatar)
+    return allUsers.find(u => u.email === 'michael.bretz@casepm.com') ||
+           allUsers.find(u => ((u.firstName || '').toLowerCase() === 'michael' && (u.lastName || '').toLowerCase() === 'bretz')) ||
+           allUsers[0] || null;
+}
+
+function isCurrentUserPrimaryContactForCompany(company) {
+    if (!company || !company.primary_contact_user_id) return false;
+    const currentUser = getCurrentUser();
+    if (!currentUser) return false;
+    return Number(company.primary_contact_user_id) === Number(currentUser.id);
+}
+
 function logCompanyAudit(action, companyId, details = {}) {
     const entry = {
         id: Date.now() + Math.random(),
@@ -837,6 +853,15 @@ function saveCompany(e) {
         primary_contact_user_id: null
     };
 
+    // If current user is Primary Contact for this company, prevent them from changing restricted fields
+    const existingForPermCheck = companies.find(c => c.id === id);
+    if (existingForPermCheck && isCurrentUserPrimaryContactForCompany(existingForPermCheck)) {
+        newCompany.company_type = existingForPermCheck.company_type;
+        newCompany.external_id = existingForPermCheck.external_id || '';
+        newCompany.status = existingForPermCheck.status || 'Active';
+        newCompany.notes = existingForPermCheck.notes || '';
+    }
+
     // Preserve primary contact designation when editing (set via "Set as Primary Contact" button)
     // Check both the original array and the live company object (in case designatePrimaryContact updated it during this edit session)
     const existingIndex = companies.findIndex(c => c.id === id);
@@ -982,6 +1007,61 @@ function editCompany(id) {
     document.getElementById('coiContainer').innerHTML = '';
     if (company.cois && company.cois.length > 0) {
         company.cois.forEach(c => addCOIRow(c));
+    }
+
+    // ==================== PRIMARY CONTACT MODE (Restricted Editing) ====================
+    const isPrimaryContact = isCurrentUserPrimaryContactForCompany(company);
+
+    if (isPrimaryContact) {
+        document.getElementById('modalTitle').innerHTML = `
+            Edit Company 
+            <span class="ml-2 px-2.5 py-0.5 text-xs rounded-full bg-emerald-600 text-white font-medium">Primary Contact Mode</span>
+        `;
+        
+        // Hide/disable fields that Primary Contacts should NOT edit
+        const externalRow = document.getElementById('external_id')?.closest('.md\\:col-span-3');
+        if (externalRow) externalRow.style.display = 'none';
+
+        const typeSelect = document.getElementById('company_type');
+        if (typeSelect) {
+            typeSelect.disabled = true;
+            typeSelect.parentElement.style.opacity = '0.6';
+        }
+
+        const statusSelect = document.getElementById('status');
+        if (statusSelect) {
+            statusSelect.disabled = true;
+            statusSelect.parentElement.style.opacity = '0.6';
+        }
+
+        const notesField = document.getElementById('notes');
+        if (notesField) {
+            notesField.disabled = true;
+            notesField.parentElement.style.opacity = '0.6';
+        }
+
+        // Show helpful banner
+        setTimeout(() => {
+            const banner = document.createElement('div');
+            banner.className = 'mb-4 px-4 py-2 bg-emerald-900/30 border border-emerald-600 rounded text-xs text-emerald-300';
+            banner.innerHTML = `<i class="fa-solid fa-info-circle mr-1"></i> You are editing as the designated Primary Contact. You can update contact info, addresses, license, insurance, and COIs. Company Type, Status, External ID and Notes are managed by Admins.`;
+            const form = document.getElementById('companyForm');
+            if (form && form.firstChild) {
+                form.insertBefore(banner, form.firstChild);
+            }
+        }, 200);
+    } else {
+        // Reset any previously hidden/disabled fields (in case modal was used in primary mode before)
+        const externalRow = document.getElementById('external_id')?.closest('.md\\:col-span-3');
+        if (externalRow) externalRow.style.display = '';
+
+        ['company_type', 'status', 'notes'].forEach(id => {
+            const el = document.getElementById(id);
+            if (el) {
+                el.disabled = false;
+                if (el.parentElement) el.parentElement.style.opacity = '1';
+            }
+        });
     }
 
     document.getElementById('companyModal').showModal();
@@ -1986,7 +2066,7 @@ function showFullCompanyAuditLog() {
                     <thead class="bg-zinc-800 sticky top-0">
                         <tr>
                             <th class="px-4 py-2 text-left text-zinc-400 w-44">Timestamp</th>
-                            <th class="px-4 py-2 text-left text-zinc-400 min-w-[110px]">Action</th>
+                            <th class="px-4 py-2 text-left text-zinc-400 min-w-[130px]">Action</th>
                             <th class="px-4 py-2 text-left text-zinc-400">Company</th>
                             <th class="px-4 py-2 text-left text-zinc-400">Details / Changes</th>
                             <th class="px-4 py-2 text-left text-zinc-400 w-32">Performed By</th>
