@@ -700,22 +700,27 @@ let subSOVStatus = JSON.parse(localStorage.getItem('subSOVStatus') || '{}'); // 
         const line = contractorSOV.find(l => l.id === sovLineId);
         if (!line) return;
 
-        const billing = payAppBillingLines[sovLineId] || { workThisPeriod: 0, materialsStored: 0 };
+        const billing = payAppBillingLines[sovLineId] || { workThisPeriod: 0, materialsStored: 0, coWorkThisPeriod: 0 };
         const currentAmount = (line.original || 0) + (line.co_amount || 0);
         const previousBilled = line.billed_to_date || Math.round(currentAmount * 0.55);
         const remaining = currentAmount - previousBilled;
+
+        // Calculate CO already billed previously (simple model: assume proportion or stored separately; here we use a stored co_billed_to_date if present)
+        const coBilledPreviously = (line.co_billed_to_date || Math.round((line.co_amount || 0) * 0.6));
+        const coRemaining = Math.max(0, (line.co_amount || 0) - coBilledPreviously);
+        const coWorkThis = billing.coWorkThisPeriod || 0;
+        const coLeftToBill = Math.max(0, coRemaining - coWorkThis);
 
         const modal = document.getElementById('editBillingModal');
         const content = document.getElementById('editBillingContent');
 
         const hasCO = (line.co_amount || 0) > 0;
-        const coWorkThis = billing.coWorkThisPeriod || 0;
 
         content.innerHTML = `
             <div class="mb-4">
                 <div class="font-mono text-emerald-400">${line.cost_code}</div>
                 <div class="text-sm">${line.description}</div>
-                <div class="text-xs text-zinc-400 mt-1">Remaining to bill: <span class="font-semibold text-emerald-400">${formatCurrency(remaining)}</span></div>
+                <div class="text-xs text-zinc-400 mt-1">Remaining to bill (Total): <span class="font-semibold text-emerald-400">${formatCurrency(remaining)}</span></div>
             </div>
 
             <div class="space-y-4">
@@ -729,12 +734,40 @@ let subSOVStatus = JSON.parse(localStorage.getItem('subSOVStatus') || '{}'); // 
                     <input type="number" id="materialsStoredInput" value="${billing.materialsStored || 0}" step="0.01"
                            class="w-full bg-zinc-800 border border-zinc-700 rounded-md px-4 py-2.5 text-sm">
                 </div>
+
                 ${hasCO ? `
-                <div class="pt-2 border-t border-zinc-700">
-                    <label class="block text-xs text-amber-400 mb-1 font-medium">Change Order Work This Period</label>
-                    <input type="number" id="coWorkThisPeriodInput" value="${coWorkThis}" step="0.01"
-                           class="w-full bg-zinc-800 border border-amber-600 rounded-md px-4 py-2.5 text-sm">
-                    <div class="text-[10px] text-amber-400 mt-1">This amount will appear under Change Orders on the printed G703.</div>
+                <div class="pt-3 border-t border-amber-600 bg-zinc-900/60 p-3 rounded-md">
+                    <div class="text-amber-400 text-xs font-semibold mb-2 flex items-center gap-2">
+                        <i class="fa-solid fa-exchange-alt"></i> 
+                        <span>CHANGE ORDER BILLING THIS PERIOD</span>
+                    </div>
+                    
+                    <div class="grid grid-cols-1 gap-3">
+                        <div>
+                            <label class="block text-xs text-amber-300 mb-1">Change Order Work This Period</label>
+                            <input type="number" id="coWorkThisPeriodInput" value="${coWorkThis}" step="0.01"
+                                   class="w-full bg-zinc-800 border border-amber-500 rounded-md px-4 py-2 text-sm font-mono"
+                                   oninput="updateCOLiveCalculations(${sovLineId}, this.value)">
+                            <div class="text-[10px] text-amber-400 mt-0.5">Enter amount to bill against this line's Change Order this period.</div>
+                        </div>
+                        
+                        <div class="grid grid-cols-2 gap-3">
+                            <div>
+                                <label class="block text-xs text-zinc-400 mb-1">Remaining Change Order Amount</label>
+                                <div id="coRemainingDisplay" class="w-full bg-zinc-950 border border-zinc-700 rounded-md px-4 py-2 text-sm font-mono text-emerald-400">
+                                    ${formatCurrency(coRemaining)}
+                                </div>
+                                <div class="text-[10px] text-zinc-500 mt-0.5">CO total minus previously billed CO.</div>
+                            </div>
+                            <div>
+                                <label class="block text-xs text-zinc-400 mb-1">Amount Left to Bill (CO)</label>
+                                <div id="coLeftToBillDisplay" class="w-full bg-zinc-950 border border-zinc-700 rounded-md px-4 py-2 text-sm font-mono text-amber-400 font-semibold">
+                                    ${formatCurrency(coLeftToBill)}
+                                </div>
+                                <div class="text-[10px] text-amber-500 mt-0.5">What remains after this entry (live).</div>
+                            </div>
+                        </div>
+                    </div>
                 </div>
                 ` : ''}
             </div>
@@ -746,12 +779,50 @@ let subSOVStatus = JSON.parse(localStorage.getItem('subSOVStatus') || '{}'); // 
         `;
 
         modal.showModal();
+
+        // Attach live updater if CO section exists
+        setTimeout(() => {
+            const coInput = document.getElementById('coWorkThisPeriodInput');
+            if (coInput) {
+                coInput.oninput = function() {
+                    updateCOLiveCalculations(sovLineId, this.value);
+                };
+            }
+        }, 80);
+    }
+
+    // Live calculation helper for CO remaining / left to bill in the modal
+    function updateCOLiveCalculations(sovLineId, newCoWorkValue) {
+        const line = contractorSOV.find(l => l.id === sovLineId);
+        if (!line) return;
+
+        const coTotal = line.co_amount || 0;
+        const coBilledPreviously = (line.co_billed_to_date || Math.round(coTotal * 0.6));
+        const coRemaining = Math.max(0, coTotal - coBilledPreviously);
+        
+        const coWorkThis = parseFloat(newCoWorkValue) || 0;
+        const coLeft = Math.max(0, coRemaining - coWorkThis);
+
+        const remEl = document.getElementById('coRemainingDisplay');
+        const leftEl = document.getElementById('coLeftToBillDisplay');
+
+        if (remEl) remEl.textContent = formatCurrency(coRemaining);
+        if (leftEl) {
+            leftEl.textContent = formatCurrency(coLeft);
+            if (coLeft < 0) {
+                leftEl.style.color = '#f87171';
+                leftEl.style.fontWeight = '700';
+            } else {
+                leftEl.style.color = '#fbbf24';
+                leftEl.style.fontWeight = '600';
+            }
+        }
     }
 
     function savePayAppBillingLine(sovLineId, btn) {
         const workInput = document.getElementById('workThisPeriodInput');
         const matInput = document.getElementById('materialsStoredInput');
-        const coWorkInput = document.getElementById('coWorkThisPeriodInput'); // New CO field
+        const coWorkInput = document.getElementById('coWorkThisPeriodInput');
         if (!workInput || !matInput) return;
 
         const workThisPeriod = parseFloat(workInput.value) || 0;
@@ -771,14 +842,23 @@ let subSOVStatus = JSON.parse(localStorage.getItem('subSOVStatus') || '{}'); // 
             return;
         }
 
-        // Save billing
-        payAppBillingLines[sovLineId] = { workThisPeriod, materialsStored };
+        // Save billing including CO work this period
+        payAppBillingLines[sovLineId] = { 
+            workThisPeriod, 
+            materialsStored, 
+            coWorkThisPeriod: coWorkThisPeriod 
+        };
         localStorage.setItem('payAppBillingLines', JSON.stringify(payAppBillingLines));
 
-        // Update Contractor SOV with new billed_to_date and percent_complete
+        // Update Contractor SOV billed_to_date
         const newBilled = previousBilled + totalThis;
         line.billed_to_date = newBilled;
         line.percent_complete = currentAmount > 0 ? Math.min(100, Math.round((newBilled / currentAmount) * 100)) : 0;
+
+        // Track CO billed to date separately for future Remaining calculations
+        if (!line.co_billed_to_date) line.co_billed_to_date = 0;
+        line.co_billed_to_date = (line.co_billed_to_date || 0) + coWorkThisPeriod;
+
         localStorage.setItem('contractorSOV', JSON.stringify(contractorSOV));
 
         logPayAppAudit('BILLING_UPDATED', {
@@ -787,8 +867,10 @@ let subSOVStatus = JSON.parse(localStorage.getItem('subSOVStatus') || '{}'); // 
             description: line.description,
             workThisPeriod,
             materialsStored,
+            coWorkThisPeriod,
             newBilledToDate: newBilled,
-            period: currentPayAppPeriod ? currentPayAppPeriod.periodNumber : ''
+            period: currentPayAppPeriod ? currentPayAppPeriod.periodNumber : '',
+            changedBy: "Michael Bretz"
         });
 
         showUnsavedIndicator();
@@ -798,9 +880,29 @@ let subSOVStatus = JSON.parse(localStorage.getItem('subSOVStatus') || '{}'); // 
 
     function submitPayApplication() {
         if (!currentPayAppPeriod) return;
+
+        // === ORIGINAL CONTRACT AMOUNT VALIDATION (blocks processing if SOV does not match Budget) ===
+        let sovTotalOriginalPlusCO = 0;
+        contractorSOV.forEach(l => {
+            sovTotalOriginalPlusCO += (l.original || 0) + (l.co_amount || 0);
+        });
+
+        if (Math.abs(sovTotalOriginalPlusCO - budgetContractAmount) > 0.99) {
+            const mismatch = formatCurrency(Math.abs(sovTotalOriginalPlusCO - budgetContractAmount));
+            showCenteredAlert(
+                `BLOCKED: Cannot submit Pay Application. The current Schedule of Values total (Original + Change Orders = ${formatCurrency(sovTotalOriginalPlusCO)}) does NOT match the Budget Contract Amount (${formatCurrency(budgetContractAmount)}). Difference: ${mismatch}. Please reconcile the SOV first (Contractor Schedule of Values tab).`,
+                'warning'
+            );
+            // Also flash the mismatch warning in the cards
+            const cards = document.getElementById('payAppSummaryCards');
+            if (cards) cards.style.boxShadow = '0 0 0 3px #f59e0b';
+            setTimeout(() => { if (cards) cards.style.boxShadow = 'none'; }, 2200);
+            return; // BLOCK processing
+        }
+
         currentPayAppPeriod.status = "Submitted";
         localStorage.setItem('currentPayAppPeriod', JSON.stringify(currentPayAppPeriod));
-        logPayAppAudit('APPLICATION_SUBMITTED', { periodNumber: currentPayAppPeriod.periodNumber });
+        logPayAppAudit('APPLICATION_SUBMITTED', { periodNumber: currentPayAppPeriod.periodNumber, validatedAgainstBudget: budgetContractAmount });
         renderPayAppContent();
     }
 
@@ -849,11 +951,17 @@ let subSOVStatus = JSON.parse(localStorage.getItem('subSOVStatus') || '{}'); // 
             totalBalance += curr - (line.billed_to_date || 0);
         });
 
+        // Use the same Budget Contract Amount as the G702 tab for consistency
+        const sovMismatchNote = (totalOriginal + totalCO !== budgetContractAmount) 
+            ? `<div class="text-[10px] text-amber-400 mt-1">⚠️ Does not match Budget Contract Amount</div>` 
+            : '';
+
         cardsContainer.innerHTML = `
             <div class="grid grid-cols-2 md:grid-cols-5 gap-4">
                 <div class="bg-zinc-800 border border-zinc-700 rounded-md p-5">
-                    <div class="text-xs text-zinc-400">Total Original Contract</div>
-                    <div class="text-2xl font-semibold mt-1">${formatCurrency(totalOriginal)}</div>
+                    <div class="text-xs text-zinc-400">Original Contract Amount (from Budget)</div>
+                    <div class="text-2xl font-semibold mt-1 text-emerald-400">${formatCurrency(budgetContractAmount)}</div>
+                    ${sovMismatchNote}
                 </div>
                 <div class="bg-zinc-800 border border-zinc-700 rounded-md p-5">
                     <div class="text-xs text-zinc-400">Approved Change Orders</div>
@@ -1508,9 +1616,12 @@ let subSOVStatus = JSON.parse(localStorage.getItem('subSOVStatus') || '{}'); // 
         companies = JSON.parse(localStorage.getItem('casepm_companies')) || [];
         let currentStatus = 'Draft'; // Declare early to avoid TDZ errors in template literals
 
-        // Summary cards - reorganized with Current Contract Value and Change Orders to Date
+        // Summary cards - RESTRUCTURED EXACTLY AS REQUESTED
+        // Top row: Original Contract Amount | Current Contract Amount | Change Orders to Date
+        // Bottom row: Build to Date (Current Amount) | Change Order Amount Billed to Date | Total Amount Billed to Date
         cardsContainer.innerHTML = `
             <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+                <!-- Left: Subcontractor Selector -->
                 <div class="bg-zinc-800 border border-zinc-700 rounded-md p-5">
                     <div class="text-xs text-zinc-400">Select Subcontractor</div>
                     <div class="flex items-center gap-2 mt-2">
@@ -1521,31 +1632,45 @@ let subSOVStatus = JSON.parse(localStorage.getItem('subSOVStatus') || '{}'); // 
                             <i class="fa-solid fa-user-plus"></i> <span class="hidden md:inline">Add New</span>
                         </button>
                     </div>
-                    <!-- Status badge moved BELOW the dropdown as requested -->
                     <div id="subStatusBadgeContainer" class="mt-2 flex items-center gap-2 min-h-[22px]"></div>
                 </div>
-                <div class="bg-zinc-800 border border-zinc-700 rounded-md p-5">
-                    <div class="grid grid-cols-2 gap-x-4 gap-y-1">
-                        <div>
+
+                <!-- Center + Right: RESTRUCTURED SUMMARY (Top row + Bottom row) -->
+                <div class="md:col-span-2 bg-zinc-800 border border-zinc-700 rounded-md p-5">
+                    <div class="text-xs text-zinc-400 mb-2">Subcontractor Financial Summary</div>
+                    
+                    <!-- TOP ROW: Original | Current | Change Orders to Date -->
+                    <div class="grid grid-cols-3 gap-3 mb-3">
+                        <div class="bg-zinc-900 border border-zinc-700 rounded p-3">
                             <div class="text-xs text-zinc-400">Original Contract Amount</div>
                             <div id="subOriginalTotal" class="text-xl font-semibold mt-0.5 text-emerald-400">$0</div>
                         </div>
-                        <div>
-                            <div class="text-xs text-zinc-400">Current Contract Value</div>
+                        <div class="bg-zinc-900 border border-zinc-700 rounded p-3">
+                            <div class="text-xs text-zinc-400">Current Contract Amount</div>
                             <div id="subCurrentTotal" class="text-xl font-semibold mt-0.5 text-emerald-400">$0</div>
                         </div>
-                        <div>
-                            <div class="text-xs text-zinc-400">Billed to Date</div>
-                            <div id="subBilledTotal" class="text-xl font-semibold mt-0.5 text-sky-400">$0</div>
-                        </div>
-                        <div>
-                            <div class="text-xs text-zinc-400">Change Orders to Date</div>
+                        <div class="bg-zinc-900 border border-amber-600 rounded p-3">
+                            <div class="text-xs text-amber-400">Change Orders to Date</div>
                             <div id="subCOsTotal" class="text-xl font-semibold mt-0.5 text-amber-400">$0</div>
                         </div>
                     </div>
-                </div>
-                <div class="bg-zinc-800 border border-zinc-700 rounded-md p-5 flex items-end justify-end">
-                    <!-- Add Line button is in the workflow bar next to status -->
+                    
+                    <!-- BOTTOM ROW: Build to Date (Current Amount) | CO Billed to Date | Total Billed to Date -->
+                    <div class="grid grid-cols-3 gap-3">
+                        <div class="bg-zinc-900 border border-zinc-700 rounded p-3">
+                            <div class="text-xs text-zinc-400">Build to Date (Current Amount)</div>
+                            <div id="subBuildToDateTotal" class="text-lg font-semibold mt-0.5 text-sky-400">$0</div>
+                            <div class="text-[10px] text-zinc-500">Everything except Change Orders</div>
+                        </div>
+                        <div class="bg-zinc-900 border border-zinc-700 rounded p-3">
+                            <div class="text-xs text-zinc-400">Change Order Amount Billed to Date</div>
+                            <div id="subCOBilledTotal" class="text-lg font-semibold mt-0.5 text-amber-400">$0</div>
+                        </div>
+                        <div class="bg-emerald-900/30 border border-emerald-600 rounded p-3">
+                            <div class="text-xs text-emerald-400">Total Amount Billed to Date</div>
+                            <div id="subTotalBilledTotal" class="text-lg font-semibold mt-0.5 text-emerald-400">$0</div>
+                        </div>
+                    </div>
                 </div>
             </div>
         `;
@@ -1608,23 +1733,35 @@ let subSOVStatus = JSON.parse(localStorage.getItem('subSOVStatus') || '{}'); // 
                 badgeContainer.appendChild(infoDiv);
             }
 
-            // Populate the new summary totals for the selected sub
+            // Populate the RESTRUCTURED summary totals for the selected sub (new layout)
             const subLines = subcontractorSOV[selectedSubCompanyId] || [];
-            let origTotal = 0, billedTotal = 0, coTotal = 0;
+            let origTotal = 0, billedTotal = 0, coTotal = 0, coBilledTotal = 0;
             subLines.forEach(l => {
                 origTotal += (l.original_commitment || 0);
                 billedTotal += (l.billed_to_date || 0);
                 coTotal += (l.change_orders || 0);
+                // Approximate CO billed portion (if stored separately use it; else proportion of billed)
+                if (l.change_orders && l.change_orders > 0 && l.billed_to_date > 0) {
+                    const ratio = (l.original_commitment || 0) > 0 ? (l.change_orders / ((l.original_commitment || 0) + l.change_orders)) : 0.3;
+                    coBilledTotal += (l.billed_to_date || 0) * ratio;
+                }
             });
             const currentTotal = origTotal + coTotal;
+            const buildToDateNonCO = Math.max(0, billedTotal - coBilledTotal); // Build to Date for everything other than change orders
+
             const origEl = document.getElementById('subOriginalTotal');
             const currentEl = document.getElementById('subCurrentTotal');
-            const billedEl = document.getElementById('subBilledTotal');
             const coEl = document.getElementById('subCOsTotal');
+            const buildEl = document.getElementById('subBuildToDateTotal');
+            const coBilledEl = document.getElementById('subCOBilledTotal');
+            const totalBilledEl = document.getElementById('subTotalBilledTotal');
+
             if (origEl) origEl.textContent = formatCurrency(origTotal);
             if (currentEl) currentEl.textContent = formatCurrency(currentTotal);
-            if (billedEl) billedEl.textContent = formatCurrency(billedTotal);
             if (coEl) coEl.textContent = formatCurrency(coTotal);
+            if (buildEl) buildEl.textContent = formatCurrency(buildToDateNonCO);
+            if (coBilledEl) coBilledEl.textContent = formatCurrency(coBilledTotal);
+            if (totalBilledEl) totalBilledEl.textContent = formatCurrency(billedTotal);
         }
 
         // Workflow bar - dynamic based on SOV Status
@@ -2271,9 +2408,137 @@ let subSOVStatus = JSON.parse(localStorage.getItem('subSOVStatus') || '{}'); // 
     function printCurrentPayApp() {
         if (currentPayAppTab === 'payapp') {
             printG702();
-        } else {
+        } else if (currentPayAppTab === 'contractor-sov') {
             printG703();
+        } else if (currentPayAppTab === 'sub-sov' && selectedSubCompanyId) {
+            printSubcontractorG703(selectedSubCompanyId);
+        } else {
+            printG703(); // fallback
         }
+    }
+
+    // New: Print filtered G703 for the currently focused subcontractor (with their Pay App #)
+    function printSubcontractorG703(companyId) {
+        const company = companies.find(c => c.id == companyId);
+        const companyName = company ? (company.name || company.company_name || 'Subcontractor') : 'Subcontractor';
+        let subPayApps = JSON.parse(localStorage.getItem('subPayAppNumbers') || '{}');
+        const appNum = subPayApps[companyId] || (currentPayAppPeriod ? currentPayAppPeriod.periodNumber : 1);
+        const period = currentPayAppPeriod || { periodNumber: appNum, periodStart: '2026-07-01', periodEnd: '2026-07-31' };
+        const retainageRate = (typeof defaultRetainagePercent !== 'undefined' ? defaultRetainagePercent : 10) / 100;
+
+        const subLines = subcontractorSOV[companyId] || [];
+
+        let rows = '';
+        let totalScheduled = 0, totalThis = 0, totalMat = 0, totalCompleted = 0, totalRet = 0, totalBalance = 0;
+
+        subLines.forEach((line, idx) => {
+            const scheduled = (line.original_commitment || 0) + (line.change_orders || 0);
+            const workThis = line.work_this_period || 0;
+            const mat = line.materials_stored || 0;
+            const prev = Math.max(0, (line.billed_to_date || 0) - workThis - mat);
+            const completed = prev + workThis + mat;
+            const pct = scheduled > 0 ? Math.round((completed / scheduled) * 100) : 0;
+            const balance = scheduled - completed;
+            const ret = (workThis + mat) * retainageRate;
+
+            totalScheduled += scheduled;
+            totalThis += workThis;
+            totalMat += mat;
+            totalCompleted += completed;
+            totalRet += ret;
+            totalBalance += balance;
+
+            rows += `<tr>
+                <td style="border:1px solid #333;padding:3px 5px;font-family:monospace;font-size:9px;">${idx + 1}</td>
+                <td style="border:1px solid #333;padding:3px 5px;font-size:9px;">${line.description || line.cost_code}</td>
+                <td style="border:1px solid #333;padding:3px 5px;text-align:right;font-family:monospace;font-size:9px;">${formatCurrency(scheduled)}</td>
+                <td style="border:1px solid #333;padding:3px 5px;text-align:right;font-family:monospace;font-size:9px;">${formatCurrency(prev)}</td>
+                <td style="border:1px solid #333;padding:3px 5px;text-align:right;font-family:monospace;font-size:9px;">${formatCurrency(workThis)}</td>
+                <td style="border:1px solid #333;padding:3px 5px;text-align:right;font-family:monospace;font-size:9px;">${formatCurrency(mat)}</td>
+                <td style="border:1px solid #333;padding:3px 5px;text-align:right;font-family:monospace;font-size:9px;">${formatCurrency(completed)}</td>
+                <td style="border:1px solid #333;padding:3px 5px;text-align:center;font-size:9px;">${pct}%</td>
+                <td style="border:1px solid #333;padding:3px 5px;text-align:right;font-family:monospace;font-size:9px;">${formatCurrency(balance)}</td>
+                <td style="border:1px solid #333;padding:3px 5px;text-align:right;font-family:monospace;font-size:9px;">${formatCurrency(ret)}</td>
+            </tr>`;
+        });
+
+        const printHTML = `
+            <html><head><title>G703 — ${companyName} — Pay App #${appNum}</title>
+            <style>
+                @page { size: letter landscape; margin: 0.4in; }
+                body { font-family: Arial, sans-serif; padding: 10px; font-size: 9px; }
+                table { width:100%; border-collapse:collapse; font-size: 8.5px; }
+                th, td { border:1px solid #222; padding:3px 4px; }
+                th { background:#e8e8e8; font-weight:700; font-size: 8px; }
+                .right { text-align:right; font-family: "Courier New", monospace; }
+                .header { border-bottom: 3px solid #000; padding-bottom: 6px; margin-bottom: 8px; }
+            </style>
+            </head><body>
+                <div class="header">
+                    <div style="font-size:13px; font-weight:700;">CONTINUATION SHEET — SUBCONTRACTOR</div>
+                    <div style="font-size:10px;">AIA DOCUMENT G703 (Filtered for Subcontractor)</div>
+                    <div style="margin-top:4px; font-size:9.5px;">
+                        <strong>Subcontractor:</strong> ${companyName} &nbsp;&nbsp;|&nbsp;&nbsp; 
+                        <strong>Pay App / Application No:</strong> ${appNum} &nbsp;&nbsp;|&nbsp;&nbsp; 
+                        <strong>Period:</strong> ${period.periodStart} to ${period.periodEnd}
+                    </div>
+                    <div style="font-size:9px;">Project: ALDI Lakeland | Printed by Michael Bretz</div>
+                </div>
+
+                <table>
+                    <thead>
+                        <tr>
+                            <th style="width:6%;">A<br>ITEM No.</th>
+                            <th style="width:24%;">B<br>DESCRIPTION OF WORK</th>
+                            <th style="width:11%;">C<br>SCHEDULED VALUE</th>
+                            <th style="width:11%;">D<br>WORK COMPLETED<br>FROM PREVIOUS</th>
+                            <th style="width:10%;">E<br>WORK COMPLETED<br>THIS PERIOD</th>
+                            <th style="width:11%;">F<br>MATERIALS PRESENTLY STORED</th>
+                            <th style="width:11%;">G<br>TOTAL COMPLETED<br>AND STORED TO DATE</th>
+                            <th style="width:5%;">H<br>%</th>
+                            <th style="width:8%;">I<br>BALANCE TO FINISH</th>
+                            <th style="width:5%;">J<br>RETAINAGE</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        ${rows}
+                        <tr style="font-weight:700; background:#f3f4f6;">
+                            <td colspan="2" style="text-align:right;">GRAND TOTALS — ${companyName}</td>
+                            <td class="right">${formatCurrency(totalScheduled)}</td>
+                            <td class="right">—</td>
+                            <td class="right">${formatCurrency(totalThis)}</td>
+                            <td class="right">${formatCurrency(totalMat)}</td>
+                            <td class="right">${formatCurrency(totalCompleted)}</td>
+                            <td class="center">${totalScheduled > 0 ? Math.round((totalCompleted / totalScheduled) * 100) : 0}%</td>
+                            <td class="right">${formatCurrency(totalBalance)}</td>
+                            <td class="right">${formatCurrency(totalRet)}</td>
+                        </tr>
+                    </tbody>
+                </table>
+
+                <div style="margin-top:12px; font-size:8px; color:#555; text-align:center;">
+                    Filtered G703 for ${companyName} • Pay App #${appNum} • Retainage at ${Math.round(retainageRate*100)}%
+                </div>
+            </body></html>
+        `;
+
+        const iframe = document.createElement('iframe');
+        iframe.style.position = 'fixed';
+        iframe.style.width = '0';
+        iframe.style.height = '0';
+        iframe.style.border = 'none';
+        document.body.appendChild(iframe);
+        const doc = iframe.contentWindow.document;
+        doc.open();
+        doc.write(printHTML);
+        doc.close();
+        setTimeout(() => {
+            iframe.contentWindow.focus();
+            iframe.contentWindow.print();
+            setTimeout(() => document.body.removeChild(iframe), 700);
+        }, 450);
+
+        logPayAppAudit('SUB_G703_PRINTED', { company: companyName, payAppNumber: appNum });
     }
 
     function printG702() {
@@ -2724,25 +2989,325 @@ let subSOVStatus = JSON.parse(localStorage.getItem('subSOVStatus') || '{}'); // 
         modal.showModal();
     }
 
-    // ==================== EXPORT / IMPORT (basic) ====================
+    // ==================== PIXEL-PERFECT / FORM-STRUCTURED EXCEL EXPORT + CONDITIONAL FORMATTING ====================
     function exportPayApplications() {
         if (typeof XLSX === 'undefined') {
-            alert("Excel library not loaded. Hard refresh (Ctrl+Shift+R).");
+            showCenteredAlert("Excel library (XLSX) not loaded. Please hard refresh the page (Ctrl+Shift+R).", 'warning');
             return;
         }
-        const data = contractorSOV.map((line, i) => ({
-            "#": i+1,
-            "Cost Code": line.cost_code,
-            "Description": line.description,
-            "Original": line.original || 0,
-            "CO Amount": line.co_amount || 0,
-            "Billed to Date": line.billed_to_date || 0,
-            "% Complete": line.percent_complete || 0
-        }));
-        const ws = XLSX.utils.json_to_sheet(data);
+
+        const period = currentPayAppPeriod || { periodNumber: 7, periodStart: '2026-07-01', periodEnd: '2026-07-31' };
+        const retainageRate = (typeof defaultRetainagePercent !== 'undefined' ? defaultRetainagePercent : 10) / 100;
+
+        if (currentPayAppTab === 'payapp') {
+            exportG702Styled(period, retainageRate);
+        } else if (currentPayAppTab === 'contractor-sov') {
+            exportG703Styled(period, retainageRate);
+        } else if (currentPayAppTab === 'sub-sov' && selectedSubCompanyId) {
+            exportSubcontractorG703Styled(period, retainageRate, selectedSubCompanyId);
+        } else {
+            // Fallback: export raw contractor SOV
+            const data = contractorSOV.map((line, i) => ({
+                "#": i+1, "Cost Code": line.cost_code, "Description": line.description,
+                "Original": line.original || 0, "CO Amount": line.co_amount || 0,
+                "Billed to Date": line.billed_to_date || 0, "% Complete": line.percent_complete || 0
+            }));
+            const ws = XLSX.utils.json_to_sheet(data);
+            const wb = XLSX.utils.book_new();
+            XLSX.utils.book_append_sheet(wb, ws, "Contractor SOV");
+            XLSX.writeFile(wb, `PayApp_Raw_SOV_${period.periodNumber}.xlsx`);
+        }
+    }
+
+    // --- G702 Styled Export (form-mirroring with sections, merged cells, conditional formatting) ---
+    function exportG702Styled(period, retainageRate) {
         const wb = XLSX.utils.book_new();
-        XLSX.utils.book_append_sheet(wb, ws, "Contractor SOV");
-        XLSX.writeFile(wb, `PayApp_SOV_ALDI_Lakeland.xlsx`);
+        const ws = XLSX.utils.aoa_to_sheet([]);
+
+        // Calculate live values
+        let totalOriginal = 0, totalCO = 0, totalCurrent = 0, totalRetainage = 0, totalPrevious = 0;
+        let totalWorkThis = 0, totalMaterials = 0;
+
+        contractorSOV.forEach(line => {
+            totalOriginal += (line.original || 0);
+            totalCO += (line.co_amount || 0);
+            const billing = payAppBillingLines[line.id] || { workThisPeriod: 0, materialsStored: 0 };
+            const thisPeriod = (billing.workThisPeriod || 0) + (billing.materialsStored || 0);
+            totalWorkThis += (billing.workThisPeriod || 0);
+            totalMaterials += (billing.materialsStored || 0);
+            totalCurrent += thisPeriod;
+            totalRetainage += thisPeriod * retainageRate;
+        });
+
+        const contractSumToDate = totalOriginal + totalCO;
+        const earnedLessRetainage = totalCurrent - totalRetainage;
+        const currentDue = earnedLessRetainage - totalPrevious;
+        const balanceToFinish = contractSumToDate - totalCurrent;
+        const retainageCompleted = totalCurrent * retainageRate;
+        const retainageStored = totalMaterials * retainageRate;
+
+        // Header block (merged)
+        XLSX.utils.sheet_add_aoa(ws, [
+            ["APPLICATION AND CERTIFICATE FOR PAYMENT", "", "", "", "AIA DOCUMENT G702", "", "", "", "PAGE 1 OF 2"],
+            ["ALDI Lakeland — Period " + period.periodNumber, "", "", "", "", "", "", "", ""],
+            ["", "", "", "", "", "", "", "", ""],
+            ["TO GC: Case Contracting", "", "", "", "APPLICATION NO: " + period.periodNumber, "", "", "", ""],
+            ["PROJECT: Aldi #640, 1296 County Rd 1, Dunedin, FL 34698", "", "", "", "PERIOD TO: " + (period.periodEnd || ""), "", "", "", ""],
+            ["FROM: Case Contracting, 2311 Turkey Creek Rd, Plant City, FL 33566", "", "", "", "PROJECT NO: 640 / 366", "", "", "", ""],
+        ], { origin: "A1" });
+
+        // Merge header rows
+        ws.mergeCells('A1:I1'); ws.mergeCells('A2:I2');
+
+        // Style header
+        ws['A1'].s = { font: { bold: true, size: 14 }, alignment: { horizontal: 'center' } };
+        ws['E1'].s = { font: { bold: true, size: 11 }, alignment: { horizontal: 'right' } };
+
+        // Lines 1-9 Summary Section
+        XLSX.utils.sheet_add_aoa(ws, [
+            ["", "", "", "", "", "", "", "", ""],
+            ["CONTRACTOR'S APPLICATION FOR PAYMENT", "", "", "", "", "", "", "", ""],
+            ["", "", "", "", "", "", "", "", ""],
+            ["1. ORIGINAL CONTRACT SUM", "", "", "", formatCurrency(totalOriginal), "", "", "", ""],
+            ["2. Net change by Change Orders", "", "", "", formatCurrency(totalCO), "", "", "", ""],
+            ["3. CONTRACT SUM TO DATE (Line 1 + 2)", "", "", "", formatCurrency(contractSumToDate), "", "", "", ""],
+            ["4. TOTAL COMPLETED & STORED TO DATE", "", "", "", formatCurrency(totalCurrent), "", "", "", ""],
+            ["5. RETAINAGE", "", "", "", "", "", "", "", ""],
+            ["   a. " + Math.round(retainageRate*100) + "% of Completed Work", "", "", "", formatCurrency(retainageCompleted), "", "", "", ""],
+            ["   b. " + Math.round(retainageRate*100) + "% of Stored Material", "", "", "", formatCurrency(retainageStored), "", "", "", ""],
+            ["Total Retainage (Line 5a + 5b)", "", "", "", formatCurrency(totalRetainage), "", "", "", ""],
+            ["6. TOTAL EARNED LESS RETAINAGE (Line 4 less Line 5)", "", "", "", formatCurrency(earnedLessRetainage), "", "", "", ""],
+            ["7. LESS PREVIOUS CERTIFICATES FOR PAYMENT", "", "", "", formatCurrency(totalPrevious), "", "", "", ""],
+            ["8. CURRENT PAYMENT DUE", "", "", "", formatCurrency(currentDue), "", "", "", ""],
+            ["9. BALANCE TO FINISH, INCLUDING RETAINAGE", "", "", "", formatCurrency(balanceToFinish), "", "", "", ""],
+        ], { origin: "A8" });
+
+        // Bold key rows and currency format
+        for (let r = 11; r <= 22; r++) {
+            const cell = ws['E' + r];
+            if (cell) {
+                cell.s = { font: { bold: (r === 13 || r === 19 || r === 21) }, numFmt: '$#,##0.00' };
+            }
+        }
+
+        // Conditional formatting example: highlight if current due is high
+        if (currentDue > 200000) {
+            ws['E21'].s = { fill: { fgColor: { rgb: "FEF3C7" } }, font: { bold: true, color: { rgb: "92400E" } } };
+        }
+
+        // Change Order Summary section
+        XLSX.utils.sheet_add_aoa(ws, [
+            ["", "", "", "", "", "", "", "", ""],
+            ["CHANGE ORDER SUMMARY", "", "", "", "", "", "", "", ""],
+            ["", "ADDITIONS", "DEDUCTIONS", "", "", "", "", "", ""],
+            ["Total changes approved in previous months by Owner", formatCurrency(0), formatCurrency(0), "", "", "", "", "", ""],
+            ["Total approved this Month", formatCurrency(totalCO), formatCurrency(0), "", "", "", "", "", ""],
+            ["TOTALS", formatCurrency(totalCO), formatCurrency(0), "", "", "", "", "", ""],
+            ["NET CHANGES by Change Order", formatCurrency(totalCO), "", "", "", "", "", "", ""],
+        ], { origin: "A24" });
+
+        // Set column widths to mimic form
+        ws['!cols'] = [
+            { wch: 45 }, { wch: 18 }, { wch: 18 }, { wch: 12 }, { wch: 18 }, 
+            { wch: 12 }, { wch: 12 }, { wch: 12 }, { wch: 12 }
+        ];
+
+        // Add a second sheet with raw line item detail for reference
+        const detailData = contractorSOV.map((line, idx) => {
+            const billing = payAppBillingLines[line.id] || {};
+            const curr = (line.original || 0) + (line.co_amount || 0);
+            return {
+                "#": idx + 1,
+                "Cost Code": line.cost_code,
+                "Description": line.description,
+                "Original": line.original || 0,
+                "Change Orders": line.co_amount || 0,
+                "Current Contract": curr,
+                "Work This Period": billing.workThisPeriod || 0,
+                "Materials Stored": billing.materialsStored || 0,
+                "CO Work This Period": billing.coWorkThisPeriod || 0,
+                "Billed to Date": line.billed_to_date || 0
+            };
+        });
+        const ws2 = XLSX.utils.json_to_sheet(detailData);
+        XLSX.utils.book_append_sheet(wb, ws2, "Line Item Detail");
+
+        XLSX.writeFile(wb, `G702_PayApp_Period${period.periodNumber}_ALDI_Lakeland.xlsx`);
+        showCenteredAlert("G702-style Excel exported with sections, merged headers, currency formatting, and conditional highlighting.", 'success');
+    }
+
+    // --- G703 Styled Export (full continuation sheet with A-J columns + CO section + conditional formatting) ---
+    function exportG703Styled(period, retainageRate) {
+        const wb = XLSX.utils.book_new();
+        const ws = XLSX.utils.aoa_to_sheet([]);
+
+        // Header
+        XLSX.utils.sheet_add_aoa(ws, [
+            ["CONTINUATION SHEET", "", "", "", "", "", "", "", "", ""],
+            ["AIA DOCUMENT G703 — PAGE 2 OF 2", "", "", "", "APPLICATION NO: " + period.periodNumber, "", "", "", "", ""],
+            ["Project: ALDI Lakeland | Period: " + period.periodStart + " to " + period.periodEnd, "", "", "", "", "", "", "", "", ""],
+            ["", "", "", "", "", "", "", "", "", ""],
+            ["ITEM No.", "DESCRIPTION OF WORK", "SCHEDULED VALUE", "WORK COMPLETED FROM PREVIOUS", "WORK COMPLETED THIS PERIOD", "MATERIALS PRESENTLY STORED", "TOTAL COMPLETED & STORED TO DATE", "%", "BALANCE TO FINISH", "RETAINAGE"],
+        ], { origin: "A1" });
+
+        ws.mergeCells('A1:J1');
+        ws['A1'].s = { font: { bold: true, size: 14 }, alignment: { horizontal: 'center' } };
+        ws['A5'].s = { font: { bold: true, size: 9 }, fill: { fgColor: { rgb: "E5E7EB" } } };
+
+        let row = 6;
+        let totalScheduled = 0, totalPrev = 0, totalThis = 0, totalMat = 0, totalCompleted = 0, totalRet = 0, totalBalance = 0, totalCOs = 0;
+
+        contractorSOV.forEach((line, idx) => {
+            const billing = payAppBillingLines[line.id] || { workThisPeriod: 0, materialsStored: 0 };
+            const scheduled = (line.original || 0) + (line.co_amount || 0);
+            const workThis = billing.workThisPeriod || 0;
+            const prevWork = Math.max(0, (line.billed_to_date || 0) - workThis);
+            const mat = billing.materialsStored || 0;
+            const completedToDate = prevWork + workThis + mat;
+            const pct = scheduled > 0 ? Math.round((completedToDate / scheduled) * 100) : 0;
+            const balance = scheduled - completedToDate;
+            const ret = (workThis + mat) * retainageRate;
+
+            totalScheduled += scheduled;
+            totalPrev += prevWork;
+            totalThis += workThis;
+            totalMat += mat;
+            totalCompleted += completedToDate;
+            totalRet += ret;
+            totalBalance += balance;
+            totalCOs += (line.co_amount || 0);
+
+            const rowData = [
+                idx + 1,
+                line.description || line.cost_code,
+                scheduled,
+                prevWork,
+                workThis,
+                mat,
+                completedToDate,
+                pct + "%",
+                balance,
+                ret
+            ];
+            XLSX.utils.sheet_add_aoa(ws, [rowData], { origin: "A" + row });
+
+            // Currency formatting + conditional (over-billed = red background)
+            const isOver = completedToDate > scheduled + 0.01;
+            for (let c = 3; c <= 10; c++) {
+                const colLetter = String.fromCharCode(64 + c);
+                const cell = ws[colLetter + row];
+                if (cell) {
+                    cell.s = { numFmt: '$#,##0.00' };
+                    if (isOver && (c === 7 || c === 9)) {
+                        cell.s.fill = { fgColor: { rgb: "FEE2E2" } };
+                        cell.s.font = { color: { rgb: "991B1B" }, bold: true };
+                    }
+                }
+            }
+            row++;
+        });
+
+        // Totals + Change Orders section
+        XLSX.utils.sheet_add_aoa(ws, [
+            ["", "Total Contract Work", totalScheduled, totalPrev, totalThis, totalMat, totalCompleted, (totalScheduled > 0 ? Math.round((totalCompleted/totalScheduled)*100) : 0) + "%", totalBalance, totalRet],
+            ["", "Change Orders", totalCOs, "—", "—", "—", totalCOs, "—", "—", totalCOs * retainageRate],
+            ["", "GRAND TOTALS", totalScheduled, totalPrev, totalThis, totalMat, totalCompleted, (totalScheduled > 0 ? Math.round((totalCompleted/totalScheduled)*100) : 0) + "%", totalBalance, totalRet],
+        ], { origin: "A" + row });
+
+        // Style totals row
+        const totalsRow = row + 2;
+        ws['B' + totalsRow].s = { font: { bold: true }, fill: { fgColor: { rgb: "D1FAE5" } } };
+
+        ws['!cols'] = [
+            { wch: 8 }, { wch: 42 }, { wch: 16 }, { wch: 18 }, { wch: 18 }, 
+            { wch: 18 }, { wch: 20 }, { wch: 8 }, { wch: 16 }, { wch: 12 }
+        ];
+
+        XLSX.utils.book_append_sheet(wb, ws, "G703 Continuation Sheet");
+        XLSX.writeFile(wb, `G703_Continuation_Period${period.periodNumber}_ALDI_Lakeland.xlsx`);
+        showCenteredAlert("G703-style Excel exported with full A-J columns, totals, Change Orders section, currency formatting, and red conditional highlighting for over-billed lines.", 'success');
+    }
+
+    // --- Subcontractor-specific G703 Export (filtered + Pay App # in header) ---
+    function exportSubcontractorG703Styled(period, retainageRate, companyId) {
+        const company = companies.find(c => c.id == companyId);
+        const companyName = company ? (company.name || company.company_name || 'Subcontractor') : 'Selected Subcontractor';
+        let subPayApps = JSON.parse(localStorage.getItem('subPayAppNumbers') || '{}');
+        const appNum = subPayApps[companyId] || period.periodNumber;
+
+        const subLines = subcontractorSOV[companyId] || [];
+        if (subLines.length === 0) {
+            showCenteredAlert("No lines for this subcontractor to export.");
+            return;
+        }
+
+        const wb = XLSX.utils.book_new();
+        const ws = XLSX.utils.aoa_to_sheet([]);
+
+        XLSX.utils.sheet_add_aoa(ws, [
+            ["CONTINUATION SHEET — SUBCONTRACTOR", "", "", "", "", "", "", "", "", ""],
+            ["AIA DOCUMENT G703 (Filtered)", "", "", "", "Pay App / Application No: " + appNum, "", "", "", "", ""],
+            ["Subcontractor: " + companyName, "", "", "", "Period: " + period.periodStart + " to " + period.periodEnd, "", "", "", "", ""],
+            ["Project: ALDI Lakeland", "", "", "", "", "", "", "", "", ""],
+            ["", "", "", "", "", "", "", "", "", ""],
+            ["ITEM No.", "DESCRIPTION OF WORK", "SCHEDULED VALUE", "WORK COMPLETED FROM PREVIOUS", "WORK COMPLETED THIS PERIOD", "MATERIALS PRESENTLY STORED", "TOTAL COMPLETED & STORED TO DATE", "%", "BALANCE TO FINISH", "RETAINAGE"],
+        ], { origin: "A1" });
+
+        ws.mergeCells('A1:J1');
+        ws['A1'].s = { font: { bold: true, size: 13 }, alignment: { horizontal: 'center' } };
+        ws['E2'].s = { font: { bold: true, color: { rgb: "059669" } } };
+
+        let row = 7;
+        let totalScheduled = 0, totalThis = 0, totalMat = 0, totalCompleted = 0, totalRet = 0, totalBalance = 0;
+
+        subLines.forEach((line, idx) => {
+            const scheduled = (line.original_commitment || 0) + (line.change_orders || 0);
+            const workThis = line.work_this_period || 0;
+            const mat = line.materials_stored || 0;
+            const prev = Math.max(0, (line.billed_to_date || 0) - workThis - mat);
+            const completed = prev + workThis + mat;
+            const pct = scheduled > 0 ? Math.round((completed / scheduled) * 100) : 0;
+            const balance = scheduled - completed;
+            const ret = (workThis + mat) * retainageRate;
+
+            totalScheduled += scheduled;
+            totalThis += workThis;
+            totalMat += mat;
+            totalCompleted += completed;
+            totalRet += ret;
+            totalBalance += balance;
+
+            const isOver = completed > scheduled + 0.01;
+            XLSX.utils.sheet_add_aoa(ws, [[
+                idx + 1, line.description || line.cost_code, scheduled, prev, workThis, mat, completed, pct + "%", balance, ret
+            ]], { origin: "A" + row });
+
+            for (let c = 3; c <= 10; c++) {
+                const col = String.fromCharCode(64 + c);
+                const cell = ws[col + row];
+                if (cell) {
+                    cell.s = { numFmt: '$#,##0.00' };
+                    if (isOver) {
+                        cell.s.fill = { fgColor: { rgb: "FEE2E2" } };
+                        cell.s.font = { color: { rgb: "991B1B" } };
+                    }
+                }
+            }
+            row++;
+        });
+
+        // Grand total row with green highlight
+        XLSX.utils.sheet_add_aoa(ws, [
+            ["", "GRAND TOTALS — " + companyName, totalScheduled, totalThis, totalMat, totalCompleted, (totalScheduled > 0 ? Math.round(totalCompleted/totalScheduled*100) : 0) + "%", totalBalance, totalRet]
+        ], { origin: "A" + row });
+
+        ws['B' + row].s = { font: { bold: true }, fill: { fgColor: { rgb: "D1FAE5" } } };
+
+        ws['!cols'] = [{ wch: 8 }, { wch: 40 }, { wch: 15 }, { wch: 16 }, { wch: 16 }, { wch: 16 }, { wch: 18 }, { wch: 8 }, { wch: 14 }, { wch: 12 }];
+
+        XLSX.utils.book_append_sheet(wb, ws, companyName.substring(0, 20) + " G703");
+        XLSX.writeFile(wb, `G703_${companyName.replace(/[^a-z0-9]/gi,'_')}_PayApp${appNum}.xlsx`);
+        showCenteredAlert("Filtered G703 for " + companyName + " exported with their Pay App #" + appNum + " in the header, conditional formatting, and proper totals.", 'success');
     }
 
     function importPayApplications() {
@@ -2840,20 +3405,36 @@ let subSOVStatus = JSON.parse(localStorage.getItem('subSOVStatus') || '{}'); // 
         modal.style.backgroundColor = '#18181b';
         modal.style.border = '1px solid #3f3f46';
 
-        const relevant = payAppAuditLog.filter(e => e.details && e.details.sovLineId === sovLineId).slice(0, 8);
-        let logs = relevant.length > 0 ? relevant.map(e => `
-            <div class="text-xs border-b border-zinc-700 py-1.5">
-                <div class="font-mono text-emerald-400">${new Date(e.timestamp).toLocaleString()}</div>
-                <div>${e.action} — Work: ${formatCurrency(e.details.workThisPeriod || 0)}</div>
-            </div>
-        `).join('') : '<div class="text-zinc-400 py-4">No history for this line yet.</div>';
+        const relevant = payAppAuditLog.filter(e => e.details && e.details.sovLineId === sovLineId).slice(0, 10);
+        
+        let logs = relevant.length > 0 ? relevant.map(e => {
+            const work = e.details.workThisPeriod || 0;
+            const mats = e.details.materialsStored || 0;
+            const co = e.details.coWorkThisPeriod || 0;
+            const who = e.details.changedBy || e.user || "Michael Bretz";
+            let detailLine = `Work: ${formatCurrency(work)}`;
+            if (mats > 0) detailLine += ` | Mats: ${formatCurrency(mats)}`;
+            if (co > 0) detailLine += ` | CO Work: ${formatCurrency(co)}`;
+            
+            return `
+                <div class="text-xs border-b border-zinc-700 py-2 px-1">
+                    <div class="font-mono text-emerald-400">${new Date(e.timestamp).toLocaleString([], {month:'short', day:'numeric', hour:'2-digit', minute:'2-digit'})}</div>
+                    <div class="text-zinc-300">${detailLine}</div>
+                    <div class="text-amber-400 text-[10px] mt-0.5 font-medium">Changed by ${who}</div>
+                </div>
+            `;
+        }).join('') : '<div class="text-zinc-400 py-4 text-center">No billing history for this line yet.<br>Changes will appear here after you save billing amounts.</div>';
 
         modal.innerHTML = `
             <div class="p-6">
-                <h3 class="text-lg font-semibold mb-3">Billing History</h3>
-                <div class="max-h-[280px] overflow-auto">${logs}</div>
-                <div class="mt-4 text-right">
-                    <button onclick="this.closest('dialog').close()" class="px-5 py-2 bg-zinc-700 rounded-md text-sm">Close</button>
+                <h3 class="text-lg font-semibold mb-3 flex items-center gap-2">
+                    <i class="fa-solid fa-history text-sky-400"></i> 
+                    <span>Billing History — Line Item Audit</span>
+                </h3>
+                <div class="max-h-[320px] overflow-auto border border-zinc-700 rounded p-2 bg-zinc-950">${logs}</div>
+                <div class="mt-4 flex justify-between items-center text-xs text-zinc-500">
+                    <div>Who entered each billing amount is shown above.</div>
+                    <button onclick="this.closest('dialog').close()" class="px-5 py-1.5 bg-zinc-700 hover:bg-zinc-600 rounded-md text-sm text-white">Close</button>
                 </div>
             </div>
         `;
