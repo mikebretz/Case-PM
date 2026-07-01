@@ -3,7 +3,7 @@
 {% block content %}
 <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
 
-<!-- Pay Applications Module - Final Verified Build v61.0 | DRAFT BILLING WORKFLOW: Save Billing only saves draft (payAppBillingLines / this_period fields). Numbers NOT committed to billed_to_date until Submit for Review / Submit Application. G702 & Sub SOV Edit Billing now behave identically. All pop-ups centered. | 2026-07-01 -->
+<!-- Pay Applications Module - Final Verified Build v62.0 | DRAFT BILLING WORKFLOW v2: Live Remaining calculation now strictly uses Draft inputs (Work+Materials) vs Previously Committed Billed. Warning on Original Contract card is scoped ONLY to sum of Original column (Change Orders ignored). All pop-ups forced center. | 2026-07-01 -->
 <style>
   /* Exact match to budget.html aesthetics */
   .modal {
@@ -508,6 +508,8 @@ let subSOVStatus = JSON.parse(localStorage.getItem('subSOVStatus') || '{}'); // 
         // Summary Cards
         // Warning only triggers if the ORIGINAL column total mismatches the Budget.
         // Change Orders are tracked separately and do NOT trigger this warning on the Original Contract card.
+        // WARNING SCOPE: Only compares sum of the 'Original' column against Budget.
+        // Change Orders (column or card) are deliberately ignored for this specific check.
         const mismatchWarning = (totalOriginal !== budgetContractAmount) 
             ? `<div class="text-[10px] text-amber-400 mt-1">⚠️ Original Contract Amount in SOV does not match the Budget Contract Amount (${formatCurrency(budgetContractAmount)})</div>` 
             : '';
