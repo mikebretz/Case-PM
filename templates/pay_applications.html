@@ -67,7 +67,7 @@
             <i class="fa-solid fa-upload"></i><span>Import</span>
         </button>
 
-        <button onclick="printCurrentPayApp()" class="flex items-center gap-2 px-4 py-2 bg-zinc-800 hover:bg-zinc-700 rounded-md text-sm font-medium transition-colors h-[38px]">
+        <button onclick="printCurrentPayApp()" class="flex items-center gap-2 px-5 py-2 min-w-[210px] bg-zinc-800 hover:bg-zinc-700 rounded-md text-sm font-medium transition-colors h-[38px]">
             <i class="fa-solid fa-print"></i><span>Print AIA G702 / G703</span>
         </button>
 
@@ -450,7 +450,7 @@
                 <th class="px-4 py-3 text-right font-medium text-zinc-400 w-24">Work This Period</th>
                 <th class="px-3 py-3 text-right font-medium text-zinc-400 w-20">Materials</th>
                 <th class="px-3 py-3 text-right font-medium text-zinc-400 w-20">Retainage</th>
-                <th class="px-3 py-3 text-center font-medium text-zinc-400 w-16">Actions</th>
+                <th class="px-3 py-3 text-center font-medium text-zinc-400 w-20">Actions</th>
             </tr>
         `;
 
@@ -461,6 +461,7 @@
             return;
         }
 
+        contractorSOV.sort((a, b) => (a.cost_code || '').localeCompare(b.cost_code || '', undefined, { numeric: true }));
         contractorSOV.forEach((line, index) => {
             const currentAmount = (line.original || 0) + (line.co_amount || 0);
             const billing = payAppBillingLines[line.id] || { workThisPeriod: 0, materialsStored: 0 };
@@ -487,9 +488,11 @@
                 <td class="px-4 py-2 text-right text-amber-400 font-semibold font-mono text-sm">${formatCurrency(workThis)}</td>
                 <td class="px-3 py-2 text-right text-sky-400 font-mono text-sm">${formatCurrency(materials)}</td>
                 <td class="px-3 py-2 text-right text-red-400 font-mono text-sm">${formatCurrency(retainage)}</td>
-                <td class="px-3 py-2 text-center">
-                    <button onclick="event.stopImmediatePropagation(); editPayAppBillingLine(${line.id})" class="text-emerald-400 hover:text-emerald-300 p-1" title="Edit"><i class="fa-solid fa-edit"></i></button>
-                    <button onclick="event.stopImmediatePropagation(); showPayAppLineHistory(${line.id})" class="text-sky-400 hover:text-sky-300 p-1 ml-1" title="History"><i class="fa-solid fa-history"></i></button>
+                <td class="px-3 py-2.5 text-center">
+                    <div class="inline-flex items-center gap-1.5">
+                        <button onclick="event.stopImmediatePropagation(); editPayAppBillingLine(${line.id})" class="text-emerald-400 hover:text-emerald-300 p-1" title="Edit Billing"><i class="fa-solid fa-edit"></i></button>
+                        <button onclick="event.stopImmediatePropagation(); showPayAppLineHistory(${line.id})" class="text-sky-400 hover:text-sky-300 p-1" title="View History"><i class="fa-solid fa-history"></i></button>
+                    </div>
                 </td>
             `;
             tbody.appendChild(row);
@@ -837,6 +840,18 @@
         const original = parseFloat(origStr) || 0;
         const co_amount = parseFloat(coStr) || 0;
 
+        // Reconciliation: Check against Budget for this cost code
+        const budgetLines = JSON.parse(localStorage.getItem('budgetLines')) || [];
+        const budgetTotalForCode = budgetLines
+            .filter(b => b.cost_code === costCode)
+            .reduce((sum, b) => sum + (b.original_budget || 0), 0);
+
+        if (budgetTotalForCode > 0 && original > budgetTotalForCode) {
+            if (!confirm(`Warning: Original Amount (${formatCurrency(original)}) exceeds Budget total for ${costCode} (${formatCurrency(budgetTotalForCode)}). Continue anyway?`)) {
+                return;
+            }
+        }
+
         if (id) {
             const line = contractorSOV.find(l => l.id === id);
             if (line) {
@@ -876,12 +891,105 @@
     }
 
     function seedContractorSOVFromBudget() {
-        if (!budgetLines || budgetLines.length === 0) {
-            alert("No budget lines found to seed from. Add budget lines first.");
+        const budgetLines = JSON.parse(localStorage.getItem('budgetLines')) || [];
+        if (budgetLines.length === 0) {
+            showCenteredAlert("No budget lines found to seed from. Please add budget lines in the Budget page first.");
             return;
         }
+
+        // Show searchable modal to select which lines to seed (active search)
+        const modal = document.createElement('dialog');
+        modal.className = 'modal rounded-md p-0 text-white w-full max-w-2xl';
+        modal.style.backgroundColor = '#18181b';
+        modal.style.border = '1px solid #3f3f46';
+
+        let html = `
+            <div class="p-6">
+                <div class="flex justify-between items-center mb-4">
+                    <h3 class="text-xl font-semibold">Seed Contractor SOV from Budget</h3>
+                    <button onclick="this.closest('dialog').close(); this.closest('dialog').remove()" class="text-zinc-400 hover:text-white">
+                        <i class="fa-solid fa-times text-xl"></i>
+                    </button>
+                </div>
+                <div class="text-sm text-zinc-400 mb-3">Select budget lines to import as Contractor SOV lines. Existing cost codes will be skipped.</div>
+                
+                <input type="text" id="seedSearchInput" placeholder="Search cost codes or descriptions..." 
+                       class="w-full bg-zinc-800 border border-zinc-700 rounded-md px-4 py-2 text-sm mb-3 focus:border-emerald-600"
+                       oninput="filterSeedTable(this)">
+                
+                <div class="max-h-[380px] overflow-auto border border-zinc-700 rounded-md mb-4">
+                    <table class="w-full text-sm" id="seedTable">
+                        <thead class="bg-zinc-800 sticky top-0">
+                            <tr>
+                                <th class="px-3 py-2 w-8"><input type="checkbox" id="seedSelectAll" onchange="toggleAllSeed(this)"></th>
+                                <th class="px-3 py-2 text-left font-medium text-zinc-400 w-28">Cost Code</th>
+                                <th class="px-3 py-2 text-left font-medium text-zinc-400">Description</th>
+                                <th class="px-3 py-2 text-right font-medium text-zinc-400 w-28">Original Budget</th>
+                            </tr>
+                        </thead>
+                        <tbody class="divide-y divide-zinc-800">
+        `;
+
+        budgetLines.forEach((b, idx) => {
+            const exists = contractorSOV.some(s => s.cost_code === b.cost_code);
+            const checked = exists ? '' : 'checked';
+            const disabled = exists ? 'disabled class="opacity-50"' : '';
+            html += `
+                <tr data-idx="${idx}">
+                    <td class="px-3 py-1.5 text-center"><input type="checkbox" class="seed-checkbox" value="${idx}" ${checked} ${disabled}></td>
+                    <td class="px-3 py-1.5 font-mono text-emerald-400 text-xs">${b.cost_code}</td>
+                    <td class="px-3 py-1.5 text-sm">${b.description}</td>
+                    <td class="px-3 py-1.5 text-right font-mono text-sm">${formatCurrency(b.original_budget || 0)}</td>
+                </tr>
+            `;
+        });
+
+        html += `
+                        </tbody>
+                    </table>
+                </div>
+
+                <div class="flex justify-end gap-3">
+                    <button onclick="this.closest('dialog').close(); this.closest('dialog').remove()" class="px-6 py-2.5 bg-zinc-700 hover:bg-zinc-600 rounded-md text-sm">Cancel</button>
+                    <button onclick="confirmSeedFromBudget(this)" class="px-8 py-2.5 bg-emerald-600 hover:bg-emerald-500 rounded-md text-sm font-semibold">Seed Selected Lines</button>
+                </div>
+            </div>
+        `;
+
+        modal.innerHTML = html;
+        document.body.appendChild(modal);
+        modal.showModal();
+
+        // Store budgetLines temporarily for confirm
+        window._seedBudgetLines = budgetLines;
+    }
+
+    function filterSeedTable(inputEl) {
+        const q = (inputEl.value || '').toLowerCase().trim();
+        const tbody = document.getElementById('seedTable').querySelector('tbody');
+        tbody.querySelectorAll('tr').forEach(row => {
+            const text = row.textContent.toLowerCase();
+            row.style.display = text.includes(q) ? '' : 'none';
+        });
+    }
+
+    function toggleAllSeed(checkbox) {
+        const table = document.getElementById('seedTable');
+        table.querySelectorAll('.seed-checkbox:not(:disabled)').forEach(cb => cb.checked = checkbox.checked);
+    }
+
+    function confirmSeedFromBudget(btn) {
+        const modal = btn.closest('dialog');
+        const budgetLines = window._seedBudgetLines || [];
+        const selectedIdxs = [];
+        modal.querySelectorAll('.seed-checkbox:checked:not(:disabled)').forEach(cb => {
+            selectedIdxs.push(parseInt(cb.value));
+        });
+
         let added = 0;
-        budgetLines.forEach(b => {
+        selectedIdxs.forEach(idx => {
+            const b = budgetLines[idx];
+            if (!b) return;
             const exists = contractorSOV.some(s => s.cost_code === b.cost_code);
             if (!exists) {
                 contractorSOV.push({
@@ -897,8 +1005,13 @@
                 added++;
             }
         });
+
         localStorage.setItem('contractorSOV', JSON.stringify(contractorSOV));
-        alert(`Seeded ${added} new lines from Budget.`);
+        modal.close();
+        modal.remove();
+        delete window._seedBudgetLines;
+
+        showCenteredAlert(`Seeded ${added} new lines from Budget into Contractor SOV.`, 'success');
         renderPayAppContent();
     }
 
@@ -1129,6 +1242,27 @@
         const notes = document.getElementById('subNotes').value.trim();
 
         const original = parseFloat(origStr) || 0;
+
+        // Reconciliation check: Sub SOV original for this code should not exceed Contractor SOV for same code
+        const contractorSOVLines = JSON.parse(localStorage.getItem('contractorSOV')) || [];
+        const contractorTotalForCode = contractorSOVLines
+            .filter(c => c.cost_code === costCode)
+            .reduce((sum, c) => sum + ((c.original || 0) + (c.co_amount || 0)), 0);
+
+        const currentSubLines = subcontractorSOV[companyId] || [];
+        let otherSubsForCode = 0;
+        currentSubLines.forEach(l => {
+            if ((!lineId || l.id !== lineId) && l.cost_code === costCode) {
+                otherSubsForCode += (l.original_commitment || 0);
+            }
+        });
+        const projectedSubTotal = otherSubsForCode + original;
+
+        if (contractorTotalForCode > 0 && projectedSubTotal > contractorTotalForCode) {
+            if (!confirm(`Warning: Total Subcontractor commitments for ${costCode} (${formatCurrency(projectedSubTotal)}) would exceed Contractor SOV amount (${formatCurrency(contractorTotalForCode)}). Continue?`)) {
+                return;
+            }
+        }
 
         if (lineId) {
             const line = subcontractorSOV[companyId].find(l => l.id === lineId);
@@ -1488,6 +1622,38 @@
 
     function showPayAppVersionHistory() {
         alert("Version history for Pay Applications will be available after first publish (similar to Budget).");
+    }
+
+    // ==================== CENTERED ALERT (matching budget.html style) ====================
+    function showCenteredAlert(message, type = 'info') {
+        const dialog = document.createElement('dialog');
+        dialog.className = 'modal rounded-md p-6 text-white';
+        dialog.style.backgroundColor = '#18181b';
+        dialog.style.border = '1px solid #3f3f46';
+        dialog.style.width = 'fit-content';
+        dialog.style.maxWidth = '90vw';
+        dialog.style.zIndex = '999999';
+
+        let icon = '';
+        if (type === 'success') icon = '<i class="fa-solid fa-check-circle text-emerald-400 mr-2"></i>';
+        else if (type === 'warning') icon = '<i class="fa-solid fa-exclamation-triangle text-amber-400 mr-2"></i>';
+        else icon = '<i class="fa-solid fa-info-circle text-sky-400 mr-2"></i>';
+
+        dialog.innerHTML = `
+            <div class="flex items-center text-base mb-5 whitespace-nowrap">
+                ${icon}
+                <span>${message}</span>
+            </div>
+            <div class="flex justify-end">
+                <button class="px-6 py-2 bg-emerald-600 hover:bg-emerald-500 rounded-md text-sm font-medium">OK</button>
+            </div>
+        `;
+        document.body.appendChild(dialog);
+        dialog.showModal();
+        dialog.querySelector('button').onclick = () => {
+            dialog.close();
+            dialog.remove();
+        };
     }
 
     function showPayAppLineHistory(sovLineId) {
