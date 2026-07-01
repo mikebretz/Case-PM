@@ -31,10 +31,11 @@
     font-size: 15px !important;
   }
   .notes-cell {
-    max-width: 320px;
+    max-width: 380px;
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
+    font-size: 15.5px !important;
   }
   .division-header {
     background-color: #27272a;
@@ -1780,19 +1781,9 @@
                         </select>
                         <p class="text-[10px] text-zinc-500 mt-1">Live list from Companies / Vendors page. Select to link as Subcontractor.</p>
                     </div>
-                    <div class="grid grid-cols-2 gap-4">
-                        <div>
-                            <label class="block text-sm mb-1.5 text-zinc-300">Primary Contact Name</label>
-                            <input type="text" id="newSubContactName" class="w-full bg-zinc-800 border border-zinc-700 rounded-md px-4 py-2.5 text-sm">
-                        </div>
-                        <div>
-                            <label class="block text-sm mb-1.5 text-zinc-300">Primary Contact Email</label>
-                            <input type="email" id="newSubContactEmail" class="w-full bg-zinc-800 border border-zinc-700 rounded-md px-4 py-2.5 text-sm">
-                        </div>
-                    </div>
-                    <div>
-                        <label class="block text-sm mb-1.5 text-zinc-300">Phone (optional)</label>
-                        <input type="text" id="newSubPhone" class="w-full bg-zinc-800 border border-zinc-700 rounded-md px-4 py-2.5 text-sm">
+                    <div id="newSubContactInfo" class="hidden bg-zinc-800 border border-zinc-700 rounded-md p-3 text-sm">
+                        <div class="text-zinc-400 text-xs mb-1">PRIMARY CONTACT (from Company record)</div>
+                        <div id="newSubContactDisplay" class="text-white"></div>
                     </div>
                 </div>
 
@@ -1809,9 +1800,11 @@
         // Populate live dropdown from Companies list (no auto-focus needed for select)
         setTimeout(() => {
             const selectEl = modal.querySelector('#newSubCompanySelect');
+            const contactInfoDiv = modal.querySelector('#newSubContactInfo');
+            const contactDisplay = modal.querySelector('#newSubContactDisplay');
+
             if (selectEl) {
                 const companiesList = JSON.parse(localStorage.getItem('casepm_companies')) || [];
-                // Clear default option and repopulate
                 selectEl.innerHTML = '<option value="">-- Select Existing Company --</option>';
                 companiesList.forEach(c => {
                     const opt = document.createElement('option');
@@ -1819,6 +1812,31 @@
                     opt.textContent = c.name || c.company_name || 'Unnamed Company';
                     selectEl.appendChild(opt);
                 });
+
+                // When user selects a company, show its designated Primary Contact (read-only, pulled from company record)
+                selectEl.onchange = function() {
+                    const selectedId = this.value;
+                    if (!selectedId || !contactInfoDiv || !contactDisplay) {
+                        if (contactInfoDiv) contactInfoDiv.classList.add('hidden');
+                        return;
+                    }
+                    const company = companiesList.find(c => c.id == selectedId);
+                    if (company) {
+                        let html = '';
+                        const pcName = company.primary_contact_name || company.primaryContactName || company.contact_name || 'Not set on company record';
+                        const pcEmail = company.primary_contact_email || company.primaryContactEmail || company.email || '';
+                        const pcPhone = company.primary_contact_phone || company.primaryContactPhone || company.phone || '';
+
+                        html = `<div class="font-medium text-emerald-300">${pcName}</div>`;
+                        if (pcEmail) html += `<div class="text-xs text-zinc-400">${pcEmail}</div>`;
+                        if (pcPhone) html += `<div class="text-xs text-zinc-400">${pcPhone}</div>`;
+                        if (!pcEmail && !pcPhone && pcName === 'Not set on company record') {
+                            html += `<div class="text-xs text-amber-400">No primary contact details saved for this company yet.</div>`;
+                        }
+                        contactDisplay.innerHTML = html;
+                        contactInfoDiv.classList.remove('hidden');
+                    }
+                };
             }
         }, 80);
     }
@@ -2492,9 +2510,10 @@
             } else if (e.details && e.details.workThisPeriod !== undefined) {
                 detail += ` — This Period: ${formatCurrency(e.details.workThisPeriod)}`;
             }
+            const user = e.user || 'System';
             return `<div class="flex justify-between text-xs border-b border-zinc-700 py-1.5 px-1">
                 <div class="font-mono text-emerald-400 w-28 flex-shrink-0">${time}</div>
-                <div class="flex-1 text-zinc-300">${detail}</div>
+                <div class="flex-1 text-zinc-300">${detail} <span class="text-[10px] text-zinc-500">by ${user}</span></div>
             </div>`;
         }).join('') : `<div class="text-zinc-400 py-6 text-center">No audit events for ${targetCostCode || 'this line'} yet.<br>Changes will appear here after edits or billing.</div>`;
 
