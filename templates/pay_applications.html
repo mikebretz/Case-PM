@@ -297,6 +297,16 @@
                 <div class="text-xs text-zinc-400">Primary Contact Mode</div>
                 <div class="text-xs mt-0.5 text-zinc-300">Subs can only edit billing fields (Work This Period, Materials, Notes) for their own lines.</div>
             </div>
+
+            <div class="pt-3 border-t border-zinc-700">
+                <label class="flex items-center justify-between cursor-pointer">
+                    <div>
+                        <div class="text-sm text-zinc-300">Require Lien Waiver with Subcontractor Pay App Submission</div>
+                        <div class="text-[10px] text-zinc-500">When ON, Subs must upload &amp; submit a lien waiver before final payment can be processed.</div>
+                    </div>
+                    <input type="checkbox" id="requireLienWaiverToggle" class="w-5 h-5 accent-emerald-600" ${requireLienWaiverOnSubPayApp ? 'checked' : ''}>
+                </label>
+            </div>
         </div>
 
         <div class="mt-6 flex justify-end gap-3">
@@ -322,7 +332,9 @@
     let hasUnsavedChanges = false;
     let payAppCollapsedDivisions = new Set();
     let defaultRetainagePercent = parseFloat(localStorage.getItem('payAppRetainagePercent') || '10');
-let subSOVStatus = JSON.parse(localStorage.getItem('subSOVStatus') || '{}'); // { [companyId]: { status: 'Draft'|'Pending Approval'|'Approved'|'Rejected', submittedDate?, approvedBy?, approvedDate? } }
+let subSOVStatus = JSON.parse(localStorage.getItem('subSOVStatus') || '{}'); // { [companyId]: { status: ..., unlockedBy?, ... } }
+let lienWaivers = JSON.parse(localStorage.getItem('lienWaivers') || '{}'); // { [companyId]: { filename: string, uploadedAt: string, submitted: boolean } }
+let requireLienWaiverOnSubPayApp = localStorage.getItem('requireLienWaiverOnSubPayApp') !== 'false'; // default true
 
     // History of previous (Approved) Pay Applications
     let payAppHistory = JSON.parse(localStorage.getItem('payAppHistory')) || [];
@@ -384,6 +396,67 @@ let subSOVStatus = JSON.parse(localStorage.getItem('subSOVStatus') || '{}'); // 
         if (extra.approvedBy) subSOVStatus[companyId].approvedBy = extra.approvedBy;
         if (extra.approvedDate) subSOVStatus[companyId].approvedDate = extra.approvedDate;
         localStorage.setItem('subSOVStatus', JSON.stringify(subSOVStatus));
+    }
+
+    // ==================== LIEN WAIVER WORKFLOW ====================
+    function getLienWaiverStatus(companyId) {
+        if (!companyId) return { hasWaiver: false, submitted: false, filename: null };
+        const waiver = lienWaivers[companyId] || {};
+        return {
+            hasWaiver: !!waiver.filename,
+            submitted: !!waiver.submitted,
+            filename: waiver.filename || null,
+            uploadedAt: waiver.uploadedAt || null
+        };
+    }
+
+    function uploadLienWaiver(companyId) {
+        if (!companyId) return;
+        const input = document.createElement('input');
+        input.type = 'file';
+        input.accept = '.pdf,.doc,.docx,.jpg,.png';
+        input.onchange = function(e) {
+            const file = e.target.files[0];
+            if (!file) return;
+
+            // Simulate upload (in real system this would go to server/storage)
+            if (!lienWaivers[companyId]) lienWaivers[companyId] = {};
+            lienWaivers[companyId].filename = file.name;
+            lienWaivers[companyId].uploadedAt = new Date().toISOString();
+            lienWaivers[companyId].submitted = false; // Needs explicit submit
+            localStorage.setItem('lienWaivers', JSON.stringify(lienWaivers));
+
+            logPayAppAudit('LIEN_WAIVER_UPLOADED', { companyId, filename: file.name });
+            showCenteredAlert(`Lien waiver "${file.name}" uploaded successfully. Click "Submit Lien Waiver" to finalize.`, 'success');
+            renderPayAppContent(); // Refresh to show new buttons/status
+        };
+        input.click();
+    }
+
+    function submitLienWaiver(companyId) {
+        if (!companyId) return;
+        const waiver = lienWaivers[companyId];
+        if (!waiver || !waiver.filename) {
+            showCenteredAlert("No lien waiver has been uploaded yet.", 'warning');
+            return;
+        }
+
+        waiver.submitted = true;
+        localStorage.setItem('lienWaivers', JSON.stringify(lienWaivers));
+
+        // Update status to final approved state
+        updateSubSOVStatus(companyId, 'Approved', { 
+            lienWaiverReceived: true,
+            lienWaiverDate: new Date().toISOString()
+        });
+
+        logPayAppAudit('LIEN_WAIVER_SUBMITTED', { companyId, filename: waiver.filename });
+        showCenteredAlert("Lien waiver submitted and recorded. Subcontractor pay app is now ready for payment processing.", 'success');
+        renderPayAppContent();
+    }
+
+    function checkLienWaiverRequirement() {
+        return requireLienWaiverOnSubPayApp;
     }
 
     // Robust Primary Contact check (matches Companies page + User Management)
@@ -1987,16 +2060,48 @@ let subSOVStatus = JSON.parse(localStorage.getItem('subSOVStatus') || '{}'); // 
                 </div>
             `;
         } else if (currentStatus === 'Approved') {
-            // User Request: When Approved/Locked, replace "Add Line" with "Submit Application".
-            // "Submit Application" commits the current period draft billing (work_this_period, materials_stored, co_billed_this_period)
-            // into the permanent billed_to_date for the focused subcontractor.
-            workflowHTML = `
-                <div class="workflow-bar px-4 py-3 flex items-center gap-3 text-sm flex-wrap">
-                    <span class="text-emerald-400 font-medium">SOV Approved — Enter current period billing. Original Commitment is locked. Draft billing is saved on "Save Billing" but not committed until you Submit Application.</span>
-                    
+            const waiverStatus = getLienWaiverStatus(selectedSubCompanyId);
+            const requiresWaiver = checkLienWaiverRequirement();
+            const isWaitingOnWaiver = subSOVStatus[selectedSubCompanyId] && subSOVStatus[selectedSubCompanyId].status === 'Approved — Waiting on Lien Waiver';
+            const lienReceived = waiverStatus.submitted;
+
+            let statusMessage = 'SOV Approved — Enter current period billing. Drafts are saved on "Save Billing" but not committed until Submit Application.';
+            let buttonsHTML = '';
+
+            if (requiresWaiver && !lienReceived) {
+                // Lien waiver is required and not yet submitted
+                statusMessage = 'Approved — Waiting on Lien Waiver. Submit Application will be blocked until a lien waiver is uploaded and submitted.';
+                buttonsHTML = `
+                    <button onclick="submitSubPeriodBilling(${selectedSubCompanyId})" class="ml-3 px-5 py-1.5 bg-zinc-600 hover:bg-zinc-500 text-white rounded text-xs font-semibold flex items-center gap-1.5 opacity-50 cursor-not-allowed" disabled title="Lien Waiver required before submission">
+                        <i class="fa-solid fa-paper-plane"></i> <span>Submit Application</span>
+                    </button>
+                    <button onclick="uploadLienWaiver(${selectedSubCompanyId})" class="px-4 py-1.5 bg-sky-600 hover:bg-sky-500 text-white rounded text-xs font-medium flex items-center gap-1.5">
+                        <i class="fa-solid fa-upload"></i> <span>Upload Lien Waiver</span>
+                    </button>
+                `;
+            } else if (requiresWaiver && lienReceived && !isWaitingOnWaiver) {
+                // Waiver uploaded but not yet "submitted" by user action, or ready
+                buttonsHTML = `
                     <button onclick="submitSubPeriodBilling(${selectedSubCompanyId})" class="ml-3 px-5 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded text-xs font-semibold flex items-center gap-1.5">
                         <i class="fa-solid fa-paper-plane"></i> <span>Submit Application</span>
                     </button>
+                    <button onclick="uploadLienWaiver(${selectedSubCompanyId})" class="px-4 py-1.5 bg-zinc-700 hover:bg-zinc-600 text-white rounded text-xs font-medium flex items-center gap-1.5">
+                        <i class="fa-solid fa-upload"></i> <span>Re-upload Lien Waiver</span>
+                    </button>
+                `;
+            } else {
+                // No lien waiver requirement or already handled
+                buttonsHTML = `
+                    <button onclick="submitSubPeriodBilling(${selectedSubCompanyId})" class="ml-3 px-5 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded text-xs font-semibold flex items-center gap-1.5">
+                        <i class="fa-solid fa-paper-plane"></i> <span>Submit Application</span>
+                    </button>
+                `;
+            }
+
+            workflowHTML = `
+                <div class="workflow-bar px-4 py-3 flex items-center gap-3 text-sm flex-wrap">
+                    <span class="text-emerald-400 font-medium">${statusMessage}</span>
+                    ${buttonsHTML}
                     
                     <button onclick="unlockSubSOV(${selectedSubCompanyId})" class="ml-auto px-4 py-1.5 bg-amber-600 hover:bg-amber-500 text-white rounded text-xs font-medium flex items-center gap-1.5">
                         <i class="fa-solid fa-unlock"></i> <span>Unlock for Revision (Admin)</span>
@@ -3758,10 +3863,17 @@ let subSOVStatus = JSON.parse(localStorage.getItem('subSOVStatus') || '{}'); // 
             defaultRetainagePercent = parseFloat(select.value) || 10;
             localStorage.setItem('payAppRetainagePercent', defaultRetainagePercent);
         }
+
+        // Lien Waiver Requirement Toggle
+        const lienToggle = document.getElementById('requireLienWaiverToggle');
+        if (lienToggle) {
+            requireLienWaiverOnSubPayApp = lienToggle.checked;
+            localStorage.setItem('requireLienWaiverOnSubPayApp', requireLienWaiverOnSubPayApp);
+        }
+
         document.getElementById('settingsModal').close();
-        showCenteredAlert(`Pay Application settings saved. Retainage set to ${defaultRetainagePercent}%.`, 'success');
-        // Re-render current tab to apply new retainage immediately if on G702
-        if (currentPayAppTab === 'payapp') {
+        showCenteredAlert(`Pay Application settings saved. Retainage set to ${defaultRetainagePercent}%. Lien Waiver requirement: ${requireLienWaiverOnSubPayApp ? 'ON' : 'OFF'}.`, 'success');
+        if (currentPayAppTab === 'payapp' || currentPayAppTab === 'sub-sov') {
             renderPayAppContent();
         }
     }
