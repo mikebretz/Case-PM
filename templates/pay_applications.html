@@ -74,9 +74,7 @@
             <i class="fa-solid fa-print"></i><span>Print AIA G702 / G703</span>
         </button>
 
-        <button onclick="showAddPayAppModal()" class="flex items-center gap-2 px-5 py-2 min-w-[195px] whitespace-nowrap bg-white text-zinc-900 hover:bg-zinc-100 rounded-md text-sm font-semibold transition-colors h-[38px]">
-            <i class="fa-solid fa-plus"></i><span>New Pay Application</span>
-        </button>
+        <!-- "New Pay Application" removed - use "New Period" button inside the Pay Application (G702) tab instead for creating billing periods -->
 
         <button onclick="showSettingsModal()" class="w-10 h-10 flex items-center justify-center bg-zinc-800 hover:bg-zinc-700 rounded-md">
             <i class="fa-solid fa-cog"></i>
@@ -117,7 +115,7 @@
 
 <!-- TABLE CONTAINER -->
 <div class="mx-6 mb-6 flex-1 overflow-hidden flex flex-col border border-zinc-700 rounded-md bg-zinc-900">
-    <div class="flex-1 overflow-auto" id="payAppTableScrollContainer" style="height: calc(100vh - 300px); overflow-y: auto;">
+    <div class="flex-1 overflow-auto" id="payAppTableScrollContainer" style="height: calc(100vh - 420px); max-height: calc(100vh - 420px); overflow-y: auto;">
         <table class="w-full text-sm min-w-[1900px]">
             <thead class="bg-zinc-800 sticky z-20 border-b border-zinc-700" style="top: 0; position: sticky;" id="payAppTableHead">
                 <!-- Populated dynamically -->
@@ -447,7 +445,7 @@
             <tr>
                 <th class="px-3 py-3 text-center font-medium text-zinc-400 w-8">#</th>
                 <th class="px-4 py-3 text-left font-medium text-zinc-400 w-28">Cost Code</th>
-                <th class="px-4 py-3 text-left font-medium text-zinc-400 min-w-[260px]">Description</th>
+                <th class="px-4 py-3 text-left font-medium text-zinc-400 min-w-[220px]">Description</th>
                 <th class="px-4 py-3 text-right font-medium text-zinc-400 w-28">Original</th>
                 <th class="px-3 py-3 text-center font-medium text-zinc-400 w-16">% Complete</th>
                 <th class="px-4 py-3 text-right font-medium text-zinc-400 w-28">Billed to Date</th>
@@ -743,7 +741,7 @@
             <tr>
                 <th class="px-3 py-3 text-center font-medium text-zinc-400 w-8">#</th>
                 <th class="px-4 py-3 text-left font-medium text-zinc-400 w-28">Cost Code</th>
-                <th class="px-4 py-3 text-left font-medium text-zinc-400 min-w-[260px]">Description</th>
+                <th class="px-4 py-3 text-left font-medium text-zinc-400 min-w-[220px]">Description</th>
                 <th class="px-4 py-3 text-right font-medium text-zinc-400 w-28">Original</th>
                 <th class="px-3 py-3 text-right font-medium text-zinc-400 w-24">COs</th>
                 <th class="px-4 py-3 text-right font-medium text-zinc-400 w-28">Current</th>
@@ -875,8 +873,11 @@
     }
 
     function selectSOVCodeFromList(code, desc, listModal) {
-        const codeInput = document.getElementById('sovCostCode');
-        const descInput = document.getElementById('sovDescription');
+        // Support both Contractor SOV and Subcontractor SOV inputs
+        let codeInput = document.getElementById('sovCostCode');
+        let descInput = document.getElementById('sovDescription');
+        if (!codeInput) codeInput = document.getElementById('subCostCode');
+        if (!descInput) descInput = document.getElementById('subDescription');
         if (codeInput) codeInput.value = code;
         if (descInput) descInput.value = desc;
         if (listModal) { listModal.close(); listModal.remove(); }
@@ -935,8 +936,12 @@
         content.innerHTML = `
             <div class="space-y-4">
                 <div>
-                    <label class="block text-sm mb-1.5 text-zinc-300">Cost Code</label>
-                    <input type="text" id="sovCostCode" class="w-full bg-zinc-800 border border-zinc-700 rounded-md px-4 py-2.5 text-sm" value="${line.cost_code}">
+                    <label class="block text-sm mb-1.5 text-zinc-300 flex items-center justify-between">
+                        <span>Cost Code</span>
+                        <button type="button" onclick="viewBudgetCostCodesForSOV()" class="ml-2 px-2.5 py-0.5 text-[10px] bg-zinc-700 hover:bg-zinc-600 text-emerald-400 rounded">View All Codes</button>
+                    </label>
+                    <input type="text" id="sovCostCode" list="sovCostCodeList" class="w-full bg-zinc-800 border border-zinc-700 rounded-md px-4 py-2.5 text-sm" value="${line.cost_code}">
+                    <datalist id="sovCostCodeList"></datalist>
                 </div>
                 <div>
                     <label class="block text-sm mb-1.5 text-zinc-300">Description</label>
@@ -963,6 +968,9 @@
             </div>
         `;
         modal.showModal();
+        setTimeout(() => {
+            populateSOVCostCodeDatalist();
+        }, 80);
     }
 
     function saveContractorSOVLine(id, btn) {
@@ -1075,8 +1083,8 @@
             const checked = exists ? '' : 'checked';
             const disabled = exists ? 'disabled class="opacity-50"' : '';
             html += `
-                <tr data-idx="${idx}">
-                    <td class="px-3 py-1.5 text-center"><input type="checkbox" class="seed-checkbox" value="${idx}" ${checked} ${disabled}></td>
+                <tr data-idx="${idx}" onclick="toggleSeedRowCheckbox(this)" style="cursor: pointer;">
+                    <td class="px-3 py-1.5 text-center" onclick="event.stopImmediatePropagation();"><input type="checkbox" class="seed-checkbox" value="${idx}" ${checked} ${disabled} onclick="event.stopImmediatePropagation();"></td>
                     <td class="px-3 py-1.5 font-mono text-emerald-400 text-xs">${b.cost_code}</td>
                     <td class="px-3 py-1.5 text-sm">${b.description}</td>
                     <td class="px-3 py-1.5 text-right font-mono text-sm">${formatCurrency(b.original_budget || 0)}</td>
@@ -1177,6 +1185,17 @@
         const table = document.getElementById('seedTable');
         if (table) {
             table.querySelectorAll('.seed-checkbox:not(:disabled)').forEach(cb => cb.checked = checkbox.checked);
+        }
+    }
+
+    // Robust direct toggle for seed rows (called from onclick on tr)
+    function toggleSeedRowCheckbox(rowEl) {
+        if (!rowEl) return;
+        const cb = rowEl.querySelector('.seed-checkbox');
+        if (cb && !cb.disabled) {
+            cb.checked = !cb.checked;
+            // Trigger change for any listeners
+            cb.dispatchEvent(new Event('change', { bubbles: true }));
         }
     }
 
@@ -1317,7 +1336,7 @@
             <tr>
                 <th class="px-3 py-3 text-center font-medium text-zinc-400 w-8">#</th>
                 <th class="px-4 py-3 text-left font-medium text-zinc-400 w-28">Cost Code</th>
-                <th class="px-4 py-3 text-left font-medium text-zinc-400 min-w-[260px]">Description</th>
+                <th class="px-4 py-3 text-left font-medium text-zinc-400 min-w-[220px]">Description</th>
                 <th class="px-4 py-3 text-right font-medium text-zinc-400 w-28">Original Commitment</th>
                 <th class="px-3 py-3 text-center font-medium text-zinc-400 w-16">% Complete</th>
                 <th class="px-4 py-3 text-right font-medium text-zinc-400 w-28">Billed to Date</th>
@@ -1462,7 +1481,10 @@
             <div class="space-y-4">
                 <div class="grid grid-cols-2 gap-4">
                     <div>
-                        <label class="block text-sm mb-1.5 text-zinc-300">Cost Code</label>
+                        <label class="block text-sm mb-1.5 text-zinc-300 flex items-center justify-between">
+                            <span>Cost Code</span>
+                            ${(!isPrimary || !line) ? `<button type="button" onclick="viewBudgetCostCodesForSOV()" class="ml-2 px-2.5 py-0.5 text-[10px] bg-zinc-700 hover:bg-zinc-600 text-emerald-400 rounded">View All Codes</button>` : ''}
+                        </label>
                         <input type="text" id="subCostCode" class="w-full bg-zinc-800 border border-zinc-700 rounded-md px-4 py-2.5 text-sm" value="${line ? line.cost_code : ''}" ${isPrimary && line ? 'readonly' : ''}>
                     </div>
                     <div>
