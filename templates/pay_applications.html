@@ -821,14 +821,9 @@ let subSOVStatus = JSON.parse(localStorage.getItem('subSOVStatus') || '{}'); // 
                     <div class="text-xs text-zinc-400">Total Billed to Date</div>
                     <div class="text-2xl font-semibold mt-1">${formatCurrency(totalBilled)}</div>
                 </div>
-                <div class="bg-zinc-800 border border-zinc-700 rounded-md p-5 flex flex-col justify-between">
-                    <div>
-                        <div class="text-xs text-zinc-400">Balance to Finish</div>
-                        <div class="text-2xl font-semibold mt-1 text-emerald-400">${formatCurrency(totalBalance)}</div>
-                    </div>
-                    <button onclick="showAddContractorSOVLine()" class="mt-2 px-4 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-medium rounded-md flex items-center justify-center gap-1.5">
-                        <i class="fa-solid fa-plus"></i> <span>Add Line</span>
-                    </button>
+                <div class="bg-zinc-800 border border-zinc-700 rounded-md p-5">
+                    <div class="text-xs text-zinc-400">Balance to Finish</div>
+                    <div class="text-2xl font-semibold mt-1 text-emerald-400">${formatCurrency(totalBalance)}</div>
                 </div>
             </div>
         `;
@@ -1449,7 +1444,7 @@ let subSOVStatus = JSON.parse(localStorage.getItem('subSOVStatus') || '{}'); // 
         companies = JSON.parse(localStorage.getItem('casepm_companies')) || [];
         let currentStatus = 'Draft'; // Declare early to avoid TDZ errors in template literals
 
-        // Summary cards - reorganized per user request
+        // Summary cards - reorganized: Add Line moved next to status, middle card now shows key totals for selected sub
         cardsContainer.innerHTML = `
             <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
                 <div class="bg-zinc-800 border border-zinc-700 rounded-md p-5">
@@ -1463,15 +1458,14 @@ let subSOVStatus = JSON.parse(localStorage.getItem('subSOVStatus') || '{}'); // 
                         </button>
                     </div>
                 </div>
-                <div class="bg-zinc-800 border border-zinc-700 rounded-md p-5 flex items-end">
-                    ${ (currentStatus !== 'Approved' || (subSOVStatus[selectedSubCompanyId] && subSOVStatus[selectedSubCompanyId].unlockedBy)) 
-                        ? `<button onclick="addLineToSelectedSub()" class="px-5 py-2.5 bg-emerald-600 hover:bg-emerald-500 rounded-md text-sm font-medium flex items-center gap-2">
-                            <i class="fa-solid fa-plus"></i> <span>Add Line to this Sub's SOV</span>
-                          </button>` 
-                        : '' }
+                <div class="bg-zinc-800 border border-zinc-700 rounded-md p-5">
+                    <div class="text-xs text-zinc-400">Original Contract Amount</div>
+                    <div id="subOriginalTotal" class="text-2xl font-semibold mt-1 text-emerald-400">$0</div>
+                    <div class="mt-3 text-xs text-zinc-400">Billed to Date</div>
+                    <div id="subBilledTotal" class="text-xl font-semibold text-sky-400">$0</div>
                 </div>
                 <div class="bg-zinc-800 border border-zinc-700 rounded-md p-5 flex items-end justify-end">
-                    <!-- Space for future filters or actions -->
+                    <!-- Add Line button moved to workflow bar area next to status -->
                 </div>
             </div>
         `;
@@ -1529,6 +1523,18 @@ let subSOVStatus = JSON.parse(localStorage.getItem('subSOVStatus') || '{}'); // 
             `;
             const selCard = selector ? selector.parentElement : null;
             if (selCard) selCard.appendChild(infoDiv);
+
+            // Populate the new summary totals for the selected sub
+            const subLines = subcontractorSOV[selectedSubCompanyId] || [];
+            let origTotal = 0, billedTotal = 0;
+            subLines.forEach(l => {
+                origTotal += (l.original_commitment || 0); // Original Contract Amount
+                billedTotal += (l.billed_to_date || 0);
+            });
+            const origEl = document.getElementById('subOriginalTotal');
+            const billedEl = document.getElementById('subBilledTotal');
+            if (origEl) origEl.textContent = formatCurrency(origTotal);
+            if (billedEl) billedEl.textContent = formatCurrency(billedTotal);
         }
 
         // Workflow bar - dynamic based on SOV Status
@@ -1539,6 +1545,9 @@ let subSOVStatus = JSON.parse(localStorage.getItem('subSOVStatus') || '{}'); // 
             workflowHTML = `
                 <div class="workflow-bar px-4 py-3 flex items-center gap-3 text-sm flex-wrap">
                     <span class="text-zinc-400">Setup Mode — Build the original Schedule of Values. When ready, submit for approval.</span>
+                    <button onclick="addLineToSelectedSub()" class="ml-3 px-4 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded text-xs font-medium flex items-center gap-1.5">
+                        <i class="fa-solid fa-plus"></i> <span>Add Line</span>
+                    </button>
                     <button onclick="submitSubSOVForApproval()" class="ml-auto px-4 py-1.5 bg-amber-600 hover:bg-amber-500 text-white rounded text-xs font-medium flex items-center gap-1.5">
                         <i class="fa-solid fa-paper-plane"></i> <span>Submit SOV for Approval</span>
                     </button>
@@ -1548,6 +1557,9 @@ let subSOVStatus = JSON.parse(localStorage.getItem('subSOVStatus') || '{}'); // 
             workflowHTML = `
                 <div class="workflow-bar px-4 py-3 flex items-center gap-3 text-sm flex-wrap">
                     <span class="text-orange-400 font-medium">Pending Approval — Review the original SOV. Approve or request revision.</span>
+                    <button onclick="addLineToSelectedSub()" class="ml-3 px-4 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded text-xs font-medium flex items-center gap-1.5">
+                        <i class="fa-solid fa-plus"></i> <span>Add Line</span>
+                    </button>
                     <button onclick="approveSubSOVSetup()" class="ml-auto px-4 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded text-xs font-medium flex items-center gap-1.5">
                         <i class="fa-solid fa-check-double"></i> <span>Approve SOV Setup</span>
                     </button>
@@ -1562,6 +1574,9 @@ let subSOVStatus = JSON.parse(localStorage.getItem('subSOVStatus') || '{}'); // 
             workflowHTML = `
                 <div class="workflow-bar px-4 py-3 flex items-center gap-3 text-sm flex-wrap">
                     <span class="text-emerald-400 font-medium">SOV Approved — Primary Contact can now enter current period billing only. Original Commitment is locked.</span>
+                    <button onclick="addLineToSelectedSub()" class="ml-3 px-4 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded text-xs font-medium flex items-center gap-1.5">
+                        <i class="fa-solid fa-plus"></i> <span>Add Line</span>
+                    </button>
                     <button onclick="unlockSubSOV(${selectedSubCompanyId})" class="ml-auto px-4 py-1.5 bg-amber-600 hover:bg-amber-500 text-white rounded text-xs font-medium flex items-center gap-1.5">
                         <i class="fa-solid fa-unlock"></i> <span>Unlock for Revision (Admin)</span>
                     </button>
