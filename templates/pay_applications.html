@@ -1,308 +1,499 @@
 {% extends "base.html" %}
 
 {% block content %}
-<div class="max-w-[1600px] mx-auto">
+<script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+
+<style>
+  /* Match budget.html exactly */
+  #payAppTableBody tr td {
+    padding-top: 8px !important;
+    padding-bottom: 8px !important;
+  }
+  .tab-button {
+    padding: 10px 20px;
+    font-weight: 500;
+    border-bottom: 3px solid transparent;
+    transition: all 0.2s ease;
+  }
+  .tab-button.active {
+    border-bottom: 3px solid #10b981;
+    color: white;
+    font-weight: 600;
+  }
+  .payapp-summary-card {
+    transition: all 0.2s ease;
+  }
+</style>
+
+<!-- HEADER (exact match to budget.html) -->
+<div class="h-16 border-b border-zinc-800 bg-zinc-900 flex items-center px-6 flex-shrink-0">
+    <div class="w-1/3">
+        <div class="text-[10px] text-zinc-400 tracking-[1px] font-medium">CURRENT PROJECT</div>
+        <div class="text-xl font-semibold tracking-tight text-white">ALDI Lakeland</div>
+    </div>
+
+    <div class="w-1/3 flex justify-start pl-0">
+        <div class="flex items-center gap-3">
+            <div class="text-2xl font-semibold text-white">Pay Applications</div>
+            <div id="payAppRevisionBadge" onclick="showPayAppVersionHistory()" 
+                 class="cursor-pointer text-lg font-bold px-4 py-1 bg-zinc-800 hover:bg-zinc-700 border border-zinc-700 text-emerald-400 rounded-2xl font-mono transition-colors">
+                Rev 01
+            </div>
+        </div>
+    </div>
+
+    <div class="w-1/3 flex items-center justify-end gap-2 flex-nowrap">
+        <button onclick="exportPayApplications()" class="flex items-center gap-2 px-4 py-2 bg-zinc-800 hover:bg-zinc-700 rounded-md text-sm font-medium transition-colors h-[38px]">
+            <i class="fa-solid fa-download"></i><span>Export</span>
+        </button>
+
+        <button onclick="importPayApplications()" class="flex items-center gap-2 px-4 py-2 bg-zinc-800 hover:bg-zinc-700 rounded-md text-sm font-medium transition-colors h-[38px]">
+            <i class="fa-solid fa-upload"></i><span>Import</span>
+        </button>
+
+        <button onclick="printCurrentPayApp()" class="flex items-center gap-2 px-4 py-2 bg-zinc-800 hover:bg-zinc-700 rounded-md text-sm font-medium transition-colors h-[38px]">
+            <i class="fa-solid fa-print"></i><span>Print AIA G702</span>
+        </button>
+
+        <button onclick="showAddPayAppModal()" class="flex items-center gap-2 px-5 py-2 min-w-[195px] whitespace-nowrap bg-white text-zinc-900 hover:bg-zinc-100 rounded-md text-sm font-semibold transition-colors h-[38px]">
+            <i class="fa-solid fa-plus"></i><span>New Pay Application</span>
+        </button>
+
+        <button onclick="showSettingsModal()" class="w-10 h-10 flex items-center justify-center bg-zinc-800 hover:bg-zinc-700 rounded-md">
+            <i class="fa-solid fa-cog"></i>
+        </button>
+
+        <!-- Compact 2-line User Profile -->
+        <div class="flex items-center gap-2 pl-3 border-l border-zinc-700 cursor-pointer flex-shrink-0" onclick="showUserProfileModal()">
+            <div class="w-8 h-8 bg-zinc-700 rounded-full overflow-hidden flex-shrink-0">
+                <img src="https://i.pravatar.cc/32?img=68" class="w-full h-full object-cover">
+            </div>
+            <div class="text-sm leading-none">
+                <div class="font-medium whitespace-nowrap">Michael Bretz</div>
+                <div class="text-[10px] text-zinc-500 whitespace-nowrap">Project Manager</div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- TABS -->
+<div class="mx-6 mt-4 flex border-b border-zinc-700">
+    <button onclick="switchPayAppTab('payapp')" id="tab-payapp"
+            class="tab-button px-6 py-3 text-sm font-medium border-b-2 border-emerald-500 text-white">Pay Application (G702)</button>
     
-    <!-- Page Header -->
-    <div class="flex items-center justify-between mb-6">
-        <div>
-            <h1 class="text-3xl font-semibold tracking-tight">Pay Applications</h1>
-            <p class="text-zinc-400 mt-1">Manage AIA-format progress billing</p>
-        </div>
-        
-        <button onclick="showAddPayAppModal()" 
-                class="flex items-center gap-2 px-5 py-2.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded-2xl text-sm font-medium transition-colors">
-            <i class="fa-solid fa-plus"></i>
-            <span>New Pay Application</span>
-        </button>
-    </div>
+    <button onclick="switchPayAppTab('contractor-sov')" id="tab-contractor-sov"
+            class="tab-button px-6 py-3 text-sm font-medium text-zinc-400 hover:text-white">Contractor Schedule of Values (G703)</button>
+    
+    <button onclick="switchPayAppTab('sub-sov')" id="tab-sub-sov"
+            class="tab-button px-6 py-3 text-sm font-medium text-zinc-400 hover:text-white">Subcontractor Schedule of Values</button>
+</div>
 
-    <!-- Filters -->
-    <div class="flex flex-wrap items-center gap-3 mb-6 bg-zinc-900 border border-zinc-800 rounded-3xl p-4">
-        <div class="flex-1 min-w-[220px]">
-            <input type="text" id="payAppSearch" placeholder="Search by number or contractor..." 
-                   class="w-full bg-zinc-800 border border-zinc-700 rounded-2xl px-4 py-2.5 text-sm focus:outline-none focus:border-emerald-600"
-                   onkeyup="filterPayApps()">
-        </div>
+<!-- SUMMARY CARDS (dynamic per tab) -->
+<div class="bg-zinc-900 border border-zinc-700 mx-6 mt-4 rounded-md p-4 flex-shrink-0" id="payAppSummaryCards">
+    <!-- Populated by JavaScript based on active tab -->
+</div>
 
-        <select id="statusFilter" onchange="filterPayApps()" 
-                class="bg-zinc-800 border border-zinc-700 rounded-2xl px-4 py-2.5 text-sm focus:outline-none focus:border-emerald-600">
-            <option value="">All Statuses</option>
-            <option value="Draft">Draft</option>
-            <option value="Submitted">Submitted</option>
-            <option value="Approved">Approved</option>
-            <option value="Paid">Paid</option>
-        </select>
-
-        <select id="projectFilter" onchange="filterPayApps()" 
-                class="bg-zinc-800 border border-zinc-700 rounded-2xl px-4 py-2.5 text-sm focus:outline-none focus:border-emerald-600">
-            <option value="">All Projects</option>
-        </select>
-
-        <button onclick="clearPayAppFilters()" 
-                class="px-4 py-2.5 text-sm bg-zinc-800 hover:bg-zinc-700 border border-zinc-700 rounded-2xl transition-colors">
-            Clear Filters
-        </button>
-    </div>
-
-    <!-- Pay Applications Table -->
-    <div class="bg-zinc-900 border border-zinc-800 rounded-3xl overflow-hidden">
-        <table class="w-full">
-            <thead>
-                <tr class="border-b border-zinc-800 bg-zinc-950">
-                    <th class="text-left px-6 py-4 text-sm font-medium text-zinc-400">App #</th>
-                    <th class="text-left px-6 py-4 text-sm font-medium text-zinc-400">Period Ending</th>
-                    <th class="text-left px-6 py-4 text-sm font-medium text-zinc-400">Contractor</th>
-                    <th class="text-right px-6 py-4 text-sm font-medium text-zinc-400">Amount</th>
-                    <th class="text-center px-6 py-4 text-sm font-medium text-zinc-400">Status</th>
-                    <th class="text-center px-6 py-4 text-sm font-medium text-zinc-400">Retainage</th>
-                    <th class="w-20"></th>
-                </tr>
+<!-- TABLE CONTAINER -->
+<div class="mx-6 mb-6 flex-1 overflow-hidden flex flex-col border border-zinc-700 rounded-md bg-zinc-900">
+    <div class="flex-1 overflow-auto" id="payAppTableScrollContainer" style="max-height: calc(100vh - 420px);">
+        <table class="w-full text-sm min-w-[1800px]">
+            <thead class="bg-zinc-800 sticky z-20 border-b border-zinc-700" style="top: 0; position: sticky;" id="payAppTableHead">
+                <!-- Populated dynamically by tab -->
             </thead>
-            <tbody id="payAppTableBody" class="divide-y divide-zinc-800">
-                <!-- Rows populated by JavaScript -->
+            <tbody id="payAppTableBody" class="divide-y divide-zinc-800 text-sm">
+                <!-- Populated by JavaScript -->
             </tbody>
         </table>
     </div>
-
+    <div class="h-px bg-zinc-700 flex-shrink-0"></div>
 </div>
-        <!-- Add / Edit Pay Application Modal -->
-        <dialog id="payAppModal" class="bg-zinc-900 border border-zinc-700 rounded-3xl p-0 w-full max-w-2xl shadow-2xl">
-            <div class="p-6">
-                <div class="flex items-center justify-between mb-5">
-                    <div class="font-semibold text-xl" id="modalTitle">New Pay Application</div>
-                    <button onclick="document.getElementById('payAppModal').close()" class="text-zinc-400 hover:text-white text-2xl leading-none">&times;</button>
+
+<!-- Fixed Bottom Status Bar -->
+<div class="fixed bottom-0 left-64 right-0 bg-zinc-900 border-t border-zinc-700 px-6 py-2 text-xs text-zinc-400 flex items-center justify-between z-[60]">
+    <div class="flex items-center gap-4">
+        <div>Pay Applications • Linked to Budget &amp; Schedule of Values • ALDI Lakeland</div>
+        <button onclick="showPayAppAuditLog()" class="text-emerald-400 hover:text-emerald-300 underline">View Pay Application Audit Log</button>
+    </div>
+    <div class="text-emerald-400">● Online</div>
+</div>
+
+<!-- Modals will be added in future iterations -->
+<dialog id="addPayAppModal" class="modal rounded-md w-full max-w-2xl p-0 text-white" style="background-color: #18181b; border: 1px solid #3f3f46;">
+    <div class="p-6">
+        <h3 class="text-xl font-semibold mb-4">Create New Pay Application</h3>
+        <p class="text-zinc-400 text-sm mb-6">This will be a full AIA G702-style Pay Application builder in the next iteration.</p>
+        <div class="flex justify-end">
+            <button onclick="document.getElementById('addPayAppModal').close()" class="px-6 py-2.5 bg-zinc-700 hover:bg-zinc-600 rounded-md text-sm">Close</button>
+        </div>
+    </div>
+</dialog>
+
+<script>
+    // ==================== DATA & STATE ====================
+    let payApplications = JSON.parse(localStorage.getItem('payApplications')) || [];
+    let contractorSOV = JSON.parse(localStorage.getItem('contractorSOV')) || [];
+    let subcontractorSOV = JSON.parse(localStorage.getItem('subcontractorSOV')) || [];
+    let companies = JSON.parse(localStorage.getItem('casepm_companies')) || [];
+    let budgetLines = JSON.parse(localStorage.getItem('budgetLines')) || [];
+
+    let currentPayAppTab = 'payapp';
+    let payAppAuditLog = JSON.parse(localStorage.getItem('payAppAuditLog')) || [];
+
+    function formatCurrency(amount) {
+        return new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(amount || 0);
+    }
+
+    // ==================== AUDIT LOGGING ====================
+    function logPayAppAudit(action, details = {}) {
+        const entry = {
+            id: Date.now() + Math.random(),
+            timestamp: new Date().toISOString(),
+            action: action,
+            user: "Michael Bretz",
+            details: details
+        };
+        payAppAuditLog.unshift(entry);
+        if (payAppAuditLog.length > 1000) payAppAuditLog.length = 1000;
+        localStorage.setItem('payAppAuditLog', JSON.stringify(payAppAuditLog));
+    }
+
+    // ==================== TAB SWITCHING ====================
+    function switchPayAppTab(tab) {
+        currentPayAppTab = tab;
+
+        // Update active tab styling
+        document.querySelectorAll('.tab-button').forEach(btn => btn.classList.remove('active', 'border-emerald-500', 'text-white'));
+        document.querySelectorAll('.tab-button').forEach(btn => btn.classList.add('text-zinc-400'));
+
+        const activeBtn = document.getElementById('tab-' + tab);
+        if (activeBtn) {
+            activeBtn.classList.add('active', 'border-emerald-500', 'text-white');
+            activeBtn.classList.remove('text-zinc-400');
+        }
+
+        renderPayAppContent();
+    }
+
+    function renderPayAppContent() {
+        const cardsContainer = document.getElementById('payAppSummaryCards');
+        const thead = document.getElementById('payAppTableHead');
+        const tbody = document.getElementById('payAppTableBody');
+
+        cardsContainer.innerHTML = '';
+        thead.innerHTML = '';
+        tbody.innerHTML = '';
+
+        if (currentPayAppTab === 'payapp') {
+            renderPayApplicationTab(cardsContainer, thead, tbody);
+        } else if (currentPayAppTab === 'contractor-sov') {
+            renderContractorSOVTab(cardsContainer, thead, tbody);
+        } else if (currentPayAppTab === 'sub-sov') {
+            renderSubcontractorSOVTab(cardsContainer, thead, tbody);
+        }
+    }
+
+    // ==================== PAY APPLICATION TAB (G702 style) ====================
+    function renderPayApplicationTab(cardsContainer, thead, tbody) {
+        // Summary Cards
+        cardsContainer.innerHTML = `
+            <div class="grid grid-cols-2 md:grid-cols-6 gap-4">
+                <div class="bg-zinc-800 border border-zinc-700 rounded-md p-4">
+                    <div class="text-xs text-zinc-400">Contract Amount</div>
+                    <div class="text-2xl font-semibold mt-1">$2,450,000</div>
                 </div>
-
-                <form id="payAppForm" onsubmit="savePayApplication(event)">
-                    <input type="hidden" id="payAppId">
-
-                    <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-                        <div>
-                            <label class="block text-sm text-zinc-400 mb-1.5">Application Number</label>
-                            <input type="text" id="app_number" placeholder="e.g. APP-005" required
-                                   class="w-full bg-zinc-800 border border-zinc-700 rounded-2xl px-4 py-2.5 text-sm focus:outline-none focus:border-emerald-600">
-                        </div>
-
-                        <div>
-                            <label class="block text-sm text-zinc-400 mb-1.5">Period Ending</label>
-                            <input type="date" id="period_ending" required
-                                   class="w-full bg-zinc-800 border border-zinc-700 rounded-2xl px-4 py-2.5 text-sm focus:outline-none focus:border-emerald-600">
-                        </div>
-
-                        <div>
-                            <label class="block text-sm text-zinc-400 mb-1.5">Contractor / Subcontractor</label>
-                            <input type="text" id="contractor" required
-                                   class="w-full bg-zinc-800 border border-zinc-700 rounded-2xl px-4 py-2.5 text-sm focus:outline-none focus:border-emerald-600">
-                        </div>
-
-                        <div>
-                            <label class="block text-sm text-zinc-400 mb-1.5">Project</label>
-                            <select id="project_id" required
-                                    class="w-full bg-zinc-800 border border-zinc-700 rounded-2xl px-4 py-2.5 text-sm focus:outline-none focus:border-emerald-600">
-                                <option value="">Select Project</option>
-                                <!-- Options can be populated dynamically later -->
-                            </select>
-                        </div>
-
-                        <div>
-                            <label class="block text-sm text-zinc-400 mb-1.5">Current Payment Due</label>
-                            <input type="number" id="current_amount" step="0.01" required
-                                   class="w-full bg-zinc-800 border border-zinc-700 rounded-2xl px-4 py-2.5 text-sm focus:outline-none focus:border-emerald-600">
-                        </div>
-
-                        <div>
-                            <label class="block text-sm text-zinc-400 mb-1.5">Retainage (%)</label>
-                            <input type="number" id="retainage_percent" value="10" step="0.01"
-                                   class="w-full bg-zinc-800 border border-zinc-700 rounded-2xl px-4 py-2.5 text-sm focus:outline-none focus:border-emerald-600">
-                        </div>
-                    </div>
-
-                    <div class="mt-4">
-                        <label class="block text-sm text-zinc-400 mb-1.5">Notes / Description</label>
-                        <textarea id="notes" rows="3"
-                                  class="w-full bg-zinc-800 border border-zinc-700 rounded-2xl px-4 py-2.5 text-sm focus:outline-none focus:border-emerald-600"></textarea>
-                    </div>
-
-                    <div class="flex gap-3 mt-6">
-                        <button type="button" onclick="document.getElementById('payAppModal').close()"
-                                class="flex-1 py-2.5 bg-zinc-800 hover:bg-zinc-700 rounded-2xl text-sm font-medium transition-colors">
-                            Cancel
-                        </button>
-                        <button type="submit"
-                                class="flex-1 py-2.5 bg-emerald-600 hover:bg-emerald-500 rounded-2xl text-sm font-medium transition-colors">
-                            Save Pay Application
-                        </button>
-                    </div>
-                </form>
+                <div class="bg-zinc-800 border border-zinc-700 rounded-md p-4">
+                    <div class="text-xs text-zinc-400">Total Billed to Date</div>
+                    <div class="text-2xl font-semibold mt-1 text-emerald-400">$1,225,000</div>
+                </div>
+                <div class="bg-zinc-800 border border-zinc-700 rounded-md p-4">
+                    <div class="text-xs text-zinc-400">Current Period Billing</div>
+                    <div class="text-2xl font-semibold mt-1 text-amber-400">$312,500</div>
+                </div>
+                <div class="bg-zinc-800 border border-zinc-700 rounded-md p-4">
+                    <div class="text-xs text-zinc-400">Retainage (10%)</div>
+                    <div class="text-2xl font-semibold mt-1">$122,500</div>
+                </div>
+                <div class="bg-zinc-800 border border-zinc-700 rounded-md p-4">
+                    <div class="text-xs text-zinc-400">Net Amount Due</div>
+                    <div class="text-2xl font-semibold mt-1 text-emerald-400">$190,000</div>
+                </div>
+                <div class="bg-zinc-800 border border-zinc-700 rounded-md p-4">
+                    <div class="text-xs text-zinc-400">Status</div>
+                    <div class="mt-1"><span class="px-3 py-1 text-xs rounded-full bg-amber-900/60 text-amber-400">In Progress • Period 6</span></div>
+                </div>
             </div>
-        </dialog>
-        <!-- JavaScript -->
-        <script>
-            // Sample data (will be replaced with backend data later)
-            let payApplications = [
-                {
-                    id: 1,
-                    app_number: "APP-004",
-                    period_ending: "2025-03-31",
-                    contractor: "ABC Concrete LLC",
-                    current_amount: 87500,
-                    retainage_percent: 10,
-                    status: "Approved"
-                },
-                {
-                    id: 2,
-                    app_number: "APP-005",
-                    period_ending: "2025-04-30",
-                    contractor: "Steel Dynamics LLC",
-                    current_amount: 124300,
-                    retainage_percent: 10,
-                    status: "Submitted"
-                }
-            ];
+        `;
 
-            function filterPayApps() {
-                const searchTerm = document.getElementById('payAppSearch').value.toLowerCase();
-                const statusFilter = document.getElementById('statusFilter').value;
+        // Table Header
+        thead.innerHTML = `
+            <tr>
+                <th class="px-4 py-3 text-left font-medium text-zinc-400 w-12">#</th>
+                <th class="px-6 py-3 text-left font-medium text-zinc-400">Cost Code</th>
+                <th class="px-6 py-3 text-left font-medium text-zinc-400 min-w-[260px]">Description</th>
+                <th class="px-4 py-3 text-right font-medium text-zinc-400 w-28">Original Budget</th>
+                <th class="px-4 py-3 text-right font-medium text-zinc-400 w-24">% Complete</th>
+                <th class="px-4 py-3 text-right font-medium text-zinc-400 w-28">Billed to Date</th>
+                <th class="px-4 py-3 text-right font-medium text-zinc-400 w-28">Current Billing</th>
+                <th class="px-4 py-3 text-right font-medium text-zinc-400 w-24">Retainage</th>
+                <th class="px-4 py-3 text-center font-medium text-zinc-400 w-20">Actions</th>
+            </tr>
+        `;
 
-                const filtered = payApplications.filter(app => {
-                    const matchesSearch = app.app_number.toLowerCase().includes(searchTerm) || 
-                                        app.contractor.toLowerCase().includes(searchTerm);
-                    const matchesStatus = !statusFilter || app.status === statusFilter;
-                    return matchesSearch && matchesStatus;
+        // Sample data for demo
+        const sampleLines = [
+            { id: 1, cost_code: "03-3000", description: "Concrete - Structural", original: 485000, percent: 65, billed: 315250, current: 78000, retainage: 7800 },
+            { id: 2, cost_code: "05-1200", description: "Structural Steel Framing", original: 312000, percent: 80, billed: 249600, current: 62400, retainage: 6240 },
+            { id: 3, cost_code: "09-9000", description: "Painting and Coating", original: 87500, percent: 40, billed: 35000, current: 17500, retainage: 1750 }
+        ];
+
+        sampleLines.forEach((line, index) => {
+            const row = document.createElement('tr');
+            row.className = 'hover:bg-zinc-800/60 transition-colors cursor-pointer';
+            row.innerHTML = `
+                <td class="px-4 py-2 text-center font-mono text-xs text-zinc-500">${index + 1}</td>
+                <td class="px-6 py-2 font-mono text-emerald-400">${line.cost_code}</td>
+                <td class="px-6 py-2">${line.description}</td>
+                <td class="px-4 py-2 text-right">${formatCurrency(line.original)}</td>
+                <td class="px-4 py-2 text-right font-mono">${line.percent}%</td>
+                <td class="px-4 py-2 text-right text-emerald-400">${formatCurrency(line.billed)}</td>
+                <td class="px-4 py-2 text-right text-amber-400 font-semibold">${formatCurrency(line.current)}</td>
+                <td class="px-4 py-2 text-right text-red-400">${formatCurrency(line.retainage)}</td>
+                <td class="px-4 py-2 text-center">
+                    <button onclick="event.stopImmediatePropagation(); showLineHistoryDemo(${line.id})" class="text-sky-400 hover:text-sky-300 p-1"><i class="fa-solid fa-history"></i></button>
+                </td>
+            `;
+            tbody.appendChild(row);
+        });
+    }
+
+    // ==================== CONTRACTOR SOV TAB ====================
+    function renderContractorSOVTab(cardsContainer, thead, tbody) {
+        cardsContainer.innerHTML = `
+            <div class="grid grid-cols-1 md:grid-cols-4 gap-4">
+                <div class="bg-zinc-800 border border-zinc-700 rounded-md p-4">
+                    <div class="text-xs text-zinc-400">Total Original Contract</div>
+                    <div class="text-2xl font-semibold mt-1">$2,450,000</div>
+                </div>
+                <div class="bg-zinc-800 border border-zinc-700 rounded-md p-4">
+                    <div class="text-xs text-zinc-400">Approved Changes</div>
+                    <div class="text-2xl font-semibold mt-1 text-amber-400">$87,500</div>
+                </div>
+                <div class="bg-zinc-800 border border-zinc-700 rounded-md p-4">
+                    <div class="text-xs text-zinc-400">Current Contract Value</div>
+                    <div class="text-2xl font-semibold mt-1 text-emerald-400">$2,537,500</div>
+                </div>
+                <div class="bg-zinc-800 border border-zinc-700 rounded-md p-4">
+                    <div class="text-xs text-zinc-400">Lines in SOV</div>
+                    <div class="text-2xl font-semibold mt-1">142</div>
+                </div>
+            </div>
+        `;
+
+        thead.innerHTML = `
+            <tr>
+                <th class="px-4 py-3 text-left font-medium text-zinc-400 w-12">#</th>
+                <th class="px-6 py-3 text-left font-medium text-zinc-400 w-28">Cost Code</th>
+                <th class="px-6 py-3 text-left font-medium text-zinc-400 min-w-[280px]">Description</th>
+                <th class="px-4 py-3 text-right font-medium text-zinc-400 w-28">Original Amount</th>
+                <th class="px-4 py-3 text-right font-medium text-zinc-400 w-24">Approved COs</th>
+                <th class="px-4 py-3 text-right font-medium text-zinc-400 w-28">Current Amount</th>
+                <th class="px-4 py-3 text-center font-medium text-zinc-400 w-20">% Billed</th>
+                <th class="px-4 py-3 text-center font-medium text-zinc-400 w-20">Actions</th>
+            </tr>
+        `;
+
+        const sampleSOV = [
+            { id: 1, cost_code: "03-3000", description: "Concrete - Structural", original: 485000, co: 12500, current: 497500, billed: 68 },
+            { id: 2, cost_code: "05-1200", description: "Structural Steel Framing", original: 312000, co: 0, current: 312000, billed: 82 }
+        ];
+
+        sampleSOV.forEach((line, index) => {
+            const row = document.createElement('tr');
+            row.className = 'hover:bg-zinc-800/60 transition-colors cursor-pointer';
+            row.innerHTML = `
+                <td class="px-4 py-2 text-center font-mono text-xs text-zinc-500">${index + 1}</td>
+                <td class="px-6 py-2 font-mono text-emerald-400">${line.cost_code}</td>
+                <td class="px-6 py-2">${line.description}</td>
+                <td class="px-4 py-2 text-right">${formatCurrency(line.original)}</td>
+                <td class="px-4 py-2 text-right text-amber-400">${formatCurrency(line.co)}</td>
+                <td class="px-4 py-2 text-right font-semibold">${formatCurrency(line.current)}</td>
+                <td class="px-4 py-2 text-center"><span class="px-2 py-0.5 text-xs rounded-full bg-emerald-900/60 text-emerald-400">${line.billed}%</span></td>
+                <td class="px-4 py-2 text-center">
+                    <button onclick="event.stopImmediatePropagation(); showLineHistoryDemo(${line.id})" class="text-sky-400 hover:text-sky-300 p-1"><i class="fa-solid fa-history"></i></button>
+                </td>
+            `;
+            tbody.appendChild(row);
+        });
+    }
+
+    // ==================== SUBCONTRACTOR SOV TAB ====================
+    function renderSubcontractorSOVTab(cardsContainer, thead, tbody) {
+        cardsContainer.innerHTML = `
+            <div class="flex items-center gap-4 mb-2">
+                <div>
+                    <label class="text-xs text-zinc-400 block mb-1">Filter by Subcontractor</label>
+                    <select id="subFilter" onchange="filterSubcontractorSOV()" class="bg-zinc-800 border border-zinc-700 rounded-md px-4 py-2 text-sm w-72">
+                        <option value="">All Subcontractors</option>
+                    </select>
+                </div>
+                <div class="pt-5">
+                    <button onclick="addSubcontractorSOVLine()" class="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 rounded-md text-sm font-medium flex items-center gap-2">
+                        <i class="fa-solid fa-plus"></i> <span>Add Line for Selected Sub</span>
+                    </button>
+                </div>
+            </div>
+        `;
+
+        // Populate subcontractor dropdown from Companies
+        setTimeout(() => {
+            const select = document.getElementById('subFilter');
+            if (select) {
+                const subs = companies.filter(c => c.company_type === 'Subcontractor');
+                subs.forEach(sub => {
+                    const opt = document.createElement('option');
+                    opt.value = sub.company_name;
+                    opt.textContent = sub.company_name;
+                    select.appendChild(opt);
                 });
-
-                renderPayAppTable(filtered);
             }
+        }, 50);
 
-            function clearPayAppFilters() {
-                document.getElementById('payAppSearch').value = '';
-                document.getElementById('statusFilter').value = '';
-                renderPayAppTable(payApplications);
-            }
+        thead.innerHTML = `
+            <tr>
+                <th class="px-4 py-3 text-left font-medium text-zinc-400 w-12">#</th>
+                <th class="px-6 py-3 text-left font-medium text-zinc-400">Subcontractor</th>
+                <th class="px-6 py-3 text-left font-medium text-zinc-400 min-w-[260px]">Description</th>
+                <th class="px-4 py-3 text-right font-medium text-zinc-400 w-28">Original Amount</th>
+                <th class="px-4 py-3 text-right font-medium text-zinc-400 w-24">% Complete</th>
+                <th class="px-4 py-3 text-right font-medium text-zinc-400 w-28">Billed to Date</th>
+                <th class="px-4 py-3 text-center font-medium text-zinc-400 w-20">Actions</th>
+            </tr>
+        `;
 
-            function renderPayAppTable(apps) {
-                const tbody = document.getElementById('payAppTableBody');
-                tbody.innerHTML = '';
+        const sampleSubSOV = [
+            { id: 1, sub: "ABC Plumbing", description: "Plumbing Rough-In - Phase 1", original: 87500, percent: 55, billed: 48125 },
+            { id: 2, sub: "ABC Plumbing", description: "Plumbing Fixtures", original: 42500, percent: 30, billed: 12750 },
+            { id: 3, sub: "Summit Electric", description: "Electrical Rough-In", original: 156000, percent: 72, billed: 112320 }
+        ];
 
-                if (apps.length === 0) {
-                    tbody.innerHTML = `
-                        <tr>
-                            <td colspan="7" class="px-6 py-8 text-center text-zinc-400">
-                                No pay applications found.
-                            </td>
-                        </tr>
-                    `;
-                    return;
-                }
+        sampleSubSOV.forEach((line, index) => {
+            const row = document.createElement('tr');
+            row.className = 'hover:bg-zinc-800/60 transition-colors cursor-pointer';
+            row.innerHTML = `
+                <td class="px-4 py-2 text-center font-mono text-xs text-zinc-500">${index + 1}</td>
+                <td class="px-6 py-2 font-medium">${line.sub}</td>
+                <td class="px-6 py-2">${line.description}</td>
+                <td class="px-4 py-2 text-right">${formatCurrency(line.original)}</td>
+                <td class="px-4 py-2 text-center font-mono">${line.percent}%</td>
+                <td class="px-4 py-2 text-right text-emerald-400">${formatCurrency(line.billed)}</td>
+                <td class="px-4 py-2 text-center">
+                    <button onclick="event.stopImmediatePropagation(); showLineHistoryDemo(${line.id})" class="text-sky-400 hover:text-sky-300 p-1"><i class="fa-solid fa-history"></i></button>
+                </td>
+            `;
+            tbody.appendChild(row);
+        });
+    }
 
-                apps.forEach(app => {
-                    const statusColor = 
-                        app.status === 'Paid' ? 'bg-emerald-600/20 text-emerald-400' :
-                        app.status === 'Approved' ? 'bg-blue-600/20 text-blue-400' :
-                        app.status === 'Submitted' ? 'bg-amber-600/20 text-amber-400' :
-                        'bg-zinc-600/20 text-zinc-400';
+    function filterSubcontractorSOV() {
+        // Placeholder for future filtering logic
+        console.log("Filtering subcontractor SOV...");
+    }
 
-                    const retainageAmount = (app.current_amount * (app.retainage_percent / 100)).toFixed(2);
-                    const totalDue = (app.current_amount - retainageAmount).toFixed(2);
+    function addSubcontractorSOVLine() {
+        const select = document.getElementById('subFilter');
+        if (!select || !select.value) {
+            alert("Please select a Subcontractor first.");
+            return;
+        }
+        alert("Add Subcontractor SOV Line modal will be built in the next iteration for: " + select.value);
+    }
 
-                    const row = document.createElement('tr');
-                    row.className = 'hover:bg-zinc-800/60 transition-colors';
-                    row.innerHTML = `
-                        <td class="px-6 py-4 font-mono text-sm">${app.app_number}</td>
-                        <td class="px-6 py-4 text-sm text-zinc-400">${app.period_ending}</td>
-                        <td class="px-6 py-4">${app.contractor}</td>
-                        <td class="px-6 py-4 text-right font-medium">$${app.current_amount.toLocaleString()}</td>
-                        <td class="px-6 py-4 text-center">
-                            <span class="inline-block px-3 py-1 rounded-full text-xs font-medium ${statusColor}">
-                                ${app.status}
-                            </span>
-                        </td>
-                        <td class="px-6 py-4 text-center text-sm text-zinc-400">
-                            ${app.retainage_percent}% ($${retainageAmount})
-                        </td>
-                        <td class="px-4 py-4">
-                            <div class="flex items-center gap-1">
-                                <button onclick="editPayApplication(${app.id})" class="p-2 hover:bg-zinc-700 rounded-xl text-zinc-400 hover:text-white">
-                                    <i class="fa-solid fa-edit"></i>
-                                </button>
-                                <button onclick="deletePayApplication(${app.id})" class="p-2 hover:bg-zinc-700 rounded-xl text-zinc-400 hover:text-red-400">
-                                    <i class="fa-solid fa-trash"></i>
-                                </button>
-                            </div>
-                        </td>
-                    `;
-                    tbody.appendChild(row);
-                });
-            }
+    function showLineHistoryDemo(id) {
+        const modal = document.createElement('dialog');
+        modal.className = 'modal rounded-md p-6 text-white w-full max-w-lg';
+        modal.style.backgroundColor = '#18181b';
+        modal.style.border = '1px solid #3f3f46';
+        modal.innerHTML = `
+            <h3 class="text-lg font-semibold mb-3">Line Item History</h3>
+            <div class="text-sm text-zinc-400">Detailed change history for this line will appear here (linked to Budget + SOV + Pay App).</div>
+            <div class="mt-6 text-right">
+                <button onclick="this.closest('dialog').close(); this.closest('dialog').remove()" class="px-5 py-2 bg-zinc-700 rounded-md text-sm">Close</button>
+            </div>
+        `;
+        document.body.appendChild(modal);
+        modal.showModal();
+    }
 
-            function showAddPayAppModal() {
-                document.getElementById('modalTitle').innerText = 'New Pay Application';
-                document.getElementById('payAppForm').reset();
-                document.getElementById('payAppId').value = '';
-                document.getElementById('payAppModal').showModal();
-            }
+    // ==================== PLACEHOLDER FUNCTIONS ====================
+    function showAddPayAppModal() {
+        document.getElementById('addPayAppModal').showModal();
+    }
 
-            function editPayApplication(id) {
-                const app = payApplications.find(a => a.id === id);
-                if (!app) return;
+    function exportPayApplications() {
+        alert("Export functionality will be implemented in the next iteration.");
+    }
 
-                document.getElementById('modalTitle').innerText = 'Edit Pay Application';
-                document.getElementById('payAppId').value = app.id;
-                document.getElementById('app_number').value = app.app_number;
-                document.getElementById('period_ending').value = app.period_ending;
-                document.getElementById('contractor').value = app.contractor;
-                document.getElementById('current_amount').value = app.current_amount;
-                document.getElementById('retainage_percent').value = app.retainage_percent;
-                document.getElementById('notes').value = app.notes || '';
+    function importPayApplications() {
+        alert("Import functionality will be implemented in the next iteration.");
+    }
 
-                document.getElementById('payAppModal').showModal();
-            }
+    function printCurrentPayApp() {
+        alert("AIA G702 / G703 print formatting will be added in the next iteration.");
+    }
 
-            function savePayApplication(e) {
-                e.preventDefault();
+    function showPayAppVersionHistory() {
+        alert("Version history for Pay Applications will be added soon.");
+    }
 
-                const id = document.getElementById('payAppId').value;
+    function showPayAppAuditLog() {
+        const modal = document.createElement('dialog');
+        modal.className = 'modal rounded-md p-6 text-white w-full max-w-5xl';
+        modal.style.backgroundColor = '#18181b';
+        modal.style.border = '1px solid #3f3f46';
+        modal.innerHTML = `
+            <h3 class="text-xl font-semibold mb-4">Pay Application Audit Log</h3>
+            <div class="text-sm text-zinc-400 mb-4">All changes to Pay Applications, Contractor SOV, and Subcontractor SOV will be logged here with full field-by-field detail (similar to Budget Audit Log).</div>
+            <div class="mt-6 text-right">
+                <button onclick="this.closest('dialog').close(); this.closest('dialog').remove()" class="px-5 py-2 bg-zinc-700 rounded-md text-sm">Close</button>
+            </div>
+        `;
+        document.body.appendChild(modal);
+        modal.showModal();
+    }
 
-                const newApp = {
-                    id: id ? parseInt(id) : Date.now(),
-                    app_number: document.getElementById('app_number').value,
-                    period_ending: document.getElementById('period_ending').value,
-                    contractor: document.getElementById('contractor').value,
-                    current_amount: parseFloat(document.getElementById('current_amount').value),
-                    retainage_percent: parseFloat(document.getElementById('retainage_percent').value),
-                    status: id ? payApplications.find(a => a.id == id).status : 'Draft',
-                    notes: document.getElementById('notes').value
-                };
+    function showSettingsModal() {
+        alert("Pay Application Settings (linking rules, retainage defaults, approval workflow) coming soon.");
+    }
 
-                if (id) {
-                    const index = payApplications.findIndex(a => a.id == id);
-                    payApplications[index] = newApp;
-                } else {
-                    payApplications.push(newApp);
-                }
+    function showUserProfileModal() {
+        // Reuse the same profile modal logic from budget/companies if available, or show placeholder
+        const modal = document.createElement('dialog');
+        modal.className = 'modal rounded-md p-6 text-white w-full max-w-md';
+        modal.style.backgroundColor = '#18181b';
+        modal.style.border = '1px solid #3f3f46';
+        modal.innerHTML = `
+            <h3 class="text-lg font-semibold mb-4">User Profile</h3>
+            <p class="text-sm text-zinc-400">Profile settings and signature management (same as User Management) will be available here.</p>
+            <div class="mt-6 text-right">
+                <button onclick="this.closest('dialog').close(); this.closest('dialog').remove()" class="px-5 py-2 bg-zinc-700 rounded-md text-sm">Close</button>
+            </div>
+        `;
+        document.body.appendChild(modal);
+        modal.showModal();
+    }
 
-                renderPayAppTable(payApplications);
-                document.getElementById('payAppModal').close();
-            }
+    // ==================== INITIALIZATION ====================
+    function initializePayApplications() {
+        // Load companies for Subcontractor dropdown
+        companies = JSON.parse(localStorage.getItem('casepm_companies')) || [];
+        budgetLines = JSON.parse(localStorage.getItem('budgetLines')) || [];
 
-            function deletePayApplication(id) {
-                if (!confirm('Delete this pay application?')) return;
-                payApplications = payApplications.filter(a => a.id !== id);
-                renderPayAppTable(payApplications);
-            }
+        // Default to Pay Application tab
+        switchPayAppTab('payapp');
 
-            function initializePayApplications() {
-                renderPayAppTable(payApplications);
-            }
+        console.log('%c[Case PM] Pay Applications page initialized (foundation + tab structure)', 'color:#10b981');
+    }
 
-            // Initialize on load
-            window.onload = function() {
-                initializePayApplications();
-            };
-        </script>
-
+    window.onload = initializePayApplications;
+</script>
 {% endblock %}
-
-</div>
-</div>
