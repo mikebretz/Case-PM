@@ -546,7 +546,7 @@ let subSOVStatus = JSON.parse(localStorage.getItem('subSOVStatus') || '{}'); // 
                 <th class="px-4 py-3 text-center font-medium text-zinc-400 w-44">Work This Period</th>
                 <th class="px-3 py-3 text-center font-medium text-zinc-400 w-36">Materials</th>
                 <th class="px-3 py-3 text-center font-medium text-zinc-400 w-36">Retainage</th>
-                <th class="px-4 py-3 text-left font-medium text-zinc-400 w-[42rem]">Notes</th>
+                <th class="px-4 py-3 text-left font-medium text-zinc-400 w-[30rem]">Notes</th>
                 <th class="px-3 py-3 text-center font-medium text-zinc-400 w-20">Actions</th>
             </tr>
         `;
@@ -857,7 +857,7 @@ let subSOVStatus = JSON.parse(localStorage.getItem('subSOVStatus') || '{}'); // 
                 <th class="px-3 py-3 text-center font-medium text-zinc-400 w-20">% Billed</th>
                 <th class="px-4 py-3 text-center font-medium text-zinc-400 w-40">Billed to Date</th>
                 <th class="px-4 py-3 text-center font-medium text-zinc-400 w-40">Balance</th>
-                <th class="px-4 py-3 text-left font-medium text-zinc-400 w-[42rem]">Notes</th>
+                <th class="px-4 py-3 text-left font-medium text-zinc-400 w-[30rem]">Notes</th>
                 <th class="px-3 py-3 text-center font-medium text-zinc-400 w-20">Actions</th>
             </tr>
         `;
@@ -1517,14 +1517,14 @@ let subSOVStatus = JSON.parse(localStorage.getItem('subSOVStatus') || '{}'); // 
             infoDiv.className = 'mt-2 flex items-center gap-2';
             const payAppLabel = (currentStatus === 'Approved') 
                 ? `Pay App #${currentNum} (Current)` 
-                : `Pay App Creation • ${currentStatus}`;
+                : `Schedule of Values Creation`;
 
             infoDiv.innerHTML = `
                 <div class="text-xs px-3 py-1 bg-emerald-900/40 text-emerald-400 rounded inline-flex items-center gap-1">
                     <i class="fa-solid fa-file-invoice-dollar"></i> <span>${payAppLabel}</span>
                 </div>
                 <div class="text-xs px-3 py-1 ${statusColor} rounded inline-flex items-center gap-1 font-medium">
-                    <i class="fa-solid fa-check-circle"></i> <span>${currentStatus}</span>
+                    <i class="fa-solid fa-sync fa-spin-pulse"></i> <span>${currentStatus}</span>
                 </div>
             `;
             const selCard = selector ? selector.parentElement : null;
@@ -1599,7 +1599,7 @@ let subSOVStatus = JSON.parse(localStorage.getItem('subSOVStatus') || '{}'); // 
                 <th class="px-3 py-3 text-center font-medium text-zinc-400 w-28">This Period</th>
                 <th class="px-3 py-3 text-center font-medium text-zinc-400 w-28">Stored Materials</th>
                 <th class="px-3 py-3 text-center font-medium text-zinc-400 w-28">Retainage</th>
-                <th class="px-4 py-3 text-left font-medium text-zinc-400 w-[52rem]">Notes</th>
+                <th class="px-4 py-3 text-left font-medium text-zinc-400 w-[36rem]">Notes</th>
                 <th class="px-3 py-3 text-center font-medium text-zinc-400 w-20">Actions</th>
             </tr>
         `;
@@ -1653,7 +1653,7 @@ let subSOVStatus = JSON.parse(localStorage.getItem('subSOVStatus') || '{}'); // 
                     renderPayAppContent();
                 };
                 headerRow.innerHTML = `
-                    <td colspan="10" class="px-4 py-2 text-emerald-400 font-semibold text-sm">
+                    <td colspan="11" class="px-4 py-2 text-emerald-400 font-semibold text-sm">
                         <i class="fa-solid fa-chevron-${isCollapsed ? 'right' : 'down'} mr-2 transition-transform"></i>
                         Division ${division} — ${divisionNamesSub[division] || 'Other'}
                     </td>
