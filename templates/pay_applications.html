@@ -464,7 +464,7 @@
             <tr>
                 <th class="px-3 py-3 text-center font-medium text-zinc-400 w-8">#</th>
                 <th class="px-4 py-3 text-left font-medium text-zinc-400 w-28">Cost Code</th>
-                <th class="px-4 py-3 text-left font-medium text-zinc-400 min-w-[100px]">Description</th>
+                <th class="px-4 py-3 text-left font-medium text-zinc-400 min-w-[80px]">Description</th>
                 <th class="px-4 py-3 text-right font-medium text-zinc-400 w-28">Original</th>
                 <th class="px-3 py-3 text-center font-medium text-zinc-400 w-16">% Complete</th>
                 <th class="px-4 py-3 text-right font-medium text-zinc-400 w-28">Billed to Date</th>
@@ -773,7 +773,7 @@
             <tr>
                 <th class="px-3 py-3 text-center font-medium text-zinc-400 w-8">#</th>
                 <th class="px-4 py-3 text-left font-medium text-zinc-400 w-28">Cost Code</th>
-                <th class="px-4 py-3 text-left font-medium text-zinc-400 min-w-[100px]">Description</th>
+                <th class="px-4 py-3 text-left font-medium text-zinc-400 min-w-[80px]">Description</th>
                 <th class="px-4 py-3 text-right font-medium text-zinc-400 w-28">Original</th>
                 <th class="px-3 py-3 text-right font-medium text-zinc-400 w-24">COs</th>
                 <th class="px-4 py-3 text-right font-medium text-zinc-400 w-28">Current</th>
@@ -1448,7 +1448,7 @@
             <tr>
                 <th class="px-3 py-3 text-center font-medium text-zinc-400 w-8">#</th>
                 <th class="px-4 py-3 text-left font-medium text-zinc-400 w-28">Cost Code</th>
-                <th class="px-4 py-3 text-left font-medium text-zinc-400 min-w-[100px]">Description</th>
+                <th class="px-4 py-3 text-left font-medium text-zinc-400 min-w-[80px]">Description</th>
                 <th class="px-4 py-3 text-right font-medium text-zinc-400 w-28">Original Commitment</th>
                 <th class="px-3 py-3 text-center font-medium text-zinc-400 w-16">% Complete</th>
                 <th class="px-4 py-3 text-right font-medium text-zinc-400 w-28">Billed to Date</th>
@@ -1775,7 +1775,8 @@
             <head>
                 <title>AIA G702 Application and Certificate for Payment #${period.periodNumber}</title>
                 <style>
-                    @page { size: letter; margin: 0.4in; }
+                    @page { size: letter; margin: 0.5in; }
+                    @media print { body { -webkit-print-color-adjust: exact; print-color-adjust: exact; } }
                     body { font-family: "Times New Roman", Times, serif; padding: 12px 20px; font-size: 10.5px; line-height: 1.25; color: #000; }
                     .form-header { border: 2px solid #000; padding: 6px 10px; margin-bottom: 8px; }
                     .form-title { font-size: 15px; font-weight: bold; text-align: center; letter-spacing: 0.5px; }
@@ -1857,9 +1858,8 @@
                     </div>
                 </div>
 
-                <div class="footer-note">
-                    This is a system-generated preview matching AIA G702-1992 layout and calculations. 
-                    Use official AIA Contract Documents forms for final submission if required. • Case PM • ALDI Lakeland
+                <div style="margin-top:10px;font-size:8px;color:#666;text-align:center;">
+                    Preview matching AIA G702-1992 layout • Retainage from Settings • Case PM
                 </div>
             </body>
             </html>
@@ -1896,8 +1896,8 @@
             const billing = payAppBillingLines[line.id] || { workThisPeriod: 0, materialsStored: 0 };
             const work = billing.workThisPeriod || 0;
             const mat = billing.materialsStored || 0;
-            const ret = (work + mat) * 0.10;
-            totalWork += work;
+            const ret = (work + mat) * retainageRate;
+            totalThis += work;
             totalMat += mat;
             totalRet += ret;
 
@@ -1914,11 +1914,14 @@
         const printHTML = `
             <html><head><title>AIA G703 Continuation Sheet - Period ${period.periodNumber}</title>
             <style>
-                body { font-family: Arial, sans-serif; padding: 25px; font-size: 11px; }
+                @page { size: letter landscape; margin: 0.5in; }
+                @media print { body { -webkit-print-color-adjust: exact; print-color-adjust: exact; } }
+                body { font-family: Arial, sans-serif; padding: 20px; font-size: 10px; }
                 table { width:100%; border-collapse:collapse; }
-                th, td { border:1px solid #333; padding:6px; }
-                th { background:#f3f4f6; font-weight:600; }
-                .right { text-align:right; }
+                th, td { border:1px solid #333; padding:5px 6px; }
+                th { background:#f0f0f0; font-weight:600; font-size: 9.5px; }
+                .right { text-align:right; font-family: "Courier New", monospace; }
+                .no-print-header { display: none; }
             </style>
             </head><body>
                 <h2 style="margin:0 0 10px 0;">AIA G703 — Continuation Sheet</h2>
@@ -1938,13 +1941,13 @@
                     <tfoot>
                         <tr style="font-weight:600;background:#f3f4f6;">
                             <td colspan="3" style="text-align:right;">TOTALS</td>
-                            <td class="right">${formatCurrency(totalWork)}</td>
+                            <td class="right">${formatCurrency(totalThis)}</td>
                             <td class="right">${formatCurrency(totalMat)}</td>
                             <td class="right">${formatCurrency(totalRet)}</td>
                         </tr>
                     </tfoot>
                 </table>
-                <div style="margin-top:20px;font-size:10px;color:#666;">System-generated G703 preview. Use official AIA form for submission.</div>
+                <div style="margin-top:12px;font-size:8.5px;color:#666;text-align:center;">Preview only — Match to official AIA G703 Continuation Sheet. Retainage rate applied from project settings.</div>
             </body></html>
         `;
 
