@@ -696,6 +696,28 @@ let subSOVStatus = JSON.parse(localStorage.getItem('subSOVStatus') || '{}'); // 
         renderPayAppContent();
     }
 
+    function updateWorkThisPeriodLive(sovLineId, newValue) {
+        const line = contractorSOV.find(l => l.id === sovLineId);
+        if (!line) return;
+
+        const workVal = parseFloat(newValue) || 0;
+        const matInput = document.getElementById('materialsStoredInput');
+        const matVal = matInput ? (parseFloat(matInput.value) || 0) : 0;
+        const coInput = document.getElementById('coWorkThisPeriodInput');
+        const coVal = coInput ? (parseFloat(coInput.value) || 0) : 0;
+
+        const currentAmount = (line.original || 0) + (line.co_amount || 0);
+        const previousBilled = line.billed_to_date || Math.round(currentAmount * 0.55);
+        const totalThis = workVal + matVal + coVal;
+        const newRemaining = Math.max(0, currentAmount - previousBilled - totalThis);
+
+        const remDisplay = document.getElementById('remainingToBillDisplay');
+        if (remDisplay) {
+            remDisplay.textContent = formatCurrency(newRemaining);
+            remDisplay.style.color = newRemaining < 0 ? '#f87171' : '#34d399';
+        }
+    }
+
     function editPayAppBillingLine(sovLineId) {
         const line = contractorSOV.find(l => l.id === sovLineId);
         if (!line) return;
@@ -727,7 +749,18 @@ let subSOVStatus = JSON.parse(localStorage.getItem('subSOVStatus') || '{}'); // 
                 <div>
                     <label class="block text-xs text-zinc-400 mb-1">Work Completed This Period</label>
                     <input type="number" id="workThisPeriodInput" value="${billing.workThisPeriod || 0}" step="0.01"
-                           class="w-full bg-zinc-800 border border-zinc-700 rounded-md px-4 py-2.5 text-sm">
+                           class="w-full bg-zinc-800 border border-zinc-700 rounded-md px-4 py-2.5 text-sm" oninput="updateWorkThisPeriodLive(${sovLineId}, this.value)">
+                    
+                    <div class="grid grid-cols-2 gap-3 mt-1.5 text-xs">
+                        <div>
+                            <div class="text-zinc-500">Amount Previously Billed</div>
+                            <div id="previouslyBilledDisplay" class="font-mono text-emerald-300">${formatCurrency(previousBilled)}</div>
+                        </div>
+                        <div>
+                            <div class="text-zinc-500">Remaining to Bill (after this entry)</div>
+                            <div id="remainingToBillDisplay" class="font-mono font-semibold text-emerald-400">${formatCurrency(remaining)}</div>
+                        </div>
+                    </div>
                 </div>
                 <div>
                     <label class="block text-xs text-zinc-400 mb-1">Materials Stored This Period</label>
@@ -1095,7 +1128,7 @@ let subSOVStatus = JSON.parse(localStorage.getItem('subSOVStatus') || '{}'); // 
                 <td class="px-4 py-2 text-[15px] text-zinc-400 notes-cell" title="${(line.notes || '').replace(/"/g, '&quot;')}">${line.notes || ''}</td>
                 <td class="px-3 py-2 text-center">
                     <button onclick="event.stopImmediatePropagation(); showSOVLineAudit(${line.id}, 'contractor')" class="text-sky-400 hover:text-sky-300 p-1" title="Line Audit Log"><i class="fa-solid fa-history"></i></button>
-                    <button onclick="event.stopImmediatePropagation(); deleteContractorSOVLine(${line.id})" class="text-red-400 hover:text-red-300 p-1 ml-1" title="Delete"><i class="fa-solid fa-trash"></i></button>
+                    ${!isLocked ? `<button onclick="event.stopImmediatePropagation(); deleteContractorSOVLine(${line.id})" class="text-red-400 hover:text-red-300 p-1 ml-1" title="Delete"><i class="fa-solid fa-trash"></i></button>` : ''}
                 </td>
             `;
             tbody.appendChild(row);
@@ -1390,10 +1423,47 @@ let subSOVStatus = JSON.parse(localStorage.getItem('subSOVStatus') || '{}'); // 
     }
 
     function deleteContractorSOVLine(id) {
-        if (!confirm("Delete this SOV line?")) return;
-        contractorSOV = contractorSOV.filter(l => l.id !== id);
-        localStorage.setItem('contractorSOV', JSON.stringify(contractorSOV));
-        renderPayAppContent();
+        const line = contractorSOV.find(l => l.id === id);
+        if (!line) return;
+
+        // Styled confirmation matching app theme (positioned/integrated feel)
+        const confirmDialog = document.createElement('dialog');
+        confirmDialog.className = 'modal rounded-md p-0 text-white';
+        confirmDialog.style.backgroundColor = '#18181b';
+        confirmDialog.style.border = '1px solid #3f3f46';
+        confirmDialog.style.maxWidth = '420px';
+
+        confirmDialog.innerHTML = `
+            <div class="p-5">
+                <div class="flex items-center gap-3 mb-4">
+                    <i class="fa-solid fa-trash text-red-400 text-xl"></i>
+                    <div>
+                        <div class="font-semibold">Delete SOV Line?</div>
+                        <div class="text-xs text-zinc-400 mt-0.5">${line.cost_code} — ${line.description}</div>
+                    </div>
+                </div>
+                <div class="text-sm text-zinc-300 mb-5">This action cannot be undone. The line and any associated billing will be permanently removed from this period's Schedule of Values.</div>
+                
+                <div class="flex justify-end gap-3">
+                    <button id="cancelDelBtn" class="px-5 py-2 bg-zinc-700 hover:bg-zinc-600 rounded-md text-sm">Cancel</button>
+                    <button id="confirmDelBtn" class="px-6 py-2 bg-red-600 hover:bg-red-500 rounded-md text-sm font-medium">Yes, Delete Line</button>
+                </div>
+            </div>
+        `;
+        document.body.appendChild(confirmDialog);
+        confirmDialog.showModal();
+
+        confirmDialog.querySelector('#cancelDelBtn').onclick = () => {
+            confirmDialog.close();
+            confirmDialog.remove();
+        };
+        confirmDialog.querySelector('#confirmDelBtn').onclick = () => {
+            contractorSOV = contractorSOV.filter(l => l.id !== id);
+            localStorage.setItem('contractorSOV', JSON.stringify(contractorSOV));
+            confirmDialog.close();
+            confirmDialog.remove();
+            renderPayAppContent();
+        };
     }
 
     function seedContractorSOVFromBudget() {
