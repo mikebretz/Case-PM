@@ -266,64 +266,440 @@
         });
     }
 
-    // ==================== CONTRACTOR SOV TAB ====================
+    // ==================== CONTRACTOR SOV TAB (Fully Editable like Budget) ====================
     function renderContractorSOVTab(cardsContainer, thead, tbody) {
+        // Load fresh data
+        contractorSOV = JSON.parse(localStorage.getItem('contractorSOV')) || [];
+
+        // Dynamic Summary Cards
+        const totalOriginal = contractorSOV.reduce((sum, line) => sum + (line.original || 0), 0);
+        const totalCOs = contractorSOV.reduce((sum, line) => sum + (line.co_amount || 0), 0);
+        const totalCurrent = contractorSOV.reduce((sum, line) => sum + (line.current_amount || line.original || 0), 0);
+        const avgBilled = contractorSOV.length > 0 
+            ? Math.round(contractorSOV.reduce((sum, line) => sum + (line.percent_billed || 0), 0) / contractorSOV.length) 
+            : 0;
+
         cardsContainer.innerHTML = `
-            <div class="grid grid-cols-1 md:grid-cols-4 gap-4">
+            <div class="grid grid-cols-2 md:grid-cols-5 gap-4">
                 <div class="bg-zinc-800 border border-zinc-700 rounded-md p-4">
                     <div class="text-xs text-zinc-400">Total Original Contract</div>
-                    <div class="text-2xl font-semibold mt-1">$2,450,000</div>
+                    <div class="text-2xl font-semibold mt-1">${formatCurrency(totalOriginal)}</div>
                 </div>
                 <div class="bg-zinc-800 border border-zinc-700 rounded-md p-4">
-                    <div class="text-xs text-zinc-400">Approved Changes</div>
-                    <div class="text-2xl font-semibold mt-1 text-amber-400">$87,500</div>
+                    <div class="text-xs text-zinc-400">Approved Change Orders</div>
+                    <div class="text-2xl font-semibold mt-1 text-amber-400">${formatCurrency(totalCOs)}</div>
                 </div>
                 <div class="bg-zinc-800 border border-zinc-700 rounded-md p-4">
                     <div class="text-xs text-zinc-400">Current Contract Value</div>
-                    <div class="text-2xl font-semibold mt-1 text-emerald-400">$2,537,500</div>
+                    <div class="text-2xl font-semibold mt-1 text-emerald-400">${formatCurrency(totalCurrent)}</div>
                 </div>
                 <div class="bg-zinc-800 border border-zinc-700 rounded-md p-4">
-                    <div class="text-xs text-zinc-400">Lines in SOV</div>
-                    <div class="text-2xl font-semibold mt-1">142</div>
+                    <div class="text-xs text-zinc-400">% Complete (Avg)</div>
+                    <div class="text-2xl font-semibold mt-1">${avgBilled}%</div>
+                </div>
+                <div class="bg-zinc-800 border border-zinc-700 rounded-md p-4 flex items-end justify-between">
+                    <div>
+                        <div class="text-xs text-zinc-400">SOV Lines</div>
+                        <div class="text-2xl font-semibold mt-1">${contractorSOV.length}</div>
+                    </div>
+                    <button onclick="addContractorSOVLine()" 
+                            class="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white text-sm font-medium rounded-md flex items-center gap-2">
+                        <i class="fa-solid fa-plus"></i> <span>Add Line</span>
+                    </button>
                 </div>
             </div>
         `;
 
+        // Table Header
         thead.innerHTML = `
             <tr>
-                <th class="px-4 py-3 text-left font-medium text-zinc-400 w-12">#</th>
+                <th class="px-4 py-3 text-left font-medium text-zinc-400 w-10">#</th>
                 <th class="px-6 py-3 text-left font-medium text-zinc-400 w-28">Cost Code</th>
                 <th class="px-6 py-3 text-left font-medium text-zinc-400 min-w-[280px]">Description</th>
                 <th class="px-4 py-3 text-right font-medium text-zinc-400 w-28">Original Amount</th>
                 <th class="px-4 py-3 text-right font-medium text-zinc-400 w-24">Approved COs</th>
                 <th class="px-4 py-3 text-right font-medium text-zinc-400 w-28">Current Amount</th>
                 <th class="px-4 py-3 text-center font-medium text-zinc-400 w-20">% Billed</th>
-                <th class="px-4 py-3 text-center font-medium text-zinc-400 w-20">Actions</th>
+                <th class="px-4 py-3 text-center font-medium text-zinc-400 w-24">Actions</th>
             </tr>
         `;
 
-        const sampleSOV = [
-            { id: 1, cost_code: "03-3000", description: "Concrete - Structural", original: 485000, co: 12500, current: 497500, billed: 68 },
-            { id: 2, cost_code: "05-1200", description: "Structural Steel Framing", original: 312000, co: 0, current: 312000, billed: 82 }
-        ];
+        tbody.innerHTML = '';
 
-        sampleSOV.forEach((line, index) => {
+        if (contractorSOV.length === 0) {
+            const emptyRow = document.createElement('tr');
+            emptyRow.innerHTML = `
+                <td colspan="8" class="px-6 py-12 text-center text-zinc-500">
+                    No Schedule of Values lines yet.<br>
+                    <button onclick="addContractorSOVLine()" class="mt-3 px-5 py-2 bg-emerald-600 hover:bg-emerald-700 rounded-md text-sm font-medium">Add First SOV Line</button>
+                    <button onclick="seedSOVFromBudget()" class="mt-3 ml-2 px-5 py-2 bg-zinc-700 hover:bg-zinc-600 rounded-md text-sm font-medium">Seed from Budget</button>
+                </td>
+            `;
+            tbody.appendChild(emptyRow);
+            return;
+        }
+
+        contractorSOV.forEach((line, index) => {
+            const currentAmount = line.current_amount || (line.original || 0) + (line.co_amount || 0);
+            const percentBilled = line.percent_billed || 0;
+
             const row = document.createElement('tr');
             row.className = 'hover:bg-zinc-800/60 transition-colors cursor-pointer';
+            row.ondblclick = () => editContractorSOVLine(line.id);
+
             row.innerHTML = `
                 <td class="px-4 py-2 text-center font-mono text-xs text-zinc-500">${index + 1}</td>
-                <td class="px-6 py-2 font-mono text-emerald-400">${line.cost_code}</td>
-                <td class="px-6 py-2">${line.description}</td>
-                <td class="px-4 py-2 text-right">${formatCurrency(line.original)}</td>
-                <td class="px-4 py-2 text-right text-amber-400">${formatCurrency(line.co)}</td>
-                <td class="px-4 py-2 text-right font-semibold">${formatCurrency(line.current)}</td>
-                <td class="px-4 py-2 text-center"><span class="px-2 py-0.5 text-xs rounded-full bg-emerald-900/60 text-emerald-400">${line.billed}%</span></td>
+                <td class="px-6 py-2 font-mono text-emerald-400">${line.cost_code || ''}</td>
+                <td class="px-6 py-2">${line.description || ''}</td>
+                <td class="px-4 py-2 text-right">${formatCurrency(line.original || 0)}</td>
+                <td class="px-4 py-2 text-right text-amber-400">${formatCurrency(line.co_amount || 0)}</td>
+                <td class="px-4 py-2 text-right font-semibold">${formatCurrency(currentAmount)}</td>
                 <td class="px-4 py-2 text-center">
-                    <button onclick="event.stopImmediatePropagation(); showLineHistoryDemo(${line.id})" class="text-sky-400 hover:text-sky-300 p-1"><i class="fa-solid fa-history"></i></button>
+                    <span class="px-2.5 py-0.5 text-xs rounded-full bg-emerald-900/60 text-emerald-400 font-mono">${percentBilled}%</span>
+                </td>
+                <td class="px-4 py-2 text-center">
+                    <div class="flex items-center justify-center gap-1">
+                        <button onclick="event.stopImmediatePropagation(); showContractorSOVLineHistory(${line.id})" 
+                                class="text-sky-400 hover:text-sky-300 p-1" title="History">
+                            <i class="fa-solid fa-history"></i>
+                        </button>
+                        <button onclick="event.stopImmediatePropagation(); deleteContractorSOVLine(${line.id})" 
+                                class="text-red-400 hover:text-red-300 p-1" title="Delete">
+                            <i class="fa-solid fa-trash"></i>
+                        </button>
+                    </div>
                 </td>
             `;
             tbody.appendChild(row);
         });
+    }
+
+    // Add new Contractor SOV Line
+    function addContractorSOVLine() {
+        showContractorSOVLineModal();
+    }
+
+    // Edit existing line
+    function editContractorSOVLine(id) {
+        const line = contractorSOV.find(l => l.id === id);
+        if (line) {
+            showContractorSOVLineModal(line);
+        }
+    }
+
+    // Modal for Add/Edit Contractor SOV Line (styled like Budget)
+    function showContractorSOVLineModal(existingLine = null) {
+        const isEdit = !!existingLine;
+        const modal = document.createElement('dialog');
+        modal.className = 'modal rounded-2xl p-0 text-white w-full max-w-2xl';
+        modal.style.backgroundColor = '#18181b';
+        modal.style.border = '1px solid #3f3f46';
+
+        modal.innerHTML = `
+            <div class="p-6">
+                <div class="flex items-center justify-between mb-5">
+                    <h3 class="text-xl font-semibold">${isEdit ? 'Edit' : 'Add'} Contractor SOV Line</h3>
+                    <button onclick="this.closest('dialog').close(); this.closest('dialog').remove()" class="text-zinc-400 hover:text-white">
+                        <i class="fa-solid fa-times text-xl"></i>
+                    </button>
+                </div>
+
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <!-- Cost Code -->
+                    <div class="md:col-span-2">
+                        <label class="block text-xs text-zinc-400 mb-1.5">Cost Code</label>
+                        <div class="flex gap-2">
+                            <input type="text" id="sovCostCode" value="${existingLine?.cost_code || ''}" 
+                                   class="flex-1 bg-zinc-800 border border-zinc-700 rounded-xl px-4 py-2.5 text-sm font-mono" placeholder="03-3000">
+                            <button onclick="showSOVCostCodePicker()" 
+                                    class="px-4 py-2.5 bg-zinc-700 hover:bg-zinc-600 rounded-xl text-sm font-medium flex items-center gap-2">
+                                <i class="fa-solid fa-list"></i> <span>View All Codes</span>
+                            </button>
+                        </div>
+                    </div>
+
+                    <div class="md:col-span-2">
+                        <label class="block text-xs text-zinc-400 mb-1.5">Description</label>
+                        <input type="text" id="sovDescription" value="${existingLine?.description || ''}" 
+                               class="w-full bg-zinc-800 border border-zinc-700 rounded-xl px-4 py-2.5 text-sm">
+                    </div>
+
+                    <div>
+                        <label class="block text-xs text-zinc-400 mb-1.5">Original Amount</label>
+                        <input type="text" id="sovOriginal" value="${existingLine?.original || ''}" 
+                               class="w-full bg-zinc-800 border border-zinc-700 rounded-xl px-4 py-2.5 text-sm text-right font-mono"
+                               oninput="formatSOVCurrencyInput(this)">
+                    </div>
+
+                    <div>
+                        <label class="block text-xs text-zinc-400 mb-1.5">Approved Change Orders</label>
+                        <input type="text" id="sovCOAmount" value="${existingLine?.co_amount || ''}" 
+                               class="w-full bg-zinc-800 border border-zinc-700 rounded-xl px-4 py-2.5 text-sm text-right font-mono"
+                               oninput="formatSOVCurrencyInput(this)">
+                    </div>
+
+                    <div class="md:col-span-2">
+                        <label class="block text-xs text-zinc-400 mb-1.5">Notes</label>
+                        <textarea id="sovNotes" rows="2" class="w-full bg-zinc-800 border border-zinc-700 rounded-xl px-4 py-2.5 text-sm">${existingLine?.notes || ''}</textarea>
+                    </div>
+                </div>
+
+                <div class="flex justify-end gap-3 mt-6 pt-5 border-t border-zinc-700">
+                    <button onclick="this.closest('dialog').close(); this.closest('dialog').remove()" 
+                            class="px-6 py-2.5 bg-zinc-700 hover:bg-zinc-600 rounded-xl text-sm font-medium">Cancel</button>
+                    <button onclick="saveContractorSOVLine(${isEdit ? existingLine.id : 'null'}, this)" 
+                            class="px-8 py-2.5 bg-emerald-600 hover:bg-emerald-700 rounded-xl text-sm font-semibold">
+                        ${isEdit ? 'Save Changes' : 'Add Line'}
+                    </button>
+                </div>
+            </div>
+        `;
+
+        document.body.appendChild(modal);
+        modal.showModal();
+
+        // Auto-focus cost code
+        setTimeout(() => {
+            const costInput = modal.querySelector('#sovCostCode');
+            if (costInput) costInput.focus();
+        }, 100);
+    }
+
+    function formatSOVCurrencyInput(input) {
+        // Simple formatting on blur
+        input.onblur = function() {
+            const val = parseFloat(this.value.replace(/[^0-9.-]+/g,"")) || 0;
+            this.value = val.toLocaleString('en-US');
+        };
+    }
+
+    // Save SOV Line
+    function saveContractorSOVLine(id, btnElement) {
+        const modal = btnElement.closest('dialog');
+        
+        const costCode = document.getElementById('sovCostCode').value.trim();
+        const description = document.getElementById('sovDescription').value.trim();
+        const original = parseFloat(document.getElementById('sovOriginal').value.replace(/[^0-9.-]+/g,"")) || 0;
+        const coAmount = parseFloat(document.getElementById('sovCOAmount').value.replace(/[^0-9.-]+/g,"")) || 0;
+        const notes = document.getElementById('sovNotes').value.trim();
+
+        if (!costCode || !description) {
+            alert("Cost Code and Description are required.");
+            return;
+        }
+
+        const currentAmount = original + coAmount;
+
+        if (id) {
+            // Edit existing
+            const lineIndex = contractorSOV.findIndex(l => l.id === id);
+            if (lineIndex > -1) {
+                const oldLine = { ...contractorSOV[lineIndex] };
+                
+                contractorSOV[lineIndex].cost_code = costCode;
+                contractorSOV[lineIndex].description = description;
+                contractorSOV[lineIndex].original = original;
+                contractorSOV[lineIndex].co_amount = coAmount;
+                contractorSOV[lineIndex].current_amount = currentAmount;
+                contractorSOV[lineIndex].notes = notes;
+                contractorSOV[lineIndex].updated_at = new Date().toISOString();
+
+                // Audit log with details
+                logPayAppAudit("CONTRACTOR_SOV_EDITED", {
+                    line_id: id,
+                    cost_code: costCode,
+                    description: description,
+                    changes: {
+                        original: { from: oldLine.original, to: original },
+                        co_amount: { from: oldLine.co_amount || 0, to: coAmount },
+                        current_amount: { from: (oldLine.current_amount || oldLine.original || 0), to: currentAmount }
+                    }
+                });
+            }
+        } else {
+            // New line
+            const newLine = {
+                id: Date.now(),
+                cost_code: costCode,
+                description: description,
+                original: original,
+                co_amount: coAmount,
+                current_amount: currentAmount,
+                percent_billed: 0,
+                notes: notes,
+                created_at: new Date().toISOString()
+            };
+            contractorSOV.push(newLine);
+
+            logPayAppAudit("CONTRACTOR_SOV_LINE_ADDED", {
+                cost_code: costCode,
+                description: description,
+                original: original
+            });
+        }
+
+        localStorage.setItem('contractorSOV', JSON.stringify(contractorSOV));
+        modal.close();
+        modal.remove();
+
+        // Refresh the tab
+        renderPayAppContent();
+    }
+
+    function deleteContractorSOVLine(id) {
+        if (!confirm("Delete this SOV line? This cannot be undone.")) return;
+
+        const line = contractorSOV.find(l => l.id === id);
+        contractorSOV = contractorSOV.filter(l => l.id !== id);
+        localStorage.setItem('contractorSOV', JSON.stringify(contractorSOV));
+
+        logPayAppAudit("CONTRACTOR_SOV_LINE_DELETED", {
+            cost_code: line?.cost_code,
+            description: line?.description
+        });
+
+        renderPayAppContent();
+    }
+
+    function showContractorSOVLineHistory(id) {
+        const line = contractorSOV.find(l => l.id === id);
+        if (!line) return;
+
+        const modal = document.createElement('dialog');
+        modal.className = 'modal rounded-2xl p-6 text-white w-full max-w-lg';
+        modal.style.backgroundColor = '#18181b';
+        modal.style.border = '1px solid #3f3f46';
+
+        modal.innerHTML = `
+            <h3 class="text-lg font-semibold mb-4">SOV Line History</h3>
+            <div class="text-sm text-zinc-400 mb-4">Detailed audit history for this line will appear here (linked to Budget changes and Pay Applications).</div>
+            
+            <div class="bg-zinc-800 rounded-xl p-4 text-xs font-mono text-zinc-400">
+                Last updated: ${line.updated_at ? new Date(line.updated_at).toLocaleString() : 'N/A'}<br>
+                Created: ${new Date(line.created_at).toLocaleString()}
+            </div>
+
+            <div class="mt-6 flex justify-end">
+                <button onclick="this.closest('dialog').close(); this.closest('dialog').remove()" 
+                        class="px-6 py-2.5 bg-zinc-700 hover:bg-zinc-600 rounded-xl text-sm">Close</button>
+            </div>
+        `;
+
+        document.body.appendChild(modal);
+        modal.showModal();
+    }
+
+    // Seed SOV from Budget (one-time or sync helper)
+    function seedSOVFromBudget() {
+        if (!confirm("Seed Contractor SOV from current Budget lines? This will add missing cost codes.")) return;
+
+        budgetLines = JSON.parse(localStorage.getItem('budgetLines')) || [];
+        
+        let added = 0;
+        budgetLines.forEach(budgetLine => {
+            const exists = contractorSOV.some(sov => sov.cost_code === budgetLine.cost_code);
+            if (!exists && budgetLine.cost_code) {
+                contractorSOV.push({
+                    id: Date.now() + Math.random(),
+                    cost_code: budgetLine.cost_code,
+                    description: budgetLine.description || budgetLine.cost_code,
+                    original: budgetLine.original || 0,
+                    co_amount: 0,
+                    current_amount: budgetLine.original || 0,
+                    percent_billed: 0,
+                    notes: "Seeded from Budget",
+                    created_at: new Date().toISOString()
+                });
+                added++;
+            }
+        });
+
+        if (added > 0) {
+            localStorage.setItem('contractorSOV', JSON.stringify(contractorSOV));
+            logPayAppAudit("CONTRACTOR_SOV_SEEDED_FROM_BUDGET", { lines_added: added });
+            renderPayAppContent();
+            alert(`${added} lines seeded from Budget.`);
+        } else {
+            alert("No new lines to seed (all Budget cost codes already exist in SOV).");
+        }
+    }
+
+    // Cost Code Picker for SOV (with search bar - improved version)
+    function showSOVCostCodePicker() {
+        const modal = document.createElement('dialog');
+        modal.className = 'modal rounded-2xl p-0 text-white w-full max-w-3xl';
+        modal.style.backgroundColor = '#18181b';
+        modal.style.border = '1px solid #3f3f46';
+
+        modal.innerHTML = `
+            <div class="p-6">
+                <div class="flex justify-between items-center mb-4">
+                    <h3 class="text-xl font-semibold">Select Cost Code</h3>
+                    <button onclick="this.closest('dialog').close(); this.closest('dialog').remove()" class="text-zinc-400 hover:text-white">
+                        <i class="fa-solid fa-times text-xl"></i>
+                    </button>
+                </div>
+
+                <input type="text" id="sovCostCodeSearch" placeholder="Search cost codes..." 
+                       class="w-full bg-zinc-800 border border-zinc-700 rounded-xl px-4 py-2.5 text-sm mb-4" autofocus>
+
+                <div class="max-h-[420px] overflow-auto border border-zinc-700 rounded-xl">
+                    <table class="w-full text-sm">
+                        <thead class="bg-zinc-800 sticky top-0">
+                            <tr>
+                                <th class="px-4 py-3 text-left">Code</th>
+                                <th class="px-4 py-3 text-left">Description</th>
+                            </tr>
+                        </thead>
+                        <tbody id="sovCostCodeListBody"></tbody>
+                    </table>
+                </div>
+            </div>
+        `;
+
+        document.body.appendChild(modal);
+        modal.showModal();
+
+        const searchInput = modal.querySelector('#sovCostCodeSearch');
+        const tbody = modal.querySelector('#sovCostCodeListBody');
+
+        function renderList(filter = '') {
+            tbody.innerHTML = '';
+            const allCodes = [...(JSON.parse(localStorage.getItem('csiCostCodes')) || []), 
+                             ...(JSON.parse(localStorage.getItem('customCostCodes')) || [])];
+
+            const filtered = allCodes.filter(c => 
+                c.code.toLowerCase().includes(filter.toLowerCase()) || 
+                (c.description || '').toLowerCase().includes(filter.toLowerCase())
+            );
+
+            filtered.forEach(code => {
+                const row = document.createElement('tr');
+                row.className = 'hover:bg-zinc-800 cursor-pointer border-b border-zinc-700';
+                row.innerHTML = `
+                    <td class="px-4 py-2.5 font-mono text-emerald-400">${code.code}</td>
+                    <td class="px-4 py-2.5">${code.description || ''}</td>
+                `;
+                row.onclick = () => {
+                    // Find the input in the parent SOV modal and set value
+                    const sovModal = document.querySelector('dialog[open]');
+                    if (sovModal) {
+                        const costInput = sovModal.querySelector('#sovCostCode');
+                        if (costInput) costInput.value = code.code;
+                    }
+                    modal.close();
+                    modal.remove();
+                };
+                tbody.appendChild(row);
+            });
+
+            if (filtered.length === 0) {
+                tbody.innerHTML = `<tr><td colspan="2" class="px-4 py-8 text-center text-zinc-500">No matching cost codes found.</td></tr>`;
+            }
+        }
+
+        searchInput.oninput = () => renderList(searchInput.value);
+        renderList(''); // Initial render
     }
 
     // ==================== SUBCONTRACTOR SOV TAB ====================
@@ -438,7 +814,112 @@
     }
 
     function printCurrentPayApp() {
-        alert("AIA G702 / G703 print formatting will be added in the next iteration.");
+        if (currentPayAppTab === 'contractor-sov') {
+            // Print Contractor SOV as G703-style
+            const printWindow = window.open('', '_blank');
+            printWindow.document.write(`
+                <html><head><title>Contractor Schedule of Values - ALDI Lakeland</title>
+                <style>
+                    body { font-family: system-ui, -apple-system, sans-serif; padding: 40px; color: #111; }
+                    table { width: 100%; border-collapse: collapse; margin-top: 20px; }
+                    th, td { border: 1px solid #ccc; padding: 8px 12px; text-align: left; }
+                    th { background: #f4f4f5; }
+                    .header { display: flex; justify-content: space-between; align-items: flex-end; margin-bottom: 30px; }
+                    .title { font-size: 22px; font-weight: 600; }
+                </style>
+                </head><body>
+                <div class="header">
+                    <div>
+                        <div style="font-size:13px;color:#666">ALDI LAKELAND</div>
+                        <div class="title">Contractor Schedule of Values</div>
+                    </div>
+                    <div style="text-align:right; font-size:13px">
+                        Rev 01 • ${new Date().toLocaleDateString()}<br>
+                        Project: ALDI Lakeland
+                    </div>
+                </div>
+                <table>
+                    <thead>
+                        <tr>
+                            <th>#</th><th>Cost Code</th><th>Description</th>
+                            <th style="text-align:right">Original</th>
+                            <th style="text-align:right">COs</th>
+                            <th style="text-align:right">Current</th>
+                            <th style="text-align:center">% Billed</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        ${contractorSOV.map((line, i) => `
+                            <tr>
+                                <td>${i+1}</td>
+                                <td style="font-family:monospace">${line.cost_code}</td>
+                                <td>${line.description}</td>
+                                <td style="text-align:right">${formatCurrency(line.original)}</td>
+                                <td style="text-align:right">${formatCurrency(line.co_amount || 0)}</td>
+                                <td style="text-align:right"><strong>${formatCurrency(line.current_amount || line.original)}</strong></td>
+                                <td style="text-align:center">${line.percent_billed || 0}%</td>
+                            </tr>
+                        `).join('')}
+                    </tbody>
+                </table>
+                <p style="margin-top:40px;font-size:12px;color:#666">This is a system-generated Schedule of Values. For official AIA G703, use the Print button in future releases.</p>
+                </body></html>
+            `);
+            printWindow.document.close();
+            setTimeout(() => printWindow.print(), 300);
+            return;
+        }
+
+        // Default: Show nice G702 print preview
+        const printWindow = window.open('', '_blank');
+        printWindow.document.write(`
+            <html><head><title>AIA G702 - Pay Application</title>
+            <style>
+                @page { size: letter; margin: 0.5in; }
+                body { font-family: system-ui; padding: 30px; line-height: 1.4; }
+                .header { display:flex; justify-content:space-between; border-bottom: 3px solid #111; padding-bottom: 15px; margin-bottom: 25px; }
+                .section { margin-bottom: 25px; }
+                table { width:100%; border-collapse: collapse; }
+                th, td { border: 1px solid #333; padding: 8px; font-size: 13px; }
+                .right { text-align: right; }
+                .title { font-size: 18px; font-weight: 700; }
+            </style>
+            </head><body>
+            <div class="header">
+                <div>
+                    <div style="font-size:11px">APPLICATION AND CERTIFICATE FOR PAYMENT</div>
+                    <div class="title">AIA Document G702</div>
+                </div>
+                <div style="text-align:right">
+                    <strong>ALDI Lakeland</strong><br>
+                    Application #: 06 &nbsp;&nbsp; Period: Current<br>
+                    Date: ${new Date().toLocaleDateString()}
+                </div>
+            </div>
+
+            <div class="section">
+                <strong>Project:</strong> ALDI Lakeland &nbsp;&nbsp;&nbsp; <strong>Owner:</strong> ALDI Inc.<br>
+                <strong>Contractor:</strong> Your Company Name &nbsp;&nbsp;&nbsp; <strong>Architect:</strong> [Architect Name]
+            </div>
+
+            <table>
+                <tr><td style="width:60%">1. Original Contract Sum</td><td class="right">$2,450,000.00</td></tr>
+                <tr><td>2. Net change by Change Orders</td><td class="right">$87,500.00</td></tr>
+                <tr><td><strong>3. Contract Sum to Date</strong></td><td class="right"><strong>$2,537,500.00</strong></td></tr>
+                <tr><td>4. Total Completed & Stored to Date</td><td class="right">$1,845,000.00</td></tr>
+                <tr><td>5. Retainage (10%)</td><td class="right">$184,500.00</td></tr>
+                <tr><td><strong>6. Total Earned Less Retainage</strong></td><td class="right"><strong>$1,660,500.00</strong></td></tr>
+                <tr><td>7. Less Previous Payments</td><td class="right">$1,348,000.00</td></tr>
+                <tr style="background:#f8f8f8"><td><strong>8. CURRENT PAYMENT DUE</strong></td><td class="right"><strong>$312,500.00</strong></td></tr>
+            </table>
+
+            <p style="margin-top:40px">This is a system-generated preview of AIA G702. Full printable version with signatures and continuation sheet (G703) coming in next iteration.</p>
+            </body></html>
+        `);
+        printWindow.document.close();
+        setTimeout(() => {
+            printWindow.print();
+        }, 400);
     }
 
     function showPayAppVersionHistory() {
@@ -487,11 +968,29 @@
         // Load companies for Subcontractor dropdown
         companies = JSON.parse(localStorage.getItem('casepm_companies')) || [];
         budgetLines = JSON.parse(localStorage.getItem('budgetLines')) || [];
+        contractorSOV = JSON.parse(localStorage.getItem('contractorSOV')) || [];
+
+        // Seed some demo data on first load if empty (for testing)
+        if (contractorSOV.length === 0 && budgetLines.length > 0) {
+            // Auto-seed a few lines from budget for demo purposes
+            contractorSOV = budgetLines.slice(0, 8).map((b, idx) => ({
+                id: Date.now() + idx,
+                cost_code: b.cost_code,
+                description: b.description || b.cost_code,
+                original: b.original || 0,
+                co_amount: 0,
+                current_amount: b.original || 0,
+                percent_billed: Math.floor(Math.random() * 70) + 10,
+                notes: "Seeded from Budget",
+                created_at: new Date().toISOString()
+            }));
+            localStorage.setItem('contractorSOV', JSON.stringify(contractorSOV));
+        }
 
         // Default to Pay Application tab
         switchPayAppTab('payapp');
 
-        console.log('%c[Case PM] Pay Applications page initialized (foundation + tab structure)', 'color:#10b981');
+        console.log('%c[Case PM] Pay Applications page initialized (Contractor SOV tab is now fully editable)', 'color:#10b981');
     }
 
     window.onload = initializePayApplications;
