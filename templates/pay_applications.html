@@ -362,6 +362,32 @@ let subSOVStatus = JSON.parse(localStorage.getItem('subSOVStatus') || '{}'); // 
         localStorage.setItem('subSOVStatus', JSON.stringify(subSOVStatus));
     }
 
+    // Robust Primary Contact check (matches Companies page + User Management)
+    function isUserPrimaryContactForCompany(company) {
+        if (!company) return false;
+        const allUsers = JSON.parse(localStorage.getItem('users') || '[]');
+        const currentUserEmail = "michael@casepm.com";
+
+        if (company.primary_contact_user_id) {
+            const pu = allUsers.find(u => u.id == company.primary_contact_user_id);
+            if (pu) {
+                const fullName = ((pu.firstName || '') + ' ' + (pu.lastName || '')).trim().toLowerCase();
+                if (fullName.includes('michael') || (pu.email || '').toLowerCase() === currentUserEmail) return true;
+            }
+        }
+        if (company.primary_contact_name && company.primary_contact_name.toLowerCase().includes('michael')) return true;
+        if ((company.primary_contact_email || '').toLowerCase() === currentUserEmail) return true;
+        // Fallback for demo "ABC Plumbing / Robert Rodriguez"
+        if (company.name && company.name.toLowerCase().includes('abc plumbing') && company.primary_contact_name === 'Robert Rodriguez') return true;
+        return false;
+    }
+
+    function getCompanyName(companyId) {
+        const companies = JSON.parse(localStorage.getItem('casepm_companies') || '[]');
+        const c = companies.find(x => x.id == companyId);
+        return c ? (c.name || c.company_name || 'Unknown Company') : 'Unknown Company';
+    }
+
     function showUnsavedIndicator() {
         hasUnsavedChanges = true;
         const dot = document.getElementById('unsavedDot');
@@ -1422,24 +1448,27 @@ let subSOVStatus = JSON.parse(localStorage.getItem('subSOVStatus') || '{}'); // 
     function renderSubcontractorSOVTab(cardsContainer, thead, tbody, workflowBar) {
         companies = JSON.parse(localStorage.getItem('casepm_companies')) || [];
 
-        // Summary cards
+        // Summary cards - reorganized per user request
         cardsContainer.innerHTML = `
             <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
                 <div class="bg-zinc-800 border border-zinc-700 rounded-md p-5">
                     <div class="text-xs text-zinc-400">Select Subcontractor</div>
-                    <select id="subSelector" onchange="selectSubcontractorForSOV(this.value)" class="mt-2 w-full bg-zinc-800 border border-zinc-700 rounded-md px-4 py-2.5 text-sm">
-                        <option value="">-- Select a Subcontractor --</option>
-                    </select>
+                    <div class="flex items-center gap-2 mt-2">
+                        <select id="subSelector" onchange="selectSubcontractorForSOV(this.value)" class="flex-1 bg-zinc-800 border border-zinc-700 rounded-md px-4 py-2.5 text-sm">
+                            <option value="">-- Select a Subcontractor --</option>
+                        </select>
+                        <button onclick="showAddNewSubcontractorQuick()" class="px-4 py-2.5 bg-zinc-700 hover:bg-zinc-600 rounded-md text-sm flex items-center gap-2 whitespace-nowrap" title="Add New Subcontractor">
+                            <i class="fa-solid fa-user-plus"></i> <span class="hidden md:inline">Add New</span>
+                        </button>
+                    </div>
                 </div>
                 <div class="bg-zinc-800 border border-zinc-700 rounded-md p-5 flex items-end">
-                    <button onclick="showAddNewSubcontractorQuick()" class="px-5 py-2.5 bg-zinc-700 hover:bg-zinc-600 rounded-md text-sm flex items-center gap-2">
-                        <i class="fa-solid fa-user-plus"></i> <span>Add New Subcontractor</span>
-                    </button>
-                </div>
-                <div class="bg-zinc-800 border border-zinc-700 rounded-md p-5 flex items-end justify-end">
                     <button onclick="addLineToSelectedSub()" class="px-5 py-2.5 bg-emerald-600 hover:bg-emerald-500 rounded-md text-sm font-medium flex items-center gap-2">
                         <i class="fa-solid fa-plus"></i> <span>Add Line to this Sub's SOV</span>
                     </button>
+                </div>
+                <div class="bg-zinc-800 border border-zinc-700 rounded-md p-5 flex items-end justify-end">
+                    <!-- Space for future filters or actions -->
                 </div>
             </div>
         `;
@@ -1542,7 +1571,7 @@ let subSOVStatus = JSON.parse(localStorage.getItem('subSOVStatus') || '{}'); // 
 
         const subLines = subcontractorSOV[selectedSubCompanyId] || [];
         const company = companies.find(c => c.id == selectedSubCompanyId);
-        const isPrimaryContact = company && (company.primary_contact_name === 'Michael Bretz' || company.primary_contact_email === 'michael@casepm.com'); // Demo logic
+        const isPrimaryContact = company && isUserPrimaryContactForCompany(company);
 
         // Header
         thead.innerHTML = `
@@ -1680,19 +1709,8 @@ let subSOVStatus = JSON.parse(localStorage.getItem('subSOVStatus') || '{}'); // 
         const modal = document.getElementById('editSubSOVModal');
         const content = document.getElementById('editSubSOVContent');
         const company = companies.find(c => c.id == companyId);
-        // Robust Primary Contact check (matches Companies page + User Management)
-        let isPrimary = false;
-        if (company) {
-            const allUsers = JSON.parse(localStorage.getItem('users') || '[]');
-            if (company.primary_contact_user_id) {
-                const pu = allUsers.find(u => u.id == company.primary_contact_user_id);
-                if (pu && (pu.firstName + ' ' + pu.lastName).toLowerCase().includes('michael') || pu.email === 'michael@casepm.com') {
-                    isPrimary = true;
-                }
-            } else if (company.primary_contact_name === 'Michael Bretz' || company.primary_contact_email === 'michael@casepm.com') {
-                isPrimary = true;
-            }
-        }
+        // Robust Primary Contact check
+        const isPrimary = company && isUserPrimaryContactForCompany(company);
 
         let line = null;
         if (lineId && subcontractorSOV[companyId]) {
@@ -2020,8 +2038,49 @@ let subSOVStatus = JSON.parse(localStorage.getItem('subSOVStatus') || '{}'); // 
     }
 
     function viewSubSOVAudit() {
-        showCenteredAlert("Full approval history is recorded in the Pay Application Audit Log (footer).", 'info');
-        // In a future pass we can open a dedicated modal filtered to this sub's SOV events.
+        if (!selectedSubCompanyId) return;
+        const companyName = getCompanyName(selectedSubCompanyId);
+        const modal = document.createElement('dialog');
+        modal.className = 'modal rounded-md w-full max-w-lg p-0 text-white';
+        modal.style.backgroundColor = '#18181b';
+        modal.style.border = '1px solid #3f3f46';
+
+        // Filter audit log for SOV-level approval/rejection events for this company
+        const approvalEvents = (payAppAuditLog || []).filter(e => {
+            if (!e.details) return false;
+            const d = e.details;
+            return (d.sovCompanyId == selectedSubCompanyId || d.companyId == selectedSubCompanyId) &&
+                   (e.action.includes('SOV') || e.action.includes('APPROVE') || e.action.includes('REJECT') || e.action.includes('SUBMIT'));
+        }).slice(0, 20);
+
+        let html = approvalEvents.length > 0 ? approvalEvents.map(e => {
+            const time = new Date(e.timestamp).toLocaleString([], {month:'short', day:'numeric', hour:'2-digit', minute:'2-digit'});
+            const user = e.user || 'System';
+            return `<div class="flex justify-between text-xs border-b border-zinc-700 py-1.5 px-2">
+                <div class="font-mono text-emerald-400 w-28">${time}</div>
+                <div class="flex-1">${e.action} <span class="text-[10px] text-zinc-500">by ${user}</span></div>
+            </div>`;
+        }).join('') : `<div class="text-zinc-400 py-8 text-center">No approval/rejection history yet for ${companyName}.</div>`;
+
+        modal.innerHTML = `
+            <div class="p-6">
+                <div class="flex justify-between items-center mb-3">
+                    <div>
+                        <h3 class="text-lg font-semibold">SOV Approval History</h3>
+                        <div class="text-xs text-emerald-400">${companyName}</div>
+                    </div>
+                    <button onclick="this.closest('dialog').close(); this.closest('dialog').remove()" class="text-zinc-400 hover:text-white">
+                        <i class="fa-solid fa-times text-xl"></i>
+                    </button>
+                </div>
+                <div class="max-h-[320px] overflow-auto border border-zinc-700 rounded-md p-2 bg-zinc-900/50">${html}</div>
+                <div class="mt-4 text-right">
+                    <button onclick="this.closest('dialog').close(); this.closest('dialog').remove()" class="px-5 py-2 bg-zinc-700 hover:bg-zinc-600 rounded-md text-sm">Close</button>
+                </div>
+            </div>
+        `;
+        document.body.appendChild(modal);
+        modal.showModal();
     }
 
     // ==================== PRINT AIA G702 / G703 ====================
