@@ -3,7 +3,7 @@
 {% block content %}
 <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
 
-<!-- Pay Applications Module - Final Verified Build v60.0 | Live Remaining under Materials (Work+Mat both update it), Strict Original Contract validation on SOV save, G702/G703 export pixel-perfect structured, Sub SOV Approved billing modal, CO backing-out support | 2026-07-01 -->
+<!-- Pay Applications Module - Final Verified Build v61.0 | DRAFT BILLING WORKFLOW: Save Billing only saves draft (payAppBillingLines / this_period fields). Numbers NOT committed to billed_to_date until Submit for Review / Submit Application. G702 & Sub SOV Edit Billing now behave identically. All pop-ups centered. | 2026-07-01 -->
 <style>
   /* Exact match to budget.html aesthetics */
   .modal {
@@ -857,21 +857,13 @@ let subSOVStatus = JSON.parse(localStorage.getItem('subSOVStatus') || '{}'); // 
         const workThisPeriod = parseFloat(workInput.value) || 0;
         const materialsStored = parseFloat(matInput.value) || 0;
         const coWorkThisPeriod = coWorkInput ? (parseFloat(coWorkInput.value) || 0) : 0;
-        const totalThis = workThisPeriod + materialsStored + coWorkThisPeriod;
 
         const line = contractorSOV.find(l => l.id === sovLineId);
         if (!line) return;
 
-        const currentAmount = (line.original || 0) + (line.co_amount || 0);
-        const previousBilled = line.billed_to_date || Math.round(currentAmount * 0.55);
-        const remaining = currentAmount - previousBilled;
-
-        if (totalThis > remaining + 0.01) {
-            alert(`Cannot save. This would over-bill by ${formatCurrency(totalThis - remaining)}. Remaining available: ${formatCurrency(remaining)}`);
-            return;
-        }
-
-        // Save billing including CO work this period
+        // === DRAFT SAVE ONLY (User Request) ===
+        // Save the values the user wants to bill THIS PERIOD as a draft.
+        // These are NOT committed to billed_to_date until the whole Pay Application is Submitted/Approved.
         payAppBillingLines[sovLineId] = { 
             workThisPeriod, 
             materialsStored, 
@@ -879,27 +871,20 @@ let subSOVStatus = JSON.parse(localStorage.getItem('subSOVStatus') || '{}'); // 
         };
         localStorage.setItem('payAppBillingLines', JSON.stringify(payAppBillingLines));
 
-        // Update Contractor SOV billed_to_date
-        const newBilled = previousBilled + totalThis;
-        line.billed_to_date = newBilled;
-        line.percent_complete = currentAmount > 0 ? Math.min(100, Math.round((newBilled / currentAmount) * 100)) : 0;
+        // NOTE: We intentionally do NOT update line.billed_to_date or percent_complete here.
+        // billed_to_date on the SOV line represents the LAST COMMITTED amount from previous approved periods.
+        // The draft values above are what will be added when the user clicks "Submit for Review".
 
-        // Track CO billed to date separately for future Remaining calculations
-        if (!line.co_billed_to_date) line.co_billed_to_date = 0;
-        line.co_billed_to_date = (line.co_billed_to_date || 0) + coWorkThisPeriod;
-
-        localStorage.setItem('contractorSOV', JSON.stringify(contractorSOV));
-
-        logPayAppAudit('BILLING_UPDATED', {
+        logPayAppAudit('BILLING_DRAFT_SAVED', {
             sovLineId,
             cost_code: line.cost_code,
             description: line.description,
             workThisPeriod,
             materialsStored,
             coWorkThisPeriod,
-            newBilledToDate: newBilled,
             period: currentPayAppPeriod ? currentPayAppPeriod.periodNumber : '',
-            changedBy: "Michael Bretz"
+            changedBy: "Michael Bretz",
+            note: "Draft saved. Not yet committed to billed_to_date. Will be applied on Submit for Review."
         });
 
         showUnsavedIndicator();
@@ -1884,14 +1869,17 @@ let subSOVStatus = JSON.parse(localStorage.getItem('subSOVStatus') || '{}'); // 
                 </div>
             `;
         } else if (currentStatus === 'Approved') {
-            // For internal tool: Show Unlock button to main company users (Admin view) when viewing a Sub's SOV.
-            // Primary Contact restriction is enforced in the edit modal instead of hiding the button here.
+            // User Request: When Approved/Locked, replace "Add Line" with "Submit Application".
+            // "Submit Application" commits the current period draft billing (work_this_period, materials_stored, co_billed_this_period)
+            // into the permanent billed_to_date for the focused subcontractor.
             workflowHTML = `
                 <div class="workflow-bar px-4 py-3 flex items-center gap-3 text-sm flex-wrap">
-                    <span class="text-emerald-400 font-medium">SOV Approved — Primary Contact can now enter current period billing only. Original Commitment is locked.</span>
-                    <button onclick="addLineToSelectedSub()" class="ml-3 px-4 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded text-xs font-medium flex items-center gap-1.5">
-                        <i class="fa-solid fa-plus"></i> <span>Add Line</span>
+                    <span class="text-emerald-400 font-medium">SOV Approved — Enter current period billing. Original Commitment is locked. Draft billing is saved on "Save Billing" but not committed until you Submit Application.</span>
+                    
+                    <button onclick="submitSubPeriodBilling(${selectedSubCompanyId})" class="ml-3 px-5 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded text-xs font-semibold flex items-center gap-1.5">
+                        <i class="fa-solid fa-paper-plane"></i> <span>Submit Application</span>
                     </button>
+                    
                     <button onclick="unlockSubSOV(${selectedSubCompanyId})" class="ml-auto px-4 py-1.5 bg-amber-600 hover:bg-amber-500 text-white rounded text-xs font-medium flex items-center gap-1.5">
                         <i class="fa-solid fa-unlock"></i> <span>Unlock for Revision (Admin)</span>
                     </button>
@@ -2273,25 +2261,16 @@ let subSOVStatus = JSON.parse(localStorage.getItem('subSOVStatus') || '{}'); // 
         const line = lines.find(l => l.id === lineId);
         if (!line) return;
 
-        const currentCommitment = (line.original_commitment || 0) + (line.change_orders || 0);
-        const previousBilled = line.billed_to_date || 0;
-        const totalThis = workThis + mats + coWork;
-
-        if (totalThis > (currentCommitment - previousBilled) + 0.01) {
-            alert(`Cannot save. This would over-bill. Remaining available: ${formatCurrency(currentCommitment - previousBilled)}`);
-            return;
-        }
-
-        // Update billing fields
+        // === DRAFT SAVE ONLY (User Request - Same as G702) ===
+        // We save the "this period" values as draft fields on the line.
+        // We do NOT update billed_to_date here. That only happens on "Submit Application".
         line.work_this_period = workThis;
         line.materials_stored = mats;
         if (coWorkInput) line.co_billed_this_period = coWork;
 
-        // Update billed_to_date (cumulative for original + CO)
-        line.billed_to_date = previousBilled + totalThis;
-        if (coWork > 0) {
-            line.co_billed_to_date = (line.co_billed_to_date || 0) + coWork;
-        }
+        // Note: billed_to_date remains as the last committed amount.
+        // The draft values above are what will be rolled into billed_to_date when the user
+        // clicks the new "Submit Application" button on an Approved Sub SOV.
 
         localStorage.setItem('subcontractorSOV', JSON.stringify(subcontractorSOV));
         showUnsavedIndicator();
@@ -2599,6 +2578,53 @@ let subSOVStatus = JSON.parse(localStorage.getItem('subSOVStatus') || '{}'); // 
         updateSubSOVStatus(selectedSubCompanyId, 'Rejected', { approvedBy: "Michael Bretz (Project Manager)" });
         logPayAppAudit('SUB_SOV_REJECTED', { companyId: selectedSubCompanyId });
         showCenteredAlert("Revision requested. Subcontractor / PM can now update the SOV and resubmit.", 'info');
+        renderPayAppContent();
+    }
+
+    /**
+     * User Request: Commits the current period draft billing (work_this_period, materials_stored, co_billed_this_period)
+     * from the Subcontractor lines into the permanent billed_to_date.
+     * This is the "Submit Application" action for an Approved Sub SOV.
+     */
+    function submitSubPeriodBilling(companyId) {
+        if (!companyId) return;
+        const lines = subcontractorSOV[companyId] || [];
+        if (lines.length === 0) {
+            showCenteredAlert("No lines to submit for this subcontractor.");
+            return;
+        }
+
+        let totalCommittedThisPeriod = 0;
+        lines.forEach(line => {
+            const work = line.work_this_period || 0;
+            const mats = line.materials_stored || 0;
+            const coWork = line.co_billed_this_period || 0;
+            const totalThis = work + mats + coWork;
+
+            if (totalThis > 0) {
+                line.billed_to_date = (line.billed_to_date || 0) + totalThis;
+                
+                // Move CO billing into permanent co_billed_to_date if it exists
+                if (coWork > 0) {
+                    line.co_billed_to_date = (line.co_billed_to_date || 0) + coWork;
+                }
+                
+                // Clear the draft "this period" fields after committing
+                line.work_this_period = 0;
+                line.materials_stored = 0;
+                line.co_billed_this_period = 0;
+                
+                totalCommittedThisPeriod += totalThis;
+            }
+        });
+
+        localStorage.setItem('subcontractorSOV', JSON.stringify(subcontractorSOV));
+        logPayAppAudit('SUB_PERIOD_BILLING_SUBMITTED', { 
+            companyId: companyId, 
+            totalCommitted: totalCommittedThisPeriod 
+        });
+        
+        showCenteredAlert(`Application submitted. ${formatCurrency(totalCommittedThisPeriod)} has been committed to Billed to Date for this period.`, 'success');
         renderPayAppContent();
     }
 
