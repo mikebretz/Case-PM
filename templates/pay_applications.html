@@ -31,7 +31,7 @@
     font-size: 15px !important;
   }
   .notes-cell {
-    max-width: 620px;
+    max-width: 780px;
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
@@ -1550,10 +1550,16 @@ let subSOVStatus = JSON.parse(localStorage.getItem('subSOVStatus') || '{}'); // 
                 </div>
             `;
         } else if (currentStatus === 'Approved') {
+            const canUnlock = !isPrimaryContact; // Admin / main company user
             workflowHTML = `
                 <div class="workflow-bar px-4 py-3 flex items-center gap-3 text-sm flex-wrap">
                     <span class="text-emerald-400 font-medium">SOV Approved — Primary Contact can now enter current period billing only. Original Commitment is locked.</span>
-                    <button onclick="viewSubSOVAudit()" class="ml-auto px-4 py-1.5 bg-zinc-700 hover:bg-zinc-600 text-white rounded text-xs font-medium flex items-center gap-1.5">
+                    ${canUnlock ? `
+                        <button onclick="unlockSubSOV(${selectedSubCompanyId})" class="ml-auto px-4 py-1.5 bg-amber-600 hover:bg-amber-500 text-white rounded text-xs font-medium flex items-center gap-1.5">
+                            <i class="fa-solid fa-unlock"></i> <span>Unlock for Revision (Admin)</span>
+                        </button>
+                    ` : ''}
+                    <button onclick="viewSubSOVAudit()" class="px-4 py-1.5 bg-zinc-700 hover:bg-zinc-600 text-white rounded text-xs font-medium flex items-center gap-1.5">
                         <i class="fa-solid fa-history"></i> <span>View Approval History</span>
                     </button>
                 </div>
@@ -1711,6 +1717,10 @@ let subSOVStatus = JSON.parse(localStorage.getItem('subSOVStatus') || '{}'); // 
         const company = companies.find(c => c.id == companyId);
         // Robust Primary Contact check
         const isPrimary = company && isUserPrimaryContactForCompany(company);
+        const statusData = subSOVStatus[companyId] || {};
+        const isApproved = statusData.status === 'Approved';
+        const isUnlocked = statusData.status === 'Draft' && statusData.unlockedBy; // simple check for unlocked state
+        const canEditStructure = !isApproved || isUnlocked; // Admin can edit structure only if unlocked
 
         let line = null;
         if (lineId && subcontractorSOV[companyId]) {
@@ -1721,6 +1731,7 @@ let subSOVStatus = JSON.parse(localStorage.getItem('subSOVStatus') || '{}'); // 
             <div class="mb-4">
                 <div class="text-sm text-zinc-400">For: <span class="font-medium text-white">${company ? (company.name || company.company_name) : 'Subcontractor'}</span></div>
                 ${isPrimary ? '<div class="text-xs text-emerald-400 mt-1">Primary Contact Mode — Original Commitment locked</div>' : ''}
+                ${isApproved && !canEditStructure ? '<div class="text-xs text-amber-400 mt-1">SOV is Approved & Locked. Use "Unlock for Revision" (Admin only) to edit structure.</div>' : ''}
             </div>
 
             <div class="space-y-4">
@@ -1728,20 +1739,26 @@ let subSOVStatus = JSON.parse(localStorage.getItem('subSOVStatus') || '{}'); // 
                     <div>
                         <label class="block text-sm mb-1.5 text-zinc-300 flex items-center justify-between">
                             <span>Cost Code</span>
-                            ${(!isPrimary || !line) ? `<button type="button" onclick="viewBudgetCostCodesForSOV('contractor-sov')" class="ml-2 px-2.5 py-0.5 text-[10px] bg-zinc-700 hover:bg-zinc-600 text-emerald-400 rounded">View Codes from G703</button>` : ''}
+                            ${(canEditStructure) ? `<button type="button" onclick="viewBudgetCostCodesForSOV('contractor-sov')" class="ml-2 px-2.5 py-0.5 text-[10px] bg-zinc-700 hover:bg-zinc-600 text-emerald-400 rounded">View Codes from G703</button>` : ''}
                         </label>
-                        <input type="text" id="subCostCode" class="w-full bg-zinc-800 border border-zinc-700 rounded-md px-4 py-2.5 text-sm" value="${line ? line.cost_code : ''}" ${isPrimary && line ? 'readonly' : ''}>
+                        <input type="text" id="subCostCode" class="w-full bg-zinc-800 border border-zinc-700 rounded-md px-4 py-2.5 text-sm" value="${line ? line.cost_code : ''}" ${!canEditStructure ? 'readonly' : ''}>
                     </div>
                     <div>
                         <label class="block text-sm mb-1.5 text-zinc-300">Description</label>
-                        <input type="text" id="subDescription" class="w-full bg-zinc-800 border border-zinc-700 rounded-md px-4 py-2.5 text-sm" value="${line ? line.description : ''}" ${isPrimary && line ? 'readonly' : ''}>
+                        <input type="text" id="subDescription" class="w-full bg-zinc-800 border border-zinc-700 rounded-md px-4 py-2.5 text-sm" value="${line ? line.description : ''}" ${!canEditStructure ? 'readonly' : ''}>
                     </div>
                 </div>
 
-                <div>
-                    <label class="block text-sm mb-1.5 text-zinc-300">Original Commitment</label>
-                    <input type="text" id="subOriginal" class="w-full bg-zinc-800 border border-zinc-700 rounded-md px-4 py-2.5 text-sm" value="${line ? formatCurrency(line.original_commitment || 0) : '$0'}" ${isPrimary ? 'readonly' : ''}>
-                    ${isPrimary ? '<div class="text-xs text-zinc-500 mt-1">Locked for Primary Contact</div>' : ''}
+                <div class="grid grid-cols-2 gap-4">
+                    <div>
+                        <label class="block text-sm mb-1.5 text-zinc-300">Original Commitment</label>
+                        <input type="text" id="subOriginal" class="w-full bg-zinc-800 border border-zinc-700 rounded-md px-4 py-2.5 text-sm" value="${line ? formatCurrency(line.original_commitment || 0) : '$0'}" ${!canEditStructure ? 'readonly' : ''}>
+                        ${!canEditStructure ? '<div class="text-xs text-zinc-500 mt-1">Locked (Approved SOV)</div>' : ''}
+                    </div>
+                    <div>
+                        <label class="block text-sm mb-1.5 text-zinc-300">Change Orders</label>
+                        <input type="text" id="subCO" class="w-full bg-zinc-800 border border-zinc-700 rounded-md px-4 py-2.5 text-sm" value="${line ? formatCurrency(line.change_orders || 0) : '$0'}" ${!canEditStructure ? 'readonly' : ''}>
+                    </div>
                 </div>
 
                 <div class="grid grid-cols-2 gap-4">
@@ -1848,8 +1865,17 @@ let subSOVStatus = JSON.parse(localStorage.getItem('subSOVStatus') || '{}'); // 
     function submitSubSOVForApproval(companyId) {
         const company = companies.find(c => c.id == companyId);
         logPayAppAudit('SUB_SOV_SUBMITTED', { company: company ? (company.name || company.company_name) : companyId, lines: (subcontractorSOV[companyId] || []).length });
-        alert("Subcontractor SOV submitted for GC review. Status logged.");
-        // In real app this would change a status flag per sub SOV
+        setSubSOVStatus(companyId, 'Pending Approval', { submittedDate: new Date().toISOString() });
+        showCenteredAlert("Subcontractor SOV submitted for GC review.", 'success');
+        renderPayAppContent();
+    }
+
+    function unlockSubSOV(companyId) {
+        if (!confirm("Unlock this Subcontractor's SOV for revision? This will allow changes to Original Commitment and structure. Only do this if absolutely necessary.")) return;
+        const company = companies.find(c => c.id == companyId);
+        setSubSOVStatus(companyId, 'Draft', { unlockedBy: 'Michael Bretz', unlockedDate: new Date().toISOString() });
+        logPayAppAudit('SUB_SOV_UNLOCKED', { company: company ? (company.name || company.company_name) : companyId, by: 'Michael Bretz' });
+        showCenteredAlert("SOV unlocked for revision. Admin can now edit structural fields.", 'success');
         renderPayAppContent();
     }
 
