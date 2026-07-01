@@ -31,7 +31,7 @@
     font-size: 15px !important;
   }
   .notes-cell {
-    max-width: 520px;
+    max-width: 620px;
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
@@ -304,6 +304,7 @@
     let hasUnsavedChanges = false;
     let payAppCollapsedDivisions = new Set();
     let defaultRetainagePercent = parseFloat(localStorage.getItem('payAppRetainagePercent') || '10');
+let subSOVStatus = JSON.parse(localStorage.getItem('subSOVStatus') || '{}'); // { [companyId]: { status: 'Draft'|'Pending Approval'|'Approved'|'Rejected', submittedDate?, approvedBy?, approvedDate? } }
 
     // Demo: Seed some data on first load if empty
     function seedDemoDataIfNeeded() {
@@ -342,6 +343,23 @@
 
     function formatCurrency(amount) {
         return new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(amount || 0);
+    }
+
+    // ==================== SUB SOV STATUS HELPERS (Approval Workflow) ====================
+    function getSubSOVStatus(companyId) {
+        if (!companyId) return 'Draft';
+        const statusData = subSOVStatus[companyId] || {};
+        return statusData.status || 'Draft';
+    }
+
+    function updateSubSOVStatus(companyId, newStatus, extra = {}) {
+        if (!companyId) return;
+        if (!subSOVStatus[companyId]) subSOVStatus[companyId] = {};
+        subSOVStatus[companyId].status = newStatus;
+        if (extra.submittedDate) subSOVStatus[companyId].submittedDate = extra.submittedDate;
+        if (extra.approvedBy) subSOVStatus[companyId].approvedBy = extra.approvedBy;
+        if (extra.approvedDate) subSOVStatus[companyId].approvedDate = extra.approvedDate;
+        localStorage.setItem('subSOVStatus', JSON.stringify(subSOVStatus));
     }
 
     function showUnsavedIndicator() {
@@ -1449,23 +1467,71 @@
             }
         }
 
-        // Show individual Pay App # for selected sub (persisted per sub)
+        // Show individual Pay App # + SOV Status for selected sub
         if (selectedSubCompanyId) {
             let subPayApps = JSON.parse(localStorage.getItem('subPayAppNumbers') || '{}');
             const currentNum = subPayApps[selectedSubCompanyId] || 1;
-            const payAppBadge = document.createElement('div');
-            payAppBadge.className = 'mt-2 text-xs px-3 py-1 bg-emerald-900/40 text-emerald-400 rounded inline-flex items-center gap-1';
-            payAppBadge.innerHTML = `<i class="fa-solid fa-file-invoice-dollar"></i> <span>Pay App #${currentNum} (Current)</span>`;
+            const currentStatus = getSubSOVStatus(selectedSubCompanyId);
+
+            const statusColors = {
+                'Draft': 'bg-amber-900/40 text-amber-400',
+                'Pending Approval': 'bg-orange-900/40 text-orange-400',
+                'Approved': 'bg-emerald-900/40 text-emerald-400',
+                'Rejected': 'bg-red-900/40 text-red-400'
+            };
+            const statusColor = statusColors[currentStatus] || 'bg-zinc-700 text-zinc-400';
+
+            const infoDiv = document.createElement('div');
+            infoDiv.className = 'mt-2 flex items-center gap-2';
+            infoDiv.innerHTML = `
+                <div class="text-xs px-3 py-1 bg-emerald-900/40 text-emerald-400 rounded inline-flex items-center gap-1">
+                    <i class="fa-solid fa-file-invoice-dollar"></i> <span>Pay App #${currentNum} (Current)</span>
+                </div>
+                <div class="text-xs px-3 py-1 ${statusColor} rounded inline-flex items-center gap-1 font-medium">
+                    <i class="fa-solid fa-check-circle"></i> <span>${currentStatus}</span>
+                </div>
+            `;
             const selCard = selector ? selector.parentElement : null;
-            if (selCard) selCard.appendChild(payAppBadge);
+            if (selCard) selCard.appendChild(infoDiv);
         }
 
-        // Workflow bar
-        workflowBar.innerHTML = `
-            <div class="workflow-bar px-4 py-3 flex items-center gap-3 text-sm">
-                <span class="text-zinc-400">Subcontractor SOV • Double-click any line to edit. Primary Contact Mode restricts fields.</span>
-            </div>
-        `;
+        // Workflow bar - dynamic based on SOV Status
+        const currentStatus = getSubSOVStatus(selectedSubCompanyId);
+        let workflowHTML = '';
+
+        if (currentStatus === 'Draft' || currentStatus === 'Rejected') {
+            workflowHTML = `
+                <div class="workflow-bar px-4 py-3 flex items-center gap-3 text-sm flex-wrap">
+                    <span class="text-zinc-400">Setup Mode — Build the original Schedule of Values. When ready, submit for approval.</span>
+                    <button onclick="submitSubSOVForApproval()" class="ml-auto px-4 py-1.5 bg-amber-600 hover:bg-amber-500 text-white rounded text-xs font-medium flex items-center gap-1.5">
+                        <i class="fa-solid fa-paper-plane"></i> <span>Submit SOV for Approval</span>
+                    </button>
+                </div>
+            `;
+        } else if (currentStatus === 'Pending Approval') {
+            workflowHTML = `
+                <div class="workflow-bar px-4 py-3 flex items-center gap-3 text-sm flex-wrap">
+                    <span class="text-orange-400 font-medium">Pending Approval — Review the original SOV. Approve or request revision.</span>
+                    <button onclick="approveSubSOVSetup()" class="ml-auto px-4 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded text-xs font-medium flex items-center gap-1.5">
+                        <i class="fa-solid fa-check-double"></i> <span>Approve SOV Setup</span>
+                    </button>
+                    <button onclick="rejectSubSOVSetup()" class="px-4 py-1.5 bg-red-600 hover:bg-red-500 text-white rounded text-xs font-medium flex items-center gap-1.5">
+                        <i class="fa-solid fa-times"></i> <span>Request Revision</span>
+                    </button>
+                </div>
+            `;
+        } else if (currentStatus === 'Approved') {
+            workflowHTML = `
+                <div class="workflow-bar px-4 py-3 flex items-center gap-3 text-sm flex-wrap">
+                    <span class="text-emerald-400 font-medium">SOV Approved — Primary Contact can now enter current period billing only. Original Commitment is locked.</span>
+                    <button onclick="viewSubSOVAudit()" class="ml-auto px-4 py-1.5 bg-zinc-700 hover:bg-zinc-600 text-white rounded text-xs font-medium flex items-center gap-1.5">
+                        <i class="fa-solid fa-history"></i> <span>View Approval History</span>
+                    </button>
+                </div>
+            `;
+        }
+
+        workflowBar.innerHTML = workflowHTML;
 
         // If no sub selected, show message in table
         if (!selectedSubCompanyId) {
@@ -1490,7 +1556,7 @@
                 <th class="px-3 py-3 text-center font-medium text-zinc-400 w-36">This Period</th>
                 <th class="px-3 py-3 text-center font-medium text-zinc-400 w-36">Stored Materials</th>
                 <th class="px-3 py-3 text-center font-medium text-zinc-400 w-32">Retainage</th>
-                <th class="px-4 py-3 text-left font-medium text-zinc-400 w-[42rem]">Notes</th>
+                <th class="px-4 py-3 text-left font-medium text-zinc-400 w-[52rem]">Notes</th>
                 <th class="px-3 py-3 text-center font-medium text-zinc-400 w-20">Actions</th>
             </tr>
         `;
@@ -1614,7 +1680,19 @@
         const modal = document.getElementById('editSubSOVModal');
         const content = document.getElementById('editSubSOVContent');
         const company = companies.find(c => c.id == companyId);
-        const isPrimary = company && company.primary_contact_name === 'Michael Bretz';
+        // Robust Primary Contact check (matches Companies page + User Management)
+        let isPrimary = false;
+        if (company) {
+            const allUsers = JSON.parse(localStorage.getItem('users') || '[]');
+            if (company.primary_contact_user_id) {
+                const pu = allUsers.find(u => u.id == company.primary_contact_user_id);
+                if (pu && (pu.firstName + ' ' + pu.lastName).toLowerCase().includes('michael') || pu.email === 'michael@casepm.com') {
+                    isPrimary = true;
+                }
+            } else if (company.primary_contact_name === 'Michael Bretz' || company.primary_contact_email === 'michael@casepm.com') {
+                isPrimary = true;
+            }
+        }
 
         let line = null;
         if (lineId && subcontractorSOV[companyId]) {
@@ -1906,6 +1984,44 @@
         renderPayAppContent();
 
         showCenteredAlert(`Subcontractor "${selectedCompany.name || selectedCompany.company_name}" linked successfully. You can now add lines to their Schedule of Values.`, 'success');
+    }
+
+    // ==================== SUB SOV APPROVAL WORKFLOW ====================
+    function submitSubSOVForApproval() {
+        if (!selectedSubCompanyId) return;
+        const currentStatus = getSubSOVStatus(selectedSubCompanyId);
+        if (currentStatus === 'Approved') {
+            showCenteredAlert("This SOV is already approved. No need to submit again.");
+            return;
+        }
+        updateSubSOVStatus(selectedSubCompanyId, 'Pending Approval', { submittedDate: new Date().toISOString() });
+        logPayAppAudit('SUB_SOV_SUBMITTED_FOR_APPROVAL', { companyId: selectedSubCompanyId });
+        showCenteredAlert("SOV submitted for approval. Main company approvers have been notified (simulated).", 'success');
+        renderPayAppContent(); // Refresh to show new status + buttons
+    }
+
+    function approveSubSOVSetup() {
+        if (!selectedSubCompanyId) return;
+        updateSubSOVStatus(selectedSubCompanyId, 'Approved', { 
+            approvedBy: "Michael Bretz (Project Manager)", 
+            approvedDate: new Date().toISOString() 
+        });
+        logPayAppAudit('SUB_SOV_APPROVED', { companyId: selectedSubCompanyId, approvedBy: "Michael Bretz" });
+        showCenteredAlert("Subcontractor Schedule of Values approved. Original Commitment is now locked. Subcontractor can enter periodic billing.", 'success');
+        renderPayAppContent();
+    }
+
+    function rejectSubSOVSetup() {
+        if (!selectedSubCompanyId) return;
+        updateSubSOVStatus(selectedSubCompanyId, 'Rejected', { approvedBy: "Michael Bretz (Project Manager)" });
+        logPayAppAudit('SUB_SOV_REJECTED', { companyId: selectedSubCompanyId });
+        showCenteredAlert("Revision requested. Subcontractor / PM can now update the SOV and resubmit.", 'info');
+        renderPayAppContent();
+    }
+
+    function viewSubSOVAudit() {
+        showCenteredAlert("Full approval history is recorded in the Pay Application Audit Log (footer).", 'info');
+        // In a future pass we can open a dedicated modal filtered to this sub's SOV events.
     }
 
     // ==================== PRINT AIA G702 / G703 ====================
