@@ -31,7 +31,7 @@
     font-size: 15px !important;
   }
   .notes-cell {
-    max-width: 380px;
+    max-width: 520px;
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
@@ -502,7 +502,7 @@
                 <th class="px-4 py-3 text-center font-medium text-zinc-400 w-44">Work This Period</th>
                 <th class="px-3 py-3 text-center font-medium text-zinc-400 w-36">Materials</th>
                 <th class="px-3 py-3 text-center font-medium text-zinc-400 w-36">Retainage</th>
-                <th class="px-4 py-3 text-left font-medium text-zinc-400 w-[28rem]">Notes</th>
+                <th class="px-4 py-3 text-left font-medium text-zinc-400 w-[42rem]">Notes</th>
                 <th class="px-3 py-3 text-center font-medium text-zinc-400 w-20">Actions</th>
             </tr>
         `;
@@ -813,7 +813,7 @@
                 <th class="px-3 py-3 text-center font-medium text-zinc-400 w-20">% Billed</th>
                 <th class="px-4 py-3 text-center font-medium text-zinc-400 w-40">Billed to Date</th>
                 <th class="px-4 py-3 text-center font-medium text-zinc-400 w-40">Balance</th>
-                <th class="px-4 py-3 text-left font-medium text-zinc-400 w-[28rem]">Notes</th>
+                <th class="px-4 py-3 text-left font-medium text-zinc-400 w-[42rem]">Notes</th>
                 <th class="px-3 py-3 text-center font-medium text-zinc-400 w-20">Actions</th>
             </tr>
         `;
@@ -1490,7 +1490,7 @@
                 <th class="px-3 py-3 text-center font-medium text-zinc-400 w-36">This Period</th>
                 <th class="px-3 py-3 text-center font-medium text-zinc-400 w-36">Stored Materials</th>
                 <th class="px-3 py-3 text-center font-medium text-zinc-400 w-32">Retainage</th>
-                <th class="px-4 py-3 text-left font-medium text-zinc-400 w-[28rem]">Notes</th>
+                <th class="px-4 py-3 text-left font-medium text-zinc-400 w-[42rem]">Notes</th>
                 <th class="px-3 py-3 text-center font-medium text-zinc-400 w-20">Actions</th>
             </tr>
         `;
@@ -1822,16 +1822,42 @@
                     }
                     const company = companiesList.find(c => c.id == selectedId);
                     if (company) {
-                        let html = '';
-                        const pcName = company.primary_contact_name || company.primaryContactName || company.contact_name || 'Not set on company record';
-                        const pcEmail = company.primary_contact_email || company.primaryContactEmail || company.email || '';
-                        const pcPhone = company.primary_contact_phone || company.primaryContactPhone || company.phone || '';
+                        const allUsers = JSON.parse(localStorage.getItem('users') || '[]');
+                        let pcName = 'Not set on company record';
+                        let pcEmail = '';
+                        let pcPhone = '';
 
-                        html = `<div class="font-medium text-emerald-300">${pcName}</div>`;
-                        if (pcEmail) html += `<div class="text-xs text-zinc-400">${pcEmail}</div>`;
-                        if (pcPhone) html += `<div class="text-xs text-zinc-400">${pcPhone}</div>`;
-                        if (!pcEmail && !pcPhone && pcName === 'Not set on company record') {
-                            html += `<div class="text-xs text-amber-400">No primary contact details saved for this company yet.</div>`;
+                        // Primary resolution matching Companies page logic (primary_contact_user_id + users lookup)
+                        if (company.primary_contact_user_id) {
+                            const pu = allUsers.find(u => u.id == company.primary_contact_user_id);
+                            if (pu) {
+                                pcName = `${pu.firstName || ''} ${pu.lastName || ''}`.trim() || 'Not set';
+                                pcEmail = pu.email || company.primary_contact_email || company.email || '';
+                                pcPhone = pu.phone || company.primary_contact_phone || company.phone || '';
+                            }
+                        } else if (company.contacts && Array.isArray(company.contacts) && company.contacts.length > 0) {
+                            // Legacy fallback: use designated primary or first contact
+                            const primaryContact = company.contacts.find(c => c.isPrimary || c.primary) || company.contacts[0];
+                            if (primaryContact) {
+                                pcName = primaryContact.name || primaryContact.fullName || 'Not set';
+                                pcEmail = primaryContact.email || '';
+                                pcPhone = primaryContact.phone || primaryContact.mobile || '';
+                            }
+                        } else if (company.primary_contact_name || company.primaryContactName) {
+                            // Very old legacy fields
+                            pcName = company.primary_contact_name || company.primaryContactName || 'Not set';
+                            pcEmail = company.primary_contact_email || company.primaryContactEmail || company.email || '';
+                            pcPhone = company.primary_contact_phone || company.primaryContactPhone || company.phone || '';
+                        }
+
+                        let html = '';
+                        if (pcName && pcName !== 'Not set on company record' && pcName !== 'Not set') {
+                            html = `<div class="font-medium text-emerald-300">${pcName}</div>`;
+                            if (pcEmail) html += `<div class="text-xs text-zinc-400">${pcEmail}</div>`;
+                            if (pcPhone) html += `<div class="text-xs text-zinc-400">${pcPhone}</div>`;
+                        } else {
+                            html = `<div class="font-medium text-emerald-300">Not set on company record</div>`;
+                            html += `<div class="text-xs text-amber-400">Set Primary Contact in the Companies page (User Management link).</div>`;
                         }
                         contactDisplay.innerHTML = html;
                         contactInfoDiv.classList.remove('hidden');
