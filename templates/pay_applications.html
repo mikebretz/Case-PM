@@ -446,14 +446,14 @@
         thead.innerHTML = `
             <tr>
                 <th class="px-3 py-3 text-center font-medium text-zinc-400 w-8">#</th>
-                <th class="px-4 py-3 text-left font-medium text-zinc-400 w-28">Cost Code</th>
-                <th class="px-4 py-3 text-left font-medium text-zinc-400 min-w-[260px]">Description</th>
-                <th class="px-4 py-3 text-right font-medium text-zinc-400 w-24">Original</th>
+                <th class="px-4 py-3 text-left font-medium text-zinc-400 w-24">Cost Code</th>
+                <th class="px-4 py-3 text-left font-medium text-zinc-400 min-w-[320px]">Description</th>
+                <th class="px-4 py-3 text-right font-medium text-zinc-400 w-28">Original</th>
                 <th class="px-3 py-3 text-center font-medium text-zinc-400 w-16">% Complete</th>
-                <th class="px-4 py-3 text-right font-medium text-zinc-400 w-24">Billed to Date</th>
-                <th class="px-4 py-3 text-right font-medium text-zinc-400 w-24">Work This Period</th>
-                <th class="px-3 py-3 text-right font-medium text-zinc-400 w-20">Materials</th>
-                <th class="px-3 py-3 text-right font-medium text-zinc-400 w-20">Retainage</th>
+                <th class="px-4 py-3 text-right font-medium text-zinc-400 w-28">Billed to Date</th>
+                <th class="px-4 py-3 text-right font-medium text-zinc-400 w-28">Work This Period</th>
+                <th class="px-3 py-3 text-right font-medium text-zinc-400 w-24">Materials</th>
+                <th class="px-3 py-3 text-right font-medium text-zinc-400 w-24">Retainage</th>
                 <th class="px-3 py-3 text-center font-medium text-zinc-400 w-20">Actions</th>
             </tr>
         `;
@@ -743,15 +743,15 @@
         thead.innerHTML = `
             <tr>
                 <th class="px-3 py-3 text-center font-medium text-zinc-400 w-8">#</th>
-                <th class="px-4 py-3 text-left font-medium text-zinc-400 w-28">Cost Code</th>
-                <th class="px-4 py-3 text-left font-medium text-zinc-400 min-w-[280px]">Description</th>
-                <th class="px-4 py-3 text-right font-medium text-zinc-400 w-24">Original</th>
-                <th class="px-3 py-3 text-right font-medium text-zinc-400 w-20">COs</th>
-                <th class="px-4 py-3 text-right font-medium text-zinc-400 w-24">Current</th>
+                <th class="px-4 py-3 text-left font-medium text-zinc-400 w-24">Cost Code</th>
+                <th class="px-4 py-3 text-left font-medium text-zinc-400 min-w-[320px]">Description</th>
+                <th class="px-4 py-3 text-right font-medium text-zinc-400 w-28">Original</th>
+                <th class="px-3 py-3 text-right font-medium text-zinc-400 w-24">COs</th>
+                <th class="px-4 py-3 text-right font-medium text-zinc-400 w-28">Current</th>
                 <th class="px-3 py-3 text-center font-medium text-zinc-400 w-16">% Billed</th>
-                <th class="px-4 py-3 text-right font-medium text-zinc-400 w-24">Billed to Date</th>
-                <th class="px-4 py-3 text-right font-medium text-zinc-400 w-24">Balance</th>
-                <th class="px-3 py-3 text-center font-medium text-zinc-400 w-16">Actions</th>
+                <th class="px-4 py-3 text-right font-medium text-zinc-400 w-28">Billed to Date</th>
+                <th class="px-4 py-3 text-right font-medium text-zinc-400 w-28">Balance</th>
+                <th class="px-3 py-3 text-center font-medium text-zinc-400 w-20">Actions</th>
             </tr>
         `;
 
@@ -762,18 +762,59 @@
             return;
         }
 
-        contractorSOV.forEach((line, index) => {
+        // Sort ascending + add division headers (matching G702 / Budget style)
+        contractorSOV.sort((a, b) => (a.cost_code || '').localeCompare(b.cost_code || '', undefined, { numeric: true }));
+
+        const divisionNames = {
+            '01': 'General Requirements', '03': 'Concrete', '04': 'Masonry',
+            '05': 'Metals', '06': 'Wood, Plastics, and Composites',
+            '07': 'Thermal and Moisture Protection', '08': 'Openings',
+            '09': 'Finishes', '22': 'Plumbing', '23': 'HVAC',
+            '26': 'Electrical', '31': 'Earthwork'
+        };
+
+        let currentDivision = null;
+        let visibleIndex = 0;
+        contractorSOV.forEach((line) => {
+            const division = (line.cost_code || '').substring(0, 2);
+
+            if (division !== currentDivision) {
+                currentDivision = division;
+                const isCollapsed = (typeof payAppCollapsedDivisions !== 'undefined' && payAppCollapsedDivisions.has(division));
+                const headerRow = document.createElement('tr');
+                headerRow.className = 'bg-zinc-800 cursor-pointer hover:bg-zinc-700';
+                headerRow.onclick = () => {
+                    if (!window.payAppCollapsedDivisions) window.payAppCollapsedDivisions = new Set();
+                    if (window.payAppCollapsedDivisions.has(division)) {
+                        window.payAppCollapsedDivisions.delete(division);
+                    } else {
+                        window.payAppCollapsedDivisions.add(division);
+                    }
+                    renderPayAppContent();
+                };
+                headerRow.innerHTML = `
+                    <td colspan="10" class="px-4 py-2 text-emerald-400 font-semibold text-sm">
+                        <i class="fa-solid fa-chevron-${isCollapsed ? 'right' : 'down'} mr-2 transition-transform"></i>
+                        Division ${division} — ${divisionNames[division] || 'Other'}
+                    </td>
+                `;
+                tbody.appendChild(headerRow);
+            }
+
+            if (window.payAppCollapsedDivisions && window.payAppCollapsedDivisions.has(division)) return;
+
             const current = (line.original || 0) + (line.co_amount || 0);
             const billed = line.billed_to_date || 0;
             const balance = current - billed;
             const pct = current > 0 ? Math.min(100, Math.round((billed / current) * 100)) : 0;
+            visibleIndex++;
 
             const row = document.createElement('tr');
             row.className = 'sov-line-row hover:bg-zinc-800/60 cursor-pointer';
             row.ondblclick = () => editContractorSOVLine(line.id);
 
             row.innerHTML = `
-                <td class="px-3 py-2 text-center font-mono text-xs text-zinc-500">${index + 1}</td>
+                <td class="px-3 py-2 text-center font-mono text-xs text-zinc-500">${visibleIndex}</td>
                 <td class="px-4 py-2 font-mono text-emerald-400 text-sm">${line.cost_code}</td>
                 <td class="px-4 py-2 text-sm">${line.description}</td>
                 <td class="px-4 py-2 text-right font-mono text-sm">${formatCurrency(line.original || 0)}</td>
@@ -1002,6 +1043,34 @@
 
         // Store budgetLines temporarily for confirm
         window._seedBudgetLines = budgetLines;
+
+        // Robust interactivity: row clicks + ensure select all works
+        setTimeout(() => {
+            const table = modal.querySelector('#seedTable');
+            if (table) {
+                // Make entire row clickable (except checkbox itself)
+                table.querySelectorAll('tr[data-idx]').forEach(row => {
+                    row.style.cursor = 'pointer';
+                    row.onclick = function(e) {
+                        if (e.target.tagName === 'INPUT' || e.target.closest('input')) return;
+                        const cb = row.querySelector('.seed-checkbox');
+                        if (cb && !cb.disabled) {
+                            cb.checked = !cb.checked;
+                        }
+                    };
+                });
+
+                // Ensure select all checkbox works reliably
+                const selectAllCb = modal.querySelector('#seedSelectAll');
+                if (selectAllCb) {
+                    selectAllCb.onchange = function() {
+                        table.querySelectorAll('.seed-checkbox:not(:disabled)').forEach(cb => {
+                            cb.checked = selectAllCb.checked;
+                        });
+                    };
+                }
+            }
+        }, 50);
     }
 
     function filterSeedTable(inputEl) {
@@ -1104,6 +1173,17 @@
             }
         }
 
+        // Show individual Pay App # for selected sub (persisted per sub)
+        if (selectedSubCompanyId) {
+            let subPayApps = JSON.parse(localStorage.getItem('subPayAppNumbers') || '{}');
+            const currentNum = subPayApps[selectedSubCompanyId] || 1;
+            const payAppBadge = document.createElement('div');
+            payAppBadge.className = 'mt-2 text-xs px-3 py-1 bg-emerald-900/40 text-emerald-400 rounded inline-flex items-center gap-1';
+            payAppBadge.innerHTML = `<i class="fa-solid fa-file-invoice-dollar"></i> <span>Pay App #${currentNum} (Current)</span>`;
+            const selCard = selector ? selector.parentElement : null;
+            if (selCard) selCard.appendChild(payAppBadge);
+        }
+
         // Workflow bar
         workflowBar.innerHTML = `
             <div class="workflow-bar px-4 py-3 flex items-center gap-3 text-sm">
@@ -1126,13 +1206,13 @@
         thead.innerHTML = `
             <tr>
                 <th class="px-3 py-3 text-center font-medium text-zinc-400 w-8">#</th>
-                <th class="px-4 py-3 text-left font-medium text-zinc-400 w-28">Cost Code</th>
-                <th class="px-4 py-3 text-left font-medium text-zinc-400 min-w-[260px]">Description</th>
-                <th class="px-4 py-3 text-right font-medium text-zinc-400 w-24">Original Commitment</th>
+                <th class="px-4 py-3 text-left font-medium text-zinc-400 w-24">Cost Code</th>
+                <th class="px-4 py-3 text-left font-medium text-zinc-400 min-w-[320px]">Description</th>
+                <th class="px-4 py-3 text-right font-medium text-zinc-400 w-28">Original Commitment</th>
                 <th class="px-3 py-3 text-center font-medium text-zinc-400 w-16">% Complete</th>
-                <th class="px-4 py-3 text-right font-medium text-zinc-400 w-24">Billed to Date</th>
-                <th class="px-3 py-3 text-right font-medium text-zinc-400 w-20">This Period</th>
-                <th class="px-3 py-3 text-center font-medium text-zinc-400 w-16">Actions</th>
+                <th class="px-4 py-3 text-right font-medium text-zinc-400 w-28">Billed to Date</th>
+                <th class="px-3 py-3 text-right font-medium text-zinc-400 w-24">This Period</th>
+                <th class="px-3 py-3 text-center font-medium text-zinc-400 w-20">Actions</th>
             </tr>
         `;
 
@@ -1154,18 +1234,59 @@
             tbody.appendChild(banner);
         }
 
-        subLines.forEach((line, index) => {
+        // Sort + Division headers for Sub SOV (consistent with G702/G703)
+        subLines.sort((a, b) => (a.cost_code || '').localeCompare(b.cost_code || '', undefined, { numeric: true }));
+
+        const divisionNamesSub = {
+            '01': 'General Requirements', '03': 'Concrete', '04': 'Masonry',
+            '05': 'Metals', '06': 'Wood, Plastics, and Composites',
+            '07': 'Thermal and Moisture Protection', '08': 'Openings',
+            '09': 'Finishes', '22': 'Plumbing', '23': 'HVAC',
+            '26': 'Electrical', '31': 'Earthwork'
+        };
+
+        let currentDivSub = null;
+        let visibleIdxSub = 0;
+        subLines.forEach((line) => {
+            const division = (line.cost_code || '').substring(0, 2);
+
+            if (division !== currentDivSub) {
+                currentDivSub = division;
+                const isCollapsed = (window.payAppCollapsedDivisions && window.payAppCollapsedDivisions.has(division));
+                const headerRow = document.createElement('tr');
+                headerRow.className = 'bg-zinc-800 cursor-pointer hover:bg-zinc-700';
+                headerRow.onclick = () => {
+                    if (!window.payAppCollapsedDivisions) window.payAppCollapsedDivisions = new Set();
+                    if (window.payAppCollapsedDivisions.has(division)) {
+                        window.payAppCollapsedDivisions.delete(division);
+                    } else {
+                        window.payAppCollapsedDivisions.add(division);
+                    }
+                    renderPayAppContent();
+                };
+                headerRow.innerHTML = `
+                    <td colspan="8" class="px-4 py-2 text-emerald-400 font-semibold text-sm">
+                        <i class="fa-solid fa-chevron-${isCollapsed ? 'right' : 'down'} mr-2 transition-transform"></i>
+                        Division ${division} — ${divisionNamesSub[division] || 'Other'}
+                    </td>
+                `;
+                tbody.appendChild(headerRow);
+            }
+
+            if (window.payAppCollapsedDivisions && window.payAppCollapsedDivisions.has(division)) return;
+
             const current = line.original_commitment || 0;
             const billed = line.billed_to_date || 0;
             const pct = current > 0 ? Math.min(100, Math.round((billed / current) * 100)) : 0;
             const thisPeriod = (line.work_this_period || 0) + (line.materials_stored || 0);
+            visibleIdxSub++;
 
             const row = document.createElement('tr');
             row.className = 'sov-line-row hover:bg-zinc-800/60 cursor-pointer';
             row.ondblclick = () => editSubSOVLine(selectedSubCompanyId, line.id);
 
             row.innerHTML = `
-                <td class="px-3 py-2 text-center font-mono text-xs text-zinc-500">${index + 1}</td>
+                <td class="px-3 py-2 text-center font-mono text-xs text-zinc-500">${visibleIdxSub}</td>
                 <td class="px-4 py-2 font-mono text-emerald-400 text-sm">${line.cost_code || ''}</td>
                 <td class="px-4 py-2 text-sm">${line.description || ''}</td>
                 <td class="px-4 py-2 text-right font-mono text-sm">${formatCurrency(current)}</td>
@@ -1382,71 +1503,93 @@
 
     function printG702() {
         const period = currentPayAppPeriod || { periodNumber: 7, periodStart: '2026-07-01', periodEnd: '2026-07-31', status: 'Draft' };
-        let totalOriginal = 0, totalCurrent = 0, totalRetainage = 0;
+        let totalOriginal = 0, totalCO = 0, totalCurrent = 0, totalRetainage = 0, totalPrevious = 0;
 
         contractorSOV.forEach(line => {
             const curr = (line.original || 0) + (line.co_amount || 0);
-            totalOriginal += curr;
+            totalOriginal += (line.original || 0);
+            totalCO += (line.co_amount || 0);
             const billing = payAppBillingLines[line.id] || { workThisPeriod: 0, materialsStored: 0 };
             const thisPeriod = (billing.workThisPeriod || 0) + (billing.materialsStored || 0);
             totalCurrent += thisPeriod;
             totalRetainage += thisPeriod * 0.10;
         });
 
-        const due = totalCurrent * 0.90;
+        const contractSumToDate = totalOriginal + totalCO;
+        const earnedLessRetainage = totalCurrent - totalRetainage;
+        const currentDue = earnedLessRetainage - totalPrevious; // simplified for current period
+        const balanceToFinish = contractSumToDate - totalCurrent;
 
         const printHTML = `
-            <html><head><title>AIA G702 - Pay Application ${period.periodNumber}</title>
+            <html><head><title>AIA G702 Application and Certificate for Payment #${period.periodNumber}</title>
             <style>
-                body { font-family: Arial, sans-serif; padding: 30px; font-size: 12px; }
-                .header { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 20px; }
-                .title { font-size: 18px; font-weight: bold; }
-                table { width: 100%; border-collapse: collapse; margin: 15px 0; }
-                th, td { border: 1px solid #333; padding: 8px; text-align: left; }
-                th { background: #f3f4f6; }
-                .right { text-align: right; }
-                .section { margin-bottom: 25px; }
-                .signature { margin-top: 40px; display: flex; justify-content: space-between; }
-                .sig-box { width: 30%; border-top: 1px solid #333; padding-top: 6px; font-size: 11px; }
+                @page { size: letter; margin: 0.5in; }
+                body { font-family: "Times New Roman", serif; padding: 20px 30px; font-size: 11px; line-height: 1.3; color: #000; }
+                .form-header { border: 2px solid #000; padding: 8px 12px; margin-bottom: 12px; }
+                .form-title { font-size: 16px; font-weight: bold; text-align: center; letter-spacing: 1px; }
+                .form-subtitle { font-size: 12px; text-align: center; margin-top: 2px; }
+                .info-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin: 12px 0; }
+                .info-box { border: 1px solid #000; padding: 8px; font-size: 10px; }
+                .info-box strong { display: block; font-size: 9px; margin-bottom: 3px; }
+                table.summary { width: 100%; border-collapse: collapse; margin: 12px 0; font-size: 11px; }
+                table.summary td, table.summary th { border: 1px solid #000; padding: 6px 8px; }
+                table.summary th { background: #f0f0f0; text-align: left; font-weight: 600; }
+                .right { text-align: right; font-family: monospace; }
+                .bold { font-weight: bold; }
+                .section-title { font-weight: bold; font-size: 11px; margin: 10px 0 4px; }
+                .cert-text { font-size: 9.5px; margin: 10px 0; line-height: 1.4; }
+                .sig-row { display: flex; justify-content: space-between; margin-top: 30px; }
+                .sig-col { width: 32%; border-top: 1px solid #000; padding-top: 6px; font-size: 10px; }
+                .footer-note { font-size: 8px; color: #555; margin-top: 20px; text-align: center; }
             </style>
             </head><body>
-                <div class="header">
-                    <div>
-                        <div style="font-size:22px;font-weight:bold;">APPLICATION FOR PAYMENT</div>
-                        <div style="color:#666;">AIA Document G702</div>
+                <div class="form-header">
+                    <div class="form-title">APPLICATION AND CERTIFICATE FOR PAYMENT</div>
+                    <div class="form-subtitle">AIA Document G702 — 1992 Edition</div>
+                </div>
+
+                <div class="info-grid">
+                    <div class="info-box">
+                        <strong>TO OWNER:</strong> ALDI Inc.<br>
+                        <strong>PROJECT:</strong> ALDI Lakeland<br>
+                        <strong>CONTRACT FOR:</strong> Commercial Construction
                     </div>
-                    <div style="text-align:right;">
-                        <div><strong>Project:</strong> ALDI Lakeland</div>
-                        <div><strong>Period:</strong> ${period.periodStart} to ${period.periodEnd}</div>
-                        <div><strong>Application #:</strong> ${period.periodNumber}</div>
+                    <div class="info-box" style="text-align:right;">
+                        <strong>APPLICATION NO:</strong> ${period.periodNumber}<br>
+                        <strong>PERIOD TO:</strong> ${period.periodEnd}<br>
+                        <strong>PROJECT NO:</strong> ALD-LAK-2026
                     </div>
                 </div>
 
-                <div class="section">
-                    <strong>Owner:</strong> ALDI Inc.<br>
-                    <strong>Contractor:</strong> Case PM Construction<br>
-                    <strong>Architect:</strong> [To be filled]
+                <div style="margin: 8px 0; font-size:10px;">
+                    Application is made for payment, as shown below, in connection with the Contract. 
+                    Continuation Sheet, AIA Document G703, is attached.
                 </div>
 
-                <table>
-                    <tr><th colspan="2">SUMMARY OF WORK</th></tr>
-                    <tr><td>1. Original Contract Sum</td><td class="right">${formatCurrency(totalOriginal)}</td></tr>
-                    <tr><td>2. Net Change Orders</td><td class="right">${formatCurrency(0)}</td></tr>
-                    <tr><td>3. Contract Sum to Date (1+2)</td><td class="right"><strong>${formatCurrency(totalOriginal)}</strong></td></tr>
-                    <tr><td>4. Total Completed &amp; Stored to Date</td><td class="right">${formatCurrency(totalCurrent)}</td></tr>
-                    <tr><td>5. Retainage (10%)</td><td class="right">${formatCurrency(totalRetainage)}</td></tr>
-                    <tr><td>6. Total Earned Less Retainage (4-5)</td><td class="right"><strong>${formatCurrency(totalCurrent - totalRetainage)}</strong></td></tr>
-                    <tr><td>7. Less Previous Payments</td><td class="right">${formatCurrency(0)}</td></tr>
-                    <tr><td><strong>8. CURRENT PAYMENT DUE</strong></td><td class="right"><strong>${formatCurrency(due)}</strong></td></tr>
+                <table class="summary">
+                    <tr><th colspan="2" style="text-align:center; background:#e5e5e5;">CONTRACTOR'S APPLICATION FOR PAYMENT</th></tr>
+                    <tr><td>1. ORIGINAL CONTRACT SUM</td><td class="right">${formatCurrency(totalOriginal)}</td></tr>
+                    <tr><td>2. NET CHANGE BY CHANGE ORDERS</td><td class="right">${formatCurrency(totalCO)}</td></tr>
+                    <tr><td class="bold">3. CONTRACT SUM TO DATE (Line 1 ± 2)</td><td class="right bold">${formatCurrency(contractSumToDate)}</td></tr>
+                    <tr><td>4. TOTAL COMPLETED &amp; STORED TO DATE (Col. G on G703)</td><td class="right">${formatCurrency(totalCurrent)}</td></tr>
+                    <tr><td>5. RETAINAGE (10% of Completed Work)</td><td class="right">${formatCurrency(totalRetainage)}</td></tr>
+                    <tr><td class="bold">6. TOTAL EARNED LESS RETAINAGE (Line 4 - 5)</td><td class="right bold">${formatCurrency(earnedLessRetainage)}</td></tr>
+                    <tr><td>7. LESS PREVIOUS CERTIFICATES FOR PAYMENT</td><td class="right">${formatCurrency(totalPrevious)}</td></tr>
+                    <tr style="background:#f8f8f8;"><td class="bold" style="font-size:12px;">8. CURRENT PAYMENT DUE</td><td class="right bold" style="font-size:12px;">${formatCurrency(currentDue)}</td></tr>
+                    <tr><td>9. BALANCE TO FINISH, INCLUDING RETAINAGE (Line 3 - 4)</td><td class="right">${formatCurrency(balanceToFinish)}</td></tr>
                 </table>
 
-                <div class="signature">
-                    <div class="sig-box">Contractor Signature / Date</div>
-                    <div class="sig-box">Owner Signature / Date</div>
-                    <div class="sig-box">Architect Signature / Date</div>
+                <div class="cert-text">
+                    The undersigned Contractor certifies that to the best of the Contractor's knowledge, information and belief the Work covered by this Application for Payment has been completed in accordance with the Contract Documents, that all amounts have been paid by the Contractor for Work for which previous Certificates for Payment were issued and payments received from the Owner, and that current payment shown herein is now due.
                 </div>
 
-                <div style="margin-top:30px;font-size:10px;color:#666;">This is a system-generated preview of AIA G702. Actual form may vary.</div>
+                <div class="sig-row">
+                    <div class="sig-col">CONTRACTOR:<br><br>_______________________________<br>Signature / Date</div>
+                    <div class="sig-col">ARCHITECT:<br><br>_______________________________<br>Signature / Date<br><span style="font-size:9px;">(Certificate for Payment)</span></div>
+                    <div class="sig-col">OWNER:<br><br>_______________________________<br>Signature / Date</div>
+                </div>
+
+                <div class="footer-note">This is a system-generated preview matching AIA G702 layout. Use official AIA forms for final submission. Case PM • ALDI Lakeland</div>
             </body></html>
         `;
 
