@@ -31,11 +31,11 @@
     font-size: 15px !important;
   }
   .notes-cell {
-    max-width: 780px;
+    max-width: 420px;
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
-    font-size: 15.5px !important;
+    font-size: 14.5px !important;
   }
   .division-header {
     background-color: #27272a;
@@ -1735,8 +1735,9 @@ let subSOVStatus = JSON.parse(localStorage.getItem('subSOVStatus') || '{}'); // 
         const isPrimary = company && isUserPrimaryContactForCompany(company);
         const statusData = subSOVStatus[companyId] || {};
         const isApproved = statusData.status === 'Approved';
-        const isUnlocked = statusData.status === 'Draft' && statusData.unlockedBy; // simple check for unlocked state
-        const canEditStructure = !isApproved || isUnlocked; // Admin can edit structure only if unlocked
+        const isUnlocked = statusData.status === 'Draft' && statusData.unlockedBy;
+        // When adding a new line (!lineId), always allow editing structure (button is hidden when Approved)
+        const canEditStructure = !lineId || !isApproved || isUnlocked;
 
         let line = null;
         if (lineId && subcontractorSOV[companyId]) {
@@ -2116,13 +2117,49 @@ let subSOVStatus = JSON.parse(localStorage.getItem('subSOVStatus') || '{}'); // 
                     </button>
                 </div>
                 <div class="max-h-[320px] overflow-auto border border-zinc-700 rounded-md p-2 bg-zinc-900/50">${html}</div>
-                <div class="mt-4 text-right">
+                <div class="mt-4 flex justify-between items-center">
+                    <button onclick="exportSubSOVApprovalHistory(${selectedSubCompanyId}, this)" class="px-4 py-2 bg-emerald-600 hover:bg-emerald-500 rounded-md text-sm flex items-center gap-2">
+                        <i class="fa-solid fa-file-excel"></i> <span>Export to Excel</span>
+                    </button>
                     <button onclick="this.closest('dialog').close(); this.closest('dialog').remove()" class="px-5 py-2 bg-zinc-700 hover:bg-zinc-600 rounded-md text-sm">Close</button>
                 </div>
             </div>
         `;
         document.body.appendChild(modal);
         modal.showModal();
+    }
+
+    function exportSubSOVApprovalHistory(companyId, btn) {
+        if (!companyId) return;
+        const companyName = getCompanyName(companyId);
+        const approvalEvents = (payAppAuditLog || []).filter(e => {
+            if (!e.details) return false;
+            const d = e.details;
+            return (d.sovCompanyId == companyId || d.companyId == companyId) &&
+                   (e.action.includes('SOV') || e.action.includes('APPROVE') || e.action.includes('REJECT') || e.action.includes('SUBMIT') || e.action.includes('UNLOCK'));
+        });
+
+        if (typeof XLSX === 'undefined') {
+            showCenteredAlert("Excel library not loaded. Please hard refresh.");
+            return;
+        }
+        if (approvalEvents.length === 0) {
+            showCenteredAlert("No approval history to export for this subcontractor.");
+            return;
+        }
+
+        const data = approvalEvents.map(e => ({
+            Timestamp: new Date(e.timestamp).toLocaleString(),
+            Action: e.action,
+            "Performed By": e.user || 'System',
+            Company: companyName,
+            Details: JSON.stringify(e.details || {})
+        }));
+
+        const ws = XLSX.utils.json_to_sheet(data);
+        const wb = XLSX.utils.book_new();
+        XLSX.utils.book_append_sheet(wb, ws, "SOV Approval History");
+        XLSX.writeFile(wb, `SOV_Approval_History_${companyName.replace(/[^a-z0-9]/gi, '_')}.xlsx`);
     }
 
     // ==================== PRINT AIA G702 / G703 ====================
