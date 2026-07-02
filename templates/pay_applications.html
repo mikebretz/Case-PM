@@ -952,4 +952,123 @@
     }
 </script>
 {% endblock %}
-
+    // ==================== MISSING PRINT + HEADER FUNCTIONS ====================
+    function printG702() {
+        const printWindow = window.open('', '_blank');
+        if (!printWindow) {
+            showCenteredAlert("Pop-up blocked. Please allow pop-ups for this site.", "warning");
+            return;
+        }
+        
+        printWindow.document.write(`
+            <html>
+            <head>
+                <title>AIA G702 - Pay Application #${currentPayAppPeriod.periodNumber}</title>
+                <style>
+                    @page { size: letter; margin: 0.5in; }
+                    body { font-family: Arial, sans-serif; padding: 30px; font-size: 12px; }
+                    h1 { font-size: 18px; margin-bottom: 5px; }
+                    .header-info { margin-bottom: 20px; }
+                    table { width: 100%; border-collapse: collapse; margin-top: 15px; }
+                    th, td { border: 1px solid #333; padding: 8px 10px; text-align: left; }
+                    th { background: #f0f0f0; }
+                    .right { text-align: right; }
+                    .total-row { font-weight: bold; background: #f8f8f8; }
+                </style>
+            </head>
+            <body>
+                <h1>APPLICATION FOR PAYMENT</h1>
+                <div class="header-info">
+                    <strong>AIA Document G702</strong><br>
+                    Project: ALDI Lakeland #24087<br>
+                    Application No: ${currentPayAppPeriod.periodNumber}<br>
+                    Period: ${currentPayAppPeriod.periodStart} to ${currentPayAppPeriod.periodEnd}<br>
+                    Contractor: Michael Bretz Construction
+                </div>
+                
+                <table>
+                    <tr><th>Description</th><th class="right">Amount</th></tr>
+                    <tr><td>Original Contract Sum</td><td class="right">$2,847,500.00</td></tr>
+                    <tr><td>Net Change by Change Orders</td><td class="right">+$124,800.00</td></tr>
+                    <tr class="total-row"><td>Contract Sum to Date</td><td class="right">$2,972,300.00</td></tr>
+                    <tr><td>Total Completed &amp; Stored to Date</td><td class="right">$1,684,750.00</td></tr>
+                    <tr><td>Retainage (10%)</td><td class="right">-$168,475.00</td></tr>
+                    <tr class="total-row" style="background:#d1fae5;"><td>CURRENT PAYMENT DUE</td><td class="right" style="font-size:15px;">$1,516,275.00</td></tr>
+                </table>
+                
+                <p style="margin-top:40px; font-size:11px; color:#666;">
+                    This is a system-generated preview. Full G702 with signatures and certifications would be generated here.
+                </p>
+            </body>
+            </html>
+        `);
+        printWindow.document.close();
+        setTimeout(() => {
+            printWindow.focus();
+            printWindow.print();
+        }, 400);
+    }
+    
+    function showPayAppVersionHistory() {
+        showCenteredAlert("Version history feature coming in next update. Current revision: Rev 01 (Period 7).", "info");
+    }
+    
+    function exportPayApplications() {
+        const data = {
+            period: currentPayAppPeriod,
+            subcontractorSOV: subcontractorSOV,
+            subPayAppHistory: subPayAppHistory,
+            exportedAt: new Date().toISOString(),
+            exportedBy: "Michael Bretz"
+        };
+        
+        const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `pay_applications_period_${currentPayAppPeriod.periodNumber}.json`;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+        
+        showCenteredAlert("Pay Applications data exported successfully.", "success");
+    }
+    
+    function importPayApplications() {
+        const input = document.createElement('input');
+        input.type = 'file';
+        input.accept = '.json';
+        
+        input.onchange = function(e) {
+            const file = e.target.files[0];
+            if (!file) return;
+            
+            const reader = new FileReader();
+            reader.onload = function(ev) {
+                try {
+                    const imported = JSON.parse(ev.target.result);
+                    
+                    if (imported.subcontractorSOV) {
+                        subcontractorSOV = imported.subcontractorSOV;
+                        localStorage.setItem('subcontractorSOV', JSON.stringify(subcontractorSOV));
+                    }
+                    if (imported.subPayAppHistory) {
+                        subPayAppHistory = imported.subPayAppHistory;
+                        localStorage.setItem('subPayAppHistory', JSON.stringify(subPayAppHistory));
+                    }
+                    
+                    showCenteredAlert("Data imported successfully. Refreshing view...", "success");
+                    setTimeout(() => {
+                        renderPayAppContent();
+                    }, 800);
+                } catch (err) {
+                    showCenteredAlert("Import failed. Invalid file format.", "error");
+                }
+            };
+            reader.readAsText(file);
+        };
+        
+        input.click();
+    }
+    
