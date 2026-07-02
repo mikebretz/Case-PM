@@ -537,24 +537,28 @@ let submissionDeadlineDate = localStorage.getItem('submissionDeadlineDate') || '
             return;
         }
 
-        const companyName = (typeof getCompanyName === 'function') ? getCompanyName(companyId) : 
-            (companies.find(c => c.id == companyId) ? (companies.find(c => c.id == companyId).name || companies.find(c => c.id == companyId).company_name || 'Subcontractor') : 'Subcontractor');
+        const iframe = document.createElement('iframe');
+        iframe.style.position = 'fixed';
+        iframe.style.width = '0';
+        iframe.style.height = '0';
+        iframe.style.border = 'none';
+        document.body.appendChild(iframe);
 
-        const printWindow = window.open('', '_blank');
-        if (!printWindow) {
-            showCenteredAlert("Pop-up blocked. Please allow pop-ups for this site and try again.", 'warning');
-            return;
-        }
+        const doc = iframe.contentWindow.document;
+        doc.open();
 
         const isPdf = (waiver.filename || '').toLowerCase().endsWith('.pdf');
-        let contentHTML = isPdf 
-            ? `<embed src="${waiver.dataUrl}" type="application/pdf" style="width:100%; height:950px; border:1px solid #ccc;" />`
-            : `<img src="${waiver.dataUrl}" style="max-width:100%; max-height:900px; border:1px solid #ccc;" alt="Lien Waiver" />`;
+        let contentHTML = '';
+        if (isPdf) {
+            contentHTML = `<embed src="${waiver.dataUrl}" type="application/pdf" style="width:100%; height:950px; border:1px solid #ccc;" />`;
+        } else {
+            contentHTML = `<img src="${waiver.dataUrl}" style="max-width:100%; max-height:900px; border:1px solid #ccc;" alt="Lien Waiver" />`;
+        }
 
-        printWindow.document.write(`
+        doc.write(`
             <html>
             <head>
-                <title>Lien Waiver - ${companyName}</title>
+                <title>Lien Waiver - ${getCompanyName(companyId)}</title>
                 <style>
                     @page { size: letter; margin: 0.5in; }
                     body { font-family: Arial, sans-serif; padding: 20px; }
@@ -562,20 +566,22 @@ let submissionDeadlineDate = localStorage.getItem('submissionDeadlineDate') || '
             </head>
             <body>
                 <h2 style="margin-bottom: 5px;">Lien Waiver</h2>
-                <p style="margin: 2px 0;"><strong>Subcontractor:</strong> ${companyName}</p>
+                <p style="margin: 2px 0;"><strong>Subcontractor:</strong> ${getCompanyName(companyId)}</p>
                 <p style="margin: 2px 0 15px 0;"><strong>File:</strong> ${waiver.filename || 'Document'}</p>
                 ${contentHTML}
                 <p style="margin-top: 10px; font-size: 12px; color: #555;">Uploaded: ${new Date(waiver.uploadedDate).toLocaleString()}</p>
             </body>
             </html>
         `);
-        printWindow.document.close();
+        doc.close();
 
         setTimeout(() => {
-            printWindow.focus();
-            printWindow.print();
+            iframe.contentWindow.focus();
+            iframe.contentWindow.print();
+            setTimeout(() => document.body.removeChild(iframe), 800);
         }, 450);
     }
+
     function submitLienWaiver(companyId) {
         if (!companyId) return;
         const waiver = lienWaivers[companyId];
@@ -3518,12 +3524,6 @@ let submissionDeadlineDate = localStorage.getItem('submissionDeadlineDate') || '
             </tr>`;
         });
 
-        const printWindow = window.open('', '_blank');
-        if (!printWindow) {
-            showCenteredAlert("Pop-up blocked. Please allow pop-ups for this site to print the G703.", 'warning');
-            return;
-        }
-
         const printHTML = `
             <html><head><title>G703 — ${companyName} — Pay App #${appNum}</title>
             <style>
@@ -3581,18 +3581,36 @@ let submissionDeadlineDate = localStorage.getItem('submissionDeadlineDate') || '
                 <div style="margin-top:12px; font-size:8px; color:#555; text-align:center;">
                     Filtered G703 for ${companyName} • Pay App #${appNum} • Retainage at ${Math.round(retainageRate*100)}%
                 </div>
+
+                ${lienWaiverSection}
             </body></html>
         `;
 
-        printWindow.document.open();
-        printWindow.document.write(printHTML);
-        printWindow.document.close();
-
+        const iframe = document.createElement('iframe');
+        iframe.style.position = 'fixed';
+        iframe.style.width = '0';
+        iframe.style.height = '0';
+        iframe.style.border = 'none';
+        document.body.appendChild(iframe);
+        const doc = iframe.contentWindow.document;
+        doc.open();
+        doc.write(printHTML);
+        doc.close();
         setTimeout(() => {
-            printWindow.focus();
-            printWindow.print();
-        }, 500);
+            iframe.contentWindow.focus();
+            iframe.contentWindow.print();
+            setTimeout(() => document.body.removeChild(iframe), 700);
+        }, 450);
+
+        logPayAppAudit('SUB_G703_PRINTED', { company: companyName, payAppNumber: appNum });
     }
+
+    function printG702() {
+        const period = currentPayAppPeriod || { periodNumber: 1, periodStart: '2026-07-01', periodEnd: '2026-07-31', status: 'Draft' };
+        const retainageRate = (typeof defaultRetainagePercent !== 'undefined' ? defaultRetainagePercent : 10) / 100;
+        const retainagePct = Math.round(retainageRate * 100);
+
+        // Calculate totals from live data
         let totalOriginal = 0, totalCO = 0, totalCurrent = 0, totalRetainage = 0, totalPrevious = 0;
         let totalWorkThisPeriod = 0, totalMaterials = 0;
 
