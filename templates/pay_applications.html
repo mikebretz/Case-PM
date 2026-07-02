@@ -3241,7 +3241,7 @@ let submissionDeadlineDate = localStorage.getItem('submissionDeadlineDate') || '
             newPayAppNumber: subPayAppNumbers[companyId]
         });
         
-        showCenteredAlert(`Application submitted. ${formatCurrency(totalCommittedThisPeriod)} committed. Pay App # advanced to ${subPayAppNumbers[companyId]}. Lien waiver cleared for next period.`, 'success');
+        showCenteredAlert(`Application submitted. ${formatCurrency(totalCommittedThisPeriod)} committed to Billed to Date. Pay App # advanced to ${subPayAppNumbers[companyId]}. Lien waiver cleared.`, 'success');
         renderPayAppContent();
     }
 
@@ -4704,12 +4704,15 @@ let submissionDeadlineDate = localStorage.getItem('submissionDeadlineDate') || '
     }
 
     function removeLienWaiver(companyId) {
+        if (!companyId) return;
         const currentPeriodNum = currentPayAppPeriod ? currentPayAppPeriod.periodNumber : 1;
         if (subLienWaivers[companyId] && subLienWaivers[companyId][currentPeriodNum]) {
             delete subLienWaivers[companyId][currentPeriodNum];
             localStorage.setItem('subLienWaivers', JSON.stringify(subLienWaivers));
-            renderPayAppContent();
             showCenteredAlert("Lien waiver removed for this period.", 'success');
+            renderPayAppContent(); // Force full re-render so the Upload button reappears and Remove button disappears
+        } else {
+            showCenteredAlert("No lien waiver found for the current period.", 'info');
         }
     }
 
