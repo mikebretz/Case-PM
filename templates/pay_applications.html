@@ -352,7 +352,7 @@
 </dialog>
 
 <script>
-    // ==================== DATA & STATE (v76.11 - Print Waiver Fixed) ====================
+    // ==================== DATA & STATE (v76.12 - Duplicate removeLienWaiver removed + Print Waiver hardened) ====================
     let payApplications = JSON.parse(localStorage.getItem('payApplications')) || [];
     let contractorSOV = JSON.parse(localStorage.getItem('contractorSOV')) || [];
     let subcontractorSOV = JSON.parse(localStorage.getItem('subcontractorSOV')) || {}; // { companyId: [lines] }
@@ -4836,16 +4836,6 @@ let submissionDeadlineDate = localStorage.getItem('submissionDeadlineDate') || '
             showCenteredAlert(`Lien Waiver "${file.name}" uploaded. Submit Application is now active.`, 'success');
         };
         reader.readAsDataURL(file);
-    }
-
-    function removeLienWaiver(companyId) {
-        const currentPeriodNum = currentPayAppPeriod ? currentPayAppPeriod.periodNumber : 1;
-        if (subLienWaivers[companyId] && subLienWaivers[companyId][currentPeriodNum]) {
-            delete subLienWaivers[companyId][currentPeriodNum];
-            localStorage.setItem('subLienWaivers', JSON.stringify(subLienWaivers));
-            renderPayAppContent();
-            showCenteredAlert("Lien waiver removed for this period.", 'success');
-        }
     }
 
     /**
