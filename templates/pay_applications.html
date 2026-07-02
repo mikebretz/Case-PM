@@ -2276,8 +2276,11 @@ let submissionDeadlineDate = localStorage.getItem('submissionDeadlineDate') || '
 
             const infoDiv = document.createElement('div');
             infoDiv.className = 'flex items-center gap-2';
+            const periodStr = currentPayAppPeriod 
+                ? `${formatDateMDY(currentPayAppPeriod.periodStart)} – ${formatDateMDY(currentPayAppPeriod.periodEnd)}` 
+                : '';
             const payAppLabel = (currentStatus === 'Approved') 
-                ? `Pay App #${currentNum} (Current)` 
+                ? `Pay App #${currentNum} (Current)<br><span style="font-size:11px; font-weight:400; opacity:0.9;">${periodStr}</span>` 
                 : `Schedule of Values Creation`;
 
             infoDiv.innerHTML = `
@@ -3388,9 +3391,18 @@ let submissionDeadlineDate = localStorage.getItem('submissionDeadlineDate') || '
             </tr>`;
         });
 
-        // Check for saved lien waiver (even if not yet submitted)
+        // Check for saved lien waiver (even if not yet submitted) - robust lookup
         const currentPeriodNum = period.periodNumber || (currentPayAppPeriod ? currentPayAppPeriod.periodNumber : 1);
-        const waiver = (subLienWaivers[companyId] && subLienWaivers[companyId][currentPeriodNum]) || null;
+        let waiver = (subLienWaivers[companyId] && subLienWaivers[companyId][currentPeriodNum]) || null;
+        
+        // Fallback: if no exact period match, use the most recent saved waiver for this company
+        if (!waiver && subLienWaivers[companyId]) {
+            const periods = Object.keys(subLienWaivers[companyId]).map(Number).sort((a,b) => b - a);
+            if (periods.length > 0) {
+                waiver = subLienWaivers[companyId][periods[0]];
+            }
+        }
+        
         let lienWaiverSection = '';
 
         if (waiver && waiver.dataUrl) {
