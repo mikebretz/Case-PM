@@ -537,28 +537,24 @@ let submissionDeadlineDate = localStorage.getItem('submissionDeadlineDate') || '
             return;
         }
 
-        const iframe = document.createElement('iframe');
-        iframe.style.position = 'fixed';
-        iframe.style.width = '0';
-        iframe.style.height = '0';
-        iframe.style.border = 'none';
-        document.body.appendChild(iframe);
+        const companyName = (typeof getCompanyName === 'function') ? getCompanyName(companyId) : 
+            (companies.find(c => c.id == companyId) ? (companies.find(c => c.id == companyId).name || companies.find(c => c.id == companyId).company_name || 'Subcontractor') : 'Subcontractor');
 
-        const doc = iframe.contentWindow.document;
-        doc.open();
-
-        const isPdf = (waiver.filename || '').toLowerCase().endsWith('.pdf');
-        let contentHTML = '';
-        if (isPdf) {
-            contentHTML = `<embed src="${waiver.dataUrl}" type="application/pdf" style="width:100%; height:950px; border:1px solid #ccc;" />`;
-        } else {
-            contentHTML = `<img src="${waiver.dataUrl}" style="max-width:100%; max-height:900px; border:1px solid #ccc;" alt="Lien Waiver" />`;
+        const printWindow = window.open('', '_blank');
+        if (!printWindow) {
+            showCenteredAlert("Pop-up blocked. Please allow pop-ups for this site and try again.", 'warning');
+            return;
         }
 
-        doc.write(`
+        const isPdf = (waiver.filename || '').toLowerCase().endsWith('.pdf');
+        let contentHTML = isPdf 
+            ? `<embed src="${waiver.dataUrl}" type="application/pdf" style="width:100%; height:950px; border:1px solid #ccc;" />`
+            : `<img src="${waiver.dataUrl}" style="max-width:100%; max-height:900px; border:1px solid #ccc;" alt="Lien Waiver" />`;
+
+        printWindow.document.write(`
             <html>
             <head>
-                <title>Lien Waiver - ${getCompanyName(companyId)}</title>
+                <title>Lien Waiver - ${companyName}</title>
                 <style>
                     @page { size: letter; margin: 0.5in; }
                     body { font-family: Arial, sans-serif; padding: 20px; }
@@ -566,22 +562,20 @@ let submissionDeadlineDate = localStorage.getItem('submissionDeadlineDate') || '
             </head>
             <body>
                 <h2 style="margin-bottom: 5px;">Lien Waiver</h2>
-                <p style="margin: 2px 0;"><strong>Subcontractor:</strong> ${getCompanyName(companyId)}</p>
+                <p style="margin: 2px 0;"><strong>Subcontractor:</strong> ${companyName}</p>
                 <p style="margin: 2px 0 15px 0;"><strong>File:</strong> ${waiver.filename || 'Document'}</p>
                 ${contentHTML}
                 <p style="margin-top: 10px; font-size: 12px; color: #555;">Uploaded: ${new Date(waiver.uploadedDate).toLocaleString()}</p>
             </body>
             </html>
         `);
-        doc.close();
+        printWindow.document.close();
 
         setTimeout(() => {
-            iframe.contentWindow.focus();
-            iframe.contentWindow.print();
-            setTimeout(() => document.body.removeChild(iframe), 800);
+            printWindow.focus();
+            printWindow.print();
         }, 450);
     }
-
     function submitLienWaiver(companyId) {
         if (!companyId) return;
         const waiver = lienWaivers[companyId];
@@ -3457,294 +3451,1560 @@ let submissionDeadlineDate = localStorage.getItem('submissionDeadlineDate') || '
         XLSX.writeFile(wb, `SOV_Approval_History_${companyName.replace(/[^a-z0-9]/gi, '_')}.xlsx`);
     }
 
-    // ==================== PRINT AIA G702 / G703 (FIXED v79 - Reliable window.open method) ====================
-function printCurrentPayApp() {
-    if (currentPayAppTab === 'payapp') {
-        printG702();
-    } else if (currentPayAppTab === 'contractor-sov') {
-        printG703();
-    } else if (currentPayAppTab === 'sub-sov' && selectedSubCompanyId) {
-        printSubcontractorG703(selectedSubCompanyId);
-    } else if (currentPayAppTab === 'previous-sub-payapps') {
-        const subId = document.getElementById('prevSubSelect') ? document.getElementById('prevSubSelect').value : null;
-        const periodIdx = document.getElementById('prevSubPeriodSelect') ? document.getElementById('prevSubPeriodSelect').value : null;
-        if (subId && periodIdx) {
-            printCombinedG703AndLienWaiver(subId, periodIdx);
+    // ==================== PRINT AIA G702 / G703 ====================
+    function printCurrentPayApp() {
+        if (currentPayAppTab === 'payapp') {
+            printG702();
+        } else if (currentPayAppTab === 'contractor-sov') {
+            printG703();
+        } else if (currentPayAppTab === 'sub-sov' && selectedSubCompanyId) {
+            printSubcontractorG703(selectedSubCompanyId);
+        } else if (currentPayAppTab === 'previous-sub-payapps') {
+            // For Previous Sub Pay Apps tab, use the historical combined print if data available
+            const subId = document.getElementById('prevSubSelect') ? document.getElementById('prevSubSelect').value : null;
+            const periodIdx = document.getElementById('prevSubPeriodSelect') ? document.getElementById('prevSubPeriodSelect').value : null;
+            if (subId && periodIdx) {
+                printCombinedG703AndLienWaiver(subId, periodIdx);
+            } else {
+                showCenteredAlert("Please select a subcontractor and period in Previous Sub Pay Apps tab first.", "warning");
+            }
         } else {
-            showCenteredAlert("Please select a subcontractor and period first.", "warning");
+            printG703(); // fallback
         }
-    } else {
-        printG703();
-    }
-}
-
-function printSubcontractorG703(companyId) {
-    const company = companies.find(c => c.id == companyId);
-    const companyName = company ? (company.name || company.company_name || 'Subcontractor') : 'Subcontractor';
-    let subPayApps = JSON.parse(localStorage.getItem('subPayAppNumbers') || '{}');
-    const appNum = subPayApps[companyId] || (currentPayAppPeriod ? currentPayAppPeriod.periodNumber : 1);
-    const period = currentPayAppPeriod || { periodNumber: appNum, periodStart: '2026-07-01', periodEnd: '2026-07-31' };
-    const retainageRate = (typeof defaultRetainagePercent !== 'undefined' ? defaultRetainagePercent : 10) / 100;
-
-    const subLines = subcontractorSOV[companyId] || [];
-
-    let rows = '';
-    let totalScheduled = 0, totalThis = 0, totalMat = 0, totalCompleted = 0, totalRet = 0, totalBalance = 0;
-
-    subLines.forEach((line, idx) => {
-        const scheduled = (line.original_commitment || 0) + (line.change_orders || 0);
-        const workThis = line.work_this_period || 0;
-        const mat = line.materials_stored || 0;
-        const prev = Math.max(0, (line.billed_to_date || 0) - workThis - mat);
-        const completed = prev + workThis + mat;
-        const pct = scheduled > 0 ? Math.round((completed / scheduled) * 100) : 0;
-        const balance = scheduled - completed;
-        const ret = (workThis + mat) * retainageRate;
-
-        totalScheduled += scheduled;
-        totalThis += workThis;
-        totalMat += mat;
-        totalCompleted += completed;
-        totalRet += ret;
-        totalBalance += balance;
-
-        rows += `<tr>
-            <td style="border:1px solid #333;padding:3px 5px;font-family:monospace;font-size:9px;">${idx + 1}</td>
-            <td style="border:1px solid #333;padding:3px 5px;font-size:9px;">${line.description || line.cost_code}</td>
-            <td style="border:1px solid #333;padding:3px 5px;text-align:right;font-family:monospace;font-size:9px;">${formatCurrency(scheduled)}</td>
-            <td style="border:1px solid #333;padding:3px 5px;text-align:right;font-family:monospace;font-size:9px;">${formatCurrency(prev)}</td>
-            <td style="border:1px solid #333;padding:3px 5px;text-align:right;font-family:monospace;font-size:9px;">${formatCurrency(workThis)}</td>
-            <td style="border:1px solid #333;padding:3px 5px;text-align:right;font-family:monospace;font-size:9px;">${formatCurrency(mat)}</td>
-            <td style="border:1px solid #333;padding:3px 5px;text-align:right;font-family:monospace;font-size:9px;">${formatCurrency(completed)}</td>
-            <td style="border:1px solid #333;padding:3px 5px;text-align:center;font-size:9px;">${pct}%</td>
-            <td style="border:1px solid #333;padding:3px 5px;text-align:right;font-family:monospace;font-size:9px;">${formatCurrency(balance)}</td>
-            <td style="border:1px solid #333;padding:3px 5px;text-align:right;font-family:monospace;font-size:9px;">${formatCurrency(ret)}</td>
-        </tr>`;
-    });
-
-    const printHTML = `
-        <html><head><title>G703 — ${companyName} — Pay App #${appNum}</title>
-        <style>
-            @page { size: letter landscape; margin: 0.4in; }
-            body { font-family: Arial, sans-serif; padding: 10px; font-size: 9px; }
-            table { width:100%; border-collapse:collapse; font-size: 8.5px; }
-            th, td { border:1px solid #222; padding:3px 4px; }
-            th { background:#e8e8e8; font-weight:700; font-size: 8px; }
-            .right { text-align:right; font-family: "Courier New", monospace; }
-            .header { border-bottom: 3px solid #000; padding-bottom: 6px; margin-bottom: 8px; }
-        </style>
-        </head><body>
-            <div class="header">
-                <div style="font-size:13px; font-weight:700;">CONTINUATION SHEET — SUBCONTRACTOR</div>
-                <div style="font-size:10px;">AIA DOCUMENT G703 (Filtered for Subcontractor)</div>
-                <div style="margin-top:4px; font-size:9.5px;">
-                    <strong>Subcontractor:</strong> ${companyName} &nbsp;&nbsp;|&nbsp;&nbsp; 
-                    <strong>Pay App / Application No:</strong> ${appNum} &nbsp;&nbsp;|&nbsp;&nbsp; 
-                    <strong>Period:</strong> ${period.periodStart} to ${period.periodEnd}
-                </div>
-                <div style="font-size:9px;">Project: ALDI Lakeland | Printed by Michael Bretz</div>
-            </div>
-
-            <table>
-                <thead>
-                    <tr>
-                        <th style="width:6%;">A<br>ITEM No.</th>
-                        <th style="width:24%;">B<br>DESCRIPTION OF WORK</th>
-                        <th style="width:11%;">C<br>SCHEDULED VALUE</th>
-                        <th style="width:11%;">D<br>WORK COMPLETED<br>FROM PREVIOUS</th>
-                        <th style="width:10%;">E<br>WORK COMPLETED<br>THIS PERIOD</th>
-                        <th style="width:11%;">F<br>MATERIALS PRESENTLY STORED</th>
-                        <th style="width:11%;">G<br>TOTAL COMPLETED<br>AND STORED TO DATE</th>
-                        <th style="width:5%;">H<br>%</th>
-                        <th style="width:8%;">I<br>BALANCE TO FINISH</th>
-                        <th style="width:5%;">J<br>RETAINAGE</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    ${rows}
-                    <tr style="font-weight:700; background:#f3f4f6;">
-                        <td colspan="2" style="text-align:right;">GRAND TOTALS — ${companyName}</td>
-                        <td class="right">${formatCurrency(totalScheduled)}</td>
-                        <td class="right">—</td>
-                        <td class="right">${formatCurrency(totalThis)}</td>
-                        <td class="right">${formatCurrency(totalMat)}</td>
-                        <td class="right">${formatCurrency(totalCompleted)}</td>
-                        <td class="center">${totalScheduled > 0 ? Math.round((totalCompleted / totalScheduled) * 100) : 0}%</td>
-                        <td class="right">${formatCurrency(totalBalance)}</td>
-                        <td class="right">${formatCurrency(totalRet)}</td>
-                    </tr>
-                </tbody>
-            </table>
-
-            <div style="margin-top:12px; font-size:8px; color:#555; text-align:center;">
-                Filtered G703 for ${companyName} • Pay App #${appNum} • Retainage at ${Math.round(retainageRate*100)}%
-            </div>
-        </body></html>
-    `;
-
-    // Use window.open for more reliable printing (avoids blank page issues with hidden iframes in some browsers)
-    const printWindow = window.open('', '_blank');
-    if (!printWindow) {
-        showCenteredAlert("Please allow pop-ups for this site to enable printing.", "warning");
-        return;
-    }
-    printWindow.document.open();
-    printWindow.document.write(printHTML);
-    printWindow.document.close();
-
-    setTimeout(() => {
-        printWindow.focus();
-        printWindow.print();
-    }, 600);
-}
-
-function printLienWaiver(companyId) {
-    if (!companyId) return;
-    const periodNum = currentPayAppPeriod ? currentPayAppPeriod.periodNumber : 1;
-    const waiver = subLienWaivers[companyId] && subLienWaivers[companyId][periodNum];
-
-    if (!waiver || !waiver.dataUrl) {
-        showCenteredAlert("No lien waiver available to print for this period.", 'warning');
-        return;
     }
 
-    const isPdf = (waiver.filename || '').toLowerCase().endsWith('.pdf');
-    let contentHTML = isPdf 
-        ? `<embed src="${waiver.dataUrl}" type="application/pdf" style="width:100%; height:950px; border:1px solid #ccc;" />`
-        : `<img src="${waiver.dataUrl}" style="max-width:100%; max-height:900px; border:1px solid #ccc;" alt="Lien Waiver" />`;
+    // New: Print filtered G703 for the currently focused subcontractor (with their Pay App #)
+    function printSubcontractorG703(companyId) {
+        const company = companies.find(c => c.id == companyId);
+        const companyName = company ? (company.name || company.company_name || 'Subcontractor') : 'Subcontractor';
+        let subPayApps = JSON.parse(localStorage.getItem('subPayAppNumbers') || '{}');
+        const appNum = subPayApps[companyId] || (currentPayAppPeriod ? currentPayAppPeriod.periodNumber : 1);
+        const period = currentPayAppPeriod || { periodNumber: appNum, periodStart: '2026-07-01', periodEnd: '2026-07-31' };
+        const retainageRate = (typeof defaultRetainagePercent !== 'undefined' ? defaultRetainagePercent : 10) / 100;
 
-    const printHTML = `
-        <html>
-        <head>
-            <title>Lien Waiver - ${getCompanyName(companyId)}</title>
+        const subLines = subcontractorSOV[companyId] || [];
+
+        let rows = '';
+        let totalScheduled = 0, totalThis = 0, totalMat = 0, totalCompleted = 0, totalRet = 0, totalBalance = 0;
+
+        subLines.forEach((line, idx) => {
+            const scheduled = (line.original_commitment || 0) + (line.change_orders || 0);
+            const workThis = line.work_this_period || 0;
+            const mat = line.materials_stored || 0;
+            const prev = Math.max(0, (line.billed_to_date || 0) - workThis - mat);
+            const completed = prev + workThis + mat;
+            const pct = scheduled > 0 ? Math.round((completed / scheduled) * 100) : 0;
+            const balance = scheduled - completed;
+            const ret = (workThis + mat) * retainageRate;
+
+            totalScheduled += scheduled;
+            totalThis += workThis;
+            totalMat += mat;
+            totalCompleted += completed;
+            totalRet += ret;
+            totalBalance += balance;
+
+            rows += `<tr>
+                <td style="border:1px solid #333;padding:3px 5px;font-family:monospace;font-size:9px;">${idx + 1}</td>
+                <td style="border:1px solid #333;padding:3px 5px;font-size:9px;">${line.description || line.cost_code}</td>
+                <td style="border:1px solid #333;padding:3px 5px;text-align:right;font-family:monospace;font-size:9px;">${formatCurrency(scheduled)}</td>
+                <td style="border:1px solid #333;padding:3px 5px;text-align:right;font-family:monospace;font-size:9px;">${formatCurrency(prev)}</td>
+                <td style="border:1px solid #333;padding:3px 5px;text-align:right;font-family:monospace;font-size:9px;">${formatCurrency(workThis)}</td>
+                <td style="border:1px solid #333;padding:3px 5px;text-align:right;font-family:monospace;font-size:9px;">${formatCurrency(mat)}</td>
+                <td style="border:1px solid #333;padding:3px 5px;text-align:right;font-family:monospace;font-size:9px;">${formatCurrency(completed)}</td>
+                <td style="border:1px solid #333;padding:3px 5px;text-align:center;font-size:9px;">${pct}%</td>
+                <td style="border:1px solid #333;padding:3px 5px;text-align:right;font-family:monospace;font-size:9px;">${formatCurrency(balance)}</td>
+                <td style="border:1px solid #333;padding:3px 5px;text-align:right;font-family:monospace;font-size:9px;">${formatCurrency(ret)}</td>
+            </tr>`;
+        });
+
+        const printWindow = window.open('', '_blank');
+        if (!printWindow) {
+            showCenteredAlert("Pop-up blocked. Please allow pop-ups for this site to print the G703.", 'warning');
+            return;
+        }
+
+        const printHTML = `
+            <html><head><title>G703 — ${companyName} — Pay App #${appNum}</title>
             <style>
-                @page { size: letter; margin: 0.5in; }
-                body { font-family: Arial, sans-serif; padding: 20px; }
+                @page { size: letter landscape; margin: 0.4in; }
+                body { font-family: Arial, sans-serif; padding: 10px; font-size: 9px; }
+                table { width:100%; border-collapse:collapse; font-size: 8.5px; }
+                th, td { border:1px solid #222; padding:3px 4px; }
+                th { background:#e8e8e8; font-weight:700; font-size: 8px; }
+                .right { text-align:right; font-family: "Courier New", monospace; }
+                .header { border-bottom: 3px solid #000; padding-bottom: 6px; margin-bottom: 8px; }
             </style>
-        </head>
-        <body>
-            <h2 style="margin-bottom: 5px;">Lien Waiver</h2>
-            <p style="margin: 2px 0;"><strong>Subcontractor:</strong> ${getCompanyName(companyId)}</p>
-            <p style="margin: 2px 0 15px 0;"><strong>File:</strong> ${waiver.filename || 'Document'}</p>
-            ${contentHTML}
-            <p style="margin-top: 10px; font-size: 12px; color: #555;">Uploaded: ${new Date(waiver.uploadedDate).toLocaleString()}</p>
-        </body>
-        </html>
-    `;
+            </head><body>
+                <div class="header">
+                    <div style="font-size:13px; font-weight:700;">CONTINUATION SHEET — SUBCONTRACTOR</div>
+                    <div style="font-size:10px;">AIA DOCUMENT G703 (Filtered for Subcontractor)</div>
+                    <div style="margin-top:4px; font-size:9.5px;">
+                        <strong>Subcontractor:</strong> ${companyName} &nbsp;&nbsp;|&nbsp;&nbsp; 
+                        <strong>Pay App / Application No:</strong> ${appNum} &nbsp;&nbsp;|&nbsp;&nbsp; 
+                        <strong>Period:</strong> ${period.periodStart} to ${period.periodEnd}
+                    </div>
+                    <div style="font-size:9px;">Project: ALDI Lakeland | Printed by Michael Bretz</div>
+                </div>
 
-    const printWindow = window.open('', '_blank');
-    if (!printWindow) {
-        showCenteredAlert("Please allow pop-ups for this site to enable printing.", "warning");
-        return;
+                <table>
+                    <thead>
+                        <tr>
+                            <th style="width:6%;">A<br>ITEM No.</th>
+                            <th style="width:24%;">B<br>DESCRIPTION OF WORK</th>
+                            <th style="width:11%;">C<br>SCHEDULED VALUE</th>
+                            <th style="width:11%;">D<br>WORK COMPLETED<br>FROM PREVIOUS</th>
+                            <th style="width:10%;">E<br>WORK COMPLETED<br>THIS PERIOD</th>
+                            <th style="width:11%;">F<br>MATERIALS PRESENTLY STORED</th>
+                            <th style="width:11%;">G<br>TOTAL COMPLETED<br>AND STORED TO DATE</th>
+                            <th style="width:5%;">H<br>%</th>
+                            <th style="width:8%;">I<br>BALANCE TO FINISH</th>
+                            <th style="width:5%;">J<br>RETAINAGE</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        ${rows}
+                        <tr style="font-weight:700; background:#f3f4f6;">
+                            <td colspan="2" style="text-align:right;">GRAND TOTALS — ${companyName}</td>
+                            <td class="right">${formatCurrency(totalScheduled)}</td>
+                            <td class="right">—</td>
+                            <td class="right">${formatCurrency(totalThis)}</td>
+                            <td class="right">${formatCurrency(totalMat)}</td>
+                            <td class="right">${formatCurrency(totalCompleted)}</td>
+                            <td class="center">${totalScheduled > 0 ? Math.round((totalCompleted / totalScheduled) * 100) : 0}%</td>
+                            <td class="right">${formatCurrency(totalBalance)}</td>
+                            <td class="right">${formatCurrency(totalRet)}</td>
+                        </tr>
+                    </tbody>
+                </table>
+
+                <div style="margin-top:12px; font-size:8px; color:#555; text-align:center;">
+                    Filtered G703 for ${companyName} • Pay App #${appNum} • Retainage at ${Math.round(retainageRate*100)}%
+                </div>
+            </body></html>
+        `;
+
+        printWindow.document.open();
+        printWindow.document.write(printHTML);
+        printWindow.document.close();
+
+        setTimeout(() => {
+            printWindow.focus();
+            printWindow.print();
+        }, 500);
     }
-    printWindow.document.open();
-    printWindow.document.write(printHTML);
-    printWindow.document.close();
+        let totalOriginal = 0, totalCO = 0, totalCurrent = 0, totalRetainage = 0, totalPrevious = 0;
+        let totalWorkThisPeriod = 0, totalMaterials = 0;
 
-    setTimeout(() => {
-        printWindow.focus();
-        printWindow.print();
-    }, 500);
-}
+        contractorSOV.forEach(line => {
+            totalOriginal += (line.original || 0);
+            totalCO += (line.co_amount || 0);
+            const billing = payAppBillingLines[line.id] || { workThisPeriod: 0, materialsStored: 0 };
+            const thisPeriod = (billing.workThisPeriod || 0);
+            const mats = (billing.materialsStored || 0);
+            totalWorkThisPeriod += thisPeriod;
+            totalMaterials += mats;
+            totalCurrent += (thisPeriod + mats);
+            totalRetainage += (thisPeriod + mats) * retainageRate;
+        });
 
-function printCombinedG703AndLienWaiver(companyId, periodNumber) {
-    const history = subPayAppHistory[companyId] && subPayAppHistory[companyId][periodNumber];
-    let waiver = subLienWaivers[companyId] && subLienWaivers[companyId][periodNumber];
+        const contractSumToDate = totalOriginal + totalCO;
+        const earnedLessRetainage = totalCurrent - totalRetainage;
+        const currentDue = earnedLessRetainage - totalPrevious;
+        const balanceToFinish = contractSumToDate - totalCurrent;
 
-    if (!waiver && subLienWaivers[companyId]) {
-        const periods = Object.keys(subLienWaivers[companyId]).map(Number).sort((a,b) => b - a);
-        if (periods.length > 0) waiver = subLienWaivers[companyId][periods[0]];
+        // Completed work for retainage split (simplified: use totalCurrent for both a & b in this preview)
+        const retainageCompleted = totalCurrent * retainageRate;
+        const retainageStored = totalMaterials * retainageRate;
+
+        const printHTML = `
+            <html>
+            <head>
+                <title>AIA G702 - Application and Certificate for Payment #${period.periodNumber}</title>
+                <style>
+                    @page { size: letter landscape; margin: 0.35in; }
+                    @media print { body { -webkit-print-color-adjust: exact; print-color-adjust: exact; } }
+                    body { font-family: "Times New Roman", Times, serif; padding: 8px 12px; font-size: 9.5px; line-height: 1.2; color: #000; }
+                    .main-header { border: 2px solid #000; padding: 4px 8px; margin-bottom: 4px; }
+                    .header-top { display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid #000; padding-bottom: 3px; margin-bottom: 4px; }
+                    .header-title { font-size: 13px; font-weight: bold; letter-spacing: 0.5px; }
+                    .header-subtitle { font-size: 10px; font-weight: bold; }
+                    .info-row { display: flex; margin-bottom: 2px; font-size: 9px; }
+                    .info-label { font-weight: bold; width: 95px; flex-shrink: 0; }
+                    .info-value { flex: 1; }
+                    .two-col { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin: 4px 0; }
+                    .box { border: 1px solid #000; padding: 5px 7px; font-size: 8.5px; line-height: 1.25; }
+                    .box-title { font-weight: bold; font-size: 9px; margin-bottom: 3px; border-bottom: 1px solid #000; padding-bottom: 2px; }
+                    table.summary { width: 100%; border-collapse: collapse; font-size: 9px; margin: 4px 0; }
+                    table.summary td, table.summary th { border: 1px solid #000; padding: 3px 5px; vertical-align: top; }
+                    .right { text-align: right; font-family: "Courier New", monospace; }
+                    .bold { font-weight: bold; }
+                    .section-title { font-weight: bold; font-size: 9.5px; margin: 6px 0 3px; }
+                    .cert-text { font-size: 8px; margin: 4px 0; line-height: 1.3; text-align: justify; }
+                    .sig-line { border-top: 1px solid #000; margin-top: 20px; padding-top: 3px; font-size: 8.5px; }
+                    .small { font-size: 7.5px; }
+                    .change-order-table { width: 100%; border-collapse: collapse; font-size: 8.5px; margin-top: 6px; }
+                    .change-order-table td, .change-order-table th { border: 1px solid #000; padding: 2px 4px; text-align: center; }
+                    .footer-note { font-size: 7px; color: #555; margin-top: 8px; text-align: center; }
+                </style>
+            </head>
+            <body>
+                <!-- Top Header -->
+                <div class="main-header">
+                    <div class="header-top">
+                        <div class="header-title">APPLICATION AND CERTIFICATE FOR PAYMENT</div>
+                        <div class="header-subtitle">AIA DOCUMENT G702</div>
+                        <div style="font-size:8px; text-align:right;">PAGE 1 OF 2 PAGES</div>
+                    </div>
+
+                    <!-- TO / PROJECT / APPLICATION INFO -->
+                    <div class="info-row">
+                        <div style="flex:1;">
+                            <span class="info-label">TO GC:</span> <span class="info-value">Case Contracting</span><br>
+                            <span class="info-label">PROJECT:</span> <span class="info-value">Aldi #640</span><br>
+                            <span class="info-label">ADDRESS:</span> <span class="info-value">1296 County Rd 1, Dunedin, FL 34698</span>
+                        </div>
+                        <div style="flex:1; text-align:right;">
+                            <span class="info-label">APPLICATION NO:</span> <span class="info-value">${period.periodNumber}</span><br>
+                            <span class="info-label">PERIOD TO:</span> <span class="info-value">${period.periodEnd || '—'}</span><br>
+                            <span class="info-label">PROJECT NO:</span> <span class="info-value">640 / 366</span><br>
+                            <span class="info-label">CONTRACT DATE:</span> <span class="info-value">2026-03-15</span>
+                        </div>
+                    </div>
+
+                    <div class="info-row" style="margin-top:4px;">
+                        <div style="flex:1;">
+                            <span class="info-label">FROM SUB-CONTRACTOR:</span> <span class="info-value">Case Contracting, 2311 Turkey Creek Rd, Plant City, FL 33566</span>
+                        </div>
+                        <div style="flex:1; text-align:right;">
+                            <span class="info-label">VIA ARCHITECT:</span> <span class="info-value">_______________________________</span>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- CONTRACT FOR -->
+                <div style="margin: 4px 0 6px; font-size:9px;">
+                    <span class="info-label">CONTRACT FOR:</span> Commercial Construction - Tenant Improvement (ALDI Lakeland)
+                </div>
+
+                <!-- Main Two-Column Content -->
+                <div class="two-col">
+                    <!-- LEFT: Contractor's Application + Summary Lines 1-9 -->
+                    <div>
+                        <div class="section-title">CONTRACTOR'S APPLICATION FOR PAYMENT</div>
+                        <div class="cert-text">
+                            The undersigned Contractor certifies that to the best of the Contractor's knowledge, information and belief, the Work covered by this Application for Payment has been completed in accordance with the Contract Documents, that all amounts have been paid by the Contractor for Work for which previous Certificates for Payment were issued and payments received from the Owner, and that current payment shown herein is now due.
+                        </div>
+
+                        <div style="margin:4px 0 2px; font-size:8.5px;">Application is made for payment, as shown below, in connection with the contract. Continuation Sheet, AIA Document G703, is attached.</div>
+
+                        <table class="summary">
+                            <tr><td>1. ORIGINAL CONTRACT SUM</td><td class="right">${formatCurrency(totalOriginal)}</td></tr>
+                            <tr><td>2. Net change by Change Orders</td><td class="right">${formatCurrency(totalCO)}</td></tr>
+                            <tr><td class="bold">3. CONTRACT SUM TO DATE (Line 1 + 2)</td><td class="right bold">${formatCurrency(contractSumToDate)}</td></tr>
+                            <tr><td>4. TOTAL COMPLETED &amp; STORED TO DATE (Column G on G703)</td><td class="right">${formatCurrency(totalCurrent)}</td></tr>
+                            <tr><td>5. RETAINAGE:</td><td class="right"></td></tr>
+                            <tr><td style="padding-left:12px;">a. ${retainagePct}% of Completed Work (Columns D + E on G703)</td><td class="right">${formatCurrency(retainageCompleted)}</td></tr>
+                            <tr><td style="padding-left:12px;">b. ${retainagePct}% of Stored Material (Column F on G703)</td><td class="right">${formatCurrency(retainageStored)}</td></tr>
+                            <tr><td>Total Retainage (Line 5a + 5b)</td><td class="right">${formatCurrency(totalRetainage)}</td></tr>
+                            <tr><td class="bold">6. TOTAL EARNED LESS RETAINAGE (Line 4 less Line 5)</td><td class="right bold">${formatCurrency(earnedLessRetainage)}</td></tr>
+                            <tr><td>7. LESS PREVIOUS CERTIFICATES FOR PAYMENT (Line 6 from prior Certificate)</td><td class="right">${formatCurrency(totalPrevious)}</td></tr>
+                            <tr style="background:#f0f0f0;"><td class="bold" style="font-size:10px;">8. CURRENT PAYMENT DUE</td><td class="right bold" style="font-size:10px;">${formatCurrency(currentDue)}</td></tr>
+                            <tr><td>9. BALANCE TO FINISH, INCLUDING RETAINAGE (Line 3 less Line 6)</td><td class="right">${formatCurrency(balanceToFinish)}</td></tr>
+                        </table>
+                    </div>
+
+                    <!-- RIGHT: Notary + Architect Certificate + Signatures -->
+                    <div>
+                        <div class="box" style="margin-bottom:6px;">
+                            <div class="box-title">NOTARY</div>
+                            State of ________________<br>
+                            County of ______________<br><br>
+                            Subscribed and Sworn to before me this _____ day of ________________, 20___<br><br>
+                            Notary Public: _________________________________<br>
+                            My Commission expires: _________________________
+                        </div>
+
+                        <div class="box">
+                            <div class="box-title">ARCHITECT'S CERTIFICATE FOR PAYMENT</div>
+                            In accordance with the Contract Documents, based on on-site observations and the data comprising this application, the Architect certifies to the Owner that to the best of the Architect's knowledge, information and belief, the Work has progressed as indicated, the quality of the Work is in accordance with the Contract Documents, and the Contractor is entitled to payment of the AMOUNT CERTIFIED.<br><br>
+                            AMOUNT CERTIFIED: $ _______________________________<br><br>
+                            <div class="sig-line">
+                                ARCHITECT: _________________________________<br>
+                                By: ___________________________ Date: ___________
+                            </div>
+                        </div>
+
+                        <div style="margin-top:10px;">
+                            <div class="sig-line">
+                                <strong>CONTRACTOR:</strong><br>
+                                _________________________________<br>
+                                Signature / Date<br>
+                                <span class="small" id="contractorSignatureLine">${(localStorage.getItem('userSignature') || 'Michael Bretz, Project Manager — Case Contracting')}</span>
+                            </div>
+                            <div class="sig-line" style="margin-top:12px;">
+                                <strong>OWNER:</strong><br>
+                                _________________________________<br>
+                                Signature / Date
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Change Order Summary -->
+                <div style="margin-top:10px;">
+                    <div class="section-title">CHANGE ORDER SUMMARY</div>
+                    <table class="change-order-table">
+                        <tr>
+                            <th></th>
+                            <th>ADDITIONS</th>
+                            <th>DEDUCTIONS</th>
+                        </tr>
+                        <tr>
+                            <td style="text-align:left;">Total changes approved in previous months by Owner</td>
+                            <td>${formatCurrency(0)}</td>
+                            <td>${formatCurrency(0)}</td>
+                        </tr>
+                        <tr>
+                            <td style="text-align:left;">Total approved this Month</td>
+                            <td>${formatCurrency(totalCO)}</td>
+                            <td>${formatCurrency(0)}</td>
+                        </tr>
+                        <tr class="bold">
+                            <td style="text-align:left;">TOTALS</td>
+                            <td>${formatCurrency(totalCO)}</td>
+                            <td>${formatCurrency(0)}</td>
+                        </tr>
+                        <tr class="bold">
+                            <td style="text-align:left;">NET CHANGES by Change Order</td>
+                            <td colspan="2">${formatCurrency(totalCO)}</td>
+                        </tr>
+                    </table>
+                </div>
+
+                <div class="footer-note">
+                    This Certificate is not negotiable. The AMOUNT CERTIFIED is payable only to the Contractor named herein. Issuance, payment and acceptance of payment are without prejudice to any rights of the Owner or Contractor under this Contract.
+                </div>
+            </body>
+            </html>
+        `;
+
+        const iframe = document.createElement('iframe');
+        iframe.style.position = 'fixed';
+        iframe.style.width = '0';
+        iframe.style.height = '0';
+        iframe.style.border = 'none';
+        document.body.appendChild(iframe);
+        const doc = iframe.contentWindow.document;
+        doc.open();
+        doc.write(printHTML);
+        doc.close();
+        setTimeout(() => {
+            iframe.contentWindow.focus();
+            iframe.contentWindow.print();
+            setTimeout(() => document.body.removeChild(iframe), 900);
+        }, 600);
+
+        logPayAppAudit('G702_PRINTED', { period: period.periodNumber });
     }
 
-    const companyName = getCompanyName(companyId);
+    function printG703() {
+        const period = currentPayAppPeriod || { periodNumber: 1, periodStart: '2026-07-01', periodEnd: '2026-07-31' };
+        const retainageRate = (typeof defaultRetainagePercent !== 'undefined' ? defaultRetainagePercent : 10) / 100;
 
-    if (!history) {
-        showCenteredAlert("No historical data found for this period.", "warning");
-        return;
-    }
+        let rows = '';
+        let totalScheduled = 0, totalPrev = 0, totalThis = 0, totalMat = 0, totalCompleted = 0, totalRet = 0, totalBalance = 0, totalCOs = 0;
 
-    let tableRows = '';
-    (history.lines || []).forEach((line, idx) => {
-        tableRows += `
-            <tr>
+        contractorSOV.forEach((line, idx) => {
+            const billing = payAppBillingLines[line.id] || { workThisPeriod: 0, materialsStored: 0 };
+            const scheduled = (line.original || 0) + (line.co_amount || 0);
+            const workThis = billing.workThisPeriod || 0;
+            // Approximate "From Previous" as cumulative billed minus this period (simple model)
+            const prevWork = Math.max(0, (line.billed_to_date || 0) - workThis);
+            const mat = billing.materialsStored || 0;
+            const completedToDate = prevWork + workThis + mat;
+            const pct = scheduled > 0 ? Math.round((completedToDate / scheduled) * 100) : 0;
+            const balance = scheduled - completedToDate;
+            const ret = (workThis + mat) * retainageRate;
+
+            totalScheduled += scheduled;
+            totalPrev += prevWork;
+            totalThis += workThis;
+            totalMat += mat;
+            totalCompleted += completedToDate;
+            totalRet += ret;
+            totalBalance += balance;
+
+            // For Change Orders section in print
+            totalCOs = (totalCOs || 0) + (line.co_amount || 0);
+
+            rows += `<tr>
                 <td style="border:1px solid #333;padding:4px 6px;font-family:monospace;font-size:9px;">${idx + 1}</td>
                 <td style="border:1px solid #333;padding:4px 6px;font-size:9px;">${line.description || line.cost_code}</td>
-                <td style="border:1px solid #333;padding:4px 6px;text-align:right;font-family:monospace;font-size:9px;">${formatCurrency(line.total_this_period || 0)}</td>
-            </tr>
-        `;
-    });
+                <td style="border:1px solid #333;padding:4px 6px;text-align:right;font-family:monospace;font-size:9px;">${formatCurrency(scheduled)}</td>
+                <td style="border:1px solid #333;padding:4px 6px;text-align:right;font-family:monospace;font-size:9px;">${formatCurrency(prevWork)}</td>
+                <td style="border:1px solid #333;padding:4px 6px;text-align:right;font-family:monospace;font-size:9px;">${formatCurrency(workThis)}</td>
+                <td style="border:1px solid #333;padding:4px 6px;text-align:right;font-family:monospace;font-size:9px;">${formatCurrency(mat)}</td>
+                <td style="border:1px solid #333;padding:4px 6px;text-align:right;font-family:monospace;font-size:9px;">${formatCurrency(completedToDate)}</td>
+                <td style="border:1px solid #333;padding:4px 6px;text-align:center;font-size:9px;">${pct}%</td>
+                <td style="border:1px solid #333;padding:4px 6px;text-align:right;font-family:monospace;font-size:9px;">${formatCurrency(balance)}</td>
+                <td style="border:1px solid #333;padding:4px 6px;text-align:right;font-family:monospace;font-size:9px;">${formatCurrency(ret)}</td>
+            </tr>`;
+        });
 
-    let lienWaiverSection = '';
-    if (waiver && waiver.dataUrl) {
-        const isPdf = (waiver.filename || '').toLowerCase().endsWith('.pdf');
-        let documentEmbed = isPdf 
-            ? `<embed src="${waiver.dataUrl}" type="application/pdf" style="width:100%; height:900px; border:1px solid #ccc;" />`
-            : `<img src="${waiver.dataUrl}" style="max-width:100%; max-height:800px; display:block; margin:0 auto; border:1px solid #ccc;" alt="Lien Waiver"/>`;
-
-        lienWaiverSection = `
-            <div style="page-break-before: always; margin-top: 40px; border-top: 2px solid #000; padding-top: 20px;">
-                <h3 style="font-size: 14px; font-weight: bold; margin-bottom: 10px;">LIEN WAIVER ATTACHMENT</h3>
-                <p style="font-size: 10px; margin-bottom: 5px;"><strong>Subcontractor:</strong> ${companyName}</p>
-                <p style="font-size: 10px; margin-bottom: 15px;"><strong>File:</strong> ${waiver.filename}</p>
-                <div style="border: 1px solid #ccc; padding: 10px; background: #fff;">
-                    ${documentEmbed}
+        const printHTML = `
+            <html><head><title>AIA G703 Continuation Sheet - Period ${period.periodNumber}</title>
+            <style>
+                @page { size: letter landscape; margin: 0.4in; }
+                @media print { body { -webkit-print-color-adjust: exact; print-color-adjust: exact; } body::before, body::after { display: none !important; } }
+                body { font-family: Arial, sans-serif; padding: 12px 16px; font-size: 9px; }
+                table { width:100%; border-collapse:collapse; font-size: 8.5px; }
+                th, td { border:1px solid #222; padding:3px 4px; vertical-align: top; }
+                th { background:#e8e8e8; font-weight:700; font-size: 8px; text-align:center; }
+                .right { text-align:right; font-family: "Courier New", monospace; }
+                .center { text-align:center; }
+                .section-header { font-weight:700; background:#f3f4f6; }
+            </style>
+            </head><body>
+                <div style="display:flex; justify-content:space-between; align-items:flex-start; margin-bottom:8px; border-bottom:2px solid #222; padding-bottom:6px;">
+                    <div>
+                        <div style="font-size:14px; font-weight:700;">CONTINUATION SHEET</div>
+                        <div style="font-size:10px;">AIA DOCUMENT G703 &nbsp;&nbsp; PAGE 2 OF 2 PAGES</div>
+                    </div>
+                    <div style="text-align:right; font-size:9px;">
+                        <div><strong>AIA Document G702</strong> APPLICATION AND CERTIFICATION OF PAYMENT containing</div>
+                        <div>Contractor's signed certification is attached.</div>
+                        <div style="margin-top:4px;">APPLICATION NO: <strong>${period.periodNumber}</strong> &nbsp;&nbsp; APPLICATION DATE: ${new Date().toLocaleDateString()} &nbsp;&nbsp; PERIOD TO: ${period.periodEnd || ''}</div>
+                        <div>PROJECT NO: 640 / 366 &nbsp;&nbsp; NAME OF PROJECT: ALDI Lakeland</div>
+                    </div>
                 </div>
-            </div>
+
+                <div style="margin-bottom:6px; font-size:8.5px;">In Tabulations below, amounts are stated to the nearest dollar. Use Column I where variable retainage for line items may apply.</div>
+
+                <table>
+                    <thead>
+                        <tr>
+                            <th style="width:6%;">A<br>ITEM No.</th>
+                            <th style="width:22%;">B<br>DESCRIPTION OF WORK</th>
+                            <th style="width:11%;">C<br>SCHEDULED VALUE</th>
+                            <th style="width:11%;">D<br>WORK COMPLETED<br>FROM PREVIOUS APPLICATION<br>(D+E)</th>
+                            <th style="width:10%;">E<br>WORK COMPLETED<br>THIS PERIOD</th>
+                            <th style="width:11%;">F<br>MATERIALS PRESENTLY STORED<br>(NOT IN D or E)</th>
+                            <th style="width:11%;">G<br>TOTAL COMPLETED AND STORED<br>TO DATE (D+E+F)</th>
+                            <th style="width:5%;">H<br>%<br>(G/C)</th>
+                            <th style="width:8%;">I<br>BALANCE TO FINISH<br>(C-G)</th>
+                            <th style="width:5%;">J<br>RETAINAGE<br>IF VARIABLE RATE</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        ${rows}
+                        <tr class="section-header">
+                            <td colspan="2" style="text-align:right; font-weight:700;">Total Contract Work</td>
+                            <td class="right">${formatCurrency(totalScheduled)}</td>
+                            <td class="right">${formatCurrency(totalPrev)}</td>
+                            <td class="right">${formatCurrency(totalThis)}</td>
+                            <td class="right">${formatCurrency(totalMat)}</td>
+                            <td class="right">${formatCurrency(totalCompleted)}</td>
+                            <td class="center">${totalScheduled > 0 ? Math.round((totalCompleted / totalScheduled) * 100) : 0}%</td>
+                            <td class="right">${formatCurrency(totalBalance)}</td>
+                            <td class="right">${formatCurrency(totalRet)}</td>
+                        </tr>
+                        <tr style="font-weight:700; background:#f3f4f6;">
+                            <td colspan="2" style="text-align:right;">Change Orders</td>
+                            <td class="right">${formatCurrency(totalCOs)}</td>
+                            <td class="right">—</td>
+                            <td class="right">—</td>
+                            <td class="right">—</td>
+                            <td class="right">${formatCurrency(totalCOs)}</td>
+                            <td class="center">—</td>
+                            <td class="right">—</td>
+                            <td class="right">${formatCurrency(totalCOs * retainageRate)}</td>
+                        </tr>
+                        <tr>
+                            <td colspan="10" style="height:4px;"></td>
+                        </tr>
+                        <tr style="font-weight:700; background:#f8f9fa;">
+                            <td colspan="2" style="text-align:right;">GRAND TOTALS</td>
+                            <td class="right">${formatCurrency(totalScheduled)}</td>
+                            <td class="right">${formatCurrency(totalPrev)}</td>
+                            <td class="right">${formatCurrency(totalThis)}</td>
+                            <td class="right">${formatCurrency(totalMat)}</td>
+                            <td class="right">${formatCurrency(totalCompleted)}</td>
+                            <td class="center">${totalScheduled > 0 ? Math.round((totalCompleted / totalScheduled) * 100) : 0}%</td>
+                            <td class="right">${formatCurrency(totalBalance)}</td>
+                            <td class="right">${formatCurrency(totalRet)}</td>
+                        </tr>
+                    </tbody>
+                </table>
+
+                <div style="margin-top:10px; font-size:8px; color:#555; text-align:center;">
+                    This is a system-generated preview matching AIA G703 layout. Retainage calculated at ${Math.round(retainageRate*100)}% from project settings.
+                </div>
+            </body></html>
         `;
-    } else {
-        lienWaiverSection = `<p style="margin-top: 30px; color: #888; font-size: 10px;">(No Lien Waiver was uploaded for this period)</p>`;
+
+        const iframe = document.createElement('iframe');
+        iframe.style.position = 'fixed';
+        iframe.style.width = '0';
+        iframe.style.height = '0';
+        iframe.style.border = 'none';
+        document.body.appendChild(iframe);
+        const doc = iframe.contentWindow.document;
+        doc.open();
+        doc.write(printHTML);
+        doc.close();
+        setTimeout(() => {
+            iframe.contentWindow.focus();
+            iframe.contentWindow.print();
+            setTimeout(() => document.body.removeChild(iframe), 800);
+        }, 500);
+
+        logPayAppAudit('G703_PRINTED', { period: period.periodNumber });
     }
 
-    const printHTML = `
-        <html><head><title>Pay App #${periodNumber} - G703 + Lien Waiver</title>
-        <style>
-            @page { size: letter landscape; margin: 0.4in; }
-            body { font-family: Arial, sans-serif; padding: 12px 16px; font-size: 9px; }
-            table { width:100%; border-collapse:collapse; font-size: 8.5px; }
-            th, td { border:1px solid #222; padding:3px 4px; }
-            th { background:#e8e8e8; font-weight:700; font-size: 8px; text-align:center; }
-            .right { text-align:right; font-family: "Courier New", monospace; }
-        </style>
-        </head><body>
-            <div style="display:flex; justify-content:space-between; align-items:flex-start; margin-bottom:8px; border-bottom:2px solid #222; padding-bottom:6px;">
-                <div>
-                    <div style="font-size:14px; font-weight:700;">CONTINUATION SHEET (Historical)</div>
-                    <div style="font-size:10px;">AIA DOCUMENT G703 &nbsp;&nbsp; Period ${periodNumber} &nbsp;&nbsp; ${companyName}</div>
+    // ==================== PREVIOUS SUB PAY APPS TAB (NEW) ====================
+    function renderPreviousSubPayAppsTab(cardsContainer, thead, tbody, workflowBar) {
+        cardsContainer.innerHTML = `
+            <div class="bg-zinc-800 border border-zinc-700 rounded-md p-5">
+                <div class="flex items-center justify-between mb-4">
+                    <div>
+                        <div class="text-lg font-semibold">Previous Subcontractor Pay Applications</div>
+                        <div class="text-xs text-zinc-400">Select a subcontractor and a previous period to view historical billing (View Only).</div>
+                    </div>
+                    <div id="prevSubPrintContainer" class="hidden">
+                        <button onclick="printSelectedSubHistoricalG703()" class="px-5 py-2.5 bg-sky-600 hover:bg-sky-500 rounded-md text-sm font-medium flex items-center gap-2">
+                            <i class="fa-solid fa-print"></i> <span>Print G703</span>
+                        </button>
+                    </div>
+                </div>
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div>
+                        <label class="block text-xs text-zinc-400 mb-1">Subcontractor</label>
+                        <select id="prevSubSelect" onchange="loadPreviousSubPeriods(this.value)" class="w-full bg-zinc-900 border border-zinc-600 rounded-md px-4 py-2.5 text-sm text-white">
+                            <option value="">-- Select Subcontractor --</option>
+                        </select>
+                    </div>
+                    <div>
+                        <label class="block text-xs text-zinc-400 mb-1">Previous Pay App Period</label>
+                        <select id="prevSubPeriodSelect" onchange="loadPreviousSubPayAppData()" class="w-full bg-zinc-900 border border-zinc-600 rounded-md px-4 py-2.5 text-sm text-white" disabled>
+                            <option value="">-- Select Period --</option>
+                        </select>
+                    </div>
                 </div>
             </div>
-            
-            <table>
-                <thead>
-                    <tr>
-                        <th style="width:6%;">#</th>
-                        <th style="width:70%;">Description of Work</th>
-                        <th style="width:24%;">Amount Billed This Period</th>
+            <div id="prevSubHistoryContainer" class="mt-4"></div>
+        `;
+
+        // Populate Subcontractor dropdown
+        const subSelect = document.getElementById('prevSubSelect');
+        if (subSelect) {
+            companies.forEach(c => {
+                if (c.type === 'Subcontractor' || c.company_type === 'Subcontractor') {
+                    const opt = document.createElement('option');
+                    opt.value = c.id;
+                    opt.textContent = c.name || c.company_name || 'Unnamed Sub';
+                    subSelect.appendChild(opt);
+                }
+            });
+        }
+        workflowBar.innerHTML = `<div class="text-xs text-zinc-500 px-4 py-2">This tab is for historical audit only. No edits are allowed.</div>`;
+    }
+
+    function loadPreviousSubPeriods(companyId) {
+        const periodSelect = document.getElementById('prevSubPeriodSelect');
+        const container = document.getElementById('prevSubHistoryContainer');
+        if (!periodSelect || !container) return;
+
+        periodSelect.innerHTML = '<option value="">-- Select Period --</option>';
+        periodSelect.disabled = true;
+        container.innerHTML = '';
+
+        if (!companyId) return;
+
+        // In a real app, this would filter payAppHistory or a sub-specific history array.
+        // For now, we simulate by checking if any history exists for this sub.
+        // We will use the global payAppHistory for demo purposes if it has relevant data.
+        if (typeof payAppHistory !== 'undefined' && payAppHistory.length > 0) {
+            periodSelect.disabled = false;
+            payAppHistory.forEach((hist, index) => {
+                // Simple filter: if history item has sub data or just show all for demo
+                const opt = document.createElement('option');
+                opt.value = index;
+                opt.textContent = `Period ${hist.periodNumber || (index+1)} — ${hist.periodStart || ''} to ${hist.periodEnd || ''}`;
+                periodSelect.appendChild(opt);
+            });
+        } else {
+            // Seed a demo option if no history
+            periodSelect.disabled = false;
+            const opt = document.createElement('option');
+            opt.value = "demo";
+            opt.textContent = "Period 1 (Demo) — View Only Mode";
+            periodSelect.appendChild(opt);
+        }
+    }
+
+    function loadPreviousSubPayAppData() {
+        const subId = document.getElementById('prevSubSelect').value;
+        const periodIndex = document.getElementById('prevSubPeriodSelect').value;
+        const container = document.getElementById('prevSubHistoryContainer');
+        if (!container || !subId || !periodIndex) return;
+
+        container.innerHTML = `
+            <div class="bg-zinc-800 border border-zinc-700 rounded-md p-4">
+                <div class="text-emerald-400 font-semibold mb-2">Historical View (Read Only)</div>
+                <div class="text-sm text-zinc-400 mb-3">Displaying data for the selected previous pay application period. This is a snapshot and cannot be edited.</div>
+                <table class="w-full text-sm border border-zinc-700">
+                    <thead class="bg-zinc-700">
+                        <tr>
+                            <th class="p-2 text-left">Cost Code</th>
+                            <th class="p-2 text-left">Description</th>
+                            <th class="p-2 text-right">Work This Period</th>
+                            <th class="p-2 text-right">% Complete</th>
+                            <th class="p-2 text-right">CO Billed This Period</th>
+                        </tr>
+                    </thead>
+                    <tbody class="divide-y divide-zinc-700 text-xs">
+                        <tr><td class="p-2">03-3000</td><td class="p-2">Concrete Foundations</td><td class="p-2 text-right">$12,500</td><td class="p-2 text-right">65%</td><td class="p-2 text-right">$2,000</td></tr>
+                        <tr><td class="p-2">05-1200</td><td class="p-2">Structural Steel</td><td class="p-2 text-right">$8,750</td><td class="p-2 text-right">80%</td><td class="p-2 text-right">$0</td></tr>
+                    </tbody>
+                </table>
+                <div class="mt-4 flex justify-end">
+                    <button onclick="showSOVLineAudit('demo', 'sub', ${subId})" class="px-4 py-1.5 text-xs bg-zinc-700 hover:bg-zinc-600 rounded">View Approval History</button>
+                </div>
+            </div>
+        `;
+    }
+
+    // ==================== AUDIT LOG ====================
+    function showPayAppAuditLog() {
+        payAppAuditLog = JSON.parse(localStorage.getItem('payAppAuditLog')) || [];
+        const modal = document.createElement('dialog');
+        modal.className = 'modal rounded-md p-0 text-white w-full max-w-6xl';
+        modal.style.backgroundColor = '#18181b';
+        modal.style.border = '1px solid #3f3f46';
+
+        let html = `
+            <div class="p-6">
+                <div class="flex justify-between items-center mb-4">
+                    <h3 class="text-xl font-semibold">Pay Application Audit Log</h3>
+                    <button onclick="this.closest('dialog').close(); this.closest('dialog').remove()" class="text-zinc-400 hover:text-white">
+                        <i class="fa-solid fa-times text-xl"></i>
+                    </button>
+                </div>
+                <div class="max-h-[520px] overflow-auto border border-zinc-700 rounded-md">
+                    <table class="w-full text-sm">
+                        <thead class="bg-zinc-800 sticky top-0">
+                            <tr>
+                                <th class="px-4 py-2 text-left font-medium text-zinc-400 w-40">Timestamp</th>
+                                <th class="px-4 py-2 text-left font-medium text-zinc-400 w-36">Action</th>
+                                <th class="px-4 py-2 text-left font-medium text-zinc-400">Details</th>
+                                <th class="px-4 py-2 text-left font-medium text-zinc-400 w-28">User</th>
+                            </tr>
+                        </thead>
+                        <tbody class="divide-y divide-zinc-800">
+        `;
+
+        if (payAppAuditLog.length === 0) {
+            html += `<tr><td colspan="4" class="px-4 py-8 text-center text-zinc-500">No audit events yet.</td></tr>`;
+        } else {
+            payAppAuditLog.slice(0, 150).forEach(entry => {
+                let actionBadge = `<span class="px-2 py-0.5 text-xs rounded-full bg-zinc-700 text-zinc-400">${entry.action}</span>`;
+                let detailText = JSON.stringify(entry.details || {});
+
+                if (entry.action === 'BILLING_UPDATED') {
+                    actionBadge = `<span class="px-2 py-0.5 text-xs rounded-full bg-amber-900/60 text-amber-400">Billing Updated</span>`;
+                    detailText = `${entry.details.cost_code} — Work: ${formatCurrency(entry.details.workThisPeriod || 0)} | Materials: ${formatCurrency(entry.details.materialsStored || 0)}`;
+                } else if (entry.action === 'APPLICATION_SUBMITTED') {
+                    actionBadge = `<span class="px-2 py-0.5 text-xs rounded-full bg-sky-900/60 text-sky-400">Submitted</span>`;
+                    detailText = `Period ${entry.details.periodNumber} submitted for review`;
+                } else if (entry.action === 'NEW_PERIOD_CREATED') {
+                    actionBadge = `<span class="px-2 py-0.5 text-xs rounded-full bg-emerald-900/60 text-emerald-400">New Period</span>`;
+                    detailText = `Period ${entry.details.periodNumber} (${entry.details.dates})`;
+                } else if (entry.action === 'SUB_SOV_SUBMITTED') {
+                    actionBadge = `<span class="px-2 py-0.5 text-xs rounded-full bg-purple-900/60 text-purple-400">Sub SOV Submitted</span>`;
+                    detailText = `${entry.details.company} — ${entry.details.lines} lines`;
+                }
+
+                const time = new Date(entry.timestamp).toLocaleString([], { month:'short', day:'numeric', hour:'2-digit', minute:'2-digit' });
+                html += `
+                    <tr class="hover:bg-zinc-800/60">
+                        <td class="px-4 py-2 text-xs text-zinc-400 font-mono">${time}</td>
+                        <td class="px-4 py-2">${actionBadge}</td>
+                        <td class="px-4 py-2 text-sm text-zinc-300">${detailText}</td>
+                        <td class="px-4 py-2 text-sm text-zinc-400">${entry.user}</td>
                     </tr>
-                </thead>
-                <tbody>
-                    ${tableRows}
-                </tbody>
-            </table>
+                `;
+            });
+        }
 
-            ${lienWaiverSection}
-        </body></html>
-    `;
+        html += `</tbody></table></div>
+            <div class="mt-4 flex justify-end">
+                <button onclick="this.closest('dialog').close(); this.closest('dialog').remove()" class="px-5 py-2 bg-emerald-600 hover:bg-emerald-500 rounded-md text-sm">Close</button>
+            </div>
+        </div>`;
 
-    const printWindow = window.open('', '_blank');
-    if (!printWindow) {
-        showCenteredAlert("Please allow pop-ups for this site to enable printing.", "warning");
-        return;
+        modal.innerHTML = html;
+        document.body.appendChild(modal);
+        modal.showModal();
     }
-    printWindow.document.open();
-    printWindow.document.write(printHTML);
-    printWindow.document.close();
-    
-    setTimeout(() => {
-        printWindow.focus();
-        printWindow.print();
-    }, 600);
-}
 
+    // ==================== PIXEL-PERFECT / FORM-STRUCTURED EXCEL EXPORT + CONDITIONAL FORMATTING ====================
+    function exportPayApplications() {
+        if (typeof XLSX === 'undefined') {
+            showCenteredAlert("Excel library (XLSX) not loaded. Please hard refresh the page (Ctrl+Shift+R).", 'warning');
+            return;
+        }
+
+        const period = currentPayAppPeriod || { periodNumber: 7, periodStart: '2026-07-01', periodEnd: '2026-07-31' };
+        const retainageRate = (typeof defaultRetainagePercent !== 'undefined' ? defaultRetainagePercent : 10) / 100;
+
+        if (currentPayAppTab === 'payapp') {
+            exportG702Styled(period, retainageRate);
+        } else if (currentPayAppTab === 'contractor-sov') {
+            exportG703Styled(period, retainageRate);
+        } else if (currentPayAppTab === 'sub-sov' && selectedSubCompanyId) {
+            exportSubcontractorG703Styled(period, retainageRate, selectedSubCompanyId);
+        } else {
+            // Fallback: export raw contractor SOV
+            const data = contractorSOV.map((line, i) => ({
+                "#": i+1, "Cost Code": line.cost_code, "Description": line.description,
+                "Original": line.original || 0, "CO Amount": line.co_amount || 0,
+                "Billed to Date": line.billed_to_date || 0, "% Complete": line.percent_complete || 0
+            }));
+            const ws = XLSX.utils.json_to_sheet(data);
+            const wb = XLSX.utils.book_new();
+            XLSX.utils.book_append_sheet(wb, ws, "Contractor SOV");
+            XLSX.writeFile(wb, `PayApp_Raw_SOV_${period.periodNumber}.xlsx`);
+        }
+    }
+
+    // --- G702 Styled Export (form-mirroring with sections, merged cells, conditional formatting) ---
+    function exportG702Styled(period, retainageRate) {
+        const wb = XLSX.utils.book_new();
+        const ws = XLSX.utils.aoa_to_sheet([]);
+
+        // Calculate live values
+        let totalOriginal = 0, totalCO = 0, totalCurrent = 0, totalRetainage = 0, totalPrevious = 0;
+        let totalWorkThis = 0, totalMaterials = 0;
+
+        contractorSOV.forEach(line => {
+            totalOriginal += (line.original || 0);
+            totalCO += (line.co_amount || 0);
+            const billing = payAppBillingLines[line.id] || { workThisPeriod: 0, materialsStored: 0 };
+            const thisPeriod = (billing.workThisPeriod || 0) + (billing.materialsStored || 0);
+            totalWorkThis += (billing.workThisPeriod || 0);
+            totalMaterials += (billing.materialsStored || 0);
+            totalCurrent += thisPeriod;
+            totalRetainage += thisPeriod * retainageRate;
+        });
+
+        const contractSumToDate = totalOriginal + totalCO;
+        const earnedLessRetainage = totalCurrent - totalRetainage;
+        const currentDue = earnedLessRetainage - totalPrevious;
+        const balanceToFinish = contractSumToDate - totalCurrent;
+        const retainageCompleted = totalCurrent * retainageRate;
+        const retainageStored = totalMaterials * retainageRate;
+
+        // Header block (merged)
+        XLSX.utils.sheet_add_aoa(ws, [
+            ["APPLICATION AND CERTIFICATE FOR PAYMENT", "", "", "", "AIA DOCUMENT G702", "", "", "", "PAGE 1 OF 2"],
+            ["ALDI Lakeland — Period " + period.periodNumber, "", "", "", "", "", "", "", ""],
+            ["", "", "", "", "", "", "", "", ""],
+            ["TO GC: Case Contracting", "", "", "", "APPLICATION NO: " + period.periodNumber, "", "", "", ""],
+            ["PROJECT: Aldi #640, 1296 County Rd 1, Dunedin, FL 34698", "", "", "", "PERIOD TO: " + (period.periodEnd || ""), "", "", "", ""],
+            ["FROM: Case Contracting, 2311 Turkey Creek Rd, Plant City, FL 33566", "", "", "", "PROJECT NO: 640 / 366", "", "", "", ""],
+        ], { origin: "A1" });
+
+        // Merge header rows
+        ws.mergeCells('A1:I1'); ws.mergeCells('A2:I2');
+
+        // Style header
+        ws['A1'].s = { font: { bold: true, size: 14 }, alignment: { horizontal: 'center' } };
+        ws['E1'].s = { font: { bold: true, size: 11 }, alignment: { horizontal: 'right' } };
+
+        // Lines 1-9 Summary Section
+        XLSX.utils.sheet_add_aoa(ws, [
+            ["", "", "", "", "", "", "", "", ""],
+            ["CONTRACTOR'S APPLICATION FOR PAYMENT", "", "", "", "", "", "", "", ""],
+            ["", "", "", "", "", "", "", "", ""],
+            ["1. ORIGINAL CONTRACT SUM", "", "", "", formatCurrency(totalOriginal), "", "", "", ""],
+            ["2. Net change by Change Orders", "", "", "", formatCurrency(totalCO), "", "", "", ""],
+            ["3. CONTRACT SUM TO DATE (Line 1 + 2)", "", "", "", formatCurrency(contractSumToDate), "", "", "", ""],
+            ["4. TOTAL COMPLETED & STORED TO DATE", "", "", "", formatCurrency(totalCurrent), "", "", "", ""],
+            ["5. RETAINAGE", "", "", "", "", "", "", "", ""],
+            ["   a. " + Math.round(retainageRate*100) + "% of Completed Work", "", "", "", formatCurrency(retainageCompleted), "", "", "", ""],
+            ["   b. " + Math.round(retainageRate*100) + "% of Stored Material", "", "", "", formatCurrency(retainageStored), "", "", "", ""],
+            ["Total Retainage (Line 5a + 5b)", "", "", "", formatCurrency(totalRetainage), "", "", "", ""],
+            ["6. TOTAL EARNED LESS RETAINAGE (Line 4 less Line 5)", "", "", "", formatCurrency(earnedLessRetainage), "", "", "", ""],
+            ["7. LESS PREVIOUS CERTIFICATES FOR PAYMENT", "", "", "", formatCurrency(totalPrevious), "", "", "", ""],
+            ["8. CURRENT PAYMENT DUE", "", "", "", formatCurrency(currentDue), "", "", "", ""],
+            ["9. BALANCE TO FINISH, INCLUDING RETAINAGE", "", "", "", formatCurrency(balanceToFinish), "", "", "", ""],
+        ], { origin: "A8" });
+
+        // Bold key rows and currency format
+        for (let r = 11; r <= 22; r++) {
+            const cell = ws['E' + r];
+            if (cell) {
+                cell.s = { font: { bold: (r === 13 || r === 19 || r === 21) }, numFmt: '$#,##0.00' };
+            }
+        }
+
+        // Conditional formatting example: highlight if current due is high
+        if (currentDue > 200000) {
+            ws['E21'].s = { fill: { fgColor: { rgb: "FEF3C7" } }, font: { bold: true, color: { rgb: "92400E" } } };
+        }
+
+        // Change Order Summary section
+        XLSX.utils.sheet_add_aoa(ws, [
+            ["", "", "", "", "", "", "", "", ""],
+            ["CHANGE ORDER SUMMARY", "", "", "", "", "", "", "", ""],
+            ["", "ADDITIONS", "DEDUCTIONS", "", "", "", "", "", ""],
+            ["Total changes approved in previous months by Owner", formatCurrency(0), formatCurrency(0), "", "", "", "", "", ""],
+            ["Total approved this Month", formatCurrency(totalCO), formatCurrency(0), "", "", "", "", "", ""],
+            ["TOTALS", formatCurrency(totalCO), formatCurrency(0), "", "", "", "", "", ""],
+            ["NET CHANGES by Change Order", formatCurrency(totalCO), "", "", "", "", "", "", ""],
+        ], { origin: "A24" });
+
+        // Set column widths to mimic form
+        ws['!cols'] = [
+            { wch: 45 }, { wch: 18 }, { wch: 18 }, { wch: 12 }, { wch: 18 }, 
+            { wch: 12 }, { wch: 12 }, { wch: 12 }, { wch: 12 }
+        ];
+
+        // Add a second sheet with raw line item detail for reference
+        const detailData = contractorSOV.map((line, idx) => {
+            const billing = payAppBillingLines[line.id] || {};
+            const curr = (line.original || 0) + (line.co_amount || 0);
+            return {
+                "#": idx + 1,
+                "Cost Code": line.cost_code,
+                "Description": line.description,
+                "Original": line.original || 0,
+                "Change Orders": line.co_amount || 0,
+                "Current Contract": curr,
+                "Work This Period": billing.workThisPeriod || 0,
+                "Materials Stored": billing.materialsStored || 0,
+                "CO Work This Period": billing.coWorkThisPeriod || 0,
+                "Billed to Date": line.billed_to_date || 0
+            };
+        });
+        const ws2 = XLSX.utils.json_to_sheet(detailData);
+        XLSX.utils.book_append_sheet(wb, ws2, "Line Item Detail");
+
+        XLSX.writeFile(wb, `G702_PayApp_Period${period.periodNumber}_ALDI_Lakeland.xlsx`);
+        showCenteredAlert("G702-style Excel exported with sections, merged headers, currency formatting, and conditional highlighting.", 'success');
+    }
+
+    // --- G703 Styled Export (full continuation sheet with A-J columns + CO section + conditional formatting) ---
+    function exportG703Styled(period, retainageRate) {
+        const wb = XLSX.utils.book_new();
+        const ws = XLSX.utils.aoa_to_sheet([]);
+
+        // Header
+        XLSX.utils.sheet_add_aoa(ws, [
+            ["CONTINUATION SHEET", "", "", "", "", "", "", "", "", ""],
+            ["AIA DOCUMENT G703 — PAGE 2 OF 2", "", "", "", "APPLICATION NO: " + period.periodNumber, "", "", "", "", ""],
+            ["Project: ALDI Lakeland | Period: " + period.periodStart + " to " + period.periodEnd, "", "", "", "", "", "", "", "", ""],
+            ["", "", "", "", "", "", "", "", "", ""],
+            ["ITEM No.", "DESCRIPTION OF WORK", "SCHEDULED VALUE", "WORK COMPLETED FROM PREVIOUS", "WORK COMPLETED THIS PERIOD", "MATERIALS PRESENTLY STORED", "TOTAL COMPLETED & STORED TO DATE", "%", "BALANCE TO FINISH", "RETAINAGE"],
+        ], { origin: "A1" });
+
+        ws.mergeCells('A1:J1');
+        ws['A1'].s = { font: { bold: true, size: 14 }, alignment: { horizontal: 'center' } };
+        ws['A5'].s = { font: { bold: true, size: 9 }, fill: { fgColor: { rgb: "E5E7EB" } } };
+
+        let row = 6;
+        let totalScheduled = 0, totalPrev = 0, totalThis = 0, totalMat = 0, totalCompleted = 0, totalRet = 0, totalBalance = 0, totalCOs = 0;
+
+        contractorSOV.forEach((line, idx) => {
+            const billing = payAppBillingLines[line.id] || { workThisPeriod: 0, materialsStored: 0 };
+            const scheduled = (line.original || 0) + (line.co_amount || 0);
+            const workThis = billing.workThisPeriod || 0;
+            const prevWork = Math.max(0, (line.billed_to_date || 0) - workThis);
+            const mat = billing.materialsStored || 0;
+            const completedToDate = prevWork + workThis + mat;
+            const pct = scheduled > 0 ? Math.round((completedToDate / scheduled) * 100) : 0;
+            const balance = scheduled - completedToDate;
+            const ret = (workThis + mat) * retainageRate;
+
+            totalScheduled += scheduled;
+            totalPrev += prevWork;
+            totalThis += workThis;
+            totalMat += mat;
+            totalCompleted += completedToDate;
+            totalRet += ret;
+            totalBalance += balance;
+            totalCOs += (line.co_amount || 0);
+
+            const rowData = [
+                idx + 1,
+                line.description || line.cost_code,
+                scheduled,
+                prevWork,
+                workThis,
+                mat,
+                completedToDate,
+                pct + "%",
+                balance,
+                ret
+            ];
+            XLSX.utils.sheet_add_aoa(ws, [rowData], { origin: "A" + row });
+
+            // Currency formatting + conditional (over-billed = red background)
+            const isOver = completedToDate > scheduled + 0.01;
+            for (let c = 3; c <= 10; c++) {
+                const colLetter = String.fromCharCode(64 + c);
+                const cell = ws[colLetter + row];
+                if (cell) {
+                    cell.s = { numFmt: '$#,##0.00' };
+                    if (isOver && (c === 7 || c === 9)) {
+                        cell.s.fill = { fgColor: { rgb: "FEE2E2" } };
+                        cell.s.font = { color: { rgb: "991B1B" }, bold: true };
+                    }
+                }
+            }
+            row++;
+        });
+
+        // Totals + Change Orders section
+        XLSX.utils.sheet_add_aoa(ws, [
+            ["", "Total Contract Work", totalScheduled, totalPrev, totalThis, totalMat, totalCompleted, (totalScheduled > 0 ? Math.round((totalCompleted/totalScheduled)*100) : 0) + "%", totalBalance, totalRet],
+            ["", "Change Orders", totalCOs, "—", "—", "—", totalCOs, "—", "—", totalCOs * retainageRate],
+            ["", "GRAND TOTALS", totalScheduled, totalPrev, totalThis, totalMat, totalCompleted, (totalScheduled > 0 ? Math.round((totalCompleted/totalScheduled)*100) : 0) + "%", totalBalance, totalRet],
+        ], { origin: "A" + row });
+
+        // Style totals row
+        const totalsRow = row + 2;
+        ws['B' + totalsRow].s = { font: { bold: true }, fill: { fgColor: { rgb: "D1FAE5" } } };
+
+        ws['!cols'] = [
+            { wch: 8 }, { wch: 42 }, { wch: 16 }, { wch: 18 }, { wch: 18 }, 
+            { wch: 18 }, { wch: 20 }, { wch: 8 }, { wch: 16 }, { wch: 12 }
+        ];
+
+        XLSX.utils.book_append_sheet(wb, ws, "G703 Continuation Sheet");
+        XLSX.writeFile(wb, `G703_Continuation_Period${period.periodNumber}_ALDI_Lakeland.xlsx`);
+        showCenteredAlert("G703-style Excel exported with full A-J columns, totals, Change Orders section, currency formatting, and red conditional highlighting for over-billed lines.", 'success');
+    }
+
+    // --- Subcontractor-specific G703 Export (filtered + Pay App # in header) ---
+    function exportSubcontractorG703Styled(period, retainageRate, companyId) {
+        const company = companies.find(c => c.id == companyId);
+        const companyName = company ? (company.name || company.company_name || 'Subcontractor') : 'Selected Subcontractor';
+        let subPayApps = JSON.parse(localStorage.getItem('subPayAppNumbers') || '{}');
+        const appNum = subPayApps[companyId] || period.periodNumber;
+
+        const subLines = subcontractorSOV[companyId] || [];
+        if (subLines.length === 0) {
+            showCenteredAlert("No lines for this subcontractor to export.");
+            return;
+        }
+
+        const wb = XLSX.utils.book_new();
+        const ws = XLSX.utils.aoa_to_sheet([]);
+
+        XLSX.utils.sheet_add_aoa(ws, [
+            ["CONTINUATION SHEET — SUBCONTRACTOR", "", "", "", "", "", "", "", "", ""],
+            ["AIA DOCUMENT G703 (Filtered)", "", "", "", "Pay App / Application No: " + appNum, "", "", "", "", ""],
+            ["Subcontractor: " + companyName, "", "", "", "Period: " + period.periodStart + " to " + period.periodEnd, "", "", "", "", ""],
+            ["Project: ALDI Lakeland", "", "", "", "", "", "", "", "", ""],
+            ["", "", "", "", "", "", "", "", "", ""],
+            ["ITEM No.", "DESCRIPTION OF WORK", "SCHEDULED VALUE", "WORK COMPLETED FROM PREVIOUS", "WORK COMPLETED THIS PERIOD", "MATERIALS PRESENTLY STORED", "TOTAL COMPLETED & STORED TO DATE", "%", "BALANCE TO FINISH", "RETAINAGE"],
+        ], { origin: "A1" });
+
+        ws.mergeCells('A1:J1');
+        ws['A1'].s = { font: { bold: true, size: 13 }, alignment: { horizontal: 'center' } };
+        ws['E2'].s = { font: { bold: true, color: { rgb: "059669" } } };
+
+        let row = 7;
+        let totalScheduled = 0, totalThis = 0, totalMat = 0, totalCompleted = 0, totalRet = 0, totalBalance = 0;
+
+        subLines.forEach((line, idx) => {
+            const scheduled = (line.original_commitment || 0) + (line.change_orders || 0);
+            const workThis = line.work_this_period || 0;
+            const mat = line.materials_stored || 0;
+            const prev = Math.max(0, (line.billed_to_date || 0) - workThis - mat);
+            const completed = prev + workThis + mat;
+            const pct = scheduled > 0 ? Math.round((completed / scheduled) * 100) : 0;
+            const balance = scheduled - completed;
+            const ret = (workThis + mat) * retainageRate;
+
+            totalScheduled += scheduled;
+            totalThis += workThis;
+            totalMat += mat;
+            totalCompleted += completed;
+            totalRet += ret;
+            totalBalance += balance;
+
+            const isOver = completed > scheduled + 0.01;
+            XLSX.utils.sheet_add_aoa(ws, [[
+                idx + 1, line.description || line.cost_code, scheduled, prev, workThis, mat, completed, pct + "%", balance, ret
+            ]], { origin: "A" + row });
+
+            for (let c = 3; c <= 10; c++) {
+                const col = String.fromCharCode(64 + c);
+                const cell = ws[col + row];
+                if (cell) {
+                    cell.s = { numFmt: '$#,##0.00' };
+                    if (isOver) {
+                        cell.s.fill = { fgColor: { rgb: "FEE2E2" } };
+                        cell.s.font = { color: { rgb: "991B1B" } };
+                    }
+                }
+            }
+            row++;
+        });
+
+        // Grand total row with green highlight
+        XLSX.utils.sheet_add_aoa(ws, [
+            ["", "GRAND TOTALS — " + companyName, totalScheduled, totalThis, totalMat, totalCompleted, (totalScheduled > 0 ? Math.round(totalCompleted/totalScheduled*100) : 0) + "%", totalBalance, totalRet]
+        ], { origin: "A" + row });
+
+        ws['B' + row].s = { font: { bold: true }, fill: { fgColor: { rgb: "D1FAE5" } } };
+
+        ws['!cols'] = [{ wch: 8 }, { wch: 40 }, { wch: 15 }, { wch: 16 }, { wch: 16 }, { wch: 16 }, { wch: 18 }, { wch: 8 }, { wch: 14 }, { wch: 12 }];
+
+        XLSX.utils.book_append_sheet(wb, ws, companyName.substring(0, 20) + " G703");
+        XLSX.writeFile(wb, `G703_${companyName.replace(/[^a-z0-9]/gi,'_')}_PayApp${appNum}.xlsx`);
+        showCenteredAlert("Filtered G703 for " + companyName + " exported with their Pay App #" + appNum + " in the header, conditional formatting, and proper totals.", 'success');
+    }
+
+    function importPayApplications() {
+        alert("Import functionality for Pay Apps coming in next iteration. Use Seed from Budget for now.");
+    }
+
+    function showAddPayAppModal() {
+        const modal = document.getElementById('addPayAppModal');
+        if (modal) modal.showModal();
+    }
+
+    function showSettingsModal() {
+        const modal = document.getElementById('settingsModal');
+        const select = document.getElementById('retainagePercentSelect');
+        if (select) {
+            select.value = String(defaultRetainagePercent);
+        }
+        
+        // Load new deadline setting
+        const deadlineToggle = document.getElementById('requireSubmissionDeadlineToggle');
+        const deadlineContainer = document.getElementById('submissionDeadlineContainer');
+        const deadlineInput = document.getElementById('submissionDeadlineDate');
+        
+        if (deadlineToggle) {
+            deadlineToggle.checked = requireSubmissionDeadline;
+            if (deadlineContainer) {
+                deadlineContainer.classList.toggle('hidden', !requireSubmissionDeadline);
+            }
+        }
+        if (deadlineInput && submissionDeadlineDate) {
+            deadlineInput.value = submissionDeadlineDate;
+        }
+        
+        modal.showModal();
+    }
+    
+    // Helper to show/hide date input when checkbox changes
+    function toggleDeadlineDateInput(checkbox) {
+        const container = document.getElementById('submissionDeadlineContainer');
+        if (container) {
+            container.classList.toggle('hidden', !checkbox.checked);
+        }
+    }
+
+    function toggleDeadlineDayInput(checkbox) {
+        const container = document.getElementById('submissionDeadlineContainer');
+        if (container) {
+            container.classList.toggle('hidden', !checkbox.checked);
+        }
+    }
+
+    function savePayAppSettings() {
+        const select = document.getElementById('retainagePercentSelect');
+        if (select) {
+            defaultRetainagePercent = parseFloat(select.value) || 10;
+            localStorage.setItem('payAppRetainagePercent', defaultRetainagePercent);
+        }
+
+        // Lien Waiver Requirement Toggle
+        const lienToggle = document.getElementById('requireLienWaiverToggle');
+        if (lienToggle) {
+            requireLienWaiverOnSubPayApp = lienToggle.checked;
+            localStorage.setItem('requireLienWaiverOnSubPayApp', requireLienWaiverOnSubPayApp);
+        }
+
+        // NEW: Zero-Dollar Lien Waiver Toggle
+        const zeroDollarToggle = document.getElementById('requireZeroDollarLienWaiverToggle');
+        if (zeroDollarToggle) {
+            requireZeroDollarLienWaiver = zeroDollarToggle.checked;
+            localStorage.setItem('requireZeroDollarLienWaiver', requireZeroDollarLienWaiver);
+        }
+
+        // Submission Deadline (Day of Month)
+        const deadlineToggle = document.getElementById('requireSubmissionDeadlineToggle');
+        const deadlineDaySelect = document.getElementById('submissionDeadlineDay');
+        if (deadlineToggle) {
+            requireSubmissionDeadline = deadlineToggle.checked;
+            localStorage.setItem('requireSubmissionDeadline', requireSubmissionDeadline);
+            if (deadlineDaySelect && deadlineDaySelect.value) {
+                localStorage.setItem('submissionDeadlineDay', deadlineDaySelect.value);
+            }
+        }
+
+        document.getElementById('settingsModal').close();
+        const dayVal = localStorage.getItem('submissionDeadlineDay') || '';
+        showCenteredAlert(`Pay Application settings saved. Retainage set to ${defaultRetainagePercent}%. Lien Waiver requirement: ${requireLienWaiverOnSubPayApp ? 'ON' : 'OFF'}. Deadline: ${dayVal ? dayVal + 'th' : 'Not set'}.`, 'success');
+        if (currentPayAppTab === 'payapp' || currentPayAppTab === 'sub-sov') {
+            renderPayAppContent();
+        }
+    }
+
+    /**
+     * NEW: Lien Waiver Compliance Engine (v74.0)
+     * This function checks if a subcontractor is compliant with lien waiver rules
+     * for the current or a specific pay period. It handles the new "Zero Dollar"
+     * requirement setting and integrates with the Previous Pay Apps history.
+     */
+    function checkLienWaiverCompliance(companyId, periodId = null) {
+        if (!companyId) return { compliant: false, reason: 'No Company ID provided.' };
+
+        const waivers = lienWaivers[companyId] || {};
+        const status = getSubSOVStatus(companyId);
+        const isZeroRequired = requireZeroDollarLienWaiver;
+
+        // If the SOV is not yet Approved, compliance is not yet required.
+        if (status !== 'Approved' && status !== 'Approved — Waiting on Lien Waiver') {
+            return { compliant: true, reason: 'SOV not yet in Approved state.' };
+        }
+
+        // Check if a waiver record exists for the specific period or the latest one.
+        const waiverRecord = periodId ? waivers[periodId] : Object.values(waivers).pop();
+
+        if (!waiverRecord || !waiverRecord.submitted) {
+            if (isZeroRequired) {
+                // Even if billing is $0, a waiver is required.
+                return { compliant: false, reason: 'Zero-Dollar Lien Waiver is REQUIRED by project settings but has not been submitted.' };
+            }
+            // Standard check: if they billed money, they need a waiver.
+            // (This logic can be expanded later to check actual billed amount > 0)
+            return { compliant: false, reason: 'Lien Waiver has not been submitted for this period.' };
+        }
+
+        return { compliant: true, reason: 'Lien Waiver on file and submitted.' };
+    }
+
+    // End of Lien Waiver Compliance Engine
+
+    function showUserProfileModal() {
+        const modal = document.getElementById('userProfileModal');
+        modal.showModal();
+        
+        // Load existing signature
+        setTimeout(() => {
+            const input = document.getElementById('userSignatureInput');
+            if (input) {
+                input.value = localStorage.getItem('userSignature') || 'Michael Bretz, Project Manager — Case Contracting';
+            }
+        }, 50);
+    }
+
+    function saveUserSignature() {
+        const input = document.getElementById('userSignatureInput');
+        if (input && input.value.trim()) {
+            localStorage.setItem('userSignature', input.value.trim());
+            showCenteredAlert("Signature saved. It will appear on future G702 prints.", 'success');
+        }
+    }
+
+    function showPayAppVersionHistory() {
+        alert("Version history for Pay Applications will be available after first publish (similar to Budget).");
+    }
+
+    // ==================== CENTERED ALERT (matching budget.html style) ====================
+    function showCenteredAlert(message, type = 'info') {
+        const dialog = document.createElement('dialog');
+        dialog.className = 'modal rounded-md p-6 text-white';
+        dialog.style.backgroundColor = '#18181b';
+        dialog.style.border = '1px solid #3f3f46';
+        dialog.style.width = 'fit-content';
+        dialog.style.maxWidth = '90vw';
+        dialog.style.zIndex = '999999';
+
+        let icon = '';
+        if (type === 'success') icon = '<i class="fa-solid fa-check-circle text-emerald-400 mr-2"></i>';
+        else if (type === 'warning') icon = '<i class="fa-solid fa-exclamation-triangle text-amber-400 mr-2"></i>';
+        else icon = '<i class="fa-solid fa-info-circle text-sky-400 mr-2"></i>';
+
+        dialog.innerHTML = `
+            <div class="flex items-center text-base mb-5 whitespace-nowrap">
+                ${icon}
+                <span>${message}</span>
+            </div>
+            <div class="flex justify-end">
+                <button class="px-6 py-2 bg-emerald-600 hover:bg-emerald-500 rounded-md text-sm font-medium">OK</button>
+            </div>
+        `;
+        document.body.appendChild(dialog);
+        dialog.showModal();
+        dialog.querySelector('button').onclick = () => {
+            dialog.close();
+            dialog.remove();
+        };
+    }
+
+    function showPayAppLineHistory(sovLineId) {
+        const modal = document.createElement('dialog');
+        modal.className = 'modal rounded-md w-full max-w-md p-0 text-white';
+        modal.style.backgroundColor = '#18181b';
+        modal.style.border = '1px solid #3f3f46';
+
+        const relevant = payAppAuditLog.filter(e => e.details && e.details.sovLineId === sovLineId).slice(0, 10);
+        
+        let logs = relevant.length > 0 ? relevant.map(e => {
+            const work = e.details.workThisPeriod || 0;
+            const mats = e.details.materialsStored || 0;
+            const co = e.details.coWorkThisPeriod || 0;
+            const who = e.details.changedBy || e.user || "Michael Bretz";
+            let detailLine = `Work: ${formatCurrency(work)}`;
+            if (mats > 0) detailLine += ` | Mats: ${formatCurrency(mats)}`;
+            if (co > 0) detailLine += ` | CO Work: ${formatCurrency(co)}`;
+            
+            return `
+                <div class="text-xs border-b border-zinc-700 py-2 px-1">
+                    <div class="font-mono text-emerald-400">${new Date(e.timestamp).toLocaleString([], {month:'short', day:'numeric', hour:'2-digit', minute:'2-digit'})}</div>
+                    <div class="text-zinc-300">${detailLine}</div>
+                    <div class="text-amber-400 text-[10px] mt-0.5 font-medium">Changed by ${who}</div>
+                </div>
+            `;
+        }).join('') : '<div class="text-zinc-400 py-4 text-center">No billing history for this line yet.<br>Changes will appear here after you save billing amounts.</div>';
+
+        modal.innerHTML = `
+            <div class="p-6">
+                <h3 class="text-lg font-semibold mb-3 flex items-center gap-2">
+                    <i class="fa-solid fa-history text-sky-400"></i> 
+                    <span>Billing History — Line Item Audit</span>
+                </h3>
+                <div class="max-h-[320px] overflow-auto border border-zinc-700 rounded p-2 bg-zinc-950">${logs}</div>
+                <div class="mt-4 flex justify-between items-center text-xs text-zinc-500">
+                    <div>Who entered each billing amount is shown above.</div>
+                    <button onclick="this.closest('dialog').close()" class="px-5 py-1.5 bg-zinc-700 hover:bg-zinc-600 rounded-md text-sm text-white">Close</button>
+                </div>
+            </div>
+        `;
+        document.body.appendChild(modal);
+        modal.showModal();
+    }
+
+    function showSOVLineAudit(lineId, type = 'contractor', companyId = null) {
+        const modal = document.createElement('dialog');
+        modal.className = 'modal rounded-md w-full max-w-lg p-0 text-white';
+        modal.style.backgroundColor = '#18181b';
+        modal.style.border = '1px solid #3f3f46';
+
+        let targetCostCode = '';
+        let lineDesc = '';
+
+        if (type === 'contractor') {
+            const line = contractorSOV.find(l => l.id === lineId);
+            if (line) { targetCostCode = line.cost_code; lineDesc = line.description; }
+        } else if (type === 'sub' && companyId) {
+            const lines = subcontractorSOV[companyId] || [];
+            const line = lines.find(l => l.id === lineId);
+            if (line) { targetCostCode = line.cost_code; lineDesc = line.description; }
+        }
+
+        const relevant = payAppAuditLog.filter(e => {
+            if (!e.details) return false;
+            const d = e.details;
+            return (d.cost_code && d.cost_code === targetCostCode) || 
+                   (d.sovLineId && d.sovLineId === lineId) ||
+                   (typeof d === 'string' && d.includes(targetCostCode));
+        }).slice(0, 12);
+
+        let logsHtml = relevant.length > 0 ? relevant.map(e => {
+            const time = new Date(e.timestamp).toLocaleString([], {month:'short', day:'numeric', hour:'2-digit', minute:'2-digit'});
+            let detail = e.action;
+            if (e.details && e.details.oldOriginal !== undefined) {
+                detail += ` — Original: ${formatCurrency(e.details.oldOriginal)} → ${formatCurrency(e.details.newOriginal || e.details.original)}`;
+            } else if (e.details && e.details.workThisPeriod !== undefined) {
+                detail += ` — This Period: ${formatCurrency(e.details.workThisPeriod)}`;
+            }
+            const user = e.user || 'System';
+            return `<div class="flex justify-between text-xs border-b border-zinc-700 py-1.5 px-1">
+                <div class="font-mono text-emerald-400 w-28 flex-shrink-0">${time}</div>
+                <div class="flex-1 text-zinc-300">${detail} <span class="text-[10px] text-zinc-500">by ${user}</span></div>
+            </div>`;
+        }).join('') : `<div class="text-zinc-400 py-6 text-center">No audit events for ${targetCostCode || 'this line'} yet.<br>Changes will appear here after edits or billing.</div>`;
+
+        modal.innerHTML = `
+            <div class="p-6">
+                <div class="flex justify-between items-center mb-3">
+                    <div>
+                        <h3 class="text-lg font-semibold">Line Audit Log</h3>
+                        <div class="text-xs text-emerald-400 font-mono">${targetCostCode} — ${lineDesc || ''}</div>
+                    </div>
+                    <button onclick="this.closest('dialog').close(); this.closest('dialog').remove()" class="text-zinc-400 hover:text-white">
+                        <i class="fa-solid fa-times text-xl"></i>
+                    </button>
+                </div>
+                <div class="max-h-[320px] overflow-auto border border-zinc-700 rounded-md p-2 bg-zinc-900/50">${logsHtml}</div>
+                <div class="mt-4 text-right">
+                    <button onclick="this.closest('dialog').close(); this.closest('dialog').remove()" class="px-5 py-2 bg-zinc-700 hover:bg-zinc-600 rounded-md text-sm">Close</button>
+                </div>
+            </div>
+        `;
+        document.body.appendChild(modal);
+        modal.showModal();
+    }
+
+    // (Duplicate submitSubSOVApplication removed to prevent redefinition errors)
+
+    function handleLienWaiverUpload(companyId, inputElement) {
+        const file = inputElement.files[0];
+        if (!file) return;
+
+        const reader = new FileReader();
+        reader.onload = function(e) {
+            const dataUrl = e.target.result; // Base64 Data URL
+            
+            if (!subLienWaivers[companyId]) subLienWaivers[companyId] = {};
+            
+            const currentPeriodNum = currentPayAppPeriod ? currentPayAppPeriod.periodNumber : 1;
+            
+            subLienWaivers[companyId][currentPeriodNum] = {
+                filename: file.name,
+                dataUrl: dataUrl,
+                uploadedDate: new Date().toISOString()
+            };
+            
+            localStorage.setItem('subLienWaivers', JSON.stringify(subLienWaivers));
+            
+            // Refresh UI to show filename and unlock Submit button
+            renderPayAppContent();
+            showCenteredAlert(`Lien Waiver "${file.name}" uploaded. Submit Application is now active.`, 'success');
+        };
+        reader.readAsDataURL(file);
+    }
+
+    /**
+     * Prints the G703 for a specific sub pay app period, including the actual lien waiver image if it exists.
+     * Uses a controlled print method.
+     */
+    function printSubPayAppWithLienWaiver(companyId, periodNumber) {
+        const history = subPayAppHistory[companyId] && subPayAppHistory[companyId][periodNumber];
+        const waiver = subLienWaivers[companyId] && subLienWaivers[companyId][periodNumber];
+        const companyName = getCompanyName(companyId);
+
+        if (!history) {
+            showCenteredAlert("Historical data not found for this period.", "warning");
+            return;
+        }
+
+        let linesHtml = history.lines.map(l => `
+            <tr>
+                <td style="border:1px solid #333;padding:4px 6px;font-family:monospace;font-size:9px;">${l.cost_code}</td>
+                <td style="border:1px solid #333;padding:4px 6px;font-size:9px;">${l.description}</td>
+                <td style="border:1px solid #333;padding:4px 6px;text-align:right;font-family:monospace;font-size:9px;">${formatCurrency(l.total_this_period)}</td>
+            </tr>
+        `).join('');
+
+        let waiverHtml = '';
+        if (waiver && waiver.dataUrl) {
+            waiverHtml = `
+                <div style="margin-top: 30px; page-break-before: always;">
+                    <h3 style="font-size: 14px; border-bottom: 2px solid #222; padding-bottom: 5px;">ATTACHED: LIEN WAIVER</h3>
+                    <p style="font-size: 10px; color: #555;">File: ${waiver.filename} | Uploaded: ${new Date(waiver.uploadedDate).toLocaleDateString()}</p>
+                    <img src="${waiver.dataUrl}" style="max-width: 100%; border: 1px solid #ccc; margin-top: 10px;" />
+                </div>
+            `;
+        } else {
+            waiverHtml = `<p style="margin-top: 30px; color: #888; font-size: 10px;">(No Lien Waiver was uploaded for this specific pay app period)</p>`;
+        }
+
+        const printContent = `
+            <html><head><title>Sub Pay App #${periodNumber} - ${companyName}</title>
+            <style>
+                @page { size: letter landscape; margin: 0.5in; }
+                body { font-family: Arial, sans-serif; padding: 20px; font-size: 10px; }
+                table { width:100%; border-collapse:collapse; font-size: 9px; }
+                th, td { border:1px solid #222; padding:4px 6px; }
+                th { background:#f0f0f0; }
+            </style>
+            </head><body>
+                <h2>CONTINUATION SHEET (G703) - HISTORICAL</h2>
+                <p><strong>Subcontractor:</strong> ${companyName} | <strong>Period:</strong> #${periodNumber} | <strong>Submitted:</strong> ${new Date(history.submittedDate).toLocaleDateString()}</p>
+                
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Cost Code</th>
+                            <th>Description</th>
+                            <th>Billed This Period</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        ${linesHtml}
+                        <tr style="font-weight:bold; background:#f8f9fa;">
+                            <td colspan="2" style="text-align:right;">TOTAL BILLED THIS PERIOD</td>
+                            <td style="text-align:right;">${formatCurrency(history.totalBilledThisPeriod)}</td>
+                        </tr>
+                    </tbody>
+                </table>
+                
+                ${waiverHtml}
+            </body></html>
+        `;
+
+        const printWindow = window.open('', '_blank');
+        printWindow.document.write(printContent);
+        printWindow.document.close();
+        setTimeout(() => {
+            printWindow.focus();
+            printWindow.print();
+        }, 500);
+    }
+
+    // ==================== INITIALIZATION ====================
+    function initializePayApplications() {
+        seedDemoDataIfNeeded();
+
+        // Restore last selected sub if any
+        const lastSub = localStorage.getItem('lastSelectedSubSOV');
+        if (lastSub) selectedSubCompanyId = parseInt(lastSub);
+
+        // Initial render
+        renderPayAppContent();
+
+        // Keyboard shortcuts
+        document.addEventListener('keydown', function(e) {
+            if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 's') {
+                e.preventDefault();
+                // Auto-save is already happening via localStorage in functions
+                const dot = document.getElementById('unsavedDot');
+                if (dot) dot.classList.add('hidden');
+                hasUnsavedChanges = false;
+            }
+        });
+
+        console.log('%c[Case PM] Pay Applications page initialized (clean v3 - aesthetics + workflow fixed) [PATCH 2026-07-01]', 'color:#10b981');
+    }
+
+    // ==================== COMBINED PRINT LOGIC (G703 + LIEN WAIVER) ====================
+    // This function generates a SINGLE print document containing both the G703 table
+    // and the actual uploaded lien waiver image (if available as a Data URL).
+    // It avoids opening multiple browser tabs/windows.
+    function printCombinedG703AndLienWaiver(companyId, periodNumber) {
+        const history = subPayAppHistory[companyId] ? subPayAppHistory[companyId][periodNumber] : null;
+        let waiver = subLienWaivers[companyId] ? subLienWaivers[companyId][periodNumber] : null;
+
+        // Robust fallback: if no exact period match, use the most recent waiver for this sub
+        if (!waiver && subLienWaivers[companyId]) {
+            const periods = Object.keys(subLienWaivers[companyId]).map(Number).sort((a,b) => b - a);
+            if (periods.length > 0) {
+                waiver = subLienWaivers[companyId][periods[0]];
+            }
+        }
+        const companyName = getCompanyName(companyId);
+
+        if (!history) {
+            showCenteredAlert("No historical data found for this period.", "warning");
+            return;
+        }
+
+        let tableRows = '';
+        (history.lines || []).forEach((line, idx) => {
+            tableRows += `
+                <tr>
+                    <td style="border:1px solid #333;padding:4px 6px;font-family:monospace;font-size:9px;">${idx + 1}</td>
+                    <td style="border:1px solid #333;padding:4px 6px;font-size:9px;">${line.description || line.cost_code}</td>
+                    <td style="border:1px solid #333;padding:4px 6px;text-align:right;font-family:monospace;font-size:9px;">${formatCurrency(line.total_this_period || 0)}</td>
+                </tr>
+            `;
+        });
+
+        let lienWaiverSection = '';
+        if (waiver && waiver.dataUrl) {
+            const isPdf = waiver.filename && waiver.filename.toLowerCase().endsWith('.pdf');
+            let documentEmbed = '';
+            if (isPdf) {
+                // For PDF, use embed tag so the actual PDF content renders in print preview
+                documentEmbed = `<embed src="${waiver.dataUrl}" type="application/pdf" style="width:100%; height:900px; border:1px solid #ccc;" />`;
+            } else {
+                // For images (PNG/JPG), use img tag
+                documentEmbed = `<img src="${waiver.dataUrl}" style="max-width: 100%; max-height: 800px; display: block; margin: 0 auto; border:1px solid #ccc;" alt="Lien Waiver Document"/>`;
+            }
+
+            lienWaiverSection = `
+                <div style="page-break-before: always; margin-top: 40px; border-top: 2px solid #000; padding-top: 20px;">
+                    <h3 style="font-size: 14px; font-weight: bold; margin-bottom: 10px;">LIEN WAIVER ATTACHMENT</h3>
+                    <p style="font-size: 10px; margin-bottom: 5px;"><strong>Subcontractor:</strong> ${companyName}</p>
+                    <p style="font-size: 10px; margin-bottom: 5px;"><strong>File:</strong> ${waiver.filename}</p>
+                    <p style="font-size: 10px; margin-bottom: 15px;"><strong>Uploaded:</strong> ${new Date(waiver.uploadedDate).toLocaleString()}</p>
+                    
+                    <div style="border: 1px solid #ccc; padding: 10px; background: #fff;">
+                        ${documentEmbed}
+                    </div>
+                    <p style="font-size: 8px; color: #555; margin-top: 10px;">This is a system-generated attachment of the lien waiver submitted for this pay application period.</p>
+                </div>
+            `;
+        } else {
+            lienWaiverSection = `
+                <div style="page-break-before: always; margin-top: 40px; border-top: 2px solid #000; padding-top: 20px;">
+                    <h3 style="font-size: 14px; font-weight: bold; margin-bottom: 10px;">LIEN WAIVER ATTACHMENT</h3>
+                    <p style="font-size: 10px; color: #c00;">No lien waiver was uploaded for this specific pay application period.</p>
+                </div>
+            `;
+        }
+
+        const printHTML = `
+            <html><head><title>Pay App #${periodNumber} - G703 + Lien Waiver</title>
+            <style>
+                @page { size: letter landscape; margin: 0.4in; }
+                body { font-family: Arial, sans-serif; padding: 12px 16px; font-size: 9px; }
+                table { width:100%; border-collapse:collapse; font-size: 8.5px; }
+                th, td { border:1px solid #222; padding:3px 4px; vertical-align: top; }
+                th { background:#e8e8e8; font-weight:700; font-size: 8px; text-align:center; }
+                .right { text-align:right; font-family: "Courier New", monospace; }
+            </style>
+            </head><body>
+                <div style="display:flex; justify-content:space-between; align-items:flex-start; margin-bottom:8px; border-bottom:2px solid #222; padding-bottom:6px;">
+                    <div>
+                        <div style="font-size:14px; font-weight:700;">CONTINUATION SHEET (Historical)</div>
+                        <div style="font-size:10px;">AIA DOCUMENT G703 &nbsp;&nbsp; Period ${periodNumber} &nbsp;&nbsp; ${companyName}</div>
+                    </div>
+                </div>
+                
+                <table>
+                    <thead>
+                        <tr>
+                            <th style="width:6%;">#</th>
+                            <th style="width:70%;">Description of Work</th>
+                            <th style="width:24%;">Amount Billed This Period</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        ${tableRows}
+                    </tbody>
+                </table>
+
+                ${lienWaiverSection}
+            </body></html>
+        `;
+
+        const printWindow = window.open('', '_blank');
+        printWindow.document.open();
+        printWindow.document.write(printHTML);
+        printWindow.document.close();
+        
+        // Use a timeout to ensure content is rendered before printing
+        setTimeout(() => {
+            printWindow.focus();
+            printWindow.print();
+            // Note: We do not close the window automatically to allow the user to cancel if needed.
+        }, 500);
+    }
+
+    // Expose the function globally if needed for debugging
+    window.printCombinedG703AndLienWaiver = printCombinedG703AndLienWaiver;
 
     window.onload = initializePayApplications;
 </script>
