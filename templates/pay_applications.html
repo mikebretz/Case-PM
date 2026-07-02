@@ -3,7 +3,7 @@
 {% block content %}
 <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
 
-<!-- Pay Applications Module - Final Verified Build v69.0 | Automatic period advancement on approval, enhanced historical table with % Complete & CO Billed, Sub SOV follows G702 cycle, Previous Pay Apps dropdown per sub. | 2026-07-02 -->
+<!-- Pay Applications Module - Final Verified Build v70.0 | Previous Pay Apps fully active with snapshot on Approve, Reset button, Day-of-Month deadline selector, Sub SOV Previous Apps dropdown + view-only history, Lien waiver clear on submit, Date formatting MDY, Pay App badge enlarged | 2026-07-02 -->
 <style>
   /* Exact match to budget.html aesthetics */
   .modal {
@@ -399,6 +399,13 @@ let submissionDeadlineDate = localStorage.getItem('submissionDeadlineDate') || '
 
     function formatCurrency(amount) {
         return new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(amount || 0);
+    }
+
+    function formatDateMDY(dateStr) {
+        if (!dateStr) return '';
+        const d = new Date(dateStr);
+        if (isNaN(d.getTime())) return dateStr;
+        return d.toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' });
     }
 
     // ==================== SUB SOV STATUS HELPERS (Approval Workflow) ====================
@@ -869,7 +876,7 @@ let submissionDeadlineDate = localStorage.getItem('submissionDeadlineDate') || '
                 <div class="bg-zinc-800 border border-zinc-700 rounded-md p-5 flex flex-col justify-between">
                     <div class="text-right">
                         <div class="text-sm font-semibold text-white">Period ${currentPayAppPeriod.periodNumber} • <span class="font-bold ${currentPayAppPeriod.status === 'Draft' ? 'text-amber-400' : currentPayAppPeriod.status === 'Submitted' ? 'text-sky-400' : 'text-emerald-400'}">${currentPayAppPeriod.status}</span></div>
-                        <div class="text-base font-medium mt-0.5 text-emerald-300">${currentPayAppPeriod.periodStart} → ${currentPayAppPeriod.periodEnd}</div>
+                        <div class="text-base font-medium mt-0.5 text-emerald-300">${formatDateMDY(currentPayAppPeriod.periodStart)} → ${formatDateMDY(currentPayAppPeriod.periodEnd)}</div>
                     </div>
                     <div class="mt-3 text-[10px] text-zinc-500 text-right">Periods advance automatically upon approval.<br>Only one Pay App per month is allowed.</div>
                 </div>
@@ -889,6 +896,10 @@ let submissionDeadlineDate = localStorage.getItem('submissionDeadlineDate') || '
         } else if (status === 'Approved') {
             workflowHTML += `<span class="px-4 py-1.5 bg-emerald-900/60 text-emerald-400 text-sm rounded-md font-medium">Approved — Payment can be processed</span>`;
         }
+        // Test button to advance period (for testing submission and previous pay apps flow)
+        workflowHTML += `<button onclick="resetToNextPeriodForTesting()" class="ml-auto px-3 py-1.5 bg-zinc-700 hover:bg-zinc-600 rounded-md text-xs font-medium flex items-center gap-1.5 border border-zinc-600" title="Advance to next period for testing">
+            <i class="fa-solid fa-fast-forward"></i> <span>Reset to Next Period (Test)</span>
+        </button>`;
         workflowHTML += `</div>`;
         workflowBar.innerHTML = workflowHTML;
 
@@ -1037,6 +1048,37 @@ let submissionDeadlineDate = localStorage.getItem('submissionDeadlineDate') || '
         logPayAppAudit('NEW_PERIOD_CREATED', { periodNumber: num, dates: `${start} to ${end}` });
 
         document.getElementById('newPeriodModal').close();
+        renderPayAppContent();
+    }
+
+    function resetToNextPeriodForTesting() {
+        if (!currentPayAppPeriod) return;
+        const nextNum = (currentPayAppPeriod.periodNumber || 1) + 1;
+
+        // Calculate next month dates (one pay app per month rule)
+        let nextStartDate = new Date(currentPayAppPeriod.periodEnd);
+        nextStartDate.setDate(nextStartDate.getDate() + 1);
+        if (nextStartDate.getDate() !== 1) {
+            // Ensure it starts on the 1st of the next month for cleanliness
+            nextStartDate = new Date(nextStartDate.getFullYear(), nextStartDate.getMonth() + 1, 1);
+        }
+        const nextEndDate = new Date(nextStartDate.getFullYear(), nextStartDate.getMonth() + 1, 0); // Last day of month
+
+        currentPayAppPeriod = {
+            id: Date.now(),
+            periodNumber: nextNum,
+            periodStart: nextStartDate.toISOString().split('T')[0],
+            periodEnd: nextEndDate.toISOString().split('T')[0],
+            status: "Draft"
+        };
+        localStorage.setItem('currentPayAppPeriod', JSON.stringify(currentPayAppPeriod));
+
+        // Clear current billing lines for the new period (fresh start)
+        payAppBillingLines = {};
+        localStorage.setItem('payAppBillingLines', JSON.stringify(payAppBillingLines));
+
+        logPayAppAudit('PERIOD_ADVANCED_TEST', { from: currentPayAppPeriod.periodNumber - 1, to: nextNum });
+        showCenteredAlert(`Advanced to Period ${nextNum} for testing.`, 'success');
         renderPayAppContent();
     }
 
@@ -4127,6 +4169,13 @@ let submissionDeadlineDate = localStorage.getItem('submissionDeadlineDate') || '
         }
     }
 
+    function toggleDeadlineDayInput(checkbox) {
+        const container = document.getElementById('submissionDeadlineContainer');
+        if (container) {
+            container.classList.toggle('hidden', !checkbox.checked);
+        }
+    }
+
     function savePayAppSettings() {
         const select = document.getElementById('retainagePercentSelect');
         if (select) {
@@ -4141,20 +4190,20 @@ let submissionDeadlineDate = localStorage.getItem('submissionDeadlineDate') || '
             localStorage.setItem('requireLienWaiverOnSubPayApp', requireLienWaiverOnSubPayApp);
         }
 
-        // New Submission Deadline Setting
+        // Submission Deadline (Day of Month)
         const deadlineToggle = document.getElementById('requireSubmissionDeadlineToggle');
-        const deadlineInput = document.getElementById('submissionDeadlineDate');
+        const deadlineDaySelect = document.getElementById('submissionDeadlineDay');
         if (deadlineToggle) {
             requireSubmissionDeadline = deadlineToggle.checked;
             localStorage.setItem('requireSubmissionDeadline', requireSubmissionDeadline);
-        }
-        if (deadlineInput && deadlineInput.value) {
-            submissionDeadlineDate = deadlineInput.value;
-            localStorage.setItem('submissionDeadlineDate', submissionDeadlineDate);
+            if (deadlineDaySelect && deadlineDaySelect.value) {
+                localStorage.setItem('submissionDeadlineDay', deadlineDaySelect.value);
+            }
         }
 
         document.getElementById('settingsModal').close();
-        showCenteredAlert(`Pay Application settings saved. Retainage set to ${defaultRetainagePercent}%. Lien Waiver requirement: ${requireLienWaiverOnSubPayApp ? 'ON' : 'OFF'}.`, 'success');
+        const dayVal = localStorage.getItem('submissionDeadlineDay') || '';
+        showCenteredAlert(`Pay Application settings saved. Retainage set to ${defaultRetainagePercent}%. Lien Waiver requirement: ${requireLienWaiverOnSubPayApp ? 'ON' : 'OFF'}. Deadline: ${dayVal ? dayVal + 'th' : 'Not set'}.`, 'success');
         if (currentPayAppTab === 'payapp' || currentPayAppTab === 'sub-sov') {
             renderPayAppContent();
         }
