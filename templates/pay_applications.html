@@ -4597,6 +4597,80 @@ let submissionDeadlineDate = localStorage.getItem('submissionDeadlineDate') || '
     }
 
     // ==================== SUBCONTRACTOR PAY APP SUBMISSION (COMMIT LOGIC) ====================
+    /**
+     * Commits the current draft billing for a subcontractor to their permanent Billed to Date.
+     * This is the core function that was missing or broken in previous iterations.
+     * It mirrors the G702 commit behavior.
+     */
+    function submitSubSOVApplication(companyId) {
+        if (!companyId || !subcontractorSOV[companyId]) {
+            showCenteredAlert("No subcontractor selected or no lines found.", "warning");
+            return;
+        }
+
+        const subLines = subcontractorSOV[companyId];
+        const currentPeriod = currentPayAppPeriod || { periodNumber: 1, periodStart: '2026-07-01', periodEnd: '2026-07-31' };
+        let totalCommittedThisPeriod = 0;
+        let snapshotLines = [];
+
+        subLines.forEach(line => {
+            const work = line.work_this_period || 0;
+            const mats = line.materials_stored || 0;
+            const coWork = line.co_work_this_period || 0;
+            const totalThisPeriod = work + mats + coWork;
+
+            if (totalThisPeriod > 0) {
+                // Commit to permanent billed_to_date
+                line.billed_to_date = (line.billed_to_date || 0) + totalThisPeriod;
+                
+                // Record for snapshot
+                snapshotLines.push({
+                    id: line.id,
+                    cost_code: line.cost_code,
+                    description: line.description,
+                    work_this_period: work,
+                    materials_stored: mats,
+                    co_work_this_period: coWork,
+                    total_this_period: totalThisPeriod
+                });
+                totalCommittedThisPeriod += totalThisPeriod;
+            }
+            
+            // Clear draft fields for next cycle (This is the "clear everything" behavior requested)
+            line.work_this_period = 0;
+            line.materials_stored = 0;
+            line.co_work_this_period = 0;
+        });
+
+        // Clear the lien waiver for this cycle
+        if (subLienWaivers[companyId]) {
+            delete subLienWaivers[companyId][currentPeriod.periodNumber];
+        }
+
+        // Save the snapshot for Previous Sub Pay Apps history
+        if (!subPayAppHistory[companyId]) subPayAppHistory[companyId] = {};
+        subPayAppHistory[companyId][currentPeriod.periodNumber] = {
+            periodInfo: { ...currentPeriod },
+            lines: snapshotLines,
+            totalBilledThisPeriod: totalCommittedThisPeriod,
+            submittedDate: new Date().toISOString(),
+            lienWaiver: subLienWaivers[companyId] ? subLienWaivers[companyId][currentPeriod.periodNumber] : null
+        };
+
+        localStorage.setItem('subcontractorSOV', JSON.stringify(subcontractorSOV));
+        localStorage.setItem('subPayAppHistory', JSON.stringify(subPayAppHistory));
+        localStorage.setItem('subLienWaivers', JSON.stringify(subLienWaivers));
+
+        logPayAppAudit('SUB_PAY_APP_SUBMITTED', { 
+            companyId: companyId, 
+            period: currentPeriod.periodNumber,
+            totalCommitted: totalCommittedThisPeriod 
+        });
+
+        showCenteredAlert(`Pay Application #${currentPeriod.periodNumber} submitted for ${getCompanyName(companyId)}. Fields cleared for next period.`, 'success');
+        
+        // Refresh the view
+        renderPayAppContent();
     }
 
     // ==================== LIEN WAIVER PRINTING (WITH ACTUAL IMAGE) ====================
