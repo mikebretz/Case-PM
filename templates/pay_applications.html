@@ -3,7 +3,7 @@
 {% block content %}
 <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
 
-<!-- Pay Applications Module - Final Verified Build v67.0 | Lien Waiver button text fixed ("Submit for Approval" when setting OFF). Filename display added next to upload button. Previous Pay Apps active with Print. | 2026-07-01 -->
+<!-- Pay Applications Module - Final Verified Build v68.0 | Lien Waiver flow fixed (Submit unlocks on filename presence). New Submission Deadline setting added. Historical G703 print includes Lien Waiver details. | 2026-07-02 -->
 <style>
   /* Exact match to budget.html aesthetics */
   .modal {
@@ -307,6 +307,21 @@
                     <input type="checkbox" id="requireLienWaiverToggle" class="w-5 h-5 accent-emerald-600" ${requireLienWaiverOnSubPayApp ? 'checked' : ''}>
                 </label>
             </div>
+
+            <!-- New: Required Submission Deadline Setting -->
+            <div class="pt-3 border-t border-zinc-700">
+                <label class="flex items-center justify-between cursor-pointer mb-2">
+                    <div>
+                        <div class="text-sm text-zinc-300">Require deadline for Subcontractor Pay App submission</div>
+                        <div class="text-[10px] text-zinc-500">When ON, all subs must submit their periodic billing by the date below.</div>
+                    </div>
+                    <input type="checkbox" id="requireSubmissionDeadlineToggle" class="w-5 h-5 accent-emerald-600" onchange="toggleDeadlineDateInput(this)">
+                </label>
+                <div id="submissionDeadlineContainer" class="hidden ml-1">
+                    <label class="block text-xs text-zinc-400 mb-1">Deadline Date (all subs must submit by)</label>
+                    <input type="date" id="submissionDeadlineDate" class="w-full bg-zinc-800 border border-zinc-700 rounded-md px-4 py-2 text-sm text-white">
+                </div>
+            </div>
         </div>
 
         <div class="mt-6 flex justify-end gap-3">
@@ -335,6 +350,8 @@
 let subSOVStatus = JSON.parse(localStorage.getItem('subSOVStatus') || '{}'); // { [companyId]: { status: ..., unlockedBy?, ... } }
 let lienWaivers = JSON.parse(localStorage.getItem('lienWaivers') || '{}'); // { [companyId]: { filename: string, uploadedAt: string, submitted: boolean } }
 let requireLienWaiverOnSubPayApp = localStorage.getItem('requireLienWaiverOnSubPayApp') !== 'false'; // default true
+let requireSubmissionDeadline = localStorage.getItem('requireSubmissionDeadline') === 'true';
+let submissionDeadlineDate = localStorage.getItem('submissionDeadlineDate') || '';
 
     // History of previous (Approved) Pay Applications
     let payAppHistory = JSON.parse(localStorage.getItem('payAppHistory')) || [];
@@ -730,13 +747,43 @@ let requireLienWaiverOnSubPayApp = localStorage.getItem('requireLienWaiverOnSubP
             showCenteredAlert("No historical snapshot data available for printing.", "warning");
             return;
         }
+        
+        // Check for lien waiver info in the snapshot or current state
+        const subId = periodData.snapshot.selectedSubId || selectedSubCompanyId;
+        const waiverInfo = subId ? (lienWaivers[subId] || {}) : {};
+        
         const originalPeriod = currentPayAppPeriod;
         const originalBilling = payAppBillingLines;
 
         currentPayAppPeriod = periodData.snapshot.period;
         payAppBillingLines = periodData.snapshot.billingLines || {};
 
+        // Call the standard G703 print
         printG703();
+
+        // After G703 prints, show a follow-up note / second print for Lien Waiver if it exists
+        setTimeout(() => {
+            if (waiverInfo.filename) {
+                const lienPrintWindow = window.open('', '_blank');
+                lienPrintWindow.document.write(`
+                    <html><head><title>Lien Waiver - ${periodData.snapshot.period.periodNumber}</title>
+                    <style>body { font-family: Arial, sans-serif; padding: 40px; } .header { border-bottom: 2px solid #000; padding-bottom: 10px; margin-bottom: 20px; }</style>
+                    </head><body>
+                        <div class="header">
+                            <h2>Lien Waiver Record</h2>
+                            <p><strong>Period:</strong> ${periodData.snapshot.period.periodNumber} (${periodData.snapshot.period.periodStart} to ${periodData.snapshot.period.periodEnd})</p>
+                            <p><strong>Subcontractor:</strong> ${getCompanyName(subId)}</p>
+                        </div>
+                        <p><strong>Lien Waiver File:</strong> ${waiverInfo.filename}</p>
+                        <p><strong>Uploaded:</strong> ${waiverInfo.uploadedAt ? new Date(waiverInfo.uploadedAt).toLocaleDateString() : 'N/A'}</p>
+                        <hr style="margin: 30px 0;">
+                        <p style="color: #666; font-size: 12px;">This document confirms that the lien waiver listed above was received and is on file for the referenced pay application period. The actual signed PDF is stored in the project document management system.</p>
+                    </body></html>
+                `);
+                lienPrintWindow.document.close();
+                setTimeout(() => { lienPrintWindow.print(); }, 500);
+            }
+        }, 1500); // Delay slightly so G703 print dialog appears first
 
         currentPayAppPeriod = originalPeriod;
         payAppBillingLines = originalBilling;
@@ -2198,28 +2245,32 @@ let requireLienWaiverOnSubPayApp = localStorage.getItem('requireLienWaiverOnSubP
             let statusMessage = 'SOV Approved — Enter current period billing. Drafts are saved on "Save Billing" but not committed until Submit Application.';
             let buttonsHTML = '';
 
-            if (requiresWaiver && !lienReceived) {
-                // Lien waiver is required and not yet submitted
-                statusMessage = 'Approved — Waiting on Lien Waiver. Submit Application will be blocked until a lien waiver is uploaded and submitted.';
-                buttonsHTML = `
-                    <button onclick="submitSubPeriodBilling(${selectedSubCompanyId})" class="ml-3 px-5 py-1.5 bg-zinc-600 hover:bg-zinc-500 text-white rounded text-xs font-semibold flex items-center gap-1.5 opacity-50 cursor-not-allowed" disabled title="Lien Waiver required before submission">
-                        <i class="fa-solid fa-paper-plane"></i> <span>Submit Application</span>
-                    </button>
-                    <button onclick="uploadLienWaiver(${selectedSubCompanyId})" class="px-4 py-1.5 bg-sky-600 hover:bg-sky-500 text-white rounded text-xs font-medium flex items-center gap-1.5">
-                        <i class="fa-solid fa-upload"></i> <span>Upload Lien Waiver</span>
-                    </button>
-                    ${waiverStatus.filename ? `<span class="text-xs text-emerald-400 ml-2 truncate max-w-[150px]" title="${waiverStatus.filename}">${waiverStatus.filename}</span>` : ''}
-                `;
-            } else if (requiresWaiver && lienReceived && !isWaitingOnWaiver) {
-                // Waiver uploaded but not yet "submitted" by user action, or ready
-                buttonsHTML = `
-                    <button onclick="submitSubPeriodBilling(${selectedSubCompanyId})" class="ml-3 px-5 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded text-xs font-semibold flex items-center gap-1.5">
-                        <i class="fa-solid fa-paper-plane"></i> <span>Submit Application</span>
-                    </button>
-                    <button onclick="uploadLienWaiver(${selectedSubCompanyId})" class="px-4 py-1.5 bg-zinc-700 hover:bg-zinc-600 text-white rounded text-xs font-medium flex items-center gap-1.5">
-                        <i class="fa-solid fa-upload"></i> <span>Re-upload Lien Waiver</span>
-                    </button>
-                `;
+            if (requiresWaiver) {
+                // Lien waiver is required
+                if (waiverStatus.filename) {
+                    // File is uploaded (filename visible) -> Unlock Submit Application
+                    statusMessage = 'Lien Waiver uploaded. You may now submit the application for final approval.';
+                    buttonsHTML = `
+                        <button onclick="submitSubPeriodBilling(${selectedSubCompanyId})" class="ml-3 px-5 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded text-xs font-semibold flex items-center gap-1.5">
+                            <i class="fa-solid fa-paper-plane"></i> <span>Submit Application</span>
+                        </button>
+                        <button onclick="uploadLienWaiver(${selectedSubCompanyId})" class="px-4 py-1.5 bg-zinc-700 hover:bg-zinc-600 text-white rounded text-xs font-medium flex items-center gap-1.5">
+                            <i class="fa-solid fa-upload"></i> <span>Re-upload Lien Waiver</span>
+                        </button>
+                        <span class="text-xs text-emerald-400 ml-2 truncate max-w-[180px]" title="${waiverStatus.filename}">${waiverStatus.filename}</span>
+                    `;
+                } else {
+                    // No file yet -> Block submit, show upload
+                    statusMessage = 'Approved — Waiting on Lien Waiver. Upload the lien waiver to unlock submission.';
+                    buttonsHTML = `
+                        <button onclick="submitSubPeriodBilling(${selectedSubCompanyId})" class="ml-3 px-5 py-1.5 bg-zinc-600 hover:bg-zinc-500 text-white rounded text-xs font-semibold flex items-center gap-1.5 opacity-50 cursor-not-allowed" disabled title="Lien Waiver required before submission">
+                            <i class="fa-solid fa-paper-plane"></i> <span>Submit Application</span>
+                        </button>
+                        <button onclick="uploadLienWaiver(${selectedSubCompanyId})" class="px-4 py-1.5 bg-sky-600 hover:bg-sky-500 text-white rounded text-xs font-medium flex items-center gap-1.5">
+                            <i class="fa-solid fa-upload"></i> <span>Upload Lien Waiver</span>
+                        </button>
+                    `;
+                }
             } else if (!requiresWaiver) {
                 // Lien waiver setting is OFF (unchecked). Primary action is "Submit for Approval".
                 // Upload remains available as optional.
@@ -4000,7 +4051,31 @@ let requireLienWaiverOnSubPayApp = localStorage.getItem('requireLienWaiverOnSubP
         if (select) {
             select.value = String(defaultRetainagePercent);
         }
+        
+        // Load new deadline setting
+        const deadlineToggle = document.getElementById('requireSubmissionDeadlineToggle');
+        const deadlineContainer = document.getElementById('submissionDeadlineContainer');
+        const deadlineInput = document.getElementById('submissionDeadlineDate');
+        
+        if (deadlineToggle) {
+            deadlineToggle.checked = requireSubmissionDeadline;
+            if (deadlineContainer) {
+                deadlineContainer.classList.toggle('hidden', !requireSubmissionDeadline);
+            }
+        }
+        if (deadlineInput && submissionDeadlineDate) {
+            deadlineInput.value = submissionDeadlineDate;
+        }
+        
         modal.showModal();
+    }
+    
+    // Helper to show/hide date input when checkbox changes
+    function toggleDeadlineDateInput(checkbox) {
+        const container = document.getElementById('submissionDeadlineContainer');
+        if (container) {
+            container.classList.toggle('hidden', !checkbox.checked);
+        }
     }
 
     function savePayAppSettings() {
@@ -4015,6 +4090,18 @@ let requireLienWaiverOnSubPayApp = localStorage.getItem('requireLienWaiverOnSubP
         if (lienToggle) {
             requireLienWaiverOnSubPayApp = lienToggle.checked;
             localStorage.setItem('requireLienWaiverOnSubPayApp', requireLienWaiverOnSubPayApp);
+        }
+
+        // New Submission Deadline Setting
+        const deadlineToggle = document.getElementById('requireSubmissionDeadlineToggle');
+        const deadlineInput = document.getElementById('submissionDeadlineDate');
+        if (deadlineToggle) {
+            requireSubmissionDeadline = deadlineToggle.checked;
+            localStorage.setItem('requireSubmissionDeadline', requireSubmissionDeadline);
+        }
+        if (deadlineInput && deadlineInput.value) {
+            submissionDeadlineDate = deadlineInput.value;
+            localStorage.setItem('submissionDeadlineDate', submissionDeadlineDate);
         }
 
         document.getElementById('settingsModal').close();
