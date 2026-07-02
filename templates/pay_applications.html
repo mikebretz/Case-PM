@@ -1727,12 +1727,17 @@ let submissionDeadlineDate = localStorage.getItem('submissionDeadlineDate') || '
     }
 
     function selectSOVCodeFromList(code, desc, listModal) {
-        // Support both Contractor SOV and Subcontractor SOV inputs
-        let codeInput = document.getElementById('sovCostCode') || document.getElementById('subCostCode');
-        let descInput = document.getElementById('sovDescription') || document.getElementById('subDescription');
+        // Robust targeting for both Contractor and Subcontractor modals
+        let codeInput = document.getElementById('subCostCode') || document.getElementById('sovCostCode');
+        let descInput = document.getElementById('subDescription') || document.getElementById('sovDescription');
+
         if (codeInput) codeInput.value = code;
         if (descInput) descInput.value = desc;
-        if (listModal) { listModal.close(); listModal.remove(); }
+
+        if (listModal) {
+            listModal.close();
+            listModal.remove();
+        }
     }
 
     function showAddContractorSOVLine() {
@@ -2826,25 +2831,28 @@ let submissionDeadlineDate = localStorage.getItem('submissionDeadlineDate') || '
 
         const original = parseFloat(origStr) || 0;
 
-        // Reconciliation check: Sub SOV original for this code should not exceed Contractor SOV for same code
+        // === HARD VALIDATION: Required fields ===
+        if (!costCode || !desc) {
+            showCenteredAlert("Cost Code and Description are required for Subcontractor SOV lines.", 'warning');
+            return;
+        }
+
+        // === HARD VALIDATION: Cannot exceed Contractor SOV Original for this cost code ===
         const contractorSOVLines = JSON.parse(localStorage.getItem('contractorSOV')) || [];
-        const contractorTotalForCode = contractorSOVLines
-            .filter(c => c.cost_code === costCode)
-            .reduce((sum, c) => sum + ((c.original || 0) + (c.co_amount || 0)), 0);
+        const matchingContractorLine = contractorSOVLines.find(c => c.cost_code === costCode);
 
-        const currentSubLines = subcontractorSOV[companyId] || [];
-        let otherSubsForCode = 0;
-        currentSubLines.forEach(l => {
-            if ((!lineId || l.id !== lineId) && l.cost_code === costCode) {
-                otherSubsForCode += (l.original_commitment || 0);
-            }
-        });
-        const projectedSubTotal = otherSubsForCode + original;
-
-        if (contractorTotalForCode > 0 && projectedSubTotal > contractorTotalForCode) {
-            if (!confirm(`Warning: Total Subcontractor commitments for ${costCode} (${formatCurrency(projectedSubTotal)}) would exceed Contractor SOV amount (${formatCurrency(contractorTotalForCode)}). Continue?`)) {
+        if (matchingContractorLine) {
+            const maxAllowed = matchingContractorLine.original || 0;
+            if (original > maxAllowed) {
+                showCenteredAlert(
+                    `BLOCKED: Original Commitment ($${original.toLocaleString()}) cannot exceed the Contractor SOV Original amount for cost code ${costCode} ($${maxAllowed.toLocaleString()}).`,
+                    'warning'
+                );
                 return;
             }
+        } else {
+            // If no matching cost code exists in G703, warn but allow (or block — current policy: allow with note)
+            // For strict projects, you can change this to block.
         }
 
         if (lineId) {
