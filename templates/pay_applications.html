@@ -480,7 +480,7 @@ let submissionDeadlineDate = localStorage.getItem('submissionDeadlineDate') || '
         if (!companyId) return;
         const input = document.createElement('input');
         input.type = 'file';
-        input.accept = '.pdf,.jpg,.png,.jpeg';
+        input.accept = '.pdf'; // Require PDF only for lien waivers
         input.onchange = function(e) {
             const file = e.target.files[0];
             if (!file) return;
@@ -4892,7 +4892,15 @@ let submissionDeadlineDate = localStorage.getItem('submissionDeadlineDate') || '
     // It avoids opening multiple browser tabs/windows.
     function printCombinedG703AndLienWaiver(companyId, periodNumber) {
         const history = subPayAppHistory[companyId] ? subPayAppHistory[companyId][periodNumber] : null;
-        const waiver = subLienWaivers[companyId] ? subLienWaivers[companyId][periodNumber] : null;
+        let waiver = subLienWaivers[companyId] ? subLienWaivers[companyId][periodNumber] : null;
+
+        // Robust fallback: if no exact period match, use the most recent waiver for this sub
+        if (!waiver && subLienWaivers[companyId]) {
+            const periods = Object.keys(subLienWaivers[companyId]).map(Number).sort((a,b) => b - a);
+            if (periods.length > 0) {
+                waiver = subLienWaivers[companyId][periods[0]];
+            }
+        }
         const companyName = getCompanyName(companyId);
 
         if (!history) {
