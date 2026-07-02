@@ -3453,29 +3453,22 @@ let submissionDeadlineDate = localStorage.getItem('submissionDeadlineDate') || '
     }
 
     // ==================== PRINT AIA G702 / G703 ====================
-  function printCurrentPayApp() {
+function printCurrentPayApp() {
     if (currentPayAppTab === 'payapp') {
         printG702();
     } else if (currentPayAppTab === 'contractor-sov') {
         printG703();
     } else if (currentPayAppTab === 'sub-sov' && selectedSubCompanyId) {
-        // When on Subcontractor Schedule of Values tab, print ONLY the G703 (no lien waiver)
-        printSubcontractorG703(selectedSubCompanyId);
+        printSubcontractorG703(selectedSubCompanyId);   // <-- Must call this
     } else if (currentPayAppTab === 'previous-sub-payapps') {
-        const subId = document.getElementById('prevSubSelect') ? document.getElementById('prevSubSelect').value : null;
-        const periodIdx = document.getElementById('prevSubPeriodSelect') ? document.getElementById('prevSubPeriodSelect').value : null;
-        if (subId && periodIdx) {
-            printCombinedG703AndLienWaiver(subId, periodIdx);
-        } else {
-            showCenteredAlert("Please select a subcontractor and period in Previous Sub Pay Apps tab first.", "warning");
-        }
+        // ... your existing previous sub pay apps logic
     } else {
-        printG703(); // fallback
+        printG703();
     }
 }
 
     // New: Print filtered G703 for the currently focused subcontractor (with their Pay App #)
-   function printSubcontractorG703(companyId) {
+  function printSubcontractorG703(companyId) {
     const company = companies.find(c => c.id == companyId);
     const companyName = company ? (company.name || company.company_name || 'Subcontractor') : 'Subcontractor';
     let subPayApps = JSON.parse(localStorage.getItem('subPayAppNumbers') || '{}');
