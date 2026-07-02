@@ -532,7 +532,7 @@ let submissionDeadlineDate = localStorage.getItem('submissionDeadlineDate') || '
         }
     }
 
-// ==================== FIXED LIEN WAIVER PRINT (Matches working G703 / Combined method) ====================
+// ==================== LIEN WAIVER PRINT (Clean print dialog + auto-close tab) ====================
 function printLienWaiver(companyId) {
     if (!companyId) return;
     const periodNum = currentPayAppPeriod ? currentPayAppPeriod.periodNumber : 1;
@@ -576,6 +576,13 @@ function printLienWaiver(companyId) {
     printWindow.document.open();
     printWindow.document.write(html);
     printWindow.document.close();
+
+    // Auto-close the tab after user finishes printing or cancels
+    printWindow.addEventListener('afterprint', function() {
+        setTimeout(() => {
+            printWindow.close();
+        }, 300);
+    });
 
     setTimeout(() => {
         printWindow.focus();
