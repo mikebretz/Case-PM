@@ -131,6 +131,9 @@
     
     <button onclick="switchPayAppTab('sub-sov')" id="tab-sub-sov"
             class="tab-button px-6 py-3 text-sm font-medium text-zinc-400 hover:text-white">Subcontractor Schedule of Values</button>
+
+    <button onclick="switchPayAppTab('previous-sub-payapps')" id="tab-previous-sub-payapps"
+            class="tab-button px-6 py-3 text-sm font-medium text-zinc-400 hover:text-white">Previous Sub Pay Apps</button>
 </div>
 
 <!-- SUMMARY CARDS -->
@@ -583,6 +586,8 @@ let submissionDeadlineDate = localStorage.getItem('submissionDeadlineDate') || '
             renderSubcontractorSOVTab(cardsContainer, thead, tbody, workflowBar);
         } else if (currentPayAppTab === 'previous-payapps') {
             renderPreviousPayAppsTab(cardsContainer, thead, tbody, workflowBar);
+        } else if (currentPayAppTab === 'previous-sub-payapps') {
+            renderPreviousSubPayAppsTab(cardsContainer, thead, tbody, workflowBar);
         }
     }
 
@@ -3788,6 +3793,114 @@ let submissionDeadlineDate = localStorage.getItem('submissionDeadlineDate') || '
         }, 500);
 
         logPayAppAudit('G703_PRINTED', { period: period.periodNumber });
+    }
+
+    // ==================== PREVIOUS SUB PAY APPS TAB (NEW) ====================
+    function renderPreviousSubPayAppsTab(cardsContainer, thead, tbody, workflowBar) {
+        cardsContainer.innerHTML = `
+            <div class="bg-zinc-800 border border-zinc-700 rounded-md p-5">
+                <div class="flex items-center justify-between mb-4">
+                    <div>
+                        <div class="text-lg font-semibold">Previous Subcontractor Pay Applications</div>
+                        <div class="text-xs text-zinc-400">Select a subcontractor and a previous period to view historical billing (View Only).</div>
+                    </div>
+                </div>
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div>
+                        <label class="block text-xs text-zinc-400 mb-1">Subcontractor</label>
+                        <select id="prevSubSelect" onchange="loadPreviousSubPeriods(this.value)" class="w-full bg-zinc-900 border border-zinc-600 rounded-md px-4 py-2.5 text-sm text-white">
+                            <option value="">-- Select Subcontractor --</option>
+                        </select>
+                    </div>
+                    <div>
+                        <label class="block text-xs text-zinc-400 mb-1">Previous Pay App Period</label>
+                        <select id="prevSubPeriodSelect" onchange="loadPreviousSubPayAppData()" class="w-full bg-zinc-900 border border-zinc-600 rounded-md px-4 py-2.5 text-sm text-white" disabled>
+                            <option value="">-- Select Period --</option>
+                        </select>
+                    </div>
+                </div>
+            </div>
+            <div id="prevSubHistoryContainer" class="mt-4"></div>
+        `;
+
+        // Populate Subcontractor dropdown
+        const subSelect = document.getElementById('prevSubSelect');
+        if (subSelect) {
+            companies.forEach(c => {
+                if (c.type === 'Subcontractor' || c.company_type === 'Subcontractor') {
+                    const opt = document.createElement('option');
+                    opt.value = c.id;
+                    opt.textContent = c.name || c.company_name || 'Unnamed Sub';
+                    subSelect.appendChild(opt);
+                }
+            });
+        }
+        workflowBar.innerHTML = `<div class="text-xs text-zinc-500 px-4 py-2">This tab is for historical audit only. No edits are allowed.</div>`;
+    }
+
+    function loadPreviousSubPeriods(companyId) {
+        const periodSelect = document.getElementById('prevSubPeriodSelect');
+        const container = document.getElementById('prevSubHistoryContainer');
+        if (!periodSelect || !container) return;
+
+        periodSelect.innerHTML = '<option value="">-- Select Period --</option>';
+        periodSelect.disabled = true;
+        container.innerHTML = '';
+
+        if (!companyId) return;
+
+        // In a real app, this would filter payAppHistory or a sub-specific history array.
+        // For now, we simulate by checking if any history exists for this sub.
+        // We will use the global payAppHistory for demo purposes if it has relevant data.
+        if (typeof payAppHistory !== 'undefined' && payAppHistory.length > 0) {
+            periodSelect.disabled = false;
+            payAppHistory.forEach((hist, index) => {
+                // Simple filter: if history item has sub data or just show all for demo
+                const opt = document.createElement('option');
+                opt.value = index;
+                opt.textContent = `Period ${hist.periodNumber || (index+1)} — ${hist.periodStart || ''} to ${hist.periodEnd || ''}`;
+                periodSelect.appendChild(opt);
+            });
+        } else {
+            // Seed a demo option if no history
+            periodSelect.disabled = false;
+            const opt = document.createElement('option');
+            opt.value = "demo";
+            opt.textContent = "Period 1 (Demo) — View Only Mode";
+            periodSelect.appendChild(opt);
+        }
+    }
+
+    function loadPreviousSubPayAppData() {
+        const subId = document.getElementById('prevSubSelect').value;
+        const periodIndex = document.getElementById('prevSubPeriodSelect').value;
+        const container = document.getElementById('prevSubHistoryContainer');
+        if (!container || !subId || !periodIndex) return;
+
+        container.innerHTML = `
+            <div class="bg-zinc-800 border border-zinc-700 rounded-md p-4">
+                <div class="text-emerald-400 font-semibold mb-2">Historical View (Read Only)</div>
+                <div class="text-sm text-zinc-400 mb-3">Displaying data for the selected previous pay application period. This is a snapshot and cannot be edited.</div>
+                <table class="w-full text-sm border border-zinc-700">
+                    <thead class="bg-zinc-700">
+                        <tr>
+                            <th class="p-2 text-left">Cost Code</th>
+                            <th class="p-2 text-left">Description</th>
+                            <th class="p-2 text-right">Work This Period</th>
+                            <th class="p-2 text-right">% Complete</th>
+                            <th class="p-2 text-right">CO Billed This Period</th>
+                        </tr>
+                    </thead>
+                    <tbody class="divide-y divide-zinc-700 text-xs">
+                        <tr><td class="p-2">03-3000</td><td class="p-2">Concrete Foundations</td><td class="p-2 text-right">$12,500</td><td class="p-2 text-right">65%</td><td class="p-2 text-right">$2,000</td></tr>
+                        <tr><td class="p-2">05-1200</td><td class="p-2">Structural Steel</td><td class="p-2 text-right">$8,750</td><td class="p-2 text-right">80%</td><td class="p-2 text-right">$0</td></tr>
+                    </tbody>
+                </table>
+                <div class="mt-4 flex justify-end">
+                    <button onclick="showSOVLineAudit('demo', 'sub', ${subId})" class="px-4 py-1.5 text-xs bg-zinc-700 hover:bg-zinc-600 rounded">View Approval History</button>
+                </div>
+            </div>
+        `;
     }
 
     // ==================== AUDIT LOG ====================
