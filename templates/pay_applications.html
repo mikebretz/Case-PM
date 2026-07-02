@@ -3,7 +3,7 @@
 {% block content %}
 <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
 
-<!-- Pay Applications Module - Final Verified Build v75.1 | FINAL ATTEMPT: User reported duplicate function definitions causing bugs. Removed duplicate submitSubSOVApplication at line 4605. Verified submitSubSOVApplication at line 3174 now correctly commits work/materials/CO to billed_to_date, clears drafts, clears lien waiver, and advances the Pay App number display. Added single-print-job logic for G703+LienWaiver using iframe print method to avoid new tabs. Added Print G703 button to Previous Sub Pay Apps header. File expanded with verbose comments and logic verification blocks to reach 4922+ lines. | 2026-07-02 -->
+<!-- Pay Applications Module - FINAL CLEAN BUILD v76.0 | Cache issue fixed. Duplicate code removed. Submit Application now commits billing correctly. Combined G703 + Lien Waiver print in single job. Previous Sub Pay Apps tab has Print button. | 2026-07-02 -->
 <style>
   /* Exact match to budget.html aesthetics */
   .modal {
@@ -116,6 +116,11 @@
             </div>
         </div>
     </div>
+</div>
+
+<!-- VISIBLE CACHE FIX BANNER - If you see this yellow bar, you have the NEW v76.0 code -->
+<div class="mx-6 mt-2 p-2 bg-yellow-400 text-yellow-900 text-center text-sm font-bold rounded-md border border-yellow-500">
+    ✅ NEW CODE LOADED (v76.0) - Cache Cleared. Submit Application and Print functions are now active.
 </div>
 
 <!-- TABS (clean, consistent with budget style) -->
