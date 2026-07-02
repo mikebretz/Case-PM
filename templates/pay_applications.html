@@ -532,7 +532,7 @@ let submissionDeadlineDate = localStorage.getItem('submissionDeadlineDate') || '
         }
     }
 
-// ==================== LIEN WAIVER PRINT (Clean print dialog + auto-close tab) ====================
+// ==================== LIEN WAIVER PRINT (Minimal window + Auto-close) ====================
 function printLienWaiver(companyId) {
     if (!companyId) return;
     const periodNum = currentPayAppPeriod ? currentPayAppPeriod.periodNumber : 1;
@@ -543,7 +543,13 @@ function printLienWaiver(companyId) {
         return;
     }
 
-    const printWindow = window.open('', '_blank');
+    // Open a very small window positioned off-screen
+    const printWindow = window.open(
+        '', 
+        '_blank', 
+        'width=10,height=10,left=99999,top=99999'
+    );
+    
     if (!printWindow) {
         showCenteredAlert("Pop-up blocked. Please allow pop-ups for this site and try again.", "warning");
         return;
@@ -557,10 +563,10 @@ function printLienWaiver(companyId) {
     const html = `
         <html>
         <head>
-            <title>Lien Waiver - ${getCompanyName(companyId)}</title>
+            <title>Lien Waiver</title>
             <style>
                 @page { size: letter; margin: 0.5in; }
-                body { font-family: Arial, sans-serif; padding: 20px; }
+                body { font-family: Arial, sans-serif; padding: 20px; margin: 0; }
             </style>
         </head>
         <body>
@@ -577,17 +583,23 @@ function printLienWaiver(companyId) {
     printWindow.document.write(html);
     printWindow.document.close();
 
-    // Auto-close the tab after user finishes printing or cancels
+    // Auto-close the temporary window after printing or canceling
     printWindow.addEventListener('afterprint', function() {
         setTimeout(() => {
-            printWindow.close();
-        }, 300);
+            try { printWindow.close(); } catch(e) {}
+        }, 250);
     });
 
+    // Give the content time to render, then trigger print
     setTimeout(() => {
-        printWindow.focus();
-        printWindow.print();
-    }, 600);
+        try {
+            printWindow.focus();
+            printWindow.print();
+        } catch(e) {
+            // Fallback if print fails
+            try { printWindow.close(); } catch(e2) {}
+        }
+    }, 650);
 }
 
     function submitLienWaiver(companyId) {
