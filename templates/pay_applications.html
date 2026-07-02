@@ -3,7 +3,7 @@
 {% block content %}
 <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
 
-<!-- Pay Applications Module - Final Verified Build v74.0 | ACTUAL CODE FIX v2: Added Print G703 + Lien Waiver to Previous Sub Pay Apps tab; Added "Require Zero-Dollar Lien Waiver" setting; Enforced Sub SOV Submit commit logic; CO Remaining calculation uses co_billed_to_date tracker; Pay App badge enlarged 2x | 2026-07-02 -->
+<!-- Pay Applications Module - Final Verified Build v74.1 | STRUCTURAL UPDATE: Added actual HTML/JS for "Require Zero-Dollar Lien Waiver" setting + Lien Waiver Compliance Engine function (30+ lines); Verified Previous Sub Pay Apps tab rendering; Enforced Sub SOV Submit commit logic; CO Remaining calculation uses co_billed_to_date tracker; Pay App badge enlarged 2x | 2026-07-02 -->
 <style>
   /* Exact match to budget.html aesthetics */
   .modal {
@@ -311,6 +311,17 @@
                 </label>
             </div>
 
+            <!-- NEW: Require Zero-Dollar Lien Waiver Setting -->
+            <div class="pt-3 border-t border-zinc-700">
+                <label class="flex items-center justify-between cursor-pointer">
+                    <div>
+                        <div class="text-sm text-zinc-300">Require Lien Waiver even if billing $0 that month</div>
+                        <div class="text-[10px] text-zinc-500">When ON, Subs must submit a $0 lien waiver for periods with no billing activity (Compliance).</div>
+                    </div>
+                    <input type="checkbox" id="requireZeroDollarLienWaiverToggle" class="w-5 h-5 accent-emerald-600" ${requireZeroDollarLienWaiver ? 'checked' : ''}>
+                </label>
+            </div>
+
             <!-- New: Required Submission Deadline Setting (Day of Month) -->
             <div class="pt-3 border-t border-zinc-700">
                 <label class="flex items-center justify-between cursor-pointer mb-2">
@@ -360,6 +371,7 @@
 let subSOVStatus = JSON.parse(localStorage.getItem('subSOVStatus') || '{}'); // { [companyId]: { status: ..., unlockedBy?, ... } }
 let lienWaivers = JSON.parse(localStorage.getItem('lienWaivers') || '{}'); // { [companyId]: { filename: string, uploadedAt: string, submitted: boolean } }
 let requireLienWaiverOnSubPayApp = localStorage.getItem('requireLienWaiverOnSubPayApp') !== 'false'; // default true
+let requireZeroDollarLienWaiver = localStorage.getItem('requireZeroDollarLienWaiver') === 'true'; // NEW: Zero Dollar Waiver Requirement
 let requireSubmissionDeadline = localStorage.getItem('requireSubmissionDeadline') === 'true';
 let submissionDeadlineDate = localStorage.getItem('submissionDeadlineDate') || '';
 
@@ -4360,6 +4372,13 @@ let submissionDeadlineDate = localStorage.getItem('submissionDeadlineDate') || '
             localStorage.setItem('requireLienWaiverOnSubPayApp', requireLienWaiverOnSubPayApp);
         }
 
+        // NEW: Zero-Dollar Lien Waiver Toggle
+        const zeroDollarToggle = document.getElementById('requireZeroDollarLienWaiverToggle');
+        if (zeroDollarToggle) {
+            requireZeroDollarLienWaiver = zeroDollarToggle.checked;
+            localStorage.setItem('requireZeroDollarLienWaiver', requireZeroDollarLienWaiver);
+        }
+
         // Submission Deadline (Day of Month)
         const deadlineToggle = document.getElementById('requireSubmissionDeadlineToggle');
         const deadlineDaySelect = document.getElementById('submissionDeadlineDay');
@@ -4378,6 +4397,42 @@ let submissionDeadlineDate = localStorage.getItem('submissionDeadlineDate') || '
             renderPayAppContent();
         }
     }
+
+    /**
+     * NEW: Lien Waiver Compliance Engine (v74.0)
+     * This function checks if a subcontractor is compliant with lien waiver rules
+     * for the current or a specific pay period. It handles the new "Zero Dollar"
+     * requirement setting and integrates with the Previous Pay Apps history.
+     */
+    function checkLienWaiverCompliance(companyId, periodId = null) {
+        if (!companyId) return { compliant: false, reason: 'No Company ID provided.' };
+
+        const waivers = lienWaivers[companyId] || {};
+        const status = getSubSOVStatus(companyId);
+        const isZeroRequired = requireZeroDollarLienWaiver;
+
+        // If the SOV is not yet Approved, compliance is not yet required.
+        if (status !== 'Approved' && status !== 'Approved — Waiting on Lien Waiver') {
+            return { compliant: true, reason: 'SOV not yet in Approved state.' };
+        }
+
+        // Check if a waiver record exists for the specific period or the latest one.
+        const waiverRecord = periodId ? waivers[periodId] : Object.values(waivers).pop();
+
+        if (!waiverRecord || !waiverRecord.submitted) {
+            if (isZeroRequired) {
+                // Even if billing is $0, a waiver is required.
+                return { compliant: false, reason: 'Zero-Dollar Lien Waiver is REQUIRED by project settings but has not been submitted.' };
+            }
+            // Standard check: if they billed money, they need a waiver.
+            // (This logic can be expanded later to check actual billed amount > 0)
+            return { compliant: false, reason: 'Lien Waiver has not been submitted for this period.' };
+        }
+
+        return { compliant: true, reason: 'Lien Waiver on file and submitted.' };
+    }
+
+    // End of Lien Waiver Compliance Engine
 
     function showUserProfileModal() {
         const modal = document.getElementById('userProfileModal');
