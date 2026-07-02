@@ -2363,7 +2363,7 @@ let submissionDeadlineDate = localStorage.getItem('submissionDeadlineDate') || '
                     // File is uploaded (filename visible) -> Unlock Submit Application
                     statusMessage = 'Lien Waiver uploaded. You may now submit the application for final approval.';
                     buttonsHTML = `
-                        <button onclick="submitSubPeriodBilling(${selectedSubCompanyId})" class="ml-3 px-5 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded text-xs font-semibold flex items-center gap-1.5">
+                        <button onclick="submitSubSOVApplication(${selectedSubCompanyId})" class="ml-3 px-5 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded text-xs font-semibold flex items-center gap-1.5">
                             <i class="fa-solid fa-paper-plane"></i> <span>Submit Application</span>
                         </button>
                         <button onclick="uploadLienWaiver(${selectedSubCompanyId})" class="px-4 py-1.5 bg-zinc-700 hover:bg-zinc-600 text-white rounded text-xs font-medium flex items-center gap-1.5">
@@ -2375,7 +2375,7 @@ let submissionDeadlineDate = localStorage.getItem('submissionDeadlineDate') || '
                     // No file yet -> Block submit, show upload
                     statusMessage = 'Approved — Waiting on Lien Waiver. Upload the lien waiver to unlock submission.';
                     buttonsHTML = `
-                        <button onclick="submitSubPeriodBilling(${selectedSubCompanyId})" class="ml-3 px-5 py-1.5 bg-zinc-600 hover:bg-zinc-500 text-white rounded text-xs font-semibold flex items-center gap-1.5 opacity-50 cursor-not-allowed" disabled title="Lien Waiver required before submission">
+                        <button onclick="submitSubSOVApplication(${selectedSubCompanyId})" class="ml-3 px-5 py-1.5 bg-zinc-600 hover:bg-zinc-500 text-white rounded text-xs font-semibold flex items-center gap-1.5 opacity-50 cursor-not-allowed" disabled title="Lien Waiver required before submission">
                             <i class="fa-solid fa-paper-plane"></i> <span>Submit Application</span>
                         </button>
                         <button onclick="uploadLienWaiver(${selectedSubCompanyId})" class="px-4 py-1.5 bg-sky-600 hover:bg-sky-500 text-white rounded text-xs font-medium flex items-center gap-1.5">
@@ -2388,7 +2388,7 @@ let submissionDeadlineDate = localStorage.getItem('submissionDeadlineDate') || '
                 // Upload remains available as optional.
                 statusMessage = 'SOV Approved — Ready for periodic billing submission.';
                 buttonsHTML = `
-                    <button onclick="submitSubPeriodBilling(${selectedSubCompanyId})" class="ml-3 px-5 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded text-xs font-semibold flex items-center gap-1.5">
+                    <button onclick="submitSubSOVApplication(${selectedSubCompanyId})" class="ml-3 px-5 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded text-xs font-semibold flex items-center gap-1.5">
                         <i class="fa-solid fa-paper-plane"></i> <span>Submit for Approval</span>
                     </button>
                     <button onclick="uploadLienWaiver(${selectedSubCompanyId})" class="px-4 py-1.5 bg-zinc-700 hover:bg-zinc-600 text-white rounded text-xs font-medium flex items-center gap-1.5">
@@ -2398,7 +2398,7 @@ let submissionDeadlineDate = localStorage.getItem('submissionDeadlineDate') || '
             } else {
                 // Fallback / already handled state when waiver is required and received
                 buttonsHTML = `
-                    <button onclick="submitSubPeriodBilling(${selectedSubCompanyId})" class="ml-3 px-5 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded text-xs font-semibold flex items-center gap-1.5">
+                    <button onclick="submitSubSOVApplication(${selectedSubCompanyId})" class="ml-3 px-5 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded text-xs font-semibold flex items-center gap-1.5">
                         <i class="fa-solid fa-paper-plane"></i> <span>Submit Application</span>
                     </button>
                     <button onclick="uploadLienWaiver(${selectedSubCompanyId})" class="px-4 py-1.5 bg-zinc-700 hover:bg-zinc-600 text-white rounded text-xs font-medium flex items-center gap-1.5">
@@ -3171,7 +3171,7 @@ let submissionDeadlineDate = localStorage.getItem('submissionDeadlineDate') || '
      * from the Subcontractor lines into the permanent billed_to_date.
      * This is the "Submit Application" action for an Approved Sub SOV.
      */
-    function submitSubPeriodBilling(companyId) {
+    function submitSubSOVApplication(companyId) {
         if (!companyId) return;
         const lines = subcontractorSOV[companyId] || [];
         if (lines.length === 0) {
@@ -4815,6 +4815,106 @@ let submissionDeadlineDate = localStorage.getItem('submissionDeadlineDate') || '
 
         console.log('%c[Case PM] Pay Applications page initialized (clean v3 - aesthetics + workflow fixed) [PATCH 2026-07-01]', 'color:#10b981');
     }
+
+    // ==================== COMBINED PRINT LOGIC (G703 + LIEN WAIVER) ====================
+    // This function generates a SINGLE print document containing both the G703 table
+    // and the actual uploaded lien waiver image (if available as a Data URL).
+    // It avoids opening multiple browser tabs/windows.
+    function printCombinedG703AndLienWaiver(companyId, periodNumber) {
+        const history = subPayAppHistory[companyId] ? subPayAppHistory[companyId][periodNumber] : null;
+        const waiver = subLienWaivers[companyId] ? subLienWaivers[companyId][periodNumber] : null;
+        const companyName = getCompanyName(companyId);
+
+        if (!history) {
+            showCenteredAlert("No historical data found for this period.", "warning");
+            return;
+        }
+
+        let tableRows = '';
+        (history.lines || []).forEach((line, idx) => {
+            tableRows += `
+                <tr>
+                    <td style="border:1px solid #333;padding:4px 6px;font-family:monospace;font-size:9px;">${idx + 1}</td>
+                    <td style="border:1px solid #333;padding:4px 6px;font-size:9px;">${line.description || line.cost_code}</td>
+                    <td style="border:1px solid #333;padding:4px 6px;text-align:right;font-family:monospace;font-size:9px;">${formatCurrency(line.total_this_period || 0)}</td>
+                </tr>
+            `;
+        });
+
+        let lienWaiverSection = '';
+        if (waiver && waiver.dataUrl) {
+            lienWaiverSection = `
+                <div style="page-break-before: always; margin-top: 40px; border-top: 2px solid #000; padding-top: 20px;">
+                    <h3 style="font-size: 14px; font-weight: bold; margin-bottom: 10px;">LIEN WAIVER ATTACHMENT</h3>
+                    <p style="font-size: 10px; margin-bottom: 5px;"><strong>Subcontractor:</strong> ${companyName}</p>
+                    <p style="font-size: 10px; margin-bottom: 5px;"><strong>File:</strong> ${waiver.filename}</p>
+                    <p style="font-size: 10px; margin-bottom: 15px;"><strong>Uploaded:</strong> ${new Date(waiver.uploadedDate).toLocaleString()}</p>
+                    
+                    <div style="border: 1px solid #ccc; padding: 10px; background: #fff;">
+                        <img src="${waiver.dataUrl}" style="max-width: 100%; max-height: 800px; display: block; margin: 0 auto;" alt="Lien Waiver Document"/>
+                    </div>
+                    <p style="font-size: 8px; color: #555; margin-top: 10px;">This is a system-generated attachment of the lien waiver submitted for this pay application period.</p>
+                </div>
+            `;
+        } else {
+            lienWaiverSection = `
+                <div style="page-break-before: always; margin-top: 40px; border-top: 2px solid #000; padding-top: 20px;">
+                    <h3 style="font-size: 14px; font-weight: bold; margin-bottom: 10px;">LIEN WAIVER ATTACHMENT</h3>
+                    <p style="font-size: 10px; color: #c00;">No lien waiver was uploaded for this specific pay application period.</p>
+                </div>
+            `;
+        }
+
+        const printHTML = `
+            <html><head><title>Pay App #${periodNumber} - G703 + Lien Waiver</title>
+            <style>
+                @page { size: letter landscape; margin: 0.4in; }
+                body { font-family: Arial, sans-serif; padding: 12px 16px; font-size: 9px; }
+                table { width:100%; border-collapse:collapse; font-size: 8.5px; }
+                th, td { border:1px solid #222; padding:3px 4px; vertical-align: top; }
+                th { background:#e8e8e8; font-weight:700; font-size: 8px; text-align:center; }
+                .right { text-align:right; font-family: "Courier New", monospace; }
+            </style>
+            </head><body>
+                <div style="display:flex; justify-content:space-between; align-items:flex-start; margin-bottom:8px; border-bottom:2px solid #222; padding-bottom:6px;">
+                    <div>
+                        <div style="font-size:14px; font-weight:700;">CONTINUATION SHEET (Historical)</div>
+                        <div style="font-size:10px;">AIA DOCUMENT G703 &nbsp;&nbsp; Period ${periodNumber} &nbsp;&nbsp; ${companyName}</div>
+                    </div>
+                </div>
+                
+                <table>
+                    <thead>
+                        <tr>
+                            <th style="width:6%;">#</th>
+                            <th style="width:70%;">Description of Work</th>
+                            <th style="width:24%;">Amount Billed This Period</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        ${tableRows}
+                    </tbody>
+                </table>
+
+                ${lienWaiverSection}
+            </body></html>
+        `;
+
+        const printWindow = window.open('', '_blank');
+        printWindow.document.open();
+        printWindow.document.write(printHTML);
+        printWindow.document.close();
+        
+        // Use a timeout to ensure content is rendered before printing
+        setTimeout(() => {
+            printWindow.focus();
+            printWindow.print();
+            // Note: We do not close the window automatically to allow the user to cancel if needed.
+        }, 500);
+    }
+
+    // Expose the function globally if needed for debugging
+    window.printCombinedG703AndLienWaiver = printCombinedG703AndLienWaiver;
 
     window.onload = initializePayApplications;
 </script>
