@@ -1578,7 +1578,7 @@ let submissionDeadlineDate = localStorage.getItem('submissionDeadlineDate') || '
 
             const row = document.createElement('tr');
             row.className = 'sov-line-row hover:bg-zinc-800/60 cursor-pointer';
-            row.ondblclick = () => { if (!isLocked) editContractorSOVLine(line.id); };
+            row.ondblclick = () => editContractorSOVLine(line.id);
 
             row.innerHTML = `
                 <td class="px-3 py-2 text-center font-mono text-xs text-zinc-500">${visibleIndex}</td>
@@ -2820,11 +2820,6 @@ let submissionDeadlineDate = localStorage.getItem('submissionDeadlineDate') || '
         const costCode = document.getElementById('subCostCode').value.trim();
         const desc = document.getElementById('subDescription').value.trim();
         const origStr = document.getElementById('subOriginal').value.replace(/[^0-9.-]/g, '');
-
-        if (!costCode || !desc) {
-            showCenteredAlert("Cost Code and Description are required for Subcontractor Schedule of Values lines.", "warning");
-            return;
-        }
         const work = parseFloat(document.getElementById('subWorkThis').value) || 0;
         const mats = parseFloat(document.getElementById('subMaterials').value) || 0;
         const notes = document.getElementById('subNotes').value.trim();
