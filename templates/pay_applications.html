@@ -528,60 +528,55 @@ let submissionDeadlineDate = localStorage.getItem('submissionDeadlineDate') || '
     }
 
     function printLienWaiver(companyId) {
-        if (!companyId) return;
-        const periodNum = currentPayAppPeriod ? currentPayAppPeriod.periodNumber : 1;
-        const waiver = subLienWaivers[companyId] && subLienWaivers[companyId][periodNum];
+    const currentPeriodNum = currentPayAppPeriod ? currentPayAppPeriod.periodNumber : 1;
+    const waiver = subLienWaivers[companyId] && subLienWaivers[companyId][currentPeriodNum];
 
-        if (!waiver || !waiver.dataUrl) {
-            showCenteredAlert("No lien waiver available to print for this period.", 'warning');
-            return;
-        }
-
-        const iframe = document.createElement('iframe');
-        iframe.style.position = 'fixed';
-        iframe.style.width = '0';
-        iframe.style.height = '0';
-        iframe.style.border = 'none';
-        document.body.appendChild(iframe);
-
-        const doc = iframe.contentWindow.document;
-        doc.open();
-
-        const isPdf = (waiver.filename || '').toLowerCase().endsWith('.pdf');
-        let contentHTML = '';
-        if (isPdf) {
-            contentHTML = `<embed src="${waiver.dataUrl}" type="application/pdf" style="width:100%; height:950px; border:1px solid #ccc;" />`;
-        } else {
-            contentHTML = `<img src="${waiver.dataUrl}" style="max-width:100%; max-height:900px; border:1px solid #ccc;" alt="Lien Waiver" />`;
-        }
-
-        doc.write(`
-            <html>
-            <head>
-                <title>Lien Waiver - ${getCompanyName(companyId)}</title>
-                <style>
-                    @page { size: letter; margin: 0.5in; }
-                    body { font-family: Arial, sans-serif; padding: 20px; }
-                </style>
-            </head>
-            <body>
-                <h2 style="margin-bottom: 5px;">Lien Waiver</h2>
-                <p style="margin: 2px 0;"><strong>Subcontractor:</strong> ${getCompanyName(companyId)}</p>
-                <p style="margin: 2px 0 15px 0;"><strong>File:</strong> ${waiver.filename || 'Document'}</p>
-                ${contentHTML}
-                <p style="margin-top: 10px; font-size: 12px; color: #555;">Uploaded: ${new Date(waiver.uploadedDate).toLocaleString()}</p>
-            </body>
-            </html>
-        `);
-        doc.close();
-
-        setTimeout(() => {
-            iframe.contentWindow.focus();
-            iframe.contentWindow.print();
-            setTimeout(() => document.body.removeChild(iframe), 800);
-        }, 450);
+    if (!waiver || !waiver.dataUrl) {
+        showCenteredAlert("No lien waiver has been uploaded for this period.", "warning");
+        return;
     }
 
+    const printHTML = `
+        <html>
+        <head>
+            <title>Lien Waiver - ${getCompanyName(companyId)}</title>
+            <style>
+                @page { size: letter; margin: 0.5in; }
+                body { font-family: Arial, sans-serif; padding: 20px; }
+                .header { border-bottom: 2px solid #000; padding-bottom: 10px; margin-bottom: 20px; }
+            </style>
+        </head>
+        <body>
+            <div class="header">
+                <h2>Lien Waiver</h2>
+                <p><strong>Subcontractor:</strong> ${getCompanyName(companyId)}</p>
+                <p><strong>Period:</strong> ${currentPayAppPeriod ? currentPayAppPeriod.periodNumber : ''} 
+                   (${currentPayAppPeriod ? currentPayAppPeriod.periodStart : ''} to ${currentPayAppPeriod ? currentPayAppPeriod.periodEnd : ''})</p>
+                <p><strong>File:</strong> ${waiver.filename}</p>
+            </div>
+            <embed src="${waiver.dataUrl}" type="application/pdf" width="100%" height="900px" />
+        </body>
+        </html>
+    `;
+
+    const iframe = document.createElement('iframe');
+    iframe.style.position = 'fixed';
+    iframe.style.width = '0';
+    iframe.style.height = '0';
+    iframe.style.border = 'none';
+    document.body.appendChild(iframe);
+
+    const doc = iframe.contentWindow.document;
+    doc.open();
+    doc.write(printHTML);
+    doc.close();
+
+    setTimeout(() => {
+        iframe.contentWindow.focus();
+        iframe.contentWindow.print();
+        setTimeout(() => document.body.removeChild(iframe), 800);
+    }, 600);
+}
     function submitLienWaiver(companyId) {
         if (!companyId) return;
         const waiver = lienWaivers[companyId];
