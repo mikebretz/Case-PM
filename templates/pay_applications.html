@@ -2454,7 +2454,7 @@ let submissionDeadlineDate = localStorage.getItem('submissionDeadlineDate') || '
                         <button onclick="uploadLienWaiver(${selectedSubCompanyId})" class="px-4 py-1.5 bg-zinc-700 hover:bg-zinc-600 text-white rounded text-xs font-medium flex items-center gap-1.5">
                             <i class="fa-solid fa-upload"></i> <span>Re-upload Lien Waiver</span>
                         </button>
-                        <span class="text-xs text-emerald-400 ml-2 truncate max-w-[180px]" title="${waiverStatus.filename}">${waiverStatus.filename}</span>
+                        <span class="text-xs text-emerald-400 ml-2 truncate max-w-[180px]" title="${waiverStatus.filename}">${waiverStatus.filename ? waiverStatus.filename.replace(/Michael.*signed.*PDF/gi, '').trim() || 'Lien Waiver.pdf' : ''}</span>
                         <button onclick="removeLienWaiver(${selectedSubCompanyId}); event.stopImmediatePropagation();" class="ml-2 px-2 py-0.5 bg-red-600 hover:bg-red-500 text-white rounded text-[10px] font-medium flex items-center gap-1">
                             <i class="fa-solid fa-times"></i> <span>Remove</span>
                         </button>
