@@ -308,18 +308,21 @@
                 </label>
             </div>
 
-            <!-- New: Required Submission Deadline Setting -->
+            <!-- New: Required Submission Deadline Setting (Day of Month) -->
             <div class="pt-3 border-t border-zinc-700">
                 <label class="flex items-center justify-between cursor-pointer mb-2">
                     <div>
                         <div class="text-sm text-zinc-300">Require deadline for Subcontractor Pay App submission</div>
-                        <div class="text-[10px] text-zinc-500">When ON, all subs must submit their periodic billing by the date below.</div>
+                        <div class="text-[10px] text-zinc-500">When ON, all subs must submit their periodic billing by this day of every month.</div>
                     </div>
-                    <input type="checkbox" id="requireSubmissionDeadlineToggle" class="w-5 h-5 accent-emerald-600" onchange="toggleDeadlineDateInput(this)">
+                    <input type="checkbox" id="requireSubmissionDeadlineToggle" class="w-5 h-5 accent-emerald-600" onchange="toggleDeadlineDayInput(this)">
                 </label>
                 <div id="submissionDeadlineContainer" class="hidden ml-1">
-                    <label class="block text-xs text-zinc-400 mb-1">Deadline Date (all subs must submit by)</label>
-                    <input type="date" id="submissionDeadlineDate" class="w-full bg-zinc-800 border border-zinc-700 rounded-md px-4 py-2 text-sm text-white">
+                    <label class="block text-xs text-zinc-400 mb-1">Day of the Month (e.g. 20th or 25th)</label>
+                    <select id="submissionDeadlineDay" class="w-full bg-zinc-800 border border-zinc-700 rounded-md px-4 py-2 text-sm text-white">
+                        <option value="">-- Select Day --</option>
+                        ${Array.from({length: 31}, (_, i) => `<option value="${i+1}">${i+1}${i === 0 ? 'st' : i === 1 ? 'nd' : i === 2 ? 'rd' : 'th'}</option>`).join('')}
+                    </select>
                 </div>
             </div>
         </div>
