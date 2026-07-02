@@ -313,15 +313,19 @@
                 <label class="flex items-center justify-between cursor-pointer mb-2">
                     <div>
                         <div class="text-sm text-zinc-300">Require deadline for Subcontractor Pay App submission</div>
-                        <div class="text-[10px] text-zinc-500">When ON, all subs must submit their periodic billing by this day of every month.</div>
+                        <div class="text-[10px] text-zinc-500">When ON, primary contacts receive a notification on this day of the month if they have not yet submitted their pay app.</div>
                     </div>
                     <input type="checkbox" id="requireSubmissionDeadlineToggle" class="w-5 h-5 accent-emerald-600" onchange="toggleDeadlineDayInput(this)">
                 </label>
                 <div id="submissionDeadlineContainer" class="hidden ml-1">
                     <label class="block text-xs text-zinc-400 mb-1">Day of the Month (e.g. 20th or 25th)</label>
                     <select id="submissionDeadlineDay" class="w-full bg-zinc-800 border border-zinc-700 rounded-md px-4 py-2 text-sm text-white">
-                        <option value="">-- Select Day --</option>
-                        ${Array.from({length: 31}, (_, i) => `<option value="${i+1}">${i+1}${i === 0 ? 'st' : i === 1 ? 'nd' : i === 2 ? 'rd' : 'th'}</option>`).join('')}
+                        <option value="">-- Select Day (Notification Trigger) --</option>
+                        ${Array.from({length: 14}, (_, i) => {
+                            const day = i + 15;
+                            const suffix = (day === 15 || day === 16) ? 'th' : (day === 17) ? 'th' : (day === 18) ? 'th' : (day === 19) ? 'th' : (day === 20) ? 'th' : (day === 21) ? 'st' : (day === 22) ? 'nd' : (day === 23) ? 'rd' : 'th';
+                            return `<option value="${day}">${day}${suffix}</option>`;
+                        }).join('')}
                     </select>
                 </div>
             </div>
@@ -2863,7 +2867,60 @@ let submissionDeadlineDate = localStorage.getItem('submissionDeadlineDate') || '
 
     function submitSubSOVForApproval(companyId) {
         const company = companies.find(c => c.id == companyId);
-        logPayAppAudit('SUB_SOV_SUBMITTED', { company: company ? (company.name || company.company_name) : companyId, lines: (subcontractorSOV[companyId] || []).length });
+        if (!company) return;
+
+        const currentStatus = getSubSOVStatus(companyId);
+        const subLines = subcontractorSOV[companyId] || [];
+
+        // If the SOV is already Approved, this "Submit Application" is for the current period billing (like G702)
+        if (currentStatus === 'Approved' || currentStatus === 'Approved — Lien Waiver Received' || currentStatus.startsWith('Approved')) {
+            // Commit billing to billed_to_date and clear drafts (like main G702 on Approve)
+            subLines.forEach(line => {
+                const work = line.work_this_period || 0;
+                const mats = line.materials_stored || 0;
+                const coWork = line.co_work_this_period || 0; // if CO field exists on line
+
+                line.billed_to_date = (line.billed_to_date || 0) + work + mats + coWork;
+                
+                // Clear draft fields for next period
+                line.work_this_period = 0;
+                line.materials_stored = 0;
+                line.co_work_this_period = 0;
+            });
+
+            // Clear lien waiver for this period (ready for next cycle)
+            if (lienWaivers[companyId]) {
+                delete lienWaivers[companyId];
+                localStorage.setItem('lienWaivers', JSON.stringify(lienWaivers));
+            }
+
+            // Create historical snapshot for this sub's pay app
+            const subHistoryKey = `subPayAppHistory_${companyId}`;
+            let subHistory = JSON.parse(localStorage.getItem(subHistoryKey) || '[]');
+            
+            const snapshot = {
+                period: JSON.parse(JSON.stringify(currentPayAppPeriod || {})),
+                lines: JSON.parse(JSON.stringify(subLines)),
+                approvedAt: new Date().toISOString(),
+                submittedBy: "Michael Bretz"
+            };
+            
+            subHistory.unshift(snapshot);
+            if (subHistory.length > 12) subHistory.length = 12; // keep last 12 periods
+            localStorage.setItem(subHistoryKey, JSON.stringify(subHistory));
+
+            logPayAppAudit('SUB_PAY_APP_SUBMITTED', { 
+                company: company.name || company.company_name, 
+                period: currentPayAppPeriod ? currentPayAppPeriod.periodNumber : '' 
+            });
+
+            showCenteredAlert("Subcontractor Pay Application submitted and committed. Draft fields cleared for next period.", 'success');
+            renderPayAppContent();
+            return;
+        }
+
+        // Original flow: First time submitting the SOV setup for approval
+        logPayAppAudit('SUB_SOV_SUBMITTED', { company: company.name || company.company_name, lines: subLines.length });
         setSubSOVStatus(companyId, 'Pending Approval', { submittedDate: new Date().toISOString() });
         showCenteredAlert("Subcontractor SOV submitted for GC review.", 'success');
         renderPayAppContent();
