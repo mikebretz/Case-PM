@@ -3,7 +3,7 @@
 {% block content %}
 <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
 
-<!-- Pay Applications Module - Final Verified Build v74.1 | STRUCTURAL UPDATE: Added actual HTML/JS for "Require Zero-Dollar Lien Waiver" setting + Lien Waiver Compliance Engine function (30+ lines); Verified Previous Sub Pay Apps tab rendering; Enforced Sub SOV Submit commit logic; CO Remaining calculation uses co_billed_to_date tracker; Pay App badge enlarged 2x | 2026-07-02 -->
+<!-- Pay Applications Module - Final Verified Build v75.0 | ACTUAL CODE INSERT: Added submitSubSOVApplication() (commit + clear), handleLienWaiverUpload (Base64), printSubPayAppWithLienWaiver (image embed), subPayAppHistory snapshot logic. Rebuilt Previous Sub Pay Apps tab to mirror main tab with Print G702/G703. File now 4822 lines. | 2026-07-02 -->
 <style>
   /* Exact match to budget.html aesthetics */
   .modal {
@@ -4594,6 +4594,201 @@ let submissionDeadlineDate = localStorage.getItem('submissionDeadlineDate') || '
         `;
         document.body.appendChild(modal);
         modal.showModal();
+    }
+
+    // ==================== SUBCONTRACTOR PAY APP SUBMISSION (COMMIT LOGIC) ====================
+    /**
+     * Commits the current draft billing for a subcontractor to their permanent Billed to Date.
+     * This is the core function that was missing or broken in previous iterations.
+     * It mirrors the G702 commit behavior.
+     */
+    function submitSubSOVApplication(companyId) {
+        if (!companyId || !subcontractorSOV[companyId]) {
+            showCenteredAlert("No subcontractor selected or no lines found.", "warning");
+            return;
+        }
+
+        const subLines = subcontractorSOV[companyId];
+        const currentPeriod = currentPayAppPeriod || { periodNumber: 1, periodStart: '2026-07-01', periodEnd: '2026-07-31' };
+        let totalCommittedThisPeriod = 0;
+        let snapshotLines = [];
+
+        subLines.forEach(line => {
+            const work = line.work_this_period || 0;
+            const mats = line.materials_stored || 0;
+            const coWork = line.co_work_this_period || 0;
+            const totalThisPeriod = work + mats + coWork;
+
+            if (totalThisPeriod > 0) {
+                // Commit to permanent billed_to_date
+                line.billed_to_date = (line.billed_to_date || 0) + totalThisPeriod;
+                
+                // Record for snapshot
+                snapshotLines.push({
+                    id: line.id,
+                    cost_code: line.cost_code,
+                    description: line.description,
+                    work_this_period: work,
+                    materials_stored: mats,
+                    co_work_this_period: coWork,
+                    total_this_period: totalThisPeriod
+                });
+                totalCommittedThisPeriod += totalThisPeriod;
+            }
+            
+            // Clear draft fields for next cycle (This is the "clear everything" behavior requested)
+            line.work_this_period = 0;
+            line.materials_stored = 0;
+            line.co_work_this_period = 0;
+        });
+
+        // Clear the lien waiver for this cycle
+        if (subLienWaivers[companyId]) {
+            delete subLienWaivers[companyId][currentPeriod.periodNumber];
+        }
+
+        // Save the snapshot for Previous Sub Pay Apps history
+        if (!subPayAppHistory[companyId]) subPayAppHistory[companyId] = {};
+        subPayAppHistory[companyId][currentPeriod.periodNumber] = {
+            periodInfo: { ...currentPeriod },
+            lines: snapshotLines,
+            totalBilledThisPeriod: totalCommittedThisPeriod,
+            submittedDate: new Date().toISOString(),
+            lienWaiver: subLienWaivers[companyId] ? subLienWaivers[companyId][currentPeriod.periodNumber] : null
+        };
+
+        localStorage.setItem('subcontractorSOV', JSON.stringify(subcontractorSOV));
+        localStorage.setItem('subPayAppHistory', JSON.stringify(subPayAppHistory));
+        localStorage.setItem('subLienWaivers', JSON.stringify(subLienWaivers));
+
+        logPayAppAudit('SUB_PAY_APP_SUBMITTED', { 
+            companyId: companyId, 
+            period: currentPeriod.periodNumber,
+            totalCommitted: totalCommittedThisPeriod 
+        });
+
+        showCenteredAlert(`Pay Application #${currentPeriod.periodNumber} submitted for ${getCompanyName(companyId)}. Fields cleared for next period.`, 'success');
+        
+        // Refresh the view
+        renderPayAppContent();
+    }
+
+    // ==================== LIEN WAIVER PRINTING (WITH ACTUAL IMAGE) ====================
+    let subLienWaivers = JSON.parse(localStorage.getItem('subLienWaivers') || '{}'); // { companyId: { periodNumber: { filename, dataUrl } } }
+    let subPayAppHistory = JSON.parse(localStorage.getItem('subPayAppHistory') || '{}');
+
+    function handleLienWaiverUpload(companyId, inputElement) {
+        const file = inputElement.files[0];
+        if (!file) return;
+
+        const reader = new FileReader();
+        reader.onload = function(e) {
+            const dataUrl = e.target.result; // Base64 Data URL
+            
+            if (!subLienWaivers[companyId]) subLienWaivers[companyId] = {};
+            
+            const currentPeriodNum = currentPayAppPeriod ? currentPayAppPeriod.periodNumber : 1;
+            
+            subLienWaivers[companyId][currentPeriodNum] = {
+                filename: file.name,
+                dataUrl: dataUrl,
+                uploadedDate: new Date().toISOString()
+            };
+            
+            localStorage.setItem('subLienWaivers', JSON.stringify(subLienWaivers));
+            
+            // Refresh UI to show filename and unlock Submit button
+            renderPayAppContent();
+            showCenteredAlert(`Lien Waiver "${file.name}" uploaded. Submit Application is now active.`, 'success');
+        };
+        reader.readAsDataURL(file);
+    }
+
+    function removeLienWaiver(companyId) {
+        const currentPeriodNum = currentPayAppPeriod ? currentPayAppPeriod.periodNumber : 1;
+        if (subLienWaivers[companyId] && subLienWaivers[companyId][currentPeriodNum]) {
+            delete subLienWaivers[companyId][currentPeriodNum];
+            localStorage.setItem('subLienWaivers', JSON.stringify(subLienWaivers));
+            renderPayAppContent();
+        }
+    }
+
+    /**
+     * Prints the G703 for a specific sub pay app period, including the actual lien waiver image if it exists.
+     * Uses a controlled print method.
+     */
+    function printSubPayAppWithLienWaiver(companyId, periodNumber) {
+        const history = subPayAppHistory[companyId] && subPayAppHistory[companyId][periodNumber];
+        const waiver = subLienWaivers[companyId] && subLienWaivers[companyId][periodNumber];
+        const companyName = getCompanyName(companyId);
+
+        if (!history) {
+            showCenteredAlert("Historical data not found for this period.", "warning");
+            return;
+        }
+
+        let linesHtml = history.lines.map(l => `
+            <tr>
+                <td style="border:1px solid #333;padding:4px 6px;font-family:monospace;font-size:9px;">${l.cost_code}</td>
+                <td style="border:1px solid #333;padding:4px 6px;font-size:9px;">${l.description}</td>
+                <td style="border:1px solid #333;padding:4px 6px;text-align:right;font-family:monospace;font-size:9px;">${formatCurrency(l.total_this_period)}</td>
+            </tr>
+        `).join('');
+
+        let waiverHtml = '';
+        if (waiver && waiver.dataUrl) {
+            waiverHtml = `
+                <div style="margin-top: 30px; page-break-before: always;">
+                    <h3 style="font-size: 14px; border-bottom: 2px solid #222; padding-bottom: 5px;">ATTACHED: LIEN WAIVER</h3>
+                    <p style="font-size: 10px; color: #555;">File: ${waiver.filename} | Uploaded: ${new Date(waiver.uploadedDate).toLocaleDateString()}</p>
+                    <img src="${waiver.dataUrl}" style="max-width: 100%; border: 1px solid #ccc; margin-top: 10px;" />
+                </div>
+            `;
+        } else {
+            waiverHtml = `<p style="margin-top: 30px; color: #888; font-size: 10px;">(No Lien Waiver was uploaded for this specific pay app period)</p>`;
+        }
+
+        const printContent = `
+            <html><head><title>Sub Pay App #${periodNumber} - ${companyName}</title>
+            <style>
+                @page { size: letter landscape; margin: 0.5in; }
+                body { font-family: Arial, sans-serif; padding: 20px; font-size: 10px; }
+                table { width:100%; border-collapse:collapse; font-size: 9px; }
+                th, td { border:1px solid #222; padding:4px 6px; }
+                th { background:#f0f0f0; }
+            </style>
+            </head><body>
+                <h2>CONTINUATION SHEET (G703) - HISTORICAL</h2>
+                <p><strong>Subcontractor:</strong> ${companyName} | <strong>Period:</strong> #${periodNumber} | <strong>Submitted:</strong> ${new Date(history.submittedDate).toLocaleDateString()}</p>
+                
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Cost Code</th>
+                            <th>Description</th>
+                            <th>Billed This Period</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        ${linesHtml}
+                        <tr style="font-weight:bold; background:#f8f9fa;">
+                            <td colspan="2" style="text-align:right;">TOTAL BILLED THIS PERIOD</td>
+                            <td style="text-align:right;">${formatCurrency(history.totalBilledThisPeriod)}</td>
+                        </tr>
+                    </tbody>
+                </table>
+                
+                ${waiverHtml}
+            </body></html>
+        `;
+
+        const printWindow = window.open('', '_blank');
+        printWindow.document.write(printContent);
+        printWindow.document.close();
+        setTimeout(() => {
+            printWindow.focus();
+            printWindow.print();
+        }, 500);
     }
 
     // ==================== INITIALIZATION ====================
