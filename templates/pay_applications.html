@@ -532,7 +532,7 @@ let submissionDeadlineDate = localStorage.getItem('submissionDeadlineDate') || '
         }
     }
 
-// ==================== FIXED LIEN WAIVER PRINT (Hidden iframe method - matches G703) ====================
+// ==================== FIXED LIEN WAIVER PRINT (Matches working G703 / Combined method) ====================
 function printLienWaiver(companyId) {
     if (!companyId) return;
     const periodNum = currentPayAppPeriod ? currentPayAppPeriod.periodNumber : 1;
@@ -543,22 +543,18 @@ function printLienWaiver(companyId) {
         return;
     }
 
-    const iframe = document.createElement('iframe');
-    iframe.style.position = 'fixed';
-    iframe.style.width = '0';
-    iframe.style.height = '0';
-    iframe.style.border = 'none';
-    document.body.appendChild(iframe);
-
-    const doc = iframe.contentWindow.document;
-    doc.open();
+    const printWindow = window.open('', '_blank');
+    if (!printWindow) {
+        showCenteredAlert("Pop-up blocked. Please allow pop-ups for this site and try again.", "warning");
+        return;
+    }
 
     const isPdf = (waiver.filename || '').toLowerCase().endsWith('.pdf');
     let contentHTML = isPdf 
         ? `<embed src="${waiver.dataUrl}" type="application/pdf" style="width:100%; height:950px; border:1px solid #ccc;" />`
         : `<img src="${waiver.dataUrl}" style="max-width:100%; max-height:900px; border:1px solid #ccc;" alt="Lien Waiver" />`;
 
-    doc.write(`
+    const html = `
         <html>
         <head>
             <title>Lien Waiver - ${getCompanyName(companyId)}</title>
@@ -575,14 +571,16 @@ function printLienWaiver(companyId) {
             <p style="margin-top: 10px; font-size: 12px; color: #555;">Uploaded: ${new Date(waiver.uploadedDate).toLocaleString()}</p>
         </body>
         </html>
-    `);
-    doc.close();
+    `;
+
+    printWindow.document.open();
+    printWindow.document.write(html);
+    printWindow.document.close();
 
     setTimeout(() => {
-        iframe.contentWindow.focus();
-        iframe.contentWindow.print();
-        setTimeout(() => document.body.removeChild(iframe), 900);
-    }, 500);
+        printWindow.focus();
+        printWindow.print();
+    }, 600);
 }
 
     function submitLienWaiver(companyId) {
