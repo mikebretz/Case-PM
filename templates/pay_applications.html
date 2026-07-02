@@ -450,13 +450,29 @@ let submissionDeadlineDate = localStorage.getItem('submissionDeadlineDate') || '
 
     // ==================== LIEN WAIVER WORKFLOW ====================
     function getLienWaiverStatus(companyId) {
-        if (!companyId) return { hasWaiver: false, submitted: false, filename: null };
+        if (!companyId) return { hasWaiver: false, submitted: false, filename: null, dataUrl: null };
+        const periodNum = currentPayAppPeriod ? currentPayAppPeriod.periodNumber : 1;
+
+        // Prefer subLienWaivers (periodic pay app waivers with image data)
+        if (subLienWaivers[companyId] && subLienWaivers[companyId][periodNum]) {
+            const w = subLienWaivers[companyId][periodNum];
+            return {
+                hasWaiver: true,
+                submitted: !!w.submitted,
+                filename: w.filename || null,
+                uploadedAt: w.uploadedDate || null,
+                dataUrl: w.dataUrl || null
+            };
+        }
+
+        // Fallback to old structure
         const waiver = lienWaivers[companyId] || {};
         return {
             hasWaiver: !!waiver.filename,
             submitted: !!waiver.submitted,
             filename: waiver.filename || null,
-            uploadedAt: waiver.uploadedAt || null
+            uploadedAt: waiver.uploadedAt || null,
+            dataUrl: null
         };
     }
 
@@ -464,23 +480,77 @@ let submissionDeadlineDate = localStorage.getItem('submissionDeadlineDate') || '
         if (!companyId) return;
         const input = document.createElement('input');
         input.type = 'file';
-        input.accept = '.pdf,.doc,.docx,.jpg,.png';
+        input.accept = '.pdf,.jpg,.png,.jpeg';
         input.onchange = function(e) {
             const file = e.target.files[0];
             if (!file) return;
 
-            // Simulate upload (in real system this would go to server/storage)
-            if (!lienWaivers[companyId]) lienWaivers[companyId] = {};
-            lienWaivers[companyId].filename = file.name;
-            lienWaivers[companyId].uploadedAt = new Date().toISOString();
-            lienWaivers[companyId].submitted = false; // Needs explicit submit
-            localStorage.setItem('lienWaivers', JSON.stringify(lienWaivers));
+            const reader = new FileReader();
+            reader.onload = function(ev) {
+                const dataUrl = ev.target.result;
 
-            logPayAppAudit('LIEN_WAIVER_UPLOADED', { companyId, filename: file.name });
-            showCenteredAlert(`Lien waiver "${file.name}" uploaded successfully. Click "Submit Lien Waiver" to finalize.`, 'success');
-            renderPayAppContent(); // Refresh to show new buttons/status
+                // Use subLienWaivers structure for current period (supports image rendering in print)
+                if (!subLienWaivers[companyId]) subLienWaivers[companyId] = {};
+                const periodNum = currentPayAppPeriod ? currentPayAppPeriod.periodNumber : 1;
+
+                subLienWaivers[companyId][periodNum] = {
+                    filename: file.name,
+                    dataUrl: dataUrl,
+                    uploadedDate: new Date().toISOString(),
+                    submitted: false
+                };
+
+                localStorage.setItem('subLienWaivers', JSON.stringify(subLienWaivers));
+
+                logPayAppAudit('LIEN_WAIVER_UPLOADED', { companyId, filename: file.name, period: periodNum });
+                showCenteredAlert(`Lien waiver "${file.name}" uploaded successfully.`, 'success');
+                renderPayAppContent();
+            };
+            reader.readAsDataURL(file);
         };
         input.click();
+    }
+
+    function removeLienWaiver(companyId) {
+        if (!companyId) return;
+        const periodNum = currentPayAppPeriod ? currentPayAppPeriod.periodNumber : 1;
+
+        if (subLienWaivers[companyId] && subLienWaivers[companyId][periodNum]) {
+            delete subLienWaivers[companyId][periodNum];
+            localStorage.setItem('subLienWaivers', JSON.stringify(subLienWaivers));
+            showCenteredAlert("Lien waiver removed.", 'success');
+            renderPayAppContent();
+        }
+    }
+
+    function printLienWaiver(companyId) {
+        if (!companyId) return;
+        const periodNum = currentPayAppPeriod ? currentPayAppPeriod.periodNumber : 1;
+        const waiver = subLienWaivers[companyId] && subLienWaivers[companyId][periodNum];
+
+        if (!waiver || !waiver.dataUrl) {
+            showCenteredAlert("No lien waiver available to print for this period.", 'warning');
+            return;
+        }
+
+        const printWindow = window.open('', '_blank');
+        printWindow.document.write(`
+            <html><head><title>Lien Waiver - ${getCompanyName(companyId)}</title>
+            <style>body { font-family: Arial, sans-serif; padding: 40px; text-align: center; } img { max-width: 100%; border: 1px solid #ccc; }</style>
+            </head><body>
+                <h2>Lien Waiver</h2>
+                <p><strong>Subcontractor:</strong> ${getCompanyName(companyId)}</p>
+                <p><strong>File:</strong> ${waiver.filename}</p>
+                <p><strong>Uploaded:</strong> ${new Date(waiver.uploadedDate).toLocaleString()}</p>
+                <hr style="margin: 20px 0;">
+                <img src="${waiver.dataUrl}" style="max-height: 900px;" />
+            </body></html>
+        `);
+        printWindow.document.close();
+        setTimeout(() => {
+            printWindow.focus();
+            printWindow.print();
+        }, 400);
     }
 
     function submitLienWaiver(companyId) {
@@ -3241,7 +3311,7 @@ let submissionDeadlineDate = localStorage.getItem('submissionDeadlineDate') || '
             newPayAppNumber: subPayAppNumbers[companyId]
         });
         
-        showCenteredAlert(`Application submitted. ${formatCurrency(totalCommittedThisPeriod)} committed to Billed to Date. Pay App # advanced to ${subPayAppNumbers[companyId]}. Lien waiver cleared.`, 'success');
+        showCenteredAlert(`Application submitted. ${formatCurrency(totalCommittedThisPeriod)} committed. Pay App # advanced to ${subPayAppNumbers[companyId]}. Lien waiver cleared for next period.`, 'success');
         renderPayAppContent();
     }
 
@@ -4704,15 +4774,12 @@ let submissionDeadlineDate = localStorage.getItem('submissionDeadlineDate') || '
     }
 
     function removeLienWaiver(companyId) {
-        if (!companyId) return;
         const currentPeriodNum = currentPayAppPeriod ? currentPayAppPeriod.periodNumber : 1;
         if (subLienWaivers[companyId] && subLienWaivers[companyId][currentPeriodNum]) {
             delete subLienWaivers[companyId][currentPeriodNum];
             localStorage.setItem('subLienWaivers', JSON.stringify(subLienWaivers));
+            renderPayAppContent();
             showCenteredAlert("Lien waiver removed for this period.", 'success');
-            renderPayAppContent(); // Force full re-render so the Upload button reappears and Remove button disappears
-        } else {
-            showCenteredAlert("No lien waiver found for the current period.", 'info');
         }
     }
 
