@@ -532,7 +532,7 @@ let submissionDeadlineDate = localStorage.getItem('submissionDeadlineDate') || '
         }
     }
 
-// ==================== LIEN WAIVER PRINT (Minimal window + Auto-close) ====================
+// ==================== LIEN WAIVER PRINT (Matches G703 behavior exactly) ====================
 function printLienWaiver(companyId) {
     if (!companyId) return;
     const periodNum = currentPayAppPeriod ? currentPayAppPeriod.periodNumber : 1;
@@ -543,13 +543,7 @@ function printLienWaiver(companyId) {
         return;
     }
 
-    // Open a very small window positioned off-screen
-    const printWindow = window.open(
-        '', 
-        '_blank', 
-        'width=10,height=10,left=99999,top=99999'
-    );
-    
+    const printWindow = window.open('', '_blank');
     if (!printWindow) {
         showCenteredAlert("Pop-up blocked. Please allow pop-ups for this site and try again.", "warning");
         return;
@@ -563,10 +557,10 @@ function printLienWaiver(companyId) {
     const html = `
         <html>
         <head>
-            <title>Lien Waiver</title>
+            <title>Lien Waiver - ${getCompanyName(companyId)}</title>
             <style>
                 @page { size: letter; margin: 0.5in; }
-                body { font-family: Arial, sans-serif; padding: 20px; margin: 0; }
+                body { font-family: Arial, sans-serif; padding: 20px; }
             </style>
         </head>
         <body>
@@ -583,12 +577,11 @@ function printLienWaiver(companyId) {
     printWindow.document.write(html);
     printWindow.document.close();
 
-    // Auto-close the temporary window after printing or canceling
-    printWindow.addEventListener('afterprint', function() {
-        setTimeout(() => {
-            try { printWindow.close(); } catch(e) {}
-        }, 250);
-    });
+    setTimeout(() => {
+        printWindow.focus();
+        printWindow.print();
+    }, 600);
+}
 
     // Give the content time to render, then trigger print
     setTimeout(() => {
