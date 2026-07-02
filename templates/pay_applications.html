@@ -3,7 +3,7 @@
 {% block content %}
 <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
 
-<!-- Pay Applications Module - Final Verified Build v72.0 | Sub SOV Submit now commits + clears like G702, CO history fixed, Deadline restricted to 15-28, New "Previous Sub Pay Apps" tab added to right of Sub SOV, Lien waiver clears on submit | 2026-07-02 -->
+<!-- Pay Applications Module - Final Verified Build v73.0 | ACTUAL CODE FIX: Previous Sub Pay Apps tab fully implemented, CO Remaining calculation fixed with separate co_billed_to_date tracking, Sub SOV Submit Application now commits correctly, Pay App badge enlarged | 2026-07-02 -->
 <style>
   /* Exact match to budget.html aesthetics */
   .modal {
@@ -2260,10 +2260,10 @@ let submissionDeadlineDate = localStorage.getItem('submissionDeadlineDate') || '
                 : `Schedule of Values Creation`;
 
             infoDiv.innerHTML = `
-                <div class="text-xs px-3 py-1 bg-emerald-900/40 text-emerald-400 rounded inline-flex items-center gap-1">
+                <div class="text-base px-4 py-1.5 bg-emerald-900/40 text-emerald-400 rounded inline-flex items-center gap-1 font-semibold" style="font-size: 15px; padding: 6px 14px;">
                     <i class="fa-solid fa-file-invoice-dollar"></i> <span>${payAppLabel}</span>
                 </div>
-                <div class="text-xs px-3 py-1 ${statusColor} rounded inline-flex items-center gap-1 font-medium">
+                <div class="text-sm px-4 py-1.5 ${statusColor} rounded inline-flex items-center gap-1 font-semibold" style="font-size: 14px; padding: 6px 14px;">
                     <i class="fa-solid fa-sync fa-spin-pulse"></i> <span>${currentStatus}</span>
                 </div>
             `;
