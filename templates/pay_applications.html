@@ -735,5 +735,194 @@
             reader.readAsDataURL(file);
         }
         
-        // Continue to Chunk 2...
-      
+// ==================== PREVIOUS SUB PAY APPS TAB ====================
+function renderPreviousSubPayAppsTab(container) {
+    let html = `
+        <div class="modern-card p-6">
+            <div class="flex items-center justify-between mb-4">
+                <div>
+                    <div class="text-lg font-semibold">Previous Subcontractor Pay Applications</div>
+                    <div class="text-xs text-zinc-400">View historical submissions and attached lien waivers</div>
+                </div>
+            </div>
+            
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+                <div>
+                    <label class="block text-xs text-zinc-400 mb-1.5">SELECT SUBCONTRACTOR</label>
+                    <select id="prevSubSelect" onchange="loadPreviousSubPayApps()" 
+                            class="w-full bg-zinc-900 border border-zinc-700 rounded-xl px-4 py-2.5 text-sm">
+                        <option value="">-- Select Subcontractor --</option>
+    `;
+    
+    companies.forEach(c => {
+        if (c.type === 'Subcontractor' || c.company_type === 'Subcontractor') {
+            html += `<option value="${c.id}">${c.name || c.company_name}</option>`;
+        }
+    });
+    
+    html += `
+                    </select>
+                </div>
+                <div>
+                    <label class="block text-xs text-zinc-400 mb-1.5">SELECT PERIOD</label>
+                    <select id="prevSubPeriodSelect" onchange="loadPreviousSubPayApps()" 
+                            class="w-full bg-zinc-900 border border-zinc-700 rounded-xl px-4 py-2.5 text-sm">
+                        <option value="">-- Select Period --</option>
+                        <option value="7">Period 7 (Jan 2026)</option>
+                        <option value="6">Period 6 (Dec 2025)</option>
+                        <option value="5">Period 5 (Nov 2025)</option>
+                    </select>
+                </div>
+            </div>
+            
+            <div id="prevSubContent">
+                <div class="text-center py-12 text-zinc-500 text-sm border border-dashed border-zinc-700 rounded-2xl">
+                    Select a subcontractor and period above to view historical pay application and lien waiver
+                </div>
+            </div>
+        </div>
+    `;
+    
+    container.innerHTML = html;
+}
+
+function loadPreviousSubPayApps() {
+    const subId = document.getElementById('prevSubSelect') ? document.getElementById('prevSubSelect').value : null;
+    const periodIdx = document.getElementById('prevSubPeriodSelect') ? document.getElementById('prevSubPeriodSelect').value : null;
+    
+    const container = document.getElementById('prevSubContent');
+    if (!container || !subId || !periodIdx) return;
+    
+    const history = subPayAppHistory[subId] && subPayAppHistory[subId][periodIdx];
+    const waiver = subLienWaivers[subId] && subLienWaivers[subId][periodIdx];
+    const companyName = getCompanyName(subId);
+    
+    if (!history) {
+        container.innerHTML = `
+            <div class="text-center py-8 text-amber-400 text-sm">
+                No historical pay application found for ${companyName} in Period ${periodIdx}.
+            </div>
+        `;
+        return;
+    }
+    
+    let rows = '';
+    (history.lines || []).forEach((line, idx) => {
+        rows += `
+            <tr>
+                <td class="p-3 font-mono text-xs">${line.cost_code || (idx + 1)}</td>
+                <td class="p-3">${line.description || ''}</td>
+                <td class="p-3 text-right font-mono">${formatCurrency(line.total_this_period || 0)}</td>
+            </tr>
+        `;
+    });
+    
+    let waiverHTML = '';
+    if (waiver && waiver.dataUrl) {
+        const isPdf = (waiver.filename || '').toLowerCase().endsWith('.pdf');
+        waiverHTML = `
+            <div class="mt-4 p-4 bg-zinc-900 border border-zinc-700 rounded-xl">
+                <div class="flex items-center justify-between mb-2">
+                    <div class="font-semibold text-sm">Lien Waiver Attached</div>
+                    <button onclick="printLienWaiver(${subId})" 
+                            class="px-3 py-1 bg-amber-600 hover:bg-amber-500 text-xs rounded-lg flex items-center gap-x-1">
+                        <i class="fa-solid fa-print"></i>
+                        <span>Print Waiver</span>
+                    </button>
+                </div>
+                <div class="text-xs text-zinc-400">${waiver.filename} • Uploaded ${new Date(waiver.uploadedDate).toLocaleDateString()}</div>
+            </div>
+        `;
+    } else {
+        waiverHTML = `
+            <div class="mt-4 p-4 bg-zinc-900 border border-dashed border-zinc-700 rounded-xl text-xs text-zinc-500">
+                No lien waiver was uploaded for this period.
+            </div>
+        `;
+    }
+    
+    container.innerHTML = `
+        <div class="border border-zinc-700 rounded-2xl overflow-hidden">
+            <div class="bg-zinc-800 px-4 py-3 flex items-center justify-between">
+                <div>
+                    <span class="font-semibold">${companyName}</span>
+                    <span class="text-xs text-zinc-400 ml-2">Period ${periodIdx}</span>
+                </div>
+                <button onclick="printCombinedG703AndLienWaiver(${subId}, ${periodIdx})" 
+                        class="px-4 py-1.5 bg-sky-600 hover:bg-sky-500 text-xs font-semibold rounded-xl flex items-center gap-x-2">
+                    <i class="fa-solid fa-print"></i>
+                    <span>Print G703 + Lien Waiver</span>
+                </button>
+            </div>
+            
+            <table class="w-full text-sm">
+                <thead>
+                    <tr class="bg-zinc-900 text-xs">
+                        <th class="p-3 text-left">Cost Code</th>
+                        <th class="p-3 text-left">Description</th>
+                        <th class="p-3 text-right">Amount Billed This Period</th>
+                    </tr>
+                </thead>
+                <tbody class="divide-y divide-zinc-700">
+                    ${rows}
+                </tbody>
+            </table>
+            
+            ${waiverHTML}
+        </div>
+    `;
+}
+
+// ==================== INITIALIZATION ====================
+function initializePayApplications() {
+    // Load saved data from localStorage
+    try {
+        const savedSOV = localStorage.getItem('subcontractorSOV');
+        if (savedSOV) subcontractorSOV = JSON.parse(savedSOV);
+        
+        const savedHistory = localStorage.getItem('subPayAppHistory');
+        if (savedHistory) subPayAppHistory = JSON.parse(savedHistory);
+        
+        const savedWaivers = localStorage.getItem('subLienWaivers');
+        if (savedWaivers) subLienWaivers = JSON.parse(savedWaivers);
+        
+        const savedAudit = localStorage.getItem('payAppAuditLog');
+        if (savedAudit) payAppAuditLog = JSON.parse(savedAudit);
+        
+        // Restore last selected sub if any
+        const lastSub = localStorage.getItem('lastSelectedSubSOV');
+        if (lastSub) {
+            setTimeout(() => {
+                const select = document.getElementById('subCompanySelect');
+                if (select) {
+                    select.value = lastSub;
+                    loadSubcontractorSOV(lastSub);
+                }
+            }, 300);
+        }
+    } catch (e) {
+        console.warn('Could not load saved pay app data:', e);
+    }
+    
+    // Render initial tab
+    renderPayAppContent();
+    
+    // Keyboard shortcut for print
+    document.addEventListener('keydown', function(e) {
+        if (e.ctrlKey && e.key === 'p') {
+            e.preventDefault();
+            printCurrentPayApp();
+        }
+    });
+    
+    console.log('%c[Case PM v83] ✅ Pay Applications module initialized with clean print functions.', 'color:#22c55e');
+}
+
+// Make sure these are globally available
+window.switchPayAppTab = switchPayAppTab;
+window.printCurrentPayApp = printCurrentPayApp;
+window.printSubcontractorG703 = printSubcontractorG703;
+window.printLienWaiver = printLienWaiver;
+window.printCombinedG703AndLienWaiver = printCombinedG703AndLienWaiver;
+window.showLienWaiverUploadModal = showLienWaiverUploadModal;
+        
