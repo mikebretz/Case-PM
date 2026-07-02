@@ -3329,6 +3329,15 @@ let submissionDeadlineDate = localStorage.getItem('submissionDeadlineDate') || '
             printG703();
         } else if (currentPayAppTab === 'sub-sov' && selectedSubCompanyId) {
             printSubcontractorG703(selectedSubCompanyId);
+        } else if (currentPayAppTab === 'previous-sub-payapps') {
+            // For Previous Sub Pay Apps tab, use the historical combined print if data available
+            const subId = document.getElementById('prevSubSelect') ? document.getElementById('prevSubSelect').value : null;
+            const periodIdx = document.getElementById('prevSubPeriodSelect') ? document.getElementById('prevSubPeriodSelect').value : null;
+            if (subId && periodIdx) {
+                printCombinedG703AndLienWaiver(subId, periodIdx);
+            } else {
+                showCenteredAlert("Please select a subcontractor and period in Previous Sub Pay Apps tab first.", "warning");
+            }
         } else {
             printG703(); // fallback
         }
@@ -3378,6 +3387,27 @@ let submissionDeadlineDate = localStorage.getItem('submissionDeadlineDate') || '
                 <td style="border:1px solid #333;padding:3px 5px;text-align:right;font-family:monospace;font-size:9px;">${formatCurrency(ret)}</td>
             </tr>`;
         });
+
+        // Check for saved lien waiver (even if not yet submitted)
+        const currentPeriodNum = period.periodNumber || (currentPayAppPeriod ? currentPayAppPeriod.periodNumber : 1);
+        const waiver = (subLienWaivers[companyId] && subLienWaivers[companyId][currentPeriodNum]) || null;
+        let lienWaiverSection = '';
+
+        if (waiver && waiver.dataUrl) {
+            lienWaiverSection = `
+                <div style="page-break-before: always; margin-top: 40px; border-top: 3px solid #000; padding-top: 20px;">
+                    <h3 style="font-size: 14px; font-weight: bold; margin-bottom: 8px;">ATTACHED LIEN WAIVER</h3>
+                    <p style="font-size: 10px; margin-bottom: 4px;"><strong>Subcontractor:</strong> ${companyName}</p>
+                    <p style="font-size: 10px; margin-bottom: 4px;"><strong>File:</strong> ${waiver.filename || 'Lien Waiver'}</p>
+                    <p style="font-size: 10px; margin-bottom: 15px;"><strong>Uploaded:</strong> ${waiver.uploadedDate ? new Date(waiver.uploadedDate).toLocaleString() : 'N/A'} (saved, pending submission)</p>
+                    
+                    <div style="border: 1px solid #ccc; padding: 10px; background: #fff; text-align: center;">
+                        <img src="${waiver.dataUrl}" style="max-width: 100%; max-height: 900px; display: block; margin: 0 auto;" alt="Lien Waiver Document"/>
+                    </div>
+                    <p style="font-size: 8px; color: #555; margin-top: 10px; text-align: center;">This lien waiver was saved for this pay application period and is included in this print job.</p>
+                </div>
+            `;
+        }
 
         const printHTML = `
             <html><head><title>G703 — ${companyName} — Pay App #${appNum}</title>
@@ -3436,6 +3466,8 @@ let submissionDeadlineDate = localStorage.getItem('submissionDeadlineDate') || '
                 <div style="margin-top:12px; font-size:8px; color:#555; text-align:center;">
                     Filtered G703 for ${companyName} • Pay App #${appNum} • Retainage at ${Math.round(retainageRate*100)}%
                 </div>
+
+                ${lienWaiverSection}
             </body></html>
         `;
 
