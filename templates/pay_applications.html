@@ -309,7 +309,7 @@
                         <div class="text-sm text-zinc-300">Require Lien Waiver with Subcontractor Pay App Submission</div>
                         <div class="text-[10px] text-zinc-500">When ON, Subs must upload &amp; submit a lien waiver before final payment can be processed.</div>
                     </div>
-                    <input type="checkbox" id="requireLienWaiverToggle" class="w-5 h-5 accent-emerald-600">
+                    <input type="checkbox" id="requireLienWaiverToggle" class="w-5 h-5 accent-emerald-600" ${requireLienWaiverOnSubPayApp ? 'checked' : ''}>
                 </label>
             </div>
 
@@ -337,7 +337,11 @@
                     <label class="block text-xs text-zinc-400 mb-1">Day of the Month (e.g. 20th or 25th)</label>
                     <select id="submissionDeadlineDay" class="w-full bg-zinc-800 border border-zinc-700 rounded-md px-4 py-2 text-sm text-white">
                         <option value="">-- Select Day (Notification Trigger) --</option>
-                        <!-- Populated dynamically in showSettingsModal() with clean options: 15th, 20th, 25th -->
+                        ${Array.from({length: 14}, (_, i) => {
+                            const day = i + 15;
+                            const suffix = (day === 15 || day === 16) ? 'th' : (day === 17) ? 'th' : (day === 18) ? 'th' : (day === 19) ? 'th' : (day === 20) ? 'th' : (day === 21) ? 'st' : (day === 22) ? 'nd' : (day === 23) ? 'rd' : 'th';
+                            return `<option value="${day}">${day}${suffix}</option>`;
+                        }).join('')}
                     </select>
                 </div>
             </div>
@@ -351,7 +355,7 @@
 </dialog>
 
 <script>
-    // ==================== DATA & STATE (v76.18 - LIVE LIEN WAIVER FIX: upload now instantly shows emerald pill on Sub SOV (no tab switch), immediate render on upload/remove for both Sub SOV & G702, robust insurance check for >=1 valid COI in certificates_of_insurance array, re-parse subLienWaivers on every Sub SOV render) ====================
+    // ==================== DATA & STATE (v76.17 - Fixed live lien waiver pill update on Sub SOV & G702 (instant render after upload/remove), nice emerald pill UI on Sub SOV matching G702, removed duplicate View from Tracker Actions, relaxed one-COI insurance rule) ====================
     let payApplications = JSON.parse(localStorage.getItem('payApplications')) || [];
     let contractorSOV = JSON.parse(localStorage.getItem('contractorSOV')) || [];
     let subcontractorSOV = JSON.parse(localStorage.getItem('subcontractorSOV')) || {}; // { companyId: [lines] }
@@ -515,9 +519,10 @@ let mainLienWaiver = JSON.parse(localStorage.getItem('mainLienWaiver') || '{}');
 
                 logPayAppAudit('LIEN_WAIVER_UPLOADED', { companyId, filename: file.name, period: periodNum });
                 showCenteredAlert(`Lien waiver "${file.name}" uploaded successfully.`, 'success');
-
-                // Immediate live UI update (no tab switch needed). Call render directly for reliability on Sub SOV.
-                renderPayAppContent();
+                // Force immediate live UI update on current tab (Sub SOV or G702) without needing to switch tabs
+                setTimeout(() => {
+                    renderPayAppContent();
+                }, 30);
             };
             reader.readAsDataURL(file);
         };
@@ -532,7 +537,10 @@ let mainLienWaiver = JSON.parse(localStorage.getItem('mainLienWaiver') || '{}');
             delete subLienWaivers[companyId][periodNum];
             localStorage.setItem('subLienWaivers', JSON.stringify(subLienWaivers));
             showCenteredAlert("Lien waiver removed.", 'success');
-            renderPayAppContent();
+            // Force immediate live UI update
+            setTimeout(() => {
+                renderPayAppContent();
+            }, 30);
         }
     }
 
@@ -560,7 +568,10 @@ let mainLienWaiver = JSON.parse(localStorage.getItem('mainLienWaiver') || '{}');
 
                 logPayAppAudit('MAIN_LIEN_WAIVER_UPLOADED', { period: periodNum, filename: file.name });
                 showCenteredAlert(`Lien waiver "${file.name}" uploaded for Pay Application.`, 'success');
-                renderPayAppContent();
+                // Force immediate live UI update on G702 tab
+                setTimeout(() => {
+                    renderPayAppContent();
+                }, 30);
             };
             reader.readAsDataURL(file);
         };
@@ -1275,13 +1286,12 @@ let mainLienWaiver = JSON.parse(localStorage.getItem('mainLienWaiver') || '{}');
         if (status === 'Draft') {
             workflowHTML += `<button onclick="submitPayApplication()" class="px-5 py-2 bg-emerald-600 hover:bg-emerald-500 rounded-md text-sm font-medium flex items-center gap-2"><i class="fa-solid fa-paper-plane"></i> Submit for Review</button>`;
             
-            // Lien Waiver button - ALWAYS visible. Text changes to "Re-upload" when file exists. Pill appears to the RIGHT.
+            // NEW: Lien Waiver Upload button for main Pay Application (G702) - placed right of Submit
             const currentPeriodNum = currentPayAppPeriod.periodNumber;
             const hasMainWaiver = mainLienWaiver[currentPeriodNum] && mainLienWaiver[currentPeriodNum].filename;
-            const mainBtnText = hasMainWaiver ? 'Re-upload Lien Waiver' : 'Lien Waiver Upload';
-            workflowHTML += `<button onclick="uploadMainContractorLienWaiver()" class="px-4 py-2 bg-zinc-700 hover:bg-zinc-600 rounded-md text-sm font-medium flex items-center gap-2 border border-zinc-600"><i class="fa-solid fa-file-upload"></i> <span>${mainBtnText}</span></button>`;
-
-            if (hasMainWaiver) {
+            if (!hasMainWaiver) {
+                workflowHTML += `<button onclick="uploadMainContractorLienWaiver()" class="px-4 py-2 bg-zinc-700 hover:bg-zinc-600 rounded-md text-sm font-medium flex items-center gap-2 border border-zinc-600"><i class="fa-solid fa-file-upload"></i> <span>Lien Waiver Upload</span></button>`;
+            } else {
                 const w = mainLienWaiver[currentPeriodNum];
                 workflowHTML += `<div class="flex items-center gap-2 px-3 py-1.5 bg-zinc-800 border border-emerald-600 rounded-md text-sm">
                     <span class="text-emerald-400"><i class="fa-solid fa-file-contract"></i></span>
@@ -2774,8 +2784,6 @@ let mainLienWaiver = JSON.parse(localStorage.getItem('mainLienWaiver') || '{}');
             `;
         } else if (currentStatus === 'Approved') {
             // === CLEAN PROCORE-STYLE MONTHLY BILLING FLOW (stays on this tab) ===
-            // Re-parse lien waiver data from localStorage for guaranteed freshness after upload (fixes live update)
-            subLienWaivers = JSON.parse(localStorage.getItem('subLienWaivers') || '{}');
             const periodNum = currentPayAppPeriod ? currentPayAppPeriod.periodNumber : 1;
             const historyEntry = subPayAppHistory[selectedSubCompanyId] && subPayAppHistory[selectedSubCompanyId][periodNum];
             const isPending = historyEntry && historyEntry.status === 'Pending Approval';
@@ -2832,23 +2840,23 @@ let mainLienWaiver = JSON.parse(localStorage.getItem('mainLienWaiver') || '{}');
                     `;
                 }
 
-                // Lien waiver controls - ALWAYS show the upload/re-upload button. Pill appears to the RIGHT when file exists.
-                const subBtnText = hasWaiver ? 'Re-upload Lien Waiver' : `Upload Lien Waiver ${requireLienWaiverOnSubPayApp ? '(Required)' : '(Optional)'}`;
-                buttonsHTML += `
-                    <button onclick="uploadLienWaiver(${selectedSubCompanyId}); event.stopImmediatePropagation();" class="px-4 py-2 bg-sky-600 hover:bg-sky-500 text-white rounded text-sm flex items-center gap-1.5">
-                        <i class="fa-solid fa-upload"></i> <span>${subBtnText}</span>
-                    </button>
-                `;
-
+                // Lien waiver controls (always available when Approved, upload is optional unless setting requires it)
                 if (hasWaiver) {
-                    // Nice pill to the right of the button (live updating)
+                    // Nice pill matching G702 main lien waiver style (live updating)
                     buttonsHTML += `
                         <div class="inline-flex items-center gap-1.5 px-3 py-1.5 bg-emerald-900/60 border border-emerald-600 rounded-md text-sm">
                             <i class="fa-solid fa-file-contract text-emerald-400"></i>
                             <span class="text-emerald-300 max-w-[180px] truncate" title="${waiver.filename}">${waiver.filename}</span>
                             <button onclick="viewLienWaiver(${selectedSubCompanyId}); event.stopImmediatePropagation();" class="px-2.5 py-0.5 bg-emerald-700 hover:bg-emerald-600 text-white rounded text-xs">View</button>
                             <button onclick="removeLienWaiver(${selectedSubCompanyId}); event.stopImmediatePropagation();" class="px-2.5 py-0.5 bg-red-600 hover:bg-red-500 text-white rounded text-xs">Remove</button>
+                            <button onclick="uploadLienWaiver(${selectedSubCompanyId}); event.stopImmediatePropagation();" class="px-2.5 py-0.5 bg-zinc-600 hover:bg-zinc-500 text-white rounded text-xs">Re-upload</button>
                         </div>
+                    `;
+                } else {
+                    buttonsHTML += `
+                        <button onclick="uploadLienWaiver(${selectedSubCompanyId})" class="px-4 py-2 bg-sky-600 hover:bg-sky-500 text-white rounded text-sm flex items-center gap-1.5">
+                            <i class="fa-solid fa-upload"></i> <span>Upload Lien Waiver ${requireLienWaiverOnSubPayApp ? '(Required)' : '(Optional)'}</span>
+                        </button>
                     `;
                 }
             }
@@ -5061,15 +5069,10 @@ function printSubcontractorG703(companyId) {
             select.value = String(defaultRetainagePercent);
         }
         
-        // Fix: Properly set the Require Lien Waiver checkbox from current setting
-        const lienToggle = document.getElementById('requireLienWaiverToggle');
-        if (lienToggle) {
-            lienToggle.checked = requireLienWaiverOnSubPayApp;
-        }
-        
-        // Load deadline setting
+        // Load new deadline setting
         const deadlineToggle = document.getElementById('requireSubmissionDeadlineToggle');
         const deadlineContainer = document.getElementById('submissionDeadlineContainer');
+        const deadlineInput = document.getElementById('submissionDeadlineDate');
         
         if (deadlineToggle) {
             deadlineToggle.checked = requireSubmissionDeadline;
@@ -5077,21 +5080,8 @@ function printSubcontractorG703(companyId) {
                 deadlineContainer.classList.toggle('hidden', !requireSubmissionDeadline);
             }
         }
-        
-        // Populate clean dropdown: only 15th, 20th, 25th (no computer code)
-        const daySelect = document.getElementById('submissionDeadlineDay');
-        if (daySelect) {
-            daySelect.innerHTML = `
-                <option value="">-- Select Day (Notification Trigger) --</option>
-                <option value="15">15th</option>
-                <option value="20">20th</option>
-                <option value="25">25th</option>
-            `;
-            // Restore previously saved value if it matches one of the options
-            const savedDay = localStorage.getItem('submissionDeadlineDay') || submissionDeadlineDate || '';
-            if (savedDay === '15' || savedDay === '20' || savedDay === '25') {
-                daySelect.value = savedDay;
-            }
+        if (deadlineInput && submissionDeadlineDate) {
+            deadlineInput.value = submissionDeadlineDate;
         }
         
         modal.showModal();
@@ -5858,37 +5848,34 @@ function printSubcontractorG703(companyId) {
             return { compliant: true, message: 'COI and insurance current (Arch Fire Protection)' };
         }
 
-        // === ROBUST "AT LEAST ONE VALID COI" LOGIC (per user requirement) ===
-        // If there is at least ONE non-expired COI entry under Certificates of Insurance (or equivalent array),
-        // it is considered current. No need for separate GL + WC + COI.
-        // Prioritize the array under "Certificates of Insurance" header / Add COI button.
-        let coiList = company.certificates_of_insurance || company.coi_entries || company.coi_list || 
-                      company.insurance_certificates || company.coi || company.coi_data || [];
+        // === SIMPLIFIED LOGIC PER USER REQUIREMENT ===
+        // For the Sub Pay App Tracker "Insurance" column:
+        // If there is at least ONE valid (non-expired) COI under Certificates of Insurance, it is considered current.
+        // They do not need separate GL + WC + COI all present.
+        const coiVal = company.coi_on_file || company.insurance_coi || company.coi_expiry || company.insurance_coi_expiry || 
+                       company.certificate_of_insurance || company.coi_file || company.coi_date || company.coi || 
+                       company.coi_entries || company.certificates_of_insurance;
 
-        if (!Array.isArray(coiList)) {
-            // If it's a single object or boolean/string, wrap it
-            if (coiList && typeof coiList === 'object') coiList = [coiList];
-            else if (coiList) coiList = [coiList];
-            else coiList = [];
+        function isExpired(val) {
+            if (!val) return true;
+            if (typeof val === 'boolean') return !val;
+            // Handle array of COI entries (common in modern vendor pages)
+            if (Array.isArray(val)) {
+                return !val.some(entry => {
+                    const exp = entry.expiry || entry.expiration || entry.expiry_date || entry.date;
+                    if (!exp) return true;
+                    const d = new Date(exp);
+                    return !isNaN(d.getTime()) && d >= new Date();
+                });
+            }
+            const d = new Date(val);
+            if (isNaN(d.getTime())) return false;
+            return d < new Date();
         }
 
-        const hasAtLeastOneValidCOI = coiList.length > 0 && coiList.some(entry => {
-            if (!entry) return false;
-            // Check common expiry field names (case insensitive via ||)
-            const exp = entry.expiry || entry.expiration || entry.expiry_date || entry.valid_until || 
-                        entry.expires || entry.date || entry.coi_expiry;
-            if (!exp) return true; // No expiry date present → assume current/valid (lenient per real-world COI handling)
-            const d = new Date(exp);
-            return !isNaN(d.getTime()) && d >= new Date(); // valid if future or today
-        });
+        const hasValidCOI = !!coiVal && !isExpired(coiVal);
 
-        if (hasAtLeastOneValidCOI) {
-            return { compliant: true, message: 'COI on file and current' };
-        }
-
-        // Fallback: check simple boolean/string fields if array check failed
-        const simpleCoi = company.coi_on_file || company.insurance_coi || company.certificate_of_insurance || company.coi_file;
-        if (simpleCoi === true || (typeof simpleCoi === 'string' && simpleCoi.trim() !== '')) {
+        if (hasValidCOI) {
             return { compliant: true, message: 'COI on file and current' };
         }
 
