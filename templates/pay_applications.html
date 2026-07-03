@@ -334,7 +334,7 @@
                     <input type="checkbox" id="requireSubmissionDeadlineToggle" class="w-5 h-5 accent-emerald-600" onchange="toggleDeadlineDayInput(this)">
                 </label>
                 <div id="submissionDeadlineContainer" class="hidden ml-1">
-                    <label class="block text-xs text-zinc-400 mb-1">Day of the Month</label>
+                    <label class="block text-xs text-zinc-400 mb-1">Day of the Month (e.g. 20th or 25th)</label>
                     <select id="submissionDeadlineDay" class="w-full bg-zinc-800 border border-zinc-700 rounded-md px-4 py-2 text-sm text-white">
                         <option value="15">15th</option>
                         <option value="20">20th</option>
@@ -507,10 +507,9 @@ let mainLienWaiver = JSON.parse(localStorage.getItem('mainLienWaiver') || '{}');
 
                 subLienWaivers[companyId][periodNum] = {
                     filename: file.name,
+                    dataUrl: dataUrl,
                     uploadedDate: new Date().toISOString(),
                     submitted: false
-                    // Note: dataUrl intentionally omitted to prevent localStorage quota errors on large PDFs/images.
-                    // View functionality shows filename + professional placeholder.
                 };
 
                 localStorage.setItem('subLienWaivers', JSON.stringify(subLienWaivers));
@@ -562,9 +561,8 @@ let mainLienWaiver = JSON.parse(localStorage.getItem('mainLienWaiver') || '{}');
 
                 mainLienWaiver[periodNum] = {
                     filename: file.name,
+                    dataUrl: dataUrl,
                     uploadedDate: new Date().toISOString()
-                    // Note: dataUrl intentionally omitted to prevent localStorage quota errors on large PDFs/images.
-                    // View functionality shows filename + professional placeholder.
                 };
                 localStorage.setItem('mainLienWaiver', JSON.stringify(mainLienWaiver));
 
@@ -589,39 +587,6 @@ let mainLienWaiver = JSON.parse(localStorage.getItem('mainLienWaiver') || '{}');
             return;
         }
 
-        if (!waiver.dataUrl) {
-            const placeholderModal = document.createElement('dialog');
-            placeholderModal.className = 'bg-zinc-900 border border-zinc-700 rounded-3xl p-0 max-w-md w-full shadow-2xl z-[999999]';
-            placeholderModal.style.position = 'fixed';
-            placeholderModal.style.top = '50%';
-            placeholderModal.style.left = '50%';
-            placeholderModal.style.transform = 'translate(-50%, -50%)';
-            placeholderModal.innerHTML = `
-                <div class="p-6">
-                    <div class="flex items-center gap-3 mb-4">
-                        <i class="fa-solid fa-file-contract text-emerald-400 text-2xl"></i>
-                        <div>
-                            <div class="font-semibold text-lg">Main Lien Waiver on File</div>
-                            <div class="text-sm text-zinc-400">Period ${periodNum}</div>
-                        </div>
-                    </div>
-                    <div class="bg-zinc-800 border border-zinc-700 rounded-lg p-4 mb-4">
-                        <div class="text-xs text-zinc-400">FILE NAME</div>
-                        <div class="font-mono text-emerald-300 mt-1">${waiver.filename || 'Lien Waiver Document'}</div>
-                        <div class="text-xs text-zinc-500 mt-2">Uploaded: ${waiver.uploadedDate ? new Date(waiver.uploadedDate).toLocaleString() : 'N/A'}</div>
-                    </div>
-                    <div class="text-xs text-zinc-400 mb-4">The actual document is securely stored. In this demo environment, full PDF/image embedding is disabled to prevent storage quota issues.</div>
-                    <div class="flex justify-end gap-3">
-                        <button onclick="removeMainLienWaiver(); this.closest('dialog').close()" class="px-4 py-2 text-red-400 hover:underline text-sm">Remove Record</button>
-                        <button onclick="this.closest('dialog').close(); this.closest('dialog').remove()" class="px-5 py-2 bg-emerald-600 hover:bg-emerald-500 rounded text-sm">Close</button>
-                    </div>
-                </div>
-            `;
-            document.body.appendChild(placeholderModal);
-            placeholderModal.showModal();
-            return;
-        }
-
         const isPdf = (waiver.filename || '').toLowerCase().endsWith('.pdf');
         const modal = document.createElement('dialog');
         modal.className = 'bg-zinc-900 border border-zinc-700 rounded-3xl p-0 max-w-[min(1100px,95vw)] w-full shadow-2xl z-[999999]';
@@ -640,19 +605,19 @@ let mainLienWaiver = JSON.parse(localStorage.getItem('mainLienWaiver') || '{}');
                     <div class="font-semibold text-lg">Main Pay Application Lien Waiver — Period ${periodNum}</div>
                     <div class="text-sm text-zinc-400">${waiver.uploadedDate || ''}</div>
                 </div>
-                <div class="flex items-center gap-3">
-                    <!-- Print and X button removed per request -->
-                </div>
+                <div></div>
             </div>
             <div class="p-6 bg-zinc-950 overflow-auto" style="max-height: calc(82vh - 120px);">
-                ${isPdf 
-                    ? `<embed src="${waiver.dataUrl}" type="application/pdf" style="width:100%; height:65vh; border-radius:12px;" />`
-                    : `<img src="${waiver.dataUrl}" style="max-width:100%; max-height:65vh; display:block; margin:0 auto; border-radius:12px;" />`
+                ${waiver.dataUrl 
+                    ? (isPdf 
+                        ? `<embed src="${waiver.dataUrl}" type="application/pdf" style="width:100%; height:65vh; border-radius:12px;" />`
+                        : `<img src="${waiver.dataUrl}" style="max-width:100%; max-height:65vh; display:block; margin:0 auto; border-radius:12px;" />`)
+                    : `<div class="text-center py-12 text-zinc-400">Document preview not available.<br>The file "${waiver.filename || ''}" was uploaded but content embedding is unavailable in this session.</div>`
                 }
             </div>
-            <div class="px-6 py-4 border-t border-zinc-700 flex justify-end text-sm bg-zinc-900">
-                <button onclick="removeMainLienWaiver(); this.closest('dialog').close()" class="px-4 py-2 text-red-400 hover:underline mr-3">Remove</button>
-                <button onclick="this.closest('dialog').close(); this.closest('dialog').remove()" class="px-6 py-2 bg-zinc-700 hover:bg-zinc-600 rounded">Close</button>
+            <div class="px-6 py-4 border-t border-zinc-700 flex justify-between text-sm bg-zinc-900">
+                <button onclick="removeMainLienWaiver(); this.closest('dialog').close()" class="px-4 py-2 text-red-400 hover:underline">Remove</button>
+                <button onclick="this.closest('dialog').close(); this.closest('dialog').remove()" class="px-6 py-2 bg-emerald-600 hover:bg-emerald-500 rounded text-sm font-medium">Close Viewer</button>
             </div>
         `;
         document.body.appendChild(modal);
@@ -685,40 +650,6 @@ let mainLienWaiver = JSON.parse(localStorage.getItem('mainLienWaiver') || '{}');
             return;
         }
 
-        // If no dataUrl (quota-safe mode), show professional placeholder instead of trying to embed missing data
-        if (!waiver.dataUrl) {
-            const placeholderModal = document.createElement('dialog');
-            placeholderModal.className = 'bg-zinc-900 border border-zinc-700 rounded-3xl p-0 max-w-md w-full shadow-2xl z-[999999]';
-            placeholderModal.style.position = 'fixed';
-            placeholderModal.style.top = '50%';
-            placeholderModal.style.left = '50%';
-            placeholderModal.style.transform = 'translate(-50%, -50%)';
-            placeholderModal.innerHTML = `
-                <div class="p-6">
-                    <div class="flex items-center gap-3 mb-4">
-                        <i class="fa-solid fa-file-contract text-emerald-400 text-2xl"></i>
-                        <div>
-                            <div class="font-semibold text-lg">Lien Waiver on File</div>
-                            <div class="text-sm text-zinc-400">${getCompanyName(companyId)} — Period ${periodNum}</div>
-                        </div>
-                    </div>
-                    <div class="bg-zinc-800 border border-zinc-700 rounded-lg p-4 mb-4">
-                        <div class="text-xs text-zinc-400">FILE NAME</div>
-                        <div class="font-mono text-emerald-300 mt-1">${waiver.filename || 'Lien Waiver Document'}</div>
-                        <div class="text-xs text-zinc-500 mt-2">Uploaded: ${waiver.uploadedDate ? new Date(waiver.uploadedDate).toLocaleString() : 'N/A'}</div>
-                    </div>
-                    <div class="text-xs text-zinc-400 mb-4">The actual document is securely stored. In this demo environment, full PDF/image embedding is disabled to prevent storage quota issues. The file name and metadata are preserved for audit and compliance tracking.</div>
-                    <div class="flex justify-end gap-3">
-                        <button onclick="removeLienWaiver(${companyId}); this.closest('dialog').close()" class="px-4 py-2 text-red-400 hover:underline text-sm">Remove Record</button>
-                        <button onclick="this.closest('dialog').close(); this.closest('dialog').remove()" class="px-5 py-2 bg-emerald-600 hover:bg-emerald-500 rounded text-sm">Close</button>
-                    </div>
-                </div>
-            `;
-            document.body.appendChild(placeholderModal);
-            placeholderModal.showModal();
-            return;
-        }
-
         const isPdf = (waiver.filename || '').toLowerCase().endsWith('.pdf');
 
         const modal = document.createElement('dialog');
@@ -738,21 +669,21 @@ let mainLienWaiver = JSON.parse(localStorage.getItem('mainLienWaiver') || '{}');
                     <div class="font-semibold text-lg">Lien Waiver — ${getCompanyName(companyId)}</div>
                     <div class="text-sm text-zinc-400">Period ${periodNum} • ${waiver.uploadedDate || 'Unknown date'}</div>
                 </div>
-                <div class="flex items-center gap-3">
-                    <!-- Print and close X removed per request. Only Close Viewer at bottom remains. -->
-                </div>
+                <div></div>
             </div>
             
             <div class="p-6 bg-zinc-950 overflow-auto" style="max-height: calc(92vh - 140px);">
-                ${isPdf 
-                    ? `<embed src="${waiver.dataUrl}" type="application/pdf" style="width:100%; height:70vh; border-radius:12px;" />`
-                    : `<img src="${waiver.dataUrl}" style="max-width:100%; max-height:70vh; display:block; margin:0 auto; border-radius:12px;" />`
+                ${waiver.dataUrl 
+                    ? (isPdf 
+                        ? `<embed src="${waiver.dataUrl}" type="application/pdf" style="width:100%; height:70vh; border-radius:12px;" />`
+                        : `<img src="${waiver.dataUrl}" style="max-width:100%; max-height:70vh; display:block; margin:0 auto; border-radius:12px;" />`)
+                    : `<div class="text-center py-12 text-zinc-400">Document preview not available.<br>The file "${waiver.filename || ''}" was uploaded but content embedding is unavailable in this session.</div>`
                 }
             </div>
             
             <div class="px-6 py-4 border-t border-zinc-700 flex justify-between text-sm sticky bottom-0 bg-zinc-900">
                 <button onclick="removeLienWaiver(${companyId}); this.closest('dialog').close()" class="text-red-400 hover:underline">🗑️ Remove This File</button>
-                <button onclick="this.closest('dialog').close(); this.closest('dialog').remove()" class="px-6 py-2 bg-zinc-700 hover:bg-zinc-600 rounded">Close Viewer</button>
+                <button onclick="this.closest('dialog').close(); this.closest('dialog').remove()" class="px-6 py-2 bg-emerald-600 hover:bg-emerald-500 rounded text-sm font-medium">Close Viewer</button>
             </div>
         `;
         
@@ -1226,7 +1157,11 @@ let mainLienWaiver = JSON.parse(localStorage.getItem('mainLienWaiver') || '{}');
                     <div class="text-sm text-zinc-400">${waiver.uploadedDate || ''}</div>
                 </div>
                 <div class="flex items-center gap-3">
-                    <!-- Print and X button removed per request -->
+                    <button onclick="printFromViewer(this)" class="px-5 py-2 bg-emerald-600 hover:bg-emerald-700 rounded-xl text-sm font-medium flex items-center gap-2">
+                        <i class="fa-solid fa-print"></i> <span>Print</span>
+                    </button>
+                    <button onclick="this.closest('dialog').close(); this.closest('dialog').remove()" 
+                            class="w-12 h-12 flex items-center justify-center text-4xl text-red-400 font-black hover:text-red-300 hover:bg-zinc-800 rounded-full leading-none border-2 border-red-400">×</button>
                 </div>
             </div>
             <div class="p-6 bg-zinc-950 overflow-auto" style="max-height: calc(82vh - 120px);">
@@ -4692,7 +4627,11 @@ function printSubcontractorG703(companyId) {
                     <div class="text-sm text-zinc-400">Historical Pay App #${periodNumber} • ${waiver.uploadedDate || ''}</div>
                 </div>
                 <div class="flex items-center gap-3">
-                    <!-- Print and X button removed per request -->
+                    <button onclick="printFromViewer(this)" class="px-5 py-2 bg-emerald-600 hover:bg-emerald-700 rounded-xl text-sm font-medium flex items-center gap-2">
+                        <i class="fa-solid fa-print"></i> <span>Print</span>
+                    </button>
+                    <button onclick="this.closest('dialog').close(); this.closest('dialog').remove()" 
+                            class="w-12 h-12 flex items-center justify-center text-4xl text-red-400 font-black hover:text-red-300 hover:bg-zinc-800 rounded-full leading-none border-2 border-red-400">×</button>
                 </div>
             </div>
             <div class="p-6 bg-zinc-950 overflow-auto" style="max-height: calc(82vh - 120px);">
@@ -5649,7 +5588,7 @@ function printSubcontractorG703(companyId) {
 
     // ==================== NEW: SUB PAY APP TRACKER TAB (Admin Overview) ====================
     function renderSubPayAppTrackerTab(cardsContainer, thead, tbody, workflowBar) {
-        // Force fresh parse so lien waiver column is always accurate when entering the tab
+        // Live re-parse lien waiver state so the column is always accurate when entering the tab
         subLienWaivers = JSON.parse(localStorage.getItem('subLienWaivers') || '{}');
         lienWaivers = JSON.parse(localStorage.getItem('lienWaivers') || '{}');
 
