@@ -517,13 +517,10 @@ let mainLienWaiver = JSON.parse(localStorage.getItem('mainLienWaiver') || '{}');
 
                 localStorage.setItem('subLienWaivers', JSON.stringify(subLienWaivers));
 
-                // Force fresh global state from disk so render sees the new waiver immediately
-                subLienWaivers = JSON.parse(localStorage.getItem('subLienWaivers') || '{}');
-
                 logPayAppAudit('LIEN_WAIVER_UPLOADED', { companyId, filename: file.name, period: periodNum });
                 showCenteredAlert(`Lien waiver "${file.name}" uploaded successfully.`, 'success');
 
-                // Immediate live UI update on current tab (Sub SOV or Tracker)
+                // Immediate live UI update (no tab switch needed). Call render directly for reliability on Sub SOV.
                 renderPayAppContent();
             };
             reader.readAsDataURL(file);
@@ -538,10 +535,6 @@ let mainLienWaiver = JSON.parse(localStorage.getItem('mainLienWaiver') || '{}');
         if (subLienWaivers[companyId] && subLienWaivers[companyId][periodNum]) {
             delete subLienWaivers[companyId][periodNum];
             localStorage.setItem('subLienWaivers', JSON.stringify(subLienWaivers));
-
-            // Force fresh global state
-            subLienWaivers = JSON.parse(localStorage.getItem('subLienWaivers') || '{}');
-
             showCenteredAlert("Lien waiver removed.", 'success');
             renderPayAppContent();
         }
@@ -568,9 +561,6 @@ let mainLienWaiver = JSON.parse(localStorage.getItem('mainLienWaiver') || '{}');
                     uploadedDate: new Date().toISOString()
                 };
                 localStorage.setItem('mainLienWaiver', JSON.stringify(mainLienWaiver));
-
-                // Force fresh global state from disk so G702 render sees the new waiver immediately
-                mainLienWaiver = JSON.parse(localStorage.getItem('mainLienWaiver') || '{}');
 
                 logPayAppAudit('MAIN_LIEN_WAIVER_UPLOADED', { period: periodNum, filename: file.name });
                 showCenteredAlert(`Lien waiver "${file.name}" uploaded for Pay Application.`, 'success');
@@ -638,10 +628,6 @@ let mainLienWaiver = JSON.parse(localStorage.getItem('mainLienWaiver') || '{}');
         if (mainLienWaiver[periodNum]) {
             delete mainLienWaiver[periodNum];
             localStorage.setItem('mainLienWaiver', JSON.stringify(mainLienWaiver));
-
-            // Force fresh global state
-            mainLienWaiver = JSON.parse(localStorage.getItem('mainLienWaiver') || '{}');
-
             showCenteredAlert("Main lien waiver removed.", 'success');
             renderPayAppContent();
         }
@@ -1293,12 +1279,13 @@ let mainLienWaiver = JSON.parse(localStorage.getItem('mainLienWaiver') || '{}');
         if (status === 'Draft') {
             workflowHTML += `<button onclick="submitPayApplication()" class="px-5 py-2 bg-emerald-600 hover:bg-emerald-500 rounded-md text-sm font-medium flex items-center gap-2"><i class="fa-solid fa-paper-plane"></i> Submit for Review</button>`;
             
-            // NEW: Lien Waiver Upload button for main Pay Application (G702) - placed right of Submit
+            // Lien Waiver button + pill (always show button; pill appears to the right when file exists)
             const currentPeriodNum = currentPayAppPeriod.periodNumber;
             const hasMainWaiver = mainLienWaiver[currentPeriodNum] && mainLienWaiver[currentPeriodNum].filename;
-            if (!hasMainWaiver) {
-                workflowHTML += `<button onclick="uploadMainContractorLienWaiver()" class="px-4 py-2 bg-zinc-700 hover:bg-zinc-600 rounded-md text-sm font-medium flex items-center gap-2 border border-zinc-600"><i class="fa-solid fa-file-upload"></i> <span>Lien Waiver Upload</span></button>`;
-            } else {
+            const mainWaiverBtnText = hasMainWaiver ? 'Re-upload Lien Waiver' : 'Lien Waiver Upload';
+            workflowHTML += `<button onclick="uploadMainContractorLienWaiver()" class="px-4 py-2 bg-zinc-700 hover:bg-zinc-600 rounded-md text-sm font-medium flex items-center gap-2 border border-zinc-600"><i class="fa-solid fa-file-upload"></i> <span>${mainWaiverBtnText}</span></button>`;
+            
+            if (hasMainWaiver) {
                 const w = mainLienWaiver[currentPeriodNum];
                 workflowHTML += `<div class="flex items-center gap-2 px-3 py-1.5 bg-zinc-800 border border-emerald-600 rounded-md text-sm">
                     <span class="text-emerald-400"><i class="fa-solid fa-file-contract"></i></span>
@@ -2849,23 +2836,22 @@ let mainLienWaiver = JSON.parse(localStorage.getItem('mainLienWaiver') || '{}');
                     `;
                 }
 
-                // Lien waiver controls (always available when Approved, upload is optional unless setting requires it)
+                // Lien waiver controls: Always show upload/re-upload button. When file exists, show pill (filename + View + Remove) to the right.
+                const subWaiverBtnText = hasWaiver ? 'Re-upload Lien Waiver' : `Upload Lien Waiver ${requireLienWaiverOnSubPayApp ? '(Required)' : '(Optional)'}`;
+                buttonsHTML += `
+                    <button onclick="uploadLienWaiver(${selectedSubCompanyId})" class="px-4 py-2 bg-sky-600 hover:bg-sky-500 text-white rounded text-sm flex items-center gap-1.5">
+                        <i class="fa-solid fa-upload"></i> <span>${subWaiverBtnText}</span>
+                    </button>
+                `;
                 if (hasWaiver) {
-                    // Nice pill matching G702 main lien waiver style (live updating)
+                    // Nice pill to the right of the button (live updating)
                     buttonsHTML += `
                         <div class="inline-flex items-center gap-1.5 px-3 py-1.5 bg-emerald-900/60 border border-emerald-600 rounded-md text-sm">
                             <i class="fa-solid fa-file-contract text-emerald-400"></i>
                             <span class="text-emerald-300 max-w-[180px] truncate" title="${waiver.filename}">${waiver.filename}</span>
                             <button onclick="viewLienWaiver(${selectedSubCompanyId}); event.stopImmediatePropagation();" class="px-2.5 py-0.5 bg-emerald-700 hover:bg-emerald-600 text-white rounded text-xs">View</button>
                             <button onclick="removeLienWaiver(${selectedSubCompanyId}); event.stopImmediatePropagation();" class="px-2.5 py-0.5 bg-red-600 hover:bg-red-500 text-white rounded text-xs">Remove</button>
-                            <button onclick="uploadLienWaiver(${selectedSubCompanyId}); event.stopImmediatePropagation();" class="px-2.5 py-0.5 bg-zinc-600 hover:bg-zinc-500 text-white rounded text-xs">Re-upload</button>
                         </div>
-                    `;
-                } else {
-                    buttonsHTML += `
-                        <button onclick="uploadLienWaiver(${selectedSubCompanyId})" class="px-4 py-2 bg-sky-600 hover:bg-sky-500 text-white rounded text-sm flex items-center gap-1.5">
-                            <i class="fa-solid fa-upload"></i> <span>Upload Lien Waiver ${requireLienWaiverOnSubPayApp ? '(Required)' : '(Optional)'}</span>
-                        </button>
                     `;
                 }
             }
@@ -5862,8 +5848,7 @@ function printSubcontractorG703(companyId) {
         // it is considered current. No need for separate GL + WC + COI.
         // Prioritize the array under "Certificates of Insurance" header / Add COI button.
         let coiList = company.certificates_of_insurance || company.coi_entries || company.coi_list || 
-                      company.insurance_certificates || company.coi || company.coi_data || 
-                      company.cois || company.insurance || company.certificates || company.coi_array || [];
+                      company.insurance_certificates || company.coi || company.coi_data || [];
 
         if (!Array.isArray(coiList)) {
             // If it's a single object or boolean/string, wrap it
