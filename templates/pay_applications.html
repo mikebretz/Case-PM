@@ -2999,8 +2999,13 @@ let mainLienWaiver = JSON.parse(localStorage.getItem('mainLienWaiver') || '{}');
                     `;
                 }
             } else {
-                // Normal ready-to-bill state
-                statusMessage = 'SOV Approved — Enter this period\'s billing';
+                // Normal ready-to-bill state (or revision requested)
+                const statusData = subSOVStatus[selectedSubCompanyId] || {};
+                if (statusData.revisionRequested) {
+                    statusMessage = 'Revision Requested — Edit This Period amounts and re-submit the Pay Application';
+                } else {
+                    statusMessage = 'SOV Approved — Enter this period\'s billing';
+                }
 
                 const canSubmit = !requireLienWaiverOnSubPayApp || hasWaiver;
 
@@ -3213,10 +3218,6 @@ let mainLienWaiver = JSON.parse(localStorage.getItem('mainLienWaiver') || '{}');
         selectedSubCompanyId = companyId ? parseInt(companyId) : null;
         localStorage.setItem('lastSelectedSubSOV', selectedSubCompanyId);
         renderPayAppContent();
-        // Ensure Remove / Replace buttons reflect the correct enabled state
-        setTimeout(() => {
-            if (typeof updateSubAdminActionButtons === 'function') updateSubAdminActionButtons();
-        }, 80);
     }
 
     function addLineToSelectedSub() {
@@ -3947,67 +3948,59 @@ let mainLienWaiver = JSON.parse(localStorage.getItem('mainLienWaiver') || '{}');
     // Request Revision for a submitted Sub Pay App (sends it back to sub for correction WITHOUT changing any dollar amounts)
     function requestRevisionSubPayApp(companyId) {
         if (!companyId) return;
-
-        // Find the most recent pending/submitted period for this sub in history (the "holding" one shown in tracker)
-        let targetPeriodNum = null;
-        const historyForSub = subPayAppHistory[companyId] || {};
-        const periods = Object.keys(historyForSub).map(Number).sort((a, b) => b - a); // newest first
-
-        for (const pNum of periods) {
-            const entry = historyForSub[pNum];
-            if (entry && (entry.status === 'Pending Approval' || entry.status === 'Submitted' || entry.revisionRequested)) {
-                targetPeriodNum = pNum;
-                break;
-            }
-        }
-
-        // Fallback: if no pending found, use the latest period in history
-        if (!targetPeriodNum && periods.length > 0) {
-            targetPeriodNum = periods[0];
-        }
-
-        if (!targetPeriodNum) {
-            // Last resort: use current main period
-            targetPeriodNum = currentPayAppPeriod ? currentPayAppPeriod.periodNumber : 1;
-        }
-
-        const historyEntry = historyForSub[targetPeriodNum];
+        const currentPeriodNum = currentPayAppPeriod ? currentPayAppPeriod.periodNumber : 1;
+        const historyEntry = subPayAppHistory[companyId] && subPayAppHistory[companyId][currentPeriodNum];
 
         if (historyEntry) {
             // Flag for revision - do NOT delete history or zero any amounts entered by sub or contractor
             historyEntry.revisionRequested = true;
             historyEntry.revisionRequestedAt = new Date().toISOString();
-            // Keep original status visible but mark it as needing revision
             localStorage.setItem('subPayAppHistory', JSON.stringify(subPayAppHistory));
         }
 
-        // Revert the working Pay App number on Sub SOV side back to this submitted/holding period
-        // so the subcontractor edits the correct "This Period" values
-        subPayAppNumbers[companyId] = targetPeriodNum;
+        // Revert the working Pay App number on Sub SOV side back to this submitted/holding period so they edit the correct one
+        subPayAppNumbers[companyId] = currentPeriodNum;
         localStorage.setItem('subPayAppNumbers', JSON.stringify(subPayAppNumbers));
 
-        // Update status in tracker to "Ready for billing" (live)
+        // Update status back to 'Approved' so the Sub SOV tab shows the monthly PAY APP billing workflow
+        // (Submit Pay Application + Lien Waiver), NOT the full SOV creation Draft flow.
         if (!subSOVStatus[companyId]) subSOVStatus[companyId] = {};
-        subSOVStatus[companyId].status = 'Ready for billing';
+        subSOVStatus[companyId].status = 'Approved';
+        subSOVStatus[companyId].revisionRequested = true;
         localStorage.setItem('subSOVStatus', JSON.stringify(subSOVStatus));
 
-        logPayAppAudit('SUB_PAYAPP_REVISION_REQUESTED', { 
-            companyId, 
-            period: targetPeriodNum, 
-            note: 'Sent back for revision. Dollar amounts preserved. Status set to Ready for billing. Sub can now edit This Period and re-submit.' 
-        });
+        logPayAppAudit('SUB_PAYAPP_REVISION_REQUESTED', { companyId, period: currentPeriodNum, note: 'Sent back for Pay App revision (This Period editing). Status set to Approved so monthly billing workflow shows.' });
 
-        // Live update the tracker (status + button disappearance) then navigate to Sub SOV
+        // Live update + navigate to Sub SOV tab for that sub so they can adjust and re-submit
         selectedSubCompanyId = companyId;
         localStorage.setItem('lastSelectedSubSOV', companyId);
-        renderPayAppContent(); 
-        // Ensure Remove/Replace buttons are correctly enabled/disabled for the selected sub
-        setTimeout(() => {
-            if (typeof updateSubAdminActionButtons === 'function') {
-                updateSubAdminActionButtons();
-            }
-        }, 50);
+        renderPayAppContent(); // live status + button disappearance
         switchPayAppTab('sub-sov');
+    }
+
+    // Safe one-time reset for Sub Pay App data only (keeps Companies, Contractor SOV, and main G702 Pay Apps)
+    function resetSubPayAppDataOnly() {
+        if (!confirm('This will CLEAR all Subcontractor Schedule of Values, sub pay app history, lien waivers, and tracker status.\n\nCompanies, Contractor SOV, and main G702 Pay Applications will NOT be touched.\n\nContinue?')) return;
+
+        subcontractorSOV = {};
+        subSOVStatus = {};
+        subLienWaivers = {};
+        subPayAppHistory = {};
+        subPayAppNumbers = {};
+        lienWaivers = {}; // sub ones
+
+        localStorage.setItem('subcontractorSOV', JSON.stringify(subcontractorSOV));
+        localStorage.setItem('subSOVStatus', JSON.stringify(subSOVStatus));
+        localStorage.setItem('subLienWaivers', JSON.stringify(subLienWaivers));
+        localStorage.setItem('subPayAppHistory', JSON.stringify(subPayAppHistory));
+        localStorage.setItem('subPayAppNumbers', JSON.stringify(subPayAppNumbers));
+        localStorage.setItem('lienWaivers', JSON.stringify(lienWaivers));
+
+        selectedSubCompanyId = null;
+        localStorage.removeItem('lastSelectedSubSOV');
+
+        showCenteredAlert('Subcontractor Schedule of Values and Sub Pay App Tracker data have been cleared. You can now start fresh. Companies and main G702 data are untouched.', 'success');
+        renderPayAppContent();
     }
 
     // ==================== REMOVE / REPLACE SUBCONTRACTOR (Admin only, Billed to Date must be $0) ====================
@@ -6033,6 +6026,7 @@ function printSubcontractorG703(companyId) {
             <div class="workflow-bar px-4 py-3 flex items-center gap-3 text-sm">
                 <span class="text-emerald-400 font-medium">Sub Pay App Tracker • Admin View</span>
                 <span class="text-xs text-emerald-300 ml-3 font-mono">Billing Period ${currentPayAppPeriod ? currentPayAppPeriod.periodNumber : '—'} • ${currentPayAppPeriod ? currentPayAppPeriod.periodStart : ''} → ${currentPayAppPeriod ? currentPayAppPeriod.periodEnd : ''}</span>
+                <button onclick="resetSubPayAppDataOnly()" class="ml-4 px-3 py-1 bg-red-900/70 hover:bg-red-800 text-red-300 text-xs rounded border border-red-700" title="Clear ALL Subcontractor SOV + Pay App history (keeps Companies + main G702)">Reset Sub Data (start fresh)</button>
                 <span class="text-xs text-zinc-500 ml-auto">Click row → Sub SOV • Approve commits to G702 • Notes are PM-only editable</span>
             </div>
         `;
