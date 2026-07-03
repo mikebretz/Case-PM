@@ -488,11 +488,15 @@ let mainLienWaiver = JSON.parse(localStorage.getItem('mainLienWaiver') || '{}');
         };
     }
 
-    function uploadLienWaiver(companyId, droppedFile = null) {
+    function uploadLienWaiver(companyId) {
         if (!companyId) return;
-
-        const processFile = (file) => {
+        const input = document.createElement('input');
+        input.type = 'file';
+        input.accept = '.pdf'; // Require PDF only for lien waivers
+        input.onchange = function(e) {
+            const file = e.target.files[0];
             if (!file) return;
+
             const reader = new FileReader();
             reader.onload = function(ev) {
                 const dataUrl = ev.target.result;
@@ -503,10 +507,9 @@ let mainLienWaiver = JSON.parse(localStorage.getItem('mainLienWaiver') || '{}');
 
                 subLienWaivers[companyId][periodNum] = {
                     filename: file.name,
+                    dataUrl: dataUrl,
                     uploadedDate: new Date().toISOString(),
                     submitted: false
-                    // Note: dataUrl intentionally omitted to prevent localStorage quota errors on large PDFs/images.
-                    // View functionality shows filename + professional placeholder.
                 };
 
                 localStorage.setItem('subLienWaivers', JSON.stringify(subLienWaivers));
@@ -516,23 +519,10 @@ let mainLienWaiver = JSON.parse(localStorage.getItem('mainLienWaiver') || '{}');
 
                 logPayAppAudit('LIEN_WAIVER_UPLOADED', { companyId, filename: file.name, period: periodNum });
 
-                // Immediate live UI update on current tab (Sub SOV or Tracker)
+                // Immediate live UI update on current tab (Sub SOV or Tracker) — no alert popup
                 renderPayAppContent();
             };
             reader.readAsDataURL(file);
-        };
-
-        if (droppedFile) {
-            processFile(droppedFile);
-            return;
-        }
-
-        const input = document.createElement('input');
-        input.type = 'file';
-        input.accept = '.pdf'; // Require PDF only for lien waivers
-        input.onchange = function(e) {
-            const file = e.target.files[0];
-            processFile(file);
         };
         input.click();
     }
@@ -553,11 +543,15 @@ let mainLienWaiver = JSON.parse(localStorage.getItem('mainLienWaiver') || '{}');
     }
 
     // ==================== MAIN CONTRACTOR (G702) LIEN WAIVER ====================
-    function uploadMainContractorLienWaiver(droppedFile = null) {
+    function uploadMainContractorLienWaiver() {
         if (!currentPayAppPeriod) return;
-
-        const processFile = (file) => {
+        const input = document.createElement('input');
+        input.type = 'file';
+        input.accept = '.pdf,.png,.jpg,.jpeg';
+        input.onchange = function(e) {
+            const file = e.target.files[0];
             if (!file) return;
+
             const reader = new FileReader();
             reader.onload = function(ev) {
                 const dataUrl = ev.target.result;
@@ -565,9 +559,8 @@ let mainLienWaiver = JSON.parse(localStorage.getItem('mainLienWaiver') || '{}');
 
                 mainLienWaiver[periodNum] = {
                     filename: file.name,
+                    dataUrl: dataUrl,
                     uploadedDate: new Date().toISOString()
-                    // Note: dataUrl intentionally omitted to prevent localStorage quota errors on large PDFs/images.
-                    // View functionality shows filename + professional placeholder.
                 };
                 localStorage.setItem('mainLienWaiver', JSON.stringify(mainLienWaiver));
 
@@ -578,19 +571,6 @@ let mainLienWaiver = JSON.parse(localStorage.getItem('mainLienWaiver') || '{}');
                 renderPayAppContent();
             };
             reader.readAsDataURL(file);
-        };
-
-        if (droppedFile) {
-            processFile(droppedFile);
-            return;
-        }
-
-        const input = document.createElement('input');
-        input.type = 'file';
-        input.accept = '.pdf,.png,.jpg,.jpeg';
-        input.onchange = function(e) {
-            const file = e.target.files[0];
-            processFile(file);
         };
         input.click();
     }
@@ -655,13 +635,6 @@ let mainLienWaiver = JSON.parse(localStorage.getItem('mainLienWaiver') || '{}');
                     <div class="font-semibold text-lg">Main Pay Application Lien Waiver — Period ${periodNum}</div>
                     <div class="text-sm text-zinc-400">${waiver.uploadedDate || ''}</div>
                 </div>
-                <div class="flex items-center gap-3">
-                    <button onclick="printFromViewer(this)" class="px-5 py-2 bg-emerald-600 hover:bg-emerald-700 rounded-xl text-sm font-medium flex items-center gap-2">
-                        <i class="fa-solid fa-print"></i> <span>Print</span>
-                    </button>
-                    <button onclick="this.closest('dialog').close(); this.closest('dialog').remove()" 
-                            class="w-12 h-12 flex items-center justify-center text-4xl text-red-400 font-black hover:text-red-300 hover:bg-zinc-800 rounded-full leading-none border-2 border-red-400">×</button>
-                </div>
             </div>
             <div class="p-6 bg-zinc-950 overflow-auto" style="max-height: calc(82vh - 120px);">
                 ${isPdf 
@@ -693,48 +666,18 @@ let mainLienWaiver = JSON.parse(localStorage.getItem('mainLienWaiver') || '{}');
         }
     }
 
-    // Reusable drag & drop setup for lien waiver hint areas (highlights, prevents default, calls upload fn with file)
-    function setupLienWaiverDropZone(hintElement, uploadFn) {
-        if (!hintElement) return;
-
-        const preventDefaults = (e) => { e.preventDefault(); e.stopPropagation(); };
-        const highlight = () => {
-            hintElement.classList.add('!border-emerald-500', 'bg-emerald-900/20');
-            hintElement.style.transform = 'translateY(-1px)';
-        };
-        const unhighlight = () => {
-            hintElement.classList.remove('!border-emerald-500', 'bg-emerald-900/20');
-            hintElement.style.transform = '';
-        };
-
-        ['dragenter','dragover','dragleave','drop'].forEach(ev => hintElement.addEventListener(ev, preventDefaults, false));
-        ['dragenter','dragover'].forEach(ev => hintElement.addEventListener(ev, highlight, false));
-        ['dragleave','drop'].forEach(ev => hintElement.addEventListener(ev, unhighlight, false));
-
-        hintElement.addEventListener('drop', function(e) {
-            const file = e.dataTransfer.files[0];
-            if (!file) return;
-            if (hintElement.id === 'subLienDropHint' && typeof selectedSubCompanyId !== 'undefined' && selectedSubCompanyId) {
-                uploadLienWaiver(selectedSubCompanyId, file);
-            } else {
-                uploadFn(file);
-            }
-        }, false);
-
-        // Bonus: clicking the hint area also opens file picker (same as button)
-        hintElement.addEventListener('click', function() {
-            if (hintElement.id === 'subLienDropHint' && typeof selectedSubCompanyId !== 'undefined' && selectedSubCompanyId) {
-                uploadLienWaiver(selectedSubCompanyId);
-            } else if (typeof uploadFn === 'function') {
-                uploadFn();
-            }
-        });
-    }
-
     function viewLienWaiver(companyId) {
         if (!companyId) return;
         const periodNum = currentPayAppPeriod ? currentPayAppPeriod.periodNumber : 1;
-        const waiver = subLienWaivers[companyId] && subLienWaivers[companyId][periodNum];
+        let waiver = subLienWaivers[companyId] && subLienWaivers[companyId][periodNum];
+
+        // Fallback for legacy entries (e.g. Florida Roofing) stored in old lienWaivers or history
+        if (!waiver) {
+            waiver = lienWaivers[companyId] || null;
+            if (waiver && !waiver.dataUrl && waiver.filename) {
+                // If legacy without dataUrl, we'll show placeholder but at least not "no waiver" error
+            }
+        }
 
         if (!waiver) {
             showCenteredAlert("No lien waiver found for this period.", "warning");
@@ -793,18 +736,6 @@ let mainLienWaiver = JSON.parse(localStorage.getItem('mainLienWaiver') || '{}');
                 <div>
                     <div class="font-semibold text-lg">Lien Waiver — ${getCompanyName(companyId)}</div>
                     <div class="text-sm text-zinc-400">Period ${periodNum} • ${waiver.uploadedDate || 'Unknown date'}</div>
-                </div>
-                <div class="flex items-center gap-3">
-                    <button onclick="printFromViewer(this)" 
-                            class="px-5 py-2 bg-emerald-600 hover:bg-emerald-700 rounded-xl text-sm font-medium flex items-center gap-2">
-                        <i class="fa-solid fa-print"></i>
-                        <span>Print Document</span>
-                    </button>
-                    <button onclick="this.closest('dialog').close(); this.closest('dialog').remove()" 
-                            class="w-12 h-12 flex items-center justify-center text-4xl text-red-400 font-black hover:text-red-300 hover:bg-zinc-800 rounded-full leading-none border-2 border-red-400"
-                            title="Close">
-                        ×
-                    </button>
                 </div>
             </div>
             
@@ -1411,7 +1342,7 @@ let mainLienWaiver = JSON.parse(localStorage.getItem('mainLienWaiver') || '{}');
         if (status === 'Draft') {
             workflowHTML += `<button onclick="submitPayApplication()" class="px-5 py-2 bg-emerald-600 hover:bg-emerald-500 rounded-md text-sm font-medium flex items-center gap-2"><i class="fa-solid fa-paper-plane"></i> Submit for Review</button>`;
             
-            // Lien Waiver Upload button for main Pay Application (G702) - ALWAYS visible, text changes, pill/hint to the right
+            // Lien Waiver Upload button for main Pay Application (G702) - ALWAYS visible, text changes, pill to the right
             const currentPeriodNum = currentPayAppPeriod.periodNumber;
             const hasMainWaiver = mainLienWaiver[currentPeriodNum] && mainLienWaiver[currentPeriodNum].filename;
             const mainWaiverBtnText = hasMainWaiver ? 'Re-upload Lien Waiver' : 'Lien Waiver Upload';
@@ -1424,9 +1355,6 @@ let mainLienWaiver = JSON.parse(localStorage.getItem('mainLienWaiver') || '{}');
                     <button onclick="viewMainLienWaiver()" class="px-2 py-0.5 text-xs bg-emerald-700 hover:bg-emerald-600 rounded">View</button>
                     <button onclick="removeMainLienWaiver()" class="px-2 py-0.5 text-xs bg-red-700 hover:bg-red-600 rounded">Remove</button>
                 </div>`;
-            } else {
-                // Drag & drop hint area (same height as button, disappears after upload, reappears on remove)
-                workflowHTML += `<div id="mainLienDropHint" class="ml-1.5 px-3 py-2 border border-dashed border-zinc-600 hover:border-zinc-400 rounded-md text-xs text-zinc-400 flex items-center h-[38px] transition-colors whitespace-nowrap" title="Drag & drop PDF, PNG, JPG or JPEG here (optional)">optional drag & drop here</div>`;
             }
         } else if (status === 'Submitted' || status === 'Under Review') {
             workflowHTML += `<button onclick="approvePayApplication()" class="px-5 py-2 bg-emerald-600 hover:bg-emerald-500 rounded-md text-sm font-medium flex items-center gap-2"><i class="fa-solid fa-check"></i> Approve Application</button>`;
@@ -1440,12 +1368,6 @@ let mainLienWaiver = JSON.parse(localStorage.getItem('mainLienWaiver') || '{}');
         </button>`;
         workflowHTML += `</div>`;
         workflowBar.innerHTML = workflowHTML;
-
-        // Setup drag & drop hint for main lien waiver (only if hint exists i.e. no waiver yet)
-        const mainDropHint = document.getElementById('mainLienDropHint');
-        if (mainDropHint) {
-            setupLienWaiverDropZone(mainDropHint, uploadMainContractorLienWaiver);
-        }
 
         // NEW: Populate Approved Subcontractor Billings card (flows from tracker approvals)
         setTimeout(() => {
@@ -2734,17 +2656,6 @@ let mainLienWaiver = JSON.parse(localStorage.getItem('mainLienWaiver') || '{}');
         companies = JSON.parse(localStorage.getItem('casepm_companies')) || [];
         let currentStatus = 'Draft'; // Declare early to avoid TDZ errors in template literals
 
-        // Compute if selected sub can be removed/replaced (billed_to_date must be exactly zero)
-        let canModifySelectedSub = false;
-        let selectedSubForModifyName = '';
-        if (selectedSubCompanyId) {
-            const subLines = subcontractorSOV[selectedSubCompanyId] || [];
-            const totalBilled = subLines.reduce((sum, line) => sum + (parseFloat(line.billed_to_date) || 0), 0);
-            canModifySelectedSub = (totalBilled === 0);
-            const comp = companies.find(c => c.id == selectedSubCompanyId);
-            selectedSubForModifyName = comp ? (comp.name || comp.company_name || 'this subcontractor') : 'this subcontractor';
-        }
-
         // Summary cards - RESTRUCTURED EXACTLY AS REQUESTED
         // Top row: Original Contract Amount | Current Contract Amount | Change Orders to Date
         // Bottom row: Build to Date (Current Amount) | Change Order Amount Billed to Date | Total Amount Billed to Date
@@ -2761,26 +2672,10 @@ let mainLienWaiver = JSON.parse(localStorage.getItem('mainLienWaiver') || '{}');
                             <i class="fa-solid fa-user-plus"></i> <span class="hidden md:inline">Add New</span>
                         </button>
                     </div>
-
-                    ${selectedSubCompanyId ? `
-                    <!-- Remove / Replace Subcontractor (only functional if Billed to Date === 0) -->
-                    <div class="mt-2 flex flex-col gap-1.5">
-                        <button onclick="removeSelectedSubcontractor()" 
-                                class="px-4 py-1.5 bg-red-700 hover:bg-red-600 rounded-md text-sm flex items-center gap-2 whitespace-nowrap transition-colors ${canModifySelectedSub ? '' : 'opacity-50 cursor-not-allowed'}"
-                                ${canModifySelectedSub ? '' : 'disabled'}
-                                title="${canModifySelectedSub ? 'Remove ' + selectedSubForModifyName + ' (Billed to Date must be $0)' : 'Cannot remove — Billed to Date > $0 or payments already made'}">
-                            <i class="fa-solid fa-user-minus"></i> <span>Remove</span>
-                        </button>
-                        <button onclick="replaceSelectedSubcontractor()" 
-                                class="px-4 py-1.5 bg-amber-600 hover:bg-amber-500 rounded-md text-sm flex items-center gap-2 whitespace-nowrap transition-colors ${canModifySelectedSub ? '' : 'opacity-50 cursor-not-allowed'}"
-                                ${canModifySelectedSub ? '' : 'disabled'}
-                                title="${canModifySelectedSub ? 'Replace ' + selectedSubForModifyName + ' with another vendor while keeping SOV lines' : 'Cannot replace — Billed to Date > $0'}">
-                            <i class="fa-solid fa-exchange-alt"></i> <span>Replace Subcontractor</span>
-                        </button>
-                    </div>
-                    ` : ''}
-
                     <div id="subStatusBadgeContainer" class="mt-2 flex items-center gap-2 min-h-[22px]"></div>
+                    
+                    <!-- Remove / Replace Subcontractor (only when selected and Billed to Date = $0) -->
+                    <div id="subAdminActions" class="mt-3 flex flex-col gap-1.5"></div>
                 </div>
 
                 <!-- Center + Right: RESTRUCTURED SUMMARY (Top row + Bottom row) -->
@@ -3006,25 +2901,30 @@ let mainLienWaiver = JSON.parse(localStorage.getItem('mainLienWaiver') || '{}');
                     `;
                 }
 
-                // Lien waiver controls — button ALWAYS visible, text changes to Re-upload, pill/hint appears to the RIGHT when file exists (live updating, no tab switch)
+                // Lien waiver controls — button ALWAYS visible, text changes to Re-upload, pill appears to the RIGHT when file exists (live updating, no tab switch)
                 const lienBtnText = hasWaiver ? 'Re-upload Lien Waiver' : `Upload Lien Waiver ${requireLienWaiverOnSubPayApp ? '(Required)' : '(Optional)'}`;
                 buttonsHTML += `
-                    <button onclick="uploadLienWaiver(${selectedSubCompanyId}); event.stopImmediatePropagation();" class="px-4 py-2 bg-sky-600 hover:bg-sky-500 text-white rounded text-sm flex items-center gap-1.5">
-                        <i class="fa-solid fa-upload"></i> <span>${lienBtnText}</span>
-                    </button>
+                    <div class="flex items-center gap-2">
+                        <button onclick="uploadLienWaiver(${selectedSubCompanyId}); event.stopImmediatePropagation();" class="px-4 py-2 bg-sky-600 hover:bg-sky-500 text-white rounded text-sm flex items-center gap-1.5 h-[38px]">
+                            <i class="fa-solid fa-upload"></i> <span>${lienBtnText}</span>
+                        </button>
+                        ${!hasWaiver ? `
+                        <div onclick="uploadLienWaiver(${selectedSubCompanyId}); event.stopImmediatePropagation();" 
+                             class="h-[38px] flex items-center px-3 text-xs text-zinc-400 border border-dashed border-zinc-600 rounded hover:border-emerald-500 hover:text-emerald-400 cursor-pointer transition-colors"
+                             title="Drag & drop PDF here or click to upload">
+                            optional drag & drop here
+                        </div>` : ''}
+                    </div>
                 `;
                 if (hasWaiver) {
                     buttonsHTML += `
-                        <div class="inline-flex items-center gap-1.5 px-3 py-1.5 bg-emerald-900/60 border border-emerald-600 rounded-md text-sm">
+                        <div class="inline-flex items-center gap-1.5 px-3 py-1.5 bg-emerald-900/60 border border-emerald-600 rounded-md text-sm h-[38px]">
                             <i class="fa-solid fa-file-contract text-emerald-400"></i>
                             <span class="text-emerald-300 max-w-[180px] truncate" title="${waiver.filename}">${waiver.filename}</span>
                             <button onclick="viewLienWaiver(${selectedSubCompanyId}); event.stopImmediatePropagation();" class="px-2.5 py-0.5 bg-emerald-700 hover:bg-emerald-600 text-white rounded text-xs">View</button>
                             <button onclick="removeLienWaiver(${selectedSubCompanyId}); event.stopImmediatePropagation();" class="px-2.5 py-0.5 bg-red-600 hover:bg-red-500 text-white rounded text-xs">Remove</button>
                         </div>
                     `;
-                } else {
-                    // Optional drag & drop hint area next to upload button (same height). Hidden after upload, reappears on remove.
-                    buttonsHTML += `<div id="subLienDropHint" class="ml-1.5 px-3 py-2 border border-dashed border-zinc-600 hover:border-zinc-400 rounded-md text-xs text-zinc-400 flex items-center h-[38px] transition-colors whitespace-nowrap" title="Drag & drop PDF here (optional)">optional drag & drop here</div>`;
                 }
             }
 
@@ -3044,12 +2944,6 @@ let mainLienWaiver = JSON.parse(localStorage.getItem('mainLienWaiver') || '{}');
         }
 
         workflowBar.innerHTML = workflowHTML;
-
-        // Setup drag & drop hint for sub lien waiver (only if hint exists)
-        const subDropHint = document.getElementById('subLienDropHint');
-        if (subDropHint) {
-            setupLienWaiverDropZone(subDropHint, uploadLienWaiver); // uploadLienWaiver will be called with companyId inside setup
-        }
 
         // If no sub selected, show message in table
         if (!selectedSubCompanyId) {
@@ -3200,101 +3094,6 @@ let mainLienWaiver = JSON.parse(localStorage.getItem('mainLienWaiver') || '{}');
         selectedSubCompanyId = companyId ? parseInt(companyId) : null;
         localStorage.setItem('lastSelectedSubSOV', selectedSubCompanyId);
         renderPayAppContent();
-    }
-
-    function removeSelectedSubcontractor() {
-        if (!selectedSubCompanyId) return;
-        const lines = subcontractorSOV[selectedSubCompanyId] || [];
-        const totalBilled = lines.reduce((sum, l) => sum + (parseFloat(l.billed_to_date) || 0), 0);
-        if (totalBilled > 0) {
-            // Silently ignore or minimal feedback (no centered alert per user preference for simple actions)
-            return;
-        }
-        const company = companies.find(c => c.id == selectedSubCompanyId);
-        const name = company ? (company.name || company.company_name) : 'Subcontractor';
-        // Proceed without popup acknowledgment
-        delete subcontractorSOV[selectedSubCompanyId];
-        if (subSOVStatus[selectedSubCompanyId]) delete subSOVStatus[selectedSubCompanyId];
-        if (subLienWaivers[selectedSubCompanyId]) delete subLienWaivers[selectedSubCompanyId];
-        localStorage.setItem('subcontractorSOV', JSON.stringify(subcontractorSOV));
-        localStorage.setItem('subSOVStatus', JSON.stringify(subSOVStatus));
-        localStorage.setItem('subLienWaivers', JSON.stringify(subLienWaivers));
-        selectedSubCompanyId = null;
-        localStorage.removeItem('lastSelectedSubSOV');
-        renderPayAppContent();
-    }
-
-    function replaceSelectedSubcontractor() {
-        if (!selectedSubCompanyId) return;
-        const lines = subcontractorSOV[selectedSubCompanyId] || [];
-        const totalBilled = lines.reduce((sum, l) => sum + (parseFloat(l.billed_to_date) || 0), 0);
-        if (totalBilled > 0) return;
-
-        // Show quick replace modal with list of other subcontractors from vendors
-        const modal = document.createElement('dialog');
-        modal.className = 'bg-zinc-900 border border-zinc-700 rounded-2xl p-0 w-full max-w-md shadow-2xl z-[999999]';
-        modal.innerHTML = `
-            <div class="px-5 py-4 border-b border-zinc-700 flex items-center justify-between">
-                <div class="font-semibold text-lg">Replace Subcontractor</div>
-                <button onclick="this.closest('dialog').close(); this.closest('dialog').remove()" class="text-zinc-400 hover:text-white">✕</button>
-            </div>
-            <div class="p-5">
-                <div class="text-sm text-zinc-400 mb-2">Select a different subcontractor from your vendors list. The current SOV lines will be transferred (Billed to Date is $0).</div>
-                <select id="replaceSubSelect" class="w-full bg-zinc-800 border border-zinc-700 rounded-md px-4 py-2.5 text-sm">
-                    <option value="">-- Select replacement subcontractor --</option>
-                </select>
-            </div>
-            <div class="px-5 py-4 border-t border-zinc-700 flex justify-end gap-3 bg-zinc-950 rounded-b-2xl">
-                <button onclick="this.closest('dialog').close(); this.closest('dialog').remove()" class="px-5 py-2 bg-zinc-700 hover:bg-zinc-600 rounded-md text-sm">Cancel</button>
-                <button id="confirmReplaceBtn" class="px-5 py-2 bg-emerald-600 hover:bg-emerald-500 rounded-md text-sm font-medium">Replace</button>
-            </div>
-        `;
-        document.body.appendChild(modal);
-        modal.showModal();
-
-        // Populate select with other subs (exclude current, prefer those without existing SOV)
-        const sel = modal.querySelector('#replaceSubSelect');
-        const currentLinesCount = (subcontractorSOV[selectedSubCompanyId] || []).length;
-        companies.forEach(c => {
-            if (c.id == selectedSubCompanyId) return;
-            const isSub = (c.type === 'Subcontractor' || c.company_type === 'Subcontractor' || (c.type && c.type.includes('Sub')));
-            if (!isSub) return;
-            const hasExisting = (subcontractorSOV[c.id] || []).length > 0;
-            const opt = document.createElement('option');
-            opt.value = c.id;
-            opt.textContent = (c.name || c.company_name || 'Unnamed') + (hasExisting ? ' (has existing SOV)' : '');
-            if (hasExisting) opt.disabled = true; // prevent picking ones with data to avoid overwrite confusion
-            sel.appendChild(opt);
-        });
-
-        modal.querySelector('#confirmReplaceBtn').onclick = function() {
-            const newId = parseInt(sel.value);
-            if (!newId || newId == selectedSubCompanyId) {
-                modal.close(); modal.remove(); return;
-            }
-            // Transfer the SOV lines to new companyId
-            const linesToMove = subcontractorSOV[selectedSubCompanyId] || [];
-            subcontractorSOV[newId] = linesToMove;
-            delete subcontractorSOV[selectedSubCompanyId];
-            // Transfer status if any
-            if (subSOVStatus[selectedSubCompanyId]) {
-                subSOVStatus[newId] = subSOVStatus[selectedSubCompanyId];
-                delete subSOVStatus[selectedSubCompanyId];
-            }
-            // Transfer lien waiver if any (rare since billed=0)
-            if (subLienWaivers[selectedSubCompanyId]) {
-                subLienWaivers[newId] = subLienWaivers[selectedSubCompanyId];
-                delete subLienWaivers[selectedSubCompanyId];
-            }
-            localStorage.setItem('subcontractorSOV', JSON.stringify(subcontractorSOV));
-            localStorage.setItem('subSOVStatus', JSON.stringify(subSOVStatus));
-            localStorage.setItem('subLienWaivers', JSON.stringify(subLienWaivers));
-            selectedSubCompanyId = newId;
-            localStorage.setItem('lastSelectedSubSOV', newId);
-            modal.close();
-            modal.remove();
-            renderPayAppContent();
-        };
     }
 
     function addLineToSelectedSub() {
@@ -3915,6 +3714,28 @@ let mainLienWaiver = JSON.parse(localStorage.getItem('mainLienWaiver') || '{}');
         const currentPeriodNum = currentPayAppPeriod ? currentPayAppPeriod.periodNumber : 1;
         const waiver = subLienWaivers[companyId] && subLienWaivers[companyId][currentPeriodNum];
 
+        // Enforce Current column remaining rule: prevent billing/submit if no remaining in Current (allows reallocation)
+        let totalRemaining = 0;
+        let attemptedOverbill = false;
+        lines.forEach(l => {
+            const currentTotal = (l.original_commitment || 0) + (l.change_orders || 0);
+            const billed = l.billed_to_date || 0;
+            const remaining = Math.max(0, currentTotal - billed);
+            totalRemaining += remaining;
+            const thisPeriodTotal = (l.work_this_period || 0) + (l.materials_stored || 0) + (l.co_billed_this_period || 0);
+            if (thisPeriodTotal > remaining + 0.005) {
+                attemptedOverbill = true;
+            }
+        });
+        if (attemptedOverbill) {
+            showCenteredAlert("This Period amount exceeds remaining balance in Current column for one or more lines. Reduce This Period or increase Current via Unlock SOV.", "warning");
+            return;
+        }
+        if (totalRemaining <= 0.01) {
+            showCenteredAlert("Nothing left in Current column to bill this period. Use 'Unlock SOV (Admin)' to clear/adjust Current on this sub and reallocate the amount to another subcontractor if needed. No pay app can be submitted while Current remaining is $0.", "warning");
+            return;
+        }
+
         // Create a snapshot of the current billing for history (do NOT commit to billed_to_date yet)
         const snapshotLines = lines.map(l => ({
             id: l.id,
@@ -3961,6 +3782,10 @@ let mainLienWaiver = JSON.parse(localStorage.getItem('mainLienWaiver') || '{}');
 
         if (!historyEntry) {
             showCenteredAlert("No pending Pay Application found for this period. Please use Submit Pay Application first.", "warning");
+            return;
+        }
+        if (historyEntry.revisionRequested) {
+            showCenteredAlert("Cannot approve — revision has been requested. Clear the revision request after sub corrects, or request again.", "warning");
             return;
         }
 
@@ -4026,25 +3851,34 @@ let mainLienWaiver = JSON.parse(localStorage.getItem('mainLienWaiver') || '{}');
     function requestRevisionSubPayApp(companyId) {
         if (!companyId) return;
         const currentPeriodNum = currentPayAppPeriod ? currentPayAppPeriod.periodNumber : 1;
-        const historyEntry = subPayAppHistory[companyId] && subPayAppHistory[companyId][currentPeriodNum];
+        if (!subPayAppHistory[companyId]) subPayAppHistory[companyId] = {};
+        let historyEntry = subPayAppHistory[companyId][currentPeriodNum];
 
-        if (historyEntry) {
-            // Remove the pending entry so the sub can edit and re-submit
-            delete subPayAppHistory[companyId][currentPeriodNum];
-            localStorage.setItem('subPayAppHistory', JSON.stringify(subPayAppHistory));
+        if (!historyEntry) {
+            // Create a minimal entry if none exists yet (so revision can be requested pre-submit)
+            historyEntry = {
+                periodNumber: currentPeriodNum,
+                status: 'Draft',
+                totalBilledThisPeriod: 0,
+                lines: JSON.parse(JSON.stringify(subcontractorSOV[companyId] || [])),
+                revisionRequested: true,
+                revisionRequestedAt: new Date().toISOString()
+            };
+            subPayAppHistory[companyId][currentPeriodNum] = historyEntry;
+        } else {
+            historyEntry.revisionRequested = true;
+            historyEntry.revisionRequestedAt = new Date().toISOString();
+            // Do NOT change status to Draft or delete — keep amounts intact as requested
+            // If it was Pending Approval, keep it so sub sees it needs fix; main cannot approve while flag is set
+            if (historyEntry.status === 'Pending Approval') {
+                historyEntry.status = 'Pending Approval'; // stays, but flag blocks approve
+            }
         }
 
-        // Clear any draft "this period" values so they can start fresh after revision
-        const lines = subcontractorSOV[companyId] || [];
-        lines.forEach(line => {
-            line.work_this_period = 0;
-            line.materials_stored = 0;
-            line.co_billed_this_period = 0;
-        });
-        localStorage.setItem('subcontractorSOV', JSON.stringify(subcontractorSOV));
+        localStorage.setItem('subPayAppHistory', JSON.stringify(subPayAppHistory));
 
         logPayAppAudit('SUB_PAYAPP_REVISION_REQUESTED', { companyId, period: currentPeriodNum });
-        showCenteredAlert("Revision requested. The subcontractor can now correct the billing and re-submit.", 'info');
+        // No popup ack — UI will show updated status/flag on re-render
         renderPayAppContent();
     }
 
@@ -5869,6 +5703,9 @@ function printSubcontractorG703(companyId) {
         let approvedSubTotalThisPeriod = 0;
         const currentPeriodNum = currentPayAppPeriod ? currentPayAppPeriod.periodNumber : 1;
 
+        // Force fresh lien waiver state so View button works reliably (fixes "shows waiver but view says none")
+        subLienWaivers = JSON.parse(localStorage.getItem('subLienWaivers') || '{}');
+
         Object.keys(subPayAppHistory || {}).forEach(companyId => {
             const entry = subPayAppHistory[companyId][currentPeriodNum];
             if (entry && entry.status === 'Approved') {
@@ -5967,7 +5804,11 @@ function printSubcontractorG703(companyId) {
             if (historyEntry && historyEntry.status === 'Approved') {
                 statusBadge = `<span class="px-3 py-0.5 text-xs rounded-full bg-emerald-900/70 text-emerald-400 font-medium">Approved &amp; Committed</span>`;
             } else if (historyEntry && historyEntry.status === 'Pending Approval') {
-                statusBadge = `<span class="px-3 py-0.5 text-xs rounded-full bg-amber-900/70 text-amber-400 font-medium">Pending Approval</span>`;
+                if (historyEntry.revisionRequested) {
+                    statusBadge = `<span class="px-3 py-0.5 text-xs rounded-full bg-orange-900/70 text-orange-400 font-medium">Revision Requested</span>`;
+                } else {
+                    statusBadge = `<span class="px-3 py-0.5 text-xs rounded-full bg-amber-900/70 text-amber-400 font-medium">Pending Approval</span>`;
+                }
             } else if (status === 'Approved') {
                 statusBadge = `<span class="px-3 py-0.5 text-xs rounded-full bg-sky-900/70 text-sky-400 font-medium">Ready for Billing</span>`;
             } else {
@@ -6009,12 +5850,8 @@ function printSubcontractorG703(companyId) {
             const notesText = statusData.notes || (historyEntry && historyEntry.notes) || '';
 
             row.innerHTML = `
-                <td class="px-4 py-3 font-medium flex items-center gap-1.5">
+                <td class="px-4 py-3 font-medium">
                     ${getCompanyName(companyId)}
-                    <button onclick="event.stopImmediatePropagation(); sendSubPayAppNotification(${companyId});" 
-                            class="ml-1 text-emerald-400 hover:text-emerald-300 p-0.5" title="Send notification email about outstanding items">
-                        <i class="fa-solid fa-envelope text-xs"></i>
-                    </button>
                 </td>
                 <td class="px-3 py-3 text-center font-mono text-emerald-400">${currentAppNum}</td>
                 <td class="px-3 py-3 text-center">${statusBadge}</td>
@@ -6028,14 +5865,18 @@ function printSubcontractorG703(companyId) {
                 </td>
                 <td class="px-4 py-2 text-center">
                     <div class="flex items-center justify-center gap-1.5 flex-wrap">
-                        ${ (historyEntry && historyEntry.status === 'Pending Approval') ? `
-                            <button onclick="event.stopImmediatePropagation(); approveSubPayApp(${companyId});" 
-                                    class="px-3 py-1 bg-emerald-600 hover:bg-emerald-500 text-white text-xs rounded font-medium">Approve &amp; Commit</button>
+                        <button onclick="event.stopImmediatePropagation(); sendSubPayAppNotification(${companyId});" 
+                                class="px-2 py-1 bg-zinc-700 hover:bg-zinc-600 text-xs rounded" title="Send notification email">
+                            <i class="fa-solid fa-envelope"></i>
+                        </button>
+                        ${ (historyEntry && (historyEntry.status === 'Pending Approval' || historyEntry.status === 'Approved' || historyEntry.revisionRequested)) ? `
                             <button onclick="event.stopImmediatePropagation(); requestRevisionSubPayApp(${companyId});" 
                                     class="px-3 py-1 bg-amber-600 hover:bg-amber-500 text-white text-xs rounded font-medium">Request Revision</button>
                         ` : '' }
-                        <button onclick="event.stopImmediatePropagation(); selectedSubCompanyId = ${companyId}; switchPayAppTab('sub-sov');" 
-                                class="px-3 py-1 bg-zinc-700 hover:bg-zinc-600 text-xs rounded">View SOV</button>
+                        ${ (historyEntry && historyEntry.status === 'Pending Approval' && !historyEntry.revisionRequested) ? `
+                            <button onclick="event.stopImmediatePropagation(); approveSubPayApp(${companyId});" 
+                                    class="px-3 py-1 bg-emerald-600 hover:bg-emerald-500 text-white text-xs rounded font-medium">Approve &amp; Commit</button>
+                        ` : '' }
                         <button onclick="event.stopImmediatePropagation(); showSubPayAppLog(${companyId});" 
                                 class="px-2 py-1 bg-sky-700 hover:bg-sky-600 text-xs rounded" title="View Log / History"><i class="fa-solid fa-history"></i></button>
                     </div>
