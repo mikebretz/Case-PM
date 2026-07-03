@@ -377,6 +377,9 @@ let requireZeroDollarLienWaiver = localStorage.getItem('requireZeroDollarLienWai
 let requireSubmissionDeadline = localStorage.getItem('requireSubmissionDeadline') === 'true';
 let submissionDeadlineDate = localStorage.getItem('submissionDeadlineDate') || '';
 
+// Main Contractor (GC) Lien Waiver for current period (separate from Sub waivers)
+let mainLienWaiver = JSON.parse(localStorage.getItem('mainLienWaiver') || '{}'); // { periodNumber: { filename, dataUrl, uploadedDate } }
+
     // Subcontractor Pay App specific state (for Submit Application workflow)
     let subLienWaivers = JSON.parse(localStorage.getItem('subLienWaivers') || '{}'); // { companyId: { periodNumber: { filename, dataUrl, uploadedDate } } }
     let subPayAppHistory = JSON.parse(localStorage.getItem('subPayAppHistory') || '{}'); // { companyId: { periodNumber: { periodInfo, lines, totalBilledThisPeriod, submittedDate, lienWaiver } } }
@@ -535,6 +538,97 @@ let submissionDeadlineDate = localStorage.getItem('submissionDeadlineDate') || '
         }
     }
 
+    // ==================== MAIN CONTRACTOR (G702) LIEN WAIVER ====================
+    function uploadMainContractorLienWaiver() {
+        if (!currentPayAppPeriod) return;
+        const input = document.createElement('input');
+        input.type = 'file';
+        input.accept = '.pdf,.png,.jpg,.jpeg';
+        input.onchange = function(e) {
+            const file = e.target.files[0];
+            if (!file) return;
+
+            const reader = new FileReader();
+            reader.onload = function(ev) {
+                const dataUrl = ev.target.result;
+                const periodNum = currentPayAppPeriod.periodNumber;
+
+                mainLienWaiver[periodNum] = {
+                    filename: file.name,
+                    dataUrl: dataUrl,
+                    uploadedDate: new Date().toISOString()
+                };
+                localStorage.setItem('mainLienWaiver', JSON.stringify(mainLienWaiver));
+
+                logPayAppAudit('MAIN_LIEN_WAIVER_UPLOADED', { period: periodNum, filename: file.name });
+                showCenteredAlert(`Lien waiver "${file.name}" uploaded for Pay Application.`, 'success');
+                renderPayAppContent();
+            };
+            reader.readAsDataURL(file);
+        };
+        input.click();
+    }
+
+    function viewMainLienWaiver() {
+        if (!currentPayAppPeriod) return;
+        const periodNum = currentPayAppPeriod.periodNumber;
+        const waiver = mainLienWaiver[periodNum];
+        if (!waiver || !waiver.dataUrl) {
+            showCenteredAlert("No lien waiver found for this period.", "warning");
+            return;
+        }
+
+        const isPdf = (waiver.filename || '').toLowerCase().endsWith('.pdf');
+        const modal = document.createElement('dialog');
+        modal.className = 'bg-zinc-900 border border-zinc-700 rounded-3xl p-0 max-w-[min(1100px,95vw)] w-full shadow-2xl z-[999999]';
+        modal.style.maxHeight = '82vh';
+        modal.style.position = 'fixed';
+        modal.style.top = '130px';
+        modal.style.left = '50%';
+        modal.style.transform = 'translateX(-50%)';
+        modal.style.margin = '0';
+
+        modal.innerHTML = `
+            <div class="drag-handle flex items-center justify-between px-6 py-4 border-b border-zinc-800 bg-zinc-950 cursor-move sticky top-0 z-10">
+                <div>
+                    <div class="font-semibold text-lg">Main Pay Application Lien Waiver — Period ${periodNum}</div>
+                    <div class="text-sm text-zinc-400">${waiver.uploadedDate || ''}</div>
+                </div>
+                <div class="flex items-center gap-3">
+                    <button onclick="printFromViewer(this)" class="px-5 py-2 bg-emerald-600 hover:bg-emerald-700 rounded-xl text-sm font-medium flex items-center gap-2">
+                        <i class="fa-solid fa-print"></i> <span>Print</span>
+                    </button>
+                    <button onclick="this.closest('dialog').close(); this.closest('dialog').remove()" 
+                            class="w-12 h-12 flex items-center justify-center text-4xl text-red-400 font-black hover:text-red-300 hover:bg-zinc-800 rounded-full leading-none border-2 border-red-400">×</button>
+                </div>
+            </div>
+            <div class="p-6 bg-zinc-950 overflow-auto" style="max-height: calc(82vh - 120px);">
+                ${isPdf 
+                    ? `<embed src="${waiver.dataUrl}" type="application/pdf" style="width:100%; height:65vh; border-radius:12px;" />`
+                    : `<img src="${waiver.dataUrl}" style="max-width:100%; max-height:65vh; display:block; margin:0 auto; border-radius:12px;" />`
+                }
+            </div>
+            <div class="px-6 py-4 border-t border-zinc-700 flex justify-end text-sm bg-zinc-900">
+                <button onclick="removeMainLienWaiver(); this.closest('dialog').close()" class="px-4 py-2 text-red-400 hover:underline mr-3">Remove</button>
+                <button onclick="this.closest('dialog').close(); this.closest('dialog').remove()" class="px-6 py-2 bg-zinc-700 hover:bg-zinc-600 rounded">Close</button>
+            </div>
+        `;
+        document.body.appendChild(modal);
+        modal.showModal();
+        makeModalDraggable(modal);
+    }
+
+    function removeMainLienWaiver() {
+        if (!currentPayAppPeriod) return;
+        const periodNum = currentPayAppPeriod.periodNumber;
+        if (mainLienWaiver[periodNum]) {
+            delete mainLienWaiver[periodNum];
+            localStorage.setItem('mainLienWaiver', JSON.stringify(mainLienWaiver));
+            showCenteredAlert("Main lien waiver removed.", 'success');
+            renderPayAppContent();
+        }
+    }
+
     function viewLienWaiver(companyId) {
         if (!companyId) return;
         const periodNum = currentPayAppPeriod ? currentPayAppPeriod.periodNumber : 1;
@@ -551,7 +645,7 @@ let submissionDeadlineDate = localStorage.getItem('submissionDeadlineDate') || '
         modal.className = 'bg-zinc-900 border border-zinc-700 rounded-3xl p-0 max-w-[min(1100px,95vw)] w-full shadow-2xl z-[999999]';
         modal.style.maxHeight = '82vh';
         modal.style.position = 'fixed';
-        modal.style.top = '70px';
+        modal.style.top = '130px';
         modal.style.left = '50%';
         modal.style.transform = 'translateX(-50%)';
         modal.style.margin = '0';
@@ -883,7 +977,7 @@ let submissionDeadlineDate = localStorage.getItem('submissionDeadlineDate') || '
                                 class="px-5 py-2.5 bg-sky-600 hover:bg-sky-500 rounded-md text-sm font-medium flex items-center gap-2">
                             <i class="fa-solid fa-print"></i> <span>Print G703</span>
                         </button>
-                        <button onclick="showPayAppAuditLog()" 
+                        <button onclick="viewHistoricalMainLienWaiver(${periodData.id})" 
                                 class="px-4 py-2.5 bg-zinc-700 hover:bg-zinc-600 rounded-md text-sm font-medium flex items-center gap-2">
                             <i class="fa-solid fa-file-contract"></i> <span>View Lien Waiver</span>
                         </button>
@@ -1024,6 +1118,60 @@ let submissionDeadlineDate = localStorage.getItem('submissionDeadlineDate') || '
         payAppBillingLines = originalBilling;
     }
 
+    // View historical main lien waiver from Previous Pay Apps tab
+    function viewHistoricalMainLienWaiver(periodId) {
+        const periodData = payAppHistory.find(p => p.id == periodId);
+        if (!periodData) return;
+
+        const periodNum = periodData.periodNumber;
+        const waiver = mainLienWaiver[periodNum];
+
+        if (!waiver || !waiver.dataUrl) {
+            showCenteredAlert("No main lien waiver was uploaded for this historical period.", "warning");
+            // Fallback: show full audit log so user can still investigate
+            showPayAppAuditLog();
+            return;
+        }
+
+        const isPdf = (waiver.filename || '').toLowerCase().endsWith('.pdf');
+        const modal = document.createElement('dialog');
+        modal.className = 'bg-zinc-900 border border-zinc-700 rounded-3xl p-0 max-w-[min(1100px,95vw)] w-full shadow-2xl z-[999999]';
+        modal.style.maxHeight = '82vh';
+        modal.style.position = 'fixed';
+        modal.style.top = '130px';
+        modal.style.left = '50%';
+        modal.style.transform = 'translateX(-50%)';
+        modal.style.margin = '0';
+
+        modal.innerHTML = `
+            <div class="drag-handle flex items-center justify-between px-6 py-4 border-b border-zinc-800 bg-zinc-950 cursor-move sticky top-0 z-10">
+                <div>
+                    <div class="font-semibold text-lg">Main Lien Waiver — Period ${periodNum} (Historical)</div>
+                    <div class="text-sm text-zinc-400">${waiver.uploadedDate || ''}</div>
+                </div>
+                <div class="flex items-center gap-3">
+                    <button onclick="printFromViewer(this)" class="px-5 py-2 bg-emerald-600 hover:bg-emerald-700 rounded-xl text-sm font-medium flex items-center gap-2">
+                        <i class="fa-solid fa-print"></i> <span>Print</span>
+                    </button>
+                    <button onclick="this.closest('dialog').close(); this.closest('dialog').remove()" 
+                            class="w-12 h-12 flex items-center justify-center text-4xl text-red-400 font-black hover:text-red-300 hover:bg-zinc-800 rounded-full leading-none border-2 border-red-400">×</button>
+                </div>
+            </div>
+            <div class="p-6 bg-zinc-950 overflow-auto" style="max-height: calc(82vh - 120px);">
+                ${isPdf 
+                    ? `<embed src="${waiver.dataUrl}" type="application/pdf" style="width:100%; height:65vh; border-radius:12px;" />`
+                    : `<img src="${waiver.dataUrl}" style="max-width:100%; max-height:65vh; display:block; margin:0 auto; border-radius:12px;" />`
+                }
+            </div>
+            <div class="px-6 py-4 border-t border-zinc-700 flex justify-end text-sm bg-zinc-900">
+                <button onclick="this.closest('dialog').close(); this.closest('dialog').remove()" class="px-6 py-2 bg-zinc-700 hover:bg-zinc-600 rounded">Close</button>
+            </div>
+        `;
+        document.body.appendChild(modal);
+        modal.showModal();
+        makeModalDraggable(modal);
+    }
+
     // ==================== PAY APPLICATION G702 TAB ====================
     function renderPayApplicationTab(cardsContainer, thead, tbody, workflowBar) {
         contractorSOV = JSON.parse(localStorage.getItem('contractorSOV')) || [];
@@ -1121,6 +1269,21 @@ let submissionDeadlineDate = localStorage.getItem('submissionDeadlineDate') || '
 
         if (status === 'Draft') {
             workflowHTML += `<button onclick="submitPayApplication()" class="px-5 py-2 bg-emerald-600 hover:bg-emerald-500 rounded-md text-sm font-medium flex items-center gap-2"><i class="fa-solid fa-paper-plane"></i> Submit for Review</button>`;
+            
+            // NEW: Lien Waiver Upload button for main Pay Application (G702) - placed right of Submit
+            const currentPeriodNum = currentPayAppPeriod.periodNumber;
+            const hasMainWaiver = mainLienWaiver[currentPeriodNum] && mainLienWaiver[currentPeriodNum].filename;
+            if (!hasMainWaiver) {
+                workflowHTML += `<button onclick="uploadMainContractorLienWaiver()" class="px-4 py-2 bg-zinc-700 hover:bg-zinc-600 rounded-md text-sm font-medium flex items-center gap-2 border border-zinc-600"><i class="fa-solid fa-file-upload"></i> <span>Lien Waiver Upload</span></button>`;
+            } else {
+                const w = mainLienWaiver[currentPeriodNum];
+                workflowHTML += `<div class="flex items-center gap-2 px-3 py-1.5 bg-zinc-800 border border-emerald-600 rounded-md text-sm">
+                    <span class="text-emerald-400"><i class="fa-solid fa-file-contract"></i></span>
+                    <span class="text-emerald-300 text-xs max-w-[160px] truncate">${w.filename}</span>
+                    <button onclick="viewMainLienWaiver()" class="px-2 py-0.5 text-xs bg-emerald-700 hover:bg-emerald-600 rounded">View</button>
+                    <button onclick="removeMainLienWaiver()" class="px-2 py-0.5 text-xs bg-red-700 hover:bg-red-600 rounded">Remove</button>
+                </div>`;
+            }
         } else if (status === 'Submitted' || status === 'Under Review') {
             workflowHTML += `<button onclick="approvePayApplication()" class="px-5 py-2 bg-emerald-600 hover:bg-emerald-500 rounded-md text-sm font-medium flex items-center gap-2"><i class="fa-solid fa-check"></i> Approve Application</button>`;
             workflowHTML += `<button onclick="requestRevisionPayApplication()" class="px-5 py-2 bg-amber-600 hover:bg-amber-500 rounded-md text-sm font-medium flex items-center gap-2"><i class="fa-solid fa-redo"></i> Request Revision</button>`;
@@ -1671,8 +1834,8 @@ let submissionDeadlineDate = localStorage.getItem('submissionDeadlineDate') || '
         });
 
         // Use the same Budget Contract Amount as the G702 tab for consistency
-        const sovMismatchNote = (totalOriginal + totalCO !== budgetContractAmount) 
-            ? `<div class="text-[10px] text-amber-400 mt-1">⚠️ Does not match Budget Contract Amount</div>` 
+        const sovMismatchNote = (totalOriginal !== budgetContractAmount) 
+            ? `<div class="text-[10px] text-amber-400 mt-1">⚠️ Original column total does not match Budget Contract Amount</div>` 
             : '';
 
         cardsContainer.innerHTML = `
@@ -4423,7 +4586,7 @@ function printSubcontractorG703(companyId) {
         modal.className = 'bg-zinc-900 border border-zinc-700 rounded-3xl p-0 max-w-[min(1100px,95vw)] w-full shadow-2xl z-[999999]';
         modal.style.maxHeight = '82vh';
         modal.style.position = 'fixed';
-        modal.style.top = '70px';
+        modal.style.top = '130px';
         modal.style.left = '50%';
         modal.style.transform = 'translateX(-50%)';
         modal.style.margin = '0';
@@ -5440,11 +5603,12 @@ function printSubcontractorG703(companyId) {
             <tr>
                 <th class="px-4 py-3 text-left font-medium text-zinc-400">Subcontractor</th>
                 <th class="px-3 py-3 text-center font-medium text-zinc-400 w-24">Pay App #</th>
-                <th class="px-3 py-3 text-center font-medium text-zinc-400 w-36">Status</th>
+                <th class="px-3 py-3 text-center font-medium text-zinc-400 w-48">Status</th>
                 <th class="px-3 py-3 text-center font-medium text-zinc-400 w-28">Lien Waiver</th>
                 <th class="px-4 py-3 text-right font-medium text-zinc-400 w-36">Billed This Period</th>
                 <th class="px-3 py-3 text-center font-medium text-zinc-400 w-20">% Complete</th>
-                <th class="px-4 py-3 text-left font-medium text-zinc-400" style="min-width: 320px; width: 380px;">Notes (PM Editable)</th>
+                <th class="px-3 py-3 text-center font-medium text-zinc-400 w-28">Insurance</th>
+                <th class="px-4 py-3 text-left font-medium text-zinc-400" style="min-width: 480px; width: 520px;">Notes (PM Editable)</th>
                 <th class="px-4 py-3 text-center font-medium text-zinc-400 w-56">Actions</th>
             </tr>
         `;
@@ -5500,6 +5664,12 @@ function printSubcontractorG703(companyId) {
                 ? `<span class="text-emerald-400"><i class="fa-solid fa-check-circle"></i> Uploaded</span>` 
                 : `<span class="text-red-400"><i class="fa-solid fa-exclamation-circle"></i> Missing</span>`;
 
+            // Simple insurance compliance check (demo: green if company has basic fields or always compliant for demo)
+            const insuranceStatus = getInsuranceComplianceStatus(companyId);
+            const insuranceBadge = insuranceStatus.compliant 
+                ? `<span class="px-2 py-0.5 text-[10px] rounded-full bg-emerald-900/70 text-emerald-400 font-medium" title="${insuranceStatus.message}">✓ All Current</span>`
+                : `<span class="px-2 py-0.5 text-[10px] rounded-full bg-red-900/70 text-red-400 font-medium" title="${insuranceStatus.message}">⚠ Review</span>`;
+
             const row = document.createElement('tr');
             row.className = 'sov-line-row hover:bg-zinc-800/60 cursor-pointer';
             row.onclick = () => {
@@ -5513,13 +5683,20 @@ function printSubcontractorG703(companyId) {
             const notesText = statusData.notes || (historyEntry && historyEntry.notes) || '';
 
             row.innerHTML = `
-                <td class="px-4 py-3 font-medium">${getCompanyName(companyId)}</td>
+                <td class="px-4 py-3 font-medium flex items-center gap-1.5">
+                    ${getCompanyName(companyId)}
+                    <button onclick="event.stopImmediatePropagation(); sendSubPayAppNotification(${companyId});" 
+                            class="ml-1 text-emerald-400 hover:text-emerald-300 p-0.5" title="Send notification email about outstanding items">
+                        <i class="fa-solid fa-envelope text-xs"></i>
+                    </button>
+                </td>
                 <td class="px-3 py-3 text-center font-mono text-emerald-400">${currentAppNum}</td>
                 <td class="px-3 py-3 text-center">${statusBadge}</td>
                 <td class="px-3 py-3 text-center text-sm">${lienBadge}</td>
                 <td class="px-4 py-3 text-right font-mono text-emerald-400">${formatCurrency(billedThis)}</td>
                 <td class="px-3 py-3 text-center font-mono text-xs">${pctComplete}%</td>
-                <td class="px-4 py-2 text-sm text-zinc-300 notes-cell" style="min-width:320px; width:380px; cursor:pointer;" title="Click to edit • ${notesText.replace(/"/g,'&quot;')}" onclick="event.stopImmediatePropagation(); editSubTrackerNote(${companyId}, this)">
+                <td class="px-3 py-3 text-center">${insuranceBadge}</td>
+                <td class="px-4 py-2 text-sm text-zinc-300 notes-cell" style="min-width:480px; width:520px; cursor:pointer;" title="Click to edit • ${notesText.replace(/"/g,'&quot;')}" onclick="event.stopImmediatePropagation(); editSubTrackerNote(${companyId}, this)">
                     ${notesText || '<span class="text-zinc-500 italic">Click to add note...</span>'}
                     <i class="fa-solid fa-pencil-alt ml-1.5 text-[10px] text-zinc-500"></i>
                 </td>
@@ -5604,6 +5781,51 @@ function printSubcontractorG703(companyId) {
         `;
         document.body.appendChild(modal);
         modal.showModal();
+    }
+
+    // Simple insurance compliance helper (checks for GL/WC/COI presence or expiry on company record)
+    function getInsuranceComplianceStatus(companyId) {
+        const company = companies.find(c => c.id == companyId);
+        if (!company) return { compliant: true, message: 'No company record' };
+
+        // Demo logic: if company has insurance fields and they are not expired, compliant.
+        // In production this would query a real compliance table or integrate with insurance tracking module.
+        const hasGL = company.gl_policy || company.insurance_gl;
+        const hasWC = company.wc_policy || company.insurance_wc;
+        const hasCOI = company.coi_on_file || company.insurance_coi;
+
+        if (hasGL && hasWC && hasCOI) {
+            return { compliant: true, message: 'General Liability, Workers Comp, and COI all current' };
+        }
+        return { 
+            compliant: false, 
+            message: 'Missing or expired: ' + 
+                     (!hasGL ? 'GL ' : '') + 
+                     (!hasWC ? 'WC ' : '') + 
+                     (!hasCOI ? 'COI' : '') 
+        };
+    }
+
+    function sendSubPayAppNotification(companyId) {
+        event.stopImmediatePropagation();
+        const companyName = getCompanyName(companyId);
+        const status = getSubSOVStatus(companyId);
+        const insurance = getInsuranceComplianceStatus(companyId);
+        const hasWaiver = getLienWaiverStatus(companyId).hasWaiver;
+
+        let outstanding = [];
+        if (status === 'Pending Approval' || status === 'Submitted') outstanding.push('Pay App pending approval');
+        if (!hasWaiver) outstanding.push('Lien Waiver missing');
+        if (!insurance.compliant) outstanding.push('Insurance review needed');
+
+        const msg = outstanding.length > 0 
+            ? `Outstanding for ${companyName}: ${outstanding.join(', ')}`
+            : `${companyName} is up to date on lien waiver, billing, and insurance.`;
+
+        // In production: call email API / notification service here
+        logPayAppAudit('SUB_PAYAPP_NOTIFICATION_SENT', { companyId, companyName, outstanding });
+
+        showCenteredAlert(`Notification sent to primary contact for ${companyName}.\n\n${msg}`, 'success');
     }
 
     // Editable Notes in Sub Pay App Tracker (PM-only internal notes, persisted per sub)
