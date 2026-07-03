@@ -3978,6 +3978,11 @@ let mainLienWaiver = JSON.parse(localStorage.getItem('mainLienWaiver') || '{}');
         historyEntry.status = 'Revision Requested';
         localStorage.setItem('subPayAppHistory', JSON.stringify(subPayAppHistory));
 
+        // Also update the live SOV status so the Submit button appears again
+        if (!subSOVStatus[companyId]) subSOVStatus[companyId] = {};
+        subSOVStatus[companyId].status = 'Approved'; // This makes the "Submit Application" workflow appear
+        localStorage.setItem('subSOVStatus', JSON.stringify(subSOVStatus));
+
         // 4. Update tracker status to Ready for billing (live)
         if (!subSOVStatus[companyId]) subSOVStatus[companyId] = {};
         subSOVStatus[companyId].status = 'Ready for billing';
@@ -6016,6 +6021,9 @@ function printSubcontractorG703(companyId) {
                 <span class="text-emerald-400 font-medium">Sub Pay App Tracker • Admin View</span>
                 <span class="text-xs text-emerald-300 ml-3 font-mono">Billing Period ${currentPayAppPeriod ? currentPayAppPeriod.periodNumber : '—'} • ${currentPayAppPeriod ? currentPayAppPeriod.periodStart : ''} → ${currentPayAppPeriod ? currentPayAppPeriod.periodEnd : ''}</span>
                 <span class="text-xs text-zinc-500 ml-auto">Click row → Sub SOV • Approve commits to G702 • Notes are PM-only editable</span>
+                <button onclick="resetSubPayAppData()" class="ml-4 px-3 py-1 bg-red-700 hover:bg-red-600 text-white text-xs rounded font-medium flex items-center gap-1.5" title="Clear all Sub SOV, History, and Tracker data for clean testing (does NOT touch Companies, Contractor SOV, or main G702)">
+                    <i class="fa-solid fa-trash"></i> <span>Reset Sub Data</span>
+                </button>
             </div>
         `;
 
@@ -6329,6 +6337,29 @@ function printSubcontractorG703(companyId) {
         // Refresh the whole tab so the note appears correctly in the table
         renderPayAppContent();
         showCenteredAlert('Note saved for this subcontractor.', 'success');
+    }
+
+    // Reset only Subcontractor-related Pay App data (for clean testing)
+    function resetSubPayAppData() {
+        if (!confirm('This will clear ALL Subcontractor Schedule of Values, Pay App History, Lien Waivers, and Status for subs. Main G702 and Contractor SOV will NOT be touched. Continue?')) {
+            return;
+        }
+        localStorage.removeItem('subcontractorSOV');
+        localStorage.removeItem('subPayAppHistory');
+        localStorage.removeItem('subLienWaivers');
+        localStorage.removeItem('subSOVStatus');
+        localStorage.removeItem('subPayAppNumbers');
+        localStorage.removeItem('lastSelectedSubSOV');
+
+        // Re-initialize empty objects
+        subcontractorSOV = {};
+        subPayAppHistory = {};
+        subLienWaivers = {};
+        subSOVStatus = {};
+        subPayAppNumbers = {};
+
+        showCenteredAlert('Subcontractor Pay App data has been reset. You can now start fresh with Pay App #1.', 'success');
+        renderPayAppContent();
     }
 
     window.onload = initializePayApplications;
