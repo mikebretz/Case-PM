@@ -65,18 +65,6 @@
     border: 1px solid #3f3f46;
     border-radius: 6px;
   }
-
-  /* Drag and drop upload visual feedback */
-  .upload-drop-btn.drag-over {
-    background-color: #166534 !important;
-    border-color: #4ade80 !important;
-    color: #fff !important;
-    box-shadow: 0 0 0 3px rgba(16, 185, 129, 0.25);
-    transform: translateY(-1px);
-  }
-  .upload-drop-btn {
-    transition: all 0.15s ease;
-  }
 </style>
 
 <!-- HEADER (exact match to budget.html) -->
@@ -503,59 +491,50 @@ let mainLienWaiver = JSON.parse(localStorage.getItem('mainLienWaiver') || '{}');
     function uploadLienWaiver(companyId, droppedFile = null) {
         if (!companyId) return;
 
+        const processFile = (file) => {
+            if (!file) return;
+            const reader = new FileReader();
+            reader.onload = function(ev) {
+                const dataUrl = ev.target.result;
+
+                // Use subLienWaivers structure for current period (supports image rendering in print)
+                if (!subLienWaivers[companyId]) subLienWaivers[companyId] = {};
+                const periodNum = currentPayAppPeriod ? currentPayAppPeriod.periodNumber : 1;
+
+                subLienWaivers[companyId][periodNum] = {
+                    filename: file.name,
+                    uploadedDate: new Date().toISOString(),
+                    submitted: false
+                    // Note: dataUrl intentionally omitted to prevent localStorage quota errors on large PDFs/images.
+                    // View functionality shows filename + professional placeholder.
+                };
+
+                localStorage.setItem('subLienWaivers', JSON.stringify(subLienWaivers));
+
+                // Force fresh global state from disk so render sees the new waiver immediately
+                subLienWaivers = JSON.parse(localStorage.getItem('subLienWaivers') || '{}');
+
+                logPayAppAudit('LIEN_WAIVER_UPLOADED', { companyId, filename: file.name, period: periodNum });
+
+                // Immediate live UI update on current tab (Sub SOV or Tracker)
+                renderPayAppContent();
+            };
+            reader.readAsDataURL(file);
+        };
+
         if (droppedFile) {
-            // Drag-and-drop path
-            processSubLienWaiverFile(companyId, droppedFile);
+            processFile(droppedFile);
             return;
         }
 
-        // Click-to-upload path (original behavior)
         const input = document.createElement('input');
         input.type = 'file';
         input.accept = '.pdf'; // Require PDF only for lien waivers
         input.onchange = function(e) {
             const file = e.target.files[0];
-            if (!file) return;
-            processSubLienWaiverFile(companyId, file);
+            processFile(file);
         };
         input.click();
-    }
-
-    function processSubLienWaiverFile(companyId, file) {
-        if (!companyId || !file) return;
-
-        // Enforce PDF for subcontractor lien waivers
-        if (!file.name.toLowerCase().endsWith('.pdf')) {
-            showCenteredAlert('Subcontractor lien waivers must be PDF files only.', 'warning');
-            return;
-        }
-
-        const reader = new FileReader();
-        reader.onload = function(ev) {
-            const dataUrl = ev.target.result;
-
-            if (!subLienWaivers[companyId]) subLienWaivers[companyId] = {};
-            const periodNum = currentPayAppPeriod ? currentPayAppPeriod.periodNumber : 1;
-
-            subLienWaivers[companyId][periodNum] = {
-                filename: file.name,
-                uploadedDate: new Date().toISOString(),
-                submitted: false,
-                dataUrl: dataUrl   // Restored for full document viewer modal (embed/image)
-            };
-
-            localStorage.setItem('subLienWaivers', JSON.stringify(subLienWaivers));
-
-            // Force fresh global state
-            subLienWaivers = JSON.parse(localStorage.getItem('subLienWaivers') || '{}');
-
-            logPayAppAudit('LIEN_WAIVER_UPLOADED', { companyId, filename: file.name, period: periodNum });
-            showCenteredAlert(`Lien waiver "${file.name}" uploaded successfully.`, 'success');
-
-            // Immediate live UI update
-            renderPayAppContent();
-        };
-        reader.readAsDataURL(file);
     }
 
     function removeLienWaiver(companyId) {
@@ -569,7 +548,6 @@ let mainLienWaiver = JSON.parse(localStorage.getItem('mainLienWaiver') || '{}');
             // Force fresh global state
             subLienWaivers = JSON.parse(localStorage.getItem('subLienWaivers') || '{}');
 
-            showCenteredAlert("Lien waiver removed.", 'success');
             renderPayAppContent();
         }
     }
@@ -578,107 +556,43 @@ let mainLienWaiver = JSON.parse(localStorage.getItem('mainLienWaiver') || '{}');
     function uploadMainContractorLienWaiver(droppedFile = null) {
         if (!currentPayAppPeriod) return;
 
+        const processFile = (file) => {
+            if (!file) return;
+            const reader = new FileReader();
+            reader.onload = function(ev) {
+                const dataUrl = ev.target.result;
+                const periodNum = currentPayAppPeriod.periodNumber;
+
+                mainLienWaiver[periodNum] = {
+                    filename: file.name,
+                    uploadedDate: new Date().toISOString()
+                    // Note: dataUrl intentionally omitted to prevent localStorage quota errors on large PDFs/images.
+                    // View functionality shows filename + professional placeholder.
+                };
+                localStorage.setItem('mainLienWaiver', JSON.stringify(mainLienWaiver));
+
+                // Force fresh global state from disk so G702 render sees the new waiver immediately
+                mainLienWaiver = JSON.parse(localStorage.getItem('mainLienWaiver') || '{}');
+
+                logPayAppAudit('MAIN_LIEN_WAIVER_UPLOADED', { period: periodNum, filename: file.name });
+                renderPayAppContent();
+            };
+            reader.readAsDataURL(file);
+        };
+
         if (droppedFile) {
-            processMainLienWaiverFile(droppedFile);
+            processFile(droppedFile);
             return;
         }
 
-        // Click path
         const input = document.createElement('input');
         input.type = 'file';
         input.accept = '.pdf,.png,.jpg,.jpeg';
         input.onchange = function(e) {
             const file = e.target.files[0];
-            if (!file) return;
-            processMainLienWaiverFile(file);
+            processFile(file);
         };
         input.click();
-    }
-
-    function processMainLienWaiverFile(file) {
-        if (!currentPayAppPeriod || !file) return;
-
-        const reader = new FileReader();
-        reader.onload = function(ev) {
-            const dataUrl = ev.target.result;
-            const periodNum = currentPayAppPeriod.periodNumber;
-
-            mainLienWaiver[periodNum] = {
-                filename: file.name,
-                uploadedDate: new Date().toISOString(),
-                dataUrl: dataUrl   // Restored so the full document viewer modal works with actual content
-            };
-            localStorage.setItem('mainLienWaiver', JSON.stringify(mainLienWaiver));
-
-            // Force fresh global state
-            mainLienWaiver = JSON.parse(localStorage.getItem('mainLienWaiver') || '{}');
-
-            logPayAppAudit('MAIN_LIEN_WAIVER_UPLOADED', { period: periodNum, filename: file.name });
-            showCenteredAlert(`Lien waiver "${file.name}" uploaded for Pay Application.`, 'success');
-            renderPayAppContent();
-        };
-        reader.readAsDataURL(file);
-    }
-
-    function setupDragAndDropForLienWaivers() {
-        const workflowBar = document.getElementById('payAppWorkflowBar');
-        if (!workflowBar) return;
-
-        // Prevent duplicate setup
-        if (workflowBar.dataset.dragDropSetup === 'true') return;
-        workflowBar.dataset.dragDropSetup = 'true';
-
-        // Drag over - highlight
-        workflowBar.addEventListener('dragover', function(e) {
-            const btn = e.target.closest('.upload-drop-btn');
-            if (btn) {
-                e.preventDefault();
-                btn.classList.add('drag-over');
-            }
-        });
-
-        // Drag enter for smoother feedback
-        workflowBar.addEventListener('dragenter', function(e) {
-            const btn = e.target.closest('.upload-drop-btn');
-            if (btn) {
-                e.preventDefault();
-                btn.classList.add('drag-over');
-            }
-        });
-
-        // Drag leave
-        workflowBar.addEventListener('dragleave', function(e) {
-            const btn = e.target.closest('.upload-drop-btn');
-            if (btn) {
-                btn.classList.remove('drag-over');
-            }
-        });
-
-        // Drop handler
-        workflowBar.addEventListener('drop', function(e) {
-            const btn = e.target.closest('.upload-drop-btn');
-            if (btn) {
-                e.preventDefault();
-                btn.classList.remove('drag-over');
-
-                const files = e.dataTransfer.files;
-                if (files && files.length > 0) {
-                    const file = files[0];
-                    const uploadType = btn.dataset.uploadType;
-
-                    if (uploadType === 'main') {
-                        uploadMainContractorLienWaiver(file);
-                    } else if (uploadType === 'sub') {
-                        const companyId = parseInt(btn.dataset.companyId, 10);
-                        if (companyId) {
-                            uploadLienWaiver(companyId, file);
-                        }
-                    }
-                }
-            }
-        });
-
-        console.log('%c[Case PM] Drag-and-drop initialized for lien waiver uploads', 'color:#10b981');
     }
 
     function viewMainLienWaiver() {
@@ -741,7 +655,13 @@ let mainLienWaiver = JSON.parse(localStorage.getItem('mainLienWaiver') || '{}');
                     <div class="font-semibold text-lg">Main Pay Application Lien Waiver — Period ${periodNum}</div>
                     <div class="text-sm text-zinc-400">${waiver.uploadedDate || ''}</div>
                 </div>
-                <!-- Clean header: no Print or big X per user request. Actions only at bottom. -->
+                <div class="flex items-center gap-3">
+                    <button onclick="printFromViewer(this)" class="px-5 py-2 bg-emerald-600 hover:bg-emerald-700 rounded-xl text-sm font-medium flex items-center gap-2">
+                        <i class="fa-solid fa-print"></i> <span>Print</span>
+                    </button>
+                    <button onclick="this.closest('dialog').close(); this.closest('dialog').remove()" 
+                            class="w-12 h-12 flex items-center justify-center text-4xl text-red-400 font-black hover:text-red-300 hover:bg-zinc-800 rounded-full leading-none border-2 border-red-400">×</button>
+                </div>
             </div>
             <div class="p-6 bg-zinc-950 overflow-auto" style="max-height: calc(82vh - 120px);">
                 ${isPdf 
@@ -751,7 +671,7 @@ let mainLienWaiver = JSON.parse(localStorage.getItem('mainLienWaiver') || '{}');
             </div>
             <div class="px-6 py-4 border-t border-zinc-700 flex justify-end text-sm bg-zinc-900">
                 <button onclick="removeMainLienWaiver(); this.closest('dialog').close()" class="px-4 py-2 text-red-400 hover:underline mr-3">Remove</button>
-                <button onclick="this.closest('dialog').close(); this.closest('dialog').remove()" class="px-6 py-2 bg-zinc-700 hover:bg-zinc-600 rounded">Close Viewer</button>
+                <button onclick="this.closest('dialog').close(); this.closest('dialog').remove()" class="px-6 py-2 bg-zinc-700 hover:bg-zinc-600 rounded">Close</button>
             </div>
         `;
         document.body.appendChild(modal);
@@ -769,9 +689,46 @@ let mainLienWaiver = JSON.parse(localStorage.getItem('mainLienWaiver') || '{}');
             // Force fresh global state
             mainLienWaiver = JSON.parse(localStorage.getItem('mainLienWaiver') || '{}');
 
-            showCenteredAlert("Main lien waiver removed.", 'success');
             renderPayAppContent();
         }
+    }
+
+    // Reusable drag & drop setup for lien waiver hint areas (highlights, prevents default, calls upload fn with file)
+    function setupLienWaiverDropZone(hintElement, uploadFn) {
+        if (!hintElement) return;
+
+        const preventDefaults = (e) => { e.preventDefault(); e.stopPropagation(); };
+        const highlight = () => {
+            hintElement.classList.add('!border-emerald-500', 'bg-emerald-900/20');
+            hintElement.style.transform = 'translateY(-1px)';
+        };
+        const unhighlight = () => {
+            hintElement.classList.remove('!border-emerald-500', 'bg-emerald-900/20');
+            hintElement.style.transform = '';
+        };
+
+        ['dragenter','dragover','dragleave','drop'].forEach(ev => hintElement.addEventListener(ev, preventDefaults, false));
+        ['dragenter','dragover'].forEach(ev => hintElement.addEventListener(ev, highlight, false));
+        ['dragleave','drop'].forEach(ev => hintElement.addEventListener(ev, unhighlight, false));
+
+        hintElement.addEventListener('drop', function(e) {
+            const file = e.dataTransfer.files[0];
+            if (!file) return;
+            if (hintElement.id === 'subLienDropHint' && typeof selectedSubCompanyId !== 'undefined' && selectedSubCompanyId) {
+                uploadLienWaiver(selectedSubCompanyId, file);
+            } else {
+                uploadFn(file);
+            }
+        }, false);
+
+        // Bonus: clicking the hint area also opens file picker (same as button)
+        hintElement.addEventListener('click', function() {
+            if (hintElement.id === 'subLienDropHint' && typeof selectedSubCompanyId !== 'undefined' && selectedSubCompanyId) {
+                uploadLienWaiver(selectedSubCompanyId);
+            } else if (typeof uploadFn === 'function') {
+                uploadFn();
+            }
+        });
     }
 
     function viewLienWaiver(companyId) {
@@ -837,7 +794,18 @@ let mainLienWaiver = JSON.parse(localStorage.getItem('mainLienWaiver') || '{}');
                     <div class="font-semibold text-lg">Lien Waiver — ${getCompanyName(companyId)}</div>
                     <div class="text-sm text-zinc-400">Period ${periodNum} • ${waiver.uploadedDate || 'Unknown date'}</div>
                 </div>
-                <!-- Clean header (no Print / big red X) — actions consolidated at bottom per previous request -->
+                <div class="flex items-center gap-3">
+                    <button onclick="printFromViewer(this)" 
+                            class="px-5 py-2 bg-emerald-600 hover:bg-emerald-700 rounded-xl text-sm font-medium flex items-center gap-2">
+                        <i class="fa-solid fa-print"></i>
+                        <span>Print Document</span>
+                    </button>
+                    <button onclick="this.closest('dialog').close(); this.closest('dialog').remove()" 
+                            class="w-12 h-12 flex items-center justify-center text-4xl text-red-400 font-black hover:text-red-300 hover:bg-zinc-800 rounded-full leading-none border-2 border-red-400"
+                            title="Close">
+                        ×
+                    </button>
+                </div>
             </div>
             
             <div class="p-6 bg-zinc-950 overflow-auto" style="max-height: calc(92vh - 140px);">
@@ -1443,11 +1411,11 @@ let mainLienWaiver = JSON.parse(localStorage.getItem('mainLienWaiver') || '{}');
         if (status === 'Draft') {
             workflowHTML += `<button onclick="submitPayApplication()" class="px-5 py-2 bg-emerald-600 hover:bg-emerald-500 rounded-md text-sm font-medium flex items-center gap-2"><i class="fa-solid fa-paper-plane"></i> Submit for Review</button>`;
             
-            // Lien Waiver Upload button for main Pay Application (G702) - ALWAYS visible, text changes, pill to the right
+            // Lien Waiver Upload button for main Pay Application (G702) - ALWAYS visible, text changes, pill/hint to the right
             const currentPeriodNum = currentPayAppPeriod.periodNumber;
             const hasMainWaiver = mainLienWaiver[currentPeriodNum] && mainLienWaiver[currentPeriodNum].filename;
             const mainWaiverBtnText = hasMainWaiver ? 'Re-upload Lien Waiver' : 'Lien Waiver Upload';
-            workflowHTML += `<button onclick="uploadMainContractorLienWaiver()" class="px-4 py-2 bg-zinc-700 hover:bg-zinc-600 rounded-md text-sm font-medium flex items-center gap-2 border border-zinc-600 upload-drop-btn" data-upload-type="main"><i class="fa-solid fa-file-upload"></i> <span>${mainWaiverBtnText}</span></button>`;
+            workflowHTML += `<button onclick="uploadMainContractorLienWaiver()" class="px-4 py-2 bg-zinc-700 hover:bg-zinc-600 rounded-md text-sm font-medium flex items-center gap-2 border border-zinc-600"><i class="fa-solid fa-file-upload"></i> <span>${mainWaiverBtnText}</span></button>`;
             if (hasMainWaiver) {
                 const w = mainLienWaiver[currentPeriodNum];
                 workflowHTML += `<div class="flex items-center gap-2 px-3 py-1.5 bg-zinc-800 border border-emerald-600 rounded-md text-sm">
@@ -1456,6 +1424,9 @@ let mainLienWaiver = JSON.parse(localStorage.getItem('mainLienWaiver') || '{}');
                     <button onclick="viewMainLienWaiver()" class="px-2 py-0.5 text-xs bg-emerald-700 hover:bg-emerald-600 rounded">View</button>
                     <button onclick="removeMainLienWaiver()" class="px-2 py-0.5 text-xs bg-red-700 hover:bg-red-600 rounded">Remove</button>
                 </div>`;
+            } else {
+                // Drag & drop hint area (same height as button, disappears after upload, reappears on remove)
+                workflowHTML += `<div id="mainLienDropHint" class="ml-1.5 px-3 py-2 border border-dashed border-zinc-600 hover:border-zinc-400 rounded-md text-xs text-zinc-400 flex items-center h-[38px] transition-colors whitespace-nowrap" title="Drag & drop PDF, PNG, JPG or JPEG here (optional)">optional drag & drop here</div>`;
             }
         } else if (status === 'Submitted' || status === 'Under Review') {
             workflowHTML += `<button onclick="approvePayApplication()" class="px-5 py-2 bg-emerald-600 hover:bg-emerald-500 rounded-md text-sm font-medium flex items-center gap-2"><i class="fa-solid fa-check"></i> Approve Application</button>`;
@@ -1469,6 +1440,12 @@ let mainLienWaiver = JSON.parse(localStorage.getItem('mainLienWaiver') || '{}');
         </button>`;
         workflowHTML += `</div>`;
         workflowBar.innerHTML = workflowHTML;
+
+        // Setup drag & drop hint for main lien waiver (only if hint exists i.e. no waiver yet)
+        const mainDropHint = document.getElementById('mainLienDropHint');
+        if (mainDropHint) {
+            setupLienWaiverDropZone(mainDropHint, uploadMainContractorLienWaiver);
+        }
 
         // NEW: Populate Approved Subcontractor Billings card (flows from tracker approvals)
         setTimeout(() => {
@@ -2757,6 +2734,17 @@ let mainLienWaiver = JSON.parse(localStorage.getItem('mainLienWaiver') || '{}');
         companies = JSON.parse(localStorage.getItem('casepm_companies')) || [];
         let currentStatus = 'Draft'; // Declare early to avoid TDZ errors in template literals
 
+        // Compute if selected sub can be removed/replaced (billed_to_date must be exactly zero)
+        let canModifySelectedSub = false;
+        let selectedSubForModifyName = '';
+        if (selectedSubCompanyId) {
+            const subLines = subcontractorSOV[selectedSubCompanyId] || [];
+            const totalBilled = subLines.reduce((sum, line) => sum + (parseFloat(line.billed_to_date) || 0), 0);
+            canModifySelectedSub = (totalBilled === 0);
+            const comp = companies.find(c => c.id == selectedSubCompanyId);
+            selectedSubForModifyName = comp ? (comp.name || comp.company_name || 'this subcontractor') : 'this subcontractor';
+        }
+
         // Summary cards - RESTRUCTURED EXACTLY AS REQUESTED
         // Top row: Original Contract Amount | Current Contract Amount | Change Orders to Date
         // Bottom row: Build to Date (Current Amount) | Change Order Amount Billed to Date | Total Amount Billed to Date
@@ -2773,6 +2761,25 @@ let mainLienWaiver = JSON.parse(localStorage.getItem('mainLienWaiver') || '{}');
                             <i class="fa-solid fa-user-plus"></i> <span class="hidden md:inline">Add New</span>
                         </button>
                     </div>
+
+                    ${selectedSubCompanyId ? `
+                    <!-- Remove / Replace Subcontractor (only functional if Billed to Date === 0) -->
+                    <div class="mt-2 flex flex-col gap-1.5">
+                        <button onclick="removeSelectedSubcontractor()" 
+                                class="px-4 py-1.5 bg-red-700 hover:bg-red-600 rounded-md text-sm flex items-center gap-2 whitespace-nowrap transition-colors ${canModifySelectedSub ? '' : 'opacity-50 cursor-not-allowed'}"
+                                ${canModifySelectedSub ? '' : 'disabled'}
+                                title="${canModifySelectedSub ? 'Remove ' + selectedSubForModifyName + ' (Billed to Date must be $0)' : 'Cannot remove — Billed to Date > $0 or payments already made'}">
+                            <i class="fa-solid fa-user-minus"></i> <span>Remove</span>
+                        </button>
+                        <button onclick="replaceSelectedSubcontractor()" 
+                                class="px-4 py-1.5 bg-amber-600 hover:bg-amber-500 rounded-md text-sm flex items-center gap-2 whitespace-nowrap transition-colors ${canModifySelectedSub ? '' : 'opacity-50 cursor-not-allowed'}"
+                                ${canModifySelectedSub ? '' : 'disabled'}
+                                title="${canModifySelectedSub ? 'Replace ' + selectedSubForModifyName + ' with another vendor while keeping SOV lines' : 'Cannot replace — Billed to Date > $0'}">
+                            <i class="fa-solid fa-exchange-alt"></i> <span>Replace Subcontractor</span>
+                        </button>
+                    </div>
+                    ` : ''}
+
                     <div id="subStatusBadgeContainer" class="mt-2 flex items-center gap-2 min-h-[22px]"></div>
                 </div>
 
@@ -2999,10 +3006,10 @@ let mainLienWaiver = JSON.parse(localStorage.getItem('mainLienWaiver') || '{}');
                     `;
                 }
 
-                // Lien waiver controls — button ALWAYS visible, text changes to Re-upload, pill appears to the RIGHT when file exists (live updating, no tab switch)
+                // Lien waiver controls — button ALWAYS visible, text changes to Re-upload, pill/hint appears to the RIGHT when file exists (live updating, no tab switch)
                 const lienBtnText = hasWaiver ? 'Re-upload Lien Waiver' : `Upload Lien Waiver ${requireLienWaiverOnSubPayApp ? '(Required)' : '(Optional)'}`;
                 buttonsHTML += `
-                    <button onclick="uploadLienWaiver(${selectedSubCompanyId}); event.stopImmediatePropagation();" class="px-4 py-2 bg-sky-600 hover:bg-sky-500 text-white rounded text-sm flex items-center gap-1.5 upload-drop-btn" data-upload-type="sub" data-company-id="${selectedSubCompanyId}">
+                    <button onclick="uploadLienWaiver(${selectedSubCompanyId}); event.stopImmediatePropagation();" class="px-4 py-2 bg-sky-600 hover:bg-sky-500 text-white rounded text-sm flex items-center gap-1.5">
                         <i class="fa-solid fa-upload"></i> <span>${lienBtnText}</span>
                     </button>
                 `;
@@ -3015,6 +3022,9 @@ let mainLienWaiver = JSON.parse(localStorage.getItem('mainLienWaiver') || '{}');
                             <button onclick="removeLienWaiver(${selectedSubCompanyId}); event.stopImmediatePropagation();" class="px-2.5 py-0.5 bg-red-600 hover:bg-red-500 text-white rounded text-xs">Remove</button>
                         </div>
                     `;
+                } else {
+                    // Optional drag & drop hint area next to upload button (same height). Hidden after upload, reappears on remove.
+                    buttonsHTML += `<div id="subLienDropHint" class="ml-1.5 px-3 py-2 border border-dashed border-zinc-600 hover:border-zinc-400 rounded-md text-xs text-zinc-400 flex items-center h-[38px] transition-colors whitespace-nowrap" title="Drag & drop PDF here (optional)">optional drag & drop here</div>`;
                 }
             }
 
@@ -3034,6 +3044,12 @@ let mainLienWaiver = JSON.parse(localStorage.getItem('mainLienWaiver') || '{}');
         }
 
         workflowBar.innerHTML = workflowHTML;
+
+        // Setup drag & drop hint for sub lien waiver (only if hint exists)
+        const subDropHint = document.getElementById('subLienDropHint');
+        if (subDropHint) {
+            setupLienWaiverDropZone(subDropHint, uploadLienWaiver); // uploadLienWaiver will be called with companyId inside setup
+        }
 
         // If no sub selected, show message in table
         if (!selectedSubCompanyId) {
@@ -3184,6 +3200,101 @@ let mainLienWaiver = JSON.parse(localStorage.getItem('mainLienWaiver') || '{}');
         selectedSubCompanyId = companyId ? parseInt(companyId) : null;
         localStorage.setItem('lastSelectedSubSOV', selectedSubCompanyId);
         renderPayAppContent();
+    }
+
+    function removeSelectedSubcontractor() {
+        if (!selectedSubCompanyId) return;
+        const lines = subcontractorSOV[selectedSubCompanyId] || [];
+        const totalBilled = lines.reduce((sum, l) => sum + (parseFloat(l.billed_to_date) || 0), 0);
+        if (totalBilled > 0) {
+            // Silently ignore or minimal feedback (no centered alert per user preference for simple actions)
+            return;
+        }
+        const company = companies.find(c => c.id == selectedSubCompanyId);
+        const name = company ? (company.name || company.company_name) : 'Subcontractor';
+        // Proceed without popup acknowledgment
+        delete subcontractorSOV[selectedSubCompanyId];
+        if (subSOVStatus[selectedSubCompanyId]) delete subSOVStatus[selectedSubCompanyId];
+        if (subLienWaivers[selectedSubCompanyId]) delete subLienWaivers[selectedSubCompanyId];
+        localStorage.setItem('subcontractorSOV', JSON.stringify(subcontractorSOV));
+        localStorage.setItem('subSOVStatus', JSON.stringify(subSOVStatus));
+        localStorage.setItem('subLienWaivers', JSON.stringify(subLienWaivers));
+        selectedSubCompanyId = null;
+        localStorage.removeItem('lastSelectedSubSOV');
+        renderPayAppContent();
+    }
+
+    function replaceSelectedSubcontractor() {
+        if (!selectedSubCompanyId) return;
+        const lines = subcontractorSOV[selectedSubCompanyId] || [];
+        const totalBilled = lines.reduce((sum, l) => sum + (parseFloat(l.billed_to_date) || 0), 0);
+        if (totalBilled > 0) return;
+
+        // Show quick replace modal with list of other subcontractors from vendors
+        const modal = document.createElement('dialog');
+        modal.className = 'bg-zinc-900 border border-zinc-700 rounded-2xl p-0 w-full max-w-md shadow-2xl z-[999999]';
+        modal.innerHTML = `
+            <div class="px-5 py-4 border-b border-zinc-700 flex items-center justify-between">
+                <div class="font-semibold text-lg">Replace Subcontractor</div>
+                <button onclick="this.closest('dialog').close(); this.closest('dialog').remove()" class="text-zinc-400 hover:text-white">✕</button>
+            </div>
+            <div class="p-5">
+                <div class="text-sm text-zinc-400 mb-2">Select a different subcontractor from your vendors list. The current SOV lines will be transferred (Billed to Date is $0).</div>
+                <select id="replaceSubSelect" class="w-full bg-zinc-800 border border-zinc-700 rounded-md px-4 py-2.5 text-sm">
+                    <option value="">-- Select replacement subcontractor --</option>
+                </select>
+            </div>
+            <div class="px-5 py-4 border-t border-zinc-700 flex justify-end gap-3 bg-zinc-950 rounded-b-2xl">
+                <button onclick="this.closest('dialog').close(); this.closest('dialog').remove()" class="px-5 py-2 bg-zinc-700 hover:bg-zinc-600 rounded-md text-sm">Cancel</button>
+                <button id="confirmReplaceBtn" class="px-5 py-2 bg-emerald-600 hover:bg-emerald-500 rounded-md text-sm font-medium">Replace</button>
+            </div>
+        `;
+        document.body.appendChild(modal);
+        modal.showModal();
+
+        // Populate select with other subs (exclude current, prefer those without existing SOV)
+        const sel = modal.querySelector('#replaceSubSelect');
+        const currentLinesCount = (subcontractorSOV[selectedSubCompanyId] || []).length;
+        companies.forEach(c => {
+            if (c.id == selectedSubCompanyId) return;
+            const isSub = (c.type === 'Subcontractor' || c.company_type === 'Subcontractor' || (c.type && c.type.includes('Sub')));
+            if (!isSub) return;
+            const hasExisting = (subcontractorSOV[c.id] || []).length > 0;
+            const opt = document.createElement('option');
+            opt.value = c.id;
+            opt.textContent = (c.name || c.company_name || 'Unnamed') + (hasExisting ? ' (has existing SOV)' : '');
+            if (hasExisting) opt.disabled = true; // prevent picking ones with data to avoid overwrite confusion
+            sel.appendChild(opt);
+        });
+
+        modal.querySelector('#confirmReplaceBtn').onclick = function() {
+            const newId = parseInt(sel.value);
+            if (!newId || newId == selectedSubCompanyId) {
+                modal.close(); modal.remove(); return;
+            }
+            // Transfer the SOV lines to new companyId
+            const linesToMove = subcontractorSOV[selectedSubCompanyId] || [];
+            subcontractorSOV[newId] = linesToMove;
+            delete subcontractorSOV[selectedSubCompanyId];
+            // Transfer status if any
+            if (subSOVStatus[selectedSubCompanyId]) {
+                subSOVStatus[newId] = subSOVStatus[selectedSubCompanyId];
+                delete subSOVStatus[selectedSubCompanyId];
+            }
+            // Transfer lien waiver if any (rare since billed=0)
+            if (subLienWaivers[selectedSubCompanyId]) {
+                subLienWaivers[newId] = subLienWaivers[selectedSubCompanyId];
+                delete subLienWaivers[selectedSubCompanyId];
+            }
+            localStorage.setItem('subcontractorSOV', JSON.stringify(subcontractorSOV));
+            localStorage.setItem('subSOVStatus', JSON.stringify(subSOVStatus));
+            localStorage.setItem('subLienWaivers', JSON.stringify(subLienWaivers));
+            selectedSubCompanyId = newId;
+            localStorage.setItem('lastSelectedSubSOV', newId);
+            modal.close();
+            modal.remove();
+            renderPayAppContent();
+        };
     }
 
     function addLineToSelectedSub() {
@@ -5622,9 +5733,6 @@ function printSubcontractorG703(companyId) {
 
         // Initial render
         renderPayAppContent();
-
-        // Setup drag-and-drop support on workflow bar (delegation survives innerHTML re-renders of buttons)
-        setupDragAndDropForLienWaivers();
 
         // Keyboard shortcuts
         document.addEventListener('keydown', function(e) {
