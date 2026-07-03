@@ -334,7 +334,7 @@
                     <input type="checkbox" id="requireSubmissionDeadlineToggle" class="w-5 h-5 accent-emerald-600" onchange="toggleDeadlineDayInput(this)">
                 </label>
                 <div id="submissionDeadlineContainer" class="hidden ml-1">
-                    <label class="block text-xs text-zinc-400 mb-1">Day of the Month (e.g. 20th or 25th)</label>
+                    <label class="block text-xs text-zinc-400 mb-1">Day of the Month</label>
                     <select id="submissionDeadlineDay" class="w-full bg-zinc-800 border border-zinc-700 rounded-md px-4 py-2 text-sm text-white">
                         <option value="15">15th</option>
                         <option value="20">20th</option>
@@ -641,11 +641,7 @@ let mainLienWaiver = JSON.parse(localStorage.getItem('mainLienWaiver') || '{}');
                     <div class="text-sm text-zinc-400">${waiver.uploadedDate || ''}</div>
                 </div>
                 <div class="flex items-center gap-3">
-                    <button onclick="printFromViewer(this)" class="px-5 py-2 bg-emerald-600 hover:bg-emerald-700 rounded-xl text-sm font-medium flex items-center gap-2">
-                        <i class="fa-solid fa-print"></i> <span>Print</span>
-                    </button>
-                    <button onclick="this.closest('dialog').close(); this.closest('dialog').remove()" 
-                            class="w-12 h-12 flex items-center justify-center text-4xl text-red-400 font-black hover:text-red-300 hover:bg-zinc-800 rounded-full leading-none border-2 border-red-400">×</button>
+                    <!-- Print and X button removed per request -->
                 </div>
             </div>
             <div class="p-6 bg-zinc-950 overflow-auto" style="max-height: calc(82vh - 120px);">
@@ -743,16 +739,7 @@ let mainLienWaiver = JSON.parse(localStorage.getItem('mainLienWaiver') || '{}');
                     <div class="text-sm text-zinc-400">Period ${periodNum} • ${waiver.uploadedDate || 'Unknown date'}</div>
                 </div>
                 <div class="flex items-center gap-3">
-                    <button onclick="printFromViewer(this)" 
-                            class="px-5 py-2 bg-emerald-600 hover:bg-emerald-700 rounded-xl text-sm font-medium flex items-center gap-2">
-                        <i class="fa-solid fa-print"></i>
-                        <span>Print Document</span>
-                    </button>
-                    <button onclick="this.closest('dialog').close(); this.closest('dialog').remove()" 
-                            class="w-12 h-12 flex items-center justify-center text-4xl text-red-400 font-black hover:text-red-300 hover:bg-zinc-800 rounded-full leading-none border-2 border-red-400"
-                            title="Close">
-                        ×
-                    </button>
+                    <!-- Print and close X removed per request. Only Close Viewer at bottom remains. -->
                 </div>
             </div>
             
@@ -1239,11 +1226,7 @@ let mainLienWaiver = JSON.parse(localStorage.getItem('mainLienWaiver') || '{}');
                     <div class="text-sm text-zinc-400">${waiver.uploadedDate || ''}</div>
                 </div>
                 <div class="flex items-center gap-3">
-                    <button onclick="printFromViewer(this)" class="px-5 py-2 bg-emerald-600 hover:bg-emerald-700 rounded-xl text-sm font-medium flex items-center gap-2">
-                        <i class="fa-solid fa-print"></i> <span>Print</span>
-                    </button>
-                    <button onclick="this.closest('dialog').close(); this.closest('dialog').remove()" 
-                            class="w-12 h-12 flex items-center justify-center text-4xl text-red-400 font-black hover:text-red-300 hover:bg-zinc-800 rounded-full leading-none border-2 border-red-400">×</button>
+                    <!-- Print and X button removed per request -->
                 </div>
             </div>
             <div class="p-6 bg-zinc-950 overflow-auto" style="max-height: calc(82vh - 120px);">
@@ -4709,11 +4692,7 @@ function printSubcontractorG703(companyId) {
                     <div class="text-sm text-zinc-400">Historical Pay App #${periodNumber} • ${waiver.uploadedDate || ''}</div>
                 </div>
                 <div class="flex items-center gap-3">
-                    <button onclick="printFromViewer(this)" class="px-5 py-2 bg-emerald-600 hover:bg-emerald-700 rounded-xl text-sm font-medium flex items-center gap-2">
-                        <i class="fa-solid fa-print"></i> <span>Print</span>
-                    </button>
-                    <button onclick="this.closest('dialog').close(); this.closest('dialog').remove()" 
-                            class="w-12 h-12 flex items-center justify-center text-4xl text-red-400 font-black hover:text-red-300 hover:bg-zinc-800 rounded-full leading-none border-2 border-red-400">×</button>
+                    <!-- Print and X button removed per request -->
                 </div>
             </div>
             <div class="p-6 bg-zinc-950 overflow-auto" style="max-height: calc(82vh - 120px);">
@@ -5670,6 +5649,10 @@ function printSubcontractorG703(companyId) {
 
     // ==================== NEW: SUB PAY APP TRACKER TAB (Admin Overview) ====================
     function renderSubPayAppTrackerTab(cardsContainer, thead, tbody, workflowBar) {
+        // Force fresh parse so lien waiver column is always accurate when entering the tab
+        subLienWaivers = JSON.parse(localStorage.getItem('subLienWaivers') || '{}');
+        lienWaivers = JSON.parse(localStorage.getItem('lienWaivers') || '{}');
+
         // Calculate approved sub billings this period for G702 roll-up
         let approvedSubTotalThisPeriod = 0;
         const currentPeriodNum = currentPayAppPeriod ? currentPayAppPeriod.periodNumber : 1;
