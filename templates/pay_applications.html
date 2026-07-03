@@ -546,9 +546,9 @@ let submissionDeadlineDate = localStorage.getItem('submissionDeadlineDate') || '
 
         const modal = document.createElement('dialog');
         modal.className = 'bg-zinc-900 border border-zinc-700 rounded-3xl p-0 max-w-[min(1100px,95vw)] w-full shadow-2xl z-[999999]';
-        modal.style.maxHeight = '92vh';
+        modal.style.maxHeight = '88vh';
         modal.style.position = 'fixed';
-        modal.style.top = '10vh';
+        modal.style.top = '5vh';
         modal.style.left = '50%';
         modal.style.transform = 'translateX(-50%)';
         modal.style.margin = '0';
@@ -717,6 +717,13 @@ let submissionDeadlineDate = localStorage.getItem('submissionDeadlineDate') || '
         hasUnsavedChanges = false;
         const dot = document.getElementById('unsavedDot');
         if (dot) dot.classList.add('hidden');
+    }
+
+    // Simple role check for demo (Michael Bretz / PM is approver)
+    function isCurrentUserApprover() {
+        // In production this would check logged-in user's role/permissions from localStorage or session
+        // For this demo, assume the PM (Michael Bretz) is always the approver
+        return true;
     }
 
     // ==================== AUDIT LOGGING ====================
@@ -2581,14 +2588,85 @@ let submissionDeadlineDate = localStorage.getItem('submissionDeadlineDate') || '
                 }
             } else if (!requireLienWaiverOnSubPayApp) {
                 // Lien waiver setting is OFF (unchecked). Upload is optional.
-                // However, if a waiver was uploaded, still show the filename + Remove/Print buttons for consistency.
                 const periodNum = currentPayAppPeriod ? currentPayAppPeriod.periodNumber : 1;
                 const currentWaiver = (subLienWaivers[selectedSubCompanyId] && subLienWaivers[selectedSubCompanyId][periodNum]) || null;
                 const hasValidWaiver = currentWaiver && currentWaiver.filename && currentWaiver.filename.trim() !== '';
 
-                statusMessage = 'SOV Approved — Ready for periodic billing submission.';
+                // NEW: Hierarchy approval check
+                const pendingSubmission = subPayAppHistory[selectedSubCompanyId] && 
+                                          subPayAppHistory[selectedSubCompanyId][periodNum] && 
+                                          subPayAppHistory[selectedSubCompanyId][periodNum].status === 'Pending Approval';
 
-                if (hasValidWaiver) {
+                if (pendingSubmission) {
+                    statusMessage = 'Pay Application Submitted — Awaiting Approval';
+                    if (isCurrentUserApprover()) {
+                        buttonsHTML = `
+                            <button onclick="approveSubPayApp(${selectedSubCompanyId})" class="ml-3 px-5 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded text-xs font-semibold flex items-center gap-1.5">
+                                <i class="fa-solid fa-check-double"></i> <span>Approve Application &amp; Process Payment</span>
+                            </button>
+                            <button onclick="viewLienWaiver(${selectedSubCompanyId}); event.stopImmediatePropagation();" class="px-4 py-1.5 bg-sky-600 hover:bg-sky-500 text-white rounded text-xs font-medium flex items-center gap-1.5">
+                                <i class="fa-solid fa-eye"></i> <span>View Lien Waiver</span>
+                            </button>
+                        `;
+                    } else {
+                        buttonsHTML = `
+                            <div class="ml-3 px-5 py-1.5 bg-zinc-700 text-zinc-400 rounded text-xs font-medium flex items-center gap-1.5">
+                                <i class="fa-solid fa-clock"></i> <span>Submitted — Awaiting Approval</span>
+                            </div>
+                        `;
+                    }
+                } else {
+                    statusMessage = 'SOV Approved — Ready for periodic billing submission.';
+                    if (hasValidWaiver) {
+                        buttonsHTML = `
+                            <button onclick="submitSubSOVApplication(${selectedSubCompanyId})" class="ml-3 px-5 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded text-xs font-semibold flex items-center gap-1.5">
+                                <i class="fa-solid fa-paper-plane"></i> <span>Submit Application</span>
+                            </button>
+                            <button onclick="uploadLienWaiver(${selectedSubCompanyId})" class="px-4 py-1.5 bg-zinc-700 hover:bg-zinc-600 text-white rounded text-xs font-medium flex items-center gap-1.5">
+                                <i class="fa-solid fa-upload"></i> <span>Re-upload Lien Waiver</span>
+                            </button>
+                            <span class="text-xs text-emerald-400 ml-2 truncate max-w-[180px]" title="${currentWaiver.filename}">${currentWaiver.filename}</span>
+                            <button onclick="removeLienWaiver(${selectedSubCompanyId}); event.stopImmediatePropagation();" class="ml-2 px-2 py-0.5 bg-red-600 hover:bg-red-500 text-white rounded text-[10px] font-medium flex items-center gap-1">
+                                <i class="fa-solid fa-times"></i> <span>Remove</span>
+                            </button>
+                            <button onclick="viewLienWaiver(${selectedSubCompanyId}); event.stopImmediatePropagation();" class="ml-1 px-2 py-0.5 bg-sky-600 hover:bg-sky-500 text-white rounded text-[10px] font-medium flex items-center gap-1">
+                                <i class="fa-solid fa-eye"></i> <span>View Lien Waiver</span>
+                            </button>
+                        `;
+                    } else {
+                        buttonsHTML = `
+                            <button onclick="submitSubSOVApplication(${selectedSubCompanyId})" class="ml-3 px-5 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded text-xs font-semibold flex items-center gap-1.5">
+                                <i class="fa-solid fa-paper-plane"></i> <span>Submit Application</span>
+                            </button>
+                            <button onclick="uploadLienWaiver(${selectedSubCompanyId})" class="px-4 py-1.5 bg-zinc-700 hover:bg-zinc-600 text-white rounded text-xs font-medium flex items-center gap-1.5">
+                                <i class="fa-solid fa-upload"></i> <span>Upload Lien Waiver (Optional)</span>
+                            </button>
+                        `;
+                    }
+                }
+            } else {
+                // Fallback when lien waiver is required
+                const periodNum = currentPayAppPeriod ? currentPayAppPeriod.periodNumber : 1;
+                const pendingSubmission = subPayAppHistory[selectedSubCompanyId] && 
+                                          subPayAppHistory[selectedSubCompanyId][periodNum] && 
+                                          subPayAppHistory[selectedSubCompanyId][periodNum].status === 'Pending Approval';
+
+                if (pendingSubmission) {
+                    statusMessage = 'Pay Application Submitted — Awaiting Approval';
+                    if (isCurrentUserApprover()) {
+                        buttonsHTML = `
+                            <button onclick="approveSubPayApp(${selectedSubCompanyId})" class="ml-3 px-5 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded text-xs font-semibold flex items-center gap-1.5">
+                                <i class="fa-solid fa-check-double"></i> <span>Approve Application &amp; Process Payment</span>
+                            </button>
+                        `;
+                    } else {
+                        buttonsHTML = `
+                            <div class="ml-3 px-5 py-1.5 bg-zinc-700 text-zinc-400 rounded text-xs font-medium flex items-center gap-1.5">
+                                <i class="fa-solid fa-clock"></i> <span>Submitted — Awaiting Approval</span>
+                            </div>
+                        `;
+                    }
+                } else {
                     buttonsHTML = `
                         <button onclick="submitSubSOVApplication(${selectedSubCompanyId})" class="ml-3 px-5 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded text-xs font-semibold flex items-center gap-1.5">
                             <i class="fa-solid fa-paper-plane"></i> <span>Submit Application</span>
@@ -2596,34 +2674,8 @@ let submissionDeadlineDate = localStorage.getItem('submissionDeadlineDate') || '
                         <button onclick="uploadLienWaiver(${selectedSubCompanyId})" class="px-4 py-1.5 bg-zinc-700 hover:bg-zinc-600 text-white rounded text-xs font-medium flex items-center gap-1.5">
                             <i class="fa-solid fa-upload"></i> <span>Re-upload Lien Waiver</span>
                         </button>
-                        <span class="text-xs text-emerald-400 ml-2 truncate max-w-[180px]" title="${currentWaiver.filename}">${currentWaiver.filename}</span>
-                        <button onclick="removeLienWaiver(${selectedSubCompanyId}); event.stopImmediatePropagation();" class="ml-2 px-2 py-0.5 bg-red-600 hover:bg-red-500 text-white rounded text-[10px] font-medium flex items-center gap-1">
-                            <i class="fa-solid fa-times"></i> <span>Remove</span>
-                        </button>
-                        <button onclick="viewLienWaiver(${selectedSubCompanyId}); event.stopImmediatePropagation();" class="ml-1 px-2 py-0.5 bg-sky-600 hover:bg-sky-500 text-white rounded text-[10px] font-medium flex items-center gap-1">
-                            <i class="fa-solid fa-eye"></i> <span>View Lien Waiver</span>
-                        </button>
-                    `;
-                } else {
-                    buttonsHTML = `
-                        <button onclick="submitSubSOVApplication(${selectedSubCompanyId})" class="ml-3 px-5 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded text-xs font-semibold flex items-center gap-1.5">
-                            <i class="fa-solid fa-paper-plane"></i> <span>Submit Application</span>
-                        </button>
-                        <button onclick="uploadLienWaiver(${selectedSubCompanyId})" class="px-4 py-1.5 bg-zinc-700 hover:bg-zinc-600 text-white rounded text-xs font-medium flex items-center gap-1.5">
-                            <i class="fa-solid fa-upload"></i> <span>Upload Lien Waiver (Optional)</span>
-                        </button>
                     `;
                 }
-            } else {
-                // Fallback / already handled state when waiver is required and received
-                buttonsHTML = `
-                    <button onclick="submitSubSOVApplication(${selectedSubCompanyId})" class="ml-3 px-5 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded text-xs font-semibold flex items-center gap-1.5">
-                        <i class="fa-solid fa-paper-plane"></i> <span>Submit Application</span>
-                    </button>
-                    <button onclick="uploadLienWaiver(${selectedSubCompanyId})" class="px-4 py-1.5 bg-zinc-700 hover:bg-zinc-600 text-white rounded text-xs font-medium flex items-center gap-1.5">
-                        <i class="fa-solid fa-upload"></i> <span>Re-upload Lien Waiver</span>
-                    </button>
-                `;
             }
 
             workflowHTML = `
