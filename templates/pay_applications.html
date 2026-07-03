@@ -3830,7 +3830,9 @@ let mainLienWaiver = JSON.parse(localStorage.getItem('mainLienWaiver') || '{}');
             return;
         }
 
-        const currentPeriodNum = currentPayAppPeriod ? currentPayAppPeriod.periodNumber : 1;
+        // Use the SUBCONTRACTOR's own working Pay App number (from subPayAppNumbers), not the main G702 period.
+        // This keeps sub pay apps independent and sequential per subcontractor.
+        const currentPeriodNum = subPayAppNumbers[companyId] || (currentPayAppPeriod ? currentPayAppPeriod.periodNumber : 1);
         const waiver = subLienWaivers[companyId] && subLienWaivers[companyId][currentPeriodNum];
 
         // Create a snapshot of the current billing for history (do NOT commit to billed_to_date yet)
@@ -3963,32 +3965,36 @@ let mainLienWaiver = JSON.parse(localStorage.getItem('mainLienWaiver') || '{}');
             return;
         }
 
-        // 1. Set the working Pay App number on Sub SOV back to the submitted period
+        // 1. Set the working Pay App number on Sub SOV back to the submitted period (this is the "holding" number)
         subPayAppNumbers[companyId] = targetPeriod;
         localStorage.setItem('subPayAppNumbers', JSON.stringify(subPayAppNumbers));
 
-        // 2. Restore the lines from history back into live SOV so "This Period" values re-appear for editing
+        // 2. Restore ONLY the "This Period" billing values from history back into the LIVE SOV lines
+        //    Do NOT overwrite the entire SOV array — this was breaking the Submit buttons and UI.
+        const liveLines = subcontractorSOV[companyId] || [];
         if (historyEntry.lines && historyEntry.lines.length > 0) {
-            subcontractorSOV[companyId] = JSON.parse(JSON.stringify(historyEntry.lines));
+            historyEntry.lines.forEach(histLine => {
+                const liveLine = liveLines.find(l => l.id === histLine.id || l.cost_code === histLine.cost_code);
+                if (liveLine) {
+                    liveLine.work_this_period = histLine.work_this_period || 0;
+                    liveLine.materials_stored = histLine.materials_stored || 0;
+                    liveLine.co_billed_this_period = histLine.co_billed_this_period || 0;
+                }
+            });
             localStorage.setItem('subcontractorSOV', JSON.stringify(subcontractorSOV));
         }
 
-        // 3. Mark as revision requested so it no longer blocks new submission
+        // 3. Keep the history entry (it remains the holding record). Just update its status for clarity.
         historyEntry.revisionRequested = true;
-        historyEntry.status = 'Revision Requested';
+        historyEntry.status = 'Revision Requested — Ready for Billing';
         localStorage.setItem('subPayAppHistory', JSON.stringify(subPayAppHistory));
 
-        // Also update the live SOV status so the Submit button appears again
+        // 4. Set live SOV status to Approved so the full "Submit Application + Lien Waiver" workflow appears
         if (!subSOVStatus[companyId]) subSOVStatus[companyId] = {};
-        subSOVStatus[companyId].status = 'Approved'; // This makes the "Submit Application" workflow appear
+        subSOVStatus[companyId].status = 'Approved';
         localStorage.setItem('subSOVStatus', JSON.stringify(subSOVStatus));
 
-        // 4. Update tracker status to Ready for billing (live)
-        if (!subSOVStatus[companyId]) subSOVStatus[companyId] = {};
-        subSOVStatus[companyId].status = 'Ready for billing';
-        localStorage.setItem('subSOVStatus', JSON.stringify(subSOVStatus));
-
-        logPayAppAudit('SUB_PAYAPP_REVISION_REQUESTED', { companyId, period: targetPeriod, note: 'Pushed back to Sub SOV as Pay App ' + targetPeriod + '. Dollar amounts restored. Status set to Ready for billing.' });
+        logPayAppAudit('SUB_PAYAPP_REVISION_REQUESTED', { companyId, period: targetPeriod, note: 'Pushed back to Sub SOV as Pay App ' + targetPeriod + '. This Period values + lien waiver restored. Status set to Approved/Ready for billing.' });
 
         // 5. Live update + navigate to Sub SOV tab
         selectedSubCompanyId = companyId;
@@ -6056,7 +6062,15 @@ function printSubcontractorG703(companyId) {
             const lines = subcontractorSOV[companyId] || [];
             const status = getSubSOVStatus(companyId);
             const historyEntry = subPayAppHistory[companyId] && subPayAppHistory[companyId][currentPeriodNum];
-            const currentAppNum = subPayAppNumbers[companyId] || currentPeriodNum;
+            // Tracker shows the SUBMITTED / HOLDING Pay App number (from history), not the working next number.
+            // This is the "holding area" for what was turned in by the sub.
+            let currentAppNum = currentPeriodNum;
+            if (subPayAppHistory[companyId]) {
+                const histPeriods = Object.keys(subPayAppHistory[companyId]).map(Number).sort((a,b) => b - a);
+                if (histPeriods.length > 0) {
+                    currentAppNum = histPeriods[0]; // Most recent submitted period is the one shown in tracker
+                }
+            }
 
             let billedThis = 0;
             let pctComplete = 0;
