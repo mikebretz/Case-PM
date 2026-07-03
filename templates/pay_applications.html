@@ -355,7 +355,7 @@
 </dialog>
 
 <script>
-    // ==================== DATA & STATE (v76.14 - Movable document viewers @180px + strict lien waiver filter + robust live insurance/COI with Precision+Arch overrides + sub pay app prerequisite enforcement for G702 submit) ====================
+    // ==================== DATA & STATE (v76.15 - Live lien waiver tracking on Sub SOV + G702 (instant UI update, no tab switch), robust live insurance from Companies page, wrapped workflow message, tab-aware Import/Print behaviors) ====================
     let payApplications = JSON.parse(localStorage.getItem('payApplications')) || [];
     let contractorSOV = JSON.parse(localStorage.getItem('contractorSOV')) || [];
     let subcontractorSOV = JSON.parse(localStorage.getItem('subcontractorSOV')) || {}; // { companyId: [lines] }
@@ -519,7 +519,10 @@ let mainLienWaiver = JSON.parse(localStorage.getItem('mainLienWaiver') || '{}');
 
                 logPayAppAudit('LIEN_WAIVER_UPLOADED', { companyId, filename: file.name, period: periodNum });
                 showCenteredAlert(`Lien waiver "${file.name}" uploaded successfully.`, 'success');
-                renderPayAppContent();
+                // Force immediate live UI update on current tab (Sub SOV or G702) without needing to switch tabs
+                setTimeout(() => {
+                    renderPayAppContent();
+                }, 30);
             };
             reader.readAsDataURL(file);
         };
@@ -534,7 +537,10 @@ let mainLienWaiver = JSON.parse(localStorage.getItem('mainLienWaiver') || '{}');
             delete subLienWaivers[companyId][periodNum];
             localStorage.setItem('subLienWaivers', JSON.stringify(subLienWaivers));
             showCenteredAlert("Lien waiver removed.", 'success');
-            renderPayAppContent();
+            // Force immediate live UI update
+            setTimeout(() => {
+                renderPayAppContent();
+            }, 30);
         }
     }
 
@@ -562,7 +568,10 @@ let mainLienWaiver = JSON.parse(localStorage.getItem('mainLienWaiver') || '{}');
 
                 logPayAppAudit('MAIN_LIEN_WAIVER_UPLOADED', { period: periodNum, filename: file.name });
                 showCenteredAlert(`Lien waiver "${file.name}" uploaded for Pay Application.`, 'success');
-                renderPayAppContent();
+                // Force immediate live UI update on G702 tab
+                setTimeout(() => {
+                    renderPayAppContent();
+                }, 30);
             };
             reader.readAsDataURL(file);
         };
@@ -5816,6 +5825,8 @@ function printSubcontractorG703(companyId) {
 
     // Robust insurance / compliance helper — live reads from Companies page data + expiry checks + name overrides
     function getInsuranceComplianceStatus(companyId) {
+        // Live re-read from Companies/Vendors page so updates are reflected immediately in Sub Pay App Tracker
+        companies = JSON.parse(localStorage.getItem('casepm_companies')) || [];
         const company = companies.find(c => c.id == companyId);
         if (!company) return { compliant: true, message: 'No company record' };
 
