@@ -547,8 +547,13 @@ let submissionDeadlineDate = localStorage.getItem('submissionDeadlineDate') || '
         const modal = document.createElement('dialog');
         modal.className = 'bg-zinc-900 border border-zinc-700 rounded-3xl p-0 max-w-[min(1100px,95vw)] w-full shadow-2xl z-[999999]';
         modal.style.maxHeight = '92vh';
+        modal.style.position = 'fixed';
+        modal.style.top = '10vh';
+        modal.style.left = '50%';
+        modal.style.transform = 'translateX(-50%)';
+        modal.style.margin = '0';
         modal.innerHTML = `
-            <div class="flex items-center justify-between px-6 py-4 border-b border-zinc-800 bg-zinc-950 sticky top-0 z-10">
+            <div class="drag-handle flex items-center justify-between px-6 py-4 border-b border-zinc-800 bg-zinc-950 cursor-move sticky top-0 z-10">
                 <div>
                     <div class="font-semibold text-lg">Lien Waiver — ${getCompanyName(companyId)}</div>
                     <div class="text-sm text-zinc-400">Period ${periodNum} • ${waiver.uploadedDate || 'Unknown date'}</div>
@@ -582,6 +587,46 @@ let submissionDeadlineDate = localStorage.getItem('submissionDeadlineDate') || '
         
         document.body.appendChild(modal);
         modal.showModal();
+
+        // Make the modal draggable (free floating)
+        makeModalDraggable(modal);
+    }
+
+    // Helper: Make any modal/dialog draggable by its .drag-handle
+    function makeModalDraggable(dialog) {
+        const handle = dialog.querySelector('.drag-handle');
+        if (!handle) return;
+
+        let pos1 = 0, pos2 = 0, pos3 = 0, pos4 = 0;
+
+        handle.onmousedown = dragMouseDown;
+
+        function dragMouseDown(e) {
+            e = e || window.event;
+            e.preventDefault();
+            pos3 = e.clientX;
+            pos4 = e.clientY;
+            document.onmouseup = closeDragElement;
+            document.onmousemove = elementDrag;
+        }
+
+        function elementDrag(e) {
+            e = e || window.event;
+            e.preventDefault();
+            pos1 = pos3 - e.clientX;
+            pos2 = pos4 - e.clientY;
+            pos3 = e.clientX;
+            pos4 = e.clientY;
+            dialog.style.top = (dialog.offsetTop - pos2) + "px";
+            dialog.style.left = (dialog.offsetLeft - pos1) + "px";
+            dialog.style.transform = 'none';
+            dialog.style.margin = '0';
+        }
+
+        function closeDragElement() {
+            document.onmouseup = null;
+            document.onmousemove = null;
+        }
     }
 
     function printFromViewer(btn) {
@@ -2489,27 +2534,13 @@ let submissionDeadlineDate = localStorage.getItem('submissionDeadlineDate') || '
                 </div>
             `;
         } else if (currentStatus === 'Approved') {
-            const waiverStatus = getLienWaiverStatus(selectedSubCompanyId);
-            const requiresWaiver = checkLienWaiverRequirement();
-            const isWaitingOnWaiver = subSOVStatus[selectedSubCompanyId] && subSOVStatus[selectedSubCompanyId].status === 'Approved — Waiting on Lien Waiver';
-            const lienReceived = waiverStatus.submitted;
-
-            // Clean monthly billing flow (Procore-style)
-            let statusMessage = 'SOV Approved — Enter current period billing below. Click Submit Pay Application when ready.';
-            let buttonsHTML = `
-                <button onclick="submitSubPayAppForApproval(${selectedSubCompanyId})" class="ml-3 px-5 py-1.5 bg-sky-600 hover:bg-sky-500 text-white rounded text-xs font-semibold flex items-center gap-1.5">
-                    <i class="fa-solid fa-paper-plane"></i> <span>Submit Pay Application</span>
-                </button>
-                <button onclick="approveSubPayApp(${selectedSubCompanyId})" class="px-5 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded text-xs font-bold flex items-center gap-1.5">
-                    <i class="fa-solid fa-check-double"></i> <span>Approve &amp; Process Payment</span>
-                </button>
-                <button onclick="uploadLienWaiver(${selectedSubCompanyId})" class="px-4 py-1.5 bg-zinc-700 hover:bg-zinc-600 text-white rounded text-xs font-medium flex items-center gap-1.5">
-                    <i class="fa-solid fa-upload"></i> <span>Upload Lien Waiver</span>
-                </button>
-                <button onclick="viewLienWaiver(${selectedSubCompanyId})" class="px-4 py-1.5 bg-zinc-700 hover:bg-zinc-600 text-white rounded text-xs font-medium flex items-center gap-1.5">
-                    <i class="fa-solid fa-eye"></i> <span>View Waiver</span>
-                </button>
-            `;
+            // Clean Procore/RedTeam-style flow:
+            // SOV stays "Approved" (locked). Sub enters monthly billing.
+            // Submit Pay Application = snapshot to history (no status change on SOV).
+            // Approve & Process Payment = commit to billed_to_date + advance pay app # + clear waiver.
+            const periodNum = currentPayAppPeriod ? currentPayAppPeriod.periodNumber : 1;
+            const currentWaiver = (subLienWaivers[selectedSubCompanyId] && subLienWaivers[selectedSubCompanyId][periodNum]) || null;
+            const hasWaiver = currentWaiver && currentWaiver.filename;
 
             if (requiresWaiver) {
                 // Lien waiver is required
@@ -3364,6 +3395,12 @@ let submissionDeadlineDate = localStorage.getItem('submissionDeadlineDate') || '
      */
     // NEW: Two-step approval workflow for Subcontractor periodic billing
     // Step 1: Sub clicks "Submit Application" → sets status to Pending Approval (does NOT commit numbers yet)
+    // NEW CLEAN FLOW (matches Procore/RedTeam style):
+    // - SOV is approved ONCE → locks original commitment amounts forever.
+    // - Every month the sub enters "Work This Period" + uploads lien waiver.
+    // - Sub clicks "Submit Pay Application" → snapshots current billing + waiver into subPayAppHistory (SOV status stays "Approved").
+    // - PM clicks "Approve & Commit Pay Application" → moves "this period" amounts into billed_to_date, advances pay app #, clears waiver, saves clean record to Previous Sub Pay Apps.
+
     function submitSubPayAppForApproval(companyId) {
         if (!companyId) return;
         const lines = subcontractorSOV[companyId] || [];
@@ -3372,24 +3409,55 @@ let submissionDeadlineDate = localStorage.getItem('submissionDeadlineDate') || '
             return;
         }
 
-        // Just mark as pending approval. The draft values (work_this_period, materials_stored, co_billed_this_period)
-        // stay on the line objects until the main company approver clicks "Approve".
-        updateSubSOVStatus(companyId, 'Pending Approval', { submittedDate: new Date().toISOString() });
+        const currentPeriodNum = currentPayAppPeriod ? currentPayAppPeriod.periodNumber : 1;
+        const waiver = subLienWaivers[companyId] && subLienWaivers[companyId][currentPeriodNum];
 
-        logPayAppAudit('SUB_PAYAPP_SUBMITTED_FOR_APPROVAL', { companyId: companyId });
-        showCenteredAlert("Application submitted for approval. The main company approver has been notified.", 'success');
+        // Create a snapshot of the current billing for history (do NOT commit to billed_to_date yet)
+        const snapshotLines = lines.map(l => ({
+            id: l.id,
+            cost_code: l.cost_code,
+            description: l.description,
+            original_commitment: l.original_commitment || 0,
+            change_orders: l.change_orders || 0,
+            billed_to_date_before: l.billed_to_date || 0,
+            work_this_period: l.work_this_period || 0,
+            materials_stored: l.materials_stored || 0,
+            co_billed_this_period: l.co_billed_this_period || 0,
+            total_this_period: (l.work_this_period || 0) + (l.materials_stored || 0) + (l.co_billed_this_period || 0)
+        }));
+
+        const totalBilledThisPeriod = snapshotLines.reduce((sum, l) => sum + l.total_this_period, 0);
+
+        // Save to history as "Pending Approval"
+        if (!subPayAppHistory[companyId]) subPayAppHistory[companyId] = {};
+        subPayAppHistory[companyId][currentPeriodNum] = {
+            periodNumber: currentPeriodNum,
+            periodStart: currentPayAppPeriod ? currentPayAppPeriod.periodStart : '',
+            periodEnd: currentPayAppPeriod ? currentPayAppPeriod.periodEnd : '',
+            submittedDate: new Date().toISOString(),
+            status: 'Pending Approval',
+            lines: snapshotLines,
+            totalBilledThisPeriod: totalBilledThisPeriod,
+            lienWaiver: waiver ? { filename: waiver.filename, uploadedDate: waiver.uploadedDate } : null
+        };
+        localStorage.setItem('subPayAppHistory', JSON.stringify(subPayAppHistory));
+
+        logPayAppAudit('SUB_PAYAPP_SUBMITTED_FOR_APPROVAL', { companyId: companyId, period: currentPeriodNum, total: totalBilledThisPeriod });
+        showCenteredAlert("Pay Application submitted. It is now visible in 'Previous Sub Pay Apps' for approval. The Schedule of Values remains Approved & locked.", 'success');
         renderPayAppContent();
     }
 
-    // Step 2: Main company approver clicks "Approve Application & Process Payout"
-    // This commits the current period draft amounts into billed_to_date, clears drafts, advances pay app #, clears lien waiver.
     function approveSubPayApp(companyId) {
         if (!companyId) return;
-        const lines = subcontractorSOV[companyId] || [];
-        if (lines.length === 0) {
-            showCenteredAlert("No lines to approve for this subcontractor.");
+        const currentPeriodNum = currentPayAppPeriod ? currentPayAppPeriod.periodNumber : 1;
+        const historyEntry = subPayAppHistory[companyId] && subPayAppHistory[companyId][currentPeriodNum];
+
+        if (!historyEntry) {
+            showCenteredAlert("No pending Pay Application found for this period. Please use Submit Pay Application first.", "warning");
             return;
         }
+
+        const lines = subcontractorSOV[companyId] || [];
 
         let totalCommittedThisPeriod = 0;
         lines.forEach(line => {
@@ -3400,44 +3468,50 @@ let submissionDeadlineDate = localStorage.getItem('submissionDeadlineDate') || '
 
             if (totalThis > 0) {
                 line.billed_to_date = (line.billed_to_date || 0) + totalThis;
-                
+
                 if (coWork > 0) {
                     line.co_billed_to_date = (line.co_billed_to_date || 0) + coWork;
                 }
-                
-                // Clear the draft "this period" fields after committing
+
+                // Clear the draft "this period" fields
                 line.work_this_period = 0;
                 line.materials_stored = 0;
                 line.co_billed_this_period = 0;
-                
+
                 totalCommittedThisPeriod += totalThis;
             }
         });
 
         localStorage.setItem('subcontractorSOV', JSON.stringify(subcontractorSOV));
 
-        // Clear lien waiver for this cycle/period
-        const currentPeriodNum = currentPayAppPeriod ? currentPayAppPeriod.periodNumber : 1;
+        // Clear lien waiver for this period
         if (subLienWaivers[companyId] && subLienWaivers[companyId][currentPeriodNum]) {
             delete subLienWaivers[companyId][currentPeriodNum];
             localStorage.setItem('subLienWaivers', JSON.stringify(subLienWaivers));
         }
 
-        // Advance Pay App number for this subcontractor
+        // Advance Pay App number
         if (!subPayAppNumbers[companyId]) subPayAppNumbers[companyId] = 1;
         subPayAppNumbers[companyId] = (subPayAppNumbers[companyId] || 1) + 1;
         localStorage.setItem('subPayAppNumbers', JSON.stringify(subPayAppNumbers));
 
-        // Set status back to Approved so the sub can enter new billing for the next period
+        // Mark the history entry as Approved (so it shows nicely in Previous Sub Pay Apps)
+        historyEntry.status = 'Approved';
+        historyEntry.approvedDate = new Date().toISOString();
+        historyEntry.approvedBy = "Michael Bretz (Project Manager)";
+        localStorage.setItem('subPayAppHistory', JSON.stringify(subPayAppHistory));
+
+        // Keep SOV status as Approved (locked)
         updateSubSOVStatus(companyId, 'Approved', { approvedBy: "Michael Bretz (Project Manager)", approvedDate: new Date().toISOString() });
 
         logPayAppAudit('SUB_PAYAPP_APPROVED_AND_COMMITTED', { 
             companyId: companyId, 
+            period: currentPeriodNum,
             totalCommitted: totalCommittedThisPeriod,
             newPayAppNumber: subPayAppNumbers[companyId]
         });
         
-        showCenteredAlert(`Application APPROVED. ${formatCurrency(totalCommittedThisPeriod)} committed to billed_to_date. Pay App # advanced to ${subPayAppNumbers[companyId]}. Subcontractor can now enter billing for the next period.`, 'success');
+        showCenteredAlert(`Pay Application APPROVED & COMMITTED. ${formatCurrency(totalCommittedThisPeriod)} moved to Billed to Date. Pay App # advanced to ${subPayAppNumbers[companyId]}. Lien waiver cleared. Record saved to Previous Sub Pay Apps.`, 'success');
         renderPayAppContent();
     }
 
