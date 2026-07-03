@@ -2542,7 +2542,7 @@ let submissionDeadlineDate = localStorage.getItem('submissionDeadlineDate') || '
             const currentWaiver = (subLienWaivers[selectedSubCompanyId] && subLienWaivers[selectedSubCompanyId][periodNum]) || null;
             const hasWaiver = currentWaiver && currentWaiver.filename;
 
-            if (requiresWaiver) {
+            if (requireLienWaiverOnSubPayApp) {
                 // Lien waiver is required
                 // Direct check on subLienWaivers for robustness (avoids stale helper state)
                 const periodNum = currentPayAppPeriod ? currentPayAppPeriod.periodNumber : 1;
@@ -2579,7 +2579,7 @@ let submissionDeadlineDate = localStorage.getItem('submissionDeadlineDate') || '
                         </button>
                     `;
                 }
-            } else if (!requiresWaiver) {
+            } else if (!requireLienWaiverOnSubPayApp) {
                 // Lien waiver setting is OFF (unchecked). Upload is optional.
                 // However, if a waiver was uploaded, still show the filename + Remove/Print buttons for consistency.
                 const periodNum = currentPayAppPeriod ? currentPayAppPeriod.periodNumber : 1;
