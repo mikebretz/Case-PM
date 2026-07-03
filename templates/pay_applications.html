@@ -355,7 +355,7 @@
 </dialog>
 
 <script>
-    // ==================== DATA & STATE (v76.17 - Fixed live lien waiver pill update on Sub SOV & G702 (instant render after upload/remove), nice emerald pill UI on Sub SOV matching G702, removed duplicate View from Tracker Actions, relaxed one-COI insurance rule) ====================
+    // ==================== DATA & STATE (v76.18 - LIVE LIEN WAIVER FIX: upload now instantly shows emerald pill on Sub SOV (no tab switch), immediate render on upload/remove for both Sub SOV & G702, robust insurance check for >=1 valid COI in certificates_of_insurance array, re-parse subLienWaivers on every Sub SOV render) ====================
     let payApplications = JSON.parse(localStorage.getItem('payApplications')) || [];
     let contractorSOV = JSON.parse(localStorage.getItem('contractorSOV')) || [];
     let subcontractorSOV = JSON.parse(localStorage.getItem('subcontractorSOV')) || {}; // { companyId: [lines] }
@@ -519,10 +519,9 @@ let mainLienWaiver = JSON.parse(localStorage.getItem('mainLienWaiver') || '{}');
 
                 logPayAppAudit('LIEN_WAIVER_UPLOADED', { companyId, filename: file.name, period: periodNum });
                 showCenteredAlert(`Lien waiver "${file.name}" uploaded successfully.`, 'success');
-                // Force immediate live UI update on current tab (Sub SOV or G702) without needing to switch tabs
-                setTimeout(() => {
-                    renderPayAppContent();
-                }, 30);
+
+                // Immediate live UI update (no tab switch needed). Call render directly for reliability on Sub SOV.
+                renderPayAppContent();
             };
             reader.readAsDataURL(file);
         };
@@ -537,10 +536,7 @@ let mainLienWaiver = JSON.parse(localStorage.getItem('mainLienWaiver') || '{}');
             delete subLienWaivers[companyId][periodNum];
             localStorage.setItem('subLienWaivers', JSON.stringify(subLienWaivers));
             showCenteredAlert("Lien waiver removed.", 'success');
-            // Force immediate live UI update
-            setTimeout(() => {
-                renderPayAppContent();
-            }, 30);
+            renderPayAppContent();
         }
     }
 
@@ -568,10 +564,7 @@ let mainLienWaiver = JSON.parse(localStorage.getItem('mainLienWaiver') || '{}');
 
                 logPayAppAudit('MAIN_LIEN_WAIVER_UPLOADED', { period: periodNum, filename: file.name });
                 showCenteredAlert(`Lien waiver "${file.name}" uploaded for Pay Application.`, 'success');
-                // Force immediate live UI update on G702 tab
-                setTimeout(() => {
-                    renderPayAppContent();
-                }, 30);
+                renderPayAppContent();
             };
             reader.readAsDataURL(file);
         };
@@ -2784,6 +2777,8 @@ let mainLienWaiver = JSON.parse(localStorage.getItem('mainLienWaiver') || '{}');
             `;
         } else if (currentStatus === 'Approved') {
             // === CLEAN PROCORE-STYLE MONTHLY BILLING FLOW (stays on this tab) ===
+            // Re-parse lien waiver data from localStorage for guaranteed freshness after upload (fixes live update)
+            subLienWaivers = JSON.parse(localStorage.getItem('subLienWaivers') || '{}');
             const periodNum = currentPayAppPeriod ? currentPayAppPeriod.periodNumber : 1;
             const historyEntry = subPayAppHistory[selectedSubCompanyId] && subPayAppHistory[selectedSubCompanyId][periodNum];
             const isPending = historyEntry && historyEntry.status === 'Pending Approval';
@@ -5848,34 +5843,37 @@ function printSubcontractorG703(companyId) {
             return { compliant: true, message: 'COI and insurance current (Arch Fire Protection)' };
         }
 
-        // === SIMPLIFIED LOGIC PER USER REQUIREMENT ===
-        // For the Sub Pay App Tracker "Insurance" column:
-        // If there is at least ONE valid (non-expired) COI under Certificates of Insurance, it is considered current.
-        // They do not need separate GL + WC + COI all present.
-        const coiVal = company.coi_on_file || company.insurance_coi || company.coi_expiry || company.insurance_coi_expiry || 
-                       company.certificate_of_insurance || company.coi_file || company.coi_date || company.coi || 
-                       company.coi_entries || company.certificates_of_insurance;
+        // === ROBUST "AT LEAST ONE VALID COI" LOGIC (per user requirement) ===
+        // If there is at least ONE non-expired COI entry under Certificates of Insurance (or equivalent array),
+        // it is considered current. No need for separate GL + WC + COI.
+        // Prioritize the array under "Certificates of Insurance" header / Add COI button.
+        let coiList = company.certificates_of_insurance || company.coi_entries || company.coi_list || 
+                      company.insurance_certificates || company.coi || company.coi_data || [];
 
-        function isExpired(val) {
-            if (!val) return true;
-            if (typeof val === 'boolean') return !val;
-            // Handle array of COI entries (common in modern vendor pages)
-            if (Array.isArray(val)) {
-                return !val.some(entry => {
-                    const exp = entry.expiry || entry.expiration || entry.expiry_date || entry.date;
-                    if (!exp) return true;
-                    const d = new Date(exp);
-                    return !isNaN(d.getTime()) && d >= new Date();
-                });
-            }
-            const d = new Date(val);
-            if (isNaN(d.getTime())) return false;
-            return d < new Date();
+        if (!Array.isArray(coiList)) {
+            // If it's a single object or boolean/string, wrap it
+            if (coiList && typeof coiList === 'object') coiList = [coiList];
+            else if (coiList) coiList = [coiList];
+            else coiList = [];
         }
 
-        const hasValidCOI = !!coiVal && !isExpired(coiVal);
+        const hasAtLeastOneValidCOI = coiList.length > 0 && coiList.some(entry => {
+            if (!entry) return false;
+            // Check common expiry field names (case insensitive via ||)
+            const exp = entry.expiry || entry.expiration || entry.expiry_date || entry.valid_until || 
+                        entry.expires || entry.date || entry.coi_expiry;
+            if (!exp) return true; // No expiry date present → assume current/valid (lenient per real-world COI handling)
+            const d = new Date(exp);
+            return !isNaN(d.getTime()) && d >= new Date(); // valid if future or today
+        });
 
-        if (hasValidCOI) {
+        if (hasAtLeastOneValidCOI) {
+            return { compliant: true, message: 'COI on file and current' };
+        }
+
+        // Fallback: check simple boolean/string fields if array check failed
+        const simpleCoi = company.coi_on_file || company.insurance_coi || company.certificate_of_insurance || company.coi_file;
+        if (simpleCoi === true || (typeof simpleCoi === 'string' && simpleCoi.trim() !== '')) {
             return { compliant: true, message: 'COI on file and current' };
         }
 
