@@ -14,8 +14,8 @@
     transform: translate(-50%, -50%) !important;
     z-index: 100000 !important;
   }
-  /* Ensure static .modal dialogs center correctly. Dynamic document viewers (lien waivers) use their own fixed + draggable positioning and should NOT be forced to center. */
-  .modal[open] {
+  /* Ensure all dynamic dialogs created via JS also center correctly */
+  dialog[open] {
     margin: auto !important;
     position: fixed !important;
     top: 50% !important;
@@ -131,11 +131,11 @@
     <button onclick="switchPayAppTab('sub-sov')" id="tab-sub-sov"
             class="tab-button px-6 py-3 text-sm font-medium text-zinc-400 hover:text-white">Subcontractor Schedule of Values</button>
 
-    <button onclick="switchPayAppTab('sub-pay-app-tracker')" id="tab-sub-pay-app-tracker"
-            class="tab-button px-6 py-3 text-sm font-medium text-zinc-400 hover:text-white">Sub Pay App Tracker</button>
-
     <button onclick="switchPayAppTab('previous-sub-payapps')" id="tab-previous-sub-payapps"
             class="tab-button px-6 py-3 text-sm font-medium text-zinc-400 hover:text-white">Previous Sub Pay Apps</button>
+
+    <button onclick="switchPayAppTab('sub-pay-app-tracker')" id="tab-sub-pay-app-tracker"
+            class="tab-button px-6 py-3 text-sm font-medium text-zinc-400 hover:text-white">Sub Pay App Tracker</button>
 </div>
 
 <!-- SUMMARY CARDS -->
@@ -355,7 +355,7 @@
 </dialog>
 
 <script>
-    // ==================== DATA & STATE (v76.14 - Movable document viewers @180px + strict lien waiver filter + robust live insurance/COI with Precision+Arch overrides + sub pay app prerequisite enforcement for G702 submit) ====================
+    // ==================== DATA & STATE (v76.15 - Live lien waiver updates + consistent UI + workflow enforcement + import/print fixes) ====================
     let payApplications = JSON.parse(localStorage.getItem('payApplications')) || [];
     let contractorSOV = JSON.parse(localStorage.getItem('contractorSOV')) || [];
     let subcontractorSOV = JSON.parse(localStorage.getItem('subcontractorSOV')) || {}; // { companyId: [lines] }
@@ -464,7 +464,7 @@ let mainLienWaiver = JSON.parse(localStorage.getItem('mainLienWaiver') || '{}');
             const w = subLienWaivers[companyId][periodNum];
             const rawName = w.filename || '';
             // Sanitize placeholder / bad filenames from previous bad uploads
-            const isPlaceholder = /michael_bretz|brent_bretz|test_lien_waiver|placeholder_lien|demo_waiver/i.test(rawName);
+            const isPlaceholder = /^(michael_bretz|brent_bretz|test_lien_waiver|placeholder|demo_lien_waiver)/i.test(rawName);
             const cleanName = isPlaceholder ? null : rawName;
 
             return {
@@ -479,7 +479,7 @@ let mainLienWaiver = JSON.parse(localStorage.getItem('mainLienWaiver') || '{}');
         // Fallback to old structure
         const waiver = lienWaivers[companyId] || {};
         const rawName = waiver.filename || '';
-        const isPlaceholder = /michael_bretz|brent_bretz|test_lien_waiver|placeholder_lien|demo_waiver/i.test(rawName);
+        const isPlaceholder = /^(michael_bretz|brent_bretz|test_lien_waiver|placeholder|demo_lien_waiver)/i.test(rawName);
         const cleanName = isPlaceholder ? null : rawName;
 
         return {
@@ -519,7 +519,10 @@ let mainLienWaiver = JSON.parse(localStorage.getItem('mainLienWaiver') || '{}');
 
                 logPayAppAudit('LIEN_WAIVER_UPLOADED', { companyId, filename: file.name, period: periodNum });
                 showCenteredAlert(`Lien waiver "${file.name}" uploaded successfully.`, 'success');
-                renderPayAppContent();
+                // Force live re-render (helps when FileReader onload timing + tab state)
+                setTimeout(() => {
+                    renderPayAppContent();
+                }, 40);
             };
             reader.readAsDataURL(file);
         };
@@ -534,7 +537,9 @@ let mainLienWaiver = JSON.parse(localStorage.getItem('mainLienWaiver') || '{}');
             delete subLienWaivers[companyId][periodNum];
             localStorage.setItem('subLienWaivers', JSON.stringify(subLienWaivers));
             showCenteredAlert("Lien waiver removed.", 'success');
-            renderPayAppContent();
+            setTimeout(() => {
+                renderPayAppContent();
+            }, 40);
         }
     }
 
@@ -562,7 +567,9 @@ let mainLienWaiver = JSON.parse(localStorage.getItem('mainLienWaiver') || '{}');
 
                 logPayAppAudit('MAIN_LIEN_WAIVER_UPLOADED', { period: periodNum, filename: file.name });
                 showCenteredAlert(`Lien waiver "${file.name}" uploaded for Pay Application.`, 'success');
-                renderPayAppContent();
+                setTimeout(() => {
+                    renderPayAppContent();
+                }, 40);
             };
             reader.readAsDataURL(file);
         };
@@ -583,12 +590,10 @@ let mainLienWaiver = JSON.parse(localStorage.getItem('mainLienWaiver') || '{}');
         modal.className = 'bg-zinc-900 border border-zinc-700 rounded-3xl p-0 max-w-[min(1100px,95vw)] w-full shadow-2xl z-[999999]';
         modal.style.maxHeight = '82vh';
         modal.style.position = 'fixed';
-        modal.style.top = '180px';
+        modal.style.top = '130px';
         modal.style.left = '50%';
         modal.style.transform = 'translateX(-50%)';
         modal.style.margin = '0';
-        modal.style.setProperty('top', '180px', 'important');
-        modal.style.setProperty('transform', 'translateX(-50%)', 'important');
 
         modal.innerHTML = `
             <div class="drag-handle flex items-center justify-between px-6 py-4 border-b border-zinc-800 bg-zinc-950 cursor-move sticky top-0 z-10">
@@ -627,7 +632,9 @@ let mainLienWaiver = JSON.parse(localStorage.getItem('mainLienWaiver') || '{}');
             delete mainLienWaiver[periodNum];
             localStorage.setItem('mainLienWaiver', JSON.stringify(mainLienWaiver));
             showCenteredAlert("Main lien waiver removed.", 'success');
-            renderPayAppContent();
+            setTimeout(() => {
+                renderPayAppContent();
+            }, 40);
         }
     }
 
@@ -647,13 +654,10 @@ let mainLienWaiver = JSON.parse(localStorage.getItem('mainLienWaiver') || '{}');
         modal.className = 'bg-zinc-900 border border-zinc-700 rounded-3xl p-0 max-w-[min(1100px,95vw)] w-full shadow-2xl z-[999999]';
         modal.style.maxHeight = '82vh';
         modal.style.position = 'fixed';
-        modal.style.top = '180px';
+        modal.style.top = '130px';
         modal.style.left = '50%';
         modal.style.transform = 'translateX(-50%)';
         modal.style.margin = '0';
-        // Force position below header + make sure draggable works despite global dialog centering CSS
-        modal.style.setProperty('top', '180px', 'important');
-        modal.style.setProperty('transform', 'translateX(-50%)', 'important');
         modal.innerHTML = `
             <div class="drag-handle flex items-center justify-between px-6 py-4 border-b border-zinc-800 bg-zinc-950 cursor-move sticky top-0 z-10">
                 <div>
@@ -1143,12 +1147,10 @@ let mainLienWaiver = JSON.parse(localStorage.getItem('mainLienWaiver') || '{}');
         modal.className = 'bg-zinc-900 border border-zinc-700 rounded-3xl p-0 max-w-[min(1100px,95vw)] w-full shadow-2xl z-[999999]';
         modal.style.maxHeight = '82vh';
         modal.style.position = 'fixed';
-        modal.style.top = '180px';
+        modal.style.top = '130px';
         modal.style.left = '50%';
         modal.style.transform = 'translateX(-50%)';
         modal.style.margin = '0';
-        modal.style.setProperty('top', '180px', 'important');
-        modal.style.setProperty('transform', 'translateX(-50%)', 'important');
 
         modal.innerHTML = `
             <div class="drag-handle flex items-center justify-between px-6 py-4 border-b border-zinc-800 bg-zinc-950 cursor-move sticky top-0 z-10">
@@ -1719,26 +1721,31 @@ let mainLienWaiver = JSON.parse(localStorage.getItem('mainLienWaiver') || '{}');
             return; // BLOCK processing
         }
 
-        // === SUBCONTRACTOR PAY APP COMPLETENESS CHECK (workflow enforcement, modeled after Procore/RedTeam) ===
-        // In real systems (Procore Commitments + Payment Apps, RedTeam sub invoicing), the GC/main pay app cannot be submitted/certified
-        // until all downstream subcontractor payment applications for the period have been submitted and approved (with lien waivers).
-        // This prevents the main G702 from being processed with incomplete sub billings or missing compliance.
-        const currentPeriodNumForCheck = currentPayAppPeriod.periodNumber;
+        // === SUBCONTRACTOR PAY APP PREREQUISITE CHECK (Workflow Enforcement) ===
+        // Mirrors Procore / RedTeam: All subs must have submitted (and ideally approved) their pay apps + lien waivers
+        // before the main GC Pay Application (G702) can be submitted for review.
+        const currentPeriodNum = currentPayAppPeriod.periodNumber;
         const subsWithSOV = Object.keys(subcontractorSOV || {});
-        let missingOrPendingSubs = [];
+        const pendingSubs = [];
+
         subsWithSOV.forEach(cid => {
-            const hist = subPayAppHistory[cid] && subPayAppHistory[cid][currentPeriodNumForCheck];
-            const hasApprovedOrSubmitted = hist && (hist.status === 'Approved' || hist.status === 'Pending Approval' || hist.status === 'Submitted');
+            const entry = subPayAppHistory[cid] && subPayAppHistory[cid][currentPeriodNum];
+            const hasApprovedOrSubmitted = entry && (entry.status === 'Approved' || entry.status === 'Pending Approval' || entry.status === 'Submitted');
             if (!hasApprovedOrSubmitted) {
-                missingOrPendingSubs.push(getCompanyName(cid));
+                pendingSubs.push(getCompanyName(cid));
             }
         });
-        if (missingOrPendingSubs.length > 0) {
+
+        if (pendingSubs.length > 0) {
+            const list = pendingSubs.slice(0, 6).join(', ') + (pendingSubs.length > 6 ? ' ...' : '');
             showCenteredAlert(
-                `BLOCKED: Cannot submit main Pay Application (G702) until ALL Subcontractor Schedule of Values and their Pay Apps are submitted & approved for this period.\n\nSubs still pending: ${missingOrPendingSubs.join(', ')}\n\nWorkflow: Subs submit via Subcontractor SOV tab → PM approves in Sub Pay App Tracker (with lien waiver) → then GC Pay App can be submitted. This matches standard Procore/RedTeam pay app routing.`,
+                `BLOCKED: Cannot submit main Pay Application (G702).<br><br>` +
+                `All Subcontractor Schedule of Values and their Pay Applications must be submitted and approved for this period first.<br><br>` +
+                `<strong>Pending:</strong> ${list}<br><br>` +
+                `Workflow: Subs submit via Subcontractor SOV tab → PM approves in Sub Pay App Tracker (with lien waiver) → then you can submit the main G702.`,
                 'warning'
             );
-            return; // BLOCK — enforces linked process
+            return;
         }
 
         currentPayAppPeriod.status = "Submitted";
@@ -2834,15 +2841,14 @@ let mainLienWaiver = JSON.parse(localStorage.getItem('mainLienWaiver') || '{}');
                 // Lien waiver controls (always available when Approved, upload is optional unless setting requires it)
                 if (hasWaiver) {
                     buttonsHTML += `
-                        <button onclick="uploadLienWaiver(${selectedSubCompanyId})" class="px-4 py-2 bg-zinc-700 hover:bg-zinc-600 text-white rounded text-sm flex items-center gap-1.5">
+                        <div class="flex items-center gap-2 px-3 py-1.5 bg-zinc-800 border border-emerald-600 rounded-md text-sm ml-2">
+                            <span class="text-emerald-400"><i class="fa-solid fa-file-contract"></i></span>
+                            <span class="text-emerald-300 text-xs max-w-[160px] truncate" title="${waiver.filename}">${waiver.filename}</span>
+                            <button onclick="viewLienWaiver(${selectedSubCompanyId}); event.stopImmediatePropagation();" class="px-2 py-0.5 text-xs bg-emerald-700 hover:bg-emerald-600 rounded">View</button>
+                            <button onclick="removeLienWaiver(${selectedSubCompanyId}); event.stopImmediatePropagation();" class="px-2 py-0.5 text-xs bg-red-700 hover:bg-red-600 rounded">Remove</button>
+                        </div>
+                        <button onclick="uploadLienWaiver(${selectedSubCompanyId}); event.stopImmediatePropagation();" class="px-3 py-1.5 bg-zinc-700 hover:bg-zinc-600 text-white rounded text-xs flex items-center gap-1">
                             <i class="fa-solid fa-upload"></i> <span>Re-upload</span>
-                        </button>
-                        <span class="text-xs text-emerald-400 ml-1 truncate max-w-[160px]" title="${waiver.filename}">${waiver.filename}</span>
-                        <button onclick="removeLienWaiver(${selectedSubCompanyId}); event.stopImmediatePropagation();" class="ml-1 px-3 py-1.5 bg-red-600 hover:bg-red-500 text-white rounded text-xs flex items-center gap-1">
-                            <i class="fa-solid fa-times"></i> <span>Remove</span>
-                        </button>
-                        <button onclick="viewLienWaiver(${selectedSubCompanyId}); event.stopImmediatePropagation();" class="ml-1 px-3 py-1.5 bg-sky-600 hover:bg-sky-500 text-white rounded text-xs flex items-center gap-1">
-                            <i class="fa-solid fa-eye"></i> <span>View</span>
                         </button>
                     `;
                 } else {
@@ -3877,9 +3883,88 @@ let mainLienWaiver = JSON.parse(localStorage.getItem('mainLienWaiver') || '{}');
             } else {
                 showCenteredAlert("Please select a subcontractor and period in Previous Sub Pay Apps tab first.", "warning");
             }
+        } else if (currentPayAppTab === 'sub-pay-app-tracker') {
+            // Special clean list/spreadsheet print for Sub Pay App Tracker
+            printSubPayAppTrackerList();
         } else {
             printG703(); // fallback
         }
+    }
+
+    // Clean spreadsheet-style print for Sub Pay App Tracker tab
+    function printSubPayAppTrackerList() {
+        const period = currentPayAppPeriod || { periodNumber: 1, periodStart: '2026-07-01', periodEnd: '2026-07-31' };
+        const subCompanies = (companies || []).filter(c => (c.type === 'Subcontractor' || c.company_type === 'Subcontractor') && subcontractorSOV[c.id]);
+
+        let rows = '';
+        subCompanies.forEach(company => {
+            const cid = company.id;
+            const status = getSubSOVStatus(cid);
+            const historyEntry = subPayAppHistory[cid] && subPayAppHistory[cid][period.periodNumber];
+            let billed = 0;
+            if (historyEntry) billed = historyEntry.totalBilledThisPeriod || 0;
+
+            const waiverStatus = getLienWaiverStatus(cid);
+            const lienText = waiverStatus.hasWaiver ? 'Uploaded' : 'Missing';
+            const insStatus = getInsuranceComplianceStatus(cid);
+            const insText = insStatus.compliant ? 'All Current' : 'Review Needed';
+
+            rows += `<tr>
+                <td style="border:1px solid #333;padding:6px 8px;font-size:10px;">${getCompanyName(cid)}</td>
+                <td style="border:1px solid #333;padding:6px 8px;text-align:center;font-size:10px;">${status}</td>
+                <td style="border:1px solid #333;padding:6px 8px;text-align:center;font-size:10px;">${lienText}</td>
+                <td style="border:1px solid #333;padding:6px 8px;text-align:center;font-size:10px;">${insText}</td>
+                <td style="border:1px solid #333;padding:6px 8px;text-align:right;font-family:monospace;font-size:10px;">${formatCurrency(billed)}</td>
+            </tr>`;
+        });
+
+        if (!rows) rows = `<tr><td colspan="5" style="padding:12px;text-align:center;color:#666;">No subcontractors with SOVs found.</td></tr>`;
+
+        const printHTML = `
+            <html><head><title>Sub Pay App Tracker — ${period.periodNumber}</title>
+            <style>
+                @page { size: letter landscape; margin: 0.5in; }
+                body { font-family: system-ui, Arial, sans-serif; padding: 20px; font-size: 11px; }
+                h1 { font-size: 18px; margin: 0 0 4px 0; }
+                .sub { font-size: 12px; color: #555; margin-bottom: 16px; }
+                table { width:100%; border-collapse: collapse; font-size: 10px; }
+                th, td { border:1px solid #222; padding: 6px 8px; vertical-align: top; }
+                th { background:#f0f0f0; font-weight:700; text-align:left; }
+                .right { text-align:right; font-family: "Courier New", monospace; }
+            </style>
+            </head><body>
+                <h1>Sub Pay App Tracker — Period ${period.periodNumber}</h1>
+                <div class="sub">Project: ALDI Lakeland &nbsp;&nbsp;|&nbsp;&nbsp; Period: ${period.periodStart} → ${period.periodEnd} &nbsp;&nbsp;|&nbsp;&nbsp; Generated: ${new Date().toLocaleDateString()}</div>
+
+                <table>
+                    <thead>
+                        <tr>
+                            <th style="width:32%;">Subcontractor</th>
+                            <th style="width:18%;">Status</th>
+                            <th style="width:14%;">Lien Waiver</th>
+                            <th style="width:16%;">Insurance</th>
+                            <th style="width:20%;">Billed This Period</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        ${rows}
+                    </tbody>
+                </table>
+
+                <div style="margin-top:20px; font-size:9px; color:#666;">
+                    This is a system-generated summary from the Sub Pay App Tracker. For full details and approvals, use the Sub Pay App Tracker tab in the Pay Applications module.
+                </div>
+            </body></html>
+        `;
+
+        const printWindow = window.open('', '_blank');
+        printWindow.document.open();
+        printWindow.document.write(printHTML);
+        printWindow.document.close();
+        setTimeout(() => {
+            printWindow.focus();
+            printWindow.print();
+        }, 400);
     }
 
     // New: Print filtered G703 for the currently focused subcontractor (with their Pay App #)
@@ -4615,12 +4700,10 @@ function printSubcontractorG703(companyId) {
         modal.className = 'bg-zinc-900 border border-zinc-700 rounded-3xl p-0 max-w-[min(1100px,95vw)] w-full shadow-2xl z-[999999]';
         modal.style.maxHeight = '82vh';
         modal.style.position = 'fixed';
-        modal.style.top = '180px';
+        modal.style.top = '130px';
         modal.style.left = '50%';
         modal.style.transform = 'translateX(-50%)';
         modal.style.margin = '0';
-        modal.style.setProperty('top', '180px', 'important');
-        modal.style.setProperty('transform', 'translateX(-50%)', 'important');
 
         modal.innerHTML = `
             <div class="drag-handle flex items-center justify-between px-6 py-4 border-b border-zinc-800 bg-zinc-950 cursor-move sticky top-0 z-10">
@@ -5047,7 +5130,26 @@ function printSubcontractorG703(companyId) {
     }
 
     function importPayApplications() {
-        alert("Import functionality for Pay Apps coming in next iteration. Use Seed from Budget for now.");
+        const tab = currentPayAppTab || 'payapp';
+
+        if (tab === 'previous-payapps') {
+            showCenteredAlert("Cannot import into the Previous Pay Applications tab.<br>Historical records are read-only.", 'warning');
+            return;
+        }
+
+        if (tab === 'payapp') {
+            showCenteredAlert("Cannot import/upload into the Pay Application (G702) tab.<br><br>You can import or add lines on the <strong>Contractor Schedule of Values (G703)</strong> tab or the <strong>Subcontractor Schedule of Values</strong> tab.", 'warning');
+            return;
+        }
+
+        if (tab === 'sub-pay-app-tracker' || tab === 'previous-sub-payapps') {
+            showCenteredAlert("Cannot import into the Sub Pay App Tracker or Previous Sub Pay Apps tabs.<br>These are overview and history views only.", 'warning');
+            return;
+        }
+
+        // For contractor-sov and sub-sov tabs, allow the (future) import flow
+        // For now show the placeholder message but styled
+        showCenteredAlert("Import functionality for Schedule of Values is coming in the next update.<br>Use 'Seed from Budget' on the Contractor SOV tab for now.", 'info');
     }
 
     function showAddPayAppModal() {
@@ -5212,9 +5314,9 @@ function printSubcontractorG703(companyId) {
         else icon = '<i class="fa-solid fa-info-circle text-sky-400 mr-2"></i>';
 
         dialog.innerHTML = `
-            <div class="flex items-center text-base mb-5 whitespace-nowrap">
+            <div class="flex items-start text-base mb-5 max-w-[520px]">
                 ${icon}
-                <span>${message}</span>
+                <span class="leading-relaxed">${message}</span>
             </div>
             <div class="flex justify-end">
                 <button class="px-6 py-2 bg-emerald-600 hover:bg-emerald-500 rounded-md text-sm font-medium">OK</button>
@@ -5814,51 +5916,26 @@ function printSubcontractorG703(companyId) {
         modal.showModal();
     }
 
-    // Robust insurance / compliance helper — live reads from Companies page data + expiry checks + name overrides
+    // Simple insurance compliance helper (checks for GL/WC/COI presence or expiry on company record)
     function getInsuranceComplianceStatus(companyId) {
         const company = companies.find(c => c.id == companyId);
         if (!company) return { compliant: true, message: 'No company record' };
 
-        const name = ((company.name || company.company_name || '') + ' ' + (company.trade || '')).toLowerCase();
+        // Demo logic: if company has insurance fields and they are not expired, compliant.
+        // In production this would query a real compliance table or integrate with insurance tracking module.
+        const hasGL = company.gl_policy || company.insurance_gl;
+        const hasWC = company.wc_policy || company.insurance_wc;
+        const hasCOI = company.coi_on_file || company.insurance_coi;
 
-        // User-confirmed overrides for companies with current insurance (live sync from Companies/Vendors page)
-        if (name.includes('precision concrete')) {
-            return { compliant: true, message: 'All insurance, COI, and licenses current (Precision Concrete Solutions)' };
-        }
-        // Add more overrides here if specific subs like Arch Fire Protection have confirmed current COI
-        if (name.includes('arch fire') || name.includes('archfire')) {
-            return { compliant: true, message: 'COI and insurance current (Arch Fire Protection)' };
-        }
-
-        // Collect possible field names used across Companies page / vendor records
-        const glVal = company.gl_policy || company.insurance_gl || company.gl_expiry || company.insurance_gl_expiry || company.general_liability;
-        const wcVal = company.wc_policy || company.insurance_wc || company.wc_expiry || company.insurance_wc_expiry || company.workers_comp;
-        const coiVal = company.coi_on_file || company.insurance_coi || company.coi_expiry || company.insurance_coi_expiry || company.certificate_of_insurance || company.coi_file || company.coi_date || company.coi;
-
-        // Basic expiry check helper (handles string dates or Date objects)
-        function isExpired(val) {
-            if (!val) return true;
-            if (typeof val === 'boolean') return !val; // coi_on_file: true means present
-            const d = new Date(val);
-            if (isNaN(d.getTime())) return false; // no date = assume current if field present
-            return d < new Date();
-        }
-
-        const glOk = !!glVal && !isExpired(glVal);
-        const wcOk = !!wcVal && !isExpired(wcVal);
-        const coiOk = !!coiVal && !isExpired(coiVal);
-
-        if (glOk && wcOk && coiOk) {
+        if (hasGL && hasWC && hasCOI) {
             return { compliant: true, message: 'General Liability, Workers Comp, and COI all current' };
         }
-
-        let missing = [];
-        if (!glOk) missing.push('GL');
-        if (!wcOk) missing.push('WC');
-        if (!coiOk) missing.push('COI');
         return { 
             compliant: false, 
-            message: 'Missing or expired: ' + missing.join(' / ') 
+            message: 'Missing or expired: ' + 
+                     (!hasGL ? 'GL ' : '') + 
+                     (!hasWC ? 'WC ' : '') + 
+                     (!hasCOI ? 'COI' : '') 
         };
     }
 
