@@ -355,7 +355,7 @@
 </dialog>
 
 <script>
-    // ==================== DATA & STATE (v76.15 - Live lien waiver tracking on Sub SOV + G702 (instant UI update, no tab switch), robust live insurance from Companies page, wrapped workflow message, tab-aware Import/Print behaviors) ====================
+    // ==================== DATA & STATE (v76.16 - Relaxed insurance logic (one valid COI = compliant) + improved tracker lien waiver badge with filename on Sub SOV + G702 (instant UI update, no tab switch), robust live insurance from Companies page, wrapped workflow message, tab-aware Import/Print behaviors) ====================
     let payApplications = JSON.parse(localStorage.getItem('payApplications')) || [];
     let contractorSOV = JSON.parse(localStorage.getItem('contractorSOV')) || [];
     let subcontractorSOV = JSON.parse(localStorage.getItem('subcontractorSOV')) || {}; // { companyId: [lines] }
@@ -5700,9 +5700,21 @@ function printSubcontractorG703(companyId) {
                 statusBadge = `<span class="px-3 py-0.5 text-xs rounded-full bg-zinc-700 text-zinc-400 font-medium">${status}</span>`;
             }
 
-            const lienBadge = hasWaiver 
-                ? `<span class="text-emerald-400"><i class="fa-solid fa-check-circle"></i> Uploaded</span>` 
-                : `<span class="text-red-400"><i class="fa-solid fa-exclamation-circle"></i> Missing</span>`;
+            // Improved lien waiver badge for tracker - shows filename when available (closer to G702 pill style)
+            let lienBadge = '';
+            if (hasWaiver) {
+                const waiverInfo = getLienWaiverStatus(companyId);
+                const fname = waiverInfo.filename || 'Lien Waiver';
+                lienBadge = `
+                    <div class="inline-flex items-center gap-1.5 px-2 py-0.5 bg-emerald-900/60 border border-emerald-600 rounded text-xs">
+                        <i class="fa-solid fa-file-contract text-emerald-400"></i>
+                        <span class="text-emerald-300 max-w-[140px] truncate" title="${fname}">${fname}</span>
+                        <button onclick="event.stopImmediatePropagation(); viewLienWaiver(${companyId});" 
+                                class="px-1.5 py-0 bg-emerald-700 hover:bg-emerald-600 rounded text-[10px]">View</button>
+                    </div>`;
+            } else {
+                lienBadge = `<span class="text-red-400"><i class="fa-solid fa-exclamation-circle"></i> Missing</span>`;
+            }
 
             // Simple insurance compliance check (demo: green if company has basic fields or always compliant for demo)
             const insuranceStatus = getInsuranceComplianceStatus(companyId);
@@ -5836,40 +5848,44 @@ function printSubcontractorG703(companyId) {
         if (name.includes('precision concrete')) {
             return { compliant: true, message: 'All insurance, COI, and licenses current (Precision Concrete Solutions)' };
         }
-        // Add more overrides here if specific subs like Arch Fire Protection have confirmed current COI
         if (name.includes('arch fire') || name.includes('archfire')) {
             return { compliant: true, message: 'COI and insurance current (Arch Fire Protection)' };
         }
 
-        // Collect possible field names used across Companies page / vendor records
-        const glVal = company.gl_policy || company.insurance_gl || company.gl_expiry || company.insurance_gl_expiry || company.general_liability;
-        const wcVal = company.wc_policy || company.insurance_wc || company.wc_expiry || company.insurance_wc_expiry || company.workers_comp;
-        const coiVal = company.coi_on_file || company.insurance_coi || company.coi_expiry || company.insurance_coi_expiry || company.certificate_of_insurance || company.coi_file || company.coi_date || company.coi;
+        // === SIMPLIFIED LOGIC PER USER REQUIREMENT ===
+        // For the Sub Pay App Tracker "Insurance" column:
+        // If there is at least ONE valid (non-expired) COI under Certificates of Insurance, it is considered current.
+        // They do not need separate GL + WC + COI all present.
+        const coiVal = company.coi_on_file || company.insurance_coi || company.coi_expiry || company.insurance_coi_expiry || 
+                       company.certificate_of_insurance || company.coi_file || company.coi_date || company.coi || 
+                       company.coi_entries || company.certificates_of_insurance;
 
-        // Basic expiry check helper (handles string dates or Date objects)
         function isExpired(val) {
             if (!val) return true;
-            if (typeof val === 'boolean') return !val; // coi_on_file: true means present
+            if (typeof val === 'boolean') return !val;
+            // Handle array of COI entries (common in modern vendor pages)
+            if (Array.isArray(val)) {
+                return !val.some(entry => {
+                    const exp = entry.expiry || entry.expiration || entry.expiry_date || entry.date;
+                    if (!exp) return true;
+                    const d = new Date(exp);
+                    return !isNaN(d.getTime()) && d >= new Date();
+                });
+            }
             const d = new Date(val);
-            if (isNaN(d.getTime())) return false; // no date = assume current if field present
+            if (isNaN(d.getTime())) return false;
             return d < new Date();
         }
 
-        const glOk = !!glVal && !isExpired(glVal);
-        const wcOk = !!wcVal && !isExpired(wcVal);
-        const coiOk = !!coiVal && !isExpired(coiVal);
+        const hasValidCOI = !!coiVal && !isExpired(coiVal);
 
-        if (glOk && wcOk && coiOk) {
-            return { compliant: true, message: 'General Liability, Workers Comp, and COI all current' };
+        if (hasValidCOI) {
+            return { compliant: true, message: 'COI on file and current' };
         }
 
-        let missing = [];
-        if (!glOk) missing.push('GL');
-        if (!wcOk) missing.push('WC');
-        if (!coiOk) missing.push('COI');
         return { 
             compliant: false, 
-            message: 'Missing or expired: ' + missing.join(' / ') 
+            message: 'Missing or expired COI' 
         };
     }
 
