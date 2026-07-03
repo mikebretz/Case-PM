@@ -133,6 +133,9 @@
 
     <button onclick="switchPayAppTab('previous-sub-payapps')" id="tab-previous-sub-payapps"
             class="tab-button px-6 py-3 text-sm font-medium text-zinc-400 hover:text-white">Previous Sub Pay Apps</button>
+
+    <button onclick="switchPayAppTab('sub-pay-app-tracker')" id="tab-sub-pay-app-tracker"
+            class="tab-button px-6 py-3 text-sm font-medium text-zinc-400 hover:text-white">Sub Pay App Tracker</button>
 </div>
 
 <!-- SUMMARY CARDS -->
@@ -784,6 +787,8 @@ let submissionDeadlineDate = localStorage.getItem('submissionDeadlineDate') || '
             renderPreviousPayAppsTab(cardsContainer, thead, tbody, workflowBar);
         } else if (currentPayAppTab === 'previous-sub-payapps') {
             renderPreviousSubPayAppsTab(cardsContainer, thead, tbody, workflowBar);
+        } else if (currentPayAppTab === 'sub-pay-app-tracker') {
+            renderSubPayAppTrackerTab(cardsContainer, thead, tbody, workflowBar);
         }
     }
 
@@ -1046,6 +1051,16 @@ let submissionDeadlineDate = localStorage.getItem('submissionDeadlineDate') || '
         const amountDue = totalCurrentBilling * 0.90;
         const contractSumToDate = totalOriginal + totalCO;
 
+        // NEW: Calculate approved sub billings this period for G702 display
+        let approvedSubTotalThisPeriod = 0;
+        const currentPeriodNumForG702 = currentPayAppPeriod ? currentPayAppPeriod.periodNumber : 1;
+        Object.keys(subPayAppHistory || {}).forEach(cid => {
+            const entry = subPayAppHistory[cid] && subPayAppHistory[cid][currentPeriodNumForG702];
+            if (entry && entry.status === 'Approved') {
+                approvedSubTotalThisPeriod += (entry.totalBilledThisPeriod || 0);
+            }
+        });
+
         // Summary Cards
         // Warning only triggers if the ORIGINAL column total mismatches the Budget.
         // Change Orders are tracked separately and do NOT trigger this warning on the Original Contract card.
@@ -1078,6 +1093,13 @@ let submissionDeadlineDate = localStorage.getItem('submissionDeadlineDate') || '
                     <div class="text-xs text-zinc-400">Current Payment Due (after ${defaultRetainagePercent}% retainage)</div>
                     <div class="text-2xl font-semibold mt-1 text-emerald-400">${formatCurrency(amountDue)}</div>
                 </div>
+
+                <!-- NEW: Approved Subcontractor Billings flowing into this G702 -->
+                <div class="bg-emerald-950/40 border border-emerald-600 rounded-md p-5 col-span-2 md:col-span-1">
+                    <div class="text-xs text-emerald-400">Approved Subcontractor Billings This Period</div>
+                    <div class="text-2xl font-semibold mt-1 text-emerald-400" id="approvedSubBillingsG702">Calculating...</div>
+                    <div class="text-[10px] text-emerald-500 mt-0.5">Rolls up from Sub Pay App Tracker approvals</div>
+                </div>
                 <div class="bg-zinc-800 border border-zinc-700 rounded-md p-5 flex flex-col justify-between">
                     <div class="text-right">
                         <div class="text-sm font-semibold text-white">Period ${currentPayAppPeriod.periodNumber} • <span class="font-bold ${currentPayAppPeriod.status === 'Draft' ? 'text-amber-400' : currentPayAppPeriod.status === 'Submitted' ? 'text-sky-400' : 'text-emerald-400'}">${currentPayAppPeriod.status}</span></div>
@@ -1107,6 +1129,21 @@ let submissionDeadlineDate = localStorage.getItem('submissionDeadlineDate') || '
         </button>`;
         workflowHTML += `</div>`;
         workflowBar.innerHTML = workflowHTML;
+
+        // NEW: Populate Approved Subcontractor Billings card (flows from tracker approvals)
+        setTimeout(() => {
+            const el = document.getElementById('approvedSubBillingsG702');
+            if (el) {
+                // Re-calculate in case of timing
+                let approvedSubTotal = 0;
+                const pNum = currentPayAppPeriod ? currentPayAppPeriod.periodNumber : 1;
+                Object.keys(subPayAppHistory || {}).forEach(cid => {
+                    const entry = subPayAppHistory[cid] && subPayAppHistory[cid][pNum];
+                    if (entry && entry.status === 'Approved') approvedSubTotal += (entry.totalBilledThisPeriod || 0);
+                });
+                el.textContent = formatCurrency(approvedSubTotal);
+            }
+        }, 80);
 
         // Table Header - G702 style
         thead.innerHTML = `
@@ -5343,6 +5380,152 @@ function printSubcontractorG703(companyId) {
             printWindow.print();
             // Note: We do not close the window automatically to allow the user to cancel if needed.
         }, 500);
+    }
+
+    // ==================== NEW: SUB PAY APP TRACKER TAB (Admin Overview) ====================
+    function renderSubPayAppTrackerTab(cardsContainer, thead, tbody, workflowBar) {
+        // Calculate approved sub billings this period for G702 roll-up
+        let approvedSubTotalThisPeriod = 0;
+        const currentPeriodNum = currentPayAppPeriod ? currentPayAppPeriod.periodNumber : 1;
+
+        Object.keys(subPayAppHistory || {}).forEach(companyId => {
+            const entry = subPayAppHistory[companyId][currentPeriodNum];
+            if (entry && entry.status === 'Approved') {
+                approvedSubTotalThisPeriod += (entry.totalBilledThisPeriod || 0);
+            }
+        });
+
+        // Summary cards
+        cardsContainer.innerHTML = `
+            <div class="grid grid-cols-2 md:grid-cols-5 gap-4">
+                <div class="bg-zinc-800 border border-zinc-700 rounded-md p-4">
+                    <div class="text-xs text-zinc-400">Active Subs with SOV</div>
+                    <div class="text-3xl font-semibold mt-1 text-emerald-400">${Object.keys(subcontractorSOV || {}).length}</div>
+                </div>
+                <div class="bg-zinc-800 border border-zinc-700 rounded-md p-4">
+                    <div class="text-xs text-zinc-400">Submitted This Period</div>
+                    <div class="text-3xl font-semibold mt-1 text-amber-400">${Object.keys(subPayAppHistory || {}).filter(cid => subPayAppHistory[cid][currentPeriodNum] && subPayAppHistory[cid][currentPeriodNum].status === 'Pending Approval').length}</div>
+                </div>
+                <div class="bg-zinc-800 border border-zinc-700 rounded-md p-4">
+                    <div class="text-xs text-zinc-400">Pending Your Approval</div>
+                    <div class="text-3xl font-semibold mt-1 text-red-400">${Object.keys(subPayAppHistory || {}).filter(cid => subPayAppHistory[cid][currentPeriodNum] && subPayAppHistory[cid][currentPeriodNum].status === 'Pending Approval').length}</div>
+                </div>
+                <div class="bg-zinc-800 border border-zinc-700 rounded-md p-4">
+                    <div class="text-xs text-zinc-400">Approved &amp; Committed</div>
+                    <div class="text-3xl font-semibold mt-1 text-emerald-400">${Object.keys(subPayAppHistory || {}).filter(cid => subPayAppHistory[cid][currentPeriodNum] && subPayAppHistory[cid][currentPeriodNum].status === 'Approved').length}</div>
+                </div>
+                <div class="bg-zinc-800 border border-emerald-600 rounded-md p-4 bg-emerald-950/30">
+                    <div class="text-xs text-emerald-400">Approved Sub $ This Period → G702</div>
+                    <div class="text-3xl font-semibold mt-1 text-emerald-400">${formatCurrency(approvedSubTotalThisPeriod)}</div>
+                    <div class="text-[10px] text-emerald-500 mt-0.5">Flows into your current Pay Application</div>
+                </div>
+            </div>
+        `;
+
+        // Workflow bar
+        workflowBar.innerHTML = `
+            <div class="workflow-bar px-4 py-3 flex items-center gap-3 text-sm">
+                <span class="text-emerald-400 font-medium">Sub Pay App Tracker • Admin View</span>
+                <span class="text-xs text-zinc-500 ml-auto">Click a row to jump to that Sub's SOV • Use Approve button to commit billings to G702</span>
+            </div>
+        `;
+
+        // Table Header
+        thead.innerHTML = `
+            <tr>
+                <th class="px-4 py-3 text-left font-medium text-zinc-400">Subcontractor</th>
+                <th class="px-3 py-3 text-center font-medium text-zinc-400 w-24">Pay App #</th>
+                <th class="px-3 py-3 text-center font-medium text-zinc-400 w-36">Status</th>
+                <th class="px-3 py-3 text-center font-medium text-zinc-400 w-28">Lien Waiver</th>
+                <th class="px-4 py-3 text-right font-medium text-zinc-400 w-36">Billed This Period</th>
+                <th class="px-3 py-3 text-center font-medium text-zinc-400 w-20">% Complete</th>
+                <th class="px-4 py-3 text-center font-medium text-zinc-400 w-48">Actions</th>
+            </tr>
+        `;
+
+        tbody.innerHTML = '';
+
+        const subCompanies = companies.filter(c => (c.type === 'Subcontractor' || c.company_type === 'Subcontractor') && subcontractorSOV[c.id]);
+
+        if (subCompanies.length === 0) {
+            tbody.innerHTML = `<tr><td colspan="7" class="px-6 py-10 text-center text-zinc-500">No subcontractors with Schedule of Values yet.</td></tr>`;
+            return;
+        }
+
+        subCompanies.forEach(company => {
+            const companyId = company.id;
+            const lines = subcontractorSOV[companyId] || [];
+            const status = getSubSOVStatus(companyId);
+            const historyEntry = subPayAppHistory[companyId] && subPayAppHistory[companyId][currentPeriodNum];
+            const currentAppNum = subPayAppNumbers[companyId] || currentPeriodNum;
+
+            let billedThis = 0;
+            let pctComplete = 0;
+
+            if (historyEntry && historyEntry.status === 'Approved') {
+                billedThis = historyEntry.totalBilledThisPeriod || 0;
+            } else if (historyEntry && historyEntry.status === 'Pending Approval') {
+                billedThis = historyEntry.totalBilledThisPeriod || 0;
+            } else {
+                // Calculate from current draft values
+                billedThis = lines.reduce((sum, l) => sum + ((l.work_this_period || 0) + (l.materials_stored || 0) + (l.co_billed_this_period || 0)), 0);
+            }
+
+            // Simple overall % complete
+            const totalScheduled = lines.reduce((sum, l) => sum + ((l.original_commitment || 0) + (l.change_orders || 0)), 0);
+            const totalBilled = lines.reduce((sum, l) => sum + (l.billed_to_date || 0), 0);
+            pctComplete = totalScheduled > 0 ? Math.round((totalBilled / totalScheduled) * 100) : 0;
+
+            const waiverStatus = getLienWaiverStatus(companyId);
+            const hasWaiver = waiverStatus.hasWaiver;
+
+            let statusBadge = '';
+            if (historyEntry && historyEntry.status === 'Approved') {
+                statusBadge = `<span class="px-3 py-0.5 text-xs rounded-full bg-emerald-900/70 text-emerald-400 font-medium">Approved &amp; Committed</span>`;
+            } else if (historyEntry && historyEntry.status === 'Pending Approval') {
+                statusBadge = `<span class="px-3 py-0.5 text-xs rounded-full bg-amber-900/70 text-amber-400 font-medium">Pending Approval</span>`;
+            } else if (status === 'Approved') {
+                statusBadge = `<span class="px-3 py-0.5 text-xs rounded-full bg-sky-900/70 text-sky-400 font-medium">Ready for Billing</span>`;
+            } else {
+                statusBadge = `<span class="px-3 py-0.5 text-xs rounded-full bg-zinc-700 text-zinc-400 font-medium">${status}</span>`;
+            }
+
+            const lienBadge = hasWaiver 
+                ? `<span class="text-emerald-400"><i class="fa-solid fa-check-circle"></i> Uploaded</span>` 
+                : `<span class="text-red-400"><i class="fa-solid fa-exclamation-circle"></i> Missing</span>`;
+
+            const row = document.createElement('tr');
+            row.className = 'sov-line-row hover:bg-zinc-800/60 cursor-pointer';
+            row.onclick = () => {
+                selectedSubCompanyId = companyId;
+                localStorage.setItem('lastSelectedSubSOV', companyId);
+                switchPayAppTab('sub-sov');
+            };
+
+            row.innerHTML = `
+                <td class="px-4 py-3 font-medium">${getCompanyName(companyId)}</td>
+                <td class="px-3 py-3 text-center font-mono text-emerald-400">${currentAppNum}</td>
+                <td class="px-3 py-3 text-center">${statusBadge}</td>
+                <td class="px-3 py-3 text-center text-sm">${lienBadge}</td>
+                <td class="px-4 py-3 text-right font-mono text-emerald-400">${formatCurrency(billedThis)}</td>
+                <td class="px-3 py-3 text-center font-mono text-xs">${pctComplete}%</td>
+                <td class="px-4 py-2 text-center">
+                    <div class="flex items-center justify-center gap-1.5">
+                        ${ (historyEntry && historyEntry.status === 'Pending Approval') ? `
+                            <button onclick="event.stopImmediatePropagation(); approveSubPayApp(${companyId});" 
+                                    class="px-3 py-1 bg-emerald-600 hover:bg-emerald-500 text-white text-xs rounded font-medium">Approve &amp; Commit</button>
+                            <button onclick="event.stopImmediatePropagation(); requestRevisionSubPayApp(${companyId});" 
+                                    class="px-3 py-1 bg-amber-600 hover:bg-amber-500 text-white text-xs rounded font-medium">Request Revision</button>
+                        ` : '' }
+                        <button onclick="event.stopImmediatePropagation(); selectedSubCompanyId = ${companyId}; switchPayAppTab('sub-sov');" 
+                                class="px-3 py-1 bg-zinc-700 hover:bg-zinc-600 text-xs rounded">View SOV</button>
+                        <button onclick="event.stopImmediatePropagation(); viewLienWaiver(${companyId});" 
+                                class="px-2 py-1 bg-zinc-700 hover:bg-zinc-600 text-xs rounded"><i class="fa-solid fa-file-contract"></i></button>
+                    </div>
+                </td>
+            `;
+            tbody.appendChild(row);
+        });
     }
 
     // Expose the function globally if needed for debugging
