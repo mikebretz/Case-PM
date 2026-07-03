@@ -355,7 +355,7 @@
 </dialog>
 
 <script>
-    // ==================== DATA & STATE (v76.16 - Relaxed insurance logic (one valid COI = compliant) + improved tracker lien waiver badge with filename on Sub SOV + G702 (instant UI update, no tab switch), robust live insurance from Companies page, wrapped workflow message, tab-aware Import/Print behaviors) ====================
+    // ==================== DATA & STATE (v76.17 - Fixed live lien waiver pill update on Sub SOV & G702 (instant render after upload/remove), nice emerald pill UI on Sub SOV matching G702, removed duplicate View from Tracker Actions, relaxed one-COI insurance rule) ====================
     let payApplications = JSON.parse(localStorage.getItem('payApplications')) || [];
     let contractorSOV = JSON.parse(localStorage.getItem('contractorSOV')) || [];
     let subcontractorSOV = JSON.parse(localStorage.getItem('subcontractorSOV')) || {}; // { companyId: [lines] }
@@ -2842,17 +2842,15 @@ let mainLienWaiver = JSON.parse(localStorage.getItem('mainLienWaiver') || '{}');
 
                 // Lien waiver controls (always available when Approved, upload is optional unless setting requires it)
                 if (hasWaiver) {
+                    // Nice pill matching G702 main lien waiver style (live updating)
                     buttonsHTML += `
-                        <button onclick="uploadLienWaiver(${selectedSubCompanyId})" class="px-4 py-2 bg-zinc-700 hover:bg-zinc-600 text-white rounded text-sm flex items-center gap-1.5">
-                            <i class="fa-solid fa-upload"></i> <span>Re-upload</span>
-                        </button>
-                        <span class="text-xs text-emerald-400 ml-1 truncate max-w-[160px]" title="${waiver.filename}">${waiver.filename}</span>
-                        <button onclick="removeLienWaiver(${selectedSubCompanyId}); event.stopImmediatePropagation();" class="ml-1 px-3 py-1.5 bg-red-600 hover:bg-red-500 text-white rounded text-xs flex items-center gap-1">
-                            <i class="fa-solid fa-times"></i> <span>Remove</span>
-                        </button>
-                        <button onclick="viewLienWaiver(${selectedSubCompanyId}); event.stopImmediatePropagation();" class="ml-1 px-3 py-1.5 bg-sky-600 hover:bg-sky-500 text-white rounded text-xs flex items-center gap-1">
-                            <i class="fa-solid fa-eye"></i> <span>View</span>
-                        </button>
+                        <div class="inline-flex items-center gap-1.5 px-3 py-1.5 bg-emerald-900/60 border border-emerald-600 rounded-md text-sm">
+                            <i class="fa-solid fa-file-contract text-emerald-400"></i>
+                            <span class="text-emerald-300 max-w-[180px] truncate" title="${waiver.filename}">${waiver.filename}</span>
+                            <button onclick="viewLienWaiver(${selectedSubCompanyId}); event.stopImmediatePropagation();" class="px-2.5 py-0.5 bg-emerald-700 hover:bg-emerald-600 text-white rounded text-xs">View</button>
+                            <button onclick="removeLienWaiver(${selectedSubCompanyId}); event.stopImmediatePropagation();" class="px-2.5 py-0.5 bg-red-600 hover:bg-red-500 text-white rounded text-xs">Remove</button>
+                            <button onclick="uploadLienWaiver(${selectedSubCompanyId}); event.stopImmediatePropagation();" class="px-2.5 py-0.5 bg-zinc-600 hover:bg-zinc-500 text-white rounded text-xs">Re-upload</button>
+                        </div>
                     `;
                 } else {
                     buttonsHTML += `
@@ -5762,8 +5760,6 @@ function printSubcontractorG703(companyId) {
                         ` : '' }
                         <button onclick="event.stopImmediatePropagation(); selectedSubCompanyId = ${companyId}; switchPayAppTab('sub-sov');" 
                                 class="px-3 py-1 bg-zinc-700 hover:bg-zinc-600 text-xs rounded">View SOV</button>
-                        <button onclick="event.stopImmediatePropagation(); viewLienWaiver(${companyId});" 
-                                class="px-2 py-1 bg-zinc-700 hover:bg-zinc-600 text-xs rounded" title="Lien Waiver"><i class="fa-solid fa-file-contract"></i></button>
                         <button onclick="event.stopImmediatePropagation(); showSubPayAppLog(${companyId});" 
                                 class="px-2 py-1 bg-sky-700 hover:bg-sky-600 text-xs rounded" title="View Log / History"><i class="fa-solid fa-history"></i></button>
                     </div>
