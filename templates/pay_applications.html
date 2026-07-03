@@ -355,7 +355,7 @@
 </dialog>
 
 <script>
-    // ==================== DATA & STATE (v76.18 - LIVE LIEN WAIVER FIX: upload now instantly shows emerald pill on Sub SOV (no tab switch), immediate render on upload/remove for both Sub SOV & G702, robust insurance check for >=1 valid COI in certificates_of_insurance array, re-parse subLienWaivers on every Sub SOV render) ====================
+    // ==================== DATA & STATE (v76.19 - LIVE LIEN WAIVER + INSURANCE FIX: uploadLienWaiver + uploadMain now force fresh parse + immediate renderPayAppContent(); insurance prioritizes certificates_of_insurance array + more aliases + lenient expiry; pill appears instantly on both Sub SOV and G702 without tab switch) ====================
     let payApplications = JSON.parse(localStorage.getItem('payApplications')) || [];
     let contractorSOV = JSON.parse(localStorage.getItem('contractorSOV')) || [];
     let subcontractorSOV = JSON.parse(localStorage.getItem('subcontractorSOV')) || {}; // { companyId: [lines] }
@@ -520,7 +520,8 @@ let mainLienWaiver = JSON.parse(localStorage.getItem('mainLienWaiver') || '{}');
                 logPayAppAudit('LIEN_WAIVER_UPLOADED', { companyId, filename: file.name, period: periodNum });
                 showCenteredAlert(`Lien waiver "${file.name}" uploaded successfully.`, 'success');
 
-                // Immediate live UI update (no tab switch needed). Call render directly for reliability on Sub SOV.
+                // Force fresh parse + immediate live render (guarantees pill appears instantly on Sub SOV without tab switch)
+                subLienWaivers = JSON.parse(localStorage.getItem('subLienWaivers') || '{}');
                 renderPayAppContent();
             };
             reader.readAsDataURL(file);
@@ -564,6 +565,9 @@ let mainLienWaiver = JSON.parse(localStorage.getItem('mainLienWaiver') || '{}');
 
                 logPayAppAudit('MAIN_LIEN_WAIVER_UPLOADED', { period: periodNum, filename: file.name });
                 showCenteredAlert(`Lien waiver "${file.name}" uploaded for Pay Application.`, 'success');
+
+                // Force fresh parse + immediate live render for G702 pill
+                mainLienWaiver = JSON.parse(localStorage.getItem('mainLienWaiver') || '{}');
                 renderPayAppContent();
             };
             reader.readAsDataURL(file);
@@ -5848,7 +5852,8 @@ function printSubcontractorG703(companyId) {
         // it is considered current. No need for separate GL + WC + COI.
         // Prioritize the array under "Certificates of Insurance" header / Add COI button.
         let coiList = company.certificates_of_insurance || company.coi_entries || company.coi_list || 
-                      company.insurance_certificates || company.coi || company.coi_data || [];
+                      company.insurance_certificates || company.coi || company.coi_data || 
+                      company.certificates || company.insurance || company.coi_array || [];
 
         if (!Array.isArray(coiList)) {
             // If it's a single object or boolean/string, wrap it
