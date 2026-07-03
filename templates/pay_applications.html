@@ -334,8 +334,9 @@
                     <input type="checkbox" id="requireSubmissionDeadlineToggle" class="w-5 h-5 accent-emerald-600" onchange="toggleDeadlineDayInput(this)">
                 </label>
                 <div id="submissionDeadlineContainer" class="hidden ml-1">
-                    <label class="block text-xs text-zinc-400 mb-1">Day of the Month (e.g. 20th or 25th)</label>
+                    <label class="block text-xs text-zinc-400 mb-1">Day of the Month</label>
                     <select id="submissionDeadlineDay" class="w-full bg-zinc-800 border border-zinc-700 rounded-md px-4 py-2 text-sm text-white">
+                        <option value="">-- Select Day (Notification Trigger) --</option>
                         <option value="15">15th</option>
                         <option value="20">20th</option>
                         <option value="25">25th</option>
@@ -507,10 +508,9 @@ let mainLienWaiver = JSON.parse(localStorage.getItem('mainLienWaiver') || '{}');
 
                 subLienWaivers[companyId][periodNum] = {
                     filename: file.name,
+                    dataUrl: dataUrl,
                     uploadedDate: new Date().toISOString(),
                     submitted: false
-                    // Note: dataUrl intentionally omitted to prevent localStorage quota errors on large PDFs/images.
-                    // View functionality shows filename + professional placeholder.
                 };
 
                 localStorage.setItem('subLienWaivers', JSON.stringify(subLienWaivers));
@@ -562,9 +562,8 @@ let mainLienWaiver = JSON.parse(localStorage.getItem('mainLienWaiver') || '{}');
 
                 mainLienWaiver[periodNum] = {
                     filename: file.name,
+                    dataUrl: dataUrl,
                     uploadedDate: new Date().toISOString()
-                    // Note: dataUrl intentionally omitted to prevent localStorage quota errors on large PDFs/images.
-                    // View functionality shows filename + professional placeholder.
                 };
                 localStorage.setItem('mainLienWaiver', JSON.stringify(mainLienWaiver));
 
@@ -584,41 +583,8 @@ let mainLienWaiver = JSON.parse(localStorage.getItem('mainLienWaiver') || '{}');
         if (!currentPayAppPeriod) return;
         const periodNum = currentPayAppPeriod.periodNumber;
         const waiver = mainLienWaiver[periodNum];
-        if (!waiver) {
+        if (!waiver || !waiver.dataUrl) {
             showCenteredAlert("No lien waiver found for this period.", "warning");
-            return;
-        }
-
-        if (!waiver.dataUrl) {
-            const placeholderModal = document.createElement('dialog');
-            placeholderModal.className = 'bg-zinc-900 border border-zinc-700 rounded-3xl p-0 max-w-md w-full shadow-2xl z-[999999]';
-            placeholderModal.style.position = 'fixed';
-            placeholderModal.style.top = '50%';
-            placeholderModal.style.left = '50%';
-            placeholderModal.style.transform = 'translate(-50%, -50%)';
-            placeholderModal.innerHTML = `
-                <div class="p-6">
-                    <div class="flex items-center gap-3 mb-4">
-                        <i class="fa-solid fa-file-contract text-emerald-400 text-2xl"></i>
-                        <div>
-                            <div class="font-semibold text-lg">Main Lien Waiver on File</div>
-                            <div class="text-sm text-zinc-400">Period ${periodNum}</div>
-                        </div>
-                    </div>
-                    <div class="bg-zinc-800 border border-zinc-700 rounded-lg p-4 mb-4">
-                        <div class="text-xs text-zinc-400">FILE NAME</div>
-                        <div class="font-mono text-emerald-300 mt-1">${waiver.filename || 'Lien Waiver Document'}</div>
-                        <div class="text-xs text-zinc-500 mt-2">Uploaded: ${waiver.uploadedDate ? new Date(waiver.uploadedDate).toLocaleString() : 'N/A'}</div>
-                    </div>
-                    <div class="text-xs text-zinc-400 mb-4">The actual document is securely stored. In this demo environment, full PDF/image embedding is disabled to prevent storage quota issues.</div>
-                    <div class="flex justify-end gap-3">
-                        <button onclick="removeMainLienWaiver(); this.closest('dialog').close()" class="px-4 py-2 text-red-400 hover:underline text-sm">Remove Record</button>
-                        <button onclick="this.closest('dialog').close(); this.closest('dialog').remove()" class="px-5 py-2 bg-emerald-600 hover:bg-emerald-500 rounded text-sm">Close</button>
-                    </div>
-                </div>
-            `;
-            document.body.appendChild(placeholderModal);
-            placeholderModal.showModal();
             return;
         }
 
@@ -641,11 +607,7 @@ let mainLienWaiver = JSON.parse(localStorage.getItem('mainLienWaiver') || '{}');
                     <div class="text-sm text-zinc-400">${waiver.uploadedDate || ''}</div>
                 </div>
                 <div class="flex items-center gap-3">
-                    <button onclick="printFromViewer(this)" class="px-5 py-2 bg-emerald-600 hover:bg-emerald-700 rounded-xl text-sm font-medium flex items-center gap-2">
-                        <i class="fa-solid fa-print"></i> <span>Print</span>
-                    </button>
-                    <button onclick="this.closest('dialog').close(); this.closest('dialog').remove()" 
-                            class="w-12 h-12 flex items-center justify-center text-4xl text-red-400 font-black hover:text-red-300 hover:bg-zinc-800 rounded-full leading-none border-2 border-red-400">×</button>
+                    <!-- Print and top X removed per request; Close remains at bottom -->
                 </div>
             </div>
             <div class="p-6 bg-zinc-950 overflow-auto" style="max-height: calc(82vh - 120px);">
@@ -684,42 +646,8 @@ let mainLienWaiver = JSON.parse(localStorage.getItem('mainLienWaiver') || '{}');
         const periodNum = currentPayAppPeriod ? currentPayAppPeriod.periodNumber : 1;
         const waiver = subLienWaivers[companyId] && subLienWaivers[companyId][periodNum];
 
-        if (!waiver) {
+        if (!waiver || !waiver.dataUrl) {
             showCenteredAlert("No lien waiver found for this period.", "warning");
-            return;
-        }
-
-        // If no dataUrl (quota-safe mode), show professional placeholder instead of trying to embed missing data
-        if (!waiver.dataUrl) {
-            const placeholderModal = document.createElement('dialog');
-            placeholderModal.className = 'bg-zinc-900 border border-zinc-700 rounded-3xl p-0 max-w-md w-full shadow-2xl z-[999999]';
-            placeholderModal.style.position = 'fixed';
-            placeholderModal.style.top = '50%';
-            placeholderModal.style.left = '50%';
-            placeholderModal.style.transform = 'translate(-50%, -50%)';
-            placeholderModal.innerHTML = `
-                <div class="p-6">
-                    <div class="flex items-center gap-3 mb-4">
-                        <i class="fa-solid fa-file-contract text-emerald-400 text-2xl"></i>
-                        <div>
-                            <div class="font-semibold text-lg">Lien Waiver on File</div>
-                            <div class="text-sm text-zinc-400">${getCompanyName(companyId)} — Period ${periodNum}</div>
-                        </div>
-                    </div>
-                    <div class="bg-zinc-800 border border-zinc-700 rounded-lg p-4 mb-4">
-                        <div class="text-xs text-zinc-400">FILE NAME</div>
-                        <div class="font-mono text-emerald-300 mt-1">${waiver.filename || 'Lien Waiver Document'}</div>
-                        <div class="text-xs text-zinc-500 mt-2">Uploaded: ${waiver.uploadedDate ? new Date(waiver.uploadedDate).toLocaleString() : 'N/A'}</div>
-                    </div>
-                    <div class="text-xs text-zinc-400 mb-4">The actual document is securely stored. In this demo environment, full PDF/image embedding is disabled to prevent storage quota issues. The file name and metadata are preserved for audit and compliance tracking.</div>
-                    <div class="flex justify-end gap-3">
-                        <button onclick="removeLienWaiver(${companyId}); this.closest('dialog').close()" class="px-4 py-2 text-red-400 hover:underline text-sm">Remove Record</button>
-                        <button onclick="this.closest('dialog').close(); this.closest('dialog').remove()" class="px-5 py-2 bg-emerald-600 hover:bg-emerald-500 rounded text-sm">Close</button>
-                    </div>
-                </div>
-            `;
-            document.body.appendChild(placeholderModal);
-            placeholderModal.showModal();
             return;
         }
 
@@ -743,16 +671,7 @@ let mainLienWaiver = JSON.parse(localStorage.getItem('mainLienWaiver') || '{}');
                     <div class="text-sm text-zinc-400">Period ${periodNum} • ${waiver.uploadedDate || 'Unknown date'}</div>
                 </div>
                 <div class="flex items-center gap-3">
-                    <button onclick="printFromViewer(this)" 
-                            class="px-5 py-2 bg-emerald-600 hover:bg-emerald-700 rounded-xl text-sm font-medium flex items-center gap-2">
-                        <i class="fa-solid fa-print"></i>
-                        <span>Print Document</span>
-                    </button>
-                    <button onclick="this.closest('dialog').close(); this.closest('dialog').remove()" 
-                            class="w-12 h-12 flex items-center justify-center text-4xl text-red-400 font-black hover:text-red-300 hover:bg-zinc-800 rounded-full leading-none border-2 border-red-400"
-                            title="Close">
-                        ×
-                    </button>
+                    <!-- Print and top X removed per request; Close Viewer remains at bottom -->
                 </div>
             </div>
             
@@ -1359,12 +1278,12 @@ let mainLienWaiver = JSON.parse(localStorage.getItem('mainLienWaiver') || '{}');
         if (status === 'Draft') {
             workflowHTML += `<button onclick="submitPayApplication()" class="px-5 py-2 bg-emerald-600 hover:bg-emerald-500 rounded-md text-sm font-medium flex items-center gap-2"><i class="fa-solid fa-paper-plane"></i> Submit for Review</button>`;
             
-            // Lien Waiver Upload button for main Pay Application (G702) - ALWAYS visible, text changes, pill to the right
+            // NEW: Lien Waiver Upload button for main Pay Application (G702) - placed right of Submit
             const currentPeriodNum = currentPayAppPeriod.periodNumber;
             const hasMainWaiver = mainLienWaiver[currentPeriodNum] && mainLienWaiver[currentPeriodNum].filename;
-            const mainWaiverBtnText = hasMainWaiver ? 'Re-upload Lien Waiver' : 'Lien Waiver Upload';
-            workflowHTML += `<button onclick="uploadMainContractorLienWaiver()" class="px-4 py-2 bg-zinc-700 hover:bg-zinc-600 rounded-md text-sm font-medium flex items-center gap-2 border border-zinc-600"><i class="fa-solid fa-file-upload"></i> <span>${mainWaiverBtnText}</span></button>`;
-            if (hasMainWaiver) {
+            if (!hasMainWaiver) {
+                workflowHTML += `<button onclick="uploadMainContractorLienWaiver()" class="px-4 py-2 bg-zinc-700 hover:bg-zinc-600 rounded-md text-sm font-medium flex items-center gap-2 border border-zinc-600"><i class="fa-solid fa-file-upload"></i> <span>Lien Waiver Upload</span></button>`;
+            } else {
                 const w = mainLienWaiver[currentPeriodNum];
                 workflowHTML += `<div class="flex items-center gap-2 px-3 py-1.5 bg-zinc-800 border border-emerald-600 rounded-md text-sm">
                     <span class="text-emerald-400"><i class="fa-solid fa-file-contract"></i></span>
@@ -2915,21 +2834,23 @@ let mainLienWaiver = JSON.parse(localStorage.getItem('mainLienWaiver') || '{}');
                     `;
                 }
 
-                // Lien waiver controls — button ALWAYS visible, text changes to Re-upload, pill appears to the RIGHT when file exists (live updating, no tab switch)
-                const lienBtnText = hasWaiver ? 'Re-upload Lien Waiver' : `Upload Lien Waiver ${requireLienWaiverOnSubPayApp ? '(Required)' : '(Optional)'}`;
-                buttonsHTML += `
-                    <button onclick="uploadLienWaiver(${selectedSubCompanyId}); event.stopImmediatePropagation();" class="px-4 py-2 bg-sky-600 hover:bg-sky-500 text-white rounded text-sm flex items-center gap-1.5">
-                        <i class="fa-solid fa-upload"></i> <span>${lienBtnText}</span>
-                    </button>
-                `;
+                // Lien waiver controls (always available when Approved, upload is optional unless setting requires it)
                 if (hasWaiver) {
+                    // Nice pill matching G702 main lien waiver style (live updating)
                     buttonsHTML += `
                         <div class="inline-flex items-center gap-1.5 px-3 py-1.5 bg-emerald-900/60 border border-emerald-600 rounded-md text-sm">
                             <i class="fa-solid fa-file-contract text-emerald-400"></i>
                             <span class="text-emerald-300 max-w-[180px] truncate" title="${waiver.filename}">${waiver.filename}</span>
                             <button onclick="viewLienWaiver(${selectedSubCompanyId}); event.stopImmediatePropagation();" class="px-2.5 py-0.5 bg-emerald-700 hover:bg-emerald-600 text-white rounded text-xs">View</button>
                             <button onclick="removeLienWaiver(${selectedSubCompanyId}); event.stopImmediatePropagation();" class="px-2.5 py-0.5 bg-red-600 hover:bg-red-500 text-white rounded text-xs">Remove</button>
+                            <button onclick="uploadLienWaiver(${selectedSubCompanyId}); event.stopImmediatePropagation();" class="px-2.5 py-0.5 bg-zinc-600 hover:bg-zinc-500 text-white rounded text-xs">Re-upload</button>
                         </div>
+                    `;
+                } else {
+                    buttonsHTML += `
+                        <button onclick="uploadLienWaiver(${selectedSubCompanyId})" class="px-4 py-2 bg-sky-600 hover:bg-sky-500 text-white rounded text-sm flex items-center gap-1.5">
+                            <i class="fa-solid fa-upload"></i> <span>Upload Lien Waiver ${requireLienWaiverOnSubPayApp ? '(Required)' : '(Optional)'}</span>
+                        </button>
                     `;
                 }
             }
@@ -5142,27 +5063,19 @@ function printSubcontractorG703(companyId) {
             select.value = String(defaultRetainagePercent);
         }
         
-        // Set checkbox states live from current variables (fixes static template literal issue in HTML)
-        const lienToggle = document.getElementById('requireLienWaiverToggle');
-        if (lienToggle) lienToggle.checked = !!requireLienWaiverOnSubPayApp;
-
-        const zeroToggle = document.getElementById('requireZeroDollarLienWaiverToggle');
-        if (zeroToggle) zeroToggle.checked = !!requireZeroDollarLienWaiver;
-
-        // Load deadline setting
+        // Load new deadline setting
         const deadlineToggle = document.getElementById('requireSubmissionDeadlineToggle');
         const deadlineContainer = document.getElementById('submissionDeadlineContainer');
-        const deadlineDaySelect = document.getElementById('submissionDeadlineDay');
+        const deadlineInput = document.getElementById('submissionDeadlineDate');
         
         if (deadlineToggle) {
-            deadlineToggle.checked = !!requireSubmissionDeadline;
+            deadlineToggle.checked = requireSubmissionDeadline;
             if (deadlineContainer) {
                 deadlineContainer.classList.toggle('hidden', !requireSubmissionDeadline);
             }
         }
-        if (deadlineDaySelect) {
-            // Set to saved value or default to 20th
-            deadlineDaySelect.value = submissionDeadlineDate || '20';
+        if (deadlineInput && submissionDeadlineDate) {
+            deadlineInput.value = submissionDeadlineDate;
         }
         
         modal.showModal();
@@ -5670,6 +5583,10 @@ function printSubcontractorG703(companyId) {
 
     // ==================== NEW: SUB PAY APP TRACKER TAB (Admin Overview) ====================
     function renderSubPayAppTrackerTab(cardsContainer, thead, tbody, workflowBar) {
+        // Live re-parse to ensure lien waiver column and all status is always up-to-date when entering the tab
+        subLienWaivers = JSON.parse(localStorage.getItem('subLienWaivers') || '{}');
+        lienWaivers = JSON.parse(localStorage.getItem('lienWaivers') || '{}');
+
         // Calculate approved sub billings this period for G702 roll-up
         let approvedSubTotalThisPeriod = 0;
         const currentPeriodNum = currentPayAppPeriod ? currentPayAppPeriod.periodNumber : 1;
@@ -5814,12 +5731,8 @@ function printSubcontractorG703(companyId) {
             const notesText = statusData.notes || (historyEntry && historyEntry.notes) || '';
 
             row.innerHTML = `
-                <td class="px-4 py-3 font-medium flex items-center gap-1.5">
+                <td class="px-4 py-3 font-medium">
                     ${getCompanyName(companyId)}
-                    <button onclick="event.stopImmediatePropagation(); sendSubPayAppNotification(${companyId});" 
-                            class="ml-1 text-emerald-400 hover:text-emerald-300 p-0.5" title="Send notification email about outstanding items">
-                        <i class="fa-solid fa-envelope text-xs"></i>
-                    </button>
                 </td>
                 <td class="px-3 py-3 text-center font-mono text-emerald-400">${currentAppNum}</td>
                 <td class="px-3 py-3 text-center">${statusBadge}</td>
@@ -5839,8 +5752,10 @@ function printSubcontractorG703(companyId) {
                             <button onclick="event.stopImmediatePropagation(); requestRevisionSubPayApp(${companyId});" 
                                     class="px-3 py-1 bg-amber-600 hover:bg-amber-500 text-white text-xs rounded font-medium">Request Revision</button>
                         ` : '' }
-                        <button onclick="event.stopImmediatePropagation(); selectedSubCompanyId = ${companyId}; switchPayAppTab('sub-sov');" 
-                                class="px-3 py-1 bg-zinc-700 hover:bg-zinc-600 text-xs rounded">View SOV</button>
+                        <button onclick="event.stopImmediatePropagation(); sendSubPayAppNotification(${companyId});" 
+                                class="px-3 py-1 bg-sky-700 hover:bg-sky-600 text-xs rounded flex items-center gap-1" title="Send notification about outstanding items">
+                            <i class="fa-solid fa-envelope"></i> <span>Notify</span>
+                        </button>
                         <button onclick="event.stopImmediatePropagation(); showSubPayAppLog(${companyId});" 
                                 class="px-2 py-1 bg-sky-700 hover:bg-sky-600 text-xs rounded" title="View Log / History"><i class="fa-solid fa-history"></i></button>
                     </div>
