@@ -2105,11 +2105,12 @@ let mainLienWaiver = JSON.parse(localStorage.getItem('mainLienWaiver') || '{}');
             localStorage.setItem('subPayAppHistory', JSON.stringify(subPayAppHistory));
         }
         
-        // === UPDATE LIVE CONTRACTOR SOV billed_to_date WITH THIS PERIOD'S COMPLETED AMOUNTS ===
-        // This ensures the next period's G702 starts with the correct cumulative Billed to Date from history/previous approvals.
+        // === UPDATE LIVE CONTRACTOR SOV billed_to_date WITH THIS PERIOD'S *FINAL DISPLAYED* COMPLETED AMOUNTS ===
+        // This ensures the next period's G702 starts with the correct cumulative Billed to Date.
+        // We use the same final values that were calculated for the history snapshot (sub min enforced).
         contractorSOV.forEach(line => {
-            const billing = payAppBillingLines[line.id] || { workThisPeriod: 0, materialsStored: 0 };
-            const thisPeriodCompleted = (billing.workThisPeriod || 0) + (billing.materialsStored || 0);
+            const finalBilling = finalBillingForSnapshot[line.id] || { workThisPeriod: 0, materialsStored: 0 };
+            const thisPeriodCompleted = (finalBilling.workThisPeriod || 0) + (finalBilling.materialsStored || 0);
             if (!line.billed_to_date) line.billed_to_date = 0;
             line.billed_to_date += thisPeriodCompleted;
         });
