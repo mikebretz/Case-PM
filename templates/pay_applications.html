@@ -1264,44 +1264,68 @@ let mainLienWaiver = JSON.parse(localStorage.getItem('mainLienWaiver') || '{}');
             return;
         }
 
-        // === TOP BANNER CONFIRMATION (formatted like the page, not centered modal or browser confirm) ===
+        // === CLEAN TOP BANNER CONFIRMATION (no HTML escaping, no leakage) ===
         const workflowBar = document.getElementById('payAppWorkflowBar');
         if (!workflowBar) {
-            // Fallback if workflow bar missing
             if (!confirm("This will push Period " + periodData.periodNumber + " back to the Pay Application (G702) as Draft. Continue?")) return;
-        } else {
-            const originalWorkflowHTML = workflowBar.innerHTML;
-            workflowBar.innerHTML = `
-                <div class="workflow-bar px-4 py-3 flex items-center gap-4 text-sm border border-amber-600 bg-amber-950/40 rounded-md">
-                    <div class="flex items-center gap-2 text-amber-300">
-                        <i class="fa-solid fa-exclamation-triangle"></i>
-                        <span class="font-medium">This will push Period ${periodData.periodNumber} back to the Pay Application (G702) tab as Draft so you can edit and re-submit.</span>
-                    </div>
-                    <div class="flex items-center gap-2 ml-auto">
-                        <button onclick="confirmRevisionPush(${periodId}, this)" 
-                                class="px-5 py-1.5 bg-amber-600 hover:bg-amber-500 text-white text-sm rounded-md font-semibold flex items-center gap-2">
-                            <i class="fa-solid fa-undo"></i> <span>Yes, Push Back to G702</span>
-                        </button>
-                        <button onclick="cancelRevisionPush(this, '${originalWorkflowHTML.replace(/'/g, "\\'")}')" 
-                                class="px-4 py-1.5 bg-zinc-700 hover:bg-zinc-600 text-sm rounded-md">
-                            Cancel
-                        </button>
-                    </div>
-                </div>
-            `;
-            return; // Wait for user to click Yes in the banner
+            performRevisionRestore(periodId);
+            return;
         }
 
-        // If we reach here (fallback path), do the restore immediately
+        // Store which period we're confirming for
+        window._pendingRevisionPeriodId = periodId;
+
+        workflowBar.innerHTML = `
+            <div class="workflow-bar px-4 py-3 flex items-center gap-4 text-sm border border-amber-600 bg-amber-950/40 rounded-md">
+                <div class="flex items-center gap-2 text-amber-300">
+                    <i class="fa-solid fa-exclamation-triangle"></i>
+                    <span class="font-medium">This will push Period ${periodData.periodNumber} back to the Pay Application (G702) tab as Draft so you can edit and re-submit.</span>
+                </div>
+                <div class="flex items-center gap-3 ml-auto">
+                    <button onclick="confirmRevisionPush()" 
+                            class="px-5 py-1.5 bg-amber-600 hover:bg-amber-500 text-white text-sm rounded-md font-semibold flex items-center gap-2">
+                        <i class="fa-solid fa-undo"></i> <span>Yes, Push Back to G702</span>
+                    </button>
+                    <button onclick="cancelRevisionPush()" 
+                            class="px-4 py-1.5 bg-zinc-700 hover:bg-zinc-600 text-sm rounded-md">
+                        Cancel
+                    </button>
+                </div>
+            </div>
+        `;
+        // Do NOT proceed with restore yet — wait for user to click Yes in the clean banner
+    }
+
+    // Called when user clicks "Yes, Push Back to G702" in the top amber banner
+    function confirmRevisionPush() {
+        const periodId = window._pendingRevisionPeriodId;
+        if (!periodId) return;
+
+        window._pendingRevisionPeriodId = null;
         performRevisionRestore(periodId);
     }
 
-    // Helper: actually perform the snapshot restore (called from banner "Yes" button)
+    // Called when user clicks "Cancel" in the top amber banner
+    function cancelRevisionPush() {
+        window._pendingRevisionPeriodId = null;
+        // Cleanly re-render the normal view for the currently selected period
+        const select = document.getElementById('previousPeriodSelect');
+        if (select && select.value) {
+            loadPreviousPayAppData(select.value);
+        } else {
+            renderPayAppContent();
+        }
+    }
+
+    // Helper: actually perform the snapshot restore + switch to G702 Draft
     function performRevisionRestore(periodId) {
         const periodData = payAppHistory.find(p => p.id == periodId);
-        if (!periodData || !periodData.snapshot) return;
+        if (!periodData || !periodData.snapshot) {
+            showCenteredAlert("Cannot restore this period. Snapshot data is missing.", "warning");
+            return;
+        }
 
-        // Restore billing lines from the historical snapshot
+        // Restore billing lines from the historical snapshot (this is the key fix for Billed to Date)
         payAppBillingLines = JSON.parse(JSON.stringify(periodData.snapshot.billingLines || {}));
         localStorage.setItem('payAppBillingLines', JSON.stringify(payAppBillingLines));
 
