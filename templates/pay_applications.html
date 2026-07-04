@@ -355,7 +355,7 @@
 </dialog>
 
 <script>
-    // ==================== DATA & STATE (v76.30 - Aesthetics only: Moved little envelope notification button from Subcontractor name column into Actions column in Sub Pay App Tracker; removed duplicate "View Lien Waiver" pill/button from Actions column (Lien Waiver column pill with View remains as the single place to view from Tracker); all prior functionality, numbering, blocking, push-to-previous, pill visibility on SOV/pending/Tracker, drag-drop, blue upload buttons, etc. 100% locked and unchanged) ====================
+    // ==================== DATA & STATE (v76.31 - Aesthetics only: Sub Pay App Tracker - Request Revision now in its own column between Pay App # and Status; removed admin view / Main G702 period text from workflow bar; added "Contractor Pay Period" summary card at top of cards grid; all prior functionality, numbering, blocking, push-to-previous, pill visibility, drag-drop, blue upload buttons, etc. 100% locked and unchanged) ====================
     let payApplications = JSON.parse(localStorage.getItem('payApplications')) || [];
     let contractorSOV = JSON.parse(localStorage.getItem('contractorSOV')) || [];
     let subcontractorSOV = JSON.parse(localStorage.getItem('subcontractorSOV')) || {}; // { companyId: [lines] }
@@ -6042,7 +6042,11 @@ function printSubcontractorG703(companyId) {
 
         // Summary cards
         cardsContainer.innerHTML = `
-            <div class="grid grid-cols-2 md:grid-cols-5 gap-4">
+            <div class="grid grid-cols-2 md:grid-cols-6 gap-4">
+                <div class="bg-zinc-800 border border-zinc-700 rounded-md p-4">
+                    <div class="text-xs text-zinc-400">Contractor Pay Period</div>
+                    <div class="text-3xl font-semibold mt-1 text-white font-mono">${currentPayAppPeriod ? currentPayAppPeriod.periodNumber : '—'}</div>
+                </div>
                 <div class="bg-zinc-800 border border-zinc-700 rounded-md p-4">
                     <div class="text-xs text-zinc-400">Active Subs with SOV</div>
                     <div class="text-3xl font-semibold mt-1 text-emerald-400">${Object.keys(subcontractorSOV || {}).length}</div>
@@ -6069,10 +6073,8 @@ function printSubcontractorG703(companyId) {
 
         // Workflow bar
         workflowBar.innerHTML = `
-            <div class="workflow-bar px-4 py-3 flex items-center gap-3 text-sm">
-                <span class="text-emerald-400 font-medium">Sub Pay App Tracker • Admin View (Left Hand = Sub SOV tab → Right Hand = here)</span>
-                <span class="text-xs text-emerald-300 ml-3 font-mono">Main G702 Period ${currentPayAppPeriod ? currentPayAppPeriod.periodNumber : '—'}</span>
-                <button onclick="clearAllSubPayAppData()" class="ml-auto px-3 py-1 bg-red-700 hover:bg-red-600 text-white text-xs rounded font-medium flex items-center gap-1.5 border border-red-600" title="Nuclear reset for all subcontractor pay app data, numbers, history, pending papers, and lien waivers. Use when numbers get stuck.">
+            <div class="workflow-bar px-4 py-3 flex items-center justify-end gap-3 text-sm">
+                <button onclick="clearAllSubPayAppData()" class="px-3 py-1 bg-red-700 hover:bg-red-600 text-white text-xs rounded font-medium flex items-center gap-1.5 border border-red-600" title="Nuclear reset for all subcontractor pay app data, numbers, history, pending papers, and lien waivers. Use when numbers get stuck.">
                     <i class="fa-solid fa-trash"></i> <span>Clear All Sub Data (Debug)</span>
                 </button>
                 <button onclick="forcePushLatestApprovedToPreviousSubPayApps()" class="ml-2 px-3 py-1 bg-violet-700 hover:bg-violet-600 text-white text-xs rounded font-medium flex items-center gap-1.5 border border-violet-600" title="Archive the most recent active Pay App from this Tracker into Previous Sub Pay Apps. This clears it from the Tracker so you can create the next pay app (#2, #3...) cleanly. The pushed paper will only appear in the Previous Sub Pay Apps tab after this action.">
@@ -6086,6 +6088,7 @@ function printSubcontractorG703(companyId) {
             <tr>
                 <th class="px-4 py-3 text-left font-medium text-zinc-400">Subcontractor</th>
                 <th class="px-3 py-3 text-center font-medium text-zinc-400 w-24">Pay App #</th>
+                <th class="px-3 py-3 text-center font-medium text-zinc-400 w-36">Request Revision</th>
                 <th class="px-3 py-3 text-center font-medium text-zinc-400 w-48">Status</th>
                 <th class="px-3 py-3 text-center font-medium text-zinc-400 w-28">Lien Waiver</th>
                 <th class="px-4 py-3 text-right font-medium text-zinc-400 w-36">Billed This Period</th>
@@ -6093,7 +6096,7 @@ function printSubcontractorG703(companyId) {
                 <th class="px-3 py-3 text-center font-medium text-zinc-400 w-20">% Complete</th>
                 <th class="px-3 py-3 text-center font-medium text-zinc-400 w-28">Insurance</th>
                 <th class="px-4 py-3 text-left font-medium text-zinc-400" style="min-width: 480px; width: 520px;">Notes (PM Editable)</th>
-                <th class="px-4 py-3 text-center font-medium text-zinc-400 w-56">Actions</th>
+                <th class="px-4 py-3 text-center font-medium text-zinc-400 w-48">Actions</th>
             </tr>
         `;
 
@@ -6113,7 +6116,7 @@ function printSubcontractorG703(companyId) {
         });
 
         if (subCompanies.length === 0) {
-            tbody.innerHTML = `<tr><td colspan="9" class="px-6 py-10 text-center text-zinc-500">No Pay Applications submitted or approved yet this period.<br><span class="text-xs">Submit from Subcontractor Schedule of Values tab (Left Hand) → then Approve to move here (Right Hand).</span></td></tr>`;
+            tbody.innerHTML = `<tr><td colspan="11" class="px-6 py-10 text-center text-zinc-500">No Pay Applications submitted or approved yet this period.<br><span class="text-xs">Submit from Subcontractor Schedule of Values tab (Left Hand) → then Approve to move here (Right Hand).</span></td></tr>`;
             return;
         }
 
@@ -6224,6 +6227,14 @@ function printSubcontractorG703(companyId) {
                     ${getCompanyName(companyId)}
                 </td>
                 <td class="px-3 py-3 text-center font-mono text-emerald-400">${displayedPayAppNum}</td>
+                <td class="px-3 py-3 text-center">
+                    ${ (historyEntry) ? `
+                        <button onclick="event.stopImmediatePropagation(); requestRevisionSubPayApp(${companyId}, ${displayedPayAppNum});" 
+                                class="px-3 py-1 bg-amber-600 hover:bg-amber-500 text-white text-xs rounded font-medium flex items-center gap-1 mx-auto" title="Send this Pay App back to Subcontractor SOV tab for editing">
+                            <i class="fa-solid fa-redo text-xs"></i> <span>Request Revision</span>
+                        </button>
+                    ` : '' }
+                </td>
                 <td class="px-3 py-3 text-center">${statusBadge}</td>
                 <td class="px-3 py-3 text-center text-sm">${lienBadge}</td>
                 <td class="px-4 py-3 text-right font-mono text-emerald-400">${formatCurrency(billedThis)}</td>
@@ -6236,17 +6247,10 @@ function printSubcontractorG703(companyId) {
                 </td>
                 <td class="px-4 py-2 text-center">
                     <div class="flex items-center justify-center gap-1.5 flex-wrap">
-                        ${ (historyEntry) ? `
-                            <button onclick="event.stopImmediatePropagation(); requestRevisionSubPayApp(${companyId}, ${displayedPayAppNum});" 
-                                    class="px-3 py-1 bg-amber-600 hover:bg-amber-500 text-white text-xs rounded font-medium flex items-center gap-1" title="Send this Pay App back to Subcontractor SOV tab for editing">
-                                <i class="fa-solid fa-redo text-xs"></i> <span>Request Revision</span>
-                            </button>
-                        ` : '' }
                         <button onclick="event.stopImmediatePropagation(); sendSubPayAppNotification(${companyId});" 
                                 class="px-2 py-1 bg-emerald-700 hover:bg-emerald-600 text-white text-xs rounded flex items-center" title="Send notification email about outstanding items">
                             <i class="fa-solid fa-envelope text-xs"></i>
                         </button>
-                        <!-- View SOV button removed per user request to keep Tracker actions clean -->
                         <button onclick="event.stopImmediatePropagation(); showSubPayAppLog(${companyId});" 
                                 class="px-2 py-1 bg-sky-700 hover:bg-sky-600 text-xs rounded" title="View Log / History"><i class="fa-solid fa-history"></i></button>
                     </div>
