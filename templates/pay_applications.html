@@ -355,7 +355,7 @@
 </dialog>
 
 <script>
-    // ==================== DATA & STATE (v76.43 - Removed persistent demo seed data for contractorSOV & subcontractorSOV so user clean resets stay clean. Cost code live reconciliation fixed in v76.42. All prior workflow 100% locked) ====================
+    // ==================== DATA & STATE (v76.48 - Contractor G703 now shows Cost to Date (Subcontracted) + Billed to Date driven by Sub Pay App Tracker/History. Live rollup view in edit modal. All prior sub workflow 100% locked) ====================
     let payApplications = JSON.parse(localStorage.getItem('payApplications')) || [];
     let contractorSOV = JSON.parse(localStorage.getItem('contractorSOV')) || [];
     let subcontractorSOV = JSON.parse(localStorage.getItem('subcontractorSOV')) || {}; // { companyId: [lines] }
@@ -417,6 +417,51 @@ let mainLienWaiver = JSON.parse(localStorage.getItem('mainLienWaiver') || '{}');
         const d = new Date(dateStr);
         if (isNaN(d.getTime())) return dateStr;
         return d.toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' });
+    }
+
+    // ==================== NEW HELPERS FOR CONTRACTOR G703 ROLLUP (v76.48) ====================
+    function normalizeCostCode(code) {
+        if (!code) return '';
+        return String(code).replace(/[\s-]/g, '').toUpperCase();
+    }
+
+    function getSubcontractedCostForCode(code) {
+        const norm = normalizeCostCode(code);
+        let total = 0;
+        Object.keys(subcontractorSOV || {}).forEach(cid => {
+            (subcontractorSOV[cid] || []).forEach(line => {
+                if (normalizeCostCode(line.cost_code) === norm) {
+                    total += (parseFloat(line.original) || 0) + (parseFloat(line.change_orders) || 0);
+                }
+            });
+        });
+        return total;
+    }
+
+    function getSubBilledTotalForCode(code) {
+        const norm = normalizeCostCode(code);
+        let total = 0;
+
+        // Active in Sub Pay App Tracker
+        if (window.subPayAppTracker) {
+            Object.values(window.subPayAppTracker).forEach(app => {
+                if (normalizeCostCode(app.cost_code || app.costCode) === norm) {
+                    total += (parseFloat(app.billed_this_period) || parseFloat(app.billedToDate) || 0);
+                }
+            });
+        }
+
+        // Archived / Previous Sub Pay Apps
+        if (window.subPayAppHistory) {
+            Object.values(window.subPayAppHistory).forEach(apps => {
+                (apps || []).forEach(app => {
+                    if (normalizeCostCode(app.cost_code || app.costCode) === norm) {
+                        total += (parseFloat(app.billed_this_period) || parseFloat(app.billedToDate) || 0);
+                    }
+                });
+            });
+        }
+        return total;
     }
 
     // ==================== SUB SOV STATUS HELPERS (Approval Workflow) ====================
@@ -2023,8 +2068,9 @@ let mainLienWaiver = JSON.parse(localStorage.getItem('mainLienWaiver') || '{}');
                 <th class="px-4 py-3 text-center font-medium text-zinc-400 w-40">Original</th>
                 <th class="px-3 py-3 text-center font-medium text-zinc-400 w-36">COs</th>
                 <th class="px-4 py-3 text-center font-medium text-zinc-400 w-40">Current</th>
+                <th class="px-4 py-3 text-center font-medium text-emerald-400 w-44">Cost to Date<br><span class="text-[10px] text-emerald-500">(Subcontracted)</span></th>
                 <th class="px-3 py-3 text-center font-medium text-zinc-400 w-20">% Billed</th>
-                <th class="px-4 py-3 text-center font-medium text-zinc-400 w-40">Billed to Date</th>
+                <th class="px-4 py-3 text-center font-medium text-zinc-400 w-44">Billed to Date<br><span class="text-[10px] text-emerald-500">(Owner / Max of Subs)</span></th>
                 <th class="px-4 py-3 text-center font-medium text-zinc-400 w-40">Balance</th>
                 <th class="px-4 py-3 text-left font-medium text-zinc-400 w-[30rem]">Notes</th>
                 <th class="px-3 py-3 text-center font-medium text-zinc-400 w-20">Actions</th>
@@ -2034,7 +2080,7 @@ let mainLienWaiver = JSON.parse(localStorage.getItem('mainLienWaiver') || '{}');
         tbody.innerHTML = '';
 
         if (contractorSOV.length === 0) {
-            tbody.innerHTML = `<tr><td colspan="10" class="px-6 py-10 text-center text-zinc-500">No Contractor SOV lines yet. Click "Add SOV Line" or "Seed from Budget".</td></tr>`;
+            tbody.innerHTML = `<tr><td colspan="11" class="px-6 py-10 text-center text-zinc-500">No Contractor SOV lines yet. Click "Add SOV Line" or "Seed from Budget".</td></tr>`;
             return;
         }
 
@@ -2080,7 +2126,9 @@ let mainLienWaiver = JSON.parse(localStorage.getItem('mainLienWaiver') || '{}');
             if (window.payAppCollapsedDivisions && window.payAppCollapsedDivisions.has(division)) return;
 
             const current = (line.original || 0) + (line.co_amount || 0);
-            const billed = line.billed_to_date || 0;
+            const subCostToDate = getSubcontractedCostForCode(line.cost_code);
+            const subBilled = getSubBilledTotalForCode(line.cost_code);
+            const billed = Math.max(line.billed_to_date || 0, subBilled);
             const balance = current - billed;
             const pct = current > 0 ? Math.min(100, Math.round((billed / current) * 100)) : 0;
             visibleIndex++;
@@ -2089,6 +2137,9 @@ let mainLienWaiver = JSON.parse(localStorage.getItem('mainLienWaiver') || '{}');
             row.className = 'sov-line-row hover:bg-zinc-800/60 cursor-pointer';
             row.ondblclick = () => editContractorSOVLine(line.id);
 
+            const billedNote = subBilled > (line.billed_to_date || 0) ? 
+                `<span class="text-[10px] text-emerald-500 ml-1" title="Lifted by Sub Pay Apps in Tracker/History">(↑ subs)</span>` : '';
+
             row.innerHTML = `
                 <td class="px-3 py-2 text-center font-mono text-xs text-zinc-500">${visibleIndex}</td>
                 <td class="px-4 py-2 font-mono text-emerald-400 text-sm">${line.cost_code}</td>
@@ -2096,8 +2147,9 @@ let mainLienWaiver = JSON.parse(localStorage.getItem('mainLienWaiver') || '{}');
                 <td class="px-4 py-2 text-right font-mono text-[15px]">${formatCurrency(line.original || 0)}</td>
                 <td class="px-3 py-2 text-right text-amber-400 font-mono text-[15px]">${formatCurrency(line.co_amount || 0)}</td>
                 <td class="px-4 py-2 text-right font-semibold text-emerald-400 font-mono text-[15px]">${formatCurrency(current)}</td>
+                <td class="px-4 py-2 text-right font-mono text-emerald-400 text-[15px]">${formatCurrency(subCostToDate)}</td>
                 <td class="px-3 py-2 text-center font-mono text-xs">${pct}%</td>
-                <td class="px-4 py-2 text-right text-emerald-400 font-mono text-[15px]">${formatCurrency(billed)}</td>
+                <td class="px-4 py-2 text-right text-emerald-400 font-mono text-[15px]">${formatCurrency(billed)}${billedNote}</td>
                 <td class="px-4 py-2 text-right font-mono text-[15px]">${formatCurrency(balance)}</td>
                 <td class="px-4 py-2 text-[15px] text-zinc-400 notes-cell" title="${(line.notes || '').replace(/"/g, '&quot;')}">${line.notes || ''}</td>
                 <td class="px-3 py-2 text-center">
@@ -2362,6 +2414,20 @@ let mainLienWaiver = JSON.parse(localStorage.getItem('mainLienWaiver') || '{}');
                     <label class="block text-sm mb-1.5 text-zinc-300">Notes</label>
                     <input type="text" id="sovNotes" class="w-full bg-zinc-800 border border-zinc-700 rounded-md px-4 py-2.5 text-sm" value="${line.notes || ''}">
                 </div>
+
+                <!-- Live Sub Pay App Rollup Info (v76.48) -->
+                <div id="contractorSubRollupInfo" class="mt-4 p-3 bg-zinc-900 border border-zinc-700 rounded-md text-xs">
+                    <div class="font-semibold text-emerald-400 mb-1.5 flex items-center gap-2">
+                        <i class="fa-solid fa-link"></i> 
+                        <span>Subcontractor Pay App Tracker Rollup (Live)</span>
+                    </div>
+                    <div id="subRollupContent" class="text-zinc-300 space-y-0.5">
+                        <!-- Populated by JS below -->
+                    </div>
+                    <div class="mt-2 text-[10px] text-amber-400">
+                        Billed to Date on this G703 line cannot be set lower than the Sub Pay App total above.
+                    </div>
+                </div>
             </div>
             <div class="flex justify-end gap-3 mt-6">
                 <button onclick="document.getElementById('contractorSOVModal').close()" class="px-6 py-2.5 bg-zinc-700 hover:bg-zinc-600 rounded-md text-sm">Cancel</button>
@@ -2369,9 +2435,37 @@ let mainLienWaiver = JSON.parse(localStorage.getItem('mainLienWaiver') || '{}');
             </div>
         `;
         modal.showModal();
+
+        // Live Sub Rollup Info (v76.48)
+        function updateSubRollup() {
+            const codeInput = document.getElementById('sovCostCode');
+            const container = document.getElementById('subRollupContent');
+            if (!codeInput || !container) return;
+
+            const code = codeInput.value.trim();
+            if (!code) {
+                container.innerHTML = `<div class="text-zinc-500">Enter or select a Cost Code to see Sub Pay App Tracker totals.</div>`;
+                return;
+            }
+
+            const subCost = getSubcontractedCostForCode(code);
+            const subBilled = getSubBilledTotalForCode(code);
+
+            container.innerHTML = `
+                <div class="flex justify-between"><span class="text-zinc-400">Subcontracted (SOV lines):</span> <span class="font-mono text-emerald-400">${formatCurrency(subCost)}</span></div>
+                <div class="flex justify-between"><span class="text-zinc-400">Billed by Subs (Tracker + History):</span> <span class="font-mono text-emerald-400 font-semibold">${formatCurrency(subBilled)}</span></div>
+                <div class="flex justify-between mt-1 pt-1 border-t border-zinc-700"><span class="text-amber-400 font-medium">Minimum Billed to Date (Owner):</span> <span class="font-mono text-amber-400 font-bold">${formatCurrency(subBilled)}</span></div>
+            `;
+        }
+
         setTimeout(() => {
-            // No datalist population - use View All Codes popup instead
-        }, 80);
+            const codeInput = document.getElementById('sovCostCode');
+            if (codeInput) {
+                codeInput.oninput = updateSubRollup;
+                // Initial population
+                updateSubRollup();
+            }
+        }, 120);
     }
 
     function saveContractorSOVLine(id, btn) {
