@@ -1460,28 +1460,6 @@ let mainLienWaiver = JSON.parse(localStorage.getItem('mainLienWaiver') || '{}');
                         <div class="text-base font-medium mt-0.5 text-emerald-300">${formatDateMDY(currentPayAppPeriod.periodStart)} → ${formatDateMDY(currentPayAppPeriod.periodEnd)}</div>
                     </div>
                     <div class="mt-1 text-[10px] text-zinc-500 text-right">Periods advance automatically upon approval.<br>Only one Pay App per month is allowed.</div>
-
-                        <!-- Month Selector for Period 1 (user requested) -->
-                        ${ (currentPayAppPeriod && currentPayAppPeriod.periodNumber === 1) ? `
-                        <div class="mt-3 p-2 bg-zinc-900 border border-emerald-600 rounded-md">
-                            <div class="text-[10px] text-emerald-400 font-medium mb-1">This Pay Period covers (starting month):</div>
-                            <select id="period1MonthSelect" onchange="savePeriod1MonthSelection(this.value)" class="w-full bg-zinc-800 border border-zinc-600 rounded px-3 py-2 text-sm text-white">
-                                <option value="">-- Select Month --</option>
-                                <option value="January 2026">January 2026</option>
-                                <option value="February 2026">February 2026</option>
-                                <option value="March 2026">March 2026</option>
-                                <option value="April 2026">April 2026</option>
-                                <option value="May 2026">May 2026</option>
-                                <option value="June 2026">June 2026</option>
-                                <option value="July 2026">July 2026</option>
-                                <option value="August 2026">August 2026</option>
-                                <option value="September 2026">September 2026</option>
-                                <option value="October 2026">October 2026</option>
-                                <option value="November 2026">November 2026</option>
-                                <option value="December 2026">December 2026</option>
-                            </select>
-                            <div class="text-[9px] text-zinc-500 mt-1">Select the starting month for Period 1. This locks the sequence for future periods.</div>
-                        </div>` : '' }
                 </div>
             </div>
         `;
@@ -6586,16 +6564,7 @@ function printSubcontractorG703(companyId) {
         }
     }
 
-    function savePeriod1MonthSelection(selectedMonth) {
-        if (!currentPayAppPeriod || currentPayAppPeriod.periodNumber !== 1) return;
-        currentPayAppPeriod.selectedMonth = selectedMonth;
-        localStorage.setItem('currentPayAppPeriod', JSON.stringify(currentPayAppPeriod));
-        // Optional: auto-adjust end date based on month if needed in future
-        // For now, just save the selection so it can be used on Approve to set future periods
-        showCenteredAlert("Month saved for Period 1. It will be used to set the sequence for future periods.", "success");
-    }
-
-function savePayAppSettings() {
+    function savePayAppSettings() {
         const select = document.getElementById('retainagePercentSelect');
         if (select) {
             defaultRetainagePercent = parseFloat(select.value) || 10;
