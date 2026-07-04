@@ -355,7 +355,7 @@
 </dialog>
 
 <script>
-    // ==================== DATA & STATE (v76.33 - BUGFIX: Fixed saveSubSOVLine crash when saving from "Edit Subcontractor Line" modal. Removed references to deleted billing fields (subWorkThis/subMaterials). Added proper handling + persistence for Change Orders (subCO). All workflow, numbering, submit blocking, push-to-previous, lien pill, drag-drop, Tracker columns, SOV status badge, etc. 100% locked and unchanged) ====================
+    // ==================== DATA & STATE (v76.36 - AESTHETICS ONLY: Previous Sub Pay Apps G703 print now includes prominent "PREVIOUS / ARCHIVED" header designation, full approved timestamp (toLocaleString), Pay App # / Pay Period / dates. Column colors in print + on-screen table reconciled to match live pay apps: Previously Billed=green, Work This Period=green, Materials Stored=blue, Completed to Date=green, Scheduled Value=white/default. All core workflow, numbering, submit blocking, push-to-previous, lien pill, Request Revision, billed amounts, etc. 100% locked and unchanged) ====================
     let payApplications = JSON.parse(localStorage.getItem('payApplications')) || [];
     let contractorSOV = JSON.parse(localStorage.getItem('contractorSOV')) || [];
     let subcontractorSOV = JSON.parse(localStorage.getItem('subcontractorSOV')) || {}; // { companyId: [lines] }
@@ -5100,9 +5100,9 @@ function printSubcontractorG703(companyId) {
                         <tr>
                             <th class="p-1.5 text-left">Cost Code</th>
                             <th class="p-1.5 text-left">Description</th>
-                            <th class="p-1.5 text-right">Scheduled Value</th>
-                            <th class="p-1.5 text-right text-amber-400">Previously Billed</th>
-                            <th class="p-1.5 text-right text-sky-400">Work This Period</th>
+                            <th class="p-1.5 text-right text-zinc-300">Scheduled Value</th>
+                            <th class="p-1.5 text-right text-emerald-400">Previously Billed</th>
+                            <th class="p-1.5 text-right text-emerald-400">Work This Period</th>
                             <th class="p-1.5 text-right text-sky-400">Materials Stored</th>
                             <th class="p-1.5 text-right text-emerald-400">Completed to Date</th>
                             <th class="p-1.5 text-center">%</th>
@@ -5116,9 +5116,9 @@ function printSubcontractorG703(companyId) {
                     <tfoot class="bg-zinc-900 font-semibold text-[10px]">
                         <tr>
                             <td colspan="2" class="p-1.5 text-right">TOTALS</td>
-                            <td class="p-1.5 text-right font-mono">${formatCurrency(totalScheduled)}</td>
-                            <td class="p-1.5 text-right font-mono text-amber-400">${formatCurrency(totalPrev)}</td>
-                            <td class="p-1.5 text-right font-mono text-sky-400">${formatCurrency(totalWork)}</td>
+                            <td class="p-1.5 text-right font-mono text-zinc-300">${formatCurrency(totalScheduled)}</td>
+                            <td class="p-1.5 text-right font-mono text-emerald-400">${formatCurrency(totalPrev)}</td>
+                            <td class="p-1.5 text-right font-mono text-emerald-400">${formatCurrency(totalWork)}</td>
                             <td class="p-1.5 text-right font-mono text-sky-400">${formatCurrency(totalMat)}</td>
                             <td class="p-1.5 text-right font-mono text-emerald-400">${formatCurrency(totalCompleted)}</td>
                             <td class="p-1.5 text-center">—</td>
@@ -5168,10 +5168,10 @@ function printSubcontractorG703(companyId) {
                 <td style="border:1px solid #333;padding:3px 5px;font-family:monospace;font-size:9px;">${idx + 1}</td>
                 <td style="border:1px solid #333;padding:3px 5px;font-size:9px;">${line.description || line.cost_code}</td>
                 <td style="border:1px solid #333;padding:3px 5px;text-align:right;font-family:monospace;font-size:9px;">${formatCurrency(scheduled)}</td>
-                <td style="border:1px solid #333;padding:3px 5px;text-align:right;font-family:monospace;font-size:9px;">${formatCurrency(prevBilled)}</td>
-                <td style="border:1px solid #333;padding:3px 5px;text-align:right;font-family:monospace;font-size:9px;">${formatCurrency(work)}</td>
-                <td style="border:1px solid #333;padding:3px 5px;text-align:right;font-family:monospace;font-size:9px;">${formatCurrency(mat)}</td>
-                <td style="border:1px solid #333;padding:3px 5px;text-align:right;font-family:monospace;font-size:9px;">${formatCurrency(completed)}</td>
+                <td style="border:1px solid #333;padding:3px 5px;text-align:right;font-family:monospace;font-size:9px;color:#10b981;">${formatCurrency(prevBilled)}</td>
+                <td style="border:1px solid #333;padding:3px 5px;text-align:right;font-family:monospace;font-size:9px;color:#10b981;">${formatCurrency(work)}</td>
+                <td style="border:1px solid #333;padding:3px 5px;text-align:right;font-family:monospace;font-size:9px;color:#38bdf8;">${formatCurrency(mat)}</td>
+                <td style="border:1px solid #333;padding:3px 5px;text-align:right;font-family:monospace;font-size:9px;color:#10b981;">${formatCurrency(completed)}</td>
                 <td style="border:1px solid #333;padding:3px 5px;text-align:center;font-size:9px;">${pct}%</td>
                 <td style="border:1px solid #333;padding:3px 5px;text-align:right;font-family:monospace;font-size:9px;">${formatCurrency(balance)}</td>
                 <td style="border:1px solid #333;padding:3px 5px;text-align:right;font-family:monospace;font-size:9px;">${formatCurrency(ret)}</td>
@@ -5191,9 +5191,15 @@ function printSubcontractorG703(companyId) {
             </style>
             </head><body>
                 <div class="header">
-                    <div style="font-size:13px; font-weight:700;">CONTINUATION SHEET (Historical Snapshot)</div>
-                    <div style="font-size:10px;">AIA G703 • ${companyName} • Pay App #${periodNumber} • ${historyEntry.periodStart || ''} to ${historyEntry.periodEnd || ''} • Approved ${historyEntry.approvedDate ? new Date(historyEntry.approvedDate).toLocaleDateString() : ''}</div>
-                    <div style="font-size:9px; color:#555; margin-top:2px;">This is the exact G703 as it existed at the time of submission/approval for this pay application. Numbers are point-in-time snapshot.</div>
+                    <div style="font-size:13px; font-weight:700;">CONTINUATION SHEET — PREVIOUS / ARCHIVED PAY APPLICATION</div>
+                    <div style="font-size:11px; font-weight:600; color:#f59e0b; margin-top:3px;">⚠️ THIS IS NOT THE CURRENT LIVE G703 — Historical Snapshot from time of approval</div>
+                    <div style="font-size:10px; margin-top:4px;">
+                        <strong>Subcontractor:</strong> ${companyName} &nbsp;|&nbsp; 
+                        <strong>Pay App #:</strong> ${periodNumber} &nbsp;|&nbsp; 
+                        <strong>Pay Period:</strong> ${historyEntry.periodStart || ''} to ${historyEntry.periodEnd || ''} &nbsp;|&nbsp; 
+                        <strong>Approved:</strong> ${historyEntry.approvedDate ? new Date(historyEntry.approvedDate).toLocaleString() : 'N/A'}
+                    </div>
+                    <div style="font-size:9px; color:#555; margin-top:3px;">This is the exact G703 snapshot captured at submission/approval. All numbers (Previously Billed, Work This Period, etc.) reflect the state at that moment. Original commitments locked in Sub SOV.</div>
                 </div>
                 <table>
                     <thead>
