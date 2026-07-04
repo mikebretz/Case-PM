@@ -463,20 +463,25 @@ let mainLienWaiver = JSON.parse(localStorage.getItem('mainLienWaiver') || '{}');
         localStorage.setItem('subSOVStatus', JSON.stringify(subSOVStatus));
     }
 
+    // Helper: always get the sub's own independent Pay App number (starts at 1, never leaks main G702 period)
+    function getCurrentSubPayAppNumber(companyId) {
+        if (!companyId) return 1;
+        if (!subPayAppNumbers[companyId] || subPayAppNumbers[companyId] < 1) {
+            subPayAppNumbers[companyId] = 1;
+            localStorage.setItem('subPayAppNumbers', JSON.stringify(subPayAppNumbers));
+        }
+        return subPayAppNumbers[companyId];
+    }
+
     // ==================== LIEN WAIVER WORKFLOW ====================
     function getLienWaiverStatus(companyId) {
         if (!companyId) return { hasWaiver: false, submitted: false, filename: null, dataUrl: null };
-
-        // Use the SUBCONTRACTOR's own independent Pay App number for lien waiver storage/lookup.
-        // This fixes the mismatch where uploads on Sub SOV were stored under main G702 period (e.g. 18)
-        // instead of the sub's current working number (e.g. 1).
-        let periodNum;
-        const company = (companies || []).find(c => c.id == companyId);
-        const isSub = company && ((company.type === 'Subcontractor') || (company.company_type === 'Subcontractor') || (company.type && company.type.includes('Sub')));
         
+        // For Subcontractors use their own independent number; for main/GC use G702 period
+        let periodNum;
+        const isSub = companies.find(c => c.id == companyId && (c.type === 'Subcontractor' || c.company_type === 'Subcontractor'));
         if (isSub) {
-            const subPayApps = JSON.parse(localStorage.getItem('subPayAppNumbers') || '{}');
-            periodNum = subPayApps[companyId] || 1;
+            periodNum = getCurrentSubPayAppNumber(companyId);
         } else {
             periodNum = currentPayAppPeriod ? currentPayAppPeriod.periodNumber : 1;
         }
@@ -548,24 +553,13 @@ let mainLienWaiver = JSON.parse(localStorage.getItem('mainLienWaiver') || '{}');
             const dataUrl = ev.target.result;
 
             if (!subLienWaivers[companyId]) subLienWaivers[companyId] = {};
-            
-            // Use SUBCONTRACTOR's own Pay App number (not main G702 period) so the waiver
-            // shows immediately on the Subcontractor Schedule of Values page where it was uploaded.
-            const company = (companies || []).find(c => c.id == companyId);
-            const isSub = company && ((company.type === 'Subcontractor') || (company.company_type === 'Subcontractor'));
-            let periodNum;
-            if (isSub) {
-                const subPayApps = JSON.parse(localStorage.getItem('subPayAppNumbers') || '{}');
-                periodNum = subPayApps[companyId] || 1;
-            } else {
-                periodNum = currentPayAppPeriod ? currentPayAppPeriod.periodNumber : 1;
-            }
+            const periodNum = currentPayAppPeriod ? currentPayAppPeriod.periodNumber : 1;
 
             subLienWaivers[companyId][periodNum] = {
                 filename: file.name,
                 uploadedDate: new Date().toISOString(),
                 submitted: false,
-                dataUrl: dataUrl
+                dataUrl: dataUrl   // Restored for full document viewer modal (embed/image)
             };
 
             localStorage.setItem('subLienWaivers', JSON.stringify(subLienWaivers));
@@ -574,9 +568,9 @@ let mainLienWaiver = JSON.parse(localStorage.getItem('mainLienWaiver') || '{}');
             subLienWaivers = JSON.parse(localStorage.getItem('subLienWaivers') || '{}');
 
             logPayAppAudit('LIEN_WAIVER_UPLOADED', { companyId, filename: file.name, period: periodNum });
-            // No success popup — UI updates live with emerald pill on BOTH Sub SOV and Tracker while editing
+            // No success popup per user request — UI updates live with emerald pill
 
-            // Immediate live UI update on current tab
+            // Immediate live UI update
             renderPayAppContent();
         };
         reader.readAsDataURL(file);
@@ -584,17 +578,7 @@ let mainLienWaiver = JSON.parse(localStorage.getItem('mainLienWaiver') || '{}');
 
     function removeLienWaiver(companyId) {
         if (!companyId) return;
-
-        // Use correct period number based on whether this is a Subcontractor
-        const company = (companies || []).find(c => c.id == companyId);
-        const isSub = company && ((company.type === 'Subcontractor') || (company.company_type === 'Subcontractor'));
-        let periodNum;
-        if (isSub) {
-            const subPayApps = JSON.parse(localStorage.getItem('subPayAppNumbers') || '{}');
-            periodNum = subPayApps[companyId] || 1;
-        } else {
-            periodNum = currentPayAppPeriod ? currentPayAppPeriod.periodNumber : 1;
-        }
+        const periodNum = currentPayAppPeriod ? currentPayAppPeriod.periodNumber : 1;
 
         if (subLienWaivers[companyId] && subLienWaivers[companyId][periodNum]) {
             delete subLienWaivers[companyId][periodNum];
@@ -603,7 +587,7 @@ let mainLienWaiver = JSON.parse(localStorage.getItem('mainLienWaiver') || '{}');
             // Force fresh global state
             subLienWaivers = JSON.parse(localStorage.getItem('subLienWaivers') || '{}');
 
-            // No popup — UI updates live
+            // No popup per user request — hint reappears live
             renderPayAppContent();
         }
     }
@@ -1088,6 +1072,11 @@ let mainLienWaiver = JSON.parse(localStorage.getItem('mainLienWaiver') || '{}');
             renderPreviousSubPayAppsTab(cardsContainer, thead, tbody, workflowBar);
         } else if (currentPayAppTab === 'sub-pay-app-tracker') {
             renderSubPayAppTrackerTab(cardsContainer, thead, tbody, workflowBar);
+        }
+
+        // Re-attach drag & drop after every render (helps with tab switches for sub lien waiver upload)
+        if (currentPayAppTab === 'payapp' || currentPayAppTab === 'sub-sov') {
+            setupDragAndDropForLienWaivers();
         }
     }
 
@@ -2999,52 +2988,18 @@ let mainLienWaiver = JSON.parse(localStorage.getItem('mainLienWaiver') || '{}');
             // === CLEAN PROCORE-STYLE MONTHLY BILLING FLOW (stays on this tab) ===
             // Re-parse lien waiver data from localStorage for guaranteed freshness after upload (fixes live update)
             subLienWaivers = JSON.parse(localStorage.getItem('subLienWaivers') || '{}');
-            
-            // CRITICAL FIX: Use the SUBCONTRACTOR's own independent Pay App number, not the main G702 period.
-            // This makes the lien waiver uploaded here actually appear on this Subcontractor Schedule of Values page.
-            const subPayApps = JSON.parse(localStorage.getItem('subPayAppNumbers') || '{}');
-            const currentWorkingNum = subPayApps[selectedSubCompanyId] || 1;
-            
-            // Check for a PENDING submission from a PREVIOUS period (the "holding" record in Tracker).
-            // We look across all periods for this sub to see if any previous Pay App is still Pending Approval.
-            let pendingEntry = null;
-            let pendingPeriodNum = null;
-            if (subPayAppHistory[selectedSubCompanyId]) {
-                Object.keys(subPayAppHistory[selectedSubCompanyId]).forEach(pNum => {
-                    const entry = subPayAppHistory[selectedSubCompanyId][pNum];
-                    if (entry && (entry.status === 'Pending Approval' || entry.status === 'Revision Requested')) {
-                        pendingEntry = entry;
-                        pendingPeriodNum = parseInt(pNum, 10);
-                    }
-                });
-            }
-            const hasPendingInTracker = !!pendingEntry;
-            
-            // For the lien waiver pill on THIS page, we show the one for the *current working period* the sub is editing.
-            const waiver = subLienWaivers[selectedSubCompanyId] && subLienWaivers[selectedSubCompanyId][currentWorkingNum];
+            const periodNum = currentPayAppPeriod ? currentPayAppPeriod.periodNumber : 1;
+            const historyEntry = subPayAppHistory[selectedSubCompanyId] && subPayAppHistory[selectedSubCompanyId][periodNum];
+            const isPending = historyEntry && historyEntry.status === 'Pending Approval';
+            const waiver = subLienWaivers[selectedSubCompanyId] && subLienWaivers[selectedSubCompanyId][periodNum];
             const hasWaiver = waiver && waiver.filename && waiver.filename.trim() !== '';
 
             let statusMessage = '';
             let buttonsHTML = '';
 
-            if (hasPendingInTracker) {
-                // There is a previous Pay App still pending in the Sub Pay App Tracker.
-                // Block new submission for the current working period. Allow Save Draft only.
-                statusMessage = `Pay App #${pendingPeriodNum} Pending in Tracker — Cannot submit new Pay App until resolved`;
-                
-                buttonsHTML = `
-                    <button onclick="saveSubSOVDraft(${selectedSubCompanyId})" 
-                            class="ml-3 px-5 py-2 bg-sky-600 hover:bg-sky-500 text-white rounded text-sm font-semibold flex items-center gap-2">
-                        <i class="fa-solid fa-save"></i> <span>Save Draft for Pay App #${currentWorkingNum}</span>
-                    </button>
-                    <div class="ml-2 px-4 py-2 bg-amber-900/60 text-amber-300 rounded text-xs flex items-center gap-2">
-                        <i class="fa-solid fa-exclamation-triangle"></i> 
-                        <span>Resolve Pay App #${pendingPeriodNum} in Sub Pay App Tracker first</span>
-                    </div>
-                `;
-            } else if (pendingEntry && pendingEntry.status === 'Pending Approval') {
-                // This specific working period has been submitted (edge case)
-                statusMessage = `Pay Application #${currentWorkingNum} Submitted — Awaiting Approval`;
+            if (isPending) {
+                // Submitted → show approval controls right here (no moving to Previous tab)
+                statusMessage = 'Pay Application Submitted — Awaiting Approval';
                 if (isCurrentUserApprover()) {
                     buttonsHTML = `
                         <button onclick="approveSubPayApp(${selectedSubCompanyId})" 
@@ -3057,6 +3012,7 @@ let mainLienWaiver = JSON.parse(localStorage.getItem('mainLienWaiver') || '{}');
                             <i class="fa-solid fa-redo"></i> 
                             <span>Request Revision</span>
                         </button>
+                        ${hasWaiver ? `<button onclick="viewLienWaiver(${selectedSubCompanyId}); event.stopImmediatePropagation();" class="px-4 py-2 bg-sky-600 hover:bg-sky-500 text-white rounded text-sm flex items-center gap-1.5"><i class="fa-solid fa-eye"></i> <span>View Lien Waiver</span></button>` : ''}
                     `;
                 } else {
                     buttonsHTML = `
@@ -3066,8 +3022,8 @@ let mainLienWaiver = JSON.parse(localStorage.getItem('mainLienWaiver') || '{}');
                     `;
                 }
             } else {
-                // Normal ready-to-bill state for the current working period
-                statusMessage = `SOV Approved — Enter billing for Pay App #${currentWorkingNum}`;
+                // Normal ready-to-bill state
+                statusMessage = 'SOV Approved — Enter this period\'s billing';
 
                 const canSubmit = !requireLienWaiverOnSubPayApp || hasWaiver;
 
@@ -3088,7 +3044,7 @@ let mainLienWaiver = JSON.parse(localStorage.getItem('mainLienWaiver') || '{}');
                     `;
                 }
 
-                // Lien waiver controls — ALWAYS visible. Shows on THIS Sub SOV page while editing current period.
+                // Lien waiver controls — button ALWAYS visible, text changes to Re-upload, pill appears to the RIGHT when file exists (live updating, no tab switch)
                 const lienBtnText = hasWaiver ? 'Re-upload Lien Waiver' : `Upload Lien Waiver ${requireLienWaiverOnSubPayApp ? '(Required)' : '(Optional)'}`;
                 buttonsHTML += `
                     <button onclick="uploadLienWaiver(${selectedSubCompanyId}); event.stopImmediatePropagation();" class="px-4 py-2 bg-sky-600 hover:bg-sky-500 text-white rounded text-sm flex items-center gap-1.5 upload-drop-btn" data-upload-type="sub" data-company-id="${selectedSubCompanyId}">
@@ -3889,17 +3845,6 @@ let mainLienWaiver = JSON.parse(localStorage.getItem('mainLienWaiver') || '{}');
     // - Sub clicks "Submit Pay Application" → snapshots current billing + waiver into subPayAppHistory (SOV status stays "Approved").
     // - PM clicks "Approve & Commit Pay Application" → moves "this period" amounts into billed_to_date, advances pay app #, clears waiver, saves clean record to Previous Sub Pay Apps.
 
-    // Simple explicit Save Draft for when a previous Pay App is pending in Tracker.
-    // The billing inputs already auto-save to localStorage on change in most edit flows,
-    // but this gives a clear button + confirmation.
-    function saveSubSOVDraft(companyId) {
-        if (!companyId) return;
-        // The live subcontractorSOV object is already the source of truth and is saved
-        // whenever editSubSOVLine or similar functions are called. We just confirm here.
-        localStorage.setItem('subcontractorSOV', JSON.stringify(subcontractorSOV));
-        showCenteredAlert('Draft billing for current period has been saved. When the pending Pay App in the Tracker is resolved, you can submit this period.', 'success');
-    }
-
     function submitSubPayAppForApproval(companyId) {
         if (!companyId) return;
         const lines = subcontractorSOV[companyId] || [];
@@ -3908,27 +3853,11 @@ let mainLienWaiver = JSON.parse(localStorage.getItem('mainLienWaiver') || '{}');
             return;
         }
 
-        // Block if there is already a pending submission for this sub in the Tracker
-        let hasPending = false;
-        if (subPayAppHistory[companyId]) {
-            Object.values(subPayAppHistory[companyId]).forEach(entry => {
-                if (entry && (entry.status === 'Pending Approval' || entry.status === 'Revision Requested')) {
-                    hasPending = true;
-                }
-            });
-        }
-        if (hasPending) {
-            showCenteredAlert("Cannot submit new Pay Application. There is still a previous Pay App pending approval in the Sub Pay App Tracker. Resolve it first (Approve or Request Revision).", 'warning');
-            return;
-        }
+        // === USE SUB'S OWN INDEPENDENT PAY APP NUMBER (never main G702 period) ===
+        const periodNum = getCurrentSubPayAppNumber(companyId);
+        const waiver = subLienWaivers[companyId] && subLienWaivers[companyId][periodNum];
 
-        // Use the SUBCONTRACTOR's own current working Pay App number
-        const subPayApps = JSON.parse(localStorage.getItem('subPayAppNumbers') || '{}');
-        const submittedNum = subPayApps[companyId] || 1;
-        
-        const waiver = subLienWaivers[companyId] && subLienWaivers[companyId][submittedNum];
-
-        // Create snapshot of what is being submitted (this period's billing + lien waiver)
+        // Create a snapshot of the current billing for history (do NOT commit to billed_to_date yet)
         const snapshotLines = lines.map(l => ({
             id: l.id,
             cost_code: l.cost_code,
@@ -3944,10 +3873,10 @@ let mainLienWaiver = JSON.parse(localStorage.getItem('mainLienWaiver') || '{}');
 
         const totalBilledThisPeriod = snapshotLines.reduce((sum, l) => sum + l.total_this_period, 0);
 
-        // Save to history under the SUB's own number as "Pending Approval" (the holding record)
+        // Save to history as "Pending Approval" under the SUB'S number
         if (!subPayAppHistory[companyId]) subPayAppHistory[companyId] = {};
-        subPayAppHistory[companyId][submittedNum] = {
-            periodNumber: submittedNum,
+        subPayAppHistory[companyId][periodNum] = {
+            periodNumber: periodNum,
             periodStart: currentPayAppPeriod ? currentPayAppPeriod.periodStart : '',
             periodEnd: currentPayAppPeriod ? currentPayAppPeriod.periodEnd : '',
             submittedDate: new Date().toISOString(),
@@ -3958,101 +3887,92 @@ let mainLienWaiver = JSON.parse(localStorage.getItem('mainLienWaiver') || '{}');
                 filename: waiver.filename, 
                 uploadedDate: waiver.uploadedDate,
                 dataUrl: waiver.dataUrl || null 
-            } : null
+            } : null,
+            revision: 0
         };
         localStorage.setItem('subPayAppHistory', JSON.stringify(subPayAppHistory));
 
-        // === ADVANCE TO NEXT PAY APP NUMBER FOR THIS SUB ===
-        const nextNum = submittedNum + 1;
-        subPayApps[companyId] = nextNum;
-        localStorage.setItem('subPayAppNumbers', JSON.stringify(subPayApps));
+        // === ADVANCE SUB'S WORKING NUMBER AND CLEAR THIS PERIOD FOR NEXT ===
+        subPayAppNumbers[companyId] = periodNum + 1;
+        localStorage.setItem('subPayAppNumbers', JSON.stringify(subPayAppNumbers));
 
-        // Commit the submitted amounts to Billed to Date on live lines, and clear "This Period" fields
-        // so the Sub SOV page now shows a clean Pay App #N+1 with updated Billed to Date.
+        // Clear draft "this period" fields on live SOV so Sub SOV is ready for next period clean
         lines.forEach(l => {
-            const submittedForThisLine = snapshotLines.find(sl => sl.id === l.id);
-            if (submittedForThisLine) {
-                l.billed_to_date = (l.billed_to_date || 0) + submittedForThisLine.total_this_period;
-            }
-            // Clear draft fields for the new period
             l.work_this_period = 0;
             l.materials_stored = 0;
             l.co_billed_this_period = 0;
         });
         localStorage.setItem('subcontractorSOV', JSON.stringify(subcontractorSOV));
 
-        // Remove the lien waiver from the *new* current working number (it stays under the submitted number
-        // in subLienWaivers and in the history snapshot, so it only shows in Tracker now).
-        if (subLienWaivers[companyId] && subLienWaivers[companyId][nextNum]) {
-            delete subLienWaivers[companyId][nextNum];
-            localStorage.setItem('subLienWaivers', JSON.stringify(subLienWaivers));
-        }
+        // Keep SOV status Approved (locked for original amounts)
+        updateSubSOVStatus(companyId, 'Approved');
 
-        logPayAppAudit('SUB_PAYAPP_SUBMITTED_FOR_APPROVAL', { companyId: companyId, period: submittedNum, total: totalBilledThisPeriod });
+        logPayAppAudit('SUB_PAYAPP_SUBMITTED_FOR_APPROVAL', { companyId: companyId, period: periodNum, total: totalBilledThisPeriod });
+        showCenteredAlert(`Pay App #${periodNum} submitted successfully. It is now in Sub Pay App Tracker (Pending Approval) with the lien waiver. Subcontractor SOV advanced to Pay App #${subPayAppNumbers[companyId]} Current. This Period cleared for next billing.`, 'success');
         
-        showCenteredAlert(`Pay App #${submittedNum} submitted successfully. It is now visible in Sub Pay App Tracker for approval. Subcontractor Schedule of Values has advanced to Pay App #${nextNum} Current (This Period cleared, Billed to Date updated).`, 'success');
-        
-        // Switch to Tracker tab so user sees the holding record immediately
+        // Switch to tracker so user sees it there immediately
         switchPayAppTab('sub-pay-app-tracker');
     }
 
     function approveSubPayApp(companyId) {
         if (!companyId) return;
-        
-        // Find the pending entry dynamically (it could be under any sub-specific number)
+
+        // Find the pending/revision-requested entry (the one in tracker)
+        let targetPeriod = null;
         let historyEntry = null;
-        let approvedPeriodNum = null;
         if (subPayAppHistory[companyId]) {
-            Object.keys(subPayAppHistory[companyId]).forEach(pNum => {
-                const entry = subPayAppHistory[companyId][pNum];
-                if (entry && (entry.status === 'Pending Approval' || entry.status === 'Revision Requested')) {
-                    historyEntry = entry;
-                    approvedPeriodNum = parseInt(pNum, 10);
+            for (const pNumKey in subPayAppHistory[companyId]) {
+                const e = subPayAppHistory[companyId][pNumKey];
+                if (e && (e.status === 'Pending Approval' || e.status === 'Revision Requested')) {
+                    targetPeriod = parseInt(pNumKey, 10);
+                    historyEntry = e;
+                    break;
                 }
-            });
+            }
         }
 
-        if (!historyEntry || !approvedPeriodNum) {
-            showCenteredAlert("No pending Pay Application found in the Tracker for this subcontractor.", "warning");
+        if (!historyEntry || !targetPeriod) {
+            showCenteredAlert("No pending Pay Application found in Sub Pay App Tracker. Please Submit from Subcontractor SOV first.", "warning");
             return;
         }
 
         const lines = subcontractorSOV[companyId] || [];
 
+        // Commit using the SNAPSHOT amounts from the submitted entry (what was actually turned in), not live inputs
         let totalCommittedThisPeriod = 0;
-        lines.forEach(line => {
-            const work = line.work_this_period || 0;
-            const mats = line.materials_stored || 0;
-            const coWork = line.co_billed_this_period || 0;
-            const totalThis = work + mats + coWork;
-
-            if (totalThis > 0) {
-                line.billed_to_date = (line.billed_to_date || 0) + totalThis;
-
-                if (coWork > 0) {
-                    line.co_billed_to_date = (line.co_billed_to_date || 0) + coWork;
+        const snapshotLines = historyEntry.lines || [];
+        snapshotLines.forEach(snap => {
+            let liveLine = lines.find(l => l.id === snap.id) || lines.find(l => l.cost_code === snap.cost_code);
+            if (liveLine) {
+                const totalThis = snap.total_this_period || 0;
+                if (totalThis > 0) {
+                    liveLine.billed_to_date = (liveLine.billed_to_date || 0) + totalThis;
+                    if (snap.co_billed_this_period > 0) {
+                        liveLine.co_billed_to_date = (liveLine.co_billed_to_date || 0) + snap.co_billed_this_period;
+                    }
+                    totalCommittedThisPeriod += totalThis;
                 }
-
-                // Clear the draft "this period" fields
-                line.work_this_period = 0;
-                line.materials_stored = 0;
-                line.co_billed_this_period = 0;
-
-                totalCommittedThisPeriod += totalThis;
             }
         });
 
+        // Clear any remaining draft this_period on live lines
+        lines.forEach(l => {
+            l.work_this_period = 0;
+            l.materials_stored = 0;
+            l.co_billed_this_period = 0;
+        });
         localStorage.setItem('subcontractorSOV', JSON.stringify(subcontractorSOV));
 
-        // Clear lien waiver for the approved period (it stays in the history snapshot for Previous Sub Pay Apps / audit)
-        if (subLienWaivers[companyId] && subLienWaivers[companyId][approvedPeriodNum]) {
-            delete subLienWaivers[companyId][approvedPeriodNum];
+        // Clear any live lien waiver under the target period (the snapshot stays in history)
+        if (subLienWaivers[companyId] && subLienWaivers[companyId][targetPeriod]) {
+            delete subLienWaivers[companyId][targetPeriod];
             localStorage.setItem('subLienWaivers', JSON.stringify(subLienWaivers));
         }
 
-        // Mark the history entry as Approved (stays in Tracker briefly or moves to Previous on next render)
+        // Do NOT advance number here — submit already advanced it. Approve just finalizes the holding record.
+
+        // Mark the history entry as Approved
         historyEntry.status = 'Approved';
-        localStorage.setItem('subPayAppHistory', JSON.stringify(subPayAppHistory));
         historyEntry.approvedDate = new Date().toISOString();
         historyEntry.approvedBy = "Michael Bretz (Project Manager)";
         localStorage.setItem('subPayAppHistory', JSON.stringify(subPayAppHistory));
@@ -4062,12 +3982,12 @@ let mainLienWaiver = JSON.parse(localStorage.getItem('mainLienWaiver') || '{}');
 
         logPayAppAudit('SUB_PAYAPP_APPROVED_AND_COMMITTED', { 
             companyId: companyId, 
-            period: currentPeriodNum,
-            totalCommitted: totalCommittedThisPeriod,
-            newPayAppNumber: subPayAppNumbers[companyId]
+            period: targetPeriod,
+            totalCommitted: totalCommittedThisPeriod
         });
         
-        showCenteredAlert(`Pay Application APPROVED & COMMITTED. ${formatCurrency(totalCommittedThisPeriod)} moved to Billed to Date. Pay App # advanced to ${subPayAppNumbers[companyId]}. Lien waiver cleared. Record saved to Previous Sub Pay Apps.`, 'success');
+        showCenteredAlert(`Pay App #${targetPeriod} APPROVED & COMMITTED. ${formatCurrency(totalCommittedThisPeriod)} moved to Billed to Date. Lien waiver cleared from live. Record now in Previous Sub Pay Apps. Sub SOV stays at next period.`, 'success');
+        renderPayAppContent();
         renderPayAppContent();
     }
 
@@ -4075,98 +3995,54 @@ let mainLienWaiver = JSON.parse(localStorage.getItem('mainLienWaiver') || '{}');
     function requestRevisionSubPayApp(companyId) {
         if (!companyId) return;
 
-        // Find the pending entry in the Tracker (the "holding" record)
+        // === DETAILED REVISION MERGE STEPS (non-destructive, field-level only) ===
+        // Step 0: Locate the submitted "holding" record from subPayAppHistory (the one showing in Tracker)
+        const periods = Object.keys(subPayAppHistory[companyId] || {}).map(Number).sort((a,b) => b - a);
         let targetPeriod = null;
         let historyEntry = null;
-        if (subPayAppHistory[companyId]) {
-            const periods = Object.keys(subPayAppHistory[companyId]).map(Number).sort((a,b) => b - a);
-            for (const p of periods) {
-                const entry = subPayAppHistory[companyId][p];
-                if (entry && (entry.status === 'Pending Approval' || entry.status === 'Revision Requested')) {
-                    targetPeriod = p;
-                    historyEntry = entry;
-                    break;
-                }
+
+        for (const p of periods) {
+            const entry = subPayAppHistory[companyId][p];
+            if (entry && (entry.status === 'Pending Approval' || entry.status === 'Revision Requested')) {
+                targetPeriod = p;
+                historyEntry = entry;
+                break;
             }
         }
 
         if (!historyEntry || !targetPeriod) {
-            showCenteredAlert("No pending Pay App found in the Sub Pay App Tracker to send back for revision.", "warning");
+            showCenteredAlert("No pending pay app found in Sub Pay App Tracker to revise.", "warning");
             return;
         }
 
-        // ========== DETAILED REVISION MERGE STEPS (non-destructive, field-level only) ==========
-        // Step 0: We have the submitted "holding" record from subPayAppHistory under targetPeriod (e.g. Pay App #1)
-        
-        // Step 1: Set the Subcontractor Schedule of Values back to this period number
-        //         so the header shows "Pay App #1 (Current)" again.
-        const subPayApps = JSON.parse(localStorage.getItem('subPayAppNumbers') || '{}');
-        subPayApps[companyId] = targetPeriod;
-        localStorage.setItem('subPayAppNumbers', JSON.stringify(subPayApps));
+        // 1. Set the working Pay App number on Sub SOV back to the submitted period
+        subPayAppNumbers[companyId] = targetPeriod;
+        localStorage.setItem('subPayAppNumbers', JSON.stringify(subPayAppNumbers));
 
-        // Step 2: SAFE FIELD-LEVEL MERGE (never replace the whole array)
-        //         This prevents the "buttons disappearing" and data loss the user reported.
-        const liveLines = subcontractorSOV[companyId] || [];
-        const snapshotLines = historyEntry.lines || [];
-
-        liveLines.forEach(liveLine => {
-            // Find matching line in the submitted snapshot (prefer id, fallback to cost_code)
-            const snap = snapshotLines.find(s => 
-                (s.id && s.id === liveLine.id) || 
-                (s.cost_code && s.cost_code === liveLine.cost_code)
-            );
-            if (snap) {
-                // Only restore the editable "This Period" draft fields + notes
-                liveLine.work_this_period = snap.work_this_period || 0;
-                liveLine.materials_stored = snap.materials_stored || 0;
-                liveLine.co_billed_this_period = snap.co_billed_this_period || 0;
-                if (snap.notes !== undefined) liveLine.notes = snap.notes;
-                
-                // IMPORTANT: Do NOT touch billed_to_date here.
-                // On Request Revision we want Billed to Date to reflect what it was BEFORE this submission
-                // (i.e. the value stored in billed_to_date_before in the snapshot, if present).
-                if (snap.billed_to_date_before !== undefined) {
-                    liveLine.billed_to_date = snap.billed_to_date_before;
-                }
-            }
-        });
-        localStorage.setItem('subcontractorSOV', JSON.stringify(subcontractorSOV));
-
-        // Step 3: Restore the lien waiver so it appears on the Sub SOV page again
-        //         (emerald pill + View/Remove + Submit workflow).
-        if (historyEntry.lienWaiver && historyEntry.lienWaiver.filename) {
-            if (!subLienWaivers[companyId]) subLienWaivers[companyId] = {};
-            subLienWaivers[companyId][targetPeriod] = {
-                filename: historyEntry.lienWaiver.filename,
-                uploadedDate: historyEntry.lienWaiver.uploadedDate || new Date().toISOString(),
-                submitted: true,
-                dataUrl: historyEntry.lienWaiver.dataUrl || null
-            };
-            localStorage.setItem('subLienWaivers', JSON.stringify(subLienWaivers));
+        // 2. Restore the lines from history back into live SOV so "This Period" values re-appear for editing
+        if (historyEntry.lines && historyEntry.lines.length > 0) {
+            subcontractorSOV[companyId] = JSON.parse(JSON.stringify(historyEntry.lines));
+            localStorage.setItem('subcontractorSOV', JSON.stringify(subcontractorSOV));
         }
 
-        // Step 4: Update status so the full Submit Application + Lien Waiver upload UI re-appears
-        if (!subSOVStatus[companyId]) subSOVStatus[companyId] = {};
-        subSOVStatus[companyId].status = 'Approved';
-        localStorage.setItem('subSOVStatus', JSON.stringify(subSOVStatus));
-
-        // Step 5: Mark the history entry so Tracker shows it as "Revision Requested"
-        historyEntry.status = 'Revision Requested';
+        // 3. Mark as revision requested so it no longer blocks new submission
         historyEntry.revisionRequested = true;
-        if (!historyEntry.revisionCount) historyEntry.revisionCount = 0;
-        historyEntry.revisionCount++;
+        historyEntry.status = 'Revision Requested';
         localStorage.setItem('subPayAppHistory', JSON.stringify(subPayAppHistory));
 
-        logPayAppAudit('SUB_PAYAPP_REVISION_REQUESTED', { 
-            companyId, 
-            period: targetPeriod, 
-            revision: historyEntry.revisionCount,
-            note: 'Pushed back to Sub SOV as Pay App #' + targetPeriod + ' Current. Amounts + lien waiver restored via safe merge. Ready for re-submission.' 
-        });
+        // Also update the live SOV status so the Submit button appears again
+        if (!subSOVStatus[companyId]) subSOVStatus[companyId] = {};
+        subSOVStatus[companyId].status = 'Approved'; // This makes the "Submit Application" workflow appear
+        localStorage.setItem('subSOVStatus', JSON.stringify(subSOVStatus));
 
-        showCenteredAlert(`Pay App #${targetPeriod} sent back for revision. Subcontractor Schedule of Values now shows Pay App #${targetPeriod} Current with the original submitted amounts and lien waiver restored.`, 'success');
+        // 4. Update tracker status to Ready for billing (live)
+        if (!subSOVStatus[companyId]) subSOVStatus[companyId] = {};
+        subSOVStatus[companyId].status = 'Ready for billing';
+        localStorage.setItem('subSOVStatus', JSON.stringify(subSOVStatus));
 
-        // Step 6: Navigate to Sub SOV tab ready for editing
+        logPayAppAudit('SUB_PAYAPP_REVISION_REQUESTED', { companyId, period: targetPeriod, note: 'Pushed back to Sub SOV as Pay App ' + targetPeriod + '. Dollar amounts restored. Status set to Ready for billing.' });
+
+        // 5. Live update + navigate to Sub SOV tab
         selectedSubCompanyId = companyId;
         localStorage.setItem('lastSelectedSubSOV', companyId);
         renderPayAppContent();
@@ -6231,18 +6107,30 @@ function printSubcontractorG703(companyId) {
             const companyId = company.id;
             const lines = subcontractorSOV[companyId] || [];
             const status = getSubSOVStatus(companyId);
-            const historyEntry = subPayAppHistory[companyId] && subPayAppHistory[companyId][currentPeriodNum];
-            const currentAppNum = subPayAppNumbers[companyId] || currentPeriodNum;
+
+            // === FIND PENDING ENTRY (the "holding" record) regardless of what number it is under ===
+            // This fixes the "18" bug completely. Never use main currentPeriodNum for sub lookups.
+            let pendingEntry = null;
+            let pendingPeriodNum = null;
+            if (subPayAppHistory[companyId]) {
+                for (const pNumKey in subPayAppHistory[companyId]) {
+                    const entry = subPayAppHistory[companyId][pNumKey];
+                    if (entry && (entry.status === 'Pending Approval' || entry.status === 'Revision Requested')) {
+                        pendingEntry = entry;
+                        pendingPeriodNum = parseInt(pNumKey, 10);
+                        break;
+                    }
+                }
+            }
+            const displayPayAppNum = pendingPeriodNum || getCurrentSubPayAppNumber(companyId);
 
             let billedThis = 0;
             let pctComplete = 0;
 
-            if (historyEntry && historyEntry.status === 'Approved') {
-                billedThis = historyEntry.totalBilledThisPeriod || 0;
-            } else if (historyEntry && historyEntry.status === 'Pending Approval') {
-                billedThis = historyEntry.totalBilledThisPeriod || 0;
+            if (pendingEntry) {
+                billedThis = pendingEntry.totalBilledThisPeriod || 0;
             } else {
-                // Calculate from current draft values
+                // Calculate from current draft values only if no pending
                 billedThis = lines.reduce((sum, l) => sum + ((l.work_this_period || 0) + (l.materials_stored || 0) + (l.co_billed_this_period || 0)), 0);
             }
 
@@ -6255,30 +6143,35 @@ function printSubcontractorG703(companyId) {
             const hasWaiver = waiverStatus.hasWaiver;
 
             let statusBadge = '';
-            if (historyEntry && historyEntry.status === 'Approved') {
+            if (pendingEntry && pendingEntry.status === 'Approved') {
                 statusBadge = `<span class="px-3 py-0.5 text-xs rounded-full bg-emerald-900/70 text-emerald-400 font-medium">Approved &amp; Committed</span>`;
-            } else if (historyEntry && historyEntry.status === 'Pending Approval') {
+            } else if (pendingEntry && pendingEntry.status === 'Pending Approval') {
                 statusBadge = `<span class="px-3 py-0.5 text-xs rounded-full bg-amber-900/70 text-amber-400 font-medium">Pending Approval</span>`;
+            } else if (pendingEntry && pendingEntry.status === 'Revision Requested') {
+                statusBadge = `<span class="px-3 py-0.5 text-xs rounded-full bg-orange-900/70 text-orange-400 font-medium">Revision Requested (Rev ${pendingEntry.revision || 1})</span>`;
             } else if (status === 'Approved') {
                 statusBadge = `<span class="px-3 py-0.5 text-xs rounded-full bg-sky-900/70 text-sky-400 font-medium">Ready for Billing</span>`;
             } else {
                 statusBadge = `<span class="px-3 py-0.5 text-xs rounded-full bg-zinc-700 text-zinc-400 font-medium">${status}</span>`;
             }
 
-            // Improved lien waiver badge for tracker - shows filename when available (closer to G702 pill style)
+            // Lien waiver badge: prefer pendingEntry snapshot (for submitted ones in tracker), fallback to live
             let lienBadge = '';
-            if (hasWaiver) {
-                const waiverInfo = getLienWaiverStatus(companyId);
-                const fname = waiverInfo.filename || 'Lien Waiver';
+            const waiverToShow = (pendingEntry && pendingEntry.lienWaiver && pendingEntry.lienWaiver.filename) 
+                ? pendingEntry.lienWaiver 
+                : (getLienWaiverStatus(companyId).hasWaiver ? getLienWaiverStatus(companyId) : null);
+            if (waiverToShow && waiverToShow.filename) {
                 lienBadge = `
                     <div class="inline-flex items-center gap-1.5 px-2 py-0.5 bg-emerald-900/60 border border-emerald-600 rounded text-xs">
                         <i class="fa-solid fa-file-contract text-emerald-400"></i>
-                        <span class="text-emerald-300 max-w-[140px] truncate" title="${fname}">${fname}</span>
-                        <button onclick="event.stopImmediatePropagation(); viewLienWaiver(${companyId});" 
+                        <span class="text-emerald-300 max-w-[140px] truncate" title="${waiverToShow.filename}">${waiverToShow.filename}</span>
+                        <button onclick="event.stopImmediatePropagation(); viewLienWaiverFromTracker(${companyId}, ${pendingPeriodNum || 'null'});" 
                                 class="px-1.5 py-0 bg-emerald-700 hover:bg-emerald-600 rounded text-[10px]">View</button>
                     </div>`;
-            } else {
+            } else if (pendingEntry) {
                 lienBadge = `<span class="text-red-400"><i class="fa-solid fa-exclamation-circle"></i> Missing</span>`;
+            } else {
+                lienBadge = `<span class="text-zinc-500 text-xs">—</span>`;
             }
 
             // Simple insurance compliance check (demo: green if company has basic fields or always compliant for demo)
@@ -6297,22 +6190,20 @@ function printSubcontractorG703(companyId) {
 
             // Notes (simple demo: from status or empty; could be made editable with save to localStorage)
             const statusData = subSOVStatus[companyId] || {};
-            const notesText = statusData.notes || (historyEntry && historyEntry.notes) || '';
+            const notesText = statusData.notes || (pendingEntry && pendingEntry.notes) || '';
 
             row.innerHTML = `
                 <td class="px-4 py-3 font-medium flex items-center gap-1.5">
                     ${getCompanyName(companyId)}
-                    ${ (historyEntry && historyEntry.status === 'Pending Approval') ? `
+                    ${ pendingEntry ? `
                     <button onclick="event.stopImmediatePropagation(); approveSubPayApp(${companyId});" 
                             class="ml-2 px-2.5 py-0.5 bg-emerald-600 hover:bg-emerald-500 text-white text-[10px] rounded font-medium">Approve &amp; Commit</button>
-                    ` : '' }
-                    ${ (historyEntry) ? `
                     <button onclick="event.stopImmediatePropagation(); requestRevisionSubPayApp(${companyId});" 
-                            class="ml-1.5 px-2.5 py-0.5 bg-amber-600 hover:bg-amber-500 text-white text-[10px] rounded font-medium" title="Send back to subcontractor for revision (preserves all entered amounts)">
+                            class="ml-1.5 px-2.5 py-0.5 bg-amber-600 hover:bg-amber-500 text-white text-[10px] rounded font-medium" title="Push Pay App #${displayPayAppNum} + lien waiver + amounts back to Sub SOV for editing (Rev ${ (pendingEntry.revision||0) + 1 })">
                         Request Revision
                     </button>` : '' }
                 </td>
-                <td class="px-3 py-3 text-center font-mono text-emerald-400">${currentAppNum}</td>
+                <td class="px-3 py-3 text-center font-mono text-emerald-400">${displayPayAppNum}${pendingEntry && pendingEntry.revision > 0 ? ` <span class="text-[9px] text-orange-400">(Rev ${pendingEntry.revision})</span>` : ''}</td>
                 <td class="px-3 py-3 text-center">${statusBadge}</td>
                 <td class="px-3 py-3 text-center text-sm">${lienBadge}</td>
                 <td class="px-4 py-3 text-right font-mono text-emerald-400">${formatCurrency(billedThis)}</td>
