@@ -355,7 +355,7 @@
 </dialog>
 
 <script>
-    // ==================== DATA & STATE (v76.49 - Reset button now fully clears G702 current period + G703 billed_to_date + Previous Periods for true fresh project start. All prior sub workflow 100% locked) ====================
+    // ==================== DATA & STATE (v76.53 - FIXED: getSubcontractedCostForCode now correctly reads original_commitment from Sub SOV lines. Cost to Date (Subcontracted) on Contractor G703 now properly rolls up Current from all Approved Sub SOVs) ====================
     let payApplications = JSON.parse(localStorage.getItem('payApplications')) || [];
     let contractorSOV = JSON.parse(localStorage.getItem('contractorSOV')) || [];
     let subcontractorSOV = JSON.parse(localStorage.getItem('subcontractorSOV')) || {}; // { companyId: [lines] }
@@ -433,7 +433,10 @@ let mainLienWaiver = JSON.parse(localStorage.getItem('mainLienWaiver') || '{}');
             if (getSubSOVStatus(cid) === 'Approved') {
                 (subcontractorSOV[cid] || []).forEach(line => {
                     if (normalizeCostCode(line.cost_code) === norm) {
-                        total += (parseFloat(line.original) || 0) + (parseFloat(line.change_orders) || 0);
+                        // FIX: Subcontractor SOV lines store the original amount under "original_commitment", not "original"
+                        const originalAmt = parseFloat(line.original_commitment || line.original || 0);
+                        const coAmt = parseFloat(line.change_orders || 0);
+                        total += originalAmt + coAmt;
                     }
                 });
             }
@@ -446,7 +449,10 @@ let mainLienWaiver = JSON.parse(localStorage.getItem('mainLienWaiver') || '{}');
         Object.keys(subcontractorSOV || {}).forEach(cid => {
             if (getSubSOVStatus(cid) === 'Approved') {
                 (subcontractorSOV[cid] || []).forEach(line => {
-                    total += (parseFloat(line.original) || 0) + (parseFloat(line.change_orders) || 0);
+                    // FIX: Subcontractor SOV lines use original_commitment
+                    const originalAmt = parseFloat(line.original_commitment || line.original || 0);
+                    const coAmt = parseFloat(line.change_orders || 0);
+                    total += originalAmt + coAmt;
                 });
             }
         });
