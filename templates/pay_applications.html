@@ -355,7 +355,7 @@
 </dialog>
 
 <script>
-    // ==================== DATA & STATE (v76.32 - Aesthetics only: Added "Current Contract Amt" column to Sub Pay App Tracker (between Lien Waiver and Billed This Period); non-animated status badge on Sub SOV tab + forces "Draft" display if previous pay app still in Tracker; removed Work This Period / Materials Stored from Edit Subcontractor Line modal; added live reconciled "Contractor G703 Total for Cost Code" display (updates as you type Original Commitment). All workflow, numbering, blocking, push-to-previous, lien pill, drag-drop, blue buttons, etc. 100% locked and unchanged) ====================
+    // ==================== DATA & STATE (v76.33 - BUGFIX: Fixed saveSubSOVLine crash when saving from "Edit Subcontractor Line" modal. Removed references to deleted billing fields (subWorkThis/subMaterials). Added proper handling + persistence for Change Orders (subCO). All workflow, numbering, submit blocking, push-to-previous, lien pill, drag-drop, Tracker columns, SOV status badge, etc. 100% locked and unchanged) ====================
     let payApplications = JSON.parse(localStorage.getItem('payApplications')) || [];
     let contractorSOV = JSON.parse(localStorage.getItem('contractorSOV')) || [];
     let subcontractorSOV = JSON.parse(localStorage.getItem('subcontractorSOV')) || {}; // { companyId: [lines] }
@@ -3505,11 +3505,11 @@ let mainLienWaiver = JSON.parse(localStorage.getItem('mainLienWaiver') || '{}');
         const costCode = document.getElementById('subCostCode').value.trim();
         const desc = document.getElementById('subDescription').value.trim();
         const origStr = document.getElementById('subOriginal').value.replace(/[^0-9.-]/g, '');
-        const work = parseFloat(document.getElementById('subWorkThis').value) || 0;
-        const mats = parseFloat(document.getElementById('subMaterials').value) || 0;
+        const coStr = document.getElementById('subCO').value.replace(/[^0-9.-]/g, '');
         const notes = document.getElementById('subNotes').value.trim();
 
         const original = parseFloat(origStr) || 0;
+        const changeOrders = parseFloat(coStr) || 0;
 
         // === HARD VALIDATION: Required fields ===
         if (!costCode || !desc) {
@@ -3518,6 +3518,7 @@ let mainLienWaiver = JSON.parse(localStorage.getItem('mainLienWaiver') || '{}');
         }
 
         // === HARD VALIDATION: Cannot exceed Contractor SOV Original for this cost code ===
+        // (Note: This checks Original Commitment only, per existing locked behavior. Current Contract Amt = Original + CO is shown in Tracker for visibility.)
         const contractorSOVLines = JSON.parse(localStorage.getItem('contractorSOV')) || [];
         const matchingContractorLine = contractorSOVLines.find(c => c.cost_code === costCode);
 
@@ -3530,9 +3531,6 @@ let mainLienWaiver = JSON.parse(localStorage.getItem('mainLienWaiver') || '{}');
                 );
                 return;
             }
-        } else {
-            // If no matching cost code exists in G703, warn but allow (or block — current policy: allow with note)
-            // For strict projects, you can change this to block.
         }
 
         if (lineId) {
@@ -3541,10 +3539,11 @@ let mainLienWaiver = JSON.parse(localStorage.getItem('mainLienWaiver') || '{}');
                 line.cost_code = costCode;
                 line.description = desc;
                 if (!document.getElementById('subOriginal').readOnly) line.original_commitment = original;
-                line.work_this_period = work;
-                line.materials_stored = mats;
+                line.change_orders = changeOrders;
                 line.notes = notes;
-                line.billed_to_date = (line.billed_to_date || 0) + work + mats; // simple cumulative
+                // NOTE: work_this_period, materials_stored, and billed_to_date are NOT touched here.
+                // They are managed exclusively via the separate Billing modal (saveSubSOVBillingLine)
+                // when the Sub SOV is in Approved status and you are entering period billing amounts.
             }
         } else {
             subcontractorSOV[companyId].push({
@@ -3552,9 +3551,10 @@ let mainLienWaiver = JSON.parse(localStorage.getItem('mainLienWaiver') || '{}');
                 cost_code: costCode,
                 description: desc,
                 original_commitment: original,
-                billed_to_date: work + mats,
-                work_this_period: work,
-                materials_stored: mats,
+                change_orders: changeOrders,
+                billed_to_date: 0,
+                work_this_period: 0,
+                materials_stored: 0,
                 notes: notes
             });
         }
