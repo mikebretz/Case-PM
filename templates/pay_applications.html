@@ -2802,7 +2802,7 @@ let mainLienWaiver = JSON.parse(localStorage.getItem('mainLienWaiver') || '{}');
                 if (isCurrentUserApprover()) {
                     buttonsHTML = `
                         <button onclick="approveSubPayApp(${selectedSubCompanyId})" 
-                                class="ml-3 px-6 py-2 bg-emerald-600 hover:bg-emerald-500 text-white rounded text-sm font-bold flex items-center gap-2 shadow-lg">
+                                class="ml-3 px-6 py-2 bg-red-600 hover:bg-red-500 text-white rounded text-sm font-bold flex items-center gap-2 shadow-lg ring-2 ring-red-400/50">
                             <i class="fa-solid fa-check-double"></i> 
                             <span>Approve Application</span>
                         </button>
@@ -3855,8 +3855,16 @@ let mainLienWaiver = JSON.parse(localStorage.getItem('mainLienWaiver') || '{}');
         });
 
         logPayAppAudit('SUB_PAYAPP_REVISION_REQUESTED', { companyId, period: periodNum, restored: true, fromPending });
-        showCenteredAlert(`Revision requested. Pay App #${periodNum} amounts + lien waiver restored to Subcontractor Schedule of Values tab for editing. Re-submit when ready.`, 'info');
+        showCenteredAlert(`Revision requested. Pay App #${periodNum} amounts + lien waiver restored to Subcontractor Schedule of Values tab (Left Hand) for editing. Re-submit when ready.`, 'info');
+        
+        // Explicitly switch back to Left Hand (Sub SOV tab) so the paper visibly returns to where it belongs
+        selectedSubCompanyId = companyId;
+        localStorage.setItem('lastSelectedSubSOV', companyId);
         renderPayAppContent();
+        // Small delay to ensure render completes before switching tab
+        setTimeout(() => {
+            switchPayAppTab('sub-sov');
+        }, 50);
     }
 
     // Legacy function kept for compatibility (now just calls the new two-step submit)
@@ -5732,10 +5740,15 @@ function printSubcontractorG703(companyId) {
 
         tbody.innerHTML = '';
 
-        const subCompanies = companies.filter(c => (c.type === 'Subcontractor' || c.company_type === 'Subcontractor') && subcontractorSOV[c.id]);
+        // Only show subs that have a submitted/approved Pay App in history for THIS period (Right Hand papers only)
+        // This prevents live SOV draft data from appearing in the Tracker tab.
+        const subCompanies = companies.filter(c => {
+            const hasHistoryForPeriod = subPayAppHistory[c.id] && subPayAppHistory[c.id][currentPeriodNum];
+            return (c.type === 'Subcontractor' || c.company_type === 'Subcontractor') && hasHistoryForPeriod;
+        });
 
         if (subCompanies.length === 0) {
-            tbody.innerHTML = `<tr><td colspan="8" class="px-6 py-10 text-center text-zinc-500">No subcontractors with Schedule of Values yet.</td></tr>`;
+            tbody.innerHTML = `<tr><td colspan="9" class="px-6 py-10 text-center text-zinc-500">No Pay Applications submitted or approved yet this period.<br><span class="text-xs">Submit from Subcontractor Schedule of Values tab (Left Hand) → then Approve to move here (Right Hand).</span></td></tr>`;
             return;
         }
 
@@ -5744,7 +5757,8 @@ function printSubcontractorG703(companyId) {
             const lines = subcontractorSOV[companyId] || [];
             const status = getSubSOVStatus(companyId);
             const historyEntry = subPayAppHistory[companyId] && subPayAppHistory[companyId][currentPeriodNum];
-            const currentAppNum = subPayAppNumbers[companyId] || currentPeriodNum;
+            // Show the Pay App # of the paper that is in the Tracker (the one being approved/revised), not the next number
+            const displayedPayAppNum = historyEntry ? (historyEntry.periodNumber || currentPeriodNum) : (subPayAppNumbers[companyId] || currentPeriodNum);
 
             let billedThis = 0;
             let pctComplete = 0;
@@ -5819,7 +5833,7 @@ function printSubcontractorG703(companyId) {
                         <i class="fa-solid fa-envelope text-xs"></i>
                     </button>
                 </td>
-                <td class="px-3 py-3 text-center font-mono text-emerald-400">${currentAppNum}</td>
+                <td class="px-3 py-3 text-center font-mono text-emerald-400">${displayedPayAppNum}</td>
                 <td class="px-3 py-3 text-center">${statusBadge}</td>
                 <td class="px-3 py-3 text-center text-sm">${lienBadge}</td>
                 <td class="px-4 py-3 text-right font-mono text-emerald-400">${formatCurrency(billedThis)}</td>
