@@ -2736,6 +2736,9 @@ let mainLienWaiver = JSON.parse(localStorage.getItem('mainLienWaiver') || '{}');
                         <button onclick="removeSelectedSubcontractor()" class="px-4 py-2.5 bg-red-600 hover:bg-red-500 rounded-md text-sm flex items-center gap-2 whitespace-nowrap text-white" title="Remove selected subcontractor (only if no pay apps submitted & pushed to Previous Sub Pay Apps)">
                             <i class="fa-solid fa-user-minus"></i> <span class="hidden md:inline">Remove</span>
                         </button>
+                        <button onclick="clearAllSubcontractorsForFreshJob()" class="px-3 py-2.5 bg-amber-600 hover:bg-amber-500 rounded-md text-sm flex items-center gap-2 whitespace-nowrap text-white" title="Clear ALL subcontractors from this job to start a completely fresh job (removes SOVs, history, lien waivers)">
+                            <i class="fa-solid fa-trash-can"></i> <span class="hidden md:inline">Clear All Subs (Fresh Job)</span>
+                        </button>
                     </div>
                     <div id="subStatusBadgeContainer" class="mt-2 flex items-center gap-2 min-h-[22px]"></div>
                 </div>
@@ -3302,10 +3305,35 @@ let mainLienWaiver = JSON.parse(localStorage.getItem('mainLienWaiver') || '{}');
         selectedSubCompanyId = null;
         localStorage.removeItem('lastSelectedSubSOV');
 
-        // Re-render everything so UI is clean (selector no longer shows deleted sub, tables clear, etc.)
+        // Immediately remove from the visible dropdown (for instant feedback when focused on the select)
+        const selector = document.getElementById('subSelector');
+        if (selector) {
+            const optToRemove = selector.querySelector(`option[value="${companyId}"]`);
+            if (optToRemove) optToRemove.remove();
+            selector.value = ''; // reset to placeholder
+        }
+
+        // Full re-render for safety (clears tables, cards, etc.)
         renderPayAppContent();
 
         // No success popup per rules — the UI update (sub disappears from dropdown, tables empty) is the confirmation.
+    }
+
+    function clearAllSubcontractorsForFreshJob() {
+        if (!confirm('⚠️ CLEAR ALL SUBCONTRACTORS FOR FRESH JOB\n\nThis will permanently delete:\n• All subcontractor SOV line items\n• All pay app history & G703 snapshots\n• All lien waivers\n• Pending submissions & counters\n\nThis is for starting a completely new/fresh job with an empty subcontractor list.\n\nContinue?')) {
+            return;
+        }
+        // Clear all sub-related data (keep contractorSOV, main pay periods, companies list, etc.)
+        localStorage.removeItem('subcontractorSOV');
+        localStorage.removeItem('subPayAppNumbers');
+        localStorage.removeItem('subPayAppHistory');
+        localStorage.removeItem('subPendingSubmissions');
+        localStorage.removeItem('subLienWaivers');
+        selectedSubCompanyId = null;
+        localStorage.removeItem('lastSelectedSubSOV');
+        // Re-render so dropdown is completely empty and UI is ready for new job
+        renderPayAppContent();
+        // No non-essential success popup — empty state + cleared tables are the confirmation
     }
 
     function addLineToSelectedSub() {
@@ -3844,21 +3872,23 @@ let mainLienWaiver = JSON.parse(localStorage.getItem('mainLienWaiver') || '{}');
     }
 
     function showAddNewSubcontractorQuick() {
-        // Create a styled modal consistent with the rest of the application (budget.html style)
-        const modal = document.createElement('dialog');
-        modal.className = 'modal rounded-md w-full max-w-md p-0 text-white';
-        modal.style.backgroundColor = '#18181b';
-        modal.style.border = '1px solid #3f3f46';
+        // FREE-FLOATING DRAGGABLE MODAL (user can move it anywhere on screen)
+        const modal = document.createElement('div');
+        modal.className = 'fixed z-[200] bg-zinc-900 border border-zinc-700 rounded-xl shadow-2xl text-white w-full max-w-md';
+        modal.style.top = '120px';
+        modal.style.left = '50%';
+        modal.style.transform = 'translateX(-50%)';
+        modal.style.minWidth = '420px';
 
         modal.innerHTML = `
-            <div class="p-6">
-                <div class="flex justify-between items-center mb-6">
-                    <h3 class="text-xl font-semibold">Add New Subcontractor</h3>
-                    <button onclick="this.closest('dialog').close(); this.closest('dialog').remove()" class="text-zinc-400 hover:text-white">
-                        <i class="fa-solid fa-times text-xl"></i>
-                    </button>
+            <div class="modal-header cursor-move bg-zinc-800 border-b border-zinc-700 px-5 py-3.5 rounded-t-xl flex items-center justify-between" style="user-select:none;">
+                <div class="flex items-center gap-2">
+                    <i class="fa-solid fa-user-plus text-emerald-400"></i>
+                    <h3 class="text-lg font-semibold">Add New Subcontractor</h3>
                 </div>
-
+                <button type="button" class="modal-close text-zinc-400 hover:text-white text-2xl leading-none px-1" aria-label="Close">×</button>
+            </div>
+            <div class="p-6">
                 <div class="space-y-4">
                     <div>
                         <label class="block text-sm mb-1.5 text-zinc-300">Company Name (from Companies list)</label>
@@ -3874,16 +3904,71 @@ let mainLienWaiver = JSON.parse(localStorage.getItem('mainLienWaiver') || '{}');
                 </div>
 
                 <div class="flex justify-end gap-3 mt-8">
-                    <button onclick="this.closest('dialog').close(); this.closest('dialog').remove()" class="px-6 py-2.5 rounded-md bg-zinc-700 hover:bg-zinc-600 text-sm">Cancel</button>
-                    <button onclick="confirmAddNewSubcontractor(this)" class="px-8 py-2.5 rounded-md bg-emerald-600 hover:bg-emerald-500 text-sm font-semibold">Add Subcontractor</button>
+                    <button type="button" class="modal-cancel px-6 py-2.5 rounded-md bg-zinc-700 hover:bg-zinc-600 text-sm">Cancel</button>
+                    <button type="button" class="modal-add px-8 py-2.5 rounded-md bg-emerald-600 hover:bg-emerald-500 text-sm font-semibold">Add Subcontractor</button>
                 </div>
             </div>
         `;
 
         document.body.appendChild(modal);
-        modal.showModal();
 
-        // Populate live dropdown from Companies list (no auto-focus needed for select)
+        // Make it draggable by the header
+        const header = modal.querySelector('.modal-header');
+        let isDragging = false;
+        let startX = 0, startY = 0, startLeft = 0, startTop = 0;
+
+        header.addEventListener('mousedown', function(e) {
+            if (e.target.closest('button')) return; // don't drag when clicking close button
+            isDragging = true;
+            startX = e.clientX;
+            startY = e.clientY;
+            const rect = modal.getBoundingClientRect();
+            startLeft = rect.left;
+            startTop = rect.top;
+            modal.style.transform = 'none'; // remove centering transform once user starts dragging
+            document.body.style.userSelect = 'none';
+        });
+
+        document.addEventListener('mousemove', function(e) {
+            if (!isDragging) return;
+            const dx = e.clientX - startX;
+            const dy = e.clientY - startY;
+            let newLeft = startLeft + dx;
+            let newTop = startTop + dy;
+            // Keep within viewport bounds (simple clamp)
+            const maxLeft = window.innerWidth - modal.offsetWidth - 20;
+            const maxTop = window.innerHeight - modal.offsetHeight - 20;
+            newLeft = Math.max(20, Math.min(newLeft, maxLeft));
+            newTop = Math.max(20, Math.min(newTop, maxTop));
+            modal.style.left = newLeft + 'px';
+            modal.style.top = newTop + 'px';
+        });
+
+        document.addEventListener('mouseup', function() {
+            if (isDragging) {
+                isDragging = false;
+                document.body.style.userSelect = '';
+            }
+        });
+
+        // Close handlers
+        const closeBtn = modal.querySelector('.modal-close');
+        const cancelBtn = modal.querySelector('.modal-cancel');
+        function closeModal() {
+            modal.remove();
+        }
+        if (closeBtn) closeBtn.onclick = closeModal;
+        if (cancelBtn) cancelBtn.onclick = closeModal;
+
+        // Add button handler (calls the existing confirm logic, adapted)
+        const addBtn = modal.querySelector('.modal-add');
+        if (addBtn) {
+            addBtn.onclick = function() {
+                confirmAddNewSubcontractorFromFloatingModal(modal);
+            };
+        }
+
+        // Populate live dropdown from Companies list
         setTimeout(() => {
             const selectEl = modal.querySelector('#newSubCompanySelect');
             const contactInfoDiv = modal.querySelector('#newSubContactInfo');
@@ -3899,7 +3984,6 @@ let mainLienWaiver = JSON.parse(localStorage.getItem('mainLienWaiver') || '{}');
                     selectEl.appendChild(opt);
                 });
 
-                // When user selects a company, show its designated Primary Contact (read-only, pulled from company record)
                 selectEl.onchange = function() {
                     const selectedId = this.value;
                     if (!selectedId || !contactInfoDiv || !contactDisplay) {
@@ -3913,7 +3997,6 @@ let mainLienWaiver = JSON.parse(localStorage.getItem('mainLienWaiver') || '{}');
                         let pcEmail = '';
                         let pcPhone = '';
 
-                        // Primary resolution matching Companies page logic (primary_contact_user_id + users lookup)
                         if (company.primary_contact_user_id) {
                             const pu = allUsers.find(u => u.id == company.primary_contact_user_id);
                             if (pu) {
@@ -3922,7 +4005,6 @@ let mainLienWaiver = JSON.parse(localStorage.getItem('mainLienWaiver') || '{}');
                                 pcPhone = pu.phone || company.primary_contact_phone || company.phone || '';
                             }
                         } else if (company.contacts && Array.isArray(company.contacts) && company.contacts.length > 0) {
-                            // Legacy fallback: use designated primary or first contact
                             const primaryContact = company.contacts.find(c => c.isPrimary || c.primary) || company.contacts[0];
                             if (primaryContact) {
                                 pcName = primaryContact.name || primaryContact.fullName || 'Not set';
@@ -3930,7 +4012,6 @@ let mainLienWaiver = JSON.parse(localStorage.getItem('mainLienWaiver') || '{}');
                                 pcPhone = primaryContact.phone || primaryContact.mobile || '';
                             }
                         } else if (company.primary_contact_name || company.primaryContactName) {
-                            // Very old legacy fields
                             pcName = company.primary_contact_name || company.primaryContactName || 'Not set';
                             pcEmail = company.primary_contact_email || company.primaryContactEmail || company.email || '';
                             pcPhone = company.primary_contact_phone || company.primaryContactPhone || company.phone || '';
@@ -3951,6 +4032,56 @@ let mainLienWaiver = JSON.parse(localStorage.getItem('mainLienWaiver') || '{}');
                 };
             }
         }, 80);
+    }
+
+    // Helper for the floating modal's Add button (adapts the original confirm logic)
+    function confirmAddNewSubcontractorFromFloatingModal(modalEl) {
+        const select = modalEl.querySelector('#newSubCompanySelect');
+        const selectedCompanyId = select ? select.value : '';
+        if (!selectedCompanyId) {
+            showCenteredAlert("Please select a company from the list.", "warning");
+            return;
+        }
+
+        const companiesList = JSON.parse(localStorage.getItem('casepm_companies')) || [];
+        const selectedCompany = companiesList.find(c => c.id == selectedCompanyId);
+        if (!selectedCompany) {
+            showCenteredAlert("Selected company not found.", "error");
+            return;
+        }
+
+        // Prevent duplicates
+        if (!subcontractorSOV) subcontractorSOV = JSON.parse(localStorage.getItem('subcontractorSOV') || '{}');
+        if (subcontractorSOV[selectedCompanyId]) {
+            showCenteredAlert("This company is already added as a subcontractor for this job.", "warning");
+            return;
+        }
+
+        // Initialize empty SOV for the new sub
+        subcontractorSOV[selectedCompanyId] = [];
+        localStorage.setItem('subcontractorSOV', JSON.stringify(subcontractorSOV));
+
+        // Initialize pay app counter
+        if (!subPayAppNumbers) subPayAppNumbers = JSON.parse(localStorage.getItem('subPayAppNumbers') || '{}');
+        subPayAppNumbers[selectedCompanyId] = 1;
+        localStorage.setItem('subPayAppNumbers', JSON.stringify(subPayAppNumbers));
+
+        // Close modal
+        modalEl.remove();
+
+        // Refresh the Subcontractor Schedule of Values tab so the new sub appears in the dropdown
+        renderPayAppContent();
+
+        // Auto-select the newly added sub
+        setTimeout(() => {
+            const selector = document.getElementById('subSelector');
+            if (selector) {
+                selector.value = selectedCompanyId;
+                selectSubcontractorForSOV(selectedCompanyId);
+            }
+        }, 120);
+
+        // No success popup — the dropdown now shows the new sub and it is auto-selected (UI confirms the action)
     }
 
     function confirmAddNewSubcontractor(btn) {
@@ -6351,7 +6482,7 @@ function printSubcontractorG703(companyId) {
             }
         });
 
-        console.log('%c[Case PM] Pay Applications page initialized (clean v3 - aesthetics + workflow fixed) [PATCH 2026-07-01]', 'color:#10b981');
+        console.log('%c[Case PM] Pay Applications page initialized (clean v3 - aesthetics + workflow fixed) [v76.45 - Draggable Add Sub modal + Remove from dropdown + Clear All Subs for fresh job]', 'color:#10b981');
     }
 
     // ==================== COMBINED PRINT LOGIC (G703 + LIEN WAIVER) ====================
