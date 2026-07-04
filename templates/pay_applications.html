@@ -6152,18 +6152,27 @@ function printSubcontractorG703(companyId) {
             const statusData = subSOVStatus[companyId] || {};
             const notesText = statusData.notes || (historyEntry && historyEntry.notes) || '';
 
+            let displayPayAppNum = subPayAppNumbers[companyId] || 1;
+            if (historyEntry && subPayAppHistory[companyId]) {
+                const periods = Object.keys(subPayAppHistory[companyId]).map(Number).sort((a,b) => b - a);
+                for (const p of periods) {
+                    if (subPayAppHistory[companyId][p] === historyEntry) {
+                        displayPayAppNum = p;
+                        break;
+                    }
+                }
+            }
+
             row.innerHTML = `
                 <td class="px-4 py-3 font-medium flex items-center gap-1.5">
                     ${getCompanyName(companyId)}
-                    ${ historyEntry ? `
-                    <button onclick="event.stopImmediatePropagation(); approveSubPayApp(${companyId});" 
-                            class="ml-2 px-2.5 py-0.5 bg-emerald-600 hover:bg-emerald-500 text-white text-[10px] rounded font-medium">Approve &amp; Commit</button>
+                    ${ (historyEntry && historyEntry.status === 'Approved') ? `
                     <button onclick="event.stopImmediatePropagation(); requestRevisionSubPayApp(${companyId});" 
-                            class="ml-1.5 px-2.5 py-0.5 bg-amber-600 hover:bg-amber-500 text-white text-[10px] rounded font-medium" title="Push this pay app back to Subcontractor Schedule of Values for editing">
+                            class="ml-2 px-2.5 py-0.5 bg-amber-600 hover:bg-amber-500 text-white text-[10px] rounded font-medium" title="Push this approved pay app back to Subcontractor Schedule of Values for editing">
                         Request Revision
                     </button>` : '' }
                 </td>
-                <td class="px-3 py-3 text-center font-mono text-emerald-400">${displayPayAppNum}</td>
+                <td class="px-3 py-3 text-center font-mono text-emerald-400">${displayPayAppNum || subPayAppNumbers[companyId] || 1}</td>
                 <td class="px-3 py-3 text-center">${statusBadge}</td>
                 <td class="px-3 py-3 text-center text-sm">${lienBadge}</td>
                 <td class="px-4 py-3 text-right font-mono text-emerald-400">${formatCurrency(billedThis)}</td>
