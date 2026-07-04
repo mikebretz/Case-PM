@@ -355,7 +355,7 @@
 </dialog>
 
 <script>
-    // ==================== DATA & STATE (v76.29 - Aesthetics only: Restored drag & drop zone next to Upload Lien Waiver on BOTH Sub SOV and main G702 tabs; standardized all lien waiver upload/Re-upload buttons to consistent sky blue; logic/workflow 100% locked) ====================
+    // ==================== DATA & STATE (v76.30 - Aesthetics only: Moved little envelope notification button from Subcontractor name column into Actions column in Sub Pay App Tracker; removed duplicate "View Lien Waiver" pill/button from Actions column (Lien Waiver column pill with View remains as the single place to view from Tracker); all prior functionality, numbering, blocking, push-to-previous, pill visibility on SOV/pending/Tracker, drag-drop, blue upload buttons, etc. 100% locked and unchanged) ====================
     let payApplications = JSON.parse(localStorage.getItem('payApplications')) || [];
     let contractorSOV = JSON.parse(localStorage.getItem('contractorSOV')) || [];
     let subcontractorSOV = JSON.parse(localStorage.getItem('subcontractorSOV')) || {}; // { companyId: [lines] }
@@ -6220,12 +6220,8 @@ function printSubcontractorG703(companyId) {
             const notesText = statusData.notes || (historyEntry && historyEntry.notes) || '';
 
             row.innerHTML = `
-                <td class="px-4 py-3 font-medium flex items-center gap-1.5">
+                <td class="px-4 py-3 font-medium">
                     ${getCompanyName(companyId)}
-                    <button onclick="event.stopImmediatePropagation(); sendSubPayAppNotification(${companyId});" 
-                            class="ml-1 text-emerald-400 hover:text-emerald-300 p-0.5" title="Send notification email about outstanding items">
-                        <i class="fa-solid fa-envelope text-xs"></i>
-                    </button>
                 </td>
                 <td class="px-3 py-3 text-center font-mono text-emerald-400">${displayedPayAppNum}</td>
                 <td class="px-3 py-3 text-center">${statusBadge}</td>
@@ -6245,14 +6241,11 @@ function printSubcontractorG703(companyId) {
                                     class="px-3 py-1 bg-amber-600 hover:bg-amber-500 text-white text-xs rounded font-medium flex items-center gap-1" title="Send this Pay App back to Subcontractor SOV tab for editing">
                                 <i class="fa-solid fa-redo text-xs"></i> <span>Request Revision</span>
                             </button>
-                            ${hasWaiver ? `
-                                <div class="inline-flex items-center gap-1 px-2 py-0.5 bg-emerald-900/60 border border-emerald-600 rounded text-xs ml-1">
-                                    <i class="fa-solid fa-file-contract text-emerald-400"></i>
-                                    <span class="text-emerald-300 max-w-[100px] truncate" title="${ (historyEntry && historyEntry.lienWaiver && historyEntry.lienWaiver.filename) || 'Lien Waiver' }">${ (historyEntry && historyEntry.lienWaiver && historyEntry.lienWaiver.filename) || 'Lien Waiver' }</span>
-                                    <button onclick="event.stopImmediatePropagation(); viewLienWaiver(${companyId}, ${displayedPayAppNum});" class="px-1.5 py-0 bg-emerald-700 hover:bg-emerald-600 rounded text-[10px]">View</button>
-                                </div>
-                            ` : ''}
                         ` : '' }
+                        <button onclick="event.stopImmediatePropagation(); sendSubPayAppNotification(${companyId});" 
+                                class="px-2 py-1 bg-emerald-700 hover:bg-emerald-600 text-white text-xs rounded flex items-center" title="Send notification email about outstanding items">
+                            <i class="fa-solid fa-envelope text-xs"></i>
+                        </button>
                         <!-- View SOV button removed per user request to keep Tracker actions clean -->
                         <button onclick="event.stopImmediatePropagation(); showSubPayAppLog(${companyId});" 
                                 class="px-2 py-1 bg-sky-700 hover:bg-sky-600 text-xs rounded" title="View Log / History"><i class="fa-solid fa-history"></i></button>
