@@ -1508,6 +1508,29 @@ let mainLienWaiver = JSON.parse(localStorage.getItem('mainLienWaiver') || '{}');
         renderPayAppContent();
     }
 
+    // Nuclear clear for all subcontractor pay app related data (use when numbers get stuck or after testing)
+    function clearAllSubPayAppData() {
+        if (!confirm("This will DELETE all Subcontractor SOVs, Pay App numbers, history, pending submissions, lien waivers, and status. Are you sure?")) {
+            return;
+        }
+        localStorage.removeItem('subcontractorSOV');
+        localStorage.removeItem('subPayAppNumbers');
+        localStorage.removeItem('subPayAppHistory');
+        localStorage.removeItem('subPendingSubmissions');
+        localStorage.removeItem('subLienWaivers');
+        localStorage.removeItem('subSOVStatus');
+        localStorage.removeItem('lienWaivers');
+
+        // Also clear main current period if user wants a full reset (optional)
+        // localStorage.removeItem('currentPayAppPeriod');
+
+        showCenteredAlert("All Subcontractor Pay App data cleared. Hard refresh the page now (Ctrl+Shift+R).", 'success');
+        // Auto hard refresh after alert
+        setTimeout(() => {
+            location.reload();
+        }, 1200);
+    }
+
     function updateWorkThisPeriodLive(sovLineId, newValue) {
         const line = contractorSOV.find(l => l.id === sovLineId);
         if (!line) return;
@@ -5717,9 +5740,11 @@ function printSubcontractorG703(companyId) {
         // Workflow bar
         workflowBar.innerHTML = `
             <div class="workflow-bar px-4 py-3 flex items-center gap-3 text-sm">
-                <span class="text-emerald-400 font-medium">Sub Pay App Tracker • Admin View</span>
-                <span class="text-xs text-emerald-300 ml-3 font-mono">Billing Period ${currentPayAppPeriod ? currentPayAppPeriod.periodNumber : '—'} • ${currentPayAppPeriod ? currentPayAppPeriod.periodStart : ''} → ${currentPayAppPeriod ? currentPayAppPeriod.periodEnd : ''}</span>
-                <span class="text-xs text-zinc-500 ml-auto">Click row → Sub SOV • Approve commits to G702 • Notes are PM-only editable</span>
+                <span class="text-emerald-400 font-medium">Sub Pay App Tracker • Admin View (Left Hand = Sub SOV tab → Right Hand = here)</span>
+                <span class="text-xs text-emerald-300 ml-3 font-mono">Main G702 Period ${currentPayAppPeriod ? currentPayAppPeriod.periodNumber : '—'}</span>
+                <button onclick="clearAllSubPayAppData()" class="ml-auto px-3 py-1 bg-red-700 hover:bg-red-600 text-white text-xs rounded font-medium flex items-center gap-1.5 border border-red-600" title="Nuclear reset for all subcontractor pay app data, numbers, history, pending papers, and lien waivers. Use when numbers get stuck.">
+                    <i class="fa-solid fa-trash"></i> <span>Clear All Sub Data (Debug)</span>
+                </button>
             </div>
         `;
 
@@ -5740,11 +5765,16 @@ function printSubcontractorG703(companyId) {
 
         tbody.innerHTML = '';
 
-        // Only show subs that have a submitted/approved Pay App in history for THIS period (Right Hand papers only)
-        // This prevents live SOV draft data from appearing in the Tracker tab.
+        // Show subs that have ANY Approved or Pending paper in history (the "right hand" papers).
+        // We show the most recent approved period number for each sub so the Tracker doesn't go "stuck" when main G702 period advances.
         const subCompanies = companies.filter(c => {
-            const hasHistoryForPeriod = subPayAppHistory[c.id] && subPayAppHistory[c.id][currentPeriodNum];
-            return (c.type === 'Subcontractor' || c.company_type === 'Subcontractor') && hasHistoryForPeriod;
+            const hist = subPayAppHistory[c.id];
+            if (!hist) return false;
+            const hasAnyApprovedOrPending = Object.keys(hist).some(p => {
+                const e = hist[p];
+                return e && (e.status === 'Approved' || e.status === 'Pending Approval');
+            });
+            return (c.type === 'Subcontractor' || c.company_type === 'Subcontractor') && hasAnyApprovedOrPending;
         });
 
         if (subCompanies.length === 0) {
@@ -5757,8 +5787,19 @@ function printSubcontractorG703(companyId) {
             const lines = subcontractorSOV[companyId] || [];
             const status = getSubSOVStatus(companyId);
             const historyEntry = subPayAppHistory[companyId] && subPayAppHistory[companyId][currentPeriodNum];
-            // Show the Pay App # of the paper that is in the Tracker (the one being approved/revised), not the next number
-            const displayedPayAppNum = historyEntry ? (historyEntry.periodNumber || currentPeriodNum) : (subPayAppNumbers[companyId] || currentPeriodNum);
+            let displayedPayAppNum = currentPeriodNum;
+            if (historyEntry && historyEntry.periodNumber) {
+                displayedPayAppNum = historyEntry.periodNumber;
+            } else if (subPayAppHistory[companyId]) {
+                // Fallback: show the highest (most recent) approved period number for this sub
+                const periods = Object.keys(subPayAppHistory[companyId]).map(Number).filter(p => {
+                    const e = subPayAppHistory[companyId][p];
+                    return e && (e.status === 'Approved' || e.status === 'Pending Approval');
+                }).sort((a,b) => b - a);
+                if (periods.length > 0) displayedPayAppNum = periods[0];
+            } else {
+                displayedPayAppNum = subPayAppNumbers[companyId] || currentPeriodNum;
+            }
 
             let billedThis = 0;
             let pctComplete = 0;
@@ -5778,7 +5819,8 @@ function printSubcontractorG703(companyId) {
             pctComplete = totalScheduled > 0 ? Math.round((totalBilled / totalScheduled) * 100) : 0;
 
             const waiverStatus = getLienWaiverStatus(companyId);
-            const hasWaiver = waiverStatus.hasWaiver;
+            // Prefer historical snapshot saved at approval time (so waiver stays visible in Tracker after live one is cleared)
+            const hasWaiver = !!(historyEntry && historyEntry.lienWaiver && historyEntry.lienWaiver.filename) || waiverStatus.hasWaiver;
 
             let statusBadge = '';
             if (historyEntry && historyEntry.status === 'Approved') {
@@ -5794,8 +5836,13 @@ function printSubcontractorG703(companyId) {
             // Improved lien waiver badge for tracker - shows filename when available (closer to G702 pill style)
             let lienBadge = '';
             if (hasWaiver) {
-                const waiverInfo = getLienWaiverStatus(companyId);
-                const fname = waiverInfo.filename || 'Lien Waiver';
+                let fname = 'Lien Waiver';
+                if (historyEntry && historyEntry.lienWaiver && historyEntry.lienWaiver.filename) {
+                    fname = historyEntry.lienWaiver.filename;
+                } else {
+                    const waiverInfo = getLienWaiverStatus(companyId);
+                    fname = waiverInfo.filename || 'Lien Waiver';
+                }
                 lienBadge = `
                     <div class="inline-flex items-center gap-1.5 px-2 py-0.5 bg-emerald-900/60 border border-emerald-600 rounded text-xs">
                         <i class="fa-solid fa-file-contract text-emerald-400"></i>
