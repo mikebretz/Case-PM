@@ -2822,7 +2822,7 @@ let mainLienWaiver = JSON.parse(localStorage.getItem('mainLienWaiver') || '{}');
             const historyEntry = subPayAppHistory[selectedSubCompanyId] && subPayAppHistory[selectedSubCompanyId][subPayAppNum];
             // Pending if either in left-hand pending store OR legacy history pending (use sub's own number)
             const isPending = (pendingEntry && pendingEntry.periodNumber === subPayAppNum) || (historyEntry && historyEntry.status === 'Pending Approval');
-            const waiver = subLienWaivers[selectedSubCompanyId] && subLienWaivers[selectedSubCompanyId][periodNum];
+            const waiver = subLienWaivers[selectedSubCompanyId] && subLienWaivers[selectedSubCompanyId][subPayAppNum];
             const hasWaiver = waiver && waiver.filename && waiver.filename.trim() !== '';
 
             let statusMessage = '';
