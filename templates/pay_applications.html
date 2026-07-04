@@ -355,7 +355,7 @@
 </dialog>
 
 <script>
-    // ==================== DATA & STATE (v76.55 - G702 Billed to Date now correctly uses cumulative from payAppHistory (previous approved periods). Work This Period flows from Sub Pay App Tracker as minimum. G703 Cost to Date (Subcontracted) rolls up Current from Approved Sub SOVs.) ====================
+    // ==================== DATA & STATE (v76.56 - EXACT cumulative Billed to Date: Period 1 shows $0. After Approve G702, this period's completed amount is added to line.billed_to_date. Next period's Billed to Date = previous cumulative + new Work This Period. Running total across all approved periods, exactly as described.) ====================
     let payApplications = JSON.parse(localStorage.getItem('payApplications')) || [];
     let contractorSOV = JSON.parse(localStorage.getItem('contractorSOV')) || [];
     let subcontractorSOV = JSON.parse(localStorage.getItem('subcontractorSOV')) || {}; // { companyId: [lines] }
@@ -1581,10 +1581,13 @@ let mainLienWaiver = JSON.parse(localStorage.getItem('mainLienWaiver') || '{}');
                 const materials = billing.materialsStored || 0;
                 const thisPeriodTotal = workThis + materials;
 
-                // CORRECTED per user requirement:
-                // Billed to Date = Total of all previous APPROVED Pay Applications' (Work This Period + Materials)
-                // for this cost code. This creates the running cumulative total across periods.
-                const previousBilled = getPreviouslyBilledFromHistory(line.cost_code);
+                // CORRECTED per user exact requirement:
+                // Billed to Date on G702 = line.billed_to_date (cumulative from all PREVIOUSLY APPROVED periods)
+                // + current period's Work This Period + Materials.
+                // On first period: line.billed_to_date starts at 0 → Billed to Date shows 0.
+                // After approve: we add this period's completed to line.billed_to_date on the SOV.
+                // Next period: Billed to Date shows previous cumulative + new this period.
+                const previousBilled = line.billed_to_date || 0;
                 const totalBilled = previousBilled + thisPeriodTotal;
                 const percentComplete = currentAmount > 0 ? Math.min(100, Math.round((totalBilled / currentAmount) * 100)) : 0;
                 const retainageRate = defaultRetainagePercent / 100;
@@ -1735,7 +1738,7 @@ let mainLienWaiver = JSON.parse(localStorage.getItem('mainLienWaiver') || '{}');
         } else {
             // Fallback calculation if element not found
             const currentAmount = (line.original || 0);
-            const previousBilled = getPreviouslyBilledFromHistory(line.cost_code);
+            const previousBilled = line.billed_to_date || 0;
             topRemaining = Math.max(0, currentAmount - previousBilled);
         }
 
