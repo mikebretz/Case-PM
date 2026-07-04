@@ -747,6 +747,15 @@ let mainLienWaiver = JSON.parse(localStorage.getItem('mainLienWaiver') || '{}');
                     submitted: false
                 };
 
+                // Also store under a special "LATEST_COMPLIANCE" key so zero-dollar compliance submissions
+                // can reliably pick up the most recent lien waiver even if they don't consume a numbered pay app slot.
+                subLienWaivers[companyId]['LATEST_COMPLIANCE'] = {
+                    filename: file.name,
+                    dataUrl: dataUrl,
+                    uploadedDate: new Date().toISOString(),
+                    submitted: false
+                };
+
                 localStorage.setItem('subLienWaivers', JSON.stringify(subLienWaivers));
 
                 logPayAppAudit('LIEN_WAIVER_UPLOADED', { companyId, filename: file.name, period: periodNum });
@@ -4865,7 +4874,18 @@ let mainLienWaiver = JSON.parse(localStorage.getItem('mainLienWaiver') || '{}');
             currentPeriodNum = subPayAppNumbers[companyId];
         }
 
-        const waiver = subLienWaivers[companyId] && subLienWaivers[companyId][currentPeriodNum];
+        // Lien waiver lookup: For zero-dollar compliance submissions, prefer the special LATEST_COMPLIANCE key
+        // so the waiver travels with the "Pay App --" entry without being tied to a numbered pay app.
+        let waiver = null;
+        if (isZeroDollarSubmission) {
+            waiver = subLienWaivers[companyId] && subLienWaivers[companyId]['LATEST_COMPLIANCE'];
+            if (!waiver) {
+                // Fallback to the normal numbered key if LATEST_COMPLIANCE wasn't set
+                waiver = subLienWaivers[companyId] && subLienWaivers[companyId][currentPeriodNum];
+            }
+        } else {
+            waiver = subLienWaivers[companyId] && subLienWaivers[companyId][currentPeriodNum];
+        }
 
         // === BLOCK SUBMISSION IF PREVIOUS PAY APP STILL ACTIVE IN TRACKER ===
         // Prevents creating Pay App #5 while #4 is still sitting in Sub Pay App Tracker (not yet pushed/archived).
@@ -5003,8 +5023,12 @@ let mainLienWaiver = JSON.parse(localStorage.getItem('mainLienWaiver') || '{}');
         // Clear live lien waiver for this period from SOV tab
         if (subLienWaivers[companyId] && subLienWaivers[companyId][currentPeriodNum]) {
             delete subLienWaivers[companyId][currentPeriodNum];
-            localStorage.setItem('subLienWaivers', JSON.stringify(subLienWaivers));
         }
+        // Also clean up the special compliance key after approval (especially important for zero-dollar submissions)
+        if (subLienWaivers[companyId] && subLienWaivers[companyId]['LATEST_COMPLIANCE']) {
+            delete subLienWaivers[companyId]['LATEST_COMPLIANCE'];
+        }
+        localStorage.setItem('subLienWaivers', JSON.stringify(subLienWaivers));
 
         // Advance Pay App number for the *next* new submission (this approved paper keeps its original number)
         // IMPORTANT: Do NOT advance the counter for zero-dollar compliance submissions
