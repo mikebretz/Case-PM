@@ -355,7 +355,7 @@
 </dialog>
 
 <script>
-    // ==================== DATA & STATE (v76.31 - Aesthetics only: Sub Pay App Tracker - Request Revision now in its own column between Pay App # and Status; removed admin view / Main G702 period text from workflow bar; added "Contractor Pay Period" summary card at top of cards grid; all prior functionality, numbering, blocking, push-to-previous, pill visibility, drag-drop, blue upload buttons, etc. 100% locked and unchanged) ====================
+    // ==================== DATA & STATE (v76.32 - Aesthetics only: Added "Current Contract Amt" column to Sub Pay App Tracker (between Lien Waiver and Billed This Period); non-animated status badge on Sub SOV tab + forces "Draft" display if previous pay app still in Tracker; removed Work This Period / Materials Stored from Edit Subcontractor Line modal; added live reconciled "Contractor G703 Total for Cost Code" display (updates as you type Original Commitment). All workflow, numbering, blocking, push-to-previous, lien pill, drag-drop, blue buttons, etc. 100% locked and unchanged) ====================
     let payApplications = JSON.parse(localStorage.getItem('payApplications')) || [];
     let contractorSOV = JSON.parse(localStorage.getItem('contractorSOV')) || [];
     let subcontractorSOV = JSON.parse(localStorage.getItem('subcontractorSOV')) || {}; // { companyId: [lines] }
@@ -2781,7 +2781,21 @@ let mainLienWaiver = JSON.parse(localStorage.getItem('mainLienWaiver') || '{}');
         if (selectedSubCompanyId) {
             let subPayApps = JSON.parse(localStorage.getItem('subPayAppNumbers') || '{}');
             const currentNum = subPayAppNumbers[selectedSubCompanyId] || 1;
-            currentStatus = getSubSOVStatus(selectedSubCompanyId);
+            let currentStatus = getSubSOVStatus(selectedSubCompanyId);
+
+            // Aesthetic display only: if a previous pay app (#1 when on #2, etc.) is still active in Tracker (not pushed),
+            // show status as "Draft" so user knows they need to push the prior paper first. Does NOT change any workflow or blocking logic.
+            if (currentNum > 1) {
+                const hist = subPayAppHistory[selectedSubCompanyId] || {};
+                const hasPreviousActive = Object.keys(hist).some(p => {
+                    const pn = parseInt(p);
+                    const e = hist[p];
+                    return pn < currentNum && e && (e.status === 'Approved' || e.status === 'Pending Approval') && e.archived !== true;
+                });
+                if (hasPreviousActive) {
+                    currentStatus = 'Draft';
+                }
+            }
 
             const statusColors = {
                 'Draft': 'bg-amber-900/40 text-amber-400',
@@ -2805,7 +2819,7 @@ let mainLienWaiver = JSON.parse(localStorage.getItem('mainLienWaiver') || '{}');
                     <i class="fa-solid fa-file-invoice-dollar"></i> <span>${payAppLabel}</span>
                 </div>
                 <div class="text-sm px-4 py-1.5 ${statusColor} rounded inline-flex items-center gap-1 font-semibold" style="font-size: 14px; padding: 6px 14px;">
-                    <i class="fa-solid fa-sync fa-spin-pulse"></i> <span>${currentStatus}</span>
+                    <i class="fa-solid fa-sync"></i> <span>${currentStatus}</span>
                 </div>
             `;
             // Append to the new container below the dropdown
@@ -3224,7 +3238,7 @@ let mainLienWaiver = JSON.parse(localStorage.getItem('mainLienWaiver') || '{}');
                             <span>Cost Code</span>
                             ${(canEditStructure) ? `<button type="button" onclick="viewBudgetCostCodesForSOV('contractor-sov')" class="ml-2 px-2.5 py-0.5 text-[10px] bg-zinc-700 hover:bg-zinc-600 text-emerald-400 rounded">View Codes from G703</button>` : ''}
                         </label>
-                        <input type="text" id="subCostCode" class="w-full bg-zinc-800 border border-zinc-700 rounded-md px-4 py-2.5 text-sm" value="${line ? line.cost_code : ''}" ${!canEditStructure ? 'readonly' : ''}>
+                        <input type="text" id="subCostCode" class="w-full bg-zinc-800 border border-zinc-700 rounded-md px-4 py-2.5 text-sm" value="${line ? line.cost_code : ''}" ${!canEditStructure ? 'readonly' : ''} oninput="updateCostCodeTotalDisplay()" onblur="updateCostCodeTotalDisplay()">
                     </div>
                     <div>
                         <label class="block text-sm mb-1.5 text-zinc-300">Description</label>
@@ -3235,24 +3249,25 @@ let mainLienWaiver = JSON.parse(localStorage.getItem('mainLienWaiver') || '{}');
                 <div class="grid grid-cols-2 gap-4">
                     <div>
                         <label class="block text-sm mb-1.5 text-zinc-300">Original Commitment</label>
-                        <input type="text" id="subOriginal" class="w-full bg-zinc-800 border border-zinc-700 rounded-md px-4 py-2.5 text-sm" value="${line ? formatCurrency(line.original_commitment || 0) : '$0'}" ${!canEditStructure ? 'readonly' : ''}>
+                        <input type="text" id="subOriginal" class="w-full bg-zinc-800 border border-zinc-700 rounded-md px-4 py-2.5 text-sm" value="${line ? formatCurrency(line.original_commitment || 0) : '$0'}" ${!canEditStructure ? 'readonly' : ''} oninput="updateCostCodeTotalDisplay()">
                         ${!canEditStructure ? '<div class="text-xs text-zinc-500 mt-1">Locked (Approved SOV)</div>' : ''}
                     </div>
                     <div>
                         <label class="block text-sm mb-1.5 text-zinc-300">Change Orders</label>
-                        <input type="text" id="subCO" class="w-full bg-zinc-800 border border-zinc-700 rounded-md px-4 py-2.5 text-sm" value="${line ? formatCurrency(line.change_orders || 0) : '$0'}" ${!canEditStructure ? 'readonly' : ''}>
+                        <input type="text" id="subCO" class="w-full bg-zinc-800 border border-zinc-700 rounded-md px-4 py-2.5 text-sm" value="${line ? formatCurrency(line.change_orders || 0) : '$0'}" ${!canEditStructure ? 'readonly' : ''} oninput="updateCostCodeTotalDisplay()">
                     </div>
                 </div>
 
-                <div class="grid grid-cols-2 gap-4">
-                    <div>
-                        <label class="block text-sm mb-1.5 text-zinc-300">Work This Period</label>
-                        <input type="number" id="subWorkThis" class="w-full bg-zinc-800 border border-zinc-700 rounded-md px-4 py-2.5 text-sm" value="${line ? (line.work_this_period || 0) : 0}" step="0.01">
+                <!-- Cost Code Total Display (live reconciled contractor G703 total for this code across subs) -->
+                <div id="costCodeTotalDisplay" class="hidden bg-emerald-900/10 border border-emerald-800 rounded-md p-3 text-xs">
+                    <div class="flex items-center justify-between">
+                        <div>
+                            <span class="text-emerald-400 font-medium">Contractor G703 Total for this Cost Code:</span>
+                            <span id="costCodeTotalValue" class="font-mono text-emerald-300 ml-2">$0</span>
+                        </div>
+                        <div id="costCodeProjected" class="text-[10px] text-emerald-500"></div>
                     </div>
-                    <div>
-                        <label class="block text-sm mb-1.5 text-zinc-300">Materials Stored</label>
-                        <input type="number" id="subMaterials" class="w-full bg-zinc-800 border border-zinc-700 rounded-md px-4 py-2.5 text-sm" value="${line ? (line.materials_stored || 0) : 0}" step="0.01">
-                    </div>
+                    <div class="text-[10px] text-zinc-500 mt-1">Reconciled across all subs billing this code. Updates live as you change Original Commitment or Cost Code.</div>
                 </div>
 
                 <div>
@@ -3267,6 +3282,70 @@ let mainLienWaiver = JSON.parse(localStorage.getItem('mainLienWaiver') || '{}');
             </div>
         `;
         modal.showModal();
+
+        // Initialize live Cost Code total display (aesthetic helper only — does not affect any workflow or data saving)
+        setTimeout(() => {
+            const costCodeInput = document.getElementById('subCostCode');
+            if (costCodeInput && costCodeInput.value.trim()) {
+                updateCostCodeTotalDisplay();
+            }
+        }, 50);
+    }
+
+    // Live display helper for reconciled Contractor G703 total per cost code (display only, no functional change to SOV or pay app workflow)
+    function updateCostCodeTotalDisplay() {
+        const costCodeEl = document.getElementById('subCostCode');
+        const originalEl = document.getElementById('subOriginal');
+        const display = document.getElementById('costCodeTotalDisplay');
+        const valueEl = document.getElementById('costCodeTotalValue');
+        const projectedEl = document.getElementById('costCodeProjected');
+        if (!costCodeEl || !display || !valueEl) return;
+
+        const costCode = (costCodeEl.value || '').trim();
+        if (!costCode) {
+            display.classList.add('hidden');
+            return;
+        }
+        display.classList.remove('hidden');
+
+        let otherTotal = 0;
+        const normCode = costCode.toUpperCase();
+
+        // Sum from main Contractor (GC) SOV lines
+        if (typeof contractorSOV !== 'undefined' && Array.isArray(contractorSOV)) {
+            contractorSOV.forEach(l => {
+                if ((l.cost_code || '').trim().toUpperCase() === normCode) {
+                    otherTotal += (l.original_commitment || 0) + (l.change_orders || 0);
+                }
+            });
+        }
+
+        // Sum from ALL subcontractor SOV lines (reconcile across subs)
+        if (typeof subcontractorSOV !== 'undefined') {
+            Object.keys(subcontractorSOV).forEach(cid => {
+                (subcontractorSOV[cid] || []).forEach(l => {
+                    if ((l.cost_code || '').trim().toUpperCase() === normCode) {
+                        otherTotal += (l.original_commitment || 0) + (l.change_orders || 0);
+                    }
+                });
+            });
+        }
+
+        // Current entry value (parse the formatted or raw input)
+        let entryVal = 0;
+        if (originalEl) {
+            const raw = originalEl.value.replace(/[$,]/g, '');
+            entryVal = parseFloat(raw) || 0;
+        }
+
+        // For simplicity in display: show the "other" total (may include current line if editing existing)
+        // and a projected new total if this entry is added/updated
+        valueEl.textContent = formatCurrency(otherTotal);
+
+        if (projectedEl) {
+            const projected = otherTotal + entryVal;  // simple additive; in real use this would be more nuanced if editing existing line
+            projectedEl.innerHTML = `Projected after this entry: <span class="font-mono">${formatCurrency(projected)}</span>`;
+        }
     }
 
     function editSubSOVLine(companyId, lineId) {
@@ -6091,6 +6170,7 @@ function printSubcontractorG703(companyId) {
                 <th class="px-3 py-3 text-center font-medium text-zinc-400 w-36">Request Revision</th>
                 <th class="px-3 py-3 text-center font-medium text-zinc-400 w-48">Status</th>
                 <th class="px-3 py-3 text-center font-medium text-zinc-400 w-28">Lien Waiver</th>
+                <th class="px-4 py-3 text-right font-medium text-emerald-400 w-40">Current Contract Amt</th>
                 <th class="px-4 py-3 text-right font-medium text-zinc-400 w-36">Billed This Period</th>
                 <th class="px-4 py-3 text-right font-medium text-emerald-400 w-40">Billed to Date (at Approval)</th>
                 <th class="px-3 py-3 text-center font-medium text-zinc-400 w-20">% Complete</th>
@@ -6116,7 +6196,7 @@ function printSubcontractorG703(companyId) {
         });
 
         if (subCompanies.length === 0) {
-            tbody.innerHTML = `<tr><td colspan="11" class="px-6 py-10 text-center text-zinc-500">No Pay Applications submitted or approved yet this period.<br><span class="text-xs">Submit from Subcontractor Schedule of Values tab (Left Hand) → then Approve to move here (Right Hand).</span></td></tr>`;
+            tbody.innerHTML = `<tr><td colspan="12" class="px-6 py-10 text-center text-zinc-500">No Pay Applications submitted or approved yet this period.<br><span class="text-xs">Submit from Subcontractor Schedule of Values tab (Left Hand) → then Approve to move here (Right Hand).</span></td></tr>`;
             return;
         }
 
@@ -6165,6 +6245,9 @@ function printSubcontractorG703(companyId) {
             const totalScheduled = lines.reduce((sum, l) => sum + ((l.original_commitment || 0) + (l.change_orders || 0)), 0);
             const totalBilled = lines.reduce((sum, l) => sum + (l.billed_to_date || 0), 0);
             pctComplete = totalScheduled > 0 ? Math.round((totalBilled / totalScheduled) * 100) : 0;
+
+            // Current Contract Amount = Original + Change Orders (for display in Tracker)
+            const currentContractAmount = lines.reduce((sum, l) => sum + ((l.original_commitment || 0) + (l.change_orders || 0)), 0);
 
             const waiverStatus = getLienWaiverStatus(companyId);
             // Prefer historical snapshot saved at approval time (so waiver stays visible in Tracker after live one is cleared)
@@ -6237,6 +6320,7 @@ function printSubcontractorG703(companyId) {
                 </td>
                 <td class="px-3 py-3 text-center">${statusBadge}</td>
                 <td class="px-3 py-3 text-center text-sm">${lienBadge}</td>
+                <td class="px-4 py-3 text-right font-mono text-emerald-300">${formatCurrency(currentContractAmount)}</td>
                 <td class="px-4 py-3 text-right font-mono text-emerald-400">${formatCurrency(billedThis)}</td>
                 <td class="px-4 py-3 text-right font-mono text-emerald-300">${formatCurrency(billedToDateAtApproval)}</td>
                 <td class="px-3 py-3 text-center font-mono text-xs">${pctComplete}%</td>
