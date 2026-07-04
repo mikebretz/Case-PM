@@ -1541,7 +1541,12 @@ let mainLienWaiver = JSON.parse(localStorage.getItem('mainLienWaiver') || '{}');
             if (!payAppCollapsedDivisions.has(division)) {
                 const currentAmount = (line.original || 0) + (line.co_amount || 0);
                 const billing = payAppBillingLines[line.id] || { workThisPeriod: 0, materialsStored: 0 };
-                const workThis = billing.workThisPeriod || 0;
+                
+                // === KEY FIX: Flow Sub Pay App Tracker amounts into G702 Work This Period ===
+                // Subcontractor "Work This Period" from approved/pending papers in the Tracker becomes the MINIMUM
+                // the GC can show on G702 for that cost code. GC can bill MORE for self-perform work.
+                const subMinWorkThisPeriod = getCurrentSubBilledThisPeriodForCode(line.cost_code);
+                const workThis = Math.max(billing.workThisPeriod || 0, subMinWorkThisPeriod);
                 const materials = billing.materialsStored || 0;
                 const thisPeriodTotal = workThis + materials;
 
@@ -1750,7 +1755,7 @@ let mainLienWaiver = JSON.parse(localStorage.getItem('mainLienWaiver') || '{}');
             <div class="space-y-4">
                 <div>
                     <label class="block text-xs text-zinc-400 mb-1">Work Completed This Period</label>
-                    <input type="number" id="workThisPeriodInput" value="${billing.workThisPeriod || 0}" step="0.01"
+                    <input type="number" id="workThisPeriodInput" value="${Math.max(billing.workThisPeriod || 0, getCurrentSubBilledThisPeriodForCode(line.cost_code))}" step="0.01"
                            class="w-full bg-zinc-800 border border-zinc-700 rounded-md px-4 py-2.5 text-sm" oninput="updateWorkThisPeriodLive(${sovLineId}, this.value)">
                 </div>
                 <div>
