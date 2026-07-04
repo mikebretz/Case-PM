@@ -2733,6 +2733,9 @@ let mainLienWaiver = JSON.parse(localStorage.getItem('mainLienWaiver') || '{}');
                         <button onclick="showAddNewSubcontractorQuick()" class="px-4 py-2.5 bg-zinc-700 hover:bg-zinc-600 rounded-md text-sm flex items-center gap-2 whitespace-nowrap" title="Add New Subcontractor">
                             <i class="fa-solid fa-user-plus"></i> <span class="hidden md:inline">Add New</span>
                         </button>
+                        <button onclick="removeSelectedSubcontractor()" class="px-4 py-2.5 bg-red-600 hover:bg-red-500 rounded-md text-sm flex items-center gap-2 whitespace-nowrap text-white" title="Remove selected subcontractor (only if no pay apps submitted & pushed to Previous Sub Pay Apps)">
+                            <i class="fa-solid fa-user-minus"></i> <span class="hidden md:inline">Remove</span>
+                        </button>
                     </div>
                     <div id="subStatusBadgeContainer" class="mt-2 flex items-center gap-2 min-h-[22px]"></div>
                 </div>
@@ -3225,6 +3228,84 @@ let mainLienWaiver = JSON.parse(localStorage.getItem('mainLienWaiver') || '{}');
         selectedSubCompanyId = companyId ? parseInt(companyId) : null;
         localStorage.setItem('lastSelectedSubSOV', selectedSubCompanyId);
         renderPayAppContent();
+    }
+
+    function removeSelectedSubcontractor() {
+        if (!selectedSubCompanyId) {
+            showCenteredAlert("Please select a subcontractor first from the dropdown.", "warning");
+            return;
+        }
+        const companyId = selectedSubCompanyId;
+        const company = companies.find(c => c.id == companyId);
+        const companyName = company ? (company.name || company.company_name || 'this subcontractor') : 'this subcontractor';
+
+        // Load latest data
+        const subSOV = JSON.parse(localStorage.getItem('subcontractorSOV') || '{}');
+        const payAppHist = JSON.parse(localStorage.getItem('subPayAppHistory') || '{}');
+        const pendingSubs = JSON.parse(localStorage.getItem('subPendingSubmissions') || '{}');
+        const payAppNums = JSON.parse(localStorage.getItem('subPayAppNumbers') || '{}');
+
+        const histForSub = payAppHist[companyId] || {};
+        const hasPushedHistory = Object.keys(histForSub).some(p => {
+            const entry = histForSub[p];
+            return entry && entry.archived === true;
+        });
+
+        const hasActiveInTracker = Object.keys(histForSub).some(p => {
+            const entry = histForSub[p];
+            return entry && (entry.status === 'Approved' || entry.status === 'Pending Approval') && entry.archived !== true;
+        }) || !!pendingSubs[companyId];
+
+        if (hasPushedHistory) {
+            showCenteredAlert(
+                `Cannot remove ${companyName}.\n\n` +
+                `This subcontractor has had one or more pay applications pushed to "Previous Sub Pay Apps".\n` +
+                `Historical payment records exist to preserve the audit trail and G703 snapshots.\n\n` +
+                `Subcontractors with pushed pay app history cannot be removed.`,
+                "error"
+            );
+            return;
+        }
+
+        if (hasActiveInTracker) {
+            showCenteredAlert(
+                `${companyName} has a pay application currently in the Sub Pay App Tracker (pending approval or approved but not yet pushed).\n\n` +
+                `To remove this subcontractor, you must first clear the pending pay app:\n` +
+                `• Go to the Sub Pay App Tracker tab\n` +
+                `• Either click "Push to Previous Sub Pay Apps" on the row (archives it safely), OR\n` +
+                `• Click "Request Revision" to bring the paper back to the Subcontractor Schedule of Values tab for changes, then re-submit/approve/push as needed.\n\n` +
+                `Once the Tracker is clear of this subcontractor's pay app, you can return here and remove the subcontractor.`,
+                "warning"
+            );
+            return;
+        }
+
+        // Safe to remove — no pushed history and no active/pending pay app
+        // Clean up all related data for this sub
+        if (subSOV[companyId]) delete subSOV[companyId];
+        if (payAppHist[companyId]) delete payAppHist[companyId];
+        if (pendingSubs[companyId]) delete pendingSubs[companyId];
+        if (payAppNums[companyId]) delete payAppNums[companyId];
+
+        // Also clean lien waivers if present
+        const lienWaivers = JSON.parse(localStorage.getItem('subLienWaivers') || '{}');
+        if (lienWaivers[companyId]) delete lienWaivers[companyId];
+
+        // Persist
+        localStorage.setItem('subcontractorSOV', JSON.stringify(subSOV));
+        localStorage.setItem('subPayAppHistory', JSON.stringify(payAppHist));
+        localStorage.setItem('subPendingSubmissions', JSON.stringify(pendingSubs));
+        localStorage.setItem('subPayAppNumbers', JSON.stringify(payAppNums));
+        localStorage.setItem('subLienWaivers', JSON.stringify(lienWaivers));
+
+        // Clear selection
+        selectedSubCompanyId = null;
+        localStorage.removeItem('lastSelectedSubSOV');
+
+        // Re-render everything so UI is clean (selector no longer shows deleted sub, tables clear, etc.)
+        renderPayAppContent();
+
+        // No success popup per rules — the UI update (sub disappears from dropdown, tables empty) is the confirmation.
     }
 
     function addLineToSelectedSub() {
