@@ -355,7 +355,7 @@
 </dialog>
 
 <script>
-    // ==================== DATA & STATE (v76.53 - FIXED: getSubcontractedCostForCode now correctly reads original_commitment from Sub SOV lines. Cost to Date (Subcontracted) on Contractor G703 now properly rolls up Current from all Approved Sub SOVs) ====================
+    // ==================== DATA & STATE (v76.55 - G702 Billed to Date now correctly uses cumulative from payAppHistory (previous approved periods). Work This Period flows from Sub Pay App Tracker as minimum. G703 Cost to Date (Subcontracted) rolls up Current from Approved Sub SOVs.) ====================
     let payApplications = JSON.parse(localStorage.getItem('payApplications')) || [];
     let contractorSOV = JSON.parse(localStorage.getItem('contractorSOV')) || [];
     let subcontractorSOV = JSON.parse(localStorage.getItem('subcontractorSOV')) || {}; // { companyId: [lines] }
@@ -524,6 +524,36 @@ let mainLienWaiver = JSON.parse(localStorage.getItem('mainLienWaiver') || '{}');
         const currentDraft = (payAppBillingLines[line.id] && payAppBillingLines[line.id].workThisPeriod) || 0;
         // If user has already entered something >= sub min, keep it. Otherwise suggest the sub min.
         return Math.max(currentDraft, subMin);
+    }
+
+    // NEW: Cumulative Billed to Date from ALL previously APPROVED Contractor Pay Applications
+    // This is the correct AIA G702 behavior the user requested:
+    // Billed to Date = sum of (Work This Period + Materials Stored) from every approved historical period for this cost code.
+    function getPreviouslyBilledFromHistory(costCode) {
+        const norm = normalizeCostCode(costCode);
+        let total = 0;
+
+        if (!payAppHistory || payAppHistory.length === 0) return 0;
+
+        payAppHistory.forEach(period => {
+            if (!period.snapshot || !period.snapshot.billingLines) return;
+
+            const histSOV = period.snapshot.contractorSOVSnapshot || [];
+
+            Object.keys(period.snapshot.billingLines).forEach(lineId => {
+                const billing = period.snapshot.billingLines[lineId] || {};
+                const sovLine = histSOV.find(l => String(l.id) === String(lineId));
+                if (!sovLine) return;
+
+                if (normalizeCostCode(sovLine.cost_code) === norm) {
+                    const work = parseFloat(billing.workThisPeriod) || 0;
+                    const mat = parseFloat(billing.materialsStored) || 0;
+                    total += work + mat;
+                }
+            });
+        });
+
+        return Math.round(total * 100) / 100;
     }
 
     // ==================== SUB SOV STATUS HELPERS (Approval Workflow) ====================
@@ -1308,7 +1338,8 @@ let mainLienWaiver = JSON.parse(localStorage.getItem('mainLienWaiver') || '{}');
             const thisPeriod = (billing.workThisPeriod || 0) + (billing.materialsStored || 0);
             totalCurrentBilling += thisPeriod;
 
-            const previousBilled = line.billed_to_date || 0;
+            // CORRECTED: Billed to Date = cumulative from all PREVIOUSLY APPROVED pay apps (history) + current period
+            const previousBilled = getPreviouslyBilledFromHistory(line.cost_code);
             totalBilledToDate += previousBilled + thisPeriod;
             totalRetainage += thisPeriod * 0.10;
         });
@@ -1550,7 +1581,10 @@ let mainLienWaiver = JSON.parse(localStorage.getItem('mainLienWaiver') || '{}');
                 const materials = billing.materialsStored || 0;
                 const thisPeriodTotal = workThis + materials;
 
-                const previousBilled = line.billed_to_date || 0;
+                // CORRECTED per user requirement:
+                // Billed to Date = Total of all previous APPROVED Pay Applications' (Work This Period + Materials)
+                // for this cost code. This creates the running cumulative total across periods.
+                const previousBilled = getPreviouslyBilledFromHistory(line.cost_code);
                 const totalBilled = previousBilled + thisPeriodTotal;
                 const percentComplete = currentAmount > 0 ? Math.min(100, Math.round((totalBilled / currentAmount) * 100)) : 0;
                 const retainageRate = defaultRetainagePercent / 100;
@@ -1701,7 +1735,7 @@ let mainLienWaiver = JSON.parse(localStorage.getItem('mainLienWaiver') || '{}');
         } else {
             // Fallback calculation if element not found
             const currentAmount = (line.original || 0);
-            const previousBilled = line.billed_to_date || 0;
+            const previousBilled = getPreviouslyBilledFromHistory(line.cost_code);
             topRemaining = Math.max(0, currentAmount - previousBilled);
         }
 
@@ -1721,7 +1755,8 @@ let mainLienWaiver = JSON.parse(localStorage.getItem('mainLienWaiver') || '{}');
 
         const billing = payAppBillingLines[sovLineId] || { workThisPeriod: 0, materialsStored: 0, coWorkThisPeriod: 0 };
         const currentAmount = (line.original || 0) + (line.co_amount || 0);
-        const previousBilled = line.billed_to_date || 0;
+        // Use history-based cumulative for accurate "Previously Billed" in the edit modal
+        const previousBilled = getPreviouslyBilledFromHistory(line.cost_code);
         const remaining = currentAmount - previousBilled;
 
         // Calculate CO already billed previously (simple model: assume proportion or stored separately; here we use a stored co_billed_to_date if present)
