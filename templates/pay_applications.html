@@ -1443,7 +1443,7 @@ let mainLienWaiver = JSON.parse(localStorage.getItem('mainLienWaiver') || '{}');
                 </div>`;
             }
         } else if (status === 'Submitted' || status === 'Under Review') {
-            workflowHTML += `<button onclick="approvePayApplication()" class="px-5 py-2 bg-emerald-600 hover:bg-emerald-500 rounded-md text-sm font-medium flex items-center gap-2"><i class="fa-solid fa-check"></i> Approve Application</button>`;
+            workflowHTML += `<button onclick="approvePayApplication()" class="px-5 py-2 bg-red-600 hover:bg-red-500 rounded-md text-sm font-medium flex items-center gap-2"><i class="fa-solid fa-check"></i> Approve Application</button>`;
             workflowHTML += `<button onclick="requestRevisionPayApplication()" class="px-5 py-2 bg-amber-600 hover:bg-amber-500 rounded-md text-sm font-medium flex items-center gap-2"><i class="fa-solid fa-redo"></i> Request Revision</button>`;
         } else if (status === 'Approved') {
             workflowHTML += `<span class="px-4 py-1.5 bg-emerald-900/60 text-emerald-400 text-sm rounded-md font-medium">Approved — Payment can be processed</span>`;
@@ -2069,6 +2069,11 @@ let mainLienWaiver = JSON.parse(localStorage.getItem('mainLienWaiver') || '{}');
         localStorage.setItem('currentPayAppPeriod', JSON.stringify(currentPayAppPeriod));
         logPayAppAudit('APPLICATION_APPROVED', { periodNumber: currentPayAppPeriod.periodNumber });
 
+        // After approval, automatically switch to Previous Pay Applications tab so user can verify the numbers carried over
+        setTimeout(() => {
+            switchPayAppTab('previous-payapps');
+        }, 800);
+
         // === ARCHIVE ALL SUB PAY APPS FOR THIS PERIOD (move from Tracker to Previous Sub Pay Apps) ===
         // Per user request + AIA flow: When the GC G702 is approved, all sub papers in the Tracker for this period
         // are archived (pushed to history). This clears the Sub Pay App Tracker for the next cycle.
@@ -2094,6 +2099,9 @@ let mainLienWaiver = JSON.parse(localStorage.getItem('mainLienWaiver') || '{}');
             line.billed_to_date += thisPeriodCompleted;
         });
         localStorage.setItem('contractorSOV', JSON.stringify(contractorSOV));
+
+        // Success confirmation for the user
+        // showCenteredAlert("Pay Application approved. Amounts from Work This Period have been added to Billed to Date for the next period.", "success");
 
         // --- Automatic Period Advancement (one per month) ---
         const currentEnd = new Date(currentPayAppPeriod.periodEnd);
