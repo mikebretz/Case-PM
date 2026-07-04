@@ -355,7 +355,7 @@
 </dialog>
 
 <script>
-    // ==================== DATA & STATE (v76.38 - Previous Sub Pay Apps: Text made larger (text-sm) in chronological summary + individual G703 detail tables. Retainage column/text changed to red everywhere in Previous Sub Pay Apps (on-screen + print). Removed all non-essential success "okay" pop-ups/showCenteredAlert (only keep descriptive warnings/errors/blocks like submit blocker when prior pay app still in Tracker). All core workflow, numbering, submit blocking, push-to-previous clearing Tracker, lien pill, Request Revision fidelity, billed amounts with no bleed, Draft badge, Edit modal, overbill prevention, drag-drop, blue upload buttons, etc. 100% locked and unchanged) ====================
+    // ==================== DATA & STATE (v76.41 - Cost code live reconciliation: "Total left after this entry" now correctly shows GC G703 minus (other subs + this entry). Normalized code matching so $48k codes display correctly. Clearer labels in Edit Sub Line modal. Submit/Approve/Request Revision button colors locked green/red/yellow. All prior workflow, numbering, push-to-previous, lien pill, Request Revision fidelity, etc. 100% locked and unchanged) ====================
     let payApplications = JSON.parse(localStorage.getItem('payApplications')) || [];
     let contractorSOV = JSON.parse(localStorage.getItem('contractorSOV')) || [];
     let subcontractorSOV = JSON.parse(localStorage.getItem('subcontractorSOV')) || {}; // { companyId: [lines] }
@@ -3257,6 +3257,11 @@ let mainLienWaiver = JSON.parse(localStorage.getItem('mainLienWaiver') || '{}');
         const modal = document.getElementById('editSubSOVModal');
         const content = document.getElementById('editSubSOVContent');
         const company = companies.find(c => c.id == companyId);
+
+        // Set context for live cost code reconciliation display
+        currentEditingSubCompanyId = companyId;
+        currentEditingLineId = lineId || null;
+
         // Robust Primary Contact check
         const isPrimary = company && isUserPrimaryContactForCompany(company);
         const statusData = subSOVStatus[companyId] || {};
@@ -3313,7 +3318,7 @@ let mainLienWaiver = JSON.parse(localStorage.getItem('mainLienWaiver') || '{}');
                         </div>
                         <div id="costCodeProjected" class="text-[10px] text-emerald-500"></div>
                     </div>
-                    <div class="text-[10px] text-zinc-500 mt-1">Reconciled across all subs billing this code. Updates live as you change Original Commitment or Cost Code.</div>
+                    <div class="text-[10px] text-zinc-500 mt-1">Contractor G703 Total shown above. "Total left after this entry" = G703 minus (other subs committed + what you are entering now). Cannot exceed G703 on Save.</div>
                 </div>
 
                 <div>
@@ -3338,10 +3343,16 @@ let mainLienWaiver = JSON.parse(localStorage.getItem('mainLienWaiver') || '{}');
         }, 50);
     }
 
-    // Live display helper for reconciled Contractor G703 total per cost code (display only, no functional change to SOV or pay app workflow)
+    // Live display helper for reconciled Contractor G703 total per cost code
+    // Shows: Contractor G703 Total | Total committed by other subs | Total left after this entry
+    // Blocks overbilling on Save (existing logic in saveSubSOVLine remains the authority)
+    let currentEditingSubCompanyId = null;
+    let currentEditingLineId = null;
+
     function updateCostCodeTotalDisplay() {
         const costCodeEl = document.getElementById('subCostCode');
         const originalEl = document.getElementById('subOriginal');
+        const coEl = document.getElementById('subCO');
         const display = document.getElementById('costCodeTotalDisplay');
         const valueEl = document.getElementById('costCodeTotalValue');
         const projectedEl = document.getElementById('costCodeProjected');
@@ -3354,65 +3365,85 @@ let mainLienWaiver = JSON.parse(localStorage.getItem('mainLienWaiver') || '{}');
         }
         display.classList.remove('hidden');
 
-        let otherTotal = 0;
-        let gcTotalForCode = 0;
-        const normCode = costCode.toUpperCase();
+        const normCode = costCode.toUpperCase().replace(/[\s-]/g, ''); // normalize: remove spaces/dashes
 
-        // Sum from main Contractor (GC) SOV lines (robust: in-memory + localStorage fallback)
+        // 1. Contractor (GC) G703 Total for this code — robust fallback to localStorage
+        let gcG703Total = 0;
         let contractorLines = [];
         if (typeof contractorSOV !== 'undefined' && Array.isArray(contractorSOV) && contractorSOV.length > 0) {
             contractorLines = contractorSOV;
         } else {
-            try {
-                contractorLines = JSON.parse(localStorage.getItem('contractorSOV') || '[]');
-            } catch (e) { contractorLines = []; }
+            try { contractorLines = JSON.parse(localStorage.getItem('contractorSOV') || '[]'); } catch (e) { contractorLines = []; }
         }
         contractorLines.forEach(l => {
-            if ((l.cost_code || '').trim().toUpperCase() === normCode) {
-                const lineTotal = (l.original_commitment || 0) + (l.change_orders || 0);
-                otherTotal += lineTotal;
-                gcTotalForCode += lineTotal;
+            const lCode = (l.cost_code || '').toUpperCase().replace(/[\s-]/g, '');
+            if (lCode === normCode) {
+                gcG703Total += (l.original_commitment || 0) + (l.change_orders || 0);
             }
         });
 
-        // Sum from ALL subcontractor SOV lines (reconcile across subs)
+        // 2. Total already committed by OTHER subs to this code (exclude current company + current editing line)
+        let otherSubsCommitted = 0;
         if (typeof subcontractorSOV !== 'undefined') {
             Object.keys(subcontractorSOV).forEach(cid => {
+                // Skip the sub we are currently editing for
+                if (currentEditingSubCompanyId && String(cid) === String(currentEditingSubCompanyId)) {
+                    // When editing an existing line, we will subtract its current saved value below
+                    return;
+                }
                 (subcontractorSOV[cid] || []).forEach(l => {
-                    if ((l.cost_code || '').trim().toUpperCase() === normCode) {
-                        otherTotal += (l.original_commitment || 0) + (l.change_orders || 0);
+                    const lCode = (l.cost_code || '').toUpperCase().replace(/[\s-]/g, '');
+                    if (lCode === normCode) {
+                        otherSubsCommitted += (l.original_commitment || 0) + (l.change_orders || 0);
                     }
                 });
             });
         }
 
-        // Current entry value (parse the formatted or raw input)
-        let entryVal = 0;
-        if (originalEl) {
-            const raw = originalEl.value.replace(/[$,]/g, '');
-            entryVal = parseFloat(raw) || 0;
+        // If we are editing an existing line for this sub, subtract its *current saved* value
+        // (so "other subs committed" truly means everyone except this new/updated entry)
+        if (currentEditingSubCompanyId && currentEditingLineId && subcontractorSOV[currentEditingSubCompanyId]) {
+            const existingLine = subcontractorSOV[currentEditingSubCompanyId].find(l => l.id === currentEditingLineId);
+            if (existingLine) {
+                const existingCode = (existingLine.cost_code || '').toUpperCase().replace(/[\s-]/g, '');
+                if (existingCode === normCode) {
+                    otherSubsCommitted -= (existingLine.original_commitment || 0) + (existingLine.change_orders || 0);
+                }
+            }
         }
 
-        // For simplicity in display: show the "other" total (may include current line if editing existing)
-        // and a projected new total if this entry is added/updated
-        valueEl.textContent = formatCurrency(otherTotal);
+        // 3. This entry's commitment (what user is typing right now)
+        let thisEntry = 0;
+        if (originalEl) {
+            const rawOrig = (originalEl.value || '').replace(/[$,]/g, '');
+            thisEntry += parseFloat(rawOrig) || 0;
+        }
+        if (coEl) {
+            const rawCO = (coEl.value || '').replace(/[$,]/g, '');
+            thisEntry += parseFloat(rawCO) || 0;
+        }
+
+        const totalAfterThisEntry = otherSubsCommitted + thisEntry;
+        const leftAfterThisEntry = gcG703Total - totalAfterThisEntry;
+
+        // Update display
+        valueEl.textContent = formatCurrency(gcG703Total);
 
         if (projectedEl) {
-            const projected = otherTotal + entryVal;  // simple additive; in real use this would be more nuanced if editing existing line
-            projectedEl.innerHTML = `Projected after this entry: <span class="font-mono">${formatCurrency(projected)}</span>`;
+            let html = '';
+            html += `Other subs committed: <span class="font-mono">${formatCurrency(otherSubsCommitted)}</span><br>`;
+            const leftColor = leftAfterThisEntry < 0 ? 'text-red-400' : 'text-emerald-400';
+            html += `Total left after this entry: <span class="font-mono font-semibold ${leftColor}">${formatCurrency(leftAfterThisEntry)}</span>`;
+            projectedEl.innerHTML = html;
         }
 
-        // Live auto-fill: if Original Commitment is empty or $0 and we have a GC total for this code, pre-populate it (only on Sub SOV)
-        if (originalEl && gcTotalForCode > 0) {
+        // Live auto-fill Original Commitment from GC total (only if empty/$0 and we have a positive GC total)
+        if (originalEl && gcG703Total > 0 && currentEditingSubCompanyId) {
             const currentRaw = (originalEl.value || '').replace(/[$,]/g, '').trim();
             if (!currentRaw || parseFloat(currentRaw) === 0) {
-                originalEl.value = formatCurrency(gcTotalForCode);
-                // Re-calculate entryVal for projected after auto-fill
-                if (projectedEl) {
-                    const newEntry = gcTotalForCode;
-                    const newProjected = otherTotal + newEntry;
-                    projectedEl.innerHTML = `Projected after this entry: <span class="font-mono">${formatCurrency(newProjected)}</span>`;
-                }
+                originalEl.value = formatCurrency(gcG703Total);
+                // Re-trigger to update the "left after this entry" with the new value
+                setTimeout(() => updateCostCodeTotalDisplay(), 10);
             }
         }
     }
