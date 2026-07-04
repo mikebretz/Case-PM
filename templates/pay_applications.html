@@ -355,7 +355,7 @@
 </dialog>
 
 <script>
-    // ==================== DATA & STATE (v76.42 - FIXED: Contractor G703 Total now correctly reads "original" field from contractorSOV. Other subs committed now correctly sums all other lines across ALL subs (excludes only the exact editing line). "Total left after this entry" = GC G703 − (other subs + this entry), shows red if negative, blocks save. Live updates from Contractor Schedule of Values "Current" column. All prior workflow 100% locked) ====================
+    // ==================== DATA & STATE (v76.43 - Removed persistent demo seed data for contractorSOV & subcontractorSOV so user clean resets stay clean. Cost code live reconciliation fixed in v76.42. All prior workflow 100% locked) ====================
     let payApplications = JSON.parse(localStorage.getItem('payApplications')) || [];
     let contractorSOV = JSON.parse(localStorage.getItem('contractorSOV')) || [];
     let subcontractorSOV = JSON.parse(localStorage.getItem('subcontractorSOV')) || {}; // { companyId: [lines] }
@@ -392,29 +392,10 @@ let mainLienWaiver = JSON.parse(localStorage.getItem('mainLienWaiver') || '{}');
     // Budget Contract Amount (from Budget page top-left card)
     const budgetContractAmount = 2450000;
 
-    // Demo: Seed some data on first load if empty
+    // Demo seed removed (v76.43) — contractorSOV and subcontractorSOV no longer auto-populate test data on empty.
+    // This ensures user "Clear All / Reset to start from scratch" stays clean on hard refresh.
     function seedDemoDataIfNeeded() {
-        if (contractorSOV.length === 0) {
-            contractorSOV = [
-                { id: 1001, cost_code: "03-3000", description: "Concrete - Structural Foundations", original: 185000, co_amount: 12500, billed_to_date: 142000, percent_complete: 72, notes: "Includes rebar" },
-                { id: 1002, cost_code: "05-1200", description: "Structural Steel Framing", original: 245000, co_amount: 0, billed_to_date: 196000, percent_complete: 80, notes: "" },
-                { id: 1003, cost_code: "26-1000", description: "Electrical - Rough In & Distribution", original: 98000, co_amount: 4200, billed_to_date: 61200, percent_complete: 60, notes: "ALDI tenant coordination" },
-                { id: 1004, cost_code: "07-5000", description: "Membrane Roofing System", original: 132000, co_amount: 0, billed_to_date: 105600, percent_complete: 80, notes: "" }
-            ];
-            localStorage.setItem('contractorSOV', JSON.stringify(contractorSOV));
-        }
-        if (Object.keys(subcontractorSOV).length === 0 && companies.length > 0) {
-            // Find or create demo subs
-            let demoSub = companies.find(c => c.type === 'Subcontractor' || c.company_type === 'Subcontractor');
-            if (!demoSub && companies.length > 0) demoSub = companies[0];
-            if (demoSub) {
-                subcontractorSOV[demoSub.id] = [
-                    { id: 2001, cost_code: "03-3000", description: "Concrete Foundations & Slab", original_commitment: 92000, billed_to_date: 68500, notes: "Progress billing #3" },
-                    { id: 2002, cost_code: "03-3000", description: "Rebar Supply & Install", original_commitment: 28500, billed_to_date: 21400, notes: "" }
-                ];
-                localStorage.setItem('subcontractorSOV', JSON.stringify(subcontractorSOV));
-            }
-        }
+        // Only ensure a default pay period exists if none is set (non-destructive to user data)
         if (!currentPayAppPeriod) {
             currentPayAppPeriod = {
                 id: Date.now(),
