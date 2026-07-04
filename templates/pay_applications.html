@@ -5841,7 +5841,8 @@ function printSubcontractorG703(companyId) {
             const companyId = company.id;
             const lines = subcontractorSOV[companyId] || [];
             const status = getSubSOVStatus(companyId);
-            const historyEntry = subPayAppHistory[companyId] && subPayAppHistory[companyId][currentPeriodNum];
+            // Use the sub-specific number we just decided, not the main G702 period number
+            const historyEntry = subPayAppHistory[companyId] && subPayAppHistory[companyId][displayedPayAppNum];
             // === Prefer the number actually stored in the paper (sub-specific, starts at 1) ===
             let displayedPayAppNum = 1;
             if (historyEntry && historyEntry.periodNumber) {
@@ -5891,6 +5892,9 @@ function printSubcontractorG703(companyId) {
                 statusBadge = `<span class="px-3 py-0.5 text-xs rounded-full bg-emerald-900/70 text-emerald-400 font-medium">Approved &amp; Committed</span>`;
             } else if (historyEntry && historyEntry.status === 'Pending Approval') {
                 statusBadge = `<span class="px-3 py-0.5 text-xs rounded-full bg-amber-900/70 text-amber-400 font-medium">Pending Approval</span>`;
+            } else if (historyEntry) {
+                // If we have a historyEntry but status is not set or is something else, treat it as Approved (the paper is in the Tracker)
+                statusBadge = `<span class="px-3 py-0.5 text-xs rounded-full bg-emerald-900/70 text-emerald-400 font-medium">Approved &amp; Committed</span>`;
             } else if (status === 'Approved') {
                 statusBadge = `<span class="px-3 py-0.5 text-xs rounded-full bg-sky-900/70 text-sky-400 font-medium">Ready for Billing</span>`;
             } else {
@@ -5963,8 +5967,7 @@ function printSubcontractorG703(companyId) {
                                 <i class="fa-solid fa-redo text-xs"></i> <span>Request Revision</span>
                             </button>
                         ` : '' }
-                        <button onclick="event.stopImmediatePropagation(); selectedSubCompanyId = ${companyId}; switchPayAppTab('sub-sov');" 
-                                class="px-3 py-1 bg-zinc-700 hover:bg-zinc-600 text-xs rounded">View SOV</button>
+                        <!-- View SOV button removed per user request to keep Tracker actions clean -->
                         <button onclick="event.stopImmediatePropagation(); showSubPayAppLog(${companyId});" 
                                 class="px-2 py-1 bg-sky-700 hover:bg-sky-600 text-xs rounded" title="View Log / History"><i class="fa-solid fa-history"></i></button>
                     </div>
