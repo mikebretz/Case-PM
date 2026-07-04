@@ -355,7 +355,7 @@
 </dialog>
 
 <script>
-    // ==================== DATA & STATE (v76.56 - EXACT cumulative Billed to Date: Period 1 shows $0. After Approve G702, this period's completed amount is added to line.billed_to_date. Next period's Billed to Date = previous cumulative + new Work This Period. Running total across all approved periods, exactly as described.) ====================
+    // ==================== DATA & STATE (v76.57 - FIXED: On current Draft period, Billed to Date column = ONLY line.billed_to_date (committed from prior approved periods). Current Work This Period is NOT added until Approve. Matches user's exact Period 1 → Period 2 flow.) ====================
     let payApplications = JSON.parse(localStorage.getItem('payApplications')) || [];
     let contractorSOV = JSON.parse(localStorage.getItem('contractorSOV')) || [];
     let subcontractorSOV = JSON.parse(localStorage.getItem('subcontractorSOV')) || {}; // { companyId: [lines] }
@@ -1338,9 +1338,10 @@ let mainLienWaiver = JSON.parse(localStorage.getItem('mainLienWaiver') || '{}');
             const thisPeriod = (billing.workThisPeriod || 0) + (billing.materialsStored || 0);
             totalCurrentBilling += thisPeriod;
 
-            // CORRECTED: Billed to Date = cumulative from all PREVIOUSLY APPROVED pay apps (history) + current period
-            const previousBilled = getPreviouslyBilledFromHistory(line.cost_code);
-            totalBilledToDate += previousBilled + thisPeriod;
+            // For the CURRENT open period view: Total Completed & Stored summary shows only committed amounts
+            // (from previously approved periods). Current period amounts are shown in Work This Period until approved.
+            const previousBilled = getPreviouslyBilledFromHistory(line.cost_code) || (line.billed_to_date || 0);
+            totalBilledToDate += previousBilled;
             totalRetainage += thisPeriod * 0.10;
         });
 
@@ -1587,8 +1588,12 @@ let mainLienWaiver = JSON.parse(localStorage.getItem('mainLienWaiver') || '{}');
                 // On first period: line.billed_to_date starts at 0 → Billed to Date shows 0.
                 // After approve: we add this period's completed to line.billed_to_date on the SOV.
                 // Next period: Billed to Date shows previous cumulative + new this period.
+                // CORRECT BEHAVIOR (per user):
+                // On the CURRENT open period (Draft/Submitted), Billed to Date shows ONLY what is already committed
+                // from previously approved pay applications (stored in line.billed_to_date).
+                // Current period's Work This Period + Materials is NOT added here until the whole G702 is Approved.
                 const previousBilled = line.billed_to_date || 0;
-                const totalBilled = previousBilled + thisPeriodTotal;
+                const totalBilled = previousBilled;   // Do NOT add thisPeriodTotal yet
                 const percentComplete = currentAmount > 0 ? Math.min(100, Math.round((totalBilled / currentAmount) * 100)) : 0;
                 const retainageRate = defaultRetainagePercent / 100;
                 const retainage = thisPeriodTotal * retainageRate;
