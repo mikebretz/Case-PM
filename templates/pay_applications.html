@@ -899,29 +899,13 @@ let mainLienWaiver = JSON.parse(localStorage.getItem('mainLienWaiver') || '{}');
             if (hist && hist.lienWaiver && hist.lienWaiver.dataUrl) {
                 waiver = hist.lienWaiver;
             } else if (!explicitPeriodNum && subPayAppHistory[companyId]) {
-                // Robust fallback for Tracker: find most recent history entry that has a lien waiver attached.
-                // Also check string keys used for compliance (ZERO_...) entries.
-                const allKeys = Object.keys(subPayAppHistory[companyId]);
-                // Prefer numeric keys first (sorted desc), then string compliance keys
-                const numericKeys = allKeys.map(k => Number(k)).filter(n => Number.isFinite(n)).sort((a,b) => b - a);
-                let found = false;
-                for (const p of numericKeys) {
+                // Robust fallback for Tracker: find most recent history entry that has a lien waiver attached (covers period mismatches)
+                const nums = Object.keys(subPayAppHistory[companyId]).map(Number).sort((a,b) => b - a);
+                for (const p of nums) {
                     const h = subPayAppHistory[companyId][p];
                     if (h && h.lienWaiver && h.lienWaiver.dataUrl) {
                         waiver = h.lienWaiver;
-                        found = true;
                         break;
-                    }
-                }
-                if (!found) {
-                    // Check compliance string keys
-                    const compKeys = allKeys.filter(k => typeof k === 'string' && k.startsWith('ZERO_')).sort().reverse();
-                    for (const k of compKeys) {
-                        const h = subPayAppHistory[companyId][k];
-                        if (h && h.lienWaiver && h.lienWaiver.dataUrl) {
-                            waiver = h.lienWaiver;
-                            break;
-                        }
                     }
                 }
             }
@@ -4963,6 +4947,26 @@ let mainLienWaiver = JSON.parse(localStorage.getItem('mainLienWaiver') || '{}');
         };
         localStorage.setItem('subPendingSubmissions', JSON.stringify(subPendingSubmissions));
 
+        // === CLEANUP: Remove live lien waiver from Sub SOV tab now that it has moved into the pending submission ===
+        // This ensures the waiver "travels with" the $0 compliance paper into the Sub Pay App Tracker.
+        // The Subcontractor Schedule of Values tab will no longer show the old pill under Pay App #N.
+        if (subLienWaivers[companyId]) {
+            // Remove the special compliance key (used for zero-dollar submissions)
+            if (subLienWaivers[companyId]['LATEST_COMPLIANCE']) {
+                delete subLienWaivers[companyId]['LATEST_COMPLIANCE'];
+            }
+            // Also remove any numeric key that might have been used
+            const numericKey = subPayAppNumbers[companyId];
+            if (numericKey && subLienWaivers[companyId][numericKey]) {
+                delete subLienWaivers[companyId][numericKey];
+            }
+            // If currentPeriodNum is a ZERO_ string key, also clean it (defensive)
+            if (typeof currentPeriodNum === 'string' && currentPeriodNum.startsWith('ZERO_') && subLienWaivers[companyId][currentPeriodNum]) {
+                delete subLienWaivers[companyId][currentPeriodNum];
+            }
+            localStorage.setItem('subLienWaivers', JSON.stringify(subLienWaivers));
+        }
+
         logPayAppAudit('SUB_PAYAPP_SUBMITTED_FOR_APPROVAL', { companyId: companyId, period: currentPeriodNum, total: totalBilledThisPeriod });
         // Success feedback removed per user request (pending status + buttons visible)
         renderPayAppContent();
@@ -5168,6 +5172,17 @@ let mainLienWaiver = JSON.parse(localStorage.getItem('mainLienWaiver') || '{}');
                 uploadedDate: sourceEntry.lienWaiver.uploadedDate || new Date().toISOString(),
                 dataUrl: sourceEntry.lienWaiver.dataUrl || null
             };
+
+            // For zero-dollar compliance entries being pushed back via Request Revision,
+            // also store under LATEST_COMPLIANCE and under the current numeric key
+            // so the Subcontractor SOV tab correctly shows the pill under "Pay App #N Current".
+            const wasZero = sourceEntry.isZeroDollar === true || !!sourceEntry.zeroDollarDisplayLabel || (typeof periodNum === 'string' && periodNum.startsWith('ZERO_'));
+            if (wasZero) {
+                subLienWaivers[companyId]['LATEST_COMPLIANCE'] = { ...subLienWaivers[companyId][periodNum] };
+                const currentNumeric = subPayAppNumbers[companyId] || 1;
+                subLienWaivers[companyId][currentNumeric] = { ...subLienWaivers[companyId][periodNum] };
+            }
+
             localStorage.setItem('subLienWaivers', JSON.stringify(subLienWaivers));
         }
 
@@ -5186,11 +5201,8 @@ let mainLienWaiver = JSON.parse(localStorage.getItem('mainLienWaiver') || '{}');
         // === CRITICAL: Reconcile the Pay App number back to the one that was in the Tracker ===
         // This ensures the Subcontractor Schedule of Values tab shows "Pay App #N Current" (the same N)
         // instead of jumping to the next number. The number only advances on successful Approve.
-        // Do NOT touch the counter for compliance (ZERO_) papers — they never consume a number.
-        if (typeof periodNum === 'number' || (typeof periodNum === 'string' && !periodNum.startsWith('ZERO_') && Number.isFinite(Number(periodNum)))) {
-            subPayAppNumbers[companyId] = Number(periodNum);
-            localStorage.setItem('subPayAppNumbers', JSON.stringify(subPayAppNumbers));
-        }
+        subPayAppNumbers[companyId] = periodNum;
+        localStorage.setItem('subPayAppNumbers', JSON.stringify(subPayAppNumbers));
 
         // Ensure the SOV status stays Approved so the billing UI shows Submit button
         updateSubSOVStatus(companyId, 'Approved', { 
@@ -7482,36 +7494,13 @@ function printSubcontractorG703(companyId) {
             const status = getSubSOVStatus(companyId);
             // === Always pick the SINGLE MOST RECENT ACTIVE (non-archived) pay app period for this sub ===
             // This ensures Tracker shows the correct current paper (#1, then after push #1 + approve #2, shows #2 with its own billed amount).
-            // FIXED: Also surface zero-dollar compliance entries (stored under ZERO_ keys) so their lien waiver travels with them.
             let displayedPayAppNum = subPayAppNumbers[companyId] || 1;
             if (subPayAppHistory[companyId]) {
-                // Numeric periods
                 const periods = Object.keys(subPayAppHistory[companyId]).map(Number).filter(p => {
                     const e = subPayAppHistory[companyId][p];
-                    return e && (e.status === 'Approved' || e.status === 'Pending Approval') && e.archived !== true && Number.isFinite(p);
+                    return e && (e.status === 'Approved' || e.status === 'Pending Approval') && e.archived !== true;
                 }).sort((a,b) => b - a);
                 if (periods.length > 0) displayedPayAppNum = periods[0];
-
-                // Also check for the most recent active compliance (ZERO_) entry
-                const compKeys = Object.keys(subPayAppHistory[companyId]).filter(k => typeof k === 'string' && k.startsWith('ZERO_'));
-                if (compKeys.length > 0) {
-                    // Pick the one with latest approved/submitted date (or last in key order as fallback)
-                    let latestCompKey = null;
-                    let latestDate = 0;
-                    compKeys.forEach(k => {
-                        const e = subPayAppHistory[companyId][k];
-                        if (e && (e.status === 'Approved' || e.status === 'Pending Approval') && e.archived !== true) {
-                            const d = e.approvedDate ? new Date(e.approvedDate).getTime() : (e.submittedDate ? new Date(e.submittedDate).getTime() : 0);
-                            if (d >= latestDate) {
-                                latestDate = d;
-                                latestCompKey = k;
-                            }
-                        }
-                    });
-                    if (latestCompKey) {
-                        displayedPayAppNum = latestCompKey; // Use actual storage key so lien waiver lookup works
-                    }
-                }
             } else if (subPendingSubmissions[companyId] && subPendingSubmissions[companyId].periodNumber) {
                 displayedPayAppNum = subPendingSubmissions[companyId].periodNumber;
             }
