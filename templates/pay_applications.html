@@ -439,29 +439,31 @@ let mainLienWaiver = JSON.parse(localStorage.getItem('mainLienWaiver') || '{}');
     }
 
     function getSubBilledTotalForCode(code) {
+        // Cumulative Billed to Date from Previous Sub Pay Apps (archived/pushed G703 snapshots)
+        // Sums Work This Period from every historical pay app line for matching cost code.
+        // This gives the running total of everything billed by subs through their pay apps for this code.
         const norm = normalizeCostCode(code);
         let total = 0;
 
-        // Active in Sub Pay App Tracker
-        if (window.subPayAppTracker) {
-            Object.values(window.subPayAppTracker).forEach(app => {
-                if (normalizeCostCode(app.cost_code || app.costCode) === norm) {
-                    total += (parseFloat(app.billed_this_period) || parseFloat(app.billedToDate) || 0);
-                }
-            });
-        }
+        if (!subPayAppHistory) return 0;
 
-        // Archived / Previous Sub Pay Apps
-        if (window.subPayAppHistory) {
-            Object.values(window.subPayAppHistory).forEach(apps => {
-                (apps || []).forEach(app => {
-                    if (normalizeCostCode(app.cost_code || app.costCode) === norm) {
-                        total += (parseFloat(app.billed_this_period) || parseFloat(app.billedToDate) || 0);
+        Object.keys(subPayAppHistory).forEach(companyId => {
+            const historyArray = subPayAppHistory[companyId] || [];
+            historyArray.forEach(payApp => {
+                if (!payApp.archived) return; // Only count pushed / Previous Sub Pay Apps
+                const lines = payApp.lines || [];
+                lines.forEach(line => {
+                    const lineCode = line.costCode || line.cost_code || '';
+                    if (normalizeCostCode(lineCode) === norm) {
+                        // Sum Work This Period across all historical pay apps for this code
+                        // (matches user request: "add up all the work this period that shows up in the previous sub pay apps")
+                        total += parseFloat(line.work_this_period) || 0;
                     }
                 });
             });
-        }
-        return total;
+        });
+
+        return Math.round(total * 100) / 100; // clean currency
     }
 
     // ==================== SUB SOV STATUS HELPERS (Approval Workflow) ====================
@@ -2070,7 +2072,7 @@ let mainLienWaiver = JSON.parse(localStorage.getItem('mainLienWaiver') || '{}');
                 <th class="px-4 py-3 text-center font-medium text-zinc-400 w-40">Current</th>
                 <th class="px-4 py-3 text-center font-medium text-emerald-400 w-44">Cost to Date<br><span class="text-[10px] text-emerald-500">(Subcontracted)</span></th>
                 <th class="px-3 py-3 text-center font-medium text-zinc-400 w-20">% Billed</th>
-                <th class="px-4 py-3 text-center font-medium text-zinc-400 w-44">Billed to Date<br><span class="text-[10px] text-emerald-500">(Owner / Max of Subs)</span></th>
+                <th class="px-4 py-3 text-center font-medium text-zinc-400 w-44">Billed to Date<br><span class="text-[10px] text-emerald-500">(Cumulative from Sub Pay Apps)</span></th>
                 <th class="px-4 py-3 text-center font-medium text-zinc-400 w-40">Balance</th>
                 <th class="px-4 py-3 text-left font-medium text-zinc-400 w-[30rem]">Notes</th>
                 <th class="px-3 py-3 text-center font-medium text-zinc-400 w-20">Actions</th>
@@ -2415,11 +2417,20 @@ let mainLienWaiver = JSON.parse(localStorage.getItem('mainLienWaiver') || '{}');
                     <input type="text" id="sovNotes" class="w-full bg-zinc-800 border border-zinc-700 rounded-md px-4 py-2.5 text-sm" value="${line.notes || ''}">
                 </div>
 
+                <div>
+                    <label class="block text-sm mb-1.5 text-zinc-300 flex items-center gap-2">
+                        <span>Billed to Date (Owner)</span>
+                        <span class="text-[10px] text-amber-400">(can be higher than Sub Pay Apps cumulative; cannot be lower)</span>
+                    </label>
+                    <input type="text" id="sovBilledToDate" class="w-full bg-zinc-800 border border-zinc-700 rounded-md px-4 py-2.5 text-sm font-mono" value="${formatCurrency(line.billed_to_date || 0)}">
+                    <div class="text-[10px] text-zinc-500 mt-0.5">This is what the Contractor bills the Owner for this line. Must be ≥ cumulative from Sub Previous Pay Apps.</div>
+                </div>
+
                 <!-- Live Sub Pay App Rollup Info (v76.48) -->
                 <div id="contractorSubRollupInfo" class="mt-4 p-3 bg-zinc-900 border border-zinc-700 rounded-md text-xs">
                     <div class="font-semibold text-emerald-400 mb-1.5 flex items-center gap-2">
                         <i class="fa-solid fa-link"></i> 
-                        <span>Subcontractor Pay App Tracker Rollup (Live)</span>
+                        <span>Sub Pay Apps — Cumulative Billed (from Previous / Pushed)</span>
                     </div>
                     <div id="subRollupContent" class="text-zinc-300 space-y-0.5">
                         <!-- Populated by JS below -->
@@ -2452,9 +2463,9 @@ let mainLienWaiver = JSON.parse(localStorage.getItem('mainLienWaiver') || '{}');
             const subBilled = getSubBilledTotalForCode(code);
 
             container.innerHTML = `
-                <div class="flex justify-between"><span class="text-zinc-400">Subcontracted (SOV lines):</span> <span class="font-mono text-emerald-400">${formatCurrency(subCost)}</span></div>
-                <div class="flex justify-between"><span class="text-zinc-400">Billed by Subs (Tracker + History):</span> <span class="font-mono text-emerald-400 font-semibold">${formatCurrency(subBilled)}</span></div>
-                <div class="flex justify-between mt-1 pt-1 border-t border-zinc-700"><span class="text-amber-400 font-medium">Minimum Billed to Date (Owner):</span> <span class="font-mono text-amber-400 font-bold">${formatCurrency(subBilled)}</span></div>
+                <div class="flex justify-between"><span class="text-zinc-400">Subcontracted (from Sub SOVs):</span> <span class="font-mono text-emerald-400">${formatCurrency(subCost)}</span></div>
+                <div class="flex justify-between"><span class="text-zinc-400">Billed by Subs (Cumulative Work This Period from all Previous Pay Apps):</span> <span class="font-mono text-emerald-400 font-semibold">${formatCurrency(subBilled)}</span></div>
+                <div class="flex justify-between mt-1 pt-1 border-t border-zinc-700"><span class="text-amber-400 font-medium">Minimum Billed to Date (Owner) — cannot go lower:</span> <span class="font-mono text-amber-400 font-bold">${formatCurrency(subBilled)}</span></div>
             `;
         }
 
@@ -2517,6 +2528,16 @@ let mainLienWaiver = JSON.parse(localStorage.getItem('mainLienWaiver') || '{}');
             }
         }
 
+        // Read Billed to Date (Owner) and enforce minimum from Sub Previous Pay Apps
+        const billedStr = document.getElementById('sovBilledToDate').value.replace(/[^0-9.-]/g, '');
+        const billedToDateNum = parseFloat(billedStr) || 0;
+        const cumulativeFromSubs = getSubBilledTotalForCode(costCode);
+
+        if (billedToDateNum < cumulativeFromSubs - 0.01) {  // small tolerance for rounding
+            alert(`BLOCKED: Billed to Date (Owner) cannot be lower than the cumulative billed by subcontractors from Previous Sub Pay Apps for ${costCode}.\n\nCumulative from Sub Pay Apps: ${formatCurrency(cumulativeFromSubs)}\nYou entered: ${formatCurrency(billedToDateNum)}\n\nThis ensures the G703 Billed to Date always reflects at least what subs have already billed through their pushed pay apps. You may enter a higher amount for contractor self-perform or additional billing.`);
+            return;
+        }
+
         if (id) {
             const line = contractorSOV.find(l => l.id === id);
             if (line) {
@@ -2525,8 +2546,9 @@ let mainLienWaiver = JSON.parse(localStorage.getItem('mainLienWaiver') || '{}');
                 line.description = desc;
                 line.original = original;
                 line.co_amount = co_amount;
+                line.billed_to_date = billedToDateNum;
                 line.notes = notes;
-                logPayAppAudit('CONTRACTOR_SOV_EDITED', { cost_code: costCode, oldOriginal, newOriginal: original });
+                logPayAppAudit('CONTRACTOR_SOV_EDITED', { cost_code: costCode, oldOriginal, newOriginal: original, billed_to_date: billedToDateNum });
             }
         } else {
             contractorSOV.push({
@@ -2535,11 +2557,11 @@ let mainLienWaiver = JSON.parse(localStorage.getItem('mainLienWaiver') || '{}');
                 description: desc,
                 original: original,
                 co_amount: co_amount,
-                billed_to_date: 0,
+                billed_to_date: billedToDateNum,
                 percent_complete: 0,
                 notes: notes
             });
-            logPayAppAudit('CONTRACTOR_SOV_ADDED', { cost_code: costCode, description: desc, original });
+            logPayAppAudit('CONTRACTOR_SOV_ADDED', { cost_code: costCode, description: desc, original, billed_to_date: billedToDateNum });
         }
 
         localStorage.setItem('contractorSOV', JSON.stringify(contractorSOV));
