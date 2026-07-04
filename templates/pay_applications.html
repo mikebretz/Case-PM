@@ -2258,9 +2258,39 @@ let mainLienWaiver = JSON.parse(localStorage.getItem('mainLienWaiver') || '{}');
         // Robust targeting for both Contractor and Subcontractor modals
         let codeInput = document.getElementById('subCostCode') || document.getElementById('sovCostCode');
         let descInput = document.getElementById('subDescription') || document.getElementById('sovDescription');
+        let originalInput = document.getElementById('subOriginal');
 
         if (codeInput) codeInput.value = code;
         if (descInput) descInput.value = desc;
+
+        // Auto-fill Original Commitment from Contractor G703 total for this code (only for Sub SOV modal, and only if empty/$0)
+        if (originalInput && codeInput && codeInput.id === 'subCostCode') {
+            const currentVal = (originalInput.value || '').replace(/[$,]/g, '');
+            if (!currentVal || parseFloat(currentVal) === 0) {
+                // Look up GC total for this code (robust)
+                let contractorLines = [];
+                if (typeof contractorSOV !== 'undefined' && Array.isArray(contractorSOV) && contractorSOV.length > 0) {
+                    contractorLines = contractorSOV;
+                } else {
+                    try { contractorLines = JSON.parse(localStorage.getItem('contractorSOV') || '[]'); } catch (e) { contractorLines = []; }
+                }
+                const norm = (code || '').trim().toUpperCase();
+                let gcTotal = 0;
+                contractorLines.forEach(l => {
+                    if ((l.cost_code || '').trim().toUpperCase() === norm) {
+                        gcTotal += (l.original_commitment || 0) + (l.change_orders || 0);
+                    }
+                });
+                if (gcTotal > 0) {
+                    originalInput.value = formatCurrency(gcTotal);
+                }
+            }
+        }
+
+        // Trigger live display update
+        if (typeof updateCostCodeTotalDisplay === 'function') {
+            setTimeout(() => updateCostCodeTotalDisplay(), 30);
+        }
 
         if (listModal) {
             listModal.close();
@@ -2887,7 +2917,7 @@ let mainLienWaiver = JSON.parse(localStorage.getItem('mainLienWaiver') || '{}');
                     <button onclick="addLineToSelectedSub()" class="ml-3 px-4 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded text-xs font-medium flex items-center gap-1.5">
                         <i class="fa-solid fa-plus"></i> <span>Add Line</span>
                     </button>
-                    <button onclick="submitSubSOVForApproval()" class="ml-auto px-4 py-1.5 bg-amber-600 hover:bg-amber-500 text-white rounded text-xs font-medium flex items-center gap-1.5">
+                    <button onclick="submitSubSOVForApproval()" class="ml-auto px-4 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded text-xs font-medium flex items-center gap-1.5">
                         <i class="fa-solid fa-paper-plane"></i> <span>Submit SOV for Approval</span>
                     </button>
                 </div>
@@ -2899,10 +2929,10 @@ let mainLienWaiver = JSON.parse(localStorage.getItem('mainLienWaiver') || '{}');
                     <button onclick="addLineToSelectedSub()" class="ml-3 px-4 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded text-xs font-medium flex items-center gap-1.5">
                         <i class="fa-solid fa-plus"></i> <span>Add Line</span>
                     </button>
-                    <button onclick="approveSubSOVSetup()" class="ml-auto px-4 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded text-xs font-medium flex items-center gap-1.5">
+                    <button onclick="approveSubSOVSetup()" class="ml-auto px-4 py-1.5 bg-red-600 hover:bg-red-500 text-white rounded text-xs font-medium flex items-center gap-1.5">
                         <i class="fa-solid fa-check-double"></i> <span>Approve SOV Setup</span>
                     </button>
-                    <button onclick="rejectSubSOVSetup()" class="px-4 py-1.5 bg-red-600 hover:bg-red-500 text-white rounded text-xs font-medium flex items-center gap-1.5">
+                    <button onclick="rejectSubSOVSetup()" class="px-4 py-1.5 bg-yellow-600 hover:bg-yellow-500 text-white rounded text-xs font-medium flex items-center gap-1.5">
                         <i class="fa-solid fa-times"></i> <span>Request Revision</span>
                     </button>
                 </div>
@@ -3325,16 +3355,25 @@ let mainLienWaiver = JSON.parse(localStorage.getItem('mainLienWaiver') || '{}');
         display.classList.remove('hidden');
 
         let otherTotal = 0;
+        let gcTotalForCode = 0;
         const normCode = costCode.toUpperCase();
 
-        // Sum from main Contractor (GC) SOV lines
-        if (typeof contractorSOV !== 'undefined' && Array.isArray(contractorSOV)) {
-            contractorSOV.forEach(l => {
-                if ((l.cost_code || '').trim().toUpperCase() === normCode) {
-                    otherTotal += (l.original_commitment || 0) + (l.change_orders || 0);
-                }
-            });
+        // Sum from main Contractor (GC) SOV lines (robust: in-memory + localStorage fallback)
+        let contractorLines = [];
+        if (typeof contractorSOV !== 'undefined' && Array.isArray(contractorSOV) && contractorSOV.length > 0) {
+            contractorLines = contractorSOV;
+        } else {
+            try {
+                contractorLines = JSON.parse(localStorage.getItem('contractorSOV') || '[]');
+            } catch (e) { contractorLines = []; }
         }
+        contractorLines.forEach(l => {
+            if ((l.cost_code || '').trim().toUpperCase() === normCode) {
+                const lineTotal = (l.original_commitment || 0) + (l.change_orders || 0);
+                otherTotal += lineTotal;
+                gcTotalForCode += lineTotal;
+            }
+        });
 
         // Sum from ALL subcontractor SOV lines (reconcile across subs)
         if (typeof subcontractorSOV !== 'undefined') {
@@ -3361,6 +3400,20 @@ let mainLienWaiver = JSON.parse(localStorage.getItem('mainLienWaiver') || '{}');
         if (projectedEl) {
             const projected = otherTotal + entryVal;  // simple additive; in real use this would be more nuanced if editing existing line
             projectedEl.innerHTML = `Projected after this entry: <span class="font-mono">${formatCurrency(projected)}</span>`;
+        }
+
+        // Live auto-fill: if Original Commitment is empty or $0 and we have a GC total for this code, pre-populate it (only on Sub SOV)
+        if (originalEl && gcTotalForCode > 0) {
+            const currentRaw = (originalEl.value || '').replace(/[$,]/g, '').trim();
+            if (!currentRaw || parseFloat(currentRaw) === 0) {
+                originalEl.value = formatCurrency(gcTotalForCode);
+                // Re-calculate entryVal for projected after auto-fill
+                if (projectedEl) {
+                    const newEntry = gcTotalForCode;
+                    const newProjected = otherTotal + newEntry;
+                    projectedEl.innerHTML = `Projected after this entry: <span class="font-mono">${formatCurrency(newProjected)}</span>`;
+                }
+            }
         }
     }
 
