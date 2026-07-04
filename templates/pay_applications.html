@@ -2736,9 +2736,6 @@ let mainLienWaiver = JSON.parse(localStorage.getItem('mainLienWaiver') || '{}');
                         <button onclick="removeSelectedSubcontractor()" class="px-4 py-2.5 bg-red-600 hover:bg-red-500 rounded-md text-sm flex items-center gap-2 whitespace-nowrap text-white" title="Remove selected subcontractor (only if no pay apps submitted & pushed to Previous Sub Pay Apps)">
                             <i class="fa-solid fa-user-minus"></i> <span class="hidden md:inline">Remove</span>
                         </button>
-                        <button onclick="clearAllSubcontractorsForFreshJob()" class="px-3 py-2.5 bg-amber-600 hover:bg-amber-500 rounded-md text-sm flex items-center gap-2 whitespace-nowrap text-white" title="Clear ALL subcontractors from this job to start a completely fresh job (removes SOVs, history, lien waivers)">
-                            <i class="fa-solid fa-trash-can"></i> <span class="hidden md:inline">Clear All Subs (Fresh Job)</span>
-                        </button>
                     </div>
                     <div id="subStatusBadgeContainer" class="mt-2 flex items-center gap-2 min-h-[22px]"></div>
                 </div>
@@ -2907,6 +2904,9 @@ let mainLienWaiver = JSON.parse(localStorage.getItem('mainLienWaiver') || '{}');
                     </button>
                     <button onclick="submitSubSOVForApproval()" class="ml-auto px-4 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded text-xs font-medium flex items-center gap-1.5">
                         <i class="fa-solid fa-paper-plane"></i> <span>Submit SOV for Approval</span>
+                    </button>
+                    <button onclick="clearAllSubcontractorsForFreshJob()" class="px-3 py-1.5 bg-amber-600 hover:bg-amber-500 text-white rounded text-xs font-medium flex items-center gap-1.5" title="TEST BUTTON: Clear ALL subcontractors from this job to start completely fresh (empties the Select Subcontractor dropdown)">
+                        <i class="fa-solid fa-trash-can"></i> <span>Clear All Subs (Test)</span>
                     </button>
                 </div>
             `;
@@ -3320,7 +3320,7 @@ let mainLienWaiver = JSON.parse(localStorage.getItem('mainLienWaiver') || '{}');
     }
 
     function clearAllSubcontractorsForFreshJob() {
-        if (!confirm('⚠️ CLEAR ALL SUBCONTRACTORS FOR FRESH JOB\n\nThis will permanently delete:\n• All subcontractor SOV line items\n• All pay app history & G703 snapshots\n• All lien waivers\n• Pending submissions & counters\n\nThis is for starting a completely new/fresh job with an empty subcontractor list.\n\nContinue?')) {
+        if (!confirm('⚠️ CLEAR ALL SUBCONTRACTORS FOR FRESH JOB (TEST BUTTON)\n\nThis will permanently delete:\n• All subcontractor SOV line items\n• All pay app history & G703 snapshots\n• All lien waivers\n• Pending submissions & counters\n\nThis is for starting a completely new/fresh job with an EMPTY subcontractor dropdown.\nYou will need to use "Add New" to add subcontractors back for this project.\n\nContinue?')) {
             return;
         }
         // Clear all sub-related data (keep contractorSOV, main pay periods, companies list, etc.)
@@ -3331,9 +3331,16 @@ let mainLienWaiver = JSON.parse(localStorage.getItem('mainLienWaiver') || '{}');
         localStorage.removeItem('subLienWaivers');
         selectedSubCompanyId = null;
         localStorage.removeItem('lastSelectedSubSOV');
-        // Re-render so dropdown is completely empty and UI is ready for new job
+
+        // Explicitly empty the dropdown immediately (guarantees fresh job state)
+        const sel = document.getElementById('subSelector');
+        if (sel) {
+            sel.innerHTML = '<option value="">-- Select a Subcontractor --</option>';
+        }
+
+        // Re-render so UI is ready for new job (dropdown stays empty until Add New is used)
         renderPayAppContent();
-        // No non-essential success popup — empty state + cleared tables are the confirmation
+        // No non-essential success popup — empty dropdown + cleared tables are the confirmation
     }
 
     function addLineToSelectedSub() {
@@ -6482,7 +6489,7 @@ function printSubcontractorG703(companyId) {
             }
         });
 
-        console.log('%c[Case PM] Pay Applications page initialized (clean v3 - aesthetics + workflow fixed) [v76.45 - Draggable Add Sub modal + Remove from dropdown + Clear All Subs for fresh job]', 'color:#10b981');
+        console.log('%c[Case PM] Pay Applications page initialized (clean v3 - aesthetics + workflow fixed) [v76.46 - Clear All Subs moved to workflow bar as Test button + explicit dropdown clear + fresh job start]', 'color:#10b981');
     }
 
     // ==================== COMBINED PRINT LOGIC (G703 + LIEN WAIVER) ====================
