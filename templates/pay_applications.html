@@ -355,7 +355,7 @@
 </dialog>
 
 <script>
-    // ==================== DATA & STATE (v76.17 - Fixed live lien waiver pill update on Sub SOV & G702 (instant render after upload/remove), nice emerald pill UI on Sub SOV matching G702, removed duplicate View from Tracker Actions, relaxed one-COI insurance rule) ====================
+    // ==================== DATA & STATE (v76.29 - Aesthetics only: Restored drag & drop zone next to Upload Lien Waiver on BOTH Sub SOV and main G702 tabs; standardized all lien waiver upload/Re-upload buttons to consistent sky blue; logic/workflow 100% locked) ====================
     let payApplications = JSON.parse(localStorage.getItem('payApplications')) || [];
     let contractorSOV = JSON.parse(localStorage.getItem('contractorSOV')) || [];
     let subcontractorSOV = JSON.parse(localStorage.getItem('subcontractorSOV')) || {}; // { companyId: [lines] }
@@ -1312,7 +1312,20 @@ let mainLienWaiver = JSON.parse(localStorage.getItem('mainLienWaiver') || '{}');
             const currentPeriodNum = currentPayAppPeriod.periodNumber;
             const hasMainWaiver = mainLienWaiver[currentPeriodNum] && mainLienWaiver[currentPeriodNum].filename;
             if (!hasMainWaiver) {
-                workflowHTML += `<button onclick="uploadMainContractorLienWaiver()" class="px-4 py-2 bg-zinc-700 hover:bg-zinc-600 rounded-md text-sm font-medium flex items-center gap-2 border border-zinc-600"><i class="fa-solid fa-file-upload"></i> <span>Lien Waiver Upload</span></button>`;
+                workflowHTML += `
+                    <div class="flex items-center gap-3 flex-wrap">
+                        <button onclick="uploadMainContractorLienWaiver()" class="px-4 py-2 bg-sky-600 hover:bg-sky-500 text-white rounded-md text-sm font-medium flex items-center gap-2">
+                            <i class="fa-solid fa-file-upload"></i> <span>Lien Waiver Upload</span>
+                        </button>
+                        <div id="main-lien-drop-zone" 
+                             class="hidden md:flex items-center justify-center px-3 py-2 border-2 border-dashed border-zinc-600 hover:border-sky-400 rounded-md text-xs text-zinc-400 cursor-pointer transition-all active:bg-zinc-800"
+                             style="min-width: 170px; height: 38px;"
+                             title="Drag & drop PDF lien waiver here or click to browse">
+                            <i class="fa-solid fa-cloud-upload-alt mr-1.5 text-sky-400"></i>
+                            <span>or drag &amp; drop PDF</span>
+                        </div>
+                    </div>
+                `;
             } else {
                 const w = mainLienWaiver[currentPeriodNum];
                 workflowHTML += `<div class="flex items-center gap-2 px-3 py-1.5 bg-zinc-800 border border-emerald-600 rounded-md text-sm">
@@ -1334,6 +1347,43 @@ let mainLienWaiver = JSON.parse(localStorage.getItem('mainLienWaiver') || '{}');
         </button>`;
         workflowHTML += `</div>`;
         workflowBar.innerHTML = workflowHTML;
+
+        // Attach drag & drop + click handler for main G702 lien waiver upload zone (aesthetics restoration, logic unchanged)
+        setTimeout(() => {
+            const dz = document.getElementById('main-lien-drop-zone');
+            if (dz && currentPayAppPeriod) {
+                dz.ondragover = (e) => { e.preventDefault(); dz.classList.add('!border-sky-400', 'bg-zinc-800/60'); };
+                dz.ondragleave = () => { dz.classList.remove('!border-sky-400', 'bg-zinc-800/60'); };
+                dz.ondrop = (e) => {
+                    e.preventDefault();
+                    dz.classList.remove('!border-sky-400', 'bg-zinc-800/60');
+                    const file = e.dataTransfer.files[0];
+                    if (!file) return;
+                    if (!file.name.toLowerCase().endsWith('.pdf')) {
+                        showCenteredAlert('Lien waiver must be a PDF file.', 'warning');
+                        return;
+                    }
+                    // Mirror the exact storage + UI update from uploadMainContractorLienWaiver() so behavior is identical
+                    const reader = new FileReader();
+                    reader.onload = function(ev) {
+                        const dataUrl = ev.target.result;
+                        const periodNum = currentPayAppPeriod.periodNumber;
+                        mainLienWaiver[periodNum] = {
+                            filename: file.name,
+                            dataUrl: dataUrl,
+                            uploadedDate: new Date().toISOString()
+                        };
+                        localStorage.setItem('mainLienWaiver', JSON.stringify(mainLienWaiver));
+                        logPayAppAudit('MAIN_LIEN_WAIVER_UPLOADED', { period: periodNum, filename: file.name });
+                        showCenteredAlert(`Lien waiver "${file.name}" uploaded for Pay Application.`, 'success');
+                        setTimeout(() => { renderPayAppContent(); }, 30);
+                    };
+                    reader.readAsDataURL(file);
+                };
+                // Click on drop zone opens file picker
+                dz.onclick = () => uploadMainContractorLienWaiver();
+            }
+        }, 70);
 
         // NEW: Populate Approved Subcontractor Billings card (flows from tracker approvals)
         setTimeout(() => {
@@ -2864,7 +2914,7 @@ let mainLienWaiver = JSON.parse(localStorage.getItem('mainLienWaiver') || '{}');
                                 <span class="text-emerald-300 max-w-[160px] truncate" title="${waiverForPill.filename || 'Lien Waiver'}">${waiverForPill.filename || 'Lien Waiver'}</span>
                                 <button onclick="viewLienWaiver(${selectedSubCompanyId}); event.stopImmediatePropagation();" class="px-2.5 py-0.5 bg-emerald-700 hover:bg-emerald-600 text-white rounded text-xs">View</button>
                                 <button onclick="removeLienWaiver(${selectedSubCompanyId}); event.stopImmediatePropagation();" class="px-2.5 py-0.5 bg-red-600 hover:bg-red-500 text-white rounded text-xs">Remove</button>
-                                <button onclick="uploadLienWaiver(${selectedSubCompanyId}); event.stopImmediatePropagation();" class="px-2.5 py-0.5 bg-zinc-600 hover:bg-zinc-500 text-white rounded text-xs">Re-upload</button>
+                                <button onclick="uploadLienWaiver(${selectedSubCompanyId}); event.stopImmediatePropagation();" class="px-2.5 py-0.5 bg-sky-600 hover:bg-sky-500 text-white rounded text-xs">Re-upload</button>
                             </div>
                         ` : ''}
                     `;
@@ -2907,14 +2957,23 @@ let mainLienWaiver = JSON.parse(localStorage.getItem('mainLienWaiver') || '{}');
                             <span class="text-emerald-300 max-w-[180px] truncate" title="${waiverForPill.filename || ''}">${waiverForPill.filename || 'Lien Waiver'}</span>
                             <button onclick="viewLienWaiver(${selectedSubCompanyId}); event.stopImmediatePropagation();" class="px-2.5 py-0.5 bg-emerald-700 hover:bg-emerald-600 text-white rounded text-xs">View</button>
                             <button onclick="removeLienWaiver(${selectedSubCompanyId}); event.stopImmediatePropagation();" class="px-2.5 py-0.5 bg-red-600 hover:bg-red-500 text-white rounded text-xs">Remove</button>
-                            <button onclick="uploadLienWaiver(${selectedSubCompanyId}); event.stopImmediatePropagation();" class="px-2.5 py-0.5 bg-zinc-600 hover:bg-zinc-500 text-white rounded text-xs">Re-upload</button>
+                            <button onclick="uploadLienWaiver(${selectedSubCompanyId}); event.stopImmediatePropagation();" class="px-2.5 py-0.5 bg-sky-600 hover:bg-sky-500 text-white rounded text-xs">Re-upload</button>
                         </div>
                     `;
                 } else {
                     buttonsHTML += `
-                        <button onclick="uploadLienWaiver(${selectedSubCompanyId})" class="px-4 py-2 bg-sky-600 hover:bg-sky-500 text-white rounded text-sm flex items-center gap-1.5">
-                            <i class="fa-solid fa-upload"></i> <span>Upload Lien Waiver ${requireLienWaiverOnSubPayApp ? '(Required)' : '(Optional)'}</span>
-                        </button>
+                        <div class="flex items-center gap-3 flex-wrap">
+                            <button onclick="uploadLienWaiver(${selectedSubCompanyId})" class="px-4 py-2 bg-sky-600 hover:bg-sky-500 text-white rounded text-sm flex items-center gap-1.5">
+                                <i class="fa-solid fa-upload"></i> <span>Upload Lien Waiver ${requireLienWaiverOnSubPayApp ? '(Required)' : '(Optional)'}</span>
+                            </button>
+                            <div id="sub-lien-drop-zone" 
+                                 class="hidden md:flex items-center justify-center px-3 py-2 border-2 border-dashed border-zinc-600 hover:border-sky-400 rounded-md text-xs text-zinc-400 cursor-pointer transition-all active:bg-zinc-800"
+                                 style="min-width: 170px; height: 38px;"
+                                 title="Drag & drop PDF lien waiver here or click to browse">
+                                <i class="fa-solid fa-cloud-upload-alt mr-1.5 text-sky-400"></i>
+                                <span>or drag &amp; drop PDF</span>
+                            </div>
+                        </div>
                     `;
                 }
             }
@@ -2935,6 +2994,45 @@ let mainLienWaiver = JSON.parse(localStorage.getItem('mainLienWaiver') || '{}');
         }
 
         workflowBar.innerHTML = workflowHTML;
+
+        // Attach drag & drop + click handler for Subcontractor lien waiver upload zone (aesthetics restoration, logic unchanged)
+        setTimeout(() => {
+            const dz = document.getElementById('sub-lien-drop-zone');
+            if (dz && selectedSubCompanyId) {
+                dz.ondragover = (e) => { e.preventDefault(); dz.classList.add('!border-sky-400', 'bg-zinc-800/60'); };
+                dz.ondragleave = () => { dz.classList.remove('!border-sky-400', 'bg-zinc-800/60'); };
+                dz.ondrop = (e) => {
+                    e.preventDefault();
+                    dz.classList.remove('!border-sky-400', 'bg-zinc-800/60');
+                    const file = e.dataTransfer.files[0];
+                    if (!file) return;
+                    if (!file.name.toLowerCase().endsWith('.pdf')) {
+                        showCenteredAlert('Lien waiver must be a PDF file.', 'warning');
+                        return;
+                    }
+                    // Mirror the exact storage + UI update from uploadLienWaiver() so behavior is identical
+                    const reader = new FileReader();
+                    reader.onload = function(ev) {
+                        const dataUrl = ev.target.result;
+                        if (!subLienWaivers[selectedSubCompanyId]) subLienWaivers[selectedSubCompanyId] = {};
+                        const periodNum = (subPayAppNumbers && subPayAppNumbers[selectedSubCompanyId]) ? subPayAppNumbers[selectedSubCompanyId] : (currentPayAppPeriod ? currentPayAppPeriod.periodNumber : 1);
+                        subLienWaivers[selectedSubCompanyId][periodNum] = {
+                            filename: file.name,
+                            dataUrl: dataUrl,
+                            uploadedDate: new Date().toISOString(),
+                            submitted: false
+                        };
+                        localStorage.setItem('subLienWaivers', JSON.stringify(subLienWaivers));
+                        logPayAppAudit('LIEN_WAIVER_UPLOADED', { companyId: selectedSubCompanyId, filename: file.name, period: periodNum });
+                        showCenteredAlert(`Lien waiver "${file.name}" uploaded successfully.`, 'success');
+                        setTimeout(() => { renderPayAppContent(); }, 30);
+                    };
+                    reader.readAsDataURL(file);
+                };
+                // Click anywhere on drop zone also opens the file picker (great UX)
+                dz.onclick = () => uploadLienWaiver(selectedSubCompanyId);
+            }
+        }, 70);
 
         // If no sub selected, show message in table
         if (!selectedSubCompanyId) {
