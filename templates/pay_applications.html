@@ -507,7 +507,8 @@ let mainLienWaiver = JSON.parse(localStorage.getItem('mainLienWaiver') || '{}');
 
                 // Use subLienWaivers structure for current period (supports image rendering in print)
                 if (!subLienWaivers[companyId]) subLienWaivers[companyId] = {};
-                const periodNum = currentPayAppPeriod ? currentPayAppPeriod.periodNumber : 1;
+                // Use SUB-SPECIFIC pay app number (independent counter per sub) so pill shows correctly on Subcontractor SOV tab
+                const periodNum = (subPayAppNumbers && subPayAppNumbers[companyId]) ? subPayAppNumbers[companyId] : (currentPayAppPeriod ? currentPayAppPeriod.periodNumber : 1);
 
                 subLienWaivers[companyId][periodNum] = {
                     filename: file.name,
@@ -532,7 +533,8 @@ let mainLienWaiver = JSON.parse(localStorage.getItem('mainLienWaiver') || '{}');
 
     function removeLienWaiver(companyId) {
         if (!companyId) return;
-        const periodNum = currentPayAppPeriod ? currentPayAppPeriod.periodNumber : 1;
+        // Use SUB-SPECIFIC pay app number so remove works correctly on Subcontractor SOV tab and pill reconciles
+        const periodNum = (subPayAppNumbers && subPayAppNumbers[companyId]) ? subPayAppNumbers[companyId] : (currentPayAppPeriod ? currentPayAppPeriod.periodNumber : 1);
 
         if (subLienWaivers[companyId] && subLienWaivers[companyId][periodNum]) {
             delete subLienWaivers[companyId][periodNum];
@@ -641,16 +643,27 @@ let mainLienWaiver = JSON.parse(localStorage.getItem('mainLienWaiver') || '{}');
         }
     }
 
-    function viewLienWaiver(companyId) {
+    function viewLienWaiver(companyId, explicitPeriodNum = null) {
         if (!companyId) return;
-        const periodNum = currentPayAppPeriod ? currentPayAppPeriod.periodNumber : 1;
+        // Prefer sub-specific pay app number; fall back to main period. Supports View from both SOV tab and Tracker.
+        let periodNum = explicitPeriodNum || ((subPayAppNumbers && subPayAppNumbers[companyId]) ? subPayAppNumbers[companyId] : (currentPayAppPeriod ? currentPayAppPeriod.periodNumber : 1));
         let waiver = subLienWaivers[companyId] && subLienWaivers[companyId][periodNum];
 
         // Fallback: check historical snapshot in Tracker (after Approve moved it out of live subLienWaivers)
         if (!waiver || !waiver.dataUrl) {
-            const hist = subPayAppHistory[companyId] && subPayAppHistory[companyId][periodNum];
+            let hist = subPayAppHistory[companyId] && subPayAppHistory[companyId][periodNum];
             if (hist && hist.lienWaiver && hist.lienWaiver.dataUrl) {
                 waiver = hist.lienWaiver;
+            } else if (!explicitPeriodNum && subPayAppHistory[companyId]) {
+                // Robust fallback for Tracker: find most recent history entry that has a lien waiver attached (covers period mismatches)
+                const nums = Object.keys(subPayAppHistory[companyId]).map(Number).sort((a,b) => b - a);
+                for (const p of nums) {
+                    const h = subPayAppHistory[companyId][p];
+                    if (h && h.lienWaiver && h.lienWaiver.dataUrl) {
+                        waiver = h.lienWaiver;
+                        break;
+                    }
+                }
             }
         }
 
@@ -3697,6 +3710,30 @@ let mainLienWaiver = JSON.parse(localStorage.getItem('mainLienWaiver') || '{}');
         const currentPeriodNum = subPayAppNumbers[companyId];  // Use sub's own counter, not main period
         const waiver = subLienWaivers[companyId] && subLienWaivers[companyId][currentPeriodNum];
 
+        // === BLOCK SUBMISSION IF PREVIOUS PAY APP STILL ACTIVE IN TRACKER ===
+        // Prevents creating Pay App #5 while #4 is still sitting in Sub Pay App Tracker (not yet pushed/archived).
+        // This enforces clean sequential workflow: Submit → Approve → Push to Previous → next Submit.
+        if (subPayAppHistory[companyId]) {
+            const prevActive = Object.keys(subPayAppHistory[companyId])
+                .map(Number)
+                .filter(p => p < currentPeriodNum)
+                .some(p => {
+                    const e = subPayAppHistory[companyId][p];
+                    return e && (e.status === 'Approved' || e.status === 'Pending Approval') && e.archived !== true;
+                });
+            if (prevActive) {
+                const prevNums = Object.keys(subPayAppHistory[companyId]).map(Number).filter(p => p < currentPeriodNum).sort((a,b) => b - a);
+                const prevNum = prevNums.length > 0 ? prevNums[0] : (currentPeriodNum - 1);
+                showCenteredAlert(
+                    `BLOCKED: Cannot submit Pay App #${currentPeriodNum} while Pay App #${prevNum} is still active in the Sub Pay App Tracker.\n\n` +
+                    `Please go to the Sub Pay App Tracker tab, find the #${prevNum} row, and click "Push to Previous Sub Pay Apps (Debug)" to archive it first.\n\n` +
+                    `This ensures each pay app is properly closed out before the next one is created, matching standard construction pay app workflow.`,
+                    'error'
+                );
+                return;
+            }
+        }
+
         // Create a snapshot of the current billing (do NOT commit to billed_to_date yet, do NOT put in Tracker yet)
         const snapshotLines = lines.map(l => ({
             id: l.id,
@@ -6059,7 +6096,8 @@ function printSubcontractorG703(companyId) {
                 lienBadge = `
                     <div class="inline-flex items-center gap-1 px-2 py-0.5 bg-emerald-900/60 border border-emerald-600 rounded text-xs" title="${fname}">
                         <i class="fa-solid fa-file-contract text-emerald-400"></i>
-                        <span class="text-emerald-300 max-w-[120px] truncate">${fname}</span>
+                        <span class="text-emerald-300 max-w-[100px] truncate">${fname}</span>
+                        <button onclick="event.stopImmediatePropagation(); viewLienWaiver(${companyId}, ${displayedPayAppNum});" class="px-1.5 py-0 bg-emerald-700 hover:bg-emerald-600 text-white rounded text-[10px]">View</button>
                     </div>`;
             } else {
                 lienBadge = `<span class="text-red-400"><i class="fa-solid fa-exclamation-circle"></i> Missing</span>`;
@@ -6113,7 +6151,7 @@ function printSubcontractorG703(companyId) {
                                 <div class="inline-flex items-center gap-1 px-2 py-0.5 bg-emerald-900/60 border border-emerald-600 rounded text-xs ml-1">
                                     <i class="fa-solid fa-file-contract text-emerald-400"></i>
                                     <span class="text-emerald-300 max-w-[100px] truncate" title="${ (historyEntry && historyEntry.lienWaiver && historyEntry.lienWaiver.filename) || 'Lien Waiver' }">${ (historyEntry && historyEntry.lienWaiver && historyEntry.lienWaiver.filename) || 'Lien Waiver' }</span>
-                                    <button onclick="event.stopImmediatePropagation(); viewLienWaiver(${companyId});" class="px-1.5 py-0 bg-emerald-700 hover:bg-emerald-600 rounded text-[10px]">View</button>
+                                    <button onclick="event.stopImmediatePropagation(); viewLienWaiver(${companyId}, ${displayedPayAppNum});" class="px-1.5 py-0 bg-emerald-700 hover:bg-emerald-600 rounded text-[10px]">View</button>
                                 </div>
                             ` : ''}
                         ` : '' }
