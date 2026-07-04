@@ -489,31 +489,57 @@ let mainLienWaiver = JSON.parse(localStorage.getItem('mainLienWaiver') || '{}');
         return Math.round(total * 100) / 100; // clean currency
     }
 
-    // NEW: Sum of Work This Period from APPROVED (or Pending) Sub Pay App entries for the CURRENT period only.
-    // This is what the GC must roll into their G702 "Work This Period" for reconciliation.
-    // Per AIA flow: GC G702 must reflect at least what subs have billed this period on matching cost codes.
+    // FIXED (v76.62): Sum of Work This Period from ALL APPROVED (or Pending) Sub Pay App entries
+    // that are currently in the Sub Pay App Tracker (not yet archived/pushed to Previous).
+    // 
+    // IMPORTANT: Subcontractor PayApp numbers are INDEPENDENT per sub.
+    // We do NOT match against currentPayAppPeriod.periodNumber.
+    // Any approved/pending paper in the Tracker contributes its amounts to the current G702 Work This Period.
+    // This matches the user's requirement: "No matter what is in the SubPayApp tracker PayApp number,
+    // if it's in there as approved, then it should be showing up on the G702 as work this period."
     function getCurrentSubBilledThisPeriodForCode(code) {
         const norm = normalizeCostCode(code);
         let total = 0;
-        if (!subPayAppHistory || !currentPayAppPeriod) return 0;
 
-        const currentPeriodNum = currentPayAppPeriod.periodNumber;
+        // 1. From subPayAppHistory (Approved papers still in Tracker)
+        if (subPayAppHistory) {
+            Object.keys(subPayAppHistory).forEach(companyId => {
+                const hist = subPayAppHistory[companyId] || {};
+                Object.keys(hist).forEach(pKey => {
+                    const entry = hist[pKey];
+                    if (!entry) return;
+                    if (entry.archived === true) return;
+                    if (entry.status !== 'Approved' && entry.status !== 'Pending Approval') return;
 
-        Object.keys(subPayAppHistory).forEach(companyId => {
-            const entry = subPayAppHistory[companyId] && subPayAppHistory[companyId][currentPeriodNum];
-            if (!entry) return;
-            // Only count papers that are in the Tracker (Approved or Pending Approval, not yet archived/pushed)
-            if (entry.archived === true) return;
-            if (entry.status !== 'Approved' && entry.status !== 'Pending Approval') return;
-
-            const lines = entry.lines || [];
-            lines.forEach(line => {
-                const lineCode = line.costCode || line.cost_code || '';
-                if (normalizeCostCode(lineCode) === norm) {
-                    total += parseFloat(line.work_this_period) || 0;
-                }
+                    const lines = entry.lines || [];
+                    lines.forEach(line => {
+                        const lineCode = line.costCode || line.cost_code || '';
+                        if (normalizeCostCode(lineCode) === norm) {
+                            total += parseFloat(line.work_this_period) || 0;
+                            // Also include materials_stored as part of the claim for this period
+                            total += parseFloat(line.materials_stored) || 0;
+                        }
+                    });
+                });
             });
-        });
+        }
+
+        // 2. Also include any pending submissions that are still in the Tracker (not yet approved by PM)
+        if (subPendingSubmissions) {
+            Object.keys(subPendingSubmissions).forEach(companyId => {
+                const pending = subPendingSubmissions[companyId];
+                if (!pending || pending.archived) return;
+
+                const lines = pending.lines || [];
+                lines.forEach(line => {
+                    const lineCode = line.costCode || line.cost_code || '';
+                    if (normalizeCostCode(lineCode) === norm) {
+                        total += parseFloat(line.work_this_period) || 0;
+                        total += parseFloat(line.materials_stored) || 0;
+                    }
+                });
+            });
+        }
 
         return Math.round(total * 100) / 100;
     }
@@ -1320,6 +1346,12 @@ let mainLienWaiver = JSON.parse(localStorage.getItem('mainLienWaiver') || '{}');
     function renderPayApplicationTab(cardsContainer, thead, tbody, workflowBar) {
         contractorSOV = JSON.parse(localStorage.getItem('contractorSOV')) || [];
         payAppBillingLines = JSON.parse(localStorage.getItem('payAppBillingLines')) || {};
+
+        // Robust reload of current period from storage (fixes header showing stale "Period 1" after advancing)
+        const storedPeriod = JSON.parse(localStorage.getItem('currentPayAppPeriod') || 'null');
+        if (storedPeriod && storedPeriod.periodNumber) {
+            currentPayAppPeriod = storedPeriod;
+        }
 
         if (!currentPayAppPeriod) {
             currentPayAppPeriod = { id: Date.now(), periodNumber: 7, periodStart: "2026-07-01", periodEnd: "2026-07-31", status: "Draft" };
