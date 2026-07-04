@@ -2780,11 +2780,14 @@ let mainLienWaiver = JSON.parse(localStorage.getItem('mainLienWaiver') || '{}');
             </div>
         `;
 
-        // Populate selector
+        // Populate selector — ONLY subs that have been explicitly added to THIS JOB's Subcontractor Schedule of Values
+        // (i.e. have an entry in subcontractorSOV). This makes "Clear All Subs (Fresh Job)" and individual Remove work correctly,
+        // and ensures new/fresh jobs start with a completely empty dropdown until you use "Add New".
         const selector = document.getElementById('subSelector');
         if (selector) {
+            const subSOVData = JSON.parse(localStorage.getItem('subcontractorSOV') || '{}');
             companies.forEach(c => {
-                if (c.type === 'Subcontractor' || c.company_type === 'Subcontractor' || (c.type && c.type.includes('Sub'))) {
+                if (subSOVData[c.id]) {  // Only include if this sub has been added to the current job's SOV
                     const opt = document.createElement('option');
                     opt.value = c.id;
                     opt.textContent = c.name || c.company_name || 'Unnamed Sub';
@@ -2792,15 +2795,6 @@ let mainLienWaiver = JSON.parse(localStorage.getItem('mainLienWaiver') || '{}');
                     selector.appendChild(opt);
                 }
             });
-            // Also allow all companies for flexibility
-            if (selector.options.length === 1) {
-                companies.forEach(c => {
-                    const opt = document.createElement('option');
-                    opt.value = c.id;
-                    opt.textContent = (c.name || c.company_name || 'Unnamed') + ' (all types)';
-                    selector.appendChild(opt);
-                });
-            }
         }
 
         // Show individual Pay App # + SOV Status for selected sub
@@ -6489,7 +6483,7 @@ function printSubcontractorG703(companyId) {
             }
         });
 
-        console.log('%c[Case PM] Pay Applications page initialized (clean v3 - aesthetics + workflow fixed) [v76.46 - Clear All Subs moved to workflow bar as Test button + explicit dropdown clear + fresh job start]', 'color:#10b981');
+        console.log('%c[Case PM] Pay Applications page initialized (clean v3 - aesthetics + workflow fixed) [v76.47 - Dropdown population now keyed ONLY to subs added to this job via subcontractorSOV (fixes Clear All Subs + individual Remove not clearing list)]', 'color:#10b981');
     }
 
     // ==================== COMBINED PRINT LOGIC (G703 + LIEN WAIVER) ====================
