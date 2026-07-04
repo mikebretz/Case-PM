@@ -448,9 +448,11 @@ let mainLienWaiver = JSON.parse(localStorage.getItem('mainLienWaiver') || '{}');
         if (!subPayAppHistory) return 0;
 
         Object.keys(subPayAppHistory).forEach(companyId => {
-            const historyArray = subPayAppHistory[companyId] || [];
+            const historyObj = subPayAppHistory[companyId] || {};
+            // subPayAppHistory[companyId] is an OBJECT keyed by period number, not an array.
+            const historyArray = Object.values(historyObj);
             historyArray.forEach(payApp => {
-                if (!payApp.archived) return; // Only count pushed / Previous Sub Pay Apps
+                if (!payApp || !payApp.archived) return; // Only count pushed / Previous Sub Pay Apps
                 const lines = payApp.lines || [];
                 lines.forEach(line => {
                     const lineCode = line.costCode || line.cost_code || '';
