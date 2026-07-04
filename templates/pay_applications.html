@@ -468,6 +468,35 @@ let mainLienWaiver = JSON.parse(localStorage.getItem('mainLienWaiver') || '{}');
         return Math.round(total * 100) / 100; // clean currency
     }
 
+    // NEW: Sum of Work This Period from APPROVED (or Pending) Sub Pay App entries for the CURRENT period only.
+    // This is what the GC must roll into their G702 "Work This Period" for reconciliation.
+    // Per AIA flow: GC G702 must reflect at least what subs have billed this period on matching cost codes.
+    function getCurrentSubBilledThisPeriodForCode(code) {
+        const norm = normalizeCostCode(code);
+        let total = 0;
+        if (!subPayAppHistory || !currentPayAppPeriod) return 0;
+
+        const currentPeriodNum = currentPayAppPeriod.periodNumber;
+
+        Object.keys(subPayAppHistory).forEach(companyId => {
+            const entry = subPayAppHistory[companyId] && subPayAppHistory[companyId][currentPeriodNum];
+            if (!entry) return;
+            // Only count papers that are in the Tracker (Approved or Pending Approval, not yet archived/pushed)
+            if (entry.archived === true) return;
+            if (entry.status !== 'Approved' && entry.status !== 'Pending Approval') return;
+
+            const lines = entry.lines || [];
+            lines.forEach(line => {
+                const lineCode = line.costCode || line.cost_code || '';
+                if (normalizeCostCode(lineCode) === norm) {
+                    total += parseFloat(line.work_this_period) || 0;
+                }
+            });
+        });
+
+        return Math.round(total * 100) / 100;
+    }
+
     // ==================== SUB SOV STATUS HELPERS (Approval Workflow) ====================
     function getSubSOVStatus(companyId) {
         if (!companyId) return 'Draft';
@@ -1676,6 +1705,16 @@ let mainLienWaiver = JSON.parse(localStorage.getItem('mainLienWaiver') || '{}');
                 <div class="font-mono text-emerald-400">${line.cost_code}</div>
                 <div class="text-sm">${line.description}</div>
                 <div class="text-xs text-zinc-400 mt-1">Remaining to Bill Total: <span id="topRemainingTotal" class="font-semibold text-emerald-400">${formatCurrency(remaining)}</span></div>
+                
+                <!-- NEW: Sub Pay App Tracker minimum enforcement (AIA reconciliation) -->
+                <div class="mt-2 p-2 bg-emerald-950/40 border border-emerald-600 rounded text-xs">
+                    <div class="text-emerald-400 font-semibold flex items-center gap-1">
+                        <i class="fa-solid fa-link"></i> 
+                        <span>Subcontractor Minimum (approved Sub Pay Apps this period)</span>
+                    </div>
+                    <div id="subMinThisPeriod" class="font-mono text-emerald-300 text-lg font-semibold">${formatCurrency(getCurrentSubBilledThisPeriodForCode(line.cost_code))}</div>
+                    <div class="text-[10px] text-emerald-500">You must enter at least this amount in Work This Period for this cost code (GC can bill more for self-perform). Cannot go below sub billed amount per AIA flow.</div>
+                </div>
             </div>
 
             <div class="space-y-4">
@@ -1788,6 +1827,19 @@ let mainLienWaiver = JSON.parse(localStorage.getItem('mainLienWaiver') || '{}');
         const line = contractorSOV.find(l => l.id === sovLineId);
         if (!line) return;
 
+        // === ENFORCEMENT: Cannot bill less than what subs have already billed this period for this code ===
+        // Per AIA process: GC G702 Work This Period must be >= sum of approved sub pay apps for the matching cost code.
+        // You can bill MORE (GC self-perform or additional scope), but never less.
+        const subMinimum = getCurrentSubBilledThisPeriodForCode(line.cost_code);
+        const totalThisPeriodEntered = workThisPeriod + materialsStored;
+        if (totalThisPeriodEntered < subMinimum - 0.01) {
+            showCenteredAlert(
+                `BLOCKED: For cost code ${line.cost_code}, you entered ${formatCurrency(totalThisPeriodEntered)} but the approved Sub Pay Apps in the Tracker have already billed ${formatCurrency(subMinimum)} for this code this period.\n\nPer AIA billing flow, the GC G702 cannot show less than what subcontractors have claimed. You may enter MORE than the sub amount (for GC self-perform work), but you cannot go below it.`,
+                'warning'
+            );
+            return; // Block save
+        }
+
         // === DRAFT SAVE ONLY (User Request) ===
         // Save the values the user wants to bill THIS PERIOD as a draft.
         // These are NOT committed to billed_to_date until the whole Pay Application is Submitted/Approved.
@@ -1862,6 +1914,28 @@ let mainLienWaiver = JSON.parse(localStorage.getItem('mainLienWaiver') || '{}');
             return; // BLOCK — enforces linked process
         }
 
+        // === LIEN WAIVER COMPLETENESS CHECK (critical AIA / compliance gate) ===
+        // GC cannot submit their G702 upstream until all sub pay apps in the Tracker have their lien waivers on file.
+        // This is a standard requirement before the GC can certify and submit to the owner/architect.
+        let subsMissingWaiver = [];
+        Object.keys(subPayAppHistory || {}).forEach(cid => {
+            const entry = subPayAppHistory[cid] && subPayAppHistory[cid][currentPeriodNumForCheck];
+            if (entry && (entry.status === 'Approved' || entry.status === 'Pending Approval') && entry.archived !== true) {
+                const hasWaiver = (entry.lienWaiver && entry.lienWaiver.filename) || 
+                                  (subLienWaivers[cid] && subLienWaivers[cid][currentPeriodNumForCheck] && subLienWaivers[cid][currentPeriodNumForCheck].filename);
+                if (!hasWaiver) {
+                    subsMissingWaiver.push(getCompanyName(cid));
+                }
+            }
+        });
+        if (subsMissingWaiver.length > 0) {
+            showCenteredAlert(
+                `BLOCKED: Cannot submit G702. The following subcontractors have approved/pending pay apps in the Sub Pay App Tracker but are MISSING their Lien Waiver:\n\n${subsMissingWaiver.join('\n')}\n\nGo to Sub Pay App Tracker → ensure every row has a lien waiver uploaded and visible before submitting the main Pay Application. This is required for AIA compliance and owner/architect review.`,
+                'warning'
+            );
+            return;
+        }
+
         currentPayAppPeriod.status = "Submitted";
         localStorage.setItem('currentPayAppPeriod', JSON.stringify(currentPayAppPeriod));
         logPayAppAudit('APPLICATION_SUBMITTED', { periodNumber: currentPayAppPeriod.periodNumber, validatedAgainstBudget: budgetContractAmount });
@@ -1916,6 +1990,22 @@ let mainLienWaiver = JSON.parse(localStorage.getItem('mainLienWaiver') || '{}');
         currentPayAppPeriod.status = "Approved";
         localStorage.setItem('currentPayAppPeriod', JSON.stringify(currentPayAppPeriod));
         logPayAppAudit('APPLICATION_APPROVED', { periodNumber: currentPayAppPeriod.periodNumber });
+
+        // === ARCHIVE ALL SUB PAY APPS FOR THIS PERIOD (move from Tracker to Previous Sub Pay Apps) ===
+        // Per user request + AIA flow: When the GC G702 is approved, all sub papers in the Tracker for this period
+        // are archived (pushed to history). This clears the Sub Pay App Tracker for the next cycle.
+        if (currentPayAppPeriod && subPayAppHistory) {
+            const pNum = currentPayAppPeriod.periodNumber;
+            Object.keys(subPayAppHistory).forEach(cid => {
+                const entry = subPayAppHistory[cid] && subPayAppHistory[cid][pNum];
+                if (entry && (entry.status === 'Approved' || entry.status === 'Pending Approval') && entry.archived !== true) {
+                    entry.archived = true;
+                    // Also ensure it has an approvedDate if missing
+                    if (!entry.approvedDate) entry.approvedDate = new Date().toISOString();
+                }
+            });
+            localStorage.setItem('subPayAppHistory', JSON.stringify(subPayAppHistory));
+        }
         
         // --- Automatic Period Advancement (one per month) ---
         const currentEnd = new Date(currentPayAppPeriod.periodEnd);
