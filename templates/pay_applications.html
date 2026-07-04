@@ -1157,7 +1157,8 @@ let mainLienWaiver = JSON.parse(localStorage.getItem('mainLienWaiver') || '{}');
             const billing = histBilling[line.id] || { workThisPeriod: 0, materialsStored: 0 };
             const workThis = billing.workThisPeriod || 0;
             const materials = billing.materialsStored || 0;
-            const retainage = (workThis + materials) * 0.10;
+            const retainageRate = (typeof defaultRetainagePercent !== 'undefined' ? defaultRetainagePercent : 10) / 100;
+            const retainage = (workThis + materials) * retainageRate;
 
             // Get metrics from snapshot if available, fallback to current calculation
             const metrics = (periodData.snapshot && periodData.snapshot.lineMetrics) 
@@ -2024,15 +2025,29 @@ let mainLienWaiver = JSON.parse(localStorage.getItem('mainLienWaiver') || '{}');
         if (!currentPayAppPeriod) return;
 
         // Create a historical snapshot of the current billing state
-        // Enhanced snapshot for historical view (includes % complete and CO billed this period)
+        // We capture the FINAL displayed values (including Sub Pay App Tracker minimum enforcement)
+        // so that when viewing history, it shows exactly what was on the G702 screen at approval time.
+        const finalBillingForSnapshot = {};
+        contractorSOV.forEach(line => {
+            const billing = payAppBillingLines[line.id] || { workThisPeriod: 0, materialsStored: 0 };
+            const subMin = getCurrentSubBilledThisPeriodForCode(line.cost_code);
+            const workThis = Math.max(billing.workThisPeriod || 0, subMin);
+            const materials = billing.materialsStored || 0;
+            finalBillingForSnapshot[line.id] = {
+                workThisPeriod: workThis,
+                materialsStored: materials,
+                coWorkThisPeriod: billing.coWorkThisPeriod || 0
+            };
+        });
+
         const snapshot = {
             period: JSON.parse(JSON.stringify(currentPayAppPeriod)),
-            billingLines: JSON.parse(JSON.stringify(payAppBillingLines || {})),
+            billingLines: finalBillingForSnapshot, // Use the final calculated values (with sub min applied)
             contractorSOVSnapshot: JSON.parse(JSON.stringify(contractorSOV || [])),
             approvedAt: new Date().toISOString(),
             // Calculated at approval time for accurate historical % and CO billed
             lineMetrics: contractorSOV.map(line => {
-                const billing = payAppBillingLines[line.id] || { workThisPeriod: 0, materialsStored: 0 };
+                const billing = finalBillingForSnapshot[line.id] || { workThisPeriod: 0, materialsStored: 0 };
                 const currentAmount = (line.original || 0) + (line.co_amount || 0);
                 const previousBilled = line.billed_to_date || 0;
                 const thisPeriodTotal = (billing.workThisPeriod || 0) + (billing.materialsStored || 0);
@@ -2041,7 +2056,7 @@ let mainLienWaiver = JSON.parse(localStorage.getItem('mainLienWaiver') || '{}');
                 return {
                     id: line.id,
                     percentComplete: pctComplete,
-                    coBilledThisPeriod: (billing.coWorkThisPeriod || 0) // from the CO field in modal
+                    coBilledThisPeriod: (billing.coWorkThisPeriod || 0)
                 };
             })
         };
@@ -2103,32 +2118,16 @@ let mainLienWaiver = JSON.parse(localStorage.getItem('mainLienWaiver') || '{}');
         // Success confirmation for the user
         // showCenteredAlert("Pay Application approved. Amounts from Work This Period have been added to Billed to Date for the next period.", "success");
 
-        // --- Automatic Period Advancement (one per month) ---
-        const currentEnd = new Date(currentPayAppPeriod.periodEnd);
-        const nextStart = new Date(currentEnd);
-        nextStart.setDate(nextStart.getDate() + 1); // Start of next month
-        if (nextStart.getDate() !== 1) {
-            nextStart.setMonth(nextStart.getMonth() + 1);
-            nextStart.setDate(1);
-        }
-        const nextEnd = new Date(nextStart.getFullYear(), nextStart.getMonth() + 1, 0); // Last day of next month
+        // NOTE: We no longer auto-advance the period here.
+        // This was causing confusion. The user now controls when to move to the next period
+        // using the "Reset to Next Period (Test)" button or the New Period modal.
+        // This ensures the user can verify the numbers in Previous Pay Applications first.
 
-        const nextPeriodNumber = (currentPayAppPeriod.periodNumber || 1) + 1;
-
-        currentPayAppPeriod = {
-            id: Date.now(),
-            periodNumber: nextPeriodNumber,
-            periodStart: nextStart.toISOString().split('T')[0],
-            periodEnd: nextEnd.toISOString().split('T')[0],
-            status: "Draft"
-        };
-        localStorage.setItem('currentPayAppPeriod', JSON.stringify(currentPayAppPeriod));
-
-        // Clear draft billing for the new period
+        // Clear only the draft billing lines so the next time user goes to G702 it is fresh for the new period
+        // (but we keep the currentPayAppPeriod as Approved so user can see it was approved)
         payAppBillingLines = {};
         localStorage.setItem('payAppBillingLines', JSON.stringify(payAppBillingLines));
 
-        // Success feedback removed per user request (UI status + new period visible)
         renderPayAppContent();
     }
 
