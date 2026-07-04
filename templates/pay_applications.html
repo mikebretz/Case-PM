@@ -2717,7 +2717,7 @@ let mainLienWaiver = JSON.parse(localStorage.getItem('mainLienWaiver') || '{}');
         // Show individual Pay App # + SOV Status for selected sub
         if (selectedSubCompanyId) {
             let subPayApps = JSON.parse(localStorage.getItem('subPayAppNumbers') || '{}');
-            const currentNum = subPayApps[selectedSubCompanyId] || 1;
+            const currentNum = subPayAppNumbers[selectedSubCompanyId] || 1;
             currentStatus = getSubSOVStatus(selectedSubCompanyId);
 
             const statusColors = {
@@ -2816,11 +2816,12 @@ let mainLienWaiver = JSON.parse(localStorage.getItem('mainLienWaiver') || '{}');
             `;
         } else if (currentStatus === 'Approved') {
             // === CLEAN PROCORE-STYLE MONTHLY BILLING FLOW (stays on this tab) ===
-            const periodNum = currentPayAppPeriod ? currentPayAppPeriod.periodNumber : 1;
+            // Use SUB-SPECIFIC pay app number (independent of main G702 period) for monthly billing cycle
+            const subPayAppNum = (subPayAppNumbers[selectedSubCompanyId] || 1);
             const pendingEntry = subPendingSubmissions[selectedSubCompanyId];
-            const historyEntry = subPayAppHistory[selectedSubCompanyId] && subPayAppHistory[selectedSubCompanyId][periodNum];
-            // Pending if either in left-hand pending store OR legacy history pending
-            const isPending = (pendingEntry && pendingEntry.periodNumber === periodNum) || (historyEntry && historyEntry.status === 'Pending Approval');
+            const historyEntry = subPayAppHistory[selectedSubCompanyId] && subPayAppHistory[selectedSubCompanyId][subPayAppNum];
+            // Pending if either in left-hand pending store OR legacy history pending (use sub's own number)
+            const isPending = (pendingEntry && pendingEntry.periodNumber === subPayAppNum) || (historyEntry && historyEntry.status === 'Pending Approval');
             const waiver = subLienWaivers[selectedSubCompanyId] && subLienWaivers[selectedSubCompanyId][periodNum];
             const hasWaiver = waiver && waiver.filename && waiver.filename.trim() !== '';
 
@@ -3727,16 +3728,24 @@ let mainLienWaiver = JSON.parse(localStorage.getItem('mainLienWaiver') || '{}');
 
     function approveSubPayApp(companyId) {
         if (!companyId) return;
-        const currentPeriodNum = currentPayAppPeriod ? currentPayAppPeriod.periodNumber : 1;
 
-        // === EXACT WORKFLOW: Prefer LEFT-HAND pending submission first ===
+        // === USE SUB-SPECIFIC PAY APP NUMBER (not main G702 period) ===
+        // The number was assigned at Submit time and stored in pendingEntry
+        let currentPeriodNum = 1;
         let pendingEntry = subPendingSubmissions[companyId];
         let sourceWasPending = false;
 
-        if (pendingEntry && pendingEntry.periodNumber === currentPeriodNum) {
+        if (pendingEntry && pendingEntry.periodNumber) {
+            currentPeriodNum = pendingEntry.periodNumber;
             sourceWasPending = true;
         } else {
-            // Fallback for legacy direct history pending (if any)
+            // Fallback: try to find the most recent pending/approved for this sub
+            if (subPayAppHistory[companyId]) {
+                const nums = Object.keys(subPayAppHistory[companyId]).map(Number).sort((a,b) => b-a);
+                if (nums.length > 0) currentPeriodNum = nums[0];
+            } else if (subPayAppNumbers[companyId]) {
+                currentPeriodNum = subPayAppNumbers[companyId];
+            }
             pendingEntry = subPayAppHistory[companyId] && subPayAppHistory[companyId][currentPeriodNum];
             if (!pendingEntry) {
                 showCenteredAlert("No submitted Pay Application found for this period. Please Submit Application first on the Subcontractor Schedule of Values tab.", "warning");
@@ -3853,7 +3862,10 @@ let mainLienWaiver = JSON.parse(localStorage.getItem('mainLienWaiver') || '{}');
                 if (nums.length > 0) periodNum = nums[0];
             }
         }
-        if (!periodNum) periodNum = (currentPayAppPeriod ? currentPayAppPeriod.periodNumber : 1); // last resort
+        if (!periodNum) {
+            // last resort: use sub's own current number
+            periodNum = (subPayAppNumbers[companyId] || (currentPayAppPeriod ? currentPayAppPeriod.periodNumber : 1));
+        }
 
         let sourceEntry = null;
         let fromPending = false;
