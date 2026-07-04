@@ -1974,9 +1974,10 @@ let mainLienWaiver = JSON.parse(localStorage.getItem('mainLienWaiver') || '{}');
             "⚠️ WARNING — NUCLEAR RESET (Fresh Project Start)\n\n" +
             "This will PERMANENTLY DELETE / RESET on the Contractor side:\n" +
             "• ALL line items on the G703 (Schedule of Values) — including every billed_to_date amount\n" +
+            "• ALL draft billing on the current G702 (Billed to Date / Work This Period columns cleared)\n" +
             "• ALL entries in the 'Select Previous Period' dropdown (payAppHistory)\n" +
             "• The current G702 period — resets to Period 1 Draft with $0 billed everywhere\n\n" +
-            "Result: A completely fresh project start. Nothing billed, nothing saved on the main G702/G703.\n\n" +
+            "Result: A completely fresh project start. Nothing billed, nothing saved on the main G702/G703. Clean slate.\n\n" +
             "Subcontractor data (Sub SOVs, Sub Pay App Tracker, Previous Sub Pay Apps) will NOT be affected.\n\n" +
             "Are you 100% sure you want to do this?"
         );
@@ -1989,6 +1990,10 @@ let mainLienWaiver = JSON.parse(localStorage.getItem('mainLienWaiver') || '{}');
         // Clear Previous Pay Application history (empties the "Select Previous Period" dropdown)
         payAppHistory = [];
         localStorage.setItem('payAppHistory', JSON.stringify(payAppHistory));
+
+        // Clear any draft billing lines for the current G702 (Work This Period / Materials Stored on G702 Billed to Date)
+        payAppBillingLines = {};
+        localStorage.setItem('payAppBillingLines', JSON.stringify(payAppBillingLines));
 
         // Reset current G702 period to a completely fresh Period 1 Draft (no billed amounts, clean start)
         currentPayAppPeriod = {
@@ -2003,10 +2008,10 @@ let mainLienWaiver = JSON.parse(localStorage.getItem('mainLienWaiver') || '{}');
         // Unlock the G703 if it was locked
         localStorage.removeItem('contractorSOVLocked');
 
-        // Re-render everything so G702 + G703 show a true fresh/empty state
+        // Re-render everything so G702 + G703 show a true fresh/empty state (nothing billed, nothing saved)
         renderPayAppContent();
 
-        console.log('%c[Case PM] FULL NUCLEAR RESET: Contractor G702/G703 + Previous Periods are now completely fresh (Period 1 Draft, $0 billed).', 'color:#f59e0b');
+        console.log('%c[Case PM] FULL NUCLEAR RESET: Contractor G702/G703 + Previous Periods are now completely fresh (Period 1 Draft, $0 billed everywhere, clean slate).', 'color:#f59e0b');
     }
 
     // ==================== CONTRACTOR SOV TAB ====================
