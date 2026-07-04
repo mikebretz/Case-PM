@@ -644,7 +644,15 @@ let mainLienWaiver = JSON.parse(localStorage.getItem('mainLienWaiver') || '{}');
     function viewLienWaiver(companyId) {
         if (!companyId) return;
         const periodNum = currentPayAppPeriod ? currentPayAppPeriod.periodNumber : 1;
-        const waiver = subLienWaivers[companyId] && subLienWaivers[companyId][periodNum];
+        let waiver = subLienWaivers[companyId] && subLienWaivers[companyId][periodNum];
+
+        // Fallback: check historical snapshot in Tracker (after Approve moved it out of live subLienWaivers)
+        if (!waiver || !waiver.dataUrl) {
+            const hist = subPayAppHistory[companyId] && subPayAppHistory[companyId][periodNum];
+            if (hist && hist.lienWaiver && hist.lienWaiver.dataUrl) {
+                waiver = hist.lienWaiver;
+            }
+        }
 
         if (!waiver || !waiver.dataUrl) {
             showCenteredAlert("No lien waiver found for this period.", "warning");
