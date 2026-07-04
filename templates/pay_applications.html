@@ -494,6 +494,14 @@ let mainLienWaiver = JSON.parse(localStorage.getItem('mainLienWaiver') || '{}');
 
     function uploadLienWaiver(companyId) {
         if (!companyId) return;
+
+        // Ensure sub-specific pay app counter is initialized so first upload always stores under the correct key (fixes pill not appearing on first upload)
+        if (!subPayAppNumbers[companyId]) {
+            subPayAppNumbers[companyId] = 1;
+            localStorage.setItem('subPayAppNumbers', JSON.stringify(subPayAppNumbers));
+        }
+        const periodNum = subPayAppNumbers[companyId];
+
         const input = document.createElement('input');
         input.type = 'file';
         input.accept = '.pdf'; // Require PDF only for lien waivers
@@ -507,8 +515,6 @@ let mainLienWaiver = JSON.parse(localStorage.getItem('mainLienWaiver') || '{}');
 
                 // Use subLienWaivers structure for current period (supports image rendering in print)
                 if (!subLienWaivers[companyId]) subLienWaivers[companyId] = {};
-                // Use SUB-SPECIFIC pay app number (independent counter per sub) so pill shows correctly on Subcontractor SOV tab
-                const periodNum = (subPayAppNumbers && subPayAppNumbers[companyId]) ? subPayAppNumbers[companyId] : (currentPayAppPeriod ? currentPayAppPeriod.periodNumber : 1);
 
                 subLienWaivers[companyId][periodNum] = {
                     filename: file.name,
@@ -533,8 +539,13 @@ let mainLienWaiver = JSON.parse(localStorage.getItem('mainLienWaiver') || '{}');
 
     function removeLienWaiver(companyId) {
         if (!companyId) return;
-        // Use SUB-SPECIFIC pay app number so remove works correctly on Subcontractor SOV tab and pill reconciles
-        const periodNum = (subPayAppNumbers && subPayAppNumbers[companyId]) ? subPayAppNumbers[companyId] : (currentPayAppPeriod ? currentPayAppPeriod.periodNumber : 1);
+
+        // Ensure sub-specific pay app counter is initialized (keeps remove/view in sync with upload)
+        if (!subPayAppNumbers[companyId]) {
+            subPayAppNumbers[companyId] = 1;
+            localStorage.setItem('subPayAppNumbers', JSON.stringify(subPayAppNumbers));
+        }
+        const periodNum = subPayAppNumbers[companyId];
 
         if (subLienWaivers[companyId] && subLienWaivers[companyId][periodNum]) {
             delete subLienWaivers[companyId][periodNum];
@@ -2781,11 +2792,13 @@ let mainLienWaiver = JSON.parse(localStorage.getItem('mainLienWaiver') || '{}');
         if (selectedSubCompanyId) {
             let subPayApps = JSON.parse(localStorage.getItem('subPayAppNumbers') || '{}');
             const currentNum = subPayAppNumbers[selectedSubCompanyId] || 1;
-            let currentStatus = getSubSOVStatus(selectedSubCompanyId);
+            const realSOVStatus = getSubSOVStatus(selectedSubCompanyId);
 
             // Aesthetic display only: if a previous pay app (#1 when on #2, etc.) is still active in Tracker (not pushed),
-            // show status as "Draft" so user knows they need to push the prior paper first. Does NOT change any workflow or blocking logic.
-            if (currentNum > 1) {
+            // show the SMALL STATUS BADGE as "Draft" so user knows they need to push the prior paper first.
+            // IMPORTANT: Do NOT use this forced status for the main Pay App # label — that must always reflect the real SOV state.
+            let displayStatus = realSOVStatus;
+            if (currentNum > 1 && realSOVStatus === 'Approved') {
                 const hist = subPayAppHistory[selectedSubCompanyId] || {};
                 const hasPreviousActive = Object.keys(hist).some(p => {
                     const pn = parseInt(p);
@@ -2793,7 +2806,7 @@ let mainLienWaiver = JSON.parse(localStorage.getItem('mainLienWaiver') || '{}');
                     return pn < currentNum && e && (e.status === 'Approved' || e.status === 'Pending Approval') && e.archived !== true;
                 });
                 if (hasPreviousActive) {
-                    currentStatus = 'Draft';
+                    displayStatus = 'Draft';  // only affects the small status pill, not the "Pay App #X Current" label
                 }
             }
 
@@ -2803,14 +2816,15 @@ let mainLienWaiver = JSON.parse(localStorage.getItem('mainLienWaiver') || '{}');
                 'Approved': 'bg-emerald-900/40 text-emerald-400',
                 'Rejected': 'bg-red-900/40 text-red-400'
             };
-            const statusColor = statusColors[currentStatus] || 'bg-zinc-700 text-zinc-400';
+            const statusColor = statusColors[displayStatus] || 'bg-zinc-700 text-zinc-400';
 
             const infoDiv = document.createElement('div');
             infoDiv.className = 'flex items-center gap-2';
             const periodStr = currentPayAppPeriod 
                 ? `${formatDateMDY(currentPayAppPeriod.periodStart)} – ${formatDateMDY(currentPayAppPeriod.periodEnd)}` 
                 : '';
-            const payAppLabel = (currentStatus === 'Approved') 
+            // Use REAL SOV status for label decision so "Pay App #2 Current" shows correctly even when prior paper is still in Tracker (Draft badge is just a visual cue)
+            const payAppLabel = (realSOVStatus === 'Approved') 
                 ? `Pay App #${currentNum} (Current)<br><span style="font-size:11px; font-weight:400; opacity:0.9;">${periodStr}</span>` 
                 : `Schedule of Values Creation`;
 
@@ -2819,7 +2833,7 @@ let mainLienWaiver = JSON.parse(localStorage.getItem('mainLienWaiver') || '{}');
                     <i class="fa-solid fa-file-invoice-dollar"></i> <span>${payAppLabel}</span>
                 </div>
                 <div class="text-sm px-4 py-1.5 ${statusColor} rounded inline-flex items-center gap-1 font-semibold" style="font-size: 14px; padding: 6px 14px;">
-                    <i class="fa-solid fa-sync"></i> <span>${currentStatus}</span>
+                    <i class="fa-solid fa-sync"></i> <span>${displayStatus}</span>
                 </div>
             `;
             // Append to the new container below the dropdown
@@ -3517,20 +3531,46 @@ let mainLienWaiver = JSON.parse(localStorage.getItem('mainLienWaiver') || '{}');
             return;
         }
 
-        // === HARD VALIDATION: Cannot exceed Contractor SOV Original for this cost code ===
-        // (Note: This checks Original Commitment only, per existing locked behavior. Current Contract Amt = Original + CO is shown in Tracker for visibility.)
+        // === HARD VALIDATION: Cannot overbill a cost code beyond the GC's G703 total (Original + COs) when summed across ALL subs ===
+        // Reconciles commitments from every subcontractor against the main contractor's G703 line total for that code.
         const contractorSOVLines = JSON.parse(localStorage.getItem('contractorSOV')) || [];
-        const matchingContractorLine = contractorSOVLines.find(c => c.cost_code === costCode);
-
-        if (matchingContractorLine) {
-            const maxAllowed = matchingContractorLine.original || 0;
-            if (original > maxAllowed) {
-                showCenteredAlert(
-                    `BLOCKED: Original Commitment ($${original.toLocaleString()}) cannot exceed the Contractor SOV Original amount for cost code ${costCode} ($${maxAllowed.toLocaleString()}).`,
-                    'warning'
-                );
-                return;
+        let gcG703Total = 0;
+        contractorSOVLines.forEach(l => {
+            if (l.cost_code === costCode) {
+                gcG703Total += (l.original || 0) + (l.change_orders || 0);
             }
+        });
+
+        // Sum what all OTHER subs have already committed to this cost code (exclude current line if editing)
+        let otherSubsCommitted = 0;
+        Object.keys(subcontractorSOV || {}).forEach(cid => {
+            const lines = subcontractorSOV[cid] || [];
+            lines.forEach(l => {
+                if (l.cost_code === costCode) {
+                    // When editing an existing line, exclude it from the "other" sum
+                    if (lineId && l.id === lineId && String(cid) === String(companyId)) {
+                        return;
+                    }
+                    otherSubsCommitted += (l.original_commitment || 0) + (l.change_orders || 0);
+                }
+            });
+        });
+
+        const thisLineCommitment = original + changeOrders;
+        const wouldBeTotalForCode = otherSubsCommitted + thisLineCommitment;
+
+        if (gcG703Total > 0 && wouldBeTotalForCode > gcG703Total) {
+            const remaining = Math.max(0, gcG703Total - otherSubsCommitted);
+            showCenteredAlert(
+                `BLOCKED: This would overbill Cost Code ${costCode} on the G703.\n\n` +
+                `GC G703 Total for this code: ${formatCurrency(gcG703Total)}\n` +
+                `Already committed by other subs: ${formatCurrency(otherSubsCommitted)}\n` +
+                `This line would commit: ${formatCurrency(thisLineCommitment)}\n` +
+                `Remaining available: ${formatCurrency(remaining)}\n\n` +
+                `You cannot commit more to a cost code than the GC has on their G703.`,
+                'error'
+            );
+            return;
         }
 
         if (lineId) {
