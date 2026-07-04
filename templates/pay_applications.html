@@ -4758,7 +4758,10 @@ let mainLienWaiver = JSON.parse(localStorage.getItem('mainLienWaiver') || '{}');
 
     // ==================== SUB SOV APPROVAL WORKFLOW ====================
     function submitSubSOVForApproval() {
-        if (!selectedSubCompanyId) return;
+        if (!selectedSubCompanyId) {
+            showErrorModal("Please select a subcontractor from the dropdown first. A subcontractor must be in charge of the Schedule of Values before you can submit it for approval.");
+            return;
+        }
         const currentStatus = getSubSOVStatus(selectedSubCompanyId);
         if (currentStatus === 'Approved') {
             showCenteredAlert("This SOV is already approved. No need to submit again.");
@@ -4804,14 +4807,14 @@ let mainLienWaiver = JSON.parse(localStorage.getItem('mainLienWaiver') || '{}');
 
     function submitSubPayAppForApproval(companyId) {
         if (!companyId) {
-            showCenteredAlert("Please select a subcontractor first before submitting a pay application.");
+            showErrorModal("Please select a subcontractor from the dropdown first before submitting a pay application. A subcontractor must be in charge of this Schedule of Values.");
             return;
         }
 
         // Ensure a real subcontractor from the company list is selected and "in charge" of this SOV
         const companyRecord = companies.find(c => c.id == companyId);
         if (!companyRecord) {
-            showCenteredAlert("The selected subcontractor is no longer valid. Please re-select a subcontractor that is in charge of this Schedule of Values.");
+            showErrorModal("The selected subcontractor is no longer valid. Please re-select a subcontractor that is actually in charge of this Schedule of Values.");
             selectedSubCompanyId = null;
             localStorage.removeItem('lastSelectedSubSOV');
             renderPayAppContent();
@@ -4844,7 +4847,8 @@ let mainLienWaiver = JSON.parse(localStorage.getItem('mainLienWaiver') || '{}');
         let zeroDollarDisplayLabel = '';
 
         if (totalBilledThisPeriodCheck === 0 && allowZeroDollarSubPayApps) {
-            // Zero-dollar compliance submission → do NOT consume a pay app number
+            // Zero-dollar compliance submission → use normal number for storage/waiver keys
+            // but flag it so we do NOT advance the counter on approval, and Tracker shows nice label.
             isZeroDollarSubmission = true;
             const periodLabel = currentPayAppPeriod 
                 ? `${new Date(currentPayAppPeriod.periodStart).toLocaleString('default', { month: 'long' })} ${new Date(currentPayAppPeriod.periodStart).getFullYear()}`
@@ -4852,8 +4856,9 @@ let mainLienWaiver = JSON.parse(localStorage.getItem('mainLienWaiver') || '{}');
             const dateRange = currentPayAppPeriod 
                 ? `${currentPayAppPeriod.periodStart} to ${currentPayAppPeriod.periodEnd}`
                 : '';
-            zeroDollarDisplayLabel = `Pay App -- ${periodLabel} (${dateRange})`;
-            currentPeriodNum = 'ZERO_' + Date.now(); // Unique non-numeric key
+            zeroDollarDisplayLabel = `Pay App -- ${periodLabel} (${dateRange}) (Compliance)`;
+            // Still use the sub's current number for consistent storage keys (lien waiver lookup, etc.)
+            currentPeriodNum = subPayAppNumbers[companyId] || 1;
         } else {
             // Normal submission with dollar amounts → use the sub's own counter
             currentPeriodNum = subPayAppNumbers[companyId];
@@ -5003,7 +5008,7 @@ let mainLienWaiver = JSON.parse(localStorage.getItem('mainLienWaiver') || '{}');
         // Advance Pay App number for the *next* new submission (this approved paper keeps its original number)
         // IMPORTANT: Do NOT advance the counter for zero-dollar compliance submissions
         const approvedPayAppNumber = currentPeriodNum;
-        const wasZeroDollar = pendingEntry.isZeroDollar === true;
+        const wasZeroDollar = pendingEntry.isZeroDollar === true || pendingEntry.zeroDollarDisplayLabel;
 
         if (!wasZeroDollar) {
             if (!subPayAppNumbers[companyId]) subPayAppNumbers[companyId] = 1;
@@ -6938,6 +6943,36 @@ function printSubcontractorG703(companyId) {
             </div>
             <div class="flex justify-end">
                 <button class="px-6 py-2 bg-emerald-600 hover:bg-emerald-500 rounded-md text-sm font-medium">OK</button>
+            </div>
+        `;
+        document.body.appendChild(dialog);
+        dialog.showModal();
+        dialog.querySelector('button').onclick = () => {
+            dialog.close();
+            dialog.remove();
+        };
+    }
+
+    // Dedicated error modal (prominent centered pop-up for validation / blocking errors)
+    function showErrorModal(message) {
+        const dialog = document.createElement('dialog');
+        dialog.className = 'modal rounded-md p-0 text-white overflow-hidden';
+        dialog.style.backgroundColor = '#18181b';
+        dialog.style.border = '2px solid #ef4444';
+        dialog.style.width = 'min(520px, 92vw)';
+        dialog.style.maxWidth = '92vw';
+        dialog.style.zIndex = '999999';
+
+        dialog.innerHTML = `
+            <div class="px-6 py-4 bg-red-900/30 border-b border-red-600 flex items-center gap-3">
+                <i class="fa-solid fa-exclamation-triangle text-red-400 text-xl"></i>
+                <div class="font-semibold text-red-300 text-lg">Action Blocked</div>
+            </div>
+            <div class="p-6 text-base text-zinc-200 leading-relaxed">
+                ${message}
+            </div>
+            <div class="px-6 py-4 bg-zinc-950 border-t border-zinc-700 flex justify-end">
+                <button class="px-8 py-2.5 bg-red-600 hover:bg-red-500 rounded-md text-sm font-semibold">OK, Got It</button>
             </div>
         `;
         document.body.appendChild(dialog);
