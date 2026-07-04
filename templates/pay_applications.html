@@ -1296,26 +1296,8 @@ let mainLienWaiver = JSON.parse(localStorage.getItem('mainLienWaiver') || '{}');
         // Do NOT proceed with restore yet — wait for user to click Yes in the clean banner
     }
 
-    // Called when user clicks "Yes, Push Back to G702" in the top amber banner
-    function confirmRevisionPush() {
-        const periodId = window._pendingRevisionPeriodId;
-        if (!periodId) return;
-
-        window._pendingRevisionPeriodId = null;
-        performRevisionRestore(periodId);
-    }
-
-    // Called when user clicks "Cancel" in the top amber banner
-    function cancelRevisionPush() {
-        window._pendingRevisionPeriodId = null;
-        // Cleanly re-render the normal view for the currently selected period
-        const select = document.getElementById('previousPeriodSelect');
-        if (select && select.value) {
-            loadPreviousPayAppData(select.value);
-        } else {
-            renderPayAppContent();
-        }
-    }
+    // Note: confirmRevisionPush and cancelRevisionPush are defined later in the file with robust implementations.
+    // This duplicate block was removed to prevent conflicts.
 
     // Helper: actually perform the snapshot restore + switch to G702 Draft
     function performRevisionRestore(periodId) {
@@ -1375,16 +1357,30 @@ let mainLienWaiver = JSON.parse(localStorage.getItem('mainLienWaiver') || '{}');
         }, 120);
     }
 
-    // Banner button handlers
-    function confirmRevisionPush(periodId, btn) {
-        const workflowBar = btn.closest('#payAppWorkflowBar');
-        if (workflowBar) workflowBar.innerHTML = ''; // clear banner
+    // Banner button handlers - ROBUST VERSION (no reliance on fragile 'this' or btn param)
+    function confirmRevisionPush(periodId) {
+        // Clear any pending banner
+        const workflowBar = document.getElementById('payAppWorkflowBar');
+        if (workflowBar) workflowBar.innerHTML = '';
+        
+        if (!periodId) {
+            // Fallback: try to get from global if somehow called without param
+            periodId = window._pendingRevisionPeriodId;
+        }
+        window._pendingRevisionPeriodId = null;
+        
         performRevisionRestore(periodId);
     }
 
-    function cancelRevisionPush(btn, originalHTML) {
-        const workflowBar = btn.closest('#payAppWorkflowBar');
-        if (workflowBar) workflowBar.innerHTML = originalHTML;
+    function cancelRevisionPush() {
+        window._pendingRevisionPeriodId = null;
+        // Re-render the normal historical view cleanly
+        const select = document.getElementById('previousPeriodSelect');
+        if (select && select.value) {
+            loadPreviousPayAppData(select.value);
+        } else {
+            renderPayAppContent();
+        }
     }
 
     // Helper functions to print historical periods (temporarily load snapshot into globals)
