@@ -441,6 +441,18 @@ let mainLienWaiver = JSON.parse(localStorage.getItem('mainLienWaiver') || '{}');
         return total;
     }
 
+    function getTotalSubcontractedCost() {
+        let total = 0;
+        Object.keys(subcontractorSOV || {}).forEach(cid => {
+            if (getSubSOVStatus(cid) === 'Approved') {
+                (subcontractorSOV[cid] || []).forEach(line => {
+                    total += (parseFloat(line.original) || 0) + (parseFloat(line.change_orders) || 0);
+                });
+            }
+        });
+        return total;
+    }
+
     function getSubBilledTotalForCode(code) {
         // Cumulative Billed to Date from Previous Sub Pay Apps (archived/pushed G703 snapshots)
         // Sums Work This Period from every historical pay app line for matching cost code.
@@ -506,35 +518,6 @@ let mainLienWaiver = JSON.parse(localStorage.getItem('mainLienWaiver') || '{}');
         const currentDraft = (payAppBillingLines[line.id] && payAppBillingLines[line.id].workThisPeriod) || 0;
         // If user has already entered something >= sub min, keep it. Otherwise suggest the sub min.
         return Math.max(currentDraft, subMin);
-    }
-
-    // NEW (v76.52): Cumulative Billed to Date from PREVIOUS APPROVED Contractor Pay Applications only.
-    // This is the source of truth for the "Billed to Date" column on the current G702.
-    // It sums (Previous Billed in that period's SOV snapshot + Work/Materials billed in that period's billingLines)
-    // for every Approved historical pay app that matches the cost code.
-    // This ensures Billed to Date on G702 = Total Completed & Stored to Date from all prior approved G703 snapshots.
-    function getCumulativeBilledToDateFromHistory(code) {
-        const norm = normalizeCostCode(code);
-        let total = 0;
-        if (!payAppHistory || payAppHistory.length === 0) return 0;
-
-        payAppHistory.forEach(hist => {
-            if (!hist || hist.status !== 'Approved' || !hist.snapshot) return;
-            const snap = hist.snapshot;
-            const histSOV = snap.contractorSOVSnapshot || [];
-            const histBilling = snap.billingLines || {};
-
-            histSOV.forEach(line => {
-                if (normalizeCostCode(line.cost_code) === norm) {
-                    const billing = histBilling[line.id] || { workThisPeriod: 0, materialsStored: 0 };
-                    const prevBilledInSnap = parseFloat(line.billed_to_date) || 0;
-                    const thisPeriodInSnap = (parseFloat(billing.workThisPeriod) || 0) + (parseFloat(billing.materialsStored) || 0);
-                    total += prevBilledInSnap + thisPeriodInSnap;
-                }
-            });
-        });
-
-        return Math.round(total * 100) / 100;
     }
 
     // ==================== SUB SOV STATUS HELPERS (Approval Workflow) ====================
@@ -1319,9 +1302,7 @@ let mainLienWaiver = JSON.parse(localStorage.getItem('mainLienWaiver') || '{}');
             const thisPeriod = (billing.workThisPeriod || 0) + (billing.materialsStored || 0);
             totalCurrentBilling += thisPeriod;
 
-            // Use cumulative from previous APPROVED Contractor Pay Applications (history)
-            // This makes "Billed to Date" = Total Completed & Stored to Date from all prior approved G703s
-            const previousBilled = getCumulativeBilledToDateFromHistory(line.cost_code);
+            const previousBilled = line.billed_to_date || 0;
             totalBilledToDate += previousBilled + thisPeriod;
             totalRetainage += thisPeriod * 0.10;
         });
@@ -1558,9 +1539,7 @@ let mainLienWaiver = JSON.parse(localStorage.getItem('mainLienWaiver') || '{}');
                 const materials = billing.materialsStored || 0;
                 const thisPeriodTotal = workThis + materials;
 
-                // Billed to Date = cumulative from all previous APPROVED Contractor Pay Applications (history)
-                // + current period draft billing. This matches "Total Completed & Stored to Date" from prior G703s.
-                const previousBilled = getCumulativeBilledToDateFromHistory(line.cost_code);
+                const previousBilled = line.billed_to_date || 0;
                 const totalBilled = previousBilled + thisPeriodTotal;
                 const percentComplete = currentAmount > 0 ? Math.min(100, Math.round((totalBilled / currentAmount) * 100)) : 0;
                 const retainageRate = defaultRetainagePercent / 100;
@@ -2052,6 +2031,16 @@ let mainLienWaiver = JSON.parse(localStorage.getItem('mainLienWaiver') || '{}');
             localStorage.setItem('subPayAppHistory', JSON.stringify(subPayAppHistory));
         }
         
+        // === UPDATE LIVE CONTRACTOR SOV billed_to_date WITH THIS PERIOD'S COMPLETED AMOUNTS ===
+        // This ensures the next period's G702 starts with the correct cumulative Billed to Date from history/previous approvals.
+        contractorSOV.forEach(line => {
+            const billing = payAppBillingLines[line.id] || { workThisPeriod: 0, materialsStored: 0 };
+            const thisPeriodCompleted = (billing.workThisPeriod || 0) + (billing.materialsStored || 0);
+            if (!line.billed_to_date) line.billed_to_date = 0;
+            line.billed_to_date += thisPeriodCompleted;
+        });
+        localStorage.setItem('contractorSOV', JSON.stringify(contractorSOV));
+
         // --- Automatic Period Advancement (one per month) ---
         const currentEnd = new Date(currentPayAppPeriod.periodEnd);
         const nextStart = new Date(currentEnd);
@@ -2185,8 +2174,8 @@ let mainLienWaiver = JSON.parse(localStorage.getItem('mainLienWaiver') || '{}');
                 </div>
                 <div class="bg-zinc-800 border border-zinc-700 rounded-md p-5">
                     <div class="text-xs text-zinc-400">Total Subcontracted (from Sub SOVs)</div>
-                    <div class="text-2xl font-semibold mt-1 text-emerald-400">${formatCurrency(getSubcontractedCostForCode(''))}</div>
-                    <div class="text-[10px] text-zinc-500 mt-0.5">Sum of all Subcontractor Schedule of Values lines</div>
+                    <div class="text-2xl font-semibold mt-1 text-emerald-400">${formatCurrency(getTotalSubcontractedCost())}</div>
+                    <div class="text-[10px] text-zinc-500 mt-0.5">Sum of Current (Original + CO) from all Approved Sub SOVs</div>
                 </div>
             </div>
         `;
