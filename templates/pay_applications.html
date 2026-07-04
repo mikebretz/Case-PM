@@ -2181,17 +2181,51 @@ let mainLienWaiver = JSON.parse(localStorage.getItem('mainLienWaiver') || '{}');
         // Success confirmation for the user
         // showCenteredAlert("Pay Application approved. Amounts from Work This Period have been added to Billed to Date for the next period.", "success");
 
-        // NOTE: We no longer auto-advance the period here.
-        // This was causing confusion. The user now controls when to move to the next period
-        // using the "Reset to Next Period (Test)" button or the New Period modal.
-        // This ensures the user can verify the numbers in Previous Pay Applications first.
+        // After approval, automatically create and switch to Period N+1 in Draft state
+        // so the Submit button appears again for the next period (user request).
+        createNextPeriodAfterApproval(currentPayAppPeriod);
 
-        // Clear only the draft billing lines so the next time user goes to G702 it is fresh for the new period
-        // (but we keep the currentPayAppPeriod as Approved so user can see it was approved)
+        // Switch back to G702 tab so user immediately sees the new Draft period ready for input
+        setTimeout(() => {
+            switchPayAppTab('payapp');
+            renderPayAppContent();
+        }, 600);
+    }
+
+    // NEW: Create next period as Draft after approval (auto-advance for workflow continuity)
+    function createNextPeriodAfterApproval(currentPeriod) {
+        if (!currentPeriod) return null;
+
+        const nextNum = (currentPeriod.periodNumber || 1) + 1;
+        
+        // Calculate next month dates based on previous period's end date
+        let nextStart = new Date(currentPeriod.periodEnd);
+        nextStart.setDate(nextStart.getDate() + 1);
+        
+        if (nextStart.getDate() !== 1) {
+            nextStart = new Date(nextStart.getFullYear(), nextStart.getMonth() + 1, 1);
+        }
+        
+        const nextEnd = new Date(nextStart.getFullYear(), nextStart.getMonth() + 1, 0);
+
+        const nextPeriod = {
+            id: Date.now(),
+            periodNumber: nextNum,
+            periodStart: nextStart.toISOString().split('T')[0],
+            periodEnd: nextEnd.toISOString().split('T')[0],
+            status: "Draft"
+        };
+
+        currentPayAppPeriod = nextPeriod;
+        localStorage.setItem('currentPayAppPeriod', JSON.stringify(currentPayAppPeriod));
+
+        // Clear draft billing lines for the new period
         payAppBillingLines = {};
         localStorage.setItem('payAppBillingLines', JSON.stringify(payAppBillingLines));
 
-        renderPayAppContent();
+        logPayAppAudit('PERIOD_AUTO_ADVANCED', { from: currentPeriod.periodNumber, to: nextNum });
+        
+        return nextPeriod;
     }
 
     function requestRevisionPayApplication() {
