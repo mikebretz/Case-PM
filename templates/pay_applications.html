@@ -377,7 +377,7 @@
 </dialog>
 
 <script>
-    // ==================== DATA & STATE (v76.64 - Added "Allow zero-dollar Sub Pay Apps" setting. Zero $ submissions appear as "Pay App -- [Month]" without consuming a pay app number. Next real submission gets the correct next number.) ====================
+    // ==================== DATA & STATE (v77.1 - Period 1 Month/Date Picker restored for Draft + when pushed back via Request Revision. Billed to Date snapshot restore working. Top banner confirmation clean.) ====================
     let payApplications = JSON.parse(localStorage.getItem('payApplications')) || [];
     let contractorSOV = JSON.parse(localStorage.getItem('contractorSOV')) || [];
     let subcontractorSOV = JSON.parse(localStorage.getItem('subcontractorSOV')) || {}; // { companyId: [lines] }
@@ -441,6 +441,57 @@ let mainLienWaiver = JSON.parse(localStorage.getItem('mainLienWaiver') || '{}');
         const d = new Date(dateStr);
         if (isNaN(d.getTime())) return dateStr;
         return d.toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' });
+    }
+
+    // ==================== PERIOD 1 MONTH SELECTOR HELPERS ====================
+    function generatePeriod1MonthOptions(currentStartDate) {
+        const options = [];
+        const today = new Date();
+        let currentMonthKey = '';
+        if (currentStartDate) {
+            const d = new Date(currentStartDate);
+            if (!isNaN(d.getTime())) {
+                currentMonthKey = d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0');
+            }
+        }
+
+        // Generate 18 months starting from 6 months ago up to 12 months in future
+        for (let i = -6; i <= 12; i++) {
+            const d = new Date(today.getFullYear(), today.getMonth() + i, 1);
+            const value = d.toISOString().split('T')[0]; // YYYY-MM-01
+            const monthKey = d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0');
+            const label = d.toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
+            const selected = (currentMonthKey && currentMonthKey === monthKey) ? 'selected' : '';
+            options.push(`<option value="${value}" ${selected}>${label}</option>`);
+        }
+        return options.join('');
+    }
+
+    function updatePeriod1BillingMonth(selectedStartDate) {
+        if (!currentPayAppPeriod || currentPayAppPeriod.periodNumber !== 1) return;
+
+        const start = new Date(selectedStartDate);
+        if (isNaN(start.getTime())) return;
+
+        // Set to first day of month
+        const periodStart = start.toISOString().split('T')[0];
+        // Last day of the month
+        const end = new Date(start.getFullYear(), start.getMonth() + 1, 0);
+        const periodEnd = end.toISOString().split('T')[0];
+
+        currentPayAppPeriod.periodStart = periodStart;
+        currentPayAppPeriod.periodEnd = periodEnd;
+
+        localStorage.setItem('currentPayAppPeriod', JSON.stringify(currentPayAppPeriod));
+
+        logPayAppAudit('PERIOD_1_MONTH_UPDATED', { 
+            periodNumber: 1, 
+            newStart: periodStart, 
+            newEnd: periodEnd 
+        });
+
+        // Refresh the G702 tab to show updated date range
+        renderPayAppContent();
     }
 
     // ==================== NEW HELPERS FOR CONTRACTOR G703 ROLLUP (v76.48) ====================
@@ -1600,6 +1651,18 @@ let mainLienWaiver = JSON.parse(localStorage.getItem('mainLienWaiver') || '{}');
                     <div class="text-right">
                         <div class="text-sm font-semibold text-white">Period ${currentPayAppPeriod.periodNumber} • <span class="font-bold ${currentPayAppPeriod.status === 'Draft' ? 'text-amber-400' : currentPayAppPeriod.status === 'Submitted' ? 'text-sky-400' : 'text-emerald-400'}">${currentPayAppPeriod.status}</span></div>
                         <div class="text-base font-medium mt-0.5 text-emerald-300">${formatDateMDY(currentPayAppPeriod.periodStart)} → ${formatDateMDY(currentPayAppPeriod.periodEnd)}</div>
+                        
+                        <!-- Period 1 Month Selector (only for Draft Period 1) -->
+                        ${ (currentPayAppPeriod.periodNumber === 1 && currentPayAppPeriod.status === 'Draft') ? `
+                        <div class="mt-3 pt-3 border-t border-zinc-700">
+                            <div class="text-[10px] text-amber-400 mb-1 text-right">Billing Month for Period 1</div>
+                            <select id="period1MonthSelect" onchange="updatePeriod1BillingMonth(this.value)" 
+                                    class="w-full bg-zinc-900 border border-amber-600 rounded-md px-3 py-1.5 text-sm text-white text-right">
+                                ${generatePeriod1MonthOptions(currentPayAppPeriod.periodStart)}
+                            </select>
+                            <div class="text-[9px] text-zinc-500 mt-0.5 text-right">Select the month this first pay application covers</div>
+                        </div>
+                        ` : ''}
                     </div>
                     <div class="mt-1 text-[10px] text-zinc-500 text-right">Periods advance automatically upon approval.<br>Only one Pay App per month is allowed.</div>
                 </div>
