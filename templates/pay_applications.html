@@ -6993,17 +6993,20 @@ function printSubcontractorG703(companyId) {
 
         tbody.innerHTML = '';
 
-        // Show subs that have an ACTIVE (non-archived) Approved or Pending paper.
+        // Show subs that have an ACTIVE (non-archived) Approved/Pending paper OR a submitted pending paper (from Sub SOV "Submit Application").
+        // Each sub has its own independent PayApp number sequence (e.g. Sub A on #3, Sub B on #5, Sub C on #7 is allowed and expected).
         // Archived papers are pushed to Previous Sub Pay Apps and no longer appear in this Tracker.
-        // We always show only the single most recent (highest period number) active paper per sub.
         const subCompanies = companies.filter(c => {
+            const hasPendingSubmission = !!subPendingSubmissions[c.id];
             const hist = subPayAppHistory[c.id];
-            if (!hist) return false;
-            const hasActiveApprovedOrPending = Object.keys(hist).some(p => {
-                const e = hist[p];
-                return e && (e.status === 'Approved' || e.status === 'Pending Approval') && e.archived !== true;
-            });
-            return (c.type === 'Subcontractor' || c.company_type === 'Subcontractor') && hasActiveApprovedOrPending;
+            let hasActiveInHistory = false;
+            if (hist) {
+                hasActiveInHistory = Object.keys(hist).some(p => {
+                    const e = hist[p];
+                    return e && (e.status === 'Approved' || e.status === 'Pending Approval') && e.archived !== true;
+                });
+            }
+            return (c.type === 'Subcontractor' || c.company_type === 'Subcontractor') && (hasPendingSubmission || hasActiveInHistory);
         });
 
         if (subCompanies.length === 0) {
@@ -7028,8 +7031,14 @@ function printSubcontractorG703(companyId) {
                 displayedPayAppNum = subPendingSubmissions[companyId].periodNumber;
             }
 
-            // NOW fetch the correct historyEntry for the chosen (latest active) period number
-            const historyEntry = subPayAppHistory[companyId] && subPayAppHistory[companyId][displayedPayAppNum];
+            // NOW fetch the correct historyEntry for the chosen (latest active) period number.
+            // Fall back to pending submission if not yet approved into history (so Tracker shows all submitted subs).
+            let historyEntry = subPayAppHistory[companyId] && subPayAppHistory[companyId][displayedPayAppNum];
+            if (!historyEntry && subPendingSubmissions[companyId] && subPendingSubmissions[companyId].periodNumber === displayedPayAppNum) {
+                historyEntry = subPendingSubmissions[companyId];
+                // Treat pending as 'Pending Approval' for display/status purposes in the tracker
+                if (!historyEntry.status) historyEntry.status = 'Pending Approval';
+            }
 
             let billedThis = 0;
             let billedToDateAtApproval = 0;
