@@ -3414,6 +3414,19 @@ let mainLienWaiver = JSON.parse(localStorage.getItem('mainLienWaiver') || '{}');
             });
         }
 
+        // If no subcontractor is selected yet, show a clear instruction so user knows they must pick one before they can submit anything
+        if (!selectedSubCompanyId) {
+            const workflowBarEl = document.getElementById('payAppWorkflowBar');
+            if (workflowBarEl) {
+                workflowBarEl.innerHTML = `
+                    <div class="workflow-bar px-4 py-3 flex items-center gap-3 text-sm bg-amber-950/40 border border-amber-600 rounded-md">
+                        <i class="fa-solid fa-info-circle text-amber-400"></i>
+                        <span class="text-amber-300">Select a subcontractor from the dropdown above. Only then can you view their Schedule of Values, enter billing amounts, and submit a pay application. A subcontractor must be in charge of the SOV before submission is allowed.</span>
+                    </div>
+                `;
+            }
+        }
+
         // Show individual Pay App # + SOV Status for selected sub
         if (selectedSubCompanyId) {
             let subPayApps = JSON.parse(localStorage.getItem('subPayAppNumbers') || '{}');
@@ -4790,10 +4803,24 @@ let mainLienWaiver = JSON.parse(localStorage.getItem('mainLienWaiver') || '{}');
     // - PM clicks "Approve & Commit Pay Application" → moves "this period" amounts into billed_to_date, advances pay app #, clears waiver, saves clean record to Previous Sub Pay Apps.
 
     function submitSubPayAppForApproval(companyId) {
-        if (!companyId) return;
+        if (!companyId) {
+            showCenteredAlert("Please select a subcontractor first before submitting a pay application.");
+            return;
+        }
+
+        // Ensure a real subcontractor from the company list is selected and "in charge" of this SOV
+        const companyRecord = companies.find(c => c.id == companyId);
+        if (!companyRecord) {
+            showCenteredAlert("The selected subcontractor is no longer valid. Please re-select a subcontractor that is in charge of this Schedule of Values.");
+            selectedSubCompanyId = null;
+            localStorage.removeItem('lastSelectedSubSOV');
+            renderPayAppContent();
+            return;
+        }
+
         const lines = subcontractorSOV[companyId] || [];
         if (lines.length === 0) {
-            showCenteredAlert("No lines to submit for this subcontractor.");
+            showCenteredAlert("No lines to submit for this subcontractor. Please add line items to the Schedule of Values first.");
             return;
         }
 
