@@ -3926,6 +3926,12 @@ let mainLienWaiver = JSON.parse(localStorage.getItem('mainLienWaiver') || '{}');
             localStorage.setItem('subPayAppHistory', JSON.stringify(subPayAppHistory));
         }
 
+        // === CRITICAL: Reconcile the Pay App number back to the one that was in the Tracker ===
+        // This ensures the Subcontractor Schedule of Values tab shows "Pay App #N Current" (the same N)
+        // instead of jumping to the next number. The number only advances on successful Approve.
+        subPayAppNumbers[companyId] = periodNum;
+        localStorage.setItem('subPayAppNumbers', JSON.stringify(subPayAppNumbers));
+
         // Ensure the SOV status stays Approved so the billing UI shows Submit button
         updateSubSOVStatus(companyId, 'Approved', { 
             note: 'Revision in progress - amounts restored from previous submission' 
