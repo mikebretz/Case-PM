@@ -1387,6 +1387,12 @@ let mainLienWaiver = JSON.parse(localStorage.getItem('mainLienWaiver') || '{}');
         } else if (status === 'Approved') {
             workflowHTML += `<span class="px-4 py-1.5 bg-emerald-900/60 text-emerald-400 text-sm rounded-md font-medium">Approved — Payment can be processed</span>`;
         }
+
+        // Combined G702 + G703 Print (as requested — prints both when on G702 tab)
+        workflowHTML += `<button onclick="printG702AndG703Together()" class="ml-3 px-4 py-2 bg-sky-600 hover:bg-sky-500 rounded-md text-sm font-medium flex items-center gap-2" title="Print current G702 Pay Application + current G703 Schedule of Values together">
+            <i class="fa-solid fa-print"></i> <span>Print G702 + G703</span>
+        </button>`;
+
         // Test button to advance period (for testing submission and previous pay apps flow)
         workflowHTML += `<button onclick="resetToNextPeriodForTesting()" class="ml-auto px-3 py-1.5 bg-zinc-700 hover:bg-zinc-600 rounded-md text-xs font-medium flex items-center gap-1.5 border border-zinc-600" title="Advance to next period for testing">
             <i class="fa-solid fa-fast-forward"></i> <span>Reset to Next Period (Test)</span>
@@ -2124,7 +2130,7 @@ let mainLienWaiver = JSON.parse(localStorage.getItem('mainLienWaiver') || '{}');
             : '';
 
         cardsContainer.innerHTML = `
-            <div class="grid grid-cols-2 md:grid-cols-5 gap-4">
+            <div class="grid grid-cols-2 md:grid-cols-4 gap-4">
                 <div class="bg-zinc-800 border border-zinc-700 rounded-md p-5">
                     <div class="text-xs text-zinc-400">Original Contract Amount (from Budget)</div>
                     <div class="text-2xl font-semibold mt-1 text-emerald-400">${formatCurrency(budgetContractAmount)}</div>
@@ -2139,12 +2145,9 @@ let mainLienWaiver = JSON.parse(localStorage.getItem('mainLienWaiver') || '{}');
                     <div class="text-2xl font-semibold mt-1 text-emerald-400">${formatCurrency(totalOriginal + totalCO)}</div>
                 </div>
                 <div class="bg-zinc-800 border border-zinc-700 rounded-md p-5">
-                    <div class="text-xs text-zinc-400">Total Billed to Date</div>
-                    <div class="text-2xl font-semibold mt-1">${formatCurrency(totalBilled)}</div>
-                </div>
-                <div class="bg-zinc-800 border border-zinc-700 rounded-md p-5">
-                    <div class="text-xs text-zinc-400">Balance to Finish</div>
-                    <div class="text-2xl font-semibold mt-1 text-emerald-400">${formatCurrency(totalBalance)}</div>
+                    <div class="text-xs text-zinc-400">Total Subcontracted (from Sub SOVs)</div>
+                    <div class="text-2xl font-semibold mt-1 text-emerald-400">${formatCurrency(getSubcontractedCostForCode(''))}</div>
+                    <div class="text-[10px] text-zinc-500 mt-0.5">Sum of all Subcontractor Schedule of Values lines</div>
                 </div>
             </div>
         `;
@@ -2190,9 +2193,8 @@ let mainLienWaiver = JSON.parse(localStorage.getItem('mainLienWaiver') || '{}');
                 <th class="px-3 py-3 text-center font-medium text-zinc-400 w-36">COs</th>
                 <th class="px-4 py-3 text-center font-medium text-zinc-400 w-40">Current</th>
                 <th class="px-4 py-3 text-center font-medium text-emerald-400 w-44">Cost to Date<br><span class="text-[10px] text-emerald-500">(Subcontracted)</span></th>
-                <th class="px-3 py-3 text-center font-medium text-zinc-400 w-20">% Billed</th>
-                <th class="px-4 py-3 text-center font-medium text-zinc-400 w-44">Billed to Date<br><span class="text-[10px] text-emerald-500">(Cumulative from Sub Pay Apps)</span></th>
-                <th class="px-4 py-3 text-center font-medium text-zinc-400 w-40">Balance</th>
+                <th class="px-3 py-3 text-center font-medium text-zinc-400 w-20">% Complete</th>
+                <th class="px-4 py-3 text-center font-medium text-amber-400 w-40">Variance<br><span class="text-[10px]">(Current vs Subcontracted)</span></th>
                 <th class="px-4 py-3 text-left font-medium text-zinc-400 w-[30rem]">Notes</th>
                 <th class="px-3 py-3 text-center font-medium text-zinc-400 w-20">Actions</th>
             </tr>
@@ -2248,18 +2250,13 @@ let mainLienWaiver = JSON.parse(localStorage.getItem('mainLienWaiver') || '{}');
 
             const current = (line.original || 0) + (line.co_amount || 0);
             const subCostToDate = getSubcontractedCostForCode(line.cost_code);
-            const subBilled = getSubBilledTotalForCode(line.cost_code);
-            const billed = Math.max(line.billed_to_date || 0, subBilled);
-            const balance = current - billed;
-            const pct = current > 0 ? Math.min(100, Math.round((billed / current) * 100)) : 0;
+            const variance = current - subCostToDate; // Positive = GC self-perform portion remaining
+            const pct = current > 0 ? Math.min(100, Math.round((subCostToDate / current) * 100)) : 0; // % subcontracted
             visibleIndex++;
 
             const row = document.createElement('tr');
             row.className = 'sov-line-row hover:bg-zinc-800/60 cursor-pointer';
             row.ondblclick = () => editContractorSOVLine(line.id);
-
-            const billedNote = subBilled > (line.billed_to_date || 0) ? 
-                `<span class="text-[10px] text-emerald-500 ml-1" title="Lifted by Sub Pay Apps in Tracker/History">(↑ subs)</span>` : '';
 
             row.innerHTML = `
                 <td class="px-3 py-2 text-center font-mono text-xs text-zinc-500">${visibleIndex}</td>
@@ -2270,8 +2267,7 @@ let mainLienWaiver = JSON.parse(localStorage.getItem('mainLienWaiver') || '{}');
                 <td class="px-4 py-2 text-right font-semibold text-emerald-400 font-mono text-[15px]">${formatCurrency(current)}</td>
                 <td class="px-4 py-2 text-right font-mono text-emerald-400 text-[15px]">${formatCurrency(subCostToDate)}</td>
                 <td class="px-3 py-2 text-center font-mono text-xs">${pct}%</td>
-                <td class="px-4 py-2 text-right text-emerald-400 font-mono text-[15px]">${formatCurrency(billed)}${billedNote}</td>
-                <td class="px-4 py-2 text-right font-mono text-[15px]">${formatCurrency(balance)}</td>
+                <td class="px-4 py-2 text-right font-mono text-amber-400 text-[15px]">${formatCurrency(variance)}</td>
                 <td class="px-4 py-2 text-[15px] text-zinc-400 notes-cell" title="${(line.notes || '').replace(/"/g, '&quot;')}">${line.notes || ''}</td>
                 <td class="px-3 py-2 text-center">
                     <button onclick="event.stopImmediatePropagation(); showSOVLineAudit(${line.id}, 'contractor')" class="text-sky-400 hover:text-sky-300 p-1" title="Line Audit Log"><i class="fa-solid fa-history"></i></button>
@@ -2536,16 +2532,10 @@ let mainLienWaiver = JSON.parse(localStorage.getItem('mainLienWaiver') || '{}');
                     <input type="text" id="sovNotes" class="w-full bg-zinc-800 border border-zinc-700 rounded-md px-4 py-2.5 text-sm" value="${line.notes || ''}">
                 </div>
 
-                <div>
-                    <label class="block text-sm mb-1.5 text-zinc-300 flex items-center gap-2">
-                        <span>Billed to Date (Owner)</span>
-                        <span class="text-[10px] text-amber-400">(can be higher than Sub Pay Apps cumulative; cannot be lower)</span>
-                    </label>
-                    <input type="text" id="sovBilledToDate" class="w-full bg-zinc-800 border border-zinc-700 rounded-md px-4 py-2.5 text-sm font-mono" value="${formatCurrency(line.billed_to_date || 0)}">
-                    <div class="text-[10px] text-zinc-500 mt-0.5">This is what the Contractor bills the Owner for this line. Must be ≥ cumulative from Sub Previous Pay Apps.</div>
-                </div>
+                <!-- G703 is SETUP ONLY. Billing happens on the G702 Pay Application tab.
+                     We show Sub Pay App cumulative here for visibility/reference only. -->
 
-                <!-- Live Sub Pay App Rollup Info (v76.48) -->
+                <!-- Live Sub Pay App Rollup Info (for visibility on setup tab) -->
                 <div id="contractorSubRollupInfo" class="mt-4 p-3 bg-zinc-900 border border-zinc-700 rounded-md text-xs">
                     <div class="font-semibold text-emerald-400 mb-1.5 flex items-center gap-2">
                         <i class="fa-solid fa-link"></i> 
@@ -2554,8 +2544,8 @@ let mainLienWaiver = JSON.parse(localStorage.getItem('mainLienWaiver') || '{}');
                     <div id="subRollupContent" class="text-zinc-300 space-y-0.5">
                         <!-- Populated by JS below -->
                     </div>
-                    <div class="mt-2 text-[10px] text-amber-400">
-                        Billed to Date on this G703 line cannot be set lower than the Sub Pay App total above.
+                    <div class="mt-2 text-[10px] text-zinc-500">
+                        Billing / adjustments are done on the Pay Application (G702) tab. This G703 tab is for contract setup only.
                     </div>
                 </div>
             </div>
@@ -2647,15 +2637,11 @@ let mainLienWaiver = JSON.parse(localStorage.getItem('mainLienWaiver') || '{}');
             }
         }
 
-        // Read Billed to Date (Owner) and enforce minimum from Sub Previous Pay Apps
-        const billedStr = document.getElementById('sovBilledToDate').value.replace(/[^0-9.-]/g, '');
-        const billedToDateNum = parseFloat(billedStr) || 0;
-        const cumulativeFromSubs = getSubBilledTotalForCode(costCode);
+        // G703 is SETUP ONLY — no Billed to Date editing here.
+        // Billing / Work This Period adjustments happen on the G702 Pay Application tab.
+        // We still calculate cumulative from Sub Pay Apps for visibility in the edit modal.
 
-        if (billedToDateNum < cumulativeFromSubs - 0.01) {  // small tolerance for rounding
-            alert(`BLOCKED: Billed to Date (Owner) cannot be lower than the cumulative billed by subcontractors from Previous Sub Pay Apps for ${costCode}.\n\nCumulative from Sub Pay Apps: ${formatCurrency(cumulativeFromSubs)}\nYou entered: ${formatCurrency(billedToDateNum)}\n\nThis ensures the G703 Billed to Date always reflects at least what subs have already billed through their pushed pay apps. You may enter a higher amount for contractor self-perform or additional billing.`);
-            return;
-        }
+        const cumulativeFromSubs = getSubBilledTotalForCode(costCode);
 
         if (id) {
             const line = contractorSOV.find(l => l.id === id);
@@ -2665,9 +2651,9 @@ let mainLienWaiver = JSON.parse(localStorage.getItem('mainLienWaiver') || '{}');
                 line.description = desc;
                 line.original = original;
                 line.co_amount = co_amount;
-                line.billed_to_date = billedToDateNum;
+                // billed_to_date is no longer edited on G703 (setup only). It lives on G702.
                 line.notes = notes;
-                logPayAppAudit('CONTRACTOR_SOV_EDITED', { cost_code: costCode, oldOriginal, newOriginal: original, billed_to_date: billedToDateNum });
+                logPayAppAudit('CONTRACTOR_SOV_EDITED', { cost_code: costCode, oldOriginal, newOriginal: original });
             }
         } else {
             contractorSOV.push({
@@ -2676,7 +2662,7 @@ let mainLienWaiver = JSON.parse(localStorage.getItem('mainLienWaiver') || '{}');
                 description: desc,
                 original: original,
                 co_amount: co_amount,
-                billed_to_date: billedToDateNum,
+                billed_to_date: 0, // Always start at 0 on setup tab; billing happens on G702
                 percent_complete: 0,
                 notes: notes
             });
