@@ -324,6 +324,17 @@
                 </label>
             </div>
 
+            <!-- NEW: Require All Subs with Approved SOVs to Submit Pay App before G702 Submit -->
+            <div class="pt-3 border-t border-zinc-700">
+                <label class="flex items-center justify-between cursor-pointer">
+                    <div>
+                        <div class="text-sm text-zinc-300">Require all Subcontractors with Approved SOVs to submit Pay Apps before G702 can be submitted</div>
+                        <div class="text-[10px] text-zinc-500">When ON, you cannot submit the main Pay Application (G702) until every subcontractor who has an Approved Schedule of Values has submitted their pay app for this period (appears in Sub Pay App Tracker).</div>
+                    </div>
+                    <input type="checkbox" id="requireAllSubPayAppsToggle" class="w-5 h-5 accent-emerald-600" ${requireAllSubPayAppsBeforeG702Submit ? 'checked' : ''}>
+                </label>
+            </div>
+
             <!-- New: Required Submission Deadline Setting (Day of Month) -->
             <div class="pt-3 border-t border-zinc-700">
                 <label class="flex items-center justify-between cursor-pointer mb-2">
@@ -355,7 +366,7 @@
 </dialog>
 
 <script>
-    // ==================== DATA & STATE (v76.57 - FIXED: On current Draft period, Billed to Date column = ONLY line.billed_to_date (committed from prior approved periods). Current Work This Period is NOT added until Approve. Matches user's exact Period 1 → Period 2 flow.) ====================
+    // ==================== DATA & STATE (v76.63 - Added setting: Require all subs with Approved SOVs to submit Pay App before G702 Submit can be clicked. Toggle in Settings controls enforcement.) ====================
     let payApplications = JSON.parse(localStorage.getItem('payApplications')) || [];
     let contractorSOV = JSON.parse(localStorage.getItem('contractorSOV')) || [];
     let subcontractorSOV = JSON.parse(localStorage.getItem('subcontractorSOV')) || {}; // { companyId: [lines] }
@@ -376,6 +387,7 @@ let requireLienWaiverOnSubPayApp = localStorage.getItem('requireLienWaiverOnSubP
 let requireZeroDollarLienWaiver = localStorage.getItem('requireZeroDollarLienWaiver') === 'true'; // NEW: Zero Dollar Waiver Requirement
 let requireSubmissionDeadline = localStorage.getItem('requireSubmissionDeadline') === 'true';
 let submissionDeadlineDate = localStorage.getItem('submissionDeadlineDate') || '';
+let requireAllSubPayAppsBeforeG702Submit = localStorage.getItem('requireAllSubPayAppsBeforeG702Submit') !== 'false'; // Default ON (true)
 
 // Main Contractor (GC) Lien Waiver for current period (separate from Sub waivers)
 let mainLienWaiver = JSON.parse(localStorage.getItem('mainLienWaiver') || '{}'); // { periodNumber: { filename, dataUrl, uploadedDate } }
@@ -2003,26 +2015,32 @@ let mainLienWaiver = JSON.parse(localStorage.getItem('mainLienWaiver') || '{}');
             return; // BLOCK processing
         }
 
-        // === SUBCONTRACTOR PAY APP COMPLETENESS CHECK (workflow enforcement, modeled after Procore/RedTeam) ===
-        // In real systems (Procore Commitments + Payment Apps, RedTeam sub invoicing), the GC/main pay app cannot be submitted/certified
-        // until all downstream subcontractor payment applications for the period have been submitted and approved (with lien waivers).
-        // This prevents the main G702 from being processed with incomplete sub billings or missing compliance.
+        // === NEW: Require All Subs with Approved SOVs to have submitted Pay Apps (Controlled by Settings) ===
         const currentPeriodNumForCheck = currentPayAppPeriod.periodNumber;
-        const subsWithSOV = Object.keys(subcontractorSOV || {});
-        let missingOrPendingSubs = [];
-        subsWithSOV.forEach(cid => {
-            const hist = subPayAppHistory[cid] && subPayAppHistory[cid][currentPeriodNumForCheck];
-            const hasApprovedOrSubmitted = hist && (hist.status === 'Approved' || hist.status === 'Pending Approval' || hist.status === 'Submitted');
-            if (!hasApprovedOrSubmitted) {
-                missingOrPendingSubs.push(getCompanyName(cid));
+        if (requireAllSubPayAppsBeforeG702Submit) {
+            // Only check subs who have an APPROVED Subcontractor SOV (these are the ones "contracted" and expected to bill)
+            const subsWithApprovedSOV = Object.keys(subcontractorSOV || {}).filter(cid => getSubSOVStatus(cid) === 'Approved');
+            
+            let missingSubs = [];
+            subsWithApprovedSOV.forEach(cid => {
+                const hist = subPayAppHistory[cid] && subPayAppHistory[cid][currentPeriodNumForCheck];
+                const hasActivePaper = hist && (hist.status === 'Approved' || hist.status === 'Pending Approval') && hist.archived !== true;
+                
+                // Also check pending submissions (in case they submitted but not yet approved into history)
+                const hasPending = subPendingSubmissions[cid] && subPendingSubmissions[cid].periodNumber === currentPeriodNumForCheck;
+                
+                if (!hasActivePaper && !hasPending) {
+                    missingSubs.push(getCompanyName(cid));
+                }
+            });
+            
+            if (missingSubs.length > 0) {
+                showCenteredAlert(
+                    `BLOCKED: Cannot submit main Pay Application (G702).\n\nThe following subcontractors have an APPROVED Schedule of Values but have NOT submitted a Pay Application for this period:\n\n${missingSubs.join('\n')}\n\nPlease have them submit their pay apps via the Subcontractor SOV tab, or turn OFF the setting "Require all Subcontractors with Approved SOVs..." in Pay Application Settings if you want to submit without them.`,
+                    'warning'
+                );
+                return; // BLOCK submission
             }
-        });
-        if (missingOrPendingSubs.length > 0) {
-            showCenteredAlert(
-                `BLOCKED: Cannot submit main Pay Application (G702) until ALL Subcontractor Schedule of Values and their Pay Apps are submitted & approved for this period.\n\nSubs still pending: ${missingOrPendingSubs.join(', ')}\n\nWorkflow: Subs submit via Subcontractor SOV tab → PM approves in Sub Pay App Tracker (with lien waiver) → then GC Pay App can be submitted. This matches standard Procore/RedTeam pay app routing.`,
-                'warning'
-            );
-            return; // BLOCK — enforces linked process
         }
 
         // === LIEN WAIVER COMPLETENESS CHECK (critical AIA / compliance gate) ===
@@ -6494,6 +6512,13 @@ function printSubcontractorG703(companyId) {
             if (deadlineDaySelect && deadlineDaySelect.value) {
                 localStorage.setItem('submissionDeadlineDay', deadlineDaySelect.value);
             }
+        }
+
+        // NEW: Require All Sub Pay Apps before G702 Submit
+        const allSubToggle = document.getElementById('requireAllSubPayAppsToggle');
+        if (allSubToggle) {
+            requireAllSubPayAppsBeforeG702Submit = allSubToggle.checked;
+            localStorage.setItem('requireAllSubPayAppsBeforeG702Submit', requireAllSubPayAppsBeforeG702Submit);
         }
 
         document.getElementById('settingsModal').close();
