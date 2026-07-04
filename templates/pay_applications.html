@@ -976,6 +976,16 @@ let mainLienWaiver = JSON.parse(localStorage.getItem('mainLienWaiver') || '{}');
         return c ? (c.name || c.company_name || 'Unknown Company') : 'Unknown Company';
     }
 
+    // Safe helper: always returns the sub's own independent pay app number (starts at 1)
+    function getCurrentSubPayAppNumber(companyId) {
+        if (!companyId) return 1;
+        if (!subPayAppNumbers[companyId]) {
+            subPayAppNumbers[companyId] = 1;
+            localStorage.setItem('subPayAppNumbers', JSON.stringify(subPayAppNumbers));
+        }
+        return subPayAppNumbers[companyId];
+    }
+
     function showUnsavedIndicator() {
         hasUnsavedChanges = true;
         const dot = document.getElementById('unsavedDot');
@@ -3004,7 +3014,19 @@ let mainLienWaiver = JSON.parse(localStorage.getItem('mainLienWaiver') || '{}');
 
                 const canSubmit = !requireLienWaiverOnSubPayApp || hasWaiver;
 
-                if (canSubmit) {
+                // Check if there is a pending submission (after Submit, before Approve)
+                const pending = subSOVStatus[selectedSubCompanyId] && subSOVStatus[selectedSubCompanyId].pendingSubmission;
+
+                if (pending) {
+                    // After Submit: Show Approve button on this tab (data stays here until Approve is hit)
+                    buttonsHTML = `
+                        <button onclick="approvePendingSubPayApp(${selectedSubCompanyId})" 
+                                class="ml-3 px-5 py-2 bg-red-600 hover:bg-red-500 text-white rounded text-sm font-semibold flex items-center gap-2">
+                            <i class="fa-solid fa-check-double"></i> <span>Approve Application</span>
+                        </button>
+                        <span class="text-xs text-amber-400 ml-2">Waiting for your approval. Data stays on this tab.</span>
+                    `;
+                } else if (canSubmit) {
                     buttonsHTML = `
                         <button onclick="submitSubPayAppForApproval(${selectedSubCompanyId})" 
                                 class="ml-3 px-5 py-2 bg-emerald-600 hover:bg-emerald-500 text-white rounded text-sm font-semibold flex items-center gap-2">
@@ -3831,57 +3853,98 @@ let mainLienWaiver = JSON.parse(localStorage.getItem('mainLienWaiver') || '{}');
         }
 
         // Use the SUBCONTRACTOR's own independent Pay App number (not the main G702 period)
-        let currentSubPayAppNum = subPayAppNumbers[companyId] || 1;
+        const currentSubPayAppNum = getCurrentSubPayAppNumber(companyId);
         const waiver = subLienWaivers[companyId] && subLienWaivers[companyId][currentSubPayAppNum];
 
-        // Create a snapshot of the current billing for history
-        const snapshotLines = lines.map(l => ({
-            id: l.id,
-            cost_code: l.cost_code,
-            description: l.description,
-            original_commitment: l.original_commitment || 0,
-            change_orders: l.change_orders || 0,
-            billed_to_date_before: l.billed_to_date || 0,
-            work_this_period: l.work_this_period || 0,
-            materials_stored: l.materials_stored || 0,
-            co_billed_this_period: l.co_billed_this_period || 0,
-            total_this_period: (l.work_this_period || 0) + (l.materials_stored || 0) + (l.co_billed_this_period || 0)
-        }));
+        const totalBilledThisPeriod = lines.reduce((sum, l) => {
+            return sum + ((l.work_this_period || 0) + (l.materials_stored || 0) + (l.co_billed_this_period || 0));
+        }, 0);
 
-        const totalBilledThisPeriod = snapshotLines.reduce((sum, l) => sum + l.total_this_period, 0);
+        // === EXACT MODEL: Submit only sets "Pending Approval" state on this tab ===
+        // Data stays on Subcontractor Schedule of Values tab. Button will change to "Approve Application".
+        if (!subSOVStatus[companyId]) subSOVStatus[companyId] = {};
+        subSOVStatus[companyId].pendingSubmission = {
+            payAppNumber: currentSubPayAppNum,
+            totalBilledThisPeriod: totalBilledThisPeriod,
+            lienWaiver: waiver ? {
+                filename: waiver.filename,
+                uploadedDate: waiver.uploadedDate,
+                dataUrl: waiver.dataUrl || null
+            } : null,
+            submittedAt: new Date().toISOString()
+        };
+        localStorage.setItem('subSOVStatus', JSON.stringify(subSOVStatus));
 
-        // Save to history under the SUB's own number as "Pending Approval"
+        logPayAppAudit('SUB_PAYAPP_SUBMITTED_PENDING', { companyId: companyId, period: currentSubPayAppNum, total: totalBilledThisPeriod });
+        showCenteredAlert("Submitted. The Approve Application button is now active on this tab. All data stays here until you (PM) hit Approve.", 'success');
+        renderPayAppContent();
+    }
+
+    // NEW: Approve button that appears on Subcontractor Schedule of Values tab after Submit
+    // This is the action that actually moves everything to Sub Pay App Tracker (Right Hand)
+    function approvePendingSubPayApp(companyId) {
+        if (!companyId) return;
+        const pending = subSOVStatus[companyId] && subSOVStatus[companyId].pendingSubmission;
+        if (!pending) {
+            showCenteredAlert("No pending submission found on this tab.", "warning");
+            return;
+        }
+
+        const lines = subcontractorSOV[companyId] || [];
+        const payAppNum = pending.payAppNumber;
+
+        // Create the final Approved record in history (Right Hand)
         if (!subPayAppHistory[companyId]) subPayAppHistory[companyId] = {};
-        subPayAppHistory[companyId][currentSubPayAppNum] = {
-            periodNumber: currentSubPayAppNum,
+        subPayAppHistory[companyId][payAppNum] = {
+            periodNumber: payAppNum,
             periodStart: currentPayAppPeriod ? currentPayAppPeriod.periodStart : '',
             periodEnd: currentPayAppPeriod ? currentPayAppPeriod.periodEnd : '',
-            submittedDate: new Date().toISOString(),
-            status: 'Pending Approval',
-            lines: snapshotLines,
-            totalBilledThisPeriod: totalBilledThisPeriod,
-            lienWaiver: waiver ? { 
-                filename: waiver.filename, 
-                uploadedDate: waiver.uploadedDate,
-                dataUrl: waiver.dataUrl || null 
-            } : null
+            submittedDate: pending.submittedAt,
+            approvedDate: new Date().toISOString(),
+            status: 'Approved',
+            lines: lines.map(l => ({
+                id: l.id,
+                cost_code: l.cost_code,
+                description: l.description,
+                work_this_period: l.work_this_period || 0,
+                materials_stored: l.materials_stored || 0,
+                co_billed_this_period: l.co_billed_this_period || 0,
+                total_this_period: (l.work_this_period || 0) + (l.materials_stored || 0) + (l.co_billed_this_period || 0)
+            })),
+            totalBilledThisPeriod: pending.totalBilledThisPeriod,
+            lienWaiver: pending.lienWaiver
         };
         localStorage.setItem('subPayAppHistory', JSON.stringify(subPayAppHistory));
 
-        // Advance the sub's working number for the next period on Sub SOV tab
-        subPayAppNumbers[companyId] = currentSubPayAppNum + 1;
-        localStorage.setItem('subPayAppNumbers', JSON.stringify(subPayAppNumbers));
-
-        // Clear This Period fields on live SOV (they have been moved to history)
+        // Commit the amounts to Billed to Date on live SOV
         lines.forEach(l => {
+            const totalThis = (l.work_this_period || 0) + (l.materials_stored || 0) + (l.co_billed_this_period || 0);
+            if (totalThis > 0) {
+                l.billed_to_date = (l.billed_to_date || 0) + totalThis;
+            }
+            // Clear This Period for the new clean #2
             l.work_this_period = 0;
             l.materials_stored = 0;
             l.co_billed_this_period = 0;
         });
         localStorage.setItem('subcontractorSOV', JSON.stringify(subcontractorSOV));
 
-        logPayAppAudit('SUB_PAYAPP_SUBMITTED_FOR_APPROVAL', { companyId: companyId, period: currentSubPayAppNum, total: totalBilledThisPeriod });
-        showCenteredAlert("Pay Application submitted. It is now visible in Sub Pay App Tracker as Pay App #" + currentSubPayAppNum + " Pending Approval. Subcontractor Schedule of Values advanced to #" + (currentSubPayAppNum + 1) + ". Lien waiver is now only in the Tracker.", 'success');
+        // Advance the sub's working number (Left Hand becomes clean #2)
+        subPayAppNumbers[companyId] = payAppNum + 1;
+        localStorage.setItem('subPayAppNumbers', JSON.stringify(subPayAppNumbers));
+
+        // Clear the pending flag
+        delete subSOVStatus[companyId].pendingSubmission;
+        localStorage.setItem('subSOVStatus', JSON.stringify(subSOVStatus));
+
+        // Remove live lien waiver (it lives in the Approved history record now)
+        if (subLienWaivers[companyId] && subLienWaivers[companyId][payAppNum]) {
+            delete subLienWaivers[companyId][payAppNum];
+            localStorage.setItem('subLienWaivers', JSON.stringify(subLienWaivers));
+        }
+
+        logPayAppAudit('SUB_PAYAPP_APPROVED_FROM_SOV', { companyId: companyId, period: payAppNum });
+        showCenteredAlert("Approved. Pay App #" + payAppNum + " moved to Sub Pay App Tracker. Subcontractor Schedule of Values is now clean Pay App #" + (payAppNum + 1) + " Current.", 'success');
         renderPayAppContent();
     }
 
@@ -6163,7 +6226,7 @@ function printSubcontractorG703(companyId) {
                         Request Revision
                     </button>` : '' }
                 </td>
-                <td class="px-3 py-3 text-center font-mono text-emerald-400">${currentAppNum}</td>
+                <td class="px-3 py-3 text-center font-mono text-emerald-400">${displayPayAppNum || subPayAppNumbers[companyId] || 1}</td>
                 <td class="px-3 py-3 text-center">${statusBadge}</td>
                 <td class="px-3 py-3 text-center text-sm">${lienBadge}</td>
                 <td class="px-4 py-3 text-right font-mono text-emerald-400">${formatCurrency(billedThis)}</td>
