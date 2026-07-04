@@ -398,7 +398,12 @@ let requireLienWaiverOnSubPayApp = localStorage.getItem('requireLienWaiverOnSubP
 let requireZeroDollarLienWaiver = localStorage.getItem('requireZeroDollarLienWaiver') === 'true'; // NEW: Zero Dollar Waiver Requirement
 let requireSubmissionDeadline = localStorage.getItem('requireSubmissionDeadline') === 'true';
 let submissionDeadlineDate = localStorage.getItem('submissionDeadlineDate') || '';
-let allowZeroDollarSubPayApps = localStorage.getItem('allowZeroDollarSubPayApps') === 'true'; // Respect the checkbox in Pay Applications Settings. Default OFF.
+let allowZeroDollarSubPayApps = localStorage.getItem('allowZeroDollarSubPayApps') !== 'false'; // NEW: Allow $0 sub pay apps (compliance) without using a pay app number
+// Force the setting ON by default so zero-dollar compliance submissions are always allowed from Sub SOV tab
+if (localStorage.getItem('allowZeroDollarSubPayApps') === null || localStorage.getItem('allowZeroDollarSubPayApps') === 'true') {
+    allowZeroDollarSubPayApps = true;
+    localStorage.setItem('allowZeroDollarSubPayApps', 'true');
+}
 let requireAllSubPayAppsBeforeG702Submit = localStorage.getItem('requireAllSubPayAppsBeforeG702Submit') !== 'false'; // Default ON (true)
 
 // Main Contractor (GC) Lien Waiver for current period (separate from Sub waivers)
@@ -4840,34 +4845,26 @@ let mainLienWaiver = JSON.parse(localStorage.getItem('mainLienWaiver') || '{}');
         const totalBilledThisPeriodCheck = tempSnapshotForTotal.reduce((sum, l) => 
             sum + (l.work_this_period + l.materials_stored + l.co_billed_this_period), 0);
 
-        // STRICT GATE: If $0 and the compliance setting is OFF, block with clear message.
-        if (totalBilledThisPeriodCheck === 0 && !allowZeroDollarSubPayApps) {
-            showErrorModal("You need to update the amounts in the 'This Period' columns before submitting this pay application.\n\nTo allow zero-dollar compliance submissions, go to Pay Applications Settings and turn ON 'Allow zero-dollar Subcontractor Pay Apps (for compliance months)'.");
-            return;
-        }
-
         let currentPeriodNum;
-        let isZeroDollarSubmission = false;
-        let zeroDollarDisplayLabel = '';
+        let isComplianceSubmission = false;
 
-        if (totalBilledThisPeriodCheck === 0 && allowZeroDollarSubPayApps) {
-            // Zero-dollar compliance submission → do NOT consume a numbered pay app slot.
-            // Display as "Pay App -- Month Year (Compliance)" with no number.
-            // The sub's pay app counter is NEVER touched for these.
-            isZeroDollarSubmission = true;
-            const periodLabel = currentPayAppPeriod 
-                ? `${new Date(currentPayAppPeriod.periodStart).toLocaleString('default', { month: 'long' })} ${new Date(currentPayAppPeriod.periodStart).getFullYear()}`
-                : 'Current Period';
-            const dateRange = currentPayAppPeriod 
-                ? `${currentPayAppPeriod.periodStart} to ${currentPayAppPeriod.periodEnd}`
-                : '';
-            zeroDollarDisplayLabel = `Pay App -- ${periodLabel} (${dateRange}) (Compliance)`;
-            
-            // Use a stable, unique storage key that will NEVER be shown as a pay app number.
-            // This keeps lien waiver lookup and pending/history storage simple without polluting the numbered sequence.
-            currentPeriodNum = `ZERO_${Date.now()}`;
+        if (totalBilledThisPeriodCheck === 0) {
+            if (!allowZeroDollarSubPayApps) {
+                showErrorModal("You need to update the amounts in the 'This Period' columns before submitting this pay application.\n\nTo allow zero-dollar compliance submissions, go to Pay Applications Settings and turn ON 'Allow zero-dollar Subcontractor Pay Apps (for compliance months)'.");
+                return;
+            }
+            // Zero-dollar compliance submission allowed.
+            // Use the CURRENT numeric pay app number (e.g. 1), but mark it as compliance.
+            // Do NOT increment the counter. The SOV tab stays on "Pay App #1 Current".
+            // In the Tracker it will be shown as "Pay App #1 C".
+            isComplianceSubmission = true;
+            if (!subPayAppNumbers[companyId]) {
+                subPayAppNumbers[companyId] = 1;
+                localStorage.setItem('subPayAppNumbers', JSON.stringify(subPayAppNumbers));
+            }
+            currentPeriodNum = subPayAppNumbers[companyId]; // keep the number, do not advance it
         } else {
-            // Normal (non-zero) submission → initialize counter only for real pay apps
+            // Normal (non-zero) submission
             if (!subPayAppNumbers[companyId]) {
                 subPayAppNumbers[companyId] = 1;
                 localStorage.setItem('subPayAppNumbers', JSON.stringify(subPayAppNumbers));
@@ -4938,8 +4935,7 @@ let mainLienWaiver = JSON.parse(localStorage.getItem('mainLienWaiver') || '{}');
             submittedDate: new Date().toISOString(),
             lines: snapshotLines,
             totalBilledThisPeriod: totalBilledThisPeriod,
-            isZeroDollar: isZeroDollarSubmission,
-            zeroDollarDisplayLabel: zeroDollarDisplayLabel,
+            isCompliance: isComplianceSubmission,
             lienWaiver: waiver ? { 
                 filename: waiver.filename, 
                 uploadedDate: waiver.uploadedDate,
@@ -4948,17 +4944,16 @@ let mainLienWaiver = JSON.parse(localStorage.getItem('mainLienWaiver') || '{}');
         };
         localStorage.setItem('subPendingSubmissions', JSON.stringify(subPendingSubmissions));
 
-        // Remove the live lien waiver from subLienWaivers so the pill disappears from the Subcontractor SOV tab
-        // (it now lives on the pending entry / Tracker compliance paper).
-        if (subLienWaivers[companyId]) {
-            if (isZeroDollarSubmission) {
+        // For compliance submissions, remove the live lien waiver so the pill disappears from Sub SOV tab
+        if (isComplianceSubmission && companyId) {
+            if (subLienWaivers[companyId]) {
                 delete subLienWaivers[companyId]['LATEST_COMPLIANCE'];
+                // Also clean any numeric key for the current number
+                if (subLienWaivers[companyId][currentPeriodNum]) {
+                    delete subLienWaivers[companyId][currentPeriodNum];
+                }
+                localStorage.setItem('subLienWaivers', JSON.stringify(subLienWaivers));
             }
-            // Also clean any numeric key that might have been used
-            if (subLienWaivers[companyId][currentPeriodNum]) {
-                delete subLienWaivers[companyId][currentPeriodNum];
-            }
-            localStorage.setItem('subLienWaivers', JSON.stringify(subLienWaivers));
         }
 
         logPayAppAudit('SUB_PAYAPP_SUBMITTED_FOR_APPROVAL', { companyId: companyId, period: currentPeriodNum, total: totalBilledThisPeriod });
@@ -5115,6 +5110,10 @@ let mainLienWaiver = JSON.parse(localStorage.getItem('mainLienWaiver') || '{}');
         if (!periodNum) {
             // last resort: use sub's own current number
             periodNum = (subPayAppNumbers[companyId] || (currentPayAppPeriod ? currentPayAppPeriod.periodNumber : 1));
+        }
+        // If periodNum came in as "1 C" (display string), extract the numeric part
+        if (typeof periodNum === 'string' && periodNum.includes('C')) {
+            periodNum = parseInt(periodNum, 10) || periodNum;
         }
 
         let sourceEntry = null;
@@ -7476,16 +7475,21 @@ function printSubcontractorG703(companyId) {
             const lines = subcontractorSOV[companyId] || [];
             const status = getSubSOVStatus(companyId);
             // === Always pick the SINGLE MOST RECENT ACTIVE (non-archived) pay app period for this sub ===
-            // This ensures Tracker shows the correct current paper (#1, then after push #1 + approve #2, shows #2 with its own billed amount).
             let displayedPayAppNum = subPayAppNumbers[companyId] || 1;
             if (subPayAppHistory[companyId]) {
-                const periods = Object.keys(subPayAppHistory[companyId]).map(Number).filter(p => {
-                    const e = subPayAppHistory[companyId][p];
-                    return e && (e.status === 'Approved' || e.status === 'Pending Approval') && e.archived !== true;
-                }).sort((a,b) => b - a);
+                // Prefer clean numeric keys; ignore old ZERO_ string keys for period selection
+                const periods = Object.keys(subPayAppHistory[companyId])
+                    .filter(k => !isNaN(parseInt(k)))
+                    .map(Number)
+                    .filter(p => {
+                        const e = subPayAppHistory[companyId][p];
+                        return e && (e.status === 'Approved' || e.status === 'Pending Approval') && e.archived !== true;
+                    }).sort((a,b) => b - a);
                 if (periods.length > 0) displayedPayAppNum = periods[0];
-            } else if (subPendingSubmissions[companyId] && subPendingSubmissions[companyId].periodNumber) {
-                displayedPayAppNum = subPendingSubmissions[companyId].periodNumber;
+            }
+            if (subPendingSubmissions[companyId] && subPendingSubmissions[companyId].periodNumber) {
+                const pn = subPendingSubmissions[companyId].periodNumber;
+                if (!isNaN(parseInt(pn))) displayedPayAppNum = pn;
             }
 
             // NOW fetch the correct historyEntry for the chosen (latest active) period number.
@@ -7497,22 +7501,15 @@ function printSubcontractorG703(companyId) {
                 if (!historyEntry.status) historyEntry.status = 'Pending Approval';
             }
 
-            // === ZERO-DOLLAR COMPLIANCE DISPLAY OVERRIDE ===
-            // If this entry was submitted as a $0 pay app (compliance month), ALWAYS show the nice label
-            // and never show a number. This paper does not consume a slot in the sub's numbered sequence.
+            // === COMPLIANCE ($0) DISPLAY: Show as "Pay App #N C" in Tracker ===
+            // The SOV tab stays on the normal number (e.g. Pay App #1 Current).
+            // The Tracker shows the compliance marker "C".
             let payAppDisplayValue = displayedPayAppNum;
-            const isZeroEntry = (historyEntry && (historyEntry.isZeroDollar === true || historyEntry.zeroDollarDisplayLabel)) ||
-                                (subPendingSubmissions[companyId] && (subPendingSubmissions[companyId].isZeroDollar === true || subPendingSubmissions[companyId].zeroDollarDisplayLabel)) ||
-                                (typeof displayedPayAppNum === 'string' && displayedPayAppNum.startsWith('ZERO_'));
-            
-            if (isZeroEntry) {
-                if (historyEntry && historyEntry.zeroDollarDisplayLabel) {
-                    payAppDisplayValue = historyEntry.zeroDollarDisplayLabel;
-                } else if (subPendingSubmissions[companyId] && subPendingSubmissions[companyId].zeroDollarDisplayLabel) {
-                    payAppDisplayValue = subPendingSubmissions[companyId].zeroDollarDisplayLabel;
-                } else {
-                    payAppDisplayValue = 'Pay App -- (Zero Dollar Compliance)';
-                }
+            const isComplianceEntry = (historyEntry && historyEntry.isCompliance === true) ||
+                                      (subPendingSubmissions[companyId] && subPendingSubmissions[companyId].isCompliance === true);
+
+            if (isComplianceEntry) {
+                payAppDisplayValue = `${displayedPayAppNum} C`;
             }
 
             let billedThis = 0;
