@@ -5841,10 +5841,10 @@ function printSubcontractorG703(companyId) {
             const companyId = company.id;
             const lines = subcontractorSOV[companyId] || [];
             const status = getSubSOVStatus(companyId);
-            // Use the sub-specific number we just decided, not the main G702 period number
-            const historyEntry = subPayAppHistory[companyId] && subPayAppHistory[companyId][displayedPayAppNum];
             // === Prefer the number actually stored in the paper (sub-specific, starts at 1) ===
             let displayedPayAppNum = 1;
+            // Use the sub-specific number we just decided, not the main G702 period number
+            const historyEntry = subPayAppHistory[companyId] && subPayAppHistory[companyId][displayedPayAppNum];
             if (historyEntry && historyEntry.periodNumber) {
                 displayedPayAppNum = historyEntry.periodNumber;
             } else if (subPendingSubmissions[companyId] && subPendingSubmissions[companyId].periodNumber) {
