@@ -355,7 +355,7 @@
 </dialog>
 
 <script>
-    // ==================== DATA & STATE (v76.49 - Added "Reset G703 + Previous Periods (Start Fresh)" button next to Lock on Contractor G703. Clears contractorSOV + payAppHistory for true clean project start. Removed demo seeding from Previous Pay Apps dropdown. All prior sub workflow 100% locked) ====================
+    // ==================== DATA & STATE (v76.49 - Reset button now fully clears G702 current period + G703 billed_to_date + Previous Periods for true fresh project start. All prior sub workflow 100% locked) ====================
     let payApplications = JSON.parse(localStorage.getItem('payApplications')) || [];
     let contractorSOV = JSON.parse(localStorage.getItem('contractorSOV')) || [];
     let subcontractorSOV = JSON.parse(localStorage.getItem('subcontractorSOV')) || {}; // { companyId: [lines] }
@@ -1971,17 +1971,18 @@ let mainLienWaiver = JSON.parse(localStorage.getItem('mainLienWaiver') || '{}');
 
     function resetContractorG703AndPreviousPeriods() {
         const confirmed = confirm(
-            "⚠️ WARNING — NUCLEAR RESET\n\n" +
-            "This will PERMANENTLY DELETE:\n" +
-            "• ALL line items on the Contractor G703 (Schedule of Values)\n" +
-            "• ALL entries in the 'Select Previous Period' dropdown (payAppHistory)\n\n" +
-            "This is intended to start a brand new project completely from scratch on the Contractor side.\n\n" +
+            "⚠️ WARNING — NUCLEAR RESET (Fresh Project Start)\n\n" +
+            "This will PERMANENTLY DELETE / RESET on the Contractor side:\n" +
+            "• ALL line items on the G703 (Schedule of Values) — including every billed_to_date amount\n" +
+            "• ALL entries in the 'Select Previous Period' dropdown (payAppHistory)\n" +
+            "• The current G702 period — resets to Period 1 Draft with $0 billed everywhere\n\n" +
+            "Result: A completely fresh project start. Nothing billed, nothing saved on the main G702/G703.\n\n" +
             "Subcontractor data (Sub SOVs, Sub Pay App Tracker, Previous Sub Pay Apps) will NOT be affected.\n\n" +
             "Are you 100% sure you want to do this?"
         );
         if (!confirmed) return;
 
-        // Clear Contractor G703
+        // Clear Contractor G703 completely (removes all lines + all billed_to_date values)
         contractorSOV = [];
         localStorage.setItem('contractorSOV', JSON.stringify(contractorSOV));
 
@@ -1989,14 +1990,23 @@ let mainLienWaiver = JSON.parse(localStorage.getItem('mainLienWaiver') || '{}');
         payAppHistory = [];
         localStorage.setItem('payAppHistory', JSON.stringify(payAppHistory));
 
+        // Reset current G702 period to a completely fresh Period 1 Draft (no billed amounts, clean start)
+        currentPayAppPeriod = {
+            id: Date.now(),
+            periodNumber: 1,
+            periodStart: new Date().toISOString().split('T')[0],
+            periodEnd: new Date(Date.now() + 30*24*60*60*1000).toISOString().split('T')[0],
+            status: "Draft"
+        };
+        localStorage.setItem('currentPayAppPeriod', JSON.stringify(currentPayAppPeriod));
+
         // Unlock the G703 if it was locked
         localStorage.removeItem('contractorSOVLocked');
 
-        // Re-render to show empty state
+        // Re-render everything so G702 + G703 show a true fresh/empty state
         renderPayAppContent();
 
-        // Optional: show a non-intrusive confirmation in console / future toast
-        console.log('%c[Case PM] Contractor G703 + Previous Periods have been fully reset for a fresh project start.', 'color:#f59e0b');
+        console.log('%c[Case PM] FULL NUCLEAR RESET: Contractor G702/G703 + Previous Periods are now completely fresh (Period 1 Draft, $0 billed).', 'color:#f59e0b');
     }
 
     // ==================== CONTRACTOR SOV TAB ====================
