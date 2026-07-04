@@ -4847,8 +4847,9 @@ let mainLienWaiver = JSON.parse(localStorage.getItem('mainLienWaiver') || '{}');
         let zeroDollarDisplayLabel = '';
 
         if (totalBilledThisPeriodCheck === 0 && allowZeroDollarSubPayApps) {
-            // Zero-dollar compliance submission → use normal number for storage/waiver keys
-            // but flag it so we do NOT advance the counter on approval, and Tracker shows nice label.
+            // Zero-dollar compliance submission → do NOT consume a numbered pay app slot.
+            // Display as "Pay App -- Month Year (Compliance)" with no number.
+            // The sub's pay app counter is NOT advanced. Next real submission gets the correct next number.
             isZeroDollarSubmission = true;
             const periodLabel = currentPayAppPeriod 
                 ? `${new Date(currentPayAppPeriod.periodStart).toLocaleString('default', { month: 'long' })} ${new Date(currentPayAppPeriod.periodStart).getFullYear()}`
@@ -4857,11 +4858,13 @@ let mainLienWaiver = JSON.parse(localStorage.getItem('mainLienWaiver') || '{}');
                 ? `${currentPayAppPeriod.periodStart} to ${currentPayAppPeriod.periodEnd}`
                 : '';
             zeroDollarDisplayLabel = `Pay App -- ${periodLabel} (${dateRange}) (Compliance)`;
-            // Still use the sub's current number for consistent storage keys (lien waiver lookup, etc.)
-            currentPeriodNum = subPayAppNumbers[companyId] || 1;
+            
+            // Use main G702 period number as storage key (keeps lien waiver lookup simple)
+            // but this paper lives OUTSIDE the numbered sequence for this sub.
+            currentPeriodNum = currentPayAppPeriod ? currentPayAppPeriod.periodNumber : Date.now();
         } else {
             // Normal submission with dollar amounts → use the sub's own counter
-            currentPeriodNum = subPayAppNumbers[companyId];
+            currentPeriodNum = subPayAppNumbers[companyId] || 1;
         }
 
         const waiver = subLienWaivers[companyId] && subLienWaivers[companyId][currentPeriodNum];
@@ -7459,15 +7462,15 @@ function printSubcontractorG703(companyId) {
             }
 
             // === ZERO-DOLLAR COMPLIANCE DISPLAY OVERRIDE ===
-            // If this entry was submitted as a $0 pay app, show the nice label instead of a number
+            // If this entry was submitted as a $0 pay app (compliance month), ALWAYS show the nice label
+            // and never show a number. This paper does not consume a slot in the sub's numbered sequence.
             let payAppDisplayValue = displayedPayAppNum;
-            if (historyEntry && historyEntry.isZeroDollar === true && historyEntry.zeroDollarDisplayLabel) {
-                payAppDisplayValue = historyEntry.zeroDollarDisplayLabel;
+            if (historyEntry && (historyEntry.isZeroDollar === true || historyEntry.zeroDollarDisplayLabel)) {
+                payAppDisplayValue = historyEntry.zeroDollarDisplayLabel || 'Pay App -- (Zero Dollar Compliance)';
+            } else if (subPendingSubmissions[companyId] && (subPendingSubmissions[companyId].isZeroDollar === true || subPendingSubmissions[companyId].zeroDollarDisplayLabel)) {
+                payAppDisplayValue = subPendingSubmissions[companyId].zeroDollarDisplayLabel || 'Pay App -- (Zero Dollar Compliance)';
             } else if (typeof displayedPayAppNum === 'string' && displayedPayAppNum.startsWith('ZERO_')) {
-                // Fallback for pending zero-dollar entries
-                payAppDisplayValue = subPendingSubmissions[companyId] && subPendingSubmissions[companyId].zeroDollarDisplayLabel 
-                    ? subPendingSubmissions[companyId].zeroDollarDisplayLabel 
-                    : 'Pay App -- (Zero Dollar Compliance)';
+                payAppDisplayValue = 'Pay App -- (Zero Dollar Compliance)';
             }
 
             let billedThis = 0;
