@@ -399,6 +399,11 @@ let requireZeroDollarLienWaiver = localStorage.getItem('requireZeroDollarLienWai
 let requireSubmissionDeadline = localStorage.getItem('requireSubmissionDeadline') === 'true';
 let submissionDeadlineDate = localStorage.getItem('submissionDeadlineDate') || '';
 let allowZeroDollarSubPayApps = localStorage.getItem('allowZeroDollarSubPayApps') !== 'false'; // NEW: Allow $0 sub pay apps (compliance) without using a pay app number
+// Force the setting ON by default so zero-dollar compliance submissions are always allowed from Sub SOV tab
+if (localStorage.getItem('allowZeroDollarSubPayApps') === null || localStorage.getItem('allowZeroDollarSubPayApps') === 'true') {
+    allowZeroDollarSubPayApps = true;
+    localStorage.setItem('allowZeroDollarSubPayApps', 'true');
+}
 let requireAllSubPayAppsBeforeG702Submit = localStorage.getItem('requireAllSubPayAppsBeforeG702Submit') !== 'false'; // Default ON (true)
 
 // Main Contractor (GC) Lien Waiver for current period (separate from Sub waivers)
