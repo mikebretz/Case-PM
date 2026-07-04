@@ -1264,19 +1264,65 @@ let mainLienWaiver = JSON.parse(localStorage.getItem('mainLienWaiver') || '{}');
             return;
         }
 
-        if (!confirm("This will push Period " + periodData.periodNumber + " back to the Pay Application (G702) tab as Draft so you can edit and re-approve it. Continue?")) {
-            return;
+        // === TOP BANNER CONFIRMATION (formatted like the page, not centered modal or browser confirm) ===
+        const workflowBar = document.getElementById('payAppWorkflowBar');
+        if (!workflowBar) {
+            // Fallback if workflow bar missing
+            if (!confirm("This will push Period " + periodData.periodNumber + " back to the Pay Application (G702) as Draft. Continue?")) return;
+        } else {
+            const originalWorkflowHTML = workflowBar.innerHTML;
+            workflowBar.innerHTML = `
+                <div class="workflow-bar px-4 py-3 flex items-center gap-4 text-sm border border-amber-600 bg-amber-950/40 rounded-md">
+                    <div class="flex items-center gap-2 text-amber-300">
+                        <i class="fa-solid fa-exclamation-triangle"></i>
+                        <span class="font-medium">This will push Period ${periodData.periodNumber} back to the Pay Application (G702) tab as Draft so you can edit and re-submit.</span>
+                    </div>
+                    <div class="flex items-center gap-2 ml-auto">
+                        <button onclick="confirmRevisionPush(${periodId}, this)" 
+                                class="px-5 py-1.5 bg-amber-600 hover:bg-amber-500 text-white text-sm rounded-md font-semibold flex items-center gap-2">
+                            <i class="fa-solid fa-undo"></i> <span>Yes, Push Back to G702</span>
+                        </button>
+                        <button onclick="cancelRevisionPush(this, '${originalWorkflowHTML.replace(/'/g, "\\'")}')" 
+                                class="px-4 py-1.5 bg-zinc-700 hover:bg-zinc-600 text-sm rounded-md">
+                            Cancel
+                        </button>
+                    </div>
+                </div>
+            `;
+            return; // Wait for user to click Yes in the banner
         }
+
+        // If we reach here (fallback path), do the restore immediately
+        performRevisionRestore(periodId);
+    }
+
+    // Helper: actually perform the snapshot restore (called from banner "Yes" button)
+    function performRevisionRestore(periodId) {
+        const periodData = payAppHistory.find(p => p.id == periodId);
+        if (!periodData || !periodData.snapshot) return;
 
         // Restore billing lines from the historical snapshot
         payAppBillingLines = JSON.parse(JSON.stringify(periodData.snapshot.billingLines || {}));
         localStorage.setItem('payAppBillingLines', JSON.stringify(payAppBillingLines));
 
+        // === KEY FIX: Restore billed_to_date on contractorSOV from the snapshot ===
+        // This treats each historical pay app as a clean "Photoshop" snapshot.
+        // When pushing Period 1 back, Billed to Date correctly goes back to $0 (as captured before any billing was added).
+        if (periodData.snapshot.contractorSOVSnapshot && Array.isArray(periodData.snapshot.contractorSOVSnapshot)) {
+            periodData.snapshot.contractorSOVSnapshot.forEach(snapLine => {
+                const liveLine = contractorSOV.find(l => String(l.id) === String(snapLine.id));
+                if (liveLine) {
+                    liveLine.billed_to_date = (snapLine.billed_to_date != null) ? snapLine.billed_to_date : 0;
+                }
+            });
+            localStorage.setItem('contractorSOV', JSON.stringify(contractorSOV));
+        }
+
         // Set the current period to a Draft version of this historical period
         currentPayAppPeriod = {
             ...periodData.snapshot.period,
             status: "Draft",
-            id: Date.now() // new id so it doesn't conflict with history
+            id: Date.now()
         };
         localStorage.setItem('currentPayAppPeriod', JSON.stringify(currentPayAppPeriod));
 
@@ -1285,10 +1331,36 @@ let mainLienWaiver = JSON.parse(localStorage.getItem('mainLienWaiver') || '{}');
             restoredFromHistoryId: periodId
         });
 
-        // Switch to G702 tab
+        // Switch to G702 tab and re-render so Billed to Date shows the restored historical values
         switchPayAppTab('payapp');
 
-        showCenteredAlert("Period " + periodData.periodNumber + " has been restored to the Pay Application tab as Draft. You can now edit the Work This Period / Materials and re-submit for approval.", "success");
+        // Show success as a top banner style message (non-intrusive)
+        setTimeout(() => {
+            const wb = document.getElementById('payAppWorkflowBar');
+            if (wb) {
+                wb.innerHTML = `
+                    <div class="workflow-bar px-4 py-2.5 flex items-center gap-3 text-sm bg-emerald-950/40 border border-emerald-600 rounded-md">
+                        <span class="text-emerald-400"><i class="fa-solid fa-check-circle"></i></span>
+                        <span class="text-emerald-300">Period ${periodData.periodNumber} restored as Draft. Billed to Date has been rewound to the exact historical snapshot values.</span>
+                    </div>
+                `;
+                setTimeout(() => {
+                    if (wb && currentPayAppTab === 'payapp') renderPayAppContent();
+                }, 2200);
+            }
+        }, 120);
+    }
+
+    // Banner button handlers
+    function confirmRevisionPush(periodId, btn) {
+        const workflowBar = btn.closest('#payAppWorkflowBar');
+        if (workflowBar) workflowBar.innerHTML = ''; // clear banner
+        performRevisionRestore(periodId);
+    }
+
+    function cancelRevisionPush(btn, originalHTML) {
+        const workflowBar = btn.closest('#payAppWorkflowBar');
+        if (workflowBar) workflowBar.innerHTML = originalHTML;
     }
 
     // Helper functions to print historical periods (temporarily load snapshot into globals)
