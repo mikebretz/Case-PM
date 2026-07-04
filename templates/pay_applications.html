@@ -460,8 +460,9 @@ let mainLienWaiver = JSON.parse(localStorage.getItem('mainLienWaiver') || '{}');
                 lines.forEach(line => {
                     const lineCode = line.costCode || line.cost_code || '';
                     if (normalizeCostCode(lineCode) === norm) {
-                        // Sum Work + Materials across all historical pay apps for this code
-                        total += (parseFloat(line.work_this_period) || 0) + (parseFloat(line.materials_stored) || 0);
+                        // Sum Work This Period across all historical pay apps for this code
+                        // (matches user request: "add up all the work this period that shows up in the previous sub pay apps")
+                        total += parseFloat(line.work_this_period) || 0;
                     }
                 });
             });
@@ -491,30 +492,11 @@ let mainLienWaiver = JSON.parse(localStorage.getItem('mainLienWaiver') || '{}');
             lines.forEach(line => {
                 const lineCode = line.costCode || line.cost_code || '';
                 if (normalizeCostCode(lineCode) === norm) {
-                    // Include both work and materials from sub pay app for full "billed this period" amount
-                    total += (parseFloat(line.work_this_period) || 0) + (parseFloat(line.materials_stored) || 0);
+                    total += parseFloat(line.work_this_period) || 0;
                 }
             });
         });
 
-        return Math.round(total * 100) / 100;
-    }
-
-    // NEW: Cumulative Billed to Date from APPROVED Subcontractor SOVs (their billed_to_date column)
-    // This is the source of truth for "Total Completed & Stored to Date" from the subcontractor side.
-    // Used on G702 so that Billed to Date column matches what subs have billed to date on their SOV.
-    function getSubBilledToDateForCode(code) {
-        const norm = normalizeCostCode(code);
-        let total = 0;
-        Object.keys(subcontractorSOV || {}).forEach(cid => {
-            if (getSubSOVStatus(cid) === 'Approved') {
-                (subcontractorSOV[cid] || []).forEach(line => {
-                    if (normalizeCostCode(line.cost_code) === norm) {
-                        total += parseFloat(line.billed_to_date || 0);
-                    }
-                });
-            }
-        });
         return Math.round(total * 100) / 100;
     }
 
@@ -524,6 +506,35 @@ let mainLienWaiver = JSON.parse(localStorage.getItem('mainLienWaiver') || '{}');
         const currentDraft = (payAppBillingLines[line.id] && payAppBillingLines[line.id].workThisPeriod) || 0;
         // If user has already entered something >= sub min, keep it. Otherwise suggest the sub min.
         return Math.max(currentDraft, subMin);
+    }
+
+    // NEW (v76.52): Cumulative Billed to Date from PREVIOUS APPROVED Contractor Pay Applications only.
+    // This is the source of truth for the "Billed to Date" column on the current G702.
+    // It sums (Previous Billed in that period's SOV snapshot + Work/Materials billed in that period's billingLines)
+    // for every Approved historical pay app that matches the cost code.
+    // This ensures Billed to Date on G702 = Total Completed & Stored to Date from all prior approved G703 snapshots.
+    function getCumulativeBilledToDateFromHistory(code) {
+        const norm = normalizeCostCode(code);
+        let total = 0;
+        if (!payAppHistory || payAppHistory.length === 0) return 0;
+
+        payAppHistory.forEach(hist => {
+            if (!hist || hist.status !== 'Approved' || !hist.snapshot) return;
+            const snap = hist.snapshot;
+            const histSOV = snap.contractorSOVSnapshot || [];
+            const histBilling = snap.billingLines || {};
+
+            histSOV.forEach(line => {
+                if (normalizeCostCode(line.cost_code) === norm) {
+                    const billing = histBilling[line.id] || { workThisPeriod: 0, materialsStored: 0 };
+                    const prevBilledInSnap = parseFloat(line.billed_to_date) || 0;
+                    const thisPeriodInSnap = (parseFloat(billing.workThisPeriod) || 0) + (parseFloat(billing.materialsStored) || 0);
+                    total += prevBilledInSnap + thisPeriodInSnap;
+                }
+            });
+        });
+
+        return Math.round(total * 100) / 100;
     }
 
     // ==================== SUB SOV STATUS HELPERS (Approval Workflow) ====================
@@ -1308,9 +1319,9 @@ let mainLienWaiver = JSON.parse(localStorage.getItem('mainLienWaiver') || '{}');
             const thisPeriod = (billing.workThisPeriod || 0) + (billing.materialsStored || 0);
             totalCurrentBilling += thisPeriod;
 
-            // Use sub-driven billed_to_date as base for consistency with G702 column requirement
-            const subBilled = getSubBilledToDateForCode(line.cost_code);
-            const previousBilled = Math.max(line.billed_to_date || 0, subBilled);
+            // Use cumulative from previous APPROVED Contractor Pay Applications (history)
+            // This makes "Billed to Date" = Total Completed & Stored to Date from all prior approved G703s
+            const previousBilled = getCumulativeBilledToDateFromHistory(line.cost_code);
             totalBilledToDate += previousBilled + thisPeriod;
             totalRetainage += thisPeriod * 0.10;
         });
@@ -1543,17 +1554,13 @@ let mainLienWaiver = JSON.parse(localStorage.getItem('mainLienWaiver') || '{}');
             if (!payAppCollapsedDivisions.has(division)) {
                 const currentAmount = (line.original || 0) + (line.co_amount || 0);
                 const billing = payAppBillingLines[line.id] || { workThisPeriod: 0, materialsStored: 0 };
-                // FLOW from Sub Pay App Tracker: Work This Period must be at least what subs have billed this period for the code.
-                // getSuggestedWorkThisPeriodForLine returns max(manual draft, sub billed this period)
-                const workThis = getSuggestedWorkThisPeriodForLine(line);
+                const workThis = billing.workThisPeriod || 0;
                 const materials = billing.materialsStored || 0;
                 const thisPeriodTotal = workThis + materials;
 
-                // Per user requirement:
-                // Billed to Date on G702 = Subcontractor's Billed to Date (from their Approved SOV) + current period billing.
-                // This makes "Total Completed & Stored to Date" on G702 match the sub SOV's billed_to_date column.
-                const subBilledToDate = getSubBilledToDateForCode(line.cost_code);
-                const previousBilled = Math.max(line.billed_to_date || 0, subBilledToDate);
+                // Billed to Date = cumulative from all previous APPROVED Contractor Pay Applications (history)
+                // + current period draft billing. This matches "Total Completed & Stored to Date" from prior G703s.
+                const previousBilled = getCumulativeBilledToDateFromHistory(line.cost_code);
                 const totalBilled = previousBilled + thisPeriodTotal;
                 const percentComplete = currentAmount > 0 ? Math.min(100, Math.round((totalBilled / currentAmount) * 100)) : 0;
                 const retainageRate = defaultRetainagePercent / 100;
@@ -1758,7 +1765,7 @@ let mainLienWaiver = JSON.parse(localStorage.getItem('mainLienWaiver') || '{}');
             <div class="space-y-4">
                 <div>
                     <label class="block text-xs text-zinc-400 mb-1">Work Completed This Period</label>
-                    <input type="number" id="workThisPeriodInput" value="${getSuggestedWorkThisPeriodForLine(line) || 0}" step="0.01"
+                    <input type="number" id="workThisPeriodInput" value="${billing.workThisPeriod || 0}" step="0.01"
                            class="w-full bg-zinc-800 border border-zinc-700 rounded-md px-4 py-2.5 text-sm" oninput="updateWorkThisPeriodLive(${sovLineId}, this.value)">
                 </div>
                 <div>
