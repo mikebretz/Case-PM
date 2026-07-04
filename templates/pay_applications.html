@@ -1250,7 +1250,7 @@ let mainLienWaiver = JSON.parse(localStorage.getItem('mainLienWaiver') || '{}');
             const thisPeriod = (billing.workThisPeriod || 0) + (billing.materialsStored || 0);
             totalCurrentBilling += thisPeriod;
 
-            const previousBilled = line.billed_to_date || Math.round(currentAmount * 0.55);
+            const previousBilled = line.billed_to_date || 0;
             totalBilledToDate += previousBilled + thisPeriod;
             totalRetainage += thisPeriod * 0.10;
         });
@@ -1486,7 +1486,7 @@ let mainLienWaiver = JSON.parse(localStorage.getItem('mainLienWaiver') || '{}');
                 const materials = billing.materialsStored || 0;
                 const thisPeriodTotal = workThis + materials;
 
-                const previousBilled = line.billed_to_date || Math.round(currentAmount * 0.55);
+                const previousBilled = line.billed_to_date || 0;
                 const totalBilled = previousBilled + thisPeriodTotal;
                 const percentComplete = currentAmount > 0 ? Math.min(100, Math.round((totalBilled / currentAmount) * 100)) : 0;
                 const retainageRate = defaultRetainagePercent / 100;
@@ -1637,7 +1637,7 @@ let mainLienWaiver = JSON.parse(localStorage.getItem('mainLienWaiver') || '{}');
         } else {
             // Fallback calculation if element not found
             const currentAmount = (line.original || 0);
-            const previousBilled = line.billed_to_date || Math.round(currentAmount * 0.55);
+            const previousBilled = line.billed_to_date || 0;
             topRemaining = Math.max(0, currentAmount - previousBilled);
         }
 
@@ -1657,7 +1657,7 @@ let mainLienWaiver = JSON.parse(localStorage.getItem('mainLienWaiver') || '{}');
 
         const billing = payAppBillingLines[sovLineId] || { workThisPeriod: 0, materialsStored: 0, coWorkThisPeriod: 0 };
         const currentAmount = (line.original || 0) + (line.co_amount || 0);
-        const previousBilled = line.billed_to_date || Math.round(currentAmount * 0.55);
+        const previousBilled = line.billed_to_date || 0;
         const remaining = currentAmount - previousBilled;
 
         // Calculate CO already billed previously (simple model: assume proportion or stored separately; here we use a stored co_billed_to_date if present)
