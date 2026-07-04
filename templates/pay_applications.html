@@ -899,27 +899,27 @@ let mainLienWaiver = JSON.parse(localStorage.getItem('mainLienWaiver') || '{}');
             if (hist && hist.lienWaiver && hist.lienWaiver.dataUrl) {
                 waiver = hist.lienWaiver;
             } else if (!explicitPeriodNum && subPayAppHistory[companyId]) {
-                // Robust fallback for Tracker: find most recent history entry that has a lien waiver attached (covers period mismatches)
-                // Also handle compliance entries whose keys are strings like "ZERO_..."
+                // Robust fallback for Tracker: find most recent history entry that has a lien waiver attached.
+                // Also check string keys used for compliance (ZERO_...) entries.
                 const allKeys = Object.keys(subPayAppHistory[companyId]);
-                const numericKeys = allKeys.filter(k => !isNaN(parseInt(k, 10))).map(k => parseInt(k, 10)).sort((a,b) => b - a);
-                const complianceKeys = allKeys.filter(k => k.startsWith('ZERO_')).sort().reverse();
-
-                // Check compliance entries first (they are usually the ones needing the fallback)
-                for (const p of complianceKeys) {
+                // Prefer numeric keys first (sorted desc), then string compliance keys
+                const numericKeys = allKeys.map(k => Number(k)).filter(n => Number.isFinite(n)).sort((a,b) => b - a);
+                let found = false;
+                for (const p of numericKeys) {
                     const h = subPayAppHistory[companyId][p];
                     if (h && h.lienWaiver && h.lienWaiver.dataUrl) {
                         waiver = h.lienWaiver;
-                        periodNum = p; // so the modal header shows the correct label
+                        found = true;
                         break;
                     }
                 }
-                if (!waiver) {
-                    for (const p of numericKeys) {
-                        const h = subPayAppHistory[companyId][p];
+                if (!found) {
+                    // Check compliance string keys
+                    const compKeys = allKeys.filter(k => typeof k === 'string' && k.startsWith('ZERO_')).sort().reverse();
+                    for (const k of compKeys) {
+                        const h = subPayAppHistory[companyId][k];
                         if (h && h.lienWaiver && h.lienWaiver.dataUrl) {
                             waiver = h.lienWaiver;
-                            periodNum = p;
                             break;
                         }
                     }
@@ -5186,8 +5186,11 @@ let mainLienWaiver = JSON.parse(localStorage.getItem('mainLienWaiver') || '{}');
         // === CRITICAL: Reconcile the Pay App number back to the one that was in the Tracker ===
         // This ensures the Subcontractor Schedule of Values tab shows "Pay App #N Current" (the same N)
         // instead of jumping to the next number. The number only advances on successful Approve.
-        subPayAppNumbers[companyId] = periodNum;
-        localStorage.setItem('subPayAppNumbers', JSON.stringify(subPayAppNumbers));
+        // Do NOT touch the counter for compliance (ZERO_) papers — they never consume a number.
+        if (typeof periodNum === 'number' || (typeof periodNum === 'string' && !periodNum.startsWith('ZERO_') && Number.isFinite(Number(periodNum)))) {
+            subPayAppNumbers[companyId] = Number(periodNum);
+            localStorage.setItem('subPayAppNumbers', JSON.stringify(subPayAppNumbers));
+        }
 
         // Ensure the SOV status stays Approved so the billing UI shows Submit button
         updateSubSOVStatus(companyId, 'Approved', { 
@@ -7479,32 +7482,35 @@ function printSubcontractorG703(companyId) {
             const status = getSubSOVStatus(companyId);
             // === Always pick the SINGLE MOST RECENT ACTIVE (non-archived) pay app period for this sub ===
             // This ensures Tracker shows the correct current paper (#1, then after push #1 + approve #2, shows #2 with its own billed amount).
-            // ROBUST: Also handle compliance entries whose periodNumber is a string like "ZERO_1720..."
+            // FIXED: Also surface zero-dollar compliance entries (stored under ZERO_ keys) so their lien waiver travels with them.
             let displayedPayAppNum = subPayAppNumbers[companyId] || 1;
             if (subPayAppHistory[companyId]) {
-                const allKeys = Object.keys(subPayAppHistory[companyId]);
-                // Separate numeric periods from compliance (string) periods
-                const numericPeriods = allKeys
-                    .map(k => ({ key: k, num: parseInt(k, 10) }))
-                    .filter(x => !isNaN(x.num))
-                    .map(x => x.num)
-                    .filter(p => {
-                        const e = subPayAppHistory[companyId][p];
-                        return e && (e.status === 'Approved' || e.status === 'Pending Approval') && e.archived !== true;
-                    })
-                    .sort((a,b) => b - a);
+                // Numeric periods
+                const periods = Object.keys(subPayAppHistory[companyId]).map(Number).filter(p => {
+                    const e = subPayAppHistory[companyId][p];
+                    return e && (e.status === 'Approved' || e.status === 'Pending Approval') && e.archived !== true && Number.isFinite(p);
+                }).sort((a,b) => b - a);
+                if (periods.length > 0) displayedPayAppNum = periods[0];
 
-                const compliancePeriods = allKeys.filter(k => 
-                    k.startsWith('ZERO_') && 
-                    subPayAppHistory[companyId][k] && 
-                    (subPayAppHistory[companyId][k].status === 'Approved' || subPayAppHistory[companyId][k].status === 'Pending Approval') &&
-                    subPayAppHistory[companyId][k].archived !== true
-                ).sort().reverse(); // most recent ZERO_ first (they contain timestamp)
-
-                if (compliancePeriods.length > 0) {
-                    displayedPayAppNum = compliancePeriods[0]; // prefer showing compliance entry if it's the latest
-                } else if (numericPeriods.length > 0) {
-                    displayedPayAppNum = numericPeriods[0];
+                // Also check for the most recent active compliance (ZERO_) entry
+                const compKeys = Object.keys(subPayAppHistory[companyId]).filter(k => typeof k === 'string' && k.startsWith('ZERO_'));
+                if (compKeys.length > 0) {
+                    // Pick the one with latest approved/submitted date (or last in key order as fallback)
+                    let latestCompKey = null;
+                    let latestDate = 0;
+                    compKeys.forEach(k => {
+                        const e = subPayAppHistory[companyId][k];
+                        if (e && (e.status === 'Approved' || e.status === 'Pending Approval') && e.archived !== true) {
+                            const d = e.approvedDate ? new Date(e.approvedDate).getTime() : (e.submittedDate ? new Date(e.submittedDate).getTime() : 0);
+                            if (d >= latestDate) {
+                                latestDate = d;
+                                latestCompKey = k;
+                            }
+                        }
+                    });
+                    if (latestCompKey) {
+                        displayedPayAppNum = latestCompKey; // Use actual storage key so lien waiver lookup works
+                    }
                 }
             } else if (subPendingSubmissions[companyId] && subPendingSubmissions[companyId].periodNumber) {
                 displayedPayAppNum = subPendingSubmissions[companyId].periodNumber;
@@ -7523,8 +7529,8 @@ function printSubcontractorG703(companyId) {
             // If this entry was submitted as a $0 pay app (compliance month), ALWAYS show the nice label
             // and never show a number. This paper does not consume a slot in the sub's numbered sequence.
             let payAppDisplayValue = displayedPayAppNum;
-            const isZeroEntry = (historyEntry && (historyEntry.isZeroDollar === true || historyEntry.zeroDollarDisplayLabel || (typeof displayedPayAppNum === 'string' && displayedPayAppNum.startsWith('ZERO_')))) ||
-                                (subPendingSubmissions[companyId] && (subPendingSubmissions[companyId].isZeroDollar === true || subPendingSubmissions[companyId].zeroDollarDisplayLabel || (typeof displayedPayAppNum === 'string' && displayedPayAppNum.startsWith('ZERO_')))) ||
+            const isZeroEntry = (historyEntry && (historyEntry.isZeroDollar === true || historyEntry.zeroDollarDisplayLabel)) ||
+                                (subPendingSubmissions[companyId] && (subPendingSubmissions[companyId].isZeroDollar === true || subPendingSubmissions[companyId].zeroDollarDisplayLabel)) ||
                                 (typeof displayedPayAppNum === 'string' && displayedPayAppNum.startsWith('ZERO_'));
             
             if (isZeroEntry) {
@@ -7532,12 +7538,6 @@ function printSubcontractorG703(companyId) {
                     payAppDisplayValue = historyEntry.zeroDollarDisplayLabel;
                 } else if (subPendingSubmissions[companyId] && subPendingSubmissions[companyId].zeroDollarDisplayLabel) {
                     payAppDisplayValue = subPendingSubmissions[companyId].zeroDollarDisplayLabel;
-                } else if (historyEntry && historyEntry.zeroDollarDisplayLabel === undefined && (typeof displayedPayAppNum === 'string' && displayedPayAppNum.startsWith('ZERO_'))) {
-                    // Fallback for older compliance entries that may not have the label stored
-                    const periodLabel = currentPayAppPeriod 
-                        ? `${new Date(currentPayAppPeriod.periodStart).toLocaleString('default', { month: 'long' })} ${new Date(currentPayAppPeriod.periodStart).getFullYear()}`
-                        : 'Current Period';
-                    payAppDisplayValue = `Pay App -- ${periodLabel} (Compliance)`;
                 } else {
                     payAppDisplayValue = 'Pay App -- (Zero Dollar Compliance)';
                 }
