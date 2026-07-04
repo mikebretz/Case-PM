@@ -355,7 +355,7 @@
 </dialog>
 
 <script>
-    // ==================== DATA & STATE (v76.37 - Previous Sub Pay Apps: Line item colors fixed (Previously Billed & Work This Period now emerald/green on rows, matching totals). Added "View All Subcontractor Pay Apps (Chronological Summary)" button above Approved Pay App Period selector. Summary table shows all archived pay apps sorted oldest-first with full totals. Double-click row loads that specific historical G703 snapshot. All core workflow, numbering, submit blocking, push-to-previous, lien pill, Request Revision, billed amounts, etc. 100% locked and unchanged) ====================
+    // ==================== DATA & STATE (v76.38 - Previous Sub Pay Apps: Text made larger (text-sm) in chronological summary + individual G703 detail tables. Retainage column/text changed to red everywhere in Previous Sub Pay Apps (on-screen + print). Removed all non-essential success "okay" pop-ups/showCenteredAlert (only keep descriptive warnings/errors/blocks like submit blocker when prior pay app still in Tracker). All core workflow, numbering, submit blocking, push-to-previous clearing Tracker, lien pill, Request Revision fidelity, billed amounts with no bleed, Draft badge, Edit modal, overbill prevention, drag-drop, blue upload buttons, etc. 100% locked and unchanged) ====================
     let payApplications = JSON.parse(localStorage.getItem('payApplications')) || [];
     let contractorSOV = JSON.parse(localStorage.getItem('contractorSOV')) || [];
     let subcontractorSOV = JSON.parse(localStorage.getItem('subcontractorSOV')) || {}; // { companyId: [lines] }
@@ -526,7 +526,7 @@ let mainLienWaiver = JSON.parse(localStorage.getItem('mainLienWaiver') || '{}');
                 localStorage.setItem('subLienWaivers', JSON.stringify(subLienWaivers));
 
                 logPayAppAudit('LIEN_WAIVER_UPLOADED', { companyId, filename: file.name, period: periodNum });
-                showCenteredAlert(`Lien waiver "${file.name}" uploaded successfully.`, 'success');
+                // Success feedback removed per user request (UI pill + status change provides confirmation)
                 // Force immediate live UI update on current tab (Sub SOV or G702) without needing to switch tabs
                 setTimeout(() => {
                     renderPayAppContent();
@@ -550,7 +550,7 @@ let mainLienWaiver = JSON.parse(localStorage.getItem('mainLienWaiver') || '{}');
         if (subLienWaivers[companyId] && subLienWaivers[companyId][periodNum]) {
             delete subLienWaivers[companyId][periodNum];
             localStorage.setItem('subLienWaivers', JSON.stringify(subLienWaivers));
-            showCenteredAlert("Lien waiver removed.", 'success');
+            // Success feedback removed per user request (UI updates provide confirmation)
             // Force immediate live UI update
             setTimeout(() => {
                 renderPayAppContent();
@@ -581,7 +581,7 @@ let mainLienWaiver = JSON.parse(localStorage.getItem('mainLienWaiver') || '{}');
                 localStorage.setItem('mainLienWaiver', JSON.stringify(mainLienWaiver));
 
                 logPayAppAudit('MAIN_LIEN_WAIVER_UPLOADED', { period: periodNum, filename: file.name });
-                showCenteredAlert(`Lien waiver "${file.name}" uploaded for Pay Application.`, 'success');
+                // Success feedback removed per user request (pill appears immediately)
                 // Force immediate live UI update on G702 tab
                 setTimeout(() => {
                     renderPayAppContent();
@@ -649,7 +649,7 @@ let mainLienWaiver = JSON.parse(localStorage.getItem('mainLienWaiver') || '{}');
         if (mainLienWaiver[periodNum]) {
             delete mainLienWaiver[periodNum];
             localStorage.setItem('mainLienWaiver', JSON.stringify(mainLienWaiver));
-            showCenteredAlert("Main lien waiver removed.", 'success');
+            // Success feedback removed per user request (UI updates provide confirmation)
             renderPayAppContent();
         }
     }
@@ -818,7 +818,7 @@ let mainLienWaiver = JSON.parse(localStorage.getItem('mainLienWaiver') || '{}');
         });
 
         logPayAppAudit('LIEN_WAIVER_SUBMITTED', { companyId, filename: waiver.filename });
-        showCenteredAlert("Lien waiver submitted and recorded. Subcontractor pay app is now ready for payment processing.", 'success');
+        // Success feedback removed per user request (status pill + Tracker update provide confirmation)
         renderPayAppContent();
     }
 
@@ -1386,7 +1386,7 @@ let mainLienWaiver = JSON.parse(localStorage.getItem('mainLienWaiver') || '{}');
                         };
                         localStorage.setItem('mainLienWaiver', JSON.stringify(mainLienWaiver));
                         logPayAppAudit('MAIN_LIEN_WAIVER_UPLOADED', { period: periodNum, filename: file.name });
-                        showCenteredAlert(`Lien waiver "${file.name}" uploaded for Pay Application.`, 'success');
+                        // Success feedback removed per user request (pill appears immediately)
                         setTimeout(() => { renderPayAppContent(); }, 30);
                     };
                     reader.readAsDataURL(file);
@@ -1586,7 +1586,7 @@ let mainLienWaiver = JSON.parse(localStorage.getItem('mainLienWaiver') || '{}');
         localStorage.setItem('payAppBillingLines', JSON.stringify(payAppBillingLines));
 
         logPayAppAudit('PERIOD_ADVANCED_TEST', { from: currentPayAppPeriod.periodNumber - 1, to: nextNum });
-        showCenteredAlert(`Advanced to Period ${nextNum} for testing.`, 'success');
+        // Debug success feedback removed per user request
         renderPayAppContent();
     }
 
@@ -1606,7 +1606,7 @@ let mainLienWaiver = JSON.parse(localStorage.getItem('mainLienWaiver') || '{}');
         // Also clear main current period if user wants a full reset (optional)
         // localStorage.removeItem('currentPayAppPeriod');
 
-        showCenteredAlert("All Subcontractor Pay App data cleared. Hard refresh the page now (Ctrl+Shift+R).", 'success');
+        // Success feedback removed per user request (page state + hard refresh note in UI)
         // Auto hard refresh after alert
         setTimeout(() => {
             location.reload();
@@ -1936,7 +1936,7 @@ let mainLienWaiver = JSON.parse(localStorage.getItem('mainLienWaiver') || '{}');
         payAppBillingLines = {};
         localStorage.setItem('payAppBillingLines', JSON.stringify(payAppBillingLines));
 
-        showCenteredAlert(`Period ${currentPayAppPeriod.periodNumber - 1} approved. New Period ${currentPayAppPeriod.periodNumber} (${currentPayAppPeriod.periodStart} to ${currentPayAppPeriod.periodEnd}) is now active as Draft.`, 'success');
+        // Success feedback removed per user request (UI status + new period visible)
         renderPayAppContent();
     }
 
@@ -1951,14 +1951,14 @@ let mainLienWaiver = JSON.parse(localStorage.getItem('mainLienWaiver') || '{}');
     // ==================== CONTRACTOR SOV LOCK / UNLOCK (Admin Only) ====================
     function lockContractorSOV() {
         localStorage.setItem('contractorSOVLocked', 'true');
-        showCenteredAlert("Contractor Schedule of Values has been locked. Only Admin can unlock for revision.", "success");
+        // Success feedback removed per user request (lock icon/state change provides feedback)
         // Immediate re-render of current tab
         renderPayAppContent();
     }
 
     function unlockContractorSOV() {
         localStorage.setItem('contractorSOVLocked', 'false');
-        showCenteredAlert("Contractor Schedule of Values unlocked for revision.", "success");
+        // Success feedback removed per user request (unlock state visible)
         // Immediate re-render of current tab
         renderPayAppContent();
     }
@@ -2697,7 +2697,7 @@ let mainLienWaiver = JSON.parse(localStorage.getItem('mainLienWaiver') || '{}');
         modal.remove();
         delete window._seedBudgetLines;
 
-        showCenteredAlert(`Seeded ${added} consolidated cost code(s) from Budget into Contractor SOV.`, 'success');
+        // Success feedback removed per user request (seeded lines now visible in table)
         renderPayAppContent();
     }
 
@@ -3054,7 +3054,7 @@ let mainLienWaiver = JSON.parse(localStorage.getItem('mainLienWaiver') || '{}');
                         };
                         localStorage.setItem('subLienWaivers', JSON.stringify(subLienWaivers));
                         logPayAppAudit('LIEN_WAIVER_UPLOADED', { companyId: selectedSubCompanyId, filename: file.name, period: periodNum });
-                        showCenteredAlert(`Lien waiver "${file.name}" uploaded successfully.`, 'success');
+                        // Success feedback removed per user request (UI pill + status change provides confirmation)
                         setTimeout(() => { renderPayAppContent(); }, 30);
                     };
                     reader.readAsDataURL(file);
@@ -3217,7 +3217,7 @@ let mainLienWaiver = JSON.parse(localStorage.getItem('mainLienWaiver') || '{}');
 
     function addLineToSelectedSub() {
         if (!selectedSubCompanyId) {
-            alert("Please select a subcontractor first.");
+            showCenteredAlert("Please select a subcontractor first.", "warning");
             return;
         }
         showAddEditSubSOVLine(selectedSubCompanyId, null);
@@ -3665,7 +3665,7 @@ let mainLienWaiver = JSON.parse(localStorage.getItem('mainLienWaiver') || '{}');
                 period: currentPayAppPeriod ? currentPayAppPeriod.periodNumber : '' 
             });
 
-            showCenteredAlert("Subcontractor Pay Application submitted and committed. Draft fields cleared for next period.", 'success');
+            // Success feedback removed per user request (Tracker + status pill update)
             renderPayAppContent();
             return;
         }
@@ -3673,7 +3673,7 @@ let mainLienWaiver = JSON.parse(localStorage.getItem('mainLienWaiver') || '{}');
         // Original flow: First time submitting the SOV setup for approval
         logPayAppAudit('SUB_SOV_SUBMITTED', { company: company.name || company.company_name, lines: subLines.length });
         setSubSOVStatus(companyId, 'Pending Approval', { submittedDate: new Date().toISOString() });
-        showCenteredAlert("Subcontractor SOV submitted for GC review.", 'success');
+        // Success feedback removed per user request (status change visible)
         renderPayAppContent();
     }
 
@@ -3711,7 +3711,7 @@ let mainLienWaiver = JSON.parse(localStorage.getItem('mainLienWaiver') || '{}');
             const company = companies.find(c => c.id == companyId);
             updateSubSOVStatus(companyId, 'Draft', { unlockedBy: 'Michael Bretz', unlockedDate: new Date().toISOString() });
             logPayAppAudit('SUB_SOV_UNLOCKED', { company: company ? (company.name || company.company_name) : companyId, by: 'Michael Bretz' });
-            showCenteredAlert("SOV unlocked for revision. Admin can now edit structural fields.", 'success');
+            // Success feedback removed per user request (edit mode active)
             renderPayAppContent();
         };
     }
@@ -3864,7 +3864,7 @@ let mainLienWaiver = JSON.parse(localStorage.getItem('mainLienWaiver') || '{}');
         // Refresh to update dropdown and view
         renderPayAppContent();
 
-        showCenteredAlert(`Subcontractor "${selectedCompany.name || selectedCompany.company_name}" linked successfully. You can now add lines to their Schedule of Values.`, 'success');
+        // Success feedback removed per user request (link state + add lines enabled)
     }
 
     // ==================== SUB SOV APPROVAL WORKFLOW ====================
@@ -3877,7 +3877,7 @@ let mainLienWaiver = JSON.parse(localStorage.getItem('mainLienWaiver') || '{}');
         }
         updateSubSOVStatus(selectedSubCompanyId, 'Pending Approval', { submittedDate: new Date().toISOString() });
         logPayAppAudit('SUB_SOV_SUBMITTED_FOR_APPROVAL', { companyId: selectedSubCompanyId });
-        showCenteredAlert("SOV submitted for approval. Main company approvers have been notified (simulated).", 'success');
+        // Success feedback removed per user request (status pill visible)
         renderPayAppContent(); // Refresh to show new status + buttons
     }
 
@@ -3888,7 +3888,7 @@ let mainLienWaiver = JSON.parse(localStorage.getItem('mainLienWaiver') || '{}');
             approvedDate: new Date().toISOString() 
         });
         logPayAppAudit('SUB_SOV_APPROVED', { companyId: selectedSubCompanyId, approvedBy: "Michael Bretz" });
-        showCenteredAlert("Subcontractor Schedule of Values approved. Original Commitment is now locked. Subcontractor can enter periodic billing.", 'success');
+        // Success feedback removed per user request (approved state + billing enabled)
         renderPayAppContent();
     }
 
@@ -3988,7 +3988,7 @@ let mainLienWaiver = JSON.parse(localStorage.getItem('mainLienWaiver') || '{}');
         localStorage.setItem('subPendingSubmissions', JSON.stringify(subPendingSubmissions));
 
         logPayAppAudit('SUB_PAYAPP_SUBMITTED_FOR_APPROVAL', { companyId: companyId, period: currentPeriodNum, total: totalBilledThisPeriod });
-        showCenteredAlert("Pay Application submitted on Subcontractor Schedule of Values tab. Click 'Approve Application' to move it to the Tracker (Right Hand). The Schedule of Values remains editable until approved.", 'success');
+        // Success feedback removed per user request (pending status + buttons visible)
         renderPayAppContent();
     }
 
@@ -4107,7 +4107,7 @@ let mainLienWaiver = JSON.parse(localStorage.getItem('mainLienWaiver') || '{}');
             newPayAppNumber: subPayAppNumbers[companyId]
         });
         
-        showCenteredAlert(`Pay Application #${approvedPayAppNumber} APPROVED & MOVED TO TRACKER. ${formatCurrency(totalCommittedThisPeriod)} committed to Billed to Date. Next new Pay App for this sub will be #${subPayAppNumbers[companyId]}.`, 'success');
+        // Success feedback removed per user request (Tracker row + next # visible)
         renderPayAppContent();
     }
 
@@ -4306,7 +4306,7 @@ let mainLienWaiver = JSON.parse(localStorage.getItem('mainLienWaiver') || '{}');
 
         logPayAppAudit('DEBUG_PUSH_TO_PREVIOUS_SUB_PAY_APPS', { companyId: targetCompanyId, period: targetPeriodNum });
 
-        showCenteredAlert(`Pay App #${targetPeriodNum} for ${getCompanyName(targetCompanyId)} ARCHIVED to Previous Sub Pay Apps. It has been cleared from the Tracker. You can now safely create Pay App #${(subPayAppNumbers[targetCompanyId] || 2)} on the Subcontractor Schedule of Values tab.`, 'success');
+        // Success feedback removed per user request (Tracker cleared + Previous tab updated)
 
         // Switch to Previous Sub Pay Apps tab and pre-load the sub/period
         renderPayAppContent();
@@ -5064,7 +5064,7 @@ function printSubcontractorG703(companyId) {
             totalBalance += balance;
 
             rows += `
-                <tr class="hover:bg-zinc-800/60 text-xs">
+                <tr class="hover:bg-zinc-800/60 text-sm">
                     <td class="px-2 py-1 font-mono text-emerald-400">${line.cost_code || ''}</td>
                     <td class="px-2 py-1">${line.description || ''}</td>
                     <td class="px-2 py-1 text-right font-mono">${formatCurrency(scheduled)}</td>
@@ -5074,7 +5074,7 @@ function printSubcontractorG703(companyId) {
                     <td class="px-2 py-1 text-right font-mono text-emerald-400">${formatCurrency(completed)}</td>
                     <td class="px-2 py-1 text-center">${pct}%</td>
                     <td class="px-2 py-1 text-right font-mono">${formatCurrency(balance)}</td>
-                    <td class="px-2 py-1 text-right font-mono text-orange-400">${formatCurrency(ret)}</td>
+                    <td class="px-2 py-1 text-right font-mono text-red-400">${formatCurrency(ret)}</td>
                 </tr>
             `;
         });
@@ -5105,7 +5105,7 @@ function printSubcontractorG703(companyId) {
 
                 <div class="text-xs text-zinc-400 mb-1">G703 Snapshot — Pay App #${periodNum} (as submitted & approved)</div>
                 <table class="w-full text-xs border border-zinc-700 mb-3">
-                    <thead class="bg-zinc-700 text-[10px]">
+                    <thead class="bg-zinc-700 text-xs">
                         <tr>
                             <th class="p-1.5 text-left">Cost Code</th>
                             <th class="p-1.5 text-left">Description</th>
@@ -5116,7 +5116,7 @@ function printSubcontractorG703(companyId) {
                             <th class="p-1.5 text-right text-emerald-400">Completed to Date</th>
                             <th class="p-1.5 text-center">%</th>
                             <th class="p-1.5 text-right">Balance to Finish</th>
-                            <th class="p-1.5 text-right text-orange-400">Retainage</th>
+                            <th class="p-1.5 text-right text-red-400">Retainage</th>
                         </tr>
                     </thead>
                     <tbody class="divide-y divide-zinc-700">
@@ -5132,7 +5132,7 @@ function printSubcontractorG703(companyId) {
                             <td class="p-1.5 text-right font-mono text-emerald-400">${formatCurrency(totalCompleted)}</td>
                             <td class="p-1.5 text-center">—</td>
                             <td class="p-1.5 text-right font-mono">${formatCurrency(totalBalance)}</td>
-                            <td class="p-1.5 text-right font-mono text-orange-400">${formatCurrency(totalRet)}</td>
+                            <td class="p-1.5 text-right font-mono text-red-400">${formatCurrency(totalRet)}</td>
                         </tr>
                     </tfoot>
                 </table>
@@ -5197,7 +5197,7 @@ function printSubcontractorG703(companyId) {
 
                 <div class="overflow-x-auto">
                 <table class="w-full text-xs border border-zinc-700">
-                    <thead class="bg-zinc-700 text-[10px]">
+                    <thead class="bg-zinc-700 text-xs">
                         <tr>
                             <th class="p-2 text-left">Subcontractor</th>
                             <th class="p-2 text-center w-20">Pay App #</th>
@@ -5208,7 +5208,7 @@ function printSubcontractorG703(companyId) {
                             <th class="p-2 text-right text-emerald-400">Work This Period</th>
                             <th class="p-2 text-right text-sky-400">Materials Stored</th>
                             <th class="p-2 text-right text-emerald-400">Completed to Date</th>
-                            <th class="p-2 text-right text-orange-400">Retainage</th>
+                            <th class="p-2 text-right text-red-400">Retainage</th>
                         </tr>
                     </thead>
                     <tbody class="divide-y divide-zinc-700">
@@ -5228,7 +5228,7 @@ function printSubcontractorG703(companyId) {
 
             html += `
                 <tr ondblclick="loadSpecificHistoricalPayApp('${app.companyId}', ${app.periodNum})" 
-                    class="hover:bg-zinc-700/70 cursor-pointer transition-colors">
+                    class="hover:bg-zinc-700/70 cursor-pointer transition-colors text-sm">
                     <td class="p-2 font-medium text-white">${app.companyName}</td>
                     <td class="p-2 text-center font-mono text-emerald-400 font-semibold">#${app.periodNum}</td>
                     <td class="p-2 text-xs text-zinc-300">${periodStr}</td>
@@ -5238,7 +5238,7 @@ function printSubcontractorG703(companyId) {
                     <td class="p-2 text-right font-mono text-emerald-400">${formatCurrency(work)}</td>
                     <td class="p-2 text-right font-mono text-sky-400">${formatCurrency(mat)}</td>
                     <td class="p-2 text-right font-mono text-emerald-400">${formatCurrency(completed)}</td>
-                    <td class="p-2 text-right font-mono text-orange-400">${formatCurrency(ret)}</td>
+                    <td class="p-2 text-right font-mono text-red-400">${formatCurrency(ret)}</td>
                 </tr>
             `;
         });
@@ -5314,7 +5314,7 @@ function printSubcontractorG703(companyId) {
                 <td style="border:1px solid #333;padding:3px 5px;text-align:right;font-family:monospace;font-size:9px;color:#10b981;">${formatCurrency(completed)}</td>
                 <td style="border:1px solid #333;padding:3px 5px;text-align:center;font-size:9px;">${pct}%</td>
                 <td style="border:1px solid #333;padding:3px 5px;text-align:right;font-family:monospace;font-size:9px;">${formatCurrency(balance)}</td>
-                <td style="border:1px solid #333;padding:3px 5px;text-align:right;font-family:monospace;font-size:9px;">${formatCurrency(ret)}</td>
+                <td style="border:1px solid #333;padding:3px 5px;text-align:right;font-family:monospace;font-size:9px;color:#ef4444;">${formatCurrency(ret)}</td>
             </tr>`;
         });
 
@@ -5663,7 +5663,7 @@ function printSubcontractorG703(companyId) {
         XLSX.utils.book_append_sheet(wb, ws2, "Line Item Detail");
 
         XLSX.writeFile(wb, `G702_PayApp_Period${period.periodNumber}_ALDI_Lakeland.xlsx`);
-        showCenteredAlert("G702-style Excel exported with sections, merged headers, currency formatting, and conditional highlighting.", 'success');
+        // Success feedback removed per user request (file download starts)
     }
 
     // --- G703 Styled Export (full continuation sheet with A-J columns + CO section + conditional formatting) ---
@@ -5755,7 +5755,7 @@ function printSubcontractorG703(companyId) {
 
         XLSX.utils.book_append_sheet(wb, ws, "G703 Continuation Sheet");
         XLSX.writeFile(wb, `G703_Continuation_Period${period.periodNumber}_ALDI_Lakeland.xlsx`);
-        showCenteredAlert("G703-style Excel exported with full A-J columns, totals, Change Orders section, currency formatting, and red conditional highlighting for over-billed lines.", 'success');
+        // Success feedback removed per user request (file download starts)
     }
 
     // --- Subcontractor-specific G703 Export (filtered + Pay App # in header) ---
@@ -5837,7 +5837,7 @@ function printSubcontractorG703(companyId) {
 
         XLSX.utils.book_append_sheet(wb, ws, companyName.substring(0, 20) + " G703");
         XLSX.writeFile(wb, `G703_${companyName.replace(/[^a-z0-9]/gi,'_')}_PayApp${appNum}.xlsx`);
-        showCenteredAlert("Filtered G703 for " + companyName + " exported with their Pay App #" + appNum + " in the header, conditional formatting, and proper totals.", 'success');
+        // Success feedback removed per user request (file download starts)
     }
 
     function importPayApplications() {
@@ -5923,7 +5923,7 @@ function printSubcontractorG703(companyId) {
 
         document.getElementById('settingsModal').close();
         const dayVal = localStorage.getItem('submissionDeadlineDay') || '';
-        showCenteredAlert(`Pay Application settings saved. Retainage set to ${defaultRetainagePercent}%. Lien Waiver requirement: ${requireLienWaiverOnSubPayApp ? 'ON' : 'OFF'}. Deadline: ${dayVal ? dayVal + 'th' : 'Not set'}.`, 'success');
+        // Success feedback removed per user request (settings UI updated)
         if (currentPayAppTab === 'payapp' || currentPayAppTab === 'sub-sov') {
             renderPayAppContent();
         }
@@ -5982,7 +5982,7 @@ function printSubcontractorG703(companyId) {
         const input = document.getElementById('userSignatureInput');
         if (input && input.value.trim()) {
             localStorage.setItem('userSignature', input.value.trim());
-            showCenteredAlert("Signature saved. It will appear on future G702 prints.", 'success');
+            // Success feedback removed per user request (signature state saved)
         }
     }
 
@@ -6151,7 +6151,7 @@ function printSubcontractorG703(companyId) {
             
             // Refresh UI to show filename and unlock Submit button
             renderPayAppContent();
-            showCenteredAlert(`Lien Waiver "${file.name}" uploaded. Submit Application is now active.`, 'success');
+            // Success feedback removed per user request (pill visible, submit enabled)
         };
         reader.readAsDataURL(file);
     }
@@ -6747,7 +6747,7 @@ function printSubcontractorG703(companyId) {
         // In production: call email API / notification service here
         logPayAppAudit('SUB_PAYAPP_NOTIFICATION_SENT', { companyId, companyName, outstanding });
 
-        showCenteredAlert(`Notification sent to primary contact for ${companyName}.\n\n${msg}`, 'success');
+        // Success feedback removed per user request (notification simulated)
     }
 
     // Editable Notes in Sub Pay App Tracker (PM-only internal notes, persisted per sub)
@@ -6785,7 +6785,7 @@ function printSubcontractorG703(companyId) {
 
         // Refresh the whole tab so the note appears correctly in the table
         renderPayAppContent();
-        showCenteredAlert('Note saved for this subcontractor.', 'success');
+        // Success feedback removed per user request (note saved visibly)
     }
 
     window.onload = initializePayApplications;
