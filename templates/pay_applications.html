@@ -500,6 +500,14 @@ let mainLienWaiver = JSON.parse(localStorage.getItem('mainLienWaiver') || '{}');
         return Math.round(total * 100) / 100;
     }
 
+    // Helper to pre-fill / suggest the sub minimum into G702 Work This Period when rendering
+    function getSuggestedWorkThisPeriodForLine(line) {
+        const subMin = getCurrentSubBilledThisPeriodForCode(line.cost_code);
+        const currentDraft = (payAppBillingLines[line.id] && payAppBillingLines[line.id].workThisPeriod) || 0;
+        // If user has already entered something >= sub min, keep it. Otherwise suggest the sub min.
+        return Math.max(currentDraft, subMin);
+    }
+
     // ==================== SUB SOV STATUS HELPERS (Approval Workflow) ====================
     function getSubSOVStatus(companyId) {
         if (!companyId) return 'Draft';
