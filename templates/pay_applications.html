@@ -3678,7 +3678,12 @@ let mainLienWaiver = JSON.parse(localStorage.getItem('mainLienWaiver') || '{}');
             return;
         }
 
-        const currentPeriodNum = currentPayAppPeriod ? currentPayAppPeriod.periodNumber : 1;
+        // === INDEPENDENT SUB PAY APP NUMBERING (starts at 1 per sub, ignores main G702 period number) ===
+        if (!subPayAppNumbers[companyId]) {
+            subPayAppNumbers[companyId] = 1;
+            localStorage.setItem('subPayAppNumbers', JSON.stringify(subPayAppNumbers));
+        }
+        const currentPeriodNum = subPayAppNumbers[companyId];  // Use sub's own counter, not main period
         const waiver = subLienWaivers[companyId] && subLienWaivers[companyId][currentPeriodNum];
 
         // Create a snapshot of the current billing (do NOT commit to billed_to_date yet, do NOT put in Tracker yet)
@@ -3741,6 +3746,12 @@ let mainLienWaiver = JSON.parse(localStorage.getItem('mainLienWaiver') || '{}');
 
         const lines = subcontractorSOV[companyId] || [];
 
+        // === SNAPSHOT billed_to_date BEFORE committing this period (for correct restoration on Request Revision) ===
+        const billedToDateSnapshot = {};
+        lines.forEach(line => {
+            billedToDateSnapshot[line.id] = line.billed_to_date || 0;
+        });
+
         let totalCommittedThisPeriod = 0;
         lines.forEach(line => {
             const work = line.work_this_period || 0;
@@ -3780,9 +3791,10 @@ let mainLienWaiver = JSON.parse(localStorage.getItem('mainLienWaiver') || '{}');
             localStorage.setItem('subLienWaivers', JSON.stringify(subLienWaivers));
         }
 
-        // Advance Pay App number (payout number becomes #2, #3, etc.)
+        // Advance Pay App number for the *next* new submission (this approved paper keeps its original number)
+        const approvedPayAppNumber = currentPeriodNum; // The number this paper was assigned at submit time
         if (!subPayAppNumbers[companyId]) subPayAppNumbers[companyId] = 1;
-        subPayAppNumbers[companyId] = (subPayAppNumbers[companyId] || 1) + 1;
+        subPayAppNumbers[companyId] = approvedPayAppNumber + 1;  // Next fresh paper will be #2, #3, etc.
         localStorage.setItem('subPayAppNumbers', JSON.stringify(subPayAppNumbers));
 
         // === Move to RIGHT HAND: Save/ensure in subPayAppHistory as Approved ===
@@ -3797,7 +3809,9 @@ let mainLienWaiver = JSON.parse(localStorage.getItem('mainLienWaiver') || '{}');
             approvedBy: "Michael Bretz (Project Manager)",
             lines: pendingEntry.lines || [],
             totalBilledThisPeriod: pendingEntry.totalBilledThisPeriod || totalCommittedThisPeriod,
-            lienWaiver: lienWaiverForHistory
+            lienWaiver: lienWaiverForHistory,
+            // Snapshot of Billed to Date *before* this app was added (used for correct restoration on Request Revision)
+            billedToDateBefore: billedToDateSnapshot
         };
         localStorage.setItem('subPayAppHistory', JSON.stringify(subPayAppHistory));
 
@@ -3817,7 +3831,7 @@ let mainLienWaiver = JSON.parse(localStorage.getItem('mainLienWaiver') || '{}');
             newPayAppNumber: subPayAppNumbers[companyId]
         });
         
-        showCenteredAlert(`Pay Application #${currentPeriodNum} APPROVED & MOVED TO TRACKER. ${formatCurrency(totalCommittedThisPeriod)} committed to Billed to Date. Pay App # advanced to ${subPayAppNumbers[companyId]}. Ready for Pay App #${subPayAppNumbers[companyId]}.`, 'success');
+        showCenteredAlert(`Pay Application #${approvedPayAppNumber} APPROVED & MOVED TO TRACKER. ${formatCurrency(totalCommittedThisPeriod)} committed to Billed to Date. Next new Pay App for this sub will be #${subPayAppNumbers[companyId]}.`, 'success');
         renderPayAppContent();
     }
 
@@ -3826,7 +3840,20 @@ let mainLienWaiver = JSON.parse(localStorage.getItem('mainLienWaiver') || '{}');
     // This matches the exact "paper from right hand back to left hand" workflow you confirmed.
     function requestRevisionSubPayApp(companyId, periodNumToRestore = null) {
         if (!companyId) return;
-        const periodNum = periodNumToRestore || (currentPayAppPeriod ? currentPayAppPeriod.periodNumber : 1);
+
+        // Prefer the number stored in the source entry itself (sub-specific independent numbering)
+        let periodNum = periodNumToRestore;
+        if (!periodNum) {
+            // Try to get it from pending or history first
+            if (subPendingSubmissions[companyId]) {
+                periodNum = subPendingSubmissions[companyId].periodNumber;
+            } else if (subPayAppHistory[companyId]) {
+                // Get the most recent approved number for this sub
+                const nums = Object.keys(subPayAppHistory[companyId]).map(Number).sort((a,b) => b-a);
+                if (nums.length > 0) periodNum = nums[0];
+            }
+        }
+        if (!periodNum) periodNum = (currentPayAppPeriod ? currentPayAppPeriod.periodNumber : 1); // last resort
 
         let sourceEntry = null;
         let fromPending = false;
@@ -3845,7 +3872,7 @@ let mainLienWaiver = JSON.parse(localStorage.getItem('mainLienWaiver') || '{}');
             return;
         }
 
-        // Restore the snapshot amounts back to the live SOV lines for editing
+        // Restore the snapshot amounts + correct Billed to Date back to the live SOV lines for editing
         const lines = subcontractorSOV[companyId] || [];
         sourceEntry.lines.forEach(snapshotLine => {
             const liveLine = lines.find(l => l.id === snapshotLine.id || l.cost_code === snapshotLine.cost_code);
@@ -3853,6 +3880,13 @@ let mainLienWaiver = JSON.parse(localStorage.getItem('mainLienWaiver') || '{}');
                 liveLine.work_this_period = snapshotLine.work_this_period || 0;
                 liveLine.materials_stored = snapshotLine.materials_stored || 0;
                 liveLine.co_billed_this_period = snapshotLine.co_billed_this_period || 0;
+
+                // === RESTORE Billed to Date to the value BEFORE this app was approved (prevents exponential growth) ===
+                if (sourceEntry.billedToDateBefore && sourceEntry.billedToDateBefore[liveLine.id] !== undefined) {
+                    liveLine.billed_to_date = sourceEntry.billedToDateBefore[liveLine.id];
+                } else if (snapshotLine.billed_to_date_before !== undefined) {
+                    liveLine.billed_to_date = snapshotLine.billed_to_date_before;
+                }
             }
         });
         localStorage.setItem('subcontractorSOV', JSON.stringify(subcontractorSOV));
@@ -5764,6 +5798,7 @@ function printSubcontractorG703(companyId) {
                 <th class="px-3 py-3 text-center font-medium text-zinc-400 w-48">Status</th>
                 <th class="px-3 py-3 text-center font-medium text-zinc-400 w-28">Lien Waiver</th>
                 <th class="px-4 py-3 text-right font-medium text-zinc-400 w-36">Billed This Period</th>
+                <th class="px-4 py-3 text-right font-medium text-emerald-400 w-40">Billed to Date (at Approval)</th>
                 <th class="px-3 py-3 text-center font-medium text-zinc-400 w-20">% Complete</th>
                 <th class="px-3 py-3 text-center font-medium text-zinc-400 w-28">Insurance</th>
                 <th class="px-4 py-3 text-left font-medium text-zinc-400" style="min-width: 480px; width: 520px;">Notes (PM Editable)</th>
@@ -5795,25 +5830,34 @@ function printSubcontractorG703(companyId) {
             const lines = subcontractorSOV[companyId] || [];
             const status = getSubSOVStatus(companyId);
             const historyEntry = subPayAppHistory[companyId] && subPayAppHistory[companyId][currentPeriodNum];
-            let displayedPayAppNum = currentPeriodNum;
+            // === Prefer the number actually stored in the paper (sub-specific, starts at 1) ===
+            let displayedPayAppNum = 1;
             if (historyEntry && historyEntry.periodNumber) {
                 displayedPayAppNum = historyEntry.periodNumber;
+            } else if (subPendingSubmissions[companyId] && subPendingSubmissions[companyId].periodNumber) {
+                displayedPayAppNum = subPendingSubmissions[companyId].periodNumber;
             } else if (subPayAppHistory[companyId]) {
-                // Fallback: show the highest (most recent) approved period number for this sub
                 const periods = Object.keys(subPayAppHistory[companyId]).map(Number).filter(p => {
                     const e = subPayAppHistory[companyId][p];
                     return e && (e.status === 'Approved' || e.status === 'Pending Approval');
                 }).sort((a,b) => b - a);
                 if (periods.length > 0) displayedPayAppNum = periods[0];
             } else {
-                displayedPayAppNum = subPayAppNumbers[companyId] || currentPeriodNum;
+                displayedPayAppNum = subPayAppNumbers[companyId] || 1;
             }
 
             let billedThis = 0;
+            let billedToDateAtApproval = 0;
             let pctComplete = 0;
 
             if (historyEntry && historyEntry.status === 'Approved') {
                 billedThis = historyEntry.totalBilledThisPeriod || 0;
+                // Use the snapshot we saved at approval time for accurate "Billed to Date before this app"
+                if (historyEntry.billedToDateBefore) {
+                    billedToDateAtApproval = Object.values(historyEntry.billedToDateBefore).reduce((sum, v) => sum + (v || 0), 0);
+                } else {
+                    billedToDateAtApproval = lines.reduce((sum, l) => sum + (l.billed_to_date || 0), 0) - billedThis;
+                }
             } else if (historyEntry && historyEntry.status === 'Pending Approval') {
                 billedThis = historyEntry.totalBilledThisPeriod || 0;
             } else {
@@ -5892,6 +5936,7 @@ function printSubcontractorG703(companyId) {
                 <td class="px-3 py-3 text-center">${statusBadge}</td>
                 <td class="px-3 py-3 text-center text-sm">${lienBadge}</td>
                 <td class="px-4 py-3 text-right font-mono text-emerald-400">${formatCurrency(billedThis)}</td>
+                <td class="px-4 py-3 text-right font-mono text-emerald-300">${formatCurrency(billedToDateAtApproval)}</td>
                 <td class="px-3 py-3 text-center font-mono text-xs">${pctComplete}%</td>
                 <td class="px-3 py-3 text-center">${insuranceBadge}</td>
                 <td class="px-4 py-2 text-sm text-zinc-300 notes-cell" style="min-width:480px; width:520px; cursor:pointer;" title="Click to edit • ${notesText.replace(/"/g,'&quot;')}" onclick="event.stopImmediatePropagation(); editSubTrackerNote(${companyId}, this)">
@@ -5901,7 +5946,7 @@ function printSubcontractorG703(companyId) {
                 <td class="px-4 py-2 text-center">
                     <div class="flex items-center justify-center gap-1.5 flex-wrap">
                         ${ (historyEntry) ? `
-                            <button onclick="event.stopImmediatePropagation(); requestRevisionSubPayApp(${companyId}, ${currentPeriodNum});" 
+                            <button onclick="event.stopImmediatePropagation(); requestRevisionSubPayApp(${companyId}, ${displayedPayAppNum});" 
                                     class="px-3 py-1 bg-amber-600 hover:bg-amber-500 text-white text-xs rounded font-medium flex items-center gap-1" title="Send this Pay App back to Subcontractor SOV tab for editing">
                                 <i class="fa-solid fa-redo text-xs"></i> <span>Request Revision</span>
                             </button>
