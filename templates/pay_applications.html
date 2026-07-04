@@ -335,6 +335,17 @@
                 </label>
             </div>
 
+            <!-- NEW: Allow Zero-Dollar Subcontractor Pay Apps (Compliance) -->
+            <div class="pt-3 border-t border-zinc-700">
+                <label class="flex items-center justify-between cursor-pointer">
+                    <div>
+                        <div class="text-sm text-zinc-300">Allow zero-dollar Subcontractor Pay Apps (for compliance months)</div>
+                        <div class="text-[10px] text-zinc-500">When ON, if a sub submits a pay app with $0 across all lines, it appears in the Tracker as "Pay App -- [Month]" <strong>without</strong> using up a pay app number. The next real (non-zero) submission will use the next correct number.</div>
+                    </div>
+                    <input type="checkbox" id="allowZeroDollarSubPayAppsToggle" class="w-5 h-5 accent-emerald-600" ${allowZeroDollarSubPayApps ? 'checked' : ''}>
+                </label>
+            </div>
+
             <!-- New: Required Submission Deadline Setting (Day of Month) -->
             <div class="pt-3 border-t border-zinc-700">
                 <label class="flex items-center justify-between cursor-pointer mb-2">
@@ -366,7 +377,7 @@
 </dialog>
 
 <script>
-    // ==================== DATA & STATE (v76.63 - Added setting: Require all subs with Approved SOVs to submit Pay App before G702 Submit can be clicked. Toggle in Settings controls enforcement.) ====================
+    // ==================== DATA & STATE (v76.64 - Added "Allow zero-dollar Sub Pay Apps" setting. Zero $ submissions appear as "Pay App -- [Month]" without consuming a pay app number. Next real submission gets the correct next number.) ====================
     let payApplications = JSON.parse(localStorage.getItem('payApplications')) || [];
     let contractorSOV = JSON.parse(localStorage.getItem('contractorSOV')) || [];
     let subcontractorSOV = JSON.parse(localStorage.getItem('subcontractorSOV')) || {}; // { companyId: [lines] }
@@ -387,6 +398,7 @@ let requireLienWaiverOnSubPayApp = localStorage.getItem('requireLienWaiverOnSubP
 let requireZeroDollarLienWaiver = localStorage.getItem('requireZeroDollarLienWaiver') === 'true'; // NEW: Zero Dollar Waiver Requirement
 let requireSubmissionDeadline = localStorage.getItem('requireSubmissionDeadline') === 'true';
 let submissionDeadlineDate = localStorage.getItem('submissionDeadlineDate') || '';
+let allowZeroDollarSubPayApps = localStorage.getItem('allowZeroDollarSubPayApps') !== 'false'; // NEW: Allow $0 sub pay apps (compliance) without using a pay app number
 let requireAllSubPayAppsBeforeG702Submit = localStorage.getItem('requireAllSubPayAppsBeforeG702Submit') !== 'false'; // Default ON (true)
 
 // Main Contractor (GC) Lien Waiver for current period (separate from Sub waivers)
@@ -4546,7 +4558,36 @@ let mainLienWaiver = JSON.parse(localStorage.getItem('mainLienWaiver') || '{}');
             subPayAppNumbers[companyId] = 1;
             localStorage.setItem('subPayAppNumbers', JSON.stringify(subPayAppNumbers));
         }
-        const currentPeriodNum = subPayAppNumbers[companyId];  // Use sub's own counter, not main period
+
+        // Calculate total first so we can decide if this is a zero-dollar compliance submission
+        const tempSnapshotForTotal = lines.map(l => ({
+            work_this_period: l.work_this_period || 0,
+            materials_stored: l.materials_stored || 0,
+            co_billed_this_period: l.co_billed_this_period || 0
+        }));
+        const totalBilledThisPeriodCheck = tempSnapshotForTotal.reduce((sum, l) => 
+            sum + (l.work_this_period + l.materials_stored + l.co_billed_this_period), 0);
+
+        let currentPeriodNum;
+        let isZeroDollarSubmission = false;
+        let zeroDollarDisplayLabel = '';
+
+        if (totalBilledThisPeriodCheck === 0 && allowZeroDollarSubPayApps) {
+            // Zero-dollar compliance submission → do NOT consume a pay app number
+            isZeroDollarSubmission = true;
+            const periodLabel = currentPayAppPeriod 
+                ? `${new Date(currentPayAppPeriod.periodStart).toLocaleString('default', { month: 'long' })} ${new Date(currentPayAppPeriod.periodStart).getFullYear()}`
+                : 'Current Period';
+            const dateRange = currentPayAppPeriod 
+                ? `${currentPayAppPeriod.periodStart} to ${currentPayAppPeriod.periodEnd}`
+                : '';
+            zeroDollarDisplayLabel = `Pay App -- ${periodLabel} (${dateRange})`;
+            currentPeriodNum = 'ZERO_' + Date.now(); // Unique non-numeric key
+        } else {
+            // Normal submission with dollar amounts → use the sub's own counter
+            currentPeriodNum = subPayAppNumbers[companyId];
+        }
+
         const waiver = subLienWaivers[companyId] && subLienWaivers[companyId][currentPeriodNum];
 
         // === BLOCK SUBMISSION IF PREVIOUS PAY APP STILL ACTIVE IN TRACKER ===
@@ -4599,6 +4640,8 @@ let mainLienWaiver = JSON.parse(localStorage.getItem('mainLienWaiver') || '{}');
             submittedDate: new Date().toISOString(),
             lines: snapshotLines,
             totalBilledThisPeriod: totalBilledThisPeriod,
+            isZeroDollar: isZeroDollarSubmission,
+            zeroDollarDisplayLabel: zeroDollarDisplayLabel,
             lienWaiver: waiver ? { 
                 filename: waiver.filename, 
                 uploadedDate: waiver.uploadedDate,
@@ -4687,10 +4730,15 @@ let mainLienWaiver = JSON.parse(localStorage.getItem('mainLienWaiver') || '{}');
         }
 
         // Advance Pay App number for the *next* new submission (this approved paper keeps its original number)
-        const approvedPayAppNumber = currentPeriodNum; // The number this paper was assigned at submit time
-        if (!subPayAppNumbers[companyId]) subPayAppNumbers[companyId] = 1;
-        subPayAppNumbers[companyId] = approvedPayAppNumber + 1;  // Next fresh paper will be #2, #3, etc.
-        localStorage.setItem('subPayAppNumbers', JSON.stringify(subPayAppNumbers));
+        // IMPORTANT: Do NOT advance the counter for zero-dollar compliance submissions
+        const approvedPayAppNumber = currentPeriodNum;
+        const wasZeroDollar = pendingEntry.isZeroDollar === true;
+
+        if (!wasZeroDollar) {
+            if (!subPayAppNumbers[companyId]) subPayAppNumbers[companyId] = 1;
+            subPayAppNumbers[companyId] = approvedPayAppNumber + 1;  // Next real (non-zero) paper gets the next number
+            localStorage.setItem('subPayAppNumbers', JSON.stringify(subPayAppNumbers));
+        }
 
         // === Move to RIGHT HAND: Save/ensure in subPayAppHistory as Approved ===
         if (!subPayAppHistory[companyId]) subPayAppHistory[companyId] = {};
@@ -6521,6 +6569,13 @@ function printSubcontractorG703(companyId) {
             localStorage.setItem('requireAllSubPayAppsBeforeG702Submit', requireAllSubPayAppsBeforeG702Submit);
         }
 
+        // NEW: Allow Zero-Dollar Sub Pay Apps (Compliance without consuming pay app number)
+        const zeroSubPayToggle = document.getElementById('allowZeroDollarSubPayAppsToggle');
+        if (zeroSubPayToggle) {
+            allowZeroDollarSubPayApps = zeroSubPayToggle.checked;
+            localStorage.setItem('allowZeroDollarSubPayApps', allowZeroDollarSubPayApps);
+        }
+
         document.getElementById('settingsModal').close();
         const dayVal = localStorage.getItem('submissionDeadlineDay') || '';
         // Success feedback removed per user request (settings UI updated)
@@ -7097,6 +7152,18 @@ function printSubcontractorG703(companyId) {
                 if (!historyEntry.status) historyEntry.status = 'Pending Approval';
             }
 
+            // === ZERO-DOLLAR COMPLIANCE DISPLAY OVERRIDE ===
+            // If this entry was submitted as a $0 pay app, show the nice label instead of a number
+            let payAppDisplayValue = displayedPayAppNum;
+            if (historyEntry && historyEntry.isZeroDollar === true && historyEntry.zeroDollarDisplayLabel) {
+                payAppDisplayValue = historyEntry.zeroDollarDisplayLabel;
+            } else if (typeof displayedPayAppNum === 'string' && displayedPayAppNum.startsWith('ZERO_')) {
+                // Fallback for pending zero-dollar entries
+                payAppDisplayValue = subPendingSubmissions[companyId] && subPendingSubmissions[companyId].zeroDollarDisplayLabel 
+                    ? subPendingSubmissions[companyId].zeroDollarDisplayLabel 
+                    : 'Pay App -- (Zero Dollar Compliance)';
+            }
+
             let billedThis = 0;
             let billedToDateAtApproval = 0;
             let pctComplete = 0;
@@ -7186,7 +7253,7 @@ function printSubcontractorG703(companyId) {
                 <td class="px-4 py-3 font-medium">
                     ${getCompanyName(companyId)}
                 </td>
-                <td class="px-3 py-3 text-center font-mono text-emerald-400">${displayedPayAppNum}</td>
+                <td class="px-3 py-3 text-center font-mono text-emerald-400 text-xs">${payAppDisplayValue}</td>
                 <td class="px-3 py-3 text-center">
                     ${ (historyEntry) ? `
                         <button onclick="event.stopImmediatePropagation(); requestRevisionSubPayApp(${companyId}, ${displayedPayAppNum});" 
