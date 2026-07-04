@@ -3830,7 +3830,8 @@ let mainLienWaiver = JSON.parse(localStorage.getItem('mainLienWaiver') || '{}');
             totalBilledThisPeriod: pendingEntry.totalBilledThisPeriod || totalCommittedThisPeriod,
             lienWaiver: lienWaiverForHistory,
             // Snapshot of Billed to Date *before* this app was added (used for correct restoration on Request Revision)
-            billedToDateBefore: billedToDateSnapshot
+            billedToDateBefore: billedToDateSnapshot,
+            archived: false   // New approved papers start as active in Tracker until explicitly pushed to Previous
         };
         localStorage.setItem('subPayAppHistory', JSON.stringify(subPayAppHistory));
 
@@ -3887,6 +3888,11 @@ let mainLienWaiver = JSON.parse(localStorage.getItem('mainLienWaiver') || '{}');
         } else {
             // Check RIGHT HAND (Tracker / history)
             sourceEntry = subPayAppHistory[companyId] && subPayAppHistory[companyId][periodNum];
+            // If it was previously pushed/archived, un-archive it so it can return to active Tracker after re-approval
+            if (sourceEntry && sourceEntry.archived === true) {
+                sourceEntry.archived = false;
+                localStorage.setItem('subPayAppHistory', JSON.stringify(subPayAppHistory));
+            }
         }
 
         if (!sourceEntry || !sourceEntry.lines) {
@@ -4033,18 +4039,18 @@ let mainLienWaiver = JSON.parse(localStorage.getItem('mainLienWaiver') || '{}');
             return;
         }
 
-        // Ensure the record is fully normalized in history (in case it was partial)
+        // Ensure the record is fully normalized in history and mark it ARCHIVED (so it disappears from Sub Pay App Tracker and appears in Previous Sub Pay Apps tab).
         if (!subPayAppHistory[targetCompanyId]) subPayAppHistory[targetCompanyId] = {};
         if (!subPayAppHistory[targetCompanyId][targetPeriodNum]) {
             subPayAppHistory[targetCompanyId][targetPeriodNum] = { ...sourceEntry };
         }
-        // Make sure status is Approved for visibility in Previous tab
         subPayAppHistory[targetCompanyId][targetPeriodNum].status = 'Approved';
+        subPayAppHistory[targetCompanyId][targetPeriodNum].archived = true;   // <-- This clears it from Tracker view
         localStorage.setItem('subPayAppHistory', JSON.stringify(subPayAppHistory));
 
         logPayAppAudit('DEBUG_PUSH_TO_PREVIOUS_SUB_PAY_APPS', { companyId: targetCompanyId, period: targetPeriodNum });
 
-        showCenteredAlert(`Pushed/verified Pay App #${targetPeriodNum} for ${getCompanyName(targetCompanyId)} into Previous Sub Pay Apps history. Switching to that tab now — select the period to view the full record, lien waiver, and G703 print. Use this to confirm Pay App #2 also lands here correctly after you Request Revision → re-bill → re-approve.`, 'success');
+        showCenteredAlert(`Pay App #${targetPeriodNum} for ${getCompanyName(targetCompanyId)} ARCHIVED to Previous Sub Pay Apps. It has been cleared from the Tracker. You can now safely create Pay App #${(subPayAppNumbers[targetCompanyId] || 2)} on the Subcontractor Schedule of Values tab.`, 'success');
 
         // Switch to Previous Sub Pay Apps tab and pre-load the sub/period
         renderPayAppContent();
@@ -4708,13 +4714,17 @@ function printSubcontractorG703(companyId) {
             <div id="prevSubHistoryContainer" class="mt-4"></div>
         `;
 
-        // Populate only subs that actually have approved history entries
+        // Populate only subs that have at least one ARCHIVED (pushed) pay app in history.
+        // Papers only appear here after you click "Push to Previous Sub Pay Apps" from the Tracker.
         const subSelect = document.getElementById('prevSubSelect');
         if (subSelect) {
-            const subsWithHistory = Object.keys(subPayAppHistory || {});
+            const subsWithArchived = Object.keys(subPayAppHistory || {}).filter(cid => {
+                const hist = subPayAppHistory[cid];
+                return hist && Object.keys(hist).some(p => hist[p] && hist[p].archived === true);
+            });
             companies.forEach(c => {
                 const cid = String(c.id);
-                if ((c.type === 'Subcontractor' || c.company_type === 'Subcontractor') && subsWithHistory.includes(cid)) {
+                if ((c.type === 'Subcontractor' || c.company_type === 'Subcontractor') && subsWithArchived.includes(cid)) {
                     const opt = document.createElement('option');
                     opt.value = c.id;
                     opt.textContent = c.name || c.company_name || 'Unnamed Sub';
@@ -4736,7 +4746,10 @@ function printSubcontractorG703(companyId) {
 
         if (!companyId || !subPayAppHistory[companyId]) return;
 
-        const periods = Object.keys(subPayAppHistory[companyId]).map(Number).sort((a,b) => b - a); // newest first
+        const periods = Object.keys(subPayAppHistory[companyId]).map(Number).filter(p => {
+            const e = subPayAppHistory[companyId][p];
+            return e && e.archived === true;
+        }).sort((a,b) => b - a); // newest first
         if (periods.length === 0) return;
 
         periodSelect.disabled = false;
@@ -5927,7 +5940,7 @@ function printSubcontractorG703(companyId) {
                 <button onclick="clearAllSubPayAppData()" class="ml-auto px-3 py-1 bg-red-700 hover:bg-red-600 text-white text-xs rounded font-medium flex items-center gap-1.5 border border-red-600" title="Nuclear reset for all subcontractor pay app data, numbers, history, pending papers, and lien waivers. Use when numbers get stuck.">
                     <i class="fa-solid fa-trash"></i> <span>Clear All Sub Data (Debug)</span>
                 </button>
-                <button onclick="forcePushLatestApprovedToPreviousSubPayApps()" class="ml-2 px-3 py-1 bg-violet-700 hover:bg-violet-600 text-white text-xs rounded font-medium flex items-center gap-1.5 border border-violet-600" title="Ensure the most recent Approved sub pay app is saved in Previous Sub Pay Apps history (subPayAppHistory) and switch to that tab pre-selected. Use to verify historical records and test that Pay App #2 creation flows correctly into Previous Sub Pay Apps after revisions.">
+                <button onclick="forcePushLatestApprovedToPreviousSubPayApps()" class="ml-2 px-3 py-1 bg-violet-700 hover:bg-violet-600 text-white text-xs rounded font-medium flex items-center gap-1.5 border border-violet-600" title="Archive the most recent active Pay App from this Tracker into Previous Sub Pay Apps. This clears it from the Tracker so you can create the next pay app (#2, #3...) cleanly. The pushed paper will only appear in the Previous Sub Pay Apps tab after this action.">
                     <i class="fa-solid fa-history"></i> <span>Push to Previous Sub Pay Apps (Debug)</span>
                 </button>
             </div>
@@ -5951,16 +5964,17 @@ function printSubcontractorG703(companyId) {
 
         tbody.innerHTML = '';
 
-        // Show subs that have ANY Approved or Pending paper in history (the "right hand" papers).
-        // We show the most recent approved period number for each sub so the Tracker doesn't go "stuck" when main G702 period advances.
+        // Show subs that have an ACTIVE (non-archived) Approved or Pending paper.
+        // Archived papers are pushed to Previous Sub Pay Apps and no longer appear in this Tracker.
+        // We always show only the single most recent (highest period number) active paper per sub.
         const subCompanies = companies.filter(c => {
             const hist = subPayAppHistory[c.id];
             if (!hist) return false;
-            const hasAnyApprovedOrPending = Object.keys(hist).some(p => {
+            const hasActiveApprovedOrPending = Object.keys(hist).some(p => {
                 const e = hist[p];
-                return e && (e.status === 'Approved' || e.status === 'Pending Approval');
+                return e && (e.status === 'Approved' || e.status === 'Pending Approval') && e.archived !== true;
             });
-            return (c.type === 'Subcontractor' || c.company_type === 'Subcontractor') && hasAnyApprovedOrPending;
+            return (c.type === 'Subcontractor' || c.company_type === 'Subcontractor') && hasActiveApprovedOrPending;
         });
 
         if (subCompanies.length === 0) {
@@ -5972,23 +5986,21 @@ function printSubcontractorG703(companyId) {
             const companyId = company.id;
             const lines = subcontractorSOV[companyId] || [];
             const status = getSubSOVStatus(companyId);
-            // === Prefer the number actually stored in the paper (sub-specific, starts at 1) ===
-            let displayedPayAppNum = 1;
-            // Use the sub-specific number we just decided, not the main G702 period number
-            const historyEntry = subPayAppHistory[companyId] && subPayAppHistory[companyId][displayedPayAppNum];
-            if (historyEntry && historyEntry.periodNumber) {
-                displayedPayAppNum = historyEntry.periodNumber;
-            } else if (subPendingSubmissions[companyId] && subPendingSubmissions[companyId].periodNumber) {
-                displayedPayAppNum = subPendingSubmissions[companyId].periodNumber;
-            } else if (subPayAppHistory[companyId]) {
+            // === Always pick the SINGLE MOST RECENT ACTIVE (non-archived) pay app period for this sub ===
+            // This ensures Tracker shows the correct current paper (#1, then after push #1 + approve #2, shows #2 with its own billed amount).
+            let displayedPayAppNum = subPayAppNumbers[companyId] || 1;
+            if (subPayAppHistory[companyId]) {
                 const periods = Object.keys(subPayAppHistory[companyId]).map(Number).filter(p => {
                     const e = subPayAppHistory[companyId][p];
-                    return e && (e.status === 'Approved' || e.status === 'Pending Approval');
+                    return e && (e.status === 'Approved' || e.status === 'Pending Approval') && e.archived !== true;
                 }).sort((a,b) => b - a);
                 if (periods.length > 0) displayedPayAppNum = periods[0];
-            } else {
-                displayedPayAppNum = subPayAppNumbers[companyId] || 1;
+            } else if (subPendingSubmissions[companyId] && subPendingSubmissions[companyId].periodNumber) {
+                displayedPayAppNum = subPendingSubmissions[companyId].periodNumber;
             }
+
+            // NOW fetch the correct historyEntry for the chosen (latest active) period number
+            const historyEntry = subPayAppHistory[companyId] && subPayAppHistory[companyId][displayedPayAppNum];
 
             let billedThis = 0;
             let billedToDateAtApproval = 0;
@@ -6004,8 +6016,10 @@ function printSubcontractorG703(companyId) {
                 }
             } else if (historyEntry && historyEntry.status === 'Pending Approval') {
                 billedThis = historyEntry.totalBilledThisPeriod || 0;
+            } else if (subPendingSubmissions[companyId] && subPendingSubmissions[companyId].periodNumber === displayedPayAppNum) {
+                billedThis = subPendingSubmissions[companyId].totalBilledThisPeriod || 0;
             } else {
-                // Calculate from current draft values
+                // Calculate from current draft values on SOV
                 billedThis = lines.reduce((sum, l) => sum + ((l.work_this_period || 0) + (l.materials_stored || 0) + (l.co_billed_this_period || 0)), 0);
             }
 
