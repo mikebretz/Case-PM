@@ -355,7 +355,7 @@
 </dialog>
 
 <script>
-    // ==================== DATA & STATE (v76.48 - Contractor G703 now shows Cost to Date (Subcontracted) + Billed to Date driven by Sub Pay App Tracker/History. Live rollup view in edit modal. All prior sub workflow 100% locked) ====================
+    // ==================== DATA & STATE (v76.49 - Added "Reset G703 + Previous Periods (Start Fresh)" button next to Lock on Contractor G703. Clears contractorSOV + payAppHistory for true clean project start. Removed demo seeding from Previous Pay Apps dropdown. All prior sub workflow 100% locked) ====================
     let payApplications = JSON.parse(localStorage.getItem('payApplications')) || [];
     let contractorSOV = JSON.parse(localStorage.getItem('contractorSOV')) || [];
     let subcontractorSOV = JSON.parse(localStorage.getItem('subcontractorSOV')) || {}; // { companyId: [lines] }
@@ -982,33 +982,9 @@ let mainLienWaiver = JSON.parse(localStorage.getItem('mainLienWaiver') || '{}');
             </div>
         `;
 
-        // Populate dropdown with history (or seed demo data if empty)
+        // Populate dropdown with history (no demo seeding — clean start after Reset)
         const select = document.getElementById('previousPeriodSelect');
         if (select) {
-            if (payAppHistory.length === 0) {
-                // Seed demo historical periods for first-time use
-                payAppHistory = [
-                    {
-                        id: 1001,
-                        periodNumber: 5,
-                        periodStart: "2026-05-01",
-                        periodEnd: "2026-05-31",
-                        status: "Approved",
-                        // In a real app this would be a snapshot of billing lines + totals at the time of approval
-                        snapshot: { note: "Historical data snapshot would be stored here in production." }
-                    },
-                    {
-                        id: 1002,
-                        periodNumber: 6,
-                        periodStart: "2026-06-01",
-                        periodEnd: "2026-06-30",
-                        status: "Approved",
-                        snapshot: { note: "Historical data snapshot would be stored here in production." }
-                    }
-                ];
-                localStorage.setItem('payAppHistory', JSON.stringify(payAppHistory));
-            }
-
             payAppHistory.forEach(p => {
                 const opt = document.createElement('option');
                 opt.value = p.id;
@@ -1993,6 +1969,36 @@ let mainLienWaiver = JSON.parse(localStorage.getItem('mainLienWaiver') || '{}');
         renderPayAppContent();
     }
 
+    function resetContractorG703AndPreviousPeriods() {
+        const confirmed = confirm(
+            "⚠️ WARNING — NUCLEAR RESET\n\n" +
+            "This will PERMANENTLY DELETE:\n" +
+            "• ALL line items on the Contractor G703 (Schedule of Values)\n" +
+            "• ALL entries in the 'Select Previous Period' dropdown (payAppHistory)\n\n" +
+            "This is intended to start a brand new project completely from scratch on the Contractor side.\n\n" +
+            "Subcontractor data (Sub SOVs, Sub Pay App Tracker, Previous Sub Pay Apps) will NOT be affected.\n\n" +
+            "Are you 100% sure you want to do this?"
+        );
+        if (!confirmed) return;
+
+        // Clear Contractor G703
+        contractorSOV = [];
+        localStorage.setItem('contractorSOV', JSON.stringify(contractorSOV));
+
+        // Clear Previous Pay Application history (empties the "Select Previous Period" dropdown)
+        payAppHistory = [];
+        localStorage.setItem('payAppHistory', JSON.stringify(payAppHistory));
+
+        // Unlock the G703 if it was locked
+        localStorage.removeItem('contractorSOVLocked');
+
+        // Re-render to show empty state
+        renderPayAppContent();
+
+        // Optional: show a non-intrusive confirmation in console / future toast
+        console.log('%c[Case PM] Contractor G703 + Previous Periods have been fully reset for a fresh project start.', 'color:#f59e0b');
+    }
+
     // ==================== CONTRACTOR SOV TAB ====================
     function renderContractorSOVTab(cardsContainer, thead, tbody, workflowBar) {
         contractorSOV = JSON.parse(localStorage.getItem('contractorSOV')) || [];
@@ -2060,6 +2066,12 @@ let mainLienWaiver = JSON.parse(localStorage.getItem('mainLienWaiver') || '{}');
                     <i class="fa-solid fa-plus"></i> <span>Add SOV Line</span>
                 </button>
                 ${lockBtnHTML}
+                <button onclick="resetContractorG703AndPreviousPeriods()" 
+                        class="px-4 py-2 bg-red-700 hover:bg-red-600 rounded-md text-sm flex items-center gap-2 border border-red-500/50"
+                        title="Nuclear reset: Clears ALL Contractor G703 lines AND empties the 'Select Previous Period' dropdown. Use to start a brand new project from scratch.">
+                    <i class="fa-solid fa-trash-can"></i> 
+                    <span>Reset G703 + Previous Periods (Start Fresh)</span>
+                </button>
             </div>
         `;
 
