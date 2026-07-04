@@ -500,6 +500,24 @@ let mainLienWaiver = JSON.parse(localStorage.getItem('mainLienWaiver') || '{}');
         return Math.round(total * 100) / 100;
     }
 
+    // NEW: Cumulative Billed to Date from APPROVED Subcontractor SOVs (their billed_to_date column)
+    // This is the source of truth for "Total Completed & Stored to Date" from the subcontractor side.
+    // Used on G702 so that Billed to Date column matches what subs have billed to date on their SOV.
+    function getSubBilledToDateForCode(code) {
+        const norm = normalizeCostCode(code);
+        let total = 0;
+        Object.keys(subcontractorSOV || {}).forEach(cid => {
+            if (getSubSOVStatus(cid) === 'Approved') {
+                (subcontractorSOV[cid] || []).forEach(line => {
+                    if (normalizeCostCode(line.cost_code) === norm) {
+                        total += parseFloat(line.billed_to_date || 0);
+                    }
+                });
+            }
+        });
+        return Math.round(total * 100) / 100;
+    }
+
     // Helper to pre-fill / suggest the sub minimum into G702 Work This Period when rendering
     function getSuggestedWorkThisPeriodForLine(line) {
         const subMin = getCurrentSubBilledThisPeriodForCode(line.cost_code);
@@ -1290,7 +1308,9 @@ let mainLienWaiver = JSON.parse(localStorage.getItem('mainLienWaiver') || '{}');
             const thisPeriod = (billing.workThisPeriod || 0) + (billing.materialsStored || 0);
             totalCurrentBilling += thisPeriod;
 
-            const previousBilled = line.billed_to_date || 0;
+            // Use sub-driven billed_to_date as base for consistency with G702 column requirement
+            const subBilled = getSubBilledToDateForCode(line.cost_code);
+            const previousBilled = Math.max(line.billed_to_date || 0, subBilled);
             totalBilledToDate += previousBilled + thisPeriod;
             totalRetainage += thisPeriod * 0.10;
         });
@@ -1529,7 +1549,11 @@ let mainLienWaiver = JSON.parse(localStorage.getItem('mainLienWaiver') || '{}');
                 const materials = billing.materialsStored || 0;
                 const thisPeriodTotal = workThis + materials;
 
-                const previousBilled = line.billed_to_date || 0;
+                // Per user requirement:
+                // Billed to Date on G702 = Subcontractor's Billed to Date (from their Approved SOV) + current period billing.
+                // This makes "Total Completed & Stored to Date" on G702 match the sub SOV's billed_to_date column.
+                const subBilledToDate = getSubBilledToDateForCode(line.cost_code);
+                const previousBilled = Math.max(line.billed_to_date || 0, subBilledToDate);
                 const totalBilled = previousBilled + thisPeriodTotal;
                 const percentComplete = currentAmount > 0 ? Math.min(100, Math.round((totalBilled / currentAmount) * 100)) : 0;
                 const retainageRate = defaultRetainagePercent / 100;
