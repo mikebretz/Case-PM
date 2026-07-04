@@ -2823,8 +2823,10 @@ let mainLienWaiver = JSON.parse(localStorage.getItem('mainLienWaiver') || '{}');
             const periodStr = currentPayAppPeriod 
                 ? `${formatDateMDY(currentPayAppPeriod.periodStart)} – ${formatDateMDY(currentPayAppPeriod.periodEnd)}` 
                 : '';
-            // Use REAL SOV status for label decision so "Pay App #2 Current" shows correctly even when prior paper is still in Tracker (Draft badge is just a visual cue)
-            const payAppLabel = (realSOVStatus === 'Approved') 
+            // Robust label: show Pay App #N (Current) once initial SOV is Approved OR we have started pay app numbering (even while prior paper is still in Tracker).
+            // The small badge may say "Draft" as a reminder to push the previous paper; the main label always reflects the next/current pay app number.
+            const hasActivePayAppCycle = (realSOVStatus === 'Approved') || currentNum > 1 || (subPayAppHistory[selectedSubCompanyId] && Object.keys(subPayAppHistory[selectedSubCompanyId] || {}).length > 0);
+            const payAppLabel = hasActivePayAppCycle 
                 ? `Pay App #${currentNum} (Current)<br><span style="font-size:11px; font-weight:400; opacity:0.9;">${periodStr}</span>` 
                 : `Schedule of Values Creation`;
 
@@ -5031,16 +5033,39 @@ function printSubcontractorG703(companyId) {
 
         const companyName = getCompanyName(subId);
         let rows = '';
-        let totalThisPeriod = 0;
+        let totalScheduled = 0, totalPrev = 0, totalWork = 0, totalMat = 0, totalCompleted = 0, totalRet = 0, totalBalance = 0;
+        const retainageRate = (typeof defaultRetainagePercent !== 'undefined' ? defaultRetainagePercent : 10) / 100;
 
         (historyEntry.lines || []).forEach((line, idx) => {
-            const amt = line.total_this_period || 0;
-            totalThisPeriod += amt;
+            const scheduled = (line.original_commitment || 0) + (line.change_orders || 0);
+            const prevBilled = line.billed_to_date_before || 0;
+            const work = line.work_this_period || 0;
+            const mat = line.materials_stored || 0;
+            const completed = prevBilled + work + mat;
+            const pct = scheduled > 0 ? Math.round((completed / scheduled) * 100) : 0;
+            const balance = scheduled - completed;
+            const ret = (work + mat) * retainageRate;
+
+            totalScheduled += scheduled;
+            totalPrev += prevBilled;
+            totalWork += work;
+            totalMat += mat;
+            totalCompleted += completed;
+            totalRet += ret;
+            totalBalance += balance;
+
             rows += `
-                <tr class="hover:bg-zinc-800/60">
-                    <td class="px-3 py-1.5 font-mono text-emerald-400 text-xs">${line.cost_code || ''}</td>
-                    <td class="px-3 py-1.5 text-sm">${line.description || ''}</td>
-                    <td class="px-3 py-1.5 text-right font-mono text-emerald-400">${formatCurrency(amt)}</td>
+                <tr class="hover:bg-zinc-800/60 text-xs">
+                    <td class="px-2 py-1 font-mono text-emerald-400">${line.cost_code || ''}</td>
+                    <td class="px-2 py-1">${line.description || ''}</td>
+                    <td class="px-2 py-1 text-right font-mono">${formatCurrency(scheduled)}</td>
+                    <td class="px-2 py-1 text-right font-mono text-amber-400">${formatCurrency(prevBilled)}</td>
+                    <td class="px-2 py-1 text-right font-mono text-sky-400">${formatCurrency(work)}</td>
+                    <td class="px-2 py-1 text-right font-mono text-sky-400">${formatCurrency(mat)}</td>
+                    <td class="px-2 py-1 text-right font-mono text-emerald-400">${formatCurrency(completed)}</td>
+                    <td class="px-2 py-1 text-center">${pct}%</td>
+                    <td class="px-2 py-1 text-right font-mono">${formatCurrency(balance)}</td>
+                    <td class="px-2 py-1 text-right font-mono text-orange-400">${formatCurrency(ret)}</td>
                 </tr>
             `;
         });
@@ -5069,22 +5094,36 @@ function printSubcontractorG703(companyId) {
                     </div>
                 </div>
 
-                <div class="text-xs text-zinc-400 mb-2">Billed This Period</div>
-                <table class="w-full text-sm border border-zinc-700 mb-4">
-                    <thead class="bg-zinc-700">
+                <div class="text-xs text-zinc-400 mb-1">G703 Snapshot — Pay App #${periodNum} (as submitted & approved)</div>
+                <table class="w-full text-xs border border-zinc-700 mb-3">
+                    <thead class="bg-zinc-700 text-[10px]">
                         <tr>
-                            <th class="p-2 text-left w-28">Cost Code</th>
-                            <th class="p-2 text-left">Description</th>
-                            <th class="p-2 text-right w-36">Amount Billed</th>
+                            <th class="p-1.5 text-left">Cost Code</th>
+                            <th class="p-1.5 text-left">Description</th>
+                            <th class="p-1.5 text-right">Scheduled Value</th>
+                            <th class="p-1.5 text-right text-amber-400">Previously Billed</th>
+                            <th class="p-1.5 text-right text-sky-400">Work This Period</th>
+                            <th class="p-1.5 text-right text-sky-400">Materials Stored</th>
+                            <th class="p-1.5 text-right text-emerald-400">Completed to Date</th>
+                            <th class="p-1.5 text-center">%</th>
+                            <th class="p-1.5 text-right">Balance to Finish</th>
+                            <th class="p-1.5 text-right text-orange-400">Retainage</th>
                         </tr>
                     </thead>
                     <tbody class="divide-y divide-zinc-700">
-                        ${rows || '<tr><td colspan="3" class="p-3 text-center text-zinc-500">No line items recorded.</td></tr>'}
+                        ${rows || '<tr><td colspan="10" class="p-3 text-center text-zinc-500">No line items recorded for this historical pay app.</td></tr>'}
                     </tbody>
-                    <tfoot class="bg-zinc-900 font-semibold">
+                    <tfoot class="bg-zinc-900 font-semibold text-[10px]">
                         <tr>
-                            <td colspan="2" class="p-2 text-right">TOTAL BILLED THIS PERIOD</td>
-                            <td class="p-2 text-right text-emerald-400 font-mono">${formatCurrency(totalThisPeriod)}</td>
+                            <td colspan="2" class="p-1.5 text-right">TOTALS</td>
+                            <td class="p-1.5 text-right font-mono">${formatCurrency(totalScheduled)}</td>
+                            <td class="p-1.5 text-right font-mono text-amber-400">${formatCurrency(totalPrev)}</td>
+                            <td class="p-1.5 text-right font-mono text-sky-400">${formatCurrency(totalWork)}</td>
+                            <td class="p-1.5 text-right font-mono text-sky-400">${formatCurrency(totalMat)}</td>
+                            <td class="p-1.5 text-right font-mono text-emerald-400">${formatCurrency(totalCompleted)}</td>
+                            <td class="p-1.5 text-center">—</td>
+                            <td class="p-1.5 text-right font-mono">${formatCurrency(totalBalance)}</td>
+                            <td class="p-1.5 text-right font-mono text-orange-400">${formatCurrency(totalRet)}</td>
                         </tr>
                     </tfoot>
                 </table>
@@ -5102,50 +5141,93 @@ function printSubcontractorG703(companyId) {
             return;
         }
         const companyName = getCompanyName(companyId);
+        const retainageRate = (typeof defaultRetainagePercent !== 'undefined' ? defaultRetainagePercent : 10) / 100;
 
         let rows = '';
-        let total = 0;
+        let totalScheduled = 0, totalPrev = 0, totalWork = 0, totalMat = 0, totalCompleted = 0, totalRet = 0, totalBalance = 0;
+
         (historyEntry.lines || []).forEach((line, idx) => {
-            const amt = line.total_this_period || 0;
-            total += amt;
+            const scheduled = (line.original_commitment || 0) + (line.change_orders || 0);
+            const prevBilled = line.billed_to_date_before || 0;
+            const work = line.work_this_period || 0;
+            const mat = line.materials_stored || 0;
+            const completed = prevBilled + work + mat;
+            const pct = scheduled > 0 ? Math.round((completed / scheduled) * 100) : 0;
+            const balance = scheduled - completed;
+            const ret = (work + mat) * retainageRate;
+
+            totalScheduled += scheduled;
+            totalPrev += prevBilled;
+            totalWork += work;
+            totalMat += mat;
+            totalCompleted += completed;
+            totalRet += ret;
+            totalBalance += balance;
+
             rows += `<tr>
-                <td style="border:1px solid #333;padding:4px 6px;font-family:monospace;font-size:9px;">${idx+1}</td>
-                <td style="border:1px solid #333;padding:4px 6px;font-size:9px;">${line.description || line.cost_code}</td>
-                <td style="border:1px solid #333;padding:4px 6px;text-align:right;font-family:monospace;font-size:9px;">${formatCurrency(amt)}</td>
+                <td style="border:1px solid #333;padding:3px 5px;font-family:monospace;font-size:9px;">${idx + 1}</td>
+                <td style="border:1px solid #333;padding:3px 5px;font-size:9px;">${line.description || line.cost_code}</td>
+                <td style="border:1px solid #333;padding:3px 5px;text-align:right;font-family:monospace;font-size:9px;">${formatCurrency(scheduled)}</td>
+                <td style="border:1px solid #333;padding:3px 5px;text-align:right;font-family:monospace;font-size:9px;">${formatCurrency(prevBilled)}</td>
+                <td style="border:1px solid #333;padding:3px 5px;text-align:right;font-family:monospace;font-size:9px;">${formatCurrency(work)}</td>
+                <td style="border:1px solid #333;padding:3px 5px;text-align:right;font-family:monospace;font-size:9px;">${formatCurrency(mat)}</td>
+                <td style="border:1px solid #333;padding:3px 5px;text-align:right;font-family:monospace;font-size:9px;">${formatCurrency(completed)}</td>
+                <td style="border:1px solid #333;padding:3px 5px;text-align:center;font-size:9px;">${pct}%</td>
+                <td style="border:1px solid #333;padding:3px 5px;text-align:right;font-family:monospace;font-size:9px;">${formatCurrency(balance)}</td>
+                <td style="border:1px solid #333;padding:3px 5px;text-align:right;font-family:monospace;font-size:9px;">${formatCurrency(ret)}</td>
             </tr>`;
         });
 
         const printHTML = `
-            <html><head><title>G703 Historical — ${companyName} Pay App #${periodNumber}</title>
+            <html><head><title>G703 — ${companyName} — Historical Pay App #${periodNumber}</title>
             <style>
                 @page { size: letter landscape; margin: 0.4in; }
-                body { font-family: Arial, sans-serif; padding: 12px; font-size: 9px; }
+                body { font-family: Arial, sans-serif; padding: 10px; font-size: 9px; }
                 table { width:100%; border-collapse:collapse; font-size: 8.5px; }
                 th, td { border:1px solid #222; padding:3px 4px; }
-                th { background:#e8e8e8; font-weight:700; }
+                th { background:#e8e8e8; font-weight:700; font-size: 8px; }
                 .right { text-align:right; font-family: "Courier New", monospace; }
+                .header { border-bottom: 3px solid #000; padding-bottom: 6px; margin-bottom: 8px; }
             </style>
             </head><body>
-                <div style="border-bottom:2px solid #222; padding-bottom:6px; margin-bottom:8px;">
-                    <div style="font-size:14px; font-weight:700;">CONTINUATION SHEET (Historical)</div>
-                    <div style="font-size:10px;">AIA G703 • ${companyName} • Pay App #${periodNumber} • ${historyEntry.periodStart} to ${historyEntry.periodEnd}</div>
+                <div class="header">
+                    <div style="font-size:13px; font-weight:700;">CONTINUATION SHEET (Historical Snapshot)</div>
+                    <div style="font-size:10px;">AIA G703 • ${companyName} • Pay App #${periodNumber} • ${historyEntry.periodStart || ''} to ${historyEntry.periodEnd || ''} • Approved ${historyEntry.approvedDate ? new Date(historyEntry.approvedDate).toLocaleDateString() : ''}</div>
+                    <div style="font-size:9px; color:#555; margin-top:2px;">This is the exact G703 as it existed at the time of submission/approval for this pay application. Numbers are point-in-time snapshot.</div>
                 </div>
                 <table>
                     <thead>
                         <tr>
-                            <th style="width:8%;">#</th>
-                            <th style="width:68%;">Description of Work</th>
-                            <th style="width:24%;">Amount Billed This Period</th>
+                            <th style="width:6%;">#</th>
+                            <th style="width:32%;">Description of Work</th>
+                            <th style="width:12%;">Scheduled Value</th>
+                            <th style="width:11%;">Previous Billed</th>
+                            <th style="width:10%;">Work This Period</th>
+                            <th style="width:10%;">Materials Stored</th>
+                            <th style="width:11%;">Completed to Date</th>
+                            <th style="width:5%;">%</th>
+                            <th style="width:10%;">Balance to Finish</th>
+                            <th style="width:8%;">Retainage</th>
                         </tr>
                     </thead>
                     <tbody>
                         ${rows}
                         <tr style="font-weight:700; background:#f3f4f6;">
-                            <td colspan="2" style="text-align:right;">TOTAL</td>
-                            <td class="right">${formatCurrency(total)}</td>
+                            <td colspan="2" style="text-align:right; padding-right:6px;">TOTALS</td>
+                            <td class="right">${formatCurrency(totalScheduled)}</td>
+                            <td class="right">${formatCurrency(totalPrev)}</td>
+                            <td class="right">${formatCurrency(totalWork)}</td>
+                            <td class="right">${formatCurrency(totalMat)}</td>
+                            <td class="right">${formatCurrency(totalCompleted)}</td>
+                            <td style="text-align:center;">—</td>
+                            <td class="right">${formatCurrency(totalBalance)}</td>
+                            <td class="right">${formatCurrency(totalRet)}</td>
                         </tr>
                     </tbody>
                 </table>
+                <div style="margin-top:12px; font-size:8px; color:#666;">
+                    Note: This historical print matches the structure and columns of the live Subcontractor G703 print from the Subcontractor Schedule of Values tab. All values are frozen as they were when this Pay App #${periodNumber} was created and approved.
+                </div>
             </body></html>
         `;
 
@@ -6210,7 +6292,7 @@ function printSubcontractorG703(companyId) {
                 <th class="px-3 py-3 text-center font-medium text-zinc-400 w-36">Request Revision</th>
                 <th class="px-3 py-3 text-center font-medium text-zinc-400 w-48">Status</th>
                 <th class="px-3 py-3 text-center font-medium text-zinc-400 w-28">Lien Waiver</th>
-                <th class="px-4 py-3 text-right font-medium text-emerald-400 w-40">Current Contract Amt</th>
+                <th class="px-4 py-3 text-right font-medium text-emerald-400 w-44" title="Original Commitment + Change Orders">Current Contract</th>
                 <th class="px-4 py-3 text-right font-medium text-zinc-400 w-36">Billed This Period</th>
                 <th class="px-4 py-3 text-right font-medium text-emerald-400 w-40">Billed to Date (at Approval)</th>
                 <th class="px-3 py-3 text-center font-medium text-zinc-400 w-20">% Complete</th>
