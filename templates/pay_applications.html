@@ -398,11 +398,16 @@ let requireLienWaiverOnSubPayApp = localStorage.getItem('requireLienWaiverOnSubP
 let requireZeroDollarLienWaiver = localStorage.getItem('requireZeroDollarLienWaiver') === 'true'; // NEW: Zero Dollar Waiver Requirement
 let requireSubmissionDeadline = localStorage.getItem('requireSubmissionDeadline') === 'true';
 let submissionDeadlineDate = localStorage.getItem('submissionDeadlineDate') || '';
-let allowZeroDollarSubPayApps = localStorage.getItem('allowZeroDollarSubPayApps') !== 'false'; // NEW: Allow $0 sub pay apps (compliance) without using a pay app number
-// Force the setting ON by default so zero-dollar compliance submissions are always allowed from Sub SOV tab
-if (localStorage.getItem('allowZeroDollarSubPayApps') === null || localStorage.getItem('allowZeroDollarSubPayApps') === 'true') {
+let allowZeroDollarSubPayApps;
+const storedAllowZero = localStorage.getItem('allowZeroDollarSubPayApps');
+if (storedAllowZero === null) {
+    // Default ON for first-time use (supports compliance workflow out of the box)
     allowZeroDollarSubPayApps = true;
     localStorage.setItem('allowZeroDollarSubPayApps', 'true');
+} else {
+    // Respect the user's explicit choice (true or false). This makes the setting persist reliably
+    // across hard refreshes and page reloads, just like other base program settings.
+    allowZeroDollarSubPayApps = storedAllowZero !== 'false';
 }
 let requireAllSubPayAppsBeforeG702Submit = localStorage.getItem('requireAllSubPayAppsBeforeG702Submit') !== 'false'; // Default ON (true)
 
@@ -6187,7 +6192,7 @@ function printSubcontractorG703(companyId) {
                 <tr ondblclick="loadSpecificHistoricalPayApp('${app.companyId}', ${app.periodNum})" 
                     class="hover:bg-zinc-700/70 cursor-pointer transition-colors text-base">
                     <td class="p-2 font-medium text-white">${app.companyName}</td>
-                    <td class="p-2 text-center font-mono text-emerald-400 font-semibold">#${app.periodNum}${app.isCompliance === true ? 'C' : ''}</td>
+                    <td class="p-2 text-center font-mono text-emerald-400 font-semibold">#${app.periodNum}</td>
                     <td class="p-2 text-xs text-zinc-300">${periodStr}</td>
                     <td class="p-2 text-xs text-zinc-400">${approvedStr}</td>
                     <td class="p-2 text-right font-mono">${formatCurrency(scheduled)}</td>
