@@ -386,8 +386,14 @@ let lienWaivers = JSON.parse(localStorage.getItem('lienWaivers') || '{}'); // { 
 let requireLienWaiverOnSubPayApp = localStorage.getItem('requireLienWaiverOnSubPayApp') !== 'false'; // default true
 let requireSubmissionDeadline = localStorage.getItem('requireSubmissionDeadline') === 'true';
 let submissionDeadlineDate = localStorage.getItem('submissionDeadlineDate') || '';
-let allowZeroDollarSubPayApps = localStorage.getItem('allowZeroDollarSubPayApps') !== 'false'; // NEW: Allow $0 sub pay apps (compliance) without using a pay app number
-// No forcing block — fully respects whatever the user saved in Pay Applications Settings (persists across hard refresh like other base settings)
+let allowZeroDollarSubPayApps = localStorage.getItem('allowZeroDollarSubPayApps');
+if (allowZeroDollarSubPayApps === null) {
+    // First time ever → default ON so compliance workflow works out of the box
+    allowZeroDollarSubPayApps = true;
+    localStorage.setItem('allowZeroDollarSubPayApps', 'true');
+} else {
+    allowZeroDollarSubPayApps = (allowZeroDollarSubPayApps === 'true');
+}
 let requireAllSubPayAppsBeforeG702Submit = localStorage.getItem('requireAllSubPayAppsBeforeG702Submit') !== 'false'; // Default ON (true)
 
 // Main Contractor (GC) Lien Waiver for current period (separate from Sub waivers)
@@ -5036,11 +5042,8 @@ let mainLienWaiver = JSON.parse(localStorage.getItem('mainLienWaiver') || '{}');
         }
 
         // === Move to RIGHT HAND: Save/ensure in subPayAppHistory as Approved ===
-        // Use distinct string key for compliance ("C1") so it is never overwritten by a later real Pay App #1
-        const storageKey = isCompliance ? ('C' + currentPeriodNum) : currentPeriodNum;
-
         if (!subPayAppHistory[companyId]) subPayAppHistory[companyId] = {};
-        subPayAppHistory[companyId][storageKey] = {
+        subPayAppHistory[companyId][currentPeriodNum] = {
             periodNumber: currentPeriodNum,
             periodStart: pendingEntry.periodStart || (currentPayAppPeriod ? currentPayAppPeriod.periodStart : ''),
             periodEnd: pendingEntry.periodEnd || (currentPayAppPeriod ? currentPayAppPeriod.periodEnd : ''),
@@ -5209,14 +5212,13 @@ let mainLienWaiver = JSON.parse(localStorage.getItem('mainLienWaiver') || '{}');
             const hist = subPayAppHistory[cid];
             if (!hist) return;
             Object.keys(hist).forEach(pStr => {
+                const p = parseInt(pStr, 10);
                 const entry = hist[pStr];
                 if (entry && (entry.status === 'Approved' || entry.status === 'Pending Approval') && entry.archived !== true) {
                     // Mark as archived (this removes it from Tracker view)
-                    // Keep original key (numeric "1" or compliance "C1") so compliance entries are not lost/overwritten
                     entry.archived = true;
                     entry.status = 'Approved'; // normalize
-                    const displayPeriod = pStr.startsWith('C') ? pStr : parseInt(pStr, 10);
-                    pushedList.push({ companyId: cid, period: displayPeriod, companyName: getCompanyName(cid) });
+                    pushedList.push({ companyId: cid, period: p, companyName: getCompanyName(cid) });
                     pushedCount++;
                 }
             });
@@ -5956,27 +5958,33 @@ function printSubcontractorG703(companyId) {
 
         if (!companyId || !subPayAppHistory[companyId]) return;
 
-        // Support both numeric keys ("1") and compliance string keys ("C1")
-        let periods = Object.keys(subPayAppHistory[companyId]).filter(pStr => {
-            const e = subPayAppHistory[companyId][pStr];
+        // Support both real numeric pay apps and compliance entries (saved under "C1", "C2", etc.)
+        const allKeys = Object.keys(subPayAppHistory[companyId]);
+        const periods = allKeys.filter(k => {
+            const e = subPayAppHistory[companyId][k];
             return e && e.archived === true;
-        }).sort((a,b) => {
-            // Sort compliance C1 after numeric, or by number
-            const na = a.startsWith('C') ? parseInt(a.slice(1),10) + 10000 : parseInt(a,10);
-            const nb = b.startsWith('C') ? parseInt(b.slice(1),10) + 10000 : parseInt(b,10);
-            return nb - na;
+        }).sort((a, b) => {
+            // Sort compliance "C1" after numeric, but keep chronological within types
+            const aNum = parseInt(a);
+            const bNum = parseInt(b);
+            const aIsC = String(a).startsWith('C');
+            const bIsC = String(b).startsWith('C');
+            if (aIsC && !bIsC) return 1;
+            if (!aIsC && bIsC) return -1;
+            return (isNaN(bNum) ? 0 : bNum) - (isNaN(aNum) ? 0 : aNum);
         });
+
         if (periods.length === 0) return;
 
         periodSelect.disabled = false;
-        periods.forEach(pKey => {
-            const entry = subPayAppHistory[companyId][pKey];
+        periods.forEach(key => {
+            const entry = subPayAppHistory[companyId][key];
             const opt = document.createElement('option');
-            opt.value = pKey;  // keep original key (number or "C1")
+            opt.value = key;   // keep string key for compliance entries ("C1")
             const status = entry.status || 'Approved';
-            const isComp = entry.isCompliance === true || String(pKey).startsWith('C');
-            const displayLabel = isComp ? `Pay App ${pKey} (Compliance)` : `Pay App #${pKey}`;
-            opt.textContent = `${displayLabel} • ${entry.periodStart || ''} to ${entry.periodEnd || ''} (${status})`;
+            const isComp = entry.isCompliance === true || String(key).startsWith('C');
+            const label = isComp ? `Pay App ${key} (Compliance)` : `Pay App #${key}`;
+            opt.textContent = `${label} • ${entry.periodStart || ''} to ${entry.periodEnd || ''} (${status})`;
             periodSelect.appendChild(opt);
         });
     }
@@ -6044,12 +6052,12 @@ function printSubcontractorG703(companyId) {
                         <div class="text-xs text-zinc-400 mt-0.5">Status: <span class="text-emerald-400">${historyEntry.status || 'Approved'}</span> • Approved ${historyEntry.approvedDate ? new Date(historyEntry.approvedDate).toLocaleDateString() : ''}</div>
                     </div>
                     <div class="flex gap-2">
-                        <button onclick="printHistoricalSubG703('${subId}', '${periodNum}')" 
+                        <button onclick="printHistoricalSubG703('${subId}', ${periodNum})" 
                                 class="px-4 py-2 bg-sky-600 hover:bg-sky-500 rounded-md text-sm font-medium flex items-center gap-2">
                             <i class="fa-solid fa-print"></i> <span>Print G703</span>
                         </button>
                         ${hasWaiverData ? `
-                        <button onclick="viewHistoricalLienWaiver('${subId}', '${periodNum}')" 
+                        <button onclick="viewHistoricalLienWaiver('${subId}', ${periodNum})" 
                                 class="px-4 py-2 bg-zinc-700 hover:bg-zinc-600 rounded-md text-sm font-medium flex items-center gap-2">
                             <i class="fa-solid fa-eye"></i> <span>View Lien Waiver</span>
                         </button>` : ''}
@@ -6900,7 +6908,6 @@ function printSubcontractorG703(companyId) {
 
         const waivers = lienWaivers[companyId] || {};
         const status = getSubSOVStatus(companyId);
-        const isZeroRequired = requireZeroDollarLienWaiver;
 
         // If the SOV is not yet Approved, compliance is not yet required.
         if (status !== 'Approved' && status !== 'Approved — Waiting on Lien Waiver') {
@@ -6911,12 +6918,9 @@ function printSubcontractorG703(companyId) {
         const waiverRecord = periodId ? waivers[periodId] : Object.values(waivers).pop();
 
         if (!waiverRecord || !waiverRecord.submitted) {
-            if (isZeroRequired) {
-                // Even if billing is $0, a waiver is required.
-                return { compliant: false, reason: 'Zero-Dollar Lien Waiver is REQUIRED by project settings but has not been submitted.' };
+            if (requireLienWaiverOnSubPayApp) {
+                return { compliant: false, reason: 'Lien Waiver is required by project settings but has not been submitted.' };
             }
-            // Standard check: if they billed money, they need a waiver.
-            // (This logic can be expanded later to check actual billed amount > 0)
             return { compliant: false, reason: 'Lien Waiver has not been submitted for this period.' };
         }
 
