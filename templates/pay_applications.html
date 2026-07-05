@@ -4854,15 +4854,16 @@ let mainLienWaiver = JSON.parse(localStorage.getItem('mainLienWaiver') || '{}');
                 return;
             }
             // Zero-dollar compliance submission allowed.
-            // Use the CURRENT numeric pay app number (e.g. 1), but mark it as compliance.
-            // Do NOT increment the counter. The SOV tab stays on "Pay App #1 Current".
-            // In the Tracker it will be shown as "Pay App #1 C".
+            // IMPORTANT: We still use the current numeric value internally so the SOV tab label stays consistent ("Pay App #N Current"),
+            // but we mark it strongly as compliance. The counter is NEVER advanced for these.
+            // In Tracker → shown as just "C".
+            // In Previous Sub Pay Apps → shown as "Pay App C".
             isComplianceSubmission = true;
             if (!subPayAppNumbers[companyId]) {
                 subPayAppNumbers[companyId] = 1;
                 localStorage.setItem('subPayAppNumbers', JSON.stringify(subPayAppNumbers));
             }
-            currentPeriodNum = subPayAppNumbers[companyId]; // keep the number, do not advance it
+            currentPeriodNum = subPayAppNumbers[companyId]; // internal numeric for SOV label only; counter not advanced on approve
         } else {
             // Normal (non-zero) submission
             if (!subPayAppNumbers[companyId]) {
@@ -5040,12 +5041,11 @@ let mainLienWaiver = JSON.parse(localStorage.getItem('mainLienWaiver') || '{}');
         localStorage.setItem('subLienWaivers', JSON.stringify(subLienWaivers));
 
         // Advance Pay App number for the *next* new submission (this approved paper keeps its original number)
-        // IMPORTANT: Do NOT advance the counter for zero-dollar compliance submissions.
-        // Compliance papers ("#1 C") stay on their number; the next real billing submission gets the same number.
+        // IMPORTANT: Do NOT advance the counter for zero-dollar compliance submissions (isCompliance flag)
         const approvedPayAppNumber = currentPeriodNum;
-        const isCompliance = pendingEntry.isCompliance === true;
+        const isComplianceEntry = pendingEntry.isCompliance === true || pendingEntry.periodNumber === 'C';
 
-        if (!isCompliance) {
+        if (!isComplianceEntry) {
             if (!subPayAppNumbers[companyId]) subPayAppNumbers[companyId] = 1;
             subPayAppNumbers[companyId] = approvedPayAppNumber + 1;  // Next real (non-zero) paper gets the next number
             localStorage.setItem('subPayAppNumbers', JSON.stringify(subPayAppNumbers));
@@ -5066,8 +5066,7 @@ let mainLienWaiver = JSON.parse(localStorage.getItem('mainLienWaiver') || '{}');
             lienWaiver: lienWaiverForHistory,
             // Snapshot of Billed to Date *before* this app was added (used for correct restoration on Request Revision)
             billedToDateBefore: billedToDateSnapshot,
-            archived: false,   // New approved papers start as active in Tracker until explicitly pushed to Previous
-            isCompliance: pendingEntry.isCompliance === true
+            archived: false   // New approved papers start as active in Tracker until explicitly pushed to Previous
         };
         localStorage.setItem('subPayAppHistory', JSON.stringify(subPayAppHistory));
 
@@ -6111,22 +6110,24 @@ function printSubcontractorG703(companyId) {
             Object.keys(hist).forEach(p => {
                 const entry = hist[p];
                 if (entry && entry.archived === true) {
+                    const isComp = entry.isCompliance === true || entry.periodNumber === 'C' || p === 'C';
                     allApps.push({
                         companyId: cid,
-                        periodNum: parseInt(p),
+                        periodNum: isComp ? 'C' : parseInt(p),
                         companyName: getCompanyName(cid),
+                        isCompliance: isComp,
                         ...entry
                     });
                 }
             });
         });
 
-        // Sort chronologically by approvedDate (oldest first), then by period number
+        // Sort purely chronologically by approvedDate / submittedDate (oldest first).
+        // C (compliance) entries stay in their real time order — they do not consume numbers.
         allApps.sort((a, b) => {
-            const da = a.approvedDate ? new Date(a.approvedDate).getTime() : 0;
-            const db = b.approvedDate ? new Date(b.approvedDate).getTime() : 0;
-            if (da !== db) return da - db;
-            return a.periodNum - b.periodNum;
+            const da = a.approvedDate ? new Date(a.approvedDate).getTime() : (a.submittedDate ? new Date(a.submittedDate).getTime() : 0);
+            const db = b.approvedDate ? new Date(b.approvedDate).getTime() : (b.submittedDate ? new Date(b.submittedDate).getTime() : 0);
+            return da - db;
         });
 
         if (allApps.length === 0) {
@@ -6187,7 +6188,7 @@ function printSubcontractorG703(companyId) {
                 <tr ondblclick="loadSpecificHistoricalPayApp('${app.companyId}', ${app.periodNum})" 
                     class="hover:bg-zinc-700/70 cursor-pointer transition-colors text-base">
                     <td class="p-2 font-medium text-white">${app.companyName}</td>
-                    <td class="p-2 text-center font-mono text-emerald-400 font-semibold">#${app.periodNum}</td>
+                    <td class="p-2 text-center font-mono text-emerald-400 font-semibold">${app.isCompliance ? 'C' : '#' + app.periodNum}</td>
                     <td class="p-2 text-xs text-zinc-300">${periodStr}</td>
                     <td class="p-2 text-xs text-zinc-400">${approvedStr}</td>
                     <td class="p-2 text-right font-mono">${formatCurrency(scheduled)}</td>
@@ -7503,15 +7504,16 @@ function printSubcontractorG703(companyId) {
                 if (!historyEntry.status) historyEntry.status = 'Pending Approval';
             }
 
-            // === COMPLIANCE ($0) DISPLAY: Show as "Pay App #N C" in Tracker ===
-            // The SOV tab stays on the normal number (e.g. Pay App #1 Current).
-            // The Tracker shows the compliance marker "C".
+            // === COMPLIANCE ($0) DISPLAY: Show as just "C" in Tracker (per user request) ===
+            // Does NOT consume the numeric pay app counter.
+            // SOV tab continues to show the normal "Pay App #N Current".
+            // Previous Sub Pay Apps will show it as "Pay App C".
             let payAppDisplayValue = displayedPayAppNum;
             const isComplianceEntry = (historyEntry && historyEntry.isCompliance === true) ||
                                       (subPendingSubmissions[companyId] && subPendingSubmissions[companyId].isCompliance === true);
 
             if (isComplianceEntry) {
-                payAppDisplayValue = `${displayedPayAppNum} C`;
+                payAppDisplayValue = 'C';
             }
 
             let billedThis = 0;
