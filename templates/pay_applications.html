@@ -2371,17 +2371,30 @@ let mainLienWaiver = JSON.parse(localStorage.getItem('mainLienWaiver') || '{}');
         }, 800);
 
         // === ARCHIVE ALL SUB PAY APPS FOR THIS PERIOD (move from Tracker to Previous Sub Pay Apps) ===
-        // Per user request + AIA flow: When the GC G702 is approved, all sub papers in the Tracker for this period
-        // are archived (pushed to history). This clears the Sub Pay App Tracker for the next cycle.
+        // Per user request + AIA flow: When the GC G702 is approved, ALL sub papers in the Tracker
+        // (normal + 1005 Compliance / zero-dollar) are archived. Compliance entries are tagged with
+        // the main G702 period so multiple 1005 entries can exist across different periods for the same sub.
         if (currentPayAppPeriod && subPayAppHistory) {
             const pNum = currentPayAppPeriod.periodNumber;
             Object.keys(subPayAppHistory).forEach(cid => {
-                const entry = subPayAppHistory[cid] && subPayAppHistory[cid][pNum];
-                if (entry && (entry.status === 'Approved' || entry.status === 'Pending Approval') && entry.archived !== true) {
-                    entry.archived = true;
-                    // Also ensure it has an approvedDate if missing
-                    if (!entry.approvedDate) entry.approvedDate = new Date().toISOString();
+                // 1. Normal numeric period entries
+                const normalEntry = subPayAppHistory[cid] && subPayAppHistory[cid][pNum];
+                if (normalEntry && (normalEntry.status === 'Approved' || normalEntry.status === 'Pending Approval') && normalEntry.archived !== true) {
+                    normalEntry.archived = true;
+                    if (!normalEntry.approvedDate) normalEntry.approvedDate = new Date().toISOString();
+                    normalEntry.pushedFromMainPeriod = pNum;
                 }
+
+                // 2. Compliance (1005) entries — they live under key 1005 or have isCompliance flag
+                // We archive any non-archived compliance entry when the main G702 is approved.
+                Object.keys(subPayAppHistory[cid] || {}).forEach(key => {
+                    const entry = subPayAppHistory[cid][key];
+                    if (entry && entry.isCompliance === true && entry.archived !== true) {
+                        entry.archived = true;
+                        if (!entry.approvedDate) entry.approvedDate = new Date().toISOString();
+                        entry.pushedFromMainPeriod = pNum; // Link to the G702 period that pushed it
+                    }
+                });
             });
             localStorage.setItem('subPayAppHistory', JSON.stringify(subPayAppHistory));
         }
