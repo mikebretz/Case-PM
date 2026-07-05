@@ -5067,8 +5067,13 @@ let mainLienWaiver = JSON.parse(localStorage.getItem('mainLienWaiver') || '{}');
         }
 
         // === Move to RIGHT HAND: Save/ensure in subPayAppHistory as Approved ===
-        // For compliance ($0) submissions, use a fixed high number (1005) so it never collides with real pay apps 1, 2, 3...
-        const historyKey = (pendingEntry.isCompliance === true) ? 1005 : currentPeriodNum;
+        // Compliance ($0) entries are now keyed by the MAIN G702 period number at approval time.
+        // This allows multiple 1005 (Compliance) entries for the same sub across different main periods
+        // without overwriting. Display everywhere still shows "1005 (Compliance)" via the isCompliance flag.
+        const mainPeriodAtApproval = currentPayAppPeriod ? currentPayAppPeriod.periodNumber : null;
+        const historyKey = (pendingEntry.isCompliance === true && mainPeriodAtApproval)
+            ? mainPeriodAtApproval
+            : currentPeriodNum;
 
         if (!subPayAppHistory[companyId]) subPayAppHistory[companyId] = {};
         subPayAppHistory[companyId][historyKey] = {
@@ -5086,7 +5091,8 @@ let mainLienWaiver = JSON.parse(localStorage.getItem('mainLienWaiver') || '{}');
             billedToDateBefore: billedToDateSnapshot,
             archived: false,
             isCompliance: pendingEntry.isCompliance === true,
-            mainG702Period: currentPayAppPeriod ? currentPayAppPeriod.periodNumber : null
+            pushedFromMainPeriod: mainPeriodAtApproval,
+            mainG702Period: mainPeriodAtApproval
         };
         localStorage.setItem('subPayAppHistory', JSON.stringify(subPayAppHistory));
 
@@ -6049,7 +6055,13 @@ function printSubcontractorG703(companyId) {
             opt.value = pNum;
             const status = entry.status || 'Approved';
             const mainP = entry.pushedFromMainPeriod || entry.mainG702Period || pNum;
-            opt.textContent = `Main Period ${mainP} • Pay App #${pNum} • ${entry.periodStart || ''} to ${entry.periodEnd || ''} (${status})`;
+
+            // Special display for compliance entries
+            let payAppLabel = (entry.isCompliance === true || entry.periodNumber === 1005)
+                ? '1005 (Compliance)'
+                : `#${pNum}`;
+
+            opt.textContent = `Main Period ${mainP} • ${payAppLabel} • ${entry.periodStart || ''} to ${entry.periodEnd || ''} (${status})`;
             periodSelect.appendChild(opt);
         });
     }
@@ -6386,10 +6398,10 @@ function printSubcontractorG703(companyId) {
             const approvedStr = app.approvedDate ? new Date(app.approvedDate).toLocaleDateString() : '—';
             const periodStr = `${app.periodStart || ''} — ${app.periodEnd || ''}`;
 
-            const mainPeriodDisplay = app.pushedFromMainPeriod || app.periodNum || '—';
-            const payAppDisplay = (app.isCompliance || String(app.periodNum) === '1005' || app.periodNum === 1005)
+            const mainPeriodDisplay = app.pushedFromMainPeriod || app.mainG702Period || app.periodNum || '—';
+            const payAppDisplay = (app.isCompliance === true || app.periodNumber === 1005)
                 ? `1005 (Compliance)`
-                : `#${app.periodNum}`;
+                : `#${app.periodNum || app.periodNumber}`;
 
             html += `
                 <tr ondblclick="loadSpecificHistoricalPayApp('${app.companyId}', ${app.periodNum})" 
