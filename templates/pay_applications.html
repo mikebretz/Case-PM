@@ -313,6 +313,17 @@
                 </label>
             </div>
 
+            <!-- NEW: Require Zero-Dollar Lien Waiver Setting -->
+            <div class="pt-3 border-t border-zinc-700">
+                <label class="flex items-center justify-between cursor-pointer">
+                    <div>
+                        <div class="text-sm text-zinc-300">Require Lien Waiver even if billing $0 that month</div>
+                        <div class="text-[10px] text-zinc-500">When ON, Subs must submit a $0 lien waiver for periods with no billing activity (Compliance).</div>
+                    </div>
+                    <input type="checkbox" id="requireZeroDollarLienWaiverToggle" class="w-5 h-5 accent-emerald-600" ${requireZeroDollarLienWaiver ? 'checked' : ''}>
+                </label>
+            </div>
+
             <!-- NEW: Require All Subs with Approved SOVs to Submit Pay App before G702 Submit -->
             <div class="pt-3 border-t border-zinc-700">
                 <label class="flex items-center justify-between cursor-pointer">
@@ -384,15 +395,15 @@
 let subSOVStatus = JSON.parse(localStorage.getItem('subSOVStatus') || '{}'); // { [companyId]: { status: ..., unlockedBy?, ... } }
 let lienWaivers = JSON.parse(localStorage.getItem('lienWaivers') || '{}'); // { [companyId]: { filename: string, uploadedAt: string, submitted: boolean } }
 let requireLienWaiverOnSubPayApp = localStorage.getItem('requireLienWaiverOnSubPayApp') !== 'false'; // default true
+let requireZeroDollarLienWaiver = localStorage.getItem('requireZeroDollarLienWaiver') === 'true'; // NEW: Zero Dollar Waiver Requirement
 let requireSubmissionDeadline = localStorage.getItem('requireSubmissionDeadline') === 'true';
 let submissionDeadlineDate = localStorage.getItem('submissionDeadlineDate') || '';
-let allowZeroDollarSubPayApps = localStorage.getItem('allowZeroDollarSubPayApps');
-if (allowZeroDollarSubPayApps === null) {
-    // First time ever → default ON so compliance workflow works out of the box
+let allowZeroDollarSubPayApps = localStorage.getItem('allowZeroDollarSubPayApps') === 'true';
+// Default to true only on the very first run so compliance workflow works out of the box.
+// After that, whatever the user saves in Pay Applications Settings is respected forever (even after hard refresh).
+if (localStorage.getItem('allowZeroDollarSubPayApps') === null) {
     allowZeroDollarSubPayApps = true;
     localStorage.setItem('allowZeroDollarSubPayApps', 'true');
-} else {
-    allowZeroDollarSubPayApps = (allowZeroDollarSubPayApps === 'true');
 }
 let requireAllSubPayAppsBeforeG702Submit = localStorage.getItem('requireAllSubPayAppsBeforeG702Submit') !== 'false'; // Default ON (true)
 
@@ -5958,33 +5969,39 @@ function printSubcontractorG703(companyId) {
 
         if (!companyId || !subPayAppHistory[companyId]) return;
 
-        // Support both real numeric pay apps and compliance entries (saved under "C1", "C2", etc.)
-        const allKeys = Object.keys(subPayAppHistory[companyId]);
-        const periods = allKeys.filter(k => {
-            const e = subPayAppHistory[companyId][k];
-            return e && e.archived === true;
-        }).sort((a, b) => {
-            // Sort compliance "C1" after numeric, but keep chronological within types
-            const aNum = parseInt(a);
-            const bNum = parseInt(b);
-            const aIsC = String(a).startsWith('C');
-            const bIsC = String(b).startsWith('C');
-            if (aIsC && !bIsC) return 1;
-            if (!aIsC && bIsC) return -1;
-            return (isNaN(bNum) ? 0 : bNum) - (isNaN(aNum) ? 0 : aNum);
+        // Collect ALL archived entries (both real numeric keys and compliance string keys like "C1")
+        let allEntries = [];
+        Object.keys(subPayAppHistory[companyId]).forEach(key => {
+            const entry = subPayAppHistory[companyId][key];
+            if (entry && entry.archived === true) {
+                allEntries.push({ key: key, entry: entry });
+            }
         });
 
-        if (periods.length === 0) return;
+        if (allEntries.length === 0) return;
+
+        // Sort by approvedDate (newest first) so chronological order is correct
+        allEntries.sort((a, b) => {
+            const da = a.entry.approvedDate ? new Date(a.entry.approvedDate).getTime() : 0;
+            const db = b.entry.approvedDate ? new Date(b.entry.approvedDate).getTime() : 0;
+            return db - da;
+        });
 
         periodSelect.disabled = false;
-        periods.forEach(key => {
-            const entry = subPayAppHistory[companyId][key];
+
+        allEntries.forEach(item => {
+            const key = item.key;
+            const entry = item.entry;
             const opt = document.createElement('option');
-            opt.value = key;   // keep string key for compliance entries ("C1")
+            opt.value = key;   // keep as string so "C1" works
+
+            const isCompliance = entry.isCompliance === true || String(key).startsWith('C');
+            const displayLabel = isCompliance 
+                ? `Pay App ${key} (Compliance)` 
+                : `Pay App #${key}`;
+
             const status = entry.status || 'Approved';
-            const isComp = entry.isCompliance === true || String(key).startsWith('C');
-            const label = isComp ? `Pay App ${key} (Compliance)` : `Pay App #${key}`;
-            opt.textContent = `${label} • ${entry.periodStart || ''} to ${entry.periodEnd || ''} (${status})`;
+            opt.textContent = `${displayLabel} • ${entry.periodStart || ''} to ${entry.periodEnd || ''} (${status})`;
             periodSelect.appendChild(opt);
         });
     }
@@ -6864,6 +6881,13 @@ function printSubcontractorG703(companyId) {
             localStorage.setItem('requireLienWaiverOnSubPayApp', requireLienWaiverOnSubPayApp);
         }
 
+        // NEW: Zero-Dollar Lien Waiver Toggle
+        const zeroDollarToggle = document.getElementById('requireZeroDollarLienWaiverToggle');
+        if (zeroDollarToggle) {
+            requireZeroDollarLienWaiver = zeroDollarToggle.checked;
+            localStorage.setItem('requireZeroDollarLienWaiver', requireZeroDollarLienWaiver);
+        }
+
         // Submission Deadline (Day of Month)
         const deadlineToggle = document.getElementById('requireSubmissionDeadlineToggle');
         const deadlineDaySelect = document.getElementById('submissionDeadlineDay');
@@ -6908,6 +6932,7 @@ function printSubcontractorG703(companyId) {
 
         const waivers = lienWaivers[companyId] || {};
         const status = getSubSOVStatus(companyId);
+        const isZeroRequired = requireZeroDollarLienWaiver;
 
         // If the SOV is not yet Approved, compliance is not yet required.
         if (status !== 'Approved' && status !== 'Approved — Waiting on Lien Waiver') {
@@ -6918,9 +6943,12 @@ function printSubcontractorG703(companyId) {
         const waiverRecord = periodId ? waivers[periodId] : Object.values(waivers).pop();
 
         if (!waiverRecord || !waiverRecord.submitted) {
-            if (requireLienWaiverOnSubPayApp) {
-                return { compliant: false, reason: 'Lien Waiver is required by project settings but has not been submitted.' };
+            if (isZeroRequired) {
+                // Even if billing is $0, a waiver is required.
+                return { compliant: false, reason: 'Zero-Dollar Lien Waiver is REQUIRED by project settings but has not been submitted.' };
             }
+            // Standard check: if they billed money, they need a waiver.
+            // (This logic can be expanded later to check actual billed amount > 0)
             return { compliant: false, reason: 'Lien Waiver has not been submitted for this period.' };
         }
 
