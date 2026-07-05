@@ -5067,11 +5067,8 @@ let mainLienWaiver = JSON.parse(localStorage.getItem('mainLienWaiver') || '{}');
         }
 
         // === Move to RIGHT HAND: Save/ensure in subPayAppHistory as Approved ===
-        // For compliance ($0) submissions, use a safe string key so multiple compliance entries can coexist
-        // without colliding or causing parse errors. Display everywhere remains "1005 (Compliance)".
-        const historyKey = (pendingEntry.isCompliance === true) 
-            ? ('compliance_' + (pendingEntry.pushedFromMainPeriod || currentPeriodNum)) 
-            : currentPeriodNum;
+        // For compliance ($0) submissions, use a fixed high number (1005) so it never collides with real pay apps 1, 2, 3...
+        const historyKey = (pendingEntry.isCompliance === true) ? 1005 : currentPeriodNum;
 
         if (!subPayAppHistory[companyId]) subPayAppHistory[companyId] = {};
         subPayAppHistory[companyId][historyKey] = {
@@ -7705,12 +7702,23 @@ function printSubcontractorG703(companyId) {
             if (subPayAppHistory[companyId]) {
                 // Prefer clean numeric keys; ignore old ZERO_ string keys for period selection
                 const periods = Object.keys(subPayAppHistory[companyId])
-                    .filter(k => !isNaN(parseInt(k)))
-                    .map(Number)
+                    .filter(k => {
+                        const n = parseInt(k);
+                        return !isNaN(n) || k.startsWith('1005') || k.includes('compliance');
+                    })
+                    .map(k => {
+                        const n = parseInt(k);
+                        return isNaN(n) ? k : n; // keep composite keys as strings
+                    })
                     .filter(p => {
                         const e = subPayAppHistory[companyId][p];
                         return e && (e.status === 'Approved' || e.status === 'Pending Approval') && e.archived !== true;
-                    }).sort((a,b) => b - a);
+                    }).sort((a,b) => {
+                        // Sort numeric first, then composite
+                        const na = typeof a === 'number' ? a : 9999;
+                        const nb = typeof b === 'number' ? b : 9999;
+                        return nb - na;
+                    });
                 if (periods.length > 0) displayedPayAppNum = periods[0];
             }
             if (subPendingSubmissions[companyId] && subPendingSubmissions[companyId].periodNumber) {
@@ -7730,8 +7738,8 @@ function printSubcontractorG703(companyId) {
             // === COMPLIANCE ($0) DISPLAY: Force 1005 (Compliance) designation ===
             // Compliance entries use a fixed high number so they never collide with real pay apps 1, 2, 3...
             let payAppDisplayValue = displayedPayAppNum;
-            const isComplianceEntry = (historyEntry && historyEntry.isCompliance === true) ||
-                                      (subPendingSubmissions[companyId] && subPendingSubmissions[companyId].isCompliance === true);
+            const isComplianceEntry = (historyEntry && (historyEntry.isCompliance === true || historyEntry.totalBilledThisPeriod === 0)) ||
+                                      (subPendingSubmissions[companyId] && (subPendingSubmissions[companyId].isCompliance === true || subPendingSubmissions[companyId].totalBilledThisPeriod === 0));
 
             if (isComplianceEntry) {
                 payAppDisplayValue = `1005 (Compliance)`;
@@ -7768,7 +7776,14 @@ function printSubcontractorG703(companyId) {
 
             const waiverStatus = getLienWaiverStatus(companyId);
             // Prefer historical snapshot saved at approval time (so waiver stays visible in Tracker after live one is cleared)
-            const hasWaiver = !!(historyEntry && historyEntry.lienWaiver && historyEntry.lienWaiver.filename) || waiverStatus.hasWaiver;
+            // For pending compliance entries, also check the attached lienWaiver copy and LATEST_COMPLIANCE fallback
+            let hasWaiver = !!(historyEntry && historyEntry.lienWaiver && historyEntry.lienWaiver.filename) || waiverStatus.hasWaiver;
+            if (!hasWaiver && subPendingSubmissions[companyId] && subPendingSubmissions[companyId].lienWaiver && subPendingSubmissions[companyId].lienWaiver.filename) {
+                hasWaiver = true;
+            }
+            if (!hasWaiver && subLienWaivers[companyId] && subLienWaivers[companyId]['LATEST_COMPLIANCE'] && subLienWaivers[companyId]['LATEST_COMPLIANCE'].filename) {
+                hasWaiver = true;
+            }
 
             let statusBadge = '';
             if (historyEntry && historyEntry.status === 'Approved') {
