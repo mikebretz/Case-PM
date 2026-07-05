@@ -7728,7 +7728,8 @@ function printSubcontractorG703(companyId) {
             // Compliance entries use a fixed high number so they never collide with real pay apps 1, 2, 3...
             let payAppDisplayValue = displayedPayAppNum;
             const isComplianceEntry = (historyEntry && historyEntry.isCompliance === true) ||
-                                      (subPendingSubmissions[companyId] && subPendingSubmissions[companyId].isCompliance === true);
+                                      (subPendingSubmissions[companyId] && subPendingSubmissions[companyId].isCompliance === true) ||
+                                      (subPendingSubmissions[companyId] && (subPendingSubmissions[companyId].totalBilledThisPeriod || 0) === 0);
 
             if (isComplianceEntry) {
                 payAppDisplayValue = `1005 (Compliance)`;
@@ -7765,7 +7766,22 @@ function printSubcontractorG703(companyId) {
 
             const waiverStatus = getLienWaiverStatus(companyId);
             // Prefer historical snapshot saved at approval time (so waiver stays visible in Tracker after live one is cleared)
-            const hasWaiver = !!(historyEntry && historyEntry.lienWaiver && historyEntry.lienWaiver.filename) || waiverStatus.hasWaiver;
+            let hasWaiver = !!(historyEntry && historyEntry.lienWaiver && historyEntry.lienWaiver.filename) || waiverStatus.hasWaiver;
+
+            // Belt-and-suspenders recovery for pending zero-dollar compliance submissions
+            // If the attached lienWaiver copy is missing on the pending object but this is a $0 submission,
+            // try one last time to recover it from LATEST_COMPLIANCE before showing the red "Missing" pill.
+            if (!hasWaiver && subPendingSubmissions[companyId] && (subPendingSubmissions[companyId].totalBilledThisPeriod || 0) === 0) {
+                const latest = subLienWaivers[companyId] && subLienWaivers[companyId]['LATEST_COMPLIANCE'];
+                if (latest && latest.filename) {
+                    hasWaiver = true;
+                    // Also attach it back to the pending entry so it survives re-renders
+                    if (!historyEntry.lienWaiver) historyEntry.lienWaiver = {};
+                    historyEntry.lienWaiver.filename = latest.filename;
+                    historyEntry.lienWaiver.dataUrl = latest.dataUrl || null;
+                    historyEntry.lienWaiver.uploadedDate = latest.uploadedDate || new Date().toISOString();
+                }
+            }
 
             let statusBadge = '';
             if (historyEntry && historyEntry.status === 'Approved') {
