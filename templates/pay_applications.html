@@ -1397,51 +1397,9 @@ let mainLienWaiver = JSON.parse(localStorage.getItem('mainLienWaiver') || '{}');
         };
         localStorage.setItem('currentPayAppPeriod', JSON.stringify(currentPayAppPeriod));
 
-        // === ROUND-TRIP FIX: Move related Sub Pay Apps (including 1005 Compliance) back to Tracker ===
-        // This ensures that when the user re-approves the main G702, the sub pay apps have a clean path back to Previous Sub Pay Apps
-        // with their full snapshot (lines + lienWaiver + pushedFromMainPeriod) preserved.
-        const mainPeriodBeingRevised = periodData.periodNumber;
-        let movedCount = 0;
-
-        if (subPayAppHistory) {
-            Object.keys(subPayAppHistory).forEach(companyId => {
-                const hist = subPayAppHistory[companyId];
-                if (!hist) return;
-
-                Object.keys(hist).forEach(pKey => {
-                    const entry = hist[pKey];
-                    if (!entry) return;
-
-                    const entryMainPeriod = entry.pushedFromMainPeriod || entry.mainG702Period || entry.mainPeriod;
-                    if (entryMainPeriod == mainPeriodBeingRevised && entry.archived === true) {
-                        // Move this entry back to pending so it re-appears in Sub Pay App Tracker
-                        if (!subPendingSubmissions[companyId]) {
-                            subPendingSubmissions[companyId] = {};
-                        }
-
-                        // Preserve the full entry (especially lienWaiver and lines for compliance entries)
-                        subPendingSubmissions[companyId][pKey] = {
-                            ...entry,
-                            archived: false,
-                            status: 'Pending Approval'
-                        };
-
-                        // Remove from history so it doesn't show in Previous anymore until re-approved
-                        delete subPayAppHistory[companyId][pKey];
-
-                        movedCount++;
-                    }
-                });
-            });
-        }
-
-        localStorage.setItem('subPayAppHistory', JSON.stringify(subPayAppHistory));
-        localStorage.setItem('subPendingSubmissions', JSON.stringify(subPendingSubmissions));
-
         logPayAppAudit('PAYAPP_REVISION_REQUESTED_FROM_HISTORY', {
             periodNumber: periodData.periodNumber,
-            restoredFromHistoryId: periodId,
-            subPayAppsMovedBackToTracker: movedCount
+            restoredFromHistoryId: periodId
         });
 
         // Switch to G702 tab and re-render so Billed to Date shows the restored historical values
@@ -6163,41 +6121,6 @@ function printSubcontractorG703(companyId) {
         const periodNum = app.periodNum;
         const companyName = app.companyName;
 
-        // Special handling for 1005 (Compliance) / zero-dollar entries that may have empty lines after round-trip
-        const isCompliance = historyEntry.isCompliance === true || historyEntry.periodNumber === 1005 || (historyEntry.lines || []).length === 0;
-
-        if (isCompliance) {
-            const waiver = historyEntry.lienWaiver || null;
-            const hasWaiverData = waiver && waiver.dataUrl;
-
-            container.innerHTML = `
-                <div class="bg-zinc-800 border border-zinc-700 rounded-md p-5">
-                    <div class="flex items-center justify-between mb-4">
-                        <div>
-                            <div class="text-emerald-400 font-semibold">Historical Pay Application — ${companyName}</div>
-                            <div class="text-sm text-zinc-300">Main Period ${historyEntry.pushedFromMainPeriod || '?'} • <span class="text-amber-400 font-bold">1005 (Compliance)</span> • ${historyEntry.periodStart || ''} to ${historyEntry.periodEnd || ''}</div>
-                            <div class="text-xs text-zinc-400 mt-0.5">Status: <span class="text-emerald-400">${historyEntry.status || 'Approved'}</span> • Approved ${historyEntry.approvedDate ? new Date(historyEntry.approvedDate).toLocaleDateString() : ''}</div>
-                        </div>
-                        <div class="flex gap-2">
-                            ${hasWaiverData ? `
-                            <button onclick="viewHistoricalLienWaiver('${subId}', ${periodNum})" 
-                                    class="px-4 py-2 bg-zinc-700 hover:bg-zinc-600 rounded-md text-sm font-medium flex items-center gap-2">
-                                <i class="fa-solid fa-eye"></i> <span>View Lien Waiver</span>
-                            </button>` : ''}
-                        </div>
-                    </div>
-
-                    <div class="bg-zinc-900 border border-zinc-700 rounded-md p-8 text-center">
-                        <div class="text-2xl text-zinc-400 mb-2">Zero-Dollar Compliance Pay App</div>
-                        <div class="text-sm text-zinc-500">No billing activity occurred during this period.<br>Lien waiver was submitted for record-keeping / compliance purposes.</div>
-                    </div>
-
-                    <div class="text-[10px] text-zinc-500 mt-3">This is a read-only historical snapshot from Main G702 Period ${historyEntry.pushedFromMainPeriod || '?'}.</div>
-                </div>
-            `;
-            return;
-        }
-
         let rows = '';
         let totalScheduled = 0, totalPrev = 0, totalWork = 0, totalMat = 0, totalCompleted = 0, totalRet = 0, totalBalance = 0;
         const retainageRate = (typeof defaultRetainagePercent !== 'undefined' ? defaultRetainagePercent : 10) / 100;
@@ -7761,20 +7684,20 @@ function printSubcontractorG703(companyId) {
 
         tbody.innerHTML = '';
 
-        // Show subs that have an ACTIVE (non-archived) Approved/Pending paper OR a submitted pending paper (from Sub SOV "Submit Application").
-        // Each sub has its own independent PayApp number sequence (e.g. Sub A on #3, Sub B on #5, Sub C on #7 is allowed and expected).
-        // Archived papers are pushed to Previous Sub Pay Apps and no longer appear in this Tracker.
+        // Show subs that have a pending submission OR any non-archived Approved/Pending paper in history.
+        // This is the stable filter for both normal and 1005 (Compliance) pay apps.
         const subCompanies = companies.filter(c => {
-            const hasPendingSubmission = !!subPendingSubmissions[c.id];
+            const hasPending = !!subPendingSubmissions[c.id];
             const hist = subPayAppHistory[c.id];
-            let hasActiveInHistory = false;
+            let hasActive = false;
             if (hist) {
-                hasActiveInHistory = Object.keys(hist).some(p => {
+                hasActive = Object.keys(hist).some(p => {
                     const e = hist[p];
-                    return e && (e.status === 'Approved' || e.status === 'Pending Approval') && e.archived !== true;
+                    return e && e.archived !== true && (e.status === 'Approved' || e.status === 'Pending Approval');
                 });
             }
-            return (c.type === 'Subcontractor' || c.company_type === 'Subcontractor') && (hasPendingSubmission || hasActiveInHistory);
+            const isSub = (c.type === 'Subcontractor' || c.company_type === 'Subcontractor');
+            return isSub && (hasPending || hasActive);
         });
 
         if (subCompanies.length === 0) {
@@ -7813,11 +7736,22 @@ function printSubcontractorG703(companyId) {
                 if (!historyEntry.status) historyEntry.status = 'Pending Approval';
             }
 
+            // Prefer pending submission's period number if it exists (fixes cases where pending compliance wasn't showing)
+            if (subPendingSubmissions[companyId] && subPendingSubmissions[companyId].periodNumber) {
+                displayedPayAppNum = subPendingSubmissions[companyId].periodNumber;
+                if (!historyEntry) {
+                    historyEntry = subPendingSubmissions[companyId];
+                    if (!historyEntry.status) historyEntry.status = 'Pending Approval';
+                }
+            }
+
             // === COMPLIANCE ($0) DISPLAY: Force 1005 (Compliance) designation ===
             // Compliance entries use a fixed high number so they never collide with real pay apps 1, 2, 3...
             let payAppDisplayValue = displayedPayAppNum;
             const isComplianceEntry = (historyEntry && historyEntry.isCompliance === true) ||
-                                      (subPendingSubmissions[companyId] && subPendingSubmissions[companyId].isCompliance === true);
+                                      (subPendingSubmissions[companyId] && subPendingSubmissions[companyId].isCompliance === true) ||
+                                      (historyEntry && (historyEntry.totalBilledThisPeriod || 0) === 0) ||
+                                      (subPendingSubmissions[companyId] && (subPendingSubmissions[companyId].totalBilledThisPeriod || 0) === 0);
 
             if (isComplianceEntry) {
                 payAppDisplayValue = `1005 (Compliance)`;
