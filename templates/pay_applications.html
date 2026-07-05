@@ -2395,13 +2395,6 @@ let mainLienWaiver = JSON.parse(localStorage.getItem('mainLienWaiver') || '{}');
                         if (!entry.pushedFromMainPeriod) {
                             entry.pushedFromMainPeriod = mainPeriod;
                         }
-                        // Safety: ensure lien waiver travels with the archived record (especially for compliance / $0 apps)
-                        if (!entry.lienWaiver || !entry.lienWaiver.filename) {
-                            const lw = subLienWaivers[cid] && (subLienWaivers[cid][entry.periodNumber] || subLienWaivers[cid]['LATEST_COMPLIANCE']);
-                            if (lw && lw.filename) {
-                                entry.lienWaiver = { ...lw };
-                            }
-                        }
                     }
                 });
             });
@@ -5049,9 +5042,6 @@ let mainLienWaiver = JSON.parse(localStorage.getItem('mainLienWaiver') || '{}');
             lienWaiverForHistory = { ...pendingEntry.lienWaiver };
         } else if (subLienWaivers[companyId] && subLienWaivers[companyId][currentPeriodNum]) {
             lienWaiverForHistory = { ...subLienWaivers[companyId][currentPeriodNum] };
-        } else if (pendingEntry.isCompliance === true && subLienWaivers[companyId] && subLienWaivers[companyId]['LATEST_COMPLIANCE']) {
-            // Special fallback for zero-dollar compliance submissions (they store under LATEST_COMPLIANCE)
-            lienWaiverForHistory = { ...subLienWaivers[companyId]['LATEST_COMPLIANCE'] };
         }
 
         // Clear live lien waiver for this period from SOV tab
@@ -5077,13 +5067,8 @@ let mainLienWaiver = JSON.parse(localStorage.getItem('mainLienWaiver') || '{}');
         }
 
         // === Move to RIGHT HAND: Save/ensure in subPayAppHistory as Approved ===
-        // For compliance ($0) submissions, use a UNIQUE key per main G702 period (e.g. "1005_p2")
-        // so multiple compliance submissions for the SAME sub in DIFFERENT main periods can coexist.
-        // We still keep periodNumber: 1005 and isCompliance: true so ALL display, labels, and numbering stay exactly "1005 (Compliance)".
-        const mainPForKey = currentPayAppPeriod ? currentPayAppPeriod.periodNumber : 1;
-        const historyKey = (pendingEntry.isCompliance === true) 
-            ? `1005_p${mainPForKey}` 
-            : currentPeriodNum;
+        // For compliance ($0) submissions, use a fixed high number (1005) so it never collides with real pay apps 1, 2, 3...
+        const historyKey = (pendingEntry.isCompliance === true) ? 1005 : currentPeriodNum;
 
         if (!subPayAppHistory[companyId]) subPayAppHistory[companyId] = {};
         subPayAppHistory[companyId][historyKey] = {
@@ -6052,20 +6037,10 @@ function printSubcontractorG703(companyId) {
 
         if (!subPayAppHistory[companyId]) return;
 
-        // Collect unique main periods for this sub (handle composite compliance keys like "1005_p2")
-        const rawKeys = Object.keys(subPayAppHistory[companyId]);
-        const periods = [];
-        rawKeys.forEach(k => {
-            const e = subPayAppHistory[companyId][k];
-            if (!e || e.archived !== true) return;
-            let mainP = e.pushedFromMainPeriod || e.mainG702Period || e.periodNum || k;
-            if (String(k).startsWith('1005_p')) {
-                // For compliance, use the main period tag so we can show "1005 (Compliance) • Main Period X"
-                mainP = e.pushedFromMainPeriod || e.mainG702Period || 1;
-            }
-            if (!periods.includes(mainP)) periods.push(mainP);
-        });
-        periods.sort((a,b) => b - a);
+        const periods = Object.keys(subPayAppHistory[companyId]).map(Number).filter(p => {
+            const e = subPayAppHistory[companyId][p];
+            return e && e.archived === true;
+        }).sort((a,b) => b - a); // newest first
         if (periods.length === 0) return;
 
         periods.forEach(pNum => {
@@ -6101,14 +6076,9 @@ function printSubcontractorG703(companyId) {
                 const matchesPeriod = !periodFilter || String(mainP) === String(periodFilter) || String(entry.periodNum) === String(periodFilter);
 
                 if (matchesSub && matchesPeriod) {
-                    // Derive correct periodNum for display (handles composite compliance keys like "1005_p2")
-                    let displayPeriodNum = parseInt(p);
-                    if (isNaN(displayPeriodNum) || String(p).startsWith('1005_p')) {
-                        displayPeriodNum = (entry.periodNumber === 1005 || entry.isCompliance) ? 1005 : parseInt(p);
-                    }
                     filteredApps.push({
                         companyId: cid,
-                        periodNum: displayPeriodNum,
+                        periodNum: parseInt(p),
                         companyName: getCompanyName(cid),
                         mainPeriod: mainP,
                         ...entry
@@ -6343,14 +6313,9 @@ function printSubcontractorG703(companyId) {
             Object.keys(hist).forEach(p => {
                 const entry = hist[p];
                 if (entry && entry.archived === true) {
-                    // Derive correct periodNum for display (handles composite compliance keys like "1005_p2")
-                    let displayPeriodNum = parseInt(p);
-                    if (isNaN(displayPeriodNum) || String(p).startsWith('1005_p')) {
-                        displayPeriodNum = (entry.periodNumber === 1005 || entry.isCompliance) ? 1005 : parseInt(p);
-                    }
                     allApps.push({
                         companyId: cid,
-                        periodNum: displayPeriodNum,
+                        periodNum: parseInt(p),
                         companyName: getCompanyName(cid),
                         ...entry
                     });
