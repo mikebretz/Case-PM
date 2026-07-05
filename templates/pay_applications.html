@@ -1298,8 +1298,16 @@ let mainLienWaiver = JSON.parse(localStorage.getItem('mainLienWaiver') || '{}');
             tbody.appendChild(row);
         });
 
-        // Show "Request Revision" button ONLY for the most recent historical period
-        const isMostRecent = payAppHistory.length > 0 && payAppHistory[payAppHistory.length - 1].id == periodId;
+        // Show "Request Revision" button ONLY for the most recent historical period (highest periodNumber)
+        // This is more reliable than array position in case payAppHistory is not perfectly sorted by insertion order.
+        let isMostRecent = false;
+        if (payAppHistory.length > 0) {
+            const maxPeriod = Math.max(...payAppHistory.map(p => p.periodNumber || 0));
+            const currentPeriodData = payAppHistory.find(p => p.id == periodId);
+            if (currentPeriodData && currentPeriodData.periodNumber === maxPeriod) {
+                isMostRecent = true;
+            }
+        }
 
         let revisionButtonHTML = '';
         if (isMostRecent) {
@@ -1402,6 +1410,42 @@ let mainLienWaiver = JSON.parse(localStorage.getItem('mainLienWaiver') || '{}');
             restoredFromHistoryId: periodId
         });
 
+        // === NEW: When revising the MOST RECENT main period, also push related Sub Pay Apps back to Tracker ===
+        // This allows the PM to revise the sub pay apps that fed into this main G702 period.
+        // Only do this for the most recent period (as requested).
+        const currentMaxPeriod = payAppHistory.length > 0 
+            ? Math.max(...payAppHistory.map(p => p.periodNumber || 0)) 
+            : 0;
+        
+        let pushedBackCount = 0;
+        if (periodData.periodNumber === currentMaxPeriod && periodData.periodNumber > 0) {
+            Object.keys(subPayAppHistory).forEach(companyId => {
+                const hist = subPayAppHistory[companyId];
+                if (!hist) return;
+                
+                Object.keys(hist).forEach(pKey => {
+                    const entry = hist[pKey];
+                    if (entry && entry.archived === true && entry.pushedFromMainPeriod === periodData.periodNumber) {
+                        // Push it back to Tracker by removing the archived flag
+                        delete entry.archived;
+                        // Optionally ensure it has a usable status
+                        if (!entry.status || entry.status === 'Approved') {
+                            entry.status = 'Approved'; // Keep it as Approved so it shows in Tracker
+                        }
+                        pushedBackCount++;
+                    }
+                });
+            });
+            
+            if (pushedBackCount > 0) {
+                localStorage.setItem('subPayAppHistory', JSON.stringify(subPayAppHistory));
+                logPayAppAudit('SUB_PAYAPPS_PUSHED_BACK_FROM_MAIN_REVISION', {
+                    mainPeriod: periodData.periodNumber,
+                    count: pushedBackCount
+                });
+            }
+        }
+
         // Switch to G702 tab and re-render so Billed to Date shows the restored historical values
         switchPayAppTab('payapp');
 
@@ -1413,6 +1457,7 @@ let mainLienWaiver = JSON.parse(localStorage.getItem('mainLienWaiver') || '{}');
                     <div class="workflow-bar px-4 py-2.5 flex items-center gap-3 text-sm bg-emerald-950/40 border border-emerald-600 rounded-md">
                         <span class="text-emerald-400"><i class="fa-solid fa-check-circle"></i></span>
                         <span class="text-emerald-300">Period ${periodData.periodNumber} restored as Draft. Billed to Date has been rewound to the exact historical snapshot values.</span>
+                        ${pushedBackCount > 0 ? `<span class="text-amber-400 ml-2">+ ${pushedBackCount} related Sub Pay App(s) moved back to Tracker for revision.</span>` : ''}
                     </div>
                 `;
                 setTimeout(() => {
@@ -5067,13 +5112,8 @@ let mainLienWaiver = JSON.parse(localStorage.getItem('mainLienWaiver') || '{}');
         }
 
         // === Move to RIGHT HAND: Save/ensure in subPayAppHistory as Approved ===
-        // Compliance ($0) entries are now keyed by the MAIN G702 period number at approval time.
-        // This allows multiple 1005 (Compliance) entries for the same sub across different main periods
-        // without overwriting. Display everywhere still shows "1005 (Compliance)" via the isCompliance flag.
-        const mainPeriodAtApproval = currentPayAppPeriod ? currentPayAppPeriod.periodNumber : null;
-        const historyKey = (pendingEntry.isCompliance === true && mainPeriodAtApproval)
-            ? mainPeriodAtApproval
-            : currentPeriodNum;
+        // For compliance ($0) submissions, use a fixed high number (1005) so it never collides with real pay apps 1, 2, 3...
+        const historyKey = (pendingEntry.isCompliance === true) ? 1005 : currentPeriodNum;
 
         if (!subPayAppHistory[companyId]) subPayAppHistory[companyId] = {};
         subPayAppHistory[companyId][historyKey] = {
@@ -5091,8 +5131,7 @@ let mainLienWaiver = JSON.parse(localStorage.getItem('mainLienWaiver') || '{}');
             billedToDateBefore: billedToDateSnapshot,
             archived: false,
             isCompliance: pendingEntry.isCompliance === true,
-            pushedFromMainPeriod: mainPeriodAtApproval,
-            mainG702Period: mainPeriodAtApproval
+            mainG702Period: currentPayAppPeriod ? currentPayAppPeriod.periodNumber : null
         };
         localStorage.setItem('subPayAppHistory', JSON.stringify(subPayAppHistory));
 
@@ -6055,13 +6094,7 @@ function printSubcontractorG703(companyId) {
             opt.value = pNum;
             const status = entry.status || 'Approved';
             const mainP = entry.pushedFromMainPeriod || entry.mainG702Period || pNum;
-
-            // Special display for compliance entries
-            let payAppLabel = (entry.isCompliance === true || entry.periodNumber === 1005)
-                ? '1005 (Compliance)'
-                : `#${pNum}`;
-
-            opt.textContent = `Main Period ${mainP} • ${payAppLabel} • ${entry.periodStart || ''} to ${entry.periodEnd || ''} (${status})`;
+            opt.textContent = `Main Period ${mainP} • Pay App #${pNum} • ${entry.periodStart || ''} to ${entry.periodEnd || ''} (${status})`;
             periodSelect.appendChild(opt);
         });
     }
@@ -6398,10 +6431,10 @@ function printSubcontractorG703(companyId) {
             const approvedStr = app.approvedDate ? new Date(app.approvedDate).toLocaleDateString() : '—';
             const periodStr = `${app.periodStart || ''} — ${app.periodEnd || ''}`;
 
-            const mainPeriodDisplay = app.pushedFromMainPeriod || app.mainG702Period || app.periodNum || '—';
-            const payAppDisplay = (app.isCompliance === true || app.periodNumber === 1005)
+            const mainPeriodDisplay = app.pushedFromMainPeriod || app.periodNum || '—';
+            const payAppDisplay = (app.isCompliance || String(app.periodNum) === '1005' || app.periodNum === 1005)
                 ? `1005 (Compliance)`
-                : `#${app.periodNum || app.periodNumber}`;
+                : `#${app.periodNum}`;
 
             html += `
                 <tr ondblclick="loadSpecificHistoricalPayApp('${app.companyId}', ${app.periodNum})" 
