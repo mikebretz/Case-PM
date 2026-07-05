@@ -1298,8 +1298,10 @@ let mainLienWaiver = JSON.parse(localStorage.getItem('mainLienWaiver') || '{}');
             tbody.appendChild(row);
         });
 
-        // Show "Request Revision" button ONLY for the most recent historical period
-        const isMostRecent = payAppHistory.length > 0 && payAppHistory[payAppHistory.length - 1].id == periodId;
+        // Show "Request Revision" button ONLY for the most recent historical period (robust: uses max periodNumber, not array order)
+        const currentPeriodNum = parseInt(periodData.periodNumber, 10) || 0;
+        const maxPeriodNum = payAppHistory.reduce((max, p) => Math.max(max, parseInt(p.periodNumber, 10) || 0), 0);
+        const isMostRecent = currentPeriodNum > 0 && currentPeriodNum === maxPeriodNum;
 
         let revisionButtonHTML = '';
         if (isMostRecent) {
@@ -1402,30 +1404,27 @@ let mainLienWaiver = JSON.parse(localStorage.getItem('mainLienWaiver') || '{}');
             restoredFromHistoryId: periodId
         });
 
-        // === UN-ARCHIVE SUB PAY APPS FOR THIS HISTORICAL PERIOD (so they re-appear in Sub Pay App Tracker) ===
-        // When contractor requests revision on previous Period N, any sub papers that were archived
-        // with pushedFromMainPeriod === N (or direct period key match) become active again in Tracker.
-        // This lets the PM click "Request Revision" on the matching sub pay apps for that same period.
-        const restorePeriodNum = periodData.periodNumber;
-        if (subPayAppHistory && typeof subPayAppHistory === 'object') {
+        // === RESTORE SUB PAY APPS FOR THIS PERIOD TO TRACKER ===
+        // When revising a previous main G702 period, un-archive any sub pay apps (normal or 1005 Compliance)
+        // that were originally pushed/archived from this exact main period number. This puts them back
+        // in the Sub Pay App Tracker so you can revise the subs for this period too.
+        if (typeof subPayAppHistory !== 'undefined' && subPayAppHistory && periodData.periodNumber != null) {
+            const targetMainPeriod = parseInt(periodData.periodNumber, 10);
+            let subsRestored = false;
             Object.keys(subPayAppHistory).forEach(cid => {
                 const hist = subPayAppHistory[cid];
-                if (!hist || typeof hist !== 'object') return;
-                // Direct key match (normal pay apps)
-                if (hist[restorePeriodNum]) {
-                    if (hist[restorePeriodNum].archived === true) {
-                        hist[restorePeriodNum].archived = false;
-                    }
-                }
-                // Also un-archive any tagged entries for this main period (e.g. multiple 1005 Compliance under same period)
-                Object.keys(hist).forEach(key => {
-                    const entry = hist[key];
-                    if (entry && entry.pushedFromMainPeriod === restorePeriodNum && entry.archived === true) {
+                if (!hist) return;
+                Object.keys(hist).forEach(pKey => {
+                    const entry = hist[pKey];
+                    if (entry && entry.pushedFromMainPeriod === targetMainPeriod && entry.archived === true) {
                         entry.archived = false;
+                        subsRestored = true;
                     }
                 });
             });
-            localStorage.setItem('subPayAppHistory', JSON.stringify(subPayAppHistory));
+            if (subsRestored) {
+                localStorage.setItem('subPayAppHistory', JSON.stringify(subPayAppHistory));
+            }
         }
 
         // Switch to G702 tab and re-render so Billed to Date shows the restored historical values
@@ -1438,7 +1437,7 @@ let mainLienWaiver = JSON.parse(localStorage.getItem('mainLienWaiver') || '{}');
                 wb.innerHTML = `
                     <div class="workflow-bar px-4 py-2.5 flex items-center gap-3 text-sm bg-emerald-950/40 border border-emerald-600 rounded-md">
                         <span class="text-emerald-400"><i class="fa-solid fa-check-circle"></i></span>
-                        <span class="text-emerald-300">Period ${periodData.periodNumber} restored as Draft. Billed to Date has been rewound to the exact historical snapshot values.</span>
+                        <span class="text-emerald-300">Period ${periodData.periodNumber} restored as Draft. Sub pay apps for this period have been restored to the Sub Pay App Tracker. Billed to Date rewound to historical snapshot.</span>
                     </div>
                 `;
                 setTimeout(() => {
@@ -7735,16 +7734,10 @@ function printSubcontractorG703(companyId) {
             const companyId = company.id;
             const lines = subcontractorSOV[companyId] || [];
             const status = getSubSOVStatus(companyId);
-            // === Pick displayed period: In revision Draft mode, prefer the sub entry matching CURRENT main period ===
-            // (when contractor requests revision on previous Period N, un-archived sub papers for N now appear in Tracker
-            //  with Request Revision button ready for that exact period. Subs that advanced independently still show their latest.)
+            // === Always pick the SINGLE MOST RECENT ACTIVE (non-archived) pay app period for this sub ===
             let displayedPayAppNum = subPayAppNumbers[companyId] || 1;
-            const currentMainPeriod = currentPayAppPeriod ? currentPayAppPeriod.periodNumber : null;
-            const isRevisionDraft = !!(currentPayAppPeriod && currentPayAppPeriod.status === 'Draft' &&
-                payAppHistory && payAppHistory.some(p => Number(p.periodNumber) === Number(currentMainPeriod)));
-
-            // First, compute the most recent active non-archived period (always)
             if (subPayAppHistory[companyId]) {
+                // Prefer clean numeric keys; ignore old ZERO_ string keys for period selection
                 const periods = Object.keys(subPayAppHistory[companyId])
                     .filter(k => !isNaN(parseInt(k)))
                     .map(Number)
@@ -7754,17 +7747,6 @@ function printSubcontractorG703(companyId) {
                     }).sort((a,b) => b - a);
                 if (periods.length > 0) displayedPayAppNum = periods[0];
             }
-
-            // Then, if in revision Draft mode AND this sub has an active (non-archived) entry for exactly the current main period,
-            // override to show THAT period's paper + its Request Revision button (this is the "push back to tracker" behavior).
-            if (isRevisionDraft && currentMainPeriod && subPayAppHistory[companyId] && subPayAppHistory[companyId][currentMainPeriod]) {
-                const candidate = subPayAppHistory[companyId][currentMainPeriod];
-                if (candidate && (candidate.status === 'Approved' || candidate.status === 'Pending Approval') && candidate.archived !== true) {
-                    displayedPayAppNum = currentMainPeriod;
-                }
-            }
-
-            // Pending submission (left-hand) always wins for its own number
             if (subPendingSubmissions[companyId] && subPendingSubmissions[companyId].periodNumber) {
                 const pn = subPendingSubmissions[companyId].periodNumber;
                 if (!isNaN(parseInt(pn))) displayedPayAppNum = pn;
