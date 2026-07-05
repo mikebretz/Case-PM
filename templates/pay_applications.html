@@ -1298,10 +1298,12 @@ let mainLienWaiver = JSON.parse(localStorage.getItem('mainLienWaiver') || '{}');
             tbody.appendChild(row);
         });
 
-        // Show "Request Revision" button ONLY for the most recent historical period (robust: uses max periodNumber, not array order)
-        const currentPeriodNum = parseInt(periodData.periodNumber, 10) || 0;
-        const maxPeriodNum = payAppHistory.reduce((max, p) => Math.max(max, parseInt(p.periodNumber, 10) || 0), 0);
-        const isMostRecent = currentPeriodNum > 0 && currentPeriodNum === maxPeriodNum;
+        // Show "Request Revision" button ONLY for the most recent historical period
+        // Strictly by highest periodNumber (user requirement: ignore array order and dates)
+        const maxPeriodNum = payAppHistory.length > 0 
+            ? Math.max(...payAppHistory.map(p => Number(p.periodNumber) || 0)) 
+            : 0;
+        const isMostRecent = periodData.periodNumber === maxPeriodNum;
 
         let revisionButtonHTML = '';
         if (isMostRecent) {
@@ -1391,6 +1393,27 @@ let mainLienWaiver = JSON.parse(localStorage.getItem('mainLienWaiver') || '{}');
             localStorage.setItem('contractorSOV', JSON.stringify(contractorSOV));
         }
 
+        // === RESTORE SUB PAY APPS FOR THIS PERIOD BACK TO TRACKER ===
+        // When revising a previous main period, un-archive any sub papers (normal or 1005 Compliance)
+        // that were originally pushed from this exact periodNumber so they reappear in Sub Pay App Tracker.
+        if (typeof subPayAppHistory !== 'undefined' && subPayAppHistory) {
+            let restoredAny = false;
+            Object.keys(subPayAppHistory).forEach(cid => {
+                const hist = subPayAppHistory[cid];
+                if (!hist) return;
+                Object.keys(hist).forEach(key => {
+                    const entry = hist[key];
+                    if (entry && entry.pushedFromMainPeriod === periodData.periodNumber && entry.archived === true) {
+                        entry.archived = false;
+                        restoredAny = true;
+                    }
+                });
+            });
+            if (restoredAny) {
+                localStorage.setItem('subPayAppHistory', JSON.stringify(subPayAppHistory));
+            }
+        }
+
         // Set the current period to a Draft version of this historical period
         currentPayAppPeriod = {
             ...periodData.snapshot.period,
@@ -1404,29 +1427,6 @@ let mainLienWaiver = JSON.parse(localStorage.getItem('mainLienWaiver') || '{}');
             restoredFromHistoryId: periodId
         });
 
-        // === RESTORE SUB PAY APPS FOR THIS PERIOD TO TRACKER ===
-        // When revising a previous main G702 period, un-archive any sub pay apps (normal or 1005 Compliance)
-        // that were originally pushed/archived from this exact main period number. This puts them back
-        // in the Sub Pay App Tracker so you can revise the subs for this period too.
-        if (typeof subPayAppHistory !== 'undefined' && subPayAppHistory && periodData.periodNumber != null) {
-            const targetMainPeriod = parseInt(periodData.periodNumber, 10);
-            let subsRestored = false;
-            Object.keys(subPayAppHistory).forEach(cid => {
-                const hist = subPayAppHistory[cid];
-                if (!hist) return;
-                Object.keys(hist).forEach(pKey => {
-                    const entry = hist[pKey];
-                    if (entry && entry.pushedFromMainPeriod === targetMainPeriod && entry.archived === true) {
-                        entry.archived = false;
-                        subsRestored = true;
-                    }
-                });
-            });
-            if (subsRestored) {
-                localStorage.setItem('subPayAppHistory', JSON.stringify(subPayAppHistory));
-            }
-        }
-
         // Switch to G702 tab and re-render so Billed to Date shows the restored historical values
         switchPayAppTab('payapp');
 
@@ -1437,7 +1437,7 @@ let mainLienWaiver = JSON.parse(localStorage.getItem('mainLienWaiver') || '{}');
                 wb.innerHTML = `
                     <div class="workflow-bar px-4 py-2.5 flex items-center gap-3 text-sm bg-emerald-950/40 border border-emerald-600 rounded-md">
                         <span class="text-emerald-400"><i class="fa-solid fa-check-circle"></i></span>
-                        <span class="text-emerald-300">Period ${periodData.periodNumber} restored as Draft. Sub pay apps for this period have been restored to the Sub Pay App Tracker. Billed to Date rewound to historical snapshot.</span>
+                        <span class="text-emerald-300">Period ${periodData.periodNumber} restored as Draft. Sub pay apps for this period are back in the Sub Pay App Tracker. Billed to Date rewound to snapshot.</span>
                     </div>
                 `;
                 setTimeout(() => {
