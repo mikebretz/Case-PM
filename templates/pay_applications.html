@@ -398,16 +398,14 @@ let requireLienWaiverOnSubPayApp = localStorage.getItem('requireLienWaiverOnSubP
 let requireZeroDollarLienWaiver = localStorage.getItem('requireZeroDollarLienWaiver') === 'true'; // NEW: Zero Dollar Waiver Requirement
 let requireSubmissionDeadline = localStorage.getItem('requireSubmissionDeadline') === 'true';
 let submissionDeadlineDate = localStorage.getItem('submissionDeadlineDate') || '';
+let allowZeroDollarSubPayAppsRaw = localStorage.getItem('allowZeroDollarSubPayApps');
 let allowZeroDollarSubPayApps;
-const storedAllowZero = localStorage.getItem('allowZeroDollarSubPayApps');
-if (storedAllowZero === null) {
-    // Default ON for first-time use (supports compliance workflow out of the box)
+if (allowZeroDollarSubPayAppsRaw === null) {
+    // First time only — default ON so compliance workflow works out of the box
     allowZeroDollarSubPayApps = true;
     localStorage.setItem('allowZeroDollarSubPayApps', 'true');
 } else {
-    // Respect the user's explicit choice (true or false). This makes the setting persist reliably
-    // across hard refreshes and page reloads, just like other base program settings.
-    allowZeroDollarSubPayApps = storedAllowZero !== 'false';
+    allowZeroDollarSubPayApps = allowZeroDollarSubPayAppsRaw === 'true';
 }
 let requireAllSubPayAppsBeforeG702Submit = localStorage.getItem('requireAllSubPayAppsBeforeG702Submit') !== 'false'; // Default ON (true)
 
@@ -5057,8 +5055,11 @@ let mainLienWaiver = JSON.parse(localStorage.getItem('mainLienWaiver') || '{}');
         }
 
         // === Move to RIGHT HAND: Save/ensure in subPayAppHistory as Approved ===
+        // Use distinct string key "C1", "C2"... for compliance entries so they never collide
+        // with real numeric pay app numbers (e.g. real Pay App #1 won't overwrite a previous "C1").
+        const historyKey = isCompliance ? `C${currentPeriodNum}` : currentPeriodNum;
         if (!subPayAppHistory[companyId]) subPayAppHistory[companyId] = {};
-        subPayAppHistory[companyId][currentPeriodNum] = {
+        subPayAppHistory[companyId][historyKey] = {
             periodNumber: currentPeriodNum,
             periodStart: pendingEntry.periodStart || (currentPayAppPeriod ? currentPayAppPeriod.periodStart : ''),
             periodEnd: pendingEntry.periodEnd || (currentPayAppPeriod ? currentPayAppPeriod.periodEnd : ''),
@@ -5072,7 +5073,8 @@ let mainLienWaiver = JSON.parse(localStorage.getItem('mainLienWaiver') || '{}');
             // Snapshot of Billed to Date *before* this app was added (used for correct restoration on Request Revision)
             billedToDateBefore: billedToDateSnapshot,
             archived: false,   // New approved papers start as active in Tracker until explicitly pushed to Previous
-            isCompliance: pendingEntry.isCompliance === true
+            isCompliance: pendingEntry.isCompliance === true,
+            complianceKey: isCompliance ? historyKey : null
         };
         localStorage.setItem('subPayAppHistory', JSON.stringify(subPayAppHistory));
 
