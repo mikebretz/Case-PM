@@ -1298,8 +1298,12 @@ let mainLienWaiver = JSON.parse(localStorage.getItem('mainLienWaiver') || '{}');
             tbody.appendChild(row);
         });
 
-        // Show "Request Revision" button ONLY for the most recent historical period
-        const isMostRecent = payAppHistory.length > 0 && payAppHistory[payAppHistory.length - 1].id == periodId;
+        // Show "Request Revision" button ONLY for the most recent historical period (highest periodNumber)
+        let maxPeriodNum = 0;
+        if (payAppHistory.length > 0) {
+            maxPeriodNum = Math.max(...payAppHistory.map(p => Number(p.periodNumber) || 0));
+        }
+        const isMostRecent = periodData.periodNumber === maxPeriodNum;
 
         let revisionButtonHTML = '';
         if (isMostRecent) {
@@ -7684,20 +7688,20 @@ function printSubcontractorG703(companyId) {
 
         tbody.innerHTML = '';
 
-        // Show subs that have a pending submission OR any non-archived Approved/Pending paper in history.
-        // This is the stable filter for both normal and 1005 (Compliance) pay apps.
+        // Show subs that have an ACTIVE (non-archived) Approved/Pending paper OR a submitted pending paper (from Sub SOV "Submit Application").
+        // Each sub has its own independent PayApp number sequence (e.g. Sub A on #3, Sub B on #5, Sub C on #7 is allowed and expected).
+        // Archived papers are pushed to Previous Sub Pay Apps and no longer appear in this Tracker.
         const subCompanies = companies.filter(c => {
-            const hasPending = !!subPendingSubmissions[c.id];
+            const hasPendingSubmission = !!subPendingSubmissions[c.id];
             const hist = subPayAppHistory[c.id];
-            let hasActive = false;
+            let hasActiveInHistory = false;
             if (hist) {
-                hasActive = Object.keys(hist).some(p => {
+                hasActiveInHistory = Object.keys(hist).some(p => {
                     const e = hist[p];
-                    return e && e.archived !== true && (e.status === 'Approved' || e.status === 'Pending Approval');
+                    return e && (e.status === 'Approved' || e.status === 'Pending Approval') && e.archived !== true;
                 });
             }
-            const isSub = (c.type === 'Subcontractor' || c.company_type === 'Subcontractor');
-            return isSub && (hasPending || hasActive);
+            return (c.type === 'Subcontractor' || c.company_type === 'Subcontractor') && (hasPendingSubmission || hasActiveInHistory);
         });
 
         if (subCompanies.length === 0) {
@@ -7736,22 +7740,11 @@ function printSubcontractorG703(companyId) {
                 if (!historyEntry.status) historyEntry.status = 'Pending Approval';
             }
 
-            // Prefer pending submission's period number if it exists (fixes cases where pending compliance wasn't showing)
-            if (subPendingSubmissions[companyId] && subPendingSubmissions[companyId].periodNumber) {
-                displayedPayAppNum = subPendingSubmissions[companyId].periodNumber;
-                if (!historyEntry) {
-                    historyEntry = subPendingSubmissions[companyId];
-                    if (!historyEntry.status) historyEntry.status = 'Pending Approval';
-                }
-            }
-
             // === COMPLIANCE ($0) DISPLAY: Force 1005 (Compliance) designation ===
             // Compliance entries use a fixed high number so they never collide with real pay apps 1, 2, 3...
             let payAppDisplayValue = displayedPayAppNum;
             const isComplianceEntry = (historyEntry && historyEntry.isCompliance === true) ||
-                                      (subPendingSubmissions[companyId] && subPendingSubmissions[companyId].isCompliance === true) ||
-                                      (historyEntry && (historyEntry.totalBilledThisPeriod || 0) === 0) ||
-                                      (subPendingSubmissions[companyId] && (subPendingSubmissions[companyId].totalBilledThisPeriod || 0) === 0);
+                                      (subPendingSubmissions[companyId] && subPendingSubmissions[companyId].isCompliance === true);
 
             if (isComplianceEntry) {
                 payAppDisplayValue = `1005 (Compliance)`;
