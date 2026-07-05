@@ -5040,11 +5040,12 @@ let mainLienWaiver = JSON.parse(localStorage.getItem('mainLienWaiver') || '{}');
         localStorage.setItem('subLienWaivers', JSON.stringify(subLienWaivers));
 
         // Advance Pay App number for the *next* new submission (this approved paper keeps its original number)
-        // IMPORTANT: Do NOT advance the counter for zero-dollar compliance submissions
+        // IMPORTANT: Do NOT advance the counter for zero-dollar compliance submissions.
+        // Compliance papers ("#1 C") stay on their number; the next real billing submission gets the same number.
         const approvedPayAppNumber = currentPeriodNum;
-        const wasZeroDollar = pendingEntry.isZeroDollar === true || pendingEntry.zeroDollarDisplayLabel;
+        const isCompliance = pendingEntry.isCompliance === true;
 
-        if (!wasZeroDollar) {
+        if (!isCompliance) {
             if (!subPayAppNumbers[companyId]) subPayAppNumbers[companyId] = 1;
             subPayAppNumbers[companyId] = approvedPayAppNumber + 1;  // Next real (non-zero) paper gets the next number
             localStorage.setItem('subPayAppNumbers', JSON.stringify(subPayAppNumbers));
@@ -5065,7 +5066,8 @@ let mainLienWaiver = JSON.parse(localStorage.getItem('mainLienWaiver') || '{}');
             lienWaiver: lienWaiverForHistory,
             // Snapshot of Billed to Date *before* this app was added (used for correct restoration on Request Revision)
             billedToDateBefore: billedToDateSnapshot,
-            archived: false   // New approved papers start as active in Tracker until explicitly pushed to Previous
+            archived: false,   // New approved papers start as active in Tracker until explicitly pushed to Previous
+            isCompliance: pendingEntry.isCompliance === true
         };
         localStorage.setItem('subPayAppHistory', JSON.stringify(subPayAppHistory));
 
