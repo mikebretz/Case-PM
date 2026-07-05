@@ -6037,26 +6037,36 @@ function printSubcontractorG703(companyId) {
 
         if (!subPayAppHistory[companyId]) return;
 
-        const periods = Object.keys(subPayAppHistory[companyId]).map(Number).filter(p => {
-            const e = subPayAppHistory[companyId][p];
+        // Keep string keys so composite compliance keys like "1005_p1" are preserved
+        const periodKeys = Object.keys(subPayAppHistory[companyId]).filter(k => {
+            const e = subPayAppHistory[companyId][k];
             return e && e.archived === true;
-        }).sort((a,b) => b - a); // newest first
-        if (periods.length === 0) return;
+        }).sort((a,b) => {
+            // Sort by main period then by key
+            const ea = subPayAppHistory[companyId][a];
+            const eb = subPayAppHistory[companyId][b];
+            const ma = ea.pushedFromMainPeriod || ea.mainG702Period || 0;
+            const mb = eb.pushedFromMainPeriod || eb.mainG702Period || 0;
+            if (ma !== mb) return mb - ma;
+            return b.localeCompare(a);
+        });
+        if (periodKeys.length === 0) return;
 
-        periods.forEach(pNum => {
-            const entry = subPayAppHistory[companyId][pNum];
+        periodKeys.forEach(key => {
+            const entry = subPayAppHistory[companyId][key];
             const opt = document.createElement('option');
-            opt.value = pNum;
+            opt.value = key; // Use the actual storage key (supports "1005_p1" etc.)
             const status = entry.status || 'Approved';
-            const mainP = entry.pushedFromMainPeriod || entry.mainG702Period || pNum;
-            opt.textContent = `Main Period ${mainP} • Pay App #${pNum} • ${entry.periodStart || ''} to ${entry.periodEnd || ''} (${status})`;
+            const mainP = entry.pushedFromMainPeriod || entry.mainG702Period || key;
+            const displayNum = (entry.isCompliance || key === '1005' || String(key).startsWith('1005')) ? '1005 (Compliance)' : `#${key}`;
+            opt.textContent = `Main Period ${mainP} • ${displayNum} • ${entry.periodStart || ''} to ${entry.periodEnd || ''} (${status})`;
             periodSelect.appendChild(opt);
         });
     }
 
     function loadPreviousSubPayAppData() {
         const subId = document.getElementById('prevSubSelect').value;
-        const periodFilter = document.getElementById('prevSubPeriodSelect').value;
+        const periodFilter = document.getElementById('prevSubPeriodSelect').value; // This is now the actual storage key (may be "1005_p1" or "1005")
         const container = document.getElementById('prevSubHistoryContainer');
         if (!container) return;
 
