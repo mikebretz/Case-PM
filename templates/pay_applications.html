@@ -389,6 +389,7 @@
     let currentPayAppPeriod = JSON.parse(localStorage.getItem('currentPayAppPeriod')) || null;
     let payAppBillingLines = JSON.parse(localStorage.getItem('payAppBillingLines')) || {}; // { sovLineId: {workThisPeriod, materialsStored} }
     let selectedSubCompanyId = null;
+    let selectedTrackerSubId = null;
     let hasUnsavedChanges = false;
     let payAppCollapsedDivisions = new Set();
     let defaultRetainagePercent = parseFloat(localStorage.getItem('payAppRetainagePercent') || '10');
@@ -1299,11 +1300,7 @@ let mainLienWaiver = JSON.parse(localStorage.getItem('mainLienWaiver') || '{}');
         });
 
         // Show "Request Revision" button ONLY for the most recent historical period
-        // Strictly by highest periodNumber (user requirement: ignore array order and dates)
-        const maxPeriodNum = payAppHistory.length > 0 
-            ? Math.max(...payAppHistory.map(p => Number(p.periodNumber) || 0)) 
-            : 0;
-        const isMostRecent = periodData.periodNumber === maxPeriodNum;
+        const isMostRecent = payAppHistory.length > 0 && payAppHistory[payAppHistory.length - 1].id == periodId;
 
         let revisionButtonHTML = '';
         if (isMostRecent) {
@@ -1393,27 +1390,6 @@ let mainLienWaiver = JSON.parse(localStorage.getItem('mainLienWaiver') || '{}');
             localStorage.setItem('contractorSOV', JSON.stringify(contractorSOV));
         }
 
-        // === RESTORE SUB PAY APPS FOR THIS PERIOD BACK TO TRACKER ===
-        // When revising a previous main period, un-archive any sub papers (normal or 1005 Compliance)
-        // that were originally pushed from this exact periodNumber so they reappear in Sub Pay App Tracker.
-        if (typeof subPayAppHistory !== 'undefined' && subPayAppHistory) {
-            let restoredAny = false;
-            Object.keys(subPayAppHistory).forEach(cid => {
-                const hist = subPayAppHistory[cid];
-                if (!hist) return;
-                Object.keys(hist).forEach(key => {
-                    const entry = hist[key];
-                    if (entry && entry.pushedFromMainPeriod === periodData.periodNumber && entry.archived === true) {
-                        entry.archived = false;
-                        restoredAny = true;
-                    }
-                });
-            });
-            if (restoredAny) {
-                localStorage.setItem('subPayAppHistory', JSON.stringify(subPayAppHistory));
-            }
-        }
-
         // Set the current period to a Draft version of this historical period
         currentPayAppPeriod = {
             ...periodData.snapshot.period,
@@ -1437,7 +1413,7 @@ let mainLienWaiver = JSON.parse(localStorage.getItem('mainLienWaiver') || '{}');
                 wb.innerHTML = `
                     <div class="workflow-bar px-4 py-2.5 flex items-center gap-3 text-sm bg-emerald-950/40 border border-emerald-600 rounded-md">
                         <span class="text-emerald-400"><i class="fa-solid fa-check-circle"></i></span>
-                        <span class="text-emerald-300">Period ${periodData.periodNumber} restored as Draft. Sub pay apps for this period are back in the Sub Pay App Tracker. Billed to Date rewound to snapshot.</span>
+                        <span class="text-emerald-300">Period ${periodData.periodNumber} restored as Draft. Billed to Date has been rewound to the exact historical snapshot values.</span>
                     </div>
                 `;
                 setTimeout(() => {
@@ -7646,7 +7622,7 @@ function printSubcontractorG703(companyId) {
             }
         });
 
-        // Summary cards
+        // Summary cards (unchanged)
         cardsContainer.innerHTML = `
             <div class="grid grid-cols-2 md:grid-cols-6 gap-4">
                 <div class="bg-zinc-800 border border-zinc-700 rounded-md p-4">
@@ -7677,7 +7653,7 @@ function printSubcontractorG703(companyId) {
             </div>
         `;
 
-        // Workflow bar
+        // Workflow bar (unchanged)
         workflowBar.innerHTML = `
             <div class="workflow-bar px-4 py-3 flex items-center justify-end gap-3 text-sm">
                 <button onclick="clearAllSubPayAppData()" class="px-3 py-1 bg-red-700 hover:bg-red-600 text-white text-xs rounded font-medium flex items-center gap-1.5 border border-red-600" title="Nuclear reset for all subcontractor pay app data, numbers, history, pending papers, and lien waivers. Use when numbers get stuck.">
@@ -7689,210 +7665,318 @@ function printSubcontractorG703(companyId) {
             </div>
         `;
 
-        // Table Header
-        thead.innerHTML = `
-            <tr>
-                <th class="px-4 py-3 text-left font-medium text-zinc-400">Subcontractor</th>
-                <th class="px-3 py-3 text-center font-medium text-zinc-400 w-24">Pay App #</th>
-                <th class="px-3 py-3 text-center font-medium text-zinc-400 w-36">Request Revision</th>
-                <th class="px-3 py-3 text-center font-medium text-zinc-400 w-48">Status</th>
-                <th class="px-3 py-3 text-center font-medium text-zinc-400 w-28">Lien Waiver</th>
-                <th class="px-4 py-3 text-right font-medium text-emerald-400 w-44" title="Original Commitment + Change Orders">Current Contract</th>
-                <th class="px-4 py-3 text-right font-medium text-zinc-400 w-36">Billed This Period</th>
-                <th class="px-4 py-3 text-right font-medium text-emerald-400 w-40">Billed to Date (at Approval)</th>
-                <th class="px-3 py-3 text-center font-medium text-zinc-400 w-20">% Complete</th>
-                <th class="px-3 py-3 text-center font-medium text-zinc-400 w-28">Insurance</th>
-                <th class="px-4 py-3 text-left font-medium text-zinc-400" style="min-width: 480px; width: 520px;">Notes (PM Editable)</th>
-                <th class="px-4 py-3 text-center font-medium text-zinc-400 w-48">Actions</th>
-            </tr>
-        `;
-
+        // Clear normal table header/body — we use custom split layout for this tab
+        thead.innerHTML = '';
         tbody.innerHTML = '';
 
-        // Show subs that have an ACTIVE (non-archived) Approved/Pending paper OR a submitted pending paper (from Sub SOV "Submit Application").
-        // Each sub has its own independent PayApp number sequence (e.g. Sub A on #3, Sub B on #5, Sub C on #7 is allowed and expected).
-        // Archived papers are pushed to Previous Sub Pay Apps and no longer appear in this Tracker.
-        const subCompanies = companies.filter(c => {
-            const hasPendingSubmission = !!subPendingSubmissions[c.id];
-            const hist = subPayAppHistory[c.id];
-            let hasActiveInHistory = false;
-            if (hist) {
-                hasActiveInHistory = Object.keys(hist).some(p => {
-                    const e = hist[p];
-                    return e && (e.status === 'Approved' || e.status === 'Pending Approval') && e.archived !== true;
-                });
-            }
-            return (c.type === 'Subcontractor' || c.company_type === 'Subcontractor') && (hasPendingSubmission || hasActiveInHistory);
-        });
+        // Get ALL subs that have a Schedule of Values for this project (alphabetical)
+        const allSubCompanies = companies
+            .filter(c => (c.type === 'Subcontractor' || c.company_type === 'Subcontractor') && subcontractorSOV[c.id] && (subcontractorSOV[c.id] || []).length > 0)
+            .sort((a, b) => getCompanyName(a.id).localeCompare(getCompanyName(b.id)));
 
-        if (subCompanies.length === 0) {
-            tbody.innerHTML = `<tr><td colspan="12" class="px-6 py-10 text-center text-zinc-500">No Pay Applications submitted or approved yet this period.<br><span class="text-xs">Submit from Subcontractor Schedule of Values tab (Left Hand) → then Approve to move here (Right Hand).</span></td></tr>`;
+        if (allSubCompanies.length === 0) {
+            const emptyTr = document.createElement('tr');
+            emptyTr.innerHTML = `<td colspan="12" class="px-6 py-10 text-center text-zinc-500">No subcontractors with Schedule of Values yet for this project.<br><span class="text-xs">Add subs and approve their SOVs in the Subcontractor SOV tab first.</span></td>`;
+            tbody.appendChild(emptyTr);
             return;
         }
 
-        subCompanies.forEach(company => {
+        // Create split-pane layout: narrow left list + right detail
+        const splitWrapper = document.createElement('div');
+        splitWrapper.className = 'px-1 py-2';
+        splitWrapper.innerHTML = `
+            <div class="flex gap-4" style="min-height: 560px;">
+                <!-- LEFT: All Subs list (narrow, fits names + status + notify) -->
+                <div class="w-72 flex-shrink-0 border border-zinc-700 rounded-lg bg-zinc-900 flex flex-col overflow-hidden">
+                    <div class="px-3 py-2 bg-zinc-800 border-b border-zinc-700 text-xs font-semibold text-zinc-300 flex items-center justify-between">
+                        <div>Subcontractors — Period ${currentPeriodNum}</div>
+                        <div class="px-2 py-0.5 bg-emerald-900/60 text-emerald-400 rounded text-[10px] font-mono">${allSubCompanies.length}</div>
+                    </div>
+                    <div class="overflow-auto flex-1 p-1.5 space-y-px" id="tracker-sub-list"></div>
+                    <div class="px-3 py-1.5 text-[10px] text-zinc-500 border-t border-zinc-700 bg-zinc-950">
+                        Click a name to view / manage their Pay App for this period
+                    </div>
+                </div>
+
+                <!-- RIGHT: Detail pane for selected sub -->
+                <div class="flex-1 border border-zinc-700 rounded-lg bg-zinc-900 flex flex-col overflow-hidden" id="tracker-detail-pane">
+                    <div class="px-4 py-2.5 bg-zinc-800 border-b border-zinc-700 text-xs font-medium text-zinc-400" id="tracker-detail-header">
+                        Select a subcontractor on the left to view their Pay App status for Period ${currentPeriodNum}
+                    </div>
+                    <div class="flex-1 overflow-auto p-4 text-sm text-zinc-400" id="tracker-detail-content">
+                        <div class="h-full flex flex-col items-center justify-center text-center">
+                            <i class="fa-solid fa-list-check text-3xl text-zinc-600 mb-3"></i>
+                            <div>Choose a subcontractor from the list on the left.</div>
+                            <div class="text-xs mt-1">You'll see their current period Pay App #, status, lien waiver, billed amounts, notes, and actions here.</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        `;
+
+        const fullWidthTd = document.createElement('td');
+        fullWidthTd.colSpan = 12;
+        fullWidthTd.className = 'p-0 align-top';
+        fullWidthTd.appendChild(splitWrapper);
+        const wrapperTr = document.createElement('tr');
+        wrapperTr.appendChild(fullWidthTd);
+        tbody.appendChild(wrapperTr);
+
+        // Populate left list
+        const leftList = splitWrapper.querySelector('#tracker-sub-list');
+        const detailContent = splitWrapper.querySelector('#tracker-detail-content');
+        const detailHeader = splitWrapper.querySelector('#tracker-detail-header');
+
+        allSubCompanies.forEach(company => {
             const companyId = company.id;
+            const name = getCompanyName(companyId);
             const lines = subcontractorSOV[companyId] || [];
-            const status = getSubSOVStatus(companyId);
-            // === Always pick the SINGLE MOST RECENT ACTIVE (non-archived) pay app period for this sub ===
-            let displayedPayAppNum = subPayAppNumbers[companyId] || 1;
-            if (subPayAppHistory[companyId]) {
-                // Prefer clean numeric keys; ignore old ZERO_ string keys for period selection
-                const periods = Object.keys(subPayAppHistory[companyId])
-                    .filter(k => !isNaN(parseInt(k)))
-                    .map(Number)
-                    .filter(p => {
-                        const e = subPayAppHistory[companyId][p];
-                        return e && (e.status === 'Approved' || e.status === 'Pending Approval') && e.archived !== true;
-                    }).sort((a,b) => b - a);
-                if (periods.length > 0) displayedPayAppNum = periods[0];
-            }
-            if (subPendingSubmissions[companyId] && subPendingSubmissions[companyId].periodNumber) {
-                const pn = subPendingSubmissions[companyId].periodNumber;
-                if (!isNaN(parseInt(pn))) displayedPayAppNum = pn;
-            }
 
-            // NOW fetch the correct historyEntry for the chosen (latest active) period number.
-            // Fall back to pending submission if not yet approved into history (so Tracker shows all submitted subs).
-            let historyEntry = subPayAppHistory[companyId] && subPayAppHistory[companyId][displayedPayAppNum];
-            if (!historyEntry && subPendingSubmissions[companyId] && subPendingSubmissions[companyId].periodNumber === displayedPayAppNum) {
-                historyEntry = subPendingSubmissions[companyId];
-                // Treat pending as 'Pending Approval' for display/status purposes in the tracker
-                if (!historyEntry.status) historyEntry.status = 'Pending Approval';
-            }
+            // Status for THIS specific currentPeriodNum (not most-recent logic)
+            let statusBadgeHTML = '';
+            let statusKey = 'not-submitted';
+            const histEntry = subPayAppHistory[companyId] && subPayAppHistory[companyId][currentPeriodNum];
+            const pendEntry = subPendingSubmissions[companyId] && subPendingSubmissions[companyId].periodNumber === currentPeriodNum ? subPendingSubmissions[companyId] : null;
 
-            // === COMPLIANCE ($0) DISPLAY: Force 1005 (Compliance) designation ===
-            // Compliance entries use a fixed high number so they never collide with real pay apps 1, 2, 3...
-            let payAppDisplayValue = displayedPayAppNum;
-            const isComplianceEntry = (historyEntry && historyEntry.isCompliance === true) ||
-                                      (subPendingSubmissions[companyId] && subPendingSubmissions[companyId].isCompliance === true);
-
-            if (isComplianceEntry) {
-                payAppDisplayValue = `1005 (Compliance)`;
+            if (pendEntry) {
+                statusBadgeHTML = `<span class="inline-block px-2 py-0.5 text-[10px] rounded-full bg-amber-900/70 text-amber-400 font-medium">Pending Approval</span>`;
+                statusKey = 'pending';
+            } else if (histEntry) {
+                if (histEntry.status === 'Approved') {
+                    statusBadgeHTML = `<span class="inline-block px-2 py-0.5 text-[10px] rounded-full bg-emerald-900/70 text-emerald-400 font-medium">Approved</span>`;
+                    statusKey = 'approved';
+                } else if (histEntry.status === 'Pending Approval') {
+                    statusBadgeHTML = `<span class="inline-block px-2 py-0.5 text-[10px] rounded-full bg-amber-900/70 text-amber-400 font-medium">Pending Approval</span>`;
+                    statusKey = 'pending';
+                } else {
+                    statusBadgeHTML = `<span class="inline-block px-2 py-0.5 text-[10px] rounded-full bg-zinc-700 text-zinc-400">In Tracker</span>`;
+                }
+            } else {
+                // No submission for current period yet — show draft readiness
+                const draftBilled = lines.reduce((sum, l) => sum + ((l.work_this_period || 0) + (l.materials_stored || 0) + (l.co_billed_this_period || 0)), 0);
+                if (draftBilled > 0) {
+                    statusBadgeHTML = `<span class="inline-block px-2 py-0.5 text-[10px] rounded-full bg-sky-900/70 text-sky-400 font-medium">Ready (Draft)</span>`;
+                } else {
+                    statusBadgeHTML = `<span class="inline-block px-2 py-0.5 text-[10px] rounded-full bg-zinc-700 text-zinc-400">Not Submitted</span>`;
+                }
+                statusKey = 'not-submitted';
             }
 
-            let billedThis = 0;
-            let billedToDateAtApproval = 0;
-            let pctComplete = 0;
+            const item = document.createElement('div');
+            item.className = `sub-tracker-item flex items-center justify-between gap-2 px-3 py-2 rounded-md hover:bg-zinc-800 cursor-pointer text-sm border border-transparent ${selectedTrackerSubId === companyId ? 'bg-emerald-950/40 border-emerald-700' : ''}`;
+            item.dataset.companyId = companyId;
+            item.innerHTML = `
+                <div class="flex-1 min-w-0 pr-1">
+                    <div class="font-medium text-white truncate">${name}</div>
+                    <div class="mt-0.5">${statusBadgeHTML}</div>
+                </div>
+                <button onclick="event.stopImmediatePropagation(); sendSubPayAppNotification(${companyId});" 
+                        class="px-2 py-1 bg-emerald-700 hover:bg-emerald-600 text-white text-xs rounded flex-shrink-0" title="Notify ${name} about Period ${currentPeriodNum} status">
+                    <i class="fa-solid fa-envelope text-xs"></i>
+                </button>
+            `;
 
-            if (historyEntry && historyEntry.status === 'Approved') {
+            item.addEventListener('click', () => {
+                selectedTrackerSubId = companyId;
+                // Update highlights
+                leftList.querySelectorAll('.sub-tracker-item').forEach(el => {
+                    el.classList.remove('bg-emerald-950/40', 'border-emerald-700');
+                    el.classList.add('border-transparent');
+                });
+                item.classList.add('bg-emerald-950/40', 'border-emerald-700');
+                item.classList.remove('border-transparent');
+
+                // Render detail on right
+                renderSubTrackerDetailForPeriod(companyId, currentPeriodNum, detailContent, detailHeader);
+            });
+
+            leftList.appendChild(item);
+        });
+
+        // Auto-select previously chosen sub if still valid
+        if (selectedTrackerSubId && allSubCompanies.some(c => c.id === selectedTrackerSubId)) {
+            const pre = leftList.querySelector(`[data-company-id="${selectedTrackerSubId}"]`);
+            if (pre) pre.click();
+        }
+    }
+
+    // Helper: Render right-hand detail pane for a specific sub + specific period (current G702 period)
+    function renderSubTrackerDetailForPeriod(companyId, periodNum, contentEl, headerEl) {
+        if (!contentEl || !headerEl) return;
+
+        const name = getCompanyName(companyId);
+        const lines = subcontractorSOV[companyId] || [];
+
+        headerEl.innerHTML = `
+            <div class="flex items-center justify-between w-full">
+                <div class="flex items-center gap-2">
+                    <span class="font-semibold text-white">${name}</span>
+                    <span class="text-xs px-2 py-0.5 bg-zinc-700 rounded font-mono">Period ${periodNum}</span>
+                </div>
+                <button onclick="selectedSubCompanyId = ${companyId}; localStorage.setItem('lastSelectedSubSOV', ${companyId}); switchPayAppTab('sub-sov');" 
+                        class="px-3 py-1 text-xs bg-sky-700 hover:bg-sky-600 rounded flex items-center gap-1.5">
+                    <i class="fa-solid fa-edit"></i> <span>Edit SOV / Submit Pay App</span>
+                </button>
+            </div>
+        `;
+
+        // === Data for THIS exact periodNum (scoped, not most-recent) ===
+        let historyEntry = subPayAppHistory[companyId] && subPayAppHistory[companyId][periodNum];
+        let pendingEntry = subPendingSubmissions[companyId] && subPendingSubmissions[companyId].periodNumber === periodNum ? subPendingSubmissions[companyId] : null;
+        const entry = historyEntry || pendingEntry;
+
+        const isComplianceEntry = (entry && entry.isCompliance === true);
+        let payAppDisplayValue = periodNum;
+        if (isComplianceEntry) payAppDisplayValue = `1005 (Compliance)`;
+
+        let billedThis = 0;
+        let billedToDateAtApproval = 0;
+        let pctComplete = 0;
+        let statusBadge = `<span class="px-3 py-0.5 text-xs rounded-full bg-zinc-700 text-zinc-400 font-medium">Not Submitted</span>`;
+        let lienBadge = `<span class="text-red-400"><i class="fa-solid fa-exclamation-circle"></i> Missing</span>`;
+        let hasActivePaper = false;
+
+        if (pendingEntry) {
+            billedThis = pendingEntry.totalBilledThisPeriod || 0;
+            statusBadge = `<span class="px-3 py-0.5 text-xs rounded-full bg-amber-900/70 text-amber-400 font-medium">Pending Approval</span>`;
+            hasActivePaper = true;
+        } else if (historyEntry) {
+            if (historyEntry.status === 'Approved') {
                 billedThis = historyEntry.totalBilledThisPeriod || 0;
-                // Use the snapshot we saved at approval time for accurate "Billed to Date before this app"
                 if (historyEntry.billedToDateBefore) {
                     billedToDateAtApproval = Object.values(historyEntry.billedToDateBefore).reduce((sum, v) => sum + (v || 0), 0);
                 } else {
                     billedToDateAtApproval = lines.reduce((sum, l) => sum + (l.billed_to_date || 0), 0) - billedThis;
                 }
-            } else if (historyEntry && historyEntry.status === 'Pending Approval') {
+                statusBadge = `<span class="px-3 py-0.5 text-xs rounded-full bg-emerald-900/70 text-emerald-400 font-medium">Approved &amp; Committed</span>`;
+            } else if (historyEntry.status === 'Pending Approval') {
                 billedThis = historyEntry.totalBilledThisPeriod || 0;
-            } else if (subPendingSubmissions[companyId] && subPendingSubmissions[companyId].periodNumber === displayedPayAppNum) {
-                billedThis = subPendingSubmissions[companyId].totalBilledThisPeriod || 0;
-            } else {
-                // Calculate from current draft values on SOV
-                billedThis = lines.reduce((sum, l) => sum + ((l.work_this_period || 0) + (l.materials_stored || 0) + (l.co_billed_this_period || 0)), 0);
-            }
-
-            // Simple overall % complete
-            const totalScheduled = lines.reduce((sum, l) => sum + ((l.original_commitment || 0) + (l.change_orders || 0)), 0);
-            const totalBilled = lines.reduce((sum, l) => sum + (l.billed_to_date || 0), 0);
-            pctComplete = totalScheduled > 0 ? Math.round((totalBilled / totalScheduled) * 100) : 0;
-
-            // Current Contract Amount = Original + Change Orders (for display in Tracker)
-            const currentContractAmount = lines.reduce((sum, l) => sum + ((l.original_commitment || 0) + (l.change_orders || 0)), 0);
-
-            const waiverStatus = getLienWaiverStatus(companyId);
-            // Prefer historical snapshot saved at approval time (so waiver stays visible in Tracker after live one is cleared)
-            const hasWaiver = !!(historyEntry && historyEntry.lienWaiver && historyEntry.lienWaiver.filename) || waiverStatus.hasWaiver;
-
-            let statusBadge = '';
-            if (historyEntry && historyEntry.status === 'Approved') {
-                statusBadge = `<span class="px-3 py-0.5 text-xs rounded-full bg-emerald-900/70 text-emerald-400 font-medium">Approved &amp; Committed</span>`;
-            } else if (historyEntry && historyEntry.status === 'Pending Approval') {
                 statusBadge = `<span class="px-3 py-0.5 text-xs rounded-full bg-amber-900/70 text-amber-400 font-medium">Pending Approval</span>`;
-            } else if (historyEntry) {
-                // If we have a historyEntry but status is not set or is something else, treat it as Approved (the paper is in the Tracker)
-                statusBadge = `<span class="px-3 py-0.5 text-xs rounded-full bg-emerald-900/70 text-emerald-400 font-medium">Approved &amp; Committed</span>`;
-            } else if (status === 'Approved') {
-                statusBadge = `<span class="px-3 py-0.5 text-xs rounded-full bg-sky-900/70 text-sky-400 font-medium">Ready for Billing</span>`;
-            } else {
-                statusBadge = `<span class="px-3 py-0.5 text-xs rounded-full bg-zinc-700 text-zinc-400 font-medium">${status}</span>`;
             }
+            hasActivePaper = true;
+        } else {
+            // Draft from current SOV
+            billedThis = lines.reduce((sum, l) => sum + ((l.work_this_period || 0) + (l.materials_stored || 0) + (l.co_billed_this_period || 0)), 0);
+            statusBadge = `<span class="px-3 py-0.5 text-xs rounded-full bg-sky-900/70 text-sky-400 font-medium">Ready for Billing (Draft)</span>`;
+        }
 
-            // Improved lien waiver badge for tracker - shows filename when available (closer to G702 pill style)
-            let lienBadge = '';
-            if (hasWaiver) {
-                let fname = 'Lien Waiver';
-                if (historyEntry && historyEntry.lienWaiver && historyEntry.lienWaiver.filename) {
-                    fname = historyEntry.lienWaiver.filename;
-                } else {
-                    const waiverInfo = getLienWaiverStatus(companyId);
-                    fname = waiverInfo.filename || 'Lien Waiver';
-                }
-                lienBadge = `
-                    <div class="inline-flex items-center gap-1 px-2 py-0.5 bg-emerald-900/60 border border-emerald-600 rounded text-xs" title="${fname}">
-                        <i class="fa-solid fa-file-contract text-emerald-400"></i>
-                        <span class="text-emerald-300 max-w-[100px] truncate">${fname}</span>
-                        <button onclick="event.stopImmediatePropagation(); viewLienWaiver(${companyId}, ${displayedPayAppNum});" class="px-1.5 py-0 bg-emerald-700 hover:bg-emerald-600 text-white rounded text-[10px]">View</button>
-                    </div>`;
-            } else {
-                lienBadge = `<span class="text-red-400"><i class="fa-solid fa-exclamation-circle"></i> Missing</span>`;
-            }
+        // Lien waiver (prefer snapshot from history if present)
+        const waiverStatus = getLienWaiverStatus(companyId);
+        const hasWaiver = !!(entry && entry.lienWaiver && entry.lienWaiver.filename) || waiverStatus.hasWaiver;
+        if (hasWaiver) {
+            let fname = 'Lien Waiver';
+            if (entry && entry.lienWaiver && entry.lienWaiver.filename) fname = entry.lienWaiver.filename;
+            else if (waiverStatus.filename) fname = waiverStatus.filename;
+            lienBadge = `
+                <div class="inline-flex items-center gap-1 px-2 py-0.5 bg-emerald-900/60 border border-emerald-600 rounded text-xs" title="${fname}">
+                    <i class="fa-solid fa-file-contract text-emerald-400"></i>
+                    <span class="text-emerald-300 max-w-[120px] truncate">${fname}</span>
+                    <button onclick="event.stopImmediatePropagation(); viewLienWaiver(${companyId}, ${periodNum});" class="px-1.5 py-0 bg-emerald-700 hover:bg-emerald-600 text-white rounded text-[10px]">View</button>
+                </div>`;
+        }
 
-            // Simple insurance compliance check (demo: green if company has basic fields or always compliant for demo)
-            const insuranceStatus = getInsuranceComplianceStatus(companyId);
-            const insuranceBadge = insuranceStatus.compliant 
-                ? `<span class="px-2 py-0.5 text-[10px] rounded-full bg-emerald-900/70 text-emerald-400 font-medium" title="${insuranceStatus.message}">✓ All Current</span>`
-                : `<span class="px-2 py-0.5 text-[10px] rounded-full bg-red-900/70 text-red-400 font-medium" title="${insuranceStatus.message}">⚠ Review</span>`;
+        // % Complete & Current Contract
+        const totalScheduled = lines.reduce((sum, l) => sum + ((l.original_commitment || 0) + (l.change_orders || 0)), 0);
+        const totalBilled = lines.reduce((sum, l) => sum + (l.billed_to_date || 0), 0);
+        pctComplete = totalScheduled > 0 ? Math.round((totalBilled / totalScheduled) * 100) : 0;
+        const currentContractAmount = lines.reduce((sum, l) => sum + ((l.original_commitment || 0) + (l.change_orders || 0)), 0);
 
-            const row = document.createElement('tr');
-            row.className = 'sov-line-row hover:bg-zinc-800/60 cursor-pointer';
-            row.onclick = () => {
-                selectedSubCompanyId = companyId;
-                localStorage.setItem('lastSelectedSubSOV', companyId);
-                switchPayAppTab('sub-sov');
-            };
+        // Insurance
+        const insuranceStatus = getInsuranceComplianceStatus(companyId);
+        const insuranceBadge = insuranceStatus.compliant 
+            ? `<span class="px-2 py-0.5 text-[10px] rounded-full bg-emerald-900/70 text-emerald-400 font-medium" title="${insuranceStatus.message}">✓ All Current</span>`
+            : `<span class="px-2 py-0.5 text-[10px] rounded-full bg-red-900/70 text-red-400 font-medium" title="${insuranceStatus.message}">⚠ Review</span>`;
 
-            // Notes (simple demo: from status or empty; could be made editable with save to localStorage)
-            const statusData = subSOVStatus[companyId] || {};
-            const notesText = statusData.notes || (historyEntry && historyEntry.notes) || '';
+        // Notes
+        const statusData = subSOVStatus[companyId] || {};
+        const notesText = (statusData.notes || (entry && entry.notes) || '').trim();
 
-            row.innerHTML = `
-                <td class="px-4 py-3 font-medium">
-                    ${getCompanyName(companyId)}
-                </td>
-                <td class="px-3 py-3 text-center font-mono text-emerald-400 text-xs">${payAppDisplayValue}</td>
-                <td class="px-3 py-3 text-center">
-                    ${ (historyEntry) ? `
-                        <button onclick="event.stopImmediatePropagation(); requestRevisionSubPayApp(${companyId}, ${displayedPayAppNum});" 
-                                class="px-3 py-1 bg-amber-600 hover:bg-amber-500 text-white text-xs rounded font-medium flex items-center gap-1 mx-auto" title="Send this Pay App back to Subcontractor SOV tab for editing">
-                            <i class="fa-solid fa-redo text-xs"></i> <span>Request Revision</span>
-                        </button>
-                    ` : '' }
-                </td>
-                <td class="px-3 py-3 text-center">${statusBadge}</td>
-                <td class="px-3 py-3 text-center text-sm">${lienBadge}</td>
-                <td class="px-4 py-3 text-right font-mono text-emerald-300">${formatCurrency(currentContractAmount)}</td>
-                <td class="px-4 py-3 text-right font-mono text-emerald-400">${formatCurrency(billedThis)}</td>
-                <td class="px-4 py-3 text-right font-mono text-emerald-300">${formatCurrency(billedToDateAtApproval)}</td>
-                <td class="px-3 py-3 text-center font-mono text-xs">${pctComplete}%</td>
-                <td class="px-3 py-3 text-center">${insuranceBadge}</td>
-                <td class="px-4 py-2 text-sm text-zinc-300 notes-cell" style="min-width:480px; width:520px; cursor:pointer;" title="Click to edit • ${notesText.replace(/"/g,'&quot;')}" onclick="event.stopImmediatePropagation(); editSubTrackerNote(${companyId}, this)">
-                    ${notesText || '<span class="text-zinc-500 italic">Click to add note...</span>'}
-                    <i class="fa-solid fa-pencil-alt ml-1.5 text-[10px] text-zinc-500"></i>
-                </td>
-                <td class="px-4 py-2 text-center">
-                    <div class="flex items-center justify-center gap-1.5 flex-wrap">
-                        <button onclick="event.stopImmediatePropagation(); sendSubPayAppNotification(${companyId});" 
-                                class="px-2 py-1 bg-emerald-700 hover:bg-emerald-600 text-white text-xs rounded flex items-center" title="Send notification email about outstanding items">
-                            <i class="fa-solid fa-envelope text-xs"></i>
-                        </button>
-                        <button onclick="event.stopImmediatePropagation(); showSubPayAppLog(${companyId});" 
-                                class="px-2 py-1 bg-sky-700 hover:bg-sky-600 text-xs rounded" title="View Log / History"><i class="fa-solid fa-history"></i></button>
+        // Revision button only if there's an actual paper for this period
+        let revisionBtn = '';
+        if (hasActivePaper) {
+            revisionBtn = `
+                <button onclick="event.stopImmediatePropagation(); requestRevisionSubPayApp(${companyId}, ${periodNum});" 
+                        class="px-3 py-1.5 bg-amber-600 hover:bg-amber-500 text-white text-xs rounded font-medium flex items-center gap-1.5">
+                    <i class="fa-solid fa-redo text-xs"></i> <span>Request Revision</span>
+                </button>`;
+        }
+
+        contentEl.innerHTML = `
+            <div class="space-y-4">
+                <!-- Top metrics row -->
+                <div class="grid grid-cols-2 md:grid-cols-4 gap-3">
+                    <div class="bg-zinc-800 border border-zinc-700 rounded p-3">
+                        <div class="text-[10px] text-zinc-400">Pay App #</div>
+                        <div class="text-2xl font-mono text-emerald-400 mt-0.5">${payAppDisplayValue}</div>
                     </div>
-                </td>
-            `;
-            tbody.appendChild(row);
-        });
+                    <div class="bg-zinc-800 border border-zinc-700 rounded p-3">
+                        <div class="text-[10px] text-zinc-400">Status</div>
+                        <div class="mt-1">${statusBadge}</div>
+                    </div>
+                    <div class="bg-zinc-800 border border-zinc-700 rounded p-3">
+                        <div class="text-[10px] text-zinc-400">Billed This Period</div>
+                        <div class="text-xl font-mono text-emerald-400 mt-0.5">${formatCurrency(billedThis)}</div>
+                    </div>
+                    <div class="bg-zinc-800 border border-zinc-700 rounded p-3">
+                        <div class="text-[10px] text-zinc-400">Current Contract</div>
+                        <div class="text-xl font-mono text-emerald-300 mt-0.5">${formatCurrency(currentContractAmount)}</div>
+                    </div>
+                </div>
+
+                <div class="grid grid-cols-1 md:grid-cols-3 gap-3">
+                    <div class="bg-zinc-800 border border-zinc-700 rounded p-3">
+                        <div class="text-[10px] text-zinc-400 mb-1">Lien Waiver</div>
+                        ${lienBadge}
+                    </div>
+                    <div class="bg-zinc-800 border border-zinc-700 rounded p-3">
+                        <div class="text-[10px] text-zinc-400 mb-1">% Complete (Overall)</div>
+                        <div class="text-xl font-mono text-white mt-0.5">${pctComplete}%</div>
+                    </div>
+                    <div class="bg-zinc-800 border border-zinc-700 rounded p-3">
+                        <div class="text-[10px] text-zinc-400 mb-1">Insurance</div>
+                        <div class="mt-1">${insuranceBadge}</div>
+                    </div>
+                </div>
+
+                <!-- Notes -->
+                <div class="bg-zinc-800 border border-zinc-700 rounded p-3">
+                    <div class="flex items-center justify-between mb-1">
+                        <div class="text-[10px] text-zinc-400">Notes (PM only — click to edit)</div>
+                    </div>
+                    <div onclick="event.stopImmediatePropagation(); editSubTrackerNote(${companyId}, this)" 
+                         class="min-h-[42px] px-3 py-2 bg-zinc-900 border border-zinc-600 rounded text-sm text-zinc-200 cursor-pointer hover:border-emerald-600/50"
+                         title="Click to edit note">
+                        ${notesText || '<span class="italic text-zinc-500">Click to add internal note for this subcontractor...</span>'}
+                        <i class="fa-solid fa-pencil-alt ml-2 text-[10px] text-zinc-500"></i>
+                    </div>
+                </div>
+
+                <!-- Actions -->
+                <div class="flex flex-wrap items-center gap-2 pt-1">
+                    ${revisionBtn}
+                    <button onclick="event.stopImmediatePropagation(); sendSubPayAppNotification(${companyId});" 
+                            class="px-3 py-1.5 bg-emerald-700 hover:bg-emerald-600 text-white text-xs rounded font-medium flex items-center gap-1.5">
+                        <i class="fa-solid fa-envelope text-xs"></i> <span>Notify Subcontractor</span>
+                    </button>
+                    <button onclick="event.stopImmediatePropagation(); showSubPayAppLog(${companyId});" 
+                            class="px-3 py-1.5 bg-sky-700 hover:bg-sky-600 text-white text-xs rounded font-medium flex items-center gap-1.5">
+                        <i class="fa-solid fa-history text-xs"></i> <span>View Activity Log</span>
+                    </button>
+                    ${hasActivePaper ? `
+                    <button onclick="event.stopImmediatePropagation(); viewLienWaiver(${companyId}, ${periodNum});" 
+                            class="px-3 py-1.5 bg-zinc-700 hover:bg-zinc-600 text-white text-xs rounded font-medium flex items-center gap-1.5">
+                        <i class="fa-solid fa-file-contract text-xs"></i> <span>View Lien Waiver</span>
+                    </button>` : ''}
+                </div>
+
+                ${!hasActivePaper ? `
+                <div class="text-[11px] text-amber-400/80 bg-amber-950/30 border border-amber-900/50 rounded px-3 py-2">
+                    This subcontractor has not submitted a pay application for Period ${periodNum} yet. 
+                    The billed amount shown reflects their current draft on the Sub SOV tab. 
+                    They can submit from there, or you can notify them using the button above.
+                </div>` : ''}
+            </div>
+        `;
     }
 
     // Expose the function globally if needed for debugging
