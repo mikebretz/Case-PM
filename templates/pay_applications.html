@@ -313,6 +313,17 @@
                 </label>
             </div>
 
+            <!-- NEW: Require Zero-Dollar Lien Waiver Setting -->
+            <div class="pt-3 border-t border-zinc-700">
+                <label class="flex items-center justify-between cursor-pointer">
+                    <div>
+                        <div class="text-sm text-zinc-300">Require Lien Waiver even if billing $0 that month</div>
+                        <div class="text-[10px] text-zinc-500">When ON, Subs must submit a $0 lien waiver for periods with no billing activity (Compliance).</div>
+                    </div>
+                    <input type="checkbox" id="requireZeroDollarLienWaiverToggle" class="w-5 h-5 accent-emerald-600" ${requireZeroDollarLienWaiver ? 'checked' : ''}>
+                </label>
+            </div>
+
             <!-- NEW: Require All Subs with Approved SOVs to Submit Pay App before G702 Submit -->
             <div class="pt-3 border-t border-zinc-700">
                 <label class="flex items-center justify-between cursor-pointer">
@@ -387,13 +398,11 @@ let requireLienWaiverOnSubPayApp = localStorage.getItem('requireLienWaiverOnSubP
 let requireZeroDollarLienWaiver = localStorage.getItem('requireZeroDollarLienWaiver') === 'true'; // NEW: Zero Dollar Waiver Requirement
 let requireSubmissionDeadline = localStorage.getItem('requireSubmissionDeadline') === 'true';
 let submissionDeadlineDate = localStorage.getItem('submissionDeadlineDate') || '';
-let allowZeroDollarSubPayApps = localStorage.getItem('allowZeroDollarSubPayApps');
-if (allowZeroDollarSubPayApps === null) {
-    // First time ever → default ON so compliance workflow works out of the box
+let allowZeroDollarSubPayApps = localStorage.getItem('allowZeroDollarSubPayApps') !== 'false'; // NEW: Allow $0 sub pay apps (compliance) without using a pay app number
+// Default to true only on very first run (null). After that, respect whatever the user saved in Settings.
+if (localStorage.getItem('allowZeroDollarSubPayApps') === null) {
     allowZeroDollarSubPayApps = true;
     localStorage.setItem('allowZeroDollarSubPayApps', 'true');
-} else {
-    allowZeroDollarSubPayApps = (allowZeroDollarSubPayApps === 'true');
 }
 let requireAllSubPayAppsBeforeG702Submit = localStorage.getItem('requireAllSubPayAppsBeforeG702Submit') !== 'false'; // Default ON (true)
 
@@ -5034,23 +5043,21 @@ let mainLienWaiver = JSON.parse(localStorage.getItem('mainLienWaiver') || '{}');
         // IMPORTANT: Do NOT advance the counter for zero-dollar compliance submissions.
         // Compliance papers ("#1 C") stay on their number; the next real billing submission gets the same number.
         const approvedPayAppNumber = currentPeriodNum;
-        const isCompliance = pendingEntry.isCompliance === true;
+        const isComp = pendingEntry.isCompliance === true;
 
-        if (!isCompliance) {
+        if (!isComp) {
             if (!subPayAppNumbers[companyId]) subPayAppNumbers[companyId] = 1;
             subPayAppNumbers[companyId] = approvedPayAppNumber + 1;  // Next real (non-zero) paper gets the next number
             localStorage.setItem('subPayAppNumbers', JSON.stringify(subPayAppNumbers));
         }
 
         // === Move to RIGHT HAND: Save/ensure in subPayAppHistory as Approved ===
-        // Compliance entries use a distinct string key (C1, C2, ...) so they NEVER collide with or get overwritten by real numeric pay apps (1, 2, ...)
-        const isCompliance = pendingEntry.isCompliance === true;
-        const historyKey = isCompliance ? `C${currentPeriodNum}` : currentPeriodNum;
+        // Use distinct string key "C1", "C2"... for compliance so it never collides with real numeric Pay App #1
+        const historyKey = (pendingEntry.isCompliance === true) ? `C${currentPeriodNum}` : currentPeriodNum;
 
         if (!subPayAppHistory[companyId]) subPayAppHistory[companyId] = {};
         subPayAppHistory[companyId][historyKey] = {
             periodNumber: currentPeriodNum,
-            complianceKey: isCompliance ? historyKey : null,
             periodStart: pendingEntry.periodStart || (currentPayAppPeriod ? currentPayAppPeriod.periodStart : ''),
             periodEnd: pendingEntry.periodEnd || (currentPayAppPeriod ? currentPayAppPeriod.periodEnd : ''),
             submittedDate: pendingEntry.submittedDate || new Date().toISOString(),
@@ -5063,7 +5070,7 @@ let mainLienWaiver = JSON.parse(localStorage.getItem('mainLienWaiver') || '{}');
             // Snapshot of Billed to Date *before* this app was added (used for correct restoration on Request Revision)
             billedToDateBefore: billedToDateSnapshot,
             archived: false,
-            isCompliance: isCompliance
+            isCompliance: pendingEntry.isCompliance === true
         };
         localStorage.setItem('subPayAppHistory', JSON.stringify(subPayAppHistory));
 
@@ -5964,26 +5971,34 @@ function printSubcontractorG703(companyId) {
 
         if (!companyId || !subPayAppHistory[companyId]) return;
 
-        // Support both numeric keys (1, 2, ...) and compliance string keys (C1, C2, ...)
-        const periods = Object.keys(subPayAppHistory[companyId]).filter(k => {
+        // Collect both numeric keys (real pay apps) and string keys like "C1", "C2" (compliance)
+        let allKeys = Object.keys(subPayAppHistory[companyId]).filter(k => {
             const e = subPayAppHistory[companyId][k];
             return e && e.archived === true;
-        }).sort((a, b) => {
-            // Put compliance entries (C1, C2) after their numeric counterparts in display order if needed, but keep chronological by approvedDate later
-            const na = parseInt(a, 10) || 9999;
-            const nb = parseInt(b, 10) || 9999;
-            return nb - na;
         });
-        if (periods.length === 0) return;
+
+        // Sort: compliance (C*) first by number, then numeric, newest first overall
+        allKeys.sort((a, b) => {
+            const isCA = String(a).startsWith('C');
+            const isCB = String(b).startsWith('C');
+            if (isCA && !isCB) return -1;
+            if (!isCA && isCB) return 1;
+            if (isCA && isCB) {
+                return parseInt(b.slice(1)) - parseInt(a.slice(1));
+            }
+            return parseInt(b) - parseInt(a);
+        });
+
+        if (allKeys.length === 0) return;
 
         periodSelect.disabled = false;
-        periods.forEach(pKey => {
-            const entry = subPayAppHistory[companyId][pKey];
+        allKeys.forEach(key => {
+            const entry = subPayAppHistory[companyId][key];
             const opt = document.createElement('option');
-            opt.value = pKey;
+            opt.value = key;  // keep original key (number or "C1")
             const status = entry.status || 'Approved';
-            const isComp = entry.isCompliance === true || (typeof pKey === 'string' && pKey.startsWith('C'));
-            const label = isComp ? `Pay App ${pKey} (Compliance)` : `Pay App #${pKey}`;
+            const isComp = entry.isCompliance === true || String(key).startsWith('C');
+            const label = isComp ? `Pay App ${key} (Compliance)` : `Pay App #${key}`;
             opt.textContent = `${label} • ${entry.periodStart || ''} to ${entry.periodEnd || ''} (${status})`;
             periodSelect.appendChild(opt);
         });
