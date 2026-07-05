@@ -5037,12 +5037,9 @@ let mainLienWaiver = JSON.parse(localStorage.getItem('mainLienWaiver') || '{}');
         localStorage.setItem('subcontractorSOV', JSON.stringify(subcontractorSOV));
 
         // Move lien waiver into the approved record (do not keep live on SOV for next period)
-        // Robust for compliance: check pending copy first, then LATEST_COMPLIANCE, then numbered key.
         let lienWaiverForHistory = null;
         if (pendingEntry.lienWaiver && pendingEntry.lienWaiver.filename) {
             lienWaiverForHistory = { ...pendingEntry.lienWaiver };
-        } else if (subLienWaivers[companyId] && subLienWaivers[companyId]['LATEST_COMPLIANCE']) {
-            lienWaiverForHistory = { ...subLienWaivers[companyId]['LATEST_COMPLIANCE'] };
         } else if (subLienWaivers[companyId] && subLienWaivers[companyId][currentPeriodNum]) {
             lienWaiverForHistory = { ...subLienWaivers[companyId][currentPeriodNum] };
         }
@@ -5070,17 +5067,10 @@ let mainLienWaiver = JSON.parse(localStorage.getItem('mainLienWaiver') || '{}');
         }
 
         // === Move to RIGHT HAND: Save/ensure in subPayAppHistory as Approved ===
-        // For compliance ($0) submissions, use a composite key (1005_pX) so multiple compliance entries
-        // for the same sub under different main G702 periods can coexist without overwriting.
-        // Display everywhere remains "1005 (Compliance)".
-        let historyKey;
-        let mainPForCompliance = 1;
-        if (pendingEntry.isCompliance === true) {
-            mainPForCompliance = (currentPayAppPeriod && currentPayAppPeriod.periodNumber) || 1;
-            historyKey = `1005_p${mainPForCompliance}`;
-        } else {
-            historyKey = currentPeriodNum;
-        }
+        // For compliance ($0) submissions, use a composite key so multiple compliance entries for the same sub
+        // can coexist under different main G702 periods without overwriting each other.
+        const mainPeriodForKey = (currentPayAppPeriod && currentPayAppPeriod.periodNumber) ? currentPayAppPeriod.periodNumber : 1;
+        const historyKey = (pendingEntry.isCompliance === true) ? `1005_p${mainPeriodForKey}` : currentPeriodNum;
 
         if (!subPayAppHistory[companyId]) subPayAppHistory[companyId] = {};
         subPayAppHistory[companyId][historyKey] = {
@@ -5098,6 +5088,7 @@ let mainLienWaiver = JSON.parse(localStorage.getItem('mainLienWaiver') || '{}');
             billedToDateBefore: billedToDateSnapshot,
             archived: false,
             isCompliance: pendingEntry.isCompliance === true,
+            pushedFromMainPeriod: currentPayAppPeriod ? currentPayAppPeriod.periodNumber : null,
             mainG702Period: currentPayAppPeriod ? currentPayAppPeriod.periodNumber : null
         };
         localStorage.setItem('subPayAppHistory', JSON.stringify(subPayAppHistory));
@@ -6049,30 +6040,30 @@ function printSubcontractorG703(companyId) {
 
         if (!subPayAppHistory[companyId]) return;
 
-        // Support both numeric keys and composite compliance keys like "1005_p2"
-        const rawKeys = Object.keys(subPayAppHistory[companyId]).filter(k => {
+        // Support both numeric keys and composite compliance keys like "1005_p1"
+        const rawKeys = Object.keys(subPayAppHistory[companyId]);
+        const periods = rawKeys.filter(k => {
             const e = subPayAppHistory[companyId][k];
             return e && e.archived === true;
-        });
-
-        if (rawKeys.length === 0) return;
-
-        // Sort by approvedDate descending (newest first), fallback to key
-        rawKeys.sort((a, b) => {
+        }).sort((a, b) => {
+            // Sort by main period if available, otherwise by key
             const ea = subPayAppHistory[companyId][a];
             const eb = subPayAppHistory[companyId][b];
-            const da = ea.approvedDate ? new Date(ea.approvedDate).getTime() : 0;
-            const db = eb.approvedDate ? new Date(eb.approvedDate).getTime() : 0;
-            return db - da;
+            const ma = ea.pushedFromMainPeriod || ea.mainG702Period || 0;
+            const mb = eb.pushedFromMainPeriod || eb.mainG702Period || 0;
+            if (ma !== mb) return mb - ma;
+            return b.localeCompare(a);
         });
 
-        rawKeys.forEach(key => {
+        if (periods.length === 0) return;
+
+        periods.forEach(key => {
             const entry = subPayAppHistory[companyId][key];
             const opt = document.createElement('option');
-            opt.value = key;  // Use actual storage key so lookup works for composite keys
+            opt.value = key;  // keep the real key (numeric string or "1005_pX")
             const status = entry.status || 'Approved';
-            const mainP = entry.pushedFromMainPeriod || entry.mainG702Period || (entry.isCompliance ? 'Compliance' : key);
-            const payAppLabel = (entry.isCompliance || String(key).startsWith('1005')) ? '1005 (Compliance)' : `#${key}`;
+            const mainP = entry.pushedFromMainPeriod || entry.mainG702Period || key;
+            const payAppLabel = (entry.isCompliance || String(entry.periodNumber) === '1005') ? '1005 (Compliance)' : `#${entry.periodNumber || key}`;
             opt.textContent = `Main Period ${mainP} • ${payAppLabel} • ${entry.periodStart || ''} to ${entry.periodEnd || ''} (${status})`;
             periodSelect.appendChild(opt);
         });
@@ -6095,19 +6086,14 @@ function printSubcontractorG703(companyId) {
                 const entry = hist[p];
                 if (!entry || entry.archived !== true) return;
 
-                const mainP = entry.pushedFromMainPeriod || entry.mainG702Period || (entry.isCompliance ? 'Compliance' : p);
+                const mainP = entry.pushedFromMainPeriod || entry.mainG702Period || entry.periodNum;
                 const matchesSub = !subId || String(cid) === String(subId);
-                // Match on main period, storage key, or periodNumber (handles composite "1005_pX" keys)
-                const matchesPeriod = !periodFilter || 
-                    String(mainP) === String(periodFilter) || 
-                    String(p) === String(periodFilter) ||
-                    String(entry.periodNumber) === String(periodFilter) ||
-                    (entry.isCompliance && String(periodFilter).includes('1005'));
+                const matchesPeriod = !periodFilter || String(mainP) === String(periodFilter) || String(entry.periodNum) === String(periodFilter);
 
                 if (matchesSub && matchesPeriod) {
                     filteredApps.push({
                         companyId: cid,
-                        periodNum: p,  // keep original key (string or number) for correct lookup
+                        periodNum: p,  // keep original key (number or composite string like "1005_p1")
                         companyName: getCompanyName(cid),
                         mainPeriod: mainP,
                         ...entry
@@ -6344,7 +6330,7 @@ function printSubcontractorG703(companyId) {
                 if (entry && entry.archived === true) {
                     allApps.push({
                         companyId: cid,
-                        periodNum: p,  // preserve original key (supports "1005_pX" composite keys)
+                        periodNum: parseInt(p),
                         companyName: getCompanyName(cid),
                         ...entry
                     });
@@ -6357,11 +6343,7 @@ function printSubcontractorG703(companyId) {
             const da = a.approvedDate ? new Date(a.approvedDate).getTime() : 0;
             const db = b.approvedDate ? new Date(b.approvedDate).getTime() : 0;
             if (da !== db) return da - db;
-            // Fallback sort: try numeric, otherwise string compare on the key
-            const na = parseInt(a.periodNum) || 0;
-            const nb = parseInt(b.periodNum) || 0;
-            if (na !== nb) return na - nb;
-            return String(a.periodNum).localeCompare(String(b.periodNum));
+            return a.periodNum - b.periodNum;
         });
 
         if (allApps.length === 0) {
@@ -7760,8 +7742,11 @@ function printSubcontractorG703(companyId) {
             // === COMPLIANCE ($0) DISPLAY: Force 1005 (Compliance) designation ===
             // Compliance entries use a fixed high number so they never collide with real pay apps 1, 2, 3...
             let payAppDisplayValue = displayedPayAppNum;
+            const pendingForThisSub = subPendingSubmissions[companyId];
+            const isZeroDollarPending = pendingForThisSub && (pendingForThisSub.totalBilledThisPeriod === 0 || pendingForThisSub.totalBilledThisPeriod === '0');
             const isComplianceEntry = (historyEntry && historyEntry.isCompliance === true) ||
-                                      (subPendingSubmissions[companyId] && subPendingSubmissions[companyId].isCompliance === true);
+                                      (pendingForThisSub && pendingForThisSub.isCompliance === true) ||
+                                      isZeroDollarPending;
 
             if (isComplianceEntry) {
                 payAppDisplayValue = `1005 (Compliance)`;
@@ -7798,7 +7783,20 @@ function printSubcontractorG703(companyId) {
 
             const waiverStatus = getLienWaiverStatus(companyId);
             // Prefer historical snapshot saved at approval time (so waiver stays visible in Tracker after live one is cleared)
-            const hasWaiver = !!(historyEntry && historyEntry.lienWaiver && historyEntry.lienWaiver.filename) || waiverStatus.hasWaiver;
+            let hasWaiver = !!(historyEntry && historyEntry.lienWaiver && historyEntry.lienWaiver.filename) || waiverStatus.hasWaiver;
+
+            // Extra recovery for pending zero-dollar compliance entries (the case that was failing)
+            if (!hasWaiver && pendingForThisSub && (pendingForThisSub.isCompliance === true || isZeroDollarPending)) {
+                const pendingWaiver = pendingForThisSub.lienWaiver;
+                if (pendingWaiver && pendingWaiver.filename) {
+                    hasWaiver = true;
+                    // Re-attach so it survives re-renders
+                    if (historyEntry) historyEntry.lienWaiver = pendingWaiver;
+                } else if (subLienWaivers[companyId] && subLienWaivers[companyId]['LATEST_COMPLIANCE']) {
+                    hasWaiver = true;
+                    if (historyEntry) historyEntry.lienWaiver = subLienWaivers[companyId]['LATEST_COMPLIANCE'];
+                }
+            }
 
             let statusBadge = '';
             if (historyEntry && historyEntry.status === 'Approved') {
