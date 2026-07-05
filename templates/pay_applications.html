@@ -5037,14 +5037,11 @@ let mainLienWaiver = JSON.parse(localStorage.getItem('mainLienWaiver') || '{}');
         localStorage.setItem('subcontractorSOV', JSON.stringify(subcontractorSOV));
 
         // Move lien waiver into the approved record (do not keep live on SOV for next period)
-        // Extra robust fallback for zero-dollar compliance submissions
         let lienWaiverForHistory = null;
         if (pendingEntry.lienWaiver && pendingEntry.lienWaiver.filename) {
             lienWaiverForHistory = { ...pendingEntry.lienWaiver };
         } else if (subLienWaivers[companyId] && subLienWaivers[companyId][currentPeriodNum]) {
             lienWaiverForHistory = { ...subLienWaivers[companyId][currentPeriodNum] };
-        } else if (subLienWaivers[companyId] && subLienWaivers[companyId]['LATEST_COMPLIANCE']) {
-            lienWaiverForHistory = { ...subLienWaivers[companyId]['LATEST_COMPLIANCE'] };
         }
 
         // Clear live lien waiver for this period from SOV tab
@@ -5070,15 +5067,8 @@ let mainLienWaiver = JSON.parse(localStorage.getItem('mainLienWaiver') || '{}');
         }
 
         // === Move to RIGHT HAND: Save/ensure in subPayAppHistory as Approved ===
-        // Use a UNIQUE key for compliance so multiple 1005 (Compliance) entries per sub (under different main periods) can coexist without overwriting.
-        // Display everywhere still shows "1005 (Compliance)" via isCompliance flag. Storage key is internal only.
-        let historyKey;
-        if (pendingEntry.isCompliance === true) {
-            const mainP = currentPayAppPeriod ? currentPayAppPeriod.periodNumber : Date.now();
-            historyKey = `1005_p${mainP}`;
-        } else {
-            historyKey = currentPeriodNum;
-        }
+        // For compliance ($0) submissions, use a fixed high number (1005) so it never collides with real pay apps 1, 2, 3...
+        const historyKey = (pendingEntry.isCompliance === true) ? 1005 : currentPeriodNum;
 
         if (!subPayAppHistory[companyId]) subPayAppHistory[companyId] = {};
         subPayAppHistory[companyId][historyKey] = {
@@ -5096,8 +5086,7 @@ let mainLienWaiver = JSON.parse(localStorage.getItem('mainLienWaiver') || '{}');
             billedToDateBefore: billedToDateSnapshot,
             archived: false,
             isCompliance: pendingEntry.isCompliance === true,
-            mainG702Period: currentPayAppPeriod ? currentPayAppPeriod.periodNumber : null,
-            pushedFromMainPeriod: currentPayAppPeriod ? currentPayAppPeriod.periodNumber : null
+            mainG702Period: currentPayAppPeriod ? currentPayAppPeriod.periodNumber : null
         };
         localStorage.setItem('subPayAppHistory', JSON.stringify(subPayAppHistory));
 
@@ -6057,12 +6046,10 @@ function printSubcontractorG703(companyId) {
         periods.forEach(pNum => {
             const entry = subPayAppHistory[companyId][pNum];
             const opt = document.createElement('option');
-            opt.value = pNum;  // actual storage key (may be composite like 1005_p2)
+            opt.value = pNum;
             const status = entry.status || 'Approved';
-            const mainP = entry.pushedFromMainPeriod || entry.mainG702Period || entry.periodNum || pNum;
-            const isComp = entry.isCompliance === true || String(pNum).startsWith('1005');
-            const payAppLabel = isComp ? '1005 (Compliance)' : `#${entry.periodNumber || pNum}`;
-            opt.textContent = `Main Period ${mainP} • ${payAppLabel} • ${entry.periodStart || ''} to ${entry.periodEnd || ''} (${status})`;
+            const mainP = entry.pushedFromMainPeriod || entry.mainG702Period || pNum;
+            opt.textContent = `Main Period ${mainP} • Pay App #${pNum} • ${entry.periodStart || ''} to ${entry.periodEnd || ''} (${status})`;
             periodSelect.appendChild(opt);
         });
     }
@@ -6264,14 +6251,12 @@ function printSubcontractorG703(companyId) {
             const approvedStr = app.approvedDate ? new Date(app.approvedDate).toLocaleDateString() : '—';
             const periodStr = `${app.periodStart || ''} — ${app.periodEnd || ''}`;
             const mainPeriodDisplay = app.pushedFromMainPeriod || app.mainPeriod || app.periodNum || '—';
-            const payAppDisplay = (app.isCompliance || String(app.periodNum) === '1005' || app.periodNum === 1005 || String(app.periodNum || '').startsWith('1005'))
+            const payAppDisplay = (app.isCompliance || String(app.periodNum) === '1005' || app.periodNum === 1005)
                 ? `1005 (Compliance)`
                 : `#${app.periodNum}`;
 
-            // Use actual storage key for reliable double-click lookup (supports composite keys like 1005_p2)
-            const clickKey = app.storageKey || app.periodNum;
             html += `
-                <tr class="hover:bg-zinc-700/70 cursor-pointer transition-colors text-base" ondblclick="loadSpecificHistoricalPayApp('${app.companyId}', '${clickKey}')">
+                <tr class="hover:bg-zinc-700/70 cursor-pointer transition-colors text-base" ondblclick="loadSpecificHistoricalPayApp('${app.companyId}', ${app.periodNum})">
                     <td class="p-2 font-medium text-white">${app.companyName}</td>
                     <td class="p-2 text-center font-mono text-sky-400 font-semibold">${mainPeriodDisplay}</td>
                     <td class="p-2 text-center font-mono text-emerald-400 font-semibold">${payAppDisplay}</td>
@@ -6281,7 +6266,7 @@ function printSubcontractorG703(companyId) {
                     <td class="p-2 text-right font-mono text-emerald-400">${formatCurrency(completed)}</td>
                     <td class="p-2 text-right font-mono text-red-400">${formatCurrency(ret)}</td>
                     <td class="p-2 text-center">
-                        <button onclick="event.stopImmediatePropagation(); printHistoricalSubG703('${app.companyId}', '${clickKey}');" class="px-2 py-0.5 text-xs bg-sky-700 hover:bg-sky-600 rounded">Print</button>
+                        <button onclick="event.stopImmediatePropagation(); printHistoricalSubG703('${app.companyId}', ${app.periodNum});" class="px-2 py-0.5 text-xs bg-sky-700 hover:bg-sky-600 rounded">Print</button>
                     </td>
                 </tr>
             `;
@@ -6330,8 +6315,7 @@ function printSubcontractorG703(companyId) {
                 if (entry && entry.archived === true) {
                     allApps.push({
                         companyId: cid,
-                        periodNum: parseInt(p) || p,  // keep original key for composite keys like 1005_p2
-                        storageKey: p,
+                        periodNum: parseInt(p),
                         companyName: getCompanyName(cid),
                         ...entry
                     });
@@ -6448,7 +6432,7 @@ function printSubcontractorG703(companyId) {
         }
     }
 
-    function loadSpecificHistoricalPayApp(companyId, periodNumOrKey) {
+    function loadSpecificHistoricalPayApp(companyId, periodNum) {
         const subSelect = document.getElementById('prevSubSelect');
         const periodSelect = document.getElementById('prevSubPeriodSelect');
         const container = document.getElementById('prevSubHistoryContainer');
@@ -6458,16 +6442,10 @@ function printSubcontractorG703(companyId) {
         subSelect.value = companyId;
         loadPreviousSubPeriods(companyId);
 
-        // Wait for periods to populate, then select the specific one (supports composite keys like 1005_p2 and plain 1005)
+        // Wait for periods to populate, then select the specific one and load data
         setTimeout(() => {
             if (periodSelect.options.length > 1) {
-                // Try exact match first (for composite keys), then fallback to numeric
-                let valToSet = String(periodNumOrKey);
-                let found = Array.from(periodSelect.options).some(o => o.value === valToSet);
-                if (!found && !isNaN(parseInt(periodNumOrKey))) {
-                    valToSet = String(parseInt(periodNumOrKey));
-                }
-                periodSelect.value = valToSet;
+                periodSelect.value = String(periodNum);
                 loadPreviousSubPayAppData();
             }
         }, 80);
