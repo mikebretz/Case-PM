@@ -5067,8 +5067,16 @@ let mainLienWaiver = JSON.parse(localStorage.getItem('mainLienWaiver') || '{}');
         }
 
         // === Move to RIGHT HAND: Save/ensure in subPayAppHistory as Approved ===
-        // For compliance ($0) submissions, use a fixed high number (1005) so it never collides with real pay apps 1, 2, 3...
-        const historyKey = (pendingEntry.isCompliance === true) ? 1005 : currentPeriodNum;
+        // For compliance ($0) submissions, use a COMPOSITE key (1005_pX) based on the MAIN G702 period
+        // so multiple compliance submissions for the same sub across different months/periods can coexist
+        // without overwriting each other. Display everywhere still shows "1005 (Compliance)".
+        let historyKey;
+        let mainPeriodForKey = currentPayAppPeriod ? currentPayAppPeriod.periodNumber : 1;
+        if (pendingEntry.isCompliance === true) {
+            historyKey = `1005_p${mainPeriodForKey}`;
+        } else {
+            historyKey = currentPeriodNum;
+        }
 
         if (!subPayAppHistory[companyId]) subPayAppHistory[companyId] = {};
         subPayAppHistory[companyId][historyKey] = {
@@ -5086,7 +5094,8 @@ let mainLienWaiver = JSON.parse(localStorage.getItem('mainLienWaiver') || '{}');
             billedToDateBefore: billedToDateSnapshot,
             archived: false,
             isCompliance: pendingEntry.isCompliance === true,
-            mainG702Period: currentPayAppPeriod ? currentPayAppPeriod.periodNumber : null
+            pushedFromMainPeriod: mainPeriodForKey,
+            mainG702Period: mainPeriodForKey
         };
         localStorage.setItem('subPayAppHistory', JSON.stringify(subPayAppHistory));
 
@@ -5936,25 +5945,17 @@ function printSubcontractorG703(companyId) {
                         </select>
                     </div>
                     <div>
-                        <label class="block text-xs text-zinc-400 mb-1">Approved Pay App Period (Main G702 Period)</label>
-                        <select id="prevSubPeriodSelect" onchange="loadPreviousSubPayAppData()" class="w-full bg-zinc-900 border border-zinc-600 rounded-md px-4 py-2.5 text-sm text-white">
-                            <option value="">-- All Periods --</option>
+                        <label class="block text-xs text-zinc-400 mb-1">Approved Pay App Period</label>
+                        <select id="prevSubPeriodSelect" onchange="loadPreviousSubPayAppData()" class="w-full bg-zinc-900 border border-zinc-600 rounded-md px-4 py-2.5 text-sm text-white" disabled>
+                            <option value="">-- Select Period --</option>
                         </select>
                     </div>
                 </div>
 
-                <!-- Search bar + View All -->
-                <div class="mt-3 flex flex-col md:flex-row gap-3 items-center justify-between">
-                    <div class="flex-1 w-full md:w-80">
-                        <div class="relative">
-                            <input type="text" id="prevSubSearchInput" placeholder="Search by sub name, pay app #, main period..." 
-                                   class="w-full bg-zinc-900 border border-zinc-600 rounded-md pl-10 pr-4 py-2 text-sm text-white placeholder-zinc-500"
-                                   onkeyup="filterPreviousSubHistory()">
-                            <i class="fa-solid fa-search absolute left-3.5 top-2.5 text-zinc-500"></i>
-                        </div>
-                    </div>
+                <!-- View All button placed above the Approved Pay App Period area as requested -->
+                <div class="mt-3 flex justify-end">
                     <button onclick="showAllHistoricalSubPayAppsSummary()" 
-                            class="px-4 py-2 bg-violet-600 hover:bg-violet-500 text-white text-sm rounded-md flex items-center gap-2 shadow-sm whitespace-nowrap">
+                            class="px-4 py-2 bg-violet-600 hover:bg-violet-500 text-white text-sm rounded-md flex items-center gap-2 shadow-sm">
                         <i class="fa-solid fa-list-ul"></i> 
                         <span>View All Subcontractor Pay Apps (Chronological Summary)</span>
                     </button>
@@ -5964,6 +5965,7 @@ function printSubcontractorG703(companyId) {
         `;
 
         // Populate only subs that have at least one ARCHIVED (pushed) pay app in history.
+        // Papers only appear here after you click "Push to Previous Sub Pay Apps" from the Tracker.
         const subSelect = document.getElementById('prevSubSelect');
         if (subSelect) {
             const subsWithArchived = Object.keys(subPayAppHistory || {}).filter(cid => {
@@ -5980,43 +5982,7 @@ function printSubcontractorG703(companyId) {
                 }
             });
         }
-
-        // Populate period dropdown with ALL unique Main Periods from archived history (unlocked - no sub required first)
-        populateAllMainPeriodsDropdown();
-
-        workflowBar.innerHTML = `<div class="text-xs text-zinc-500 px-4 py-2">Read-only historical records. Use buttons below to Print G703 or View Lien Waiver. Period dropdown now works independently — pick a Main Period to see all subs for that G702 period.</div>`;
-    }
-
-    function populateAllMainPeriodsDropdown() {
-        const periodSelect = document.getElementById('prevSubPeriodSelect');
-        if (!periodSelect) return;
-
-        // Keep the "All Periods" option
-        periodSelect.innerHTML = '<option value="">-- All Periods --</option>';
-
-        const mainPeriods = new Set();
-        Object.keys(subPayAppHistory || {}).forEach(cid => {
-            const hist = subPayAppHistory[cid];
-            if (!hist) return;
-            Object.keys(hist).forEach(p => {
-                const entry = hist[p];
-                if (entry && entry.archived === true) {
-                    const mp = entry.pushedFromMainPeriod || entry.mainG702Period || null;
-                    if (mp) mainPeriods.add(mp);
-                    // Also include the entry's own periodNum as fallback (for older data or compliance display)
-                    if (entry.periodNum && entry.periodNum !== 1005) mainPeriods.add(entry.periodNum);
-                }
-            });
-        });
-
-        // Sort numerically
-        const sorted = Array.from(mainPeriods).sort((a, b) => a - b);
-        sorted.forEach(mp => {
-            const opt = document.createElement('option');
-            opt.value = mp;
-            opt.textContent = `Period ${mp}`;
-            periodSelect.appendChild(opt);
-        });
+        workflowBar.innerHTML = `<div class="text-xs text-zinc-500 px-4 py-2">Read-only historical records. Use buttons below to Print G703 or View Lien Waiver.</div>`;
     }
 
     function loadPreviousSubPeriods(companyId) {
@@ -6024,94 +5990,74 @@ function printSubcontractorG703(companyId) {
         const container = document.getElementById('prevSubHistoryContainer');
         if (!periodSelect || !container) return;
 
+        periodSelect.innerHTML = '<option value="">-- Select Approved Period --</option>';
+        periodSelect.disabled = true;
         container.innerHTML = '';
 
-        if (!companyId) {
-            // No sub selected — repopulate with ALL main periods (global)
-            populateAllMainPeriodsDropdown();
-            return;
-        }
+        if (!companyId || !subPayAppHistory[companyId]) return;
 
-        // Sub selected — show periods for THIS sub (keep per-sub options for precision)
-        periodSelect.innerHTML = '<option value="">-- All Periods for this Sub --</option>';
+        // Collect all archived entries, handling composite keys for compliance (1005_pX)
+        const archivedEntries = [];
+        Object.keys(subPayAppHistory[companyId]).forEach(key => {
+            const e = subPayAppHistory[companyId][key];
+            if (e && e.archived === true) {
+                archivedEntries.push({ key: key, entry: e });
+            }
+        });
+        if (archivedEntries.length === 0) return;
 
-        if (!subPayAppHistory[companyId]) return;
+        // Sort by pushedFromMainPeriod (or mainG702Period) descending, then by key
+        archivedEntries.sort((a, b) => {
+            const ma = a.entry.pushedFromMainPeriod || a.entry.mainG702Period || 0;
+            const mb = b.entry.pushedFromMainPeriod || b.entry.mainG702Period || 0;
+            if (ma !== mb) return mb - ma;
+            return String(b.key).localeCompare(String(a.key));
+        });
 
-        const periods = Object.keys(subPayAppHistory[companyId]).map(Number).filter(p => {
-            const e = subPayAppHistory[companyId][p];
-            return e && e.archived === true;
-        }).sort((a,b) => b - a); // newest first
-        if (periods.length === 0) return;
-
-        periods.forEach(pNum => {
-            const entry = subPayAppHistory[companyId][pNum];
+        periodSelect.disabled = false;
+        archivedEntries.forEach(item => {
+            const key = item.key;
+            const entry = item.entry;
             const opt = document.createElement('option');
-            opt.value = pNum;
+            opt.value = key;  // Use the actual storage key (composite for compliance)
             const status = entry.status || 'Approved';
-            const mainP = entry.pushedFromMainPeriod || entry.mainG702Period || pNum;
-            opt.textContent = `Main Period ${mainP} • Pay App #${pNum} • ${entry.periodStart || ''} to ${entry.periodEnd || ''} (${status})`;
+            let label = '';
+            if (entry.isCompliance === true || String(key).startsWith('1005')) {
+                const mainP = entry.pushedFromMainPeriod || entry.mainG702Period || '?';
+                label = `1005 (Compliance) • Main Period ${mainP}`;
+            } else {
+                label = `Pay App #${entry.periodNumber || key} • ${entry.periodStart || ''} to ${entry.periodEnd || ''}`;
+            }
+            opt.textContent = `${label} (${status})`;
             periodSelect.appendChild(opt);
         });
     }
 
     function loadPreviousSubPayAppData() {
         const subId = document.getElementById('prevSubSelect').value;
-        const periodFilter = document.getElementById('prevSubPeriodSelect').value;
+        const selectedKey = document.getElementById('prevSubPeriodSelect').value;  // Can be "1", "2", or "1005_p2" etc.
         const container = document.getElementById('prevSubHistoryContainer');
-        if (!container) return;
+        if (!container || !subId || !selectedKey) return;
 
-        container.innerHTML = '';
-
-        // Build filtered list of all archived entries
-        let filteredApps = [];
-        Object.keys(subPayAppHistory || {}).forEach(cid => {
-            const hist = subPayAppHistory[cid];
-            if (!hist) return;
-            Object.keys(hist).forEach(p => {
-                const entry = hist[p];
-                if (!entry || entry.archived !== true) return;
-
-                const mainP = entry.pushedFromMainPeriod || entry.mainG702Period || entry.periodNum;
-                const matchesSub = !subId || String(cid) === String(subId);
-                const matchesPeriod = !periodFilter || String(mainP) === String(periodFilter) || String(entry.periodNum) === String(periodFilter);
-
-                if (matchesSub && matchesPeriod) {
-                    filteredApps.push({
-                        companyId: cid,
-                        periodNum: parseInt(p),
-                        companyName: getCompanyName(cid),
-                        mainPeriod: mainP,
-                        ...entry
-                    });
-                }
-            });
-        });
-
-        if (filteredApps.length === 0) {
-            container.innerHTML = `<div class="text-zinc-400 p-4">No matching historical pay apps found for the selected filters.</div>`;
+        let historyEntry = subPayAppHistory[subId] && subPayAppHistory[subId][selectedKey];
+        // Fallback for old flat 1005 keys or numeric
+        if (!historyEntry && (selectedKey === '1005' || selectedKey == 1005)) {
+            historyEntry = subPayAppHistory[subId] && subPayAppHistory[subId][1005];
+        }
+        if (!historyEntry) {
+            container.innerHTML = `<div class="text-zinc-400 p-4">No data found for this period.</div>`;
             return;
         }
 
-        // If exactly one entry and a specific sub+period was chosen, show the detailed G703 view
-        if (filteredApps.length === 1 && subId && periodFilter) {
-            const app = filteredApps[0];
-            showDetailedHistoricalEntry(app, container);
-            return;
-        }
-
-        // Otherwise show a compact filtered table (supports period-only or sub-only or both)
-        showFilteredHistoricalTable(filteredApps, container);
-    }
-
-    function showDetailedHistoricalEntry(app, container) {
-        const historyEntry = app;
-        const subId = app.companyId;
-        const periodNum = app.periodNum;
-        const companyName = app.companyName;
-
+        const companyName = getCompanyName(subId);
         let rows = '';
         let totalScheduled = 0, totalPrev = 0, totalWork = 0, totalMat = 0, totalCompleted = 0, totalRet = 0, totalBalance = 0;
         const retainageRate = (typeof defaultRetainagePercent !== 'undefined' ? defaultRetainagePercent : 10) / 100;
+
+        // Nice display label for compliance vs normal
+        const isComp = historyEntry.isCompliance === true || String(selectedKey).startsWith('1005');
+        const mainPeriodLabel = historyEntry.pushedFromMainPeriod || historyEntry.mainG702Period || '';
+        const displayPayAppLabel = isComp ? `1005 (Compliance)${mainPeriodLabel ? ' • Main Period ' + mainPeriodLabel : ''}` : `#${historyEntry.periodNumber || selectedKey}`;
 
         (historyEntry.lines || []).forEach((line, idx) => {
             const scheduled = (line.original_commitment || 0) + (line.change_orders || 0);
@@ -6155,7 +6101,7 @@ function printSubcontractorG703(companyId) {
                 <div class="flex items-center justify-between mb-4">
                     <div>
                         <div class="text-emerald-400 font-semibold">Historical Pay Application — ${companyName}</div>
-                        <div class="text-sm text-zinc-300">Main Period ${historyEntry.pushedFromMainPeriod || historyEntry.mainPeriod || '?'} • Pay App #${periodNum} • ${historyEntry.periodStart} to ${historyEntry.periodEnd}</div>
+                        <div class="text-sm text-zinc-300">${displayPayAppLabel} • ${historyEntry.periodStart} to ${historyEntry.periodEnd}</div>
                         <div class="text-xs text-zinc-400 mt-0.5">Status: <span class="text-emerald-400">${historyEntry.status || 'Approved'}</span> • Approved ${historyEntry.approvedDate ? new Date(historyEntry.approvedDate).toLocaleDateString() : ''}</div>
                     </div>
                     <div class="flex gap-2">
@@ -6171,7 +6117,7 @@ function printSubcontractorG703(companyId) {
                     </div>
                 </div>
 
-                <div class="text-xs text-zinc-400 mb-1">G703 Snapshot — Pay App #${periodNum} (as submitted & approved) ${historyEntry.pushedFromMainPeriod ? `• From Main G702 Period ${historyEntry.pushedFromMainPeriod}` : ''}</div>
+                <div class="text-xs text-zinc-400 mb-1">G703 Snapshot — ${displayPayAppLabel} (as submitted & approved) ${historyEntry.pushedFromMainPeriod ? `• From Main G702 Period ${historyEntry.pushedFromMainPeriod}` : ''}</div>
                 <table class="w-full text-sm border border-zinc-700 mb-3">
                     <thead class="bg-zinc-700 text-sm">
                         <tr>
@@ -6210,99 +6156,8 @@ function printSubcontractorG703(companyId) {
         `;
     }
 
-    function showFilteredHistoricalTable(apps, container) {
-        const retainageRate = (typeof defaultRetainagePercent !== 'undefined' ? defaultRetainagePercent : 10) / 100;
-
-        let html = `
-            <div class="bg-zinc-800 border border-zinc-700 rounded-md p-4">
-                <div class="flex items-center justify-between mb-3">
-                    <div class="font-semibold text-emerald-400 flex items-center gap-2">
-                        <i class="fa-solid fa-filter"></i> 
-                        Filtered Previous Subcontractor Pay Applications (${apps.length} entries)
-                    </div>
-                    <button onclick="document.getElementById('prevSubHistoryContainer').innerHTML = '';" 
-                            class="px-3 py-1 text-xs bg-zinc-700 hover:bg-zinc-600 rounded-md">Clear View</button>
-                </div>
-                <div class="overflow-x-auto">
-                <table class="w-full text-sm border border-zinc-700">
-                    <thead class="bg-zinc-700 text-sm">
-                        <tr>
-                            <th class="p-2 text-left">Subcontractor</th>
-                            <th class="p-2 text-center w-16">Main Period</th>
-                            <th class="p-2 text-center w-24">Pay App #</th>
-                            <th class="p-2 text-left">Pay Period</th>
-                            <th class="p-2 text-left w-28">Approved</th>
-                            <th class="p-2 text-right">Work This Period</th>
-                            <th class="p-2 text-right text-emerald-400">Completed to Date</th>
-                            <th class="p-2 text-right text-red-400">Retainage</th>
-                            <th class="p-2 text-center w-20">Actions</th>
-                        </tr>
-                    </thead>
-                    <tbody class="divide-y divide-zinc-700">
-        `;
-
-        apps.forEach(app => {
-            const lines = app.lines || [];
-            const work = lines.reduce((sum, l) => sum + (l.work_this_period || 0), 0);
-            const mat = lines.reduce((sum, l) => sum + (l.materials_stored || 0), 0);
-            const completed = lines.reduce((sum, l) => sum + ((l.billed_to_date_before || 0) + (l.work_this_period || 0) + (l.materials_stored || 0)), 0);
-            const ret = (work + mat) * retainageRate;
-
-            const approvedStr = app.approvedDate ? new Date(app.approvedDate).toLocaleDateString() : '—';
-            const periodStr = `${app.periodStart || ''} — ${app.periodEnd || ''}`;
-            const mainPeriodDisplay = app.pushedFromMainPeriod || app.mainPeriod || app.periodNum || '—';
-            const payAppDisplay = (app.isCompliance || String(app.periodNum) === '1005' || app.periodNum === 1005)
-                ? `1005 (Compliance)`
-                : `#${app.periodNum}`;
-
-            html += `
-                <tr class="hover:bg-zinc-700/70 cursor-pointer transition-colors text-base" ondblclick="loadSpecificHistoricalPayApp('${app.companyId}', ${app.periodNum})">
-                    <td class="p-2 font-medium text-white">${app.companyName}</td>
-                    <td class="p-2 text-center font-mono text-sky-400 font-semibold">${mainPeriodDisplay}</td>
-                    <td class="p-2 text-center font-mono text-emerald-400 font-semibold">${payAppDisplay}</td>
-                    <td class="p-2 text-xs text-zinc-300">${periodStr}</td>
-                    <td class="p-2 text-xs text-zinc-400">${approvedStr}</td>
-                    <td class="p-2 text-right font-mono text-emerald-400">${formatCurrency(work)}</td>
-                    <td class="p-2 text-right font-mono text-emerald-400">${formatCurrency(completed)}</td>
-                    <td class="p-2 text-right font-mono text-red-400">${formatCurrency(ret)}</td>
-                    <td class="p-2 text-center">
-                        <button onclick="event.stopImmediatePropagation(); printHistoricalSubG703('${app.companyId}', ${app.periodNum});" class="px-2 py-0.5 text-xs bg-sky-700 hover:bg-sky-600 rounded">Print</button>
-                    </td>
-                </tr>
-            `;
-        });
-
-        html += `</tbody></table></div></div>`;
-        container.innerHTML = html;
-    }
-
-    // Live filter for the search bar in Previous Sub Pay Apps tab
-    function filterPreviousSubHistory() {
-        const searchVal = (document.getElementById('prevSubSearchInput') || {}).value || '';
-        const container = document.getElementById('prevSubHistoryContainer');
-        if (!container) return;
-
-        // If the chronological summary is currently open, filter its rows
-        const summaryTable = container.querySelector('table');
-        if (summaryTable) {
-            const rows = summaryTable.querySelectorAll('tbody tr');
-            const term = searchVal.toLowerCase().trim();
-            rows.forEach(row => {
-                const text = row.textContent.toLowerCase();
-                row.style.display = text.includes(term) ? '' : 'none';
-            });
-            return;
-        }
-
-        // Otherwise trigger a filtered load using current dropdown values + search (basic implementation)
-        // For simplicity, if search is used without dropdowns, show the full chronological summary filtered
-        if (searchVal.length > 1) {
-            showAllHistoricalSubPayAppsSummary(searchVal);
-        }
-    }
-
     // ==================== VIEW ALL HISTORICAL SUB PAY APPS SUMMARY (NEW) ====================
-    function showAllHistoricalSubPayAppsSummary(initialSearchTerm = '') {
+    function showAllHistoricalSubPayAppsSummary() {
         const container = document.getElementById('prevSubHistoryContainer');
         if (!container) return;
 
@@ -6310,12 +6165,13 @@ function printSubcontractorG703(companyId) {
         Object.keys(subPayAppHistory || {}).forEach(cid => {
             const hist = subPayAppHistory[cid];
             if (!hist) return;
-            Object.keys(hist).forEach(p => {
-                const entry = hist[p];
+            Object.keys(hist).forEach(storageKey => {
+                const entry = hist[storageKey];
                 if (entry && entry.archived === true) {
                     allApps.push({
                         companyId: cid,
-                        periodNum: parseInt(p),
+                        storageKey: storageKey,           // Preserve actual key for lookup (important for 1005_pX compliance)
+                        periodNum: entry.periodNumber || parseInt(storageKey) || 1005, // For display fallback
                         companyName: getCompanyName(cid),
                         ...entry
                     });
@@ -6346,7 +6202,7 @@ function printSubcontractorG703(companyId) {
                             <i class="fa-solid fa-history"></i> 
                             All Previous Subcontractor Pay Applications — Chronological Order
                         </div>
-                        <div class="text-xs text-zinc-400">Double-click any row to view the full G703 snapshot for that specific pay app. Use the search bar above to filter.</div>
+                        <div class="text-xs text-zinc-400">Double-click any row to view the full G703 snapshot for that specific pay app.</div>
                     </div>
                     <button onclick="document.getElementById('prevSubHistoryContainer').innerHTML = ''; " 
                             class="px-3 py-1.5 text-xs bg-zinc-700 hover:bg-zinc-600 rounded-md flex items-center gap-1.5">
@@ -6355,7 +6211,7 @@ function printSubcontractorG703(companyId) {
                 </div>
 
                 <div class="overflow-x-auto">
-                <table class="w-full text-sm border border-zinc-700" id="chronologicalSummaryTable">
+                <table class="w-full text-sm border border-zinc-700">
                     <thead class="bg-zinc-700 text-sm">
                         <tr>
                             <th class="p-2 text-left">Subcontractor</th>
@@ -6392,7 +6248,7 @@ function printSubcontractorG703(companyId) {
                 : `#${app.periodNum}`;
 
             html += `
-                <tr ondblclick="loadSpecificHistoricalPayApp('${app.companyId}', ${app.periodNum})" 
+                <tr ondblclick="loadSpecificHistoricalPayApp('${app.companyId}', '${app.storageKey || app.periodNum}')" 
                     class="hover:bg-zinc-700/70 cursor-pointer transition-colors text-base">
                     <td class="p-2 font-medium text-white">${app.companyName}</td>
                     <td class="p-2 text-center font-mono text-sky-400 font-semibold">${mainPeriodDisplay}</td>
@@ -6418,42 +6274,45 @@ function printSubcontractorG703(companyId) {
         `;
 
         container.innerHTML = html;
-
-        // If an initial search term was passed (from the tab search bar), apply filter immediately
-        if (initialSearchTerm) {
-            setTimeout(() => {
-                const term = initialSearchTerm.toLowerCase().trim();
-                const rows = container.querySelectorAll('#chronologicalSummaryTable tbody tr');
-                rows.forEach(row => {
-                    const text = row.textContent.toLowerCase();
-                    row.style.display = text.includes(term) ? '' : 'none';
-                });
-            }, 50);
-        }
     }
 
-    function loadSpecificHistoricalPayApp(companyId, periodNum) {
+    function loadSpecificHistoricalPayApp(companyId, periodNumOrKey) {
         const subSelect = document.getElementById('prevSubSelect');
         const periodSelect = document.getElementById('prevSubPeriodSelect');
         const container = document.getElementById('prevSubHistoryContainer');
         if (!subSelect || !periodSelect || !container) return;
 
-        // Set subcontractor and trigger period list load
+        // Set subcontractor and trigger period list load (now handles composite keys in dropdown)
         subSelect.value = companyId;
         loadPreviousSubPeriods(companyId);
 
-        // Wait for periods to populate, then select the specific one and load data
+        // Wait for periods to populate, then select the specific key (composite or numeric) and load data
         setTimeout(() => {
-            if (periodSelect.options.length > 1) {
-                periodSelect.value = String(periodNum);
+            if (periodSelect.options.length > 0) {
+                // Try exact match first (for composite keys like "1005_p2")
+                let found = false;
+                for (let i = 0; i < periodSelect.options.length; i++) {
+                    if (periodSelect.options[i].value === String(periodNumOrKey)) {
+                        periodSelect.value = periodSelect.options[i].value;
+                        found = true;
+                        break;
+                    }
+                }
+                if (!found) {
+                    // Fallback: try numeric or 1005
+                    periodSelect.value = String(periodNumOrKey);
+                }
                 loadPreviousSubPayAppData();
             }
-        }, 80);
+        }, 120);
     }
 
     // Print historical sub G703 (uses the snapshot lines)
-    function printHistoricalSubG703(companyId, periodNumber) {
-        const historyEntry = subPayAppHistory[companyId] && subPayAppHistory[companyId][periodNumber];
+    function printHistoricalSubG703(companyId, periodNumberOrKey) {
+        let historyEntry = subPayAppHistory[companyId] && subPayAppHistory[companyId][periodNumberOrKey];
+        if (!historyEntry && (periodNumberOrKey === '1005' || periodNumberOrKey == 1005)) {
+            historyEntry = subPayAppHistory[companyId] && subPayAppHistory[companyId][1005];
+        }
         if (!historyEntry) {
             showCenteredAlert("Historical data not found.", "warning");
             return;
@@ -6573,8 +6432,11 @@ function printSubcontractorG703(companyId) {
     }
 
     // View historical lien waiver from snapshot
-    function viewHistoricalLienWaiver(companyId, periodNumber) {
-        const historyEntry = subPayAppHistory[companyId] && subPayAppHistory[companyId][periodNumber];
+    function viewHistoricalLienWaiver(companyId, periodNumberOrKey) {
+        let historyEntry = subPayAppHistory[companyId] && subPayAppHistory[companyId][periodNumberOrKey];
+        if (!historyEntry && (periodNumberOrKey === '1005' || periodNumberOrKey == 1005)) {
+            historyEntry = subPayAppHistory[companyId] && subPayAppHistory[companyId][1005];
+        }
         const waiver = historyEntry && historyEntry.lienWaiver;
 
         if (!waiver || !waiver.dataUrl) {
