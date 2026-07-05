@@ -6187,7 +6187,7 @@ function printSubcontractorG703(companyId) {
                 <tr ondblclick="loadSpecificHistoricalPayApp('${app.companyId}', ${app.periodNum})" 
                     class="hover:bg-zinc-700/70 cursor-pointer transition-colors text-base">
                     <td class="p-2 font-medium text-white">${app.companyName}</td>
-                    <td class="p-2 text-center font-mono text-emerald-400 font-semibold">#${app.periodNum}</td>
+                    <td class="p-2 text-center font-mono text-emerald-400 font-semibold">#${app.periodNum}${app.isCompliance === true ? 'C' : ''}</td>
                     <td class="p-2 text-xs text-zinc-300">${periodStr}</td>
                     <td class="p-2 text-xs text-zinc-400">${approvedStr}</td>
                     <td class="p-2 text-right font-mono">${formatCurrency(scheduled)}</td>
