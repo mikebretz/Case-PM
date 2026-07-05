@@ -1298,12 +1298,8 @@ let mainLienWaiver = JSON.parse(localStorage.getItem('mainLienWaiver') || '{}');
             tbody.appendChild(row);
         });
 
-        // Show "Request Revision" button ONLY for the most recent historical period (highest periodNumber)
-        let maxPeriodNum = 0;
-        if (payAppHistory.length > 0) {
-            maxPeriodNum = Math.max(...payAppHistory.map(p => Number(p.periodNumber) || 0));
-        }
-        const isMostRecent = periodData.periodNumber === maxPeriodNum;
+        // Show "Request Revision" button ONLY for the most recent historical period
+        const isMostRecent = payAppHistory.length > 0 && payAppHistory[payAppHistory.length - 1].id == periodId;
 
         let revisionButtonHTML = '';
         if (isMostRecent) {
@@ -1405,6 +1401,32 @@ let mainLienWaiver = JSON.parse(localStorage.getItem('mainLienWaiver') || '{}');
             periodNumber: periodData.periodNumber,
             restoredFromHistoryId: periodId
         });
+
+        // === UN-ARCHIVE SUB PAY APPS FOR THIS HISTORICAL PERIOD (so they re-appear in Sub Pay App Tracker) ===
+        // When contractor requests revision on previous Period N, any sub papers that were archived
+        // with pushedFromMainPeriod === N (or direct period key match) become active again in Tracker.
+        // This lets the PM click "Request Revision" on the matching sub pay apps for that same period.
+        const restorePeriodNum = periodData.periodNumber;
+        if (subPayAppHistory && typeof subPayAppHistory === 'object') {
+            Object.keys(subPayAppHistory).forEach(cid => {
+                const hist = subPayAppHistory[cid];
+                if (!hist || typeof hist !== 'object') return;
+                // Direct key match (normal pay apps)
+                if (hist[restorePeriodNum]) {
+                    if (hist[restorePeriodNum].archived === true) {
+                        hist[restorePeriodNum].archived = false;
+                    }
+                }
+                // Also un-archive any tagged entries for this main period (e.g. multiple 1005 Compliance under same period)
+                Object.keys(hist).forEach(key => {
+                    const entry = hist[key];
+                    if (entry && entry.pushedFromMainPeriod === restorePeriodNum && entry.archived === true) {
+                        entry.archived = false;
+                    }
+                });
+            });
+            localStorage.setItem('subPayAppHistory', JSON.stringify(subPayAppHistory));
+        }
 
         // Switch to G702 tab and re-render so Billed to Date shows the restored historical values
         switchPayAppTab('payapp');
@@ -7713,10 +7735,16 @@ function printSubcontractorG703(companyId) {
             const companyId = company.id;
             const lines = subcontractorSOV[companyId] || [];
             const status = getSubSOVStatus(companyId);
-            // === Always pick the SINGLE MOST RECENT ACTIVE (non-archived) pay app period for this sub ===
+            // === Pick displayed period: In revision Draft mode, prefer the sub entry matching CURRENT main period ===
+            // (when contractor requests revision on previous Period N, un-archived sub papers for N now appear in Tracker
+            //  with Request Revision button ready for that exact period. Subs that advanced independently still show their latest.)
             let displayedPayAppNum = subPayAppNumbers[companyId] || 1;
+            const currentMainPeriod = currentPayAppPeriod ? currentPayAppPeriod.periodNumber : null;
+            const isRevisionDraft = !!(currentPayAppPeriod && currentPayAppPeriod.status === 'Draft' &&
+                payAppHistory && payAppHistory.some(p => Number(p.periodNumber) === Number(currentMainPeriod)));
+
+            // First, compute the most recent active non-archived period (always)
             if (subPayAppHistory[companyId]) {
-                // Prefer clean numeric keys; ignore old ZERO_ string keys for period selection
                 const periods = Object.keys(subPayAppHistory[companyId])
                     .filter(k => !isNaN(parseInt(k)))
                     .map(Number)
@@ -7726,6 +7754,17 @@ function printSubcontractorG703(companyId) {
                     }).sort((a,b) => b - a);
                 if (periods.length > 0) displayedPayAppNum = periods[0];
             }
+
+            // Then, if in revision Draft mode AND this sub has an active (non-archived) entry for exactly the current main period,
+            // override to show THAT period's paper + its Request Revision button (this is the "push back to tracker" behavior).
+            if (isRevisionDraft && currentMainPeriod && subPayAppHistory[companyId] && subPayAppHistory[companyId][currentMainPeriod]) {
+                const candidate = subPayAppHistory[companyId][currentMainPeriod];
+                if (candidate && (candidate.status === 'Approved' || candidate.status === 'Pending Approval') && candidate.archived !== true) {
+                    displayedPayAppNum = currentMainPeriod;
+                }
+            }
+
+            // Pending submission (left-hand) always wins for its own number
             if (subPendingSubmissions[companyId] && subPendingSubmissions[companyId].periodNumber) {
                 const pn = subPendingSubmissions[companyId].periodNumber;
                 if (!isNaN(parseInt(pn))) displayedPayAppNum = pn;
