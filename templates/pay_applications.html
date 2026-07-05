@@ -2370,18 +2370,34 @@ let mainLienWaiver = JSON.parse(localStorage.getItem('mainLienWaiver') || '{}');
             switchPayAppTab('previous-payapps');
         }, 800);
 
-        // === ARCHIVE ALL SUB PAY APPS FOR THIS PERIOD (move from Tracker to Previous Sub Pay Apps) ===
-        // Per user request + AIA flow: When the GC G702 is approved, all sub papers in the Tracker for this period
-        // are archived (pushed to history). This clears the Sub Pay App Tracker for the next cycle.
+        // === ARCHIVE ALL SUB PAY APPS FROM TRACKER (including 1005 Compliance entries) ===
+        // When the main G702 is approved, push EVERY sub pay app currently in the Tracker
+        // (normal numbered ones + 1005 Compliance ones) to Previous Sub Pay Apps.
+        // Compliance entries are tied to the main G702 period they were pushed from.
         if (currentPayAppPeriod && subPayAppHistory) {
-            const pNum = currentPayAppPeriod.periodNumber;
+            const mainPeriod = currentPayAppPeriod.periodNumber;
             Object.keys(subPayAppHistory).forEach(cid => {
-                const entry = subPayAppHistory[cid] && subPayAppHistory[cid][pNum];
-                if (entry && (entry.status === 'Approved' || entry.status === 'Pending Approval') && entry.archived !== true) {
-                    entry.archived = true;
-                    // Also ensure it has an approvedDate if missing
-                    if (!entry.approvedDate) entry.approvedDate = new Date().toISOString();
-                }
+                const hist = subPayAppHistory[cid];
+                if (!hist) return;
+
+                Object.keys(hist).forEach(key => {
+                    const entry = hist[key];
+                    if (!entry) return;
+
+                    const isCompliance = entry.isCompliance === true || String(key).startsWith('1005');
+                    const isActive = (entry.status === 'Approved' || entry.status === 'Pending Approval') && entry.archived !== true;
+
+                    if (isActive) {
+                        entry.archived = true;
+                        entry.pushedFromMainPeriod = mainPeriod; // Record which main G702 period pushed it
+                        if (!entry.approvedDate) entry.approvedDate = new Date().toISOString();
+
+                        // For compliance entries, also store a friendly label
+                        if (isCompliance && !entry.complianceLabel) {
+                            entry.complianceLabel = `1005 (Compliance) — from Main Period ${mainPeriod}`;
+                        }
+                    }
+                });
             });
             localStorage.setItem('subPayAppHistory', JSON.stringify(subPayAppHistory));
         }
@@ -5052,12 +5068,9 @@ let mainLienWaiver = JSON.parse(localStorage.getItem('mainLienWaiver') || '{}');
         }
 
         // === Move to RIGHT HAND: Save/ensure in subPayAppHistory as Approved ===
-        // For compliance ($0) submissions, use a fixed high number (1005) so it never collides with real pay apps 1, 2, 3...
-        const historyKey = (pendingEntry.isCompliance === true) ? 1005 : currentPeriodNum;
-
         if (!subPayAppHistory[companyId]) subPayAppHistory[companyId] = {};
-        subPayAppHistory[companyId][historyKey] = {
-            periodNumber: (pendingEntry.isCompliance === true) ? 1005 : currentPeriodNum,
+        subPayAppHistory[companyId][currentPeriodNum] = {
+            periodNumber: currentPeriodNum,
             periodStart: pendingEntry.periodStart || (currentPayAppPeriod ? currentPayAppPeriod.periodStart : ''),
             periodEnd: pendingEntry.periodEnd || (currentPayAppPeriod ? currentPayAppPeriod.periodEnd : ''),
             submittedDate: pendingEntry.submittedDate || new Date().toISOString(),
@@ -5069,9 +5082,8 @@ let mainLienWaiver = JSON.parse(localStorage.getItem('mainLienWaiver') || '{}');
             lienWaiver: lienWaiverForHistory,
             // Snapshot of Billed to Date *before* this app was added (used for correct restoration on Request Revision)
             billedToDateBefore: billedToDateSnapshot,
-            archived: false,
-            isCompliance: pendingEntry.isCompliance === true,
-            mainG702Period: currentPayAppPeriod ? currentPayAppPeriod.periodNumber : null
+            archived: false,   // New approved papers start as active in Tracker until explicitly pushed to Previous
+            isCompliance: pendingEntry.isCompliance === true
         };
         localStorage.setItem('subPayAppHistory', JSON.stringify(subPayAppHistory));
 
@@ -7507,14 +7519,15 @@ function printSubcontractorG703(companyId) {
                 if (!historyEntry.status) historyEntry.status = 'Pending Approval';
             }
 
-            // === COMPLIANCE ($0) DISPLAY: Force 1005 (Compliance) designation ===
-            // Compliance entries use a fixed high number so they never collide with real pay apps 1, 2, 3...
+            // === COMPLIANCE ($0) DISPLAY: Show as "Pay App #N C" in Tracker ===
+            // The SOV tab stays on the normal number (e.g. Pay App #1 Current).
+            // The Tracker shows the compliance marker "C".
             let payAppDisplayValue = displayedPayAppNum;
             const isComplianceEntry = (historyEntry && historyEntry.isCompliance === true) ||
                                       (subPendingSubmissions[companyId] && subPendingSubmissions[companyId].isCompliance === true);
 
             if (isComplianceEntry) {
-                payAppDisplayValue = `1005 (Compliance)`;
+                payAppDisplayValue = `${displayedPayAppNum} C`;
             }
 
             let billedThis = 0;
