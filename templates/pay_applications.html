@@ -4854,10 +4854,15 @@ let mainLienWaiver = JSON.parse(localStorage.getItem('mainLienWaiver') || '{}');
                 return;
             }
             // Zero-dollar compliance submission allowed.
-            // Force designation to 1005 (Compliance) so it never collides with real pay app numbers.
-            // Multiple 1005 entries are allowed (one per main G702 period).
+            // Use the CURRENT numeric pay app number (e.g. 1), but mark it as compliance.
+            // Do NOT increment the counter. The SOV tab stays on "Pay App #1 Current".
+            // In the Tracker it will be shown as "Pay App #1 C".
             isComplianceSubmission = true;
-            currentPeriodNum = 1005; // Fixed compliance designation
+            if (!subPayAppNumbers[companyId]) {
+                subPayAppNumbers[companyId] = 1;
+                localStorage.setItem('subPayAppNumbers', JSON.stringify(subPayAppNumbers));
+            }
+            currentPeriodNum = subPayAppNumbers[companyId]; // keep the number, do not advance it
         } else {
             // Normal (non-zero) submission
             if (!subPayAppNumbers[companyId]) {
@@ -7498,14 +7503,15 @@ function printSubcontractorG703(companyId) {
                 if (!historyEntry.status) historyEntry.status = 'Pending Approval';
             }
 
-            // === COMPLIANCE ($0) DISPLAY: Always show as 1005 (Compliance) ===
-            // This prevents collision with real pay app numbers and allows multiple 1005 entries (one per main period).
+            // === COMPLIANCE ($0) DISPLAY: Show as "Pay App #N C" in Tracker ===
+            // The SOV tab stays on the normal number (e.g. Pay App #1 Current).
+            // The Tracker shows the compliance marker "C".
             let payAppDisplayValue = displayedPayAppNum;
             const isComplianceEntry = (historyEntry && historyEntry.isCompliance === true) ||
                                       (subPendingSubmissions[companyId] && subPendingSubmissions[companyId].isCompliance === true);
 
             if (isComplianceEntry) {
-                payAppDisplayValue = `1005 (Compliance)`;
+                payAppDisplayValue = `${displayedPayAppNum} C`;
             }
 
             let billedThis = 0;
