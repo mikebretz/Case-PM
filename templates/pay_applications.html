@@ -1300,7 +1300,11 @@ let mainLienWaiver = JSON.parse(localStorage.getItem('mainLienWaiver') || '{}');
         });
 
         // Show "Request Revision" button ONLY for the most recent historical period
-        const isMostRecent = payAppHistory.length > 0 && payAppHistory[payAppHistory.length - 1].id == periodId;
+        // Strictly by highest periodNumber (ignore array order and dates, as requested)
+        const maxPeriodNum = payAppHistory.length > 0 
+            ? Math.max(...payAppHistory.map(p => Number(p.periodNumber) || 0)) 
+            : 0;
+        const isMostRecent = periodData.periodNumber === maxPeriodNum;
 
         let revisionButtonHTML = '';
         if (isMostRecent) {
@@ -1403,63 +1407,58 @@ let mainLienWaiver = JSON.parse(localStorage.getItem('mainLienWaiver') || '{}');
             restoredFromHistoryId: periodId
         });
 
-        // Switch to G702 tab and re-render so Billed to Date shows the restored historical values
-        switchPayAppTab('payapp');
-
-        // === RESTORE SUB PAY APPS + LIEN WAIVERS FOR THIS MAIN PERIOD (so they reappear in Sub Pay App Tracker) ===
-        // This makes the full revision round-trip work: Request Revision on main period → subs' papers + waivers come back into Tracker.
+        // === RESTORE SUB PAY APPS + LIEN WAIVERS for this main period (robust round-trip) ===
         let restoredSubCount = 0;
         let restoredWaiverCount = 0;
-        const targetMainPeriod = periodData.periodNumber;
+        const mainPeriodNum = periodData.periodNumber;
 
         if (subPayAppHistory) {
             Object.keys(subPayAppHistory).forEach(cid => {
                 const hist = subPayAppHistory[cid];
                 if (!hist) return;
-
-                Object.keys(hist).forEach(key => {
-                    const entry = hist[key];
+                Object.keys(hist).forEach(pKey => {
+                    const entry = hist[pKey];
                     if (!entry) return;
-
-                    const taggedMain = entry.pushedFromMainPeriod || entry.mainG702Period;
-                    if (String(taggedMain) === String(targetMainPeriod) && entry.archived === true) {
-                        entry.archived = false; // Bring it back into the Tracker
+                    const pushedFrom = entry.pushedFromMainPeriod || entry.mainPeriod || entry.mainG702Period;
+                    if (Number(pushedFrom) === mainPeriodNum && entry.archived === true) {
+                        entry.archived = false;
                         restoredSubCount++;
-
-                        // Restore lien waiver so the pill appears again in Tracker and Sub SOV
-                        if (entry.lienWaiver && entry.lienWaiver.filename && entry.lienWaiver.dataUrl) {
+                        // Restore lien waiver if it was stored in the history entry
+                        if (entry.lienWaiver && entry.lienWaiver.dataUrl) {
                             if (!subLienWaivers[cid]) subLienWaivers[cid] = {};
-                            // Use the storage key that was used originally (or fall back to the sub's pay app number / 1005)
-                            const waiverKey = entry.periodNumber || key || 'LATEST_COMPLIANCE';
-                            subLienWaivers[cid][waiverKey] = { ...entry.lienWaiver };
+                            // Put it back under both the sub's pay app number and LATEST_COMPLIANCE for safety
+                            const subPayNum = entry.periodNum || entry.periodNumber || pKey;
+                            subLienWaivers[cid][subPayNum] = { ...entry.lienWaiver };
+                            subLienWaivers[cid]['LATEST_COMPLIANCE'] = { ...entry.lienWaiver };
                             restoredWaiverCount++;
                         }
                     }
                 });
             });
-            localStorage.setItem('subPayAppHistory', JSON.stringify(subPayAppHistory));
+            if (restoredSubCount > 0) {
+                localStorage.setItem('subPayAppHistory', JSON.stringify(subPayAppHistory));
+            }
             if (restoredWaiverCount > 0) {
                 localStorage.setItem('subLienWaivers', JSON.stringify(subLienWaivers));
             }
         }
 
-        // Show success banner (now includes sub restore info)
+        // Switch to G702 tab and re-render so Billed to Date shows the restored historical values
+        switchPayAppTab('payapp');
+
+        // Show success as a top banner style message (non-intrusive)
         setTimeout(() => {
             const wb = document.getElementById('payAppWorkflowBar');
             if (wb) {
-                let msg = `Period ${periodData.periodNumber} restored as Draft. Billed to Date has been rewound to the exact historical snapshot values.`;
-                if (restoredSubCount > 0) {
-                    msg += ` ${restoredSubCount} sub pay app(s) + ${restoredWaiverCount} lien waiver(s) restored to Sub Pay App Tracker.`;
-                }
                 wb.innerHTML = `
                     <div class="workflow-bar px-4 py-2.5 flex items-center gap-3 text-sm bg-emerald-950/40 border border-emerald-600 rounded-md">
                         <span class="text-emerald-400"><i class="fa-solid fa-check-circle"></i></span>
-                        <span class="text-emerald-300">${msg}</span>
+                        <span class="text-emerald-300">Period ${periodData.periodNumber} restored as Draft.${restoredSubCount > 0 ? ` ${restoredSubCount} sub pay app(s) + ${restoredWaiverCount} lien waiver(s) restored to Tracker.` : ''} Billed to Date rewound to historical snapshot.</span>
                     </div>
                 `;
                 setTimeout(() => {
                     if (wb && currentPayAppTab === 'payapp') renderPayAppContent();
-                }, 2800);
+                }, 2200);
             }
         }, 120);
     }
@@ -6043,13 +6042,10 @@ function printSubcontractorG703(companyId) {
         periodSelect.innerHTML = '<option value="">-- All Periods --</option>';
 
         const mainPeriods = new Set();
-
-        // 1. From main contractor payAppHistory (guarantees every approved G702 period appears, even if no sub papers tagged it)
+        // Always include every approved main G702 period from payAppHistory (prevents early compliance periods from disappearing)
         (payAppHistory || []).forEach(p => {
-            if (p && p.periodNumber) mainPeriods.add(p.periodNumber);
+            if (p && p.periodNumber) mainPeriods.add(Number(p.periodNumber));
         });
-
-        // 2. From archived sub papers (for extra robustness)
         Object.keys(subPayAppHistory || {}).forEach(cid => {
             const hist = subPayAppHistory[cid];
             if (!hist) return;
@@ -6058,6 +6054,7 @@ function printSubcontractorG703(companyId) {
                 if (entry && entry.archived === true) {
                     const mp = entry.pushedFromMainPeriod || entry.mainG702Period || null;
                     if (mp) mainPeriods.add(mp);
+                    // Also include the entry's own periodNum as fallback (for older data or compliance display)
                     if (entry.periodNum && entry.periodNum !== 1005) mainPeriods.add(entry.periodNum);
                 }
             });
@@ -7790,13 +7787,7 @@ function printSubcontractorG703(companyId) {
             row.innerHTML = `
                 <div class="flex items-center gap-2 min-w-0">
                     <div class="font-medium text-white truncate">${companyName}</div>
-                </div>
-                <div class="flex items-center gap-2 flex-shrink-0">
                     ${statusHTML}
-                    <button onclick="event.stopImmediatePropagation(); sendSubPayAppNotification(${companyId});" 
-                            class="px-1.5 py-0.5 bg-emerald-700 hover:bg-emerald-600 text-white rounded text-[10px]" title="Notify this sub about ${statusForPeriod.status} for Period ${currentPeriodNum}">
-                        <i class="fa-solid fa-envelope text-xs"></i>
-                    </button>
                 </div>
             `;
             listContainer.appendChild(row);
@@ -7813,61 +7804,35 @@ function printSubcontractorG703(companyId) {
         }
     }
 
-    // ROBUST HELPER: Find the active (non-archived) pay app paper for a given main G702 period.
-    // Handles both normal numbered papers and 1005 Compliance papers, whether keyed by main period or by sub's independent number + pushedFromMainPeriod tag.
-    function getActiveSubPayAppPaperForMainPeriod(companyId, mainPeriodNum) {
-        if (!companyId || !mainPeriodNum) return null;
-
+    // Helper: Get status for a specific sub + specific period (used in left list)
+    function getSubPayAppStatusForPeriod(companyId, periodNum) {
+        // Robust lookup: find any active (non-archived) paper for this main G702 period,
+        // whether stored under the main periodNum or under the sub's independent pay app number (with pushedFromMainPeriod tag).
+        let activeEntry = null;
         const hist = subPayAppHistory[companyId] || {};
-        let bestEntry = null;
-        let bestKey = null;
-
-        // 1. Direct key match (some papers are stored under the main period number)
-        if (hist[mainPeriodNum] && hist[mainPeriodNum].archived !== true) {
-            bestEntry = hist[mainPeriodNum];
-            bestKey = mainPeriodNum;
-        }
-
-        // 2. Search all keys for entries explicitly tagged with this main period (most common path for compliance + numbered papers)
-        Object.keys(hist).forEach(key => {
-            const entry = hist[key];
+        Object.keys(hist).forEach(pKey => {
+            const entry = hist[pKey];
             if (!entry || entry.archived === true) return;
-            const taggedMain = entry.pushedFromMainPeriod || entry.mainG702Period;
-            if (String(taggedMain) === String(mainPeriodNum)) {
-                // Prefer Approved over Pending if both exist (rare)
-                if (!bestEntry || (bestEntry.status !== 'Approved' && entry.status === 'Approved')) {
-                    bestEntry = entry;
-                    bestKey = key;
+            const pushed = Number(entry.pushedFromMainPeriod || entry.mainPeriod || entry.mainG702Period || 0);
+            if (pushed === periodNum || Number(pKey) === periodNum) {
+                if (!activeEntry || (entry.status === 'Approved' && activeEntry.status !== 'Approved')) {
+                    activeEntry = entry;
                 }
             }
         });
 
-        // 3. Also check pending submissions that were submitted against this main period
-        const pending = subPendingSubmissions[companyId];
-        if (pending && !pending.archived && (pending.periodNumber === mainPeriodNum || pending.pushedFromMainPeriod === mainPeriodNum)) {
-            if (!bestEntry || bestEntry.status !== 'Approved') {
-                bestEntry = pending;
-                bestKey = 'PENDING';
-            }
-        }
+        const pending = subPendingSubmissions[companyId] && subPendingSubmissions[companyId].periodNumber === periodNum ? subPendingSubmissions[companyId] : null;
 
-        if (bestEntry) {
-            return { entry: bestEntry, storageKey: bestKey, isCompliance: !!(bestEntry.isCompliance || bestEntry.periodNumber === 1005 || String(bestKey).startsWith('1005')) };
+        if (activeEntry && activeEntry.status === 'Approved') {
+            return { status: 'Approved', hasPaper: true };
         }
-        return null;
-    }
-
-    // Helper: Get status for a specific sub + specific main G702 period (used in left list)
-    // Now uses the robust lookup above so status always reflects the actual paper in Sub Pay App Tracker.
-    function getSubPayAppStatusForPeriod(companyId, periodNum) {
-        const paper = getActiveSubPayAppPaperForMainPeriod(companyId, periodNum);
-        if (paper) {
-            const st = paper.entry.status;
-            if (st === 'Approved') return { status: 'Approved', hasPaper: true };
-            if (st === 'Pending Approval') return { status: 'Pending Approval', hasPaper: true };
+        if (activeEntry && activeEntry.status === 'Pending Approval') {
+            return { status: 'Pending Approval', hasPaper: true };
         }
-
-        // No paper yet — check if they have draft amounts on their live SOV
+        if (pending) {
+            return { status: 'Pending Approval', hasPaper: true };
+        }
+        // Check if they have draft amounts on their live SOV (Ready for them to submit)
         const lines = subcontractorSOV[companyId] || [];
         const hasDraftBilling = lines.some(l => (l.work_this_period || 0) > 0 || (l.materials_stored || 0) > 0 || (l.co_billed_this_period || 0) > 0);
         if (hasDraftBilling) {
@@ -7882,24 +7847,25 @@ function printSubcontractorG703(companyId) {
         const companyName = getCompanyName(companyId);
         const lines = subcontractorSOV[companyId] || [];
 
-        // ROBUST LOOKUP: Use the new helper so we correctly find papers even when they are keyed under the sub's independent pay app number
-        // but tagged with pushedFromMainPeriod, or are 1005 Compliance papers.
-        const paperInfo = getActiveSubPayAppPaperForMainPeriod(companyId, currentPeriodNum);
-        const historyEntry = paperInfo ? paperInfo.entry : null;
-        const pendingEntry = (subPendingSubmissions[companyId] && !subPendingSubmissions[companyId].archived) ? subPendingSubmissions[companyId] : null;
+        // Robust find: locate the actual paper for this main G702 period (may be stored under sub's own pay app #)
+        let historyEntry = null;
+        let actualPayAppNumForDisplay = currentPeriodNum;
+        const hist = subPayAppHistory[companyId] || {};
+        Object.keys(hist).forEach(pKey => {
+            const e = hist[pKey];
+            if (!e || e.archived === true) return;
+            const pushed = Number(e.pushedFromMainPeriod || e.mainPeriod || e.mainG702Period || 0);
+            if (pushed === currentPeriodNum || Number(pKey) === currentPeriodNum) {
+                if (!historyEntry || (e.status === 'Approved' && historyEntry.status !== 'Approved')) {
+                    historyEntry = e;
+                    actualPayAppNumForDisplay = e.periodNum || e.periodNumber || pKey;
+                }
+            }
+        });
+        let pendingEntry = subPendingSubmissions[companyId] && subPendingSubmissions[companyId].periodNumber === currentPeriodNum ? subPendingSubmissions[companyId] : null;
 
-        const isCompliance = paperInfo ? paperInfo.isCompliance : false;
-
-        // Show the ACTUAL pay app number from the paper itself (fixes "says pay app 3 when it's really pay app 1 after compliance submissions")
-        let actualPayAppNum = currentPeriodNum;
-        if (historyEntry) {
-            if (historyEntry.periodNumber && historyEntry.periodNumber !== 1005) actualPayAppNum = historyEntry.periodNumber;
-            else if (paperInfo.storageKey && !isNaN(parseInt(paperInfo.storageKey))) actualPayAppNum = parseInt(paperInfo.storageKey);
-        }
-        let payAppDisplay = isCompliance ? '1005 (Compliance)' : `Pay App #${actualPayAppNum}`;
-        if (historyEntry && historyEntry.periodNumber && historyEntry.periodNumber !== actualPayAppNum && !isCompliance) {
-            payAppDisplay += ` <span class="text-[10px] text-zinc-400">(sub counter at #${historyEntry.periodNumber})</span>`;
-        }
+        const isCompliance = (historyEntry && historyEntry.isCompliance) || (pendingEntry && pendingEntry.isCompliance);
+        let payAppDisplay = isCompliance ? '1005 (Compliance)' : `Pay App #${actualPayAppNumForDisplay}`;
 
         let status = 'Not Submitted';
         let billedThis = 0;
