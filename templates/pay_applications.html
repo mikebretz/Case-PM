@@ -4875,7 +4875,7 @@ let mainLienWaiver = JSON.parse(localStorage.getItem('mainLienWaiver') || '{}');
         // Lien waiver lookup: For zero-dollar compliance submissions, prefer the special LATEST_COMPLIANCE key
         // so the waiver travels with the "Pay App --" entry without being tied to a numbered pay app.
         let waiver = null;
-        if (isZeroDollarSubmission) {
+        if (isComplianceSubmission) {
             waiver = subLienWaivers[companyId] && subLienWaivers[companyId]['LATEST_COMPLIANCE'];
             if (!waiver) {
                 // Fallback to the normal numbered key if LATEST_COMPLIANCE wasn't set
