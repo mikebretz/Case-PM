@@ -1397,9 +1397,51 @@ let mainLienWaiver = JSON.parse(localStorage.getItem('mainLienWaiver') || '{}');
         };
         localStorage.setItem('currentPayAppPeriod', JSON.stringify(currentPayAppPeriod));
 
+        // === ROUND-TRIP FIX: Move related Sub Pay Apps (including 1005 Compliance) back to Tracker ===
+        // This ensures that when the user re-approves the main G702, the sub pay apps have a clean path back to Previous Sub Pay Apps
+        // with their full snapshot (lines + lienWaiver + pushedFromMainPeriod) preserved.
+        const mainPeriodBeingRevised = periodData.periodNumber;
+        let movedCount = 0;
+
+        if (subPayAppHistory) {
+            Object.keys(subPayAppHistory).forEach(companyId => {
+                const hist = subPayAppHistory[companyId];
+                if (!hist) return;
+
+                Object.keys(hist).forEach(pKey => {
+                    const entry = hist[pKey];
+                    if (!entry) return;
+
+                    const entryMainPeriod = entry.pushedFromMainPeriod || entry.mainG702Period || entry.mainPeriod;
+                    if (entryMainPeriod == mainPeriodBeingRevised && entry.archived === true) {
+                        // Move this entry back to pending so it re-appears in Sub Pay App Tracker
+                        if (!subPendingSubmissions[companyId]) {
+                            subPendingSubmissions[companyId] = {};
+                        }
+
+                        // Preserve the full entry (especially lienWaiver and lines for compliance entries)
+                        subPendingSubmissions[companyId][pKey] = {
+                            ...entry,
+                            archived: false,
+                            status: 'Pending Approval'
+                        };
+
+                        // Remove from history so it doesn't show in Previous anymore until re-approved
+                        delete subPayAppHistory[companyId][pKey];
+
+                        movedCount++;
+                    }
+                });
+            });
+        }
+
+        localStorage.setItem('subPayAppHistory', JSON.stringify(subPayAppHistory));
+        localStorage.setItem('subPendingSubmissions', JSON.stringify(subPendingSubmissions));
+
         logPayAppAudit('PAYAPP_REVISION_REQUESTED_FROM_HISTORY', {
             periodNumber: periodData.periodNumber,
-            restoredFromHistoryId: periodId
+            restoredFromHistoryId: periodId,
+            subPayAppsMovedBackToTracker: movedCount
         });
 
         // Switch to G702 tab and re-render so Billed to Date shows the restored historical values
@@ -6120,6 +6162,41 @@ function printSubcontractorG703(companyId) {
         const subId = app.companyId;
         const periodNum = app.periodNum;
         const companyName = app.companyName;
+
+        // Special handling for 1005 (Compliance) / zero-dollar entries that may have empty lines after round-trip
+        const isCompliance = historyEntry.isCompliance === true || historyEntry.periodNumber === 1005 || (historyEntry.lines || []).length === 0;
+
+        if (isCompliance) {
+            const waiver = historyEntry.lienWaiver || null;
+            const hasWaiverData = waiver && waiver.dataUrl;
+
+            container.innerHTML = `
+                <div class="bg-zinc-800 border border-zinc-700 rounded-md p-5">
+                    <div class="flex items-center justify-between mb-4">
+                        <div>
+                            <div class="text-emerald-400 font-semibold">Historical Pay Application — ${companyName}</div>
+                            <div class="text-sm text-zinc-300">Main Period ${historyEntry.pushedFromMainPeriod || '?'} • <span class="text-amber-400 font-bold">1005 (Compliance)</span> • ${historyEntry.periodStart || ''} to ${historyEntry.periodEnd || ''}</div>
+                            <div class="text-xs text-zinc-400 mt-0.5">Status: <span class="text-emerald-400">${historyEntry.status || 'Approved'}</span> • Approved ${historyEntry.approvedDate ? new Date(historyEntry.approvedDate).toLocaleDateString() : ''}</div>
+                        </div>
+                        <div class="flex gap-2">
+                            ${hasWaiverData ? `
+                            <button onclick="viewHistoricalLienWaiver('${subId}', ${periodNum})" 
+                                    class="px-4 py-2 bg-zinc-700 hover:bg-zinc-600 rounded-md text-sm font-medium flex items-center gap-2">
+                                <i class="fa-solid fa-eye"></i> <span>View Lien Waiver</span>
+                            </button>` : ''}
+                        </div>
+                    </div>
+
+                    <div class="bg-zinc-900 border border-zinc-700 rounded-md p-8 text-center">
+                        <div class="text-2xl text-zinc-400 mb-2">Zero-Dollar Compliance Pay App</div>
+                        <div class="text-sm text-zinc-500">No billing activity occurred during this period.<br>Lien waiver was submitted for record-keeping / compliance purposes.</div>
+                    </div>
+
+                    <div class="text-[10px] text-zinc-500 mt-3">This is a read-only historical snapshot from Main G702 Period ${historyEntry.pushedFromMainPeriod || '?'}.</div>
+                </div>
+            `;
+            return;
+        }
 
         let rows = '';
         let totalScheduled = 0, totalPrev = 0, totalWork = 0, totalMat = 0, totalCompleted = 0, totalRet = 0, totalBalance = 0;
