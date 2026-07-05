@@ -1298,16 +1298,8 @@ let mainLienWaiver = JSON.parse(localStorage.getItem('mainLienWaiver') || '{}');
             tbody.appendChild(row);
         });
 
-        // Show "Request Revision" button ONLY for the most recent historical period (highest periodNumber)
-        // This is more reliable than array position in case payAppHistory is not perfectly sorted by insertion order.
-        let isMostRecent = false;
-        if (payAppHistory.length > 0) {
-            const maxPeriod = Math.max(...payAppHistory.map(p => p.periodNumber || 0));
-            const currentPeriodData = payAppHistory.find(p => p.id == periodId);
-            if (currentPeriodData && currentPeriodData.periodNumber === maxPeriod) {
-                isMostRecent = true;
-            }
-        }
+        // Show "Request Revision" button ONLY for the most recent historical period
+        const isMostRecent = payAppHistory.length > 0 && payAppHistory[payAppHistory.length - 1].id == periodId;
 
         let revisionButtonHTML = '';
         if (isMostRecent) {
@@ -1410,38 +1402,45 @@ let mainLienWaiver = JSON.parse(localStorage.getItem('mainLienWaiver') || '{}');
             restoredFromHistoryId: periodId
         });
 
-        // === NEW: When revising the MOST RECENT main period, also push related Sub Pay Apps back to Tracker ===
-        // This allows the PM to revise the sub pay apps that fed into this main G702 period.
-        // Only do this for the most recent period (as requested).
-        const currentMaxPeriod = payAppHistory.length > 0 
-            ? Math.max(...payAppHistory.map(p => p.periodNumber || 0)) 
-            : 0;
-        
-        let pushedBackCount = 0;
-        if (periodData.periodNumber === currentMaxPeriod && periodData.periodNumber > 0) {
-            Object.keys(subPayAppHistory).forEach(companyId => {
-                const hist = subPayAppHistory[companyId];
+        // === ROUND-TRIP FIX: Also move related Sub Pay Apps back to Tracker ===
+        // This ensures that when you Request Revision on the most recent main period,
+        // all Sub Pay Apps (including 1005 Compliance) that were pushed from that period
+        // re-appear in the Sub Pay App Tracker with their full G703 snapshot + lien waiver intact.
+        const mainPeriodNum = periodData.periodNumber;
+        let movedSubCount = 0;
+
+        if (subPayAppHistory) {
+            Object.keys(subPayAppHistory).forEach(cid => {
+                const hist = subPayAppHistory[cid];
                 if (!hist) return;
-                
+
                 Object.keys(hist).forEach(pKey => {
                     const entry = hist[pKey];
-                    if (entry && entry.archived === true && entry.pushedFromMainPeriod === periodData.periodNumber) {
-                        // Push it back to Tracker by removing the archived flag
-                        delete entry.archived;
-                        // Optionally ensure it has a usable status
-                        if (!entry.status || entry.status === 'Approved') {
-                            entry.status = 'Approved'; // Keep it as Approved so it shows in Tracker
+                    if (!entry) return;
+
+                    const fromMain = entry.pushedFromMainPeriod || entry.mainG702Period || entry.mainPeriod;
+                    if (entry.archived === true && fromMain == mainPeriodNum) {
+                        // Restore to pending so it shows in Tracker again
+                        if (!subPendingSubmissions[cid]) {
+                            subPendingSubmissions[cid] = JSON.parse(JSON.stringify(entry));
                         }
-                        pushedBackCount++;
+                        subPendingSubmissions[cid].archived = false;
+                        subPendingSubmissions[cid].status = 'Pending Approval';
+
+                        // Keep a deep backup for re-push safety
+                        if (!window._subRevisionBackups) window._subRevisionBackups = {};
+                        window._subRevisionBackups[`${cid}_${pKey}`] = JSON.parse(JSON.stringify(entry));
+
+                        movedSubCount++;
                     }
                 });
             });
-            
-            if (pushedBackCount > 0) {
-                localStorage.setItem('subPayAppHistory', JSON.stringify(subPayAppHistory));
-                logPayAppAudit('SUB_PAYAPPS_PUSHED_BACK_FROM_MAIN_REVISION', {
-                    mainPeriod: periodData.periodNumber,
-                    count: pushedBackCount
+
+            if (movedSubCount > 0) {
+                localStorage.setItem('subPendingSubmissions', JSON.stringify(subPendingSubmissions));
+                logPayAppAudit('SUB_PAYAPPS_MOVED_BACK_FOR_REVISION', {
+                    mainPeriod: mainPeriodNum,
+                    count: movedSubCount
                 });
             }
         }
@@ -1453,11 +1452,13 @@ let mainLienWaiver = JSON.parse(localStorage.getItem('mainLienWaiver') || '{}');
         setTimeout(() => {
             const wb = document.getElementById('payAppWorkflowBar');
             if (wb) {
+                const extra = movedSubCount > 0 
+                    ? ` + ${movedSubCount} related Sub Pay App(s) moved back to Tracker for revision.` 
+                    : '';
                 wb.innerHTML = `
                     <div class="workflow-bar px-4 py-2.5 flex items-center gap-3 text-sm bg-emerald-950/40 border border-emerald-600 rounded-md">
                         <span class="text-emerald-400"><i class="fa-solid fa-check-circle"></i></span>
-                        <span class="text-emerald-300">Period ${periodData.periodNumber} restored as Draft. Billed to Date has been rewound to the exact historical snapshot values.</span>
-                        ${pushedBackCount > 0 ? `<span class="text-amber-400 ml-2">+ ${pushedBackCount} related Sub Pay App(s) moved back to Tracker for revision.</span>` : ''}
+                        <span class="text-emerald-300">Period ${periodData.periodNumber} restored as Draft. Billed to Date has been rewound to the exact historical snapshot values.${extra}</span>
                     </div>
                 `;
                 setTimeout(() => {
@@ -5087,6 +5088,12 @@ let mainLienWaiver = JSON.parse(localStorage.getItem('mainLienWaiver') || '{}');
             lienWaiverForHistory = { ...pendingEntry.lienWaiver };
         } else if (subLienWaivers[companyId] && subLienWaivers[companyId][currentPeriodNum]) {
             lienWaiverForHistory = { ...subLienWaivers[companyId][currentPeriodNum] };
+        } else if (window._subRevisionBackups) {
+            // ROUND-TRIP SAFETY: If this entry came back from a previous revision, try to recover the lien waiver from backup
+            const backupKey = Object.keys(window._subRevisionBackups).find(k => k.startsWith(companyId + '_'));
+            if (backupKey && window._subRevisionBackups[backupKey] && window._subRevisionBackups[backupKey].lienWaiver) {
+                lienWaiverForHistory = { ...window._subRevisionBackups[backupKey].lienWaiver };
+            }
         }
 
         // Clear live lien waiver for this period from SOV tab
