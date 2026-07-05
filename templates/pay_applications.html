@@ -313,17 +313,6 @@
                 </label>
             </div>
 
-            <!-- NEW: Require Zero-Dollar Lien Waiver Setting -->
-            <div class="pt-3 border-t border-zinc-700">
-                <label class="flex items-center justify-between cursor-pointer">
-                    <div>
-                        <div class="text-sm text-zinc-300">Require Lien Waiver even if billing $0 that month</div>
-                        <div class="text-[10px] text-zinc-500">When ON, Subs must submit a $0 lien waiver for periods with no billing activity (Compliance).</div>
-                    </div>
-                    <input type="checkbox" id="requireZeroDollarLienWaiverToggle" class="w-5 h-5 accent-emerald-600" ${requireZeroDollarLienWaiver ? 'checked' : ''}>
-                </label>
-            </div>
-
             <!-- NEW: Require All Subs with Approved SOVs to Submit Pay App before G702 Submit -->
             <div class="pt-3 border-t border-zinc-700">
                 <label class="flex items-center justify-between cursor-pointer">
@@ -398,11 +387,13 @@ let requireLienWaiverOnSubPayApp = localStorage.getItem('requireLienWaiverOnSubP
 let requireZeroDollarLienWaiver = localStorage.getItem('requireZeroDollarLienWaiver') === 'true'; // NEW: Zero Dollar Waiver Requirement
 let requireSubmissionDeadline = localStorage.getItem('requireSubmissionDeadline') === 'true';
 let submissionDeadlineDate = localStorage.getItem('submissionDeadlineDate') || '';
-let allowZeroDollarSubPayApps = localStorage.getItem('allowZeroDollarSubPayApps') !== 'false'; // NEW: Allow $0 sub pay apps (compliance) without using a pay app number
-// Force the setting ON by default so zero-dollar compliance submissions are always allowed from Sub SOV tab
-if (localStorage.getItem('allowZeroDollarSubPayApps') === null || localStorage.getItem('allowZeroDollarSubPayApps') === 'true') {
+let allowZeroDollarSubPayApps = localStorage.getItem('allowZeroDollarSubPayApps');
+if (allowZeroDollarSubPayApps === null) {
+    // First time ever → default ON so compliance workflow works out of the box
     allowZeroDollarSubPayApps = true;
     localStorage.setItem('allowZeroDollarSubPayApps', 'true');
+} else {
+    allowZeroDollarSubPayApps = (allowZeroDollarSubPayApps === 'true');
 }
 let requireAllSubPayAppsBeforeG702Submit = localStorage.getItem('requireAllSubPayAppsBeforeG702Submit') !== 'false'; // Default ON (true)
 
@@ -5052,9 +5043,14 @@ let mainLienWaiver = JSON.parse(localStorage.getItem('mainLienWaiver') || '{}');
         }
 
         // === Move to RIGHT HAND: Save/ensure in subPayAppHistory as Approved ===
+        // Compliance entries use a distinct string key (C1, C2, ...) so they NEVER collide with or get overwritten by real numeric pay apps (1, 2, ...)
+        const isCompliance = pendingEntry.isCompliance === true;
+        const historyKey = isCompliance ? `C${currentPeriodNum}` : currentPeriodNum;
+
         if (!subPayAppHistory[companyId]) subPayAppHistory[companyId] = {};
-        subPayAppHistory[companyId][currentPeriodNum] = {
+        subPayAppHistory[companyId][historyKey] = {
             periodNumber: currentPeriodNum,
+            complianceKey: isCompliance ? historyKey : null,
             periodStart: pendingEntry.periodStart || (currentPayAppPeriod ? currentPayAppPeriod.periodStart : ''),
             periodEnd: pendingEntry.periodEnd || (currentPayAppPeriod ? currentPayAppPeriod.periodEnd : ''),
             submittedDate: pendingEntry.submittedDate || new Date().toISOString(),
@@ -5066,8 +5062,8 @@ let mainLienWaiver = JSON.parse(localStorage.getItem('mainLienWaiver') || '{}');
             lienWaiver: lienWaiverForHistory,
             // Snapshot of Billed to Date *before* this app was added (used for correct restoration on Request Revision)
             billedToDateBefore: billedToDateSnapshot,
-            archived: false,   // New approved papers start as active in Tracker until explicitly pushed to Previous
-            isCompliance: pendingEntry.isCompliance === true
+            archived: false,
+            isCompliance: isCompliance
         };
         localStorage.setItem('subPayAppHistory', JSON.stringify(subPayAppHistory));
 
@@ -5968,19 +5964,27 @@ function printSubcontractorG703(companyId) {
 
         if (!companyId || !subPayAppHistory[companyId]) return;
 
-        const periods = Object.keys(subPayAppHistory[companyId]).map(Number).filter(p => {
-            const e = subPayAppHistory[companyId][p];
+        // Support both numeric keys (1, 2, ...) and compliance string keys (C1, C2, ...)
+        const periods = Object.keys(subPayAppHistory[companyId]).filter(k => {
+            const e = subPayAppHistory[companyId][k];
             return e && e.archived === true;
-        }).sort((a,b) => b - a); // newest first
+        }).sort((a, b) => {
+            // Put compliance entries (C1, C2) after their numeric counterparts in display order if needed, but keep chronological by approvedDate later
+            const na = parseInt(a, 10) || 9999;
+            const nb = parseInt(b, 10) || 9999;
+            return nb - na;
+        });
         if (periods.length === 0) return;
 
         periodSelect.disabled = false;
-        periods.forEach(pNum => {
-            const entry = subPayAppHistory[companyId][pNum];
+        periods.forEach(pKey => {
+            const entry = subPayAppHistory[companyId][pKey];
             const opt = document.createElement('option');
-            opt.value = pNum;
+            opt.value = pKey;
             const status = entry.status || 'Approved';
-            opt.textContent = `Pay App #${pNum} • ${entry.periodStart || ''} to ${entry.periodEnd || ''} (${status})`;
+            const isComp = entry.isCompliance === true || (typeof pKey === 'string' && pKey.startsWith('C'));
+            const label = isComp ? `Pay App ${pKey} (Compliance)` : `Pay App #${pKey}`;
+            opt.textContent = `${label} • ${entry.periodStart || ''} to ${entry.periodEnd || ''} (${status})`;
             periodSelect.appendChild(opt);
         });
     }
@@ -7511,7 +7515,7 @@ function printSubcontractorG703(companyId) {
                                       (subPendingSubmissions[companyId] && subPendingSubmissions[companyId].isCompliance === true);
 
             if (isComplianceEntry) {
-                payAppDisplayValue = `${displayedPayAppNum} C`;
+                payAppDisplayValue = `C${displayedPayAppNum}`;
             }
 
             let billedThis = 0;
