@@ -1402,49 +1402,6 @@ let mainLienWaiver = JSON.parse(localStorage.getItem('mainLienWaiver') || '{}');
             restoredFromHistoryId: periodId
         });
 
-        // === ROUND-TRIP FIX: Also move related Sub Pay Apps back to Tracker ===
-        // This ensures that when you Request Revision on the most recent main period,
-        // all Sub Pay Apps (including 1005 Compliance) that were pushed from that period
-        // re-appear in the Sub Pay App Tracker with their full G703 snapshot + lien waiver intact.
-        const mainPeriodNum = periodData.periodNumber;
-        let movedSubCount = 0;
-
-        if (subPayAppHistory) {
-            Object.keys(subPayAppHistory).forEach(cid => {
-                const hist = subPayAppHistory[cid];
-                if (!hist) return;
-
-                Object.keys(hist).forEach(pKey => {
-                    const entry = hist[pKey];
-                    if (!entry) return;
-
-                    const fromMain = entry.pushedFromMainPeriod || entry.mainG702Period || entry.mainPeriod;
-                    if (entry.archived === true && fromMain == mainPeriodNum) {
-                        // Restore to pending so it shows in Tracker again
-                        if (!subPendingSubmissions[cid]) {
-                            subPendingSubmissions[cid] = JSON.parse(JSON.stringify(entry));
-                        }
-                        subPendingSubmissions[cid].archived = false;
-                        subPendingSubmissions[cid].status = 'Pending Approval';
-
-                        // Keep a deep backup for re-push safety
-                        if (!window._subRevisionBackups) window._subRevisionBackups = {};
-                        window._subRevisionBackups[`${cid}_${pKey}`] = JSON.parse(JSON.stringify(entry));
-
-                        movedSubCount++;
-                    }
-                });
-            });
-
-            if (movedSubCount > 0) {
-                localStorage.setItem('subPendingSubmissions', JSON.stringify(subPendingSubmissions));
-                logPayAppAudit('SUB_PAYAPPS_MOVED_BACK_FOR_REVISION', {
-                    mainPeriod: mainPeriodNum,
-                    count: movedSubCount
-                });
-            }
-        }
-
         // Switch to G702 tab and re-render so Billed to Date shows the restored historical values
         switchPayAppTab('payapp');
 
@@ -1452,13 +1409,10 @@ let mainLienWaiver = JSON.parse(localStorage.getItem('mainLienWaiver') || '{}');
         setTimeout(() => {
             const wb = document.getElementById('payAppWorkflowBar');
             if (wb) {
-                const extra = movedSubCount > 0 
-                    ? ` + ${movedSubCount} related Sub Pay App(s) moved back to Tracker for revision.` 
-                    : '';
                 wb.innerHTML = `
                     <div class="workflow-bar px-4 py-2.5 flex items-center gap-3 text-sm bg-emerald-950/40 border border-emerald-600 rounded-md">
                         <span class="text-emerald-400"><i class="fa-solid fa-check-circle"></i></span>
-                        <span class="text-emerald-300">Period ${periodData.periodNumber} restored as Draft. Billed to Date has been rewound to the exact historical snapshot values.${extra}</span>
+                        <span class="text-emerald-300">Period ${periodData.periodNumber} restored as Draft. Billed to Date has been rewound to the exact historical snapshot values.</span>
                     </div>
                 `;
                 setTimeout(() => {
@@ -5088,12 +5042,6 @@ let mainLienWaiver = JSON.parse(localStorage.getItem('mainLienWaiver') || '{}');
             lienWaiverForHistory = { ...pendingEntry.lienWaiver };
         } else if (subLienWaivers[companyId] && subLienWaivers[companyId][currentPeriodNum]) {
             lienWaiverForHistory = { ...subLienWaivers[companyId][currentPeriodNum] };
-        } else if (window._subRevisionBackups) {
-            // ROUND-TRIP SAFETY: If this entry came back from a previous revision, try to recover the lien waiver from backup
-            const backupKey = Object.keys(window._subRevisionBackups).find(k => k.startsWith(companyId + '_'));
-            if (backupKey && window._subRevisionBackups[backupKey] && window._subRevisionBackups[backupKey].lienWaiver) {
-                lienWaiverForHistory = { ...window._subRevisionBackups[backupKey].lienWaiver };
-            }
         }
 
         // Clear live lien waiver for this period from SOV tab
