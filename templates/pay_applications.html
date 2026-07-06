@@ -479,14 +479,14 @@ let mainLienWaiver = JSON.parse(localStorage.getItem('mainLienWaiver') || '{}');
         const start = new Date(selectedStartDate);
         if (isNaN(start.getTime())) return;
 
-        // FORCE clean calendar month: 1st day through last day of the selected month.
-        // This prevents "today's date" or partial ranges (e.g. July 5 – August 4).
+        // FORCE to the 1st day of the selected month (ignore whatever day was passed in)
         const year = start.getFullYear();
-        const month = start.getMonth(); // 0-indexed
+        const month = start.getMonth();
+        const periodStart = new Date(year, month, 1).toISOString().split('T')[0];
 
-        const periodStart = `${year}-${String(month + 1).padStart(2, '0')}-01`;
-        const lastDay = new Date(year, month + 1, 0).getDate();
-        const periodEnd = `${year}-${String(month + 1).padStart(2, '0')}-${lastDay}`;
+        // Last day of that exact month
+        const end = new Date(year, month + 1, 0);
+        const periodEnd = end.toISOString().split('T')[0];
 
         currentPayAppPeriod.periodStart = periodStart;
         currentPayAppPeriod.periodEnd = periodEnd;
@@ -2374,35 +2374,13 @@ let mainLienWaiver = JSON.parse(localStorage.getItem('mainLienWaiver') || '{}');
             switchPayAppTab('previous-payapps');
         }, 800);
 
-        // === PROMOTE PENDING SUBMISSIONS INTO HISTORY + ARCHIVE ALL FOR THIS PERIOD ===
-        // This ensures every sub pay app (including those still in pending state) gets properly
-        // moved into subPayAppHistory with archived=true and the correct pushedFromMainPeriod tag.
-        // This fixes the "submitted but shows as not submitted / disappears from Tracker" issue.
-        const mainPeriod = currentPayAppPeriod ? currentPayAppPeriod.periodNumber : null;
+        // === ARCHIVE ALL SUB PAY APPS FOR THIS PERIOD (move from Tracker to Previous Sub Pay Apps) ===
+        // Per user request + AIA flow: When the GC G702 is approved, ALL sub papers in the Tracker
+        // (normal ones + 1005 Compliance / zero-dollar ones) are archived. Compliance entries are
+        // tagged with the main G702 period so multiple 1005 entries per sub can coexist under different periods.
+        if (currentPayAppPeriod && subPayAppHistory) {
+            const mainPeriod = currentPayAppPeriod.periodNumber;
 
-        if (mainPeriod && subPendingSubmissions) {
-            Object.keys(subPendingSubmissions).forEach(cid => {
-                const pending = subPendingSubmissions[cid];
-                if (!pending || pending.archived) return;
-
-                // Promote pending into subPayAppHistory
-                if (!subPayAppHistory[cid]) subPayAppHistory[cid] = {};
-                subPayAppHistory[cid][mainPeriod] = {
-                    ...pending,
-                    status: pending.status || 'Approved',
-                    archived: true,
-                    approvedDate: new Date().toISOString(),
-                    pushedFromMainPeriod: mainPeriod
-                };
-            });
-            // Clear pending after promotion
-            subPendingSubmissions = {};
-            localStorage.setItem('subPendingSubmissions', JSON.stringify(subPendingSubmissions));
-            localStorage.setItem('subPayAppHistory', JSON.stringify(subPayAppHistory));
-        }
-
-        // Now archive everything in subPayAppHistory for this main period (normal + compliance)
-        if (mainPeriod && subPayAppHistory) {
             Object.keys(subPayAppHistory).forEach(cid => {
                 const hist = subPayAppHistory[cid];
                 if (!hist) return;
@@ -2411,11 +2389,13 @@ let mainLienWaiver = JSON.parse(localStorage.getItem('mainLienWaiver') || '{}');
                     const entry = hist[key];
                     if (!entry) return;
 
+                    const isCompliance = entry.isCompliance === true || key === '1005' || String(key).startsWith('1005');
                     const isActive = (entry.status === 'Approved' || entry.status === 'Pending Approval') && entry.archived !== true;
 
                     if (isActive) {
                         entry.archived = true;
                         if (!entry.approvedDate) entry.approvedDate = new Date().toISOString();
+                        // Tag with the main G702 period that pushed it (enables multiple 1005s per sub under different periods)
                         if (!entry.pushedFromMainPeriod) {
                             entry.pushedFromMainPeriod = mainPeriod;
                         }
@@ -4332,26 +4312,6 @@ let mainLienWaiver = JSON.parse(localStorage.getItem('mainLienWaiver') || '{}');
         const line = lines.find(l => l.id === lineId);
         if (!line) return;
 
-        // === HARD OVERBILLING BLOCK (User Requirement) ===
-        // A sub cannot save billing that would exceed the Scheduled Value of THIS specific line item.
-        const scheduledValue = (line.original_commitment || 0) + (line.change_orders || 0);
-        const alreadyBilled = line.billed_to_date || 0;
-        const newThisPeriodTotal = workThis + mats + coWork;
-        const wouldBeBilledToDate = alreadyBilled + newThisPeriodTotal;
-
-        if (wouldBeBilledToDate > scheduledValue + 0.01) { // small tolerance for floating point
-            const remaining = Math.max(0, scheduledValue - alreadyBilled);
-            showErrorModal(
-                `Overbilling blocked.<br><br>` +
-                `This line's Scheduled Value: <strong>${formatCurrency(scheduledValue)}</strong><br>` +
-                `Already billed to date: <strong>${formatCurrency(alreadyBilled)}</strong><br>` +
-                `You are trying to bill: <strong>${formatCurrency(newThisPeriodTotal)}</strong> this period.<br><br>` +
-                `Remaining available on this line: <strong>${formatCurrency(remaining)}</strong><br><br>` +
-                `You cannot bill more than the Scheduled Value for this cost code.`
-            );
-            return;
-        }
-
         // === DRAFT SAVE ONLY (User Request - Same as G702) ===
         // We save the "this period" values as draft fields on the line.
         // We do NOT update billed_to_date here. That only happens on "Submit Application".
@@ -6046,18 +6006,17 @@ function printSubcontractorG703(companyId) {
 
         const mainPeriods = new Set();
 
-        // PRIMARY SOURCE: Always seed from main contractor payAppHistory first.
-        // This guarantees every approved G702 period (including early compliance ones)
-        // appears in the dropdown even if subPayAppHistory tagging is incomplete.
+        // PRIMARY SOURCE: Always include every period that has ever existed in the main contractor payAppHistory.
+        // This guarantees Period 1 (even if it was only a zero-dollar compliance paper) never disappears again.
         if (Array.isArray(payAppHistory)) {
             payAppHistory.forEach(p => {
                 if (p && p.periodNumber) {
-                    mainPeriods.add(p.periodNumber);
+                    mainPeriods.add(Number(p.periodNumber));
                 }
             });
         }
 
-        // Supplement with any additional periods found in archived sub entries (for robustness)
+        // SECONDARY SOURCE: Also include any main periods referenced by archived sub pay apps (for robustness)
         Object.keys(subPayAppHistory || {}).forEach(cid => {
             const hist = subPayAppHistory[cid];
             if (!hist) return;
@@ -6065,8 +6024,8 @@ function printSubcontractorG703(companyId) {
                 const entry = hist[p];
                 if (entry && entry.archived === true) {
                     const mp = entry.pushedFromMainPeriod || entry.mainG702Period || null;
-                    if (mp) mainPeriods.add(mp);
-                    if (entry.periodNum && entry.periodNum !== 1005) mainPeriods.add(entry.periodNum);
+                    if (mp) mainPeriods.add(Number(mp));
+                    if (entry.periodNum && entry.periodNum !== 1005) mainPeriods.add(Number(entry.periodNum));
                 }
             });
         });
