@@ -3,16 +3,10 @@
 {% block title %}Submittals{% endblock %}
 
 {% block content %}
-<!-- 
-  PURE INNER CONTENT for {% block content %}
-  - No duplicate header bar (base.html controls top bar, project selector, user profile)
-  - Starts directly with summary cards + page actions
-  - Matches Budget page styling exactly (rounded-md cards, rounded-2xl badges, zinc palette, spacing, button styles)
-  - Full width inside the p-6 content area from base
--->
+<script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
 
 <style>
-  /* Submittals-specific styles - matches Budget exactly */
+  /* Submittals specific styles - matches Budget page exactly */
   .metric-card {
     transition: transform 0.1s ease, box-shadow 0.1s ease;
   }
@@ -25,318 +19,563 @@
     transition: background-color 0.1s ease;
   }
   .submittal-row:hover {
-    background-color: #27251f;
+    background-color: #27272a;
   }
-
+  
   .status-badge {
-    font-size: 10px;
+    font-size: 11px;
     font-weight: 600;
-    letter-spacing: 0.5px;
     padding: 2px 10px;
     border-radius: 9999px;
-    display: inline-flex;
-    align-items: center;
-    gap: 4px;
-  }
-
-  .division-header {
-    background-color: #18181b;
-    font-weight: 700;
-    color: #a1a1aa;
     letter-spacing: 0.5px;
+  }
+  
+  .modal {
+    animation: modalPopIn 0.2s cubic-bezier(0.32, 0.72, 0, 1);
+  }
+  
+  @keyframes modalPopIn {
+    from { opacity: 0; transform: scale(0.96) translateY(10px); }
+    to { opacity: 1; transform: scale(1) translateY(0); }
+  }
+  
+  .tab-button {
+    position: relative;
+    padding-bottom: 10px;
+    font-weight: 500;
+    color: #a1a1aa;
+    transition: color 0.1s ease;
+  }
+  .tab-button.active {
+    color: #e4e4e7;
+  }
+  .tab-button.active::after {
+    content: '';
+    position: absolute;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    height: 2px;
+    background-color: #10b981;
+  }
+  
+  .comment-architect { background-color: #18181b; border-left: 3px solid #10b981; }
+  .comment-gc { background-color: #18181b; border-left: 3px solid #3b82f6; }
+  .comment-sub { background-color: #18181b; border-left: 3px solid #f59e0b; }
+  .comment-revise { background-color: #18181b; border-left: 3px solid #ef4444; }
+  
+  .division-header {
+    background-color: #27272a;
+    font-weight: 700;
+    color: #e4e4e7;
     position: sticky;
     top: 0;
     z-index: 10;
   }
-
-  .comment-architect { border-left-color: #10b981; }
-  .comment-gc { border-left-color: #3b82f6; }
-  .comment-sub { border-left-color: #f59e0b; }
-  .comment-revision { border-left-color: #ef4444; }
-
-  .modal {
-    animation: modalPop 0.2s cubic-bezier(0.32, 0.72, 0, 1);
-  }
-  @keyframes modalPop {
-    from { opacity: 0; transform: scale(0.96) translateY(10px); }
-    to { opacity: 1; transform: scale(1) translateY(0); }
-  }
-
-  .spec-section-row:hover {
-    background-color: #27251f;
+  
+  .spec-row:hover {
+    background-color: #27272a;
   }
 </style>
 
-<!-- PAGE HEADER / ACTIONS (inside content area, no duplicate top bar) -->
-<div class="flex items-center justify-between mb-4">
-  <div class="flex items-center gap-3">
-    <div>
-      <div class="text-2xl font-semibold tracking-tight text-white">Submittals</div>
-      <div class="text-xs text-zinc-500 -mt-0.5">47 total • 12 pending review</div>
+<!-- PAGE HEADER (inner content only - base.html provides top nav + project selector + user profile) -->
+<div class="flex items-center justify-between px-6 pt-6 pb-4 border-b border-zinc-800">
+  <div>
+    <div class="flex items-center gap-3">
+      <h1 class="text-3xl font-semibold tracking-tight text-white">Submittals</h1>
+      <div onclick="showVersionHistory()" 
+           class="cursor-pointer text-sm font-bold px-3.5 py-1 bg-zinc-800 hover:bg-zinc-700 border border-zinc-700 text-emerald-400 rounded-2xl font-mono transition-colors">
+        Rev 02
+      </div>
+      <div id="unsavedDot" class="hidden w-2 h-2 bg-amber-500 rounded-full"></div>
     </div>
-    <div onclick="showVersionHistory()" 
-         class="cursor-pointer text-sm font-bold px-3.5 py-1 bg-zinc-800 hover:bg-zinc-700 border border-zinc-700 text-emerald-400 rounded-2xl font-mono transition-colors flex items-center gap-1.5">
-      <span>Rev 02</span>
-    </div>
-    <div id="unsavedDot" class="hidden w-2 h-2 bg-amber-500 rounded-full"></div>
+    <p class="text-sm text-zinc-400 mt-1">Track, review, and manage all project submittals</p>
   </div>
-
-  <div class="flex items-center gap-2">
+  
+  <div class="flex items-center gap-3">
     <!-- New Submittal Button -->
     <button onclick="showNewSubmittalModal()"
-            class="flex items-center gap-2 px-5 py-2 bg-emerald-600 hover:bg-emerald-500 text-white rounded-md text-sm font-semibold transition-colors h-[38px]">
+            class="flex items-center gap-2 px-5 py-2.5 bg-emerald-600 hover:bg-emerald-500 rounded-md text-sm font-semibold transition-colors h-[42px]">
       <i class="fa-solid fa-plus"></i>
       <span>New Submittal</span>
     </button>
-
-    <!-- Gear → Spec Sections Management -->
-    <button onclick="showSpecSectionsManagement()"
-            class="w-10 h-10 flex items-center justify-center bg-zinc-800 hover:bg-zinc-700 rounded-md border border-zinc-700 transition-colors"
-            title="Program Settings → Spec Sections Management">
+    
+    <!-- Gear / Settings -->
+    <button onclick="openSpecSectionsModal()"
+            class="w-11 h-11 flex items-center justify-center bg-zinc-800 hover:bg-zinc-700 border border-zinc-700 rounded-md transition-colors"
+            title="Spec Sections Management (Program Settings)">
       <i class="fa-solid fa-cog text-lg"></i>
     </button>
-
-    <!-- Quick actions -->
+    
+    <!-- Export / Import -->
     <button onclick="exportSubmittals()" 
-            class="flex items-center gap-2 px-4 py-2 bg-zinc-800 hover:bg-zinc-700 rounded-md text-sm font-medium transition-colors h-[38px]">
+            class="flex items-center gap-2 px-4 py-2.5 bg-zinc-800 hover:bg-zinc-700 border border-zinc-700 rounded-md text-sm font-medium transition-colors h-[42px]">
       <i class="fa-solid fa-download"></i>
       <span>Export</span>
     </button>
+    
     <button onclick="importSubmittals()" 
-            class="flex items-center gap-2 px-4 py-2 bg-zinc-800 hover:bg-zinc-700 rounded-md text-sm font-medium transition-colors h-[38px]">
+            class="flex items-center gap-2 px-4 py-2.5 bg-zinc-800 hover:bg-zinc-700 border border-zinc-700 rounded-md text-sm font-medium transition-colors h-[42px]">
       <i class="fa-solid fa-upload"></i>
       <span>Import</span>
     </button>
   </div>
 </div>
 
-<!-- SUMMARY METRIC CARDS (exact match to Budget style) -->
-<div class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4 mb-6">
-  <div class="metric-card bg-zinc-900 border border-zinc-700 rounded-md p-4">
-    <div class="flex items-center justify-between">
-      <div>
-        <div class="text-sm text-zinc-400">Total Submittals</div>
-        <div id="totalSubmittals" class="text-2xl font-semibold mt-1">47</div>
+<!-- SUMMARY METRIC CARDS -->
+<div class="px-6 pt-5 pb-2">
+  <div class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">
+    <div class="metric-card bg-zinc-800 border border-zinc-700 rounded-md p-5">
+      <div class="flex items-center justify-between">
+        <div>
+          <div class="text-sm text-zinc-400">Total Submittals</div>
+          <div id="metricTotal" class="text-3xl font-semibold mt-1 text-white">87</div>
+        </div>
+        <i class="fa-solid fa-file-lines text-3xl text-zinc-600"></i>
       </div>
-      <i class="fa-solid fa-folder text-3xl text-zinc-600"></i>
     </div>
-  </div>
-  <div class="metric-card bg-zinc-900 border border-zinc-700 rounded-md p-4">
-    <div class="flex items-center justify-between">
-      <div>
-        <div class="text-sm text-zinc-400">Pending / In Review</div>
-        <div id="pendingSubmittals" class="text-2xl font-semibold mt-1 text-amber-400">12</div>
+    
+    <div class="metric-card bg-zinc-800 border border-zinc-700 rounded-md p-5">
+      <div class="flex items-center justify-between">
+        <div>
+          <div class="text-sm text-zinc-400">Pending Review</div>
+          <div id="metricPending" class="text-3xl font-semibold mt-1 text-amber-400">14</div>
+        </div>
+        <i class="fa-solid fa-clock text-3xl text-amber-600"></i>
       </div>
-      <i class="fa-solid fa-clock text-3xl text-amber-500/70"></i>
     </div>
-  </div>
-  <div class="metric-card bg-zinc-900 border border-zinc-700 rounded-md p-4">
-    <div class="flex items-center justify-between">
-      <div>
-        <div class="text-sm text-zinc-400">No Exceptions Taken</div>
-        <div id="approvedSubmittals" class="text-2xl font-semibold mt-1 text-emerald-400">21</div>
+    
+    <div class="metric-card bg-zinc-800 border border-zinc-700 rounded-md p-5">
+      <div class="flex items-center justify-between">
+        <div>
+          <div class="text-sm text-zinc-400">No Exceptions Taken</div>
+          <div id="metricNoExceptions" class="text-3xl font-semibold mt-1 text-emerald-400">52</div>
+        </div>
+        <i class="fa-solid fa-check-circle text-3xl text-emerald-600"></i>
       </div>
-      <i class="fa-solid fa-check-circle text-3xl text-emerald-500/70"></i>
     </div>
-  </div>
-  <div class="metric-card bg-zinc-900 border border-zinc-700 rounded-md p-4">
-    <div class="flex items-center justify-between">
-      <div>
-        <div class="text-sm text-zinc-400">Revise &amp; Resubmit</div>
-        <div id="reviseSubmittals" class="text-2xl font-semibold mt-1 text-orange-400">8</div>
+    
+    <div class="metric-card bg-zinc-800 border border-zinc-700 rounded-md p-5">
+      <div class="flex items-center justify-between">
+        <div>
+          <div class="text-sm text-zinc-400">Revise &amp; Resubmit</div>
+          <div id="metricRevise" class="text-3xl font-semibold mt-1 text-orange-400">11</div>
+        </div>
+        <i class="fa-solid fa-redo text-3xl text-orange-600"></i>
       </div>
-      <i class="fa-solid fa-redo text-3xl text-orange-500/70"></i>
     </div>
-  </div>
-  <div class="metric-card bg-zinc-900 border border-zinc-700 rounded-md p-4">
-    <div class="flex items-center justify-between">
-      <div>
-        <div class="text-sm text-zinc-400">Rejected</div>
-        <div id="rejectedSubmittals" class="text-2xl font-semibold mt-1 text-red-400">3</div>
+    
+    <div class="metric-card bg-zinc-800 border border-zinc-700 rounded-md p-5">
+      <div class="flex items-center justify-between">
+        <div>
+          <div class="text-sm text-zinc-400">Rejected</div>
+          <div id="metricRejected" class="text-3xl font-semibold mt-1 text-red-400">4</div>
+        </div>
+        <i class="fa-solid fa-times-circle text-3xl text-red-600"></i>
       </div>
-      <i class="fa-solid fa-times-circle text-3xl text-red-500/70"></i>
     </div>
-  </div>
-  <div class="metric-card bg-zinc-900 border border-zinc-700 rounded-md p-4">
-    <div class="flex items-center justify-between">
-      <div>
-        <div class="text-sm text-zinc-400">Closed</div>
-        <div id="closedSubmittals" class="text-2xl font-semibold mt-1 text-zinc-400">3</div>
+    
+    <div class="metric-card bg-zinc-800 border border-zinc-700 rounded-md p-5">
+      <div class="flex items-center justify-between">
+        <div>
+          <div class="text-sm text-zinc-400">Closed</div>
+          <div id="metricClosed" class="text-3xl font-semibold mt-1 text-sky-400">6</div>
+        </div>
+        <i class="fa-solid fa-folder-check text-3xl text-sky-600"></i>
       </div>
-      <i class="fa-solid fa-check-double text-3xl text-zinc-500"></i>
     </div>
   </div>
 </div>
 
-<!-- FILTERS + SEARCH -->
-<div class="bg-zinc-900 border border-zinc-700 rounded-md p-4 mb-4">
-  <div class="flex flex-col lg:flex-row gap-3 items-center">
-    <div class="flex-1 w-full">
-      <div class="relative">
-        <i class="fa-solid fa-search absolute left-3 top-1/2 -translate-y-1/2 text-zinc-500"></i>
-        <input id="searchInput" type="text" placeholder="Search submittals, spec sections, subjects..." 
-               onkeyup="filterSubmittals()"
-               class="w-full bg-zinc-800 border border-zinc-700 rounded-md pl-10 pr-4 py-2 text-sm focus:outline-none focus:border-emerald-600">
-      </div>
+<!-- SEARCH + FILTERS -->
+<div class="px-6 pt-4 pb-3 flex flex-col lg:flex-row gap-3 items-center">
+  <div class="flex-1 w-full">
+    <div class="relative">
+      <i class="fa-solid fa-search absolute left-4 top-3.5 text-zinc-500"></i>
+      <input type="text" id="searchInput" placeholder="Search submittals by number, title, spec section, or subcontractor..." 
+             onkeyup="filterSubmittals()"
+             class="w-full bg-zinc-900 border border-zinc-700 focus:border-emerald-600 rounded-md pl-11 pr-4 py-2.5 text-sm placeholder:text-zinc-500">
     </div>
+  </div>
+  
+  <div class="flex gap-3 w-full lg:w-auto">
+    <select id="statusFilter" onchange="filterSubmittals()" 
+            class="bg-zinc-900 border border-zinc-700 rounded-md px-4 py-2.5 text-sm focus:border-emerald-600 min-w-[170px]">
+      <option value="">All Statuses</option>
+      <option value="Pending">Pending Review</option>
+      <option value="No Exceptions Taken">No Exceptions Taken</option>
+      <option value="Reviewed as Noted">Reviewed as Noted</option>
+      <option value="Revise & Resubmit">Revise &amp; Resubmit</option>
+      <option value="Rejected">Rejected</option>
+      <option value="Closed">Closed</option>
+    </select>
     
-    <div class="flex gap-2 w-full lg:w-auto">
-      <select id="statusFilter" onchange="filterSubmittals()" 
-              class="bg-zinc-800 border border-zinc-700 rounded-md px-3 py-2 text-sm focus:outline-none focus:border-emerald-600">
-        <option value="">All Statuses</option>
-        <option value="Submitted to Architect">Submitted to Architect</option>
-        <option value="No Exceptions Taken">No Exceptions Taken</option>
-        <option value="Reviewed as Noted">Reviewed as Noted</option>
-        <option value="Revise &amp; Resubmit">Revise &amp; Resubmit</option>
-        <option value="Rejected">Rejected</option>
-        <option value="Closed">Closed</option>
-      </select>
-      
-      <select id="divisionFilter" onchange="filterSubmittals()" 
-              class="bg-zinc-800 border border-zinc-700 rounded-md px-3 py-2 text-sm focus:outline-none focus:border-emerald-600">
-        <option value="">All Divisions</option>
-        <option value="01">Division 01 — General Requirements</option>
-        <option value="03">Division 03 — Concrete</option>
-        <option value="04">Division 04 — Masonry</option>
-        <option value="05">Division 05 — Metals</option>
-        <option value="06">Division 06 — Wood, Plastics, and Composites</option>
-        <option value="07">Division 07 — Thermal and Moisture Protection</option>
-        <option value="08">Division 08 — Openings</option>
-        <option value="09">Division 09 — Finishes</option>
-        <option value="10">Division 10 — Specialties</option>
-        <option value="21">Division 21 — Fire Suppression</option>
-        <option value="22">Division 22 — Plumbing</option>
-        <option value="23">Division 23 — HVAC</option>
-        <option value="26">Division 26 — Electrical</option>
-        <option value="28">Division 28 — Electronic Safety and Security</option>
-        <option value="31">Division 31 — Earthwork</option>
-        <option value="32">Division 32 — Exterior Improvements</option>
-        <option value="33">Division 33 — Utilities</option>
-      </select>
-      
-      <button onclick="clearFilters()" 
-              class="px-4 py-2 bg-zinc-800 hover:bg-zinc-700 rounded-md text-sm font-medium transition-colors border border-zinc-700">
-        Clear
-      </button>
-    </div>
+    <select id="divisionFilter" onchange="filterSubmittals()" 
+            class="bg-zinc-900 border border-zinc-700 rounded-md px-4 py-2.5 text-sm focus:border-emerald-600 min-w-[160px]">
+      <option value="">All Divisions</option>
+      <option value="01">01 - General Requirements</option>
+      <option value="03">03 - Concrete</option>
+      <option value="04">04 - Masonry</option>
+      <option value="05">05 - Metals</option>
+      <option value="06">06 - Wood, Plastics, Composites</option>
+      <option value="07">07 - Thermal &amp; Moisture Protection</option>
+      <option value="08">08 - Openings</option>
+      <option value="09">09 - Finishes</option>
+      <option value="21">21 - Fire Suppression</option>
+      <option value="22">22 - Plumbing</option>
+      <option value="23">23 - HVAC</option>
+      <option value="26">26 - Electrical</option>
+      <option value="28">28 - Electronic Safety &amp; Security</option>
+    </select>
+    
+    <button onclick="clearFilters()" 
+            class="px-5 py-2.5 bg-zinc-800 hover:bg-zinc-700 border border-zinc-700 rounded-md text-sm font-medium transition-colors">
+      Clear
+    </button>
   </div>
 </div>
 
 <!-- SUBMITTALS TABLE -->
-<div class="bg-zinc-900 border border-zinc-700 rounded-md overflow-hidden">
-  <div class="overflow-x-auto">
-    <table class="w-full text-sm">
-      <thead class="bg-zinc-800 border-b border-zinc-700">
-        <tr>
-          <th class="px-4 py-3 text-left font-semibold text-zinc-400 w-12">#</th>
-          <th class="px-4 py-3 text-left font-semibold text-zinc-400">Spec Section</th>
-          <th class="px-4 py-3 text-left font-semibold text-zinc-400">Subject / Title</th>
-          <th class="px-4 py-3 text-left font-semibold text-zinc-400 w-28">Type</th>
-          <th class="px-4 py-3 text-left font-semibold text-zinc-400 w-24">Rev</th>
-          <th class="px-4 py-3 text-left font-semibold text-zinc-400 w-36">Status</th>
-          <th class="px-4 py-3 text-left font-semibold text-zinc-400 w-28">Due Date</th>
-          <th class="px-4 py-3 text-left font-semibold text-zinc-400 w-32">From</th>
-          <th class="px-4 py-3 text-center font-semibold text-zinc-400 w-16">Links</th>
-          <th class="px-4 py-3 text-center font-semibold text-zinc-400 w-12"></th>
-        </tr>
-      </thead>
-      <tbody id="submittalsTableBody" class="divide-y divide-zinc-800 text-zinc-200">
-        <!-- Populated by JavaScript -->
-      </tbody>
-    </table>
+<div class="px-6 pb-8">
+  <div class="border border-zinc-700 rounded-md bg-zinc-900 overflow-hidden">
+    <div class="overflow-auto" style="max-height: calc(100vh - 420px);">
+      <table class="w-full text-sm min-w-[1400px]">
+        <thead class="bg-zinc-800 border-b border-zinc-700 sticky top-0 z-10">
+          <tr>
+            <th class="px-5 py-3.5 text-left font-semibold text-zinc-300 w-28">Submittal #</th>
+            <th class="px-5 py-3.5 text-left font-semibold text-zinc-300 w-24">Spec Section</th>
+            <th class="px-5 py-3.5 text-left font-semibold text-zinc-300 min-w-[280px]">Title / Subject</th>
+            <th class="px-5 py-3.5 text-left font-semibold text-zinc-300 w-40">From</th>
+            <th class="px-5 py-3.5 text-center font-semibold text-zinc-300 w-32">Status</th>
+            <th class="px-5 py-3.5 text-center font-semibold text-zinc-300 w-28">Rev</th>
+            <th class="px-5 py-3.5 text-center font-semibold text-zinc-300 w-36">Last Action</th>
+            <th class="px-5 py-3.5 text-center font-semibold text-zinc-300 w-28">Due Date</th>
+            <th class="px-5 py-3.5 text-center font-semibold text-zinc-300 w-20">Actions</th>
+          </tr>
+        </thead>
+        <tbody id="submittalsTableBody" class="divide-y divide-zinc-800 text-zinc-200">
+          <!-- Populated by JavaScript -->
+        </tbody>
+      </table>
+    </div>
   </div>
 </div>
 
-<!-- DETAIL MODAL (Large - All Information) -->
-<div id="detailModal" class="hidden fixed inset-0 bg-black/70 flex items-center justify-center z-[100] p-4">
-  <div class="bg-zinc-900 border border-zinc-700 rounded-2xl w-full max-w-6xl max-h-[92vh] flex flex-col modal">
+<!-- LARGE DETAILED SUBMITTAL MODAL -->
+<div id="submittalDetailModal" onclick="if (event.target.id === 'submittalDetailModal') closeSubmittalDetailModal()" 
+     class="hidden fixed inset-0 bg-black/70 backdrop-blur-sm z-[100] flex items-center justify-center p-4">
+  <div onclick="event.stopImmediatePropagation()" 
+       class="bg-zinc-900 border border-zinc-700 rounded-2xl w-full max-w-[1100px] max-h-[92vh] overflow-hidden flex flex-col shadow-2xl">
+    
     <!-- Modal Header -->
-    <div class="px-6 py-4 border-b border-zinc-700 flex items-center justify-between flex-shrink-0">
-      <div class="flex items-center gap-3">
+    <div class="flex items-center justify-between px-6 py-4 border-b border-zinc-800 bg-zinc-950">
+      <div class="flex items-center gap-4">
         <div>
-          <div id="modalSubmittalNum" class="font-mono text-emerald-400 text-sm"></div>
-          <div id="modalTitle" class="text-xl font-semibold"></div>
+          <div id="modalSubmittalNumber" class="font-mono text-xl font-bold text-emerald-400"></div>
+          <div id="modalSpecSection" class="text-sm text-zinc-400"></div>
         </div>
+        <div id="modalStatusBadge" class="px-4 py-1 rounded-full text-sm font-semibold"></div>
       </div>
+      
       <div class="flex items-center gap-2">
         <button onclick="saveSubmittalChanges()" 
-                class="px-4 py-2 bg-emerald-600 hover:bg-emerald-500 rounded-md text-sm font-semibold flex items-center gap-2">
-          <i class="fa-solid fa-save"></i> <span>Save Changes</span>
+                class="flex items-center gap-2 px-4 py-2 bg-emerald-600 hover:bg-emerald-500 rounded-md text-sm font-semibold transition-colors">
+          <i class="fa-solid fa-save"></i>
+          <span>Save Changes</span>
         </button>
-        <button onclick="closeDetailModal()" 
-                class="w-9 h-9 flex items-center justify-center text-zinc-400 hover:text-white hover:bg-zinc-800 rounded-md">
+        <button onclick="closeSubmittalDetailModal()" 
+                class="w-10 h-10 flex items-center justify-center text-zinc-400 hover:text-white hover:bg-zinc-800 rounded-md transition-colors">
           <i class="fa-solid fa-times text-xl"></i>
         </button>
       </div>
     </div>
-
+    
     <!-- Tabs -->
-    <div class="flex border-b border-zinc-700 px-6 flex-shrink-0 bg-zinc-950">
-      <button onclick="switchTab(0)" class="tab-btn active px-5 py-3 text-sm font-medium border-b-2 border-emerald-500 text-white">Overview &amp; Details</button>
-      <button onclick="switchTab(1)" class="tab-btn px-5 py-3 text-sm font-medium text-zinc-400 hover:text-white">Workflow &amp; History</button>
-      <button onclick="switchTab(2)" class="tab-btn px-5 py-3 text-sm font-medium text-zinc-400 hover:text-white">Review Comments</button>
-      <button onclick="switchTab(3)" class="tab-btn px-5 py-3 text-sm font-medium text-zinc-400 hover:text-white">Links &amp; Attachments</button>
+    <div class="flex border-b border-zinc-800 px-6 bg-zinc-950">
+      <button onclick="switchTab(0)" class="tab-button active px-5 py-3 text-sm" data-tab="0">Overview &amp; Details</button>
+      <button onclick="switchTab(1)" class="tab-button px-5 py-3 text-sm" data-tab="1">Workflow &amp; History</button>
+      <button onclick="switchTab(2)" class="tab-button px-5 py-3 text-sm" data-tab="2">Review Comments</button>
+      <button onclick="switchTab(3)" class="tab-button px-5 py-3 text-sm" data-tab="3">Links &amp; Attachments</button>
     </div>
-
+    
     <!-- Tab Content -->
-    <div class="flex-1 overflow-auto p-6" id="modalTabContent">
-      <!-- Populated dynamically by JS -->
+    <div class="flex-1 overflow-auto p-6" style="max-height: calc(92vh - 180px);">
+      
+      <!-- TAB 0: Overview & Details -->
+      <div id="tab-0" class="tab-content">
+        <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+          <!-- Left Column -->
+          <div class="space-y-5">
+            <div>
+              <label class="block text-xs font-semibold text-zinc-400 tracking-wider mb-1.5">SPEC SECTION</label>
+              <div class="flex gap-2">
+                <select id="modalSpecSectionSelect" onchange="updateSpecSectionTitle()" 
+                        class="flex-1 bg-zinc-800 border border-zinc-700 rounded-md px-3 py-2.5 text-sm focus:border-emerald-600">
+                  <!-- Populated dynamically -->
+                </select>
+                <button onclick="quickAddSpecSection()" 
+                        class="px-3 py-2.5 bg-zinc-700 hover:bg-zinc-600 rounded-md text-sm font-medium" title="Add new spec section">
+                  <i class="fa-solid fa-plus"></i>
+                </button>
+              </div>
+              <div id="modalSpecSectionTitle" class="mt-1.5 text-sm text-emerald-400 font-medium"></div>
+            </div>
+            
+            <div>
+              <label class="block text-xs font-semibold text-zinc-400 tracking-wider mb-1.5">SUBMITTAL TITLE / SUBJECT</label>
+              <input type="text" id="modalTitle" class="w-full bg-zinc-800 border border-zinc-700 rounded-md px-3 py-2.5 text-sm focus:border-emerald-600">
+            </div>
+            
+            <div class="grid grid-cols-2 gap-4">
+              <div>
+                <label class="block text-xs font-semibold text-zinc-400 tracking-wider mb-1.5">PARAGRAPH / ITEM</label>
+                <input type="text" id="modalParagraph" class="w-full bg-zinc-800 border border-zinc-700 rounded-md px-3 py-2.5 text-sm focus:border-emerald-600">
+              </div>
+              <div>
+                <label class="block text-xs font-semibold text-zinc-400 tracking-wider mb-1.5">SUBMITTAL TYPE</label>
+                <select id="modalType" class="w-full bg-zinc-800 border border-zinc-700 rounded-md px-3 py-2.5 text-sm focus:border-emerald-600">
+                  <option>Shop Drawing</option>
+                  <option>Product Data</option>
+                  <option>Samples</option>
+                  <option>Certificates</option>
+                  <option>Test Reports</option>
+                  <option>Calculations</option>
+                  <option>Other</option>
+                </select>
+              </div>
+            </div>
+            
+            <div class="grid grid-cols-3 gap-4">
+              <div>
+                <label class="block text-xs font-semibold text-zinc-400 tracking-wider mb-1.5">REVISION</label>
+                <input type="text" id="modalRevision" class="w-full bg-zinc-800 border border-zinc-700 rounded-md px-3 py-2.5 text-sm focus:border-emerald-600">
+              </div>
+              <div>
+                <label class="block text-xs font-semibold text-zinc-400 tracking-wider mb-1.5">TRANSMITTAL #</label>
+                <input type="text" id="modalTransmittal" class="w-full bg-zinc-800 border border-zinc-700 rounded-md px-3 py-2.5 text-sm focus:border-emerald-600">
+              </div>
+              <div>
+                <label class="block text-xs font-semibold text-zinc-400 tracking-wider mb-1.5">COPIES</label>
+                <input type="number" id="modalCopies" class="w-full bg-zinc-800 border border-zinc-700 rounded-md px-3 py-2.5 text-sm focus:border-emerald-600">
+              </div>
+            </div>
+          </div>
+          
+          <!-- Right Column -->
+          <div class="space-y-5">
+            <div class="grid grid-cols-2 gap-4">
+              <div>
+                <label class="block text-xs font-semibold text-zinc-400 tracking-wider mb-1.5">RECEIVED FROM</label>
+                <input type="text" id="modalReceivedFrom" class="w-full bg-zinc-800 border border-zinc-700 rounded-md px-3 py-2.5 text-sm focus:border-emerald-600">
+              </div>
+              <div>
+                <label class="block text-xs font-semibold text-zinc-400 tracking-wider mb-1.5">REFERRED TO</label>
+                <input type="text" id="modalReferredTo" class="w-full bg-zinc-800 border border-zinc-700 rounded-md px-3 py-2.5 text-sm focus:border-emerald-600">
+              </div>
+            </div>
+            
+            <div>
+              <label class="block text-xs font-semibold text-zinc-400 tracking-wider mb-1.5">COPIES TO / DISTRIBUTION</label>
+              <input type="text" id="modalCopiesTo" class="w-full bg-zinc-800 border border-zinc-700 rounded-md px-3 py-2.5 text-sm focus:border-emerald-600" placeholder="Architect, Owner, Subcontractor...">
+            </div>
+            
+            <div class="grid grid-cols-2 gap-4">
+              <div>
+                <label class="block text-xs font-semibold text-zinc-400 tracking-wider mb-1.5">DATE RECEIVED</label>
+                <input type="date" id="modalDateReceived" class="w-full bg-zinc-800 border border-zinc-700 rounded-md px-3 py-2.5 text-sm focus:border-emerald-600">
+              </div>
+              <div>
+                <label class="block text-xs font-semibold text-zinc-400 tracking-wider mb-1.5">DATE SENT TO ARCHITECT</label>
+                <input type="date" id="modalDateSent" class="w-full bg-zinc-800 border border-zinc-700 rounded-md px-3 py-2.5 text-sm focus:border-emerald-600">
+              </div>
+            </div>
+            
+            <div class="grid grid-cols-2 gap-4">
+              <div>
+                <label class="block text-xs font-semibold text-zinc-400 tracking-wider mb-1.5">DUE DATE</label>
+                <input type="date" id="modalDueDate" class="w-full bg-zinc-800 border border-zinc-700 rounded-md px-3 py-2.5 text-sm focus:border-emerald-600">
+              </div>
+              <div>
+                <label class="block text-xs font-semibold text-zinc-400 tracking-wider mb-1.5">DATE RETURNED</label>
+                <input type="date" id="modalDateReturned" class="w-full bg-zinc-800 border border-zinc-700 rounded-md px-3 py-2.5 text-sm focus:border-emerald-600">
+              </div>
+            </div>
+          </div>
+        </div>
+        
+        <div class="mt-6">
+          <label class="block text-xs font-semibold text-zinc-400 tracking-wider mb-1.5">INTERNAL NOTES</label>
+          <textarea id="modalInternalNotes" rows="3" 
+                    class="w-full bg-zinc-800 border border-zinc-700 rounded-md px-3 py-2.5 text-sm focus:border-emerald-600 resize-y"></textarea>
+        </div>
+      </div>
+      
+      <!-- TAB 1: Workflow & History -->
+      <div id="tab-1" class="tab-content hidden">
+        <div class="mb-4">
+          <label class="block text-xs font-semibold text-zinc-400 tracking-wider mb-2">CURRENT WORKFLOW STATUS</label>
+          <select id="modalWorkflowStatus" onchange="updateStatusBadgePreview()" 
+                  class="w-full max-w-md bg-zinc-800 border border-zinc-700 rounded-md px-3 py-2.5 text-sm focus:border-emerald-600">
+            <option value="Pending">Pending Review</option>
+            <option value="No Exceptions Taken">No Exceptions Taken</option>
+            <option value="Reviewed as Noted">Reviewed as Noted</option>
+            <option value="Revise & Resubmit">Revise &amp; Resubmit</option>
+            <option value="Rejected">Rejected</option>
+            <option value="Closed">Closed</option>
+          </select>
+        </div>
+        
+        <div>
+          <label class="block text-xs font-semibold text-zinc-400 tracking-wider mb-2">STATUS HISTORY / AUDIT LOG</label>
+          <div id="modalStatusHistory" class="bg-zinc-950 border border-zinc-800 rounded-md p-4 text-sm space-y-3 max-h-[280px] overflow-auto">
+            <!-- Populated by JS -->
+          </div>
+        </div>
+      </div>
+      
+      <!-- TAB 2: Review Comments -->
+      <div id="tab-2" class="tab-content hidden">
+        <div class="flex justify-between items-center mb-3">
+          <div class="text-sm font-semibold text-zinc-300">Review Comments &amp; Responses</div>
+          <button onclick="addNewComment()" 
+                  class="flex items-center gap-2 px-3 py-1.5 text-xs bg-zinc-700 hover:bg-zinc-600 rounded-md">
+            <i class="fa-solid fa-plus"></i>
+            <span>Add Comment</span>
+          </button>
+        </div>
+        
+        <div id="modalCommentsList" class="space-y-3 max-h-[320px] overflow-auto pr-1">
+          <!-- Populated by JS -->
+        </div>
+      </div>
+      
+      <!-- TAB 3: Links & Attachments -->
+      <div id="tab-3" class="tab-content hidden">
+        <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+          <!-- Linked Drawings / Plans -->
+          <div>
+            <div class="flex items-center justify-between mb-2">
+              <div class="text-sm font-semibold text-zinc-300">Linked Drawings / Plans</div>
+              <button onclick="showLinkDrawingModal()" 
+                      class="text-xs px-3 py-1 bg-zinc-700 hover:bg-zinc-600 rounded-md flex items-center gap-1.5">
+                <i class="fa-solid fa-link"></i>
+                <span>Link Drawing</span>
+              </button>
+            </div>
+            <div id="modalLinkedDrawings" class="bg-zinc-950 border border-zinc-800 rounded-md p-3 min-h-[120px] text-sm space-y-2">
+              <!-- Populated by JS -->
+            </div>
+          </div>
+          
+          <!-- Attachments -->
+          <div>
+            <div class="flex items-center justify-between mb-2">
+              <div class="text-sm font-semibold text-zinc-300">Attachments</div>
+              <button onclick="simulateUploadAttachment()" 
+                      class="text-xs px-3 py-1 bg-zinc-700 hover:bg-zinc-600 rounded-md flex items-center gap-1.5">
+                <i class="fa-solid fa-paperclip"></i>
+                <span>Upload File</span>
+              </button>
+            </div>
+            <div id="modalAttachments" class="bg-zinc-950 border border-zinc-800 rounded-md p-3 min-h-[120px] text-sm space-y-2">
+              <!-- Populated by JS -->
+            </div>
+          </div>
+        </div>
+        
+        <div class="mt-6">
+          <div class="text-sm font-semibold text-zinc-300 mb-2">Linked RFIs / Change Orders</div>
+          <div class="flex gap-2 flex-wrap" id="modalLinkedOther">
+            <!-- Populated by JS -->
+          </div>
+        </div>
+      </div>
+      
+    </div>
+    
+    <!-- Modal Footer -->
+    <div class="border-t border-zinc-800 px-6 py-3.5 bg-zinc-950 flex justify-between items-center text-xs text-zinc-500">
+      <div>
+        Created: <span id="modalCreatedDate"></span> &nbsp;•&nbsp; Last Updated: <span id="modalUpdatedDate"></span>
+      </div>
+      <div class="flex gap-4">
+        <button onclick="deleteCurrentSubmittal()" class="text-red-400 hover:text-red-500 flex items-center gap-1.5">
+          <i class="fa-solid fa-trash"></i>
+          <span>Delete Submittal</span>
+        </button>
+      </div>
     </div>
   </div>
 </div>
 
-<!-- SPEC SECTIONS MANAGEMENT MODAL (Program Settings subsection) -->
-<div id="specSectionsModal" class="hidden fixed inset-0 bg-black/70 flex items-center justify-center z-[110] p-4">
-  <div class="bg-zinc-900 border border-zinc-700 rounded-2xl w-full max-w-5xl max-h-[90vh] flex flex-col modal">
-    <div class="px-6 py-4 border-b border-zinc-700 flex items-center justify-between">
+<!-- SPEC SECTIONS MANAGEMENT MODAL (Program Settings) -->
+<div id="specSectionsModal" onclick="if (event.target.id === 'specSectionsModal') closeSpecSectionsModal()" 
+     class="hidden fixed inset-0 bg-black/70 backdrop-blur-sm z-[110] flex items-center justify-center p-4">
+  <div onclick="event.stopImmediatePropagation()" 
+       class="bg-zinc-900 border border-zinc-700 rounded-2xl w-full max-w-[980px] max-h-[88vh] flex flex-col shadow-2xl">
+    
+    <div class="flex items-center justify-between px-6 py-4 border-b border-zinc-800">
       <div>
-        <div class="font-semibold text-lg">Spec Sections Management</div>
-        <div class="text-xs text-zinc-500">Program Settings • CSI MasterFormat</div>
+        <div class="font-semibold text-xl">Spec Sections Management</div>
+        <div class="text-xs text-zinc-400">Program Settings • CSI MasterFormat</div>
       </div>
       <div class="flex items-center gap-2">
         <button onclick="loadFullMasterFormat()" 
-                class="px-3 py-1.5 text-xs bg-zinc-800 hover:bg-zinc-700 rounded-md flex items-center gap-1.5">
-          <i class="fa-solid fa-download"></i> <span>Load Full MasterFormat</span>
+                class="px-4 py-2 text-sm bg-zinc-700 hover:bg-zinc-600 rounded-md flex items-center gap-2">
+          <i class="fa-solid fa-download"></i>
+          <span>Load Full MasterFormat</span>
         </button>
-        <button onclick="exportSpecSections()" 
-                class="px-3 py-1.5 text-xs bg-zinc-800 hover:bg-zinc-700 rounded-md flex items-center gap-1.5">
-          <i class="fa-solid fa-file-export"></i> <span>Export CSV</span>
+        <button onclick="exportSpecSectionsCSV()" 
+                class="px-4 py-2 text-sm bg-zinc-700 hover:bg-zinc-600 rounded-md flex items-center gap-2">
+          <i class="fa-solid fa-download"></i>
+          <span>Export CSV</span>
         </button>
-        <label class="px-3 py-1.5 text-xs bg-zinc-800 hover:bg-zinc-700 rounded-md flex items-center gap-1.5 cursor-pointer">
-          <i class="fa-solid fa-file-import"></i> <span>Import CSV</span>
-          <input type="file" accept=".csv" class="hidden" onchange="importSpecSections(event)">
-        </label>
-        <button onclick="closeSpecModal()" class="w-9 h-9 flex items-center justify-center text-zinc-400 hover:text-white hover:bg-zinc-800 rounded-md">
-          <i class="fa-solid fa-times text-xl"></i>
+        <button onclick="importSpecSectionsCSV()" 
+                class="px-4 py-2 text-sm bg-zinc-700 hover:bg-zinc-600 rounded-md flex items-center gap-2">
+          <i class="fa-solid fa-upload"></i>
+          <span>Import CSV</span>
+        </button>
+        <button onclick="closeSpecSectionsModal()" class="w-9 h-9 flex items-center justify-center text-zinc-400 hover:text-white hover:bg-zinc-800 rounded-md">
+          <i class="fa-solid fa-times text-lg"></i>
         </button>
       </div>
     </div>
-
-    <div class="p-4 flex-1 overflow-auto">
-      <!-- Add new section form -->
-      <div class="bg-zinc-950 border border-zinc-700 rounded-md p-4 mb-4">
+    
+    <div class="p-5 flex-1 overflow-auto">
+      <!-- Add New Spec Section Form -->
+      <div class="bg-zinc-950 border border-zinc-800 rounded-md p-4 mb-4">
         <div class="text-sm font-semibold mb-3 text-emerald-400">Add New Spec Section</div>
         <div class="grid grid-cols-1 md:grid-cols-5 gap-3">
-          <input id="newDiv" placeholder="Division (e.g. 03)" class="bg-zinc-900 border border-zinc-700 rounded-md px-3 py-2 text-sm">
-          <input id="newSection" placeholder="Section (e.g. 30 00)" class="bg-zinc-900 border border-zinc-700 rounded-md px-3 py-2 text-sm">
-          <input id="newTitle" placeholder="Section Title" class="bg-zinc-900 border border-zinc-700 rounded-md px-3 py-2 text-sm md:col-span-2">
-          <button onclick="addNewSpecSection()" 
-                  class="bg-emerald-600 hover:bg-emerald-500 rounded-md text-sm font-semibold flex items-center justify-center gap-2">
-            <i class="fa-solid fa-plus"></i> Add
-          </button>
+          <div>
+            <input type="text" id="newSpecDivision" placeholder="Division (e.g. 03)" class="w-full bg-zinc-800 border border-zinc-700 rounded-md px-3 py-2 text-sm">
+          </div>
+          <div>
+            <input type="text" id="newSpecNumber" placeholder="Section # (e.g. 03 30 00)" class="w-full bg-zinc-800 border border-zinc-700 rounded-md px-3 py-2 text-sm">
+          </div>
+          <div class="md:col-span-2">
+            <input type="text" id="newSpecTitle" placeholder="Section Title" class="w-full bg-zinc-800 border border-zinc-700 rounded-md px-3 py-2 text-sm">
+          </div>
+          <div>
+            <button onclick="addNewSpecSection()" 
+                    class="w-full h-[42px] bg-emerald-600 hover:bg-emerald-500 rounded-md text-sm font-semibold flex items-center justify-center gap-2">
+              <i class="fa-solid fa-plus"></i>
+              <span>Add Section</span>
+            </button>
+          </div>
         </div>
       </div>
-
-      <div class="overflow-x-auto border border-zinc-700 rounded-md">
+      
+      <!-- Spec Sections Table -->
+      <div class="border border-zinc-700 rounded-md overflow-hidden">
         <table class="w-full text-sm">
           <thead class="bg-zinc-800">
             <tr>
-              <th class="px-4 py-2 text-left w-20">Division</th>
-              <th class="px-4 py-2 text-left w-28">Section #</th>
-              <th class="px-4 py-2 text-left">Title</th>
-              <th class="px-4 py-2 text-center w-20">Custom</th>
-              <th class="px-4 py-2 text-center w-20">Active</th>
-              <th class="px-4 py-2 text-center w-24">Actions</th>
+              <th class="px-4 py-3 text-left font-medium text-zinc-300 w-20">Division</th>
+              <th class="px-4 py-3 text-left font-medium text-zinc-300 w-28">Section #</th>
+              <th class="px-4 py-3 text-left font-medium text-zinc-300">Section Title</th>
+              <th class="px-4 py-3 text-center font-medium text-zinc-300 w-20">Custom</th>
+              <th class="px-4 py-3 text-center font-medium text-zinc-300 w-20">Active</th>
+              <th class="px-4 py-3 text-center font-medium text-zinc-300 w-24">Actions</th>
             </tr>
           </thead>
           <tbody id="specSectionsTableBody" class="divide-y divide-zinc-800">
@@ -349,214 +588,292 @@
 </div>
 
 <!-- Toast Container -->
-<div id="toastContainer" class="fixed bottom-4 right-4 z-[200] space-y-2"></div>
+<div id="toastContainer" class="fixed bottom-6 right-6 z-[200] space-y-2"></div>
 
 <script>
-// ==================== DATA ====================
-let submittals = [
-  {
-    id: 1,
-    submittalNum: "03 30 00-001",
-    specSection: "03 30 00",
-    specTitle: "Cast-in-Place Concrete",
-    paragraph: "3.2.A",
-    subject: "Concrete Mix Design - 4000 PSI",
-    type: "Product Data",
-    revision: "0",
-    status: "No Exceptions Taken",
-    dueDate: "2025-02-15",
-    receivedDate: "2025-01-28",
-    returnedDate: "2025-02-10",
-    receivedFrom: "ABC Concrete LLC",
-    referredTo: "Smith &amp; Associates",
-    copiesTo: "Owner, Structural Engineer",
-    notes: "Approved for use on foundation and slab pours.",
-    transmittalNum: "TR-2025-0142",
-    links: [{type: "Drawing", ref: "S-101", title: "Foundation & Slab Details"}],
-    comments: [
-      {date: "2025-02-05", author: "Architect", text: "No Exceptions Taken. Proceed.", style: "architect"},
-      {date: "2025-02-03", author: "GC", text: "Submitted for review.", style: "gc"}
-    ],
-    workflowHistory: [
-      {date: "2025-01-28", action: "Submitted to Architect", by: "Michael Bretz"},
-      {date: "2025-02-10", action: "Status changed to No Exceptions Taken", by: "Architect"}
-    ]
-  },
-  {
-    id: 2,
-    submittalNum: "05 40 00-003",
-    specSection: "05 40 00",
-    specTitle: "Cold-Formed Metal Framing",
-    paragraph: "2.1.B",
-    subject: "Metal Studs - 20ga x 3-5/8\"",
-    type: "Product Data",
-    revision: "1",
-    status: "Revise &amp; Resubmit",
-    dueDate: "2025-03-01",
-    receivedDate: "2025-02-18",
-    returnedDate: "2025-02-25",
-    receivedFrom: "Steel Dynamics Inc.",
-    referredTo: "Smith &amp; Associates",
-    copiesTo: "Owner",
-    notes: "Resubmit with updated gauge and coating specs.",
-    transmittalNum: "TR-2025-0198",
-    links: [],
-    comments: [
-      {date: "2025-02-25", author: "Architect", text: "Revise & Resubmit. Gauge must be minimum 18ga for exterior walls.", style: "architect"},
-      {date: "2025-02-20", author: "Subcontractor", text: "Updated submittal attached.", style: "sub"}
-    ],
-    workflowHistory: [
-      {date: "2025-02-18", action: "Submitted to Architect", by: "Michael Bretz"},
-      {date: "2025-02-25", action: "Status changed to Revise & Resubmit", by: "Architect"}
-    ]
-  },
-  {
-    id: 3,
-    submittalNum: "08 11 13-002",
-    specSection: "08 11 13",
-    specTitle: "Hollow Metal Doors and Frames",
-    paragraph: "1.3.A",
-    subject: "HM Doors - Fire Rated",
-    type: "Shop Drawings",
-    revision: "0",
-    status: "Reviewed as Noted",
-    dueDate: "2025-02-20",
-    receivedDate: "2025-02-05",
-    returnedDate: "2025-02-18",
-    receivedFrom: "Door Systems LLC",
-    referredTo: "Smith &amp; Associates",
-    copiesTo: "",
-    notes: "Minor notes on hardware schedule. Approved as noted.",
-    transmittalNum: "TR-2025-0175",
-    links: [{type: "Drawing", ref: "A-201", title: "Door Schedule"}],
-    comments: [
-      {date: "2025-02-18", author: "Architect", text: "Reviewed as Noted. Hardware group 3 to be used on all exterior doors.", style: "architect"}
-    ],
-    workflowHistory: [
-      {date: "2025-02-05", action: "Submitted to Architect", by: "Michael Bretz"},
-      {date: "2025-02-18", action: "Status changed to Reviewed as Noted", by: "Architect"}
-    ]
-  }
-];
+// =====================================================
+// SUBMITTALS MODULE - FULL INNER CONTENT
+// Matches Budget page styling exactly
+// =====================================================
 
-let specSections = [
-  {id: 1, division: "01", section: "10 00", title: "Summary", isCustom: false, active: true},
-  {id: 2, division: "03", section: "30 00", title: "Cast-in-Place Concrete", isCustom: false, active: true},
-  {id: 3, division: "03", section: "35 00", title: "Concrete Finishing", isCustom: false, active: true},
-  {id: 4, division: "05", section: "40 00", title: "Cold-Formed Metal Framing", isCustom: false, active: true},
-  {id: 5, division: "08", section: "11 13", title: "Hollow Metal Doors and Frames", isCustom: false, active: true},
-  {id: 6, division: "09", section: "21 00", title: "Gypsum Board Assemblies", isCustom: false, active: true},
-  {id: 7, division: "22", section: "10 00", title: "Plumbing Piping", isCustom: false, active: true},
-  {id: 8, division: "23", section: "00 00", title: "HVAC General", isCustom: false, active: true},
-  {id: 9, division: "26", section: "10 00", title: "Electrical General Requirements", isCustom: false, active: true},
-  {id: 10, division: "26", section: "51 00", title: "Lighting", isCustom: false, active: true}
-];
-
+let submittals = [];
+let specSections = [];
 let currentSubmittalId = null;
 let currentTab = 0;
 
-// ==================== RENDER TABLE ====================
-function renderSubmittalsTable(filtered = null) {
+// Sample initial data
+function initializeData() {
+  // Spec Sections (CSI MasterFormat - focused on common submittal sections)
+  specSections = [
+    {id:1, division:"01", number:"01 10 00", title:"Summary", active:true, custom:false},
+    {id:2, division:"01", number:"01 20 00", title:"Price and Payment Procedures", active:true, custom:false},
+    {id:3, division:"01", number:"01 30 00", title:"Administrative Requirements", active:true, custom:false},
+    {id:4, division:"01", number:"01 40 00", title:"Quality Requirements", active:true, custom:false},
+    {id:5, division:"01", number:"01 50 00", title:"Temporary Facilities and Controls", active:true, custom:false},
+    {id:6, division:"01", number:"01 60 00", title:"Product Requirements", active:true, custom:false},
+    {id:7, division:"01", number:"01 70 00", title:"Execution and Closeout Requirements", active:true, custom:false},
+    {id:8, division:"01", number:"01 78 00", title:"Closeout Submittals", active:true, custom:false},
+    
+    {id:9, division:"03", number:"03 10 00", title:"Concrete Forming and Accessories", active:true, custom:false},
+    {id:10, division:"03", number:"03 20 00", title:"Concrete Reinforcing", active:true, custom:false},
+    {id:11, division:"03", number:"03 30 00", title:"Cast-in-Place Concrete", active:true, custom:false},
+    {id:12, division:"03", number:"03 35 00", title:"Concrete Finishing", active:true, custom:false},
+    {id:13, division:"03", number:"03 40 00", title:"Precast Concrete", active:true, custom:false},
+    
+    {id:14, division:"04", number:"04 20 00", title:"Unit Masonry", active:true, custom:false},
+    {id:15, division:"04", number:"04 40 00", title:"Stone Assemblies", active:true, custom:false},
+    
+    {id:16, division:"05", number:"05 12 00", title:"Structural Steel Framing", active:true, custom:false},
+    {id:17, division:"05", number:"05 40 00", title:"Cold-Formed Metal Framing", active:true, custom:false},
+    {id:18, division:"05", number:"05 50 00", title:"Metal Fabrications", active:true, custom:false},
+    
+    {id:19, division:"06", number:"06 10 00", title:"Rough Carpentry", active:true, custom:false},
+    {id:20, division:"06", number:"06 20 00", title:"Finish Carpentry", active:true, custom:false},
+    
+    {id:21, division:"07", number:"07 10 00", title:"Dampproofing and Waterproofing", active:true, custom:false},
+    {id:22, division:"07", number:"07 20 00", title:"Thermal Protection", active:true, custom:false},
+    {id:23, division:"07", number:"07 40 00", title:"Roofing and Siding Panels", active:true, custom:false},
+    {id:24, division:"07", number:"07 60 00", title:"Flashing and Sheet Metal", active:true, custom:false},
+    
+    {id:25, division:"08", number:"08 10 00", title:"Doors and Frames", active:true, custom:false},
+    {id:26, division:"08", number:"08 30 00", title:"Specialty Doors and Frames", active:true, custom:false},
+    {id:27, division:"08", number:"08 40 00", title:"Entrances, Storefronts, and Curtain Walls", active:true, custom:false},
+    {id:28, division:"08", number:"08 70 00", title:"Hardware", active:true, custom:false},
+    {id:29, division:"08", number:"08 80 00", title:"Glazing", active:true, custom:false},
+    
+    {id:30, division:"09", number:"09 20 00", title:"Plaster and Gypsum Board", active:true, custom:false},
+    {id:31, division:"09", number:"09 30 00", title:"Tiling", active:true, custom:false},
+    {id:32, division:"09", number:"09 50 00", title:"Ceilings", active:true, custom:false},
+    {id:33, division:"09", number:"09 60 00", title:"Flooring", active:true, custom:false},
+    {id:34, division:"09", number:"09 90 00", title:"Painting and Coating", active:true, custom:false},
+    
+    {id:35, division:"21", number:"21 10 00", title:"Water-Based Fire-Suppression Systems", active:true, custom:false},
+    {id:36, division:"21", number:"21 20 00", title:"Fire-Extinguishing Systems", active:true, custom:false},
+    
+    {id:37, division:"22", number:"22 10 00", title:"Plumbing Piping", active:true, custom:false},
+    {id:38, division:"22", number:"22 30 00", title:"Plumbing Equipment", active:true, custom:false},
+    {id:39, division:"22", number:"22 40 00", title:"Plumbing Fixtures", active:true, custom:false},
+    
+    {id:40, division:"23", number:"23 05 00", title:"Common Work Results for HVAC", active:true, custom:false},
+    {id:41, division:"23", number:"23 30 00", title:"HVAC Air Distribution", active:true, custom:false},
+    {id:42, division:"23", number:"23 70 00", title:"Central HVAC Equipment", active:true, custom:false},
+    
+    {id:43, division:"26", number:"26 05 00", title:"Common Work Results for Electrical", active:true, custom:false},
+    {id:44, division:"26", number:"26 20 00", title:"Low-Voltage Electrical Transmission", active:true, custom:false},
+    {id:45, division:"26", number:"26 50 00", title:"Lighting", active:true, custom:false},
+    
+    {id:46, division:"28", number:"28 10 00", title:"Electronic Access Control and Intrusion Detection", active:true, custom:false},
+    {id:47, division:"28", number:"28 30 00", title:"Electronic Detection and Alarm", active:true, custom:false},
+  ];
+  
+  // Sample Submittals
+  submittals = [
+    {
+      id: 1,
+      number: "SUB-2026-001",
+      specSection: "03 30 00",
+      specTitle: "Cast-in-Place Concrete",
+      paragraph: "2.1.A",
+      title: "Concrete Mix Design - 4000 PSI",
+      type: "Product Data",
+      revision: "00",
+      transmittal: "TR-2401",
+      status: "No Exceptions Taken",
+      receivedFrom: "ABC Concrete LLC",
+      referredTo: "Architect",
+      copiesTo: "Owner, Structural Engineer",
+      dateReceived: "2026-04-12",
+      dateSent: "2026-04-14",
+      dueDate: "2026-04-28",
+      dateReturned: "2026-04-25",
+      copies: 3,
+      internalNotes: "Approved for use. Verify slump on first placement.",
+      created: "2026-04-10",
+      updated: "2026-04-25",
+      workflowHistory: [
+        {date: "2026-04-10", user: "Michael Bretz", action: "Created submittal"},
+        {date: "2026-04-14", user: "Michael Bretz", action: "Sent to Architect for review"},
+        {date: "2026-04-25", user: "Architect (J. Ramirez)", action: "Status changed to No Exceptions Taken"}
+      ],
+      comments: [
+        {id:1, date:"2026-04-22", user:"J. Ramirez (Architect)", type:"architect", text:"Mix design meets 4000 PSI requirement. No exceptions taken."},
+        {id:2, date:"2026-04-23", user:"Michael Bretz (GC)", type:"gc", text:"Approved. Ready for placement on slab pour scheduled 5/2."}
+      ],
+      linkedDrawings: ["S-101 Foundation & Slab Details", "S-201 Concrete Sections"],
+      attachments: ["Concrete_Mix_Design_4000psi.pdf", "MSDS_Cement.pdf"],
+      linkedRFIs: [],
+      linkedCOs: []
+    },
+    {
+      id: 2,
+      number: "SUB-2026-002",
+      specSection: "05 12 00",
+      specTitle: "Structural Steel Framing",
+      paragraph: "1.5.B",
+      title: "Structural Steel Shop Drawings",
+      type: "Shop Drawing",
+      revision: "01",
+      transmittal: "TR-2415",
+      status: "Revise & Resubmit",
+      receivedFrom: "Steel Dynamics Inc.",
+      referredTo: "Structural Engineer",
+      copiesTo: "Owner, Architect",
+      dateReceived: "2026-04-18",
+      dateSent: "2026-04-20",
+      dueDate: "2026-05-04",
+      dateReturned: "2026-05-02",
+      copies: 2,
+      internalNotes: "Connection details at column base need revision per RFI-087.",
+      created: "2026-04-15",
+      updated: "2026-05-02",
+      workflowHistory: [
+        {date: "2026-04-15", user: "Michael Bretz", action: "Created submittal"},
+        {date: "2026-04-20", user: "Michael Bretz", action: "Sent to Structural Engineer"},
+        {date: "2026-05-02", user: "Structural Engineer (T. Kline)", action: "Status changed to Revise & Resubmit - comments attached"}
+      ],
+      comments: [
+        {id:1, date:"2026-05-01", user:"T. Kline (Struct. Eng.)", type:"architect", text:"Base plate connection at grid C/4 shows insufficient weld size. Revise per detail 5/S-401 and resubmit."},
+        {id:2, date:"2026-05-02", user:"Michael Bretz (GC)", type:"gc", text:"Forwarded to steel fabricator for revision. Expect resubmit by 5/8."}
+      ],
+      linkedDrawings: ["S-401 Steel Details", "S-301 Steel Framing Plan"],
+      attachments: ["Steel_Shop_Drawings_Rev01.pdf"],
+      linkedRFIs: ["RFI-087"],
+      linkedCOs: []
+    },
+    {
+      id: 3,
+      number: "SUB-2026-003",
+      specSection: "08 40 00",
+      specTitle: "Entrances, Storefronts, and Curtain Walls",
+      paragraph: "2.3",
+      title: "Storefront System - Kawneer 451T",
+      type: "Product Data",
+      revision: "00",
+      transmittal: "TR-2422",
+      status: "Pending",
+      receivedFrom: "Glazing Solutions LLC",
+      referredTo: "Architect",
+      copiesTo: "Owner",
+      dateReceived: "2026-05-01",
+      dateSent: "2026-05-03",
+      dueDate: "2026-05-17",
+      dateReturned: "",
+      copies: 2,
+      internalNotes: "Color: Dark Bronze. Confirm thermal performance values.",
+      created: "2026-04-28",
+      updated: "2026-05-03",
+      workflowHistory: [
+        {date: "2026-04-28", user: "Michael Bretz", action: "Created submittal"},
+        {date: "2026-05-03", user: "Michael Bretz", action: "Sent to Architect for review"}
+      ],
+      comments: [],
+      linkedDrawings: ["A-201 Exterior Elevations", "A-501 Storefront Details"],
+      attachments: ["Kawneer_451T_Cut_Sheet.pdf", "Thermal_Performance_Data.pdf"],
+      linkedRFIs: [],
+      linkedCOs: []
+    }
+  ];
+  
+  // Load from localStorage if available
+  const savedSubmittals = localStorage.getItem('casepm_submittals');
+  if (savedSubmittals) submittals = JSON.parse(savedSubmittals);
+  
+  const savedSpecs = localStorage.getItem('casepm_spec_sections');
+  if (savedSpecs) specSections = JSON.parse(savedSpecs);
+}
+
+// Save to localStorage
+function saveToLocalStorage() {
+  localStorage.setItem('casepm_submittals', JSON.stringify(submittals));
+  localStorage.setItem('casepm_spec_sections', JSON.stringify(specSections));
+}
+
+// Render Submittals Table
+function renderSubmittalsTable(filteredSubmittals = null) {
   const tbody = document.getElementById('submittalsTableBody');
   tbody.innerHTML = '';
   
-  const data = filtered || submittals;
+  const data = filteredSubmittals || submittals;
   
   if (data.length === 0) {
-    tbody.innerHTML = `<tr><td colspan="10" class="px-4 py-8 text-center text-zinc-500">No submittals found.</td></tr>`;
+    tbody.innerHTML = `<tr><td colspan="9" class="px-5 py-8 text-center text-zinc-500">No submittals found matching your filters.</td></tr>`;
     return;
   }
   
-  data.forEach(s => {
+  data.forEach(sub => {
     const row = document.createElement('tr');
     row.className = 'submittal-row cursor-pointer border-b border-zinc-800';
-    row.onclick = () => openDetailModal(s.id);
+    row.onclick = () => openSubmittalDetail(sub.id);
     
-    const statusColor = getStatusColor(s.status);
+    const statusColor = getStatusColor(sub.status);
     
     row.innerHTML = `
-      <td class="px-4 py-3 font-mono text-emerald-400 text-xs">${s.submittalNum}</td>
-      <td class="px-4 py-3">
-        <div class="font-medium">${s.specSection}</div>
-        <div class="text-[10px] text-zinc-500">${s.specTitle}</div>
+      <td class="px-5 py-3.5 font-mono text-emerald-400 font-semibold">${sub.number}</td>
+      <td class="px-5 py-3.5 font-mono text-sm">${sub.specSection}</td>
+      <td class="px-5 py-3.5">
+        <div class="font-medium">${sub.title}</div>
+        <div class="text-xs text-zinc-500">${sub.specTitle || ''}</div>
       </td>
-      <td class="px-4 py-3">
-        <div class="font-medium">${s.subject}</div>
-        <div class="text-[10px] text-zinc-500">${s.paragraph || ''}</div>
+      <td class="px-5 py-3.5 text-sm text-zinc-400">${sub.receivedFrom}</td>
+      <td class="px-5 py-3.5 text-center">
+        <span class="status-badge ${statusColor}">${sub.status}</span>
       </td>
-      <td class="px-4 py-3 text-xs text-zinc-400">${s.type}</td>
-      <td class="px-4 py-3 text-center"><span class="font-mono text-xs bg-zinc-800 px-2 py-0.5 rounded">${s.revision}</span></td>
-      <td class="px-4 py-3">
-        <span class="status-badge ${statusColor}">${s.status}</span>
-      </td>
-      <td class="px-4 py-3 text-xs text-zinc-400">${s.dueDate || '-'}</td>
-      <td class="px-4 py-3 text-xs text-zinc-400">${s.receivedFrom || '-'}</td>
-      <td class="px-4 py-3 text-center">
-        ${s.links && s.links.length > 0 ? 
-          `<span class="inline-flex items-center justify-center w-6 h-6 bg-emerald-900/50 text-emerald-400 rounded-full text-xs">${s.links.length}</span>` : 
-          `<span class="text-zinc-600">-</span>`}
-      </td>
-      <td class="px-4 py-3 text-center">
-        <button onclick="event.stopImmediatePropagation(); deleteSubmittal(${s.id})" 
-                class="text-red-500 hover:text-red-400 p-1">
-          <i class="fa-solid fa-trash text-xs"></i>
+      <td class="px-5 py-3.5 text-center font-mono text-xs">${sub.revision}</td>
+      <td class="px-5 py-3.5 text-center text-xs text-zinc-400">${sub.updated}</td>
+      <td class="px-5 py-3.5 text-center text-xs">${sub.dueDate || '—'}</td>
+      <td class="px-5 py-3.5 text-center">
+        <button onclick="event.stopImmediatePropagation(); openSubmittalDetail(${sub.id});" 
+                class="px-3 py-1 text-xs bg-zinc-700 hover:bg-emerald-600 hover:text-white rounded transition-colors">
+          View
         </button>
       </td>
     `;
     tbody.appendChild(row);
   });
   
-  updateMetricCards();
+  updateMetrics();
 }
 
 function getStatusColor(status) {
-  if (status === 'No Exceptions Taken') return 'bg-emerald-900/60 text-emerald-400';
-  if (status === 'Reviewed as Noted') return 'bg-blue-900/60 text-blue-400';
-  if (status === 'Revise &amp; Resubmit' || status === 'Revise & Resubmit') return 'bg-orange-900/60 text-orange-400';
-  if (status === 'Rejected') return 'bg-red-900/60 text-red-400';
-  if (status === 'Closed') return 'bg-zinc-700 text-zinc-400';
-  return 'bg-amber-900/60 text-amber-400';
+  if (status === 'No Exceptions Taken') return 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/30';
+  if (status === 'Reviewed as Noted') return 'bg-sky-500/10 text-sky-400 border border-sky-500/30';
+  if (status === 'Revise & Resubmit') return 'bg-orange-500/10 text-orange-400 border border-orange-500/30';
+  if (status === 'Rejected') return 'bg-red-500/10 text-red-400 border border-red-500/30';
+  if (status === 'Closed') return 'bg-zinc-500/10 text-zinc-400 border border-zinc-500/30';
+  return 'bg-amber-500/10 text-amber-400 border border-amber-500/30'; // Pending
 }
 
-function updateMetricCards() {
-  const total = submittals.length;
-  const pending = submittals.filter(s => ['Submitted to Architect', 'In Review'].includes(s.status)).length;
-  const approved = submittals.filter(s => s.status === 'No Exceptions Taken').length;
-  const revise = submittals.filter(s => s.status.includes('Revise')).length;
-  const rejected = submittals.filter(s => s.status === 'Rejected').length;
-  const closed = submittals.filter(s => s.status === 'Closed').length;
-  
-  document.getElementById('totalSubmittals').textContent = total;
-  document.getElementById('pendingSubmittals').textContent = pending;
-  document.getElementById('approvedSubmittals').textContent = approved;
-  document.getElementById('reviseSubmittals').textContent = revise;
-  document.getElementById('rejectedSubmittals').textContent = rejected;
-  document.getElementById('closedSubmittals').textContent = closed;
+function updateMetrics() {
+  document.getElementById('metricTotal').textContent = submittals.length;
+  document.getElementById('metricPending').textContent = submittals.filter(s => s.status === 'Pending').length;
+  document.getElementById('metricNoExceptions').textContent = submittals.filter(s => s.status === 'No Exceptions Taken').length;
+  document.getElementById('metricRevise').textContent = submittals.filter(s => s.status === 'Revise & Resubmit').length;
+  document.getElementById('metricRejected').textContent = submittals.filter(s => s.status === 'Rejected').length;
+  document.getElementById('metricClosed').textContent = submittals.filter(s => s.status === 'Closed').length;
 }
 
-// ==================== FILTER ====================
 function filterSubmittals() {
   const search = document.getElementById('searchInput').value.toLowerCase();
-  const status = document.getElementById('statusFilter').value;
-  const division = document.getElementById('divisionFilter').value;
+  const statusFilter = document.getElementById('statusFilter').value;
+  const divisionFilter = document.getElementById('divisionFilter').value;
   
   let filtered = submittals;
   
   if (search) {
     filtered = filtered.filter(s => 
-      s.subject.toLowerCase().includes(search) ||
-      s.specSection.toLowerCase().includes(search) ||
-      s.specTitle.toLowerCase().includes(search) ||
+      s.number.toLowerCase().includes(search) ||
+      s.title.toLowerCase().includes(search) ||
+      (s.specSection && s.specSection.toLowerCase().includes(search)) ||
       (s.receivedFrom && s.receivedFrom.toLowerCase().includes(search))
     );
   }
   
-  if (status) {
-    filtered = filtered.filter(s => s.status === status);
+  if (statusFilter) {
+    filtered = filtered.filter(s => s.status === statusFilter);
   }
   
-  if (division) {
-    filtered = filtered.filter(s => s.specSection.startsWith(division));
+  if (divisionFilter) {
+    filtered = filtered.filter(s => s.specSection && s.specSection.startsWith(divisionFilter));
   }
   
   renderSubmittalsTable(filtered);
@@ -569,379 +886,503 @@ function clearFilters() {
   renderSubmittalsTable();
 }
 
-// ==================== DETAIL MODAL ====================
-function openDetailModal(id) {
+// Open large detail modal
+function openSubmittalDetail(id) {
+  const sub = submittals.find(s => s.id === id);
+  if (!sub) return;
+  
   currentSubmittalId = id;
-  const s = submittals.find(x => x.id === id);
-  if (!s) return;
   
-  document.getElementById('modalSubmittalNum').textContent = s.submittalNum;
-  document.getElementById('modalTitle').textContent = s.subject;
+  // Populate fields
+  document.getElementById('modalSubmittalNumber').textContent = sub.number;
+  document.getElementById('modalSpecSection').textContent = `${sub.specSection} — ${sub.specTitle || ''}`;
   
-  currentTab = 0;
-  renderModalTabContent(s);
-  document.getElementById('detailModal').classList.remove('hidden');
-  document.getElementById('detailModal').classList.add('flex');
+  // Populate spec section dropdown
+  populateSpecSectionDropdown(sub.specSection);
+  
+  document.getElementById('modalTitle').value = sub.title || '';
+  document.getElementById('modalParagraph').value = sub.paragraph || '';
+  document.getElementById('modalType').value = sub.type || 'Shop Drawing';
+  document.getElementById('modalRevision').value = sub.revision || '00';
+  document.getElementById('modalTransmittal').value = sub.transmittal || '';
+  document.getElementById('modalReceivedFrom').value = sub.receivedFrom || '';
+  document.getElementById('modalReferredTo').value = sub.referredTo || '';
+  document.getElementById('modalCopiesTo').value = sub.copiesTo || '';
+  document.getElementById('modalDateReceived').value = sub.dateReceived || '';
+  document.getElementById('modalDateSent').value = sub.dateSent || '';
+  document.getElementById('modalDueDate').value = sub.dueDate || '';
+  document.getElementById('modalDateReturned').value = sub.dateReturned || '';
+  document.getElementById('modalCopies').value = sub.copies || 1;
+  document.getElementById('modalInternalNotes').value = sub.internalNotes || '';
+  
+  // Status
+  document.getElementById('modalWorkflowStatus').value = sub.status;
+  updateStatusBadgePreview();
+  
+  // History
+  renderStatusHistory(sub);
+  
+  // Comments
+  renderComments(sub);
+  
+  // Links & Attachments
+  renderLinkedDrawings(sub);
+  renderAttachments(sub);
+  renderLinkedOther(sub);
+  
+  // Dates
+  document.getElementById('modalCreatedDate').textContent = sub.created || '—';
+  document.getElementById('modalUpdatedDate').textContent = sub.updated || '—';
+  
+  // Show modal
+  document.getElementById('submittalDetailModal').classList.remove('hidden');
+  document.getElementById('submittalDetailModal').classList.add('flex');
+  
+  // Default to first tab
+  switchTab(0);
 }
 
-function closeDetailModal() {
-  document.getElementById('detailModal').classList.add('hidden');
-  document.getElementById('detailModal').classList.remove('flex');
+function updateStatusBadgePreview() {
+  const status = document.getElementById('modalWorkflowStatus').value;
+  const badge = document.getElementById('modalStatusBadge');
+  badge.textContent = status;
+  badge.className = `px-4 py-1 rounded-full text-sm font-semibold ${getStatusColor(status)}`;
+}
+
+function populateSpecSectionDropdown(currentSection) {
+  const select = document.getElementById('modalSpecSectionSelect');
+  select.innerHTML = '<option value="">-- Select Spec Section --</option>';
+  
+  // Group by division
+  const grouped = {};
+  specSections.filter(s => s.active).forEach(s => {
+    if (!grouped[s.division]) grouped[s.division] = [];
+    grouped[s.division].push(s);
+  });
+  
+  Object.keys(grouped).sort().forEach(div => {
+    const optgroup = document.createElement('optgroup');
+    optgroup.label = `Division ${div}`;
+    
+    grouped[div].sort((a,b) => a.number.localeCompare(b.number)).forEach(sec => {
+      const opt = document.createElement('option');
+      opt.value = sec.number;
+      opt.textContent = `${sec.number} — ${sec.title}`;
+      if (sec.number === currentSection) opt.selected = true;
+      optgroup.appendChild(opt);
+    });
+    
+    select.appendChild(optgroup);
+  });
+  
+  // Update title when selection changes
+  select.onchange = () => {
+    const selected = specSections.find(s => s.number === select.value);
+    document.getElementById('modalSpecSectionTitle').textContent = selected ? selected.title : '';
+  };
+}
+
+function updateSpecSectionTitle() {
+  const select = document.getElementById('modalSpecSectionSelect');
+  const selected = specSections.find(s => s.number === select.value);
+  document.getElementById('modalSpecSectionTitle').textContent = selected ? selected.title : '';
+}
+
+function quickAddSpecSection() {
+  closeSubmittalDetailModal();
+  setTimeout(() => {
+    openSpecSectionsModal();
+  }, 300);
 }
 
 function switchTab(tabIndex) {
-  currentTab = tabIndex;
-  const s = submittals.find(x => x.id === currentSubmittalId);
-  if (s) renderModalTabContent(s);
+  // Hide all
+  document.querySelectorAll('.tab-content').forEach(el => el.classList.add('hidden'));
+  document.querySelectorAll('.tab-button').forEach(el => el.classList.remove('active'));
   
-  // Update active tab styling
-  document.querySelectorAll('.tab-btn').forEach((btn, i) => {
-    if (i === tabIndex) {
-      btn.classList.add('active', 'border-emerald-500', 'text-white');
-      btn.classList.remove('text-zinc-400');
-    } else {
-      btn.classList.remove('active', 'border-emerald-500', 'text-white');
-      btn.classList.add('text-zinc-400');
-    }
-  });
+  // Show selected
+  document.getElementById(`tab-${tabIndex}`).classList.remove('hidden');
+  document.querySelector(`.tab-button[data-tab="${tabIndex}"]`).classList.add('active');
+  currentTab = tabIndex;
 }
 
-function renderModalTabContent(s) {
-  const container = document.getElementById('modalTabContent');
+function renderStatusHistory(sub) {
+  const container = document.getElementById('modalStatusHistory');
   container.innerHTML = '';
   
-  if (currentTab === 0) {
-    // Overview & Details
-    container.innerHTML = `
-      <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        <div class="space-y-4">
-          <div>
-            <div class="text-xs text-zinc-500 mb-1">SPEC SECTION</div>
-            <div class="flex items-center gap-2">
-              <div class="font-mono text-emerald-400 text-lg">${s.specSection}</div>
-              <div class="text-sm text-zinc-400">${s.specTitle}</div>
-            </div>
-          </div>
-          
-          <div class="grid grid-cols-2 gap-4">
-            <div>
-              <div class="text-xs text-zinc-500 mb-1">PARAGRAPH</div>
-              <div class="font-medium">${s.paragraph || '—'}</div>
-            </div>
-            <div>
-              <div class="text-xs text-zinc-500 mb-1">TYPE</div>
-              <div class="font-medium">${s.type}</div>
-            </div>
-            <div>
-              <div class="text-xs text-zinc-500 mb-1">REVISION</div>
-              <div class="font-mono">${s.revision}</div>
-            </div>
-            <div>
-              <div class="text-xs text-zinc-500 mb-1">TRANSMITTAL #</div>
-              <div class="font-mono">${s.transmittalNum || '—'}</div>
-            </div>
-          </div>
-        </div>
-        
-        <div class="space-y-4">
-          <div>
-            <div class="text-xs text-zinc-500 mb-1">STATUS</div>
-            <select id="modalStatus" class="w-full bg-zinc-800 border border-zinc-700 rounded-md px-3 py-2 text-sm">
-              <option ${s.status === 'Submitted to Architect' ? 'selected' : ''}>Submitted to Architect</option>
-              <option ${s.status === 'No Exceptions Taken' ? 'selected' : ''}>No Exceptions Taken</option>
-              <option ${s.status === 'Reviewed as Noted' ? 'selected' : ''}>Reviewed as Noted</option>
-              <option ${s.status === 'Revise & Resubmit' ? 'selected' : ''}>Revise & Resubmit</option>
-              <option ${s.status === 'Rejected' ? 'selected' : ''}>Rejected</option>
-              <option ${s.status === 'Closed' ? 'selected' : ''}>Closed</option>
-            </select>
-          </div>
-          
-          <div class="grid grid-cols-3 gap-3">
-            <div>
-              <div class="text-xs text-zinc-500 mb-1">RECEIVED DATE</div>
-              <input type="date" id="modalReceivedDate" value="${s.receivedDate || ''}" class="w-full bg-zinc-800 border border-zinc-700 rounded-md px-3 py-2 text-sm">
-            </div>
-            <div>
-              <div class="text-xs text-zinc-500 mb-1">DUE DATE</div>
-              <input type="date" id="modalDueDate" value="${s.dueDate || ''}" class="w-full bg-zinc-800 border border-zinc-700 rounded-md px-3 py-2 text-sm">
-            </div>
-            <div>
-              <div class="text-xs text-zinc-500 mb-1">RETURNED DATE</div>
-              <input type="date" id="modalReturnedDate" value="${s.returnedDate || ''}" class="w-full bg-zinc-800 border border-zinc-700 rounded-md px-3 py-2 text-sm">
-            </div>
-          </div>
-        </div>
-      </div>
-      
-      <div class="mt-6 grid grid-cols-1 lg:grid-cols-2 gap-6">
-        <div>
-          <div class="text-xs text-zinc-500 mb-1">RECEIVED FROM</div>
-          <input id="modalReceivedFrom" value="${s.receivedFrom || ''}" class="w-full bg-zinc-800 border border-zinc-700 rounded-md px-3 py-2 text-sm">
-        </div>
-        <div>
-          <div class="text-xs text-zinc-500 mb-1">REFERRED TO (Architect/Engineer)</div>
-          <input id="modalReferredTo" value="${s.referredTo || ''}" class="w-full bg-zinc-800 border border-zinc-700 rounded-md px-3 py-2 text-sm">
-        </div>
-      </div>
-      
-      <div class="mt-4">
-        <div class="text-xs text-zinc-500 mb-1">COPIES TO / DISTRIBUTION</div>
-        <input id="modalCopiesTo" value="${s.copiesTo || ''}" class="w-full bg-zinc-800 border border-zinc-700 rounded-md px-3 py-2 text-sm">
-      </div>
-      
-      <div class="mt-4">
-        <div class="text-xs text-zinc-500 mb-1">INTERNAL NOTES</div>
-        <textarea id="modalNotes" rows="3" class="w-full bg-zinc-800 border border-zinc-700 rounded-md px-3 py-2 text-sm">${s.notes || ''}</textarea>
+  if (!sub.workflowHistory || sub.workflowHistory.length === 0) {
+    container.innerHTML = '<div class="text-xs text-zinc-500">No history yet.</div>';
+    return;
+  }
+  
+  sub.workflowHistory.forEach(item => {
+    const div = document.createElement('div');
+    div.className = 'flex gap-3 text-xs';
+    div.innerHTML = `
+      <div class="w-20 text-zinc-500 flex-shrink-0">${item.date}</div>
+      <div class="flex-1">
+        <span class="font-medium text-zinc-300">${item.user}</span>
+        <span class="text-zinc-400">— ${item.action}</span>
       </div>
     `;
-  } else if (currentTab === 1) {
-    // Workflow & History
-    let html = `<div class="space-y-3">`;
-    (s.workflowHistory || []).forEach(h => {
-      html += `
-        <div class="flex gap-3 text-sm">
-          <div class="w-28 text-xs text-zinc-500 pt-0.5">${h.date}</div>
-          <div class="flex-1">
-            <div class="font-medium">${h.action}</div>
-            <div class="text-xs text-zinc-500">by ${h.by}</div>
-          </div>
-        </div>`;
-    });
-    html += `</div>`;
-    container.innerHTML = html;
-  } else if (currentTab === 2) {
-    // Review Comments
-    let html = `<div class="space-y-4">`;
-    (s.comments || []).forEach(c => {
-      const styleClass = c.style === 'architect' ? 'comment-architect border-emerald-500' : 
-                         c.style === 'gc' ? 'comment-gc border-blue-500' : 
-                         c.style === 'sub' ? 'comment-sub border-amber-500' : 'comment-revision border-red-500';
-      html += `
-        <div class="border-l-4 ${styleClass} bg-zinc-950 pl-4 py-2">
-          <div class="flex justify-between text-xs">
-            <span class="font-semibold">${c.author}</span>
-            <span class="text-zinc-500">${c.date}</span>
-          </div>
-          <div class="text-sm mt-1">${c.text}</div>
-        </div>`;
-    });
-    
-    html += `
-      <div class="pt-4 border-t border-zinc-700">
-        <div class="text-xs text-zinc-500 mb-2">Add Comment</div>
-        <div class="flex gap-2">
-          <select id="commentStyle" class="bg-zinc-800 border border-zinc-700 rounded-md px-2 text-sm">
-            <option value="architect">Architect Response</option>
-            <option value="gc">GC Note</option>
-            <option value="sub">Subcontractor Reply</option>
-            <option value="revision">Revision / Rejection</option>
-          </select>
-          <input id="commentText" placeholder="Enter comment..." class="flex-1 bg-zinc-800 border border-zinc-700 rounded-md px-3 py-2 text-sm">
-          <button onclick="addComment()" class="px-4 bg-emerald-600 hover:bg-emerald-500 rounded-md text-sm font-semibold">Post</button>
-        </div>
-      </div>
-    </div>`;
-    container.innerHTML = html;
-  } else if (currentTab === 3) {
-    // Links & Attachments
-    let html = `<div>
-      <div class="flex justify-between items-center mb-3">
-        <div class="text-sm font-semibold">Linked Drawings / RFIs / Change Orders</div>
-        <button onclick="showLinkPicker()" class="text-xs px-3 py-1 bg-zinc-800 hover:bg-zinc-700 rounded-md flex items-center gap-1">
-          <i class="fa-solid fa-link"></i> <span>Link Drawing</span>
-        </button>
-      </div>`;
-    
-    if (s.links && s.links.length > 0) {
-      s.links.forEach((link, idx) => {
-        html += `
-          <div class="flex items-center justify-between bg-zinc-950 border border-zinc-700 rounded-md px-3 py-2 mb-2">
-            <div class="flex items-center gap-3">
-              <i class="fa-solid fa-file text-emerald-400"></i>
-              <div>
-                <div class="font-medium text-sm">${link.ref} — ${link.title}</div>
-                <div class="text-xs text-zinc-500">${link.type}</div>
-              </div>
-            </div>
-            <button onclick="removeLink(${idx})" class="text-red-500 hover:text-red-400"><i class="fa-solid fa-unlink"></i></button>
-          </div>`;
-      });
-    } else {
-      html += `<div class="text-xs text-zinc-500 py-4">No links yet. Use the button above to link drawings or RFIs.</div>`;
-    }
-    
-    html += `</div>`;
-    container.innerHTML = html;
-  }
-}
-
-function saveSubmittalChanges() {
-  const s = submittals.find(x => x.id === currentSubmittalId);
-  if (!s) return;
-  
-  const statusEl = document.getElementById('modalStatus');
-  if (statusEl) s.status = statusEl.value;
-  
-  const receivedEl = document.getElementById('modalReceivedDate');
-  if (receivedEl) s.receivedDate = receivedEl.value;
-  
-  const dueEl = document.getElementById('modalDueDate');
-  if (dueEl) s.dueDate = dueEl.value;
-  
-  const returnedEl = document.getElementById('modalReturnedDate');
-  if (returnedEl) s.returnedDate = returnedEl.value;
-  
-  const fromEl = document.getElementById('modalReceivedFrom');
-  if (fromEl) s.receivedFrom = fromEl.value;
-  
-  const referredEl = document.getElementById('modalReferredTo');
-  if (referredEl) s.referredTo = referredEl.value;
-  
-  const copiesEl = document.getElementById('modalCopiesTo');
-  if (copiesEl) s.copiesTo = copiesEl.value;
-  
-  const notesEl = document.getElementById('modalNotes');
-  if (notesEl) s.notes = notesEl.value;
-  
-  // Add to workflow history
-  if (!s.workflowHistory) s.workflowHistory = [];
-  s.workflowHistory.push({
-    date: new Date().toISOString().split('T')[0],
-    action: `Updated details / status changed to ${s.status}`,
-    by: "Michael Bretz"
+    container.appendChild(div);
   });
-  
-  showToast('Changes saved successfully', 'success');
-  closeDetailModal();
-  renderSubmittalsTable();
 }
 
-function addComment() {
-  const s = submittals.find(x => x.id === currentSubmittalId);
-  if (!s) return;
+function renderComments(sub) {
+  const container = document.getElementById('modalCommentsList');
+  container.innerHTML = '';
   
-  const text = document.getElementById('commentText').value.trim();
-  const style = document.getElementById('commentStyle').value;
+  if (!sub.comments || sub.comments.length === 0) {
+    container.innerHTML = '<div class="text-xs text-zinc-500 px-2">No comments yet. Click "Add Comment" to start the review thread.</div>';
+    return;
+  }
+  
+  sub.comments.forEach(comment => {
+    const div = document.createElement('div');
+    let typeClass = 'comment-gc';
+    if (comment.type === 'architect') typeClass = 'comment-architect';
+    if (comment.type === 'sub') typeClass = 'comment-sub';
+    if (comment.type === 'revise') typeClass = 'comment-revise';
+    
+    div.className = `p-3 rounded-md text-sm ${typeClass}`;
+    div.innerHTML = `
+      <div class="flex justify-between items-start mb-1">
+        <div class="font-semibold text-xs">${comment.user}</div>
+        <div class="text-[10px] text-zinc-500">${comment.date}</div>
+      </div>
+      <div class="text-zinc-200">${comment.text}</div>
+    `;
+    container.appendChild(div);
+  });
+}
+
+function addNewComment() {
+  const sub = submittals.find(s => s.id === currentSubmittalId);
+  if (!sub) return;
+  
+  const text = prompt('Enter your comment:');
   if (!text) return;
   
-  if (!s.comments) s.comments = [];
-  s.comments.push({
+  const type = prompt('Comment type? (architect / gc / sub / revise)', 'gc');
+  
+  if (!sub.comments) sub.comments = [];
+  
+  sub.comments.push({
+    id: Date.now(),
     date: new Date().toISOString().split('T')[0],
-    author: style === 'architect' ? 'Architect' : style === 'gc' ? 'GC' : style === 'sub' ? 'Subcontractor' : 'System',
-    text: text,
-    style: style
+    user: "Michael Bretz (GC)",
+    type: type || 'gc',
+    text: text
   });
   
-  document.getElementById('commentText').value = '';
-  renderModalTabContent(s);
+  sub.updated = new Date().toISOString().split('T')[0];
+  
+  saveToLocalStorage();
+  renderComments(sub);
   showToast('Comment added', 'success');
 }
 
-function removeLink(idx) {
-  const s = submittals.find(x => x.id === currentSubmittalId);
-  if (!s || !s.links) return;
-  s.links.splice(idx, 1);
-  renderModalTabContent(s);
+function renderLinkedDrawings(sub) {
+  const container = document.getElementById('modalLinkedDrawings');
+  container.innerHTML = '';
+  
+  if (!sub.linkedDrawings || sub.linkedDrawings.length === 0) {
+    container.innerHTML = '<div class="text-xs text-zinc-500">No drawings linked yet.</div>';
+    return;
+  }
+  
+  sub.linkedDrawings.forEach((drawing, index) => {
+    const div = document.createElement('div');
+    div.className = 'flex items-center justify-between bg-zinc-900 px-3 py-1.5 rounded text-xs';
+    div.innerHTML = `
+      <div class="flex items-center gap-2">
+        <i class="fa-solid fa-drafting-compass text-emerald-500"></i>
+        <span>${drawing}</span>
+      </div>
+      <button onclick="unlinkDrawing(${index})" class="text-red-400 hover:text-red-500 px-1">×</button>
+    `;
+    container.appendChild(div);
+  });
 }
 
-// ==================== NEW SUBMITTAL ====================
+function unlinkDrawing(index) {
+  const sub = submittals.find(s => s.id === currentSubmittalId);
+  if (!sub || !sub.linkedDrawings) return;
+  
+  sub.linkedDrawings.splice(index, 1);
+  saveToLocalStorage();
+  renderLinkedDrawings(sub);
+}
+
+function showLinkDrawingModal() {
+  const drawings = [
+    "A-101 Floor Plan - Level 1",
+    "A-201 Exterior Elevations",
+    "A-501 Storefront Details",
+    "S-101 Foundation & Slab Details",
+    "S-201 Concrete Sections",
+    "S-301 Steel Framing Plan",
+    "S-401 Steel Details",
+    "M-101 HVAC Plan",
+    "E-101 Electrical Plan"
+  ];
+  
+  const list = drawings.map(d => `<div onclick="linkDrawing('${d}'); document.getElementById('linkDrawingPicker').remove();" class="px-3 py-2 hover:bg-zinc-700 cursor-pointer rounded text-sm">${d}</div>`).join('');
+  
+  const picker = document.createElement('div');
+  picker.id = 'linkDrawingPicker';
+  picker.className = 'fixed inset-0 bg-black/60 z-[120] flex items-center justify-center';
+  picker.innerHTML = `
+    <div onclick="event.target.remove()" class="absolute inset-0"></div>
+    <div onclick="event.stopImmediatePropagation()" class="bg-zinc-900 border border-zinc-700 rounded-xl w-full max-w-md p-4 relative">
+      <div class="font-semibold mb-3 px-1">Link Drawing / Sheet</div>
+      <div class="max-h-[280px] overflow-auto border border-zinc-800 rounded-md">${list}</div>
+      <div class="mt-3 text-right">
+        <button onclick="this.closest('#linkDrawingPicker').remove()" class="px-4 py-1.5 text-sm bg-zinc-700 rounded-md">Cancel</button>
+      </div>
+    </div>
+  `;
+  document.body.appendChild(picker);
+}
+
+function linkDrawing(drawingName) {
+  const sub = submittals.find(s => s.id === currentSubmittalId);
+  if (!sub) return;
+  
+  if (!sub.linkedDrawings) sub.linkedDrawings = [];
+  if (!sub.linkedDrawings.includes(drawingName)) {
+    sub.linkedDrawings.push(drawingName);
+    saveToLocalStorage();
+    renderLinkedDrawings(sub);
+  }
+  document.getElementById('linkDrawingPicker')?.remove();
+}
+
+function renderAttachments(sub) {
+  const container = document.getElementById('modalAttachments');
+  container.innerHTML = '';
+  
+  if (!sub.attachments || sub.attachments.length === 0) {
+    container.innerHTML = '<div class="text-xs text-zinc-500">No attachments yet.</div>';
+    return;
+  }
+  
+  sub.attachments.forEach((file, index) => {
+    const div = document.createElement('div');
+    div.className = 'flex items-center justify-between bg-zinc-900 px-3 py-1.5 rounded text-xs';
+    div.innerHTML = `
+      <div class="flex items-center gap-2">
+        <i class="fa-solid fa-paperclip text-sky-500"></i>
+        <span class="truncate max-w-[220px]">${file}</span>
+      </div>
+      <button onclick="removeAttachment(${index})" class="text-red-400 hover:text-red-500 px-1">×</button>
+    `;
+    container.appendChild(div);
+  });
+}
+
+function simulateUploadAttachment() {
+  const sub = submittals.find(s => s.id === currentSubmittalId);
+  if (!sub) return;
+  
+  const filename = prompt('Enter filename to simulate upload:', 'Submittal_Attachment.pdf');
+  if (!filename) return;
+  
+  if (!sub.attachments) sub.attachments = [];
+  sub.attachments.push(filename);
+  saveToLocalStorage();
+  renderAttachments(sub);
+  showToast('Attachment added (simulated)', 'success');
+}
+
+function removeAttachment(index) {
+  const sub = submittals.find(s => s.id === currentSubmittalId);
+  if (!sub || !sub.attachments) return;
+  sub.attachments.splice(index, 1);
+  saveToLocalStorage();
+  renderAttachments(sub);
+}
+
+function renderLinkedOther(sub) {
+  const container = document.getElementById('modalLinkedOther');
+  container.innerHTML = '';
+  
+  let html = '';
+  if (sub.linkedRFIs && sub.linkedRFIs.length > 0) {
+    html += sub.linkedRFIs.map(r => `<span class="px-2.5 py-1 bg-sky-500/10 text-sky-400 text-xs rounded-full border border-sky-500/30">RFI: ${r}</span>`).join('');
+  }
+  if (sub.linkedCOs && sub.linkedCOs.length > 0) {
+    html += sub.linkedCOs.map(c => `<span class="px-2.5 py-1 bg-amber-500/10 text-amber-400 text-xs rounded-full border border-amber-500/30">CO: ${c}</span>`).join('');
+  }
+  
+  container.innerHTML = html || '<span class="text-xs text-zinc-500">No linked RFIs or Change Orders</span>';
+}
+
+// Save changes from modal
+function saveSubmittalChanges() {
+  const sub = submittals.find(s => s.id === currentSubmittalId);
+  if (!sub) return;
+  
+  const oldStatus = sub.status;
+  const newStatus = document.getElementById('modalWorkflowStatus').value;
+  
+  // Update fields
+  sub.specSection = document.getElementById('modalSpecSectionSelect').value || sub.specSection;
+  sub.title = document.getElementById('modalTitle').value;
+  sub.paragraph = document.getElementById('modalParagraph').value;
+  sub.type = document.getElementById('modalType').value;
+  sub.revision = document.getElementById('modalRevision').value;
+  sub.transmittal = document.getElementById('modalTransmittal').value;
+  sub.receivedFrom = document.getElementById('modalReceivedFrom').value;
+  sub.referredTo = document.getElementById('modalReferredTo').value;
+  sub.copiesTo = document.getElementById('modalCopiesTo').value;
+  sub.dateReceived = document.getElementById('modalDateReceived').value;
+  sub.dateSent = document.getElementById('modalDateSent').value;
+  sub.dueDate = document.getElementById('modalDueDate').value;
+  sub.dateReturned = document.getElementById('modalDateReturned').value;
+  sub.copies = parseInt(document.getElementById('modalCopies').value) || 1;
+  sub.internalNotes = document.getElementById('modalInternalNotes').value;
+  sub.status = newStatus;
+  sub.updated = new Date().toISOString().split('T')[0];
+  
+  // Add to history if status changed
+  if (oldStatus !== newStatus) {
+    if (!sub.workflowHistory) sub.workflowHistory = [];
+    sub.workflowHistory.push({
+      date: sub.updated,
+      user: "Michael Bretz",
+      action: `Status changed from "${oldStatus}" to "${newStatus}"`
+    });
+  }
+  
+  saveToLocalStorage();
+  closeSubmittalDetailModal();
+  renderSubmittalsTable();
+  showToast('Submittal updated successfully', 'success');
+}
+
+function deleteCurrentSubmittal() {
+  if (!confirm('Delete this submittal permanently?')) return;
+  
+  submittals = submittals.filter(s => s.id !== currentSubmittalId);
+  saveToLocalStorage();
+  closeSubmittalDetailModal();
+  renderSubmittalsTable();
+  showToast('Submittal deleted', 'error');
+}
+
+function closeSubmittalDetailModal() {
+  const modal = document.getElementById('submittalDetailModal');
+  modal.classList.remove('flex');
+  modal.classList.add('hidden');
+  currentSubmittalId = null;
+}
+
+// New Submittal
 function showNewSubmittalModal() {
-  const subject = prompt('Enter Submittal Subject / Title:');
-  if (!subject) return;
-  
-  const spec = prompt('Enter Spec Section (e.g. 03 30 00):', '03 30 00');
-  if (!spec) return;
-  
-  const newId = Math.max(0, ...submittals.map(s => s.id)) + 1;
+  const number = `SUB-2026-${String(submittals.length + 10).padStart(3, '0')}`;
   
   const newSub = {
-    id: newId,
-    submittalNum: `${spec}-00${newId}`,
-    specSection: spec,
-    specTitle: getSpecTitle(spec),
-    paragraph: '',
-    subject: subject,
-    type: 'Product Data',
-    revision: '0',
-    status: 'Submitted to Architect',
-    dueDate: '',
-    receivedDate: new Date().toISOString().split('T')[0],
-    returnedDate: '',
-    receivedFrom: '',
-    referredTo: '',
-    copiesTo: '',
-    notes: '',
-    transmittalNum: `TR-${new Date().getFullYear()}-${String(newId).padStart(4, '0')}`,
-    links: [],
+    id: Date.now(),
+    number: number,
+    specSection: "03 30 00",
+    specTitle: "Cast-in-Place Concrete",
+    paragraph: "",
+    title: "New Submittal - Enter Title",
+    type: "Shop Drawing",
+    revision: "00",
+    transmittal: "",
+    status: "Pending",
+    receivedFrom: "",
+    referredTo: "",
+    copiesTo: "",
+    dateReceived: new Date().toISOString().split('T')[0],
+    dateSent: "",
+    dueDate: "",
+    dateReturned: "",
+    copies: 1,
+    internalNotes: "",
+    created: new Date().toISOString().split('T')[0],
+    updated: new Date().toISOString().split('T')[0],
+    workflowHistory: [
+      {date: new Date().toISOString().split('T')[0], user: "Michael Bretz", action: "Created submittal"}
+    ],
     comments: [],
-    workflowHistory: [{
-      date: new Date().toISOString().split('T')[0],
-      action: 'Created and submitted to Architect',
-      by: 'Michael Bretz'
-    }]
+    linkedDrawings: [],
+    attachments: [],
+    linkedRFIs: [],
+    linkedCOs: []
   };
   
   submittals.unshift(newSub);
+  saveToLocalStorage();
   renderSubmittalsTable();
-  showToast('New submittal created', 'success');
-  setTimeout(() => openDetailModal(newId), 300);
+  
+  // Open detail modal immediately for editing
+  setTimeout(() => {
+    openSubmittalDetail(newSub.id);
+  }, 150);
 }
 
-function getSpecTitle(sectionNum) {
-  const found = specSections.find(s => s.section === sectionNum || `${s.division} ${s.section}` === sectionNum);
-  return found ? found.title : 'Custom Section';
-}
-
-// ==================== SPEC SECTIONS MANAGEMENT ====================
-function showSpecSectionsManagement() {
-  renderSpecSectionsTable();
+// Spec Sections Management
+function openSpecSectionsModal() {
   document.getElementById('specSectionsModal').classList.remove('hidden');
   document.getElementById('specSectionsModal').classList.add('flex');
+  renderSpecSectionsTable();
 }
 
-function closeSpecModal() {
-  document.getElementById('specSectionsModal').classList.add('hidden');
+function closeSpecSectionsModal() {
   document.getElementById('specSectionsModal').classList.remove('flex');
+  document.getElementById('specSectionsModal').classList.add('hidden');
 }
 
 function renderSpecSectionsTable() {
   const tbody = document.getElementById('specSectionsTableBody');
   tbody.innerHTML = '';
   
-  // Group by division for sticky headers
-  const grouped = {};
-  specSections.forEach(s => {
-    if (!grouped[s.division]) grouped[s.division] = [];
-    grouped[s.division].push(s);
+  // Sort by division then number
+  const sorted = [...specSections].sort((a, b) => {
+    if (a.division !== b.division) return a.division.localeCompare(b.division);
+    return a.number.localeCompare(b.number);
   });
   
-  Object.keys(grouped).sort().forEach(div => {
-    // Division header
-    const headerRow = document.createElement('tr');
-    headerRow.className = 'division-header';
-    headerRow.innerHTML = `<td colspan="6" class="px-4 py-2 text-xs font-bold tracking-wider">DIVISION ${div} — ${getDivisionName(div)}</td>`;
-    tbody.appendChild(headerRow);
-    
-    grouped[div].forEach(s => {
-      const row = document.createElement('tr');
-      row.className = 'spec-section-row border-b border-zinc-800';
-      row.innerHTML = `
-        <td class="px-4 py-2 font-mono text-xs text-zinc-400">${s.division}</td>
-        <td class="px-4 py-2 font-mono text-emerald-400">${s.section}</td>
-        <td class="px-4 py-2">${s.title}</td>
-        <td class="px-4 py-2 text-center">${s.isCustom ? '<span class="text-[10px] px-2 py-0.5 bg-amber-900/50 text-amber-400 rounded">Custom</span>' : ''}</td>
-        <td class="px-4 py-2 text-center">
-          <button onclick="toggleSpecActive(${s.id}, this)" class="${s.active ? 'text-emerald-400' : 'text-zinc-500'}">
-            <i class="fa-solid ${s.active ? 'fa-toggle-on' : 'fa-toggle-off'} text-xl"></i>
-          </button>
-        </td>
-        <td class="px-4 py-2 text-center">
-          <button onclick="editSpecSection(${s.id})" class="text-blue-400 hover:text-blue-300 mx-1"><i class="fa-solid fa-edit"></i></button>
-          <button onclick="deleteSpecSection(${s.id})" class="text-red-400 hover:text-red-300 mx-1"><i class="fa-solid fa-trash"></i></button>
+  let currentDivision = null;
+  
+  sorted.forEach(spec => {
+    // Add division header if new division
+    if (spec.division !== currentDivision) {
+      currentDivision = spec.division;
+      const headerRow = document.createElement('tr');
+      headerRow.className = 'division-header';
+      headerRow.innerHTML = `
+        <td colspan="6" class="px-4 py-2 text-xs font-bold tracking-wider">
+          DIVISION ${spec.division} — ${getDivisionName(spec.division)}
         </td>
       `;
-      tbody.appendChild(row);
-    });
+      tbody.appendChild(headerRow);
+    }
+    
+    const row = document.createElement('tr');
+    row.className = 'spec-row border-b border-zinc-800';
+    row.innerHTML = `
+      <td class="px-4 py-2.5 font-mono text-xs text-zinc-400">${spec.division}</td>
+      <td class="px-4 py-2.5 font-mono text-emerald-400">${spec.number}</td>
+      <td class="px-4 py-2.5">${spec.title}</td>
+      <td class="px-4 py-2.5 text-center">
+        ${spec.custom ? '<span class="text-[10px] px-2 py-0.5 bg-amber-500/10 text-amber-400 rounded">Custom</span>' : ''}
+      </td>
+      <td class="px-4 py-2.5 text-center">
+        <button onclick="toggleSpecActive(${spec.id}, this)" class="text-xs px-2.5 py-0.5 rounded ${spec.active ? 'bg-emerald-500/10 text-emerald-400' : 'bg-zinc-700 text-zinc-400'}">
+          ${spec.active ? 'Active' : 'Inactive'}
+        </button>
+      </td>
+      <td class="px-4 py-2.5 text-center">
+        <button onclick="editSpecSection(${spec.id})" class="text-emerald-400 hover:text-emerald-300 px-1"><i class="fa-solid fa-edit"></i></button>
+        <button onclick="deleteSpecSection(${spec.id})" class="text-red-400 hover:text-red-300 px-1 ml-1"><i class="fa-solid fa-trash"></i></button>
+      </td>
+    `;
+    tbody.appendChild(row);
   });
 }
 
@@ -951,189 +1392,205 @@ function getDivisionName(div) {
     '03': 'Concrete',
     '04': 'Masonry',
     '05': 'Metals',
-    '06': 'Wood, Plastics, and Composites',
-    '07': 'Thermal and Moisture Protection',
+    '06': 'Wood, Plastics, Composites',
+    '07': 'Thermal & Moisture Protection',
     '08': 'Openings',
     '09': 'Finishes',
-    '10': 'Specialties',
     '21': 'Fire Suppression',
     '22': 'Plumbing',
     '23': 'HVAC',
     '26': 'Electrical',
-    '28': 'Electronic Safety and Security',
-    '31': 'Earthwork',
-    '32': 'Exterior Improvements',
-    '33': 'Utilities'
+    '28': 'Electronic Safety & Security'
   };
-  return names[div] || 'Custom Division';
-}
-
-function addNewSpecSection() {
-  const div = document.getElementById('newDiv').value.trim();
-  const sec = document.getElementById('newSection').value.trim();
-  const title = document.getElementById('newTitle').value.trim();
-  
-  if (!div || !sec || !title) {
-    showToast('Please fill Division, Section, and Title', 'error');
-    return;
-  }
-  
-  const newId = Math.max(0, ...specSections.map(s => s.id)) + 1;
-  specSections.push({
-    id: newId,
-    division: div,
-    section: sec,
-    title: title,
-    isCustom: true,
-    active: true
-  });
-  
-  document.getElementById('newDiv').value = '';
-  document.getElementById('newSection').value = '';
-  document.getElementById('newTitle').value = '';
-  
-  renderSpecSectionsTable();
-  showToast('Spec section added', 'success');
+  return names[div] || 'Other';
 }
 
 function toggleSpecActive(id, btn) {
-  const s = specSections.find(x => x.id === id);
-  if (!s) return;
-  s.active = !s.active;
-  btn.innerHTML = `<i class="fa-solid ${s.active ? 'fa-toggle-on' : 'fa-toggle-off'} text-xl"></i>`;
-  btn.className = s.active ? 'text-emerald-400' : 'text-zinc-500';
+  const spec = specSections.find(s => s.id === id);
+  if (!spec) return;
+  
+  spec.active = !spec.active;
+  saveToLocalStorage();
+  
+  // Update button appearance
+  btn.className = `text-xs px-2.5 py-0.5 rounded ${spec.active ? 'bg-emerald-500/10 text-emerald-400' : 'bg-zinc-700 text-zinc-400'}`;
+  btn.textContent = spec.active ? 'Active' : 'Inactive';
+}
+
+function addNewSpecSection() {
+  const division = document.getElementById('newSpecDivision').value.trim();
+  const number = document.getElementById('newSpecNumber').value.trim();
+  const title = document.getElementById('newSpecTitle').value.trim();
+  
+  if (!division || !number || !title) {
+    alert('Please fill out Division, Section Number, and Title.');
+    return;
+  }
+  
+  const newSpec = {
+    id: Date.now(),
+    division: division,
+    number: number,
+    title: title,
+    active: true,
+    custom: true
+  };
+  
+  specSections.push(newSpec);
+  saveToLocalStorage();
+  
+  // Clear form
+  document.getElementById('newSpecDivision').value = '';
+  document.getElementById('newSpecNumber').value = '';
+  document.getElementById('newSpecTitle').value = '';
+  
+  renderSpecSectionsTable();
+  showToast('New spec section added', 'success');
 }
 
 function editSpecSection(id) {
-  const s = specSections.find(x => x.id === id);
-  if (!s) return;
+  const spec = specSections.find(s => s.id === id);
+  if (!spec) return;
   
-  const newTitle = prompt('Edit Section Title:', s.title);
-  if (newTitle !== null) {
-    s.title = newTitle;
-    renderSpecSectionsTable();
-  }
+  const newTitle = prompt('Edit Section Title:', spec.title);
+  if (newTitle === null) return;
+  
+  spec.title = newTitle.trim() || spec.title;
+  saveToLocalStorage();
+  renderSpecSectionsTable();
 }
 
 function deleteSpecSection(id) {
   if (!confirm('Delete this spec section?')) return;
+  
   specSections = specSections.filter(s => s.id !== id);
+  saveToLocalStorage();
   renderSpecSectionsTable();
 }
 
 function loadFullMasterFormat() {
-  // Add more standard sections
+  if (!confirm('This will add many more standard CSI sections. Continue?')) return;
+  
   const additional = [
-    {division: "01", section: "20 00", title: "Price and Payment Procedures"},
-    {division: "01", section: "30 00", title: "Administrative Requirements"},
-    {division: "03", section: "10 00", title: "Concrete Forming and Accessories"},
-    {division: "03", section: "20 00", title: "Concrete Reinforcing"},
-    {division: "05", section: "12 00", title: "Structural Steel Framing"},
-    {division: "08", section: "71 00", title: "Door Hardware"},
-    {division: "09", section: "65 00", title: "Resilient Flooring"},
-    {division: "22", section: "40 00", title: "Plumbing Fixtures"},
-    {division: "23", section: "30 00", title: "HVAC Air Distribution"},
-    {division: "26", section: "27 00", title: "Low-Voltage Electrical Power Conductors"}
+    {division:"01", number:"01 35 00", title:"Special Procedures", active:true, custom:false},
+    {division:"03", number:"03 45 00", title:"Precast Architectural Concrete", active:true, custom:false},
+    {division:"05", number:"05 21 00", title:"Steel Joist Framing", active:true, custom:false},
+    {division:"07", number:"07 50 00", title:"Membrane Roofing", active:true, custom:false},
+    {division:"08", number:"08 50 00", title:"Windows", active:true, custom:false},
+    {division:"09", number:"09 65 00", title:"Resilient Flooring", active:true, custom:false},
+    {division:"22", number:"22 05 00", title:"Common Work Results for Plumbing", active:true, custom:false},
+    {division:"23", number:"23 09 00", title:"Instrumentation and Control for HVAC", active:true, custom:false},
+    {division:"26", number:"26 09 00", title:"Instrumentation and Control for Electrical Systems", active:true, custom:false},
+    {division:"31", number:"31 10 00", title:"Site Clearing", active:true, custom:false},
+    {division:"31", number:"31 20 00", title:"Earth Moving", active:true, custom:false},
+    {division:"32", number:"32 10 00", title:"Bases, Ballasts, and Paving", active:true, custom:false},
+    {division:"33", number:"33 10 00", title:"Water Utilities", active:true, custom:false},
   ];
   
-  let added = 0;
-  additional.forEach(a => {
-    if (!specSections.find(s => s.section === a.section)) {
-      specSections.push({
-        id: Date.now() + added,
-        division: a.division,
-        section: a.section,
-        title: a.title,
-        isCustom: false,
-        active: true
-      });
-      added++;
+  additional.forEach(item => {
+    if (!specSections.find(s => s.number === item.number)) {
+      specSections.push({...item, id: Date.now() + Math.random()});
     }
   });
   
+  saveToLocalStorage();
   renderSpecSectionsTable();
-  showToast(`Loaded ${added} additional MasterFormat sections`, 'success');
+  showToast('Full MasterFormat sections loaded', 'success');
 }
 
-function exportSpecSections() {
-  let csv = 'Division,Section,Title,Custom,Active\n';
-  specSections.forEach(s => {
-    csv += `"${s.division}","${s.section}","${s.title}",${s.isCustom},${s.active}\n`;
+function exportSpecSectionsCSV() {
+  const headers = ['Division', 'Section Number', 'Section Title', 'Active', 'Custom'];
+  const rows = specSections.map(s => [s.division, s.number, s.title, s.active ? 'Yes' : 'No', s.custom ? 'Yes' : 'No']);
+  
+  let csv = headers.join(',') + '\n';
+  rows.forEach(row => {
+    csv += row.map(field => `"${String(field).replace(/"/g, '""')}"`).join(',') + '\n';
   });
   
   const blob = new Blob([csv], {type: 'text/csv'});
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
   a.href = url;
-  a.download = 'spec_sections.csv';
+  a.download = 'CSI_Spec_Sections.csv';
   a.click();
   URL.revokeObjectURL(url);
 }
 
-function importSpecSections(event) {
-  const file = event.target.files[0];
-  if (!file) return;
-  
-  const reader = new FileReader();
-  reader.onload = function(e) {
-    const lines = e.target.result.split('\n').slice(1); // skip header
-    let imported = 0;
+function importSpecSectionsCSV() {
+  const input = document.createElement('input');
+  input.type = 'file';
+  input.accept = '.csv';
+  input.onchange = e => {
+    const file = e.target.files[0];
+    if (!file) return;
     
-    lines.forEach(line => {
-      if (!line.trim()) return;
-      const parts = line.split(',').map(p => p.replace(/"/g, '').trim());
-      if (parts.length >= 3) {
-        const exists = specSections.find(s => s.section === parts[1]);
-        if (!exists) {
-          specSections.push({
-            id: Date.now() + imported,
-            division: parts[0],
-            section: parts[1],
-            title: parts[2],
-            isCustom: parts[3] === 'true',
-            active: parts[4] !== 'false'
-          });
-          imported++;
+    const reader = new FileReader();
+    reader.onload = event => {
+      const text = event.target.result;
+      const lines = text.trim().split('\n');
+      
+      for (let i = 1; i < lines.length; i++) {
+        const cols = lines[i].split(',').map(c => c.replace(/^"|"$/g, '').trim());
+        if (cols.length >= 3) {
+          const exists = specSections.find(s => s.number === cols[1]);
+          if (!exists) {
+            specSections.push({
+              id: Date.now() + i,
+              division: cols[0],
+              number: cols[1],
+              title: cols[2],
+              active: cols[3] !== 'No',
+              custom: true
+            });
+          }
         }
       }
-    });
-    
-    renderSpecSectionsTable();
-    showToast(`Imported ${imported} new spec sections`, 'success');
+      
+      saveToLocalStorage();
+      renderSpecSectionsTable();
+      showToast('Spec sections imported', 'success');
+    };
+    reader.readAsText(file);
   };
-  reader.readAsText(file);
-  event.target.value = '';
+  input.click();
 }
 
-// ==================== LINKING (Drawings) ====================
-function showLinkPicker() {
-  const s = submittals.find(x => x.id === currentSubmittalId);
-  if (!s) return;
+// Export / Import Submittals
+function exportSubmittals() {
+  const headers = ['Submittal #', 'Spec Section', 'Title', 'Status', 'Revision', 'From', 'Due Date'];
+  const rows = submittals.map(s => [s.number, s.specSection, s.title, s.status, s.revision, s.receivedFrom, s.dueDate]);
   
-  const drawingNum = prompt('Enter Drawing / Sheet Number to link (e.g. S-101):');
-  if (!drawingNum) return;
+  let csv = headers.join(',') + '\n';
+  rows.forEach(row => {
+    csv += row.map(field => `"${String(field || '').replace(/"/g, '""')}"`).join(',') + '\n';
+  });
   
-  const title = prompt('Enter Drawing Title:', 'Foundation Details');
-  if (!title) return;
-  
-  if (!s.links) s.links = [];
-  s.links.push({type: 'Drawing', ref: drawingNum, title: title});
-  
-  renderModalTabContent(s);
-  showToast('Drawing linked successfully', 'success');
+  const blob = new Blob([csv], {type: 'text/csv'});
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = 'Submittals_Export.csv';
+  a.click();
+  URL.revokeObjectURL(url);
 }
 
-function removeLinkFromDetail(idx) {
-  // Already handled in renderModalTabContent via onclick
+function importSubmittals() {
+  alert('Import functionality ready. In production this would parse a CSV and create submittals with full field mapping.');
+  // Placeholder for full implementation
 }
 
-// ==================== UTILS ====================
+// Version History (placeholder)
+function showVersionHistory() {
+  alert('Version History:\n\nRev 02 - Added full CSI MasterFormat + Spec Sections admin\nRev 01 - Initial Submittals module with workflow');
+}
+
+// Toast helper
 function showToast(message, type = 'success') {
   const container = document.getElementById('toastContainer');
   const toast = document.createElement('div');
-  toast.className = `px-4 py-3 rounded-md text-sm flex items-center gap-2 shadow-lg ${type === 'success' ? 'bg-emerald-600' : 'bg-red-600'} text-white`;
+  toast.className = `px-4 py-3 rounded-md shadow-lg text-sm flex items-center gap-2 ${type === 'success' ? 'bg-emerald-600' : type === 'error' ? 'bg-red-600' : 'bg-zinc-700'} text-white`;
   toast.innerHTML = `
-    <i class="fa-solid ${type === 'success' ? 'fa-check-circle' : 'fa-exclamation-circle'}"></i>
+    <i class="fa-solid ${type === 'success' ? 'fa-check-circle' : type === 'error' ? 'fa-exclamation-circle' : 'fa-info-circle'}"></i>
     <span>${message}</span>
   `;
   container.appendChild(toast);
@@ -1145,71 +1602,46 @@ function showToast(message, type = 'success') {
   }, 2800);
 }
 
-function showVersionHistory() {
-  alert('Version History:\n\nRev 02 - Current (Feb 2025)\nRev 01 - Initial setup with CSI integration');
-}
-
-function exportSubmittals() {
-  let csv = 'Submittal #,Spec Section,Title,Status,Rev,Due Date,From\n';
-  submittals.forEach(s => {
-    csv += `"${s.submittalNum}","${s.specSection}","${s.subject}","${s.status}","${s.revision}","${s.dueDate}","${s.receivedFrom}"\n`;
-  });
-  
-  const blob = new Blob([csv], {type: 'text/csv'});
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement('a');
-  a.href = url;
-  a.download = 'submittals_export.csv';
-  a.click();
-  URL.revokeObjectURL(url);
-}
-
-function importSubmittals() {
-  showToast('Import feature ready — connect to backend API for production use', 'success');
-}
-
-function deleteSubmittal(id) {
-  if (!confirm('Delete this submittal?')) return;
-  submittals = submittals.filter(s => s.id !== id);
-  renderSubmittalsTable();
-  showToast('Submittal deleted', 'success');
-}
-
-function switchProject() {
-  const selector = document.getElementById('projectSelector');
-  if (!selector) return;
-  showToast(`Switched to ${selector.value} (demo)`, 'success');
-  // In real app: reload data for selected project
-}
-
-// ==================== INIT ====================
-function initSubmittals() {
-  renderSubmittalsTable();
-  
-  // Keyboard shortcuts
-  document.addEventListener('keydown', function(e) {
-    if (e.key === '/' && document.activeElement.tagName === 'BODY') {
-      e.preventDefault();
-      const search = document.getElementById('searchInput');
-      if (search) search.focus();
-    }
-    if (e.key === 'Escape') {
-      const detail = document.getElementById('detailModal');
-      const spec = document.getElementById('specSectionsModal');
-      if (!detail.classList.contains('hidden')) closeDetailModal();
-      else if (!spec.classList.contains('hidden')) closeSpecModal();
-    }
-  });
-  
-  // Seed a few more submittals for demo
-  if (submittals.length < 5) {
-    // Already have 3, add 2 more if needed
+// Keyboard shortcuts
+document.addEventListener('keydown', function(e) {
+  if (e.key === '/' && document.activeElement.tagName === 'BODY') {
+    e.preventDefault();
+    const search = document.getElementById('searchInput');
+    if (search) search.focus();
   }
   
-  console.log('%c[Submittals] Pure inner content initialized — ready for base.html integration', 'color:#10b981');
+  if (e.key === 'Escape') {
+    const detailModal = document.getElementById('submittalDetailModal');
+    const specModal = document.getElementById('specSectionsModal');
+    
+    if (!detailModal.classList.contains('hidden')) {
+      closeSubmittalDetailModal();
+    } else if (!specModal.classList.contains('hidden')) {
+      closeSpecSectionsModal();
+    }
+  }
+});
+
+// Initialize everything
+function initializeSubmittalsPage() {
+  initializeData();
+  renderSubmittalsTable();
+  
+  // Seed some extra spec sections if none exist
+  if (specSections.length < 10) {
+    // Already seeded in initializeData
+  }
+  
+  // Make sure metrics are correct
+  updateMetrics();
+  
+  // Show welcome toast once
+  setTimeout(() => {
+    // Optional: showToast('Submittals module ready', 'info');
+  }, 800);
 }
 
-// Auto-init when loaded inside base.html
-initSubmittals();
+// Boot
+initializeSubmittalsPage();
 </script>
 {% endblock %}
