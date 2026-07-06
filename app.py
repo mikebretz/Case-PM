@@ -1282,6 +1282,21 @@ def audit_log():
     return render_template('audit_log.html', logs=logs)
 
 
+# ==================== EMAIL PAGE ====================
+@app.route('/email')
+@login_required
+def email_page():
+    return render_template('email.html')
+
+
+# ==================== AUDIT LOG PAGE (Clean route for sidebar) ====================
+@app.route('/audit_log')
+@login_required
+def audit_log_page():
+    logs = AuditLog.query.order_by(AuditLog.timestamp.desc()).limit(100).all()
+    return render_template('audit_log.html', logs=logs)
+
+
 # ==================== NOTIFICATIONS ====================
 
 @app.route('/notifications')
