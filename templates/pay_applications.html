@@ -416,6 +416,9 @@ let mainLienWaiver = JSON.parse(localStorage.getItem('mainLienWaiver') || '{}');
     let subPayAppNumbers = JSON.parse(localStorage.getItem('subPayAppNumbers') || '{}'); // { companyId: currentPayAppNumber }
     let subPendingSubmissions = JSON.parse(localStorage.getItem('subPendingSubmissions') || '{}'); // { companyId: { periodNumber, lines: [...], totalBilledThisPeriod, lienWaiver, submittedDate } }  // LEFT-HAND pending until final Approve
 
+    // NEW: Append-only archive for Previous Sub Pay Apps (never filtered, never deleted, only appended to)
+    let previousSubPayAppArchive = JSON.parse(localStorage.getItem('previousSubPayAppArchive') || '[]');
+
     // History of previous (Approved) Pay Applications
     let payAppHistory = JSON.parse(localStorage.getItem('payAppHistory')) || [];
 
@@ -479,14 +482,14 @@ let mainLienWaiver = JSON.parse(localStorage.getItem('mainLienWaiver') || '{}');
         const start = new Date(selectedStartDate);
         if (isNaN(start.getTime())) return;
 
-        // FORCE to the 1st day of the selected month (ignore whatever day was passed in)
+        // STRICT: Always force 1st day of the selected month → last day of that same month.
+        // Ignores whatever day was passed in and ignores "today".
         const year = start.getFullYear();
         const month = start.getMonth();
-        const periodStart = new Date(year, month, 1).toISOString().split('T')[0];
 
-        // Last day of that exact month
-        const end = new Date(year, month + 1, 0);
-        const periodEnd = end.toISOString().split('T')[0];
+        const periodStart = `${year}-${String(month + 1).padStart(2, '0')}-01`;
+        const lastDay = new Date(year, month + 1, 0).getDate();
+        const periodEnd = `${year}-${String(month + 1).padStart(2, '0')}-${String(lastDay).padStart(2, '0')}`;
 
         currentPayAppPeriod.periodStart = periodStart;
         currentPayAppPeriod.periodEnd = periodEnd;
@@ -664,6 +667,21 @@ let mainLienWaiver = JSON.parse(localStorage.getItem('mainLienWaiver') || '{}');
         });
 
         return Math.round(total * 100) / 100;
+    }
+
+    // ==================== APPEND-ONLY ARCHIVE HELPERS (NEW - guarantees Previous Sub Pay Apps never lose entries) ====================
+    function appendToPreviousSubPayAppArchive(entry) {
+        if (!entry || !entry.companyId || !entry.periodNum) return;
+        // Prevent exact duplicates
+        const exists = previousSubPayAppArchive.some(e =>
+            e.companyId === entry.companyId &&
+            e.periodNum === entry.periodNum &&
+            e.pushedFromMainPeriod === entry.pushedFromMainPeriod
+        );
+        if (!exists) {
+            previousSubPayAppArchive.unshift(entry); // newest on top
+            localStorage.setItem('previousSubPayAppArchive', JSON.stringify(previousSubPayAppArchive));
+        }
     }
 
     // ==================== SUB SOV STATUS HELPERS (Approval Workflow) ====================
@@ -6006,17 +6024,22 @@ function printSubcontractorG703(companyId) {
 
         const mainPeriods = new Set();
 
-        // PRIMARY SOURCE: Always include every period that has ever existed in the main contractor payAppHistory.
-        // This guarantees Period 1 (even if it was only a zero-dollar compliance paper) never disappears again.
-        if (Array.isArray(payAppHistory)) {
+        // 1. Primary source: main contractor payAppHistory (authoritative list of every period that ever existed)
+        if (payAppHistory && payAppHistory.length > 0) {
             payAppHistory.forEach(p => {
-                if (p && p.periodNumber) {
-                    mainPeriods.add(Number(p.periodNumber));
-                }
+                if (p.periodNumber) mainPeriods.add(p.periodNumber);
             });
         }
 
-        // SECONDARY SOURCE: Also include any main periods referenced by archived sub pay apps (for robustness)
+        // 2. Also include any periods from the new append-only archive (guarantees early compliance papers are never lost)
+        if (previousSubPayAppArchive && previousSubPayAppArchive.length > 0) {
+            previousSubPayAppArchive.forEach(entry => {
+                const mp = entry.pushedFromMainPeriod || entry.mainG702Period || entry.periodNum;
+                if (mp && mp !== 1005) mainPeriods.add(mp);
+            });
+        }
+
+        // 3. Fallback: old logic from subPayAppHistory (for compatibility)
         Object.keys(subPayAppHistory || {}).forEach(cid => {
             const hist = subPayAppHistory[cid];
             if (!hist) return;
@@ -6024,8 +6047,8 @@ function printSubcontractorG703(companyId) {
                 const entry = hist[p];
                 if (entry && entry.archived === true) {
                     const mp = entry.pushedFromMainPeriod || entry.mainG702Period || null;
-                    if (mp) mainPeriods.add(Number(mp));
-                    if (entry.periodNum && entry.periodNum !== 1005) mainPeriods.add(Number(entry.periodNum));
+                    if (mp) mainPeriods.add(mp);
+                    if (entry.periodNum && entry.periodNum !== 1005) mainPeriods.add(entry.periodNum);
                 }
             });
         });
