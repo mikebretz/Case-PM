@@ -479,11 +479,17 @@ let mainLienWaiver = JSON.parse(localStorage.getItem('mainLienWaiver') || '{}');
         const start = new Date(selectedStartDate);
         if (isNaN(start.getTime())) return;
 
-        // Set to first day of month
-        const periodStart = start.toISOString().split('T')[0];
-        // Last day of the month
-        const end = new Date(start.getFullYear(), start.getMonth() + 1, 0);
-        const periodEnd = end.toISOString().split('T')[0];
+        // === STRICT CALENDAR MONTH ONLY ===
+        // Force start = 1st of the selected month, end = last day of that exact month.
+        // This prevents any "today's date" or partial range bleeding into other months.
+        const year = start.getFullYear();
+        const month = start.getMonth(); // 0-based
+
+        const periodStartDate = new Date(year, month, 1);
+        const periodEndDate = new Date(year, month + 1, 0); // Last day of month
+
+        const periodStart = periodStartDate.toISOString().split('T')[0];
+        const periodEnd = periodEndDate.toISOString().split('T')[0];
 
         currentPayAppPeriod.periodStart = periodStart;
         currentPayAppPeriod.periodEnd = periodEnd;
@@ -4309,6 +4315,28 @@ let mainLienWaiver = JSON.parse(localStorage.getItem('mainLienWaiver') || '{}');
         const line = lines.find(l => l.id === lineId);
         if (!line) return;
 
+        // === HARD OVERBILLING BLOCK (per line item) ===
+        // A sub cannot bill more in "Work This Period + Materials + CO Work" than what remains
+        // on THIS SPECIFIC LINE (Original Commitment + Change Orders - already billed_to_date).
+        const scheduledValue = (parseFloat(line.original_commitment) || 0) + (parseFloat(line.change_orders) || 0);
+        const alreadyBilled = parseFloat(line.billed_to_date) || 0;
+        const remainingOnLine = Math.max(0, scheduledValue - alreadyBilled);
+
+        const thisPeriodTotal = workThis + mats + coWork;
+
+        if (thisPeriodTotal > remainingOnLine + 0.01) {
+            showCenteredAlert(
+                `BLOCKED: You cannot overbill this line item.\n\n` +
+                `Scheduled Value (Original + COs): ${formatCurrency(scheduledValue)}\n` +
+                `Already Billed to Date: ${formatCurrency(alreadyBilled)}\n` +
+                `Remaining on this line: ${formatCurrency(remainingOnLine)}\n` +
+                `You tried to bill this period: ${formatCurrency(thisPeriodTotal)}\n\n` +
+                `Please reduce the amounts so they do not exceed the remaining balance on this specific line.`,
+                'error'
+            );
+            return; // Do not save
+        }
+
         // === DRAFT SAVE ONLY (User Request - Same as G702) ===
         // We save the "this period" values as draft fields on the line.
         // We do NOT update billed_to_date here. That only happens on "Submit Application".
@@ -6002,6 +6030,19 @@ function printSubcontractorG703(companyId) {
         periodSelect.innerHTML = '<option value="">-- All Periods --</option>';
 
         const mainPeriods = new Set();
+
+        // PRIMARY SOURCE: Always seed from the main contractor payAppHistory.
+        // This guarantees every approved G702 period (including early ones that had only compliance papers)
+        // ALWAYS appears in the dropdown, even if sub tagging was incomplete.
+        if (payAppHistory && payAppHistory.length > 0) {
+            payAppHistory.forEach(p => {
+                if (p && p.periodNumber) {
+                    mainPeriods.add(p.periodNumber);
+                }
+            });
+        }
+
+        // Also include any archived sub entries that have a clean pushedFromMainPeriod tag (defensive)
         Object.keys(subPayAppHistory || {}).forEach(cid => {
             const hist = subPayAppHistory[cid];
             if (!hist) return;
@@ -6010,7 +6051,6 @@ function printSubcontractorG703(companyId) {
                 if (entry && entry.archived === true) {
                     const mp = entry.pushedFromMainPeriod || entry.mainG702Period || null;
                     if (mp) mainPeriods.add(mp);
-                    // Also include the entry's own periodNum as fallback (for older data or compliance display)
                     if (entry.periodNum && entry.periodNum !== 1005) mainPeriods.add(entry.periodNum);
                 }
             });
