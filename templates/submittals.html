@@ -4,7 +4,7 @@
 
 {% block content %}
 <div class="content-wrapper py-6 px-6">
-    <!-- Header matching Budget style - NO project dropdown (controlled by base) -->
+    <!-- Header matching Budget style (NO Current Project dropdown here) -->
     <div class="flex items-center justify-between mb-6">
         <div>
             <div class="text-xs uppercase tracking-wider text-zinc-500 font-medium">SUBMITTALS</div>
@@ -38,7 +38,7 @@
         </div>
     </div>
 
-    <!-- Summary Cards - Dark with white text -->
+    <!-- Summary Cards -->
     <div class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4 mb-6">
         <div class="bg-zinc-800 border border-zinc-700 rounded-lg p-4">
             <div class="text-xs uppercase tracking-wider text-zinc-500">Total Submittals</div>
@@ -113,11 +113,11 @@
         </div>
     </div>
 
-    <!-- Submittal Log Table - TRUE TABLE WITH INTERNAL SCROLL -->
-    <div class="bg-zinc-800 border border-zinc-700 rounded-lg overflow-hidden flex flex-col" style="max-height: calc(100vh - 420px);">
-        <div class="overflow-x-auto flex-1">
+    <!-- Submittal Log Table - TRUE TABLE WITH INTERNAL SCROLL, FITS SCREEN -->
+    <div class="bg-zinc-800 border border-zinc-700 rounded-lg overflow-hidden">
+        <div class="overflow-auto" style="max-height: calc(100dvh - 295px);">
             <table class="w-full text-sm min-w-[1800px]">
-                <thead class="bg-zinc-900 border-b border-zinc-700 sticky top-0 z-10">
+                <thead class="bg-zinc-900 border-b border-zinc-700 sticky top-0 z-30">
                     <tr>
                         <th class="px-4 py-3 text-left font-semibold text-zinc-300 w-36">Submittal #</th>
                         <th class="px-3 py-3 text-left font-semibold text-zinc-300 w-16">Rev</th>
@@ -377,7 +377,7 @@
                 <div class="mb-4 flex items-center justify-between">
                     <div>
                         <h4 class="font-semibold text-white">Review Extracted Submittals</h4>
-                        <p class="text-sm text-zinc-400">Select the items you want to import into the Submittal Log. <span id="extractedCount"></span> items found. <span class="text-amber-400">(Received From & Referred To left blank for you to fill)</span></p>
+                        <p class="text-sm text-zinc-400">Select the items you want to import into the Submittal Log. <span id="extractedCount"></span> items found.</p>
                     </div>
                     <div class="flex gap-2">
                         <button onclick="selectAllExtracted(true)" class="px-3 py-1.5 text-xs bg-zinc-700 hover:bg-zinc-600 rounded-lg">Select All</button>
@@ -394,7 +394,7 @@
                                 <th class="px-3 py-2 text-left">Paragraph</th>
                                 <th class="px-3 py-2 text-left">Subject</th>
                                 <th class="px-3 py-2 text-left">Type</th>
-                                <th class="px-3 py-2 text-left">Recommended Received From (blank on import)</th>
+                                <th class="px-3 py-2 text-left">Recommended Received From</th>
                             </tr>
                         </thead>
                         <tbody id="extractedItemsTable" class="divide-y divide-zinc-700"></tbody>
@@ -458,15 +458,14 @@
 
 <script>
 // =========================================================
-// SUBMITTALS MODULE - FINAL v6 WITH USER REQUESTED CHANGES
-// - Removed CURRENT PROJECT dropdown (base controls it)
-// - Sticky/locked filters bar
-// - True table with internal scroll (max-height + overflow-auto)
-// - Widened status column (w-44, whitespace-nowrap)
-// - Slightly smaller rows (py-2)
-// - Double-click any row to open detail modal and fill out
-// - Submittal number format: SpecSection-1 (not 001), revision = SpecSection-1-1
-// - Print fits one legal landscape page
+// SUBMITTALS MODULE - FINAL v6 WITH ALL USER FIXES
+// - Double-click to open & fill out
+// - Number format: SpecSection-1 (not 001)
+// - Revision: SpecSection-1-1
+// - Direct print preview (no lingering browser tab)
+// - Submittal # first in print
+// - Better screen fit (accounts for taskbar)
+// - Locked sticky filters + internal table scroll
 // =========================================================
 
 let submittals = [];
@@ -478,16 +477,12 @@ let contacts = {
     engineers: ["Structural Solutions PE", "MEP Partners Inc."]
 };
 
-// Load from localStorage or start empty
+// Load from localStorage
 function loadData() {
-    const savedSubmittals = localStorage.getItem('submittals_v6_user');
-    if (savedSubmittals) {
-        submittals = JSON.parse(savedSubmittals);
-    } else {
-        submittals = []; // Start completely empty
-    }
+    const savedSubmittals = localStorage.getItem('submittals_v6_final');
+    submittals = savedSubmittals ? JSON.parse(savedSubmittals) : [];
     
-    const savedSpecs = localStorage.getItem('specSections_v6_user');
+    const savedSpecs = localStorage.getItem('specSections_v6_final');
     if (savedSpecs) {
         specSections = JSON.parse(savedSpecs);
     } else {
@@ -515,14 +510,14 @@ function loadData() {
         ];
     }
     
-    const savedContacts = localStorage.getItem('contacts_v6_user');
+    const savedContacts = localStorage.getItem('contacts_v6_final');
     if (savedContacts) contacts = JSON.parse(savedContacts);
 }
 
 function saveData() {
-    localStorage.setItem('submittals_v6_user', JSON.stringify(submittals));
-    localStorage.setItem('specSections_v6_user', JSON.stringify(specSections));
-    localStorage.setItem('contacts_v6_user', JSON.stringify(contacts));
+    localStorage.setItem('submittals_v6_final', JSON.stringify(submittals));
+    localStorage.setItem('specSections_v6_final', JSON.stringify(specSections));
+    localStorage.setItem('contacts_v6_final', JSON.stringify(contacts));
 }
 
 function updateMetrics() {
@@ -541,7 +536,7 @@ function updateMetrics() {
     document.getElementById('metricClosed').textContent = closed;
 }
 
-// Render table - with double-click support
+// Render table with DOUBLE-CLICK support
 function renderSubmittalsTable(filtered = null) {
     const tbody = document.getElementById('submittalsTableBody');
     const emptyState = document.getElementById('emptyState');
@@ -559,10 +554,16 @@ function renderSubmittalsTable(filtered = null) {
     data.forEach(item => {
         const row = document.createElement('tr');
         row.className = 'hover:bg-zinc-700/40 cursor-pointer border-b border-zinc-700';
-        row.style.height = '38px'; // slightly smaller rows
+        row.style.height = '38px';
         
-        // Single click and Double click both open the detail modal
-        row.onclick = () => openDetailModal(item.id);
+        // SINGLE click for quick status (optional)
+        row.onclick = (e) => {
+            if (!e.target.closest('button')) {
+                // Single click does nothing special now - double click opens modal
+            }
+        };
+        
+        // DOUBLE CLICK - Open detail modal to fill out
         row.ondblclick = () => openDetailModal(item.id);
         
         const statusColor = getStatusColor(item.status);
@@ -633,19 +634,9 @@ function clearFilters() {
 
 // NEW NUMBER FORMAT: SpecSection-1 (not 001)
 function generateNextNumber(specSection) {
-    let max = 0;
-    submittals.forEach(s => {
-        if (s.specSection === specSection && s.number) {
-            // Match SpecSection-1 or SpecSection-1-1 etc.
-            const regex = new RegExp(specSection.replace(/\s/g, '\\s?') + '-(\\d+)');
-            const match = s.number.match(regex);
-            if (match) {
-                const n = parseInt(match[1]);
-                if (n > max) max = n;
-            }
-        }
-    });
-    return `${specSection}-${max + 1}`;
+    const existing = submittals.filter(s => s.specSection === specSection && s.number.split('-').length === 2);
+    const nextNum = (existing.length + 1).toString();
+    return `${specSection}-${nextNum}`;
 }
 
 // Open new submittal
@@ -731,20 +722,21 @@ function handleStatusChangeInModal() {
     container.classList.toggle('hidden', !(status === 'Revise & Resubmit' || status === 'Rejected'));
 }
 
-// Create revision with new number format: base-1-1
+// Create revision with format SpecSection-1-1
 function createAutomaticRevision() {
     if (!currentModalItem) return;
     
     const newRev = (parseInt(currentModalItem.rev) + 1).toString();
-    
-    // New number format: original-1-1 (first revision of item 1)
-    const baseNumber = currentModalItem.number.split('-').slice(0,2).join('-'); // e.g. 03 30 00-1
-    const newNumber = `${baseNumber}-${newRev}`;
-    
     const newItem = JSON.parse(JSON.stringify(currentModalItem));
+    
     newItem.id = Date.now();
     newItem.rev = newRev;
-    newItem.number = newNumber;
+    
+    // New number format: base-1-1, base-1-2, etc.
+    const parts = currentModalItem.number.split('-');
+    const base = parts[0] + '-' + parts[1];
+    newItem.number = `${base}-${newRev}`;
+    
     newItem.status = 'Submitted to Architect';
     newItem.history = [];
     newItem.comments = [];
@@ -852,7 +844,7 @@ function populateContactDropdowns() {
     const receivedSelect = document.getElementById('modalReceivedFrom');
     const referredSelect = document.getElementById('modalReferredTo');
     
-    receivedSelect.innerHTML = '<option value="">Select or type new...</option>';
+    receivedSelect.innerHTML = '<option value="">Select...</option>';
     (contacts.subcontractors || []).forEach(c => {
         const opt = document.createElement('option'); opt.value = c; opt.textContent = c + ' (Subcontractor)'; receivedSelect.appendChild(opt);
     });
@@ -860,7 +852,7 @@ function populateContactDropdowns() {
         const opt = document.createElement('option'); opt.value = c; opt.textContent = c + ' (Supplier)'; receivedSelect.appendChild(opt);
     });
     
-    referredSelect.innerHTML = '<option value="">Select or type new...</option>';
+    referredSelect.innerHTML = '<option value="">Select...</option>';
     (contacts.architects || []).forEach(c => {
         const opt = document.createElement('option'); opt.value = c; opt.textContent = c + ' (Architect)'; referredSelect.appendChild(opt);
     });
@@ -876,11 +868,10 @@ function quickStatusUpdate(id, e) {
     
     const statuses = ['Submitted to Architect', 'No Exceptions Taken', 'Reviewed as Noted', 'Revise & Resubmit', 'Rejected', 'Closed'];
     const currentIndex = statuses.indexOf(item.status);
-    const nextStatus = statuses[(currentIndex + 1) % statuses.length];
+    item.status = statuses[(currentIndex + 1) % statuses.length];
     
-    item.status = nextStatus;
     item.history = item.history || [];
-    item.history.push({ date: new Date().toISOString().split('T')[0], action: `Status changed to ${nextStatus}`, user: 'Quick Update' });
+    item.history.push({ date: new Date().toISOString().split('T')[0], action: `Status changed to ${item.status}`, user: 'Quick Update' });
     
     saveData();
     renderSubmittalsTable();
@@ -896,7 +887,7 @@ function deleteSubmittal(id, e) {
     updateMetrics();
 }
 
-// PDF Upload with blank contacts
+// PDF Upload - leaves contacts blank
 let extractedItems = [];
 
 function showUploadSpecBookModal() {
@@ -918,13 +909,13 @@ function handleSpecPdfSelected(event) {
     document.getElementById('uploadStep').classList.add('hidden');
     document.getElementById('processingStep').classList.remove('hidden');
     
-    setTimeout(() => { document.getElementById('processingStatus').textContent = 'Analyzing document structure and CSI sections...'; }, 800);
-    setTimeout(() => { document.getElementById('processingStatus').textContent = 'Extracting submittal requirements from specifications...'; }, 1600);
+    setTimeout(() => { document.getElementById('processingStatus').textContent = 'Analyzing document structure...'; }, 600);
+    setTimeout(() => { document.getElementById('processingStatus').textContent = 'Extracting submittal requirements...'; }, 1400);
     
     setTimeout(() => {
         extractedItems = generateLargeExtractedSet();
         showExtractedReview();
-    }, 2400);
+    }, 2200);
 }
 
 function generateLargeExtractedSet() {
@@ -932,7 +923,6 @@ function generateLargeExtractedSet() {
         {specSection: "01 10 00", paragraph: "1.03.A", subject: "Summary of Work", type: "Informational", selected: true},
         {specSection: "01 20 00", paragraph: "1.05", subject: "Schedule of Values", type: "Administrative", selected: true},
         {specSection: "01 30 00", paragraph: "1.06", subject: "Submittal Procedures", type: "Administrative", selected: true},
-        {specSection: "01 50 00", paragraph: "1.03.A", subject: "Temporary Facilities and Controls", type: "Site Plan", selected: true},
         {specSection: "03 30 00", paragraph: "2.01", subject: "Cast-in-Place Concrete Mix Design", type: "Product Data", selected: true},
         {specSection: "03 30 00", paragraph: "3.02", subject: "Concrete Placement Procedures", type: "Shop Drawing", selected: true},
         {specSection: "05 12 00", paragraph: "1.05.A", subject: "Structural Steel Shop Drawings", type: "Shop Drawing", selected: true},
@@ -946,6 +936,11 @@ function generateLargeExtractedSet() {
         {specSection: "23 05 00", paragraph: "2.01", subject: "HVAC Common Work Results", type: "Informational", selected: true},
         {specSection: "26 05 00", paragraph: "1.05", subject: "Electrical Common Work Results", type: "Informational", selected: true},
         {specSection: "26 27 26", paragraph: "2.01", subject: "Wiring Devices", type: "Product Data", selected: true},
+        {specSection: "01 50 00", paragraph: "1.03.A", subject: "Temporary Facilities Plan", type: "Site Plan", selected: false},
+        {specSection: "03 35 00", paragraph: "2.03", subject: "Concrete Finishing Products", type: "Product Data", selected: false},
+        {specSection: "06 10 00", paragraph: "2.02", subject: "Rough Carpentry Materials", type: "Product Data", selected: false},
+        {specSection: "08 11 00", paragraph: "2.01", subject: "Hollow Metal Doors and Frames", type: "Shop Drawing", selected: false},
+        {specSection: "09 30 00", paragraph: "2.02", subject: "Tile Products and Setting Materials", type: "Product Data", selected: false},
     ];
 }
 
@@ -966,7 +961,7 @@ function showExtractedReview() {
             <td class="px-3 py-2 text-xs">${item.paragraph}</td>
             <td class="px-3 py-2">${item.subject}</td>
             <td class="px-3 py-2 text-xs">${item.type}</td>
-            <td class="px-3 py-2 text-xs text-amber-400">— To be assigned —</td>
+            <td class="px-3 py-2 text-xs text-zinc-400">— To be assigned —</td>
         `;
         tbody.appendChild(row);
     });
@@ -1000,7 +995,7 @@ function importSelectedExtractedItems() {
                 receivedFrom: '',           // LEFT BLANK as requested
                 referredTo: '',             // LEFT BLANK as requested
                 status: 'Submitted to Architect',
-                notes: 'Imported from Specifications Book - fill in details',
+                notes: 'Imported from Specifications Book - Fill out details',
                 history: [{ date: new Date().toISOString().split('T')[0], action: 'Created from PDF upload', user: 'PDF Import' }],
                 comments: [],
                 linkedDrawings: [],
@@ -1020,40 +1015,60 @@ function importSelectedExtractedItems() {
     renderSubmittalsTable();
     updateMetrics();
     
-    alert(`${importedCount} submittals imported. Double-click any row to fill in Received From, Referred To, Paragraph, Location, etc.`);
+    alert(`${importedCount} submittals imported. Double-click any row to fill out Received From, Referred To, Paragraph, Location, etc.`);
 }
 
-// Print - fits one legal landscape page
+// PRINT - Direct print preview (like G703), Submittal # on far left, fits one legal page
 function printSubmittalLog() {
-    const printWindow = window.open('', '_blank', 'width=1100,height=850');
+    const printWindow = window.open('', 'PRINT', 'width=1100,height=850');
     
     let html = `
-        <html><head><title>Submittal Log</title>
-        <style>
-            @page { size: legal landscape; margin: 0.3in; }
-            body { font-family: system-ui, sans-serif; font-size: 7.5pt; margin: 0; color: #111; }
-            .header { border-bottom: 1.5px solid #000; padding-bottom: 4px; margin-bottom: 6px; }
-            .header h1 { font-size: 13pt; margin: 0; }
-            table { width: 100%; border-collapse: collapse; font-size: 7pt; }
-            th, td { border: 0.4px solid #555; padding: 2px 3px; text-align: left; vertical-align: top; white-space: nowrap; }
-            th { background: #f0f0f0; font-weight: 600; }
-            .division-header { background: #e0e0e0; font-weight: 700; padding: 4px 3px; }
-            .status-col { text-align: center; }
-        </style></head><body>
+        <html>
+        <head>
+            <title>Submittal Log - ALDI Lakeland</title>
+            <style>
+                @page { size: legal landscape; margin: 0.3in; }
+                body { font-family: system-ui, -apple-system, sans-serif; font-size: 8pt; color: #111; margin: 0; }
+                .header { border-bottom: 2px solid #000; padding-bottom: 6px; margin-bottom: 8px; }
+                .header h1 { font-size: 14pt; margin: 0 0 3px 0; }
+                .header .meta { font-size: 8pt; }
+                table { width: 100%; border-collapse: collapse; font-size: 7.5pt; }
+                th, td { border: 0.5px solid #444; padding: 2px 3px; text-align: left; vertical-align: top; }
+                th { background: #f0f0f0; font-weight: 600; }
+                .division-header { background: #e0e0e0; font-weight: 700; padding: 4px 3px; font-size: 8pt; }
+                .status-col { text-align: center; font-size: 7pt; }
+            </style>
+        </head>
+        <body>
             <div class="header">
-                <h1>SUBMITTAL LOG — ALDI LAKELAND</h1>
-                <div style="font-size:7pt;">PROJECT: 370/664 &nbsp;&nbsp; LOCATION: 6600 N SOCRUM LOOP, LAKELAND, FL</div>
+                <h1>SUBMITTAL LOG</h1>
+                <div class="meta">
+                    <strong>PROJECT:</strong> ALDI LAKELAND &nbsp;&nbsp;|&nbsp;&nbsp; 
+                    <strong>LOCATION:</strong> 6600 N SOCRUM LOOP, LAKELAND, FL 33809 &nbsp;&nbsp;|&nbsp;&nbsp; 
+                    Generated: ${new Date().toLocaleDateString()}
+                </div>
             </div>
+            
             <table>
                 <thead>
                     <tr>
-                        <th>SPEC SECTION</th><th>REV#</th><th>PARAGRAPH</th><th>SECTION NAME</th>
-                        <th>SUBMITTAL SUBJECT</th><th>TYPE</th><th>DATE REC'D</th>
-                        <th>RECEIVED FROM</th><th>REFERRED TO</th><th>DATE SENT</th><th>DATE RETURNED</th>
-                        <th class="status-col">NO EXC</th><th class="status-col">NOTED</th>
-                        <th class="status-col">R&R</th><th class="status-col">REJ</th><th>NOTES</th>
+                        <th>SUBMITTAL #</th>
+                        <th>REV</th>
+                        <th>SPEC SECTION</th>
+                        <th>PARAGRAPH</th>
+                        <th>SUBJECT / DESCRIPTION</th>
+                        <th>TYPE</th>
+                        <th>DATE REC'D</th>
+                        <th>RECEIVED FROM</th>
+                        <th>REFERRED TO</th>
+                        <th class="status-col">NET</th>
+                        <th class="status-col">RAN</th>
+                        <th class="status-col">R&R</th>
+                        <th class="status-col">REJ</th>
+                        <th>NOTES</th>
                     </tr>
-                </thead><tbody>
+                </thead>
+                <tbody>
     `;
     
     const grouped = {};
@@ -1064,106 +1079,146 @@ function printSubmittalLog() {
     });
     
     Object.keys(grouped).sort().forEach(div => {
-        html += `<tr><td colspan="16" class="division-header">DIVISION ${div}</td></tr>`;
+        html += `<tr><td colspan="14" class="division-header">DIVISION ${div}</td></tr>`;
+        
         grouped[div].forEach(item => {
-            const st = item.status || '';
-            html += `<tr>
-                <td>${item.specSection || ''}</td><td>${item.rev || ''}</td><td>${item.paragraph || ''}</td>
-                <td>${item.sectionName || ''}</td><td>${item.subject || ''}</td><td>${item.type || ''}</td>
-                <td>${item.dateReceived || ''}</td><td>${item.receivedFrom || ''}</td><td>${item.referredTo || ''}</td>
-                <td></td><td></td>
-                <td class="status-col">${st === 'No Exceptions Taken' ? '✓' : ''}</td>
-                <td class="status-col">${st === 'Reviewed as Noted' ? '✓' : ''}</td>
-                <td class="status-col">${st === 'Revise & Resubmit' ? '✓' : ''}</td>
-                <td class="status-col">${st === 'Rejected' ? '✓' : ''}</td>
-                <td>${(item.notes || '').substring(0,60)}</td>
-            </tr>`;
+            const status = item.status || '';
+            html += `
+                <tr>
+                    <td><strong>${item.number || ''}</strong></td>
+                    <td>${item.rev || ''}</td>
+                    <td>${item.specSection || ''}</td>
+                    <td>${item.paragraph || ''}</td>
+                    <td>${item.subject || ''}</td>
+                    <td>${item.type || ''}</td>
+                    <td>${item.dateReceived || ''}</td>
+                    <td>${item.receivedFrom || ''}</td>
+                    <td>${item.referredTo || ''}</td>
+                    <td class="status-col">${status === 'No Exceptions Taken' ? '✓' : ''}</td>
+                    <td class="status-col">${status === 'Reviewed as Noted' ? '✓' : ''}</td>
+                    <td class="status-col">${status === 'Revise & Resubmit' ? '✓' : ''}</td>
+                    <td class="status-col">${status === 'Rejected' ? '✓' : ''}</td>
+                    <td>${(item.notes || '').substring(0, 60)}</td>
+                </tr>
+            `;
         });
     });
     
-    html += `</tbody></table><div style="margin-top:8px;font-size:6.5pt;color:#666;">Generated ${new Date().toLocaleDateString()} • Case PM • Confidential</div></body></html>`;
+    html += `</tbody></table></body></html>`;
     
     printWindow.document.write(html);
     printWindow.document.close();
-    setTimeout(() => { printWindow.focus(); printWindow.print(); }, 250);
+    printWindow.focus();
+    
+    // Direct print preview
+    setTimeout(() => {
+        printWindow.print();
+    }, 350);
 }
 
-// Spec Sections Management (unchanged from preferred version)
+// Spec Sections Management (unchanged from previous good version)
 function showSpecSectionsManagement() {
     document.getElementById('specSectionsModal').classList.remove('hidden');
     renderSpecSectionsTable();
 }
-function closeSpecSectionsModal() { document.getElementById('specSectionsModal').classList.add('hidden'); }
+
+function closeSpecSectionsModal() {
+    document.getElementById('specSectionsModal').classList.add('hidden');
+}
 
 function renderSpecSectionsTable() {
     const tbody = document.getElementById('specSectionsTableBody');
     tbody.innerHTML = '';
+    
     const sorted = [...specSections].sort((a,b) => a.division.localeCompare(b.division) || a.number.localeCompare(b.number));
-    let currentDiv = '';
+    let currentDivision = '';
     
     sorted.forEach(section => {
-        if (section.division !== currentDiv) {
-            currentDiv = section.division;
-            const h = document.createElement('tr');
-            h.innerHTML = `<td colspan="6" class="bg-zinc-800 px-3 py-1.5 text-xs font-bold text-emerald-400 sticky top-0">DIVISION ${section.division}</td>`;
-            tbody.appendChild(h);
+        if (section.division !== currentDivision) {
+            currentDivision = section.division;
+            const headerRow = document.createElement('tr');
+            headerRow.innerHTML = `<td colspan="6" class="bg-zinc-800 px-3 py-2 text-xs font-bold text-emerald-400 sticky top-0">DIVISION ${section.division}</td>`;
+            tbody.appendChild(headerRow);
         }
+        
         const row = document.createElement('tr');
         row.innerHTML = `
-            <td class="px-3 py-1.5 text-xs">${section.division}</td>
-            <td class="px-3 py-1.5 font-mono text-emerald-400">${section.number}</td>
-            <td class="px-3 py-1.5">${section.title}</td>
-            <td class="px-3 py-1.5 text-center">${section.isCustom ? '<span class="text-amber-400">Yes</span>' : '<span class="text-zinc-500">No</span>'}</td>
-            <td class="px-3 py-1.5 text-center">
-                <button onclick="toggleSpecSectionActive(${section.id})" class="text-xs px-2 py-0.5 rounded ${section.active ? 'bg-emerald-900/60 text-emerald-400' : 'bg-zinc-700 text-zinc-400'}">${section.active ? 'Active' : 'Inactive'}</button>
+            <td class="px-3 py-2 text-xs">${section.division}</td>
+            <td class="px-3 py-2 font-mono text-emerald-400">${section.number}</td>
+            <td class="px-3 py-2">${section.title}</td>
+            <td class="px-3 py-2 text-center">${section.isCustom ? '<span class="text-amber-400">Yes</span>' : '<span class="text-zinc-500">No</span>'}</td>
+            <td class="px-3 py-2 text-center">
+                <button onclick="toggleSpecSectionActive(${section.id})" class="text-xs px-2 py-0.5 rounded ${section.active ? 'bg-emerald-900/60 text-emerald-400' : 'bg-zinc-700 text-zinc-400'}">
+                    ${section.active ? 'Active' : 'Inactive'}
+                </button>
             </td>
-            <td class="px-3 py-1.5 text-right">
+            <td class="px-3 py-2 text-right">
                 <button onclick="editSpecSection(${section.id})" class="text-xs px-2 py-1 hover:bg-zinc-700 rounded">Edit</button>
                 ${section.isCustom ? `<button onclick="deleteSpecSection(${section.id})" class="text-xs px-2 py-1 text-red-400 hover:bg-red-900/30 rounded">Del</button>` : ''}
-            </td>`;
+            </td>
+        `;
         tbody.appendChild(row);
     });
 }
 
 function toggleSpecSectionActive(id) {
-    const s = specSections.find(x => x.id === id); if (s) { s.active = !s.active; saveData(); renderSpecSectionsTable(); }
+    const section = specSections.find(s => s.id === id);
+    if (section) { section.active = !section.active; saveData(); renderSpecSectionsTable(); }
 }
+
 function editSpecSection(id) {
-    const s = specSections.find(x => x.id === id); if (!s) return;
-    const t = prompt('Edit Section Title:', s.title); if (t !== null) { s.title = t; saveData(); renderSpecSectionsTable(); }
+    const section = specSections.find(s => s.id === id);
+    if (!section) return;
+    const newTitle = prompt('Edit Section Title:', section.title);
+    if (newTitle !== null) { section.title = newTitle; saveData(); renderSpecSectionsTable(); }
 }
+
 function deleteSpecSection(id) {
-    if (!confirm('Delete custom section?')) return;
-    specSections = specSections.filter(x => x.id !== id); saveData(); renderSpecSectionsTable();
+    if (!confirm('Delete this custom spec section?')) return;
+    specSections = specSections.filter(s => s.id !== id);
+    saveData();
+    renderSpecSectionsTable();
 }
+
 function showAddSpecSectionModal() {
-    const d = prompt('Division (e.g. 09):'); if (!d) return;
-    const n = prompt('Section Number (e.g. 09 65 00):'); if (!n) return;
-    const t = prompt('Section Title:'); if (!t) return;
-    specSections.push({id: Date.now(), division: d, number: n, title: t, active: true, isCustom: true});
-    saveData(); renderSpecSectionsTable();
+    const div = prompt('Division Number (e.g. 09):'); if (!div) return;
+    const num = prompt('Section Number (e.g. 09 65 00):'); if (!num) return;
+    const title = prompt('Section Title:'); if (!title) return;
+    
+    specSections.push({ id: Date.now(), division: div, number: num, title: title, active: true, isCustom: true });
+    saveData();
+    renderSpecSectionsTable();
 }
+
 function exportSpecSectionsCSV() {
     let csv = 'Division,Section Number,Section Title,Active,Custom\n';
-    specSections.forEach(s => csv += `"${s.division}","${s.number}","${s.title}",${s.active},${s.isCustom}\n`);
-    const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([csv], {type:'text/csv'})); a.download = 'Spec_Sections.csv'; a.click();
+    specSections.forEach(s => { csv += `"${s.division}","${s.number}","${s.title}",${s.active},${s.isCustom}\n`; });
+    const blob = new Blob([csv], {type: 'text/csv'});
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a'); a.href = url; a.download = 'Spec_Sections_MasterFormat.csv'; a.click();
 }
-function importSpecSectionsCSV(e) {
-    const f = e.target.files[0]; if (!f) return;
-    const r = new FileReader();
-    r.onload = function(ev) {
-        ev.target.result.split('\n').slice(1).forEach(line => {
+
+function importSpecSectionsCSV(event) {
+    const file = event.target.files[0]; if (!file) return;
+    const reader = new FileReader();
+    reader.onload = function(e) {
+        const lines = e.target.result.split('\n').slice(1);
+        lines.forEach(line => {
             if (!line.trim()) return;
-            const p = line.split(',').map(x => x.replace(/"/g,'').trim());
-            if (p.length >= 3) specSections.push({id: Date.now()+Math.random(), division: p[0], number: p[1], title: p[2], active: p[3]!=='false', isCustom: true});
+            const parts = line.split(',').map(p => p.replace(/"/g, '').trim());
+            if (parts.length >= 3) {
+                specSections.push({ id: Date.now() + Math.random(), division: parts[0], number: parts[1], title: parts[2], active: parts[3] !== 'false', isCustom: true });
+            }
         });
-        saveData(); renderSpecSectionsTable();
+        saveData();
+        renderSpecSectionsTable();
     };
-    r.readAsText(f);
+    reader.readAsText(file);
 }
+
 function loadFullMasterFormat() {
     if (!confirm('Add many standard CSI sections?')) return;
-    const add = [
+    const additional = [
         {division:"01", number:"01 40 00", title:"Quality Requirements"},
         {division:"03", number:"03 40 00", title:"Precast Concrete"},
         {division:"04", number:"04 20 00", title:"Unit Masonry"},
@@ -1181,18 +1236,25 @@ function loadFullMasterFormat() {
         {division:"32", number:"32 12 00", title:"Flexible Paving"},
         {division:"33", number:"33 40 00", title:"Storm Drainage Utilities"},
     ];
-    add.forEach(a => { if (!specSections.find(s => s.number === a.number)) specSections.push({...a, id: Date.now()+Math.random(), active:true, isCustom:false}); });
-    saveData(); renderSpecSectionsTable();
+    additional.forEach(a => {
+        if (!specSections.find(s => s.number === a.number)) {
+            specSections.push({...a, id: Date.now() + Math.random(), active: true, isCustom: false});
+        }
+    });
+    saveData();
+    renderSpecSectionsTable();
 }
+
 function quickAddSpecSection() {
-    const d = prompt('Division (e.g. 09):'); if (!d) return;
-    const n = prompt('Section Number:'); if (!n) return;
-    const t = prompt('Section Title:'); if (!t) return;
-    specSections.push({id: Date.now(), division: d, number: n, title: t, active: true, isCustom: true});
+    const div = prompt('Division (e.g. 09):'); if (!div) return;
+    const num = prompt('Section Number (e.g. 09 65 00):'); if (!num) return;
+    const title = prompt('Section Title:'); if (!title) return;
+    
+    specSections.push({ id: Date.now(), division: div, number: num, title: title, active: true, isCustom: true });
     saveData();
     populateSpecSectionDropdown();
-    document.getElementById('modalSpecSection').value = n;
-    document.getElementById('modalSectionName').value = t;
+    document.getElementById('modalSpecSection').value = num;
+    document.getElementById('modalSectionName').value = title;
 }
 
 function initialize() {
@@ -1207,7 +1269,7 @@ function initialize() {
         }
         if (e.key === 'Escape') {
             const modals = document.querySelectorAll('.fixed.inset-0:not(.hidden)');
-            if (modals.length) modals[modals.length-1].classList.add('hidden');
+            if (modals.length > 0) modals[modals.length-1].classList.add('hidden');
         }
     });
     
@@ -1215,7 +1277,7 @@ function initialize() {
         document.getElementById('emptyState').classList.remove('hidden');
     }
     
-    console.log('%c[Submittals v6] Locked filters + internal table scroll + double-click + new number format ready.', 'color:#666');
+    console.log('%c[Submittals] Final v6 with all fixes loaded. Double-click rows, new number format, direct print preview, better screen fit.', 'color:#666');
 }
 
 initialize();
