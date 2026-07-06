@@ -1952,15 +1952,14 @@ let mainLienWaiver = JSON.parse(localStorage.getItem('mainLienWaiver') || '{}');
         if (!currentPayAppPeriod) return;
         const nextNum = (currentPayAppPeriod.periodNumber || 1) + 1;
 
-        // ROBUST calendar-month advancement (one pay app per month)
-        // Always calculate clean month boundaries from the previous period's start month + 1
-        let base = new Date(currentPayAppPeriod.periodStart || currentPayAppPeriod.periodEnd);
-        if (isNaN(base.getTime())) base = new Date();
-
-        // Move to the first day of the next month
-        let nextStartDate = new Date(base.getFullYear(), base.getMonth() + 1, 1);
-        // Last day of that same month
-        let nextEndDate = new Date(nextStartDate.getFullYear(), nextStartDate.getMonth() + 1, 0);
+        // Calculate next month dates (one pay app per month rule)
+        let nextStartDate = new Date(currentPayAppPeriod.periodEnd);
+        nextStartDate.setDate(nextStartDate.getDate() + 1);
+        if (nextStartDate.getDate() !== 1) {
+            // Ensure it starts on the 1st of the next month for cleanliness
+            nextStartDate = new Date(nextStartDate.getFullYear(), nextStartDate.getMonth() + 1, 1);
+        }
+        const nextEndDate = new Date(nextStartDate.getFullYear(), nextStartDate.getMonth() + 1, 0); // Last day of month
 
         currentPayAppPeriod = {
             id: Date.now(),
@@ -1976,6 +1975,7 @@ let mainLienWaiver = JSON.parse(localStorage.getItem('mainLienWaiver') || '{}');
         localStorage.setItem('payAppBillingLines', JSON.stringify(payAppBillingLines));
 
         logPayAppAudit('PERIOD_ADVANCED_TEST', { from: currentPayAppPeriod.periodNumber - 1, to: nextNum });
+        // Debug success feedback removed per user request
         renderPayAppContent();
     }
 
@@ -6002,18 +6002,6 @@ function printSubcontractorG703(companyId) {
         periodSelect.innerHTML = '<option value="">-- All Periods --</option>';
 
         const mainPeriods = new Set();
-
-        // PRIMARY SOURCE OF TRUTH: Always include every period that has ever existed in the main contractor payAppHistory.
-        // This guarantees Period 1 (even if it was only a zero-dollar compliance paper) NEVER disappears.
-        if (Array.isArray(payAppHistory)) {
-            payAppHistory.forEach(p => {
-                if (p && p.periodNumber) {
-                    mainPeriods.add(Number(p.periodNumber));
-                }
-            });
-        }
-
-        // Also scan subPayAppHistory for any additional periods (defensive, for untagged compliance papers)
         Object.keys(subPayAppHistory || {}).forEach(cid => {
             const hist = subPayAppHistory[cid];
             if (!hist) return;
@@ -6021,10 +6009,9 @@ function printSubcontractorG703(companyId) {
                 const entry = hist[p];
                 if (entry && entry.archived === true) {
                     const mp = entry.pushedFromMainPeriod || entry.mainG702Period || null;
-                    if (mp) mainPeriods.add(Number(mp));
-                    // Fallback: include the entry's own period number for old compliance papers that may be missing the tag
-                    const ownPeriod = entry.periodNum || entry.periodNumber;
-                    if (ownPeriod) mainPeriods.add(Number(ownPeriod));
+                    if (mp) mainPeriods.add(mp);
+                    // Also include the entry's own periodNum as fallback (for older data or compliance display)
+                    if (entry.periodNum && entry.periodNum !== 1005) mainPeriods.add(entry.periodNum);
                 }
             });
         });
