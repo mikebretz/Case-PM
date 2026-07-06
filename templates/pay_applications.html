@@ -479,11 +479,18 @@ let mainLienWaiver = JSON.parse(localStorage.getItem('mainLienWaiver') || '{}');
         const start = new Date(selectedStartDate);
         if (isNaN(start.getTime())) return;
 
-        // Set to first day of month
-        const periodStart = start.toISOString().split('T')[0];
-        // Last day of the month
-        const end = new Date(start.getFullYear(), start.getMonth() + 1, 0);
-        const periodEnd = end.toISOString().split('T')[0];
+        // === STRICT CALENDAR MONTH ENFORCEMENT ===
+        // Always force the period to be the FULL calendar month of the selected date.
+        // Example: Selecting any day in July 2026 → July 1, 2026 through July 31, 2026.
+        // Never bleed into previous/next month, never start from "today".
+        const year = start.getFullYear();
+        const month = start.getMonth(); // 0-based
+
+        const periodStartDate = new Date(year, month, 1);
+        const periodEndDate = new Date(year, month + 1, 0); // Last day of the month
+
+        const periodStart = periodStartDate.toISOString().split('T')[0];
+        const periodEnd = periodEndDate.toISOString().split('T')[0];
 
         currentPayAppPeriod.periodStart = periodStart;
         currentPayAppPeriod.periodEnd = periodEnd;
@@ -1406,14 +1413,59 @@ let mainLienWaiver = JSON.parse(localStorage.getItem('mainLienWaiver') || '{}');
         // Switch to G702 tab and re-render so Billed to Date shows the restored historical values
         switchPayAppTab('payapp');
 
+        // === SUB PAY APP + LIEN WAIVER RESTORE (CRITICAL FOR ROUND-TRIP) ===
+        // When pushing a previous main period back to Draft, also bring back any sub pay apps
+        // that were originally pushed from that same main period, including their lien waivers.
+        let restoredSubCount = 0;
+        let restoredWaiverCount = 0;
+        const targetMainPeriod = periodData.periodNumber;
+
+        if (subPayAppHistory && typeof subPayAppHistory === 'object') {
+            Object.keys(subPayAppHistory).forEach(cid => {
+                const hist = subPayAppHistory[cid];
+                if (!hist) return;
+                Object.keys(hist).forEach(pKey => {
+                    const entry = hist[pKey];
+                    if (!entry) return;
+
+                    const entryMain = entry.pushedFromMainPeriod || entry.mainG702Period || entry.periodNum;
+                    if (entryMain == targetMainPeriod && entry.archived === true) {
+                        // Un-archive it so it reappears in Sub Pay App Tracker
+                        entry.archived = false;
+                        restoredSubCount++;
+
+                        // Restore lien waiver if it exists in the snapshot
+                        if (entry.lienWaiver && entry.lienWaiver.dataUrl) {
+                            if (!subLienWaivers[cid]) subLienWaivers[cid] = {};
+                            subLienWaivers[cid][pKey] = { ...entry.lienWaiver };
+                            restoredWaiverCount++;
+                        }
+                    }
+                });
+            });
+
+            if (restoredSubCount > 0) {
+                localStorage.setItem('subPayAppHistory', JSON.stringify(subPayAppHistory));
+                if (restoredWaiverCount > 0) {
+                    localStorage.setItem('subLienWaivers', JSON.stringify(subLienWaivers));
+                }
+            }
+        }
+
         // Show success as a top banner style message (non-intrusive)
         setTimeout(() => {
             const wb = document.getElementById('payAppWorkflowBar');
             if (wb) {
+                let msg = `Period ${periodData.periodNumber} restored as Draft. Billed to Date has been rewound to the exact historical snapshot values.`;
+                if (restoredSubCount > 0) {
+                    msg += ` ${restoredSubCount} sub pay app(s)`;
+                    if (restoredWaiverCount > 0) msg += ` + ${restoredWaiverCount} lien waiver(s)`;
+                    msg += ` restored to Sub Pay App Tracker.`;
+                }
                 wb.innerHTML = `
                     <div class="workflow-bar px-4 py-2.5 flex items-center gap-3 text-sm bg-emerald-950/40 border border-emerald-600 rounded-md">
                         <span class="text-emerald-400"><i class="fa-solid fa-check-circle"></i></span>
-                        <span class="text-emerald-300">Period ${periodData.periodNumber} restored as Draft. Billed to Date has been rewound to the exact historical snapshot values.</span>
+                        <span class="text-emerald-300">${msg}</span>
                     </div>
                 `;
                 setTimeout(() => {
@@ -6002,6 +6054,19 @@ function printSubcontractorG703(companyId) {
         periodSelect.innerHTML = '<option value="">-- All Periods --</option>';
 
         const mainPeriods = new Set();
+
+        // === CRITICAL FIX: Seed FIRST from main payAppHistory (source of truth for approved G702 periods) ===
+        // This guarantees that Period 1, 2, 3... NEVER disappear from the dropdown, even if early
+        // compliance (1005) papers had incomplete tagging or were pushed before tagging was robust.
+        if (Array.isArray(payAppHistory)) {
+            payAppHistory.forEach(p => {
+                if (p && p.periodNumber) {
+                    mainPeriods.add(p.periodNumber);
+                }
+            });
+        }
+
+        // Then supplement with any additional periods found in sub history (defensive)
         Object.keys(subPayAppHistory || {}).forEach(cid => {
             const hist = subPayAppHistory[cid];
             if (!hist) return;
@@ -6010,7 +6075,7 @@ function printSubcontractorG703(companyId) {
                 if (entry && entry.archived === true) {
                     const mp = entry.pushedFromMainPeriod || entry.mainG702Period || null;
                     if (mp) mainPeriods.add(mp);
-                    // Also include the entry's own periodNum as fallback (for older data or compliance display)
+                    // Fallback for very old compliance entries
                     if (entry.periodNum && entry.periodNum !== 1005) mainPeriods.add(entry.periodNum);
                 }
             });
@@ -6076,6 +6141,10 @@ function printSubcontractorG703(companyId) {
         container.innerHTML = '';
 
         // Build filtered list of all archived entries
+        // === DEFENSIVE / INCLUSIVE FILTERING ===
+        // We now treat the main G702 period (from payAppHistory) as the primary key.
+        // Old compliance (1005) papers that may be missing clean tags are still shown
+        // when their main period is selected, using multiple fallback matching strategies.
         let filteredApps = [];
         Object.keys(subPayAppHistory || {}).forEach(cid => {
             const hist = subPayAppHistory[cid];
@@ -6084,9 +6153,19 @@ function printSubcontractorG703(companyId) {
                 const entry = hist[p];
                 if (!entry || entry.archived !== true) return;
 
-                const mainP = entry.pushedFromMainPeriod || entry.mainG702Period || entry.periodNum;
+                const mainP = entry.pushedFromMainPeriod || entry.mainG702Period || entry.periodNum || parseInt(p);
                 const matchesSub = !subId || String(cid) === String(subId);
-                const matchesPeriod = !periodFilter || String(mainP) === String(periodFilter) || String(entry.periodNum) === String(periodFilter);
+
+                // Very defensive period matching:
+                // 1. Direct main period match
+                // 2. Entry's own periodNum matches the filter (for old compliance papers)
+                // 3. If no filter, show everything for the selected sub
+                let matchesPeriod = true;
+                if (periodFilter) {
+                    matchesPeriod = String(mainP) === String(periodFilter) ||
+                                    String(entry.periodNum) === String(periodFilter) ||
+                                    String(parseInt(p)) === String(periodFilter);
+                }
 
                 if (matchesSub && matchesPeriod) {
                     filteredApps.push({
@@ -7473,6 +7552,36 @@ function printSubcontractorG703(companyId) {
     function initializePayApplications() {
         seedDemoDataIfNeeded();
 
+        // === CRITICAL DATA INTEGRITY MIGRATION ===
+        // Backfill `pushedFromMainPeriod` tag on any old archived sub pay app entries
+        // that are missing it. This prevents early compliance (1005) papers and old
+        // numbered papers from being filtered out of Previous Sub Pay Apps after
+        // new main periods are created. This is append-only and safe.
+        let migrationRan = false;
+        if (subPayAppHistory && typeof subPayAppHistory === 'object') {
+            Object.keys(subPayAppHistory).forEach(cid => {
+                const hist = subPayAppHistory[cid];
+                if (!hist || typeof hist !== 'object') return;
+                Object.keys(hist).forEach(pKey => {
+                    const entry = hist[pKey];
+                    if (!entry || entry.archived !== true) return;
+                    if (!entry.pushedFromMainPeriod && !entry.mainG702Period) {
+                        // Use the entry's own periodNum as the best-effort main period tag
+                        const fallbackMain = entry.periodNum || parseInt(pKey) || null;
+                        if (fallbackMain) {
+                            entry.pushedFromMainPeriod = fallbackMain;
+                            entry.mainG702Period = fallbackMain;
+                            migrationRan = true;
+                        }
+                    }
+                });
+            });
+            if (migrationRan) {
+                localStorage.setItem('subPayAppHistory', JSON.stringify(subPayAppHistory));
+                console.log('%c[Case PM] Data integrity migration: backfilled pushedFromMainPeriod tags on old archived sub pay apps.', 'color:#f59e0b');
+            }
+        }
+
         // Restore last selected sub if any
         const lastSub = localStorage.getItem('lastSelectedSubSOV');
         if (lastSub) selectedSubCompanyId = parseInt(lastSub);
@@ -7491,7 +7600,7 @@ function printSubcontractorG703(companyId) {
             }
         });
 
-        console.log('%c[Case PM] Pay Applications page initialized (clean v3 - aesthetics + workflow fixed) [v76.47 - Dropdown population now keyed ONLY to subs added to this job via subcontractorSOV (fixes Clear All Subs + individual Remove not clearing list)]', 'color:#10b981');
+        console.log('%c[Case PM] Pay Applications page initialized (FINAL HARDENED v - append-only Previous Sub Pay Apps + strict calendar month dates)', 'color:#10b981');
     }
 
     // ==================== COMBINED PRINT LOGIC (G703 + LIEN WAIVER) ====================
@@ -8155,3 +8264,4 @@ function printSubcontractorG703(companyId) {
 </script>
 
 {% endblock %}
+=== FINAL HARDENED VERSION - Mon Jul  6 00:28:23 UTC 2026 ===
