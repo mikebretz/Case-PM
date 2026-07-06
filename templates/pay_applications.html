@@ -479,17 +479,12 @@ let mainLienWaiver = JSON.parse(localStorage.getItem('mainLienWaiver') || '{}');
         const start = new Date(selectedStartDate);
         if (isNaN(start.getTime())) return;
 
-        // === STRICT CALENDAR MONTH ONLY ===
-        // Force start = 1st of the selected month, end = last day of that exact month.
-        // This prevents any "today's date" or partial range bleeding into other months.
+        // === STRICT FIX: Always force full calendar month (1st to last day) ===
+        // Ignore whatever day is in the selected value. Force 1st of month.
         const year = start.getFullYear();
-        const month = start.getMonth(); // 0-based
-
-        const periodStartDate = new Date(year, month, 1);
-        const periodEndDate = new Date(year, month + 1, 0); // Last day of month
-
-        const periodStart = periodStartDate.toISOString().split('T')[0];
-        const periodEnd = periodEndDate.toISOString().split('T')[0];
+        const month = start.getMonth();
+        const periodStart = new Date(year, month, 1).toISOString().split('T')[0];
+        const periodEnd = new Date(year, month + 1, 0).toISOString().split('T')[0];
 
         currentPayAppPeriod.periodStart = periodStart;
         currentPayAppPeriod.periodEnd = periodEnd;
@@ -4315,38 +4310,22 @@ let mainLienWaiver = JSON.parse(localStorage.getItem('mainLienWaiver') || '{}');
         const line = lines.find(l => l.id === lineId);
         if (!line) return;
 
-        // === HARD OVERBILLING BLOCK (per line item) ===
-        // A sub cannot bill more in "Work This Period + Materials + CO Work" than what remains
-        // on THIS SPECIFIC LINE (Original Commitment + Change Orders - already billed_to_date).
+        // === HARD OVERBILLING BLOCK (User Requirement) ===
+        // Prevent a sub from billing more on this line than its own Scheduled Value (Original + COs).
         const scheduledValue = (parseFloat(line.original_commitment) || 0) + (parseFloat(line.change_orders) || 0);
         const alreadyBilled = parseFloat(line.billed_to_date) || 0;
-        const remainingOnLine = Math.max(0, scheduledValue - alreadyBilled);
+        const wouldBeBilledToDate = alreadyBilled + workThis + mats + coWork;
 
-        const thisPeriodTotal = workThis + mats + coWork;
-
-        if (thisPeriodTotal > remainingOnLine + 0.01) {
-            showCenteredAlert(
-                `BLOCKED: You cannot overbill this line item.\n\n` +
-                `Scheduled Value (Original + COs): ${formatCurrency(scheduledValue)}\n` +
-                `Already Billed to Date: ${formatCurrency(alreadyBilled)}\n` +
-                `Remaining on this line: ${formatCurrency(remainingOnLine)}\n` +
-                `You tried to bill this period: ${formatCurrency(thisPeriodTotal)}\n\n` +
-                `Please reduce the amounts so they do not exceed the remaining balance on this specific line.`,
-                'error'
-            );
-            return; // Do not save
+        if (wouldBeBilledToDate > scheduledValue + 0.01) {
+            const remaining = Math.max(0, scheduledValue - alreadyBilled);
+            showErrorModal(`Overbilling blocked. This line's Scheduled Value is ${formatCurrency(scheduledValue)}. Already billed: ${formatCurrency(alreadyBilled)}. Remaining on this line: ${formatCurrency(remaining)}. You cannot bill more than the remaining amount on this specific line item.`);
+            return;
         }
 
         // === DRAFT SAVE ONLY (User Request - Same as G702) ===
-        // We save the "this period" values as draft fields on the line.
-        // We do NOT update billed_to_date here. That only happens on "Submit Application".
         line.work_this_period = workThis;
         line.materials_stored = mats;
         if (coWorkInput) line.co_billed_this_period = coWork;
-
-        // Note: billed_to_date remains as the last committed amount.
-        // The draft values above are what will be rolled into billed_to_date when the user
-        // clicks the new "Submit Application" button on an Approved Sub SOV.
 
         localStorage.setItem('subcontractorSOV', JSON.stringify(subcontractorSOV));
         showUnsavedIndicator();
@@ -5993,6 +5972,12 @@ function printSubcontractorG703(companyId) {
                         <i class="fa-solid fa-list-ul"></i> 
                         <span>View All Subcontractor Pay Apps (Chronological Summary)</span>
                     </button>
+                    <button onclick="debugInspectPayAppArchive()" 
+                            class="px-3 py-2 bg-amber-600 hover:bg-amber-500 text-white text-xs rounded-md flex items-center gap-1.5 border border-amber-500"
+                            title="Diagnostic tool: Shows exactly what periods and sub pay apps exist in storage right now. Use when entries disappear.">
+                        <i class="fa-solid fa-bug"></i> 
+                        <span>Debug: Inspect Archive State</span>
+                    </button>
                 </div>
             </div>
             <div id="prevSubHistoryContainer" class="mt-4"></div>
@@ -6026,15 +6011,14 @@ function printSubcontractorG703(companyId) {
         const periodSelect = document.getElementById('prevSubPeriodSelect');
         if (!periodSelect) return;
 
-        // Keep the "All Periods" option
         periodSelect.innerHTML = '<option value="">-- All Periods --</option>';
 
         const mainPeriods = new Set();
 
-        // PRIMARY SOURCE: Always seed from the main contractor payAppHistory.
-        // This guarantees every approved G702 period (including early ones that had only compliance papers)
-        // ALWAYS appears in the dropdown, even if sub tagging was incomplete.
-        if (payAppHistory && payAppHistory.length > 0) {
+        // === PRIMARY SOURCE: Main contractor payAppHistory (authoritative list of all approved G702 periods) ===
+        // This guarantees Period 1, 2, 3... (including early zero-dollar compliance periods) NEVER disappear
+        // even if sub pay app entries have incomplete pushedFromMainPeriod tags.
+        if (payAppHistory && Array.isArray(payAppHistory)) {
             payAppHistory.forEach(p => {
                 if (p && p.periodNumber) {
                     mainPeriods.add(p.periodNumber);
@@ -6042,7 +6026,7 @@ function printSubcontractorG703(companyId) {
             });
         }
 
-        // Also include any archived sub entries that have a clean pushedFromMainPeriod tag (defensive)
+        // Secondary: Also include any main periods referenced inside archived sub pay apps (for robustness)
         Object.keys(subPayAppHistory || {}).forEach(cid => {
             const hist = subPayAppHistory[cid];
             if (!hist) return;
@@ -6056,7 +6040,6 @@ function printSubcontractorG703(companyId) {
             });
         });
 
-        // Sort numerically
         const sorted = Array.from(mainPeriods).sort((a, b) => a - b);
         sorted.forEach(mp => {
             const opt = document.createElement('option');
@@ -6064,6 +6047,63 @@ function printSubcontractorG703(companyId) {
             opt.textContent = `Period ${mp}`;
             periodSelect.appendChild(opt);
         });
+    }
+
+    // ==================== DIAGNOSTIC DEBUG FUNCTION (Temporary) ====================
+    function debugInspectPayAppArchive() {
+        const modal = document.createElement('dialog');
+        modal.className = 'modal rounded-md p-0 text-white w-full max-w-5xl';
+        modal.style.backgroundColor = '#18181b';
+        modal.style.border = '2px solid #f59e0b';
+
+        let html = `
+            <div class="p-5">
+                <div class="flex justify-between items-center mb-4 border-b border-zinc-700 pb-3">
+                    <div>
+                        <h3 class="text-lg font-semibold text-amber-400"><i class="fa-solid fa-bug mr-2"></i> Pay App Archive Inspector (Diagnostic)</h3>
+                        <div class="text-xs text-zinc-400">This shows the raw state of what is actually stored. Use this when entries disappear from Previous Sub Pay Apps.</div>
+                    </div>
+                    <button onclick="this.closest('dialog').close(); this.closest('dialog').remove()" class="text-zinc-400 hover:text-white text-2xl leading-none">×</button>
+                </div>
+
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm">
+                    <div class="bg-zinc-900 border border-zinc-700 rounded p-3">
+                        <div class="font-semibold text-emerald-400 mb-2">Main Contractor Periods (payAppHistory)</div>
+                        <div class="max-h-48 overflow-auto text-xs font-mono">
+                            ${payAppHistory && payAppHistory.length > 0 
+                                ? payAppHistory.map(p => `Period ${p.periodNumber} (${p.periodStart} → ${p.periodEnd}) [${p.status}]`).join('<br>')
+                                : '<span class="text-zinc-500">No main periods in payAppHistory yet.</span>'}
+                        </div>
+                    </div>
+
+                    <div class="bg-zinc-900 border border-zinc-700 rounded p-3">
+                        <div class="font-semibold text-sky-400 mb-2">Archived Sub Pay Apps (subPayAppHistory)</div>
+                        <div class="max-h-48 overflow-auto text-xs">
+                            ${Object.keys(subPayAppHistory || {}).length > 0 
+                                ? Object.keys(subPayAppHistory).map(cid => {
+                                    const hist = subPayAppHistory[cid];
+                                    const archived = Object.keys(hist).filter(p => hist[p] && hist[p].archived === true);
+                                    return `<div class="mb-1"><span class="text-white">${getCompanyName(cid)}</span>: ${archived.length} archived entries</div>`;
+                                  }).join('')
+                                : '<span class="text-zinc-500">No archived sub pay apps yet.</span>'}
+                        </div>
+                    </div>
+                </div>
+
+                <div class="mt-4 text-xs text-zinc-400 bg-zinc-950 p-3 rounded border border-zinc-700">
+                    <strong>Key Rule:</strong> Once a sub pay app (any number, including 1005 Compliance) is pushed to Previous Sub Pay Apps, it should stay there forever. 
+                    If Period 1 is missing after creating Period 2, the dropdown should still show it because it now reads primarily from payAppHistory.
+                </div>
+
+                <div class="mt-4 flex justify-end">
+                    <button onclick="this.closest('dialog').close(); this.closest('dialog').remove()" class="px-5 py-2 bg-zinc-700 hover:bg-zinc-600 rounded text-sm">Close Inspector</button>
+                </div>
+            </div>
+        `;
+
+        modal.innerHTML = html;
+        document.body.appendChild(modal);
+        modal.showModal();
     }
 
     function loadPreviousSubPeriods(companyId) {
