@@ -69,6 +69,40 @@
 
     {% if current_user.is_authenticated %}
     
+    <!-- ==================== TOP HEADER BAR ==================== -->
+    <div class="h-16 border-b border-zinc-800 bg-zinc-900 flex items-center justify-between px-6 flex-shrink-0">
+        <!-- Left: Current Project -->
+        <div class="flex items-center gap-3">
+            <div>
+                <div class="text-[10px] text-zinc-400 tracking-[1px] font-medium">CURRENT PROJECT</div>
+                <button onclick="document.getElementById('projectSwitcherModal').showModal()"
+                        class="flex items-center gap-2 text-xl font-semibold tracking-tight text-white hover:text-emerald-400 transition-colors">
+                    <span>ALDI Lakeland</span>
+                    <i class="fa-solid fa-chevron-down text-sm ml-1"></i>
+                </button>
+            </div>
+        </div>
+
+        <!-- Right: User Profile -->
+        <div class="flex items-center gap-3 cursor-pointer" onclick="document.getElementById('userMenu').showModal()">
+            <div class="flex items-center gap-3">
+                <div class="w-9 h-9 bg-zinc-700 rounded-full overflow-hidden flex-shrink-0">
+                    {% if current_user.profile_pic %}
+                        <img src="{{ current_user.profile_pic }}" class="w-full h-full object-cover">
+                    {% else %}
+                        <div class="w-full h-full flex items-center justify-center bg-emerald-600 text-white font-bold text-sm">
+                            {{ current_user.first_name[0] }}{{ current_user.last_name[0] if current_user.last_name else '' }}
+                        </div>
+                    {% endif %}
+                </div>
+                <div class="text-sm leading-none">
+                    <div class="font-medium">{{ current_user.full_name }}</div>
+                    <div class="text-[10px] text-zinc-500">{{ current_user.role }}</div>
+                </div>
+            </div>
+        </div>
+    </div>
+
     <!-- ==================== MAIN LAYOUT ==================== -->
     <div class="flex h-screen overflow-hidden">
         
@@ -104,6 +138,12 @@
                 <a href="{{ url_for('projects_page') }}" class="nav-link flex items-center gap-3 px-4 py-2.5 rounded-2xl mb-1 {% if request.endpoint == 'projects_page' %}active{% endif %}">
                     <i class="fa-solid fa-folder w-5"></i>
                     <span>Projects</span>
+                </a>
+
+                <!-- NEW: Email -->
+                <a href="{{ url_for('email_page') }}" class="nav-link flex items-center gap-3 px-4 py-2.5 rounded-2xl mb-1 {% if request.endpoint == 'email_page' %}active{% endif %}">
+                    <i class="fa-solid fa-envelope w-5"></i>
+                    <span>Email</span>
                 </a>
 
                 <!-- Core Modules -->
@@ -224,6 +264,12 @@
                 <a href="{{ url_for('program_settings') }}" class="nav-link flex items-center gap-3 px-4 py-2.5 rounded-2xl mb-1 {% if request.endpoint == 'program_settings' %}active{% endif %}">
                     <i class="fa-solid fa-cog w-5"></i>
                     <span>Program Settings</span>
+                </a>
+
+                <!-- NEW: Audit Log -->
+                <a href="{{ url_for('audit_log_page') }}" class="nav-link flex items-center gap-3 px-4 py-2.5 rounded-2xl mb-1 {% if request.endpoint == 'audit_log_page' %}active{% endif %}">
+                    <i class="fa-solid fa-history w-5"></i>
+                    <span>Audit Log</span>
                 </a>
             </div>
 
