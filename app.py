@@ -965,16 +965,6 @@ def create_safety_report():
 @login_required
 def schedule_page():
     projects = Project.query.order_by(Project.name).all()
-    if not projects:
-        default = Project(
-            number='PRJ-001',
-            name='Default Construction Project',
-            status='Active',
-            start_date=date.today()
-        )
-        db.session.add(default)
-        db.session.commit()
-        projects = [default]
     return render_template('schedule.html', projects=projects)
 
 
