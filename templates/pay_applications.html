@@ -65,10 +65,44 @@
     border: 1px solid #3f3f46;
     border-radius: 6px;
   }
+  /* Pay Applications page: pin toolbar through workflow; only table scrolls */
+  .pay-app-page {
+    display: flex;
+    flex-direction: column;
+    height: 100%;
+    min-height: 0;
+    margin: -1.5rem;
+    padding: 1.5rem 0 2.5rem;
+    overflow: hidden;
+    box-sizing: border-box;
+  }
+  .pay-app-pinned {
+    flex-shrink: 0;
+    padding-left: 1.5rem;
+    padding-right: 1.5rem;
+  }
+  .pay-app-table-panel {
+    flex: 1 1 auto;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+    margin-left: 1.5rem;
+    margin-right: 1.5rem;
+    margin-bottom: 0.5rem;
+    overflow: hidden;
+  }
+  #payAppTableScrollContainer {
+    flex: 1 1 auto;
+    min-height: 0;
+    overflow: auto;
+    width: 100%;
+  }
 </style>
 
+<div class="pay-app-page">
+
 <!-- PAGE TOOLBAR (project + user profile live in base.html) -->
-<div class="mx-6 mt-4 flex items-center justify-between flex-shrink-0">
+<div class="pay-app-pinned flex items-center justify-between flex-shrink-0">
     <div class="flex items-center gap-3">
         <div class="text-2xl font-semibold text-white">Pay Applications</div>
         <div id="payAppRevisionBadge" onclick="showPayAppVersionHistory()" 
@@ -98,7 +132,7 @@
 </div>
 
 <!-- TABS (clean, consistent with budget style) -->
-<div class="mx-6 mt-4 flex border-b border-zinc-700">
+<div class="pay-app-pinned mt-4 flex border-b border-zinc-700">
     <button onclick="switchPayAppTab('previous-payapps')" id="tab-previous-payapps"
             class="tab-button px-6 py-3 text-sm font-medium text-zinc-400 hover:text-white">Previous Pay Applications</button>
 
@@ -119,16 +153,16 @@
 </div>
 
 <!-- SUMMARY CARDS -->
-<div class="bg-zinc-900 border border-zinc-700 mx-6 mt-4 rounded-md p-4 flex-shrink-0" id="payAppSummaryCards">
+<div class="pay-app-pinned bg-zinc-900 border border-zinc-700 mt-4 rounded-md p-4 flex-shrink-0" id="payAppSummaryCards">
     <!-- Populated dynamically by tab -->
 </div>
 
 <!-- WORKFLOW / ACTION BAR (tab-specific, prevents button multiplication) -->
-<div id="payAppWorkflowBar" class="mx-6 mb-3 flex-shrink-0"></div>
+<div id="payAppWorkflowBar" class="pay-app-pinned mb-3 flex-shrink-0"></div>
 
 <!-- TABLE CONTAINER -->
-<div class="mx-6 mb-6 flex-1 overflow-hidden flex flex-col border border-zinc-700 rounded-md bg-zinc-900">
-    <div class="flex-1 overflow-auto min-h-0" id="payAppTableScrollContainer" style="max-height: calc(100vh - 360px); height: calc(100vh - 360px);">
+<div class="pay-app-table-panel border border-zinc-700 rounded-md bg-zinc-900">
+    <div id="payAppTableScrollContainer">
         <table class="w-full text-sm min-w-[1900px]">
             <thead class="bg-zinc-800 sticky z-20 border-b border-zinc-700" style="top: 0; position: sticky;" id="payAppTableHead">
                 <!-- Populated dynamically -->
@@ -138,7 +172,8 @@
             </tbody>
         </table>
     </div>
-    <div class="h-px bg-zinc-700 flex-shrink-0"></div>
+</div>
+
 </div>
 
 <!-- Fixed Bottom Status Bar -->
@@ -289,7 +324,7 @@
                         <div class="text-sm text-zinc-300">Require Lien Waiver with Subcontractor Pay App Submission</div>
                         <div class="text-[10px] text-zinc-500">When ON, Subs must upload &amp; submit a lien waiver before final payment can be processed.</div>
                     </div>
-                    <input type="checkbox" id="requireLienWaiverToggle" class="w-5 h-5 accent-emerald-600" ${requireLienWaiverOnSubPayApp ? 'checked' : ''}>
+                    <input type="checkbox" id="requireLienWaiverToggle" class="w-5 h-5 accent-emerald-600">
                 </label>
             </div>
 
@@ -300,7 +335,7 @@
                         <div class="text-sm text-zinc-300">Require all Subcontractors with Approved SOVs to submit Pay Apps before G702 can be submitted</div>
                         <div class="text-[10px] text-zinc-500">When ON, you cannot submit the main Pay Application (G702) until every subcontractor who has an Approved Schedule of Values has submitted their pay app for this period (appears in Sub Pay App Tracker).</div>
                     </div>
-                    <input type="checkbox" id="requireAllSubPayAppsToggle" class="w-5 h-5 accent-emerald-600" ${requireAllSubPayAppsBeforeG702Submit ? 'checked' : ''}>
+                    <input type="checkbox" id="requireAllSubPayAppsToggle" class="w-5 h-5 accent-emerald-600">
                 </label>
             </div>
 
@@ -355,8 +390,8 @@ let subSOVStatus = JSON.parse(localStorage.getItem('subSOVStatus') || '{}'); // 
 let lienWaivers = JSON.parse(localStorage.getItem('lienWaivers') || '{}'); // { [companyId]: { filename: string, uploadedAt: string, submitted: boolean } }
 let requireLienWaiverOnSubPayApp = localStorage.getItem('requireLienWaiverOnSubPayApp') !== 'false'; // default true
 let requireSubmissionDeadline = localStorage.getItem('requireSubmissionDeadline') === 'true';
-let submissionDeadlineDate = localStorage.getItem('submissionDeadlineDate') || '';
-let allowZeroDollarSubPayApps = false; // DISABLED: Zero-dollar submissions now always use sequential pay app number
+let submissionDeadlineDay = localStorage.getItem('submissionDeadlineDay') || '';
+let allowZeroDollarSubPayApps = localStorage.getItem('allowZeroDollarSubPayApps') === 'true';
 let requireAllSubPayAppsBeforeG702Submit = localStorage.getItem('requireAllSubPayAppsBeforeG702Submit') !== 'false'; // Default ON (true)
 
 // Main Contractor (GC) Lien Waiver for current period (separate from Sub waivers)
@@ -397,11 +432,26 @@ let mainLienWaiver = JSON.parse(localStorage.getItem('mainLienWaiver') || '{}');
         return new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(amount || 0);
     }
 
+    function parseLocalDate(dateStr) {
+        if (!dateStr) return null;
+        const parts = String(dateStr).split('-').map(Number);
+        if (parts.length < 3 || parts.some(n => Number.isNaN(n))) return null;
+        return new Date(parts[0], parts[1] - 1, parts[2]);
+    }
+
+    function toLocalDateString(year, monthIndex, day) {
+        return `${year}-${String(monthIndex + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+    }
+
     function formatDateMDY(dateStr) {
         if (!dateStr) return '';
-        const d = new Date(dateStr);
-        if (isNaN(d.getTime())) return dateStr;
+        const d = parseLocalDate(dateStr);
+        if (!d || isNaN(d.getTime())) return dateStr;
         return d.toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' });
+    }
+
+    function formatPeriodDateRange(periodStart, periodEnd) {
+        return `${formatDateMDY(periodStart)} → ${formatDateMDY(periodEnd)}`;
     }
 
     // ==================== PERIOD 1 MONTH SELECTOR HELPERS ====================
@@ -410,8 +460,8 @@ let mainLienWaiver = JSON.parse(localStorage.getItem('mainLienWaiver') || '{}');
         const today = new Date();
         let currentMonthKey = '';
         if (currentStartDate) {
-            const d = new Date(currentStartDate);
-            if (!isNaN(d.getTime())) {
+            const d = parseLocalDate(currentStartDate);
+            if (d && !isNaN(d.getTime())) {
                 currentMonthKey = d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0');
             }
         }
@@ -419,7 +469,7 @@ let mainLienWaiver = JSON.parse(localStorage.getItem('mainLienWaiver') || '{}');
         // Generate 18 months starting from 6 months ago up to 12 months in future
         for (let i = -6; i <= 12; i++) {
             const d = new Date(today.getFullYear(), today.getMonth() + i, 1);
-            const value = d.toISOString().split('T')[0]; // YYYY-MM-01
+            const value = toLocalDateString(d.getFullYear(), d.getMonth(), 1);
             const monthKey = d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0');
             const label = d.toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
             const selected = (currentMonthKey && currentMonthKey === monthKey) ? 'selected' : '';
@@ -429,19 +479,17 @@ let mainLienWaiver = JSON.parse(localStorage.getItem('mainLienWaiver') || '{}');
     }
 
     function updatePeriod1BillingMonth(selectedStartDate) {
-        if (!currentPayAppPeriod || currentPayAppPeriod.periodNumber !== 1) return;
+        if (!currentPayAppPeriod || currentPayAppPeriod.status !== 'Draft') return;
 
-        const start = new Date(selectedStartDate);
-        if (isNaN(start.getTime())) return;
+        const start = parseLocalDate(selectedStartDate);
+        if (!start || isNaN(start.getTime())) return;
 
-        // STRICT: Always force 1st day of the selected month → last day of that same month.
-        // Ignores whatever day was passed in and ignores "today".
         const year = start.getFullYear();
         const month = start.getMonth();
 
-        const periodStart = `${year}-${String(month + 1).padStart(2, '0')}-01`;
+        const periodStart = toLocalDateString(year, month, 1);
         const lastDay = new Date(year, month + 1, 0).getDate();
-        const periodEnd = `${year}-${String(month + 1).padStart(2, '0')}-${String(lastDay).padStart(2, '0')}`;
+        const periodEnd = toLocalDateString(year, month, lastDay);
 
         currentPayAppPeriod.periodStart = periodStart;
         currentPayAppPeriod.periodEnd = periodEnd;
@@ -449,12 +497,16 @@ let mainLienWaiver = JSON.parse(localStorage.getItem('mainLienWaiver') || '{}');
         localStorage.setItem('currentPayAppPeriod', JSON.stringify(currentPayAppPeriod));
 
         logPayAppAudit('PERIOD_1_MONTH_UPDATED', { 
-            periodNumber: 1, 
+            periodNumber: currentPayAppPeriod.periodNumber, 
             newStart: periodStart, 
             newEnd: periodEnd 
         });
 
-        // Refresh the G702 tab to show updated date range
+        const dateRangeEl = document.getElementById('g702PeriodDateRange');
+        if (dateRangeEl) {
+            dateRangeEl.textContent = formatPeriodDateRange(periodStart, periodEnd);
+        }
+
         renderPayAppContent();
     }
 
@@ -1629,17 +1681,16 @@ let mainLienWaiver = JSON.parse(localStorage.getItem('mainLienWaiver') || '{}');
                 <div class="bg-zinc-800 border border-zinc-700 rounded-md p-4 flex flex-col justify-between">
                     <div class="text-right">
                         <div class="text-sm font-semibold text-white">Period ${currentPayAppPeriod.periodNumber} • <span class="font-bold ${currentPayAppPeriod.status === 'Draft' ? 'text-amber-400' : currentPayAppPeriod.status === 'Submitted' ? 'text-sky-400' : 'text-emerald-400'}">${currentPayAppPeriod.status}</span></div>
-                        <div class="text-base font-medium mt-0.5 text-emerald-300">${formatDateMDY(currentPayAppPeriod.periodStart)} → ${formatDateMDY(currentPayAppPeriod.periodEnd)}</div>
+                        <div id="g702PeriodDateRange" class="text-base font-medium mt-1 text-emerald-300">${formatPeriodDateRange(currentPayAppPeriod.periodStart, currentPayAppPeriod.periodEnd)}</div>
                         
-                        <!-- Period 1 Month Selector (only for Draft Period 1) -->
-                        ${ (currentPayAppPeriod.periodNumber === 1 && currentPayAppPeriod.status === 'Draft') ? `
+                        ${ currentPayAppPeriod.status === 'Draft' ? `
                         <div class="mt-3 pt-3 border-t border-zinc-700">
-                            <div class="text-[10px] text-amber-400 mb-1 text-right">Billing Month for Period 1</div>
+                            <div class="text-[10px] text-amber-400 mb-1 text-right">Billing Month</div>
                             <select id="period1MonthSelect" onchange="updatePeriod1BillingMonth(this.value)" 
                                     class="w-full bg-zinc-900 border border-amber-600 rounded-md px-3 py-1.5 text-sm text-white text-right">
                                 ${generatePeriod1MonthOptions(currentPayAppPeriod.periodStart)}
                             </select>
-                            <div class="text-[9px] text-zinc-500 mt-0.5 text-right">Select the month this first pay application covers</div>
+                            <div class="text-[9px] text-zinc-500 mt-0.5 text-right">Dates above update to the 1st through last day of the selected month</div>
                         </div>
                         ` : ''}
                     </div>
@@ -6955,28 +7006,40 @@ function printSubcontractorG703(companyId) {
     }
 
     function showSettingsModal() {
+        syncSettingsModalFromStorage();
         const modal = document.getElementById('settingsModal');
+        if (modal) modal.showModal();
+    }
+
+    function syncSettingsModalFromStorage() {
         const select = document.getElementById('retainagePercentSelect');
         if (select) {
             select.value = String(defaultRetainagePercent);
         }
-        
-        // Load new deadline setting
+
+        const lienToggle = document.getElementById('requireLienWaiverToggle');
+        if (lienToggle) {
+            lienToggle.checked = requireLienWaiverOnSubPayApp;
+        }
+
+        const allSubToggle = document.getElementById('requireAllSubPayAppsToggle');
+        if (allSubToggle) {
+            allSubToggle.checked = requireAllSubPayAppsBeforeG702Submit;
+        }
+
         const deadlineToggle = document.getElementById('requireSubmissionDeadlineToggle');
         const deadlineContainer = document.getElementById('submissionDeadlineContainer');
-        const deadlineInput = document.getElementById('submissionDeadlineDate');
-        
+        const deadlineDaySelect = document.getElementById('submissionDeadlineDay');
+
         if (deadlineToggle) {
             deadlineToggle.checked = requireSubmissionDeadline;
             if (deadlineContainer) {
                 deadlineContainer.classList.toggle('hidden', !requireSubmissionDeadline);
             }
         }
-        if (deadlineInput && submissionDeadlineDate) {
-            deadlineInput.value = submissionDeadlineDate;
+        if (deadlineDaySelect && submissionDeadlineDay) {
+            deadlineDaySelect.value = submissionDeadlineDay;
         }
-        
-        modal.showModal();
     }
     
     // Helper to show/hide date input when checkbox changes
@@ -6994,58 +7057,81 @@ function printSubcontractorG703(companyId) {
         }
     }
 
-    function savePayAppSettings() {
+    function persistPayAppSettings() {
         const select = document.getElementById('retainagePercentSelect');
         if (select) {
             defaultRetainagePercent = parseFloat(select.value) || 10;
             localStorage.setItem('payAppRetainagePercent', defaultRetainagePercent);
         }
 
-        // Lien Waiver Requirement Toggle
         const lienToggle = document.getElementById('requireLienWaiverToggle');
         if (lienToggle) {
             requireLienWaiverOnSubPayApp = lienToggle.checked;
             localStorage.setItem('requireLienWaiverOnSubPayApp', requireLienWaiverOnSubPayApp);
         }
 
-        // NEW: Zero-Dollar Lien Waiver Toggle
         const zeroDollarToggle = document.getElementById('requireZeroDollarLienWaiverToggle');
         if (zeroDollarToggle) {
             requireZeroDollarLienWaiver = zeroDollarToggle.checked;
             localStorage.setItem('requireZeroDollarLienWaiver', requireZeroDollarLienWaiver);
         }
 
-        // Submission Deadline (Day of Month)
         const deadlineToggle = document.getElementById('requireSubmissionDeadlineToggle');
         const deadlineDaySelect = document.getElementById('submissionDeadlineDay');
         if (deadlineToggle) {
             requireSubmissionDeadline = deadlineToggle.checked;
             localStorage.setItem('requireSubmissionDeadline', requireSubmissionDeadline);
             if (deadlineDaySelect && deadlineDaySelect.value) {
-                localStorage.setItem('submissionDeadlineDay', deadlineDaySelect.value);
+                submissionDeadlineDay = deadlineDaySelect.value;
+                localStorage.setItem('submissionDeadlineDay', submissionDeadlineDay);
+            } else if (!requireSubmissionDeadline) {
+                submissionDeadlineDay = '';
+                localStorage.removeItem('submissionDeadlineDay');
             }
         }
 
-        // NEW: Require All Sub Pay Apps before G702 Submit
         const allSubToggle = document.getElementById('requireAllSubPayAppsToggle');
         if (allSubToggle) {
             requireAllSubPayAppsBeforeG702Submit = allSubToggle.checked;
             localStorage.setItem('requireAllSubPayAppsBeforeG702Submit', requireAllSubPayAppsBeforeG702Submit);
         }
 
-        // NEW: Allow Zero-Dollar Sub Pay Apps (Compliance without consuming pay app number)
         const zeroSubPayToggle = document.getElementById('allowZeroDollarSubPayAppsToggle');
         if (zeroSubPayToggle) {
             allowZeroDollarSubPayApps = zeroSubPayToggle.checked;
             localStorage.setItem('allowZeroDollarSubPayApps', allowZeroDollarSubPayApps);
         }
+    }
 
+    function savePayAppSettings() {
+        persistPayAppSettings();
         document.getElementById('settingsModal').close();
-        const dayVal = localStorage.getItem('submissionDeadlineDay') || '';
-        // Success feedback removed per user request (settings UI updated)
         if (currentPayAppTab === 'payapp' || currentPayAppTab === 'sub-sov') {
             renderPayAppContent();
         }
+    }
+
+    function bindPayAppSettingsAutoSave() {
+        const modal = document.getElementById('settingsModal');
+        if (!modal || modal.dataset.autosaveBound === 'true') return;
+        modal.dataset.autosaveBound = 'true';
+
+        modal.addEventListener('change', function(e) {
+            const id = e.target && e.target.id;
+            if (!id) return;
+            if ([
+                'retainagePercentSelect',
+                'requireLienWaiverToggle',
+                'requireAllSubPayAppsToggle',
+                'requireSubmissionDeadlineToggle',
+                'submissionDeadlineDay'
+            ].includes(id)) {
+                persistPayAppSettings();
+                if (currentPayAppTab === 'payapp' || currentPayAppTab === 'sub-sov') {
+                    renderPayAppContent();
+                }
+            }
+        });
     }
 
     /**
@@ -7386,6 +7472,7 @@ function printSubcontractorG703(companyId) {
     // ==================== INITIALIZATION ====================
     function initializePayApplications() {
         seedDemoDataIfNeeded();
+        bindPayAppSettingsAutoSave();
 
         // Restore last selected sub if any
         const lastSub = localStorage.getItem('lastSelectedSubSOV');
