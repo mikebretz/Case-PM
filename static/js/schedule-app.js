@@ -100,27 +100,25 @@
     }
 
     function applyBaselineVariance() {
+        if (!ganttReady) return;
+        const clearFields = t => {
+            if (!t) return;
+            t.baseline_start = null;
+            t.baseline_finish = null;
+            t.start_variance = null;
+            t.finish_variance = null;
+        };
         const idx = scheduleSettings.active_baseline_index;
         if (idx == null || idx < 0 || !baselines[idx]) {
-            gantt.eachTask(id => {
-                const t = gantt.getTask(id);
-                t.baseline_start = null;
-                t.baseline_finish = null;
-                t.start_variance = null;
-                t.finish_variance = null;
-            });
+            gantt.eachTask(clearFields);
             return;
         }
         const bMap = baselineTaskMap(baselines[idx]);
-        gantt.eachTask(id => {
-            const t = gantt.getTask(id);
-            if (t.type === 'project') return;
-            const b = bMap.get(String(id));
+        gantt.eachTask(t => {
+            if (!t || t.type === 'project') return;
+            const b = bMap.get(String(t.id));
             if (!b) {
-                t.baseline_start = null;
-                t.baseline_finish = null;
-                t.start_variance = null;
-                t.finish_variance = null;
+                clearFields(t);
                 return;
             }
             t.baseline_start = b.start_date || null;
@@ -467,7 +465,7 @@
 
     function sanitizeAllTaskDates() {
         if (!ganttReady) return;
-        gantt.eachTask(id => sanitizeTaskDates(gantt.getTask(id)));
+        gantt.eachTask(t => sanitizeTaskDates(t));
     }
 
     function predTemplate(task) {
@@ -1006,12 +1004,12 @@
         if (payload.settings) scheduleSettings = Object.assign(scheduleSettings, payload.settings);
         refreshWbsCodes();
         applySettingsToUI();
-        gantt.eachTask(id => applyTaskBarColor(gantt.getTask(id)));
+        gantt.eachTask(t => applyTaskBarColor(t));
+        applyBaselineVariance();
         queueChartOverlay();
         gantt.render();
         setSaveStatus('Ready');
         pushUndoState();
-        applyBaselineVariance();
         updateDataDateMarker();
         return true;
     }
