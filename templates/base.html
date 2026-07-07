@@ -578,7 +578,11 @@
             const name = names[projectId] || 'ALDI Lakeland';
             const nameEl = document.getElementById('currentProjectName');
             if (nameEl) nameEl.textContent = name;
+            localStorage.setItem('casepm_current_project_id', String(projectId));
             document.getElementById('projectSwitcherModal')?.close();
+            if (window.location.pathname.includes('/schedule')) {
+                window.location.href = '/schedule?project_id=' + projectId;
+            }
         };
 
         console.log('%c[Case PM v56.0] ✅ Ultimate base.html loaded successfully with complete sidebar.', 'color:#10b981; font-weight:600');
