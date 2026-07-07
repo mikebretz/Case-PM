@@ -8,12 +8,23 @@
 
 <div class="schedule-page-root">
     <div id="scheduleChrome" class="no-print">
-        <div class="flex flex-wrap items-start justify-between gap-2 mb-2 pt-0">
-            <div>
+        <div class="flex flex-wrap items-center justify-between gap-2 mb-2 pt-0">
+            <div class="min-w-0">
                 <h1 class="text-xl font-semibold tracking-tight">Project Schedule</h1>
-                <p class="text-zinc-500 text-xs mt-0.5">Single-click to select · Double-click cell to edit · Use header project switcher for project context</p>
+                <p class="text-zinc-500 text-xs mt-0.5">Single-click to select · Double-click cell to edit · Drag column borders to resize</p>
             </div>
             <div class="flex flex-wrap items-center gap-2">
+                <button type="button" class="schedule-toolbar-btn" onclick="ScheduleApp.exportJson()"><i class="fa-solid fa-download"></i> Export</button>
+                <button type="button" class="schedule-toolbar-btn" onclick="document.getElementById('scheduleImportInput').click()" title="MS Project XML, Primavera XER, or JSON">
+                    <i class="fa-solid fa-upload"></i> Import
+                </button>
+                <input type="file" id="scheduleImportInput" accept=".json,.xml,.xer,text/xml,application/xml" class="hidden"
+                       onchange="ScheduleApp.importFile(this.files[0]); this.value=''">
+                <button type="button" class="schedule-toolbar-btn" onclick="ScheduleApp.printGantt()"><i class="fa-solid fa-print"></i> Print</button>
+                <button type="button" class="schedule-toolbar-btn" onclick="ScheduleApp.saveSchedule()"><i class="fa-solid fa-save text-emerald-400"></i> Save</button>
+                <button type="button" class="schedule-toolbar-btn schedule-toolbar-btn-danger" onclick="ScheduleApp.clearSchedule()" title="Clear entire schedule">
+                    <i class="fa-solid fa-eraser"></i> Clear
+                </button>
                 <span id="scheduleSaveStatus" class="text-xs text-zinc-500 px-2">Ready</span>
             </div>
         </div>
@@ -67,19 +78,6 @@
                 <button type="button" class="schedule-toolbar-btn" onclick="ScheduleApp.showDisplaySettings()" title="Bar & link colors"><i class="fa-solid fa-palette text-violet-400"></i> Display</button>
                 <button type="button" class="schedule-toolbar-btn" onclick="ScheduleApp.showColumnManager()" title="Add or remove grid columns"><i class="fa-solid fa-table-columns"></i> Columns</button>
             </div>
-            <div class="flex flex-wrap gap-1 border-r border-zinc-700 pr-2 mr-1">
-                <button type="button" class="schedule-toolbar-btn" onclick="ScheduleApp.exportJson()"><i class="fa-solid fa-download"></i> Export</button>
-                <button type="button" class="schedule-toolbar-btn" onclick="document.getElementById('scheduleImportInput').click()" title="MS Project XML, Primavera XER, or JSON">
-                    <i class="fa-solid fa-upload"></i> Import
-                </button>
-                <input type="file" id="scheduleImportInput" accept=".json,.xml,.xer,text/xml,application/xml" class="hidden"
-                       onchange="ScheduleApp.importFile(this.files[0]); this.value=''">
-                <button type="button" class="schedule-toolbar-btn" onclick="ScheduleApp.printGantt()"><i class="fa-solid fa-print"></i> Print</button>
-                <button type="button" class="schedule-toolbar-btn" onclick="ScheduleApp.saveSchedule()"><i class="fa-solid fa-save text-emerald-400"></i> Save</button>
-            </div>
-            <button type="button" class="schedule-toolbar-btn schedule-toolbar-btn-danger" onclick="ScheduleApp.clearSchedule()" title="Clear entire schedule (test)">
-                <i class="fa-solid fa-eraser"></i> Clear Schedule
-            </button>
         </div>
 
         <!-- View tabs -->

@@ -54,24 +54,10 @@ body:has(.schedule-page-root) #mainContent {
 }
 .sched-color-editor { width: 100%; height: 28px; padding: 0; border: none; background: transparent; }
 
-/* Overlay: timeline floats over grid; columns keep fixed width + scroll */
-.schedule-overlay-mode #gantt_here .gantt_layout_root { position: relative !important; }
-.schedule-overlay-mode #gantt_here .gantt_layout_cell:first-child {
-    width: 100% !important;
-    max-width: 100% !important;
-    flex: 1 1 auto !important;
-}
-.schedule-overlay-mode #gantt_here .gantt_grid {
-    min-width: max-content;
+/* Grid: fixed column widths, horizontal scroll inside grid panel */
+#gantt_here .gantt_grid_scale,
+#gantt_here .gantt_grid_data {
     overflow-x: auto !important;
-}
-.schedule-overlay-mode #gantt_here .gantt_grid_scale,
-.schedule-overlay-mode #gantt_here .gantt_grid_data {
-    min-width: max-content !important;
-    width: max-content !important;
-}
-.schedule-overlay-mode #gantt_here .gantt_layout_cell:nth-child(3) {
-    pointer-events: auto;
 }
 
 /* Grid readability */
@@ -156,8 +142,16 @@ body:has(.schedule-page-root) #mainContent {
     overflow-x: auto !important;
 }
 
-/* Column resize handles — visible & grabbable */
-.gantt_grid_column_resize_wrap { cursor: col-resize !important; }
+/* Column resize handles — visible & grabbable (above timeline) */
+.gantt_grid_column_resize_wrap {
+    cursor: col-resize !important;
+    z-index: 5;
+    position: relative;
+}
+.gantt_resizer_x {
+    z-index: 4;
+    cursor: col-resize !important;
+}
 .gantt_grid_column_resize_wrap .gantt_grid_column_resize {
     background-color: #10b981 !important;
     width: 3px !important;
