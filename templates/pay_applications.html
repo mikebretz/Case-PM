@@ -923,7 +923,11 @@ let mainLienWaiver = JSON.parse(localStorage.getItem('mainLienWaiver') || '{}');
             const pendingMatches = pending.isCompliance
                 ? (pendMain == null || pendMain === g702PeriodNum)
                 : (pendMain === g702PeriodNum || (pendMain == null && g702PeriodNum === currentOpen));
-            if (pendingMatches) return { source: 'pending', entry: pending };
+            if (pendingMatches) {
+                const payAppNum = pending.isCompliance ? (subPayAppNumbers[cid] || 1) : pending.periodNumber;
+                const historyKey = resolvePayAppHistoryStorageKey(pending, payAppNum, pendMain || g702PeriodNum);
+                return { source: 'pending', entry: pending, historyKey };
+            }
         }
 
         const hist = subPayAppHistory[cid] || {};
@@ -1074,6 +1078,34 @@ let mainLienWaiver = JSON.parse(localStorage.getItem('mainLienWaiver') || '{}');
             });
         });
         if (changed) safeSetLocalStorage('subPayAppHistory', subPayAppHistory);
+    }
+
+    function getSubLienWaiverForEntry(companyId, entry) {
+        if (!entry || !entry.lienWaiver) return null;
+        const resolved = resolveSubLienWaiverFile(companyId, entry.lienWaiver);
+        if (resolved && (resolved.filename || resolved.dataUrl)) return resolved;
+        if (entry.lienWaiver.filename) return entry.lienWaiver;
+        return null;
+    }
+
+    function attachLienWaiverToPayAppRecord(companyId, waiver, historyKey, payAppNum) {
+        if (!waiver || !waiver.filename) return null;
+        const cid = String(companyId);
+        if (waiver.dataUrl) {
+            if (!subLienWaiverArchive[cid]) subLienWaiverArchive[cid] = {};
+            subLienWaiverArchive[cid][historyKey] = {
+                filename: waiver.filename,
+                dataUrl: waiver.dataUrl,
+                uploadedDate: waiver.uploadedDate || waiver.uploadedAt || new Date().toISOString()
+            };
+            safeSetLocalStorage('subLienWaiverArchive', subLienWaiverArchive);
+        } else {
+            archiveSubLienWaiverFile(cid, payAppNum, historyKey);
+        }
+        return compactLienWaiverMeta(
+            { filename: waiver.filename, uploadedDate: waiver.uploadedDate || waiver.uploadedAt },
+            historyKey
+        );
     }
 
     function getArchivedLienWaiverStorageKey(companyId, historyKey, mainPeriod) {
@@ -2597,9 +2629,8 @@ let mainLienWaiver = JSON.parse(localStorage.getItem('mainLienWaiver') || '{}');
         renderPayAppContent();
     }
 
-    // Nuclear clear for all subcontractor pay app related data (use when numbers get stuck or after testing)
     function clearAllSubPayAppData() {
-        if (!confirm("This will DELETE all Subcontractor SOVs, Pay App numbers, history, pending submissions, lien waivers, and status. Are you sure?")) {
+        if (!confirm("This will DELETE all Subcontractor SOVs, Pay App numbers, history, pending submissions, lien waivers, Previous Sub Pay Apps archive, and status. Are you sure?")) {
             return;
         }
         localStorage.removeItem('subcontractorSOV');
@@ -2608,17 +2639,23 @@ let mainLienWaiver = JSON.parse(localStorage.getItem('mainLienWaiver') || '{}');
         localStorage.removeItem('subPendingSubmissions');
         localStorage.removeItem('subLienWaivers');
         localStorage.removeItem('subLienWaiverArchive');
+        localStorage.removeItem('previousSubPayAppArchive');
         localStorage.removeItem('subSOVStatus');
         localStorage.removeItem('lienWaivers');
 
-        // Also clear main current period if user wants a full reset (optional)
-        // localStorage.removeItem('currentPayAppPeriod');
+        subcontractorSOV = {};
+        subPayAppNumbers = {};
+        subPayAppHistory = {};
+        subPendingSubmissions = {};
+        subLienWaivers = {};
+        subLienWaiverArchive = {};
+        previousSubPayAppArchive = [];
+        subSOVStatus = {};
+        lienWaivers = {};
 
-        // Success feedback removed per user request (page state + hard refresh note in UI)
-        // Auto hard refresh after alert
         setTimeout(() => {
             location.reload();
-        }, 1200);
+        }, 400);
     }
 
     function updateWorkThisPeriodLive(sovLineId, newValue) {
@@ -5442,7 +5479,8 @@ let mainLienWaiver = JSON.parse(localStorage.getItem('mainLienWaiver') || '{}');
             return;
         }
 
-        const lines = subcontractorSOV[companyId] || [];
+        const cid = String(companyId);
+        const lines = subcontractorSOV[cid] || subcontractorSOV[companyId] || [];
         if (lines.length === 0) {
             showCenteredAlert("No lines to submit for this subcontractor. Please add line items to the Schedule of Values first.");
             return;
@@ -5454,10 +5492,11 @@ let mainLienWaiver = JSON.parse(localStorage.getItem('mainLienWaiver') || '{}');
         let currentPeriodNum;
         let isComplianceSubmission = false;
 
-        if (!subPayAppNumbers[companyId]) {
-            subPayAppNumbers[companyId] = 1;
-            localStorage.setItem('subPayAppNumbers', JSON.stringify(subPayAppNumbers));
+        if (!subPayAppNumbers[cid] && !subPayAppNumbers[companyId]) {
+            subPayAppNumbers[cid] = 1;
+            safeSetLocalStorage('subPayAppNumbers', subPayAppNumbers);
         }
+        currentPeriodNum = subPayAppNumbers[cid] || subPayAppNumbers[companyId] || 1;
 
         if (totalBilledThisPeriodCheck === 0) {
             if (!allowZeroDollarSubPayApps) {
@@ -5465,12 +5504,10 @@ let mainLienWaiver = JSON.parse(localStorage.getItem('mainLienWaiver') || '{}');
                 return;
             }
             isComplianceSubmission = true;
-            currentPeriodNum = subPayAppNumbers[companyId];
-        } else {
-            currentPeriodNum = subPayAppNumbers[companyId];
         }
 
-        let waiver = subLienWaivers[companyId] && subLienWaivers[companyId][currentPeriodNum];
+        const lwBucket = subLienWaivers[cid] || subLienWaivers[companyId] || {};
+        let waiver = lwBucket[currentPeriodNum];
 
         if (isComplianceSubmission && (!waiver || !waiver.filename)) {
             showCenteredAlert("Zero-dollar compliance submissions require an uploaded lien waiver before submitting.", 'warning');
@@ -5540,10 +5577,10 @@ let mainLienWaiver = JSON.parse(localStorage.getItem('mainLienWaiver') || '{}');
             currentPeriodNum,
             mainG702Period
         );
+        const lienWaiverMeta = attachLienWaiverToPayAppRecord(cid, waiver, historyKey, currentPeriodNum);
 
         // === EXACT WORKFLOW: snapshot on left + push Pending paper into Tracker with full payload ===
-        if (!subPendingSubmissions[companyId]) subPendingSubmissions[companyId] = {};
-        subPendingSubmissions[companyId] = {
+        subPendingSubmissions[cid] = {
             periodNumber: isComplianceSubmission ? 1005 : currentPeriodNum,
             periodStart: currentPayAppPeriod ? currentPayAppPeriod.periodStart : '',
             periodEnd: currentPayAppPeriod ? currentPayAppPeriod.periodEnd : '',
@@ -5552,12 +5589,12 @@ let mainLienWaiver = JSON.parse(localStorage.getItem('mainLienWaiver') || '{}');
             totalBilledThisPeriod: totalBilledThisPeriod,
             isCompliance: isComplianceSubmission,
             mainG702Period: mainG702Period,
-            lienWaiver: waiver ? compactLienWaiverMeta(waiver, currentPeriodNum) : null
+            lienWaiver: lienWaiverMeta
         };
         if (!safeSetLocalStorage('subPendingSubmissions', subPendingSubmissions)) return;
 
-        if (!subPayAppHistory[companyId]) subPayAppHistory[companyId] = {};
-        subPayAppHistory[companyId][historyKey] = {
+        if (!subPayAppHistory[cid]) subPayAppHistory[cid] = {};
+        subPayAppHistory[cid][historyKey] = {
             periodNumber: isComplianceSubmission ? 1005 : currentPeriodNum,
             periodStart: currentPayAppPeriod ? currentPayAppPeriod.periodStart : '',
             periodEnd: currentPayAppPeriod ? currentPayAppPeriod.periodEnd : '',
@@ -5567,7 +5604,7 @@ let mainLienWaiver = JSON.parse(localStorage.getItem('mainLienWaiver') || '{}');
             totalBilledThisPeriod: totalBilledThisPeriod,
             isCompliance: isComplianceSubmission,
             mainG702Period: mainG702Period,
-            lienWaiver: waiver ? compactLienWaiverMeta(waiver, currentPeriodNum) : null,
+            lienWaiver: lienWaiverMeta,
             archived: false
         };
         if (!safeSetLocalStorage('subPayAppHistory', subPayAppHistory)) return;
@@ -5713,54 +5750,49 @@ let mainLienWaiver = JSON.parse(localStorage.getItem('mainLienWaiver') || '{}');
     // Request Revision for a pending (left hand) or approved (right hand / Tracker) Sub Pay App
     // RESTORES the submitted amounts + lien waiver back to Sub SOV tab as editable Pay App #N Current
     // This matches the exact "paper from right hand back to left hand" workflow you confirmed.
-    function requestRevisionSubPayApp(companyId, periodNumToRestore = null) {
+    function requestRevisionSubPayApp(companyId, periodNumOrHistoryKey = null) {
         if (!companyId) return;
+        const cid = String(companyId);
 
-        // Prefer the number stored in the source entry itself (sub-specific independent numbering)
-        let periodNum = periodNumToRestore;
-        if (!periodNum) {
-            // Try to get it from pending or history first
-            if (subPendingSubmissions[companyId]) {
-                periodNum = subPendingSubmissions[companyId].periodNumber;
-            } else if (subPayAppHistory[companyId]) {
-                // Get the most recent approved number for this sub
-                const nums = Object.keys(subPayAppHistory[companyId]).map(Number).sort((a,b) => b-a);
-                if (nums.length > 0) periodNum = nums[0];
+        let paper = null;
+        if (periodNumOrHistoryKey != null && String(periodNumOrHistoryKey).includes('_')) {
+            const key = String(periodNumOrHistoryKey);
+            const hist = subPayAppHistory[cid] || subPayAppHistory[companyId] || {};
+            if (hist[key]) paper = { source: 'history', entry: hist[key], historyKey: key };
+        } else if (periodNumOrHistoryKey != null) {
+            paper = findActiveSubPayAppForG702Period(cid, periodNumOrHistoryKey);
+            if (!paper) {
+                const key = String(periodNumOrHistoryKey);
+                const hist = subPayAppHistory[cid] || subPayAppHistory[companyId] || {};
+                if (hist[key]) paper = { source: 'history', entry: hist[key], historyKey: key };
             }
-        }
-        if (!periodNum) {
-            // last resort: use sub's own current number
-            periodNum = (subPayAppNumbers[companyId] || (currentPayAppPeriod ? currentPayAppPeriod.periodNumber : 1));
-        }
-        // If periodNum came in as "1 C" (display string), extract the numeric part
-        if (typeof periodNum === 'string' && periodNum.includes('C')) {
-            periodNum = parseInt(periodNum, 10) || periodNum;
-        }
-
-        let sourceEntry = null;
-        let fromPending = false;
-
-        // Check LEFT HAND pending first (before it moved to Tracker)
-        if (subPendingSubmissions[companyId] && subPendingSubmissions[companyId].periodNumber === periodNum) {
-            sourceEntry = subPendingSubmissions[companyId];
-            fromPending = true;
         } else {
-            // Check RIGHT HAND (Tracker / history)
-            sourceEntry = subPayAppHistory[companyId] && subPayAppHistory[companyId][periodNum];
-            // If it was previously pushed/archived, un-archive it so it can return to active Tracker after re-approval
-            if (sourceEntry && sourceEntry.archived === true) {
-                sourceEntry.archived = false;
-                localStorage.setItem('subPayAppHistory', JSON.stringify(subPayAppHistory));
+            paper = findActiveSubPayAppForG702Period(cid, getCurrentG702PeriodNum());
+        }
+        if (!paper && (subPendingSubmissions[cid] || subPendingSubmissions[companyId])) {
+            const pend = subPendingSubmissions[cid] || subPendingSubmissions[companyId];
+            const payAppNum = pend.isCompliance ? (subPayAppNumbers[cid] || 1) : pend.periodNumber;
+            const historyKey = resolvePayAppHistoryStorageKey(pend, payAppNum, pend.mainG702Period || getCurrentG702PeriodNum());
+            paper = { source: 'pending', entry: pend, historyKey };
+        }
+        if (!paper) {
+            const hist = subPayAppHistory[cid] || subPayAppHistory[companyId] || {};
+            const activeKeys = Object.keys(hist).filter(k => isActiveTrackerEntry(hist[k]));
+            if (activeKeys.length === 1) {
+                paper = { source: 'history', entry: hist[activeKeys[0]], historyKey: activeKeys[0] };
             }
         }
 
+        const sourceEntry = paper && paper.entry;
         if (!sourceEntry || !sourceEntry.lines) {
             showCenteredAlert("No submitted Pay App found to restore for revision.", "warning");
             return;
         }
 
-        // Restore the snapshot amounts + correct Billed to Date back to the live SOV lines for editing
-        const lines = subcontractorSOV[companyId] || [];
+        const historyKey = paper.historyKey;
+        const fromPending = paper.source === 'pending';
+
+        const lines = subcontractorSOV[cid] || subcontractorSOV[companyId] || [];
         sourceEntry.lines.forEach(snapshotLine => {
             const liveLine = lines.find(l => l.id === snapshotLine.id || l.cost_code === snapshotLine.cost_code);
             if (liveLine) {
@@ -5768,7 +5800,6 @@ let mainLienWaiver = JSON.parse(localStorage.getItem('mainLienWaiver') || '{}');
                 liveLine.materials_stored = snapshotLine.materials_stored || 0;
                 liveLine.co_billed_this_period = snapshotLine.co_billed_this_period || 0;
 
-                // === RESTORE Billed to Date to the value BEFORE this app was approved (prevents exponential growth) ===
                 if (sourceEntry.billedToDateBefore && sourceEntry.billedToDateBefore[liveLine.id] !== undefined) {
                     liveLine.billed_to_date = sourceEntry.billedToDateBefore[liveLine.id];
                 } else if (snapshotLine.billed_to_date_before !== undefined) {
@@ -5776,54 +5807,49 @@ let mainLienWaiver = JSON.parse(localStorage.getItem('mainLienWaiver') || '{}');
                 }
             }
         });
-        localStorage.setItem('subcontractorSOV', JSON.stringify(subcontractorSOV));
+        safeSetLocalStorage('subcontractorSOV', subcontractorSOV);
 
-        // Restore lien waiver if it existed in the snapshot
-        if (sourceEntry.lienWaiver && sourceEntry.lienWaiver.filename) {
-            const restorePeriod = subPayAppNumbers[companyId] || periodNum;
-            const fullWaiver = resolveSubLienWaiverFile(companyId, sourceEntry.lienWaiver);
-            if (fullWaiver && fullWaiver.dataUrl) {
-                if (!subLienWaivers[companyId]) subLienWaivers[companyId] = {};
-                subLienWaivers[companyId][restorePeriod] = {
-                    filename: fullWaiver.filename,
-                    uploadedDate: fullWaiver.uploadedDate || new Date().toISOString(),
-                    dataUrl: fullWaiver.dataUrl
-                };
-                safeSetLocalStorage('subLienWaivers', subLienWaivers);
-            }
+        const resolvedWaiver = getSubLienWaiverForEntry(cid, sourceEntry);
+        if (resolvedWaiver && resolvedWaiver.dataUrl) {
+            const restorePeriod = sourceEntry.isCompliance
+                ? (subPayAppNumbers[cid] || 1)
+                : (sourceEntry.periodNumber && sourceEntry.periodNumber !== 1005 ? sourceEntry.periodNumber : (subPayAppNumbers[cid] || 1));
+            if (!subLienWaivers[cid]) subLienWaivers[cid] = {};
+            subLienWaivers[cid][restorePeriod] = {
+                filename: resolvedWaiver.filename,
+                uploadedDate: resolvedWaiver.uploadedDate || new Date().toISOString(),
+                dataUrl: resolvedWaiver.dataUrl
+            };
+            safeSetLocalStorage('subLienWaivers', subLienWaivers);
         }
 
-        // Remove from source (pending or history) so it goes back to left hand as editable current
         if (fromPending) {
+            delete subPendingSubmissions[cid];
             delete subPendingSubmissions[companyId];
-            localStorage.setItem('subPendingSubmissions', JSON.stringify(subPendingSubmissions));
-        } else {
-            delete subPayAppHistory[companyId][periodNum];
-            if (Object.keys(subPayAppHistory[companyId] || {}).length === 0) {
-                delete subPayAppHistory[companyId];
-            }
-            localStorage.setItem('subPayAppHistory', JSON.stringify(subPayAppHistory));
+            safeSetLocalStorage('subPendingSubmissions', subPendingSubmissions);
+        }
+        if (historyKey && subPayAppHistory[cid]) {
+            delete subPayAppHistory[cid][historyKey];
+            if (Object.keys(subPayAppHistory[cid]).length === 0) delete subPayAppHistory[cid];
+            safeSetLocalStorage('subPayAppHistory', subPayAppHistory);
         }
 
-        // === CRITICAL: Reconcile the Pay App number back to the one that was in the Tracker ===
-        // This ensures the Subcontractor Schedule of Values tab shows "Pay App #N Current" (the same N)
-        // instead of jumping to the next number. The number only advances on successful Approve.
-        subPayAppNumbers[companyId] = periodNum;
-        localStorage.setItem('subPayAppNumbers', JSON.stringify(subPayAppNumbers));
+        const restorePayAppNum = sourceEntry.isCompliance
+            ? (subPayAppNumbers[cid] || 1)
+            : (sourceEntry.periodNumber && sourceEntry.periodNumber !== 1005 ? sourceEntry.periodNumber : (subPayAppNumbers[cid] || 1));
+        subPayAppNumbers[cid] = restorePayAppNum;
+        safeSetLocalStorage('subPayAppNumbers', subPayAppNumbers);
 
-        // Ensure the SOV status stays Approved so the billing UI shows Submit button
-        updateSubSOVStatus(companyId, 'Approved', { 
-            note: 'Revision in progress - amounts restored from previous submission' 
+        updateSubSOVStatus(cid, 'Approved', {
+            note: 'Revision in progress - amounts restored from previous submission'
         });
 
-        logPayAppAudit('SUB_PAYAPP_REVISION_REQUESTED', { companyId, period: periodNum, restored: true, fromPending });
-        showCenteredAlert(`Revision requested. Pay App #${periodNum} amounts + lien waiver restored to Subcontractor Schedule of Values tab (Left Hand) for editing. Re-submit when ready.`, 'info');
-        
-        // Explicitly switch back to Left Hand (Sub SOV tab) so the paper visibly returns to where it belongs
+        logPayAppAudit('SUB_PAYAPP_REVISION_REQUESTED', { companyId: cid, period: restorePayAppNum, historyKey, restored: true, fromPending });
+        showCenteredAlert(`Revision requested. Pay App #${restorePayAppNum} amounts + lien waiver restored to Subcontractor Schedule of Values tab for editing. Re-submit when ready.`, 'info');
+
         selectedSubCompanyId = companyId;
-        localStorage.setItem('lastSelectedSubSOV', companyId);
+        localStorage.setItem('lastSelectedSubSOV', cid);
         renderPayAppContent();
-        // Small delay to ensure render completes before switching tab
         setTimeout(() => {
             switchPayAppTab('sub-sov');
         }, 50);
@@ -8198,8 +8224,11 @@ function printSubcontractorG703(companyId) {
 
     function getSubTrackerLienWaiverStatus(companyId, periodNum) {
         const paper = getSubTrackerPaper(companyId, periodNum);
-        if (paper && paper.entry && paper.entry.lienWaiver && paper.entry.lienWaiver.filename) {
-            return { hasWaiver: true, filename: paper.entry.lienWaiver.filename };
+        if (paper && paper.entry) {
+            const resolved = getSubLienWaiverForEntry(companyId, paper.entry);
+            if (resolved && resolved.filename) {
+                return { hasWaiver: true, filename: resolved.filename };
+            }
         }
         const lw = getLienWaiverStatus(companyId);
         if (lw && lw.hasWaiver) return { hasWaiver: true, filename: lw.filename };
@@ -8405,11 +8434,15 @@ function printSubcontractorG703(companyId) {
         const lines = subcontractorSOV[companyId] || [];
 
         const paper = getSubTrackerPaper(companyId, currentPeriodNum);
+        const revisionHistoryKey = paper && paper.historyKey ? paper.historyKey : null;
         let historyEntry = paper && paper.source === 'history' ? paper.entry : null;
         let pendingEntry = paper && paper.source === 'pending' ? paper.entry : null;
 
         const isCompliance = (historyEntry && historyEntry.isCompliance) || (pendingEntry && pendingEntry.isCompliance);
-        let payAppDisplay = isCompliance ? 'Compliance (Lien Waiver)' : `Pay App #${subPayAppNumbers[companyId] || currentPeriodNum}`;
+        const displayPayAppNum = historyEntry
+            ? (historyEntry.isCompliance ? (subPayAppNumbers[companyId] || 1) : (historyEntry.periodNumber !== 1005 ? historyEntry.periodNumber : (subPayAppNumbers[companyId] || 1)))
+            : (pendingEntry ? (pendingEntry.isCompliance ? (subPayAppNumbers[companyId] || 1) : pendingEntry.periodNumber) : (subPayAppNumbers[companyId] || currentPeriodNum));
+        let payAppDisplay = isCompliance ? 'Compliance (Lien Waiver)' : `Pay App #${displayPayAppNum}`;
 
         let status = 'Not Submitted';
         let billedThis = 0;
@@ -8423,15 +8456,17 @@ function printSubcontractorG703(companyId) {
         if (historyEntry && (historyEntry.status === 'Approved' || historyEntry.status === 'Pending Approval')) {
             status = historyEntry.status === 'Approved' ? 'Approved & Committed' : 'Pending Approval';
             billedThis = historyEntry.totalBilledThisPeriod || 0;
-            hasWaiver = !!(historyEntry.lienWaiver && historyEntry.lienWaiver.filename);
-            waiverFilename = historyEntry.lienWaiver ? historyEntry.lienWaiver.filename : '';
+            const resolvedWaiver = getSubLienWaiverForEntry(companyId, historyEntry);
+            hasWaiver = !!(resolvedWaiver && resolvedWaiver.filename);
+            waiverFilename = resolvedWaiver ? resolvedWaiver.filename : '';
             notesText = historyEntry.notes || (subSOVStatus[companyId] && subSOVStatus[companyId].notes) || '';
             canRequestRevision = true;
         } else if (pendingEntry) {
             status = 'Pending Approval';
             billedThis = pendingEntry.totalBilledThisPeriod || 0;
-            hasWaiver = !!(pendingEntry.lienWaiver && pendingEntry.lienWaiver.filename);
-            waiverFilename = pendingEntry.lienWaiver ? pendingEntry.lienWaiver.filename : '';
+            const resolvedWaiver = getSubLienWaiverForEntry(companyId, pendingEntry);
+            hasWaiver = !!(resolvedWaiver && resolvedWaiver.filename);
+            waiverFilename = resolvedWaiver ? resolvedWaiver.filename : '';
             notesText = pendingEntry.notes || (subSOVStatus[companyId] && subSOVStatus[companyId].notes) || '';
             canRequestRevision = true;
         } else {
@@ -8518,7 +8553,7 @@ function printSubcontractorG703(companyId) {
 
             <div class="flex flex-wrap gap-2 pt-2 border-t border-zinc-700">
                 ${canRequestRevision ? `
-                    <button onclick="requestRevisionSubPayApp(${companyId}, ${currentPeriodNum});" 
+                    <button onclick="requestRevisionSubPayApp(${companyId}${revisionHistoryKey ? `, '${revisionHistoryKey}'` : ''});" 
                             class="px-4 py-1.5 bg-amber-600 hover:bg-amber-500 text-white text-xs rounded font-medium flex items-center gap-1.5">
                         <i class="fa-solid fa-redo"></i> <span>Request Revision (Push back to Sub SOV)</span>
                     </button>
