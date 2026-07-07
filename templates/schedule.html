@@ -6,16 +6,15 @@
 <link rel="stylesheet" href="https://cdn.dhtmlx.com/gantt/edge/dhtmlxgantt.css">
 <link rel="stylesheet" href="{{ url_for('static', filename='css/schedule-gantt.css') }}">
 
-<div class="schedule-page-root px-2">
+<div class="schedule-page-root">
     <div id="scheduleChrome" class="no-print">
-        <!-- Header -->
-        <div class="flex flex-wrap items-start justify-between gap-3 mb-3 pt-1">
+        <div class="flex flex-wrap items-start justify-between gap-2 mb-2 pt-0">
             <div>
-                <h1 class="text-2xl font-semibold tracking-tight">Project Schedule</h1>
-                <p class="text-zinc-400 text-sm mt-0.5">Click cells to edit · Double-click for detail · Import MS Project XML or Primavera XER</p>
+                <h1 class="text-xl font-semibold tracking-tight">Project Schedule</h1>
+                <p class="text-zinc-500 text-xs mt-0.5">Click cell to edit · Double-click for tabs · Drag column edges to resize</p>
             </div>
             <div class="flex flex-wrap items-center gap-2">
-                <select id="scheduleProjectSelect" class="bg-zinc-800 border border-zinc-700 rounded-xl px-3 py-2 text-sm">
+                <select id="scheduleProjectSelect" class="bg-zinc-900 border border-zinc-700 rounded-md px-2 py-1.5 text-xs">
                     {% for project in projects %}
                     <option value="{{ project.id }}">{{ project.number }} — {{ project.name }}</option>
                     {% else %}
@@ -26,8 +25,7 @@
             </div>
         </div>
 
-        <!-- Toolbar -->
-        <div class="bg-zinc-900 border border-zinc-800 rounded-2xl p-2 mb-2 flex flex-wrap gap-1 items-center">
+        <div class="bg-zinc-900 border border-zinc-700 rounded-md p-1.5 mb-2 flex flex-wrap gap-1 items-center">
             <div class="flex flex-wrap gap-1 border-r border-zinc-700 pr-2 mr-1">
                 <button type="button" class="schedule-toolbar-btn" onclick="ScheduleApp.addActivity('task')" title="Add Activity">
                     <i class="fa-solid fa-plus text-emerald-400"></i> Activity
@@ -77,8 +75,8 @@
 
         <!-- View tabs -->
         <div class="flex flex-wrap items-center justify-between gap-3 mb-2">
-            <div class="flex bg-zinc-900 border border-zinc-800 rounded-xl p-1">
-                <button type="button" id="tabGantt" class="schedule-view-tab active-view px-4 py-2 text-sm rounded-lg" onclick="ScheduleApp.switchScheduleView('gantt')">
+            <div class="flex bg-zinc-900 border border-zinc-700 rounded-md p-0.5">
+                <button type="button" id="tabGantt" class="schedule-view-tab active-view px-3 py-1.5 text-xs rounded-md" onclick="ScheduleApp.switchScheduleView('gantt')">
                     <i class="fa-solid fa-chart-gantt mr-1.5"></i> Gantt Chart
                 </button>
                 <button type="button" id="tabLookahead" class="schedule-view-tab px-4 py-2 text-sm rounded-lg text-zinc-400 hover:text-white" onclick="ScheduleApp.switchScheduleView('lookahead')">
@@ -106,7 +104,7 @@
     </div>
 
     <!-- Gantt (fills remaining viewport) -->
-    <div id="ganttViewPanel" class="flex-1 min-h-0 bg-zinc-900 border border-zinc-800 rounded-2xl overflow-hidden flex flex-col">
+    <div id="ganttViewPanel" class="flex-1 min-h-0 bg-zinc-900 border border-zinc-700 rounded-md overflow-hidden flex flex-col">
         <div id="scheduleGanttHost" class="flex-1 min-h-0">
             <div id="gantt_here"></div>
         </div>
@@ -151,15 +149,117 @@
         </div>
     </div>
 
-    <div id="scheduleStatusBar" class="flex-shrink-0 mt-2 flex flex-wrap gap-4 text-xs text-zinc-500 bg-zinc-900/80 border border-zinc-800 rounded-xl px-4 py-2 no-print">
+    <div id="scheduleStatusBar" class="flex-shrink-0 mt-1 flex flex-wrap gap-3 text-xs text-zinc-500 bg-zinc-900 border border-zinc-700 rounded-md px-3 py-1.5 no-print">
         <span>Loading…</span>
     </div>
 </div>
+
+<!-- MS Project / P6 field picker -->
+<dialog id="scheduleFieldPickerModal" class="rounded-md w-full max-w-lg p-0 text-white shadow-2xl" style="background:#18181b;border:1px solid #3f3f46;">
+    <div class="px-4 py-3 border-b border-zinc-700 flex justify-between items-center">
+        <div>
+            <h3 class="font-semibold text-sm">Add Schedule Column</h3>
+            <p class="text-xs text-zinc-500">MS Project / Primavera fields</p>
+        </div>
+        <button type="button" onclick="document.getElementById('scheduleFieldPickerModal').close()" class="text-zinc-400 hover:text-white">&times;</button>
+    </div>
+    <div id="scheduleFieldPickerList" class="p-3 max-h-[60vh] overflow-auto"></div>
+</dialog>
+
+<!-- Tabbed activity detail (MS Project / Primavera style) -->
+<dialog id="scheduleActivityModal" class="rounded-md w-full max-w-3xl p-0 text-white shadow-2xl" style="background:#18181b;border:1px solid #3f3f46;">
+    <div class="px-4 py-3 border-b border-zinc-700 flex justify-between items-start gap-3">
+        <div>
+            <div class="flex items-center gap-2">
+                <span id="sam_wbs_badge" class="text-xs font-mono text-emerald-400 bg-emerald-950/50 px-2 py-0.5 rounded border border-emerald-800"></span>
+                <h3 id="sam_modal_title" class="font-semibold">Activity Detail</h3>
+            </div>
+        </div>
+        <button type="button" onclick="ScheduleActivityModal.close()" class="text-zinc-400 hover:text-white text-xl">&times;</button>
+    </div>
+    <div class="flex border-b border-zinc-700 px-2 overflow-x-auto">
+        <button type="button" class="sched-modal-tab px-4 py-2 text-xs font-medium border-emerald-500 text-white" data-tab="general" onclick="ScheduleActivityModal.switchTab('general')">General</button>
+        <button type="button" class="sched-modal-tab px-4 py-2 text-xs font-medium text-zinc-400 border-transparent" data-tab="logic" onclick="ScheduleActivityModal.switchTab('logic')">Predecessors</button>
+        <button type="button" class="sched-modal-tab px-4 py-2 text-xs font-medium text-zinc-400 border-transparent" data-tab="resources" onclick="ScheduleActivityModal.switchTab('resources')">Resources &amp; Cost</button>
+        <button type="button" class="sched-modal-tab px-4 py-2 text-xs font-medium text-zinc-400 border-transparent" data-tab="advanced" onclick="ScheduleActivityModal.switchTab('advanced')">Constraints</button>
+        <button type="button" class="sched-modal-tab px-4 py-2 text-xs font-medium text-zinc-400 border-transparent" data-tab="cpm" onclick="ScheduleActivityModal.switchTab('cpm')">CPM / Float</button>
+        <button type="button" class="sched-modal-tab px-4 py-2 text-xs font-medium text-zinc-400 border-transparent" data-tab="notes" onclick="ScheduleActivityModal.switchTab('notes')">Notes &amp; Codes</button>
+    </div>
+    <div class="p-4 max-h-[55vh] overflow-auto text-sm">
+        <div class="sched-modal-panel" data-panel="general">
+            <div class="grid grid-cols-2 gap-3">
+                <div class="col-span-2"><label class="text-xs text-zinc-500">Activity Name</label><input id="sam_text" class="w-full mt-1 bg-zinc-800 border border-zinc-700 rounded-md px-3 py-1.5 text-sm"></div>
+                <div><label class="text-xs text-zinc-500">Activity ID</label><input id="sam_activity_id" class="w-full mt-1 bg-zinc-800 border border-zinc-700 rounded-md px-3 py-1.5 text-sm"></div>
+                <div><label class="text-xs text-zinc-500">Type</label><select id="sam_type" class="w-full mt-1 bg-zinc-800 border border-zinc-700 rounded-md px-3 py-1.5 text-sm"><option value="task">Task</option><option value="milestone">Milestone</option><option value="project">Summary</option></select></div>
+                <div><label class="text-xs text-zinc-500">Duration (days)</label><input id="sam_duration" type="number" class="w-full mt-1 bg-zinc-800 border border-zinc-700 rounded-md px-3 py-1.5 text-sm"></div>
+                <div><label class="text-xs text-zinc-500">% Complete</label><input id="sam_progress" type="number" min="0" max="100" class="w-full mt-1 bg-zinc-800 border border-zinc-700 rounded-md px-3 py-1.5 text-sm"></div>
+                <div><label class="text-xs text-zinc-500">Start</label><input id="sam_start" type="date" class="w-full mt-1 bg-zinc-800 border border-zinc-700 rounded-md px-3 py-1.5 text-sm"></div>
+                <div><label class="text-xs text-zinc-500">Finish</label><input id="sam_finish" type="date" class="w-full mt-1 bg-zinc-800 border border-zinc-700 rounded-md px-3 py-1.5 text-sm"></div>
+                <div><label class="text-xs text-zinc-500">Bar Color</label><input id="sam_bar_color" type="color" class="w-full mt-1 h-9 bg-zinc-800 border border-zinc-700 rounded-md px-1"></div>
+            </div>
+        </div>
+        <div class="sched-modal-panel hidden" data-panel="logic">
+            <label class="text-xs text-zinc-500">Predecessors (e.g. 1.2FS+2, 1.3SS)</label>
+            <textarea id="sam_predecessors" rows="3" class="w-full mt-1 bg-zinc-800 border border-zinc-700 rounded-md px-3 py-2 text-sm font-mono" placeholder="WBS code + FS/SS/FF/SF + optional lag"></textarea>
+            <label class="text-xs text-zinc-500 mt-3 block">Successors (read-only)</label>
+            <input id="sam_successors" readonly class="w-full mt-1 bg-zinc-950 border border-zinc-700 rounded-md px-3 py-1.5 text-sm text-zinc-400">
+        </div>
+        <div class="sched-modal-panel hidden" data-panel="resources">
+            <div class="grid grid-cols-2 gap-3">
+                <div class="col-span-2"><label class="text-xs text-zinc-500">Resource Names</label><input id="sam_resource" class="w-full mt-1 bg-zinc-800 border border-zinc-700 rounded-md px-3 py-1.5 text-sm"></div>
+                <div class="col-span-2"><label class="text-xs text-zinc-500">Responsible Party</label><input id="sam_owner" class="w-full mt-1 bg-zinc-800 border border-zinc-700 rounded-md px-3 py-1.5 text-sm"></div>
+                <div><label class="text-xs text-zinc-500">Work (hours)</label><input id="sam_work_hours" type="number" class="w-full mt-1 bg-zinc-800 border border-zinc-700 rounded-md px-3 py-1.5 text-sm"></div>
+                <div><label class="text-xs text-zinc-500">Remaining Duration</label><input id="sam_remaining" type="number" class="w-full mt-1 bg-zinc-800 border border-zinc-700 rounded-md px-3 py-1.5 text-sm"></div>
+                <div><label class="text-xs text-zinc-500">Cost</label><input id="sam_cost" type="number" step="0.01" class="w-full mt-1 bg-zinc-800 border border-zinc-700 rounded-md px-3 py-1.5 text-sm"></div>
+                <div><label class="text-xs text-zinc-500">Fixed Cost</label><input id="sam_fixed_cost" type="number" step="0.01" class="w-full mt-1 bg-zinc-800 border border-zinc-700 rounded-md px-3 py-1.5 text-sm"></div>
+                <div><label class="text-xs text-zinc-500">Actual Start</label><input id="sam_actual_start" type="date" class="w-full mt-1 bg-zinc-800 border border-zinc-700 rounded-md px-3 py-1.5 text-sm"></div>
+                <div><label class="text-xs text-zinc-500">Actual Finish</label><input id="sam_actual_finish" type="date" class="w-full mt-1 bg-zinc-800 border border-zinc-700 rounded-md px-3 py-1.5 text-sm"></div>
+            </div>
+        </div>
+        <div class="sched-modal-panel hidden" data-panel="advanced">
+            <div class="grid grid-cols-2 gap-3">
+                <div><label class="text-xs text-zinc-500">Constraint Type</label><select id="sam_constraint_type" class="w-full mt-1 bg-zinc-800 border border-zinc-700 rounded-md px-3 py-1.5 text-sm"><option value="asap">As Soon As Possible</option><option value="alap">As Late As Possible</option><option value="mso">Must Start On</option><option value="mfo">Must Finish On</option><option value="snet">Start No Earlier Than</option><option value="snlt">Start No Later Than</option><option value="fnet">Finish No Earlier Than</option><option value="fnlt">Finish No Later Than</option></select></div>
+                <div><label class="text-xs text-zinc-500">Constraint Date</label><input id="sam_constraint_date" type="date" class="w-full mt-1 bg-zinc-800 border border-zinc-700 rounded-md px-3 py-1.5 text-sm"></div>
+                <div><label class="text-xs text-zinc-500">Deadline</label><input id="sam_deadline" type="date" class="w-full mt-1 bg-zinc-800 border border-zinc-700 rounded-md px-3 py-1.5 text-sm"></div>
+                <div><label class="text-xs text-zinc-500">Priority</label><select id="sam_priority" class="w-full mt-1 bg-zinc-800 border border-zinc-700 rounded-md px-3 py-1.5 text-sm"><option value="500">500 — Highest</option><option value="1000" selected>1000 — Normal</option><option value="1500">1500 — Low</option></select></div>
+                <div class="col-span-2"><label class="text-xs text-zinc-500">Calendar</label><input id="sam_calendar" class="w-full mt-1 bg-zinc-800 border border-zinc-700 rounded-md px-3 py-1.5 text-sm" value="Standard"></div>
+            </div>
+        </div>
+        <div class="sched-modal-panel hidden" data-panel="cpm">
+            <div class="grid grid-cols-2 gap-3">
+                <div><label class="text-xs text-zinc-500">Free Float (days)</label><input id="sam_free_float" readonly class="w-full mt-1 bg-zinc-950 border border-zinc-700 rounded-md px-3 py-1.5 text-sm text-zinc-400"></div>
+                <div><label class="text-xs text-zinc-500">Total Float (days)</label><input id="sam_total_float" readonly class="w-full mt-1 bg-zinc-950 border border-zinc-700 rounded-md px-3 py-1.5 text-sm text-zinc-400"></div>
+            </div>
+            <p class="text-xs text-zinc-500 mt-3">Run <b>Schedule</b> on the toolbar to recalculate CPM dates and float.</p>
+        </div>
+        <div class="sched-modal-panel hidden" data-panel="notes">
+            <div class="space-y-3">
+                <div><label class="text-xs text-zinc-500">Activity Code</label><input id="sam_activity_code" class="w-full mt-1 bg-zinc-800 border border-zinc-700 rounded-md px-3 py-1.5 text-sm"></div>
+                <div class="grid grid-cols-2 gap-3">
+                    <div><label class="text-xs text-zinc-500">Phase</label><input id="sam_phase" class="w-full mt-1 bg-zinc-800 border border-zinc-700 rounded-md px-3 py-1.5 text-sm"></div>
+                    <div><label class="text-xs text-zinc-500">Discipline</label><input id="sam_discipline" class="w-full mt-1 bg-zinc-800 border border-zinc-700 rounded-md px-3 py-1.5 text-sm"></div>
+                </div>
+                <div><label class="text-xs text-zinc-500">Notes</label><textarea id="sam_notes" rows="3" class="w-full mt-1 bg-zinc-800 border border-zinc-700 rounded-md px-3 py-2 text-sm"></textarea></div>
+                <div><label class="text-xs text-zinc-500">Hyperlink</label><input id="sam_hyperlink" class="w-full mt-1 bg-zinc-800 border border-zinc-700 rounded-md px-3 py-1.5 text-sm" placeholder="https://"></div>
+            </div>
+        </div>
+    </div>
+    <div class="px-4 py-3 border-t border-zinc-700 flex justify-between gap-2">
+        <button type="button" onclick="ScheduleActivityModal.delete()" class="px-3 py-1.5 text-xs text-red-400 hover:bg-red-950/40 rounded-md">Delete</button>
+        <div class="flex gap-2">
+            <button type="button" onclick="ScheduleActivityModal.close()" class="px-4 py-1.5 text-xs bg-zinc-800 hover:bg-zinc-700 rounded-md">Cancel</button>
+            <button type="button" onclick="ScheduleActivityModal.save()" class="px-4 py-1.5 text-xs bg-emerald-600 hover:bg-emerald-500 rounded-md font-medium">Save Activity</button>
+        </div>
+    </div>
+</dialog>
 
 <script src="https://cdn.dhtmlx.com/gantt/edge/dhtmlxgantt.js"></script>
 <script src="https://cdn.dhtmlx.com/gantt/edge/ext/dhtmlxgantt_marker.js"></script>
 <script src="https://cdn.dhtmlx.com/gantt/edge/ext/dhtmlxgantt_zoom.js"></script>
 <script src="{{ url_for('static', filename='js/schedule-cpm.js') }}"></script>
 <script src="{{ url_for('static', filename='js/schedule-import.js') }}"></script>
+<script src="{{ url_for('static', filename='js/schedule-fields.js') }}"></script>
+<script src="{{ url_for('static', filename='js/schedule-activity-modal.js') }}"></script>
 <script src="{{ url_for('static', filename='js/schedule-app.js') }}"></script>
+<script>document.body.dataset.pageModule = 'schedule';</script>
 {% endblock %}
