@@ -313,17 +313,6 @@
                 </label>
             </div>
 
-            <!-- NEW: Require Zero-Dollar Lien Waiver Setting -->
-            <div class="pt-3 border-t border-zinc-700">
-                <label class="flex items-center justify-between cursor-pointer">
-                    <div>
-                        <div class="text-sm text-zinc-300">Require Lien Waiver even if billing $0 that month</div>
-                        <div class="text-[10px] text-zinc-500">When ON, Subs must submit a $0 lien waiver for periods with no billing activity (Compliance).</div>
-                    </div>
-                    <input type="checkbox" id="requireLienWaiverOnSubPayAppToggle" class="w-5 h-5 accent-emerald-600" ${requireLienWaiverOnSubPayApp ? 'checked' : ''}>
-                </label>
-            </div>
-
             <!-- NEW: Require All Subs with Approved SOVs to Submit Pay App before G702 Submit -->
             <div class="pt-3 border-t border-zinc-700">
                 <label class="flex items-center justify-between cursor-pointer">
@@ -332,17 +321,6 @@
                         <div class="text-[10px] text-zinc-500">When ON, you cannot submit the main Pay Application (G702) until every subcontractor who has an Approved Schedule of Values has submitted their pay app for this period (appears in Sub Pay App Tracker).</div>
                     </div>
                     <input type="checkbox" id="requireAllSubPayAppsToggle" class="w-5 h-5 accent-emerald-600" ${requireAllSubPayAppsBeforeG702Submit ? 'checked' : ''}>
-                </label>
-            </div>
-
-            <!-- NEW: Allow Zero-Dollar Subcontractor Pay Apps (Compliance) -->
-            <div class="pt-3 border-t border-zinc-700">
-                <label class="flex items-center justify-between cursor-pointer">
-                    <div>
-                        <div class="text-sm text-zinc-300">Allow zero-dollar Subcontractor Pay Apps (for compliance months)</div>
-                        <div class="text-[10px] text-zinc-500">When ON, if a sub submits a pay app with $0 across all lines, it appears in the Tracker as "Pay App -- [Month]" <strong>without</strong> using up a pay app number. The next real (non-zero) submission will use the next correct number.</div>
-                    </div>
-                    <input type="checkbox" id="allowZeroDollarSubPayAppsToggle" class="w-5 h-5 accent-emerald-600" ${allowZeroDollarSubPayApps ? 'checked' : ''}>
                 </label>
             </div>
 
@@ -396,15 +374,9 @@
 let subSOVStatus = JSON.parse(localStorage.getItem('subSOVStatus') || '{}'); // { [companyId]: { status: ..., unlockedBy?, ... } }
 let lienWaivers = JSON.parse(localStorage.getItem('lienWaivers') || '{}'); // { [companyId]: { filename: string, uploadedAt: string, submitted: boolean } }
 let requireLienWaiverOnSubPayApp = localStorage.getItem('requireLienWaiverOnSubPayApp') !== 'false'; // default true
-let requireLienWaiverOnSubPayApp = localStorage.getItem('requireLienWaiverOnSubPayApp') === 'true'; // NEW: Zero Dollar Waiver Requirement
 let requireSubmissionDeadline = localStorage.getItem('requireSubmissionDeadline') === 'true';
 let submissionDeadlineDate = localStorage.getItem('submissionDeadlineDate') || '';
-let allowZeroDollarSubPayApps = localStorage.getItem('allowZeroDollarSubPayApps') !== 'false'; // NEW: Allow $0 sub pay apps (compliance) without using a pay app number
-// Force the setting ON by default so zero-dollar compliance submissions are always allowed from Sub SOV tab
-if (localStorage.getItem('allowZeroDollarSubPayApps') === null || localStorage.getItem('allowZeroDollarSubPayApps') === 'true') {
-    allowZeroDollarSubPayApps = true;
-    localStorage.setItem('allowZeroDollarSubPayApps', 'true');
-}
+let allowZeroDollarSubPayApps = false; // DISABLED: Zero-dollar submissions now always use sequential pay app number
 let requireAllSubPayAppsBeforeG702Submit = localStorage.getItem('requireAllSubPayAppsBeforeG702Submit') !== 'false'; // Default ON (true)
 
 // Main Contractor (GC) Lien Waiver for current period (separate from Sub waivers)
@@ -4871,45 +4843,17 @@ let mainLienWaiver = JSON.parse(localStorage.getItem('mainLienWaiver') || '{}');
             return;
         }
 
-        // Calculate total first so we can decide if this is a zero-dollar compliance submission
-        const tempSnapshotForTotal = lines.map(l => ({
-            work_this_period: l.work_this_period || 0,
-            materials_stored: l.materials_stored || 0,
-            co_billed_this_period: l.co_billed_this_period || 0
-        }));
-        const totalBilledThisPeriodCheck = tempSnapshotForTotal.reduce((sum, l) => 
-            sum + (l.work_this_period + l.materials_stored + l.co_billed_this_period), 0);
-
-        let currentPeriodNum;
-        let isComplianceSubmission = false;
-
-        if (totalBilledThisPeriodCheck === 0) {
-            if (!allowZeroDollarSubPayApps) {
-                showErrorModal("You need to update the amounts in the 'This Period' columns before submitting this pay application.\n\nTo allow zero-dollar compliance submissions, go to Pay Applications Settings and turn ON 'Allow zero-dollar Subcontractor Pay Apps (for compliance months)'.");
-                return;
-            }
-            // Zero-dollar compliance submission allowed.
-            // Use the CURRENT numeric pay app number (e.g. 1), but mark it as compliance.
-            // Do NOT increment the counter. The SOV tab stays on "Pay App #1 Current".
-            // In the Tracker it will be shown as "Pay App #1 C".
-            
-            if (!subPayAppNumbers[companyId]) {
-                subPayAppNumbers[companyId] = 1;
-                localStorage.setItem('subPayAppNumbers', JSON.stringify(subPayAppNumbers));
-            }
-            currentPeriodNum = subPayAppNumbers[companyId]; // keep the number, do not advance it
-        } else {
-            // Normal (non-zero) submission
-            if (!subPayAppNumbers[companyId]) {
-                subPayAppNumbers[companyId] = 1;
-                localStorage.setItem('subPayAppNumbers', JSON.stringify(subPayAppNumbers));
-            }
-            currentPeriodNum = subPayAppNumbers[companyId];
+        // Always assign the next sequential pay app number (even for $0 submissions).
+        // The special zero-dollar "no number / compliance" mode has been removed.
+        if (!subPayAppNumbers[companyId]) {
+            subPayAppNumbers[companyId] = 1;
+            localStorage.setItem('subPayAppNumbers', JSON.stringify(subPayAppNumbers));
         }
+        let currentPeriodNum = subPayAppNumbers[companyId];
 
         // so the waiver travels with the "Pay App --" entry without being tied to a numbered pay app.
         let waiver = null;
-        if (false) {
+        if (isCompliance) {
             if (!waiver) {
                 waiver = subLienWaivers[companyId] && subLienWaivers[companyId][currentPeriodNum];
             }
@@ -4967,7 +4911,7 @@ let mainLienWaiver = JSON.parse(localStorage.getItem('mainLienWaiver') || '{}');
             submittedDate: new Date().toISOString(),
             lines: snapshotLines,
             totalBilledThisPeriod: totalBilledThisPeriod,
-            isCompliance: isComplianceSubmission,
+            isCompliance: isCompliance,
             lienWaiver: waiver ? { 
                 filename: waiver.filename, 
                 uploadedDate: waiver.uploadedDate,
@@ -4977,7 +4921,7 @@ let mainLienWaiver = JSON.parse(localStorage.getItem('mainLienWaiver') || '{}');
         localStorage.setItem('subPendingSubmissions', JSON.stringify(subPendingSubmissions));
 
         // For compliance submissions, remove the live lien waiver so the pill disappears from Sub SOV tab
-        if (isComplianceSubmission && companyId) {
+        if (isCompliance && companyId) {
             if (subLienWaivers[companyId]) {
                 // Also clean any numeric key for the current number
                 if (subLienWaivers[companyId][currentPeriodNum]) {
@@ -5068,17 +5012,12 @@ let mainLienWaiver = JSON.parse(localStorage.getItem('mainLienWaiver') || '{}');
         }
         localStorage.setItem('subLienWaivers', JSON.stringify(subLienWaivers));
 
-        // Advance Pay App number for the *next* new submission (this approved paper keeps its original number)
-        // IMPORTANT: Do NOT advance the counter for zero-dollar compliance submissions.
-        // Compliance papers ("#1 C") stay on their number; the next real billing submission gets the same number.
+        // Always advance the pay app number for the next submission.
+        // Every submitted pay app (including $0) now consumes a sequential number.
         const approvedPayAppNumber = currentPeriodNum;
-        const isCompliance = pendingEntry.isCompliance === true;
-
-        if (!isCompliance) {
-            if (!subPayAppNumbers[companyId]) subPayAppNumbers[companyId] = 1;
-            subPayAppNumbers[companyId] = approvedPayAppNumber + 1;  // Next real (non-zero) paper gets the next number
-            localStorage.setItem('subPayAppNumbers', JSON.stringify(subPayAppNumbers));
-        }
+        if (!subPayAppNumbers[companyId]) subPayAppNumbers[companyId] = 1;
+        subPayAppNumbers[companyId] = approvedPayAppNumber + 1;
+        localStorage.setItem('subPayAppNumbers', JSON.stringify(subPayAppNumbers));
 
         // === Move to RIGHT HAND: Save/ensure in subPayAppHistory as Approved ===
         // Compliance ($0) entries are now keyed by the MAIN G702 period number at approval time.
@@ -7124,10 +7063,10 @@ function printSubcontractorG703(companyId) {
         }
 
         // NEW: Zero-Dollar Lien Waiver Toggle
-        const zeroDollarToggle = document.getElementById('requireLienWaiverOnSubPayAppToggle');
+        const zeroDollarToggle = document.getElementById('requireZeroDollarLienWaiverToggle');
         if (zeroDollarToggle) {
-            requireLienWaiverOnSubPayApp = zeroDollarToggle.checked;
-            localStorage.setItem('requireLienWaiverOnSubPayApp', requireLienWaiverOnSubPayApp);
+            requireZeroDollarLienWaiver = zeroDollarToggle.checked;
+            localStorage.setItem('requireZeroDollarLienWaiver', requireZeroDollarLienWaiver);
         }
 
         // Submission Deadline (Day of Month)
@@ -7174,7 +7113,7 @@ function printSubcontractorG703(companyId) {
 
         const waivers = lienWaivers[companyId] || {};
         const status = getSubSOVStatus(companyId);
-        const isZeroRequired = requireLienWaiverOnSubPayApp;
+        const isZeroRequired = requireZeroDollarLienWaiver;
 
         // If the SOV is not yet Approved, compliance is not yet required.
         if (status !== 'Approved' && status !== 'Approved — Waiting on Lien Waiver') {
