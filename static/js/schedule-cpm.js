@@ -241,7 +241,13 @@
         const isLeaf = id => !(childIds.get(String(id)) || []).length;
 
         const { preds, succs } = buildAdjacency(links || []);
-        const leaves = [...taskMap.keys()].filter(id => isLeaf(id) && taskMap.get(id).type !== 'project');
+        const leaves = [...taskMap.keys()].filter(id => {
+            const t = taskMap.get(id);
+            if (!isLeaf(id) || t.type === 'project') return false;
+            const at = String(t.activity_type || '').toLowerCase();
+            if (at === 'loe' || at === 'level of effort') return false;
+            return true;
+        });
         const today = parseDate(new Date()) || new Date();
 
         const es = new Map();
