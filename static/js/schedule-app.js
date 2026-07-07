@@ -43,7 +43,8 @@
         milestone_color: '#8b5cf6',
         link_color: '#94a3b8',
         link_width: 2,
-        active_baseline_index: -1
+        active_baseline_index: -1,
+        show_baseline_bars: true
     };
 
     function pushUndoState() {
@@ -293,6 +294,7 @@
 
     function applyChartOverlay() {
         if (!ganttReady) return;
+        const scroll = getTimelineScrollState();
         const root = document.querySelector('#gantt_here .gantt_layout_root');
         if (!root) return;
 
@@ -308,8 +310,7 @@
         gridCell.style.cssText = 'flex:1 1 auto;width:100%!important;min-width:0!important;position:relative;z-index:2;overflow:hidden;';
         if (nativeResizer) nativeResizer.style.cssText = 'display:none!important;width:0!important;min-width:0!important;';
 
-        // Viewport only — do NOT clamp inner task/data area width (that locked scrolling to ~2 weeks)
-        timelineCell.style.cssText = `position:absolute!important;top:0;right:0;bottom:0;width:${timelineW}px!important;z-index:15;box-shadow:-8px 0 24px rgba(0,0,0,0.55);pointer-events:auto;overflow:hidden;`;
+        timelineCell.style.cssText = `position:absolute!important;top:0;right:0;bottom:0;width:${timelineW}px!important;z-index:15;box-shadow:-8px 0 24px rgba(0,0,0,0.55);pointer-events:auto;overflow:visible!important;`;
 
         let handle = document.getElementById('scheduleChartResizer');
         if (!handle) {
@@ -320,6 +321,7 @@
             root.appendChild(handle);
         }
         handle.style.right = (timelineW - 4) + 'px';
+        restoreTimelineScroll(scroll);
     }
 
     function queueChartOverlay() {
@@ -376,6 +378,120 @@
     function updateGridWidth() {
         syncGridTableWidth();
         queueChartOverlay();
+    }
+
+    function constrainInlineEditor() {
+        requestAnimationFrame(() => {
+            const ph = document.querySelector('#gantt_here .gantt_grid_editor_placeholder, #gantt_here .gantt_inline_editor');
+            if (!ph) return;
+            const cell = ph.closest('.gantt_cell');
+            if (!cell) return;
+            const cw = cell.clientWidth;
+            const ch = cell.clientHeight;
+            ph.style.width = cw + 'px';
+            ph.style.maxWidth = cw + 'px';
+            ph.style.minWidth = '0';
+            ph.style.height = Math.max(22, ch - 2) + 'px';
+            ph.style.maxHeight = ch + 'px';
+            ph.style.overflow = 'hidden';
+            ph.style.boxSizing = 'border-box';
+            ph.style.position = 'absolute';
+            ph.style.left = '0';
+            ph.style.top = '0';
+            ph.querySelectorAll('input, select, textarea').forEach(inp => {
+                inp.style.width = '100%';
+                inp.style.maxWidth = '100%';
+                inp.style.height = '100%';
+                inp.style.minHeight = '0';
+                inp.style.boxSizing = 'border-box';
+                inp.style.fontSize = '13px';
+                inp.style.padding = '2px 4px';
+            });
+        });
+    }
+
+    function getTimelineScrollState() {
+        if (!ganttReady || typeof gantt.getScrollState !== 'function') return null;
+        try { return gantt.getScrollState(); } catch (e) { return null; }
+    }
+
+    function restoreTimelineScroll(state) {
+        if (!state || typeof gantt.scrollTo !== 'function') return;
+        requestAnimationFrame(() => {
+            try { gantt.scrollTo(state.x, state.y); } catch (e) { /* ok */ }
+        });
+    }
+
+    function getProjectDateBounds() {
+        if (!ganttReady) return null;
+        const range = gantt.getSubtaskDates();
+        let start = range?.start_date ? toGanttDate(range.start_date) : new Date();
+        let end = range?.end_date ? toGanttDate(range.end_date) : new Date(start.getTime() + 120 * 86400000);
+        if (!start) start = new Date();
+        if (!end || end <= start) end = CasePMSchedule.addCalendarDays(start, 120);
+        start = CasePMSchedule.addCalendarDays(start, -120);
+        end = CasePMSchedule.addCalendarDays(end, 240);
+        if (CasePMSchedule.calendarDaysBetween(start, end) < 540) {
+            end = CasePMSchedule.addCalendarDays(start, 540);
+        }
+        return { start, end };
+    }
+
+    function applyTimelineDateRange() {
+        const bounds = getProjectDateBounds();
+        if (!bounds) return;
+        gantt.config.start_date = bounds.start;
+        gantt.config.end_date = bounds.end;
+    }
+
+    function handleColumnResize(index, column, new_width, persist) {
+        if (column && column.name) {
+            columnWidths[column.name] = new_width;
+            column.width = new_width;
+            if (gantt.config.columns[index]) {
+                gantt.config.columns[index].width = new_width;
+            }
+        }
+        syncGridTableWidth();
+        if (persist) queueSave();
+    }
+
+    let baselineLayerBound = false;
+    function initBaselineBars() {
+        if (baselineLayerBound || typeof gantt.addTaskLayer !== 'function') return;
+        baselineLayerBound = true;
+        gantt.addTaskLayer(function renderBaselineBar(task) {
+            if (task.type === 'project' || scheduleSettings.show_baseline_bars === false) return null;
+            if (!task.baseline_start || !task.baseline_finish) return null;
+            const bStart = toGanttDate(task.baseline_start);
+            const bEnd = toGanttDate(task.baseline_finish);
+            if (!bStart || !bEnd || typeof gantt.posFromDate !== 'function' || typeof gantt.getTaskTop !== 'function') return null;
+            const left = gantt.posFromDate(bStart);
+            const right = gantt.posFromDate(bEnd);
+            const top = gantt.getTaskTop(task.id);
+            if (left == null || right == null || top == null) return null;
+            const barH = gantt.config.bar_height || 24;
+            const el = document.createElement('div');
+            el.className = 'gantt_baseline_bar';
+            el.style.cssText = `position:absolute;left:${left}px;width:${Math.max(3, right - left)}px;top:${top + barH - 5}px;height:4px;pointer-events:none;`;
+            el.title = `Baseline: ${formatDateSafe(bStart)} – ${formatDateSafe(bEnd)}`;
+            return el;
+        });
+    }
+
+    function isLoeTask(task) {
+        const t = String(task?.activity_type || '').toLowerCase();
+        return t === 'loe' || t === 'level of effort';
+    }
+
+    function effectiveProgress(task) {
+        if (!task) return 0;
+        const type = String(task.percent_complete_type || 'physical').toLowerCase();
+        if (type === 'duration' && task.schedule_percent_complete != null) {
+            return Math.min(1, Number(task.schedule_percent_complete) / 100);
+        }
+        const p = Number(task.progress) || 0;
+        return p <= 1 ? p : p / 100;
     }
 
     function toGanttDate(value) {
@@ -553,7 +669,7 @@
             { name: 'end_date', label: 'Finish', align: 'center', width: 98, min_width: 88, resize: true, editor: { type: 'date', map_to: 'end_date' }, template: t => formatDateSafe(t.end_date) },
             { name: 'predecessors', label: 'Predecessors', width: 118, min_width: 80, resize: true, editor: { type: 'pred_string', map_to: 'auto' }, template: predTemplate },
             { name: 'successors', label: 'Successors', width: 108, min_width: 80, resize: true, template: succTemplate },
-            { name: 'progress', label: '%', align: 'center', width: 48, min_width: 42, resize: true, editor: { type: 'number', map_to: 'progress', min: 0, max: 100 }, template: t => Math.round((t.progress || 0) <= 1 ? (t.progress || 0) * 100 : (t.progress || 0)) },
+            { name: 'progress', label: '%', align: 'center', width: 48, min_width: 42, resize: true, editor: { type: 'number', map_to: 'progress', min: 0, max: 100 }, template: t => Math.round(effectiveProgress(t) * 100) },
             { name: 'resource', label: 'Resource', width: 108, min_width: 70, resize: true, editor: { type: 'text', map_to: 'resource' } },
             { name: 'owner', label: 'Responsible', width: 108, min_width: 70, resize: true, editor: { type: 'text', map_to: 'owner' } },
             { name: 'total_float', label: 'Total Float', width: 72, align: 'center', resize: true, template: t => t.$slack != null ? t.$slack : (t.total_float != null ? t.total_float : '') },
@@ -609,6 +725,7 @@
                 placeholder.appendChild(inp);
                 inp.focus();
                 inp.select();
+                constrainInlineEditor();
             },
             hide: function () { },
             set_value: function (value, id) {
@@ -638,6 +755,7 @@
                 inp.value = task.bar_color || scheduleSettings.default_bar_color || '#3b82f6';
                 placeholder.appendChild(inp);
                 inp.focus();
+                constrainInlineEditor();
             },
             hide: function () { },
             set_value: function (value, id) {
@@ -754,7 +872,10 @@
 
         gantt.attachEvent('onBeforeLightbox', () => false);
 
-        gantt.attachEvent('onBeforeEditStart', () => allowGridEdit);
+        gantt.attachEvent('onBeforeEditStart', () => {
+            setTimeout(constrainInlineEditor, 0);
+            return allowGridEdit;
+        });
 
         gantt.attachEvent('onTaskLoading', (task) => {
             sanitizeTaskDates(task);
@@ -772,8 +893,9 @@
             if (gantt.config.highlight_critical_path && isTaskCritical(task)) classes.push('cpm_critical');
             if (task.type === 'milestone') classes.push('cpm_milestone');
             if (task.type === 'project') classes.push('cpm_summary');
+            if (isLoeTask(task)) classes.push('cpm_loe');
             if (task.bar_color) classes.push('cpm_custom_color');
-            const p = Math.round((task.progress || 0) * 100);
+            const p = Math.round(effectiveProgress(task) * 100);
             if (p >= 100) classes.push('cpm_complete');
             else if (p > 0) classes.push('cpm_in_progress');
             return classes.join(' ');
@@ -807,7 +929,7 @@
                 Start: ${formatDateSafe(start)}<br/>
                 Finish: ${formatDateSafe(end)}<br/>
                 Duration: ${task.duration}d<br/>
-                Progress: ${Math.round((task.progress || 0) * 100)}%<br/>
+                Progress: ${Math.round(effectiveProgress(task) * 100)}%<br/>
                 ${preds ? 'Predecessors: ' + preds : ''}`;
         };
 
@@ -863,6 +985,7 @@
         gantt.attachEvent('onAfterLinkUpdate', () => { pushUndoState(); queueSave(); });
         gantt.attachEvent('onAfterLinkDelete', () => { pushUndoState(); queueSave(); });
         gantt.attachEvent('onAfterTaskDrag', function () {
+            applyTimelineDateRange();
             pushUndoState();
             queueSave();
             gantt.render();
@@ -874,16 +997,12 @@
             queueSave();
             gantt.render();
         });
+        gantt.attachEvent('onColumnResize', function (index, column, new_width) {
+            handleColumnResize(index, column, new_width, false);
+            return true;
+        });
         gantt.attachEvent('onColumnResizeEnd', function (index, column, new_width) {
-            if (column && column.name) {
-                columnWidths[column.name] = new_width;
-                column.width = new_width;
-                if (gantt.config.columns[index]) {
-                    gantt.config.columns[index].width = new_width;
-                }
-            }
-            syncGridTableWidth();
-            queueSave();
+            handleColumnResize(index, column, new_width, true);
             gantt.render();
         });
         gantt.attachEvent('onGanttRender', () => {
@@ -895,6 +1014,9 @@
         });
 
         document.addEventListener('keydown', onScheduleKeyDown);
+
+        initBaselineBars();
+        applyTimelineDateRange();
 
 
         syncGridTableWidth();
@@ -1006,6 +1128,7 @@
         applySettingsToUI();
         gantt.eachTask(t => applyTaskBarColor(t));
         applyBaselineVariance();
+        applyTimelineDateRange();
         queueChartOverlay();
         gantt.render();
         setSaveStatus('Ready');
@@ -1143,6 +1266,8 @@
         set('dispMilestoneColor', s.milestone_color || '#8b5cf6');
         set('dispLinkColor', s.link_color || '#94a3b8');
         set('dispLinkWidth', s.link_width || 2);
+        const bl = document.getElementById('dispShowBaselineBars');
+        if (bl) bl.checked = s.show_baseline_bars !== false;
         document.getElementById('scheduleDisplayModal')?.showModal();
     }
 
@@ -1155,7 +1280,9 @@
         scheduleSettings.milestone_color = get('dispMilestoneColor') || '#8b5cf6';
         scheduleSettings.link_color = get('dispLinkColor') || '#94a3b8';
         scheduleSettings.link_width = parseInt(get('dispLinkWidth'), 10) || 2;
+        scheduleSettings.show_baseline_bars = document.getElementById('dispShowBaselineBars')?.checked !== false;
         applyGanttDisplayStyles();
+        gantt.render();
         document.getElementById('scheduleDisplayModal')?.close();
         queueSave();
         showScheduleAlert('Display settings applied', 'success');
@@ -1358,9 +1485,10 @@
         });
         sanitizeAllTaskDates();
         applyBaselineVariance();
+        applyTimelineDateRange();
         wbsCodeMap = wbsMap || CasePMSchedule.buildWbsMap(tasks);
         gantt.render();
-        if (opts.scroll !== false && !opts.skipScroll) scrollToScheduleRange();
+        if (opts.scroll === true) scrollToScheduleRange();
         updateDataDateMarker();
         applyChartOverlay();
         updateStatusBar();

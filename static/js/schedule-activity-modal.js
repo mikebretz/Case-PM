@@ -75,6 +75,7 @@
         setVal('sam_text', t.text || '');
         setVal('sam_activity_id', t.activity_id || '');
         setVal('sam_type', t.type || 'task');
+        setVal('sam_activity_type', t.activity_type || 'task');
         setVal('sam_duration', t.duration != null ? t.duration : '');
         setVal('sam_start', t.start_date ? gantt.templates.format_date(t.start_date) : '');
         setVal('sam_finish', t.end_date ? gantt.templates.format_date(t.end_date) : '');
@@ -181,6 +182,7 @@
         t.text = val('sam_text');
         t.activity_id = val('sam_activity_id');
         t.type = val('sam_type');
+        t.activity_type = val('sam_activity_type') || 'task';
         t.duration = parseFloat(val('sam_duration')) || 0;
         const start = val('sam_start');
         if (start) t.start_date = toModalDate(start);
