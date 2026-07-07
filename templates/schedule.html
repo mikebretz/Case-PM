@@ -54,8 +54,14 @@
                 <button type="button" class="schedule-toolbar-btn" onclick="ScheduleApp.setBaseline()"><i class="fa-solid fa-camera"></i> Baseline</button>
             </div>
             <div class="flex flex-wrap gap-1 border-r border-zinc-700 pr-2 mr-1">
+                <span class="text-[0.65rem] text-zinc-500 self-center px-1">Timescale</span>
+                <button type="button" class="schedule-toolbar-btn" data-timescale="day" onclick="ScheduleApp.setTimescale('day')" title="Day view">Days</button>
+                <button type="button" class="schedule-toolbar-btn active-tool" data-timescale="week" onclick="ScheduleApp.setTimescale('week')" title="Week view">Weeks</button>
+                <button type="button" class="schedule-toolbar-btn" data-timescale="month" onclick="ScheduleApp.setTimescale('month')" title="Month view">Months</button>
+                <button type="button" class="schedule-toolbar-btn" data-timescale="quarter" onclick="ScheduleApp.setTimescale('quarter')" title="Quarter view">Quarters</button>
                 <button type="button" class="schedule-toolbar-btn" onclick="ScheduleApp.zoomGantt('in')"><i class="fa-solid fa-magnifying-glass-plus"></i></button>
                 <button type="button" class="schedule-toolbar-btn" onclick="ScheduleApp.zoomGantt('out')"><i class="fa-solid fa-magnifying-glass-minus"></i></button>
+                <button type="button" class="schedule-toolbar-btn" onclick="ScheduleApp.showDisplaySettings()" title="Bar & link colors"><i class="fa-solid fa-palette text-violet-400"></i> Display</button>
                 <button type="button" class="schedule-toolbar-btn" onclick="ScheduleApp.showAddColumnDialog()" title="Add custom grid column"><i class="fa-solid fa-table-columns"></i> + Column</button>
             </div>
             <div class="flex flex-wrap gap-1 border-r border-zinc-700 pr-2 mr-1">
@@ -153,6 +159,35 @@
         <span>Loading…</span>
     </div>
 </div>
+
+<!-- Display settings (bar & link colors) -->
+<dialog id="scheduleDisplayModal" class="rounded-md w-full max-w-md p-0 text-white shadow-2xl" style="background:#18181b;border:1px solid #3f3f46;">
+    <div class="px-4 py-3 border-b border-zinc-700 flex justify-between items-center">
+        <div>
+            <h3 class="font-semibold text-sm">Gantt Display Settings</h3>
+            <p class="text-xs text-zinc-500">Bar colors, milestones, and predecessor links</p>
+        </div>
+        <button type="button" onclick="document.getElementById('scheduleDisplayModal').close()" class="text-zinc-400 hover:text-white">&times;</button>
+    </div>
+    <div class="p-4 space-y-3 text-sm">
+        <div class="grid grid-cols-2 gap-3">
+            <label class="flex flex-col gap-1"><span class="text-xs text-zinc-500">Normal bar</span><input id="dispBarColor" type="color" class="h-9 w-full bg-zinc-800 border border-zinc-700 rounded-md"></label>
+            <label class="flex flex-col gap-1"><span class="text-xs text-zinc-500">Critical path</span><input id="dispCriticalColor" type="color" class="h-9 w-full bg-zinc-800 border border-zinc-700 rounded-md"></label>
+            <label class="flex flex-col gap-1"><span class="text-xs text-zinc-500">In progress</span><input id="dispProgressColor" type="color" class="h-9 w-full bg-zinc-800 border border-zinc-700 rounded-md"></label>
+            <label class="flex flex-col gap-1"><span class="text-xs text-zinc-500">Complete</span><input id="dispCompleteColor" type="color" class="h-9 w-full bg-zinc-800 border border-zinc-700 rounded-md"></label>
+            <label class="flex flex-col gap-1"><span class="text-xs text-zinc-500">Milestone</span><input id="dispMilestoneColor" type="color" class="h-9 w-full bg-zinc-800 border border-zinc-700 rounded-md"></label>
+            <label class="flex flex-col gap-1"><span class="text-xs text-zinc-500">Predecessor links</span><input id="dispLinkColor" type="color" class="h-9 w-full bg-zinc-800 border border-zinc-700 rounded-md"></label>
+        </div>
+        <label class="flex flex-col gap-1"><span class="text-xs text-zinc-500">Link line width (px)</span>
+            <input id="dispLinkWidth" type="number" min="1" max="6" step="1" class="bg-zinc-800 border border-zinc-700 rounded-md px-3 py-1.5 text-sm w-24">
+        </label>
+        <p class="text-xs text-zinc-500">Per-activity bar colors can still be set in the activity detail modal or Color column.</p>
+    </div>
+    <div class="px-4 py-3 border-t border-zinc-700 flex justify-end gap-2">
+        <button type="button" onclick="document.getElementById('scheduleDisplayModal').close()" class="px-4 py-1.5 text-xs bg-zinc-800 hover:bg-zinc-700 rounded-md">Cancel</button>
+        <button type="button" onclick="ScheduleApp.saveDisplaySettings()" class="px-4 py-1.5 text-xs bg-emerald-600 hover:bg-emerald-500 rounded-md font-medium">Apply</button>
+    </div>
+</dialog>
 
 <!-- MS Project / P6 field picker -->
 <dialog id="scheduleFieldPickerModal" class="rounded-md w-full max-w-lg p-0 text-white shadow-2xl" style="background:#18181b;border:1px solid #3f3f46;">

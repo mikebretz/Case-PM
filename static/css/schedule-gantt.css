@@ -82,37 +82,52 @@ body:has(.schedule-page-root) #mainContent {
 .gantt_task_cell { border-color: #27272a !important; }
 
 /* ─── Gantt bars: semi-transparent fill + bright border (visible on dark) ─── */
+:root {
+    --gantt-bar-normal: #3b82f6;
+    --gantt-bar-critical: #ef4444;
+    --gantt-bar-progress: #f59e0b;
+    --gantt-bar-complete: #71717a;
+    --gantt-milestone: #8b5cf6;
+    --gantt-link-color: #94a3b8;
+    --gantt-link-width: 2px;
+}
 .gantt_task_line {
-    background-color: rgba(59, 130, 246, 0.45) !important;
-    border: 2px solid #60a5fa !important;
+    background-color: color-mix(in srgb, var(--gantt-bar-normal) 45%, transparent) !important;
+    border: 2px solid var(--gantt-bar-normal) !important;
     border-radius: 3px;
-    box-shadow: 0 0 6px rgba(96, 165, 250, 0.35);
+    box-shadow: 0 0 6px color-mix(in srgb, var(--gantt-bar-normal) 35%, transparent);
 }
 .gantt_task_line.cpm_critical {
-    background-color: rgba(239, 68, 68, 0.45) !important;
-    border-color: #f87171 !important;
-    box-shadow: 0 0 6px rgba(248, 113, 113, 0.4);
+    background-color: color-mix(in srgb, var(--gantt-bar-critical) 45%, transparent) !important;
+    border-color: var(--gantt-bar-critical) !important;
+    box-shadow: 0 0 6px color-mix(in srgb, var(--gantt-bar-critical) 40%, transparent);
 }
 .gantt_task_line.cpm_in_progress {
-    background-color: rgba(245, 158, 11, 0.45) !important;
-    border-color: #fbbf24 !important;
-    box-shadow: 0 0 6px rgba(251, 191, 36, 0.35);
+    background-color: color-mix(in srgb, var(--gantt-bar-progress) 45%, transparent) !important;
+    border-color: var(--gantt-bar-progress) !important;
+    box-shadow: 0 0 6px color-mix(in srgb, var(--gantt-bar-progress) 35%, transparent);
 }
 .gantt_task_line.cpm_complete {
-    background-color: rgba(113, 113, 122, 0.4) !important;
-    border-color: #a1a1aa !important;
+    background-color: color-mix(in srgb, var(--gantt-bar-complete) 40%, transparent) !important;
+    border-color: var(--gantt-bar-complete) !important;
 }
 .gantt_task_line.gantt_milestone, .gantt_task_line.cpm_milestone {
-    background-color: rgba(139, 92, 246, 0.5) !important;
-    border-color: #a78bfa !important;
+    background-color: color-mix(in srgb, var(--gantt-milestone) 50%, transparent) !important;
+    border-color: var(--gantt-milestone) !important;
 }
 .gantt_task_line.cpm_summary, .gantt_task_line.gantt_project {
     background-color: rgba(30, 41, 59, 0.7) !important;
     border-color: #64748b !important;
 }
 .gantt_task_progress { background-color: rgba(0, 0, 0, 0.35) !important; }
-.gantt_task_link .gantt_line_wrapper div { background-color: #94a3b8 !important; }
-.gantt_link_arrow_right { border-left-color: #94a3b8 !important; }
+.gantt_task_link .gantt_line_wrapper div {
+    background-color: var(--gantt-link-color) !important;
+    height: var(--gantt-link-width) !important;
+}
+.gantt_link_arrow_right { border-left-color: var(--gantt-link-color) !important; }
+.gantt_link_arrow_left { border-right-color: var(--gantt-link-color) !important; }
+.gantt_link_arrow_up { border-bottom-color: var(--gantt-link-color) !important; }
+.gantt_link_arrow_down { border-top-color: var(--gantt-link-color) !important; }
 
 /* Inline editor */
 .gantt_inline_editor, .gantt_grid_editor_placeholder {
