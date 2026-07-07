@@ -29,6 +29,10 @@ if (window.pdfjsLib) {
                 <i class="fa-solid fa-file-pdf mr-2 text-red-400"></i>
                 Upload Specs Book (PDF)
             </button>
+            <span id="specBookLoadedBadge" class="hidden text-xs text-emerald-400 flex items-center gap-1.5 px-2 py-1 bg-emerald-950/40 border border-emerald-800 rounded-lg" title="Specifications book is saved and linked to imported submittals">
+                <i class="fa-solid fa-book"></i>
+                <span id="specBookLoadedName">Spec book loaded</span>
+            </span>
             
             <button onclick="printSubmittalLog()" 
                     class="flex items-center gap-2 px-4 py-2 bg-zinc-800 hover:bg-zinc-700 border border-zinc-700 rounded-lg text-sm font-medium transition-colors">
@@ -224,6 +228,11 @@ if (window.pdfjsLib) {
                 <div id="modalStatusBadge" class="px-3 py-1 rounded-full text-xs font-semibold"></div>
             </div>
             <div class="flex items-center gap-2">
+                <button id="viewInSpecBookBtn" type="button" onclick="viewSubmittalInSpecBook()"
+                        class="hidden px-4 py-2 bg-sky-700 hover:bg-sky-600 text-white rounded-lg text-sm font-semibold flex items-center gap-2"
+                        title="Open the uploaded specifications book at this section/paragraph">
+                    <i class="fa-solid fa-book-open"></i> View in Spec Book
+                </button>
                 <button onclick="saveSubmittalFromModal()" class="px-4 py-2 bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg text-sm font-semibold flex items-center gap-2">
                     <i class="fa-solid fa-save"></i> Save Changes
                 </button>
@@ -421,6 +430,12 @@ let submittals = [];
 let specSections = [];
 let parsedSpecBookEntries = [];
 let selectedSpecBookFile = null;
+let specBookArchive = null; // { filename, uploadedAt, pageCount, sectionPageMap, blobUrl }
+
+const SPEC_BOOK_DB_NAME = 'casepm_spec_books';
+const SPEC_BOOK_STORE = 'books';
+const SPEC_BOOK_ID = 'current';
+const SPEC_BOOK_META_KEY = 'specBookMeta_gear_fixed';
 
 const SUBMITTAL_TYPE_KEYWORDS = [
     'Product Data', 'Shop Drawings', 'Samples', 'Design Data', "Manufacturer's Instructions",
@@ -576,6 +591,15 @@ function openDetailModal(id, isNew = false, newData = null) {
     if (document.getElementById('modalReferredTo')) {
         document.getElementById('modalReferredTo').value = currentModalItem.referredTo || '';
     }
+
+    if (!currentModalItem.specBookPage && specBookArchive && currentModalItem.specSection) {
+        currentModalItem.specBookPage = resolveSpecBookPageForSubmittal(currentModalItem);
+    }
+    if (!currentModalItem.specBookFilename && specBookArchive) {
+        currentModalItem.specBookFilename = specBookArchive.filename;
+    }
+
+    updateViewInSpecBookButton();
     
     // Show modal
     document.getElementById('detailModal').classList.remove('hidden');
@@ -913,15 +937,25 @@ async function processSpecBookFile(file) {
         const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
         const pageCount = pdf.numPages;
         let fullText = '';
+        const pageTexts = [];
 
         for (let i = 1; i <= pageCount; i++) {
             const page = await pdf.getPage(i);
-            fullText += await extractPdfPageTextFromPage(page) + '\n';
+            const text = await extractPdfPageTextFromPage(page);
+            pageTexts.push({ page: i, text });
+            fullText += text + '\n';
             setSpecBookProgress(5 + (i / pageCount) * 70, `Reading page ${i} of ${pageCount}...`);
         }
 
         setSpecBookProgress(80, 'Extracting submittal requirements...');
+        const sectionPageMap = buildSectionPageMap(pageTexts);
         parsedSpecBookEntries = parseSpecBookText(fullText);
+        enrichParsedEntriesWithSpecBookPages(parsedSpecBookEntries, pageTexts, sectionPageMap);
+
+        setSpecBookProgress(90, 'Saving specifications book...');
+        await saveSpecBookArchive(file, { pageCount, sectionPageMap });
+        updateSpecBookLoadedBadge();
+
         setSpecBookProgress(100, `Found ${parsedSpecBookEntries.length} submittal item(s)`);
 
         const preview = document.getElementById('specBookPreview');
@@ -939,7 +973,7 @@ async function processSpecBookFile(file) {
             ).join('');
             preview.innerHTML = `
                 <div class="text-emerald-400 font-medium mb-2">${parsedSpecBookEntries.length} submittal items ready to import</div>
-                <div class="text-xs text-zinc-400 mb-2">Sections found:</div>
+                <div class="text-xs text-zinc-400 mb-2">Across ${Object.keys(grouped).length} specification section(s):</div>
                 <div>${sectionList}${Object.keys(grouped).length > 12 ? '<span class="text-xs text-zinc-500">…and more</span>' : ''}</div>
             `;
             document.getElementById('specBookImportBtn').disabled = false;
@@ -1087,17 +1121,10 @@ function findAllSpecSections(text) {
 
   sections.sort((a, b) => a.index - b.index);
 
-  // Deduplicate: keep first title per section number unless much later (repeated header)
+  // Keep earliest occurrence of each section number (ignore repeated headers/TOC duplicates)
   const byNumber = new Map();
   sections.forEach(s => {
-    const prev = byNumber.get(s.number);
-    if (!prev) {
-      byNumber.set(s.number, s);
-      return;
-    }
-    if (s.index - prev.index > 500) {
-      byNumber.set(s.number + '@' + s.index, s);
-    }
+    if (!byNumber.has(s.number)) byNumber.set(s.number, s);
   });
 
   return Array.from(byNumber.values()).sort((a, b) => a.index - b.index);
@@ -1411,7 +1438,9 @@ function importParsedSpecBook() {
                 user: 'System'
             }],
             source: 'spec-book-import',
-            importedAt: today
+            importedAt: today,
+            specBookPage: parsed.specBookPage || null,
+            specBookFilename: specBookArchive ? specBookArchive.filename : (selectedSpecBookFile ? selectedSpecBookFile.name : null)
         };
         item.number = generateNextNumber(item.specSection);
         submittals.push(item);
@@ -1450,9 +1479,284 @@ function printSubmittalLog() {
     window.print(); // Simple version that triggers native print
 }
 
+// ==================== SPEC BOOK STORAGE & VIEWER ====================
+
+function openSpecBookDb() {
+    return new Promise((resolve, reject) => {
+        const req = indexedDB.open(SPEC_BOOK_DB_NAME, 1);
+        req.onupgradeneeded = () => {
+            if (!req.result.objectStoreNames.contains(SPEC_BOOK_STORE)) {
+                req.result.createObjectStore(SPEC_BOOK_STORE);
+            }
+        };
+        req.onsuccess = () => resolve(req.result);
+        req.onerror = () => reject(req.error);
+    });
+}
+
+function revokeSpecBookBlobUrl() {
+    if (specBookArchive && specBookArchive.blobUrl) {
+        URL.revokeObjectURL(specBookArchive.blobUrl);
+    }
+}
+
+async function saveSpecBookArchive(file, meta) {
+    const arrayBuffer = await file.arrayBuffer();
+    const db = await openSpecBookDb();
+    const record = {
+        id: SPEC_BOOK_ID,
+        filename: file.name,
+        uploadedAt: new Date().toISOString(),
+        pageCount: meta.pageCount,
+        sectionPageMap: meta.sectionPageMap || {},
+        data: arrayBuffer
+    };
+    await new Promise((resolve, reject) => {
+        const tx = db.transaction(SPEC_BOOK_STORE, 'readwrite');
+        tx.objectStore(SPEC_BOOK_STORE).put(record);
+        tx.oncomplete = () => resolve();
+        tx.onerror = () => reject(tx.error);
+    });
+
+    localStorage.setItem(SPEC_BOOK_META_KEY, JSON.stringify({
+        filename: record.filename,
+        uploadedAt: record.uploadedAt,
+        pageCount: record.pageCount,
+        sectionPageMap: record.sectionPageMap
+    }));
+
+    revokeSpecBookBlobUrl();
+    const blob = new Blob([arrayBuffer], { type: 'application/pdf' });
+    specBookArchive = {
+        filename: record.filename,
+        uploadedAt: record.uploadedAt,
+        pageCount: record.pageCount,
+        sectionPageMap: record.sectionPageMap,
+        blobUrl: URL.createObjectURL(blob)
+    };
+}
+
+async function loadSpecBookArchive() {
+    try {
+        const metaRaw = localStorage.getItem(SPEC_BOOK_META_KEY);
+        if (!metaRaw) {
+            specBookArchive = null;
+            return null;
+        }
+        const meta = JSON.parse(metaRaw);
+        const db = await openSpecBookDb();
+        const record = await new Promise((resolve, reject) => {
+            const tx = db.transaction(SPEC_BOOK_STORE, 'readonly');
+            const req = tx.objectStore(SPEC_BOOK_STORE).get(SPEC_BOOK_ID);
+            req.onsuccess = () => resolve(req.result || null);
+            req.onerror = () => reject(req.error);
+        });
+        if (!record || !record.data) {
+            specBookArchive = null;
+            return null;
+        }
+        revokeSpecBookBlobUrl();
+        const blob = new Blob([record.data], { type: 'application/pdf' });
+        specBookArchive = {
+            filename: record.filename || meta.filename,
+            uploadedAt: record.uploadedAt || meta.uploadedAt,
+            pageCount: record.pageCount || meta.pageCount,
+            sectionPageMap: record.sectionPageMap || meta.sectionPageMap || {},
+            blobUrl: URL.createObjectURL(blob)
+        };
+        return specBookArchive;
+    } catch (err) {
+        console.warn('Could not load spec book archive:', err);
+        specBookArchive = null;
+        return null;
+    }
+}
+
+function updateSpecBookLoadedBadge() {
+    const badge = document.getElementById('specBookLoadedBadge');
+    const nameEl = document.getElementById('specBookLoadedName');
+    if (!badge) return;
+    if (specBookArchive && specBookArchive.filename) {
+        badge.classList.remove('hidden');
+        if (nameEl) nameEl.textContent = specBookArchive.filename;
+    } else {
+        badge.classList.add('hidden');
+    }
+}
+
+function buildSectionPageMap(pageTexts) {
+    const map = {};
+    const patterns = [
+        /(?:SECTION\s+)?(\d{2}\s+\d{2}\s+\d{2})/gi,
+        /\b(\d{6})\b/g
+    ];
+    pageTexts.forEach(({ page, text }) => {
+        patterns.forEach(re => {
+            let m;
+            while ((m = re.exec(text)) !== null) {
+                const num = normalizeSpecSectionNumber(m[1]);
+                if (num && !map[num]) map[num] = page;
+            }
+        });
+    });
+    return map;
+}
+
+function enrichParsedEntriesWithSpecBookPages(entries, pageTexts, sectionPageMap) {
+    entries.forEach(entry => {
+        entry.specBookPage = findBestSpecBookPageForEntry(entry, pageTexts, sectionPageMap);
+    });
+}
+
+function findBestSpecBookPageForEntry(entry, pageTexts, sectionPageMap) {
+    const sec = normalizeSpecSectionNumber(entry.specSection);
+    const startPage = sectionPageMap[sec] || 1;
+    const para = String(entry.paragraph || '');
+    const article = para.match(/\d+\.\d+/)?.[0];
+    const letter = para.match(/\b([A-Z])\b/)?.[1];
+    const typeNeedle = (entry.type || '').toLowerCase().slice(0, 16);
+
+    let bestSubmittalPage = null;
+    for (const { page, text } of pageTexts) {
+        if (page < startPage || page > startPage + 20) continue;
+        const norm = text.replace(/\s+/g, ' ');
+        if (!/SUBMITTAL/i.test(norm)) continue;
+        if (article && norm.includes(article)) {
+            if (letter && new RegExp(`\\b${letter}\\.\\s*`, 'i').test(norm)) return page;
+            bestSubmittalPage = page;
+        }
+        if (typeNeedle && norm.toLowerCase().includes(typeNeedle)) return page;
+        if (!bestSubmittalPage) bestSubmittalPage = page;
+    }
+    return bestSubmittalPage || startPage;
+}
+
+function resolveSpecBookPageForSubmittal(item) {
+    if (!item) return 1;
+    if (item.specBookPage) return Number(item.specBookPage) || 1;
+    const map = (specBookArchive && specBookArchive.sectionPageMap) || {};
+    const sec = normalizeSpecSectionNumber(item.specSection);
+    return map[sec] || 1;
+}
+
+function updateViewInSpecBookButton() {
+    const btn = document.getElementById('viewInSpecBookBtn');
+    if (!btn) return;
+    const canView = !!(specBookArchive && specBookArchive.blobUrl && currentModalItem && currentModalItem.specSection);
+    btn.classList.toggle('hidden', !canView);
+    if (canView) {
+        const page = resolveSpecBookPageForSubmittal(currentModalItem);
+        const para = currentModalItem.paragraph ? ` • ¶ ${currentModalItem.paragraph}` : '';
+        btn.title = `Open specifications book at Section ${currentModalItem.specSection}${para} (page ${page})`;
+    }
+}
+
+function viewSubmittalInSpecBook() {
+    if (!currentModalItem) return;
+    if (!specBookArchive || !specBookArchive.blobUrl) {
+        alert('No specifications book on file. Use Upload Specs Book (PDF) to add one.');
+        return;
+    }
+    const page = resolveSpecBookPageForSubmittal(currentModalItem);
+    const para = currentModalItem.paragraph ? `Paragraph ${currentModalItem.paragraph}` : 'Submittals article';
+    openSpecBookViewer({
+        page,
+        title: `Specifications — Section ${currentModalItem.specSection}`,
+        subtitle: `${currentModalItem.sectionName || ''} • ${para} • ${currentModalItem.type || ''}`.replace(/^ • | • $/g, ''),
+        specSection: currentModalItem.specSection,
+        paragraph: currentModalItem.paragraph
+    });
+}
+
+function closeSpecBookViewer(trigger) {
+    const modal = trigger?.closest?.('dialog') || document.querySelector('.submittal-spec-viewer');
+    if (modal) {
+        modal.close();
+        modal.remove();
+    }
+}
+
+function openSpecBookViewer({ page, title, subtitle, specSection, paragraph }) {
+    if (!specBookArchive?.blobUrl) {
+        alert('Specifications book file is not available.');
+        return;
+    }
+    document.querySelectorAll('.submittal-spec-viewer').forEach(el => {
+        el.close();
+        el.remove();
+    });
+
+    const pageNum = Math.max(1, Math.min(Number(page) || 1, specBookArchive.pageCount || 9999));
+    const pdfSrc = `${specBookArchive.blobUrl}#page=${pageNum}&view=FitH`;
+
+    const modal = document.createElement('dialog');
+    modal.className = 'submittal-spec-viewer bg-zinc-900 border border-zinc-700 rounded-xl p-0 w-full max-w-[min(1100px,95vw)] shadow-2xl z-[99999]';
+    modal.style.maxHeight = '90vh';
+    modal.style.margin = 'auto';
+    modal.style.position = 'fixed';
+    modal.style.top = '50%';
+    modal.style.left = '50%';
+    modal.style.transform = 'translate(-50%, -50%)';
+
+    modal.innerHTML = `
+        <div class="px-6 py-4 border-b border-zinc-700 bg-zinc-950 flex items-center justify-between gap-4">
+            <div class="min-w-0">
+                <div class="font-semibold text-lg text-white truncate">${title || 'Specifications Book'}</div>
+                <div class="text-sm text-zinc-400 truncate">${subtitle || ''}</div>
+                <div class="text-xs text-sky-400 mt-0.5 font-mono">Section ${specSection || '—'}${paragraph ? ` • ¶ ${paragraph}` : ''} — Page ${pageNum} of ${specBookArchive.pageCount || '?'}</div>
+            </div>
+            <div class="flex items-center gap-2 flex-shrink-0">
+                <button type="button" onclick="jumpSpecBookPage(${Math.max(1, pageNum - 1)})" class="px-3 py-1.5 bg-zinc-700 hover:bg-zinc-600 rounded text-xs" ${pageNum <= 1 ? 'disabled' : ''}>Prev</button>
+                <button type="button" onclick="jumpSpecBookPage(${pageNum + 1})" class="px-3 py-1.5 bg-zinc-700 hover:bg-zinc-600 rounded text-xs">Next</button>
+            </div>
+        </div>
+        <div class="p-4 bg-zinc-950 overflow-auto" style="max-height: calc(90vh - 130px);">
+            <embed id="specBookPdfEmbed" src="${pdfSrc}" type="application/pdf" class="w-full rounded-lg" style="height: 70vh; min-height: 480px;" />
+        </div>
+        <div class="px-6 py-3 border-t border-zinc-700 flex justify-between items-center bg-zinc-900 text-sm">
+            <span class="text-zinc-500 text-xs truncate max-w-[50%]">${specBookArchive.filename || 'Specifications.pdf'}</span>
+            <div class="flex items-center gap-2">
+                <button type="button" onclick="printSpecBookViewer()" class="px-4 py-2 bg-emerald-600 hover:bg-emerald-500 rounded-lg text-sm font-medium flex items-center gap-2">
+                    <i class="fa-solid fa-print"></i> Print
+                </button>
+                <button type="button" onclick="closeSpecBookViewer(this)" class="px-4 py-2 bg-zinc-700 hover:bg-zinc-600 rounded-lg text-sm">Close</button>
+            </div>
+        </div>
+    `;
+
+    modal._specBookContext = { specSection, paragraph, title, subtitle };
+    modal.addEventListener('close', () => modal.remove());
+    modal.addEventListener('cancel', e => { e.preventDefault(); closeSpecBookViewer(modal); });
+    document.body.appendChild(modal);
+    modal.showModal();
+}
+
+function jumpSpecBookPage(page) {
+    const modal = document.querySelector('.submittal-spec-viewer');
+    if (!modal || !specBookArchive) return;
+    const ctx = modal._specBookContext || {};
+    openSpecBookViewer({
+        page,
+        title: ctx.title,
+        subtitle: ctx.subtitle,
+        specSection: ctx.specSection,
+        paragraph: ctx.paragraph
+    });
+}
+
+function printSpecBookViewer() {
+    const embed = document.getElementById('specBookPdfEmbed');
+    if (embed && embed.contentWindow) {
+        try { embed.contentWindow.print(); return; } catch (e) { /* fall through */ }
+    }
+    window.print();
+}
+
 // Initialize
-function initialize() {
+async function initialize() {
     loadData();
+    await loadSpecBookArchive();
+    updateSpecBookLoadedBadge();
     renderSubmittalsTable();
     updateMetrics();
     console.log('%c[Submittals] Initialized with Spec Book PDF import.', 'color:#22c55e');
