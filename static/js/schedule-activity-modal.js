@@ -80,6 +80,7 @@
         setVal('sam_finish', t.end_date ? gantt.templates.format_date(t.end_date) : '');
         const pct = Math.round((t.progress || 0) <= 1 ? (t.progress || 0) * 100 : (t.progress || 0));
         setVal('sam_progress', pct);
+        setVal('sam_percent_complete_type', t.percent_complete_type || 'physical');
         setVal('sam_predecessors', predString(taskId));
         setVal('sam_successors', succTemplate(taskId));
         setVal('sam_resource', t.resource || '');
@@ -103,6 +104,22 @@
         setVal('sam_bar_color', t.bar_color || '#3b82f6');
         setVal('sam_free_float', t.free_float != null ? t.free_float : (t.$free != null ? t.$free : ''));
         setVal('sam_total_float', t.total_float != null ? t.total_float : (t.$slack != null ? t.$slack : ''));
+        setVal('sam_early_start', t.early_start || '');
+        setVal('sam_early_finish', t.early_finish || '');
+        setVal('sam_late_start', t.late_start || '');
+        setVal('sam_late_finish', t.late_finish || '');
+        setVal('sam_baseline_start', t.baseline_start || '');
+        setVal('sam_baseline_finish', t.baseline_finish || '');
+        setVal('sam_start_variance', t.start_variance != null ? t.start_variance : '');
+        setVal('sam_finish_variance', t.finish_variance != null ? t.finish_variance : '');
+        setVal('sam_bcws', t.bcws != null ? t.bcws : '');
+        setVal('sam_bcwp', t.bcwp != null ? t.bcwp : '');
+        setVal('sam_acwp', t.acwp != null ? t.acwp : '');
+        setVal('sam_actual_cost', t.actual_cost || '');
+        setVal('sam_cpi', t.cpi != null ? t.cpi : '');
+        setVal('sam_spi', t.spi != null ? t.spi : '');
+        setVal('sam_cost_variance', t.cost_variance != null ? t.cost_variance : '');
+        setVal('sam_schedule_variance', t.schedule_variance != null ? t.schedule_variance : '');
         document.getElementById('sam_modal_title').textContent = t.text || 'Activity Detail';
         document.getElementById('sam_wbs_badge').textContent = wbsFor(t);
     }
@@ -170,10 +187,12 @@
         const finish = val('sam_finish');
         if (finish) t.end_date = toModalDate(finish);
         t.progress = Math.min(1, parseInt(val('sam_progress'), 10) / 100 || 0);
+        t.percent_complete_type = val('sam_percent_complete_type') || 'physical';
         t.resource = val('sam_resource');
         t.owner = val('sam_owner');
         t.work_hours = val('sam_work_hours');
         t.cost = val('sam_cost');
+        t.actual_cost = val('sam_actual_cost');
         t.fixed_cost = val('sam_fixed_cost');
         t.constraint_type = val('sam_constraint_type');
         t.constraint_date = val('sam_constraint_date') || null;
@@ -195,7 +214,7 @@
         } else {
             applyPredecessorString(currentTaskId, val('sam_predecessors'));
         }
-        if (window.ScheduleApp && ScheduleApp.runSchedule) ScheduleApp.runSchedule();
+        if (window.ScheduleApp && ScheduleApp.runSchedule) ScheduleApp.runSchedule({ skipScroll: true });
         else gantt.render();
         if (window.CasePMActivityLog) {
             CasePMActivityLog.log('Updated activity', t.text, 'schedule');

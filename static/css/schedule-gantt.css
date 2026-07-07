@@ -476,3 +476,25 @@ body:has(.schedule-page-root) #scheduleFieldPickerModal {
     body.printing-lookahead #ganttViewPanel { display: none !important; }
     body.printing-lookahead #lookaheadViewPanel { display: block !important; }
 }
+
+/* Data date marker on Gantt timeline */
+.schedule-data-date-marker,
+.gantt_marker.schedule-data-date-marker {
+    background-color: rgba(56, 189, 248, 0.85) !important;
+    width: 2px !important;
+}
+.gantt_marker_content.schedule-data-date-marker,
+.schedule-data-date-marker .gantt_marker_content {
+    background: #0ea5e9;
+    color: #fff;
+    font-size: 10px;
+    padding: 2px 6px;
+    border-radius: 3px;
+    white-space: nowrap;
+}
+
+.schedule-toolbar-btn[disabled] {
+    opacity: 0.35;
+    pointer-events: none;
+    cursor: not-allowed;
+}
