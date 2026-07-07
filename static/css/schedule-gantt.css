@@ -1,0 +1,170 @@
+/* Case PM Schedule — dark theme overrides for dhtmlx-gantt */
+
+#gantt_here {
+    width: 100%;
+    height: calc(100dvh - 280px);
+    min-height: 480px;
+}
+
+.gantt_container,
+.gantt_layout_cell {
+    background-color: #18181b !important;
+    color: #e4e4e7 !important;
+}
+
+.gantt_grid,
+.gantt_grid_scale,
+.gantt_task_scale {
+    background-color: #09090b !important;
+    border-color: #3f3f46 !important;
+    color: #a1a1aa !important;
+}
+
+.gantt_grid_data .gantt_row,
+.gantt_task_row {
+    background-color: #18181b !important;
+    border-color: #27272a !important;
+}
+
+.gantt_grid_data .gantt_row.odd,
+.gantt_task_row.odd {
+    background-color: #1c1c1f !important;
+}
+
+.gantt_grid_data .gantt_row.gantt_selected,
+.gantt_grid_data .gantt_row:hover,
+.gantt_task_row.gantt_selected {
+    background-color: #27272a !important;
+}
+
+.gantt_cell,
+.gantt_grid_head_cell {
+    border-color: #3f3f46 !important;
+    color: #e4e4e7 !important;
+}
+
+.gantt_task_line {
+    background-color: #059669;
+    border-color: #047857;
+}
+
+.gantt_task_line.cpm_critical {
+    background-color: #dc2626 !important;
+    border-color: #b91c1c !important;
+}
+
+.gantt_task_line.cpm_in_progress {
+    background-color: #d97706 !important;
+    border-color: #b45309 !important;
+}
+
+.gantt_task_line.cpm_complete {
+    background-color: #52525b !important;
+    border-color: #3f3f46 !important;
+    opacity: 0.7;
+}
+
+.gantt_task_line.gantt_milestone,
+.gantt_task_line.cpm_milestone {
+    background-color: #38bdf8 !important;
+    border-color: #0ea5e9 !important;
+}
+
+.gantt_task_progress {
+    background-color: rgba(0, 0, 0, 0.25);
+}
+
+.gantt_task_link .gantt_line_wrapper div {
+    background-color: #71717a !important;
+}
+
+.gantt_link_arrow_right {
+    border-left-color: #71717a !important;
+}
+
+.gantt_link_control div {
+    background-color: #10b981 !important;
+}
+
+.gantt_tree_icon.gantt_open,
+.gantt_tree_icon.gantt_close {
+    filter: invert(0.7);
+}
+
+.gantt_layout_content {
+    border-color: #3f3f46 !important;
+}
+
+.gantt_cal_light,
+.gantt_popup,
+.gantt_tooltip {
+    background-color: #18181b !important;
+    color: #e4e4e7 !important;
+    border: 1px solid #3f3f46 !important;
+}
+
+.gantt_cal_light input,
+.gantt_cal_light select,
+.gantt_cal_light textarea {
+    background-color: #27272a !important;
+    color: #e4e4e7 !important;
+    border-color: #3f3f46 !important;
+}
+
+.gantt_btn_set div {
+    background-color: #27272a !important;
+    color: #e4e4e7 !important;
+}
+
+.schedule-toolbar-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.35rem;
+    padding: 0.4rem 0.65rem;
+    font-size: 0.75rem;
+    border-radius: 0.65rem;
+    background: #27272a;
+    border: 1px solid #3f3f46;
+    color: #e4e4e7;
+    transition: background 0.15s;
+    white-space: nowrap;
+}
+
+.schedule-toolbar-btn:hover {
+    background: #3f3f46;
+}
+
+.schedule-toolbar-btn.active-tool {
+    background: #065f46;
+    border-color: #10b981;
+    color: #fff;
+}
+
+.schedule-view-tab.active-view {
+    background: #27272a;
+    color: #fff;
+}
+
+@media print {
+    body * { visibility: hidden; }
+    #ganttViewPanel, #ganttViewPanel *,
+    #lookaheadViewPanel.printing, #lookaheadViewPanel.printing * {
+        visibility: visible;
+    }
+    #ganttViewPanel, #lookaheadViewPanel.printing {
+        position: absolute;
+        left: 0;
+        top: 0;
+        width: 100%;
+    }
+    .no-print { display: none !important; }
+    #gantt_here { height: auto !important; min-height: 0 !important; }
+}
+
+body.printing-lookahead #lookaheadViewPanel {
+    display: block !important;
+}
+
+body.printing-lookahead .no-print {
+    display: none !important;
+}
