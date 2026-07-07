@@ -3,6 +3,12 @@
 {% block title %}Submittals{% endblock %}
 
 {% block content %}
+<script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+<script>
+if (window.pdfjsLib) {
+    pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+}
+</script>
 <div class="content-wrapper py-6 px-6">
     <!-- Header -->
     <div class="flex items-center justify-between mb-6">
@@ -150,6 +156,65 @@
     </div>
 </div>
 
+<!-- Upload Spec Book Modal -->
+<div id="uploadSpecBookModal" class="hidden fixed inset-0 bg-black/70 flex items-center justify-center z-[60] p-4">
+    <div class="bg-zinc-900 border border-zinc-700 rounded-xl w-full max-w-2xl flex flex-col">
+        <div class="px-6 py-4 border-b border-zinc-700 flex items-center justify-between">
+            <div>
+                <h3 class="text-xl font-semibold text-white">Upload Specifications Book (PDF)</h3>
+                <p class="text-sm text-zinc-400 mt-0.5">Extract CSI sections and submittal requirements into your log</p>
+            </div>
+            <button onclick="closeUploadSpecBookModal()" class="text-zinc-400 hover:text-white"><i class="fa-solid fa-times text-xl"></i></button>
+        </div>
+        <div class="p-6 space-y-4">
+            <div id="specBookDropZone"
+                 class="border-2 border-dashed border-zinc-600 hover:border-emerald-500 rounded-xl p-8 text-center cursor-pointer transition-colors bg-zinc-800/40"
+                 onclick="document.getElementById('specBookFileInput').click()">
+                <i class="fa-solid fa-file-pdf text-4xl text-red-400 mb-3"></i>
+                <div class="text-white font-medium">Drop your Specifications PDF here</div>
+                <div class="text-sm text-zinc-400 mt-1">or click to browse — PDF only</div>
+                <input type="file" id="specBookFileInput" accept=".pdf,application/pdf" class="hidden" onchange="handleSpecBookFileSelected(event)">
+            </div>
+            <div id="specBookFileName" class="hidden text-sm text-emerald-400 flex items-center gap-2">
+                <i class="fa-solid fa-check-circle"></i>
+                <span id="specBookFileNameText"></span>
+            </div>
+            <div id="specBookProgress" class="hidden">
+                <div class="flex items-center justify-between text-xs text-zinc-400 mb-1">
+                    <span id="specBookProgressLabel">Reading PDF...</span>
+                    <span id="specBookProgressPct">0%</span>
+                </div>
+                <div class="h-2 bg-zinc-800 rounded-full overflow-hidden">
+                    <div id="specBookProgressBar" class="h-full bg-emerald-500 transition-all duration-200" style="width:0%"></div>
+                </div>
+            </div>
+            <div id="specBookPreview" class="hidden bg-zinc-800 border border-zinc-700 rounded-lg p-4 max-h-48 overflow-auto text-sm text-zinc-300"></div>
+            <div class="flex items-center gap-3 text-sm">
+                <label class="flex items-center gap-2 cursor-pointer">
+                    <input type="radio" name="specBookImportMode" value="append" checked class="accent-emerald-500">
+                    <span>Add to existing log</span>
+                </label>
+                <label class="flex items-center gap-2 cursor-pointer">
+                    <input type="radio" name="specBookImportMode" value="replace" class="accent-emerald-500">
+                    <span>Replace existing log</span>
+                </label>
+            </div>
+            <p class="text-xs text-zinc-500 leading-relaxed">
+                The parser scans for CSI MasterFormat sections (e.g. <span class="font-mono text-zinc-400">03 30 00</span>) and
+                <strong class="text-zinc-400">SUBMITTALS</strong> articles (Product Data, Shop Drawings, Samples, etc.).
+                Double-click any row after import to complete dates, contacts, and status.
+            </p>
+        </div>
+        <div class="px-6 py-4 border-t border-zinc-700 flex justify-end gap-3">
+            <button onclick="closeUploadSpecBookModal()" class="px-4 py-2 bg-zinc-700 hover:bg-zinc-600 rounded-lg text-sm">Cancel</button>
+            <button id="specBookImportBtn" onclick="importParsedSpecBook()" disabled
+                    class="px-5 py-2 bg-emerald-600 hover:bg-emerald-500 disabled:opacity-40 disabled:cursor-not-allowed text-white rounded-lg text-sm font-semibold flex items-center gap-2">
+                <i class="fa-solid fa-file-import"></i> Import to Submittal Log
+            </button>
+        </div>
+    </div>
+</div>
+
 <!-- Detail Modal -->
 <div id="detailModal" class="hidden fixed inset-0 bg-black/70 flex items-center justify-center z-50 p-4">
     <div class="bg-zinc-900 border border-zinc-700 rounded-xl w-full max-w-[1100px] max-h-[92vh] flex flex-col">
@@ -202,6 +267,10 @@
                         <div>
                             <label class="block text-xs uppercase tracking-wider text-zinc-500 mb-1.5">Subject / Description</label>
                             <input type="text" id="modalSubject" class="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-sm">
+                        </div>
+                        <div>
+                            <label class="block text-xs uppercase tracking-wider text-zinc-500 mb-1.5">Submittal Type</label>
+                            <input type="text" id="modalType" placeholder="e.g. Product Data, Shop Drawings" class="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-sm">
                         </div>
                     </div>
                     
@@ -350,6 +419,16 @@
 
 let submittals = [];
 let specSections = [];
+let parsedSpecBookEntries = [];
+let selectedSpecBookFile = null;
+
+const SUBMITTAL_TYPE_KEYWORDS = [
+    'Product Data', 'Shop Drawings', 'Samples', 'Design Data', "Manufacturer's Instructions",
+    'Test Reports', 'Certificates', 'Qualification Data', 'Field Quality Control',
+    'Quality Assurance', 'Maintenance Data', 'Operation and Maintenance Data',
+    'Closeout Submittals', 'Record Documents', 'Warranties', 'LEED Submittals',
+    'Mockups', 'Source Quality Control', 'Preconstruction Documents', 'Reports'
+];
 
 // Load data
 function loadData() {
@@ -383,11 +462,34 @@ function saveData() {
 // Update metrics
 function updateMetrics() {
     document.getElementById('metricTotal').textContent = submittals.length;
-    // Add other metrics as needed
+    document.getElementById('metricPending').textContent = submittals.filter(s =>
+        ['Submitted to Architect', 'Returned from Subcontractor', 'Sent to Subcontractor', 'Draft'].includes(s.status)
+    ).length;
+    document.getElementById('metricNoExceptions').textContent = submittals.filter(s => s.status === 'No Exceptions Taken').length;
+    document.getElementById('metricRevise').textContent = submittals.filter(s => s.status === 'Revise & Resubmit').length;
+    document.getElementById('metricRejected').textContent = submittals.filter(s => s.status === 'Rejected').length;
+    document.getElementById('metricClosed').textContent = submittals.filter(s => s.status === 'Closed').length;
+}
+
+function getFilteredSubmittals() {
+    const search = (document.getElementById('searchInput')?.value || '').toLowerCase().trim();
+    const status = document.getElementById('statusFilter')?.value || '';
+    const division = document.getElementById('divisionFilter')?.value || '';
+    return submittals.filter(s => {
+        const hay = [
+            s.number, s.subject, s.specSection, s.sectionName, s.paragraph, s.type, s.receivedFrom, s.referredTo
+        ].filter(Boolean).join(' ').toLowerCase();
+        const matchesSearch = !search || hay.includes(search);
+        const matchesStatus = !status || s.status === status;
+        const div = (s.specSection || '').replace(/\s/g, '').slice(0, 2);
+        const matchesDivision = !division || div === division;
+        return matchesSearch && matchesStatus && matchesDivision;
+    });
 }
 
 // Render table
-function renderSubmittalsTable() {
+function renderSubmittalsTable(list) {
+    const rows = list || getFilteredSubmittals();
     const tbody = document.getElementById('submittalsTableBody');
     const empty = document.getElementById('emptyState');
     tbody.innerHTML = '';
@@ -398,8 +500,13 @@ function renderSubmittalsTable() {
     } else {
         empty.classList.add('hidden');
     }
+
+    if (rows.length === 0) {
+        tbody.innerHTML = `<tr><td colspan="11" class="px-4 py-8 text-center text-zinc-500">No submittals match your filters.</td></tr>`;
+        return;
+    }
     
-    submittals.forEach(item => {
+    rows.forEach(item => {
         const row = document.createElement('tr');
         row.className = 'hover:bg-zinc-700/40 cursor-pointer border-b border-zinc-700';
         
@@ -407,11 +514,11 @@ function renderSubmittalsTable() {
         row.ondblclick = () => openDetailModal(item.id);
         
         row.innerHTML = `
-            <td class="px-4 py-2 font-mono text-emerald-400 font-semibold">${item.number}</td>
+            <td class="px-4 py-2 font-mono text-emerald-400 font-semibold">${item.number || '<span class="text-zinc-500 italic">Draft</span>'}</td>
             <td class="px-3 py-2 text-center font-mono">${item.rev}</td>
             <td class="px-3 py-2">${item.specSection}</td>
             <td class="px-3 py-2 text-xs text-zinc-400">${item.paragraph || '-'}</td>
-            <td class="px-4 py-2"><div class="font-medium">${item.subject}</div></td>
+            <td class="px-4 py-2"><div class="font-medium">${item.subject}</div>${item.sectionName ? `<div class="text-xs text-zinc-500 mt-0.5">${item.sectionName}</div>` : ''}</td>
             <td class="px-3 py-2 text-xs">${item.type || '-'}</td>
             <td class="px-3 py-2 text-xs">${item.dateReceived || '-'}</td>
             <td class="px-3 py-2 text-xs">${item.receivedFrom || '-'}</td>
@@ -442,6 +549,7 @@ function openDetailModal(id, isNew = false, newData = null) {
     document.getElementById('modalParagraph').value = currentModalItem.paragraph || '';
     document.getElementById('modalRev').value = currentModalItem.rev || '0';
     document.getElementById('modalSubject').value = currentModalItem.subject || '';
+    document.getElementById('modalType').value = currentModalItem.type || '';
     document.getElementById('modalDateReceived').value = currentModalItem.dateReceived || '';
     document.getElementById('modalRequiredBy').value = currentModalItem.requiredBy || '';
     document.getElementById('modalStatus').value = currentModalItem.status || 'Draft';
@@ -457,6 +565,12 @@ function openDetailModal(id, isNew = false, newData = null) {
     
     if (currentModalItem.specSection) {
         document.getElementById('modalSpecSection').value = currentModalItem.specSection;
+    }
+    if (document.getElementById('modalReceivedFrom')) {
+        document.getElementById('modalReceivedFrom').value = currentModalItem.receivedFrom || '';
+    }
+    if (document.getElementById('modalReferredTo')) {
+        document.getElementById('modalReferredTo').value = currentModalItem.referredTo || '';
     }
     
     // Show modal
@@ -477,13 +591,16 @@ function saveSubmittalFromModal() {
     currentModalItem.paragraph = document.getElementById('modalParagraph').value;
     currentModalItem.rev = document.getElementById('modalRev').value || '0';
     currentModalItem.subject = document.getElementById('modalSubject').value;
+    currentModalItem.type = document.getElementById('modalType').value;
     currentModalItem.dateReceived = document.getElementById('modalDateReceived').value;
     currentModalItem.requiredBy = document.getElementById('modalRequiredBy').value;
     currentModalItem.status = document.getElementById('modalStatus').value;
     currentModalItem.costImpact = document.getElementById('modalCostImpact').value;
     currentModalItem.scheduleDays = document.getElementById('modalScheduleDays').value;
     currentModalItem.impactNotes = document.getElementById('modalImpactNotes').value;
-    
+    currentModalItem.receivedFrom = document.getElementById('modalReceivedFrom').value;
+    currentModalItem.referredTo = document.getElementById('modalReferredTo').value;
+
     if (!currentModalItem.number) {
         currentModalItem.number = generateNextNumber(currentModalItem.specSection);
     }
@@ -708,13 +825,7 @@ function applyDigitalSignature() {
 }
 
 function filterSubmittals() {
-    // Basic filter
-    const search = document.getElementById('searchInput').value.toLowerCase();
-    const filtered = submittals.filter(s => 
-        (s.number && s.number.toLowerCase().includes(search)) ||
-        (s.subject && s.subject.toLowerCase().includes(search))
-    );
-    renderSubmittalsTable(filtered);
+    renderSubmittalsTable();
 }
 
 function clearFilters() {
@@ -722,6 +833,351 @@ function clearFilters() {
     document.getElementById('statusFilter').value = '';
     document.getElementById('divisionFilter').value = '';
     renderSubmittalsTable();
+}
+
+// ==================== SPEC BOOK PDF UPLOAD & PARSING ====================
+
+function showUploadSpecBookModal() {
+    parsedSpecBookEntries = [];
+    selectedSpecBookFile = null;
+    document.getElementById('specBookFileInput').value = '';
+    document.getElementById('specBookFileName').classList.add('hidden');
+    document.getElementById('specBookProgress').classList.add('hidden');
+    document.getElementById('specBookPreview').classList.add('hidden');
+    document.getElementById('specBookImportBtn').disabled = true;
+    document.getElementById('uploadSpecBookModal').classList.remove('hidden');
+    bindSpecBookDragDrop();
+}
+
+function closeUploadSpecBookModal() {
+    document.getElementById('uploadSpecBookModal').classList.add('hidden');
+}
+
+function bindSpecBookDragDrop() {
+    const zone = document.getElementById('specBookDropZone');
+    if (!zone || zone.dataset.bound === '1') return;
+    zone.dataset.bound = '1';
+    ['dragenter', 'dragover'].forEach(evt => {
+        zone.addEventListener(evt, e => {
+            e.preventDefault();
+            zone.classList.add('border-emerald-500', 'bg-emerald-950/20');
+        });
+    });
+    ['dragleave', 'drop'].forEach(evt => {
+        zone.addEventListener(evt, e => {
+            e.preventDefault();
+            zone.classList.remove('border-emerald-500', 'bg-emerald-950/20');
+        });
+    });
+    zone.addEventListener('drop', e => {
+        const file = e.dataTransfer?.files?.[0];
+        if (file) processSpecBookFile(file);
+    });
+}
+
+function handleSpecBookFileSelected(event) {
+    const file = event.target.files?.[0];
+    if (file) processSpecBookFile(file);
+}
+
+function setSpecBookProgress(pct, label) {
+    document.getElementById('specBookProgress').classList.remove('hidden');
+    document.getElementById('specBookProgressBar').style.width = `${pct}%`;
+    document.getElementById('specBookProgressPct').textContent = `${Math.round(pct)}%`;
+    if (label) document.getElementById('specBookProgressLabel').textContent = label;
+}
+
+async function processSpecBookFile(file) {
+    if (!file.name.toLowerCase().endsWith('.pdf')) {
+        alert('Please upload a PDF specifications book.');
+        return;
+    }
+    if (!window.pdfjsLib) {
+        alert('PDF library failed to load. Please refresh the page and try again.');
+        return;
+    }
+
+    selectedSpecBookFile = file;
+    document.getElementById('specBookFileName').classList.remove('hidden');
+    document.getElementById('specBookFileNameText').textContent = file.name;
+    document.getElementById('specBookImportBtn').disabled = true;
+    parsedSpecBookEntries = [];
+
+    try {
+        setSpecBookProgress(5, 'Loading PDF...');
+        const arrayBuffer = await file.arrayBuffer();
+        const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
+        const pageCount = pdf.numPages;
+        let fullText = '';
+
+        for (let i = 1; i <= pageCount; i++) {
+            const page = await pdf.getPage(i);
+            const content = await page.getTextContent();
+            const pageText = content.items.map(item => item.str).join(' ');
+            fullText += pageText + '\n';
+            setSpecBookProgress(5 + (i / pageCount) * 70, `Reading page ${i} of ${pageCount}...`);
+        }
+
+        setSpecBookProgress(80, 'Extracting submittal requirements...');
+        parsedSpecBookEntries = parseSpecBookText(fullText);
+        setSpecBookProgress(100, `Found ${parsedSpecBookEntries.length} submittal item(s)`);
+
+        const preview = document.getElementById('specBookPreview');
+        preview.classList.remove('hidden');
+        if (parsedSpecBookEntries.length === 0) {
+            preview.innerHTML = `<div class="text-amber-400"><i class="fa-solid fa-exclamation-triangle"></i> No submittal requirements were detected. The PDF may be scanned/image-only, or use a non-standard format. Try a text-based MasterFormat spec book.</div>`;
+            document.getElementById('specBookImportBtn').disabled = true;
+        } else {
+            const grouped = {};
+            parsedSpecBookEntries.forEach(e => {
+                grouped[e.specSection] = (grouped[e.specSection] || 0) + 1;
+            });
+            const sectionList = Object.keys(grouped).slice(0, 12).map(sec =>
+                `<span class="inline-block mr-2 mb-1 px-2 py-0.5 bg-zinc-700 rounded text-xs font-mono">${sec} (${grouped[sec]})</span>`
+            ).join('');
+            preview.innerHTML = `
+                <div class="text-emerald-400 font-medium mb-2">${parsedSpecBookEntries.length} submittal items ready to import</div>
+                <div class="text-xs text-zinc-400 mb-2">Sections found:</div>
+                <div>${sectionList}${Object.keys(grouped).length > 12 ? '<span class="text-xs text-zinc-500">…and more</span>' : ''}</div>
+            `;
+            document.getElementById('specBookImportBtn').disabled = false;
+        }
+    } catch (err) {
+        console.error('Spec book PDF parse error:', err);
+        alert('Could not read the PDF: ' + (err.message || err));
+        setSpecBookProgress(0, 'Error reading PDF');
+    }
+}
+
+function normalizeSpecSectionNumber(raw) {
+    if (!raw) return '';
+    const digits = String(raw).replace(/\D/g, '');
+    if (digits.length >= 6) {
+        return `${digits.slice(0, 2)} ${digits.slice(2, 4)} ${digits.slice(4, 6)}`;
+    }
+    return String(raw).trim();
+}
+
+function cleanSectionTitle(title) {
+    return String(title || '')
+        .replace(/\s+/g, ' ')
+        .replace(/\bPART\s+\d+.*$/i, '')
+        .replace(/\bSECTION\s+INCLUDES.*$/i, '')
+        .trim()
+        .slice(0, 120);
+}
+
+function extractDivision(specSection) {
+    const digits = (specSection || '').replace(/\D/g, '');
+    return digits.length >= 2 ? digits.slice(0, 2) : '';
+}
+
+function ensureSpecSectionRegistered(specSection, sectionName) {
+    const normalized = normalizeSpecSectionNumber(specSection);
+    if (!normalized) return;
+    let found = specSections.find(s => normalizeSpecSectionNumber(s.number) === normalized);
+    if (!found) {
+        found = {
+            id: Date.now() + Math.random(),
+            division: extractDivision(normalized),
+            number: normalized,
+            title: sectionName || `Section ${normalized}`,
+            active: true
+        };
+        specSections.push(found);
+    } else if (sectionName && (!found.title || found.title.startsWith('Section '))) {
+        found.title = sectionName;
+    }
+}
+
+function parseSpecBookText(fullText) {
+    const entries = [];
+    const seen = new Set();
+    const text = fullText
+        .replace(/\r\n/g, '\n')
+        .replace(/\f/g, '\n')
+        .replace(/([a-z])([A-Z])/g, '$1 $2');
+
+    const sectionStarts = [];
+    const sectionRe = /(?:^|\n)\s*(?:SECTION\s+)?(\d{2}\s+\d{2}\s+\d{2})\s*[-–—:.\s]*\s*([A-Z][^\n]{0,100})/gi;
+    let m;
+    while ((m = sectionRe.exec(text)) !== null) {
+        const number = normalizeSpecSectionNumber(m[1]);
+        const title = cleanSectionTitle(m[2]);
+        if (!number || title.length < 3) continue;
+        if (/^(PAGE|DIVISION|TABLE OF)/i.test(title)) continue;
+        sectionStarts.push({ index: m.index, number, title });
+    }
+
+    const dedupedSections = [];
+    sectionStarts.forEach(s => {
+        if (!dedupedSections.find(d => d.number === s.number && Math.abs(d.index - s.index) < 50)) {
+            dedupedSections.push(s);
+        }
+    });
+
+    for (let i = 0; i < dedupedSections.length; i++) {
+        const start = dedupedSections[i];
+        const end = i + 1 < dedupedSections.length ? dedupedSections[i + 1].index : text.length;
+        const body = text.slice(start.index, end);
+        extractSubmittalsFromSection(body, start.number, start.title, entries, seen);
+    }
+
+    if (entries.length === 0) {
+        extractSubmittalsFromFullText(text, entries, seen);
+    }
+
+    return entries;
+}
+
+function extractSubmittalsFromSection(body, specSection, sectionName, entries, seen) {
+    const submittalBlockRe = /(?:^|\n)\s*(?:\d+\.\d+\s+)?SUBMITTALS?\b[^\n]*([\s\S]*?)(?=(?:\n\s*\d+\.\d+\s+[A-Z][A-Z\s]{2,})|(?:\n\s*PART\s+\d+)|(?:\n\s*SECTION\s+\d{2}\s+\d{2}\s+\d{2})|$)/i;
+    const blockMatch = body.match(submittalBlockRe);
+    const block = blockMatch ? blockMatch[1] : '';
+
+    if (block) {
+        const articleMatch = body.match(/(?:^|\n)\s*(\d+\.\d+)\s+SUBMITTALS?\b/i);
+        const article = articleMatch ? articleMatch[1] : '1.3';
+        parseSubmittalItems(block, specSection, sectionName, article, entries, seen);
+    }
+
+    if (!block || entries.filter(e => e.specSection === specSection).length === 0) {
+        const genericRe = new RegExp(
+            `SUBMITTALS?[\\s\\S]{0,800}?((?:[A-Z]\\.\\s*(?:${SUBMITTAL_TYPE_KEYWORDS.map(k => k.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('|')})[^\\n:]*:[^\\n]+)`,
+            'i'
+        );
+        const g = body.match(genericRe);
+        if (g) parseSubmittalItems(g[1] || g[0], specSection, sectionName, '1.3', entries, seen);
+    }
+}
+
+function parseSubmittalItems(block, specSection, sectionName, article, entries, seen) {
+    const typePattern = SUBMITTAL_TYPE_KEYWORDS.map(k => k.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('|');
+    const itemRe = new RegExp(
+        `(?:^|\\n)\\s*([A-Z])\\.\\s*(${typePattern})[^:\\n]*:\\s*([^\\n]+(?:\\n(?!\\s*[A-Z]\\.)[^\\n]+)*)`,
+        'gi'
+    );
+    let match;
+    let found = false;
+    while ((match = itemRe.exec(block)) !== null) {
+        found = true;
+        addParsedEntry({
+            specSection,
+            sectionName,
+            paragraph: `${article} ${match[1]}`,
+            type: match[2].trim(),
+            subject: `${match[2].trim()} — ${collapseWhitespace(match[3])}`
+        }, entries, seen);
+    }
+
+    if (!found) {
+        const looseRe = /(?:^|\n)\s*([A-Z])\.\s*([^\n:]{4,80}):\s*([^\n]+)/g;
+        while ((match = looseRe.exec(block)) !== null) {
+            const label = match[2].trim();
+            if (/^(SECTION|PART|END|NOTE|REFER)/i.test(label)) continue;
+            found = true;
+            addParsedEntry({
+                specSection,
+                sectionName,
+                paragraph: `${article} ${match[1]}`,
+                type: label.split(/\s+/).slice(0, 3).join(' '),
+                subject: `${label} — ${collapseWhitespace(match[3])}`
+            }, entries, seen);
+        }
+    }
+}
+
+function extractSubmittalsFromFullText(text, entries, seen) {
+    const typePattern = SUBMITTAL_TYPE_KEYWORDS.map(k => k.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('|');
+    const globalRe = new RegExp(
+        `(\\d{2}\\s+\\d{2}\\s+\\d{2})[\\s\\S]{0,2500}?SUBMITTALS?[\\s\\S]{0,1200}?((?:[A-Z]\\.\\s*(?:${typePattern})[^\\n:]*:[^\\n]+\\s*)+)`,
+        'gi'
+    );
+    let match;
+    while ((match = globalRe.exec(text)) !== null) {
+        const specSection = normalizeSpecSectionNumber(match[1]);
+        parseSubmittalItems(match[2], specSection, '', '1.3', entries, seen);
+    }
+}
+
+function collapseWhitespace(str) {
+    return String(str || '').replace(/\s+/g, ' ').trim().slice(0, 240);
+}
+
+function addParsedEntry(data, entries, seen) {
+    const key = `${data.specSection}|${data.paragraph}|${data.type}|${data.subject.slice(0, 60)}`;
+    if (seen.has(key)) return;
+    seen.add(key);
+    entries.push({ ...data });
+}
+
+function importParsedSpecBook() {
+    if (!parsedSpecBookEntries.length) {
+        alert('No submittal items to import. Upload and parse a specifications PDF first.');
+        return;
+    }
+
+    const mode = document.querySelector('input[name="specBookImportMode"]:checked')?.value || 'append';
+    if (mode === 'replace' && submittals.length > 0) {
+        if (!confirm(`Replace all ${submittals.length} existing submittal(s) with ${parsedSpecBookEntries.length} imported item(s)?`)) {
+            return;
+        }
+        submittals = [];
+    }
+
+    const today = new Date().toISOString().split('T')[0];
+    let imported = 0;
+
+    parsedSpecBookEntries.forEach(parsed => {
+        ensureSpecSectionRegistered(parsed.specSection, parsed.sectionName);
+
+        const duplicate = submittals.find(s =>
+            s.specSection === parsed.specSection &&
+            s.paragraph === parsed.paragraph &&
+            s.type === parsed.type
+        );
+        if (duplicate) return;
+
+        const item = {
+            id: Date.now() + Math.random(),
+            number: '',
+            rev: '0',
+            specSection: parsed.specSection,
+            sectionName: parsed.sectionName || '',
+            paragraph: parsed.paragraph || '',
+            subject: parsed.subject || parsed.type || 'Submittal Required',
+            type: parsed.type || 'Submittal',
+            dateReceived: '',
+            requiredBy: '',
+            receivedFrom: '',
+            referredTo: '',
+            status: 'Draft',
+            costImpact: '',
+            scheduleDays: '',
+            impactNotes: '',
+            history: [{
+                date: new Date().toISOString(),
+                action: `Imported from Spec Book${selectedSpecBookFile ? ': ' + selectedSpecBookFile.name : ''}`,
+                user: 'System'
+            }],
+            source: 'spec-book-import',
+            importedAt: today
+        };
+        item.number = generateNextNumber(item.specSection);
+        submittals.push(item);
+        imported++;
+    });
+
+    saveData();
+    closeUploadSpecBookModal();
+    renderSubmittalsTable();
+    updateMetrics();
+
+    if (imported === 0) {
+        alert('All detected submittal items already exist in the log (duplicates skipped).');
+    } else {
+        alert(`Imported ${imported} submittal item(s) into the log.\n\nDouble-click any row to fill in dates, contacts, and status.`);
+    }
 }
 
 function deleteSubmittal(id) {
@@ -749,7 +1205,7 @@ function initialize() {
     loadData();
     renderSubmittalsTable();
     updateMetrics();
-    console.log('%c[Submittals] Gear Fixed version initialized. Gear button should now work.', 'color:#22c55e');
+    console.log('%c[Submittals] Initialized with Spec Book PDF import.', 'color:#22c55e');
 }
 
 initialize();
