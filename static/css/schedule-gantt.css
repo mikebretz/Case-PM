@@ -45,12 +45,21 @@ body:has(.schedule-page-root) #mainContent {
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    width: 18px;
-    height: 18px;
+    width: 30px;
+    height: 30px;
+    min-width: 30px;
     cursor: pointer;
-    color: #10b981;
-    font-size: 14px;
+    color: #34d399;
+    font-size: 22px;
+    font-weight: 700;
+    line-height: 1;
     user-select: none;
+    border-radius: 4px;
+    background: rgba(16, 185, 129, 0.12);
+}
+.sched-tree-btn:hover {
+    background: rgba(16, 185, 129, 0.28);
+    color: #6ee7b7;
 }
 .sched-color-editor { width: 100%; height: 28px; padding: 0; border: none; background: transparent; }
 
@@ -69,15 +78,21 @@ body:has(.schedule-page-root) #mainContent {
 .schedule-overlay-mode #gantt_here .gantt_grid_data {
     overflow: visible !important;
 }
+.schedule-overlay-mode #gantt_here .gantt_layout_cell:nth-child(3) {
+    position: absolute !important;
+    right: 0 !important;
+    top: 0 !important;
+    bottom: 0 !important;
+}
 .schedule-chart-resizer {
     position: absolute;
     top: 0;
     bottom: 0;
-    width: 8px;
-    margin-right: -4px;
+    width: 10px;
+    margin-right: -5px;
     z-index: 25;
     cursor: col-resize;
-    background: linear-gradient(90deg, transparent, rgba(16, 185, 129, 0.45), transparent);
+    background: linear-gradient(90deg, transparent, rgba(16, 185, 129, 0.55), rgba(16, 185, 129, 0.85), rgba(16, 185, 129, 0.55), transparent);
 }
 .schedule-chart-resizer:hover {
     background: linear-gradient(90deg, transparent, rgba(16, 185, 129, 0.85), transparent);
@@ -177,6 +192,26 @@ body:has(.schedule-page-root) #mainContent {
 .gantt_grid_data .gantt_cell {
     padding-left: 6px !important;
     padding-right: 6px !important;
+    overflow: hidden !important;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    flex: 0 0 auto !important;
+}
+.gantt_grid_editor_placeholder,
+.gantt_inline_editor {
+    width: 100% !important;
+    max-width: 100% !important;
+    min-width: 0 !important;
+    box-sizing: border-box !important;
+    overflow: hidden !important;
+}
+.gantt_grid_editor_placeholder input,
+.gantt_grid_editor_placeholder select,
+.gantt_inline_editor input,
+.gantt_inline_editor select {
+    width: 100% !important;
+    max-width: 100% !important;
+    box-sizing: border-box !important;
 }
 .gantt_hor_scroll {
     overflow-x: auto !important;
@@ -260,6 +295,29 @@ body:has(.schedule-page-root) #mainContent {
 /* Print header — hidden on screen */
 .no-screen { display: none !important; }
 .schedule-print-sheet { display: none; }
+
+/* Centered modals on schedule page */
+body:has(.schedule-page-root) dialog {
+    margin: auto;
+    position: fixed;
+    inset: 0;
+    width: min(96vw, 48rem);
+    max-height: 90vh;
+    overflow: hidden;
+    color: #e4e4e7;
+}
+body:has(.schedule-page-root) dialog::backdrop {
+    background: rgba(0, 0, 0, 0.72);
+}
+body:has(.schedule-page-root) dialog.schedule-modal-dialog,
+body:has(.schedule-page-root) #scheduleActivityModal,
+body:has(.schedule-page-root) #scheduleDisplayModal,
+body:has(.schedule-page-root) #scheduleColumnManagerModal,
+body:has(.schedule-page-root) #scheduleFieldPickerModal {
+    background: #18181b;
+    border: 1px solid #3f3f46;
+    border-radius: 0.375rem;
+}
 
 /* Activity modal tabs */
 .sched-modal-tab { border-bottom: 2px solid transparent; }
