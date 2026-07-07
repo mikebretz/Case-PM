@@ -26,21 +26,57 @@
     transition: all 0.2s ease;
   }
   #payAppSummaryCards {
-    padding: 0.625rem !important;
+    padding: 0.375rem !important;
+  }
+  #payAppSummaryCards .g702-summary-grid {
+    gap: 0.375rem;
   }
   #payAppSummaryCards .summary-metric-card {
-    padding: 0.625rem 0.75rem;
+    padding: 0.3rem 0.45rem;
+    min-height: 0;
+  }
+  #payAppSummaryCards .summary-metric-card .metric-label {
+    font-size: 0.625rem;
+    line-height: 1.1;
   }
   #payAppSummaryCards .summary-metric-card .metric-value {
-    margin-top: 0.125rem;
+    margin-top: 0;
+    font-size: 0.95rem;
+    line-height: 1.15;
+  }
+  #payAppSummaryCards .summary-metric-card .metric-sub {
+    font-size: 0.5625rem;
+    line-height: 1.1;
+    margin-top: 0.0625rem;
+  }
+  #payAppSummaryCards .summary-period-card {
+    grid-column: span 2;
+  }
+  @media (min-width: 1024px) {
+    #payAppSummaryCards .summary-period-card {
+      grid-column: span 2;
+    }
+  }
+  #payAppSummaryCards .summary-period-card .period-inline-row {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: flex-end;
+    gap: 0.35rem 0.5rem;
   }
   #payAppSummaryCards .summary-period-card .period-billing-block {
-    margin-top: 0.375rem;
-    padding-top: 0.375rem;
+    margin-top: 0.25rem;
+    padding-top: 0.25rem;
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: flex-end;
+    gap: 0.25rem 0.5rem;
   }
   #payAppSummaryCards .summary-period-card select {
-    padding-top: 0.125rem;
-    padding-bottom: 0.125rem;
+    padding: 0.1rem 0.35rem;
+    font-size: 0.7rem;
+    max-width: 9rem;
   }
   .tab-button {
     padding: 7px 24px;
@@ -877,6 +913,14 @@ let mainLienWaiver = JSON.parse(localStorage.getItem('mainLienWaiver') || '{}');
         return currentPayAppPeriod ? currentPayAppPeriod.periodNumber : 1;
     }
 
+    function reloadSubPayAppStoresFromLocalStorage() {
+        subPayAppHistory = JSON.parse(localStorage.getItem('subPayAppHistory') || '{}');
+        subPendingSubmissions = JSON.parse(localStorage.getItem('subPendingSubmissions') || '{}');
+        subPayAppNumbers = JSON.parse(localStorage.getItem('subPayAppNumbers') || '{}');
+        previousSubPayAppArchive = JSON.parse(localStorage.getItem('previousSubPayAppArchive') || '[]');
+        subLienWaiverArchive = JSON.parse(localStorage.getItem('subLienWaiverArchive') || '{}');
+    }
+
     function getMostRecentPayAppHistoryEntry() {
         if (!payAppHistory || payAppHistory.length === 0) return null;
         return payAppHistory.reduce((best, entry) => {
@@ -896,18 +940,32 @@ let mainLienWaiver = JSON.parse(localStorage.getItem('mainLienWaiver') || '{}');
         return !!(latest && String(latest.id) === String(periodId));
     }
 
-    function archivedEntryMatchesMainPeriod(historyKey, entry, mainP) {
-        if (!entry) return false;
+    function resolveArchivedMainPeriod(historyKey, entry) {
+        if (!entry) return null;
         const key = String(historyKey || '');
         const tagged = entry.pushedFromMainPeriod != null
             ? Number(entry.pushedFromMainPeriod)
             : (entry.mainG702Period != null
                 ? Number(entry.mainG702Period)
                 : (entry.mainPeriod != null ? Number(entry.mainPeriod) : null));
-        if (tagged === mainP) return true;
-        if (entry.isCompliance && key === complianceHistoryKey(mainP)) return true;
+        if (tagged != null && !Number.isNaN(tagged) && tagged !== 1005) return tagged;
+        if (entry.isCompliance || tagged === 1005) {
+            const fromKey = key.match(/^1005_(\d+)$/);
+            if (fromKey) return Number(fromKey[1]);
+        }
+        return tagged != null && !Number.isNaN(tagged) ? tagged : null;
+    }
+
+    function archivedEntryMatchesMainPeriod(historyKey, entry, mainP) {
+        if (!entry) return false;
+        const target = Number(mainP);
+        if (!target || Number.isNaN(target)) return false;
+        const resolved = resolveArchivedMainPeriod(historyKey, entry);
+        if (resolved === target) return true;
+        const key = String(historyKey || '');
+        if (entry.isCompliance && key === complianceHistoryKey(target)) return true;
         const complianceKeyMatch = key.match(/^1005_(\d+)$/);
-        if (complianceKeyMatch && Number(complianceKeyMatch[1]) === mainP) return true;
+        if (complianceKeyMatch && Number(complianceKeyMatch[1]) === target) return true;
         return false;
     }
 
@@ -915,6 +973,7 @@ let mainLienWaiver = JSON.parse(localStorage.getItem('mainLienWaiver') || '{}');
         const mainP = Number(mainPeriod);
         if (!mainP || Number.isNaN(mainP)) return 0;
 
+        reloadSubPayAppStoresFromLocalStorage();
         normalizeSubPayAppCompanyKeys();
         migratePreviousArchiveIntoHistory();
 
@@ -928,7 +987,7 @@ let mainLienWaiver = JSON.parse(localStorage.getItem('mainLienWaiver') || '{}');
 
             if (!subPayAppHistory[cid]) subPayAppHistory[cid] = {};
             const existing = subPayAppHistory[cid][histKey] || {};
-            subPayAppHistory[cid][histKey] = {
+            const restored = {
                 ...existing,
                 ...entry,
                 archived: false,
@@ -936,20 +995,23 @@ let mainLienWaiver = JSON.parse(localStorage.getItem('mainLienWaiver') || '{}');
                 pushedFromMainPeriod: mainP,
                 mainG702Period: mainP
             };
+            delete restored.archiveId;
+            subPayAppHistory[cid][histKey] = restored;
             restoredKeys.add(dedup);
             restoredCount++;
             clearStaleSubPendingForCompany(cid);
         }
 
-        // Source 1: previousSubPayAppArchive — everything shown under Previous for this Main Period
-        (previousSubPayAppArchive || []).forEach(archiveEntry => {
-            if (!archiveEntry || archiveEntry.companyId == null) return;
-            const histKey = archiveEntry.historyKey || archiveEntry.periodNum;
-            if (!archivedEntryMatchesMainPeriod(histKey, archiveEntry, mainP)) return;
-            restoreEntry(String(archiveEntry.companyId), histKey, archiveEntry);
-        });
+        // Primary: canonical archived list (same source as Previous Sub Pay Apps tab)
+        collectAllArchivedSubPayApps()
+            .filter(app => archivedEntryMatchesMainPeriod(app.historyKey || app.periodNum, app, mainP))
+            .forEach(app => {
+                if (app.companyId == null) return;
+                const histKey = app.historyKey || app.periodNum;
+                restoreEntry(String(app.companyId), histKey, app);
+            });
 
-        // Source 2: subPayAppHistory rows still marked archived
+        // Secondary: any archived rows in subPayAppHistory not yet picked up
         Object.keys(subPayAppHistory || {}).forEach(cid => {
             const hist = subPayAppHistory[cid] || {};
             Object.keys(hist).forEach(key => {
@@ -962,6 +1024,14 @@ let mainLienWaiver = JSON.parse(localStorage.getItem('mainLienWaiver') || '{}');
 
         if (restoredCount > 0) {
             safeSetLocalStorage('subPayAppHistory', subPayAppHistory);
+            safeSetLocalStorage('subPendingSubmissions', subPendingSubmissions);
+            previousSubPayAppArchive = (previousSubPayAppArchive || []).filter(entry => {
+                if (!entry || entry.companyId == null) return true;
+                const histKey = entry.historyKey || entry.periodNum;
+                const dedup = `${String(entry.companyId)}_${String(histKey)}`;
+                return !restoredKeys.has(dedup);
+            });
+            safeSetLocalStorage('previousSubPayAppArchive', previousSubPayAppArchive);
             rebuildPreviousSubPayAppArchiveFromHistory();
             repairActiveTrackerLienWaivers();
             logPayAppAudit('SUB_PAY_APPS_RESTORED_TO_TRACKER_FROM_G702_REVISION', {
@@ -1325,8 +1395,11 @@ let mainLienWaiver = JSON.parse(localStorage.getItem('mainLienWaiver') || '{}');
             const key = String(entry.historyKey || entry.periodNum);
             if (!subPayAppHistory[cid]) subPayAppHistory[cid] = {};
             const existing = subPayAppHistory[cid][key];
-            if (!existing || existing.archived !== true) {
+            if (!existing) {
                 subPayAppHistory[cid][key] = { ...entry, archived: true };
+                changed = true;
+            } else if (existing.archived === true) {
+                Object.assign(existing, entry, { archived: true });
                 changed = true;
             }
         });
@@ -2272,7 +2345,7 @@ let mainLienWaiver = JSON.parse(localStorage.getItem('mainLienWaiver') || '{}');
                     <span class="font-medium">This will push Period ${periodData.periodNumber} back to the Pay Application (G702) tab as Draft so you can edit and re-submit. Related sub pay apps for this G702 period will also move back to the Sub Pay App Tracker.</span>
                 </div>
                 <div class="flex items-center gap-3 ml-auto">
-                    <button onclick="confirmRevisionPush()" 
+                    <button onclick="confirmRevisionPush(window._pendingRevisionPeriodId)" 
                             class="px-5 py-1.5 bg-amber-600 hover:bg-amber-500 text-white text-sm rounded-md font-semibold flex items-center gap-2">
                         <i class="fa-solid fa-undo"></i> <span>Yes, Push Back to G702</span>
                     </button>
@@ -2296,6 +2369,8 @@ let mainLienWaiver = JSON.parse(localStorage.getItem('mainLienWaiver') || '{}');
             showCenteredAlert("Cannot restore this period. Snapshot data is missing.", "warning");
             return;
         }
+
+        reloadSubPayAppStoresFromLocalStorage();
 
         // Restore billing lines from the historical snapshot (this is the key fix for Billed to Date)
         payAppBillingLines = JSON.parse(JSON.stringify(periodData.snapshot.billingLines || {}));
@@ -2322,7 +2397,12 @@ let mainLienWaiver = JSON.parse(localStorage.getItem('mainLienWaiver') || '{}');
         };
         localStorage.setItem('currentPayAppPeriod', JSON.stringify(currentPayAppPeriod));
 
-        const restoredSubCount = restoreSubPayAppsForG702PeriodToTracker(periodData.periodNumber);
+        const mainPeriodToRestore = Number(
+            periodData.periodNumber ||
+            periodData.snapshot?.period?.periodNumber ||
+            0
+        );
+        const restoredSubCount = restoreSubPayAppsForG702PeriodToTracker(mainPeriodToRestore);
 
         logPayAppAudit('PAYAPP_REVISION_REQUESTED_FROM_HISTORY', {
             periodNumber: periodData.periodNumber,
@@ -2342,7 +2422,7 @@ let mainLienWaiver = JSON.parse(localStorage.getItem('mainLienWaiver') || '{}');
                 wb.innerHTML = `
                     <div class="workflow-bar px-4 py-2.5 flex items-center gap-3 text-sm bg-emerald-950/40 border border-emerald-600 rounded-md">
                         <span class="text-emerald-400"><i class="fa-solid fa-check-circle"></i></span>
-                        <span class="text-emerald-300">Period ${periodData.periodNumber} restored as Draft. Billed to Date rewound to the historical snapshot.${restoredSubCount > 0 ? ` ${restoredSubCount} related sub pay app(s) for Main Period ${periodData.periodNumber} moved back to the Sub Pay App Tracker.` : ' No archived sub pay apps were found for this Main Period in Previous Sub Pay Apps.'}</span>
+                        <span class="text-emerald-300">Period ${periodData.periodNumber} restored as Draft. Billed to Date rewound to the historical snapshot.${restoredSubCount > 0 ? ` ${restoredSubCount} related sub pay app(s) for Main Period ${mainPeriodToRestore} moved back to the Sub Pay App Tracker.` : ` No archived sub pay apps were found for Main Period ${mainPeriodToRestore} in Previous Sub Pay Apps.`}</span>
                         ${restoredSubCount > 0 ? `<button onclick="switchPayAppTab('sub-pay-app-tracker')" class="ml-3 px-3 py-1 bg-sky-700 hover:bg-sky-600 text-white text-xs rounded">View Sub Pay App Tracker</button>` : ''}
                     </div>
                 `;
@@ -2530,52 +2610,50 @@ let mainLienWaiver = JSON.parse(localStorage.getItem('mainLienWaiver') || '{}');
             : '';
 
         cardsContainer.innerHTML = `
-            <div class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 xl:grid-cols-7 gap-2">
+            <div class="g702-summary-grid grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-8 gap-1.5">
                 <div class="summary-metric-card bg-zinc-800 border border-zinc-700 rounded-md">
-                    <div class="text-xs text-zinc-400">Original Contract</div>
-                    <div class="text-xl font-semibold metric-value">${formatCurrency(budgetContractAmount)}</div>
+                    <div class="metric-label text-zinc-400">Original Contract</div>
+                    <div class="font-semibold metric-value">${formatCurrency(budgetContractAmount)}</div>
                     ${mismatchWarning}
                 </div>
                 <div class="summary-metric-card bg-zinc-800 border border-zinc-700 rounded-md">
-                    <div class="text-xs text-zinc-400">Net Change Orders</div>
-                    <div class="text-xl font-semibold metric-value text-amber-400">${formatCurrency(totalCO)}</div>
+                    <div class="metric-label text-zinc-400">Net Change Orders</div>
+                    <div class="font-semibold metric-value text-amber-400">${formatCurrency(totalCO)}</div>
                 </div>
                 <div class="summary-metric-card bg-zinc-800 border border-zinc-700 rounded-md">
-                    <div class="text-xs text-zinc-400">Contract Sum to Date</div>
-                    <div class="text-xl font-semibold metric-value text-emerald-400">${formatCurrency(contractSumToDate)}</div>
+                    <div class="metric-label text-zinc-400">Contract Sum to Date</div>
+                    <div class="font-semibold metric-value text-emerald-400">${formatCurrency(contractSumToDate)}</div>
                 </div>
                 <div class="summary-metric-card bg-zinc-800 border border-zinc-700 rounded-md">
-                    <div class="text-xs text-zinc-400">Total Completed &amp; Stored</div>
-                    <div class="text-xl font-semibold metric-value">${formatCurrency(totalBilledToDate)}</div>
+                    <div class="metric-label text-zinc-400">Total Completed &amp; Stored</div>
+                    <div class="font-semibold metric-value">${formatCurrency(totalBilledToDate)}</div>
                 </div>
                 <div class="summary-metric-card bg-zinc-800 border border-zinc-700 rounded-md">
-                    <div class="text-xs text-zinc-400">Current Payment Due (after ${defaultRetainagePercent}% retainage)</div>
-                    <div class="text-xl font-semibold metric-value text-emerald-400">${formatCurrency(amountDue)}</div>
+                    <div class="metric-label text-zinc-400">Current Payment Due (after ${defaultRetainagePercent}% retainage)</div>
+                    <div class="font-semibold metric-value text-emerald-400">${formatCurrency(amountDue)}</div>
                 </div>
 
-                <!-- NEW: Approved Subcontractor Billings flowing into this G702 -->
                 <div class="summary-metric-card bg-emerald-950/40 border border-emerald-600 rounded-md">
-                    <div class="text-xs text-emerald-400">Approved Subcontractor Billings This Period</div>
-                    <div class="text-xl font-semibold metric-value text-emerald-400" id="approvedSubBillingsG702">Calculating...</div>
-                    <div class="text-[10px] text-emerald-500 mt-0.5">Rolls up from Sub Pay App Tracker approvals</div>
+                    <div class="metric-label text-emerald-400">Approved Sub Billings This Period</div>
+                    <div class="font-semibold metric-value text-emerald-400" id="approvedSubBillingsG702">Calculating...</div>
+                    <div class="metric-sub text-emerald-500">Rolls up from Sub Pay App Tracker</div>
                 </div>
-                <div class="summary-period-card summary-metric-card bg-zinc-800 border border-zinc-700 rounded-md flex flex-col justify-between">
-                    <div class="text-right">
-                        <div class="text-sm font-semibold text-white">Period ${currentPayAppPeriod.periodNumber} • <span class="font-bold ${currentPayAppPeriod.status === 'Draft' ? 'text-amber-400' : currentPayAppPeriod.status === 'Submitted' ? 'text-sky-400' : 'text-emerald-400'}">${currentPayAppPeriod.status}</span></div>
-                        <div id="g702PeriodDateRange" class="text-base font-medium mt-0.5 text-emerald-300">${formatPeriodDateRange(currentPayAppPeriod.periodStart, currentPayAppPeriod.periodEnd)}</div>
-                        
+                <div class="summary-period-card summary-metric-card bg-zinc-800 border border-zinc-700 rounded-md lg:col-span-2">
+                    <div class="period-inline-row text-right">
+                        <span class="text-xs font-semibold text-white whitespace-nowrap">Period ${currentPayAppPeriod.periodNumber}</span>
+                        <span class="text-[10px] font-bold px-1.5 py-0 rounded ${currentPayAppPeriod.status === 'Draft' ? 'text-amber-400 bg-amber-950/50' : currentPayAppPeriod.status === 'Submitted' ? 'text-sky-400 bg-sky-950/50' : 'text-emerald-400 bg-emerald-950/50'}">${currentPayAppPeriod.status}</span>
+                        <span id="g702PeriodDateRange" class="text-[11px] font-medium text-emerald-300 whitespace-nowrap">${formatPeriodDateRange(currentPayAppPeriod.periodStart, currentPayAppPeriod.periodEnd)}</span>
                         ${ currentPayAppPeriod.status === 'Draft' ? `
-                        <div class="period-billing-block border-t border-zinc-700">
-                            <div class="text-[10px] text-amber-400 mb-0.5 text-right">Billing Month</div>
+                        <span class="period-billing-block border-l border-zinc-700 pl-2">
+                            <span class="text-[10px] text-amber-400 whitespace-nowrap">Billing Month</span>
                             <select id="period1MonthSelect" onchange="updatePeriod1BillingMonth(this.value)" 
-                                    class="w-full bg-zinc-900 border border-amber-600 rounded-md px-3 text-sm text-white text-right">
+                                    class="bg-zinc-900 border border-amber-600 rounded text-white text-right">
                                 ${generatePeriod1MonthOptions(currentPayAppPeriod.periodStart)}
                             </select>
-                            <div class="text-[9px] text-zinc-500 mt-0.5 text-right">Dates above update to the 1st through last day of the selected month</div>
-                        </div>
+                        </span>
                         ` : ''}
                     </div>
-                    <div class="mt-0.5 text-[10px] text-zinc-500 text-right">Periods advance automatically upon approval.<br>Only one Pay App per month is allowed.</div>
+                    <div class="text-[9px] text-zinc-500 text-right mt-0.5 leading-tight">Periods advance on approval · one pay app per month</div>
                 </div>
             </div>
         `;
@@ -7044,7 +7122,7 @@ function printSubcontractorG703(companyId) {
         container.innerHTML = '';
 
         const filteredApps = collectAllArchivedSubPayApps().filter(app => {
-            const mainP = app.pushedFromMainPeriod || app.mainG702Period || app.mainPeriod || app.periodNum;
+            const mainP = resolveArchivedMainPeriod(app.historyKey || app.periodNum, app) ?? app.periodNum;
             const matchesSub = !subId || String(app.companyId) === String(subId);
             const matchesPeriod = !periodFilter || String(mainP) === String(periodFilter) || String(app.periodNum) === String(periodFilter);
             return matchesSub && matchesPeriod;
