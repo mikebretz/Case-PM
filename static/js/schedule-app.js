@@ -19,9 +19,17 @@
     let customColumns = [];
     let columnWidths = {};
     let scheduleSettings = {
-        data_date: CasePMSchedule.formatDate(new Date()),
+        data_date: typeof CasePMSchedule !== 'undefined' ? CasePMSchedule.formatDate(new Date()) : '',
         calendar: 'standard',
-        lookahead_days: 14
+        lookahead_days: 14,
+        timescale: 'week',
+        default_bar_color: '#3b82f6',
+        critical_bar_color: '#ef4444',
+        progress_bar_color: '#f59e0b',
+        complete_bar_color: '#71717a',
+        milestone_color: '#8b5cf6',
+        link_color: '#94a3b8',
+        link_width: 2
     };
 
     function buildEmptySchedule() {
@@ -181,9 +189,22 @@
 
         gantt.templates.task_style = function (start, end, task) {
             if (task.type === 'project') return '';
-            const color = task.bar_color || (gantt.isCriticalTask(task) ? '#ef4444' : '#3b82f6');
-            return `background-color:${color}99;border:2px solid ${color};box-shadow:0 0 0 1px ${color}55;`;
+            let color = task.bar_color;
+            if (!color) {
+                if (gantt.isCriticalTask(task)) color = scheduleSettings.critical_bar_color;
+                else if (Math.round((task.progress || 0) * 100) >= 100) color = scheduleSettings.complete_bar_color;
+                else if ((task.progress || 0) > 0) color = scheduleSettings.progress_bar_color;
+                else if (task.type === 'milestone') color = scheduleSettings.milestone_color;
+                else color = scheduleSettings.default_bar_color;
+            }
+            return `background-color:${color}55;border:2px solid ${color};box-shadow:0 0 8px ${color}44;`;
         };
+
+        gantt.templates.link_class = function () {
+            return 'cpm_schedule_link';
+        };
+
+        applyGanttDisplayStyles();
 
         gantt.templates.tooltip_text = function (start, end, task) {
             const preds = predTemplate(task);
@@ -261,18 +282,6 @@
         const footerH = footer ? footer.offsetHeight : 40;
         const statusH = status ? status.offsetHeight + 8 : 0;
         const h = Math.max(300, window.innerHeight - top - statusH - footerH - 12);
-        host.style.height = h + 'px';
-        if (ganttReady) gantt.render();
-    }
-
-    // ─── Persistence ───
-        const host = document.getElementById('scheduleGanttHost');
-        const chrome = document.getElementById('scheduleChrome');
-        if (!host || !chrome) return;
-        const top = chrome.getBoundingClientRect().bottom;
-        const status = document.getElementById('scheduleStatusBar');
-        const statusH = status ? status.offsetHeight + 12 : 40;
-        const h = Math.max(320, window.innerHeight - top - statusH - 16);
         host.style.height = h + 'px';
         if (ganttReady) gantt.render();
     }
@@ -399,11 +408,78 @@
         return sel ? parseInt(sel.value, 10) || 1 : 1;
     }
 
+    function applyGanttDisplayStyles() {
+        const s = scheduleSettings;
+        const root = document.documentElement;
+        root.style.setProperty('--gantt-bar-normal', s.default_bar_color || '#3b82f6');
+        root.style.setProperty('--gantt-bar-critical', s.critical_bar_color || '#ef4444');
+        root.style.setProperty('--gantt-bar-progress', s.progress_bar_color || '#f59e0b');
+        root.style.setProperty('--gantt-bar-complete', s.complete_bar_color || '#71717a');
+        root.style.setProperty('--gantt-milestone', s.milestone_color || '#8b5cf6');
+        root.style.setProperty('--gantt-link-color', s.link_color || '#94a3b8');
+        root.style.setProperty('--gantt-link-width', (s.link_width || 2) + 'px');
+        if (ganttReady) gantt.render();
+    }
+
+    function setTimescale(scale, persist) {
+        const map = { day: 0, week: 1, month: 2, quarter: 3 };
+        const level = map[scale];
+        if (level === undefined) return;
+        scheduleSettings.timescale = scale;
+        if (gantt.ext && gantt.ext.zoom) {
+            gantt.ext.zoom.setLevel(level);
+        } else {
+            const scales = {
+                day: [{ unit: 'day', step: 1, format: '%d %M' }],
+                week: [{ unit: 'week', step: 1, format: 'W%W' }, { unit: 'day', step: 1, format: '%d' }],
+                month: [{ unit: 'month', step: 1, format: '%F %Y' }, { unit: 'week', step: 1, format: 'W%W' }],
+                quarter: [{ unit: 'year', step: 1, format: '%Y' }, { unit: 'month', step: 1, format: '%M' }]
+            };
+            gantt.config.scales = scales[scale] || scales.day;
+            gantt.render();
+        }
+        document.querySelectorAll('[data-timescale]').forEach(btn => {
+            const on = btn.getAttribute('data-timescale') === scale;
+            btn.classList.toggle('active-tool', on);
+        });
+        if (persist !== false) queueSave();
+    }
+
+    function showDisplaySettings() {
+        const s = scheduleSettings;
+        const set = (id, v) => { const el = document.getElementById(id); if (el) el.value = v; };
+        set('dispBarColor', s.default_bar_color || '#3b82f6');
+        set('dispCriticalColor', s.critical_bar_color || '#ef4444');
+        set('dispProgressColor', s.progress_bar_color || '#f59e0b');
+        set('dispCompleteColor', s.complete_bar_color || '#71717a');
+        set('dispMilestoneColor', s.milestone_color || '#8b5cf6');
+        set('dispLinkColor', s.link_color || '#94a3b8');
+        set('dispLinkWidth', s.link_width || 2);
+        document.getElementById('scheduleDisplayModal')?.showModal();
+    }
+
+    function saveDisplaySettings() {
+        const get = id => document.getElementById(id)?.value;
+        scheduleSettings.default_bar_color = get('dispBarColor') || '#3b82f6';
+        scheduleSettings.critical_bar_color = get('dispCriticalColor') || '#ef4444';
+        scheduleSettings.progress_bar_color = get('dispProgressColor') || '#f59e0b';
+        scheduleSettings.complete_bar_color = get('dispCompleteColor') || '#71717a';
+        scheduleSettings.milestone_color = get('dispMilestoneColor') || '#8b5cf6';
+        scheduleSettings.link_color = get('dispLinkColor') || '#94a3b8';
+        scheduleSettings.link_width = parseInt(get('dispLinkWidth'), 10) || 2;
+        applyGanttDisplayStyles();
+        document.getElementById('scheduleDisplayModal')?.close();
+        queueSave();
+        showScheduleAlert('Display settings applied', 'success');
+    }
+
     function applySettingsToUI() {
         const dd = document.getElementById('dataDateInput');
         const la = document.getElementById('lookaheadDaysInput');
         if (dd) dd.value = scheduleSettings.data_date || CasePMSchedule.formatDate(new Date());
         if (la) la.value = scheduleSettings.lookahead_days || 14;
+        applyGanttDisplayStyles();
+        if (scheduleSettings.timescale) setTimescale(scheduleSettings.timescale, false);
     }
 
     function setSaveStatus(msg) {
@@ -763,6 +839,7 @@
         }
         configureGantt();
         initZoom();
+        if (scheduleSettings.timescale) setTimescale(scheduleSettings.timescale, false);
         await loadSchedule();
         runSchedule();
         switchScheduleView('gantt');
@@ -779,7 +856,8 @@
 
     window.ScheduleApp = {
         init, addActivity, deleteSelected, indentSelected, outdentSelected,
-        linkSelected, unlinkSelected, zoomGantt, toggleCriticalPath, setBaseline,
+        linkSelected, unlinkSelected, zoomGantt, setTimescale, showDisplaySettings, saveDisplaySettings,
+        toggleCriticalPath, setBaseline,
         runSchedule, switchScheduleView, renderLookAhead, focusActivity,
         exportJson, importFile, printGantt, printLookAhead, saveSchedule,
         loadSchedule, clearSchedule, showAddColumnDialog, addFieldColumn, queueSave
