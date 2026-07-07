@@ -11,16 +11,20 @@
         <div class="flex flex-wrap items-start justify-between gap-2 mb-2 pt-0">
             <div>
                 <h1 class="text-xl font-semibold tracking-tight">Project Schedule</h1>
-                <p class="text-zinc-500 text-xs mt-0.5">Click cell to edit · Double-click for tabs · Drag column edges to resize</p>
+                <p class="text-zinc-500 text-xs mt-0.5">Project dropdown selects schedule · Columns to add/remove · Drag column edges to resize</p>
             </div>
             <div class="flex flex-wrap items-center gap-2">
-                <select id="scheduleProjectSelect" class="bg-zinc-900 border border-zinc-700 rounded-md px-2 py-1.5 text-xs">
+                {% if projects %}
+                <label class="text-xs text-zinc-500">Project</label>
+                <select id="scheduleProjectSelect" class="bg-zinc-900 border border-zinc-700 rounded-md px-2 py-1.5 text-xs min-w-[12rem]">
                     {% for project in projects %}
-                    <option value="{{ project.id }}">{{ project.number }} — {{ project.name }}</option>
-                    {% else %}
-                    <option value="1">Default Project</option>
+                    <option value="{{ project.id }}" data-number="{{ project.number }}" data-name="{{ project.name }}">{{ project.number }} — {{ project.name }}</option>
                     {% endfor %}
                 </select>
+                {% else %}
+                <span class="text-xs text-amber-400">No projects — create a project first to save schedules.</span>
+                <select id="scheduleProjectSelect" class="hidden"><option value="0">—</option></select>
+                {% endif %}
                 <span id="scheduleSaveStatus" class="text-xs text-zinc-500 px-2">Ready</span>
             </div>
         </div>
@@ -62,7 +66,7 @@
                 <button type="button" class="schedule-toolbar-btn" onclick="ScheduleApp.zoomGantt('in')"><i class="fa-solid fa-magnifying-glass-plus"></i></button>
                 <button type="button" class="schedule-toolbar-btn" onclick="ScheduleApp.zoomGantt('out')"><i class="fa-solid fa-magnifying-glass-minus"></i></button>
                 <button type="button" class="schedule-toolbar-btn" onclick="ScheduleApp.showDisplaySettings()" title="Bar & link colors"><i class="fa-solid fa-palette text-violet-400"></i> Display</button>
-                <button type="button" class="schedule-toolbar-btn" onclick="ScheduleApp.showAddColumnDialog()" title="Add custom grid column"><i class="fa-solid fa-table-columns"></i> + Column</button>
+                <button type="button" class="schedule-toolbar-btn" onclick="ScheduleApp.showColumnManager()" title="Add or remove grid columns"><i class="fa-solid fa-table-columns"></i> Columns</button>
             </div>
             <div class="flex flex-wrap gap-1 border-r border-zinc-700 pr-2 mr-1">
                 <button type="button" class="schedule-toolbar-btn" onclick="ScheduleApp.exportJson()"><i class="fa-solid fa-download"></i> Export</button>
@@ -111,6 +115,7 @@
 
     <!-- Gantt (fills remaining viewport) -->
     <div id="ganttViewPanel" class="flex-1 min-h-0 bg-zinc-900 border border-zinc-700 rounded-md overflow-hidden flex flex-col">
+        <div id="schedulePrintHeader" class="schedule-print-header no-screen" aria-hidden="true"></div>
         <div id="scheduleGanttHost" class="flex-1 min-h-0">
             <div id="gantt_here"></div>
         </div>
@@ -189,7 +194,24 @@
     </div>
 </dialog>
 
-<!-- MS Project / P6 field picker -->
+<!-- Column manager (add / remove) -->
+<dialog id="scheduleColumnManagerModal" class="rounded-md w-full max-w-lg p-0 text-white shadow-2xl" style="background:#18181b;border:1px solid #3f3f46;">
+    <div class="px-4 py-3 border-b border-zinc-700 flex justify-between items-center">
+        <div>
+            <h3 class="font-semibold text-sm">Manage Columns</h3>
+            <p class="text-xs text-zinc-500">Remove columns or add MS Project / Primavera fields</p>
+        </div>
+        <button type="button" onclick="document.getElementById('scheduleColumnManagerModal').close()" class="text-zinc-400 hover:text-white">&times;</button>
+    </div>
+    <div class="p-3 max-h-[60vh] overflow-auto">
+        <div class="text-xs uppercase text-zinc-500 font-semibold mb-2">Visible columns</div>
+        <div id="scheduleVisibleColumnsList" class="space-y-1 mb-4"></div>
+        <div class="text-xs uppercase text-emerald-400 font-semibold mb-2">Add column</div>
+        <div id="scheduleFieldPickerListMgr"></div>
+    </div>
+</dialog>
+
+<!-- MS Project / P6 field picker (legacy quick add) -->
 <dialog id="scheduleFieldPickerModal" class="rounded-md w-full max-w-lg p-0 text-white shadow-2xl" style="background:#18181b;border:1px solid #3f3f46;">
     <div class="px-4 py-3 border-b border-zinc-700 flex justify-between items-center">
         <div>

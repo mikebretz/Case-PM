@@ -41,6 +41,35 @@ body:has(.schedule-page-root) #mainContent {
 .schedule-view-tab.active-view { background: #27272a; color: #fff; border-radius: 0.375rem; }
 .sched-color-swatch { display: inline-block; width: 14px; height: 14px; border-radius: 2px; border: 1px solid #71717a; }
 
+/* Grid readability */
+.gantt_cell, .gantt_tree_content, .gantt_grid_head_cell {
+    font-size: 13px !important;
+    line-height: 1.35 !important;
+}
+
+/* Selection & inline edit — stay dark (no white flash) */
+.gantt_grid_data .gantt_row.gantt_selected,
+.gantt_grid_data .gantt_row.gantt_selected .gantt_cell,
+.gantt_grid_data .gantt_cell.gantt_selected,
+.gantt_grid_data .gantt_row.gantt_selected.odd,
+.gantt_grid_data .gantt_row.gantt_selected.odd .gantt_cell {
+    background-color: #1e3a5f !important;
+    color: #f8fafc !important;
+}
+.gantt_grid_data .gantt_row:hover .gantt_cell {
+    color: #f4f4f5 !important;
+}
+.gantt_grid_editor_placeholder,
+.gantt_grid_editor_placeholder input,
+.gantt_grid_editor_placeholder select,
+.gantt_inline_editor,
+.gantt_inline_editor input,
+.gantt_inline_editor select {
+    background: #27272a !important;
+    color: #fff !important;
+    border: 2px solid #10b981 !important;
+}
+
 /* ─── Grid dark — consistent rows (no white flash on project/summary) ─── */
 .gantt_grid, .gantt_grid_scale, .gantt_grid_head, .gantt_grid_data,
 .gantt_container, .gantt_layout_cell {
@@ -65,6 +94,10 @@ body:has(.schedule-page-root) #mainContent {
 .gantt_grid_data .gantt_row.gantt_project:hover {
     background-color: #27272a !important;
     color: #f4f4f5 !important;
+}
+/* Selected row uses darker blue — override hover above */
+.gantt_grid_data .gantt_row.gantt_selected {
+    background-color: #1e3a5f !important;
 }
 .gantt_tree_content, .gantt_grid_head, .gantt_grid_head_cell {
     background-color: #18181b !important;
@@ -118,43 +151,15 @@ body:has(.schedule-page-root) #mainContent {
 .gantt_scale_line { border-color: #3f3f46 !important; }
 .gantt_task_cell { border-color: #27272a !important; }
 
-/* ─── Gantt bars: semi-transparent fill + bright border (visible on dark) ─── */
+/* ─── Gantt bars: colors from task_style inline (display settings + per-activity) ─── */
 :root {
-    --gantt-bar-normal: #3b82f6;
-    --gantt-bar-critical: #ef4444;
-    --gantt-bar-progress: #f59e0b;
-    --gantt-bar-complete: #71717a;
-    --gantt-milestone: #8b5cf6;
     --gantt-link-color: #94a3b8;
     --gantt-link-width: 2px;
 }
-.gantt_task_line {
-    background-color: color-mix(in srgb, var(--gantt-bar-normal) 45%, transparent) !important;
-    border: 2px solid var(--gantt-bar-normal) !important;
-    border-radius: 3px;
-    box-shadow: 0 0 6px color-mix(in srgb, var(--gantt-bar-normal) 35%, transparent);
-}
-.gantt_task_line.cpm_critical {
-    background-color: color-mix(in srgb, var(--gantt-bar-critical) 45%, transparent) !important;
-    border-color: var(--gantt-bar-critical) !important;
-    box-shadow: 0 0 6px color-mix(in srgb, var(--gantt-bar-critical) 40%, transparent);
-}
-.gantt_task_line.cpm_in_progress {
-    background-color: color-mix(in srgb, var(--gantt-bar-progress) 45%, transparent) !important;
-    border-color: var(--gantt-bar-progress) !important;
-    box-shadow: 0 0 6px color-mix(in srgb, var(--gantt-bar-progress) 35%, transparent);
-}
-.gantt_task_line.cpm_complete {
-    background-color: color-mix(in srgb, var(--gantt-bar-complete) 40%, transparent) !important;
-    border-color: var(--gantt-bar-complete) !important;
-}
-.gantt_task_line.gantt_milestone, .gantt_task_line.cpm_milestone {
-    background-color: color-mix(in srgb, var(--gantt-milestone) 50%, transparent) !important;
-    border-color: var(--gantt-milestone) !important;
-}
+/* Only style links via CSS; bar fill/border come from gantt.templates.task_style */
 .gantt_task_line.cpm_summary, .gantt_task_line.gantt_project {
     background-color: rgba(30, 41, 59, 0.7) !important;
-    border-color: #64748b !important;
+    border: 2px solid #64748b !important;
 }
 .gantt_task_progress { background-color: rgba(0, 0, 0, 0.35) !important; }
 .gantt_task_link .gantt_line_wrapper div {
@@ -173,15 +178,114 @@ body:has(.schedule-page-root) #mainContent {
     border: 2px solid #10b981 !important;
 }
 
+/* Print header — hidden on screen */
+.no-screen { display: none !important; }
+
 /* Activity modal tabs */
 .sched-modal-tab { border-bottom: 2px solid transparent; }
 
+/* ─── MS Project / Primavera style print (Save as PDF from browser) ─── */
 @media print {
-    body.printing-gantt header, body.printing-gantt nav, body.printing-gantt .no-print,
-    body.printing-gantt #scheduleChrome, body.printing-gantt #scheduleStatusBar { display: none !important; }
-    body.printing-gantt #ganttViewPanel { display: block !important; width: 100% !important; }
-    body.printing-gantt #scheduleGanttHost, body.printing-gantt #gantt_here { min-height: 600px !important; }
-    body.printing-lookahead .no-print, body.printing-lookahead #scheduleChrome,
+    @page {
+        size: landscape;
+        margin: 0.35in 0.45in;
+    }
+    body.printing-gantt {
+        background: #fff !important;
+        -webkit-print-color-adjust: exact;
+        print-color-adjust: exact;
+    }
+    body.printing-gantt header,
+    body.printing-gantt nav,
+    body.printing-gantt .no-print,
+    body.printing-gantt #scheduleChrome,
+    body.printing-gantt #scheduleStatusBar { display: none !important; }
+    body.printing-gantt #mainContent { padding: 0 !important; overflow: visible !important; }
+    body.printing-gantt .schedule-page-root { overflow: visible !important; height: auto !important; }
+    body.printing-gantt #ganttViewPanel {
+        display: block !important;
+        width: 100% !important;
+        border: none !important;
+        background: #fff !important;
+    }
+    body.printing-gantt .no-screen,
+    body.printing-gantt #schedulePrintHeader {
+        display: block !important;
+    }
+    .schedule-print-header {
+        font-family: Arial, Helvetica, sans-serif;
+        color: #111;
+        border-bottom: 2px solid #111;
+        padding-bottom: 10px;
+        margin-bottom: 12px;
+    }
+    .sched-print-brand {
+        font-size: 9pt;
+        text-transform: uppercase;
+        letter-spacing: 0.08em;
+        color: #444;
+    }
+    .sched-print-title {
+        font-size: 18pt;
+        font-weight: 700;
+        margin: 4px 0 10px;
+        color: #000;
+    }
+    .sched-print-meta-grid {
+        display: grid;
+        grid-template-columns: repeat(4, 1fr);
+        gap: 6px 16px;
+        font-size: 9pt;
+    }
+    .sched-print-label {
+        display: block;
+        font-size: 7.5pt;
+        text-transform: uppercase;
+        letter-spacing: 0.05em;
+        color: #666;
+    }
+    body.printing-gantt #scheduleGanttHost,
+    body.printing-gantt #gantt_here {
+        min-height: 520px !important;
+        height: auto !important;
+    }
+    /* Light theme for printed Gantt */
+    body.printing-gantt .gantt_grid,
+    body.printing-gantt .gantt_grid_scale,
+    body.printing-gantt .gantt_grid_head,
+    body.printing-gantt .gantt_grid_data,
+    body.printing-gantt .gantt_task,
+    body.printing-gantt .gantt_task_scale,
+    body.printing-gantt .gantt_container,
+    body.printing-gantt .gantt_layout_cell {
+        background: #fff !important;
+        color: #111 !important;
+        border-color: #999 !important;
+    }
+    body.printing-gantt .gantt_grid_data .gantt_row,
+    body.printing-gantt .gantt_grid_data .gantt_row.odd,
+    body.printing-gantt .gantt_task_row,
+    body.printing-gantt .gantt_task_row.odd {
+        background: #fff !important;
+        color: #111 !important;
+    }
+    body.printing-gantt .gantt_grid_data .gantt_row.odd {
+        background: #f5f5f5 !important;
+    }
+    body.printing-gantt .gantt_cell,
+    body.printing-gantt .gantt_grid_head_cell,
+    body.printing-gantt .gantt_scale_cell,
+    body.printing-gantt .gantt_task_cell {
+        color: #111 !important;
+        border-color: #bbb !important;
+        font-size: 8pt !important;
+    }
+    body.printing-gantt .gantt_grid_head_cell {
+        font-weight: 700;
+        background: #e8e8e8 !important;
+    }
+    body.printing-lookahead .no-print,
+    body.printing-lookahead #scheduleChrome,
     body.printing-lookahead #ganttViewPanel { display: none !important; }
     body.printing-lookahead #lookaheadViewPanel { display: block !important; }
 }

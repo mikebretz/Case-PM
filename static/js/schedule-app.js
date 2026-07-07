@@ -18,6 +18,7 @@
     let resizeTimer = null;
     let baselines = [];
     let customColumns = [];
+    let hiddenColumns = [];
     let columnWidths = {};
     let wbsCodeMap = new Map();
     let scheduleSettings = {
@@ -34,12 +35,39 @@
         link_width: 2
     };
 
+    const REQUIRED_COLUMNS = ['text'];
+    const BUILTIN_COLUMN_DEFS = [
+        { name: 'wbs', label: 'WBS', width: 58, align: 'center', resize: true, template: t => wbsCode(t) },
+        { name: 'activity_id', label: 'ID', width: 64, align: 'center', resize: true, editor: { type: 'text', map_to: 'activity_id' }, template: t => t.activity_id || '' },
+        { name: 'text', label: 'Activity Name', tree: true, width: 220, min_width: 120, resize: true, editor: { type: 'text', map_to: 'text' } },
+        { name: 'duration', label: 'Dur', align: 'center', width: 52, min_width: 44, resize: true, editor: { type: 'number', map_to: 'duration', min: 0, max: 9999 } },
+        { name: 'start_date', label: 'Start', align: 'center', width: 98, min_width: 88, resize: true, editor: { type: 'date', map_to: 'start_date' }, template: t => formatDateSafe(t.start_date) },
+        { name: 'end_date', label: 'Finish', align: 'center', width: 98, min_width: 88, resize: true, editor: { type: 'date', map_to: 'end_date' }, template: t => formatDateSafe(t.end_date) },
+        { name: 'predecessors', label: 'Predecessors', width: 118, min_width: 80, resize: true, editor: { type: 'predecessor', map_to: 'auto' }, template: predTemplate },
+        { name: 'successors', label: 'Successors', width: 108, min_width: 80, resize: true, template: succTemplate },
+        { name: 'progress', label: '%', align: 'center', width: 48, min_width: 42, resize: true, editor: { type: 'number', map_to: 'progress', min: 0, max: 100 }, template: t => Math.round((t.progress || 0) <= 1 ? (t.progress || 0) * 100 : (t.progress || 0)) },
+        { name: 'resource', label: 'Resource', width: 108, min_width: 70, resize: true, editor: { type: 'text', map_to: 'resource' } },
+        { name: 'owner', label: 'Responsible', width: 108, min_width: 70, resize: true, editor: { type: 'text', map_to: 'owner' } },
+        { name: 'total_float', label: 'Total Float', width: 72, align: 'center', resize: true, template: t => t.$slack != null ? t.$slack : (t.total_float != null ? t.total_float : '') },
+        { name: 'bar_color', label: 'Color', width: 58, align: 'center', resize: true, template: t => t.bar_color ? `<span class="sched-color-swatch" style="background:${t.bar_color}"></span>` : '—', editor: { type: 'text', map_to: 'bar_color' } }
+    ];
+
+    function getProjectMeta() {
+        const sel = document.getElementById('scheduleProjectSelect');
+        const opt = sel?.selectedOptions?.[0];
+        if (!opt) return { id: '', number: '', name: 'Project Schedule', label: 'Project Schedule' };
+        const number = opt.dataset.number || opt.textContent.split('—')[0]?.trim() || '';
+        const name = opt.dataset.name || opt.textContent.split('—').slice(1).join('—').trim() || number;
+        return { id: sel.value, number, name, label: opt.textContent.trim() };
+    }
+
     function buildEmptySchedule() {
         const today = CasePMSchedule.formatDate(new Date());
+        const meta = getProjectMeta();
         return {
             data: [{
                 id: 1,
-                text: 'New Construction Project',
+                text: meta.name || 'Project Schedule',
                 type: 'project',
                 open: true,
                 start_date: today,
@@ -207,24 +235,11 @@
     }
 
     function buildColumnConfig() {
-        const builtins = [
-            { name: 'wbs', label: 'WBS', width: 55, align: 'center', resize: true, template: t => wbsCode(t) },
-            { name: 'activity_id', label: 'ID', width: 60, align: 'center', resize: true, editor: { type: 'text', map_to: 'activity_id' }, template: t => t.activity_id || '' },
-            { name: 'text', label: 'Activity Name', tree: true, width: 200, min_width: 100, resize: true, editor: { type: 'text', map_to: 'text' } },
-            { name: 'duration', label: 'Dur', align: 'center', width: 50, min_width: 40, resize: true, editor: { type: 'number', map_to: 'duration', min: 0, max: 9999 } },
-            { name: 'start_date', label: 'Start', align: 'center', width: 95, min_width: 80, resize: true, editor: { type: 'date', map_to: 'start_date' }, template: t => formatDateSafe(t.start_date) },
-            { name: 'end_date', label: 'Finish', align: 'center', width: 95, min_width: 80, resize: true, editor: { type: 'date', map_to: 'end_date' }, template: t => formatDateSafe(t.end_date) },
-            { name: 'predecessors', label: 'Predecessors', width: 110, min_width: 70, resize: true, editor: { type: 'predecessor', map_to: 'auto' }, template: predTemplate },
-            { name: 'successors', label: 'Successors', width: 100, min_width: 70, resize: true, template: succTemplate },
-            { name: 'progress', label: '%', align: 'center', width: 45, min_width: 40, resize: true, editor: { type: 'number', map_to: 'progress', min: 0, max: 100 }, template: t => Math.round((t.progress || 0) <= 1 ? (t.progress || 0) * 100 : (t.progress || 0)) },
-            { name: 'resource', label: 'Resource', width: 100, min_width: 60, resize: true, editor: { type: 'text', map_to: 'resource' } },
-            { name: 'owner', label: 'Responsible', width: 100, min_width: 60, resize: true, editor: { type: 'text', map_to: 'owner' } },
-            { name: 'total_float', label: 'Total Float', width: 70, align: 'center', resize: true, template: t => t.$slack != null ? t.$slack : (t.total_float != null ? t.total_float : '') },
-            { name: 'bar_color', label: 'Color', width: 55, align: 'center', resize: true, template: t => t.bar_color ? `<span class="sched-color-swatch" style="background:${t.bar_color}"></span>` : '—', editor: { type: 'text', map_to: 'bar_color' } }
-        ];
+        const builtins = BUILTIN_COLUMN_DEFS
+            .filter(c => !hiddenColumns.includes(c.name))
+            .map(c => Object.assign({}, c, { width: colWidth(c.name, c.width) }));
 
-        const cols = builtins.map(c => Object.assign({}, c, { width: colWidth(c.name, c.width) }));
-
+        const cols = builtins.slice();
         customColumns.forEach(cc => {
             const field = (typeof CasePMScheduleFields !== 'undefined') ? CasePMScheduleFields.getField(cc.map_to || cc.name) : null;
             const col = {
@@ -258,33 +273,37 @@
         gantt.config.skip_off_time = false;
         gantt.config.duration_unit = 'day';
         gantt.config.time_step = 1440;
-        gantt.config.row_height = 34;
-        gantt.config.bar_height = 22;
-        gantt.config.scale_height = 50;
-        gantt.config.scroll_size = 20;
+        gantt.config.row_height = 38;
+        gantt.config.bar_height = 24;
+        gantt.config.scale_height = 52;
+        gantt.config.scroll_size = 18;
         gantt.config.fit_tasks = true;
         gantt.config.show_errors = false;
         gantt.config.highlight_critical_path = true;
         gantt.config.grid_elastic_columns = false;
         gantt.config.keep_grid_width = true;
+        gantt.config.autosize = false;
         gantt.config.reorder_grid_columns = false;
         gantt.config.open_tree_initially = true;
         gantt.config.details_on_dblclick = false;
+        gantt.config.show_task_cells = true;
 
         gantt.config.layout = {
             css: 'gantt_container',
             cols: [
                 {
-                    width: 580,
-                    min_width: 320,
-                    max_width: 900,
-                    rows: [{ view: 'grid', scrollY: 'scrollVer' }]
+                    width: 520,
+                    min_width: 240,
+                    rows: [
+                        { view: 'grid', scrollX: 'gridScroll', scrollY: 'scrollVer' },
+                        { view: 'scrollbar', id: 'gridScroll', height: 18 }
+                    ]
                 },
                 { resizer: true, width: 1 },
                 {
                     rows: [
                         { view: 'timeline', scrollX: 'scrollHor', scrollY: 'scrollVer' },
-                        { view: 'scrollbar', id: 'scrollHor', height: 20 }
+                        { view: 'scrollbar', id: 'scrollHor', height: 18 }
                     ]
                 },
                 { view: 'scrollbar', id: 'scrollVer' }
@@ -310,6 +329,7 @@
             if (gantt.config.highlight_critical_path && isTaskCritical(task)) classes.push('cpm_critical');
             if (task.type === 'milestone') classes.push('cpm_milestone');
             if (task.type === 'project') classes.push('cpm_summary');
+            if (task.bar_color) classes.push('cpm_custom_color');
             const p = Math.round((task.progress || 0) * 100);
             if (p >= 100) classes.push('cpm_complete');
             else if (p > 0) classes.push('cpm_in_progress');
@@ -326,7 +346,7 @@
                 else if (task.type === 'milestone') color = scheduleSettings.milestone_color;
                 else color = scheduleSettings.default_bar_color;
             }
-            return `background-color:${color}55;border:2px solid ${color};box-shadow:0 0 8px ${color}44;`;
+            return `background-color:${color}66;border:2px solid ${color};box-shadow:0 0 8px ${color}55;`;
         };
 
         gantt.templates.link_class = function () {
@@ -455,12 +475,13 @@
         const links = gantt.getLinks().map(l => ({
             id: l.id, source: l.source, target: l.target, type: String(l.type), lag: l.lag || 0
         }));
-        return { data, links, baselines, customColumns, columnWidths, settings: scheduleSettings };
+        return { data, links, baselines, customColumns, hiddenColumns, columnWidths, settings: scheduleSettings };
     }
 
     function loadSchedulePayload(payload) {
         if (!payload || !payload.data) return false;
         customColumns = payload.customColumns || [];
+        hiddenColumns = payload.hiddenColumns || [];
         columnWidths = payload.columnWidths || {};
         normalizeTaskDates(payload.data);
         gantt.config.columns = buildColumnConfig();
@@ -557,11 +578,6 @@
     function applyGanttDisplayStyles() {
         const s = scheduleSettings;
         const root = document.documentElement;
-        root.style.setProperty('--gantt-bar-normal', s.default_bar_color || '#3b82f6');
-        root.style.setProperty('--gantt-bar-critical', s.critical_bar_color || '#ef4444');
-        root.style.setProperty('--gantt-bar-progress', s.progress_bar_color || '#f59e0b');
-        root.style.setProperty('--gantt-bar-complete', s.complete_bar_color || '#71717a');
-        root.style.setProperty('--gantt-milestone', s.milestone_color || '#8b5cf6');
         root.style.setProperty('--gantt-link-color', s.link_color || '#94a3b8');
         root.style.setProperty('--gantt-link-width', (s.link_width || 2) + 'px');
         if (ganttReady) gantt.render();
@@ -737,17 +753,45 @@
         logActivity('Ran CPM schedule', `${updates.size} activities calculated`);
     }
 
-    function showAddColumnDialog() {
-        const dlg = document.getElementById('scheduleFieldPickerModal');
+    function showColumnManager() {
+        const dlg = document.getElementById('scheduleColumnManagerModal');
+        if (!dlg) return showAddColumnDialog();
+        const visible = document.getElementById('scheduleVisibleColumnsList');
+        if (visible) {
+            const cols = gantt.config.columns || [];
+            if (!cols.length) {
+                visible.innerHTML = '<p class="text-zinc-500 text-sm">No columns visible.</p>';
+            } else {
+                visible.innerHTML = cols.map(col => {
+                    const required = REQUIRED_COLUMNS.includes(col.name);
+                    const label = col.label || col.name;
+                    return `<div class="flex items-center justify-between gap-2 px-3 py-2 rounded-md bg-zinc-800/80 border border-zinc-700">
+                        <span class="text-sm">${label}</span>
+                        ${required
+                            ? '<span class="text-[0.65rem] text-zinc-500">Required</span>'
+                            : `<button type="button" class="text-xs text-red-400 hover:text-red-300 px-2 py-1" onclick="ScheduleApp.removeColumn('${col.name}')">Remove</button>`}
+                    </div>`;
+                }).join('');
+            }
+        }
+        showAddColumnDialog(true);
+        dlg.showModal();
+    }
+
+    function showAddColumnDialog(managerMode) {
+        const dlg = managerMode
+            ? document.getElementById('scheduleColumnManagerModal')
+            : document.getElementById('scheduleFieldPickerModal');
         if (!dlg || typeof CasePMScheduleFields === 'undefined') {
-            showScheduleAlert('Field catalog not loaded.', 'error');
+            if (!managerMode) showScheduleAlert('Field catalog not loaded.', 'error');
             return;
         }
         const existing = gantt.config.columns.map(c => c.name);
         const addable = CasePMScheduleFields.getAddableFields(existing);
-        const container = document.getElementById('scheduleFieldPickerList');
+        const container = document.getElementById(managerMode ? 'scheduleFieldPickerListMgr' : 'scheduleFieldPickerList');
+        if (!container) return;
         if (!addable.length) {
-            container.innerHTML = '<p class="text-zinc-400 text-sm p-4">All standard fields are already visible in the grid.</p>';
+            container.innerHTML = '<p class="text-zinc-400 text-sm p-2">All standard fields are already visible in the grid.</p>';
         } else {
             const groups = CasePMScheduleFields.groupFields(addable);
             let html = '';
@@ -763,7 +807,23 @@
             });
             container.innerHTML = html;
         }
-        dlg.showModal();
+        if (!managerMode) dlg.showModal();
+    }
+
+    function removeColumn(name) {
+        if (REQUIRED_COLUMNS.includes(name)) {
+            showScheduleAlert('Activity Name is required and cannot be removed.', 'warning');
+            return;
+        }
+        const customIdx = customColumns.findIndex(c => (c.map_to || c.name) === name);
+        if (customIdx >= 0) customColumns.splice(customIdx, 1);
+        if (!hiddenColumns.includes(name)) hiddenColumns.push(name);
+        gantt.config.columns = buildColumnConfig();
+        updateGridWidth();
+        gantt.render();
+        queueSave();
+        logActivity('Removed column', name);
+        showColumnManager();
     }
 
     function addFieldColumn(mapTo) {
@@ -774,10 +834,12 @@
             return;
         }
         customColumns.push({ name: mapTo, map_to: mapTo, label: field.label, width: 100 });
+        hiddenColumns = hiddenColumns.filter(n => n !== mapTo);
         gantt.config.columns = buildColumnConfig();
         updateGridWidth();
         gantt.render();
         document.getElementById('scheduleFieldPickerModal')?.close();
+        document.getElementById('scheduleColumnManagerModal')?.close();
         queueSave();
         logActivity('Added column', field.label);
         showScheduleAlert(`Column "${field.label}" added to grid.`, 'success');
@@ -944,7 +1006,33 @@
         reader.readAsText(file);
     }
 
+    function buildPrintHeader() {
+        const meta = getProjectMeta();
+        const range = gantt.getSubtaskDates();
+        const dataDate = document.getElementById('dataDateInput')?.value || scheduleSettings.data_date || CasePMSchedule.formatDate(new Date());
+        const now = new Date();
+        const printed = now.toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' });
+        let critical = 0;
+        gantt.eachTask(t => { if (t.type !== 'project' && isTaskCritical(t)) critical++; });
+        const el = document.getElementById('schedulePrintHeader');
+        if (!el) return;
+        el.innerHTML = `
+            <div class="sched-print-brand">Case PM · Project Controls</div>
+            <h1 class="sched-print-title">Project Schedule</h1>
+            <div class="sched-print-meta-grid">
+                <div><span class="sched-print-label">Project</span><strong>${meta.name}</strong></div>
+                <div><span class="sched-print-label">Project No.</span><strong>${meta.number || '—'}</strong></div>
+                <div><span class="sched-print-label">Data Date</span><strong>${formatDateSafe(dataDate)}</strong></div>
+                <div><span class="sched-print-label">Printed</span><strong>${printed}</strong></div>
+                <div><span class="sched-print-label">Schedule Start</span><strong>${range?.start_date ? formatDateSafe(range.start_date) : '—'}</strong></div>
+                <div><span class="sched-print-label">Schedule Finish</span><strong>${range?.end_date ? formatDateSafe(range.end_date) : '—'}</strong></div>
+                <div><span class="sched-print-label">Activities</span><strong>${countTasks()}</strong></div>
+                <div><span class="sched-print-label">Critical Activities</span><strong>${critical}</strong></div>
+            </div>`;
+    }
+
     function printGantt() {
+        buildPrintHeader();
         document.body.classList.add('printing-gantt');
         const panel = document.getElementById('ganttViewPanel');
         if (panel) panel.classList.add('print-active');
@@ -956,7 +1044,7 @@
                 document.body.classList.remove('printing-gantt');
                 panel?.classList.remove('print-active');
             }, 500);
-        }, 300);
+        }, 400);
     }
 
     function printLookAhead() {
@@ -1028,7 +1116,7 @@
         toggleCriticalPath, setBaseline,
         runSchedule, switchScheduleView, renderLookAhead, focusActivity,
         exportJson, importFile, printGantt, printLookAhead, saveSchedule,
-        loadSchedule, clearSchedule, showAddColumnDialog, addFieldColumn, queueSave
+        loadSchedule, clearSchedule, showColumnManager, showAddColumnDialog, removeColumn, addFieldColumn, queueSave
     };
 
     if (document.readyState === 'loading') {
