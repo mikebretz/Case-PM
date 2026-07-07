@@ -54,10 +54,50 @@ body:has(.schedule-page-root) #mainContent {
 }
 .sched-color-editor { width: 100%; height: 28px; padding: 0; border: none; background: transparent; }
 
-/* Grid: fixed column widths, horizontal scroll inside grid panel */
-#gantt_here .gantt_grid_scale,
-#gantt_here .gantt_grid_data {
-    overflow-x: auto !important;
+/* Overlay: calendar floats over grid; columns keep fixed width */
+.schedule-overlay-mode #gantt_here .gantt_layout_root {
+    position: relative !important;
+}
+.schedule-overlay-mode #gantt_here .gantt_layout_cell:first-child {
+    flex: 1 1 auto !important;
+    width: 100% !important;
+    min-width: 0 !important;
+    z-index: 2;
+}
+.schedule-overlay-mode #gantt_here .gantt_grid,
+.schedule-overlay-mode #gantt_here .gantt_grid_scale,
+.schedule-overlay-mode #gantt_here .gantt_grid_data {
+    overflow: visible !important;
+}
+.schedule-chart-resizer {
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    width: 8px;
+    margin-right: -4px;
+    z-index: 25;
+    cursor: col-resize;
+    background: linear-gradient(90deg, transparent, rgba(16, 185, 129, 0.45), transparent);
+}
+.schedule-chart-resizer:hover {
+    background: linear-gradient(90deg, transparent, rgba(16, 185, 129, 0.85), transparent);
+}
+/* Column headers draggable for reorder */
+.gantt_grid_head_cell {
+    cursor: grab !important;
+}
+.gantt_grid_head_cell:active {
+    cursor: grabbing !important;
+}
+.gantt_grid_column_resize_wrap {
+    cursor: col-resize !important;
+    z-index: 30 !important;
+    position: relative;
+}
+.gantt-bar-date-label {
+    font-size: 10px;
+    color: #e4e4e7;
+    white-space: nowrap;
 }
 
 /* Grid readability */
@@ -188,11 +228,17 @@ body:has(.schedule-page-root) #mainContent {
     background-color: rgba(30, 41, 59, 0.7) !important;
     border: 2px solid #64748b !important;
 }
-/* Per-activity colors from task_style override status classes */
-.gantt_task_line.cpm_custom_color .gantt_task_content,
-.gantt_task_line.cpm_custom_color {
+/* Per-activity bar colors — task.color + task_style */
+.gantt_task_line.cpm_custom_color,
+.gantt_task_line.cpm_in_progress,
+.gantt_task_line.cpm_complete,
+.gantt_task_line.cpm_critical,
+.gantt_task_line.cpm_milestone {
+    background: var(--dhx-gantt-task-background, inherit) !important;
+    border-color: var(--dhx-gantt-task-border, inherit) !important;
+}
+.gantt_task_line .gantt_task_content {
     background: inherit !important;
-    border-color: inherit !important;
 }
 .gantt_task_progress { background-color: rgba(0, 0, 0, 0.35) !important; }
 .gantt_task_link .gantt_line_wrapper div {
@@ -229,23 +275,37 @@ body:has(.schedule-page-root) #mainContent {
         -webkit-print-color-adjust: exact;
         print-color-adjust: exact;
     }
-    body.printing-gantt header,
-    body.printing-gantt nav,
-    body.printing-gantt .no-print,
+    body.printing-gantt #appShell > .h-14,
+    body.printing-gantt #appShell > .flex.flex-1 > .w-56,
     body.printing-gantt #scheduleChrome,
     body.printing-gantt #scheduleStatusBar,
     body.printing-gantt #scheduleGanttHost,
-    body.printing-gantt #gantt_here { display: none !important; }
-    body.printing-gantt #mainContent { padding: 0 !important; overflow: visible !important; }
-    body.printing-gantt .schedule-page-root { overflow: visible !important; height: auto !important; }
+    body.printing-gantt #gantt_here,
+    body.printing-gantt #lookaheadViewPanel,
+    body.printing-gantt #traceViewPanel,
+    body.printing-gantt .no-print { display: none !important; }
+    body.printing-gantt #mainContent {
+        padding: 0 !important;
+        overflow: visible !important;
+        display: block !important;
+    }
+    body.printing-gantt .schedule-page-root {
+        overflow: visible !important;
+        height: auto !important;
+    }
     body.printing-gantt #ganttViewPanel {
         display: block !important;
         width: 100% !important;
         border: none !important;
         background: #fff !important;
+        overflow: visible !important;
     }
     body.printing-gantt #schedulePrintSheet {
         display: block !important;
+        position: relative !important;
+        background: #fff !important;
+        color: #111 !important;
+        padding: 0;
     }
     .schedule-print-header {
         font-family: Arial, Helvetica, sans-serif;
@@ -299,7 +359,31 @@ body:has(.schedule-page-root) #mainContent {
     }
     .schedule-print-table td.c { text-align: center; }
     .schedule-print-table tr.print-summary { font-weight: 700; background: #f0f0f0; }
-    .print-bar-cell { width: 38%; padding: 2px 4px !important; }
+    .print-bar-cell { width: 38%; padding: 2px 4px !important; position: relative; }
+    .print-bar-dates {
+        font-size: 6.5pt;
+        color: #333;
+        margin-bottom: 1px;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+    }
+    .print-timescale {
+        position: relative;
+        height: 14px;
+        border-bottom: 1px solid #999;
+        margin-bottom: 2px;
+        background: #eee;
+    }
+    .print-ts-label {
+        position: absolute;
+        top: 1px;
+        transform: translateX(-50%);
+        font-size: 6pt;
+        color: #444;
+        white-space: nowrap;
+    }
+    .print-ts-row td { padding: 0 !important; border-top: none !important; }
     .print-bar-track {
         position: relative;
         height: 12px;
@@ -312,6 +396,22 @@ body:has(.schedule-page-root) #mainContent {
         bottom: 1px;
         border-radius: 2px;
         min-width: 2px;
+    }
+    .print-gantt-chart {
+        margin-top: 14px;
+        page-break-inside: avoid;
+    }
+    .print-chart-title {
+        font-size: 10pt;
+        font-weight: 700;
+        margin: 0 0 6px;
+        color: #111;
+    }
+    .print-chart-svg {
+        width: 100%;
+        border: 1px solid #999;
+        background: #fafafa;
+        display: block;
     }
     body.printing-lookahead .no-print,
     body.printing-lookahead #scheduleChrome,
