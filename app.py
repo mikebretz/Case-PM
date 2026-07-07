@@ -14,6 +14,7 @@ from werkzeug.security import generate_password_hash, check_password_hash
 from werkzeug.utils import secure_filename
 from datetime import datetime, date
 import os
+import json
 from functools import wraps
 
 app = Flask(__name__)
@@ -233,6 +234,14 @@ class ScheduleTask(db.Model):
     assigned_to = db.Column(db.String(100))
     notes = db.Column(db.Text)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
+
+
+class ScheduleData(db.Model):
+    """Full CPM schedule payload (Gantt tasks + links) per project."""
+    id = db.Column(db.Integer, primary_key=True)
+    project_id = db.Column(db.Integer, db.ForeignKey('project.id'), unique=True, nullable=False)
+    payload = db.Column(db.Text)
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
 
 class Company(db.Model):
@@ -955,9 +964,65 @@ def create_safety_report():
 @app.route('/schedule')
 @login_required
 def schedule_page():
-    tasks = ScheduleTask.query.order_by(ScheduleTask.start_date.asc()).all()
     projects = Project.query.order_by(Project.name).all()
-    return render_template('schedule.html', tasks=tasks, projects=projects)
+    if not projects:
+        default = Project(
+            number='PRJ-001',
+            name='Default Construction Project',
+            status='Active',
+            start_date=date.today()
+        )
+        db.session.add(default)
+        db.session.commit()
+        projects = [default]
+    return render_template('schedule.html', projects=projects)
+
+
+@app.route('/api/schedule', methods=['GET'])
+@login_required
+def api_get_schedule():
+    project_id = request.args.get('project_id', type=int)
+    if not project_id:
+        return jsonify({'error': 'project_id required'}), 400
+    record = ScheduleData.query.filter_by(project_id=project_id).first()
+    if not record or not record.payload:
+        return jsonify({'project_id': project_id, 'payload': None})
+    try:
+        payload = json.loads(record.payload)
+    except json.JSONDecodeError:
+        payload = None
+    return jsonify({
+        'project_id': project_id,
+        'payload': payload,
+        'updated_at': record.updated_at.isoformat() if record.updated_at else None
+    })
+
+
+@app.route('/api/schedule', methods=['PUT'])
+@login_required
+def api_save_schedule():
+    try:
+        body = request.get_json(silent=True) or {}
+        project_id = body.get('project_id')
+        payload = body.get('payload')
+        if not project_id or payload is None:
+            return jsonify({'error': 'project_id and payload required'}), 400
+        project_id = int(project_id)
+        if not Project.query.get(project_id):
+            return jsonify({'error': 'Invalid project_id'}), 400
+        record = ScheduleData.query.filter_by(project_id=int(project_id)).first()
+        payload_json = json.dumps(payload)
+        if record:
+            record.payload = payload_json
+            record.updated_at = datetime.utcnow()
+        else:
+            record = ScheduleData(project_id=int(project_id), payload=payload_json)
+            db.session.add(record)
+        db.session.commit()
+        return jsonify({'ok': True, 'project_id': project_id})
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({'error': str(e)}), 500
 
 
 @app.route('/schedule/create', methods=['POST'])

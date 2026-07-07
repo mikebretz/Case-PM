@@ -1,383 +1,172 @@
 {% extends "base.html" %}
 
-{% block content %}
-<div class="max-w-[1600px] mx-auto">
-    
-    <!-- Page Header -->
-    <div class="flex items-center justify-between mb-6">
-        <div>
-            <h1 class="text-3xl font-semibold tracking-tight">Schedule</h1>
-            <p class="text-zinc-400 mt-1">Project timeline and task management</p>
-        </div>
-        
-        <div class="flex items-center gap-3">
-            <!-- View Toggle -->
-            <div class="flex bg-zinc-900 border border-zinc-800 rounded-2xl p-1">
-                <button onclick="switchView('list')" id="listViewBtn"
-                        class="px-4 py-2 text-sm rounded-xl bg-zinc-800 flex items-center gap-2 active-view">
-                    <i class="fa-solid fa-list"></i>
-                    <span>List</span>
-                </button>
-                <button onclick="switchView('gantt')" id="ganttViewBtn"
-                        class="px-4 py-2 text-sm rounded-xl hover:bg-zinc-800 flex items-center gap-2">
-                    <i class="fa-solid fa-chart-gantt"></i>
-                    <span>Gantt</span>
-                </button>
-            </div>
+{% block title %}Schedule{% endblock %}
 
-            <button onclick="showAddTaskModal()" 
-                    class="flex items-center gap-2 px-5 py-2.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded-2xl text-sm font-medium transition-colors">
-                <i class="fa-solid fa-plus"></i>
-                <span>Add Task</span>
+{% block content %}
+<link rel="stylesheet" href="https://cdn.dhtmlx.com/gantt/edge/dhtmlxgantt.css">
+<link rel="stylesheet" href="{{ url_for('static', filename='css/schedule-gantt.css') }}">
+
+<div class="max-w-[100%] mx-auto px-2 pb-4 no-print">
+    <!-- Header -->
+    <div class="flex flex-wrap items-start justify-between gap-4 mb-4">
+        <div>
+            <h1 class="text-2xl font-semibold tracking-tight">Project Schedule</h1>
+            <p class="text-zinc-400 text-sm mt-0.5">CPM scheduling — Gantt, activity table, relationships, baselines &amp; look-ahead</p>
+        </div>
+        <div class="flex flex-wrap items-center gap-2">
+            <select id="scheduleProjectSelect" class="bg-zinc-800 border border-zinc-700 rounded-xl px-3 py-2 text-sm">
+                {% for project in projects %}
+                <option value="{{ project.id }}">{{ project.number }} — {{ project.name }}</option>
+                {% else %}
+                <option value="1">Default Project</option>
+                {% endfor %}
+            </select>
+            <span id="scheduleSaveStatus" class="text-xs text-zinc-500 px-2">Ready</span>
+        </div>
+    </div>
+
+    <!-- Ribbon / Toolbar (MS Project / P6 style) -->
+    <div class="bg-zinc-900 border border-zinc-800 rounded-2xl p-2 mb-3 flex flex-wrap gap-1 items-center">
+        <div class="flex flex-wrap gap-1 border-r border-zinc-700 pr-2 mr-1">
+            <button type="button" class="schedule-toolbar-btn" onclick="ScheduleApp.addActivity('task')" title="Add Activity">
+                <i class="fa-solid fa-plus text-emerald-400"></i> Activity
+            </button>
+            <button type="button" class="schedule-toolbar-btn" onclick="ScheduleApp.addActivity('milestone')" title="Add Milestone">
+                <i class="fa-solid fa-diamond text-sky-400"></i> Milestone
+            </button>
+            <button type="button" class="schedule-toolbar-btn" onclick="ScheduleApp.deleteSelected()" title="Delete">
+                <i class="fa-solid fa-trash text-red-400"></i>
+            </button>
+        </div>
+        <div class="flex flex-wrap gap-1 border-r border-zinc-700 pr-2 mr-1">
+            <button type="button" class="schedule-toolbar-btn" onclick="ScheduleApp.indentSelected()" title="Indent (make child)">
+                <i class="fa-solid fa-indent"></i>
+            </button>
+            <button type="button" class="schedule-toolbar-btn" onclick="ScheduleApp.outdentSelected()" title="Outdent">
+                <i class="fa-solid fa-outdent"></i>
+            </button>
+        </div>
+        <div class="flex flex-wrap gap-1 border-r border-zinc-700 pr-2 mr-1">
+            <button type="button" class="schedule-toolbar-btn" onclick="ScheduleApp.linkSelected('FS')" title="Finish-to-Start link">
+                <i class="fa-solid fa-link"></i> FS
+            </button>
+            <button type="button" class="schedule-toolbar-btn" onclick="ScheduleApp.linkSelected('SS')" title="Start-to-Start">SS</button>
+            <button type="button" class="schedule-toolbar-btn" onclick="ScheduleApp.linkSelected('FF')" title="Finish-to-Finish">FF</button>
+            <button type="button" class="schedule-toolbar-btn" onclick="ScheduleApp.linkSelected('SF')" title="Start-to-Finish">SF</button>
+            <button type="button" class="schedule-toolbar-btn" onclick="ScheduleApp.unlinkSelected()" title="Remove links">
+                <i class="fa-solid fa-link-slash"></i>
+            </button>
+        </div>
+        <div class="flex flex-wrap gap-1 border-r border-zinc-700 pr-2 mr-1">
+            <button type="button" class="schedule-toolbar-btn" onclick="ScheduleApp.runSchedule()" title="Calculate CPM schedule">
+                <i class="fa-solid fa-calculator text-emerald-400"></i> Schedule
+            </button>
+            <button type="button" id="criticalPathBtn" class="schedule-toolbar-btn active-tool" onclick="ScheduleApp.toggleCriticalPath()" title="Toggle critical path">
+                <i class="fa-solid fa-route text-red-400"></i> Critical Path
+            </button>
+            <button type="button" class="schedule-toolbar-btn" onclick="ScheduleApp.setBaseline()" title="Save baseline snapshot">
+                <i class="fa-solid fa-camera"></i> Baseline
+            </button>
+        </div>
+        <div class="flex flex-wrap gap-1 border-r border-zinc-700 pr-2 mr-1">
+            <button type="button" class="schedule-toolbar-btn" onclick="ScheduleApp.zoomGantt('in')"><i class="fa-solid fa-magnifying-glass-plus"></i></button>
+            <button type="button" class="schedule-toolbar-btn" onclick="ScheduleApp.zoomGantt('out')"><i class="fa-solid fa-magnifying-glass-minus"></i></button>
+        </div>
+        <div class="flex flex-wrap gap-1">
+            <button type="button" class="schedule-toolbar-btn" onclick="ScheduleApp.exportJson()"><i class="fa-solid fa-download"></i> Export</button>
+            <button type="button" class="schedule-toolbar-btn" onclick="document.getElementById('scheduleImportInput').click()"><i class="fa-solid fa-upload"></i> Import</button>
+            <input type="file" id="scheduleImportInput" accept=".json" class="hidden" onchange="ScheduleApp.importJson(this.files[0]); this.value=''">
+            <button type="button" class="schedule-toolbar-btn" onclick="ScheduleApp.printGantt()"><i class="fa-solid fa-print"></i> Print Gantt</button>
+            <button type="button" class="schedule-toolbar-btn" onclick="ScheduleApp.saveSchedule()"><i class="fa-solid fa-save text-emerald-400"></i> Save</button>
+        </div>
+    </div>
+
+    <!-- View tabs + schedule settings -->
+    <div class="flex flex-wrap items-center justify-between gap-3 mb-3">
+        <div class="flex bg-zinc-900 border border-zinc-800 rounded-xl p-1">
+            <button type="button" id="tabGantt" class="schedule-view-tab active-view px-4 py-2 text-sm rounded-lg" onclick="ScheduleApp.switchScheduleView('gantt')">
+                <i class="fa-solid fa-chart-gantt mr-1.5"></i> Gantt Chart
+            </button>
+            <button type="button" id="tabLookahead" class="schedule-view-tab px-4 py-2 text-sm rounded-lg text-zinc-400 hover:text-white" onclick="ScheduleApp.switchScheduleView('lookahead')">
+                <i class="fa-solid fa-binoculars mr-1.5"></i> Look-Ahead
+                <span id="lookaheadCount" class="ml-1 text-xs bg-emerald-900/50 text-emerald-400 px-1.5 py-0.5 rounded-full"></span>
+            </button>
+            <button type="button" id="tabTrace" class="schedule-view-tab px-4 py-2 text-sm rounded-lg text-zinc-400 hover:text-white" onclick="ScheduleApp.switchScheduleView('trace')">
+                <i class="fa-solid fa-table mr-1.5"></i> Activity Table
+            </button>
+        </div>
+        <div class="flex flex-wrap items-center gap-3 text-sm">
+            <label class="flex items-center gap-2 text-zinc-400">
+                Data Date
+                <input type="date" id="dataDateInput" class="bg-zinc-800 border border-zinc-700 rounded-lg px-2 py-1.5 text-sm text-white">
+            </label>
+            <label class="flex items-center gap-2 text-zinc-400">
+                Look-ahead (work days)
+                <select id="lookaheadDaysInput" class="bg-zinc-800 border border-zinc-700 rounded-lg px-2 py-1.5 text-sm" onchange="ScheduleApp.renderLookAhead()">
+                    <option value="7">1 Week</option>
+                    <option value="14" selected>2 Weeks</option>
+                    <option value="21">3 Weeks</option>
+                    <option value="30">6 Weeks</option>
+                </select>
+            </label>
+            <button type="button" class="schedule-toolbar-btn" onclick="ScheduleApp.renderLookAhead(); ScheduleApp.printLookAhead()">
+                <i class="fa-solid fa-print"></i> Print Look-Ahead
             </button>
         </div>
     </div>
 
-    <!-- Filters -->
-    <div class="flex flex-wrap items-center gap-3 mb-6 bg-zinc-900 border border-zinc-800 rounded-3xl p-4">
-        <div class="flex-1 min-w-[220px]">
-            <input type="text" id="scheduleSearch" placeholder="Search tasks..." 
-                   class="w-full bg-zinc-800 border border-zinc-700 rounded-2xl px-4 py-2.5 text-sm focus:outline-none focus:border-emerald-600"
-                   onkeyup="filterSchedule()">
-        </div>
-
-        <select id="statusFilter" onchange="filterSchedule()" 
-                class="bg-zinc-800 border border-zinc-700 rounded-2xl px-4 py-2.5 text-sm focus:outline-none focus:border-emerald-600">
-            <option value="">All Statuses</option>
-            <option value="Not Started">Not Started</option>
-            <option value="In Progress">In Progress</option>
-            <option value="Completed">Completed</option>
-            <option value="Delayed">Delayed</option>
-        </select>
-
-        <select id="assigneeFilter" onchange="filterSchedule()" 
-                class="bg-zinc-800 border border-zinc-700 rounded-2xl px-4 py-2.5 text-sm focus:outline-none focus:border-emerald-600">
-            <option value="">All Assignees</option>
-            <!-- Populated dynamically via JS or backend -->
-        </select>
-
-        <button onclick="clearFilters()" 
-                class="px-4 py-2.5 text-sm bg-zinc-800 hover:bg-zinc-700 border border-zinc-700 rounded-2xl transition-colors">
-            Clear Filters
-        </button>
+    <!-- Gantt view -->
+    <div id="ganttViewPanel" class="bg-zinc-900 border border-zinc-800 rounded-2xl overflow-hidden">
+        <div id="gantt_here"></div>
     </div>
 
-    <!-- Schedule Content -->
-    <div id="scheduleContent">
-        
-        <!-- List View -->
-        <div id="listView">
-            <div class="bg-zinc-900 border border-zinc-800 rounded-3xl overflow-hidden">
-                <table class="w-full">
-                    <thead>
-                        <tr class="border-b border-zinc-800 bg-zinc-950">
-                            <th class="text-left px-6 py-4 text-sm font-medium text-zinc-400">Task</th>
-                            <th class="text-left px-6 py-4 text-sm font-medium text-zinc-400">Start Date</th>
-                            <th class="text-left px-6 py-4 text-sm font-medium text-zinc-400">End Date</th>
-                            <th class="text-left px-6 py-4 text-sm font-medium text-zinc-400">Assigned To</th>
-                            <th class="text-center px-6 py-4 text-sm font-medium text-zinc-400">Status</th>
-                            <th class="text-center px-6 py-4 text-sm font-medium text-zinc-400">Progress</th>
-                            <th class="w-12"></th>
-                        </tr>
-                    </thead>
-                    <tbody id="scheduleTableBody" class="divide-y divide-zinc-800">
-                        <!-- Tasks will be populated here via JavaScript or Jinja loop -->
-                    </tbody>
-                </table>
-            </div>
-        </div>
-
-        <!-- Gantt View (Placeholder for now) -->
-        <div id="ganttView" class="hidden">
-            <div class="bg-zinc-900 border border-zinc-800 rounded-3xl p-8 text-center">
-                <i class="fa-solid fa-chart-gantt text-5xl text-zinc-600 mb-4"></i>
-                <h3 class="text-xl font-semibold mb-2">Gantt Chart View</h3>
-                <p class="text-zinc-400 max-w-md mx-auto">Gantt chart view is coming soon. For now, please use the List view.</p>
-            </div>
-        </div>
-
-    </div>
-</div>
-        <!-- Add Task Modal -->
-        <dialog id="addTaskModal" class="bg-zinc-900 border border-zinc-700 rounded-3xl p-0 w-full max-w-lg shadow-2xl">
-            <div class="p-6">
-                <div class="flex items-center justify-between mb-5">
-                    <div class="font-semibold text-xl">Add New Task</div>
-                    <button onclick="document.getElementById('addTaskModal').close()" class="text-zinc-400 hover:text-white text-2xl leading-none">&times;</button>
+    <!-- Look-ahead view -->
+    <div id="lookaheadViewPanel" class="hidden">
+        <div class="bg-zinc-900 border border-zinc-800 rounded-2xl p-5">
+            <div class="flex items-center justify-between mb-4">
+                <div>
+                    <h2 class="text-lg font-semibold">Intelligent Look-Ahead Schedule</h2>
+                    <p class="text-sm text-zinc-400 mt-0.5">Major items, critical path work, in-progress activities, and near-term starts — not the entire schedule.</p>
                 </div>
-
-                <form id="addTaskForm" onsubmit="addNewTask(event)">
-                    <div class="space-y-4">
-                        <div>
-                            <label class="block text-sm text-zinc-400 mb-1.5">Task Name</label>
-                            <input type="text" name="task_name" required
-                                   class="w-full bg-zinc-800 border border-zinc-700 rounded-2xl px-4 py-2.5 text-sm focus:outline-none focus:border-emerald-600">
-                        </div>
-
-                        <div class="grid grid-cols-2 gap-4">
-                            <div>
-                                <label class="block text-sm text-zinc-400 mb-1.5">Start Date</label>
-                                <input type="date" name="start_date" required
-                                       class="w-full bg-zinc-800 border border-zinc-700 rounded-2xl px-4 py-2.5 text-sm focus:outline-none focus:border-emerald-600">
-                            </div>
-                            <div>
-                                <label class="block text-sm text-zinc-400 mb-1.5">End Date</label>
-                                <input type="date" name="end_date" required
-                                       class="w-full bg-zinc-800 border border-zinc-700 rounded-2xl px-4 py-2.5 text-sm focus:outline-none focus:border-emerald-600">
-                            </div>
-                        </div>
-
-                        <div>
-                            <label class="block text-sm text-zinc-400 mb-1.5">Assigned To</label>
-                            <input type="text" name="assigned_to" placeholder="Company or Person"
-                                   class="w-full bg-zinc-800 border border-zinc-700 rounded-2xl px-4 py-2.5 text-sm focus:outline-none focus:border-emerald-600">
-                        </div>
-
-                        <div class="grid grid-cols-2 gap-4">
-                            <div>
-                                <label class="block text-sm text-zinc-400 mb-1.5">Status</label>
-                                <select name="status" class="w-full bg-zinc-800 border border-zinc-700 rounded-2xl px-4 py-2.5 text-sm focus:outline-none focus:border-emerald-600">
-                                    <option value="Not Started">Not Started</option>
-                                    <option value="In Progress">In Progress</option>
-                                    <option value="Completed">Completed</option>
-                                    <option value="Delayed">Delayed</option>
-                                </select>
-                            </div>
-                            <div>
-                                <label class="block text-sm text-zinc-400 mb-1.5">Progress (%)</label>
-                                <input type="number" name="progress" value="0" min="0" max="100"
-                                       class="w-full bg-zinc-800 border border-zinc-700 rounded-2xl px-4 py-2.5 text-sm focus:outline-none focus:border-emerald-600">
-                            </div>
-                        </div>
-                    </div>
-
-                    <div class="flex gap-3 mt-6">
-                        <button type="button" onclick="document.getElementById('addTaskModal').close()"
-                                class="flex-1 py-2.5 bg-zinc-800 hover:bg-zinc-700 rounded-2xl text-sm font-medium transition-colors">
-                            Cancel
-                        </button>
-                        <button type="submit"
-                                class="flex-1 py-2.5 bg-emerald-600 hover:bg-emerald-500 rounded-2xl text-sm font-medium transition-colors">
-                            Add Task
-                        </button>
-                    </div>
-                </form>
+                <button type="button" class="schedule-toolbar-btn" onclick="ScheduleApp.renderLookAhead()">
+                    <i class="fa-solid fa-rotate"></i> Refresh
+                </button>
             </div>
-        </dialog>
+            <div id="lookaheadContent"></div>
+        </div>
+    </div>
 
+    <!-- Activity trace table (P6 activity sheet) -->
+    <div id="traceViewPanel" class="hidden">
+        <div class="bg-zinc-900 border border-zinc-800 rounded-2xl overflow-auto" style="max-height: calc(100dvh - 280px);">
+            <table class="w-full text-sm">
+                <thead class="sticky top-0 bg-zinc-950 border-b border-zinc-800 text-xs uppercase text-zinc-400">
+                    <tr>
+                        <th class="text-left px-3 py-2">WBS</th>
+                        <th class="text-left px-3 py-2">Activity</th>
+                        <th class="text-center px-3 py-2">Dur</th>
+                        <th class="text-left px-3 py-2">Start</th>
+                        <th class="text-left px-3 py-2">Finish</th>
+                        <th class="text-center px-3 py-2">%</th>
+                        <th class="text-left px-3 py-2">Predecessors</th>
+                        <th class="text-center px-3 py-2">Critical</th>
+                        <th class="text-left px-3 py-2">Resource</th>
+                    </tr>
+                </thead>
+                <tbody id="traceTableBody"></tbody>
+            </table>
+        </div>
+    </div>
+
+    <!-- Status bar -->
+    <div id="scheduleStatusBar" class="mt-3 flex flex-wrap gap-6 text-xs text-zinc-500 bg-zinc-900/80 border border-zinc-800 rounded-xl px-4 py-2 no-print">
+        <span>Loading schedule…</span>
     </div>
 </div>
 
-<script>
-    // Sample data (will be replaced with backend data later)
-    let scheduleTasks = [
-        {
-            id: 1,
-            task_name: "Foundation Pour",
-            start_date: "2025-03-10",
-            end_date: "2025-03-14",
-            assigned_to: "ABC Concrete",
-            status: "Completed",
-            progress: 100
-        },
-        {
-            id: 2,
-            task_name: "Steel Erection - Level 1",
-            start_date: "2025-03-17",
-            end_date: "2025-03-28",
-            assigned_to: "Steel Dynamics LLC",
-            status: "In Progress",
-            progress: 65
-        },
-        {
-            id: 3,
-            task_name: "Electrical Rough-In",
-            start_date: "2025-03-24",
-            end_date: "2025-04-04",
-            assigned_to: "PowerTech Electric",
-            status: "Not Started",
-            progress: 0
-        }
-    ];
-
-    function switchView(view) {
-        const listView = document.getElementById('listView');
-        const ganttView = document.getElementById('ganttView');
-        const listBtn = document.getElementById('listViewBtn');
-        const ganttBtn = document.getElementById('ganttViewBtn');
-
-        if (view === 'list') {
-            listView.classList.remove('hidden');
-            ganttView.classList.add('hidden');
-            listBtn.classList.add('active-view', 'bg-zinc-800');
-            ganttBtn.classList.remove('active-view', 'bg-zinc-800');
-        } else {
-            listView.classList.add('hidden');
-            ganttView.classList.remove('hidden');
-            ganttBtn.classList.add('active-view', 'bg-zinc-800');
-            listBtn.classList.remove('active-view', 'bg-zinc-800');
-        }
-    }
-
-    function filterSchedule() {
-        const searchTerm = document.getElementById('scheduleSearch').value.toLowerCase();
-        const statusFilter = document.getElementById('statusFilter').value;
-        const assigneeFilter = document.getElementById('assigneeFilter').value.toLowerCase();
-
-        const filtered = scheduleTasks.filter(task => {
-            const matchesSearch = task.task_name.toLowerCase().includes(searchTerm) || 
-                                task.assigned_to.toLowerCase().includes(searchTerm);
-            const matchesStatus = !statusFilter || task.status === statusFilter;
-            const matchesAssignee = !assigneeFilter || task.assigned_to.toLowerCase().includes(assigneeFilter);
-
-            return matchesSearch && matchesStatus && matchesAssignee;
-        });
-
-        renderScheduleTable(filtered);
-    }
-
-    function clearFilters() {
-        document.getElementById('scheduleSearch').value = '';
-        document.getElementById('statusFilter').value = '';
-        document.getElementById('assigneeFilter').value = '';
-        renderScheduleTable(scheduleTasks);
-    }
-
-    function renderScheduleTable(tasks) {
-        const tbody = document.getElementById('scheduleTableBody');
-        tbody.innerHTML = '';
-
-        if (tasks.length === 0) {
-            tbody.innerHTML = `
-                <tr>
-                    <td colspan="7" class="px-6 py-8 text-center text-zinc-400">
-                        No tasks found matching your filters.
-                    </td>
-                </tr>
-            `;
-            return;
-        }
-
-        tasks.forEach(task => {
-            const statusColor = 
-                task.status === 'Completed' ? 'bg-emerald-600/20 text-emerald-400' :
-                task.status === 'In Progress' ? 'bg-amber-600/20 text-amber-400' :
-                task.status === 'Delayed' ? 'bg-red-600/20 text-red-400' :
-                'bg-zinc-600/20 text-zinc-400';
-
-            const row = document.createElement('tr');
-            row.className = 'hover:bg-zinc-800/60 transition-colors';
-            row.innerHTML = `
-                <td class="px-6 py-4 font-medium">${task.task_name}</td>
-                <td class="px-6 py-4 text-sm text-zinc-400">${task.start_date}</td>
-                <td class="px-6 py-4 text-sm text-zinc-400">${task.end_date}</td>
-                <td class="px-6 py-4 text-sm">${task.assigned_to}</td>
-                <td class="px-6 py-4 text-center">
-                    <span class="inline-block px-3 py-1 rounded-full text-xs font-medium ${statusColor}">
-                        ${task.status}
-                    </span>
-                </td>
-                <td class="px-6 py-4">
-                    <div class="flex items-center gap-2">
-                        <div class="flex-1 bg-zinc-800 rounded-full h-2">
-                            <div class="bg-emerald-500 h-2 rounded-full" style="width: ${task.progress}%"></div>
-                        </div>
-                        <span class="text-xs text-zinc-400 w-8 text-right">${task.progress}%</span>
-                    </div>
-                </td>
-                <td class="px-4 py-4">
-                    <div class="flex items-center gap-1">
-                        <button onclick="editTask(${task.id})" class="p-2 hover:bg-zinc-700 rounded-xl text-zinc-400 hover:text-white">
-                            <i class="fa-solid fa-edit"></i>
-                        </button>
-                        <button onclick="deleteTask(${task.id})" class="p-2 hover:bg-zinc-700 rounded-xl text-zinc-400 hover:text-red-400">
-                            <i class="fa-solid fa-trash"></i>
-                        </button>
-                    </div>
-                </td>
-            `;
-            tbody.appendChild(row);
-        });
-    }
-
-    function showAddTaskModal() {
-        document.getElementById('addTaskModal').showModal();
-    }
-
-    function addNewTask(e) {
-        e.preventDefault();
-        
-        const form = document.getElementById('addTaskForm');
-        const formData = new FormData(form);
-
-        const newTask = {
-            id: Date.now(),
-            task_name: formData.get('task_name'),
-            start_date: formData.get('start_date'),
-            end_date: formData.get('end_date'),
-            assigned_to: formData.get('assigned_to'),
-            status: formData.get('status'),
-            progress: parseInt(formData.get('progress')) || 0
-        };
-
-        scheduleTasks.push(newTask);
-        renderScheduleTable(scheduleTasks);
-        
-        document.getElementById('addTaskModal').close();
-        form.reset();
-
-        // TODO: Send to backend via fetch() later
-        console.log('New task added (local only for now):', newTask);
-    }
-
-    function editTask(taskId) {
-        const task = scheduleTasks.find(t => t.id === taskId);
-        if (!task) return;
-
-        // For now, just alert. We can improve this later.
-        const newStatus = prompt(`Update status for "${task.task_name}" (Current: ${task.status})`, task.status);
-        if (newStatus) {
-            task.status = newStatus;
-            renderScheduleTable(scheduleTasks);
-        }
-    }
-
-    function deleteTask(taskId) {
-        if (!confirm('Are you sure you want to delete this task?')) return;
-
-        scheduleTasks = scheduleTasks.filter(t => t.id !== taskId);
-        renderScheduleTable(scheduleTasks);
-    }
-
-    // Initialize Schedule Page
-    function initializeSchedule() {
-        renderScheduleTable(scheduleTasks);
-
-        // Set default view
-        document.getElementById('listViewBtn').classList.add('active-view', 'bg-zinc-800');
-    }
-
-    // Boot the page
-    window.onload = function() {
-        initializeSchedule();
-    };
-</script>
-    <!-- ==================== FINAL POLISH ==================== -->
-    <script>
-        // Additional safety: Re-render table if needed after full load
-        document.addEventListener('DOMContentLoaded', function() {
-            const tbody = document.getElementById('scheduleTableBody');
-            if (tbody && tbody.children.length === 0) {
-                if (typeof scheduleTasks !== 'undefined' && scheduleTasks.length > 0) {
-                    renderScheduleTable(scheduleTasks);
-                }
-            }
-        });
-
-        console.log('%c[Case PM] Schedule page loaded successfully.', 'color:#10b981');
-    </script>
-
+<script src="https://cdn.dhtmlx.com/gantt/edge/dhtmlxgantt.js"></script>
+<script src="https://cdn.dhtmlx.com/gantt/edge/ext/dhtmlxgantt_marker.js"></script>
+<script src="https://cdn.dhtmlx.com/gantt/edge/ext/dhtmlxgantt_zoom.js"></script>
+<script src="{{ url_for('static', filename='js/schedule-cpm.js') }}"></script>
+<script src="{{ url_for('static', filename='js/schedule-app.js') }}"></script>
 {% endblock %}
-
-</div>
-</div>
