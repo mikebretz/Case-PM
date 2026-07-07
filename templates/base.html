@@ -83,16 +83,27 @@
 
     <div id="appShell" class="flex flex-col h-full min-h-0 overflow-hidden">
     
-    <!-- ==================== TOP HEADER BAR (brand + user) ==================== -->
-    <div class="h-12 border-b border-zinc-800 bg-zinc-900 flex items-center justify-between px-4 flex-shrink-0">
-        <!-- Left: Case PM brand -->
-        <div class="flex items-center gap-2.5">
-            <div class="w-8 h-8 bg-emerald-600 rounded-xl flex items-center justify-center flex-shrink-0">
-                <i class="fa-solid fa-hard-hat text-white text-lg"></i>
+    <!-- ==================== TOP HEADER BAR (brand + project + user) ==================== -->
+    <div class="h-14 border-b border-zinc-800 bg-zinc-900 flex items-center justify-between px-4 flex-shrink-0">
+        <!-- Left: Case PM brand + Current Project -->
+        <div class="flex items-center gap-5 min-w-0">
+            <div class="flex items-center gap-2.5 flex-shrink-0">
+                <div class="w-8 h-8 bg-emerald-600 rounded-xl flex items-center justify-center flex-shrink-0">
+                    <i class="fa-solid fa-hard-hat text-white text-lg"></i>
+                </div>
+                <div class="leading-none">
+                    <div class="font-display text-lg font-semibold tracking-tighter text-white">Case PM</div>
+                    <div class="text-[9px] text-zinc-500 mt-0.5">Construction OS</div>
+                </div>
             </div>
-            <div class="leading-none">
-                <div class="font-display text-lg font-semibold tracking-tighter text-white">Case PM</div>
-                <div class="text-[9px] text-zinc-500 mt-0.5">Construction OS</div>
+            <div class="h-8 w-px bg-zinc-700 flex-shrink-0 hidden sm:block"></div>
+            <div class="flex items-center gap-2 min-w-0 hidden sm:flex">
+                <span class="text-[10px] text-zinc-400 tracking-[1px] font-medium flex-shrink-0">CURRENT PROJECT</span>
+                <button type="button" onclick="document.getElementById('projectSwitcherModal').showModal()"
+                        class="flex items-center gap-2 text-sm font-semibold tracking-tight text-white hover:text-emerald-400 transition-colors min-w-0">
+                    <span id="currentProjectName" class="truncate">{{ project_name if project_name else 'ALDI Lakeland' }}</span>
+                    <i class="fa-solid fa-chevron-down text-xs text-zinc-400 flex-shrink-0"></i>
+                </button>
             </div>
         </div>
 
@@ -281,18 +292,6 @@
 
         <!-- MAIN CONTENT AREA -->
         <div class="flex-1 flex flex-col overflow-hidden min-w-0">
-
-            <!-- Project bar (right of sidebar) -->
-            <div class="flex-shrink-0 border-b border-zinc-800 bg-zinc-900 px-4 py-2">
-                <div class="flex items-center gap-2">
-                    <span class="text-[10px] text-zinc-400 tracking-[1px] font-medium">CURRENT PROJECT</span>
-                    <button type="button" onclick="document.getElementById('projectSwitcherModal').showModal()"
-                            class="flex items-center gap-2 text-sm font-semibold tracking-tight text-white hover:text-emerald-400 transition-colors">
-                        <span id="currentProjectName">{{ project_name if project_name else 'ALDI Lakeland' }}</span>
-                        <i class="fa-solid fa-chevron-down text-xs text-zinc-400"></i>
-                    </button>
-                </div>
-            </div>
 
             <!-- Main Content Block -->
             <div id="mainContent" class="flex-1 min-h-0 overflow-auto p-4">
