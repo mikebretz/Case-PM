@@ -874,6 +874,59 @@ let mainLienWaiver = JSON.parse(localStorage.getItem('mainLienWaiver') || '{}');
         return currentPayAppPeriod ? currentPayAppPeriod.periodNumber : 1;
     }
 
+    function getMostRecentPayAppHistoryEntry() {
+        if (!payAppHistory || payAppHistory.length === 0) return null;
+        return payAppHistory.reduce((best, entry) => {
+            if (!best) return entry;
+            const bestPeriod = Number(best.periodNumber) || 0;
+            const entryPeriod = Number(entry.periodNumber) || 0;
+            if (entryPeriod !== bestPeriod) return entryPeriod > bestPeriod ? entry : best;
+            const bestApproved = new Date(best.snapshot?.approvedAt || best.approvedAt || 0).getTime();
+            const entryApproved = new Date(entry.snapshot?.approvedAt || entry.approvedAt || 0).getTime();
+            if (entryApproved !== bestApproved) return entryApproved > bestApproved ? entry : best;
+            return (Number(entry.id) || 0) > (Number(best.id) || 0) ? entry : best;
+        }, null);
+    }
+
+    function isMostRecentPayAppHistoryPeriod(periodId) {
+        const latest = getMostRecentPayAppHistoryEntry();
+        return !!(latest && String(latest.id) === String(periodId));
+    }
+
+    function restoreSubPayAppsForG702PeriodToTracker(mainPeriod) {
+        const mainP = Number(mainPeriod);
+        if (!mainP || Number.isNaN(mainP)) return 0;
+        let restoredCount = 0;
+
+        Object.keys(subPayAppHistory || {}).forEach(cid => {
+            const hist = subPayAppHistory[cid] || {};
+            Object.keys(hist).forEach(key => {
+                const entry = hist[key];
+                if (!entry || entry.archived !== true) return;
+                const entryMain = entry.pushedFromMainPeriod != null
+                    ? Number(entry.pushedFromMainPeriod)
+                    : (entry.mainG702Period != null ? Number(entry.mainG702Period) : null);
+                if (entryMain !== mainP) return;
+
+                entry.archived = false;
+                entry.status = entry.status || 'Approved';
+                if (entry.pushedFromMainPeriod == null) entry.pushedFromMainPeriod = mainP;
+                if (entry.mainG702Period == null) entry.mainG702Period = mainP;
+                restoredCount++;
+            });
+        });
+
+        if (restoredCount > 0) {
+            safeSetLocalStorage('subPayAppHistory', subPayAppHistory);
+            rebuildPreviousSubPayAppArchiveFromHistory();
+            logPayAppAudit('SUB_PAY_APPS_RESTORED_TO_TRACKER_FROM_G702_REVISION', {
+                mainPeriod: mainP,
+                count: restoredCount
+            });
+        }
+        return restoredCount;
+    }
+
     function isActiveTrackerEntry(entry) {
         return !!(entry && (entry.status === 'Approved' || entry.status === 'Pending Approval') && entry.archived !== true);
     }
@@ -2039,8 +2092,8 @@ let mainLienWaiver = JSON.parse(localStorage.getItem('mainLienWaiver') || '{}');
             tbody.appendChild(row);
         });
 
-        // Show "Request Revision" button ONLY for the most recent historical period
-        const isMostRecent = payAppHistory.length > 0 && payAppHistory[payAppHistory.length - 1].id == periodId;
+        // Show "Request Revision" button ONLY for the most recent historical G702 period
+        const isMostRecent = isMostRecentPayAppHistoryPeriod(periodId);
 
         let revisionButtonHTML = '';
         if (isMostRecent) {
@@ -2085,7 +2138,7 @@ let mainLienWaiver = JSON.parse(localStorage.getItem('mainLienWaiver') || '{}');
             <div class="workflow-bar px-4 py-3 flex items-center gap-4 text-sm border border-amber-600 bg-amber-950/40 rounded-md">
                 <div class="flex items-center gap-2 text-amber-300">
                     <i class="fa-solid fa-exclamation-triangle"></i>
-                    <span class="font-medium">This will push Period ${periodData.periodNumber} back to the Pay Application (G702) tab as Draft so you can edit and re-submit.</span>
+                    <span class="font-medium">This will push Period ${periodData.periodNumber} back to the Pay Application (G702) tab as Draft so you can edit and re-submit. Related sub pay apps for this G702 period will also move back to the Sub Pay App Tracker.</span>
                 </div>
                 <div class="flex items-center gap-3 ml-auto">
                     <button onclick="confirmRevisionPush()" 
@@ -2138,9 +2191,12 @@ let mainLienWaiver = JSON.parse(localStorage.getItem('mainLienWaiver') || '{}');
         };
         localStorage.setItem('currentPayAppPeriod', JSON.stringify(currentPayAppPeriod));
 
+        const restoredSubCount = restoreSubPayAppsForG702PeriodToTracker(periodData.periodNumber);
+
         logPayAppAudit('PAYAPP_REVISION_REQUESTED_FROM_HISTORY', {
             periodNumber: periodData.periodNumber,
-            restoredFromHistoryId: periodId
+            restoredFromHistoryId: periodId,
+            restoredSubPayApps: restoredSubCount
         });
 
         // Switch to G702 tab and re-render so Billed to Date shows the restored historical values
@@ -2153,7 +2209,7 @@ let mainLienWaiver = JSON.parse(localStorage.getItem('mainLienWaiver') || '{}');
                 wb.innerHTML = `
                     <div class="workflow-bar px-4 py-2.5 flex items-center gap-3 text-sm bg-emerald-950/40 border border-emerald-600 rounded-md">
                         <span class="text-emerald-400"><i class="fa-solid fa-check-circle"></i></span>
-                        <span class="text-emerald-300">Period ${periodData.periodNumber} restored as Draft. Billed to Date has been rewound to the exact historical snapshot values.</span>
+                        <span class="text-emerald-300">Period ${periodData.periodNumber} restored as Draft. Billed to Date rewound to the historical snapshot.${restoredSubCount > 0 ? ` ${restoredSubCount} related sub pay app(s) moved back to the Sub Pay App Tracker.` : ''}</span>
                     </div>
                 `;
                 setTimeout(() => {
@@ -4324,24 +4380,43 @@ let mainLienWaiver = JSON.parse(localStorage.getItem('mainLienWaiver') || '{}');
             `;
         } else if (currentStatus === 'Approved') {
             // === CLEAN PROCORE-STYLE MONTHLY BILLING FLOW (stays on this tab) ===
-            // Use SUB-SPECIFIC pay app number (independent of main G702 period) for monthly billing cycle
-            const subPayAppNum = (subPayAppNumbers[selectedSubCompanyId] || 1);
-            const pendingEntry = subPendingSubmissions[selectedSubCompanyId];
-            const historyEntry = subPayAppHistory[selectedSubCompanyId] && subPayAppHistory[selectedSubCompanyId][subPayAppNum];
-            const subLines = subcontractorSOV[selectedSubCompanyId] || [];
-            const draftTotal = subLines.reduce((sum, l) => sum + (l.work_this_period || 0) + (l.materials_stored || 0) + (l.co_billed_this_period || 0), 0);
+            const cid = String(selectedSubCompanyId);
+            const subPayAppNum = subPayAppNumbers[cid] || subPayAppNumbers[selectedSubCompanyId] || 1;
+            const mainP = getCurrentG702PeriodNum();
+            const activePaper = findActiveSubPayAppForG702Period(selectedSubCompanyId, mainP);
+            const activeEntry = activePaper ? activePaper.entry : null;
+            const pendingEntry = subPendingSubmissions[cid] || subPendingSubmissions[selectedSubCompanyId];
+            const subLines = subcontractorSOV[cid] || subcontractorSOV[selectedSubCompanyId] || [];
+            const draftTotal = subLines.reduce((sum, l) =>
+                sum + (l.work_this_period || 0) + (l.materials_stored || 0) + (l.co_billed_this_period || 0), 0);
             const isZeroComplianceDraft = draftTotal === 0 && allowZeroDollarSubPayApps;
-            // Pending if either in left-hand pending store OR legacy history pending (use sub's own number)
-            const isPending = (pendingEntry && (pendingEntry.periodNumber === subPayAppNum || pendingEntry.isCompliance)) || (historyEntry && historyEntry.status === 'Pending Approval');
-            const waiverLive = subLienWaivers[selectedSubCompanyId] && subLienWaivers[selectedSubCompanyId][subPayAppNum];
+            const isPending = !!(activeEntry && activeEntry.status === 'Pending Approval');
+            const isInTracker = !!(activeEntry && activeEntry.status === 'Approved' && activeEntry.archived !== true);
+            const waiverLive = (subLienWaivers[cid] || subLienWaivers[selectedSubCompanyId] || {})[subPayAppNum];
             const waiverFromPending = pendingEntry && pendingEntry.lienWaiver && pendingEntry.lienWaiver.filename;
-            const hasWaiver = (waiverLive && waiverLive.filename && waiverLive.filename.trim() !== '') || !!waiverFromPending;
-            const waiverForPill = waiverLive || (pendingEntry && pendingEntry.lienWaiver) || {};
+            const waiverFromActive = activeEntry && activeEntry.lienWaiver && activeEntry.lienWaiver.filename;
+            const hasWaiver = (waiverLive && waiverLive.filename && waiverLive.filename.trim() !== '')
+                || !!waiverFromPending
+                || !!waiverFromActive;
+            const waiverForPill = waiverLive || (pendingEntry && pendingEntry.lienWaiver) || (activeEntry && activeEntry.lienWaiver) || {};
 
             let statusMessage = '';
             let buttonsHTML = '';
 
-            if (isPending) {
+            if (isInTracker) {
+                statusMessage = activeEntry.isCompliance
+                    ? 'Compliance pay app approved — in Sub Pay App Tracker (awaiting main G702 approval)'
+                    : 'Pay Application approved — in Sub Pay App Tracker (awaiting main G702 approval)';
+                buttonsHTML = `
+                    <div class="ml-3 px-5 py-2 bg-emerald-900/50 border border-emerald-600 text-emerald-300 rounded text-sm font-medium flex items-center gap-2">
+                        <i class="fa-solid fa-inbox"></i>
+                        <span>In Tracker — open Sub Pay App Tracker to review</span>
+                    </div>
+                    <button onclick="switchPayAppTab('sub-pay-app-tracker')" class="px-4 py-2 bg-sky-700 hover:bg-sky-600 text-white rounded text-sm flex items-center gap-2">
+                        <i class="fa-solid fa-arrow-right"></i> <span>Go to Tracker</span>
+                    </button>
+                `;
+            } else if (isPending) {
                 // Submitted → show approval controls right here (no moving to Previous tab)
                 statusMessage = 'Pay Application Submitted — Awaiting Approval';
                 if (isCurrentUserApprover()) {
@@ -5012,9 +5087,22 @@ let mainLienWaiver = JSON.parse(localStorage.getItem('mainLienWaiver') || '{}');
             const remainingEl = document.getElementById('subRemainingToBill');
             if (workInput && matInput && remainingEl) {
                 const updateRemaining = () => {
-                    const w = parseFloat(workInput.value) || 0;
-                    const m = parseFloat(matInput.value) || 0;
-                    const newRemaining = remaining - w - m;
+                    let w = parseFloat(workInput.value) || 0;
+                    let m = parseFloat(matInput.value) || 0;
+                    let total = w + m;
+                    if (total > remaining) {
+                        if (m > remaining) {
+                            m = Math.max(0, remaining);
+                            matInput.value = m % 1 === 0 ? String(m) : m.toFixed(2);
+                            w = 0;
+                            workInput.value = '0';
+                        } else {
+                            w = Math.max(0, remaining - m);
+                            workInput.value = w % 1 === 0 ? String(w) : w.toFixed(2);
+                        }
+                        total = w + m;
+                    }
+                    const newRemaining = remaining - total;
                     remainingEl.innerHTML = `Remaining after this entry: <span class="${newRemaining < 0 ? 'text-red-400' : 'text-emerald-400'}">${formatCurrency(newRemaining)}</span>`;
                 };
                 workInput.oninput = updateRemaining;
@@ -5032,7 +5120,14 @@ let mainLienWaiver = JSON.parse(localStorage.getItem('mainLienWaiver') || '{}');
         const coTotal = line.change_orders || 0;
         const coBilledPreviously = line.co_billed_to_date || 0;
         const coWorkThis = parseFloat(newCoWorkValue) || 0;
-        const coRemainingAfter = Math.max(0, coTotal - coBilledPreviously - coWorkThis);
+        const coRemaining = Math.max(0, coTotal - coBilledPreviously);
+        const clampedCoWork = Math.min(coWorkThis, coRemaining);
+        const coRemainingAfter = Math.max(0, coRemaining - clampedCoWork);
+
+        const coInput = document.getElementById('subCoWorkThisPeriodInput');
+        if (coInput && coWorkThis > coRemaining) {
+            coInput.value = clampedCoWork % 1 === 0 ? String(clampedCoWork) : clampedCoWork.toFixed(2);
+        }
 
         const prevEl = document.getElementById('subCoPreviouslyBilledDisplay');
         const remEl = document.getElementById('subCoRemainingToBillDisplay');
@@ -5060,9 +5155,33 @@ let mainLienWaiver = JSON.parse(localStorage.getItem('mainLienWaiver') || '{}');
         const mats = parseFloat(matInput.value) || 0;
         const coWork = coWorkInput ? (parseFloat(coWorkInput.value) || 0) : 0;
 
-        const lines = subcontractorSOV[companyId] || [];
+        const lines = subcontractorSOV[companyId] || subcontractorSOV[String(companyId)] || [];
         const line = lines.find(l => l.id === lineId);
         if (!line) return;
+
+        const previousBilled = line.billed_to_date || 0;
+        const currentCommitment = (line.original_commitment || 0) + (line.change_orders || 0);
+        const remaining = Math.max(0, currentCommitment - previousBilled);
+        const totalThisPeriod = workThis + mats;
+
+        if (totalThisPeriod > remaining + 0.001) {
+            showCenteredAlert(
+                `BLOCKED: Work Completed + Materials Stored (${formatCurrency(totalThisPeriod)}) exceeds remaining to bill (${formatCurrency(remaining)}). Reduce the amounts so "Remaining after this entry" does not go negative.`,
+                'warning'
+            );
+            return;
+        }
+
+        const coTotal = line.change_orders || 0;
+        const coBilledPreviously = line.co_billed_to_date || 0;
+        const coRemaining = Math.max(0, coTotal - coBilledPreviously);
+        if (coWork > coRemaining + 0.001) {
+            showCenteredAlert(
+                `BLOCKED: Change Order work this period (${formatCurrency(coWork)}) exceeds CO remaining to bill (${formatCurrency(coRemaining)}).`,
+                'warning'
+            );
+            return;
+        }
 
         // === DRAFT SAVE ONLY (User Request - Same as G702) ===
         // We save the "this period" values as draft fields on the line.
@@ -5738,36 +5857,41 @@ let mainLienWaiver = JSON.parse(localStorage.getItem('mainLienWaiver') || '{}');
 
     function approveSubPayApp(companyId) {
         if (!companyId) return;
+        const cid = String(companyId);
 
-        // === USE SUB-SPECIFIC PAY APP NUMBER (not main G702 period) ===
-        // The number was assigned at Submit time and stored in pendingEntry
         let currentPeriodNum = 1;
-        let pendingEntry = subPendingSubmissions[companyId];
+        let pendingEntry = subPendingSubmissions[cid] || subPendingSubmissions[companyId];
         let sourceWasPending = false;
 
-        if (pendingEntry && pendingEntry.periodNumber) {
+        if (pendingEntry && (pendingEntry.periodNumber || pendingEntry.isCompliance)) {
             if (pendingEntry.isCompliance) {
-                currentPeriodNum = subPayAppNumbers[companyId] || 1;
+                currentPeriodNum = subPayAppNumbers[cid] || subPayAppNumbers[companyId] || 1;
             } else {
                 currentPeriodNum = pendingEntry.periodNumber;
             }
             sourceWasPending = true;
         } else {
-            // Fallback: try to find the most recent pending/approved for this sub
-            if (subPayAppHistory[companyId]) {
-                const nums = Object.keys(subPayAppHistory[companyId]).map(Number).sort((a,b) => b-a);
+            const paper = findActiveSubPayAppForG702Period(cid, getCurrentG702PeriodNum());
+            if (paper && paper.entry && paper.entry.status === 'Pending Approval') {
+                pendingEntry = paper.entry;
+                currentPeriodNum = pendingEntry.isCompliance
+                    ? (subPayAppNumbers[cid] || subPayAppNumbers[companyId] || 1)
+                    : (pendingEntry.periodNumber || subPayAppNumbers[cid] || 1);
+            } else if (subPayAppHistory[cid] || subPayAppHistory[companyId]) {
+                const hist = subPayAppHistory[cid] || subPayAppHistory[companyId];
+                const nums = Object.keys(hist).map(Number).sort((a, b) => b - a);
                 if (nums.length > 0) currentPeriodNum = nums[0];
-            } else if (subPayAppNumbers[companyId]) {
-                currentPeriodNum = subPayAppNumbers[companyId];
+                pendingEntry = hist[Object.keys(hist).sort().pop()];
+            } else if (subPayAppNumbers[cid] || subPayAppNumbers[companyId]) {
+                currentPeriodNum = subPayAppNumbers[cid] || subPayAppNumbers[companyId];
             }
-            pendingEntry = subPayAppHistory[companyId] && subPayAppHistory[companyId][currentPeriodNum];
             if (!pendingEntry) {
                 showCenteredAlert("No submitted Pay Application found for this period. Please Submit Application first on the Subcontractor Schedule of Values tab.", "warning");
                 return;
             }
         }
 
-        const lines = subcontractorSOV[companyId] || [];
+        const lines = subcontractorSOV[cid] || subcontractorSOV[companyId] || [];
 
         // === SNAPSHOT billed_to_date BEFORE committing this period (for correct restoration on Request Revision) ===
         const billedToDateSnapshot = {};
@@ -5789,47 +5913,53 @@ let mainLienWaiver = JSON.parse(localStorage.getItem('mainLienWaiver') || '{}');
                     line.co_billed_to_date = (line.co_billed_to_date || 0) + coWork;
                 }
 
-                // Clear the draft "this period" fields → SOV becomes clean for next period
-                line.work_this_period = 0;
-                line.materials_stored = 0;
-                line.co_billed_this_period = 0;
-
                 totalCommittedThisPeriod += totalThis;
             }
+
+            // Always clear draft fields (including $0 compliance) so Submit does not stay lit
+            line.work_this_period = 0;
+            line.materials_stored = 0;
+            line.co_billed_this_period = 0;
         });
 
         localStorage.setItem('subcontractorSOV', JSON.stringify(subcontractorSOV));
 
         const waiverStoragePeriod = (pendingEntry.lienWaiver && pendingEntry.lienWaiver.storagePeriod)
+            || subPayAppNumbers[cid]
             || subPayAppNumbers[companyId]
             || currentPeriodNum;
         const mainPeriodAtApproval = currentPayAppPeriod ? currentPayAppPeriod.periodNumber : null;
         const historyKey = resolvePayAppHistoryStorageKey(pendingEntry, currentPeriodNum, mainPeriodAtApproval);
 
+        archiveSubLienWaiverFile(cid, waiverStoragePeriod, historyKey);
         archiveSubLienWaiverFile(companyId, waiverStoragePeriod, historyKey);
 
         let lienWaiverForHistory = compactLienWaiverMeta(
-            resolveSubLienWaiverFile(companyId, { storagePeriod: historyKey }) || pendingEntry.lienWaiver,
+            resolveSubLienWaiverFile(cid, { storagePeriod: historyKey }) || pendingEntry.lienWaiver,
             historyKey
         );
 
-        if (subLienWaivers[companyId] && subLienWaivers[companyId][waiverStoragePeriod]) {
-            delete subLienWaivers[companyId][waiverStoragePeriod];
-        }
+        [cid, String(companyId)].forEach(key => {
+            if (subLienWaivers[key]) {
+                delete subLienWaivers[key][waiverStoragePeriod];
+                delete subLienWaivers[key][currentPeriodNum];
+                delete subLienWaivers[key][historyKey];
+                if (Object.keys(subLienWaivers[key]).length === 0) delete subLienWaivers[key];
+            }
+        });
         safeSetLocalStorage('subLienWaivers', subLienWaivers);
 
         const approvedPayAppNumber = currentPeriodNum;
         const isCompliance = pendingEntry.isCompliance === true;
 
         if (!isCompliance) {
-            if (!subPayAppNumbers[companyId]) subPayAppNumbers[companyId] = 1;
-            subPayAppNumbers[companyId] = approvedPayAppNumber + 1;
+            if (!subPayAppNumbers[cid] && !subPayAppNumbers[companyId]) subPayAppNumbers[cid] = 1;
+            subPayAppNumbers[cid] = approvedPayAppNumber + 1;
             safeSetLocalStorage('subPayAppNumbers', subPayAppNumbers);
         }
 
-        // === Move to RIGHT HAND: Save/ensure in subPayAppHistory as Approved ===
-        if (!subPayAppHistory[companyId]) subPayAppHistory[companyId] = {};
-        subPayAppHistory[companyId][historyKey] = {
+        if (!subPayAppHistory[cid]) subPayAppHistory[cid] = {};
+        subPayAppHistory[cid][historyKey] = {
             periodNumber: (pendingEntry.isCompliance === true) ? 1005 : currentPeriodNum,
             periodStart: pendingEntry.periodStart || (currentPayAppPeriod ? currentPayAppPeriod.periodStart : ''),
             periodEnd: pendingEntry.periodEnd || (currentPayAppPeriod ? currentPayAppPeriod.periodEnd : ''),
@@ -5849,14 +5979,13 @@ let mainLienWaiver = JSON.parse(localStorage.getItem('mainLienWaiver') || '{}');
         };
         if (!safeSetLocalStorage('subPayAppHistory', subPayAppHistory)) return;
 
-        // If it came from pending, remove it from left-hand pending store
-        if (sourceWasPending && subPendingSubmissions[companyId]) {
+        if (sourceWasPending && (subPendingSubmissions[cid] || subPendingSubmissions[companyId])) {
+            delete subPendingSubmissions[cid];
             delete subPendingSubmissions[companyId];
             safeSetLocalStorage('subPendingSubmissions', subPendingSubmissions);
         }
 
-        // Keep SOV status as Approved (locked for next period)
-        updateSubSOVStatus(companyId, 'Approved', { approvedBy: "Michael Bretz (Project Manager)", approvedDate: new Date().toISOString() });
+        updateSubSOVStatus(cid, 'Approved', { approvedBy: "Michael Bretz (Project Manager)", approvedDate: new Date().toISOString() });
 
         logPayAppAudit('SUB_PAYAPP_APPROVED_AND_COMMITTED', { 
             companyId: companyId, 
