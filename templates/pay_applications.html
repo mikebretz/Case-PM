@@ -320,7 +320,7 @@
                         <div class="text-sm text-zinc-300">Require Lien Waiver even if billing $0 that month</div>
                         <div class="text-[10px] text-zinc-500">When ON, Subs must submit a $0 lien waiver for periods with no billing activity (Compliance).</div>
                     </div>
-                    <input type="checkbox" id="requireZeroDollarLienWaiverToggle" class="w-5 h-5 accent-emerald-600" ${requireZeroDollarLienWaiver ? 'checked' : ''}>
+                    <input type="checkbox" id="requireLienWaiverOnSubPayAppToggle" class="w-5 h-5 accent-emerald-600" ${requireLienWaiverOnSubPayApp ? 'checked' : ''}>
                 </label>
             </div>
 
@@ -396,7 +396,7 @@
 let subSOVStatus = JSON.parse(localStorage.getItem('subSOVStatus') || '{}'); // { [companyId]: { status: ..., unlockedBy?, ... } }
 let lienWaivers = JSON.parse(localStorage.getItem('lienWaivers') || '{}'); // { [companyId]: { filename: string, uploadedAt: string, submitted: boolean } }
 let requireLienWaiverOnSubPayApp = localStorage.getItem('requireLienWaiverOnSubPayApp') !== 'false'; // default true
-let requireZeroDollarLienWaiver = localStorage.getItem('requireZeroDollarLienWaiver') === 'true'; // NEW: Zero Dollar Waiver Requirement
+let requireLienWaiverOnSubPayApp = localStorage.getItem('requireLienWaiverOnSubPayApp') === 'true'; // NEW: Zero Dollar Waiver Requirement
 let requireSubmissionDeadline = localStorage.getItem('requireSubmissionDeadline') === 'true';
 let submissionDeadlineDate = localStorage.getItem('submissionDeadlineDate') || '';
 let allowZeroDollarSubPayApps = localStorage.getItem('allowZeroDollarSubPayApps') !== 'false'; // NEW: Allow $0 sub pay apps (compliance) without using a pay app number
@@ -769,9 +769,7 @@ let mainLienWaiver = JSON.parse(localStorage.getItem('mainLienWaiver') || '{}');
                     submitted: false
                 };
 
-                // Also store under a special "LATEST_COMPLIANCE" key so zero-dollar compliance submissions
                 // can reliably pick up the most recent lien waiver even if they don't consume a numbered pay app slot.
-                subLienWaivers[companyId]['LATEST_COMPLIANCE'] = {
                     filename: file.name,
                     dataUrl: dataUrl,
                     uploadedDate: new Date().toISOString(),
@@ -4894,7 +4892,7 @@ let mainLienWaiver = JSON.parse(localStorage.getItem('mainLienWaiver') || '{}');
             // Use the CURRENT numeric pay app number (e.g. 1), but mark it as compliance.
             // Do NOT increment the counter. The SOV tab stays on "Pay App #1 Current".
             // In the Tracker it will be shown as "Pay App #1 C".
-            isComplianceSubmission = true;
+            
             if (!subPayAppNumbers[companyId]) {
                 subPayAppNumbers[companyId] = 1;
                 localStorage.setItem('subPayAppNumbers', JSON.stringify(subPayAppNumbers));
@@ -4909,13 +4907,10 @@ let mainLienWaiver = JSON.parse(localStorage.getItem('mainLienWaiver') || '{}');
             currentPeriodNum = subPayAppNumbers[companyId];
         }
 
-        // Lien waiver lookup: For zero-dollar compliance submissions, prefer the special LATEST_COMPLIANCE key
         // so the waiver travels with the "Pay App --" entry without being tied to a numbered pay app.
         let waiver = null;
-        if (isComplianceSubmission) {
-            waiver = subLienWaivers[companyId] && subLienWaivers[companyId]['LATEST_COMPLIANCE'];
+        if (false) {
             if (!waiver) {
-                // Fallback to the normal numbered key if LATEST_COMPLIANCE wasn't set
                 waiver = subLienWaivers[companyId] && subLienWaivers[companyId][currentPeriodNum];
             }
         } else {
@@ -4984,7 +4979,6 @@ let mainLienWaiver = JSON.parse(localStorage.getItem('mainLienWaiver') || '{}');
         // For compliance submissions, remove the live lien waiver so the pill disappears from Sub SOV tab
         if (isComplianceSubmission && companyId) {
             if (subLienWaivers[companyId]) {
-                delete subLienWaivers[companyId]['LATEST_COMPLIANCE'];
                 // Also clean any numeric key for the current number
                 if (subLienWaivers[companyId][currentPeriodNum]) {
                     delete subLienWaivers[companyId][currentPeriodNum];
@@ -5071,8 +5065,6 @@ let mainLienWaiver = JSON.parse(localStorage.getItem('mainLienWaiver') || '{}');
             delete subLienWaivers[companyId][currentPeriodNum];
         }
         // Also clean up the special compliance key after approval (especially important for zero-dollar submissions)
-        if (subLienWaivers[companyId] && subLienWaivers[companyId]['LATEST_COMPLIANCE']) {
-            delete subLienWaivers[companyId]['LATEST_COMPLIANCE'];
         }
         localStorage.setItem('subLienWaivers', JSON.stringify(subLienWaivers));
 
@@ -7132,10 +7124,10 @@ function printSubcontractorG703(companyId) {
         }
 
         // NEW: Zero-Dollar Lien Waiver Toggle
-        const zeroDollarToggle = document.getElementById('requireZeroDollarLienWaiverToggle');
+        const zeroDollarToggle = document.getElementById('requireLienWaiverOnSubPayAppToggle');
         if (zeroDollarToggle) {
-            requireZeroDollarLienWaiver = zeroDollarToggle.checked;
-            localStorage.setItem('requireZeroDollarLienWaiver', requireZeroDollarLienWaiver);
+            requireLienWaiverOnSubPayApp = zeroDollarToggle.checked;
+            localStorage.setItem('requireLienWaiverOnSubPayApp', requireLienWaiverOnSubPayApp);
         }
 
         // Submission Deadline (Day of Month)
@@ -7182,7 +7174,7 @@ function printSubcontractorG703(companyId) {
 
         const waivers = lienWaivers[companyId] || {};
         const status = getSubSOVStatus(companyId);
-        const isZeroRequired = requireZeroDollarLienWaiver;
+        const isZeroRequired = requireLienWaiverOnSubPayApp;
 
         // If the SOV is not yet Approved, compliance is not yet required.
         if (status !== 'Approved' && status !== 'Approved — Waiting on Lien Waiver') {
