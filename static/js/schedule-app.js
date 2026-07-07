@@ -133,34 +133,11 @@
         gantt.config.grid_width = total;
     }
 
-    function syncTimelineInnerWidth(timelineCell, timelineW) {
-        if (!timelineCell) return;
-        timelineCell.style.setProperty('width', timelineW + 'px', 'important');
-        timelineCell.style.setProperty('right', '0', 'important');
-        timelineCell.style.setProperty('left', 'auto', 'important');
-        const selectors = [
-            '.gantt_layout_content',
-            '.gantt_task',
-            '.gantt_task_bg',
-            '.gantt_task_scale',
-            '.gantt_data_area',
-            '.gantt_bars_area'
-        ];
-        selectors.forEach(sel => {
-            timelineCell.querySelectorAll(sel).forEach(el => {
-                el.style.width = timelineW + 'px';
-                el.style.minWidth = timelineW + 'px';
-            });
-        });
-    }
-
     function applyChartOverlay() {
         if (!ganttReady) return;
         const root = document.querySelector('#gantt_here .gantt_layout_root');
         if (!root) return;
 
-        const hostEl = document.getElementById('gantt_here');
-        const hostW = hostEl?.offsetWidth || 1200;
         const timelineW = getTimelineWidth();
 
         const cells = root.querySelectorAll(':scope > .gantt_layout_cell');
@@ -173,8 +150,8 @@
         gridCell.style.cssText = 'flex:1 1 auto;width:100%!important;min-width:0!important;position:relative;z-index:2;overflow:hidden;';
         if (nativeResizer) nativeResizer.style.cssText = 'display:none!important;width:0!important;min-width:0!important;';
 
+        // Viewport only — do NOT clamp inner task/data area width (that locked scrolling to ~2 weeks)
         timelineCell.style.cssText = `position:absolute!important;top:0;right:0;bottom:0;width:${timelineW}px!important;z-index:15;box-shadow:-8px 0 24px rgba(0,0,0,0.55);pointer-events:auto;overflow:hidden;`;
-        syncTimelineInnerWidth(timelineCell, timelineW);
 
         let handle = document.getElementById('scheduleChartResizer');
         if (!handle) {
@@ -579,7 +556,9 @@
         gantt.config.show_errors = false;
         gantt.config.highlight_critical_path = true;
         gantt.config.grid_elastic_columns = false;
-        gantt.config.keep_grid_width = true;
+        gantt.config.keep_grid_width = false;
+        gantt.config.round_dnd_dates = false;
+        gantt.config.drag_timeline = { useKey: false };
         gantt.config.autosize = false;
         gantt.config.reorder_grid_columns = true;
         gantt.config.open_tree_initially = true;
@@ -724,22 +703,28 @@
         gantt.attachEvent('onAfterLinkAdd', queueSave);
         gantt.attachEvent('onAfterLinkUpdate', queueSave);
         gantt.attachEvent('onAfterLinkDelete', queueSave);
-        gantt.attachEvent('onAfterTaskDrag', queueSave);
+        gantt.attachEvent('onAfterTaskDrag', function () {
+            queueSave();
+            gantt.render();
+        });
         gantt.attachEvent('onAfterColumnReorder', () => {
             columnOrder = gantt.config.columns.map(c => c.name);
             scheduleSettings.column_order = columnOrder.slice();
             syncGridTableWidth();
             queueSave();
-            queueChartOverlay();
+            gantt.render();
         });
         gantt.attachEvent('onColumnResizeEnd', function (index, column, new_width) {
             if (column && column.name) {
                 columnWidths[column.name] = new_width;
                 column.width = new_width;
+                if (gantt.config.columns[index]) {
+                    gantt.config.columns[index].width = new_width;
+                }
             }
             syncGridTableWidth();
             queueSave();
-            queueChartOverlay();
+            gantt.render();
         });
         gantt.attachEvent('onGanttRender', () => {
             refreshWbsCodes();
@@ -748,6 +733,7 @@
                 requestAnimationFrame(applyChartOverlay);
             }
         });
+
 
         syncGridTableWidth();
         gantt.init('gantt_here');

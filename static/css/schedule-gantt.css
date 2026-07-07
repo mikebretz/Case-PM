@@ -106,8 +106,9 @@ body:has(.schedule-page-root) #mainContent {
 }
 .gantt_grid_column_resize_wrap {
     cursor: col-resize !important;
-    z-index: 30 !important;
+    z-index: 35 !important;
     position: relative;
+    pointer-events: auto !important;
 }
 .gantt-bar-date-label {
     font-size: 10px;
@@ -195,7 +196,6 @@ body:has(.schedule-page-root) #mainContent {
     overflow: hidden !important;
     text-overflow: ellipsis;
     white-space: nowrap;
-    flex: 0 0 auto !important;
 }
 .gantt_grid_editor_placeholder,
 .gantt_inline_editor {
