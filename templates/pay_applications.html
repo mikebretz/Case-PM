@@ -66,29 +66,36 @@
     border-radius: 6px;
   }
   /* Pay Applications page: pin toolbar through workflow; only table scrolls */
+  .flex-1.min-h-0.overflow-auto.p-6:has(.pay-app-page) {
+    overflow: hidden !important;
+    display: flex;
+    flex-direction: column;
+    padding: 0 !important;
+  }
   .pay-app-page {
     display: flex;
     flex-direction: column;
-    height: 100%;
+    flex: 1;
     min-height: 0;
-    margin: -1.5rem;
-    padding: 1.5rem 0 2.5rem;
+    width: 100%;
+    padding: 1.5rem 1.5rem 0;
     overflow: hidden;
     box-sizing: border-box;
   }
-  .pay-app-pinned {
-    flex-shrink: 0;
-    padding-left: 1.5rem;
-    padding-right: 1.5rem;
+  .pay-app-stack {
+    display: flex;
+    flex-direction: column;
+    flex: 1;
+    min-height: 0;
+    width: 100%;
+    max-width: 100%;
+    overflow: hidden;
   }
   .pay-app-table-panel {
     flex: 1 1 auto;
     min-height: 0;
     display: flex;
     flex-direction: column;
-    margin-left: 1.5rem;
-    margin-right: 1.5rem;
-    margin-bottom: 0.5rem;
     overflow: hidden;
   }
   #payAppTableScrollContainer {
@@ -100,9 +107,10 @@
 </style>
 
 <div class="pay-app-page">
+<div class="pay-app-stack">
 
 <!-- PAGE TOOLBAR (project + user profile live in base.html) -->
-<div class="pay-app-pinned flex items-center justify-between flex-shrink-0">
+<div class="flex items-center justify-between flex-shrink-0">
     <div class="flex items-center gap-3">
         <div class="text-2xl font-semibold text-white">Pay Applications</div>
         <div id="payAppRevisionBadge" onclick="showPayAppVersionHistory()" 
@@ -132,7 +140,7 @@
 </div>
 
 <!-- TABS (clean, consistent with budget style) -->
-<div class="pay-app-pinned mt-4 flex border-b border-zinc-700">
+<div class="mt-4 flex border-b border-zinc-700 flex-shrink-0">
     <button onclick="switchPayAppTab('previous-payapps')" id="tab-previous-payapps"
             class="tab-button px-6 py-3 text-sm font-medium text-zinc-400 hover:text-white">Previous Pay Applications</button>
 
@@ -153,12 +161,12 @@
 </div>
 
 <!-- SUMMARY CARDS -->
-<div class="pay-app-pinned bg-zinc-900 border border-zinc-700 mt-4 rounded-md p-4 flex-shrink-0" id="payAppSummaryCards">
+<div class="bg-zinc-900 border border-zinc-700 mt-4 rounded-md p-4 flex-shrink-0" id="payAppSummaryCards">
     <!-- Populated dynamically by tab -->
 </div>
 
 <!-- WORKFLOW / ACTION BAR (tab-specific, prevents button multiplication) -->
-<div id="payAppWorkflowBar" class="pay-app-pinned mb-3 flex-shrink-0"></div>
+<div id="payAppWorkflowBar" class="mb-3 flex-shrink-0"></div>
 
 <!-- TABLE CONTAINER -->
 <div class="pay-app-table-panel border border-zinc-700 rounded-md bg-zinc-900">
@@ -175,14 +183,6 @@
 </div>
 
 </div>
-
-<!-- Fixed Bottom Status Bar -->
-<div class="fixed bottom-0 left-64 right-0 bg-zinc-900 border-t border-zinc-700 px-6 py-2 text-xs text-zinc-400 flex items-center justify-between z-[60]">
-    <div class="flex items-center gap-4">
-        <div>Pay Applications • Linked to Budget &amp; Schedule of Values • ALDI Lakeland</div>
-        <button onclick="showPayAppAuditLog()" class="text-emerald-400 hover:text-emerald-300 underline">View Pay Application Audit Log</button>
-    </div>
-    <div class="text-emerald-400">● Online</div>
 </div>
 
 <!-- ==================== ALL MODALS (styled exactly like budget.html) ==================== -->

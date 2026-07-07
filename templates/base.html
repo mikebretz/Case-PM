@@ -65,9 +65,11 @@
         }
     </style>
 </head>
-<body class="bg-zinc-950 text-zinc-200">
+<body class="bg-zinc-950 text-zinc-200 h-screen overflow-hidden">
 
     {% if current_user.is_authenticated %}
+
+    <div id="appShell" class="flex flex-col h-full min-h-0 overflow-hidden">
     
     <!-- ==================== TOP HEADER BAR ==================== -->
     <div class="h-16 border-b border-zinc-800 bg-zinc-900 flex items-center justify-between px-6 flex-shrink-0">
@@ -104,7 +106,7 @@
     </div>
 
     <!-- ==================== MAIN LAYOUT ==================== -->
-    <div class="flex h-screen overflow-hidden">
+    <div class="flex flex-1 min-h-0 overflow-hidden">
         
         <!-- SIDEBAR -->
         <div class="w-64 bg-zinc-900 border-r border-zinc-800 flex flex-col">
@@ -285,15 +287,18 @@
         <div class="flex-1 flex flex-col overflow-hidden">
 
             <!-- Main Content Block -->
-            <div class="flex-1 overflow-auto p-6">
+            <div class="flex-1 min-h-0 overflow-auto p-6">
                 <!-- Page Content Goes Here -->
                 {% block content %}{% endblock %}
             </div>
             
             <!-- Footer Bar -->
-            <div class="h-12 border-t border-zinc-800 bg-zinc-900 px-6 flex items-center justify-between text-xs text-zinc-500">
-                <div>
-                    Last synced: <span id="lastSyncTime">just now</span>
+            <div class="h-12 flex-shrink-0 border-t border-zinc-800 bg-zinc-900 px-6 flex items-center justify-between text-xs text-zinc-500">
+                <div class="flex items-center gap-4 min-w-0">
+                    <div class="whitespace-nowrap">Last synced: <span id="lastSyncTime">just now</span></div>
+                    {% if request.endpoint == 'pay_applications_page' %}
+                    <button type="button" onclick="typeof showPayAppAuditLog === 'function' && showPayAppAuditLog()" class="text-emerald-400 hover:text-emerald-300 underline whitespace-nowrap">View Pay Application Audit Log</button>
+                    {% endif %}
                 </div>
                 <div class="flex items-center gap-4">
                     <div class="flex items-center gap-1.5">
@@ -304,6 +309,7 @@
                 </div>
             </div>
         </div>
+    </div>
     </div>
 
     <!-- ==================== QUICK ADD MODAL ==================== -->
