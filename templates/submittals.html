@@ -9,6 +9,31 @@ if (window.pdfjsLib) {
     pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
 }
 </script>
+<style>
+  .submittal-dialog {
+    background-color: #18181b;
+    border: 1px solid #3f3f46;
+    border-radius: 0.75rem;
+    color: #fff;
+    padding: 0;
+    margin: auto;
+    max-width: 95vw;
+    z-index: 999999;
+  }
+  .submittal-dialog::backdrop {
+    background: rgba(0, 0, 0, 0.72);
+  }
+  .submittal-dialog .drag-handle {
+    cursor: move;
+  }
+  .submittal-modal-panel {
+    position: relative;
+    margin: auto;
+  }
+  .submittal-modal-panel .drag-handle {
+    cursor: move;
+  }
+</style>
 <div class="content-wrapper py-6 px-6">
     <!-- Header -->
     <div class="flex items-center justify-between mb-6">
@@ -162,8 +187,8 @@ if (window.pdfjsLib) {
 
 <!-- Upload Spec Book Modal -->
 <div id="uploadSpecBookModal" class="hidden fixed inset-0 bg-black/70 flex items-center justify-center z-[60] p-4">
-    <div class="bg-zinc-900 border border-zinc-700 rounded-xl w-full max-w-2xl flex flex-col">
-        <div class="px-6 py-4 border-b border-zinc-700 flex items-center justify-between">
+    <div class="submittal-modal-panel bg-zinc-900 border border-zinc-700 rounded-xl w-full max-w-2xl flex flex-col">
+        <div class="drag-handle px-6 py-4 border-b border-zinc-700 flex items-center justify-between bg-zinc-950">
             <div>
                 <h3 class="text-xl font-semibold text-white">Upload Specifications Book (PDF)</h3>
                 <p class="text-sm text-zinc-400 mt-0.5">Extract CSI sections and submittal requirements into your log</p>
@@ -221,8 +246,8 @@ if (window.pdfjsLib) {
 
 <!-- Detail Modal -->
 <div id="detailModal" class="hidden fixed inset-0 bg-black/70 flex items-center justify-center z-50 p-4">
-    <div class="bg-zinc-900 border border-zinc-700 rounded-xl w-full max-w-[1100px] max-h-[92vh] flex flex-col">
-        <div class="flex items-center justify-between px-6 py-4 border-b border-zinc-700">
+    <div class="submittal-modal-panel bg-zinc-900 border border-zinc-700 rounded-xl w-full max-w-[1100px] max-h-[92vh] flex flex-col">
+        <div class="drag-handle flex items-center justify-between px-6 py-4 border-b border-zinc-700 bg-zinc-950">
             <div class="flex items-center gap-3">
                 <div id="modalSubmittalNumber" class="font-mono text-xl font-bold text-emerald-400"></div>
                 <div id="modalStatusBadge" class="px-3 py-1 rounded-full text-xs font-semibold"></div>
@@ -255,7 +280,7 @@ if (window.pdfjsLib) {
                     <div class="space-y-4">
                         <div>
                             <label class="block text-xs uppercase tracking-wider text-zinc-500 mb-1.5">Spec Section</label>
-                            <select id="modalSpecSection" onchange="updateSectionNameFromSelect()" class="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-sm">
+                            <select id="modalSpecSection" onchange="updateSectionNameFromSelect(); updateViewInSpecBookButton();" class="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-sm">
                                 <!-- Populated by JS -->
                             </select>
                         </div>
@@ -381,8 +406,8 @@ if (window.pdfjsLib) {
 
 <!-- Spec Sections Modal (THE GEAR MODAL) -->
 <div id="specSectionsModal" class="hidden fixed inset-0 bg-black/70 flex items-center justify-center z-[70] p-4">
-    <div class="bg-zinc-900 border border-zinc-700 rounded-xl w-full max-w-6xl max-h-[90vh] flex flex-col">
-        <div class="px-6 py-4 border-b border-zinc-700 flex items-center justify-between">
+    <div class="submittal-modal-panel bg-zinc-900 border border-zinc-700 rounded-xl w-full max-w-6xl max-h-[90vh] flex flex-col">
+        <div class="drag-handle px-6 py-4 border-b border-zinc-700 flex items-center justify-between bg-zinc-950">
             <div>
                 <h3 class="text-xl font-semibold">Spec Sections Management</h3>
                 <p class="text-sm text-zinc-400">Program Settings • CSI MasterFormat 2020</p>
@@ -436,6 +461,213 @@ const SPEC_BOOK_DB_NAME = 'casepm_spec_books';
 const SPEC_BOOK_STORE = 'books';
 const SPEC_BOOK_ID = 'current';
 const SPEC_BOOK_META_KEY = 'specBookMeta_gear_fixed';
+const SPEC_BOOK_DB_VERSION = 2;
+
+// ==================== CENTERED DIALOGS (program style) ====================
+
+function escapeSubmittalHtml(text) {
+    return String(text || '')
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;');
+}
+
+function makeSubmittalModalDraggable(dialog) {
+    const handle = dialog.querySelector('.drag-handle');
+    if (!handle || handle.dataset.dragBound === '1') return;
+    handle.dataset.dragBound = '1';
+    let pos1 = 0, pos2 = 0, pos3 = 0, pos4 = 0;
+    handle.onmousedown = (e) => {
+        if (e.target.closest('button, input, select, textarea, a')) return;
+        e.preventDefault();
+        pos3 = e.clientX;
+        pos4 = e.clientY;
+        document.onmouseup = () => { document.onmouseup = null; document.onmousemove = null; };
+        document.onmousemove = (ev) => {
+            ev.preventDefault();
+            pos1 = pos3 - ev.clientX;
+            pos2 = pos4 - ev.clientY;
+            pos3 = ev.clientX;
+            pos4 = ev.clientY;
+            dialog.style.top = (dialog.offsetTop - pos2) + 'px';
+            dialog.style.left = (dialog.offsetLeft - pos1) + 'px';
+            dialog.style.transform = 'none';
+            dialog.style.margin = '0';
+        };
+    };
+}
+
+function resetSubmittalPanelPosition(panel) {
+    if (!panel) return;
+    panel.style.position = '';
+    panel.style.top = '';
+    panel.style.left = '';
+    panel.style.margin = 'auto';
+    panel.style.transform = '';
+}
+
+function initDraggableSubmittalPanel(overlayId) {
+    const overlay = document.getElementById(overlayId);
+    const panel = overlay?.querySelector('.submittal-modal-panel');
+    if (!panel) return;
+    resetSubmittalPanelPosition(panel);
+    const handle = panel.querySelector('.drag-handle');
+    if (!handle || handle.dataset.dragBound === '1') return;
+    handle.dataset.dragBound = '1';
+    let pos1 = 0, pos2 = 0, pos3 = 0, pos4 = 0;
+    handle.onmousedown = (e) => {
+        if (e.target.closest('button, input, select, textarea, a')) return;
+        e.preventDefault();
+        const rect = panel.getBoundingClientRect();
+        panel.style.position = 'fixed';
+        panel.style.margin = '0';
+        panel.style.top = rect.top + 'px';
+        panel.style.left = rect.left + 'px';
+        pos3 = e.clientX;
+        pos4 = e.clientY;
+        document.onmouseup = () => { document.onmouseup = null; document.onmousemove = null; };
+        document.onmousemove = (ev) => {
+            ev.preventDefault();
+            pos1 = pos3 - ev.clientX;
+            pos2 = pos4 - ev.clientY;
+            pos3 = ev.clientX;
+            pos4 = ev.clientY;
+            panel.style.top = (panel.offsetTop - pos2) + 'px';
+            panel.style.left = (panel.offsetLeft - pos1) + 'px';
+        };
+    };
+}
+
+function showCenteredAlert(message, type = 'info') {
+    const dialog = document.createElement('dialog');
+    dialog.className = 'submittal-dialog';
+    dialog.style.width = 'min(520px, 92vw)';
+
+    let headerClass = 'bg-zinc-950 border-b border-zinc-700';
+    let icon = '<i class="fa-solid fa-info-circle text-sky-400"></i>';
+    let title = 'Notice';
+    if (type === 'success') {
+        icon = '<i class="fa-solid fa-check-circle text-emerald-400"></i>';
+        title = 'Success';
+        headerClass = 'bg-emerald-950/40 border-b border-emerald-800';
+    } else if (type === 'warning') {
+        icon = '<i class="fa-solid fa-exclamation-triangle text-amber-400"></i>';
+        title = 'Warning';
+        headerClass = 'bg-amber-950/30 border-b border-amber-800';
+    } else if (type === 'error') {
+        icon = '<i class="fa-solid fa-circle-xmark text-red-400"></i>';
+        title = 'Error';
+        headerClass = 'bg-red-950/30 border-b border-red-800';
+    }
+
+    dialog.innerHTML = `
+        <div class="drag-handle px-5 py-3 ${headerClass} flex items-center gap-2">
+            ${icon}
+            <span class="font-semibold text-sm">${title}</span>
+        </div>
+        <div class="px-5 py-4 text-sm text-zinc-200 leading-relaxed" style="white-space: pre-wrap;">${escapeSubmittalHtml(message)}</div>
+        <div class="px-5 py-3 border-t border-zinc-700 bg-zinc-950 flex justify-end">
+            <button type="button" class="px-6 py-2 bg-emerald-600 hover:bg-emerald-500 rounded-md text-sm font-medium">OK</button>
+        </div>
+    `;
+    document.body.appendChild(dialog);
+    const close = () => { dialog.close(); dialog.remove(); };
+    dialog.querySelector('button').onclick = close;
+    dialog.addEventListener('cancel', (e) => { e.preventDefault(); close(); });
+    dialog.showModal();
+    makeSubmittalModalDraggable(dialog);
+}
+
+function showCenteredConfirm(message, options = {}) {
+    const {
+        title = 'Confirm',
+        confirmText = 'Yes',
+        cancelText = 'Cancel',
+        danger = false
+    } = options;
+
+    return new Promise(resolve => {
+        const dialog = document.createElement('dialog');
+        dialog.className = 'submittal-dialog';
+        dialog.style.width = 'min(520px, 92vw)';
+
+        dialog.innerHTML = `
+            <div class="drag-handle px-5 py-3 bg-zinc-950 border-b border-zinc-700 flex items-center gap-2">
+                <i class="fa-solid fa-question-circle text-sky-400"></i>
+                <span class="font-semibold text-sm">${escapeSubmittalHtml(title)}</span>
+            </div>
+            <div class="px-5 py-4 text-sm text-zinc-200 leading-relaxed" style="white-space: pre-wrap;">${escapeSubmittalHtml(message)}</div>
+            <div class="px-5 py-3 border-t border-zinc-700 bg-zinc-950 flex justify-end gap-2">
+                <button type="button" data-action="cancel" class="px-4 py-2 bg-zinc-700 hover:bg-zinc-600 rounded-md text-sm">${escapeSubmittalHtml(cancelText)}</button>
+                <button type="button" data-action="confirm" class="px-5 py-2 ${danger ? 'bg-red-600 hover:bg-red-500' : 'bg-emerald-600 hover:bg-emerald-500'} rounded-md text-sm font-medium">${escapeSubmittalHtml(confirmText)}</button>
+            </div>
+        `;
+        document.body.appendChild(dialog);
+        const finish = (result) => { dialog.close(); dialog.remove(); resolve(result); };
+        dialog.querySelector('[data-action="cancel"]').onclick = () => finish(false);
+        dialog.querySelector('[data-action="confirm"]').onclick = () => finish(true);
+        dialog.addEventListener('cancel', (e) => { e.preventDefault(); finish(false); });
+        dialog.showModal();
+        makeSubmittalModalDraggable(dialog);
+    });
+}
+
+function showCenteredPrompt(fields, options = {}) {
+    const {
+        title = 'Input',
+        confirmText = 'OK',
+        cancelText = 'Cancel'
+    } = options;
+    const fieldList = Array.isArray(fields) ? fields : [{ id: 'value', label: fields.label || 'Value', value: fields.value || '', placeholder: fields.placeholder || '' }];
+
+    return new Promise(resolve => {
+        const dialog = document.createElement('dialog');
+        dialog.className = 'submittal-dialog';
+        dialog.style.width = 'min(520px, 92vw)';
+
+        const inputsHtml = fieldList.map(field => `
+            <div>
+                <label class="block text-xs uppercase tracking-wider text-zinc-500 mb-1.5">${escapeSubmittalHtml(field.label || field.id)}</label>
+                <input type="text" data-field="${escapeSubmittalHtml(field.id)}" value="${escapeSubmittalHtml(field.value || '')}" placeholder="${escapeSubmittalHtml(field.placeholder || '')}"
+                       class="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-sm focus:border-emerald-600">
+            </div>
+        `).join('');
+
+        dialog.innerHTML = `
+            <div class="drag-handle px-5 py-3 bg-zinc-950 border-b border-zinc-700 flex items-center gap-2">
+                <i class="fa-solid fa-pen-to-square text-sky-400"></i>
+                <span class="font-semibold text-sm">${escapeSubmittalHtml(title)}</span>
+            </div>
+            <form class="px-5 py-4 space-y-3">${inputsHtml}</form>
+            <div class="px-5 py-3 border-t border-zinc-700 bg-zinc-950 flex justify-end gap-2">
+                <button type="button" data-action="cancel" class="px-4 py-2 bg-zinc-700 hover:bg-zinc-600 rounded-md text-sm">${escapeSubmittalHtml(cancelText)}</button>
+                <button type="submit" data-action="confirm" class="px-5 py-2 bg-emerald-600 hover:bg-emerald-500 rounded-md text-sm font-medium">${escapeSubmittalHtml(confirmText)}</button>
+            </div>
+        `;
+        document.body.appendChild(dialog);
+
+        const form = dialog.querySelector('form');
+        const inputEls = [...dialog.querySelectorAll('input[data-field]')];
+        const finish = (result) => { dialog.close(); dialog.remove(); resolve(result); };
+
+        form.onsubmit = (e) => {
+            e.preventDefault();
+            const values = {};
+            inputEls.forEach(el => { values[el.dataset.field] = el.value.trim(); });
+            finish(values);
+        };
+        dialog.querySelector('[data-action="cancel"]').onclick = () => finish(null);
+        dialog.addEventListener('cancel', (e) => { e.preventDefault(); finish(null); });
+        dialog.showModal();
+        makeSubmittalModalDraggable(dialog);
+        const firstInput = inputEls[0];
+        if (firstInput) {
+            firstInput.focus();
+            firstInput.select();
+        }
+    });
+}
 
 const SUBMITTAL_TYPE_KEYWORDS = [
     'Product Data', 'Shop Drawings', 'Samples', 'Design Data', "Manufacturer's Instructions",
@@ -603,6 +835,7 @@ function openDetailModal(id, isNew = false, newData = null) {
     
     // Show modal
     document.getElementById('detailModal').classList.remove('hidden');
+    initDraggableSubmittalPanel('detailModal');
     switchTab(0);
 }
 
@@ -628,6 +861,12 @@ function saveSubmittalFromModal() {
     currentModalItem.impactNotes = document.getElementById('modalImpactNotes').value;
     currentModalItem.receivedFrom = document.getElementById('modalReceivedFrom').value;
     currentModalItem.referredTo = document.getElementById('modalReferredTo').value;
+    if (specBookArchive) {
+        currentModalItem.specBookFilename = specBookArchive.filename;
+        if (currentModalItem.specSection) {
+            currentModalItem.specBookPage = resolveSpecBookPageForSubmittal(currentModalItem);
+        }
+    }
 
     if (!currentModalItem.number) {
         currentModalItem.number = generateNextNumber(currentModalItem.specSection);
@@ -677,12 +916,13 @@ function showSpecSectionsManagement() {
     console.log('[GEAR] showSpecSectionsManagement called');
     const modal = document.getElementById('specSectionsModal');
     if (!modal) {
-        alert('Error: Spec Sections modal not found in the page.');
+        showCenteredAlert('Error: Spec Sections modal not found in the page.', 'error');
         console.error('specSectionsModal element is missing from the DOM.');
         return;
     }
     modal.classList.remove('hidden');
     renderSpecSectionsTable();
+    initDraggableSubmittalPanel('specSectionsModal');
 }
 
 function closeSpecSectionsModal() {
@@ -719,29 +959,32 @@ function toggleSpecActive(id) {
     if (s) { s.active = !s.active; saveData(); renderSpecSectionsTable(); }
 }
 
-function editSpecSection(id) {
+async function editSpecSection(id) {
     const s = specSections.find(x => x.id === id);
     if (!s) return;
-    const newTitle = prompt('Edit Title:', s.title);
-    if (newTitle) { s.title = newTitle; saveData(); renderSpecSectionsTable(); }
+    const result = await showCenteredPrompt(
+        [{ id: 'title', label: 'Section Title', value: s.title }],
+        { title: 'Edit Spec Section', confirmText: 'Save' }
+    );
+    if (result && result.title) { s.title = result.title; saveData(); renderSpecSectionsTable(); }
 }
 
-function deleteSpecSection(id) {
-    if (!confirm('Delete this section?')) return;
+async function deleteSpecSection(id) {
+    if (!(await showCenteredConfirm('Delete this section?', { title: 'Delete Spec Section', confirmText: 'Delete', danger: true }))) return;
     specSections = specSections.filter(x => x.id !== id);
     saveData();
     renderSpecSectionsTable();
 }
 
-function showAddSpecSectionModal() {
-    const div = prompt('Division (e.g. 09):');
-    if (!div) return;
-    const num = prompt('Section Number (e.g. 09 65 00):');
-    if (!num) return;
-    const title = prompt('Section Title:');
-    if (!title) return;
-    
-    specSections.push({id: Date.now(), division: div, number: num, title: title, active: true});
+async function showAddSpecSectionModal() {
+    const result = await showCenteredPrompt([
+        { id: 'division', label: 'Division', placeholder: 'e.g. 09' },
+        { id: 'number', label: 'Section Number', placeholder: 'e.g. 09 65 00' },
+        { id: 'title', label: 'Section Title', placeholder: '' }
+    ], { title: 'Add Spec Section', confirmText: 'Add' });
+    if (!result || !result.division || !result.number || !result.title) return;
+
+    specSections.push({ id: Date.now(), division: result.division, number: result.number, title: result.title, active: true });
     saveData();
     renderSpecSectionsTable();
 }
@@ -775,8 +1018,8 @@ function importSpecSectionsCSV(e) {
     reader.readAsText(file);
 }
 
-function loadFullMasterFormat() {
-    if (!confirm('Add many standard sections?')) return;
+async function loadFullMasterFormat() {
+    if (!(await showCenteredConfirm('Add many standard sections?', { title: 'Load MasterFormat Sections' }))) return;
     const more = [
         {division:"01", number:"01 30 00", title:"Administrative Requirements"},
         {division:"03", number:"03 35 00", title:"Concrete Finishing"},
@@ -848,7 +1091,7 @@ function applyDigitalSignature() {
         action: 'Digitally Signed by Current User',
         user: 'Current User (Simulated)'
     });
-    alert('Digital signature applied (simulated).');
+    showCenteredAlert('Digital signature applied (simulated).', 'success');
     // Re-render history if on that tab
 }
 
@@ -874,6 +1117,7 @@ function showUploadSpecBookModal() {
     document.getElementById('specBookPreview').classList.add('hidden');
     document.getElementById('specBookImportBtn').disabled = true;
     document.getElementById('uploadSpecBookModal').classList.remove('hidden');
+    initDraggableSubmittalPanel('uploadSpecBookModal');
     bindSpecBookDragDrop();
 }
 
@@ -917,11 +1161,11 @@ function setSpecBookProgress(pct, label) {
 
 async function processSpecBookFile(file) {
     if (!file.name.toLowerCase().endsWith('.pdf')) {
-        alert('Please upload a PDF specifications book.');
+        showCenteredAlert('Please upload a PDF specifications book.', 'warning');
         return;
     }
     if (!window.pdfjsLib) {
-        alert('PDF library failed to load. Please refresh the page and try again.');
+        showCenteredAlert('PDF library failed to load. Please refresh the page and try again.', 'error');
         return;
     }
 
@@ -980,7 +1224,7 @@ async function processSpecBookFile(file) {
         }
     } catch (err) {
         console.error('Spec book PDF parse error:', err);
-        alert('Could not read the PDF: ' + (err.message || err));
+        showCenteredAlert('Could not read the PDF: ' + (err.message || err), 'error');
         setSpecBookProgress(0, 'Error reading PDF');
     }
 }
@@ -1388,15 +1632,18 @@ function addParsedEntry(data, entries, seen) {
     entries.push({ ...data });
 }
 
-function importParsedSpecBook() {
+async function importParsedSpecBook() {
     if (!parsedSpecBookEntries.length) {
-        alert('No submittal items to import. Upload and parse a specifications PDF first.');
+        showCenteredAlert('No submittal items to import. Upload and parse a specifications PDF first.', 'warning');
         return;
     }
 
     const mode = document.querySelector('input[name="specBookImportMode"]:checked')?.value || 'append';
     if (mode === 'replace' && submittals.length > 0) {
-        if (!confirm(`Replace all ${submittals.length} existing submittal(s) with ${parsedSpecBookEntries.length} imported item(s)?`)) {
+        if (!(await showCenteredConfirm(
+            `Replace all ${submittals.length} existing submittal(s) with ${parsedSpecBookEntries.length} imported item(s)?`,
+            { title: 'Replace Submittal Log', confirmText: 'Replace All', danger: true }
+        ))) {
             return;
         }
         submittals = [];
@@ -1453,22 +1700,22 @@ function importParsedSpecBook() {
     updateMetrics();
 
     if (imported === 0) {
-        alert('All detected submittal items already exist in the log (duplicates skipped).');
+        showCenteredAlert('All detected submittal items already exist in the log (duplicates skipped).', 'info');
     } else {
-        alert(`Imported ${imported} submittal item(s) into the log.\n\nDouble-click any row to fill in dates, contacts, and status.`);
+        showCenteredAlert(`Imported ${imported} submittal item(s) into the log.\n\nDouble-click any row to fill in dates, contacts, and status.`, 'success');
     }
 }
 
-function deleteSubmittal(id) {
-    if (!confirm('Delete this submittal?')) return;
+async function deleteSubmittal(id) {
+    if (!(await showCenteredConfirm('Delete this submittal?', { title: 'Delete Submittal', confirmText: 'Delete', danger: true }))) return;
     submittals = submittals.filter(s => s.id !== id);
     saveData();
     renderSubmittalsTable();
     updateMetrics();
 }
 
-function clearSubmittalLog() {
-    if (!confirm('Clear the entire Submittal Log for testing?')) return;
+async function clearSubmittalLog() {
+    if (!(await showCenteredConfirm('Clear the entire Submittal Log for testing?', { title: 'Clear Log', confirmText: 'Clear All', danger: true }))) return;
     submittals = [];
     saveData();
     renderSubmittalsTable();
@@ -1483,10 +1730,14 @@ function printSubmittalLog() {
 
 function openSpecBookDb() {
     return new Promise((resolve, reject) => {
-        const req = indexedDB.open(SPEC_BOOK_DB_NAME, 1);
-        req.onupgradeneeded = () => {
-            if (!req.result.objectStoreNames.contains(SPEC_BOOK_STORE)) {
-                req.result.createObjectStore(SPEC_BOOK_STORE);
+        const req = indexedDB.open(SPEC_BOOK_DB_NAME, SPEC_BOOK_DB_VERSION);
+        req.onupgradeneeded = (event) => {
+            const db = req.result;
+            if (event.oldVersion > 0 && event.oldVersion < SPEC_BOOK_DB_VERSION && db.objectStoreNames.contains(SPEC_BOOK_STORE)) {
+                db.deleteObjectStore(SPEC_BOOK_STORE);
+            }
+            if (!db.objectStoreNames.contains(SPEC_BOOK_STORE)) {
+                db.createObjectStore(SPEC_BOOK_STORE, { keyPath: 'id' });
             }
         };
         req.onsuccess = () => resolve(req.result);
@@ -1515,7 +1766,7 @@ async function saveSpecBookArchive(file, meta) {
         const tx = db.transaction(SPEC_BOOK_STORE, 'readwrite');
         tx.objectStore(SPEC_BOOK_STORE).put(record);
         tx.oncomplete = () => resolve();
-        tx.onerror = () => reject(tx.error);
+        tx.onerror = () => reject(tx.error || new Error('Failed to save spec book to storage'));
     });
 
     localStorage.setItem(SPEC_BOOK_META_KEY, JSON.stringify({
@@ -1654,7 +1905,7 @@ function updateViewInSpecBookButton() {
 function viewSubmittalInSpecBook() {
     if (!currentModalItem) return;
     if (!specBookArchive || !specBookArchive.blobUrl) {
-        alert('No specifications book on file. Use Upload Specs Book (PDF) to add one.');
+        showCenteredAlert('No specifications book on file. Use Upload Specs Book (PDF) to add one.', 'warning');
         return;
     }
     const page = resolveSpecBookPageForSubmittal(currentModalItem);
@@ -1678,7 +1929,7 @@ function closeSpecBookViewer(trigger) {
 
 function openSpecBookViewer({ page, title, subtitle, specSection, paragraph }) {
     if (!specBookArchive?.blobUrl) {
-        alert('Specifications book file is not available.');
+        showCenteredAlert('Specifications book file is not available.', 'error');
         return;
     }
     document.querySelectorAll('.submittal-spec-viewer').forEach(el => {
@@ -1690,20 +1941,16 @@ function openSpecBookViewer({ page, title, subtitle, specSection, paragraph }) {
     const pdfSrc = `${specBookArchive.blobUrl}#page=${pageNum}&view=FitH`;
 
     const modal = document.createElement('dialog');
-    modal.className = 'submittal-spec-viewer bg-zinc-900 border border-zinc-700 rounded-xl p-0 w-full max-w-[min(1100px,95vw)] shadow-2xl z-[99999]';
+    modal.className = 'submittal-dialog submittal-spec-viewer';
+    modal.style.width = 'min(1100px, 95vw)';
     modal.style.maxHeight = '90vh';
-    modal.style.margin = 'auto';
-    modal.style.position = 'fixed';
-    modal.style.top = '50%';
-    modal.style.left = '50%';
-    modal.style.transform = 'translate(-50%, -50%)';
 
     modal.innerHTML = `
-        <div class="px-6 py-4 border-b border-zinc-700 bg-zinc-950 flex items-center justify-between gap-4">
+        <div class="drag-handle px-6 py-4 border-b border-zinc-700 bg-zinc-950 flex items-center justify-between gap-4">
             <div class="min-w-0">
-                <div class="font-semibold text-lg text-white truncate">${title || 'Specifications Book'}</div>
-                <div class="text-sm text-zinc-400 truncate">${subtitle || ''}</div>
-                <div class="text-xs text-sky-400 mt-0.5 font-mono">Section ${specSection || '—'}${paragraph ? ` • ¶ ${paragraph}` : ''} — Page ${pageNum} of ${specBookArchive.pageCount || '?'}</div>
+                <div class="font-semibold text-lg text-white truncate">${escapeSubmittalHtml(title || 'Specifications Book')}</div>
+                <div class="text-sm text-zinc-400 truncate">${escapeSubmittalHtml(subtitle || '')}</div>
+                <div class="text-xs text-sky-400 mt-0.5 font-mono">Section ${escapeSubmittalHtml(specSection || '—')}${paragraph ? ` • ¶ ${escapeSubmittalHtml(paragraph)}` : ''} — Page ${pageNum} of ${specBookArchive.pageCount || '?'}</div>
             </div>
             <div class="flex items-center gap-2 flex-shrink-0">
                 <button type="button" onclick="jumpSpecBookPage(${Math.max(1, pageNum - 1)})" class="px-3 py-1.5 bg-zinc-700 hover:bg-zinc-600 rounded text-xs" ${pageNum <= 1 ? 'disabled' : ''}>Prev</button>
@@ -1714,7 +1961,7 @@ function openSpecBookViewer({ page, title, subtitle, specSection, paragraph }) {
             <embed id="specBookPdfEmbed" src="${pdfSrc}" type="application/pdf" class="w-full rounded-lg" style="height: 70vh; min-height: 480px;" />
         </div>
         <div class="px-6 py-3 border-t border-zinc-700 flex justify-between items-center bg-zinc-900 text-sm">
-            <span class="text-zinc-500 text-xs truncate max-w-[50%]">${specBookArchive.filename || 'Specifications.pdf'}</span>
+            <span class="text-zinc-500 text-xs truncate max-w-[50%]">${escapeSubmittalHtml(specBookArchive.filename || 'Specifications.pdf')}</span>
             <div class="flex items-center gap-2">
                 <button type="button" onclick="printSpecBookViewer()" class="px-4 py-2 bg-emerald-600 hover:bg-emerald-500 rounded-lg text-sm font-medium flex items-center gap-2">
                     <i class="fa-solid fa-print"></i> Print
@@ -1729,6 +1976,7 @@ function openSpecBookViewer({ page, title, subtitle, specSection, paragraph }) {
     modal.addEventListener('cancel', e => { e.preventDefault(); closeSpecBookViewer(modal); });
     document.body.appendChild(modal);
     modal.showModal();
+    makeSubmittalModalDraggable(modal);
 }
 
 function jumpSpecBookPage(page) {
