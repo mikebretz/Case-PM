@@ -870,14 +870,190 @@ let mainLienWaiver = JSON.parse(localStorage.getItem('mainLienWaiver') || '{}');
         return regularPayAppHistoryKey(payAppNumber);
     }
 
-    function hasActiveSubPayAppInTracker(companyId) {
-        if (!companyId) return false;
-        if (subPendingSubmissions[companyId]) return true;
-        const hist = subPayAppHistory[companyId] || {};
-        return Object.keys(hist).some(key => {
-            const e = hist[key];
-            return e && (e.status === 'Approved' || e.status === 'Pending Approval') && e.archived !== true;
+    function getCurrentG702PeriodNum() {
+        return currentPayAppPeriod ? currentPayAppPeriod.periodNumber : 1;
+    }
+
+    function isActiveTrackerEntry(entry) {
+        return !!(entry && (entry.status === 'Approved' || entry.status === 'Pending Approval') && entry.archived !== true);
+    }
+
+    function normalizeSubPayAppCompanyKeys() {
+        function mergeStore(getter, setter, key) {
+            const src = getter() || {};
+            const out = {};
+            Object.keys(src).forEach(k => {
+                const nk = String(k);
+                if (!out[nk]) out[nk] = src[k];
+                else if (typeof out[nk] === 'object' && typeof src[k] === 'object' && !Array.isArray(out[nk])) {
+                    Object.assign(out[nk], src[k]);
+                }
+            });
+            setter(out);
+            safeSetLocalStorage(key, out);
+            return out;
+        }
+        subPayAppHistory = mergeStore(() => subPayAppHistory, v => { subPayAppHistory = v; }, 'subPayAppHistory');
+        subPendingSubmissions = mergeStore(() => subPendingSubmissions, v => { subPendingSubmissions = v; }, 'subPendingSubmissions');
+        subPayAppNumbers = mergeStore(() => subPayAppNumbers, v => { subPayAppNumbers = v; }, 'subPayAppNumbers');
+        subSOVStatus = mergeStore(() => subSOVStatus, v => { subSOVStatus = v; }, 'subSOVStatus');
+    }
+
+    function listActiveSubPayAppEntries(companyId) {
+        const cid = String(companyId);
+        const results = [];
+        const pending = subPendingSubmissions[cid];
+        if (pending) results.push({ source: 'pending', entry: pending, historyKey: null });
+        const hist = subPayAppHistory[cid] || {};
+        Object.keys(hist).forEach(key => {
+            const entry = hist[key];
+            if (isActiveTrackerEntry(entry)) results.push({ source: 'history', entry, historyKey: key });
         });
+        return results;
+    }
+
+    function findActiveSubPayAppForG702Period(companyId, g702PeriodNum) {
+        const cid = String(companyId);
+        g702PeriodNum = g702PeriodNum != null ? Number(g702PeriodNum) : getCurrentG702PeriodNum();
+        const currentOpen = getCurrentG702PeriodNum();
+
+        const pending = subPendingSubmissions[cid];
+        if (pending) {
+            const pendMain = pending.mainG702Period != null ? Number(pending.mainG702Period) : null;
+            const pendingMatches = pending.isCompliance
+                ? (pendMain == null || pendMain === g702PeriodNum)
+                : (pendMain === g702PeriodNum || (pendMain == null && g702PeriodNum === currentOpen));
+            if (pendingMatches) return { source: 'pending', entry: pending };
+        }
+
+        const hist = subPayAppHistory[cid] || {};
+        let legacyUntagged = null;
+
+        for (const key of Object.keys(hist)) {
+            const entry = hist[key];
+            if (!isActiveTrackerEntry(entry)) continue;
+
+            const tagged = entry.mainG702Period != null
+                ? Number(entry.mainG702Period)
+                : (entry.pushedFromMainPeriod != null ? Number(entry.pushedFromMainPeriod) : null);
+
+            if (entry.isCompliance) {
+                if (key === complianceHistoryKey(g702PeriodNum) || tagged === g702PeriodNum) {
+                    return { source: 'history', entry, historyKey: key };
+                }
+                continue;
+            }
+
+            if (tagged === g702PeriodNum) {
+                return { source: 'history', entry, historyKey: key };
+            }
+
+            if (tagged == null && g702PeriodNum === currentOpen) {
+                if (!legacyUntagged) legacyUntagged = { source: 'history', entry, historyKey: key };
+            }
+        }
+
+        if (legacyUntagged) {
+            legacyUntagged.entry.mainG702Period = g702PeriodNum;
+            safeSetLocalStorage('subPayAppHistory', subPayAppHistory);
+            return legacyUntagged;
+        }
+
+        return null;
+    }
+
+    function hasActiveSubPayAppForCurrentG702Period(companyId) {
+        return !!findActiveSubPayAppForG702Period(companyId, getCurrentG702PeriodNum());
+    }
+
+    function hasActiveSubPayAppInTracker(companyId, g702PeriodNum) {
+        if (g702PeriodNum != null) {
+            return !!findActiveSubPayAppForG702Period(companyId, g702PeriodNum);
+        }
+        return listActiveSubPayAppEntries(companyId).length > 0;
+    }
+
+    function reconcileSubPayAppTrackerState() {
+        normalizeSubPayAppCompanyKeys();
+        const g702 = getCurrentG702PeriodNum();
+        let changed = false;
+
+        Object.keys(subPendingSubmissions || {}).forEach(cid => {
+            const pend = subPendingSubmissions[cid];
+            if (!pend) return;
+            if (pend.mainG702Period == null) {
+                pend.mainG702Period = g702;
+                changed = true;
+            }
+            const payAppNum = pend.isCompliance ? (subPayAppNumbers[cid] || 1) : pend.periodNumber;
+            const hKey = resolvePayAppHistoryStorageKey(pend, payAppNum, pend.mainG702Period);
+            if (!subPayAppHistory[cid]) subPayAppHistory[cid] = {};
+            const existing = subPayAppHistory[cid][hKey];
+            if (!existing || existing.archived === true) {
+                subPayAppHistory[cid][hKey] = {
+                    periodNumber: pend.isCompliance ? 1005 : payAppNum,
+                    periodStart: pend.periodStart || (currentPayAppPeriod ? currentPayAppPeriod.periodStart : ''),
+                    periodEnd: pend.periodEnd || (currentPayAppPeriod ? currentPayAppPeriod.periodEnd : ''),
+                    submittedDate: pend.submittedDate || new Date().toISOString(),
+                    status: 'Pending Approval',
+                    lines: pend.lines || [],
+                    totalBilledThisPeriod: pend.totalBilledThisPeriod || 0,
+                    isCompliance: !!pend.isCompliance,
+                    mainG702Period: pend.mainG702Period,
+                    lienWaiver: pend.lienWaiver || null,
+                    archived: false
+                };
+                changed = true;
+            } else if (isActiveTrackerEntry(existing)) {
+                if ((!existing.lines || !existing.lines.length) && pend.lines && pend.lines.length) {
+                    existing.lines = pend.lines;
+                    changed = true;
+                }
+                if (!existing.lienWaiver && pend.lienWaiver) {
+                    existing.lienWaiver = pend.lienWaiver;
+                    changed = true;
+                }
+                if (!existing.totalBilledThisPeriod && pend.totalBilledThisPeriod) {
+                    existing.totalBilledThisPeriod = pend.totalBilledThisPeriod;
+                    changed = true;
+                }
+                if (!existing.mainG702Period) {
+                    existing.mainG702Period = pend.mainG702Period;
+                    changed = true;
+                }
+            }
+        });
+
+        Object.keys(subPayAppHistory || {}).forEach(cid => {
+            const hist = subPayAppHistory[cid] || {};
+            Object.keys(hist).forEach(key => {
+                const entry = hist[key];
+                if (!isActiveTrackerEntry(entry)) return;
+                if (entry.mainG702Period == null && !entry.isCompliance) {
+                    entry.mainG702Period = g702;
+                    changed = true;
+                }
+                if (entry.status === 'Pending Approval' && !subPendingSubmissions[cid]) {
+                    subPendingSubmissions[cid] = {
+                        periodNumber: entry.periodNumber,
+                        periodStart: entry.periodStart,
+                        periodEnd: entry.periodEnd,
+                        submittedDate: entry.submittedDate,
+                        lines: entry.lines || [],
+                        totalBilledThisPeriod: entry.totalBilledThisPeriod || 0,
+                        isCompliance: !!entry.isCompliance,
+                        mainG702Period: entry.mainG702Period || g702,
+                        lienWaiver: entry.lienWaiver || null
+                    };
+                    changed = true;
+                }
+            });
+        });
+
+        if (changed) {
+            safeSetLocalStorage('subPayAppHistory', subPayAppHistory);
+            safeSetLocalStorage('subPendingSubmissions', subPendingSubmissions);
+        }
     }
 
     function migrateLegacyComplianceKeys() {
@@ -1077,19 +1253,33 @@ let mainLienWaiver = JSON.parse(localStorage.getItem('mainLienWaiver') || '{}');
     }
 
     function getApprovedSOVSubcontractors() {
-        return (companies || [])
-            .filter(c => {
-                const isSub = c.type === 'Subcontractor' || c.company_type === 'Subcontractor';
-                const hasLines = subcontractorSOV[c.id] && subcontractorSOV[c.id].length > 0;
-                return isSub && hasLines && getSubSOVStatus(c.id) === 'Approved';
-            })
-            .sort((a, b) => getCompanyName(a.id).localeCompare(getCompanyName(b.id)));
+        const seen = new Set();
+        const result = [];
+
+        function addSub(companyId) {
+            const cid = String(companyId);
+            if (seen.has(cid)) return;
+            const lines = subcontractorSOV[cid] || subcontractorSOV[companyId];
+            if (!lines || !lines.length) return;
+            if (getSubSOVStatus(cid) !== 'Approved') return;
+            seen.add(cid);
+            const fromList = (companies || []).find(c => String(c.id) === cid);
+            result.push(fromList || { id: cid, name: getCompanyName(cid) });
+        }
+
+        Object.keys(subcontractorSOV || {}).forEach(addSub);
+        (companies || []).forEach(c => {
+            const isSub = c.type === 'Subcontractor' || c.company_type === 'Subcontractor';
+            if (isSub) addSub(c.id);
+        });
+
+        return result.sort((a, b) => getCompanyName(a.id).localeCompare(getCompanyName(b.id)));
     }
 
     // ==================== SUB SOV STATUS HELPERS (Approval Workflow) ====================
     function getSubSOVStatus(companyId) {
         if (!companyId) return 'Draft';
-        const statusData = subSOVStatus[companyId] || {};
+        const statusData = subSOVStatus[companyId] || subSOVStatus[String(companyId)] || {};
         return statusData.status || 'Draft';
     }
 
@@ -1564,6 +1754,8 @@ let mainLienWaiver = JSON.parse(localStorage.getItem('mainLienWaiver') || '{}');
         const workflowBar = document.getElementById('payAppWorkflowBar');
 
         if (!cardsContainer || !thead || !tbody || !workflowBar) return;
+
+        reconcileSubPayAppTrackerState();
 
         cardsContainer.innerHTML = '';
         thead.innerHTML = '';
@@ -2677,18 +2869,12 @@ let mainLienWaiver = JSON.parse(localStorage.getItem('mainLienWaiver') || '{}');
         // === NEW: Require All Subs with Approved SOVs to have submitted Pay Apps (Controlled by Settings) ===
         const currentPeriodNumForCheck = currentPayAppPeriod.periodNumber;
         if (requireAllSubPayAppsBeforeG702Submit) {
-            // Only check subs who have an APPROVED Subcontractor SOV (these are the ones "contracted" and expected to bill)
             const subsWithApprovedSOV = Object.keys(subcontractorSOV || {}).filter(cid => getSubSOVStatus(cid) === 'Approved');
             
             let missingSubs = [];
             subsWithApprovedSOV.forEach(cid => {
-                const hist = subPayAppHistory[cid] && subPayAppHistory[cid][currentPeriodNumForCheck];
-                const hasActivePaper = hist && (hist.status === 'Approved' || hist.status === 'Pending Approval') && hist.archived !== true;
-                
-                // Also check pending submissions (in case they submitted but not yet approved into history)
-                const hasPending = subPendingSubmissions[cid] && subPendingSubmissions[cid].periodNumber === currentPeriodNumForCheck;
-                
-                if (!hasActivePaper && !hasPending) {
+                const paper = findActiveSubPayAppForG702Period(cid, currentPeriodNumForCheck);
+                if (!paper) {
                     missingSubs.push(getCompanyName(cid));
                 }
             });
@@ -2706,14 +2892,19 @@ let mainLienWaiver = JSON.parse(localStorage.getItem('mainLienWaiver') || '{}');
         // GC cannot submit their G702 upstream until all sub pay apps in the Tracker have their lien waivers on file.
         // This is a standard requirement before the GC can certify and submit to the owner/architect.
         let subsMissingWaiver = [];
-        Object.keys(subPayAppHistory || {}).forEach(cid => {
-            const entry = subPayAppHistory[cid] && subPayAppHistory[cid][currentPeriodNumForCheck];
-            if (entry && (entry.status === 'Approved' || entry.status === 'Pending Approval') && entry.archived !== true) {
-                const hasWaiver = (entry.lienWaiver && entry.lienWaiver.filename) || 
-                                  (subLienWaivers[cid] && subLienWaivers[cid][currentPeriodNumForCheck] && subLienWaivers[cid][currentPeriodNumForCheck].filename);
-                if (!hasWaiver) {
-                    subsMissingWaiver.push(getCompanyName(cid));
-                }
+        Object.keys(subcontractorSOV || {}).forEach(cid => {
+            if (getSubSOVStatus(cid) !== 'Approved') return;
+            const paper = findActiveSubPayAppForG702Period(cid, currentPeriodNumForCheck);
+            if (!paper) return;
+            const entry = paper.entry;
+            const waiverPeriod = (entry.lienWaiver && entry.lienWaiver.storagePeriod)
+                || subPayAppNumbers[cid]
+                || entry.periodNumber;
+            const hasWaiver = (entry.lienWaiver && entry.lienWaiver.filename)
+                || (subLienWaivers[cid] && subLienWaivers[cid][waiverPeriod] && subLienWaivers[cid][waiverPeriod].filename)
+                || !!(resolveSubLienWaiverFile(cid, entry.lienWaiver) && resolveSubLienWaiverFile(cid, entry.lienWaiver).filename);
+            if (!hasWaiver) {
+                subsMissingWaiver.push(getCompanyName(cid));
             }
         });
         if (subsMissingWaiver.length > 0) {
@@ -3859,7 +4050,7 @@ let mainLienWaiver = JSON.parse(localStorage.getItem('mainLienWaiver') || '{}');
 
             // If any pay app paper is active in the Tracker (including $0 compliance), show Draft — not Approved.
             let displayStatus = realSOVStatus;
-            if (hasActiveSubPayAppInTracker(selectedSubCompanyId)) {
+            if (hasActiveSubPayAppForCurrentG702Period(selectedSubCompanyId)) {
                 displayStatus = 'Draft';
             } else if (currentNum > 1 && realSOVStatus === 'Approved') {
                 const hist = subPayAppHistory[selectedSubCompanyId] || {};
@@ -5286,11 +5477,21 @@ let mainLienWaiver = JSON.parse(localStorage.getItem('mainLienWaiver') || '{}');
             return;
         }
 
-        // === BLOCK if ANY pay app is still active in the Tracker (including $0 compliance) ===
+        // === BLOCK if a pay app is already active for THIS G702 billing period ===
+        if (hasActiveSubPayAppForCurrentG702Period(companyId)) {
+            showCenteredAlert(
+                `BLOCKED: Cannot submit a new pay application while another is still active in the Sub Pay App Tracker for this billing period.\n\n` +
+                `Go to Sub Pay App Tracker to review it, or wait until the main G702 is approved (which archives tracker papers automatically).`,
+                'error'
+            );
+            return;
+        }
+
+        // Stale paper from a prior G702 period still open — guide user
         if (hasActiveSubPayAppInTracker(companyId)) {
             showCenteredAlert(
-                `BLOCKED: Cannot submit a new pay application while another is still active in the Sub Pay App Tracker.\n\n` +
-                `The current paper must be approved and then pushed to Previous Sub Pay Apps (automatic when the main G702 is approved) before you can start the next pay app for this subcontractor.`,
+                `BLOCKED: This subcontractor has a pay application still open from a PRIOR billing period.\n\n` +
+                `Approve the main Pay Application (G702) for that prior period to archive it, or use Sub Pay App Tracker → "Push to Previous Sub Pay Apps (Debug)" to clear it.`,
                 'error'
             );
             return;
@@ -7857,6 +8058,7 @@ function printSubcontractorG703(companyId) {
         bindPayAppSettingsAutoSave();
         pruneInlineLienWaiverPayloads();
         migrateLegacyComplianceKeys();
+        reconcileSubPayAppTrackerState();
 
         // Restore last selected sub if any
         const lastSub = localStorage.getItem('lastSelectedSubSOV');
@@ -8012,9 +8214,9 @@ function printSubcontractorG703(companyId) {
         // Calculate approved sub billings this period for G702 roll-up
         let approvedSubTotalThisPeriod = 0;
         approvedSOVSubs.forEach(company => {
-            const entry = subPayAppHistory[company.id] && subPayAppHistory[company.id][currentPeriodNum];
-            if (entry && entry.status === 'Approved' && entry.archived !== true) {
-                approvedSubTotalThisPeriod += (entry.totalBilledThisPeriod || 0);
+            const paper = findActiveSubPayAppForG702Period(company.id, currentPeriodNum);
+            if (paper && paper.entry && paper.entry.status === 'Approved') {
+                approvedSubTotalThisPeriod += (paper.entry.totalBilledThisPeriod || 0);
             }
         });
 
@@ -8069,6 +8271,9 @@ function printSubcontractorG703(companyId) {
         // Workflow bar (debug buttons preserved)
         workflowBar.innerHTML = `
             <div class="workflow-bar px-4 py-3 flex items-center justify-end gap-3 text-sm">
+                <button onclick="reconcileSubPayAppTrackerState(); renderPayAppContent();" class="px-3 py-1 bg-sky-700 hover:bg-sky-600 text-white text-xs rounded font-medium flex items-center gap-1.5 border border-sky-600" title="Repair stuck/orphaned sub pay app records so Tracker and Sub SOV stay in sync.">
+                    <i class="fa-solid fa-wrench"></i> <span>Repair Tracker Sync</span>
+                </button>
                 <button onclick="clearAllSubPayAppData()" class="px-3 py-1 bg-red-700 hover:bg-red-600 text-white text-xs rounded font-medium flex items-center gap-1.5 border border-red-600" title="Nuclear reset for all subcontractor pay app data, numbers, history, pending papers, and lien waivers. Use when numbers get stuck.">
                     <i class="fa-solid fa-trash"></i> <span>Clear All Sub Data (Debug)</span>
                 </button>
@@ -8166,43 +8371,7 @@ function printSubcontractorG703(companyId) {
 
     // Helper: find tracker paper for a sub in the current G702 period
     function getSubTrackerPaper(companyId, g702PeriodNum) {
-        const pending = subPendingSubmissions[companyId];
-        if (pending) {
-            const pendingMain = pending.mainG702Period || pending.periodNumber;
-            if (pending.isCompliance || pendingMain === g702PeriodNum || pending.periodNumber === g702PeriodNum) {
-                return { source: 'pending', entry: pending };
-            }
-        }
-
-        const hist = subPayAppHistory[companyId] || {};
-        let bestMatch = null;
-
-        Object.keys(hist).forEach(key => {
-            const entry = hist[key];
-            if (!entry || entry.archived === true) return;
-            if (entry.status !== 'Approved' && entry.status !== 'Pending Approval') return;
-
-            const taggedMain = entry.mainG702Period || entry.pushedFromMainPeriod;
-            const matchesPeriod = taggedMain === g702PeriodNum
-                || key === complianceHistoryKey(g702PeriodNum)
-                || (!entry.isCompliance && parseInt(key, 10) === g702PeriodNum && !taggedMain);
-
-            if (matchesPeriod) {
-                bestMatch = { source: 'history', entry, historyKey: key };
-            }
-        });
-
-        if (bestMatch) return bestMatch;
-
-        const subNum = subPayAppNumbers[companyId];
-        if (subNum && hist[subNum] && hist[subNum].archived !== true && !hist[subNum].isCompliance) {
-            const e = hist[subNum];
-            if (!e.mainG702Period || e.mainG702Period === g702PeriodNum) {
-                return { source: 'history', entry: e, historyKey: String(subNum) };
-            }
-        }
-
-        return null;
+        return findActiveSubPayAppForG702Period(companyId, g702PeriodNum);
     }
 
     // Helper: Get status for a specific sub + specific period (used in left list)
