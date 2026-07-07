@@ -451,6 +451,7 @@ let mainLienWaiver = JSON.parse(localStorage.getItem('mainLienWaiver') || '{}');
 
     // Subcontractor Pay App specific state (for Submit Application workflow)
     let subLienWaivers = JSON.parse(localStorage.getItem('subLienWaivers') || '{}'); // { companyId: { periodNumber: { filename, dataUrl, uploadedDate } } }
+    let subLienWaiverArchive = JSON.parse(localStorage.getItem('subLienWaiverArchive') || '{}'); // canonical PDF store keyed by companyId -> periodKey
     let subPayAppHistory = JSON.parse(localStorage.getItem('subPayAppHistory') || '{}'); // { companyId: { periodNumber: { periodInfo, lines, totalBilledThisPeriod, submittedDate, lienWaiver } } }
     let subPayAppNumbers = JSON.parse(localStorage.getItem('subPayAppNumbers') || '{}'); // { companyId: currentPayAppNumber }
     let subPendingSubmissions = JSON.parse(localStorage.getItem('subPendingSubmissions') || '{}'); // { companyId: { periodNumber, lines: [...], totalBilledThisPeriod, lienWaiver, submittedDate } }  // LEFT-HAND pending until final Approve
@@ -477,6 +478,117 @@ let mainLienWaiver = JSON.parse(localStorage.getItem('mainLienWaiver') || '{}');
                 status: "Draft"
             };
             localStorage.setItem('currentPayAppPeriod', JSON.stringify(currentPayAppPeriod));
+        }
+    }
+
+    function safeSetLocalStorage(key, value) {
+        const payload = typeof value === 'string' ? value : JSON.stringify(value);
+        try {
+            localStorage.setItem(key, payload);
+            return true;
+        } catch (e) {
+            console.error('localStorage save failed:', key, e);
+            if (e && (e.name === 'QuotaExceededError' || e.code === 22)) {
+                showCenteredAlert(
+                    'Browser storage is full (usually from uploaded lien waiver PDFs). The save could not complete.\n\nTry Sub Pay App Tracker → "Clear All Sub Data (Debug)", or remove old lien waiver uploads.',
+                    'error'
+                );
+            } else {
+                showCenteredAlert('Could not save data: ' + (e.message || e), 'error');
+            }
+            return false;
+        }
+    }
+
+    function compactLienWaiverMeta(waiver, storagePeriod) {
+        if (!waiver || !waiver.filename) return null;
+        return {
+            filename: waiver.filename,
+            uploadedDate: waiver.uploadedDate || waiver.uploadedAt || new Date().toISOString(),
+            storagePeriod: storagePeriod
+        };
+    }
+
+    function resolveSubLienWaiverFile(companyId, metaOrPeriod) {
+        if (!companyId) return null;
+        let storagePeriod = metaOrPeriod;
+        let meta = null;
+        if (metaOrPeriod && typeof metaOrPeriod === 'object') {
+            meta = metaOrPeriod;
+            if (meta.dataUrl) {
+                return {
+                    filename: meta.filename,
+                    dataUrl: meta.dataUrl,
+                    uploadedDate: meta.uploadedDate || meta.uploadedAt
+                };
+            }
+            storagePeriod = meta.storagePeriod ?? meta.periodNumber;
+        }
+        if (storagePeriod == null) {
+            storagePeriod = subPayAppNumbers[companyId] || (currentPayAppPeriod ? currentPayAppPeriod.periodNumber : 1);
+        }
+        const live = subLienWaivers[companyId] && subLienWaivers[companyId][storagePeriod];
+        if (live && live.dataUrl) return live;
+        const archived = subLienWaiverArchive[companyId] && subLienWaiverArchive[companyId][storagePeriod];
+        if (archived && archived.dataUrl) return archived;
+        if (meta && meta.filename) {
+            return { filename: meta.filename, dataUrl: null, uploadedDate: meta.uploadedDate };
+        }
+        return live || archived || null;
+    }
+
+    function archiveSubLienWaiverFile(companyId, fromPeriod, toStorageKey) {
+        if (!companyId || fromPeriod == null || toStorageKey == null) return false;
+        const source = (subLienWaivers[companyId] && subLienWaivers[companyId][fromPeriod])
+            || (subLienWaiverArchive[companyId] && subLienWaiverArchive[companyId][fromPeriod]);
+        if (!source || !source.filename) return false;
+        if (!subLienWaiverArchive[companyId]) subLienWaiverArchive[companyId] = {};
+        subLienWaiverArchive[companyId][toStorageKey] = {
+            filename: source.filename,
+            dataUrl: source.dataUrl || null,
+            uploadedDate: source.uploadedDate || source.uploadedAt || new Date().toISOString()
+        };
+        if (subLienWaivers[companyId] && subLienWaivers[companyId][fromPeriod]) {
+            delete subLienWaivers[companyId][fromPeriod];
+            safeSetLocalStorage('subLienWaivers', subLienWaivers);
+        }
+        return safeSetLocalStorage('subLienWaiverArchive', subLienWaiverArchive);
+    }
+
+    // Move inline base64 PDFs out of pending/history into subLienWaiverArchive (prevents QuotaExceededError)
+    function pruneInlineLienWaiverPayloads() {
+        let changed = false;
+        Object.keys(subPendingSubmissions || {}).forEach(cid => {
+            const entry = subPendingSubmissions[cid];
+            if (!entry || !entry.lienWaiver) return;
+            const storagePeriod = entry.lienWaiver.storagePeriod || subPayAppNumbers[cid] || entry.periodNumber;
+            if (entry.lienWaiver.dataUrl) {
+                if (!subLienWaiverArchive[cid]) subLienWaiverArchive[cid] = {};
+                subLienWaiverArchive[cid][`pending_${storagePeriod}`] = {
+                    filename: entry.lienWaiver.filename,
+                    dataUrl: entry.lienWaiver.dataUrl,
+                    uploadedDate: entry.lienWaiver.uploadedDate || new Date().toISOString()
+                };
+            }
+            entry.lienWaiver = compactLienWaiverMeta(entry.lienWaiver, storagePeriod);
+            changed = true;
+        });
+        Object.keys(subPayAppHistory || {}).forEach(cid => {
+            const hist = subPayAppHistory[cid] || {};
+            Object.keys(hist).forEach(key => {
+                const entry = hist[key];
+                if (!entry || !entry.lienWaiver) return;
+                if (entry.lienWaiver.dataUrl) {
+                    archiveSubLienWaiverFile(cid, key, key);
+                }
+                entry.lienWaiver = compactLienWaiverMeta(entry.lienWaiver, entry.lienWaiver.storagePeriod || key);
+                changed = true;
+            });
+        });
+        if (changed) {
+            safeSetLocalStorage('subLienWaiverArchive', subLienWaiverArchive);
+            safeSetLocalStorage('subPendingSubmissions', subPendingSubmissions);
+            safeSetLocalStorage('subPayAppHistory', subPayAppHistory);
         }
     }
 
@@ -958,23 +1070,27 @@ let mainLienWaiver = JSON.parse(localStorage.getItem('mainLienWaiver') || '{}');
 
     function viewLienWaiver(companyId, explicitPeriodNum = null) {
         if (!companyId) return;
-        // Prefer sub-specific pay app number; fall back to main period. Supports View from both SOV tab and Tracker.
         let periodNum = explicitPeriodNum || ((subPayAppNumbers && subPayAppNumbers[companyId]) ? subPayAppNumbers[companyId] : (currentPayAppPeriod ? currentPayAppPeriod.periodNumber : 1));
-        let waiver = subLienWaivers[companyId] && subLienWaivers[companyId][periodNum];
+        let waiver = resolveSubLienWaiverFile(companyId, periodNum);
 
-        // Fallback: check historical snapshot in Tracker (after Approve moved it out of live subLienWaivers)
+        if (!waiver || !waiver.dataUrl) {
+            const pending = subPendingSubmissions[companyId];
+            if (pending && pending.lienWaiver) {
+                waiver = resolveSubLienWaiverFile(companyId, pending.lienWaiver);
+            }
+        }
+
         if (!waiver || !waiver.dataUrl) {
             let hist = subPayAppHistory[companyId] && subPayAppHistory[companyId][periodNum];
-            if (hist && hist.lienWaiver && hist.lienWaiver.dataUrl) {
-                waiver = hist.lienWaiver;
-            } else if (!explicitPeriodNum && subPayAppHistory[companyId]) {
-                // Robust fallback for Tracker: find most recent history entry that has a lien waiver attached (covers period mismatches)
+            if (hist && hist.lienWaiver) {
+                waiver = resolveSubLienWaiverFile(companyId, hist.lienWaiver);
+            } else if (subPayAppHistory[companyId]) {
                 const nums = Object.keys(subPayAppHistory[companyId]).map(Number).sort((a,b) => b - a);
                 for (const p of nums) {
                     const h = subPayAppHistory[companyId][p];
-                    if (h && h.lienWaiver && h.lienWaiver.dataUrl) {
-                        waiver = h.lienWaiver;
-                        break;
+                    if (h && h.lienWaiver) {
+                        waiver = resolveSubLienWaiverFile(companyId, h.lienWaiver);
+                        if (waiver && waiver.dataUrl) break;
                     }
                 }
             }
@@ -2065,6 +2181,7 @@ let mainLienWaiver = JSON.parse(localStorage.getItem('mainLienWaiver') || '{}');
         localStorage.removeItem('subPayAppHistory');
         localStorage.removeItem('subPendingSubmissions');
         localStorage.removeItem('subLienWaivers');
+        localStorage.removeItem('subLienWaiverArchive');
         localStorage.removeItem('subSOVStatus');
         localStorage.removeItem('lienWaivers');
 
@@ -5014,18 +5131,9 @@ let mainLienWaiver = JSON.parse(localStorage.getItem('mainLienWaiver') || '{}');
             totalBilledThisPeriod: totalBilledThisPeriod,
             isCompliance: isComplianceSubmission,
             mainG702Period: currentPayAppPeriod ? currentPayAppPeriod.periodNumber : null,
-            lienWaiver: waiver ? { 
-                filename: waiver.filename, 
-                uploadedDate: waiver.uploadedDate,
-                dataUrl: waiver.dataUrl || null 
-            } : null
+            lienWaiver: waiver ? compactLienWaiverMeta(waiver, currentPeriodNum) : null
         };
-        localStorage.setItem('subPendingSubmissions', JSON.stringify(subPendingSubmissions));
-
-        if (isComplianceSubmission && companyId && subLienWaivers[companyId] && subLienWaivers[companyId][currentPeriodNum]) {
-            delete subLienWaivers[companyId][currentPeriodNum];
-            localStorage.setItem('subLienWaivers', JSON.stringify(subLienWaivers));
-        }
+        if (!safeSetLocalStorage('subPendingSubmissions', subPendingSubmissions)) return;
 
         logPayAppAudit('SUB_PAYAPP_SUBMITTED_FOR_APPROVAL', { companyId: companyId, period: currentPeriodNum, total: totalBilledThisPeriod, isCompliance: isComplianceSubmission });
         // Success feedback removed per user request (pending status + buttons visible)
@@ -5042,7 +5150,11 @@ let mainLienWaiver = JSON.parse(localStorage.getItem('mainLienWaiver') || '{}');
         let sourceWasPending = false;
 
         if (pendingEntry && pendingEntry.periodNumber) {
-            currentPeriodNum = pendingEntry.periodNumber;
+            if (pendingEntry.isCompliance) {
+                currentPeriodNum = subPayAppNumbers[companyId] || 1;
+            } else {
+                currentPeriodNum = pendingEntry.periodNumber;
+            }
             sourceWasPending = true;
         } else {
             // Fallback: try to find the most recent pending/approved for this sub
@@ -5092,19 +5204,25 @@ let mainLienWaiver = JSON.parse(localStorage.getItem('mainLienWaiver') || '{}');
 
         localStorage.setItem('subcontractorSOV', JSON.stringify(subcontractorSOV));
 
-        // Move lien waiver into the approved record (do not keep live on SOV for next period)
-        let lienWaiverForHistory = null;
-        if (pendingEntry.lienWaiver && pendingEntry.lienWaiver.filename) {
-            lienWaiverForHistory = { ...pendingEntry.lienWaiver };
-        } else if (subLienWaivers[companyId] && subLienWaivers[companyId][currentPeriodNum]) {
-            lienWaiverForHistory = { ...subLienWaivers[companyId][currentPeriodNum] };
-        }
+        const waiverStoragePeriod = (pendingEntry.lienWaiver && pendingEntry.lienWaiver.storagePeriod)
+            || subPayAppNumbers[companyId]
+            || currentPeriodNum;
+        const mainPeriodAtApproval = currentPayAppPeriod ? currentPayAppPeriod.periodNumber : null;
+        const historyKey = (pendingEntry.isCompliance === true && mainPeriodAtApproval)
+            ? mainPeriodAtApproval
+            : currentPeriodNum;
 
-        // Clear live lien waiver for this period from SOV tab
-        if (subLienWaivers[companyId] && subLienWaivers[companyId][currentPeriodNum]) {
-            delete subLienWaivers[companyId][currentPeriodNum];
+        archiveSubLienWaiverFile(companyId, waiverStoragePeriod, historyKey);
+
+        let lienWaiverForHistory = compactLienWaiverMeta(
+            resolveSubLienWaiverFile(companyId, { storagePeriod: historyKey }) || pendingEntry.lienWaiver,
+            historyKey
+        );
+
+        if (subLienWaivers[companyId] && subLienWaivers[companyId][waiverStoragePeriod]) {
+            delete subLienWaivers[companyId][waiverStoragePeriod];
         }
-        localStorage.setItem('subLienWaivers', JSON.stringify(subLienWaivers));
+        safeSetLocalStorage('subLienWaivers', subLienWaivers);
 
         const approvedPayAppNumber = currentPeriodNum;
         const isCompliance = pendingEntry.isCompliance === true;
@@ -5112,15 +5230,10 @@ let mainLienWaiver = JSON.parse(localStorage.getItem('mainLienWaiver') || '{}');
         if (!isCompliance) {
             if (!subPayAppNumbers[companyId]) subPayAppNumbers[companyId] = 1;
             subPayAppNumbers[companyId] = approvedPayAppNumber + 1;
-            localStorage.setItem('subPayAppNumbers', JSON.stringify(subPayAppNumbers));
+            safeSetLocalStorage('subPayAppNumbers', subPayAppNumbers);
         }
 
         // === Move to RIGHT HAND: Save/ensure in subPayAppHistory as Approved ===
-        const mainPeriodAtApproval = currentPayAppPeriod ? currentPayAppPeriod.periodNumber : null;
-        const historyKey = (pendingEntry.isCompliance === true && mainPeriodAtApproval)
-            ? mainPeriodAtApproval
-            : currentPeriodNum;
-
         if (!subPayAppHistory[companyId]) subPayAppHistory[companyId] = {};
         subPayAppHistory[companyId][historyKey] = {
             periodNumber: (pendingEntry.isCompliance === true) ? 1005 : currentPeriodNum,
@@ -5140,12 +5253,12 @@ let mainLienWaiver = JSON.parse(localStorage.getItem('mainLienWaiver') || '{}');
             pushedFromMainPeriod: mainPeriodAtApproval,
             mainG702Period: mainPeriodAtApproval
         };
-        localStorage.setItem('subPayAppHistory', JSON.stringify(subPayAppHistory));
+        if (!safeSetLocalStorage('subPayAppHistory', subPayAppHistory)) return;
 
         // If it came from pending, remove it from left-hand pending store
         if (sourceWasPending && subPendingSubmissions[companyId]) {
             delete subPendingSubmissions[companyId];
-            localStorage.setItem('subPendingSubmissions', JSON.stringify(subPendingSubmissions));
+            safeSetLocalStorage('subPendingSubmissions', subPendingSubmissions);
         }
 
         // Keep SOV status as Approved (locked for next period)
@@ -5232,13 +5345,17 @@ let mainLienWaiver = JSON.parse(localStorage.getItem('mainLienWaiver') || '{}');
 
         // Restore lien waiver if it existed in the snapshot
         if (sourceEntry.lienWaiver && sourceEntry.lienWaiver.filename) {
-            if (!subLienWaivers[companyId]) subLienWaivers[companyId] = {};
-            subLienWaivers[companyId][periodNum] = {
-                filename: sourceEntry.lienWaiver.filename,
-                uploadedDate: sourceEntry.lienWaiver.uploadedDate || new Date().toISOString(),
-                dataUrl: sourceEntry.lienWaiver.dataUrl || null
-            };
-            localStorage.setItem('subLienWaivers', JSON.stringify(subLienWaivers));
+            const restorePeriod = subPayAppNumbers[companyId] || periodNum;
+            const fullWaiver = resolveSubLienWaiverFile(companyId, sourceEntry.lienWaiver);
+            if (fullWaiver && fullWaiver.dataUrl) {
+                if (!subLienWaivers[companyId]) subLienWaivers[companyId] = {};
+                subLienWaivers[companyId][restorePeriod] = {
+                    filename: fullWaiver.filename,
+                    uploadedDate: fullWaiver.uploadedDate || new Date().toISOString(),
+                    dataUrl: fullWaiver.dataUrl
+                };
+                safeSetLocalStorage('subLienWaivers', subLienWaivers);
+            }
         }
 
         // Remove from source (pending or history) so it goes back to left hand as editable current
@@ -7575,6 +7692,7 @@ function printSubcontractorG703(companyId) {
     function initializePayApplications() {
         seedDemoDataIfNeeded();
         bindPayAppSettingsAutoSave();
+        pruneInlineLienWaiverPayloads();
 
         // Restore last selected sub if any
         const lastSub = localStorage.getItem('lastSelectedSubSOV');
@@ -7863,7 +7981,7 @@ function printSubcontractorG703(companyId) {
     // Helper: find tracker paper for a sub in the current G702 period
     function getSubTrackerPaper(companyId, g702PeriodNum) {
         const pending = subPendingSubmissions[companyId];
-        if (pending && (pending.isCompliance || pending.mainG702Period === g702PeriodNum || pending.periodNumber === g702PeriodNum)) {
+        if (pending && (pending.isCompliance || pending.mainG702Period === g702PeriodNum || pending.periodNumber === g702PeriodNum || pending.periodNumber === 1005)) {
             return { source: 'pending', entry: pending };
         }
 
