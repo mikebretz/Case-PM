@@ -210,7 +210,18 @@
         t.notes = val('sam_notes');
         t.hyperlink = val('sam_hyperlink');
         t.bar_color = val('sam_bar_color');
+        if (window.ScheduleApp && typeof gantt !== 'undefined') {
+            const task = gantt.getTask(currentTaskId);
+            if (task.bar_color) {
+                let hex = String(task.bar_color).trim();
+                if (hex && !hex.startsWith('#')) hex = '#' + hex;
+                task.bar_color = hex;
+            }
+        }
         gantt.updateTask(currentTaskId);
+        if (window.ScheduleApp && ScheduleApp.focusTimelineOnTask) {
+            ScheduleApp.focusTimelineOnTask(currentTaskId);
+        }
         if (window.ScheduleApp && ScheduleApp.applyPredecessorString) {
             ScheduleApp.applyPredecessorString(currentTaskId, val('sam_predecessors'));
         } else {
