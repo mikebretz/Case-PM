@@ -1312,15 +1312,22 @@ def update_profile():
 
 # ==================== ERROR HANDLERS ====================
 
+@app.route('/favicon.ico')
+def favicon():
+    return '', 204
+
+
 @app.errorhandler(404)
 def page_not_found(e):
-    return render_template('404.html'), 404
+    if request.path == '/favicon.ico':
+        return '', 204
+    return 'Page not found', 404
 
 
 @app.errorhandler(500)
 def internal_server_error(e):
     db.session.rollback()
-    return render_template('500.html'), 500
+    return 'Internal server error', 500
 
 
 @app.errorhandler(403)
