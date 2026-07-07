@@ -36,6 +36,18 @@
             border-left: 3px solid #10b981;
         }
 
+        .sidebar-nav .nav-link {
+            padding-top: 0.375rem;
+            padding-bottom: 0.375rem;
+            margin-bottom: 0.125rem;
+            border-radius: 0.75rem;
+        }
+
+        .sidebar-nav .section-block {
+            margin-top: 0.5rem;
+            margin-bottom: 0.25rem;
+        }
+
         .section-header {
             font-size: 10px;
             font-weight: 600;
@@ -71,33 +83,32 @@
 
     <div id="appShell" class="flex flex-col h-full min-h-0 overflow-hidden">
     
-    <!-- ==================== TOP HEADER BAR ==================== -->
-    <div class="h-16 border-b border-zinc-800 bg-zinc-900 flex items-center justify-between px-6 flex-shrink-0">
-        <!-- Left: Current Project -->
-        <div class="flex items-center gap-3">
-            <div>
-                <div class="text-[10px] text-zinc-400 tracking-[1px] font-medium">CURRENT PROJECT</div>
-                <button onclick="document.getElementById('projectSwitcherModal').showModal()"
-                        class="flex items-center gap-2 text-xl font-semibold tracking-tight text-white hover:text-emerald-400 transition-colors">
-                    <span>ALDI Lakeland</span>
-                    <i class="fa-solid fa-chevron-down text-sm ml-1"></i>
-                </button>
+    <!-- ==================== TOP HEADER BAR (brand + user) ==================== -->
+    <div class="h-12 border-b border-zinc-800 bg-zinc-900 flex items-center justify-between px-4 flex-shrink-0">
+        <!-- Left: Case PM brand -->
+        <div class="flex items-center gap-2.5">
+            <div class="w-8 h-8 bg-emerald-600 rounded-xl flex items-center justify-center flex-shrink-0">
+                <i class="fa-solid fa-hard-hat text-white text-lg"></i>
+            </div>
+            <div class="leading-none">
+                <div class="font-display text-lg font-semibold tracking-tighter text-white">Case PM</div>
+                <div class="text-[9px] text-zinc-500 mt-0.5">Construction OS</div>
             </div>
         </div>
 
         <!-- Right: User Profile -->
         <div class="flex items-center gap-3 cursor-pointer" onclick="document.getElementById('userMenu').showModal()">
-            <div class="flex items-center gap-3">
-                <div class="w-9 h-9 bg-zinc-700 rounded-full overflow-hidden flex-shrink-0">
+            <div class="flex items-center gap-2.5">
+                <div class="w-8 h-8 bg-zinc-700 rounded-full overflow-hidden flex-shrink-0">
                     {% if current_user.profile_pic %}
                         <img src="{{ current_user.profile_pic }}" class="w-full h-full object-cover">
                     {% else %}
-                        <div class="w-full h-full flex items-center justify-center bg-emerald-600 text-white font-bold text-sm">
+                        <div class="w-full h-full flex items-center justify-center bg-emerald-600 text-white font-bold text-xs">
                             {{ current_user.first_name[0] }}{{ current_user.last_name[0] if current_user.last_name else '' }}
                         </div>
                     {% endif %}
                 </div>
-                <div class="text-sm leading-none">
+                <div class="text-sm leading-none hidden sm:block">
                     <div class="font-medium">{{ current_user.full_name }}</div>
                     <div class="text-[10px] text-zinc-500">{{ current_user.role }}</div>
                 </div>
@@ -109,191 +120,187 @@
     <div class="flex flex-1 min-h-0 overflow-hidden">
         
         <!-- SIDEBAR -->
-        <div class="w-64 bg-zinc-900 border-r border-zinc-800 flex flex-col">
-            
-            <!-- Logo -->
-            <div class="px-6 py-5 border-b border-zinc-800">
-                <div class="flex items-center gap-3">
-                    <div class="w-9 h-9 bg-emerald-600 rounded-2xl flex items-center justify-center">
-                        <i class="fa-solid fa-hard-hat text-white text-2xl"></i>
-                    </div>
-                    <div>
-                        <div class="font-display text-2xl font-semibold tracking-tighter">Case PM</div>
-                        <div class="text-[10px] text-zinc-500 -mt-1">Construction OS</div>
-                    </div>
-                </div>
-            </div>
+        <div class="w-56 bg-zinc-900 border-r border-zinc-800 flex flex-col flex-shrink-0">
 
             <!-- Navigation -->
-            <div class="flex-1 overflow-y-auto sidebar px-3 py-4 text-sm">
+            <div class="flex-1 overflow-y-auto sidebar sidebar-nav px-2 py-2 text-sm">
                 
                 <!-- Main -->
-                <div class="px-3 mb-2">
-                    <div class="section-header px-3 mb-1">Main</div>
+                <div class="px-2 section-block">
+                    <div class="section-header px-2 mb-0.5">Main</div>
                 </div>
                 
-                <a href="{{ url_for('dashboard') }}" class="nav-link flex items-center gap-3 px-4 py-2.5 rounded-2xl mb-1 {% if request.endpoint == 'dashboard' %}active{% endif %}">
+                <a href="{{ url_for('dashboard') }}" class="nav-link flex items-center gap-2.5 px-3 py-1.5 rounded-xl mb-0.5 {% if request.endpoint == 'dashboard' %}active{% endif %}">
                     <i class="fa-solid fa-home w-5"></i>
                     <span>Dashboard</span>
                 </a>
                 
-                <a href="{{ url_for('projects_page') }}" class="nav-link flex items-center gap-3 px-4 py-2.5 rounded-2xl mb-1 {% if request.endpoint == 'projects_page' %}active{% endif %}">
+                <a href="{{ url_for('projects_page') }}" class="nav-link flex items-center gap-2.5 px-3 py-1.5 rounded-xl mb-0.5 {% if request.endpoint == 'projects_page' %}active{% endif %}">
                     <i class="fa-solid fa-folder w-5"></i>
                     <span>Projects</span>
                 </a>
 
                 <!-- NEW: Email -->
-                <a href="{{ url_for('email_page') }}" class="nav-link flex items-center gap-3 px-4 py-2.5 rounded-2xl mb-1 {% if request.endpoint == 'email_page' %}active{% endif %}">
+                <a href="{{ url_for('email_page') }}" class="nav-link flex items-center gap-2.5 px-3 py-1.5 rounded-xl mb-0.5 {% if request.endpoint == 'email_page' %}active{% endif %}">
                     <i class="fa-solid fa-envelope w-5"></i>
                     <span>Email</span>
                 </a>
 
                 <!-- Core Modules -->
-                <div class="px-3 mt-4 mb-2">
-                    <div class="section-header px-3 mb-1">Core Modules</div>
+                <div class="px-2 section-block">
+                    <div class="section-header px-2 mb-0.5">Core Modules</div>
                 </div>
 
-                <a href="{{ url_for('daily_log') }}" class="nav-link flex items-center gap-3 px-4 py-2.5 rounded-2xl mb-1 {% if request.endpoint == 'daily_log' %}active{% endif %}">
+                <a href="{{ url_for('daily_log') }}" class="nav-link flex items-center gap-2.5 px-3 py-1.5 rounded-xl mb-0.5 {% if request.endpoint == 'daily_log' %}active{% endif %}">
                     <i class="fa-solid fa-clipboard-list w-5"></i>
                     <span>Daily Log</span>
                 </a>
 
-                <a href="{{ url_for('weekly_report') }}" class="nav-link flex items-center gap-3 px-4 py-2.5 rounded-2xl mb-1 {% if request.endpoint == 'weekly_report' %}active{% endif %}">
+                <a href="{{ url_for('weekly_report') }}" class="nav-link flex items-center gap-2.5 px-3 py-1.5 rounded-xl mb-0.5 {% if request.endpoint == 'weekly_report' %}active{% endif %}">
                     <i class="fa-solid fa-calendar-week w-5"></i>
                     <span>Weekly Report</span>
                 </a>
 
-                <a href="{{ url_for('schedule_page') }}" class="nav-link flex items-center gap-3 px-4 py-2.5 rounded-2xl mb-1 {% if request.endpoint == 'schedule_page' %}active{% endif %}">
+                <a href="{{ url_for('schedule_page') }}" class="nav-link flex items-center gap-2.5 px-3 py-1.5 rounded-xl mb-0.5 {% if request.endpoint == 'schedule_page' %}active{% endif %}">
                     <i class="fa-solid fa-calendar-alt w-5"></i>
                     <span>Schedule</span>
                 </a>
 
-                <a href="{{ url_for('rfis_page') }}" class="nav-link flex items-center gap-3 px-4 py-2.5 rounded-2xl mb-1 {% if request.endpoint == 'rfis_page' %}active{% endif %}">
+                <a href="{{ url_for('rfis_page') }}" class="nav-link flex items-center gap-2.5 px-3 py-1.5 rounded-xl mb-0.5 {% if request.endpoint == 'rfis_page' %}active{% endif %}">
                     <i class="fa-solid fa-question-circle w-5"></i>
                     <span>RFIs</span>
                 </a>
 
-                <a href="{{ url_for('change_orders_page') }}" class="nav-link flex items-center gap-3 px-4 py-2.5 rounded-2xl mb-1 {% if request.endpoint == 'change_orders_page' %}active{% endif %}">
+                <a href="{{ url_for('change_orders_page') }}" class="nav-link flex items-center gap-2.5 px-3 py-1.5 rounded-xl mb-0.5 {% if request.endpoint == 'change_orders_page' %}active{% endif %}">
                     <i class="fa-solid fa-exchange-alt w-5"></i>
                     <span>Change Orders</span>
                 </a>
 
-                <a href="{{ url_for('submittals_page') }}" class="nav-link flex items-center gap-3 px-4 py-2.5 rounded-2xl mb-1 {% if request.endpoint == 'submittals_page' %}active{% endif %}">
+                <a href="{{ url_for('submittals_page') }}" class="nav-link flex items-center gap-2.5 px-3 py-1.5 rounded-xl mb-0.5 {% if request.endpoint == 'submittals_page' %}active{% endif %}">
                     <i class="fa-solid fa-file-upload w-5"></i>
                     <span>Submittals</span>
                 </a>
 
-                <a href="{{ url_for('punch_list_page') }}" class="nav-link flex items-center gap-3 px-4 py-2.5 rounded-2xl mb-1 {% if request.endpoint == 'punch_list_page' %}active{% endif %}">
+                <a href="{{ url_for('punch_list_page') }}" class="nav-link flex items-center gap-2.5 px-3 py-1.5 rounded-xl mb-0.5 {% if request.endpoint == 'punch_list_page' %}active{% endif %}">
                     <i class="fa-solid fa-tasks w-5"></i>
                     <span>Punch List</span>
                 </a>
 
-                <a href="{{ url_for('safety_page') }}" class="nav-link flex items-center gap-3 px-4 py-2.5 rounded-2xl mb-1 {% if request.endpoint == 'safety_page' %}active{% endif %}">
+                <a href="{{ url_for('safety_page') }}" class="nav-link flex items-center gap-2.5 px-3 py-1.5 rounded-xl mb-0.5 {% if request.endpoint == 'safety_page' %}active{% endif %}">
                     <i class="fa-solid fa-shield-alt w-5"></i>
                     <span>Safety</span>
                 </a>
 
                 <!-- Financial -->
-                <div class="px-3 mt-4 mb-2">
-                    <div class="section-header px-3 mb-1">Financial</div>
+                <div class="px-2 section-block">
+                    <div class="section-header px-2 mb-0.5">Financial</div>
                 </div>
 
-                <a href="{{ url_for('budget_page') }}" class="nav-link flex items-center gap-3 px-4 py-2.5 rounded-2xl mb-1 {% if request.endpoint == 'budget_page' %}active{% endif %}">
+                <a href="{{ url_for('budget_page') }}" class="nav-link flex items-center gap-2.5 px-3 py-1.5 rounded-xl mb-0.5 {% if request.endpoint == 'budget_page' %}active{% endif %}">
                     <i class="fa-solid fa-chart-pie w-5"></i>
                     <span>Budget</span>
                 </a>
 
-                <a href="{{ url_for('commitments_page') }}" class="nav-link flex items-center gap-3 px-4 py-2.5 rounded-2xl mb-1 {% if request.endpoint == 'commitments_page' %}active{% endif %}">
+                <a href="{{ url_for('commitments_page') }}" class="nav-link flex items-center gap-2.5 px-3 py-1.5 rounded-xl mb-0.5 {% if request.endpoint == 'commitments_page' %}active{% endif %}">
                     <i class="fa-solid fa-handshake w-5"></i>
                     <span>Commitments</span>
                 </a>
 
-                <a href="{{ url_for('pay_applications_page') }}" class="nav-link flex items-center gap-3 px-4 py-2.5 rounded-2xl mb-1 {% if request.endpoint == 'pay_applications_page' %}active{% endif %}">
+                <a href="{{ url_for('pay_applications_page') }}" class="nav-link flex items-center gap-2.5 px-3 py-1.5 rounded-xl mb-0.5 {% if request.endpoint == 'pay_applications_page' %}active{% endif %}">
                     <i class="fa-solid fa-file-invoice-dollar w-5"></i>
                     <span>Pay Applications</span>
                 </a>
 
                 <!-- Field & Docs -->
-                <div class="px-3 mt-4 mb-2">
-                    <div class="section-header px-3 mb-1">Field &amp; Docs</div>
+                <div class="px-2 section-block">
+                    <div class="section-header px-2 mb-0.5">Field &amp; Docs</div>
                 </div>
 
-                <a href="{{ url_for('photos_page') }}" class="nav-link flex items-center gap-3 px-4 py-2.5 rounded-2xl mb-1 {% if request.endpoint == 'photos_page' %}active{% endif %}">
+                <a href="{{ url_for('photos_page') }}" class="nav-link flex items-center gap-2.5 px-3 py-1.5 rounded-xl mb-0.5 {% if request.endpoint == 'photos_page' %}active{% endif %}">
                     <i class="fa-solid fa-camera w-5"></i>
                     <span>Photos</span>
                 </a>
 
-                <a href="{{ url_for('documents_page') }}" class="nav-link flex items-center gap-3 px-4 py-2.5 rounded-2xl mb-1 {% if request.endpoint == 'documents_page' %}active{% endif %}">
+                <a href="{{ url_for('documents_page') }}" class="nav-link flex items-center gap-2.5 px-3 py-1.5 rounded-xl mb-0.5 {% if request.endpoint == 'documents_page' %}active{% endif %}">
                     <i class="fa-solid fa-folder-open w-5"></i>
                     <span>Documents</span>
                 </a>
 
-                <a href="{{ url_for('drawings_page') }}" class="nav-link flex items-center gap-3 px-4 py-2.5 rounded-2xl mb-1 {% if request.endpoint == 'drawings_page' %}active{% endif %}">
+                <a href="{{ url_for('drawings_page') }}" class="nav-link flex items-center gap-2.5 px-3 py-1.5 rounded-xl mb-0.5 {% if request.endpoint == 'drawings_page' %}active{% endif %}">
                     <i class="fa-solid fa-drafting-compass w-5"></i>
                     <span>Drawings</span>
                 </a>
 
-                <a href="{{ url_for('deliveries_page') }}" class="nav-link flex items-center gap-3 px-4 py-2.5 rounded-2xl mb-1 {% if request.endpoint == 'deliveries_page' %}active{% endif %}">
+                <a href="{{ url_for('deliveries_page') }}" class="nav-link flex items-center gap-2.5 px-3 py-1.5 rounded-xl mb-0.5 {% if request.endpoint == 'deliveries_page' %}active{% endif %}">
                     <i class="fa-solid fa-truck w-5"></i>
                     <span>Deliveries</span>
                 </a>
 
-                <a href="{{ url_for('inspections_page') }}" class="nav-link flex items-center gap-3 px-4 py-2.5 rounded-2xl mb-1 {% if request.endpoint == 'inspections_page' %}active{% endif %}">
+                <a href="{{ url_for('inspections_page') }}" class="nav-link flex items-center gap-2.5 px-3 py-1.5 rounded-xl mb-0.5 {% if request.endpoint == 'inspections_page' %}active{% endif %}">
                     <i class="fa-solid fa-clipboard-check w-5"></i>
                     <span>Inspections</span>
                 </a>
 
-                <a href="{{ url_for('meeting_minutes_page') }}" class="nav-link flex items-center gap-3 px-4 py-2.5 rounded-2xl mb-1 {% if request.endpoint == 'meeting_minutes_page' %}active{% endif %}">
+                <a href="{{ url_for('meeting_minutes_page') }}" class="nav-link flex items-center gap-2.5 px-3 py-1.5 rounded-xl mb-0.5 {% if request.endpoint == 'meeting_minutes_page' %}active{% endif %}">
                     <i class="fa-solid fa-users w-5"></i>
                     <span>Meeting Minutes</span>
                 </a>
 
                 <!-- Admin -->
-                <div class="px-3 mt-4 mb-2">
-                    <div class="section-header px-3 mb-1">Admin</div>
+                <div class="px-2 section-block">
+                    <div class="section-header px-2 mb-0.5">Admin</div>
                 </div>
 
-                <a href="{{ url_for('companies_page') }}" class="nav-link flex items-center gap-3 px-4 py-2.5 rounded-2xl mb-1 {% if request.endpoint == 'companies_page' %}active{% endif %}">
+                <a href="{{ url_for('companies_page') }}" class="nav-link flex items-center gap-2.5 px-3 py-1.5 rounded-xl mb-0.5 {% if request.endpoint == 'companies_page' %}active{% endif %}">
                     <i class="fa-solid fa-building w-5"></i>
                     <span>Companies / Vendors</span>
                 </a>
 
-                <a href="{{ url_for('user_management') }}" class="nav-link flex items-center gap-3 px-4 py-2.5 rounded-2xl mb-1 {% if request.endpoint == 'user_management' %}active{% endif %}">
+                <a href="{{ url_for('user_management') }}" class="nav-link flex items-center gap-2.5 px-3 py-1.5 rounded-xl mb-0.5 {% if request.endpoint == 'user_management' %}active{% endif %}">
                     <i class="fa-solid fa-users w-5"></i>
                     <span>User Management</span>
                 </a>
 
-                <a href="{{ url_for('program_settings') }}" class="nav-link flex items-center gap-3 px-4 py-2.5 rounded-2xl mb-1 {% if request.endpoint == 'program_settings' %}active{% endif %}">
+                <a href="{{ url_for('program_settings') }}" class="nav-link flex items-center gap-2.5 px-3 py-1.5 rounded-xl mb-0.5 {% if request.endpoint == 'program_settings' %}active{% endif %}">
                     <i class="fa-solid fa-cog w-5"></i>
                     <span>Program Settings</span>
                 </a>
 
                 <!-- NEW: Audit Log -->
-                <a href="{{ url_for('audit_log_page') }}" class="nav-link flex items-center gap-3 px-4 py-2.5 rounded-2xl mb-1 {% if request.endpoint == 'audit_log_page' %}active{% endif %}">
+                <a href="{{ url_for('audit_log_page') }}" class="nav-link flex items-center gap-2.5 px-3 py-1.5 rounded-xl mb-0.5 {% if request.endpoint == 'audit_log_page' %}active{% endif %}">
                     <i class="fa-solid fa-history w-5"></i>
                     <span>Audit Log</span>
                 </a>
             </div>
 
             <!-- Sidebar Footer -->
-            <div class="p-4 border-t border-zinc-800">
-                <div class="text-[10px] text-zinc-500 px-3">
-                    Case PM v56.0 • ALDI Lakeland
-                </div>
+            <div class="px-3 py-2 border-t border-zinc-800 flex-shrink-0">
+                <div class="text-[9px] text-zinc-500">Case PM v56.0</div>
             </div>
         </div>
 
         <!-- MAIN CONTENT AREA -->
-        <div class="flex-1 flex flex-col overflow-hidden">
+        <div class="flex-1 flex flex-col overflow-hidden min-w-0">
+
+            <!-- Project bar (right of sidebar) -->
+            <div class="flex-shrink-0 border-b border-zinc-800 bg-zinc-900 px-4 py-2">
+                <div class="flex items-center gap-2">
+                    <span class="text-[10px] text-zinc-400 tracking-[1px] font-medium">CURRENT PROJECT</span>
+                    <button type="button" onclick="document.getElementById('projectSwitcherModal').showModal()"
+                            class="flex items-center gap-2 text-sm font-semibold tracking-tight text-white hover:text-emerald-400 transition-colors">
+                        <span id="currentProjectName">{{ project_name if project_name else 'ALDI Lakeland' }}</span>
+                        <i class="fa-solid fa-chevron-down text-xs text-zinc-400"></i>
+                    </button>
+                </div>
+            </div>
 
             <!-- Main Content Block -->
-            <div class="flex-1 min-h-0 overflow-auto p-6">
-                <!-- Page Content Goes Here -->
+            <div id="mainContent" class="flex-1 min-h-0 overflow-auto p-4">
                 {% block content %}{% endblock %}
             </div>
             
             <!-- Footer Bar -->
-            <div class="h-12 flex-shrink-0 border-t border-zinc-800 bg-zinc-900 px-6 flex items-center justify-between text-xs text-zinc-500">
+            <div class="h-10 flex-shrink-0 border-t border-zinc-800 bg-zinc-900 px-4 flex items-center justify-between text-xs text-zinc-500">
                 <div class="flex items-center gap-4 min-w-0">
                     <div class="whitespace-nowrap">Last synced: <span id="lastSyncTime">just now</span></div>
                     {% if request.endpoint == 'pay_applications_page' %}
@@ -523,6 +530,15 @@
         if (syncEl) {
             syncEl.textContent = new Date().toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'});
         }
+
+        // Project switcher (demo)
+        window.switchProject = function(projectId) {
+            const names = { 1: 'ALDI Lakeland', 2: 'Wesley Chapel Retail' };
+            const name = names[projectId] || 'ALDI Lakeland';
+            const nameEl = document.getElementById('currentProjectName');
+            if (nameEl) nameEl.textContent = name;
+            document.getElementById('projectSwitcherModal')?.close();
+        };
 
         console.log('%c[Case PM v56.0] ✅ Ultimate base.html loaded successfully with complete sidebar.', 'color:#10b981; font-weight:600');
     </script>
