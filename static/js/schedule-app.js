@@ -7,11 +7,21 @@
     const LINK_LABELS = { '0': 'FS', '1': 'SS', '2': 'FF', '3': 'SF' };
 
     const EXTENDED_FIELDS = [
-        'activity_id', 'resource', 'owner', 'work_hours', 'cost', 'fixed_cost',
+        'activity_id', 'resource', 'owner', 'work_hours', 'cost', 'actual_cost', 'fixed_cost',
         'actual_start', 'actual_finish', 'remaining_duration', 'constraint_type', 'constraint_date',
-        'deadline', 'priority', 'calendar', 'activity_code', 'phase', 'discipline',
-        'bar_color', 'notes', 'hyperlink', 'free_float', 'total_float'
+        'deadline', 'priority', 'calendar', 'activity_code', 'activity_type', 'phase', 'discipline',
+        'bar_color', 'notes', 'hyperlink', 'free_float', 'total_float',
+        'early_start', 'early_finish', 'late_start', 'late_finish',
+        'percent_complete_type', 'schedule_percent_complete',
+        'bcws', 'bcwp', 'acwp', 'cpi', 'spi', 'cost_variance', 'schedule_variance',
+        'baseline_start', 'baseline_finish', 'start_variance', 'finish_variance'
     ];
+
+    const UNDO_MAX = 40;
+    let undoStack = [];
+    let redoStack = [];
+    let undoPaused = false;
+    let dataDateMarkerId = null;
 
     let ganttReady = false;
     let saveTimer = null;
@@ -32,10 +42,160 @@
         complete_bar_color: '#71717a',
         milestone_color: '#8b5cf6',
         link_color: '#94a3b8',
-        link_width: 2
+        link_width: 2,
+        active_baseline_index: -1
     };
 
-    const REQUIRED_COLUMNS = ['text', 'collapse'];
+    function pushUndoState() {
+        if (!ganttReady || undoPaused) return;
+        const snap = JSON.stringify(serializeSchedule());
+        if (undoStack.length && undoStack[undoStack.length - 1] === snap) return;
+        undoStack.push(snap);
+        if (undoStack.length > UNDO_MAX) undoStack.shift();
+        redoStack = [];
+        updateUndoButtons();
+    }
+
+    function restoreUndoState(json) {
+        undoPaused = true;
+        try {
+            loadSchedulePayload(JSON.parse(json));
+        } finally {
+            undoPaused = false;
+        }
+        gantt.render();
+        applyChartOverlay();
+        updateStatusBar();
+        updateUndoButtons();
+        queueSave();
+    }
+
+    function undo() {
+        if (undoStack.length < 2) return showScheduleAlert('Nothing to undo.', 'info');
+        const current = undoStack.pop();
+        redoStack.push(current);
+        restoreUndoState(undoStack[undoStack.length - 1]);
+        logActivity('Undo', 'Restored previous schedule state');
+    }
+
+    function redo() {
+        if (!redoStack.length) return showScheduleAlert('Nothing to redo.', 'info');
+        const snap = redoStack.pop();
+        undoStack.push(snap);
+        restoreUndoState(snap);
+        logActivity('Redo', 'Restored next schedule state');
+    }
+
+    function updateUndoButtons() {
+        const canUndo = undoStack.length > 1;
+        const canRedo = redoStack.length > 0;
+        document.getElementById('scheduleUndoBtn')?.toggleAttribute('disabled', !canUndo);
+        document.getElementById('scheduleRedoBtn')?.toggleAttribute('disabled', !canRedo);
+    }
+
+    function baselineTaskMap(baseline) {
+        const map = new Map();
+        (baseline?.data || []).forEach(t => map.set(String(t.id), t));
+        return map;
+    }
+
+    function applyBaselineVariance() {
+        const idx = scheduleSettings.active_baseline_index;
+        if (idx == null || idx < 0 || !baselines[idx]) {
+            gantt.eachTask(id => {
+                const t = gantt.getTask(id);
+                t.baseline_start = null;
+                t.baseline_finish = null;
+                t.start_variance = null;
+                t.finish_variance = null;
+            });
+            return;
+        }
+        const bMap = baselineTaskMap(baselines[idx]);
+        gantt.eachTask(id => {
+            const t = gantt.getTask(id);
+            if (t.type === 'project') return;
+            const b = bMap.get(String(id));
+            if (!b) {
+                t.baseline_start = null;
+                t.baseline_finish = null;
+                t.start_variance = null;
+                t.finish_variance = null;
+                return;
+            }
+            t.baseline_start = b.start_date || null;
+            t.baseline_finish = b.end_date || null;
+            const curStart = toGanttDate(t.start_date);
+            const curEnd = toGanttDate(t.end_date);
+            const bStart = CasePMSchedule.parseDate(b.start_date);
+            const bEnd = CasePMSchedule.parseDate(b.end_date);
+            t.start_variance = (curStart && bStart) ? CasePMSchedule.calendarDaysBetween(bStart, curStart) : null;
+            t.finish_variance = (curEnd && bEnd) ? CasePMSchedule.calendarDaysBetween(bEnd, curEnd) : null;
+        });
+    }
+
+    function updateDataDateMarker() {
+        if (!ganttReady || !gantt.addMarker) return;
+        const dd = CasePMSchedule.parseDate(document.getElementById('dataDateInput')?.value || scheduleSettings.data_date);
+        if (!dd) return;
+        if (dataDateMarkerId != null) {
+            try { gantt.deleteMarker(dataDateMarkerId); } catch (e) { /* ok */ }
+            dataDateMarkerId = null;
+        }
+        dataDateMarkerId = gantt.addMarker({
+            start_date: dd,
+            css: 'schedule-data-date-marker',
+            text: 'Data Date',
+            title: 'Status / data date: ' + CasePMSchedule.formatDate(dd)
+        });
+    }
+
+    function showBaselineManager() {
+        const dlg = document.getElementById('scheduleBaselineModal');
+        if (!dlg) return setBaseline();
+        const list = document.getElementById('scheduleBaselineList');
+        if (!list) return;
+        if (!baselines.length) {
+            list.innerHTML = '<p class="text-zinc-500 text-sm p-2">No baselines saved. Click <b>Set Baseline</b> to capture the current schedule.</p>';
+        } else {
+            list.innerHTML = baselines.map((b, i) => {
+                const active = scheduleSettings.active_baseline_index === i;
+                const count = (b.data || []).length;
+                return `<div class="flex items-center justify-between gap-2 px-3 py-2 rounded-md border ${active ? 'border-emerald-600 bg-emerald-950/30' : 'border-zinc-700 bg-zinc-800/80'}">
+                    <div class="min-w-0">
+                        <div class="text-sm font-medium truncate">${b.name}</div>
+                        <div class="text-xs text-zinc-500">${count} activities · ${new Date(b.created).toLocaleString()}</div>
+                    </div>
+                    <div class="flex gap-1 flex-shrink-0">
+                        <button type="button" class="schedule-toolbar-btn text-xs px-2 py-1" onclick="ScheduleApp.activateBaseline(${i})">${active ? 'Active' : 'Use'}</button>
+                        <button type="button" class="schedule-toolbar-btn text-xs px-2 py-1 text-red-400" onclick="ScheduleApp.deleteBaseline(${i})">Delete</button>
+                    </div>
+                </div>`;
+            }).join('');
+        }
+        dlg.showModal();
+    }
+
+    function activateBaseline(index) {
+        scheduleSettings.active_baseline_index = index;
+        applyBaselineVariance();
+        gantt.render();
+        queueSave();
+        showBaselineManager();
+        showScheduleAlert(`Baseline "${baselines[index].name}" is now active for variance columns.`, 'success');
+    }
+
+    function deleteBaseline(index) {
+        if (!baselines[index]) return;
+        if (!confirm(`Delete baseline "${baselines[index].name}"?`)) return;
+        baselines.splice(index, 1);
+        if (scheduleSettings.active_baseline_index === index) scheduleSettings.active_baseline_index = -1;
+        else if (scheduleSettings.active_baseline_index > index) scheduleSettings.active_baseline_index--;
+        applyBaselineVariance();
+        queueSave();
+        showBaselineManager();
+    }
+
 
     function getProjectMeta() {
         const ctx = document.getElementById('scheduleProjectContext');
@@ -133,34 +293,11 @@
         gantt.config.grid_width = total;
     }
 
-    function syncTimelineInnerWidth(timelineCell, timelineW) {
-        if (!timelineCell) return;
-        timelineCell.style.setProperty('width', timelineW + 'px', 'important');
-        timelineCell.style.setProperty('right', '0', 'important');
-        timelineCell.style.setProperty('left', 'auto', 'important');
-        const selectors = [
-            '.gantt_layout_content',
-            '.gantt_task',
-            '.gantt_task_bg',
-            '.gantt_task_scale',
-            '.gantt_data_area',
-            '.gantt_bars_area'
-        ];
-        selectors.forEach(sel => {
-            timelineCell.querySelectorAll(sel).forEach(el => {
-                el.style.width = timelineW + 'px';
-                el.style.minWidth = timelineW + 'px';
-            });
-        });
-    }
-
     function applyChartOverlay() {
         if (!ganttReady) return;
         const root = document.querySelector('#gantt_here .gantt_layout_root');
         if (!root) return;
 
-        const hostEl = document.getElementById('gantt_here');
-        const hostW = hostEl?.offsetWidth || 1200;
         const timelineW = getTimelineWidth();
 
         const cells = root.querySelectorAll(':scope > .gantt_layout_cell');
@@ -173,8 +310,8 @@
         gridCell.style.cssText = 'flex:1 1 auto;width:100%!important;min-width:0!important;position:relative;z-index:2;overflow:hidden;';
         if (nativeResizer) nativeResizer.style.cssText = 'display:none!important;width:0!important;min-width:0!important;';
 
+        // Viewport only — do NOT clamp inner task/data area width (that locked scrolling to ~2 weeks)
         timelineCell.style.cssText = `position:absolute!important;top:0;right:0;bottom:0;width:${timelineW}px!important;z-index:15;box-shadow:-8px 0 24px rgba(0,0,0,0.55);pointer-events:auto;overflow:hidden;`;
-        syncTimelineInnerWidth(timelineCell, timelineW);
 
         let handle = document.getElementById('scheduleChartResizer');
         if (!handle) {
@@ -561,7 +698,7 @@
 
     function configureGantt() {
         if (gantt.plugins) {
-            gantt.plugins({ tooltip: true });
+            gantt.plugins({ tooltip: true, marker: true });
         }
 
         gantt.config.date_format = '%Y-%m-%d';
@@ -579,7 +716,9 @@
         gantt.config.show_errors = false;
         gantt.config.highlight_critical_path = true;
         gantt.config.grid_elastic_columns = false;
-        gantt.config.keep_grid_width = true;
+        gantt.config.keep_grid_width = false;
+        gantt.config.round_dnd_dates = false;
+        gantt.config.drag_timeline = { useKey: false };
         gantt.config.autosize = false;
         gantt.config.reorder_grid_columns = true;
         gantt.config.open_tree_initially = true;
@@ -717,29 +856,37 @@
             if (task.progress > 1) task.progress = Math.min(1, task.progress / 100);
             applyTaskBarColor(task);
             gantt.refreshTask(id);
+            pushUndoState();
             queueSave();
         });
-        gantt.attachEvent('onAfterTaskAdd', queueSave);
-        gantt.attachEvent('onAfterTaskDelete', queueSave);
-        gantt.attachEvent('onAfterLinkAdd', queueSave);
-        gantt.attachEvent('onAfterLinkUpdate', queueSave);
-        gantt.attachEvent('onAfterLinkDelete', queueSave);
-        gantt.attachEvent('onAfterTaskDrag', queueSave);
+        gantt.attachEvent('onAfterTaskAdd', () => { pushUndoState(); queueSave(); });
+        gantt.attachEvent('onAfterTaskDelete', () => { pushUndoState(); queueSave(); });
+        gantt.attachEvent('onAfterLinkAdd', () => { pushUndoState(); queueSave(); });
+        gantt.attachEvent('onAfterLinkUpdate', () => { pushUndoState(); queueSave(); });
+        gantt.attachEvent('onAfterLinkDelete', () => { pushUndoState(); queueSave(); });
+        gantt.attachEvent('onAfterTaskDrag', function () {
+            pushUndoState();
+            queueSave();
+            gantt.render();
+        });
         gantt.attachEvent('onAfterColumnReorder', () => {
             columnOrder = gantt.config.columns.map(c => c.name);
             scheduleSettings.column_order = columnOrder.slice();
             syncGridTableWidth();
             queueSave();
-            queueChartOverlay();
+            gantt.render();
         });
         gantt.attachEvent('onColumnResizeEnd', function (index, column, new_width) {
             if (column && column.name) {
                 columnWidths[column.name] = new_width;
                 column.width = new_width;
+                if (gantt.config.columns[index]) {
+                    gantt.config.columns[index].width = new_width;
+                }
             }
             syncGridTableWidth();
             queueSave();
-            queueChartOverlay();
+            gantt.render();
         });
         gantt.attachEvent('onGanttRender', () => {
             refreshWbsCodes();
@@ -749,6 +896,9 @@
             }
         });
 
+        document.addEventListener('keydown', onScheduleKeyDown);
+
+
         syncGridTableWidth();
         gantt.init('gantt_here');
         sanitizeAllTaskDates();
@@ -756,6 +906,34 @@
         ganttReady = true;
         resizeGanttHost();
         window.addEventListener('resize', resizeGanttHost);
+    }
+
+    function onScheduleKeyDown(e) {
+        const tag = (e.target?.tagName || '').toLowerCase();
+        if (tag === 'input' || tag === 'textarea' || tag === 'select' || e.target?.isContentEditable) return;
+        if (!ganttReady) return;
+
+        if (e.key === 'Delete' || e.key === 'Backspace') {
+            e.preventDefault();
+            deleteSelected();
+            return;
+        }
+        if (e.key === 'F2') {
+            e.preventDefault();
+            const id = gantt.getSelectedId();
+            if (!id) return;
+            startCellEdit(id, 'text');
+            return;
+        }
+        if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'z' && !e.shiftKey) {
+            e.preventDefault();
+            undo();
+            return;
+        }
+        if ((e.ctrlKey || e.metaKey) && (e.key.toLowerCase() === 'y' || (e.key.toLowerCase() === 'z' && e.shiftKey))) {
+            e.preventDefault();
+            redo();
+        }
     }
 
     function logActivity(action, detail) {
@@ -832,6 +1010,9 @@
         queueChartOverlay();
         gantt.render();
         setSaveStatus('Ready');
+        pushUndoState();
+        applyBaselineVariance();
+        updateDataDateMarker();
         return true;
     }
 
@@ -989,6 +1170,7 @@
         if (la) la.value = scheduleSettings.lookahead_days || 14;
         applyGanttDisplayStyles();
         if (scheduleSettings.timescale) setTimescale(scheduleSettings.timescale, false);
+        updateDataDateMarker();
     }
 
     function setSaveStatus(msg) {
@@ -1134,6 +1316,9 @@
         const name = `Baseline ${baselines.length + 1} — ${CasePMSchedule.formatDate(new Date())}`;
         baselines.push({ name, created: new Date().toISOString(), data: snap.data });
         if (baselines.length > 10) baselines.shift();
+        scheduleSettings.active_baseline_index = baselines.length - 1;
+        applyBaselineVariance();
+        gantt.render();
         showScheduleAlert(`Baseline saved: ${name}`, 'success');
         queueSave();
     }
@@ -1147,27 +1332,38 @@
         }
     }
 
-    function runSchedule() {
+    function runSchedule(options) {
+        const opts = options || {};
+        const dataDate = CasePMSchedule.parseDate(document.getElementById('dataDateInput')?.value) || new Date();
+        scheduleSettings.data_date = CasePMSchedule.formatDate(dataDate);
         const tasks = [];
         gantt.eachTask(t => tasks.push(Object.assign({}, t)));
         const links = gantt.getLinks().map(l => Object.assign({}, l));
-        const { updates, wbsMap } = CasePMSchedule.runCPM(tasks, links);
+        const { updates, wbsMap } = CasePMSchedule.runCPM(tasks, links, { dataDate });
+        const evmFields = ['bcws', 'bcwp', 'acwp', 'cpi', 'spi', 'cost_variance', 'schedule_variance', 'schedule_percent_complete'];
+        const cpmFields = ['early_start', 'early_finish', 'late_start', 'late_finish'];
         updates.forEach((patch, id) => {
             if (!gantt.isTaskExists(id)) return;
             const task = gantt.getTask(id);
             if (patch.start_date) task.start_date = toGanttDate(patch.start_date);
             if (patch.end_date) task.end_date = toGanttDate(patch.end_date);
+            cpmFields.forEach(f => {
+                if (patch[f]) task[f] = CasePMSchedule.formatDate(patch[f]);
+            });
             if (patch.total_float != null) task.total_float = patch.total_float;
             if (patch.free_float != null) task.free_float = patch.free_float;
+            evmFields.forEach(f => { if (patch[f] != null) task[f] = patch[f]; });
             task.$slack = patch.$slack;
             task.$critical = patch.$critical;
             sanitizeTaskDates(task);
             gantt.refreshTask(id);
         });
         sanitizeAllTaskDates();
+        applyBaselineVariance();
         wbsCodeMap = wbsMap || CasePMSchedule.buildWbsMap(tasks);
         gantt.render();
-        scrollToScheduleRange();
+        if (opts.scroll !== false && !opts.skipScroll) scrollToScheduleRange();
+        updateDataDateMarker();
         applyChartOverlay();
         updateStatusBar();
         queueSave();
@@ -1384,13 +1580,23 @@
             return;
         }
         let critical = 0;
-        gantt.eachTask(t => { if (t.type !== 'project' && isTaskCritical(t)) critical++; });
+        let totalCpi = 0;
+        let cpiCount = 0;
+        gantt.eachTask(t => {
+            if (t.type !== 'project' && isTaskCritical(t)) critical++;
+            if (t.cpi != null && !Number.isNaN(Number(t.cpi))) { totalCpi += Number(t.cpi); cpiCount++; }
+        });
+        const avgCpi = cpiCount ? (totalCpi / cpiCount).toFixed(2) : '—';
+        const blIdx = scheduleSettings.active_baseline_index;
+        const blLabel = blIdx >= 0 && baselines[blIdx] ? baselines[blIdx].name : 'None';
         el.innerHTML = `
             <span>Start: <b>${formatDateSafe(range.start_date)}</b></span>
             <span>Finish: <b>${formatDateSafe(range.end_date)}</b></span>
             <span>Activities: <b>${countTasks()}</b></span>
             <span>Critical: <b class="text-red-400">${critical}</b></span>
-            <span class="text-zinc-600">| Single-click to select · Double-click cell to edit · Drag column borders to resize</span>`;
+            <span>Baseline: <b class="text-sky-400">${blLabel}</b></span>
+            <span>Avg CPI: <b>${avgCpi}</b></span>
+            <span class="text-zinc-600">| Ctrl+Z undo · F2 edit · Del delete</span>`;
     }
 
     // ─── Import / Export / Print ───
@@ -1608,13 +1814,15 @@
         initZoom();
         if (scheduleSettings.timescale) setTimescale(scheduleSettings.timescale, false);
         await loadSchedule();
-        runSchedule();
+        runSchedule({ skipScroll: true });
         switchScheduleView('gantt');
         const pid = getSelectedProjectId();
         if (pid) localStorage.setItem('casepm_current_project_id', String(pid));
 
         document.getElementById('dataDateInput')?.addEventListener('change', () => {
             scheduleSettings.data_date = document.getElementById('dataDateInput').value;
+            updateDataDateMarker();
+            gantt.render();
             queueSave();
         });
     }
@@ -1623,7 +1831,8 @@
         init, addActivity, deleteSelected, indentSelected, outdentSelected, openActivityDetail,
         linkSelected, unlinkSelected, zoomGantt, setTimescale, showDisplaySettings, saveDisplaySettings,
         wbsCode, applyPredecessorString,
-        toggleCriticalPath, setBaseline,
+        toggleCriticalPath, setBaseline, showBaselineManager, activateBaseline, deleteBaseline,
+        undo, redo,
         runSchedule, switchScheduleView, renderLookAhead, focusActivity,
         exportJson, importFile, printGantt, printLookAhead, saveSchedule,
         loadSchedule, clearSchedule, showColumnManager, showAddColumnDialog, removeColumn, addFieldColumn, queueSave

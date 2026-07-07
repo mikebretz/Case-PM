@@ -129,11 +129,106 @@
         return slack != null && slack <= 0;
     }
 
+    const CONSTRAINT_TYPES = {
+        asap: 'asap', alap: 'alap', mso: 'mso', mfo: 'mfo',
+        snet: 'snet', snlt: 'snlt', fnet: 'fnet', fnlt: 'fnlt'
+    };
+
+    function normalizeConstraintType(value) {
+        const v = String(value || 'asap').toLowerCase();
+        return CONSTRAINT_TYPES[v] ? v : 'asap';
+    }
+
+    function applyForwardConstraint(task, es, ef, esMap, efMap) {
+        const type = normalizeConstraintType(task.constraint_type);
+        const cDate = parseDate(task.constraint_date);
+        if (!cDate || type === 'asap' || type === 'alap') return;
+        const dur = Math.max(0, Number(task.duration) || 0);
+        const id = String(task.id);
+        let start = esMap.get(id);
+        let finish = efMap.get(id);
+        if (type === 'mso') {
+            start = cDate;
+            finish = task.type === 'milestone' ? cDate : calcFinishFromStart(cDate, dur, task.type);
+        } else if (type === 'mfo') {
+            finish = cDate;
+            start = task.type === 'milestone' ? cDate : addCalendarDays(cDate, -dur);
+        } else if (type === 'snet' && start < cDate) {
+            start = cDate;
+            finish = task.type === 'milestone' ? cDate : calcFinishFromStart(cDate, dur, task.type);
+        } else if (type === 'fnet' && finish < cDate) {
+            finish = cDate;
+            start = task.type === 'milestone' ? cDate : addCalendarDays(cDate, -dur);
+        }
+        esMap.set(id, start);
+        efMap.set(id, finish);
+    }
+
+    function applyBackwardConstraint(task, ls, lf, lsMap, lfMap) {
+        const type = normalizeConstraintType(task.constraint_type);
+        const cDate = parseDate(task.constraint_date);
+        if (!cDate) return;
+        const dur = Math.max(0, Number(task.duration) || 0);
+        const id = String(task.id);
+        let lateStart = lsMap.get(id);
+        let lateFinish = lfMap.get(id);
+        if (type === 'snlt' && lateStart > cDate) {
+            lateStart = cDate;
+            lateFinish = task.type === 'milestone' ? cDate : calcFinishFromStart(cDate, dur, task.type);
+        } else if (type === 'fnlt' && lateFinish > cDate) {
+            lateFinish = cDate;
+            lateStart = task.type === 'milestone' ? cDate : addCalendarDays(cDate, -dur);
+        }
+        lsMap.set(id, lateStart);
+        lfMap.set(id, lateFinish);
+    }
+
+    /**
+     * Simplified EVM metrics per activity (MS Project / P6 style).
+     */
+    function computeEVM(task, dataDate) {
+        const dd = parseDate(dataDate) || new Date();
+        const cost = Number(task.cost) || Number(task.budgeted_cost) || 0;
+        const actualCost = Number(task.actual_cost) || 0;
+        const progress = task.progress <= 1 ? (Number(task.progress) || 0) : (Number(task.progress) || 0) / 100;
+        const start = taskStartDate(task);
+        const end = taskEndDate(task);
+        const duration = Math.max(1, Number(task.duration) || 1);
+
+        let bcws = 0;
+        if (start && end && cost > 0) {
+            const totalSpan = Math.max(1, calendarDaysBetween(start, end));
+            const elapsed = Math.max(0, Math.min(totalSpan, calendarDaysBetween(start, dd)));
+            bcws = cost * (elapsed / totalSpan);
+        }
+
+        const bcwp = cost * progress;
+        const acwp = actualCost > 0 ? actualCost : bcwp;
+        const cpi = acwp > 0 ? bcwp / acwp : null;
+        const spi = bcws > 0 ? bcwp / bcws : null;
+        const costVariance = bcwp - acwp;
+        const scheduleVariance = bcwp - bcws;
+
+        const schedPct = duration > 0 ? Math.min(100, Math.round((progress * duration / duration) * 100)) : Math.round(progress * 100);
+
+        return {
+            bcws: Math.round(bcws * 100) / 100,
+            bcwp: Math.round(bcwp * 100) / 100,
+            acwp: Math.round(acwp * 100) / 100,
+            cpi: cpi != null ? Math.round(cpi * 1000) / 1000 : null,
+            spi: spi != null ? Math.round(spi * 1000) / 1000 : null,
+            cost_variance: Math.round(costVariance * 100) / 100,
+            schedule_variance: Math.round(scheduleVariance * 100) / 100,
+            schedule_percent_complete: schedPct
+        };
+    }
+
     /**
      * CPM forward/backward pass (community-edition fallback — no dhtmlx PRO plugins).
      * Updates activity dates from logic links and marks critical path (total float <= 0).
      */
-    function runCPM(tasks, links) {
+    function runCPM(tasks, links, options) {
+        const opts = options || {};
         const taskMap = new Map();
         (tasks || []).forEach(t => taskMap.set(String(t.id), Object.assign({}, t)));
 
@@ -206,6 +301,12 @@
             if (!changed) break;
         }
 
+        // Apply forward constraints (MSO, MFO, SNET, FNET)
+        leaves.forEach(id => {
+            const t = taskMap.get(id);
+            applyForwardConstraint(t, es.get(id), ef.get(id), es, ef);
+        });
+
         let projectEnd = today;
         leaves.forEach(id => {
             const e = ef.get(id);
@@ -245,18 +346,42 @@
             if (!changed) break;
         }
 
+        // Apply backward constraints (SNLT, FNLT)
+        leaves.forEach(id => {
+            const t = taskMap.get(id);
+            applyBackwardConstraint(t, ls.get(id), lf.get(id), ls, lf);
+        });
+
+        const dataDate = parseDate(opts.dataDate) || today;
+
         const updates = new Map();
         leaves.forEach(id => {
             const t = taskMap.get(id);
             const totalFloat = Math.max(0, calendarDaysBetween(es.get(id), ls.get(id)));
             const critical = totalFloat <= 0;
+            const constraint = normalizeConstraintType(t.constraint_type);
+            let schedStart = es.get(id);
+            let schedEnd = ef.get(id);
+            if (constraint === 'alap') {
+                schedStart = ls.get(id);
+                schedEnd = lf.get(id);
+            }
+            const evm = computeEVM(Object.assign({}, t, {
+                start_date: schedStart,
+                end_date: schedEnd
+            }), dataDate);
             updates.set(id, {
-                start_date: es.get(id),
-                end_date: ef.get(id),
+                start_date: schedStart,
+                end_date: schedEnd,
+                early_start: es.get(id),
+                early_finish: ef.get(id),
+                late_start: ls.get(id),
+                late_finish: lf.get(id),
                 total_float: totalFloat,
                 free_float: totalFloat,
                 $slack: totalFloat,
-                $critical: critical
+                $critical: critical,
+                ...evm
             });
         });
 
@@ -462,6 +587,8 @@
         isWorkDay,
         buildWbsMap,
         isTaskCritical,
+        normalizeConstraintType,
+        computeEVM,
         runCPM,
         computeLookAhead,
         groupLookAheadByWbs
