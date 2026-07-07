@@ -96,7 +96,43 @@
     min-height: 0;
     display: flex;
     flex-direction: column;
+    margin-bottom: 0.75rem;
     overflow: hidden;
+  }
+  .pay-app-tracker-panel {
+    flex: 1 1 auto;
+    min-height: 0;
+    display: none;
+    flex-direction: column;
+    margin-bottom: 0.75rem;
+    overflow: hidden;
+  }
+  .pay-app-tracker-panel.is-active {
+    display: flex;
+  }
+  .pay-app-table-panel.is-hidden {
+    display: none;
+  }
+  #payAppTrackerSplit {
+    flex: 1 1 auto;
+    min-height: 0;
+    display: flex;
+    gap: 1rem;
+    overflow: hidden;
+  }
+  #payAppTrackerSplit .tracker-sub-list-panel {
+    width: 18rem;
+    flex-shrink: 0;
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+    overflow: hidden;
+  }
+  #payAppTrackerSplit .tracker-sub-detail-panel {
+    flex: 1 1 auto;
+    min-width: 0;
+    min-height: 0;
+    overflow: auto;
   }
   #payAppTableScrollContainer {
     flex: 1 1 auto;
@@ -168,8 +204,13 @@
 <!-- WORKFLOW / ACTION BAR (tab-specific, prevents button multiplication) -->
 <div id="payAppWorkflowBar" class="mb-3 flex-shrink-0"></div>
 
+<!-- SUB PAY APP TRACKER PANEL (replaces main table on tracker tab) -->
+<div id="payAppTrackerPanel" class="pay-app-tracker-panel border border-zinc-700 rounded-md bg-zinc-900">
+    <div id="payAppTrackerSplit"></div>
+</div>
+
 <!-- TABLE CONTAINER -->
-<div class="pay-app-table-panel border border-zinc-700 rounded-md bg-zinc-900">
+<div id="payAppTablePanel" class="pay-app-table-panel border border-zinc-700 rounded-md bg-zinc-900">
     <div id="payAppTableScrollContainer">
         <table class="w-full text-sm min-w-[1900px]">
             <thead class="bg-zinc-800 sticky z-20 border-b border-zinc-700" style="top: 0; position: sticky;" id="payAppTableHead">
@@ -336,6 +377,17 @@
                         <div class="text-[10px] text-zinc-500">When ON, you cannot submit the main Pay Application (G702) until every subcontractor who has an Approved Schedule of Values has submitted their pay app for this period (appears in Sub Pay App Tracker).</div>
                     </div>
                     <input type="checkbox" id="requireAllSubPayAppsToggle" class="w-5 h-5 accent-emerald-600">
+                </label>
+            </div>
+
+            <!-- Allow Zero-Dollar Sub Pay Apps (Compliance) -->
+            <div class="pt-3 border-t border-zinc-700">
+                <label class="flex items-center justify-between cursor-pointer">
+                    <div>
+                        <div class="text-sm text-zinc-300">Allow zero-dollar Subcontractor Pay Apps (compliance / lien waiver only)</div>
+                        <div class="text-[10px] text-zinc-500">When ON, subs can submit a $0 pay app with an attached lien waiver. It appears in the Sub Pay App Tracker as <strong>Compliance</strong> without using a numbered pay app slot.</div>
+                    </div>
+                    <input type="checkbox" id="allowZeroDollarSubPayAppsToggle" class="w-5 h-5 accent-emerald-600">
                 </label>
             </div>
 
@@ -1167,6 +1219,15 @@ let mainLienWaiver = JSON.parse(localStorage.getItem('mainLienWaiver') || '{}');
         thead.innerHTML = '';
         tbody.innerHTML = '';
         workflowBar.innerHTML = '';
+
+        const tablePanel = document.getElementById('payAppTablePanel');
+        const trackerPanel = document.getElementById('payAppTrackerPanel');
+        const trackerSplit = document.getElementById('payAppTrackerSplit');
+        if (trackerSplit) trackerSplit.innerHTML = '';
+
+        const onTrackerTab = currentPayAppTab === 'sub-pay-app-tracker';
+        if (tablePanel) tablePanel.classList.toggle('is-hidden', onTrackerTab);
+        if (trackerPanel) trackerPanel.classList.toggle('is-active', onTrackerTab);
 
         if (currentPayAppTab === 'payapp') {
             renderPayApplicationTab(cardsContainer, thead, tbody, workflowBar);
@@ -3594,8 +3655,11 @@ let mainLienWaiver = JSON.parse(localStorage.getItem('mainLienWaiver') || '{}');
             const subPayAppNum = (subPayAppNumbers[selectedSubCompanyId] || 1);
             const pendingEntry = subPendingSubmissions[selectedSubCompanyId];
             const historyEntry = subPayAppHistory[selectedSubCompanyId] && subPayAppHistory[selectedSubCompanyId][subPayAppNum];
+            const subLines = subcontractorSOV[selectedSubCompanyId] || [];
+            const draftTotal = subLines.reduce((sum, l) => sum + (l.work_this_period || 0) + (l.materials_stored || 0) + (l.co_billed_this_period || 0), 0);
+            const isZeroComplianceDraft = draftTotal === 0 && allowZeroDollarSubPayApps;
             // Pending if either in left-hand pending store OR legacy history pending (use sub's own number)
-            const isPending = (pendingEntry && pendingEntry.periodNumber === subPayAppNum) || (historyEntry && historyEntry.status === 'Pending Approval');
+            const isPending = (pendingEntry && (pendingEntry.periodNumber === subPayAppNum || pendingEntry.isCompliance)) || (historyEntry && historyEntry.status === 'Pending Approval');
             const waiverLive = subLienWaivers[selectedSubCompanyId] && subLienWaivers[selectedSubCompanyId][subPayAppNum];
             const waiverFromPending = pendingEntry && pendingEntry.lienWaiver && pendingEntry.lienWaiver.filename;
             const hasWaiver = (waiverLive && waiverLive.filename && waiverLive.filename.trim() !== '') || !!waiverFromPending;
@@ -3638,9 +3702,13 @@ let mainLienWaiver = JSON.parse(localStorage.getItem('mainLienWaiver') || '{}');
                 }
             } else {
                 // Normal ready-to-bill state
-                statusMessage = 'SOV Approved — Enter this period\'s billing';
+                statusMessage = isZeroComplianceDraft
+                    ? 'SOV Approved — $0 compliance month (upload lien waiver, then submit)'
+                    : 'SOV Approved — Enter this period\'s billing';
 
-                const canSubmit = !requireLienWaiverOnSubPayApp || hasWaiver;
+                const canSubmit = isZeroComplianceDraft
+                    ? hasWaiver
+                    : (!requireLienWaiverOnSubPayApp || hasWaiver);
 
                 if (canSubmit) {
                     buttonsHTML = `
@@ -4866,20 +4934,38 @@ let mainLienWaiver = JSON.parse(localStorage.getItem('mainLienWaiver') || '{}');
             return;
         }
 
-        // Always assign the next sequential pay app number (even for $0 submissions).
-        // The special zero-dollar "no number / compliance" mode has been removed.
+        const totalBilledThisPeriodCheck = lines.reduce((sum, l) =>
+            sum + (l.work_this_period || 0) + (l.materials_stored || 0) + (l.co_billed_this_period || 0), 0);
+
+        let currentPeriodNum;
+        let isComplianceSubmission = false;
+
         if (!subPayAppNumbers[companyId]) {
             subPayAppNumbers[companyId] = 1;
             localStorage.setItem('subPayAppNumbers', JSON.stringify(subPayAppNumbers));
         }
-        let currentPeriodNum = subPayAppNumbers[companyId];
+
+        if (totalBilledThisPeriodCheck === 0) {
+            if (!allowZeroDollarSubPayApps) {
+                showErrorModal("You need to update the amounts in the 'This Period' columns before submitting this pay application.\n\nTo allow zero-dollar compliance submissions, go to Pay Applications Settings and turn ON 'Allow zero-dollar Subcontractor Pay Apps (compliance / lien waiver only)'.");
+                return;
+            }
+            isComplianceSubmission = true;
+            currentPeriodNum = subPayAppNumbers[companyId];
+        } else {
+            currentPeriodNum = subPayAppNumbers[companyId];
+        }
 
         let waiver = subLienWaivers[companyId] && subLienWaivers[companyId][currentPeriodNum];
 
+        if (isComplianceSubmission && (!waiver || !waiver.filename)) {
+            showCenteredAlert("Zero-dollar compliance submissions require an uploaded lien waiver before submitting.", 'warning');
+            return;
+        }
+
         // === BLOCK SUBMISSION IF PREVIOUS PAY APP STILL ACTIVE IN TRACKER ===
-        // Prevents creating Pay App #5 while #4 is still sitting in Sub Pay App Tracker (not yet pushed/archived).
-        // This enforces clean sequential workflow: Submit → Approve → Push to Previous → next Submit.
-        if (subPayAppHistory[companyId]) {
+        // Compliance ($0) submissions do not consume a pay app number and may bypass this gate.
+        if (!isComplianceSubmission && subPayAppHistory[companyId]) {
             const prevActive = Object.keys(subPayAppHistory[companyId])
                 .map(Number)
                 .filter(p => p < currentPeriodNum)
@@ -4920,12 +5006,14 @@ let mainLienWaiver = JSON.parse(localStorage.getItem('mainLienWaiver') || '{}');
         // Do NOT save to subPayAppHistory yet → Tracker stays EMPTY
         if (!subPendingSubmissions[companyId]) subPendingSubmissions[companyId] = {};
         subPendingSubmissions[companyId] = {
-            periodNumber: currentPeriodNum,
+            periodNumber: isComplianceSubmission ? 1005 : currentPeriodNum,
             periodStart: currentPayAppPeriod ? currentPayAppPeriod.periodStart : '',
             periodEnd: currentPayAppPeriod ? currentPayAppPeriod.periodEnd : '',
             submittedDate: new Date().toISOString(),
             lines: snapshotLines,
             totalBilledThisPeriod: totalBilledThisPeriod,
+            isCompliance: isComplianceSubmission,
+            mainG702Period: currentPayAppPeriod ? currentPayAppPeriod.periodNumber : null,
             lienWaiver: waiver ? { 
                 filename: waiver.filename, 
                 uploadedDate: waiver.uploadedDate,
@@ -4934,7 +5022,12 @@ let mainLienWaiver = JSON.parse(localStorage.getItem('mainLienWaiver') || '{}');
         };
         localStorage.setItem('subPendingSubmissions', JSON.stringify(subPendingSubmissions));
 
-        logPayAppAudit('SUB_PAYAPP_SUBMITTED_FOR_APPROVAL', { companyId: companyId, period: currentPeriodNum, total: totalBilledThisPeriod });
+        if (isComplianceSubmission && companyId && subLienWaivers[companyId] && subLienWaivers[companyId][currentPeriodNum]) {
+            delete subLienWaivers[companyId][currentPeriodNum];
+            localStorage.setItem('subLienWaivers', JSON.stringify(subLienWaivers));
+        }
+
+        logPayAppAudit('SUB_PAYAPP_SUBMITTED_FOR_APPROVAL', { companyId: companyId, period: currentPeriodNum, total: totalBilledThisPeriod, isCompliance: isComplianceSubmission });
         // Success feedback removed per user request (pending status + buttons visible)
         renderPayAppContent();
     }
@@ -5013,22 +5106,24 @@ let mainLienWaiver = JSON.parse(localStorage.getItem('mainLienWaiver') || '{}');
         }
         localStorage.setItem('subLienWaivers', JSON.stringify(subLienWaivers));
 
-        // Always advance the pay app number for the next submission.
-        // Every submitted pay app (including $0) now consumes a sequential number.
         const approvedPayAppNumber = currentPeriodNum;
-        if (!subPayAppNumbers[companyId]) subPayAppNumbers[companyId] = 1;
-        subPayAppNumbers[companyId] = approvedPayAppNumber + 1;
-        localStorage.setItem('subPayAppNumbers', JSON.stringify(subPayAppNumbers));
+        const isCompliance = pendingEntry.isCompliance === true;
+
+        if (!isCompliance) {
+            if (!subPayAppNumbers[companyId]) subPayAppNumbers[companyId] = 1;
+            subPayAppNumbers[companyId] = approvedPayAppNumber + 1;
+            localStorage.setItem('subPayAppNumbers', JSON.stringify(subPayAppNumbers));
+        }
 
         // === Move to RIGHT HAND: Save/ensure in subPayAppHistory as Approved ===
-        // Compliance ($0) entries are now keyed by the MAIN G702 period number at approval time.
-        // This allows multiple 1005 (Compliance) entries for the same sub across different main periods
         const mainPeriodAtApproval = currentPayAppPeriod ? currentPayAppPeriod.periodNumber : null;
-        const historyKey = currentPeriodNum;
+        const historyKey = (pendingEntry.isCompliance === true && mainPeriodAtApproval)
+            ? mainPeriodAtApproval
+            : currentPeriodNum;
 
         if (!subPayAppHistory[companyId]) subPayAppHistory[companyId] = {};
         subPayAppHistory[companyId][historyKey] = {
-            periodNumber: currentPeriodNum,
+            periodNumber: (pendingEntry.isCompliance === true) ? 1005 : currentPeriodNum,
             periodStart: pendingEntry.periodStart || (currentPayAppPeriod ? currentPayAppPeriod.periodStart : ''),
             periodEnd: pendingEntry.periodEnd || (currentPayAppPeriod ? currentPayAppPeriod.periodEnd : ''),
             submittedDate: pendingEntry.submittedDate || new Date().toISOString(),
@@ -5041,6 +5136,7 @@ let mainLienWaiver = JSON.parse(localStorage.getItem('mainLienWaiver') || '{}');
             // Snapshot of Billed to Date *before* this app was added (used for correct restoration on Request Revision)
             billedToDateBefore: billedToDateSnapshot,
             archived: false,
+            isCompliance: pendingEntry.isCompliance === true,
             pushedFromMainPeriod: mainPeriodAtApproval,
             mainG702Period: mainPeriodAtApproval
         };
@@ -6023,8 +6119,8 @@ function printSubcontractorG703(companyId) {
             const mainP = entry.pushedFromMainPeriod || entry.mainG702Period || pNum;
 
             // Special display for compliance entries
-            let payAppLabel = (entry.periodNumber === 1005)
-                ? '1005 (Compliance)'
+            let payAppLabel = (entry.isCompliance === true || entry.periodNumber === 1005)
+                ? 'Compliance (Lien Waiver)'
                 : `#${pNum}`;
 
             opt.textContent = `Main Period ${mainP} • ${payAppLabel} • ${entry.periodStart || ''} to ${entry.periodEnd || ''} (${status})`;
@@ -6229,8 +6325,8 @@ function printSubcontractorG703(companyId) {
             const approvedStr = app.approvedDate ? new Date(app.approvedDate).toLocaleDateString() : '—';
             const periodStr = `${app.periodStart || ''} — ${app.periodEnd || ''}`;
             const mainPeriodDisplay = app.pushedFromMainPeriod || app.mainPeriod || app.periodNum || '—';
-            const payAppDisplay = (String(app.periodNum) === '1005' || app.periodNum === 1005)
-                ? `1005 (Compliance)`
+            const payAppDisplay = (app.isCompliance || String(app.periodNum) === '1005' || app.periodNum === 1005)
+                ? `Compliance (Lien Waiver)`
                 : `#${app.periodNum}`;
 
             html += `
@@ -6365,8 +6461,8 @@ function printSubcontractorG703(companyId) {
             const periodStr = `${app.periodStart || ''} — ${app.periodEnd || ''}`;
 
             const mainPeriodDisplay = app.pushedFromMainPeriod || app.mainG702Period || app.periodNum || '—';
-            const payAppDisplay = (app.periodNumber === 1005)
-                ? `1005 (Compliance)`
+            const payAppDisplay = (app.isCompliance === true || app.periodNumber === 1005)
+                ? `Compliance (Lien Waiver)`
                 : `#${app.periodNum || app.periodNumber}`;
 
             html += `
@@ -7027,6 +7123,11 @@ function printSubcontractorG703(companyId) {
             allSubToggle.checked = requireAllSubPayAppsBeforeG702Submit;
         }
 
+        const zeroSubPayToggle = document.getElementById('allowZeroDollarSubPayAppsToggle');
+        if (zeroSubPayToggle) {
+            zeroSubPayToggle.checked = allowZeroDollarSubPayApps;
+        }
+
         const deadlineToggle = document.getElementById('requireSubmissionDeadlineToggle');
         const deadlineContainer = document.getElementById('submissionDeadlineContainer');
         const deadlineDaySelect = document.getElementById('submissionDeadlineDay');
@@ -7124,7 +7225,8 @@ function printSubcontractorG703(companyId) {
                 'requireLienWaiverToggle',
                 'requireAllSubPayAppsToggle',
                 'requireSubmissionDeadlineToggle',
-                'submissionDeadlineDay'
+                'submissionDeadlineDay',
+                'allowZeroDollarSubPayAppsToggle'
             ].includes(id)) {
                 persistPayAppSettings();
                 if (currentPayAppTab === 'payapp' || currentPayAppTab === 'sub-sov') {
@@ -7674,34 +7776,25 @@ function printSubcontractorG703(companyId) {
         thead.innerHTML = '';
         tbody.innerHTML = '';
 
-        // Remove any previous split view (prevents stacking on re-renders when selecting)
-        const existingSplit = cardsContainer.querySelector('.mt-4.flex.gap-4');
-        if (existingSplit) existingSplit.remove();
-
-        // === NEW SPLIT VIEW: Left list of all subs with SOV (alphabetical) + Right detail pane for current G702 period ===
-        const splitWrap = document.createElement('div');
-        splitWrap.className = 'mt-4 flex gap-4';
-        splitWrap.innerHTML = `
-            <!-- LEFT: Alphabetical list of all subs with SOVs + status for current period -->
-            <div class="w-72 flex-shrink-0 bg-zinc-900 border border-zinc-700 rounded-md overflow-hidden flex flex-col" style="max-height: 560px;">
+        const trackerSplit = document.getElementById('payAppTrackerSplit');
+        if (!trackerSplit) return;
+        trackerSplit.innerHTML = `
+            <div class="tracker-sub-list-panel bg-zinc-900 border border-zinc-700 rounded-md overflow-hidden">
                 <div class="px-3 py-2.5 bg-zinc-800 border-b border-zinc-700 flex items-center justify-between flex-shrink-0">
                     <div class="text-xs font-semibold text-zinc-300 tracking-wide">SUBCONTRACTORS — Period ${currentPeriodNum}</div>
                     <div class="text-[10px] text-zinc-500">${Object.keys(subcontractorSOV || {}).length} total</div>
                 </div>
-                <div id="trackerSubList" class="overflow-auto flex-1 p-1 text-sm"></div>
+                <div id="trackerSubList" class="overflow-auto flex-1 p-1 text-sm min-h-0"></div>
             </div>
-
-            <!-- RIGHT: Detail pane for selected sub's pay app (current period) -->
-            <div class="flex-1 bg-zinc-900 border border-zinc-700 rounded-md p-4 min-h-[420px]" id="trackerSubDetail">
+            <div class="tracker-sub-detail-panel bg-zinc-900 border border-zinc-700 rounded-md p-4" id="trackerSubDetail">
                 <div class="h-full flex items-center justify-center text-zinc-500 text-sm">
                     Select a subcontractor on the left to see their pay app status and details for this period.
                 </div>
             </div>
         `;
-        cardsContainer.appendChild(splitWrap);
 
-        const listContainer = splitWrap.querySelector('#trackerSubList');
-        const detailContainer = splitWrap.querySelector('#trackerSubDetail');
+        const listContainer = trackerSplit.querySelector('#trackerSubList');
+        const detailContainer = trackerSplit.querySelector('#trackerSubDetail');
 
         // Get ALL subs that have a Schedule of Values (alphabetical)
         const allSubsWithSOV = companies
@@ -7767,21 +7860,42 @@ function printSubcontractorG703(companyId) {
         }
     }
 
+    // Helper: find tracker paper for a sub in the current G702 period
+    function getSubTrackerPaper(companyId, g702PeriodNum) {
+        const pending = subPendingSubmissions[companyId];
+        if (pending && (pending.isCompliance || pending.mainG702Period === g702PeriodNum || pending.periodNumber === g702PeriodNum)) {
+            return { source: 'pending', entry: pending };
+        }
+
+        const hist = subPayAppHistory[companyId] || {};
+        if (hist[g702PeriodNum] && hist[g702PeriodNum].archived !== true) {
+            return { source: 'history', entry: hist[g702PeriodNum] };
+        }
+
+        const subNum = subPayAppNumbers[companyId];
+        if (subNum && hist[subNum] && hist[subNum].archived !== true && !hist[subNum].isCompliance) {
+            return { source: 'history', entry: hist[subNum] };
+        }
+
+        return null;
+    }
+
     // Helper: Get status for a specific sub + specific period (used in left list)
     function getSubPayAppStatusForPeriod(companyId, periodNum) {
-        const hist = subPayAppHistory[companyId] && subPayAppHistory[companyId][periodNum];
-        const pending = subPendingSubmissions[companyId] && subPendingSubmissions[companyId].periodNumber === periodNum ? subPendingSubmissions[companyId] : null;
+        const paper = getSubTrackerPaper(companyId, periodNum);
+        if (paper) {
+            if (paper.entry.isCompliance) {
+                const status = paper.source === 'pending' ? 'Pending Approval' : (paper.entry.status || 'Approved');
+                return { status: status === 'Approved' ? 'Approved' : 'Pending Approval', hasPaper: true, isCompliance: true };
+            }
+            if (paper.entry.status === 'Approved') {
+                return { status: 'Approved', hasPaper: true };
+            }
+            if (paper.entry.status === 'Pending Approval' || paper.source === 'pending') {
+                return { status: 'Pending Approval', hasPaper: true };
+            }
+        }
 
-        if (hist && hist.status === 'Approved' && hist.archived !== true) {
-            return { status: 'Approved', hasPaper: true };
-        }
-        if (hist && hist.status === 'Pending Approval' && hist.archived !== true) {
-            return { status: 'Pending Approval', hasPaper: true };
-        }
-        if (pending) {
-            return { status: 'Pending Approval', hasPaper: true };
-        }
-        // Check if they have draft amounts on their live SOV (Ready for them to submit)
         const lines = subcontractorSOV[companyId] || [];
         const hasDraftBilling = lines.some(l => (l.work_this_period || 0) > 0 || (l.materials_stored || 0) > 0 || (l.co_billed_this_period || 0) > 0);
         if (hasDraftBilling) {
@@ -7796,13 +7910,12 @@ function printSubcontractorG703(companyId) {
         const companyName = getCompanyName(companyId);
         const lines = subcontractorSOV[companyId] || [];
 
-        // Find the paper for THIS exact period (prefer history, then pending)
-        let historyEntry = subPayAppHistory[companyId] && subPayAppHistory[companyId][currentPeriodNum];
-        let pendingEntry = subPendingSubmissions[companyId] && subPendingSubmissions[companyId].periodNumber === currentPeriodNum ? subPendingSubmissions[companyId] : null;
+        const paper = getSubTrackerPaper(companyId, currentPeriodNum);
+        let historyEntry = paper && paper.source === 'history' ? paper.entry : null;
+        let pendingEntry = paper && paper.source === 'pending' ? paper.entry : null;
 
-        const displayedPayAppNum = currentPeriodNum; // For Tracker we show against the main G702 period
-
-        let payAppDisplay = `Pay App #${currentPeriodNum}`;
+        const isCompliance = (historyEntry && historyEntry.isCompliance) || (pendingEntry && pendingEntry.isCompliance);
+        let payAppDisplay = isCompliance ? 'Compliance (Lien Waiver)' : `Pay App #${subPayAppNumbers[companyId] || currentPeriodNum}`;
 
         let status = 'Not Submitted';
         let billedThis = 0;
