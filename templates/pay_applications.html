@@ -896,35 +896,78 @@ let mainLienWaiver = JSON.parse(localStorage.getItem('mainLienWaiver') || '{}');
         return !!(latest && String(latest.id) === String(periodId));
     }
 
+    function archivedEntryMatchesMainPeriod(historyKey, entry, mainP) {
+        if (!entry) return false;
+        const key = String(historyKey || '');
+        const tagged = entry.pushedFromMainPeriod != null
+            ? Number(entry.pushedFromMainPeriod)
+            : (entry.mainG702Period != null
+                ? Number(entry.mainG702Period)
+                : (entry.mainPeriod != null ? Number(entry.mainPeriod) : null));
+        if (tagged === mainP) return true;
+        if (entry.isCompliance && key === complianceHistoryKey(mainP)) return true;
+        const complianceKeyMatch = key.match(/^1005_(\d+)$/);
+        if (complianceKeyMatch && Number(complianceKeyMatch[1]) === mainP) return true;
+        return false;
+    }
+
     function restoreSubPayAppsForG702PeriodToTracker(mainPeriod) {
         const mainP = Number(mainPeriod);
         if (!mainP || Number.isNaN(mainP)) return 0;
-        let restoredCount = 0;
 
+        normalizeSubPayAppCompanyKeys();
+        migratePreviousArchiveIntoHistory();
+
+        let restoredCount = 0;
+        const restoredKeys = new Set();
+
+        function restoreEntry(cid, key, entry) {
+            const histKey = String(key);
+            const dedup = `${cid}_${histKey}`;
+            if (restoredKeys.has(dedup)) return;
+
+            if (!subPayAppHistory[cid]) subPayAppHistory[cid] = {};
+            const existing = subPayAppHistory[cid][histKey] || {};
+            subPayAppHistory[cid][histKey] = {
+                ...existing,
+                ...entry,
+                archived: false,
+                status: entry.status || existing.status || 'Approved',
+                pushedFromMainPeriod: mainP,
+                mainG702Period: mainP
+            };
+            restoredKeys.add(dedup);
+            restoredCount++;
+            clearStaleSubPendingForCompany(cid);
+        }
+
+        // Source 1: previousSubPayAppArchive — everything shown under Previous for this Main Period
+        (previousSubPayAppArchive || []).forEach(archiveEntry => {
+            if (!archiveEntry || archiveEntry.companyId == null) return;
+            const histKey = archiveEntry.historyKey || archiveEntry.periodNum;
+            if (!archivedEntryMatchesMainPeriod(histKey, archiveEntry, mainP)) return;
+            restoreEntry(String(archiveEntry.companyId), histKey, archiveEntry);
+        });
+
+        // Source 2: subPayAppHistory rows still marked archived
         Object.keys(subPayAppHistory || {}).forEach(cid => {
             const hist = subPayAppHistory[cid] || {};
             Object.keys(hist).forEach(key => {
                 const entry = hist[key];
                 if (!entry || entry.archived !== true) return;
-                const entryMain = entry.pushedFromMainPeriod != null
-                    ? Number(entry.pushedFromMainPeriod)
-                    : (entry.mainG702Period != null ? Number(entry.mainG702Period) : null);
-                if (entryMain !== mainP) return;
-
-                entry.archived = false;
-                entry.status = entry.status || 'Approved';
-                if (entry.pushedFromMainPeriod == null) entry.pushedFromMainPeriod = mainP;
-                if (entry.mainG702Period == null) entry.mainG702Period = mainP;
-                restoredCount++;
+                if (!archivedEntryMatchesMainPeriod(key, entry, mainP)) return;
+                restoreEntry(String(cid), key, entry);
             });
         });
 
         if (restoredCount > 0) {
             safeSetLocalStorage('subPayAppHistory', subPayAppHistory);
             rebuildPreviousSubPayAppArchiveFromHistory();
+            repairActiveTrackerLienWaivers();
             logPayAppAudit('SUB_PAY_APPS_RESTORED_TO_TRACKER_FROM_G702_REVISION', {
                 mainPeriod: mainP,
-                count: restoredCount
+                count: restoredCount,
+                companyKeys: Array.from(restoredKeys)
             });
         }
         return restoredCount;
@@ -2287,6 +2330,8 @@ let mainLienWaiver = JSON.parse(localStorage.getItem('mainLienWaiver') || '{}');
             restoredSubPayApps: restoredSubCount
         });
 
+        renderPayAppContent();
+
         // Switch to G702 tab and re-render so Billed to Date shows the restored historical values
         switchPayAppTab('payapp');
 
@@ -2297,7 +2342,8 @@ let mainLienWaiver = JSON.parse(localStorage.getItem('mainLienWaiver') || '{}');
                 wb.innerHTML = `
                     <div class="workflow-bar px-4 py-2.5 flex items-center gap-3 text-sm bg-emerald-950/40 border border-emerald-600 rounded-md">
                         <span class="text-emerald-400"><i class="fa-solid fa-check-circle"></i></span>
-                        <span class="text-emerald-300">Period ${periodData.periodNumber} restored as Draft. Billed to Date rewound to the historical snapshot.${restoredSubCount > 0 ? ` ${restoredSubCount} related sub pay app(s) moved back to the Sub Pay App Tracker.` : ''}</span>
+                        <span class="text-emerald-300">Period ${periodData.periodNumber} restored as Draft. Billed to Date rewound to the historical snapshot.${restoredSubCount > 0 ? ` ${restoredSubCount} related sub pay app(s) for Main Period ${periodData.periodNumber} moved back to the Sub Pay App Tracker.` : ' No archived sub pay apps were found for this Main Period in Previous Sub Pay Apps.'}</span>
+                        ${restoredSubCount > 0 ? `<button onclick="switchPayAppTab('sub-pay-app-tracker')" class="ml-3 px-3 py-1 bg-sky-700 hover:bg-sky-600 text-white text-xs rounded">View Sub Pay App Tracker</button>` : ''}
                     </div>
                 `;
                 setTimeout(() => {
@@ -8782,16 +8828,22 @@ function printSubcontractorG703(companyId) {
         if (historyEntry && (historyEntry.status === 'Approved' || historyEntry.status === 'Pending Approval')) {
             status = historyEntry.status === 'Approved' ? 'Approved & Committed' : 'Pending Approval';
             billedThis = historyEntry.totalBilledThisPeriod || 0;
-            const resolvedWaiver = getSubLienWaiverForEntry(companyId, historyEntry);
-            hasWaiver = !!(resolvedWaiver && resolvedWaiver.filename);
+            const resolvedWaiver = getSubLienWaiverForEntry(companyId, {
+                ...historyEntry,
+                historyKey: revisionHistoryKey
+            }, revisionHistoryKey);
+            hasWaiver = !!(resolvedWaiver && (resolvedWaiver.dataUrl || resolvedWaiver.filename));
             waiverFilename = resolvedWaiver ? resolvedWaiver.filename : '';
             notesText = historyEntry.notes || (subSOVStatus[companyId] && subSOVStatus[companyId].notes) || '';
             canRequestRevision = true;
         } else if (pendingEntry) {
             status = 'Pending Approval';
             billedThis = pendingEntry.totalBilledThisPeriod || 0;
-            const resolvedWaiver = getSubLienWaiverForEntry(companyId, pendingEntry);
-            hasWaiver = !!(resolvedWaiver && resolvedWaiver.filename);
+            const resolvedWaiver = getSubLienWaiverForEntry(companyId, {
+                ...pendingEntry,
+                historyKey: revisionHistoryKey
+            }, revisionHistoryKey);
+            hasWaiver = !!(resolvedWaiver && (resolvedWaiver.dataUrl || resolvedWaiver.filename));
             waiverFilename = resolvedWaiver ? resolvedWaiver.filename : '';
             notesText = pendingEntry.notes || (subSOVStatus[companyId] && subSOVStatus[companyId].notes) || '';
             canRequestRevision = true;
