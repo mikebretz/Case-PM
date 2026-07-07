@@ -118,6 +118,42 @@
         return ordered;
     }
 
+    function getTimelineWidth() {
+        const hostW = document.getElementById('gantt_here')?.offsetWidth || 1200;
+        if (scheduleSettings.timeline_width_px >= 180) {
+            return Math.max(180, Math.min(hostW - 160, scheduleSettings.timeline_width_px));
+        }
+        const pct = scheduleSettings.timeline_pct ?? 0.45;
+        return Math.max(200, Math.min(hostW - 160, Math.round(hostW * pct)));
+    }
+
+    function syncGridTableWidth() {
+        if (!ganttReady || !gantt.config.columns) return;
+        const total = getColumnsTotalWidth();
+        gantt.config.grid_width = total;
+    }
+
+    function syncTimelineInnerWidth(timelineCell, timelineW) {
+        if (!timelineCell) return;
+        timelineCell.style.setProperty('width', timelineW + 'px', 'important');
+        timelineCell.style.setProperty('right', '0', 'important');
+        timelineCell.style.setProperty('left', 'auto', 'important');
+        const selectors = [
+            '.gantt_layout_content',
+            '.gantt_task',
+            '.gantt_task_bg',
+            '.gantt_task_scale',
+            '.gantt_data_area',
+            '.gantt_bars_area'
+        ];
+        selectors.forEach(sel => {
+            timelineCell.querySelectorAll(sel).forEach(el => {
+                el.style.width = timelineW + 'px';
+                el.style.minWidth = timelineW + 'px';
+            });
+        });
+    }
+
     function applyChartOverlay() {
         if (!ganttReady) return;
         const root = document.querySelector('#gantt_here .gantt_layout_root');
@@ -125,8 +161,7 @@
 
         const hostEl = document.getElementById('gantt_here');
         const hostW = hostEl?.offsetWidth || 1200;
-        const timelineW = Math.max(200, Math.min(hostW - 160, Math.round(hostW * (scheduleSettings.timeline_pct ?? 0.45))));
-        const colTotal = getColumnsTotalWidth();
+        const timelineW = getTimelineWidth();
 
         const cells = root.querySelectorAll(':scope > .gantt_layout_cell');
         const gridCell = cells[0];
@@ -138,18 +173,8 @@
         gridCell.style.cssText = 'flex:1 1 auto;width:100%!important;min-width:0!important;position:relative;z-index:2;overflow:hidden;';
         if (nativeResizer) nativeResizer.style.cssText = 'display:none!important;width:0!important;min-width:0!important;';
 
-        timelineCell.style.cssText = `position:absolute;top:0;right:0;bottom:0;width:${timelineW}px;z-index:15;box-shadow:-8px 0 24px rgba(0,0,0,0.55);pointer-events:auto;`;
-
-        const scale = gridCell.querySelector('.gantt_grid_scale');
-        const data = gridCell.querySelector('.gantt_grid_data');
-        if (scale) {
-            scale.style.width = colTotal + 'px';
-            scale.style.minWidth = colTotal + 'px';
-        }
-        if (data) {
-            data.style.width = colTotal + 'px';
-            data.style.minWidth = colTotal + 'px';
-        }
+        timelineCell.style.cssText = `position:absolute!important;top:0;right:0;bottom:0;width:${timelineW}px!important;z-index:15;box-shadow:-8px 0 24px rgba(0,0,0,0.55);pointer-events:auto;overflow:hidden;`;
+        syncTimelineInnerWidth(timelineCell, timelineW);
 
         let handle = document.getElementById('scheduleChartResizer');
         if (!handle) {
@@ -170,7 +195,9 @@
     const overlayDrag = { active: false, bound: false };
 
     function initChartOverlay() {
-        scheduleSettings.timeline_pct = scheduleSettings.timeline_pct ?? 0.45;
+        if (scheduleSettings.timeline_width_px == null && scheduleSettings.timeline_pct == null) {
+            scheduleSettings.timeline_pct = 0.45;
+        }
         document.getElementById('scheduleGanttHost')?.classList.add('schedule-overlay-mode');
 
         if (!overlayDrag.bound) {
@@ -188,6 +215,7 @@
                 if (!hostEl) return;
                 const rect = hostEl.getBoundingClientRect();
                 const timelineW = Math.max(180, Math.min(rect.width - 160, rect.right - e.clientX));
+                scheduleSettings.timeline_width_px = timelineW;
                 scheduleSettings.timeline_pct = timelineW / rect.width;
                 applyChartOverlay();
             });
@@ -197,13 +225,21 @@
                     queueSave();
                 }
             });
-            window.addEventListener('resize', queueChartOverlay);
+            window.addEventListener('resize', () => {
+                const hostW = document.getElementById('gantt_here')?.offsetWidth;
+                if (hostW && scheduleSettings.timeline_pct) {
+                    scheduleSettings.timeline_width_px = Math.round(hostW * scheduleSettings.timeline_pct);
+                }
+                queueChartOverlay();
+            });
         }
 
+        syncGridTableWidth();
         queueChartOverlay();
     }
 
     function updateGridWidth() {
+        syncGridTableWidth();
         queueChartOverlay();
     }
 
@@ -539,11 +575,11 @@
         gantt.config.bar_height = 24;
         gantt.config.scale_height = 52;
         gantt.config.scroll_size = 18;
-        gantt.config.fit_tasks = true;
+        gantt.config.fit_tasks = false;
         gantt.config.show_errors = false;
         gantt.config.highlight_critical_path = true;
         gantt.config.grid_elastic_columns = false;
-        gantt.config.keep_grid_width = false;
+        gantt.config.keep_grid_width = true;
         gantt.config.autosize = false;
         gantt.config.reorder_grid_columns = true;
         gantt.config.open_tree_initially = true;
@@ -565,7 +601,8 @@
                 },
                 { resizer: true, width: 1 },
                 {
-                    width: 300,
+                    width: 600,
+                    min_width: 200,
                     rows: [
                         { view: 'timeline', scrollX: 'scrollHor', scrollY: 'scrollVer' },
                         { view: 'scrollbar', id: 'scrollHor', height: 18 }
@@ -691,6 +728,7 @@
         gantt.attachEvent('onAfterColumnReorder', () => {
             columnOrder = gantt.config.columns.map(c => c.name);
             scheduleSettings.column_order = columnOrder.slice();
+            syncGridTableWidth();
             queueSave();
             queueChartOverlay();
         });
@@ -699,14 +737,19 @@
                 columnWidths[column.name] = new_width;
                 column.width = new_width;
             }
+            syncGridTableWidth();
             queueSave();
             queueChartOverlay();
         });
         gantt.attachEvent('onGanttRender', () => {
             refreshWbsCodes();
             updateStatusBar();
+            if (!overlayDrag.active) {
+                requestAnimationFrame(applyChartOverlay);
+            }
         });
 
+        syncGridTableWidth();
         gantt.init('gantt_here');
         sanitizeAllTaskDates();
         initChartOverlay();
@@ -731,9 +774,11 @@
         const h = Math.max(300, window.innerHeight - top - statusH - footerH - 12);
         host.style.height = h + 'px';
         if (!ganttReady) return;
-        queueChartOverlay();
         clearTimeout(resizeTimer);
-        resizeTimer = setTimeout(() => gantt.render(), 80);
+        resizeTimer = setTimeout(() => {
+            gantt.render();
+            applyChartOverlay();
+        }, 80);
     }
 
     // ─── Persistence ───
@@ -1093,6 +1138,15 @@
         queueSave();
     }
 
+    function scrollToScheduleRange() {
+        if (!ganttReady) return;
+        const range = gantt.getSubtaskDates();
+        if (range?.start_date) {
+            const d = toGanttDate(range.start_date);
+            if (d) gantt.showDate(d);
+        }
+    }
+
     function runSchedule() {
         const tasks = [];
         gantt.eachTask(t => tasks.push(Object.assign({}, t)));
@@ -1113,6 +1167,8 @@
         sanitizeAllTaskDates();
         wbsCodeMap = wbsMap || CasePMSchedule.buildWbsMap(tasks);
         gantt.render();
+        scrollToScheduleRange();
+        applyChartOverlay();
         updateStatusBar();
         queueSave();
         logActivity('Ran CPM schedule', `${updates.size} activities calculated`);
@@ -1519,11 +1575,11 @@
     function showScheduleAlert(message, type) {
         const colors = { success: 'text-emerald-400', warning: 'text-amber-400', error: 'text-red-400', info: 'text-sky-400' };
         const dlg = document.createElement('dialog');
-        dlg.className = 'bg-zinc-900 border border-zinc-700 rounded-2xl p-0 w-full max-w-md shadow-2xl';
+        dlg.className = 'schedule-modal-dialog bg-zinc-900 border border-zinc-700 rounded-md p-0 w-full max-w-md shadow-2xl';
         dlg.innerHTML = `<div class="px-5 py-3 border-b border-zinc-700 ${colors[type] || 'text-sky-400'} font-semibold text-sm">${type || 'Notice'}</div>
             <div class="px-5 py-4 text-sm text-zinc-200">${message}</div>
             <div class="px-5 py-3 border-t border-zinc-700 flex justify-end">
-                <button class="px-5 py-2 bg-emerald-600 hover:bg-emerald-500 rounded-lg text-sm">OK</button>
+                <button class="schedule-toolbar-btn px-5 py-2 bg-emerald-600 hover:bg-emerald-500 rounded-md text-sm">OK</button>
             </div>`;
         document.body.appendChild(dlg);
         dlg.querySelector('button').onclick = () => { dlg.close(); dlg.remove(); };
