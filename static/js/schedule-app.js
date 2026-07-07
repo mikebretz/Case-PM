@@ -89,10 +89,46 @@
         wbsCodeMap = CasePMSchedule.buildWbsMap(tasks);
     }
 
+    function applyGridSplitWidth() {
+        if (!ganttReady) return;
+        const w = getGridSplitWidth();
+        gantt.config.grid_width = w;
+        if (gantt.config.layout && gantt.config.layout.cols && gantt.config.layout.cols[0]) {
+            gantt.config.layout.cols[0].width = w;
+        }
+    }
+
     function updateGridWidth() {
-        if (!ganttReady || !gantt.config.columns) return;
-        const width = gantt.config.columns.reduce((sum, col) => sum + (parseInt(col.width, 10) || 0), 0);
-        gantt.config.grid_width = width;
+        applyGridSplitWidth();
+    }
+
+    function getGridSplitWidth() {
+        const hostW = document.getElementById('gantt_here')?.offsetWidth || 1200;
+        const saved = parseInt(scheduleSettings.grid_split_width, 10);
+        if (saved && saved >= 200) return Math.min(saved, hostW - 280);
+        return Math.min(560, Math.max(320, Math.round(hostW * 0.42)));
+    }
+
+    function persistGridSplitWidth() {
+        const gridCell = document.querySelector('#gantt_here .gantt_layout_root > .gantt_layout_cell');
+        if (!gridCell) return;
+        const w = gridCell.offsetWidth;
+        if (w >= 200) {
+            scheduleSettings.grid_split_width = w;
+            queueSave();
+        }
+    }
+
+    function initGridSplitResizer() {
+        const bind = () => {
+            const resizer = document.querySelector('#gantt_here .gantt_resizer_x');
+            if (!resizer || resizer.dataset.cpmBound) return;
+            resizer.dataset.cpmBound = '1';
+            resizer.addEventListener('mouseup', persistGridSplitWidth);
+            resizer.addEventListener('touchend', persistGridSplitWidth);
+        };
+        bind();
+        gantt.attachEvent('onGanttRender', bind);
     }
 
     function toGanttDate(value) {
@@ -379,57 +415,6 @@
         };
     }
 
-    function initOverlaySplit() {
-        scheduleSettings.timeline_pct = scheduleSettings.timeline_pct || 0.52;
-        const host = document.getElementById('scheduleGanttHost');
-        if (host) host.classList.add('schedule-overlay-mode');
-
-        const applySplit = () => {
-            const root = document.querySelector('#gantt_here .gantt_layout_root');
-            if (!root) return;
-            const cells = root.querySelectorAll(':scope > .gantt_layout_cell');
-            const gridCell = cells[0];
-            const resizer = cells[1];
-            const timelineCell = cells[2];
-            if (!gridCell || !timelineCell) return;
-            const hostW = document.getElementById('gantt_here')?.offsetWidth || 1200;
-            const timelineW = Math.max(220, Math.round(hostW * scheduleSettings.timeline_pct));
-            root.style.position = 'relative';
-            gridCell.style.cssText = 'width:100%!important;max-width:100%!important;flex:1 1 auto!important;position:relative;z-index:1;overflow:visible!important;';
-            const gridInner = gridCell.querySelector('.gantt_grid');
-            if (gridInner) {
-                gridInner.style.width = Math.max(gantt.config.grid_width || 0, hostW) + 'px';
-                gridInner.style.minWidth = (gantt.config.grid_width || 0) + 'px';
-            }
-            if (resizer) {
-                resizer.style.cssText = `position:absolute;top:0;bottom:0;right:${timelineW - 2}px;width:6px;z-index:30;cursor:col-resize;background:transparent;`;
-            }
-            timelineCell.style.cssText = `position:absolute;top:0;right:0;bottom:0;width:${timelineW}px;z-index:10;box-shadow:-8px 0 20px rgba(0,0,0,0.45);pointer-events:auto;`;
-            updateGridWidth();
-        };
-
-        applySplit();
-        gantt.attachEvent('onGanttRender', applySplit);
-
-        let drag = null;
-        document.addEventListener('mousedown', e => {
-            if (!e.target?.classList?.contains('gantt_resizer_x') && !e.target?.closest?.('.gantt_resizer_x')) return;
-            drag = { startX: e.clientX, startPct: scheduleSettings.timeline_pct };
-            e.preventDefault();
-        });
-        document.addEventListener('mousemove', e => {
-            if (!drag) return;
-            const hostW = document.getElementById('gantt_here')?.offsetWidth || 1200;
-            const delta = drag.startX - e.clientX;
-            const newTimelineW = Math.max(180, Math.min(hostW - 200, hostW * drag.startPct + delta));
-            scheduleSettings.timeline_pct = newTimelineW / hostW;
-            applySplit();
-        });
-        document.addEventListener('mouseup', () => {
-            if (drag) { drag = null; queueSave(); }
-        });
-    }
-
     let allowGridEdit = false;
 
     function locateGridCell(target) {
@@ -480,7 +465,7 @@
         gantt.config.show_errors = false;
         gantt.config.highlight_critical_path = true;
         gantt.config.grid_elastic_columns = false;
-        gantt.config.keep_grid_width = true;
+        gantt.config.keep_grid_width = false;
         gantt.config.autosize = false;
         gantt.config.reorder_grid_columns = false;
         gantt.config.open_tree_initially = true;
@@ -490,11 +475,15 @@
         gantt.config.keyboard_navigation = false;
         gantt.config.show_task_cells = true;
 
+        const gridSplit = getGridSplitWidth();
+        gantt.config.grid_width = gridSplit;
+
         gantt.config.layout = {
             css: 'gantt_container',
             cols: [
                 {
-                    min_width: 240,
+                    width: gridSplit,
+                    min_width: 200,
                     rows: [
                         { view: 'grid', scrollX: 'gridScroll', scrollY: 'scrollVer' },
                         { view: 'scrollbar', id: 'gridScroll', height: 18 }
@@ -502,8 +491,6 @@
                 },
                 { resizer: true, width: 1 },
                 {
-                    width: 1,
-                    min_width: 1,
                     rows: [
                         { view: 'timeline', scrollX: 'scrollHor', scrollY: 'scrollVer' },
                         { view: 'scrollbar', id: 'scrollHor', height: 18 }
@@ -621,7 +608,6 @@
                 column.width = new_width;
                 column.min_width = new_width;
             }
-            updateGridWidth();
             queueSave();
         });
         gantt.attachEvent('onGanttRender', () => {
@@ -632,7 +618,7 @@
         updateGridWidth();
         gantt.init('gantt_here');
         sanitizeAllTaskDates();
-        initOverlaySplit();
+        initGridSplitResizer();
         ganttReady = true;
         resizeGanttHost();
         window.addEventListener('resize', resizeGanttHost);
@@ -654,6 +640,7 @@
         const h = Math.max(300, window.innerHeight - top - statusH - footerH - 12);
         host.style.height = h + 'px';
         if (!ganttReady) return;
+        applyGridSplitWidth();
         clearTimeout(resizeTimer);
         resizeTimer = setTimeout(() => gantt.render(), 80);
     }
@@ -703,6 +690,7 @@
         if (payload.settings) scheduleSettings = Object.assign(scheduleSettings, payload.settings);
         refreshWbsCodes();
         applySettingsToUI();
+        applyGridSplitWidth();
         gantt.render();
         setSaveStatus('Ready');
         return true;
@@ -883,6 +871,7 @@
             parent: parent
         }, parent);
         gantt.selectTask(id);
+        gantt.showTask(id);
         if (window.ScheduleActivityModal) ScheduleActivityModal.open(id);
         else showScheduleAlert('Open activity detail by double-clicking a row.', 'info');
         logActivity('Added activity', type === 'milestone' ? 'Milestone' : 'Task');
@@ -1325,11 +1314,41 @@
 
     function printGantt() {
         buildPrintSheet();
-        document.body.classList.add('printing-gantt');
+        const sheet = document.getElementById('schedulePrintSheet');
+        if (!sheet || !sheet.innerHTML.trim()) {
+            showScheduleAlert('Nothing to print — add activities first.', 'warning');
+            return;
+        }
+        const printCss = `
+            @page { size: landscape; margin: 0.35in 0.45in; }
+            body { margin: 0; font-family: Arial, Helvetica, sans-serif; color: #111; }
+            .schedule-print-header { border-bottom: 2px solid #111; padding-bottom: 10px; margin-bottom: 12px; }
+            .sched-print-brand { font-size: 9pt; text-transform: uppercase; letter-spacing: 0.08em; color: #444; }
+            .sched-print-title { font-size: 18pt; font-weight: 700; margin: 4px 0 10px; }
+            .sched-print-meta-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px 16px; font-size: 9pt; }
+            .sched-print-label { display: block; font-size: 7.5pt; text-transform: uppercase; color: #666; }
+            .schedule-print-table { width: 100%; border-collapse: collapse; font-size: 8.5pt; }
+            .schedule-print-table th, .schedule-print-table td { border: 1px solid #999; padding: 3px 5px; }
+            .schedule-print-table th { background: #e8e8e8; font-weight: 700; }
+            .schedule-print-table td.c { text-align: center; }
+            .schedule-print-table tr.print-summary { font-weight: 700; background: #f0f0f0; }
+            .print-bar-cell { width: 38%; }
+            .print-bar-track { position: relative; height: 12px; background: #f5f5f5; border: 1px solid #ccc; }
+            .print-bar { position: absolute; top: 1px; bottom: 1px; border-radius: 2px; min-width: 2px; }
+        `;
+        const win = window.open('', '_blank', 'width=1100,height=800');
+        if (!win) {
+            showScheduleAlert('Allow pop-ups to print the schedule.', 'warning');
+            return;
+        }
+        win.document.open();
+        win.document.write(`<!DOCTYPE html><html><head><meta charset="utf-8"><title>Project Schedule</title><style>${printCss}</style></head><body>${sheet.innerHTML}</body></html>`);
+        win.document.close();
+        win.focus();
         setTimeout(() => {
-            window.print();
-            setTimeout(() => document.body.classList.remove('printing-gantt'), 500);
-        }, 200);
+            win.print();
+            win.onafterprint = () => win.close();
+        }, 350);
     }
 
     function printLookAhead() {
