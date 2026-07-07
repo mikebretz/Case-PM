@@ -144,6 +144,20 @@
         });
     }
 
+    function toModalDate(value) {
+        if (!value) return null;
+        if (value instanceof Date && !Number.isNaN(value.getTime())) return value;
+        if (typeof CasePMSchedule !== 'undefined') {
+            const d = CasePMSchedule.parseDate(value);
+            if (d) return d;
+        }
+        if (gantt.date && gantt.date.str_to_date) {
+            const d = gantt.date.str_to_date(value);
+            if (d && !Number.isNaN(d.getTime())) return d;
+        }
+        return null;
+    }
+
     function saveActivityModal() {
         if (!currentTaskId || !gantt.isTaskExists(currentTaskId)) return;
         const t = gantt.getTask(currentTaskId);
@@ -152,9 +166,9 @@
         t.type = val('sam_type');
         t.duration = parseFloat(val('sam_duration')) || 0;
         const start = val('sam_start');
-        if (start) t.start_date = gantt.date.str_to_date(start);
+        if (start) t.start_date = toModalDate(start);
         const finish = val('sam_finish');
-        if (finish) t.end_date = gantt.date.str_to_date(finish);
+        if (finish) t.end_date = toModalDate(finish);
         t.progress = Math.min(1, parseInt(val('sam_progress'), 10) / 100 || 0);
         t.resource = val('sam_resource');
         t.owner = val('sam_owner');
