@@ -51,6 +51,9 @@
 
     let editingContext = null;
     let editorClampTimer = null;
+    let floatingEditorActive = false;
+    let lastScrollTargetDate = null;
+    const columnEditors = new Map();
 
     function pushUndoState() {
         if (!ganttReady || undoPaused) return;
@@ -299,7 +302,6 @@
 
     function applyChartOverlay() {
         if (!ganttReady) return;
-        const scroll = getTimelineScrollState();
         const root = document.querySelector('#gantt_here .gantt_layout_root');
         if (!root) return;
 
@@ -315,7 +317,7 @@
         gridCell.style.cssText = 'flex:1 1 auto;width:100%!important;min-width:0!important;position:relative;z-index:2;overflow:hidden;';
         if (nativeResizer) nativeResizer.style.cssText = 'display:none!important;width:0!important;min-width:0!important;';
 
-        timelineCell.style.cssText = `position:absolute!important;top:0;right:0;bottom:0;width:${timelineW}px!important;z-index:15;box-shadow:-8px 0 24px rgba(0,0,0,0.55);pointer-events:auto;overflow:visible!important;`;
+        timelineCell.style.cssText = `position:absolute!important;top:0;right:0;bottom:0;width:${timelineW}px!important;z-index:15;box-shadow:-8px 0 24px rgba(0,0,0,0.55);pointer-events:auto;overflow:hidden!important;`;
 
         let handle = document.getElementById('scheduleChartResizer');
         if (!handle) {
@@ -326,7 +328,6 @@
             root.appendChild(handle);
         }
         handle.style.right = (timelineW - 4) + 'px';
-        restoreTimelineScroll(scroll);
     }
 
     function queueChartOverlay() {
@@ -488,12 +489,62 @@
         return { start, end };
     }
 
+    function setTimelineScrollX(px) {
+        const x = Math.max(0, Math.round(px));
+        const y = (typeof gantt.getScrollState === 'function' ? gantt.getScrollState()?.y : 0) || 0;
+        try {
+            if (gantt.scrollTo) gantt.scrollTo(x, y);
+        } catch (e) { /* ok */ }
+        document.querySelectorAll('#gantt_here .gantt_hor_scroll').forEach(el => {
+            el.scrollLeft = x;
+        });
+    }
+
+    function ensureTimelineInnerWidth() {
+        if (!ganttReady || typeof gantt.posFromDate !== 'function') return;
+        const bounds = getProjectDateBounds();
+        if (!bounds) return;
+        const right = gantt.posFromDate(bounds.end);
+        if (right == null) return;
+        const w = Math.max(right + 400, 3000);
+        document.querySelectorAll(
+            '#gantt_here .gantt_layout_cell:nth-child(3) .gantt_task_bg, ' +
+            '#gantt_here .gantt_layout_cell:nth-child(3) .gantt_data_area, ' +
+            '#gantt_here .gantt_layout_cell:nth-child(3) .gantt_bars_area'
+        ).forEach(el => {
+            el.style.width = w + 'px';
+            el.style.minWidth = w + 'px';
+        });
+    }
+
+    function scrollTimelineToDate(date) {
+        if (!date) return;
+        const d = toGanttDate(date);
+        if (!d) return;
+        lastScrollTargetDate = d;
+        if (typeof gantt.posFromDate === 'function') {
+            const x = gantt.posFromDate(d);
+            if (x != null) {
+                setTimelineScrollX(Math.max(0, x - 80));
+                return;
+            }
+        }
+        if (gantt.showDate) gantt.showDate(d);
+    }
+
     function syncTimelineToTasks() {
         if (!ganttReady) return;
         applyTimelineDateRange();
         gantt.render();
-        scrollToScheduleRange();
-        applyChartOverlay();
+        requestAnimationFrame(() => {
+            ensureTimelineInnerWidth();
+            scrollToScheduleRange();
+            applyChartOverlay();
+            requestAnimationFrame(() => {
+                ensureTimelineInnerWidth();
+                scrollToScheduleRange();
+            });
+        });
     }
 
     function scrollToToday() {
@@ -906,81 +957,70 @@
             cols.push(col);
         });
 
-        return orderColumns(cols);
+        return orderColumns(cols).map(c => {
+            const copy = Object.assign({}, c);
+            if (copy.editor) {
+                columnEditors.set(copy.name, copy.editor);
+                delete copy.editor;
+            }
+            return copy;
+        });
+    }
+
+    function findGridCell(taskId, colName) {
+        const colIdx = gantt.config.columns.findIndex(c => c.name === colName);
+        if (colIdx < 0) return null;
+        for (const r of document.querySelectorAll('#gantt_here .gantt_grid_data .gantt_row')) {
+            let rid = null;
+            try { rid = gantt.locate(r); } catch (e) { /* ok */ }
+            if (String(rid) === String(taskId)) {
+                const cells = r.querySelectorAll(':scope > .gantt_cell');
+                return cells[colIdx] || null;
+            }
+        }
+        return null;
+    }
+
+    function closeFloatingEditor() {
+        document.querySelectorAll('.sched-floating-cell-editor').forEach(el => el.remove());
+        floatingEditorActive = false;
+        editingContext = null;
+    }
+
+    function saveFloatingEditor(taskId, colName, value) {
+        const ed = columnEditors.get(colName);
+        if (!ed || !gantt.isTaskExists(taskId)) return;
+        const task = gantt.getTask(taskId);
+        const field = ed.map_to || colName;
+        const type = ed.type || 'sched_text';
+
+        if (type === 'pred_string') {
+            applyPredecessorString(taskId, value);
+        } else if (type === 'color_hex') {
+            task.bar_color = value;
+            applyTaskBarColor(task);
+            gantt.updateTask(taskId);
+        } else if (type === 'sched_date' || type === 'date') {
+            if (value) task[field] = toGanttDate(value);
+            sanitizeTaskDates(task);
+            gantt.updateTask(taskId);
+        } else if (type === 'sched_number' || type === 'number') {
+            const n = parseFloat(value);
+            if (!Number.isNaN(n)) {
+                task[field] = field === 'progress' ? Math.min(1, Math.max(0, n / 100)) : n;
+            }
+            gantt.updateTask(taskId);
+        } else {
+            task[field] = value;
+            gantt.updateTask(taskId);
+        }
+        pushUndoState();
+        queueSave();
     }
 
     function registerCustomEditors() {
-        registerSchedCellEditors();
-        if (!gantt.config.editor_types) gantt.config.editor_types = {};
-        gantt.config.editor_types.pred_string = {
-            show: function (id, column, config, placeholder) {
-                placeholder.innerHTML = '';
-                const inp = document.createElement('input');
-                inp.type = 'text';
-                inp.className = 'sched-cell-editor';
-                inp.value = predTemplate(gantt.getTask(id));
-                inp.placeholder = 'e.g. 1.2FS+2';
-                placeholder.appendChild(inp);
-                scheduleEditorClampLoop();
-                inp.focus();
-                inp.select();
-            },
-            hide: function () { },
-            set_value: function (value, id) {
-                applyPredecessorString(id, value);
-                queueSave();
-            },
-            get_value: function (id, column, node) {
-                return node.querySelector('input')?.value || '';
-            },
-            is_changed: function (value, id, column, node) {
-                const cur = node.querySelector('input')?.value || '';
-                return cur !== predTemplate(gantt.getTask(id));
-            },
-            is_valid: function () { return true; },
-            save: function (id, column, node) {
-                applyPredecessorString(id, node.querySelector('input')?.value || '');
-                queueSave();
-            },
-            focus: function (node) { node.querySelector('input')?.focus(); }
-        };
-        gantt.config.editor_types.color_hex = {
-            show: function (id, column, config, placeholder) {
-                const task = gantt.getTask(id);
-                const inp = document.createElement('input');
-                inp.type = 'color';
-                inp.className = 'gantt_grid_editor sched-color-editor';
-                inp.value = task.bar_color || scheduleSettings.default_bar_color || '#3b82f6';
-                placeholder.appendChild(inp);
-                inp.focus();
-                scheduleEditorClampLoop();
-            },
-            hide: function () { },
-            set_value: function (value, id) {
-                const t = gantt.getTask(id);
-                t.bar_color = value;
-                applyTaskBarColor(t);
-                gantt.updateTask(id);
-                gantt.render();
-            },
-            get_value: function (id, column, node) {
-                return node.querySelector('input')?.value || '';
-            },
-            is_changed: function () { return true; },
-            is_valid: function () { return true; },
-            save: function (id, column, node) {
-                const t = gantt.getTask(id);
-                t.bar_color = node.querySelector('input')?.value || '';
-                applyTaskBarColor(t);
-                gantt.updateTask(id);
-                gantt.render();
-                queueSave();
-            },
-            focus: function (node) { node.querySelector('input')?.focus(); }
-        };
+        /* dhtmlx grid editors disabled — we use in-cell floating editors instead */
     }
-
-    let allowGridEdit = false;
 
     function locateGridCell(target) {
         if (!target || !target.closest) return null;
@@ -999,17 +1039,69 @@
     }
 
     function startCellEdit(id, colName) {
+        const ed = columnEditors.get(colName);
+        if (!ed) return;
+        closeFloatingEditor();
+
+        const cell = findGridCell(id, colName);
+        if (!cell) return;
+
         editingContext = { taskId: id, colName };
-        allowGridEdit = true;
-        setTimeout(() => {
-            if (gantt.ext && gantt.ext.inlineEditors) {
-                gantt.ext.inlineEditors.startEdit(id, colName);
-            } else if (gantt.inlineEditors && gantt.inlineEditors.startEdit) {
-                gantt.inlineEditors.startEdit(id, colName);
+        floatingEditorActive = true;
+        const task = gantt.getTask(id);
+        const field = ed.map_to || colName;
+
+        const wrap = document.createElement('div');
+        wrap.className = 'sched-floating-cell-editor';
+
+        let input;
+        if (ed.type === 'color_hex') {
+            input = document.createElement('input');
+            input.type = 'color';
+            input.value = task.bar_color || scheduleSettings.default_bar_color || '#3b82f6';
+        } else if (ed.type === 'sched_date' || ed.type === 'date') {
+            input = document.createElement('input');
+            input.type = 'date';
+            input.value = taskDateInputValue(task, field);
+        } else if (ed.type === 'sched_number' || ed.type === 'number') {
+            input = document.createElement('input');
+            input.type = 'number';
+            let v = task[field];
+            if (field === 'progress') v = Math.round(effectiveProgress(task) * 100);
+            input.value = v != null ? v : '';
+            if (ed.min != null) input.min = ed.min;
+            if (ed.max != null) input.max = ed.max;
+        } else {
+            input = document.createElement('input');
+            input.type = 'text';
+            if (ed.type === 'pred_string') {
+                input.value = predTemplate(task);
+                input.placeholder = 'e.g. 1.2FS+2';
+            } else {
+                input.value = task[field] != null ? task[field] : '';
             }
-            scheduleEditorClampLoop();
-            setTimeout(() => { allowGridEdit = false; }, 250);
-        }, 0);
+        }
+        input.className = 'sched-cell-editor';
+        wrap.appendChild(input);
+        cell.appendChild(wrap);
+        input.focus();
+        if (input.select) input.select();
+
+        const commit = () => {
+            if (!floatingEditorActive) return;
+            saveFloatingEditor(id, colName, input.value);
+            closeFloatingEditor();
+            gantt.render();
+        };
+        input.addEventListener('keydown', e => {
+            e.stopPropagation();
+            if (e.key === 'Enter') { e.preventDefault(); commit(); }
+            if (e.key === 'Escape') { e.preventDefault(); closeFloatingEditor(); gantt.render(); }
+        });
+        input.addEventListener('blur', () => setTimeout(() => {
+            if (floatingEditorActive) commit();
+        }, 150));
+        wrap.addEventListener('mousedown', e => e.stopPropagation());
     }
 
     function configureGantt() {
@@ -1079,10 +1171,9 @@
 
         gantt.attachEvent('onBeforeLightbox', () => false);
 
-        gantt.attachEvent('onBeforeEditStart', () => {
-            scheduleEditorClampLoop();
-            return allowGridEdit;
-        });
+        gantt.attachEvent('onBeforeEditStart', () => false);
+
+        gantt.attachEvent('onEmptyClick', () => closeFloatingEditor());
 
         gantt.attachEvent('onTaskLoading', (task) => {
             sanitizeTaskDates(task);
@@ -1142,6 +1233,9 @@
 
         gantt.attachEvent('onTaskClick', function (id, e) {
             const target = e.target || e.srcElement;
+            if (!target.closest?.('.sched-floating-cell-editor')) {
+                closeFloatingEditor();
+            }
             if (target.closest?.('.sched-tree-btn')) {
                 const t = gantt.getTask(id);
                 if (gantt.hasChild(id)) {
@@ -1165,7 +1259,7 @@
                     else if (typeof pos.column === 'string') col = gantt.config.columns.find(c => c.name === pos.column);
                     else if (pos.column && pos.column.name) col = pos.column;
                 }
-                if (col && col.editor && !['wbs', 'successors', 'collapse'].includes(col.name)) {
+                if (col && columnEditors.has(col.name) && !['wbs', 'successors', 'collapse'].includes(col.name)) {
                     startCellEdit(id, col.name);
                     return false;
                 }
@@ -1216,6 +1310,10 @@
             refreshWbsCodes();
             updateStatusBar();
             updateDeadlineMarkers();
+            ensureTimelineInnerWidth();
+            if (lastScrollTargetDate) {
+                requestAnimationFrame(() => scrollTimelineToDate(lastScrollTargetDate));
+            }
             if (!overlayDrag.active) {
                 requestAnimationFrame(applyChartOverlay);
             }
@@ -1231,7 +1329,6 @@
         gantt.init('gantt_here');
         sanitizeAllTaskDates();
         initChartOverlay();
-        bindEditorClampObserver();
         ganttReady = true;
         resizeGanttHost();
         window.addEventListener('resize', resizeGanttHost);
@@ -1344,7 +1441,7 @@
         pushUndoState();
         updateDataDateMarker();
         updateDeadlineMarkers();
-        setTimeout(() => syncTimelineToTasks(), 100);
+        setTimeout(() => syncTimelineToTasks(), 150);
         return true;
     }
 
@@ -1740,13 +1837,9 @@
     function scrollToScheduleRange() {
         if (!ganttReady) return;
         const range = gantt.getSubtaskDates();
-        if (range?.start_date) {
-            const d = toGanttDate(range.start_date);
-            if (d) {
-                const padded = CasePMSchedule.addCalendarDays(d, -14);
-                gantt.showDate(padded);
-            }
-        }
+        if (!range?.start_date) return;
+        const d = toGanttDate(range.start_date);
+        if (d) scrollTimelineToDate(CasePMSchedule.addCalendarDays(d, -7));
     }
 
     function runSchedule(options) {
@@ -1784,6 +1877,10 @@
         scrollToScheduleRange();
         updateDataDateMarker();
         applyChartOverlay();
+        requestAnimationFrame(() => {
+            ensureTimelineInnerWidth();
+            scrollToScheduleRange();
+        });
         updateStatusBar();
         queueSave();
         logActivity('Ran CPM schedule', `${updates.size} activities calculated`);
@@ -2234,6 +2331,7 @@
         if (scheduleSettings.timescale) setTimescale(scheduleSettings.timescale, false);
         await loadSchedule();
         runSchedule();
+        syncTimelineToTasks();
         switchScheduleView('gantt');
         const pid = getSelectedProjectId();
         if (pid) localStorage.setItem('casepm_current_project_id', String(pid));
