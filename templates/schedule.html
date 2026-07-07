@@ -89,6 +89,9 @@
                 <button type="button" class="schedule-toolbar-btn" onclick="ScheduleApp.exportCsv()" title="Export grid to CSV"><i class="fa-solid fa-file-csv"></i> CSV</button>
                 <button type="button" class="schedule-toolbar-btn" onclick="ScheduleApp.exportXer()" title="Export Primavera XER"><i class="fa-solid fa-file-export text-sky-400"></i> XER</button>
                 <button type="button" class="schedule-toolbar-btn" onclick="ScheduleApp.exportMsProjectXml()" title="Export MS Project XML"><i class="fa-solid fa-file-code"></i> XML</button>
+                <button type="button" class="schedule-toolbar-btn" onclick="ScheduleApp.resetTimelineCalendar()" title="Fix frozen timeline — reset to current year"><i class="fa-solid fa-calendar-plus text-emerald-400"></i> Reset Calendar</button>
+                <button type="button" class="schedule-toolbar-btn" onclick="ScheduleApp.showFeaturesChecklist()" title="All schedule features checklist"><i class="fa-solid fa-list-check text-sky-400"></i> Features</button>
+                <button type="button" class="schedule-toolbar-btn" onclick="ScheduleApp.showAllOptionalColumns()" title="Add all MS Project / P6 columns"><i class="fa-solid fa-table-list"></i> All Fields</button>
                 <button type="button" class="schedule-toolbar-btn" onclick="ScheduleApp.showColumnManager()" title="Add or remove grid columns"><i class="fa-solid fa-table-columns"></i> Columns</button>
             </div>
         </div>
@@ -216,6 +219,21 @@
     <div class="px-4 py-3 border-t border-zinc-700 flex justify-end gap-2">
         <button type="button" onclick="document.getElementById('scheduleDisplayModal').close()" class="px-4 py-1.5 text-xs bg-zinc-800 hover:bg-zinc-700 rounded-md">Cancel</button>
         <button type="button" onclick="ScheduleApp.saveDisplaySettings()" class="px-4 py-1.5 text-xs bg-emerald-600 hover:bg-emerald-500 rounded-md font-medium">Apply</button>
+    </div>
+</dialog>
+
+<!-- Features checklist -->
+<dialog id="scheduleFeaturesModal" class="rounded-md w-full max-w-lg p-0 text-white shadow-2xl" style="background:#18181b;border:1px solid #3f3f46;">
+    <div class="px-4 py-3 border-b border-zinc-700 flex justify-between items-center">
+        <div>
+            <h3 class="font-semibold text-sm">Schedule Features</h3>
+            <p class="text-xs text-zinc-500">Everything implemented — use this list to error-check</p>
+        </div>
+        <button type="button" onclick="document.getElementById('scheduleFeaturesModal').close()" class="text-zinc-400 hover:text-white">&times;</button>
+    </div>
+    <div id="scheduleFeaturesList" class="p-3 max-h-[65vh] overflow-auto space-y-1"></div>
+    <div class="px-4 py-3 border-t border-zinc-700 flex justify-end">
+        <button type="button" onclick="document.getElementById('scheduleFeaturesModal').close()" class="px-4 py-1.5 text-xs bg-zinc-800 hover:bg-zinc-700 rounded-md">Close</button>
     </div>
 </dialog>
 
@@ -379,7 +397,6 @@
 
 <script src="https://cdn.dhtmlx.com/gantt/edge/dhtmlxgantt.js"></script>
 <script src="https://cdn.dhtmlx.com/gantt/edge/ext/dhtmlxgantt_marker.js"></script>
-<script src="https://cdn.dhtmlx.com/gantt/edge/ext/dhtmlxgantt_zoom.js"></script>
 <script src="{{ url_for('static', filename='js/schedule-cpm.js') }}"></script>
 <script src="{{ url_for('static', filename='js/schedule-import.js') }}"></script>
 <script src="{{ url_for('static', filename='js/schedule-export.js') }}"></script>
