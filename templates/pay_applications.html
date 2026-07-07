@@ -855,18 +855,151 @@ let mainLienWaiver = JSON.parse(localStorage.getItem('mainLienWaiver') || '{}');
     }
 
     // ==================== APPEND-ONLY ARCHIVE HELPERS (NEW - guarantees Previous Sub Pay Apps never lose entries) ====================
+    function complianceHistoryKey(mainG702Period) {
+        return `1005_${mainG702Period || 1}`;
+    }
+
+    function regularPayAppHistoryKey(payAppNumber) {
+        return String(payAppNumber);
+    }
+
+    function resolvePayAppHistoryStorageKey(entry, payAppNumber, mainG702Period) {
+        if (entry && entry.isCompliance) {
+            return complianceHistoryKey(mainG702Period || entry.mainG702Period || 1);
+        }
+        return regularPayAppHistoryKey(payAppNumber);
+    }
+
+    function hasActiveSubPayAppInTracker(companyId) {
+        if (!companyId) return false;
+        if (subPendingSubmissions[companyId]) return true;
+        const hist = subPayAppHistory[companyId] || {};
+        return Object.keys(hist).some(key => {
+            const e = hist[key];
+            return e && (e.status === 'Approved' || e.status === 'Pending Approval') && e.archived !== true;
+        });
+    }
+
+    function migrateLegacyComplianceKeys() {
+        let changed = false;
+        Object.keys(subPayAppHistory || {}).forEach(cid => {
+            const hist = subPayAppHistory[cid] || {};
+            Object.keys(hist).forEach(key => {
+                const entry = hist[key];
+                if (!entry || !entry.isCompliance) return;
+                const mainP = entry.mainG702Period || entry.pushedFromMainPeriod || parseInt(key, 10);
+                if (!mainP || Number.isNaN(mainP)) return;
+                const newKey = complianceHistoryKey(mainP);
+                if (key !== newKey) {
+                    if (!hist[newKey]) hist[newKey] = { ...entry, mainG702Period: mainP };
+                    delete hist[key];
+                    changed = true;
+                }
+            });
+        });
+        if (changed) safeSetLocalStorage('subPayAppHistory', subPayAppHistory);
+    }
+
+    function getArchivedLienWaiverStorageKey(companyId, historyKey, mainPeriod) {
+        return `prev_${companyId}_${mainPeriod}_${historyKey}`;
+    }
+
+    function ensureLienWaiverSnapshottedForArchive(companyId, historyKey, entry, mainPeriod) {
+        if (!entry || !entry.lienWaiver || !entry.lienWaiver.filename) return entry ? entry.lienWaiver : null;
+
+        const archiveKey = getArchivedLienWaiverStorageKey(companyId, historyKey, mainPeriod);
+        const storagePeriod = entry.lienWaiver.storagePeriod || subPayAppNumbers[companyId] || historyKey;
+
+        let resolved = resolveSubLienWaiverFile(companyId, entry.lienWaiver);
+        if (!resolved || !resolved.dataUrl) resolved = resolveSubLienWaiverFile(companyId, storagePeriod);
+        if (!resolved || !resolved.dataUrl) resolved = resolveSubLienWaiverFile(companyId, `pending_${storagePeriod}`);
+
+        if (resolved && resolved.dataUrl) {
+            if (!subLienWaiverArchive[companyId]) subLienWaiverArchive[companyId] = {};
+            subLienWaiverArchive[companyId][archiveKey] = {
+                filename: resolved.filename,
+                dataUrl: resolved.dataUrl,
+                uploadedDate: resolved.uploadedDate || new Date().toISOString()
+            };
+            safeSetLocalStorage('subLienWaiverArchive', subLienWaiverArchive);
+        }
+
+        return compactLienWaiverMeta(
+            { filename: entry.lienWaiver.filename, uploadedDate: entry.lienWaiver.uploadedDate },
+            archiveKey
+        );
+    }
+
+    function buildPreviousArchiveRecord(companyId, historyKey, entry, mainPeriod) {
+        const histKey = String(historyKey);
+        return {
+            ...entry,
+            companyId: parseInt(companyId, 10),
+            companyName: getCompanyName(companyId),
+            historyKey: histKey,
+            periodNum: entry.isCompliance ? 1005 : (entry.periodNumber || parseInt(histKey, 10) || 0),
+            pushedFromMainPeriod: mainPeriod,
+            mainG702Period: entry.mainG702Period || mainPeriod
+        };
+    }
+
     function appendToPreviousSubPayAppArchive(entry) {
-        if (!entry || !entry.companyId || !entry.periodNum) return;
-        // Prevent exact duplicates
+        if (!entry || entry.companyId == null) return;
+        const uniqueKey = `${entry.companyId}_${entry.historyKey || entry.periodNum}_${entry.pushedFromMainPeriod}_${entry.isCompliance ? 'c' : 'p'}`;
         const exists = previousSubPayAppArchive.some(e =>
-            e.companyId === entry.companyId &&
-            e.periodNum === entry.periodNum &&
-            e.pushedFromMainPeriod === entry.pushedFromMainPeriod
+            `${e.companyId}_${e.historyKey || e.periodNum}_${e.pushedFromMainPeriod}_${e.isCompliance ? 'c' : 'p'}` === uniqueKey
         );
         if (!exists) {
-            previousSubPayAppArchive.unshift(entry); // newest on top
-            localStorage.setItem('previousSubPayAppArchive', JSON.stringify(previousSubPayAppArchive));
+            previousSubPayAppArchive.unshift({ ...entry, archiveId: uniqueKey });
+            safeSetLocalStorage('previousSubPayAppArchive', previousSubPayAppArchive);
         }
+    }
+
+    function getSubPayAppHistoryEntry(companyId, historyKeyOrPeriod) {
+        const hist = subPayAppHistory[companyId] || {};
+        const key = String(historyKeyOrPeriod);
+        if (hist[key]) return { key, entry: hist[key] };
+
+        const fromArchive = collectAllArchivedSubPayApps().find(a =>
+            String(a.companyId) === String(companyId) &&
+            (String(a.historyKey) === key || String(a.periodNum) === key)
+        );
+        if (fromArchive) return { key: fromArchive.historyKey || key, entry: fromArchive };
+
+        return null;
+    }
+
+    function collectAllArchivedSubPayApps() {
+        const byKey = new Map();
+
+        function addRecord(companyId, historyKey, entry) {
+            if (!entry || entry.archived !== true) return;
+            const histKey = String(historyKey);
+            const mainP = entry.pushedFromMainPeriod || entry.mainG702Period || entry.mainPeriod;
+            const uniq = `${companyId}_${histKey}_${mainP}_${entry.isCompliance ? 'c' : 'p'}`;
+            if (byKey.has(uniq)) return;
+            byKey.set(uniq, {
+                companyId: companyId,
+                historyKey: histKey,
+                periodNum: entry.isCompliance ? 1005 : (entry.periodNumber || parseInt(histKey, 10) || 0),
+                companyName: getCompanyName(companyId),
+                mainPeriod: mainP,
+                ...entry
+            });
+        }
+
+        Object.keys(subPayAppHistory || {}).forEach(cid => {
+            const hist = subPayAppHistory[cid] || {};
+            Object.keys(hist).forEach(key => addRecord(cid, key, hist[key]));
+        });
+
+        (previousSubPayAppArchive || []).forEach(entry => {
+            const cid = entry.companyId;
+            const histKey = entry.historyKey || String(entry.periodNum);
+            addRecord(cid, histKey, { ...entry, archived: true });
+        });
+
+        return Array.from(byKey.values());
     }
 
     // Push all active Tracker sub pay apps into Previous Sub Pay Apps (used on G702 approval + debug)
@@ -879,11 +1012,15 @@ let mainLienWaiver = JSON.parse(localStorage.getItem('mainLienWaiver') || '{}');
         Object.keys(subPendingSubmissions || {}).forEach(cid => {
             const pend = subPendingSubmissions[cid];
             if (!pend) return;
-            const periodKey = pend.periodNumber || pend.mainG702Period || mainP;
+            const historyKey = resolvePayAppHistoryStorageKey(
+                pend,
+                pend.isCompliance ? (subPayAppNumbers[cid] || 1) : pend.periodNumber,
+                pend.mainG702Period || mainP
+            );
             if (!subPayAppHistory[cid]) subPayAppHistory[cid] = {};
-            if (!subPayAppHistory[cid][periodKey]) {
-                subPayAppHistory[cid][periodKey] = {
-                    periodNumber: periodKey,
+            if (!subPayAppHistory[cid][historyKey]) {
+                subPayAppHistory[cid][historyKey] = {
+                    periodNumber: pend.isCompliance ? 1005 : pend.periodNumber,
                     periodStart: pend.periodStart || (currentPayAppPeriod ? currentPayAppPeriod.periodStart : ''),
                     periodEnd: pend.periodEnd || (currentPayAppPeriod ? currentPayAppPeriod.periodEnd : ''),
                     submittedDate: pend.submittedDate || new Date().toISOString(),
@@ -898,18 +1035,13 @@ let mainLienWaiver = JSON.parse(localStorage.getItem('mainLienWaiver') || '{}');
                     mainG702Period: pend.mainG702Period || mainP
                 };
             }
-            const entry = subPayAppHistory[cid][periodKey];
+            const entry = subPayAppHistory[cid][historyKey];
             entry.archived = true;
             entry.status = entry.status || 'Approved';
             if (!entry.pushedFromMainPeriod) entry.pushedFromMainPeriod = mainP;
-            appendToPreviousSubPayAppArchive({
-                companyId: parseInt(cid, 10),
-                companyName: getCompanyName(cid),
-                periodNum: periodKey,
-                pushedFromMainPeriod: mainP,
-                ...entry
-            });
-            pushedList.push({ companyId: cid, period: periodKey, companyName: getCompanyName(cid) });
+            entry.lienWaiver = ensureLienWaiverSnapshottedForArchive(cid, historyKey, entry, mainP);
+            appendToPreviousSubPayAppArchive(buildPreviousArchiveRecord(cid, historyKey, entry, mainP));
+            pushedList.push({ companyId: cid, period: historyKey, companyName: getCompanyName(cid) });
             pushedCount++;
             delete subPendingSubmissions[cid];
         });
@@ -928,16 +1060,9 @@ let mainLienWaiver = JSON.parse(localStorage.getItem('mainLienWaiver') || '{}');
                     entry.approvedDate = new Date().toISOString();
                 }
                 if (!entry.pushedFromMainPeriod) entry.pushedFromMainPeriod = mainP;
-
-                const periodNum = entry.periodNumber || parseInt(key, 10);
-                appendToPreviousSubPayAppArchive({
-                    companyId: parseInt(cid, 10),
-                    companyName: getCompanyName(cid),
-                    periodNum: periodNum,
-                    pushedFromMainPeriod: mainP,
-                    ...entry
-                });
-                pushedList.push({ companyId: cid, period: periodNum, companyName: getCompanyName(cid) });
+                entry.lienWaiver = ensureLienWaiverSnapshottedForArchive(cid, key, entry, mainP);
+                appendToPreviousSubPayAppArchive(buildPreviousArchiveRecord(cid, key, entry, mainP));
+                pushedList.push({ companyId: cid, period: key, companyName: getCompanyName(cid) });
                 pushedCount++;
             });
         });
@@ -3732,19 +3857,18 @@ let mainLienWaiver = JSON.parse(localStorage.getItem('mainLienWaiver') || '{}');
             const currentNum = subPayAppNumbers[selectedSubCompanyId] || 1;
             const realSOVStatus = getSubSOVStatus(selectedSubCompanyId);
 
-            // Aesthetic display only: if a previous pay app (#1 when on #2, etc.) is still active in Tracker (not pushed),
-            // show the SMALL STATUS BADGE as "Draft" so user knows they need to push the prior paper first.
-            // IMPORTANT: Do NOT use this forced status for the main Pay App # label — that must always reflect the real SOV state.
+            // If any pay app paper is active in the Tracker (including $0 compliance), show Draft — not Approved.
             let displayStatus = realSOVStatus;
-            if (currentNum > 1 && realSOVStatus === 'Approved') {
+            if (hasActiveSubPayAppInTracker(selectedSubCompanyId)) {
+                displayStatus = 'Draft';
+            } else if (currentNum > 1 && realSOVStatus === 'Approved') {
                 const hist = subPayAppHistory[selectedSubCompanyId] || {};
                 const hasPreviousActive = Object.keys(hist).some(p => {
-                    const pn = parseInt(p);
                     const e = hist[p];
-                    return pn < currentNum && e && (e.status === 'Approved' || e.status === 'Pending Approval') && e.archived !== true;
+                    return e && (e.status === 'Approved' || e.status === 'Pending Approval') && e.archived !== true;
                 });
                 if (hasPreviousActive) {
-                    displayStatus = 'Draft';  // only affects the small status pill, not the "Pay App #X Current" label
+                    displayStatus = 'Draft';
                 }
             }
 
@@ -5162,8 +5286,17 @@ let mainLienWaiver = JSON.parse(localStorage.getItem('mainLienWaiver') || '{}');
             return;
         }
 
-        // === BLOCK SUBMISSION IF PREVIOUS PAY APP STILL ACTIVE IN TRACKER ===
-        // Compliance ($0) submissions do not consume a pay app number and may bypass this gate.
+        // === BLOCK if ANY pay app is still active in the Tracker (including $0 compliance) ===
+        if (hasActiveSubPayAppInTracker(companyId)) {
+            showCenteredAlert(
+                `BLOCKED: Cannot submit a new pay application while another is still active in the Sub Pay App Tracker.\n\n` +
+                `The current paper must be approved and then pushed to Previous Sub Pay Apps (automatic when the main G702 is approved) before you can start the next pay app for this subcontractor.`,
+                'error'
+            );
+            return;
+        }
+
+        // Legacy guard: previous numbered pay apps still active
         if (!isComplianceSubmission && subPayAppHistory[companyId]) {
             const prevActive = Object.keys(subPayAppHistory[companyId])
                 .map(Number)
@@ -5200,9 +5333,14 @@ let mainLienWaiver = JSON.parse(localStorage.getItem('mainLienWaiver') || '{}');
         }));
 
         const totalBilledThisPeriod = snapshotLines.reduce((sum, l) => sum + l.total_this_period, 0);
+        const mainG702Period = currentPayAppPeriod ? currentPayAppPeriod.periodNumber : null;
+        const historyKey = resolvePayAppHistoryStorageKey(
+            { isCompliance: isComplianceSubmission },
+            currentPeriodNum,
+            mainG702Period
+        );
 
-        // === EXACT WORKFLOW: Keep the "paper" on LEFT HAND (Sub SOV tab) as local pending ===
-        // Do NOT save to subPayAppHistory yet → Tracker stays EMPTY
+        // === EXACT WORKFLOW: snapshot on left + push Pending paper into Tracker with full payload ===
         if (!subPendingSubmissions[companyId]) subPendingSubmissions[companyId] = {};
         subPendingSubmissions[companyId] = {
             periodNumber: isComplianceSubmission ? 1005 : currentPeriodNum,
@@ -5212,10 +5350,26 @@ let mainLienWaiver = JSON.parse(localStorage.getItem('mainLienWaiver') || '{}');
             lines: snapshotLines,
             totalBilledThisPeriod: totalBilledThisPeriod,
             isCompliance: isComplianceSubmission,
-            mainG702Period: currentPayAppPeriod ? currentPayAppPeriod.periodNumber : null,
+            mainG702Period: mainG702Period,
             lienWaiver: waiver ? compactLienWaiverMeta(waiver, currentPeriodNum) : null
         };
         if (!safeSetLocalStorage('subPendingSubmissions', subPendingSubmissions)) return;
+
+        if (!subPayAppHistory[companyId]) subPayAppHistory[companyId] = {};
+        subPayAppHistory[companyId][historyKey] = {
+            periodNumber: isComplianceSubmission ? 1005 : currentPeriodNum,
+            periodStart: currentPayAppPeriod ? currentPayAppPeriod.periodStart : '',
+            periodEnd: currentPayAppPeriod ? currentPayAppPeriod.periodEnd : '',
+            submittedDate: new Date().toISOString(),
+            status: 'Pending Approval',
+            lines: snapshotLines,
+            totalBilledThisPeriod: totalBilledThisPeriod,
+            isCompliance: isComplianceSubmission,
+            mainG702Period: mainG702Period,
+            lienWaiver: waiver ? compactLienWaiverMeta(waiver, currentPeriodNum) : null,
+            archived: false
+        };
+        if (!safeSetLocalStorage('subPayAppHistory', subPayAppHistory)) return;
 
         logPayAppAudit('SUB_PAYAPP_SUBMITTED_FOR_APPROVAL', { companyId: companyId, period: currentPeriodNum, total: totalBilledThisPeriod, isCompliance: isComplianceSubmission });
         // Success feedback removed per user request (pending status + buttons visible)
@@ -5290,9 +5444,7 @@ let mainLienWaiver = JSON.parse(localStorage.getItem('mainLienWaiver') || '{}');
             || subPayAppNumbers[companyId]
             || currentPeriodNum;
         const mainPeriodAtApproval = currentPayAppPeriod ? currentPayAppPeriod.periodNumber : null;
-        const historyKey = (pendingEntry.isCompliance === true && mainPeriodAtApproval)
-            ? mainPeriodAtApproval
-            : currentPeriodNum;
+        const historyKey = resolvePayAppHistoryStorageKey(pendingEntry, currentPeriodNum, mainPeriodAtApproval);
 
         archiveSubLienWaiverFile(companyId, waiverStoragePeriod, historyKey);
 
@@ -6279,29 +6431,11 @@ function printSubcontractorG703(companyId) {
 
         container.innerHTML = '';
 
-        // Build filtered list of all archived entries
-        let filteredApps = [];
-        Object.keys(subPayAppHistory || {}).forEach(cid => {
-            const hist = subPayAppHistory[cid];
-            if (!hist) return;
-            Object.keys(hist).forEach(p => {
-                const entry = hist[p];
-                if (!entry || entry.archived !== true) return;
-
-                const mainP = entry.pushedFromMainPeriod || entry.mainG702Period || entry.periodNum;
-                const matchesSub = !subId || String(cid) === String(subId);
-                const matchesPeriod = !periodFilter || String(mainP) === String(periodFilter) || String(entry.periodNum) === String(periodFilter);
-
-                if (matchesSub && matchesPeriod) {
-                    filteredApps.push({
-                        companyId: cid,
-                        periodNum: parseInt(p),
-                        companyName: getCompanyName(cid),
-                        mainPeriod: mainP,
-                        ...entry
-                    });
-                }
-            });
+        const filteredApps = collectAllArchivedSubPayApps().filter(app => {
+            const mainP = app.pushedFromMainPeriod || app.mainG702Period || app.mainPeriod || app.periodNum;
+            const matchesSub = !subId || String(app.companyId) === String(subId);
+            const matchesPeriod = !periodFilter || String(mainP) === String(periodFilter) || String(app.periodNum) === String(periodFilter);
+            return matchesSub && matchesPeriod;
         });
 
         if (filteredApps.length === 0) {
@@ -6365,7 +6499,9 @@ function printSubcontractorG703(companyId) {
         });
 
         const waiver = historyEntry.lienWaiver || null;
-        const hasWaiverData = waiver && waiver.dataUrl;
+        const resolvedWaiver = waiver ? resolveSubLienWaiverFile(subId, waiver) : null;
+        const hasWaiverData = !!(resolvedWaiver && resolvedWaiver.dataUrl);
+        const waiverHistoryKey = app.historyKey || periodNum;
 
         container.innerHTML = `
             <div class="bg-zinc-800 border border-zinc-700 rounded-md p-5">
@@ -6376,12 +6512,12 @@ function printSubcontractorG703(companyId) {
                         <div class="text-xs text-zinc-400 mt-0.5">Status: <span class="text-emerald-400">${historyEntry.status || 'Approved'}</span> • Approved ${historyEntry.approvedDate ? new Date(historyEntry.approvedDate).toLocaleDateString() : ''}</div>
                     </div>
                     <div class="flex gap-2">
-                        <button onclick="printHistoricalSubG703('${subId}', ${periodNum})" 
+                        <button onclick="printHistoricalSubG703('${subId}', '${waiverHistoryKey}')" 
                                 class="px-4 py-2 bg-sky-600 hover:bg-sky-500 rounded-md text-sm font-medium flex items-center gap-2">
                             <i class="fa-solid fa-print"></i> <span>Print G703</span>
                         </button>
                         ${hasWaiverData ? `
-                        <button onclick="viewHistoricalLienWaiver('${subId}', ${periodNum})" 
+                        <button onclick="viewHistoricalLienWaiver('${subId}', '${waiverHistoryKey}')" 
                                 class="px-4 py-2 bg-zinc-700 hover:bg-zinc-600 rounded-md text-sm font-medium flex items-center gap-2">
                             <i class="fa-solid fa-eye"></i> <span>View Lien Waiver</span>
                         </button>` : ''}
@@ -6473,7 +6609,7 @@ function printSubcontractorG703(companyId) {
                 : `#${app.periodNum}`;
 
             html += `
-                <tr class="hover:bg-zinc-700/70 cursor-pointer transition-colors text-base" ondblclick="loadSpecificHistoricalPayApp('${app.companyId}', ${app.periodNum})">
+                <tr class="hover:bg-zinc-700/70 cursor-pointer transition-colors text-base" ondblclick="loadSpecificHistoricalPayApp('${app.companyId}', '${app.historyKey || app.periodNum}')">
                     <td class="p-2 font-medium text-white">${app.companyName}</td>
                     <td class="p-2 text-center font-mono text-sky-400 font-semibold">${mainPeriodDisplay}</td>
                     <td class="p-2 text-center font-mono text-emerald-400 font-semibold">${payAppDisplay}</td>
@@ -6483,7 +6619,8 @@ function printSubcontractorG703(companyId) {
                     <td class="p-2 text-right font-mono text-emerald-400">${formatCurrency(completed)}</td>
                     <td class="p-2 text-right font-mono text-red-400">${formatCurrency(ret)}</td>
                     <td class="p-2 text-center">
-                        <button onclick="event.stopImmediatePropagation(); printHistoricalSubG703('${app.companyId}', ${app.periodNum});" class="px-2 py-0.5 text-xs bg-sky-700 hover:bg-sky-600 rounded">Print</button>
+                        <button onclick="event.stopImmediatePropagation(); printHistoricalSubG703('${app.companyId}', '${app.historyKey || app.periodNum}');" class="px-2 py-0.5 text-xs bg-sky-700 hover:bg-sky-600 rounded">Print</button>
+                        ${(app.lienWaiver && app.lienWaiver.filename) ? `<button onclick="event.stopImmediatePropagation(); viewHistoricalLienWaiver('${app.companyId}', '${app.historyKey || app.periodNum}');" class="ml-1 px-2 py-0.5 text-xs bg-emerald-700 hover:bg-emerald-600 rounded">Waiver</button>` : ''}
                     </td>
                 </tr>
             `;
@@ -6523,22 +6660,7 @@ function printSubcontractorG703(companyId) {
         const container = document.getElementById('prevSubHistoryContainer');
         if (!container) return;
 
-        let allApps = [];
-        Object.keys(subPayAppHistory || {}).forEach(cid => {
-            const hist = subPayAppHistory[cid];
-            if (!hist) return;
-            Object.keys(hist).forEach(p => {
-                const entry = hist[p];
-                if (entry && entry.archived === true) {
-                    allApps.push({
-                        companyId: cid,
-                        periodNum: parseInt(p),
-                        companyName: getCompanyName(cid),
-                        ...entry
-                    });
-                }
-            });
-        });
+        let allApps = collectAllArchivedSubPayApps();
 
         // Sort chronologically by approvedDate (oldest first), then by period number
         allApps.sort((a, b) => {
@@ -6609,7 +6731,7 @@ function printSubcontractorG703(companyId) {
                 : `#${app.periodNum || app.periodNumber}`;
 
             html += `
-                <tr ondblclick="loadSpecificHistoricalPayApp('${app.companyId}', ${app.periodNum})" 
+                <tr ondblclick="loadSpecificHistoricalPayApp('${app.companyId}', '${app.historyKey || app.periodNum}')" 
                     class="hover:bg-zinc-700/70 cursor-pointer transition-colors text-base">
                     <td class="p-2 font-medium text-white">${app.companyName}</td>
                     <td class="p-2 text-center font-mono text-sky-400 font-semibold">${mainPeriodDisplay}</td>
@@ -6649,28 +6771,36 @@ function printSubcontractorG703(companyId) {
         }
     }
 
-    function loadSpecificHistoricalPayApp(companyId, periodNum) {
+    function loadSpecificHistoricalPayApp(companyId, historyKeyOrPeriod) {
         const subSelect = document.getElementById('prevSubSelect');
         const periodSelect = document.getElementById('prevSubPeriodSelect');
         const container = document.getElementById('prevSubHistoryContainer');
         if (!subSelect || !periodSelect || !container) return;
 
-        // Set subcontractor and trigger period list load
+        const match = collectAllArchivedSubPayApps().find(a =>
+            String(a.companyId) === String(companyId) &&
+            (String(a.historyKey) === String(historyKeyOrPeriod) || String(a.periodNum) === String(historyKeyOrPeriod))
+        );
+
         subSelect.value = companyId;
         loadPreviousSubPeriods(companyId);
 
-        // Wait for periods to populate, then select the specific one and load data
         setTimeout(() => {
+            if (match) {
+                showDetailedHistoricalEntry(match, container);
+                return;
+            }
             if (periodSelect.options.length > 1) {
-                periodSelect.value = String(periodNum);
+                periodSelect.value = String(historyKeyOrPeriod);
                 loadPreviousSubPayAppData();
             }
         }, 80);
     }
 
     // Print historical sub G703 (uses the snapshot lines)
-    function printHistoricalSubG703(companyId, periodNumber) {
-        const historyEntry = subPayAppHistory[companyId] && subPayAppHistory[companyId][periodNumber];
+    function printHistoricalSubG703(companyId, historyKeyOrPeriod) {
+        const found = getSubPayAppHistoryEntry(companyId, historyKeyOrPeriod);
+        const historyEntry = found ? found.entry : null;
         if (!historyEntry) {
             showCenteredAlert("Historical data not found.", "warning");
             return;
@@ -6790,14 +6920,21 @@ function printSubcontractorG703(companyId) {
     }
 
     // View historical lien waiver from snapshot
-    function viewHistoricalLienWaiver(companyId, periodNumber) {
-        const historyEntry = subPayAppHistory[companyId] && subPayAppHistory[companyId][periodNumber];
-        const waiver = historyEntry && historyEntry.lienWaiver;
+    function viewHistoricalLienWaiver(companyId, historyKeyOrPeriod) {
+        const found = getSubPayAppHistoryEntry(companyId, historyKeyOrPeriod);
+        const historyEntry = found ? found.entry : null;
+        const waiver = historyEntry && historyEntry.lienWaiver
+            ? resolveSubLienWaiverFile(companyId, historyEntry.lienWaiver)
+            : null;
 
         if (!waiver || !waiver.dataUrl) {
             showCenteredAlert("No lien waiver image/PDF was saved for this historical period.", "warning");
             return;
         }
+
+        const periodLabel = historyEntry && historyEntry.isCompliance
+            ? 'Compliance (Lien Waiver)'
+            : `Pay App #${historyEntry ? (historyEntry.periodNumber || historyKeyOrPeriod) : historyKeyOrPeriod}`;
 
         const isPdf = (waiver.filename || '').toLowerCase().endsWith('.pdf');
         const modal = document.createElement('dialog');
@@ -6815,7 +6952,7 @@ function printSubcontractorG703(companyId) {
             <div class="drag-handle flex items-center justify-between px-6 py-4 border-b border-zinc-800 bg-zinc-950 cursor-move sticky top-0 z-10">
                 <div>
                     <div class="font-semibold text-lg">Lien Waiver — ${getCompanyName(companyId)}</div>
-                    <div class="text-sm text-zinc-400">Historical Pay App #${periodNumber} • ${waiver.uploadedDate || ''}</div>
+                    <div class="text-sm text-zinc-400">${periodLabel} • ${waiver.uploadedDate || ''}</div>
                 </div>
                 <div class="flex items-center gap-3">
                     <button onclick="printFromViewer(this)" class="px-5 py-2 bg-emerald-600 hover:bg-emerald-700 rounded-xl text-sm font-medium flex items-center gap-2">
@@ -7719,6 +7856,7 @@ function printSubcontractorG703(companyId) {
         seedDemoDataIfNeeded();
         bindPayAppSettingsAutoSave();
         pruneInlineLienWaiverPayloads();
+        migrateLegacyComplianceKeys();
 
         // Restore last selected sub if any
         const lastSub = localStorage.getItem('lastSelectedSubSOV');
@@ -8029,18 +8167,39 @@ function printSubcontractorG703(companyId) {
     // Helper: find tracker paper for a sub in the current G702 period
     function getSubTrackerPaper(companyId, g702PeriodNum) {
         const pending = subPendingSubmissions[companyId];
-        if (pending && (pending.isCompliance || pending.mainG702Period === g702PeriodNum || pending.periodNumber === g702PeriodNum || pending.periodNumber === 1005)) {
-            return { source: 'pending', entry: pending };
+        if (pending) {
+            const pendingMain = pending.mainG702Period || pending.periodNumber;
+            if (pending.isCompliance || pendingMain === g702PeriodNum || pending.periodNumber === g702PeriodNum) {
+                return { source: 'pending', entry: pending };
+            }
         }
 
         const hist = subPayAppHistory[companyId] || {};
-        if (hist[g702PeriodNum] && hist[g702PeriodNum].archived !== true) {
-            return { source: 'history', entry: hist[g702PeriodNum] };
-        }
+        let bestMatch = null;
+
+        Object.keys(hist).forEach(key => {
+            const entry = hist[key];
+            if (!entry || entry.archived === true) return;
+            if (entry.status !== 'Approved' && entry.status !== 'Pending Approval') return;
+
+            const taggedMain = entry.mainG702Period || entry.pushedFromMainPeriod;
+            const matchesPeriod = taggedMain === g702PeriodNum
+                || key === complianceHistoryKey(g702PeriodNum)
+                || (!entry.isCompliance && parseInt(key, 10) === g702PeriodNum && !taggedMain);
+
+            if (matchesPeriod) {
+                bestMatch = { source: 'history', entry, historyKey: key };
+            }
+        });
+
+        if (bestMatch) return bestMatch;
 
         const subNum = subPayAppNumbers[companyId];
         if (subNum && hist[subNum] && hist[subNum].archived !== true && !hist[subNum].isCompliance) {
-            return { source: 'history', entry: hist[subNum] };
+            const e = hist[subNum];
+            if (!e.mainG702Period || e.mainG702Period === g702PeriodNum) {
+                return { source: 'history', entry: e, historyKey: String(subNum) };
+            }
         }
 
         return null;
