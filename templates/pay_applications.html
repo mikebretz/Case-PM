@@ -528,6 +528,7 @@ let mainLienWaiver = JSON.parse(localStorage.getItem('mainLienWaiver') || '{}');
 
     function resolveSubLienWaiverFile(companyId, metaOrPeriod) {
         if (!companyId) return null;
+        const cid = String(companyId);
         let storagePeriod = metaOrPeriod;
         let meta = null;
         if (metaOrPeriod && typeof metaOrPeriod === 'object') {
@@ -542,11 +543,13 @@ let mainLienWaiver = JSON.parse(localStorage.getItem('mainLienWaiver') || '{}');
             storagePeriod = meta.storagePeriod ?? meta.periodNumber;
         }
         if (storagePeriod == null) {
-            storagePeriod = subPayAppNumbers[companyId] || (currentPayAppPeriod ? currentPayAppPeriod.periodNumber : 1);
+            storagePeriod = subPayAppNumbers[cid] || subPayAppNumbers[companyId] || (currentPayAppPeriod ? currentPayAppPeriod.periodNumber : 1);
         }
-        const live = subLienWaivers[companyId] && subLienWaivers[companyId][storagePeriod];
+        const live = (subLienWaivers[cid] && subLienWaivers[cid][storagePeriod])
+            || (subLienWaivers[companyId] && subLienWaivers[companyId][storagePeriod]);
         if (live && live.dataUrl) return live;
-        const archived = subLienWaiverArchive[companyId] && subLienWaiverArchive[companyId][storagePeriod];
+        const archived = (subLienWaiverArchive[cid] && subLienWaiverArchive[cid][storagePeriod])
+            || (subLienWaiverArchive[companyId] && subLienWaiverArchive[companyId][storagePeriod]);
         if (archived && archived.dataUrl) return archived;
         if (meta && meta.filename) {
             return { filename: meta.filename, dataUrl: null, uploadedDate: meta.uploadedDate };
@@ -1073,6 +1076,10 @@ let mainLienWaiver = JSON.parse(localStorage.getItem('mainLienWaiver') || '{}');
             const hKey = resolvePayAppHistoryStorageKey(pend, payAppNum, pend.mainG702Period);
             if (!subPayAppHistory[cid]) subPayAppHistory[cid] = {};
             const existing = subPayAppHistory[cid][hKey];
+            if (existing && existing.status === 'Approved' && existing.archived !== true) {
+                clearStaleSubPendingForCompany(cid);
+                return;
+            }
             if (!existing || existing.archived === true) {
                 subPayAppHistory[cid][hKey] = {
                     periodNumber: pend.isCompliance ? 1005 : payAppNum,
@@ -1158,6 +1165,8 @@ let mainLienWaiver = JSON.parse(localStorage.getItem('mainLienWaiver') || '{}');
                 }
             });
         });
+
+        repairActiveTrackerLienWaivers();
     }
 
     function migrateLegacyComplianceKeys() {
@@ -1180,23 +1189,67 @@ let mainLienWaiver = JSON.parse(localStorage.getItem('mainLienWaiver') || '{}');
         if (changed) safeSetLocalStorage('subPayAppHistory', subPayAppHistory);
     }
 
-    function getSubLienWaiverForEntry(companyId, entry) {
+    function getSubLienWaiverForEntry(companyId, entry, historyKeyOverride) {
         if (!entry) return null;
         const cid = String(companyId);
+        const historyKey = historyKeyOverride || entry.historyKey || (entry.lienWaiver && entry.lienWaiver.storagePeriod);
+        const mainP = entry.pushedFromMainPeriod || entry.mainG702Period || entry.mainPeriod || getCurrentG702PeriodNum();
+
         if (entry.lienWaiver) {
             const resolved = resolveSubLienWaiverFile(cid, entry.lienWaiver);
             if (resolved && resolved.dataUrl) return resolved;
             if (resolved && resolved.filename) return resolved;
         }
-        const historyKey = entry.historyKey || (entry.lienWaiver && entry.lienWaiver.storagePeriod);
-        const mainP = entry.pushedFromMainPeriod || entry.mainG702Period || entry.mainPeriod;
-        if (historyKey != null && mainP != null) {
-            const archiveKey = getArchivedLienWaiverStorageKey(cid, historyKey, mainP);
-            const archived = subLienWaiverArchive[cid] && subLienWaiverArchive[cid][archiveKey];
+
+        const keysToTry = [];
+        if (historyKey != null) keysToTry.push(String(historyKey));
+        if (mainP != null && historyKey != null) keysToTry.push(getArchivedLienWaiverStorageKey(cid, historyKey, mainP));
+        if (entry.lienWaiver && entry.lienWaiver.storagePeriod != null) keysToTry.push(String(entry.lienWaiver.storagePeriod));
+        const payAppNum = subPayAppNumbers[cid] || subPayAppNumbers[companyId] || entry.periodNumber;
+        if (payAppNum != null) {
+            keysToTry.push(String(payAppNum));
+            keysToTry.push(`pending_${payAppNum}`);
+        }
+
+        const archiveStore = subLienWaiverArchive[cid] || subLienWaiverArchive[companyId] || {};
+        for (const k of keysToTry) {
+            const archived = archiveStore[k];
             if (archived && archived.dataUrl) return archived;
         }
+
         if (entry.lienWaiver && entry.lienWaiver.filename) return entry.lienWaiver;
         return null;
+    }
+
+    function repairActiveTrackerLienWaivers() {
+        let changed = false;
+        Object.keys(subPayAppHistory || {}).forEach(cid => {
+            const hist = subPayAppHistory[cid] || {};
+            Object.keys(hist).forEach(key => {
+                const entry = hist[key];
+                if (!isActiveTrackerEntry(entry)) return;
+                const resolved = getSubLienWaiverForEntry(cid, { ...entry, historyKey: key }, key);
+                if (!resolved || !resolved.dataUrl) return;
+                if (!subLienWaiverArchive[cid]) subLienWaiverArchive[cid] = {};
+                if (!subLienWaiverArchive[cid][key] || !subLienWaiverArchive[cid][key].dataUrl) {
+                    subLienWaiverArchive[cid][key] = {
+                        filename: resolved.filename,
+                        dataUrl: resolved.dataUrl,
+                        uploadedDate: resolved.uploadedDate || new Date().toISOString()
+                    };
+                    changed = true;
+                }
+                const meta = compactLienWaiverMeta(resolved, key);
+                if (meta && (!entry.lienWaiver || entry.lienWaiver.storagePeriod !== key)) {
+                    entry.lienWaiver = meta;
+                    changed = true;
+                }
+            });
+        });
+        if (changed) {
+            safeSetLocalStorage('subPayAppHistory', subPayAppHistory);
+            safeSetLocalStorage('subLienWaiverArchive', subLienWaiverArchive);
+        }
     }
 
     function subPayAppArchiveDedupKey(companyId, historyKey, entry) {
@@ -1651,18 +1704,33 @@ let mainLienWaiver = JSON.parse(localStorage.getItem('mainLienWaiver') || '{}');
         input.click();
     }
 
-    function viewMainLienWaiver() {
-        if (!currentPayAppPeriod) return;
-        const periodNum = currentPayAppPeriod.periodNumber;
-        const waiver = mainLienWaiver[periodNum];
-        if (!waiver || !waiver.dataUrl) {
-            showCenteredAlert("No lien waiver found for this period.", "warning");
+    function closeAllDocumentViewers() {
+        document.querySelectorAll('dialog.pay-app-doc-viewer').forEach(dialog => {
+            try { dialog.close(); } catch (e) { /* ignore */ }
+            dialog.remove();
+        });
+    }
+
+    function closeDocumentViewer(btn) {
+        const modal = btn ? btn.closest('dialog') : null;
+        if (modal) {
+            try { modal.close(); } catch (e) { /* ignore */ }
+            modal.remove();
+        } else {
+            closeAllDocumentViewers();
+        }
+    }
+
+    function openDocumentViewer({ title, subtitle, dataUrl, filename, footerLeftHtml }) {
+        if (!dataUrl) {
+            showCenteredAlert("No document available to view.", "warning");
             return;
         }
+        closeAllDocumentViewers();
 
-        const isPdf = (waiver.filename || '').toLowerCase().endsWith('.pdf');
+        const isPdf = (filename || '').toLowerCase().endsWith('.pdf');
         const modal = document.createElement('dialog');
-        modal.className = 'bg-zinc-900 border border-zinc-700 rounded-3xl p-0 max-w-[min(1100px,95vw)] w-full shadow-2xl z-[999999]';
+        modal.className = 'pay-app-doc-viewer bg-zinc-900 border border-zinc-700 rounded-3xl p-0 max-w-[min(1100px,95vw)] w-full shadow-2xl z-[999999]';
         modal.style.maxHeight = '82vh';
         modal.style.position = 'fixed';
         modal.style.top = '180px';
@@ -1673,33 +1741,52 @@ let mainLienWaiver = JSON.parse(localStorage.getItem('mainLienWaiver') || '{}');
         modal.style.setProperty('transform', 'translateX(-50%)', 'important');
 
         modal.innerHTML = `
-            <div class="drag-handle flex items-center justify-between px-6 py-4 border-b border-zinc-800 bg-zinc-950 cursor-move sticky top-0 z-10">
-                <div>
-                    <div class="font-semibold text-lg">Main Pay Application Lien Waiver — Period ${periodNum}</div>
-                    <div class="text-sm text-zinc-400">${waiver.uploadedDate || ''}</div>
-                </div>
-                <div class="flex items-center gap-3">
-                    <button onclick="printFromViewer(this)" class="px-5 py-2 bg-emerald-600 hover:bg-emerald-700 rounded-xl text-sm font-medium flex items-center gap-2">
-                        <i class="fa-solid fa-print"></i> <span>Print</span>
-                    </button>
-                    <button onclick="this.closest('dialog').close(); this.closest('dialog').remove()" 
-                            class="w-12 h-12 flex items-center justify-center text-4xl text-red-400 font-black hover:text-red-300 hover:bg-zinc-800 rounded-full leading-none border-2 border-red-400">×</button>
-                </div>
+            <div class="drag-handle px-6 py-4 border-b border-zinc-800 bg-zinc-950 cursor-move sticky top-0 z-10">
+                <div class="font-semibold text-lg">${title || 'Document Viewer'}</div>
+                <div class="text-sm text-zinc-400">${subtitle || ''}</div>
             </div>
-            <div class="p-6 bg-zinc-950 overflow-auto" style="max-height: calc(82vh - 120px);">
-                ${isPdf 
-                    ? `<embed src="${waiver.dataUrl}" type="application/pdf" style="width:100%; height:65vh; border-radius:12px;" />`
-                    : `<img src="${waiver.dataUrl}" style="max-width:100%; max-height:65vh; display:block; margin:0 auto; border-radius:12px;" />`
+            <div class="p-6 bg-zinc-950 overflow-auto doc-viewer-content" style="max-height: calc(82vh - 140px);">
+                ${isPdf
+                    ? `<embed src="${dataUrl}" type="application/pdf" style="width:100%; height:65vh; border-radius:12px;" />`
+                    : `<img src="${dataUrl}" style="max-width:100%; max-height:65vh; display:block; margin:0 auto; border-radius:12px;" alt="${filename || 'Document'}" />`
                 }
             </div>
-            <div class="px-6 py-4 border-t border-zinc-700 flex justify-end text-sm bg-zinc-900">
-                <button onclick="removeMainLienWaiver(); this.closest('dialog').close()" class="px-4 py-2 text-red-400 hover:underline mr-3">Remove</button>
-                <button onclick="this.closest('dialog').close(); this.closest('dialog').remove()" class="px-6 py-2 bg-zinc-700 hover:bg-zinc-600 rounded">Close</button>
+            <div class="px-6 py-4 border-t border-zinc-700 flex justify-between items-center text-sm bg-zinc-900 sticky bottom-0">
+                <div>${footerLeftHtml || ''}</div>
+                <div class="flex items-center gap-3">
+                    <button type="button" onclick="printFromViewer(this)" class="px-5 py-2 bg-emerald-600 hover:bg-emerald-700 rounded-xl text-sm font-medium flex items-center gap-2">
+                        <i class="fa-solid fa-print"></i> <span>Print</span>
+                    </button>
+                    <button type="button" onclick="closeDocumentViewer(this)" class="px-6 py-2 bg-zinc-700 hover:bg-zinc-600 rounded">Close</button>
+                </div>
             </div>
         `;
+
+        modal.addEventListener('close', () => modal.remove());
+        modal.addEventListener('cancel', (e) => {
+            e.preventDefault();
+            closeDocumentViewer(modal.querySelector('button[onclick*="closeDocumentViewer"]'));
+        });
         document.body.appendChild(modal);
         modal.showModal();
         makeModalDraggable(modal);
+    }
+
+    function viewMainLienWaiver() {
+        if (!currentPayAppPeriod) return;
+        const periodNum = currentPayAppPeriod.periodNumber;
+        const waiver = mainLienWaiver[periodNum];
+        if (!waiver || !waiver.dataUrl) {
+            showCenteredAlert("No lien waiver found for this period.", "warning");
+            return;
+        }
+        openDocumentViewer({
+            title: `Main Pay Application Lien Waiver — Period ${periodNum}`,
+            subtitle: waiver.uploadedDate || '',
+            dataUrl: waiver.dataUrl,
+            filename: waiver.filename,
+            footerLeftHtml: `<button type="button" onclick="removeMainLienWaiver(); closeDocumentViewer(this)" class="text-red-400 hover:underline">Remove</button>`
+        });
     }
 
     function removeMainLienWaiver() {
@@ -1715,29 +1802,26 @@ let mainLienWaiver = JSON.parse(localStorage.getItem('mainLienWaiver') || '{}');
 
     function viewLienWaiver(companyId, explicitPeriodNum = null) {
         if (!companyId) return;
-        let periodNum = explicitPeriodNum || ((subPayAppNumbers && subPayAppNumbers[companyId]) ? subPayAppNumbers[companyId] : (currentPayAppPeriod ? currentPayAppPeriod.periodNumber : 1));
-        let waiver = resolveSubLienWaiverFile(companyId, periodNum);
+        const cid = String(companyId);
+        const paper = findActiveSubPayAppForG702Period(companyId, getCurrentG702PeriodNum());
+        let waiver = null;
 
-        if (!waiver || !waiver.dataUrl) {
-            const pending = subPendingSubmissions[companyId];
-            if (pending && pending.lienWaiver) {
-                waiver = resolveSubLienWaiverFile(companyId, pending.lienWaiver);
-            }
+        if (paper) {
+            waiver = getSubLienWaiverForEntry(cid, {
+                ...resolveSubPayAppPaperEntry(companyId, paper),
+                historyKey: paper.historyKey
+            }, paper.historyKey);
         }
 
         if (!waiver || !waiver.dataUrl) {
-            let hist = subPayAppHistory[companyId] && subPayAppHistory[companyId][periodNum];
-            if (hist && hist.lienWaiver) {
-                waiver = resolveSubLienWaiverFile(companyId, hist.lienWaiver);
-            } else if (subPayAppHistory[companyId]) {
-                const nums = Object.keys(subPayAppHistory[companyId]).map(Number).sort((a,b) => b - a);
-                for (const p of nums) {
-                    const h = subPayAppHistory[companyId][p];
-                    if (h && h.lienWaiver) {
-                        waiver = resolveSubLienWaiverFile(companyId, h.lienWaiver);
-                        if (waiver && waiver.dataUrl) break;
-                    }
-                }
+            const periodNum = explicitPeriodNum || subPayAppNumbers[cid] || subPayAppNumbers[companyId] || (currentPayAppPeriod ? currentPayAppPeriod.periodNumber : 1);
+            waiver = resolveSubLienWaiverFile(cid, periodNum);
+        }
+
+        if (!waiver || !waiver.dataUrl) {
+            const pending = subPendingSubmissions[cid] || subPendingSubmissions[companyId];
+            if (pending && pending.lienWaiver) {
+                waiver = resolveSubLienWaiverFile(cid, pending.lienWaiver);
             }
         }
 
@@ -1746,57 +1830,14 @@ let mainLienWaiver = JSON.parse(localStorage.getItem('mainLienWaiver') || '{}');
             return;
         }
 
-        const isPdf = (waiver.filename || '').toLowerCase().endsWith('.pdf');
-
-        const modal = document.createElement('dialog');
-        modal.className = 'bg-zinc-900 border border-zinc-700 rounded-3xl p-0 max-w-[min(1100px,95vw)] w-full shadow-2xl z-[999999]';
-        modal.style.maxHeight = '82vh';
-        modal.style.position = 'fixed';
-        modal.style.top = '180px';
-        modal.style.left = '50%';
-        modal.style.transform = 'translateX(-50%)';
-        modal.style.margin = '0';
-        // Force position below header + make sure draggable works despite global dialog centering CSS
-        modal.style.setProperty('top', '180px', 'important');
-        modal.style.setProperty('transform', 'translateX(-50%)', 'important');
-        modal.innerHTML = `
-            <div class="drag-handle flex items-center justify-between px-6 py-4 border-b border-zinc-800 bg-zinc-950 cursor-move sticky top-0 z-10">
-                <div>
-                    <div class="font-semibold text-lg">Lien Waiver — ${getCompanyName(companyId)}</div>
-                    <div class="text-sm text-zinc-400">Period ${periodNum} • ${waiver.uploadedDate || 'Unknown date'}</div>
-                </div>
-                <div class="flex items-center gap-3">
-                    <button onclick="printFromViewer(this)" 
-                            class="px-5 py-2 bg-emerald-600 hover:bg-emerald-700 rounded-xl text-sm font-medium flex items-center gap-2">
-                        <i class="fa-solid fa-print"></i>
-                        <span>Print Document</span>
-                    </button>
-                    <button onclick="this.closest('dialog').close(); this.closest('dialog').remove()" 
-                            class="w-12 h-12 flex items-center justify-center text-4xl text-red-400 font-black hover:text-red-300 hover:bg-zinc-800 rounded-full leading-none border-2 border-red-400"
-                            title="Close">
-                        ×
-                    </button>
-                </div>
-            </div>
-            
-            <div class="p-6 bg-zinc-950 overflow-auto" style="max-height: calc(92vh - 140px);">
-                ${isPdf 
-                    ? `<embed src="${waiver.dataUrl}" type="application/pdf" style="width:100%; height:70vh; border-radius:12px;" />`
-                    : `<img src="${waiver.dataUrl}" style="max-width:100%; max-height:70vh; display:block; margin:0 auto; border-radius:12px;" />`
-                }
-            </div>
-            
-            <div class="px-6 py-4 border-t border-zinc-700 flex justify-between text-sm sticky bottom-0 bg-zinc-900">
-                <button onclick="removeLienWaiver(${companyId}); this.closest('dialog').close()" class="text-red-400 hover:underline">🗑️ Remove This File</button>
-                <button onclick="this.closest('dialog').close(); this.closest('dialog').remove()" class="px-6 py-2 bg-zinc-700 hover:bg-zinc-600 rounded">Close Viewer</button>
-            </div>
-        `;
-        
-        document.body.appendChild(modal);
-        modal.showModal();
-
-        // Make the modal draggable (free floating)
-        makeModalDraggable(modal);
+        const periodNum = explicitPeriodNum || subPayAppNumbers[cid] || subPayAppNumbers[companyId] || (currentPayAppPeriod ? currentPayAppPeriod.periodNumber : 1);
+        openDocumentViewer({
+            title: `Lien Waiver — ${getCompanyName(companyId)}`,
+            subtitle: `Period ${periodNum} • ${waiver.uploadedDate || 'Unknown date'}`,
+            dataUrl: waiver.dataUrl,
+            filename: waiver.filename,
+            footerLeftHtml: `<button type="button" onclick="removeLienWaiver(${companyId}); closeDocumentViewer(this)" class="text-red-400 hover:underline">Remove This File</button>`
+        });
     }
 
     // Helper: Make any modal/dialog draggable by its .drag-handle
@@ -1839,24 +1880,24 @@ let mainLienWaiver = JSON.parse(localStorage.getItem('mainLienWaiver') || '{}');
     function printFromViewer(btn) {
         const modal = btn.closest('dialog');
         if (!modal) return;
-        
+        const content = modal.querySelector('.doc-viewer-content');
+        if (!content) return;
+
         const printWindow = window.open('', '_blank');
         printWindow.document.write(`
             <html>
             <head>
-                <title>Lien Waiver</title>
+                <title>Document</title>
                 <style>
                     @page { size: letter; margin: 0.5in; }
                     body { font-family: system-ui, -apple-system, sans-serif; margin: 0; padding: 20px; }
+                    img, embed { max-width: 100%; }
                 </style>
             </head>
-            <body>
-                ${modal.innerHTML}
-            </body>
+            <body>${content.innerHTML}</body>
             </html>
         `);
         printWindow.document.close();
-        
         setTimeout(() => {
             printWindow.focus();
             printWindow.print();
@@ -2376,45 +2417,12 @@ let mainLienWaiver = JSON.parse(localStorage.getItem('mainLienWaiver') || '{}');
             return;
         }
 
-        const isPdf = (waiver.filename || '').toLowerCase().endsWith('.pdf');
-        const modal = document.createElement('dialog');
-        modal.className = 'bg-zinc-900 border border-zinc-700 rounded-3xl p-0 max-w-[min(1100px,95vw)] w-full shadow-2xl z-[999999]';
-        modal.style.maxHeight = '82vh';
-        modal.style.position = 'fixed';
-        modal.style.top = '180px';
-        modal.style.left = '50%';
-        modal.style.transform = 'translateX(-50%)';
-        modal.style.margin = '0';
-        modal.style.setProperty('top', '180px', 'important');
-        modal.style.setProperty('transform', 'translateX(-50%)', 'important');
-
-        modal.innerHTML = `
-            <div class="drag-handle flex items-center justify-between px-6 py-4 border-b border-zinc-800 bg-zinc-950 cursor-move sticky top-0 z-10">
-                <div>
-                    <div class="font-semibold text-lg">Main Lien Waiver — Period ${periodNum} (Historical)</div>
-                    <div class="text-sm text-zinc-400">${waiver.uploadedDate || ''}</div>
-                </div>
-                <div class="flex items-center gap-3">
-                    <button onclick="printFromViewer(this)" class="px-5 py-2 bg-emerald-600 hover:bg-emerald-700 rounded-xl text-sm font-medium flex items-center gap-2">
-                        <i class="fa-solid fa-print"></i> <span>Print</span>
-                    </button>
-                    <button onclick="this.closest('dialog').close(); this.closest('dialog').remove()" 
-                            class="w-12 h-12 flex items-center justify-center text-4xl text-red-400 font-black hover:text-red-300 hover:bg-zinc-800 rounded-full leading-none border-2 border-red-400">×</button>
-                </div>
-            </div>
-            <div class="p-6 bg-zinc-950 overflow-auto" style="max-height: calc(82vh - 120px);">
-                ${isPdf 
-                    ? `<embed src="${waiver.dataUrl}" type="application/pdf" style="width:100%; height:65vh; border-radius:12px;" />`
-                    : `<img src="${waiver.dataUrl}" style="max-width:100%; max-height:65vh; display:block; margin:0 auto; border-radius:12px;" />`
-                }
-            </div>
-            <div class="px-6 py-4 border-t border-zinc-700 flex justify-end text-sm bg-zinc-900">
-                <button onclick="this.closest('dialog').close(); this.closest('dialog').remove()" class="px-6 py-2 bg-zinc-700 hover:bg-zinc-600 rounded">Close</button>
-            </div>
-        `;
-        document.body.appendChild(modal);
-        modal.showModal();
-        makeModalDraggable(modal);
+        openDocumentViewer({
+            title: `Main Lien Waiver — Period ${periodNum} (Historical)`,
+            subtitle: waiver.uploadedDate || '',
+            dataUrl: waiver.dataUrl,
+            filename: waiver.filename
+        });
     }
 
     // ==================== PAY APPLICATION G702 TAB ====================
@@ -5987,10 +5995,16 @@ let mainLienWaiver = JSON.parse(localStorage.getItem('mainLienWaiver') || '{}');
         archiveSubLienWaiverFile(cid, waiverStoragePeriod, historyKey);
         archiveSubLienWaiverFile(companyId, waiverStoragePeriod, historyKey);
 
-        let lienWaiverForHistory = compactLienWaiverMeta(
-            resolveSubLienWaiverFile(cid, { storagePeriod: historyKey }) || pendingEntry.lienWaiver,
-            historyKey
+        let lienWaiverForHistory = ensureLienWaiverSnapshottedForArchive(
+            cid,
+            historyKey,
+            { ...pendingEntry, lienWaiver: pendingEntry.lienWaiver },
+            mainPeriodAtApproval
         );
+        if (!lienWaiverForHistory) {
+            const resolved = resolveSubLienWaiverFile(cid, { storagePeriod: historyKey }) || pendingEntry.lienWaiver;
+            lienWaiverForHistory = compactLienWaiverMeta(resolved, historyKey);
+        }
 
         [cid, String(companyId)].forEach(key => {
             if (subLienWaivers[key]) {
@@ -6050,6 +6064,23 @@ let mainLienWaiver = JSON.parse(localStorage.getItem('mainLienWaiver') || '{}');
     // Request Revision for a pending (left hand) or approved (right hand / Tracker) Sub Pay App
     // RESTORES the submitted amounts + lien waiver back to Sub SOV tab as editable Pay App #N Current
     // This matches the exact "paper from right hand back to left hand" workflow you confirmed.
+    function removeActiveSubPayAppPaper(companyId, paper) {
+        const cid = String(companyId);
+        clearStaleSubPendingForCompany(companyId);
+
+        const hist = subPayAppHistory[cid] || subPayAppHistory[companyId] || {};
+        if (paper && paper.historyKey && hist[paper.historyKey]) {
+            delete hist[paper.historyKey];
+        } else {
+            Object.keys(hist).forEach(key => {
+                if (isActiveTrackerEntry(hist[key])) delete hist[key];
+            });
+        }
+        if (subPayAppHistory[cid] && Object.keys(subPayAppHistory[cid]).length === 0) delete subPayAppHistory[cid];
+        if (subPayAppHistory[companyId] && Object.keys(subPayAppHistory[companyId]).length === 0) delete subPayAppHistory[companyId];
+        safeSetLocalStorage('subPayAppHistory', subPayAppHistory);
+    }
+
     function requestRevisionSubPayApp(companyId, periodNumOrHistoryKey = null) {
         if (!companyId) return;
         const cid = String(companyId);
@@ -6084,16 +6115,17 @@ let mainLienWaiver = JSON.parse(localStorage.getItem('mainLienWaiver') || '{}');
         }
 
         const sourceEntry = paper && paper.entry;
-        if (!sourceEntry || !sourceEntry.lines) {
+        if (!sourceEntry) {
             showCenteredAlert("No submitted Pay App found to restore for revision.", "warning");
             return;
         }
 
         const historyKey = paper.historyKey;
-        const fromPending = paper.source === 'pending';
+        const wasApproved = sourceEntry.status === 'Approved';
+        const snapshotLines = sourceEntry.lines || [];
 
         const lines = subcontractorSOV[cid] || subcontractorSOV[companyId] || [];
-        sourceEntry.lines.forEach(snapshotLine => {
+        snapshotLines.forEach(snapshotLine => {
             const liveLine = lines.find(l => l.id === snapshotLine.id || l.cost_code === snapshotLine.cost_code);
             if (liveLine) {
                 liveLine.work_this_period = snapshotLine.work_this_period || 0;
@@ -6109,13 +6141,14 @@ let mainLienWaiver = JSON.parse(localStorage.getItem('mainLienWaiver') || '{}');
         });
         safeSetLocalStorage('subcontractorSOV', subcontractorSOV);
 
-        const resolvedWaiver = getSubLienWaiverForEntry(cid, sourceEntry);
+        const resolvedWaiver = getSubLienWaiverForEntry(cid, { ...sourceEntry, historyKey }, historyKey);
+        const restorePayAppNum = sourceEntry.isCompliance
+            ? (subPayAppNumbers[cid] || 1)
+            : (sourceEntry.periodNumber && sourceEntry.periodNumber !== 1005 ? sourceEntry.periodNumber : (subPayAppNumbers[cid] || 1));
+
         if (resolvedWaiver && resolvedWaiver.dataUrl) {
-            const restorePeriod = sourceEntry.isCompliance
-                ? (subPayAppNumbers[cid] || 1)
-                : (sourceEntry.periodNumber && sourceEntry.periodNumber !== 1005 ? sourceEntry.periodNumber : (subPayAppNumbers[cid] || 1));
             if (!subLienWaivers[cid]) subLienWaivers[cid] = {};
-            subLienWaivers[cid][restorePeriod] = {
+            subLienWaivers[cid][restorePayAppNum] = {
                 filename: resolvedWaiver.filename,
                 uploadedDate: resolvedWaiver.uploadedDate || new Date().toISOString(),
                 dataUrl: resolvedWaiver.dataUrl
@@ -6123,20 +6156,8 @@ let mainLienWaiver = JSON.parse(localStorage.getItem('mainLienWaiver') || '{}');
             safeSetLocalStorage('subLienWaivers', subLienWaivers);
         }
 
-        if (fromPending) {
-            delete subPendingSubmissions[cid];
-            delete subPendingSubmissions[companyId];
-            safeSetLocalStorage('subPendingSubmissions', subPendingSubmissions);
-        }
-        if (historyKey && subPayAppHistory[cid]) {
-            delete subPayAppHistory[cid][historyKey];
-            if (Object.keys(subPayAppHistory[cid]).length === 0) delete subPayAppHistory[cid];
-            safeSetLocalStorage('subPayAppHistory', subPayAppHistory);
-        }
+        removeActiveSubPayAppPaper(companyId, paper);
 
-        const restorePayAppNum = sourceEntry.isCompliance
-            ? (subPayAppNumbers[cid] || 1)
-            : (sourceEntry.periodNumber && sourceEntry.periodNumber !== 1005 ? sourceEntry.periodNumber : (subPayAppNumbers[cid] || 1));
         subPayAppNumbers[cid] = restorePayAppNum;
         safeSetLocalStorage('subPayAppNumbers', subPayAppNumbers);
 
@@ -6144,8 +6165,14 @@ let mainLienWaiver = JSON.parse(localStorage.getItem('mainLienWaiver') || '{}');
             note: 'Revision in progress - amounts restored from previous submission'
         });
 
-        logPayAppAudit('SUB_PAYAPP_REVISION_REQUESTED', { companyId: cid, period: restorePayAppNum, historyKey, restored: true, fromPending });
-        showCenteredAlert(`Revision requested. Pay App #${restorePayAppNum} amounts + lien waiver restored to Subcontractor Schedule of Values tab for editing. Re-submit when ready.`, 'info');
+        logPayAppAudit('SUB_PAYAPP_REVISION_REQUESTED', {
+            companyId: cid,
+            period: restorePayAppNum,
+            historyKey,
+            restored: true,
+            wasApproved
+        });
+        showCenteredAlert(`Revision requested. Pay App #${restorePayAppNum} amounts + lien waiver restored to Subcontractor Schedule of Values for re-submit.`, 'info');
 
         selectedSubCompanyId = companyId;
         localStorage.setItem('lastSelectedSubSOV', cid);
@@ -7485,46 +7512,12 @@ function printSubcontractorG703(companyId) {
             ? 'Compliance (Lien Waiver)'
             : `Pay App #${historyEntry ? (historyEntry.periodNumber || historyKeyOrPeriod) : historyKeyOrPeriod}`;
 
-        const isPdf = (waiver.filename || '').toLowerCase().endsWith('.pdf');
-        const modal = document.createElement('dialog');
-        modal.className = 'bg-zinc-900 border border-zinc-700 rounded-3xl p-0 max-w-[min(1100px,95vw)] w-full shadow-2xl z-[999999]';
-        modal.style.maxHeight = '82vh';
-        modal.style.position = 'fixed';
-        modal.style.top = '180px';
-        modal.style.left = '50%';
-        modal.style.transform = 'translateX(-50%)';
-        modal.style.margin = '0';
-        modal.style.setProperty('top', '180px', 'important');
-        modal.style.setProperty('transform', 'translateX(-50%)', 'important');
-
-        modal.innerHTML = `
-            <div class="drag-handle flex items-center justify-between px-6 py-4 border-b border-zinc-800 bg-zinc-950 cursor-move sticky top-0 z-10">
-                <div>
-                    <div class="font-semibold text-lg">Lien Waiver — ${getCompanyName(companyId)}</div>
-                    <div class="text-sm text-zinc-400">${periodLabel} • ${waiver.uploadedDate || ''}</div>
-                </div>
-                <div class="flex items-center gap-3">
-                    <button onclick="printFromViewer(this)" class="px-5 py-2 bg-emerald-600 hover:bg-emerald-700 rounded-xl text-sm font-medium flex items-center gap-2">
-                        <i class="fa-solid fa-print"></i> <span>Print</span>
-                    </button>
-                    <button onclick="this.closest('dialog').close(); this.closest('dialog').remove()" 
-                            class="w-12 h-12 flex items-center justify-center text-4xl text-red-400 font-black hover:text-red-300 hover:bg-zinc-800 rounded-full leading-none border-2 border-red-400">×</button>
-                </div>
-            </div>
-            <div class="p-6 bg-zinc-950 overflow-auto" style="max-height: calc(82vh - 120px);">
-                ${isPdf 
-                    ? `<embed src="${waiver.dataUrl}" type="application/pdf" style="width:100%; height:65vh; border-radius:12px;" />`
-                    : `<img src="${waiver.dataUrl}" style="max-width:100%; max-height:65vh; display:block; margin:0 auto; border-radius:12px;" />`
-                }
-            </div>
-            <div class="px-6 py-4 border-t border-zinc-700 flex justify-end text-sm bg-zinc-900">
-                <button onclick="this.closest('dialog').close(); this.closest('dialog').remove()" class="px-6 py-2 bg-zinc-700 hover:bg-zinc-600 rounded">Close</button>
-            </div>
-        `;
-
-        document.body.appendChild(modal);
-        modal.showModal();
-        makeModalDraggable(modal);
+        openDocumentViewer({
+            title: `Lien Waiver — ${getCompanyName(companyId)}`,
+            subtitle: `${periodLabel} • ${waiver.uploadedDate || ''}`,
+            dataUrl: waiver.dataUrl,
+            filename: waiver.filename
+        });
     }
 
     // ==================== AUDIT LOG ====================
@@ -8547,10 +8540,14 @@ function printSubcontractorG703(companyId) {
 
     function getSubTrackerLienWaiverStatus(companyId, periodNum) {
         const paper = getSubTrackerPaper(companyId, periodNum);
-        if (paper && paper.entry) {
-            const resolved = getSubLienWaiverForEntry(companyId, paper.entry);
-            if (resolved && resolved.filename) {
-                return { hasWaiver: true, filename: resolved.filename };
+        if (paper) {
+            const resolvedEntry = resolveSubPayAppPaperEntry(companyId, paper);
+            const resolved = getSubLienWaiverForEntry(companyId, {
+                ...(resolvedEntry || paper.entry),
+                historyKey: paper.historyKey
+            }, paper.historyKey);
+            if (resolved && (resolved.dataUrl || resolved.filename)) {
+                return { hasWaiver: !!(resolved.dataUrl || resolved.filename), filename: resolved.filename };
             }
         }
         const lw = getLienWaiverStatus(companyId);
