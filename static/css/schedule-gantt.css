@@ -41,20 +41,39 @@ body:has(.schedule-page-root) #mainContent {
 .schedule-view-tab.active-view { background: #27272a; color: #fff; border-radius: 0.375rem; }
 .sched-color-swatch { display: inline-block; width: 14px; height: 14px; border-radius: 2px; border: 1px solid #71717a; }
 
-/* ─── Grid dark ─── */
+/* ─── Grid dark — consistent rows (no white flash on project/summary) ─── */
 .gantt_grid, .gantt_grid_scale, .gantt_grid_head, .gantt_grid_data,
 .gantt_container, .gantt_layout_cell {
     background-color: #18181b !important;
     color: #e4e4e7 !important;
     border-color: #3f3f46 !important;
 }
-.gantt_grid_data .gantt_row { border-color: #3f3f46 !important; }
-.gantt_grid_data .gantt_row.odd { background-color: #1c1c1f !important; }
+.gantt_grid_data .gantt_row,
+.gantt_grid_data .gantt_row.cpm_project_row,
+.gantt_grid_data .gantt_row.gantt_project {
+    background-color: #18181b !important;
+    color: #e4e4e7 !important;
+    border-color: #3f3f46 !important;
+}
+.gantt_grid_data .gantt_row.odd {
+    background-color: #1c1c1f !important;
+    color: #e4e4e7 !important;
+}
 .gantt_grid_data .gantt_row.gantt_selected,
-.gantt_grid_data .gantt_row:hover { background-color: #27272a !important; }
+.gantt_grid_data .gantt_row:hover,
+.gantt_grid_data .gantt_row.cpm_project_row:hover,
+.gantt_grid_data .gantt_row.gantt_project:hover {
+    background-color: #27272a !important;
+    color: #f4f4f5 !important;
+}
+.gantt_tree_content, .gantt_grid_head, .gantt_grid_head_cell {
+    background-color: #18181b !important;
+    color: #a1a1aa !important;
+}
 .gantt_cell, .gantt_grid_head_cell {
     border-color: #3f3f46 !important;
     color: #e4e4e7 !important;
+    background-color: transparent !important;
     box-sizing: border-box !important;
 }
 
@@ -86,7 +105,8 @@ body:has(.schedule-page-root) #mainContent {
 .gantt_task, .gantt_task_bg, .gantt_data_area, .gantt_bars_area {
     background-color: #0f0f12 !important;
 }
-.gantt_task_row, .gantt_task_row.odd {
+.gantt_task_row, .gantt_task_row.odd,
+.gantt_task_row.gantt_project, .gantt_task_row.cpm_project_row {
     background-color: #141417 !important;
     border-color: #27272a !important;
 }

@@ -15,6 +15,7 @@
 
     let ganttReady = false;
     let saveTimer = null;
+    let resizeTimer = null;
     let baselines = [];
     let customColumns = [];
     let columnWidths = {};
@@ -42,7 +43,7 @@
                 type: 'project',
                 open: true,
                 start_date: today,
-                duration: 1,
+                duration: 0,
                 progress: 0
             }],
             links: []
@@ -78,14 +79,11 @@
         if (!ganttReady || !gantt.config.columns) return;
         const width = gantt.config.columns.reduce((sum, col) => sum + (parseInt(col.width, 10) || 0), 0);
         gantt.config.grid_width = width;
-        if (gantt.config.layout && gantt.config.layout.cols && gantt.config.layout.cols[0]) {
-            gantt.config.layout.cols[0].width = Math.min(900, Math.max(320, width));
-        }
     }
 
-    function coerceTaskDate(value) {
+    function toGanttDate(value) {
         if (!value) return null;
-        if (value instanceof Date && !Number.isNaN(value.getTime())) return value;
+        if (value instanceof Date && !Number.isNaN(value.getTime())) return new Date(value.getTime());
         if (typeof value === 'string') {
             const parsed = CasePMSchedule.parseDate(value);
             if (parsed) return parsed;
@@ -93,29 +91,84 @@
                 const g = gantt.date.parseDate(value, gantt.config.date_format);
                 if (g && !Number.isNaN(g.getTime())) return g;
             }
+            if (typeof gantt !== 'undefined' && gantt.date && gantt.date.str_to_date) {
+                const g = gantt.date.str_to_date(value);
+                if (g && !Number.isNaN(g.getTime())) return g;
+            }
         }
         return null;
+    }
+
+    function formatDateSafe(value) {
+        const d = toGanttDate(value);
+        if (!d) return '—';
+        try {
+            return gantt.templates.format_date(d);
+        } catch (e) {
+            return CasePMSchedule.formatDate(d);
+        }
+    }
+
+    function coerceTaskDate(value) {
+        return toGanttDate(value);
     }
 
     function normalizeTaskDates(data) {
         const today = CasePMSchedule.formatDate(new Date());
         (data || []).forEach(task => {
-            let start = coerceTaskDate(task.start_date);
-            if (!start) start = coerceTaskDate(today);
-            task.start_date = start;
+            let start = toGanttDate(task.start_date) || toGanttDate(today);
+            task.start_date = CasePMSchedule.formatDate(start);
             const dur = Math.max(0, Number(task.duration) || 0);
             if (task.type === 'milestone') {
                 task.duration = 0;
-                task.end_date = start;
-            } else if (!coerceTaskDate(task.end_date)) {
-                task.end_date = CasePMSchedule.addCalendarDays(start, dur || 1);
+                task.end_date = task.start_date;
+            } else if (task.type === 'project') {
+                task.duration = dur || 0;
+                const end = toGanttDate(task.end_date);
+                task.end_date = end ? CasePMSchedule.formatDate(end) : task.start_date;
+            } else if (!toGanttDate(task.end_date)) {
+                task.end_date = CasePMSchedule.formatDate(CasePMSchedule.addCalendarDays(start, dur || 1));
             } else {
-                task.end_date = coerceTaskDate(task.end_date);
+                task.end_date = CasePMSchedule.formatDate(toGanttDate(task.end_date));
             }
             if (task.duration == null || Number.isNaN(Number(task.duration))) {
-                task.duration = dur || 1;
+                task.duration = task.type === 'project' ? 0 : (dur || 1);
+            }
+            if (task.constraint_date) {
+                const cd = toGanttDate(task.constraint_date);
+                if (cd) task.constraint_date = CasePMSchedule.formatDate(cd);
             }
         });
+    }
+
+    function sanitizeTaskDates(task) {
+        if (!task) return;
+        const start = toGanttDate(task.start_date);
+        if (start) task.start_date = start;
+        else if (task.type !== 'project') task.start_date = new Date();
+
+        const dur = Math.max(0, Number(task.duration) || 0);
+        if (task.type === 'milestone') {
+            task.duration = 0;
+            task.end_date = new Date(task.start_date.getTime());
+            return;
+        }
+        if (task.type === 'project') {
+            const end = toGanttDate(task.end_date);
+            task.end_date = end || new Date(task.start_date.getTime());
+            return;
+        }
+        let end = toGanttDate(task.end_date);
+        if (!end) end = CasePMSchedule.addCalendarDays(task.start_date, dur || 1);
+        task.end_date = end;
+        if (!dur) {
+            task.duration = Math.max(1, CasePMSchedule.calendarDaysBetween(task.start_date, task.end_date));
+        }
+    }
+
+    function sanitizeAllTaskDates() {
+        if (!ganttReady) return;
+        gantt.eachTask(id => sanitizeTaskDates(gantt.getTask(id)));
     }
 
     function predTemplate(task) {
@@ -159,8 +212,8 @@
             { name: 'activity_id', label: 'ID', width: 60, align: 'center', resize: true, editor: { type: 'text', map_to: 'activity_id' }, template: t => t.activity_id || '' },
             { name: 'text', label: 'Activity Name', tree: true, width: 200, min_width: 100, resize: true, editor: { type: 'text', map_to: 'text' } },
             { name: 'duration', label: 'Dur', align: 'center', width: 50, min_width: 40, resize: true, editor: { type: 'number', map_to: 'duration', min: 0, max: 9999 } },
-            { name: 'start_date', label: 'Start', align: 'center', width: 95, min_width: 80, resize: true, editor: { type: 'date', map_to: 'start_date' } },
-            { name: 'end_date', label: 'Finish', align: 'center', width: 95, min_width: 80, resize: true, editor: { type: 'date', map_to: 'end_date' } },
+            { name: 'start_date', label: 'Start', align: 'center', width: 95, min_width: 80, resize: true, editor: { type: 'date', map_to: 'start_date' }, template: t => formatDateSafe(t.start_date) },
+            { name: 'end_date', label: 'Finish', align: 'center', width: 95, min_width: 80, resize: true, editor: { type: 'date', map_to: 'end_date' }, template: t => formatDateSafe(t.end_date) },
             { name: 'predecessors', label: 'Predecessors', width: 110, min_width: 70, resize: true, editor: { type: 'predecessor', map_to: 'auto' }, template: predTemplate },
             { name: 'successors', label: 'Successors', width: 100, min_width: 70, resize: true, template: succTemplate },
             { name: 'progress', label: '%', align: 'center', width: 45, min_width: 40, resize: true, editor: { type: 'number', map_to: 'progress', min: 0, max: 100 }, template: t => Math.round((t.progress || 0) <= 1 ? (t.progress || 0) * 100 : (t.progress || 0)) },
@@ -242,6 +295,16 @@
 
         gantt.attachEvent('onBeforeLightbox', () => false);
 
+        gantt.attachEvent('onTaskLoading', (task) => {
+            sanitizeTaskDates(task);
+            return true;
+        });
+
+        gantt.templates.grid_row_class = function (start, end, task) {
+            if (task.type === 'project') return 'cpm_project_row';
+            return '';
+        };
+
         gantt.templates.task_class = function (start, end, task) {
             const classes = [];
             if (gantt.config.highlight_critical_path && isTaskCritical(task)) classes.push('cpm_critical');
@@ -275,8 +338,8 @@
         gantt.templates.tooltip_text = function (start, end, task) {
             const preds = predTemplate(task);
             return `<b>${task.text}</b><br/>
-                Start: ${gantt.templates.tooltip_date_format(start)}<br/>
-                Finish: ${gantt.templates.tooltip_date_format(end)}<br/>
+                Start: ${formatDateSafe(start)}<br/>
+                Finish: ${formatDateSafe(end)}<br/>
                 Duration: ${task.duration}d<br/>
                 Progress: ${Math.round((task.progress || 0) * 100)}%<br/>
                 ${preds ? 'Predecessors: ' + preds : ''}`;
@@ -308,10 +371,15 @@
             return true;
         });
 
+        gantt.attachEvent('onBeforeTaskUpdate', (id, task) => {
+            sanitizeTaskDates(task);
+            return true;
+        });
+
         gantt.attachEvent('onAfterTaskUpdate', (id, task) => {
+            sanitizeTaskDates(task);
             if (task.progress > 1) {
                 task.progress = Math.min(1, task.progress / 100);
-                gantt.refreshTask(id);
             }
             queueSave();
         });
@@ -334,6 +402,7 @@
 
         updateGridWidth();
         gantt.init('gantt_here');
+        sanitizeAllTaskDates();
         ganttReady = true;
         resizeGanttHost();
         window.addEventListener('resize', resizeGanttHost);
@@ -354,7 +423,9 @@
         const statusH = status ? status.offsetHeight + 8 : 0;
         const h = Math.max(300, window.innerHeight - top - statusH - footerH - 12);
         host.style.height = h + 'px';
-        if (ganttReady) gantt.render();
+        if (!ganttReady) return;
+        clearTimeout(resizeTimer);
+        resizeTimer = setTimeout(() => gantt.render(), 80);
     }
 
     // ─── Persistence ───
@@ -366,8 +437,8 @@
                 text: t.text,
                 parent: t.parent,
                 type: t.type,
-                start_date: t.start_date ? gantt.templates.format_date(t.start_date) : undefined,
-                end_date: t.end_date ? gantt.templates.format_date(t.end_date) : undefined,
+                start_date: t.start_date ? formatDateSafe(t.start_date) : undefined,
+                end_date: t.end_date ? formatDateSafe(t.end_date) : undefined,
                 duration: t.duration,
                 progress: t.progress,
                 open: t.open,
@@ -396,6 +467,7 @@
         updateGridWidth();
         gantt.clearAll();
         gantt.parse({ data: payload.data, links: payload.links || [] });
+        sanitizeAllTaskDates();
         baselines = payload.baselines || [];
         if (payload.settings) scheduleSettings = Object.assign(scheduleSettings, payload.settings);
         refreshWbsCodes();
@@ -564,11 +636,12 @@
     // ─── Toolbar ───
     function addActivity(type) {
         const parent = gantt.getSelectedId() || 0;
-        const today = CasePMSchedule.formatDate(new Date());
+        const today = toGanttDate(CasePMSchedule.formatDate(new Date()));
         const id = gantt.addTask({
             text: type === 'milestone' ? 'New Milestone' : 'New Activity',
             type: type || 'task',
             start_date: today,
+            end_date: type === 'milestone' ? today : CasePMSchedule.addCalendarDays(today, 5),
             duration: type === 'milestone' ? 0 : 5,
             progress: 0,
             parent: parent
@@ -647,14 +720,16 @@
         updates.forEach((patch, id) => {
             if (!gantt.isTaskExists(id)) return;
             const task = gantt.getTask(id);
-            if (patch.start_date) task.start_date = patch.start_date;
-            if (patch.end_date) task.end_date = patch.end_date;
+            if (patch.start_date) task.start_date = toGanttDate(patch.start_date);
+            if (patch.end_date) task.end_date = toGanttDate(patch.end_date);
             if (patch.total_float != null) task.total_float = patch.total_float;
             if (patch.free_float != null) task.free_float = patch.free_float;
             task.$slack = patch.$slack;
             task.$critical = patch.$critical;
+            sanitizeTaskDates(task);
             gantt.refreshTask(id);
         });
+        sanitizeAllTaskDates();
         wbsCodeMap = wbsMap || CasePMSchedule.buildWbsMap(tasks);
         gantt.render();
         updateStatusBar();
@@ -795,8 +870,8 @@
                 <td class="px-3 py-2 font-mono text-xs">${wbsCode(t)}</td>
                 <td class="px-3 py-2 ${critical ? 'text-red-400' : ''}">${t.text}</td>
                 <td class="px-3 py-2 text-center">${t.duration}</td>
-                <td class="px-3 py-2">${gantt.templates.format_date(t.start_date)}</td>
-                <td class="px-3 py-2">${t.end_date ? gantt.templates.format_date(t.end_date) : '—'}</td>
+                <td class="px-3 py-2">${formatDateSafe(t.start_date)}</td>
+                <td class="px-3 py-2">${formatDateSafe(t.end_date)}</td>
                 <td class="px-3 py-2 text-center">${Math.round((t.progress || 0) * 100)}%</td>
                 <td class="px-3 py-2 text-xs">${predTemplate(t) || '—'}</td>
                 <td class="px-3 py-2 text-center">${critical ? '<span class="text-red-400">Yes</span>' : '—'}</td>
@@ -828,8 +903,8 @@
         let critical = 0;
         gantt.eachTask(t => { if (t.type !== 'project' && isTaskCritical(t)) critical++; });
         el.innerHTML = `
-            <span>Start: <b>${gantt.templates.format_date(range.start_date)}</b></span>
-            <span>Finish: <b>${gantt.templates.format_date(range.end_date)}</b></span>
+            <span>Start: <b>${formatDateSafe(range.start_date)}</b></span>
+            <span>Finish: <b>${formatDateSafe(range.end_date)}</b></span>
             <span>Activities: <b>${countTasks()}</b></span>
             <span>Critical: <b class="text-red-400">${critical}</b></span>
             <span class="text-zinc-600">| Click cell to edit · Double-click row for full detail · Drag column borders to resize</span>`;
