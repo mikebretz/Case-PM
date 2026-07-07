@@ -24,9 +24,9 @@ body:has(.schedule-page-root) #mainContent {
 .schedule-toolbar-btn {
     display: inline-flex;
     align-items: center;
-    gap: 0.3rem;
-    padding: 0.35rem 0.55rem;
-    font-size: 0.7rem;
+    gap: 0.43rem;
+    padding: 0.5rem 0.79rem;
+    font-size: 1.01rem;
     border-radius: 0.375rem;
     background: #27272a;
     border: 1px solid #3f3f46;
@@ -40,6 +40,39 @@ body:has(.schedule-page-root) #mainContent {
 .schedule-toolbar-btn-danger:hover { background: #7f1d1d; color: #fff; }
 .schedule-view-tab.active-view { background: #27272a; color: #fff; border-radius: 0.375rem; }
 .sched-color-swatch { display: inline-block; width: 14px; height: 14px; border-radius: 2px; border: 1px solid #71717a; }
+
+.sched-tree-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 18px;
+    height: 18px;
+    cursor: pointer;
+    color: #10b981;
+    font-size: 14px;
+    user-select: none;
+}
+.sched-color-editor { width: 100%; height: 28px; padding: 0; border: none; background: transparent; }
+
+/* Overlay: timeline floats over grid; columns keep fixed width + scroll */
+.schedule-overlay-mode #gantt_here .gantt_layout_root { position: relative !important; }
+.schedule-overlay-mode #gantt_here .gantt_layout_cell:first-child {
+    width: 100% !important;
+    max-width: 100% !important;
+    flex: 1 1 auto !important;
+}
+.schedule-overlay-mode #gantt_here .gantt_grid {
+    min-width: max-content;
+    overflow-x: auto !important;
+}
+.schedule-overlay-mode #gantt_here .gantt_grid_scale,
+.schedule-overlay-mode #gantt_here .gantt_grid_data {
+    min-width: max-content !important;
+    width: max-content !important;
+}
+.schedule-overlay-mode #gantt_here .gantt_layout_cell:nth-child(3) {
+    pointer-events: auto;
+}
 
 /* Grid readability */
 .gantt_cell, .gantt_tree_content, .gantt_grid_head_cell {
@@ -161,6 +194,12 @@ body:has(.schedule-page-root) #mainContent {
     background-color: rgba(30, 41, 59, 0.7) !important;
     border: 2px solid #64748b !important;
 }
+/* Per-activity colors from task_style override status classes */
+.gantt_task_line.cpm_custom_color .gantt_task_content,
+.gantt_task_line.cpm_custom_color {
+    background: inherit !important;
+    border-color: inherit !important;
+}
 .gantt_task_progress { background-color: rgba(0, 0, 0, 0.35) !important; }
 .gantt_task_link .gantt_line_wrapper div {
     background-color: var(--gantt-link-color) !important;
@@ -180,11 +219,12 @@ body:has(.schedule-page-root) #mainContent {
 
 /* Print header — hidden on screen */
 .no-screen { display: none !important; }
+.schedule-print-sheet { display: none; }
 
 /* Activity modal tabs */
 .sched-modal-tab { border-bottom: 2px solid transparent; }
 
-/* ─── MS Project / Primavera style print (Save as PDF from browser) ─── */
+/* ─── MS Project / Primavera style print (schedule-only, Save as PDF) ─── */
 @media print {
     @page {
         size: landscape;
@@ -199,7 +239,9 @@ body:has(.schedule-page-root) #mainContent {
     body.printing-gantt nav,
     body.printing-gantt .no-print,
     body.printing-gantt #scheduleChrome,
-    body.printing-gantt #scheduleStatusBar { display: none !important; }
+    body.printing-gantt #scheduleStatusBar,
+    body.printing-gantt #scheduleGanttHost,
+    body.printing-gantt #gantt_here { display: none !important; }
     body.printing-gantt #mainContent { padding: 0 !important; overflow: visible !important; }
     body.printing-gantt .schedule-page-root { overflow: visible !important; height: auto !important; }
     body.printing-gantt #ganttViewPanel {
@@ -208,8 +250,7 @@ body:has(.schedule-page-root) #mainContent {
         border: none !important;
         background: #fff !important;
     }
-    body.printing-gantt .no-screen,
-    body.printing-gantt #schedulePrintHeader {
+    body.printing-gantt #schedulePrintSheet {
         display: block !important;
     }
     .schedule-print-header {
@@ -244,45 +285,39 @@ body:has(.schedule-page-root) #mainContent {
         letter-spacing: 0.05em;
         color: #666;
     }
-    body.printing-gantt #scheduleGanttHost,
-    body.printing-gantt #gantt_here {
-        min-height: 520px !important;
-        height: auto !important;
+    .schedule-print-table {
+        width: 100%;
+        border-collapse: collapse;
+        font-family: Arial, Helvetica, sans-serif;
+        font-size: 8.5pt;
+        color: #111;
     }
-    /* Light theme for printed Gantt */
-    body.printing-gantt .gantt_grid,
-    body.printing-gantt .gantt_grid_scale,
-    body.printing-gantt .gantt_grid_head,
-    body.printing-gantt .gantt_grid_data,
-    body.printing-gantt .gantt_task,
-    body.printing-gantt .gantt_task_scale,
-    body.printing-gantt .gantt_container,
-    body.printing-gantt .gantt_layout_cell {
-        background: #fff !important;
-        color: #111 !important;
-        border-color: #999 !important;
+    .schedule-print-table th,
+    .schedule-print-table td {
+        border: 1px solid #999;
+        padding: 3px 5px;
+        vertical-align: middle;
     }
-    body.printing-gantt .gantt_grid_data .gantt_row,
-    body.printing-gantt .gantt_grid_data .gantt_row.odd,
-    body.printing-gantt .gantt_task_row,
-    body.printing-gantt .gantt_task_row.odd {
-        background: #fff !important;
-        color: #111 !important;
-    }
-    body.printing-gantt .gantt_grid_data .gantt_row.odd {
-        background: #f5f5f5 !important;
-    }
-    body.printing-gantt .gantt_cell,
-    body.printing-gantt .gantt_grid_head_cell,
-    body.printing-gantt .gantt_scale_cell,
-    body.printing-gantt .gantt_task_cell {
-        color: #111 !important;
-        border-color: #bbb !important;
-        font-size: 8pt !important;
-    }
-    body.printing-gantt .gantt_grid_head_cell {
+    .schedule-print-table th {
+        background: #e8e8e8;
         font-weight: 700;
-        background: #e8e8e8 !important;
+        text-align: left;
+    }
+    .schedule-print-table td.c { text-align: center; }
+    .schedule-print-table tr.print-summary { font-weight: 700; background: #f0f0f0; }
+    .print-bar-cell { width: 38%; padding: 2px 4px !important; }
+    .print-bar-track {
+        position: relative;
+        height: 12px;
+        background: #f5f5f5;
+        border: 1px solid #ccc;
+    }
+    .print-bar {
+        position: absolute;
+        top: 1px;
+        bottom: 1px;
+        border-radius: 2px;
+        min-width: 2px;
     }
     body.printing-lookahead .no-print,
     body.printing-lookahead #scheduleChrome,

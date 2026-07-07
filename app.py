@@ -965,7 +965,9 @@ def create_safety_report():
 @login_required
 def schedule_page():
     projects = Project.query.order_by(Project.name).all()
-    return render_template('schedule.html', projects=projects)
+    project_id = request.args.get('project_id', type=int)
+    active_project = Project.query.get(project_id) if project_id else (projects[0] if projects else None)
+    return render_template('schedule.html', projects=projects, active_project=active_project)
 
 
 @app.route('/api/schedule', methods=['GET'])

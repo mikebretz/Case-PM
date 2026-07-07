@@ -11,26 +11,25 @@
         <div class="flex flex-wrap items-start justify-between gap-2 mb-2 pt-0">
             <div>
                 <h1 class="text-xl font-semibold tracking-tight">Project Schedule</h1>
-                <p class="text-zinc-500 text-xs mt-0.5">Project dropdown selects schedule · Columns to add/remove · Drag column edges to resize</p>
+                <p class="text-zinc-500 text-xs mt-0.5">Single-click to select · Double-click cell to edit · Use header project switcher for project context</p>
             </div>
             <div class="flex flex-wrap items-center gap-2">
-                {% if projects %}
-                <label class="text-xs text-zinc-500">Project</label>
-                <select id="scheduleProjectSelect" class="bg-zinc-900 border border-zinc-700 rounded-md px-2 py-1.5 text-xs min-w-[12rem]">
-                    {% for project in projects %}
-                    <option value="{{ project.id }}" data-number="{{ project.number }}" data-name="{{ project.name }}">{{ project.number }} — {{ project.name }}</option>
-                    {% endfor %}
-                </select>
-                {% else %}
-                <span class="text-xs text-amber-400">No projects — create a project first to save schedules.</span>
-                <select id="scheduleProjectSelect" class="hidden"><option value="0">—</option></select>
-                {% endif %}
                 <span id="scheduleSaveStatus" class="text-xs text-zinc-500 px-2">Ready</span>
             </div>
         </div>
 
+        {% if active_project %}
+        <div id="scheduleProjectContext" class="hidden"
+             data-project-id="{{ active_project.id }}"
+             data-project-number="{{ active_project.number }}"
+             data-project-name="{{ active_project.name }}"></div>
+        {% endif %}
+
         <div class="bg-zinc-900 border border-zinc-700 rounded-md p-1.5 mb-2 flex flex-wrap gap-1 items-center">
             <div class="flex flex-wrap gap-1 border-r border-zinc-700 pr-2 mr-1">
+                <button type="button" class="schedule-toolbar-btn" onclick="ScheduleApp.openActivityDetail()" title="Activity detail for selected row">
+                    <i class="fa-solid fa-window-restore text-sky-400"></i> Activity Detail
+                </button>
                 <button type="button" class="schedule-toolbar-btn" onclick="ScheduleApp.addActivity('task')" title="Add Activity">
                     <i class="fa-solid fa-plus text-emerald-400"></i> Activity
                 </button>
@@ -89,6 +88,9 @@
                 <button type="button" id="tabGantt" class="schedule-view-tab active-view px-3 py-1.5 text-xs rounded-md" onclick="ScheduleApp.switchScheduleView('gantt')">
                     <i class="fa-solid fa-chart-gantt mr-1.5"></i> Gantt Chart
                 </button>
+                <button type="button" id="tabActivity" class="schedule-view-tab px-3 py-1.5 text-xs rounded-md text-zinc-400 hover:text-white" onclick="ScheduleApp.openActivityDetail()" title="Open activity detail for selected row">
+                    <i class="fa-solid fa-window-restore mr-1.5"></i> Activity
+                </button>
                 <button type="button" id="tabLookahead" class="schedule-view-tab px-4 py-2 text-sm rounded-lg text-zinc-400 hover:text-white" onclick="ScheduleApp.switchScheduleView('lookahead')">
                     <i class="fa-solid fa-binoculars mr-1.5"></i> Look-Ahead
                     <span id="lookaheadCount" class="ml-1 text-xs bg-emerald-900/50 text-emerald-400 px-1.5 py-0.5 rounded-full"></span>
@@ -115,7 +117,7 @@
 
     <!-- Gantt (fills remaining viewport) -->
     <div id="ganttViewPanel" class="flex-1 min-h-0 bg-zinc-900 border border-zinc-700 rounded-md overflow-hidden flex flex-col">
-        <div id="schedulePrintHeader" class="schedule-print-header no-screen" aria-hidden="true"></div>
+        <div id="schedulePrintSheet" class="schedule-print-sheet no-screen" aria-hidden="true"></div>
         <div id="scheduleGanttHost" class="flex-1 min-h-0">
             <div id="gantt_here"></div>
         </div>
@@ -318,5 +320,14 @@
 <script src="{{ url_for('static', filename='js/schedule-fields.js') }}"></script>
 <script src="{{ url_for('static', filename='js/schedule-activity-modal.js') }}"></script>
 <script src="{{ url_for('static', filename='js/schedule-app.js') }}"></script>
-<script>document.body.dataset.pageModule = 'schedule';</script>
+<script>
+document.body.dataset.pageModule = 'schedule';
+{% if active_project %}
+(function () {
+    const nameEl = document.getElementById('currentProjectName');
+    if (nameEl) nameEl.textContent = {{ active_project.name|tojson }};
+    localStorage.setItem('casepm_current_project_id', '{{ active_project.id }}');
+})();
+{% endif %}
+</script>
 {% endblock %}

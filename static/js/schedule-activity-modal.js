@@ -190,7 +190,11 @@
         t.hyperlink = val('sam_hyperlink');
         t.bar_color = val('sam_bar_color');
         gantt.updateTask(currentTaskId);
-        applyPredecessorString(currentTaskId, val('sam_predecessors'));
+        if (window.ScheduleApp && ScheduleApp.applyPredecessorString) {
+            ScheduleApp.applyPredecessorString(currentTaskId, val('sam_predecessors'));
+        } else {
+            applyPredecessorString(currentTaskId, val('sam_predecessors'));
+        }
         if (window.ScheduleApp && ScheduleApp.runSchedule) ScheduleApp.runSchedule();
         else gantt.render();
         if (window.CasePMActivityLog) {
