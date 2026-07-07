@@ -741,13 +741,6 @@ let mainLienWaiver = JSON.parse(localStorage.getItem('mainLienWaiver') || '{}');
                     submitted: false
                 };
 
-                // can reliably pick up the most recent lien waiver even if they don't consume a numbered pay app slot.
-                    filename: file.name,
-                    dataUrl: dataUrl,
-                    uploadedDate: new Date().toISOString(),
-                    submitted: false
-                };
-
                 localStorage.setItem('subLienWaivers', JSON.stringify(subLienWaivers));
 
                 logPayAppAudit('LIEN_WAIVER_UPLOADED', { companyId, filename: file.name, period: periodNum });
@@ -4850,14 +4843,7 @@ let mainLienWaiver = JSON.parse(localStorage.getItem('mainLienWaiver') || '{}');
         }
         let currentPeriodNum = subPayAppNumbers[companyId];
 
-        // so the waiver travels with the "Pay App --" entry without being tied to a numbered pay app.
-        let waiver = null;
-            if (!waiver) {
-                waiver = subLienWaivers[companyId] && subLienWaivers[companyId][currentPeriodNum];
-            }
-        } else {
-            waiver = subLienWaivers[companyId] && subLienWaivers[companyId][currentPeriodNum];
-        }
+        let waiver = subLienWaivers[companyId] && subLienWaivers[companyId][currentPeriodNum];
 
         // === BLOCK SUBMISSION IF PREVIOUS PAY APP STILL ACTIVE IN TRACKER ===
         // Prevents creating Pay App #5 while #4 is still sitting in Sub Pay App Tracker (not yet pushed/archived).
@@ -4916,16 +4902,6 @@ let mainLienWaiver = JSON.parse(localStorage.getItem('mainLienWaiver') || '{}');
             } : null
         };
         localStorage.setItem('subPendingSubmissions', JSON.stringify(subPendingSubmissions));
-
-        // For compliance submissions, remove the live lien waiver so the pill disappears from Sub SOV tab
-            if (subLienWaivers[companyId]) {
-                // Also clean any numeric key for the current number
-                if (subLienWaivers[companyId][currentPeriodNum]) {
-                    delete subLienWaivers[companyId][currentPeriodNum];
-                }
-                localStorage.setItem('subLienWaivers', JSON.stringify(subLienWaivers));
-            }
-        }
 
         logPayAppAudit('SUB_PAYAPP_SUBMITTED_FOR_APPROVAL', { companyId: companyId, period: currentPeriodNum, total: totalBilledThisPeriod });
         // Success feedback removed per user request (pending status + buttons visible)
@@ -5004,8 +4980,6 @@ let mainLienWaiver = JSON.parse(localStorage.getItem('mainLienWaiver') || '{}');
         if (subLienWaivers[companyId] && subLienWaivers[companyId][currentPeriodNum]) {
             delete subLienWaivers[companyId][currentPeriodNum];
         }
-        // Also clean up the special compliance key after approval (especially important for zero-dollar submissions)
-        }
         localStorage.setItem('subLienWaivers', JSON.stringify(subLienWaivers));
 
         // Always advance the pay app number for the next submission.
@@ -5019,13 +4993,11 @@ let mainLienWaiver = JSON.parse(localStorage.getItem('mainLienWaiver') || '{}');
         // Compliance ($0) entries are now keyed by the MAIN G702 period number at approval time.
         // This allows multiple 1005 (Compliance) entries for the same sub across different main periods
         const mainPeriodAtApproval = currentPayAppPeriod ? currentPayAppPeriod.periodNumber : null;
-        const historyKey = (pendingEntry.false && mainPeriodAtApproval)
-            ? mainPeriodAtApproval
-            : currentPeriodNum;
+        const historyKey = currentPeriodNum;
 
         if (!subPayAppHistory[companyId]) subPayAppHistory[companyId] = {};
         subPayAppHistory[companyId][historyKey] = {
-            periodNumber: (pendingEntry.false) ? 1005 : currentPeriodNum,
+            periodNumber: currentPeriodNum,
             periodStart: pendingEntry.periodStart || (currentPayAppPeriod ? currentPayAppPeriod.periodStart : ''),
             periodEnd: pendingEntry.periodEnd || (currentPayAppPeriod ? currentPayAppPeriod.periodEnd : ''),
             submittedDate: pendingEntry.submittedDate || new Date().toISOString(),
@@ -6020,7 +5992,7 @@ function printSubcontractorG703(companyId) {
             const mainP = entry.pushedFromMainPeriod || entry.mainG702Period || pNum;
 
             // Special display for compliance entries
-            let payAppLabel = (entry.false || entry.periodNumber === 1005)
+            let payAppLabel = (entry.periodNumber === 1005)
                 ? '1005 (Compliance)'
                 : `#${pNum}`;
 
@@ -6226,6 +6198,7 @@ function printSubcontractorG703(companyId) {
             const approvedStr = app.approvedDate ? new Date(app.approvedDate).toLocaleDateString() : '—';
             const periodStr = `${app.periodStart || ''} — ${app.periodEnd || ''}`;
             const mainPeriodDisplay = app.pushedFromMainPeriod || app.mainPeriod || app.periodNum || '—';
+            const payAppDisplay = (String(app.periodNum) === '1005' || app.periodNum === 1005)
                 ? `1005 (Compliance)`
                 : `#${app.periodNum}`;
 
@@ -6361,7 +6334,7 @@ function printSubcontractorG703(companyId) {
             const periodStr = `${app.periodStart || ''} — ${app.periodEnd || ''}`;
 
             const mainPeriodDisplay = app.pushedFromMainPeriod || app.mainG702Period || app.periodNum || '—';
-            const payAppDisplay = (app.false || app.periodNumber === 1005)
+            const payAppDisplay = (app.periodNumber === 1005)
                 ? `1005 (Compliance)`
                 : `#${app.periodNum || app.periodNumber}`;
 
@@ -7762,6 +7735,7 @@ function printSubcontractorG703(companyId) {
 
         const displayedPayAppNum = currentPeriodNum; // For Tracker we show against the main G702 period
 
+        let payAppDisplay = `Pay App #${currentPeriodNum}`;
 
         let status = 'Not Submitted';
         let billedThis = 0;
