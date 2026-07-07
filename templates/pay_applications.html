@@ -965,58 +965,85 @@ let mainLienWaiver = JSON.parse(localStorage.getItem('mainLienWaiver') || '{}');
         return results;
     }
 
+    function entryMatchesG702Period(historyKey, entry, g702PeriodNum, currentOpen) {
+        if (!entry || !isActiveTrackerEntry(entry)) return false;
+        const tagged = entry.mainG702Period != null
+            ? Number(entry.mainG702Period)
+            : (entry.pushedFromMainPeriod != null ? Number(entry.pushedFromMainPeriod) : null);
+
+        if (entry.isCompliance) {
+            return String(historyKey) === complianceHistoryKey(g702PeriodNum) || tagged === g702PeriodNum;
+        }
+        if (tagged === g702PeriodNum) return true;
+        if (tagged == null && g702PeriodNum === currentOpen) return true;
+        return false;
+    }
+
+    function clearStaleSubPendingForCompany(companyId) {
+        const cid = String(companyId);
+        let changed = false;
+        [cid, companyId].forEach(key => {
+            if (key != null && subPendingSubmissions[key]) {
+                delete subPendingSubmissions[key];
+                changed = true;
+            }
+        });
+        if (changed) safeSetLocalStorage('subPendingSubmissions', subPendingSubmissions);
+    }
+
+    function resolveSubPayAppPaperEntry(companyId, paper) {
+        if (!paper) return null;
+        const cid = String(companyId);
+        const hist = subPayAppHistory[cid] || subPayAppHistory[companyId] || {};
+        if (paper.historyKey && hist[paper.historyKey]) return hist[paper.historyKey];
+        if (paper.source === 'history') return paper.entry;
+        if (paper.source === 'pending' && paper.historyKey && hist[paper.historyKey]) return hist[paper.historyKey];
+        return paper.entry || null;
+    }
+
     function findActiveSubPayAppForG702Period(companyId, g702PeriodNum) {
         const cid = String(companyId);
         g702PeriodNum = g702PeriodNum != null ? Number(g702PeriodNum) : getCurrentG702PeriodNum();
         const currentOpen = getCurrentG702PeriodNum();
+        const hist = subPayAppHistory[cid] || subPayAppHistory[companyId] || {};
 
-        const pending = subPendingSubmissions[cid];
+        let approvedMatch = null;
+        let pendingHistoryMatch = null;
+
+        for (const key of Object.keys(hist)) {
+            const entry = hist[key];
+            if (!entryMatchesG702Period(key, entry, g702PeriodNum, currentOpen)) continue;
+            if (entry.status === 'Approved' && entry.archived !== true) {
+                approvedMatch = { source: 'history', entry, historyKey: key };
+                break;
+            }
+            if (entry.status === 'Pending Approval' && !pendingHistoryMatch) {
+                pendingHistoryMatch = { source: 'history', entry, historyKey: key };
+            }
+        }
+
+        if (approvedMatch) {
+            clearStaleSubPendingForCompany(companyId);
+            return approvedMatch;
+        }
+
+        const pending = subPendingSubmissions[cid] || subPendingSubmissions[companyId];
         if (pending) {
             const pendMain = pending.mainG702Period != null ? Number(pending.mainG702Period) : null;
             const pendingMatches = pending.isCompliance
                 ? (pendMain == null || pendMain === g702PeriodNum)
                 : (pendMain === g702PeriodNum || (pendMain == null && g702PeriodNum === currentOpen));
             if (pendingMatches) {
-                const payAppNum = pending.isCompliance ? (subPayAppNumbers[cid] || 1) : pending.periodNumber;
+                const payAppNum = pending.isCompliance
+                    ? (subPayAppNumbers[cid] || subPayAppNumbers[companyId] || 1)
+                    : pending.periodNumber;
                 const historyKey = resolvePayAppHistoryStorageKey(pending, payAppNum, pendMain || g702PeriodNum);
+                if (pendingHistoryMatch) return pendingHistoryMatch;
                 return { source: 'pending', entry: pending, historyKey };
             }
         }
 
-        const hist = subPayAppHistory[cid] || {};
-        let legacyUntagged = null;
-
-        for (const key of Object.keys(hist)) {
-            const entry = hist[key];
-            if (!isActiveTrackerEntry(entry)) continue;
-
-            const tagged = entry.mainG702Period != null
-                ? Number(entry.mainG702Period)
-                : (entry.pushedFromMainPeriod != null ? Number(entry.pushedFromMainPeriod) : null);
-
-            if (entry.isCompliance) {
-                if (key === complianceHistoryKey(g702PeriodNum) || tagged === g702PeriodNum) {
-                    return { source: 'history', entry, historyKey: key };
-                }
-                continue;
-            }
-
-            if (tagged === g702PeriodNum) {
-                return { source: 'history', entry, historyKey: key };
-            }
-
-            if (tagged == null && g702PeriodNum === currentOpen) {
-                if (!legacyUntagged) legacyUntagged = { source: 'history', entry, historyKey: key };
-            }
-        }
-
-        if (legacyUntagged) {
-            legacyUntagged.entry.mainG702Period = g702PeriodNum;
-            safeSetLocalStorage('subPayAppHistory', subPayAppHistory);
-            return legacyUntagged;
-        }
-
-        return null;
+        return pendingHistoryMatch;
     }
 
     function hasActiveSubPayAppForCurrentG702Period(companyId) {
@@ -1111,6 +1138,26 @@ let mainLienWaiver = JSON.parse(localStorage.getItem('mainLienWaiver') || '{}');
             safeSetLocalStorage('subPayAppHistory', subPayAppHistory);
             safeSetLocalStorage('subPendingSubmissions', subPendingSubmissions);
         }
+
+        // Remove stale pending rows when history already shows Approved for the same G702 period
+        Object.keys(subPayAppHistory || {}).forEach(cid => {
+            const hist = subPayAppHistory[cid] || {};
+            Object.keys(hist).forEach(key => {
+                const entry = hist[key];
+                if (!entry || entry.status !== 'Approved' || entry.archived === true) return;
+                const mainP = entry.mainG702Period || entry.pushedFromMainPeriod || g702;
+                if (subPendingSubmissions[cid]) {
+                    const pend = subPendingSubmissions[cid];
+                    const pendMain = pend.mainG702Period != null ? Number(pend.mainG702Period) : g702;
+                    const samePaper = entry.isCompliance
+                        ? !!pend.isCompliance
+                        : (!pend.isCompliance && Number(pend.periodNumber) === Number(entry.periodNumber));
+                    if (samePaper && (pendMain === Number(mainP) || pendMain === g702)) {
+                        clearStaleSubPendingForCompany(cid);
+                    }
+                }
+            });
+        });
     }
 
     function migrateLegacyComplianceKeys() {
@@ -4384,27 +4431,33 @@ let mainLienWaiver = JSON.parse(localStorage.getItem('mainLienWaiver') || '{}');
             const subPayAppNum = subPayAppNumbers[cid] || subPayAppNumbers[selectedSubCompanyId] || 1;
             const mainP = getCurrentG702PeriodNum();
             const activePaper = findActiveSubPayAppForG702Period(selectedSubCompanyId, mainP);
-            const activeEntry = activePaper ? activePaper.entry : null;
+            const resolvedEntry = resolveSubPayAppPaperEntry(selectedSubCompanyId, activePaper);
+            const activeEntry = resolvedEntry || (activePaper ? activePaper.entry : null);
             const pendingEntry = subPendingSubmissions[cid] || subPendingSubmissions[selectedSubCompanyId];
             const subLines = subcontractorSOV[cid] || subcontractorSOV[selectedSubCompanyId] || [];
             const draftTotal = subLines.reduce((sum, l) =>
                 sum + (l.work_this_period || 0) + (l.materials_stored || 0) + (l.co_billed_this_period || 0), 0);
             const isZeroComplianceDraft = draftTotal === 0 && allowZeroDollarSubPayApps;
-            const isPending = !!(activeEntry && activeEntry.status === 'Pending Approval');
-            const isInTracker = !!(activeEntry && activeEntry.status === 'Approved' && activeEntry.archived !== true);
+            const isInTracker = !!(resolvedEntry && resolvedEntry.status === 'Approved' && resolvedEntry.archived !== true);
+            const isPending = !isInTracker && !!(
+                (resolvedEntry && resolvedEntry.status === 'Pending Approval') ||
+                (activePaper && activePaper.source === 'pending')
+            );
             const waiverLive = (subLienWaivers[cid] || subLienWaivers[selectedSubCompanyId] || {})[subPayAppNum];
             const waiverFromPending = pendingEntry && pendingEntry.lienWaiver && pendingEntry.lienWaiver.filename;
-            const waiverFromActive = activeEntry && activeEntry.lienWaiver && activeEntry.lienWaiver.filename;
-            const hasWaiver = (waiverLive && waiverLive.filename && waiverLive.filename.trim() !== '')
+            const waiverFromActive = resolvedEntry && resolvedEntry.lienWaiver && resolvedEntry.lienWaiver.filename;
+            const hasWaiver = !isInTracker && (
+                (waiverLive && waiverLive.filename && waiverLive.filename.trim() !== '')
                 || !!waiverFromPending
-                || !!waiverFromActive;
-            const waiverForPill = waiverLive || (pendingEntry && pendingEntry.lienWaiver) || (activeEntry && activeEntry.lienWaiver) || {};
+                || !!waiverFromActive
+            );
+            const waiverForPill = waiverLive || (pendingEntry && pendingEntry.lienWaiver) || (resolvedEntry && resolvedEntry.lienWaiver) || {};
 
             let statusMessage = '';
             let buttonsHTML = '';
 
             if (isInTracker) {
-                statusMessage = activeEntry.isCompliance
+                statusMessage = resolvedEntry.isCompliance
                     ? 'Compliance pay app approved — in Sub Pay App Tracker (awaiting main G702 approval)'
                     : 'Pay Application approved — in Sub Pay App Tracker (awaiting main G702 approval)';
                 buttonsHTML = `
@@ -5979,11 +6032,7 @@ let mainLienWaiver = JSON.parse(localStorage.getItem('mainLienWaiver') || '{}');
         };
         if (!safeSetLocalStorage('subPayAppHistory', subPayAppHistory)) return;
 
-        if (sourceWasPending && (subPendingSubmissions[cid] || subPendingSubmissions[companyId])) {
-            delete subPendingSubmissions[cid];
-            delete subPendingSubmissions[companyId];
-            safeSetLocalStorage('subPendingSubmissions', subPendingSubmissions);
-        }
+        clearStaleSubPendingForCompany(companyId);
 
         updateSubSOVStatus(cid, 'Approved', { approvedBy: "Michael Bretz (Project Manager)", approvedDate: new Date().toISOString() });
 
@@ -8681,15 +8730,15 @@ function printSubcontractorG703(companyId) {
     function getSubPayAppStatusForPeriod(companyId, periodNum) {
         const paper = getSubTrackerPaper(companyId, periodNum);
         if (paper) {
-            if (paper.entry.isCompliance) {
-                const status = paper.source === 'pending' ? 'Pending Approval' : (paper.entry.status || 'Approved');
-                return { status: status === 'Approved' ? 'Approved' : 'Pending Approval', hasPaper: true, isCompliance: true };
+            const resolved = resolveSubPayAppPaperEntry(companyId, paper);
+            if (resolved && resolved.status === 'Approved' && resolved.archived !== true) {
+                return { status: 'Approved', hasPaper: true, isCompliance: !!resolved.isCompliance };
             }
-            if (paper.entry.status === 'Approved') {
-                return { status: 'Approved', hasPaper: true };
+            if (resolved && resolved.status === 'Pending Approval') {
+                return { status: 'Pending Approval', hasPaper: true, isCompliance: !!resolved.isCompliance };
             }
-            if (paper.entry.status === 'Pending Approval' || paper.source === 'pending') {
-                return { status: 'Pending Approval', hasPaper: true };
+            if (paper.source === 'pending') {
+                return { status: 'Pending Approval', hasPaper: true, isCompliance: !!paper.entry.isCompliance };
             }
         }
 
@@ -8709,8 +8758,14 @@ function printSubcontractorG703(companyId) {
 
         const paper = getSubTrackerPaper(companyId, currentPeriodNum);
         const revisionHistoryKey = paper && paper.historyKey ? paper.historyKey : null;
-        let historyEntry = paper && paper.source === 'history' ? paper.entry : null;
-        let pendingEntry = paper && paper.source === 'pending' ? paper.entry : null;
+        const resolvedEntry = resolveSubPayAppPaperEntry(companyId, paper);
+        let historyEntry = resolvedEntry && (resolvedEntry.status === 'Approved' || resolvedEntry.status === 'Pending Approval')
+            ? resolvedEntry
+            : (paper && paper.source === 'history' ? paper.entry : null);
+        let pendingEntry = (!historyEntry || historyEntry.status === 'Pending Approval') && paper && paper.source === 'pending'
+            ? paper.entry
+            : null;
+        if (historyEntry && historyEntry.status === 'Approved') pendingEntry = null;
 
         const isCompliance = (historyEntry && historyEntry.isCompliance) || (pendingEntry && pendingEntry.isCompliance);
         const displayPayAppNum = historyEntry
