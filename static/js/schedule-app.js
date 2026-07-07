@@ -2,23 +2,22 @@
 (function () {
     'use strict';
 
-    const STORAGE_KEY = 'casepm_schedule_v3';
+    const STORAGE_KEY = 'casepm_schedule_v4';
     const LINK_TYPES = { FS: '0', SS: '1', FF: '2', SF: '3' };
     const LINK_LABELS = { '0': 'FS', '1': 'SS', '2': 'FF', '3': 'SF' };
 
-    const EDITORS = {
-        text: { type: 'text', map_to: 'text' },
-        number: { type: 'number', map_to: 'duration', min: 0, max: 9999 },
-        date: { type: 'date', map_to: 'start_date' },
-        end_date: { type: 'date', map_to: 'end_date' },
-        progress: { type: 'number', map_to: 'progress', min: 0, max: 1 },
-        predecessors: { type: 'predecessor', map_to: 'auto' }
-    };
+    const EXTENDED_FIELDS = [
+        'activity_id', 'resource', 'owner', 'work_hours', 'cost', 'fixed_cost',
+        'actual_start', 'actual_finish', 'remaining_duration', 'constraint_type', 'constraint_date',
+        'deadline', 'priority', 'calendar', 'activity_code', 'phase', 'discipline',
+        'bar_color', 'notes', 'hyperlink', 'free_float', 'total_float'
+    ];
 
     let ganttReady = false;
     let saveTimer = null;
     let baselines = [];
     let customColumns = [];
+    let columnWidths = {};
     let scheduleSettings = {
         data_date: CasePMSchedule.formatDate(new Date()),
         calendar: 'standard',
@@ -52,41 +51,65 @@
         }).join(', ');
     }
 
+    function colWidth(name, fallback) {
+        return columnWidths[name] || fallback;
+    }
+
+    function succTemplate(task) {
+        const links = task.$source || [];
+        return links.map(lid => {
+            const link = gantt.getLink(lid);
+            const tgt = gantt.getTask(link.target);
+            const code = gantt.getWBSCode ? gantt.getWBSCode(tgt) : tgt.id;
+            const lag = link.lag ? (link.lag > 0 ? `+${link.lag}` : link.lag) : '';
+            return `${code}${LINK_LABELS[link.type] || 'FS'}${lag}`;
+        }).join(', ');
+    }
+
+    function editorForField(field) {
+        if (!field || field.type === 'readonly' || field.type === 'successors') return null;
+        if (field.type === 'predecessor') return { type: 'predecessor', map_to: 'auto' };
+        if (field.type === 'date') return { type: 'date', map_to: field.map_to };
+        if (field.type === 'number') return { type: 'number', map_to: field.map_to, min: 0, max: 999999 };
+        if (field.type === 'percent') return { type: 'number', map_to: field.map_to, min: 0, max: 100 };
+        return { type: 'text', map_to: field.map_to };
+    }
+
     function buildColumnConfig() {
-        const cols = [
+        const builtins = [
             { name: 'wbs', label: 'WBS', width: 55, align: 'center', resize: true, template: gantt.getWBSCode },
-            { name: 'text', label: 'Activity Name', tree: true, width: 200, min_width: 100, resize: true, editor: EDITORS.text },
-            { name: 'duration', label: 'Dur', align: 'center', width: 50, min_width: 40, resize: true, editor: EDITORS.number },
-            { name: 'start_date', label: 'Start', align: 'center', width: 95, min_width: 80, resize: true, editor: EDITORS.date },
-            { name: 'end_date', label: 'Finish', align: 'center', width: 95, min_width: 80, resize: true, editor: EDITORS.end_date },
-            {
-                name: 'predecessors', label: 'Predecessors', width: 110, min_width: 70, resize: true,
-                editor: EDITORS.predecessors, template: predTemplate
-            },
-            {
-                name: 'progress', label: '%', align: 'center', width: 45, min_width: 40, resize: true,
-                editor: { type: 'number', map_to: 'progress', min: 0, max: 100 },
-                template: t => Math.round((t.progress || 0) <= 1 ? (t.progress || 0) * 100 : (t.progress || 0))
-            },
+            { name: 'activity_id', label: 'ID', width: 60, align: 'center', resize: true, editor: { type: 'text', map_to: 'activity_id' }, template: t => t.activity_id || '' },
+            { name: 'text', label: 'Activity Name', tree: true, width: 200, min_width: 100, resize: true, editor: { type: 'text', map_to: 'text' } },
+            { name: 'duration', label: 'Dur', align: 'center', width: 50, min_width: 40, resize: true, editor: { type: 'number', map_to: 'duration', min: 0, max: 9999 } },
+            { name: 'start_date', label: 'Start', align: 'center', width: 95, min_width: 80, resize: true, editor: { type: 'date', map_to: 'start_date' } },
+            { name: 'end_date', label: 'Finish', align: 'center', width: 95, min_width: 80, resize: true, editor: { type: 'date', map_to: 'end_date' } },
+            { name: 'predecessors', label: 'Predecessors', width: 110, min_width: 70, resize: true, editor: { type: 'predecessor', map_to: 'auto' }, template: predTemplate },
+            { name: 'successors', label: 'Successors', width: 100, min_width: 70, resize: true, template: succTemplate },
+            { name: 'progress', label: '%', align: 'center', width: 45, min_width: 40, resize: true, editor: { type: 'number', map_to: 'progress', min: 0, max: 100 }, template: t => Math.round((t.progress || 0) <= 1 ? (t.progress || 0) * 100 : (t.progress || 0)) },
             { name: 'resource', label: 'Resource', width: 100, min_width: 60, resize: true, editor: { type: 'text', map_to: 'resource' } },
             { name: 'owner', label: 'Responsible', width: 100, min_width: 60, resize: true, editor: { type: 'text', map_to: 'owner' } },
-            {
-                name: 'bar_color', label: 'Bar Color', width: 70, align: 'center', resize: true,
-                template: t => t.bar_color ? `<span style="display:inline-block;width:14px;height:14px;border-radius:3px;background:${t.bar_color}"></span>` : '—',
-                editor: { type: 'text', map_to: 'bar_color' }
-            }
+            { name: 'total_float', label: 'Total Float', width: 70, align: 'center', resize: true, template: t => t.$slack != null ? t.$slack : (t.total_float != null ? t.total_float : '') },
+            { name: 'bar_color', label: 'Color', width: 55, align: 'center', resize: true, template: t => t.bar_color ? `<span class="sched-color-swatch" style="background:${t.bar_color}"></span>` : '—', editor: { type: 'text', map_to: 'bar_color' } }
         ];
 
+        const cols = builtins.map(c => Object.assign({}, c, { width: colWidth(c.name, c.width) }));
+
         customColumns.forEach(cc => {
-            cols.push({
-                name: cc.name,
+            const field = (typeof CasePMScheduleFields !== 'undefined') ? CasePMScheduleFields.getField(cc.map_to || cc.name) : null;
+            const col = {
+                name: cc.map_to || cc.name,
                 label: cc.label,
-                width: cc.width || 90,
+                width: colWidth(cc.map_to || cc.name, cc.width || 90),
                 min_width: 50,
                 resize: true,
-                editor: { type: 'text', map_to: cc.name },
-                template: t => t[cc.name] || ''
-            });
+                template: t => {
+                    if (field && field.type === 'readonly') return t[field.map_to] != null ? t[field.map_to] : '';
+                    return t[cc.map_to || cc.name] || '';
+                }
+            };
+            const ed = field ? editorForField(field) : { type: 'text', map_to: cc.map_to || cc.name };
+            if (ed) col.editor = ed;
+            cols.push(col);
         });
 
         return cols;
@@ -115,9 +138,11 @@
         gantt.config.auto_scheduling = true;
         gantt.config.auto_scheduling_strict = false;
         gantt.config.highlight_critical_path = true;
-        gantt.config.grid_elastic_columns = 'min_width';
+        gantt.config.grid_elastic_columns = false;
+        gantt.config.keep_grid_width = false;
         gantt.config.reorder_grid_columns = true;
         gantt.config.open_tree_initially = true;
+        gantt.config.details_on_dblclick = false;
 
         gantt.config.layout = {
             css: 'gantt_container',
@@ -141,38 +166,7 @@
 
         gantt.config.columns = buildColumnConfig();
 
-        gantt.config.lightbox.sections = [
-            { name: 'description', height: 40, map_to: 'text', type: 'textarea', focus: true },
-            { name: 'type', type: 'typeselect', map_to: 'type' },
-            { name: 'time', type: 'duration', map_to: 'auto' },
-            { name: 'predecessors', type: 'predecessor', map_to: 'auto' },
-            {
-                name: 'progress_section', type: 'template', map_to: 'progress',
-                options: {
-                    template: (task) => {
-                        const pct = Math.round((task.progress || 0) * 100);
-                        return `<label style="display:block;margin:8px 0 4px">% Complete: <b>${pct}%</b></label>
-                            <input type="range" min="0" max="100" value="${pct}" style="width:100%"
-                                oninput="this.previousElementSibling.innerHTML='% Complete: <b>'+this.value+'%</b>'"
-                                onchange="gantt.getTask(${task.id}).progress=parseInt(this.value,10)/100;gantt.updateTask(${task.id})">`;
-                    }
-                }
-            },
-            { name: 'resource', height: 30, map_to: 'resource', type: 'textarea' },
-            { name: 'owner', height: 30, map_to: 'owner', type: 'textarea' },
-            {
-                name: 'bar_color_section', type: 'template', map_to: 'bar_color',
-                options: {
-                    template: (task) => {
-                        const c = task.bar_color || '#3b82f6';
-                        return `<label style="display:block;margin:4px 0">Gantt Bar Color</label>
-                            <input type="color" value="${c}" style="width:60px;height:32px;border:none;cursor:pointer"
-                                onchange="gantt.getTask(${task.id}).bar_color=this.value;gantt.updateTask(${task.id});gantt.render()">`;
-                    }
-                }
-            },
-            { name: 'constraint', type: 'constraint' }
-        ];
+        gantt.attachEvent('onBeforeLightbox', () => false);
 
         gantt.templates.task_class = function (start, end, task) {
             const classes = [];
@@ -186,10 +180,9 @@
         };
 
         gantt.templates.task_style = function (start, end, task) {
-            if (task.bar_color && task.type !== 'project') {
-                return `background-color:${task.bar_color};border-color:${task.bar_color};`;
-            }
-            return '';
+            if (task.type === 'project') return '';
+            const color = task.bar_color || (gantt.isCriticalTask(task) ? '#ef4444' : '#3b82f6');
+            return `background-color:${color}99;border:2px solid ${color};box-shadow:0 0 0 1px ${color}55;`;
         };
 
         gantt.templates.tooltip_text = function (start, end, task) {
@@ -202,9 +195,27 @@
                 ${preds ? 'Predecessors: ' + preds : ''}`;
         };
 
-        gantt.attachEvent('onTaskDblClick', function (id, e) {
-            if (e.target && e.target.closest('.gantt_grid')) {
-                gantt.showLightbox(id);
+        gantt.attachEvent('onTaskClick', function (id, e) {
+            const target = e.target || e.srcElement;
+            if (!target.closest || !target.closest('.gantt_grid')) return true;
+            if (target.closest('.gantt_tree_icon')) return true;
+            const pos = gantt.locateCell && gantt.locateCell(target);
+            if (!pos) return true;
+            const col = gantt.config.columns[pos.column];
+            if (!col || !col.editor || col.name === 'wbs' || col.name === 'successors') return true;
+            setTimeout(() => {
+                if (gantt.ext && gantt.ext.inlineEditors) {
+                    gantt.ext.inlineEditors.startEdit(id, col.name);
+                } else if (gantt.inlineEditors) {
+                    gantt.inlineEditors.startEdit(id, col.name);
+                }
+            }, 0);
+            return false;
+        });
+
+        gantt.attachEvent('onTaskDblClick', function (id) {
+            if (window.ScheduleActivityModal) {
+                ScheduleActivityModal.open(id);
                 return false;
             }
             return true;
@@ -224,8 +235,11 @@
         gantt.attachEvent('onAfterLinkDelete', queueSave);
         gantt.attachEvent('onAfterTaskDrag', queueSave);
         gantt.attachEvent('onAfterColumnReorder', queueSave);
-        gantt.attachEvent('onColumnResizeEnd', () => { gantt.render(); queueSave(); });
-        gantt.attachEvent('onGanttRender', () => { updateStatusBar(); injectColumnAddButton(); });
+        gantt.attachEvent('onColumnResizeEnd', function (index, column, new_width) {
+            if (column && column.name) columnWidths[column.name] = new_width;
+            queueSave();
+        });
+        gantt.attachEvent('onGanttRender', () => { updateStatusBar(); });
 
         gantt.init('gantt_here');
         ganttReady = true;
@@ -233,24 +247,25 @@
         window.addEventListener('resize', resizeGanttHost);
     }
 
-    function injectColumnAddButton() {
-        const head = document.querySelector('.gantt_grid_head_cell[data-column-id="bar_color"]');
-        if (!head || document.getElementById('ganttColAddBtn')) return;
-        const btn = document.createElement('button');
-        btn.id = 'ganttColAddBtn';
-        btn.type = 'button';
-        btn.title = 'Add custom column';
-        btn.className = 'gantt-col-add-btn';
-        btn.innerHTML = '+';
-        btn.onclick = (e) => { e.stopPropagation(); showAddColumnDialog(); };
-        const lastHead = document.querySelector('.gantt_grid_scale .gantt_grid_head_cell:last-child');
-        if (lastHead) {
-            lastHead.style.position = 'relative';
-            lastHead.appendChild(btn);
-        }
+    function logActivity(action, detail) {
+        if (window.CasePMActivityLog) CasePMActivityLog.log(action, detail, 'schedule');
     }
 
     function resizeGanttHost() {
+        const host = document.getElementById('scheduleGanttHost');
+        const chrome = document.getElementById('scheduleChrome');
+        if (!host || !chrome) return;
+        const top = chrome.getBoundingClientRect().bottom;
+        const status = document.getElementById('scheduleStatusBar');
+        const footer = document.querySelector('#mainContent + div, .border-t.border-zinc-800');
+        const footerH = footer ? footer.offsetHeight : 40;
+        const statusH = status ? status.offsetHeight + 8 : 0;
+        const h = Math.max(300, window.innerHeight - top - statusH - footerH - 12);
+        host.style.height = h + 'px';
+        if (ganttReady) gantt.render();
+    }
+
+    // ─── Persistence ───
         const host = document.getElementById('scheduleGanttHost');
         const chrome = document.getElementById('scheduleChrome');
         if (!host || !chrome) return;
@@ -282,18 +297,20 @@
                 constraint_type: t.constraint_type,
                 constraint_date: t.constraint_date
             };
-            customColumns.forEach(cc => { row[cc.name] = t[cc.name] || ''; });
+            EXTENDED_FIELDS.forEach(f => { if (t[f] != null && t[f] !== '') row[f] = t[f]; });
+            customColumns.forEach(cc => { row[cc.map_to || cc.name] = t[cc.map_to || cc.name] || ''; });
             data.push(row);
         });
         const links = gantt.getLinks().map(l => ({
             id: l.id, source: l.source, target: l.target, type: String(l.type), lag: l.lag || 0
         }));
-        return { data, links, baselines, customColumns, settings: scheduleSettings };
+        return { data, links, baselines, customColumns, columnWidths, settings: scheduleSettings };
     }
 
     function loadSchedulePayload(payload) {
         if (!payload || !payload.data) return false;
         customColumns = payload.customColumns || [];
+        columnWidths = payload.columnWidths || {};
         gantt.config.columns = buildColumnConfig();
         gantt.clearAll();
         gantt.parse({ data: payload.data, links: payload.links || [] });
@@ -350,6 +367,7 @@
             });
         } catch (e) { /* ok */ }
         setSaveStatus('Schedule cleared');
+        logActivity('Cleared schedule', 'All activities removed');
     }
 
     function queueSave() {
@@ -370,6 +388,7 @@
                 body: JSON.stringify({ project_id: projectId, payload })
             });
             setSaveStatus('Saved');
+            logActivity('Saved schedule', `${countTasks()} activities`);
         } catch (e) {
             setSaveStatus('Saved locally');
         }
@@ -405,7 +424,9 @@
             parent: parent
         }, parent);
         gantt.selectTask(id);
-        gantt.showLightbox(id);
+        if (window.ScheduleActivityModal) ScheduleActivityModal.open(id);
+        else showScheduleAlert('Open activity detail by double-clicking a row.', 'info');
+        logActivity('Added activity', type === 'milestone' ? 'Milestone' : 'Task');
     }
 
     function deleteSelected() {
@@ -475,18 +496,48 @@
     }
 
     function showAddColumnDialog() {
-        const label = prompt('New column header name:', 'Custom Field');
-        if (!label || !label.trim()) return;
-        const name = 'col_' + label.trim().toLowerCase().replace(/[^a-z0-9]+/g, '_');
-        if (customColumns.find(c => c.name === name)) {
-            showScheduleAlert('Column already exists.', 'warning');
+        const dlg = document.getElementById('scheduleFieldPickerModal');
+        if (!dlg || typeof CasePMScheduleFields === 'undefined') {
+            showScheduleAlert('Field catalog not loaded.', 'error');
             return;
         }
-        customColumns.push({ name, label: label.trim(), width: 100 });
+        const existing = gantt.config.columns.map(c => c.name);
+        const addable = CasePMScheduleFields.getAddableFields(existing);
+        const container = document.getElementById('scheduleFieldPickerList');
+        if (!addable.length) {
+            container.innerHTML = '<p class="text-zinc-400 text-sm p-4">All standard fields are already visible in the grid.</p>';
+        } else {
+            const groups = CasePMScheduleFields.groupFields(addable);
+            let html = '';
+            Object.keys(groups).sort().forEach(g => {
+                html += `<div class="mb-3"><div class="text-xs uppercase text-emerald-400 font-semibold mb-1">${g}</div><div class="space-y-1">`;
+                groups[g].forEach(f => {
+                    html += `<button type="button" class="w-full text-left px-3 py-2 rounded-md bg-zinc-800 hover:bg-zinc-700 border border-zinc-700 text-sm" onclick="ScheduleApp.addFieldColumn('${f.map_to}')">
+                        <span class="font-medium">${f.label}</span>
+                        <span class="block text-xs text-zinc-500 mt-0.5">${f.desc}</span>
+                    </button>`;
+                });
+                html += '</div></div>';
+            });
+            container.innerHTML = html;
+        }
+        dlg.showModal();
+    }
+
+    function addFieldColumn(mapTo) {
+        const field = CasePMScheduleFields.getField(mapTo);
+        if (!field) return;
+        if (customColumns.find(c => (c.map_to || c.name) === mapTo)) {
+            showScheduleAlert('Column already visible.', 'warning');
+            return;
+        }
+        customColumns.push({ name: mapTo, map_to: mapTo, label: field.label, width: 100 });
         gantt.config.columns = buildColumnConfig();
         gantt.render();
+        document.getElementById('scheduleFieldPickerModal')?.close();
         queueSave();
-        showScheduleAlert(`Column "${label}" added. Click any cell to edit inline.`, 'success');
+        logActivity('Added column', field.label);
+        showScheduleAlert(`Column "${field.label}" added to grid.`, 'success');
     }
 
     // ─── Views ───
@@ -642,6 +693,7 @@
                 runSchedule();
                 queueSave();
                 showScheduleAlert(`Imported ${payload.data.length} items from ${payload.source || file.name}`, 'success');
+                logActivity('Imported schedule', file.name);
             } catch (err) {
                 showScheduleAlert('Import failed: ' + (err.message || err), 'error');
             }
@@ -730,7 +782,7 @@
         linkSelected, unlinkSelected, zoomGantt, toggleCriticalPath, setBaseline,
         runSchedule, switchScheduleView, renderLookAhead, focusActivity,
         exportJson, importFile, printGantt, printLookAhead, saveSchedule,
-        loadSchedule, clearSchedule, showAddColumnDialog
+        loadSchedule, clearSchedule, showAddColumnDialog, addFieldColumn, queueSave
     };
 
     if (document.readyState === 'loading') {
