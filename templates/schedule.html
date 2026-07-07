@@ -80,7 +80,9 @@
                 <button type="button" class="schedule-toolbar-btn" data-timescale="quarter" onclick="ScheduleApp.setTimescale('quarter')" title="Quarter view">Quarters</button>
                 <button type="button" class="schedule-toolbar-btn" onclick="ScheduleApp.zoomGantt('in')"><i class="fa-solid fa-magnifying-glass-plus"></i></button>
                 <button type="button" class="schedule-toolbar-btn" onclick="ScheduleApp.zoomGantt('out')"><i class="fa-solid fa-magnifying-glass-minus"></i></button>
-                <button type="button" class="schedule-toolbar-btn" onclick="ScheduleApp.showDisplaySettings()" title="Bar & link colors"><i class="fa-solid fa-palette text-violet-400"></i> Display</button>
+                <button type="button" class="schedule-toolbar-btn" onclick="ScheduleApp.fitScheduleView()" title="Scroll timeline to show task bars"><i class="fa-solid fa-compress-arrows-alt text-sky-400"></i> Fit View</button>
+                <button type="button" class="schedule-toolbar-btn" onclick="ScheduleApp.scrollToToday()" title="Scroll to today"><i class="fa-solid fa-calendar-day"></i> Today</button>
+                <button type="button" class="schedule-toolbar-btn" onclick="ScheduleApp.exportCsv()" title="Export grid to CSV"><i class="fa-solid fa-file-csv"></i> CSV</button>
                 <button type="button" class="schedule-toolbar-btn" onclick="ScheduleApp.showColumnManager()" title="Add or remove grid columns"><i class="fa-solid fa-table-columns"></i> Columns</button>
             </div>
         </div>
@@ -103,6 +105,10 @@
                 </button>
             </div>
             <div class="flex flex-wrap items-center gap-3 text-sm">
+                <label class="flex items-center gap-2 text-zinc-400">Filter
+                    <input type="search" id="scheduleFilterInput" placeholder="Activity name, ID, resource…" class="bg-zinc-800 border border-zinc-700 rounded-lg px-2 py-1.5 text-sm text-white w-44"
+                           oninput="ScheduleApp.filterTasks(this.value)">
+                </label>
                 <label class="flex items-center gap-2 text-zinc-400">Data Date
                     <input type="date" id="dataDateInput" class="bg-zinc-800 border border-zinc-700 rounded-lg px-2 py-1.5 text-sm text-white">
                 </label>

@@ -47,6 +47,11 @@
         show_baseline_bars: true
     };
 
+    const REQUIRED_COLUMNS = ['text', 'collapse'];
+
+    let editingContext = null;
+    let editorClampTimer = null;
+
     function pushUndoState() {
         if (!ganttReady || undoPaused) return;
         const snap = JSON.stringify(serializeSchedule());
@@ -381,33 +386,79 @@
     }
 
     function constrainInlineEditor() {
-        requestAnimationFrame(() => {
-            const ph = document.querySelector('#gantt_here .gantt_grid_editor_placeholder, #gantt_here .gantt_inline_editor');
-            if (!ph) return;
-            const cell = ph.closest('.gantt_cell');
-            if (!cell) return;
-            const cw = cell.clientWidth;
-            const ch = cell.clientHeight;
-            ph.style.width = cw + 'px';
-            ph.style.maxWidth = cw + 'px';
-            ph.style.minWidth = '0';
-            ph.style.height = Math.max(22, ch - 2) + 'px';
-            ph.style.maxHeight = ch + 'px';
-            ph.style.overflow = 'hidden';
-            ph.style.boxSizing = 'border-box';
-            ph.style.position = 'absolute';
-            ph.style.left = '0';
-            ph.style.top = '0';
-            ph.querySelectorAll('input, select, textarea').forEach(inp => {
-                inp.style.width = '100%';
-                inp.style.maxWidth = '100%';
-                inp.style.height = '100%';
-                inp.style.minHeight = '0';
-                inp.style.boxSizing = 'border-box';
-                inp.style.fontSize = '13px';
-                inp.style.padding = '2px 4px';
+        const ph = document.querySelector('#gantt_here .gantt_grid_editor_placeholder, #gantt_here .gantt_inline_editor');
+        if (!ph) return;
+
+        let cell = null;
+        let row = null;
+        if (editingContext && gantt.isTaskExists(editingContext.taskId)) {
+            const colIdx = gantt.config.columns.findIndex(c => c.name === editingContext.colName);
+            const rows = document.querySelectorAll('#gantt_here .gantt_grid_data .gantt_row');
+            rows.forEach(r => {
+                if (cell) return;
+                let rid = null;
+                try { rid = gantt.locate(r); } catch (e) { /* ok */ }
+                if (String(rid) === String(editingContext.taskId) && colIdx >= 0) {
+                    row = r;
+                    const cells = r.querySelectorAll(':scope > .gantt_cell');
+                    cell = cells[colIdx];
+                }
             });
+        }
+        if (!cell) cell = ph.closest('.gantt_cell');
+        if (!cell) return;
+        if (!row) row = cell.closest('.gantt_row');
+        const gridData = cell.closest('.gantt_grid_data');
+        if (!gridData || !row) return;
+
+        const left = cell.offsetLeft;
+        const top = row.offsetTop;
+        const w = cell.offsetWidth;
+        const h = row.offsetHeight;
+
+        ph.style.cssText = [
+            'position:absolute!important',
+            `left:${left}px!important`,
+            `top:${top}px!important`,
+            `width:${w}px!important`,
+            `height:${h}px!important`,
+            'max-width:' + w + 'px!important',
+            'max-height:' + h + 'px!important',
+            'min-width:0!important',
+            'overflow:hidden!important',
+            'box-sizing:border-box!important',
+            'z-index:30!important',
+            'padding:0!important',
+            'margin:0!important'
+        ].join(';');
+
+        ph.querySelectorAll('input, select, textarea').forEach(inp => {
+            inp.style.cssText = 'width:100%!important;height:100%!important;max-width:100%!important;max-height:100%!important;box-sizing:border-box!important;font-size:13px!important;padding:2px 4px!important;margin:0!important;border-radius:2px!important;';
+            if (inp.type === 'date') inp.style.minHeight = '0';
         });
+    }
+
+    function scheduleEditorClampLoop() {
+        clearTimeout(editorClampTimer);
+        constrainInlineEditor();
+        let n = 0;
+        const tick = () => {
+            if (!document.querySelector('#gantt_here .gantt_grid_editor_placeholder')) return;
+            constrainInlineEditor();
+            if (++n < 12) editorClampTimer = setTimeout(tick, 50);
+        };
+        editorClampTimer = setTimeout(tick, 50);
+    }
+
+    function bindEditorClampObserver() {
+        const grid = document.querySelector('#gantt_here .gantt_grid_data');
+        if (!grid || grid.dataset.editorClampBound) return;
+        grid.dataset.editorClampBound = '1';
+        new MutationObserver(() => {
+            if (document.querySelector('#gantt_here .gantt_grid_editor_placeholder')) {
+                scheduleEditorClampLoop();
+            }
+        }).observe(grid, { childList: true, subtree: true, attributes: true, attributeFilter: ['style', 'class'] });
     }
 
     function getTimelineScrollState() {
@@ -437,11 +488,155 @@
         return { start, end };
     }
 
+    function syncTimelineToTasks() {
+        if (!ganttReady) return;
+        applyTimelineDateRange();
+        gantt.render();
+        scrollToScheduleRange();
+        applyChartOverlay();
+    }
+
+    function scrollToToday() {
+        if (!ganttReady) return;
+        const today = toGanttDate(CasePMSchedule.formatDate(new Date()));
+        if (today) gantt.showDate(today);
+        applyChartOverlay();
+    }
+
+    function fitScheduleView() {
+        syncTimelineToTasks();
+    }
+
     function applyTimelineDateRange() {
         const bounds = getProjectDateBounds();
         if (!bounds) return;
         gantt.config.start_date = bounds.start;
         gantt.config.end_date = bounds.end;
+    }
+
+    function taskDateInputValue(task, field) {
+        const d = toGanttDate(task[field]);
+        return d ? CasePMSchedule.formatDate(d) : '';
+    }
+
+    function registerSchedCellEditors() {
+        if (!gantt.config.editor_types) gantt.config.editor_types = {};
+
+        gantt.config.editor_types.sched_text = {
+            show(id, column, config, placeholder) {
+                placeholder.innerHTML = '';
+                const inp = document.createElement('input');
+                inp.type = 'text';
+                inp.className = 'sched-cell-editor';
+                const field = config.map_to || column.name;
+                inp.value = gantt.getTask(id)[field] || '';
+                placeholder.appendChild(inp);
+                scheduleEditorClampLoop();
+                inp.focus();
+                inp.select();
+            },
+            hide() {},
+            get_value(id, column, node) {
+                return node.querySelector('input')?.value || '';
+            },
+            set_value(value, id, column, node) {
+                const field = column.editor.map_to || column.name;
+                gantt.getTask(id)[field] = value;
+                gantt.updateTask(id);
+            },
+            is_changed(value) { return true; },
+            is_valid() { return true; },
+            save(id, column, node) {
+                const field = column.editor.map_to || column.name;
+                gantt.getTask(id)[field] = node.querySelector('input')?.value || '';
+                gantt.updateTask(id);
+                queueSave();
+            },
+            focus(node) { node.querySelector('input')?.focus(); }
+        };
+
+        gantt.config.editor_types.sched_date = {
+            show(id, column, config, placeholder) {
+                placeholder.innerHTML = '';
+                const inp = document.createElement('input');
+                inp.type = 'date';
+                inp.className = 'sched-cell-editor';
+                const field = config.map_to || column.name;
+                inp.value = taskDateInputValue(gantt.getTask(id), field);
+                placeholder.appendChild(inp);
+                scheduleEditorClampLoop();
+                inp.focus();
+            },
+            hide() {},
+            get_value(id, column, node) {
+                return node.querySelector('input')?.value || '';
+            },
+            set_value(value, id, column) {
+                const field = column.editor.map_to || column.name;
+                const task = gantt.getTask(id);
+                if (value) task[field] = toGanttDate(value);
+                gantt.updateTask(id);
+            },
+            is_changed(value, id, column, node) {
+                const field = column.editor.map_to || column.name;
+                return (node.querySelector('input')?.value || '') !== taskDateInputValue(gantt.getTask(id), field);
+            },
+            is_valid() { return true; },
+            save(id, column, node) {
+                const field = column.editor.map_to || column.name;
+                const val = node.querySelector('input')?.value;
+                const task = gantt.getTask(id);
+                if (val) task[field] = toGanttDate(val);
+                sanitizeTaskDates(task);
+                gantt.updateTask(id);
+                queueSave();
+            },
+            focus(node) { node.querySelector('input')?.focus(); }
+        };
+
+        gantt.config.editor_types.sched_number = {
+            show(id, column, config, placeholder) {
+                placeholder.innerHTML = '';
+                const inp = document.createElement('input');
+                inp.type = 'number';
+                inp.className = 'sched-cell-editor';
+                const field = config.map_to || column.name;
+                const task = gantt.getTask(id);
+                let v = task[field];
+                if (field === 'progress') v = Math.round(effectiveProgress(task) * 100);
+                inp.value = v != null ? v : '';
+                if (config.min != null) inp.min = config.min;
+                if (config.max != null) inp.max = config.max;
+                placeholder.appendChild(inp);
+                scheduleEditorClampLoop();
+                inp.focus();
+                inp.select();
+            },
+            hide() {},
+            get_value(id, column, node) {
+                return node.querySelector('input')?.value || '';
+            },
+            set_value(value, id, column) {
+                const field = column.editor.map_to || column.name;
+                const task = gantt.getTask(id);
+                const n = parseFloat(value);
+                task[field] = field === 'progress' ? Math.min(1, Math.max(0, n / 100)) : n;
+                gantt.updateTask(id);
+            },
+            is_changed() { return true; },
+            is_valid() { return true; },
+            save(id, column, node) {
+                const field = column.editor.map_to || column.name;
+                const n = parseFloat(node.querySelector('input')?.value);
+                const task = gantt.getTask(id);
+                if (!Number.isNaN(n)) {
+                    task[field] = field === 'progress' ? Math.min(1, Math.max(0, n / 100)) : n;
+                }
+                gantt.updateTask(id);
+                queueSave();
+            },
+            focus(node) { node.querySelector('input')?.focus(); }
+        };
     }
 
     function handleColumnResize(index, column, new_width, persist) {
@@ -659,19 +854,19 @@
         return [
             { name: 'collapse', label: '', width: 30, min_width: 30, resize: false, align: 'center', template: collapseTemplate },
             { name: 'wbs', label: 'WBS', width: 58, align: 'center', resize: true, template: t => wbsCode(t) },
-            { name: 'activity_id', label: 'ID', width: 64, align: 'center', resize: true, editor: { type: 'text', map_to: 'activity_id' }, template: t => t.activity_id || '' },
-            { name: 'text', label: 'Activity Name', tree: false, width: 220, min_width: 120, resize: true, editor: { type: 'text', map_to: 'text' }, template: t => {
+            { name: 'activity_id', label: 'ID', width: 64, align: 'center', resize: true, editor: { type: 'sched_text', map_to: 'activity_id' }, template: t => t.activity_id || '' },
+            { name: 'text', label: 'Activity Name', tree: false, width: 220, min_width: 120, resize: true, editor: { type: 'sched_text', map_to: 'text' }, template: t => {
                 const pad = (t.$level || 0) * 14;
                 return `<span style="padding-left:${pad}px;display:inline-block">${t.text || ''}</span>`;
             } },
-            { name: 'duration', label: 'Dur', align: 'center', width: 52, min_width: 44, resize: true, editor: { type: 'number', map_to: 'duration', min: 0, max: 9999 } },
-            { name: 'start_date', label: 'Start', align: 'center', width: 98, min_width: 88, resize: true, editor: { type: 'date', map_to: 'start_date' }, template: t => formatDateSafe(t.start_date) },
-            { name: 'end_date', label: 'Finish', align: 'center', width: 98, min_width: 88, resize: true, editor: { type: 'date', map_to: 'end_date' }, template: t => formatDateSafe(t.end_date) },
+            { name: 'duration', label: 'Dur', align: 'center', width: 52, min_width: 44, resize: true, editor: { type: 'sched_number', map_to: 'duration', min: 0, max: 9999 } },
+            { name: 'start_date', label: 'Start', align: 'center', width: 98, min_width: 88, resize: true, editor: { type: 'sched_date', map_to: 'start_date' }, template: t => formatDateSafe(t.start_date) },
+            { name: 'end_date', label: 'Finish', align: 'center', width: 98, min_width: 88, resize: true, editor: { type: 'sched_date', map_to: 'end_date' }, template: t => formatDateSafe(t.end_date) },
             { name: 'predecessors', label: 'Predecessors', width: 118, min_width: 80, resize: true, editor: { type: 'pred_string', map_to: 'auto' }, template: predTemplate },
             { name: 'successors', label: 'Successors', width: 108, min_width: 80, resize: true, template: succTemplate },
-            { name: 'progress', label: '%', align: 'center', width: 48, min_width: 42, resize: true, editor: { type: 'number', map_to: 'progress', min: 0, max: 100 }, template: t => Math.round(effectiveProgress(t) * 100) },
-            { name: 'resource', label: 'Resource', width: 108, min_width: 70, resize: true, editor: { type: 'text', map_to: 'resource' } },
-            { name: 'owner', label: 'Responsible', width: 108, min_width: 70, resize: true, editor: { type: 'text', map_to: 'owner' } },
+            { name: 'progress', label: '%', align: 'center', width: 48, min_width: 42, resize: true, editor: { type: 'sched_number', map_to: 'progress', min: 0, max: 100 }, template: t => Math.round(effectiveProgress(t) * 100) },
+            { name: 'resource', label: 'Resource', width: 108, min_width: 70, resize: true, editor: { type: 'sched_text', map_to: 'resource' } },
+            { name: 'owner', label: 'Responsible', width: 108, min_width: 70, resize: true, editor: { type: 'sched_text', map_to: 'owner' } },
             { name: 'total_float', label: 'Total Float', width: 72, align: 'center', resize: true, template: t => t.$slack != null ? t.$slack : (t.total_float != null ? t.total_float : '') },
             { name: 'bar_color', label: 'Color', width: 58, align: 'center', resize: true, template: t => t.bar_color ? `<span class="sched-color-swatch" style="background:${t.bar_color}"></span>` : '—', editor: { type: 'color_hex', map_to: 'bar_color' } }
         ];
@@ -679,11 +874,12 @@
 
     function editorForField(field) {
         if (!field || field.type === 'readonly' || field.type === 'successors') return null;
-        if (field.type === 'predecessor') return { type: 'predecessor', map_to: 'auto' };
-        if (field.type === 'date') return { type: 'date', map_to: field.map_to };
-        if (field.type === 'number') return { type: 'number', map_to: field.map_to, min: 0, max: 999999 };
-        if (field.type === 'percent') return { type: 'number', map_to: field.map_to, min: 0, max: 100 };
-        return { type: 'text', map_to: field.map_to };
+        if (field.type === 'predecessor') return { type: 'pred_string', map_to: 'auto' };
+        if (field.type === 'date') return { type: 'sched_date', map_to: field.map_to };
+        if (field.type === 'number') return { type: 'sched_number', map_to: field.map_to, min: 0, max: 999999 };
+        if (field.type === 'percent') return { type: 'sched_number', map_to: field.map_to, min: 0, max: 100 };
+        if (field.type === 'color') return { type: 'color_hex', map_to: field.map_to };
+        return { type: 'sched_text', map_to: field.map_to };
     }
 
     function buildColumnConfig() {
@@ -714,18 +910,20 @@
     }
 
     function registerCustomEditors() {
+        registerSchedCellEditors();
         if (!gantt.config.editor_types) gantt.config.editor_types = {};
         gantt.config.editor_types.pred_string = {
             show: function (id, column, config, placeholder) {
+                placeholder.innerHTML = '';
                 const inp = document.createElement('input');
                 inp.type = 'text';
-                inp.className = 'gantt_grid_editor';
+                inp.className = 'sched-cell-editor';
                 inp.value = predTemplate(gantt.getTask(id));
                 inp.placeholder = 'e.g. 1.2FS+2';
                 placeholder.appendChild(inp);
+                scheduleEditorClampLoop();
                 inp.focus();
                 inp.select();
-                constrainInlineEditor();
             },
             hide: function () { },
             set_value: function (value, id) {
@@ -755,7 +953,7 @@
                 inp.value = task.bar_color || scheduleSettings.default_bar_color || '#3b82f6';
                 placeholder.appendChild(inp);
                 inp.focus();
-                constrainInlineEditor();
+                scheduleEditorClampLoop();
             },
             hide: function () { },
             set_value: function (value, id) {
@@ -801,6 +999,7 @@
     }
 
     function startCellEdit(id, colName) {
+        editingContext = { taskId: id, colName };
         allowGridEdit = true;
         setTimeout(() => {
             if (gantt.ext && gantt.ext.inlineEditors) {
@@ -808,7 +1007,8 @@
             } else if (gantt.inlineEditors && gantt.inlineEditors.startEdit) {
                 gantt.inlineEditors.startEdit(id, colName);
             }
-            setTimeout(() => { allowGridEdit = false; }, 100);
+            scheduleEditorClampLoop();
+            setTimeout(() => { allowGridEdit = false; }, 250);
         }, 0);
     }
 
@@ -842,7 +1042,7 @@
         gantt.config.details_on_create = false;
         gantt.config.select_task = true;
         gantt.config.keyboard_navigation = false;
-        gantt.config.show_task_cells = true;
+        gantt.config.show_task_cells = false;
         gantt.config.show_links = true;
 
         gantt.config.layout = {
@@ -870,10 +1070,17 @@
         gantt.config.columns = buildColumnConfig();
         registerCustomEditors();
 
+        gantt.attachEvent('onBeforeTaskDisplay', function (id, task) {
+            if (!taskFilterQuery) return true;
+            if (task.type === 'project') return true;
+            const hay = [task.text, task.activity_id, task.resource, task.owner, wbsCode(task)].join(' ').toLowerCase();
+            return hay.includes(taskFilterQuery);
+        });
+
         gantt.attachEvent('onBeforeLightbox', () => false);
 
         gantt.attachEvent('onBeforeEditStart', () => {
-            setTimeout(constrainInlineEditor, 0);
+            scheduleEditorClampLoop();
             return allowGridEdit;
         });
 
@@ -1008,6 +1215,7 @@
         gantt.attachEvent('onGanttRender', () => {
             refreshWbsCodes();
             updateStatusBar();
+            updateDeadlineMarkers();
             if (!overlayDrag.active) {
                 requestAnimationFrame(applyChartOverlay);
             }
@@ -1023,6 +1231,7 @@
         gantt.init('gantt_here');
         sanitizeAllTaskDates();
         initChartOverlay();
+        bindEditorClampObserver();
         ganttReady = true;
         resizeGanttHost();
         window.addEventListener('resize', resizeGanttHost);
@@ -1134,6 +1343,8 @@
         setSaveStatus('Ready');
         pushUndoState();
         updateDataDateMarker();
+        updateDeadlineMarkers();
+        setTimeout(() => syncTimelineToTasks(), 100);
         return true;
     }
 
@@ -1328,6 +1539,7 @@
         const today = toGanttDate(CasePMSchedule.formatDate(new Date()));
         const id = gantt.addTask({
             text: type === 'milestone' ? 'New Milestone' : 'New Activity',
+            activity_id: nextActivityId(),
             type: type || 'task',
             start_date: today,
             end_date: type === 'milestone' ? today : CasePMSchedule.addCalendarDays(today, 5),
@@ -1448,12 +1660,92 @@
         queueSave();
     }
 
+    let taskFilterQuery = '';
+    let deadlineMarkerIds = [];
+
+    function updateDeadlineMarkers() {
+        if (!ganttReady || !gantt.addMarker) return;
+        deadlineMarkerIds.forEach(id => { try { gantt.deleteMarker(id); } catch (e) { /* ok */ } });
+        deadlineMarkerIds = [];
+        gantt.eachTask(t => {
+            if (t.type === 'project' || !t.deadline) return;
+            const d = toGanttDate(t.deadline);
+            if (!d) return;
+            const mid = gantt.addMarker({
+                start_date: d,
+                css: 'schedule-deadline-marker',
+                text: '◆',
+                title: `Deadline: ${t.text || ''} (${CasePMSchedule.formatDate(d)})`
+            });
+            deadlineMarkerIds.push(mid);
+        });
+    }
+
+    function filterTasks(query) {
+        taskFilterQuery = (query || '').trim().toLowerCase();
+        gantt.render();
+    }
+
+    function nextActivityId() {
+        let max = 0;
+        gantt.eachTask(t => {
+            const n = parseInt(String(t.activity_id || '').replace(/\D/g, ''), 10);
+            if (!Number.isNaN(n) && n > max) max = n;
+        });
+        return String(max + 10);
+    }
+
+    function exportCsv() {
+        const cols = (gantt.config.columns || []).filter(c => c.name !== 'collapse' && c.name !== 'bar_color');
+        const headers = cols.map(c => c.label || c.name);
+        const rows = [headers];
+        gantt.eachTask(t => {
+            rows.push(cols.map(c => {
+                let v = '';
+                if (c.name === 'wbs') v = wbsCode(t);
+                else if (c.name === 'predecessors') v = predTemplate(t);
+                else if (c.name === 'successors') v = succTemplate(t);
+                else if (c.template) v = String(c.template(t)).replace(/<[^>]+>/g, '').trim();
+                else v = t[c.name] != null ? t[c.name] : '';
+                if (v instanceof Date) v = formatDateSafe(v);
+                return v;
+            }));
+        });
+        const csv = rows.map(r => r.map(v => `"${String(v).replace(/"/g, '""')}"`).join(',')).join('\n');
+        const blob = new Blob([csv], { type: 'text/csv' });
+        const a = document.createElement('a');
+        a.href = URL.createObjectURL(blob);
+        a.download = `schedule_${CasePMSchedule.formatDate(new Date())}.csv`;
+        a.click();
+    }
+
+    function rollupSummaryProgress() {
+        function walk(parentId) {
+            const kids = gantt.getChildren(parentId) || [];
+            kids.forEach(walk);
+            if (!gantt.isTaskExists(parentId)) return;
+            const t = gantt.getTask(parentId);
+            if (t.type !== 'project') return;
+            const children = kids.filter(id => gantt.isTaskExists(id)).map(id => gantt.getTask(id)).filter(c => c.type !== 'project');
+            if (!children.length) return;
+            const total = children.reduce((s, c) => s + (Number(c.duration) || 0), 0);
+            if (total <= 0) return;
+            const earned = children.reduce((s, c) => s + (Number(c.duration) || 0) * effectiveProgress(c), 0);
+            t.progress = earned / total;
+            gantt.refreshTask(parentId);
+        }
+        walk(0);
+    }
+
     function scrollToScheduleRange() {
         if (!ganttReady) return;
         const range = gantt.getSubtaskDates();
         if (range?.start_date) {
             const d = toGanttDate(range.start_date);
-            if (d) gantt.showDate(d);
+            if (d) {
+                const padded = CasePMSchedule.addCalendarDays(d, -14);
+                gantt.showDate(padded);
+            }
         }
     }
 
@@ -1485,10 +1777,11 @@
         });
         sanitizeAllTaskDates();
         applyBaselineVariance();
+        rollupSummaryProgress();
         applyTimelineDateRange();
         wbsCodeMap = wbsMap || CasePMSchedule.buildWbsMap(tasks);
         gantt.render();
-        if (opts.scroll === true) scrollToScheduleRange();
+        scrollToScheduleRange();
         updateDataDateMarker();
         applyChartOverlay();
         updateStatusBar();
@@ -1940,7 +2233,7 @@
         initZoom();
         if (scheduleSettings.timescale) setTimescale(scheduleSettings.timescale, false);
         await loadSchedule();
-        runSchedule({ skipScroll: true });
+        runSchedule();
         switchScheduleView('gantt');
         const pid = getSelectedProjectId();
         if (pid) localStorage.setItem('casepm_current_project_id', String(pid));
@@ -1958,7 +2251,7 @@
         linkSelected, unlinkSelected, zoomGantt, setTimescale, showDisplaySettings, saveDisplaySettings,
         wbsCode, applyPredecessorString,
         toggleCriticalPath, setBaseline, showBaselineManager, activateBaseline, deleteBaseline,
-        undo, redo,
+        undo, redo, fitScheduleView, scrollToToday, filterTasks, exportCsv,
         runSchedule, switchScheduleView, renderLookAhead, focusActivity,
         exportJson, importFile, printGantt, printLookAhead, saveSchedule,
         loadSchedule, clearSchedule, showColumnManager, showAddColumnDialog, removeColumn, addFieldColumn, queueSave
