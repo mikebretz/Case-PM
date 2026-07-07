@@ -49,15 +49,18 @@
     };
 
     const REQUIRED_COLUMNS = ['text', 'collapse'];
-    const ROLLING_YEARS_BACK = 2;
-    const ROLLING_YEARS_FORWARD = 4;
-    const ROLLING_MIN_SPAN_DAYS = 365 * 6;
+    const ROLLING_YEARS_BACK = 8;
+    const ROLLING_YEARS_FORWARD = 12;
+    const ROLLING_MIN_SPAN_DAYS = 365 * 10;
 
     let editingContext = null;
     let editorClampTimer = null;
     let floatingEditorActive = false;
     let rollingCalendarBounds = null;
     let initialTimelineFocused = false;
+    let timelineScrollProgrammatic = false;
+    let timelineExtendTimer = null;
+    let filterCriticalOnly = false;
     const columnEditors = new Map();
 
     function pushUndoState() {
@@ -333,7 +336,19 @@
         gridCell.style.cssText = 'flex:1 1 auto;width:100%!important;min-width:0!important;position:relative;z-index:2;overflow:hidden;';
         if (nativeResizer) nativeResizer.style.cssText = 'display:none!important;width:0!important;min-width:0!important;';
 
-        timelineCell.style.cssText = `position:absolute!important;top:0;right:0;bottom:0;width:${timelineW}px!important;z-index:15;box-shadow:-8px 0 24px rgba(0,0,0,0.55);pointer-events:auto;overflow:hidden!important;`;
+        timelineCell.style.cssText = [
+            `position:absolute!important`,
+            `top:0!important`,
+            `right:0!important`,
+            `bottom:0!important`,
+            `width:${timelineW}px!important`,
+            `z-index:15!important`,
+            `box-shadow:-8px 0 24px rgba(0,0,0,0.55)`,
+            `pointer-events:auto!important`,
+            `overflow:visible!important`,
+            `display:flex!important`,
+            `flex-direction:column!important`
+        ].join(';');
 
         let handle = document.getElementById('scheduleChartResizer');
         if (!handle) {
@@ -490,26 +505,30 @@
         });
     }
 
+    function ganttDateAdd(date, amount, unit) {
+        const d = toGanttDate(date);
+        if (!d) return null;
+        if (gantt.date && gantt.date.add) return gantt.date.add(d, amount, unit || 'day');
+        return CasePMSchedule.addCalendarDays(d, amount);
+    }
+
     function computeRollingCalendarBounds() {
         const today = new Date();
-        let start = CasePMSchedule.addCalendarDays(today, -ROLLING_YEARS_BACK * 365);
-        let end = CasePMSchedule.addCalendarDays(today, ROLLING_YEARS_FORWARD * 365);
+        let start = new Date(today.getFullYear() - ROLLING_YEARS_BACK, 0, 1);
+        let end = new Date(today.getFullYear() + ROLLING_YEARS_FORWARD, 11, 31);
         if (ganttReady) {
-            const range = gantt.getSubtaskDates();
-            if (range?.start_date) {
-                const ts = toGanttDate(range.start_date);
+            gantt.eachTask(t => {
+                const ts = toGanttDate(t.start_date);
+                const te = toGanttDate(t.end_date);
                 if (ts) {
-                    const padded = CasePMSchedule.addCalendarDays(ts, -180);
-                    if (padded < start) start = padded;
+                    const padded = ganttDateAdd(ts, -120, 'day');
+                    if (padded && padded < start) start = padded;
                 }
-            }
-            if (range?.end_date) {
-                const te = toGanttDate(range.end_date);
                 if (te) {
-                    const padded = CasePMSchedule.addCalendarDays(te, 365);
-                    if (padded > end) end = padded;
+                    const padded = ganttDateAdd(te, 180, 'day');
+                    if (padded && padded > end) end = padded;
                 }
-            }
+            });
         }
         if (CasePMSchedule.calendarDaysBetween(start, end) < ROLLING_MIN_SPAN_DAYS) {
             end = CasePMSchedule.addCalendarDays(start, ROLLING_MIN_SPAN_DAYS);
@@ -526,8 +545,8 @@
         } else {
             rollingCalendarBounds = bounds;
         }
-        gantt.config.start_date = rollingCalendarBounds.start;
-        gantt.config.end_date = rollingCalendarBounds.end;
+        gantt.config.start_date = new Date(rollingCalendarBounds.start.getTime());
+        gantt.config.end_date = new Date(rollingCalendarBounds.end.getTime());
     }
 
     function getProjectDateBounds() {
@@ -535,48 +554,95 @@
         return computeRollingCalendarBounds();
     }
 
+    function getTimelineScrollElements() {
+        const els = new Set();
+        document.querySelectorAll(
+            '#gantt_here .gantt_hor_scroll, #gantt_here .gantt_scroll_hor, ' +
+            '#gantt_here [data-cell-id="scrollHor"] .gantt_layout_outer_scroll, ' +
+            '#gantt_here [data-cell-id="scrollHor"] .gantt_hor_scroll'
+        ).forEach(el => els.add(el));
+        return [...els];
+    }
+
+    function readTimelineScrollX() {
+        const state = getTimelineScrollState();
+        if (state && state.x != null) return state.x;
+        const targets = getTimelineScrollElements();
+        for (const el of targets) {
+            if (el.scrollLeft > 0) return el.scrollLeft;
+        }
+        return targets[0]?.scrollLeft || 0;
+    }
+
     function setTimelineScrollX(px) {
         const x = Math.max(0, Math.round(px));
         const y = (typeof gantt.getScrollState === 'function' ? gantt.getScrollState()?.y : 0) || 0;
+        timelineScrollProgrammatic = true;
         try {
             if (gantt.scrollTo) gantt.scrollTo(x, y);
         } catch (e) { /* ok */ }
-        document.querySelectorAll('#gantt_here .gantt_hor_scroll').forEach(el => {
-            el.scrollLeft = x;
-        });
+        getTimelineScrollElements().forEach(el => { el.scrollLeft = x; });
+        requestAnimationFrame(() => { timelineScrollProgrammatic = false; });
     }
 
-    function ensureTimelineInnerWidth() {
-        if (!ganttReady || typeof gantt.posFromDate !== 'function') return;
+    function maybeExtendTimelineOnScroll() {
+        if (!ganttReady || timelineScrollProgrammatic) return;
+        if (typeof gantt.getScrollState !== 'function' || typeof gantt.dateFromPos !== 'function') return;
+        const state = gantt.getScrollState();
+        if (!state) return;
+        const viewW = getTimelineWidth();
+        const leftDate = gantt.dateFromPos(state.x);
+        const rightDate = gantt.dateFromPos(state.x + Math.max(200, viewW - 40));
+        if (!leftDate || !rightDate) return;
         const bounds = getProjectDateBounds();
-        if (!bounds) return;
-        const right = gantt.posFromDate(bounds.end);
-        if (right == null) return;
-        const w = Math.max(right + 600, 8000);
-        document.querySelectorAll(
-            '#gantt_here .gantt_layout_cell:nth-child(3) .gantt_task_bg, ' +
-            '#gantt_here .gantt_layout_cell:nth-child(3) .gantt_data_area, ' +
-            '#gantt_here .gantt_layout_cell:nth-child(3) .gantt_bars_area, ' +
-            '#gantt_here .gantt_layout_cell:nth-child(3) .gantt_task'
-        ).forEach(el => {
-            el.style.width = w + 'px';
-            el.style.minWidth = w + 'px';
-        });
+        let changed = false;
+        const edge = gantt.date.add ? gantt.date.add(bounds.start, 3, 'month') : ganttDateAdd(bounds.start, 90, 'day');
+        const farEdge = gantt.date.add ? gantt.date.add(bounds.end, -3, 'month') : ganttDateAdd(bounds.end, -90, 'day');
+        const anchor = leftDate;
+        if (+leftDate <= +edge) {
+            rollingCalendarBounds.start = gantt.date.add
+                ? gantt.date.add(bounds.start, -6, 'month')
+                : ganttDateAdd(bounds.start, -180, 'day');
+            changed = true;
+        }
+        if (+rightDate >= +farEdge) {
+            rollingCalendarBounds.end = gantt.date.add
+                ? gantt.date.add(bounds.end, 6, 'month')
+                : ganttDateAdd(bounds.end, 180, 'day');
+            changed = true;
+        }
+        if (!changed) return;
+        gantt.config.start_date = new Date(rollingCalendarBounds.start.getTime());
+        gantt.config.end_date = new Date(rollingCalendarBounds.end.getTime());
+        clearTimeout(timelineExtendTimer);
+        timelineExtendTimer = setTimeout(() => {
+            timelineScrollProgrammatic = true;
+            gantt.render();
+            requestAnimationFrame(() => {
+                if (gantt.showDate) gantt.showDate(anchor);
+                requestAnimationFrame(() => { timelineScrollProgrammatic = false; });
+            });
+        }, 80);
     }
 
     function scrollTimelineToDate(date, marginPx) {
         if (!date) return;
         const d = toGanttDate(date);
         if (!d) return;
-        const margin = marginPx != null ? marginPx : 80;
-        if (typeof gantt.posFromDate === 'function') {
-            const x = gantt.posFromDate(d);
-            if (x != null) {
-                setTimelineScrollX(Math.max(0, x - margin));
-                return;
-            }
-        }
+        applyRollingCalendarRange(false);
+        const margin = marginPx != null ? marginPx : Math.round(getTimelineWidth() * 0.25);
+        timelineScrollProgrammatic = true;
         if (gantt.showDate) gantt.showDate(d);
+        gantt.render();
+        requestAnimationFrame(() => {
+            requestAnimationFrame(() => {
+                let x = null;
+                if (typeof gantt.posFromDate === 'function') x = gantt.posFromDate(d);
+                if (x != null) setTimelineScrollX(Math.max(0, x - margin));
+                else if (gantt.showDate) gantt.showDate(d);
+                timelineScrollProgrammatic = false;
+            });
+        });
     }
 
     function focusTimelineOnTask(id) {
@@ -585,13 +651,62 @@
         if (task.type === 'project') return;
         const start = toGanttDate(task.start_date);
         const end = toGanttDate(task.end_date) || start;
-        if (!start || typeof gantt.posFromDate !== 'function') return;
-        const left = gantt.posFromDate(start);
-        const right = gantt.posFromDate(end);
-        if (left == null) return;
-        const mid = (left + (right != null ? right : left)) / 2;
-        const timelineW = getTimelineWidth();
-        setTimelineScrollX(Math.max(0, mid - timelineW / 2));
+        if (!start) return;
+        applyRollingCalendarRange(false);
+        timelineScrollProgrammatic = true;
+        if (gantt.showDate) gantt.showDate(start);
+        gantt.render();
+        requestAnimationFrame(() => {
+            requestAnimationFrame(() => {
+                const left = typeof gantt.posFromDate === 'function' ? gantt.posFromDate(start) : null;
+                const right = typeof gantt.posFromDate === 'function' ? gantt.posFromDate(end) : left;
+                if (left != null) {
+                    const mid = (left + (right != null ? right : left)) / 2;
+                    setTimelineScrollX(Math.max(0, mid - getTimelineWidth() / 2));
+                }
+                timelineScrollProgrammatic = false;
+            });
+        });
+    }
+
+    function panTimeline(direction, unit) {
+        if (!ganttReady) return;
+        const state = gantt.getScrollState?.();
+        const cur = state?.x ?? readTimelineScrollX();
+        if (unit === 'month' && typeof gantt.dateFromPos === 'function' && typeof gantt.posFromDate === 'function') {
+            const pivot = gantt.dateFromPos(cur + getTimelineWidth() / 2) || new Date();
+            const next = gantt.date.add
+                ? gantt.date.add(pivot, direction, 'month')
+                : ganttDateAdd(pivot, direction * 30, 'day');
+            if (next) scrollTimelineToDate(next, getTimelineWidth() / 2);
+            return;
+        }
+        const step = Math.max(160, Math.round(getTimelineWidth() * 0.45));
+        setTimelineScrollX(cur + direction * step);
+    }
+
+    function initTimelineEngine() {
+        if (initTimelineEngine.bound) return;
+        initTimelineEngine.bound = true;
+
+        gantt.attachEvent('onGanttScroll', function () {
+            if (timelineScrollProgrammatic) return;
+            clearTimeout(timelineExtendTimer);
+            timelineExtendTimer = setTimeout(maybeExtendTimelineOnScroll, 100);
+        });
+
+        const host = document.getElementById('gantt_here');
+        if (host) {
+            host.addEventListener('wheel', e => {
+                const inTimeline = e.target.closest('.gantt_layout_cell:nth-child(3)');
+                if (!inTimeline) return;
+                const horiz = Math.abs(e.deltaX) > Math.abs(e.deltaY);
+                const delta = horiz ? e.deltaX : (e.shiftKey ? e.deltaY : 0);
+                if (!delta) return;
+                e.preventDefault();
+                setTimelineScrollX(readTimelineScrollX() + delta);
+            }, { passive: false });
+        }
     }
 
     function syncTimelineToTasks(options) {
@@ -601,7 +716,6 @@
         updateRowHeightsForLabels();
         gantt.render();
         requestAnimationFrame(() => {
-            ensureTimelineInnerWidth();
             if (opts.scrollToTasks) scrollToScheduleRange();
             applyChartOverlay();
         });
@@ -609,12 +723,24 @@
 
     function scrollToToday() {
         if (!ganttReady) return;
-        scrollTimelineToDate(CasePMSchedule.formatDate(new Date()), getTimelineWidth() / 2);
+        const today = document.getElementById('dataDateInput')?.value || CasePMSchedule.formatDate(new Date());
+        scrollTimelineToDate(today, getTimelineWidth() / 2);
         applyChartOverlay();
     }
 
     function fitScheduleView() {
-        syncTimelineToTasks({ scrollToTasks: true });
+        if (!ganttReady) return;
+        const range = gantt.getSubtaskDates();
+        if (!range?.start_date || !range?.end_date) return scrollToToday();
+        const start = toGanttDate(range.start_date);
+        const end = toGanttDate(range.end_date);
+        if (!start || !end) return scrollToToday();
+        applyRollingCalendarRange(false);
+        const mid = gantt.date.add
+            ? gantt.date.add(start, Math.round(CasePMSchedule.calendarDaysBetween(start, end) / 2), 'day')
+            : ganttDateAdd(start, Math.round(CasePMSchedule.calendarDaysBetween(start, end) / 2), 'day');
+        scrollTimelineToDate(mid, getTimelineWidth() / 2);
+        applyChartOverlay();
     }
 
     function applyTimelineDateRange() {
@@ -1265,6 +1391,10 @@
         gantt.config.show_task_cells = false;
         gantt.config.show_links = true;
 
+        const todaySeed = new Date();
+        gantt.config.start_date = new Date(todaySeed.getFullYear() - ROLLING_YEARS_BACK, 0, 1);
+        gantt.config.end_date = new Date(todaySeed.getFullYear() + ROLLING_YEARS_FORWARD, 11, 31);
+
         gantt.config.layout = {
             css: 'gantt_container',
             cols: [
@@ -1291,8 +1421,9 @@
         registerCustomEditors();
 
         gantt.attachEvent('onBeforeTaskDisplay', function (id, task) {
-            if (!taskFilterQuery) return true;
+            if (filterCriticalOnly && task.type !== 'project' && !isTaskCritical(task)) return false;
             if (task.type === 'project') return true;
+            if (!taskFilterQuery) return true;
             const hay = [task.text, task.activity_id, task.resource, task.owner, wbsCode(task)].join(' ').toLowerCase();
             return hay.includes(taskFilterQuery);
         });
@@ -1448,7 +1579,6 @@
             refreshWbsCodes();
             updateStatusBar();
             updateDeadlineMarkers();
-            ensureTimelineInnerWidth();
             if (!overlayDrag.active) {
                 requestAnimationFrame(applyChartOverlay);
             }
@@ -1458,6 +1588,7 @@
 
         initBaselineBars();
         initBarLabels();
+        initTimelineEngine();
         applyRollingCalendarRange(true);
 
 
@@ -1586,8 +1717,9 @@
         if (!initialTimelineFocused) {
             initialTimelineFocused = true;
             setTimeout(() => {
-                ensureTimelineInnerWidth();
-                scrollToScheduleRange();
+                applyRollingCalendarRange(true);
+                gantt.render();
+                scrollToToday();
                 applyChartOverlay();
             }, 150);
         }
@@ -1694,6 +1826,9 @@
         const level = map[scale];
         if (level === undefined) return;
         scheduleSettings.timescale = scale;
+        const anchor = gantt.getScrollState?.() && typeof gantt.dateFromPos === 'function'
+            ? gantt.dateFromPos(gantt.getScrollState().x + getTimelineWidth() / 2)
+            : null;
         if (gantt.ext && gantt.ext.zoom) {
             gantt.ext.zoom.setLevel(level);
         } else {
@@ -1704,8 +1839,10 @@
                 quarter: [{ unit: 'year', step: 1, format: '%Y' }, { unit: 'month', step: 1, format: '%M' }]
             };
             gantt.config.scales = scales[scale] || scales.day;
-            gantt.render();
         }
+        applyRollingCalendarRange(true);
+        gantt.render();
+        if (anchor) scrollTimelineToDate(anchor, getTimelineWidth() / 2);
         document.querySelectorAll('[data-timescale]').forEach(btn => {
             const on = btn.getAttribute('data-timescale') === scale;
             btn.classList.toggle('active-tool', on);
@@ -1927,9 +2064,15 @@
 
     function zoomGantt(dir) {
         if (!gantt.ext || !gantt.ext.zoom) return;
+        const anchor = gantt.getScrollState?.() && typeof gantt.dateFromPos === 'function'
+            ? gantt.dateFromPos(gantt.getScrollState().x + getTimelineWidth() / 2)
+            : null;
         const cur = gantt.ext.zoom.getCurrentLevel();
         if (dir === 'in') gantt.ext.zoom.setLevel(Math.max(0, cur - 1));
         else gantt.ext.zoom.setLevel(Math.min(3, cur + 1));
+        applyRollingCalendarRange(true);
+        gantt.render();
+        if (anchor) scrollTimelineToDate(anchor, getTimelineWidth() / 2);
     }
 
     function toggleCriticalPath() {
@@ -1974,6 +2117,60 @@
     function filterTasks(query) {
         taskFilterQuery = (query || '').trim().toLowerCase();
         gantt.render();
+    }
+
+    function toggleCriticalFilter() {
+        filterCriticalOnly = !filterCriticalOnly;
+        document.getElementById('criticalFilterBtn')?.classList.toggle('active-tool', filterCriticalOnly);
+        gantt.render();
+        showScheduleAlert(filterCriticalOnly ? 'Showing critical activities only' : 'Showing all activities', 'info');
+    }
+
+    function sortByStartDate() {
+        if (!ganttReady) return;
+        const buckets = new Map();
+        gantt.eachTask(t => {
+            const p = String(t.parent || 0);
+            if (!buckets.has(p)) buckets.set(p, []);
+            buckets.get(p).push(t);
+        });
+        buckets.forEach(list => {
+            list.sort((a, b) => {
+                const as = toGanttDate(a.start_date)?.getTime() || 0;
+                const bs = toGanttDate(b.start_date)?.getTime() || 0;
+                return as - bs || String(a.text || '').localeCompare(String(b.text || ''));
+            });
+            list.forEach((t, idx) => gantt.moveTask(t.id, idx, t.parent));
+        });
+        refreshWbsCodes();
+        gantt.render();
+        pushUndoState();
+        queueSave();
+        logActivity('Sorted schedule', 'Activities ordered by start date within each WBS level');
+    }
+
+    function exportXer() {
+        if (typeof CasePMScheduleExport === 'undefined') {
+            return showScheduleAlert('Export module not loaded.', 'error');
+        }
+        const blob = new Blob([CasePMScheduleExport.toXer(serializeSchedule(), getProjectMeta())], { type: 'text/plain' });
+        const a = document.createElement('a');
+        a.href = URL.createObjectURL(blob);
+        a.download = `schedule_${CasePMSchedule.formatDate(new Date())}.xer`;
+        a.click();
+        logActivity('Exported XER', getProjectMeta().name);
+    }
+
+    function exportMsProjectXml() {
+        if (typeof CasePMScheduleExport === 'undefined') {
+            return showScheduleAlert('Export module not loaded.', 'error');
+        }
+        const blob = new Blob([CasePMScheduleExport.toMsProjectXml(serializeSchedule(), getProjectMeta())], { type: 'application/xml' });
+        const a = document.createElement('a');
+        a.href = URL.createObjectURL(blob);
+        a.download = `schedule_${CasePMSchedule.formatDate(new Date())}.xml`;
+        a.click();
+        logActivity('Exported MS Project XML', getProjectMeta().name);
     }
 
     function nextActivityId() {
@@ -2070,10 +2267,6 @@
         if (!opts.skipScroll) scrollToScheduleRange();
         updateDataDateMarker();
         applyChartOverlay();
-        requestAnimationFrame(() => {
-            ensureTimelineInnerWidth();
-            if (!opts.skipScroll) scrollToScheduleRange();
-        });
         updateStatusBar();
         queueSave();
         logActivity('Ran CPM schedule', `${updates.size} activities calculated`);
@@ -2299,9 +2492,17 @@
         const avgCpi = cpiCount ? (totalCpi / cpiCount).toFixed(2) : '—';
         const blIdx = scheduleSettings.active_baseline_index;
         const blLabel = blIdx >= 0 && baselines[blIdx] ? baselines[blIdx].name : 'None';
+        let viewRange = '';
+        if (ganttReady && typeof gantt.getScrollState === 'function' && typeof gantt.dateFromPos === 'function') {
+            const st = gantt.getScrollState();
+            const left = st ? gantt.dateFromPos(st.x) : null;
+            const right = st ? gantt.dateFromPos(st.x + getTimelineWidth()) : null;
+            if (left && right) viewRange = `<span>Viewing: <b>${formatDateSafe(left)}</b> – <b>${formatDateSafe(right)}</b></span>`;
+        }
         el.innerHTML = `
             <span>Start: <b>${formatDateSafe(range.start_date)}</b></span>
             <span>Finish: <b>${formatDateSafe(range.end_date)}</b></span>
+            ${viewRange}
             <span>Activities: <b>${countTasks()}</b></span>
             <span>Critical: <b class="text-red-400">${critical}</b></span>
             <span>Baseline: <b class="text-sky-400">${blLabel}</b></span>
@@ -2513,6 +2714,7 @@
             ]
         });
         gantt.ext.zoom.setLevel(1);
+        applyRollingCalendarRange(true);
     }
 
     async function init() {
@@ -2529,8 +2731,7 @@
         updateRowHeightsForLabels();
         gantt.render();
         requestAnimationFrame(() => {
-            ensureTimelineInnerWidth();
-            scrollToScheduleRange();
+            scrollToToday();
             applyChartOverlay();
         });
         switchScheduleView('gantt');
@@ -2549,9 +2750,9 @@
         init, addActivity, duplicateSelected, deleteSelected, indentSelected, outdentSelected, openActivityDetail,
         linkSelected, unlinkSelected, zoomGantt, setTimescale, showDisplaySettings, saveDisplaySettings,
         wbsCode, applyPredecessorString,
-        toggleCriticalPath, setBaseline, showBaselineManager, activateBaseline, deleteBaseline,
-        undo, redo, fitScheduleView, scrollToToday, filterTasks, exportCsv, focusTimelineOnTask,
-        runSchedule, switchScheduleView, renderLookAhead, focusActivity,
+        toggleCriticalPath, toggleCriticalFilter, setBaseline, showBaselineManager, activateBaseline, deleteBaseline,
+        undo, redo, fitScheduleView, scrollToToday, panTimeline, filterTasks, exportCsv, focusTimelineOnTask,
+        runSchedule, switchScheduleView, renderLookAhead, focusActivity, sortByStartDate, exportXer, exportMsProjectXml,
         exportJson, importFile, printGantt, printLookAhead, saveSchedule,
         loadSchedule, clearSchedule, showColumnManager, showAddColumnDialog, removeColumn, addFieldColumn, queueSave
     };
