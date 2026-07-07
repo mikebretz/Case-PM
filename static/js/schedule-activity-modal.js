@@ -7,13 +7,23 @@
     let currentTaskId = null;
     let activeTab = 'general';
 
+    function wbsFor(task) {
+        if (window.ScheduleApp && typeof ScheduleApp.wbsCode === 'function') {
+            return ScheduleApp.wbsCode(task);
+        }
+        if (typeof gantt.getWBSCode === 'function') {
+            try { return gantt.getWBSCode(task); } catch (e) { /* community edition */ }
+        }
+        return String(task.activity_id || task.id);
+    }
+
     function succTemplate(taskId) {
         const task = gantt.getTask(taskId);
         const links = task.$source || [];
         return links.map(lid => {
             const link = gantt.getLink(lid);
             const tgt = gantt.getTask(link.target);
-            const code = gantt.getWBSCode ? gantt.getWBSCode(tgt) : tgt.id;
+            const code = wbsFor(tgt);
             const types = { '0': 'FS', '1': 'SS', '2': 'FF', '3': 'SF' };
             const lag = link.lag ? (link.lag > 0 ? `+${link.lag}` : link.lag) : '';
             return `${code}${types[link.type] || 'FS'}${lag}`;
@@ -94,7 +104,7 @@
         setVal('sam_free_float', t.free_float != null ? t.free_float : (t.$free != null ? t.$free : ''));
         setVal('sam_total_float', t.total_float != null ? t.total_float : (t.$slack != null ? t.$slack : ''));
         document.getElementById('sam_modal_title').textContent = t.text || 'Activity Detail';
-        document.getElementById('sam_wbs_badge').textContent = gantt.getWBSCode ? gantt.getWBSCode(t) : '';
+        document.getElementById('sam_wbs_badge').textContent = wbsFor(t);
     }
 
     function predString(taskId) {
@@ -104,7 +114,7 @@
         return links.map(lid => {
             const link = gantt.getLink(lid);
             const src = gantt.getTask(link.source);
-            const code = gantt.getWBSCode ? gantt.getWBSCode(src) : src.id;
+            const code = wbsFor(src);
             const lag = link.lag ? (link.lag > 0 ? `+${link.lag}` : link.lag) : '';
             return `${code}${types[link.type] || 'FS'}${lag}`;
         }).join(', ');
@@ -125,7 +135,7 @@
             let sourceId = null;
             gantt.eachTask(t => {
                 if (sourceId) return;
-                const wbs = gantt.getWBSCode ? gantt.getWBSCode(t) : String(t.id);
+                const wbs = wbsFor(t);
                 if (wbs === code || String(t.id) === code || String(t.activity_id) === code) sourceId = t.id;
             });
             if (sourceId && sourceId !== taskId) {
@@ -167,8 +177,8 @@
         t.bar_color = val('sam_bar_color');
         gantt.updateTask(currentTaskId);
         applyPredecessorString(currentTaskId, val('sam_predecessors'));
-        if (gantt.autoSchedule) gantt.autoSchedule();
-        gantt.render();
+        if (window.ScheduleApp && ScheduleApp.runSchedule) ScheduleApp.runSchedule();
+        else gantt.render();
         if (window.CasePMActivityLog) {
             CasePMActivityLog.log('Updated activity', t.text, 'schedule');
         }
