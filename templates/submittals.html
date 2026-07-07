@@ -424,10 +424,14 @@ let selectedSpecBookFile = null;
 
 const SUBMITTAL_TYPE_KEYWORDS = [
     'Product Data', 'Shop Drawings', 'Samples', 'Design Data', "Manufacturer's Instructions",
-    'Test Reports', 'Certificates', 'Qualification Data', 'Field Quality Control',
-    'Quality Assurance', 'Maintenance Data', 'Operation and Maintenance Data',
-    'Closeout Submittals', 'Record Documents', 'Warranties', 'LEED Submittals',
-    'Mockups', 'Source Quality Control', 'Preconstruction Documents', 'Reports'
+    'Manufacturers Instructions', 'Test Reports', 'Certificates', 'Qualification Data',
+    'Field Quality Control', 'Quality Assurance', 'Maintenance Data',
+    'Operation and Maintenance Data', 'Operation and Maintenance', 'Closeout Submittals',
+    'Record Documents', 'Warranties', 'LEED Submittals', 'Mockups', 'Mock-ups',
+    'Source Quality Control', 'Preconstruction Documents', 'Reports', 'Coordination Drawings',
+    'Delegated-Design Submittals', 'Sustainable Design Submittals', 'Attic Stock',
+    'Warranty', 'O&M Manual', 'Instruction Manuals', 'Material Certificates',
+    'Design Calculations', 'Schedules', 'Mill Certificates', 'Appraisal Reports'
 ];
 
 // Load data
@@ -912,9 +916,7 @@ async function processSpecBookFile(file) {
 
         for (let i = 1; i <= pageCount; i++) {
             const page = await pdf.getPage(i);
-            const content = await page.getTextContent();
-            const pageText = content.items.map(item => item.str).join(' ');
-            fullText += pageText + '\n';
+            fullText += await extractPdfPageTextFromPage(page) + '\n';
             setSpecBookProgress(5 + (i / pageCount) * 70, `Reading page ${i} of ${pageCount}...`);
         }
 
@@ -990,114 +992,362 @@ function ensureSpecSectionRegistered(specSection, sectionName) {
     }
 }
 
-function parseSpecBookText(fullText) {
-    const entries = [];
-    const seen = new Set();
-    const text = fullText
-        .replace(/\r\n/g, '\n')
-        .replace(/\f/g, '\n')
-        .replace(/([a-z])([A-Z])/g, '$1 $2');
+async function extractPdfPageTextFromPage(page) {
+  const content = await page.getTextContent();
+    const tolerance = 4;
+    const items = (content.items || [])
+      .filter(it => it.str && String(it.str).trim())
+      .map(it => ({
+        str: String(it.str).trim(),
+        x: it.transform[4],
+        y: it.transform[5]
+      }))
+      .sort((a, b) => {
+        if (Math.abs(a.y - b.y) > tolerance) return b.y - a.y;
+        return a.x - b.x;
+      });
 
-    const sectionStarts = [];
-    const sectionRe = /(?:^|\n)\s*(?:SECTION\s+)?(\d{2}\s+\d{2}\s+\d{2})\s*[-–—:.\s]*\s*([A-Z][^\n]{0,100})/gi;
-    let m;
-    while ((m = sectionRe.exec(text)) !== null) {
-        const number = normalizeSpecSectionNumber(m[1]);
-        const title = cleanSectionTitle(m[2]);
-        if (!number || title.length < 3) continue;
-        if (/^(PAGE|DIVISION|TABLE OF)/i.test(title)) continue;
-        sectionStarts.push({ index: m.index, number, title });
-    }
-
-    const dedupedSections = [];
-    sectionStarts.forEach(s => {
-        if (!dedupedSections.find(d => d.number === s.number && Math.abs(d.index - s.index) < 50)) {
-            dedupedSections.push(s);
-        }
+    const lines = [];
+    let bucket = [];
+    let lastY = null;
+    items.forEach(item => {
+      if (lastY === null || Math.abs(item.y - lastY) > tolerance) {
+        if (bucket.length) lines.push(bucket.join(' '));
+        bucket = [item.str];
+        lastY = item.y;
+      } else {
+        bucket.push(item.str);
+      }
     });
+    if (bucket.length) lines.push(bucket.join(' '));
+  return lines.join('\n');
+}
 
-    for (let i = 0; i < dedupedSections.length; i++) {
-        const start = dedupedSections[i];
-        const end = i + 1 < dedupedSections.length ? dedupedSections[i + 1].index : text.length;
-        const body = text.slice(start.index, end);
-        extractSubmittalsFromSection(body, start.number, start.title, entries, seen);
+function normalizeSpecText(raw) {
+  let text = String(raw || '')
+    .replace(/\r\n/g, '\n')
+    .replace(/\f/g, '\n')
+    .replace(/\u00a0/g, ' ');
+
+  // Re-break mashed PDF lines at common MasterFormat markers
+  text = text
+    .replace(/\s+(SECTION\s+\d{2}\s*\d{2}\s*\d{2})/gi, '\n$1')
+    .replace(/\s+(\d{2}\s+\d{2}\s+\d{2})\s{2,}([A-Z])/g, '\n$1  $2')
+    .replace(/\s+(\d{6})\s+([A-Z][A-Z])/g, '\n$1 $2')
+    .replace(/\s+(PART\s+\d+\s*[-–—])/gi, '\n$1')
+    .replace(/\s+(\d{1,2}\.\d{1,2}\s+SUBMITTALS?\b)/gi, '\n$1')
+    .replace(/\s+(\d{1,2}\.\d{1,2}\s+[A-Z][A-Z0-9\s]{3,40})\b/g, '\n$1')
+    .replace(/\s+(DIVISION\s+\d{2}\b)/gi, '\n$1');
+
+  const typeAlt = SUBMITTAL_TYPE_KEYWORDS
+    .map(k => k.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'))
+    .join('|');
+  text = text.replace(
+    new RegExp(`\\s+([A-Z])\\.\\s*(${typeAlt})\\s*:`, 'gi'),
+  '\n$1. $2:');
+  text = text.replace(
+    new RegExp(`\\s+(\\d{1,2})\\.\\s*(${typeAlt})\\s*:`, 'gi'),
+  '\n$1. $2:');
+
+  return text.replace(/[ \t]+\n/g, '\n').replace(/\n{3,}/g, '\n\n');
+}
+
+function getSubmittalTypePattern() {
+  return SUBMITTAL_TYPE_KEYWORDS
+    .map(k => k.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'))
+    .join('|');
+}
+
+function findAllSpecSections(text) {
+  const sections = [];
+  const seenAt = new Set();
+
+  const patterns = [
+    /(?:^|\n)\s*SECTION\s+(\d{2}\s*\d{2}\s*\d{2})\s*[-–—:.\s]*\s*([A-Za-z0-9][^\n]{2,100})/gi,
+    /(?:^|\n)\s*(\d{2}\s+\d{2}\s+\d{2})\s*[-–—:\s]+\s*([A-Z][A-Za-z0-9\s,&'\-/()]{3,90})/g,
+    /(?:^|\n)\s*(\d{2}\s+\d{2}\s+\d{2})\s{2,}([A-Z][A-Za-z0-9\s,&'\-/()]{3,90})/g,
+    /(?:^|\n)\s*(\d{6})\s+([A-Z][A-Za-z0-9\s,&'\-/()]{3,90})/g,
+    /(?:^|\n)\s*(\d{2}\s+\d{2}\s+\d{2})\s+([A-Z][A-Za-z0-9\s,&'\-/()]{3,70}?)\s*\.{2,}\s*\d+/g
+  ];
+
+  patterns.forEach(re => {
+    let m;
+    while ((m = re.exec(text)) !== null) {
+      const number = normalizeSpecSectionNumber(m[1]);
+      const title = cleanSectionTitle(m[2]);
+      if (!number || title.length < 3) continue;
+      if (/^(PAGE|DIVISION|TABLE OF|INDEX|END OF)/i.test(title)) continue;
+      if (/^\d+$/.test(title.trim())) continue;
+      const key = `${number}@${m.index}`;
+      if (seenAt.has(key)) continue;
+      seenAt.add(key);
+      sections.push({ index: m.index, number, title });
     }
+  });
 
-    if (entries.length === 0) {
-        extractSubmittalsFromFullText(text, entries, seen);
+  sections.sort((a, b) => a.index - b.index);
+
+  // Deduplicate: keep first title per section number unless much later (repeated header)
+  const byNumber = new Map();
+  sections.forEach(s => {
+    const prev = byNumber.get(s.number);
+    if (!prev) {
+      byNumber.set(s.number, s);
+      return;
     }
+    if (s.index - prev.index > 500) {
+      byNumber.set(s.number + '@' + s.index, s);
+    }
+  });
 
-    return entries;
+  return Array.from(byNumber.values()).sort((a, b) => a.index - b.index);
+}
+
+function findNearestSectionBefore(sections, index) {
+  let found = null;
+  for (const s of sections) {
+    if (s.index <= index) found = s;
+    else break;
+  }
+  return found;
+}
+
+function parseSpecBookText(fullText) {
+  const entries = [];
+  const seen = new Set();
+  const text = normalizeSpecText(fullText);
+  const sections = findAllSpecSections(text);
+  const typePattern = getSubmittalTypePattern();
+
+  // Pass 1: walk each section body for SUBMITTALS article(s)
+  for (let i = 0; i < sections.length; i++) {
+    const start = sections[i];
+    const end = i + 1 < sections.length ? sections[i + 1].index : text.length;
+    const body = text.slice(start.index, end);
+    extractSubmittalsFromSection(body, start.number, start.title, entries, seen);
+  }
+
+  // Pass 2: find every SUBMITTALS heading in full doc and parse nearby lines
+  const submittalHeadingRe = /(?:^|\n)\s*(\d{1,2}\.\d{1,2})?\s*SUBMITTALS?\b[^\n]*/gi;
+  let heading;
+  while ((heading = submittalHeadingRe.exec(text)) !== null) {
+    const article = heading[1] || '1.3';
+    const nearest = findNearestSectionBefore(sections, heading.index);
+    const specSection = nearest ? nearest.number : '';
+    const sectionName = nearest ? nearest.title : '';
+    const chunk = text.slice(heading.index, heading.index + 6000);
+    const blockEnd = chunk.search(/\n\s*\d{1,2}\.\d{1,2}\s+(?!SUBMITTAL)[A-Z]/i);
+    const block = blockEnd > 0 ? chunk.slice(0, blockEnd) : chunk.slice(0, 3500);
+    parseSubmittalItems(block, specSection, sectionName, article, entries, seen);
+    parseSubmittalLines(block, specSection, sectionName, article, entries, seen);
+  }
+
+  // Pass 3: global inline scan (PDFs with no line breaks between items)
+  extractInlineSubmittalItems(text, sections, entries, seen, typePattern);
+
+  // Pass 4: sections that mention submittals but produced nothing — one placeholder each
+  sections.forEach(sec => {
+    const end = sections.find(s => s.index > sec.index);
+    const body = text.slice(sec.index, end ? end.index : sec.index + 8000);
+    if (!/\bSUBMITTALS?\b/i.test(body)) return;
+    const hasForSection = entries.some(e => e.specSection === sec.number);
+    if (!hasForSection) {
+      addParsedEntry({
+        specSection: sec.number,
+        sectionName: sec.title,
+        paragraph: '1.3',
+        type: 'Submittals Required',
+        subject: `Submittals per specification — ${sec.title}`
+      }, entries, seen);
+    }
+  });
+
+  // Pass 5: if still sparse, pull from Table of Contents / section list (one row per section)
+  if (entries.length < sections.length * 0.5 && sections.length >= 3) {
+    sections.forEach(sec => {
+      if (!entries.some(e => e.specSection === sec.number)) {
+        addParsedEntry({
+          specSection: sec.number,
+          sectionName: sec.title,
+          paragraph: '',
+          type: 'Specification Section',
+          subject: `${sec.title} — review specification for submittal requirements`
+        }, entries, seen);
+      }
+    });
+  }
+
+  entries.sort((a, b) => {
+    const an = (a.specSection || '').replace(/\s/g, '');
+    const bn = (b.specSection || '').replace(/\s/g, '');
+    if (an !== bn) return an.localeCompare(bn);
+    return (a.paragraph || '').localeCompare(b.paragraph || '');
+  });
+
+  return entries;
 }
 
 function extractSubmittalsFromSection(body, specSection, sectionName, entries, seen) {
-    const submittalBlockRe = /(?:^|\n)\s*(?:\d+\.\d+\s+)?SUBMITTALS?\b[^\n]*([\s\S]*?)(?=(?:\n\s*\d+\.\d+\s+[A-Z][A-Z\s]{2,})|(?:\n\s*PART\s+\d+)|(?:\n\s*SECTION\s+\d{2}\s+\d{2}\s+\d{2})|$)/i;
-    const blockMatch = body.match(submittalBlockRe);
-    const block = blockMatch ? blockMatch[1] : '';
+  const blocks = body.split(/(?=(?:^|\n)\s*\d{1,2}\.\d{1,2}\s+SUBMITTALS?\b)/i);
+  blocks.forEach(block => {
+    if (!/\bSUBMITTALS?\b/i.test(block)) return;
+    const articleMatch = block.match(/(?:^|\n)\s*(\d{1,2}\.\d{1,2})\s+SUBMITTALS?\b/i);
+    const article = articleMatch ? articleMatch[1] : '1.3';
+    const content = block.replace(/^(?:^|\n)\s*\d{1,2}\.\d{1,2}\s+SUBMITTALS?\b[^\n]*/i, '');
+    parseSubmittalItems(content, specSection, sectionName, article, entries, seen);
+    parseSubmittalLines(content, specSection, sectionName, article, entries, seen);
+  });
 
-    if (block) {
-        const articleMatch = body.match(/(?:^|\n)\s*(\d+\.\d+)\s+SUBMITTALS?\b/i);
-        const article = articleMatch ? articleMatch[1] : '1.3';
-        parseSubmittalItems(block, specSection, sectionName, article, entries, seen);
-    }
-
-    if (!block || entries.filter(e => e.specSection === specSection).length === 0) {
-        const genericRe = new RegExp(
-            `SUBMITTALS?[\\s\\S]{0,800}?((?:[A-Z]\\.\\s*(?:${SUBMITTAL_TYPE_KEYWORDS.map(k => k.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('|')})[^\\n:]*:[^\\n]+)`,
-            'i'
-        );
-        const g = body.match(genericRe);
-        if (g) parseSubmittalItems(g[1] || g[0], specSection, sectionName, '1.3', entries, seen);
-    }
+  if (!/\bSUBMITTALS?\b/i.test(body)) return;
+  const genericRe = new RegExp(
+    `SUBMITTALS?\\b[\\s\\S]{0,4000}`,
+    'i'
+  );
+  const g = body.match(genericRe);
+  if (g) {
+    parseSubmittalItems(g[0], specSection, sectionName, '1.3', entries, seen);
+    parseSubmittalLines(g[0], specSection, sectionName, '1.3', entries, seen);
+  }
 }
 
 function parseSubmittalItems(block, specSection, sectionName, article, entries, seen) {
-    const typePattern = SUBMITTAL_TYPE_KEYWORDS.map(k => k.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('|');
-    const itemRe = new RegExp(
-        `(?:^|\\n)\\s*([A-Z])\\.\\s*(${typePattern})[^:\\n]*:\\s*([^\\n]+(?:\\n(?!\\s*[A-Z]\\.)[^\\n]+)*)`,
-        'gi'
-    );
-    let match;
-    let found = false;
-    while ((match = itemRe.exec(block)) !== null) {
-        found = true;
+  if (!block || !specSection) return;
+  const typePattern = getSubmittalTypePattern();
+  let found = false;
+
+  // A. Product Data: description (multiline)
+  const letterTypeRe = new RegExp(
+    `(?:^|\\n|\\s)\\s*([A-Z])\\.\\s*(${typePattern})\\b[^:\\n]{0,50}:\\s*([^\\n]+(?:\\n(?!\\s*[A-Z]\\.)[^\\n]+)*)`,
+    'gi'
+  );
+  let match;
+  while ((match = letterTypeRe.exec(block)) !== null) {
+    found = true;
+    addParsedEntry({
+      specSection,
+      sectionName,
+      paragraph: `${article} ${match[1]}`,
+      type: collapseWhitespace(match[2]),
+      subject: `${collapseWhitespace(match[2])} — ${collapseWhitespace(match[3])}`
+    }, entries, seen);
+  }
+
+  // 1. Product Data: numbered sub-items
+  const numTypeRe = new RegExp(
+    `(?:^|\\n|\\s)\\s*(\\d{1,2})\\.\\s*(${typePattern})\\b[^:\\n]{0,50}:\\s*([^\\n]+)`,
+    'gi'
+  );
+  while ((match = numTypeRe.exec(block)) !== null) {
+    found = true;
+    addParsedEntry({
+      specSection,
+      sectionName,
+      paragraph: `${article}.${match[1]}`,
+      type: collapseWhitespace(match[2]),
+      subject: `${collapseWhitespace(match[2])} — ${collapseWhitespace(match[3])}`
+    }, entries, seen);
+  }
+
+  // A. Any label with colon (loose)
+  if (!found) {
+    const looseRe = /(?:^|\n|\s)\s*([A-Z])\.\s*([^\n:]{4,90}?):\s*([^\n]+)/g;
+    while ((match = looseRe.exec(block)) !== null) {
+      const label = collapseWhitespace(match[2]);
+      if (/^(SECTION|PART|END|NOTE|REFER|SEE|ARTICLE|SUBMITTAL)/i.test(label)) continue;
+      if (label.length < 4) continue;
+      found = true;
+      addParsedEntry({
+        specSection,
+        sectionName,
+        paragraph: `${article} ${match[1]}`,
+        type: label.split(/\s+/).slice(0, 4).join(' '),
+        subject: `${label} — ${collapseWhitespace(match[3])}`
+      }, entries, seen);
+    }
+  }
+}
+
+function parseSubmittalLines(block, specSection, sectionName, article, entries, seen) {
+  if (!block || !specSection) return;
+  const lines = block.split('\n');
+  const typePattern = getSubmittalTypePattern();
+  const kwRe = new RegExp(`\\b(${typePattern})\\b`, 'i');
+
+  lines.forEach((line, idx) => {
+    const trimmed = line.trim();
+    if (trimmed.length < 8) return;
+
+    // Bullet / dash lines: "- Product Data for ..."
+    const bullet = trimmed.match(/^[-•*]\s*(.+)$/);
+    if (bullet) {
+      const body = bullet[1].trim();
+      const kw = body.match(kwRe);
+      if (kw) {
         addParsedEntry({
-            specSection,
-            sectionName,
-            paragraph: `${article} ${match[1]}`,
-            type: match[2].trim(),
-            subject: `${match[2].trim()} — ${collapseWhitespace(match[3])}`
+          specSection,
+          sectionName,
+          paragraph: `${article}.${idx + 1}`,
+          type: kw[1],
+          subject: collapseWhitespace(body)
         }, entries, seen);
+      } else if (/submittal|submit|provide|furnish|include/i.test(body)) {
+        addParsedEntry({
+          specSection,
+          sectionName,
+          paragraph: `${article}.${idx + 1}`,
+          type: 'Submittal Item',
+          subject: collapseWhitespace(body)
+        }, entries, seen);
+      }
+      return;
     }
 
-    if (!found) {
-        const looseRe = /(?:^|\n)\s*([A-Z])\.\s*([^\n:]{4,80}):\s*([^\n]+)/g;
-        while ((match = looseRe.exec(block)) !== null) {
-            const label = match[2].trim();
-            if (/^(SECTION|PART|END|NOTE|REFER)/i.test(label)) continue;
-            found = true;
-            addParsedEntry({
-                specSection,
-                sectionName,
-                paragraph: `${article} ${match[1]}`,
-                type: label.split(/\s+/).slice(0, 3).join(' '),
-                subject: `${label} — ${collapseWhitespace(match[3])}`
-            }, entries, seen);
-        }
+    // "Submit ..." / "Provide ..." / "Furnish ..."
+    if (/^(Submit|Provide|Furnish|Include|Send|Deliver)\b/i.test(trimmed)) {
+      addParsedEntry({
+        specSection,
+        sectionName,
+        paragraph: `${article}.${idx + 1}`,
+        type: 'Submittal Requirement',
+        subject: collapseWhitespace(trimmed)
+      }, entries, seen);
     }
+  });
+}
+
+function extractInlineSubmittalItems(text, sections, entries, seen, typePattern) {
+  const inlineRe = new RegExp(
+    `\\b([A-Z])\\.\\s*(${typePattern})\\b[^:]{0,40}:\\s*([^]*?)(?=\\s+[A-Z]\\.\\s*(?:${typePattern})\\b|\\s+\\d{1,2}\\.\\d{1,2}\\s+[A-Z]{3,}|\\s+SECTION\\s+\\d{2}|$)`,
+    'gi'
+  );
+  let match;
+  while ((match = inlineRe.exec(text)) !== null) {
+    const nearest = findNearestSectionBefore(sections, match.index);
+    if (!nearest) continue;
+    addParsedEntry({
+      specSection: nearest.number,
+      sectionName: nearest.title,
+      paragraph: `1.3 ${match[1]}`,
+      type: collapseWhitespace(match[2]),
+      subject: `${collapseWhitespace(match[2])} — ${collapseWhitespace(match[3])}`
+    }, entries, seen);
+  }
 }
 
 function extractSubmittalsFromFullText(text, entries, seen) {
-    const typePattern = SUBMITTAL_TYPE_KEYWORDS.map(k => k.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('|');
-    const globalRe = new RegExp(
-        `(\\d{2}\\s+\\d{2}\\s+\\d{2})[\\s\\S]{0,2500}?SUBMITTALS?[\\s\\S]{0,1200}?((?:[A-Z]\\.\\s*(?:${typePattern})[^\\n:]*:[^\\n]+\\s*)+)`,
-        'gi'
-    );
-    let match;
-    while ((match = globalRe.exec(text)) !== null) {
-        const specSection = normalizeSpecSectionNumber(match[1]);
-        parseSubmittalItems(match[2], specSection, '', '1.3', entries, seen);
-    }
+  // Legacy fallback — kept for compatibility
+  const typePattern = getSubmittalTypePattern();
+  const globalRe = new RegExp(
+    `(\\d{2}\\s+\\d{2}\\s+\\d{2})[\\s\\S]{0,3500}?SUBMITTALS?[\\s\\S]{0,2500}`,
+    'gi'
+  );
+  let match;
+  while ((match = globalRe.exec(text)) !== null) {
+    const specSection = normalizeSpecSectionNumber(match[1]);
+    const chunk = match[0];
+    parseSubmittalItems(chunk, specSection, '', '1.3', entries, seen);
+    parseSubmittalLines(chunk, specSection, '', '1.3', entries, seen);
+  }
 }
 
 function collapseWhitespace(str) {
