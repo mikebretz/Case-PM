@@ -78,11 +78,17 @@
                 <button type="button" class="schedule-toolbar-btn active-tool" data-timescale="week" onclick="ScheduleApp.setTimescale('week')" title="Week view">Weeks</button>
                 <button type="button" class="schedule-toolbar-btn" data-timescale="month" onclick="ScheduleApp.setTimescale('month')" title="Month view">Months</button>
                 <button type="button" class="schedule-toolbar-btn" data-timescale="quarter" onclick="ScheduleApp.setTimescale('quarter')" title="Quarter view">Quarters</button>
+                <button type="button" class="schedule-toolbar-btn" onclick="ScheduleApp.panTimeline(-1, 'month')" title="Previous month"><i class="fa-solid fa-chevron-left"></i></button>
+                <button type="button" class="schedule-toolbar-btn" onclick="ScheduleApp.panTimeline(1, 'month')" title="Next month"><i class="fa-solid fa-chevron-right"></i></button>
                 <button type="button" class="schedule-toolbar-btn" onclick="ScheduleApp.zoomGantt('in')"><i class="fa-solid fa-magnifying-glass-plus"></i></button>
                 <button type="button" class="schedule-toolbar-btn" onclick="ScheduleApp.zoomGantt('out')"><i class="fa-solid fa-magnifying-glass-minus"></i></button>
-                <button type="button" class="schedule-toolbar-btn" onclick="ScheduleApp.fitScheduleView()" title="Scroll timeline to show task bars"><i class="fa-solid fa-compress-arrows-alt text-sky-400"></i> Fit View</button>
-                <button type="button" class="schedule-toolbar-btn" onclick="ScheduleApp.scrollToToday()" title="Scroll to today"><i class="fa-solid fa-calendar-day"></i> Today</button>
+                <button type="button" class="schedule-toolbar-btn" onclick="ScheduleApp.fitScheduleView()" title="Center timeline on schedule range"><i class="fa-solid fa-compress-arrows-alt text-sky-400"></i> Fit View</button>
+                <button type="button" class="schedule-toolbar-btn" onclick="ScheduleApp.scrollToToday()" title="Scroll to data date / today"><i class="fa-solid fa-calendar-day"></i> Today</button>
+                <button type="button" id="criticalFilterBtn" class="schedule-toolbar-btn" onclick="ScheduleApp.toggleCriticalFilter()" title="Show critical activities only"><i class="fa-solid fa-filter text-amber-400"></i> Critical Only</button>
+                <button type="button" class="schedule-toolbar-btn" onclick="ScheduleApp.sortByStartDate()" title="Sort activities by start date"><i class="fa-solid fa-arrow-down-short-wide"></i> Sort</button>
                 <button type="button" class="schedule-toolbar-btn" onclick="ScheduleApp.exportCsv()" title="Export grid to CSV"><i class="fa-solid fa-file-csv"></i> CSV</button>
+                <button type="button" class="schedule-toolbar-btn" onclick="ScheduleApp.exportXer()" title="Export Primavera XER"><i class="fa-solid fa-file-export text-sky-400"></i> XER</button>
+                <button type="button" class="schedule-toolbar-btn" onclick="ScheduleApp.exportMsProjectXml()" title="Export MS Project XML"><i class="fa-solid fa-file-code"></i> XML</button>
                 <button type="button" class="schedule-toolbar-btn" onclick="ScheduleApp.showColumnManager()" title="Add or remove grid columns"><i class="fa-solid fa-table-columns"></i> Columns</button>
             </div>
         </div>
@@ -376,6 +382,7 @@
 <script src="https://cdn.dhtmlx.com/gantt/edge/ext/dhtmlxgantt_zoom.js"></script>
 <script src="{{ url_for('static', filename='js/schedule-cpm.js') }}"></script>
 <script src="{{ url_for('static', filename='js/schedule-import.js') }}"></script>
+<script src="{{ url_for('static', filename='js/schedule-export.js') }}"></script>
 <script src="{{ url_for('static', filename='js/schedule-fields.js') }}"></script>
 <script src="{{ url_for('static', filename='js/schedule-activity-modal.js') }}"></script>
 <script src="{{ url_for('static', filename='js/schedule-app.js') }}"></script>

@@ -83,6 +83,39 @@ body:has(.schedule-page-root) #mainContent {
     right: 0 !important;
     top: 0 !important;
     bottom: 0 !important;
+    overflow: visible !important;
+    display: flex !important;
+    flex-direction: column !important;
+}
+.schedule-overlay-mode #gantt_here .gantt_layout_cell:nth-child(3) > .gantt_layout_content {
+    flex: 1 1 auto !important;
+    min-height: 0 !important;
+    display: flex !important;
+    flex-direction: column !important;
+    overflow: hidden !important;
+}
+.schedule-overlay-mode #gantt_here .gantt_layout_cell:nth-child(3) [data-cell-id="scrollHor"] {
+    flex: 0 0 18px !important;
+    height: 18px !important;
+    min-height: 18px !important;
+    max-height: 18px !important;
+    z-index: 22 !important;
+    position: relative !important;
+    visibility: visible !important;
+    opacity: 1 !important;
+    pointer-events: auto !important;
+    background: #18181b !important;
+    border-top: 1px solid #3f3f46 !important;
+}
+.schedule-overlay-mode #gantt_here .gantt_layout_cell:nth-child(3) .gantt_hor_scroll,
+.schedule-overlay-mode #gantt_here .gantt_layout_cell:nth-child(3) .gantt_scroll_hor {
+    overflow-x: auto !important;
+    overflow-y: hidden !important;
+    width: 100% !important;
+    pointer-events: auto !important;
+}
+.schedule-overlay-mode #gantt_here .gantt_layout_cell:nth-child(3) .gantt_task {
+    overflow: visible !important;
 }
 .schedule-chart-resizer {
     position: absolute;
