@@ -48,6 +48,9 @@
                 <button type="button" class="schedule-toolbar-btn" onclick="ScheduleApp.addActivity('milestone')" title="Add Milestone">
                     <i class="fa-solid fa-diamond text-sky-400"></i> Milestone
                 </button>
+                <button type="button" class="schedule-toolbar-btn" onclick="ScheduleApp.duplicateSelected()" title="Duplicate selected (Ctrl+D)">
+                    <i class="fa-solid fa-copy"></i>
+                </button>
                 <button type="button" class="schedule-toolbar-btn" onclick="ScheduleApp.deleteSelected()" title="Delete selected">
                     <i class="fa-solid fa-trash text-red-400"></i>
                 </button>
@@ -197,6 +200,10 @@
         <label class="flex items-center gap-2 text-sm text-zinc-300">
             <input id="dispShowBaselineBars" type="checkbox" class="rounded border-zinc-600" checked>
             Show baseline bars on Gantt
+        </label>
+        <label class="flex items-center gap-2 text-sm text-zinc-300">
+            <input id="dispShowBarLabels" type="checkbox" class="rounded border-zinc-600" checked>
+            Show EVM labels under activity bars (% complete, CPI, SPI, float, cost)
         </label>
         <p class="text-xs text-zinc-500">Per-activity bar colors can still be set in the activity detail modal or Color column.</p>
     </div>

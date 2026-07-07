@@ -44,15 +44,20 @@
         link_color: '#94a3b8',
         link_width: 2,
         active_baseline_index: -1,
-        show_baseline_bars: true
+        show_baseline_bars: true,
+        show_bar_labels: true
     };
 
     const REQUIRED_COLUMNS = ['text', 'collapse'];
+    const ROLLING_YEARS_BACK = 2;
+    const ROLLING_YEARS_FORWARD = 4;
+    const ROLLING_MIN_SPAN_DAYS = 365 * 6;
 
     let editingContext = null;
     let editorClampTimer = null;
     let floatingEditorActive = false;
-    let lastScrollTargetDate = null;
+    let rollingCalendarBounds = null;
+    let initialTimelineFocused = false;
     const columnEditors = new Map();
 
     function pushUndoState() {
@@ -264,10 +269,21 @@
         return gantt.config.columns.reduce((sum, col) => sum + (parseInt(col.width, 10) || 0), 0);
     }
 
+    function normalizeHexColor(value) {
+        if (!value) return '';
+        let hex = String(value).trim();
+        if (!hex) return '';
+        if (!hex.startsWith('#')) hex = '#' + hex;
+        if (/^#[0-9a-fA-F]{3}$/.test(hex)) {
+            hex = '#' + hex[1] + hex[1] + hex[2] + hex[2] + hex[3] + hex[3];
+        }
+        return /^#[0-9a-fA-F]{6}$/.test(hex) ? hex.toLowerCase() : '';
+    }
+
     function applyTaskBarColor(task) {
         if (!task || task.type === 'project') return;
-        const color = resolveBarColor(task);
-        task.color = task.bar_color || color;
+        if (task.bar_color) task.bar_color = normalizeHexColor(task.bar_color) || task.bar_color;
+        task.color = resolveBarColor(task);
     }
 
     function orderColumns(cols) {
@@ -474,19 +490,49 @@
         });
     }
 
-    function getProjectDateBounds() {
-        if (!ganttReady) return null;
-        const range = gantt.getSubtaskDates();
-        let start = range?.start_date ? toGanttDate(range.start_date) : new Date();
-        let end = range?.end_date ? toGanttDate(range.end_date) : new Date(start.getTime() + 120 * 86400000);
-        if (!start) start = new Date();
-        if (!end || end <= start) end = CasePMSchedule.addCalendarDays(start, 120);
-        start = CasePMSchedule.addCalendarDays(start, -120);
-        end = CasePMSchedule.addCalendarDays(end, 240);
-        if (CasePMSchedule.calendarDaysBetween(start, end) < 540) {
-            end = CasePMSchedule.addCalendarDays(start, 540);
+    function computeRollingCalendarBounds() {
+        const today = new Date();
+        let start = CasePMSchedule.addCalendarDays(today, -ROLLING_YEARS_BACK * 365);
+        let end = CasePMSchedule.addCalendarDays(today, ROLLING_YEARS_FORWARD * 365);
+        if (ganttReady) {
+            const range = gantt.getSubtaskDates();
+            if (range?.start_date) {
+                const ts = toGanttDate(range.start_date);
+                if (ts) {
+                    const padded = CasePMSchedule.addCalendarDays(ts, -180);
+                    if (padded < start) start = padded;
+                }
+            }
+            if (range?.end_date) {
+                const te = toGanttDate(range.end_date);
+                if (te) {
+                    const padded = CasePMSchedule.addCalendarDays(te, 365);
+                    if (padded > end) end = padded;
+                }
+            }
+        }
+        if (CasePMSchedule.calendarDaysBetween(start, end) < ROLLING_MIN_SPAN_DAYS) {
+            end = CasePMSchedule.addCalendarDays(start, ROLLING_MIN_SPAN_DAYS);
         }
         return { start, end };
+    }
+
+    function applyRollingCalendarRange(forceReset) {
+        const bounds = computeRollingCalendarBounds();
+        if (!forceReset && rollingCalendarBounds) {
+            const nextStart = bounds.start < rollingCalendarBounds.start ? bounds.start : rollingCalendarBounds.start;
+            const nextEnd = bounds.end > rollingCalendarBounds.end ? bounds.end : rollingCalendarBounds.end;
+            rollingCalendarBounds = { start: nextStart, end: nextEnd };
+        } else {
+            rollingCalendarBounds = bounds;
+        }
+        gantt.config.start_date = rollingCalendarBounds.start;
+        gantt.config.end_date = rollingCalendarBounds.end;
+    }
+
+    function getProjectDateBounds() {
+        if (rollingCalendarBounds) return rollingCalendarBounds;
+        return computeRollingCalendarBounds();
     }
 
     function setTimelineScrollX(px) {
@@ -506,63 +552,79 @@
         if (!bounds) return;
         const right = gantt.posFromDate(bounds.end);
         if (right == null) return;
-        const w = Math.max(right + 400, 3000);
+        const w = Math.max(right + 600, 8000);
         document.querySelectorAll(
             '#gantt_here .gantt_layout_cell:nth-child(3) .gantt_task_bg, ' +
             '#gantt_here .gantt_layout_cell:nth-child(3) .gantt_data_area, ' +
-            '#gantt_here .gantt_layout_cell:nth-child(3) .gantt_bars_area'
+            '#gantt_here .gantt_layout_cell:nth-child(3) .gantt_bars_area, ' +
+            '#gantt_here .gantt_layout_cell:nth-child(3) .gantt_task'
         ).forEach(el => {
             el.style.width = w + 'px';
             el.style.minWidth = w + 'px';
         });
     }
 
-    function scrollTimelineToDate(date) {
+    function scrollTimelineToDate(date, marginPx) {
         if (!date) return;
         const d = toGanttDate(date);
         if (!d) return;
-        lastScrollTargetDate = d;
+        const margin = marginPx != null ? marginPx : 80;
         if (typeof gantt.posFromDate === 'function') {
             const x = gantt.posFromDate(d);
             if (x != null) {
-                setTimelineScrollX(Math.max(0, x - 80));
+                setTimelineScrollX(Math.max(0, x - margin));
                 return;
             }
         }
         if (gantt.showDate) gantt.showDate(d);
     }
 
-    function syncTimelineToTasks() {
+    function focusTimelineOnTask(id) {
+        if (!ganttReady || !id || !gantt.isTaskExists(id)) return;
+        const task = gantt.getTask(id);
+        if (task.type === 'project') return;
+        const start = toGanttDate(task.start_date);
+        const end = toGanttDate(task.end_date) || start;
+        if (!start || typeof gantt.posFromDate !== 'function') return;
+        const left = gantt.posFromDate(start);
+        const right = gantt.posFromDate(end);
+        if (left == null) return;
+        const mid = (left + (right != null ? right : left)) / 2;
+        const timelineW = getTimelineWidth();
+        setTimelineScrollX(Math.max(0, mid - timelineW / 2));
+    }
+
+    function syncTimelineToTasks(options) {
         if (!ganttReady) return;
-        applyTimelineDateRange();
+        const opts = options || {};
+        applyRollingCalendarRange(false);
+        updateRowHeightsForLabels();
         gantt.render();
         requestAnimationFrame(() => {
             ensureTimelineInnerWidth();
-            scrollToScheduleRange();
+            if (opts.scrollToTasks) scrollToScheduleRange();
             applyChartOverlay();
-            requestAnimationFrame(() => {
-                ensureTimelineInnerWidth();
-                scrollToScheduleRange();
-            });
         });
     }
 
     function scrollToToday() {
         if (!ganttReady) return;
-        const today = toGanttDate(CasePMSchedule.formatDate(new Date()));
-        if (today) gantt.showDate(today);
+        scrollTimelineToDate(CasePMSchedule.formatDate(new Date()), getTimelineWidth() / 2);
         applyChartOverlay();
     }
 
     function fitScheduleView() {
-        syncTimelineToTasks();
+        syncTimelineToTasks({ scrollToTasks: true });
     }
 
     function applyTimelineDateRange() {
-        const bounds = getProjectDateBounds();
-        if (!bounds) return;
-        gantt.config.start_date = bounds.start;
-        gantt.config.end_date = bounds.end;
+        applyRollingCalendarRange(false);
+    }
+
+    function updateRowHeightsForLabels() {
+        const showLabels = scheduleSettings.show_bar_labels !== false;
+        gantt.config.row_height = showLabels ? 52 : 38;
+        gantt.config.bar_height = showLabels ? 22 : 24;
     }
 
     function taskDateInputValue(task, field) {
@@ -703,6 +765,49 @@
     }
 
     let baselineLayerBound = false;
+    let barLabelLayerBound = false;
+
+    function buildBarSublabelText(task) {
+        const parts = [];
+        const pct = Math.round(effectiveProgress(task) * 100);
+        parts.push(pct + '% complete');
+        if (task.schedule_percent_complete != null && String(task.percent_complete_type || '').toLowerCase() === 'duration') {
+            parts.push('Sched ' + Math.round(Number(task.schedule_percent_complete)) + '%');
+        }
+        if (task.cpi != null && !Number.isNaN(Number(task.cpi))) parts.push('CPI ' + Number(task.cpi).toFixed(2));
+        if (task.spi != null && !Number.isNaN(Number(task.spi))) parts.push('SPI ' + Number(task.spi).toFixed(2));
+        if (task.total_float != null) parts.push('TF ' + task.total_float + 'd');
+        if (task.cost != null && task.cost !== '') {
+            const cost = Number(task.cost);
+            if (!Number.isNaN(cost)) parts.push('$' + cost.toLocaleString(undefined, { maximumFractionDigits: 0 }));
+        }
+        if (task.resource) parts.push(task.resource);
+        return parts.join(' · ');
+    }
+
+    function initBarLabels() {
+        if (barLabelLayerBound || typeof gantt.addTaskLayer !== 'function') return;
+        barLabelLayerBound = true;
+        gantt.addTaskLayer(function renderBarSublabel(task) {
+            if (scheduleSettings.show_bar_labels === false) return null;
+            if (task.type === 'project') return null;
+            const start = toGanttDate(task.start_date);
+            if (!start || typeof gantt.posFromDate !== 'function' || typeof gantt.getTaskTop !== 'function') return null;
+            const left = gantt.posFromDate(start);
+            const top = gantt.getTaskTop(task.id);
+            if (left == null || top == null) return null;
+            const label = buildBarSublabelText(task);
+            if (!label) return null;
+            const barH = gantt.config.bar_height || 22;
+            const el = document.createElement('div');
+            el.className = 'gantt_bar_sublabel';
+            el.textContent = label;
+            el.style.cssText = `position:absolute;left:${left}px;top:${top + barH + 2}px;max-width:420px;pointer-events:none;`;
+            el.title = label;
+            return el;
+        });
+    }
+
     function initBaselineBars() {
         if (baselineLayerBound || typeof gantt.addTaskLayer !== 'function') return;
         baselineLayerBound = true;
@@ -862,14 +967,31 @@
         return `<span class="sched-tree-btn" title="${open ? 'Collapse' : 'Expand'}">${open ? '▾' : '▸'}</span>`;
     }
 
+    function constraintLabel(type) {
+        const map = {
+            asap: '', alap: 'ALAP', mso: 'MSO', mfo: 'MFO',
+            snet: 'SNET', snlt: 'SNLT', fnet: 'FNET', fnlt: 'FNLT'
+        };
+        return map[String(type || 'asap').toLowerCase()] || String(type || '').toUpperCase();
+    }
+
+    function constraintTemplate(task) {
+        if (!task || task.type === 'project') return '';
+        const code = constraintLabel(task.constraint_type);
+        if (!code) return '';
+        const date = task.constraint_date ? formatDateSafe(task.constraint_date) : '';
+        return `<span class="sched-constraint-badge" title="Constraint: ${code}${date ? ' ' + date : ''}">${code}</span>`;
+    }
+
     function resolveBarColor(task) {
         if (!task || task.type === 'project') return '#64748b';
-        if (task.bar_color) return task.bar_color;
-        if (isTaskCritical(task)) return scheduleSettings.critical_bar_color;
-        if (Math.round((task.progress || 0) * 100) >= 100) return scheduleSettings.complete_bar_color;
-        if ((task.progress || 0) > 0) return scheduleSettings.progress_bar_color;
-        if (task.type === 'milestone') return scheduleSettings.milestone_color;
-        return scheduleSettings.default_bar_color;
+        const custom = normalizeHexColor(task.bar_color);
+        if (custom) return custom;
+        if (isTaskCritical(task)) return normalizeHexColor(scheduleSettings.critical_bar_color) || '#ef4444';
+        if (Math.round(effectiveProgress(task) * 100) >= 100) return normalizeHexColor(scheduleSettings.complete_bar_color) || '#71717a';
+        if (effectiveProgress(task) > 0) return normalizeHexColor(scheduleSettings.progress_bar_color) || '#f59e0b';
+        if (task.type === 'milestone') return normalizeHexColor(scheduleSettings.milestone_color) || '#8b5cf6';
+        return normalizeHexColor(scheduleSettings.default_bar_color) || '#3b82f6';
     }
 
     function applyPredecessorString(taskId, predStr) {
@@ -919,7 +1041,11 @@
             { name: 'resource', label: 'Resource', width: 108, min_width: 70, resize: true, editor: { type: 'sched_text', map_to: 'resource' } },
             { name: 'owner', label: 'Responsible', width: 108, min_width: 70, resize: true, editor: { type: 'sched_text', map_to: 'owner' } },
             { name: 'total_float', label: 'Total Float', width: 72, align: 'center', resize: true, template: t => t.$slack != null ? t.$slack : (t.total_float != null ? t.total_float : '') },
-            { name: 'bar_color', label: 'Color', width: 58, align: 'center', resize: true, template: t => t.bar_color ? `<span class="sched-color-swatch" style="background:${t.bar_color}"></span>` : '—', editor: { type: 'color_hex', map_to: 'bar_color' } }
+            { name: 'constraint_type', label: 'Cstr', width: 52, align: 'center', resize: true, template: constraintTemplate },
+            { name: 'bar_color', label: 'Color', width: 58, align: 'center', resize: true, template: t => {
+                const c = normalizeHexColor(t.bar_color);
+                return c ? `<span class="sched-color-swatch" style="background:${c}"></span>` : '—';
+            }, editor: { type: 'color_hex', map_to: 'bar_color' } }
         ];
     }
 
@@ -997,9 +1123,10 @@
         if (type === 'pred_string') {
             applyPredecessorString(taskId, value);
         } else if (type === 'color_hex') {
-            task.bar_color = value;
+            task.bar_color = normalizeHexColor(value) || value;
             applyTaskBarColor(task);
             gantt.updateTask(taskId);
+            gantt.refreshTask(taskId);
         } else if (type === 'sched_date' || type === 'date') {
             if (value) task[field] = toGanttDate(value);
             sanitizeTaskDates(task);
@@ -1118,6 +1245,7 @@
         gantt.config.time_step = 1440;
         gantt.config.row_height = 38;
         gantt.config.bar_height = 24;
+        updateRowHeightsForLabels();
         gantt.config.scale_height = 52;
         gantt.config.scroll_size = 18;
         gantt.config.fit_tasks = false;
@@ -1188,14 +1316,21 @@
 
         gantt.templates.task_class = function (start, end, task) {
             const classes = [];
-            if (gantt.config.highlight_critical_path && isTaskCritical(task)) classes.push('cpm_critical');
+            if (task.type === 'project') {
+                classes.push('cpm_summary');
+                return classes.join(' ');
+            }
             if (task.type === 'milestone') classes.push('cpm_milestone');
-            if (task.type === 'project') classes.push('cpm_summary');
             if (isLoeTask(task)) classes.push('cpm_loe');
-            if (task.bar_color) classes.push('cpm_custom_color');
-            const p = Math.round(effectiveProgress(task) * 100);
-            if (p >= 100) classes.push('cpm_complete');
-            else if (p > 0) classes.push('cpm_in_progress');
+            const custom = normalizeHexColor(task.bar_color);
+            if (custom) {
+                classes.push('cpm_custom_color');
+            } else {
+                if (gantt.config.highlight_critical_path && isTaskCritical(task)) classes.push('cpm_critical');
+                const p = Math.round(effectiveProgress(task) * 100);
+                if (p >= 100) classes.push('cpm_complete');
+                else if (p > 0) classes.push('cpm_in_progress');
+            }
             return classes.join(' ');
         };
 
@@ -1206,8 +1341,8 @@
         };
 
         gantt.templates.task_text = function (start, end, task) {
-            if (task.type === 'project') return '';
-            return `<span class="gantt-bar-date-label">${formatDateSafe(start)}</span>`;
+            if (task.type === 'project') return task.text || '';
+            return task.text || '';
         };
 
         gantt.templates.rightside_text = function (start, end, task) {
@@ -1245,6 +1380,9 @@
             }
             if (target.closest?.('.gantt_tree_icon')) return true;
             gantt.selectTask(id);
+            if (!target.closest?.('.sched-floating-cell-editor')) {
+                focusTimelineOnTask(id);
+            }
             return true;
         });
 
@@ -1286,7 +1424,7 @@
         gantt.attachEvent('onAfterLinkUpdate', () => { pushUndoState(); queueSave(); });
         gantt.attachEvent('onAfterLinkDelete', () => { pushUndoState(); queueSave(); });
         gantt.attachEvent('onAfterTaskDrag', function () {
-            applyTimelineDateRange();
+            applyRollingCalendarRange(false);
             pushUndoState();
             queueSave();
             gantt.render();
@@ -1311,9 +1449,6 @@
             updateStatusBar();
             updateDeadlineMarkers();
             ensureTimelineInnerWidth();
-            if (lastScrollTargetDate) {
-                requestAnimationFrame(() => scrollTimelineToDate(lastScrollTargetDate));
-            }
             if (!overlayDrag.active) {
                 requestAnimationFrame(applyChartOverlay);
             }
@@ -1322,7 +1457,8 @@
         document.addEventListener('keydown', onScheduleKeyDown);
 
         initBaselineBars();
-        applyTimelineDateRange();
+        initBarLabels();
+        applyRollingCalendarRange(true);
 
 
         syncGridTableWidth();
@@ -1349,6 +1485,11 @@
             const id = gantt.getSelectedId();
             if (!id) return;
             startCellEdit(id, 'text');
+            return;
+        }
+        if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'd') {
+            e.preventDefault();
+            duplicateSelected();
             return;
         }
         if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'z' && !e.shiftKey) {
@@ -1434,14 +1575,22 @@
         applySettingsToUI();
         gantt.eachTask(t => applyTaskBarColor(t));
         applyBaselineVariance();
-        applyTimelineDateRange();
+        applyRollingCalendarRange(true);
+        updateRowHeightsForLabels();
         queueChartOverlay();
         gantt.render();
         setSaveStatus('Ready');
         pushUndoState();
         updateDataDateMarker();
         updateDeadlineMarkers();
-        setTimeout(() => syncTimelineToTasks(), 150);
+        if (!initialTimelineFocused) {
+            initialTimelineFocused = true;
+            setTimeout(() => {
+                ensureTimelineInnerWidth();
+                scrollToScheduleRange();
+                applyChartOverlay();
+            }, 150);
+        }
         return true;
     }
 
@@ -1576,6 +1725,8 @@
         set('dispLinkWidth', s.link_width || 2);
         const bl = document.getElementById('dispShowBaselineBars');
         if (bl) bl.checked = s.show_baseline_bars !== false;
+        const lbl = document.getElementById('dispShowBarLabels');
+        if (lbl) lbl.checked = s.show_bar_labels !== false;
         document.getElementById('scheduleDisplayModal')?.showModal();
     }
 
@@ -1589,6 +1740,9 @@
         scheduleSettings.link_color = get('dispLinkColor') || '#94a3b8';
         scheduleSettings.link_width = parseInt(get('dispLinkWidth'), 10) || 2;
         scheduleSettings.show_baseline_bars = document.getElementById('dispShowBaselineBars')?.checked !== false;
+        scheduleSettings.show_bar_labels = document.getElementById('dispShowBarLabels')?.checked !== false;
+        gantt.eachTask(t => applyTaskBarColor(t));
+        updateRowHeightsForLabels();
         applyGanttDisplayStyles();
         gantt.render();
         document.getElementById('scheduleDisplayModal')?.close();
@@ -1631,6 +1785,44 @@
         return parent;
     }
 
+    function duplicateSelected() {
+        const id = gantt.getSelectedId();
+        if (!id || !gantt.isTaskExists(id)) return showScheduleAlert('Select an activity to duplicate.', 'warning');
+        const src = gantt.getTask(id);
+        if (src.type === 'project') return showScheduleAlert('Select a task or milestone to duplicate, not a summary row.', 'warning');
+        const clone = {
+            text: (src.text || 'Activity') + ' (copy)',
+            activity_id: nextActivityId(),
+            type: src.type || 'task',
+            start_date: toGanttDate(src.start_date),
+            end_date: toGanttDate(src.end_date),
+            duration: src.duration,
+            progress: src.progress || 0,
+            parent: src.parent,
+            open: true,
+            resource: src.resource,
+            owner: src.owner,
+            cost: src.cost,
+            bar_color: src.bar_color,
+            constraint_type: src.constraint_type,
+            constraint_date: src.constraint_date,
+            activity_type: src.activity_type,
+            percent_complete_type: src.percent_complete_type,
+            notes: src.notes
+        };
+        EXTENDED_FIELDS.forEach(f => {
+            if (src[f] != null && clone[f] == null) clone[f] = src[f];
+        });
+        const newId = gantt.addTask(clone, src.parent);
+        applyTaskBarColor(gantt.getTask(newId));
+        gantt.selectTask(newId);
+        focusTimelineOnTask(newId);
+        gantt.render();
+        pushUndoState();
+        queueSave();
+        logActivity('Duplicated activity', src.text);
+    }
+
     function addActivity(type) {
         const parent = resolveAddParent();
         const today = toGanttDate(CasePMSchedule.formatDate(new Date()));
@@ -1647,6 +1839,7 @@
         }, parent);
         applyTaskBarColor(gantt.getTask(id));
         gantt.selectTask(id);
+        focusTimelineOnTask(id);
         gantt.showTask(id);
         gantt.render();
         queueChartOverlay();
@@ -1871,15 +2064,15 @@
         sanitizeAllTaskDates();
         applyBaselineVariance();
         rollupSummaryProgress();
-        applyTimelineDateRange();
+        applyRollingCalendarRange(false);
         wbsCodeMap = wbsMap || CasePMSchedule.buildWbsMap(tasks);
         gantt.render();
-        scrollToScheduleRange();
+        if (!opts.skipScroll) scrollToScheduleRange();
         updateDataDateMarker();
         applyChartOverlay();
         requestAnimationFrame(() => {
             ensureTimelineInnerWidth();
-            scrollToScheduleRange();
+            if (!opts.skipScroll) scrollToScheduleRange();
         });
         updateStatusBar();
         queueSave();
@@ -2079,6 +2272,7 @@
         switchScheduleView('gantt');
         gantt.selectTask(id);
         gantt.showTask(id);
+        focusTimelineOnTask(id);
     }
 
     function countTasks() {
@@ -2330,8 +2524,15 @@
         initZoom();
         if (scheduleSettings.timescale) setTimescale(scheduleSettings.timescale, false);
         await loadSchedule();
-        runSchedule();
-        syncTimelineToTasks();
+        runSchedule({ skipScroll: true });
+        applyRollingCalendarRange(true);
+        updateRowHeightsForLabels();
+        gantt.render();
+        requestAnimationFrame(() => {
+            ensureTimelineInnerWidth();
+            scrollToScheduleRange();
+            applyChartOverlay();
+        });
         switchScheduleView('gantt');
         const pid = getSelectedProjectId();
         if (pid) localStorage.setItem('casepm_current_project_id', String(pid));
@@ -2345,11 +2546,11 @@
     }
 
     window.ScheduleApp = {
-        init, addActivity, deleteSelected, indentSelected, outdentSelected, openActivityDetail,
+        init, addActivity, duplicateSelected, deleteSelected, indentSelected, outdentSelected, openActivityDetail,
         linkSelected, unlinkSelected, zoomGantt, setTimescale, showDisplaySettings, saveDisplaySettings,
         wbsCode, applyPredecessorString,
         toggleCriticalPath, setBaseline, showBaselineManager, activateBaseline, deleteBaseline,
-        undo, redo, fitScheduleView, scrollToToday, filterTasks, exportCsv,
+        undo, redo, fitScheduleView, scrollToToday, filterTasks, exportCsv, focusTimelineOnTask,
         runSchedule, switchScheduleView, renderLookAhead, focusActivity,
         exportJson, importFile, printGantt, printLookAhead, saveSchedule,
         loadSchedule, clearSchedule, showColumnManager, showAddColumnDialog, removeColumn, addFieldColumn, queueSave
