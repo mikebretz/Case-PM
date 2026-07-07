@@ -76,14 +76,233 @@
         return task.type === 'project' || task.$has_child;
     }
 
+    function addCalendarDays(start, days) {
+        const d = parseDate(start);
+        if (!d) return null;
+        const out = new Date(d.getTime());
+        out.setDate(out.getDate() + Math.round(Number(days) || 0));
+        return out;
+    }
+
+    function calendarDaysBetween(start, end) {
+        const s = parseDate(start);
+        const e = parseDate(end);
+        if (!s || !e) return 0;
+        return Math.round((e.getTime() - s.getTime()) / MS_DAY);
+    }
+
+    function calcFinishFromStart(start, duration, type) {
+        const s = parseDate(start);
+        if (!s) return null;
+        const dur = Math.max(0, Number(duration) || 0);
+        if (type === 'milestone' || dur === 0) return new Date(s.getTime());
+        return addCalendarDays(s, dur);
+    }
+
+    function buildWbsMap(tasks) {
+        const map = new Map();
+        const byParent = new Map();
+        (tasks || []).forEach(t => {
+            const p = String(t.parent || 0);
+            if (!byParent.has(p)) byParent.set(p, []);
+            byParent.get(p).push(t);
+        });
+        byParent.forEach(list => list.sort((a, b) => (a.$index || 0) - (b.$index || 0) || String(a.id).localeCompare(String(b.id))));
+
+        function walk(parentId, prefix) {
+            const kids = byParent.get(String(parentId)) || [];
+            kids.forEach((t, i) => {
+                const code = prefix ? `${prefix}.${i + 1}` : String(i + 1);
+                map.set(String(t.id), code);
+                walk(t.id, code);
+            });
+        }
+        walk(0, '');
+        walk('0', '');
+        return map;
+    }
+
+    function isTaskCritical(task) {
+        if (!task || task.type === 'project') return false;
+        if (task.$critical || task.critical) return true;
+        const slack = task.$slack != null ? task.$slack : task.total_float;
+        return slack != null && slack <= 0;
+    }
+
+    /**
+     * CPM forward/backward pass (community-edition fallback — no dhtmlx PRO plugins).
+     * Updates activity dates from logic links and marks critical path (total float <= 0).
+     */
+    function runCPM(tasks, links) {
+        const taskMap = new Map();
+        (tasks || []).forEach(t => taskMap.set(String(t.id), Object.assign({}, t)));
+
+        const childIds = new Map();
+        taskMap.forEach((t, id) => {
+            const p = String(t.parent || 0);
+            if (!childIds.has(p)) childIds.set(p, []);
+            childIds.get(p).push(id);
+        });
+        const isLeaf = id => !(childIds.get(String(id)) || []).length;
+
+        const { preds, succs } = buildAdjacency(links || []);
+        const leaves = [...taskMap.keys()].filter(id => isLeaf(id) && taskMap.get(id).type !== 'project');
+        const today = parseDate(new Date()) || new Date();
+
+        const es = new Map();
+        const ef = new Map();
+        const ls = new Map();
+        const lf = new Map();
+
+        leaves.forEach(id => {
+            const t = taskMap.get(id);
+            const start = parseDate(t.start_date) || today;
+            const end = parseDate(t.end_date) || calcFinishFromStart(start, t.duration, t.type);
+            es.set(id, start);
+            ef.set(id, end);
+        });
+
+        const linkType = link => String(link.type ?? '0');
+        const lagOf = link => Number(link.lag) || 0;
+
+        function pushForward(succId, candidateStart) {
+            const t = taskMap.get(succId);
+            const dur = Math.max(0, Number(t.duration) || 0);
+            const cand = parseDate(candidateStart);
+            if (!cand) return;
+            const cur = es.get(succId);
+            if (!cur || cand > cur) {
+                es.set(succId, cand);
+                ef.set(succId, calcFinishFromStart(cand, dur, t.type));
+            }
+        }
+
+        for (let pass = 0; pass < Math.max(1, leaves.length * 3); pass++) {
+            let changed = false;
+            leaves.forEach(succId => {
+                (preds.get(succId) || preds.get(Number(succId)) || []).forEach(link => {
+                    const predId = String(link.source);
+                    if (!es.has(predId)) return;
+                    const type = linkType(link);
+                    const lag = lagOf(link);
+                    const pes = es.get(predId);
+                    const pef = ef.get(predId);
+                    const before = es.get(succId)?.getTime();
+                    if (type === '1') pushForward(succId, addCalendarDays(pes, lag));
+                    else if (type === '2') {
+                        const t = taskMap.get(succId);
+                        const dur = Math.max(0, Number(t.duration) || 0);
+                        const needEnd = addCalendarDays(pef, lag);
+                        pushForward(succId, t.type === 'milestone' ? needEnd : addCalendarDays(needEnd, -dur));
+                    } else if (type === '3') {
+                        const t = taskMap.get(succId);
+                        const dur = Math.max(0, Number(t.duration) || 0);
+                        const needEnd = addCalendarDays(pes, lag);
+                        pushForward(succId, t.type === 'milestone' ? needEnd : addCalendarDays(needEnd, -dur));
+                    } else pushForward(succId, addCalendarDays(pef, lag));
+                    if (es.get(succId)?.getTime() !== before) changed = true;
+                });
+            });
+            if (!changed) break;
+        }
+
+        let projectEnd = today;
+        leaves.forEach(id => {
+            const e = ef.get(id);
+            if (e && e > projectEnd) projectEnd = e;
+        });
+
+        leaves.forEach(id => {
+            const t = taskMap.get(id);
+            const dur = Math.max(0, Number(t.duration) || 0);
+            lf.set(id, projectEnd);
+            ls.set(id, t.type === 'milestone' ? projectEnd : addCalendarDays(projectEnd, -dur));
+        });
+
+        for (let pass = 0; pass < Math.max(1, leaves.length * 3); pass++) {
+            let changed = false;
+            [...leaves].reverse().forEach(predId => {
+                const pt = taskMap.get(predId);
+                const pdur = Math.max(0, Number(pt.duration) || 0);
+                (succs.get(predId) || succs.get(Number(predId)) || []).forEach(link => {
+                    const succId = String(link.target);
+                    if (!ls.has(succId)) return;
+                    const type = linkType(link);
+                    const lag = lagOf(link);
+                    let candLf = lf.get(predId);
+                    if (type === '1') candLf = addCalendarDays(ls.get(succId), -lag);
+                    else if (type === '2') candLf = addCalendarDays(lf.get(succId), -lag);
+                    else if (type === '3') candLf = addCalendarDays(ls.get(succId), -lag);
+                    else candLf = addCalendarDays(ls.get(succId), -lag);
+                    const candLs = pt.type === 'milestone' ? candLf : addCalendarDays(candLf, -pdur);
+                    if (candLs < ls.get(predId)) {
+                        ls.set(predId, candLs);
+                        lf.set(predId, candLf);
+                        changed = true;
+                    }
+                });
+            });
+            if (!changed) break;
+        }
+
+        const updates = new Map();
+        leaves.forEach(id => {
+            const t = taskMap.get(id);
+            const totalFloat = Math.max(0, calendarDaysBetween(es.get(id), ls.get(id)));
+            const critical = totalFloat <= 0;
+            updates.set(id, {
+                start_date: es.get(id),
+                end_date: ef.get(id),
+                total_float: totalFloat,
+                free_float: totalFloat,
+                $slack: totalFloat,
+                $critical: critical
+            });
+        });
+
+        // Roll summary dates from children
+        function rollup(parentId) {
+            const kids = childIds.get(String(parentId)) || [];
+            if (!kids.length) return;
+            kids.forEach(rollup);
+            if (!taskMap.has(String(parentId))) return;
+            let minS = null;
+            let maxE = null;
+            kids.forEach(cid => {
+                const u = updates.get(cid);
+                const t = taskMap.get(cid);
+                const s = u?.start_date || parseDate(t.start_date);
+                const e = u?.end_date || parseDate(t.end_date);
+                if (s && (!minS || s < minS)) minS = s;
+                if (e && (!maxE || e > maxE)) maxE = e;
+            });
+            if (minS) {
+                updates.set(String(parentId), {
+                    start_date: minS,
+                    end_date: maxE || minS,
+                    total_float: null,
+                    free_float: null,
+                    $slack: null,
+                    $critical: false
+                });
+            }
+        }
+        ['0', 0].forEach(r => rollup(r));
+        childIds.forEach((_, pid) => rollup(pid));
+
+        return { updates, wbsMap: buildWbsMap(tasks) };
+    }
+
     function buildAdjacency(links) {
         const preds = new Map();
         const succs = new Map();
         (links || []).forEach(link => {
-            if (!preds.has(link.target)) preds.set(link.target, []);
-            if (!succs.has(link.source)) succs.set(link.source, []);
-            preds.get(link.target).push(link);
-            succs.get(link.source).push(link);
+            const src = String(link.source);
+            const tgt = String(link.target);
+            if (!preds.has(tgt)) preds.set(tgt, []);
+            if (!succs.has(src)) succs.set(src, []);
+            preds.get(tgt).push(link);
+            succs.get(src).push(link);
         });
         return { preds, succs };
     }
@@ -235,10 +454,15 @@
         parseDate,
         formatDate,
         addWorkDays,
+        addCalendarDays,
         workDaysBetween,
+        calendarDaysBetween,
         taskEndDate,
         taskStartDate,
         isWorkDay,
+        buildWbsMap,
+        isTaskCritical,
+        runCPM,
         computeLookAhead,
         groupLookAheadByWbs
     };

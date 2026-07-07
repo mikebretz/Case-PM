@@ -18,6 +18,7 @@
     let baselines = [];
     let customColumns = [];
     let columnWidths = {};
+    let wbsCodeMap = new Map();
     let scheduleSettings = {
         data_date: typeof CasePMSchedule !== 'undefined' ? CasePMSchedule.formatDate(new Date()) : '',
         calendar: 'standard',
@@ -48,12 +49,81 @@
         };
     }
 
+    function wbsCode(task) {
+        if (!task) return '';
+        if (typeof gantt !== 'undefined' && typeof gantt.getWBSCode === 'function') {
+            try { return gantt.getWBSCode(task); } catch (e) { /* community edition */ }
+        }
+        return wbsCodeMap.get(String(task.id)) || String(task.activity_id || task.id);
+    }
+
+    function isTaskCritical(task) {
+        if (!task) return false;
+        if (typeof gantt !== 'undefined' && typeof gantt.isCriticalTask === 'function') {
+            try { return gantt.isCriticalTask(task); } catch (e) { /* community edition */ }
+        }
+        return typeof CasePMSchedule !== 'undefined' && CasePMSchedule.isTaskCritical
+            ? CasePMSchedule.isTaskCritical(task)
+            : !!(task.$critical || task.critical);
+    }
+
+    function refreshWbsCodes() {
+        if (!ganttReady) return;
+        const tasks = [];
+        gantt.eachTask(t => tasks.push({ id: t.id, parent: t.parent, $index: gantt.getTaskIndex(t.id) }));
+        wbsCodeMap = CasePMSchedule.buildWbsMap(tasks);
+    }
+
+    function updateGridWidth() {
+        if (!ganttReady || !gantt.config.columns) return;
+        const width = gantt.config.columns.reduce((sum, col) => sum + (parseInt(col.width, 10) || 0), 0);
+        gantt.config.grid_width = width;
+        if (gantt.config.layout && gantt.config.layout.cols && gantt.config.layout.cols[0]) {
+            gantt.config.layout.cols[0].width = Math.min(900, Math.max(320, width));
+        }
+    }
+
+    function coerceTaskDate(value) {
+        if (!value) return null;
+        if (value instanceof Date && !Number.isNaN(value.getTime())) return value;
+        if (typeof value === 'string') {
+            const parsed = CasePMSchedule.parseDate(value);
+            if (parsed) return parsed;
+            if (typeof gantt !== 'undefined' && gantt.date && gantt.date.parseDate) {
+                const g = gantt.date.parseDate(value, gantt.config.date_format);
+                if (g && !Number.isNaN(g.getTime())) return g;
+            }
+        }
+        return null;
+    }
+
+    function normalizeTaskDates(data) {
+        const today = CasePMSchedule.formatDate(new Date());
+        (data || []).forEach(task => {
+            let start = coerceTaskDate(task.start_date);
+            if (!start) start = coerceTaskDate(today);
+            task.start_date = start;
+            const dur = Math.max(0, Number(task.duration) || 0);
+            if (task.type === 'milestone') {
+                task.duration = 0;
+                task.end_date = start;
+            } else if (!coerceTaskDate(task.end_date)) {
+                task.end_date = CasePMSchedule.addCalendarDays(start, dur || 1);
+            } else {
+                task.end_date = coerceTaskDate(task.end_date);
+            }
+            if (task.duration == null || Number.isNaN(Number(task.duration))) {
+                task.duration = dur || 1;
+            }
+        });
+    }
+
     function predTemplate(task) {
         const links = task.$target || [];
         return links.map(lid => {
             const link = gantt.getLink(lid);
             const src = gantt.getTask(link.source);
-            const code = gantt.getWBSCode ? gantt.getWBSCode(src) : src.id;
+            const code = wbsCode(src);
             const lag = link.lag ? (link.lag > 0 ? `+${link.lag}` : link.lag) : '';
             return `${code}${LINK_LABELS[link.type] || 'FS'}${lag}`;
         }).join(', ');
@@ -68,7 +138,7 @@
         return links.map(lid => {
             const link = gantt.getLink(lid);
             const tgt = gantt.getTask(link.target);
-            const code = gantt.getWBSCode ? gantt.getWBSCode(tgt) : tgt.id;
+            const code = wbsCode(tgt);
             const lag = link.lag ? (link.lag > 0 ? `+${link.lag}` : link.lag) : '';
             return `${code}${LINK_LABELS[link.type] || 'FS'}${lag}`;
         }).join(', ');
@@ -85,7 +155,7 @@
 
     function buildColumnConfig() {
         const builtins = [
-            { name: 'wbs', label: 'WBS', width: 55, align: 'center', resize: true, template: gantt.getWBSCode },
+            { name: 'wbs', label: 'WBS', width: 55, align: 'center', resize: true, template: t => wbsCode(t) },
             { name: 'activity_id', label: 'ID', width: 60, align: 'center', resize: true, editor: { type: 'text', map_to: 'activity_id' }, template: t => t.activity_id || '' },
             { name: 'text', label: 'Activity Name', tree: true, width: 200, min_width: 100, resize: true, editor: { type: 'text', map_to: 'text' } },
             { name: 'duration', label: 'Dur', align: 'center', width: 50, min_width: 40, resize: true, editor: { type: 'number', map_to: 'duration', min: 0, max: 9999 } },
@@ -124,31 +194,27 @@
     }
 
     function configureGantt() {
-        gantt.plugins({
-            critical_path: true,
-            auto_scheduling: true,
-            multiselect: true,
-            tooltip: true,
-            marker: true
-        });
+        if (gantt.plugins) {
+            gantt.plugins({ tooltip: true });
+        }
 
         gantt.config.date_format = '%Y-%m-%d';
         gantt.config.xml_date = '%Y-%m-%d';
-        gantt.config.work_time = true;
-        gantt.config.correct_work_time = true;
-        gantt.config.skip_off_time = true;
+        gantt.config.work_time = false;
+        gantt.config.correct_work_time = false;
+        gantt.config.skip_off_time = false;
         gantt.config.duration_unit = 'day';
         gantt.config.time_step = 1440;
         gantt.config.row_height = 34;
         gantt.config.bar_height = 22;
+        gantt.config.scale_height = 50;
+        gantt.config.scroll_size = 20;
         gantt.config.fit_tasks = true;
         gantt.config.show_errors = false;
-        gantt.config.auto_scheduling = true;
-        gantt.config.auto_scheduling_strict = false;
         gantt.config.highlight_critical_path = true;
         gantt.config.grid_elastic_columns = false;
-        gantt.config.keep_grid_width = false;
-        gantt.config.reorder_grid_columns = true;
+        gantt.config.keep_grid_width = true;
+        gantt.config.reorder_grid_columns = false;
         gantt.config.open_tree_initially = true;
         gantt.config.details_on_dblclick = false;
 
@@ -178,7 +244,7 @@
 
         gantt.templates.task_class = function (start, end, task) {
             const classes = [];
-            if (gantt.config.highlight_critical_path && gantt.isCriticalTask(task)) classes.push('cpm_critical');
+            if (gantt.config.highlight_critical_path && isTaskCritical(task)) classes.push('cpm_critical');
             if (task.type === 'milestone') classes.push('cpm_milestone');
             if (task.type === 'project') classes.push('cpm_summary');
             const p = Math.round((task.progress || 0) * 100);
@@ -191,7 +257,7 @@
             if (task.type === 'project') return '';
             let color = task.bar_color;
             if (!color) {
-                if (gantt.isCriticalTask(task)) color = scheduleSettings.critical_bar_color;
+                if (isTaskCritical(task)) color = scheduleSettings.critical_bar_color;
                 else if (Math.round((task.progress || 0) * 100) >= 100) color = scheduleSettings.complete_bar_color;
                 else if ((task.progress || 0) > 0) color = scheduleSettings.progress_bar_color;
                 else if (task.type === 'milestone') color = scheduleSettings.milestone_color;
@@ -258,10 +324,15 @@
         gantt.attachEvent('onAfterColumnReorder', queueSave);
         gantt.attachEvent('onColumnResizeEnd', function (index, column, new_width) {
             if (column && column.name) columnWidths[column.name] = new_width;
+            updateGridWidth();
             queueSave();
         });
-        gantt.attachEvent('onGanttRender', () => { updateStatusBar(); });
+        gantt.attachEvent('onGanttRender', () => {
+            refreshWbsCodes();
+            updateStatusBar();
+        });
 
+        updateGridWidth();
         gantt.init('gantt_here');
         ganttReady = true;
         resizeGanttHost();
@@ -320,11 +391,14 @@
         if (!payload || !payload.data) return false;
         customColumns = payload.customColumns || [];
         columnWidths = payload.columnWidths || {};
+        normalizeTaskDates(payload.data);
         gantt.config.columns = buildColumnConfig();
+        updateGridWidth();
         gantt.clearAll();
         gantt.parse({ data: payload.data, links: payload.links || [] });
         baselines = payload.baselines || [];
         if (payload.settings) scheduleSettings = Object.assign(scheduleSettings, payload.settings);
+        refreshWbsCodes();
         applySettingsToUI();
         gantt.render();
         setSaveStatus('Ready');
@@ -566,9 +640,26 @@
     }
 
     function runSchedule() {
-        if (gantt.autoSchedule) gantt.autoSchedule();
+        const tasks = [];
+        gantt.eachTask(t => tasks.push(Object.assign({}, t)));
+        const links = gantt.getLinks().map(l => Object.assign({}, l));
+        const { updates, wbsMap } = CasePMSchedule.runCPM(tasks, links);
+        updates.forEach((patch, id) => {
+            if (!gantt.isTaskExists(id)) return;
+            const task = gantt.getTask(id);
+            if (patch.start_date) task.start_date = patch.start_date;
+            if (patch.end_date) task.end_date = patch.end_date;
+            if (patch.total_float != null) task.total_float = patch.total_float;
+            if (patch.free_float != null) task.free_float = patch.free_float;
+            task.$slack = patch.$slack;
+            task.$critical = patch.$critical;
+            gantt.refreshTask(id);
+        });
+        wbsCodeMap = wbsMap || CasePMSchedule.buildWbsMap(tasks);
         gantt.render();
         updateStatusBar();
+        queueSave();
+        logActivity('Ran CPM schedule', `${updates.size} activities calculated`);
     }
 
     function showAddColumnDialog() {
@@ -609,6 +700,7 @@
         }
         customColumns.push({ name: mapTo, map_to: mapTo, label: field.label, width: 100 });
         gantt.config.columns = buildColumnConfig();
+        updateGridWidth();
         gantt.render();
         document.getElementById('scheduleFieldPickerModal')?.close();
         queueSave();
@@ -696,11 +788,11 @@
         tbody.innerHTML = '';
         gantt.eachTask(t => {
             if (t.type === 'project') return;
-            const critical = gantt.isCriticalTask(t);
+            const critical = isTaskCritical(t);
             const tr = document.createElement('tr');
             tr.className = 'hover:bg-zinc-800/50 border-b border-zinc-800';
             tr.innerHTML = `
-                <td class="px-3 py-2 font-mono text-xs">${gantt.getWBSCode(t)}</td>
+                <td class="px-3 py-2 font-mono text-xs">${wbsCode(t)}</td>
                 <td class="px-3 py-2 ${critical ? 'text-red-400' : ''}">${t.text}</td>
                 <td class="px-3 py-2 text-center">${t.duration}</td>
                 <td class="px-3 py-2">${gantt.templates.format_date(t.start_date)}</td>
@@ -734,7 +826,7 @@
             return;
         }
         let critical = 0;
-        gantt.eachTask(t => { if (t.type !== 'project' && gantt.isCriticalTask(t)) critical++; });
+        gantt.eachTask(t => { if (t.type !== 'project' && isTaskCritical(t)) critical++; });
         el.innerHTML = `
             <span>Start: <b>${gantt.templates.format_date(range.start_date)}</b></span>
             <span>Finish: <b>${gantt.templates.format_date(range.end_date)}</b></span>
@@ -857,6 +949,7 @@
     window.ScheduleApp = {
         init, addActivity, deleteSelected, indentSelected, outdentSelected,
         linkSelected, unlinkSelected, zoomGantt, setTimescale, showDisplaySettings, saveDisplaySettings,
+        wbsCode,
         toggleCriticalPath, setBaseline,
         runSchedule, switchScheduleView, renderLookAhead, focusActivity,
         exportJson, importFile, printGantt, printLookAhead, saveSchedule,
