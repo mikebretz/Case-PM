@@ -103,6 +103,11 @@
         setVal('sam_notes', t.notes || '');
         setVal('sam_hyperlink', t.hyperlink || '');
         setVal('sam_bar_color', t.bar_color || '#3b82f6');
+        setVal('sam_bar_height', t.bar_height != null ? t.bar_height : '');
+        setVal('sam_row_height', t.row_height != null ? t.row_height : '');
+        setVal('sam_bar_border_width', t.bar_border_width != null ? t.bar_border_width : '');
+        setVal('sam_bar_border_color', t.bar_border_color || '#ffffff');
+        setVal('sam_bar_border_style', t.bar_border_style || 'solid');
         setVal('sam_free_float', t.free_float != null ? t.free_float : (t.$free != null ? t.$free : ''));
         setVal('sam_total_float', t.total_float != null ? t.total_float : (t.$slack != null ? t.$slack : ''));
         setVal('sam_early_start', t.early_start || '');
@@ -210,6 +215,20 @@
         t.notes = val('sam_notes');
         t.hyperlink = val('sam_hyperlink');
         t.bar_color = val('sam_bar_color');
+        const barH = val('sam_bar_height');
+        t.bar_height = barH !== '' ? parseInt(barH, 10) : null;
+        const rowH = val('sam_row_height');
+        t.row_height = rowH !== '' ? parseInt(rowH, 10) : null;
+        const bbw = val('sam_bar_border_width');
+        t.bar_border_width = bbw !== '' ? parseInt(bbw, 10) : null;
+        t.bar_border_color = val('sam_bar_border_color') || null;
+        t.bar_border_style = val('sam_bar_border_style') || 'solid';
+        if (t.bar_height == null || Number.isNaN(t.bar_height)) delete t.bar_height;
+        if (t.row_height == null || Number.isNaN(t.row_height)) delete t.row_height;
+        if (t.bar_border_width == null || Number.isNaN(t.bar_border_width) || t.bar_border_width <= 0) {
+            delete t.bar_border_width;
+            delete t.bar_border_color;
+        }
         if (window.ScheduleApp && typeof gantt !== 'undefined') {
             const task = gantt.getTask(currentTaskId);
             if (task.bar_color) {
@@ -246,11 +265,29 @@
         closeActivityModal();
     }
 
+    function saveBarAsDefaultsFromModal() {
+        if (!currentTaskId || !gantt.isTaskExists(currentTaskId)) return;
+        const t = gantt.getTask(currentTaskId);
+        t.bar_color = val('sam_bar_color');
+        const barH = val('sam_bar_height');
+        if (barH !== '') t.bar_height = parseInt(barH, 10);
+        const rowH = val('sam_row_height');
+        if (rowH !== '') t.row_height = parseInt(rowH, 10);
+        const bbw = val('sam_bar_border_width');
+        if (bbw !== '') t.bar_border_width = parseInt(bbw, 10);
+        t.bar_border_color = val('sam_bar_border_color') || null;
+        t.bar_border_style = val('sam_bar_border_style') || 'solid';
+        if (window.ScheduleApp?.saveBarSettingsAsDefaults) {
+            ScheduleApp.saveBarSettingsAsDefaults(t);
+        }
+    }
+
     global.ScheduleActivityModal = {
         open: openActivityModal,
         close: closeActivityModal,
         switchTab: switchModalTab,
         save: saveActivityModal,
-        delete: deleteFromModal
+        delete: deleteFromModal,
+        saveBarAsDefaults: saveBarAsDefaultsFromModal
     };
 })(typeof window !== 'undefined' ? window : global);
