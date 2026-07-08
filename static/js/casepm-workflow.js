@@ -391,6 +391,7 @@
     onSubmittalDecision,
     onRFIStatusChange,
     onChangeOrderSubmitted,
+    onPCOSubmitted,
     onBudgetPublished,
     onBudgetSaved,
   };
