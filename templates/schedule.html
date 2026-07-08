@@ -345,6 +345,11 @@
         <label class="flex items-center gap-2"><input id="printIncludeChart" type="checkbox" class="rounded border-zinc-600"> Separate schedule chart (off by default)</label>
         <label class="flex items-center gap-2"><input id="printIncludeEvm" type="checkbox" class="rounded border-zinc-600"> EVM columns (CPI/SPI) + project rollup</label>
         <label class="flex items-center gap-2"><input id="printIncludeFooter" type="checkbox" class="rounded border-zinc-600"> Print footer line</label>
+        <div class="border-t border-zinc-700 pt-2 mt-2 space-y-2">
+            <p class="text-xs text-zinc-500">Task columns — matches on-screen grid left of chart divider (MS Project style)</p>
+            <label class="flex items-center gap-2"><input id="printHideWbs" type="checkbox" class="rounded border-zinc-600"> Hide WBS column</label>
+            <label class="flex items-center gap-2"><input id="printHideId" type="checkbox" class="rounded border-zinc-600"> Hide ID column</label>
+        </div>
     </div>
     <div class="px-4 py-3 border-t border-zinc-700 flex justify-end gap-2">
         <button type="button" onclick="document.getElementById('schedulePrintModal').close()" class="px-4 py-1.5 text-xs bg-zinc-800 hover:bg-zinc-700 rounded-md">Cancel</button>

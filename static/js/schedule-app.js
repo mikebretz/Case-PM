@@ -64,6 +64,8 @@
             include_schedule_chart: false,
             include_evm: false,
             include_footer: true,
+            print_hide_wbs: false,
+            print_hide_id: false,
             header_footer: null
         };
     }
@@ -1581,11 +1583,72 @@
         handleColumnResize(colIndex, col, width, true, true);
     }
 
+    function getExposedGridWidth() {
+        const host = document.getElementById('gantt_here');
+        if (!host) return 600;
+        return Math.max(120, host.clientWidth - getTimelineWidth());
+    }
+
     function getExposedGridRightEdge() {
         const host = document.getElementById('gantt_here');
         if (!host) return 0;
         const rect = host.getBoundingClientRect();
         return rect.left + rect.width - getTimelineWidth();
+    }
+
+    function getPrintVisibleGridColumns(ps) {
+        const opts = ps || scheduleSettings.print_settings || {};
+        const cols = gantt.config.columns || [];
+        const host = document.getElementById('gantt_here');
+        const headCells = document.querySelectorAll('#gantt_here .gantt_grid_scale .gantt_grid_head_cell');
+        if (!host || !headCells.length) {
+            return cols
+                .filter(c => c.name !== 'collapse')
+                .filter(c => !(opts.print_hide_wbs && c.name === 'wbs'))
+                .filter(c => !(opts.print_hide_id && c.name === 'activity_id'))
+                .map((col, index) => ({ col, index, width: parseInt(col.width, 10) || 80 }));
+        }
+        const hostRect = host.getBoundingClientRect();
+        const exposedRight = getExposedGridRightEdge();
+        const visible = [];
+        cols.forEach((col, index) => {
+            if (col.name === 'collapse') return;
+            if (opts.print_hide_wbs && col.name === 'wbs') return;
+            if (opts.print_hide_id && col.name === 'activity_id') return;
+            const cell = headCells[index];
+            if (!cell) return;
+            const rect = cell.getBoundingClientRect();
+            const width = rect.width;
+            if (width < 4) return;
+            const fullyVisible = rect.left >= hostRect.left + 1 && rect.right <= exposedRight + 1;
+            if (!fullyVisible) return;
+            visible.push({ col, index, width });
+        });
+        if (!visible.length) {
+            return cols
+                .filter(c => c.name !== 'collapse' && c.name !== 'bar_color')
+                .filter(c => !(opts.print_hide_wbs && c.name === 'wbs'))
+                .filter(c => !(opts.print_hide_id && c.name === 'activity_id'))
+                .slice(0, 8)
+                .map((col, index) => ({ col, index, width: parseInt(col.width, 10) || 80 }));
+        }
+        return visible;
+    }
+
+    function renderPrintCellHtml(task, col) {
+        try {
+            if (col.template && typeof col.template === 'function') {
+                const html = col.template(task);
+                return html != null ? String(html) : '';
+            }
+        } catch (e) { /* ok */ }
+        if (col.name === 'progress') return String(Math.round(effectiveProgress(task) * 100));
+        if (col.name === 'start_date' || col.name === 'end_date') return formatDateSafe(task[col.name]);
+        if (col.name === 'predecessors') return predTemplate(task) || '—';
+        if (col.name === 'successors') return succTemplate(task) || '—';
+        const val = task[col.map_to || col.name];
+        if (val == null || val === '') return col.name === 'text' ? '' : '—';
+        return String(val);
     }
 
     const colResizeDrag = { active: false, colIndex: -1, startX: 0, startW: 0 };
@@ -3960,18 +4023,24 @@
         document.getElementById('printIncludeChart').checked = !!ps.include_schedule_chart;
         document.getElementById('printIncludeEvm').checked = !!ps.include_evm;
         document.getElementById('printIncludeFooter').checked = !!ps.include_footer;
+        document.getElementById('printHideWbs').checked = ps.print_hide_wbs === true;
+        document.getElementById('printHideId').checked = ps.print_hide_id === true;
         dlg.showModal();
     }
 
     function savePrintSettings() {
         const hf = ensureHeaderFooterSettings();
+        const prev = scheduleSettings.print_settings || {};
         scheduleSettings.print_settings = {
+            ...prev,
             include_summary: document.getElementById('printIncludeSummary')?.checked !== false,
             include_activity_table: document.getElementById('printIncludeTable')?.checked !== false,
             include_inline_bars: document.getElementById('printIncludeInlineBars')?.checked !== false,
             include_schedule_chart: document.getElementById('printIncludeChart')?.checked === true,
             include_evm: document.getElementById('printIncludeEvm')?.checked === true,
             include_footer: document.getElementById('printIncludeFooter')?.checked === true,
+            print_hide_wbs: document.getElementById('printHideWbs')?.checked === true,
+            print_hide_id: document.getElementById('printHideId')?.checked === true,
             header_footer: hf
         };
         hf.include_footer = scheduleSettings.print_settings.include_footer;
@@ -4006,6 +4075,14 @@
         const showChart = ps.include_schedule_chart === true;
         const showEvm = ps.include_evm === true;
         const showSummary = ps.include_summary !== false;
+        const visibleCols = showTable ? getPrintVisibleGridColumns(ps) : [];
+        const hostW = document.getElementById('gantt_here')?.clientWidth || 1000;
+        const exposedW = getExposedGridWidth();
+        const timelineW = getTimelineWidth();
+        const splitTotal = Math.max(exposedW + timelineW, 1);
+        const textTablePct = showInlineBars ? (exposedW / splitTotal) * 100 : 100;
+        const barTablePct = showInlineBars ? (timelineW / splitTotal) * 100 : 0;
+        const visibleTextW = visibleCols.reduce((s, v) => s + v.width, 0) || 1;
 
         let critical = 0;
         const tasks = [];
@@ -4020,7 +4097,7 @@
         let rows = '';
         const rowMap = new Map();
         let rowIdx = 0;
-        if (showTable) {
+        if (showTable && visibleCols.length) {
             gantt.eachTask(t => {
                 rowMap.set(t.id, rowIdx++);
                 const ts = toGanttDate(t.start_date)?.getTime() || startMs;
@@ -4030,21 +4107,22 @@
                 const color = resolveBarColor(t);
                 const level = t.$level || 0;
                 const dateLabel = `${formatDateSafe(t.start_date)} – ${formatDateSafe(t.end_date)}`;
-                const evmCols = showEvm
-                    ? `<td class="c print-col-pct">${t.cpi != null ? t.cpi : '—'}</td><td class="c print-col-pct">${t.spi != null ? t.spi : '—'}</td>`
+                const cells = visibleCols.map(({ col, width: colW }) => {
+                    const pct = ((colW / visibleTextW) * textTablePct).toFixed(3);
+                    const align = col.align === 'center' ? ' c' : '';
+                    const nameCls = col.name === 'text' ? ' print-name' : '';
+                    const indent = col.name === 'text' ? ` style="padding-left:${4 + level * 10}px;width:${pct}%"` : ` style="width:${pct}%"`;
+                    let content = renderPrintCellHtml(t, col);
+                    if (col.name === 'progress' && !content.includes('%')) content += '%';
+                    return `<td class="print-col-${col.name}${nameCls}${align}"${indent}>${content}</td>`;
+                }).join('');
+                const evmExtra = showEvm && !visibleCols.some(v => v.col.name === 'cpi')
+                    ? `<td class="c print-col-cpi" style="width:${(textTablePct / visibleCols.length * 0.5).toFixed(2)}%">${t.cpi != null ? t.cpi : '—'}</td><td class="c print-col-spi" style="width:${(textTablePct / visibleCols.length * 0.5).toFixed(2)}%">${t.spi != null ? t.spi : '—'}</td>`
                     : '';
-                const dateCols = showInlineBars ? '' : `<td class="print-col-date">${formatDateSafe(t.start_date)}</td><td class="print-col-date">${formatDateSafe(t.end_date)}</td>`;
                 const barCell = showInlineBars
-                    ? `<td class="print-bar-cell"><div class="print-bar-dates">${dateLabel}</div><div class="print-bar-track"><div class="print-bar" style="left:${left}%;width:${width}%;background:${color}"></div></div></td>`
+                    ? `<td class="print-bar-cell" style="width:${barTablePct.toFixed(2)}%"><div class="print-bar-dates">${dateLabel}</div><div class="print-bar-track"><div class="print-bar" style="left:${left}%;width:${width}%;background:${color}"></div></div></td>`
                     : '';
-                rows += `<tr class="${t.type === 'project' ? 'print-summary' : ''}">
-                    <td class="print-col-wbs">${wbsCode(t)}</td>
-                    <td class="print-name print-col-name" style="padding-left:${4 + level * 10}px">${t.text || ''}</td>
-                    <td class="c print-col-dur">${t.duration != null ? t.duration : ''}</td>
-                    ${dateCols}
-                    <td class="c print-col-pct">${Math.round((t.progress || 0) * 100)}%</td>
-                    <td class="print-col-pred">${predTemplate(t) || '—'}</td>${evmCols}${barCell}
-                </tr>`;
+                rows += `<tr class="${t.type === 'project' ? 'print-summary' : ''}">${cells}${evmExtra}${barCell}</tr>`;
             });
         }
 
@@ -4078,11 +4156,18 @@
                 <svg class="print-chart-svg" viewBox="0 0 100 100" preserveAspectRatio="none" style="height:${chartH}px">${chartLines}${chartBars}</svg></div>`;
         }
 
-        const evmHeader = showEvm ? '<th class="print-col-pct">CPI</th><th class="print-col-pct">SPI</th>' : '';
-        const dateHeader = showInlineBars ? '' : '<th class="print-col-date">Start</th><th class="print-col-date">Finish</th>';
-        const barHeader = showInlineBars ? '<th class="print-bar-cell">Schedule Bars</th>' : '';
-        const textColCount = (showInlineBars ? 5 : 7) + (showEvm ? 2 : 0);
-        const tsRow = showInlineBars ? `<tr class="print-ts-row"><td colspan="${textColCount}"></td><td class="print-bar-cell">${timescale}</td></tr>` : '';
+        const evmHeader = showEvm && !visibleCols.some(v => v.col.name === 'cpi')
+            ? `<th class="print-col-cpi c">CPI</th><th class="print-col-spi c">SPI</th>` : '';
+        const barHeader = showInlineBars ? `<th class="print-bar-cell" style="width:${barTablePct.toFixed(2)}%">Schedule Bars</th>` : '';
+        const colHeaders = visibleCols.map(({ col, width: colW }) => {
+            const pct = ((colW / visibleTextW) * textTablePct).toFixed(3);
+            const label = col.label || col.name || '';
+            const align = col.align === 'center' ? ' c' : '';
+            return `<th class="print-col-${col.name}${align}" style="width:${pct}%">${label}</th>`;
+        }).join('');
+        const textColCount = visibleCols.length + (evmHeader ? 2 : 0);
+        const tsRow = showInlineBars && textColCount
+            ? `<tr class="print-ts-row"><td colspan="${textColCount}"></td><td class="print-bar-cell">${timescale}</td></tr>` : '';
         const evmSummary = showEvm && projectEvm ? `
             <div class="sched-print-evm-grid mt-2 text-xs">
                 <div><span class="sched-print-label">BAC</span><strong>$${projectEvm.bac.toLocaleString()}</strong></div>
@@ -4144,10 +4229,10 @@
             return html;
         })();
 
-        const tableBlock = showTable ? `
-            <table class="schedule-print-table schedule-print-table-compact">
+        const tableBlock = showTable && visibleCols.length ? `
+            <table class="schedule-print-table schedule-print-table-compact schedule-print-table-visible-cols">
                 <thead><tr>
-                    <th class="print-col-wbs">WBS</th><th class="print-col-name">Activity</th><th class="print-col-dur">Dur</th>${dateHeader}<th class="print-col-pct">%</th><th class="print-col-pred">Pred</th>${evmHeader}${barHeader}
+                    ${colHeaders}${evmHeader}${barHeader}
                 </tr>${tsRow}</thead>
                 <tbody>${rows}</tbody>
             </table>` : '';
