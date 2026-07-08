@@ -61,6 +61,7 @@
     let timelineScrollProgrammatic = false;
     let timelineExtendTimer = null;
     let filterCriticalOnly = false;
+    let clipboardTaskId = null;
     const columnEditors = new Map();
 
     function pushUndoState() {
@@ -222,6 +223,25 @@
         return { id: '', number: '', name: 'Project Schedule', label: 'Project Schedule' };
     }
 
+    function syncRootProjectName() {
+        if (!ganttReady) return;
+        const meta = getProjectMeta();
+        if (!meta.name) return;
+        let rootId = null;
+        gantt.eachTask(t => {
+            if (!rootId && (t.parent === 0 || t.parent == null) && t.type === 'project') rootId = t.id;
+        });
+        if (rootId != null && gantt.isTaskExists(rootId)) {
+            const root = gantt.getTask(rootId);
+            if (root.text !== meta.name) {
+                root.text = meta.name;
+                gantt.refreshTask(rootId);
+            }
+        }
+        const nameEl = document.getElementById('currentProjectName');
+        if (nameEl && meta.name) nameEl.textContent = meta.label || meta.name;
+    }
+
     function buildEmptySchedule() {
         const today = CasePMSchedule.formatDate(new Date());
         const meta = getProjectMeta();
@@ -305,25 +325,95 @@
     }
 
     function getTimelineWidth() {
-        const timelineCell = document.querySelector('#gantt_here .gantt_layout_cell:nth-child(3)');
-        if (timelineCell?.offsetWidth > 80) return timelineCell.offsetWidth;
         const hostW = document.getElementById('gantt_here')?.offsetWidth || 1200;
-        const gridW = getColumnsTotalWidth();
-        return Math.max(240, hostW - gridW - 24);
+        if (scheduleSettings.timeline_width_px >= 180) {
+            return Math.max(200, Math.min(hostW - 100, scheduleSettings.timeline_width_px));
+        }
+        const pct = scheduleSettings.timeline_pct ?? 0.42;
+        return Math.max(240, Math.min(hostW - 100, Math.round(hostW * pct)));
     }
 
     function syncGridTableWidth() {
         if (!ganttReady || !gantt.config.columns) return;
         const total = getColumnsTotalWidth();
         gantt.config.grid_width = total;
-        if (gantt.config.layout?.cols?.[0]) {
-            gantt.config.layout.cols[0].width = total;
-            gantt.config.layout.cols[0].min_width = Math.min(200, total);
-        }
+    }
+
+    let headerSyncTimer = null;
+    function syncGridHeaderAlignment() {
+        if (!ganttReady || !gantt.config.columns) return;
+        const cols = gantt.config.columns;
+        const headCells = document.querySelectorAll('#gantt_here .gantt_grid_scale .gantt_grid_head_cell');
+        headCells.forEach((hc, i) => {
+            const col = cols[i];
+            if (!col) return;
+            const w = parseInt(col.width, 10) || 80;
+            hc.style.width = w + 'px';
+            hc.style.minWidth = w + 'px';
+            hc.style.maxWidth = w + 'px';
+        });
+        document.querySelectorAll('#gantt_here .gantt_grid_data .gantt_row').forEach(row => {
+            const cells = row.querySelectorAll(':scope > .gantt_cell');
+            cells.forEach((cell, i) => {
+                const col = cols[i];
+                if (!col) return;
+                const w = parseInt(col.width, 10) || 80;
+                cell.style.width = w + 'px';
+                cell.style.minWidth = w + 'px';
+                cell.style.maxWidth = w + 'px';
+            });
+        });
+    }
+
+    function queueGridHeaderSync() {
+        clearTimeout(headerSyncTimer);
+        headerSyncTimer = setTimeout(syncGridHeaderAlignment, 20);
     }
 
     function applyChartOverlay() {
+        if (!ganttReady) return;
+        const root = document.querySelector('#gantt_here .gantt_layout_root');
+        if (!root) return;
+
+        const timelineW = getTimelineWidth();
+        const cells = root.querySelectorAll(':scope > .gantt_layout_cell');
+        const gridCell = cells[0];
+        const nativeResizer = cells[1];
+        const timelineCell = cells[2];
+        if (!gridCell || !timelineCell) return;
+
         syncGridTableWidth();
+
+        root.style.position = 'relative';
+        gridCell.style.cssText = 'flex:1 1 auto;width:100%!important;min-width:0!important;position:relative;z-index:2;overflow:hidden;';
+        if (nativeResizer) nativeResizer.style.cssText = 'display:none!important;width:0!important;min-width:0!important;';
+
+        timelineCell.style.cssText = [
+            'position:absolute!important',
+            'top:0!important',
+            'right:0!important',
+            'bottom:0!important',
+            `width:${timelineW}px!important`,
+            'z-index:18!important',
+            'box-shadow:-10px 0 28px rgba(0,0,0,0.55)',
+            'pointer-events:auto!important',
+            'display:flex!important',
+            'flex-direction:column!important',
+            'overflow:visible!important',
+            'background:#0f0f12!important'
+        ].join(';');
+
+        let handle = document.getElementById('scheduleChartResizer');
+        if (!handle) {
+            handle = document.createElement('div');
+            handle.id = 'scheduleChartResizer';
+            handle.className = 'schedule-chart-resizer';
+            handle.title = 'Drag to resize chart overlay';
+            root.appendChild(handle);
+        }
+        handle.style.right = (timelineW - 5) + 'px';
+
+        queueGridHeaderSync();
     }
 
     function queueChartOverlay() {
@@ -331,11 +421,49 @@
         overlayApplyTimer = setTimeout(applyChartOverlay, 16);
     }
 
+    const overlayDrag = { active: false, bound: false };
+
     function initChartOverlay() {
-        document.getElementById('scheduleGanttHost')?.classList.remove('schedule-overlay-mode');
-        const oldHandle = document.getElementById('scheduleChartResizer');
-        if (oldHandle) oldHandle.remove();
-        syncGridTableWidth();
+        if (scheduleSettings.timeline_width_px == null && scheduleSettings.timeline_pct == null) {
+            scheduleSettings.timeline_pct = 0.42;
+        }
+        document.getElementById('scheduleGanttHost')?.classList.add('schedule-overlay-mode');
+
+        if (!overlayDrag.bound) {
+            overlayDrag.bound = true;
+            document.addEventListener('mousedown', e => {
+                const handle = document.getElementById('scheduleChartResizer');
+                if (!handle || (!handle.contains(e.target) && e.target !== handle)) return;
+                overlayDrag.active = true;
+                e.preventDefault();
+                e.stopPropagation();
+            });
+            document.addEventListener('mousemove', e => {
+                if (!overlayDrag.active) return;
+                const hostEl = document.getElementById('gantt_here');
+                if (!hostEl) return;
+                const rect = hostEl.getBoundingClientRect();
+                const timelineW = Math.max(200, Math.min(rect.width - 120, rect.right - e.clientX));
+                scheduleSettings.timeline_width_px = timelineW;
+                scheduleSettings.timeline_pct = timelineW / rect.width;
+                applyChartOverlay();
+            });
+            document.addEventListener('mouseup', () => {
+                if (overlayDrag.active) {
+                    overlayDrag.active = false;
+                    queueSave();
+                }
+            });
+            window.addEventListener('resize', () => {
+                const hostW = document.getElementById('gantt_here')?.offsetWidth;
+                if (hostW && scheduleSettings.timeline_pct) {
+                    scheduleSettings.timeline_width_px = Math.round(hostW * scheduleSettings.timeline_pct);
+                }
+                queueChartOverlay();
+            });
+        }
+
+        queueChartOverlay();
     }
 
     function updateGridWidth() {
@@ -699,8 +827,8 @@
 
     function updateRowHeightsForLabels() {
         const showLabels = scheduleSettings.show_bar_labels !== false;
-        gantt.config.row_height = showLabels ? 52 : 38;
-        gantt.config.bar_height = showLabels ? 22 : 24;
+        gantt.config.row_height = showLabels ? 54 : 42;
+        gantt.config.bar_height = showLabels ? 22 : 26;
     }
 
     function taskDateInputValue(task, field) {
@@ -837,6 +965,8 @@
             }
         }
         syncGridTableWidth();
+        queueGridHeaderSync();
+        if (!persist) queueChartOverlay();
         if (persist) queueSave();
     }
 
@@ -1338,16 +1468,16 @@
         gantt.config.skip_off_time = false;
         gantt.config.duration_unit = 'day';
         gantt.config.time_step = 1440;
-        gantt.config.row_height = 38;
-        gantt.config.bar_height = 24;
+        gantt.config.row_height = 42;
+        gantt.config.bar_height = 26;
         updateRowHeightsForLabels();
-        gantt.config.scale_height = 52;
-        gantt.config.scroll_size = 18;
+        gantt.config.scale_height = 58;
+        gantt.config.scroll_size = 20;
         gantt.config.fit_tasks = false;
         gantt.config.show_errors = false;
         gantt.config.highlight_critical_path = true;
         gantt.config.grid_elastic_columns = false;
-        gantt.config.keep_grid_width = false;
+        gantt.config.keep_grid_width = true;
         gantt.config.round_dnd_dates = false;
         gantt.config.drag_timeline = { useKey: false };
         gantt.config.autosize = false;
@@ -1372,7 +1502,6 @@
             css: 'gantt_container',
             cols: [
                 {
-                    width: gridW,
                     min_width: 200,
                     rows: [
                         { view: 'grid', scrollX: 'gridScroll', scrollY: 'scrollVer' },
@@ -1381,7 +1510,8 @@
                 },
                 { resizer: true, width: 1 },
                 {
-                    min_width: 240,
+                    width: Math.max(360, Math.round((document.getElementById('gantt_here')?.offsetWidth || 1000) * 0.42)),
+                    min_width: 220,
                     rows: [
                         { view: 'timeline', scrollX: 'scrollHor', scrollY: 'scrollVer' },
                         { view: 'scrollbar', id: 'scrollHor', height: 20 }
@@ -1390,6 +1520,7 @@
                 { view: 'scrollbar', id: 'scrollVer' }
             ]
         };
+        gantt.config.grid_width = gridW;
 
         gantt.config.columns = buildColumnConfig();
         registerCustomEditors();
@@ -1539,7 +1670,8 @@
             scheduleSettings.column_order = columnOrder.slice();
             syncGridTableWidth();
             queueSave();
-            gantt.render();
+            queueGridHeaderSync();
+            queueChartOverlay();
         });
         gantt.attachEvent('onColumnResize', function (index, column, new_width) {
             handleColumnResize(index, column, new_width, false);
@@ -1547,13 +1679,16 @@
         });
         gantt.attachEvent('onColumnResizeEnd', function (index, column, new_width) {
             handleColumnResize(index, column, new_width, true);
-            gantt.render();
+            queueChartOverlay();
         });
         gantt.attachEvent('onGanttRender', () => {
             refreshWbsCodes();
             updateStatusBar();
             updateDeadlineMarkers();
-            requestAnimationFrame(applyChartOverlay);
+            if (!overlayDrag.active) {
+                queueChartOverlay();
+            }
+            queueGridHeaderSync();
         });
 
         document.addEventListener('keydown', onScheduleKeyDown);
@@ -1588,6 +1723,27 @@
             const id = gantt.getSelectedId();
             if (!id) return;
             startCellEdit(id, 'text');
+            return;
+        }
+        if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'c') {
+            const id = gantt.getSelectedId();
+            if (id && gantt.isTaskExists(id)) {
+                clipboardTaskId = id;
+                e.preventDefault();
+            }
+            return;
+        }
+        if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'v') {
+            if (clipboardTaskId && gantt.isTaskExists(clipboardTaskId)) {
+                e.preventDefault();
+                gantt.selectTask(clipboardTaskId);
+                duplicateSelected();
+            }
+            return;
+        }
+        if (e.key === '?' || (e.shiftKey && e.key === '/')) {
+            e.preventDefault();
+            showKeyboardShortcuts();
             return;
         }
         if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'd') {
@@ -1677,9 +1833,11 @@
         refreshWbsCodes();
         applySettingsToUI();
         gantt.eachTask(t => applyTaskBarColor(t));
+        syncRootProjectName();
         applyBaselineVariance();
         applyRollingCalendarRange(true);
         updateRowHeightsForLabels();
+        syncRootProjectName();
         queueChartOverlay();
         gantt.render();
         setSaveStatus('Ready');
@@ -2709,12 +2867,19 @@
         showScheduleAlert(added ? `Added ${added} optional columns. Drag column edges to resize.` : 'All optional columns are already visible.', 'success');
     }
 
+    function showKeyboardShortcuts() {
+        const dlg = document.getElementById('scheduleShortcutsModal');
+        if (!dlg) return showScheduleAlert('F2 edit · Del delete · Ctrl+D duplicate · Ctrl+C/V copy/paste · Ctrl+Z undo · ? this help', 'info');
+        dlg.showModal();
+    }
+
     function showFeaturesChecklist() {
         const dlg = document.getElementById('scheduleFeaturesModal');
         if (!dlg) return showScheduleAlert('Features panel not found.', 'error');
         const list = document.getElementById('scheduleFeaturesList');
         if (!list) return;
         const items = [
+            ['Chart overlays grid (does not squeeze columns)', 'Drag green edge on chart'],
             ['CPM Schedule + float', 'Toolbar → Schedule'],
             ['Critical path highlight', 'Toolbar → Critical'],
             ['Critical-only filter', 'Toolbar → Critical Only'],
@@ -2722,18 +2887,19 @@
             ['Baselines + variance', 'Set Baseline / Baselines manager'],
             ['Data-date marker', 'Data Date field + Schedule'],
             ['Undo / Redo', 'Ctrl+Z / Ctrl+Y'],
+            ['Copy / Paste activity', 'Ctrl+C / Ctrl+V'],
             ['Duplicate activity', 'Copy button or Ctrl+D'],
             ['Indent / Outdent (bold parent)', 'Indent — parent row goes bold'],
             ['Predecessor lag in grid', 'Lag column; edit via Predecessors FS+2'],
             ['Constraint badges', 'Cstr column + Activity modal'],
             ['Custom bar colors', 'Color column or Display settings'],
-            ['Timeline pan', '◀ ▶ buttons, chart scrollbar, Shift+wheel'],
-            ['Reset frozen calendar', 'Reset Calendar button'],
+            ['Timeline pan + Reset Calendar', '◀ ▶ · Reset Calendar · Shift+wheel'],
             ['Export JSON / CSV / XER / XML', 'Toolbar export buttons'],
             ['Print Gantt + Look-ahead', 'Print buttons'],
-            ['All MS Project/P6 columns', 'Columns → Show All Fields'],
+            ['All MS Project/P6 columns', 'All Fields button'],
             ['Activity detail modal', 'Activity tab or double-click row'],
-            ['Look-ahead + Activity table views', 'View tabs']
+            ['Look-ahead + Activity table views', 'View tabs'],
+            ['Keyboard shortcuts', 'Press ? on schedule page']
         ];
         list.innerHTML = items.map(([name, how]) =>
             `<div class="flex justify-between gap-3 px-3 py-2 rounded-md bg-zinc-800/80 border border-zinc-700 text-sm">
@@ -2771,6 +2937,7 @@
         updateRowHeightsForLabels();
         gantt.render();
         requestAnimationFrame(() => {
+            syncRootProjectName();
             jumpToScheduleTasks();
             applyChartOverlay();
         });
@@ -2793,7 +2960,7 @@
         toggleCriticalPath, toggleCriticalFilter, setBaseline, showBaselineManager, activateBaseline, deleteBaseline,
         undo, redo, fitScheduleView, scrollToToday, panTimeline, resetTimelineCalendar, filterTasks, exportCsv, focusTimelineOnTask,
         runSchedule, switchScheduleView, renderLookAhead, focusActivity, sortByStartDate, exportXer, exportMsProjectXml,
-        showAllOptionalColumns, showFeaturesChecklist,
+        showAllOptionalColumns, showFeaturesChecklist, showKeyboardShortcuts,
         exportJson, importFile, printGantt, printLookAhead, saveSchedule,
         loadSchedule, clearSchedule, showColumnManager, showAddColumnDialog, removeColumn, addFieldColumn, queueSave
     };
