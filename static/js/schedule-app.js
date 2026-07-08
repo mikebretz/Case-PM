@@ -1609,6 +1609,10 @@
                 .map((col, index) => ({ col, index, width: parseInt(col.width, 10) || 80 }));
         }
         const hostRect = host.getBoundingClientRect();
+        const gridView = document.querySelector('#gantt_here .gantt_grid_data')
+            || document.querySelector('#gantt_here .gantt_grid_scale');
+        const viewRect = gridView?.getBoundingClientRect() || hostRect;
+        const viewLeft = viewRect.left;
         const exposedRight = getExposedGridRightEdge();
         const visible = [];
         cols.forEach((col, index) => {
@@ -1620,7 +1624,7 @@
             const rect = cell.getBoundingClientRect();
             const width = rect.width;
             if (width < 4) return;
-            const fullyVisible = rect.left >= hostRect.left + 1 && rect.right <= exposedRight + 1;
+            const fullyVisible = rect.left >= viewLeft - 0.5 && rect.right <= exposedRight + 0.5;
             if (!fullyVisible) return;
             visible.push({ col, index, width });
         });
@@ -4013,6 +4017,31 @@
         showScheduleAlert('Header and footer settings saved. They apply on the next print.', 'success');
     }
 
+    function updatePrintColumnToggleUI() {
+        const ps = scheduleSettings.print_settings || {};
+        const wbsOn = ps.print_hide_wbs !== true;
+        const idOn = ps.print_hide_id !== true;
+        document.getElementById('printWbsOn')?.classList.toggle('active-tool', wbsOn);
+        document.getElementById('printWbsOff')?.classList.toggle('active-tool', !wbsOn);
+        document.getElementById('printIdOn')?.classList.toggle('active-tool', idOn);
+        document.getElementById('printIdOff')?.classList.toggle('active-tool', !idOn);
+    }
+
+    function setPrintColumnToggle(which, show) {
+        if (!scheduleSettings.print_settings) scheduleSettings.print_settings = {};
+        if (which === 'wbs') scheduleSettings.print_settings.print_hide_wbs = !show;
+        if (which === 'id') scheduleSettings.print_settings.print_hide_id = !show;
+        updatePrintColumnToggleUI();
+        const vis = getPrintVisibleGridColumns(scheduleSettings.print_settings);
+        const hint = document.getElementById('printVisibleColHint');
+        if (hint) {
+            const names = vis.map(v => v.col.label || v.col.name).join(', ');
+            hint.textContent = vis.length
+                ? `${vis.length} column(s) will print: ${names}`
+                : 'No fully visible columns — drag chart divider or scroll grid.';
+        }
+    }
+
     function showPrintSetup() {
         const dlg = document.getElementById('schedulePrintModal');
         if (!dlg) return printGantt();
@@ -4023,8 +4052,15 @@
         document.getElementById('printIncludeChart').checked = !!ps.include_schedule_chart;
         document.getElementById('printIncludeEvm').checked = !!ps.include_evm;
         document.getElementById('printIncludeFooter').checked = !!ps.include_footer;
-        document.getElementById('printHideWbs').checked = ps.print_hide_wbs === true;
-        document.getElementById('printHideId').checked = ps.print_hide_id === true;
+        updatePrintColumnToggleUI();
+        const vis = getPrintVisibleGridColumns(ps);
+        const hint = document.getElementById('printVisibleColHint');
+        if (hint) {
+            const names = vis.map(v => v.col.label || v.col.name).join(', ');
+            hint.textContent = vis.length
+                ? `${vis.length} column(s) will print: ${names}`
+                : 'No fully visible columns — drag chart divider or scroll grid.';
+        }
         dlg.showModal();
     }
 
@@ -4039,8 +4075,8 @@
             include_schedule_chart: document.getElementById('printIncludeChart')?.checked === true,
             include_evm: document.getElementById('printIncludeEvm')?.checked === true,
             include_footer: document.getElementById('printIncludeFooter')?.checked === true,
-            print_hide_wbs: document.getElementById('printHideWbs')?.checked === true,
-            print_hide_id: document.getElementById('printHideId')?.checked === true,
+            print_hide_wbs: scheduleSettings.print_settings?.print_hide_wbs === true,
+            print_hide_id: scheduleSettings.print_settings?.print_hide_id === true,
             header_footer: hf
         };
         hf.include_footer = scheduleSettings.print_settings.include_footer;
@@ -4396,7 +4432,7 @@
         undo, redo, fitScheduleView, scrollToToday, panTimeline, resetTimelineCalendar, filterTasks, exportCsv, focusTimelineOnTask,
         runSchedule, switchScheduleView, renderLookAhead, focusActivity, sortByStartDate, exportXer, exportMsProjectXml,
         showAllOptionalColumns, showFeaturesChecklist, showKeyboardShortcuts,
-        exportJson, importFile, printGantt, printLookAhead, showPrintSetup, savePrintSettings,
+        exportJson, importFile, printGantt, printLookAhead, showPrintSetup, savePrintSettings, setPrintColumnToggle,
         showHeaderFooterSetup, saveHeaderFooterSettings, onHeaderLogoSelected, clearHeaderLogo,
         saveSchedule,
         loadSchedule, clearSchedule, showColumnManager, showAddColumnDialog, removeColumn, addFieldColumn, queueSave,
