@@ -870,6 +870,14 @@ body:has(.schedule-page-root) #scheduleFieldPickerModal {
         text-overflow: ellipsis;
         white-space: nowrap;
     }
+    .schedule-print-table-visible-cols th,
+    .schedule-print-table-visible-cols td {
+        white-space: nowrap;
+    }
+    .schedule-print-table-visible-cols .print-name {
+        white-space: normal !important;
+        line-height: 1.15;
+    }
     .print-col-wbs { width: 4%; }
     .print-col-name { width: 14%; white-space: normal !important; line-height: 1.15; }
     .print-col-dur { width: 3%; }

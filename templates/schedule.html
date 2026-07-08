@@ -345,6 +345,20 @@
         <label class="flex items-center gap-2"><input id="printIncludeChart" type="checkbox" class="rounded border-zinc-600"> Separate schedule chart (off by default)</label>
         <label class="flex items-center gap-2"><input id="printIncludeEvm" type="checkbox" class="rounded border-zinc-600"> EVM columns (CPI/SPI) + project rollup</label>
         <label class="flex items-center gap-2"><input id="printIncludeFooter" type="checkbox" class="rounded border-zinc-600"> Print footer line</label>
+        <div class="border-t border-zinc-700 pt-2 mt-2 space-y-3">
+            <p class="text-xs text-zinc-500">Task columns print exactly as shown — only columns <strong>100% visible</strong> left of the chart divider are included (MS Project style).</p>
+            <p id="printVisibleColHint" class="text-xs text-emerald-400"></p>
+            <div class="flex flex-wrap items-center gap-2">
+                <span class="text-xs text-zinc-400 w-24">WBS column</span>
+                <button type="button" id="printWbsOn" class="schedule-toolbar-btn text-xs active-tool" onclick="ScheduleApp.setPrintColumnToggle('wbs', true)">Print</button>
+                <button type="button" id="printWbsOff" class="schedule-toolbar-btn text-xs" onclick="ScheduleApp.setPrintColumnToggle('wbs', false)">Skip</button>
+            </div>
+            <div class="flex flex-wrap items-center gap-2">
+                <span class="text-xs text-zinc-400 w-24">ID column</span>
+                <button type="button" id="printIdOn" class="schedule-toolbar-btn text-xs active-tool" onclick="ScheduleApp.setPrintColumnToggle('id', true)">Print</button>
+                <button type="button" id="printIdOff" class="schedule-toolbar-btn text-xs" onclick="ScheduleApp.setPrintColumnToggle('id', false)">Skip</button>
+            </div>
+        </div>
     </div>
     <div class="px-4 py-3 border-t border-zinc-700 flex justify-end gap-2">
         <button type="button" onclick="document.getElementById('schedulePrintModal').close()" class="px-4 py-1.5 text-xs bg-zinc-800 hover:bg-zinc-700 rounded-md">Cancel</button>
