@@ -561,7 +561,12 @@
 
         const total = getColumnsTotalWidth();
         const host = document.getElementById('gantt_here');
-        if (host) host.style.setProperty('--sched-grid-min-width', total + 'px');
+        const hostW = host?.clientWidth || root.clientWidth || 1200;
+        const leftPx = Math.max(0, hostW - timelineW);
+        if (host) {
+            host.style.setProperty('--sched-grid-min-width', total + 'px');
+            host.style.setProperty('--sched-timeline-width', timelineW + 'px');
+        }
 
         root.style.position = 'relative';
         gridCell.style.cssText = 'flex:1 1 auto;width:100%!important;min-width:0!important;position:relative;z-index:2;overflow:hidden;';
@@ -569,10 +574,12 @@
 
         timelineCell.style.cssText = [
             'position:absolute!important',
+            `left:${leftPx}px!important`,
+            'right:auto!important',
             'top:0!important',
-            'right:0!important',
             'bottom:0!important',
             `width:${timelineW}px!important`,
+            'max-width:' + timelineW + 'px!important',
             'z-index:18!important',
             'display:flex!important',
             'flex-direction:column!important',
@@ -1327,14 +1334,71 @@
         handleColumnResize(colIndex, col, width, true, true);
     }
 
+    function getExposedGridRightEdge() {
+        const host = document.getElementById('gantt_here');
+        if (!host) return 0;
+        const rect = host.getBoundingClientRect();
+        return rect.left + rect.width - getTimelineWidth();
+    }
+
+    const colResizeDrag = { active: false, colIndex: -1, startX: 0, startW: 0 };
+
     function bindColumnResizeEnhancements() {
         if (bindColumnResizeEnhancements.done) return;
         bindColumnResizeEnhancements.done = true;
         const host = document.getElementById('gantt_here');
         if (!host) return;
+
+        const onColMove = e => {
+            if (!colResizeDrag.active || colResizeDrag.colIndex < 0) return;
+            const col = gantt.config.columns[colResizeDrag.colIndex];
+            if (!col) return;
+            const delta = e.clientX - colResizeDrag.startX;
+            const newW = Math.max(col.min_width || 50, Math.min(520, colResizeDrag.startW + delta));
+            handleColumnResize(colResizeDrag.colIndex, col, newW, false, false);
+            preserveGridScrollLeft(columnResizeScrollLeft);
+        };
+
+        const endColResize = () => {
+            if (!colResizeDrag.active) return;
+            const idx = colResizeDrag.colIndex;
+            colResizeDrag.active = false;
+            if (idx >= 0 && gantt.config.columns[idx]) {
+                handleColumnResize(idx, gantt.config.columns[idx], gantt.config.columns[idx].width, true, true);
+            }
+            colResizeDrag.colIndex = -1;
+            columnResizeScrollLeft = null;
+        };
+
+        host.addEventListener('mousedown', e => {
+            const tick = e.target.closest('.gantt_grid_column_resize, .gantt_grid_column_resize_wrap');
+            if (!tick) return;
+            const wrap = tick.closest('.gantt_grid_column_resize_wrap') || tick;
+            const scale = wrap.closest('.gantt_grid_scale');
+            if (!scale) return;
+            const boundary = getExposedGridRightEdge();
+            if (wrap.getBoundingClientRect().left > boundary - 4) return;
+            const wraps = Array.from(scale.querySelectorAll('.gantt_grid_column_resize_wrap'));
+            const colIndex = wraps.indexOf(wrap);
+            if (colIndex < 0 || !gantt.config.columns[colIndex] || gantt.config.columns[colIndex].resize === false) return;
+            const grid = document.querySelector('#gantt_here .gantt_grid_data');
+            columnResizeScrollLeft = grid ? grid.scrollLeft : 0;
+            colResizeDrag.active = true;
+            colResizeDrag.colIndex = colIndex;
+            colResizeDrag.startX = e.clientX;
+            colResizeDrag.startW = parseInt(gantt.config.columns[colIndex].width, 10) || 80;
+            e.preventDefault();
+            e.stopPropagation();
+        }, true);
+
+        document.addEventListener('mousemove', onColMove);
+        document.addEventListener('mouseup', endColResize);
+
         host.addEventListener('dblclick', e => {
             const wrap = e.target.closest('.gantt_grid_column_resize_wrap');
             if (!wrap) return;
+            const boundary = getExposedGridRightEdge();
+            if (wrap.getBoundingClientRect().left > boundary - 4) return;
             const scale = wrap.closest('.gantt_grid_scale');
             if (!scale) return;
             const wraps = Array.from(scale.querySelectorAll('.gantt_grid_column_resize_wrap'));
@@ -1343,11 +1407,6 @@
             e.preventDefault();
             e.stopPropagation();
             autoFitGridColumn(colIndex);
-        }, true);
-        host.addEventListener('mousedown', e => {
-            if (!e.target.closest('.gantt_grid_column_resize_wrap')) return;
-            const grid = document.querySelector('#gantt_here .gantt_grid_data');
-            columnResizeScrollLeft = grid ? grid.scrollLeft : 0;
         }, true);
     }
 
@@ -2117,8 +2176,9 @@
             queueSave();
             if (mode === 'move' || mode === 'resize' || mode === 'progress') {
                 runSchedule({ skipScroll: true });
+            } else {
+                queueChartOverlay();
             }
-            gantt.render();
             refreshTimelinePanBar();
         });
         gantt.attachEvent('onAfterColumnReorder', () => {
@@ -2136,7 +2196,7 @@
         gantt.attachEvent('onColumnResize', function (index, column, new_width) {
             handleColumnResize(index, column, new_width, false, false);
             preserveGridScrollLeft(columnResizeScrollLeft);
-            return true;
+            return false;
         });
         gantt.attachEvent('onColumnResizeEnd', function (index, column, new_width) {
             handleColumnResize(index, column, new_width, true, true);
@@ -2150,6 +2210,9 @@
             restoreTimelineScrollAfterRender();
             refreshTimelinePanBar();
             bindColumnResizeEnhancements();
+            if (ganttReady && document.getElementById('scheduleGanttHost')?.classList.contains('schedule-overlay-mode')) {
+                applyChartOverlay();
+            }
         });
 
         document.addEventListener('keydown', onScheduleKeyDown);
