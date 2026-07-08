@@ -221,13 +221,50 @@
   function loadAll() {
     settings = { ...DEFAULT_SETTINGS, ...loadJson(STORAGE.settings, {}) };
     mailMessages = loadJson(STORAGE.mail, null) || seedMail();
-    internalMessages = loadJson(STORAGE.internal, null) || seedInternal();
     contacts = loadJson(STORAGE.contacts, null) || seedContacts();
     rules = loadJson(STORAGE.rules, []);
     signatures = loadJson(STORAGE.signatures, null) || seedSignatures();
     templates = loadJson(STORAGE.templates, null) || seedTemplates();
     if (!loadJson(STORAGE.mail, null)) persistMail();
+    internalMessages = [];
+    refreshInternalFromServer();
+  }
+
+  async function refreshInternalFromServer() {
+    try {
+      const res = await fetch('/api/internal-messages');
+      if (res.ok) {
+        const data = await res.json();
+        internalMessages = data.map(m => ({
+          id: m.id,
+          folder: m.folder,
+          type: m.type,
+          from: m.from,
+          fromUser: m.fromUser,
+          subject: m.subject,
+          preview: m.preview,
+          body: m.body,
+          date: m.date,
+          unread: m.unread,
+          priority: m.priority,
+          actionUrl: m.actionUrl,
+          actionLabel: m.actionLabel,
+          project: m.project,
+          module: m.module,
+          requiresAction: m.requiresAction,
+          approvalId: m.approvalId,
+          archived: m.archived,
+        }));
+        persistInternal();
+        render();
+        return;
+      }
+    } catch (e) {
+      console.warn('Internal messages API unavailable, using cache', e);
+    }
+    internalMessages = loadJson(STORAGE.internal, null) || seedInternal();
     if (!loadJson(STORAGE.internal, null)) persistInternal();
+    render();
   }
 
   function persistMail() { saveJson(STORAGE.mail, mailMessages); }
@@ -292,7 +329,7 @@
 
   function getMessage(id) {
     const pool = state.workspace === 'internal' ? internalMessages : mailMessages;
-    return pool.find(m => m.id === id);
+    return pool.find(m => String(m.id) === String(id));
   }
 
   function render() {
@@ -502,7 +539,13 @@
           </div>
           <div class="prose prose-invert max-w-none text-sm text-zinc-300">${m.body || esc(m.preview)}</div>
         </div>`;
-      if (m.unread) { m.unread = false; persistInternal(); }
+      if (m.unread) {
+        m.unread = false;
+        persistInternal();
+        if (typeof m.id === 'number' || String(m.id).match(/^\d+$/)) {
+          fetch(`/api/internal-messages/${m.id}/read`, { method: 'POST' }).catch(() => {});
+        }
+      }
       return;
     }
 
@@ -733,16 +776,42 @@
     if (m) { m.unread = false; persistInternal(); render(); }
   }
 
-  function approveInternal(id) {
+  async function approveInternal(id) {
     const target = id || state.selectedId;
-    const m = internalMessages.find(x => x.id === target);
-    if (m) { m.unread = false; m.requiresAction = false; toast(`Approved: ${m.subject}`, 'success'); persistInternal(); render(); }
+    const m = internalMessages.find(x => String(x.id) === String(target));
+    if (!m) return;
+    if (m.approvalId && typeof CasePMWorkflow !== 'undefined') {
+      try {
+        await CasePMWorkflow.decide(m.approvalId, 'approve');
+      } catch (e) {
+        toast('Could not approve: ' + e.message, 'error');
+        return;
+      }
+    }
+    m.unread = false;
+    m.requiresAction = false;
+    toast(`Approved: ${m.subject}`, 'success');
+    await refreshInternalFromServer();
   }
 
-  function dismissInternal(id) {
+  async function dismissInternal(id) {
     const target = id || state.selectedId;
-    const m = internalMessages.find(x => x.id === target);
-    if (m) { m.archived = true; m.unread = false; persistInternal(); state.selectedId = null; render(); }
+    const m = internalMessages.find(x => String(x.id) === String(target));
+    if (!m) return;
+    if (m.approvalId && typeof CasePMWorkflow !== 'undefined') {
+      try {
+        await CasePMWorkflow.decide(m.approvalId, 'dismiss');
+      } catch (e) {
+        /* still archive locally */
+      }
+    }
+    if (typeof m.id === 'number' || String(m.id).match(/^\d+$/)) {
+      await fetch(`/api/internal-messages/${m.id}/archive`, { method: 'POST' }).catch(() => {});
+    }
+    m.archived = true;
+    m.unread = false;
+    state.selectedId = null;
+    await refreshInternalFromServer();
   }
 
   function composeInternal() {
@@ -760,7 +829,14 @@
     setFolder('team');
   }
 
-  function refresh() { toast('Mailbox synced.', 'success'); render(); }
+  function refresh() {
+    if (state.workspace === 'internal') {
+      refreshInternalFromServer().then(() => toast('Internal messages synced.', 'success'));
+      return;
+    }
+    toast('Mailbox synced.', 'success');
+    render();
+  }
 
   function printMessage(id) {
     const m = getMessage(id);
@@ -830,7 +906,11 @@
     ctx = { ...ctx, ...options };
     loadAll();
     global.CasePMEmailSettings = settings;
-    render();
+    if (typeof CasePMWorkflow !== 'undefined') {
+      CasePMWorkflow.loadPortal().then(() => render());
+    } else {
+      render();
+    }
     document.getElementById('emailSearchInput')?.addEventListener('input', e => setSearch(e.target.value));
 
     if (settings.keyboardShortcuts) {

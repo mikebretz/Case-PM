@@ -2,6 +2,7 @@
 
 {% block content %}
 <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+<script src="{{ url_for('static', filename='js/casepm-workflow.js') }}"></script>
 
 <style>
   /* Exact match to budget.html aesthetics */
@@ -2130,10 +2131,10 @@ let mainLienWaiver = JSON.parse(casepmStore.getItem('mainLienWaiver') || '{}'); 
         if (dot) dot.classList.add('hidden');
     }
 
-    // Simple role check for demo (Michael Bretz / PM is approver)
     function isCurrentUserApprover() {
-        // In production this would check logged-in user's role/permissions from localStorage or session
-        // For this demo, assume the PM (Michael Bretz) is always the approver
+        if (typeof CasePMWorkflow !== 'undefined' && window.CASEPM_PORTAL) {
+            return CasePMWorkflow.canApprove('Pay Applications');
+        }
         return true;
     }
 
@@ -3359,6 +3360,9 @@ let mainLienWaiver = JSON.parse(casepmStore.getItem('mainLienWaiver') || '{}'); 
         casepmStore.setItem('currentPayAppPeriod', JSON.stringify(currentPayAppPeriod));
         logPayAppAudit('APPLICATION_SUBMITTED', { periodNumber: currentPayAppPeriod.periodNumber, validatedAgainstBudget: budgetContractAmount });
         renderPayAppContent();
+        if (typeof CasePMWorkflow !== 'undefined') {
+            CasePMWorkflow.onG702Submitted(currentPayAppPeriod).catch(e => console.warn('Workflow', e));
+        }
     }
 
     function approvePayApplication() {
@@ -3423,6 +3427,9 @@ let mainLienWaiver = JSON.parse(casepmStore.getItem('mainLienWaiver') || '{}'); 
         currentPayAppPeriod.status = "Approved";
         casepmStore.setItem('currentPayAppPeriod', JSON.stringify(currentPayAppPeriod));
         logPayAppAudit('APPLICATION_APPROVED', { periodNumber: currentPayAppPeriod.periodNumber });
+        if (typeof CasePMWorkflow !== 'undefined') {
+            CasePMWorkflow.onG702Approved(currentPayAppPeriod).catch(e => console.warn('Workflow', e));
+        }
 
         // After approval, automatically switch to Previous Pay Applications tab so user can verify the numbers carried over
         setTimeout(() => {
@@ -3498,6 +3505,9 @@ let mainLienWaiver = JSON.parse(casepmStore.getItem('mainLienWaiver') || '{}'); 
         currentPayAppPeriod.status = "Draft";
         casepmStore.setItem('currentPayAppPeriod', JSON.stringify(currentPayAppPeriod));
         logPayAppAudit('REVISION_REQUESTED', { periodNumber: currentPayAppPeriod.periodNumber });
+        if (typeof CasePMWorkflow !== 'undefined') {
+            CasePMWorkflow.onG702RevisionRequested(currentPayAppPeriod).catch(e => console.warn('Workflow', e));
+        }
         renderPayAppContent();
     }
 
@@ -5899,7 +5909,9 @@ let mainLienWaiver = JSON.parse(casepmStore.getItem('mainLienWaiver') || '{}'); 
         }
         updateSubSOVStatus(selectedSubCompanyId, 'Pending Approval', { submittedDate: new Date().toISOString() });
         logPayAppAudit('SUB_SOV_SUBMITTED_FOR_APPROVAL', { companyId: selectedSubCompanyId });
-        // Success feedback removed per user request (status pill visible)
+        if (typeof CasePMWorkflow !== 'undefined') {
+            CasePMWorkflow.onSubSOVSubmitted(selectedSubCompanyId, getCompanyName(selectedSubCompanyId)).catch(e => console.warn('Workflow', e));
+        }
         renderPayAppContent(); // Refresh to show new status + buttons
     }
 
@@ -5910,7 +5922,9 @@ let mainLienWaiver = JSON.parse(casepmStore.getItem('mainLienWaiver') || '{}'); 
             approvedDate: new Date().toISOString() 
         });
         logPayAppAudit('SUB_SOV_APPROVED', { companyId: selectedSubCompanyId, approvedBy: "Michael Bretz" });
-        // Success feedback removed per user request (approved state + billing enabled)
+        if (typeof CasePMWorkflow !== 'undefined') {
+            CasePMWorkflow.onSubSOVApproved(selectedSubCompanyId, getCompanyName(selectedSubCompanyId)).catch(e => console.warn('Workflow', e));
+        }
         renderPayAppContent();
     }
 
@@ -6082,7 +6096,9 @@ let mainLienWaiver = JSON.parse(casepmStore.getItem('mainLienWaiver') || '{}'); 
         if (!safeSetLocalStorage('subPayAppHistory', subPayAppHistory)) return;
 
         logPayAppAudit('SUB_PAYAPP_SUBMITTED_FOR_APPROVAL', { companyId: companyId, period: currentPeriodNum, total: totalBilledThisPeriod, isCompliance: isComplianceSubmission });
-        // Success feedback removed per user request (pending status + buttons visible)
+        if (typeof CasePMWorkflow !== 'undefined') {
+            CasePMWorkflow.onSubPayAppSubmitted(companyId, getCompanyName(companyId), currentPeriodNum, totalBilledThisPeriodCheck).catch(e => console.warn('Workflow', e));
+        }
         renderPayAppContent();
     }
 
@@ -6226,8 +6242,10 @@ let mainLienWaiver = JSON.parse(casepmStore.getItem('mainLienWaiver') || '{}'); 
             totalCommitted: totalCommittedThisPeriod,
             newPayAppNumber: subPayAppNumbers[companyId]
         });
+        if (typeof CasePMWorkflow !== 'undefined') {
+            CasePMWorkflow.onSubPayAppApproved(companyId, getCompanyName(companyId), currentPeriodNum).catch(e => console.warn('Workflow', e));
+        }
         
-        // Success feedback removed per user request (Tracker row + next # visible)
         renderPayAppContent();
     }
 
@@ -9253,7 +9271,11 @@ function printSubcontractorG703(companyId) {
         // In production: call email API / notification service here
         logPayAppAudit('SUB_PAYAPP_NOTIFICATION_SENT', { companyId, companyName, outstanding });
 
-        // Success feedback removed per user request (notification simulated)
+        if (typeof CasePMWorkflow !== 'undefined' && outstanding.length > 0) {
+            const company = companies.find(c => String(c.id) === String(companyId));
+            const userId = company && company.primary_contact_user_id;
+            CasePMWorkflow.notifySubPayAppDue(companyId, companyName, userId).catch(e => console.warn('Workflow', e));
+        }
     }
 
     // Editable Notes in Sub Pay App Tracker (PM-only internal notes, persisted per sub)

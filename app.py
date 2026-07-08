@@ -99,6 +99,8 @@ class User(db.Model, UserMixin):
     password_hash = db.Column(db.String(256), nullable=False)
     role = db.Column(db.String(50), default='Viewer')
     company = db.Column(db.String(120))
+    company_id = db.Column(db.Integer, db.ForeignKey('company.id'), nullable=True)
+    permissions_json = db.Column(db.Text)
     status = db.Column(db.String(20), default='Active')
     must_change_password = db.Column(db.Boolean, default=True)
     require_2fa = db.Column(db.Boolean, default=False)
@@ -118,7 +120,16 @@ class User(db.Model, UserMixin):
     def has_permission(self, permission):
         if self.role == 'Admin':
             return True
-        return False
+        try:
+            from case_workflow import get_role_permissions, user_can_approve
+            perms = get_role_permissions(self)
+            if perms.get('modules') == '*':
+                return True
+            if permission in (perms.get('modules') or []):
+                return True
+            return user_can_approve(self, permission)
+        except Exception:
+            return False
 
     def __repr__(self):
         return f'<User {self.email}>'
@@ -254,10 +265,22 @@ def inject_project_context():
     if not current_user.is_authenticated:
         return {}
     active = get_active_project()
+    portal = {}
+    try:
+        from case_workflow import get_role_permissions, user_portal_type, is_sub_user, is_architect_user
+        portal = {
+            'portal_type': user_portal_type(current_user),
+            'is_sub_portal': is_sub_user(current_user),
+            'is_architect_portal': is_architect_user(current_user),
+            'role_permissions': get_role_permissions(current_user),
+        }
+    except Exception:
+        portal = {'portal_type': 'staff', 'is_sub_portal': False, 'is_architect_portal': False}
     return {
         'active_project': active,
         'project_name': active.name if active else 'Select Project',
         'all_projects': Project.query.order_by(Project.name).all(),
+        **portal,
     }
 
 
@@ -1097,6 +1120,48 @@ def create_change_order():
         return redirect_with_project('change_orders_page')
 
 
+@app.route('/change-orders/<int:co_id>/update-status', methods=['POST'])
+@login_required
+def update_change_order_status(co_id):
+    co = ChangeOrder.query.get_or_404(co_id)
+    data = request.get_json(silent=True) or {}
+    new_status = data.get('status') or request.form.get('status')
+    if not new_status:
+        return jsonify({'success': False, 'message': 'No status provided'}), 400
+
+    old_status = co.status
+    co.status = new_status
+    db.session.commit()
+
+    log = AuditLog(
+        user_id=current_user.id,
+        action='Updated Change Order Status',
+        target_type='ChangeOrder',
+        target_id=co.id,
+        details=f"Changed status from '{old_status}' to '{new_status}'",
+    )
+    db.session.add(log)
+
+    if new_status in ('Submitted', 'Under Review'):
+        try:
+            from case_workflow import create_approval
+            create_approval(
+                project_id=co.project_id,
+                module='Change Orders',
+                entity_type='ChangeOrder',
+                entity_id=co.id,
+                title=f'Change Order {co.number or co.id} requires approval',
+                description=co.description or '',
+                action_url=f'/change-orders?project_id={co.project_id}',
+                payload={'amount': co.amount, 'status': new_status},
+            )
+        except Exception:
+            pass
+
+    db.session.commit()
+    return jsonify({'success': True, 'new_status': new_status})
+
+
 # ==================== SUBMITTAL ROUTES ====================
 
 @app.route('/submittals')
@@ -1761,7 +1826,7 @@ def audit_log_page():
 def notifications():
     user_notifications = Notification.query.filter_by(user_id=current_user.id).order_by(
         Notification.created_at.desc()
-    ).limit(30).all()
+    ).limit(50).all()
     return render_template('notifications.html', notifications=user_notifications)
 
 
@@ -1812,12 +1877,32 @@ def api_stats():
 
 
 
+with app.app_context():
+    try:
+        import case_workflow as cw
+        cw.register_workflow(app, db, {
+            'User': User,
+            'Project': Project,
+            'Company': Company,
+            'Notification': Notification,
+            'AuditLog': AuditLog,
+            'login_required': login_required,
+        })
+        db.create_all()
+        cw.ensure_workflow_schema(db.engine)
+    except Exception as _e:
+        print('Workflow init:', _e)
+
 # ==================== FINAL STARTUP & INITIALIZATION ====================
 
 if __name__ == '__main__':
     with app.app_context():
-        # Create all database tables
         db.create_all()
+        try:
+            import case_workflow as cw
+            cw.ensure_workflow_schema(db.engine)
+        except Exception:
+            pass
 
         # Create default admin user if it doesn't exist
         if not User.query.filter_by(email='admin@casepm.local').first():
