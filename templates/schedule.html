@@ -95,7 +95,6 @@
                 <button type="button" class="schedule-toolbar-btn" onclick="ScheduleApp.showEvmScurve()" title="EVM S-curve"><i class="fa-solid fa-chart-line text-sky-400"></i> S-Curve</button>
                 <button type="button" class="schedule-toolbar-btn" onclick="ScheduleApp.showResourceHistogram()" title="Resource usage histogram"><i class="fa-solid fa-chart-bar text-amber-400"></i> Histogram</button>
                 <button type="button" class="schedule-toolbar-btn" onclick="ScheduleApp.resetTimelineCalendar()" title="Fix frozen timeline — reset to current year"><i class="fa-solid fa-calendar-plus text-emerald-400"></i> Reset Calendar</button>
-                <button type="button" class="schedule-toolbar-btn" onclick="ScheduleApp.showFeaturesChecklist()" title="All schedule features checklist"><i class="fa-solid fa-list-check text-sky-400"></i> Features</button>
                 <button type="button" class="schedule-toolbar-btn" onclick="ScheduleApp.showAllOptionalColumns()" title="Add all MS Project / P6 columns"><i class="fa-solid fa-table-list"></i> All Fields</button>
                 <button type="button" class="schedule-toolbar-btn" onclick="ScheduleApp.showColumnManager()" title="Add or remove grid columns"><i class="fa-solid fa-table-columns"></i> Columns</button>
             </div>
@@ -146,7 +145,8 @@
         <div id="schedulePrintSheet" class="schedule-print-sheet no-screen" aria-hidden="true"></div>
         <div id="scheduleGanttHost" class="flex-1 min-h-0 relative">
             <div id="gantt_here"></div>
-            <div id="scheduleTimelinePan" class="schedule-timeline-pan hidden" title="Drag to pan timeline left/right">
+            <div id="scheduleChartResizer" class="schedule-chart-resizer hidden" title="Drag to resize chart overlay" role="separator" aria-orientation="vertical"></div>
+            <div id="scheduleTimelinePan" class="schedule-timeline-pan hidden" title="Drag to pan timeline left/right" aria-label="Timeline horizontal scroll">
                 <div class="schedule-timeline-pan-track">
                     <div class="schedule-timeline-pan-thumb"></div>
                 </div>
@@ -264,21 +264,6 @@
         <div class="flex justify-between"><span>Ctrl+Z / Ctrl+Y</span><span class="text-zinc-500">Undo / Redo</span></div>
         <div class="flex justify-between"><span>Delete</span><span class="text-zinc-500">Delete selected</span></div>
         <div class="flex justify-between"><span>Shift + scroll</span><span class="text-zinc-500">Pan timeline</span></div>
-    </div>
-</dialog>
-
-<!-- Features checklist -->
-<dialog id="scheduleFeaturesModal" class="rounded-md w-full max-w-lg p-0 text-white shadow-2xl" style="background:#18181b;border:1px solid #3f3f46;">
-    <div class="px-4 py-3 border-b border-zinc-700 flex justify-between items-center">
-        <div>
-            <h3 class="font-semibold text-sm">Schedule Features</h3>
-            <p class="text-xs text-zinc-500">Everything implemented — use this list to error-check</p>
-        </div>
-        <button type="button" onclick="document.getElementById('scheduleFeaturesModal').close()" class="text-zinc-400 hover:text-white">&times;</button>
-    </div>
-    <div id="scheduleFeaturesList" class="p-3 max-h-[65vh] overflow-auto space-y-1"></div>
-    <div class="px-4 py-3 border-t border-zinc-700 flex justify-end">
-        <button type="button" onclick="document.getElementById('scheduleFeaturesModal').close()" class="px-4 py-1.5 text-xs bg-zinc-800 hover:bg-zinc-700 rounded-md">Close</button>
     </div>
 </dialog>
 

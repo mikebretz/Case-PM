@@ -522,14 +522,14 @@
         ].join(';');
 
         let handle = document.getElementById('scheduleChartResizer');
-        if (!handle) {
-            handle = document.createElement('div');
-            handle.id = 'scheduleChartResizer';
-            handle.className = 'schedule-chart-resizer';
-            handle.title = 'Drag to resize chart overlay';
-            root.appendChild(handle);
+        const hostWrap = document.getElementById('scheduleGanttHost');
+        if (handle && hostWrap) {
+            handle.classList.remove('hidden');
+            handle.style.left = Math.max(0, hostWrap.clientWidth - timelineW - 6) + 'px';
         }
-        handle.style.right = (timelineW - 5) + 'px';
+        root.querySelectorAll('.schedule-chart-resizer').forEach(el => {
+            if (el !== handle) el.remove();
+        });
         syncLayoutTimelineWidth();
         ensureTimelineScrollbar();
         refreshTimelinePanBar();
@@ -540,39 +540,61 @@
         overlayApplyTimer = setTimeout(applyChartOverlay, 16);
     }
 
-    const overlayDrag = { active: false, bound: false };
+    const overlayDrag = { active: false, bound: false, startX: 0, startW: 0, pointerId: null };
+
+    function bindChartResizer() {
+        const handle = document.getElementById('scheduleChartResizer');
+        if (!handle || overlayDrag.bound) return;
+        overlayDrag.bound = true;
+
+        const onMove = e => {
+            if (!overlayDrag.active) return;
+            const hostEl = document.getElementById('gantt_here');
+            if (!hostEl) return;
+            const rect = hostEl.getBoundingClientRect();
+            const dx = overlayDrag.startX - e.clientX;
+            const timelineW = Math.max(220, Math.min(rect.width - 140, overlayDrag.startW + dx));
+            scheduleSettings.timeline_width_px = timelineW;
+            scheduleSettings.timeline_pct = timelineW / rect.width;
+            applyChartOverlay();
+        };
+
+        const endResize = () => {
+            if (!overlayDrag.active) return;
+            overlayDrag.active = false;
+            const handleEl = document.getElementById('scheduleChartResizer');
+            try { handleEl?.releasePointerCapture(overlayDrag.pointerId); } catch (e) { /* ok */ }
+            queueSave();
+        };
+
+        handle.addEventListener('pointerdown', e => {
+            overlayDrag.active = true;
+            overlayDrag.startX = e.clientX;
+            overlayDrag.startW = scheduleSettings.timeline_width_px >= 180
+                ? scheduleSettings.timeline_width_px
+                : getTimelineWidth();
+            overlayDrag.pointerId = e.pointerId;
+            e.preventDefault();
+            e.stopPropagation();
+            try { handle.setPointerCapture(e.pointerId); } catch (err) { /* ok */ }
+        });
+        handle.addEventListener('pointermove', onMove);
+        handle.addEventListener('pointerup', endResize);
+        handle.addEventListener('pointercancel', endResize);
+        document.addEventListener('pointermove', onMove);
+        document.addEventListener('pointerup', endResize);
+        document.addEventListener('pointercancel', endResize);
+    }
 
     function initChartOverlay() {
         if (scheduleSettings.timeline_width_px == null && scheduleSettings.timeline_pct == null) {
             scheduleSettings.timeline_pct = 0.42;
         }
         document.getElementById('scheduleGanttHost')?.classList.add('schedule-overlay-mode');
+        bindChartResizer();
 
-        if (!overlayDrag.bound) {
-            overlayDrag.bound = true;
-            document.addEventListener('mousedown', e => {
-                const handle = document.getElementById('scheduleChartResizer');
-                if (!handle || (!handle.contains(e.target) && e.target !== handle)) return;
-                overlayDrag.active = true;
-                e.preventDefault();
-                e.stopPropagation();
-            });
-            document.addEventListener('mousemove', e => {
-                if (!overlayDrag.active) return;
-                const hostEl = document.getElementById('gantt_here');
-                if (!hostEl) return;
-                const rect = hostEl.getBoundingClientRect();
-                const timelineW = Math.max(200, Math.min(rect.width - 120, rect.right - e.clientX));
-                scheduleSettings.timeline_width_px = timelineW;
-                scheduleSettings.timeline_pct = timelineW / rect.width;
-                applyChartOverlay();
-            });
-            document.addEventListener('mouseup', () => {
-                if (overlayDrag.active) {
-                    overlayDrag.active = false;
-                    queueSave();
-                }
-            });
+        if (!initChartOverlay.resizeBound) {
+            initChartOverlay.resizeBound = true;
             window.addEventListener('resize', () => {
                 const hostW = document.getElementById('gantt_here')?.offsetWidth;
                 if (hostW && scheduleSettings.timeline_pct) {
@@ -997,11 +1019,11 @@
             host.addEventListener('wheel', e => {
                 const inTimeline = e.target.closest('.gantt_layout_cell:nth-child(3)');
                 if (!inTimeline) return;
-                const horiz = Math.abs(e.deltaX) > Math.abs(e.deltaY);
-                const delta = horiz ? e.deltaX : (e.shiftKey ? e.deltaY : 0);
+                const delta = Math.abs(e.deltaX) > Math.abs(e.deltaY) ? e.deltaX : e.deltaY;
                 if (!delta) return;
                 e.preventDefault();
-                setTimelineScrollX(readTimelineScrollX() + delta);
+                // Wheel right / down pans forward (later dates); flip sign vs browser default
+                setTimelineScrollX(readTimelineScrollX() - delta);
             }, { passive: false });
         }
         bindTimelineScrollbarSync();
@@ -3163,19 +3185,19 @@
                 const level = t.$level || 0;
                 const dateLabel = `${formatDateSafe(t.start_date)} – ${formatDateSafe(t.end_date)}`;
                 const evmCols = showEvm
-                    ? `<td class="c">${t.cpi != null ? t.cpi : '—'}</td><td class="c">${t.spi != null ? t.spi : '—'}</td>`
+                    ? `<td class="c print-col-pct">${t.cpi != null ? t.cpi : '—'}</td><td class="c print-col-pct">${t.spi != null ? t.spi : '—'}</td>`
                     : '';
+                const dateCols = showInlineBars ? '' : `<td class="print-col-date">${formatDateSafe(t.start_date)}</td><td class="print-col-date">${formatDateSafe(t.end_date)}</td>`;
                 const barCell = showInlineBars
                     ? `<td class="print-bar-cell"><div class="print-bar-dates">${dateLabel}</div><div class="print-bar-track"><div class="print-bar" style="left:${left}%;width:${width}%;background:${color}"></div></div></td>`
                     : '';
                 rows += `<tr class="${t.type === 'project' ? 'print-summary' : ''}">
-                    <td>${wbsCode(t)}</td>
-                    <td class="print-name" style="padding-left:${8 + level * 14}px">${t.text || ''}</td>
-                    <td class="c">${t.duration != null ? t.duration : ''}</td>
-                    <td>${formatDateSafe(t.start_date)}</td>
-                    <td>${formatDateSafe(t.end_date)}</td>
-                    <td class="c">${Math.round((t.progress || 0) * 100)}%</td>
-                    <td>${predTemplate(t) || '—'}</td>${evmCols}${barCell}
+                    <td class="print-col-wbs">${wbsCode(t)}</td>
+                    <td class="print-name print-col-name" style="padding-left:${4 + level * 10}px">${t.text || ''}</td>
+                    <td class="c print-col-dur">${t.duration != null ? t.duration : ''}</td>
+                    ${dateCols}
+                    <td class="c print-col-pct">${Math.round((t.progress || 0) * 100)}%</td>
+                    <td class="print-col-pred">${predTemplate(t) || '—'}</td>${evmCols}${barCell}
                 </tr>`;
             });
         }
@@ -3210,9 +3232,11 @@
                 <svg class="print-chart-svg" viewBox="0 0 100 100" preserveAspectRatio="none" style="height:${chartH}px">${chartLines}${chartBars}</svg></div>`;
         }
 
-        const evmHeader = showEvm ? '<th>CPI</th><th>SPI</th>' : '';
-        const barHeader = showInlineBars ? '<th class="print-bar-cell">Gantt</th>' : '';
-        const tsRow = showInlineBars ? `<tr class="print-ts-row"><td colspan="${showEvm ? 9 : 7}"></td><td class="print-bar-cell">${timescale}</td></tr>` : '';
+        const evmHeader = showEvm ? '<th class="print-col-pct">CPI</th><th class="print-col-pct">SPI</th>' : '';
+        const dateHeader = showInlineBars ? '' : '<th class="print-col-date">Start</th><th class="print-col-date">Finish</th>';
+        const barHeader = showInlineBars ? '<th class="print-bar-cell">Schedule Bars</th>' : '';
+        const textColCount = (showInlineBars ? 5 : 7) + (showEvm ? 2 : 0);
+        const tsRow = showInlineBars ? `<tr class="print-ts-row"><td colspan="${textColCount}"></td><td class="print-bar-cell">${timescale}</td></tr>` : '';
         const evmSummary = showEvm && projectEvm ? `
             <div class="sched-print-evm-grid mt-2 text-xs">
                 <div><span class="sched-print-label">BAC</span><strong>$${projectEvm.bac.toLocaleString()}</strong></div>
@@ -3241,9 +3265,9 @@
             </div>` : '';
 
         const tableBlock = showTable ? `
-            <table class="schedule-print-table">
+            <table class="schedule-print-table schedule-print-table-compact">
                 <thead><tr>
-                    <th>WBS</th><th>Activity Name</th><th>Dur</th><th>Start</th><th>Finish</th><th>%</th><th>Predecessors</th>${evmHeader}${barHeader}
+                    <th class="print-col-wbs">WBS</th><th class="print-col-name">Activity</th><th class="print-col-dur">Dur</th>${dateHeader}<th class="print-col-pct">%</th><th class="print-col-pred">Pred</th>${evmHeader}${barHeader}
                 </tr>${tsRow}</thead>
                 <tbody>${rows}</tbody>
             </table>` : '';
@@ -3313,61 +3337,7 @@
     }
 
     function showFeaturesChecklist() {
-        const dlg = document.getElementById('scheduleFeaturesModal');
-        if (!dlg) return showScheduleAlert('Features panel not found.', 'error');
-        const list = document.getElementById('scheduleFeaturesList');
-        if (!list) return;
-        const installed = [
-            ['Chart overlays grid (does not squeeze columns)', 'Drag green edge on chart'],
-            ['CPM Schedule + float', 'Toolbar → Schedule'],
-            ['Critical path highlight', 'Toolbar → Critical'],
-            ['Critical-only filter', 'Toolbar → Critical Only'],
-            ['EVM (CPI/SPI) + bar labels', 'Schedule then Display settings'],
-            ['Baselines + variance', 'Set Baseline / Baselines manager'],
-            ['Multi-baseline comparison table', 'Baselines → compare checkboxes'],
-            ['Data-date marker', 'Data Date field + Schedule'],
-            ['Undo / Redo', 'Ctrl+Z / Ctrl+Y'],
-            ['Copy / Paste activity', 'Ctrl+C / Ctrl+V'],
-            ['Duplicate activity', 'Copy button or Ctrl+D'],
-            ['Indent / Outdent (bold parent)', 'Indent — parent row goes bold'],
-            ['Predecessor lag in grid', 'Lag column; edit via Predecessors FS+2'],
-            ['Constraint badges', 'Cstr column + Activity modal'],
-            ['Custom bar colors', 'Color column or Display settings'],
-            ['Timeline pan + day scale + pan bar', 'Days button · ◀ ▶ · drag green pan bar at bottom'],
-            ['Export JSON / CSV / XER / XML', 'Toolbar export buttons'],
-            ['Print setup (choose what to print)', 'Print → setup dialog'],
-            ['All MS Project/P6 columns', 'All Fields button'],
-            ['Activity detail modal', 'Activity tab or double-click row'],
-            ['Look-ahead + Activity table + Portfolio', 'View tabs'],
-            ['Resource leveling', 'Resources toolbar → Level Resources'],
-            ['Project EVM rollup (BAC/CPI/SPI/EAC)', 'Run Schedule · status bar'],
-            ['Keyboard shortcuts', 'Press ? on schedule page'],
-            ['Reset column widths', 'Columns → Reset Widths'],
-            ['Light / dark mode (schedule page only)', 'Sun/moon button in toolbar'],
-            ['Resource usage histogram', 'Resources → Histogram'],
-            ['Baseline restore', 'Baselines → Restore'],
-            ['EVM S-curve chart', 'Toolbar → S-Curve'],
-            ['Non-work day shading (weekends)', 'Automatic on calendar'],
-            ['Drag bars on chart to reschedule', 'Drag task bars on timeline']
-        ];
-        const planned = [];
-        const installedHtml = installed.map(([name, how]) =>
-            `<div class="flex justify-between gap-3 px-3 py-2 rounded-md bg-emerald-950/30 border border-emerald-800/40 text-sm">
-                <span class="text-zinc-200"><i class="fa-solid fa-check text-emerald-400 mr-1.5 text-xs"></i>${name}</span>
-                <span class="text-xs text-zinc-500 text-right">${how}</span>
-            </div>`
-        ).join('');
-        const plannedHtml = planned.map(([name, how]) =>
-            `<div class="flex justify-between gap-3 px-3 py-2 rounded-md bg-zinc-800/60 border border-zinc-700 text-sm">
-                <span class="text-zinc-400"><i class="fa-regular fa-circle text-zinc-600 mr-1.5 text-xs"></i>${name}</span>
-                <span class="text-xs text-zinc-600 text-right">${how}</span>
-            </div>`
-        ).join('');
-        list.innerHTML = `
-            <div class="px-3 py-2 text-xs uppercase tracking-wide text-emerald-400 font-semibold">Installed — ${installed.length} features</div>
-            ${installedHtml}
-            ${planned.length ? `<div class="px-3 py-2 mt-3 text-xs uppercase tracking-wide text-amber-400 font-semibold">Not yet installed — ${planned.length} remaining</div>${plannedHtml}` : '<div class="px-3 py-4 text-center text-sm text-emerald-400">All schedule features are installed.</div>'}`;
-        dlg.showModal();
+        showScheduleAlert('All schedule features are installed.', 'success');
     }
 
     function showScheduleAlert(message, type) {

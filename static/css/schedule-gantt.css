@@ -183,15 +183,21 @@ body:has(.schedule-page-root) #mainContent {
 .schedule-chart-resizer {
     position: absolute;
     top: 0;
-    bottom: 0;
-    width: 10px;
-    margin-right: -5px;
-    z-index: 25;
+    bottom: 24px;
+    width: 14px;
+    margin-left: -7px;
+    z-index: 55;
     cursor: col-resize;
-    background: linear-gradient(90deg, transparent, rgba(16, 185, 129, 0.55), rgba(16, 185, 129, 0.85), rgba(16, 185, 129, 0.55), transparent);
+    pointer-events: auto;
+    touch-action: none;
+    background: linear-gradient(90deg, transparent, rgba(16, 185, 129, 0.45), rgba(16, 185, 129, 0.95), rgba(16, 185, 129, 0.45), transparent);
+    box-shadow: 0 0 0 1px rgba(16, 185, 129, 0.35);
 }
-.schedule-chart-resizer:hover {
-    background: linear-gradient(90deg, transparent, rgba(16, 185, 129, 0.85), transparent);
+.schedule-chart-resizer.hidden { display: none; }
+.schedule-chart-resizer:hover,
+.schedule-chart-resizer:active {
+    background: linear-gradient(90deg, transparent, rgba(16, 185, 129, 0.75), rgba(52, 211, 153, 1), rgba(16, 185, 129, 0.75), transparent);
+    box-shadow: 0 0 8px rgba(16, 185, 129, 0.55);
 }
 
 .sched-parent-name {
@@ -716,9 +722,23 @@ body:has(.schedule-page-root) #scheduleFieldPickerModal {
         width: 100%;
         border-collapse: collapse;
         font-family: Arial, Helvetica, sans-serif;
-        font-size: 8.5pt;
+        font-size: 8pt;
         color: #111;
+        table-layout: fixed;
     }
+    .schedule-print-table-compact th,
+    .schedule-print-table-compact td {
+        padding: 2px 3px;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+    }
+    .print-col-wbs { width: 4%; }
+    .print-col-name { width: 14%; white-space: normal !important; line-height: 1.15; }
+    .print-col-dur { width: 3%; }
+    .print-col-date { width: 6%; font-size: 7pt; }
+    .print-col-pct { width: 3%; }
+    .print-col-pred { width: 8%; font-size: 7pt; }
     .schedule-print-table th,
     .schedule-print-table td {
         border: 1px solid #999;
@@ -729,12 +749,13 @@ body:has(.schedule-page-root) #scheduleFieldPickerModal {
         background: #e8e8e8;
         font-weight: 700;
         text-align: left;
+        font-size: 7.5pt;
     }
     .schedule-print-table td.c { text-align: center; }
     .schedule-print-table tr.print-summary { font-weight: 700; background: #f0f0f0; }
-    .print-bar-cell { width: 38%; padding: 2px 4px !important; position: relative; }
+    .print-bar-cell { width: 58%; padding: 2px 4px !important; position: relative; }
     .print-bar-dates {
-        font-size: 6.5pt;
+        font-size: 6pt;
         color: #333;
         margin-bottom: 1px;
         white-space: nowrap;
@@ -759,7 +780,7 @@ body:has(.schedule-page-root) #scheduleFieldPickerModal {
     .print-ts-row td { padding: 0 !important; border-top: none !important; }
     .print-bar-track {
         position: relative;
-        height: 12px;
+        height: 14px;
         background: #f5f5f5;
         border: 1px solid #ccc;
     }
@@ -861,15 +882,31 @@ input[type="date"].sched-cell-editor::-webkit-calendar-picker-indicator {
     border-top: 1px solid var(--sched-border);
     touch-action: none;
 }
+.schedule-timeline-pan::before {
+    content: 'Pan';
+    position: absolute;
+    left: 8px;
+    top: 50%;
+    transform: translateY(-50%);
+    font-size: 9px;
+    font-weight: 600;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    color: var(--sched-text-muted);
+    pointer-events: none;
+    z-index: 1;
+}
 .schedule-timeline-pan.hidden { display: none; }
 .schedule-timeline-pan-track {
     position: relative;
-    width: 100%;
     height: 14px;
+    margin-left: 28px;
+    width: calc(100% - 28px);
     background: var(--sched-surface);
     border-radius: 7px;
     border: 1px solid var(--sched-border);
     cursor: pointer;
+    box-shadow: inset 0 1px 2px rgba(0,0,0,0.15);
 }
 .schedule-timeline-pan-thumb {
     position: absolute;
