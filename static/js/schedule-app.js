@@ -4103,7 +4103,7 @@
         const dataDate = document.getElementById('dataDateInput')?.value || scheduleSettings.data_date || CasePMSchedule.formatDate(new Date());
         const printed = new Date().toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' });
         const DAY_MS = 86400000;
-        const PRINT_CHART_PAD_DAYS = 5;
+        const PRINT_CHART_PAD_DAYS = 2;
         const scheduleStartMs = range?.start_date ? toGanttDate(range.start_date)?.getTime() : Date.now();
         const scheduleEndMs = range?.end_date ? toGanttDate(range.end_date)?.getTime() : scheduleStartMs + DAY_MS * 30;
         const startMs = scheduleStartMs - PRINT_CHART_PAD_DAYS * DAY_MS;
