@@ -6,6 +6,15 @@
 <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
 <script src="{{ url_for('static', filename='js/budget-sync.js') }}"></script>
 <script src="{{ url_for('static', filename='js/pay-app-sync.js') }}"></script>
+<script>
+window.COMMITMENT_PROJECT_CTX = {
+    id: {{ active_project.id if active_project else 'null' }},
+    name: {{ (active_project.name if active_project else '')|tojson }},
+    number: {{ (active_project.number if active_project and active_project.number else '')|tojson }},
+    address: {{ (active_project.address if active_project and active_project.address else '')|tojson }},
+    sage_job: {{ (active_project.sage_job_number or active_project.accounting_project_number if active_project else '')|tojson }},
+};
+</script>
 <script src="{{ url_for('static', filename='js/commitments-app.js') }}"></script>
 
 <style>
@@ -98,20 +107,24 @@
 </div>
 </div>
 
-<!-- DRAWER -->
-<div id="comDetailDrawer" class="fixed top-0 right-0 h-full w-full max-w-lg bg-zinc-900 border-l border-zinc-700 z-[55] transform translate-x-full shadow-2xl flex flex-col">
+<!-- DRAWER (above footer) -->
+<div id="comDetailDrawer" class="fixed top-0 right-0 h-full w-full max-w-lg bg-zinc-900 border-l border-zinc-700 z-[80] transform translate-x-full shadow-2xl flex flex-col">
     <div class="flex items-center justify-between px-5 py-4 border-b border-zinc-800 flex-shrink-0">
         <h3 id="drawerTitle" class="text-lg font-semibold">Details</h3>
         <button type="button" onclick="CasePMCommitments.closeDrawer()" class="text-zinc-400 hover:text-white text-xl">&times;</button>
     </div>
-    <div id="drawerBody" class="flex-1 overflow-auto p-5 text-sm space-y-4"></div>
-    <div id="drawerActions" class="p-4 border-t border-zinc-800 flex flex-wrap gap-2 flex-shrink-0"></div>
+    <div id="drawerBody" class="flex-1 overflow-auto p-5 pb-24 text-sm space-y-4"></div>
+    <div id="drawerActions" class="p-4 border-t border-zinc-800 flex flex-wrap gap-2 flex-shrink-0 bg-zinc-900"></div>
 </div>
-<div id="comDrawerBackdrop" class="fixed inset-0 bg-black/40 z-[54] hidden" onclick="CasePMCommitments.closeDrawer()"></div>
+<div id="comDrawerBackdrop" class="fixed inset-0 bg-black/40 z-[79] hidden" onclick="CasePMCommitments.closeDrawer()"></div>
 
-<!-- SAGE BAR -->
-<div class="fixed bottom-0 left-56 right-0 bg-zinc-900 border-t border-zinc-700 px-6 py-2 text-xs text-zinc-400 flex items-center justify-between z-[60]">
-    <span id="comSageStatusText">Sage 300 Commitments · Loading…</span>
+<!-- FOOTER (Sage + Audit Log — matches Budget page) -->
+<div id="comSageSyncStatusBar" class="fixed bottom-0 left-56 right-0 bg-zinc-900 border-t border-zinc-700 px-6 py-2 text-xs text-zinc-400 flex items-center justify-between z-[60]">
+    <div class="flex items-center gap-4">
+        <span id="comSageStatusText">Sage 300 Commitments · Loading…</span>
+        <button type="button" onclick="CasePMCommitments.openSageSyncLogModal()" class="text-emerald-400 hover:text-emerald-300 underline">View Sage Log</button>
+        <button type="button" onclick="CasePMCommitments.showCommitmentAuditLog()" class="text-emerald-400 hover:text-emerald-300 underline">View Commitment Audit Log</button>
+    </div>
     <div class="text-emerald-400">● Online</div>
 </div>
 
@@ -126,6 +139,14 @@
             <input type="hidden" id="modalRecordId" value="">
             <input type="hidden" id="modalCompanyName" value="">
             <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+                <div>
+                    <label class="block text-sm text-zinc-400 mb-1">Commitment #</label>
+                    <input type="text" id="modalNumber" readonly class="w-full bg-zinc-950 border border-zinc-700 rounded-md px-4 py-2 text-sm font-mono text-emerald-400" placeholder="Auto-assigned on save">
+                </div>
+                <div>
+                    <label class="block text-sm text-zinc-400 mb-1">Type</label>
+                    <select id="modalType" onchange="CasePMCommitments.onTypeChange()" class="w-full bg-zinc-800 border border-zinc-700 rounded-md px-4 py-2 text-sm"></select>
+                </div>
                 <div class="md:col-span-2">
                     <label class="block text-sm text-zinc-400 mb-1">Title <span class="text-red-400">*</span></label>
                     <input type="text" id="modalTitle" class="w-full bg-zinc-800 border border-zinc-700 rounded-md px-4 py-2 text-sm" required>
@@ -135,20 +156,49 @@
                     <textarea id="modalDescription" rows="2" class="w-full bg-zinc-800 border border-zinc-700 rounded-md px-4 py-2 text-sm"></textarea>
                 </div>
                 <div>
-                    <label class="block text-sm text-zinc-400 mb-1">Type</label>
-                    <select id="modalType" class="w-full bg-zinc-800 border border-zinc-700 rounded-md px-4 py-2 text-sm"></select>
-                </div>
-                <div>
                     <label class="block text-sm text-zinc-400 mb-1">AIA Contract Form</label>
                     <select id="modalAiaForm" class="w-full bg-zinc-800 border border-zinc-700 rounded-md px-4 py-2 text-sm"></select>
+                </div>
+                <div>
+                    <label class="block text-sm text-zinc-400 mb-1">Billing Type</label>
+                    <select id="modalBillingType" class="w-full bg-zinc-800 border border-zinc-700 rounded-md px-4 py-2 text-sm">
+                        <option value="Lump Sum">Lump Sum</option>
+                        <option value="Unit Price">Unit Price</option>
+                        <option value="Cost Plus">Cost Plus</option>
+                        <option value="T&amp;M">Time &amp; Materials</option>
+                    </select>
                 </div>
                 <div>
                     <label class="block text-sm text-zinc-400 mb-1">Vendor / Subcontractor</label>
                     <select id="modalCompany" onchange="CasePMCommitments.onCompanyChange()" class="w-full bg-zinc-800 border border-zinc-700 rounded-md px-4 py-2 text-sm"></select>
                 </div>
                 <div>
-                    <label class="block text-sm text-zinc-400 mb-1">Date</label>
+                    <label class="block text-sm text-zinc-400 mb-1">Contact Name</label>
+                    <input type="text" id="modalContactName" class="w-full bg-zinc-800 border border-zinc-700 rounded-md px-4 py-2 text-sm">
+                </div>
+                <div>
+                    <label class="block text-sm text-zinc-400 mb-1">Contact Email</label>
+                    <input type="email" id="modalContactEmail" class="w-full bg-zinc-800 border border-zinc-700 rounded-md px-4 py-2 text-sm">
+                </div>
+                <div>
+                    <label class="block text-sm text-zinc-400 mb-1">Contact Phone</label>
+                    <input type="tel" id="modalContactPhone" class="w-full bg-zinc-800 border border-zinc-700 rounded-md px-4 py-2 text-sm">
+                </div>
+                <div>
+                    <label class="block text-sm text-zinc-400 mb-1">Contract Date</label>
                     <input type="date" id="modalDate" class="w-full bg-zinc-800 border border-zinc-700 rounded-md px-4 py-2 text-sm">
+                </div>
+                <div>
+                    <label class="block text-sm text-zinc-400 mb-1">Start Date</label>
+                    <input type="date" id="modalStartDate" class="w-full bg-zinc-800 border border-zinc-700 rounded-md px-4 py-2 text-sm">
+                </div>
+                <div>
+                    <label class="block text-sm text-zinc-400 mb-1">End / Substantial Completion</label>
+                    <input type="date" id="modalEndDate" class="w-full bg-zinc-800 border border-zinc-700 rounded-md px-4 py-2 text-sm">
+                </div>
+                <div>
+                    <label class="block text-sm text-zinc-400 mb-1">Delivery Date (PO)</label>
+                    <input type="date" id="modalDeliveryDate" class="w-full bg-zinc-800 border border-zinc-700 rounded-md px-4 py-2 text-sm">
                 </div>
                 <div>
                     <label class="block text-sm text-zinc-400 mb-1">Retainage %</label>
@@ -157,6 +207,10 @@
                 <div>
                     <label class="block text-sm text-zinc-400 mb-1">Payment Terms</label>
                     <input type="text" id="modalPaymentTerms" placeholder="Net 30, Progress billing…" class="w-full bg-zinc-800 border border-zinc-700 rounded-md px-4 py-2 text-sm">
+                </div>
+                <div>
+                    <label class="block text-sm text-zinc-400 mb-1">Freight Terms</label>
+                    <input type="text" id="modalFreightTerms" placeholder="FOB Destination, Prepaid…" class="w-full bg-zinc-800 border border-zinc-700 rounded-md px-4 py-2 text-sm">
                 </div>
                 <div>
                     <label class="block text-sm text-zinc-400 mb-1">Signature Method</label>
@@ -169,6 +223,33 @@
                 <div>
                     <label class="block text-sm text-zinc-400 mb-1">Amount (if no SOV lines)</label>
                     <input type="number" step="0.01" id="modalAmount" class="w-full bg-zinc-800 border border-zinc-700 rounded-md px-4 py-2 text-sm">
+                </div>
+                <div class="md:col-span-2 border-t border-zinc-700 pt-3 mt-1">
+                    <div class="text-xs text-zinc-500 uppercase mb-2">Contract Parties (AIA header fields)</div>
+                </div>
+                <div>
+                    <label class="block text-sm text-zinc-400 mb-1">Owner</label>
+                    <input type="text" id="modalOwnerName" class="w-full bg-zinc-800 border border-zinc-700 rounded-md px-4 py-2 text-sm">
+                </div>
+                <div>
+                    <label class="block text-sm text-zinc-400 mb-1">Contractor (GC)</label>
+                    <input type="text" id="modalContractorName" class="w-full bg-zinc-800 border border-zinc-700 rounded-md px-4 py-2 text-sm">
+                </div>
+                <div class="md:col-span-2">
+                    <label class="block text-sm text-zinc-400 mb-1">Architect / Engineer</label>
+                    <input type="text" id="modalArchitectEngineer" class="w-full bg-zinc-800 border border-zinc-700 rounded-md px-4 py-2 text-sm">
+                </div>
+                <div class="flex items-center gap-2">
+                    <input type="checkbox" id="modalBondRequired" class="rounded border-zinc-600">
+                    <label for="modalBondRequired" class="text-sm text-zinc-400">Performance &amp; Payment Bond Required</label>
+                </div>
+                <div class="flex items-center gap-2">
+                    <input type="checkbox" id="modalTaxExempt" class="rounded border-zinc-600">
+                    <label for="modalTaxExempt" class="text-sm text-zinc-400">Tax Exempt</label>
+                </div>
+                <div class="md:col-span-2">
+                    <label class="block text-sm text-zinc-400 mb-1">Insurance Requirements</label>
+                    <textarea id="modalInsuranceRequirements" rows="2" placeholder="GL $1M, Auto $1M, WC statutory…" class="w-full bg-zinc-800 border border-zinc-700 rounded-md px-4 py-2 text-sm"></textarea>
                 </div>
             </div>
             <div class="mb-4 border border-zinc-700 rounded-md p-4">
