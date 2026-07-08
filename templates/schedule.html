@@ -39,32 +39,32 @@
              data-project-name="{{ active_project.name }}"></div>
         {% endif %}
 
-        <div class="schedule-toolbar-scroll bg-zinc-900 border border-zinc-700 rounded-md p-1.5 mb-2">
-            <div class="schedule-toolbar-inner">
-            <div class="schedule-toolbar-group">
-                <button type="button" id="scheduleUndoBtn" class="schedule-toolbar-btn" onclick="ScheduleApp.undo()" title="Undo (Ctrl+Z)" disabled><i class="fa-solid fa-rotate-left"></i></button>
-                <button type="button" id="scheduleRedoBtn" class="schedule-toolbar-btn" onclick="ScheduleApp.redo()" title="Redo (Ctrl+Y)" disabled><i class="fa-solid fa-rotate-right"></i></button>
+        <div id="scheduleMainToolbar" class="bg-zinc-900 border border-zinc-700 rounded-md p-1.5 mb-2 flex flex-wrap gap-1 items-center relative">
+            <div class="flex flex-wrap gap-1 border-r border-zinc-700 pr-2 mr-1 items-center">
+                <div class="relative">
+                    <button type="button" id="scheduleMoreToolsBtn" class="schedule-toolbar-btn" title="More tools not on the toolbar" aria-expanded="false" aria-haspopup="true">
+                        <i class="fa-solid fa-ellipsis"></i> More
+                    </button>
+                    <div id="scheduleMoreToolsMenu" class="hidden absolute left-0 top-full mt-1 z-50 min-w-[220px] max-h-[70vh] overflow-auto bg-zinc-900 border border-zinc-700 rounded-md shadow-2xl p-1"></div>
+                </div>
+                <button type="button" id="scheduleCustomizeToolbarBtn" class="schedule-toolbar-btn" title="Choose which tools appear on the toolbar">
+                    <i class="fa-solid fa-sliders"></i>
+                </button>
+                <span data-sched-tool="undo"><button type="button" id="scheduleUndoBtn" class="schedule-toolbar-btn" onclick="ScheduleApp.undo()" title="Undo (Ctrl+Z)" disabled><i class="fa-solid fa-rotate-left"></i></button></span>
+                <span data-sched-tool="redo"><button type="button" id="scheduleRedoBtn" class="schedule-toolbar-btn" onclick="ScheduleApp.redo()" title="Redo (Ctrl+Y)" disabled><i class="fa-solid fa-rotate-right"></i></button></span>
             </div>
-            <div class="schedule-toolbar-group">
-                <button type="button" class="schedule-toolbar-btn" onclick="ScheduleApp.addActivity('task')" title="Add Activity">
-                    <i class="fa-solid fa-plus text-emerald-400"></i> Activity
-                </button>
-                <button type="button" class="schedule-toolbar-btn" onclick="ScheduleApp.addActivity('milestone')" title="Add Milestone">
-                    <i class="fa-solid fa-diamond text-sky-400"></i> Milestone
-                </button>
-                <button type="button" class="schedule-toolbar-btn" onclick="ScheduleApp.duplicateSelected()" title="Duplicate selected (Ctrl+D)">
-                    <i class="fa-solid fa-copy"></i>
-                </button>
-                <button type="button" class="schedule-toolbar-btn" onclick="ScheduleApp.deleteSelected()" title="Delete selected">
-                    <i class="fa-solid fa-trash text-red-400"></i>
-                </button>
+            <div data-sched-tool-group="edit" class="flex flex-wrap gap-1 border-r border-zinc-700 pr-2 mr-1">
+                <span data-sched-tool="add-activity"><button type="button" class="schedule-toolbar-btn" onclick="ScheduleApp.addActivity('task')" title="Add Activity"><i class="fa-solid fa-plus text-emerald-400"></i> Activity</button></span>
+                <span data-sched-tool="add-milestone"><button type="button" class="schedule-toolbar-btn" onclick="ScheduleApp.addActivity('milestone')" title="Add Milestone"><i class="fa-solid fa-diamond text-sky-400"></i> Milestone</button></span>
+                <span data-sched-tool="duplicate"><button type="button" class="schedule-toolbar-btn" onclick="ScheduleApp.duplicateSelected()" title="Duplicate selected (Ctrl+D)"><i class="fa-solid fa-copy"></i></button></span>
+                <span data-sched-tool="delete"><button type="button" class="schedule-toolbar-btn" onclick="ScheduleApp.deleteSelected()" title="Delete selected"><i class="fa-solid fa-trash text-red-400"></i></button></span>
             </div>
-            <div class="schedule-toolbar-group">
-                <button type="button" class="schedule-toolbar-btn" onclick="ScheduleApp.indentSelected()" title="Indent"><i class="fa-solid fa-indent"></i></button>
-                <button type="button" class="schedule-toolbar-btn" onclick="ScheduleApp.outdentSelected()" title="Outdent"><i class="fa-solid fa-outdent"></i></button>
+            <div data-sched-tool-group="structure" class="flex flex-wrap gap-1 border-r border-zinc-700 pr-2 mr-1">
+                <span data-sched-tool="indent"><button type="button" class="schedule-toolbar-btn" onclick="ScheduleApp.indentSelected()" title="Indent"><i class="fa-solid fa-indent"></i></button></span>
+                <span data-sched-tool="outdent"><button type="button" class="schedule-toolbar-btn" onclick="ScheduleApp.outdentSelected()" title="Outdent"><i class="fa-solid fa-outdent"></i></button></span>
             </div>
-            <div class="schedule-toolbar-group" title="Cell alignment — click a cell, row, or column header then choose align">
-                <button type="button" id="schedAlignLeftBtn" class="schedule-toolbar-btn active-tool" onclick="ScheduleApp.setGridCellAlignH('left')" title="Align left (selected cell, row, or column)"><i class="fa-solid fa-align-left"></i></button>
+            <div data-sched-tool="align" data-sched-tool-group="format" class="flex flex-wrap gap-1 border-r border-zinc-700 pr-2 mr-1" title="Cell alignment — click a cell, row, or column header then choose align">
+                <button type="button" id="schedAlignLeftBtn" class="schedule-toolbar-btn active-tool" onclick="ScheduleApp.setGridCellAlignH('left')" title="Align left"><i class="fa-solid fa-align-left"></i></button>
                 <button type="button" id="schedAlignCenterHBtn" class="schedule-toolbar-btn" onclick="ScheduleApp.setGridCellAlignH('center')" title="Align center"><i class="fa-solid fa-align-center"></i></button>
                 <button type="button" id="schedAlignRightBtn" class="schedule-toolbar-btn" onclick="ScheduleApp.setGridCellAlignH('right')" title="Align right"><i class="fa-solid fa-align-right"></i></button>
                 <span class="text-zinc-600 self-center text-xs px-0.5">|</span>
@@ -73,58 +73,53 @@
                 <button type="button" id="schedAlignBottomBtn" class="schedule-toolbar-btn" onclick="ScheduleApp.setGridCellAlignV('bottom')" title="Align bottom"><i class="fa-solid fa-arrow-down"></i></button>
                 <span class="text-zinc-600 self-center text-xs px-0.5">|</span>
                 <span class="text-xs text-zinc-500 self-center">Font</span>
-                <input type="number" id="schedFontSizeInput" min="8" max="24" step="1" value="13"
-                       class="w-14 bg-zinc-800 border border-zinc-700 rounded-md text-xs px-1.5 py-1.5 text-zinc-200 text-center"
-                       title="Font size (px) — select cell, row, or column then Apply"
-                       onkeydown="if(event.key==='Enter'){event.preventDefault();ScheduleApp.setGridFontSize(Number(this.value));}">
+                <input type="number" id="schedFontSizeInput" min="8" max="24" step="1" value="13" class="w-14 bg-zinc-800 border border-zinc-700 rounded-md text-xs px-1.5 py-1.5 text-zinc-200 text-center" onkeydown="if(event.key==='Enter'){event.preventDefault();ScheduleApp.setGridFontSize(Number(this.value));}">
                 <button type="button" class="schedule-toolbar-btn text-xs" onclick="ScheduleApp.setGridFontSize(Number(document.getElementById('schedFontSizeInput').value))" title="Apply font size">Apply</button>
                 <span class="text-xs text-zinc-500 self-center ml-1">Row</span>
-                <input type="number" id="schedRowHeightInput" min="18" max="80" step="1" value="32"
-                       class="w-14 bg-zinc-800 border border-zinc-700 rounded-md text-xs px-1.5 py-1.5 text-zinc-200 text-center"
-                       title="Row height (px) — select row then Apply or All Rows"
-                       onkeydown="if(event.key==='Enter'){event.preventDefault();ScheduleApp.setGridRowHeight(Number(this.value));}">
-                <button type="button" class="schedule-toolbar-btn text-xs" onclick="ScheduleApp.setGridRowHeight(Number(document.getElementById('schedRowHeightInput').value))" title="Apply row height to selected row">Apply</button>
-                <button type="button" class="schedule-toolbar-btn text-xs" onclick="ScheduleApp.setGridRowHeight(Number(document.getElementById('schedRowHeightInput').value), true)" title="Apply row height to all activities">All Rows</button>
+                <input type="number" id="schedRowHeightInput" min="18" max="80" step="1" value="32" class="w-14 bg-zinc-800 border border-zinc-700 rounded-md text-xs px-1.5 py-1.5 text-zinc-200 text-center" onkeydown="if(event.key==='Enter'){event.preventDefault();ScheduleApp.setGridRowHeight(Number(this.value));}">
+                <button type="button" class="schedule-toolbar-btn text-xs" onclick="ScheduleApp.setGridRowHeight(Number(document.getElementById('schedRowHeightInput').value))" title="Apply row height">Apply</button>
+                <button type="button" class="schedule-toolbar-btn text-xs" onclick="ScheduleApp.setGridRowHeight(Number(document.getElementById('schedRowHeightInput').value), true)" title="All rows">All Rows</button>
             </div>
-            <div class="schedule-toolbar-group">
-                <button type="button" class="schedule-toolbar-btn" onclick="ScheduleApp.linkSelected('FS')" title="Finish-to-Start"><i class="fa-solid fa-link"></i> FS</button>
-                <button type="button" class="schedule-toolbar-btn" onclick="ScheduleApp.linkSelected('SS')">SS</button>
-                <button type="button" class="schedule-toolbar-btn" onclick="ScheduleApp.linkSelected('FF')">FF</button>
-                <button type="button" class="schedule-toolbar-btn" onclick="ScheduleApp.linkSelected('SF')">SF</button>
-                <button type="button" class="schedule-toolbar-btn" onclick="ScheduleApp.unlinkSelected()"><i class="fa-solid fa-link-slash"></i></button>
+            <div data-sched-tool-group="links" class="flex flex-wrap gap-1 border-r border-zinc-700 pr-2 mr-1">
+                <span data-sched-tool="link-fs"><button type="button" class="schedule-toolbar-btn" onclick="ScheduleApp.linkSelected('FS')" title="Finish-to-Start"><i class="fa-solid fa-link"></i> FS</button></span>
+                <span data-sched-tool="link-ss"><button type="button" class="schedule-toolbar-btn" onclick="ScheduleApp.linkSelected('SS')">SS</button></span>
+                <span data-sched-tool="link-ff"><button type="button" class="schedule-toolbar-btn" onclick="ScheduleApp.linkSelected('FF')">FF</button></span>
+                <span data-sched-tool="link-sf"><button type="button" class="schedule-toolbar-btn" onclick="ScheduleApp.linkSelected('SF')">SF</button></span>
+                <span data-sched-tool="unlink"><button type="button" class="schedule-toolbar-btn" onclick="ScheduleApp.unlinkSelected()"><i class="fa-solid fa-link-slash"></i></button></span>
             </div>
-            <div class="schedule-toolbar-group">
-                <button type="button" class="schedule-toolbar-btn" onclick="ScheduleApp.runSchedule()"><i class="fa-solid fa-calculator text-emerald-400"></i> Schedule</button>
-                <button type="button" id="criticalPathBtn" class="schedule-toolbar-btn active-tool" onclick="ScheduleApp.toggleCriticalPath()"><i class="fa-solid fa-route text-red-400"></i> Critical</button>
-                <button type="button" class="schedule-toolbar-btn" onclick="ScheduleApp.setBaseline()" title="Save current schedule as baseline"><i class="fa-solid fa-camera"></i> Set Baseline</button>
-                <button type="button" class="schedule-toolbar-btn" onclick="ScheduleApp.showBaselineManager()" title="Manage baselines and variance"><i class="fa-solid fa-layer-group text-sky-400"></i> Baselines</button>
-                <button type="button" class="schedule-toolbar-btn" onclick="ScheduleApp.showResourceLeveling()" title="Detect and level resource overallocation"><i class="fa-solid fa-users-gear text-amber-400"></i> Resources</button>
+            <div data-sched-tool-group="schedule" class="flex flex-wrap gap-1 border-r border-zinc-700 pr-2 mr-1">
+                <span data-sched-tool="run-schedule"><button type="button" class="schedule-toolbar-btn" onclick="ScheduleApp.runSchedule()"><i class="fa-solid fa-calculator text-emerald-400"></i> Schedule</button></span>
+                <span data-sched-tool="critical-path"><button type="button" id="criticalPathBtn" class="schedule-toolbar-btn active-tool" onclick="ScheduleApp.toggleCriticalPath()"><i class="fa-solid fa-route text-red-400"></i> Critical</button></span>
+                <span data-sched-tool="set-baseline"><button type="button" class="schedule-toolbar-btn" onclick="ScheduleApp.setBaseline()" title="Save baseline"><i class="fa-solid fa-camera"></i> Set Baseline</button></span>
+                <span data-sched-tool="baselines"><button type="button" class="schedule-toolbar-btn" onclick="ScheduleApp.showBaselineManager()" title="Manage baselines"><i class="fa-solid fa-layer-group text-sky-400"></i> Baselines</button></span>
+                <span data-sched-tool="resources"><button type="button" class="schedule-toolbar-btn" onclick="ScheduleApp.showResourceLeveling()" title="Resource leveling"><i class="fa-solid fa-users-gear text-amber-400"></i> Resources</button></span>
             </div>
-            <div class="schedule-toolbar-group">
+            <div data-sched-tool-group="view" class="flex flex-wrap gap-1 border-r border-zinc-700 pr-2 mr-1">
+                <span data-sched-tool="timescale" class="contents">
                 <span class="text-[0.65rem] text-zinc-500 self-center px-1">Timescale</span>
                 <button type="button" class="schedule-toolbar-btn active-tool" data-timescale="day" onclick="ScheduleApp.setTimescale('day')" title="Day view">Days</button>
                 <button type="button" class="schedule-toolbar-btn" data-timescale="week" onclick="ScheduleApp.setTimescale('week')" title="Week view">Weeks</button>
                 <button type="button" class="schedule-toolbar-btn" data-timescale="month" onclick="ScheduleApp.setTimescale('month')" title="Month view">Months</button>
                 <button type="button" class="schedule-toolbar-btn" data-timescale="quarter" onclick="ScheduleApp.setTimescale('quarter')" title="Quarter view">Quarters</button>
-                <button type="button" class="schedule-toolbar-btn" onclick="ScheduleApp.panTimeline(-1, 'month')" title="Previous month"><i class="fa-solid fa-chevron-left"></i></button>
-                <button type="button" class="schedule-toolbar-btn" onclick="ScheduleApp.panTimeline(1, 'month')" title="Next month"><i class="fa-solid fa-chevron-right"></i></button>
                 <button type="button" class="schedule-toolbar-btn" onclick="ScheduleApp.zoomGantt('in')"><i class="fa-solid fa-magnifying-glass-plus"></i></button>
                 <button type="button" class="schedule-toolbar-btn" onclick="ScheduleApp.zoomGantt('out')"><i class="fa-solid fa-magnifying-glass-minus"></i></button>
-                <button type="button" class="schedule-toolbar-btn" onclick="ScheduleApp.fitScheduleView()" title="Center timeline on schedule range"><i class="fa-solid fa-compress-arrows-alt text-sky-400"></i> Fit View</button>
-                <button type="button" class="schedule-toolbar-btn" onclick="ScheduleApp.scrollToToday()" title="Scroll to data date / today"><i class="fa-solid fa-calendar-day"></i> Today</button>
-                <button type="button" id="criticalFilterBtn" class="schedule-toolbar-btn" onclick="ScheduleApp.toggleCriticalFilter()" title="Show critical activities only"><i class="fa-solid fa-filter text-amber-400"></i> Critical Only</button>
-                <button type="button" class="schedule-toolbar-btn" onclick="ScheduleApp.sortByStartDate()" title="Sort activities by start date"><i class="fa-solid fa-arrow-down-short-wide"></i> Sort</button>
-                <button type="button" class="schedule-toolbar-btn" onclick="ScheduleApp.exportCsv()" title="Export grid to CSV"><i class="fa-solid fa-file-csv"></i> CSV</button>
-                <button type="button" class="schedule-toolbar-btn" onclick="ScheduleApp.exportXer()" title="Export Primavera XER"><i class="fa-solid fa-file-export text-sky-400"></i> XER</button>
-                <button type="button" class="schedule-toolbar-btn" onclick="ScheduleApp.exportMsProjectXml()" title="Export MS Project XML"><i class="fa-solid fa-file-code"></i> XML</button>
-                <button type="button" class="schedule-toolbar-btn" onclick="ScheduleApp.showDisplaySettings()" title="Bar colors, EVM labels, baselines"><i class="fa-solid fa-palette text-violet-400"></i> Display</button>
-                <button type="button" id="scheduleThemeToggleBtn" class="schedule-toolbar-btn" onclick="ScheduleApp.toggleScheduleTheme()" title="Light/dark mode (schedule page only)"><i class="fa-solid fa-sun text-amber-400"></i></button>
-                <button type="button" class="schedule-toolbar-btn" onclick="ScheduleApp.showEvmScurve()" title="EVM S-curve"><i class="fa-solid fa-chart-line text-sky-400"></i> S-Curve</button>
-                <button type="button" class="schedule-toolbar-btn" onclick="ScheduleApp.showResourceHistogram()" title="Resource usage histogram"><i class="fa-solid fa-chart-bar text-amber-400"></i> Histogram</button>
-                <button type="button" class="schedule-toolbar-btn" onclick="ScheduleApp.resetTimelineCalendar()" title="Fix frozen timeline — reset to current year"><i class="fa-solid fa-calendar-plus text-emerald-400"></i> Reset Calendar</button>
-                <button type="button" class="schedule-toolbar-btn" onclick="ScheduleApp.showAllOptionalColumns()" title="Add all MS Project / P6 columns"><i class="fa-solid fa-table-list"></i> All Fields</button>
-                <button type="button" class="schedule-toolbar-btn" onclick="ScheduleApp.showColumnManager()" title="Add or remove grid columns"><i class="fa-solid fa-table-columns"></i> Columns</button>
-            </div>
+                </span>
+                <span data-sched-tool="pan-prev"><button type="button" class="schedule-toolbar-btn" onclick="ScheduleApp.panTimeline(-1, 'month')" title="Previous month"><i class="fa-solid fa-chevron-left"></i></button></span>
+                <span data-sched-tool="pan-next"><button type="button" class="schedule-toolbar-btn" onclick="ScheduleApp.panTimeline(1, 'month')" title="Next month"><i class="fa-solid fa-chevron-right"></i></button></span>
+                <span data-sched-tool="fit-view"><button type="button" class="schedule-toolbar-btn" onclick="ScheduleApp.fitScheduleView()" title="Fit view"><i class="fa-solid fa-compress-arrows-alt text-sky-400"></i> Fit View</button></span>
+                <span data-sched-tool="today"><button type="button" class="schedule-toolbar-btn" onclick="ScheduleApp.scrollToToday()" title="Scroll to today"><i class="fa-solid fa-calendar-day"></i> Today</button></span>
+                <span data-sched-tool="critical-filter"><button type="button" id="criticalFilterBtn" class="schedule-toolbar-btn" onclick="ScheduleApp.toggleCriticalFilter()" title="Critical only"><i class="fa-solid fa-filter text-amber-400"></i> Critical Only</button></span>
+                <span data-sched-tool="sort"><button type="button" class="schedule-toolbar-btn" onclick="ScheduleApp.sortByStartDate()" title="Sort by start"><i class="fa-solid fa-arrow-down-short-wide"></i> Sort</button></span>
+                <span data-sched-tool="export-csv"><button type="button" class="schedule-toolbar-btn" onclick="ScheduleApp.exportCsv()" title="Export CSV"><i class="fa-solid fa-file-csv"></i> CSV</button></span>
+                <span data-sched-tool="export-xer"><button type="button" class="schedule-toolbar-btn" onclick="ScheduleApp.exportXer()" title="Export XER"><i class="fa-solid fa-file-export text-sky-400"></i> XER</button></span>
+                <span data-sched-tool="export-xml"><button type="button" class="schedule-toolbar-btn" onclick="ScheduleApp.exportMsProjectXml()" title="Export XML"><i class="fa-solid fa-file-code"></i> XML</button></span>
+                <span data-sched-tool="display"><button type="button" class="schedule-toolbar-btn" onclick="ScheduleApp.showDisplaySettings()" title="Display settings"><i class="fa-solid fa-palette text-violet-400"></i> Display</button></span>
+                <span data-sched-tool="theme"><button type="button" id="scheduleThemeToggleBtn" class="schedule-toolbar-btn" onclick="ScheduleApp.toggleScheduleTheme()" title="Theme"><i class="fa-solid fa-sun text-amber-400"></i></button></span>
+                <span data-sched-tool="scurve"><button type="button" class="schedule-toolbar-btn" onclick="ScheduleApp.showEvmScurve()" title="S-Curve"><i class="fa-solid fa-chart-line text-sky-400"></i> S-Curve</button></span>
+                <span data-sched-tool="histogram"><button type="button" class="schedule-toolbar-btn" onclick="ScheduleApp.showResourceHistogram()" title="Histogram"><i class="fa-solid fa-chart-bar text-amber-400"></i> Histogram</button></span>
+                <span data-sched-tool="reset-calendar"><button type="button" class="schedule-toolbar-btn" onclick="ScheduleApp.resetTimelineCalendar()" title="Reset calendar"><i class="fa-solid fa-calendar-plus text-emerald-400"></i> Reset Calendar</button></span>
+                <span data-sched-tool="all-fields"><button type="button" class="schedule-toolbar-btn" onclick="ScheduleApp.showAllOptionalColumns()" title="All fields"><i class="fa-solid fa-table-list"></i> All Fields</button></span>
+                <span data-sched-tool="columns"><button type="button" class="schedule-toolbar-btn" onclick="ScheduleApp.showColumnManager()" title="Columns"><i class="fa-solid fa-table-columns"></i> Columns</button></span>
             </div>
         </div>
 
@@ -655,6 +650,7 @@
 <script src="{{ url_for('static', filename='js/schedule-activity-modal.js') }}"></script>
 <script src="{{ url_for('static', filename='js/schedule-extras.js') }}"></script>
 <script src="{{ url_for('static', filename='js/schedule-calendar.js') }}"></script>
+<script src="{{ url_for('static', filename='js/schedule-toolbar.js') }}"></script>
 <script src="{{ url_for('static', filename='js/schedule-app.js') }}"></script>
 <script>
 document.body.dataset.pageModule = 'schedule';
@@ -663,5 +659,6 @@ document.body.dataset.pageModule = 'schedule';
     localStorage.setItem('casepm_current_project_id', '{{ active_project.id }}');
 })();
 {% endif %}
+if (typeof ScheduleToolbar !== 'undefined') ScheduleToolbar.init();
 </script>
 {% endblock %}
