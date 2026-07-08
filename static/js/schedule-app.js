@@ -46,7 +46,9 @@
         active_baseline_index: -1,
         show_baseline_bars: true,
         show_bar_labels: true,
-        theme: 'dark'
+        theme: 'dark',
+        grid_cell_align_h: 'center',
+        grid_cell_align_v: 'middle'
     };
     if (!scheduleSettings.print_settings) {
         scheduleSettings.print_settings = {
@@ -455,29 +457,66 @@
         return (gantt.config.columns || []).map(c => `${c.name}:${parseInt(c.width, 10) || 80}`).join('|');
     }
 
+    function applyColumnWidthToCell(cell, w) {
+        if (!cell) return;
+        cell.style.setProperty('width', w + 'px', 'important');
+        cell.style.setProperty('min-width', w + 'px', 'important');
+    }
+
+    function applySingleColumnWidth(colIndex, width) {
+        if (!ganttReady || !gantt.config.columns) return;
+        const w = parseInt(width, 10) || 80;
+        const headCells = document.querySelectorAll('#gantt_here .gantt_grid_scale .gantt_grid_head_cell');
+        applyColumnWidthToCell(headCells[colIndex], w);
+        document.querySelectorAll('#gantt_here .gantt_grid_data .gantt_row').forEach(row => {
+            const cells = row.querySelectorAll(':scope > .gantt_cell');
+            applyColumnWidthToCell(cells[colIndex], w);
+        });
+    }
+
+    function syncColumnResizeHandlePositions() {
+        if (!ganttReady || !gantt.config.columns) return;
+        const scale = document.querySelector('#gantt_here .gantt_grid_scale');
+        if (!scale) return;
+        scale.style.position = 'relative';
+        const scaleRect = scale.getBoundingClientRect();
+        const headCells = scale.querySelectorAll('.gantt_grid_head_cell');
+        const wraps = scale.querySelectorAll('.gantt_grid_column_resize_wrap');
+        wraps.forEach((wrap, i) => {
+            const cell = headCells[i];
+            if (!cell) return;
+            const cellRect = cell.getBoundingClientRect();
+            const left = cellRect.right - scaleRect.left - 2;
+            wrap.style.position = 'absolute';
+            wrap.style.left = Math.max(0, Math.round(left)) + 'px';
+            wrap.style.top = '0';
+            wrap.style.height = '100%';
+            wrap.style.marginLeft = '0';
+        });
+    }
+
     function applyGridColumnWidthStyles() {
         if (!ganttReady || !gantt.config.columns) return;
         const key = columnWidthsKey();
-        if (key === lastHeaderWidthsKey) return;
+        if (key === lastHeaderWidthsKey) {
+            syncColumnResizeHandlePositions();
+            return;
+        }
         lastHeaderWidthsKey = key;
 
         const cols = gantt.config.columns;
         const styleEl = document.getElementById('sched-grid-col-widths');
         if (styleEl) styleEl.textContent = '';
 
-        const applyW = (cell, w) => {
-            cell.style.setProperty('width', w + 'px', 'important');
-            cell.style.setProperty('min-width', w + 'px', 'important');
-        };
-
         document.querySelectorAll('#gantt_here .gantt_grid_scale .gantt_grid_head_cell').forEach((cell, i) => {
-            if (i < cols.length) applyW(cell, parseInt(cols[i].width, 10) || 80);
+            if (i < cols.length) applyColumnWidthToCell(cell, parseInt(cols[i].width, 10) || 80);
         });
         document.querySelectorAll('#gantt_here .gantt_grid_data .gantt_row').forEach(row => {
             row.querySelectorAll(':scope > .gantt_cell').forEach((cell, i) => {
-                if (i < cols.length) applyW(cell, parseInt(cols[i].width, 10) || 80);
+                if (i < cols.length) applyColumnWidthToCell(cell, parseInt(cols[i].width, 10) || 80);
             });
         });
+        syncColumnResizeHandlePositions();
     }
 
     function syncGridHeaderAlignment() {
@@ -510,31 +549,7 @@
         scheduleSettings.timeline_pct = clamped;
         if (hostW) scheduleSettings.timeline_width_px = Math.round(hostW * clamped);
         applyChartOverlay();
-        syncChartWidthSlider();
         if (persist) queueSave();
-    }
-
-    function syncChartWidthSlider() {
-        const slider = document.getElementById('scheduleChartWidthSlider');
-        const label = document.getElementById('scheduleChartWidthLabel');
-        if (!slider) return;
-        const pct = Math.round((scheduleSettings.timeline_pct ?? 0.75) * 100);
-        const val = String(Math.max(30, Math.min(88, pct)));
-        if (slider.value !== val) slider.value = val;
-        if (label) label.textContent = val + '%';
-    }
-
-    function initChartWidthSlider() {
-        const slider = document.getElementById('scheduleChartWidthSlider');
-        if (!slider || slider.dataset.schedBound) return;
-        slider.dataset.schedBound = '1';
-        slider.addEventListener('input', () => {
-            setTimelineWidthFromPct(Number(slider.value) / 100, false);
-        });
-        slider.addEventListener('change', () => {
-            setTimelineWidthFromPct(Number(slider.value) / 100, true);
-        });
-        syncChartWidthSlider();
     }
 
     function positionChartResizerVisual() {
@@ -596,7 +611,6 @@
         syncLayoutTimelineWidth();
         ensureTimelineScrollbar();
         refreshTimelinePanBar();
-        syncChartWidthSlider();
     }
 
     function queueChartOverlay() {
@@ -641,8 +655,6 @@
             document.body.classList.remove('schedule-chart-resizing');
             queueSave();
         });
-
-        initChartWidthSlider();
     }
 
     function initChartOverlay() {
@@ -1418,6 +1430,8 @@
                 gantt.config.columns[index].width = new_width;
             }
         }
+        applySingleColumnWidth(index, new_width);
+        syncColumnResizeHandlePositions();
         if (reflow) {
             syncGridTableWidth();
             lastHeaderWidthsKey = '';
@@ -2210,6 +2224,8 @@
             restoreTimelineScrollAfterRender();
             refreshTimelinePanBar();
             bindColumnResizeEnhancements();
+            queueGridHeaderSync();
+            applyGridCellAlignment();
             if (ganttReady && document.getElementById('scheduleGanttHost')?.classList.contains('schedule-overlay-mode')) {
                 applyChartOverlay();
             }
@@ -2587,9 +2603,42 @@
         if (dd) dd.value = scheduleSettings.data_date || CasePMSchedule.formatDate(new Date());
         if (la) la.value = scheduleSettings.lookahead_days || 14;
         applyGanttDisplayStyles();
+        applyGridCellAlignment();
         if (scheduleSettings.timescale) setTimescale(scheduleSettings.timescale, false);
         else setTimescale('day', false);
         updateDataDateMarker();
+    }
+
+    function applyGridCellAlignment() {
+        const host = document.getElementById('scheduleGanttHost');
+        const h = scheduleSettings.grid_cell_align_h || 'center';
+        const v = scheduleSettings.grid_cell_align_v || 'middle';
+        if (host) {
+            host.dataset.cellAlignH = h;
+            host.dataset.cellAlignV = v;
+        }
+        const hMap = { left: 'schedAlignLeftBtn', center: 'schedAlignCenterHBtn', right: 'schedAlignRightBtn' };
+        Object.entries(hMap).forEach(([align, id]) => {
+            document.getElementById(id)?.classList.toggle('active-tool', h === align);
+        });
+        const vMap = { top: 'schedAlignTopBtn', middle: 'schedAlignMiddleBtn', bottom: 'schedAlignBottomBtn' };
+        Object.entries(vMap).forEach(([align, id]) => {
+            document.getElementById(id)?.classList.toggle('active-tool', v === align);
+        });
+    }
+
+    function setGridCellAlignH(align) {
+        if (!['left', 'center', 'right'].includes(align)) return;
+        scheduleSettings.grid_cell_align_h = align;
+        applyGridCellAlignment();
+        queueSave();
+    }
+
+    function setGridCellAlignV(align) {
+        if (!['top', 'middle', 'bottom'].includes(align)) return;
+        scheduleSettings.grid_cell_align_v = align;
+        applyGridCellAlignment();
+        queueSave();
     }
 
     function setSaveStatus(msg) {
@@ -3873,6 +3922,7 @@
             queueGridHeaderSync();
         });
         switchScheduleView('gantt');
+        applyGridCellAlignment();
         const pid = getSelectedProjectId();
         if (pid) localStorage.setItem('casepm_current_project_id', String(pid));
 
@@ -3919,6 +3969,7 @@
         showHeaderFooterSetup, saveHeaderFooterSettings, onHeaderLogoSelected, clearHeaderLogo,
         saveSchedule,
         loadSchedule, clearSchedule, showColumnManager, showAddColumnDialog, removeColumn, addFieldColumn, queueSave,
+        setGridCellAlignH, setGridCellAlignV,
         runResourceLeveling, showResourceLeveling, renderPortfolio, resetColumnWidths, renderBaselineComparison,
         restoreBaseline, toggleScheduleTheme: () => window.ScheduleExtras?.toggleTheme(),
         showResourceHistogram: () => window.ScheduleExtras?.showResourceHistogram(),
