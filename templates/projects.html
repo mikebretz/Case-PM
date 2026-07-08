@@ -4,11 +4,35 @@
 
 {% block content %}
 <style>
+  #mainContent:has(.projects-page-root) {
+    padding: 0;
+    overflow: hidden;
+  }
   .projects-page-root {
-    height: calc(100dvh - 4.25rem);
+    height: 100%;
+    min-height: 0;
     display: flex;
     flex-direction: column;
     overflow: hidden;
+  }
+  .projects-page-top {
+    flex-shrink: 0;
+  }
+  .project-stat-tile {
+    padding: 0.5rem 0.75rem;
+  }
+  .project-stat-tile .stat-label {
+    font-size: 9px;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    color: #a1a1aa;
+    line-height: 1.2;
+  }
+  .project-stat-tile .stat-value {
+    font-size: 1.125rem;
+    font-weight: 600;
+    margin-top: 0.125rem;
+    line-height: 1.2;
   }
   .project-tab-btn.active {
     border-bottom: 2px solid #10b981;
@@ -44,97 +68,107 @@
     position: sticky;
     top: 0;
     z-index: 10;
-    background: #09090b;
+    background: #18181b;
+  }
+  .project-row {
+    cursor: pointer;
   }
 </style>
 
 <div class="projects-page-root">
-    <!-- Toolbar header (budget / schedule style) -->
-    <div class="h-16 border-b border-zinc-800 bg-zinc-900 flex items-center px-6 flex-shrink-0">
-        <div class="w-1/3 min-w-0">
-            <div class="text-[10px] text-zinc-400 tracking-[1px] font-medium">PORTFOLIO</div>
-            <div class="text-xl font-semibold tracking-tight text-white truncate">Projects</div>
+    <div class="projects-page-top">
+        <!-- Toolbar header -->
+        <div class="h-16 border-b border-zinc-800 bg-zinc-900 flex items-center px-6">
+            <div class="flex-1 min-w-0">
+                <div class="text-[10px] text-zinc-400 tracking-[1px] font-medium">PORTFOLIO</div>
+                <div class="text-xl font-semibold tracking-tight text-white truncate">Projects</div>
+            </div>
+            <div class="flex items-center justify-end gap-2 flex-shrink-0">
+                <button type="button" onclick="exportProjectsCsv()"
+                        class="flex items-center gap-2 px-4 py-2 bg-zinc-800 hover:bg-zinc-700 rounded-md text-sm font-medium h-[38px]">
+                    <i class="fa-solid fa-download"></i><span>Export</span>
+                </button>
+                <button type="button" onclick="openProjectModal('create')"
+                        class="flex items-center gap-2 px-5 py-2 bg-white text-zinc-900 hover:bg-zinc-100 rounded-md text-sm font-semibold h-[38px]">
+                    <i class="fa-solid fa-plus"></i><span>New Project</span>
+                </button>
+            </div>
         </div>
-        <div class="w-1/3 flex justify-center">
-            <div class="text-sm text-zinc-500 hidden md:block">Procore · RedTeam · Sage 300 field set</div>
+
+        <!-- Summary cards (compact) -->
+        <div class="bg-zinc-900 border-b border-zinc-800 px-6 py-2 flex-shrink-0">
+            <div class="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-7 gap-2">
+                <div class="bg-zinc-800 border border-zinc-700 rounded-md project-stat-tile">
+                    <div class="stat-label">Total Projects</div>
+                    <div class="stat-value">{{ stats.total }}</div>
+                </div>
+                <div class="bg-zinc-800 border border-zinc-700 rounded-md project-stat-tile">
+                    <div class="stat-label">Active</div>
+                    <div class="stat-value text-emerald-400">{{ stats.active }}</div>
+                </div>
+                <div class="bg-zinc-800 border border-zinc-700 rounded-md project-stat-tile">
+                    <div class="stat-label">Completed</div>
+                    <div class="stat-value text-sky-400">{{ stats.completed }}</div>
+                </div>
+                <div class="bg-zinc-800 border border-zinc-700 rounded-md project-stat-tile">
+                    <div class="stat-label">On Hold</div>
+                    <div class="stat-value text-amber-400">{{ stats.on_hold }}</div>
+                </div>
+                <div class="bg-zinc-800 border border-zinc-700 rounded-md project-stat-tile">
+                    <div class="stat-label">Portfolio Value</div>
+                    <div class="stat-value">${{ '{:,.0f}'.format(stats.contract_value) }}</div>
+                </div>
+                <div class="bg-zinc-800 border border-zinc-700 rounded-md project-stat-tile">
+                    <div class="stat-label">Pre-Construction</div>
+                    <div class="stat-value text-violet-400">{{ stats.pre_construction }}</div>
+                </div>
+                <div class="bg-zinc-800 border border-zinc-700 rounded-md project-stat-tile">
+                    <div class="stat-label">Avg % Complete</div>
+                    <div class="stat-value text-emerald-300">{{ stats.avg_percent_complete }}%</div>
+                </div>
+            </div>
         </div>
-        <div class="w-1/3 flex items-center justify-end gap-2">
-            <button type="button" onclick="exportProjectsCsv()"
-                    class="flex items-center gap-2 px-4 py-2 bg-zinc-800 hover:bg-zinc-700 rounded-md text-sm font-medium h-[38px]">
-                <i class="fa-solid fa-download"></i><span>Export</span>
-            </button>
-            <button type="button" onclick="openProjectModal('create')"
-                    class="flex items-center gap-2 px-5 py-2 bg-white text-zinc-900 hover:bg-zinc-100 rounded-md text-sm font-semibold h-[38px]">
-                <i class="fa-solid fa-plus"></i><span>New Project</span>
-            </button>
+
+        <!-- Filters -->
+        <div class="px-6 py-2.5 flex flex-col md:flex-row gap-2 flex-shrink-0 bg-zinc-950 border-b border-zinc-800">
+            <input type="text" id="projectSearch" placeholder="Search project #, name, client, job #, PM..."
+                   oninput="filterProjects()"
+                   class="flex-1 bg-zinc-900 border border-zinc-700 rounded-md px-4 py-2 text-sm focus:border-emerald-600">
+            <select id="projectStatusFilter" onchange="filterProjects()"
+                    class="bg-zinc-900 border border-zinc-700 rounded-md px-4 py-2 text-sm min-w-[160px]">
+                <option value="">All Statuses</option>
+                <option value="Pre-Construction">Pre-Construction</option>
+                <option value="Active">Active</option>
+                <option value="On Hold">On Hold</option>
+                <option value="Completed">Completed</option>
+            </select>
+            <select id="projectManagerFilter" onchange="filterProjects()"
+                    class="bg-zinc-900 border border-zinc-700 rounded-md px-4 py-2 text-sm min-w-[180px]">
+                <option value="">All Project Managers</option>
+                {% for user in users %}
+                <option value="{{ user.full_name }}">{{ user.full_name }}</option>
+                {% endfor %}
+            </select>
         </div>
     </div>
 
-    <!-- Summary cards -->
-    <div class="bg-zinc-900 border border-zinc-700 mx-6 mt-4 rounded-md p-4 flex-shrink-0">
-        <div class="grid grid-cols-2 md:grid-cols-5 gap-3">
-            <div class="bg-zinc-800 border border-zinc-700 rounded-md p-4">
-                <div class="text-xs text-zinc-400 uppercase tracking-wide">Total Projects</div>
-                <div class="text-2xl font-semibold mt-1">{{ stats.total }}</div>
-            </div>
-            <div class="bg-zinc-800 border border-zinc-700 rounded-md p-4">
-                <div class="text-xs text-zinc-400 uppercase tracking-wide">Active</div>
-                <div class="text-2xl font-semibold mt-1 text-emerald-400">{{ stats.active }}</div>
-            </div>
-            <div class="bg-zinc-800 border border-zinc-700 rounded-md p-4">
-                <div class="text-xs text-zinc-400 uppercase tracking-wide">Completed</div>
-                <div class="text-2xl font-semibold mt-1 text-sky-400">{{ stats.completed }}</div>
-            </div>
-            <div class="bg-zinc-800 border border-zinc-700 rounded-md p-4">
-                <div class="text-xs text-zinc-400 uppercase tracking-wide">On Hold</div>
-                <div class="text-2xl font-semibold mt-1 text-amber-400">{{ stats.on_hold }}</div>
-            </div>
-            <div class="bg-zinc-800 border border-zinc-700 rounded-md p-4">
-                <div class="text-xs text-zinc-400 uppercase tracking-wide">Portfolio Value</div>
-                <div class="text-2xl font-semibold mt-1" id="portfolioValueDisplay">${{ '{:,.0f}'.format(stats.contract_value) }}</div>
-            </div>
-        </div>
-    </div>
-
-    <!-- Filters -->
-    <div class="mx-6 mt-3 mb-3 flex flex-col md:flex-row gap-3 flex-shrink-0">
-        <input type="text" id="projectSearch" placeholder="Search project #, name, client, Sage job #, PM..."
-               oninput="filterProjects()"
-               class="flex-1 bg-zinc-900 border border-zinc-700 rounded-md px-4 py-2.5 text-sm focus:border-emerald-600">
-        <select id="projectStatusFilter" onchange="filterProjects()"
-                class="bg-zinc-900 border border-zinc-700 rounded-md px-4 py-2.5 text-sm min-w-[160px]">
-            <option value="">All Statuses</option>
-            <option value="Pre-Construction">Pre-Construction</option>
-            <option value="Active">Active</option>
-            <option value="On Hold">On Hold</option>
-            <option value="Completed">Completed</option>
-        </select>
-        <select id="projectManagerFilter" onchange="filterProjects()"
-                class="bg-zinc-900 border border-zinc-700 rounded-md px-4 py-2.5 text-sm min-w-[180px]">
-            <option value="">All Project Managers</option>
-            {% for user in users %}
-            <option value="{{ user.full_name }}">{{ user.full_name }}</option>
-            {% endfor %}
-        </select>
-    </div>
-
-    <!-- Table -->
-    <div id="projectsTableWrap" class="mx-6 mb-4 bg-zinc-900 border border-zinc-700 rounded-md overflow-hidden">
+    <!-- Table (scrolls within remaining viewport) -->
+    <div id="projectsTableWrap" class="mx-6 my-3 bg-zinc-900 border border-zinc-700 rounded-md">
         <table id="projectsTable" class="w-full text-sm">
             <thead>
                 <tr class="border-b border-zinc-700 text-zinc-400 text-xs uppercase tracking-wide">
-                    <th class="px-3 py-3 text-left font-medium w-24">Project #</th>
-                    <th class="px-3 py-3 text-left font-medium w-24">Sage Job #</th>
-                    <th class="px-3 py-3 text-left font-medium min-w-[160px]">Project Name</th>
-                    <th class="px-3 py-3 text-left font-medium min-w-[120px]">Client / Owner</th>
-                    <th class="px-3 py-3 text-left font-medium w-28">Location</th>
-                    <th class="px-3 py-3 text-left font-medium w-32">Project Manager</th>
-                    <th class="px-3 py-3 text-right font-medium w-28">Contract Value</th>
-                    <th class="px-3 py-3 text-center font-medium w-24">Start</th>
-                    <th class="px-3 py-3 text-center font-medium w-24">Est. Complete</th>
-                    <th class="px-3 py-3 text-center font-medium w-20">% Done</th>
-                    <th class="px-3 py-3 text-center font-medium w-28">Status</th>
-                    <th class="px-3 py-3 text-center font-medium w-28">Actions</th>
+                    <th class="px-3 py-2.5 text-left font-medium w-24">Project #</th>
+                    <th class="px-3 py-2.5 text-left font-medium w-24">Job #</th>
+                    <th class="px-3 py-2.5 text-left font-medium min-w-[160px]">Project Name</th>
+                    <th class="px-3 py-2.5 text-left font-medium min-w-[120px]">Client / Owner</th>
+                    <th class="px-3 py-2.5 text-left font-medium w-28">Location</th>
+                    <th class="px-3 py-2.5 text-left font-medium w-32">Project Manager</th>
+                    <th class="px-3 py-2.5 text-right font-medium w-28">Contract Value</th>
+                    <th class="px-3 py-2.5 text-center font-medium w-24">Start</th>
+                    <th class="px-3 py-2.5 text-center font-medium w-24">Est. Complete</th>
+                    <th class="px-3 py-2.5 text-center font-medium w-20">% Done</th>
+                    <th class="px-3 py-2.5 text-center font-medium w-28">Status</th>
+                    <th class="px-3 py-2.5 text-center font-medium w-20">Actions</th>
                 </tr>
             </thead>
             <tbody class="divide-y divide-zinc-800">
@@ -143,17 +177,18 @@
                     data-id="{{ project.id }}"
                     data-status="{{ project.status or '' }}"
                     data-pm="{{ project.project_manager or '' }}"
-                    data-search="{{ (project.number or '')|lower }} {{ project.name|lower }} {{ (project.client or '')|lower }} {{ (project.sage_job_number or '')|lower }} {{ (project.project_manager or '')|lower }} {{ project.location_label()|lower }}">
-                    <td class="px-3 py-2.5 font-mono text-emerald-400 text-xs">{{ project.number or '—' }}</td>
-                    <td class="px-3 py-2.5 font-mono text-xs text-zinc-300">{{ project.sage_job_number or '—' }}</td>
-                    <td class="px-3 py-2.5 font-medium text-white">{{ project.name }}</td>
-                    <td class="px-3 py-2.5 text-zinc-300 truncate max-w-[140px]">{{ project.client or '—' }}</td>
-                    <td class="px-3 py-2.5 text-zinc-400 text-xs">{{ project.location_label() }}</td>
-                    <td class="px-3 py-2.5 text-zinc-300 text-xs truncate max-w-[120px]">{{ project.project_manager or '—' }}</td>
-                    <td class="px-3 py-2.5 text-right font-mono text-xs">{{ '${:,.0f}'.format(project.contract_value) if project.contract_value else '—' }}</td>
-                    <td class="px-3 py-2.5 text-center text-xs text-zinc-400">{{ project.start_date.strftime('%m/%d/%y') if project.start_date else '—' }}</td>
-                    <td class="px-3 py-2.5 text-center text-xs text-zinc-400">{{ project.end_date.strftime('%m/%d/%y') if project.end_date else '—' }}</td>
-                    <td class="px-3 py-2.5 text-center">
+                    data-search="{{ (project.number or '')|lower }} {{ project.name|lower }} {{ (project.client or '')|lower }} {{ (project.sage_job_number or '')|lower }} {{ (project.project_manager or '')|lower }} {{ project.location_label()|lower }}"
+                    title="Double-click to edit project">
+                    <td class="px-3 py-2 font-mono text-emerald-400 text-xs">{{ project.number or '—' }}</td>
+                    <td class="px-3 py-2 font-mono text-xs text-zinc-300">{{ project.sage_job_number or '—' }}</td>
+                    <td class="px-3 py-2 font-medium text-white">{{ project.name }}</td>
+                    <td class="px-3 py-2 text-zinc-300 truncate max-w-[140px]">{{ project.client or '—' }}</td>
+                    <td class="px-3 py-2 text-zinc-400 text-xs">{{ project.location_label() }}</td>
+                    <td class="px-3 py-2 text-zinc-300 text-xs truncate max-w-[120px]">{{ project.project_manager or '—' }}</td>
+                    <td class="px-3 py-2 text-right font-mono text-xs">{{ '${:,.0f}'.format(project.contract_value) if project.contract_value else '—' }}</td>
+                    <td class="px-3 py-2 text-center text-xs text-zinc-400">{{ project.start_date.strftime('%m/%d/%y') if project.start_date else '—' }}</td>
+                    <td class="px-3 py-2 text-center text-xs text-zinc-400">{{ project.end_date.strftime('%m/%d/%y') if project.end_date else '—' }}</td>
+                    <td class="px-3 py-2 text-center">
                         <div class="flex items-center justify-center gap-1.5">
                             <div class="w-12 bg-zinc-800 rounded-full h-1.5">
                                 <div class="bg-emerald-500 h-1.5 rounded-full" style="width: {{ project.percent_complete or 0 }}%"></div>
@@ -161,8 +196,9 @@
                             <span class="text-[10px] text-zinc-500 w-7">{{ project.percent_complete or 0 }}%</span>
                         </div>
                     </td>
-                    <td class="px-3 py-2.5 text-center">
+                    <td class="px-3 py-2 text-center">
                         <select onchange="updateProjectStatus({{ project.id }}, this.value)"
+                                onclick="event.stopPropagation()"
                                 class="bg-zinc-800 border border-zinc-700 rounded px-2 py-1 text-[11px] max-w-[110px]">
                             <option value="Pre-Construction" {% if project.status == 'Pre-Construction' %}selected{% endif %}>Pre-Con</option>
                             <option value="Active" {% if project.status == 'Active' %}selected{% endif %}>Active</option>
@@ -170,13 +206,11 @@
                             <option value="Completed" {% if project.status == 'Completed' %}selected{% endif %}>Completed</option>
                         </select>
                     </td>
-                    <td class="px-3 py-2.5 text-center">
+                    <td class="px-3 py-2 text-center">
                         <div class="flex items-center justify-center gap-0.5">
-                            <button type="button" onclick="switchProject({{ project.id }})" title="Set as current project"
+                            <button type="button" onclick="event.stopPropagation(); switchProject({{ project.id }})" title="Set as current project"
                                     class="p-1.5 text-sky-400 hover:bg-zinc-800 rounded"><i class="fa-solid fa-crosshairs text-xs"></i></button>
-                            <button type="button" onclick="openProjectModal('edit', {{ project.id }})" title="Edit project"
-                                    class="p-1.5 text-emerald-400 hover:bg-zinc-800 rounded"><i class="fa-solid fa-pen text-xs"></i></button>
-                            <button type="button" onclick="goToDailyLog({{ project.id }})" title="Daily Log"
+                            <button type="button" onclick="event.stopPropagation(); goToDailyLog({{ project.id }})" title="Daily Log"
                                     class="p-1.5 text-zinc-400 hover:bg-zinc-800 rounded"><i class="fa-solid fa-clipboard-list text-xs"></i></button>
                         </div>
                     </td>
@@ -198,10 +232,7 @@
 <div id="projectModal" class="hidden fixed inset-0 bg-black/70 flex items-center justify-center z-[80] p-4">
     <div class="bg-zinc-900 border border-zinc-700 rounded-xl w-full max-w-5xl max-h-[92vh] flex flex-col shadow-2xl">
         <div class="px-6 py-4 border-b border-zinc-700 flex items-center justify-between bg-zinc-950 rounded-t-xl">
-            <div>
-                <h2 id="projectModalTitle" class="text-lg font-semibold text-white">New Project</h2>
-                <p class="text-xs text-zinc-500 mt-0.5">Fields aligned with Procore, RedTeam Flex, and Sage 300 PJC project setup</p>
-            </div>
+            <h2 id="projectModalTitle" class="text-lg font-semibold text-white">New Project</h2>
             <button type="button" onclick="closeProjectModal()" class="text-zinc-400 hover:text-white w-9 h-9 flex items-center justify-center rounded-lg hover:bg-zinc-800">
                 <i class="fa-solid fa-times"></i>
             </button>
@@ -213,13 +244,12 @@
             <button type="button" class="project-tab-btn px-4 py-3 text-sm font-medium text-zinc-400 whitespace-nowrap" data-tab="schedule" onclick="switchProjectTab('schedule')">Schedule & Dates</button>
             <button type="button" class="project-tab-btn px-4 py-3 text-sm font-medium text-zinc-400 whitespace-nowrap" data-tab="financial" onclick="switchProjectTab('financial')">Financial</button>
             <button type="button" class="project-tab-btn px-4 py-3 text-sm font-medium text-zinc-400 whitespace-nowrap" data-tab="team" onclick="switchProjectTab('team')">Team & Contacts</button>
-            <button type="button" class="project-tab-btn px-4 py-3 text-sm font-medium text-zinc-400 whitespace-nowrap" data-tab="sage" onclick="switchProjectTab('sage')">Sage Accounting</button>
+            <button type="button" class="project-tab-btn px-4 py-3 text-sm font-medium text-zinc-400 whitespace-nowrap" data-tab="sage" onclick="switchProjectTab('sage')">Accounting</button>
             <button type="button" class="project-tab-btn px-4 py-3 text-sm font-medium text-zinc-400 whitespace-nowrap" data-tab="other" onclick="switchProjectTab('other')">Other</button>
         </div>
 
         <form id="projectForm" method="POST" class="flex-1 overflow-auto">
             <div class="p-6 space-y-4">
-                <!-- GENERAL (Procore + RedTeam core) -->
                 <div id="projectTab-general" class="project-tab-panel">
                     <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
                         <div>
@@ -227,12 +257,12 @@
                             <input type="text" name="number" id="fld_number" class="project-field-input font-mono" value="PRJ-{{ '%03d' % (projects|length + 1) }}">
                         </div>
                         <div>
-                            <label class="project-field-label">Accounting Project # <span class="text-zinc-600">(Procore)</span></label>
+                            <label class="project-field-label">Accounting Project #</label>
                             <input type="text" name="accounting_project_number" id="fld_accounting_project_number" class="project-field-input font-mono" placeholder="e.g. 370 / 664">
                         </div>
                         <div>
-                            <label class="project-field-label">Sage Job / Contract # <span class="text-red-400">*</span></label>
-                            <input type="text" name="sage_job_number" id="fld_sage_job_number" class="project-field-input font-mono" placeholder="Sage PJC contract number">
+                            <label class="project-field-label">Job / Contract # <span class="text-red-400">*</span></label>
+                            <input type="text" name="sage_job_number" id="fld_sage_job_number" class="project-field-input font-mono" placeholder="Accounting job number">
                         </div>
                     </div>
                     <div class="mt-4">
@@ -250,7 +280,7 @@
                             </select>
                         </div>
                         <div>
-                            <label class="project-field-label">Stage <span class="text-zinc-600">(Procore)</span></label>
+                            <label class="project-field-label">Stage</label>
                             <select name="stage" id="fld_stage" class="project-field-input">
                                 <option value="">—</option>
                                 <option value="Bidding">Bidding</option>
@@ -284,7 +314,7 @@
                     </div>
                     <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mt-4">
                         <div>
-                            <label class="project-field-label">Delivery Method <span class="text-zinc-600">(RedTeam)</span></label>
+                            <label class="project-field-label">Delivery Method</label>
                             <input type="text" name="delivery_method" id="fld_delivery_method" class="project-field-input" placeholder="Design-Bid-Build, CM, etc.">
                         </div>
                         <div>
@@ -302,7 +332,6 @@
                     </div>
                 </div>
 
-                <!-- LOCATION -->
                 <div id="projectTab-location" class="project-tab-panel hidden">
                     <div class="mb-4">
                         <label class="project-field-label">Street Address</label>
@@ -374,7 +403,6 @@
                     </div>
                 </div>
 
-                <!-- SCHEDULE & DATES -->
                 <div id="projectTab-schedule" class="project-tab-panel hidden">
                     <div class="grid grid-cols-2 md:grid-cols-3 gap-4">
                         <div>
@@ -412,7 +440,6 @@
                     </div>
                 </div>
 
-                <!-- FINANCIAL -->
                 <div id="projectTab-financial" class="project-tab-panel hidden">
                     <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
                         <div>
@@ -427,7 +454,7 @@
                             <input type="number" name="square_feet" id="fld_square_feet" class="project-field-input">
                         </div>
                         <div>
-                            <label class="project-field-label">Financing <span class="text-zinc-600">(RedTeam)</span></label>
+                            <label class="project-field-label">Financing</label>
                             <input type="text" name="financing" id="fld_financing" class="project-field-input">
                         </div>
                     </div>
@@ -443,7 +470,6 @@
                     </div>
                 </div>
 
-                <!-- TEAM & CONTACTS -->
                 <div id="projectTab-team" class="project-tab-panel hidden">
                     <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
                         <div>
@@ -499,12 +525,10 @@
                     </div>
                 </div>
 
-                <!-- SAGE ACCOUNTING -->
                 <div id="projectTab-sage" class="project-tab-panel hidden">
-                    <p class="text-xs text-zinc-500 mb-4">Sage 300 Project & Job Costing — contract maintenance and G/L integration fields</p>
                     <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
                         <div>
-                            <label class="project-field-label">Sage Contract Number</label>
+                            <label class="project-field-label">Contract Number</label>
                             <input type="text" name="sage_contract_number" id="fld_sage_contract_number" class="project-field-input font-mono">
                         </div>
                         <div>
@@ -544,7 +568,6 @@
                     </div>
                 </div>
 
-                <!-- OTHER -->
                 <div id="projectTab-other" class="project-tab-panel hidden">
                     <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
                         <div>
@@ -679,7 +702,7 @@ function goToDailyLog(projectId) {
 }
 
 function exportProjectsCsv() {
-    const rows = [['Project #','Sage Job #','Name','Client','City','State','PM','Contract Value','Start','End','% Complete','Status']];
+    const rows = [['Project #','Job #','Name','Client','City','State','PM','Contract Value','Start','End','% Complete','Status']];
     document.querySelectorAll('.project-row').forEach(row => {
         if (row.style.display === 'none') return;
         const cells = row.querySelectorAll('td');
@@ -704,6 +727,13 @@ function exportProjectsCsv() {
     a.download = 'projects-export.csv';
     a.click();
 }
+
+document.querySelectorAll('.project-row').forEach(row => {
+    row.addEventListener('dblclick', (e) => {
+        if (e.target.closest('select, button')) return;
+        openProjectModal('edit', Number(row.dataset.id));
+    });
+});
 
 document.addEventListener('keydown', e => {
     if (e.key === 'Escape') closeProjectModal();
