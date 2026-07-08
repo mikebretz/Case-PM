@@ -192,6 +192,18 @@ class Project(db.Model):
         )
         return os.path.isfile(pdf_path)
 
+    def has_project_logo(self):
+        meta = _read_project_asset_meta(self.id, 'projects')
+        if not meta or not meta.get('filename'):
+            return False
+        path = os.path.join(_project_asset_folder(self.id, 'projects'), meta['filename'])
+        return os.path.isfile(path)
+
+    def project_logo_url(self):
+        if not self.has_project_logo():
+            return None
+        return url_for('serve_project_logo', project_id=int(self.id))
+
     def to_dict(self):
         d = self.get_details()
         return {
@@ -215,6 +227,8 @@ class Project(db.Model):
             'project_type': self.project_type or '',
             'description': self.description or '',
             'has_original_contract': self.has_original_contract(),
+            'has_project_logo': self.has_project_logo(),
+            'logo_url': self.project_logo_url(),
             **d,
         }
 
@@ -694,11 +708,33 @@ os.makedirs(os.path.join(UPLOAD_FOLDER, 'attachments'), exist_ok=True)
 os.makedirs(os.path.join(UPLOAD_FOLDER, 'change_orders'), exist_ok=True)
 os.makedirs(os.path.join(UPLOAD_FOLDER, 'spec_books'), exist_ok=True)
 os.makedirs(os.path.join(UPLOAD_FOLDER, 'contracts'), exist_ok=True)
+os.makedirs(os.path.join(UPLOAD_FOLDER, 'projects'), exist_ok=True)
 os.makedirs(os.path.join(UPLOAD_FOLDER, 'commitments'), exist_ok=True)
+
+LOGO_EXTENSIONS = {'png', 'jpg', 'jpeg', 'gif', 'webp', 'svg'}
 
 
 def allowed_file(filename):
     return '.' in filename and filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS
+
+
+def allowed_logo_file(filename):
+    return '.' in filename and filename.rsplit('.', 1)[1].lower() in LOGO_EXTENSIONS
+
+
+def _project_asset_folder(project_id, subfolder):
+    return os.path.join(app.config['UPLOAD_FOLDER'], subfolder, str(project_id))
+
+
+def _read_project_asset_meta(project_id, subfolder):
+    meta_path = os.path.join(_project_asset_folder(project_id, subfolder), 'meta.json')
+    if not os.path.isfile(meta_path):
+        return None
+    try:
+        with open(meta_path, encoding='utf-8') as fh:
+            return json.load(fh)
+    except (OSError, json.JSONDecodeError):
+        return None
 
 
 def save_uploaded_file(file, folder='photos'):
@@ -915,6 +951,9 @@ def api_current_project():
         'sage_billings_account': d.get('sage_billings_account'),
         'sage_wip_account': d.get('sage_wip_account'),
         'sage_ar_customer_code': d.get('sage_ar_customer_code'),
+        'has_original_contract': active.has_original_contract(),
+        'has_project_logo': active.has_project_logo(),
+        'logo_url': active.project_logo_url(),
     })
 
 
@@ -1756,6 +1795,75 @@ def api_delete_original_contract(project_id):
     return jsonify({'ok': True})
 
 
+@app.route('/api/projects/<int:project_id>/logo', methods=['GET'])
+@login_required
+def api_get_project_logo(project_id):
+    Project.query.get_or_404(project_id)
+    folder = _project_asset_folder(project_id, 'projects')
+    meta = _read_project_asset_meta(project_id, 'projects')
+    if not meta or not meta.get('filename'):
+        return jsonify({'found': False})
+    logo_path = os.path.join(folder, meta['filename'])
+    if not os.path.isfile(logo_path):
+        return jsonify({'found': False})
+    meta['found'] = True
+    meta['url'] = url_for('serve_project_logo', project_id=int(project_id))
+    return jsonify(meta)
+
+
+@app.route('/api/projects/<int:project_id>/logo', methods=['POST'])
+@login_required
+def api_upload_project_logo(project_id):
+    Project.query.get_or_404(project_id)
+    file = request.files.get('file')
+    if not file or not file.filename:
+        return jsonify({'error': 'file required'}), 400
+    if not allowed_logo_file(file.filename):
+        return jsonify({'error': 'Image required (PNG, JPG, GIF, WebP, or SVG)'}), 400
+
+    ext = file.filename.rsplit('.', 1)[1].lower()
+    stored_name = f'logo.{ext}'
+    folder = _project_asset_folder(project_id, 'projects')
+    os.makedirs(folder, exist_ok=True)
+
+    for existing in os.listdir(folder):
+        if existing.startswith('logo.'):
+            try:
+                os.remove(os.path.join(folder, existing))
+            except OSError:
+                pass
+
+    file.save(os.path.join(folder, stored_name))
+    meta = {
+        'filename': stored_name,
+        'originalName': secure_filename(file.filename) or file.filename,
+        'uploadedAt': datetime.utcnow().isoformat() + 'Z',
+        'uploadedById': current_user.id,
+        'uploadedByName': getattr(current_user, 'full_name', None) or current_user.email,
+    }
+    with open(os.path.join(folder, 'meta.json'), 'w', encoding='utf-8') as fh:
+        json.dump(meta, fh)
+
+    meta['ok'] = True
+    meta['url'] = url_for('serve_project_logo', project_id=int(project_id))
+    return jsonify(meta)
+
+
+@app.route('/api/projects/<int:project_id>/logo', methods=['DELETE'])
+@login_required
+def api_delete_project_logo(project_id):
+    if current_user.role != 'Admin':
+        return jsonify({'error': 'Admin only'}), 403
+    folder = _project_asset_folder(project_id, 'projects')
+    if os.path.isdir(folder):
+        for name in os.listdir(folder):
+            try:
+                os.remove(os.path.join(folder, name))
+            except OSError:
+                pass
+    return jsonify({'ok': True})
+
+
 @app.route('/api/projects/<int:project_id>/aia/catina-link', methods=['POST'])
 @login_required
 def api_project_catina_link(project_id):
@@ -1787,6 +1895,25 @@ def api_project_catina_link(project_id):
 def serve_original_contract_pdf(project_id):
     directory = os.path.join(app.config['UPLOAD_FOLDER'], 'contracts', str(project_id))
     return send_from_directory(directory, 'original_contract.pdf', mimetype='application/pdf')
+
+
+@app.route('/uploads/projects/<int:project_id>/logo')
+@login_required
+def serve_project_logo(project_id):
+    meta = _read_project_asset_meta(project_id, 'projects')
+    if not meta or not meta.get('filename'):
+        return jsonify({'error': 'not found'}), 404
+    directory = _project_asset_folder(project_id, 'projects')
+    ext = meta['filename'].rsplit('.', 1)[-1].lower()
+    mimetypes = {
+        'png': 'image/png',
+        'jpg': 'image/jpeg',
+        'jpeg': 'image/jpeg',
+        'gif': 'image/gif',
+        'webp': 'image/webp',
+        'svg': 'image/svg+xml',
+    }
+    return send_from_directory(directory, meta['filename'], mimetype=mimetypes.get(ext, 'application/octet-stream'))
 
 
 @app.route('/uploads/spec_books/<int:project_id>/spec_book.pdf')

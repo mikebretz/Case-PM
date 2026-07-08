@@ -267,7 +267,7 @@
             <button type="button" class="project-tab-btn active px-4 py-3 text-sm font-medium text-zinc-400 whitespace-nowrap" data-tab="general" onclick="switchProjectTab('general')">General</button>
             <button type="button" class="project-tab-btn px-4 py-3 text-sm font-medium text-zinc-400 whitespace-nowrap" data-tab="location" onclick="switchProjectTab('location')">Location</button>
             <button type="button" class="project-tab-btn px-4 py-3 text-sm font-medium text-zinc-400 whitespace-nowrap" data-tab="schedule" onclick="switchProjectTab('schedule')">Schedule & Dates</button>
-            <button type="button" class="project-tab-btn px-4 py-3 text-sm font-medium text-zinc-400 whitespace-nowrap" data-tab="financial" onclick="switchProjectTab('financial')">Financial</button>
+            <button type="button" class="project-tab-btn px-4 py-3 text-sm font-medium text-zinc-400 whitespace-nowrap" data-tab="financial" onclick="switchProjectTab('financial')">Financial &amp; Contract <span id="tabBadgeFinancial" class="hidden ml-1 text-emerald-400">●</span></button>
             <button type="button" class="project-tab-btn px-4 py-3 text-sm font-medium text-zinc-400 whitespace-nowrap" data-tab="contract" onclick="switchProjectTab('contract')">Contract &amp; AIA</button>
             <button type="button" class="project-tab-btn px-4 py-3 text-sm font-medium text-zinc-400 whitespace-nowrap" data-tab="team" onclick="switchProjectTab('team')">Team & Contacts</button>
             <button type="button" class="project-tab-btn px-4 py-3 text-sm font-medium text-zinc-400 whitespace-nowrap" data-tab="sage" onclick="switchProjectTab('sage')">Sage 300</button>
@@ -296,6 +296,25 @@
                     <div class="mt-4">
                         <label class="project-field-label">Project Name <span class="text-red-400">*</span></label>
                         <input type="text" name="name" id="fld_name" class="project-field-input" required>
+                    </div>
+
+                    <div class="mt-4 border border-zinc-700 rounded-lg p-4 bg-zinc-950/40">
+                        <div class="text-sm font-medium text-white mb-2"><i class="fa-solid fa-image text-sky-400 mr-2"></i>Project Logo</div>
+                        <p class="text-xs text-zinc-400 mb-3">Shown on reports, pay apps, and project headers. PNG or JPG recommended.</p>
+                        <div class="flex flex-wrap items-start gap-4">
+                            <div class="w-20 h-20 rounded-lg border border-zinc-700 bg-zinc-900 flex items-center justify-center overflow-hidden flex-shrink-0">
+                                <img id="projectLogoPreview" src="" alt="" class="max-h-full max-w-full object-contain hidden">
+                                <span id="projectLogoPlaceholder" class="text-[10px] text-zinc-600 text-center px-1">No logo</span>
+                            </div>
+                            <div class="flex-1 min-w-[200px]">
+                                <div id="projectLogoStatus" class="text-xs text-zinc-500 mb-2">Save project first, then upload a logo.</div>
+                                <div class="flex flex-wrap gap-2 items-center">
+                                    <input type="file" id="projectLogoFile" accept="image/png,image/jpeg,image/jpg,image/gif,image/webp,image/svg+xml" class="text-xs text-zinc-400 file:mr-3 file:py-1.5 file:px-3 file:rounded file:border-0 file:bg-zinc-700 file:text-zinc-200">
+                                    <button type="button" id="uploadLogoBtn" onclick="uploadProjectLogo()" class="px-4 py-2 bg-sky-700 hover:bg-sky-600 rounded-md text-xs font-medium text-white" disabled>Upload Logo</button>
+                                    <button type="button" id="deleteLogoBtn" onclick="deleteProjectLogo()" class="hidden px-4 py-2 bg-red-900/50 hover:bg-red-800 rounded-md text-xs text-red-300">Remove</button>
+                                </div>
+                            </div>
+                        </div>
                     </div>
                     <div class="grid grid-cols-1 md:grid-cols-4 gap-4 mt-4">
                         <div>
@@ -469,6 +488,20 @@
                 </div>
 
                 <div id="projectTab-financial" class="project-tab-panel hidden">
+                    <div class="border border-red-900/40 bg-red-950/20 rounded-lg p-4 mb-5">
+                        <div class="text-sm font-medium text-white mb-1"><i class="fa-solid fa-file-pdf text-red-400 mr-2"></i>Original Prime Contract (PDF)</div>
+                        <p class="text-xs text-zinc-400 mb-3">Upload the executed owner–GC agreement here. This is the signed contract on file — used for pay applications, budget reference, and audit.</p>
+                        <div id="originalContractStatus" class="text-xs text-zinc-500 mb-3">No contract uploaded.</div>
+                        <div class="flex flex-wrap gap-2 items-center">
+                            <input type="file" id="originalContractFile" accept=".pdf,application/pdf" class="text-xs text-zinc-400 file:mr-3 file:py-1.5 file:px-3 file:rounded file:border-0 file:bg-zinc-700 file:text-zinc-200">
+                            <button type="button" id="uploadContractBtn" onclick="uploadOriginalContract()" class="px-4 py-2 bg-emerald-700 hover:bg-emerald-600 rounded-md text-xs font-medium text-white" disabled>Upload PDF</button>
+                            <a id="viewContractLink" href="#" target="_blank" rel="noopener" class="hidden px-4 py-2 bg-zinc-700 hover:bg-zinc-600 rounded-md text-xs text-sky-300">View Contract</a>
+                            <button type="button" id="deleteContractBtn" onclick="deleteOriginalContract()" class="hidden px-4 py-2 bg-red-900/50 hover:bg-red-800 rounded-md text-xs text-red-300">Remove</button>
+                        </div>
+                        <p class="text-[10px] text-zinc-500 mt-2">Tip: Save the project first if you are creating a new job, then return to this tab to upload.</p>
+                    </div>
+
+                    <div class="text-xs text-zinc-500 uppercase tracking-wide mb-3">Contract amounts</div>
                     <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
                         <div>
                             <label class="project-field-label">Current Contract Value</label>
@@ -535,17 +568,22 @@
                 </div>
 
                 <div id="projectTab-contract" class="project-tab-panel hidden">
+                    <div class="border border-violet-900/40 bg-violet-950/20 rounded-lg p-4 mb-4">
+                        <div class="text-sm font-medium text-violet-200 mb-2"><i class="fa-solid fa-circle-info mr-2"></i>How AIA contracts work in Case PM</div>
+                        <ul class="text-xs text-zinc-300 space-y-2 list-disc pl-4">
+                            <li><strong class="text-white">Upload executed PDF</strong> — <button type="button" onclick="switchProjectTab('financial')" class="text-sky-400 hover:underline">Financial &amp; Contract tab</button>: store the signed owner–GC agreement (most common for jobs already under contract).</li>
+                            <li><strong class="text-white">AIA Contract Documents (Catina)</strong> — AIA’s official platform for <em>licensed</em> A101/A401 forms, e-signature, and document control. Case PM links to Catina; it is the direct AIA path when you need official forms (not a separate AIA API).</li>
+                            <li><strong class="text-white">Commitments editor</strong> — Case PM’s built-in AIA-style language for subs and POs. Good for workflow inside the app; not a replacement for Catina when licensed AIA documents are required.</li>
+                        </ul>
+                    </div>
+
                     <div class="border border-zinc-700 rounded-lg p-4 mb-4 bg-zinc-950/50">
-                        <div class="text-sm font-medium text-white mb-2"><i class="fa-solid fa-file-pdf text-red-400 mr-2"></i>Original Prime Contract (PDF)</div>
-                        <p class="text-xs text-zinc-400 mb-3">Upload the executed owner–GC agreement. Used for pay apps, commitments defaults, and AIA document reference.</p>
-                        <div id="originalContractStatus" class="text-xs text-zinc-500 mb-3">No contract uploaded.</div>
-                        <div class="flex flex-wrap gap-2 items-center">
-                            <input type="file" id="originalContractFile" accept=".pdf,application/pdf" class="text-xs text-zinc-400 file:mr-3 file:py-1.5 file:px-3 file:rounded file:border-0 file:bg-zinc-700 file:text-zinc-200">
-                            <button type="button" id="uploadContractBtn" onclick="uploadOriginalContract()" class="px-4 py-2 bg-emerald-700 hover:bg-emerald-600 rounded-md text-xs font-medium text-white" disabled>Upload PDF</button>
-                            <a id="viewContractLink" href="#" target="_blank" rel="noopener" class="hidden px-4 py-2 bg-zinc-700 hover:bg-zinc-600 rounded-md text-xs text-sky-300">View Contract</a>
-                            <button type="button" id="deleteContractBtn" onclick="deleteOriginalContract()" class="hidden px-4 py-2 bg-red-900/50 hover:bg-red-800 rounded-md text-xs text-red-300">Remove</button>
-                            <button type="button" id="openCatinaProjectBtn" onclick="openProjectCatina()" class="hidden px-4 py-2 bg-violet-800 hover:bg-violet-700 rounded-md text-xs text-white"><i class="fa-solid fa-building-columns mr-1"></i>Open in Catina</button>
-                        </div>
+                        <div class="text-sm font-medium text-white mb-2">Original contract on file</div>
+                        <div id="contractTabMirrorStatus" class="text-xs text-zinc-500 mb-2">—</div>
+                        <button type="button" onclick="switchProjectTab('financial')" class="px-4 py-2 bg-zinc-700 hover:bg-zinc-600 rounded-md text-xs text-white">
+                            <i class="fa-solid fa-file-pdf text-red-400 mr-1"></i> Upload / view in Financial &amp; Contract
+                        </button>
+                        <button type="button" id="openCatinaProjectBtn" onclick="openProjectCatina()" class="hidden ml-2 px-4 py-2 bg-violet-800 hover:bg-violet-700 rounded-md text-xs text-white"><i class="fa-solid fa-building-columns mr-1"></i>Open in Catina</button>
                     </div>
 
                     <div class="text-xs text-zinc-500 uppercase tracking-wide mb-3">AIA Prime Contract</div>
@@ -571,11 +609,11 @@
                         </div>
                         <div>
                             <label class="project-field-label">AIA Catina Project ID</label>
-                            <input type="text" name="catina_project_id" id="fld_catina_project_id" class="project-field-input font-mono" placeholder="From AIA Contract Documents">
+                            <input type="text" name="catina_project_id" id="fld_catina_project_id" class="project-field-input font-mono" placeholder="From AIA Contract Documents (Catina)">
                         </div>
                         <div class="md:col-span-2">
-                            <label class="project-field-label">AIA Catina Document URL</label>
-                            <input type="url" name="catina_document_url" id="fld_catina_document_url" class="project-field-input" placeholder="https://contractdocs.aia.org/...">
+                            <label class="project-field-label">AIA / Catina Document URL</label>
+                            <input type="url" name="catina_document_url" id="fld_catina_document_url" class="project-field-input" placeholder="https://contractdocs.aia.org/... (official AIA document link)">
                         </div>
                     </div>
 
@@ -898,8 +936,10 @@ function openProjectModal(mode, projectId) {
     if (numErr) numErr.classList.add('hidden');
     if (mode === 'edit' && projectId) {
         loadOriginalContractStatus(projectId);
+        loadProjectLogoStatus(projectId);
     } else {
         resetOriginalContractUI();
+        resetProjectLogoUI();
     }
 }
 
@@ -936,37 +976,130 @@ function resetOriginalContractUI() {
     document.getElementById('uploadContractBtn').disabled = true;
     document.getElementById('viewContractLink').classList.add('hidden');
     document.getElementById('deleteContractBtn').classList.add('hidden');
-    document.getElementById('openCatinaProjectBtn').classList.add('hidden');
+    const catinaBtn = document.getElementById('openCatinaProjectBtn');
+    if (catinaBtn) catinaBtn.classList.add('hidden');
+    const mirror = document.getElementById('contractTabMirrorStatus');
+    if (mirror) mirror.textContent = 'Save project first, then upload on Financial & Contract tab.';
+    const badge = document.getElementById('tabBadgeFinancial');
+    if (badge) badge.classList.add('hidden');
+}
+
+function resetProjectLogoUI() {
+    const statusEl = document.getElementById('projectLogoStatus');
+    const uploadBtn = document.getElementById('uploadLogoBtn');
+    const deleteBtn = document.getElementById('deleteLogoBtn');
+    const preview = document.getElementById('projectLogoPreview');
+    const placeholder = document.getElementById('projectLogoPlaceholder');
+    if (statusEl) statusEl.textContent = 'Save project first, then upload a logo.';
+    if (uploadBtn) uploadBtn.disabled = true;
+    if (deleteBtn) deleteBtn.classList.add('hidden');
+    if (preview) { preview.src = ''; preview.classList.add('hidden'); }
+    if (placeholder) placeholder.classList.remove('hidden');
+}
+
+function setContractStatusUI(json) {
+    const statusEl = document.getElementById('originalContractStatus');
+    const viewLink = document.getElementById('viewContractLink');
+    const deleteBtn = document.getElementById('deleteContractBtn');
+    const mirror = document.getElementById('contractTabMirrorStatus');
+    const badge = document.getElementById('tabBadgeFinancial');
+    if (json.found) {
+        const label = `<span class="text-emerald-400">Uploaded:</span> ${json.filename || 'original_contract.pdf'} · ${json.uploadedAt ? new Date(json.uploadedAt).toLocaleString() : ''}`;
+        if (statusEl) statusEl.innerHTML = label;
+        if (mirror) mirror.innerHTML = label;
+        if (viewLink) { viewLink.href = json.url; viewLink.classList.remove('hidden'); }
+        if (deleteBtn) deleteBtn.classList.remove('hidden');
+        if (badge) badge.classList.remove('hidden');
+    } else {
+        const empty = 'No original contract uploaded yet.';
+        if (statusEl) statusEl.textContent = empty;
+        if (mirror) mirror.textContent = empty;
+        if (viewLink) viewLink.classList.add('hidden');
+        if (deleteBtn) deleteBtn.classList.add('hidden');
+        if (badge) badge.classList.add('hidden');
+    }
 }
 
 async function loadOriginalContractStatus(projectId) {
-    const statusEl = document.getElementById('originalContractStatus');
     const uploadBtn = document.getElementById('uploadContractBtn');
-    const viewLink = document.getElementById('viewContractLink');
-    const deleteBtn = document.getElementById('deleteContractBtn');
     const catinaBtn = document.getElementById('openCatinaProjectBtn');
     const fileInput = document.getElementById('originalContractFile');
     if (!projectId) { resetOriginalContractUI(); return; }
-    uploadBtn.disabled = false;
-    catinaBtn.classList.remove('hidden');
+    if (uploadBtn) uploadBtn.disabled = false;
+    if (catinaBtn) catinaBtn.classList.remove('hidden');
     try {
         const res = await fetch(`/api/projects/${projectId}/original-contract`, { credentials: 'same-origin' });
         const json = await res.json();
-        if (json.found) {
-            statusEl.innerHTML = `<span class="text-emerald-400">Uploaded:</span> ${json.filename || 'original_contract.pdf'} · ${json.uploadedAt ? new Date(json.uploadedAt).toLocaleString() : ''}`;
-            viewLink.href = json.url;
-            viewLink.classList.remove('hidden');
-            deleteBtn.classList.remove('hidden');
-        } else {
-            statusEl.textContent = 'No original contract uploaded yet.';
-            viewLink.classList.add('hidden');
-            deleteBtn.classList.add('hidden');
-        }
+        setContractStatusUI(json);
     } catch {
-        statusEl.textContent = 'Could not load contract status.';
+        const err = 'Could not load contract status.';
+        const statusEl = document.getElementById('originalContractStatus');
+        if (statusEl) statusEl.textContent = err;
+        const mirror = document.getElementById('contractTabMirrorStatus');
+        if (mirror) mirror.textContent = err;
     }
     if (fileInput) {
-        fileInput.onchange = () => { uploadBtn.disabled = !fileInput.files?.length; };
+        fileInput.onchange = () => { if (uploadBtn) uploadBtn.disabled = !fileInput.files?.length; };
+    }
+}
+
+async function loadProjectLogoStatus(projectId) {
+    const statusEl = document.getElementById('projectLogoStatus');
+    const uploadBtn = document.getElementById('uploadLogoBtn');
+    const deleteBtn = document.getElementById('deleteLogoBtn');
+    const preview = document.getElementById('projectLogoPreview');
+    const placeholder = document.getElementById('projectLogoPlaceholder');
+    const fileInput = document.getElementById('projectLogoFile');
+    if (!projectId) { resetProjectLogoUI(); return; }
+    if (uploadBtn) uploadBtn.disabled = false;
+    try {
+        const res = await fetch(`/api/projects/${projectId}/logo`, { credentials: 'same-origin' });
+        const json = await res.json();
+        if (json.found) {
+            if (statusEl) statusEl.innerHTML = `<span class="text-emerald-400">Uploaded:</span> ${json.originalName || json.filename || 'logo'}`;
+            if (preview) { preview.src = json.url + '?t=' + Date.now(); preview.classList.remove('hidden'); }
+            if (placeholder) placeholder.classList.add('hidden');
+            if (deleteBtn) deleteBtn.classList.remove('hidden');
+        } else {
+            if (statusEl) statusEl.textContent = 'No logo uploaded yet.';
+            if (preview) { preview.src = ''; preview.classList.add('hidden'); }
+            if (placeholder) placeholder.classList.remove('hidden');
+            if (deleteBtn) deleteBtn.classList.add('hidden');
+        }
+    } catch {
+        if (statusEl) statusEl.textContent = 'Could not load logo status.';
+    }
+    if (fileInput) {
+        fileInput.onchange = () => { if (uploadBtn) uploadBtn.disabled = !fileInput.files?.length; };
+    }
+}
+
+async function uploadProjectLogo() {
+    if (!editingProjectId) { alert('Save the project first.'); return; }
+    const fileInput = document.getElementById('projectLogoFile');
+    if (!fileInput?.files?.length) return;
+    const fd = new FormData();
+    fd.append('file', fileInput.files[0]);
+    try {
+        const res = await fetch(`/api/projects/${editingProjectId}/logo`, { method: 'POST', body: fd, credentials: 'same-origin' });
+        const json = await res.json();
+        if (!res.ok) throw new Error(json.error || 'Upload failed');
+        await loadProjectLogoStatus(editingProjectId);
+        fileInput.value = '';
+        alert('Project logo uploaded.');
+    } catch (e) {
+        alert(e.message);
+    }
+}
+
+async function deleteProjectLogo() {
+    if (!editingProjectId || !confirm('Remove the project logo?')) return;
+    try {
+        const res = await fetch(`/api/projects/${editingProjectId}/logo`, { method: 'DELETE', credentials: 'same-origin' });
+        if (!res.ok) throw new Error('Delete failed');
+        await loadProjectLogoStatus(editingProjectId);
+    } catch (e) {
+        alert(e.message);
     }
 }
 
