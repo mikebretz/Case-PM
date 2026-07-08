@@ -2803,8 +2803,9 @@
         const fromUrl = new URLSearchParams(window.location.search).get('project_id');
         const ctx = document.getElementById('scheduleProjectContext');
         const fromCtx = ctx?.dataset?.projectId;
+        const fromGlobal = window.CASEPM_ACTIVE_PROJECT_ID;
         const fromStorage = localStorage.getItem('casepm_current_project_id');
-        const id = parseInt(fromUrl || fromCtx || fromStorage || '0', 10);
+        const id = parseInt(fromUrl || fromCtx || fromGlobal || fromStorage || '0', 10);
         return id || 0;
     }
 

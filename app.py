@@ -7,7 +7,7 @@
 # Cleaned & Completed Full Version (vFinal)
 # ============================================================
 
-from flask import Flask, render_template, request, redirect, url_for, flash, jsonify
+from flask import Flask, render_template, request, redirect, url_for, flash, jsonify, session
 from flask_sqlalchemy import SQLAlchemy
 from flask_login import LoginManager, UserMixin, login_user, logout_user, login_required, current_user
 from werkzeug.security import generate_password_hash, check_password_hash
@@ -31,6 +31,39 @@ login_manager.init_app(app)
 login_manager.login_view = 'login'
 login_manager.login_message = "Please log in to access this page."
 login_manager.login_message_category = "warning"
+
+# Endpoints that are not scoped to a single project (portfolio / admin).
+PROJECT_AGNOSTIC_ENDPOINTS = frozenset({
+    'dashboard',
+    'projects_page',
+    'project_detail',
+    'create_project',
+    'email_page',
+    'companies_page',
+    'create_company',
+    'upload_coi',
+    'user_management',
+    'create_user',
+    'delete_user',
+    'program_settings',
+    'audit_log',
+    'audit_log_page',
+    'notifications',
+    'mark_notification_read',
+    'profile',
+    'update_profile',
+    'search',
+    'login',
+    'logout',
+    'force_change_password',
+    'static',
+    'favicon',
+    'api_stats',
+    'api_current_project',
+    'api_portfolio_schedules',
+})
+
+CURRENT_PROJECT_SESSION_KEY = 'current_project_id'
 
 
 # ==================== PERMISSION DECORATORS ====================
@@ -110,6 +143,69 @@ class Project(db.Model):
     status = db.Column(db.String(50), default='Active')
     percent_complete = db.Column(db.Integer, default=0)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
+
+
+def get_current_project_id():
+    """Resolve the active project id from URL, session, or first project."""
+    if not current_user.is_authenticated:
+        return None
+
+    project_id = request.args.get('project_id', type=int)
+    if project_id:
+        if Project.query.get(project_id):
+            session[CURRENT_PROJECT_SESSION_KEY] = project_id
+            return project_id
+        return None
+
+    stored = session.get(CURRENT_PROJECT_SESSION_KEY)
+    if stored:
+        try:
+            stored_id = int(stored)
+            if Project.query.get(stored_id):
+                return stored_id
+        except (TypeError, ValueError):
+            pass
+
+    first = Project.query.order_by(Project.name).first()
+    if first:
+        session[CURRENT_PROJECT_SESSION_KEY] = first.id
+        return first.id
+    return None
+
+
+def get_active_project():
+    pid = get_current_project_id()
+    return Project.query.get(pid) if pid else None
+
+
+def query_for_active_project(model):
+    """Filter a SQLAlchemy model query to the current project."""
+    q = model.query
+    project = get_active_project()
+    if project is not None:
+        q = q.filter_by(project_id=project.id)
+    return q
+
+
+def redirect_with_project(endpoint, **values):
+    """Redirect to a project-scoped page, preserving current project."""
+    if endpoint not in PROJECT_AGNOSTIC_ENDPOINTS:
+        pid = get_current_project_id()
+        if pid and 'project_id' not in values:
+            values['project_id'] = pid
+    return redirect(url_for(endpoint, **values))
+
+
+@app.context_processor
+def inject_project_context():
+    if not current_user.is_authenticated:
+        return {}
+    active = get_active_project()
+    return {
+        'active_project': active,
+        'project_name': active.name if active else 'Select Project',
+        'all_projects': Project.query.order_by(Project.name).all(),
+    }
 
 
 class DailyLog(db.Model):
@@ -483,6 +579,40 @@ def dashboard():
     )
 
 
+@app.route('/api/current-project', methods=['GET', 'POST'])
+@login_required
+def api_current_project():
+    """Get or set the session-scoped current project."""
+    if request.method == 'POST':
+        data = request.get_json(silent=True) or {}
+        project_id = data.get('project_id')
+        try:
+            project_id = int(project_id)
+        except (TypeError, ValueError):
+            return jsonify({'error': 'project_id required'}), 400
+        project = Project.query.get(project_id)
+        if not project:
+            return jsonify({'error': 'Invalid project_id'}), 404
+        session[CURRENT_PROJECT_SESSION_KEY] = project_id
+        return jsonify({
+            'ok': True,
+            'project_id': project.id,
+            'name': project.name,
+            'number': project.number,
+            'address': project.address,
+        })
+
+    active = get_active_project()
+    if not active:
+        return jsonify({'project_id': None, 'name': None, 'number': None, 'address': None})
+    return jsonify({
+        'project_id': active.id,
+        'name': active.name,
+        'number': active.number,
+        'address': active.address,
+    })
+
+
 
 
 # ==================== PROJECTS ROUTES ====================
@@ -555,7 +685,7 @@ def project_detail(project_id):
 @app.route('/daily-log')
 @login_required
 def daily_log():
-    logs = DailyLog.query.order_by(DailyLog.date.desc()).limit(30).all()
+    logs = query_for_active_project(DailyLog).order_by(DailyLog.date.desc()).limit(30).all()
     projects = Project.query.order_by(Project.name).all()
     return render_template('daily_log.html', logs=logs, projects=projects)
 
@@ -572,7 +702,7 @@ def create_daily_log():
 
         if not project_id or not date_str:
             flash('Project and Date are required.', 'error')
-            return redirect(url_for('daily_log'))
+            return redirect_with_project('daily_log')
 
         log = DailyLog(
             project_id=int(project_id),
@@ -587,12 +717,12 @@ def create_daily_log():
         db.session.commit()
 
         flash('Daily Log saved successfully!', 'success')
-        return redirect(url_for('daily_log'))
+        return redirect_with_project('daily_log')
 
     except Exception as e:
         db.session.rollback()
         flash(f'Error saving daily log: {str(e)}', 'error')
-        return redirect(url_for('daily_log'))
+        return redirect_with_project('daily_log')
 
 
 # ==================== FILE UPLOAD ROUTES ====================
@@ -654,7 +784,7 @@ def upload_coi(company_id):
 @app.route('/rfis')
 @login_required
 def rfis_page():
-    rfis = RFI.query.order_by(RFI.created_at.desc()).all()
+    rfis = query_for_active_project(RFI).order_by(RFI.created_at.desc()).all()
     projects = Project.query.order_by(Project.name).all()
     return render_template('rfis.html', rfis=rfis, projects=projects)
 
@@ -671,7 +801,7 @@ def create_rfi():
 
         if not subject or not project_id:
             flash('Subject and Project are required.', 'error')
-            return redirect(url_for('rfis_page'))
+            return redirect_with_project('rfis_page')
 
         number = generate_next_number('RFI', RFI)
 
@@ -691,12 +821,12 @@ def create_rfi():
         db.session.commit()
 
         flash(f'RFI {number} created successfully!', 'success')
-        return redirect(url_for('rfis_page'))
+        return redirect_with_project('rfis_page')
 
     except Exception as e:
         db.session.rollback()
         flash(f'Error creating RFI: {str(e)}', 'error')
-        return redirect(url_for('rfis_page'))
+        return redirect_with_project('rfis_page')
 
 
 @app.route('/rfis/<int:rfi_id>/update-status', methods=['POST'])
@@ -730,7 +860,7 @@ def update_rfi_status(rfi_id):
 @app.route('/change-orders')
 @login_required
 def change_orders_page():
-    change_orders = ChangeOrder.query.order_by(ChangeOrder.created_at.desc()).all()
+    change_orders = query_for_active_project(ChangeOrder).order_by(ChangeOrder.created_at.desc()).all()
     projects = Project.query.order_by(Project.name).all()
     return render_template('change_orders.html', change_orders=change_orders, projects=projects)
 
@@ -747,7 +877,7 @@ def create_change_order():
 
         if not description or not project_id:
             flash('Description and Project are required.', 'error')
-            return redirect(url_for('change_orders_page'))
+            return redirect_with_project('change_orders_page')
 
         number = generate_next_number('CO', ChangeOrder)
 
@@ -767,12 +897,12 @@ def create_change_order():
         db.session.commit()
 
         flash(f'Change Order {number} created successfully!', 'success')
-        return redirect(url_for('change_orders_page'))
+        return redirect_with_project('change_orders_page')
 
     except Exception as e:
         db.session.rollback()
         flash(f'Error creating Change Order: {str(e)}', 'error')
-        return redirect(url_for('change_orders_page'))
+        return redirect_with_project('change_orders_page')
 
 
 # ==================== SUBMITTAL ROUTES ====================
@@ -780,22 +910,9 @@ def create_change_order():
 @app.route('/submittals')
 @login_required
 def submittals_page():
-    submittals = Submittal.query.order_by(Submittal.created_at.desc()).all()
+    submittals = query_for_active_project(Submittal).order_by(Submittal.created_at.desc()).all()
     projects = Project.query.order_by(Project.name).all()
-    project_id = request.args.get('project_id', type=int)
-    if not project_id:
-        stored = request.cookies.get('casepm_current_project_id')
-        try:
-            project_id = int(stored) if stored else None
-        except (TypeError, ValueError):
-            project_id = None
-    active_project = Project.query.get(project_id) if project_id else (projects[0] if projects else None)
-    return render_template(
-        'submittals.html',
-        submittals=submittals,
-        projects=projects,
-        active_project=active_project,
-    )
+    return render_template('submittals.html', submittals=submittals, projects=projects)
 
 
 @app.route('/submittals/create', methods=['POST'])
@@ -809,7 +926,7 @@ def create_submittal():
 
         if not description or not project_id:
             flash('Description and Project are required.', 'error')
-            return redirect(url_for('submittals_page'))
+            return redirect_with_project('submittals_page')
 
         number = generate_next_number('SUB', Submittal)
 
@@ -828,12 +945,12 @@ def create_submittal():
         db.session.commit()
 
         flash(f'Submittal {number} created successfully!', 'success')
-        return redirect(url_for('submittals_page'))
+        return redirect_with_project('submittals_page')
 
     except Exception as e:
         db.session.rollback()
         flash(f'Error creating Submittal: {str(e)}', 'error')
-        return redirect(url_for('submittals_page'))
+        return redirect_with_project('submittals_page')
 
 
 @app.route('/submittals/<int:submittal_id>/update-status', methods=['POST'])
@@ -857,7 +974,7 @@ def update_submittal_status(submittal_id):
 @app.route('/punch-list')
 @login_required
 def punch_list_page():
-    punch_items = PunchItem.query.order_by(PunchItem.created_at.desc()).all()
+    punch_items = query_for_active_project(PunchItem).order_by(PunchItem.created_at.desc()).all()
     projects = Project.query.order_by(Project.name).all()
     return render_template('punch_list.html', punch_items=punch_items, projects=projects)
 
@@ -875,7 +992,7 @@ def create_punch_item():
 
         if not description or not project_id:
             flash('Description and Project are required.', 'error')
-            return redirect(url_for('punch_list_page'))
+            return redirect_with_project('punch_list_page')
 
         number = generate_next_number('PL', PunchItem)
 
@@ -895,12 +1012,12 @@ def create_punch_item():
         db.session.commit()
 
         flash(f'Punch Item {number} created successfully!', 'success')
-        return redirect(url_for('punch_list_page'))
+        return redirect_with_project('punch_list_page')
 
     except Exception as e:
         db.session.rollback()
         flash(f'Error creating Punch Item: {str(e)}', 'error')
-        return redirect(url_for('punch_list_page'))
+        return redirect_with_project('punch_list_page')
 
 
 @app.route('/punch-list/<int:item_id>/update-status', methods=['POST'])
@@ -924,7 +1041,7 @@ def update_punch_status(item_id):
 @app.route('/safety')
 @login_required
 def safety_page():
-    reports = SafetyReport.query.order_by(SafetyReport.created_at.desc()).limit(50).all()
+    reports = query_for_active_project(SafetyReport).order_by(SafetyReport.created_at.desc()).limit(50).all()
     projects = Project.query.order_by(Project.name).all()
     return render_template('safety.html', reports=reports, projects=projects)
 
@@ -943,7 +1060,7 @@ def create_safety_report():
 
         if not description or not project_id:
             flash('Description and Project are required.', 'error')
-            return redirect(url_for('safety_page'))
+            return redirect_with_project('safety_page')
 
         number = generate_next_number('SAF', SafetyReport)
 
@@ -964,12 +1081,12 @@ def create_safety_report():
         db.session.commit()
 
         flash(f'Safety Report {number} created successfully!', 'success')
-        return redirect(url_for('safety_page'))
+        return redirect_with_project('safety_page')
 
     except Exception as e:
         db.session.rollback()
         flash(f'Error creating Safety Report: {str(e)}', 'error')
-        return redirect(url_for('safety_page'))
+        return redirect_with_project('safety_page')
 
 
 # ==================== SCHEDULE ROUTES ====================
@@ -978,9 +1095,7 @@ def create_safety_report():
 @login_required
 def schedule_page():
     projects = Project.query.order_by(Project.name).all()
-    project_id = request.args.get('project_id', type=int)
-    active_project = Project.query.get(project_id) if project_id else (projects[0] if projects else None)
-    return render_template('schedule.html', projects=projects, active_project=active_project)
+    return render_template('schedule.html', projects=projects)
 
 
 @app.route('/api/schedules/portfolio')
@@ -1113,7 +1228,7 @@ def create_schedule_task():
 
         if not description or not project_id:
             flash('Description and Project are required.', 'error')
-            return redirect(url_for('schedule_page'))
+            return redirect_with_project('schedule_page')
 
         number = generate_next_number('TSK', ScheduleTask)
 
@@ -1132,12 +1247,12 @@ def create_schedule_task():
         db.session.commit()
 
         flash(f'Schedule Task {number} created successfully!', 'success')
-        return redirect(url_for('schedule_page'))
+        return redirect_with_project('schedule_page')
 
     except Exception as e:
         db.session.rollback()
         flash(f'Error creating Schedule Task: {str(e)}', 'error')
-        return redirect(url_for('schedule_page'))
+        return redirect_with_project('schedule_page')
 
 
 
@@ -1259,7 +1374,7 @@ def delete_user(user_id):
 @app.route('/weekly-report')
 @login_required
 def weekly_report():
-    reports = WeeklyReport.query.order_by(WeeklyReport.week_ending.desc()).limit(20).all()
+    reports = query_for_active_project(WeeklyReport).order_by(WeeklyReport.week_ending.desc()).limit(20).all()
     projects = Project.query.order_by(Project.name).all()
     return render_template('weekly_report.html', reports=reports, projects=projects)
 
@@ -1275,7 +1390,7 @@ def create_weekly_report():
 
         if not project_id or not week_ending:
             flash('Project and Week Ending date are required.', 'error')
-            return redirect(url_for('weekly_report'))
+            return redirect_with_project('weekly_report')
 
         report = WeeklyReport(
             project_id=int(project_id),
@@ -1290,12 +1405,12 @@ def create_weekly_report():
         db.session.commit()
 
         flash('Weekly Report submitted successfully!', 'success')
-        return redirect(url_for('weekly_report'))
+        return redirect_with_project('weekly_report')
 
     except Exception as e:
         db.session.rollback()
         flash(f'Error creating Weekly Report: {str(e)}', 'error')
-        return redirect(url_for('weekly_report'))
+        return redirect_with_project('weekly_report')
 
 
 # ==================== PLACEHOLDER ROUTES (Prevent BuildError) ====================
@@ -1306,7 +1421,7 @@ def create_weekly_report():
 @login_required
 def photos_page():
     projects = Project.query.order_by(Project.name).all()
-    photos = Photo.query.order_by(Photo.created_at.desc()).limit(50).all()
+    photos = query_for_active_project(Photo).order_by(Photo.created_at.desc()).limit(50).all()
     return render_template('photos.html', projects=projects, photos=photos)
 
 

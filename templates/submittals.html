@@ -676,9 +676,30 @@ let specBookArchive = null; // { filename, uploadedAt, pageCount, sectionPageMap
 
 const SPEC_BOOK_DB_NAME = 'casepm_spec_books';
 const SPEC_BOOK_STORE = 'books';
-const SPEC_BOOK_ID = 'current';
-const SPEC_BOOK_META_KEY = 'specBookMeta_gear_fixed';
 const SPEC_BOOK_DB_VERSION = 2;
+
+function getSubmittalProjectId() {
+    const ctx = window.SUBMITTAL_PROJECT_CTX;
+    if (ctx && ctx.id) return String(ctx.id);
+    const stored = localStorage.getItem('casepm_current_project_id');
+    return stored || '0';
+}
+
+function getSpecBookStorageId() {
+    return `project_${getSubmittalProjectId()}`;
+}
+
+function getSubmittalsStorageKey() {
+    return `submittals_gear_fixed_p${getSubmittalProjectId()}`;
+}
+
+function getSpecSectionsStorageKey() {
+    return `specSections_gear_fixed_p${getSubmittalProjectId()}`;
+}
+
+function getSpecBookMetaKey() {
+    return `specBookMeta_gear_fixed_p${getSubmittalProjectId()}`;
+}
 
 // ==================== CENTERED DIALOGS (program style) ====================
 
@@ -900,14 +921,28 @@ const SUBMITTAL_TYPE_KEYWORDS = [
 
 // Load data
 function loadData() {
-    const saved = localStorage.getItem('submittals_gear_fixed');
+    let saved = localStorage.getItem(getSubmittalsStorageKey());
+    if (!saved) {
+        const legacy = localStorage.getItem('submittals_gear_fixed');
+        if (legacy) {
+            saved = legacy;
+            localStorage.setItem(getSubmittalsStorageKey(), legacy);
+        }
+    }
     if (saved) {
         submittals = JSON.parse(saved);
     } else {
-        submittals = []; // Start empty
+        submittals = [];
     }
     
-    const savedSpecs = localStorage.getItem('specSections_gear_fixed');
+    let savedSpecs = localStorage.getItem(getSpecSectionsStorageKey());
+    if (!savedSpecs) {
+        const legacySpecs = localStorage.getItem('specSections_gear_fixed');
+        if (legacySpecs) {
+            savedSpecs = legacySpecs;
+            localStorage.setItem(getSpecSectionsStorageKey(), legacySpecs);
+        }
+    }
     if (savedSpecs) {
         specSections = JSON.parse(savedSpecs);
     } else {
@@ -923,8 +958,8 @@ function loadData() {
 }
 
 function saveData() {
-    localStorage.setItem('submittals_gear_fixed', JSON.stringify(submittals));
-    localStorage.setItem('specSections_gear_fixed', JSON.stringify(specSections));
+    localStorage.setItem(getSubmittalsStorageKey(), JSON.stringify(submittals));
+    localStorage.setItem(getSpecSectionsStorageKey(), JSON.stringify(specSections));
 }
 
 // Update metrics
@@ -1394,7 +1429,7 @@ async function getSpecBookDbRecord() {
     const db = await openSpecBookDb();
     return new Promise((resolve, reject) => {
         const tx = db.transaction(SPEC_BOOK_STORE, 'readonly');
-        const req = tx.objectStore(SPEC_BOOK_STORE).get(SPEC_BOOK_ID);
+        const req = tx.objectStore(SPEC_BOOK_STORE).get(getSpecBookStorageId());
         req.onsuccess = () => resolve(req.result || null);
         req.onerror = () => reject(req.error);
     });
@@ -2604,7 +2639,7 @@ async function saveSpecBookArchive(file, meta) {
     const arrayBuffer = await file.arrayBuffer();
     const db = await openSpecBookDb();
     const record = {
-        id: SPEC_BOOK_ID,
+        id: getSpecBookStorageId(),
         filename: file.name,
         uploadedAt: new Date().toISOString(),
         pageCount: meta.pageCount,
@@ -2619,7 +2654,7 @@ async function saveSpecBookArchive(file, meta) {
         tx.onerror = () => reject(tx.error || new Error('Failed to save spec book to storage'));
     });
 
-    localStorage.setItem(SPEC_BOOK_META_KEY, JSON.stringify({
+    localStorage.setItem(getSpecBookMetaKey(), JSON.stringify({
         filename: record.filename,
         uploadedAt: record.uploadedAt,
         pageCount: record.pageCount,
@@ -2639,7 +2674,7 @@ async function saveSpecBookArchive(file, meta) {
 
 async function loadSpecBookArchive() {
     try {
-        const metaRaw = localStorage.getItem(SPEC_BOOK_META_KEY);
+        const metaRaw = localStorage.getItem(getSpecBookMetaKey());
         if (!metaRaw) {
             specBookArchive = null;
             return null;
@@ -2648,7 +2683,7 @@ async function loadSpecBookArchive() {
         const db = await openSpecBookDb();
         const record = await new Promise((resolve, reject) => {
             const tx = db.transaction(SPEC_BOOK_STORE, 'readonly');
-            const req = tx.objectStore(SPEC_BOOK_STORE).get(SPEC_BOOK_ID);
+            const req = tx.objectStore(SPEC_BOOK_STORE).get(getSpecBookStorageId());
             req.onsuccess = () => resolve(req.result || null);
             req.onerror = () => reject(req.error);
         });
