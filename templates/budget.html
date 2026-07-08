@@ -86,6 +86,7 @@
         <div class="bg-zinc-800 border border-zinc-700 rounded-md p-5">
             <div class="text-sm text-zinc-400">Contract Amount</div>
             <div id="contractAmount" class="text-xl font-semibold mt-1">$2,450,000</div>
+            <div id="contractAmountSource" class="text-[10px] text-zinc-500 mt-0.5"></div>
         </div>
         <div class="bg-zinc-800 border border-zinc-700 rounded-md p-5">
             <div class="text-sm text-zinc-400">Original Budget</div>
@@ -379,8 +380,21 @@
 
 <script>
     // ==================== DATA & STATE ====================
+    const SERVER_ORIGINAL_CONTRACT_AMOUNT = {{ project_original_contract_amount|tojson if project_original_contract_amount is not none else 'null' }};
     const SERVER_CONTRACT_VALUE = {{ project_contract_value|tojson if project_contract_value is not none else 'null' }};
+    const SERVER_CONTRACT_AMOUNT = {{ project_contract_amount|tojson if project_contract_amount is not none else 'null' }};
+    const SERVER_CONTRACT_AMOUNT_SOURCE = {{ project_contract_amount_source|tojson if project_contract_amount_source else 'null' }};
     const SERVER_SAGE_JOB = {{ (project_sage_job or '')|tojson }};
+
+    function resolveServerContractAmount() {
+        return SERVER_CONTRACT_AMOUNT || SERVER_ORIGINAL_CONTRACT_AMOUNT || SERVER_CONTRACT_VALUE || null;
+    }
+
+    function contractAmountSourceLabel() {
+        if (SERVER_CONTRACT_AMOUNT_SOURCE === 'original_contract') return 'From project original contract';
+        if (SERVER_CONTRACT_AMOUNT_SOURCE === 'contract_value') return 'From project contract value';
+        return '';
+    }
 
     let budgetLines = [];
     let pendingChanges = [];
@@ -433,7 +447,7 @@
         customCostCodes = JSON.parse(casepmStore.getItem('customCostCodes') || '[]');
         activeCostCodeList = casepmStore.getItem('activeCostCodeList') || 'csi';
         const storedContract = parseFloat(casepmStore.getItem('budgetContractAmount') || '');
-        contractAmount = storedContract || SERVER_CONTRACT_VALUE || 2450000;
+        contractAmount = storedContract || resolveServerContractAmount() || 2450000;
         budgetSageSyncLog = JSON.parse(casepmStore.getItem('budgetSageSyncLog') || '[]');
     }
 
@@ -2581,14 +2595,17 @@
                 await CasePMWorkflow.loadPortal().catch(() => {});
             }
             reloadBudgetStateFromStorage();
-            if (SERVER_CONTRACT_VALUE && !casepmStore.getItem('budgetContractAmount')) {
-                contractAmount = SERVER_CONTRACT_VALUE;
+            const serverAmt = resolveServerContractAmount();
+            if (serverAmt && !casepmStore.getItem('budgetContractAmount')) {
+                contractAmount = serverAmt;
                 casepmStore.setItem('budgetContractAmount', String(contractAmount));
             }
             await loadPendingChangeOrders();
 
             const contractEl = document.getElementById('contractAmount');
             if (contractEl) contractEl.textContent = formatCurrency(contractAmount);
+            const sourceEl = document.getElementById('contractAmountSource');
+            if (sourceEl) sourceEl.textContent = contractAmountSourceLabel();
 
             renderBudgetTable(budgetLines);
             updateTotals();

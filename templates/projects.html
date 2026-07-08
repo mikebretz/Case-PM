@@ -167,6 +167,7 @@
                     <th class="px-3 py-2.5 text-center font-medium w-24">Start</th>
                     <th class="px-3 py-2.5 text-center font-medium w-24">Est. Complete</th>
                     <th class="px-3 py-2.5 text-center font-medium w-20">% Done</th>
+                    <th class="px-3 py-2.5 text-center font-medium w-20">Sage</th>
                     <th class="px-3 py-2.5 text-center font-medium w-28">Status</th>
                     <th class="px-3 py-2.5 text-center font-medium w-20">Actions</th>
                 </tr>
@@ -206,6 +207,10 @@
                         </div>
                     </td>
                     <td class="px-3 py-2 text-center">
+                        {% set sage = sage_statuses.get(project.id, {}) %}
+                        <span class="text-[10px] font-medium {{ sage.get('class', 'text-zinc-400') }}" title="{{ sage.get('detail', '') }}">{{ sage.get('label', '—') }}</span>
+                    </td>
+                    <td class="px-3 py-2 text-center">
                         <select onchange="updateProjectStatus({{ project.id }}, this.value)"
                                 onclick="event.stopPropagation()"
                                 class="bg-zinc-800 border border-zinc-700 rounded px-2 py-1 text-[11px] max-w-[110px]">
@@ -226,7 +231,7 @@
                 </tr>
                 {% else %}
                 <tr>
-                    <td colspan="12" class="px-6 py-16 text-center text-zinc-500">
+                    <td colspan="13" class="px-6 py-16 text-center text-zinc-500">
                         <i class="fa-solid fa-folder-open text-3xl mb-3 block text-zinc-600"></i>
                         No projects yet. Click <strong class="text-white">New Project</strong> to create your first job.
                     </td>
