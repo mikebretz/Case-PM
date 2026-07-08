@@ -55,14 +55,14 @@ body:has(.schedule-page-root) #mainContent {
 }
 
 #scheduleChrome { flex-shrink: 0; z-index: 20; }
-#scheduleGanttHost { flex: 1; min-height: 0; overflow: hidden; background: var(--sched-bg); position: relative; }
+#scheduleGanttHost { flex: 1; min-height: 0; overflow: hidden; background: var(--sched-bg); position: relative; isolation: isolate; }
 #gantt_here { width: 100%; height: 100%; position: relative; z-index: 1; }
 
-/* Overlay controls layer — resizer only; pan slider lives inside timeline cell */
+/* Overlay controls layer — resizer visual + host captures drag near boundary */
 .schedule-overlay-controls {
     position: absolute;
     inset: 0;
-    z-index: 100;
+    z-index: 200;
     pointer-events: none;
 }
 .schedule-chart-resizer {
@@ -70,8 +70,8 @@ body:has(.schedule-page-root) #mainContent {
     top: 0;
     bottom: 0;
     width: 14px;
-    margin-right: -7px;
-    z-index: 110;
+    margin-left: -7px;
+    z-index: 210;
     cursor: col-resize;
     pointer-events: auto;
     touch-action: none;
@@ -90,6 +90,11 @@ body.schedule-chart-resizing {
 }
 body.schedule-chart-resizing #gantt_here .gantt_layout_cell:nth-child(3) {
     pointer-events: none !important;
+}
+.schedule-chart-width-slider {
+    accent-color: #10b981;
+    height: 4px;
+    cursor: pointer;
 }
 
 /* Toolbar uses theme tokens */
@@ -179,7 +184,7 @@ body.schedule-chart-resizing #gantt_here .gantt_layout_cell:nth-child(3) {
 }
 .schedule-overlay-mode #gantt_here .gantt_row,
 .schedule-overlay-mode #gantt_here .gantt_task_row {
-    min-height: 26px !important;
+    min-height: 30px !important;
 }
 .schedule-overlay-mode #gantt_here .gantt_layout_cell:nth-child(3) {
     position: absolute !important;
@@ -452,7 +457,7 @@ body.schedule-chart-resizing #gantt_here .gantt_layout_cell:nth-child(3) {
 }
 .gantt_grid_data .gantt_row,
 .gantt_task_row {
-    min-height: 26px !important;
+    min-height: 30px !important;
 }
 .gantt_cell, .gantt_grid_head_cell {
     border-color: #3f3f46 !important;
@@ -719,6 +724,42 @@ body:has(.schedule-page-root) #scheduleFieldPickerModal {
         padding-bottom: 10px;
         margin-bottom: 12px;
     }
+    .sched-print-meta-block {
+        border-bottom: 1px solid #ccc;
+        padding-bottom: 8px;
+        margin-bottom: 10px;
+    }
+    .sched-print-hf {
+        display: grid;
+        grid-template-columns: 1fr 1fr 1fr;
+        align-items: center;
+        gap: 8px;
+        font-family: Arial, Helvetica, sans-serif;
+        color: #111;
+        font-size: 9pt;
+    }
+    .sched-print-hf-header {
+        border-bottom: 2px solid #111;
+        padding-bottom: 8px;
+        margin-bottom: 10px;
+    }
+    .sched-print-hf-footer {
+        border-top: 1px solid #999;
+        padding-top: 8px;
+        margin-top: 14px;
+        color: #444;
+        font-size: 8pt;
+    }
+    .sched-print-hf-col { min-height: 1.2em; }
+    .sched-print-hf-left { text-align: left; display: flex; align-items: center; gap: 8px; }
+    .sched-print-hf-center { text-align: center; font-weight: 700; font-size: 14pt; }
+    .sched-print-hf-right { text-align: right; }
+    .sched-print-hf-logo {
+        max-height: 36px;
+        max-width: 120px;
+        object-fit: contain;
+    }
+    .sched-print-hf-text { line-height: 1.2; }
     .sched-print-brand {
         font-size: 9pt;
         text-transform: uppercase;
