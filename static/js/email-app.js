@@ -446,23 +446,23 @@
 
   function attachComposeDropZone(scope) {
     const root = scope || document;
-    const zone = root.querySelector('.email-compose-dropzone');
-    const body = root.querySelector('[data-compose-body]');
-    const targets = [zone, body].filter(Boolean);
+    const main = root.querySelector('.email-compose-editor-main');
+    const body = root.querySelector('#inlineComposeBody');
+    const targets = [main, body].filter(Boolean);
     if (!targets.length) return;
     function onDragOver(e) {
       e.preventDefault();
       e.stopPropagation();
-      if (zone) zone.classList.add('drag-over');
+      main?.classList.add('drag-over');
     }
     function onDragLeave(e) {
       e.preventDefault();
-      if (zone) zone.classList.remove('drag-over');
+      if (main && !main.contains(e.relatedTarget)) main.classList.remove('drag-over');
     }
     function onDrop(e) {
       e.preventDefault();
       e.stopPropagation();
-      if (zone) zone.classList.remove('drag-over');
+      main?.classList.remove('drag-over');
       addFilesToCompose(e.dataTransfer?.files);
     }
     targets.forEach(t => {
@@ -575,12 +575,16 @@
 
     const isDraft = state.workspace === 'mail' && (m.folder === 'drafts' || m.isDraft);
     if (isDraft) {
+      const parts = prepareComposeParts({ body: m.body || '', draftId: m.id, mode: 'draft' });
       state.inlineCompose = {
         mode: 'draft',
         to: (m.to || []).join(', '),
         cc: (m.cc || []).join(', '),
         bcc: (m.bcc || []).join(', '),
         subject: m.subject || '',
+        messageHtml: parts.messageHtml,
+        signatureHtml: parts.signatureHtml,
+        quoteHtml: parts.quoteHtml,
         body: m.body || '',
         draftId: m.id,
         showCcBcc: !!((m.cc && m.cc.length) || (m.bcc && m.bcc.length)),
@@ -873,78 +877,185 @@
     }
   }
 
+  let composeSelectionRange = null;
+  let composeSelectionEditor = null;
+
+  function prepareComposeParts(opts) {
+    const sigHtml = normalizeComposeHtml(
+      signatures.find(s => s.id === settings.defaultSignatureId)?.html || ''
+    );
+    const rawBody = opts?.body || '';
+    if (rawBody) {
+      const hrMatch = rawBody.match(/<hr\b/i);
+      if (hrMatch) {
+        const idx = rawBody.search(/<hr\b/i);
+        return {
+          messageHtml: rawBody.slice(0, idx),
+          signatureHtml: sigHtml,
+          quoteHtml: rawBody.slice(idx),
+        };
+      }
+      if (opts?.draftId || opts?.mode === 'draft') {
+        return { messageHtml: rawBody, signatureHtml: '', quoteHtml: '' };
+      }
+      return { messageHtml: rawBody, signatureHtml: '', quoteHtml: '' };
+    }
+    return { messageHtml: '', signatureHtml: sigHtml, quoteHtml: '' };
+  }
+
+  function getComposeEditorRoot(scope) {
+    return scope?.querySelector?.('#emailInlineCompose') ? scope : (scope || document);
+  }
+
+  function saveComposeSelection(scope) {
+    const root = getComposeEditorRoot(scope);
+    const sel = window.getSelection();
+    if (!sel || sel.rangeCount === 0) return;
+    const range = sel.getRangeAt(0);
+    const editors = root.querySelectorAll('#inlineComposeBody, #inlineComposeSignature');
+    for (const ed of editors) {
+      if (ed.contains(range.commonAncestorContainer)) {
+        composeSelectionRange = range.cloneRange();
+        composeSelectionEditor = ed;
+        return;
+      }
+    }
+  }
+
+  function restoreComposeSelection() {
+    if (!composeSelectionRange || !composeSelectionEditor) return false;
+    const sel = window.getSelection();
+    sel.removeAllRanges();
+    sel.addRange(composeSelectionRange);
+    return true;
+  }
+
+  function applyFontSizePt(pt) {
+    const size = Math.max(8, Math.min(72, Number(pt) || 14));
+    const sel = window.getSelection();
+    if (!sel || sel.rangeCount === 0) return;
+    const range = sel.getRangeAt(0);
+    if (range.collapsed) {
+      document.execCommand('fontSize', false, '7');
+      composeSelectionEditor?.querySelectorAll('font[size="7"]').forEach(node => {
+        const span = document.createElement('span');
+        span.style.fontSize = size + 'pt';
+        span.innerHTML = node.innerHTML;
+        node.replaceWith(span);
+      });
+      return;
+    }
+    const span = document.createElement('span');
+    span.style.fontSize = size + 'pt';
+    try {
+      range.surroundContents(span);
+    } catch {
+      const extracted = range.extractContents();
+      span.appendChild(extracted);
+      range.insertNode(span);
+    }
+    range.setStartAfter(span);
+    range.collapse(true);
+    sel.removeAllRanges();
+    sel.addRange(range);
+    composeSelectionRange = range.cloneRange();
+  }
+
+  function runComposeCommand(cmd, value) {
+    const editor = composeSelectionEditor
+      || document.getElementById('inlineComposeBody')
+      || document.getElementById('inlineComposeSignature');
+    if (!editor) return;
+    editor.focus();
+    restoreComposeSelection();
+    try { document.execCommand('styleWithCSS', false, true); } catch { /* ignore */ }
+    if (cmd === 'fontSizePt') {
+      applyFontSizePt(value);
+    } else if (cmd === 'foreColor') {
+      document.execCommand('foreColor', false, value);
+    } else {
+      document.execCommand(cmd, false, value ?? null);
+    }
+    saveComposeSelection(composeSelectionEditor.closest('#emailInlineCompose') || document);
+  }
+
+  function getComposeFullHtml() {
+    const msg = document.getElementById('inlineComposeBody')?.innerHTML || '';
+    const sig = document.getElementById('inlineComposeSignature')?.innerHTML || '';
+    const quote = document.getElementById('inlineComposeQuote')?.innerHTML || '';
+    return msg + sig + quote;
+  }
+
   function renderComposeToolbarHTML() {
     return `
-      <div class="email-compose-rail" id="emailComposeToolbar" role="toolbar" aria-label="Formatting">
-        <button type="button" class="email-compose-rail-btn" data-cmd="bold" title="Bold"><i class="fa-solid fa-bold"></i></button>
-        <button type="button" class="email-compose-rail-btn" data-cmd="italic" title="Italic"><i class="fa-solid fa-italic"></i></button>
-        <button type="button" class="email-compose-rail-btn" data-cmd="underline" title="Underline"><i class="fa-solid fa-underline"></i></button>
-        <span class="email-compose-rail-divider"></span>
-        <select class="email-compose-rail-select" data-cmd="fontSize" title="Text size" aria-label="Text size">
-          <option value="2">S</option>
-          <option value="3" selected>N</option>
-          <option value="4">L</option>
-          <option value="5">XL</option>
-          <option value="6">XXL</option>
-        </select>
+      <span class="email-compose-toolbar-divider"></span>
+      <div class="email-compose-toolbar" id="emailComposeToolbar" role="toolbar" aria-label="Formatting">
+        <button type="button" class="email-compose-toolbar-btn" data-cmd="bold" title="Bold"><i class="fa-solid fa-bold"></i></button>
+        <button type="button" class="email-compose-toolbar-btn" data-cmd="italic" title="Italic"><i class="fa-solid fa-italic"></i></button>
+        <button type="button" class="email-compose-toolbar-btn" data-cmd="underline" title="Underline"><i class="fa-solid fa-underline"></i></button>
+        <span class="email-compose-toolbar-divider"></span>
+        <input type="number" class="email-compose-font-size" id="composeFontSize" min="8" max="72" value="14" title="Font size (pt)" aria-label="Font size in points">
+        <span class="text-[10px] text-zinc-500">pt</span>
         <input type="color" class="email-compose-color" data-cmd="foreColor" title="Text color" value="#e4e4e7" aria-label="Text color">
-        <span class="email-compose-rail-divider"></span>
-        <button type="button" class="email-compose-rail-btn" data-cmd="insertUnorderedList" title="Bullet list"><i class="fa-solid fa-list-ul"></i></button>
-        <button type="button" class="email-compose-rail-btn" data-cmd="insertOrderedList" title="Numbered list"><i class="fa-solid fa-list-ol"></i></button>
-        <span class="email-compose-rail-divider"></span>
-        <button type="button" class="email-compose-rail-btn" data-cmd="justifyLeft" title="Align left"><i class="fa-solid fa-align-left"></i></button>
-        <button type="button" class="email-compose-rail-btn" data-cmd="removeFormat" title="Clear formatting"><i class="fa-solid fa-eraser"></i></button>
+        <span class="email-compose-toolbar-divider"></span>
+        <button type="button" class="email-compose-toolbar-btn" data-cmd="insertUnorderedList" title="Bullet list"><i class="fa-solid fa-list-ul"></i></button>
+        <button type="button" class="email-compose-toolbar-btn" data-cmd="insertOrderedList" title="Numbered list"><i class="fa-solid fa-list-ol"></i></button>
+        <button type="button" class="email-compose-toolbar-btn" data-cmd="justifyLeft" title="Align left"><i class="fa-solid fa-align-left"></i></button>
+        <button type="button" class="email-compose-toolbar-btn" data-cmd="removeFormat" title="Clear formatting"><i class="fa-solid fa-eraser"></i></button>
       </div>`;
   }
 
   function attachComposeEditor(scope) {
-    const root = scope || document;
+    const root = getComposeEditorRoot(scope);
     const toolbar = root.querySelector('#emailComposeToolbar');
     const body = root.querySelector('#inlineComposeBody');
+    const signature = root.querySelector('#inlineComposeSignature');
     if (!body) return;
 
-    body.style.textAlign = 'left';
-    body.setAttribute('dir', 'ltr');
-    body.querySelectorAll('p, div, li').forEach(el => { el.style.textAlign = 'left'; });
+    [body, signature].filter(Boolean).forEach(ed => {
+      ed.style.textAlign = 'left';
+      ed.setAttribute('dir', 'ltr');
+      ed.addEventListener('keyup', () => saveComposeSelection(root));
+      ed.addEventListener('mouseup', () => saveComposeSelection(root));
+      ed.addEventListener('focus', () => { composeSelectionEditor = ed; saveComposeSelection(root); });
+    });
 
     if (!toolbar) return;
+    toolbar.dataset.bound = '1';
 
-    function focusBody() { body.focus(); }
+    toolbar.addEventListener('mousedown', e => {
+      e.preventDefault();
+      saveComposeSelection(root);
+    });
 
     toolbar.querySelectorAll('button[data-cmd]').forEach(btn => {
-      btn.addEventListener('mousedown', e => e.preventDefault());
-      btn.addEventListener('click', () => {
-        focusBody();
-        const cmd = btn.dataset.cmd;
-        document.execCommand(cmd, false, null);
-        btn.classList.toggle('active', cmd === 'bold' || cmd === 'italic' || cmd === 'underline'
-          ? document.queryCommandState(cmd) : false);
+      btn.addEventListener('click', e => {
+        e.preventDefault();
+        runComposeCommand(btn.dataset.cmd);
+        if (['bold', 'italic', 'underline'].includes(btn.dataset.cmd)) {
+          btn.classList.toggle('active', document.queryCommandState(btn.dataset.cmd));
+        }
       });
     });
 
-    const sizeSelect = toolbar.querySelector('select[data-cmd="fontSize"]');
-    if (sizeSelect) {
-      sizeSelect.addEventListener('mousedown', e => e.stopPropagation());
-      sizeSelect.addEventListener('change', () => {
-        focusBody();
-        if (sizeSelect.value) document.execCommand('fontSize', false, sizeSelect.value);
+    const sizeInput = toolbar.querySelector('#composeFontSize');
+    if (sizeInput) {
+      sizeInput.addEventListener('change', () => runComposeCommand('fontSizePt', sizeInput.value));
+      sizeInput.addEventListener('keydown', e => {
+        if (e.key === 'Enter') {
+          e.preventDefault();
+          runComposeCommand('fontSizePt', sizeInput.value);
+        }
       });
     }
 
     const colorInput = toolbar.querySelector('input[data-cmd="foreColor"]');
     if (colorInput) {
-      colorInput.addEventListener('mousedown', e => e.stopPropagation());
-      colorInput.addEventListener('input', () => {
-        focusBody();
-        document.execCommand('foreColor', false, colorInput.value);
-      });
+      colorInput.addEventListener('input', () => runComposeCommand('foreColor', colorInput.value));
     }
 
-    body.addEventListener('keyup', () => {
-      toolbar.querySelectorAll('button[data-cmd="bold"], button[data-cmd="italic"], button[data-cmd="underline"]').forEach(btn => {
-        btn.classList.toggle('active', document.queryCommandState(btn.dataset.cmd));
-      });
-    });
+    body.focus();
+    composeSelectionEditor = body;
   }
 
   function initComposeSurface(scope) {
@@ -992,11 +1103,11 @@
           </div>
         </div>
         <div class="email-compose-editor-wrap">
-          ${renderComposeToolbarHTML()}
-          <div class="email-compose-editor-main">
-            <div id="inlineComposeBody" contenteditable="true" data-compose-body class="email-inline-compose-body email-compose-dropzone">${c.body || ''}</div>
-            <div class="email-compose-dropzone px-4" data-compose-body>Drag &amp; drop files here to attach</div>
-            <div data-compose-attachments class="px-4 pb-2">${renderAttachmentChips(attachments, 'CasePMEmail.removeComposeAttachment')}</div>
+          <div class="email-compose-editor-main email-compose-dropzone">
+            <div id="inlineComposeBody" contenteditable="true" data-compose-body class="email-inline-compose-body">${c.messageHtml ?? c.body ?? ''}</div>
+            ${(c.signatureHtml !== undefined && c.signatureHtml !== '') || (!c.quoteHtml && c.mode !== 'draft' && !c.draftId) ? `<div id="inlineComposeSignature" contenteditable="true" data-compose-body class="email-compose-signature">${c.signatureHtml || ''}</div>` : ''}
+            ${c.quoteHtml ? `<div id="inlineComposeQuote" class="email-compose-quote" contenteditable="false">${c.quoteHtml}</div>` : ''}
+            <div data-compose-attachments class="px-4 pb-2 flex-shrink-0">${renderAttachmentChips(attachments, 'CasePMEmail.removeComposeAttachment')}</div>
           </div>
         </div>
         <input type="file" multiple class="hidden" data-compose-file-input id="inlineComposeFileInput">
@@ -1005,10 +1116,11 @@
           <input type="datetime-local" id="inlineComposeScheduleAt" class="email-field-input mt-1">
         </div>
         <div class="email-inline-compose-footer">
-          <div class="flex gap-1">
+          <div class="flex items-center gap-1 flex-wrap flex-1 min-w-0">
             <button type="button" class="email-toolbar-btn" title="Attach file" onclick="document.getElementById('inlineComposeFileInput')?.click()"><i class="fa-solid fa-paperclip"></i></button>
             <button type="button" class="email-toolbar-btn" title="Schedule send" onclick="document.getElementById('inlineComposeScheduleRow').classList.toggle('hidden')"><i class="fa-solid fa-clock"></i></button>
             <button type="button" class="email-toolbar-btn" title="Save draft" onclick="CasePMEmail.saveDraft()"><i class="fa-solid fa-file-pen"></i></button>
+            ${renderComposeToolbarHTML()}
           </div>
           <div class="flex gap-2">
             <button type="button" onclick="CasePMEmail.undoSend()" class="text-xs text-zinc-400 hover:text-white">Undo</button>
@@ -1261,14 +1373,17 @@
   }
 
   function compose(opts) {
-    const sigHtml = signatures.find(s => s.id === settings.defaultSignatureId)?.html || '';
+    const parts = prepareComposeParts(opts || {});
     state.inlineCompose = {
       mode: opts?.draftId ? 'draft' : (opts?.mode || 'new'),
       to: opts?.to || '',
       cc: opts?.cc || '',
       bcc: opts?.bcc || '',
       subject: opts?.subject || '',
-      body: opts?.body || normalizeComposeHtml(sigHtml),
+      messageHtml: parts.messageHtml,
+      signatureHtml: parts.signatureHtml,
+      quoteHtml: parts.quoteHtml,
+      body: parts.messageHtml + parts.signatureHtml + parts.quoteHtml,
       draftId: opts?.draftId || null,
       replyToId: opts?.replyToId || null,
       showCcBcc: !!(opts?.cc || opts?.bcc),
@@ -1296,7 +1411,7 @@
   function saveDraft() {
     const to = document.getElementById('inlineComposeTo')?.value.trim() || '';
     const subject = document.getElementById('inlineComposeSubject')?.value.trim() || '';
-    const body = document.getElementById('inlineComposeBody')?.innerHTML || '';
+    const body = getComposeFullHtml();
     const draft = {
       id: state.inlineCompose?.draftId || uid(),
       folder: 'drafts', category: 'primary', focused: true,
@@ -1322,7 +1437,7 @@
   function sendMail(scheduled) {
     const to = document.getElementById('inlineComposeTo')?.value.trim();
     const subject = document.getElementById('inlineComposeSubject')?.value.trim();
-    const body = document.getElementById('inlineComposeBody')?.innerHTML;
+    const body = getComposeFullHtml();
     if (!to) { toast('Add at least one recipient.', 'error'); return; }
     const scheduleVal = document.getElementById('inlineComposeScheduleAt')?.value;
     const draftId = state.inlineCompose?.draftId;
