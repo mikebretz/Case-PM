@@ -428,14 +428,14 @@
         if (scheduleSettings.timeline_width_px >= 180) {
             return Math.max(200, Math.min(hostW - 100, scheduleSettings.timeline_width_px));
         }
-        const pct = scheduleSettings.timeline_pct ?? 0.42;
+        const pct = scheduleSettings.timeline_pct ?? 0.75;
         return Math.max(240, Math.min(hostW - 100, Math.round(hostW * pct)));
     }
 
     function syncLayoutTimelineWidth() {
         const w = scheduleSettings.timeline_width_px >= 180
             ? scheduleSettings.timeline_width_px
-            : Math.max(240, Math.round((document.getElementById('gantt_here')?.offsetWidth || 1000) * (scheduleSettings.timeline_pct ?? 0.42)));
+            : Math.max(240, Math.round((document.getElementById('gantt_here')?.offsetWidth || 1000) * (scheduleSettings.timeline_pct ?? 0.75)));
         if (gantt.config.layout?.cols?.[2]) gantt.config.layout.cols[2].width = w;
     }
 
@@ -483,14 +483,44 @@
     }
 
     function syncColumnResizeHandlePositions() {
+        if (!ganttReady || !gantt.config.columns) return;
         const scale = document.querySelector('#gantt_here .gantt_grid_scale');
         if (!scale) return;
+        scale.style.position = 'relative';
+        scale.style.overflow = 'visible';
+
+        const cols = gantt.config.columns;
+        const headCells = scale.querySelectorAll('.gantt_grid_head_cell');
+        const wraps = scale.querySelectorAll('.gantt_grid_column_resize_wrap');
         let x = 0;
-        scale.querySelectorAll(':scope > *').forEach(el => {
-            if (el.classList.contains('gantt_grid_head_cell')) {
-                x += el.offsetWidth;
-            } else if (el.classList.contains('gantt_grid_column_resize_wrap')) {
-                el.style.left = Math.max(0, x - 5) + 'px';
+
+        headCells.forEach((cell, i) => {
+            const w = parseInt(cols[i]?.width, 10) || parseInt(cell.style.width, 10) || 80;
+            x += w;
+            if (i >= wraps.length) return;
+            const wrap = wraps[i];
+            wrap.style.cssText = [
+                'position:absolute',
+                `left:${Math.max(0, x - 2)}px`,
+                'top:0',
+                'bottom:0',
+                'width:8px',
+                'margin-left:-4px',
+                'z-index:55',
+                'pointer-events:auto',
+                'cursor:col-resize'
+            ].join(';');
+            const tick = wrap.querySelector('.gantt_grid_column_resize');
+            if (tick) {
+                tick.style.cssText = [
+                    'display:block',
+                    'width:4px',
+                    'height:100%',
+                    'min-height:42px',
+                    'margin:0 auto',
+                    'background-color:#10b981',
+                    'opacity:0.95'
+                ].join(';');
             }
         });
     }
@@ -555,21 +585,22 @@
 
         ensureTimelineOverlayWidgets(timelineCell);
 
-        let handle = document.getElementById('scheduleChartResizer');
-        if (!handle) {
-            handle = document.createElement('div');
-            handle.id = 'scheduleChartResizer';
-            handle.className = 'schedule-chart-resizer';
-            handle.title = 'Drag to resize chart overlay';
-            root.appendChild(handle);
+        const hostWrap = document.getElementById('scheduleGanttHost');
+        const handle = document.getElementById('scheduleChartResizer');
+        if (handle && hostWrap && timelineCell) {
+            const hostRect = hostWrap.getBoundingClientRect();
+            const edgeLeft = hostRect.right - timelineW;
+            handle.style.position = 'fixed';
+            handle.style.top = hostRect.top + 'px';
+            handle.style.height = hostRect.height + 'px';
+            handle.style.bottom = 'auto';
+            handle.style.left = (edgeLeft - 12) + 'px';
+            handle.style.right = 'auto';
+            handle.style.width = '24px';
+            handle.style.marginLeft = '0';
+            handle.classList.remove('hidden');
         }
-        handle.classList.remove('hidden');
-        handle.style.left = 'auto';
-        handle.style.right = (timelineW - 5) + 'px';
-
-        root.querySelectorAll('.schedule-chart-resizer').forEach(el => {
-            if (el !== handle) el.remove();
-        });
+        document.querySelector('#gantt_here .gantt_layout_root > .schedule-chart-resizer')?.remove();
 
         syncLayoutTimelineWidth();
         ensureTimelineScrollbar();
@@ -582,45 +613,58 @@
         overlayApplyTimer = setTimeout(applyChartOverlay, 16);
     }
 
-    const overlayDrag = { active: false, bound: false, startX: 0, startW: 0, pointerId: null };
+    const overlayDrag = { active: false, pointerId: null };
 
     function initChartOverlayDrag() {
-        if (initChartOverlayDrag.done) return;
+        const handle = document.getElementById('scheduleChartResizer');
+        if (!handle || initChartOverlayDrag.done) return;
         initChartOverlayDrag.done = true;
 
-        document.addEventListener('mousedown', e => {
-            const handle = document.getElementById('scheduleChartResizer');
-            if (!handle || (e.target !== handle && !handle.contains(e.target))) return;
-            overlayDrag.active = true;
-            overlayDrag.startX = e.clientX;
-            overlayDrag.startW = scheduleSettings.timeline_width_px >= 180
-                ? scheduleSettings.timeline_width_px
-                : getTimelineWidth();
-            e.preventDefault();
-            e.stopPropagation();
-        }, true);
-
-        document.addEventListener('mousemove', e => {
+        const onMove = e => {
             if (!overlayDrag.active) return;
-            const hostEl = document.getElementById('gantt_here');
-            if (!hostEl) return;
-            const rect = hostEl.getBoundingClientRect();
-            const timelineW = Math.max(200, Math.min(rect.width - 120, rect.right - e.clientX));
+            const hostWrap = document.getElementById('scheduleGanttHost');
+            if (!hostWrap) return;
+            const rect = hostWrap.getBoundingClientRect();
+            const timelineW = Math.max(280, Math.min(rect.width - 120, rect.right - e.clientX));
             scheduleSettings.timeline_width_px = timelineW;
             scheduleSettings.timeline_pct = timelineW / rect.width;
             applyChartOverlay();
-        }, true);
+        };
 
-        document.addEventListener('mouseup', () => {
+        const endResize = e => {
             if (!overlayDrag.active) return;
             overlayDrag.active = false;
+            document.body.classList.remove('schedule-chart-resizing');
+            if (overlayDrag.pointerId != null) {
+                try { handle.releasePointerCapture(overlayDrag.pointerId); } catch (err) { /* ok */ }
+            }
+            overlayDrag.pointerId = null;
             queueSave();
-        }, true);
+        };
+
+        handle.addEventListener('pointerdown', e => {
+            if (e.button !== 0) return;
+            overlayDrag.active = true;
+            overlayDrag.pointerId = e.pointerId;
+            document.body.classList.add('schedule-chart-resizing');
+            e.preventDefault();
+            e.stopPropagation();
+            try { handle.setPointerCapture(e.pointerId); } catch (err) { /* ok */ }
+        });
+        handle.addEventListener('pointermove', onMove);
+        handle.addEventListener('pointerup', endResize);
+        handle.addEventListener('pointercancel', endResize);
+        window.addEventListener('pointermove', onMove);
+        window.addEventListener('pointerup', endResize);
+        window.addEventListener('scroll', () => { if (ganttReady) applyChartOverlay(); }, true);
     }
 
     function initChartOverlay() {
         if (scheduleSettings.timeline_width_px == null && scheduleSettings.timeline_pct == null) {
-            scheduleSettings.timeline_pct = 0.42;
+            scheduleSettings.timeline_pct = 0.75;
+        } else if (scheduleSettings.timeline_pct != null && scheduleSettings.timeline_pct < 0.55) {
+            scheduleSettings.timeline_pct = 0.75;
+            scheduleSettings.timeline_width_px = null;
         }
         document.getElementById('scheduleGanttHost')?.classList.add('schedule-overlay-mode');
         initChartOverlayDrag();
@@ -1125,8 +1169,8 @@
 
     function updateRowHeightsForLabels() {
         const showLabels = scheduleSettings.show_bar_labels !== false;
-        gantt.config.row_height = showLabels ? 56 : 44;
-        gantt.config.bar_height = showLabels ? 22 : 26;
+        gantt.config.row_height = showLabels ? 26 : 22;
+        gantt.config.bar_height = showLabels ? 10 : 12;
     }
 
     function taskDateInputValue(task, field) {
@@ -1788,8 +1832,8 @@
         gantt.config.skip_off_time = false;
         gantt.config.duration_unit = 'day';
         gantt.config.time_step = 1440;
-        gantt.config.row_height = 44;
-        gantt.config.bar_height = 26;
+        gantt.config.row_height = 22;
+        gantt.config.bar_height = 12;
         updateRowHeightsForLabels();
         gantt.config.scale_height = 88;
         updateScaleHeight();
@@ -1834,7 +1878,7 @@
                 },
                 { resizer: true, width: 1 },
                 {
-                    width: Math.max(360, Math.round((document.getElementById('gantt_here')?.offsetWidth || 1000) * 0.42)),
+                    width: Math.max(360, Math.round((document.getElementById('gantt_here')?.offsetWidth || 1000) * 0.75)),
                     min_width: 220,
                     rows: [
                         { view: 'timeline', scrollX: 'scrollHor', scrollY: 'scrollVer' },
@@ -2022,6 +2066,7 @@
             updateDeadlineMarkers();
             ensureTimelineScrollbar();
             restoreTimelineScrollAfterRender();
+            applyGridColumnWidthStyles();
             syncColumnResizeHandlePositions();
             refreshTimelinePanBar();
         });
@@ -2537,12 +2582,27 @@
         queueSave();
     }
 
+    function getRootProjectId() {
+        let rootId = null;
+        gantt.eachTask(t => {
+            if (!rootId && (t.parent === 0 || t.parent == null) && t.type === 'project') rootId = t.id;
+        });
+        return rootId;
+    }
+
     function outdentSelected() {
         const id = gantt.getSelectedId();
         if (!id) return showScheduleAlert('Select an activity to outdent.', 'warning');
+        const rootId = getRootProjectId();
+        if (rootId != null && String(id) === String(rootId)) {
+            return showScheduleAlert('The main project summary cannot be outdented.', 'warning');
+        }
         const parent = gantt.getParent(id);
         if (!parent || parent === 0) return showScheduleAlert('Activity is already at top level.', 'warning');
         const grandParent = gantt.getParent(parent) || 0;
+        if (grandParent === 0 || grandParent === '0') {
+            return showScheduleAlert('Cannot outdent past the project summary — all activities must stay under the main construction task.', 'warning');
+        }
         const insertAt = gantt.getTaskIndex(parent) + 1;
         gantt.moveTask(id, insertAt, grandParent);
         demoteSummaryIfEmpty(parent);
