@@ -15,6 +15,7 @@
     templates: 'casepm_email_templates',
     blocked: 'casepm_email_blocked',
     safe: 'casepm_email_safe_senders',
+    customFolders: 'casepm_email_custom_folders',
   };
 
   const MAIL_FOLDERS = [
@@ -114,14 +115,13 @@
     search: '',
     searchAdvanced: null,
     sort: 'date_desc',
-    composeOpen: false,
-    composeMinimized: false,
     settingsOpen: false,
     rulesOpen: false,
     contactsOpen: false,
     filterUnread: false,
     filterFlagged: false,
     filterAttachments: false,
+    inlineCompose: null,
   };
 
   let mailMessages = [];
@@ -131,6 +131,7 @@
   let rules = [];
   let signatures = [];
   let templates = [];
+  let customFolders = [];
   let undoTimer = null;
   let ctx = { userName: 'User', userEmail: '', users: [], projectName: '' };
 
@@ -221,18 +222,89 @@
   function loadAll() {
     settings = { ...DEFAULT_SETTINGS, ...loadJson(STORAGE.settings, {}) };
     mailMessages = loadJson(STORAGE.mail, null) || seedMail();
-    internalMessages = loadJson(STORAGE.internal, null) || seedInternal();
     contacts = loadJson(STORAGE.contacts, null) || seedContacts();
     rules = loadJson(STORAGE.rules, []);
     signatures = loadJson(STORAGE.signatures, null) || seedSignatures();
     templates = loadJson(STORAGE.templates, null) || seedTemplates();
+    customFolders = loadJson(STORAGE.customFolders, []);
     if (!loadJson(STORAGE.mail, null)) persistMail();
+    internalMessages = [];
+    refreshInternalFromServer();
+  }
+
+  async function refreshInternalFromServer() {
+    try {
+      const res = await fetch('/api/internal-messages');
+      if (res.ok) {
+        const data = await res.json();
+        internalMessages = data.map(m => ({
+          id: m.id,
+          folder: m.folder,
+          type: m.type,
+          from: m.from,
+          fromUser: m.fromUser,
+          subject: m.subject,
+          preview: m.preview,
+          body: m.body,
+          date: m.date,
+          unread: m.unread,
+          priority: m.priority,
+          actionUrl: m.actionUrl,
+          actionLabel: m.actionLabel,
+          project: m.project,
+          module: m.module,
+          requiresAction: m.requiresAction,
+          approvalId: m.approvalId,
+          archived: m.archived,
+        }));
+        persistInternal();
+        render();
+        return;
+      }
+    } catch (e) {
+      console.warn('Internal messages API unavailable, using cache', e);
+    }
+    internalMessages = loadJson(STORAGE.internal, null) || seedInternal();
     if (!loadJson(STORAGE.internal, null)) persistInternal();
+    render();
   }
 
   function persistMail() { saveJson(STORAGE.mail, mailMessages); }
   function persistInternal() { saveJson(STORAGE.internal, internalMessages); }
   function persistSettings() { saveJson(STORAGE.settings, settings); global.CasePMEmailSettings = settings; }
+  function persistCustomFolders() { saveJson(STORAGE.customFolders, customFolders); }
+
+  function buildContactIndex() {
+    const map = new Map();
+    function add(name, email) {
+      if (!email) return;
+      const key = String(email).toLowerCase().trim();
+      if (!key) return;
+      if (!map.has(key)) map.set(key, { name: (name || '').trim() || email, email: key });
+    }
+    (ctx.users || []).forEach(u => add(u.name || u.full_name, u.email));
+    try {
+      const umUsers = loadJson('users', []);
+      if (Array.isArray(umUsers)) umUsers.forEach(u => add(u.name || u.full_name, u.email));
+    } catch { /* ignore */ }
+    contacts.forEach(c => add(c.name, c.email));
+    mailMessages.forEach(m => {
+      add(m.from, m.fromEmail);
+      (m.to || []).forEach(e => add('', e));
+      (m.cc || []).forEach(e => add('', e));
+      (m.bcc || []).forEach(e => add('', e));
+    });
+    return [...map.values()];
+  }
+
+  function filterContacts(query) {
+    const q = (query || '').toLowerCase().trim();
+    const all = buildContactIndex();
+    if (!q) return all.slice(0, 12);
+    return all.filter(c =>
+      c.email.includes(q) || (c.name && c.name.toLowerCase().includes(q))
+    ).slice(0, 12);
+  }
 
   function folderCount(folderId, workspace) {
     if (workspace === 'internal') {
@@ -243,6 +315,7 @@
     if (folderId === 'snoozed') return mailMessages.filter(m => m.snoozedUntil && new Date(m.snoozedUntil) > new Date()).length;
     if (folderId === 'focused') return mailMessages.filter(m => m.folder === 'inbox' && m.focused).length;
     if (folderId === 'other') return mailMessages.filter(m => m.folder === 'inbox' && !m.focused).length;
+    if (folderId.startsWith('custom_')) return mailMessages.filter(m => m.folder === folderId).length;
     return mailMessages.filter(m => m.folder === folderId && m.unread).length;
   }
 
@@ -258,6 +331,7 @@
       if (state.folder === 'snoozed') return m.snoozedUntil && new Date(m.snoozedUntil) > new Date();
       if (state.folder === 'focused') return m.folder === 'inbox' && m.focused;
       if (state.folder === 'other') return m.folder === 'inbox' && !m.focused;
+      if (state.folder.startsWith('custom_')) return m.folder === state.folder;
       return m.folder === state.folder;
     });
     if (state.category && settings.gmailCategories) list = list.filter(m => m.category === state.category);
@@ -292,31 +366,64 @@
 
   function getMessage(id) {
     const pool = state.workspace === 'internal' ? internalMessages : mailMessages;
-    return pool.find(m => m.id === id);
+    return pool.find(m => String(m.id) === String(id));
   }
 
   function render() {
-    renderWorkspaceTabs();
+    renderHeader();
     renderSidebar();
-    renderToolbar();
     renderMessageList();
     renderReadingPane();
     applyLayoutClasses();
-    updateComposeVisibility();
   }
 
-  function renderWorkspaceTabs() {
-    const el = document.getElementById('emailWorkspaceTabs');
+  function renderToolbarHTML() {
+    const isMail = state.workspace === 'mail';
+    const hasSel = state.selectedId || state.selectedIds.size > 0;
+    return `
+      <div class="flex items-center gap-1 flex-wrap">
+        ${isMail ? `<button type="button" class="email-toolbar-btn" onclick="CasePMEmail.compose()"><i class="fa-solid fa-pen"></i> New</button>` : ''}
+        <button type="button" class="email-toolbar-btn" onclick="CasePMEmail.refresh()" title="Refresh"><i class="fa-solid fa-rotate"></i></button>
+        ${isMail ? `
+        <button type="button" class="email-toolbar-btn" ${hasSel ? '' : 'disabled'} onclick="CasePMEmail.archiveSelected()"><i class="fa-solid fa-box-archive"></i> Archive</button>
+        <button type="button" class="email-toolbar-btn" ${hasSel ? '' : 'disabled'} onclick="CasePMEmail.deleteSelected()"><i class="fa-solid fa-trash"></i> Delete</button>
+        <button type="button" class="email-toolbar-btn" ${hasSel ? '' : 'disabled'} onclick="CasePMEmail.markReadToggle()"><i class="fa-solid fa-envelope-open"></i> Read/Unread</button>
+        <button type="button" class="email-toolbar-btn" ${hasSel ? '' : 'disabled'} onclick="CasePMEmail.flagSelected()"><i class="fa-solid fa-flag"></i> Flag</button>
+        <button type="button" class="email-toolbar-btn" ${hasSel ? '' : 'disabled'} onclick="CasePMEmail.starSelected()"><i class="fa-solid fa-star"></i> Star</button>
+        <button type="button" class="email-toolbar-btn" ${hasSel ? '' : 'disabled'} onclick="CasePMEmail.snoozeSelected()"><i class="fa-solid fa-clock"></i> Snooze</button>
+        <button type="button" class="email-toolbar-btn" ${hasSel ? '' : 'disabled'} onclick="CasePMEmail.moveSelected()"><i class="fa-solid fa-folder"></i> Move</button>
+        <button type="button" class="email-toolbar-btn" ${hasSel ? '' : 'disabled'} onclick="CasePMEmail.labelSelected()"><i class="fa-solid fa-tag"></i> Label</button>
+        <button type="button" class="email-toolbar-btn" ${hasSel ? '' : 'disabled'} onclick="CasePMEmail.reportPhishing()"><i class="fa-solid fa-shield"></i> Report</button>
+        ` : `
+        <button type="button" class="email-toolbar-btn" ${hasSel ? '' : 'disabled'} onclick="CasePMEmail.markInternalRead()"><i class="fa-solid fa-check"></i> Mark Read</button>
+        <button type="button" class="email-toolbar-btn" ${hasSel ? '' : 'disabled'} onclick="CasePMEmail.approveInternal()"><i class="fa-solid fa-circle-check"></i> Approve</button>
+        <button type="button" class="email-toolbar-btn" ${hasSel ? '' : 'disabled'} onclick="CasePMEmail.dismissInternal()"><i class="fa-solid fa-xmark"></i> Dismiss</button>
+        <button type="button" class="email-toolbar-btn" onclick="CasePMEmail.composeInternal()"><i class="fa-solid fa-paper-plane"></i> New Message</button>
+        `}
+        <span class="w-px h-5 bg-zinc-700 mx-1"></span>
+        <button type="button" class="email-toolbar-btn" onclick="CasePMEmail.toggleFilter('unread')"><i class="fa-solid fa-filter"></i> Unread</button>
+        <button type="button" class="email-toolbar-btn" onclick="CasePMEmail.showAdvancedSearch()"><i class="fa-solid fa-magnifying-glass-plus"></i> Advanced</button>
+        ${isMail ? `<button type="button" class="email-toolbar-btn" onclick="CasePMEmail.showRules()"><i class="fa-solid fa-wand-magic-sparkles"></i> Rules</button>` : ''}
+        <button type="button" class="email-toolbar-btn" onclick="CasePMEmail.showContacts()"><i class="fa-solid fa-address-book"></i> Contacts</button>
+        <button type="button" class="email-toolbar-btn" onclick="CasePMEmail.showSettings()"><i class="fa-solid fa-gear"></i> Settings</button>
+      </div>`;
+  }
+
+  function renderHeader() {
+    const el = document.getElementById('emailWorkspaceHeader');
     if (!el) return;
     const mailUnread = mailMessages.filter(m => m.folder === 'inbox' && m.unread).length;
     const internalUnread = internalMessages.filter(m => !m.archived && m.unread).length;
     el.innerHTML = `
-      <button type="button" class="px-5 py-2.5 text-sm font-medium border-b-2 ${state.workspace === 'mail' ? 'border-emerald-500 text-white' : 'border-transparent text-zinc-400'}" onclick="CasePMEmail.setWorkspace('mail')">
-        <i class="fa-solid fa-envelope mr-2"></i>Mail ${mailUnread ? `<span class="ml-1 text-xs bg-emerald-600 text-white px-1.5 py-0.5 rounded-full">${mailUnread}</span>` : ''}
-      </button>
-      <button type="button" class="px-5 py-2.5 text-sm font-medium border-b-2 ${state.workspace === 'internal' ? 'border-emerald-500 text-white' : 'border-transparent text-zinc-400'}" onclick="CasePMEmail.setWorkspace('internal')">
-        <i class="fa-solid fa-bell mr-2"></i>Internal ${internalUnread ? `<span class="ml-1 text-xs bg-amber-600 text-white px-1.5 py-0.5 rounded-full">${internalUnread}</span>` : ''}
-      </button>`;
+      <div class="email-workspace-tabs flex px-4">
+        <button type="button" class="px-5 py-2.5 text-sm font-medium border-b-2 ${state.workspace === 'mail' ? 'border-emerald-500 text-white' : 'border-transparent text-zinc-400'}" onclick="CasePMEmail.setWorkspace('mail')">
+          <i class="fa-solid fa-envelope mr-2"></i>Mail ${mailUnread ? `<span class="ml-1 text-xs bg-emerald-600 text-white px-1.5 py-0.5 rounded-full">${mailUnread}</span>` : ''}
+        </button>
+        <button type="button" class="px-5 py-2.5 text-sm font-medium border-b-2 ${state.workspace === 'internal' ? 'border-emerald-500 text-white' : 'border-transparent text-zinc-400'}" onclick="CasePMEmail.setWorkspace('internal')">
+          <i class="fa-solid fa-bell mr-2"></i>Internal ${internalUnread ? `<span class="ml-1 text-xs bg-amber-600 text-white px-1.5 py-0.5 rounded-full">${internalUnread}</span>` : ''}
+        </button>
+      </div>
+      <div class="email-workspace-toolbar">${renderToolbarHTML()}</div>`;
   }
 
   function renderSidebar() {
@@ -341,6 +448,26 @@
           <button type="button" class="email-folder-btn ${state.category === c.id ? 'active' : ''}" onclick="CasePMEmail.setCategory('${c.id}')">
             <span><i class="fa-solid ${c.icon} w-4 mr-2 text-zinc-500"></i>${c.label}</span>
           </button>`).join('');
+      }
+
+      foldersEl.innerHTML += `<div class="mt-3 mb-1 px-2 flex items-center justify-between">
+        <span class="text-[9px] uppercase tracking-wider text-zinc-500">My Folders</span>
+        <button type="button" onclick="CasePMEmail.addCustomFolder()" class="text-[9px] text-emerald-400 hover:text-emerald-300" title="New folder"><i class="fa-solid fa-plus"></i></button>
+      </div>`;
+      foldersEl.innerHTML += customFolders.map(f => `
+        <div class="email-folder-btn ${state.folder === 'custom_' + f.id ? 'active' : ''}" style="padding-right:0.35rem">
+          <button type="button" class="flex-1 flex items-center min-w-0 text-left" onclick="CasePMEmail.setFolder('custom_${f.id}')">
+            <i class="fa-solid fa-folder w-4 mr-2 text-zinc-500 flex-shrink-0"></i>
+            <span class="truncate">${esc(f.name)}</span>
+          </button>
+          <span class="count flex-shrink-0">${folderCount('custom_' + f.id, 'mail') || ''}</span>
+          <span class="email-custom-folder-actions flex-shrink-0">
+            <button type="button" class="email-custom-folder-btn" onclick="event.stopPropagation(); CasePMEmail.renameCustomFolder('${f.id}')" title="Rename"><i class="fa-solid fa-pen"></i></button>
+            <button type="button" class="email-custom-folder-btn" onclick="event.stopPropagation(); CasePMEmail.deleteCustomFolder('${f.id}')" title="Delete"><i class="fa-solid fa-trash"></i></button>
+          </span>
+        </div>`).join('');
+      if (!customFolders.length) {
+        foldersEl.innerHTML += `<div class="px-2 py-1 text-[10px] text-zinc-600">No custom folders yet</div>`;
       }
 
       if (accountEl) {
@@ -380,38 +507,121 @@
     }
   }
 
-  function renderToolbar() {
-    const el = document.getElementById('emailToolbar');
-    if (!el) return;
-    const isMail = state.workspace === 'mail';
-    const hasSel = state.selectedId || state.selectedIds.size > 0;
-    el.innerHTML = `
-      <div class="flex items-center gap-1 flex-wrap">
-        ${isMail ? `<button type="button" class="email-toolbar-btn" onclick="CasePMEmail.compose()"><i class="fa-solid fa-pen"></i> New</button>` : ''}
-        <button type="button" class="email-toolbar-btn" onclick="CasePMEmail.refresh()" title="Refresh"><i class="fa-solid fa-rotate"></i></button>
-        ${isMail ? `
-        <button type="button" class="email-toolbar-btn" ${hasSel ? '' : 'disabled'} onclick="CasePMEmail.archiveSelected()"><i class="fa-solid fa-box-archive"></i> Archive</button>
-        <button type="button" class="email-toolbar-btn" ${hasSel ? '' : 'disabled'} onclick="CasePMEmail.deleteSelected()"><i class="fa-solid fa-trash"></i> Delete</button>
-        <button type="button" class="email-toolbar-btn" ${hasSel ? '' : 'disabled'} onclick="CasePMEmail.markReadToggle()"><i class="fa-solid fa-envelope-open"></i> Read/Unread</button>
-        <button type="button" class="email-toolbar-btn" ${hasSel ? '' : 'disabled'} onclick="CasePMEmail.flagSelected()"><i class="fa-solid fa-flag"></i> Flag</button>
-        <button type="button" class="email-toolbar-btn" ${hasSel ? '' : 'disabled'} onclick="CasePMEmail.starSelected()"><i class="fa-solid fa-star"></i> Star</button>
-        <button type="button" class="email-toolbar-btn" ${hasSel ? '' : 'disabled'} onclick="CasePMEmail.snoozeSelected()"><i class="fa-solid fa-clock"></i> Snooze</button>
-        <button type="button" class="email-toolbar-btn" ${hasSel ? '' : 'disabled'} onclick="CasePMEmail.moveSelected()"><i class="fa-solid fa-folder"></i> Move</button>
-        <button type="button" class="email-toolbar-btn" ${hasSel ? '' : 'disabled'} onclick="CasePMEmail.labelSelected()"><i class="fa-solid fa-tag"></i> Label</button>
-        <button type="button" class="email-toolbar-btn" ${hasSel ? '' : 'disabled'} onclick="CasePMEmail.reportPhishing()"><i class="fa-solid fa-shield"></i> Report</button>
-        ` : `
-        <button type="button" class="email-toolbar-btn" ${hasSel ? '' : 'disabled'} onclick="CasePMEmail.markInternalRead()"><i class="fa-solid fa-check"></i> Mark Read</button>
-        <button type="button" class="email-toolbar-btn" ${hasSel ? '' : 'disabled'} onclick="CasePMEmail.approveInternal()"><i class="fa-solid fa-circle-check"></i> Approve</button>
-        <button type="button" class="email-toolbar-btn" ${hasSel ? '' : 'disabled'} onclick="CasePMEmail.dismissInternal()"><i class="fa-solid fa-xmark"></i> Dismiss</button>
-        <button type="button" class="email-toolbar-btn" onclick="CasePMEmail.composeInternal()"><i class="fa-solid fa-paper-plane"></i> New Message</button>
-        `}
-        <span class="w-px h-5 bg-zinc-700 mx-1"></span>
-        <button type="button" class="email-toolbar-btn" onclick="CasePMEmail.toggleFilter('unread')"><i class="fa-solid fa-filter"></i> Unread</button>
-        <button type="button" class="email-toolbar-btn" onclick="CasePMEmail.showAdvancedSearch()"><i class="fa-solid fa-magnifying-glass-plus"></i> Advanced</button>
-        ${isMail ? `<button type="button" class="email-toolbar-btn" onclick="CasePMEmail.showRules()"><i class="fa-solid fa-wand-magic-sparkles"></i> Rules</button>` : ''}
-        <button type="button" class="email-toolbar-btn" onclick="CasePMEmail.showContacts()"><i class="fa-solid fa-address-book"></i> Contacts</button>
-        <button type="button" class="email-toolbar-btn" onclick="CasePMEmail.showSettings()"><i class="fa-solid fa-gear"></i> Settings</button>
+  function renderInlineComposeHTML() {
+    const c = state.inlineCompose;
+    if (!c) return '';
+    const title = { new: 'New Message', reply: 'Reply', replyAll: 'Reply All', forward: 'Forward', draft: 'Edit Draft' }[c.mode] || 'Compose';
+    return `
+      <div class="email-inline-compose" id="emailInlineCompose">
+        <div class="email-inline-compose-header">
+          <span class="text-sm font-semibold text-white">${title}</span>
+          <button type="button" onclick="CasePMEmail.closeCompose()" class="text-zinc-400 hover:text-white w-8 h-8 rounded hover:bg-zinc-800"><i class="fa-solid fa-times"></i></button>
+        </div>
+        <div class="email-inline-compose-fields text-sm">
+          <div class="email-inline-compose-row">
+            <label>To</label>
+            <input type="text" id="inlineComposeTo" value="${esc(c.to)}" placeholder="Recipients" autocomplete="off">
+            <button type="button" onclick="CasePMEmail.toggleCcBcc()" class="text-xs text-zinc-400 hover:text-white flex-shrink-0">Cc/Bcc</button>
+            <div id="inlineSuggestTo" class="email-recipient-suggest hidden"></div>
+          </div>
+          <div id="inlineCcBccRows" class="${c.showCcBcc ? '' : 'hidden'} space-y-2">
+            <div class="email-inline-compose-row">
+              <label>Cc</label>
+              <input type="text" id="inlineComposeCc" value="${esc(c.cc)}" autocomplete="off">
+              <div id="inlineSuggestCc" class="email-recipient-suggest hidden"></div>
+            </div>
+            <div class="email-inline-compose-row">
+              <label>Bcc</label>
+              <input type="text" id="inlineComposeBcc" value="${esc(c.bcc)}" autocomplete="off">
+              <div id="inlineSuggestBcc" class="email-recipient-suggest hidden"></div>
+            </div>
+          </div>
+          <div class="email-inline-compose-row">
+            <label>Subj</label>
+            <input type="text" id="inlineComposeSubject" value="${esc(c.subject)}" class="font-medium">
+          </div>
+        </div>
+        <div id="inlineComposeBody" contenteditable="true" class="email-inline-compose-body">${c.body || ''}</div>
+        <div id="inlineComposeScheduleRow" class="hidden px-4 pb-2">
+          <label class="text-xs text-zinc-400">Schedule send</label>
+          <input type="datetime-local" id="inlineComposeScheduleAt" class="email-field-input mt-1">
+        </div>
+        <div class="email-inline-compose-footer">
+          <div class="flex gap-1">
+            <button type="button" class="email-toolbar-btn" title="Attach file"><i class="fa-solid fa-paperclip"></i></button>
+            <button type="button" class="email-toolbar-btn" title="Schedule send" onclick="document.getElementById('inlineComposeScheduleRow').classList.toggle('hidden')"><i class="fa-solid fa-clock"></i></button>
+            <button type="button" class="email-toolbar-btn" title="Save draft" onclick="CasePMEmail.saveDraft()"><i class="fa-solid fa-file-pen"></i></button>
+          </div>
+          <div class="flex gap-2">
+            <button type="button" onclick="CasePMEmail.undoSend()" class="text-xs text-zinc-400 hover:text-white">Undo</button>
+            <button type="button" onclick="CasePMEmail.sendMail(true)" class="px-3 py-1.5 bg-zinc-800 hover:bg-zinc-700 rounded-md text-xs">Schedule</button>
+            <button type="button" onclick="CasePMEmail.sendMail()" class="px-5 py-2 bg-emerald-600 hover:bg-emerald-500 rounded-md text-sm font-semibold text-white">Send</button>
+          </div>
+        </div>
       </div>`;
+  }
+
+  function attachRecipientAutocomplete() {
+    const fields = [
+      { input: 'inlineComposeTo', suggest: 'inlineSuggestTo' },
+      { input: 'inlineComposeCc', suggest: 'inlineSuggestCc' },
+      { input: 'inlineComposeBcc', suggest: 'inlineSuggestBcc' },
+    ];
+    fields.forEach(({ input, suggest }) => {
+      const inp = document.getElementById(input);
+      const box = document.getElementById(suggest);
+      if (!inp || !box) return;
+      let activeIdx = -1;
+      function hide() { box.classList.add('hidden'); box.innerHTML = ''; activeIdx = -1; }
+      function pick(contact) {
+        const parts = inp.value.split(/[,;]/);
+        parts[parts.length - 1] = ' ' + (contact.name ? `"${contact.name}" <${contact.email}>` : contact.email);
+        inp.value = parts.join(',').replace(/^,\s*/, '').trim();
+        hide();
+        inp.focus();
+      }
+      function renderSuggest() {
+        const val = inp.value;
+        const segment = (val.split(/[,;]/).pop() || '').trim();
+        const matches = filterContacts(segment);
+        if (!segment || !matches.length) { hide(); return; }
+        box.innerHTML = matches.map((c, i) => `
+          <button type="button" class="email-recipient-suggest-item${i === activeIdx ? ' active' : ''}" data-idx="${i}">
+            <div>${esc(c.name)}</div>
+            <div class="email">${esc(c.email)}</div>
+          </button>`).join('');
+        box.classList.remove('hidden');
+        box.querySelectorAll('.email-recipient-suggest-item').forEach(btn => {
+          btn.addEventListener('mousedown', e => {
+            e.preventDefault();
+            pick(matches[Number(btn.dataset.idx)]);
+          });
+        });
+      }
+      inp.addEventListener('input', () => { activeIdx = -1; renderSuggest(); });
+      inp.addEventListener('keydown', e => {
+        const items = box.querySelectorAll('.email-recipient-suggest-item');
+        if (e.key === 'ArrowDown' && items.length) {
+          e.preventDefault();
+          activeIdx = Math.min(activeIdx + 1, items.length - 1);
+          renderSuggest();
+        } else if (e.key === 'ArrowUp' && items.length) {
+          e.preventDefault();
+          activeIdx = Math.max(activeIdx - 1, 0);
+          renderSuggest();
+        } else if (e.key === 'Enter' && activeIdx >= 0 && items[activeIdx]) {
+          e.preventDefault();
+          items[activeIdx].dispatchEvent(new MouseEvent('mousedown'));
+        } else if (e.key === 'Escape') {
+          hide();
+        }
+      });
+      inp.addEventListener('blur', () => setTimeout(hide, 150));
+    });
+  }
+
+  function renderToolbar() {
+    /* toolbar merged into renderHeader */
   }
 
   function renderMessageList() {
@@ -430,7 +640,7 @@
       el.innerHTML = messages.map(m => {
         const badgeClass = { approval: 'email-internal-badge-approval', alert: 'email-internal-badge-alert', message: 'email-internal-badge-message', mention: 'email-internal-badge-mention', announce: 'email-internal-badge-announce' }[m.type] || 'email-internal-badge-alert';
         return `
-        <div class="email-msg-row ${m.unread ? 'unread' : ''} ${state.selectedId === m.id ? 'active' : ''}" onclick="CasePMEmail.select('${m.id}')" data-id="${m.id}">
+        <div class="email-msg-row ${m.unread ? 'unread' : ''} ${state.selectedId === m.id ? 'active' : ''}" onclick="CasePMEmail.select('${m.id}')" ondblclick="CasePMEmail.openMessage('${m.id}')" data-id="${m.id}">
           <div class="flex items-start gap-2">
             <div class="flex-1 min-w-0">
               <div class="flex items-center gap-2 mb-0.5">
@@ -449,7 +659,7 @@
     }
 
     el.innerHTML = messages.map(m => `
-      <div class="email-msg-row ${m.unread ? 'unread' : ''} ${m.starred ? 'starred' : ''} ${state.selectedId === m.id ? 'active' : ''}" onclick="CasePMEmail.select('${m.id}')" data-id="${m.id}">
+      <div class="email-msg-row ${m.unread ? 'unread' : ''} ${m.starred ? 'starred' : ''} ${state.selectedId === m.id ? 'active' : ''}" onclick="CasePMEmail.select('${m.id}')" ondblclick="CasePMEmail.openMessage('${m.id}')" data-id="${m.id}">
         <div class="flex items-start gap-2">
           <button type="button" class="email-star text-zinc-600 hover:text-amber-400 flex-shrink-0 mt-0.5" onclick="event.stopPropagation(); CasePMEmail.toggleStar('${m.id}')">
             <i class="fa-${m.starred ? 'solid' : 'regular'} fa-star text-xs"></i>
@@ -475,19 +685,29 @@
   function renderReadingPane() {
     const el = document.getElementById('emailReadingPane');
     if (!el) return;
-    if (settings.previewPane === 'off' && !state.composeOpen) {
-      el.innerHTML = `<div class="flex-1 flex items-center justify-center text-zinc-500 text-sm p-8">Select a message to read</div>`;
-      return;
-    }
-    const m = state.selectedId ? getMessage(state.selectedId) : null;
-    if (!m) {
-      el.innerHTML = `<div class="flex-1 flex items-center justify-center text-zinc-500 text-sm p-8"><div class="text-center"><i class="fa-solid fa-envelope-open-text text-3xl mb-3 text-zinc-600"></i>Select a message</div></div>`;
+
+    if (state.inlineCompose && state.inlineCompose.mode === 'new' && !state.selectedId) {
+      el.innerHTML = renderInlineComposeHTML();
+      attachRecipientAutocomplete();
       return;
     }
 
-    if (state.workspace === 'internal') {
-      el.innerHTML = `
-        <div class="flex-1 overflow-auto p-6">
+    if (settings.previewPane === 'off' && !state.inlineCompose && !state.selectedId) {
+      el.innerHTML = `<div class="flex-1 flex items-center justify-center text-zinc-500 text-sm p-8">Select a message to read</div>`;
+      return;
+    }
+
+    const m = state.selectedId ? getMessage(state.selectedId) : null;
+    if (!m && !state.inlineCompose) {
+      el.innerHTML = `<div class="flex-1 flex items-center justify-center text-zinc-500 text-sm p-8"><div class="text-center"><i class="fa-solid fa-envelope-open-text text-3xl mb-3 text-zinc-600"></i>Select a message<br><span class="text-xs text-zinc-600 mt-2 block">Double-click to open</span></div></div>`;
+      return;
+    }
+
+    const composeHtml = state.inlineCompose ? renderInlineComposeHTML() : '';
+
+    if (state.workspace === 'internal' && m) {
+      el.innerHTML = composeHtml + `
+        <div class="email-reading-message overflow-auto p-6">
           <div class="flex items-start justify-between gap-4 mb-4">
             <div>
               <h2 class="text-lg font-semibold text-white">${esc(m.subject)}</h2>
@@ -502,13 +722,26 @@
           </div>
           <div class="prose prose-invert max-w-none text-sm text-zinc-300">${m.body || esc(m.preview)}</div>
         </div>`;
-      if (m.unread) { m.unread = false; persistInternal(); }
+      if (state.inlineCompose) attachRecipientAutocomplete();
+      if (m.unread) {
+        m.unread = false;
+        persistInternal();
+        if (typeof m.id === 'number' || String(m.id).match(/^\d+$/)) {
+          fetch(`/api/internal-messages/${m.id}/read`, { method: 'POST' }).catch(() => {});
+        }
+      }
+      return;
+    }
+
+    if (!m) {
+      el.innerHTML = composeHtml;
+      if (state.inlineCompose) attachRecipientAutocomplete();
       return;
     }
 
     if (settings.markAsReadOnView && m.unread) { m.unread = false; persistMail(); }
 
-    el.innerHTML = `
+    el.innerHTML = composeHtml + `
       <div class="border-b border-zinc-800 px-4 py-2 flex flex-wrap gap-1 flex-shrink-0">
         <button type="button" class="email-toolbar-btn" onclick="CasePMEmail.reply('${m.id}')"><i class="fa-solid fa-reply"></i> Reply</button>
         <button type="button" class="email-toolbar-btn" onclick="CasePMEmail.replyAll('${m.id}')"><i class="fa-solid fa-reply-all"></i> Reply All</button>
@@ -519,7 +752,7 @@
         <button type="button" class="email-toolbar-btn" onclick="CasePMEmail.snoozeSelected('${m.id}')"><i class="fa-solid fa-clock"></i></button>
         <button type="button" class="email-toolbar-btn" onclick="CasePMEmail.moveSelected('${m.id}')"><i class="fa-solid fa-folder"></i></button>
       </div>
-      <div class="flex-1 overflow-auto p-6">
+      <div class="email-reading-message overflow-auto p-6">
         <h2 class="text-lg font-semibold text-white mb-2">${esc(m.subject)}</h2>
         <div class="text-sm text-zinc-400 mb-4">
           <div><span class="text-zinc-500">From:</span> ${esc(m.from)} &lt;${esc(m.fromEmail)}&gt;</div>
@@ -529,6 +762,7 @@
         ${m.attachments && m.attachments.length ? `<div class="mb-4 flex flex-wrap gap-2">${m.attachments.map(a => `<span class="text-xs bg-zinc-800 border border-zinc-700 px-3 py-1.5 rounded-md"><i class="fa-solid fa-paperclip mr-1"></i>${esc(a.name)} <span class="text-zinc-500">(${esc(a.size)})</span></span>`).join('')}</div>` : ''}
         <div class="prose prose-invert max-w-none text-sm text-zinc-300">${m.body || esc(m.preview)}</div>
       </div>`;
+    if (state.inlineCompose) attachRecipientAutocomplete();
   }
 
   function applyLayoutClasses() {
@@ -541,19 +775,13 @@
     if (settings.density === 'compact') document.body.classList.add('email-density-compact');
   }
 
-  function updateComposeVisibility() {
-    const panel = document.getElementById('emailComposePanel');
-    if (!panel) return;
-    panel.classList.toggle('hidden', !state.composeOpen);
-    if (state.composeMinimized) panel.classList.add('h-12'); else panel.classList.remove('h-12');
-  }
-
   // ─── Actions ───────────────────────────────────────────────
   function setWorkspace(ws) {
     state.workspace = ws;
     state.folder = ws === 'internal' ? 'internal-inbox' : 'inbox';
     state.category = null;
     state.selectedId = null;
+    state.inlineCompose = null;
     render();
   }
 
@@ -570,7 +798,30 @@
   }
 
   function select(id) {
+    if (state.selectedId !== id) state.inlineCompose = null;
     state.selectedId = id;
+    renderMessageList();
+    renderReadingPane();
+  }
+
+  function openMessage(id) {
+    state.selectedId = id;
+    const m = getMessage(id);
+    if (!m) return;
+    if (state.workspace === 'mail' && (m.folder === 'drafts' || m.isDraft)) {
+      state.inlineCompose = {
+        mode: 'draft',
+        to: (m.to || []).join(', '),
+        cc: (m.cc || []).join(', '),
+        bcc: (m.bcc || []).join(', '),
+        subject: m.subject || '',
+        body: m.body || '',
+        draftId: m.id,
+        showCcBcc: !!((m.cc && m.cc.length) || (m.bcc && m.bcc.length)),
+      };
+    } else {
+      state.inlineCompose = null;
+    }
     renderMessageList();
     renderReadingPane();
   }
@@ -591,32 +842,77 @@
   }
 
   function compose(opts) {
-    state.composeOpen = true;
-    state.composeMinimized = false;
-    const panel = document.getElementById('emailComposePanel');
-    if (!panel) return;
-    document.getElementById('composeTo').value = opts?.to || '';
-    document.getElementById('composeCc').value = opts?.cc || '';
-    document.getElementById('composeBcc').value = opts?.bcc || '';
-    document.getElementById('composeSubject').value = opts?.subject || '';
-    document.getElementById('composeBody').innerHTML = opts?.body || (signatures.find(s => s.id === settings.defaultSignatureId)?.html || '');
-    document.getElementById('composeScheduleRow').classList.add('hidden');
-    updateComposeVisibility();
+    state.inlineCompose = {
+      mode: opts?.draftId ? 'draft' : (opts?.mode || 'new'),
+      to: opts?.to || '',
+      cc: opts?.cc || '',
+      bcc: opts?.bcc || '',
+      subject: opts?.subject || '',
+      body: opts?.body || (signatures.find(s => s.id === settings.defaultSignatureId)?.html || ''),
+      draftId: opts?.draftId || null,
+      replyToId: opts?.replyToId || null,
+      showCcBcc: !!(opts?.cc || opts?.bcc),
+    };
+    if (opts?.replyToId) state.selectedId = opts.replyToId;
+    else if (!opts?.draftId) state.selectedId = null;
+    renderReadingPane();
+    renderMessageList();
   }
 
-  function closeCompose() { state.composeOpen = false; updateComposeVisibility(); }
+  function closeCompose() {
+    state.inlineCompose = null;
+    renderReadingPane();
+  }
+
+  function toggleCcBcc() {
+    const row = document.getElementById('inlineCcBccRows');
+    if (row) row.classList.toggle('hidden');
+    if (state.inlineCompose) state.inlineCompose.showCcBcc = row && !row.classList.contains('hidden');
+  }
+
+  function saveDraft() {
+    const to = document.getElementById('inlineComposeTo')?.value.trim() || '';
+    const subject = document.getElementById('inlineComposeSubject')?.value.trim() || '';
+    const body = document.getElementById('inlineComposeBody')?.innerHTML || '';
+    const draft = {
+      id: state.inlineCompose?.draftId || uid(),
+      folder: 'drafts', category: 'primary', focused: true,
+      from: settings.displayName || ctx.userName, fromEmail: settings.emailAddress || ctx.userEmail,
+      to: to.split(/[,;]/).map(s => s.trim()).filter(Boolean),
+      cc: (document.getElementById('inlineComposeCc')?.value || '').split(/[,;]/).map(s => s.trim()).filter(Boolean),
+      bcc: (document.getElementById('inlineComposeBcc')?.value || '').split(/[,;]/).map(s => s.trim()).filter(Boolean),
+      subject: subject || '(No subject)', preview: body.replace(/<[^>]+>/g, '').slice(0, 120),
+      body, date: new Date().toISOString(), unread: true, starred: false, flagged: false,
+      hasAttachments: false, attachments: [], labels: [], threadId: uid(), importance: 'normal',
+      snoozedUntil: null, scheduledFor: null, isDraft: true,
+    };
+    const idx = mailMessages.findIndex(m => m.id === draft.id);
+    if (idx >= 0) mailMessages[idx] = draft;
+    else mailMessages.unshift(draft);
+    persistMail();
+    state.inlineCompose = null;
+    state.selectedId = draft.id;
+    toast('Draft saved.', 'success');
+    render();
+  }
 
   function sendMail(scheduled) {
-    const to = document.getElementById('composeTo').value.trim();
-    const subject = document.getElementById('composeSubject').value.trim();
-    const body = document.getElementById('composeBody').innerHTML;
+    const to = document.getElementById('inlineComposeTo')?.value.trim();
+    const subject = document.getElementById('inlineComposeSubject')?.value.trim();
+    const body = document.getElementById('inlineComposeBody')?.innerHTML;
     if (!to) { toast('Add at least one recipient.', 'error'); return; }
-    const scheduleVal = document.getElementById('composeScheduleAt')?.value;
+    const scheduleVal = document.getElementById('inlineComposeScheduleAt')?.value;
+    const draftId = state.inlineCompose?.draftId;
+    if (draftId) {
+      const di = mailMessages.findIndex(m => m.id === draftId);
+      if (di >= 0) mailMessages.splice(di, 1);
+    }
     const msg = {
       id: uid(), folder: scheduled || scheduleVal ? 'scheduled' : 'sent', category: 'primary', focused: true,
       from: settings.displayName || ctx.userName, fromEmail: settings.emailAddress || ctx.userEmail,
       to: to.split(/[,;]/).map(s => s.trim()).filter(Boolean),
-      cc: (document.getElementById('composeCc').value || '').split(/[,;]/).map(s => s.trim()).filter(Boolean),
+      cc: (document.getElementById('inlineComposeCc')?.value || '').split(/[,;]/).map(s => s.trim()).filter(Boolean),
+      bcc: (document.getElementById('inlineComposeBcc')?.value || '').split(/[,;]/).map(s => s.trim()).filter(Boolean),
       subject: subject || '(No subject)', preview: body.replace(/<[^>]+>/g, '').slice(0, 120),
       body, date: new Date().toISOString(), unread: false, starred: false, flagged: false,
       hasAttachments: false, attachments: [], labels: [], threadId: uid(), importance: 'normal',
@@ -656,7 +952,16 @@
   function reply(id, all) {
     const m = getMessage(id);
     if (!m) return;
-    compose({ to: m.fromEmail, subject: 'RE: ' + m.subject.replace(/^RE:\s*/i, ''), body: `<br><br><hr><p>On ${fmtDate(m.date)}, ${esc(m.from)} wrote:</p>${m.body || ''}` });
+    const to = all
+      ? [m.fromEmail, ...(m.to || []).filter(e => e !== (settings.emailAddress || ctx.userEmail))].join(', ')
+      : m.fromEmail;
+    compose({
+      mode: all ? 'replyAll' : 'reply',
+      to,
+      subject: 'RE: ' + m.subject.replace(/^RE:\s*/i, ''),
+      body: `<br><br><hr><p>On ${fmtDate(m.date)}, ${esc(m.from)} wrote:</p>${m.body || ''}`,
+      replyToId: id,
+    });
   }
 
   function replyAll(id) { reply(id, true); }
@@ -664,7 +969,12 @@
   function forward(id) {
     const m = getMessage(id);
     if (!m) return;
-    compose({ subject: 'FW: ' + m.subject.replace(/^FW:\s*/i, ''), body: `<br><br><hr><p>Forwarded message:</p>${m.body || ''}` });
+    compose({
+      mode: 'forward',
+      subject: 'FW: ' + m.subject.replace(/^FW:\s*/i, ''),
+      body: `<br><br><hr><p>Forwarded message:</p>${m.body || ''}`,
+      replyToId: id,
+    });
   }
 
   function archiveSelected(id) {
@@ -711,11 +1021,51 @@
     render();
   }
 
-  function moveSelected() {
-    const folder = prompt('Move to folder: inbox, sent, drafts, archive, spam, trash', 'archive');
+  function moveSelected(id) {
+    const systemFolders = MAIL_FOLDERS.map(f => f.id).join(', ');
+    const customList = customFolders.map(f => `custom_${f.id} (${f.name})`).join(', ');
+    const hint = customList ? `${systemFolders}, ${customList}` : systemFolders;
+    const folder = prompt(`Move to folder:\n${hint}`, 'archive');
     if (!folder) return;
-    const m = getMessage(state.selectedId);
-    if (m && MAIL_FOLDERS.some(f => f.id === folder)) { m.folder = folder; persistMail(); render(); }
+    const target = id || state.selectedId;
+    const m = getMessage(target);
+    if (!m) return;
+    const normalized = folder.includes('(') ? folder.split('(')[0].trim() : folder.trim();
+    const valid = MAIL_FOLDERS.some(f => f.id === normalized) || normalized.startsWith('custom_');
+    if (valid) { m.folder = normalized; persistMail(); toast('Moved.', 'success'); render(); }
+    else toast('Unknown folder.', 'error');
+  }
+
+  function addCustomFolder() {
+    const name = prompt('New folder name:', 'Projects');
+    if (!name || !name.trim()) return;
+    const id = 'cf_' + Date.now().toString(36);
+    customFolders.push({ id, name: name.trim() });
+    persistCustomFolders();
+    renderSidebar();
+    toast(`Folder "${name.trim()}" created.`, 'success');
+  }
+
+  function renameCustomFolder(id) {
+    const f = customFolders.find(x => x.id === id);
+    if (!f) return;
+    const name = prompt('Rename folder:', f.name);
+    if (!name || !name.trim()) return;
+    f.name = name.trim();
+    persistCustomFolders();
+    renderSidebar();
+  }
+
+  function deleteCustomFolder(id) {
+    const f = customFolders.find(x => x.id === id);
+    if (!f) return;
+    if (!confirm(`Delete folder "${f.name}"? Messages will move to Inbox.`)) return;
+    mailMessages.forEach(m => { if (m.folder === 'custom_' + id) m.folder = 'inbox'; });
+    customFolders = customFolders.filter(x => x.id !== id);
+    if (state.folder === 'custom_' + id) state.folder = 'inbox';
+    persistCustomFolders();
+    persistMail();
+    render();
   }
 
   function labelSelected() {
@@ -733,16 +1083,42 @@
     if (m) { m.unread = false; persistInternal(); render(); }
   }
 
-  function approveInternal(id) {
+  async function approveInternal(id) {
     const target = id || state.selectedId;
-    const m = internalMessages.find(x => x.id === target);
-    if (m) { m.unread = false; m.requiresAction = false; toast(`Approved: ${m.subject}`, 'success'); persistInternal(); render(); }
+    const m = internalMessages.find(x => String(x.id) === String(target));
+    if (!m) return;
+    if (m.approvalId && typeof CasePMWorkflow !== 'undefined') {
+      try {
+        await CasePMWorkflow.decide(m.approvalId, 'approve');
+      } catch (e) {
+        toast('Could not approve: ' + e.message, 'error');
+        return;
+      }
+    }
+    m.unread = false;
+    m.requiresAction = false;
+    toast(`Approved: ${m.subject}`, 'success');
+    await refreshInternalFromServer();
   }
 
-  function dismissInternal(id) {
+  async function dismissInternal(id) {
     const target = id || state.selectedId;
-    const m = internalMessages.find(x => x.id === target);
-    if (m) { m.archived = true; m.unread = false; persistInternal(); state.selectedId = null; render(); }
+    const m = internalMessages.find(x => String(x.id) === String(target));
+    if (!m) return;
+    if (m.approvalId && typeof CasePMWorkflow !== 'undefined') {
+      try {
+        await CasePMWorkflow.decide(m.approvalId, 'dismiss');
+      } catch (e) {
+        /* still archive locally */
+      }
+    }
+    if (typeof m.id === 'number' || String(m.id).match(/^\d+$/)) {
+      await fetch(`/api/internal-messages/${m.id}/archive`, { method: 'POST' }).catch(() => {});
+    }
+    m.archived = true;
+    m.unread = false;
+    state.selectedId = null;
+    await refreshInternalFromServer();
   }
 
   function composeInternal() {
@@ -760,7 +1136,14 @@
     setFolder('team');
   }
 
-  function refresh() { toast('Mailbox synced.', 'success'); render(); }
+  function refresh() {
+    if (state.workspace === 'internal') {
+      refreshInternalFromServer().then(() => toast('Internal messages synced.', 'success'));
+      return;
+    }
+    toast('Mailbox synced.', 'success');
+    render();
+  }
 
   function printMessage(id) {
     const m = getMessage(id);
@@ -830,7 +1213,11 @@
     ctx = { ...ctx, ...options };
     loadAll();
     global.CasePMEmailSettings = settings;
-    render();
+    if (typeof CasePMWorkflow !== 'undefined') {
+      CasePMWorkflow.loadPortal().then(() => render());
+    } else {
+      render();
+    }
     document.getElementById('emailSearchInput')?.addEventListener('input', e => setSearch(e.target.value));
 
     if (settings.keyboardShortcuts) {
@@ -850,10 +1237,11 @@
   }
 
   global.CasePMEmail = {
-    init, setWorkspace, setFolder, setCategory, select, setSearch, toggleFilter, toggleStar,
-    compose, closeCompose, sendMail, undoSend, reply, replyAll, forward,
+    init, setWorkspace, setFolder, setCategory, select, openMessage, setSearch, toggleFilter, toggleStar,
+    compose, closeCompose, toggleCcBcc, saveDraft, sendMail, undoSend, reply, replyAll, forward,
     archiveSelected, deleteSelected, markReadToggle, flagSelected, starSelected,
     snoozeSelected, moveSelected, labelSelected, reportPhishing,
+    addCustomFolder, renameCustomFolder, deleteCustomFolder,
     markInternalRead, approveInternal, dismissInternal, composeInternal,
     refresh, printMessage, searchLabel, openSetup, showSettings, showRules, addRule, deleteRule,
     showContacts, showAdvancedSearch, runAdvancedSearch,

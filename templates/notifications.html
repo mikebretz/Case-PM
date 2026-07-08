@@ -1,0 +1,46 @@
+{% extends "base.html" %}
+
+{% block title %}Notifications{% endblock %}
+
+{% block content %}
+<div class="max-w-3xl mx-auto">
+    <div class="flex items-center justify-between mb-6">
+        <div>
+            <h1 class="text-2xl font-semibold tracking-tight">Notifications</h1>
+            <p class="text-sm text-zinc-400 mt-1">Approvals, alerts, and workflow updates</p>
+        </div>
+        <div class="flex gap-2">
+            <button type="button" onclick="markAllRead()" class="px-4 py-2 bg-zinc-800 hover:bg-zinc-700 rounded-md text-sm">Mark all read</button>
+            <a href="{{ url_for('email_page') }}?tab=internal" class="px-4 py-2 bg-emerald-600 hover:bg-emerald-500 rounded-md text-sm font-medium">Open Internal Inbox</a>
+        </div>
+    </div>
+
+    <div class="bg-zinc-900 border border-zinc-700 rounded-lg divide-y divide-zinc-800" id="notificationsList">
+        {% for n in notifications %}
+        <a href="{{ n.link or url_for('email_page') }}?tab=internal"
+           class="block px-5 py-4 hover:bg-zinc-800/50 transition-colors {% if not n.is_read %}border-l-2 border-emerald-500{% endif %}"
+           data-id="{{ n.id }}">
+            <div class="flex items-start justify-between gap-3">
+                <div>
+                    <div class="font-medium text-white {% if not n.is_read %}text-emerald-50{% endif %}">{{ n.title }}</div>
+                    <div class="text-sm text-zinc-400 mt-1">{{ n.message }}</div>
+                </div>
+                <div class="text-xs text-zinc-500 flex-shrink-0">{{ n.created_at.strftime('%m/%d/%y %H:%M') if n.created_at else '' }}</div>
+            </div>
+        </a>
+        {% else %}
+        <div class="px-6 py-16 text-center text-zinc-500">
+            <i class="fa-solid fa-bell-slash text-3xl mb-3 block text-zinc-600"></i>
+            No notifications yet. Workflow events from pay apps, submittals, and change orders will appear here.
+        </div>
+        {% endfor %}
+    </div>
+</div>
+
+<script>
+async function markAllRead() {
+    await fetch('/api/notifications/mark-all-read', { method: 'POST' });
+    document.querySelectorAll('#notificationsList a').forEach(el => el.classList.remove('border-l-2', 'border-emerald-500'));
+}
+</script>
+{% endblock %}
