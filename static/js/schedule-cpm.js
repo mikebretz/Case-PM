@@ -581,6 +581,145 @@
         return groups;
     }
 
+    /** Project-level EVM rollup (BAC, BCWS, BCWP, ACWP, CPI, SPI, EAC, VAC). */
+    function computeProjectEVM(tasks, dataDate) {
+        const dd = parseDate(dataDate) || new Date();
+        let bac = 0, bcws = 0, bcwp = 0, acwp = 0;
+        (tasks || []).forEach(t => {
+            if (!t || t.type === 'project') return;
+            const cost = Number(t.cost) || Number(t.budgeted_cost) || 0;
+            if (cost <= 0) return;
+            const evm = computeEVM(t, dd);
+            bac += cost;
+            bcws += evm.bcws || 0;
+            bcwp += evm.bcwp || 0;
+            acwp += evm.acwp || 0;
+        });
+        const cpi = acwp > 0 ? bcwp / acwp : null;
+        const spi = bcws > 0 ? bcwp / bcws : null;
+        const eac = cpi && cpi > 0 ? bac / cpi : bac;
+        const vac = bac - eac;
+        return {
+            bac: Math.round(bac * 100) / 100,
+            bcws: Math.round(bcws * 100) / 100,
+            bcwp: Math.round(bcwp * 100) / 100,
+            acwp: Math.round(acwp * 100) / 100,
+            cpi: cpi != null ? Math.round(cpi * 1000) / 1000 : null,
+            spi: spi != null ? Math.round(spi * 1000) / 1000 : null,
+            eac: Math.round(eac * 100) / 100,
+            vac: Math.round(vac * 100) / 100,
+            cv: Math.round((bcwp - acwp) * 100) / 100,
+            sv: Math.round((bcwp - bcws) * 100) / 100
+        };
+    }
+
+    /** Detect resource overallocation windows (same resource on overlapping tasks). */
+    function detectResourceConflicts(tasks) {
+        const byResource = new Map();
+        (tasks || []).forEach(t => {
+            if (!t || t.type === 'project' || t.type === 'milestone') return;
+            const res = String(t.resource || '').trim();
+            if (!res) return;
+            const start = taskStartDate(t);
+            const end = taskEndDate(t);
+            if (!start || !end) return;
+            res.split(/[,;]+/).map(s => s.trim()).filter(Boolean).forEach(r => {
+                if (!byResource.has(r)) byResource.set(r, []);
+                byResource.get(r).push({ id: t.id, text: t.text, start, end, duration: t.duration });
+            });
+        });
+        const conflicts = [];
+        byResource.forEach((list, resource) => {
+            const sorted = list.slice().sort((a, b) => a.start - b.start);
+            for (let i = 0; i < sorted.length; i++) {
+                for (let j = i + 1; j < sorted.length; j++) {
+                    const a = sorted[i];
+                    const b = sorted[j];
+                    if (b.start >= a.end) break;
+                    conflicts.push({
+                        resource,
+                        taskA: a.id,
+                        taskB: b.id,
+                        textA: a.text,
+                        textB: b.text,
+                        overlapStart: b.start > a.start ? b.start : a.start,
+                        overlapEnd: a.end < b.end ? a.end : b.end
+                    });
+                }
+            }
+        });
+        return conflicts;
+    }
+
+    /**
+     * Forward-pass resource leveling: delay lower-priority tasks to resolve overlaps.
+     * Returns { updates: Map<id, {start_date, end_date}>, conflictsResolved, remaining }.
+     */
+    function levelResources(tasks, links, options) {
+        const opts = options || {};
+        const taskMap = new Map();
+        (tasks || []).forEach(t => taskMap.set(String(t.id), Object.assign({}, t)));
+        const conflicts = detectResourceConflicts([...taskMap.values()]);
+        const updates = new Map();
+        let resolved = 0;
+
+        conflicts.forEach(c => {
+            const a = taskMap.get(String(c.taskA));
+            const b = taskMap.get(String(c.taskB));
+            if (!a || !b) return;
+            const aFloat = Number(a.total_float ?? a.$slack ?? 999);
+            const bFloat = Number(b.total_float ?? b.$slack ?? 999);
+            const moveId = aFloat <= bFloat ? String(c.taskB) : String(c.taskA);
+            const stayId = moveId === String(c.taskA) ? String(c.taskB) : String(c.taskA);
+            const move = taskMap.get(moveId);
+            const stay = taskMap.get(stayId);
+            if (!move || !stay) return;
+            const stayEnd = taskEndDate(stay);
+            if (!stayEnd) return;
+            const newStart = addCalendarDays(stayEnd, opts.lagDays || 0);
+            const dur = Math.max(0, Number(move.duration) || 0);
+            const newEnd = move.type === 'milestone' ? newStart : addCalendarDays(newStart, dur);
+            move.start_date = newStart;
+            move.end_date = newEnd;
+            taskMap.set(moveId, move);
+            updates.set(moveId, { start_date: newStart, end_date: newEnd });
+            resolved++;
+        });
+
+        return { updates, conflictsResolved: resolved, remaining: detectResourceConflicts([...taskMap.values()]).length };
+    }
+
+    /** Summarize schedule payload for portfolio dashboard. */
+    function summarizeSchedulePayload(payload, dataDate) {
+        if (!payload?.data?.length) return null;
+        const tasks = payload.data;
+        const links = payload.links || [];
+        const dd = parseDate(dataDate) || new Date();
+        const range = { start: null, end: null };
+        let progressSum = 0, progressN = 0, critical = 0;
+        tasks.forEach(t => {
+            if (t.type === 'project') return;
+            const s = taskStartDate(t);
+            const e = taskEndDate(t);
+            if (s && (!range.start || s < range.start)) range.start = s;
+            if (e && (!range.end || e > range.end)) range.end = e;
+            const p = t.progress <= 1 ? (Number(t.progress) || 0) : (Number(t.progress) || 0) / 100;
+            progressSum += p;
+            progressN++;
+            if (t.$critical || t.critical) critical++;
+        });
+        const evm = computeProjectEVM(tasks, dd);
+        return {
+            activity_count: progressN,
+            critical_count: critical,
+            pct_complete: progressN ? Math.round((progressSum / progressN) * 100) : 0,
+            start_date: range.start ? formatDate(range.start) : null,
+            finish_date: range.end ? formatDate(range.end) : null,
+            ...evm,
+            link_count: links.length
+        };
+    }
+
     global.CasePMSchedule = {
         parseDate,
         formatDate,
@@ -595,6 +734,10 @@
         isTaskCritical,
         normalizeConstraintType,
         computeEVM,
+        computeProjectEVM,
+        detectResourceConflicts,
+        levelResources,
+        summarizeSchedulePayload,
         runCPM,
         computeLookAhead,
         groupLookAheadByWbs

@@ -20,7 +20,7 @@
                 </button>
                 <input type="file" id="scheduleImportInput" accept=".json,.xml,.xer,text/xml,application/xml" class="hidden"
                        onchange="ScheduleApp.importFile(this.files[0]); this.value=''">
-                <button type="button" class="schedule-toolbar-btn" onclick="ScheduleApp.printGantt()"><i class="fa-solid fa-print"></i> Print</button>
+                <button type="button" class="schedule-toolbar-btn" onclick="ScheduleApp.showPrintSetup()"><i class="fa-solid fa-print"></i> Print</button>
                 <button type="button" class="schedule-toolbar-btn" onclick="ScheduleApp.saveSchedule()"><i class="fa-solid fa-save text-emerald-400"></i> Save</button>
                 <button type="button" class="schedule-toolbar-btn schedule-toolbar-btn-danger" onclick="ScheduleApp.clearSchedule()" title="Clear entire schedule">
                     <i class="fa-solid fa-eraser"></i> Clear
@@ -71,6 +71,7 @@
                 <button type="button" id="criticalPathBtn" class="schedule-toolbar-btn active-tool" onclick="ScheduleApp.toggleCriticalPath()"><i class="fa-solid fa-route text-red-400"></i> Critical</button>
                 <button type="button" class="schedule-toolbar-btn" onclick="ScheduleApp.setBaseline()" title="Save current schedule as baseline"><i class="fa-solid fa-camera"></i> Set Baseline</button>
                 <button type="button" class="schedule-toolbar-btn" onclick="ScheduleApp.showBaselineManager()" title="Manage baselines and variance"><i class="fa-solid fa-layer-group text-sky-400"></i> Baselines</button>
+                <button type="button" class="schedule-toolbar-btn" onclick="ScheduleApp.showResourceLeveling()" title="Detect and level resource overallocation"><i class="fa-solid fa-users-gear text-amber-400"></i> Resources</button>
             </div>
             <div class="flex flex-wrap gap-1 border-r border-zinc-700 pr-2 mr-1">
                 <span class="text-[0.65rem] text-zinc-500 self-center px-1">Timescale</span>
@@ -112,6 +113,9 @@
                 </button>
                 <button type="button" id="tabTrace" class="schedule-view-tab px-4 py-2 text-sm rounded-lg text-zinc-400 hover:text-white" onclick="ScheduleApp.switchScheduleView('trace')">
                     <i class="fa-solid fa-table mr-1.5"></i> Activity Table
+                </button>
+                <button type="button" id="tabPortfolio" class="schedule-view-tab px-4 py-2 text-sm rounded-lg text-zinc-400 hover:text-white" onclick="ScheduleApp.switchScheduleView('portfolio')">
+                    <i class="fa-solid fa-building mr-1.5"></i> Portfolio
                 </button>
             </div>
             <div class="flex flex-wrap items-center gap-3 text-sm">
@@ -178,6 +182,20 @@
                 </thead>
                 <tbody id="traceTableBody"></tbody>
             </table>
+        </div>
+    </div>
+
+    <!-- Portfolio schedule rollup -->
+    <div id="portfolioViewPanel" class="hidden flex-1 min-h-0 overflow-auto">
+        <div class="bg-zinc-900 border border-zinc-800 rounded-2xl p-5 h-full overflow-auto">
+            <div class="flex items-center justify-between mb-4">
+                <div>
+                    <h2 class="text-lg font-semibold">Portfolio Schedule Dashboard</h2>
+                    <p class="text-sm text-zinc-400">EVM rollup and schedule summary across all projects. Click a row to open that schedule.</p>
+                </div>
+                <button type="button" class="schedule-toolbar-btn" onclick="ScheduleApp.renderPortfolio()"><i class="fa-solid fa-rotate"></i> Refresh</button>
+            </div>
+            <div id="portfolioContent"></div>
         </div>
     </div>
 
@@ -271,6 +289,10 @@
         <div class="text-xs uppercase text-emerald-400 font-semibold mb-2">Add column</div>
         <div id="scheduleFieldPickerListMgr"></div>
     </div>
+    <div class="px-4 py-3 border-t border-zinc-700 flex justify-between gap-2">
+        <button type="button" onclick="ScheduleApp.resetColumnWidths()" class="schedule-toolbar-btn text-xs"><i class="fa-solid fa-arrows-left-right-to-line"></i> Reset Widths</button>
+        <button type="button" onclick="document.getElementById('scheduleColumnManagerModal').close()" class="px-4 py-1.5 text-xs bg-zinc-800 hover:bg-zinc-700 rounded-md">Close</button>
+    </div>
 </dialog>
 
 <!-- MS Project / P6 field picker (legacy quick add) -->
@@ -285,6 +307,45 @@
     <div id="scheduleFieldPickerList" class="p-3 max-h-[60vh] overflow-auto"></div>
 </dialog>
 
+<!-- Print setup -->
+<dialog id="schedulePrintModal" class="rounded-md w-full max-w-md p-0 text-white shadow-2xl" style="background:#18181b;border:1px solid #3f3f46;">
+    <div class="px-4 py-3 border-b border-zinc-700 flex justify-between items-center">
+        <div>
+            <h3 class="font-semibold text-sm">Print Setup</h3>
+            <p class="text-xs text-zinc-500">Choose what to include in the schedule printout</p>
+        </div>
+        <button type="button" onclick="document.getElementById('schedulePrintModal').close()" class="text-zinc-400 hover:text-white">&times;</button>
+    </div>
+    <div class="p-4 space-y-2 text-sm">
+        <label class="flex items-center gap-2"><input id="printIncludeSummary" type="checkbox" class="rounded border-zinc-600" checked> Project summary header</label>
+        <label class="flex items-center gap-2"><input id="printIncludeTable" type="checkbox" class="rounded border-zinc-600" checked> Activity table</label>
+        <label class="flex items-center gap-2"><input id="printIncludeInlineBars" type="checkbox" class="rounded border-zinc-600" checked> Inline Gantt bars in table</label>
+        <label class="flex items-center gap-2"><input id="printIncludeChart" type="checkbox" class="rounded border-zinc-600"> Separate schedule chart (off by default)</label>
+        <label class="flex items-center gap-2"><input id="printIncludeEvm" type="checkbox" class="rounded border-zinc-600"> EVM columns (CPI/SPI) + project rollup</label>
+        <label class="flex items-center gap-2"><input id="printIncludeFooter" type="checkbox" class="rounded border-zinc-600"> Print footer line</label>
+    </div>
+    <div class="px-4 py-3 border-t border-zinc-700 flex justify-end gap-2">
+        <button type="button" onclick="document.getElementById('schedulePrintModal').close()" class="px-4 py-1.5 text-xs bg-zinc-800 hover:bg-zinc-700 rounded-md">Cancel</button>
+        <button type="button" onclick="ScheduleApp.savePrintSettings()" class="px-4 py-1.5 text-xs bg-emerald-600 hover:bg-emerald-500 rounded-md font-medium">Print</button>
+    </div>
+</dialog>
+
+<!-- Resource leveling -->
+<dialog id="scheduleResourceModal" class="rounded-md w-full max-w-lg p-0 text-white shadow-2xl" style="background:#18181b;border:1px solid #3f3f46;">
+    <div class="px-4 py-3 border-b border-zinc-700 flex justify-between items-center">
+        <div>
+            <h3 class="font-semibold text-sm">Resource Leveling</h3>
+            <p class="text-xs text-zinc-500">Detect overallocation and delay conflicting activities</p>
+        </div>
+        <button type="button" onclick="document.getElementById('scheduleResourceModal').close()" class="text-zinc-400 hover:text-white">&times;</button>
+    </div>
+    <div id="scheduleResourceConflictList" class="p-3 max-h-[50vh] overflow-auto space-y-2"></div>
+    <div class="px-4 py-3 border-t border-zinc-700 flex justify-between gap-2">
+        <button type="button" onclick="ScheduleApp.runResourceLeveling()" class="schedule-toolbar-btn text-xs"><i class="fa-solid fa-wand-magic-sparkles text-amber-400"></i> Level Resources</button>
+        <button type="button" onclick="document.getElementById('scheduleResourceModal').close()" class="px-4 py-1.5 text-xs bg-zinc-800 hover:bg-zinc-700 rounded-md">Close</button>
+    </div>
+</dialog>
+
 <!-- Baseline manager -->
 <dialog id="scheduleBaselineModal" class="rounded-md w-full max-w-lg p-0 text-white shadow-2xl" style="background:#18181b;border:1px solid #3f3f46;">
     <div class="px-4 py-3 border-b border-zinc-700 flex justify-between items-center">
@@ -296,6 +357,7 @@
     </div>
     <div class="p-3 max-h-[50vh] overflow-auto">
         <div id="scheduleBaselineList" class="space-y-2"></div>
+        <div id="scheduleBaselineCompare"></div>
     </div>
     <div class="px-4 py-3 border-t border-zinc-700 flex justify-between gap-2">
         <button type="button" onclick="ScheduleApp.setBaseline()" class="schedule-toolbar-btn text-xs"><i class="fa-solid fa-camera"></i> Set Baseline</button>

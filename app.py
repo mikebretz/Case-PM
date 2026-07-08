@@ -970,6 +970,75 @@ def schedule_page():
     return render_template('schedule.html', projects=projects, active_project=active_project)
 
 
+@app.route('/api/schedules/portfolio')
+@login_required
+def api_portfolio_schedules():
+    """Lightweight schedule + EVM summary for all projects (portfolio dashboard)."""
+    projects = Project.query.order_by(Project.name).all()
+    rows = []
+    for p in projects:
+        record = ScheduleData.query.filter_by(project_id=p.id).first()
+        summary = {
+            'project_id': p.id,
+            'project_number': p.number or '',
+            'project_name': p.name,
+            'start_date': None,
+            'finish_date': None,
+            'pct_complete': None,
+            'critical_count': 0,
+            'activity_count': 0,
+            'cpi': None,
+            'spi': None,
+            'bac': None,
+            'has_schedule': False
+        }
+        if record and record.payload:
+            try:
+                payload = json.loads(record.payload)
+            except json.JSONDecodeError:
+                payload = None
+            if payload and payload.get('data'):
+                summary['has_schedule'] = True
+                tasks = payload['data']
+                links = payload.get('links') or []
+                data_date = (payload.get('settings') or {}).get('data_date')
+                start = finish = None
+                progress_sum = crit = act = 0
+                bac = bcwp = acwp = bcws = 0.0
+                for t in tasks:
+                    if t.get('type') == 'project':
+                        continue
+                    act += 1
+                    sd = t.get('start_date')
+                    ed = t.get('end_date')
+                    if sd and (not start or sd < start):
+                        start = sd
+                    if ed and (not finish or ed > finish):
+                        finish = ed
+                    prog = t.get('progress') or 0
+                    if prog > 1:
+                        prog = prog / 100.0
+                    progress_sum += prog
+                    if t.get('$critical') or t.get('critical'):
+                        crit += 1
+                    cost = float(t.get('cost') or 0)
+                    if cost > 0:
+                        bac += cost
+                        bcwp += cost * prog
+                        acwp += float(t.get('actual_cost') or 0) or cost * prog
+                summary['start_date'] = start
+                summary['finish_date'] = finish
+                summary['activity_count'] = act
+                summary['critical_count'] = crit
+                summary['pct_complete'] = round((progress_sum / act) * 100) if act else 0
+                summary['bac'] = round(bac, 2)
+                summary['cpi'] = round(bcwp / acwp, 3) if acwp > 0 else None
+                summary['spi'] = round(bcwp / bac, 3) if bac > 0 and progress_sum > 0 else None
+        if summary['has_schedule']:
+            rows.append(summary)
+    return jsonify(rows)
+
+
 @app.route('/api/schedule', methods=['GET'])
 @login_required
 def api_get_schedule():

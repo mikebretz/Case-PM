@@ -47,6 +47,17 @@
         show_baseline_bars: true,
         show_bar_labels: true
     };
+    if (!scheduleSettings.print_settings) {
+        scheduleSettings.print_settings = {
+            include_summary: true,
+            include_activity_table: true,
+            include_inline_bars: true,
+            include_schedule_chart: false,
+            include_evm: false,
+            include_footer: false
+        };
+    }
+    if (!scheduleSettings.compare_baseline_indices) scheduleSettings.compare_baseline_indices = [];
 
     const REQUIRED_COLUMNS = ['text', 'collapse'];
     const ROLLING_YEARS_BACK = 2;
@@ -170,17 +181,23 @@
         const dlg = document.getElementById('scheduleBaselineModal');
         if (!dlg) return setBaseline();
         const list = document.getElementById('scheduleBaselineList');
+        const compare = document.getElementById('scheduleBaselineCompare');
         if (!list) return;
         if (!baselines.length) {
             list.innerHTML = '<p class="text-zinc-500 text-sm p-2">No baselines saved. Click <b>Set Baseline</b> to capture the current schedule.</p>';
+            if (compare) compare.innerHTML = '';
         } else {
             list.innerHTML = baselines.map((b, i) => {
                 const active = scheduleSettings.active_baseline_index === i;
+                const compared = (scheduleSettings.compare_baseline_indices || []).includes(i);
                 const count = (b.data || []).length;
                 return `<div class="flex items-center justify-between gap-2 px-3 py-2 rounded-md border ${active ? 'border-emerald-600 bg-emerald-950/30' : 'border-zinc-700 bg-zinc-800/80'}">
-                    <div class="min-w-0">
-                        <div class="text-sm font-medium truncate">${b.name}</div>
-                        <div class="text-xs text-zinc-500">${count} activities · ${new Date(b.created).toLocaleString()}</div>
+                    <div class="min-w-0 flex items-center gap-2">
+                        <input type="checkbox" class="rounded border-zinc-600 baseline-compare-cb" data-idx="${i}" ${compared ? 'checked' : ''} title="Compare in table">
+                        <div>
+                            <div class="text-sm font-medium truncate">${b.name}</div>
+                            <div class="text-xs text-zinc-500">${count} activities · ${new Date(b.created).toLocaleString()}</div>
+                        </div>
                     </div>
                     <div class="flex gap-1 flex-shrink-0">
                         <button type="button" class="schedule-toolbar-btn text-xs px-2 py-1" onclick="ScheduleApp.activateBaseline(${i})">${active ? 'Active' : 'Use'}</button>
@@ -188,8 +205,53 @@
                     </div>
                 </div>`;
             }).join('');
+            list.querySelectorAll('.baseline-compare-cb').forEach(cb => {
+                cb.addEventListener('change', () => {
+                    const idx = parseInt(cb.dataset.idx, 10);
+                    let sel = scheduleSettings.compare_baseline_indices || [];
+                    if (cb.checked) {
+                        if (!sel.includes(idx)) sel.push(idx);
+                    } else sel = sel.filter(i => i !== idx);
+                    scheduleSettings.compare_baseline_indices = sel.slice(0, 3);
+                    renderBaselineComparison();
+                    queueSave();
+                });
+            });
+            renderBaselineComparison();
         }
         dlg.showModal();
+    }
+
+    function renderBaselineComparison() {
+        const el = document.getElementById('scheduleBaselineCompare');
+        if (!el) return;
+        const indices = (scheduleSettings.compare_baseline_indices || []).filter(i => baselines[i]);
+        if (!indices.length) {
+            el.innerHTML = '<p class="text-xs text-zinc-500 mt-3">Check baselines above to compare start/finish variance side-by-side.</p>';
+            return;
+        }
+        let html = '<div class="mt-4 text-xs uppercase text-sky-400 font-semibold mb-2">Multi-baseline comparison</div>';
+        html += '<div class="overflow-auto max-h-48 border border-zinc-700 rounded-md"><table class="w-full text-xs"><thead class="bg-zinc-900 sticky top-0"><tr>';
+        html += '<th class="text-left px-2 py-1">WBS</th><th class="text-left px-2 py-1">Activity</th>';
+        html += '<th class="text-left px-2 py-1">Current</th>';
+        indices.forEach(i => { html += `<th class="text-left px-2 py-1">${baselines[i].name}</th>`; });
+        html += '</tr></thead><tbody>';
+        gantt.eachTask(t => {
+            if (t.type === 'project') return;
+            const wbs = wbsCode(t);
+            html += `<tr class="border-t border-zinc-800"><td class="px-2 py-1">${wbs}</td><td class="px-2 py-1 truncate max-w-[120px]">${t.text || ''}</td>`;
+            html += `<td class="px-2 py-1 whitespace-nowrap">${formatDateSafe(t.start_date)} – ${formatDateSafe(t.end_date)}</td>`;
+            indices.forEach(i => {
+                const bMap = baselineTaskMap(baselines[i]);
+                const b = bMap.get(String(t.id));
+                const txt = b ? `${formatDateSafe(b.start_date)} – ${formatDateSafe(b.end_date)}` : '—';
+                const sv = t.start_variance != null ? ` <span class="text-amber-400">(${t.start_variance}d)</span>` : '';
+                html += `<td class="px-2 py-1 whitespace-nowrap">${txt}${i === scheduleSettings.active_baseline_index ? sv : ''}</td>`;
+            });
+            html += '</tr>';
+        });
+        html += '</tbody></table></div>';
+        el.innerHTML = html;
     }
 
     function activateBaseline(index) {
@@ -330,12 +392,25 @@
     }
 
     function getTimelineWidth() {
+        return getTimelineDomWidth();
+    }
+
+    function getTimelineDomWidth() {
+        const timelineCell = document.querySelector('#gantt_here .gantt_layout_root > .gantt_layout_cell:nth-child(3)');
+        if (timelineCell && timelineCell.offsetWidth > 80) return timelineCell.offsetWidth;
         const hostW = document.getElementById('gantt_here')?.offsetWidth || 1200;
         if (scheduleSettings.timeline_width_px >= 180) {
             return Math.max(200, Math.min(hostW - 100, scheduleSettings.timeline_width_px));
         }
         const pct = scheduleSettings.timeline_pct ?? 0.42;
         return Math.max(240, Math.min(hostW - 100, Math.round(hostW * pct)));
+    }
+
+    function syncLayoutTimelineWidth() {
+        const w = scheduleSettings.timeline_width_px >= 180
+            ? scheduleSettings.timeline_width_px
+            : Math.max(240, Math.round((document.getElementById('gantt_here')?.offsetWidth || 1000) * (scheduleSettings.timeline_pct ?? 0.42)));
+        if (gantt.config.layout?.cols?.[2]) gantt.config.layout.cols[2].width = w;
     }
 
     function syncGridTableWidth() {
@@ -364,7 +439,7 @@
             const w = parseInt(col.width, 10) || 80;
             const n = i + 1;
             return `#scheduleGanttHost .gantt_grid_head_cell:nth-child(${n}),
-#scheduleGanttHost .gantt_cell:nth-child(${n}){width:${w}px!important;min-width:${w}px!important;max-width:${w}px!important;flex:0 0 ${w}px!important;}`;
+#scheduleGanttHost .gantt_cell:nth-child(${n}){width:${w}px!important;min-width:${w}px!important;flex:0 0 ${w}px!important;}`;
         }).join('\n');
 
         let el = document.getElementById('sched-grid-col-widths');
@@ -429,6 +504,7 @@
             root.appendChild(handle);
         }
         handle.style.right = (timelineW - 5) + 'px';
+        syncLayoutTimelineWidth();
     }
 
     function queueChartOverlay() {
@@ -683,9 +759,9 @@
         if (typeof gantt.getScrollState !== 'function' || typeof gantt.dateFromPos !== 'function') return;
         const state = gantt.getScrollState();
         if (!state) return;
-        const viewW = getTimelineWidth();
+        const viewW = getTimelineDomWidth();
         const leftDate = gantt.dateFromPos(state.x);
-        const rightDate = gantt.dateFromPos(state.x + Math.max(200, viewW - 40));
+        const rightDate = gantt.dateFromPos(state.x + Math.max(120, viewW - 8));
         if (!leftDate || !rightDate) return;
         const bounds = getProjectDateBounds();
         let changed = false;
@@ -723,18 +799,14 @@
         const d = toGanttDate(date);
         if (!d) return;
         applyRollingCalendarRange(false);
-        const margin = marginPx != null ? marginPx : Math.round(getTimelineWidth() * 0.25);
+        const viewW = getTimelineDomWidth();
+        const margin = marginPx != null ? marginPx : Math.round(viewW * 0.2);
         timelineScrollProgrammatic = true;
         if (gantt.showDate) gantt.showDate(d);
-        gantt.render();
         requestAnimationFrame(() => {
-            requestAnimationFrame(() => {
-                let x = null;
-                if (typeof gantt.posFromDate === 'function') x = gantt.posFromDate(d);
-                if (x != null) setTimelineScrollX(Math.max(0, x - margin));
-                else if (gantt.showDate) gantt.showDate(d);
-                timelineScrollProgrammatic = false;
-            });
+            let x = typeof gantt.posFromDate === 'function' ? gantt.posFromDate(d) : null;
+            if (x != null) setTimelineScrollX(Math.max(0, x - margin));
+            timelineScrollProgrammatic = false;
         });
     }
 
@@ -745,20 +817,18 @@
         const start = toGanttDate(task.start_date);
         const end = toGanttDate(task.end_date) || start;
         if (!start) return;
-        applyRollingCalendarRange(false);
+        const viewW = getTimelineDomWidth();
         timelineScrollProgrammatic = true;
-        if (gantt.showDate) gantt.showDate(start);
-        gantt.render();
         requestAnimationFrame(() => {
-            requestAnimationFrame(() => {
-                const left = typeof gantt.posFromDate === 'function' ? gantt.posFromDate(start) : null;
-                const right = typeof gantt.posFromDate === 'function' ? gantt.posFromDate(end) : left;
-                if (left != null) {
-                    const mid = (left + (right != null ? right : left)) / 2;
-                    setTimelineScrollX(Math.max(0, mid - getTimelineWidth() / 2));
-                }
-                timelineScrollProgrammatic = false;
-            });
+            const left = typeof gantt.posFromDate === 'function' ? gantt.posFromDate(start) : null;
+            const right = typeof gantt.posFromDate === 'function' ? gantt.posFromDate(end) : left;
+            if (left != null) {
+                const mid = (left + (right != null ? right : left)) / 2;
+                setTimelineScrollX(Math.max(0, mid - viewW / 2));
+            } else if (gantt.showDate) {
+                gantt.showDate(start);
+            }
+            timelineScrollProgrammatic = false;
         });
     }
 
@@ -981,8 +1051,19 @@
         }
         syncGridTableWidth();
         lastHeaderWidthsKey = '';
-        queueGridHeaderSync();
+        applyGridColumnWidthStyles();
         if (persist) queueSave();
+    }
+
+    function resetColumnWidths() {
+        columnWidths = {};
+        gantt.config.columns = buildColumnConfig();
+        syncGridTableWidth();
+        lastHeaderWidthsKey = '';
+        applyGridColumnWidthStyles();
+        gantt.render();
+        queueSave();
+        showScheduleAlert('Column widths reset to defaults.', 'success');
     }
 
     let baselineLayerBound = false;
@@ -1236,33 +1317,42 @@
         return normalizeHexColor(scheduleSettings.default_bar_color) || '#3b82f6';
     }
 
-    function applyPredecessorString(taskId, predStr) {
-        if (!gantt.isTaskExists(taskId)) return;
+    function applyPredecessorString(taskId, predStr, options) {
+        if (!gantt.isTaskExists(taskId)) return false;
+        const opts = options || {};
         const existing = [...(gantt.getTask(taskId).$target || [])];
         existing.forEach(lid => gantt.deleteLink(lid));
+        const failed = [];
+        let added = 0;
         if (predStr && predStr.trim()) {
             const parts = predStr.split(/[,;]+/).map(s => s.trim()).filter(Boolean);
             const types = { FS: '0', SS: '1', FF: '2', SF: '3' };
             parts.forEach(part => {
-                const m = part.match(/^([^\s]+?)(FS|SS|FF|SF)?([+-]?\d+)?$/i);
-                if (!m) return;
+                const m = part.match(/^([\w.%-]+?)(FS|SS|FF|SF)?([+-]?\d+)?$/i);
+                if (!m) { failed.push(part); return; }
                 const code = m[1];
                 const type = types[(m[2] || 'FS').toUpperCase()] || '0';
                 const lag = parseInt(m[3] || '0', 10) || 0;
                 let sourceId = null;
                 gantt.eachTask(t => {
                     if (sourceId) return;
+                    if (t.id === taskId) return;
                     const wbs = wbsCode(t);
-                    if (wbs === code || String(t.id) === code || String(t.activity_id) === code) sourceId = t.id;
+                    if (wbs === code || String(t.id) === code || String(t.activity_id || '') === code) sourceId = t.id;
                 });
                 if (sourceId && sourceId !== taskId) {
                     gantt.addLink({ source: sourceId, target: taskId, type, lag });
-                }
+                    added++;
+                } else failed.push(part);
             });
         }
         gantt.refreshTask(taskId);
-        gantt.render();
         refreshWbsCodes();
+        if (!opts.skipSchedule) runSchedule({ skipScroll: true });
+        if (!opts.skipUndo) pushUndoState();
+        if (!opts.skipSave) queueSave();
+        if (failed.length) showScheduleAlert(`Could not link predecessor(s): ${failed.join(', ')}. Use WBS or Activity ID (e.g. 1.2FS+2).`, 'warning');
+        return added > 0 || (!predStr?.trim() && !failed.length);
     }
 
     function getBuiltinColumnDefs() {
@@ -1300,6 +1390,7 @@
     }
 
     function buildColumnConfig() {
+        columnEditors.clear();
         const builtins = getBuiltinColumnDefs()
             .filter(c => !hiddenColumns.includes(c.name))
             .map(c => Object.assign({}, c, { width: colWidth(c.name, c.width) }));
@@ -1361,7 +1452,7 @@
         const type = ed.type || 'sched_text';
 
         if (type === 'pred_string') {
-            applyPredecessorString(taskId, value);
+            applyPredecessorString(taskId, value, { skipSchedule: false, skipUndo: true, skipSave: true });
         } else if (type === 'color_hex') {
             task.bar_color = normalizeHexColor(value) || value;
             applyTaskBarColor(task);
@@ -1458,7 +1549,7 @@
             if (!floatingEditorActive) return;
             saveFloatingEditor(id, colName, input.value);
             closeFloatingEditor();
-            gantt.render();
+            gantt.refreshTask(id);
         };
         input.addEventListener('keydown', e => {
             e.stopPropagation();
@@ -1631,7 +1722,9 @@
             }
             if (target.closest?.('.gantt_tree_icon')) return true;
             gantt.selectTask(id);
-            if (!target.closest?.('.sched-floating-cell-editor')) {
+            const inGrid = target.closest?.('.gantt_grid');
+            const inTimeline = target.closest?.('.gantt_task') || target.closest?.('.gantt_task_line') || target.closest?.('.gantt_task_bg');
+            if (inTimeline && !inGrid) {
                 focusTimelineOnTask(id);
             }
             return true;
@@ -1642,14 +1735,22 @@
             if (target.closest?.('.sched-tree-btn') || target.closest?.('.gantt_tree_icon')) return true;
             if (target.closest?.('.gantt_grid')) {
                 const pos = (gantt.locateCell && gantt.locateCell(target)) || locateGridCell(target);
-                let col = null;
+                let colName = null;
                 if (pos) {
-                    if (typeof pos.column === 'number') col = gantt.config.columns[pos.column];
-                    else if (typeof pos.column === 'string') col = gantt.config.columns.find(c => c.name === pos.column);
-                    else if (pos.column && pos.column.name) col = pos.column;
+                    if (typeof pos.column === 'number' && gantt.config.columns[pos.column]) {
+                        colName = gantt.config.columns[pos.column].name;
+                    } else if (typeof pos.column === 'string') {
+                        colName = pos.column;
+                    } else if (pos.column?.name) {
+                        colName = pos.column.name;
+                    }
                 }
-                if (col && columnEditors.has(col.name) && !['wbs', 'successors', 'collapse'].includes(col.name)) {
-                    startCellEdit(id, col.name);
+                if (colName && columnEditors.has(colName) && !['wbs', 'successors', 'collapse'].includes(colName)) {
+                    setTimeout(() => startCellEdit(id, colName), 0);
+                    return false;
+                }
+                if (window.ScheduleActivityModal) {
+                    ScheduleActivityModal.open(id);
                     return false;
                 }
             }
@@ -1842,6 +1943,13 @@
         sanitizeAllTaskDates();
         baselines = payload.baselines || [];
         if (payload.settings) scheduleSettings = Object.assign(scheduleSettings, payload.settings);
+        if (!scheduleSettings.print_settings) {
+            scheduleSettings.print_settings = {
+                include_summary: true, include_activity_table: true, include_inline_bars: true,
+                include_schedule_chart: false, include_evm: false, include_footer: false
+            };
+        }
+        if (!scheduleSettings.compare_baseline_indices) scheduleSettings.compare_baseline_indices = [];
         refreshWbsCodes();
         applySettingsToUI();
         gantt.eachTask(t => applyTaskBarColor(t));
@@ -2141,10 +2249,10 @@
         }, parent);
         applyTaskBarColor(gantt.getTask(id));
         gantt.selectTask(id);
-        focusTimelineOnTask(id);
         gantt.showTask(id);
         gantt.render();
         queueChartOverlay();
+        queueGridHeaderSync();
         if (window.ScheduleActivityModal) ScheduleActivityModal.open(id);
         else showScheduleAlert('Open activity detail by double-clicking a row.', 'info');
         logActivity('Added activity', type === 'milestone' ? 'Milestone' : 'Task');
@@ -2530,7 +2638,7 @@
 
     // ─── Views ───
     function switchScheduleView(view) {
-        ['ganttViewPanel', 'lookaheadViewPanel', 'traceViewPanel'].forEach(id => {
+        ['ganttViewPanel', 'lookaheadViewPanel', 'traceViewPanel', 'portfolioViewPanel'].forEach(id => {
             document.getElementById(id)?.classList.add('hidden');
         });
         document.querySelectorAll('.schedule-view-tab').forEach(btn => btn.classList.remove('active-view'));
@@ -2540,6 +2648,7 @@
             document.getElementById('tabGantt')?.classList.add('active-view');
             resizeGanttHost();
             gantt.render();
+            applyChartOverlay();
         } else if (view === 'lookahead') {
             document.getElementById('lookaheadViewPanel')?.classList.remove('hidden');
             document.getElementById('tabLookahead')?.classList.add('active-view');
@@ -2548,6 +2657,10 @@
             document.getElementById('traceViewPanel')?.classList.remove('hidden');
             document.getElementById('tabTrace')?.classList.add('active-view');
             renderTraceTable();
+        } else if (view === 'portfolio') {
+            document.getElementById('portfolioViewPanel')?.classList.remove('hidden');
+            document.getElementById('tabPortfolio')?.classList.add('active-view');
+            renderPortfolio();
         }
     }
 
@@ -2649,11 +2762,15 @@
         let critical = 0;
         let totalCpi = 0;
         let cpiCount = 0;
+        const tasks = [];
         gantt.eachTask(t => {
+            tasks.push(t);
             if (t.type !== 'project' && isTaskCritical(t)) critical++;
             if (t.cpi != null && !Number.isNaN(Number(t.cpi))) { totalCpi += Number(t.cpi); cpiCount++; }
         });
-        const avgCpi = cpiCount ? (totalCpi / cpiCount).toFixed(2) : '—';
+        const dataDate = document.getElementById('dataDateInput')?.value || scheduleSettings.data_date;
+        const projectEvm = CasePMSchedule.computeProjectEVM ? CasePMSchedule.computeProjectEVM(tasks, dataDate) : null;
+        const avgCpi = projectEvm?.cpi != null ? projectEvm.cpi : (cpiCount ? (totalCpi / cpiCount).toFixed(2) : '—');
         const blIdx = scheduleSettings.active_baseline_index;
         const blLabel = blIdx >= 0 && baselines[blIdx] ? baselines[blIdx].name : 'None';
         let viewRange = '';
@@ -2663,8 +2780,9 @@
         }
         if (ganttReady && typeof gantt.getScrollState === 'function' && typeof gantt.dateFromPos === 'function') {
             const st = gantt.getScrollState();
+            const viewW = getTimelineDomWidth();
             const left = st ? gantt.dateFromPos(st.x) : null;
-            const right = st ? gantt.dateFromPos(st.x + getTimelineWidth()) : null;
+            const right = st ? gantt.dateFromPos(st.x + viewW) : null;
             if (left && right) viewRange = `<span>Viewing: <b>${formatDateSafe(left)}</b> – <b>${formatDateSafe(right)}</b></span>`;
         }
         el.innerHTML = `
@@ -2675,7 +2793,9 @@
             <span>Activities: <b>${countTasks()}</b></span>
             <span>Critical: <b class="text-red-400">${critical}</b></span>
             <span>Baseline: <b class="text-sky-400">${blLabel}</b></span>
-            <span>Avg CPI: <b>${avgCpi}</b></span>
+            <span>CPI: <b>${avgCpi}</b></span>
+            <span>SPI: <b>${projectEvm?.spi ?? '—'}</b></span>
+            <span>BAC: <b>${projectEvm?.bac != null ? '$' + Number(projectEvm.bac).toLocaleString() : '—'}</b></span>
             <span class="text-zinc-600">| Ctrl+Z undo · F2 edit · Del delete</span>`;
     }
 
@@ -2713,6 +2833,116 @@
         reader.readAsText(file);
     }
 
+    function runResourceLeveling() {
+        if (!ganttReady || typeof CasePMSchedule.levelResources !== 'function') {
+            return showScheduleAlert('Resource leveling engine not loaded.', 'error');
+        }
+        const tasks = [];
+        gantt.eachTask(t => tasks.push(Object.assign({}, t)));
+        const links = gantt.getLinks().map(l => Object.assign({}, l));
+        const result = CasePMSchedule.levelResources(tasks, links, { lagDays: 0 });
+        if (!result.updates.size) {
+            const conflicts = CasePMSchedule.detectResourceConflicts(tasks);
+            if (!conflicts.length) return showScheduleAlert('No resource conflicts detected.', 'info');
+            return showScheduleAlert(`${conflicts.length} conflict(s) remain — tasks may lack float to shift.`, 'warning');
+        }
+        result.updates.forEach((patch, id) => {
+            if (!gantt.isTaskExists(id)) return;
+            const task = gantt.getTask(id);
+            if (patch.start_date) task.start_date = toGanttDate(patch.start_date);
+            if (patch.end_date) task.end_date = toGanttDate(patch.end_date);
+            sanitizeTaskDates(task);
+            gantt.refreshTask(id);
+        });
+        runSchedule({ skipScroll: true });
+        pushUndoState();
+        logActivity('Resource leveling', `Resolved ${result.conflictsResolved} conflict(s); ${result.remaining} remaining`);
+        showScheduleAlert(`Leveled ${result.conflictsResolved} resource conflict(s). ${result.remaining} remaining.`, result.remaining ? 'warning' : 'success');
+        showResourceLeveling();
+    }
+
+    function showResourceLeveling() {
+        const dlg = document.getElementById('scheduleResourceModal');
+        const list = document.getElementById('scheduleResourceConflictList');
+        if (!dlg || !list) return runResourceLeveling();
+        const tasks = [];
+        gantt.eachTask(t => tasks.push(Object.assign({}, t)));
+        const conflicts = CasePMSchedule.detectResourceConflicts ? CasePMSchedule.detectResourceConflicts(tasks) : [];
+        if (!conflicts.length) {
+            list.innerHTML = '<p class="text-zinc-400 text-sm">No resource overallocation detected. Assign resources to activities to enable leveling.</p>';
+        } else {
+            list.innerHTML = conflicts.map(c =>
+                `<div class="px-3 py-2 rounded-md bg-zinc-800/80 border border-amber-800/50 text-sm">
+                    <span class="text-amber-400 font-medium">${c.resource}</span>
+                    <span class="text-zinc-400"> — </span>${c.textA || c.taskA} overlaps ${c.textB || c.taskB}
+                </div>`
+            ).join('');
+        }
+        dlg.showModal();
+    }
+
+    async function renderPortfolio() {
+        const container = document.getElementById('portfolioContent');
+        if (!container) return;
+        container.innerHTML = '<p class="text-zinc-400 text-sm p-4">Loading portfolio schedules…</p>';
+        try {
+            const res = await fetch('/api/schedules/portfolio');
+            if (!res.ok) throw new Error('Failed to load portfolio');
+            const rows = await res.json();
+            if (!rows.length) {
+                container.innerHTML = '<p class="text-zinc-400 text-center py-12">No projects with schedules found.</p>';
+                return;
+            }
+            let html = `<table class="w-full text-sm"><thead class="sticky top-0 bg-zinc-950 border-b border-zinc-800 text-xs uppercase text-zinc-400">
+                <tr><th class="text-left px-3 py-2">Project</th><th class="text-left px-3 py-2">Start</th><th class="text-left px-3 py-2">Finish</th>
+                <th class="text-center px-3 py-2">%</th><th class="text-center px-3 py-2">Critical</th><th class="text-center px-3 py-2">CPI</th><th class="text-center px-3 py-2">SPI</th><th class="text-center px-3 py-2">BAC</th></tr></thead><tbody>`;
+            rows.forEach(r => {
+                const cur = getSelectedProjectId() === r.project_id;
+                html += `<tr class="border-b border-zinc-800 hover:bg-zinc-800/50 cursor-pointer ${cur ? 'bg-emerald-950/20' : ''}" onclick="window.location.href='/schedule?project_id=${r.project_id}'">
+                    <td class="px-3 py-2 font-medium">${r.project_number ? r.project_number + ' — ' : ''}${r.project_name}</td>
+                    <td class="px-3 py-2">${r.start_date || '—'}</td>
+                    <td class="px-3 py-2">${r.finish_date || '—'}</td>
+                    <td class="px-3 py-2 text-center">${r.pct_complete != null ? r.pct_complete + '%' : '—'}</td>
+                    <td class="px-3 py-2 text-center">${r.critical_count ?? '—'}</td>
+                    <td class="px-3 py-2 text-center">${r.cpi != null ? r.cpi : '—'}</td>
+                    <td class="px-3 py-2 text-center">${r.spi != null ? r.spi : '—'}</td>
+                    <td class="px-3 py-2 text-center">${r.bac != null ? '$' + Number(r.bac).toLocaleString() : '—'}</td>
+                </tr>`;
+            });
+            html += '</tbody></table>';
+            container.innerHTML = html;
+        } catch (e) {
+            container.innerHTML = `<p class="text-red-400 text-sm p-4">${e.message || 'Could not load portfolio.'}</p>`;
+        }
+    }
+
+    function showPrintSetup() {
+        const dlg = document.getElementById('schedulePrintModal');
+        if (!dlg) return printGantt();
+        const ps = scheduleSettings.print_settings || {};
+        document.getElementById('printIncludeSummary').checked = ps.include_summary !== false;
+        document.getElementById('printIncludeTable').checked = ps.include_activity_table !== false;
+        document.getElementById('printIncludeInlineBars').checked = ps.include_inline_bars !== false;
+        document.getElementById('printIncludeChart').checked = !!ps.include_schedule_chart;
+        document.getElementById('printIncludeEvm').checked = !!ps.include_evm;
+        document.getElementById('printIncludeFooter').checked = !!ps.include_footer;
+        dlg.showModal();
+    }
+
+    function savePrintSettings() {
+        scheduleSettings.print_settings = {
+            include_summary: document.getElementById('printIncludeSummary')?.checked !== false,
+            include_activity_table: document.getElementById('printIncludeTable')?.checked !== false,
+            include_inline_bars: document.getElementById('printIncludeInlineBars')?.checked !== false,
+            include_schedule_chart: document.getElementById('printIncludeChart')?.checked === true,
+            include_evm: document.getElementById('printIncludeEvm')?.checked === true,
+            include_footer: document.getElementById('printIncludeFooter')?.checked === true
+        };
+        queueSave();
+        document.getElementById('schedulePrintModal')?.close();
+        printGantt();
+    }
+
     function buildPrintTimescale(startMs, span) {
         const ticks = 10;
         let cells = '';
@@ -2725,6 +2955,7 @@
     }
 
     function buildPrintSheet() {
+        const ps = scheduleSettings.print_settings || {};
         const meta = getProjectMeta();
         const range = gantt.getSubtaskDates();
         const dataDate = document.getElementById('dataDateInput')?.value || scheduleSettings.data_date || CasePMSchedule.formatDate(new Date());
@@ -2732,79 +2963,99 @@
         const startMs = range?.start_date ? toGanttDate(range.start_date)?.getTime() : Date.now();
         const endMs = range?.end_date ? toGanttDate(range.end_date)?.getTime() : startMs + 86400000 * 30;
         const span = Math.max(endMs - startMs, 86400000);
+        const timescale = buildPrintTimescale(startMs, span);
+        const showInlineBars = ps.include_inline_bars !== false;
+        const showTable = ps.include_activity_table !== false;
+        const showChart = ps.include_schedule_chart === true;
+        const showEvm = ps.include_evm === true;
+        const showSummary = ps.include_summary !== false;
 
         let critical = 0;
-        gantt.eachTask(t => { if (t.type !== 'project' && isTaskCritical(t)) critical++; });
-
-        const timescale = buildPrintTimescale(startMs, span);
+        const tasks = [];
+        gantt.eachTask(t => {
+            tasks.push(t);
+            if (t.type !== 'project' && isTaskCritical(t)) critical++;
+        });
+        const projectEvm = CasePMSchedule.computeProjectEVM
+            ? CasePMSchedule.computeProjectEVM(tasks, dataDate)
+            : null;
 
         let rows = '';
         const rowMap = new Map();
         let rowIdx = 0;
-        gantt.eachTask(t => {
-            rowMap.set(t.id, rowIdx++);
-            const ts = toGanttDate(t.start_date)?.getTime() || startMs;
-            const te = toGanttDate(t.end_date)?.getTime() || ts;
-            const left = Math.max(0, ((ts - startMs) / span) * 100);
-            const width = Math.max(t.type === 'milestone' ? 0.8 : 1.2, ((te - ts) / span) * 100);
-            const color = resolveBarColor(t);
-            const level = t.$level || 0;
-            const dateLabel = `${formatDateSafe(t.start_date)} – ${formatDateSafe(t.end_date)}`;
-            rows += `<tr class="${t.type === 'project' ? 'print-summary' : ''}">
-                <td>${wbsCode(t)}</td>
-                <td class="print-name" style="padding-left:${8 + level * 14}px">${t.text || ''}</td>
-                <td class="c">${t.duration != null ? t.duration : ''}</td>
-                <td>${formatDateSafe(t.start_date)}</td>
-                <td>${formatDateSafe(t.end_date)}</td>
-                <td class="c">${Math.round((t.progress || 0) * 100)}%</td>
-                <td>${predTemplate(t) || '—'}</td>
-                <td class="print-bar-cell">
-                    <div class="print-bar-dates">${dateLabel}</div>
-                    <div class="print-bar-track"><div class="print-bar" style="left:${left}%;width:${width}%;background:${color}"></div></div>
-                </td>
-            </tr>`;
-        });
+        if (showTable) {
+            gantt.eachTask(t => {
+                rowMap.set(t.id, rowIdx++);
+                const ts = toGanttDate(t.start_date)?.getTime() || startMs;
+                const te = toGanttDate(t.end_date)?.getTime() || ts;
+                const left = Math.max(0, ((ts - startMs) / span) * 100);
+                const width = Math.max(t.type === 'milestone' ? 0.8 : 1.2, ((te - ts) / span) * 100);
+                const color = resolveBarColor(t);
+                const level = t.$level || 0;
+                const dateLabel = `${formatDateSafe(t.start_date)} – ${formatDateSafe(t.end_date)}`;
+                const evmCols = showEvm
+                    ? `<td class="c">${t.cpi != null ? t.cpi : '—'}</td><td class="c">${t.spi != null ? t.spi : '—'}</td>`
+                    : '';
+                const barCell = showInlineBars
+                    ? `<td class="print-bar-cell"><div class="print-bar-dates">${dateLabel}</div><div class="print-bar-track"><div class="print-bar" style="left:${left}%;width:${width}%;background:${color}"></div></div></td>`
+                    : '';
+                rows += `<tr class="${t.type === 'project' ? 'print-summary' : ''}">
+                    <td>${wbsCode(t)}</td>
+                    <td class="print-name" style="padding-left:${8 + level * 14}px">${t.text || ''}</td>
+                    <td class="c">${t.duration != null ? t.duration : ''}</td>
+                    <td>${formatDateSafe(t.start_date)}</td>
+                    <td>${formatDateSafe(t.end_date)}</td>
+                    <td class="c">${Math.round((t.progress || 0) * 100)}%</td>
+                    <td>${predTemplate(t) || '—'}</td>${evmCols}${barCell}
+                </tr>`;
+            });
+        }
 
-        const links = gantt.getLinks();
-        const chartH = Math.max(120, rowIdx * 18);
-        let chartBars = '';
-        gantt.eachTask(t => {
-            const i = rowMap.get(t.id);
-            if (i == null) return;
-            const ts = toGanttDate(t.start_date)?.getTime() || startMs;
-            const te = toGanttDate(t.end_date)?.getTime() || ts;
-            const x = Math.max(0, ((ts - startMs) / span) * 100);
-            const w = Math.max(t.type === 'milestone' ? 0.6 : 1, ((te - ts) / span) * 100);
-            const y = ((i + 0.5) / rowIdx) * 100;
-            const color = resolveBarColor(t);
-            chartBars += `<rect x="${x}" y="${y - 1.2}" width="${w}" height="2.4" fill="${color}" rx="0.3"/>`;
-        });
-        let chartLines = '';
-        links.forEach(link => {
-            if (!gantt.isTaskExists(link.source) || !gantt.isTaskExists(link.target)) return;
-            const src = gantt.getTask(link.source);
-            const tgt = gantt.getTask(link.target);
-            const si = rowMap.get(link.source);
-            const ti = rowMap.get(link.target);
-            if (si == null || ti == null) return;
-            const x1 = ((toGanttDate(src.end_date)?.getTime() || startMs) - startMs) / span * 100;
-            const x2 = ((toGanttDate(tgt.start_date)?.getTime() || startMs) - startMs) / span * 100;
-            const y1 = ((si + 0.5) / rowIdx) * 100;
-            const y2 = ((ti + 0.5) / rowIdx) * 100;
-            chartLines += `<line x1="${x1}" y1="${y1}" x2="${x2}" y2="${y2}" stroke="#444" stroke-width="0.4"/>`;
-        });
-        const chartBlock = rowIdx ? `
-            <div class="print-gantt-chart">
-                <h3 class="print-chart-title">Schedule Chart</h3>
-                ${timescale}
-                <svg class="print-chart-svg" viewBox="0 0 100 100" preserveAspectRatio="none" style="height:${chartH}px">
-                    ${chartLines}${chartBars}
-                </svg>
+        let chartBlock = '';
+        if (showChart && rowIdx) {
+            const chartH = Math.max(120, rowIdx * 18);
+            let chartBars = '';
+            gantt.eachTask(t => {
+                const i = rowMap.get(t.id);
+                if (i == null) return;
+                const ts = toGanttDate(t.start_date)?.getTime() || startMs;
+                const te = toGanttDate(t.end_date)?.getTime() || ts;
+                const x = Math.max(0, ((ts - startMs) / span) * 100);
+                const w = Math.max(t.type === 'milestone' ? 0.6 : 1, ((te - ts) / span) * 100);
+                const y = ((i + 0.5) / rowIdx) * 100;
+                chartBars += `<rect x="${x}" y="${y - 1.2}" width="${w}" height="2.4" fill="${resolveBarColor(t)}" rx="0.3"/>`;
+            });
+            let chartLines = '';
+            gantt.getLinks().forEach(link => {
+                if (!gantt.isTaskExists(link.source) || !gantt.isTaskExists(link.target)) return;
+                const src = gantt.getTask(link.source);
+                const tgt = gantt.getTask(link.target);
+                const si = rowMap.get(link.source);
+                const ti = rowMap.get(link.target);
+                if (si == null || ti == null) return;
+                const x1 = ((toGanttDate(src.end_date)?.getTime() || startMs) - startMs) / span * 100;
+                const x2 = ((toGanttDate(tgt.start_date)?.getTime() || startMs) - startMs) / span * 100;
+                chartLines += `<line x1="${x1}" y1="${(si + 0.5) / rowIdx * 100}" x2="${x2}" y2="${(ti + 0.5) / rowIdx * 100}" stroke="#444" stroke-width="0.4"/>`;
+            });
+            chartBlock = `<div class="print-gantt-chart"><h3 class="print-chart-title">Schedule Chart</h3>${timescale}
+                <svg class="print-chart-svg" viewBox="0 0 100 100" preserveAspectRatio="none" style="height:${chartH}px">${chartLines}${chartBars}</svg></div>`;
+        }
+
+        const evmHeader = showEvm ? '<th>CPI</th><th>SPI</th>' : '';
+        const barHeader = showInlineBars ? '<th class="print-bar-cell">Gantt</th>' : '';
+        const tsRow = showInlineBars ? `<tr class="print-ts-row"><td colspan="${showEvm ? 9 : 7}"></td><td class="print-bar-cell">${timescale}</td></tr>` : '';
+        const evmSummary = showEvm && projectEvm ? `
+            <div class="sched-print-evm-grid mt-2 text-xs">
+                <div><span class="sched-print-label">BAC</span><strong>$${projectEvm.bac.toLocaleString()}</strong></div>
+                <div><span class="sched-print-label">BCWP</span><strong>$${projectEvm.bcwp.toLocaleString()}</strong></div>
+                <div><span class="sched-print-label">ACWP</span><strong>$${projectEvm.acwp.toLocaleString()}</strong></div>
+                <div><span class="sched-print-label">CPI</span><strong>${projectEvm.cpi ?? '—'}</strong></div>
+                <div><span class="sched-print-label">SPI</span><strong>${projectEvm.spi ?? '—'}</strong></div>
+                <div><span class="sched-print-label">EAC</span><strong>$${projectEvm.eac.toLocaleString()}</strong></div>
+                <div><span class="sched-print-label">VAC</span><strong>$${projectEvm.vac.toLocaleString()}</strong></div>
             </div>` : '';
 
-        const sheet = document.getElementById('schedulePrintSheet');
-        if (!sheet) return;
-        sheet.innerHTML = `
+        const headerBlock = showSummary ? `
             <div class="schedule-print-header">
                 <div class="sched-print-brand">Case PM · Project Controls</div>
                 <h1 class="sched-print-title">Project Schedule</h1>
@@ -2817,18 +3068,23 @@
                     <div><span class="sched-print-label">Schedule Finish</span><strong>${range?.end_date ? formatDateSafe(range.end_date) : '—'}</strong></div>
                     <div><span class="sched-print-label">Activities</span><strong>${countTasks()}</strong></div>
                     <div><span class="sched-print-label">Critical</span><strong>${critical}</strong></div>
-                </div>
-            </div>
+                </div>${evmSummary}
+            </div>` : '';
+
+        const tableBlock = showTable ? `
             <table class="schedule-print-table">
-                <thead>
-                    <tr>
-                        <th>WBS</th><th>Activity Name</th><th>Dur</th><th>Start</th><th>Finish</th><th>%</th><th>Predecessors</th><th class="print-bar-cell">Gantt</th>
-                    </tr>
-                    <tr class="print-ts-row"><td colspan="7"></td><td class="print-bar-cell">${timescale}</td></tr>
-                </thead>
+                <thead><tr>
+                    <th>WBS</th><th>Activity Name</th><th>Dur</th><th>Start</th><th>Finish</th><th>%</th><th>Predecessors</th>${evmHeader}${barHeader}
+                </tr>${tsRow}</thead>
                 <tbody>${rows}</tbody>
-            </table>
-            ${chartBlock}`;
+            </table>` : '';
+
+        const footerBlock = ps.include_footer ? '<div class="sched-print-footer text-xs text-zinc-500 mt-4">Case PM Schedule Report</div>' : '';
+
+        const sheet = document.getElementById('schedulePrintSheet');
+        if (!sheet) return;
+        sheet.innerHTML = headerBlock + tableBlock + chartBlock + footerBlock;
+        sheet.dataset.printFooter = ps.include_footer ? '1' : '0';
     }
 
     function printGantt() {
@@ -2838,10 +3094,11 @@
             showScheduleAlert('Nothing to print — add activities first.', 'warning');
             return;
         }
+        document.body.classList.toggle('printing-gantt-show-footer', sheet.dataset.printFooter === '1');
         document.body.classList.add('printing-gantt');
         setTimeout(() => {
             window.print();
-            setTimeout(() => document.body.classList.remove('printing-gantt'), 600);
+            setTimeout(() => document.body.classList.remove('printing-gantt', 'printing-gantt-show-footer'), 600);
         }, 150);
     }
 
@@ -2912,7 +3169,13 @@
             ['All MS Project/P6 columns', 'All Fields button'],
             ['Activity detail modal', 'Activity tab or double-click row'],
             ['Look-ahead + Activity table views', 'View tabs'],
-            ['Keyboard shortcuts', 'Press ? on schedule page']
+            ['Resource leveling', 'Resources toolbar → Level Resources'],
+            ['Multi-baseline comparison', 'Baselines → check compare boxes'],
+            ['Project EVM rollup (BAC/CPI/SPI/EAC)', 'Run Schedule · status bar + Print EVM'],
+            ['Portfolio schedule dashboard', 'Portfolio tab'],
+            ['Print setup (choose what to print)', 'Print → setup dialog'],
+            ['Keyboard shortcuts', 'Press ? on schedule page'],
+            ['Reset column widths', 'Columns → Reset Widths']
         ];
         list.innerHTML = items.map(([name, how]) =>
             `<div class="flex justify-between gap-3 px-3 py-2 rounded-md bg-zinc-800/80 border border-zinc-700 text-sm">
@@ -2976,8 +3239,9 @@
         undo, redo, fitScheduleView, scrollToToday, panTimeline, resetTimelineCalendar, filterTasks, exportCsv, focusTimelineOnTask,
         runSchedule, switchScheduleView, renderLookAhead, focusActivity, sortByStartDate, exportXer, exportMsProjectXml,
         showAllOptionalColumns, showFeaturesChecklist, showKeyboardShortcuts,
-        exportJson, importFile, printGantt, printLookAhead, saveSchedule,
-        loadSchedule, clearSchedule, showColumnManager, showAddColumnDialog, removeColumn, addFieldColumn, queueSave
+        exportJson, importFile, printGantt, printLookAhead, showPrintSetup, savePrintSettings, saveSchedule,
+        loadSchedule, clearSchedule, showColumnManager, showAddColumnDialog, removeColumn, addFieldColumn, queueSave,
+        runResourceLeveling, showResourceLeveling, renderPortfolio, resetColumnWidths, renderBaselineComparison
     };
 
     if (document.readyState === 'loading') {
