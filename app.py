@@ -183,6 +183,15 @@ class Project(db.Model):
             return ', '.join(parts)
         return self.address or '—'
 
+    def has_original_contract(self):
+        pdf_path = os.path.join(
+            app.config.get('UPLOAD_FOLDER', 'uploads'),
+            'contracts',
+            str(self.id),
+            'original_contract.pdf',
+        )
+        return os.path.isfile(pdf_path)
+
     def to_dict(self):
         d = self.get_details()
         return {
@@ -205,6 +214,7 @@ class Project(db.Model):
             'stage': self.stage or '',
             'project_type': self.project_type or '',
             'description': self.description or '',
+            'has_original_contract': self.has_original_contract(),
             **d,
         }
 
@@ -683,6 +693,7 @@ os.makedirs(os.path.join(UPLOAD_FOLDER, 'documents'), exist_ok=True)
 os.makedirs(os.path.join(UPLOAD_FOLDER, 'attachments'), exist_ok=True)
 os.makedirs(os.path.join(UPLOAD_FOLDER, 'change_orders'), exist_ok=True)
 os.makedirs(os.path.join(UPLOAD_FOLDER, 'spec_books'), exist_ok=True)
+os.makedirs(os.path.join(UPLOAD_FOLDER, 'contracts'), exist_ok=True)
 os.makedirs(os.path.join(UPLOAD_FOLDER, 'commitments'), exist_ok=True)
 
 
@@ -872,11 +883,33 @@ def api_current_project():
     active = get_active_project()
     if not active:
         return jsonify({'project_id': None, 'name': None, 'number': None, 'address': None})
+    d = active.to_dict()
     return jsonify({
         'project_id': active.id,
         'name': active.name,
         'number': active.number,
         'address': active.address,
+        'city': active.city,
+        'state': active.state,
+        'zip_code': active.zip_code,
+        'client': active.client,
+        'contract_value': active.contract_value,
+        'sage_job_number': active.sage_job_number or active.accounting_project_number,
+        'accounting_project_number': active.accounting_project_number,
+        'prime_aia_form': d.get('prime_aia_form'),
+        'owner_legal_name': d.get('owner_legal_name') or active.client,
+        'contractor_legal_name': d.get('contractor_legal_name'),
+        'architect_of_record': d.get('architect_of_record') or d.get('architect_firm'),
+        'default_retainage_percent': d.get('default_retainage_percent'),
+        'catina_project_id': d.get('catina_project_id'),
+        'catina_document_url': d.get('catina_document_url'),
+        'original_contract_amount': d.get('original_contract_amount'),
+        'contract_execution_date': d.get('contract_execution_date'),
+        'notice_to_proceed_date': d.get('notice_to_proceed_date'),
+        'sage_contract_number': d.get('sage_contract_number'),
+        'sage_billings_account': d.get('sage_billings_account'),
+        'sage_wip_account': d.get('sage_wip_account'),
+        'sage_ar_customer_code': d.get('sage_ar_customer_code'),
     })
 
 
@@ -892,10 +925,21 @@ PROJECT_DETAIL_FIELDS = [
     'warranty_start_date', 'warranty_end_date',
     'owner_contact_name', 'owner_contact_email', 'owner_contact_phone',
     'architect_firm', 'architect_contact', 'superintendent', 'estimator',
+    # Prime contract & AIA
+    'original_contract_amount', 'prime_aia_form', 'contractor_legal_name', 'owner_legal_name',
+    'architect_of_record', 'architect_license_number', 'contract_execution_date',
+    'notice_to_proceed_date', 'catina_project_id', 'catina_document_url',
+    'default_retainage_percent', 'default_billing_period', 'bond_required',
+    'performance_bond_amount', 'payment_bond_amount', 'insurance_gl_limit',
+    'insurance_auto_limit', 'prevailing_wage', 'building_permit_number', 'ahj_authority',
+    'lien_state', 'ocip_ccip', 'contingency_amount', 'allowances_total',
+    # Sage 300 CRE
     'sage_contract_number', 'sage_account_set', 'sage_accounting_method',
     'sage_billings_account', 'sage_wip_account', 'sage_revenue_account',
-    'sage_ar_customer_code', 'sage_default_tax_group', 'parent_project_id',
-    'project_template', 'notes',
+    'sage_ar_customer_code', 'sage_default_tax_group', 'sage_company_code',
+    'sage_database', 'sage_ap_vendor_prefix', 'sage_cost_code_prefix',
+    'sage_subcontract_liability_account', 'sage_default_cost_type', 'sage_sync_enabled',
+    'parent_project_id', 'project_template', 'notes',
 ]
 
 
@@ -1536,6 +1580,101 @@ def api_upload_spec_book():
     meta['ok'] = True
     meta['url'] = url_for('serve_spec_book_pdf', project_id=int(project_id))
     return jsonify(meta)
+
+
+@app.route('/api/projects/<int:project_id>/original-contract', methods=['GET'])
+@login_required
+def api_get_original_contract(project_id):
+    folder = os.path.join(app.config['UPLOAD_FOLDER'], 'contracts', str(project_id))
+    meta_path = os.path.join(folder, 'meta.json')
+    pdf_path = os.path.join(folder, 'original_contract.pdf')
+    if not os.path.isfile(meta_path) or not os.path.isfile(pdf_path):
+        return jsonify({'found': False})
+    try:
+        with open(meta_path, encoding='utf-8') as fh:
+            meta = json.load(fh)
+    except (OSError, json.JSONDecodeError):
+        return jsonify({'found': False})
+    meta['found'] = True
+    meta['url'] = url_for('serve_original_contract_pdf', project_id=int(project_id))
+    return jsonify(meta)
+
+
+@app.route('/api/projects/<int:project_id>/original-contract', methods=['POST'])
+@login_required
+def api_upload_original_contract(project_id):
+    Project.query.get_or_404(project_id)
+    file = request.files.get('file')
+    if not file or not file.filename:
+        return jsonify({'error': 'file required'}), 400
+    if not allowed_file(file.filename) or not file.filename.lower().endswith('.pdf'):
+        return jsonify({'error': 'PDF file required'}), 400
+
+    folder = os.path.join(app.config['UPLOAD_FOLDER'], 'contracts', str(project_id))
+    os.makedirs(folder, exist_ok=True)
+    pdf_path = os.path.join(folder, 'original_contract.pdf')
+    file.save(pdf_path)
+
+    meta = {
+        'filename': secure_filename(file.filename) or file.filename,
+        'uploadedAt': datetime.utcnow().isoformat() + 'Z',
+        'uploadedById': current_user.id,
+        'uploadedByName': getattr(current_user, 'full_name', None) or current_user.email,
+        'aiaForm': (request.form.get('aia_form') or '').strip(),
+        'executedDate': (request.form.get('executed_date') or '').strip(),
+    }
+    with open(os.path.join(folder, 'meta.json'), 'w', encoding='utf-8') as fh:
+        json.dump(meta, fh)
+
+    meta['ok'] = True
+    meta['url'] = url_for('serve_original_contract_pdf', project_id=int(project_id))
+    return jsonify(meta)
+
+
+@app.route('/api/projects/<int:project_id>/original-contract', methods=['DELETE'])
+@login_required
+def api_delete_original_contract(project_id):
+    if current_user.role != 'Admin':
+        return jsonify({'error': 'Admin only'}), 403
+    folder = os.path.join(app.config['UPLOAD_FOLDER'], 'contracts', str(project_id))
+    for name in ('original_contract.pdf', 'meta.json'):
+        path = os.path.join(folder, name)
+        if os.path.isfile(path):
+            os.remove(path)
+    return jsonify({'ok': True})
+
+
+@app.route('/api/projects/<int:project_id>/aia/catina-link', methods=['POST'])
+@login_required
+def api_project_catina_link(project_id):
+    from aia_service import build_catina_create_url, build_catina_open_url, commitment_export_for_catina
+    project = Project.query.get_or_404(project_id)
+    d = project.to_dict()
+    catina_url = d.get('catina_document_url')
+    catina_id = d.get('catina_project_id')
+    if catina_url or catina_id:
+        url = build_catina_open_url(catina_id, catina_url)
+    else:
+        payload = commitment_export_for_catina({
+            'id': None,
+            'number': project.number,
+            'aia_form': d.get('prime_aia_form') or 'A101',
+            'title': project.name,
+            'description': project.description,
+            'current_amount': project.contract_value,
+            'owner_name': d.get('owner_legal_name') or project.client,
+            'contractor_name': d.get('contractor_legal_name'),
+            'architect_engineer': d.get('architect_of_record'),
+        })
+        url = build_catina_create_url(payload, {'name': project.name, 'number': project.number})
+    return jsonify({'ok': True, 'url': url, 'portal': 'AIA Contract Documents (Catina)'})
+
+
+@app.route('/uploads/contracts/<int:project_id>/original_contract.pdf')
+@login_required
+def serve_original_contract_pdf(project_id):
+    directory = os.path.join(app.config['UPLOAD_FOLDER'], 'contracts', str(project_id))
+    return send_from_directory(directory, 'original_contract.pdf', mimetype='application/pdf')
 
 
 @app.route('/uploads/spec_books/<int:project_id>/spec_book.pdf')

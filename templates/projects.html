@@ -181,7 +181,16 @@
                     title="Double-click to edit project">
                     <td class="px-3 py-2 font-mono text-emerald-400 text-xs">{{ project.number or '—' }}</td>
                     <td class="px-3 py-2 font-mono text-xs text-zinc-300">{{ project.sage_job_number or '—' }}</td>
-                    <td class="px-3 py-2 font-medium text-white">{{ project.name }}</td>
+                    <td class="px-3 py-2 font-medium text-white">
+                        {{ project.name }}
+                        {% if project.has_original_contract() %}
+                        <span class="ml-1.5 inline-flex text-red-400/90" title="Original contract on file"><i class="fa-solid fa-file-pdf text-[10px]"></i></span>
+                        {% endif %}
+                        {% set pd = project.get_details() %}
+                        {% if pd.get('prime_aia_form') %}
+                        <span class="ml-1 inline-flex text-violet-400/90 font-mono text-[9px]" title="Prime AIA {{ pd.get('prime_aia_form') }}">{{ pd.get('prime_aia_form') }}</span>
+                        {% endif %}
+                    </td>
                     <td class="px-3 py-2 text-zinc-300 truncate max-w-[140px]">{{ project.client or '—' }}</td>
                     <td class="px-3 py-2 text-zinc-400 text-xs">{{ project.location_label() }}</td>
                     <td class="px-3 py-2 text-zinc-300 text-xs truncate max-w-[120px]">{{ project.project_manager or '—' }}</td>
@@ -243,8 +252,9 @@
             <button type="button" class="project-tab-btn px-4 py-3 text-sm font-medium text-zinc-400 whitespace-nowrap" data-tab="location" onclick="switchProjectTab('location')">Location</button>
             <button type="button" class="project-tab-btn px-4 py-3 text-sm font-medium text-zinc-400 whitespace-nowrap" data-tab="schedule" onclick="switchProjectTab('schedule')">Schedule & Dates</button>
             <button type="button" class="project-tab-btn px-4 py-3 text-sm font-medium text-zinc-400 whitespace-nowrap" data-tab="financial" onclick="switchProjectTab('financial')">Financial</button>
+            <button type="button" class="project-tab-btn px-4 py-3 text-sm font-medium text-zinc-400 whitespace-nowrap" data-tab="contract" onclick="switchProjectTab('contract')">Contract &amp; AIA</button>
             <button type="button" class="project-tab-btn px-4 py-3 text-sm font-medium text-zinc-400 whitespace-nowrap" data-tab="team" onclick="switchProjectTab('team')">Team & Contacts</button>
-            <button type="button" class="project-tab-btn px-4 py-3 text-sm font-medium text-zinc-400 whitespace-nowrap" data-tab="sage" onclick="switchProjectTab('sage')">Accounting</button>
+            <button type="button" class="project-tab-btn px-4 py-3 text-sm font-medium text-zinc-400 whitespace-nowrap" data-tab="sage" onclick="switchProjectTab('sage')">Sage 300</button>
             <button type="button" class="project-tab-btn px-4 py-3 text-sm font-medium text-zinc-400 whitespace-nowrap" data-tab="other" onclick="switchProjectTab('other')">Other</button>
         </div>
 
@@ -443,11 +453,47 @@
                 <div id="projectTab-financial" class="project-tab-panel hidden">
                     <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
                         <div>
-                            <label class="project-field-label">Total Contract Value</label>
+                            <label class="project-field-label">Current Contract Value</label>
                             <div class="relative">
                                 <span class="absolute left-3 top-2.5 text-zinc-500">$</span>
                                 <input type="number" step="0.01" name="contract_value" id="fld_contract_value" class="project-field-input pl-7">
                             </div>
+                            <p class="text-[10px] text-zinc-500 mt-1">Includes approved change orders</p>
+                        </div>
+                        <div>
+                            <label class="project-field-label">Original Contract Amount</label>
+                            <div class="relative">
+                                <span class="absolute left-3 top-2.5 text-zinc-500">$</span>
+                                <input type="number" step="0.01" name="original_contract_amount" id="fld_original_contract_amount" class="project-field-input pl-7">
+                            </div>
+                            <p class="text-[10px] text-zinc-500 mt-1">G702 Line 1 — before COs</p>
+                        </div>
+                        <div>
+                            <label class="project-field-label">Contingency</label>
+                            <div class="relative">
+                                <span class="absolute left-3 top-2.5 text-zinc-500">$</span>
+                                <input type="number" step="0.01" name="contingency_amount" id="fld_contingency_amount" class="project-field-input pl-7">
+                            </div>
+                        </div>
+                        <div>
+                            <label class="project-field-label">Allowances Total</label>
+                            <div class="relative">
+                                <span class="absolute left-3 top-2.5 text-zinc-500">$</span>
+                                <input type="number" step="0.01" name="allowances_total" id="fld_allowances_total" class="project-field-input pl-7">
+                            </div>
+                        </div>
+                        <div>
+                            <label class="project-field-label">Default Retainage %</label>
+                            <input type="number" step="0.1" min="0" max="100" name="default_retainage_percent" id="fld_default_retainage_percent" class="project-field-input" placeholder="10">
+                        </div>
+                        <div>
+                            <label class="project-field-label">Default Billing Period</label>
+                            <select name="default_billing_period" id="fld_default_billing_period" class="project-field-input">
+                                <option value="">—</option>
+                                <option value="Monthly">Monthly</option>
+                                <option value="Bi-Weekly">Bi-Weekly</option>
+                                <option value="Milestone">Milestone</option>
+                            </select>
                         </div>
                         <div>
                             <label class="project-field-label">Square Feet</label>
@@ -467,6 +513,125 @@
                             <option value="Government">Government</option>
                             <option value="Non-Profit">Non-Profit</option>
                         </select>
+                    </div>
+                </div>
+
+                <div id="projectTab-contract" class="project-tab-panel hidden">
+                    <div class="border border-zinc-700 rounded-lg p-4 mb-4 bg-zinc-950/50">
+                        <div class="text-sm font-medium text-white mb-2"><i class="fa-solid fa-file-pdf text-red-400 mr-2"></i>Original Prime Contract (PDF)</div>
+                        <p class="text-xs text-zinc-400 mb-3">Upload the executed owner–GC agreement. Used for pay apps, commitments defaults, and AIA document reference.</p>
+                        <div id="originalContractStatus" class="text-xs text-zinc-500 mb-3">No contract uploaded.</div>
+                        <div class="flex flex-wrap gap-2 items-center">
+                            <input type="file" id="originalContractFile" accept=".pdf,application/pdf" class="text-xs text-zinc-400 file:mr-3 file:py-1.5 file:px-3 file:rounded file:border-0 file:bg-zinc-700 file:text-zinc-200">
+                            <button type="button" id="uploadContractBtn" onclick="uploadOriginalContract()" class="px-4 py-2 bg-emerald-700 hover:bg-emerald-600 rounded-md text-xs font-medium text-white" disabled>Upload PDF</button>
+                            <a id="viewContractLink" href="#" target="_blank" rel="noopener" class="hidden px-4 py-2 bg-zinc-700 hover:bg-zinc-600 rounded-md text-xs text-sky-300">View Contract</a>
+                            <button type="button" id="deleteContractBtn" onclick="deleteOriginalContract()" class="hidden px-4 py-2 bg-red-900/50 hover:bg-red-800 rounded-md text-xs text-red-300">Remove</button>
+                            <button type="button" id="openCatinaProjectBtn" onclick="openProjectCatina()" class="hidden px-4 py-2 bg-violet-800 hover:bg-violet-700 rounded-md text-xs text-white"><i class="fa-solid fa-building-columns mr-1"></i>Open in Catina</button>
+                        </div>
+                    </div>
+
+                    <div class="text-xs text-zinc-500 uppercase tracking-wide mb-3">AIA Prime Contract</div>
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <div>
+                            <label class="project-field-label">Prime AIA Form</label>
+                            <select name="prime_aia_form" id="fld_prime_aia_form" class="project-field-input">
+                                <option value="">— Select —</option>
+                                <option value="A101">A101 — Stipulated Sum (Owner–Contractor)</option>
+                                <option value="A102">A102 — Cost of the Work Plus Fee</option>
+                                <option value="A103">A103 — Cost Plus Fee with GMP</option>
+                                <option value="A201">A201 — General Conditions</option>
+                                <option value="Other">Other / Custom</option>
+                            </select>
+                        </div>
+                        <div>
+                            <label class="project-field-label">Contract Execution Date</label>
+                            <input type="date" name="contract_execution_date" id="fld_contract_execution_date" class="project-field-input">
+                        </div>
+                        <div>
+                            <label class="project-field-label">Notice to Proceed Date</label>
+                            <input type="date" name="notice_to_proceed_date" id="fld_notice_to_proceed_date" class="project-field-input">
+                        </div>
+                        <div>
+                            <label class="project-field-label">AIA Catina Project ID</label>
+                            <input type="text" name="catina_project_id" id="fld_catina_project_id" class="project-field-input font-mono" placeholder="From AIA Contract Documents">
+                        </div>
+                        <div class="md:col-span-2">
+                            <label class="project-field-label">AIA Catina Document URL</label>
+                            <input type="url" name="catina_document_url" id="fld_catina_document_url" class="project-field-input" placeholder="https://contractdocs.aia.org/...">
+                        </div>
+                    </div>
+
+                    <div class="text-xs text-zinc-500 uppercase tracking-wide mt-5 mb-3">Contract Parties (defaults for commitments &amp; pay apps)</div>
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <div>
+                            <label class="project-field-label">Owner Legal Name</label>
+                            <input type="text" name="owner_legal_name" id="fld_owner_legal_name" class="project-field-input" placeholder="Defaults from Client if blank">
+                        </div>
+                        <div>
+                            <label class="project-field-label">Contractor (GC) Legal Name</label>
+                            <input type="text" name="contractor_legal_name" id="fld_contractor_legal_name" class="project-field-input" placeholder="Case Contracting">
+                        </div>
+                        <div>
+                            <label class="project-field-label">Architect of Record</label>
+                            <input type="text" name="architect_of_record" id="fld_architect_of_record" class="project-field-input">
+                        </div>
+                        <div>
+                            <label class="project-field-label">Architect License #</label>
+                            <input type="text" name="architect_license_number" id="fld_architect_license_number" class="project-field-input">
+                        </div>
+                    </div>
+
+                    <div class="text-xs text-zinc-500 uppercase tracking-wide mt-5 mb-3">Bonding, Insurance &amp; Compliance</div>
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <div class="flex items-center gap-2 pt-6">
+                            <input type="checkbox" name="bond_required" id="fld_bond_required" value="1" class="rounded border-zinc-600">
+                            <label for="fld_bond_required" class="text-sm text-zinc-300">Performance &amp; Payment Bonds Required</label>
+                        </div>
+                        <div>
+                            <label class="project-field-label">Performance Bond Amount</label>
+                            <input type="number" step="0.01" name="performance_bond_amount" id="fld_performance_bond_amount" class="project-field-input">
+                        </div>
+                        <div>
+                            <label class="project-field-label">Payment Bond Amount</label>
+                            <input type="number" step="0.01" name="payment_bond_amount" id="fld_payment_bond_amount" class="project-field-input">
+                        </div>
+                        <div>
+                            <label class="project-field-label">GL Insurance Limit</label>
+                            <input type="text" name="insurance_gl_limit" id="fld_insurance_gl_limit" class="project-field-input" placeholder="$1,000,000 per occurrence">
+                        </div>
+                        <div>
+                            <label class="project-field-label">Auto Insurance Limit</label>
+                            <input type="text" name="insurance_auto_limit" id="fld_insurance_auto_limit" class="project-field-input">
+                        </div>
+                        <div>
+                            <label class="project-field-label">OCIP / CCIP</label>
+                            <select name="ocip_ccip" id="fld_ocip_ccip" class="project-field-input">
+                                <option value="">None</option>
+                                <option value="OCIP">OCIP (Owner Controlled)</option>
+                                <option value="CCIP">CCIP (Contractor Controlled)</option>
+                            </select>
+                        </div>
+                        <div>
+                            <label class="project-field-label">Prevailing Wage</label>
+                            <select name="prevailing_wage" id="fld_prevailing_wage" class="project-field-input">
+                                <option value="">—</option>
+                                <option value="No">No</option>
+                                <option value="Davis-Bacon">Davis-Bacon (Federal)</option>
+                                <option value="State">State Prevailing Wage</option>
+                            </select>
+                        </div>
+                        <div>
+                            <label class="project-field-label">Building Permit #</label>
+                            <input type="text" name="building_permit_number" id="fld_building_permit_number" class="project-field-input">
+                        </div>
+                        <div>
+                            <label class="project-field-label">AHJ / Authority Having Jurisdiction</label>
+                            <input type="text" name="ahj_authority" id="fld_ahj_authority" class="project-field-input">
+                        </div>
+                        <div>
+                            <label class="project-field-label">Lien Law State</label>
+                            <input type="text" name="lien_state" id="fld_lien_state" class="project-field-input" maxlength="2" placeholder="FL">
+                        </div>
                     </div>
                 </div>
 
@@ -526,7 +691,16 @@
                 </div>
 
                 <div id="projectTab-sage" class="project-tab-panel hidden">
+                    <p class="text-xs text-zinc-400 mb-4">Sage 300 CRE job setup — synced to commitments, budget, pay apps, and change orders when <code class="text-emerald-400">SAGE_API_URL</code> is configured.</p>
                     <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <div>
+                            <label class="project-field-label">Sage Company Code</label>
+                            <input type="text" name="sage_company_code" id="fld_sage_company_code" class="project-field-input font-mono" placeholder="Company entity in Sage">
+                        </div>
+                        <div>
+                            <label class="project-field-label">Sage Database</label>
+                            <input type="text" name="sage_database" id="fld_sage_database" class="project-field-input font-mono">
+                        </div>
                         <div>
                             <label class="project-field-label">Contract Number</label>
                             <input type="text" name="sage_contract_number" id="fld_sage_contract_number" class="project-field-input font-mono">
@@ -562,8 +736,36 @@
                             <input type="text" name="sage_revenue_account" id="fld_sage_revenue_account" class="project-field-input font-mono">
                         </div>
                         <div>
+                            <label class="project-field-label">Subcontract Liability Account</label>
+                            <input type="text" name="sage_subcontract_liability_account" id="fld_sage_subcontract_liability_account" class="project-field-input font-mono">
+                        </div>
+                        <div>
                             <label class="project-field-label">Default Tax Group</label>
                             <input type="text" name="sage_default_tax_group" id="fld_sage_default_tax_group" class="project-field-input">
+                        </div>
+                        <div>
+                            <label class="project-field-label">AP Vendor Prefix</label>
+                            <input type="text" name="sage_ap_vendor_prefix" id="fld_sage_ap_vendor_prefix" class="project-field-input font-mono" placeholder="Default vendor code prefix for subs">
+                        </div>
+                        <div>
+                            <label class="project-field-label">Cost Code Prefix</label>
+                            <input type="text" name="sage_cost_code_prefix" id="fld_sage_cost_code_prefix" class="project-field-input font-mono">
+                        </div>
+                        <div>
+                            <label class="project-field-label">Default Cost Type</label>
+                            <select name="sage_default_cost_type" id="fld_sage_default_cost_type" class="project-field-input">
+                                <option value="">—</option>
+                                <option value="Labor">Labor</option>
+                                <option value="Material">Material</option>
+                                <option value="Subcontract">Subcontract</option>
+                                <option value="Equipment">Equipment</option>
+                                <option value="Other">Other</option>
+                            </select>
+                        </div>
+                        <div class="flex items-center gap-2 pt-6">
+                            <input type="hidden" name="sage_sync_enabled" id="fld_sage_sync_enabled_hidden" value="1">
+                            <input type="checkbox" id="fld_sage_sync_enabled" checked class="rounded border-zinc-600" onchange="document.getElementById('fld_sage_sync_enabled_hidden').value = this.checked ? '1' : '0'">
+                            <label for="fld_sage_sync_enabled" class="text-sm text-zinc-300">Enable Sage 300 sync for this project</label>
                         </div>
                     </div>
                 </div>
@@ -606,11 +808,18 @@ const PROJECT_FIELD_IDS = [
     'timezone','latitude','longitude','store_number','phone','fax','office',
     'start_date','actual_start_date','end_date','projected_finish_date','substantial_completion_date',
     'percent_complete','warranty_start_date','warranty_end_date',
-    'contract_value','square_feet','financing','owner_type',
+    'contract_value','original_contract_amount','contingency_amount','allowances_total',
+    'default_retainage_percent','default_billing_period','square_feet','financing','owner_type',
+    'prime_aia_form','contract_execution_date','notice_to_proceed_date','catina_project_id','catina_document_url',
+    'owner_legal_name','contractor_legal_name','architect_of_record','architect_license_number',
+    'performance_bond_amount','payment_bond_amount','insurance_gl_limit','insurance_auto_limit',
+    'ocip_ccip','prevailing_wage','building_permit_number','ahj_authority','lien_state',
     'client','project_manager','owner_contact_name','owner_contact_email','owner_contact_phone',
     'architect_firm','architect_contact','superintendent','estimator',
     'sage_contract_number','sage_account_set','sage_accounting_method','sage_ar_customer_code',
     'sage_billings_account','sage_wip_account','sage_revenue_account','sage_default_tax_group',
+    'sage_company_code','sage_database','sage_ap_vendor_prefix','sage_cost_code_prefix',
+    'sage_subcontract_liability_account','sage_default_cost_type','sage_sync_enabled',
     'parent_project_id','project_template','flag_color','notes'
 ];
 
@@ -655,6 +864,11 @@ function openProjectModal(mode, projectId) {
 
     switchProjectTab('general');
     document.getElementById('projectModal').classList.remove('hidden');
+    if (mode === 'edit' && projectId) {
+        loadOriginalContractStatus(projectId);
+    } else {
+        resetOriginalContractUI();
+    }
 }
 
 function closeProjectModal() {
@@ -664,8 +878,109 @@ function closeProjectModal() {
 function populateProjectForm(data) {
     PROJECT_FIELD_IDS.forEach(key => {
         const el = document.getElementById('fld_' + key);
-        if (el && data[key] != null) el.value = data[key];
+        if (!el || data[key] == null) return;
+        if (el.type === 'checkbox') {
+            el.checked = data[key] === '1' || data[key] === true || data[key] === 'true';
+        } else {
+            el.value = data[key];
+        }
     });
+    const bondEl = document.getElementById('fld_bond_required');
+    if (bondEl) bondEl.checked = data.bond_required === '1' || data.bond_required === true;
+    const sageSync = document.getElementById('fld_sage_sync_enabled');
+    const sageHidden = document.getElementById('fld_sage_sync_enabled_hidden');
+    if (sageSync) {
+        const on = data.sage_sync_enabled !== '0' && data.sage_sync_enabled !== false;
+        sageSync.checked = on;
+        if (sageHidden) sageHidden.value = on ? '1' : '0';
+    }
+    if (!data.contractor_legal_name && document.getElementById('fld_contractor_legal_name')) {
+        document.getElementById('fld_contractor_legal_name').value = 'Case Contracting';
+    }
+}
+
+function resetOriginalContractUI() {
+    document.getElementById('originalContractStatus').textContent = 'Save project first, then upload contract PDF.';
+    document.getElementById('uploadContractBtn').disabled = true;
+    document.getElementById('viewContractLink').classList.add('hidden');
+    document.getElementById('deleteContractBtn').classList.add('hidden');
+    document.getElementById('openCatinaProjectBtn').classList.add('hidden');
+}
+
+async function loadOriginalContractStatus(projectId) {
+    const statusEl = document.getElementById('originalContractStatus');
+    const uploadBtn = document.getElementById('uploadContractBtn');
+    const viewLink = document.getElementById('viewContractLink');
+    const deleteBtn = document.getElementById('deleteContractBtn');
+    const catinaBtn = document.getElementById('openCatinaProjectBtn');
+    const fileInput = document.getElementById('originalContractFile');
+    if (!projectId) { resetOriginalContractUI(); return; }
+    uploadBtn.disabled = false;
+    catinaBtn.classList.remove('hidden');
+    try {
+        const res = await fetch(`/api/projects/${projectId}/original-contract`, { credentials: 'same-origin' });
+        const json = await res.json();
+        if (json.found) {
+            statusEl.innerHTML = `<span class="text-emerald-400">Uploaded:</span> ${json.filename || 'original_contract.pdf'} · ${json.uploadedAt ? new Date(json.uploadedAt).toLocaleString() : ''}`;
+            viewLink.href = json.url;
+            viewLink.classList.remove('hidden');
+            deleteBtn.classList.remove('hidden');
+        } else {
+            statusEl.textContent = 'No original contract uploaded yet.';
+            viewLink.classList.add('hidden');
+            deleteBtn.classList.add('hidden');
+        }
+    } catch {
+        statusEl.textContent = 'Could not load contract status.';
+    }
+    if (fileInput) {
+        fileInput.onchange = () => { uploadBtn.disabled = !fileInput.files?.length; };
+    }
+}
+
+async function uploadOriginalContract() {
+    if (!editingProjectId) { alert('Save the project first.'); return; }
+    const fileInput = document.getElementById('originalContractFile');
+    if (!fileInput?.files?.length) return;
+    const fd = new FormData();
+    fd.append('file', fileInput.files[0]);
+    const aiaForm = document.getElementById('fld_prime_aia_form')?.value;
+    const execDate = document.getElementById('fld_contract_execution_date')?.value;
+    if (aiaForm) fd.append('aia_form', aiaForm);
+    if (execDate) fd.append('executed_date', execDate);
+    try {
+        const res = await fetch(`/api/projects/${editingProjectId}/original-contract`, { method: 'POST', body: fd, credentials: 'same-origin' });
+        const json = await res.json();
+        if (!res.ok) throw new Error(json.error || 'Upload failed');
+        await loadOriginalContractStatus(editingProjectId);
+        fileInput.value = '';
+        alert('Original contract uploaded.');
+    } catch (e) {
+        alert(e.message);
+    }
+}
+
+async function deleteOriginalContract() {
+    if (!editingProjectId || !confirm('Remove the uploaded original contract?')) return;
+    try {
+        const res = await fetch(`/api/projects/${editingProjectId}/original-contract`, { method: 'DELETE', credentials: 'same-origin' });
+        if (!res.ok) throw new Error('Delete failed');
+        await loadOriginalContractStatus(editingProjectId);
+    } catch (e) {
+        alert(e.message);
+    }
+}
+
+async function openProjectCatina() {
+    if (!editingProjectId) { alert('Save the project first.'); return; }
+    try {
+        const res = await fetch(`/api/projects/${editingProjectId}/aia/catina-link`, { method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/json' }, body: '{}' });
+        const json = await res.json();
+        if (!res.ok) throw new Error(json.error || 'Failed');
+        window.open(json.url, '_blank', 'noopener');
+    } catch (e) {
+        alert(e.message);
+    }
 }
 
 function filterProjects() {

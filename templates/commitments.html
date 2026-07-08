@@ -12,7 +12,35 @@ window.COMMITMENT_PROJECT_CTX = {
     name: {{ (active_project.name if active_project else '')|tojson }},
     number: {{ (active_project.number if active_project and active_project.number else '')|tojson }},
     address: {{ (active_project.address if active_project and active_project.address else '')|tojson }},
+    city: {{ (active_project.city if active_project and active_project.city else '')|tojson }},
+    state: {{ (active_project.state if active_project and active_project.state else '')|tojson }},
+    client: {{ (active_project.client if active_project and active_project.client else '')|tojson }},
     sage_job: {{ (active_project.sage_job_number or active_project.accounting_project_number if active_project else '')|tojson }},
+    contract_value: {{ active_project.contract_value if active_project and active_project.contract_value else 0 }},
+    {% if active_project %}
+    {% set pd = active_project.get_details() %}
+    original_contract_amount: {{ pd.get('original_contract_amount', '')|tojson }},
+    prime_aia_form: {{ pd.get('prime_aia_form', '')|tojson }},
+    owner_legal_name: {{ (pd.get('owner_legal_name') or active_project.client or '')|tojson }},
+    contractor_legal_name: {{ (pd.get('contractor_legal_name') or 'Case Contracting')|tojson }},
+    architect_of_record: {{ (pd.get('architect_of_record') or pd.get('architect_firm') or '')|tojson }},
+    default_retainage_percent: {{ pd.get('default_retainage_percent', '')|tojson }},
+    catina_project_id: {{ pd.get('catina_project_id', '')|tojson }},
+    catina_document_url: {{ pd.get('catina_document_url', '')|tojson }},
+    contract_execution_date: {{ pd.get('contract_execution_date', '')|tojson }},
+    notice_to_proceed_date: {{ pd.get('notice_to_proceed_date', '')|tojson }},
+    {% else %}
+    original_contract_amount: '',
+    prime_aia_form: '',
+    owner_legal_name: '',
+    contractor_legal_name: 'Case Contracting',
+    architect_of_record: '',
+    default_retainage_percent: '',
+    catina_project_id: '',
+    catina_document_url: '',
+    contract_execution_date: '',
+    notice_to_proceed_date: '',
+    {% endif %}
 };
 </script>
 <script src="{{ url_for('static', filename='js/commitment-sage-sync.js') }}"></script>
