@@ -147,13 +147,13 @@
     try {
       const json = await api(`/api/change-orders/link-options?project_id=${pid}`);
       state.rfis = json.rfis || [];
+      state.commitments = json.commitments || [];
     } catch { state.rfis = []; }
-    try {
-      state.commitments = JSON.parse(localStorage.getItem('casepm_commitments') || '[]');
-      if (!state.commitments.length) {
-        state.commitments = JSON.parse(localStorage.getItem('commitments') || '[]');
-      }
-    } catch { state.commitments = []; }
+    if (!state.commitments?.length) {
+      try {
+        state.commitments = JSON.parse(localStorage.getItem(`casepm_commitments_p${pid}`) || localStorage.getItem('casepm_commitments') || '[]');
+      } catch { state.commitments = []; }
+    }
   }
 
   function populateLinkSelects(record) {
@@ -166,7 +166,7 @@
     if (comSel) {
       comSel.innerHTML = '<option value="">— None —</option>' +
         state.commitments.map((c, i) => {
-          const ref = c.number || c.commitment_number || `COM-${i + 1}`;
+          const ref = c.number || `COM-${c.id || i + 1}`;
           const label = c.description || c.title || ref;
           return `<option value="${ref}" ${record?.linked_commitment_ref === ref ? 'selected' : ''}>${ref} — ${label}</option>`;
         }).join('');

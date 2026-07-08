@@ -425,6 +425,59 @@ class PCOAllocation(db.Model):
     description = db.Column(db.String(200))
 
 
+class Commitment(db.Model):
+    __tablename__ = 'commitment'
+    id = db.Column(db.Integer, primary_key=True)
+    project_id = db.Column(db.Integer, db.ForeignKey('project.id'), nullable=False)
+    number = db.Column(db.String(30))
+    title = db.Column(db.String(200))
+    description = db.Column(db.Text, nullable=False)
+    commitment_type = db.Column(db.String(40), default='Purchase Order')
+    status = db.Column(db.String(40), default='Draft')
+    original_amount = db.Column(db.Float, default=0)
+    approved_changes = db.Column(db.Float, default=0)
+    current_amount = db.Column(db.Float, default=0)
+    company_name = db.Column(db.String(200))
+    company_id = db.Column(db.String(64))
+    contact_name = db.Column(db.String(150))
+    contact_email = db.Column(db.String(150))
+    contact_phone = db.Column(db.String(50))
+    date = db.Column(db.Date)
+    executed_date = db.Column(db.Date)
+    retainage_percent = db.Column(db.Float, default=0)
+    aia_form = db.Column(db.String(20), default='N/A')
+    payment_terms = db.Column(db.String(120))
+    scope_of_work = db.Column(db.Text)
+    notes = db.Column(db.Text)
+    ball_in_court_role = db.Column(db.String(80), default='Creator')
+    approval_stage = db.Column(db.Integer, default=0)
+    submitted_at = db.Column(db.DateTime)
+    approved_at = db.Column(db.DateTime)
+    approved_by_id = db.Column(db.Integer, db.ForeignKey('user.id'))
+    signature_method = db.Column(db.String(30), default='internal')
+    signature_status = db.Column(db.String(40), default='unsigned')
+    docusign_envelope_id = db.Column(db.String(120))
+    docusign_status = db.Column(db.String(60))
+    signed_document_url = db.Column(db.String(400))
+    certified_signatures_json = db.Column(db.Text)
+    attachments_json = db.Column(db.Text)
+    sage_sync_status = db.Column(db.String(60))
+    budget_validated = db.Column(db.Boolean, default=False)
+    invoiced_amount = db.Column(db.Float, default=0)
+    created_by_id = db.Column(db.Integer, db.ForeignKey('user.id'))
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+
+class CommitmentAllocation(db.Model):
+    __tablename__ = 'commitment_allocation'
+    id = db.Column(db.Integer, primary_key=True)
+    commitment_id = db.Column(db.Integer, db.ForeignKey('commitment.id'), nullable=False)
+    cost_code = db.Column(db.String(30))
+    amount = db.Column(db.Float, default=0)
+    description = db.Column(db.String(200))
+
+
 class PayAppProjectState(db.Model):
     __tablename__ = 'pay_app_project_state'
     id = db.Column(db.Integer, primary_key=True)
@@ -614,6 +667,7 @@ os.makedirs(os.path.join(UPLOAD_FOLDER, 'documents'), exist_ok=True)
 os.makedirs(os.path.join(UPLOAD_FOLDER, 'attachments'), exist_ok=True)
 os.makedirs(os.path.join(UPLOAD_FOLDER, 'change_orders'), exist_ok=True)
 os.makedirs(os.path.join(UPLOAD_FOLDER, 'spec_books'), exist_ok=True)
+os.makedirs(os.path.join(UPLOAD_FOLDER, 'commitments'), exist_ok=True)
 
 
 def allowed_file(filename):
@@ -1959,7 +2013,284 @@ def budget_page():
 @app.route('/commitments')
 @login_required
 def commitments_page():
-    return render_template('commitments.html')
+    active = get_active_project()
+    return render_template('commitments.html', active_project=active)
+
+
+def generate_commitment_number(commitment_type, project_id):
+    from commitment_persistence import prefix_for_type
+    prefix = prefix_for_type(commitment_type or 'Purchase Order')
+    last = (
+        Commitment.query.filter_by(project_id=int(project_id))
+        .filter(Commitment.number.like(f'{prefix}-%'))
+        .order_by(Commitment.id.desc())
+        .first()
+    )
+    if last and last.number:
+        try:
+            n = int(last.number.split('-')[-1])
+            return f'{prefix}-{n + 1:03d}'
+        except (TypeError, ValueError):
+            pass
+    return f'{prefix}-001'
+
+
+def _parse_commitment_date(value):
+    if not value:
+        return datetime.utcnow().date()
+    try:
+        return datetime.fromisoformat(str(value).replace('Z', '')).date()
+    except (TypeError, ValueError):
+        return datetime.utcnow().date()
+
+
+@app.route('/api/commitments/dashboard', methods=['GET'])
+@login_required
+def api_commitments_dashboard():
+    from commitment_persistence import compute_dashboard_stats
+    project_id = request.args.get('project_id', type=int) or get_current_project_id()
+    if not project_id:
+        return jsonify({'error': 'project_id required'}), 400
+    return jsonify(compute_dashboard_stats(Commitment, int(project_id)))
+
+
+@app.route('/api/commitments/cost-codes', methods=['GET'])
+@login_required
+def api_commitments_cost_codes():
+    from co_persistence import get_budget_cost_codes
+    project_id = request.args.get('project_id', type=int) or get_current_project_id()
+    if not project_id:
+        return jsonify({'error': 'project_id required'}), 400
+    return jsonify({'cost_codes': get_budget_cost_codes(BudgetProjectState, int(project_id))})
+
+
+@app.route('/api/commitments', methods=['GET'])
+@login_required
+def api_list_commitments():
+    from commitment_persistence import commitment_to_dict
+    project_id = request.args.get('project_id', type=int) or get_current_project_id()
+    if not project_id:
+        return jsonify({'error': 'project_id required'}), 400
+    status = request.args.get('status')
+    ctype = request.args.get('type')
+    q = Commitment.query.filter_by(project_id=int(project_id))
+    if status:
+        q = q.filter_by(status=status)
+    if ctype:
+        q = q.filter_by(commitment_type=ctype)
+    rows = q.order_by(Commitment.created_at.desc()).all()
+    result = []
+    for c in rows:
+        allocs = CommitmentAllocation.query.filter_by(commitment_id=c.id).all()
+        result.append(commitment_to_dict(c, allocs))
+    return jsonify({'commitments': result})
+
+
+@app.route('/api/commitments/<int:commitment_id>', methods=['GET'])
+@login_required
+def api_get_commitment(commitment_id):
+    from commitment_persistence import commitment_to_dict
+    c = Commitment.query.get_or_404(commitment_id)
+    allocs = CommitmentAllocation.query.filter_by(commitment_id=c.id).all()
+    return jsonify(commitment_to_dict(c, allocs))
+
+
+@app.route('/api/commitments', methods=['POST'])
+@login_required
+def api_create_commitment():
+    from commitment_persistence import apply_commitment_fields, commitment_to_dict, save_allocations, validate_budget_headroom
+    try:
+        body = request.get_json(silent=True) or {}
+        project_id = body.get('project_id') or get_current_project_id()
+        if not project_id:
+            return jsonify({'error': 'project_id required'}), 400
+        description = (body.get('description') or body.get('title') or '').strip()
+        if not description:
+            return jsonify({'error': 'description required'}), 400
+        ctype = body.get('commitment_type') or 'Purchase Order'
+        number = body.get('number') or generate_commitment_number(ctype, project_id)
+        c = Commitment(
+            project_id=int(project_id),
+            number=number,
+            description=description,
+            commitment_type=ctype,
+            status=body.get('status') or 'Draft',
+            date=_parse_commitment_date(body.get('date')),
+            ball_in_court_role='Creator',
+            created_by_id=current_user.id,
+        )
+        apply_commitment_fields(c, body)
+        db.session.add(c)
+        db.session.flush()
+        if body.get('allocations'):
+            total = save_allocations(CommitmentAllocation, c.id, body['allocations'], db)
+            if total:
+                c.original_amount = total
+                c.current_amount = total + float(c.approved_changes or 0)
+        warnings = validate_budget_headroom(BudgetProjectState, int(project_id), body.get('allocations') or [])
+        db.session.commit()
+        allocs = CommitmentAllocation.query.filter_by(commitment_id=c.id).all()
+        return jsonify({'ok': True, 'commitment': commitment_to_dict(c, allocs), 'budget_warnings': warnings})
+    except Exception as exc:
+        db.session.rollback()
+        return jsonify({'error': str(exc)}), 500
+
+
+@app.route('/api/commitments/<int:commitment_id>', methods=['PUT'])
+@login_required
+def api_update_commitment(commitment_id):
+    from commitment_persistence import apply_commitment_fields, commitment_to_dict, save_allocations, validate_budget_headroom
+    c = Commitment.query.get_or_404(commitment_id)
+    body = request.get_json(silent=True) or {}
+    apply_commitment_fields(c, body)
+    c.updated_at = datetime.utcnow()
+    if body.get('allocations') is not None:
+        total = save_allocations(CommitmentAllocation, c.id, body['allocations'], db)
+        if total:
+            c.original_amount = total
+            c.current_amount = total + float(c.approved_changes or 0)
+    warnings = validate_budget_headroom(BudgetProjectState, c.project_id, body.get('allocations') or [])
+    db.session.commit()
+    allocs = CommitmentAllocation.query.filter_by(commitment_id=c.id).all()
+    return jsonify({'ok': True, 'commitment': commitment_to_dict(c, allocs), 'budget_warnings': warnings})
+
+
+@app.route('/api/commitments/<int:commitment_id>/workflow', methods=['POST'])
+@login_required
+def api_commitment_workflow(commitment_id):
+    from commitment_persistence import (
+        commitment_workflow_action, commitment_to_dict, notify_ball_in_court,
+        sync_commitment_to_budget, sync_commitment_to_sub_sov,
+    )
+    c = Commitment.query.get_or_404(commitment_id)
+    body = request.get_json(silent=True) or {}
+    action = body.get('action')
+    try:
+        new_status, final_approved = commitment_workflow_action(c, action, current_user)
+    except ValueError as exc:
+        return jsonify({'error': str(exc)}), 400
+
+    budget_sync = None
+    sov_sync = None
+
+    if action == 'submit' and not c.submitted_at:
+        c.submitted_at = datetime.utcnow()
+        try:
+            from case_workflow import create_approval
+            create_approval(
+                project_id=c.project_id,
+                module='Commitments',
+                entity_type='Commitment',
+                entity_id=c.id,
+                title=f'{c.number} submitted — {c.ball_in_court_role} review',
+                description=c.description or '',
+                action_url=f'/commitments?project_id={c.project_id}',
+                payload={'amount': c.current_amount, 'type': c.commitment_type},
+                assignee_role=c.ball_in_court_role,
+            )
+        except Exception:
+            pass
+        from sage_service import create_and_process_sage_event
+        create_and_process_sage_event(
+            SageSyncEvent, Project, db, c.project_id,
+            'CommitmentSubmitted',
+            message=f'{c.number} submitted — ball with {c.ball_in_court_role}',
+            payload={'commitment_id': c.id, 'amount': c.current_amount, 'type': c.commitment_type},
+            user_id=current_user.id,
+        )
+
+    if action == 'send_docusign':
+        from sage_service import create_and_process_sage_event
+        create_and_process_sage_event(
+            SageSyncEvent, Project, db, c.project_id,
+            'CommitmentDocuSignSent',
+            message=f'DocuSign envelope queued for {c.number}',
+            payload={'commitment_id': c.id, 'envelope_id': c.docusign_envelope_id},
+            user_id=current_user.id,
+        )
+
+    if final_approved:
+        c.approved_at = datetime.utcnow()
+        c.approved_by_id = current_user.id
+        allocs = CommitmentAllocation.query.filter_by(commitment_id=c.id).all()
+        try:
+            budget_sync = sync_commitment_to_budget(BudgetProjectState, db, c, allocs, current_user.id)
+            c.sage_sync_status = 'budget_synced'
+        except Exception as exc:
+            budget_sync = {'error': str(exc)}
+        try:
+            sov_sync = sync_commitment_to_sub_sov(PayAppProjectState, db, c, allocs, current_user.id)
+        except Exception as exc:
+            sov_sync = {'error': str(exc)}
+        from sage_service import create_and_process_sage_event
+        create_and_process_sage_event(
+            SageSyncEvent, Project, db, c.project_id,
+            'CommitmentApproved',
+            message=f'Commitment {c.number} approved — budget & SOV updated',
+            payload={'commitment_id': c.id, 'amount': c.current_amount, 'budget_sync': budget_sync, 'sov_sync': sov_sync},
+            user_id=current_user.id,
+        )
+    elif action in ('submit', 'approve') and c.ball_in_court_role:
+        notify_ball_in_court(c.project_id, c, User)
+        if action == 'approve' and not final_approved:
+            try:
+                from case_workflow import create_approval
+                create_approval(
+                    project_id=c.project_id,
+                    module='Commitments',
+                    entity_type='Commitment',
+                    entity_id=c.id,
+                    title=f'{c.number} — {c.ball_in_court_role} approval',
+                    description=c.description or '',
+                    action_url=f'/commitments?project_id={c.project_id}',
+                    payload={'amount': c.current_amount},
+                    assignee_role=c.ball_in_court_role,
+                )
+            except Exception:
+                pass
+
+    db.session.commit()
+    allocs = CommitmentAllocation.query.filter_by(commitment_id=c.id).all()
+    return jsonify({
+        'ok': True,
+        'new_status': new_status,
+        'final_approved': final_approved,
+        'ball_in_court_role': c.ball_in_court_role,
+        'commitment': commitment_to_dict(c, allocs),
+        'budget_sync_result': budget_sync,
+        'sov_sync_result': sov_sync,
+    })
+
+
+@app.route('/api/commitments/<int:commitment_id>/attachments', methods=['POST'])
+@login_required
+def api_upload_commitment_attachment(commitment_id):
+    from commitment_persistence import commitment_to_dict, _parse_json
+    c = Commitment.query.get_or_404(commitment_id)
+    file = request.files.get('file')
+    if not file or not file.filename:
+        return jsonify({'error': 'file required'}), 400
+    saved = save_uploaded_file(file, folder=f'commitments/{commitment_id}')
+    if not saved:
+        return jsonify({'error': 'invalid file type'}), 400
+    items = _parse_json(c.attachments_json, [])
+    items.append({
+        'filename': saved,
+        'original_name': file.filename,
+        'uploaded_at': datetime.utcnow().isoformat() + 'Z',
+        'uploaded_by_id': current_user.id,
+    })
+    c.attachments_json = json.dumps(items)
+    db.session.commit()
+    allocs = CommitmentAllocation.query.filter_by(commitment_id=c.id).all()
+    return jsonify({'ok': True, 'commitment': commitment_to_dict(c, allocs)})
+
+
+@app.route('/uploads/commitments/<path:subpath>')
+@login_required
+def serve_commitment_attachment(subpath):
+    directory = os.path.join(app.config['UPLOAD_FOLDER'], 'commitments')
+    return send_from_directory(directory, subpath)
 
 
 @app.route('/deliveries')
@@ -2514,9 +2845,21 @@ def api_change_orders_link_options():
     if not project_id:
         return jsonify({'error': 'project_id required'}), 400
     rfis = RFI.query.filter_by(project_id=int(project_id)).order_by(RFI.created_at.desc()).limit(200).all()
+    commitments = Commitment.query.filter_by(project_id=int(project_id)).order_by(Commitment.created_at.desc()).limit(200).all()
     return jsonify({
         'rfis': [{'id': r.id, 'number': r.number, 'subject': r.subject, 'status': r.status} for r in rfis],
-        'commitments': [],  # client supplements from localStorage
+        'commitments': [
+            {
+                'id': c.id,
+                'number': c.number,
+                'description': c.description,
+                'commitment_type': c.commitment_type,
+                'status': c.status,
+                'amount': c.current_amount or c.original_amount,
+                'company_name': c.company_name,
+            }
+            for c in commitments
+        ],
     })
 
 
@@ -2869,6 +3212,11 @@ with app.app_context():
             ensure_co_schema(db.engine, db)
         except Exception as _ce:
             print('CO schema:', _ce)
+        try:
+            from commitment_persistence import ensure_commitment_schema
+            ensure_commitment_schema(db.engine, db)
+        except Exception as _cm:
+            print('Commitment schema:', _cm)
     except Exception as _e:
         print('Workflow init:', _e)
 
