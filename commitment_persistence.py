@@ -94,6 +94,7 @@ def ensure_commitment_schema(engine, db):
         'delivery_date': 'DATE',
         'freight_terms': 'VARCHAR(120)',
         'tax_exempt': 'BOOLEAN DEFAULT 0',
+        'aia_contract_json': 'TEXT',
     }
     for name, col_type in additions.items():
         if name not in cols:
@@ -177,6 +178,7 @@ def commitment_to_dict(commitment, allocations=None):
         'delivery_date': commitment.delivery_date.isoformat() if getattr(commitment, 'delivery_date', None) else None,
         'freight_terms': getattr(commitment, 'freight_terms', None),
         'tax_exempt': bool(getattr(commitment, 'tax_exempt', False)),
+        'aia_contract': _parse_json(getattr(commitment, 'aia_contract_json', None), None),
         'submitted_at': commitment.submitted_at.isoformat() if getattr(commitment, 'submitted_at', None) else None,
         'approved_at': commitment.approved_at.isoformat() if commitment.approved_at else None,
         'allocations': [
@@ -234,6 +236,8 @@ def apply_commitment_fields(commitment, data):
         commitment.certified_signatures_json = json.dumps(data['certified_signatures'])
     if data.get('attachments') is not None:
         commitment.attachments_json = json.dumps(data['attachments'])
+    if data.get('aia_contract') is not None:
+        commitment.aia_contract_json = json.dumps(data['aia_contract'])
 
 
 def _parse_date(value):
@@ -359,7 +363,16 @@ def commitment_workflow_action(commitment, action, user):
         commitment.docusign_status = 'sent'
         return commitment.status, False
 
-    raise ValueError('action must be submit, approve, reject, sign_internal, or send_docusign')
+    if action == 'void':
+        if not user or user.role != 'Admin':
+            raise ValueError('Only administrators can void commitments')
+        if commitment.status == 'Void':
+            raise ValueError('Commitment is already void')
+        commitment.status = 'Void'
+        commitment.ball_in_court_role = None
+        return commitment.status, False
+
+    raise ValueError('action must be submit, approve, reject, sign_internal, send_docusign, or void')
 
 
 def notify_ball_in_court(project_id, commitment, User):

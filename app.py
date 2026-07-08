@@ -475,6 +475,7 @@ class Commitment(db.Model):
     delivery_date = db.Column(db.Date)
     freight_terms = db.Column(db.String(120))
     tax_exempt = db.Column(db.Boolean, default=False)
+    aia_contract_json = db.Column(db.Text)
     created_by_id = db.Column(db.Integer, db.ForeignKey('user.id'))
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
@@ -2192,8 +2193,20 @@ def api_delete_commitment(commitment_id):
     if current_user.role != 'Admin':
         return jsonify({'error': 'Only administrators can delete commitments'}), 403
     c = Commitment.query.get_or_404(commitment_id)
+    force = request.args.get('force') == '1'
+    body = request.get_json(silent=True) or {}
+    if body.get('force'):
+        force = True
     if c.status not in ('Draft', 'Rejected', 'Void'):
-        return jsonify({'error': f'Cannot delete commitment in status {c.status}. Void it first or contact support.'}), 400
+        if force:
+            c.status = 'Void'
+            c.ball_in_court_role = None
+            db.session.flush()
+        else:
+            return jsonify({
+                'error': f'Cannot delete commitment in status {c.status}. Use force delete or void first.',
+                'can_force': True,
+            }), 400
     CommitmentAllocation.query.filter_by(commitment_id=c.id).delete()
     db.session.delete(c)
     db.session.commit()
