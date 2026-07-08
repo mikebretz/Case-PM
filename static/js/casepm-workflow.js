@@ -314,6 +314,24 @@
     });
   }
 
+  async function onPCOSubmitted(pco) {
+    return emit('submit', {
+      module: 'Change Orders',
+      entity_type: 'PCO',
+      entity_id: pco.id,
+      title: `PCO ${pco.number} — ${pco.title}`,
+      description: pco.description || '',
+      action_url: `/change-orders?project_id=${projectId()}`,
+      payload: {
+        snapshotType: 'pco',
+        number: pco.number,
+        title: pco.title,
+        estimated_amount: pco.estimated_amount,
+        status: pco.status,
+      },
+    });
+  }
+
   // ─── Budget hooks ───────────────────────────────────────────
   async function onBudgetPublished(revision, snapshot) {
     const lines = snapshot?.budgetLines || [];

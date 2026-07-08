@@ -1,546 +1,258 @@
-
 {% extends "base.html" %}
 
 {% block content %}
-<script src="{{ url_for('static', filename='js/pay-app-sync.js') }}"></script>
+<script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
 <script src="{{ url_for('static', filename='js/budget-sync.js') }}"></script>
-<div class="p-8 max-w-[1600px] mx-auto">
+<script src="{{ url_for('static', filename='js/pay-app-sync.js') }}"></script>
+<script src="{{ url_for('static', filename='js/change-orders-app.js') }}"></script>
 
-    <!-- Header -->
-    <div class="flex items-center justify-between mb-8">
-        <div>
-            <h1 class="text-3xl font-semibold tracking-tight">Change Orders</h1>
-            <p class="text-zinc-400 mt-1">Change Order Log & Tracking • ALDI Lakeland</p>
-        </div>
-        
+<!-- HEADER -->
+<div class="h-16 border-b border-zinc-800 bg-zinc-900 flex items-center px-6 flex-shrink-0">
+    <div class="w-1/3">
+        <div class="text-[10px] text-zinc-400 tracking-[1px] font-medium">CURRENT PROJECT</div>
+        <div class="text-xl font-semibold tracking-tight text-white">{{ project_name }}</div>
+    </div>
+    <div class="w-1/3 flex justify-start">
         <div class="flex items-center gap-3">
-            <button onclick="exportChangeOrdersToExcel()" 
-                    class="flex items-center gap-2 px-4 py-2.5 bg-zinc-800 hover:bg-zinc-700 transition-colors rounded-2xl text-sm font-medium">
-                <i class="fa-solid fa-file-excel"></i>
-                <span class="hidden md:inline">Export Excel</span>
-            </button>
-            
-            <button onclick="showCreateChangeOrderModal()"
-                    class="flex items-center gap-2 px-5 py-2.5 bg-emerald-600 hover:bg-emerald-500 transition-colors rounded-2xl text-sm font-medium">
-                <i class="fa-solid fa-plus"></i>
-                <span>New Change Order</span>
-            </button>
+            <div class="text-2xl font-semibold text-white">Change Orders</div>
+            <div class="text-xs text-zinc-500 hidden md:block">PCO → CO · Budget · SOV · Sage 300</div>
         </div>
     </div>
-
-    <!-- Summary Cards -->
-    <div class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-4 mb-8">
-        <div class="bg-zinc-900 border border-zinc-800 rounded-3xl p-5">
-            <div class="text-sm text-zinc-400">Total Change Orders</div>
-            <div class="text-3xl font-semibold mt-1">{{ change_orders|length }}</div>
-        </div>
-        <div class="bg-zinc-900 border border-zinc-800 rounded-3xl p-5">
-            <div class="text-sm text-zinc-400">Approved</div>
-            <div class="text-3xl font-semibold mt-1 text-emerald-400">18</div>
-        </div>
-        <div class="bg-zinc-900 border border-zinc-800 rounded-3xl p-5">
-            <div class="text-sm text-zinc-400">Pending Approval</div>
-            <div class="text-3xl font-semibold mt-1 text-yellow-400">7</div>
-        </div>
-        <div class="bg-zinc-900 border border-zinc-800 rounded-3xl p-5">
-            <div class="text-sm text-zinc-400">Total Approved Value</div>
-            <div class="text-3xl font-semibold mt-1">$412,850</div>
-        </div>
-        <div class="bg-zinc-900 border border-zinc-800 rounded-3xl p-5">
-            <div class="text-sm text-zinc-400">Avg. Approval Time</div>
-            <div class="text-3xl font-semibold mt-1">4.2 days</div>
-        </div>
+    <div class="w-1/3 flex items-center justify-end gap-2 flex-wrap">
+        <button type="button" onclick="CasePMChangeOrders.exportExcel()" class="flex items-center gap-2 px-4 py-2 bg-zinc-800 hover:bg-zinc-700 rounded-md text-sm h-[38px]">
+            <i class="fa-solid fa-file-excel"></i><span class="hidden md:inline">Export</span>
+        </button>
+        <button type="button" onclick="CasePMChangeOrders.newPco()" class="flex items-center gap-2 px-4 py-2 bg-sky-700 hover:bg-sky-600 rounded-md text-sm font-medium h-[38px]">
+            <i class="fa-solid fa-lightbulb"></i><span>New PCO</span>
+        </button>
+        <button type="button" onclick="CasePMChangeOrders.newCo()" class="flex items-center gap-2 px-5 py-2 bg-white text-zinc-900 hover:bg-zinc-100 rounded-md text-sm font-semibold h-[38px]">
+            <i class="fa-solid fa-plus"></i><span>New CO</span>
+        </button>
     </div>
-
-    <!-- Filters -->
-    <div class="flex flex-col md:flex-row gap-3 mb-4">
-        <input type="text" id="coSearch" placeholder="Search CO #, description, or vendor..." 
-               onkeyup="filterChangeOrders()"
-               class="flex-1 bg-zinc-900 border border-zinc-700 rounded-2xl px-4 py-2.5 text-sm">
-
-        <select id="coStatusFilter" onchange="filterChangeOrders()"
-                class="bg-zinc-900 border border-zinc-700 rounded-2xl px-4 py-2.5 text-sm">
-            <option value="">All Statuses</option>
-            <option value="Draft">Draft</option>
-            <option value="Submitted">Submitted</option>
-            <option value="Under Review">Under Review</option>
-            <option value="Approved">Approved</option>
-            <option value="Rejected">Rejected</option>
-        </select>
-
-        <select id="coPriorityFilter" onchange="filterChangeOrders()"
-                class="bg-zinc-900 border border-zinc-700 rounded-2xl px-4 py-2.5 text-sm">
-            <option value="">All Priorities</option>
-            <option value="High">High</option>
-            <option value="Medium">Medium</option>
-            <option value="Low">Low</option>
-        </select>
-    </div>
-
-    <!-- Change Orders Table -->
-    <div class="bg-zinc-900 border border-zinc-800 rounded-3xl overflow-hidden">
-        <table class="w-full text-sm">
-            <thead>
-                <tr class="bg-zinc-950 border-b border-zinc-800">
-                    <th class="px-6 py-4 text-left font-medium text-zinc-400">CO #</th>
-                    <th class="px-6 py-4 text-left font-medium text-zinc-400">Date</th>
-                    <th class="px-6 py-4 text-left font-medium text-zinc-400">Description</th>
-                    <th class="px-6 py-4 text-left font-medium text-zinc-400">Requested By</th>
-                    <th class="px-6 py-4 text-right font-medium text-zinc-400">Amount</th>
-                    <th class="px-6 py-4 text-center font-medium text-zinc-400">Status</th>
-                    <th class="px-6 py-4 text-center font-medium text-zinc-400">Actions</th>
-                </tr>
-            </thead>
-            <tbody>
-
-                {% for co in change_orders %}
-                <tr class="border-b border-zinc-800 hover:bg-zinc-800/60 transition-colors">
-                    <td class="px-6 py-4 font-mono text-emerald-400">{{ co.number }}</td>
-                    <td class="px-6 py-4">{{ co.date.strftime('%m/%d/%Y') if co.date else '—' }}</td>
-                    <td class="px-6 py-4 max-w-[320px] truncate">{{ co.description }}</td>
-                    <td class="px-6 py-4">{{ co.requested_by }}</td>
-                    <td class="px-6 py-4 text-right font-mono">
-                        ${{ "{:,.2f}".format(co.amount) }}
-                    </td>
-                    <td class="px-6 py-4 text-center">
-                        <select onchange="updateChangeOrderStatus({{ co.id }}, this.value)"
-                                class="bg-zinc-800 border border-zinc-700 rounded-xl px-3 py-1 text-xs">
-                            <option value="Draft" {% if co.status == 'Draft' %}selected{% endif %}>Draft</option>
-                            <option value="Submitted" {% if co.status == 'Submitted' %}selected{% endif %}>Submitted</option>
-                            <option value="Under Review" {% if co.status == 'Under Review' %}selected{% endif %}>Under Review</option>
-                            <option value="Approved" {% if co.status == 'Approved' %}selected{% endif %}>Approved</option>
-                            <option value="Rejected" {% if co.status == 'Rejected' %}selected{% endif %}>Rejected</option>
-                        </select>
-                    </td>
-                    <td class="px-6 py-4 text-center">
-                        <div class="flex items-center justify-center gap-1">
-                            <button onclick="viewChangeOrder({{ co.id }})" 
-                                    class="p-2 text-emerald-400 hover:text-emerald-300 hover:bg-zinc-800 rounded-xl transition-colors" title="View Details">
-                                <i class="fa-solid fa-eye"></i>
-                            </button>
-                            
-                            <button onclick="editChangeOrder({{ co.id }})" 
-                                    class="p-2 text-emerald-400 hover:text-emerald-300 hover:bg-zinc-800 rounded-xl transition-colors" title="Edit">
-                                <i class="fa-solid fa-edit"></i>
-                            </button>
-
-                            {% if co.status != 'Approved' %}
-                            <button onclick="approveChangeOrder({{ co.id }})" 
-                                    class="p-2 text-emerald-400 hover:text-emerald-300 hover:bg-zinc-800 rounded-xl transition-colors" title="Approve">
-                                <i class="fa-solid fa-check"></i>
-                            </button>
-                            {% endif %}
-
-                            <button onclick="addRevision({{ co.id }})" 
-                                    class="p-2 text-emerald-400 hover:text-emerald-300 hover:bg-zinc-800 rounded-xl transition-colors" title="Add Revision">
-                                <i class="fa-solid fa-redo"></i>
-                            </button>
-                        </div>
-                    </td>
-                </tr>
-                {% else %}
-                <tr>
-                    <td colspan="7" class="px-6 py-12 text-center text-zinc-400">
-                        No change orders found.
-                    </td>
-                </tr>
-                {% endfor %}
-            </tbody>
-        </table>
-    </div>
-
 </div>
 
-<!-- ==================== CREATE / EDIT CHANGE ORDER MODAL ==================== -->
-<dialog id="changeOrderModal" class="bg-zinc-900 border border-zinc-700 rounded-3xl p-0 w-full max-w-4xl">
-    <div class="p-6">
-        <div class="flex items-center justify-between mb-6">
-            <h2 class="text-xl font-semibold" id="coModalTitle">Create New Change Order</h2>
-            <button onclick="closeChangeOrderModal()" class="text-zinc-400 hover:text-white text-2xl leading-none">×</button>
+<!-- SUMMARY CARDS -->
+<div class="bg-zinc-900 border border-zinc-700 mx-6 mt-4 rounded-md p-4 sticky top-0 z-30">
+    <div class="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-8 gap-3">
+        <div class="bg-zinc-800 border border-zinc-700 rounded-md p-4">
+            <div class="text-xs text-zinc-400">Total COs</div>
+            <div id="statTotalCo" class="text-xl font-semibold mt-1">0</div>
         </div>
+        <div class="bg-zinc-800 border border-zinc-700 rounded-md p-4">
+            <div class="text-xs text-zinc-400">Approved</div>
+            <div id="statApproved" class="text-xl font-semibold mt-1 text-emerald-400">0</div>
+        </div>
+        <div class="bg-zinc-800 border border-zinc-700 rounded-md p-4">
+            <div class="text-xs text-zinc-400">Pending Approval</div>
+            <div id="statPending" class="text-xl font-semibold mt-1 text-amber-400">0</div>
+        </div>
+        <div class="bg-zinc-800 border border-zinc-700 rounded-md p-4">
+            <div class="text-xs text-zinc-400">Open PCOs</div>
+            <div id="statOpenPco" class="text-xl font-semibold mt-1 text-sky-400">0</div>
+        </div>
+        <div class="bg-zinc-800 border border-zinc-700 rounded-md p-4">
+            <div class="text-xs text-zinc-400">Approved Value</div>
+            <div id="statApprovedTotal" class="text-lg font-semibold mt-1">$0</div>
+        </div>
+        <div class="bg-zinc-800 border border-zinc-700 rounded-md p-4">
+            <div class="text-xs text-zinc-400">Pending Value</div>
+            <div id="statPendingTotal" class="text-lg font-semibold mt-1 text-orange-400">$0</div>
+        </div>
+        <div class="bg-zinc-800 border border-zinc-700 rounded-md p-4">
+            <div class="text-xs text-zinc-400">PCO ROM Total</div>
+            <div id="statPcoRom" class="text-lg font-semibold mt-1 text-sky-300">$0</div>
+        </div>
+        <div class="bg-zinc-800 border border-zinc-700 rounded-md p-4">
+            <div class="text-xs text-zinc-400">Avg Approval</div>
+            <div id="statAvgDays" class="text-xl font-semibold mt-1">—</div>
+        </div>
+    </div>
+</div>
 
-        <form id="changeOrderForm" onsubmit="saveChangeOrder(event)">
-            <input type="hidden" id="changeOrderId">
+<!-- TABS + FILTERS -->
+<div class="mx-6 mt-4 mb-2 flex flex-col lg:flex-row gap-3 items-start lg:items-center justify-between">
+    <div class="flex gap-2">
+        <button type="button" id="btnTabCos" onclick="CasePMChangeOrders.switchTab('cos')" class="px-4 py-2 rounded-md text-sm font-medium bg-emerald-600 text-white">Change Orders</button>
+        <button type="button" id="btnTabPcos" onclick="CasePMChangeOrders.switchTab('pcos')" class="px-4 py-2 rounded-md text-sm font-medium bg-zinc-800 text-zinc-300">PCO Log</button>
+    </div>
+    <div class="flex flex-col md:flex-row gap-2 w-full lg:w-auto">
+        <input type="text" id="coSearch" placeholder="Search number, title, company…" class="flex-1 bg-zinc-900 border border-zinc-700 rounded-md px-4 py-2 text-sm focus:border-emerald-600 min-w-[200px]">
+        <select id="coStatusFilter" class="bg-zinc-900 border border-zinc-700 rounded-md px-4 py-2 text-sm">
+            <option value="">All Statuses</option>
+            <optgroup label="CO">
+                <option>Draft</option><option>Submitted</option><option>Under Review</option>
+                <option>Pending Owner</option><option>Pending Architect</option>
+                <option>Approved</option><option>Rejected</option><option>Void</option>
+            </optgroup>
+            <optgroup label="PCO">
+                <option>Open</option><option>Pricing</option><option>Pending Review</option>
+                <option>Approved for CO</option><option>Promoted</option>
+            </optgroup>
+        </select>
+        <select id="coPriorityFilter" class="bg-zinc-900 border border-zinc-700 rounded-md px-4 py-2 text-sm">
+            <option value="">All Priorities</option>
+            <option>Low</option><option>Medium</option><option>High</option><option>Critical</option>
+        </select>
+    </div>
+</div>
 
-            <!-- Top Row: Number and Date -->
-            <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
-                <div>
-                    <label class="block text-sm text-zinc-400 mb-1.5">Change Order #</label>
-                    <input type="text" id="coNumber" class="w-full bg-zinc-800 border border-zinc-700 rounded-2xl px-4 py-2.5 text-sm font-mono" readonly>
+<!-- CHANGE ORDERS TABLE -->
+<div id="tabCos" class="mx-6 mb-24 flex-1 overflow-hidden flex flex-col border border-zinc-700 rounded-md bg-zinc-900">
+    <div class="flex-1 overflow-auto" style="max-height: calc(100vh - 340px);">
+        <table class="w-full text-sm min-w-[1200px]">
+            <thead class="bg-zinc-800 sticky top-0 z-20 border-b border-zinc-700">
+                <tr>
+                    <th class="px-4 py-3 text-left text-zinc-400 font-medium">CO #</th>
+                    <th class="px-4 py-3 text-left text-zinc-400 font-medium">Date</th>
+                    <th class="px-4 py-3 text-left text-zinc-400 font-medium">Title</th>
+                    <th class="px-4 py-3 text-left text-zinc-400 font-medium">Company</th>
+                    <th class="px-4 py-3 text-left text-zinc-400 font-medium">Cost Code</th>
+                    <th class="px-4 py-3 text-right text-zinc-400 font-medium">Amount</th>
+                    <th class="px-4 py-3 text-center text-zinc-400 font-medium">Status</th>
+                    <th class="px-4 py-3 text-center text-zinc-400 font-medium">Ball in Court</th>
+                    <th class="px-4 py-3 text-center text-zinc-400 font-medium">Schedule</th>
+                    <th class="px-4 py-3 text-center text-zinc-400 font-medium">Sync</th>
+                    <th class="px-4 py-3 text-center text-zinc-400 font-medium w-28">Actions</th>
+                </tr>
+            </thead>
+            <tbody id="coTableBody" class="divide-y divide-zinc-800"></tbody>
+        </table>
+    </div>
+</div>
+
+<!-- PCO TABLE -->
+<div id="tabPcos" class="hidden mx-6 mb-24 flex-1 overflow-hidden flex flex-col border border-zinc-700 rounded-md bg-zinc-900">
+    <div class="px-4 py-2 border-b border-zinc-800 text-xs text-zinc-500">
+        Potential Change Orders (PCO) — estimate ROM costs before formal CO. Promote to CO when ready; allocations flow to Budget, Contractor SOV, and Sage 300 on approval.
+    </div>
+    <div class="flex-1 overflow-auto" style="max-height: calc(100vh - 380px);">
+        <table class="w-full text-sm min-w-[1100px]">
+            <thead class="bg-zinc-800 sticky top-0 z-20 border-b border-zinc-700">
+                <tr>
+                    <th class="px-4 py-3 text-left text-zinc-400 font-medium">PCO #</th>
+                    <th class="px-4 py-3 text-left text-zinc-400 font-medium">Title</th>
+                    <th class="px-4 py-3 text-left text-zinc-400 font-medium">Company</th>
+                    <th class="px-4 py-3 text-left text-zinc-400 font-medium">Contact</th>
+                    <th class="px-4 py-3 text-left text-zinc-400 font-medium">Cost Code</th>
+                    <th class="px-4 py-3 text-right text-zinc-400 font-medium">ROM</th>
+                    <th class="px-4 py-3 text-center text-zinc-400 font-medium">Status</th>
+                    <th class="px-4 py-3 text-center text-zinc-400 font-medium">Ball in Court</th>
+                    <th class="px-4 py-3 text-center text-zinc-400 font-medium">Days</th>
+                    <th class="px-4 py-3 text-center text-zinc-400 font-medium w-28">Actions</th>
+                </tr>
+            </thead>
+            <tbody id="pcoTableBody" class="divide-y divide-zinc-800"></tbody>
+        </table>
+    </div>
+</div>
+
+<!-- FIXED BOTTOM BAR -->
+<div class="fixed bottom-0 left-56 right-0 bg-zinc-900 border-t border-zinc-700 px-6 py-2 text-xs text-zinc-400 flex items-center justify-between z-[60]">
+    <div class="flex items-center gap-4">
+        <span id="coSageStatusText">Sage 300 PCO/CO · Loading…</span>
+        <button type="button" onclick="CasePMChangeOrders.openSageLog()" class="text-emerald-400 hover:text-emerald-300 underline">View Sage Log</button>
+    </div>
+    <div class="text-emerald-400">● Online</div>
+</div>
+
+<!-- CREATE / EDIT MODAL (PCO or CO) -->
+<dialog id="coModal" class="modal rounded-md w-full max-w-4xl p-0 text-white" style="background-color: #18181b; border: 1px solid #3f3f46;">
+    <div class="p-6 max-h-[90vh] overflow-auto">
+        <div class="flex justify-between items-center mb-5">
+            <h2 id="coModalHeading" class="text-xl font-semibold">New Change Order</h2>
+            <button type="button" onclick="document.getElementById('coModal').close()" class="text-zinc-400 hover:text-white text-2xl">&times;</button>
+        </div>
+        <form onsubmit="CasePMChangeOrders.saveModal(event)">
+            <input type="hidden" id="modalMode" value="co">
+            <input type="hidden" id="modalRecordId" value="">
+
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+                <div class="md:col-span-2">
+                    <label class="block text-sm text-zinc-400 mb-1">Title <span class="text-red-400">*</span></label>
+                    <input type="text" id="modalTitle" class="w-full bg-zinc-800 border border-zinc-700 rounded-md px-4 py-2 text-sm" required>
+                </div>
+                <div class="md:col-span-2">
+                    <label class="block text-sm text-zinc-400 mb-1">Description</label>
+                    <textarea id="modalDescription" rows="2" class="w-full bg-zinc-800 border border-zinc-700 rounded-md px-4 py-2 text-sm"></textarea>
                 </div>
                 <div>
-                    <label class="block text-sm text-zinc-400 mb-1.5">Date <span class="text-red-400">*</span></label>
-                    <input type="date" id="coDate" class="w-full bg-zinc-800 border border-zinc-700 rounded-2xl px-4 py-2.5 text-sm" required>
+                    <label class="block text-sm text-zinc-400 mb-1">Company / Vendor</label>
+                    <select id="modalCompany" onchange="CasePMChangeOrders.onCompanyChange()" class="w-full bg-zinc-800 border border-zinc-700 rounded-md px-4 py-2 text-sm"></select>
                 </div>
                 <div>
-                    <label class="block text-sm text-zinc-400 mb-1.5">Revision #</label>
-                    <input type="text" id="coRevision" value="0" class="w-full bg-zinc-800 border border-zinc-700 rounded-2xl px-4 py-2.5 text-sm font-mono">
+                    <label class="block text-sm text-zinc-400 mb-1">Contact</label>
+                    <select id="modalContact" onchange="CasePMChangeOrders.onContactChange()" class="w-full bg-zinc-800 border border-zinc-700 rounded-md px-4 py-2 text-sm"></select>
+                </div>
+                <div>
+                    <label class="block text-sm text-zinc-400 mb-1">Contact Email</label>
+                    <input type="email" id="modalContactEmail" class="w-full bg-zinc-800 border border-zinc-700 rounded-md px-4 py-2 text-sm">
+                </div>
+                <div>
+                    <label class="block text-sm text-zinc-400 mb-1">Contact Phone</label>
+                    <input type="tel" id="modalContactPhone" class="w-full bg-zinc-800 border border-zinc-700 rounded-md px-4 py-2 text-sm">
+                </div>
+                <div>
+                    <label class="block text-sm text-zinc-400 mb-1">Reason</label>
+                    <select id="modalReason" class="w-full bg-zinc-800 border border-zinc-700 rounded-md px-4 py-2 text-sm"></select>
+                </div>
+                <div>
+                    <label class="block text-sm text-zinc-400 mb-1">Priority</label>
+                    <select id="modalPriority" class="w-full bg-zinc-800 border border-zinc-700 rounded-md px-4 py-2 text-sm"></select>
+                </div>
+                <div id="modalContractTypeRow">
+                    <label class="block text-sm text-zinc-400 mb-1">Contract Type</label>
+                    <select id="modalContractType" class="w-full bg-zinc-800 border border-zinc-700 rounded-md px-4 py-2 text-sm"></select>
+                </div>
+                <div id="modalDateRow">
+                    <label class="block text-sm text-zinc-400 mb-1">CO Date</label>
+                    <input type="date" id="modalDate" class="w-full bg-zinc-800 border border-zinc-700 rounded-md px-4 py-2 text-sm">
+                </div>
+                <div>
+                    <label class="block text-sm text-zinc-400 mb-1">Schedule Impact (days)</label>
+                    <input type="number" id="modalScheduleDays" min="0" value="0" class="w-full bg-zinc-800 border border-zinc-700 rounded-md px-4 py-2 text-sm">
+                </div>
+                <div>
+                    <label class="block text-sm text-zinc-400 mb-1">Total Amount (or sum of lines)</label>
+                    <input type="number" step="0.01" id="modalAmount" class="w-full bg-zinc-800 border border-zinc-700 rounded-md px-4 py-2 text-sm">
+                </div>
+                <div>
+                    <label class="block text-sm text-zinc-400 mb-1">Requested By</label>
+                    <input type="text" id="modalRequestedBy" class="w-full bg-zinc-800 border border-zinc-700 rounded-md px-4 py-2 text-sm">
+                </div>
+                <div>
+                    <label class="block text-sm text-zinc-400 mb-1">Status</label>
+                    <select id="modalStatus" class="w-full bg-zinc-800 border border-zinc-700 rounded-md px-4 py-2 text-sm"></select>
                 </div>
             </div>
 
-            <!-- Description -->
-            <div class="mb-4">
-                <label class="block text-sm text-zinc-400 mb-1.5">Description <span class="text-red-400">*</span></label>
-                <textarea id="coDescription" rows="3" class="w-full bg-zinc-800 border border-zinc-700 rounded-2xl px-4 py-3 text-sm" placeholder="Describe the change in detail..." required></textarea>
-            </div>
-
-            <!-- Requested By + Amount -->
-            <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
-                <div>
-                    <label class="block text-sm text-zinc-400 mb-1.5">Requested By</label>
-                    <input type="text" id="coRequestedBy" class="w-full bg-zinc-800 border border-zinc-700 rounded-2xl px-4 py-2.5 text-sm" value="{{ current_user.first_name }} {{ current_user.last_name }}">
-                </div>
-                <div>
-                    <label class="block text-sm text-zinc-400 mb-1.5">Amount <span class="text-red-400">*</span></label>
-                    <div class="relative">
-                        <span class="absolute left-4 top-3 text-zinc-400">$</span>
-                        <input type="number" step="0.01" id="coAmount" class="w-full bg-zinc-800 border border-zinc-700 rounded-2xl pl-8 pr-4 py-2.5 text-sm" required>
+            <!-- COST CODE ALLOCATIONS -->
+            <div class="mb-4 border border-zinc-700 rounded-md p-4">
+                <div class="flex items-center justify-between mb-3">
+                    <div>
+                        <div class="text-sm font-medium text-zinc-300">Cost Code Allocations</div>
+                        <div class="text-[10px] text-zinc-500">From project budget · syncs to Budget pending/approved and Contractor SOV on CO approval</div>
                     </div>
                 </div>
-                <div>
-                    <label class="block text-sm text-zinc-400 mb-1.5">Cost Code (SOV)</label>
-                    <input type="text" id="coCostCode" class="w-full bg-zinc-800 border border-zinc-700 rounded-2xl px-4 py-2.5 text-sm font-mono" placeholder="e.g. 03-3000">
-                    <p class="text-[10px] text-zinc-500 mt-1">Applied to contractor SOV on approval</p>
+                <div class="grid grid-cols-12 gap-2 text-[10px] text-zinc-500 uppercase mb-1 px-1">
+                    <div class="col-span-4">Cost Code</div>
+                    <div class="col-span-3">Description</div>
+                    <div class="col-span-3 text-right">Amount</div>
+                    <div class="col-span-2"></div>
                 </div>
+                <div id="allocationRows"></div>
             </div>
 
-            <!-- Reason & Impact -->
-            <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
-                <div>
-                    <label class="block text-sm text-zinc-400 mb-1.5">Reason for Change</label>
-                    <select id="coReason" class="w-full bg-zinc-800 border border-zinc-700 rounded-2xl px-4 py-2.5 text-sm">
-                        <option value="">Select Reason...</option>
-                        <option value="Owner Request">Owner Request</option>
-                        <option value="Design Change">Design Change</option>
-                        <option value="Unforeseen Condition">Unforeseen Condition</option>
-                        <option value="Code Compliance">Code Compliance</option>
-                        <option value="Error or Omission">Error or Omission</option>
-                        <option value="Other">Other</option>
-                    </select>
-                </div>
-                <div>
-                    <label class="block text-sm text-zinc-400 mb-1.5">Schedule Impact</label>
-                    <select id="coScheduleImpact" class="w-full bg-zinc-800 border border-zinc-700 rounded-2xl px-4 py-2.5 text-sm">
-                        <option value="None">No Impact</option>
-                        <option value="Minor">Minor Delay (1-3 days)</option>
-                        <option value="Moderate">Moderate Delay (4-10 days)</option>
-                        <option value="Significant">Significant Delay (10+ days)</option>
-                    </select>
-                </div>
-            </div>
-
-            <!-- Notes -->
             <div class="mb-4">
-                <label class="block text-sm text-zinc-400 mb-1.5">Notes / Justification</label>
-                <textarea id="coNotes" rows="3" class="w-full bg-zinc-800 border border-zinc-700 rounded-2xl px-4 py-3 text-sm" placeholder="Additional details or justification for this change..."></textarea>
+                <label class="block text-sm text-zinc-400 mb-1">Notes</label>
+                <textarea id="modalNotes" rows="2" class="w-full bg-zinc-800 border border-zinc-700 rounded-md px-4 py-2 text-sm"></textarea>
             </div>
 
-            <!-- Attachments -->
-            <div class="mb-6">
-                <label class="block text-sm text-zinc-400 mb-1.5">Attachments</label>
-                <div class="border-2 border-dashed border-zinc-700 rounded-2xl p-6 text-center">
-                    <i class="fa-solid fa-cloud-upload-alt text-3xl text-zinc-500 mb-2"></i>
-                    <p class="text-sm text-zinc-400">Drag & drop files here or</p>
-                    <label class="inline-block mt-2 px-5 py-2 bg-zinc-800 hover:bg-zinc-700 rounded-2xl text-sm cursor-pointer">
-                        Select Files
-                        <input type="file" id="coAttachments" multiple class="hidden">
-                    </label>
-                    <p class="text-xs text-zinc-500 mt-2">PDF, JPG, PNG, DOCX up to 25MB</p>
-                </div>
-                <div id="attachmentList" class="mt-3 space-y-2 text-sm"></div>
-            </div>
-
-            <!-- Status -->
-            <div class="mb-6">
-                <label class="block text-sm text-zinc-400 mb-1.5">Status</label>
-                <select id="coStatus" class="w-full bg-zinc-800 border border-zinc-700 rounded-2xl px-4 py-2.5 text-sm">
-                    <option value="Draft">Draft</option>
-                    <option value="Submitted">Submitted</option>
-                    <option value="Under Review">Under Review</option>
-                </select>
-            </div>
-
-            <!-- Action Buttons -->
-            <div class="flex gap-3 mt-8">
-                <button type="button" onclick="closeChangeOrderModal()" 
-                        class="flex-1 bg-zinc-800 hover:bg-zinc-700 rounded-2xl py-3 text-sm font-medium transition-colors">
-                    Cancel
-                </button>
-                <button type="submit" 
-                        class="flex-1 bg-emerald-600 hover:bg-emerald-500 rounded-2xl py-3 text-sm font-medium transition-colors">
-                    Save Change Order
-                </button>
+            <div class="flex justify-end gap-3">
+                <button type="button" onclick="document.getElementById('coModal').close()" class="px-6 py-2.5 bg-zinc-800 hover:bg-zinc-700 rounded-md text-sm">Cancel</button>
+                <button type="submit" class="px-8 py-2.5 bg-emerald-600 hover:bg-emerald-500 rounded-md text-sm font-semibold">Save</button>
             </div>
         </form>
     </div>
 </dialog>
-
-<!-- ==================== JAVASCRIPT ==================== -->
-<script>
-    const CO_PROJECT_ID = {{ active_project.id if active_project else 'null' }};
-
-    function showToast(message, isError) {
-        const toast = document.createElement('div');
-        toast.className = `fixed bottom-6 right-6 z-50 px-4 py-2 rounded-xl text-sm shadow-lg ${isError ? 'bg-red-900 text-red-100' : 'bg-emerald-900 text-emerald-100'}`;
-        toast.textContent = message;
-        document.body.appendChild(toast);
-        setTimeout(() => toast.remove(), 2800);
-    }
-
-    function canApproveChangeOrders() {
-        if (typeof CasePMWorkflow !== 'undefined' && window.CASEPM_PORTAL) {
-            return CasePMWorkflow.canApprove('Change Orders');
-        }
-        return true;
-    }
-
-    async function applyCoSovSync(syncResult, budgetSyncResult) {
-        if (syncResult && !syncResult.error && typeof CasePMPayAppSync !== 'undefined') {
-            CasePMPayAppSync.applyCoSyncResult(syncResult);
-        }
-        if (budgetSyncResult && typeof CasePMBudgetSync !== 'undefined') {
-            CasePMBudgetSync.applyBudgetSyncResult(budgetSyncResult);
-        }
-        window.dispatchEvent(new CustomEvent('casepm:co-approved', {
-            detail: { sov: syncResult, budget: budgetSyncResult },
-        }));
-    }
-
-    // ==================== FILTERING ====================
-    function filterChangeOrders() {
-        const search = document.getElementById('coSearch').value.toLowerCase();
-        const status = document.getElementById('coStatusFilter').value;
-        const priority = document.getElementById('coPriorityFilter').value;
-
-        const rows = document.querySelectorAll('table tbody tr');
-
-        rows.forEach(row => {
-            const text = row.textContent.toLowerCase();
-            const rowStatus = row.querySelector('select') ? row.querySelector('select').value : '';
-
-            let show = true;
-
-            if (search && !text.includes(search)) show = false;
-            if (status && rowStatus !== status) show = false;
-            // Priority filter can be expanded later if needed
-
-            row.style.display = show ? '' : 'none';
-        });
-    }
-
-    // ==================== MODAL FUNCTIONS ====================
-    function showCreateChangeOrderModal() {
-        const modal = document.getElementById('changeOrderModal');
-        const form = document.getElementById('changeOrderForm');
-
-        form.reset();
-        document.getElementById('changeOrderId').value = '';
-        document.getElementById('coModalTitle').innerText = 'Create New Change Order';
-        document.getElementById('coNumber').value = 'Auto-assigned on save';
-        document.getElementById('coRevision').value = '0';
-        document.getElementById('coCostCode').value = '';
-
-        const today = new Date().toISOString().split('T')[0];
-        document.getElementById('coDate').value = today;
-
-        modal.showModal();
-    }
-
-    function closeChangeOrderModal() {
-        document.getElementById('changeOrderModal').close();
-    }
-
-    async function editChangeOrder(id) {
-        try {
-            const res = await fetch(`/api/change-orders/${id}`, { credentials: 'same-origin' });
-            if (!res.ok) throw new Error('Failed to load change order');
-            const co = await res.json();
-            const modal = document.getElementById('changeOrderModal');
-            document.getElementById('coModalTitle').innerText = 'Edit Change Order';
-            document.getElementById('changeOrderId').value = id;
-            document.getElementById('coNumber').value = co.number || '';
-            document.getElementById('coDate').value = co.date ? co.date.split('T')[0] : '';
-            document.getElementById('coDescription').value = co.description || '';
-            document.getElementById('coRequestedBy').value = co.requested_by || '';
-            document.getElementById('coAmount').value = co.amount || 0;
-            document.getElementById('coCostCode').value = co.cost_code || '';
-            document.getElementById('coReason').value = co.reason || '';
-            document.getElementById('coScheduleImpact').value = co.schedule_impact || 'None';
-            document.getElementById('coNotes').value = co.notes || '';
-            document.getElementById('coRevision').value = co.revision || 0;
-            document.getElementById('coStatus').value = co.status || 'Draft';
-            modal.showModal();
-        } catch (err) {
-            showToast(err.message || 'Could not load change order', true);
-        }
-    }
-
-    async function saveChangeOrder(e) {
-        e.preventDefault();
-
-        if (!CO_PROJECT_ID) {
-            showToast('Select a project before creating a change order', true);
-            return;
-        }
-
-        const id = document.getElementById('changeOrderId').value;
-        const isEdit = id !== '';
-        const payload = {
-            project_id: CO_PROJECT_ID,
-            description: document.getElementById('coDescription').value.trim(),
-            date: document.getElementById('coDate').value,
-            amount: parseFloat(document.getElementById('coAmount').value) || 0,
-            status: document.getElementById('coStatus').value,
-            revision: parseInt(document.getElementById('coRevision').value, 10) || 0,
-            requested_by: document.getElementById('coRequestedBy').value,
-            cost_code: document.getElementById('coCostCode').value.trim() || null,
-            reason: document.getElementById('coReason').value,
-            schedule_impact: document.getElementById('coScheduleImpact').value,
-            notes: document.getElementById('coNotes').value,
-        };
-
-        try {
-            const url = isEdit ? `/api/change-orders/${id}` : '/api/change-orders';
-            const res = await fetch(url, {
-                method: isEdit ? 'PUT' : 'POST',
-                credentials: 'same-origin',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(payload),
-            });
-            const json = await res.json();
-            if (!res.ok) throw new Error(json.error || json.message || 'Save failed');
-
-            closeChangeOrderModal();
-            showToast(isEdit ? 'Change Order updated successfully' : `Change Order ${json.number || ''} created`);
-            setTimeout(() => location.reload(), 700);
-        } catch (err) {
-            showToast(err.message || 'Save failed', true);
-        }
-    }
-
-    // ==================== ACTION FUNCTIONS ====================
-    async function updateChangeOrderStatus(id, newStatus) {
-        try {
-            const res = await fetch(`/change-orders/${id}/update-status`, {
-                method: 'POST',
-                credentials: 'same-origin',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ status: newStatus }),
-            });
-            const json = await res.json();
-            if (!res.ok || !json.success) throw new Error(json.message || 'Status update failed');
-
-            if (json.sync_result || json.budget_sync_result) {
-                await applyCoSovSync(json.sync_result, json.budget_sync_result);
-            }
-            const msg = json.sov_synced
-                ? `Approved — $${(json.sync_result?.sov_amount_applied || 0).toLocaleString()} synced to contractor SOV`
-                : `Status updated to ${newStatus}`;
-            showToast(msg);
-        } catch (err) {
-            showToast(err.message || 'Status update failed', true);
-            location.reload();
-        }
-    }
-
-    async function viewChangeOrder(id) {
-        try {
-            const res = await fetch(`/api/change-orders/${id}`, { credentials: 'same-origin' });
-            if (!res.ok) throw new Error('Not found');
-            const co = await res.json();
-            const lines = [
-                `CO #: ${co.number}`,
-                `Status: ${co.status}`,
-                `Amount: $${(co.amount || 0).toLocaleString()}`,
-                `Cost Code: ${co.cost_code || '—'}`,
-                `Schedule Impact: ${co.schedule_impact || '—'}`,
-                co.sov_synced_at ? `SOV Synced: ${new Date(co.sov_synced_at).toLocaleString()}` : '',
-                '',
-                co.description || '',
-            ].filter(Boolean);
-            alert(lines.join('\n'));
-        } catch (err) {
-            showToast('Could not load change order details', true);
-        }
-    }
-
-    async function approveChangeOrder(id) {
-        if (!canApproveChangeOrders()) {
-            showToast('You do not have permission to approve change orders', true);
-            return;
-        }
-        const costCode = prompt('Cost code for SOV allocation (optional — leave blank for first line / holding):', '');
-        if (costCode === null) return;
-        if (!confirm('Approve this Change Order? Amount will sync to contractor SOV and schedule.')) return;
-
-        try {
-            if (costCode.trim()) {
-                await fetch(`/api/change-orders/${id}/allocate`, {
-                    method: 'POST',
-                    credentials: 'same-origin',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ cost_code: costCode.trim() }),
-                });
-            }
-            const res = await fetch(`/change-orders/${id}/update-status`, {
-                method: 'POST',
-                credentials: 'same-origin',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ status: 'Approved' }),
-            });
-            const json = await res.json();
-            if (!res.ok || !json.success) throw new Error(json.message || 'Approval failed');
-
-            if (json.sync_result || json.budget_sync_result) {
-                await applyCoSovSync(json.sync_result, json.budget_sync_result);
-            }
-            const applied = json.sync_result?.sov_amount_applied;
-            showToast(applied != null
-                ? `Approved — $${Number(applied).toLocaleString()} added to contractor SOV`
-                : 'Change Order approved successfully');
-            setTimeout(() => location.reload(), 900);
-        } catch (err) {
-            showToast(err.message || 'Approval failed', true);
-        }
-    }
-
-    async function addRevision(id) {
-        const newRevision = prompt('Enter new revision number (e.g. 1):', '1');
-        if (!newRevision) return;
-        try {
-            const res = await fetch(`/api/change-orders/${id}`, {
-                method: 'PUT',
-                credentials: 'same-origin',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ revision: parseInt(newRevision, 10) }),
-            });
-            if (!res.ok) throw new Error('Revision update failed');
-            showToast(`Revision ${newRevision} saved`);
-            setTimeout(() => location.reload(), 600);
-        } catch (err) {
-            showToast(err.message || 'Could not save revision', true);
-        }
-    }
-
-    function exportChangeOrdersToExcel() {
-        showToast('Exporting Change Orders to Excel...');
-        setTimeout(() => {
-            showToast('Export completed');
-        }, 1200);
-    }
-
-    // ==================== INITIALIZATION ====================
-    function initializeChangeOrdersPage() {
-        if (typeof CasePMPayAppSync !== 'undefined') {
-            CasePMPayAppSync.init().catch(() => {});
-        }
-        if (typeof CasePMWorkflow !== 'undefined') {
-            CasePMWorkflow.loadPortal().catch(() => {});
-        }
-        console.log('%c[Case PM] Change Orders page initialized with server sync.', 'color:#10b981');
-    }
-
-    window.addEventListener('load', initializeChangeOrdersPage);
-</script>
 
 {% endblock %}
