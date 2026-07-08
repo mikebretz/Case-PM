@@ -1173,7 +1173,7 @@
     function getTaskRowHeight(task) {
         if (!task) return scheduleSettings.default_row_height || 32;
         const custom = parseInt(task.row_height, 10);
-        if (!Number.isNaN(custom) && custom >= 22) return custom;
+        if (!Number.isNaN(custom) && custom >= 18) return custom;
         if (task.type === 'project' || isParentTask(task)) {
             return scheduleSettings.summary_row_height || 48;
         }
@@ -2940,9 +2940,9 @@
         }
         if (!scheduleSettings.column_align) scheduleSettings.column_align = {};
         if (!scheduleSettings.default_cell_style) scheduleSettings.default_cell_style = { font_size: 13 };
-        const fsSel = document.getElementById('schedFontSizeSelect');
+        const fsSel = document.getElementById('schedFontSizeInput');
         if (fsSel) fsSel.value = String(getDefaultCellFontSize());
-        const rhSel = document.getElementById('schedRowHeightSelect');
+        const rhSel = document.getElementById('schedRowHeightInput');
         if (rhSel) rhSel.value = String(scheduleSettings.default_row_height || 32);
         updateAlignToolbarButtons();
         if (scheduleSettings.timescale) setTimescale(scheduleSettings.timescale, false);
@@ -2990,7 +2990,7 @@
     }
 
     function applyRowHeightToSelection(height, allRows) {
-        const h = Math.max(22, Math.min(80, parseInt(height, 10) || 32));
+        const h = Math.max(18, Math.min(80, parseInt(height, 10) || 32));
         if (allRows) {
             scheduleSettings.default_row_height = h;
             gantt.eachTask(t => {
@@ -3018,14 +3018,14 @@
 
     function setGridFontSize(fontSize) {
         applyFontSizeToSelection(fontSize);
-        const sel = document.getElementById('schedFontSizeSelect');
-        if (sel) sel.value = String(fontSize);
+        const inp = document.getElementById('schedFontSizeInput');
+        if (inp) inp.value = String(Math.max(8, Math.min(24, parseInt(fontSize, 10) || 13)));
     }
 
     function setGridRowHeight(height, allRows) {
         applyRowHeightToSelection(height, !!allRows);
-        const sel = document.getElementById('schedRowHeightSelect');
-        if (sel) sel.value = String(height);
+        const inp = document.getElementById('schedRowHeightInput');
+        if (inp) inp.value = String(Math.max(18, Math.min(80, parseInt(height, 10) || 32)));
     }
 
     function saveBarSettingsAsDefaults(task) {
@@ -4102,9 +4102,13 @@
         const range = gantt.getSubtaskDates();
         const dataDate = document.getElementById('dataDateInput')?.value || scheduleSettings.data_date || CasePMSchedule.formatDate(new Date());
         const printed = new Date().toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' });
-        const startMs = range?.start_date ? toGanttDate(range.start_date)?.getTime() : Date.now();
-        const endMs = range?.end_date ? toGanttDate(range.end_date)?.getTime() : startMs + 86400000 * 30;
-        const span = Math.max(endMs - startMs, 86400000);
+        const DAY_MS = 86400000;
+        const PRINT_CHART_PAD_DAYS = 5;
+        const scheduleStartMs = range?.start_date ? toGanttDate(range.start_date)?.getTime() : Date.now();
+        const scheduleEndMs = range?.end_date ? toGanttDate(range.end_date)?.getTime() : scheduleStartMs + DAY_MS * 30;
+        const startMs = scheduleStartMs - PRINT_CHART_PAD_DAYS * DAY_MS;
+        const endMs = scheduleEndMs + PRINT_CHART_PAD_DAYS * DAY_MS;
+        const span = Math.max(endMs - startMs, DAY_MS);
         const timescale = buildPrintTimescale(startMs, span);
         const showInlineBars = ps.include_inline_bars !== false;
         const showTable = ps.include_activity_table !== false;
