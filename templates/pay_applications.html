@@ -476,44 +476,44 @@
 
 <script>
     // ==================== DATA & STATE (v77.1 - Period 1 Month/Date Picker restored for Draft + when pushed back via Request Revision. Billed to Date snapshot restore working. Top banner confirmation clean.) ====================
-    let payApplications = JSON.parse(localStorage.getItem('payApplications')) || [];
-    let contractorSOV = JSON.parse(localStorage.getItem('contractorSOV')) || [];
-    let subcontractorSOV = JSON.parse(localStorage.getItem('subcontractorSOV')) || {}; // { companyId: [lines] }
-    let companies = JSON.parse(localStorage.getItem('casepm_companies')) || [];
-    let budgetLines = JSON.parse(localStorage.getItem('budgetLines')) || [];
-    let payAppAuditLog = JSON.parse(localStorage.getItem('payAppAuditLog')) || [];
+    let payApplications = JSON.parse(casepmStore.getItem('payApplications')) || [];
+    let contractorSOV = JSON.parse(casepmStore.getItem('contractorSOV')) || [];
+    let subcontractorSOV = JSON.parse(casepmStore.getItem('subcontractorSOV')) || {}; // { companyId: [lines] }
+    let companies = JSON.parse(casepmStore.getItem('casepm_companies')) || [];
+    let budgetLines = JSON.parse(casepmStore.getItem('budgetLines')) || [];
+    let payAppAuditLog = JSON.parse(casepmStore.getItem('payAppAuditLog')) || [];
 
     let currentPayAppTab = 'payapp';
-    let currentPayAppPeriod = JSON.parse(localStorage.getItem('currentPayAppPeriod')) || null;
-    let payAppBillingLines = JSON.parse(localStorage.getItem('payAppBillingLines')) || {}; // { sovLineId: {workThisPeriod, materialsStored} }
+    let currentPayAppPeriod = JSON.parse(casepmStore.getItem('currentPayAppPeriod')) || null;
+    let payAppBillingLines = JSON.parse(casepmStore.getItem('payAppBillingLines')) || {}; // { sovLineId: {workThisPeriod, materialsStored} }
     let selectedSubCompanyId = null;
     let selectedTrackerSubId = null;
     let hasUnsavedChanges = false;
     let payAppCollapsedDivisions = new Set();
-    let defaultRetainagePercent = parseFloat(localStorage.getItem('payAppRetainagePercent') || '10');
-let subSOVStatus = JSON.parse(localStorage.getItem('subSOVStatus') || '{}'); // { [companyId]: { status: ..., unlockedBy?, ... } }
-let lienWaivers = JSON.parse(localStorage.getItem('lienWaivers') || '{}'); // { [companyId]: { filename: string, uploadedAt: string, submitted: boolean } }
-let requireLienWaiverOnSubPayApp = localStorage.getItem('requireLienWaiverOnSubPayApp') !== 'false'; // default true
-let requireSubmissionDeadline = localStorage.getItem('requireSubmissionDeadline') === 'true';
-let submissionDeadlineDay = localStorage.getItem('submissionDeadlineDay') || '';
-let allowZeroDollarSubPayApps = localStorage.getItem('allowZeroDollarSubPayApps') === 'true';
-let requireAllSubPayAppsBeforeG702Submit = localStorage.getItem('requireAllSubPayAppsBeforeG702Submit') !== 'false'; // Default ON (true)
+    let defaultRetainagePercent = parseFloat(casepmStore.getItem('payAppRetainagePercent') || '10');
+let subSOVStatus = JSON.parse(casepmStore.getItem('subSOVStatus') || '{}'); // { [companyId]: { status: ..., unlockedBy?, ... } }
+let lienWaivers = JSON.parse(casepmStore.getItem('lienWaivers') || '{}'); // { [companyId]: { filename: string, uploadedAt: string, submitted: boolean } }
+let requireLienWaiverOnSubPayApp = casepmStore.getItem('requireLienWaiverOnSubPayApp') !== 'false'; // default true
+let requireSubmissionDeadline = casepmStore.getItem('requireSubmissionDeadline') === 'true';
+let submissionDeadlineDay = casepmStore.getItem('submissionDeadlineDay') || '';
+let allowZeroDollarSubPayApps = casepmStore.getItem('allowZeroDollarSubPayApps') === 'true';
+let requireAllSubPayAppsBeforeG702Submit = casepmStore.getItem('requireAllSubPayAppsBeforeG702Submit') !== 'false'; // Default ON (true)
 
 // Main Contractor (GC) Lien Waiver for current period (separate from Sub waivers)
-let mainLienWaiver = JSON.parse(localStorage.getItem('mainLienWaiver') || '{}'); // { periodNumber: { filename, dataUrl, uploadedDate } }
+let mainLienWaiver = JSON.parse(casepmStore.getItem('mainLienWaiver') || '{}'); // { periodNumber: { filename, dataUrl, uploadedDate } }
 
     // Subcontractor Pay App specific state (for Submit Application workflow)
-    let subLienWaivers = JSON.parse(localStorage.getItem('subLienWaivers') || '{}'); // { companyId: { periodNumber: { filename, dataUrl, uploadedDate } } }
-    let subLienWaiverArchive = JSON.parse(localStorage.getItem('subLienWaiverArchive') || '{}'); // canonical PDF store keyed by companyId -> periodKey
-    let subPayAppHistory = JSON.parse(localStorage.getItem('subPayAppHistory') || '{}'); // { companyId: { periodNumber: { periodInfo, lines, totalBilledThisPeriod, submittedDate, lienWaiver } } }
-    let subPayAppNumbers = JSON.parse(localStorage.getItem('subPayAppNumbers') || '{}'); // { companyId: currentPayAppNumber }
-    let subPendingSubmissions = JSON.parse(localStorage.getItem('subPendingSubmissions') || '{}'); // { companyId: { periodNumber, lines: [...], totalBilledThisPeriod, lienWaiver, submittedDate } }  // LEFT-HAND pending until final Approve
+    let subLienWaivers = JSON.parse(casepmStore.getItem('subLienWaivers') || '{}'); // { companyId: { periodNumber: { filename, dataUrl, uploadedDate } } }
+    let subLienWaiverArchive = JSON.parse(casepmStore.getItem('subLienWaiverArchive') || '{}'); // canonical PDF store keyed by companyId -> periodKey
+    let subPayAppHistory = JSON.parse(casepmStore.getItem('subPayAppHistory') || '{}'); // { companyId: { periodNumber: { periodInfo, lines, totalBilledThisPeriod, submittedDate, lienWaiver } } }
+    let subPayAppNumbers = JSON.parse(casepmStore.getItem('subPayAppNumbers') || '{}'); // { companyId: currentPayAppNumber }
+    let subPendingSubmissions = JSON.parse(casepmStore.getItem('subPendingSubmissions') || '{}'); // { companyId: { periodNumber, lines: [...], totalBilledThisPeriod, lienWaiver, submittedDate } }  // LEFT-HAND pending until final Approve
 
     // NEW: Append-only archive for Previous Sub Pay Apps (never filtered, never deleted, only appended to)
-    let previousSubPayAppArchive = JSON.parse(localStorage.getItem('previousSubPayAppArchive') || '[]');
+    let previousSubPayAppArchive = JSON.parse(casepmStore.getItem('previousSubPayAppArchive') || '[]');
 
     // History of previous (Approved) Pay Applications
-    let payAppHistory = JSON.parse(localStorage.getItem('payAppHistory')) || [];
+    let payAppHistory = JSON.parse(casepmStore.getItem('payAppHistory')) || [];
 
     // Budget Contract Amount (from Budget page top-left card)
     const budgetContractAmount = 2450000;
@@ -530,14 +530,14 @@ let mainLienWaiver = JSON.parse(localStorage.getItem('mainLienWaiver') || '{}');
                 periodEnd: "2026-07-31",
                 status: "Draft"
             };
-            localStorage.setItem('currentPayAppPeriod', JSON.stringify(currentPayAppPeriod));
+            casepmStore.setItem('currentPayAppPeriod', JSON.stringify(currentPayAppPeriod));
         }
     }
 
     function safeSetLocalStorage(key, value) {
         const payload = typeof value === 'string' ? value : JSON.stringify(value);
         try {
-            localStorage.setItem(key, payload);
+            casepmStore.setItem(key, payload);
             return true;
         } catch (e) {
             console.error('localStorage save failed:', key, e);
@@ -714,7 +714,7 @@ let mainLienWaiver = JSON.parse(localStorage.getItem('mainLienWaiver') || '{}');
         currentPayAppPeriod.periodStart = periodStart;
         currentPayAppPeriod.periodEnd = periodEnd;
 
-        localStorage.setItem('currentPayAppPeriod', JSON.stringify(currentPayAppPeriod));
+        casepmStore.setItem('currentPayAppPeriod', JSON.stringify(currentPayAppPeriod));
 
         logPayAppAudit('PERIOD_1_MONTH_UPDATED', { 
             periodNumber: currentPayAppPeriod.periodNumber, 
@@ -914,11 +914,11 @@ let mainLienWaiver = JSON.parse(localStorage.getItem('mainLienWaiver') || '{}');
     }
 
     function reloadSubPayAppStoresFromLocalStorage() {
-        subPayAppHistory = JSON.parse(localStorage.getItem('subPayAppHistory') || '{}');
-        subPendingSubmissions = JSON.parse(localStorage.getItem('subPendingSubmissions') || '{}');
-        subPayAppNumbers = JSON.parse(localStorage.getItem('subPayAppNumbers') || '{}');
-        previousSubPayAppArchive = JSON.parse(localStorage.getItem('previousSubPayAppArchive') || '[]');
-        subLienWaiverArchive = JSON.parse(localStorage.getItem('subLienWaiverArchive') || '{}');
+        subPayAppHistory = JSON.parse(casepmStore.getItem('subPayAppHistory') || '{}');
+        subPendingSubmissions = JSON.parse(casepmStore.getItem('subPendingSubmissions') || '{}');
+        subPayAppNumbers = JSON.parse(casepmStore.getItem('subPayAppNumbers') || '{}');
+        previousSubPayAppArchive = JSON.parse(casepmStore.getItem('previousSubPayAppArchive') || '[]');
+        subLienWaiverArchive = JSON.parse(casepmStore.getItem('subLienWaiverArchive') || '{}');
     }
 
     function getMostRecentPayAppHistoryEntry() {
@@ -1727,7 +1727,7 @@ let mainLienWaiver = JSON.parse(localStorage.getItem('mainLienWaiver') || '{}');
         if (extra.submittedDate) subSOVStatus[companyId].submittedDate = extra.submittedDate;
         if (extra.approvedBy) subSOVStatus[companyId].approvedBy = extra.approvedBy;
         if (extra.approvedDate) subSOVStatus[companyId].approvedDate = extra.approvedDate;
-        localStorage.setItem('subSOVStatus', JSON.stringify(subSOVStatus));
+        casepmStore.setItem('subSOVStatus', JSON.stringify(subSOVStatus));
     }
 
     // ==================== LIEN WAIVER WORKFLOW ====================
@@ -1773,7 +1773,7 @@ let mainLienWaiver = JSON.parse(localStorage.getItem('mainLienWaiver') || '{}');
         // Ensure sub-specific pay app counter is initialized so first upload always stores under the correct key (fixes pill not appearing on first upload)
         if (!subPayAppNumbers[companyId]) {
             subPayAppNumbers[companyId] = 1;
-            localStorage.setItem('subPayAppNumbers', JSON.stringify(subPayAppNumbers));
+            casepmStore.setItem('subPayAppNumbers', JSON.stringify(subPayAppNumbers));
         }
         const periodNum = subPayAppNumbers[companyId];
 
@@ -1798,7 +1798,7 @@ let mainLienWaiver = JSON.parse(localStorage.getItem('mainLienWaiver') || '{}');
                     submitted: false
                 };
 
-                localStorage.setItem('subLienWaivers', JSON.stringify(subLienWaivers));
+                casepmStore.setItem('subLienWaivers', JSON.stringify(subLienWaivers));
 
                 logPayAppAudit('LIEN_WAIVER_UPLOADED', { companyId, filename: file.name, period: periodNum });
                 // Success feedback removed per user request (UI pill + status change provides confirmation)
@@ -1818,13 +1818,13 @@ let mainLienWaiver = JSON.parse(localStorage.getItem('mainLienWaiver') || '{}');
         // Ensure sub-specific pay app counter is initialized (keeps remove/view in sync with upload)
         if (!subPayAppNumbers[companyId]) {
             subPayAppNumbers[companyId] = 1;
-            localStorage.setItem('subPayAppNumbers', JSON.stringify(subPayAppNumbers));
+            casepmStore.setItem('subPayAppNumbers', JSON.stringify(subPayAppNumbers));
         }
         const periodNum = subPayAppNumbers[companyId];
 
         if (subLienWaivers[companyId] && subLienWaivers[companyId][periodNum]) {
             delete subLienWaivers[companyId][periodNum];
-            localStorage.setItem('subLienWaivers', JSON.stringify(subLienWaivers));
+            casepmStore.setItem('subLienWaivers', JSON.stringify(subLienWaivers));
             // Success feedback removed per user request (UI updates provide confirmation)
             // Force immediate live UI update
             setTimeout(() => {
@@ -1853,7 +1853,7 @@ let mainLienWaiver = JSON.parse(localStorage.getItem('mainLienWaiver') || '{}');
                     dataUrl: dataUrl,
                     uploadedDate: new Date().toISOString()
                 };
-                localStorage.setItem('mainLienWaiver', JSON.stringify(mainLienWaiver));
+                casepmStore.setItem('mainLienWaiver', JSON.stringify(mainLienWaiver));
 
                 logPayAppAudit('MAIN_LIEN_WAIVER_UPLOADED', { period: periodNum, filename: file.name });
                 // Success feedback removed per user request (pill appears immediately)
@@ -1957,7 +1957,7 @@ let mainLienWaiver = JSON.parse(localStorage.getItem('mainLienWaiver') || '{}');
         const periodNum = currentPayAppPeriod.periodNumber;
         if (mainLienWaiver[periodNum]) {
             delete mainLienWaiver[periodNum];
-            localStorage.setItem('mainLienWaiver', JSON.stringify(mainLienWaiver));
+            casepmStore.setItem('mainLienWaiver', JSON.stringify(mainLienWaiver));
             // Success feedback removed per user request (UI updates provide confirmation)
             renderPayAppContent();
         }
@@ -2076,7 +2076,7 @@ let mainLienWaiver = JSON.parse(localStorage.getItem('mainLienWaiver') || '{}');
         }
 
         waiver.submitted = true;
-        localStorage.setItem('lienWaivers', JSON.stringify(lienWaivers));
+        casepmStore.setItem('lienWaivers', JSON.stringify(lienWaivers));
 
         // Update status to final approved state
         updateSubSOVStatus(companyId, 'Approved', { 
@@ -2096,7 +2096,7 @@ let mainLienWaiver = JSON.parse(localStorage.getItem('mainLienWaiver') || '{}');
     // Robust Primary Contact check (matches Companies page + User Management)
     function isUserPrimaryContactForCompany(company) {
         if (!company) return false;
-        const allUsers = JSON.parse(localStorage.getItem('users') || '[]');
+        const allUsers = JSON.parse(casepmStore.getItem('users') || '[]');
         const currentUserEmail = "michael@casepm.com";
 
         if (company.primary_contact_user_id) {
@@ -2114,7 +2114,7 @@ let mainLienWaiver = JSON.parse(localStorage.getItem('mainLienWaiver') || '{}');
     }
 
     function getCompanyName(companyId) {
-        const companies = JSON.parse(localStorage.getItem('casepm_companies') || '[]');
+        const companies = JSON.parse(casepmStore.getItem('casepm_companies') || '[]');
         const c = companies.find(x => x.id == companyId);
         return c ? (c.name || c.company_name || 'Unknown Company') : 'Unknown Company';
     }
@@ -2148,7 +2148,7 @@ let mainLienWaiver = JSON.parse(localStorage.getItem('mainLienWaiver') || '{}');
         };
         payAppAuditLog.unshift(entry);
         if (payAppAuditLog.length > 1000) payAppAuditLog.length = 1000;
-        localStorage.setItem('payAppAuditLog', JSON.stringify(payAppAuditLog));
+        casepmStore.setItem('payAppAuditLog', JSON.stringify(payAppAuditLog));
     }
 
     // ==================== TAB SWITCHING ====================
@@ -2421,7 +2421,7 @@ let mainLienWaiver = JSON.parse(localStorage.getItem('mainLienWaiver') || '{}');
 
         // Restore billing lines from the historical snapshot (this is the key fix for Billed to Date)
         payAppBillingLines = JSON.parse(JSON.stringify(periodData.snapshot.billingLines || {}));
-        localStorage.setItem('payAppBillingLines', JSON.stringify(payAppBillingLines));
+        casepmStore.setItem('payAppBillingLines', JSON.stringify(payAppBillingLines));
 
         // === KEY FIX: Restore billed_to_date on contractorSOV from the snapshot ===
         // This treats each historical pay app as a clean "Photoshop" snapshot.
@@ -2433,7 +2433,7 @@ let mainLienWaiver = JSON.parse(localStorage.getItem('mainLienWaiver') || '{}');
                     liveLine.billed_to_date = (snapLine.billed_to_date != null) ? snapLine.billed_to_date : 0;
                 }
             });
-            localStorage.setItem('contractorSOV', JSON.stringify(contractorSOV));
+            casepmStore.setItem('contractorSOV', JSON.stringify(contractorSOV));
         }
 
         // Set the current period to a Draft version of this historical period
@@ -2442,7 +2442,7 @@ let mainLienWaiver = JSON.parse(localStorage.getItem('mainLienWaiver') || '{}');
             status: "Draft",
             id: Date.now()
         };
-        localStorage.setItem('currentPayAppPeriod', JSON.stringify(currentPayAppPeriod));
+        casepmStore.setItem('currentPayAppPeriod', JSON.stringify(currentPayAppPeriod));
 
         const mainPeriodToRestore = Number(
             periodData.periodNumber ||
@@ -2599,18 +2599,18 @@ let mainLienWaiver = JSON.parse(localStorage.getItem('mainLienWaiver') || '{}');
 
     // ==================== PAY APPLICATION G702 TAB ====================
     function renderPayApplicationTab(cardsContainer, thead, tbody, workflowBar) {
-        contractorSOV = JSON.parse(localStorage.getItem('contractorSOV')) || [];
-        payAppBillingLines = JSON.parse(localStorage.getItem('payAppBillingLines')) || {};
+        contractorSOV = JSON.parse(casepmStore.getItem('contractorSOV')) || [];
+        payAppBillingLines = JSON.parse(casepmStore.getItem('payAppBillingLines')) || {};
 
         // Robust reload of current period from storage (fixes header showing stale "Period 1" after advancing)
-        const storedPeriod = JSON.parse(localStorage.getItem('currentPayAppPeriod') || 'null');
+        const storedPeriod = JSON.parse(casepmStore.getItem('currentPayAppPeriod') || 'null');
         if (storedPeriod && storedPeriod.periodNumber) {
             currentPayAppPeriod = storedPeriod;
         }
 
         if (!currentPayAppPeriod) {
             currentPayAppPeriod = { id: Date.now(), periodNumber: 7, periodStart: "2026-07-01", periodEnd: "2026-07-31", status: "Draft" };
-            localStorage.setItem('currentPayAppPeriod', JSON.stringify(currentPayAppPeriod));
+            casepmStore.setItem('currentPayAppPeriod', JSON.stringify(currentPayAppPeriod));
         }
 
         // Calculate live totals
@@ -2778,7 +2778,7 @@ let mainLienWaiver = JSON.parse(localStorage.getItem('mainLienWaiver') || '{}');
                             dataUrl: dataUrl,
                             uploadedDate: new Date().toISOString()
                         };
-                        localStorage.setItem('mainLienWaiver', JSON.stringify(mainLienWaiver));
+                        casepmStore.setItem('mainLienWaiver', JSON.stringify(mainLienWaiver));
                         logPayAppAudit('MAIN_LIEN_WAIVER_UPLOADED', { period: periodNum, filename: file.name });
                         // Success feedback removed per user request (pill appears immediately)
                         setTimeout(() => { renderPayAppContent(); }, 30);
@@ -2956,11 +2956,11 @@ let mainLienWaiver = JSON.parse(localStorage.getItem('mainLienWaiver') || '{}');
             periodEnd: end,
             status: "Draft"
         };
-        localStorage.setItem('currentPayAppPeriod', JSON.stringify(currentPayAppPeriod));
+        casepmStore.setItem('currentPayAppPeriod', JSON.stringify(currentPayAppPeriod));
 
         // Clear previous period billing (new period starts fresh)
         payAppBillingLines = {};
-        localStorage.setItem('payAppBillingLines', JSON.stringify(payAppBillingLines));
+        casepmStore.setItem('payAppBillingLines', JSON.stringify(payAppBillingLines));
 
         logPayAppAudit('NEW_PERIOD_CREATED', { periodNumber: num, dates: `${start} to ${end}` });
 
@@ -2988,11 +2988,11 @@ let mainLienWaiver = JSON.parse(localStorage.getItem('mainLienWaiver') || '{}');
             periodEnd: nextEndDate.toISOString().split('T')[0],
             status: "Draft"
         };
-        localStorage.setItem('currentPayAppPeriod', JSON.stringify(currentPayAppPeriod));
+        casepmStore.setItem('currentPayAppPeriod', JSON.stringify(currentPayAppPeriod));
 
         // Clear current billing lines for the new period (fresh start)
         payAppBillingLines = {};
-        localStorage.setItem('payAppBillingLines', JSON.stringify(payAppBillingLines));
+        casepmStore.setItem('payAppBillingLines', JSON.stringify(payAppBillingLines));
 
         logPayAppAudit('PERIOD_ADVANCED_TEST', { from: currentPayAppPeriod.periodNumber - 1, to: nextNum });
         // Debug success feedback removed per user request
@@ -3003,15 +3003,15 @@ let mainLienWaiver = JSON.parse(localStorage.getItem('mainLienWaiver') || '{}');
         if (!confirm("This will DELETE all Subcontractor SOVs, Pay App numbers, history, pending submissions, lien waivers, Previous Sub Pay Apps archive, and status. Are you sure?")) {
             return;
         }
-        localStorage.removeItem('subcontractorSOV');
-        localStorage.removeItem('subPayAppNumbers');
-        localStorage.removeItem('subPayAppHistory');
-        localStorage.removeItem('subPendingSubmissions');
-        localStorage.removeItem('subLienWaivers');
-        localStorage.removeItem('subLienWaiverArchive');
-        localStorage.removeItem('previousSubPayAppArchive');
-        localStorage.removeItem('subSOVStatus');
-        localStorage.removeItem('lienWaivers');
+        casepmStore.removeItem('subcontractorSOV');
+        casepmStore.removeItem('subPayAppNumbers');
+        casepmStore.removeItem('subPayAppHistory');
+        casepmStore.removeItem('subPendingSubmissions');
+        casepmStore.removeItem('subLienWaivers');
+        casepmStore.removeItem('subLienWaiverArchive');
+        casepmStore.removeItem('previousSubPayAppArchive');
+        casepmStore.removeItem('subSOVStatus');
+        casepmStore.removeItem('lienWaivers');
 
         subcontractorSOV = {};
         subPayAppNumbers = {};
@@ -3262,7 +3262,7 @@ let mainLienWaiver = JSON.parse(localStorage.getItem('mainLienWaiver') || '{}');
             materialsStored, 
             coWorkThisPeriod: coWorkThisPeriod 
         };
-        localStorage.setItem('payAppBillingLines', JSON.stringify(payAppBillingLines));
+        casepmStore.setItem('payAppBillingLines', JSON.stringify(payAppBillingLines));
 
         // NOTE: We intentionally do NOT update line.billed_to_date or percent_complete here.
         // billed_to_date on the SOV line represents the LAST COMMITTED amount from previous approved periods.
@@ -3356,7 +3356,7 @@ let mainLienWaiver = JSON.parse(localStorage.getItem('mainLienWaiver') || '{}');
         }
 
         currentPayAppPeriod.status = "Submitted";
-        localStorage.setItem('currentPayAppPeriod', JSON.stringify(currentPayAppPeriod));
+        casepmStore.setItem('currentPayAppPeriod', JSON.stringify(currentPayAppPeriod));
         logPayAppAudit('APPLICATION_SUBMITTED', { periodNumber: currentPayAppPeriod.periodNumber, validatedAgainstBudget: budgetContractAmount });
         renderPayAppContent();
     }
@@ -3412,16 +3412,16 @@ let mainLienWaiver = JSON.parse(localStorage.getItem('mainLienWaiver') || '{}');
                 status: "Approved",
                 snapshot: snapshot
             });
-            localStorage.setItem('payAppHistory', JSON.stringify(payAppHistory));
+            casepmStore.setItem('payAppHistory', JSON.stringify(payAppHistory));
         } else {
             // Update existing snapshot if re-approved
             payAppHistory[existingIndex].snapshot = snapshot;
             payAppHistory[existingIndex].status = "Approved";
-            localStorage.setItem('payAppHistory', JSON.stringify(payAppHistory));
+            casepmStore.setItem('payAppHistory', JSON.stringify(payAppHistory));
         }
 
         currentPayAppPeriod.status = "Approved";
-        localStorage.setItem('currentPayAppPeriod', JSON.stringify(currentPayAppPeriod));
+        casepmStore.setItem('currentPayAppPeriod', JSON.stringify(currentPayAppPeriod));
         logPayAppAudit('APPLICATION_APPROVED', { periodNumber: currentPayAppPeriod.periodNumber });
 
         // After approval, automatically switch to Previous Pay Applications tab so user can verify the numbers carried over
@@ -3441,7 +3441,7 @@ let mainLienWaiver = JSON.parse(localStorage.getItem('mainLienWaiver') || '{}');
             if (!line.billed_to_date) line.billed_to_date = 0;
             line.billed_to_date += thisPeriodCompleted;
         });
-        localStorage.setItem('contractorSOV', JSON.stringify(contractorSOV));
+        casepmStore.setItem('contractorSOV', JSON.stringify(contractorSOV));
 
         // Success confirmation for the user
         // showCenteredAlert("Pay Application approved. Amounts from Work This Period have been added to Billed to Date for the next period.", "success");
@@ -3482,11 +3482,11 @@ let mainLienWaiver = JSON.parse(localStorage.getItem('mainLienWaiver') || '{}');
         };
 
         currentPayAppPeriod = nextPeriod;
-        localStorage.setItem('currentPayAppPeriod', JSON.stringify(currentPayAppPeriod));
+        casepmStore.setItem('currentPayAppPeriod', JSON.stringify(currentPayAppPeriod));
 
         // Clear draft billing lines for the new period
         payAppBillingLines = {};
-        localStorage.setItem('payAppBillingLines', JSON.stringify(payAppBillingLines));
+        casepmStore.setItem('payAppBillingLines', JSON.stringify(payAppBillingLines));
 
         logPayAppAudit('PERIOD_AUTO_ADVANCED', { from: currentPeriod.periodNumber, to: nextNum });
         
@@ -3496,21 +3496,21 @@ let mainLienWaiver = JSON.parse(localStorage.getItem('mainLienWaiver') || '{}');
     function requestRevisionPayApplication() {
         if (!currentPayAppPeriod) return;
         currentPayAppPeriod.status = "Draft";
-        localStorage.setItem('currentPayAppPeriod', JSON.stringify(currentPayAppPeriod));
+        casepmStore.setItem('currentPayAppPeriod', JSON.stringify(currentPayAppPeriod));
         logPayAppAudit('REVISION_REQUESTED', { periodNumber: currentPayAppPeriod.periodNumber });
         renderPayAppContent();
     }
 
     // ==================== CONTRACTOR SOV LOCK / UNLOCK (Admin Only) ====================
     function lockContractorSOV() {
-        localStorage.setItem('contractorSOVLocked', 'true');
+        casepmStore.setItem('contractorSOVLocked', 'true');
         // Success feedback removed per user request (lock icon/state change provides feedback)
         // Immediate re-render of current tab
         renderPayAppContent();
     }
 
     function unlockContractorSOV() {
-        localStorage.setItem('contractorSOVLocked', 'false');
+        casepmStore.setItem('contractorSOVLocked', 'false');
         // Success feedback removed per user request (unlock state visible)
         // Immediate re-render of current tab
         renderPayAppContent();
@@ -3532,15 +3532,15 @@ let mainLienWaiver = JSON.parse(localStorage.getItem('mainLienWaiver') || '{}');
 
         // Clear Contractor G703 completely (removes all lines + all billed_to_date values)
         contractorSOV = [];
-        localStorage.setItem('contractorSOV', JSON.stringify(contractorSOV));
+        casepmStore.setItem('contractorSOV', JSON.stringify(contractorSOV));
 
         // Clear Previous Pay Application history (empties the "Select Previous Period" dropdown)
         payAppHistory = [];
-        localStorage.setItem('payAppHistory', JSON.stringify(payAppHistory));
+        casepmStore.setItem('payAppHistory', JSON.stringify(payAppHistory));
 
         // Clear any draft billing lines for the current G702 (Work This Period / Materials Stored on G702 Billed to Date)
         payAppBillingLines = {};
-        localStorage.setItem('payAppBillingLines', JSON.stringify(payAppBillingLines));
+        casepmStore.setItem('payAppBillingLines', JSON.stringify(payAppBillingLines));
 
         // Reset current G702 period to a completely fresh Period 1 Draft (no billed amounts, clean start)
         currentPayAppPeriod = {
@@ -3550,10 +3550,10 @@ let mainLienWaiver = JSON.parse(localStorage.getItem('mainLienWaiver') || '{}');
             periodEnd: new Date(Date.now() + 30*24*60*60*1000).toISOString().split('T')[0],
             status: "Draft"
         };
-        localStorage.setItem('currentPayAppPeriod', JSON.stringify(currentPayAppPeriod));
+        casepmStore.setItem('currentPayAppPeriod', JSON.stringify(currentPayAppPeriod));
 
         // Unlock the G703 if it was locked
-        localStorage.removeItem('contractorSOVLocked');
+        casepmStore.removeItem('contractorSOVLocked');
 
         // Re-render everything so G702 + G703 show a true fresh/empty state (nothing billed, nothing saved)
         renderPayAppContent();
@@ -3563,7 +3563,7 @@ let mainLienWaiver = JSON.parse(localStorage.getItem('mainLienWaiver') || '{}');
 
     // ==================== CONTRACTOR SOV TAB ====================
     function renderContractorSOVTab(cardsContainer, thead, tbody, workflowBar) {
-        contractorSOV = JSON.parse(localStorage.getItem('contractorSOV')) || [];
+        contractorSOV = JSON.parse(casepmStore.getItem('contractorSOV')) || [];
 
         let totalOriginal = 0, totalCO = 0, totalBilled = 0, totalBalance = 0;
 
@@ -3604,7 +3604,7 @@ let mainLienWaiver = JSON.parse(localStorage.getItem('mainLienWaiver') || '{}');
         `;
 
         // Workflow bar - with Lock/Unlock for Admin control
-        const isLocked = localStorage.getItem('contractorSOVLocked') === 'true';
+        const isLocked = casepmStore.getItem('contractorSOVLocked') === 'true';
         let lockBtnHTML = '';
         if (isLocked) {
             lockBtnHTML = `<button onclick="unlockContractorSOV()" class="px-4 py-2 bg-amber-600 hover:bg-amber-500 rounded-md text-sm font-medium flex items-center gap-2 ml-auto">
@@ -3733,7 +3733,7 @@ let mainLienWaiver = JSON.parse(localStorage.getItem('mainLienWaiver') || '{}');
         const datalist = document.getElementById('sovCostCodeList');
         if (!datalist) return;
         datalist.innerHTML = '';
-        const budgetLinesData = JSON.parse(localStorage.getItem('budgetLines')) || [];
+        const budgetLinesData = JSON.parse(casepmStore.getItem('budgetLines')) || [];
         // Unique by cost_code
         const seen = new Set();
         budgetLinesData.forEach(b => {
@@ -3750,10 +3750,10 @@ let mainLienWaiver = JSON.parse(localStorage.getItem('mainLienWaiver') || '{}');
         let sourceData = [];
         let title = 'Select Cost Code';
         if (source === 'contractor-sov') {
-            sourceData = JSON.parse(localStorage.getItem('contractorSOV')) || [];
+            sourceData = JSON.parse(casepmStore.getItem('contractorSOV')) || [];
             title = 'Select from Contractor SOV (G703)';
         } else {
-            sourceData = JSON.parse(localStorage.getItem('budgetLines')) || [];
+            sourceData = JSON.parse(casepmStore.getItem('budgetLines')) || [];
             title = 'Select from Budget Cost Codes';
         }
         if (sourceData.length === 0) {
@@ -3873,7 +3873,7 @@ let mainLienWaiver = JSON.parse(localStorage.getItem('mainLienWaiver') || '{}');
                 if (typeof contractorSOV !== 'undefined' && Array.isArray(contractorSOV) && contractorSOV.length > 0) {
                     contractorLines = contractorSOV;
                 } else {
-                    try { contractorLines = JSON.parse(localStorage.getItem('contractorSOV') || '[]'); } catch (e) { contractorLines = []; }
+                    try { contractorLines = JSON.parse(casepmStore.getItem('contractorSOV') || '[]'); } catch (e) { contractorLines = []; }
                 }
                 const norm = (code || '').trim().toUpperCase();
                 let gcTotal = 0;
@@ -3901,7 +3901,7 @@ let mainLienWaiver = JSON.parse(localStorage.getItem('mainLienWaiver') || '{}');
     }
 
     function showAddContractorSOVLine() {
-        const isLocked = localStorage.getItem('contractorSOVLocked') === 'true';
+        const isLocked = casepmStore.getItem('contractorSOVLocked') === 'true';
         // Allow modal to open even when locked, but fields will be disabled except Notes
         const modal = document.getElementById('contractorSOVModal');
         const content = document.getElementById('contractorSOVModalContent');
@@ -3948,7 +3948,7 @@ let mainLienWaiver = JSON.parse(localStorage.getItem('mainLienWaiver') || '{}');
     function editContractorSOVLine(id) {
         const line = contractorSOV.find(l => l.id === id);
         if (!line) return;
-        const isLocked = localStorage.getItem('contractorSOVLocked') === 'true';
+        const isLocked = casepmStore.getItem('contractorSOVLocked') === 'true';
         const modal = document.getElementById('contractorSOVModal');
         const content = document.getElementById('contractorSOVModalContent');
         content.innerHTML = `
@@ -4077,7 +4077,7 @@ let mainLienWaiver = JSON.parse(localStorage.getItem('mainLienWaiver') || '{}');
         }
 
         // Reconciliation: Check against Budget for this cost code (per-code)
-        const budgetLines = JSON.parse(localStorage.getItem('budgetLines')) || [];
+        const budgetLines = JSON.parse(casepmStore.getItem('budgetLines')) || [];
         const budgetTotalForCode = budgetLines
             .filter(b => b.cost_code === costCode)
             .reduce((sum, b) => sum + (b.original_budget || 0), 0);
@@ -4120,7 +4120,7 @@ let mainLienWaiver = JSON.parse(localStorage.getItem('mainLienWaiver') || '{}');
             logPayAppAudit('CONTRACTOR_SOV_ADDED', { cost_code: costCode, description: desc, original, billed_to_date: billedToDateNum });
         }
 
-        localStorage.setItem('contractorSOV', JSON.stringify(contractorSOV));
+        casepmStore.setItem('contractorSOV', JSON.stringify(contractorSOV));
         showUnsavedIndicator();
         btn.closest('dialog').close();
         renderPayAppContent();
@@ -4163,7 +4163,7 @@ let mainLienWaiver = JSON.parse(localStorage.getItem('mainLienWaiver') || '{}');
         };
         confirmDialog.querySelector('#confirmDelBtn').onclick = () => {
             contractorSOV = contractorSOV.filter(l => l.id !== id);
-            localStorage.setItem('contractorSOV', JSON.stringify(contractorSOV));
+            casepmStore.setItem('contractorSOV', JSON.stringify(contractorSOV));
             confirmDialog.close();
             confirmDialog.remove();
             renderPayAppContent();
@@ -4171,7 +4171,7 @@ let mainLienWaiver = JSON.parse(localStorage.getItem('mainLienWaiver') || '{}');
     }
 
     function seedContractorSOVFromBudget() {
-        const budgetLines = JSON.parse(localStorage.getItem('budgetLines')) || [];
+        const budgetLines = JSON.parse(casepmStore.getItem('budgetLines')) || [];
         if (budgetLines.length === 0) {
             showCenteredAlert("No budget lines found to seed from. Please add budget lines in the Budget page first.");
             return;
@@ -4376,7 +4376,7 @@ let mainLienWaiver = JSON.parse(localStorage.getItem('mainLienWaiver') || '{}');
             }
         });
 
-        localStorage.setItem('contractorSOV', JSON.stringify(contractorSOV));
+        casepmStore.setItem('contractorSOV', JSON.stringify(contractorSOV));
         modal.close();
         modal.remove();
         delete window._seedBudgetLines;
@@ -4387,7 +4387,7 @@ let mainLienWaiver = JSON.parse(localStorage.getItem('mainLienWaiver') || '{}');
 
     // ==================== SUBCONTRACTOR SOV TAB ====================
     function renderSubcontractorSOVTab(cardsContainer, thead, tbody, workflowBar) {
-        companies = JSON.parse(localStorage.getItem('casepm_companies')) || [];
+        companies = JSON.parse(casepmStore.getItem('casepm_companies')) || [];
         let currentStatus = 'Draft'; // Declare early to avoid TDZ errors in template literals
 
         // Summary cards - RESTRUCTURED EXACTLY AS REQUESTED
@@ -4457,7 +4457,7 @@ let mainLienWaiver = JSON.parse(localStorage.getItem('mainLienWaiver') || '{}');
         // and ensures new/fresh jobs start with a completely empty dropdown until you use "Add New".
         const selector = document.getElementById('subSelector');
         if (selector) {
-            const subSOVData = JSON.parse(localStorage.getItem('subcontractorSOV') || '{}');
+            const subSOVData = JSON.parse(casepmStore.getItem('subcontractorSOV') || '{}');
             companies.forEach(c => {
                 if (subSOVData[c.id]) {  // Only include if this sub has been added to the current job's SOV
                     const opt = document.createElement('option');
@@ -4484,7 +4484,7 @@ let mainLienWaiver = JSON.parse(localStorage.getItem('mainLienWaiver') || '{}');
 
         // Show individual Pay App # + SOV Status for selected sub
         if (selectedSubCompanyId) {
-            let subPayApps = JSON.parse(localStorage.getItem('subPayAppNumbers') || '{}');
+            let subPayApps = JSON.parse(casepmStore.getItem('subPayAppNumbers') || '{}');
             const currentNum = subPayAppNumbers[selectedSubCompanyId] || 1;
             const realSOVStatus = getSubSOVStatus(selectedSubCompanyId);
 
@@ -4780,7 +4780,7 @@ let mainLienWaiver = JSON.parse(localStorage.getItem('mainLienWaiver') || '{}');
                             uploadedDate: new Date().toISOString(),
                             submitted: false
                         };
-                        localStorage.setItem('subLienWaivers', JSON.stringify(subLienWaivers));
+                        casepmStore.setItem('subLienWaivers', JSON.stringify(subLienWaivers));
                         logPayAppAudit('LIEN_WAIVER_UPLOADED', { companyId: selectedSubCompanyId, filename: file.name, period: periodNum });
                         // Success feedback removed per user request (UI pill + status change provides confirmation)
                         setTimeout(() => { renderPayAppContent(); }, 30);
@@ -4939,7 +4939,7 @@ let mainLienWaiver = JSON.parse(localStorage.getItem('mainLienWaiver') || '{}');
 
     function selectSubcontractorForSOV(companyId) {
         selectedSubCompanyId = companyId ? parseInt(companyId) : null;
-        localStorage.setItem('lastSelectedSubSOV', selectedSubCompanyId);
+        casepmStore.setItem('lastSelectedSubSOV', selectedSubCompanyId);
         renderPayAppContent();
     }
 
@@ -4953,10 +4953,10 @@ let mainLienWaiver = JSON.parse(localStorage.getItem('mainLienWaiver') || '{}');
         const companyName = company ? (company.name || company.company_name || 'this subcontractor') : 'this subcontractor';
 
         // Load latest data
-        const subSOV = JSON.parse(localStorage.getItem('subcontractorSOV') || '{}');
-        const payAppHist = JSON.parse(localStorage.getItem('subPayAppHistory') || '{}');
-        const pendingSubs = JSON.parse(localStorage.getItem('subPendingSubmissions') || '{}');
-        const payAppNums = JSON.parse(localStorage.getItem('subPayAppNumbers') || '{}');
+        const subSOV = JSON.parse(casepmStore.getItem('subcontractorSOV') || '{}');
+        const payAppHist = JSON.parse(casepmStore.getItem('subPayAppHistory') || '{}');
+        const pendingSubs = JSON.parse(casepmStore.getItem('subPendingSubmissions') || '{}');
+        const payAppNums = JSON.parse(casepmStore.getItem('subPayAppNumbers') || '{}');
 
         const histForSub = payAppHist[companyId] || {};
         const hasPushedHistory = Object.keys(histForSub).some(p => {
@@ -5001,19 +5001,19 @@ let mainLienWaiver = JSON.parse(localStorage.getItem('mainLienWaiver') || '{}');
         if (payAppNums[companyId]) delete payAppNums[companyId];
 
         // Also clean lien waivers if present
-        const lienWaivers = JSON.parse(localStorage.getItem('subLienWaivers') || '{}');
+        const lienWaivers = JSON.parse(casepmStore.getItem('subLienWaivers') || '{}');
         if (lienWaivers[companyId]) delete lienWaivers[companyId];
 
         // Persist
-        localStorage.setItem('subcontractorSOV', JSON.stringify(subSOV));
-        localStorage.setItem('subPayAppHistory', JSON.stringify(payAppHist));
-        localStorage.setItem('subPendingSubmissions', JSON.stringify(pendingSubs));
-        localStorage.setItem('subPayAppNumbers', JSON.stringify(payAppNums));
-        localStorage.setItem('subLienWaivers', JSON.stringify(lienWaivers));
+        casepmStore.setItem('subcontractorSOV', JSON.stringify(subSOV));
+        casepmStore.setItem('subPayAppHistory', JSON.stringify(payAppHist));
+        casepmStore.setItem('subPendingSubmissions', JSON.stringify(pendingSubs));
+        casepmStore.setItem('subPayAppNumbers', JSON.stringify(payAppNums));
+        casepmStore.setItem('subLienWaivers', JSON.stringify(lienWaivers));
 
         // Clear selection
         selectedSubCompanyId = null;
-        localStorage.removeItem('lastSelectedSubSOV');
+        casepmStore.removeItem('lastSelectedSubSOV');
 
         // Immediately remove from the visible dropdown (for instant feedback when focused on the select)
         const selector = document.getElementById('subSelector');
@@ -5034,13 +5034,13 @@ let mainLienWaiver = JSON.parse(localStorage.getItem('mainLienWaiver') || '{}');
             return;
         }
         // Clear all sub-related data (keep contractorSOV, main pay periods, companies list, etc.)
-        localStorage.removeItem('subcontractorSOV');
-        localStorage.removeItem('subPayAppNumbers');
-        localStorage.removeItem('subPayAppHistory');
-        localStorage.removeItem('subPendingSubmissions');
-        localStorage.removeItem('subLienWaivers');
+        casepmStore.removeItem('subcontractorSOV');
+        casepmStore.removeItem('subPayAppNumbers');
+        casepmStore.removeItem('subPayAppHistory');
+        casepmStore.removeItem('subPendingSubmissions');
+        casepmStore.removeItem('subLienWaivers');
         selectedSubCompanyId = null;
-        localStorage.removeItem('lastSelectedSubSOV');
+        casepmStore.removeItem('lastSelectedSubSOV');
 
         // Explicitly empty the dropdown immediately (guarantees fresh job state)
         const sel = document.getElementById('subSelector');
@@ -5181,7 +5181,7 @@ let mainLienWaiver = JSON.parse(localStorage.getItem('mainLienWaiver') || '{}');
         if (typeof contractorSOV !== 'undefined' && Array.isArray(contractorSOV) && contractorSOV.length > 0) {
             contractorLines = contractorSOV;
         } else {
-            try { contractorLines = JSON.parse(localStorage.getItem('contractorSOV') || '[]'); } catch (e) { contractorLines = []; }
+            try { contractorLines = JSON.parse(casepmStore.getItem('contractorSOV') || '[]'); } catch (e) { contractorLines = []; }
         }
         contractorLines.forEach(l => {
             const lCode = (l.cost_code || '').toUpperCase().replace(/[\s-]/g, '');
@@ -5425,7 +5425,7 @@ let mainLienWaiver = JSON.parse(localStorage.getItem('mainLienWaiver') || '{}');
         // The draft values above are what will be rolled into billed_to_date when the user
         // clicks the new "Submit Application" button on an Approved Sub SOV.
 
-        localStorage.setItem('subcontractorSOV', JSON.stringify(subcontractorSOV));
+        casepmStore.setItem('subcontractorSOV', JSON.stringify(subcontractorSOV));
         showUnsavedIndicator();
         btn.closest('dialog').close();
         renderPayAppContent();
@@ -5451,7 +5451,7 @@ let mainLienWaiver = JSON.parse(localStorage.getItem('mainLienWaiver') || '{}');
 
         // === HARD VALIDATION: Cannot overbill a cost code beyond the GC's G703 total (Original + COs) when summed across ALL subs ===
         // Reconciles commitments from every subcontractor against the main contractor's G703 line total for that code.
-        const contractorSOVLines = JSON.parse(localStorage.getItem('contractorSOV')) || [];
+        const contractorSOVLines = JSON.parse(casepmStore.getItem('contractorSOV')) || [];
         let gcG703Total = 0;
         contractorSOVLines.forEach(l => {
             if (l.cost_code === costCode) {
@@ -5517,7 +5517,7 @@ let mainLienWaiver = JSON.parse(localStorage.getItem('mainLienWaiver') || '{}');
             });
         }
 
-        localStorage.setItem('subcontractorSOV', JSON.stringify(subcontractorSOV));
+        casepmStore.setItem('subcontractorSOV', JSON.stringify(subcontractorSOV));
         showUnsavedIndicator();
         btn.closest('dialog').close();
         renderPayAppContent();
@@ -5527,7 +5527,7 @@ let mainLienWaiver = JSON.parse(localStorage.getItem('mainLienWaiver') || '{}');
         if (!confirm("Delete this line from the subcontractor's SOV?")) return;
         if (subcontractorSOV[companyId]) {
             subcontractorSOV[companyId] = subcontractorSOV[companyId].filter(l => l.id !== lineId);
-            localStorage.setItem('subcontractorSOV', JSON.stringify(subcontractorSOV));
+            casepmStore.setItem('subcontractorSOV', JSON.stringify(subcontractorSOV));
             renderPayAppContent();
         }
     }
@@ -5558,12 +5558,12 @@ let mainLienWaiver = JSON.parse(localStorage.getItem('mainLienWaiver') || '{}');
             // Clear lien waiver for this period (ready for next cycle)
             if (lienWaivers[companyId]) {
                 delete lienWaivers[companyId];
-                localStorage.setItem('lienWaivers', JSON.stringify(lienWaivers));
+                casepmStore.setItem('lienWaivers', JSON.stringify(lienWaivers));
             }
 
             // Create historical snapshot for this sub's pay app
             const subHistoryKey = `subPayAppHistory_${companyId}`;
-            let subHistory = JSON.parse(localStorage.getItem(subHistoryKey) || '[]');
+            let subHistory = JSON.parse(casepmStore.getItem(subHistoryKey) || '[]');
             
             const snapshot = {
                 period: JSON.parse(JSON.stringify(currentPayAppPeriod || {})),
@@ -5574,7 +5574,7 @@ let mainLienWaiver = JSON.parse(localStorage.getItem('mainLienWaiver') || '{}');
             
             subHistory.unshift(snapshot);
             if (subHistory.length > 12) subHistory.length = 12; // keep last 12 periods
-            localStorage.setItem(subHistoryKey, JSON.stringify(subHistory));
+            casepmStore.setItem(subHistoryKey, JSON.stringify(subHistory));
 
             logPayAppAudit('SUB_PAY_APP_SUBMITTED', { 
                 company: company.name || company.company_name, 
@@ -5736,7 +5736,7 @@ let mainLienWaiver = JSON.parse(localStorage.getItem('mainLienWaiver') || '{}');
             const contactDisplay = modal.querySelector('#newSubContactDisplay');
 
             if (selectEl) {
-                const companiesList = JSON.parse(localStorage.getItem('casepm_companies')) || [];
+                const companiesList = JSON.parse(casepmStore.getItem('casepm_companies')) || [];
                 selectEl.innerHTML = '<option value="">-- Select Existing Company --</option>';
                 companiesList.forEach(c => {
                     const opt = document.createElement('option');
@@ -5753,7 +5753,7 @@ let mainLienWaiver = JSON.parse(localStorage.getItem('mainLienWaiver') || '{}');
                     }
                     const company = companiesList.find(c => c.id == selectedId);
                     if (company) {
-                        const allUsers = JSON.parse(localStorage.getItem('users') || '[]');
+                        const allUsers = JSON.parse(casepmStore.getItem('users') || '[]');
                         let pcName = 'Not set on company record';
                         let pcEmail = '';
                         let pcPhone = '';
@@ -5804,7 +5804,7 @@ let mainLienWaiver = JSON.parse(localStorage.getItem('mainLienWaiver') || '{}');
             return;
         }
 
-        const companiesList = JSON.parse(localStorage.getItem('casepm_companies')) || [];
+        const companiesList = JSON.parse(casepmStore.getItem('casepm_companies')) || [];
         const selectedCompany = companiesList.find(c => c.id == selectedCompanyId);
         if (!selectedCompany) {
             showCenteredAlert("Selected company not found.", "error");
@@ -5812,7 +5812,7 @@ let mainLienWaiver = JSON.parse(localStorage.getItem('mainLienWaiver') || '{}');
         }
 
         // Prevent duplicates
-        if (!subcontractorSOV) subcontractorSOV = JSON.parse(localStorage.getItem('subcontractorSOV') || '{}');
+        if (!subcontractorSOV) subcontractorSOV = JSON.parse(casepmStore.getItem('subcontractorSOV') || '{}');
         if (subcontractorSOV[selectedCompanyId]) {
             showCenteredAlert("This company is already added as a subcontractor for this job.", "warning");
             return;
@@ -5820,12 +5820,12 @@ let mainLienWaiver = JSON.parse(localStorage.getItem('mainLienWaiver') || '{}');
 
         // Initialize empty SOV for the new sub
         subcontractorSOV[selectedCompanyId] = [];
-        localStorage.setItem('subcontractorSOV', JSON.stringify(subcontractorSOV));
+        casepmStore.setItem('subcontractorSOV', JSON.stringify(subcontractorSOV));
 
         // Initialize pay app counter
-        if (!subPayAppNumbers) subPayAppNumbers = JSON.parse(localStorage.getItem('subPayAppNumbers') || '{}');
+        if (!subPayAppNumbers) subPayAppNumbers = JSON.parse(casepmStore.getItem('subPayAppNumbers') || '{}');
         subPayAppNumbers[selectedCompanyId] = 1;
-        localStorage.setItem('subPayAppNumbers', JSON.stringify(subPayAppNumbers));
+        casepmStore.setItem('subPayAppNumbers', JSON.stringify(subPayAppNumbers));
 
         // Close modal
         modalEl.remove();
@@ -5855,7 +5855,7 @@ let mainLienWaiver = JSON.parse(localStorage.getItem('mainLienWaiver') || '{}');
         }
 
         // Find the selected company from the live list
-        const companiesList = JSON.parse(localStorage.getItem('casepm_companies')) || [];
+        const companiesList = JSON.parse(casepmStore.getItem('casepm_companies')) || [];
         const selectedCompany = companiesList.find(c => c.id == selectedCompanyId);
         if (!selectedCompany) {
             alert("Selected company not found. Please refresh and try again.");
@@ -5866,13 +5866,13 @@ let mainLienWaiver = JSON.parse(localStorage.getItem('mainLienWaiver') || '{}');
         if (!selectedCompany.type || selectedCompany.type !== 'Subcontractor') {
             selectedCompany.type = 'Subcontractor';
             selectedCompany.company_type = 'Subcontractor';
-            localStorage.setItem('casepm_companies', JSON.stringify(companiesList));
+            casepmStore.setItem('casepm_companies', JSON.stringify(companiesList));
         }
 
         // Initialize empty SOV for this sub if needed
         if (!subcontractorSOV[selectedCompanyId]) {
             subcontractorSOV[selectedCompanyId] = [];
-            localStorage.setItem('subcontractorSOV', JSON.stringify(subcontractorSOV));
+            casepmStore.setItem('subcontractorSOV', JSON.stringify(subcontractorSOV));
         }
 
         selectedSubCompanyId = selectedCompanyId;
@@ -5946,7 +5946,7 @@ let mainLienWaiver = JSON.parse(localStorage.getItem('mainLienWaiver') || '{}');
         if (!companyRecord) {
             showErrorModal("The selected subcontractor is no longer valid. Please re-select a subcontractor that is actually in charge of this Schedule of Values.");
             selectedSubCompanyId = null;
-            localStorage.removeItem('lastSelectedSubSOV');
+            casepmStore.removeItem('lastSelectedSubSOV');
             renderPayAppContent();
             return;
         }
@@ -6153,7 +6153,7 @@ let mainLienWaiver = JSON.parse(localStorage.getItem('mainLienWaiver') || '{}');
             line.co_billed_this_period = 0;
         });
 
-        localStorage.setItem('subcontractorSOV', JSON.stringify(subcontractorSOV));
+        casepmStore.setItem('subcontractorSOV', JSON.stringify(subcontractorSOV));
 
         const waiverStoragePeriod = (pendingEntry.lienWaiver && pendingEntry.lienWaiver.storagePeriod)
             || subPayAppNumbers[cid]
@@ -6345,7 +6345,7 @@ let mainLienWaiver = JSON.parse(localStorage.getItem('mainLienWaiver') || '{}');
         showCenteredAlert(`Revision requested. Pay App #${restorePayAppNum} amounts + lien waiver restored to Subcontractor Schedule of Values for re-submit.`, 'info');
 
         selectedSubCompanyId = companyId;
-        localStorage.setItem('lastSelectedSubSOV', cid);
+        casepmStore.setItem('lastSelectedSubSOV', cid);
         renderPayAppContent();
         setTimeout(() => {
             switchPayAppTab('sub-sov');
@@ -6494,7 +6494,7 @@ let mainLienWaiver = JSON.parse(localStorage.getItem('mainLienWaiver') || '{}');
 function printSubcontractorG703(companyId) {
     const company = companies.find(c => c.id == companyId);
     const companyName = company ? (company.name || company.company_name || 'Subcontractor') : 'Subcontractor';
-    let subPayApps = JSON.parse(localStorage.getItem('subPayAppNumbers') || '{}');
+    let subPayApps = JSON.parse(casepmStore.getItem('subPayAppNumbers') || '{}');
     const appNum = subPayApps[companyId] || (currentPayAppPeriod ? currentPayAppPeriod.periodNumber : 1);
     const period = currentPayAppPeriod || { periodNumber: appNum, periodStart: '2026-07-01', periodEnd: '2026-07-31' };
     const retainageRate = (typeof defaultRetainagePercent !== 'undefined' ? defaultRetainagePercent : 10) / 100;
@@ -6767,7 +6767,7 @@ function printSubcontractorG703(companyId) {
                                 <strong>CONTRACTOR:</strong><br>
                                 _________________________________<br>
                                 Signature / Date<br>
-                                <span class="small" id="contractorSignatureLine">${(localStorage.getItem('userSignature') || 'Michael Bretz, Project Manager — Case Contracting')}</span>
+                                <span class="small" id="contractorSignatureLine">${(casepmStore.getItem('userSignature') || 'Michael Bretz, Project Manager — Case Contracting')}</span>
                             </div>
                             <div class="sig-line" style="margin-top:12px;">
                                 <strong>OWNER:</strong><br>
@@ -7691,7 +7691,7 @@ function printSubcontractorG703(companyId) {
 
     // ==================== AUDIT LOG ====================
     function showPayAppAuditLog() {
-        payAppAuditLog = JSON.parse(localStorage.getItem('payAppAuditLog')) || [];
+        payAppAuditLog = JSON.parse(casepmStore.getItem('payAppAuditLog')) || [];
         const modal = document.createElement('dialog');
         modal.className = 'modal rounded-md p-0 text-white w-full max-w-6xl';
         modal.style.backgroundColor = '#18181b';
@@ -8005,7 +8005,7 @@ function printSubcontractorG703(companyId) {
     function exportSubcontractorG703Styled(period, retainageRate, companyId) {
         const company = companies.find(c => c.id == companyId);
         const companyName = company ? (company.name || company.company_name || 'Subcontractor') : 'Selected Subcontractor';
-        let subPayApps = JSON.parse(localStorage.getItem('subPayAppNumbers') || '{}');
+        let subPayApps = JSON.parse(casepmStore.getItem('subPayAppNumbers') || '{}');
         const appNum = subPayApps[companyId] || period.periodNumber;
 
         const subLines = subcontractorSOV[companyId] || [];
@@ -8153,45 +8153,45 @@ function printSubcontractorG703(companyId) {
         const select = document.getElementById('retainagePercentSelect');
         if (select) {
             defaultRetainagePercent = parseFloat(select.value) || 10;
-            localStorage.setItem('payAppRetainagePercent', defaultRetainagePercent);
+            casepmStore.setItem('payAppRetainagePercent', defaultRetainagePercent);
         }
 
         const lienToggle = document.getElementById('requireLienWaiverToggle');
         if (lienToggle) {
             requireLienWaiverOnSubPayApp = lienToggle.checked;
-            localStorage.setItem('requireLienWaiverOnSubPayApp', requireLienWaiverOnSubPayApp);
+            casepmStore.setItem('requireLienWaiverOnSubPayApp', requireLienWaiverOnSubPayApp);
         }
 
         const zeroDollarToggle = document.getElementById('requireZeroDollarLienWaiverToggle');
         if (zeroDollarToggle) {
             requireZeroDollarLienWaiver = zeroDollarToggle.checked;
-            localStorage.setItem('requireZeroDollarLienWaiver', requireZeroDollarLienWaiver);
+            casepmStore.setItem('requireZeroDollarLienWaiver', requireZeroDollarLienWaiver);
         }
 
         const deadlineToggle = document.getElementById('requireSubmissionDeadlineToggle');
         const deadlineDaySelect = document.getElementById('submissionDeadlineDay');
         if (deadlineToggle) {
             requireSubmissionDeadline = deadlineToggle.checked;
-            localStorage.setItem('requireSubmissionDeadline', requireSubmissionDeadline);
+            casepmStore.setItem('requireSubmissionDeadline', requireSubmissionDeadline);
             if (deadlineDaySelect && deadlineDaySelect.value) {
                 submissionDeadlineDay = deadlineDaySelect.value;
-                localStorage.setItem('submissionDeadlineDay', submissionDeadlineDay);
+                casepmStore.setItem('submissionDeadlineDay', submissionDeadlineDay);
             } else if (!requireSubmissionDeadline) {
                 submissionDeadlineDay = '';
-                localStorage.removeItem('submissionDeadlineDay');
+                casepmStore.removeItem('submissionDeadlineDay');
             }
         }
 
         const allSubToggle = document.getElementById('requireAllSubPayAppsToggle');
         if (allSubToggle) {
             requireAllSubPayAppsBeforeG702Submit = allSubToggle.checked;
-            localStorage.setItem('requireAllSubPayAppsBeforeG702Submit', requireAllSubPayAppsBeforeG702Submit);
+            casepmStore.setItem('requireAllSubPayAppsBeforeG702Submit', requireAllSubPayAppsBeforeG702Submit);
         }
 
         const zeroSubPayToggle = document.getElementById('allowZeroDollarSubPayAppsToggle');
         if (zeroSubPayToggle) {
             allowZeroDollarSubPayApps = zeroSubPayToggle.checked;
-            localStorage.setItem('allowZeroDollarSubPayApps', allowZeroDollarSubPayApps);
+            casepmStore.setItem('allowZeroDollarSubPayApps', allowZeroDollarSubPayApps);
         }
     }
 
@@ -8271,7 +8271,7 @@ function printSubcontractorG703(companyId) {
         setTimeout(() => {
             const input = document.getElementById('userSignatureInput');
             if (input) {
-                input.value = localStorage.getItem('userSignature') || 'Michael Bretz, Project Manager — Case Contracting';
+                input.value = casepmStore.getItem('userSignature') || 'Michael Bretz, Project Manager — Case Contracting';
             }
         }, 50);
     }
@@ -8279,7 +8279,7 @@ function printSubcontractorG703(companyId) {
     function saveUserSignature() {
         const input = document.getElementById('userSignatureInput');
         if (input && input.value.trim()) {
-            localStorage.setItem('userSignature', input.value.trim());
+            casepmStore.setItem('userSignature', input.value.trim());
             // Success feedback removed per user request (signature state saved)
         }
     }
@@ -8475,7 +8475,7 @@ function printSubcontractorG703(companyId) {
                 uploadedDate: new Date().toISOString()
             };
             
-            localStorage.setItem('subLienWaivers', JSON.stringify(subLienWaivers));
+            casepmStore.setItem('subLienWaivers', JSON.stringify(subLienWaivers));
             
             // Refresh UI to show filename and unlock Submit button
             renderPayAppContent();
@@ -8572,7 +8572,7 @@ function printSubcontractorG703(companyId) {
         rebuildPreviousSubPayAppArchiveFromHistory();
 
         // Restore last selected sub if any
-        const lastSub = localStorage.getItem('lastSelectedSubSOV');
+        const lastSub = casepmStore.getItem('lastSelectedSubSOV');
         if (lastSub) selectedSubCompanyId = parseInt(lastSub);
 
         // Initial render
@@ -9067,7 +9067,7 @@ function printSubcontractorG703(companyId) {
                         class="px-4 py-1.5 bg-sky-700 hover:bg-sky-600 text-white text-xs rounded font-medium flex items-center gap-1.5">
                     <i class="fa-solid fa-history"></i> <span>View Log</span>
                 </button>
-                <button onclick="switchPayAppTab('sub-sov'); selectedSubCompanyId = ${companyId}; localStorage.setItem('lastSelectedSubSOV', ${companyId}); renderPayAppContent();" 
+                <button onclick="switchPayAppTab('sub-sov'); selectedSubCompanyId = ${companyId}; casepmStore.setItem('lastSelectedSubSOV', ${companyId}); renderPayAppContent();" 
                         class="ml-auto px-4 py-1.5 bg-zinc-700 hover:bg-zinc-600 text-white text-xs rounded font-medium">
                     Open in Sub SOV Tab
                 </button>
@@ -9091,17 +9091,17 @@ function printSubcontractorG703(companyId) {
 
         if (!subSOVStatus[companyId]) subSOVStatus[companyId] = {};
         subSOVStatus[companyId].notes = newNote;
-        localStorage.setItem('subSOVStatus', JSON.stringify(subSOVStatus));
+        casepmStore.setItem('subSOVStatus', JSON.stringify(subSOVStatus));
 
         // Also try to update the current period's history/pending entry if it exists
         const currentPeriodNum = currentPayAppPeriod ? currentPayAppPeriod.periodNumber : 1;
         if (subPayAppHistory[companyId] && subPayAppHistory[companyId][currentPeriodNum]) {
             subPayAppHistory[companyId][currentPeriodNum].notes = newNote;
-            localStorage.setItem('subPayAppHistory', JSON.stringify(subPayAppHistory));
+            casepmStore.setItem('subPayAppHistory', JSON.stringify(subPayAppHistory));
         }
         if (subPendingSubmissions[companyId] && subPendingSubmissions[companyId].periodNumber === currentPeriodNum) {
             subPendingSubmissions[companyId].notes = newNote;
-            localStorage.setItem('subPendingSubmissions', JSON.stringify(subPendingSubmissions));
+            casepmStore.setItem('subPendingSubmissions', JSON.stringify(subPendingSubmissions));
         }
 
         logPayAppAudit('SUB_TRACKER_NOTE_UPDATED', { companyId, period: currentPeriodNum, note: newNote.substring(0, 120) });
@@ -9183,7 +9183,7 @@ function printSubcontractorG703(companyId) {
     // Robust insurance / compliance helper — live reads from Companies page data + expiry checks + name overrides
     function getInsuranceComplianceStatus(companyId) {
         // Live re-read from Companies/Vendors page so updates are reflected immediately in Sub Pay App Tracker
-        companies = JSON.parse(localStorage.getItem('casepm_companies')) || [];
+        companies = JSON.parse(casepmStore.getItem('casepm_companies')) || [];
         const company = companies.find(c => c.id == companyId);
         if (!company) return { compliant: true, message: 'No company record' };
 
@@ -9285,7 +9285,7 @@ function printSubcontractorG703(companyId) {
 
         if (!subSOVStatus[companyId]) subSOVStatus[companyId] = {};
         subSOVStatus[companyId].notes = newNote;
-        localStorage.setItem('subSOVStatus', JSON.stringify(subSOVStatus));
+        casepmStore.setItem('subSOVStatus', JSON.stringify(subSOVStatus));
 
         logPayAppAudit('SUB_TRACKER_NOTE_UPDATED', { companyId, note: newNote.substring(0, 120) });
 

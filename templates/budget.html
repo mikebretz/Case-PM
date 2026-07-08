@@ -19,7 +19,7 @@
 <div class="h-16 border-b border-zinc-800 bg-zinc-900 flex items-center px-6 flex-shrink-0">
     <div class="w-1/3">
         <div class="text-[10px] text-zinc-400 tracking-[1px] font-medium">CURRENT PROJECT</div>
-        <div class="text-xl font-semibold tracking-tight text-white">ALDI Lakeland</div>
+        <div class="text-xl font-semibold tracking-tight text-white">{{ project_name }}</div>
     </div>
 
     <div class="w-1/3 flex justify-start pl-0">
@@ -377,7 +377,7 @@
 
 <script>
     // ==================== DATA & STATE ====================
-    let budgetLines = JSON.parse(localStorage.getItem('budgetLines')) || [];
+    let budgetLines = JSON.parse(casepmStore.getItem('budgetLines')) || [];
     let pendingChanges = [
         { id: 101, number: "CO-003", description: "Additional rebar in foundation", amount: 12450, status: "Pending Owner Approval" },
         { id: 102, number: "CO-004", description: "Electrical upgrade for new equipment", amount: 8750, status: "Pending Owner Approval" }
@@ -403,11 +403,11 @@
     let budgetSaved = false;
     let contractAmount = 2450000;
     let pendingNavigationUrl = null;
-    let currentRevision = parseInt(localStorage.getItem('budgetRevision') || '1');
-    let publishAuditLog = JSON.parse(localStorage.getItem('publishAuditLog') || '[]');
-    let budgetLocked = localStorage.getItem('budgetLocked') === 'true';
-    let budgetSnapshots = JSON.parse(localStorage.getItem('budgetSnapshots') || '[]');
-    let budgetAuditLog = JSON.parse(localStorage.getItem('budgetAuditLog') || '[]');
+    let currentRevision = parseInt(casepmStore.getItem('budgetRevision') || '1');
+    let publishAuditLog = JSON.parse(casepmStore.getItem('publishAuditLog') || '[]');
+    let budgetLocked = casepmStore.getItem('budgetLocked') === 'true';
+    let budgetSnapshots = JSON.parse(casepmStore.getItem('budgetSnapshots') || '[]');
+    let budgetAuditLog = JSON.parse(casepmStore.getItem('budgetAuditLog') || '[]');
     let collapsedDivisions = new Set();
     let hasUnsavedChanges = false;
 
@@ -427,7 +427,7 @@
         };
         budgetAuditLog.unshift(entry);
         if (budgetAuditLog.length > 1000) budgetAuditLog.length = 1000;
-        localStorage.setItem('budgetAuditLog', JSON.stringify(budgetAuditLog));
+        casepmStore.setItem('budgetAuditLog', JSON.stringify(budgetAuditLog));
     }
 
     // ==================== REAL-TIME BUDGET VALIDATION ====================
@@ -642,15 +642,15 @@
         }
         currentRevision++;
         budgetLocked = false;
-        localStorage.setItem('budgetRevision', currentRevision);
-        localStorage.setItem('budgetLocked', 'false');
+        casepmStore.setItem('budgetRevision', currentRevision);
+        casepmStore.setItem('budgetLocked', 'false');
 
         budgetSnapshots.push({
             revision: currentRevision,
             timestamp: new Date().toISOString(),
             lines: JSON.parse(JSON.stringify(budgetLines))
         });
-        localStorage.setItem('budgetSnapshots', JSON.stringify(budgetSnapshots));
+        casepmStore.setItem('budgetSnapshots', JSON.stringify(budgetSnapshots));
 
         logBudgetAudit("REVISION_CREATED", { newRevision: currentRevision });
 
@@ -667,7 +667,7 @@
     // ==================== BUDGET AUDIT LOG VIEWER ====================
     function showBudgetAuditLog() {
         // Always reload latest from storage
-        budgetAuditLog = JSON.parse(localStorage.getItem('budgetAuditLog') || '[]');
+        budgetAuditLog = JSON.parse(casepmStore.getItem('budgetAuditLog') || '[]');
 
         const modal = document.createElement('dialog');
         modal.className = 'modal rounded-md p-0 text-white w-full max-w-6xl';
@@ -850,7 +850,7 @@
         if (!line) return;
 
         // Always reload latest audit log
-        budgetAuditLog = JSON.parse(localStorage.getItem('budgetAuditLog') || '[]');
+        budgetAuditLog = JSON.parse(casepmStore.getItem('budgetAuditLog') || '[]');
 
         const modal = document.getElementById('lineHistoryModal');
         const content = document.getElementById('lineHistoryContent');
@@ -1031,7 +1031,7 @@
             });
         }
 
-        localStorage.setItem('budgetLines', JSON.stringify(budgetLines));
+        casepmStore.setItem('budgetLines', JSON.stringify(budgetLines));
         showUnsavedIndicator();
         renderBudgetTable(budgetLines);
         document.getElementById('budgetLineModal').close();
@@ -1055,7 +1055,7 @@
 
         document.getElementById('btnAddToExisting').onclick = () => {
             existingLine.original_budget += newAmount;
-            localStorage.setItem('budgetLines', JSON.stringify(budgetLines));
+            casepmStore.setItem('budgetLines', JSON.stringify(budgetLines));
             renderBudgetTable(budgetLines);
             dialog.close();
             dialog.remove();
@@ -1100,7 +1100,7 @@
                     original_budget: deletedLine.original_budget
                 });
             }
-            localStorage.setItem('budgetLines', JSON.stringify(budgetLines));
+            casepmStore.setItem('budgetLines', JSON.stringify(budgetLines));
             renderBudgetTable(budgetLines);
             dialog.close();
             dialog.remove();
@@ -1259,7 +1259,7 @@
                         });
                         added++;
                     });
-                    localStorage.setItem('budgetLines', JSON.stringify(budgetLines));
+                    casepmStore.setItem('budgetLines', JSON.stringify(budgetLines));
                     renderBudgetTable(budgetLines);
                     showCenteredAlert(`Successfully imported ${added} budget line items.`);
                 } catch (err) {
@@ -1352,7 +1352,7 @@
     function saveBudget() {
         if (budgetLines.length === 0) { showCenteredAlert("Nothing to save yet."); return; }
         budgetSaved = true;
-        localStorage.setItem('budgetLines', JSON.stringify(budgetLines));
+        casepmStore.setItem('budgetLines', JSON.stringify(budgetLines));
         hideUnsavedIndicator();
         hasUnsavedChanges = false;
 
@@ -1390,15 +1390,15 @@
         budgetLines.forEach(l => l.syncStatus = 'Pending');
 
         budgetSaved = true;
-        localStorage.setItem('budgetLines', JSON.stringify(budgetLines));
+        casepmStore.setItem('budgetLines', JSON.stringify(budgetLines));
         hideUnsavedIndicator();
         hasUnsavedChanges = false;
 
         budgetPublished = true;
         budgetLocked = true;
         currentRevision++;
-        localStorage.setItem('budgetRevision', currentRevision);
-        localStorage.setItem('budgetLocked', 'true');
+        casepmStore.setItem('budgetRevision', currentRevision);
+        casepmStore.setItem('budgetLocked', 'true');
 
         updateButtonStates();
 
@@ -1408,7 +1408,7 @@
             lines: JSON.parse(JSON.stringify(budgetLines))
         };
         budgetSnapshots.push(snapshot);
-        localStorage.setItem('budgetSnapshots', JSON.stringify(budgetSnapshots));
+        casepmStore.setItem('budgetSnapshots', JSON.stringify(budgetSnapshots));
 
         publishAuditLog.push({
             revision: currentRevision,
@@ -1416,7 +1416,7 @@
             linesCount: budgetLines.length,
             totalBudget: budgetLines.reduce((sum, l) => sum + (l.original_budget || 0), 0)
         });
-        localStorage.setItem('publishAuditLog', JSON.stringify(publishAuditLog));
+        casepmStore.setItem('publishAuditLog', JSON.stringify(publishAuditLog));
 
         logBudgetAudit("BUDGET_PUBLISHED", {
             linesCount: budgetLines.length,
@@ -1456,7 +1456,7 @@
 
     // ==================== VERSION HISTORY ====================
     function showVersionHistory() {
-        const snapshots = JSON.parse(localStorage.getItem('budgetSnapshots') || '[]');
+        const snapshots = JSON.parse(casepmStore.getItem('budgetSnapshots') || '[]');
         const container = document.getElementById('versionHistoryContent');
         container.innerHTML = '';
 
@@ -1484,7 +1484,7 @@
             showCenteredAlert("Excel library not loaded. Please hard refresh.");
             return;
         }
-        const snapshots = JSON.parse(localStorage.getItem('budgetSnapshots') || '[]');
+        const snapshots = JSON.parse(casepmStore.getItem('budgetSnapshots') || '[]');
         if (snapshots.length === 0) {
             showCenteredAlert("No version history to export.");
             return;
@@ -1508,7 +1508,7 @@
     function showRevisionDetails(rev) {
         document.getElementById('versionHistoryModal').close();
 
-        const snapshots = JSON.parse(localStorage.getItem('budgetSnapshots') || '[]');
+        const snapshots = JSON.parse(casepmStore.getItem('budgetSnapshots') || '[]');
         const sorted = snapshots.slice().sort((a, b) => a.revision - b.revision);
         const currentIndex = sorted.findIndex(s => s.revision === rev);
         const snap = sorted[currentIndex];
@@ -1761,7 +1761,7 @@
     // ==================== AUTO-SAVE DRAFT ====================
     setInterval(() => {
         if (budgetLines.length > 0 && !budgetPublished) {
-            localStorage.setItem('budgetLines', JSON.stringify(budgetLines));
+            casepmStore.setItem('budgetLines', JSON.stringify(budgetLines));
         }
     }, 45000);
 
@@ -2387,13 +2387,13 @@
 
     // ==================== FINAL INITIALIZATION ====================
     function initializeBudget() {
-        const savedLines = localStorage.getItem('budgetLines');
+        const savedLines = casepmStore.getItem('budgetLines');
         if (savedLines) budgetLines = JSON.parse(savedLines);
 
-        const savedRevision = localStorage.getItem('budgetRevision');
+        const savedRevision = casepmStore.getItem('budgetRevision');
         if (savedRevision) currentRevision = parseInt(savedRevision);
 
-        const lockedState = localStorage.getItem('budgetLocked');
+        const lockedState = casepmStore.getItem('budgetLocked');
         budgetLocked = lockedState === 'true';
 
         const contractEl = document.getElementById('contractAmount');

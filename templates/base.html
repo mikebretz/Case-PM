@@ -75,7 +75,17 @@
                 transform: scale(1) translateY(0);
             }
         }
+
+        .app-header-bar {
+            height: 4.25rem;
+            min-height: 4.25rem;
+        }
+
+        #projectSwitcherMenu {
+            box-shadow: 0 12px 40px rgba(0, 0, 0, 0.45);
+        }
     </style>
+    <script src="{{ url_for('static', filename='js/casepm-project-storage.js') }}"></script>
 </head>
 <body class="bg-zinc-950 text-zinc-200 h-screen overflow-hidden">
 
@@ -84,26 +94,62 @@
     <div id="appShell" class="flex flex-col h-full min-h-0 overflow-hidden">
     
     <!-- ==================== TOP HEADER BAR (brand + project + user) ==================== -->
-    <div class="h-14 border-b border-zinc-800 bg-zinc-900 flex items-center justify-between px-4 flex-shrink-0">
-        <!-- Left: Case PM brand + Current Project -->
-        <div class="flex items-center gap-5 min-w-0">
-            <div class="flex items-center gap-2.5 flex-shrink-0">
-                <div class="w-8 h-8 bg-emerald-600 rounded-xl flex items-center justify-center flex-shrink-0">
-                    <i class="fa-solid fa-hard-hat text-white text-lg"></i>
-                </div>
-                <div class="leading-none">
-                    <div class="font-display text-lg font-semibold tracking-tighter text-white">Case PM</div>
-                    <div class="text-[9px] text-zinc-500 mt-0.5">Construction OS</div>
-                </div>
+    <div id="appHeaderBar" class="app-header-bar border-b border-zinc-800 bg-zinc-900 flex items-center justify-between px-5 flex-shrink-0">
+        <!-- Left: Case PM brand -->
+        <div class="flex items-center gap-2.5 flex-shrink-0">
+            <div class="w-9 h-9 bg-emerald-600 rounded-xl flex items-center justify-center flex-shrink-0">
+                <i class="fa-solid fa-hard-hat text-white text-base"></i>
             </div>
-            <div class="h-8 w-px bg-zinc-700 flex-shrink-0 hidden sm:block"></div>
-            <div class="flex items-center gap-2 min-w-0 hidden sm:flex">
-                <span class="text-[10px] text-zinc-400 tracking-[1px] font-medium flex-shrink-0">CURRENT PROJECT</span>
-                <button type="button" onclick="document.getElementById('projectSwitcherModal').showModal()"
-                        class="flex items-center gap-2 text-sm font-semibold tracking-tight text-white hover:text-emerald-400 transition-colors min-w-0">
-                    <span id="currentProjectName" class="truncate">{{ project_name }}</span>
-                    <i class="fa-solid fa-chevron-down text-xs text-zinc-400 flex-shrink-0"></i>
+            <div class="leading-tight">
+                <div class="font-display text-base font-semibold tracking-tight text-white">Case PM</div>
+                <div class="text-[8px] text-zinc-500 uppercase tracking-wide">Construction OS</div>
+            </div>
+        </div>
+
+        <!-- Current project dropdown (~1" right of brand) -->
+        <div class="flex-1 flex items-center min-w-0">
+            <div class="relative ml-10" id="projectSwitcherWrap">
+                <button type="button" id="projectSwitcherBtn" onclick="toggleProjectDropdown(event)"
+                        class="flex items-center gap-2.5 text-left min-w-0 max-w-md rounded-lg px-2 py-1.5 hover:bg-zinc-800/80 transition-colors">
+                    <div class="min-w-0">
+                        <div class="text-[9px] text-zinc-400 tracking-[1px] font-medium leading-none mb-0.5">CURRENT PROJECT</div>
+                        <div class="flex items-center gap-2 min-w-0">
+                            <span id="currentProjectName" class="truncate text-sm font-semibold text-white">{{ project_name }}</span>
+                            <i class="fa-solid fa-chevron-down text-[10px] text-zinc-400 flex-shrink-0"></i>
+                        </div>
+                    </div>
                 </button>
+                <div id="projectSwitcherMenu"
+                     class="hidden absolute top-full left-0 mt-1.5 w-80 max-w-[calc(100vw-2rem)] bg-zinc-900 border border-zinc-700 rounded-xl z-[200] overflow-hidden">
+                    <div class="px-3 py-2 border-b border-zinc-800 text-[10px] uppercase tracking-wider text-zinc-500 font-medium">
+                        Switch Project
+                    </div>
+                    <div class="max-h-72 overflow-auto py-1" id="projectSwitcherList">
+                        {% if all_projects %}
+                            {% for project in all_projects %}
+                            <button type="button" onclick="switchProject({{ project.id }})"
+                                    data-project-id="{{ project.id }}"
+                                    class="project-switcher-item w-full flex items-center justify-between px-3 py-2.5 hover:bg-zinc-800 text-left transition-colors">
+                                <div class="min-w-0 pr-2">
+                                    <div class="font-medium text-sm truncate text-white">{{ project.name }}</div>
+                                    <div class="text-xs text-zinc-500 truncate">
+                                        {% if project.number %}{{ project.number }} • {% endif %}{{ project.status or 'Active' }}
+                                    </div>
+                                </div>
+                                <i class="fa-solid fa-check text-emerald-400 text-sm project-switcher-check flex-shrink-0 {% if not active_project or active_project.id != project.id %}hidden{% endif %}"></i>
+                            </button>
+                            {% endfor %}
+                        {% else %}
+                            <div class="px-3 py-4 text-sm text-zinc-500 text-center">No projects yet.</div>
+                        {% endif %}
+                    </div>
+                    <div class="border-t border-zinc-800 p-2">
+                        <a href="{{ url_for('projects_page') }}"
+                           class="block w-full py-2 text-center text-xs bg-zinc-800 hover:bg-zinc-700 rounded-lg text-zinc-200 transition-colors">
+                            <i class="fa-solid fa-folder-plus mr-1"></i> Manage All Projects
+                        </a>
+                    </div>
+                </div>
             </div>
         </div>
 
@@ -162,42 +208,42 @@
                     <div class="section-header px-2 mb-0.5">Core Modules</div>
                 </div>
 
-                <a href="{{ url_for('daily_log') }}" class="nav-link flex items-center gap-2.5 px-3 py-1.5 rounded-xl mb-0.5 {% if request.endpoint == 'daily_log' %}active{% endif %}">
+                <a href="{{ url_for('daily_log', project_id=active_project.id) if active_project else url_for('daily_log') }}" class="nav-link flex items-center gap-2.5 px-3 py-1.5 rounded-xl mb-0.5 {% if request.endpoint == 'daily_log' %}active{% endif %}">
                     <i class="fa-solid fa-clipboard-list w-5"></i>
                     <span>Daily Log</span>
                 </a>
 
-                <a href="{{ url_for('weekly_report') }}" class="nav-link flex items-center gap-2.5 px-3 py-1.5 rounded-xl mb-0.5 {% if request.endpoint == 'weekly_report' %}active{% endif %}">
+                <a href="{{ url_for('weekly_report', project_id=active_project.id) if active_project else url_for('weekly_report') }}" class="nav-link flex items-center gap-2.5 px-3 py-1.5 rounded-xl mb-0.5 {% if request.endpoint == 'weekly_report' %}active{% endif %}">
                     <i class="fa-solid fa-calendar-week w-5"></i>
                     <span>Weekly Report</span>
                 </a>
 
-                <a href="{{ url_for('schedule_page') }}" class="nav-link flex items-center gap-2.5 px-3 py-1.5 rounded-xl mb-0.5 {% if request.endpoint == 'schedule_page' %}active{% endif %}">
+                <a href="{{ url_for('schedule_page', project_id=active_project.id) if active_project else url_for('schedule_page') }}" class="nav-link flex items-center gap-2.5 px-3 py-1.5 rounded-xl mb-0.5 {% if request.endpoint == 'schedule_page' %}active{% endif %}">
                     <i class="fa-solid fa-calendar-alt w-5"></i>
                     <span>Schedule</span>
                 </a>
 
-                <a href="{{ url_for('rfis_page') }}" class="nav-link flex items-center gap-2.5 px-3 py-1.5 rounded-xl mb-0.5 {% if request.endpoint == 'rfis_page' %}active{% endif %}">
+                <a href="{{ url_for('rfis_page', project_id=active_project.id) if active_project else url_for('rfis_page') }}" class="nav-link flex items-center gap-2.5 px-3 py-1.5 rounded-xl mb-0.5 {% if request.endpoint == 'rfis_page' %}active{% endif %}">
                     <i class="fa-solid fa-question-circle w-5"></i>
                     <span>RFIs</span>
                 </a>
 
-                <a href="{{ url_for('change_orders_page') }}" class="nav-link flex items-center gap-2.5 px-3 py-1.5 rounded-xl mb-0.5 {% if request.endpoint == 'change_orders_page' %}active{% endif %}">
+                <a href="{{ url_for('change_orders_page', project_id=active_project.id) if active_project else url_for('change_orders_page') }}" class="nav-link flex items-center gap-2.5 px-3 py-1.5 rounded-xl mb-0.5 {% if request.endpoint == 'change_orders_page' %}active{% endif %}">
                     <i class="fa-solid fa-exchange-alt w-5"></i>
                     <span>Change Orders</span>
                 </a>
 
-                <a href="{{ url_for('submittals_page') }}" class="nav-link flex items-center gap-2.5 px-3 py-1.5 rounded-xl mb-0.5 {% if request.endpoint == 'submittals_page' %}active{% endif %}">
+                <a href="{{ url_for('submittals_page', project_id=active_project.id) if active_project else url_for('submittals_page') }}" class="nav-link flex items-center gap-2.5 px-3 py-1.5 rounded-xl mb-0.5 {% if request.endpoint == 'submittals_page' %}active{% endif %}">
                     <i class="fa-solid fa-file-upload w-5"></i>
                     <span>Submittals</span>
                 </a>
 
-                <a href="{{ url_for('punch_list_page') }}" class="nav-link flex items-center gap-2.5 px-3 py-1.5 rounded-xl mb-0.5 {% if request.endpoint == 'punch_list_page' %}active{% endif %}">
+                <a href="{{ url_for('punch_list_page', project_id=active_project.id) if active_project else url_for('punch_list_page') }}" class="nav-link flex items-center gap-2.5 px-3 py-1.5 rounded-xl mb-0.5 {% if request.endpoint == 'punch_list_page' %}active{% endif %}">
                     <i class="fa-solid fa-tasks w-5"></i>
                     <span>Punch List</span>
                 </a>
 
-                <a href="{{ url_for('safety_page') }}" class="nav-link flex items-center gap-2.5 px-3 py-1.5 rounded-xl mb-0.5 {% if request.endpoint == 'safety_page' %}active{% endif %}">
+                <a href="{{ url_for('safety_page', project_id=active_project.id) if active_project else url_for('safety_page') }}" class="nav-link flex items-center gap-2.5 px-3 py-1.5 rounded-xl mb-0.5 {% if request.endpoint == 'safety_page' %}active{% endif %}">
                     <i class="fa-solid fa-shield-alt w-5"></i>
                     <span>Safety</span>
                 </a>
@@ -207,17 +253,17 @@
                     <div class="section-header px-2 mb-0.5">Financial</div>
                 </div>
 
-                <a href="{{ url_for('budget_page') }}" class="nav-link flex items-center gap-2.5 px-3 py-1.5 rounded-xl mb-0.5 {% if request.endpoint == 'budget_page' %}active{% endif %}">
+                <a href="{{ url_for('budget_page', project_id=active_project.id) if active_project else url_for('budget_page') }}" class="nav-link flex items-center gap-2.5 px-3 py-1.5 rounded-xl mb-0.5 {% if request.endpoint == 'budget_page' %}active{% endif %}">
                     <i class="fa-solid fa-chart-pie w-5"></i>
                     <span>Budget</span>
                 </a>
 
-                <a href="{{ url_for('commitments_page') }}" class="nav-link flex items-center gap-2.5 px-3 py-1.5 rounded-xl mb-0.5 {% if request.endpoint == 'commitments_page' %}active{% endif %}">
+                <a href="{{ url_for('commitments_page', project_id=active_project.id) if active_project else url_for('commitments_page') }}" class="nav-link flex items-center gap-2.5 px-3 py-1.5 rounded-xl mb-0.5 {% if request.endpoint == 'commitments_page' %}active{% endif %}">
                     <i class="fa-solid fa-handshake w-5"></i>
                     <span>Commitments</span>
                 </a>
 
-                <a href="{{ url_for('pay_applications_page') }}" class="nav-link flex items-center gap-2.5 px-3 py-1.5 rounded-xl mb-0.5 {% if request.endpoint == 'pay_applications_page' %}active{% endif %}">
+                <a href="{{ url_for('pay_applications_page', project_id=active_project.id) if active_project else url_for('pay_applications_page') }}" class="nav-link flex items-center gap-2.5 px-3 py-1.5 rounded-xl mb-0.5 {% if request.endpoint == 'pay_applications_page' %}active{% endif %}">
                     <i class="fa-solid fa-file-invoice-dollar w-5"></i>
                     <span>Pay Applications</span>
                 </a>
@@ -227,32 +273,32 @@
                     <div class="section-header px-2 mb-0.5">Field &amp; Docs</div>
                 </div>
 
-                <a href="{{ url_for('photos_page') }}" class="nav-link flex items-center gap-2.5 px-3 py-1.5 rounded-xl mb-0.5 {% if request.endpoint == 'photos_page' %}active{% endif %}">
+                <a href="{{ url_for('photos_page', project_id=active_project.id) if active_project else url_for('photos_page') }}" class="nav-link flex items-center gap-2.5 px-3 py-1.5 rounded-xl mb-0.5 {% if request.endpoint == 'photos_page' %}active{% endif %}">
                     <i class="fa-solid fa-camera w-5"></i>
                     <span>Photos</span>
                 </a>
 
-                <a href="{{ url_for('documents_page') }}" class="nav-link flex items-center gap-2.5 px-3 py-1.5 rounded-xl mb-0.5 {% if request.endpoint == 'documents_page' %}active{% endif %}">
+                <a href="{{ url_for('documents_page', project_id=active_project.id) if active_project else url_for('documents_page') }}" class="nav-link flex items-center gap-2.5 px-3 py-1.5 rounded-xl mb-0.5 {% if request.endpoint == 'documents_page' %}active{% endif %}">
                     <i class="fa-solid fa-folder-open w-5"></i>
                     <span>Documents</span>
                 </a>
 
-                <a href="{{ url_for('drawings_page') }}" class="nav-link flex items-center gap-2.5 px-3 py-1.5 rounded-xl mb-0.5 {% if request.endpoint == 'drawings_page' %}active{% endif %}">
+                <a href="{{ url_for('drawings_page', project_id=active_project.id) if active_project else url_for('drawings_page') }}" class="nav-link flex items-center gap-2.5 px-3 py-1.5 rounded-xl mb-0.5 {% if request.endpoint == 'drawings_page' %}active{% endif %}">
                     <i class="fa-solid fa-drafting-compass w-5"></i>
                     <span>Drawings</span>
                 </a>
 
-                <a href="{{ url_for('deliveries_page') }}" class="nav-link flex items-center gap-2.5 px-3 py-1.5 rounded-xl mb-0.5 {% if request.endpoint == 'deliveries_page' %}active{% endif %}">
+                <a href="{{ url_for('deliveries_page', project_id=active_project.id) if active_project else url_for('deliveries_page') }}" class="nav-link flex items-center gap-2.5 px-3 py-1.5 rounded-xl mb-0.5 {% if request.endpoint == 'deliveries_page' %}active{% endif %}">
                     <i class="fa-solid fa-truck w-5"></i>
                     <span>Deliveries</span>
                 </a>
 
-                <a href="{{ url_for('inspections_page') }}" class="nav-link flex items-center gap-2.5 px-3 py-1.5 rounded-xl mb-0.5 {% if request.endpoint == 'inspections_page' %}active{% endif %}">
+                <a href="{{ url_for('inspections_page', project_id=active_project.id) if active_project else url_for('inspections_page') }}" class="nav-link flex items-center gap-2.5 px-3 py-1.5 rounded-xl mb-0.5 {% if request.endpoint == 'inspections_page' %}active{% endif %}">
                     <i class="fa-solid fa-clipboard-check w-5"></i>
                     <span>Inspections</span>
                 </a>
 
-                <a href="{{ url_for('meeting_minutes_page') }}" class="nav-link flex items-center gap-2.5 px-3 py-1.5 rounded-xl mb-0.5 {% if request.endpoint == 'meeting_minutes_page' %}active{% endif %}">
+                <a href="{{ url_for('meeting_minutes_page', project_id=active_project.id) if active_project else url_for('meeting_minutes_page') }}" class="nav-link flex items-center gap-2.5 px-3 py-1.5 rounded-xl mb-0.5 {% if request.endpoint == 'meeting_minutes_page' %}active{% endif %}">
                     <i class="fa-solid fa-users w-5"></i>
                     <span>Meeting Minutes</span>
                 </a>
@@ -372,46 +418,6 @@
                 <button onclick="quickAddAction('pay_app')" class="flex flex-col items-center justify-center gap-2 p-4 bg-zinc-800 hover:bg-zinc-700 rounded-2xl transition-colors text-left">
                     <i class="fa-solid fa-file-invoice-dollar text-2xl text-emerald-400"></i>
                     <span class="font-medium text-sm">Pay Application</span>
-                </button>
-            </div>
-        </div>
-    </dialog>
-
-    <!-- ==================== PROJECT SWITCHER MODAL ==================== -->
-    <dialog id="projectSwitcherModal" class="bg-zinc-900 border border-zinc-700 rounded-3xl p-0 w-full max-w-md shadow-2xl">
-        <div class="p-6">
-            <div class="flex items-center justify-between mb-4">
-                <div class="font-semibold text-lg">Switch Project</div>
-                <button onclick="document.getElementById('projectSwitcherModal').close()" class="text-zinc-400 hover:text-white">
-                    <i class="fa-solid fa-times text-xl"></i>
-                </button>
-            </div>
-
-            <div class="space-y-1 max-h-80 overflow-auto" id="projectSwitcherList">
-                {% if all_projects %}
-                    {% for project in all_projects %}
-                    <div onclick="switchProject({{ project.id }})"
-                         data-project-id="{{ project.id }}"
-                         class="project-switcher-item flex items-center justify-between p-3 hover:bg-zinc-800 rounded-2xl cursor-pointer">
-                        <div class="min-w-0">
-                            <div class="font-medium truncate">{{ project.name }}</div>
-                            <div class="text-xs text-zinc-500 truncate">
-                                {% if project.number %}{{ project.number }} • {% endif %}{{ project.status or 'Active' }}
-                            </div>
-                        </div>
-                        <i class="fa-solid fa-check text-emerald-400 project-switcher-check {% if not active_project or active_project.id != project.id %}hidden{% endif %}"></i>
-                    </div>
-                    {% endfor %}
-                {% else %}
-                    <div class="p-4 text-sm text-zinc-500 text-center">No projects yet. Create one from the Projects page.</div>
-                {% endif %}
-            </div>
-
-            <div class="mt-4 pt-4 border-t border-zinc-800">
-                <button onclick="document.getElementById('projectSwitcherModal').close(); window.location.href='{{ url_for('projects_page') }}'" 
-                        class="w-full py-2.5 text-sm bg-zinc-800 hover:bg-zinc-700 rounded-2xl flex items-center justify-center gap-2">
-                    <i class="fa-solid fa-folder-plus"></i>
-                    <span>Manage All Projects</span>
                 </button>
             </div>
         </div>
@@ -617,6 +623,24 @@
             });
         };
 
+        window.closeProjectDropdown = function() {
+            document.getElementById('projectSwitcherMenu')?.classList.add('hidden');
+        };
+
+        window.toggleProjectDropdown = function(event) {
+            event?.stopPropagation();
+            const menu = document.getElementById('projectSwitcherMenu');
+            if (!menu) return;
+            menu.classList.toggle('hidden');
+        };
+
+        document.addEventListener('click', function(e) {
+            const wrap = document.getElementById('projectSwitcherWrap');
+            if (wrap && !wrap.contains(e.target)) {
+                closeProjectDropdown();
+            }
+        });
+
         window.switchProject = async function(projectId) {
             projectId = parseInt(projectId, 10);
             if (!projectId) return;
@@ -642,7 +666,7 @@
             const nameEl = document.getElementById('currentProjectName');
             if (nameEl) nameEl.textContent = name;
             updateProjectSwitcherChecks(projectId);
-            document.getElementById('projectSwitcherModal')?.close();
+            closeProjectDropdown();
 
             if (typeof window.onCasePmProjectChanged === 'function') {
                 window.onCasePmProjectChanged(projectId, project);
