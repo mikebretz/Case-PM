@@ -137,12 +137,65 @@ class Project(db.Model):
     name = db.Column(db.String(200), nullable=False)
     client = db.Column(db.String(150))
     address = db.Column(db.String(300))
+    city = db.Column(db.String(100))
+    state = db.Column(db.String(50))
+    zip_code = db.Column(db.String(20))
     start_date = db.Column(db.Date)
     end_date = db.Column(db.Date)
     contract_value = db.Column(db.Float)
     status = db.Column(db.String(50), default='Active')
     percent_complete = db.Column(db.Integer, default=0)
+    project_manager = db.Column(db.String(120))
+    sage_job_number = db.Column(db.String(50))
+    accounting_project_number = db.Column(db.String(50))
+    stage = db.Column(db.String(80))
+    project_type = db.Column(db.String(80))
+    description = db.Column(db.Text)
+    details_json = db.Column(db.Text)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    def get_details(self):
+        if not self.details_json:
+            return {}
+        try:
+            return json.loads(self.details_json)
+        except (TypeError, json.JSONDecodeError):
+            return {}
+
+    def set_details(self, data):
+        self.details_json = json.dumps(data or {})
+
+    def location_label(self):
+        parts = [p for p in [self.city, self.state] if p]
+        if parts:
+            return ', '.join(parts)
+        return self.address or '—'
+
+    def to_dict(self):
+        d = self.get_details()
+        return {
+            'id': self.id,
+            'number': self.number or '',
+            'name': self.name or '',
+            'client': self.client or '',
+            'address': self.address or '',
+            'city': self.city or '',
+            'state': self.state or '',
+            'zip_code': self.zip_code or '',
+            'start_date': self.start_date.isoformat() if self.start_date else '',
+            'end_date': self.end_date.isoformat() if self.end_date else '',
+            'contract_value': self.contract_value or 0,
+            'status': self.status or 'Active',
+            'percent_complete': self.percent_complete or 0,
+            'project_manager': self.project_manager or '',
+            'sage_job_number': self.sage_job_number or '',
+            'accounting_project_number': self.accounting_project_number or '',
+            'stage': self.stage or '',
+            'project_type': self.project_type or '',
+            'description': self.description or '',
+            **d,
+        }
 
 
 def get_current_project_id():
@@ -617,39 +670,129 @@ def api_current_project():
 
 # ==================== PROJECTS ROUTES ====================
 
+PROJECT_DETAIL_FIELDS = [
+    'bid_type', 'program', 'delivery_method', 'financing', 'owner_type', 'square_feet',
+    'departments', 'office', 'county', 'country', 'region', 'designated_market_area',
+    'timezone', 'latitude', 'longitude', 'phone', 'fax', 'store_number', 'flag_color',
+    'actual_start_date', 'projected_finish_date', 'substantial_completion_date',
+    'warranty_start_date', 'warranty_end_date',
+    'owner_contact_name', 'owner_contact_email', 'owner_contact_phone',
+    'architect_firm', 'architect_contact', 'superintendent', 'estimator',
+    'sage_contract_number', 'sage_account_set', 'sage_accounting_method',
+    'sage_billings_account', 'sage_wip_account', 'sage_revenue_account',
+    'sage_ar_customer_code', 'sage_default_tax_group', 'parent_project_id',
+    'project_template', 'notes',
+]
+
+
+def ensure_project_schema():
+    """Add new Project columns on existing SQLite databases."""
+    from sqlalchemy import inspect, text
+    inspector = inspect(db.engine)
+    if 'project' not in inspector.get_table_names():
+        return
+    existing = {c['name'] for c in inspector.get_columns('project')}
+    additions = {
+        'city': 'VARCHAR(100)',
+        'state': 'VARCHAR(50)',
+        'zip_code': 'VARCHAR(20)',
+        'project_manager': 'VARCHAR(120)',
+        'sage_job_number': 'VARCHAR(50)',
+        'accounting_project_number': 'VARCHAR(50)',
+        'stage': 'VARCHAR(80)',
+        'project_type': 'VARCHAR(80)',
+        'description': 'TEXT',
+        'details_json': 'TEXT',
+        'updated_at': 'DATETIME',
+    }
+    for col, typedef in additions.items():
+        if col not in existing:
+            db.session.execute(text(f'ALTER TABLE project ADD COLUMN {col} {typedef}'))
+    db.session.commit()
+
+
+def _parse_date(value):
+    if not value:
+        return None
+    try:
+        return datetime.strptime(value, '%Y-%m-%d').date()
+    except (TypeError, ValueError):
+        return None
+
+
+def _parse_float(value):
+    if value in (None, ''):
+        return None
+    try:
+        return float(str(value).replace(',', '').replace('$', ''))
+    except (TypeError, ValueError):
+        return None
+
+
+def _apply_project_form(project, form):
+    project.name = (form.get('name') or '').strip()
+    project.client = (form.get('client') or '').strip()
+    project.address = (form.get('address') or '').strip()
+    project.city = (form.get('city') or '').strip()
+    project.state = (form.get('state') or '').strip()
+    project.zip_code = (form.get('zip_code') or '').strip()
+    project.start_date = _parse_date(form.get('start_date'))
+    project.end_date = _parse_date(form.get('end_date'))
+    project.contract_value = _parse_float(form.get('contract_value')) or 0.0
+    project.status = form.get('status') or project.status or 'Active'
+    project.percent_complete = int(form.get('percent_complete') or project.percent_complete or 0)
+    project.project_manager = (form.get('project_manager') or '').strip()
+    project.sage_job_number = (form.get('sage_job_number') or '').strip()
+    project.accounting_project_number = (form.get('accounting_project_number') or '').strip()
+    project.stage = (form.get('stage') or '').strip()
+    project.project_type = (form.get('project_type') or '').strip()
+    project.description = (form.get('description') or '').strip()
+    if form.get('number'):
+        project.number = (form.get('number') or '').strip()
+    details = {k: (form.get(k) or '').strip() for k in PROJECT_DETAIL_FIELDS}
+    project.set_details(details)
+    project.updated_at = datetime.utcnow()
+
+
 @app.route('/projects')
 @login_required
 def projects_page():
+    ensure_project_schema()
     projects = Project.query.order_by(Project.created_at.desc()).all()
     companies = Company.query.order_by(Company.name).all()
-    return render_template('projects.html', projects=projects, companies=companies)
+    users = User.query.filter_by(status='Active').order_by(User.last_name, User.first_name).all()
+    stats = {
+        'total': len(projects),
+        'active': sum(1 for p in projects if p.status == 'Active'),
+        'completed': sum(1 for p in projects if p.status == 'Completed'),
+        'on_hold': sum(1 for p in projects if p.status == 'On Hold'),
+        'contract_value': sum(p.contract_value or 0 for p in projects),
+    }
+    return render_template(
+        'projects.html',
+        projects=projects,
+        companies=companies,
+        users=users,
+        stats=stats,
+    )
 
 
 @app.route('/projects/create', methods=['POST'])
 @login_required
 def create_project():
+    ensure_project_schema()
     try:
         name = request.form.get('name')
-        client = request.form.get('client')
-        address = request.form.get('address')
-        start_date = request.form.get('start_date')
-        end_date = request.form.get('end_date')
-        contract_value = request.form.get('contract_value')
-        status = request.form.get('status', 'Active')
-
         if not name:
             flash('Project name is required.', 'error')
             return redirect(url_for('projects_page'))
 
+        next_num = Project.query.count() + 1
         project = Project(
+            number=request.form.get('number') or f"PRJ-{next_num:03d}",
             name=name,
-            client=client,
-            address=address,
-            start_date=datetime.strptime(start_date, '%Y-%m-%d').date() if start_date else None,
-            end_date=datetime.strptime(end_date, '%Y-%m-%d').date() if end_date else None,
-            contract_value=float(contract_value) if contract_value else 0.0,
-            status=status
         )
+        _apply_project_form(project, request.form)
 
         db.session.add(project)
         db.session.commit()
@@ -671,6 +814,48 @@ def create_project():
         db.session.rollback()
         flash(f'Error creating project: {str(e)}', 'error')
         return redirect(url_for('projects_page'))
+
+
+@app.route('/projects/<int:project_id>/update', methods=['POST'])
+@login_required
+def update_project(project_id):
+    ensure_project_schema()
+    project = Project.query.get_or_404(project_id)
+    try:
+        _apply_project_form(project, request.form)
+        db.session.commit()
+        if request.headers.get('X-Requested-With') == 'XMLHttpRequest' or request.is_json:
+            return jsonify({'ok': True, 'project': project.to_dict()})
+        flash(f'Project "{project.name}" updated successfully!', 'success')
+        return redirect(url_for('projects_page'))
+    except Exception as e:
+        db.session.rollback()
+        if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
+            return jsonify({'error': str(e)}), 400
+        flash(f'Error updating project: {str(e)}', 'error')
+        return redirect(url_for('projects_page'))
+
+
+@app.route('/api/projects/<int:project_id>')
+@login_required
+def api_get_project(project_id):
+    ensure_project_schema()
+    project = Project.query.get_or_404(project_id)
+    return jsonify(project.to_dict())
+
+
+@app.route('/projects/<int:project_id>/status', methods=['POST'])
+@login_required
+def update_project_status(project_id):
+    ensure_project_schema()
+    project = Project.query.get_or_404(project_id)
+    data = request.get_json(silent=True) or {}
+    status = data.get('status') or request.form.get('status')
+    if status:
+        project.status = status
+        project.updated_at = datetime.utcnow()
+        db.session.commit()
+    return jsonify({'ok': True, 'status': project.status})
 
 
 @app.route('/projects/<int:project_id>')
