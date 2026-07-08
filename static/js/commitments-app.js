@@ -715,7 +715,7 @@
     document.getElementById('comModalHeading').textContent = record ? `Edit ${record.number}` : 'New Commitment';
     populateSelect('modalType', TYPES, record?.commitment_type || 'Purchase Order');
     populateSelect('modalStatus', STATUSES, record?.status || 'Draft');
-    populateSelect('modalAiaForm', AIA_FORMS, record?.aia_form || defaultAiaForType(record?.commitment_type));
+    populateSelect('modalAiaForm', AIA_FORMS, record?.aia_form || defaultAiaForType(record?.commitment_type) || ctx.prime_aia_form || defaultAiaForType('Purchase Order'));
     populateSelect('modalSignatureMethod', SIGNATURE_METHODS.map(s => s.value), record?.signature_method || 'internal');
     populateCompanySelect(record?.company_id);
     setVal('modalTitle', record?.title || '');
@@ -724,7 +724,9 @@
     setVal('modalContactName', record?.contact_name || '');
     setVal('modalContactEmail', record?.contact_email || '');
     setVal('modalContactPhone', record?.contact_phone || '');
-    setVal('modalRetainage', record?.retainage_percent || 0);
+    setVal('modalRetainage', (record?.retainage_percent != null && record?.retainage_percent !== '')
+      ? record.retainage_percent
+      : (parseFloat(ctx.default_retainage_percent) || 0));
     setVal('modalPaymentTerms', record?.payment_terms || '');
     setVal('modalFreightTerms', record?.freight_terms || '');
     setVal('modalBillingType', record?.billing_type || 'Lump Sum');
@@ -734,9 +736,9 @@
     setVal('modalEndDate', record?.end_date ? record.end_date.split('T')[0] : '');
     setVal('modalDeliveryDate', record?.delivery_date ? record.delivery_date.split('T')[0] : '');
     setVal('modalAmount', record?.original_amount || '');
-    setVal('modalOwnerName', record?.owner_name || ctx.name || '');
-    setVal('modalContractorName', record?.contractor_name || 'Case Contracting');
-    setVal('modalArchitectEngineer', record?.architect_engineer || '');
+    setVal('modalOwnerName', record?.owner_name || ctx.owner_legal_name || ctx.client || '');
+    setVal('modalContractorName', record?.contractor_name || ctx.contractor_legal_name || 'Case Contracting');
+    setVal('modalArchitectEngineer', record?.architect_engineer || ctx.architect_of_record || '');
     const numEl = document.getElementById('modalNumber');
     if (record?.number) {
       numEl.value = record.number;

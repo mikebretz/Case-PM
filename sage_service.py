@@ -50,11 +50,30 @@ def _project_sage_context(Project, project_id):
             details = {}
     return {
         'project_id': project_id,
+        'project_name': project.name or '',
+        'project_number': project.number or '',
         'sage_job_number': project.sage_job_number or project.accounting_project_number or '',
         'sage_contract_number': details.get('sage_contract_number', ''),
         'sage_billings_account': details.get('sage_billings_account', ''),
         'sage_wip_account': details.get('sage_wip_account', ''),
+        'sage_revenue_account': details.get('sage_revenue_account', ''),
         'sage_ar_customer_code': details.get('sage_ar_customer_code', ''),
+        'sage_account_set': details.get('sage_account_set', ''),
+        'sage_accounting_method': details.get('sage_accounting_method', ''),
+        'sage_default_tax_group': details.get('sage_default_tax_group', ''),
+        'sage_company_code': details.get('sage_company_code', ''),
+        'sage_database': details.get('sage_database', ''),
+        'sage_ap_vendor_prefix': details.get('sage_ap_vendor_prefix', ''),
+        'sage_cost_code_prefix': details.get('sage_cost_code_prefix', ''),
+        'sage_subcontract_liability_account': details.get('sage_subcontract_liability_account', ''),
+        'sage_default_cost_type': details.get('sage_default_cost_type', ''),
+        'sage_sync_enabled': details.get('sage_sync_enabled', '1') != '0',
+        'contract_value': float(project.contract_value or 0),
+        'original_contract_amount': details.get('original_contract_amount', ''),
+        'prime_aia_form': details.get('prime_aia_form', ''),
+        'owner_legal_name': details.get('owner_legal_name', '') or project.client or '',
+        'contractor_legal_name': details.get('contractor_legal_name', ''),
+        'catina_project_id': details.get('catina_project_id', ''),
     }
 
 
