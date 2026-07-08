@@ -3361,7 +3361,21 @@ let mainLienWaiver = JSON.parse(casepmStore.getItem('mainLienWaiver') || '{}'); 
         logPayAppAudit('APPLICATION_SUBMITTED', { periodNumber: currentPayAppPeriod.periodNumber, validatedAgainstBudget: budgetContractAmount });
         renderPayAppContent();
         if (typeof CasePMWorkflow !== 'undefined') {
-            CasePMWorkflow.onG702Submitted(currentPayAppPeriod).catch(e => console.warn('Workflow', e));
+            const billingSnapshot = {};
+            contractorSOV.forEach(line => {
+                const billing = payAppBillingLines[line.id] || { workThisPeriod: 0, materialsStored: 0 };
+                const subMin = getCurrentSubBilledThisPeriodForCode(line.cost_code);
+                billingSnapshot[line.id] = {
+                    workThisPeriod: Math.max(billing.workThisPeriod || 0, subMin),
+                    materialsStored: billing.materialsStored || 0,
+                    coWorkThisPeriod: billing.coWorkThisPeriod || 0,
+                };
+            });
+            CasePMWorkflow.onG702Submitted(currentPayAppPeriod, {
+                contractorSOV: JSON.parse(JSON.stringify(contractorSOV || [])),
+                billingLines: billingSnapshot,
+                budgetContractAmount: budgetContractAmount,
+            }).catch(e => console.warn('Workflow', e));
         }
     }
 
@@ -5910,7 +5924,14 @@ let mainLienWaiver = JSON.parse(casepmStore.getItem('mainLienWaiver') || '{}'); 
         updateSubSOVStatus(selectedSubCompanyId, 'Pending Approval', { submittedDate: new Date().toISOString() });
         logPayAppAudit('SUB_SOV_SUBMITTED_FOR_APPROVAL', { companyId: selectedSubCompanyId });
         if (typeof CasePMWorkflow !== 'undefined') {
-            CasePMWorkflow.onSubSOVSubmitted(selectedSubCompanyId, getCompanyName(selectedSubCompanyId)).catch(e => console.warn('Workflow', e));
+            const sovLines = (subcontractorSOV[selectedSubCompanyId] || []).map(line => ({
+                cost_code: line.cost_code,
+                description: line.description,
+                original: line.original,
+                co_amount: line.co_amount,
+                billed_to_date: line.billed_to_date,
+            }));
+            CasePMWorkflow.onSubSOVSubmitted(selectedSubCompanyId, getCompanyName(selectedSubCompanyId), { lines: sovLines }).catch(e => console.warn('Workflow', e));
         }
         renderPayAppContent(); // Refresh to show new status + buttons
     }
@@ -6097,7 +6118,11 @@ let mainLienWaiver = JSON.parse(casepmStore.getItem('mainLienWaiver') || '{}'); 
 
         logPayAppAudit('SUB_PAYAPP_SUBMITTED_FOR_APPROVAL', { companyId: companyId, period: currentPeriodNum, total: totalBilledThisPeriod, isCompliance: isComplianceSubmission });
         if (typeof CasePMWorkflow !== 'undefined') {
-            CasePMWorkflow.onSubPayAppSubmitted(companyId, getCompanyName(companyId), currentPeriodNum, totalBilledThisPeriodCheck).catch(e => console.warn('Workflow', e));
+            CasePMWorkflow.onSubPayAppSubmitted(companyId, getCompanyName(companyId), currentPeriodNum, totalBilledThisPeriodCheck, {
+                lines: snapshotLines,
+                periodStart: currentPayAppPeriod ? currentPayAppPeriod.periodStart : '',
+                periodEnd: currentPayAppPeriod ? currentPayAppPeriod.periodEnd : '',
+            }).catch(e => console.warn('Workflow', e));
         }
         renderPayAppContent();
     }

@@ -99,15 +99,38 @@
   }
 
   // ─── Pay Application hooks ─────────────────────────────────
-  async function onG702Submitted(period) {
+  async function onG702Submitted(period, snapshot) {
+    const billingLines = snapshot?.billingLines || {};
+    const sov = snapshot?.contractorSOV || [];
+    const thisPeriodTotal = sov.reduce((sum, line) => {
+      const b = billingLines[line.id] || {};
+      return sum + (b.workThisPeriod || 0) + (b.materialsStored || 0);
+    }, 0);
     return emit('submit', {
       module: 'Pay Applications',
       entity_type: 'G702',
       entity_id: `period-${period.periodNumber}`,
       title: `Pay Application #${period.periodNumber} submitted for review`,
-      description: `GC pay application period ${period.periodNumber} is ready for PM/owner review.`,
+      description: `GC pay application period ${period.periodNumber} — $${thisPeriodTotal.toLocaleString(undefined, { minimumFractionDigits: 2 })} this period.`,
       action_url: payAppUrl(),
-      payload: { periodNumber: period.periodNumber, status: 'Submitted' },
+      payload: {
+        snapshotType: 'g702',
+        periodNumber: period.periodNumber,
+        periodStart: period.periodStart,
+        periodEnd: period.periodEnd,
+        status: period.status || 'Submitted',
+        budgetContractAmount: snapshot?.budgetContractAmount,
+        contractorSOV: sov.map(line => ({
+          id: line.id,
+          cost_code: line.cost_code,
+          description: line.description,
+          original: line.original,
+          co_amount: line.co_amount,
+          billed_to_date: line.billed_to_date,
+        })),
+        billingLines,
+        thisPeriodTotal,
+      },
     });
   }
 
@@ -133,16 +156,31 @@
     });
   }
 
-  async function onSubSOVSubmitted(companyId, companyName) {
+  async function onSubSOVSubmitted(companyId, companyName, snapshot) {
+    const lines = (snapshot?.lines || []).map(line => ({
+      cost_code: line.cost_code,
+      description: line.description,
+      original: line.original,
+      co_amount: line.co_amount,
+      billed_to_date: line.billed_to_date,
+    }));
+    const totalOriginal = lines.reduce((s, l) => s + (l.original || 0), 0);
     return emit('submit', {
       module: 'Pay Applications',
       entity_type: 'SubSOV',
       entity_id: String(companyId),
       company_id: Number(companyId) || null,
       title: `Sub SOV submitted — ${companyName}`,
-      description: `${companyName} submitted their Schedule of Values for approval.`,
+      description: `${companyName} submitted Schedule of Values (${lines.length} lines, $${totalOriginal.toLocaleString(undefined, { minimumFractionDigits: 2 })} original).`,
       action_url: payAppUrl(),
       assignee_role: 'Project Manager',
+      payload: {
+        snapshotType: 'sub_sov',
+        companyId,
+        companyName,
+        lines,
+        totalOriginal,
+      },
     });
   }
 
@@ -158,16 +196,25 @@
     });
   }
 
-  async function onSubPayAppSubmitted(companyId, companyName, periodNum, amount) {
+  async function onSubPayAppSubmitted(companyId, companyName, periodNum, amount, snapshot) {
     return emit('submit', {
       module: 'Pay Applications',
       entity_type: 'SubPayApp',
       entity_id: `${companyId}-${periodNum}`,
       company_id: Number(companyId) || null,
       title: `Sub Pay App #${periodNum} — ${companyName}`,
-      description: `Amount this period: $${Number(amount || 0).toLocaleString()}. Review in Sub Pay App Tracker.`,
+      description: `Amount this period: $${Number(amount || 0).toLocaleString(undefined, { minimumFractionDigits: 2 })}.`,
       action_url: payAppUrl(),
-      payload: { companyId, periodNum, amount },
+      payload: {
+        snapshotType: 'sub_pay_app',
+        companyId,
+        companyName,
+        periodNum,
+        amount,
+        lines: snapshot?.lines || [],
+        periodStart: snapshot?.periodStart,
+        periodEnd: snapshot?.periodEnd,
+      },
     });
   }
 
@@ -257,7 +304,13 @@
       title: `Change Order ${co.number} pending approval`,
       description: co.description || '',
       action_url: `/change-orders?project_id=${projectId()}`,
-      payload: { amount: co.amount },
+      payload: {
+        snapshotType: 'change_order',
+        number: co.number,
+        description: co.description || co.title || '',
+        amount: co.amount,
+        status: co.status,
+      },
     });
   }
 
