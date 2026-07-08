@@ -11,7 +11,7 @@
         <div class="flex flex-wrap items-center justify-between gap-2 mb-2 pt-0">
             <div class="min-w-0">
                 <h1 class="text-xl font-semibold tracking-tight">Project Schedule</h1>
-                <p class="text-zinc-500 text-xs mt-0.5">Single-click to select · Double-click to edit · Drag green chart edge or use Chart % slider · Drag column header borders to resize</p>
+                <p class="text-zinc-500 text-xs mt-0.5">Single-click to select · Double-click to edit · Drag green chart edge · Drag column borders to resize · Double-click column border to auto-fit</p>
             </div>
             <div class="flex flex-wrap items-center gap-2">
                 <button type="button" class="schedule-toolbar-btn" onclick="ScheduleApp.exportJson()"><i class="fa-solid fa-download"></i> Export</button>
@@ -339,45 +339,56 @@
         <button type="button" onclick="document.getElementById('scheduleHeaderFooterModal').close()" class="text-zinc-400 hover:text-white">&times;</button>
     </div>
     <div class="p-4 space-y-4 text-sm max-h-[70vh] overflow-auto">
-        <div class="flex flex-wrap gap-4">
+        <div class="flex flex-wrap gap-4 items-end">
             <label class="flex items-center gap-2"><input id="hfIncludeHeader" type="checkbox" class="rounded border-zinc-600" checked> Include header band</label>
             <label class="flex items-center gap-2"><input id="hfIncludeFooter" type="checkbox" class="rounded border-zinc-600" checked> Include footer band</label>
             <label class="flex items-center gap-2"><input id="hfShowMetaRow" type="checkbox" class="rounded border-zinc-600" checked> Show project details row below header</label>
+            <label class="text-xs text-zinc-400">Header height (pt)
+                <input id="hfHeaderBandHeight" type="number" min="48" max="160" value="80" class="mt-1 w-20 bg-zinc-800 border border-zinc-700 rounded px-2 py-1 text-sm">
+            </label>
+            <label class="text-xs text-zinc-400">Footer height (pt)
+                <input id="hfFooterBandHeight" type="number" min="20" max="80" value="32" class="mt-1 w-20 bg-zinc-800 border border-zinc-700 rounded px-2 py-1 text-sm">
+            </label>
         </div>
         <div class="border border-zinc-700 rounded-md p-3 space-y-2">
-            <h4 class="text-xs font-semibold uppercase tracking-wide text-emerald-400">Header</h4>
-            <div class="grid grid-cols-1 md:grid-cols-3 gap-2">
-                <label class="block text-xs text-zinc-400">Left
-                    <input id="hfHeaderLeft" type="text" class="mt-1 w-full bg-zinc-800 border border-zinc-700 rounded px-2 py-1.5 text-sm" placeholder="Company name">
-                </label>
-                <label class="block text-xs text-zinc-400">Center
-                    <input id="hfHeaderCenter" type="text" class="mt-1 w-full bg-zinc-800 border border-zinc-700 rounded px-2 py-1.5 text-sm" placeholder="Project Schedule">
-                </label>
-                <label class="block text-xs text-zinc-400">Right
-                    <input id="hfHeaderRight" type="text" class="mt-1 w-full bg-zinc-800 border border-zinc-700 rounded px-2 py-1.5 text-sm" placeholder="{project}">
-                </label>
-            </div>
-            <div class="grid grid-cols-1 md:grid-cols-3 gap-3 pt-1">
-                <div class="text-xs text-zinc-500 space-y-1">
-                    <span class="text-zinc-400">Left logo</span>
+            <h4 class="text-xs font-semibold uppercase tracking-wide text-emerald-400">Header cells</h4>
+            <p class="text-xs text-zinc-500">Text, font size, color, and logo height per column (like Word header cells)</p>
+            <div class="grid grid-cols-1 md:grid-cols-3 gap-3">
+                <div class="space-y-2 p-2 rounded bg-zinc-800/40 border border-zinc-700/60">
+                    <div class="text-xs font-medium text-zinc-300">Left</div>
+                    <input id="hfHeaderLeft" type="text" class="w-full bg-zinc-800 border border-zinc-700 rounded px-2 py-1.5 text-sm" placeholder="Company name">
+                    <div class="grid grid-cols-3 gap-1 text-xs">
+                        <label class="text-zinc-500">Font<select id="hfHdrLeftFontSize" class="mt-0.5 w-full bg-zinc-900 border border-zinc-700 rounded px-1 py-1"><option>9</option><option>10</option><option>11</option><option>12</option><option>14</option><option>16</option><option>18</option><option>20</option></select></label>
+                        <label class="text-zinc-500">Color<input id="hfHdrLeftColor" type="color" value="#111111" class="mt-0.5 w-full h-7 bg-zinc-900 border border-zinc-700 rounded"></label>
+                        <label class="text-zinc-500">Logo pt<input id="hfHdrLeftLogoHeight" type="number" min="12" max="120" value="42" class="mt-0.5 w-full bg-zinc-900 border border-zinc-700 rounded px-1 py-1"></label>
+                    </div>
                     <img id="hfHeaderLogoPreviewLeft" class="hidden h-10 max-w-[120px] object-contain bg-white rounded px-1" alt="">
-                    <input type="file" id="hfLogoInputLeft" accept="image/*" class="block text-xs text-zinc-400 w-full"
-                           onchange="ScheduleApp.onHeaderLogoSelected(this.files[0], 'left'); this.value=''">
-                    <button type="button" class="text-xs text-zinc-400 hover:text-white" onclick="ScheduleApp.clearHeaderLogo('left')">Remove</button>
+                    <input type="file" id="hfLogoInputLeft" accept="image/*" class="block text-xs text-zinc-400 w-full" onchange="ScheduleApp.onHeaderLogoSelected(this.files[0], 'left'); this.value=''">
+                    <button type="button" class="text-xs text-zinc-400 hover:text-white" onclick="ScheduleApp.clearHeaderLogo('left')">Remove logo</button>
                 </div>
-                <div class="text-xs text-zinc-500 space-y-1">
-                    <span class="text-zinc-400">Center logo</span>
+                <div class="space-y-2 p-2 rounded bg-zinc-800/40 border border-zinc-700/60">
+                    <div class="text-xs font-medium text-zinc-300">Center</div>
+                    <input id="hfHeaderCenter" type="text" class="w-full bg-zinc-800 border border-zinc-700 rounded px-2 py-1.5 text-sm" placeholder="Project Schedule">
+                    <div class="grid grid-cols-3 gap-1 text-xs">
+                        <label class="text-zinc-500">Font<select id="hfHdrCenterFontSize" class="mt-0.5 w-full bg-zinc-900 border border-zinc-700 rounded px-1 py-1"><option>9</option><option>10</option><option>11</option><option>12</option><option>14</option><option selected>16</option><option>18</option><option>20</option><option>24</option></select></label>
+                        <label class="text-zinc-500">Color<input id="hfHdrCenterColor" type="color" value="#111111" class="mt-0.5 w-full h-7 bg-zinc-900 border border-zinc-700 rounded"></label>
+                        <label class="text-zinc-500">Logo pt<input id="hfHdrCenterLogoHeight" type="number" min="12" max="120" value="42" class="mt-0.5 w-full bg-zinc-900 border border-zinc-700 rounded px-1 py-1"></label>
+                    </div>
                     <img id="hfHeaderLogoPreviewCenter" class="hidden h-10 max-w-[120px] object-contain bg-white rounded px-1 mx-auto" alt="">
-                    <input type="file" id="hfLogoInputCenter" accept="image/*" class="block text-xs text-zinc-400 w-full"
-                           onchange="ScheduleApp.onHeaderLogoSelected(this.files[0], 'center'); this.value=''">
-                    <button type="button" class="text-xs text-zinc-400 hover:text-white" onclick="ScheduleApp.clearHeaderLogo('center')">Remove</button>
+                    <input type="file" id="hfLogoInputCenter" accept="image/*" class="block text-xs text-zinc-400 w-full" onchange="ScheduleApp.onHeaderLogoSelected(this.files[0], 'center'); this.value=''">
+                    <button type="button" class="text-xs text-zinc-400 hover:text-white" onclick="ScheduleApp.clearHeaderLogo('center')">Remove logo</button>
                 </div>
-                <div class="text-xs text-zinc-500 space-y-1">
-                    <span class="text-zinc-400">Right logo</span>
+                <div class="space-y-2 p-2 rounded bg-zinc-800/40 border border-zinc-700/60">
+                    <div class="text-xs font-medium text-zinc-300">Right</div>
+                    <input id="hfHeaderRight" type="text" class="w-full bg-zinc-800 border border-zinc-700 rounded px-2 py-1.5 text-sm" placeholder="{project}">
+                    <div class="grid grid-cols-3 gap-1 text-xs">
+                        <label class="text-zinc-500">Font<select id="hfHdrRightFontSize" class="mt-0.5 w-full bg-zinc-900 border border-zinc-700 rounded px-1 py-1"><option>9</option><option>10</option><option>11</option><option selected>12</option><option>14</option><option>16</option><option>18</option><option>20</option></select></label>
+                        <label class="text-zinc-500">Color<input id="hfHdrRightColor" type="color" value="#111111" class="mt-0.5 w-full h-7 bg-zinc-900 border border-zinc-700 rounded"></label>
+                        <label class="text-zinc-500">Logo pt<input id="hfHdrRightLogoHeight" type="number" min="12" max="120" value="42" class="mt-0.5 w-full bg-zinc-900 border border-zinc-700 rounded px-1 py-1"></label>
+                    </div>
                     <img id="hfHeaderLogoPreviewRight" class="hidden h-10 max-w-[120px] object-contain bg-white rounded px-1 ml-auto" alt="">
-                    <input type="file" id="hfLogoInputRight" accept="image/*" class="block text-xs text-zinc-400 w-full"
-                           onchange="ScheduleApp.onHeaderLogoSelected(this.files[0], 'right'); this.value=''">
-                    <button type="button" class="text-xs text-zinc-400 hover:text-white" onclick="ScheduleApp.clearHeaderLogo('right')">Remove</button>
+                    <input type="file" id="hfLogoInputRight" accept="image/*" class="block text-xs text-zinc-400 w-full" onchange="ScheduleApp.onHeaderLogoSelected(this.files[0], 'right'); this.value=''">
+                    <button type="button" class="text-xs text-zinc-400 hover:text-white" onclick="ScheduleApp.clearHeaderLogo('right')">Remove logo</button>
                 </div>
             </div>
         </div>

@@ -69,20 +69,20 @@ body:has(.schedule-page-root) #mainContent {
     position: absolute;
     top: 0;
     bottom: 0;
-    width: 14px;
-    margin-left: -7px;
+    width: 5px;
+    margin-left: -2px;
     z-index: 210;
     cursor: col-resize;
     pointer-events: auto;
     touch-action: none;
-    background: linear-gradient(90deg, transparent, rgba(16, 185, 129, 0.5), rgba(52, 211, 153, 1), rgba(16, 185, 129, 0.5), transparent);
-    box-shadow: 0 0 0 1px rgba(16, 185, 129, 0.45);
+    background: rgba(16, 185, 129, 0.55);
+    box-shadow: none;
 }
 .schedule-chart-resizer.hidden { display: none; }
 .schedule-chart-resizer:hover,
 .schedule-chart-resizer:active {
-    background: linear-gradient(90deg, transparent, rgba(16, 185, 129, 0.8), rgba(110, 231, 183, 1), rgba(16, 185, 129, 0.8), transparent);
-    box-shadow: 0 0 12px rgba(16, 185, 129, 0.65);
+    background: rgba(52, 211, 153, 0.85);
+    box-shadow: 0 0 6px rgba(16, 185, 129, 0.35);
 }
 body.schedule-chart-resizing {
     cursor: col-resize !important;
@@ -163,7 +163,6 @@ body.schedule-chart-resizing #gantt_here .gantt_layout_cell:nth-child(3) {
 }
 .schedule-overlay-mode #gantt_here .gantt_grid_head_cell,
 .schedule-overlay-mode #gantt_here .gantt_cell {
-    flex: 0 0 auto !important;
     box-sizing: border-box !important;
 }
 .schedule-overlay-mode #gantt_here .gantt_grid_column_resize_wrap {
@@ -755,8 +754,7 @@ body:has(.schedule-page-root) #scheduleFieldPickerModal {
     .sched-print-hf-center { text-align: center; font-weight: 700; font-size: 14pt; display: flex; align-items: center; justify-content: center; gap: 8px; flex-wrap: wrap; }
     .sched-print-hf-right { text-align: right; display: flex; align-items: center; justify-content: flex-end; gap: 8px; flex-wrap: wrap; }
     .sched-print-hf-logo {
-        max-height: 36px;
-        max-width: 120px;
+        max-width: 180px;
         object-fit: contain;
     }
     .sched-print-hf-text { line-height: 1.2; }
