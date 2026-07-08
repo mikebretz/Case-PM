@@ -369,6 +369,16 @@ class PayAppProjectState(db.Model):
     updated_by_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=True)
 
 
+class BudgetProjectState(db.Model):
+    __tablename__ = 'budget_project_state'
+    id = db.Column(db.Integer, primary_key=True)
+    project_id = db.Column(db.Integer, db.ForeignKey('project.id'), unique=True, nullable=False)
+    data_json = db.Column(db.Text, default='{}')
+    version = db.Column(db.Integer, default=1)
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    updated_by_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=True)
+
+
 class SageSyncEvent(db.Model):
     __tablename__ = 'sage_sync_event'
     id = db.Column(db.Integer, primary_key=True)
@@ -1226,6 +1236,7 @@ def update_change_order_status(co_id):
             pass
 
     sync_result = None
+    budget_sync_result = None
     if new_status == 'Approved' and old_status != 'Approved':
         co.approved_at = datetime.utcnow()
         co.approved_by_id = current_user.id
@@ -1248,12 +1259,22 @@ def update_change_order_status(co_id):
             co.sage_sync_status = f'sync_error:{str(exc)[:120]}'
             sync_result = {'error': str(exc)}
 
+    try:
+        from budget_persistence import sync_change_order_to_budget
+        budget_sync_result = sync_change_order_to_budget(
+            ChangeOrder, ChangeOrderAllocation, BudgetProjectState,
+            db, co.id, old_status, new_status, current_user.id,
+        )
+    except Exception:
+        pass
+
     db.session.commit()
     return jsonify({
         'success': True,
         'new_status': new_status,
         'sov_synced': new_status == 'Approved' and sync_result and not sync_result.get('error'),
         'sync_result': sync_result,
+        'budget_sync_result': budget_sync_result,
     })
 
 
@@ -1792,7 +1813,12 @@ def drawings_page():
 @app.route('/budget')
 @login_required
 def budget_page():
-    return render_template('budget.html')
+    active = get_active_project()
+    return render_template(
+        'budget.html',
+        project_contract_value=active.contract_value if active else None,
+        project_sage_job=active.sage_job_number or active.accounting_project_number if active else '',
+    )
 
 
 @app.route('/commitments')
@@ -1959,6 +1985,125 @@ def global_search():
         rfis=rfis,
         daily_logs=daily_logs
     )
+
+
+# ==================== BUDGET API ====================
+
+@app.route('/api/budget/state', methods=['GET'])
+@login_required
+def api_get_budget_state():
+    from budget_persistence import get_budget_state as load_state
+    project_id = request.args.get('project_id', type=int) or get_current_project_id()
+    if not project_id:
+        return jsonify({'error': 'project_id required'}), 400
+    record, data = load_state(BudgetProjectState, project_id)
+    if not record:
+        return jsonify({'project_id': project_id, 'data': None, 'version': 0})
+    return jsonify({
+        'project_id': project_id,
+        'data': data,
+        'version': record.version,
+        'updated_at': record.updated_at.isoformat() if record.updated_at else None,
+    })
+
+
+@app.route('/api/budget/state', methods=['PUT'])
+@login_required
+def api_save_budget_state():
+    from budget_persistence import merge_state_patch, save_budget_state as persist_state, get_budget_state as load_state
+    body = request.get_json(silent=True) or {}
+    project_id = body.get('project_id') or get_current_project_id()
+    if not project_id:
+        return jsonify({'error': 'project_id required'}), 400
+    project_id = int(project_id)
+    patch = body.get('data') or body.get('patch') or {}
+    full_replace = bool(body.get('full_replace'))
+    record, existing = load_state(BudgetProjectState, project_id)
+    if full_replace:
+        merged = patch
+    else:
+        merged = merge_state_patch(existing, patch)
+    record = persist_state(BudgetProjectState, db, project_id, merged, current_user.id)
+    return jsonify({
+        'ok': True,
+        'project_id': project_id,
+        'version': record.version,
+        'updated_at': record.updated_at.isoformat() if record.updated_at else None,
+    })
+
+
+@app.route('/api/budget/import-local', methods=['POST'])
+@login_required
+def api_import_budget_local():
+    from budget_persistence import save_budget_state as persist_state
+    body = request.get_json(silent=True) or {}
+    project_id = body.get('project_id') or get_current_project_id()
+    data = body.get('data')
+    if not project_id or not isinstance(data, dict):
+        return jsonify({'error': 'project_id and data required'}), 400
+    record = persist_state(BudgetProjectState, db, int(project_id), data, current_user.id)
+    return jsonify({'ok': True, 'version': record.version})
+
+
+@app.route('/api/budget/pending-change-orders', methods=['GET'])
+@login_required
+def api_budget_pending_change_orders():
+    from budget_persistence import PENDING_CO_STATUSES
+    project_id = request.args.get('project_id', type=int) or get_current_project_id()
+    if not project_id:
+        return jsonify({'error': 'project_id required'}), 400
+    cos = ChangeOrder.query.filter(
+        ChangeOrder.project_id == project_id,
+        ChangeOrder.status.in_(list(PENDING_CO_STATUSES) + ['Pending', 'Draft']),
+    ).order_by(ChangeOrder.created_at.desc()).all()
+    return jsonify({
+        'change_orders': [{
+            'id': co.id,
+            'number': co.number,
+            'description': co.description,
+            'amount': co.amount,
+            'status': co.status,
+            'cost_code': co.cost_code,
+        } for co in cos if co.status not in ('Approved', 'Rejected')],
+    })
+
+
+@app.route('/api/budget/publish', methods=['POST'])
+@login_required
+def api_publish_budget():
+    """Finalize budget publish: mark Sage sync status on lines and queue Sage event."""
+    from budget_persistence import get_budget_state, save_budget_state, mark_budget_lines_sage_status
+    from sage_service import create_and_process_sage_event
+    body = request.get_json(silent=True) or {}
+    project_id = body.get('project_id') or get_current_project_id()
+    if not project_id:
+        return jsonify({'error': 'project_id required'}), 400
+    project_id = int(project_id)
+    sage_status = body.get('sage_status', 'Synced')
+    record, state = get_budget_state(BudgetProjectState, project_id)
+    if not state:
+        return jsonify({'error': 'no budget state'}), 400
+    state = mark_budget_lines_sage_status(state, sage_status)
+    record = save_budget_state(BudgetProjectState, db, project_id, state, current_user.id)
+    event = create_and_process_sage_event(
+        SageSyncEvent, Project, db, project_id,
+        'BudgetPublished',
+        message=body.get('message', f'Budget revision {state.get("budgetRevision", "")} published'),
+        payload={
+            'revision': state.get('budgetRevision'),
+            'lines_count': len(state.get('budgetLines') or []),
+            'total_original': sum((l.get('original_budget') or 0) for l in (state.get('budgetLines') or [])),
+            'contract_amount': state.get('budgetContractAmount'),
+        },
+        user_id=current_user.id,
+    )
+    from sage_service import sage_event_to_dict
+    return jsonify({
+        'ok': True,
+        'version': record.version,
+        'event': sage_event_to_dict(event),
+        'budgetLines': state.get('budgetLines'),
+    })
 
 
 # ==================== PAY APPLICATION API ====================
@@ -2204,6 +2349,10 @@ with app.app_context():
             ensure_pay_app_schema(db.engine, db)
         except Exception as _pe:
             print('Pay app schema:', _pe)
+        try:
+            db.create_all()
+        except Exception as _be:
+            print('Budget schema:', _be)
     except Exception as _e:
         print('Workflow init:', _e)
 

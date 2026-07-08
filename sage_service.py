@@ -12,6 +12,9 @@ SAGE_EVENT_MAP = {
     'SubPayAppSubmitted': {'module': 'SubcontractorBilling', 'action': 'submit'},
     'SubPayAppApproved': {'module': 'SubcontractorBilling', 'action': 'post_ap'},
     'ChangeOrderApproved': {'module': 'PCO', 'action': 'post'},
+    'BudgetSaved': {'module': 'JobCost', 'action': 'save_budget'},
+    'BudgetPublished': {'module': 'JobCost', 'action': 'publish_budget'},
+    'BudgetSageSync': {'module': 'JobCost', 'action': 'sync_cost_codes'},
     'ManualSync': {'module': 'General', 'action': 'sync'},
 }
 

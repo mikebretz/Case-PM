@@ -314,6 +314,38 @@
     });
   }
 
+  // ─── Budget hooks ───────────────────────────────────────────
+  async function onBudgetPublished(revision, snapshot) {
+    const lines = snapshot?.budgetLines || [];
+    const totalOriginal = lines.reduce((s, l) => s + (l.original_budget || 0), 0);
+    return emit('submit', {
+      module: 'Budget',
+      entity_type: 'BudgetRevision',
+      entity_id: `rev-${revision}`,
+      title: `Budget Revision ${revision} published for approval`,
+      description: `Budget published with ${lines.length} lines — $${totalOriginal.toLocaleString(undefined, { minimumFractionDigits: 2 })} original.`,
+      action_url: `/budget?project_id=${projectId()}`,
+      payload: {
+        snapshotType: 'budget',
+        revision,
+        linesCount: lines.length,
+        totalOriginal,
+        contractAmount: snapshot?.budgetContractAmount,
+      },
+    });
+  }
+
+  async function onBudgetSaved(linesCount, totalOriginal) {
+    return emit('notify', {
+      module: 'Budget',
+      title: 'Budget saved',
+      description: `Budget draft saved (${linesCount} lines, $${totalOriginal.toLocaleString(undefined, { minimumFractionDigits: 2 })} original).`,
+      action_url: `/budget?project_id=${projectId()}`,
+      folder: 'team',
+      msg_type: 'message',
+    });
+  }
+
   global.CasePMWorkflow = {
     loadPortal,
     projectId,
@@ -341,5 +373,7 @@
     onSubmittalDecision,
     onRFIStatusChange,
     onChangeOrderSubmitted,
+    onBudgetPublished,
+    onBudgetSaved,
   };
 })(window);
