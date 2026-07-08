@@ -71,15 +71,19 @@
                 <button type="button" id="schedAlignMiddleBtn" class="schedule-toolbar-btn active-tool" onclick="ScheduleApp.setGridCellAlignV('middle')" title="Align middle"><i class="fa-solid fa-grip-lines"></i></button>
                 <button type="button" id="schedAlignBottomBtn" class="schedule-toolbar-btn" onclick="ScheduleApp.setGridCellAlignV('bottom')" title="Align bottom"><i class="fa-solid fa-arrow-down"></i></button>
                 <span class="text-zinc-600 self-center text-xs px-0.5">|</span>
-                <select id="schedFontSizeSelect" class="bg-zinc-800 border border-zinc-700 rounded-md text-xs px-2 py-1.5 text-zinc-200" title="Font size for selected cell, row, or column" onchange="ScheduleApp.setGridFontSize(Number(this.value))">
-                    <option value="10">10</option><option value="11">11</option><option value="12">12</option>
-                    <option value="13" selected>13</option><option value="14">14</option><option value="16">16</option><option value="18">18</option>
-                </select>
-                <select id="schedRowHeightSelect" class="bg-zinc-800 border border-zinc-700 rounded-md text-xs px-2 py-1.5 text-zinc-200" title="Row height for selected row" onchange="ScheduleApp.setGridRowHeight(Number(this.value))">
-                    <option value="28">28</option><option value="32" selected>32</option><option value="36">36</option>
-                    <option value="40">40</option><option value="48">48</option><option value="56">56</option>
-                </select>
-                <button type="button" class="schedule-toolbar-btn text-xs" onclick="ScheduleApp.setGridRowHeight(Number(document.getElementById('schedRowHeightSelect').value), true)" title="Apply row height to all activities">All Rows</button>
+                <span class="text-xs text-zinc-500 self-center">Font</span>
+                <input type="number" id="schedFontSizeInput" min="8" max="24" step="1" value="13"
+                       class="w-14 bg-zinc-800 border border-zinc-700 rounded-md text-xs px-1.5 py-1.5 text-zinc-200 text-center"
+                       title="Font size (px) — select cell, row, or column then Apply"
+                       onkeydown="if(event.key==='Enter'){event.preventDefault();ScheduleApp.setGridFontSize(Number(this.value));}">
+                <button type="button" class="schedule-toolbar-btn text-xs" onclick="ScheduleApp.setGridFontSize(Number(document.getElementById('schedFontSizeInput').value))" title="Apply font size">Apply</button>
+                <span class="text-xs text-zinc-500 self-center ml-1">Row</span>
+                <input type="number" id="schedRowHeightInput" min="18" max="80" step="1" value="32"
+                       class="w-14 bg-zinc-800 border border-zinc-700 rounded-md text-xs px-1.5 py-1.5 text-zinc-200 text-center"
+                       title="Row height (px) — select row then Apply or All Rows"
+                       onkeydown="if(event.key==='Enter'){event.preventDefault();ScheduleApp.setGridRowHeight(Number(this.value));}">
+                <button type="button" class="schedule-toolbar-btn text-xs" onclick="ScheduleApp.setGridRowHeight(Number(document.getElementById('schedRowHeightInput').value))" title="Apply row height to selected row">Apply</button>
+                <button type="button" class="schedule-toolbar-btn text-xs" onclick="ScheduleApp.setGridRowHeight(Number(document.getElementById('schedRowHeightInput').value), true)" title="Apply row height to all activities">All Rows</button>
             </div>
             <div class="flex flex-wrap gap-1 border-r border-zinc-700 pr-2 mr-1">
                 <button type="button" class="schedule-toolbar-btn" onclick="ScheduleApp.linkSelected('FS')" title="Finish-to-Start"><i class="fa-solid fa-link"></i> FS</button>
