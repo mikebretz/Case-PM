@@ -177,6 +177,7 @@
     </script>
     <script src="{{ url_for('static', filename='js/casepm-project-storage.js') }}"></script>
     <script src="{{ url_for('static', filename='js/casepm-dialog.js') }}"></script>
+    <script src="{{ url_for('static', filename='js/casepm-print.js') }}"></script>
     <script src="{{ url_for('static', filename='js/casepm-workflow.js') }}"></script>
 </head>
 <body class="bg-zinc-950 text-zinc-200 h-screen overflow-hidden {% if is_sub_portal %}portal-sub{% elif is_architect_portal %}portal-architect{% else %}portal-staff{% endif %}">
@@ -686,13 +687,17 @@
         // Force dark mode
         document.documentElement.classList.add('dark');
 
-        // Enhanced mobile dialog handling
+        // Enhanced mobile dialog handling + draggable pop-ups
         document.querySelectorAll('dialog').forEach(dialog => {
             dialog.addEventListener('cancel', (e) => {
                 e.preventDefault();
                 dialog.close();
             });
         });
+        if (typeof CasePMDialog !== 'undefined') {
+            CasePMDialog.initAllDialogs();
+            CasePMDialog.observeDialogs();
+        }
 
         // Update last sync time
         const syncEl = document.getElementById('lastSyncTime');

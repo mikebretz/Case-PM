@@ -3538,7 +3538,7 @@
 
     // ─── Views ───
     function switchScheduleView(view) {
-        ['ganttViewPanel', 'lookaheadViewPanel', 'traceViewPanel', 'portfolioViewPanel'].forEach(id => {
+        ['ganttViewPanel', 'calendarViewPanel', 'lookaheadViewPanel', 'traceViewPanel', 'portfolioViewPanel'].forEach(id => {
             document.getElementById(id)?.classList.add('hidden');
         });
         document.querySelectorAll('.schedule-view-tab').forEach(btn => btn.classList.remove('active-view'));
@@ -3549,6 +3549,10 @@
             resizeGanttHost();
             gantt.render();
             applyChartOverlay();
+        } else if (view === 'calendar') {
+            document.getElementById('calendarViewPanel')?.classList.remove('hidden');
+            document.getElementById('tabCalendar')?.classList.add('active-view');
+            renderCalendarView();
         } else if (view === 'lookahead') {
             document.getElementById('lookaheadViewPanel')?.classList.remove('hidden');
             document.getElementById('tabLookahead')?.classList.add('active-view');
@@ -3562,6 +3566,15 @@
             document.getElementById('tabPortfolio')?.classList.add('active-view');
             renderPortfolio();
         }
+    }
+
+    function renderCalendarView() {
+        if (!window.ScheduleCalendar) return;
+        const tasks = [];
+        gantt.eachTask(t => tasks.push(Object.assign({}, t)));
+        ScheduleCalendar.init('scheduleCalendarContent', {
+            getTasks: () => tasks,
+        });
     }
 
     function renderLookAhead() {
@@ -4435,7 +4448,7 @@
         wbsCode, applyPredecessorString,
         toggleCriticalPath, toggleCriticalFilter, setBaseline, showBaselineManager, activateBaseline, deleteBaseline,
         undo, redo, fitScheduleView, scrollToToday, panTimeline, resetTimelineCalendar, filterTasks, exportCsv, focusTimelineOnTask,
-        runSchedule, switchScheduleView, renderLookAhead, focusActivity, sortByStartDate, exportXer, exportMsProjectXml,
+        runSchedule, switchScheduleView, renderCalendarView, renderLookAhead, focusActivity, sortByStartDate, exportXer, exportMsProjectXml,
         showAllOptionalColumns, showFeaturesChecklist, showKeyboardShortcuts,
         exportJson, importFile, printGantt, printLookAhead, showPrintSetup, savePrintSettings, setPrintColumnToggle,
         showHeaderFooterSetup, saveHeaderFooterSettings, onHeaderLogoSelected, clearHeaderLogo,

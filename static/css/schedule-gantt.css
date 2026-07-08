@@ -110,6 +110,101 @@ body.schedule-chart-resizing #gantt_here .gantt_layout_cell:nth-child(3) {
 .schedule-toolbar-btn.active-tool { background: #065f46; border-color: #10b981; color: #fff; }
 .schedule-toolbar-btn-danger { border-color: #7f1d1d; color: #fca5a5; }
 .schedule-toolbar-btn-danger:hover { background: #7f1d1d; color: #fff; }
+
+/* Horizontal scroll toolbar — keeps button groups intact when zoomed/narrow */
+.schedule-toolbar-scroll {
+    overflow-x: auto;
+    overflow-y: hidden;
+    -webkit-overflow-scrolling: touch;
+}
+.schedule-toolbar-inner {
+    display: flex;
+    flex-wrap: nowrap;
+    align-items: center;
+    gap: 0;
+    min-width: max-content;
+}
+.schedule-toolbar-group {
+    display: inline-flex;
+    flex-wrap: nowrap;
+    align-items: center;
+    gap: 0.25rem;
+    border-right: 1px solid var(--sched-border, #3f3f46);
+    padding-right: 0.5rem;
+    margin-right: 0.35rem;
+    flex-shrink: 0;
+}
+.schedule-toolbar-group:last-child {
+    border-right: none;
+    margin-right: 0;
+    padding-right: 0;
+}
+
+/* 12-month calendar schedule view */
+.sched-cal-toolbar { margin-bottom: 0.75rem; }
+.sched-cal-year-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+    gap: 1rem;
+}
+.sched-cal-month {
+    background: var(--sched-panel-bg, #18181b);
+    border: 1px solid var(--sched-border, #3f3f46);
+    border-radius: 0.5rem;
+    padding: 0.5rem;
+}
+.sched-cal-month-title {
+    font-size: 0.8125rem;
+    font-weight: 600;
+    text-align: center;
+    margin-bottom: 0.35rem;
+    color: var(--sched-text, #e4e4e7);
+}
+.sched-cal-dow {
+    display: grid;
+    grid-template-columns: repeat(7, 1fr);
+    gap: 1px;
+    font-size: 0.625rem;
+    color: #71717a;
+    text-align: center;
+    margin-bottom: 2px;
+}
+.sched-cal-grid {
+    display: grid;
+    grid-template-columns: repeat(7, 1fr);
+    gap: 1px;
+}
+.sched-cal-day {
+    min-height: 52px;
+    background: var(--sched-cell-bg, #09090b);
+    border: 1px solid var(--sched-border, #27272a);
+    padding: 1px;
+    font-size: 0.625rem;
+    overflow: hidden;
+}
+.sched-cal-day-pad { background: transparent; border-color: transparent; }
+.sched-cal-weekend { background: #0c0c0e; }
+.sched-cal-day-num {
+    font-size: 0.6rem;
+    color: #a1a1aa;
+    padding: 0 2px;
+    line-height: 1.2;
+}
+.sched-cal-bars { display: flex; flex-direction: column; gap: 1px; margin-top: 1px; }
+.sched-cal-bar {
+    height: 10px;
+    font-size: 0.5rem;
+    line-height: 10px;
+    color: #fff;
+    overflow: hidden;
+    white-space: nowrap;
+    padding: 0 2px;
+}
+.sched-cal-bar-start { border-radius: 2px 0 0 2px; }
+.sched-cal-bar-end { border-radius: 0 2px 2px 0; }
+.sched-cal-bar-mid { border-radius: 0; margin-left: -1px; margin-right: -1px; }
+.sched-cal-more { font-size: 0.5rem; color: #71717a; padding: 0 2px; }
+
 .schedule-view-tab.active-view { background: #27272a; color: #fff; border-radius: 0.375rem; }
 .sched-color-swatch { display: inline-block; width: 14px; height: 14px; border-radius: 2px; border: 1px solid #71717a; }
 

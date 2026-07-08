@@ -39,12 +39,13 @@
              data-project-name="{{ active_project.name }}"></div>
         {% endif %}
 
-        <div class="bg-zinc-900 border border-zinc-700 rounded-md p-1.5 mb-2 flex flex-wrap gap-1 items-center">
-            <div class="flex flex-wrap gap-1 border-r border-zinc-700 pr-2 mr-1">
+        <div class="schedule-toolbar-scroll bg-zinc-900 border border-zinc-700 rounded-md p-1.5 mb-2">
+            <div class="schedule-toolbar-inner">
+            <div class="schedule-toolbar-group">
                 <button type="button" id="scheduleUndoBtn" class="schedule-toolbar-btn" onclick="ScheduleApp.undo()" title="Undo (Ctrl+Z)" disabled><i class="fa-solid fa-rotate-left"></i></button>
                 <button type="button" id="scheduleRedoBtn" class="schedule-toolbar-btn" onclick="ScheduleApp.redo()" title="Redo (Ctrl+Y)" disabled><i class="fa-solid fa-rotate-right"></i></button>
             </div>
-            <div class="flex flex-wrap gap-1 border-r border-zinc-700 pr-2 mr-1">
+            <div class="schedule-toolbar-group">
                 <button type="button" class="schedule-toolbar-btn" onclick="ScheduleApp.addActivity('task')" title="Add Activity">
                     <i class="fa-solid fa-plus text-emerald-400"></i> Activity
                 </button>
@@ -58,11 +59,11 @@
                     <i class="fa-solid fa-trash text-red-400"></i>
                 </button>
             </div>
-            <div class="flex flex-wrap gap-1 border-r border-zinc-700 pr-2 mr-1">
+            <div class="schedule-toolbar-group">
                 <button type="button" class="schedule-toolbar-btn" onclick="ScheduleApp.indentSelected()" title="Indent"><i class="fa-solid fa-indent"></i></button>
                 <button type="button" class="schedule-toolbar-btn" onclick="ScheduleApp.outdentSelected()" title="Outdent"><i class="fa-solid fa-outdent"></i></button>
             </div>
-            <div class="flex flex-wrap gap-1 border-r border-zinc-700 pr-2 mr-1" title="Cell alignment — click a cell, row, or column header then choose align">
+            <div class="schedule-toolbar-group" title="Cell alignment — click a cell, row, or column header then choose align">
                 <button type="button" id="schedAlignLeftBtn" class="schedule-toolbar-btn active-tool" onclick="ScheduleApp.setGridCellAlignH('left')" title="Align left (selected cell, row, or column)"><i class="fa-solid fa-align-left"></i></button>
                 <button type="button" id="schedAlignCenterHBtn" class="schedule-toolbar-btn" onclick="ScheduleApp.setGridCellAlignH('center')" title="Align center"><i class="fa-solid fa-align-center"></i></button>
                 <button type="button" id="schedAlignRightBtn" class="schedule-toolbar-btn" onclick="ScheduleApp.setGridCellAlignH('right')" title="Align right"><i class="fa-solid fa-align-right"></i></button>
@@ -85,21 +86,21 @@
                 <button type="button" class="schedule-toolbar-btn text-xs" onclick="ScheduleApp.setGridRowHeight(Number(document.getElementById('schedRowHeightInput').value))" title="Apply row height to selected row">Apply</button>
                 <button type="button" class="schedule-toolbar-btn text-xs" onclick="ScheduleApp.setGridRowHeight(Number(document.getElementById('schedRowHeightInput').value), true)" title="Apply row height to all activities">All Rows</button>
             </div>
-            <div class="flex flex-wrap gap-1 border-r border-zinc-700 pr-2 mr-1">
+            <div class="schedule-toolbar-group">
                 <button type="button" class="schedule-toolbar-btn" onclick="ScheduleApp.linkSelected('FS')" title="Finish-to-Start"><i class="fa-solid fa-link"></i> FS</button>
                 <button type="button" class="schedule-toolbar-btn" onclick="ScheduleApp.linkSelected('SS')">SS</button>
                 <button type="button" class="schedule-toolbar-btn" onclick="ScheduleApp.linkSelected('FF')">FF</button>
                 <button type="button" class="schedule-toolbar-btn" onclick="ScheduleApp.linkSelected('SF')">SF</button>
                 <button type="button" class="schedule-toolbar-btn" onclick="ScheduleApp.unlinkSelected()"><i class="fa-solid fa-link-slash"></i></button>
             </div>
-            <div class="flex flex-wrap gap-1 border-r border-zinc-700 pr-2 mr-1">
+            <div class="schedule-toolbar-group">
                 <button type="button" class="schedule-toolbar-btn" onclick="ScheduleApp.runSchedule()"><i class="fa-solid fa-calculator text-emerald-400"></i> Schedule</button>
                 <button type="button" id="criticalPathBtn" class="schedule-toolbar-btn active-tool" onclick="ScheduleApp.toggleCriticalPath()"><i class="fa-solid fa-route text-red-400"></i> Critical</button>
                 <button type="button" class="schedule-toolbar-btn" onclick="ScheduleApp.setBaseline()" title="Save current schedule as baseline"><i class="fa-solid fa-camera"></i> Set Baseline</button>
                 <button type="button" class="schedule-toolbar-btn" onclick="ScheduleApp.showBaselineManager()" title="Manage baselines and variance"><i class="fa-solid fa-layer-group text-sky-400"></i> Baselines</button>
                 <button type="button" class="schedule-toolbar-btn" onclick="ScheduleApp.showResourceLeveling()" title="Detect and level resource overallocation"><i class="fa-solid fa-users-gear text-amber-400"></i> Resources</button>
             </div>
-            <div class="flex flex-wrap gap-1 border-r border-zinc-700 pr-2 mr-1">
+            <div class="schedule-toolbar-group">
                 <span class="text-[0.65rem] text-zinc-500 self-center px-1">Timescale</span>
                 <button type="button" class="schedule-toolbar-btn active-tool" data-timescale="day" onclick="ScheduleApp.setTimescale('day')" title="Day view">Days</button>
                 <button type="button" class="schedule-toolbar-btn" data-timescale="week" onclick="ScheduleApp.setTimescale('week')" title="Week view">Weeks</button>
@@ -124,6 +125,7 @@
                 <button type="button" class="schedule-toolbar-btn" onclick="ScheduleApp.showAllOptionalColumns()" title="Add all MS Project / P6 columns"><i class="fa-solid fa-table-list"></i> All Fields</button>
                 <button type="button" class="schedule-toolbar-btn" onclick="ScheduleApp.showColumnManager()" title="Add or remove grid columns"><i class="fa-solid fa-table-columns"></i> Columns</button>
             </div>
+            </div>
         </div>
 
         <!-- View tabs -->
@@ -134,6 +136,9 @@
                 </button>
                 <button type="button" id="tabActivity" class="schedule-view-tab px-3 py-1.5 text-xs rounded-md text-zinc-400 hover:text-white" onclick="ScheduleApp.openActivityDetail()" title="Open activity detail for selected row">
                     <i class="fa-solid fa-window-restore mr-1.5"></i> Activity
+                </button>
+                <button type="button" id="tabCalendar" class="schedule-view-tab px-3 py-1.5 text-xs rounded-md text-zinc-400 hover:text-white" onclick="ScheduleApp.switchScheduleView('calendar')">
+                    <i class="fa-solid fa-calendar-days mr-1.5"></i> Calendar
                 </button>
                 <button type="button" id="tabLookahead" class="schedule-view-tab px-4 py-2 text-sm rounded-lg text-zinc-400 hover:text-white" onclick="ScheduleApp.switchScheduleView('lookahead')">
                     <i class="fa-solid fa-binoculars mr-1.5"></i> Look-Ahead
@@ -174,6 +179,13 @@
             <div id="scheduleOverlayControls" class="schedule-overlay-controls">
                 <div id="scheduleChartResizer" class="schedule-chart-resizer" title="Drag to resize chart — task columns show in the exposed area on the left" role="separator" aria-orientation="vertical"></div>
             </div>
+        </div>
+    </div>
+
+    <!-- Calendar year view -->
+    <div id="calendarViewPanel" class="hidden flex-1 min-h-0 overflow-auto">
+        <div class="bg-zinc-900 border border-zinc-800 rounded-2xl p-4 h-full overflow-auto">
+            <div id="scheduleCalendarContent"></div>
         </div>
     </div>
 
@@ -642,6 +654,7 @@
 <script src="{{ url_for('static', filename='js/schedule-fields.js') }}"></script>
 <script src="{{ url_for('static', filename='js/schedule-activity-modal.js') }}"></script>
 <script src="{{ url_for('static', filename='js/schedule-extras.js') }}"></script>
+<script src="{{ url_for('static', filename='js/schedule-calendar.js') }}"></script>
 <script src="{{ url_for('static', filename='js/schedule-app.js') }}"></script>
 <script>
 document.body.dataset.pageModule = 'schedule';
