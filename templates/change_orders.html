@@ -3,6 +3,7 @@
 
 {% block content %}
 <script src="{{ url_for('static', filename='js/pay-app-sync.js') }}"></script>
+<script src="{{ url_for('static', filename='js/budget-sync.js') }}"></script>
 <div class="p-8 max-w-[1600px] mx-auto">
 
     <!-- Header -->
@@ -293,12 +294,16 @@
         return true;
     }
 
-    async function applyCoSovSync(syncResult) {
-        if (!syncResult || syncResult.error) return;
-        if (typeof CasePMPayAppSync !== 'undefined') {
+    async function applyCoSovSync(syncResult, budgetSyncResult) {
+        if (syncResult && !syncResult.error && typeof CasePMPayAppSync !== 'undefined') {
             CasePMPayAppSync.applyCoSyncResult(syncResult);
         }
-        window.dispatchEvent(new CustomEvent('casepm:co-approved', { detail: syncResult }));
+        if (budgetSyncResult && typeof CasePMBudgetSync !== 'undefined') {
+            CasePMBudgetSync.applyBudgetSyncResult(budgetSyncResult);
+        }
+        window.dispatchEvent(new CustomEvent('casepm:co-approved', {
+            detail: { sov: syncResult, budget: budgetSyncResult },
+        }));
     }
 
     // ==================== FILTERING ====================
@@ -425,7 +430,9 @@
             const json = await res.json();
             if (!res.ok || !json.success) throw new Error(json.message || 'Status update failed');
 
-            if (json.sync_result) await applyCoSovSync(json.sync_result);
+            if (json.sync_result || json.budget_sync_result) {
+                await applyCoSovSync(json.sync_result, json.budget_sync_result);
+            }
             const msg = json.sov_synced
                 ? `Approved — $${(json.sync_result?.sov_amount_applied || 0).toLocaleString()} synced to contractor SOV`
                 : `Status updated to ${newStatus}`;
@@ -484,7 +491,9 @@
             const json = await res.json();
             if (!res.ok || !json.success) throw new Error(json.message || 'Approval failed');
 
-            if (json.sync_result) await applyCoSovSync(json.sync_result);
+            if (json.sync_result || json.budget_sync_result) {
+                await applyCoSovSync(json.sync_result, json.budget_sync_result);
+            }
             const applied = json.sync_result?.sov_amount_applied;
             showToast(applied != null
                 ? `Approved — $${Number(applied).toLocaleString()} added to contractor SOV`

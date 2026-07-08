@@ -2,6 +2,7 @@
 
 {% block content %}
 <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+<script src="{{ url_for('static', filename='js/budget-sync.js') }}"></script>
 
 <style>
   /* Hide native datalist dropdown arrow for cleaner look - we use "view all codes" for full selector */
@@ -169,9 +170,10 @@
 </div>
 
 <!-- Fixed Bottom Status Bar -->
-<div class="fixed bottom-0 left-56 right-0 bg-zinc-900 border-t border-zinc-700 px-6 py-2 text-xs text-zinc-400 flex items-center justify-between z-[60]">
+<div id="sageSyncStatusBar" class="fixed bottom-0 left-56 right-0 bg-zinc-900 border-t border-zinc-700 px-6 py-2 text-xs text-zinc-400 flex items-center justify-between z-[60]">
     <div class="flex items-center gap-4">
-        <div>Last synced with Sage 300 • Connected • ALDI Lakeland</div>
+        <span id="sageSyncStatusText">Sage 300 · Loading sync status…</span>
+        <button onclick="openSageSyncLogModal()" class="text-emerald-400 hover:text-emerald-300 underline">View Sage Log</button>
         <button onclick="showBudgetAuditLog()" class="text-emerald-400 hover:text-emerald-300 underline">View Budget Audit Log</button>
     </div>
     <div class="text-emerald-400">● Online</div>
@@ -291,7 +293,7 @@
                 <i class="fa-solid fa-sync"></i>
                 <span>Sync All Budget Settings with Sage 300</span>
             </button>
-            <p class="text-[10px] text-center text-zinc-500 mt-2">Placeholder — connects when backend is ready.</p>
+            <p class="text-[10px] text-center text-zinc-500 mt-2">Posts cost codes and types to Sage via BudgetSageSync events.</p>
         </div>
     </div>
 </dialog>
@@ -377,11 +379,11 @@
 
 <script>
     // ==================== DATA & STATE ====================
-    let budgetLines = JSON.parse(casepmStore.getItem('budgetLines')) || [];
-    let pendingChanges = [
-        { id: 101, number: "CO-003", description: "Additional rebar in foundation", amount: 12450, status: "Pending Owner Approval" },
-        { id: 102, number: "CO-004", description: "Electrical upgrade for new equipment", amount: 8750, status: "Pending Owner Approval" }
-    ];
+    const SERVER_CONTRACT_VALUE = {{ project_contract_value|tojson if project_contract_value is not none else 'null' }};
+    const SERVER_SAGE_JOB = {{ (project_sage_job or '')|tojson }};
+
+    let budgetLines = [];
+    let pendingChanges = [];
     let csiCostCodes = [
         { code: "01-1000", description: "Summary", cost_type: "General Conditions" },
         { code: "03-3000", description: "Concrete - Structural", cost_type: "Subcontract" },
@@ -403,13 +405,148 @@
     let budgetSaved = false;
     let contractAmount = 2450000;
     let pendingNavigationUrl = null;
-    let currentRevision = parseInt(casepmStore.getItem('budgetRevision') || '1');
-    let publishAuditLog = JSON.parse(casepmStore.getItem('publishAuditLog') || '[]');
-    let budgetLocked = casepmStore.getItem('budgetLocked') === 'true';
-    let budgetSnapshots = JSON.parse(casepmStore.getItem('budgetSnapshots') || '[]');
-    let budgetAuditLog = JSON.parse(casepmStore.getItem('budgetAuditLog') || '[]');
+    let currentRevision = 1;
+    let publishAuditLog = [];
+    let budgetLocked = false;
+    let budgetSnapshots = [];
+    let budgetAuditLog = [];
+    let budgetSageSyncLog = [];
     let collapsedDivisions = new Set();
     let hasUnsavedChanges = false;
+
+    function isBudgetApprover() {
+        if (typeof CasePMWorkflow !== 'undefined' && window.CASEPM_PORTAL) {
+            return CasePMWorkflow.canApprove('Budget');
+        }
+        return true;
+    }
+
+    function reloadBudgetStateFromStorage() {
+        budgetLines = JSON.parse(casepmStore.getItem('budgetLines') || '[]');
+        currentRevision = parseInt(casepmStore.getItem('budgetRevision') || '1', 10);
+        budgetLocked = casepmStore.getItem('budgetLocked') === 'true';
+        budgetPublished = casepmStore.getItem('budgetPublished') === 'true';
+        publishAuditLog = JSON.parse(casepmStore.getItem('publishAuditLog') || '[]');
+        budgetSnapshots = JSON.parse(casepmStore.getItem('budgetSnapshots') || '[]');
+        budgetAuditLog = JSON.parse(casepmStore.getItem('budgetAuditLog') || '[]');
+        costTypes = JSON.parse(casepmStore.getItem('costTypes') || 'null') || costTypes;
+        customCostCodes = JSON.parse(casepmStore.getItem('customCostCodes') || '[]');
+        activeCostCodeList = casepmStore.getItem('activeCostCodeList') || 'csi';
+        const storedContract = parseFloat(casepmStore.getItem('budgetContractAmount') || '');
+        contractAmount = storedContract || SERVER_CONTRACT_VALUE || 2450000;
+        budgetSageSyncLog = JSON.parse(casepmStore.getItem('budgetSageSyncLog') || '[]');
+    }
+
+    function persistBudgetSettings() {
+        casepmStore.setItem('costTypes', JSON.stringify(costTypes));
+        casepmStore.setItem('customCostCodes', JSON.stringify(customCostCodes));
+        casepmStore.setItem('activeCostCodeList', activeCostCodeList);
+        casepmStore.setItem('budgetContractAmount', String(contractAmount));
+        casepmStore.setItem('budgetPublished', budgetPublished ? 'true' : 'false');
+    }
+
+    function logSageSync(eventType, details) {
+        const entry = {
+            timestamp: new Date().toISOString(),
+            eventType,
+            status: details.status || 'queued',
+            sageJobNumber: SERVER_SAGE_JOB || '—',
+            message: details.message || '',
+            payload: details.payload || null,
+        };
+        budgetSageSyncLog.unshift(entry);
+        if (budgetSageSyncLog.length > 100) budgetSageSyncLog.length = 100;
+        casepmStore.setItem('budgetSageSyncLog', JSON.stringify(budgetSageSyncLog));
+        renderSageSyncStatus(entry);
+        return entry;
+    }
+
+    function queueSageSync(eventType, payload, message) {
+        if (casepmStore.getItem('budgetSageSyncAutoEnabled') === 'false') {
+            logSageSync(eventType, { status: 'skipped', message: message + ' (auto-sync disabled)', payload });
+            return Promise.resolve(null);
+        }
+        const entry = logSageSync(eventType, { status: 'queued', message, payload });
+        if (typeof CasePMBudgetSync !== 'undefined') {
+            return CasePMBudgetSync.queueSageEvent(eventType, payload, message).then(res => {
+                if (res && res.event) {
+                    entry.status = res.event.status;
+                    if (res.event.status === 'posted' || res.event.status === 'simulated') {
+                        const label = res.event.status === 'posted' ? 'Synced' : 'Simulated';
+                        budgetLines.forEach(l => { if (l.syncStatus === 'Pending') l.syncStatus = label; });
+                        casepmStore.setItem('budgetLines', JSON.stringify(budgetLines));
+                    }
+                    renderSageSyncStatus(entry);
+                }
+                return res;
+            }).catch(() => null);
+        }
+        return Promise.resolve(null);
+    }
+
+    function renderSageSyncStatus(latest) {
+        const el = document.getElementById('sageSyncStatusText');
+        if (!el) return;
+        const item = latest || budgetSageSyncLog[0];
+        const job = SERVER_SAGE_JOB || '—';
+        if (!item) {
+            el.textContent = `Sage 300 · Job ${job} · No sync events yet`;
+            return;
+        }
+        el.textContent = `Sage 300 · Job ${job} · ${item.eventType} · ${item.status}`;
+    }
+
+    function openSageSyncLogModal() {
+        let modal = document.getElementById('budgetSageSyncLogModal');
+        if (!modal) {
+            modal = document.createElement('dialog');
+            modal.id = 'budgetSageSyncLogModal';
+            modal.className = 'bg-zinc-900 border border-zinc-700 rounded-lg p-0 text-white max-w-2xl w-full';
+            document.body.appendChild(modal);
+        }
+        function renderRows(events) {
+            const merged = (events && events.length) ? events.map(e => ({
+                timestamp: e.created_at,
+                eventType: e.event_type,
+                status: e.status,
+                message: e.message,
+            })) : budgetSageSyncLog;
+            return merged.length
+                ? merged.slice(0, 40).map(e => `
+                <tr class="border-b border-zinc-800">
+                    <td class="py-2 pr-3 text-[10px] text-zinc-400 whitespace-nowrap">${new Date(e.timestamp).toLocaleString()}</td>
+                    <td class="py-2 pr-3 text-xs">${e.eventType}</td>
+                    <td class="py-2 pr-3 text-xs ${e.status === 'queued' ? 'text-amber-400' : e.status === 'error' ? 'text-red-400' : 'text-emerald-400'}">${e.status}</td>
+                    <td class="py-2 text-xs text-zinc-300">${e.message || ''}</td>
+                </tr>`).join('')
+                : '<tr><td colspan="4" class="py-6 text-center text-zinc-500 text-sm">No Sage sync events recorded yet.</td></tr>';
+        }
+        modal.innerHTML = `
+            <div class="p-5">
+                <div class="flex items-center justify-between mb-4">
+                    <h3 class="text-lg font-semibold">Sage 300 Budget Sync Log</h3>
+                    <button type="button" onclick="document.getElementById('budgetSageSyncLogModal').close()" class="text-zinc-400 hover:text-white"><i class="fa-solid fa-times"></i></button>
+                </div>
+                <p class="text-xs text-zinc-400 mb-3">Budget save/publish and cost code sync events post to Sage when SAGE_API_URL is configured.</p>
+                <div class="max-h-80 overflow-auto">
+                    <table class="w-full text-left"><thead><tr class="text-[10px] text-zinc-500 uppercase"><th class="pb-2">Time</th><th class="pb-2">Event</th><th class="pb-2">Status</th><th class="pb-2">Detail</th></tr></thead>
+                    <tbody id="budgetSageSyncLogBody">${renderRows([])}</tbody></table>
+                </div>
+            </div>`;
+        modal.showModal();
+        if (typeof CasePMBudgetSync !== 'undefined') {
+            CasePMBudgetSync.fetchSageEvents(40).then(events => {
+                const body = document.getElementById('budgetSageSyncLogBody');
+                if (body) body.innerHTML = renderRows(events);
+            });
+        }
+    }
+
+    async function loadPendingChangeOrders() {
+        if (typeof CasePMBudgetSync !== 'undefined') {
+            pendingChanges = await CasePMBudgetSync.fetchPendingChangeOrders();
+        }
+    }
 
     function formatCurrency(amount) {
         return new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(amount || 0);
@@ -642,8 +779,10 @@
         }
         currentRevision++;
         budgetLocked = false;
+        budgetPublished = false;
         casepmStore.setItem('budgetRevision', currentRevision);
         casepmStore.setItem('budgetLocked', 'false');
+        casepmStore.setItem('budgetPublished', 'false');
 
         budgetSnapshots.push({
             revision: currentRevision,
@@ -1352,23 +1491,26 @@
     function saveBudget() {
         if (budgetLines.length === 0) { showCenteredAlert("Nothing to save yet."); return; }
         budgetSaved = true;
+        persistBudgetSettings();
         casepmStore.setItem('budgetLines', JSON.stringify(budgetLines));
         hideUnsavedIndicator();
         hasUnsavedChanges = false;
 
-        logBudgetAudit("BUDGET_SAVED", {
-            linesCount: budgetLines.length,
-            totalOriginal: budgetLines.reduce((sum, l) => sum + (l.original_budget || 0), 0)
-        });
+        const totalOriginal = budgetLines.reduce((sum, l) => sum + (l.original_budget || 0), 0);
+        logBudgetAudit("BUDGET_SAVED", { linesCount: budgetLines.length, totalOriginal });
 
-        const dialog = document.createElement('dialog');
-        dialog.className = 'modal rounded-md p-6 w-full max-w-fit text-white';
-        dialog.style.backgroundColor = '#18181b';
-        dialog.style.border = '1px solid #3f3f46';
-        dialog.innerHTML = `<div class="text-base">Budget saved to the project (not pushed to Sage 300).</div>`;
-        document.body.appendChild(dialog);
-        dialog.showModal();
-        setTimeout(() => { dialog.close(); dialog.remove(); }, 1800);
+        queueSageSync('BudgetSaved', {
+            revision: currentRevision,
+            linesCount: budgetLines.length,
+            totalOriginal,
+            contractAmount,
+        }, `Budget revision ${currentRevision} saved — queued for Sage Job Cost review`);
+
+        if (typeof CasePMWorkflow !== 'undefined' && CasePMWorkflow.onBudgetSaved) {
+            CasePMWorkflow.onBudgetSaved(budgetLines.length, totalOriginal).catch(() => {});
+        }
+
+        showCenteredAlert('Budget saved to project and server. Sage sync queued.', 'success');
     }
 
     function publishBudget() {
@@ -1386,10 +1528,10 @@
             return;
         }
 
-        // FIX: Set to Pending BEFORE saving to localStorage
         budgetLines.forEach(l => l.syncStatus = 'Pending');
 
         budgetSaved = true;
+        persistBudgetSettings();
         casepmStore.setItem('budgetLines', JSON.stringify(budgetLines));
         hideUnsavedIndicator();
         hasUnsavedChanges = false;
@@ -1399,6 +1541,7 @@
         currentRevision++;
         casepmStore.setItem('budgetRevision', currentRevision);
         casepmStore.setItem('budgetLocked', 'true');
+        casepmStore.setItem('budgetPublished', 'true');
 
         updateButtonStates();
 
@@ -1410,35 +1553,68 @@
         budgetSnapshots.push(snapshot);
         casepmStore.setItem('budgetSnapshots', JSON.stringify(budgetSnapshots));
 
+        const totalOriginal = budgetLines.reduce((sum, l) => sum + (l.original_budget || 0), 0);
         publishAuditLog.push({
             revision: currentRevision,
             timestamp: new Date().toISOString(),
             linesCount: budgetLines.length,
-            totalBudget: budgetLines.reduce((sum, l) => sum + (l.original_budget || 0), 0)
+            totalBudget: totalOriginal
         });
         casepmStore.setItem('publishAuditLog', JSON.stringify(publishAuditLog));
 
-        logBudgetAudit("BUDGET_PUBLISHED", {
-            linesCount: budgetLines.length,
-            totalBudget: budgetLines.reduce((sum, l) => sum + (l.original_budget || 0), 0)
-        });
+        logBudgetAudit("BUDGET_PUBLISHED", { linesCount: budgetLines.length, totalBudget: totalOriginal });
 
         updateRevisionBadge();
         updateButtonStates();
         renderBudgetTable(budgetLines);
 
-        const dialog = document.createElement('dialog');
-        dialog.className = 'modal rounded-md p-6 w-full max-w-fit text-white';
-        dialog.style.backgroundColor = '#18181b';
-        dialog.style.border = '1px solid #3f3f46';
-        dialog.innerHTML = `<div class="text-base">Budget published & saved. Revision ${currentRevision} created. Budget is now locked.</div>`;
-        document.body.appendChild(dialog);
-        dialog.showModal();
-        setTimeout(() => { dialog.close(); dialog.remove(); }, 2200);
+        const snapshotPayload = {
+            budgetLines,
+            budgetContractAmount: contractAmount,
+            budgetRevision: currentRevision,
+        };
+
+        if (typeof CasePMWorkflow !== 'undefined' && CasePMWorkflow.onBudgetPublished) {
+            CasePMWorkflow.onBudgetPublished(currentRevision, snapshotPayload).catch(() => {});
+        }
+
+        const pid = (typeof CasePMWorkflow !== 'undefined' && CasePMWorkflow.projectId) ? CasePMWorkflow.projectId() : null;
+        fetch('/api/budget/publish', {
+            method: 'POST',
+            credentials: 'same-origin',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                project_id: pid,
+                message: `Budget revision ${String(currentRevision).padStart(2, '0')} published`,
+            }),
+        }).then(r => r.json()).then(res => {
+            if (res && res.budgetLines) {
+                budgetLines = res.budgetLines;
+                casepmStore.setItem('budgetLines', JSON.stringify(budgetLines));
+                renderBudgetTable(budgetLines);
+            }
+            if (res && res.event) {
+                logSageSync('BudgetPublished', {
+                    status: res.event.status,
+                    message: res.event.message,
+                    payload: res.event.payload,
+                });
+            }
+        }).catch(() => {
+            queueSageSync('BudgetPublished', {
+                revision: currentRevision,
+                linesCount: budgetLines.length,
+                totalOriginal,
+                contractAmount,
+            }, `Budget revision ${currentRevision} published — queued for Sage Job Cost posting`);
+        });
+
+        showCenteredAlert(`Budget published. Revision ${String(currentRevision).padStart(2, '0')} created and locked. Sage sync queued.`, 'success');
     }
 
     // ==================== VIEW PENDING CHANGES ====================
-    function viewPendingChanges() {
+    async function viewPendingChanges() {
+        await loadPendingChangeOrders();
         const container = document.getElementById('pendingChangesContent');
         container.innerHTML = '';
         if (pendingChanges.length === 0) {
@@ -1447,7 +1623,7 @@
             pendingChanges.forEach(change => {
                 const div = document.createElement('div');
                 div.className = 'border border-zinc-700 rounded-md p-4 mb-3';
-                div.innerHTML = `<div class="flex justify-between"><div><div class="font-semibold">${change.number}</div><div class="text-sm text-zinc-400">${change.description}</div></div><div class="text-right"><div class="font-semibold text-orange-400">${formatCurrency(change.amount)}</div><div class="text-xs text-zinc-400">${change.status}</div></div></div>`;
+                div.innerHTML = `<div class="flex justify-between"><div><div class="font-semibold">${change.number || 'CO-' + change.id}</div><div class="text-sm text-zinc-400">${change.description}</div>${change.cost_code ? `<div class="text-xs text-zinc-500 mt-1">Cost Code: ${change.cost_code}</div>` : ''}</div><div class="text-right"><div class="font-semibold text-orange-400">${formatCurrency(change.amount)}</div><div class="text-xs text-zinc-400">${change.status}</div></div></div>`;
                 container.appendChild(div);
             });
         }
@@ -1793,6 +1969,7 @@
         if (val && !costTypes.includes(val)) costTypes.push(val);
         document.getElementById('newCostTypeModal').close();
         renderCostTypesList();
+        persistBudgetSettings();
         input.value = '';
     }
     function removeCostType(index) {
@@ -1805,7 +1982,7 @@
         dialog.showModal();
         const buttons = dialog.querySelectorAll('button');
         buttons[0].onclick = () => { dialog.close(); dialog.remove(); };
-        buttons[1].onclick = () => { costTypes.splice(index, 1); renderCostTypesList(); dialog.close(); dialog.remove(); };
+        buttons[1].onclick = () => { costTypes.splice(index, 1); renderCostTypesList(); persistBudgetSettings(); dialog.close(); dialog.remove(); };
     }
 
     // ==================== UPLOAD COST CODES (robust - all divisions, dedup, combined + separate) ====================
@@ -1880,6 +2057,7 @@
 
                     showCenteredAlert(`Successfully imported ${added} cost codes into Custom list.`);
                     populateCostCodeDatalist();
+                    persistBudgetSettings();
                 } catch (err) {
                     console.error(err);
                     showCenteredAlert("Failed to read file. Make sure it has Code + Description columns (combined or separate).");
@@ -2221,11 +2399,20 @@
         }
 
         populateCostCodeDatalist();
+        persistBudgetSettings();
 
-        showCenteredAlert("Synced with Sage 300 successfully. 'Sage 300' cost code list created/activated. Cost Types cleared and replaced with clean synced list.", 'success');
+        queueSageSync('BudgetSageSync', {
+            codesImported: sageSeed.length,
+            costTypesCount: costTypes.length,
+        }, 'Budget cost codes and types synced from Sage 300');
+
+        showCenteredAlert("Synced with Sage 300. Cost code list and types updated. Sage event queued.", 'success');
     }
 
-    function changeActiveCostCodeList() { activeCostCodeList = document.getElementById('costCodeListSelector').value; }
+    function changeActiveCostCodeList() {
+        activeCostCodeList = document.getElementById('costCodeListSelector').value;
+        persistBudgetSettings();
+    }
 
     // ==================== RICH INVALID LINES MODAL FOR PUBLISH (restored) ====================
     function showInvalidLinesForPublish(invalidLines) {
@@ -2387,52 +2574,75 @@
 
     // ==================== FINAL INITIALIZATION ====================
     function initializeBudget() {
-        const savedLines = casepmStore.getItem('budgetLines');
-        if (savedLines) budgetLines = JSON.parse(savedLines);
-
-        const savedRevision = casepmStore.getItem('budgetRevision');
-        if (savedRevision) currentRevision = parseInt(savedRevision);
-
-        const lockedState = casepmStore.getItem('budgetLocked');
-        budgetLocked = lockedState === 'true';
-
-        const contractEl = document.getElementById('contractAmount');
-        if (contractEl) contractEl.textContent = formatCurrency(contractAmount);
-
-        renderBudgetTable(budgetLines);
-        updateTotals();
-        updateRevisionBadge();
-        updateButtonStates();
-
-        const costTypeSelect = document.getElementById('cost_type');
-        if (costTypeSelect) {
-            costTypes.forEach(type => {
-                const option = document.createElement('option');
-                option.value = type;
-                option.textContent = type;
-                costTypeSelect.appendChild(option);
-            });
-        }
-
-        document.querySelectorAll('.nav-link').forEach(link => {
-            link.addEventListener('click', warnBeforeLeaving, true);
-        });
-
-        const searchInput = document.getElementById('searchInput');
-        const typeFilter = document.getElementById('costTypeFilter');
-        if (searchInput) searchInput.addEventListener('input', filterBudgetLines);
-        if (typeFilter) typeFilter.addEventListener('change', filterBudgetLines);
-
-        setTimeout(() => {
-            const thead = document.querySelector('thead.sticky');
-            if (thead) {
-                thead.style.position = 'sticky';
-                thead.style.top = '0';
-                thead.style.zIndex = '20';
+        const boot = async () => {
+            if (typeof CasePMBudgetSync !== 'undefined') {
+                await CasePMBudgetSync.init();
+            } else if (typeof CasePMWorkflow !== 'undefined') {
+                await CasePMWorkflow.loadPortal().catch(() => {});
             }
-        }, 300);
+            reloadBudgetStateFromStorage();
+            if (SERVER_CONTRACT_VALUE && !casepmStore.getItem('budgetContractAmount')) {
+                contractAmount = SERVER_CONTRACT_VALUE;
+                casepmStore.setItem('budgetContractAmount', String(contractAmount));
+            }
+            await loadPendingChangeOrders();
 
-        console.log('%c[Case PM] Budget page fully initialized (v20 - All requested fixes: Upload all codes, View List, clean Sage types, no green desc, better datalist arrow behavior)', 'color:#10b981');
+            const contractEl = document.getElementById('contractAmount');
+            if (contractEl) contractEl.textContent = formatCurrency(contractAmount);
+
+            renderBudgetTable(budgetLines);
+            updateTotals();
+            updateRevisionBadge();
+            updateButtonStates();
+            renderSageSyncStatus();
+
+            const costTypeSelect = document.getElementById('cost_type');
+            if (costTypeSelect) {
+                costTypeSelect.innerHTML = '';
+                costTypes.forEach(type => {
+                    const option = document.createElement('option');
+                    option.value = type;
+                    option.textContent = type;
+                    costTypeSelect.appendChild(option);
+                });
+            }
+
+            document.querySelectorAll('.nav-link').forEach(link => {
+                link.addEventListener('click', warnBeforeLeaving, true);
+            });
+
+            const searchInput = document.getElementById('searchInput');
+            const typeFilter = document.getElementById('costTypeFilter');
+            if (searchInput) searchInput.addEventListener('input', filterBudgetLines);
+            if (typeFilter) typeFilter.addEventListener('change', filterBudgetLines);
+
+            window.addEventListener('casepm:co-approved', () => {
+                if (typeof CasePMBudgetSync !== 'undefined') {
+                    CasePMBudgetSync.refreshFromServer().then(() => {
+                        reloadBudgetStateFromStorage();
+                        renderBudgetTable(budgetLines);
+                        updateTotals();
+                    });
+                }
+            });
+            window.addEventListener('casepm:budget-state-refreshed', () => {
+                reloadBudgetStateFromStorage();
+                renderBudgetTable(budgetLines);
+                updateTotals();
+            });
+
+            setTimeout(() => {
+                const thead = document.querySelector('thead.sticky');
+                if (thead) {
+                    thead.style.position = 'sticky';
+                    thead.style.top = '0';
+                    thead.style.zIndex = '20';
+                }
+            }, 300);
+
+            console.log('%c[Case PM] Budget page initialized with server sync and Sage integration.', 'color:#10b981');
+        };
+        boot();
     }
 
     window.onload = initializeBudget;

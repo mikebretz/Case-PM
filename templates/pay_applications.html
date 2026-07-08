@@ -530,8 +530,8 @@ let mainLienWaiver = JSON.parse(casepmStore.getItem('mainLienWaiver') || '{}'); 
     // History of previous (Approved) Pay Applications
     let payAppHistory = JSON.parse(casepmStore.getItem('payAppHistory')) || [];
 
-    // Budget Contract Amount (from Budget page top-left card)
-    const budgetContractAmount = 2450000;
+    // Budget Contract Amount (from Budget page — synced via budgetContractAmount key)
+    let budgetContractAmount = parseFloat(casepmStore.getItem('budgetContractAmount')) || 2450000;
 
     // Demo seed removed (v76.43) — contractorSOV and subcontractorSOV no longer auto-populate test data on empty.
     // This ensures user "Clear All / Reset to start from scratch" stays clean on hard refresh.
@@ -1046,6 +1046,7 @@ let mainLienWaiver = JSON.parse(casepmStore.getItem('mainLienWaiver') || '{}'); 
         mainLienWaiver = JSON.parse(casepmStore.getItem('mainLienWaiver') || '{}');
         defaultRetainagePercent = parseFloat(casepmStore.getItem('payAppRetainagePercent') || '10');
         sageSyncAutoEnabled = casepmStore.getItem('sageSyncAutoEnabled') !== 'false';
+        budgetContractAmount = parseFloat(casepmStore.getItem('budgetContractAmount')) || budgetContractAmount || 2450000;
     }
 
     function renderSageSyncStatus() {
