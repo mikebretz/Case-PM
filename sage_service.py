@@ -39,6 +39,8 @@ COMMITMENT_SAGE_TYPE_MAP = {
 
 
 def _project_sage_context(Project, project_id):
+    from program_settings_persistence import merge_sage_context, load_sage_defaults
+
     project = Project.query.get(project_id)
     if not project:
         return {}
@@ -48,26 +50,28 @@ def _project_sage_context(Project, project_id):
             details = json.loads(project.details_json)
         except (TypeError, json.JSONDecodeError):
             details = {}
+    sage = merge_sage_context(details, load_sage_defaults())
     return {
         'project_id': project_id,
         'project_name': project.name or '',
         'project_number': project.number or '',
         'sage_job_number': project.sage_job_number or project.accounting_project_number or '',
-        'sage_contract_number': details.get('sage_contract_number', ''),
-        'sage_billings_account': details.get('sage_billings_account', ''),
-        'sage_wip_account': details.get('sage_wip_account', ''),
-        'sage_revenue_account': details.get('sage_revenue_account', ''),
-        'sage_ar_customer_code': details.get('sage_ar_customer_code', ''),
-        'sage_account_set': details.get('sage_account_set', ''),
-        'sage_accounting_method': details.get('sage_accounting_method', ''),
-        'sage_default_tax_group': details.get('sage_default_tax_group', ''),
-        'sage_company_code': details.get('sage_company_code', ''),
-        'sage_database': details.get('sage_database', ''),
-        'sage_ap_vendor_prefix': details.get('sage_ap_vendor_prefix', ''),
-        'sage_cost_code_prefix': details.get('sage_cost_code_prefix', ''),
-        'sage_subcontract_liability_account': details.get('sage_subcontract_liability_account', ''),
-        'sage_default_cost_type': details.get('sage_default_cost_type', ''),
-        'sage_sync_enabled': details.get('sage_sync_enabled', '1') != '0',
+        'sage_contract_number': details.get('sage_contract_number', '') or sage.get('sage_contract_number', ''),
+        'sage_billings_account': sage.get('sage_billings_account', ''),
+        'sage_wip_account': sage.get('sage_wip_account', ''),
+        'sage_revenue_account': sage.get('sage_revenue_account', ''),
+        'sage_ar_customer_code': details.get('sage_ar_customer_code', '') or sage.get('sage_ar_customer_code', ''),
+        'sage_account_set': sage.get('sage_account_set', ''),
+        'sage_accounting_method': sage.get('sage_accounting_method', ''),
+        'sage_default_tax_group': sage.get('sage_default_tax_group', ''),
+        'sage_company_code': sage.get('sage_company_code', ''),
+        'sage_database': sage.get('sage_database', ''),
+        'sage_ap_vendor_prefix': sage.get('sage_ap_vendor_prefix', ''),
+        'sage_cost_code_prefix': sage.get('sage_cost_code_prefix', ''),
+        'sage_subcontract_liability_account': sage.get('sage_subcontract_liability_account', ''),
+        'sage_default_cost_type': sage.get('sage_default_cost_type', ''),
+        'sage_sync_enabled': sage.get('sage_sync_enabled', '1') != '0',
+        'sage_defaults_source': 'program' if load_sage_defaults() else 'project',
         'contract_value': float(project.contract_value or 0),
         'original_contract_amount': details.get('original_contract_amount', ''),
         'prime_aia_form': details.get('prime_aia_form', ''),

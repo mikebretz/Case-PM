@@ -20,6 +20,8 @@
                 class="settings-tab-btn px-6 py-3 text-sm font-medium text-zinc-400 hover:text-white">Backup & Maintenance</button>
         <button onclick="switchSettingsTab('email')" id="tab-email"
                 class="settings-tab-btn px-6 py-3 text-sm font-medium text-zinc-400 hover:text-white">Email Settings</button>
+        <button onclick="switchSettingsTab('sage')" id="tab-sage"
+                class="settings-tab-btn px-6 py-3 text-sm font-medium text-zinc-400 hover:text-white">Sage 300</button>
     </div>
 
     <!-- Company Info Tab -->
@@ -238,6 +240,106 @@
         </div>
     </div>
 
+    <!-- Sage 300 Tab -->
+    <div id="tab-content-sage" class="hidden">
+        <div class="bg-zinc-900 border border-zinc-800 rounded-3xl p-8">
+            <div class="mb-6">
+                <h2 class="text-xl font-semibold">Sage 300 CRE — Company Defaults</h2>
+                <p class="text-sm text-zinc-400 mt-1">Set database, company code, and GL accounts once here. Each project only needs its own <strong class="text-zinc-300">Sage job number</strong> unless you override accounts on that job.</p>
+                <p class="text-xs text-zinc-500 mt-2">Live sync still requires <code class="text-emerald-400">SAGE_API_URL</code> and <code class="text-emerald-400">SAGE_API_KEY</code> in your server environment.</p>
+            </div>
+
+            <form id="sageDefaultsForm" onsubmit="saveSageDefaults(event)">
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-5">
+                    <div>
+                        <label class="block text-sm text-zinc-400 mb-1.5">Sage Company Code</label>
+                        <input type="text" id="sage_company_code" name="sage_company_code" value="{{ sage_defaults.get('sage_company_code', '') }}"
+                               class="w-full bg-zinc-800 border border-zinc-700 rounded-xl px-4 py-2.5 text-sm font-mono focus:outline-none focus:border-emerald-600">
+                    </div>
+                    <div>
+                        <label class="block text-sm text-zinc-400 mb-1.5">Sage Database</label>
+                        <input type="text" id="sage_database" name="sage_database" value="{{ sage_defaults.get('sage_database', '') }}"
+                               class="w-full bg-zinc-800 border border-zinc-700 rounded-xl px-4 py-2.5 text-sm font-mono focus:outline-none focus:border-emerald-600"
+                               placeholder="e.g. CASE_CONSTRUCTION">
+                    </div>
+                    <div>
+                        <label class="block text-sm text-zinc-400 mb-1.5">Account Set</label>
+                        <input type="text" id="sage_account_set" name="sage_account_set" value="{{ sage_defaults.get('sage_account_set', '') }}"
+                               class="w-full bg-zinc-800 border border-zinc-700 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:border-emerald-600">
+                    </div>
+                    <div>
+                        <label class="block text-sm text-zinc-400 mb-1.5">Accounting Method</label>
+                        <select id="sage_accounting_method" name="sage_accounting_method" class="w-full bg-zinc-800 border border-zinc-700 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:border-emerald-600">
+                            <option value="">— Select —</option>
+                            <option value="Completed Contract" {% if sage_defaults.get('sage_accounting_method') == 'Completed Contract' %}selected{% endif %}>Completed Contract</option>
+                            <option value="Percentage of Completion" {% if sage_defaults.get('sage_accounting_method') == 'Percentage of Completion' %}selected{% endif %}>Percentage of Completion</option>
+                            <option value="Billings and Costs" {% if sage_defaults.get('sage_accounting_method') == 'Billings and Costs' %}selected{% endif %}>Billings and Costs</option>
+                            <option value="Accrual-Basis" {% if sage_defaults.get('sage_accounting_method') == 'Accrual-Basis' %}selected{% endif %}>Accrual-Basis</option>
+                        </select>
+                    </div>
+                    <div>
+                        <label class="block text-sm text-zinc-400 mb-1.5">Billings Account</label>
+                        <input type="text" id="sage_billings_account" name="sage_billings_account" value="{{ sage_defaults.get('sage_billings_account', '') }}"
+                               class="w-full bg-zinc-800 border border-zinc-700 rounded-xl px-4 py-2.5 text-sm font-mono focus:outline-none focus:border-emerald-600">
+                    </div>
+                    <div>
+                        <label class="block text-sm text-zinc-400 mb-1.5">Work in Progress Account</label>
+                        <input type="text" id="sage_wip_account" name="sage_wip_account" value="{{ sage_defaults.get('sage_wip_account', '') }}"
+                               class="w-full bg-zinc-800 border border-zinc-700 rounded-xl px-4 py-2.5 text-sm font-mono focus:outline-none focus:border-emerald-600">
+                    </div>
+                    <div>
+                        <label class="block text-sm text-zinc-400 mb-1.5">Revenue Account</label>
+                        <input type="text" id="sage_revenue_account" name="sage_revenue_account" value="{{ sage_defaults.get('sage_revenue_account', '') }}"
+                               class="w-full bg-zinc-800 border border-zinc-700 rounded-xl px-4 py-2.5 text-sm font-mono focus:outline-none focus:border-emerald-600">
+                    </div>
+                    <div>
+                        <label class="block text-sm text-zinc-400 mb-1.5">Subcontract Liability Account</label>
+                        <input type="text" id="sage_subcontract_liability_account" name="sage_subcontract_liability_account" value="{{ sage_defaults.get('sage_subcontract_liability_account', '') }}"
+                               class="w-full bg-zinc-800 border border-zinc-700 rounded-xl px-4 py-2.5 text-sm font-mono focus:outline-none focus:border-emerald-600">
+                    </div>
+                    <div>
+                        <label class="block text-sm text-zinc-400 mb-1.5">Default A/R Customer Code</label>
+                        <input type="text" id="sage_ar_customer_code" name="sage_ar_customer_code" value="{{ sage_defaults.get('sage_ar_customer_code', '') }}"
+                               class="w-full bg-zinc-800 border border-zinc-700 rounded-xl px-4 py-2.5 text-sm font-mono focus:outline-none focus:border-emerald-600">
+                    </div>
+                    <div>
+                        <label class="block text-sm text-zinc-400 mb-1.5">Default Tax Group</label>
+                        <input type="text" id="sage_default_tax_group" name="sage_default_tax_group" value="{{ sage_defaults.get('sage_default_tax_group', '') }}"
+                               class="w-full bg-zinc-800 border border-zinc-700 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:border-emerald-600">
+                    </div>
+                    <div>
+                        <label class="block text-sm text-zinc-400 mb-1.5">AP Vendor Prefix</label>
+                        <input type="text" id="sage_ap_vendor_prefix" name="sage_ap_vendor_prefix" value="{{ sage_defaults.get('sage_ap_vendor_prefix', '') }}"
+                               class="w-full bg-zinc-800 border border-zinc-700 rounded-xl px-4 py-2.5 text-sm font-mono focus:outline-none focus:border-emerald-600">
+                    </div>
+                    <div>
+                        <label class="block text-sm text-zinc-400 mb-1.5">Cost Code Prefix</label>
+                        <input type="text" id="sage_cost_code_prefix" name="sage_cost_code_prefix" value="{{ sage_defaults.get('sage_cost_code_prefix', '') }}"
+                               class="w-full bg-zinc-800 border border-zinc-700 rounded-xl px-4 py-2.5 text-sm font-mono focus:outline-none focus:border-emerald-600">
+                    </div>
+                    <div>
+                        <label class="block text-sm text-zinc-400 mb-1.5">Default Cost Type</label>
+                        <select id="sage_default_cost_type" name="sage_default_cost_type" class="w-full bg-zinc-800 border border-zinc-700 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:border-emerald-600">
+                            <option value="">—</option>
+                            {% for ct in ['Labor', 'Material', 'Subcontract', 'Equipment', 'Other'] %}
+                            <option value="{{ ct }}" {% if sage_defaults.get('sage_default_cost_type') == ct %}selected{% endif %}>{{ ct }}</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                </div>
+                <div class="mt-6 flex items-center gap-3">
+                    <label class="flex items-center gap-2 cursor-pointer">
+                        <input type="checkbox" id="sage_sync_enabled" class="rounded border-zinc-600" {% if sage_defaults.get('sage_sync_enabled', '1') != '0' %}checked{% endif %}>
+                        <span class="text-sm text-zinc-300">Enable Sage sync for new projects by default</span>
+                    </label>
+                </div>
+                <div class="mt-8 flex justify-end gap-3">
+                    <button type="submit" class="px-6 py-2.5 bg-emerald-600 hover:bg-emerald-500 rounded-2xl text-sm font-medium">Save Sage Defaults</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
         <!-- JavaScript -->
         <script src="{{ url_for('static', filename='js/email-settings-ui.js') }}"></script>
         <script>
@@ -263,6 +365,29 @@
                 if (tab === 'email' && typeof CasePMEmailSettingsUI !== 'undefined') {
                     window.CasePMEmailSettings = CasePMEmailSettingsUI.loadFromStorage();
                     CasePMEmailSettingsUI.render('programEmailSettingsBody');
+                }
+            }
+
+            async function saveSageDefaults(e) {
+                e.preventDefault();
+                const form = document.getElementById('sageDefaultsForm');
+                const sage = {};
+                form.querySelectorAll('input[name^="sage_"], select[name^="sage_"]').forEach(el => {
+                    sage[el.name] = el.type === 'checkbox' ? (el.checked ? '1' : '0') : el.value.trim();
+                });
+                sage.sage_sync_enabled = document.getElementById('sage_sync_enabled')?.checked ? '1' : '0';
+                try {
+                    const res = await fetch('/api/program-settings/sage', {
+                        method: 'PUT',
+                        credentials: 'same-origin',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ sage }),
+                    });
+                    const json = await res.json();
+                    if (!res.ok) throw new Error(json.error || 'Save failed');
+                    alert('Sage 300 defaults saved. New projects will inherit these settings.');
+                } catch (err) {
+                    alert(err.message || 'Could not save Sage defaults.');
                 }
             }
 
@@ -315,6 +440,7 @@
                 initializeSettings();
                 const params = new URLSearchParams(window.location.search);
                 if (params.get('tab') === 'email') switchSettingsTab('email');
+                if (params.get('tab') === 'sage') switchSettingsTab('sage');
             };
         </script>
 
