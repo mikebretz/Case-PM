@@ -5,33 +5,40 @@
 {% block content %}
 <style>
   #mainContent:has(.projects-page-root) {
-    padding: 0;
-    overflow: hidden;
-  }
-  .projects-page-root {
-    height: 100%;
-    min-height: 0;
+    overflow: hidden !important;
     display: flex;
     flex-direction: column;
+    padding: 0 !important;
+  }
+  .projects-page-root {
+    display: flex;
+    flex-direction: column;
+    flex: 1;
+    min-height: 0;
+    width: 100%;
+    padding: 1rem 1rem 0;
+    overflow: hidden;
+    box-sizing: border-box;
+  }
+  .projects-page-stack {
+    display: flex;
+    flex-direction: column;
+    flex: 1;
+    min-height: 0;
     overflow: hidden;
   }
-  .projects-page-top {
-    flex-shrink: 0;
-  }
   .project-stat-tile {
-    padding: 0.5rem 0.75rem;
+    padding: 1rem;
   }
   .project-stat-tile .stat-label {
-    font-size: 9px;
-    text-transform: uppercase;
-    letter-spacing: 0.04em;
+    font-size: 0.75rem;
     color: #a1a1aa;
     line-height: 1.2;
   }
   .project-stat-tile .stat-value {
-    font-size: 1.125rem;
+    font-size: 1.25rem;
     font-weight: 600;
-    margin-top: 0.125rem;
+    margin-top: 0.25rem;
     line-height: 1.2;
   }
   .project-tab-btn.active {
@@ -68,7 +75,7 @@
     position: sticky;
     top: 0;
     z-index: 10;
-    background: #18181b;
+    background: #27272a;
   }
   .project-row {
     cursor: pointer;
@@ -76,28 +83,29 @@
 </style>
 
 <div class="projects-page-root">
-    <div class="projects-page-top">
-        <!-- Toolbar header -->
-        <div class="h-16 border-b border-zinc-800 bg-zinc-900 flex items-center px-6">
-            <div class="flex-1 min-w-0">
-                <div class="text-[10px] text-zinc-400 tracking-[1px] font-medium">PORTFOLIO</div>
-                <div class="text-xl font-semibold tracking-tight text-white truncate">Projects</div>
-            </div>
-            <div class="flex items-center justify-end gap-2 flex-shrink-0">
-                <button type="button" onclick="exportProjectsCsv()"
-                        class="flex items-center gap-2 px-4 py-2 bg-zinc-800 hover:bg-zinc-700 rounded-md text-sm font-medium h-[38px]">
-                    <i class="fa-solid fa-download"></i><span>Export</span>
-                </button>
-                <button type="button" onclick="openProjectModal('create')"
-                        class="flex items-center gap-2 px-5 py-2 bg-white text-zinc-900 hover:bg-zinc-100 rounded-md text-sm font-semibold h-[38px]">
-                    <i class="fa-solid fa-plus"></i><span>New Project</span>
-                </button>
-            </div>
-        </div>
+<div class="projects-page-stack">
 
-        <!-- Summary cards (compact) -->
-        <div class="bg-zinc-900 border-b border-zinc-800 px-6 py-2 flex-shrink-0">
-            <div class="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-7 gap-2">
+    <!-- Toolbar (matches Commitments / Pay Applications) -->
+    <div class="flex items-center justify-between flex-shrink-0 mb-4">
+        <div class="flex items-center gap-3 min-w-0">
+            <div class="text-2xl font-semibold text-white whitespace-nowrap">Projects</div>
+            <div class="text-xs text-zinc-500 hidden sm:block">Portfolio · Sage 300 · AIA · Contract documents</div>
+        </div>
+        <div class="flex items-center gap-2 flex-shrink-0">
+            <button type="button" onclick="exportProjectsCsv()"
+                    class="flex items-center gap-2 px-4 py-2 bg-zinc-800 hover:bg-zinc-700 rounded-md text-sm font-medium h-[38px]">
+                <i class="fa-solid fa-download"></i><span class="hidden md:inline">Export</span>
+            </button>
+            <button type="button" onclick="openProjectModal('create')"
+                    class="flex items-center gap-2 px-5 py-2 bg-white text-zinc-900 hover:bg-zinc-100 rounded-md text-sm font-semibold h-[38px]">
+                <i class="fa-solid fa-plus"></i><span>New Project</span>
+            </button>
+        </div>
+    </div>
+
+    <!-- Summary cards -->
+    <div class="bg-zinc-900 border border-zinc-700 rounded-md p-4 flex-shrink-0 mb-4">
+        <div class="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-7 gap-3">
                 <div class="bg-zinc-800 border border-zinc-700 rounded-md project-stat-tile">
                     <div class="stat-label">Total Projects</div>
                     <div class="stat-value">{{ stats.total }}</div>
@@ -129,8 +137,8 @@
             </div>
         </div>
 
-        <!-- Filters -->
-        <div class="px-6 py-2.5 flex flex-col md:flex-row gap-2 flex-shrink-0 bg-zinc-950 border-b border-zinc-800">
+    <!-- Filters -->
+    <div class="flex flex-col md:flex-row gap-2 mb-3 flex-shrink-0">
             <input type="text" id="projectSearch" placeholder="Search project #, name, client, job #, PM..."
                    oninput="filterProjects()"
                    class="flex-1 bg-zinc-900 border border-zinc-700 rounded-md px-4 py-2 text-sm focus:border-emerald-600">
@@ -149,11 +157,11 @@
                 <option value="{{ user.full_name }}">{{ user.full_name }}</option>
                 {% endfor %}
             </select>
-        </div>
     </div>
 
-    <!-- Table (scrolls within remaining viewport) -->
-    <div id="projectsTableWrap" class="mx-6 my-3 bg-zinc-900 border border-zinc-700 rounded-md">
+    <!-- Table -->
+    <div class="flex-1 min-h-0 flex flex-col border border-zinc-700 rounded-md bg-zinc-900 mb-4 overflow-hidden">
+    <div id="projectsTableWrap" class="flex-1 overflow-auto min-h-0">
         <table id="projectsTable" class="w-full text-sm">
             <thead>
                 <tr class="border-b border-zinc-700 text-zinc-400 text-xs uppercase tracking-wide">
@@ -240,6 +248,9 @@
             </tbody>
         </table>
     </div>
+    </div>
+
+</div>
 </div>
 
 <!-- Project create / edit modal (tabbed) -->
@@ -269,7 +280,9 @@
                     <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
                         <div>
                             <label class="project-field-label">Case PM Project #</label>
-                            <input type="text" name="number" id="fld_number" class="project-field-input font-mono" value="PRJ-{{ '%03d' % (projects|length + 1) }}">
+                            <input type="text" name="number" id="fld_number" class="project-field-input font-mono uppercase" value="PRJ-{{ '%03d' % (projects|length + 1) }}" autocomplete="off" onblur="normalizeProjectNumberField()">
+                            <div id="projectNumberHint" class="text-[10px] text-zinc-500 mt-1">Not case-sensitive — PRJ-001 and prj-001 are the same.</div>
+                            <div id="projectNumberError" class="hidden text-[10px] text-red-400 mt-1"></div>
                         </div>
                         <div>
                             <label class="project-field-label">Accounting Project #</label>
@@ -696,19 +709,39 @@
                 </div>
 
                 <div id="projectTab-sage" class="project-tab-panel hidden">
-                    <p class="text-xs text-zinc-400 mb-4">Sage 300 CRE job setup — synced to commitments, budget, pay apps, and change orders when <code class="text-emerald-400">SAGE_API_URL</code> is configured.</p>
-                    <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div class="border border-emerald-800/40 bg-emerald-950/20 rounded-lg p-4 mb-4">
+                        <div class="text-sm font-medium text-emerald-300 mb-1"><i class="fa-solid fa-database mr-2"></i>Sage 300 defaults are set once for the whole company</div>
+                        <p class="text-xs text-zinc-400">Configure company code, Sage database, GL accounts, and tax groups in <a href="{{ url_for('program_settings') }}?tab=sage" class="text-sky-400 hover:underline">Program Settings → Sage 300</a>. Each project only needs its own <strong class="text-zinc-300">Sage job number</strong> (General tab) unless you override defaults below.</p>
+                    </div>
+
+                    <div class="text-xs text-zinc-500 uppercase tracking-wide mb-3">This job only</div>
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-5">
+                        <div>
+                            <label class="project-field-label">Sage Contract Number</label>
+                            <input type="text" name="sage_contract_number" id="fld_sage_contract_number" class="project-field-input font-mono" placeholder="Optional — job-specific contract in Sage">
+                        </div>
+                        <div>
+                            <label class="project-field-label">A/R Customer Code</label>
+                            <input type="text" name="sage_ar_customer_code" id="fld_sage_ar_customer_code" class="project-field-input font-mono" placeholder="Leave blank to use program default">
+                        </div>
+                        <div class="flex items-center gap-2 pt-6">
+                            <input type="hidden" name="sage_sync_enabled" id="fld_sage_sync_enabled_hidden" value="1">
+                            <input type="checkbox" id="fld_sage_sync_enabled" checked class="rounded border-zinc-600" onchange="document.getElementById('fld_sage_sync_enabled_hidden').value = this.checked ? '1' : '0'">
+                            <label for="fld_sage_sync_enabled" class="text-sm text-zinc-300">Enable Sage 300 sync for this project</label>
+                        </div>
+                    </div>
+
+                    <details class="border border-zinc-700 rounded-lg p-4 bg-zinc-950/40">
+                        <summary class="text-sm font-medium text-zinc-300 cursor-pointer select-none">Override program Sage defaults (optional)</summary>
+                        <p class="text-xs text-zinc-500 mt-2 mb-4">Only fill these if this job uses different accounts or database than your company defaults.</p>
+                        <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
                         <div>
                             <label class="project-field-label">Sage Company Code</label>
-                            <input type="text" name="sage_company_code" id="fld_sage_company_code" class="project-field-input font-mono" placeholder="Company entity in Sage">
+                            <input type="text" name="sage_company_code" id="fld_sage_company_code" class="project-field-input font-mono" placeholder="From program settings">
                         </div>
                         <div>
                             <label class="project-field-label">Sage Database</label>
-                            <input type="text" name="sage_database" id="fld_sage_database" class="project-field-input font-mono">
-                        </div>
-                        <div>
-                            <label class="project-field-label">Contract Number</label>
-                            <input type="text" name="sage_contract_number" id="fld_sage_contract_number" class="project-field-input font-mono">
+                            <input type="text" name="sage_database" id="fld_sage_database" class="project-field-input font-mono" placeholder="From program settings">
                         </div>
                         <div>
                             <label class="project-field-label">Account Set</label>
@@ -717,16 +750,12 @@
                         <div>
                             <label class="project-field-label">Accounting Method</label>
                             <select name="sage_accounting_method" id="fld_sage_accounting_method" class="project-field-input">
-                                <option value="">—</option>
+                                <option value="">— Use program default —</option>
                                 <option value="Completed Contract">Completed Contract</option>
                                 <option value="Percentage of Completion">Percentage of Completion</option>
                                 <option value="Billings and Costs">Billings and Costs</option>
                                 <option value="Accrual-Basis">Accrual-Basis</option>
                             </select>
-                        </div>
-                        <div>
-                            <label class="project-field-label">A/R Customer Code</label>
-                            <input type="text" name="sage_ar_customer_code" id="fld_sage_ar_customer_code" class="project-field-input font-mono">
                         </div>
                         <div>
                             <label class="project-field-label">Billings Account</label>
@@ -750,7 +779,7 @@
                         </div>
                         <div>
                             <label class="project-field-label">AP Vendor Prefix</label>
-                            <input type="text" name="sage_ap_vendor_prefix" id="fld_sage_ap_vendor_prefix" class="project-field-input font-mono" placeholder="Default vendor code prefix for subs">
+                            <input type="text" name="sage_ap_vendor_prefix" id="fld_sage_ap_vendor_prefix" class="project-field-input font-mono">
                         </div>
                         <div>
                             <label class="project-field-label">Cost Code Prefix</label>
@@ -759,7 +788,7 @@
                         <div>
                             <label class="project-field-label">Default Cost Type</label>
                             <select name="sage_default_cost_type" id="fld_sage_default_cost_type" class="project-field-input">
-                                <option value="">—</option>
+                                <option value="">— Use program default —</option>
                                 <option value="Labor">Labor</option>
                                 <option value="Material">Material</option>
                                 <option value="Subcontract">Subcontract</option>
@@ -767,12 +796,8 @@
                                 <option value="Other">Other</option>
                             </select>
                         </div>
-                        <div class="flex items-center gap-2 pt-6">
-                            <input type="hidden" name="sage_sync_enabled" id="fld_sage_sync_enabled_hidden" value="1">
-                            <input type="checkbox" id="fld_sage_sync_enabled" checked class="rounded border-zinc-600" onchange="document.getElementById('fld_sage_sync_enabled_hidden').value = this.checked ? '1' : '0'">
-                            <label for="fld_sage_sync_enabled" class="text-sm text-zinc-300">Enable Sage 300 sync for this project</label>
                         </div>
-                    </div>
+                    </details>
                 </div>
 
                 <div id="projectTab-other" class="project-tab-panel hidden">
@@ -869,6 +894,8 @@ function openProjectModal(mode, projectId) {
 
     switchProjectTab('general');
     document.getElementById('projectModal').classList.remove('hidden');
+    const numErr = document.getElementById('projectNumberError');
+    if (numErr) numErr.classList.add('hidden');
     if (mode === 'edit' && projectId) {
         loadOriginalContractStatus(projectId);
     } else {
@@ -988,6 +1015,40 @@ async function openProjectCatina() {
     }
 }
 
+function normalizeProjectNumberField() {
+    const el = document.getElementById('fld_number');
+    if (!el) return;
+    el.value = (el.value || '').trim().toUpperCase();
+}
+
+async function validateProjectNumber(showAlert) {
+    const el = document.getElementById('fld_number');
+    const errEl = document.getElementById('projectNumberError');
+    if (!el) return true;
+    normalizeProjectNumberField();
+    const number = el.value.trim();
+    if (!number) {
+        if (errEl) { errEl.textContent = 'Project number is required.'; errEl.classList.remove('hidden'); }
+        return false;
+    }
+    const params = new URLSearchParams({ number });
+    if (editingProjectId) params.set('exclude_id', String(editingProjectId));
+    try {
+        const res = await fetch(`/api/projects/validate-number?${params}`, { credentials: 'same-origin' });
+        const json = await res.json();
+        if (!json.available) {
+            if (errEl) { errEl.textContent = json.error || 'Project number already in use.'; errEl.classList.remove('hidden'); }
+            if (showAlert) alert(json.error || 'Project number already in use.');
+            return false;
+        }
+        if (errEl) errEl.classList.add('hidden');
+        if (json.number) el.value = json.number;
+        return true;
+    } catch {
+        return true;
+    }
+}
+
 function filterProjects() {
     const search = (document.getElementById('projectSearch').value || '').toLowerCase();
     const status = document.getElementById('projectStatusFilter').value;
@@ -1057,6 +1118,11 @@ document.querySelectorAll('.project-row').forEach(row => {
 
 document.addEventListener('keydown', e => {
     if (e.key === 'Escape') closeProjectModal();
+});
+
+document.getElementById('projectForm')?.addEventListener('submit', async (e) => {
+    const ok = await validateProjectNumber(true);
+    if (!ok) e.preventDefault();
 });
 </script>
 {% endblock %}

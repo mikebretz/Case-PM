@@ -950,7 +950,7 @@ PROJECT_DETAIL_FIELDS = [
 
 def ensure_project_schema():
     """Add new Project columns on existing SQLite databases."""
-    from sqlalchemy import inspect, text
+    from sqlalchemy import inspect, text, func
     inspector = inspect(db.engine)
     if 'project' not in inspector.get_table_names():
         return
@@ -1036,6 +1036,23 @@ def _project_financial_context(project):
     }
 
 
+def _normalize_project_number(value):
+    """Canonical project number — uppercase so PRJ-001 and prj-001 are treated the same."""
+    return (value or '').strip().upper()
+
+
+def _project_number_conflict(number, exclude_project_id=None):
+    """Return conflicting Project if number already exists (case-insensitive)."""
+    from sqlalchemy import func
+    normalized = _normalize_project_number(number)
+    if not normalized:
+        return None
+    q = Project.query.filter(func.upper(Project.number) == normalized)
+    if exclude_project_id:
+        q = q.filter(Project.id != int(exclude_project_id))
+    return q.first()
+
+
 def _apply_project_form(project, form):
     project.name = (form.get('name') or '').strip()
     project.client = (form.get('client') or '').strip()
@@ -1055,7 +1072,7 @@ def _apply_project_form(project, form):
     project.project_type = (form.get('project_type') or '').strip()
     project.description = (form.get('description') or '').strip()
     if form.get('number'):
-        project.number = (form.get('number') or '').strip()
+        project.number = _normalize_project_number(form.get('number'))
     details = {k: (form.get(k) or '').strip() for k in PROJECT_DETAIL_FIELDS}
     project.set_details(details)
     project.updated_at = datetime.utcnow()
@@ -1110,8 +1127,15 @@ def create_project():
             return redirect(url_for('projects_page'))
 
         next_num = Project.query.count() + 1
+        raw_number = request.form.get('number') or f"PRJ-{next_num:03d}"
+        number = _normalize_project_number(raw_number)
+        conflict = _project_number_conflict(number)
+        if conflict:
+            flash(f'Project number "{number}" is already used by "{conflict.name}". Project numbers are not case-sensitive.', 'error')
+            return redirect(url_for('projects_page'))
+
         project = Project(
-            number=request.form.get('number') or f"PRJ-{next_num:03d}",
+            number=number,
             name=name,
         )
         _apply_project_form(project, request.form)
@@ -1134,7 +1158,11 @@ def create_project():
 
     except Exception as e:
         db.session.rollback()
-        flash(f'Error creating project: {str(e)}', 'error')
+        err = str(e)
+        if 'UNIQUE constraint failed' in err and 'project.number' in err:
+            flash('That project number is already in use (not case-sensitive).', 'error')
+        else:
+            flash(f'Error creating project: {err}', 'error')
         return redirect(url_for('projects_page'))
 
 
@@ -1144,6 +1172,15 @@ def update_project(project_id):
     ensure_project_schema()
     project = Project.query.get_or_404(project_id)
     try:
+        new_number = _normalize_project_number(request.form.get('number') or project.number)
+        conflict = _project_number_conflict(new_number, exclude_project_id=project_id)
+        if conflict:
+            msg = f'Project number "{new_number}" is already used by "{conflict.name}". Project numbers are not case-sensitive.'
+            if request.headers.get('X-Requested-With') == 'XMLHttpRequest' or request.is_json:
+                return jsonify({'error': msg}), 400
+            flash(msg, 'error')
+            return redirect(url_for('projects_page'))
+
         _apply_project_form(project, request.form)
         db.session.commit()
         if request.headers.get('X-Requested-With') == 'XMLHttpRequest' or request.is_json:
@@ -1156,6 +1193,24 @@ def update_project(project_id):
             return jsonify({'error': str(e)}), 400
         flash(f'Error updating project: {str(e)}', 'error')
         return redirect(url_for('projects_page'))
+
+
+@app.route('/api/projects/validate-number', methods=['GET'])
+@login_required
+def api_validate_project_number():
+    number = _normalize_project_number(request.args.get('number', ''))
+    exclude_id = request.args.get('exclude_id', type=int)
+    if not number:
+        return jsonify({'ok': False, 'error': 'Project number required'})
+    conflict = _project_number_conflict(number, exclude_project_id=exclude_id)
+    if conflict:
+        return jsonify({
+            'ok': False,
+            'available': False,
+            'error': f'Project number "{number}" is already used by "{conflict.name}".',
+            'conflict_project_id': conflict.id,
+        })
+    return jsonify({'ok': True, 'available': True, 'number': number})
 
 
 @app.route('/api/projects/<int:project_id>')
@@ -2746,7 +2801,27 @@ def pay_applications_page():
 @app.route('/program-settings')
 @login_required
 def program_settings():
-    return render_template('program_settings.html')
+    from program_settings_persistence import load_sage_defaults
+    return render_template('program_settings.html', sage_defaults=load_sage_defaults())
+
+
+@app.route('/api/program-settings/sage', methods=['GET'])
+@login_required
+def api_get_sage_program_settings():
+    from program_settings_persistence import load_sage_defaults, SAGE_DEFAULT_KEYS
+    sage = load_sage_defaults()
+    return jsonify({'sage': sage, 'keys': SAGE_DEFAULT_KEYS})
+
+
+@app.route('/api/program-settings/sage', methods=['PUT'])
+@login_required
+def api_save_sage_program_settings():
+    if current_user.role != 'Admin':
+        return jsonify({'error': 'Admin only'}), 403
+    from program_settings_persistence import save_sage_defaults
+    body = request.get_json(silent=True) or {}
+    sage = save_sage_defaults(body.get('sage') or body)
+    return jsonify({'ok': True, 'sage': sage})
 
 
 @app.route('/profile')
