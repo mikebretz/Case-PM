@@ -340,6 +340,49 @@ class ChangeOrder(db.Model):
     date = db.Column(db.Date)
     created_by_id = db.Column(db.Integer, db.ForeignKey('user.id'))
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    cost_code = db.Column(db.String(30))
+    requested_by = db.Column(db.String(150))
+    priority = db.Column(db.String(20))
+    revision = db.Column(db.Integer, default=0)
+    notes = db.Column(db.Text)
+    approved_at = db.Column(db.DateTime)
+    approved_by_id = db.Column(db.Integer, db.ForeignKey('user.id'))
+    sov_synced_at = db.Column(db.DateTime)
+    sage_sync_status = db.Column(db.String(30))
+
+
+class ChangeOrderAllocation(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    change_order_id = db.Column(db.Integer, db.ForeignKey('change_order.id'), nullable=False)
+    cost_code = db.Column(db.String(30))
+    amount = db.Column(db.Float, default=0)
+    sov_line_legacy_id = db.Column(db.String(64))
+
+
+class PayAppProjectState(db.Model):
+    __tablename__ = 'pay_app_project_state'
+    id = db.Column(db.Integer, primary_key=True)
+    project_id = db.Column(db.Integer, db.ForeignKey('project.id'), unique=True, nullable=False)
+    data_json = db.Column(db.Text, default='{}')
+    version = db.Column(db.Integer, default=1)
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    updated_by_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=True)
+
+
+class SageSyncEvent(db.Model):
+    __tablename__ = 'sage_sync_event'
+    id = db.Column(db.Integer, primary_key=True)
+    project_id = db.Column(db.Integer, db.ForeignKey('project.id'), nullable=False)
+    event_type = db.Column(db.String(80), nullable=False)
+    status = db.Column(db.String(30), default='queued')
+    sage_job_number = db.Column(db.String(80))
+    message = db.Column(db.Text)
+    payload_json = db.Column(db.Text)
+    response_json = db.Column(db.Text)
+    error_text = db.Column(db.Text)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    posted_at = db.Column(db.DateTime, nullable=True)
+    created_by_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=True)
 
 
 class Submittal(db.Model):
@@ -1080,42 +1123,67 @@ def change_orders_page():
     return render_template('change_orders.html', change_orders=change_orders, projects=projects)
 
 
+def _parse_change_order_date(value):
+    if not value:
+        return datetime.utcnow().date()
+    if isinstance(value, str):
+        try:
+            return datetime.strptime(value[:10], '%Y-%m-%d').date()
+        except ValueError:
+            return datetime.utcnow().date()
+    return value
+
+
+def _change_order_from_payload(data, project_id=None):
+    pid = data.get('project_id') or project_id or get_current_project_id()
+    if not pid:
+        raise ValueError('project_id required')
+    return {
+        'project_id': int(pid),
+        'description': (data.get('description') or '').strip(),
+        'amount': float(data.get('amount') or 0),
+        'reason': data.get('reason'),
+        'schedule_impact': data.get('schedule_impact'),
+        'status': data.get('status') or 'Draft',
+        'date': _parse_change_order_date(data.get('date')),
+        'cost_code': data.get('cost_code'),
+        'requested_by': data.get('requested_by'),
+        'priority': data.get('priority'),
+        'revision': int(data.get('revision') or 0),
+        'notes': data.get('notes'),
+    }
+
+
 @app.route('/change-orders/create', methods=['POST'])
 @login_required
 def create_change_order():
     try:
-        project_id = request.form.get('project_id')
-        description = request.form.get('description')
-        amount = request.form.get('amount')
-        reason = request.form.get('reason')
-        schedule_impact = request.form.get('schedule_impact')
-
-        if not description or not project_id:
+        data = request.get_json(silent=True) or request.form
+        fields = _change_order_from_payload(data)
+        if not fields['description']:
+            if request.is_json:
+                return jsonify({'success': False, 'message': 'Description is required'}), 400
             flash('Description and Project are required.', 'error')
             return redirect_with_project('change_orders_page')
 
         number = generate_next_number('CO', ChangeOrder)
-
         co = ChangeOrder(
-            project_id=int(project_id),
             number=number,
-            description=description,
-            amount=float(amount) if amount else 0.0,
-            reason=reason,
-            schedule_impact=schedule_impact,
-            status='Pending',
-            date=datetime.utcnow().date(),
-            created_by_id=current_user.id
+            created_by_id=current_user.id,
+            **fields,
         )
-
         db.session.add(co)
         db.session.commit()
 
+        if request.is_json:
+            return jsonify({'success': True, 'id': co.id, 'number': co.number})
         flash(f'Change Order {number} created successfully!', 'success')
         return redirect_with_project('change_orders_page')
 
     except Exception as e:
         db.session.rollback()
+        if request.is_json:
+            return jsonify({'success': False, 'message': str(e)}), 400
         flash(f'Error creating Change Order: {str(e)}', 'error')
         return redirect_with_project('change_orders_page')
 
@@ -1131,7 +1199,6 @@ def update_change_order_status(co_id):
 
     old_status = co.status
     co.status = new_status
-    db.session.commit()
 
     log = AuditLog(
         user_id=current_user.id,
@@ -1158,8 +1225,36 @@ def update_change_order_status(co_id):
         except Exception:
             pass
 
+    sync_result = None
+    if new_status == 'Approved' and old_status != 'Approved':
+        co.approved_at = datetime.utcnow()
+        co.approved_by_id = current_user.id
+        try:
+            from pay_app_persistence import sync_change_order_to_sov
+            sync_result = sync_change_order_to_sov(
+                ChangeOrder, ChangeOrderAllocation, PayAppProjectState,
+                ScheduleData, Project, db, co.id, current_user.id,
+            )
+            co.sage_sync_status = 'sov_synced'
+            from sage_service import create_and_process_sage_event
+            create_and_process_sage_event(
+                SageSyncEvent, Project, db, co.project_id,
+                'ChangeOrderApproved',
+                message=f'Change Order {co.number} approved — SOV and schedule updated',
+                payload={'change_order_id': co.id, 'amount': co.amount, 'sync': sync_result},
+                user_id=current_user.id,
+            )
+        except Exception as exc:
+            co.sage_sync_status = f'sync_error:{str(exc)[:120]}'
+            sync_result = {'error': str(exc)}
+
     db.session.commit()
-    return jsonify({'success': True, 'new_status': new_status})
+    return jsonify({
+        'success': True,
+        'new_status': new_status,
+        'sov_synced': new_status == 'Approved' and sync_result and not sync_result.get('error'),
+        'sync_result': sync_result,
+    })
 
 
 # ==================== SUBMITTAL ROUTES ====================
@@ -1866,6 +1961,220 @@ def global_search():
     )
 
 
+# ==================== PAY APPLICATION API ====================
+
+@app.route('/api/pay-applications/state', methods=['GET'])
+@login_required
+def api_get_pay_app_state():
+    from pay_app_persistence import get_pay_app_state as load_state
+    project_id = request.args.get('project_id', type=int) or get_current_project_id()
+    if not project_id:
+        return jsonify({'error': 'project_id required'}), 400
+    record, data = load_state(PayAppProjectState, project_id)
+    if not record:
+        return jsonify({'project_id': project_id, 'data': None, 'version': 0})
+    return jsonify({
+        'project_id': project_id,
+        'data': data,
+        'version': record.version,
+        'updated_at': record.updated_at.isoformat() if record.updated_at else None,
+    })
+
+
+@app.route('/api/pay-applications/state', methods=['PUT'])
+@login_required
+def api_save_pay_app_state():
+    from pay_app_persistence import merge_state_patch, save_pay_app_state as persist_state, get_pay_app_state as load_state
+    body = request.get_json(silent=True) or {}
+    project_id = body.get('project_id') or get_current_project_id()
+    if not project_id:
+        return jsonify({'error': 'project_id required'}), 400
+    project_id = int(project_id)
+    patch = body.get('data') or body.get('patch') or {}
+    full_replace = bool(body.get('full_replace'))
+    record, existing = load_state(PayAppProjectState, project_id)
+    if full_replace:
+        merged = patch
+    else:
+        merged = merge_state_patch(existing, patch)
+    record = persist_state(PayAppProjectState, db, project_id, merged, current_user.id)
+    return jsonify({
+        'ok': True,
+        'project_id': project_id,
+        'version': record.version,
+        'updated_at': record.updated_at.isoformat() if record.updated_at else None,
+    })
+
+
+@app.route('/api/pay-applications/import-local', methods=['POST'])
+@login_required
+def api_import_pay_app_local():
+    from pay_app_persistence import save_pay_app_state as persist_state
+    body = request.get_json(silent=True) or {}
+    project_id = body.get('project_id') or get_current_project_id()
+    data = body.get('data')
+    if not project_id or not isinstance(data, dict):
+        return jsonify({'error': 'project_id and data required'}), 400
+    record = persist_state(PayAppProjectState, db, int(project_id), data, current_user.id)
+    return jsonify({'ok': True, 'version': record.version})
+
+
+# ==================== SAGE 300 SYNC API ====================
+
+@app.route('/api/sage/sync-events', methods=['GET'])
+@login_required
+def api_list_sage_sync_events():
+    from sage_service import sage_event_to_dict
+    project_id = request.args.get('project_id', type=int) or get_current_project_id()
+    if not project_id:
+        return jsonify({'error': 'project_id required'}), 400
+    limit = min(request.args.get('limit', 50, type=int), 200)
+    events = SageSyncEvent.query.filter_by(project_id=project_id).order_by(SageSyncEvent.created_at.desc()).limit(limit).all()
+    return jsonify({'events': [sage_event_to_dict(e) for e in events]})
+
+
+@app.route('/api/sage/sync-events', methods=['POST'])
+@login_required
+def api_create_sage_sync_event():
+    from sage_service import create_and_process_sage_event, sage_event_to_dict
+    body = request.get_json(silent=True) or {}
+    project_id = body.get('project_id') or get_current_project_id()
+    event_type = body.get('event_type') or body.get('eventType')
+    if not project_id or not event_type:
+        return jsonify({'error': 'project_id and event_type required'}), 400
+    auto = body.get('auto_process', True)
+    event = create_and_process_sage_event(
+        SageSyncEvent, Project, db, int(project_id),
+        event_type,
+        message=body.get('message', ''),
+        payload=body.get('payload'),
+        user_id=current_user.id,
+        auto_process=auto,
+    )
+    return jsonify({'ok': True, 'event': sage_event_to_dict(event)})
+
+
+@app.route('/api/sage/sync-events/<int:event_id>/retry', methods=['POST'])
+@login_required
+def api_retry_sage_sync_event(event_id):
+    from sage_service import process_sage_event, sage_event_to_dict
+    event = SageSyncEvent.query.get_or_404(event_id)
+    event.status = 'queued'
+    process_sage_event(event, db)
+    return jsonify({'ok': True, 'event': sage_event_to_dict(event)})
+
+
+# ==================== CHANGE ORDER API (SOV integration) ====================
+
+@app.route('/api/change-orders/<int:co_id>', methods=['GET'])
+@login_required
+def api_get_change_order(co_id):
+    co = ChangeOrder.query.get_or_404(co_id)
+    allocs = ChangeOrderAllocation.query.filter_by(change_order_id=co.id).all()
+    return jsonify({
+        'id': co.id,
+        'number': co.number,
+        'description': co.description,
+        'amount': co.amount,
+        'reason': co.reason,
+        'schedule_impact': co.schedule_impact,
+        'status': co.status,
+        'date': co.date.isoformat() if co.date else None,
+        'cost_code': co.cost_code,
+        'requested_by': co.requested_by,
+        'priority': co.priority,
+        'revision': co.revision,
+        'notes': co.notes,
+        'sov_synced_at': co.sov_synced_at.isoformat() if co.sov_synced_at else None,
+        'allocations': [{'cost_code': a.cost_code, 'amount': a.amount} for a in allocs],
+    })
+
+
+@app.route('/api/change-orders/<int:co_id>/allocate', methods=['POST'])
+@login_required
+def api_allocate_change_order(co_id):
+    co = ChangeOrder.query.get_or_404(co_id)
+    body = request.get_json(silent=True) or {}
+    allocations = body.get('allocations') or []
+    ChangeOrderAllocation.query.filter_by(change_order_id=co.id).delete()
+    for item in allocations:
+        db.session.add(ChangeOrderAllocation(
+            change_order_id=co.id,
+            cost_code=item.get('cost_code'),
+            amount=float(item.get('amount') or 0),
+        ))
+    if body.get('cost_code') and not allocations:
+        co.cost_code = body.get('cost_code')
+    db.session.commit()
+    return jsonify({'ok': True})
+
+
+@app.route('/api/change-orders', methods=['POST'])
+@login_required
+def api_create_change_order():
+    try:
+        fields = _change_order_from_payload(request.get_json(silent=True) or {})
+        if not fields['description']:
+            return jsonify({'error': 'description required'}), 400
+        number = generate_next_number('CO', ChangeOrder)
+        co = ChangeOrder(number=number, created_by_id=current_user.id, **fields)
+        db.session.add(co)
+        db.session.commit()
+        return jsonify({'ok': True, 'id': co.id, 'number': co.number})
+    except ValueError as exc:
+        return jsonify({'error': str(exc)}), 400
+    except Exception as exc:
+        db.session.rollback()
+        return jsonify({'error': str(exc)}), 500
+
+
+@app.route('/api/change-orders/<int:co_id>', methods=['PUT'])
+@login_required
+def api_update_change_order(co_id):
+    co = ChangeOrder.query.get_or_404(co_id)
+    body = request.get_json(silent=True) or {}
+    if body.get('description') is not None:
+        co.description = body['description']
+    if body.get('amount') is not None:
+        co.amount = float(body['amount'])
+    if body.get('reason') is not None:
+        co.reason = body['reason']
+    if body.get('schedule_impact') is not None:
+        co.schedule_impact = body['schedule_impact']
+    if body.get('status') is not None:
+        co.status = body['status']
+    if body.get('date') is not None:
+        co.date = _parse_change_order_date(body['date'])
+    if body.get('cost_code') is not None:
+        co.cost_code = body['cost_code']
+    if body.get('requested_by') is not None:
+        co.requested_by = body['requested_by']
+    if body.get('priority') is not None:
+        co.priority = body['priority']
+    if body.get('revision') is not None:
+        co.revision = int(body['revision'])
+    if body.get('notes') is not None:
+        co.notes = body['notes']
+    db.session.commit()
+    return jsonify({'ok': True, 'id': co.id})
+
+
+@app.route('/api/change-orders/<int:co_id>/sync-to-sov', methods=['POST'])
+@login_required
+def api_sync_change_order_to_sov(co_id):
+    from pay_app_persistence import sync_change_order_to_sov
+    try:
+        result = sync_change_order_to_sov(
+            ChangeOrder, ChangeOrderAllocation, PayAppProjectState,
+            ScheduleData, Project, db, co_id, current_user.id,
+        )
+        return jsonify({'ok': True, **result})
+    except ValueError as exc:
+        return jsonify({'error': str(exc)}), 400
+    except Exception as exc:
+        return jsonify({'error': str(exc)}), 500
+
+
 # ==================== QUICK STATS API ====================
 
 @app.route('/api/stats')
@@ -1890,6 +2199,11 @@ with app.app_context():
         })
         db.create_all()
         cw.ensure_workflow_schema(db.engine)
+        try:
+            from pay_app_persistence import ensure_pay_app_schema
+            ensure_pay_app_schema(db.engine, db)
+        except Exception as _pe:
+            print('Pay app schema:', _pe)
     except Exception as _e:
         print('Workflow init:', _e)
 

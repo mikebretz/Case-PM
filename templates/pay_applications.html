@@ -3,6 +3,7 @@
 {% block content %}
 <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
 <script src="{{ url_for('static', filename='js/casepm-workflow.js') }}"></script>
+<script src="{{ url_for('static', filename='js/pay-app-sync.js') }}"></script>
 
 <style>
   /* Exact match to budget.html aesthetics */
@@ -257,6 +258,7 @@
 
 <!-- WORKFLOW / ACTION BAR (tab-specific, prevents button multiplication) -->
 <div id="payAppWorkflowBar" class="mb-3 flex-shrink-0"></div>
+<div id="sageSyncStatusBar" class="mb-2 px-3 py-1.5 bg-zinc-900/80 border border-zinc-800 rounded-md flex items-center justify-between flex-shrink-0"></div>
 
 <!-- SUB PAY APP TRACKER PANEL (replaces main table on tracker tab) -->
 <div id="payAppTrackerPanel" class="pay-app-tracker-panel border border-zinc-700 rounded-md bg-zinc-900">
@@ -465,6 +467,18 @@
                         }).join('')}
                     </select>
                 </div>
+            </div>
+
+            <!-- Sage 300 integration -->
+            <div class="pt-3 border-t border-zinc-700">
+                <label class="flex items-center justify-between cursor-pointer">
+                    <div>
+                        <div class="text-sm text-zinc-300">Auto-queue Sage 300 sync on pay app milestones</div>
+                        <div class="text-[10px] text-zinc-500">When ON, G702/sub pay app submissions and approvals are logged to the Sage sync queue (visible on the Pay Applications page). Requires Sage job number on the project.</div>
+                    </div>
+                    <input type="checkbox" id="sageSyncAutoEnabledToggle" class="w-5 h-5 accent-emerald-600">
+                </label>
+                <button type="button" onclick="pushManualSageSync()" class="mt-2 px-3 py-1.5 text-xs bg-zinc-800 hover:bg-zinc-700 border border-zinc-600 rounded-md">Queue manual Sage sync now</button>
             </div>
         </div>
 
@@ -894,7 +908,211 @@ let mainLienWaiver = JSON.parse(casepmStore.getItem('mainLienWaiver') || '{}'); 
         return Math.round(total * 100) / 100;
     }
 
-    // ==================== APPEND-ONLY ARCHIVE HELPERS (NEW - guarantees Previous Sub Pay Apps never lose entries) ====================
+    function getContractorLineCoAmount(line) {
+        if (!line) return 0;
+        return parseFloat(line.co_amount != null ? line.co_amount : (line.change_orders || 0)) || 0;
+    }
+
+    function getRetainageRate() {
+        return (typeof defaultRetainagePercent !== 'undefined' ? defaultRetainagePercent : 10) / 100;
+    }
+
+    function getG702BillingForLine(line) {
+        const billing = payAppBillingLines[line.id] || { workThisPeriod: 0, materialsStored: 0, coWorkThisPeriod: 0 };
+        const subMin = getCurrentSubBilledThisPeriodForCode(line.cost_code);
+        const workThis = Math.max(parseFloat(billing.workThisPeriod) || 0, subMin);
+        const materials = parseFloat(billing.materialsStored) || 0;
+        const coWorkThis = parseFloat(billing.coWorkThisPeriod) || 0;
+        const contractPeriod = workThis + materials;
+        const thisPeriodTotal = contractPeriod + coWorkThis;
+        const retainageRate = getRetainageRate();
+        return {
+            billing, workThis, materials, coWorkThis, contractPeriod, thisPeriodTotal,
+            retainage: thisPeriodTotal * retainageRate, retainageRate, subMin,
+        };
+    }
+
+    function getPreviouslyCoBilledFromHistory(costCode) {
+        const norm = normalizeCostCode(costCode);
+        let total = 0;
+        if (!payAppHistory || payAppHistory.length === 0) return 0;
+        payAppHistory.forEach(period => {
+            if (!period.snapshot || !period.snapshot.billingLines) return;
+            const histSOV = period.snapshot.contractorSOVSnapshot || [];
+            Object.keys(period.snapshot.billingLines).forEach(lineId => {
+                const billing = period.snapshot.billingLines[lineId] || {};
+                const sovLine = histSOV.find(l => String(l.id) === String(lineId));
+                if (!sovLine || normalizeCostCode(sovLine.cost_code) !== norm) return;
+                total += parseFloat(billing.coWorkThisPeriod) || 0;
+            });
+        });
+        return Math.round(total * 100) / 100;
+    }
+
+    function computeG703Rollup() {
+        const retainageRate = getRetainageRate();
+        const rollup = {
+            retainageRate,
+            contract: { scheduled: 0, prev: 0, thisPeriod: 0, materials: 0, completed: 0, balance: 0, retainage: 0 },
+            changeOrders: { scheduled: 0, prev: 0, thisPeriod: 0, materials: 0, completed: 0, balance: 0, retainage: 0 },
+            grand: { scheduled: 0, prev: 0, thisPeriod: 0, materials: 0, completed: 0, balance: 0, retainage: 0 },
+        };
+        (contractorSOV || []).forEach(line => {
+            const b = getG702BillingForLine(line);
+            const original = line.original || 0;
+            const coScheduled = getContractorLineCoAmount(line);
+            const contractPrev = line.billed_to_date || 0;
+            const coPrev = line.co_billed_to_date || 0;
+            const contractCompleted = contractPrev + b.workThis + b.materials;
+            const coCompleted = coPrev + b.coWorkThis;
+
+            rollup.contract.scheduled += original;
+            rollup.contract.prev += contractPrev;
+            rollup.contract.thisPeriod += b.workThis;
+            rollup.contract.materials += b.materials;
+            rollup.contract.completed += contractCompleted;
+            rollup.contract.balance += Math.max(0, original - contractCompleted);
+            rollup.contract.retainage += (b.workThis + b.materials) * retainageRate;
+
+            rollup.changeOrders.scheduled += coScheduled;
+            rollup.changeOrders.prev += coPrev;
+            rollup.changeOrders.thisPeriod += b.coWorkThis;
+            rollup.changeOrders.completed += coCompleted;
+            rollup.changeOrders.balance += Math.max(0, coScheduled - coCompleted);
+            rollup.changeOrders.retainage += b.coWorkThis * retainageRate;
+        });
+        ['scheduled', 'prev', 'thisPeriod', 'materials', 'completed', 'balance', 'retainage'].forEach(key => {
+            rollup.grand[key] = rollup.contract[key] + rollup.changeOrders[key];
+        });
+        return rollup;
+    }
+
+    // Sage 300 sync queue — visible audit trail until live API integration is configured
+    let sageSyncLog = JSON.parse(casepmStore.getItem('sageSyncLog') || '[]');
+    let sageSyncAutoEnabled = casepmStore.getItem('sageSyncAutoEnabled') !== 'false';
+
+    function logSageSync(eventType, details = {}) {
+        const project = JSON.parse(casepmStore.getItem('currentProject') || 'null') || {};
+        const entry = {
+            id: Date.now() + Math.random(),
+            timestamp: new Date().toISOString(),
+            eventType,
+            status: details.status || 'queued',
+            sageJobNumber: project.sage_job_number || project.accounting_project_number || '',
+            message: details.message || '',
+            payload: details.payload || null,
+        };
+        sageSyncLog.unshift(entry);
+        if (sageSyncLog.length > 200) sageSyncLog.length = 200;
+        casepmStore.setItem('sageSyncLog', JSON.stringify(sageSyncLog));
+        logPayAppAudit('SAGE_SYNC_' + eventType.toUpperCase(), entry);
+        renderSageSyncStatus();
+        return entry;
+    }
+
+    function queueSageSync(eventType, payload, message) {
+        if (!sageSyncAutoEnabled) {
+            logSageSync(eventType, { status: 'skipped', message: message + ' (auto-sync disabled in settings)', payload });
+            return null;
+        }
+        const entry = logSageSync(eventType, { status: 'queued', message, payload });
+        if (typeof CasePMPayAppSync !== 'undefined') {
+            CasePMPayAppSync.queueSageEvent(eventType, payload, message).then(res => {
+                if (res && res.event) {
+                    entry.status = res.event.status;
+                    if (res.event.status === 'posted' || res.event.status === 'simulated') {
+                        entry.status = res.event.status;
+                    }
+                    renderSageSyncStatus();
+                }
+            }).catch(() => {});
+        }
+        return entry;
+    }
+
+    function reloadPayAppStateFromStorage() {
+        contractorSOV = JSON.parse(casepmStore.getItem('contractorSOV')) || [];
+        payAppBillingLines = JSON.parse(casepmStore.getItem('payAppBillingLines')) || {};
+        currentPayAppPeriod = JSON.parse(casepmStore.getItem('currentPayAppPeriod') || 'null');
+        payAppHistory = JSON.parse(casepmStore.getItem('payAppHistory')) || [];
+        subcontractorSOV = JSON.parse(casepmStore.getItem('subcontractorSOV')) || {};
+        subPayAppHistory = JSON.parse(casepmStore.getItem('subPayAppHistory') || '{}');
+        subPendingSubmissions = JSON.parse(casepmStore.getItem('subPendingSubmissions') || '{}');
+        subPayAppNumbers = JSON.parse(casepmStore.getItem('subPayAppNumbers') || '{}');
+        subSOVStatus = JSON.parse(casepmStore.getItem('subSOVStatus') || '{}');
+        subLienWaivers = JSON.parse(casepmStore.getItem('subLienWaivers') || '{}');
+        subLienWaiverArchive = JSON.parse(casepmStore.getItem('subLienWaiverArchive') || '{}');
+        previousSubPayAppArchive = JSON.parse(casepmStore.getItem('previousSubPayAppArchive') || '[]');
+        mainLienWaiver = JSON.parse(casepmStore.getItem('mainLienWaiver') || '{}');
+        defaultRetainagePercent = parseFloat(casepmStore.getItem('payAppRetainagePercent') || '10');
+        sageSyncAutoEnabled = casepmStore.getItem('sageSyncAutoEnabled') !== 'false';
+    }
+
+    function renderSageSyncStatus() {
+        const el = document.getElementById('sageSyncStatusBar');
+        if (!el) return;
+        const latest = sageSyncLog[0];
+        const job = (JSON.parse(casepmStore.getItem('currentProject') || 'null') || {}).sage_job_number || '—';
+        if (!latest) {
+            el.innerHTML = `<span class="text-zinc-500 text-xs"><i class="fa-solid fa-database mr-1"></i>Sage 300: Job ${job} · No sync events yet</span>`;
+            return;
+        }
+        const statusColor = latest.status === 'queued' ? 'text-amber-400' : latest.status === 'skipped' ? 'text-zinc-500' : 'text-emerald-400';
+        el.innerHTML = `
+            <span class="text-xs ${statusColor}"><i class="fa-solid fa-database mr-1"></i>Sage 300 · ${latest.eventType} · ${latest.status}</span>
+            <span class="text-[10px] text-zinc-500 ml-2">${new Date(latest.timestamp).toLocaleString()}</span>
+            <button type="button" onclick="openSageSyncLogModal()" class="text-[10px] text-sky-400 hover:text-sky-300 ml-2 underline">View log</button>`;
+    }
+
+    function openSageSyncLogModal() {
+        let modal = document.getElementById('sageSyncLogModal');
+        if (!modal) {
+            modal = document.createElement('dialog');
+            modal.id = 'sageSyncLogModal';
+            modal.className = 'bg-zinc-900 border border-zinc-700 rounded-lg p-0 text-white max-w-2xl w-full';
+            document.body.appendChild(modal);
+        }
+        function renderRows(events) {
+            const merged = (events && events.length) ? events.map(e => ({
+                timestamp: e.created_at,
+                eventType: e.event_type,
+                status: e.status,
+                message: e.message,
+            })) : sageSyncLog;
+            return merged.length
+                ? merged.slice(0, 40).map(e => `
+                <tr class="border-b border-zinc-800">
+                    <td class="py-2 pr-3 text-[10px] text-zinc-400 whitespace-nowrap">${new Date(e.timestamp).toLocaleString()}</td>
+                    <td class="py-2 pr-3 text-xs">${e.eventType}</td>
+                    <td class="py-2 pr-3 text-xs ${e.status === 'queued' ? 'text-amber-400' : e.status === 'skipped' ? 'text-zinc-500' : e.status === 'error' ? 'text-red-400' : 'text-emerald-400'}">${e.status}</td>
+                    <td class="py-2 text-xs text-zinc-300">${e.message || ''}</td>
+                </tr>`).join('')
+                : '<tr><td colspan="4" class="py-6 text-center text-zinc-500 text-sm">No Sage sync events recorded yet.</td></tr>';
+        }
+        modal.innerHTML = `
+            <div class="p-5">
+                <div class="flex items-center justify-between mb-4">
+                    <h3 class="text-lg font-semibold">Sage 300 Sync Log</h3>
+                    <button type="button" onclick="document.getElementById('sageSyncLogModal').close()" class="text-zinc-400 hover:text-white"><i class="fa-solid fa-times"></i></button>
+                </div>
+                <p class="text-xs text-zinc-400 mb-3">Events post to Sage when SAGE_API_URL is configured; otherwise they are validated and marked simulated until the connector is live.</p>
+                <div class="max-h-80 overflow-auto">
+                    <table class="w-full text-left"><thead><tr class="text-[10px] text-zinc-500 uppercase"><th class="pb-2">Time</th><th class="pb-2">Event</th><th class="pb-2">Status</th><th class="pb-2">Detail</th></tr></thead><tbody id="sageSyncLogTableBody">${renderRows([])}</tbody></table>
+                </div>
+            </div>`;
+        modal.showModal();
+        if (typeof CasePMPayAppSync !== 'undefined') {
+            CasePMPayAppSync.fetchSageEvents(40).then(events => {
+                const body = document.getElementById('sageSyncLogTableBody');
+                if (body) body.innerHTML = renderRows(events);
+            });
+        }
+    }
+
+    function pushManualSageSync() {
+        queueSageSync('ManualSync', { period: currentPayAppPeriod?.periodNumber }, 'Manual Sage sync requested from Pay Applications');
+        showCenteredAlert('Sage sync queued. Open the sync log to review status.', 'success');
+    }
     function complianceHistoryKey(mainG702Period) {
         return `1005_${mainG702Period || 1}`;
     }
@@ -2196,6 +2414,7 @@ let mainLienWaiver = JSON.parse(casepmStore.getItem('mainLienWaiver') || '{}'); 
         const onTrackerTab = currentPayAppTab === 'sub-pay-app-tracker';
         if (tablePanel) tablePanel.classList.toggle('is-hidden', onTrackerTab);
         if (trackerPanel) trackerPanel.classList.toggle('is-active', onTrackerTab);
+        renderSageSyncStatus();
 
         if (currentPayAppTab === 'payapp') {
             renderPayApplicationTab(cardsContainer, thead, tbody, workflowBar);
@@ -2615,26 +2834,14 @@ let mainLienWaiver = JSON.parse(casepmStore.getItem('mainLienWaiver') || '{}'); 
         }
 
         // Calculate live totals
-        let totalOriginal = 0, totalCO = 0, totalCurrent = 0, totalBilledToDate = 0, totalCurrentBilling = 0, totalRetainage = 0;
-
-        contractorSOV.forEach(line => {
-            totalOriginal += (line.original || 0);
-            totalCO += (line.co_amount || 0);
-            const currentAmount = (line.original || 0) + (line.co_amount || 0);
-            totalCurrent += currentAmount;
-
-            const billing = payAppBillingLines[line.id] || { workThisPeriod: 0, materialsStored: 0 };
-            const thisPeriod = (billing.workThisPeriod || 0) + (billing.materialsStored || 0);
-            totalCurrentBilling += thisPeriod;
-
-            // For the CURRENT open period view: Total Completed & Stored summary shows only committed amounts
-            // (from previously approved periods). Current period amounts are shown in Work This Period until approved.
-            const previousBilled = getPreviouslyBilledFromHistory(line.cost_code) || (line.billed_to_date || 0);
-            totalBilledToDate += previousBilled;
-            totalRetainage += thisPeriod * 0.10;
-        });
-
-        const amountDue = totalCurrentBilling * 0.90;
+        const g703 = computeG703Rollup();
+        const retainageRate = g703.retainageRate;
+        let totalOriginal = g703.contract.scheduled, totalCO = g703.changeOrders.scheduled;
+        let totalCurrent = g703.grand.scheduled;
+        let totalBilledToDate = g703.grand.prev;
+        let totalCurrentBilling = g703.grand.thisPeriod + g703.grand.materials + g703.changeOrders.thisPeriod;
+        let totalRetainage = g703.grand.retainage;
+        const amountDue = totalCurrentBilling - totalRetainage;
         const contractSumToDate = totalOriginal + totalCO;
 
         // NEW: Calculate approved sub billings this period for G702 display
@@ -2741,8 +2948,12 @@ let mainLienWaiver = JSON.parse(casepmStore.getItem('mainLienWaiver') || '{}'); 
                 </div>`;
             }
         } else if (status === 'Submitted' || status === 'Under Review') {
-            workflowHTML += `<button onclick="approvePayApplication()" class="px-5 py-2 bg-red-600 hover:bg-red-500 rounded-md text-sm font-medium flex items-center gap-2"><i class="fa-solid fa-check"></i> Approve Application</button>`;
-            workflowHTML += `<button onclick="requestRevisionPayApplication()" class="px-5 py-2 bg-amber-600 hover:bg-amber-500 rounded-md text-sm font-medium flex items-center gap-2"><i class="fa-solid fa-redo"></i> Request Revision</button>`;
+            if (isCurrentUserApprover()) {
+                workflowHTML += `<button onclick="approvePayApplication()" class="px-5 py-2 bg-red-600 hover:bg-red-500 rounded-md text-sm font-medium flex items-center gap-2"><i class="fa-solid fa-check"></i> Approve Application</button>`;
+                workflowHTML += `<button onclick="requestRevisionPayApplication()" class="px-5 py-2 bg-amber-600 hover:bg-amber-500 rounded-md text-sm font-medium flex items-center gap-2"><i class="fa-solid fa-redo"></i> Request Revision</button>`;
+            } else {
+                workflowHTML += `<span class="px-4 py-1.5 bg-sky-900/60 text-sky-300 text-sm rounded-md">Awaiting approver review</span>`;
+            }
         } else if (status === 'Approved') {
             workflowHTML += `<span class="px-4 py-1.5 bg-emerald-900/60 text-emerald-400 text-sm rounded-md font-medium">Approved — Payment can be processed</span>`;
         }
@@ -2818,6 +3029,7 @@ let mainLienWaiver = JSON.parse(casepmStore.getItem('mainLienWaiver') || '{}'); 
                 <th class="px-3 py-3 text-center font-medium text-zinc-400 w-20">% Complete</th>
                 <th class="px-4 py-3 text-center font-medium text-zinc-400 w-44">Billed to Date</th>
                 <th class="px-4 py-3 text-center font-medium text-zinc-400 w-44">Work This Period</th>
+                <th class="px-3 py-3 text-center font-medium text-zinc-400 w-36">CO Work</th>
                 <th class="px-3 py-3 text-center font-medium text-zinc-400 w-36">Materials</th>
                 <th class="px-3 py-3 text-center font-medium text-zinc-400 w-36">Retainage</th>
                 <th class="px-4 py-3 text-left font-medium text-zinc-400 w-[21rem]">Notes</th>
@@ -2860,7 +3072,7 @@ let mainLienWaiver = JSON.parse(casepmStore.getItem('mainLienWaiver') || '{}'); 
                     renderPayAppContent();
                 };
                 headerRow.innerHTML = `
-                    <td colspan="13" class="px-4 py-2 text-emerald-400 font-semibold text-sm">
+                    <td colspan="14" class="px-4 py-2 text-emerald-400 font-semibold text-sm">
                         <i class="fa-solid fa-chevron-${isCollapsed ? 'right' : 'down'} mr-2 transition-transform"></i>
                         Division ${division} — ${divisionNames[division] || 'Other'}
                     </td>
@@ -2869,32 +3081,17 @@ let mainLienWaiver = JSON.parse(casepmStore.getItem('mainLienWaiver') || '{}'); 
             }
 
             if (!payAppCollapsedDivisions.has(division)) {
-                const currentAmount = (line.original || 0) + (line.co_amount || 0);
-                const billing = payAppBillingLines[line.id] || { workThisPeriod: 0, materialsStored: 0 };
-                
-                // === KEY FIX: Flow Sub Pay App Tracker amounts into G702 Work This Period ===
-                // Subcontractor "Work This Period" from approved/pending papers in the Tracker becomes the MINIMUM
-                // the GC can show on G702 for that cost code. GC can bill MORE for self-perform work.
-                const subMinWorkThisPeriod = getCurrentSubBilledThisPeriodForCode(line.cost_code);
-                const workThis = Math.max(billing.workThisPeriod || 0, subMinWorkThisPeriod);
-                const materials = billing.materialsStored || 0;
-                const thisPeriodTotal = workThis + materials;
-
-                // CORRECTED per user exact requirement:
-                // Billed to Date on G702 = line.billed_to_date (cumulative from all PREVIOUSLY APPROVED periods)
-                // + current period's Work This Period + Materials.
-                // On first period: line.billed_to_date starts at 0 → Billed to Date shows 0.
-                // After approve: we add this period's completed to line.billed_to_date on the SOV.
-                // Next period: Billed to Date shows previous cumulative + new this period.
-                // CORRECT BEHAVIOR (per user):
-                // On the CURRENT open period (Draft/Submitted), Billed to Date shows ONLY what is already committed
-                // from previously approved pay applications (stored in line.billed_to_date).
-                // Current period's Work This Period + Materials is NOT added here until the whole G702 is Approved.
-                const previousBilled = line.billed_to_date || 0;
-                const totalBilled = previousBilled;   // Do NOT add thisPeriodTotal yet
+                const coAmount = getContractorLineCoAmount(line);
+                const currentAmount = (line.original || 0) + coAmount;
+                const b = getG702BillingForLine(line);
+                const workThis = b.workThis;
+                const materials = b.materials;
+                const coWorkThis = b.coWorkThis;
+                const thisPeriodTotal = b.thisPeriodTotal;
+                const previousBilled = (line.billed_to_date || 0) + (line.co_billed_to_date || 0);
+                const totalBilled = previousBilled;
                 const percentComplete = currentAmount > 0 ? Math.min(100, Math.round((totalBilled / currentAmount) * 100)) : 0;
-                const retainageRate = defaultRetainagePercent / 100;
-                const retainage = thisPeriodTotal * retainageRate;
+                const retainage = b.retainage;
 
                 const row = document.createElement('tr');
                 row.className = 'sov-line-row hover:bg-zinc-800/60 cursor-pointer';
@@ -2905,11 +3102,12 @@ let mainLienWaiver = JSON.parse(casepmStore.getItem('mainLienWaiver') || '{}'); 
                     <td class="px-4 py-2 font-mono text-emerald-400 text-sm">${line.cost_code || ''}</td>
                     <td class="px-4 py-2 text-sm">${line.description || ''}</td>
                     <td class="px-4 py-2 text-right font-mono text-[15px]">${formatCurrency(line.original || 0)}</td>
-                    <td class="px-4 py-2 text-right font-mono text-amber-400 text-[15px]">${formatCurrency(line.co_amount || 0)}</td>
+                    <td class="px-4 py-2 text-right font-mono text-amber-400 text-[15px]">${formatCurrency(coAmount)}</td>
                     <td class="px-4 py-2 text-right font-mono text-emerald-400 text-[15px] font-semibold">${formatCurrency(currentAmount)}</td>
                     <td class="px-3 py-2 text-center font-mono text-xs">${percentComplete}%</td>
                     <td class="px-4 py-2 text-right text-emerald-400 font-mono text-[15px]">${formatCurrency(totalBilled)}</td>
                     <td class="px-4 py-2 text-right text-emerald-400 font-semibold font-mono text-[15px]">${formatCurrency(workThis)}</td>
+                    <td class="px-3 py-2 text-right text-amber-300 font-mono text-[15px]">${formatCurrency(coWorkThis)}</td>
                     <td class="px-3 py-2 text-right text-sky-400 font-mono text-[15px]">${formatCurrency(materials)}</td>
                     <td class="px-3 py-2 text-right text-red-400 font-mono text-[15px]">${formatCurrency(retainage)}</td>
                     <td class="px-4 py-2 text-[15px] text-zinc-400 notes-cell" title="${(line.notes || '').replace(/"/g, '&quot;')}">${line.notes || ''}</td>
@@ -3099,21 +3297,20 @@ let mainLienWaiver = JSON.parse(casepmStore.getItem('mainLienWaiver') || '{}'); 
         if (!line) return;
 
         const billing = payAppBillingLines[sovLineId] || { workThisPeriod: 0, materialsStored: 0, coWorkThisPeriod: 0 };
-        const currentAmount = (line.original || 0) + (line.co_amount || 0);
-        // Use history-based cumulative for accurate "Previously Billed" in the edit modal
-        const previousBilled = getPreviouslyBilledFromHistory(line.cost_code);
-        const remaining = currentAmount - previousBilled;
+        const coAmount = getContractorLineCoAmount(line);
+        const currentAmount = (line.original || 0) + coAmount;
+        const previousBilled = (line.billed_to_date || 0) + (line.co_billed_to_date || 0);
+        const remaining = Math.max(0, (line.original || 0) - (line.billed_to_date || 0));
 
-        // Calculate CO already billed previously (simple model: assume proportion or stored separately; here we use a stored co_billed_to_date if present)
-        const coBilledPreviously = (line.co_billed_to_date || Math.round((line.co_amount || 0) * 0.6));
-        const coRemaining = Math.max(0, (line.co_amount || 0) - coBilledPreviously);
+        const coBilledPreviously = line.co_billed_to_date || 0;
+        const coRemaining = Math.max(0, coAmount - coBilledPreviously);
         const coWorkThis = billing.coWorkThisPeriod || 0;
         const coLeftToBill = Math.max(0, coRemaining - coWorkThis);
 
         const modal = document.getElementById('editBillingModal');
         const content = document.getElementById('editBillingContent');
 
-        const hasCO = (line.co_amount || 0) > 0;
+        const hasCO = coAmount > 0;
 
         content.innerHTML = `
             <div class="mb-4">
@@ -3208,8 +3405,8 @@ let mainLienWaiver = JSON.parse(casepmStore.getItem('mainLienWaiver') || '{}'); 
         const line = contractorSOV.find(l => l.id === sovLineId);
         if (!line) return;
 
-        const coTotal = line.co_amount || 0;
-        const coBilledPreviously = (line.co_billed_to_date || Math.round(coTotal * 0.6));
+        const coTotal = getContractorLineCoAmount(line);
+        const coBilledPreviously = line.co_billed_to_date || 0;
         const coWorkThis = parseFloat(newCoWorkValue) || 0;
         const coRemainingAfter = Math.max(0, coTotal - coBilledPreviously - coWorkThis);
 
@@ -3359,6 +3556,7 @@ let mainLienWaiver = JSON.parse(casepmStore.getItem('mainLienWaiver') || '{}'); 
         currentPayAppPeriod.status = "Submitted";
         casepmStore.setItem('currentPayAppPeriod', JSON.stringify(currentPayAppPeriod));
         logPayAppAudit('APPLICATION_SUBMITTED', { periodNumber: currentPayAppPeriod.periodNumber, validatedAgainstBudget: budgetContractAmount });
+        queueSageSync('G702Submitted', { periodNumber: currentPayAppPeriod.periodNumber }, `G702 period ${currentPayAppPeriod.periodNumber} submitted — queued for Sage progress billing review`);
         renderPayAppContent();
         if (typeof CasePMWorkflow !== 'undefined') {
             const billingSnapshot = {};
@@ -3405,10 +3603,10 @@ let mainLienWaiver = JSON.parse(casepmStore.getItem('mainLienWaiver') || '{}'); 
             approvedAt: new Date().toISOString(),
             // Calculated at approval time for accurate historical % and CO billed
             lineMetrics: contractorSOV.map(line => {
-                const billing = finalBillingForSnapshot[line.id] || { workThisPeriod: 0, materialsStored: 0 };
-                const currentAmount = (line.original || 0) + (line.co_amount || 0);
-                const previousBilled = line.billed_to_date || 0;
-                const thisPeriodTotal = (billing.workThisPeriod || 0) + (billing.materialsStored || 0);
+            const currentAmount = (line.original || 0) + (line.co_amount || 0);
+                const billing = finalBillingForSnapshot[line.id] || { workThisPeriod: 0, materialsStored: 0, coWorkThisPeriod: 0 };
+                const previousBilled = (line.billed_to_date || 0) + (line.co_billed_to_date || 0);
+                const thisPeriodTotal = (billing.workThisPeriod || 0) + (billing.materialsStored || 0) + (billing.coWorkThisPeriod || 0);
                 const totalBilledAtApproval = previousBilled + thisPeriodTotal;
                 const pctComplete = currentAmount > 0 ? Math.min(100, Math.round((totalBilledAtApproval / currentAmount) * 100)) : 0;
                 return {
@@ -3441,6 +3639,12 @@ let mainLienWaiver = JSON.parse(casepmStore.getItem('mainLienWaiver') || '{}'); 
         currentPayAppPeriod.status = "Approved";
         casepmStore.setItem('currentPayAppPeriod', JSON.stringify(currentPayAppPeriod));
         logPayAppAudit('APPLICATION_APPROVED', { periodNumber: currentPayAppPeriod.periodNumber });
+        const approvedRollup = computeG703Rollup();
+        queueSageSync('G702Approved', {
+            periodNumber: currentPayAppPeriod.periodNumber,
+            grandTotal: approvedRollup.grand.completed,
+            amountDue: approvedRollup.grand.thisPeriod + approvedRollup.grand.materials + approvedRollup.changeOrders.thisPeriod - approvedRollup.grand.retainage,
+        }, `G702 period ${currentPayAppPeriod.periodNumber} approved — queued for Sage AR/progress billing post`);
         if (typeof CasePMWorkflow !== 'undefined') {
             CasePMWorkflow.onG702Approved(currentPayAppPeriod).catch(e => console.warn('Workflow', e));
         }
@@ -3457,10 +3661,13 @@ let mainLienWaiver = JSON.parse(casepmStore.getItem('mainLienWaiver') || '{}'); 
         // This ensures the next period's G702 starts with the correct cumulative Billed to Date.
         // We use the same final values that were calculated for the history snapshot (sub min enforced).
         contractorSOV.forEach(line => {
-            const finalBilling = finalBillingForSnapshot[line.id] || { workThisPeriod: 0, materialsStored: 0 };
-            const thisPeriodCompleted = (finalBilling.workThisPeriod || 0) + (finalBilling.materialsStored || 0);
+            const finalBilling = finalBillingForSnapshot[line.id] || { workThisPeriod: 0, materialsStored: 0, coWorkThisPeriod: 0 };
+            const contractCompleted = (finalBilling.workThisPeriod || 0) + (finalBilling.materialsStored || 0);
+            const coCompleted = finalBilling.coWorkThisPeriod || 0;
             if (!line.billed_to_date) line.billed_to_date = 0;
-            line.billed_to_date += thisPeriodCompleted;
+            if (!line.co_billed_to_date) line.co_billed_to_date = 0;
+            line.billed_to_date += contractCompleted;
+            line.co_billed_to_date += coCompleted;
         });
         casepmStore.setItem('contractorSOV', JSON.stringify(contractorSOV));
 
@@ -3904,7 +4111,7 @@ let mainLienWaiver = JSON.parse(casepmStore.getItem('mainLienWaiver') || '{}'); 
                 contractorLines.forEach(l => {
                     if ((l.cost_code || '').trim().toUpperCase() === norm) {
                         // Contractor SOV uses "original" field
-                        gcTotal += (l.original || 0) + (l.change_orders || 0);
+                        gcTotal += (l.original || 0) + getContractorLineCoAmount(l);
                     }
                 });
                 if (gcTotal > 0) {
@@ -4925,7 +5132,7 @@ let mainLienWaiver = JSON.parse(casepmStore.getItem('mainLienWaiver') || '{}'); 
             const coAmount = line.change_orders || 0;
             const currentTotal = current + coAmount;
             // Retainage: use 10% of (This Period + Stored Materials) for display, or a stored field if available
-            const retainageAmount = (thisPeriod + (line.materials_stored || 0)) * 0.10;
+            const retainageAmount = (thisPeriod + (line.materials_stored || 0) + (line.co_billed_this_period || 0)) * getRetainageRate();
 
             row.innerHTML = `
                 <td class="px-3 py-2 text-center font-mono text-xs text-zinc-500">${visibleIdxSub}</td>
@@ -5211,7 +5418,7 @@ let mainLienWaiver = JSON.parse(casepmStore.getItem('mainLienWaiver') || '{}'); 
             const lCode = (l.cost_code || '').toUpperCase().replace(/[\s-]/g, '');
             if (lCode === normCode) {
                 // Contractor SOV lines use "original" + "change_orders" (this is the "Current" column value)
-                gcG703Total += (l.original || 0) + (l.change_orders || 0);
+                gcG703Total += (l.original || 0) + getContractorLineCoAmount(l);
             }
         });
 
@@ -5479,7 +5686,7 @@ let mainLienWaiver = JSON.parse(casepmStore.getItem('mainLienWaiver') || '{}'); 
         let gcG703Total = 0;
         contractorSOVLines.forEach(l => {
             if (l.cost_code === costCode) {
-                gcG703Total += (l.original || 0) + (l.change_orders || 0);
+                gcG703Total += (l.original || 0) + getContractorLineCoAmount(l);
             }
         });
 
@@ -6117,6 +6324,7 @@ let mainLienWaiver = JSON.parse(casepmStore.getItem('mainLienWaiver') || '{}'); 
         if (!safeSetLocalStorage('subPayAppHistory', subPayAppHistory)) return;
 
         logPayAppAudit('SUB_PAYAPP_SUBMITTED_FOR_APPROVAL', { companyId: companyId, period: currentPeriodNum, total: totalBilledThisPeriod, isCompliance: isComplianceSubmission });
+        queueSageSync('SubPayAppSubmitted', { companyId, periodNumber: currentPeriodNum, total: totalBilledThisPeriod }, `Sub pay app submitted by ${getCompanyName(companyId)} — queued for Sage review`);
         if (typeof CasePMWorkflow !== 'undefined') {
             CasePMWorkflow.onSubPayAppSubmitted(companyId, getCompanyName(companyId), currentPeriodNum, totalBilledThisPeriodCheck, {
                 lines: snapshotLines,
@@ -6270,6 +6478,12 @@ let mainLienWaiver = JSON.parse(casepmStore.getItem('mainLienWaiver') || '{}'); 
         if (typeof CasePMWorkflow !== 'undefined') {
             CasePMWorkflow.onSubPayAppApproved(companyId, getCompanyName(companyId), currentPeriodNum).catch(e => console.warn('Workflow', e));
         }
+        queueSageSync('SubPayAppApproved', {
+            companyId,
+            companyName: getCompanyName(companyId),
+            periodNumber: currentPeriodNum,
+            totalCommitted: totalCommittedThisPeriod,
+        }, `Sub pay app #${currentPeriodNum} for ${getCompanyName(companyId)} approved — queued for Sage subcontractor billing/AP`);
         
         renderPayAppContent();
     }
@@ -6659,33 +6873,25 @@ function printSubcontractorG703(companyId) {
 
     function printG702() {
         const period = currentPayAppPeriod || { periodNumber: 1, periodStart: '2026-07-01', periodEnd: '2026-07-31', status: 'Draft' };
-        const retainageRate = (typeof defaultRetainagePercent !== 'undefined' ? defaultRetainagePercent : 10) / 100;
+        const rollup = computeG703Rollup();
+        const retainageRate = rollup.retainageRate;
         const retainagePct = Math.round(retainageRate * 100);
 
-        // Calculate totals from live data
-        let totalOriginal = 0, totalCO = 0, totalCurrent = 0, totalRetainage = 0, totalPrevious = 0;
-        let totalWorkThisPeriod = 0, totalMaterials = 0;
-
-        contractorSOV.forEach(line => {
-            totalOriginal += (line.original || 0);
-            totalCO += (line.co_amount || 0);
-            const billing = payAppBillingLines[line.id] || { workThisPeriod: 0, materialsStored: 0 };
-            const thisPeriod = (billing.workThisPeriod || 0);
-            const mats = (billing.materialsStored || 0);
-            totalWorkThisPeriod += thisPeriod;
-            totalMaterials += mats;
-            totalCurrent += (thisPeriod + mats);
-            totalRetainage += (thisPeriod + mats) * retainageRate;
-        });
+        const totalOriginal = rollup.contract.scheduled;
+        const totalCO = rollup.changeOrders.scheduled;
+        const totalCurrent = rollup.grand.thisPeriod + rollup.grand.materials + rollup.changeOrders.thisPeriod;
+        const totalRetainage = rollup.grand.retainage;
+        const totalPrevious = rollup.grand.prev - (rollup.grand.thisPeriod + rollup.grand.materials + rollup.changeOrders.thisPeriod);
+        const cumulativeCompleted = rollup.grand.completed;
 
         const contractSumToDate = totalOriginal + totalCO;
-        const earnedLessRetainage = totalCurrent - totalRetainage;
-        const currentDue = earnedLessRetainage - totalPrevious;
-        const balanceToFinish = contractSumToDate - totalCurrent;
+        const earnedLessRetainage = cumulativeCompleted - totalRetainage;
+        const previousEarnedLessRetainage = Math.max(0, (rollup.grand.prev) - (rollup.grand.prev * retainageRate));
+        const currentDue = earnedLessRetainage - previousEarnedLessRetainage;
+        const balanceToFinish = contractSumToDate - earnedLessRetainage;
 
-        // Completed work for retainage split (simplified: use totalCurrent for both a & b in this preview)
-        const retainageCompleted = totalCurrent * retainageRate;
-        const retainageStored = totalMaterials * retainageRate;
+        const retainageCompleted = (rollup.contract.thisPeriod + rollup.changeOrders.thisPeriod) * retainageRate;
+        const retainageStored = rollup.grand.materials * retainageRate;
 
         const printHTML = `
             <html>
@@ -6772,13 +6978,13 @@ function printSubcontractorG703(companyId) {
                             <tr><td>1. ORIGINAL CONTRACT SUM</td><td class="right">${formatCurrency(totalOriginal)}</td></tr>
                             <tr><td>2. Net change by Change Orders</td><td class="right">${formatCurrency(totalCO)}</td></tr>
                             <tr><td class="bold">3. CONTRACT SUM TO DATE (Line 1 + 2)</td><td class="right bold">${formatCurrency(contractSumToDate)}</td></tr>
-                            <tr><td>4. TOTAL COMPLETED &amp; STORED TO DATE (Column G on G703)</td><td class="right">${formatCurrency(totalCurrent)}</td></tr>
+                            <tr><td>4. TOTAL COMPLETED &amp; STORED TO DATE (Column G on G703)</td><td class="right">${formatCurrency(cumulativeCompleted)}</td></tr>
                             <tr><td>5. RETAINAGE:</td><td class="right"></td></tr>
                             <tr><td style="padding-left:12px;">a. ${retainagePct}% of Completed Work (Columns D + E on G703)</td><td class="right">${formatCurrency(retainageCompleted)}</td></tr>
                             <tr><td style="padding-left:12px;">b. ${retainagePct}% of Stored Material (Column F on G703)</td><td class="right">${formatCurrency(retainageStored)}</td></tr>
                             <tr><td>Total Retainage (Line 5a + 5b)</td><td class="right">${formatCurrency(totalRetainage)}</td></tr>
                             <tr><td class="bold">6. TOTAL EARNED LESS RETAINAGE (Line 4 less Line 5)</td><td class="right bold">${formatCurrency(earnedLessRetainage)}</td></tr>
-                            <tr><td>7. LESS PREVIOUS CERTIFICATES FOR PAYMENT (Line 6 from prior Certificate)</td><td class="right">${formatCurrency(totalPrevious)}</td></tr>
+                            <tr><td>7. LESS PREVIOUS CERTIFICATES FOR PAYMENT (Line 6 from prior Certificate)</td><td class="right">${formatCurrency(previousEarnedLessRetainage)}</td></tr>
                             <tr style="background:#f0f0f0;"><td class="bold" style="font-size:10px;">8. CURRENT PAYMENT DUE</td><td class="right bold" style="font-size:10px;">${formatCurrency(currentDue)}</td></tr>
                             <tr><td>9. BALANCE TO FINISH, INCLUDING RETAINAGE (Line 3 less Line 6)</td><td class="right">${formatCurrency(balanceToFinish)}</td></tr>
                         </table>
@@ -6880,33 +7086,20 @@ function printSubcontractorG703(companyId) {
 
     function printG703() {
         const period = currentPayAppPeriod || { periodNumber: 1, periodStart: '2026-07-01', periodEnd: '2026-07-31' };
-        const retainageRate = (typeof defaultRetainagePercent !== 'undefined' ? defaultRetainagePercent : 10) / 100;
+        const rollup = computeG703Rollup();
+        const retainageRate = rollup.retainageRate;
 
         let rows = '';
-        let totalScheduled = 0, totalPrev = 0, totalThis = 0, totalMat = 0, totalCompleted = 0, totalRet = 0, totalBalance = 0, totalCOs = 0;
-
         contractorSOV.forEach((line, idx) => {
-            const billing = payAppBillingLines[line.id] || { workThisPeriod: 0, materialsStored: 0 };
-            const scheduled = (line.original || 0) + (line.co_amount || 0);
-            const workThis = billing.workThisPeriod || 0;
-            // Approximate "From Previous" as cumulative billed minus this period (simple model)
-            const prevWork = Math.max(0, (line.billed_to_date || 0) - workThis);
-            const mat = billing.materialsStored || 0;
+            const b = getG702BillingForLine(line);
+            const scheduled = line.original || 0;
+            const prevWork = line.billed_to_date || 0;
+            const workThis = b.workThis;
+            const mat = b.materials;
             const completedToDate = prevWork + workThis + mat;
             const pct = scheduled > 0 ? Math.round((completedToDate / scheduled) * 100) : 0;
-            const balance = scheduled - completedToDate;
+            const balance = Math.max(0, scheduled - completedToDate);
             const ret = (workThis + mat) * retainageRate;
-
-            totalScheduled += scheduled;
-            totalPrev += prevWork;
-            totalThis += workThis;
-            totalMat += mat;
-            totalCompleted += completedToDate;
-            totalRet += ret;
-            totalBalance += balance;
-
-            // For Change Orders section in print
-            totalCOs = (totalCOs || 0) + (line.co_amount || 0);
 
             rows += `<tr>
                 <td style="border:1px solid #333;padding:4px 6px;font-family:monospace;font-size:9px;">${idx + 1}</td>
@@ -6921,6 +7114,12 @@ function printSubcontractorG703(companyId) {
                 <td style="border:1px solid #333;padding:4px 6px;text-align:right;font-family:monospace;font-size:9px;">${formatCurrency(ret)}</td>
             </tr>`;
         });
+
+        const c = rollup.contract;
+        const co = rollup.changeOrders;
+        const g = rollup.grand;
+        const pctContract = c.scheduled > 0 ? Math.round((c.completed / c.scheduled) * 100) : 0;
+        const pctGrand = g.scheduled > 0 ? Math.round((g.completed / g.scheduled) * 100) : 0;
 
         const printHTML = `
             <html><head><title>AIA G703 Continuation Sheet - Period ${period.periodNumber}</title>
@@ -6970,39 +7169,39 @@ function printSubcontractorG703(companyId) {
                         ${rows}
                         <tr class="section-header">
                             <td colspan="2" style="text-align:right; font-weight:700;">Total Contract Work</td>
-                            <td class="right">${formatCurrency(totalScheduled)}</td>
-                            <td class="right">${formatCurrency(totalPrev)}</td>
-                            <td class="right">${formatCurrency(totalThis)}</td>
-                            <td class="right">${formatCurrency(totalMat)}</td>
-                            <td class="right">${formatCurrency(totalCompleted)}</td>
-                            <td class="center">${totalScheduled > 0 ? Math.round((totalCompleted / totalScheduled) * 100) : 0}%</td>
-                            <td class="right">${formatCurrency(totalBalance)}</td>
-                            <td class="right">${formatCurrency(totalRet)}</td>
+                            <td class="right">${formatCurrency(c.scheduled)}</td>
+                            <td class="right">${formatCurrency(c.prev)}</td>
+                            <td class="right">${formatCurrency(c.thisPeriod)}</td>
+                            <td class="right">${formatCurrency(c.materials)}</td>
+                            <td class="right">${formatCurrency(c.completed)}</td>
+                            <td class="center">${pctContract}%</td>
+                            <td class="right">${formatCurrency(c.balance)}</td>
+                            <td class="right">${formatCurrency(c.retainage)}</td>
                         </tr>
                         <tr style="font-weight:700; background:#f3f4f6;">
                             <td colspan="2" style="text-align:right;">Change Orders</td>
-                            <td class="right">${formatCurrency(totalCOs)}</td>
-                            <td class="right">—</td>
-                            <td class="right">—</td>
-                            <td class="right">—</td>
-                            <td class="right">${formatCurrency(totalCOs)}</td>
-                            <td class="center">—</td>
-                            <td class="right">—</td>
-                            <td class="right">${formatCurrency(totalCOs * retainageRate)}</td>
+                            <td class="right">${formatCurrency(co.scheduled)}</td>
+                            <td class="right">${formatCurrency(co.prev)}</td>
+                            <td class="right">${formatCurrency(co.thisPeriod)}</td>
+                            <td class="right">${formatCurrency(co.materials)}</td>
+                            <td class="right">${formatCurrency(co.completed)}</td>
+                            <td class="center">${co.scheduled > 0 ? Math.round((co.completed / co.scheduled) * 100) : 0}%</td>
+                            <td class="right">${formatCurrency(co.balance)}</td>
+                            <td class="right">${formatCurrency(co.retainage)}</td>
                         </tr>
                         <tr>
                             <td colspan="10" style="height:4px;"></td>
                         </tr>
                         <tr style="font-weight:700; background:#f8f9fa;">
                             <td colspan="2" style="text-align:right;">GRAND TOTALS</td>
-                            <td class="right">${formatCurrency(totalScheduled)}</td>
-                            <td class="right">${formatCurrency(totalPrev)}</td>
-                            <td class="right">${formatCurrency(totalThis)}</td>
-                            <td class="right">${formatCurrency(totalMat)}</td>
-                            <td class="right">${formatCurrency(totalCompleted)}</td>
-                            <td class="center">${totalScheduled > 0 ? Math.round((totalCompleted / totalScheduled) * 100) : 0}%</td>
-                            <td class="right">${formatCurrency(totalBalance)}</td>
-                            <td class="right">${formatCurrency(totalRet)}</td>
+                            <td class="right">${formatCurrency(g.scheduled)}</td>
+                            <td class="right">${formatCurrency(g.prev)}</td>
+                            <td class="right">${formatCurrency(g.thisPeriod)}</td>
+                            <td class="right">${formatCurrency(g.materials)}</td>
+                            <td class="right">${formatCurrency(g.completed)}</td>
+                            <td class="center">${pctGrand}%</td>
+                            <td class="right">${formatCurrency(g.balance)}</td>
+                            <td class="right">${formatCurrency(g.retainage)}</td>
                         </tr>
                     </tbody>
                 </table>
@@ -7971,27 +8170,18 @@ function printSubcontractorG703(companyId) {
         ws['A5'].s = { font: { bold: true, size: 9 }, fill: { fgColor: { rgb: "E5E7EB" } } };
 
         let row = 6;
-        let totalScheduled = 0, totalPrev = 0, totalThis = 0, totalMat = 0, totalCompleted = 0, totalRet = 0, totalBalance = 0, totalCOs = 0;
+        const rollup = computeG703Rollup();
 
         contractorSOV.forEach((line, idx) => {
-            const billing = payAppBillingLines[line.id] || { workThisPeriod: 0, materialsStored: 0 };
-            const scheduled = (line.original || 0) + (line.co_amount || 0);
-            const workThis = billing.workThisPeriod || 0;
-            const prevWork = Math.max(0, (line.billed_to_date || 0) - workThis);
-            const mat = billing.materialsStored || 0;
+            const b = getG702BillingForLine(line);
+            const scheduled = line.original || 0;
+            const workThis = b.workThis;
+            const prevWork = line.billed_to_date || 0;
+            const mat = b.materials;
             const completedToDate = prevWork + workThis + mat;
             const pct = scheduled > 0 ? Math.round((completedToDate / scheduled) * 100) : 0;
-            const balance = scheduled - completedToDate;
-            const ret = (workThis + mat) * retainageRate;
-
-            totalScheduled += scheduled;
-            totalPrev += prevWork;
-            totalThis += workThis;
-            totalMat += mat;
-            totalCompleted += completedToDate;
-            totalRet += ret;
-            totalBalance += balance;
-            totalCOs += (line.co_amount || 0);
+            const balance = Math.max(0, scheduled - completedToDate);
+            const ret = (workThis + mat) * rollup.retainageRate;
 
             const rowData = [
                 idx + 1,
@@ -8007,7 +8197,6 @@ function printSubcontractorG703(companyId) {
             ];
             XLSX.utils.sheet_add_aoa(ws, [rowData], { origin: "A" + row });
 
-            // Currency formatting + conditional (over-billed = red background)
             const isOver = completedToDate > scheduled + 0.01;
             for (let c = 3; c <= 10; c++) {
                 const colLetter = String.fromCharCode(64 + c);
@@ -8023,11 +8212,13 @@ function printSubcontractorG703(companyId) {
             row++;
         });
 
-        // Totals + Change Orders section
+        const c = rollup.contract;
+        const co = rollup.changeOrders;
+        const g = rollup.grand;
         XLSX.utils.sheet_add_aoa(ws, [
-            ["", "Total Contract Work", totalScheduled, totalPrev, totalThis, totalMat, totalCompleted, (totalScheduled > 0 ? Math.round((totalCompleted/totalScheduled)*100) : 0) + "%", totalBalance, totalRet],
-            ["", "Change Orders", totalCOs, "—", "—", "—", totalCOs, "—", "—", totalCOs * retainageRate],
-            ["", "GRAND TOTALS", totalScheduled, totalPrev, totalThis, totalMat, totalCompleted, (totalScheduled > 0 ? Math.round((totalCompleted/totalScheduled)*100) : 0) + "%", totalBalance, totalRet],
+            ["", "Total Contract Work", c.scheduled, c.prev, c.thisPeriod, c.materials, c.completed, (c.scheduled > 0 ? Math.round((c.completed/c.scheduled)*100) : 0) + "%", c.balance, c.retainage],
+            ["", "Change Orders", co.scheduled, co.prev, co.thisPeriod, co.materials, co.completed, (co.scheduled > 0 ? Math.round((co.completed/co.scheduled)*100) : 0) + "%", co.balance, co.retainage],
+            ["", "GRAND TOTALS", g.scheduled, g.prev, g.thisPeriod, g.materials, g.completed, (g.scheduled > 0 ? Math.round((g.completed/g.scheduled)*100) : 0) + "%", g.balance, g.retainage],
         ], { origin: "A" + row });
 
         // Style totals row
@@ -8175,6 +8366,11 @@ function printSubcontractorG703(companyId) {
         if (deadlineDaySelect && submissionDeadlineDay) {
             deadlineDaySelect.value = submissionDeadlineDay;
         }
+
+        const sageToggle = document.getElementById('sageSyncAutoEnabledToggle');
+        if (sageToggle) {
+            sageToggle.checked = sageSyncAutoEnabled;
+        }
     }
     
     // Helper to show/hide date input when checkbox changes
@@ -8236,6 +8432,12 @@ function printSubcontractorG703(companyId) {
             allowZeroDollarSubPayApps = zeroSubPayToggle.checked;
             casepmStore.setItem('allowZeroDollarSubPayApps', allowZeroDollarSubPayApps);
         }
+
+        const sageToggle = document.getElementById('sageSyncAutoEnabledToggle');
+        if (sageToggle) {
+            sageSyncAutoEnabled = sageToggle.checked;
+            casepmStore.setItem('sageSyncAutoEnabled', sageSyncAutoEnabled ? 'true' : 'false');
+        }
     }
 
     function savePayAppSettings() {
@@ -8260,7 +8462,8 @@ function printSubcontractorG703(companyId) {
                 'requireAllSubPayAppsToggle',
                 'requireSubmissionDeadlineToggle',
                 'submissionDeadlineDay',
-                'allowZeroDollarSubPayAppsToggle'
+                'allowZeroDollarSubPayAppsToggle',
+                'sageSyncAutoEnabledToggle'
             ].includes(id)) {
                 persistPayAppSettings();
                 if (currentPayAppTab === 'payapp' || currentPayAppTab === 'sub-sov') {
@@ -8607,19 +8810,40 @@ function printSubcontractorG703(companyId) {
 
     // ==================== INITIALIZATION ====================
     function initializePayApplications() {
-        seedDemoDataIfNeeded();
-        bindPayAppSettingsAutoSave();
-        pruneInlineLienWaiverPayloads();
-        migrateLegacyComplianceKeys();
-        reconcileSubPayAppTrackerState();
-        rebuildPreviousSubPayAppArchiveFromHistory();
+        const boot = async () => {
+            if (typeof CasePMPayAppSync !== 'undefined') {
+                await CasePMPayAppSync.init();
+                reloadPayAppStateFromStorage();
+            } else if (typeof CasePMWorkflow !== 'undefined') {
+                CasePMWorkflow.loadPortal().catch(() => {});
+            }
+            seedDemoDataIfNeeded();
+            bindPayAppSettingsAutoSave();
+            pruneInlineLienWaiverPayloads();
+            migrateLegacyComplianceKeys();
+            reconcileSubPayAppTrackerState();
+            rebuildPreviousSubPayAppArchiveFromHistory();
 
-        // Restore last selected sub if any
-        const lastSub = casepmStore.getItem('lastSelectedSubSOV');
-        if (lastSub) selectedSubCompanyId = parseInt(lastSub);
+            const lastSub = casepmStore.getItem('lastSelectedSubSOV');
+            if (lastSub) selectedSubCompanyId = parseInt(lastSub);
 
-        // Initial render
-        renderPayAppContent();
+            renderPayAppContent();
+            renderSageSyncStatus();
+        };
+        boot();
+
+        window.addEventListener('casepm:co-approved', () => {
+            if (typeof CasePMPayAppSync !== 'undefined') {
+                CasePMPayAppSync.refreshFromServer().then(() => {
+                    reloadPayAppStateFromStorage();
+                    renderPayAppContent();
+                });
+            }
+        });
+        window.addEventListener('casepm:payapp-state-refreshed', () => {
+            reloadPayAppStateFromStorage();
+            renderPayAppContent();
+        });
 
         // Keyboard shortcuts
         document.addEventListener('keydown', function(e) {

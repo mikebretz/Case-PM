@@ -2,6 +2,7 @@
 {% extends "base.html" %}
 
 {% block content %}
+<script src="{{ url_for('static', filename='js/pay-app-sync.js') }}"></script>
 <div class="p-8 max-w-[1600px] mx-auto">
 
     <!-- Header -->
@@ -183,7 +184,7 @@
             </div>
 
             <!-- Requested By + Amount -->
-            <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+            <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
                 <div>
                     <label class="block text-sm text-zinc-400 mb-1.5">Requested By</label>
                     <input type="text" id="coRequestedBy" class="w-full bg-zinc-800 border border-zinc-700 rounded-2xl px-4 py-2.5 text-sm" value="{{ current_user.first_name }} {{ current_user.last_name }}">
@@ -194,6 +195,11 @@
                         <span class="absolute left-4 top-3 text-zinc-400">$</span>
                         <input type="number" step="0.01" id="coAmount" class="w-full bg-zinc-800 border border-zinc-700 rounded-2xl pl-8 pr-4 py-2.5 text-sm" required>
                     </div>
+                </div>
+                <div>
+                    <label class="block text-sm text-zinc-400 mb-1.5">Cost Code (SOV)</label>
+                    <input type="text" id="coCostCode" class="w-full bg-zinc-800 border border-zinc-700 rounded-2xl px-4 py-2.5 text-sm font-mono" placeholder="e.g. 03-3000">
+                    <p class="text-[10px] text-zinc-500 mt-1">Applied to contractor SOV on approval</p>
                 </div>
             </div>
 
@@ -270,6 +276,31 @@
 
 <!-- ==================== JAVASCRIPT ==================== -->
 <script>
+    const CO_PROJECT_ID = {{ active_project.id if active_project else 'null' }};
+
+    function showToast(message, isError) {
+        const toast = document.createElement('div');
+        toast.className = `fixed bottom-6 right-6 z-50 px-4 py-2 rounded-xl text-sm shadow-lg ${isError ? 'bg-red-900 text-red-100' : 'bg-emerald-900 text-emerald-100'}`;
+        toast.textContent = message;
+        document.body.appendChild(toast);
+        setTimeout(() => toast.remove(), 2800);
+    }
+
+    function canApproveChangeOrders() {
+        if (typeof CasePMWorkflow !== 'undefined' && window.CASEPM_PORTAL) {
+            return CasePMWorkflow.canApprove('Change Orders');
+        }
+        return true;
+    }
+
+    async function applyCoSovSync(syncResult) {
+        if (!syncResult || syncResult.error) return;
+        if (typeof CasePMPayAppSync !== 'undefined') {
+            CasePMPayAppSync.applyCoSyncResult(syncResult);
+        }
+        window.dispatchEvent(new CustomEvent('casepm:co-approved', { detail: syncResult }));
+    }
+
     // ==================== FILTERING ====================
     function filterChangeOrders() {
         const search = document.getElementById('coSearch').value.toLowerCase();
@@ -300,13 +331,10 @@
         form.reset();
         document.getElementById('changeOrderId').value = '';
         document.getElementById('coModalTitle').innerText = 'Create New Change Order';
-
-        // Auto-generate next CO number (example format)
-        const nextNumber = 'ALDI-' + String(19).padStart(3, '0') + '-0';
-        document.getElementById('coNumber').value = nextNumber;
+        document.getElementById('coNumber').value = 'Auto-assigned on save';
         document.getElementById('coRevision').value = '0';
+        document.getElementById('coCostCode').value = '';
 
-        // Set today's date
         const today = new Date().toISOString().split('T')[0];
         document.getElementById('coDate').value = today;
 
@@ -317,80 +345,171 @@
         document.getElementById('changeOrderModal').close();
     }
 
-    function editChangeOrder(id) {
-        const modal = document.getElementById('changeOrderModal');
-        document.getElementById('coModalTitle').innerText = 'Edit Change Order';
-        document.getElementById('changeOrderId').value = id;
-
-        // In a real application, you would fetch the data using the ID.
-        // For now, we populate with example data:
-        document.getElementById('coNumber').value = 'ALDI-018-0';
-        document.getElementById('coDate').value = '2026-06-18';
-        document.getElementById('coDescription').value = 'Additional rebar and concrete for foundation wall at column line B';
-        document.getElementById('coRequestedBy').value = 'Mike Bretz';
-        document.getElementById('coAmount').value = '8750';
-        document.getElementById('coReason').value = 'Unforeseen Condition';
-        document.getElementById('coScheduleImpact').value = 'Minor';
-        document.getElementById('coStatus').value = 'Under Review';
-
-        modal.showModal();
+    async function editChangeOrder(id) {
+        try {
+            const res = await fetch(`/api/change-orders/${id}`, { credentials: 'same-origin' });
+            if (!res.ok) throw new Error('Failed to load change order');
+            const co = await res.json();
+            const modal = document.getElementById('changeOrderModal');
+            document.getElementById('coModalTitle').innerText = 'Edit Change Order';
+            document.getElementById('changeOrderId').value = id;
+            document.getElementById('coNumber').value = co.number || '';
+            document.getElementById('coDate').value = co.date ? co.date.split('T')[0] : '';
+            document.getElementById('coDescription').value = co.description || '';
+            document.getElementById('coRequestedBy').value = co.requested_by || '';
+            document.getElementById('coAmount').value = co.amount || 0;
+            document.getElementById('coCostCode').value = co.cost_code || '';
+            document.getElementById('coReason').value = co.reason || '';
+            document.getElementById('coScheduleImpact').value = co.schedule_impact || 'None';
+            document.getElementById('coNotes').value = co.notes || '';
+            document.getElementById('coRevision').value = co.revision || 0;
+            document.getElementById('coStatus').value = co.status || 'Draft';
+            modal.showModal();
+        } catch (err) {
+            showToast(err.message || 'Could not load change order', true);
+        }
     }
 
-    function saveChangeOrder(e) {
+    async function saveChangeOrder(e) {
         e.preventDefault();
+
+        if (!CO_PROJECT_ID) {
+            showToast('Select a project before creating a change order', true);
+            return;
+        }
 
         const id = document.getElementById('changeOrderId').value;
         const isEdit = id !== '';
-
-        const data = {
-            number: document.getElementById('coNumber').value,
+        const payload = {
+            project_id: CO_PROJECT_ID,
+            description: document.getElementById('coDescription').value.trim(),
             date: document.getElementById('coDate').value,
-            description: document.getElementById('coDescription').value,
-            amount: parseFloat(document.getElementById('coAmount').value),
+            amount: parseFloat(document.getElementById('coAmount').value) || 0,
             status: document.getElementById('coStatus').value,
-            revision: document.getElementById('coRevision').value
+            revision: parseInt(document.getElementById('coRevision').value, 10) || 0,
+            requested_by: document.getElementById('coRequestedBy').value,
+            cost_code: document.getElementById('coCostCode').value.trim() || null,
+            reason: document.getElementById('coReason').value,
+            schedule_impact: document.getElementById('coScheduleImpact').value,
+            notes: document.getElementById('coNotes').value,
         };
 
-        console.log(isEdit ? 'Updating Change Order:' : 'Creating Change Order:', data);
+        try {
+            const url = isEdit ? `/api/change-orders/${id}` : '/api/change-orders';
+            const res = await fetch(url, {
+                method: isEdit ? 'PUT' : 'POST',
+                credentials: 'same-origin',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload),
+            });
+            const json = await res.json();
+            if (!res.ok) throw new Error(json.error || json.message || 'Save failed');
 
-        closeChangeOrderModal();
-
-        if (isEdit) {
-            showToast('Change Order updated successfully');
-        } else {
-            showToast('New Change Order created successfully');
+            closeChangeOrderModal();
+            showToast(isEdit ? 'Change Order updated successfully' : `Change Order ${json.number || ''} created`);
+            setTimeout(() => location.reload(), 700);
+        } catch (err) {
+            showToast(err.message || 'Save failed', true);
         }
-
-        // In a real app, you would refresh the table or reload the page
-        setTimeout(() => {
-            location.reload();
-        }, 900);
     }
 
     // ==================== ACTION FUNCTIONS ====================
-    function updateChangeOrderStatus(id, newStatus) {
-        console.log(`Updating Change Order #${id} to status: ${newStatus}`);
-        showToast(`Status updated to ${newStatus}`);
-        // TODO: Send update to backend
-    }
+    async function updateChangeOrderStatus(id, newStatus) {
+        try {
+            const res = await fetch(`/change-orders/${id}/update-status`, {
+                method: 'POST',
+                credentials: 'same-origin',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ status: newStatus }),
+            });
+            const json = await res.json();
+            if (!res.ok || !json.success) throw new Error(json.message || 'Status update failed');
 
-    function viewChangeOrder(id) {
-        alert(`Opening detailed view for Change Order #${id}\n(Full details, revision history, and attachments will appear here)`);
-    }
-
-    function approveChangeOrder(id) {
-        if (confirm('Approve this Change Order?')) {
-            console.log(`Approving Change Order #${id}`);
-            showToast('Change Order approved successfully');
-            // TODO: Update status via backend
+            if (json.sync_result) await applyCoSovSync(json.sync_result);
+            const msg = json.sov_synced
+                ? `Approved — $${(json.sync_result?.sov_amount_applied || 0).toLocaleString()} synced to contractor SOV`
+                : `Status updated to ${newStatus}`;
+            showToast(msg);
+        } catch (err) {
+            showToast(err.message || 'Status update failed', true);
+            location.reload();
         }
     }
 
-    function addRevision(id) {
+    async function viewChangeOrder(id) {
+        try {
+            const res = await fetch(`/api/change-orders/${id}`, { credentials: 'same-origin' });
+            if (!res.ok) throw new Error('Not found');
+            const co = await res.json();
+            const lines = [
+                `CO #: ${co.number}`,
+                `Status: ${co.status}`,
+                `Amount: $${(co.amount || 0).toLocaleString()}`,
+                `Cost Code: ${co.cost_code || '—'}`,
+                `Schedule Impact: ${co.schedule_impact || '—'}`,
+                co.sov_synced_at ? `SOV Synced: ${new Date(co.sov_synced_at).toLocaleString()}` : '',
+                '',
+                co.description || '',
+            ].filter(Boolean);
+            alert(lines.join('\n'));
+        } catch (err) {
+            showToast('Could not load change order details', true);
+        }
+    }
+
+    async function approveChangeOrder(id) {
+        if (!canApproveChangeOrders()) {
+            showToast('You do not have permission to approve change orders', true);
+            return;
+        }
+        const costCode = prompt('Cost code for SOV allocation (optional — leave blank for first line / holding):', '');
+        if (costCode === null) return;
+        if (!confirm('Approve this Change Order? Amount will sync to contractor SOV and schedule.')) return;
+
+        try {
+            if (costCode.trim()) {
+                await fetch(`/api/change-orders/${id}/allocate`, {
+                    method: 'POST',
+                    credentials: 'same-origin',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ cost_code: costCode.trim() }),
+                });
+            }
+            const res = await fetch(`/change-orders/${id}/update-status`, {
+                method: 'POST',
+                credentials: 'same-origin',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ status: 'Approved' }),
+            });
+            const json = await res.json();
+            if (!res.ok || !json.success) throw new Error(json.message || 'Approval failed');
+
+            if (json.sync_result) await applyCoSovSync(json.sync_result);
+            const applied = json.sync_result?.sov_amount_applied;
+            showToast(applied != null
+                ? `Approved — $${Number(applied).toLocaleString()} added to contractor SOV`
+                : 'Change Order approved successfully');
+            setTimeout(() => location.reload(), 900);
+        } catch (err) {
+            showToast(err.message || 'Approval failed', true);
+        }
+    }
+
+    async function addRevision(id) {
         const newRevision = prompt('Enter new revision number (e.g. 1):', '1');
-        if (newRevision) {
-            console.log(`Creating revision ${newRevision} for Change Order #${id}`);
-            showToast(`Revision ${newRevision} created`);
+        if (!newRevision) return;
+        try {
+            const res = await fetch(`/api/change-orders/${id}`, {
+                method: 'PUT',
+                credentials: 'same-origin',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ revision: parseInt(newRevision, 10) }),
+            });
+            if (!res.ok) throw new Error('Revision update failed');
+            showToast(`Revision ${newRevision} saved`);
+            setTimeout(() => location.reload(), 600);
+        } catch (err) {
+            showToast(err.message || 'Could not save revision', true);
         }
     }
 
@@ -403,7 +522,13 @@
 
     // ==================== INITIALIZATION ====================
     function initializeChangeOrdersPage() {
-        console.log('%c[Case PM] Change Orders page initialized with full features.', 'color:#10b981');
+        if (typeof CasePMPayAppSync !== 'undefined') {
+            CasePMPayAppSync.init().catch(() => {});
+        }
+        if (typeof CasePMWorkflow !== 'undefined') {
+            CasePMWorkflow.loadPortal().catch(() => {});
+        }
+        console.log('%c[Case PM] Change Orders page initialized with server sync.', 'color:#10b981');
     }
 
     window.addEventListener('load', initializeChangeOrdersPage);
