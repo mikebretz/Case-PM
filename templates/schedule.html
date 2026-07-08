@@ -11,7 +11,7 @@
         <div class="flex flex-wrap items-center justify-between gap-2 mb-2 pt-0">
             <div class="min-w-0">
                 <h1 class="text-xl font-semibold tracking-tight">Project Schedule</h1>
-                <p class="text-zinc-500 text-xs mt-0.5">Single-click to select · Double-click to edit · Drag green chart edge · Drag column borders to resize · Double-click column border to auto-fit · Use alignment buttons for cell text</p>
+                <p class="text-zinc-500 text-xs mt-0.5">Single-click cell to select · Click column header to select column · Alignment buttons apply to selection · Drag column borders to resize</p>
             </div>
             <div class="flex flex-wrap items-center gap-2">
                 <button type="button" class="schedule-toolbar-btn" onclick="ScheduleApp.exportJson()"><i class="fa-solid fa-download"></i> Export</button>
@@ -62,9 +62,9 @@
                 <button type="button" class="schedule-toolbar-btn" onclick="ScheduleApp.indentSelected()" title="Indent"><i class="fa-solid fa-indent"></i></button>
                 <button type="button" class="schedule-toolbar-btn" onclick="ScheduleApp.outdentSelected()" title="Outdent"><i class="fa-solid fa-outdent"></i></button>
             </div>
-            <div class="flex flex-wrap gap-1 border-r border-zinc-700 pr-2 mr-1" title="Cell alignment (Excel-style)">
-                <button type="button" id="schedAlignLeftBtn" class="schedule-toolbar-btn" onclick="ScheduleApp.setGridCellAlignH('left')" title="Align left"><i class="fa-solid fa-align-left"></i></button>
-                <button type="button" id="schedAlignCenterHBtn" class="schedule-toolbar-btn active-tool" onclick="ScheduleApp.setGridCellAlignH('center')" title="Align center"><i class="fa-solid fa-align-center"></i></button>
+            <div class="flex flex-wrap gap-1 border-r border-zinc-700 pr-2 mr-1" title="Cell alignment — click a cell, row, or column header then choose align">
+                <button type="button" id="schedAlignLeftBtn" class="schedule-toolbar-btn active-tool" onclick="ScheduleApp.setGridCellAlignH('left')" title="Align left (selected cell, row, or column)"><i class="fa-solid fa-align-left"></i></button>
+                <button type="button" id="schedAlignCenterHBtn" class="schedule-toolbar-btn" onclick="ScheduleApp.setGridCellAlignH('center')" title="Align center"><i class="fa-solid fa-align-center"></i></button>
                 <button type="button" id="schedAlignRightBtn" class="schedule-toolbar-btn" onclick="ScheduleApp.setGridCellAlignH('right')" title="Align right"><i class="fa-solid fa-align-right"></i></button>
                 <span class="text-zinc-600 self-center text-xs px-0.5">|</span>
                 <button type="button" id="schedAlignTopBtn" class="schedule-toolbar-btn" onclick="ScheduleApp.setGridCellAlignV('top')" title="Align top"><i class="fa-solid fa-arrow-up"></i></button>

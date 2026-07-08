@@ -317,8 +317,11 @@ body.schedule-chart-resizing #gantt_here .gantt_layout_cell:nth-child(3) {
 .gantt_grid_column_resize_wrap {
     cursor: col-resize !important;
     z-index: 45 !important;
-    position: relative;
+    position: absolute !important;
     pointer-events: auto !important;
+    margin-left: 0 !important;
+    top: 0 !important;
+    height: 100% !important;
 }
 .gantt-bar-date-label {
     font-size: 10px;
@@ -561,49 +564,40 @@ body.schedule-chart-resizing #gantt_here .gantt_layout_cell:nth-child(3) {
     overflow: hidden !important;
 }
 
-/* Grid cell alignment — Excel-style horizontal + vertical */
-#scheduleGanttHost[data-cell-align-h="left"] #gantt_here .gantt_grid_data .gantt_cell,
-#scheduleGanttHost[data-cell-align-h="left"] #gantt_here .gantt_grid_scale .gantt_grid_head_cell {
-    text-align: left !important;
-    justify-content: flex-start !important;
-}
-#scheduleGanttHost[data-cell-align-h="center"] #gantt_here .gantt_grid_data .gantt_cell,
-#scheduleGanttHost[data-cell-align-h="center"] #gantt_here .gantt_grid_scale .gantt_grid_head_cell {
-    text-align: center !important;
-    justify-content: center !important;
-}
-#scheduleGanttHost[data-cell-align-h="right"] #gantt_here .gantt_grid_data .gantt_cell,
-#scheduleGanttHost[data-cell-align-h="right"] #gantt_here .gantt_grid_scale .gantt_grid_head_cell {
-    text-align: right !important;
-    justify-content: flex-end !important;
-}
-#scheduleGanttHost[data-cell-align-h="center"] #gantt_here .gantt_tree_content,
-#scheduleGanttHost[data-cell-align-h="right"] #gantt_here .gantt_tree_content {
+/* Grid cell alignment — per-cell classes (data rows only; never header cells) */
+.gantt_grid_data .gantt_cell.sched-align-h-left { text-align: left !important; justify-content: flex-start !important; }
+.gantt_grid_data .gantt_cell.sched-align-h-center { text-align: center !important; justify-content: center !important; }
+.gantt_grid_data .gantt_cell.sched-align-h-right { text-align: right !important; justify-content: flex-end !important; }
+.gantt_grid_data .gantt_cell.sched-align-h-center .gantt_tree_content,
+.gantt_grid_data .gantt_cell.sched-align-h-right .gantt_tree_content {
     width: 100%;
 }
-#scheduleGanttHost[data-cell-align-v="top"] #gantt_here .gantt_grid_data .gantt_cell,
-#scheduleGanttHost[data-cell-align-v="top"] #gantt_here .gantt_grid_scale .gantt_grid_head_cell {
+.gantt_grid_data .gantt_cell.sched-align-v-top {
     display: flex !important;
     align-items: flex-start !important;
 }
-#scheduleGanttHost[data-cell-align-v="middle"] #gantt_here .gantt_grid_data .gantt_cell,
-#scheduleGanttHost[data-cell-align-v="middle"] #gantt_here .gantt_grid_scale .gantt_grid_head_cell {
+.gantt_grid_data .gantt_cell.sched-align-v-middle {
     display: flex !important;
     align-items: center !important;
 }
-#scheduleGanttHost[data-cell-align-v="bottom"] #gantt_here .gantt_grid_data .gantt_cell,
-#scheduleGanttHost[data-cell-align-v="bottom"] #gantt_here .gantt_grid_scale .gantt_grid_head_cell {
+.gantt_grid_data .gantt_cell.sched-align-v-bottom {
     display: flex !important;
     align-items: flex-end !important;
 }
-#scheduleGanttHost[data-cell-align-v] #gantt_here .gantt_tree_content {
+.gantt_grid_data .gantt_cell.sched-align-v-top .gantt_tree_content,
+.gantt_grid_data .gantt_cell.sched-align-v-middle .gantt_tree_content,
+.gantt_grid_data .gantt_cell.sched-align-v-bottom .gantt_tree_content {
     flex: 1 1 auto;
     min-width: 0;
 }
-#scheduleGanttHost[data-cell-align-v="top"] #gantt_here .gantt_grid_scale .gantt_grid_head_cell,
-#scheduleGanttHost[data-cell-align-v="middle"] #gantt_here .gantt_grid_scale .gantt_grid_head_cell,
-#scheduleGanttHost[data-cell-align-v="bottom"] #gantt_here .gantt_grid_scale .gantt_grid_head_cell {
-    line-height: 1.2 !important;
+.gantt_grid_data .gantt_cell.sched-cell-selected {
+    outline: 1px solid #10b981 !important;
+    outline-offset: -1px;
+    z-index: 2;
+}
+.gantt_grid_scale .gantt_grid_head_cell.sched-col-selected {
+    background: rgba(16, 185, 129, 0.18) !important;
+    box-shadow: inset 0 0 0 1px #10b981 !important;
 }
 
 .gantt_hor_scroll {

@@ -47,8 +47,8 @@
         show_baseline_bars: true,
         show_bar_labels: true,
         theme: 'dark',
-        grid_cell_align_h: 'center',
-        grid_cell_align_v: 'middle'
+        default_cell_align: { h: 'left', v: 'middle' },
+        column_align: {}
     };
     if (!scheduleSettings.print_settings) {
         scheduleSettings.print_settings = {
@@ -517,6 +517,12 @@
             });
         });
         syncColumnResizeHandlePositions();
+    }
+
+    function queueColumnResizeHandleSync() {
+        requestAnimationFrame(() => {
+            syncColumnResizeHandlePositions();
+        });
     }
 
     function syncGridHeaderAlignment() {
@@ -1296,6 +1302,158 @@
         };
     }
 
+    function normalizeCellAlign(obj) {
+        const h = ['left', 'center', 'right'].includes(obj?.h) ? obj.h : 'left';
+        const v = ['top', 'middle', 'bottom'].includes(obj?.v) ? obj.v : 'middle';
+        return { h, v };
+    }
+
+    function getDefaultCellAlign() {
+        return normalizeCellAlign(scheduleSettings.default_cell_align || { h: 'left', v: 'middle' });
+    }
+
+    function getCellAlign(task, colName) {
+        const cell = task?.cell_align?.[colName];
+        const col = scheduleSettings.column_align?.[colName];
+        const def = getDefaultCellAlign();
+        return normalizeCellAlign({
+            h: cell?.h || col?.h || def.h,
+            v: cell?.v || col?.v || def.v
+        });
+    }
+
+    function getSelectionAlignPreview() {
+        const sel = gridSelection;
+        if (sel.type === 'cell' && sel.taskId && gantt.isTaskExists(sel.taskId)) {
+            return getCellAlign(gantt.getTask(sel.taskId), sel.colName);
+        }
+        if (sel.type === 'column' && sel.colName) {
+            const col = scheduleSettings.column_align?.[sel.colName];
+            const def = getDefaultCellAlign();
+            return normalizeCellAlign({ h: col?.h || def.h, v: col?.v || def.v });
+        }
+        if ((sel.type === 'row' && sel.taskId) || gantt.getSelectedId()) {
+            const taskId = sel.taskId || gantt.getSelectedId();
+            if (taskId && gantt.isTaskExists(taskId)) {
+                const task = gantt.getTask(taskId);
+                const firstCol = gantt.config.columns?.[0]?.name;
+                if (firstCol) return getCellAlign(task, firstCol);
+            }
+        }
+        return getDefaultCellAlign();
+    }
+
+    function applyCellAlignToDom() {
+        if (!ganttReady) return;
+        document.querySelectorAll('#gantt_here .gantt_grid_data .gantt_row').forEach(row => {
+            let taskId = null;
+            try { taskId = gantt.locate(row); } catch (e) { /* ok */ }
+            if (!taskId || !gantt.isTaskExists(taskId)) return;
+            const task = gantt.getTask(taskId);
+            row.querySelectorAll(':scope > .gantt_cell').forEach((cell, i) => {
+                const col = gantt.config.columns[i];
+                if (!col) return;
+                const a = getCellAlign(task, col.name);
+                cell.classList.remove(
+                    'sched-align-h-left', 'sched-align-h-center', 'sched-align-h-right',
+                    'sched-align-v-top', 'sched-align-v-middle', 'sched-align-v-bottom',
+                    'sched-cell-selected'
+                );
+                cell.classList.add(`sched-align-h-${a.h}`, `sched-align-v-${a.v}`);
+                if (gridSelection.type === 'cell'
+                    && String(gridSelection.taskId) === String(taskId)
+                    && gridSelection.colName === col.name) {
+                    cell.classList.add('sched-cell-selected');
+                }
+            });
+        });
+        document.querySelectorAll('#gantt_here .gantt_grid_scale .gantt_grid_head_cell').forEach((head, i) => {
+            const col = gantt.config.columns[i];
+            head.classList.toggle('sched-col-selected', !!(gridSelection.type === 'column' && col && gridSelection.colName === col.name));
+        });
+    }
+
+    function highlightGridSelection() {
+        applyCellAlignToDom();
+        updateAlignToolbarButtons();
+    }
+
+    function updateAlignToolbarButtons() {
+        const a = getSelectionAlignPreview();
+        const hMap = { left: 'schedAlignLeftBtn', center: 'schedAlignCenterHBtn', right: 'schedAlignRightBtn' };
+        Object.entries(hMap).forEach(([align, id]) => {
+            document.getElementById(id)?.classList.toggle('active-tool', a.h === align);
+        });
+        const vMap = { top: 'schedAlignTopBtn', middle: 'schedAlignMiddleBtn', bottom: 'schedAlignBottomBtn' };
+        Object.entries(vMap).forEach(([align, id]) => {
+            document.getElementById(id)?.classList.toggle('active-tool', a.v === align);
+        });
+    }
+
+    function applyAlignToSelection(axis, value) {
+        const sel = gridSelection;
+        if (!sel.type) {
+            if (!scheduleSettings.default_cell_align) scheduleSettings.default_cell_align = getDefaultCellAlign();
+            scheduleSettings.default_cell_align[axis] = value;
+        } else if (sel.type === 'column' && sel.colName) {
+            if (!scheduleSettings.column_align) scheduleSettings.column_align = {};
+            if (!scheduleSettings.column_align[sel.colName]) scheduleSettings.column_align[sel.colName] = {};
+            scheduleSettings.column_align[sel.colName][axis] = value;
+            gantt.eachTask(t => {
+                if (t.cell_align?.[sel.colName]) {
+                    delete t.cell_align[sel.colName];
+                    if (!Object.keys(t.cell_align).length) delete t.cell_align;
+                }
+            });
+        } else if (sel.type === 'cell' && sel.taskId && gantt.isTaskExists(sel.taskId)) {
+            const task = gantt.getTask(sel.taskId);
+            if (!task.cell_align) task.cell_align = {};
+            if (!task.cell_align[sel.colName]) task.cell_align[sel.colName] = {};
+            task.cell_align[sel.colName][axis] = value;
+            gantt.updateTask(sel.taskId);
+        } else {
+            const taskId = (sel.type === 'row' && sel.taskId) ? sel.taskId : gantt.getSelectedId();
+            if (!taskId || !gantt.isTaskExists(taskId)) {
+                if (!scheduleSettings.default_cell_align) scheduleSettings.default_cell_align = getDefaultCellAlign();
+                scheduleSettings.default_cell_align[axis] = value;
+            } else {
+                const task = gantt.getTask(taskId);
+                if (!task.cell_align) task.cell_align = {};
+                (gantt.config.columns || []).forEach(col => {
+                    if (!task.cell_align[col.name]) task.cell_align[col.name] = {};
+                    task.cell_align[col.name][axis] = value;
+                });
+                gantt.updateTask(taskId);
+            }
+        }
+        highlightGridSelection();
+        pushUndoState();
+        queueSave();
+    }
+
+    function bindGridSelectionHandlers() {
+        if (bindGridSelectionHandlers.done) return;
+        bindGridSelectionHandlers.done = true;
+        const host = document.getElementById('gantt_here');
+        if (!host) return;
+
+        host.addEventListener('click', e => {
+            const head = e.target.closest('.gantt_grid_head_cell');
+            if (head && !e.target.closest('.gantt_grid_column_resize_wrap')) {
+                const scale = head.closest('.gantt_grid_scale');
+                if (!scale) return;
+                const heads = Array.from(scale.querySelectorAll('.gantt_grid_head_cell'));
+                const idx = heads.indexOf(head);
+                const col = gantt.config.columns[idx];
+                if (!col) return;
+                gridSelection = { type: 'column', colName: col.name };
+                highlightGridSelection();
+                e.stopPropagation();
+            }
+        }, true);
+    }
+
+    let gridSelection = { type: null };
     let columnResizeScrollLeft = null;
 
     function getGridScrollElements() {
@@ -1431,7 +1589,7 @@
             }
         }
         applySingleColumnWidth(index, new_width);
-        syncColumnResizeHandlePositions();
+        queueColumnResizeHandleSync();
         if (reflow) {
             syncGridTableWidth();
             lastHeaderWidthsKey = '';
@@ -2136,6 +2294,16 @@
             }
             if (target.closest?.('.gantt_tree_icon')) return true;
             gantt.selectTask(id);
+            if (target.closest?.('.gantt_grid_data .gantt_cell')) {
+                const pos = locateGridCell(target);
+                if (pos) {
+                    gridSelection = { type: 'cell', taskId: pos.id, colName: pos.column };
+                    highlightGridSelection();
+                } else {
+                    gridSelection = { type: 'row', taskId: id };
+                    highlightGridSelection();
+                }
+            }
             return true;
         });
 
@@ -2224,8 +2392,10 @@
             restoreTimelineScrollAfterRender();
             refreshTimelinePanBar();
             bindColumnResizeEnhancements();
+            bindGridSelectionHandlers();
             queueGridHeaderSync();
-            applyGridCellAlignment();
+            applyCellAlignToDom();
+            updateAlignToolbarButtons();
             if (ganttReady && document.getElementById('scheduleGanttHost')?.classList.contains('schedule-overlay-mode')) {
                 applyChartOverlay();
             }
@@ -2245,6 +2415,7 @@
         initChartOverlay();
         ganttReady = true;
         bindColumnResizeEnhancements();
+        bindGridSelectionHandlers();
         syncRootProjectName();
         queueGridHeaderSync();
         resizeGanttHost();
@@ -2350,6 +2521,7 @@
                 constraint_date: t.constraint_date
             };
             EXTENDED_FIELDS.forEach(f => { if (t[f] != null && t[f] !== '') row[f] = t[f]; });
+            if (t.cell_align && Object.keys(t.cell_align).length) row.cell_align = t.cell_align;
             customColumns.forEach(cc => { row[cc.map_to || cc.name] = t[cc.map_to || cc.name] || ''; });
             data.push(row);
         });
@@ -2603,42 +2775,32 @@
         if (dd) dd.value = scheduleSettings.data_date || CasePMSchedule.formatDate(new Date());
         if (la) la.value = scheduleSettings.lookahead_days || 14;
         applyGanttDisplayStyles();
-        applyGridCellAlignment();
+        if (!scheduleSettings.default_cell_align) {
+            scheduleSettings.default_cell_align = { h: 'left', v: 'middle' };
+        }
+        if (scheduleSettings.grid_cell_align_h || scheduleSettings.grid_cell_align_v) {
+            scheduleSettings.default_cell_align = normalizeCellAlign({
+                h: scheduleSettings.grid_cell_align_h,
+                v: scheduleSettings.grid_cell_align_v
+            });
+            delete scheduleSettings.grid_cell_align_h;
+            delete scheduleSettings.grid_cell_align_v;
+        }
+        if (!scheduleSettings.column_align) scheduleSettings.column_align = {};
+        updateAlignToolbarButtons();
         if (scheduleSettings.timescale) setTimescale(scheduleSettings.timescale, false);
         else setTimescale('day', false);
         updateDataDateMarker();
     }
 
-    function applyGridCellAlignment() {
-        const host = document.getElementById('scheduleGanttHost');
-        const h = scheduleSettings.grid_cell_align_h || 'center';
-        const v = scheduleSettings.grid_cell_align_v || 'middle';
-        if (host) {
-            host.dataset.cellAlignH = h;
-            host.dataset.cellAlignV = v;
-        }
-        const hMap = { left: 'schedAlignLeftBtn', center: 'schedAlignCenterHBtn', right: 'schedAlignRightBtn' };
-        Object.entries(hMap).forEach(([align, id]) => {
-            document.getElementById(id)?.classList.toggle('active-tool', h === align);
-        });
-        const vMap = { top: 'schedAlignTopBtn', middle: 'schedAlignMiddleBtn', bottom: 'schedAlignBottomBtn' };
-        Object.entries(vMap).forEach(([align, id]) => {
-            document.getElementById(id)?.classList.toggle('active-tool', v === align);
-        });
-    }
-
     function setGridCellAlignH(align) {
         if (!['left', 'center', 'right'].includes(align)) return;
-        scheduleSettings.grid_cell_align_h = align;
-        applyGridCellAlignment();
-        queueSave();
+        applyAlignToSelection('h', align);
     }
 
     function setGridCellAlignV(align) {
         if (!['top', 'middle', 'bottom'].includes(align)) return;
-        scheduleSettings.grid_cell_align_v = align;
-        applyGridCellAlignment();
-        queueSave();
+        applyAlignToSelection('v', align);
     }
 
     function setSaveStatus(msg) {
@@ -3922,7 +4084,7 @@
             queueGridHeaderSync();
         });
         switchScheduleView('gantt');
-        applyGridCellAlignment();
+        updateAlignToolbarButtons();
         const pid = getSelectedProjectId();
         if (pid) localStorage.setItem('casepm_current_project_id', String(pid));
 
