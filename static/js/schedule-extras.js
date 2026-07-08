@@ -3,13 +3,12 @@
     'use strict';
 
     let api = null;
-    let rangeBound = false;
     let rangeDragging = false;
     const bgPan = { active: false, startX: 0, startScroll: 0, pointerId: null };
 
     function init(hooks) {
         api = hooks;
-        initTimelineRangeSlider();
+        rebindPanSlider();
         initTimelineBackgroundPan();
         applyThemeFromSettings();
     }
@@ -37,65 +36,59 @@
         api.queueSave();
     }
 
-    function getPanWrap() {
-        return document.getElementById('scheduleTimelinePan');
+    function getRangeEl() {
+        return document.querySelector('#gantt_here .schedule-timeline-range');
     }
 
-    function getRangeEl() {
-        return document.getElementById('scheduleTimelineRange');
+    function getPanWrap() {
+        return document.querySelector('#gantt_here .schedule-timeline-pan');
     }
 
     function updateTimelinePanBar() {
         const wrap = getPanWrap();
         const range = getRangeEl();
         if (!wrap || !range || !api?.getPanMetrics) return;
-        const hostWrap = document.getElementById('scheduleGanttHost');
-        if (!hostWrap) return;
         const metrics = api.getPanMetrics();
         if (!metrics || metrics.maxScroll <= 0) {
             wrap.classList.add('hidden');
             return;
         }
         wrap.classList.remove('hidden');
-        const timelineW = api.getTimelineWidth();
-        wrap.style.left = Math.max(0, hostWrap.clientWidth - timelineW) + 'px';
-        wrap.style.width = timelineW + 'px';
-
         const max = Math.max(1, Math.round(metrics.maxScroll));
         const val = Math.max(0, Math.min(max, Math.round(metrics.scrollX)));
         if (!rangeDragging) {
-            range.max = String(max);
-            range.value = String(val);
+            if (range.max !== String(max)) range.max = String(max);
+            if (range.value !== String(val)) range.value = String(val);
         }
     }
 
-    function initTimelineRangeSlider() {
-        if (rangeBound) return;
-        const wrap = getPanWrap();
+    function rebindPanSlider() {
         const range = getRangeEl();
-        if (!wrap || !range) return;
-        rangeBound = true;
+        if (!range || range.dataset.schedPanBound) return;
+        range.dataset.schedPanBound = '1';
 
         range.addEventListener('pointerdown', () => { rangeDragging = true; });
         range.addEventListener('input', () => {
-            const metrics = api.getPanMetrics();
-            if (!metrics) return;
+            if (!api) return;
             api.setScrollX(Number(range.value));
         });
-        const endDrag = () => { rangeDragging = false; updateTimelinePanBar(); };
+        const endDrag = () => {
+            rangeDragging = false;
+            updateTimelinePanBar();
+        };
         range.addEventListener('pointerup', endDrag);
         range.addEventListener('pointercancel', endDrag);
         range.addEventListener('change', endDrag);
     }
 
     function initTimelineBackgroundPan() {
-        if (bgPan.inited) return;
-        bgPan.inited = true;
+        if (initTimelineBackgroundPan.done) return;
+        initTimelineBackgroundPan.done = true;
         const host = document.getElementById('gantt_here');
         if (!host) return;
         host.addEventListener('pointerdown', e => {
             if (e.button !== 0 && e.button !== 1) return;
-            if (e.target.closest('#scheduleOverlayControls, #scheduleChartResizer, #scheduleTimelinePan, #scheduleTimelineRange')) return;
+            if (e.target.closest('.schedule-chart-resizer, .schedule-timeline-pan, .schedule-timeline-range')) return;
             const onBar = e.target.closest('.gantt_task_line, .gantt_task_link, .gantt_link_arrow, .sched-floating-cell-editor');
             const inTimeline = e.target.closest('.gantt_layout_cell:nth-child(3)');
             if (!inTimeline || onBar) return;
@@ -285,6 +278,7 @@
         toggleTheme,
         applyThemeFromSettings,
         updateTimelinePanBar,
+        rebindPanSlider,
         showResourceHistogram,
         showEvmScurve,
         setupNonWorkTemplates,
