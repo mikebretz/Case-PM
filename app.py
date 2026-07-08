@@ -464,6 +464,17 @@ class Commitment(db.Model):
     sage_sync_status = db.Column(db.String(60))
     budget_validated = db.Column(db.Boolean, default=False)
     invoiced_amount = db.Column(db.Float, default=0)
+    start_date = db.Column(db.Date)
+    end_date = db.Column(db.Date)
+    billing_type = db.Column(db.String(40), default='Lump Sum')
+    bond_required = db.Column(db.Boolean, default=False)
+    insurance_requirements = db.Column(db.Text)
+    owner_name = db.Column(db.String(200))
+    contractor_name = db.Column(db.String(200))
+    architect_engineer = db.Column(db.String(200))
+    delivery_date = db.Column(db.Date)
+    freight_terms = db.Column(db.String(120))
+    tax_exempt = db.Column(db.Boolean, default=False)
     created_by_id = db.Column(db.Integer, db.ForeignKey('user.id'))
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
@@ -2054,6 +2065,19 @@ def api_commitments_dashboard():
     return jsonify(compute_dashboard_stats(Commitment, int(project_id)))
 
 
+@app.route('/api/commitments/next-number', methods=['GET'])
+@login_required
+def api_commitments_next_number():
+    project_id = request.args.get('project_id', type=int) or get_current_project_id()
+    if not project_id:
+        return jsonify({'error': 'project_id required'}), 400
+    ctype = request.args.get('type') or 'Purchase Order'
+    return jsonify({
+        'number': generate_commitment_number(ctype, int(project_id)),
+        'commitment_type': ctype,
+    })
+
+
 @app.route('/api/commitments/cost-codes', methods=['GET'])
 @login_required
 def api_commitments_cost_codes():
@@ -2142,7 +2166,14 @@ def api_update_commitment(commitment_id):
     from commitment_persistence import apply_commitment_fields, commitment_to_dict, save_allocations, validate_budget_headroom
     c = Commitment.query.get_or_404(commitment_id)
     body = request.get_json(silent=True) or {}
+    old_type = c.commitment_type
     apply_commitment_fields(c, body)
+    new_type = body.get('commitment_type') or c.commitment_type
+    if new_type != old_type and c.status == 'Draft':
+        c.number = generate_commitment_number(new_type, c.project_id)
+        c.aia_form = body.get('aia_form') or c.aia_form
+    if body.get('number') and c.status == 'Draft':
+        c.number = body['number']
     c.updated_at = datetime.utcnow()
     if body.get('allocations') is not None:
         total = save_allocations(CommitmentAllocation, c.id, body['allocations'], db)
@@ -2153,6 +2184,20 @@ def api_update_commitment(commitment_id):
     db.session.commit()
     allocs = CommitmentAllocation.query.filter_by(commitment_id=c.id).all()
     return jsonify({'ok': True, 'commitment': commitment_to_dict(c, allocs), 'budget_warnings': warnings})
+
+
+@app.route('/api/commitments/<int:commitment_id>', methods=['DELETE'])
+@login_required
+def api_delete_commitment(commitment_id):
+    if current_user.role != 'Admin':
+        return jsonify({'error': 'Only administrators can delete commitments'}), 403
+    c = Commitment.query.get_or_404(commitment_id)
+    if c.status not in ('Draft', 'Rejected', 'Void'):
+        return jsonify({'error': f'Cannot delete commitment in status {c.status}. Void it first or contact support.'}), 400
+    CommitmentAllocation.query.filter_by(commitment_id=c.id).delete()
+    db.session.delete(c)
+    db.session.commit()
+    return jsonify({'ok': True, 'deleted_id': commitment_id})
 
 
 @app.route('/api/commitments/<int:commitment_id>/workflow', methods=['POST'])

@@ -83,6 +83,17 @@ def ensure_commitment_schema(engine, db):
         'budget_validated': 'BOOLEAN DEFAULT 0',
         'invoiced_amount': 'FLOAT DEFAULT 0',
         'updated_at': 'DATETIME',
+        'start_date': 'DATE',
+        'end_date': 'DATE',
+        'billing_type': 'VARCHAR(40)',
+        'bond_required': 'BOOLEAN DEFAULT 0',
+        'insurance_requirements': 'TEXT',
+        'owner_name': 'VARCHAR(200)',
+        'contractor_name': 'VARCHAR(200)',
+        'architect_engineer': 'VARCHAR(200)',
+        'delivery_date': 'DATE',
+        'freight_terms': 'VARCHAR(120)',
+        'tax_exempt': 'BOOLEAN DEFAULT 0',
     }
     for name, col_type in additions.items():
         if name not in cols:
@@ -155,6 +166,17 @@ def commitment_to_dict(commitment, allocations=None):
         'budget_validated': bool(getattr(commitment, 'budget_validated', False)),
         'invoiced_amount': float(getattr(commitment, 'invoiced_amount', 0) or 0),
         'notes': commitment.notes,
+        'start_date': commitment.start_date.isoformat() if getattr(commitment, 'start_date', None) else None,
+        'end_date': commitment.end_date.isoformat() if getattr(commitment, 'end_date', None) else None,
+        'billing_type': getattr(commitment, 'billing_type', None) or 'Lump Sum',
+        'bond_required': bool(getattr(commitment, 'bond_required', False)),
+        'insurance_requirements': getattr(commitment, 'insurance_requirements', None),
+        'owner_name': getattr(commitment, 'owner_name', None),
+        'contractor_name': getattr(commitment, 'contractor_name', None),
+        'architect_engineer': getattr(commitment, 'architect_engineer', None),
+        'delivery_date': commitment.delivery_date.isoformat() if getattr(commitment, 'delivery_date', None) else None,
+        'freight_terms': getattr(commitment, 'freight_terms', None),
+        'tax_exempt': bool(getattr(commitment, 'tax_exempt', False)),
         'submitted_at': commitment.submitted_at.isoformat() if getattr(commitment, 'submitted_at', None) else None,
         'approved_at': commitment.approved_at.isoformat() if commitment.approved_at else None,
         'allocations': [
@@ -175,7 +197,8 @@ def apply_commitment_fields(commitment, data):
         'title', 'description', 'commitment_type', 'status', 'notes', 'company_name', 'company_id',
         'contact_name', 'contact_email', 'contact_phone', 'aia_form', 'payment_terms', 'scope_of_work',
         'ball_in_court_role', 'signature_method', 'signature_status', 'docusign_envelope_id',
-        'docusign_status', 'signed_document_url', 'sage_sync_status',
+        'docusign_status', 'signed_document_url', 'sage_sync_status', 'billing_type',
+        'insurance_requirements', 'owner_name', 'contractor_name', 'architect_engineer', 'freight_terms',
     ):
         if data.get(field) is not None:
             setattr(commitment, field, data[field])
@@ -197,6 +220,16 @@ def apply_commitment_fields(commitment, data):
         commitment.date = _parse_date(data['date'])
     if data.get('executed_date') is not None:
         commitment.executed_date = _parse_date(data['executed_date'])
+    if data.get('start_date') is not None:
+        commitment.start_date = _parse_date(data['start_date'])
+    if data.get('end_date') is not None:
+        commitment.end_date = _parse_date(data['end_date'])
+    if data.get('delivery_date') is not None:
+        commitment.delivery_date = _parse_date(data['delivery_date'])
+    if data.get('bond_required') is not None:
+        commitment.bond_required = bool(data['bond_required'])
+    if data.get('tax_exempt') is not None:
+        commitment.tax_exempt = bool(data['tax_exempt'])
     if data.get('certified_signatures') is not None:
         commitment.certified_signatures_json = json.dumps(data['certified_signatures'])
     if data.get('attachments') is not None:
