@@ -34,14 +34,26 @@
     drawerRecord: null,
     modalOriginalType: null,
     modalStatus: 'Draft',
+    aiaContract: null,
+    portalLoaded: false,
   };
 
   function projectCtx() {
     return global.COMMITMENT_PROJECT_CTX || {};
   }
 
+  function isAdmin() {
+    const p = global.CASEPM_PORTAL;
+    if (p) {
+      if (p.isAdmin === true) return true;
+      if (p.role === 'Admin') return true;
+      if (p.permissions && p.permissions.modules === '*') return true;
+    }
+    return false;
+  }
+
   function userRole() {
-    return (global.CASEPM_PORTAL && global.CASEPM_PORTAL.role) || 'Admin';
+    return (global.CASEPM_PORTAL && global.CASEPM_PORTAL.role) || '';
   }
 
   function userName() {
@@ -50,12 +62,16 @@
 
   function canActOnBall(role) {
     if (!role) return false;
-    if (userRole() === 'Admin') return true;
+    if (isAdmin()) return true;
     return (ROLE_MAP[role] || [role]).includes(userRole());
   }
 
-  function canDelete(c) {
-    return userRole() === 'Admin' && DELETABLE_STATUSES.includes(c.status);
+  function canDeleteRecord(c) {
+    return isAdmin() && c && c.id;
+  }
+
+  function isDirectlyDeletable(c) {
+    return DELETABLE_STATUSES.includes(c.status);
   }
 
   function projectId() {
@@ -266,6 +282,7 @@
             ${showApprove ? `<button onclick="CasePMCommitments.workflow(${c.id},'approve')" class="p-1.5 text-emerald-400 hover:bg-zinc-800 rounded" title="Approve"><i class="fa-solid fa-check"></i></button>
             <button onclick="CasePMCommitments.workflow(${c.id},'reject')" class="p-1.5 text-red-400 hover:bg-zinc-800 rounded" title="Reject"><i class="fa-solid fa-times"></i></button>` : ''}
             <button onclick="CasePMCommitments.edit(${c.id})" class="p-1.5 text-zinc-400 hover:bg-zinc-800 rounded"><i class="fa-solid fa-edit"></i></button>
+            ${isAdmin() ? `<button onclick="CasePMCommitments.deleteCommitment(${c.id})" class="p-1.5 text-red-400 hover:bg-zinc-800 rounded" title="Delete (Admin)"><i class="fa-solid fa-trash"></i></button>` : ''}
           </div>
         </td>
       </tr>`;
@@ -432,6 +449,137 @@
     }
   }
 
+  function contractFormKey() {
+    const form = document.getElementById('modalAiaForm')?.value;
+    const type = document.getElementById('modalType')?.value;
+    if (global.CasePMAiaTemplates) return global.CasePMAiaTemplates.resolveFormKey(form, type);
+    return form || 'A401';
+  }
+
+  function readContractFromForm() {
+    const sections = [];
+    document.querySelectorAll('[data-contract-section-id]').forEach(el => {
+      const id = el.dataset.contractSectionId;
+      const titleEl = document.querySelector(`[data-contract-title="${id}"]`);
+      const bodyEl = document.querySelector(`[data-contract-body="${id}"]`);
+      const enabledEl = document.querySelector(`[data-contract-enabled="${id}"]`);
+      if (!bodyEl) return;
+      sections.push({
+        id,
+        title: titleEl?.value || '',
+        body: bodyEl.value || '',
+        enabled: enabledEl ? enabledEl.checked : true,
+        builtin: el.dataset.contractBuiltin === '1',
+      });
+    });
+    return {
+      form: contractFormKey(),
+      inclusions: document.getElementById('modalInclusions')?.value || '',
+      exclusions: document.getElementById('modalExclusions')?.value || '',
+      scope_supplement: document.getElementById('modalScopeSupplement')?.value || '',
+      sections,
+    };
+  }
+
+  function renderContractSections() {
+    const container = document.getElementById('contractSectionsList');
+    if (!container) return;
+    const contract = state.aiaContract;
+    if (!contract || !contract.sections) {
+      container.innerHTML = '<p class="text-xs text-zinc-500">Select an AIA form to load contract articles.</p>';
+      return;
+    }
+    container.innerHTML = contract.sections.map((s, idx) => `
+      <div class="border border-zinc-700 rounded-md p-3 bg-zinc-900" data-contract-section-id="${esc(s.id)}" data-contract-builtin="${s.builtin ? '1' : '0'}">
+        <div class="flex items-center gap-2 mb-2">
+          <input type="checkbox" data-contract-enabled="${esc(s.id)}" ${s.enabled !== false ? 'checked' : ''} class="rounded border-zinc-600">
+          <input type="text" data-contract-title="${esc(s.id)}" value="${esc(s.title)}" class="flex-1 bg-zinc-800 border border-zinc-700 rounded px-2 py-1 text-xs font-semibold">
+          ${!s.builtin ? `<button type="button" onclick="CasePMCommitments.removeContractSection('${esc(s.id)}')" class="px-2 py-1 text-xs text-red-400 hover:bg-red-900/40 rounded">Remove</button>` : ''}
+        </div>
+        <textarea data-contract-body="${esc(s.id)}" rows="8" class="w-full bg-zinc-950 border border-zinc-700 rounded-md px-3 py-2 text-xs font-mono leading-relaxed">${esc(s.body || '')}</textarea>
+      </div>`).join('');
+  }
+
+  function loadContractTemplate(forceReset) {
+    if (!global.CasePMAiaTemplates) return;
+    const key = contractFormKey();
+    if (forceReset || !state.aiaContract) {
+      state.aiaContract = global.CasePMAiaTemplates.cloneTemplate(key);
+    } else {
+      state.aiaContract = global.CasePMAiaTemplates.mergeContract(state.aiaContract, key);
+    }
+    document.getElementById('modalInclusions').value = state.aiaContract.inclusions || '';
+    document.getElementById('modalExclusions').value = state.aiaContract.exclusions || '';
+    document.getElementById('modalScopeSupplement').value = state.aiaContract.scope_supplement || '';
+    renderContractSections();
+  }
+
+  function setContractFromRecord(record) {
+    if (!global.CasePMAiaTemplates) return;
+    const form = record?.aia_form || document.getElementById('modalAiaForm')?.value;
+    const type = record?.commitment_type || document.getElementById('modalType')?.value || 'Purchase Order';
+    const key = global.CasePMAiaTemplates.resolveFormKey(form, type);
+    state.aiaContract = record?.aia_contract
+      ? global.CasePMAiaTemplates.mergeContract(record.aia_contract, key)
+      : global.CasePMAiaTemplates.cloneTemplate(key);
+    const inc = document.getElementById('modalInclusions');
+    const exc = document.getElementById('modalExclusions');
+    const scope = document.getElementById('modalScopeSupplement');
+    if (inc) inc.value = state.aiaContract.inclusions || '';
+    if (exc) exc.value = state.aiaContract.exclusions || '';
+    if (scope) scope.value = state.aiaContract.scope_supplement || '';
+    renderContractSections();
+  }
+
+  function onAiaFormChange() {
+    if (confirm('Load contract template for the selected AIA form? Unsaved article edits in this session will be replaced.')) {
+      loadContractTemplate(true);
+    }
+  }
+
+  function toggleContractEditor() {
+    const panel = document.getElementById('contractEditorPanel');
+    const chevron = document.getElementById('contractEditorChevron');
+    if (!panel) return;
+    panel.classList.toggle('hidden');
+    if (chevron) chevron.classList.toggle('fa-chevron-down', panel.classList.contains('hidden'));
+    if (chevron) chevron.classList.toggle('fa-chevron-up', !panel.classList.contains('hidden'));
+  }
+
+  function addContractSection() {
+    if (!state.aiaContract) loadContractTemplate(true);
+    const id = `custom-${Date.now()}`;
+    state.aiaContract.sections.push({
+      id,
+      title: 'NEW ARTICLE / SECTION',
+      body: 'Enter contract language here.',
+      enabled: true,
+      builtin: false,
+    });
+    renderContractSections();
+  }
+
+  function removeContractSection(id) {
+    if (!state.aiaContract) return;
+    state.aiaContract.sections = state.aiaContract.sections.filter(s => s.id !== id);
+    renderContractSections();
+  }
+
+  function updateAdminDeleteBar(record) {
+    const bar = document.getElementById('adminDeleteBar');
+    const btn = document.getElementById('modalDeleteBtn');
+    if (!bar) return;
+    if (isAdmin() && record?.id) {
+      bar.classList.remove('hidden');
+      if (btn) {
+        const deletable = isDirectlyDeletable(record);
+        btn.title = deletable ? 'Delete permanently' : `Status: ${record.status} — will void then delete`;
+      }
+    } else {
+      bar.classList.add('hidden');
+    }
+  }
+
   function renderAllocationRows() {
     const container = document.getElementById('allocationRows');
     if (!container) return;
@@ -511,6 +659,8 @@
     state.allocationRows = (record?.allocations?.length)
       ? record.allocations.map(a => ({ ...a }))
       : [{ cost_code: '', amount: record?.original_amount || 0, description: '' }];
+    setContractFromRecord(record);
+    updateAdminDeleteBar(record);
     onCompanyChange();
     renderAllocationRows();
     document.getElementById('comModal').showModal();
@@ -551,6 +701,7 @@
       insurance_requirements: document.getElementById('modalInsuranceRequirements')?.value.trim() || null,
       original_amount: total || parseFloat(document.getElementById('modalAmount').value) || 0,
       allocations: allocs,
+      aia_contract: readContractFromForm(),
     };
   }
 
@@ -584,23 +735,34 @@
     }
   }
 
-  async function deleteCommitment(id) {
+  async function deleteCommitment(id, options = {}) {
     const c = state.commitments.find(x => x.id === id) || state.drawerRecord;
     if (!c) return;
-    if (!canDelete(c)) {
-      alert('Only administrators can delete Draft, Rejected, or Void commitments.');
+    if (!canDeleteRecord(c)) {
+      alert(`Only administrators can delete commitments. Your role: ${userRole() || 'unknown'}.`);
       return;
     }
-    if (!confirm(`Permanently delete ${c.number}? This cannot be undone.`)) return;
+    const needsForce = !isDirectlyDeletable(c);
+    const msg = needsForce
+      ? `${c.number} is "${c.status}". As Admin, void and permanently delete?`
+      : `Permanently delete ${c.number}? This cannot be undone.`;
+    if (!options.skipConfirm && !confirm(msg)) return;
     try {
-      await api(`/api/commitments/${id}`, { method: 'DELETE' });
-      logCommitmentAudit('COMMITMENT_DELETED', { number: c.number, type: c.commitment_type });
+      const url = needsForce ? `/api/commitments/${id}?force=1` : `/api/commitments/${id}`;
+      await api(url, { method: 'DELETE', body: needsForce ? JSON.stringify({ force: true }) : undefined });
+      logCommitmentAudit('COMMITMENT_DELETED', { number: c.number, type: c.commitment_type, forced: needsForce });
       closeDrawer();
+      document.getElementById('comModal')?.close();
       await refreshAll();
       toast(`${c.number} deleted`);
     } catch (err) {
       alert(err.message);
     }
+  }
+
+  function deleteFromModal() {
+    const id = document.getElementById('modalRecordId')?.value;
+    if (id) deleteCommitment(parseInt(id, 10));
   }
 
   async function workflow(id, action) {
@@ -697,9 +859,10 @@
       <div class="mt-4"><div class="text-xs text-zinc-500 uppercase mb-2">Signatures</div>${sigs}</div>`;
     const showSubmit = c.status === 'Draft';
     const showApprove = ['Submitted', 'Pending PM', 'Pending Accounting', 'Pending Owner'].includes(c.status) && canActOnBall(c.ball_in_court_role);
-    const showDelete = canDelete(c);
+    const showAdminDelete = canDeleteRecord(c);
     document.getElementById('drawerActions').innerHTML = `
       <button type="button" onclick="CasePMCommitments.printCommitment(${c.id})" class="px-4 py-2 bg-sky-700 hover:bg-sky-600 rounded-md text-sm"><i class="fa-solid fa-print mr-1"></i>Print</button>
+      <button type="button" onclick="CasePMCommitments.editContractLanguage(${c.id})" class="px-4 py-2 bg-indigo-800 hover:bg-indigo-700 rounded-md text-sm"><i class="fa-solid fa-file-contract mr-1"></i>Contract Language</button>
       ${showSubmit ? `<button type="button" onclick="CasePMCommitments.workflow(${c.id},'submit')" class="px-4 py-2 bg-amber-600 hover:bg-amber-500 rounded-md text-sm">Submit</button>` : ''}
       ${showApprove ? `<button type="button" onclick="CasePMCommitments.workflow(${c.id},'approve')" class="px-4 py-2 bg-emerald-600 hover:bg-emerald-500 rounded-md text-sm">Approve</button>
       <button type="button" onclick="CasePMCommitments.workflow(${c.id},'reject')" class="px-4 py-2 bg-zinc-800 text-red-400 rounded-md text-sm">Reject</button>` : ''}
@@ -707,7 +870,7 @@
         <button type="button" onclick="CasePMCommitments.signInternal(${c.id})" class="px-4 py-2 bg-sky-700 hover:bg-sky-600 rounded-md text-sm">Certified Sign</button>
         <button type="button" onclick="CasePMCommitments.sendDocuSign(${c.id})" class="px-4 py-2 bg-indigo-700 hover:bg-indigo-600 rounded-md text-sm"><i class="fa-solid fa-file-signature mr-1"></i>DocuSign</button>` : ''}
       <button type="button" onclick="CasePMCommitments.edit(${c.id})" class="px-4 py-2 bg-zinc-800 hover:bg-zinc-700 rounded-md text-sm">Edit</button>
-      ${showDelete ? `<button type="button" onclick="CasePMCommitments.deleteCommitment(${c.id})" class="px-4 py-2 bg-red-900/60 hover:bg-red-800 text-red-300 rounded-md text-sm"><i class="fa-solid fa-trash mr-1"></i>Delete</button>` : ''}`;
+      ${showAdminDelete ? `<button type="button" onclick="CasePMCommitments.deleteCommitment(${c.id})" class="px-4 py-2 bg-red-900/70 hover:bg-red-800 text-red-200 rounded-md text-sm" title="${isDirectlyDeletable(c) ? 'Delete' : 'Void & delete'}"><i class="fa-solid fa-trash mr-1"></i>Delete</button>` : ''}`;
     openDrawer();
   }
 
@@ -758,9 +921,12 @@
   function buildAiaPrintHtml(c) {
     const ctx = projectCtx();
     const form = c.aia_form || 'N/A';
+    const contract = c.aia_contract || (global.CasePMAiaTemplates
+      ? global.CasePMAiaTemplates.cloneTemplate(global.CasePMAiaTemplates.resolveFormKey(form, c.commitment_type))
+      : null);
     const isPO = c.commitment_type === 'Purchase Order' || form === 'N/A';
     const isSub = c.commitment_type === 'Subcontract' || form === 'A401';
-    const docTitle = isPO ? 'PURCHASE ORDER' : isSub ? 'AGREEMENT BETWEEN CONTRACTOR AND SUBCONTRACTOR' : 'AGREEMENT';
+    const docTitle = contract?.title || (isPO ? 'PURCHASE ORDER' : isSub ? 'AGREEMENT BETWEEN CONTRACTOR AND SUBCONTRACTOR' : 'AGREEMENT');
     const docSubtitle = isPO ? 'PURCHASE ORDER' : `AIA DOCUMENT ${form}`;
     const owner = c.owner_name || ctx.name || '___________________________';
     const contractor = c.contractor_name || 'Case Contracting';
@@ -770,33 +936,23 @@
     const total = c.current_amount || c.original_amount || 0;
     const retainPct = c.retainage_percent || 0;
 
-    let articles = '';
-    if (isSub || form === 'A401') {
-      articles = `
-        <div class="section-title">ARTICLE 1 — THE WORK</div>
-        <div class="cert-text">Subcontractor shall perform the Work described as: <strong>${esc(c.title || c.description)}</strong>. Scope: ${esc(c.scope_of_work || c.description || '')}</div>
-        <div class="section-title">ARTICLE 2 — CONTRACT SUM</div>
-        <div class="cert-text">The Contractor shall pay the Subcontractor the Contract Sum of <strong>${fmt(total)}</strong> for performance of the Work (${esc(c.billing_type || 'Lump Sum')}).</div>
-        <div class="section-title">ARTICLE 3 — PAYMENT</div>
-        <div class="cert-text">Payment terms: ${esc(c.payment_terms || 'Per progress billing')}. Retainage: ${retainPct}%. ${c.bond_required ? 'Performance and Payment Bonds required.' : ''}</div>
-        <div class="section-title">ARTICLE 4 — TIME</div>
-        <div class="cert-text">Commencement: ${fmtDate(c.start_date || c.date)}. Substantial Completion: ${fmtDate(c.end_date)}. Contract Date: ${fmtDate(c.date)}.</div>
-        ${c.insurance_requirements ? `<div class="section-title">ARTICLE 5 — INSURANCE</div><div class="cert-text">${esc(c.insurance_requirements)}</div>` : ''}`;
-    } else if (form === 'A101' || form === 'A102') {
-      articles = `
-        <div class="section-title">ARTICLE 1 — THE WORK</div>
-        <div class="cert-text">Contractor shall provide the Work: <strong>${esc(c.title || c.description)}</strong></div>
-        <div class="section-title">ARTICLE 2 — CONTRACT SUM</div>
-        <div class="cert-text">${form === 'A102' ? 'Cost of the Work plus Contractor\'s Fee' : 'Stipulated Sum'}: <strong>${fmt(total)}</strong> (${esc(c.billing_type || 'Lump Sum')})</div>
-        <div class="section-title">ARTICLE 3 — PAYMENT</div>
-        <div class="cert-text">${esc(c.payment_terms || 'Per AIA progress billing')}. Retainage ${retainPct}%.</div>`;
-    } else {
-      articles = `
-        <div class="section-title">SCOPE / DESCRIPTION</div>
-        <div class="cert-text">${esc(c.scope_of_work || c.description || '')}</div>
-        <div class="section-title">AMOUNT</div>
-        <div class="cert-text">Total: <strong>${fmt(total)}</strong></div>`;
-    }
+    const inclusions = contract?.inclusions || '';
+    const exclusions = contract?.exclusions || '';
+    const scopeSupp = contract?.scope_supplement || c.scope_of_work || c.description || '';
+    const enabledSections = (contract?.sections || []).filter(s => s.enabled !== false);
+
+    const scopeBlock = (inclusions || exclusions || scopeSupp) ? `
+      <div class="section-title">SUPPLEMENTARY SCOPE SCHEDULE</div>
+      ${scopeSupp ? `<div class="box" style="margin-bottom:6px;"><div class="box-title">SCOPE OF WORK</div><div class="cert-text" style="white-space:pre-wrap;">${esc(scopeSupp)}</div></div>` : ''}
+      ${inclusions ? `<div class="box" style="margin-bottom:6px;"><div class="box-title">INCLUSIONS</div><div class="cert-text" style="white-space:pre-wrap;">${esc(inclusions)}</div></div>` : ''}
+      ${exclusions ? `<div class="box" style="margin-bottom:6px;"><div class="box-title">EXCLUSIONS</div><div class="cert-text" style="white-space:pre-wrap;">${esc(exclusions)}</div></div>` : ''}
+    ` : '';
+
+    const articlesHtml = enabledSections.length
+      ? enabledSections.map(s => `
+        <div class="section-title">${esc(s.title)}</div>
+        <div class="cert-text" style="white-space:pre-wrap;">${esc(s.body || '')}</div>`).join('')
+      : `<div class="cert-text">${esc(c.scope_of_work || c.description || '')}</div>`;
 
     return `
       <div class="main-header">
@@ -835,7 +991,12 @@
           ${c.architect_engineer ? `<div class="info-row"><span class="info-label">ARCHITECT:</span><span>${esc(c.architect_engineer)}</span></div>` : ''}
         </div>
       </div>
-      ${articles}
+      ${scopeBlock}
+      <div class="section-title">CONTRACT SUMMARY</div>
+      <div class="cert-text">Contract Amount: <strong>${fmt(total)}</strong> · Billing: ${esc(c.billing_type || 'Lump Sum')} · Retainage: ${retainPct}% · Payment: ${esc(c.payment_terms || '—')}${c.bond_required ? ' · Bonds Required' : ''}</div>
+      ${c.insurance_requirements ? `<div class="cert-text">Insurance: ${esc(c.insurance_requirements)}</div>` : ''}
+      <div class="section-title">CONTRACT ARTICLES</div>
+      ${articlesHtml}
       <div class="section-title">${isPO ? 'LINE ITEMS' : 'SCHEDULE OF VALUES'}</div>
       ${sovTableHtml(c.allocations, total)}
       ${isPO && c.freight_terms ? `<div class="cert-text">Freight Terms: ${esc(c.freight_terms)}${c.tax_exempt ? ' · TAX EXEMPT' : ''}</div>` : ''}
@@ -847,6 +1008,17 @@
         <div class="sig-line">${isPO ? 'VENDOR' : 'SUBCONTRACTOR'}<br><br>Date: _______________</div>
       </div>
       <div class="footer-note">Generated by Case PM · ${new Date().toLocaleString()} · Form ${esc(form)} · Not an official AIA document unless executed</div>`;
+  }
+
+  async function editContractLanguage(id) {
+    closeDrawer();
+    const record = await api(`/api/commitments/${id}`);
+    await openModal(record);
+    const panel = document.getElementById('contractEditorPanel');
+    const chevron = document.getElementById('contractEditorChevron');
+    if (panel) panel.classList.remove('hidden');
+    if (chevron) { chevron.classList.remove('fa-chevron-down'); chevron.classList.add('fa-chevron-up'); }
+    panel?.scrollIntoView({ behavior: 'smooth', block: 'start' });
   }
 
   async function printCommitment(id) {
@@ -921,6 +1093,7 @@
     await loadCostCodes();
     bindFilters();
     await refreshAll();
+    renderTable();
   }
 
   global.CasePMCommitments = {
@@ -935,10 +1108,18 @@
     sendDocuSign,
     signInternal,
     deleteCommitment,
+    deleteFromModal,
     printCommitment,
+    editContractLanguage,
     onTypeChange,
+    onAiaFormChange,
     openSageSyncLogModal,
     showCommitmentAuditLog,
+    toggleContractEditor,
+    loadContractTemplate,
+    addContractSection,
+    removeContractSection,
+    isAdmin,
     addAllocRow: () => { state.allocationRows.push({ cost_code: '', amount: 0, description: '' }); renderAllocationRows(); },
     removeAllocRow: idx => { state.allocationRows.splice(idx, 1); renderAllocationRows(); },
     onCompanyChange,

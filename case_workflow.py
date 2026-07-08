@@ -414,6 +414,7 @@ def register_workflow(app, _db, models):
             'userName': current_user.full_name,
             'userEmail': current_user.email,
             'role': current_user.role,
+            'isAdmin': current_user.role == 'Admin',
             'portal': user_portal_type(current_user),
             'companyId': getattr(current_user, 'company_id', None),
             'companyName': company.name if company else (current_user.company or ''),
