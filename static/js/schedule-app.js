@@ -461,20 +461,38 @@
         lastHeaderWidthsKey = key;
 
         const cols = gantt.config.columns;
-        const rules = cols.map((col, i) => {
-            const w = parseInt(col.width, 10) || 80;
-            const n = i + 1;
-            return `#scheduleGanttHost .gantt_grid_head_cell:nth-child(${n}),
-#scheduleGanttHost .gantt_cell:nth-child(${n}){width:${w}px!important;min-width:${w}px!important;flex:0 0 ${w}px!important;}`;
-        }).join('\n');
+        const styleEl = document.getElementById('sched-grid-col-widths');
+        if (styleEl) styleEl.textContent = '';
 
-        let el = document.getElementById('sched-grid-col-widths');
-        if (!el) {
-            el = document.createElement('style');
-            el.id = 'sched-grid-col-widths';
-            document.head.appendChild(el);
-        }
-        el.textContent = rules;
+        const applyW = (cell, w) => {
+            cell.style.setProperty('width', w + 'px', 'important');
+            cell.style.setProperty('min-width', w + 'px', 'important');
+            cell.style.setProperty('max-width', w + 'px', 'important');
+            cell.style.setProperty('flex', `0 0 ${w}px`, 'important');
+        };
+
+        document.querySelectorAll('#gantt_here .gantt_grid_scale .gantt_grid_head_cell').forEach((cell, i) => {
+            if (i < cols.length) applyW(cell, parseInt(cols[i].width, 10) || 80);
+        });
+        document.querySelectorAll('#gantt_here .gantt_grid_data .gantt_row').forEach(row => {
+            row.querySelectorAll(':scope > .gantt_cell').forEach((cell, i) => {
+                if (i < cols.length) applyW(cell, parseInt(cols[i].width, 10) || 80);
+            });
+        });
+        syncColumnResizeHandlePositions();
+    }
+
+    function syncColumnResizeHandlePositions() {
+        const scale = document.querySelector('#gantt_here .gantt_grid_scale');
+        if (!scale) return;
+        let x = 0;
+        scale.querySelectorAll(':scope > *').forEach(el => {
+            if (el.classList.contains('gantt_grid_head_cell')) {
+                x += el.offsetWidth;
+            } else if (el.classList.contains('gantt_grid_column_resize_wrap')) {
+                el.style.left = Math.max(0, x - 5) + 'px';
+            }
+        });
     }
 
     function syncGridHeaderAlignment() {
@@ -487,15 +505,6 @@
     }
 
     function ensureTimelineOverlayWidgets(timelineCell) {
-        let handle = timelineCell.querySelector(':scope > .schedule-chart-resizer');
-        if (!handle) {
-            handle = document.createElement('div');
-            handle.className = 'schedule-chart-resizer';
-            handle.title = 'Drag to resize chart overlay';
-            handle.setAttribute('role', 'separator');
-            handle.setAttribute('aria-orientation', 'vertical');
-            timelineCell.appendChild(handle);
-        }
         let pan = timelineCell.querySelector(':scope > .schedule-timeline-pan');
         if (!pan) {
             pan = document.createElement('div');
@@ -506,9 +515,8 @@
             timelineCell.appendChild(pan);
             if (window.ScheduleExtras?.rebindPanSlider) ScheduleExtras.rebindPanSlider();
         }
-        handle.classList.remove('hidden');
         pan.classList.remove('hidden');
-        return { handle, pan };
+        timelineCell.querySelector(':scope > .schedule-chart-resizer')?.remove();
     }
 
     function applyChartOverlay() {
@@ -546,13 +554,26 @@
         ].join(';');
 
         ensureTimelineOverlayWidgets(timelineCell);
-        document.getElementById('scheduleOverlayControls')?.remove();
-        root.querySelectorAll('.schedule-chart-resizer, .schedule-timeline-pan').forEach(el => {
-            if (!timelineCell.contains(el)) el.remove();
+
+        let handle = document.getElementById('scheduleChartResizer');
+        if (!handle) {
+            handle = document.createElement('div');
+            handle.id = 'scheduleChartResizer';
+            handle.className = 'schedule-chart-resizer';
+            handle.title = 'Drag to resize chart overlay';
+            root.appendChild(handle);
+        }
+        handle.classList.remove('hidden');
+        handle.style.left = 'auto';
+        handle.style.right = (timelineW - 5) + 'px';
+
+        root.querySelectorAll('.schedule-chart-resizer').forEach(el => {
+            if (el !== handle) el.remove();
         });
 
         syncLayoutTimelineWidth();
         ensureTimelineScrollbar();
+        syncColumnResizeHandlePositions();
         refreshTimelinePanBar();
     }
 
@@ -567,40 +588,34 @@
         if (initChartOverlayDrag.done) return;
         initChartOverlayDrag.done = true;
 
-        const onMove = e => {
-            if (!overlayDrag.active) return;
-            e.preventDefault();
-            const hostEl = document.getElementById('gantt_here');
-            if (!hostEl) return;
-            const rect = hostEl.getBoundingClientRect();
-            const timelineW = Math.max(220, Math.min(rect.width - 140, rect.right - e.clientX));
-            scheduleSettings.timeline_width_px = timelineW;
-            scheduleSettings.timeline_pct = timelineW / rect.width;
-            applyChartOverlay();
-        };
-
-        const endResize = () => {
-            if (!overlayDrag.active) return;
-            overlayDrag.active = false;
-            queueSave();
-        };
-
-        document.addEventListener('pointerdown', e => {
-            const handle = e.target.closest('.schedule-chart-resizer');
-            if (!handle || !handle.closest('#gantt_here .gantt_layout_cell:nth-child(3)')) return;
+        document.addEventListener('mousedown', e => {
+            const handle = document.getElementById('scheduleChartResizer');
+            if (!handle || (e.target !== handle && !handle.contains(e.target))) return;
             overlayDrag.active = true;
             overlayDrag.startX = e.clientX;
             overlayDrag.startW = scheduleSettings.timeline_width_px >= 180
                 ? scheduleSettings.timeline_width_px
                 : getTimelineWidth();
-            overlayDrag.pointerId = e.pointerId;
             e.preventDefault();
             e.stopPropagation();
-            try { handle.setPointerCapture(e.pointerId); } catch (err) { /* ok */ }
         }, true);
-        document.addEventListener('pointermove', onMove, true);
-        document.addEventListener('pointerup', endResize, true);
-        document.addEventListener('pointercancel', endResize, true);
+
+        document.addEventListener('mousemove', e => {
+            if (!overlayDrag.active) return;
+            const hostEl = document.getElementById('gantt_here');
+            if (!hostEl) return;
+            const rect = hostEl.getBoundingClientRect();
+            const timelineW = Math.max(200, Math.min(rect.width - 120, rect.right - e.clientX));
+            scheduleSettings.timeline_width_px = timelineW;
+            scheduleSettings.timeline_pct = timelineW / rect.width;
+            applyChartOverlay();
+        }, true);
+
+        document.addEventListener('mouseup', () => {
+            if (!overlayDrag.active) return;
+            overlayDrag.active = false;
+            queueSave();
+        }, true);
     }
 
     function initChartOverlay() {
@@ -1048,6 +1063,12 @@
             }, { passive: false, capture: true });
         }
         bindTimelineScrollbarSync();
+
+        const gridData = document.querySelector('#gantt_here .gantt_grid_data');
+        if (gridData && !gridData.dataset.resizeSyncBound) {
+            gridData.dataset.resizeSyncBound = '1';
+            gridData.addEventListener('scroll', () => syncColumnResizeHandlePositions(), { passive: true });
+        }
     }
 
     function ensureTimelineScrollbar() {
@@ -1989,6 +2010,7 @@
         });
         gantt.attachEvent('onColumnResize', function (index, column, new_width) {
             handleColumnResize(index, column, new_width, false);
+            syncColumnResizeHandlePositions();
             return true;
         });
         gantt.attachEvent('onColumnResizeEnd', function (index, column, new_width) {
@@ -2000,6 +2022,7 @@
             updateDeadlineMarkers();
             ensureTimelineScrollbar();
             restoreTimelineScrollAfterRender();
+            syncColumnResizeHandlePositions();
             refreshTimelinePanBar();
         });
 

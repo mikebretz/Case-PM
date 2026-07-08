@@ -130,9 +130,15 @@ body:has(.schedule-page-root) #mainContent {
 .schedule-overlay-mode #gantt_here .gantt_grid_column_resize_wrap {
     z-index: 45 !important;
     pointer-events: auto !important;
+    position: absolute !important;
+    top: 0 !important;
+    height: 100% !important;
+    width: 8px !important;
+    margin-left: -4px !important;
 }
 .schedule-overlay-mode #gantt_here .gantt_grid_scale {
     overflow: hidden !important;
+    position: relative !important;
 }
 .schedule-overlay-mode #gantt_here .gantt_grid_head,
 .schedule-overlay-mode #gantt_here .gantt_grid_scale .gantt_grid_head_cell {
@@ -181,24 +187,26 @@ body:has(.schedule-page-root) #mainContent {
     background: var(--sched-scroll-bg) !important;
     border-top: 1px solid var(--sched-border) !important;
 }
-.schedule-overlay-mode #gantt_here .gantt_layout_cell:nth-child(3) .schedule-chart-resizer {
+/* Chart overlay resizer — on layout root at chart/grid boundary (early working pattern) */
+.schedule-overlay-mode #gantt_here .schedule-chart-resizer,
+#gantt_here .gantt_layout_root > .schedule-chart-resizer {
     position: absolute;
-    left: -10px;
     top: 0;
-    bottom: 30px;
-    width: 20px;
-    z-index: 80;
+    bottom: 0;
+    width: 12px;
+    margin-right: -6px;
+    z-index: 30;
     cursor: col-resize;
     pointer-events: auto;
     touch-action: none;
-    background: linear-gradient(90deg, transparent, rgba(16, 185, 129, 0.5), rgba(52, 211, 153, 1), rgba(16, 185, 129, 0.5), transparent);
-    box-shadow: 0 0 0 1px rgba(16, 185, 129, 0.45);
+    background: linear-gradient(90deg, transparent, rgba(16, 185, 129, 0.55), rgba(16, 185, 129, 0.9), rgba(16, 185, 129, 0.55), transparent);
 }
-.schedule-overlay-mode #gantt_here .gantt_layout_cell:nth-child(3) .schedule-chart-resizer:hover,
-.schedule-overlay-mode #gantt_here .gantt_layout_cell:nth-child(3) .schedule-chart-resizer:active {
-    background: linear-gradient(90deg, transparent, rgba(16, 185, 129, 0.8), rgba(110, 231, 183, 1), rgba(16, 185, 129, 0.8), transparent);
-    box-shadow: 0 0 12px rgba(16, 185, 129, 0.65);
+.schedule-overlay-mode #gantt_here .schedule-chart-resizer:hover,
+#gantt_here .gantt_layout_root > .schedule-chart-resizer:hover {
+    background: linear-gradient(90deg, transparent, rgba(16, 185, 129, 0.85), rgba(52, 211, 153, 1), rgba(16, 185, 129, 0.85), transparent);
+    box-shadow: 0 0 10px rgba(16, 185, 129, 0.5);
 }
+.schedule-chart-resizer.hidden { display: none !important; }
 .schedule-overlay-mode #gantt_here .gantt_layout_cell:nth-child(3) .schedule-timeline-pan {
     position: absolute;
     left: 0;
