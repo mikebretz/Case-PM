@@ -95,6 +95,10 @@ def ensure_commitment_schema(engine, db):
         'freight_terms': 'VARCHAR(120)',
         'tax_exempt': 'BOOLEAN DEFAULT 0',
         'aia_contract_json': 'TEXT',
+        'external_document_provider': 'VARCHAR(40)',
+        'external_document_id': 'VARCHAR(200)',
+        'external_document_url': 'VARCHAR(500)',
+        'catina_project_id': 'VARCHAR(120)',
     }
     for name, col_type in additions.items():
         if name not in cols:
@@ -179,6 +183,10 @@ def commitment_to_dict(commitment, allocations=None):
         'freight_terms': getattr(commitment, 'freight_terms', None),
         'tax_exempt': bool(getattr(commitment, 'tax_exempt', False)),
         'aia_contract': _parse_json(getattr(commitment, 'aia_contract_json', None), None),
+        'external_document_provider': getattr(commitment, 'external_document_provider', None),
+        'external_document_id': getattr(commitment, 'external_document_id', None),
+        'external_document_url': getattr(commitment, 'external_document_url', None),
+        'catina_project_id': getattr(commitment, 'catina_project_id', None),
         'submitted_at': commitment.submitted_at.isoformat() if getattr(commitment, 'submitted_at', None) else None,
         'approved_at': commitment.approved_at.isoformat() if commitment.approved_at else None,
         'allocations': [
@@ -201,6 +209,7 @@ def apply_commitment_fields(commitment, data):
         'ball_in_court_role', 'signature_method', 'signature_status', 'docusign_envelope_id',
         'docusign_status', 'signed_document_url', 'sage_sync_status', 'billing_type',
         'insurance_requirements', 'owner_name', 'contractor_name', 'architect_engineer', 'freight_terms',
+        'external_document_provider', 'external_document_id', 'external_document_url', 'catina_project_id',
     ):
         if data.get(field) is not None:
             setattr(commitment, field, data[field])
@@ -356,11 +365,10 @@ def commitment_workflow_action(commitment, action, user):
         return commitment.status, False
 
     if action == 'send_docusign':
-        if not commitment.docusign_envelope_id:
-            commitment.docusign_envelope_id = f'ENV-{commitment.id}-{int(datetime.utcnow().timestamp())}'
         commitment.signature_method = 'docusign'
         commitment.signature_status = 'pending_signatures'
-        commitment.docusign_status = 'sent'
+        if not commitment.docusign_status:
+            commitment.docusign_status = 'pending'
         return commitment.status, False
 
     if action == 'void':
@@ -505,6 +513,62 @@ def sync_commitment_to_sub_sov(PayAppProjectState, db, commitment, allocations, 
         record = PayAppProjectState(project_id=commitment.project_id, data_json=payload, version=1, updated_by_id=user_id)
         db.session.add(record)
     return {'company_key': company_key, 'lines_added': added, 'total_lines': len(lines)}
+
+
+def build_commitment_sage_payload(commitment, allocations=None, extra=None):
+    """Full Sage 300 CRE payload for commitment sync (AP / Subcontracts modules)."""
+    allocs = allocations or []
+    extra = extra or {}
+    return {
+        'commitment_id': commitment.id,
+        'number': commitment.number,
+        'title': getattr(commitment, 'title', None) or commitment.description,
+        'description': commitment.description,
+        'commitment_type': commitment.commitment_type,
+        'status': commitment.status,
+        'aia_form': getattr(commitment, 'aia_form', None),
+        'billing_type': getattr(commitment, 'billing_type', None),
+        'vendor': {
+            'company_id': getattr(commitment, 'company_id', None),
+            'company_name': commitment.company_name,
+            'contact_name': getattr(commitment, 'contact_name', None),
+            'contact_email': getattr(commitment, 'contact_email', None),
+            'contact_phone': getattr(commitment, 'contact_phone', None),
+            'sage_vendor_code': extra.get('sage_vendor_code'),
+        },
+        'amounts': {
+            'original': float(commitment.original_amount or 0),
+            'approved_changes': float(commitment.approved_changes or 0),
+            'current': float(commitment.current_amount or 0),
+            'retainage_percent': float(getattr(commitment, 'retainage_percent', 0) or 0),
+            'invoiced': float(getattr(commitment, 'invoiced_amount', 0) or 0),
+        },
+        'dates': {
+            'contract': commitment.date.isoformat() if commitment.date else None,
+            'start': commitment.start_date.isoformat() if getattr(commitment, 'start_date', None) else None,
+            'end': commitment.end_date.isoformat() if getattr(commitment, 'end_date', None) else None,
+            'delivery': commitment.delivery_date.isoformat() if getattr(commitment, 'delivery_date', None) else None,
+            'executed': commitment.executed_date.isoformat() if getattr(commitment, 'executed_date', None) else None,
+        },
+        'payment_terms': getattr(commitment, 'payment_terms', None),
+        'freight_terms': getattr(commitment, 'freight_terms', None),
+        'tax_exempt': bool(getattr(commitment, 'tax_exempt', False)),
+        'bond_required': bool(getattr(commitment, 'bond_required', False)),
+        'allocations': [
+            {
+                'cost_code': a.cost_code if hasattr(a, 'cost_code') else a.get('cost_code'),
+                'amount': float(a.amount if hasattr(a, 'amount') else a.get('amount') or 0),
+                'description': getattr(a, 'description', None) or (a.get('description') if isinstance(a, dict) else ''),
+            }
+            for a in allocs
+        ],
+        'external_document': {
+            'provider': getattr(commitment, 'external_document_provider', None),
+            'id': getattr(commitment, 'external_document_id', None),
+            'url': getattr(commitment, 'external_document_url', None),
+        },
+        **{k: v for k, v in extra.items() if k != 'sage_vendor_code'},
+    }
 
 
 def validate_budget_headroom(BudgetProjectState, project_id, allocations):

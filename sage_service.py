@@ -20,8 +20,21 @@ SAGE_EVENT_MAP = {
     'BudgetSageSync': {'module': 'JobCost', 'action': 'sync_cost_codes'},
     'CommitmentSubmitted': {'module': 'AP', 'action': 'submit_commitment'},
     'CommitmentApproved': {'module': 'AP', 'action': 'post_commitment'},
+    'CommitmentApprovalStep': {'module': 'AP', 'action': 'approval_step'},
+    'CommitmentRejected': {'module': 'AP', 'action': 'reject_commitment'},
+    'CommitmentVoided': {'module': 'AP', 'action': 'void_commitment'},
+    'CommitmentUpdated': {'module': 'AP', 'action': 'update_commitment'},
     'CommitmentDocuSignSent': {'module': 'AP', 'action': 'docusign_sent'},
+    'CommitmentExecuted': {'module': 'AP', 'action': 'commitment_executed'},
     'ManualSync': {'module': 'General', 'action': 'sync'},
+}
+
+# Sage CRE module/action overrides by commitment document type
+COMMITMENT_SAGE_TYPE_MAP = {
+    'Purchase Order': {'module': 'AP', 'doc_type': 'purchase_order', 'submit': 'create_po', 'post': 'post_po'},
+    'Subcontract': {'module': 'Subcontracts', 'doc_type': 'subcontract', 'submit': 'create_subcontract', 'post': 'post_subcontract'},
+    'Material Supply': {'module': 'AP', 'doc_type': 'material_order', 'submit': 'create_material_order', 'post': 'post_material_order'},
+    'Service Agreement': {'module': 'AP', 'doc_type': 'service_agreement', 'submit': 'create_service_agreement', 'post': 'post_service_agreement'},
 }
 
 
@@ -47,6 +60,18 @@ def _project_sage_context(Project, project_id):
 
 def build_sage_payload(event_type, project_ctx, payload):
     mapping = SAGE_EVENT_MAP.get(event_type, {'module': 'General', 'action': 'sync'})
+    data = payload or {}
+    # Commitment events: use type-specific Sage module/action when commitment_type present
+    if event_type.startswith('Commitment') and data.get('commitment_type'):
+        type_map = COMMITMENT_SAGE_TYPE_MAP.get(data['commitment_type'], {})
+        if type_map:
+            mapping = dict(mapping)
+            mapping['module'] = type_map.get('module', mapping['module'])
+            if event_type == 'CommitmentSubmitted':
+                mapping['action'] = type_map.get('submit', mapping['action'])
+            elif event_type in ('CommitmentApproved', 'CommitmentExecuted'):
+                mapping['action'] = type_map.get('post', mapping['action'])
+            data = {**data, 'sage_document_type': type_map.get('doc_type')}
     return {
         'source': 'CasePM',
         'event_type': event_type,
@@ -54,7 +79,7 @@ def build_sage_payload(event_type, project_ctx, payload):
         'sage_action': mapping['action'],
         'timestamp': datetime.utcnow().isoformat() + 'Z',
         'project': project_ctx,
-        'data': payload or {},
+        'data': data,
     }
 
 
@@ -96,6 +121,7 @@ def create_and_process_sage_event(
     payload=None,
     user_id=None,
     auto_process=True,
+    Commitment=None,
 ):
     ctx = _project_sage_context(Project, project_id)
     sage_payload = build_sage_payload(event_type, ctx, payload)
@@ -113,19 +139,21 @@ def create_and_process_sage_event(
     db.session.flush()
 
     if auto_process:
-        process_sage_event(event, db)
+        process_sage_event(event, db, Commitment=Commitment)
 
     db.session.commit()
     return event
 
 
-def process_sage_event(event, db):
+def process_sage_event(event, db, Commitment=None):
     if not event or event.status == 'posted':
         return event
 
     if not event.sage_job_number:
         event.status = 'pending_config'
         event.error_text = 'Project sage_job_number not configured'
+        if Commitment:
+            _mirror_commitment_sage_status(db, Commitment, event)
         db.session.commit()
         return event
 
@@ -141,11 +169,9 @@ def process_sage_event(event, db):
         event.response_json = json.dumps(response or {})
         event.error_text = None
     elif error:
-        # API configured but failed
         event.status = 'error'
         event.error_text = error
     else:
-        # No API — mark as simulated post (visible in UI, ready for connector)
         event.status = 'simulated'
         event.posted_at = datetime.utcnow()
         event.response_json = json.dumps({
@@ -154,8 +180,37 @@ def process_sage_event(event, db):
             'sage_job': event.sage_job_number,
         })
 
+    if Commitment:
+        _mirror_commitment_sage_status(db, Commitment, event)
     db.session.commit()
     return event
+
+
+def _mirror_commitment_sage_status(db, Commitment, event):
+    try:
+        payload = json.loads(event.payload_json or '{}')
+    except (TypeError, json.JSONDecodeError):
+        return
+    data = payload.get('data') if isinstance(payload, dict) else {}
+    if not isinstance(data, dict):
+        return
+    cid = data.get('commitment_id')
+    if not cid:
+        return
+    c = Commitment.query.get(int(cid))
+    if not c:
+        return
+    if event.status == 'posted':
+        c.sage_sync_status = 'sage_posted'
+    elif event.status == 'simulated':
+        c.sage_sync_status = 'sage_simulated'
+    elif event.status == 'error':
+        c.sage_sync_status = f"sage_error:{(event.error_text or '')[:48]}"
+    elif event.status == 'pending_config':
+        c.sage_sync_status = 'sage_pending_config'
+    else:
+        c.sage_sync_status = f'sage_{event.status}'
+    db.session.flush()
 
 
 def sage_event_to_dict(event):
