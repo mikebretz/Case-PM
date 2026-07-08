@@ -223,23 +223,28 @@
         return { id: '', number: '', name: 'Project Schedule', label: 'Project Schedule' };
     }
 
+    const GENERIC_ROOT_NAMES = new Set([
+        '', 'project schedule', 'construction project', 'new project', 'untitled project'
+    ]);
+
     function syncRootProjectName() {
-        if (!ganttReady) return;
         const meta = getProjectMeta();
-        if (!meta.name) return;
+        const nameEl = document.getElementById('currentProjectName');
+        if (nameEl && meta.name) nameEl.textContent = meta.label || meta.name;
+        if (!ganttReady || !meta.name) return;
         let rootId = null;
         gantt.eachTask(t => {
             if (!rootId && (t.parent === 0 || t.parent == null) && t.type === 'project') rootId = t.id;
         });
-        if (rootId != null && gantt.isTaskExists(rootId)) {
-            const root = gantt.getTask(rootId);
-            if (root.text !== meta.name) {
-                root.text = meta.name;
-                gantt.refreshTask(rootId);
-            }
+        if (rootId == null || !gantt.isTaskExists(rootId)) return;
+        const root = gantt.getTask(rootId);
+        const current = String(root.text || '').trim();
+        const shouldReplace = !current || GENERIC_ROOT_NAMES.has(current.toLowerCase()) || current !== meta.name;
+        if (shouldReplace && root.text !== meta.name) {
+            root.text = meta.name;
+            gantt.refreshTask(rootId);
+            queueSave();
         }
-        const nameEl = document.getElementById('currentProjectName');
-        if (nameEl && meta.name) nameEl.textContent = meta.label || meta.name;
     }
 
     function buildEmptySchedule() {
@@ -337,37 +342,47 @@
         if (!ganttReady || !gantt.config.columns) return;
         const total = getColumnsTotalWidth();
         gantt.config.grid_width = total;
+        const host = document.getElementById('gantt_here');
+        if (host) host.style.setProperty('--sched-grid-min-width', total + 'px');
     }
 
     let headerSyncTimer = null;
-    function syncGridHeaderAlignment() {
+    let lastHeaderWidthsKey = '';
+
+    function columnWidthsKey() {
+        return (gantt.config.columns || []).map(c => `${c.name}:${parseInt(c.width, 10) || 80}`).join('|');
+    }
+
+    function applyGridColumnWidthStyles() {
         if (!ganttReady || !gantt.config.columns) return;
+        const key = columnWidthsKey();
+        if (key === lastHeaderWidthsKey) return;
+        lastHeaderWidthsKey = key;
+
         const cols = gantt.config.columns;
-        const headCells = document.querySelectorAll('#gantt_here .gantt_grid_scale .gantt_grid_head_cell');
-        headCells.forEach((hc, i) => {
-            const col = cols[i];
-            if (!col) return;
+        const rules = cols.map((col, i) => {
             const w = parseInt(col.width, 10) || 80;
-            hc.style.width = w + 'px';
-            hc.style.minWidth = w + 'px';
-            hc.style.maxWidth = w + 'px';
-        });
-        document.querySelectorAll('#gantt_here .gantt_grid_data .gantt_row').forEach(row => {
-            const cells = row.querySelectorAll(':scope > .gantt_cell');
-            cells.forEach((cell, i) => {
-                const col = cols[i];
-                if (!col) return;
-                const w = parseInt(col.width, 10) || 80;
-                cell.style.width = w + 'px';
-                cell.style.minWidth = w + 'px';
-                cell.style.maxWidth = w + 'px';
-            });
-        });
+            const n = i + 1;
+            return `#scheduleGanttHost .gantt_grid_head_cell:nth-child(${n}),
+#scheduleGanttHost .gantt_cell:nth-child(${n}){width:${w}px!important;min-width:${w}px!important;max-width:${w}px!important;flex:0 0 ${w}px!important;}`;
+        }).join('\n');
+
+        let el = document.getElementById('sched-grid-col-widths');
+        if (!el) {
+            el = document.createElement('style');
+            el.id = 'sched-grid-col-widths';
+            document.head.appendChild(el);
+        }
+        el.textContent = rules;
+    }
+
+    function syncGridHeaderAlignment() {
+        applyGridColumnWidthStyles();
     }
 
     function queueGridHeaderSync() {
         clearTimeout(headerSyncTimer);
-        headerSyncTimer = setTimeout(syncGridHeaderAlignment, 20);
+        headerSyncTimer = setTimeout(applyGridColumnWidthStyles, 32);
     }
 
     function applyChartOverlay() {
@@ -382,7 +397,9 @@
         const timelineCell = cells[2];
         if (!gridCell || !timelineCell) return;
 
-        syncGridTableWidth();
+        const total = getColumnsTotalWidth();
+        const host = document.getElementById('gantt_here');
+        if (host) host.style.setProperty('--sched-grid-min-width', total + 'px');
 
         root.style.position = 'relative';
         gridCell.style.cssText = 'flex:1 1 auto;width:100%!important;min-width:0!important;position:relative;z-index:2;overflow:hidden;';
@@ -412,8 +429,6 @@
             root.appendChild(handle);
         }
         handle.style.right = (timelineW - 5) + 'px';
-
-        queueGridHeaderSync();
     }
 
     function queueChartOverlay() {
@@ -827,7 +842,7 @@
 
     function updateRowHeightsForLabels() {
         const showLabels = scheduleSettings.show_bar_labels !== false;
-        gantt.config.row_height = showLabels ? 54 : 42;
+        gantt.config.row_height = showLabels ? 56 : 44;
         gantt.config.bar_height = showLabels ? 22 : 26;
     }
 
@@ -965,8 +980,8 @@
             }
         }
         syncGridTableWidth();
+        lastHeaderWidthsKey = '';
         queueGridHeaderSync();
-        if (!persist) queueChartOverlay();
         if (persist) queueSave();
     }
 
@@ -1468,10 +1483,10 @@
         gantt.config.skip_off_time = false;
         gantt.config.duration_unit = 'day';
         gantt.config.time_step = 1440;
-        gantt.config.row_height = 42;
+        gantt.config.row_height = 44;
         gantt.config.bar_height = 26;
         updateRowHeightsForLabels();
-        gantt.config.scale_height = 58;
+        gantt.config.scale_height = 62;
         gantt.config.scroll_size = 20;
         gantt.config.fit_tasks = false;
         gantt.config.show_errors = false;
@@ -1679,16 +1694,11 @@
         });
         gantt.attachEvent('onColumnResizeEnd', function (index, column, new_width) {
             handleColumnResize(index, column, new_width, true);
-            queueChartOverlay();
         });
         gantt.attachEvent('onGanttRender', () => {
             refreshWbsCodes();
             updateStatusBar();
             updateDeadlineMarkers();
-            if (!overlayDrag.active) {
-                queueChartOverlay();
-            }
-            queueGridHeaderSync();
         });
 
         document.addEventListener('keydown', onScheduleKeyDown);
@@ -1704,6 +1714,8 @@
         sanitizeAllTaskDates();
         initChartOverlay();
         ganttReady = true;
+        syncRootProjectName();
+        queueGridHeaderSync();
         resizeGanttHost();
         window.addEventListener('resize', resizeGanttHost);
     }
@@ -1840,6 +1852,7 @@
         syncRootProjectName();
         queueChartOverlay();
         gantt.render();
+        queueGridHeaderSync();
         setSaveStatus('Ready');
         pushUndoState();
         updateDataDateMarker();
@@ -2929,6 +2942,7 @@
             setSaveStatus('Gantt library failed to load — refresh page');
             return;
         }
+        syncRootProjectName();
         configureGantt();
         await loadSchedule();
         runSchedule({ skipScroll: true });
@@ -2940,6 +2954,7 @@
             syncRootProjectName();
             jumpToScheduleTasks();
             applyChartOverlay();
+            queueGridHeaderSync();
         });
         switchScheduleView('gantt');
         const pid = getSelectedProjectId();
