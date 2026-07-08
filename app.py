@@ -613,6 +613,7 @@ os.makedirs(os.path.join(UPLOAD_FOLDER, 'coi'), exist_ok=True)
 os.makedirs(os.path.join(UPLOAD_FOLDER, 'documents'), exist_ok=True)
 os.makedirs(os.path.join(UPLOAD_FOLDER, 'attachments'), exist_ok=True)
 os.makedirs(os.path.join(UPLOAD_FOLDER, 'change_orders'), exist_ok=True)
+os.makedirs(os.path.join(UPLOAD_FOLDER, 'spec_books'), exist_ok=True)
 
 
 def allowed_file(filename):
@@ -1407,6 +1408,71 @@ def update_submittal_status(submittal_id):
         return jsonify({'success': True, 'new_status': new_status})
 
     return jsonify({'success': False}), 400
+
+
+@app.route('/api/submittals/spec-book', methods=['GET'])
+@login_required
+def api_get_spec_book():
+    project_id = request.args.get('project_id', type=int) or get_current_project_id()
+    if not project_id:
+        return jsonify({'error': 'project_id required'}), 400
+    folder = os.path.join(app.config['UPLOAD_FOLDER'], 'spec_books', str(project_id))
+    meta_path = os.path.join(folder, 'meta.json')
+    pdf_path = os.path.join(folder, 'spec_book.pdf')
+    if not os.path.isfile(meta_path) or not os.path.isfile(pdf_path):
+        return jsonify({'found': False})
+    try:
+        with open(meta_path, encoding='utf-8') as fh:
+            meta = json.load(fh)
+    except (OSError, json.JSONDecodeError):
+        return jsonify({'found': False})
+    meta['found'] = True
+    meta['url'] = url_for('serve_spec_book_pdf', project_id=int(project_id))
+    return jsonify(meta)
+
+
+@app.route('/api/submittals/spec-book', methods=['POST'])
+@login_required
+def api_upload_spec_book():
+    project_id = request.form.get('project_id', type=int) or get_current_project_id()
+    if not project_id:
+        return jsonify({'error': 'project_id required'}), 400
+    file = request.files.get('file')
+    if not file or not file.filename:
+        return jsonify({'error': 'file required'}), 400
+    if not allowed_file(file.filename) or not file.filename.lower().endswith('.pdf'):
+        return jsonify({'error': 'PDF file required'}), 400
+
+    folder = os.path.join(app.config['UPLOAD_FOLDER'], 'spec_books', str(project_id))
+    os.makedirs(folder, exist_ok=True)
+    pdf_path = os.path.join(folder, 'spec_book.pdf')
+    file.save(pdf_path)
+
+    section_map_raw = request.form.get('sectionPageMap') or '{}'
+    try:
+        section_page_map = json.loads(section_map_raw)
+    except json.JSONDecodeError:
+        section_page_map = {}
+
+    meta = {
+        'filename': secure_filename(file.filename) or file.filename,
+        'uploadedAt': datetime.utcnow().isoformat() + 'Z',
+        'pageCount': int(request.form.get('pageCount') or 0),
+        'sectionPageMap': section_page_map,
+    }
+    with open(os.path.join(folder, 'meta.json'), 'w', encoding='utf-8') as fh:
+        json.dump(meta, fh)
+
+    meta['ok'] = True
+    meta['url'] = url_for('serve_spec_book_pdf', project_id=int(project_id))
+    return jsonify(meta)
+
+
+@app.route('/uploads/spec_books/<int:project_id>/spec_book.pdf')
+@login_required
+def serve_spec_book_pdf(project_id):
+    directory = os.path.join(app.config['UPLOAD_FOLDER'], 'spec_books', str(project_id))
+    return send_from_directory(directory, 'spec_book.pdf', mimetype='application/pdf')
 
 
 
