@@ -179,6 +179,11 @@ ROLE_PERMISSIONS = {
     'Superintendent': {'portal': 'staff', 'approve': ['Daily Log', 'Safety'], 'modules': 'field'},
     'Architect': {'portal': 'consultant', 'approve': ['Submittals', 'RFIs', 'Change Orders'], 'modules': ['Submittals', 'RFIs', 'Change Orders', 'Drawings', 'Documents', 'Email']},
     'Owner': {'portal': 'consultant', 'approve': ['Change Orders', 'Pay Applications'], 'modules': ['Pay Applications', 'Change Orders', 'RFIs', 'Documents', 'Email', 'Schedule']},
+    'Contractor Accounting': {
+        'portal': 'staff',
+        'approve': ['Pay Applications', 'Change Orders'],
+        'modules': ['Pay Applications', 'Change Orders', 'Budget', 'Documents', 'Email', 'Schedule'],
+    },
     'Company User': {'portal': 'sub', 'approve': [], 'modules': ['Pay Applications', 'Submittals', 'Documents', 'Email', 'RFIs']},
     'Viewer': {'portal': 'staff', 'approve': [], 'modules': 'view'},
 }

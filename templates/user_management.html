@@ -96,6 +96,7 @@
         <option value="Superintendent">Superintendent</option>
         <option value="Architect">Architect</option>
         <option value="Owner">Owner</option>
+        <option value="Contractor Accounting">Contractor Accounting</option>
         <option value="Company User">Company User</option>
     </select>
 
@@ -210,6 +211,7 @@
                                 <option value="Superintendent">Superintendent</option>
                                 <option value="Architect">Architect</option>
                                 <option value="Owner">Owner</option>
+                                <option value="Contractor Accounting">Contractor Accounting</option>
                                 <option value="Company User" selected>Company User</option>
                                 <option value="Viewer">Viewer</option>
                             </select>
@@ -291,6 +293,7 @@
                 <div class="flex gap-2 mb-4 flex-wrap">
                     <button type="button" onclick="applyRoleTemplate('Admin')" class="px-3 py-1 text-xs bg-zinc-700 hover:bg-zinc-600 rounded">Admin Template</button>
                     <button type="button" onclick="applyRoleTemplate('Project Manager')" class="px-3 py-1 text-xs bg-zinc-700 hover:bg-zinc-600 rounded">PM Template</button>
+                    <button type="button" onclick="applyRoleTemplate('Contractor Accounting')" class="px-3 py-1 text-xs bg-zinc-700 hover:bg-zinc-600 rounded">Accounting Template</button>
                     <button type="button" onclick="applyRoleTemplate('Company User')" class="px-3 py-1 text-xs bg-zinc-700 hover:bg-zinc-600 rounded">Company User Template</button>
                     <button type="button" onclick="applyRoleTemplate('Viewer')" class="px-3 py-1 text-xs bg-zinc-700 hover:bg-zinc-600 rounded">Viewer Template</button>
                 </div>
@@ -409,6 +412,7 @@
         "Superintendent": { access: "Edit", approve: "Approve Only" },
         "Architect": { access: "Edit", approve: "Approve Only" },
         "Owner": { access: "View", approve: "Approve & Reject" },
+        "Contractor Accounting": { access: "Edit", approve: "Approve & Reject" },
         "Company User": { access: "View", approve: "None" },
         "Viewer": { access: "View", approve: "None" }
     };

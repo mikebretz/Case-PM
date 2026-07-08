@@ -3,6 +3,7 @@
 {% block content %}
 <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
 <script src="{{ url_for('static', filename='js/casepm-workflow.js') }}"></script>
+<script src="{{ url_for('static', filename='js/pay-app-sync.js') }}"></script>
 
 <style>
   /* Exact match to budget.html aesthetics */
@@ -1014,7 +1015,37 @@ let mainLienWaiver = JSON.parse(casepmStore.getItem('mainLienWaiver') || '{}'); 
             logSageSync(eventType, { status: 'skipped', message: message + ' (auto-sync disabled in settings)', payload });
             return null;
         }
-        return logSageSync(eventType, { status: 'queued', message, payload });
+        const entry = logSageSync(eventType, { status: 'queued', message, payload });
+        if (typeof CasePMPayAppSync !== 'undefined') {
+            CasePMPayAppSync.queueSageEvent(eventType, payload, message).then(res => {
+                if (res && res.event) {
+                    entry.status = res.event.status;
+                    if (res.event.status === 'posted' || res.event.status === 'simulated') {
+                        entry.status = res.event.status;
+                    }
+                    renderSageSyncStatus();
+                }
+            }).catch(() => {});
+        }
+        return entry;
+    }
+
+    function reloadPayAppStateFromStorage() {
+        contractorSOV = JSON.parse(casepmStore.getItem('contractorSOV')) || [];
+        payAppBillingLines = JSON.parse(casepmStore.getItem('payAppBillingLines')) || {};
+        currentPayAppPeriod = JSON.parse(casepmStore.getItem('currentPayAppPeriod') || 'null');
+        payAppHistory = JSON.parse(casepmStore.getItem('payAppHistory')) || [];
+        subcontractorSOV = JSON.parse(casepmStore.getItem('subcontractorSOV')) || {};
+        subPayAppHistory = JSON.parse(casepmStore.getItem('subPayAppHistory') || '{}');
+        subPendingSubmissions = JSON.parse(casepmStore.getItem('subPendingSubmissions') || '{}');
+        subPayAppNumbers = JSON.parse(casepmStore.getItem('subPayAppNumbers') || '{}');
+        subSOVStatus = JSON.parse(casepmStore.getItem('subSOVStatus') || '{}');
+        subLienWaivers = JSON.parse(casepmStore.getItem('subLienWaivers') || '{}');
+        subLienWaiverArchive = JSON.parse(casepmStore.getItem('subLienWaiverArchive') || '{}');
+        previousSubPayAppArchive = JSON.parse(casepmStore.getItem('previousSubPayAppArchive') || '[]');
+        mainLienWaiver = JSON.parse(casepmStore.getItem('mainLienWaiver') || '{}');
+        defaultRetainagePercent = parseFloat(casepmStore.getItem('payAppRetainagePercent') || '10');
+        sageSyncAutoEnabled = casepmStore.getItem('sageSyncAutoEnabled') !== 'false';
     }
 
     function renderSageSyncStatus() {
@@ -1041,27 +1072,41 @@ let mainLienWaiver = JSON.parse(casepmStore.getItem('mainLienWaiver') || '{}'); 
             modal.className = 'bg-zinc-900 border border-zinc-700 rounded-lg p-0 text-white max-w-2xl w-full';
             document.body.appendChild(modal);
         }
-        const rows = sageSyncLog.length
-            ? sageSyncLog.slice(0, 40).map(e => `
+        function renderRows(events) {
+            const merged = (events && events.length) ? events.map(e => ({
+                timestamp: e.created_at,
+                eventType: e.event_type,
+                status: e.status,
+                message: e.message,
+            })) : sageSyncLog;
+            return merged.length
+                ? merged.slice(0, 40).map(e => `
                 <tr class="border-b border-zinc-800">
                     <td class="py-2 pr-3 text-[10px] text-zinc-400 whitespace-nowrap">${new Date(e.timestamp).toLocaleString()}</td>
                     <td class="py-2 pr-3 text-xs">${e.eventType}</td>
-                    <td class="py-2 pr-3 text-xs ${e.status === 'queued' ? 'text-amber-400' : e.status === 'skipped' ? 'text-zinc-500' : 'text-emerald-400'}">${e.status}</td>
+                    <td class="py-2 pr-3 text-xs ${e.status === 'queued' ? 'text-amber-400' : e.status === 'skipped' ? 'text-zinc-500' : e.status === 'error' ? 'text-red-400' : 'text-emerald-400'}">${e.status}</td>
                     <td class="py-2 text-xs text-zinc-300">${e.message || ''}</td>
                 </tr>`).join('')
-            : '<tr><td colspan="4" class="py-6 text-center text-zinc-500 text-sm">No Sage sync events recorded yet.</td></tr>';
+                : '<tr><td colspan="4" class="py-6 text-center text-zinc-500 text-sm">No Sage sync events recorded yet.</td></tr>';
+        }
         modal.innerHTML = `
             <div class="p-5">
                 <div class="flex items-center justify-between mb-4">
                     <h3 class="text-lg font-semibold">Sage 300 Sync Log</h3>
                     <button type="button" onclick="document.getElementById('sageSyncLogModal').close()" class="text-zinc-400 hover:text-white"><i class="fa-solid fa-times"></i></button>
                 </div>
-                <p class="text-xs text-zinc-400 mb-3">Events queue when pay applications, sub pay apps, or change orders reach approval milestones. Configure Sage job number on the project to enable posting when the Sage API connector is connected.</p>
+                <p class="text-xs text-zinc-400 mb-3">Events post to Sage when SAGE_API_URL is configured; otherwise they are validated and marked simulated until the connector is live.</p>
                 <div class="max-h-80 overflow-auto">
-                    <table class="w-full text-left"><thead><tr class="text-[10px] text-zinc-500 uppercase"><th class="pb-2">Time</th><th class="pb-2">Event</th><th class="pb-2">Status</th><th class="pb-2">Detail</th></tr></thead><tbody>${rows}</tbody></table>
+                    <table class="w-full text-left"><thead><tr class="text-[10px] text-zinc-500 uppercase"><th class="pb-2">Time</th><th class="pb-2">Event</th><th class="pb-2">Status</th><th class="pb-2">Detail</th></tr></thead><tbody id="sageSyncLogTableBody">${renderRows([])}</tbody></table>
                 </div>
             </div>`;
         modal.showModal();
+        if (typeof CasePMPayAppSync !== 'undefined') {
+            CasePMPayAppSync.fetchSageEvents(40).then(events => {
+                const body = document.getElementById('sageSyncLogTableBody');
+                if (body) body.innerHTML = renderRows(events);
+            });
+        }
     }
 
     function pushManualSageSync() {
@@ -8765,24 +8810,40 @@ function printSubcontractorG703(companyId) {
 
     // ==================== INITIALIZATION ====================
     function initializePayApplications() {
-        seedDemoDataIfNeeded();
-        bindPayAppSettingsAutoSave();
-        pruneInlineLienWaiverPayloads();
-        migrateLegacyComplianceKeys();
-        reconcileSubPayAppTrackerState();
-        rebuildPreviousSubPayAppArchiveFromHistory();
+        const boot = async () => {
+            if (typeof CasePMPayAppSync !== 'undefined') {
+                await CasePMPayAppSync.init();
+                reloadPayAppStateFromStorage();
+            } else if (typeof CasePMWorkflow !== 'undefined') {
+                CasePMWorkflow.loadPortal().catch(() => {});
+            }
+            seedDemoDataIfNeeded();
+            bindPayAppSettingsAutoSave();
+            pruneInlineLienWaiverPayloads();
+            migrateLegacyComplianceKeys();
+            reconcileSubPayAppTrackerState();
+            rebuildPreviousSubPayAppArchiveFromHistory();
 
-        if (typeof CasePMWorkflow !== 'undefined') {
-            CasePMWorkflow.loadPortal().catch(() => {});
-        }
+            const lastSub = casepmStore.getItem('lastSelectedSubSOV');
+            if (lastSub) selectedSubCompanyId = parseInt(lastSub);
 
-        // Restore last selected sub if any
-        const lastSub = casepmStore.getItem('lastSelectedSubSOV');
-        if (lastSub) selectedSubCompanyId = parseInt(lastSub);
+            renderPayAppContent();
+            renderSageSyncStatus();
+        };
+        boot();
 
-        // Initial render
-        renderPayAppContent();
-        renderSageSyncStatus();
+        window.addEventListener('casepm:co-approved', () => {
+            if (typeof CasePMPayAppSync !== 'undefined') {
+                CasePMPayAppSync.refreshFromServer().then(() => {
+                    reloadPayAppStateFromStorage();
+                    renderPayAppContent();
+                });
+            }
+        });
+        window.addEventListener('casepm:payapp-state-refreshed', () => {
+            reloadPayAppStateFromStorage();
+            renderPayAppContent();
+        });
 
         // Keyboard shortcuts
         document.addEventListener('keydown', function(e) {
