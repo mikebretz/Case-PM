@@ -714,17 +714,20 @@
     setTimeout(() => t.remove(), 2800);
   }
 
-  const CO_PRINT_FIELDS = [
-    { key: 'number', label: 'CO #', default: true },
-    { key: 'date', label: 'Date', default: true },
-    { key: 'title', label: 'Title', default: true },
-    { key: 'description', label: 'Description', default: false },
-    { key: 'company_name', label: 'Company', default: true },
-    { key: 'contact_name', label: 'Contact', default: true },
-    { key: 'cost_code', label: 'Cost Code', default: true },
-    { key: 'amount', label: 'Amount', default: true },
-    { key: 'status', label: 'Status', default: true },
-    { key: 'ball_in_court_role', label: 'Ball in Court', default: true },
+  const CO_BASE_PRINT_COLUMNS = [
+    { key: 'number', label: 'CO #', width: '6%', mono: true },
+    { key: 'date', label: 'Date', width: '6%', align: 'center' },
+    { key: 'title', label: 'Title / Description', width: '16%' },
+    { key: 'company_name', label: 'Company', width: '10%' },
+    { key: 'contact_name', label: 'Contact', width: '8%' },
+    { key: 'cost_code', label: 'Cost<br>Code', width: '7%', mono: true },
+    { key: 'amount', label: 'Amount', width: '8%', align: 'right' },
+    { key: 'status', label: 'Status', width: '8%', align: 'center' },
+    { key: 'ball_in_court_role', label: 'Ball<br>in Court', width: '8%', align: 'center' },
+  ];
+
+  const CO_OPTIONAL_PRINT_FIELDS = [
+    { key: 'description', label: 'Full Description', default: false },
     { key: 'schedule_impact_days', label: 'Schedule Days', default: false },
     { key: 'reason', label: 'Reason', default: false },
     { key: 'priority', label: 'Priority', default: false },
@@ -734,17 +737,20 @@
     { key: 'notes', label: 'Notes', default: false },
   ];
 
-  const PCO_PRINT_FIELDS = [
-    { key: 'number', label: 'PCO #', default: true },
-    { key: 'title', label: 'Title', default: true },
-    { key: 'company_name', label: 'Company', default: true },
-    { key: 'contact_name', label: 'Contact', default: true },
-    { key: 'estimated_amount', label: 'ROM', default: true },
-    { key: 'status', label: 'Status', default: true },
-    { key: 'ball_in_court_role', label: 'Ball in Court', default: true },
+  const PCO_BASE_PRINT_COLUMNS = [
+    { key: 'number', label: 'PCO #', width: '6%', mono: true },
+    { key: 'date', label: 'Date', width: '6%', align: 'center' },
+    { key: 'title', label: 'Title / Description', width: '18%' },
+    { key: 'company_name', label: 'Company', width: '10%' },
+    { key: 'contact_name', label: 'Contact', width: '8%' },
+    { key: 'estimated_amount', label: 'ROM', width: '8%', align: 'right' },
+    { key: 'status', label: 'Status', width: '8%', align: 'center' },
+    { key: 'ball_in_court_role', label: 'Ball<br>in Court', width: '8%', align: 'center' },
+  ];
+
+  const PCO_OPTIONAL_PRINT_FIELDS = [
     { key: 'reason', label: 'Reason', default: false },
     { key: 'priority', label: 'Priority', default: false },
-    { key: 'date', label: 'Date', default: true },
     { key: 'notes', label: 'Notes', default: false },
     { key: 'change_order_id', label: 'Linked CO', default: false },
   ];
@@ -752,6 +758,7 @@
   function coPrintValue(co, key) {
     if (key === 'date') return fmtDate(co.date);
     if (key === 'amount') return fmt(co.amount);
+    if (key === 'title') return co.title || co.description || '';
     if (key === 'cost_code') return co.cost_code || (co.allocations?.[0]?.cost_code) || '';
     if (key === 'sov_synced_at') return co.sov_synced_at ? 'Yes' : 'No';
     return co[key] ?? '';
@@ -773,17 +780,31 @@
     };
   }
 
-  function buildLogSection(title, fieldDefs, selectedKeys, rows, valueFn) {
-    const columns = selectedKeys.map(k => {
-      const def = fieldDefs.find(f => f.key === k);
-      return { key: k, label: def?.label || k };
-    });
+  function resolvePrintColumns(baseCols, optionalFieldDefs, selectedOptionalKeys) {
+    const optional = optionalFieldDefs
+      .filter(f => (selectedOptionalKeys || []).includes(f.key))
+      .map(f => ({ key: f.key, label: f.label.replace(/ /g, '<br>'), width: '7%' }));
+    return [...baseCols, ...optional];
+  }
+
+  function buildRegisterSection(title, columns, rows, valueFn) {
     const data = rows.map(r => {
       const obj = {};
-      selectedKeys.forEach(k => { obj[k] = valueFn(r, k); });
+      columns.forEach(c => { obj[c.key] = valueFn(r, c.key); });
       return obj;
     });
-    return { title, columns, rows: data, emptyMessage: `No ${title.toLowerCase()} records.` };
+    return {
+      title,
+      columns: columns.map(c => ({
+        key: c.key,
+        label: c.label,
+        width: c.width,
+        align: c.align,
+        mono: c.mono,
+      })),
+      rows: data,
+      emptyMessage: `No ${title.toLowerCase()} records.`,
+    };
   }
 
   async function printLog() {
@@ -791,38 +812,35 @@
       alert('Print module not loaded.');
       return;
     }
-    const allFields = [...CO_PRINT_FIELDS];
-    PCO_PRINT_FIELDS.forEach(f => {
-      if (!allFields.find(x => x.key === f.key)) allFields.push(f);
-    });
-    const uniqueFields = [];
-    const seen = new Set();
-    [...CO_PRINT_FIELDS, ...PCO_PRINT_FIELDS].forEach(f => {
-      if (!seen.has(f.key)) { seen.add(f.key); uniqueFields.push(f); }
-    });
 
     const picked = await global.CasePMPrint.showFieldPicker({
       title: 'Print Change Order Log',
+      note: 'Standard register columns are always included. Choose extra columns to append on the right. CO and PCO logs use the same optional field names where applicable.',
       logTypes: [
         { value: 'cos', label: 'Change Orders' },
         { value: 'pcos', label: 'PCO Log' },
         { value: 'both', label: 'Both' },
       ],
-      fields: uniqueFields,
+      fields: [...CO_OPTIONAL_PRINT_FIELDS, ...PCO_OPTIONAL_PRINT_FIELDS.filter(f => !CO_OPTIONAL_PRINT_FIELDS.find(c => c.key === f.key))],
     });
     if (!picked) return;
 
     const meta = getCoPrintMeta();
     const sections = [];
     if (picked.logType === 'cos' || picked.logType === 'both') {
-      sections.push(buildLogSection('CHANGE ORDER LOG', CO_PRINT_FIELDS, picked.fields, filteredCos(), coPrintValue));
+      const cols = resolvePrintColumns(CO_BASE_PRINT_COLUMNS, CO_OPTIONAL_PRINT_FIELDS, picked.fields);
+      sections.push(buildRegisterSection('CHANGE ORDER LOG', cols, filteredCos(), coPrintValue));
     }
     if (picked.logType === 'pcos' || picked.logType === 'both') {
-      sections.push(buildLogSection('POTENTIAL CHANGE ORDER LOG', PCO_PRINT_FIELDS, picked.fields, filteredPcos(), pcoPrintValue));
+      const cols = resolvePrintColumns(PCO_BASE_PRINT_COLUMNS, PCO_OPTIONAL_PRINT_FIELDS, picked.fields);
+      sections.push(buildRegisterSection('POTENTIAL CHANGE ORDER LOG', cols, filteredPcos(), pcoPrintValue));
     }
 
     const html = global.CasePMPrint.buildPrintDocument({ meta, sections, rowsPerPage: 26 });
-    global.CasePMPrint.openPrintWindow(html, 'Change Order Log');
+    global.CasePMPrint.triggerPrintPreview(html, {
+      containerId: 'coPrintSheet',
+      bodyClass: 'printing-co-log',
+    });
   }
 
   function exportExcel() {

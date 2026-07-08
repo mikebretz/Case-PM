@@ -110,37 +110,14 @@ body.schedule-chart-resizing #gantt_here .gantt_layout_cell:nth-child(3) {
 .schedule-toolbar-btn.active-tool { background: #065f46; border-color: #10b981; color: #fff; }
 .schedule-toolbar-btn-danger { border-color: #7f1d1d; color: #fca5a5; }
 .schedule-toolbar-btn-danger:hover { background: #7f1d1d; color: #fff; }
-
-/* Horizontal scroll toolbar — keeps button groups intact when zoomed/narrow */
-.schedule-toolbar-scroll {
-    overflow-x: auto;
-    overflow-y: hidden;
-    -webkit-overflow-scrolling: touch;
+#scheduleMainToolbar [data-sched-tool].hidden { display: none !important; }
+#scheduleMoreToolsMenu .schedule-more-tool-item {
+  display: flex;
+  width: 100%;
+  justify-content: flex-start;
+  margin: 0;
 }
-.schedule-toolbar-inner {
-    display: flex;
-    flex-wrap: nowrap;
-    align-items: center;
-    gap: 0;
-    min-width: max-content;
-}
-.schedule-toolbar-group {
-    display: inline-flex;
-    flex-wrap: nowrap;
-    align-items: center;
-    gap: 0.25rem;
-    border-right: 1px solid var(--sched-border, #3f3f46);
-    padding-right: 0.5rem;
-    margin-right: 0.35rem;
-    flex-shrink: 0;
-}
-.schedule-toolbar-group:last-child {
-    border-right: none;
-    margin-right: 0;
-    padding-right: 0;
-}
-
-/* 12-month calendar schedule view */
+.schedule-view-tab.active-view { background: #27272a; color: #fff; border-radius: 0.375rem; }
 .sched-cal-toolbar { margin-bottom: 0.75rem; }
 .sched-cal-year-grid {
     display: grid;

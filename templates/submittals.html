@@ -2238,32 +2238,47 @@ async function clearSubmittalLog() {
     updateMetrics();
 }
 
-const SUBMITTAL_PRINT_FIELDS = [
-    { key: 'specSection', label: 'Spec Section', default: true },
-    { key: 'rev', label: 'Rev #', default: true },
-    { key: 'paragraph', label: 'Paragraph', default: true },
-    { key: 'copiesTo', label: 'Copies To', default: false },
-    { key: 'subject', label: 'Submittal Subject', default: true },
-    { key: 'type', label: 'Submittal Type', default: true },
-    { key: 'dateReceived', label: 'Date Received', default: true },
-    { key: 'assignedCompanyName', label: 'Assigned Company', default: true },
-    { key: 'assignedContactName', label: 'Assigned Contact', default: true },
-    { key: 'receivedFrom', label: 'Received From', default: true },
-    { key: 'referredTo', label: 'Referred To', default: true },
-    { key: 'dateSent', label: 'Date Sent', default: true },
-    { key: 'dateReturned', label: 'Date Returned', default: true },
-    { key: 'noExceptions', label: 'No Exceptions Taken', default: true },
-    { key: 'reviewedAsNoted', label: 'Reviewed As Noted', default: true },
-    { key: 'reviseResubmit', label: 'Revise & Resubmit', default: true },
-    { key: 'rejected', label: 'Rejected', default: true },
-    { key: 'resubmitGc', label: 'Resubmit w/ GC Approval', default: false },
-    { key: 'subcontractorFile', label: 'Sub-Contractor File', default: false },
-    { key: 'field', label: 'Field', default: false },
-    { key: 'fieldDocument', label: 'Document', default: false },
-    { key: 'sectionName', label: 'Section Name', default: true },
-    { key: 'transmittalNumber', label: 'Transmittal #', default: true },
-    { key: 'status', label: 'Status', default: true },
+/** Fixed ALDI-style column order — always printed in this sequence. */
+const SUBMITTAL_BASE_PRINT_COLUMNS = [
+    { key: 'specSection', label: 'Spec<br>Section', width: '4.5%', mono: true },
+    { key: 'rev', label: 'Rev#', width: '2.5%', align: 'center', mono: true },
+    { key: 'paragraph', label: 'Paragraph', width: '4%', mono: true },
+    { key: 'copiesTo', label: 'Copies<br>To', width: '3%', align: 'center' },
+    { key: 'subject', label: 'Submittal<br>Subject', width: '9%' },
+    { key: 'type', label: 'Submittal<br>Type', width: '7%' },
+    { key: 'dateReceived', label: 'Date<br>Received', width: '4.5%', align: 'center' },
+    { key: 'receivedFrom', label: 'Received<br>From', width: '6%' },
+    { key: 'referredTo', label: 'Referred<br>To', width: '5.5%' },
+    { key: 'dateSent', label: 'Date<br>Sent', width: '4%', align: 'center' },
+    { key: 'dateReturned', label: 'Date<br>Returned', width: '4%', align: 'center' },
+    { key: 'noExceptions', label: 'No<br>Exceptions<br>Taken', width: '3.5%', align: 'center', check: true },
+    { key: 'reviewedAsNoted', label: 'Reviewed<br>As<br>Noted', width: '3.5%', align: 'center', check: true },
+    { key: 'reviseResubmit', label: 'Revise &amp;<br>Resubmit', width: '3.5%', align: 'center', check: true },
+    { key: 'rejected', label: 'Rejected', width: '3%', align: 'center', check: true },
+    { key: 'resubmitGc', label: 'Resubmit<br>w/ GC<br>Approval', width: '3.5%', align: 'center', check: true },
+    { key: 'subcontractorFile', label: 'Sub-<br>Contractor<br>File', width: '4%', align: 'center' },
+    { key: 'field', label: 'Field', width: '3.5%', align: 'center' },
+    { key: 'fieldDocument', label: 'Document', width: '3.5%', align: 'center' },
+    { key: 'sectionName', label: 'Section<br>Name', width: '8%' },
+    { key: 'transmittalNumber', label: 'Transmittal<br>#', width: '4%', align: 'center', mono: true },
+    { key: 'status', label: 'Status', width: '5%', align: 'center' },
 ];
+
+/** Optional columns — appended to the right of the standard log. */
+const SUBMITTAL_OPTIONAL_PRINT_FIELDS = [
+    { key: 'assignedCompanyName', label: 'Assigned Company', default: false },
+    { key: 'assignedContactName', label: 'Assigned Contact', default: false },
+    { key: 'requiredBy', label: 'Required By', default: false },
+    { key: 'costImpact', label: 'Cost Impact ($)', default: false },
+    { key: 'scheduleDays', label: 'Schedule Impact (Days)', default: false },
+];
+
+function resolveSubmittalPrintColumns(selectedOptionalKeys) {
+    const optional = SUBMITTAL_OPTIONAL_PRINT_FIELDS
+        .filter(f => (selectedOptionalKeys || []).includes(f.key))
+        .map(f => ({ key: f.key, label: f.label.replace(/ /g, '<br>'), width: '5%' }));
+    return [...SUBMITTAL_BASE_PRINT_COLUMNS, ...optional];
+}
 
 function submittalPrintCellValue(item, key) {
     const checks = getReviewCheckmarks(item);
@@ -2280,6 +2295,7 @@ function submittalPrintCellValue(item, key) {
         case 'transmittalNumber': return item.transmittalNumber || item.number || '';
         case 'status': return getPrintStatusLabel(item);
         case 'assignedCompanyName': return item.assignedCompanyName || item.receivedFrom || '';
+        case 'requiredBy': return formatPrintDate(item.requiredBy);
         default: return item[key] ?? '';
     }
 }
@@ -2291,17 +2307,20 @@ async function showPrintSubmittalLogPicker() {
     }
     const picked = await CasePMPrint.showFieldPicker({
         title: 'Print Submittal Log',
-        fields: SUBMITTAL_PRINT_FIELDS,
+        note: 'Standard log columns (spec section through status) are always included in ALDI register order. Choose any extra columns to append on the right.',
+        fields: SUBMITTAL_OPTIONAL_PRINT_FIELDS,
     });
     if (!picked) return;
     printSubmittalLog(picked.fields);
 }
 
-function printSubmittalLog(selectedFields) {
-    const fields = selectedFields || SUBMITTAL_PRINT_FIELDS.filter(f => f.default !== false).map(f => f.key);
-    const html = buildSubmittalPrintSheet(fields);
+function printSubmittalLog(selectedOptionalFields) {
+    const html = buildSubmittalPrintSheet(selectedOptionalFields);
     if (typeof CasePMPrint !== 'undefined') {
-        CasePMPrint.openPrintWindow(html, 'Submittal Log');
+        CasePMPrint.triggerPrintPreview(html, {
+            containerId: 'submittalPrintSheet',
+            bodyClass: 'printing-submittal-log',
+        });
         return;
     }
     const sheet = document.getElementById('submittalPrintSheet');
@@ -2386,38 +2405,26 @@ function getPrintStatusLabel(item) {
     return 'OPEN SUBMITTAL';
 }
 
-function buildSubmittalPrintRow(item, fields) {
+function buildSubmittalPrintRow(item, columns) {
     const esc = escapeSubmittalHtml;
-    const centerKeys = new Set(['rev', 'copiesTo', 'dateReceived', 'dateSent', 'dateReturned', 'subcontractorFile', 'field', 'fieldDocument', 'transmittalNumber', 'status']);
-    const checkKeys = new Set(['noExceptions', 'reviewedAsNoted', 'reviseResubmit', 'rejected', 'resubmitGc']);
-    return '<tr>' + fields.map(key => {
-        const val = submittalPrintCellValue(item, key);
+    return '<tr>' + columns.map(col => {
+        const val = submittalPrintCellValue(item, col.key);
         let cls = '';
-        if (centerKeys.has(key) || checkKeys.has(key)) cls = ' class="c"';
-        else if (key === 'specSection' || key === 'paragraph' || key === 'rev' || key === 'transmittalNumber') cls = ' class="mono' + (centerKeys.has(key) ? ' c' : '') + '"';
-        else if (checkKeys.has(key)) cls = ' class="check"';
+        if (col.check) cls = ' class="check"';
+        else if (col.mono) cls = ' class="mono' + (col.align === 'center' ? ' c"' : '"');
+        else if (col.align === 'center') cls = ' class="c"';
         return `<td${cls}>${esc(val)}</td>`;
     }).join('') + '</tr>';
 }
 
-function buildSubmittalPrintTableHead(fields) {
-    const labels = {
-        specSection: 'Spec<br>Section', rev: 'Rev#', paragraph: 'Paragraph', copiesTo: 'Copies<br>To',
-        subject: 'Submittal<br>Subject', type: 'Submittal<br>Type', dateReceived: 'Date<br>Received',
-        assignedCompanyName: 'Assigned<br>Company', assignedContactName: 'Assigned<br>Contact',
-        receivedFrom: 'Received<br>From', referredTo: 'Referred<br>To', dateSent: 'Date<br>Sent',
-        dateReturned: 'Date<br>Returned', noExceptions: 'No<br>Exceptions<br>Taken',
-        reviewedAsNoted: 'Reviewed<br>As<br>Noted', reviseResubmit: 'Revise &amp;<br>Resubmit',
-        rejected: 'Rejected', resubmitGc: 'Resubmit<br>w/ GC<br>Approval',
-        subcontractorFile: 'Sub-<br>Contractor<br>File', field: 'Field', fieldDocument: 'Document',
-        sectionName: 'Section<br>Name', transmittalNumber: 'Transmittal<br>#', status: 'Status',
-    };
-    const head = fields.map(k => `<th>${labels[k] || k}</th>`).join('');
+function buildSubmittalPrintTableHead(columns) {
+    const head = columns.map(c => `<th${c.width ? ` style="width:${c.width}"` : ''}>${c.label}</th>`).join('');
     return `<table class="submittal-print-table"><thead><tr>${head}</tr></thead><tbody>`;
 }
 
-function buildSubmittalPrintSheet(selectedFields) {
-    const fields = selectedFields || SUBMITTAL_PRINT_FIELDS.filter(f => f.default !== false).map(f => f.key);
+function buildSubmittalPrintSheet(selectedOptionalFields) {
+    const columns = resolveSubmittalPrintColumns(selectedOptionalFields);
+    const fields = columns.map(c => c.key);
     const meta = getSubmittalProjectMeta();
     const rows = [...submittals].sort((a, b) => {
         const sa = formatSpecSectionForPrint(a.specSection);
@@ -2445,7 +2452,7 @@ function buildSubmittalPrintSheet(selectedFields) {
             const chunk = rows.slice(p * ROWS_PER_PAGE, (p + 1) * ROWS_PER_PAGE);
             let html = buildSubmittalPrintPageHeader(meta);
             html += buildSubmittalPrintTableHead(fields);
-            html += chunk.map(item => buildSubmittalPrintRow(item, fields)).join('');
+            html += chunk.map(item => buildSubmittalPrintRow(item, columns)).join('');
             html += `</tbody></table>
                 <div class="submittal-print-footer">
                     <span>Confidential</span>
