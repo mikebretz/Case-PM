@@ -782,7 +782,20 @@ def create_change_order():
 def submittals_page():
     submittals = Submittal.query.order_by(Submittal.created_at.desc()).all()
     projects = Project.query.order_by(Project.name).all()
-    return render_template('submittals.html', submittals=submittals, projects=projects)
+    project_id = request.args.get('project_id', type=int)
+    if not project_id:
+        stored = request.cookies.get('casepm_current_project_id')
+        try:
+            project_id = int(stored) if stored else None
+        except (TypeError, ValueError):
+            project_id = None
+    active_project = Project.query.get(project_id) if project_id else (projects[0] if projects else None)
+    return render_template(
+        'submittals.html',
+        submittals=submittals,
+        projects=projects,
+        active_project=active_project,
+    )
 
 
 @app.route('/submittals/create', methods=['POST'])
