@@ -621,7 +621,7 @@
         <p><span class="text-zinc-500">Reason</span><br>${esc(co.reason || '—')}</p>
         <p><span class="text-zinc-500">Description</span><br>${esc(co.description || '—')}</p>
         ${co.source_pco_id ? `<p><span class="text-zinc-500">Source PCO</span><br>#${co.source_pco_id}</p>` : ''}
-        <p><span class="text-zinc-500">Linked RFI</span><br>${esc(linkedRfiLabel(co.linked_rfi_id))}</p>
+        <p><span class="text-zinc-500">Linked RFI</span><br>${co.linked_rfi_id ? `<a href="/rfis" class="text-sky-400 hover:underline">${esc(linkedRfiLabel(co.linked_rfi_id))}</a>` : '—'}</p>
         <p><span class="text-zinc-500">Linked commitment</span><br>${esc(co.linked_commitment_ref || '—')}</p>
         <p><span class="text-zinc-500">Sage / SOV</span><br>${co.sov_synced_at ? '<span class="text-emerald-400">SOV synced</span>' : esc(co.sage_sync_status || '—')}</p>
       </div>
@@ -656,6 +656,7 @@
         <p><span class="text-zinc-500">Company</span><br>${esc(p.company_name || '—')}</p>
         <p><span class="text-zinc-500">Contact</span><br>${esc(p.contact_name || '—')}</p>
         <p><span class="text-zinc-500">Description</span><br>${esc(p.description || '—')}</p>
+        <p><span class="text-zinc-500">Linked RFI</span><br>${p.linked_rfi_id ? `<a href="/rfis" class="text-sky-400 hover:underline">${esc(linkedRfiLabel(p.linked_rfi_id))}</a>` : '—'}</p>
         ${p.change_order_id ? `<p><span class="text-zinc-500">Promoted to CO</span><br>#${p.change_order_id}</p>` : ''}
       </div>
       <div class="mt-4">

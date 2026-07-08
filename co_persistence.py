@@ -328,6 +328,7 @@ def promote_pco_to_co(
         source_pco_id=pco.id,
         ball_in_court_role='Creator',
         contract_type='Owner',
+        linked_rfi_id=getattr(pco, 'linked_rfi_id', None),
         created_by_id=user_id,
     )
     db.session.add(co)

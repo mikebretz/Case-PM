@@ -350,6 +350,32 @@ class RFI(db.Model):
     spec_reference = db.Column(db.String(100))
     created_by_id = db.Column(db.Integer, db.ForeignKey('user.id'))
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    from_party = db.Column(db.String(150))
+    to_party = db.Column(db.String(150))
+    received_from_company = db.Column(db.String(200))
+    received_from_contact = db.Column(db.String(150))
+    responsible_contractor = db.Column(db.String(200))
+    rfi_manager_name = db.Column(db.String(150))
+    assignees_json = db.Column(db.Text)
+    distribution_json = db.Column(db.Text)
+    ball_in_court_role = db.Column(db.String(80))
+    official_answer = db.Column(db.Text)
+    answered_at = db.Column(db.DateTime)
+    answered_by_id = db.Column(db.Integer, db.ForeignKey('user.id'))
+    notes = db.Column(db.Text)
+    cost_impact_amount = db.Column(db.Float, default=0)
+    schedule_impact_days = db.Column(db.Integer, default=0)
+    schedule_impact_label = db.Column(db.String(50))
+    is_private = db.Column(db.Integer, default=0)
+    attachments_json = db.Column(db.Text)
+    responses_json = db.Column(db.Text)
+    plan_pins_json = db.Column(db.Text)
+    linked_pco_id = db.Column(db.Integer)
+    updated_at = db.Column(db.DateTime)
+    closed_at = db.Column(db.DateTime)
+    submitted_at = db.Column(db.DateTime)
+    location_description = db.Column(db.String(300))
+    discipline = db.Column(db.String(80))
 
 
 class ChangeOrder(db.Model):
@@ -771,10 +797,10 @@ def get_dashboard_stats():
     stats = {
         'total_projects': Project.query.count(),
         'active_projects': Project.query.filter(Project.status.in_(['Active', 'Pre-Construction'])).count(),
-        'open_rfis': RFI.query.filter(RFI.status.in_(['Open', 'Awaiting Response'])).count(),
+        'open_rfis': RFI.query.filter(RFI.status.in_(['Open', 'Awaiting Response', 'Under Review'])).count(),
         'overdue_rfis': RFI.query.filter(
             RFI.due_date < datetime.utcnow().date(),
-            RFI.status.in_(['Open', 'Awaiting Response'])
+            RFI.status.in_(['Open', 'Awaiting Response', 'Under Review'])
         ).count(),
         'open_change_orders': ChangeOrder.query.filter(ChangeOrder.status == 'Pending').count(),
         'open_punch_items': PunchItem.query.filter(PunchItem.status != 'Completed').count(),
@@ -1385,45 +1411,44 @@ def upload_coi(company_id):
 @app.route('/rfis')
 @login_required
 def rfis_page():
-    rfis = query_for_active_project(RFI).order_by(RFI.created_at.desc()).all()
-    projects = Project.query.order_by(Project.name).all()
-    return render_template('rfis.html', rfis=rfis, projects=projects)
+    return render_template('rfis.html')
 
 
 @app.route('/rfis/create', methods=['POST'])
 @login_required
 def create_rfi():
+    """Legacy form create — redirects to API-style handling."""
     try:
-        project_id = request.form.get('project_id')
+        project_id = request.form.get('project_id') or get_current_project_id()
         subject = request.form.get('subject')
-        question = request.form.get('question')
-        priority = request.form.get('priority', 'Medium')
-        due_date = request.form.get('due_date')
-
         if not subject or not project_id:
             flash('Subject and Project are required.', 'error')
             return redirect_with_project('rfis_page')
-
-        number = generate_next_number('RFI', RFI)
-
+        from rfi_persistence import apply_rfi_fields
+        due_date = request.form.get('due_date')
         rfi = RFI(
             project_id=int(project_id),
-            number=number,
+            number=generate_next_number('RFI', RFI),
             subject=subject,
-            question=question,
-            priority=priority,
-            status='Open',
+            question=request.form.get('question'),
+            priority=request.form.get('priority', 'Medium'),
+            status=request.form.get('status') or 'Draft',
             date=datetime.utcnow().date(),
             due_date=datetime.strptime(due_date, '%Y-%m-%d').date() if due_date else None,
-            created_by_id=current_user.id
+            created_by_id=current_user.id,
+            ball_in_court_role='RFI Manager',
         )
-
+        apply_rfi_fields(rfi, {
+            'from_party': request.form.get('from_party'),
+            'to_party': request.form.get('to_party'),
+            'drawing_reference': request.form.get('drawing_reference'),
+            'spec_reference': request.form.get('spec_reference'),
+            'notes': request.form.get('notes'),
+        })
         db.session.add(rfi)
         db.session.commit()
-
-        flash(f'RFI {number} created successfully!', 'success')
+        flash(f'RFI {rfi.number} created successfully!', 'success')
         return redirect_with_project('rfis_page')
-
     except Exception as e:
         db.session.rollback()
         flash(f'Error creating RFI: {str(e)}', 'error')
@@ -1454,6 +1479,195 @@ def update_rfi_status(rfi_id):
         return jsonify({'success': True, 'new_status': new_status})
 
     return jsonify({'success': False, 'message': 'No status provided'}), 400
+
+
+# ==================== RFI REST API ====================
+
+@app.route('/api/rfis/dashboard', methods=['GET'])
+@login_required
+def api_rfi_dashboard():
+    from rfi_persistence import compute_rfi_dashboard
+    project_id = request.args.get('project_id', type=int) or get_current_project_id()
+    if not project_id:
+        return jsonify({'error': 'project_id required'}), 400
+    return jsonify(compute_rfi_dashboard(RFI, int(project_id)))
+
+
+@app.route('/api/rfis', methods=['GET'])
+@login_required
+def api_list_rfis():
+    from rfi_persistence import rfi_to_dict, get_linked_records
+    project_id = request.args.get('project_id', type=int) or get_current_project_id()
+    if not project_id:
+        return jsonify({'error': 'project_id required'}), 400
+    status = request.args.get('status')
+    priority = request.args.get('priority')
+    q = RFI.query.filter_by(project_id=int(project_id))
+    if status:
+        q = q.filter_by(status=status)
+    if priority:
+        q = q.filter_by(priority=priority)
+    rfis = q.order_by(RFI.created_at.desc()).all()
+    result = []
+    for rfi in rfis:
+        linked_cos, linked_pcos = get_linked_records(rfi.id, ChangeOrder, PotentialChangeOrder)
+        result.append(rfi_to_dict(rfi, linked_cos, linked_pcos))
+    return jsonify({'rfis': result})
+
+
+@app.route('/api/rfis/<int:rfi_id>', methods=['GET'])
+@login_required
+def api_get_rfi(rfi_id):
+    from rfi_persistence import rfi_to_dict, get_linked_records
+    rfi = RFI.query.get_or_404(rfi_id)
+    linked_cos, linked_pcos = get_linked_records(rfi.id, ChangeOrder, PotentialChangeOrder)
+    return jsonify(rfi_to_dict(rfi, linked_cos, linked_pcos))
+
+
+@app.route('/api/rfis', methods=['POST'])
+@login_required
+def api_create_rfi():
+    from rfi_persistence import apply_rfi_fields, rfi_to_dict
+    try:
+        body = request.get_json(silent=True) or {}
+        project_id = body.get('project_id') or get_current_project_id()
+        if not project_id:
+            return jsonify({'error': 'project_id required'}), 400
+        subject = (body.get('subject') or '').strip()
+        if not subject:
+            return jsonify({'error': 'subject required'}), 400
+        status = body.get('status') or 'Draft'
+        rfi = RFI(
+            project_id=int(project_id),
+            number=generate_next_number('RFI', RFI),
+            subject=subject,
+            question=body.get('question'),
+            priority=body.get('priority') or 'Medium',
+            status=status,
+            date=datetime.utcnow().date(),
+            created_by_id=current_user.id,
+            ball_in_court_role='RFI Manager' if status == 'Draft' else 'Assignee',
+        )
+        apply_rfi_fields(rfi, body)
+        if body.get('create_as_open'):
+            rfi.status = 'Open'
+            rfi.submitted_at = datetime.utcnow()
+            rfi.ball_in_court_role = 'Assignee'
+        db.session.add(rfi)
+        db.session.commit()
+        return jsonify({'ok': True, 'rfi': rfi_to_dict(rfi)})
+    except Exception as exc:
+        db.session.rollback()
+        return jsonify({'error': str(exc)}), 500
+
+
+@app.route('/api/rfis/<int:rfi_id>', methods=['PUT'])
+@login_required
+def api_update_rfi(rfi_id):
+    from rfi_persistence import apply_rfi_fields, rfi_to_dict, get_linked_records
+    rfi = RFI.query.get_or_404(rfi_id)
+    body = request.get_json(silent=True) or {}
+    apply_rfi_fields(rfi, body)
+    db.session.commit()
+    linked_cos, linked_pcos = get_linked_records(rfi.id, ChangeOrder, PotentialChangeOrder)
+    return jsonify({'ok': True, 'rfi': rfi_to_dict(rfi, linked_cos, linked_pcos)})
+
+
+@app.route('/api/rfis/<int:rfi_id>/workflow', methods=['POST'])
+@login_required
+def api_rfi_workflow(rfi_id):
+    from rfi_persistence import workflow_rfi, rfi_to_dict, add_response, get_linked_records
+    rfi = RFI.query.get_or_404(rfi_id)
+    body = request.get_json(silent=True) or {}
+    action = body.get('action')
+    user_name = f'{current_user.first_name} {current_user.last_name}'.strip() or current_user.email
+    try:
+        if action == 'respond':
+            add_response(rfi, body, current_user.id, user_name)
+        else:
+            workflow_rfi(rfi, action, user_name)
+        db.session.commit()
+        linked_cos, linked_pcos = get_linked_records(rfi.id, ChangeOrder, PotentialChangeOrder)
+        return jsonify({'ok': True, 'rfi': rfi_to_dict(rfi, linked_cos, linked_pcos)})
+    except ValueError as exc:
+        db.session.rollback()
+        return jsonify({'error': str(exc)}), 400
+
+
+@app.route('/api/rfis/<int:rfi_id>/attachments', methods=['POST'])
+@login_required
+def api_rfi_upload_attachment(rfi_id):
+    from rfi_persistence import apply_rfi_fields, rfi_to_dict, _parse_json
+    rfi = RFI.query.get_or_404(rfi_id)
+    if 'file' not in request.files:
+        return jsonify({'error': 'file required'}), 400
+    f = request.files['file']
+    if not f.filename:
+        return jsonify({'error': 'empty filename'}), 400
+    safe = secure_filename(f.filename)
+    folder = os.path.join(app.config['UPLOAD_FOLDER'], 'rfis', str(rfi_id))
+    os.makedirs(folder, exist_ok=True)
+    path = os.path.join(folder, safe)
+    f.save(path)
+    attachments = _parse_json(rfi.attachments_json, [])
+    attachments.append({
+        'filename': safe,
+        'original_name': f.filename,
+        'uploaded_at': datetime.utcnow().isoformat(),
+        'uploaded_by': f'{current_user.first_name} {current_user.last_name}'.strip(),
+    })
+    apply_rfi_fields(rfi, {'attachments': attachments})
+    db.session.commit()
+    return jsonify({'ok': True, 'attachments': attachments})
+
+
+@app.route('/api/rfis/<int:rfi_id>/promote-pco', methods=['POST'])
+@login_required
+def api_rfi_promote_pco(rfi_id):
+    """Create a PCO from an RFI (RedTeam / Procore style)."""
+    from co_persistence import pco_to_dict
+    rfi = RFI.query.get_or_404(rfi_id)
+    body = request.get_json(silent=True) or {}
+    pco = PotentialChangeOrder(
+        project_id=rfi.project_id,
+        number=generate_next_number('PCO', PotentialChangeOrder),
+        title=body.get('title') or f'PCO from {rfi.number}: {rfi.subject}',
+        description=body.get('description') or rfi.official_answer or rfi.question,
+        estimated_amount=float(body.get('estimated_amount') or rfi.cost_impact_amount or 0),
+        status='Open',
+        reason=body.get('reason') or 'Design Change',
+        priority=rfi.priority or 'Medium',
+        schedule_impact_days=rfi.schedule_impact_days or 0,
+        linked_rfi_id=rfi.id,
+        ball_in_court_role='Project Manager',
+        created_by_id=current_user.id,
+    )
+    db.session.add(pco)
+    db.session.flush()
+    rfi.linked_pco_id = pco.id
+    db.session.commit()
+    return jsonify({'ok': True, 'pco': pco_to_dict(pco), 'pco_id': pco.id})
+
+
+@app.route('/uploads/rfis/<int:rfi_id>/<path:filename>')
+@login_required
+def serve_rfi_attachment(rfi_id, filename):
+    folder = os.path.join(app.config['UPLOAD_FOLDER'], 'rfis', str(rfi_id))
+    return send_from_directory(folder, filename)
+
+
+@app.route('/api/rfis/link-options', methods=['GET'])
+@login_required
+def api_rfi_link_options():
+    project_id = request.args.get('project_id', type=int) or get_current_project_id()
+    if not project_id:
+        return jsonify({'error': 'project_id required'}), 400
+    cos = ChangeOrder.query.filter_by(project_id=int(project_id)).order_by(ChangeOrder.created_at.desc()).limit(200).all()
+    pcos = PotentialChangeOrder.query.filter_by(project_id=int(project_id)).order_by(PotentialChangeOrder.created_at.desc()).limit(200).all()
+    return jsonify({
+        'change_orders': [{'id': c.id, 'number': c.number, 'title': getattr(c, 'title', None) or c.description, 'status': c.status} for c in cos],
+        'pcos': [{'id': p.id, 'number': p.number, 'title': p.title, 'status': p.status} for p in pcos],
+    })
 
 
 # ==================== CHANGE ORDER ROUTES ====================
@@ -3845,6 +4059,11 @@ with app.app_context():
             ensure_co_schema(db.engine, db)
         except Exception as _ce:
             print('CO schema:', _ce)
+        try:
+            from rfi_persistence import ensure_rfi_schema
+            ensure_rfi_schema(db.engine, db)
+        except Exception as _re:
+            print('RFI schema:', _re)
         try:
             from commitment_persistence import ensure_commitment_schema
             ensure_commitment_schema(db.engine, db)

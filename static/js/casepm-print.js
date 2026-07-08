@@ -131,7 +131,8 @@
         body.${cls},
         body.casepm-printing,
         body.printing-submittal-log,
-        body.printing-co-log {
+        body.printing-co-log,
+        body.printing-rfi-log {
           background: #fff !important;
           -webkit-print-color-adjust: exact;
           print-color-adjust: exact;
@@ -159,13 +160,20 @@
         body.printing-co-log #appSidebar,
         body.printing-co-log #appShell > .flex.flex-1 > div.h-10,
         body.printing-co-log .co-page > *:not(#coPrintSheet),
-        body.printing-co-log .no-print {
+        body.printing-co-log .no-print,
+        body.printing-rfi-log #appShell > #appHeaderBar,
+        body.printing-rfi-log #appSidebar,
+        body.printing-rfi-log #appShell > .flex.flex-1 > div.h-10,
+        body.printing-rfi-log .rfi-page > *:not(#rfiPrintSheet),
+        body.printing-rfi-log #rfiDetailDrawer,
+        body.printing-rfi-log .no-print {
           display: none !important;
         }
         body.${cls} #mainContent,
         body.casepm-printing #mainContent,
         body.printing-submittal-log #mainContent,
-        body.printing-co-log #mainContent {
+        body.printing-co-log #mainContent,
+        body.printing-rfi-log #mainContent {
           padding: 0 !important;
           overflow: visible !important;
           display: block !important;
@@ -177,7 +185,8 @@
         body.casepm-printing #submittalPrintSheet,
         body.casepm-printing #coPrintSheet,
         body.printing-submittal-log #submittalPrintSheet,
-        body.printing-co-log #coPrintSheet {
+        body.printing-co-log #coPrintSheet,
+        body.printing-rfi-log #rfiPrintSheet {
           display: block !important;
           background: #fff !important;
           color: #111 !important;
