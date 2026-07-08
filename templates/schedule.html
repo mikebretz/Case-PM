@@ -91,6 +91,9 @@
                 <button type="button" class="schedule-toolbar-btn" onclick="ScheduleApp.exportXer()" title="Export Primavera XER"><i class="fa-solid fa-file-export text-sky-400"></i> XER</button>
                 <button type="button" class="schedule-toolbar-btn" onclick="ScheduleApp.exportMsProjectXml()" title="Export MS Project XML"><i class="fa-solid fa-file-code"></i> XML</button>
                 <button type="button" class="schedule-toolbar-btn" onclick="ScheduleApp.showDisplaySettings()" title="Bar colors, EVM labels, baselines"><i class="fa-solid fa-palette text-violet-400"></i> Display</button>
+                <button type="button" id="scheduleThemeToggleBtn" class="schedule-toolbar-btn" onclick="ScheduleApp.toggleScheduleTheme()" title="Light/dark mode (schedule page only)"><i class="fa-solid fa-sun text-amber-400"></i></button>
+                <button type="button" class="schedule-toolbar-btn" onclick="ScheduleApp.showEvmScurve()" title="EVM S-curve"><i class="fa-solid fa-chart-line text-sky-400"></i> S-Curve</button>
+                <button type="button" class="schedule-toolbar-btn" onclick="ScheduleApp.showResourceHistogram()" title="Resource usage histogram"><i class="fa-solid fa-chart-bar text-amber-400"></i> Histogram</button>
                 <button type="button" class="schedule-toolbar-btn" onclick="ScheduleApp.resetTimelineCalendar()" title="Fix frozen timeline — reset to current year"><i class="fa-solid fa-calendar-plus text-emerald-400"></i> Reset Calendar</button>
                 <button type="button" class="schedule-toolbar-btn" onclick="ScheduleApp.showFeaturesChecklist()" title="All schedule features checklist"><i class="fa-solid fa-list-check text-sky-400"></i> Features</button>
                 <button type="button" class="schedule-toolbar-btn" onclick="ScheduleApp.showAllOptionalColumns()" title="Add all MS Project / P6 columns"><i class="fa-solid fa-table-list"></i> All Fields</button>
@@ -141,8 +144,13 @@
     <!-- Gantt (fills remaining viewport) -->
     <div id="ganttViewPanel" class="flex-1 min-h-0 bg-zinc-900 border border-zinc-700 rounded-md overflow-hidden flex flex-col">
         <div id="schedulePrintSheet" class="schedule-print-sheet no-screen" aria-hidden="true"></div>
-        <div id="scheduleGanttHost" class="flex-1 min-h-0">
+        <div id="scheduleGanttHost" class="flex-1 min-h-0 relative">
             <div id="gantt_here"></div>
+            <div id="scheduleTimelinePan" class="schedule-timeline-pan hidden" title="Drag to pan timeline left/right">
+                <div class="schedule-timeline-pan-track">
+                    <div class="schedule-timeline-pan-thumb"></div>
+                </div>
+            </div>
         </div>
     </div>
 
@@ -342,8 +350,30 @@
     <div id="scheduleResourceConflictList" class="p-3 max-h-[50vh] overflow-auto space-y-2"></div>
     <div class="px-4 py-3 border-t border-zinc-700 flex justify-between gap-2">
         <button type="button" onclick="ScheduleApp.runResourceLeveling()" class="schedule-toolbar-btn text-xs"><i class="fa-solid fa-wand-magic-sparkles text-amber-400"></i> Level Resources</button>
+        <button type="button" onclick="ScheduleApp.showResourceHistogram()" class="schedule-toolbar-btn text-xs"><i class="fa-solid fa-chart-bar"></i> Histogram</button>
         <button type="button" onclick="document.getElementById('scheduleResourceModal').close()" class="px-4 py-1.5 text-xs bg-zinc-800 hover:bg-zinc-700 rounded-md">Close</button>
     </div>
+</dialog>
+
+<!-- Resource histogram -->
+<dialog id="scheduleResourceHistogramModal" class="rounded-md w-full max-w-lg p-0 text-white shadow-2xl" style="background:#18181b;border:1px solid #3f3f46;">
+    <div class="px-4 py-3 border-b border-zinc-700 flex justify-between items-center">
+        <h3 class="font-semibold text-sm">Resource Usage Histogram</h3>
+        <button type="button" onclick="document.getElementById('scheduleResourceHistogramModal').close()" class="text-zinc-400 hover:text-white">&times;</button>
+    </div>
+    <div id="scheduleResourceHistogramBody" class="p-4 max-h-[60vh] overflow-auto"></div>
+</dialog>
+
+<!-- EVM S-curve -->
+<dialog id="scheduleEvmScurveModal" class="rounded-md w-full max-w-2xl p-0 text-white shadow-2xl" style="background:#18181b;border:1px solid #3f3f46;">
+    <div class="px-4 py-3 border-b border-zinc-700 flex justify-between items-center">
+        <div>
+            <h3 class="font-semibold text-sm">EVM S-Curve</h3>
+            <p id="scheduleEvmScurveLegend" class="text-xs text-zinc-500 mt-1"></p>
+        </div>
+        <button type="button" onclick="document.getElementById('scheduleEvmScurveModal').close()" class="text-zinc-400 hover:text-white">&times;</button>
+    </div>
+    <div class="p-4"><canvas id="scheduleEvmScurveCanvas" class="w-full" style="height:160px"></canvas></div>
 </dialog>
 
 <!-- Baseline manager -->
@@ -483,6 +513,7 @@
 <script src="{{ url_for('static', filename='js/schedule-export.js') }}"></script>
 <script src="{{ url_for('static', filename='js/schedule-fields.js') }}"></script>
 <script src="{{ url_for('static', filename='js/schedule-activity-modal.js') }}"></script>
+<script src="{{ url_for('static', filename='js/schedule-extras.js') }}"></script>
 <script src="{{ url_for('static', filename='js/schedule-app.js') }}"></script>
 <script>
 document.body.dataset.pageModule = 'schedule';
