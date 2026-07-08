@@ -468,8 +468,6 @@
         const applyW = (cell, w) => {
             cell.style.setProperty('width', w + 'px', 'important');
             cell.style.setProperty('min-width', w + 'px', 'important');
-            cell.style.setProperty('max-width', w + 'px', 'important');
-            cell.style.setProperty('flex', `0 0 ${w}px`, 'important');
         };
 
         document.querySelectorAll('#gantt_here .gantt_grid_scale .gantt_grid_head_cell').forEach((cell, i) => {
@@ -613,6 +611,7 @@
             overlayDrag.startW = scheduleSettings.timeline_width_px >= 180
                 ? scheduleSettings.timeline_width_px
                 : getTimelineWidth();
+            document.body.classList.add('schedule-chart-resizing');
             e.preventDefault();
             e.stopPropagation();
         });
@@ -1278,7 +1277,81 @@
         };
     }
 
-    function handleColumnResize(index, column, new_width, persist) {
+    let columnResizeScrollLeft = null;
+
+    function getGridScrollElements() {
+        return [
+            document.querySelector('#gantt_here .gantt_grid_data'),
+            document.querySelector('#gantt_here .gantt_grid_scale'),
+            document.querySelector('#gantt_here [data-cell-id="gridScroll"] .gantt_hor_scroll'),
+            document.querySelector('#gantt_here [data-cell-id="gridScroll"] .gantt_layout_outer_scroll')
+        ].filter(Boolean);
+    }
+
+    function preserveGridScrollLeft(left) {
+        getGridScrollElements().forEach(el => {
+            if (left != null) el.scrollLeft = left;
+        });
+    }
+
+    function measureColumnContentWidth(colIndex) {
+        const col = gantt.config.columns[colIndex];
+        if (!col) return 80;
+        const canvas = document.createElement('canvas');
+        const ctx = canvas.getContext('2d');
+        ctx.font = '600 11px Arial, Helvetica, sans-serif';
+        let maxW = ctx.measureText(col.label || col.name || '').width + 22;
+        ctx.font = '13px Arial, Helvetica, sans-serif';
+
+        const measureCell = cell => {
+            if (!cell) return;
+            const text = cell.textContent || '';
+            maxW = Math.max(maxW, ctx.measureText(text).width + 18, cell.scrollWidth + 12);
+        };
+
+        document.querySelectorAll('#gantt_here .gantt_grid_scale .gantt_grid_head_cell').forEach((cell, i) => {
+            if (i === colIndex) measureCell(cell);
+        });
+        document.querySelectorAll('#gantt_here .gantt_grid_data .gantt_row').forEach(row => {
+            const cells = row.querySelectorAll(':scope > .gantt_cell');
+            measureCell(cells[colIndex]);
+        });
+
+        return Math.min(520, Math.max(col.min_width || 50, Math.ceil(maxW)));
+    }
+
+    function autoFitGridColumn(colIndex) {
+        if (!ganttReady || !gantt.config.columns[colIndex] || gantt.config.columns[colIndex].resize === false) return;
+        const col = gantt.config.columns[colIndex];
+        const width = measureColumnContentWidth(colIndex);
+        handleColumnResize(colIndex, col, width, true, true);
+    }
+
+    function bindColumnResizeEnhancements() {
+        if (bindColumnResizeEnhancements.done) return;
+        bindColumnResizeEnhancements.done = true;
+        const host = document.getElementById('gantt_here');
+        if (!host) return;
+        host.addEventListener('dblclick', e => {
+            const wrap = e.target.closest('.gantt_grid_column_resize_wrap');
+            if (!wrap) return;
+            const scale = wrap.closest('.gantt_grid_scale');
+            if (!scale) return;
+            const wraps = Array.from(scale.querySelectorAll('.gantt_grid_column_resize_wrap'));
+            const colIndex = wraps.indexOf(wrap);
+            if (colIndex < 0) return;
+            e.preventDefault();
+            e.stopPropagation();
+            autoFitGridColumn(colIndex);
+        }, true);
+        host.addEventListener('mousedown', e => {
+            if (!e.target.closest('.gantt_grid_column_resize_wrap')) return;
+            const grid = document.querySelector('#gantt_here .gantt_grid_data');
+            columnResizeScrollLeft = grid ? grid.scrollLeft : 0;
+        }, true);
+    }
+
+    function handleColumnResize(index, column, new_width, persist, reflow) {
         if (column && column.name) {
             columnWidths[column.name] = new_width;
             column.width = new_width;
@@ -1286,11 +1359,13 @@
                 gantt.config.columns[index].width = new_width;
             }
         }
-        syncGridTableWidth();
-        lastHeaderWidthsKey = '';
-        applyGridColumnWidthStyles();
-        queueChartOverlay();
-        if (persist) queueSave();
+        if (reflow) {
+            syncGridTableWidth();
+            lastHeaderWidthsKey = '';
+            applyGridColumnWidthStyles();
+            queueChartOverlay();
+            if (persist) queueSave();
+        }
     }
 
     function resetColumnWidths() {
@@ -2054,12 +2129,18 @@
             queueGridHeaderSync();
             queueChartOverlay();
         });
+        gantt.attachEvent('onColumnResizeStart', function () {
+            const grid = document.querySelector('#gantt_here .gantt_grid_data');
+            columnResizeScrollLeft = grid ? grid.scrollLeft : 0;
+        });
         gantt.attachEvent('onColumnResize', function (index, column, new_width) {
-            handleColumnResize(index, column, new_width, false);
+            handleColumnResize(index, column, new_width, false, false);
+            preserveGridScrollLeft(columnResizeScrollLeft);
             return true;
         });
         gantt.attachEvent('onColumnResizeEnd', function (index, column, new_width) {
-            handleColumnResize(index, column, new_width, true);
+            handleColumnResize(index, column, new_width, true, true);
+            columnResizeScrollLeft = null;
         });
         gantt.attachEvent('onGanttRender', () => {
             refreshWbsCodes();
@@ -2068,6 +2149,7 @@
             ensureTimelineScrollbar();
             restoreTimelineScrollAfterRender();
             refreshTimelinePanBar();
+            bindColumnResizeEnhancements();
         });
 
         document.addEventListener('keydown', onScheduleKeyDown);
@@ -2083,6 +2165,7 @@
         sanitizeAllTaskDates();
         initChartOverlay();
         ganttReady = true;
+        bindColumnResizeEnhancements();
         syncRootProjectName();
         queueGridHeaderSync();
         resizeGanttHost();
@@ -3207,21 +3290,48 @@
         }
     }
 
+    function hfCellFormattingDefaults(section, side) {
+        const isHeader = section === 'header';
+        return {
+            font_size: isHeader ? (side === 'center' ? 16 : 11) : 9,
+            color: isHeader ? '#111111' : '#444444',
+            logo_height_pt: isHeader ? 42 : 24
+        };
+    }
+
     function defaultHeaderFooterSettings() {
+        const mkSection = (centerText, rightText) => {
+            const section = {};
+            ['left', 'center', 'right'].forEach(side => {
+                const fmt = hfCellFormattingDefaults('header', side);
+                section[side + '_text'] = side === 'center' ? centerText : (side === 'right' ? rightText : '');
+                section[side + '_logo'] = null;
+                section[side + '_font_size'] = fmt.font_size;
+                section[side + '_color'] = fmt.color;
+                section[side + '_logo_height_pt'] = fmt.logo_height_pt;
+            });
+            return section;
+        };
+        const mkFooter = () => {
+            const section = {};
+            ['left', 'center', 'right'].forEach(side => {
+                const fmt = hfCellFormattingDefaults('footer', side);
+                section[side + '_text'] = side === 'center' ? 'Case PM · Project Controls' : (side === 'right' ? 'Printed {printed}' : '');
+                section[side + '_logo'] = null;
+                section[side + '_font_size'] = fmt.font_size;
+                section[side + '_color'] = fmt.color;
+                section[side + '_logo_height_pt'] = fmt.logo_height_pt;
+            });
+            return section;
+        };
         return {
             include_header: true,
             include_footer: true,
             show_meta_row: true,
-            header: {
-                left_text: '', left_logo: null,
-                center_text: 'Project Schedule', center_logo: null,
-                right_text: '{project}', right_logo: null
-            },
-            footer: {
-                left_text: '', left_logo: null,
-                center_text: 'Case PM · Project Controls', center_logo: null,
-                right_text: 'Printed {printed}', right_logo: null
-            }
+            header_band_height_pt: 80,
+            footer_band_height_pt: 32,
+            header: mkSection('Project Schedule', '{project}'),
+            footer: mkFooter()
         };
     }
 
@@ -3235,10 +3345,16 @@
             ['header', 'footer'].forEach(section => {
                 hf[section] = Object.assign({}, defaults[section], hf[section] || {});
                 ['left', 'center', 'right'].forEach(side => {
+                    const fmt = hfCellFormattingDefaults(section, side);
                     if (hf[section][side + '_logo'] === undefined) hf[section][side + '_logo'] = null;
                     if (hf[section][side + '_text'] === undefined) hf[section][side + '_text'] = defaults[section][side + '_text'] || '';
+                    if (hf[section][side + '_font_size'] == null) hf[section][side + '_font_size'] = fmt.font_size;
+                    if (!hf[section][side + '_color']) hf[section][side + '_color'] = fmt.color;
+                    if (hf[section][side + '_logo_height_pt'] == null) hf[section][side + '_logo_height_pt'] = fmt.logo_height_pt;
                 });
             });
+            if (hf.header_band_height_pt == null) hf.header_band_height_pt = defaults.header_band_height_pt;
+            if (hf.footer_band_height_pt == null) hf.footer_band_height_pt = defaults.footer_band_height_pt;
         }
         return scheduleSettings.print_settings.header_footer;
     }
@@ -3256,23 +3372,59 @@
             .replace(/\{critical\}/gi, String(ctx.critical ?? ''));
     }
 
-    function buildPrintHfCell(cfg, side, ctx) {
+    function buildPrintHfCell(cfg, side, ctx, section) {
         const parts = [];
+        const fontSize = cfg[side + '_font_size'] || (section === 'header' ? 11 : 9);
+        const color = cfg[side + '_color'] || (section === 'header' ? '#111111' : '#444444');
+        const logoH = cfg[side + '_logo_height_pt'] || (section === 'header' ? 42 : 24);
         const logo = cfg[side + '_logo'];
-        if (logo) parts.push(`<img src="${logo}" alt="" class="sched-print-hf-logo">`);
+        if (logo) {
+            parts.push(`<img src="${logo}" alt="" class="sched-print-hf-logo" style="max-height:${logoH}pt">`);
+        }
         const text = expandPrintTokens(cfg[side + '_text'], ctx);
-        if (text) parts.push(`<span class="sched-print-hf-text">${text}</span>`);
+        if (text) {
+            parts.push(`<span class="sched-print-hf-text" style="font-size:${fontSize}pt;color:${color}">${text}</span>`);
+        }
         return parts.join('') || '&nbsp;';
     }
 
     function buildPrintHeaderFooterHtml(section, hf, ctx) {
         const cfg = hf[section];
         const bandClass = section === 'header' ? 'sched-print-hf-header' : 'sched-print-hf-footer';
-        return `<div class="sched-print-hf ${bandClass}">
-            <div class="sched-print-hf-col sched-print-hf-left">${buildPrintHfCell(cfg, 'left', ctx)}</div>
-            <div class="sched-print-hf-col sched-print-hf-center">${buildPrintHfCell(cfg, 'center', ctx)}</div>
-            <div class="sched-print-hf-col sched-print-hf-right">${buildPrintHfCell(cfg, 'right', ctx)}</div>
+        const bandH = section === 'header' ? (hf.header_band_height_pt || 80) : (hf.footer_band_height_pt || 32);
+        return `<div class="sched-print-hf ${bandClass}" style="min-height:${bandH}pt">
+            <div class="sched-print-hf-col sched-print-hf-left">${buildPrintHfCell(cfg, 'left', ctx, section)}</div>
+            <div class="sched-print-hf-col sched-print-hf-center">${buildPrintHfCell(cfg, 'center', ctx, section)}</div>
+            <div class="sched-print-hf-col sched-print-hf-right">${buildPrintHfCell(cfg, 'right', ctx, section)}</div>
         </div>`;
+    }
+
+    function hfFmtId(side, prop) {
+        return 'hfHdr' + side.charAt(0).toUpperCase() + side.slice(1) + prop;
+    }
+
+    function loadHeaderFooterForm(hf) {
+        document.getElementById('hfIncludeHeader').checked = hf.include_header !== false;
+        document.getElementById('hfIncludeFooter').checked = hf.include_footer !== false;
+        document.getElementById('hfShowMetaRow').checked = hf.show_meta_row !== false;
+        document.getElementById('hfHeaderBandHeight').value = hf.header_band_height_pt || 80;
+        document.getElementById('hfFooterBandHeight').value = hf.footer_band_height_pt || 32;
+        document.getElementById('hfHeaderLeft').value = hf.header.left_text || '';
+        document.getElementById('hfHeaderCenter').value = hf.header.center_text || 'Project Schedule';
+        document.getElementById('hfHeaderRight').value = hf.header.right_text || '{project}';
+        document.getElementById('hfFooterLeft').value = hf.footer.left_text || '';
+        document.getElementById('hfFooterCenter').value = hf.footer.center_text || '';
+        document.getElementById('hfFooterRight').value = hf.footer.right_text || '';
+        ['left', 'center', 'right'].forEach(side => {
+            const fmt = hf.header;
+            const fs = document.getElementById(hfFmtId(side, 'FontSize'));
+            const fc = document.getElementById(hfFmtId(side, 'Color'));
+            const lh = document.getElementById(hfFmtId(side, 'LogoHeight'));
+            if (fs) fs.value = String(fmt[side + '_font_size'] || 11);
+            if (fc) fc.value = fmt[side + '_color'] || '#111111';
+            if (lh) lh.value = String(fmt[side + '_logo_height_pt'] || 42);
+        });
+        syncHeaderFooterLogoPreviews(hf);
     }
 
     function syncHeaderFooterLogoPreviews(hf) {
@@ -3293,17 +3445,7 @@
     function showHeaderFooterSetup() {
         const dlg = document.getElementById('scheduleHeaderFooterModal');
         if (!dlg) return;
-        const hf = ensureHeaderFooterSettings();
-        document.getElementById('hfIncludeHeader').checked = hf.include_header !== false;
-        document.getElementById('hfIncludeFooter').checked = hf.include_footer !== false;
-        document.getElementById('hfShowMetaRow').checked = hf.show_meta_row !== false;
-        document.getElementById('hfHeaderLeft').value = hf.header.left_text || '';
-        document.getElementById('hfHeaderCenter').value = hf.header.center_text || 'Project Schedule';
-        document.getElementById('hfHeaderRight').value = hf.header.right_text || '{project}';
-        document.getElementById('hfFooterLeft').value = hf.footer.left_text || '';
-        document.getElementById('hfFooterCenter').value = hf.footer.center_text || '';
-        document.getElementById('hfFooterRight').value = hf.footer.right_text || '';
-        syncHeaderFooterLogoPreviews(hf);
+        loadHeaderFooterForm(ensureHeaderFooterSettings());
         dlg.showModal();
     }
 
@@ -3331,12 +3473,19 @@
         hf.include_header = document.getElementById('hfIncludeHeader')?.checked !== false;
         hf.include_footer = document.getElementById('hfIncludeFooter')?.checked !== false;
         hf.show_meta_row = document.getElementById('hfShowMetaRow')?.checked !== false;
+        hf.header_band_height_pt = Math.max(48, Math.min(160, parseInt(document.getElementById('hfHeaderBandHeight')?.value, 10) || 80));
+        hf.footer_band_height_pt = Math.max(20, Math.min(80, parseInt(document.getElementById('hfFooterBandHeight')?.value, 10) || 32));
         hf.header.left_text = document.getElementById('hfHeaderLeft')?.value || '';
         hf.header.center_text = document.getElementById('hfHeaderCenter')?.value || '';
         hf.header.right_text = document.getElementById('hfHeaderRight')?.value || '';
         hf.footer.left_text = document.getElementById('hfFooterLeft')?.value || '';
         hf.footer.center_text = document.getElementById('hfFooterCenter')?.value || '';
         hf.footer.right_text = document.getElementById('hfFooterRight')?.value || '';
+        ['left', 'center', 'right'].forEach(side => {
+            hf.header[side + '_font_size'] = parseInt(document.getElementById(hfFmtId(side, 'FontSize'))?.value, 10) || 11;
+            hf.header[side + '_color'] = document.getElementById(hfFmtId(side, 'Color'))?.value || '#111111';
+            hf.header[side + '_logo_height_pt'] = Math.max(12, Math.min(120, parseInt(document.getElementById(hfFmtId(side, 'LogoHeight'))?.value, 10) || 42));
+        });
         scheduleSettings.print_settings.include_footer = hf.include_footer;
         queueSave();
         document.getElementById('scheduleHeaderFooterModal')?.close();
