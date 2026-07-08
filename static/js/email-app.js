@@ -122,6 +122,8 @@
     filterFlagged: false,
     filterAttachments: false,
     inlineCompose: null,
+    popoutZ: 100,
+    composeAttachments: [],
   };
 
   let mailMessages = [];
@@ -186,7 +188,7 @@
   function seedInternal() {
     const now = Date.now();
     return [
-      { id: uid(), folder: 'approvals', type: 'approval', from: 'Case PM System', fromUser: 'System', subject: 'Pay Application #4 requires your approval', preview: 'Subcontractor: ABC Electric — Amount: $48,250.00', body: '<p><strong>Pay Application #4</strong> from ABC Electric is ready for your review.</p><p>Amount: <strong>$48,250.00</strong></p><p>Project: Lakeland Store #447</p>', date: new Date(now - 1800000).toISOString(), unread: true, priority: 'high', actionUrl: '/pay-applications', actionLabel: 'Review Pay App', project: 'Lakeland Store #447', module: 'Pay Applications', requiresAction: true },
+      { id: uid(), folder: 'approvals', type: 'approval', from: 'Case PM System', fromUser: 'System', subject: 'Pay Application #4 requires your approval', preview: 'Subcontractor: ABC Electric — Amount: $48,250.00', body: '<p><strong>Pay Application #4</strong> from ABC Electric is ready for your review.</p><p>Amount: <strong>$48,250.00</strong></p><p>Project: Lakeland Store #447</p>', date: new Date(now - 1800000).toISOString(), unread: true, priority: 'high', actionUrl: '/pay-applications', actionLabel: 'Review Pay App', project: 'Lakeland Store #447', module: 'Pay Applications', requiresAction: true, entityType: 'SubPayApp', payload: { snapshotType: 'sub_pay_app', companyName: 'ABC Electric', periodNum: 4, amount: 48250, lines: [{ cost_code: '26-100', description: 'Electrical Rough-In', original: 185000, billed_to_date: 142000, workThisPeriod: 18500 }, { cost_code: '26-200', description: 'Electrical Trim', original: 62000, billed_to_date: 41000, workThisPeriod: 9750 }, { cost_code: '26-300', description: 'Fire Alarm', original: 28000, billed_to_date: 22000, workThisPeriod: 6000 }] } },
       { id: uid(), folder: 'approvals', type: 'approval', from: 'Jennifer Walsh', fromUser: 'Jennifer Walsh', subject: 'Change Order CO-017 pending PM approval', preview: 'Owner-directed CO for additional dock doors — $12,400', body: '<p>Please approve CO-017 for additional dock doors.</p>', date: new Date(now - 5400000).toISOString(), unread: true, priority: 'high', actionUrl: '/change-orders', actionLabel: 'Review CO', project: 'Lakeland Store #447', module: 'Change Orders', requiresAction: true },
       { id: uid(), folder: 'alerts', type: 'alert', from: 'Case PM System', fromUser: 'System', subject: 'Schedule baseline published', preview: 'Revision 03 was published by Tom Bradley', body: '<p>Schedule <strong>Rev 03</strong> was published.</p>', date: new Date(now - 10800000).toISOString(), unread: false, priority: 'normal', actionUrl: '/schedule', actionLabel: 'View Schedule', project: 'Lakeland Store #447', module: 'Schedule', requiresAction: false },
       { id: uid(), folder: 'team', type: 'message', from: 'Tom Bradley', fromUser: 'Tom Bradley', subject: 'Can you review the updated lookahead?', preview: 'I pushed changes to weeks 3-6. Let me know if the masonry...', body: '<p>Hey — I pushed changes to weeks 3-6 on the lookahead. Can you take a look when you get a chance?</p>', date: new Date(now - 14400000).toISOString(), unread: true, priority: 'normal', actionUrl: '/schedule', actionLabel: 'Open Schedule', project: 'Lakeland Store #447', module: 'Schedule', requiresAction: false },
@@ -256,6 +258,9 @@
           requiresAction: m.requiresAction,
           approvalId: m.approvalId,
           archived: m.archived,
+          payload: m.payload || {},
+          entityType: m.entityType || '',
+          entityId: m.entityId || '',
         }));
         persistInternal();
         render();
@@ -274,6 +279,366 @@
   function persistSettings() { saveJson(STORAGE.settings, settings); global.CasePMEmailSettings = settings; }
   function persistCustomFolders() { saveJson(STORAGE.customFolders, customFolders); }
   function persistSignatures() { saveJson(STORAGE.signatures, signatures); }
+
+  function fmtMoney(n) {
+    return '$' + Number(n || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  }
+
+  function snapshotTypeFor(m) {
+    const p = m.payload || {};
+    if (p.snapshotType) return p.snapshotType;
+    if (m.entityType === 'G702') return 'g702';
+    if (m.entityType === 'SubSOV') return 'sub_sov';
+    if (m.entityType === 'SubPayApp') return 'sub_pay_app';
+    if (m.entityType === 'ChangeOrder') return 'change_order';
+    return '';
+  }
+
+  function renderSovTable(lines, opts) {
+    opts = opts || {};
+    const showWork = opts.showWorkThisPeriod;
+    const showBilled = opts.showBilled !== false;
+    if (!lines || !lines.length) return '<p class="text-xs text-zinc-500 p-3">No line items in snapshot.</p>';
+    let totalOrig = 0, totalBilled = 0, totalWork = 0;
+    const rows = lines.map(line => {
+      const orig = (line.original || 0) + (line.co_amount || 0);
+      const billed = line.billed_to_date || 0;
+      const work = line.workThisPeriod || 0;
+      totalOrig += orig;
+      totalBilled += billed;
+      totalWork += work;
+      return `<tr>
+        <td>${esc(line.cost_code || '')}</td>
+        <td>${esc(line.description || '')}</td>
+        <td class="num">${fmtMoney(line.original)}</td>
+        ${line.co_amount ? `<td class="num">${fmtMoney(line.co_amount)}</td>` : ''}
+        ${showBilled ? `<td class="num">${fmtMoney(billed)}</td>` : ''}
+        ${showWork ? `<td class="num">${fmtMoney(work)}</td>` : ''}
+      </tr>`;
+    }).join('');
+    const coCol = lines.some(l => l.co_amount) ? '<th class="num">CO</th>' : '';
+    return `
+      <table class="email-snapshot-table">
+        <thead><tr>
+          <th>Code</th><th>Description</th><th class="num">Original</th>${coCol}
+          ${showBilled ? '<th class="num">Billed to Date</th>' : ''}
+          ${showWork ? '<th class="num">This Period</th>' : ''}
+        </tr></thead>
+        <tbody>${rows}</tbody>
+      </table>
+      <div class="email-snapshot-summary">
+        <span>Lines: <strong>${lines.length}</strong></span>
+        <span>Contract: <strong>${fmtMoney(totalOrig)}</strong></span>
+        ${showBilled ? `<span>Billed: <strong>${fmtMoney(totalBilled)}</strong></span>` : ''}
+        ${showWork ? `<span>This period: <strong>${fmtMoney(totalWork)}</strong></span>` : ''}
+      </div>`;
+  }
+
+  function renderSubmissionSnapshot(m) {
+    const p = m.payload || {};
+    const type = snapshotTypeFor(m);
+    if (!type && !Object.keys(p).length) return '';
+
+    if (type === 'sub_sov') {
+      return `<div class="email-snapshot-panel">
+        <div class="email-snapshot-panel-header"><i class="fa-solid fa-table mr-1"></i> Schedule of Values — ${esc(p.companyName || 'Subcontractor')}</div>
+        ${renderSovTable(p.lines || [], { showBilled: true })}
+      </div>`;
+    }
+    if (type === 'sub_pay_app') {
+      const lines = p.lines || [];
+      return `<div class="email-snapshot-panel">
+        <div class="email-snapshot-panel-header"><i class="fa-solid fa-file-invoice-dollar mr-1"></i> Pay App #${esc(String(p.periodNum || ''))} — ${esc(p.companyName || '')}</div>
+        ${renderSovTable(lines, { showWorkThisPeriod: true, showBilled: true })}
+        <div class="email-snapshot-summary"><span>Total this period: <strong>${fmtMoney(p.amount)}</strong></span></div>
+      </div>`;
+    }
+    if (type === 'g702') {
+      const sov = p.contractorSOV || [];
+      const billing = p.billingLines || {};
+      const enriched = sov.map(line => {
+        const b = billing[line.id] || {};
+        return { ...line, workThisPeriod: (b.workThisPeriod || 0) + (b.materialsStored || 0) };
+      });
+      return `<div class="email-snapshot-panel">
+        <div class="email-snapshot-panel-header"><i class="fa-solid fa-file-invoice mr-1"></i> G702 Pay Application #${esc(String(p.periodNumber || ''))} ${p.periodStart ? `(${esc(p.periodStart)} – ${esc(p.periodEnd)})` : ''}</div>
+        ${renderSovTable(enriched, { showWorkThisPeriod: true })}
+        <div class="email-snapshot-summary">
+          <span>Period total: <strong>${fmtMoney(p.thisPeriodTotal)}</strong></span>
+          ${p.budgetContractAmount ? `<span>Budget contract: <strong>${fmtMoney(p.budgetContractAmount)}</strong></span>` : ''}
+        </div>
+      </div>`;
+    }
+    if (type === 'change_order') {
+      return `<div class="email-snapshot-panel">
+        <div class="email-snapshot-panel-header"><i class="fa-solid fa-exchange-alt mr-1"></i> Change Order ${esc(String(p.number || ''))}</div>
+        <div class="p-3 text-sm text-zinc-300">
+          <p>${esc(p.description || '')}</p>
+          <p class="mt-2">Amount: <strong class="text-white">${fmtMoney(p.amount)}</strong></p>
+        </div>
+      </div>`;
+    }
+    return '';
+  }
+
+  function renderInternalActions(m, prefix) {
+    prefix = prefix || 'CasePMEmail';
+    return `
+      <div class="flex gap-2 flex-shrink-0 flex-wrap">
+        ${m.actionUrl ? `<a href="${esc(m.actionUrl)}" class="px-4 py-2 bg-emerald-600 hover:bg-emerald-500 rounded-md text-sm font-medium text-white">${esc(m.actionLabel || 'Open')}</a>` : ''}
+        ${m.requiresAction ? `<button type="button" onclick="${prefix}.approveInternal('${m.id}')" class="px-4 py-2 bg-sky-600 hover:bg-sky-500 rounded-md text-sm">Approve</button>` : ''}
+        <button type="button" onclick="${prefix}.dismissInternal('${m.id}')" class="px-4 py-2 bg-zinc-800 hover:bg-zinc-700 rounded-md text-sm">Dismiss</button>
+        <button type="button" onclick="${prefix}.printMessage('${m.id}')" class="px-3 py-2 bg-zinc-800 hover:bg-zinc-700 rounded-md text-sm" title="Print"><i class="fa-solid fa-print"></i></button>
+      </div>`;
+  }
+
+  function renderInternalMessageContent(m) {
+    const snapshot = renderSubmissionSnapshot(m);
+    return `
+      <div class="flex items-start justify-between gap-4 mb-4">
+        <div>
+          <h2 class="text-lg font-semibold text-white">${esc(m.subject)}</h2>
+          <div class="text-sm text-zinc-400 mt-1">From <strong class="text-zinc-200">${esc(m.from)}</strong> · ${fmtDate(m.date)}</div>
+          <div class="text-xs text-zinc-500 mt-1">${esc(m.module || '')} · ${esc(m.project || '')}</div>
+        </div>
+        ${renderInternalActions(m)}
+      </div>
+      ${snapshot}
+      <div class="prose prose-invert max-w-none text-sm text-zinc-300">${m.body || esc(m.preview)}</div>`;
+  }
+
+  function renderMailMessageContent(m) {
+    return `
+      <div class="border-b border-zinc-800 px-4 py-2 flex flex-wrap gap-1 flex-shrink-0">
+        <button type="button" class="email-toolbar-btn" onclick="CasePMEmail.reply('${m.id}')"><i class="fa-solid fa-reply"></i> Reply</button>
+        <button type="button" class="email-toolbar-btn" onclick="CasePMEmail.replyAll('${m.id}')"><i class="fa-solid fa-reply-all"></i> Reply All</button>
+        <button type="button" class="email-toolbar-btn" onclick="CasePMEmail.forward('${m.id}')"><i class="fa-solid fa-share"></i> Forward</button>
+        <button type="button" class="email-toolbar-btn" onclick="CasePMEmail.archiveSelected('${m.id}')"><i class="fa-solid fa-box-archive"></i></button>
+        <button type="button" class="email-toolbar-btn" onclick="CasePMEmail.deleteSelected('${m.id}')"><i class="fa-solid fa-trash"></i></button>
+        <button type="button" class="email-toolbar-btn" onclick="CasePMEmail.printMessage('${m.id}')"><i class="fa-solid fa-print"></i></button>
+        <button type="button" class="email-toolbar-btn" onclick="CasePMEmail.snoozeSelected('${m.id}')"><i class="fa-solid fa-clock"></i></button>
+        <button type="button" class="email-toolbar-btn" onclick="CasePMEmail.moveSelected('${m.id}')"><i class="fa-solid fa-folder"></i></button>
+      </div>
+      <div class="email-reading-message overflow-auto p-6">
+        <h2 class="text-lg font-semibold text-white mb-2">${esc(m.subject)}</h2>
+        <div class="text-sm text-zinc-400 mb-4">
+          <div><span class="text-zinc-500">From:</span> ${esc(m.from)} &lt;${esc(m.fromEmail)}&gt;</div>
+          <div><span class="text-zinc-500">To:</span> ${esc((m.to || []).join(', '))}</div>
+          <div><span class="text-zinc-500">Date:</span> ${new Date(m.date).toLocaleString()}</div>
+        </div>
+        ${m.attachments && m.attachments.length ? `<div class="mb-4 flex flex-wrap gap-2">${m.attachments.map(a => `<span class="text-xs bg-zinc-800 border border-zinc-700 px-3 py-1.5 rounded-md"><i class="fa-solid fa-paperclip mr-1"></i>${esc(a.name)} <span class="text-zinc-500">(${esc(a.size)})</span></span>`).join('')}</div>` : ''}
+        <div class="prose prose-invert max-w-none text-sm text-zinc-300">${m.body || esc(m.preview)}</div>
+      </div>`;
+  }
+
+  function formatFileSize(bytes) {
+    if (bytes < 1024) return bytes + ' B';
+    if (bytes < 1048576) return (bytes / 1024).toFixed(1) + ' KB';
+    return (bytes / 1048576).toFixed(1) + ' MB';
+  }
+
+  function renderAttachmentChips(attachments, removeFn) {
+    if (!attachments || !attachments.length) return '';
+    return `<div class="flex flex-wrap gap-1 px-4 pb-2">${attachments.map((a, i) =>
+      `<span class="email-attachment-chip"><i class="fa-solid fa-paperclip"></i>${esc(a.name)} <span class="text-zinc-500">(${esc(a.size)})</span><button type="button" onclick="${removeFn}(${i})" title="Remove">&times;</button></span>`
+    ).join('')}</div>`;
+  }
+
+  function attachComposeDropZone(scope) {
+    const root = scope || document;
+    const zone = root.querySelector('.email-compose-dropzone');
+    const body = root.querySelector('[data-compose-body]');
+    const targets = [zone, body].filter(Boolean);
+    if (!targets.length) return;
+    function onDragOver(e) {
+      e.preventDefault();
+      e.stopPropagation();
+      if (zone) zone.classList.add('drag-over');
+    }
+    function onDragLeave(e) {
+      e.preventDefault();
+      if (zone) zone.classList.remove('drag-over');
+    }
+    function onDrop(e) {
+      e.preventDefault();
+      e.stopPropagation();
+      if (zone) zone.classList.remove('drag-over');
+      addFilesToCompose(e.dataTransfer?.files);
+    }
+    targets.forEach(t => {
+      t.addEventListener('dragover', onDragOver);
+      t.addEventListener('dragleave', onDragLeave);
+      t.addEventListener('drop', onDrop);
+    });
+    const fileInput = root.querySelector('[data-compose-file-input]');
+    if (fileInput) {
+      fileInput.addEventListener('change', () => {
+        addFilesToCompose(fileInput.files);
+        fileInput.value = '';
+      });
+    }
+  }
+
+  function addFilesToCompose(fileList) {
+    if (!fileList || !state.inlineCompose) return;
+    if (!state.inlineCompose.attachments) state.inlineCompose.attachments = [];
+    [...fileList].forEach(file => {
+      state.inlineCompose.attachments.push({
+        name: file.name,
+        size: formatFileSize(file.size),
+        type: file.type,
+        file,
+      });
+    });
+    refreshComposeAttachmentUI();
+  }
+
+  function removeComposeAttachment(idx) {
+    if (!state.inlineCompose?.attachments) return;
+    state.inlineCompose.attachments.splice(idx, 1);
+    refreshComposeAttachmentUI();
+  }
+
+  function refreshComposeAttachmentUI() {
+    const chips = document.querySelectorAll('[data-compose-attachments]');
+    const html = renderAttachmentChips(state.inlineCompose?.attachments || [], 'CasePMEmail.removeComposeAttachment');
+    chips.forEach(el => { el.innerHTML = html; });
+  }
+
+  function setupPopoutWindow(el, messageId) {
+    const header = el.querySelector('[data-popout-drag]');
+    if (!header) return;
+    let drag = false, resize = false, sx = 0, sy = 0, sl = 0, st = 0, sw = 0, sh = 0;
+    header.addEventListener('mousedown', e => {
+      if (e.target.closest('button')) return;
+      drag = true;
+      sx = e.clientX; sy = e.clientY;
+      sl = el.offsetLeft; st = el.offsetTop;
+      state.popoutZ += 1;
+      el.style.zIndex = state.popoutZ;
+      e.preventDefault();
+    });
+    const handle = el.querySelector('[data-popout-resize]');
+    if (handle) {
+      handle.addEventListener('mousedown', e => {
+        resize = true;
+        sx = e.clientX; sy = e.clientY;
+        sw = el.offsetWidth; sh = el.offsetHeight;
+        e.preventDefault();
+        e.stopPropagation();
+      });
+    }
+    const onMove = e => {
+      if (drag) {
+        el.style.left = Math.max(8, sl + e.clientX - sx) + 'px';
+        el.style.top = Math.max(8, st + e.clientY - sy) + 'px';
+      }
+      if (resize) {
+        el.style.width = Math.max(420, sw + e.clientX - sx) + 'px';
+        el.style.height = Math.max(320, sh + e.clientY - sy) + 'px';
+      }
+    };
+    const onUp = () => { drag = false; resize = false; };
+    document.addEventListener('mousemove', onMove);
+    document.addEventListener('mouseup', onUp);
+    el._popoutCleanup = () => {
+      document.removeEventListener('mousemove', onMove);
+      document.removeEventListener('mouseup', onUp);
+    };
+  }
+
+  function closeMessagePopout(id) {
+    const el = document.getElementById('emailPopout-' + id);
+    if (el) {
+      if (el._popoutCleanup) el._popoutCleanup();
+      el.remove();
+    }
+    if (state.inlineCompose?.popoutId === id) {
+      state.inlineCompose = null;
+    }
+  }
+
+  function openMessagePopout(id) {
+    const m = getMessage(id);
+    if (!m) return;
+    state.selectedId = id;
+    const host = document.getElementById('emailPopoutLayer');
+    if (!host) return;
+
+    const existing = document.getElementById('emailPopout-' + id);
+    if (existing) {
+      state.popoutZ += 1;
+      existing.style.zIndex = state.popoutZ;
+      renderMessageList();
+      return;
+    }
+
+    const isDraft = state.workspace === 'mail' && (m.folder === 'drafts' || m.isDraft);
+    if (isDraft) {
+      state.inlineCompose = {
+        mode: 'draft',
+        to: (m.to || []).join(', '),
+        cc: (m.cc || []).join(', '),
+        bcc: (m.bcc || []).join(', '),
+        subject: m.subject || '',
+        body: m.body || '',
+        draftId: m.id,
+        showCcBcc: !!((m.cc && m.cc.length) || (m.bcc && m.bcc.length)),
+        attachments: [...(m.attachments || [])],
+        popoutId: id,
+      };
+    } else {
+      state.inlineCompose = null;
+    }
+
+    const left = 120 + (host.children.length * 28);
+    const top = 72 + (host.children.length * 24);
+    const el = document.createElement('div');
+    el.id = 'emailPopout-' + id;
+    el.className = 'email-popout-window';
+    el.style.cssText = `left:${left}px;top:${top}px;width:min(720px,calc(100vw - 3rem));height:min(78vh,820px);z-index:${++state.popoutZ}`;
+    const title = isDraft ? 'Edit Draft' : esc(m.subject);
+    let bodyHtml = '';
+    if (isDraft) {
+      bodyHtml = renderInlineComposeHTML({ popout: true });
+    } else if (state.workspace === 'internal') {
+      bodyHtml = `<div class="p-6">${renderInternalMessageContent(m)}</div>`;
+    } else {
+      bodyHtml = renderMailMessageContent(m);
+    }
+    el.innerHTML = `
+      <div class="email-popout-header" data-popout-drag>
+        <span class="email-popout-title">${title}</span>
+        <div class="flex gap-1 flex-shrink-0">
+          ${!isDraft && state.workspace === 'mail' ? `<button type="button" class="text-zinc-400 hover:text-white w-8 h-8 rounded hover:bg-zinc-800" onclick="CasePMEmail.reply('${m.id}')" title="Reply"><i class="fa-solid fa-reply text-sm"></i></button>` : ''}
+          <button type="button" class="text-zinc-400 hover:text-white w-8 h-8 rounded hover:bg-zinc-800" onclick="CasePMEmail.closeMessagePopout('${m.id}')"><i class="fa-solid fa-times"></i></button>
+        </div>
+      </div>
+      <div class="email-popout-body">${bodyHtml}</div>
+      <div class="email-popout-resize" data-popout-resize></div>`;
+    host.appendChild(el);
+    setupPopoutWindow(el, id);
+    if (isDraft) {
+      attachRecipientAutocomplete();
+      attachComposeDropZone(el);
+    }
+    if (m.unread) markMessageRead(m);
+    renderMessageList();
+    renderReadingPane();
+  }
+
+  function markMessageRead(m) {
+    if (state.workspace === 'internal') {
+      m.unread = false;
+      persistInternal();
+      if (typeof m.id === 'number' || String(m.id).match(/^\d+$/)) {
+        fetch(`/api/internal-messages/${m.id}/read`, { method: 'POST' }).catch(() => {});
+      }
+    } else if (settings.markAsReadOnView) {
+      m.unread = false;
+      persistMail();
+    }
+  }
 
   function buildContactIndex() {
     const map = new Map();
@@ -508,16 +873,19 @@
     }
   }
 
-  function renderInlineComposeHTML() {
+  function renderInlineComposeHTML(opts) {
     const c = state.inlineCompose;
     if (!c) return '';
+    const inPopout = opts?.popout;
     const title = { new: 'New Message', reply: 'Reply', replyAll: 'Reply All', forward: 'Forward', draft: 'Edit Draft' }[c.mode] || 'Compose';
+    const attachments = c.attachments || [];
+    const closeFn = inPopout && c.popoutId ? `CasePMEmail.closeMessagePopout('${c.popoutId}')` : 'CasePMEmail.closeCompose()';
     return `
       <div class="email-inline-compose" id="emailInlineCompose">
-        <div class="email-inline-compose-header">
+        ${inPopout ? '' : `<div class="email-inline-compose-header">
           <span class="text-sm font-semibold text-white">${title}</span>
-          <button type="button" onclick="CasePMEmail.closeCompose()" class="text-zinc-400 hover:text-white w-8 h-8 rounded hover:bg-zinc-800"><i class="fa-solid fa-times"></i></button>
-        </div>
+          <button type="button" onclick="${closeFn}" class="text-zinc-400 hover:text-white w-8 h-8 rounded hover:bg-zinc-800"><i class="fa-solid fa-times"></i></button>
+        </div>`}
         <div class="email-inline-compose-fields text-sm">
           <div class="email-inline-compose-row">
             <label>To</label>
@@ -542,14 +910,17 @@
             <input type="text" id="inlineComposeSubject" value="${esc(c.subject)}" class="font-medium">
           </div>
         </div>
-        <div id="inlineComposeBody" contenteditable="true" class="email-inline-compose-body">${c.body || ''}</div>
+        <div id="inlineComposeBody" contenteditable="true" data-compose-body class="email-inline-compose-body email-compose-dropzone">${c.body || ''}</div>
+        <div class="email-compose-dropzone" data-compose-body>Drag &amp; drop files here to attach</div>
+        <div data-compose-attachments>${renderAttachmentChips(attachments, 'CasePMEmail.removeComposeAttachment')}</div>
+        <input type="file" multiple class="hidden" data-compose-file-input id="inlineComposeFileInput">
         <div id="inlineComposeScheduleRow" class="hidden px-4 pb-2">
           <label class="text-xs text-zinc-400">Schedule send</label>
           <input type="datetime-local" id="inlineComposeScheduleAt" class="email-field-input mt-1">
         </div>
         <div class="email-inline-compose-footer">
           <div class="flex gap-1">
-            <button type="button" class="email-toolbar-btn" title="Attach file"><i class="fa-solid fa-paperclip"></i></button>
+            <button type="button" class="email-toolbar-btn" title="Attach file" onclick="document.getElementById('inlineComposeFileInput')?.click()"><i class="fa-solid fa-paperclip"></i></button>
             <button type="button" class="email-toolbar-btn" title="Schedule send" onclick="document.getElementById('inlineComposeScheduleRow').classList.toggle('hidden')"><i class="fa-solid fa-clock"></i></button>
             <button type="button" class="email-toolbar-btn" title="Save draft" onclick="CasePMEmail.saveDraft()"><i class="fa-solid fa-file-pen"></i></button>
           </div>
@@ -690,6 +1061,7 @@
     if (state.inlineCompose && state.inlineCompose.mode === 'new' && !state.selectedId) {
       el.innerHTML = renderInlineComposeHTML();
       attachRecipientAutocomplete();
+      attachComposeDropZone(el);
       return;
     }
 
@@ -709,28 +1081,13 @@
     if (state.workspace === 'internal' && m) {
       el.innerHTML = composeHtml + `
         <div class="email-reading-message overflow-auto p-6">
-          <div class="flex items-start justify-between gap-4 mb-4">
-            <div>
-              <h2 class="text-lg font-semibold text-white">${esc(m.subject)}</h2>
-              <div class="text-sm text-zinc-400 mt-1">From <strong class="text-zinc-200">${esc(m.from)}</strong> · ${fmtDate(m.date)}</div>
-              <div class="text-xs text-zinc-500 mt-1">${esc(m.module || '')} · ${esc(m.project || '')}</div>
-            </div>
-            <div class="flex gap-2 flex-shrink-0">
-              ${m.actionUrl ? `<a href="${esc(m.actionUrl)}" class="px-4 py-2 bg-emerald-600 hover:bg-emerald-500 rounded-md text-sm font-medium text-white">${esc(m.actionLabel || 'Open')}</a>` : ''}
-              ${m.requiresAction ? `<button type="button" onclick="CasePMEmail.approveInternal('${m.id}')" class="px-4 py-2 bg-sky-600 hover:bg-sky-500 rounded-md text-sm">Approve</button>` : ''}
-              <button type="button" onclick="CasePMEmail.dismissInternal('${m.id}')" class="px-4 py-2 bg-zinc-800 hover:bg-zinc-700 rounded-md text-sm">Dismiss</button>
-            </div>
-          </div>
-          <div class="prose prose-invert max-w-none text-sm text-zinc-300">${m.body || esc(m.preview)}</div>
+          ${renderInternalMessageContent(m)}
         </div>`;
-      if (state.inlineCompose) attachRecipientAutocomplete();
-      if (m.unread) {
-        m.unread = false;
-        persistInternal();
-        if (typeof m.id === 'number' || String(m.id).match(/^\d+$/)) {
-          fetch(`/api/internal-messages/${m.id}/read`, { method: 'POST' }).catch(() => {});
-        }
+      if (state.inlineCompose) {
+        attachRecipientAutocomplete();
+        attachComposeDropZone(el);
       }
+      if (m.unread) markMessageRead(m);
       return;
     }
 
@@ -740,30 +1097,13 @@
       return;
     }
 
-    if (settings.markAsReadOnView && m.unread) { m.unread = false; persistMail(); }
+    if (settings.markAsReadOnView && m.unread) markMessageRead(m);
 
-    el.innerHTML = composeHtml + `
-      <div class="border-b border-zinc-800 px-4 py-2 flex flex-wrap gap-1 flex-shrink-0">
-        <button type="button" class="email-toolbar-btn" onclick="CasePMEmail.reply('${m.id}')"><i class="fa-solid fa-reply"></i> Reply</button>
-        <button type="button" class="email-toolbar-btn" onclick="CasePMEmail.replyAll('${m.id}')"><i class="fa-solid fa-reply-all"></i> Reply All</button>
-        <button type="button" class="email-toolbar-btn" onclick="CasePMEmail.forward('${m.id}')"><i class="fa-solid fa-share"></i> Forward</button>
-        <button type="button" class="email-toolbar-btn" onclick="CasePMEmail.archiveSelected('${m.id}')"><i class="fa-solid fa-box-archive"></i></button>
-        <button type="button" class="email-toolbar-btn" onclick="CasePMEmail.deleteSelected('${m.id}')"><i class="fa-solid fa-trash"></i></button>
-        <button type="button" class="email-toolbar-btn" onclick="CasePMEmail.printMessage('${m.id}')"><i class="fa-solid fa-print"></i></button>
-        <button type="button" class="email-toolbar-btn" onclick="CasePMEmail.snoozeSelected('${m.id}')"><i class="fa-solid fa-clock"></i></button>
-        <button type="button" class="email-toolbar-btn" onclick="CasePMEmail.moveSelected('${m.id}')"><i class="fa-solid fa-folder"></i></button>
-      </div>
-      <div class="email-reading-message overflow-auto p-6">
-        <h2 class="text-lg font-semibold text-white mb-2">${esc(m.subject)}</h2>
-        <div class="text-sm text-zinc-400 mb-4">
-          <div><span class="text-zinc-500">From:</span> ${esc(m.from)} &lt;${esc(m.fromEmail)}&gt;</div>
-          <div><span class="text-zinc-500">To:</span> ${esc((m.to || []).join(', '))}</div>
-          <div><span class="text-zinc-500">Date:</span> ${new Date(m.date).toLocaleString()}</div>
-        </div>
-        ${m.attachments && m.attachments.length ? `<div class="mb-4 flex flex-wrap gap-2">${m.attachments.map(a => `<span class="text-xs bg-zinc-800 border border-zinc-700 px-3 py-1.5 rounded-md"><i class="fa-solid fa-paperclip mr-1"></i>${esc(a.name)} <span class="text-zinc-500">(${esc(a.size)})</span></span>`).join('')}</div>` : ''}
-        <div class="prose prose-invert max-w-none text-sm text-zinc-300">${m.body || esc(m.preview)}</div>
-      </div>`;
-    if (state.inlineCompose) attachRecipientAutocomplete();
+    el.innerHTML = composeHtml + renderMailMessageContent(m);
+    if (state.inlineCompose) {
+      attachRecipientAutocomplete();
+      attachComposeDropZone(el);
+    }
   }
 
   function applyLayoutClasses() {
@@ -806,25 +1146,7 @@
   }
 
   function openMessage(id) {
-    state.selectedId = id;
-    const m = getMessage(id);
-    if (!m) return;
-    if (state.workspace === 'mail' && (m.folder === 'drafts' || m.isDraft)) {
-      state.inlineCompose = {
-        mode: 'draft',
-        to: (m.to || []).join(', '),
-        cc: (m.cc || []).join(', '),
-        bcc: (m.bcc || []).join(', '),
-        subject: m.subject || '',
-        body: m.body || '',
-        draftId: m.id,
-        showCcBcc: !!((m.cc && m.cc.length) || (m.bcc && m.bcc.length)),
-      };
-    } else {
-      state.inlineCompose = null;
-    }
-    renderMessageList();
-    renderReadingPane();
+    openMessagePopout(id);
   }
 
   function setSearch(q) {
@@ -853,11 +1175,14 @@
       draftId: opts?.draftId || null,
       replyToId: opts?.replyToId || null,
       showCcBcc: !!(opts?.cc || opts?.bcc),
+      attachments: opts?.attachments || [],
     };
     if (opts?.replyToId) state.selectedId = opts.replyToId;
     else if (!opts?.draftId) state.selectedId = null;
     renderReadingPane();
     renderMessageList();
+    const pane = document.getElementById('emailReadingPane');
+    if (pane) attachComposeDropZone(pane);
   }
 
   function closeCompose() {
@@ -908,6 +1233,7 @@
       const di = mailMessages.findIndex(m => m.id === draftId);
       if (di >= 0) mailMessages.splice(di, 1);
     }
+    const atts = (state.inlineCompose?.attachments || []).map(a => ({ name: a.name, size: a.size }));
     const msg = {
       id: uid(), folder: scheduled || scheduleVal ? 'scheduled' : 'sent', category: 'primary', focused: true,
       from: settings.displayName || ctx.userName, fromEmail: settings.emailAddress || ctx.userEmail,
@@ -916,7 +1242,7 @@
       bcc: (document.getElementById('inlineComposeBcc')?.value || '').split(/[,;]/).map(s => s.trim()).filter(Boolean),
       subject: subject || '(No subject)', preview: body.replace(/<[^>]+>/g, '').slice(0, 120),
       body, date: new Date().toISOString(), unread: false, starred: false, flagged: false,
-      hasAttachments: false, attachments: [], labels: [], threadId: uid(), importance: 'normal',
+      hasAttachments: atts.length > 0, attachments: atts, labels: [], threadId: uid(), importance: 'normal',
       scheduledFor: scheduleVal || null, snoozedUntil: null,
     };
     if (settings.undoSendSeconds > 0 && !scheduled && !scheduleVal) {
@@ -1146,12 +1472,47 @@
     render();
   }
 
+  function buildPrintDocument(m) {
+    const snapshot = state.workspace === 'internal' ? renderSubmissionSnapshot(m) : '';
+    const attHtml = (m.attachments || []).length
+      ? `<p><strong>Attachments:</strong> ${m.attachments.map(a => esc(a.name)).join(', ')}</p>` : '';
+    const meta = state.workspace === 'internal'
+      ? `<p><strong>From:</strong> ${esc(m.from)}<br><strong>Module:</strong> ${esc(m.module || '')} · ${esc(m.project || '')}<br><strong>Date:</strong> ${fmtDate(m.date)}</p>`
+      : `<p><strong>From:</strong> ${esc(m.from)} &lt;${esc(m.fromEmail || '')}&gt;<br><strong>To:</strong> ${esc((m.to || []).join(', '))}<br><strong>Date:</strong> ${new Date(m.date).toLocaleString()}</p>`;
+    return `<!DOCTYPE html><html><head><meta charset="utf-8"><title>${esc(m.subject)}</title>
+      <style>
+        body{font-family:Arial,sans-serif;padding:24px;color:#111;line-height:1.5}
+        h1{font-size:20px;margin:0 0 12px}
+        table{width:100%;border-collapse:collapse;font-size:12px;margin:12px 0}
+        th,td{border:1px solid #ccc;padding:6px 8px;text-align:left}
+        th{background:#f3f4f6}
+        td.num{text-align:right}
+        .summary{margin-top:8px;font-size:12px}
+      </style></head><body>
+      <h1>${esc(m.subject)}</h1>${meta}${attHtml}
+      ${snapshot.replace(/class="[^"]*"/g, '').replace(/email-snapshot-/g, 'snap-')}
+      <div>${m.body || esc(m.preview)}</div></body></html>`;
+  }
+
   function printMessage(id) {
     const m = getMessage(id);
     if (!m) return;
-    const w = window.open('', '_blank');
-    w.document.write(`<html><head><title>${esc(m.subject)}</title></head><body><h1>${esc(m.subject)}</h1>${m.body || ''}</body></html>`);
-    w.print();
+    let frame = document.getElementById('emailPrintFrame');
+    if (!frame) {
+      frame = document.createElement('iframe');
+      frame.id = 'emailPrintFrame';
+      frame.className = 'email-print-frame';
+      frame.title = 'Print preview';
+      document.body.appendChild(frame);
+    }
+    const win = frame.contentWindow;
+    win.document.open();
+    win.document.write(buildPrintDocument(m));
+    win.document.close();
+    setTimeout(() => {
+      win.focus();
+      win.print();
+    }, 250);
   }
 
   function searchLabel(label) { state.search = label; document.getElementById('emailSearchInput').value = label; renderMessageList(); }
@@ -1246,8 +1607,10 @@
   }
 
   global.CasePMEmail = {
-    init, setWorkspace, setFolder, setCategory, select, openMessage, setSearch, toggleFilter, toggleStar,
+    init, setWorkspace, setFolder, setCategory, select, openMessage, openMessagePopout, closeMessagePopout,
+    setSearch, toggleFilter, toggleStar,
     compose, closeCompose, toggleCcBcc, saveDraft, sendMail, undoSend, reply, replyAll, forward,
+    removeComposeAttachment,
     archiveSelected, deleteSelected, markReadToggle, flagSelected, starSelected,
     snoozeSelected, moveSelected, labelSelected, reportPhishing,
     addCustomFolder, renameCustomFolder, deleteCustomFolder,

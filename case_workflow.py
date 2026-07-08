@@ -103,7 +103,7 @@ def init_models(_db):
         created_at = db.Column(db.DateTime, default=datetime.utcnow)
 
         def to_dict(self):
-            return {
+            d = {
                 'id': self.id,
                 'folder': self.folder,
                 'type': self.msg_type,
@@ -122,7 +122,17 @@ def init_models(_db):
                 'archived': self.archived,
                 'date': self.created_at.isoformat() if self.created_at else '',
                 'approvalId': self.approval_id,
+                'payload': {},
+                'entityType': '',
+                'entityId': '',
             }
+            if self.approval_id:
+                approval = ApprovalRequest.query.get(self.approval_id)
+                if approval:
+                    d['payload'] = approval.get_payload()
+                    d['entityType'] = approval.entity_type or ''
+                    d['entityId'] = approval.entity_id or ''
+            return d
 
         def _project_name(self):
             if not self.project_id or not Project:
