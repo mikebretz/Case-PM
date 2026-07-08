@@ -166,11 +166,13 @@ body.schedule-chart-resizing #gantt_here .gantt_layout_cell:nth-child(3) {
     box-sizing: border-box !important;
 }
 .schedule-overlay-mode #gantt_here .gantt_grid_column_resize_wrap {
-    z-index: 45 !important;
+    z-index: 50 !important;
     pointer-events: auto !important;
 }
 .schedule-overlay-mode #gantt_here .gantt_grid_scale {
     overflow: visible !important;
+    position: relative !important;
+    z-index: 22 !important;
 }
 .schedule-overlay-mode #gantt_here .gantt_grid_head,
 .schedule-overlay-mode #gantt_here .gantt_grid_scale .gantt_grid_head_cell {
@@ -187,7 +189,10 @@ body.schedule-chart-resizing #gantt_here .gantt_layout_cell:nth-child(3) {
 }
 .schedule-overlay-mode #gantt_here .gantt_layout_cell:nth-child(3) {
     position: absolute !important;
-    right: 0 !important;
+    right: auto !important;
+    left: calc(100% - var(--sched-timeline-width, 45%)) !important;
+    width: var(--sched-timeline-width, 45%) !important;
+    max-width: var(--sched-timeline-width, 45%) !important;
     top: 0 !important;
     bottom: 0 !important;
     z-index: 18 !important;
