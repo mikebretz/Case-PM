@@ -14,15 +14,36 @@ def is_catina_configured():
 
 def integration_info():
     return {
+        'methods': [
+            {
+                'id': 'upload_pdf',
+                'label': 'Upload executed contract (PDF)',
+                'where': 'Projects → Financial tab',
+                'note': 'Store the signed owner–GC agreement on file. Used for pay apps and reference.',
+            },
+            {
+                'id': 'catina',
+                'label': 'AIA Contract Documents (Catina)',
+                'where': 'Projects → Contract & AIA tab',
+                'note': 'Official licensed AIA forms (A101, A401, etc.) are created and e-signed in Catina — AIA’s platform. Case PM links to Catina; it does not replace licensed AIA documents.',
+                'configured': is_catina_configured(),
+            },
+            {
+                'id': 'casepm_commitments',
+                'label': 'Case PM commitment editor',
+                'where': 'Commitments module',
+                'note': 'Editable AIA-style contract language for subs and POs inside Case PM. Good for internal workflow — not a substitute for official AIA licensed forms when those are required.',
+            },
+        ],
         'catina': {
             'configured': is_catina_configured(),
             'portal_url': CATINA_PORTAL_URL,
             'org_id': os.environ.get('AIA_CATINA_ORG_ID', '').strip() or None,
             'required_env': ['AIA_CATINA_ORG_ID or AIA_CATINA_ENABLED=1'],
-            'note': 'Official licensed AIA forms are created and executed in AIA Contract Documents (Catina). Case PM links commitments to Catina documents.',
+            'note': 'Catina is AIA’s official path for licensed forms and DocuSign execution. There is no separate public AIA API — third-party tools integrate via Catina or by storing executed PDFs.',
         },
         'docusign_via_catina': {
-            'note': 'Catina includes built-in DocuSign eSignature for AIA documents. Prefer Catina for official AIA execution.',
+            'note': 'Catina includes built-in DocuSign eSignature for AIA documents. Case PM Commitments can also send DocuSign when DOCUSIGN_* env vars are set.',
         },
     }
 
