@@ -45,7 +45,8 @@
         link_width: 2,
         active_baseline_index: -1,
         show_baseline_bars: true,
-        show_bar_labels: true
+        show_bar_labels: true,
+        theme: 'dark'
     };
     if (!scheduleSettings.print_settings) {
         scheduleSettings.print_settings = {
@@ -70,6 +71,7 @@
     let rollingCalendarBounds = null;
     let initialTimelineFocused = false;
     let timelineScrollProgrammatic = false;
+    let lastTimelineScrollX = 0;
     let timelineExtendTimer = null;
     let filterCriticalOnly = false;
     let clipboardTaskId = null;
@@ -200,6 +202,7 @@
                         </div>
                     </div>
                     <div class="flex gap-1 flex-shrink-0">
+                        <button type="button" class="schedule-toolbar-btn text-xs px-2 py-1" onclick="ScheduleApp.restoreBaseline(${i})" title="Restore dates from this baseline">Restore</button>
                         <button type="button" class="schedule-toolbar-btn text-xs px-2 py-1" onclick="ScheduleApp.activateBaseline(${i})">${active ? 'Active' : 'Use'}</button>
                         <button type="button" class="schedule-toolbar-btn text-xs px-2 py-1 text-red-400" onclick="ScheduleApp.deleteBaseline(${i})">Delete</button>
                     </div>
@@ -272,6 +275,29 @@
         applyBaselineVariance();
         queueSave();
         showBaselineManager();
+    }
+
+    function restoreBaseline(index) {
+        const b = baselines[index];
+        if (!b) return;
+        if (!confirm(`Restore all activity dates from "${b.name}"? Current dates will be overwritten.`)) return;
+        const bMap = baselineTaskMap(b);
+        gantt.eachTask(t => {
+            if (t.type === 'project') return;
+            const snap = bMap.get(String(t.id));
+            if (!snap) return;
+            if (snap.start_date) t.start_date = toGanttDate(snap.start_date);
+            if (snap.end_date) t.end_date = toGanttDate(snap.end_date);
+            if (snap.duration != null) t.duration = snap.duration;
+            sanitizeTaskDates(t);
+            gantt.updateTask(t.id);
+        });
+        runSchedule({ skipScroll: true });
+        pushUndoState();
+        queueSave();
+        showBaselineManager();
+        showScheduleAlert(`Schedule dates restored from "${b.name}".`, 'success');
+        logActivity('Restored baseline', b.name);
     }
 
 
@@ -506,6 +532,7 @@
         handle.style.right = (timelineW - 5) + 'px';
         syncLayoutTimelineWidth();
         ensureTimelineScrollbar();
+        refreshTimelinePanBar();
     }
 
     function queueChartOverlay() {
@@ -729,6 +756,34 @@
         gantt.config.scale_height = Math.max(88, rows * 44);
     }
 
+    function getTimelinePanMetrics() {
+        if (!ganttReady) return null;
+        const state = getTimelineScrollState();
+        if (state && state.inner_width > 0 && state.width > 0) {
+            const totalW = state.inner_width;
+            const viewW = state.width;
+            const scrollX = state.x != null ? state.x : lastTimelineScrollX;
+            const maxScroll = Math.max(0, totalW - viewW);
+            return { totalW, viewW, scrollX, maxScroll };
+        }
+        if (typeof gantt.posFromDate !== 'function') return null;
+        const start = gantt.config.start_date;
+        const end = gantt.config.end_date;
+        if (!start || !end) return null;
+        let totalW = 0;
+        try {
+            totalW = Math.max(1, gantt.posFromDate(end) - gantt.posFromDate(start));
+        } catch (e) { return null; }
+        const viewW = getTimelineDomWidth();
+        const scrollX = readTimelineScrollX();
+        const maxScroll = Math.max(0, totalW - viewW);
+        return { totalW, viewW, scrollX, maxScroll };
+    }
+
+    function refreshTimelinePanBar() {
+        if (window.ScheduleExtras?.updateTimelinePanBar) ScheduleExtras.updateTimelinePanBar();
+    }
+
     function bindTimelineScrollbarSync() {
         const bindEl = el => {
             if (!el || el.dataset.schedScrollBound) return;
@@ -760,26 +815,68 @@
     function readTimelineScrollX() {
         const state = getTimelineScrollState();
         if (state && state.x != null) return state.x;
+        const taskEl = document.querySelector('#gantt_here .gantt_task');
+        if (taskEl && taskEl.scrollLeft > 0) return taskEl.scrollLeft;
         const targets = getTimelineScrollElements();
         for (const el of targets) {
             if (el.scrollLeft > 0) return el.scrollLeft;
         }
-        return targets[0]?.scrollLeft || 0;
+        return lastTimelineScrollX || targets[0]?.scrollLeft || 0;
+    }
+
+    function syncTimelineScrollViews(x, y) {
+        const taskEl = document.querySelector('#gantt_here .gantt_task');
+        if (taskEl && Math.abs(taskEl.scrollLeft - x) > 1) taskEl.scrollLeft = x;
+        getTimelineScrollElements().forEach(el => {
+            if (Math.abs(el.scrollLeft - x) > 1) el.scrollLeft = x;
+        });
+        try {
+            if (gantt.$ui?.getView) {
+                const scrollHor = gantt.$ui.getView('scrollHor');
+                if (scrollHor?.scrollTo) scrollHor.scrollTo(x, null);
+            }
+        } catch (e) { /* ok */ }
+        if (y != null) {
+            try {
+                if (gantt.$ui?.getView) {
+                    const scrollVer = gantt.$ui.getView('scrollVer');
+                    if (scrollVer?.scrollTo) scrollVer.scrollTo(null, y);
+                }
+            } catch (e) { /* ok */ }
+        }
     }
 
     function setTimelineScrollX(px) {
-        const x = Math.max(0, Math.round(px));
+        const metrics = getTimelinePanMetrics();
+        const maxScroll = metrics?.maxScroll ?? Infinity;
+        const x = Math.max(0, Math.min(maxScroll, Math.round(px)));
         const y = (typeof gantt.getScrollState === 'function' ? gantt.getScrollState()?.y : 0) || 0;
+        lastTimelineScrollX = x;
         timelineScrollProgrammatic = true;
         try {
             if (gantt.scrollTo) gantt.scrollTo(x, y);
         } catch (e) { /* ok */ }
-        getTimelineScrollElements().forEach(el => {
-            if (Math.abs(el.scrollLeft - x) > 1) el.scrollLeft = x;
-        });
+        syncTimelineScrollViews(x, y);
         requestAnimationFrame(() => {
-            requestAnimationFrame(() => { timelineScrollProgrammatic = false; });
+            syncTimelineScrollViews(x, y);
+            timelineScrollProgrammatic = false;
+            refreshTimelinePanBar();
         });
+    }
+
+    function restoreTimelineScrollAfterRender() {
+        if (!ganttReady || lastTimelineScrollX <= 0) return;
+        const current = readTimelineScrollX();
+        if (Math.abs(current - lastTimelineScrollX) < 2) return;
+        const metrics = getTimelinePanMetrics();
+        if (!metrics || metrics.maxScroll <= 0) return;
+        const x = Math.min(lastTimelineScrollX, metrics.maxScroll);
+        timelineScrollProgrammatic = true;
+        try {
+            if (gantt.scrollTo) gantt.scrollTo(x, (gantt.getScrollState()?.y) || 0);
+        } catch (e) { /* ok */ }
+        syncTimelineScrollViews(x);
+        requestAnimationFrame(() => { timelineScrollProgrammatic = false; });
     }
 
     function maybeExtendTimelineOnScroll() {
@@ -834,7 +931,7 @@
         requestAnimationFrame(() => {
             let x = typeof gantt.posFromDate === 'function' ? gantt.posFromDate(d) : null;
             if (x != null) setTimelineScrollX(Math.max(0, x - margin));
-            timelineScrollProgrammatic = false;
+            else timelineScrollProgrammatic = false;
         });
     }
 
@@ -855,8 +952,10 @@
                 setTimelineScrollX(Math.max(0, mid - viewW / 2));
             } else if (gantt.showDate) {
                 gantt.showDate(start);
+                timelineScrollProgrammatic = false;
+            } else {
+                timelineScrollProgrammatic = false;
             }
-            timelineScrollProgrammatic = false;
         });
     }
 
@@ -883,9 +982,11 @@
         gantt.attachEvent('onGanttScroll', function (left) {
             if (timelineScrollProgrammatic) return;
             if (left != null) {
+                lastTimelineScrollX = left;
                 getTimelineScrollElements().forEach(el => {
                     if (Math.abs(el.scrollLeft - left) > 1) el.scrollLeft = left;
                 });
+                refreshTimelinePanBar();
             }
             clearTimeout(timelineExtendTimer);
             timelineExtendTimer = setTimeout(maybeExtendTimelineOnScroll, 100);
@@ -1635,6 +1736,9 @@
         gantt.config.keep_grid_width = true;
         gantt.config.round_dnd_dates = false;
         gantt.config.drag_timeline = { useKey: false };
+        gantt.config.drag_move = true;
+        gantt.config.drag_resize = true;
+        gantt.config.drag_progress = true;
         gantt.config.autosize = false;
         gantt.config.reorder_grid_columns = true;
         gantt.config.open_tree_initially = true;
@@ -1747,6 +1851,8 @@
 
         applyGanttDisplayStyles();
 
+        if (window.ScheduleExtras) ScheduleExtras.setupNonWorkTemplates(gantt);
+
         gantt.templates.tooltip_text = function (start, end, task) {
             const preds = predTemplate(task);
             return `<b>${task.text}</b><br/>
@@ -1824,11 +1930,15 @@
         gantt.attachEvent('onAfterLinkAdd', () => { pushUndoState(); queueSave(); });
         gantt.attachEvent('onAfterLinkUpdate', () => { pushUndoState(); queueSave(); });
         gantt.attachEvent('onAfterLinkDelete', () => { pushUndoState(); queueSave(); });
-        gantt.attachEvent('onAfterTaskDrag', function () {
+        gantt.attachEvent('onAfterTaskDrag', function (id, mode) {
             applyRollingCalendarRange(false);
             pushUndoState();
             queueSave();
+            if (mode === 'move' || mode === 'resize' || mode === 'progress') {
+                runSchedule({ skipScroll: true });
+            }
             gantt.render();
+            refreshTimelinePanBar();
         });
         gantt.attachEvent('onAfterColumnReorder', () => {
             columnOrder = gantt.config.columns.map(c => c.name);
@@ -1850,6 +1960,8 @@
             updateStatusBar();
             updateDeadlineMarkers();
             ensureTimelineScrollbar();
+            restoreTimelineScrollAfterRender();
+            refreshTimelinePanBar();
         });
 
         document.addEventListener('keydown', onScheduleKeyDown);
@@ -1945,6 +2057,7 @@
         resizeTimer = setTimeout(() => {
             gantt.render();
             applyChartOverlay();
+            refreshTimelinePanBar();
         }, 80);
     }
 
@@ -1993,6 +2106,8 @@
         sanitizeAllTaskDates();
         baselines = payload.baselines || [];
         if (payload.settings) scheduleSettings = Object.assign(scheduleSettings, payload.settings);
+        if (!scheduleSettings.theme) scheduleSettings.theme = 'dark';
+        if (window.ScheduleExtras) ScheduleExtras.applyThemeFromSettings();
         if (!scheduleSettings.print_settings) {
             scheduleSettings.print_settings = {
                 include_summary: true, include_activity_table: true, include_inline_bars: true,
@@ -3218,7 +3333,7 @@
             ['Predecessor lag in grid', 'Lag column; edit via Predecessors FS+2'],
             ['Constraint badges', 'Cstr column + Activity modal'],
             ['Custom bar colors', 'Color column or Display settings'],
-            ['Timeline pan + day scale + scrollbar', 'Days button · ◀ ▶ · drag scrollbar'],
+            ['Timeline pan + day scale + pan bar', 'Days button · ◀ ▶ · drag green pan bar at bottom'],
             ['Export JSON / CSV / XER / XML', 'Toolbar export buttons'],
             ['Print setup (choose what to print)', 'Print → setup dialog'],
             ['All MS Project/P6 columns', 'All Fields button'],
@@ -3227,16 +3342,15 @@
             ['Resource leveling', 'Resources toolbar → Level Resources'],
             ['Project EVM rollup (BAC/CPI/SPI/EAC)', 'Run Schedule · status bar'],
             ['Keyboard shortcuts', 'Press ? on schedule page'],
-            ['Reset column widths', 'Columns → Reset Widths']
+            ['Reset column widths', 'Columns → Reset Widths'],
+            ['Light / dark mode (schedule page only)', 'Sun/moon button in toolbar'],
+            ['Resource usage histogram', 'Resources → Histogram'],
+            ['Baseline restore', 'Baselines → Restore'],
+            ['EVM S-curve chart', 'Toolbar → S-Curve'],
+            ['Non-work day shading (weekends)', 'Automatic on calendar'],
+            ['Drag bars on chart to reschedule', 'Drag task bars on timeline']
         ];
-        const planned = [
-            ['Light mode toggle (page only)', 'CSS ready — toggle not wired yet'],
-            ['Resource usage histogram', 'Planned'],
-            ['Baseline restore (revert to baseline)', 'Planned'],
-            ['EVM S-curve charts', 'Planned'],
-            ['Non-work day / holiday shading', 'Planned'],
-            ['Drag bars on chart to reschedule', 'Planned']
-        ];
+        const planned = [];
         const installedHtml = installed.map(([name, how]) =>
             `<div class="flex justify-between gap-3 px-3 py-2 rounded-md bg-emerald-950/30 border border-emerald-800/40 text-sm">
                 <span class="text-zinc-200"><i class="fa-solid fa-check text-emerald-400 mr-1.5 text-xs"></i>${name}</span>
@@ -3252,8 +3366,7 @@
         list.innerHTML = `
             <div class="px-3 py-2 text-xs uppercase tracking-wide text-emerald-400 font-semibold">Installed — ${installed.length} features</div>
             ${installedHtml}
-            <div class="px-3 py-2 mt-3 text-xs uppercase tracking-wide text-amber-400 font-semibold">Not yet installed — ${planned.length} remaining</div>
-            ${plannedHtml}`;
+            ${planned.length ? `<div class="px-3 py-2 mt-3 text-xs uppercase tracking-wide text-amber-400 font-semibold">Not yet installed — ${planned.length} remaining</div>${plannedHtml}` : '<div class="px-3 py-4 text-center text-sm text-emerald-400">All schedule features are installed.</div>'}`;
         dlg.showModal();
     }
 
@@ -3300,6 +3413,27 @@
             gantt.render();
             queueSave();
         });
+
+        if (window.ScheduleExtras) {
+            ScheduleExtras.init({
+                getPanMetrics: getTimelinePanMetrics,
+                getScrollX: readTimelineScrollX,
+                setScrollX: setTimelineScrollX,
+                getTimelineWidth: getTimelineDomWidth,
+                getSettings: () => scheduleSettings,
+                queueSave,
+                getTasks: () => { const t = []; gantt.eachTask(x => t.push(x)); return t; },
+                getDataDate: () => document.getElementById('dataDateInput')?.value || scheduleSettings.data_date,
+                getSubtaskDates: () => gantt.getSubtaskDates(),
+                parseDate: d => CasePMSchedule.parseDate(d),
+                daysBetween: (a, b) => CasePMSchedule.calendarDaysBetween(a, b),
+                alert: showScheduleAlert
+            });
+            requestAnimationFrame(() => {
+                refreshTimelinePanBar();
+                setTimeout(refreshTimelinePanBar, 120);
+            });
+        }
     }
 
     window.ScheduleApp = {
@@ -3312,7 +3446,10 @@
         showAllOptionalColumns, showFeaturesChecklist, showKeyboardShortcuts,
         exportJson, importFile, printGantt, printLookAhead, showPrintSetup, savePrintSettings, saveSchedule,
         loadSchedule, clearSchedule, showColumnManager, showAddColumnDialog, removeColumn, addFieldColumn, queueSave,
-        runResourceLeveling, showResourceLeveling, renderPortfolio, resetColumnWidths, renderBaselineComparison
+        runResourceLeveling, showResourceLeveling, renderPortfolio, resetColumnWidths, renderBaselineComparison,
+        restoreBaseline, toggleScheduleTheme: () => window.ScheduleExtras?.toggleTheme(),
+        showResourceHistogram: () => window.ScheduleExtras?.showResourceHistogram(),
+        showEvmScurve: () => window.ScheduleExtras?.showEvmScurve()
     };
 
     if (document.readyState === 'loading') {

@@ -55,7 +55,7 @@ body:has(.schedule-page-root) #mainContent {
 }
 
 #scheduleChrome { flex-shrink: 0; z-index: 20; }
-#scheduleGanttHost { flex: 1; min-height: 0; overflow: hidden; background: var(--sched-bg); }
+#scheduleGanttHost { flex: 1; min-height: 0; overflow: hidden; background: var(--sched-bg); position: relative; padding-bottom: 24px; box-sizing: border-box; }
 #gantt_here { width: 100%; height: 100%; }
 
 /* Toolbar uses theme tokens */
@@ -164,14 +164,13 @@ body:has(.schedule-page-root) #mainContent {
     flex-direction: column !important;
 }
 .schedule-overlay-mode #gantt_here .gantt_layout_cell:nth-child(3) [data-cell-id="scrollHor"] {
-    flex: 0 0 22px !important;
-    height: 22px !important;
-    min-height: 22px !important;
-    z-index: 35 !important;
-    pointer-events: auto !important;
-    background: var(--sched-scroll-bg) !important;
-    border-top: 1px solid var(--sched-border) !important;
-    overflow: visible !important;
+    flex: 0 0 0 !important;
+    height: 0 !important;
+    min-height: 0 !important;
+    overflow: hidden !important;
+    opacity: 0 !important;
+    pointer-events: none !important;
+    border: none !important;
 }
 .schedule-overlay-mode #gantt_here [data-cell-id="scrollHor"] .gantt_layout_outer_scroll,
 .schedule-overlay-mode #gantt_here [data-cell-id="scrollHor"] .gantt_hor_scroll {
@@ -847,4 +846,97 @@ input[type="date"].sched-cell-editor::-webkit-calendar-picker-indicator {
     opacity: 0.35;
     pointer-events: none;
     cursor: not-allowed;
+}
+
+/* Custom timeline pan bar (overlay mode — reliable horizontal scroll) */
+.schedule-timeline-pan {
+    position: absolute;
+    bottom: 0;
+    height: 24px;
+    z-index: 50;
+    pointer-events: auto;
+    padding: 3px 8px 5px;
+    box-sizing: border-box;
+    background: var(--sched-scroll-bg);
+    border-top: 1px solid var(--sched-border);
+    touch-action: none;
+}
+.schedule-timeline-pan.hidden { display: none; }
+.schedule-timeline-pan-track {
+    position: relative;
+    width: 100%;
+    height: 14px;
+    background: var(--sched-surface);
+    border-radius: 7px;
+    border: 1px solid var(--sched-border);
+    cursor: pointer;
+}
+.schedule-timeline-pan-thumb {
+    position: absolute;
+    top: 1px;
+    height: 10px;
+    min-width: 28px;
+    background: var(--sched-accent);
+    border-radius: 5px;
+    cursor: grab;
+    box-shadow: 0 0 0 1px rgba(0,0,0,0.2);
+    touch-action: none;
+}
+.schedule-timeline-pan-thumb:active { cursor: grabbing; }
+
+/* Weekend / non-work shading on timeline */
+.schedule-nonwork-cell,
+.gantt_task_cell.schedule-nonwork-cell {
+    background-color: rgba(63, 63, 70, 0.45) !important;
+}
+.schedule-nonwork-scale,
+.gantt_scale_cell.schedule-nonwork-scale {
+    background-color: rgba(63, 63, 70, 0.35) !important;
+    color: var(--sched-text-muted) !important;
+}
+.schedule-page-root.schedule-theme-light .schedule-nonwork-cell,
+.schedule-page-root.schedule-theme-light .gantt_task_cell.schedule-nonwork-cell {
+    background-color: rgba(228, 228, 231, 0.7) !important;
+}
+.schedule-page-root.schedule-theme-light .schedule-nonwork-scale,
+.schedule-page-root.schedule-theme-light .gantt_scale_cell.schedule-nonwork-scale {
+    background-color: rgba(228, 228, 231, 0.9) !important;
+}
+
+/* Light theme — gantt surfaces (page only) */
+.schedule-page-root.schedule-theme-light .gantt_grid,
+.schedule-page-root.schedule-theme-light .gantt_grid_scale,
+.schedule-page-root.schedule-theme-light .gantt_grid_data,
+.schedule-page-root.schedule-theme-light .gantt_task,
+.schedule-page-root.schedule-theme-light .gantt_task_scale {
+    background-color: var(--sched-bg) !important;
+    color: var(--sched-text) !important;
+}
+.schedule-page-root.schedule-theme-light .gantt_cell,
+.schedule-page-root.schedule-theme-light .gantt_grid_head_cell,
+.schedule-page-root.schedule-theme-light .gantt_scale_cell {
+    color: var(--sched-text) !important;
+    border-color: var(--sched-border) !important;
+}
+.schedule-page-root.schedule-theme-light #ganttViewPanel,
+.schedule-page-root.schedule-theme-light #scheduleStatusBar {
+    background: var(--sched-panel-bg) !important;
+    border-color: var(--sched-border) !important;
+}
+.schedule-page-root.schedule-theme-light .bg-zinc-900 {
+    background-color: var(--sched-panel-bg) !important;
+    border-color: var(--sched-border) !important;
+}
+.schedule-page-root.schedule-theme-light .schedule-view-tab.active-view {
+    background: var(--sched-surface) !important;
+    color: var(--sched-text-strong) !important;
+}
+
+/* Drag bars on chart */
+.gantt_task_line {
+    cursor: grab;
+}
+.gantt_task_line.gantt_drag_move,
+.gantt_task_line:active {
+    cursor: grabbing;
 }
