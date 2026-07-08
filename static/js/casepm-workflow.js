@@ -104,7 +104,7 @@
     const sov = snapshot?.contractorSOV || [];
     const thisPeriodTotal = sov.reduce((sum, line) => {
       const b = billingLines[line.id] || {};
-      return sum + (b.workThisPeriod || 0) + (b.materialsStored || 0);
+      return sum + (b.workThisPeriod || 0) + (b.materialsStored || 0) + (b.coWorkThisPeriod || 0);
     }, 0);
     return emit('submit', {
       module: 'Pay Applications',
