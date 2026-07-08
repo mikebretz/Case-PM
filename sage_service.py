@@ -246,3 +246,97 @@ def sage_event_to_dict(event):
         'created_at': event.created_at.isoformat() if event.created_at else None,
         'posted_at': event.posted_at.isoformat() if event.posted_at else None,
     }
+
+
+def latest_sage_events_by_project(SageSyncEvent, project_ids):
+    """Most recent SageSyncEvent per project_id (one query)."""
+    if not project_ids:
+        return {}
+    events = (
+        SageSyncEvent.query
+        .filter(SageSyncEvent.project_id.in_(project_ids))
+        .order_by(SageSyncEvent.created_at.desc())
+        .all()
+    )
+    by_project = {}
+    for event in events:
+        if event.project_id not in by_project:
+            by_project[event.project_id] = event
+    return by_project
+
+
+def project_sage_sync_status(project, latest_event=None):
+    """Human-readable Sage 300 sync status for a project row."""
+    details = project.get_details() if project and hasattr(project, 'get_details') else {}
+    if details.get('sage_sync_enabled') == '0':
+        return {
+            'status': 'disabled',
+            'label': 'Off',
+            'class': 'text-zinc-500',
+            'detail': 'Sage sync disabled for this project',
+        }
+
+    job = (
+        (getattr(project, 'sage_job_number', None) or '')
+        or (getattr(project, 'accounting_project_number', None) or '')
+    ).strip()
+    if not job:
+        return {
+            'status': 'no_job',
+            'label': 'No job #',
+            'class': 'text-amber-400',
+            'detail': 'Set Sage job number on project',
+        }
+
+    if not latest_event:
+        return {
+            'status': 'ready',
+            'label': 'Ready',
+            'class': 'text-zinc-400',
+            'detail': f'Job {job} — no sync events yet',
+        }
+
+    event_type = latest_event.event_type or 'Sync'
+    status = latest_event.status or 'queued'
+    if status == 'posted':
+        return {
+            'status': 'posted',
+            'label': 'Synced',
+            'class': 'text-emerald-400',
+            'detail': f'{event_type} · posted',
+        }
+    if status == 'simulated':
+        return {
+            'status': 'simulated',
+            'label': 'Simulated',
+            'class': 'text-sky-400',
+            'detail': f'{event_type} · logged (no live API)',
+        }
+    if status == 'error':
+        err = (latest_event.error_text or '')[:60]
+        return {
+            'status': 'error',
+            'label': 'Error',
+            'class': 'text-red-400',
+            'detail': err or f'{event_type} failed',
+        }
+    if status == 'pending_config':
+        return {
+            'status': 'pending_config',
+            'label': 'Config',
+            'class': 'text-amber-400',
+            'detail': latest_event.error_text or 'Sage job not configured',
+        }
+    if status == 'queued':
+        return {
+            'status': 'queued',
+            'label': 'Queued',
+            'class': 'text-amber-400',
+            'detail': event_type,
+        }
+    return {
+        'status': status,
+        'label': status.replace('_', ' ').title(),
+        'class': 'text-zinc-400',
+        'detail': event_type,
+    }

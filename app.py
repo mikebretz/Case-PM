@@ -894,6 +894,11 @@ def api_current_project():
         'zip_code': active.zip_code,
         'client': active.client,
         'contract_value': active.contract_value,
+        'contract_amount': _project_contract_amount(active),
+        'contract_amount_source': (
+            'original_contract' if _parse_float(d.get('original_contract_amount')) is not None else
+            ('contract_value' if active.contract_value else None)
+        ),
         'sage_job_number': active.sage_job_number or active.accounting_project_number,
         'accounting_project_number': active.accounting_project_number,
         'prime_aia_form': d.get('prime_aia_form'),
@@ -987,6 +992,50 @@ def _parse_float(value):
         return None
 
 
+def _project_contract_amount(project):
+    """Prefer original_contract_amount from project details, then contract_value."""
+    if not project:
+        return None
+    details = project.get_details()
+    original = _parse_float(details.get('original_contract_amount'))
+    if original is not None:
+        return original
+    if project.contract_value:
+        return float(project.contract_value)
+    return None
+
+
+def _project_financial_context(project):
+    """Shared contract/retainage defaults for budget and pay applications."""
+    if not project:
+        return {
+            'original_contract_amount': None,
+            'contract_value': None,
+            'contract_amount': None,
+            'contract_amount_source': None,
+            'default_retainage_percent': None,
+            'sage_job': '',
+        }
+    details = project.get_details()
+    original = _parse_float(details.get('original_contract_amount'))
+    contract_value = float(project.contract_value) if project.contract_value else None
+    if original is not None:
+        amount, source = original, 'original_contract'
+    elif contract_value is not None:
+        amount, source = contract_value, 'contract_value'
+    else:
+        amount, source = None, None
+    retainage = _parse_float(details.get('default_retainage_percent'))
+    return {
+        'original_contract_amount': original,
+        'contract_value': contract_value,
+        'contract_amount': amount,
+        'contract_amount_source': source,
+        'default_retainage_percent': retainage,
+        'sage_job': project.sage_job_number or project.accounting_project_number or '',
+    }
+
+
 def _apply_project_form(project, form):
     project.name = (form.get('name') or '').strip()
     project.client = (form.get('client') or '').strip()
@@ -1016,10 +1065,17 @@ def _apply_project_form(project, form):
 @login_required
 def projects_page():
     ensure_project_schema()
+    from sage_service import latest_sage_events_by_project, project_sage_sync_status
+
     projects = Project.query.order_by(Project.created_at.desc()).all()
     companies = Company.query.order_by(Company.name).all()
     users = User.query.filter_by(status='Active').order_by(User.last_name, User.first_name).all()
     active_projects = [p for p in projects if p.status == 'Active']
+    latest_sage_events = latest_sage_events_by_project(SageSyncEvent, [p.id for p in projects])
+    sage_statuses = {
+        p.id: project_sage_sync_status(p, latest_sage_events.get(p.id))
+        for p in projects
+    }
     stats = {
         'total': len(projects),
         'active': len(active_projects),
@@ -1039,6 +1095,7 @@ def projects_page():
         companies=companies,
         users=users,
         stats=stats,
+        sage_statuses=sage_statuses,
     )
 
 
@@ -2158,10 +2215,14 @@ def drawings_page():
 @login_required
 def budget_page():
     active = get_active_project()
+    fin = _project_financial_context(active)
     return render_template(
         'budget.html',
-        project_contract_value=active.contract_value if active else None,
-        project_sage_job=active.sage_job_number or active.accounting_project_number if active else '',
+        project_original_contract_amount=fin['original_contract_amount'],
+        project_contract_value=fin['contract_value'],
+        project_contract_amount=fin['contract_amount'],
+        project_contract_amount_source=fin['contract_amount_source'],
+        project_sage_job=fin['sage_job'],
     )
 
 
@@ -2669,7 +2730,17 @@ def meeting_minutes_page():
 @app.route('/pay-applications')
 @login_required
 def pay_applications_page():
-    return render_template('pay_applications.html')
+    active = get_active_project()
+    fin = _project_financial_context(active)
+    return render_template(
+        'pay_applications.html',
+        project_original_contract_amount=fin['original_contract_amount'],
+        project_contract_value=fin['contract_value'],
+        project_contract_amount=fin['contract_amount'],
+        project_contract_amount_source=fin['contract_amount_source'],
+        project_default_retainage_percent=fin['default_retainage_percent'],
+        project_sage_job=fin['sage_job'],
+    )
 
 
 @app.route('/program-settings')
@@ -2906,6 +2977,10 @@ def api_publish_budget():
         return jsonify({'error': 'no budget state'}), 400
     state = mark_budget_lines_sage_status(state, sage_status)
     record = save_budget_state(BudgetProjectState, db, project_id, state, current_user.id)
+    project = Project.query.get(project_id)
+    resolved_contract = state.get('budgetContractAmount')
+    if resolved_contract in (None, ''):
+        resolved_contract = _project_contract_amount(project)
     event = create_and_process_sage_event(
         SageSyncEvent, Project, db, project_id,
         'BudgetPublished',
@@ -2914,7 +2989,8 @@ def api_publish_budget():
             'revision': state.get('budgetRevision'),
             'lines_count': len(state.get('budgetLines') or []),
             'total_original': sum((l.get('original_budget') or 0) for l in (state.get('budgetLines') or [])),
-            'contract_amount': state.get('budgetContractAmount'),
+            'contract_amount': resolved_contract,
+            'original_contract_amount': _parse_float((project.get_details() if project else {}).get('original_contract_amount')),
         },
         user_id=current_user.id,
     )

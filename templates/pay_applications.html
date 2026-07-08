@@ -490,6 +490,30 @@
 </dialog>
 
 <script>
+    const SERVER_ORIGINAL_CONTRACT_AMOUNT = {{ project_original_contract_amount|tojson if project_original_contract_amount is not none else 'null' }};
+    const SERVER_CONTRACT_VALUE = {{ project_contract_value|tojson if project_contract_value is not none else 'null' }};
+    const SERVER_CONTRACT_AMOUNT = {{ project_contract_amount|tojson if project_contract_amount is not none else 'null' }};
+    const SERVER_CONTRACT_AMOUNT_SOURCE = {{ project_contract_amount_source|tojson if project_contract_amount_source else 'null' }};
+    const SERVER_DEFAULT_RETAINAGE_PERCENT = {{ project_default_retainage_percent|tojson if project_default_retainage_percent is not none else 'null' }};
+
+    function resolveServerContractAmount() {
+        return SERVER_CONTRACT_AMOUNT || SERVER_ORIGINAL_CONTRACT_AMOUNT || SERVER_CONTRACT_VALUE || null;
+    }
+
+    function seedProjectContractDefaults() {
+        const serverAmt = resolveServerContractAmount();
+        if (serverAmt && !casepmStore.getItem('budgetContractAmount')) {
+            budgetContractAmount = parseFloat(serverAmt);
+            casepmStore.setItem('budgetContractAmount', String(budgetContractAmount));
+        }
+        if (SERVER_DEFAULT_RETAINAGE_PERCENT != null && !casepmStore.getItem('payAppRetainagePercent')) {
+            defaultRetainagePercent = parseFloat(SERVER_DEFAULT_RETAINAGE_PERCENT) || 10;
+            casepmStore.setItem('payAppRetainagePercent', String(defaultRetainagePercent));
+            const retainageSelect = document.getElementById('retainagePercentSelect');
+            if (retainageSelect) retainageSelect.value = String(defaultRetainagePercent);
+        }
+    }
+
     // ==================== DATA & STATE (v77.1 - Period 1 Month/Date Picker restored for Draft + when pushed back via Request Revision. Billed to Date snapshot restore working. Top banner confirmation clean.) ====================
     let payApplications = JSON.parse(casepmStore.getItem('payApplications')) || [];
     let contractorSOV = JSON.parse(casepmStore.getItem('contractorSOV')) || [];
@@ -1046,7 +1070,7 @@ let mainLienWaiver = JSON.parse(casepmStore.getItem('mainLienWaiver') || '{}'); 
         mainLienWaiver = JSON.parse(casepmStore.getItem('mainLienWaiver') || '{}');
         defaultRetainagePercent = parseFloat(casepmStore.getItem('payAppRetainagePercent') || '10');
         sageSyncAutoEnabled = casepmStore.getItem('sageSyncAutoEnabled') !== 'false';
-        budgetContractAmount = parseFloat(casepmStore.getItem('budgetContractAmount')) || budgetContractAmount || 2450000;
+        budgetContractAmount = parseFloat(casepmStore.getItem('budgetContractAmount')) || resolveServerContractAmount() || budgetContractAmount || 2450000;
     }
 
     function renderSageSyncStatus() {
@@ -8814,10 +8838,11 @@ function printSubcontractorG703(companyId) {
         const boot = async () => {
             if (typeof CasePMPayAppSync !== 'undefined') {
                 await CasePMPayAppSync.init();
-                reloadPayAppStateFromStorage();
             } else if (typeof CasePMWorkflow !== 'undefined') {
                 CasePMWorkflow.loadPortal().catch(() => {});
             }
+            seedProjectContractDefaults();
+            reloadPayAppStateFromStorage();
             seedDemoDataIfNeeded();
             bindPayAppSettingsAutoSave();
             pruneInlineLienWaiverPayloads();
