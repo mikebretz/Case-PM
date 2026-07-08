@@ -761,12 +761,19 @@ def projects_page():
     projects = Project.query.order_by(Project.created_at.desc()).all()
     companies = Company.query.order_by(Company.name).all()
     users = User.query.filter_by(status='Active').order_by(User.last_name, User.first_name).all()
+    active_projects = [p for p in projects if p.status == 'Active']
     stats = {
         'total': len(projects),
-        'active': sum(1 for p in projects if p.status == 'Active'),
+        'active': len(active_projects),
         'completed': sum(1 for p in projects if p.status == 'Completed'),
         'on_hold': sum(1 for p in projects if p.status == 'On Hold'),
+        'pre_construction': sum(1 for p in projects if p.status == 'Pre-Construction'),
         'contract_value': sum(p.contract_value or 0 for p in projects),
+        'active_value': sum(p.contract_value or 0 for p in active_projects),
+        'avg_percent_complete': (
+            round(sum(p.percent_complete or 0 for p in active_projects) / len(active_projects))
+            if active_projects else 0
+        ),
     }
     return render_template(
         'projects.html',
