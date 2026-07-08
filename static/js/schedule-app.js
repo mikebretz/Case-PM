@@ -2,7 +2,7 @@
 (function () {
     'use strict';
 
-    const STORAGE_KEY = 'casepm_schedule_v4';
+    const STORAGE_KEY = 'casepm_schedule_v5';
     const LINK_TYPES = { FS: '0', SS: '1', FF: '2', SF: '3' };
     const LINK_LABELS = { '0': 'FS', '1': 'SS', '2': 'FF', '3': 'SF' };
 
@@ -49,9 +49,9 @@
     };
 
     const REQUIRED_COLUMNS = ['text', 'collapse'];
-    const ROLLING_YEARS_BACK = 8;
-    const ROLLING_YEARS_FORWARD = 12;
-    const ROLLING_MIN_SPAN_DAYS = 365 * 10;
+    const ROLLING_YEARS_BACK = 2;
+    const ROLLING_YEARS_FORWARD = 6;
+    const ROLLING_MIN_SPAN_DAYS = 365 * 3;
 
     let editingContext = null;
     let editorClampTimer = null;
@@ -305,60 +305,25 @@
     }
 
     function getTimelineWidth() {
+        const timelineCell = document.querySelector('#gantt_here .gantt_layout_cell:nth-child(3)');
+        if (timelineCell?.offsetWidth > 80) return timelineCell.offsetWidth;
         const hostW = document.getElementById('gantt_here')?.offsetWidth || 1200;
-        if (scheduleSettings.timeline_width_px >= 180) {
-            return Math.max(180, Math.min(hostW - 160, scheduleSettings.timeline_width_px));
-        }
-        const pct = scheduleSettings.timeline_pct ?? 0.45;
-        return Math.max(200, Math.min(hostW - 160, Math.round(hostW * pct)));
+        const gridW = getColumnsTotalWidth();
+        return Math.max(240, hostW - gridW - 24);
     }
 
     function syncGridTableWidth() {
         if (!ganttReady || !gantt.config.columns) return;
         const total = getColumnsTotalWidth();
         gantt.config.grid_width = total;
+        if (gantt.config.layout?.cols?.[0]) {
+            gantt.config.layout.cols[0].width = total;
+            gantt.config.layout.cols[0].min_width = Math.min(200, total);
+        }
     }
 
     function applyChartOverlay() {
-        if (!ganttReady) return;
-        const root = document.querySelector('#gantt_here .gantt_layout_root');
-        if (!root) return;
-
-        const timelineW = getTimelineWidth();
-
-        const cells = root.querySelectorAll(':scope > .gantt_layout_cell');
-        const gridCell = cells[0];
-        const nativeResizer = cells[1];
-        const timelineCell = cells[2];
-        if (!gridCell || !timelineCell) return;
-
-        root.style.position = 'relative';
-        gridCell.style.cssText = 'flex:1 1 auto;width:100%!important;min-width:0!important;position:relative;z-index:2;overflow:hidden;';
-        if (nativeResizer) nativeResizer.style.cssText = 'display:none!important;width:0!important;min-width:0!important;';
-
-        timelineCell.style.cssText = [
-            `position:absolute!important`,
-            `top:0!important`,
-            `right:0!important`,
-            `bottom:0!important`,
-            `width:${timelineW}px!important`,
-            `z-index:15!important`,
-            `box-shadow:-8px 0 24px rgba(0,0,0,0.55)`,
-            `pointer-events:auto!important`,
-            `overflow:visible!important`,
-            `display:flex!important`,
-            `flex-direction:column!important`
-        ].join(';');
-
-        let handle = document.getElementById('scheduleChartResizer');
-        if (!handle) {
-            handle = document.createElement('div');
-            handle.id = 'scheduleChartResizer';
-            handle.className = 'schedule-chart-resizer';
-            handle.title = 'Drag to resize chart overlay';
-            root.appendChild(handle);
-        }
-        handle.style.right = (timelineW - 4) + 'px';
+        syncGridTableWidth();
     }
 
     function queueChartOverlay() {
@@ -366,50 +331,11 @@
         overlayApplyTimer = setTimeout(applyChartOverlay, 16);
     }
 
-    const overlayDrag = { active: false, bound: false };
-
     function initChartOverlay() {
-        if (scheduleSettings.timeline_width_px == null && scheduleSettings.timeline_pct == null) {
-            scheduleSettings.timeline_pct = 0.45;
-        }
-        document.getElementById('scheduleGanttHost')?.classList.add('schedule-overlay-mode');
-
-        if (!overlayDrag.bound) {
-            overlayDrag.bound = true;
-            document.addEventListener('mousedown', e => {
-                const handle = document.getElementById('scheduleChartResizer');
-                if (!handle || (!handle.contains(e.target) && e.target !== handle)) return;
-                overlayDrag.active = true;
-                e.preventDefault();
-                e.stopPropagation();
-            });
-            document.addEventListener('mousemove', e => {
-                if (!overlayDrag.active) return;
-                const hostEl = document.getElementById('gantt_here');
-                if (!hostEl) return;
-                const rect = hostEl.getBoundingClientRect();
-                const timelineW = Math.max(180, Math.min(rect.width - 160, rect.right - e.clientX));
-                scheduleSettings.timeline_width_px = timelineW;
-                scheduleSettings.timeline_pct = timelineW / rect.width;
-                applyChartOverlay();
-            });
-            document.addEventListener('mouseup', () => {
-                if (overlayDrag.active) {
-                    overlayDrag.active = false;
-                    queueSave();
-                }
-            });
-            window.addEventListener('resize', () => {
-                const hostW = document.getElementById('gantt_here')?.offsetWidth;
-                if (hostW && scheduleSettings.timeline_pct) {
-                    scheduleSettings.timeline_width_px = Math.round(hostW * scheduleSettings.timeline_pct);
-                }
-                queueChartOverlay();
-            });
-        }
-
+        document.getElementById('scheduleGanttHost')?.classList.remove('schedule-overlay-mode');
+        const oldHandle = document.getElementById('scheduleChartResizer');
+        if (oldHandle) oldHandle.remove();
         syncGridTableWidth();
-        queueChartOverlay();
     }
 
     function updateGridWidth() {
@@ -512,24 +438,34 @@
         return CasePMSchedule.addCalendarDays(d, amount);
     }
 
+    function getDefaultCalendarBounds() {
+        const y = new Date().getFullYear();
+        return {
+            start: new Date(y - ROLLING_YEARS_BACK, 0, 1),
+            end: new Date(y + ROLLING_YEARS_FORWARD, 11, 31)
+        };
+    }
+
     function computeRollingCalendarBounds() {
-        const today = new Date();
-        let start = new Date(today.getFullYear() - ROLLING_YEARS_BACK, 0, 1);
-        let end = new Date(today.getFullYear() + ROLLING_YEARS_FORWARD, 11, 31);
+        const defaults = getDefaultCalendarBounds();
+        let start = new Date(defaults.start.getTime());
+        let end = new Date(defaults.end.getTime());
+        const floorYear = new Date().getFullYear() - ROLLING_YEARS_BACK;
         if (ganttReady) {
             gantt.eachTask(t => {
                 const ts = toGanttDate(t.start_date);
                 const te = toGanttDate(t.end_date);
-                if (ts) {
-                    const padded = ganttDateAdd(ts, -120, 'day');
+                if (ts && ts.getFullYear() >= floorYear - 1) {
+                    const padded = ganttDateAdd(ts, -60, 'day');
                     if (padded && padded < start) start = padded;
                 }
                 if (te) {
-                    const padded = ganttDateAdd(te, 180, 'day');
+                    const padded = ganttDateAdd(te, 120, 'day');
                     if (padded && padded > end) end = padded;
                 }
             });
         }
+        if (start < defaults.start) start = new Date(defaults.start.getTime());
         if (CasePMSchedule.calendarDaysBetween(start, end) < ROLLING_MIN_SPAN_DAYS) {
             end = CasePMSchedule.addCalendarDays(start, ROLLING_MIN_SPAN_DAYS);
         }
@@ -538,15 +474,29 @@
 
     function applyRollingCalendarRange(forceReset) {
         const bounds = computeRollingCalendarBounds();
-        if (!forceReset && rollingCalendarBounds) {
-            const nextStart = bounds.start < rollingCalendarBounds.start ? bounds.start : rollingCalendarBounds.start;
-            const nextEnd = bounds.end > rollingCalendarBounds.end ? bounds.end : rollingCalendarBounds.end;
-            rollingCalendarBounds = { start: nextStart, end: nextEnd };
-        } else {
+        if (forceReset || !rollingCalendarBounds) {
             rollingCalendarBounds = bounds;
+        } else {
+            rollingCalendarBounds = {
+                start: bounds.start < rollingCalendarBounds.start ? bounds.start : rollingCalendarBounds.start,
+                end: bounds.end > rollingCalendarBounds.end ? bounds.end : rollingCalendarBounds.end
+            };
+            const defaults = getDefaultCalendarBounds();
+            if (rollingCalendarBounds.start < defaults.start) {
+                rollingCalendarBounds.start = new Date(defaults.start.getTime());
+            }
         }
         gantt.config.start_date = new Date(rollingCalendarBounds.start.getTime());
         gantt.config.end_date = new Date(rollingCalendarBounds.end.getTime());
+    }
+
+    function resetTimelineCalendar() {
+        rollingCalendarBounds = null;
+        applyRollingCalendarRange(true);
+        gantt.render();
+        scrollToToday();
+        updateStatusBar();
+        showScheduleAlert('Timeline reset to current year range. Use ◀ ▶ or the chart scrollbar to pan.', 'success');
     }
 
     function getProjectDateBounds() {
@@ -1087,10 +1037,31 @@
         }).join(', ');
     }
 
+    function isParentTask(task) {
+        if (!task) return false;
+        if (task.type === 'project') return true;
+        return ganttReady && gantt.hasChild(task.id);
+    }
+
+    function activityNameTemplate(task) {
+        const pad = (task.$level || 0) * 14;
+        const parent = isParentTask(task);
+        const cls = parent ? 'sched-parent-name' : '';
+        const weight = parent ? 'font-weight:700;' : '';
+        return `<span class="${cls}" style="padding-left:${pad}px;display:inline-block;${weight}">${task.text || ''}</span>`;
+    }
+
     function collapseTemplate(task) {
         if (!ganttReady || !gantt.hasChild(task.id)) return '';
         const open = task.$open !== false;
         return `<span class="sched-tree-btn" title="${open ? 'Collapse' : 'Expand'}">${open ? '▾' : '▸'}</span>`;
+    }
+
+    function primaryLinkLag(task) {
+        if (!ganttReady || !task.$target?.length) return '';
+        const link = gantt.getLink(task.$target[0]);
+        if (!link || link.lag == null || link.lag === 0) return '';
+        return link.lag > 0 ? `+${link.lag}` : String(link.lag);
     }
 
     function constraintLabel(type) {
@@ -1154,14 +1125,12 @@
             { name: 'collapse', label: '', width: 30, min_width: 30, resize: false, align: 'center', template: collapseTemplate },
             { name: 'wbs', label: 'WBS', width: 58, align: 'center', resize: true, template: t => wbsCode(t) },
             { name: 'activity_id', label: 'ID', width: 64, align: 'center', resize: true, editor: { type: 'sched_text', map_to: 'activity_id' }, template: t => t.activity_id || '' },
-            { name: 'text', label: 'Activity Name', tree: false, width: 220, min_width: 120, resize: true, editor: { type: 'sched_text', map_to: 'text' }, template: t => {
-                const pad = (t.$level || 0) * 14;
-                return `<span style="padding-left:${pad}px;display:inline-block">${t.text || ''}</span>`;
-            } },
+            { name: 'text', label: 'Activity Name', tree: false, width: 220, min_width: 120, resize: true, editor: { type: 'sched_text', map_to: 'text' }, template: activityNameTemplate },
             { name: 'duration', label: 'Dur', align: 'center', width: 52, min_width: 44, resize: true, editor: { type: 'sched_number', map_to: 'duration', min: 0, max: 9999 } },
             { name: 'start_date', label: 'Start', align: 'center', width: 98, min_width: 88, resize: true, editor: { type: 'sched_date', map_to: 'start_date' }, template: t => formatDateSafe(t.start_date) },
             { name: 'end_date', label: 'Finish', align: 'center', width: 98, min_width: 88, resize: true, editor: { type: 'sched_date', map_to: 'end_date' }, template: t => formatDateSafe(t.end_date) },
             { name: 'predecessors', label: 'Predecessors', width: 118, min_width: 80, resize: true, editor: { type: 'pred_string', map_to: 'auto' }, template: predTemplate },
+            { name: 'link_lag', label: 'Lag', width: 48, align: 'center', resize: true, template: t => primaryLinkLag(t) },
             { name: 'successors', label: 'Successors', width: 108, min_width: 80, resize: true, template: succTemplate },
             { name: 'progress', label: '%', align: 'center', width: 48, min_width: 42, resize: true, editor: { type: 'sched_number', map_to: 'progress', min: 0, max: 100 }, template: t => Math.round(effectiveProgress(t) * 100) },
             { name: 'resource', label: 'Resource', width: 108, min_width: 70, resize: true, editor: { type: 'sched_text', map_to: 'resource' } },
@@ -1391,26 +1360,31 @@
         gantt.config.show_task_cells = false;
         gantt.config.show_links = true;
 
+        gantt.config.min_column_width = 50;
+        applyTimescaleScales(scheduleSettings.timescale || 'week');
+
         const todaySeed = new Date();
         gantt.config.start_date = new Date(todaySeed.getFullYear() - ROLLING_YEARS_BACK, 0, 1);
         gantt.config.end_date = new Date(todaySeed.getFullYear() + ROLLING_YEARS_FORWARD, 11, 31);
 
+        const gridW = getColumnsTotalWidth();
         gantt.config.layout = {
             css: 'gantt_container',
             cols: [
                 {
+                    width: gridW,
+                    min_width: 200,
                     rows: [
                         { view: 'grid', scrollX: 'gridScroll', scrollY: 'scrollVer' },
-                        { view: 'scrollbar', id: 'gridScroll', height: 18 }
+                        { view: 'scrollbar', id: 'gridScroll', height: 20 }
                     ]
                 },
                 { resizer: true, width: 1 },
                 {
-                    width: 600,
-                    min_width: 200,
+                    min_width: 240,
                     rows: [
                         { view: 'timeline', scrollX: 'scrollHor', scrollY: 'scrollVer' },
-                        { view: 'scrollbar', id: 'scrollHor', height: 18 }
+                        { view: 'scrollbar', id: 'scrollHor', height: 20 }
                     ]
                 },
                 { view: 'scrollbar', id: 'scrollVer' }
@@ -1441,7 +1415,7 @@
         });
 
         gantt.templates.grid_row_class = function (start, end, task) {
-            if (task.type === 'project') return 'cpm_project_row';
+            if (isParentTask(task)) return 'cpm_project_row sched-parent-row';
             return '';
         };
 
@@ -1579,9 +1553,7 @@
             refreshWbsCodes();
             updateStatusBar();
             updateDeadlineMarkers();
-            if (!overlayDrag.active) {
-                requestAnimationFrame(applyChartOverlay);
-            }
+            requestAnimationFrame(applyChartOverlay);
         });
 
         document.addEventListener('keydown', onScheduleKeyDown);
@@ -1719,7 +1691,7 @@
             setTimeout(() => {
                 applyRollingCalendarRange(true);
                 gantt.render();
-                scrollToToday();
+                jumpToScheduleTasks();
                 applyChartOverlay();
             }, 150);
         }
@@ -1821,25 +1793,47 @@
         if (ganttReady) gantt.render();
     }
 
+    function applyTimescaleScales(scale) {
+        const scales = {
+            day: [
+                { unit: 'month', step: 1, format: '%F %Y' },
+                { unit: 'day', step: 1, format: '%d' }
+            ],
+            week: [
+                { unit: 'month', step: 1, format: '%F %Y' },
+                { unit: 'week', step: 1, format: 'W%W' }
+            ],
+            month: [
+                { unit: 'year', step: 1, format: '%Y' },
+                { unit: 'month', step: 1, format: '%M' }
+            ],
+            quarter: [
+                { unit: 'year', step: 1, format: '%Y' },
+                { unit: 'month', step: 3, format: '%M' }
+            ]
+        };
+        gantt.config.scales = scales[scale] || scales.week;
+        if (!gantt.config.min_column_width) gantt.config.min_column_width = 50;
+    }
+
+    function jumpToScheduleTasks() {
+        let target = null;
+        gantt.eachTask(t => {
+            if (target || t.type === 'project') return;
+            const d = toGanttDate(t.start_date);
+            if (d) target = d;
+        });
+        if (target) scrollTimelineToDate(target, getTimelineWidth() / 3);
+        else scrollToToday();
+    }
+
     function setTimescale(scale, persist) {
-        const map = { day: 0, week: 1, month: 2, quarter: 3 };
-        const level = map[scale];
-        if (level === undefined) return;
+        if (!scale) return;
         scheduleSettings.timescale = scale;
         const anchor = gantt.getScrollState?.() && typeof gantt.dateFromPos === 'function'
             ? gantt.dateFromPos(gantt.getScrollState().x + getTimelineWidth() / 2)
             : null;
-        if (gantt.ext && gantt.ext.zoom) {
-            gantt.ext.zoom.setLevel(level);
-        } else {
-            const scales = {
-                day: [{ unit: 'day', step: 1, format: '%d %M' }],
-                week: [{ unit: 'week', step: 1, format: 'W%W' }, { unit: 'day', step: 1, format: '%d' }],
-                month: [{ unit: 'month', step: 1, format: '%F %Y' }, { unit: 'week', step: 1, format: 'W%W' }],
-                quarter: [{ unit: 'year', step: 1, format: '%Y' }, { unit: 'month', step: 1, format: '%M' }]
-            };
-            gantt.config.scales = scales[scale] || scales.day;
-        }
+        applyTimescaleScales(scale);
         applyRollingCalendarRange(true);
         gantt.render();
         if (anchor) scrollTimelineToDate(anchor, getTimelineWidth() / 2);
@@ -2026,6 +2020,7 @@
         const childCount = gantt.getChildren(prev).filter(cid => cid !== id).length;
         gantt.moveTask(id, childCount, prev);
         gantt.open(prev);
+        gantt.refreshTask(prev);
         gantt.selectTask(id);
         refreshWbsCodes();
         gantt.render();
@@ -2063,13 +2058,11 @@
     }
 
     function zoomGantt(dir) {
-        if (!gantt.ext || !gantt.ext.zoom) return;
+        const cur = gantt.config.min_column_width || 50;
+        gantt.config.min_column_width = Math.max(24, Math.min(100, cur + (dir === 'in' ? -6 : 6)));
         const anchor = gantt.getScrollState?.() && typeof gantt.dateFromPos === 'function'
             ? gantt.dateFromPos(gantt.getScrollState().x + getTimelineWidth() / 2)
             : null;
-        const cur = gantt.ext.zoom.getCurrentLevel();
-        if (dir === 'in') gantt.ext.zoom.setLevel(Math.max(0, cur - 1));
-        else gantt.ext.zoom.setLevel(Math.min(3, cur + 1));
         applyRollingCalendarRange(true);
         gantt.render();
         if (anchor) scrollTimelineToDate(anchor, getTimelineWidth() / 2);
@@ -2493,6 +2486,10 @@
         const blIdx = scheduleSettings.active_baseline_index;
         const blLabel = blIdx >= 0 && baselines[blIdx] ? baselines[blIdx].name : 'None';
         let viewRange = '';
+        let calRange = '';
+        if (ganttReady && rollingCalendarBounds) {
+            calRange = `<span>Calendar: <b>${formatDateSafe(rollingCalendarBounds.start)}</b> – <b>${formatDateSafe(rollingCalendarBounds.end)}</b></span>`;
+        }
         if (ganttReady && typeof gantt.getScrollState === 'function' && typeof gantt.dateFromPos === 'function') {
             const st = gantt.getScrollState();
             const left = st ? gantt.dateFromPos(st.x) : null;
@@ -2502,6 +2499,7 @@
         el.innerHTML = `
             <span>Start: <b>${formatDateSafe(range.start_date)}</b></span>
             <span>Finish: <b>${formatDateSafe(range.end_date)}</b></span>
+            ${calRange}
             ${viewRange}
             <span>Activities: <b>${countTasks()}</b></span>
             <span>Critical: <b class="text-red-400">${critical}</b></span>
@@ -2689,6 +2687,63 @@
         }, 200);
     }
 
+    function showAllOptionalColumns() {
+        if (typeof CasePMScheduleFields === 'undefined') {
+            return showScheduleAlert('Field catalog not loaded.', 'error');
+        }
+        const existing = new Set((gantt.config.columns || []).map(c => c.name));
+        let added = 0;
+        CasePMScheduleFields.FIELDS.forEach(f => {
+            const key = f.map_to || f.id;
+            if (existing.has(key) || f.type === 'successors') return;
+            hiddenColumns = hiddenColumns.filter(n => n !== key);
+            if (!customColumns.find(c => (c.map_to || c.name) === key)) {
+                customColumns.push({ name: key, map_to: key, label: f.label, width: 92 });
+                added++;
+            }
+        });
+        gantt.config.columns = buildColumnConfig();
+        updateGridWidth();
+        gantt.render();
+        queueSave();
+        showScheduleAlert(added ? `Added ${added} optional columns. Drag column edges to resize.` : 'All optional columns are already visible.', 'success');
+    }
+
+    function showFeaturesChecklist() {
+        const dlg = document.getElementById('scheduleFeaturesModal');
+        if (!dlg) return showScheduleAlert('Features panel not found.', 'error');
+        const list = document.getElementById('scheduleFeaturesList');
+        if (!list) return;
+        const items = [
+            ['CPM Schedule + float', 'Toolbar → Schedule'],
+            ['Critical path highlight', 'Toolbar → Critical'],
+            ['Critical-only filter', 'Toolbar → Critical Only'],
+            ['EVM (CPI/SPI) + bar labels', 'Schedule then Display settings'],
+            ['Baselines + variance', 'Set Baseline / Baselines manager'],
+            ['Data-date marker', 'Data Date field + Schedule'],
+            ['Undo / Redo', 'Ctrl+Z / Ctrl+Y'],
+            ['Duplicate activity', 'Copy button or Ctrl+D'],
+            ['Indent / Outdent (bold parent)', 'Indent — parent row goes bold'],
+            ['Predecessor lag in grid', 'Lag column; edit via Predecessors FS+2'],
+            ['Constraint badges', 'Cstr column + Activity modal'],
+            ['Custom bar colors', 'Color column or Display settings'],
+            ['Timeline pan', '◀ ▶ buttons, chart scrollbar, Shift+wheel'],
+            ['Reset frozen calendar', 'Reset Calendar button'],
+            ['Export JSON / CSV / XER / XML', 'Toolbar export buttons'],
+            ['Print Gantt + Look-ahead', 'Print buttons'],
+            ['All MS Project/P6 columns', 'Columns → Show All Fields'],
+            ['Activity detail modal', 'Activity tab or double-click row'],
+            ['Look-ahead + Activity table views', 'View tabs']
+        ];
+        list.innerHTML = items.map(([name, how]) =>
+            `<div class="flex justify-between gap-3 px-3 py-2 rounded-md bg-zinc-800/80 border border-zinc-700 text-sm">
+                <span class="text-zinc-200">${name}</span>
+                <span class="text-xs text-zinc-500 text-right">${how}</span>
+            </div>`
+        ).join('');
+        dlg.showModal();
+    }
+
     function showScheduleAlert(message, type) {
         const colors = { success: 'text-emerald-400', warning: 'text-amber-400', error: 'text-red-400', info: 'text-sky-400' };
         const dlg = document.createElement('dialog');
@@ -2703,35 +2758,20 @@
         dlg.showModal();
     }
 
-    function initZoom() {
-        if (!gantt.ext || !gantt.ext.zoom) return;
-        gantt.ext.zoom.init({
-            levels: [
-                { name: 'day', scale_height: 50, min_column_width: 50, scales: [{ unit: 'day', step: 1, format: '%d %M' }, { unit: 'month', step: 1, format: '%F %Y' }] },
-                { name: 'week', scale_height: 50, min_column_width: 60, scales: [{ unit: 'week', step: 1, format: 'Week %W' }, { unit: 'month', step: 1, format: '%F %Y' }] },
-                { name: 'month', scale_height: 50, min_column_width: 70, scales: [{ unit: 'month', step: 1, format: '%F %Y' }, { unit: 'year', step: 1, format: '%Y' }] },
-                { name: 'quarter', scale_height: 50, min_column_width: 80, scales: [{ unit: 'quarter', step: 1, format: 'Q%q %Y' }, { unit: 'year', step: 1, format: '%Y' }] }
-            ]
-        });
-        gantt.ext.zoom.setLevel(1);
-        applyRollingCalendarRange(true);
-    }
-
     async function init() {
         if (typeof gantt === 'undefined') {
             setSaveStatus('Gantt library failed to load — refresh page');
             return;
         }
         configureGantt();
-        initZoom();
-        if (scheduleSettings.timescale) setTimescale(scheduleSettings.timescale, false);
         await loadSchedule();
         runSchedule({ skipScroll: true });
         applyRollingCalendarRange(true);
+        applyTimescaleScales(scheduleSettings.timescale || 'week');
         updateRowHeightsForLabels();
         gantt.render();
         requestAnimationFrame(() => {
-            scrollToToday();
+            jumpToScheduleTasks();
             applyChartOverlay();
         });
         switchScheduleView('gantt');
@@ -2751,8 +2791,9 @@
         linkSelected, unlinkSelected, zoomGantt, setTimescale, showDisplaySettings, saveDisplaySettings,
         wbsCode, applyPredecessorString,
         toggleCriticalPath, toggleCriticalFilter, setBaseline, showBaselineManager, activateBaseline, deleteBaseline,
-        undo, redo, fitScheduleView, scrollToToday, panTimeline, filterTasks, exportCsv, focusTimelineOnTask,
+        undo, redo, fitScheduleView, scrollToToday, panTimeline, resetTimelineCalendar, filterTasks, exportCsv, focusTimelineOnTask,
         runSchedule, switchScheduleView, renderLookAhead, focusActivity, sortByStartDate, exportXer, exportMsProjectXml,
+        showAllOptionalColumns, showFeaturesChecklist,
         exportJson, importFile, printGantt, printLookAhead, saveSchedule,
         loadSchedule, clearSchedule, showColumnManager, showAddColumnDialog, removeColumn, addFieldColumn, queueSave
     };
