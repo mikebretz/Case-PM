@@ -714,6 +714,117 @@
     setTimeout(() => t.remove(), 2800);
   }
 
+  const CO_PRINT_FIELDS = [
+    { key: 'number', label: 'CO #', default: true },
+    { key: 'date', label: 'Date', default: true },
+    { key: 'title', label: 'Title', default: true },
+    { key: 'description', label: 'Description', default: false },
+    { key: 'company_name', label: 'Company', default: true },
+    { key: 'contact_name', label: 'Contact', default: true },
+    { key: 'cost_code', label: 'Cost Code', default: true },
+    { key: 'amount', label: 'Amount', default: true },
+    { key: 'status', label: 'Status', default: true },
+    { key: 'ball_in_court_role', label: 'Ball in Court', default: true },
+    { key: 'schedule_impact_days', label: 'Schedule Days', default: false },
+    { key: 'reason', label: 'Reason', default: false },
+    { key: 'priority', label: 'Priority', default: false },
+    { key: 'contract_type', label: 'Contract Type', default: false },
+    { key: 'sage_sync_status', label: 'Sage Sync', default: false },
+    { key: 'sov_synced_at', label: 'SOV Synced', default: false },
+    { key: 'notes', label: 'Notes', default: false },
+  ];
+
+  const PCO_PRINT_FIELDS = [
+    { key: 'number', label: 'PCO #', default: true },
+    { key: 'title', label: 'Title', default: true },
+    { key: 'company_name', label: 'Company', default: true },
+    { key: 'contact_name', label: 'Contact', default: true },
+    { key: 'estimated_amount', label: 'ROM', default: true },
+    { key: 'status', label: 'Status', default: true },
+    { key: 'ball_in_court_role', label: 'Ball in Court', default: true },
+    { key: 'reason', label: 'Reason', default: false },
+    { key: 'priority', label: 'Priority', default: false },
+    { key: 'date', label: 'Date', default: true },
+    { key: 'notes', label: 'Notes', default: false },
+    { key: 'change_order_id', label: 'Linked CO', default: false },
+  ];
+
+  function coPrintValue(co, key) {
+    if (key === 'date') return fmtDate(co.date);
+    if (key === 'amount') return fmt(co.amount);
+    if (key === 'cost_code') return co.cost_code || (co.allocations?.[0]?.cost_code) || '';
+    if (key === 'sov_synced_at') return co.sov_synced_at ? 'Yes' : 'No';
+    return co[key] ?? '';
+  }
+
+  function pcoPrintValue(pco, key) {
+    if (key === 'estimated_amount') return fmt(pco.estimated_amount);
+    if (key === 'date') return fmtDate(pco.date);
+    if (key === 'change_order_id') return pco.change_order_id ? `CO ${pco.change_order_id}` : '';
+    return pco[key] ?? '';
+  }
+
+  function getCoPrintMeta() {
+    const nameEl = document.getElementById('currentProjectName');
+    return {
+      name: (nameEl?.textContent || '').trim() || 'Project',
+      number: projectId() || '',
+      location: '',
+    };
+  }
+
+  function buildLogSection(title, fieldDefs, selectedKeys, rows, valueFn) {
+    const columns = selectedKeys.map(k => {
+      const def = fieldDefs.find(f => f.key === k);
+      return { key: k, label: def?.label || k };
+    });
+    const data = rows.map(r => {
+      const obj = {};
+      selectedKeys.forEach(k => { obj[k] = valueFn(r, k); });
+      return obj;
+    });
+    return { title, columns, rows: data, emptyMessage: `No ${title.toLowerCase()} records.` };
+  }
+
+  async function printLog() {
+    if (typeof global.CasePMPrint === 'undefined') {
+      alert('Print module not loaded.');
+      return;
+    }
+    const allFields = [...CO_PRINT_FIELDS];
+    PCO_PRINT_FIELDS.forEach(f => {
+      if (!allFields.find(x => x.key === f.key)) allFields.push(f);
+    });
+    const uniqueFields = [];
+    const seen = new Set();
+    [...CO_PRINT_FIELDS, ...PCO_PRINT_FIELDS].forEach(f => {
+      if (!seen.has(f.key)) { seen.add(f.key); uniqueFields.push(f); }
+    });
+
+    const picked = await global.CasePMPrint.showFieldPicker({
+      title: 'Print Change Order Log',
+      logTypes: [
+        { value: 'cos', label: 'Change Orders' },
+        { value: 'pcos', label: 'PCO Log' },
+        { value: 'both', label: 'Both' },
+      ],
+      fields: uniqueFields,
+    });
+    if (!picked) return;
+
+    const meta = getCoPrintMeta();
+    const sections = [];
+    if (picked.logType === 'cos' || picked.logType === 'both') {
+      sections.push(buildLogSection('CHANGE ORDER LOG', CO_PRINT_FIELDS, picked.fields, filteredCos(), coPrintValue));
+    }
+    if (picked.logType === 'pcos' || picked.logType === 'both') {
+      sections.push(buildLogSection('POTENTIAL CHANGE ORDER LOG', PCO_PRINT_FIELDS, picked.fields, filteredPcos(), pcoPrintValue));
+    }
+
+    const html = global.CasePMPrint.buildPrintDocument({ meta, sections, rowsPerPage: 26 });
+    global.CasePMPrint.openPrintWindow(html, 'Change Order Log');
+  }
+
   function exportExcel() {
     if (typeof XLSX === 'undefined') { alert('Excel library not loaded'); return; }
     const data = state.changeOrders.map(co => ({
@@ -791,7 +902,7 @@
     viewCo, viewPco, workflowCo, closeDrawer, promotePco,
     addAllocRow: () => { state.allocationRows.push({ cost_code: '', amount: 0, description: '' }); renderAllocationRows(); },
     removeAllocRow: idx => { state.allocationRows.splice(idx, 1); renderAllocationRows(); },
-    onCompanyChange, onContactChange, exportExcel, openSageLog,
+    onCompanyChange, onContactChange, exportExcel, printLog, openSageLog,
     newPco: () => openModal('pco', null),
     newCo: () => openModal('co', null),
   };

@@ -81,9 +81,94 @@
         border-bottom: 1px solid #3f3f46;
         font-weight: 600;
         font-size: 1rem;
+        cursor: move;
+      }
+      .casepm-drag-handle, dialog .drag-handle {
+        cursor: move;
+        user-select: none;
+      }
+      dialog.casepm-dialog.casepm-dragged,
+      dialog.casepm-draggable.casepm-dragged {
+        transform: none !important;
+        margin: 0 !important;
       }
     `;
     document.head.appendChild(style);
+  }
+
+  function makeDraggable(el, handleSelector) {
+    if (!el || el.dataset.casepmDraggable === '1') return;
+    const handle = typeof handleSelector === 'string'
+      ? el.querySelector(handleSelector)
+      : (handleSelector || el.querySelector('.casepm-drag-handle, .drag-handle, .casepm-dialog-title'));
+    if (!handle) return;
+    el.dataset.casepmDraggable = '1';
+    el.classList.add('casepm-draggable');
+    let pos1 = 0, pos2 = 0, pos3 = 0, pos4 = 0;
+    handle.onmousedown = (e) => {
+      if (e.button !== 0) return;
+      if (e.target.closest('button, input, select, textarea, a, label')) return;
+      e.preventDefault();
+      const rect = el.getBoundingClientRect();
+      el.style.position = 'fixed';
+      el.style.margin = '0';
+      el.style.top = rect.top + 'px';
+      el.style.left = rect.left + 'px';
+      el.style.transform = 'none';
+      el.classList.add('casepm-dragged');
+      pos3 = e.clientX;
+      pos4 = e.clientY;
+      const onUp = () => {
+        document.removeEventListener('mouseup', onUp);
+        document.removeEventListener('mousemove', onMove);
+      };
+      const onMove = (ev) => {
+        ev.preventDefault();
+        pos1 = pos3 - ev.clientX;
+        pos2 = pos4 - ev.clientY;
+        pos3 = ev.clientX;
+        pos4 = ev.clientY;
+        el.style.top = (el.offsetTop - pos2) + 'px';
+        el.style.left = (el.offsetLeft - pos1) + 'px';
+      };
+      document.addEventListener('mouseup', onUp);
+      document.addEventListener('mousemove', onMove);
+    };
+  }
+
+  function findDialogHandle(dialog) {
+    return dialog.querySelector('.casepm-drag-handle, .drag-handle, .casepm-dialog-title')
+      || dialog.querySelector(':scope > div:first-child > div:first-child')
+      || dialog.querySelector(':scope > div:first-child');
+  }
+
+  function patchDialogElement(dialog) {
+    if (!dialog || dialog.tagName !== 'DIALOG' || dialog.dataset.casepmDraggable === '1') return;
+    let handle = findDialogHandle(dialog);
+    if (handle && !handle.classList.contains('casepm-drag-handle') && !handle.classList.contains('drag-handle')) {
+      handle.classList.add('casepm-drag-handle');
+    }
+    makeDraggable(dialog, handle);
+  }
+
+  function initAllDialogs(root) {
+    (root || document).querySelectorAll('dialog').forEach(patchDialogElement);
+  }
+
+  function observeDialogs() {
+    if (global.__casepmDialogObserver) return;
+    initAllDialogs();
+    const observer = new MutationObserver((mutations) => {
+      mutations.forEach((m) => {
+        m.addedNodes.forEach((node) => {
+          if (node.nodeType !== 1) return;
+          if (node.tagName === 'DIALOG') patchDialogElement(node);
+          else if (node.querySelectorAll) node.querySelectorAll('dialog').forEach(patchDialogElement);
+        });
+      });
+    });
+    observer.observe(document.body, { childList: true, subtree: true });
+    global.__casepmDialogObserver = observer;
   }
 
   function iconForType(type) {
@@ -120,6 +205,7 @@
           </div>
         </div>`;
       document.body.appendChild(dialog);
+      makeDraggable(dialog, '.casepm-dialog-title');
       dialog.showModal();
       dialog.querySelector('[data-action="ok"]').onclick = () => resolve(closeDialog(dialog, true));
       dialog.addEventListener('cancel', (e) => {
@@ -148,6 +234,7 @@
           </div>
         </div>`;
       document.body.appendChild(dialog);
+      makeDraggable(dialog, '.casepm-dialog-title');
       dialog.showModal();
       dialog.querySelector('[data-action="cancel"]').onclick = () => resolve(closeDialog(dialog, false));
       dialog.querySelector('[data-action="confirm"]').onclick = () => resolve(closeDialog(dialog, true));
@@ -169,6 +256,9 @@
   global.CasePMDialog = {
     alert: showCenteredAlert,
     confirm: showCenteredConfirm,
+    makeDraggable,
+    initAllDialogs,
+    observeDialogs,
   };
 
   // Route native alert() through centered dialog app-wide.
@@ -179,5 +269,11 @@
       showCenteredAlert(String(message ?? ''), 'info');
     };
     global.__casepmAlertPatched = true;
+  }
+
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', observeDialogs);
+  } else {
+    observeDialogs();
   }
 })(window);
