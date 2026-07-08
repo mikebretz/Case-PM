@@ -70,6 +70,16 @@
                 <button type="button" id="schedAlignTopBtn" class="schedule-toolbar-btn" onclick="ScheduleApp.setGridCellAlignV('top')" title="Align top"><i class="fa-solid fa-arrow-up"></i></button>
                 <button type="button" id="schedAlignMiddleBtn" class="schedule-toolbar-btn active-tool" onclick="ScheduleApp.setGridCellAlignV('middle')" title="Align middle"><i class="fa-solid fa-grip-lines"></i></button>
                 <button type="button" id="schedAlignBottomBtn" class="schedule-toolbar-btn" onclick="ScheduleApp.setGridCellAlignV('bottom')" title="Align bottom"><i class="fa-solid fa-arrow-down"></i></button>
+                <span class="text-zinc-600 self-center text-xs px-0.5">|</span>
+                <select id="schedFontSizeSelect" class="bg-zinc-800 border border-zinc-700 rounded-md text-xs px-2 py-1.5 text-zinc-200" title="Font size for selected cell, row, or column" onchange="ScheduleApp.setGridFontSize(Number(this.value))">
+                    <option value="10">10</option><option value="11">11</option><option value="12">12</option>
+                    <option value="13" selected>13</option><option value="14">14</option><option value="16">16</option><option value="18">18</option>
+                </select>
+                <select id="schedRowHeightSelect" class="bg-zinc-800 border border-zinc-700 rounded-md text-xs px-2 py-1.5 text-zinc-200" title="Row height for selected row" onchange="ScheduleApp.setGridRowHeight(Number(this.value))">
+                    <option value="28">28</option><option value="32" selected>32</option><option value="36">36</option>
+                    <option value="40">40</option><option value="48">48</option><option value="56">56</option>
+                </select>
+                <button type="button" class="schedule-toolbar-btn text-xs" onclick="ScheduleApp.setGridRowHeight(Number(document.getElementById('schedRowHeightSelect').value), true)" title="Apply row height to all activities">All Rows</button>
             </div>
             <div class="flex flex-wrap gap-1 border-r border-zinc-700 pr-2 mr-1">
                 <button type="button" class="schedule-toolbar-btn" onclick="ScheduleApp.linkSelected('FS')" title="Finish-to-Start"><i class="fa-solid fa-link"></i> FS</button>
@@ -242,6 +252,16 @@
         <label class="flex flex-col gap-1"><span class="text-xs text-zinc-500">Link line width (px)</span>
             <input id="dispLinkWidth" type="number" min="1" max="6" step="1" class="bg-zinc-800 border border-zinc-700 rounded-md px-3 py-1.5 text-sm w-24">
         </label>
+        <div class="grid grid-cols-2 gap-3">
+            <label class="flex flex-col gap-1"><span class="text-xs text-zinc-500">Default row height (px)</span>
+                <input id="dispDefaultRowHeight" type="number" min="22" max="80" class="bg-zinc-800 border border-zinc-700 rounded-md px-3 py-1.5 text-sm"></label>
+            <label class="flex flex-col gap-1"><span class="text-xs text-zinc-500">Default bar height (px)</span>
+                <input id="dispDefaultBarHeight" type="number" min="8" max="40" class="bg-zinc-800 border border-zinc-700 rounded-md px-3 py-1.5 text-sm"></label>
+            <label class="flex flex-col gap-1"><span class="text-xs text-zinc-500">Summary row height (px)</span>
+                <input id="dispSummaryRowHeight" type="number" min="28" max="96" class="bg-zinc-800 border border-zinc-700 rounded-md px-3 py-1.5 text-sm"></label>
+            <label class="flex flex-col gap-1"><span class="text-xs text-zinc-500">Summary bar height (px)</span>
+                <input id="dispSummaryBarHeight" type="number" min="10" max="48" class="bg-zinc-800 border border-zinc-700 rounded-md px-3 py-1.5 text-sm"></label>
+        </div>
         <label class="flex items-center gap-2 text-sm text-zinc-300">
             <input id="dispShowBaselineBars" type="checkbox" class="rounded border-zinc-600" checked>
             Show baseline bars on Gantt
@@ -491,6 +511,7 @@
         <button type="button" class="sched-modal-tab px-4 py-2 text-xs font-medium text-zinc-400 border-transparent" data-tab="advanced" onclick="ScheduleActivityModal.switchTab('advanced')">Constraints</button>
         <button type="button" class="sched-modal-tab px-4 py-2 text-xs font-medium text-zinc-400 border-transparent" data-tab="cpm" onclick="ScheduleActivityModal.switchTab('cpm')">CPM / Float</button>
         <button type="button" class="sched-modal-tab px-4 py-2 text-xs font-medium text-zinc-400 border-transparent" data-tab="evm" onclick="ScheduleActivityModal.switchTab('evm')">EVM</button>
+        <button type="button" class="sched-modal-tab px-4 py-2 text-xs font-medium text-zinc-400 border-transparent" data-tab="bar" onclick="ScheduleActivityModal.switchTab('bar')">Bar</button>
         <button type="button" class="sched-modal-tab px-4 py-2 text-xs font-medium text-zinc-400 border-transparent" data-tab="notes" onclick="ScheduleActivityModal.switchTab('notes')">Notes &amp; Codes</button>
     </div>
     <div class="p-4 max-h-[55vh] overflow-auto text-sm">
@@ -505,8 +526,19 @@
                 <div><label class="text-xs text-zinc-500">% Complete Type</label><select id="sam_percent_complete_type" class="w-full mt-1 bg-zinc-800 border border-zinc-700 rounded-md px-3 py-1.5 text-sm"><option value="physical">Physical</option><option value="duration">Duration</option><option value="units">Units</option></select></div>
                 <div><label class="text-xs text-zinc-500">Start</label><input id="sam_start" type="date" class="w-full mt-1 bg-zinc-800 border border-zinc-700 rounded-md px-3 py-1.5 text-sm"></div>
                 <div><label class="text-xs text-zinc-500">Finish</label><input id="sam_finish" type="date" class="w-full mt-1 bg-zinc-800 border border-zinc-700 rounded-md px-3 py-1.5 text-sm"></div>
-                <div><label class="text-xs text-zinc-500">Bar Color</label><input id="sam_bar_color" type="color" class="w-full mt-1 h-9 bg-zinc-800 border border-zinc-700 rounded-md px-1"></div>
             </div>
+        </div>
+        <div class="sched-modal-panel hidden" data-panel="bar">
+            <div class="grid grid-cols-2 gap-3">
+                <div><label class="text-xs text-zinc-500">Bar Color</label><input id="sam_bar_color" type="color" class="w-full mt-1 h-9 bg-zinc-800 border border-zinc-700 rounded-md px-1"></div>
+                <div><label class="text-xs text-zinc-500">Bar Height (px)</label><input id="sam_bar_height" type="number" min="6" max="48" class="w-full mt-1 bg-zinc-800 border border-zinc-700 rounded-md px-3 py-1.5 text-sm" placeholder="Default"></div>
+                <div><label class="text-xs text-zinc-500">Row Height (px)</label><input id="sam_row_height" type="number" min="22" max="80" class="w-full mt-1 bg-zinc-800 border border-zinc-700 rounded-md px-3 py-1.5 text-sm" placeholder="Default"></div>
+                <div><label class="text-xs text-zinc-500">Border Width (px)</label><input id="sam_bar_border_width" type="number" min="0" max="6" class="w-full mt-1 bg-zinc-800 border border-zinc-700 rounded-md px-3 py-1.5 text-sm" placeholder="0"></div>
+                <div><label class="text-xs text-zinc-500">Border Color</label><input id="sam_bar_border_color" type="color" class="w-full mt-1 h-9 bg-zinc-800 border border-zinc-700 rounded-md px-1" value="#ffffff"></div>
+                <div><label class="text-xs text-zinc-500">Border Style</label><select id="sam_bar_border_style" class="w-full mt-1 bg-zinc-800 border border-zinc-700 rounded-md px-3 py-1.5 text-sm"><option value="solid">Solid</option><option value="dashed">Dashed</option><option value="dotted">Dotted</option><option value="double">Double</option></select></div>
+            </div>
+            <p class="text-xs text-zinc-500 mt-3">Summary rows use the schedule summary height defaults unless overridden here.</p>
+            <button type="button" onclick="ScheduleActivityModal.saveBarAsDefaults()" class="schedule-toolbar-btn text-xs mt-3"><i class="fa-solid fa-palette text-violet-400"></i> Save as Default Bar Settings</button>
         </div>
         <div class="sched-modal-panel hidden" data-panel="logic">
             <label class="text-xs text-zinc-500">Predecessors (e.g. 1.2FS+2, 1.3SS)</label>
@@ -597,8 +629,6 @@
 document.body.dataset.pageModule = 'schedule';
 {% if active_project %}
 (function () {
-    const nameEl = document.getElementById('currentProjectName');
-    if (nameEl) nameEl.textContent = {{ active_project.name|tojson }};
     localStorage.setItem('casepm_current_project_id', '{{ active_project.id }}');
 })();
 {% endif %}

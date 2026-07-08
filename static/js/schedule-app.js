@@ -14,7 +14,8 @@
         'early_start', 'early_finish', 'late_start', 'late_finish',
         'percent_complete_type', 'schedule_percent_complete',
         'bcws', 'bcwp', 'acwp', 'cpi', 'spi', 'cost_variance', 'schedule_variance',
-        'baseline_start', 'baseline_finish', 'start_variance', 'finish_variance'
+        'baseline_start', 'baseline_finish', 'start_variance', 'finish_variance',
+        'row_height', 'bar_height', 'bar_border_width', 'bar_border_color', 'bar_border_style'
     ];
 
     const UNDO_MAX = 40;
@@ -48,7 +49,12 @@
         show_bar_labels: true,
         theme: 'dark',
         default_cell_align: { h: 'left', v: 'middle' },
-        column_align: {}
+        column_align: {},
+        default_cell_style: { font_size: 13 },
+        default_row_height: 32,
+        default_bar_height: 22,
+        summary_row_height: 48,
+        summary_bar_height: 26
     };
     if (!scheduleSettings.print_settings) {
         scheduleSettings.print_settings = {
@@ -314,37 +320,19 @@
         return { id: '', number: '', name: 'Project Schedule', label: 'Project Schedule' };
     }
 
-    const GENERIC_ROOT_NAMES = new Set([
-        '', 'project schedule', 'construction project', 'new project', 'untitled project'
-    ]);
-
-    function syncRootProjectName() {
-        const meta = getProjectMeta();
-        const nameEl = document.getElementById('currentProjectName');
-        if (nameEl && meta.name) nameEl.textContent = meta.label || meta.name;
-        if (!ganttReady || !meta.name) return;
-        let rootId = null;
-        gantt.eachTask(t => {
-            if (!rootId && (t.parent === 0 || t.parent == null) && t.type === 'project') rootId = t.id;
-        });
-        if (rootId == null || !gantt.isTaskExists(rootId)) return;
-        const root = gantt.getTask(rootId);
-        const current = String(root.text || '').trim();
-        const shouldReplace = !current || GENERIC_ROOT_NAMES.has(current.toLowerCase()) || current !== meta.name;
-        if (shouldReplace && root.text !== meta.name) {
-            root.text = meta.name;
-            gantt.refreshTask(rootId);
-            queueSave();
+    function syncScheduleProjectContext() {
+        const ctx = document.getElementById('scheduleProjectContext');
+        if (ctx?.dataset?.projectId) {
+            localStorage.setItem('casepm_current_project_id', ctx.dataset.projectId);
         }
     }
 
     function buildEmptySchedule() {
         const today = CasePMSchedule.formatDate(new Date());
-        const meta = getProjectMeta();
         return {
             data: [{
                 id: 1,
-                text: meta.name || 'Project Schedule',
+                text: 'Default Construction Project',
                 type: 'project',
                 open: true,
                 start_date: today,
@@ -1173,8 +1161,81 @@
 
     function updateRowHeightsForLabels() {
         const showLabels = scheduleSettings.show_bar_labels !== false;
-        gantt.config.row_height = showLabels ? 35 : 30;
-        gantt.config.bar_height = showLabels ? 12 : 14;
+        const baseRow = scheduleSettings.default_row_height || 32;
+        const baseBar = scheduleSettings.default_bar_height || 22;
+        gantt.config.row_height = showLabels ? baseRow + 8 : baseRow;
+        gantt.config.bar_height = baseBar;
+        refreshGanttRowMetrics();
+    }
+
+    function getTaskRowHeight(task) {
+        if (!task) return scheduleSettings.default_row_height || 32;
+        const custom = parseInt(task.row_height, 10);
+        if (!Number.isNaN(custom) && custom >= 22) return custom;
+        if (task.type === 'project' || isParentTask(task)) {
+            return scheduleSettings.summary_row_height || 48;
+        }
+        const showLabels = scheduleSettings.show_bar_labels !== false;
+        const base = scheduleSettings.default_row_height || 32;
+        return showLabels ? base + 8 : base;
+    }
+
+    function getTaskBarHeight(task) {
+        if (!task) return scheduleSettings.default_bar_height || 22;
+        const custom = parseInt(task.bar_height, 10);
+        if (!Number.isNaN(custom) && custom >= 6) return custom;
+        if (task.type === 'project' || isParentTask(task)) {
+            return scheduleSettings.summary_bar_height || 26;
+        }
+        return scheduleSettings.default_bar_height || 22;
+    }
+
+    function buildTaskBarStyle(task) {
+        const color = resolveBarColor(task);
+        const barH = getTaskBarHeight(task);
+        const parts = [
+            `--dhx-gantt-task-background:${color}`,
+            `--dhx-gantt-task-border:${color}`,
+            `height:${barH}px`,
+            `min-height:${barH}px`,
+            `line-height:${Math.max(12, barH - 4)}px`,
+            `background-color:${color} !important`
+        ];
+        const bw = parseInt(task.bar_border_width, 10);
+        if (!Number.isNaN(bw) && bw > 0) {
+            const bc = normalizeHexColor(task.bar_border_color) || task.bar_border_color || '#ffffff';
+            parts.push(`border:${bw}px ${task.bar_border_style || 'solid'} ${bc} !important`);
+        } else {
+            parts.push(`border-color:${color} !important`);
+        }
+        return parts.join(';') + ';';
+    }
+
+    function refreshGanttRowMetrics() {
+        if (!ganttReady) return;
+        let maxH = scheduleSettings.summary_row_height || 48;
+        gantt.eachTask(t => {
+            maxH = Math.max(maxH, getTaskRowHeight(t));
+        });
+        gantt.config.row_height = maxH;
+        if (typeof gantt.getTaskHeight === 'function') {
+            gantt.getTaskHeight = task => getTaskRowHeight(task);
+        }
+    }
+
+    function applyRowHeightsToDom() {
+        if (!ganttReady) return;
+        const applyToRow = row => {
+            let taskId = null;
+            try { taskId = gantt.locate(row); } catch (e) { /* ok */ }
+            if (!taskId || !gantt.isTaskExists(taskId)) return;
+            const h = getTaskRowHeight(gantt.getTask(taskId));
+            row.style.height = h + 'px';
+            row.style.minHeight = h + 'px';
+            row.style.maxHeight = h + 'px';
+        };
+        document.querySelectorAll('#gantt_here .gantt_grid_data .gantt_row').forEach(applyToRow);
+        document.querySelectorAll('#gantt_here .gantt_task_row').forEach(applyToRow);
     }
 
     function taskDateInputValue(task, field) {
@@ -1305,7 +1366,22 @@
     function normalizeCellAlign(obj) {
         const h = ['left', 'center', 'right'].includes(obj?.h) ? obj.h : 'left';
         const v = ['top', 'middle', 'bottom'].includes(obj?.v) ? obj.v : 'middle';
-        return { h, v };
+        const out = { h, v };
+        const fs = parseInt(obj?.font_size, 10);
+        if (!Number.isNaN(fs) && fs >= 9 && fs <= 24) out.font_size = fs;
+        return out;
+    }
+
+    function getDefaultCellFontSize() {
+        return scheduleSettings.default_cell_style?.font_size || 13;
+    }
+
+    function getCellFontSize(task, colName) {
+        const cell = task?.cell_align?.[colName];
+        const col = scheduleSettings.column_align?.[colName];
+        const fs = cell?.font_size || col?.font_size || getDefaultCellFontSize();
+        const n = parseInt(fs, 10);
+        return (!Number.isNaN(n) && n >= 9 && n <= 24) ? n : 13;
     }
 
     function getDefaultCellAlign() {
@@ -1360,6 +1436,7 @@
                     'sched-cell-selected'
                 );
                 cell.classList.add(`sched-align-h-${a.h}`, `sched-align-v-${a.v}`);
+                cell.style.fontSize = getCellFontSize(task, col.name) + 'px';
                 if (gridSelection.type === 'cell'
                     && String(gridSelection.taskId) === String(taskId)
                     && gridSelection.colName === col.name) {
@@ -1644,7 +1721,7 @@
             if (left == null || top == null) return null;
             const label = buildBarSublabelText(task);
             if (!label) return null;
-            const barH = gantt.config.bar_height || 22;
+            const barH = getTaskBarHeight(task);
             const el = document.createElement('div');
             el.className = 'gantt_bar_sublabel';
             el.textContent = label;
@@ -1667,7 +1744,7 @@
             const right = gantt.posFromDate(bEnd);
             const top = gantt.getTaskTop(task.id);
             if (left == null || right == null || top == null) return null;
-            const barH = gantt.config.bar_height || 24;
+            const barH = getTaskBarHeight(task);
             const el = document.createElement('div');
             el.className = 'gantt_baseline_bar';
             el.style.cssText = `position:absolute;left:${left}px;width:${Math.max(3, right - left)}px;top:${top + barH - 5}px;height:4px;pointer-events:none;`;
@@ -2128,9 +2205,10 @@
         gantt.config.skip_off_time = false;
         gantt.config.duration_unit = 'day';
         gantt.config.time_step = 1440;
-        gantt.config.row_height = 30;
-        gantt.config.bar_height = 14;
+        gantt.config.row_height = 32;
+        gantt.config.bar_height = 22;
         updateRowHeightsForLabels();
+        gantt.getTaskHeight = task => getTaskRowHeight(task);
         gantt.config.scale_height = 88;
         updateScaleHeight();
         gantt.config.scroll_size = 20;
@@ -2222,14 +2300,14 @@
         });
 
         gantt.templates.grid_row_class = function (start, end, task) {
-            if (isParentTask(task)) return 'cpm_project_row sched-parent-row';
+            if (isParentTask(task)) return 'cpm_project_row sched-parent-row sched-summary-row';
             return '';
         };
 
         gantt.templates.task_class = function (start, end, task) {
             const classes = [];
             if (task.type === 'project') {
-                classes.push('cpm_summary');
+                classes.push('cpm_summary', 'sched-summary-bar');
                 return classes.join(' ');
             }
             if (task.type === 'milestone') classes.push('cpm_milestone');
@@ -2247,9 +2325,7 @@
         };
 
         gantt.templates.task_style = function (start, end, task) {
-            if (task.type === 'project') return '';
-            const color = resolveBarColor(task);
-            return `--dhx-gantt-task-background:${color};--dhx-gantt-task-border:${color};background-color:${color} !important;border-color:${color} !important;`;
+            return buildTaskBarStyle(task);
         };
 
         gantt.templates.task_text = function (start, end, task) {
@@ -2396,6 +2472,7 @@
             queueGridHeaderSync();
             applyCellAlignToDom();
             updateAlignToolbarButtons();
+            applyRowHeightsToDom();
             if (ganttReady && document.getElementById('scheduleGanttHost')?.classList.contains('schedule-overlay-mode')) {
                 applyChartOverlay();
             }
@@ -2416,7 +2493,7 @@
         ganttReady = true;
         bindColumnResizeEnhancements();
         bindGridSelectionHandlers();
-        syncRootProjectName();
+        syncScheduleProjectContext();
         queueGridHeaderSync();
         resizeGanttHost();
         window.addEventListener('resize', resizeGanttHost);
@@ -2559,11 +2636,11 @@
         refreshWbsCodes();
         applySettingsToUI();
         gantt.eachTask(t => applyTaskBarColor(t));
-        syncRootProjectName();
+        syncScheduleProjectContext();
         applyBaselineVariance();
         applyRollingCalendarRange(true);
         updateRowHeightsForLabels();
-        syncRootProjectName();
+        syncScheduleProjectContext();
         queueChartOverlay();
         gantt.render();
         queueGridHeaderSync();
@@ -2742,6 +2819,10 @@
         set('dispMilestoneColor', s.milestone_color || '#8b5cf6');
         set('dispLinkColor', s.link_color || '#94a3b8');
         set('dispLinkWidth', s.link_width || 2);
+        set('dispDefaultRowHeight', s.default_row_height || 32);
+        set('dispDefaultBarHeight', s.default_bar_height || 22);
+        set('dispSummaryRowHeight', s.summary_row_height || 48);
+        set('dispSummaryBarHeight', s.summary_bar_height || 26);
         const bl = document.getElementById('dispShowBaselineBars');
         if (bl) bl.checked = s.show_baseline_bars !== false;
         const lbl = document.getElementById('dispShowBarLabels');
@@ -2760,6 +2841,10 @@
         scheduleSettings.link_width = parseInt(get('dispLinkWidth'), 10) || 2;
         scheduleSettings.show_baseline_bars = document.getElementById('dispShowBaselineBars')?.checked !== false;
         scheduleSettings.show_bar_labels = document.getElementById('dispShowBarLabels')?.checked !== false;
+        scheduleSettings.default_row_height = parseInt(get('dispDefaultRowHeight'), 10) || 32;
+        scheduleSettings.default_bar_height = parseInt(get('dispDefaultBarHeight'), 10) || 22;
+        scheduleSettings.summary_row_height = parseInt(get('dispSummaryRowHeight'), 10) || 48;
+        scheduleSettings.summary_bar_height = parseInt(get('dispSummaryBarHeight'), 10) || 26;
         gantt.eachTask(t => applyTaskBarColor(t));
         updateRowHeightsForLabels();
         applyGanttDisplayStyles();
@@ -2787,10 +2872,109 @@
             delete scheduleSettings.grid_cell_align_v;
         }
         if (!scheduleSettings.column_align) scheduleSettings.column_align = {};
+        if (!scheduleSettings.default_cell_style) scheduleSettings.default_cell_style = { font_size: 13 };
+        const fsSel = document.getElementById('schedFontSizeSelect');
+        if (fsSel) fsSel.value = String(getDefaultCellFontSize());
+        const rhSel = document.getElementById('schedRowHeightSelect');
+        if (rhSel) rhSel.value = String(scheduleSettings.default_row_height || 32);
         updateAlignToolbarButtons();
         if (scheduleSettings.timescale) setTimescale(scheduleSettings.timescale, false);
         else setTimescale('day', false);
         updateDataDateMarker();
+    }
+
+    function applyFontSizeToSelection(fontSize) {
+        const fs = Math.max(9, Math.min(24, parseInt(fontSize, 10) || 13));
+        const sel = gridSelection;
+        if (!sel.type) {
+            if (!scheduleSettings.default_cell_style) scheduleSettings.default_cell_style = {};
+            scheduleSettings.default_cell_style.font_size = fs;
+        } else if (sel.type === 'column' && sel.colName) {
+            if (!scheduleSettings.column_align) scheduleSettings.column_align = {};
+            if (!scheduleSettings.column_align[sel.colName]) scheduleSettings.column_align[sel.colName] = {};
+            scheduleSettings.column_align[sel.colName].font_size = fs;
+            gantt.eachTask(t => {
+                if (t.cell_align?.[sel.colName]) delete t.cell_align[sel.colName].font_size;
+            });
+        } else if (sel.type === 'cell' && sel.taskId && gantt.isTaskExists(sel.taskId)) {
+            const task = gantt.getTask(sel.taskId);
+            if (!task.cell_align) task.cell_align = {};
+            if (!task.cell_align[sel.colName]) task.cell_align[sel.colName] = {};
+            task.cell_align[sel.colName].font_size = fs;
+            gantt.updateTask(sel.taskId);
+        } else {
+            const taskId = (sel.type === 'row' && sel.taskId) ? sel.taskId : gantt.getSelectedId();
+            if (!taskId || !gantt.isTaskExists(taskId)) {
+                if (!scheduleSettings.default_cell_style) scheduleSettings.default_cell_style = {};
+                scheduleSettings.default_cell_style.font_size = fs;
+            } else {
+                const task = gantt.getTask(taskId);
+                if (!task.cell_align) task.cell_align = {};
+                (gantt.config.columns || []).forEach(col => {
+                    if (!task.cell_align[col.name]) task.cell_align[col.name] = {};
+                    task.cell_align[col.name].font_size = fs;
+                });
+                gantt.updateTask(taskId);
+            }
+        }
+        highlightGridSelection();
+        pushUndoState();
+        queueSave();
+    }
+
+    function applyRowHeightToSelection(height, allRows) {
+        const h = Math.max(22, Math.min(80, parseInt(height, 10) || 32));
+        if (allRows) {
+            scheduleSettings.default_row_height = h;
+            gantt.eachTask(t => {
+                if (t.type !== 'project') delete t.row_height;
+                gantt.updateTask(t.id);
+            });
+        } else {
+            const sel = gridSelection;
+            const taskId = (sel.type === 'cell' && sel.taskId) ? sel.taskId
+                : ((sel.type === 'row' && sel.taskId) ? sel.taskId : gantt.getSelectedId());
+            if (!taskId || !gantt.isTaskExists(taskId)) {
+                scheduleSettings.default_row_height = h;
+            } else {
+                const task = gantt.getTask(taskId);
+                task.row_height = h;
+                gantt.updateTask(taskId);
+            }
+        }
+        updateRowHeightsForLabels();
+        gantt.render();
+        applyRowHeightsToDom();
+        pushUndoState();
+        queueSave();
+    }
+
+    function setGridFontSize(fontSize) {
+        applyFontSizeToSelection(fontSize);
+        const sel = document.getElementById('schedFontSizeSelect');
+        if (sel) sel.value = String(fontSize);
+    }
+
+    function setGridRowHeight(height, allRows) {
+        applyRowHeightToSelection(height, !!allRows);
+        const sel = document.getElementById('schedRowHeightSelect');
+        if (sel) sel.value = String(height);
+    }
+
+    function saveBarSettingsAsDefaults(task) {
+        if (!task) return;
+        if (task.bar_color) scheduleSettings.default_bar_color = normalizeHexColor(task.bar_color) || task.bar_color;
+        if (task.bar_height) scheduleSettings.default_bar_height = parseInt(task.bar_height, 10) || scheduleSettings.default_bar_height;
+        if (task.type === 'project') {
+            if (task.row_height) scheduleSettings.summary_row_height = parseInt(task.row_height, 10) || scheduleSettings.summary_row_height;
+            if (task.bar_height) scheduleSettings.summary_bar_height = parseInt(task.bar_height, 10) || scheduleSettings.summary_bar_height;
+        }
+        gantt.eachTask(t => applyTaskBarColor(t));
+        updateRowHeightsForLabels();
+        applyGanttDisplayStyles();
+        gantt.render();
+        queueSave();
+        showScheduleAlert('Bar settings saved as schedule defaults.', 'success');
     }
 
     function setGridCellAlignH(align) {
@@ -4069,7 +4253,7 @@
             setSaveStatus('Gantt library failed to load — refresh page');
             return;
         }
-        syncRootProjectName();
+        syncScheduleProjectContext();
         configureGantt();
         await loadSchedule();
         runSchedule({ skipScroll: true });
@@ -4078,7 +4262,7 @@
         updateRowHeightsForLabels();
         gantt.render();
         requestAnimationFrame(() => {
-            syncRootProjectName();
+            syncScheduleProjectContext();
             applyChartOverlay();
             scrollToToday();
             queueGridHeaderSync();
@@ -4131,7 +4315,7 @@
         showHeaderFooterSetup, saveHeaderFooterSettings, onHeaderLogoSelected, clearHeaderLogo,
         saveSchedule,
         loadSchedule, clearSchedule, showColumnManager, showAddColumnDialog, removeColumn, addFieldColumn, queueSave,
-        setGridCellAlignH, setGridCellAlignV,
+        setGridCellAlignH, setGridCellAlignV, setGridFontSize, setGridRowHeight, saveBarSettingsAsDefaults,
         runResourceLeveling, showResourceLeveling, renderPortfolio, resetColumnWidths, renderBaselineComparison,
         restoreBaseline, toggleScheduleTheme: () => window.ScheduleExtras?.toggleTheme(),
         showResourceHistogram: () => window.ScheduleExtras?.showResourceHistogram(),
