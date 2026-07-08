@@ -50,17 +50,17 @@
     function updateTimelinePanBar() {
         const bar = getPanEl();
         if (!bar || !api?.getPanMetrics) return;
+        const hostWrap = document.getElementById('scheduleGanttHost');
         const host = document.getElementById('gantt_here');
-        if (!host) return;
+        if (!hostWrap || !host) return;
         const metrics = api.getPanMetrics();
         if (!metrics || metrics.maxScroll <= 0) {
             bar.classList.add('hidden');
             return;
         }
         bar.classList.remove('hidden');
-        const hostRect = host.getBoundingClientRect();
         const timelineW = api.getTimelineWidth();
-        bar.style.left = (hostRect.width - timelineW) + 'px';
+        bar.style.left = Math.max(0, hostWrap.clientWidth - timelineW) + 'px';
         bar.style.width = timelineW + 'px';
 
         const track = bar.querySelector('.schedule-timeline-pan-track');
