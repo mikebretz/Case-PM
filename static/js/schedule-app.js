@@ -486,6 +486,31 @@
         headerSyncTimer = setTimeout(applyGridColumnWidthStyles, 32);
     }
 
+    function ensureTimelineOverlayWidgets(timelineCell) {
+        let handle = timelineCell.querySelector(':scope > .schedule-chart-resizer');
+        if (!handle) {
+            handle = document.createElement('div');
+            handle.className = 'schedule-chart-resizer';
+            handle.title = 'Drag to resize chart overlay';
+            handle.setAttribute('role', 'separator');
+            handle.setAttribute('aria-orientation', 'vertical');
+            timelineCell.appendChild(handle);
+        }
+        let pan = timelineCell.querySelector(':scope > .schedule-timeline-pan');
+        if (!pan) {
+            pan = document.createElement('div');
+            pan.className = 'schedule-timeline-pan';
+            pan.id = 'scheduleTimelinePan';
+            pan.setAttribute('aria-label', 'Calendar horizontal scroll');
+            pan.innerHTML = '<span class="schedule-timeline-pan-label">Calendar</span><input type="range" id="scheduleTimelineRange" class="schedule-timeline-range" min="0" max="1000" value="0" step="1" aria-label="Pan calendar left and right">';
+            timelineCell.appendChild(pan);
+            if (window.ScheduleExtras?.rebindPanSlider) ScheduleExtras.rebindPanSlider();
+        }
+        handle.classList.remove('hidden');
+        pan.classList.remove('hidden');
+        return { handle, pan };
+    }
+
     function applyChartOverlay() {
         if (!ganttReady) return;
         const root = document.querySelector('#gantt_here .gantt_layout_root');
@@ -513,24 +538,19 @@
             'bottom:0!important',
             `width:${timelineW}px!important`,
             'z-index:18!important',
-            'box-shadow:-10px 0 28px rgba(0,0,0,0.55)',
-            'pointer-events:auto!important',
             'display:flex!important',
             'flex-direction:column!important',
             'overflow:hidden!important',
-            'background:#0f0f12!important'
+            'background:var(--sched-chart-bg)!important',
+            'box-shadow:-10px 0 28px rgba(0,0,0,0.55)!important'
         ].join(';');
 
-        let handle = document.getElementById('scheduleChartResizer');
-        const hostWrap = document.getElementById('scheduleGanttHost');
-        if (handle && hostWrap) {
-            handle.classList.remove('hidden');
-            handle.style.left = 'auto';
-            handle.style.right = Math.max(0, timelineW - 8) + 'px';
-        }
-        root.querySelectorAll('.schedule-chart-resizer').forEach(el => {
-            if (el !== handle) el.remove();
+        ensureTimelineOverlayWidgets(timelineCell);
+        document.getElementById('scheduleOverlayControls')?.remove();
+        root.querySelectorAll('.schedule-chart-resizer, .schedule-timeline-pan').forEach(el => {
+            if (!timelineCell.contains(el)) el.remove();
         });
+
         syncLayoutTimelineWidth();
         ensureTimelineScrollbar();
         refreshTimelinePanBar();
@@ -543,10 +563,9 @@
 
     const overlayDrag = { active: false, bound: false, startX: 0, startW: 0, pointerId: null };
 
-    function bindChartResizer() {
-        const handle = document.getElementById('scheduleChartResizer');
-        if (!handle || overlayDrag.bound) return;
-        overlayDrag.bound = true;
+    function initChartOverlayDrag() {
+        if (initChartOverlayDrag.done) return;
+        initChartOverlayDrag.done = true;
 
         const onMove = e => {
             if (!overlayDrag.active) return;
@@ -554,21 +573,21 @@
             const hostEl = document.getElementById('gantt_here');
             if (!hostEl) return;
             const rect = hostEl.getBoundingClientRect();
-            const dx = overlayDrag.startX - e.clientX;
-            const timelineW = Math.max(220, Math.min(rect.width - 140, overlayDrag.startW + dx));
+            const timelineW = Math.max(220, Math.min(rect.width - 140, rect.right - e.clientX));
             scheduleSettings.timeline_width_px = timelineW;
             scheduleSettings.timeline_pct = timelineW / rect.width;
             applyChartOverlay();
         };
 
-        const endResize = e => {
+        const endResize = () => {
             if (!overlayDrag.active) return;
             overlayDrag.active = false;
-            try { handle.releasePointerCapture(overlayDrag.pointerId); } catch (err) { /* ok */ }
             queueSave();
         };
 
-        handle.addEventListener('pointerdown', e => {
+        document.addEventListener('pointerdown', e => {
+            const handle = e.target.closest('.schedule-chart-resizer');
+            if (!handle || !handle.closest('#gantt_here .gantt_layout_cell:nth-child(3)')) return;
             overlayDrag.active = true;
             overlayDrag.startX = e.clientX;
             overlayDrag.startW = scheduleSettings.timeline_width_px >= 180
@@ -578,13 +597,10 @@
             e.preventDefault();
             e.stopPropagation();
             try { handle.setPointerCapture(e.pointerId); } catch (err) { /* ok */ }
-        }, { capture: true });
-        handle.addEventListener('pointermove', onMove);
-        handle.addEventListener('pointerup', endResize);
-        handle.addEventListener('pointercancel', endResize);
-        document.addEventListener('pointermove', onMove);
-        document.addEventListener('pointerup', endResize);
-        document.addEventListener('pointercancel', endResize);
+        }, true);
+        document.addEventListener('pointermove', onMove, true);
+        document.addEventListener('pointerup', endResize, true);
+        document.addEventListener('pointercancel', endResize, true);
     }
 
     function initChartOverlay() {
@@ -592,7 +608,7 @@
             scheduleSettings.timeline_pct = 0.42;
         }
         document.getElementById('scheduleGanttHost')?.classList.add('schedule-overlay-mode');
-        bindChartResizer();
+        initChartOverlayDrag();
 
         if (!initChartOverlay.resizeBound) {
             initChartOverlay.resizeBound = true;
@@ -798,23 +814,18 @@
 
     function getTimelinePanMetrics() {
         if (!ganttReady) return null;
-        const state = getTimelineScrollState();
-        if (state && state.inner_width > 0 && state.width > 0) {
-            const totalW = state.inner_width;
-            const viewW = state.width;
-            const scrollX = state.x != null ? state.x : lastTimelineScrollX;
-            const maxScroll = Math.max(0, totalW - viewW);
-            return { totalW, viewW, scrollX, maxScroll };
-        }
-        if (typeof gantt.posFromDate !== 'function') return null;
-        const start = gantt.config.start_date;
-        const end = gantt.config.end_date;
-        if (!start || !end) return null;
+        const viewW = getTimelineDomWidth();
         let totalW = 0;
         try {
-            totalW = Math.max(1, gantt.posFromDate(end) - gantt.posFromDate(start));
-        } catch (e) { return null; }
-        const viewW = getTimelineDomWidth();
+            if (gantt.config.start_date && gantt.config.end_date && typeof gantt.posFromDate === 'function') {
+                totalW = Math.max(1, gantt.posFromDate(gantt.config.end_date) - gantt.posFromDate(gantt.config.start_date));
+            }
+        } catch (e) { /* ok */ }
+        if (!totalW || totalW <= viewW) {
+            const state = getTimelineScrollState();
+            if (state?.inner_width > viewW) totalW = state.inner_width;
+        }
+        if (!totalW) totalW = viewW + 1;
         const scrollX = readTimelineScrollX();
         const maxScroll = Math.max(0, totalW - viewW);
         return { totalW, viewW, scrollX, maxScroll };
@@ -853,21 +864,27 @@
     }
 
     function readTimelineScrollX() {
+        const taskEl = document.querySelector('#gantt_here .gantt_layout_cell:nth-child(3) .gantt_task');
+        if (taskEl) return taskEl.scrollLeft || 0;
         const state = getTimelineScrollState();
         if (state && state.x != null) return state.x;
-        const taskEl = document.querySelector('#gantt_here .gantt_task');
-        if (taskEl && taskEl.scrollLeft > 0) return taskEl.scrollLeft;
-        const targets = getTimelineScrollElements();
-        for (const el of targets) {
-            if (el.scrollLeft > 0) return el.scrollLeft;
-        }
-        return lastTimelineScrollX || targets[0]?.scrollLeft || 0;
+        return lastTimelineScrollX || 0;
+    }
+
+    function getTimelineScrollTargets() {
+        const sels = [
+            '#gantt_here .gantt_layout_cell:nth-child(3) .gantt_task',
+            '#gantt_here .gantt_layout_cell:nth-child(3) .gantt_task_bg',
+            '#gantt_here .gantt_layout_cell:nth-child(3) .gantt_data_area'
+        ];
+        const els = new Set();
+        sels.forEach(sel => document.querySelectorAll(sel).forEach(el => els.add(el)));
+        getTimelineScrollElements().forEach(el => els.add(el));
+        return [...els];
     }
 
     function syncTimelineScrollViews(x, y) {
-        const taskEl = document.querySelector('#gantt_here .gantt_task');
-        if (taskEl && Math.abs(taskEl.scrollLeft - x) > 1) taskEl.scrollLeft = x;
-        getTimelineScrollElements().forEach(el => {
+        getTimelineScrollTargets().forEach(el => {
             if (Math.abs(el.scrollLeft - x) > 1) el.scrollLeft = x;
         });
         try {
@@ -888,15 +905,15 @@
 
     function setTimelineScrollX(px) {
         const metrics = getTimelinePanMetrics();
-        const maxScroll = metrics?.maxScroll ?? Infinity;
+        const maxScroll = metrics?.maxScroll ?? 999999;
         const x = Math.max(0, Math.min(maxScroll, Math.round(px)));
         const y = (typeof gantt.getScrollState === 'function' ? gantt.getScrollState()?.y : 0) || 0;
         lastTimelineScrollX = x;
         timelineScrollProgrammatic = true;
+        syncTimelineScrollViews(x, y);
         try {
             if (gantt.scrollTo) gantt.scrollTo(x, y);
         } catch (e) { /* ok */ }
-        syncTimelineScrollViews(x, y);
         requestAnimationFrame(() => {
             syncTimelineScrollViews(x, y);
             timelineScrollProgrammatic = false;
@@ -944,14 +961,25 @@
         if (!d) return;
         applyRollingCalendarRange(false);
         const viewW = getTimelineDomWidth();
-        const margin = marginPx != null ? marginPx : Math.round(viewW * 0.2);
-        requestAnimationFrame(() => {
+        const margin = marginPx != null ? marginPx : Math.round(viewW / 2);
+        const apply = () => {
             let x = null;
             try {
                 if (typeof gantt.posFromDate === 'function') x = gantt.posFromDate(d);
             } catch (e) { /* ok */ }
-            if (x != null) setTimelineScrollX(Math.max(0, x - margin));
-        });
+            if (x != null && !Number.isNaN(x)) {
+                setTimelineScrollX(Math.max(0, x - margin));
+                return;
+            }
+            if (gantt.showDate) gantt.showDate(d);
+            requestAnimationFrame(() => {
+                try {
+                    x = gantt.posFromDate(d);
+                    if (x != null) setTimelineScrollX(Math.max(0, x - margin));
+                } catch (e) { /* ok */ }
+            });
+        };
+        requestAnimationFrame(() => requestAnimationFrame(apply));
     }
 
     function focusTimelineOnTask(id) {
@@ -1216,6 +1244,7 @@
         syncGridTableWidth();
         lastHeaderWidthsKey = '';
         applyGridColumnWidthStyles();
+        queueChartOverlay();
         if (persist) queueSave();
     }
 
@@ -1892,11 +1921,6 @@
             }
             if (target.closest?.('.gantt_tree_icon')) return true;
             gantt.selectTask(id);
-            const inGrid = target.closest?.('.gantt_grid');
-            const inTimeline = target.closest?.('.gantt_task') || target.closest?.('.gantt_task_line') || target.closest?.('.gantt_task_bg');
-            if (inTimeline && !inGrid) {
-                focusTimelineOnTask(id);
-            }
             return true;
         });
 
@@ -3362,8 +3386,8 @@
         gantt.render();
         requestAnimationFrame(() => {
             syncRootProjectName();
-            jumpToScheduleTasks();
             applyChartOverlay();
+            scrollToToday();
             queueGridHeaderSync();
         });
         switchScheduleView('gantt');
@@ -3392,11 +3416,11 @@
                 daysBetween: (a, b) => CasePMSchedule.calendarDaysBetween(a, b),
                 alert: showScheduleAlert
             });
-            bindChartResizer();
             requestAnimationFrame(() => {
                 applyChartOverlay();
+                scrollToToday();
                 refreshTimelinePanBar();
-                setTimeout(refreshTimelinePanBar, 200);
+                setTimeout(() => { applyChartOverlay(); refreshTimelinePanBar(); }, 250);
             });
         }
     }
