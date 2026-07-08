@@ -1739,7 +1739,11 @@ def audit_log():
 @app.route('/email')
 @login_required
 def email_page():
-    return render_template('email.html')
+    users = User.query.filter_by(status='Active').order_by(User.last_name, User.first_name).all()
+    return render_template(
+        'email.html',
+        users=[{'name': u.full_name, 'email': u.email} for u in users],
+    )
 
 
 # ==================== AUDIT LOG PAGE (Clean route for sidebar) ====================

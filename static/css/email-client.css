@@ -1,0 +1,161 @@
+#mainContent:has(.email-page-root) {
+  padding: 0;
+  overflow: hidden;
+}
+.email-page-root {
+  height: 100%;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  background: #09090b;
+}
+.email-workspace-tabs {
+  flex-shrink: 0;
+  border-bottom: 1px solid #27272a;
+  background: #18181b;
+}
+.email-main {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  overflow: hidden;
+}
+.email-sidebar {
+  width: 220px;
+  flex-shrink: 0;
+  border-right: 1px solid #27272a;
+  background: #18181b;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+.email-sidebar-scroll {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+}
+.email-list-pane {
+  width: 380px;
+  flex-shrink: 0;
+  border-right: 1px solid #27272a;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  background: #0f0f10;
+}
+.email-reading-pane {
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  background: #09090b;
+}
+.email-folder-btn {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  padding: 0.45rem 0.75rem;
+  border-radius: 0.5rem;
+  font-size: 0.8125rem;
+  color: #d4d4d8;
+  transition: background 0.15s;
+}
+.email-folder-btn:hover { background: #27272a; }
+.email-folder-btn.active { background: #27272a; color: #fff; font-weight: 500; }
+.email-folder-btn .count {
+  font-size: 0.6875rem;
+  color: #71717a;
+  min-width: 1.25rem;
+  text-align: right;
+}
+.email-msg-row {
+  padding: 0.65rem 0.85rem;
+  border-bottom: 1px solid #1f1f23;
+  cursor: pointer;
+  transition: background 0.12s;
+}
+.email-msg-row:hover { background: #18181b; }
+.email-msg-row.active { background: #1c1917; border-left: 3px solid #10b981; }
+.email-msg-row.unread .email-msg-subject { font-weight: 600; color: #fff; }
+.email-msg-row.starred .email-star { color: #fbbf24; }
+.email-toolbar-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  padding: 0.35rem 0.65rem;
+  border-radius: 0.375rem;
+  font-size: 0.75rem;
+  color: #d4d4d8;
+  background: transparent;
+  border: 1px solid transparent;
+}
+.email-toolbar-btn:hover { background: #27272a; border-color: #3f3f46; }
+.email-toolbar-btn:disabled { opacity: 0.4; cursor: not-allowed; }
+.email-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  padding: 0.15rem 0.5rem;
+  border-radius: 9999px;
+  font-size: 0.625rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+.email-compose-overlay {
+  position: fixed;
+  bottom: 0;
+  right: 1.5rem;
+  width: min(640px, calc(100vw - 2rem));
+  z-index: 90;
+  box-shadow: 0 -8px 40px rgba(0,0,0,0.5);
+}
+.email-settings-section {
+  border: 1px solid #3f3f46;
+  border-radius: 0.75rem;
+  padding: 1rem 1.25rem;
+  background: #27272a;
+}
+.email-settings-section h3 {
+  font-size: 0.875rem;
+  font-weight: 600;
+  margin-bottom: 0.75rem;
+}
+.email-field-label {
+  display: block;
+  font-size: 0.6875rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: #a1a1aa;
+  margin-bottom: 0.35rem;
+}
+.email-field-input {
+  width: 100%;
+  background: #18181b;
+  border: 1px solid #3f3f46;
+  border-radius: 0.5rem;
+  padding: 0.5rem 0.75rem;
+  font-size: 0.8125rem;
+  color: #fff;
+}
+.email-field-input:focus {
+  outline: none;
+  border-color: #059669;
+}
+.email-internal-badge-approval { background: #7c2d12; color: #fed7aa; }
+.email-internal-badge-alert { background: #1e3a5f; color: #93c5fd; }
+.email-internal-badge-message { background: #14532d; color: #86efac; }
+.email-internal-badge-mention { background: #4c1d95; color: #c4b5fd; }
+.email-internal-badge-announce { background: #713f12; color: #fde68a; }
+.email-preview-bottom .email-list-pane { width: 100%; border-right: none; }
+.email-preview-bottom .email-reading-pane {
+  border-top: 1px solid #27272a;
+  max-height: 45%;
+}
+.email-preview-off .email-reading-pane { display: none; }
+.email-preview-off .email-list-pane { flex: 1; width: auto; }
+.email-density-compact .email-msg-row { padding: 0.4rem 0.75rem; font-size: 0.75rem; }
+.email-search-highlight { background: #854d0e; color: #fef3c7; padding: 0 2px; border-radius: 2px; }
