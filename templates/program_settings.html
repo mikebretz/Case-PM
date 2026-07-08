@@ -385,9 +385,9 @@
                     });
                     const json = await res.json();
                     if (!res.ok) throw new Error(json.error || 'Save failed');
-                    alert('Sage 300 defaults saved. New projects will inherit these settings.');
+                    CasePMDialog.alert('Sage 300 defaults saved. New projects will inherit these settings.', 'success');
                 } catch (err) {
-                    alert(err.message || 'Could not save Sage defaults.');
+                    CasePMDialog.alert(err.message || 'Could not save Sage defaults.', 'error');
                 }
             }
 
@@ -409,19 +409,18 @@
 
             function saveCompanyInfo(e) {
                 e.preventDefault();
-                // Placeholder - will connect to backend later
-                alert('Company information saved successfully! (Backend integration coming soon)');
+                CasePMDialog.alert('Company information saved successfully! (Backend integration coming soon)', 'success');
             }
 
-            function createManualBackup() {
-                if (confirm('Create a full backup of all program data now?')) {
-                    alert('Backup process started. You will be notified when it completes.');
-                    // Backend call would go here
+            async function createManualBackup() {
+                const ok = await CasePMDialog.confirm('Create a full backup of all program data now?', { title: 'Create backup', confirmLabel: 'Start backup' });
+                if (ok) {
+                    CasePMDialog.alert('Backup process started. You will be notified when it completes.', 'success');
                 }
             }
 
             function showAddRoleModal() {
-                alert('Custom role creation modal will be implemented in a future update.');
+                CasePMDialog.alert('Custom role creation modal will be implemented in a future update.', 'info');
             }
 
             // Initialize default tab on load

@@ -307,10 +307,9 @@
                                 <span id="projectLogoPlaceholder" class="text-[10px] text-zinc-600 text-center px-1">No logo</span>
                             </div>
                             <div class="flex-1 min-w-[200px]">
-                                <div id="projectLogoStatus" class="text-xs text-zinc-500 mb-2">Save project first, then upload a logo.</div>
+                                <div id="projectLogoStatus" class="text-xs text-zinc-500 mb-2">Save project first, then choose an image file.</div>
                                 <div class="flex flex-wrap gap-2 items-center">
                                     <input type="file" id="projectLogoFile" accept="image/png,image/jpeg,image/jpg,image/gif,image/webp,image/svg+xml" class="text-xs text-zinc-400 file:mr-3 file:py-1.5 file:px-3 file:rounded file:border-0 file:bg-zinc-700 file:text-zinc-200">
-                                    <button type="button" id="uploadLogoBtn" onclick="uploadProjectLogo()" class="px-4 py-2 bg-sky-700 hover:bg-sky-600 rounded-md text-xs font-medium text-white" disabled>Upload Logo</button>
                                     <button type="button" id="deleteLogoBtn" onclick="deleteProjectLogo()" class="hidden px-4 py-2 bg-red-900/50 hover:bg-red-800 rounded-md text-xs text-red-300">Remove</button>
                                 </div>
                             </div>
@@ -986,13 +985,13 @@ function resetOriginalContractUI() {
 
 function resetProjectLogoUI() {
     const statusEl = document.getElementById('projectLogoStatus');
-    const uploadBtn = document.getElementById('uploadLogoBtn');
     const deleteBtn = document.getElementById('deleteLogoBtn');
     const preview = document.getElementById('projectLogoPreview');
     const placeholder = document.getElementById('projectLogoPlaceholder');
-    if (statusEl) statusEl.textContent = 'Save project first, then upload a logo.';
-    if (uploadBtn) uploadBtn.disabled = true;
+    const fileInput = document.getElementById('projectLogoFile');
+    if (statusEl) statusEl.textContent = 'Save project first, then choose an image file.';
     if (deleteBtn) deleteBtn.classList.add('hidden');
+    if (fileInput) fileInput.disabled = true;
     if (preview) { preview.src = ''; preview.classList.add('hidden'); }
     if (placeholder) placeholder.classList.remove('hidden');
 }
@@ -1045,23 +1044,27 @@ async function loadOriginalContractStatus(projectId) {
 
 async function loadProjectLogoStatus(projectId) {
     const statusEl = document.getElementById('projectLogoStatus');
-    const uploadBtn = document.getElementById('uploadLogoBtn');
     const deleteBtn = document.getElementById('deleteLogoBtn');
     const preview = document.getElementById('projectLogoPreview');
     const placeholder = document.getElementById('projectLogoPlaceholder');
     const fileInput = document.getElementById('projectLogoFile');
     if (!projectId) { resetProjectLogoUI(); return; }
-    if (uploadBtn) uploadBtn.disabled = false;
+    if (fileInput) {
+        fileInput.disabled = false;
+        fileInput.onchange = () => {
+            if (fileInput.files?.length) uploadProjectLogo();
+        };
+    }
     try {
         const res = await fetch(`/api/projects/${projectId}/logo`, { credentials: 'same-origin' });
         const json = await res.json();
         if (json.found) {
-            if (statusEl) statusEl.innerHTML = `<span class="text-emerald-400">Uploaded:</span> ${json.originalName || json.filename || 'logo'}`;
+            if (statusEl) statusEl.innerHTML = `<span class="text-emerald-400">On file:</span> ${json.originalName || json.filename || 'logo'}`;
             if (preview) { preview.src = json.url + '?t=' + Date.now(); preview.classList.remove('hidden'); }
             if (placeholder) placeholder.classList.add('hidden');
             if (deleteBtn) deleteBtn.classList.remove('hidden');
         } else {
-            if (statusEl) statusEl.textContent = 'No logo uploaded yet.';
+            if (statusEl) statusEl.textContent = 'Choose an image file to upload.';
             if (preview) { preview.src = ''; preview.classList.add('hidden'); }
             if (placeholder) placeholder.classList.remove('hidden');
             if (deleteBtn) deleteBtn.classList.add('hidden');
@@ -1069,13 +1072,13 @@ async function loadProjectLogoStatus(projectId) {
     } catch {
         if (statusEl) statusEl.textContent = 'Could not load logo status.';
     }
-    if (fileInput) {
-        fileInput.onchange = () => { if (uploadBtn) uploadBtn.disabled = !fileInput.files?.length; };
-    }
 }
 
 async function uploadProjectLogo() {
-    if (!editingProjectId) { alert('Save the project first.'); return; }
+    if (!editingProjectId) {
+        alert('Save the project first.');
+        return;
+    }
     const fileInput = document.getElementById('projectLogoFile');
     if (!fileInput?.files?.length) return;
     const fd = new FormData();
@@ -1086,20 +1089,28 @@ async function uploadProjectLogo() {
         if (!res.ok) throw new Error(json.error || 'Upload failed');
         await loadProjectLogoStatus(editingProjectId);
         fileInput.value = '';
-        alert('Project logo uploaded.');
+        if (parseInt(window.CASEPM_ACTIVE_PROJECT_ID, 10) === editingProjectId && typeof refreshHeaderProjectLogo === 'function') {
+            await refreshHeaderProjectLogo();
+        }
+        CasePMDialog.alert('Project logo saved.', 'success');
     } catch (e) {
-        alert(e.message);
+        CasePMDialog.alert(e.message, 'error');
     }
 }
 
 async function deleteProjectLogo() {
-    if (!editingProjectId || !confirm('Remove the project logo?')) return;
+    if (!editingProjectId) return;
+    const ok = await CasePMDialog.confirm('Remove the project logo?', { title: 'Remove logo', confirmLabel: 'Remove', danger: true });
+    if (!ok) return;
     try {
         const res = await fetch(`/api/projects/${editingProjectId}/logo`, { method: 'DELETE', credentials: 'same-origin' });
         if (!res.ok) throw new Error('Delete failed');
         await loadProjectLogoStatus(editingProjectId);
+        if (parseInt(window.CASEPM_ACTIVE_PROJECT_ID, 10) === editingProjectId && typeof refreshHeaderProjectLogo === 'function') {
+            await refreshHeaderProjectLogo();
+        }
     } catch (e) {
-        alert(e.message);
+        CasePMDialog.alert(e.message, 'error');
     }
 }
 
@@ -1119,20 +1130,22 @@ async function uploadOriginalContract() {
         if (!res.ok) throw new Error(json.error || 'Upload failed');
         await loadOriginalContractStatus(editingProjectId);
         fileInput.value = '';
-        alert('Original contract uploaded.');
+        CasePMDialog.alert('Original contract uploaded.', 'success');
     } catch (e) {
-        alert(e.message);
+        CasePMDialog.alert(e.message, 'error');
     }
 }
 
 async function deleteOriginalContract() {
-    if (!editingProjectId || !confirm('Remove the uploaded original contract?')) return;
+    if (!editingProjectId) return;
+    const ok = await CasePMDialog.confirm('Remove the uploaded original contract?', { title: 'Remove contract', confirmLabel: 'Remove', danger: true });
+    if (!ok) return;
     try {
         const res = await fetch(`/api/projects/${editingProjectId}/original-contract`, { method: 'DELETE', credentials: 'same-origin' });
         if (!res.ok) throw new Error('Delete failed');
         await loadOriginalContractStatus(editingProjectId);
     } catch (e) {
-        alert(e.message);
+        CasePMDialog.alert(e.message, 'error');
     }
 }
 
@@ -1144,7 +1157,7 @@ async function openProjectCatina() {
         if (!res.ok) throw new Error(json.error || 'Failed');
         window.open(json.url, '_blank', 'noopener');
     } catch (e) {
-        alert(e.message);
+        CasePMDialog.alert(e.message, 'error');
     }
 }
 
@@ -1171,7 +1184,7 @@ async function validateProjectNumber(showAlert) {
         const json = await res.json();
         if (!json.available) {
             if (errEl) { errEl.textContent = json.error || 'Project number already in use.'; errEl.classList.remove('hidden'); }
-            if (showAlert) alert(json.error || 'Project number already in use.');
+            if (showAlert) await CasePMDialog.alert(json.error || 'Project number already in use.', 'error');
             return false;
         }
         if (errEl) errEl.classList.add('hidden');

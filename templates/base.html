@@ -145,7 +145,29 @@
         }
 
         .project-switcher-offset {
-            margin-left: calc(2.5rem + 1in);
+            margin-left: calc(2.5rem + 2in);
+        }
+
+        #headerProjectLogo {
+            width: 2.75rem;
+            height: 2.75rem;
+            object-fit: contain;
+            background: #27272a;
+            border: 1px solid #3f3f46;
+            border-radius: 0.5rem;
+            padding: 0.125rem;
+        }
+
+        dialog {
+            margin: auto;
+            position: fixed;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            color: #fff;
+        }
+        dialog::backdrop {
+            background: rgba(0, 0, 0, 0.72);
         }
     </style>
     <script>
@@ -154,6 +176,7 @@
         }
     </script>
     <script src="{{ url_for('static', filename='js/casepm-project-storage.js') }}"></script>
+    <script src="{{ url_for('static', filename='js/casepm-dialog.js') }}"></script>
     <script src="{{ url_for('static', filename='js/casepm-workflow.js') }}"></script>
 </head>
 <body class="bg-zinc-950 text-zinc-200 h-screen overflow-hidden {% if is_sub_portal %}portal-sub{% elif is_architect_portal %}portal-architect{% else %}portal-staff{% endif %}">
@@ -188,7 +211,10 @@
 
         <!-- Current project dropdown (shifted right over main content) -->
         <div class="flex-1 flex items-center min-w-0">
-            <div class="relative project-switcher-offset" id="projectSwitcherWrap">
+            <div class="relative project-switcher-offset flex items-center gap-3 min-w-0" id="projectSwitcherWrap">
+                <div id="headerProjectLogoWrap" class="flex-shrink-0 {% if not active_project or not active_project.has_project_logo() %}hidden{% endif %}">
+                    <img id="headerProjectLogo" src="{% if active_project and active_project.has_project_logo() %}{{ active_project.project_logo_url() }}{% endif %}" alt="Project logo">
+                </div>
                 <button type="button" id="projectSwitcherBtn" onclick="toggleProjectDropdown(event)"
                         class="flex items-center gap-2.5 text-left min-w-0 max-w-md rounded-lg px-2 py-1.5 hover:bg-zinc-800/80 transition-colors">
                     <div class="min-w-0">
@@ -708,6 +734,30 @@
             );
         };
 
+        window.updateHeaderProjectLogo = function(logoUrl, show) {
+            const wrap = document.getElementById('headerProjectLogoWrap');
+            const img = document.getElementById('headerProjectLogo');
+            if (!wrap || !img) return;
+            if (show && logoUrl) {
+                img.src = logoUrl + (logoUrl.includes('?') ? '&' : '?') + 't=' + Date.now();
+                wrap.classList.remove('hidden');
+            } else {
+                img.removeAttribute('src');
+                wrap.classList.add('hidden');
+            }
+        };
+
+        window.refreshHeaderProjectLogo = async function() {
+            try {
+                const res = await fetch('/api/current-project', { credentials: 'same-origin' });
+                if (!res.ok) return;
+                const data = await res.json();
+                window.updateHeaderProjectLogo(data.logo_url, data.has_project_logo);
+            } catch (e) {
+                console.warn('Could not refresh project logo', e);
+            }
+        };
+
         window.updateProjectSwitcherChecks = function(projectId) {
             document.querySelectorAll('.project-switcher-item').forEach(item => {
                 const check = item.querySelector('.project-switcher-check');
@@ -760,6 +810,7 @@
             if (nameEl) nameEl.textContent = name;
             updateProjectSwitcherChecks(projectId);
             closeProjectDropdown();
+            await refreshHeaderProjectLogo();
 
             if (typeof window.onCasePmProjectChanged === 'function') {
                 window.onCasePmProjectChanged(projectId, project);
