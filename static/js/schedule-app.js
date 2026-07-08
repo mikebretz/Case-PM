@@ -479,50 +479,6 @@
                 if (i < cols.length) applyW(cell, parseInt(cols[i].width, 10) || 80);
             });
         });
-        syncColumnResizeHandlePositions();
-    }
-
-    function syncColumnResizeHandlePositions() {
-        if (!ganttReady || !gantt.config.columns) return;
-        const scale = document.querySelector('#gantt_here .gantt_grid_scale');
-        if (!scale) return;
-        scale.style.position = 'relative';
-        scale.style.overflow = 'visible';
-
-        const cols = gantt.config.columns;
-        const headCells = scale.querySelectorAll('.gantt_grid_head_cell');
-        const wraps = scale.querySelectorAll('.gantt_grid_column_resize_wrap');
-        let x = 0;
-
-        headCells.forEach((cell, i) => {
-            const w = parseInt(cols[i]?.width, 10) || parseInt(cell.style.width, 10) || 80;
-            x += w;
-            if (i >= wraps.length) return;
-            const wrap = wraps[i];
-            wrap.style.cssText = [
-                'position:absolute',
-                `left:${Math.max(0, x - 2)}px`,
-                'top:0',
-                'bottom:0',
-                'width:8px',
-                'margin-left:-4px',
-                'z-index:55',
-                'pointer-events:auto',
-                'cursor:col-resize'
-            ].join(';');
-            const tick = wrap.querySelector('.gantt_grid_column_resize');
-            if (tick) {
-                tick.style.cssText = [
-                    'display:block',
-                    'width:4px',
-                    'height:100%',
-                    'min-height:42px',
-                    'margin:0 auto',
-                    'background-color:#10b981',
-                    'opacity:0.95'
-                ].join(';');
-            }
-        });
     }
 
     function syncGridHeaderAlignment() {
@@ -585,26 +541,16 @@
 
         ensureTimelineOverlayWidgets(timelineCell);
 
-        const hostWrap = document.getElementById('scheduleGanttHost');
         const handle = document.getElementById('scheduleChartResizer');
-        if (handle && hostWrap && timelineCell) {
-            const hostRect = hostWrap.getBoundingClientRect();
-            const edgeLeft = hostRect.right - timelineW;
-            handle.style.position = 'fixed';
-            handle.style.top = hostRect.top + 'px';
-            handle.style.height = hostRect.height + 'px';
-            handle.style.bottom = 'auto';
-            handle.style.left = (edgeLeft - 12) + 'px';
-            handle.style.right = 'auto';
-            handle.style.width = '24px';
-            handle.style.marginLeft = '0';
+        if (handle) {
             handle.classList.remove('hidden');
+            handle.style.left = 'auto';
+            handle.style.right = Math.max(0, timelineW - 7) + 'px';
         }
         document.querySelector('#gantt_here .gantt_layout_root > .schedule-chart-resizer')?.remove();
 
         syncLayoutTimelineWidth();
         ensureTimelineScrollbar();
-        syncColumnResizeHandlePositions();
         refreshTimelinePanBar();
     }
 
@@ -613,31 +559,31 @@
         overlayApplyTimer = setTimeout(applyChartOverlay, 16);
     }
 
-    const overlayDrag = { active: false, pointerId: null };
+    const overlayDrag = { active: false, bound: false, startX: 0, startW: 0, pointerId: null };
 
-    function initChartOverlayDrag() {
+    function bindChartResizer() {
         const handle = document.getElementById('scheduleChartResizer');
-        if (!handle || initChartOverlayDrag.done) return;
-        initChartOverlayDrag.done = true;
+        if (!handle || overlayDrag.bound) return;
+        overlayDrag.bound = true;
 
         const onMove = e => {
             if (!overlayDrag.active) return;
-            const hostWrap = document.getElementById('scheduleGanttHost');
-            if (!hostWrap) return;
-            const rect = hostWrap.getBoundingClientRect();
-            const timelineW = Math.max(280, Math.min(rect.width - 120, rect.right - e.clientX));
+            e.preventDefault();
+            const hostEl = document.getElementById('gantt_here');
+            if (!hostEl) return;
+            const rect = hostEl.getBoundingClientRect();
+            const dx = overlayDrag.startX - e.clientX;
+            const timelineW = Math.max(220, Math.min(rect.width - 120, overlayDrag.startW + dx));
             scheduleSettings.timeline_width_px = timelineW;
             scheduleSettings.timeline_pct = timelineW / rect.width;
             applyChartOverlay();
         };
 
-        const endResize = e => {
+        const endResize = () => {
             if (!overlayDrag.active) return;
             overlayDrag.active = false;
             document.body.classList.remove('schedule-chart-resizing');
-            if (overlayDrag.pointerId != null) {
-                try { handle.releasePointerCapture(overlayDrag.pointerId); } catch (err) { /* ok */ }
-            }
+            try { handle.releasePointerCapture(overlayDrag.pointerId); } catch (err) { /* ok */ }
             overlayDrag.pointerId = null;
             queueSave();
         };
@@ -645,18 +591,22 @@
         handle.addEventListener('pointerdown', e => {
             if (e.button !== 0) return;
             overlayDrag.active = true;
+            overlayDrag.startX = e.clientX;
+            overlayDrag.startW = scheduleSettings.timeline_width_px >= 180
+                ? scheduleSettings.timeline_width_px
+                : getTimelineWidth();
             overlayDrag.pointerId = e.pointerId;
             document.body.classList.add('schedule-chart-resizing');
             e.preventDefault();
             e.stopPropagation();
             try { handle.setPointerCapture(e.pointerId); } catch (err) { /* ok */ }
-        });
+        }, { capture: true });
         handle.addEventListener('pointermove', onMove);
         handle.addEventListener('pointerup', endResize);
         handle.addEventListener('pointercancel', endResize);
-        window.addEventListener('pointermove', onMove);
-        window.addEventListener('pointerup', endResize);
-        window.addEventListener('scroll', () => { if (ganttReady) applyChartOverlay(); }, true);
+        document.addEventListener('pointermove', onMove);
+        document.addEventListener('pointerup', endResize);
+        document.addEventListener('pointercancel', endResize);
     }
 
     function initChartOverlay() {
@@ -667,7 +617,7 @@
             scheduleSettings.timeline_width_px = null;
         }
         document.getElementById('scheduleGanttHost')?.classList.add('schedule-overlay-mode');
-        initChartOverlayDrag();
+        bindChartResizer();
 
         if (!initChartOverlay.resizeBound) {
             initChartOverlay.resizeBound = true;
@@ -1111,7 +1061,7 @@
         const gridData = document.querySelector('#gantt_here .gantt_grid_data');
         if (gridData && !gridData.dataset.resizeSyncBound) {
             gridData.dataset.resizeSyncBound = '1';
-            gridData.addEventListener('scroll', () => syncColumnResizeHandlePositions(), { passive: true });
+            gridData.addEventListener('scroll', () => queueGridHeaderSync(), { passive: true });
         }
     }
 
@@ -1169,8 +1119,8 @@
 
     function updateRowHeightsForLabels() {
         const showLabels = scheduleSettings.show_bar_labels !== false;
-        gantt.config.row_height = showLabels ? 26 : 22;
-        gantt.config.bar_height = showLabels ? 10 : 12;
+        gantt.config.row_height = showLabels ? 30 : 26;
+        gantt.config.bar_height = showLabels ? 12 : 14;
     }
 
     function taskDateInputValue(task, field) {
@@ -1832,8 +1782,8 @@
         gantt.config.skip_off_time = false;
         gantt.config.duration_unit = 'day';
         gantt.config.time_step = 1440;
-        gantt.config.row_height = 22;
-        gantt.config.bar_height = 12;
+        gantt.config.row_height = 26;
+        gantt.config.bar_height = 14;
         updateRowHeightsForLabels();
         gantt.config.scale_height = 88;
         updateScaleHeight();
@@ -2054,7 +2004,6 @@
         });
         gantt.attachEvent('onColumnResize', function (index, column, new_width) {
             handleColumnResize(index, column, new_width, false);
-            syncColumnResizeHandlePositions();
             return true;
         });
         gantt.attachEvent('onColumnResizeEnd', function (index, column, new_width) {
@@ -2066,8 +2015,6 @@
             updateDeadlineMarkers();
             ensureTimelineScrollbar();
             restoreTimelineScrollAfterRender();
-            applyGridColumnWidthStyles();
-            syncColumnResizeHandlePositions();
             refreshTimelinePanBar();
         });
 
