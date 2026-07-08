@@ -1,4 +1,42 @@
-/* Case PM Schedule — full dark mode, visible bordered Gantt bars (budget-style) */
+/* Case PM Schedule — theme tokens scoped to schedule page only (sidebar/header/footer unchanged) */
+
+.schedule-page-root {
+    /* Dark theme (default) */
+    --sched-bg: #18181b;
+    --sched-surface: #27272a;
+    --sched-surface-raised: #1c1c1f;
+    --sched-border: #3f3f46;
+    --sched-text: #e4e4e7;
+    --sched-text-muted: #a1a1aa;
+    --sched-text-strong: #f4f4f5;
+    --sched-accent: #10b981;
+    --sched-chart-bg: #0f0f12;
+    --sched-scroll-bg: #18181b;
+    --sched-row-hover: rgba(39, 39, 42, 0.85);
+    --sched-selection: rgba(148, 163, 184, 0.07);
+    --sched-toolbar-bg: #27272a;
+    --sched-panel-bg: #18181b;
+    color: var(--sched-text);
+    background: transparent;
+}
+
+/* Light theme — ready for future toggle; add class schedule-theme-light to .schedule-page-root */
+.schedule-page-root.schedule-theme-light {
+    --sched-bg: #ffffff;
+    --sched-surface: #f4f4f5;
+    --sched-surface-raised: #fafafa;
+    --sched-border: #d4d4d8;
+    --sched-text: #18181b;
+    --sched-text-muted: #71717a;
+    --sched-text-strong: #09090b;
+    --sched-accent: #059669;
+    --sched-chart-bg: #f8fafc;
+    --sched-scroll-bg: #f4f4f5;
+    --sched-row-hover: rgba(228, 228, 231, 0.9);
+    --sched-selection: rgba(59, 130, 246, 0.08);
+    --sched-toolbar-bg: #f4f4f5;
+    --sched-panel-bg: #ffffff;
+}
 
 body:has(.schedule-page-root) #mainContent {
     overflow: hidden !important;
@@ -17,10 +55,10 @@ body:has(.schedule-page-root) #mainContent {
 }
 
 #scheduleChrome { flex-shrink: 0; z-index: 20; }
-#scheduleGanttHost { flex: 1; min-height: 0; overflow: hidden; }
+#scheduleGanttHost { flex: 1; min-height: 0; overflow: hidden; background: var(--sched-bg); }
 #gantt_here { width: 100%; height: 100%; }
 
-/* Budget-style compact controls */
+/* Toolbar uses theme tokens */
 .schedule-toolbar-btn {
     display: inline-flex;
     align-items: center;
@@ -28,13 +66,13 @@ body:has(.schedule-page-root) #mainContent {
     padding: 0.5rem 0.79rem;
     font-size: 1.01rem;
     border-radius: 0.375rem;
-    background: #27272a;
-    border: 1px solid #3f3f46;
-    color: #e4e4e7;
+    background: var(--sched-toolbar-bg);
+    border: 1px solid var(--sched-border);
+    color: var(--sched-text);
     white-space: nowrap;
     cursor: pointer;
 }
-.schedule-toolbar-btn:hover { background: #3f3f46; }
+.schedule-toolbar-btn:hover { filter: brightness(1.12); }
 .schedule-toolbar-btn.active-tool { background: #065f46; border-color: #10b981; color: #fff; }
 .schedule-toolbar-btn-danger { border-color: #7f1d1d; color: #fca5a5; }
 .schedule-toolbar-btn-danger:hover { background: #7f1d1d; color: #fff; }
@@ -102,7 +140,8 @@ body:has(.schedule-page-root) #mainContent {
     line-height: 42px !important;
 }
 .schedule-overlay-mode #gantt_here .gantt_task_scale {
-    height: 42px !important;
+    height: auto !important;
+    min-height: 88px !important;
 }
 .schedule-overlay-mode #gantt_here .gantt_row {
     min-height: 44px !important;
@@ -115,7 +154,8 @@ body:has(.schedule-page-root) #mainContent {
     z-index: 18 !important;
     display: flex !important;
     flex-direction: column !important;
-    overflow: visible !important;
+    overflow: hidden !important;
+    background: var(--sched-chart-bg) !important;
 }
 .schedule-overlay-mode #gantt_here .gantt_layout_cell:nth-child(3) > .gantt_layout_content {
     flex: 1 1 auto !important;
@@ -124,13 +164,22 @@ body:has(.schedule-page-root) #mainContent {
     flex-direction: column !important;
 }
 .schedule-overlay-mode #gantt_here .gantt_layout_cell:nth-child(3) [data-cell-id="scrollHor"] {
-    flex: 0 0 20px !important;
-    height: 20px !important;
-    min-height: 20px !important;
-    z-index: 22 !important;
+    flex: 0 0 22px !important;
+    height: 22px !important;
+    min-height: 22px !important;
+    z-index: 35 !important;
     pointer-events: auto !important;
-    background: #18181b !important;
-    border-top: 1px solid #3f3f46 !important;
+    background: var(--sched-scroll-bg) !important;
+    border-top: 1px solid var(--sched-border) !important;
+    overflow: visible !important;
+}
+.schedule-overlay-mode #gantt_here [data-cell-id="scrollHor"] .gantt_layout_outer_scroll,
+.schedule-overlay-mode #gantt_here [data-cell-id="scrollHor"] .gantt_hor_scroll {
+    overflow-x: auto !important;
+    overflow-y: hidden !important;
+    pointer-events: auto !important;
+    height: 22px !important;
+    min-height: 22px !important;
 }
 .schedule-chart-resizer {
     position: absolute;
@@ -168,10 +217,26 @@ body:has(.schedule-page-root) #mainContent {
 #gantt_here .gantt_scroll_hor {
     overflow-x: auto !important;
     overflow-y: hidden !important;
-    height: 20px !important;
-    min-height: 20px !important;
-    background: #18181b !important;
-    border-top: 1px solid #3f3f46 !important;
+    height: 22px !important;
+    min-height: 22px !important;
+    background: var(--sched-scroll-bg) !important;
+    border-top: 1px solid var(--sched-border) !important;
+    pointer-events: auto !important;
+    z-index: 30 !important;
+}
+#gantt_here .gantt_hor_scroll::-webkit-scrollbar,
+#gantt_here .gantt_scroll_hor::-webkit-scrollbar {
+    height: 14px !important;
+}
+#gantt_here .gantt_hor_scroll::-webkit-scrollbar-thumb,
+#gantt_here .gantt_scroll_hor::-webkit-scrollbar-thumb {
+    background: var(--sched-accent) !important;
+    border-radius: 6px !important;
+    border: 2px solid var(--sched-scroll-bg) !important;
+}
+#gantt_here .gantt_hor_scroll::-webkit-scrollbar-track,
+#gantt_here .gantt_scroll_hor::-webkit-scrollbar-track {
+    background: var(--sched-surface) !important;
 }
 
 /* Schedule page dropdowns / date inputs — clearer letterforms (match modal pop-out) */
@@ -210,7 +275,15 @@ body:has(.schedule-page-root) #mainContent {
     white-space: nowrap;
 }
 
-/* Grid readability */
+#ganttViewPanel,
+#lookaheadViewPanel .bg-zinc-900,
+#traceViewPanel .bg-zinc-900,
+#portfolioViewPanel .bg-zinc-900,
+#scheduleStatusBar {
+    background: var(--sched-panel-bg) !important;
+    border-color: var(--sched-border) !important;
+    color: var(--sched-text) !important;
+}
 .gantt_cell, .gantt_tree_content, .gantt_grid_head_cell {
     font-size: 13px !important;
     line-height: 1.35 !important;
@@ -229,12 +302,30 @@ body:has(.schedule-page-root) #mainContent {
     text-transform: uppercase;
     vertical-align: middle !important;
 }
+/* Timeline scale — two rows (month + day) must both be visible */
+.gantt_task_scale,
+.gantt_grid_scale {
+    height: auto !important;
+    min-height: 88px !important;
+}
 .gantt_scale_cell {
-    height: 42px !important;
-    line-height: 42px !important;
+    height: 44px !important;
+    line-height: 44px !important;
     font-size: 11px !important;
     font-weight: 600 !important;
     letter-spacing: 0.04em !important;
+    color: var(--sched-text-muted) !important;
+    background: var(--sched-bg) !important;
+    border-color: var(--sched-border) !important;
+}
+.gantt_scale_line { border-color: var(--sched-border) !important; }
+/* Second scale row (days) */
+.gantt_task_scale .gantt_scale_line:last-child .gantt_scale_cell,
+.gantt_task_scale .gantt_scale_line:nth-child(2) .gantt_scale_cell {
+    font-size: 12px !important;
+    font-weight: 700 !important;
+    color: var(--sched-text-strong) !important;
+    letter-spacing: 0.02em !important;
 }
 
 /* Faint full-row selection — grid + timeline (not bar edges) */
