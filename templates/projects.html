@@ -1,323 +1,712 @@
-
 {% extends "base.html" %}
 
-{% block content %}
-<div class="p-8 max-w-[1600px] mx-auto">
+{% block title %}Projects{% endblock %}
 
-    <!-- Header -->
-    <div class="flex items-center justify-between mb-8">
-        <div>
-            <h1 class="text-3xl font-semibold tracking-tight">Projects</h1>
-            <p class="text-zinc-400 mt-1">Project Portfolio & Overview • Case PM</p>
+{% block content %}
+<style>
+  .projects-page-root {
+    height: calc(100dvh - 4.25rem);
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+  }
+  .project-tab-btn.active {
+    border-bottom: 2px solid #10b981;
+    color: #fff;
+  }
+  .project-field-label {
+    display: block;
+    font-size: 10px;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: #a1a1aa;
+    margin-bottom: 0.375rem;
+  }
+  .project-field-input {
+    width: 100%;
+    background: #27272a;
+    border: 1px solid #3f3f46;
+    border-radius: 0.375rem;
+    padding: 0.5rem 0.75rem;
+    font-size: 0.875rem;
+    color: #fff;
+  }
+  .project-field-input:focus {
+    outline: none;
+    border-color: #059669;
+  }
+  #projectsTableWrap {
+    flex: 1;
+    min-height: 0;
+    overflow: auto;
+  }
+  #projectsTable thead th {
+    position: sticky;
+    top: 0;
+    z-index: 10;
+    background: #09090b;
+  }
+</style>
+
+<div class="projects-page-root">
+    <!-- Toolbar header (budget / schedule style) -->
+    <div class="h-16 border-b border-zinc-800 bg-zinc-900 flex items-center px-6 flex-shrink-0">
+        <div class="w-1/3 min-w-0">
+            <div class="text-[10px] text-zinc-400 tracking-[1px] font-medium">PORTFOLIO</div>
+            <div class="text-xl font-semibold tracking-tight text-white truncate">Projects</div>
         </div>
-        <button onclick="showCreateProjectModal()"
-                class="flex items-center gap-2 px-5 py-2.5 bg-emerald-600 hover:bg-emerald-500 transition-colors rounded-2xl text-sm font-medium">
-            <i class="fa-solid fa-plus"></i>
-            <span>New Project</span>
-        </button>
+        <div class="w-1/3 flex justify-center">
+            <div class="text-sm text-zinc-500 hidden md:block">Procore · RedTeam · Sage 300 field set</div>
+        </div>
+        <div class="w-1/3 flex items-center justify-end gap-2">
+            <button type="button" onclick="exportProjectsCsv()"
+                    class="flex items-center gap-2 px-4 py-2 bg-zinc-800 hover:bg-zinc-700 rounded-md text-sm font-medium h-[38px]">
+                <i class="fa-solid fa-download"></i><span>Export</span>
+            </button>
+            <button type="button" onclick="openProjectModal('create')"
+                    class="flex items-center gap-2 px-5 py-2 bg-white text-zinc-900 hover:bg-zinc-100 rounded-md text-sm font-semibold h-[38px]">
+                <i class="fa-solid fa-plus"></i><span>New Project</span>
+            </button>
+        </div>
     </div>
 
-    <!-- Summary Cards -->
-    <div class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-4 mb-8">
-        <div class="bg-zinc-900 border border-zinc-800 rounded-3xl p-5">
-            <div class="text-sm text-zinc-400">Total Projects</div>
-            <div class="text-3xl font-semibold mt-1">{{ projects|length }}</div>
-        </div>
-        <div class="bg-zinc-900 border border-zinc-800 rounded-3xl p-5">
-            <div class="text-sm text-zinc-400">Active</div>
-            <div class="text-3xl font-semibold mt-1 text-emerald-400">7</div>
-        </div>
-        <div class="bg-zinc-900 border border-zinc-800 rounded-3xl p-5">
-            <div class="text-sm text-zinc-400">Completed</div>
-            <div class="text-3xl font-semibold mt-1 text-emerald-400">12</div>
-        </div>
-        <div class="bg-zinc-900 border border-zinc-800 rounded-3xl p-5">
-            <div class="text-sm text-zinc-400">On Hold</div>
-            <div class="text-3xl font-semibold mt-1 text-yellow-400">2</div>
-        </div>
-        <div class="bg-zinc-900 border border-zinc-800 rounded-3xl p-5">
-            <div class="text-sm text-zinc-400">Total Contract Value</div>
-            <div class="text-3xl font-semibold mt-1">$18.4M</div>
+    <!-- Summary cards -->
+    <div class="bg-zinc-900 border border-zinc-700 mx-6 mt-4 rounded-md p-4 flex-shrink-0">
+        <div class="grid grid-cols-2 md:grid-cols-5 gap-3">
+            <div class="bg-zinc-800 border border-zinc-700 rounded-md p-4">
+                <div class="text-xs text-zinc-400 uppercase tracking-wide">Total Projects</div>
+                <div class="text-2xl font-semibold mt-1">{{ stats.total }}</div>
+            </div>
+            <div class="bg-zinc-800 border border-zinc-700 rounded-md p-4">
+                <div class="text-xs text-zinc-400 uppercase tracking-wide">Active</div>
+                <div class="text-2xl font-semibold mt-1 text-emerald-400">{{ stats.active }}</div>
+            </div>
+            <div class="bg-zinc-800 border border-zinc-700 rounded-md p-4">
+                <div class="text-xs text-zinc-400 uppercase tracking-wide">Completed</div>
+                <div class="text-2xl font-semibold mt-1 text-sky-400">{{ stats.completed }}</div>
+            </div>
+            <div class="bg-zinc-800 border border-zinc-700 rounded-md p-4">
+                <div class="text-xs text-zinc-400 uppercase tracking-wide">On Hold</div>
+                <div class="text-2xl font-semibold mt-1 text-amber-400">{{ stats.on_hold }}</div>
+            </div>
+            <div class="bg-zinc-800 border border-zinc-700 rounded-md p-4">
+                <div class="text-xs text-zinc-400 uppercase tracking-wide">Portfolio Value</div>
+                <div class="text-2xl font-semibold mt-1" id="portfolioValueDisplay">${{ '{:,.0f}'.format(stats.contract_value) }}</div>
+            </div>
         </div>
     </div>
 
     <!-- Filters -->
-    <div class="flex flex-col md:flex-row gap-3 mb-4">
-        <input type="text" id="projectSearch" placeholder="Search project name, number, or client..." 
-               onkeyup="filterProjects()"
-               class="flex-1 bg-zinc-900 border border-zinc-700 rounded-2xl px-4 py-2.5 text-sm">
-
+    <div class="mx-6 mt-3 mb-3 flex flex-col md:flex-row gap-3 flex-shrink-0">
+        <input type="text" id="projectSearch" placeholder="Search project #, name, client, Sage job #, PM..."
+               oninput="filterProjects()"
+               class="flex-1 bg-zinc-900 border border-zinc-700 rounded-md px-4 py-2.5 text-sm focus:border-emerald-600">
         <select id="projectStatusFilter" onchange="filterProjects()"
-                class="bg-zinc-900 border border-zinc-700 rounded-2xl px-4 py-2.5 text-sm">
+                class="bg-zinc-900 border border-zinc-700 rounded-md px-4 py-2.5 text-sm min-w-[160px]">
             <option value="">All Statuses</option>
+            <option value="Pre-Construction">Pre-Construction</option>
             <option value="Active">Active</option>
             <option value="On Hold">On Hold</option>
             <option value="Completed">Completed</option>
-            <option value="Pre-Construction">Pre-Construction</option>
         </select>
-
         <select id="projectManagerFilter" onchange="filterProjects()"
-                class="bg-zinc-900 border border-zinc-700 rounded-2xl px-4 py-2.5 text-sm">
+                class="bg-zinc-900 border border-zinc-700 rounded-md px-4 py-2.5 text-sm min-w-[180px]">
             <option value="">All Project Managers</option>
-            <option value="Mike Bretz">Mike Bretz</option>
-            <option value="Sarah Kline">Sarah Kline</option>
-            <option value="Tom Rivera">Tom Rivera</option>
+            {% for user in users %}
+            <option value="{{ user.full_name }}">{{ user.full_name }}</option>
+            {% endfor %}
         </select>
     </div>
 
-    <!-- Projects Table -->
-    <div class="bg-zinc-900 border border-zinc-800 rounded-3xl overflow-hidden">
-        <table class="w-full text-sm">
+    <!-- Table -->
+    <div id="projectsTableWrap" class="mx-6 mb-4 bg-zinc-900 border border-zinc-700 rounded-md overflow-hidden">
+        <table id="projectsTable" class="w-full text-sm">
             <thead>
-                <tr class="bg-zinc-950 border-b border-zinc-800">
-                    <th class="px-6 py-4 text-left font-medium text-zinc-400">Project #</th>
-                    <th class="px-6 py-4 text-left font-medium text-zinc-400">Project Name</th>
-                    <th class="px-6 py-4 text-left font-medium text-zinc-400">Client</th>
-                    <th class="px-6 py-4 text-center font-medium text-zinc-400">Start Date</th>
-                    <th class="px-6 py-4 text-center font-medium text-zinc-400">Est. Completion</th>
-                    <th class="px-6 py-4 text-center font-medium text-zinc-400">% Complete</th>
-                    <th class="px-6 py-4 text-center font-medium text-zinc-400">Status</th>
-                    <th class="px-6 py-4 text-center font-medium text-zinc-400">Actions</th>
+                <tr class="border-b border-zinc-700 text-zinc-400 text-xs uppercase tracking-wide">
+                    <th class="px-3 py-3 text-left font-medium w-24">Project #</th>
+                    <th class="px-3 py-3 text-left font-medium w-24">Sage Job #</th>
+                    <th class="px-3 py-3 text-left font-medium min-w-[160px]">Project Name</th>
+                    <th class="px-3 py-3 text-left font-medium min-w-[120px]">Client / Owner</th>
+                    <th class="px-3 py-3 text-left font-medium w-28">Location</th>
+                    <th class="px-3 py-3 text-left font-medium w-32">Project Manager</th>
+                    <th class="px-3 py-3 text-right font-medium w-28">Contract Value</th>
+                    <th class="px-3 py-3 text-center font-medium w-24">Start</th>
+                    <th class="px-3 py-3 text-center font-medium w-24">Est. Complete</th>
+                    <th class="px-3 py-3 text-center font-medium w-20">% Done</th>
+                    <th class="px-3 py-3 text-center font-medium w-28">Status</th>
+                    <th class="px-3 py-3 text-center font-medium w-28">Actions</th>
                 </tr>
             </thead>
-            <tbody>
-
+            <tbody class="divide-y divide-zinc-800">
                 {% for project in projects %}
-                <tr class="border-b border-zinc-800 hover:bg-zinc-800/60 transition-colors">
-                    <td class="px-6 py-4 font-mono text-emerald-400">{{ project.number }}</td>
-                    <td class="px-6 py-4 font-medium">{{ project.name }}</td>
-                    <td class="px-6 py-4">{{ project.client }}</td>
-                    <td class="px-6 py-4 text-center">{{ project.start_date.strftime('%m/%d/%Y') if project.start_date else '—' }}</td>
-                    <td class="px-6 py-4 text-center">{{ project.end_date.strftime('%m/%d/%Y') if project.end_date else '—' }}</td>
-                    
-                    <!-- Progress Bar -->
-                    <td class="px-6 py-4 text-center">
-                        <div class="flex items-center justify-center gap-2">
-                            <div class="w-16 bg-zinc-800 rounded-full h-2">
-                                <div class="bg-emerald-500 h-2 rounded-full" style="width: {{ project.percent_complete or 0 }}%"></div>
+                <tr class="project-row hover:bg-zinc-800/50 transition-colors"
+                    data-id="{{ project.id }}"
+                    data-status="{{ project.status or '' }}"
+                    data-pm="{{ project.project_manager or '' }}"
+                    data-search="{{ (project.number or '')|lower }} {{ project.name|lower }} {{ (project.client or '')|lower }} {{ (project.sage_job_number or '')|lower }} {{ (project.project_manager or '')|lower }} {{ project.location_label()|lower }}">
+                    <td class="px-3 py-2.5 font-mono text-emerald-400 text-xs">{{ project.number or '—' }}</td>
+                    <td class="px-3 py-2.5 font-mono text-xs text-zinc-300">{{ project.sage_job_number or '—' }}</td>
+                    <td class="px-3 py-2.5 font-medium text-white">{{ project.name }}</td>
+                    <td class="px-3 py-2.5 text-zinc-300 truncate max-w-[140px]">{{ project.client or '—' }}</td>
+                    <td class="px-3 py-2.5 text-zinc-400 text-xs">{{ project.location_label() }}</td>
+                    <td class="px-3 py-2.5 text-zinc-300 text-xs truncate max-w-[120px]">{{ project.project_manager or '—' }}</td>
+                    <td class="px-3 py-2.5 text-right font-mono text-xs">{{ '${:,.0f}'.format(project.contract_value) if project.contract_value else '—' }}</td>
+                    <td class="px-3 py-2.5 text-center text-xs text-zinc-400">{{ project.start_date.strftime('%m/%d/%y') if project.start_date else '—' }}</td>
+                    <td class="px-3 py-2.5 text-center text-xs text-zinc-400">{{ project.end_date.strftime('%m/%d/%y') if project.end_date else '—' }}</td>
+                    <td class="px-3 py-2.5 text-center">
+                        <div class="flex items-center justify-center gap-1.5">
+                            <div class="w-12 bg-zinc-800 rounded-full h-1.5">
+                                <div class="bg-emerald-500 h-1.5 rounded-full" style="width: {{ project.percent_complete or 0 }}%"></div>
                             </div>
-                            <span class="text-xs text-zinc-400 w-8">{{ project.percent_complete or 0 }}%</span>
+                            <span class="text-[10px] text-zinc-500 w-7">{{ project.percent_complete or 0 }}%</span>
                         </div>
                     </td>
-
-                    <!-- Status -->
-                    <td class="px-6 py-4 text-center">
+                    <td class="px-3 py-2.5 text-center">
                         <select onchange="updateProjectStatus({{ project.id }}, this.value)"
-                                class="bg-zinc-800 border border-zinc-700 rounded-xl px-3 py-1 text-xs">
-                            <option value="Pre-Construction" {% if project.status == 'Pre-Construction' %}selected{% endif %}>Pre-Construction</option>
+                                class="bg-zinc-800 border border-zinc-700 rounded px-2 py-1 text-[11px] max-w-[110px]">
+                            <option value="Pre-Construction" {% if project.status == 'Pre-Construction' %}selected{% endif %}>Pre-Con</option>
                             <option value="Active" {% if project.status == 'Active' %}selected{% endif %}>Active</option>
                             <option value="On Hold" {% if project.status == 'On Hold' %}selected{% endif %}>On Hold</option>
                             <option value="Completed" {% if project.status == 'Completed' %}selected{% endif %}>Completed</option>
                         </select>
                     </td>
-
-                    <td class="px-6 py-4 text-center">
-                        <div class="flex items-center justify-center gap-1">
-                            <button onclick="viewProject({{ project.id }})" 
-                                    class="p-2 text-emerald-400 hover:text-emerald-300 hover:bg-zinc-800 rounded-xl transition-colors" title="View Dashboard">
-                                <i class="fa-solid fa-eye"></i>
-                            </button>
-                            
-                            <button onclick="editProject({{ project.id }})" 
-                                    class="p-2 text-emerald-400 hover:text-emerald-300 hover:bg-zinc-800 rounded-xl transition-colors" title="Edit">
-                                <i class="fa-solid fa-edit"></i>
-                            </button>
-
-                            <button onclick="goToDailyLog({{ project.id }})" 
-                                    class="p-2 text-emerald-400 hover:text-emerald-300 hover:bg-zinc-800 rounded-xl transition-colors" title="Daily Log">
-                                <i class="fa-solid fa-clipboard-list"></i>
-                            </button>
+                    <td class="px-3 py-2.5 text-center">
+                        <div class="flex items-center justify-center gap-0.5">
+                            <button type="button" onclick="switchProject({{ project.id }})" title="Set as current project"
+                                    class="p-1.5 text-sky-400 hover:bg-zinc-800 rounded"><i class="fa-solid fa-crosshairs text-xs"></i></button>
+                            <button type="button" onclick="openProjectModal('edit', {{ project.id }})" title="Edit project"
+                                    class="p-1.5 text-emerald-400 hover:bg-zinc-800 rounded"><i class="fa-solid fa-pen text-xs"></i></button>
+                            <button type="button" onclick="goToDailyLog({{ project.id }})" title="Daily Log"
+                                    class="p-1.5 text-zinc-400 hover:bg-zinc-800 rounded"><i class="fa-solid fa-clipboard-list text-xs"></i></button>
                         </div>
                     </td>
                 </tr>
                 {% else %}
                 <tr>
-                    <td colspan="8" class="px-6 py-12 text-center text-zinc-400">
-                        No projects found.
+                    <td colspan="12" class="px-6 py-16 text-center text-zinc-500">
+                        <i class="fa-solid fa-folder-open text-3xl mb-3 block text-zinc-600"></i>
+                        No projects yet. Click <strong class="text-white">New Project</strong> to create your first job.
                     </td>
                 </tr>
                 {% endfor %}
             </tbody>
         </table>
     </div>
-
 </div>
 
-<!-- ==================== CREATE PROJECT MODAL ==================== -->
-<dialog id="createProjectModal" class="bg-zinc-900 border border-zinc-700 rounded-3xl p-0 w-full max-w-3xl">
-    <div class="p-6">
-        <div class="flex items-center justify-between mb-6">
-            <h2 class="text-xl font-semibold">Create New Project</h2>
-            <button onclick="closeCreateProjectModal()" class="text-zinc-400 hover:text-white">
-                <i class="fa-solid fa-times text-xl"></i>
+<!-- Project create / edit modal (tabbed) -->
+<div id="projectModal" class="hidden fixed inset-0 bg-black/70 flex items-center justify-center z-[80] p-4">
+    <div class="bg-zinc-900 border border-zinc-700 rounded-xl w-full max-w-5xl max-h-[92vh] flex flex-col shadow-2xl">
+        <div class="px-6 py-4 border-b border-zinc-700 flex items-center justify-between bg-zinc-950 rounded-t-xl">
+            <div>
+                <h2 id="projectModalTitle" class="text-lg font-semibold text-white">New Project</h2>
+                <p class="text-xs text-zinc-500 mt-0.5">Fields aligned with Procore, RedTeam Flex, and Sage 300 PJC project setup</p>
+            </div>
+            <button type="button" onclick="closeProjectModal()" class="text-zinc-400 hover:text-white w-9 h-9 flex items-center justify-center rounded-lg hover:bg-zinc-800">
+                <i class="fa-solid fa-times"></i>
             </button>
         </div>
 
-        <form method="POST" action="{{ url_for('create_project') }}">
-            <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
-                <div>
-                    <label class="block text-sm text-zinc-400 mb-1.5">Project Number</label>
-                    <input type="text" name="number" value="PRJ-{{ '%03d' % (projects|length + 1) }}" 
-                           class="w-full bg-zinc-800 border border-zinc-700 rounded-2xl px-4 py-2.5 text-sm font-mono" readonly>
-                </div>
-                <div>
-                    <label class="block text-sm text-zinc-400 mb-1.5">Project Name <span class="text-red-400">*</span></label>
-                    <input type="text" name="name" class="w-full bg-zinc-800 border border-zinc-700 rounded-2xl px-4 py-2.5 text-sm" required>
-                </div>
-            </div>
+        <div class="flex border-b border-zinc-700 px-4 overflow-x-auto flex-shrink-0">
+            <button type="button" class="project-tab-btn active px-4 py-3 text-sm font-medium text-zinc-400 whitespace-nowrap" data-tab="general" onclick="switchProjectTab('general')">General</button>
+            <button type="button" class="project-tab-btn px-4 py-3 text-sm font-medium text-zinc-400 whitespace-nowrap" data-tab="location" onclick="switchProjectTab('location')">Location</button>
+            <button type="button" class="project-tab-btn px-4 py-3 text-sm font-medium text-zinc-400 whitespace-nowrap" data-tab="schedule" onclick="switchProjectTab('schedule')">Schedule & Dates</button>
+            <button type="button" class="project-tab-btn px-4 py-3 text-sm font-medium text-zinc-400 whitespace-nowrap" data-tab="financial" onclick="switchProjectTab('financial')">Financial</button>
+            <button type="button" class="project-tab-btn px-4 py-3 text-sm font-medium text-zinc-400 whitespace-nowrap" data-tab="team" onclick="switchProjectTab('team')">Team & Contacts</button>
+            <button type="button" class="project-tab-btn px-4 py-3 text-sm font-medium text-zinc-400 whitespace-nowrap" data-tab="sage" onclick="switchProjectTab('sage')">Sage Accounting</button>
+            <button type="button" class="project-tab-btn px-4 py-3 text-sm font-medium text-zinc-400 whitespace-nowrap" data-tab="other" onclick="switchProjectTab('other')">Other</button>
+        </div>
 
-            <div class="mb-4">
-                <label class="block text-sm text-zinc-400 mb-1.5">Client / Owner <span class="text-red-400">*</span></label>
-                <select name="client" class="w-full bg-zinc-800 border border-zinc-700 rounded-2xl px-4 py-2.5 text-sm" required>
-                    <option value="">Select Client...</option>
-                    {% for company in companies %}
-                    <option value="{{ company.name }}">{{ company.name }}</option>
-                    {% endfor %}
-                </select>
-            </div>
-
-            <div class="mb-4">
-                <label class="block text-sm text-zinc-400 mb-1.5">Project Address</label>
-                <input type="text" name="address" class="w-full bg-zinc-800 border border-zinc-700 rounded-2xl px-4 py-2.5 text-sm">
-            </div>
-
-            <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
-                <div>
-                    <label class="block text-sm text-zinc-400 mb-1.5">Start Date</label>
-                    <input type="date" name="start_date" class="w-full bg-zinc-800 border border-zinc-700 rounded-2xl px-4 py-2.5 text-sm">
+        <form id="projectForm" method="POST" class="flex-1 overflow-auto">
+            <div class="p-6 space-y-4">
+                <!-- GENERAL (Procore + RedTeam core) -->
+                <div id="projectTab-general" class="project-tab-panel">
+                    <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+                        <div>
+                            <label class="project-field-label">Case PM Project #</label>
+                            <input type="text" name="number" id="fld_number" class="project-field-input font-mono" value="PRJ-{{ '%03d' % (projects|length + 1) }}">
+                        </div>
+                        <div>
+                            <label class="project-field-label">Accounting Project # <span class="text-zinc-600">(Procore)</span></label>
+                            <input type="text" name="accounting_project_number" id="fld_accounting_project_number" class="project-field-input font-mono" placeholder="e.g. 370 / 664">
+                        </div>
+                        <div>
+                            <label class="project-field-label">Sage Job / Contract # <span class="text-red-400">*</span></label>
+                            <input type="text" name="sage_job_number" id="fld_sage_job_number" class="project-field-input font-mono" placeholder="Sage PJC contract number">
+                        </div>
+                    </div>
+                    <div class="mt-4">
+                        <label class="project-field-label">Project Name <span class="text-red-400">*</span></label>
+                        <input type="text" name="name" id="fld_name" class="project-field-input" required>
+                    </div>
+                    <div class="grid grid-cols-1 md:grid-cols-4 gap-4 mt-4">
+                        <div>
+                            <label class="project-field-label">Status</label>
+                            <select name="status" id="fld_status" class="project-field-input">
+                                <option value="Pre-Construction">Pre-Construction</option>
+                                <option value="Active" selected>Active</option>
+                                <option value="On Hold">On Hold</option>
+                                <option value="Completed">Completed</option>
+                            </select>
+                        </div>
+                        <div>
+                            <label class="project-field-label">Stage <span class="text-zinc-600">(Procore)</span></label>
+                            <select name="stage" id="fld_stage" class="project-field-input">
+                                <option value="">—</option>
+                                <option value="Bidding">Bidding</option>
+                                <option value="Course of Construction">Course of Construction</option>
+                                <option value="Post-Construction">Post-Construction</option>
+                                <option value="Warranty">Warranty</option>
+                            </select>
+                        </div>
+                        <div>
+                            <label class="project-field-label">Project Type</label>
+                            <select name="project_type" id="fld_project_type" class="project-field-input">
+                                <option value="">—</option>
+                                <option value="Commercial">Commercial</option>
+                                <option value="Industrial">Industrial</option>
+                                <option value="Retail">Retail</option>
+                                <option value="Healthcare">Healthcare</option>
+                                <option value="Education">Education</option>
+                                <option value="Residential">Residential</option>
+                            </select>
+                        </div>
+                        <div>
+                            <label class="project-field-label">Bid Type</label>
+                            <select name="bid_type" id="fld_bid_type" class="project-field-input">
+                                <option value="">—</option>
+                                <option value="Negotiated">Negotiated</option>
+                                <option value="Hard Bid">Hard Bid</option>
+                                <option value="Design-Build">Design-Build</option>
+                                <option value="CM at Risk">CM at Risk</option>
+                            </select>
+                        </div>
+                    </div>
+                    <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mt-4">
+                        <div>
+                            <label class="project-field-label">Delivery Method <span class="text-zinc-600">(RedTeam)</span></label>
+                            <input type="text" name="delivery_method" id="fld_delivery_method" class="project-field-input" placeholder="Design-Bid-Build, CM, etc.">
+                        </div>
+                        <div>
+                            <label class="project-field-label">Program</label>
+                            <input type="text" name="program" id="fld_program" class="project-field-input">
+                        </div>
+                        <div>
+                            <label class="project-field-label">Departments</label>
+                            <input type="text" name="departments" id="fld_departments" class="project-field-input">
+                        </div>
+                    </div>
+                    <div class="mt-4">
+                        <label class="project-field-label">Description</label>
+                        <textarea name="description" id="fld_description" rows="3" class="project-field-input"></textarea>
+                    </div>
                 </div>
-                <div>
-                    <label class="block text-sm text-zinc-400 mb-1.5">Est. Completion</label>
-                    <input type="date" name="end_date" class="w-full bg-zinc-800 border border-zinc-700 rounded-2xl px-4 py-2.5 text-sm">
+
+                <!-- LOCATION -->
+                <div id="projectTab-location" class="project-tab-panel hidden">
+                    <div class="mb-4">
+                        <label class="project-field-label">Street Address</label>
+                        <input type="text" name="address" id="fld_address" class="project-field-input">
+                    </div>
+                    <div class="grid grid-cols-2 md:grid-cols-4 gap-4">
+                        <div>
+                            <label class="project-field-label">City</label>
+                            <input type="text" name="city" id="fld_city" class="project-field-input">
+                        </div>
+                        <div>
+                            <label class="project-field-label">State</label>
+                            <input type="text" name="state" id="fld_state" class="project-field-input" maxlength="2" placeholder="FL">
+                        </div>
+                        <div>
+                            <label class="project-field-label">ZIP</label>
+                            <input type="text" name="zip_code" id="fld_zip_code" class="project-field-input">
+                        </div>
+                        <div>
+                            <label class="project-field-label">County</label>
+                            <input type="text" name="county" id="fld_county" class="project-field-input">
+                        </div>
+                    </div>
+                    <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mt-4">
+                        <div>
+                            <label class="project-field-label">Country</label>
+                            <input type="text" name="country" id="fld_country" class="project-field-input" value="United States">
+                        </div>
+                        <div>
+                            <label class="project-field-label">Region</label>
+                            <input type="text" name="region" id="fld_region" class="project-field-input">
+                        </div>
+                        <div>
+                            <label class="project-field-label">Designated Market Area</label>
+                            <input type="text" name="designated_market_area" id="fld_designated_market_area" class="project-field-input">
+                        </div>
+                    </div>
+                    <div class="grid grid-cols-1 md:grid-cols-4 gap-4 mt-4">
+                        <div>
+                            <label class="project-field-label">Timezone</label>
+                            <input type="text" name="timezone" id="fld_timezone" class="project-field-input" placeholder="America/New_York">
+                        </div>
+                        <div>
+                            <label class="project-field-label">Latitude</label>
+                            <input type="text" name="latitude" id="fld_latitude" class="project-field-input">
+                        </div>
+                        <div>
+                            <label class="project-field-label">Longitude</label>
+                            <input type="text" name="longitude" id="fld_longitude" class="project-field-input">
+                        </div>
+                        <div>
+                            <label class="project-field-label">Store #</label>
+                            <input type="text" name="store_number" id="fld_store_number" class="project-field-input">
+                        </div>
+                    </div>
+                    <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mt-4">
+                        <div>
+                            <label class="project-field-label">Project Phone</label>
+                            <input type="text" name="phone" id="fld_phone" class="project-field-input">
+                        </div>
+                        <div>
+                            <label class="project-field-label">Fax</label>
+                            <input type="text" name="fax" id="fld_fax" class="project-field-input">
+                        </div>
+                        <div>
+                            <label class="project-field-label">Office</label>
+                            <input type="text" name="office" id="fld_office" class="project-field-input">
+                        </div>
+                    </div>
                 </div>
-                <div>
-                    <label class="block text-sm text-zinc-400 mb-1.5">Contract Value</label>
-                    <div class="relative">
-                        <span class="absolute left-4 top-3 text-zinc-400">$</span>
-                        <input type="number" step="0.01" name="contract_value" class="w-full bg-zinc-800 border border-zinc-700 rounded-2xl pl-8 pr-4 py-2.5 text-sm">
+
+                <!-- SCHEDULE & DATES -->
+                <div id="projectTab-schedule" class="project-tab-panel hidden">
+                    <div class="grid grid-cols-2 md:grid-cols-3 gap-4">
+                        <div>
+                            <label class="project-field-label">Start Date</label>
+                            <input type="date" name="start_date" id="fld_start_date" class="project-field-input">
+                        </div>
+                        <div>
+                            <label class="project-field-label">Actual Start Date</label>
+                            <input type="date" name="actual_start_date" id="fld_actual_start_date" class="project-field-input">
+                        </div>
+                        <div>
+                            <label class="project-field-label">Est. Completion</label>
+                            <input type="date" name="end_date" id="fld_end_date" class="project-field-input">
+                        </div>
+                        <div>
+                            <label class="project-field-label">Projected Finish</label>
+                            <input type="date" name="projected_finish_date" id="fld_projected_finish_date" class="project-field-input">
+                        </div>
+                        <div>
+                            <label class="project-field-label">Substantial Completion</label>
+                            <input type="date" name="substantial_completion_date" id="fld_substantial_completion_date" class="project-field-input">
+                        </div>
+                        <div>
+                            <label class="project-field-label">% Complete</label>
+                            <input type="number" name="percent_complete" id="fld_percent_complete" min="0" max="100" class="project-field-input" value="0">
+                        </div>
+                        <div>
+                            <label class="project-field-label">Warranty Start</label>
+                            <input type="date" name="warranty_start_date" id="fld_warranty_start_date" class="project-field-input">
+                        </div>
+                        <div>
+                            <label class="project-field-label">Warranty End</label>
+                            <input type="date" name="warranty_end_date" id="fld_warranty_end_date" class="project-field-input">
+                        </div>
+                    </div>
+                </div>
+
+                <!-- FINANCIAL -->
+                <div id="projectTab-financial" class="project-tab-panel hidden">
+                    <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+                        <div>
+                            <label class="project-field-label">Total Contract Value</label>
+                            <div class="relative">
+                                <span class="absolute left-3 top-2.5 text-zinc-500">$</span>
+                                <input type="number" step="0.01" name="contract_value" id="fld_contract_value" class="project-field-input pl-7">
+                            </div>
+                        </div>
+                        <div>
+                            <label class="project-field-label">Square Feet</label>
+                            <input type="number" name="square_feet" id="fld_square_feet" class="project-field-input">
+                        </div>
+                        <div>
+                            <label class="project-field-label">Financing <span class="text-zinc-600">(RedTeam)</span></label>
+                            <input type="text" name="financing" id="fld_financing" class="project-field-input">
+                        </div>
+                    </div>
+                    <div class="mt-4">
+                        <label class="project-field-label">Owner Type</label>
+                        <select name="owner_type" id="fld_owner_type" class="project-field-input max-w-md">
+                            <option value="">—</option>
+                            <option value="Private">Private</option>
+                            <option value="Public">Public</option>
+                            <option value="Government">Government</option>
+                            <option value="Non-Profit">Non-Profit</option>
+                        </select>
+                    </div>
+                </div>
+
+                <!-- TEAM & CONTACTS -->
+                <div id="projectTab-team" class="project-tab-panel hidden">
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <div>
+                            <label class="project-field-label">Client / Owner <span class="text-red-400">*</span></label>
+                            <select name="client" id="fld_client" class="project-field-input" required>
+                                <option value="">Select client...</option>
+                                {% for company in companies %}
+                                <option value="{{ company.name }}">{{ company.name }}</option>
+                                {% endfor %}
+                            </select>
+                        </div>
+                        <div>
+                            <label class="project-field-label">Project Manager</label>
+                            <select name="project_manager" id="fld_project_manager" class="project-field-input">
+                                <option value="">Select PM...</option>
+                                {% for user in users %}
+                                <option value="{{ user.full_name }}">{{ user.full_name }}</option>
+                                {% endfor %}
+                            </select>
+                        </div>
+                    </div>
+                    <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mt-4">
+                        <div>
+                            <label class="project-field-label">Owner Contact Name</label>
+                            <input type="text" name="owner_contact_name" id="fld_owner_contact_name" class="project-field-input">
+                        </div>
+                        <div>
+                            <label class="project-field-label">Owner Contact Email</label>
+                            <input type="email" name="owner_contact_email" id="fld_owner_contact_email" class="project-field-input">
+                        </div>
+                        <div>
+                            <label class="project-field-label">Owner Contact Phone</label>
+                            <input type="text" name="owner_contact_phone" id="fld_owner_contact_phone" class="project-field-input">
+                        </div>
+                    </div>
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mt-4">
+                        <div>
+                            <label class="project-field-label">Architect Firm</label>
+                            <input type="text" name="architect_firm" id="fld_architect_firm" class="project-field-input">
+                        </div>
+                        <div>
+                            <label class="project-field-label">Architect Contact</label>
+                            <input type="text" name="architect_contact" id="fld_architect_contact" class="project-field-input">
+                        </div>
+                        <div>
+                            <label class="project-field-label">Superintendent</label>
+                            <input type="text" name="superintendent" id="fld_superintendent" class="project-field-input">
+                        </div>
+                        <div>
+                            <label class="project-field-label">Estimator</label>
+                            <input type="text" name="estimator" id="fld_estimator" class="project-field-input">
+                        </div>
+                    </div>
+                </div>
+
+                <!-- SAGE ACCOUNTING -->
+                <div id="projectTab-sage" class="project-tab-panel hidden">
+                    <p class="text-xs text-zinc-500 mb-4">Sage 300 Project & Job Costing — contract maintenance and G/L integration fields</p>
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <div>
+                            <label class="project-field-label">Sage Contract Number</label>
+                            <input type="text" name="sage_contract_number" id="fld_sage_contract_number" class="project-field-input font-mono">
+                        </div>
+                        <div>
+                            <label class="project-field-label">Account Set</label>
+                            <input type="text" name="sage_account_set" id="fld_sage_account_set" class="project-field-input" placeholder="Billings / WIP / Revenue accounts">
+                        </div>
+                        <div>
+                            <label class="project-field-label">Accounting Method</label>
+                            <select name="sage_accounting_method" id="fld_sage_accounting_method" class="project-field-input">
+                                <option value="">—</option>
+                                <option value="Completed Contract">Completed Contract</option>
+                                <option value="Percentage of Completion">Percentage of Completion</option>
+                                <option value="Billings and Costs">Billings and Costs</option>
+                                <option value="Accrual-Basis">Accrual-Basis</option>
+                            </select>
+                        </div>
+                        <div>
+                            <label class="project-field-label">A/R Customer Code</label>
+                            <input type="text" name="sage_ar_customer_code" id="fld_sage_ar_customer_code" class="project-field-input font-mono">
+                        </div>
+                        <div>
+                            <label class="project-field-label">Billings Account</label>
+                            <input type="text" name="sage_billings_account" id="fld_sage_billings_account" class="project-field-input font-mono">
+                        </div>
+                        <div>
+                            <label class="project-field-label">Work in Progress Account</label>
+                            <input type="text" name="sage_wip_account" id="fld_sage_wip_account" class="project-field-input font-mono">
+                        </div>
+                        <div>
+                            <label class="project-field-label">Revenue Account</label>
+                            <input type="text" name="sage_revenue_account" id="fld_sage_revenue_account" class="project-field-input font-mono">
+                        </div>
+                        <div>
+                            <label class="project-field-label">Default Tax Group</label>
+                            <input type="text" name="sage_default_tax_group" id="fld_sage_default_tax_group" class="project-field-input">
+                        </div>
+                    </div>
+                </div>
+
+                <!-- OTHER -->
+                <div id="projectTab-other" class="project-tab-panel hidden">
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <div>
+                            <label class="project-field-label">Parent Project ID</label>
+                            <input type="text" name="parent_project_id" id="fld_parent_project_id" class="project-field-input" placeholder="For phased / master projects">
+                        </div>
+                        <div>
+                            <label class="project-field-label">Project Template</label>
+                            <input type="text" name="project_template" id="fld_project_template" class="project-field-input">
+                        </div>
+                        <div>
+                            <label class="project-field-label">Flag Color</label>
+                            <input type="text" name="flag_color" id="fld_flag_color" class="project-field-input" placeholder="e.g. #10b981">
+                        </div>
+                    </div>
+                    <div class="mt-4">
+                        <label class="project-field-label">Notes</label>
+                        <textarea name="notes" id="fld_notes" rows="4" class="project-field-input"></textarea>
                     </div>
                 </div>
             </div>
 
-            <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
-                <div>
-                    <label class="block text-sm text-zinc-400 mb-1.5">Project Manager</label>
-                    <select name="project_manager" class="w-full bg-zinc-800 border border-zinc-700 rounded-2xl px-4 py-2.5 text-sm">
-                        <option value="Mike Bretz">Mike Bretz</option>
-                        <option value="Sarah Kline">Sarah Kline</option>
-                        <option value="Tom Rivera">Tom Rivera</option>
-                    </select>
-                </div>
-                <div>
-                    <label class="block text-sm text-zinc-400 mb-1.5">Status</label>
-                    <select name="status" class="w-full bg-zinc-800 border border-zinc-700 rounded-2xl px-4 py-2.5 text-sm">
-                        <option value="Pre-Construction">Pre-Construction</option>
-                        <option value="Active" selected>Active</option>
-                        <option value="On Hold">On Hold</option>
-                    </select>
-                </div>
-            </div>
-
-            <div class="flex gap-3 mt-8">
-                <button type="button" onclick="closeCreateProjectModal()"
-                        class="flex-1 bg-zinc-800 hover:bg-zinc-700 rounded-2xl py-3 text-sm font-medium transition-colors">
-                    Cancel
-                </button>
-                <button type="submit"
-                        class="flex-1 bg-emerald-600 hover:bg-emerald-500 rounded-2xl py-3 text-sm font-medium transition-colors">
-                    Create Project
-                </button>
+            <div class="px-6 py-4 border-t border-zinc-700 bg-zinc-950 flex justify-end gap-3 rounded-b-xl flex-shrink-0">
+                <button type="button" onclick="closeProjectModal()" class="px-5 py-2.5 bg-zinc-800 hover:bg-zinc-700 rounded-md text-sm font-medium">Cancel</button>
+                <button type="submit" id="projectFormSubmitBtn" class="px-6 py-2.5 bg-emerald-600 hover:bg-emerald-500 rounded-md text-sm font-semibold text-white">Create Project</button>
             </div>
         </form>
     </div>
-</dialog>
+</div>
 
-<!-- ==================== JAVASCRIPT ==================== -->
 <script>
-    // ==================== FILTERING ====================
-    function filterProjects() {
-        const search = document.getElementById('projectSearch').value.toLowerCase();
-        const status = document.getElementById('projectStatusFilter').value;
-        const pm = document.getElementById('projectManagerFilter').value;
+const PROJECT_FIELD_IDS = [
+    'number','accounting_project_number','sage_job_number','name','status','stage','project_type',
+    'bid_type','delivery_method','program','departments','description',
+    'address','city','state','zip_code','county','country','region','designated_market_area',
+    'timezone','latitude','longitude','store_number','phone','fax','office',
+    'start_date','actual_start_date','end_date','projected_finish_date','substantial_completion_date',
+    'percent_complete','warranty_start_date','warranty_end_date',
+    'contract_value','square_feet','financing','owner_type',
+    'client','project_manager','owner_contact_name','owner_contact_email','owner_contact_phone',
+    'architect_firm','architect_contact','superintendent','estimator',
+    'sage_contract_number','sage_account_set','sage_accounting_method','sage_ar_customer_code',
+    'sage_billings_account','sage_wip_account','sage_revenue_account','sage_default_tax_group',
+    'parent_project_id','project_template','flag_color','notes'
+];
 
-        document.querySelectorAll('tbody tr').forEach(row => {
-            const text = row.textContent.toLowerCase();
-            const rowStatus = row.querySelector('select') ? row.querySelector('select').value : '';
-            const rowPM = row.textContent;
+let projectModalMode = 'create';
+let editingProjectId = null;
 
-            let show = true;
-
-            if (search && !text.includes(search)) show = false;
-            if (status && rowStatus !== status) show = false;
-            if (pm && !rowPM.includes(pm)) show = false;
-
-            row.style.display = show ? '' : 'none';
-        });
-    }
-
-    // ==================== MODAL FUNCTIONS ====================
-    function showCreateProjectModal() {
-        document.getElementById('createProjectModal').showModal();
-    }
-
-    function closeCreateProjectModal() {
-        document.getElementById('createProjectModal').close();
-    }
-
-    // ==================== ACTION FUNCTIONS ====================
-    function updateProjectStatus(id, newStatus) {
-        console.log(`Updating Project #${id} to status: ${newStatus}`);
-        showToast(`Project status updated to ${newStatus}`);
-        // TODO: Send update to backend
-    }
-
-    function viewProject(id) {
-        window.location.href = "{{ url_for('daily_log') }}?project_id=" + id;
-    }
-
-    function editProject(id) {
-        alert(`Editing Project #${id}\n(Edit project modal will open here in a future update)`);
-    }
-
-    function goToDailyLog(projectId) {
-        window.location.href = "{{ url_for('daily_log') }}?project_id=" + projectId;
-    }
-
-    // ==================== INITIALIZATION ====================
-    function initializeProjectsPage() {
-        console.log('%c[Case PM] Projects page initialized with full features.', 'color:#10b981');
-    }
-
-    window.addEventListener('load', initializeProjectsPage);
-</script>
-
-{% endblock %}
-
-<!-- ==================== FINAL ENHANCEMENTS ==================== -->
-<script>
-    // ==================== KEYBOARD SHORTCUTS ====================
-    document.addEventListener('keydown', function(e) {
-        if (e.key === "/" && document.activeElement.tagName === "BODY") {
-            e.preventDefault();
-            const search = document.getElementById('projectSearch');
-            if (search) search.focus();
-        }
+function switchProjectTab(tab) {
+    document.querySelectorAll('.project-tab-panel').forEach(el => el.classList.add('hidden'));
+    document.querySelectorAll('.project-tab-btn').forEach(btn => {
+        btn.classList.toggle('active', btn.dataset.tab === tab);
+        btn.classList.toggle('text-white', btn.dataset.tab === tab);
+        btn.classList.toggle('text-zinc-400', btn.dataset.tab !== tab);
     });
+    const panel = document.getElementById('projectTab-' + tab);
+    if (panel) panel.classList.remove('hidden');
+}
 
-    // ==================== BULK ACTIONS (Future Ready) ====================
-    function bulkUpdateProjectStatus() {
-        const selected = document.querySelectorAll('table tbody input[type="checkbox"]:checked');
-        if (selected.length === 0) {
-            alert("Please select projects to update.");
-            return;
-        }
-        alert(`Bulk status update for ${selected.length} projects will be available here.`);
+function openProjectModal(mode, projectId) {
+    projectModalMode = mode;
+    editingProjectId = projectId || null;
+    const form = document.getElementById('projectForm');
+    const title = document.getElementById('projectModalTitle');
+    const submitBtn = document.getElementById('projectFormSubmitBtn');
+
+    if (mode === 'create') {
+        title.textContent = 'New Project';
+        submitBtn.textContent = 'Create Project';
+        form.action = "{{ url_for('create_project') }}";
+        form.reset();
+        document.getElementById('fld_number').value = "PRJ-{{ '%03d' % (projects|length + 1) }}";
+        document.getElementById('fld_country').value = 'United States';
+        document.getElementById('fld_status').value = 'Active';
+    } else {
+        title.textContent = 'Edit Project';
+        submitBtn.textContent = 'Save Project';
+        form.action = `/projects/${projectId}/update`;
+        fetch(`/api/projects/${projectId}`)
+            .then(r => r.json())
+            .then(data => populateProjectForm(data))
+            .catch(() => alert('Could not load project details.'));
     }
 
-    // ==================== FINAL INITIALIZATION ====================
-    function finalProjectsInitialization() {
-        console.log('%c[Case PM] projects.html fully loaded with maximum features.', 'color:#10b981');
-    }
+    switchProjectTab('general');
+    document.getElementById('projectModal').classList.remove('hidden');
+}
 
-    window.addEventListener('load', finalProjectsInitialization);
+function closeProjectModal() {
+    document.getElementById('projectModal').classList.add('hidden');
+}
+
+function populateProjectForm(data) {
+    PROJECT_FIELD_IDS.forEach(key => {
+        const el = document.getElementById('fld_' + key);
+        if (el && data[key] != null) el.value = data[key];
+    });
+}
+
+function filterProjects() {
+    const search = (document.getElementById('projectSearch').value || '').toLowerCase();
+    const status = document.getElementById('projectStatusFilter').value;
+    const pm = document.getElementById('projectManagerFilter').value;
+
+    document.querySelectorAll('.project-row').forEach(row => {
+        const hay = row.dataset.search || '';
+        const rowStatus = row.dataset.status || '';
+        const rowPm = row.dataset.pm || '';
+        let show = true;
+        if (search && !hay.includes(search)) show = false;
+        if (status && rowStatus !== status) show = false;
+        if (pm && rowPm !== pm) show = false;
+        row.style.display = show ? '' : 'none';
+    });
+}
+
+async function updateProjectStatus(id, status) {
+    try {
+        await fetch(`/projects/${id}/status`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ status })
+        });
+    } catch (e) {
+        console.warn('Status update failed', e);
+    }
+}
+
+function goToDailyLog(projectId) {
+    window.location.href = "{{ url_for('daily_log') }}?project_id=" + projectId;
+}
+
+function exportProjectsCsv() {
+    const rows = [['Project #','Sage Job #','Name','Client','City','State','PM','Contract Value','Start','End','% Complete','Status']];
+    document.querySelectorAll('.project-row').forEach(row => {
+        if (row.style.display === 'none') return;
+        const cells = row.querySelectorAll('td');
+        rows.push([
+            cells[0]?.textContent?.trim(),
+            cells[1]?.textContent?.trim(),
+            cells[2]?.textContent?.trim(),
+            cells[3]?.textContent?.trim(),
+            '', '',
+            cells[5]?.textContent?.trim(),
+            cells[6]?.textContent?.trim(),
+            cells[7]?.textContent?.trim(),
+            cells[8]?.textContent?.trim(),
+            cells[9]?.querySelector('span')?.textContent?.trim(),
+            cells[10]?.querySelector('select')?.value
+        ]);
+    });
+    const csv = rows.map(r => r.map(c => `"${String(c || '').replace(/"/g, '""')}"`).join(',')).join('\n');
+    const blob = new Blob([csv], { type: 'text/csv' });
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = 'projects-export.csv';
+    a.click();
+}
+
+document.addEventListener('keydown', e => {
+    if (e.key === 'Escape') closeProjectModal();
+});
 </script>
+{% endblock %}
