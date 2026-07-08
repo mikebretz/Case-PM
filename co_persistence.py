@@ -15,11 +15,25 @@ BALL_IN_COURT_MAP = {
     'Draft': 'Creator',
     'Submitted': 'Project Manager',
     'Under Review': 'Project Manager',
-    'Pending Owner': 'Owner',
     'Pending Architect': 'Architect',
+    'Pending Owner': 'Owner',
     'Approved': None,
     'Rejected': None,
     'Void': None,
+}
+
+# Sequential approval chain (Procore / RedTeam style)
+APPROVAL_CHAIN = (
+    {'from_status': 'Submitted', 'role': 'Project Manager', 'next_status': 'Pending Architect'},
+    {'from_status': 'Pending Architect', 'role': 'Architect', 'next_status': 'Pending Owner'},
+    {'from_status': 'Pending Owner', 'role': 'Owner', 'next_status': 'Approved'},
+)
+
+ROLE_APPROVERS = {
+    'Project Manager': ('Project Manager', 'Admin', 'Contractor Accounting'),
+    'Architect': ('Architect', 'Admin'),
+    'Owner': ('Owner', 'Admin'),
+    'Creator': ('Project Manager', 'Admin', 'Company User'),
 }
 REASON_CODES = (
     'Owner Request', 'Design Change', 'Unforeseen Condition', 'Code Compliance',
@@ -51,6 +65,9 @@ def ensure_co_schema(engine, db):
             'contract_type': 'VARCHAR(40)',
             'submitted_at': 'DATETIME',
             'attachments_json': 'TEXT',
+            'linked_rfi_id': 'INTEGER',
+            'linked_commitment_ref': 'VARCHAR(80)',
+            'approval_stage': 'INTEGER DEFAULT 0',
         }
         for name, col_type in additions.items():
             if name not in cols:
@@ -62,6 +79,18 @@ def ensure_co_schema(engine, db):
         if 'description' not in cols:
             db.session.execute(text('ALTER TABLE change_order_allocation ADD COLUMN description VARCHAR(200)'))
             db.session.commit()
+
+    if 'potential_change_order' in tables:
+        cols = {c['name'] for c in inspector.get_columns('potential_change_order')}
+        pco_additions = {
+            'linked_rfi_id': 'INTEGER',
+            'linked_commitment_ref': 'VARCHAR(80)',
+            'attachments_json': 'TEXT',
+        }
+        for name, col_type in pco_additions.items():
+            if name not in cols:
+                db.session.execute(text(f'ALTER TABLE potential_change_order ADD COLUMN {name} {col_type}'))
+        db.session.commit()
 
 
 def schedule_impact_to_days(value):
@@ -123,6 +152,9 @@ def co_to_dict(co, allocations=None, revisions=None):
         'sov_synced_at': co.sov_synced_at.isoformat() if co.sov_synced_at else None,
         'sage_sync_status': co.sage_sync_status,
         'attachments': _parse_json(getattr(co, 'attachments_json', None), []),
+        'linked_rfi_id': getattr(co, 'linked_rfi_id', None),
+        'linked_commitment_ref': getattr(co, 'linked_commitment_ref', None),
+        'approval_stage': getattr(co, 'approval_stage', 0) or 0,
         'allocations': [{'cost_code': a.cost_code, 'amount': a.amount, 'description': getattr(a, 'description', '')} for a in (allocs or [])],
         'revisions': revisions or [],
         'created_at': co.created_at.isoformat() if co.created_at else None,
@@ -152,6 +184,8 @@ def pco_to_dict(pco, allocations=None):
         'cost_code': pco.cost_code,
         'notes': pco.notes,
         'change_order_id': pco.change_order_id,
+        'linked_rfi_id': getattr(pco, 'linked_rfi_id', None),
+        'linked_commitment_ref': getattr(pco, 'linked_commitment_ref', None),
         'allocations': [{'cost_code': a.cost_code, 'amount': a.amount, 'description': getattr(a, 'description', '')} for a in (allocs or [])],
         'created_at': pco.created_at.isoformat() if pco.created_at else None,
         'updated_at': pco.updated_at.isoformat() if pco.updated_at else None,
@@ -212,13 +246,20 @@ def apply_co_fields(co, data):
         co.ball_in_court_role = data['ball_in_court_role']
     if data.get('attachments') is not None:
         co.attachments_json = json.dumps(data['attachments'])
+    if data.get('linked_rfi_id') is not None:
+        co.linked_rfi_id = int(data['linked_rfi_id']) if data['linked_rfi_id'] else None
+    if data.get('linked_commitment_ref') is not None:
+        co.linked_commitment_ref = data['linked_commitment_ref']
 
 
 def apply_pco_fields(pco, data):
     for field in ('title', 'description', 'reason', 'priority', 'notes', 'cost_code', 'requested_by',
-                  'company_name', 'company_id', 'contact_name', 'contact_email', 'contact_phone', 'ball_in_court_role'):
+                  'company_name', 'company_id', 'contact_name', 'contact_email', 'contact_phone', 'ball_in_court_role',
+                  'linked_commitment_ref'):
         if data.get(field) is not None:
             setattr(pco, field, data[field])
+    if data.get('linked_rfi_id') is not None:
+        pco.linked_rfi_id = int(data['linked_rfi_id']) if data['linked_rfi_id'] else None
     if data.get('estimated_amount') is not None:
         pco.estimated_amount = float(data['estimated_amount'])
     if data.get('status') is not None:
@@ -376,3 +417,109 @@ def get_budget_cost_codes(BudgetProjectState, project_id):
                 'pending': 0,
             })
     return codes
+
+
+def user_can_act_on_ball_in_court(user, role):
+    if not user or not role:
+        return False
+    if user.role == 'Admin':
+        return True
+    allowed = ROLE_APPROVERS.get(role, (role,))
+    return user.role in allowed
+
+
+def get_next_approval_step(current_status):
+    for step in APPROVAL_CHAIN:
+        if step['from_status'] == current_status:
+            return step
+    return None
+
+
+def set_ball_in_court(co, status=None):
+    status = status or co.status
+    co.ball_in_court_role = BALL_IN_COURT_MAP.get(status, co.ball_in_court_role)
+
+
+def notify_ball_in_court(project_id, co, User, title=None, description=None):
+    role = co.ball_in_court_role
+    if not role:
+        return
+    try:
+        import case_workflow as cw
+        action_url = f'/change-orders?project_id={project_id}'
+        title = title or f'{co.number} — ball in court: {role}'
+        description = description or (co.description or getattr(co, 'title', None) or '')
+        users = User.query.filter_by(status='Active').all()
+        targets = [u for u in users if user_can_act_on_ball_in_court(u, role)]
+        if not targets:
+            targets = cw.find_assignees(project_id, 'Change Orders')
+        for u in targets:
+            cw.notify_user(u.id, title, description, action_url)
+            cw.create_internal_message(
+                u.id,
+                folder='action-required',
+                msg_type='alert',
+                subject=title,
+                preview=description[:500],
+                body=f'<p>{description}</p><p><strong>Ball in court:</strong> {role}</p>',
+                project_id=project_id,
+                from_label='Change Orders',
+                module='Change Orders',
+                action_url=action_url,
+                action_label='Review Change Order',
+                priority='high',
+                requires_action=True,
+            )
+    except Exception:
+        pass
+
+
+def co_workflow_action(co, action, user, User):
+    action = (action or '').lower()
+    if action == 'submit':
+        if co.status not in ('Draft',):
+            raise ValueError('Only draft change orders can be submitted')
+        co.status = 'Submitted'
+        co.approval_stage = 0
+        set_ball_in_court(co)
+        return co.status, False
+
+    if action == 'reject':
+        co.status = 'Rejected'
+        co.ball_in_court_role = None
+        return co.status, False
+
+    if action == 'approve':
+        role = co.ball_in_court_role
+        if not user_can_act_on_ball_in_court(user, role):
+            raise ValueError(f'Your role cannot approve while ball is with {role}')
+        step = get_next_approval_step(co.status)
+        if not step:
+            raise ValueError('No approval step for current status')
+        next_status = step['next_status']
+        co.status = next_status
+        co.approval_stage = (co.approval_stage or 0) + 1
+        set_ball_in_court(co)
+        if next_status == 'Approved':
+            co.ball_in_court_role = None
+            return co.status, True
+        return co.status, False
+
+    raise ValueError('action must be submit, approve, or reject')
+
+
+def attachment_record(filename, original_name, uploaded_by_id=None):
+    return {
+        'filename': filename,
+        'original_name': original_name,
+        'uploaded_at': datetime.utcnow().isoformat() + 'Z',
+        'uploaded_by_id': uploaded_by_id,
+    }
+
+
+def append_attachment(co, record):
+    items = _parse_json(getattr(co, 'attachments_json', None), [])
+    items.append(record)
+    co.attachments_json = json.dumps(items)
+    return items
+

@@ -7,7 +7,7 @@
 # Cleaned & Completed Full Version (vFinal)
 # ============================================================
 
-from flask import Flask, render_template, request, redirect, url_for, flash, jsonify, session
+from flask import Flask, render_template, request, redirect, url_for, flash, jsonify, session, send_from_directory
 from flask_sqlalchemy import SQLAlchemy
 from flask_login import LoginManager, UserMixin, login_user, logout_user, login_required, current_user
 from werkzeug.security import generate_password_hash, check_password_hash
@@ -361,6 +361,9 @@ class ChangeOrder(db.Model):
     contract_type = db.Column(db.String(40), default='Owner')
     submitted_at = db.Column(db.DateTime)
     attachments_json = db.Column(db.Text)
+    linked_rfi_id = db.Column(db.Integer, db.ForeignKey('rfi.id'), nullable=True)
+    linked_commitment_ref = db.Column(db.String(80))
+    approval_stage = db.Column(db.Integer, default=0)
 
 
 class ChangeOrderAllocation(db.Model):
@@ -405,6 +408,9 @@ class PotentialChangeOrder(db.Model):
     cost_code = db.Column(db.String(30))
     notes = db.Column(db.Text)
     change_order_id = db.Column(db.Integer, db.ForeignKey('change_order.id'), nullable=True)
+    linked_rfi_id = db.Column(db.Integer, db.ForeignKey('rfi.id'), nullable=True)
+    linked_commitment_ref = db.Column(db.String(80))
+    attachments_json = db.Column(db.Text)
     created_by_id = db.Column(db.Integer, db.ForeignKey('user.id'))
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
@@ -606,6 +612,7 @@ os.makedirs(os.path.join(UPLOAD_FOLDER, 'photos'), exist_ok=True)
 os.makedirs(os.path.join(UPLOAD_FOLDER, 'coi'), exist_ok=True)
 os.makedirs(os.path.join(UPLOAD_FOLDER, 'documents'), exist_ok=True)
 os.makedirs(os.path.join(UPLOAD_FOLDER, 'attachments'), exist_ok=True)
+os.makedirs(os.path.join(UPLOAD_FOLDER, 'change_orders'), exist_ok=True)
 
 
 def allowed_file(filename):
@@ -2432,6 +2439,184 @@ def api_sync_change_order_to_sov(co_id):
         return jsonify({'error': str(exc)}), 400
     except Exception as exc:
         return jsonify({'error': str(exc)}), 500
+
+
+@app.route('/api/change-orders/link-options', methods=['GET'])
+@login_required
+def api_change_orders_link_options():
+    project_id = request.args.get('project_id', type=int) or get_current_project_id()
+    if not project_id:
+        return jsonify({'error': 'project_id required'}), 400
+    rfis = RFI.query.filter_by(project_id=int(project_id)).order_by(RFI.created_at.desc()).limit(200).all()
+    return jsonify({
+        'rfis': [{'id': r.id, 'number': r.number, 'subject': r.subject, 'status': r.status} for r in rfis],
+        'commitments': [],  # client supplements from localStorage
+    })
+
+
+@app.route('/api/change-orders/<int:co_id>/workflow', methods=['POST'])
+@login_required
+def api_change_order_workflow(co_id):
+    from co_persistence import co_workflow_action, notify_ball_in_court, co_to_dict
+    co = ChangeOrder.query.get_or_404(co_id)
+    body = request.get_json(silent=True) or {}
+    action = body.get('action')
+    old_status = co.status
+    try:
+        new_status, final_approved = co_workflow_action(co, action, current_user, User)
+    except ValueError as exc:
+        return jsonify({'error': str(exc)}), 400
+
+    if action == 'submit' and not co.submitted_at:
+        co.submitted_at = datetime.utcnow()
+        try:
+            from case_workflow import create_approval
+            create_approval(
+                project_id=co.project_id,
+                module='Change Orders',
+                entity_type='ChangeOrder',
+                entity_id=co.id,
+                title=f'Change Order {co.number} submitted — {co.ball_in_court_role} review',
+                description=co.description or '',
+                action_url=f'/change-orders?project_id={co.project_id}',
+                payload={'amount': co.amount, 'status': new_status, 'ball_in_court': co.ball_in_court_role},
+                assignee_role=co.ball_in_court_role,
+            )
+        except Exception:
+            pass
+        from sage_service import create_and_process_sage_event
+        create_and_process_sage_event(
+            SageSyncEvent, Project, db, co.project_id,
+            'ChangeOrderSubmitted',
+            message=f'{co.number} submitted — ball with {co.ball_in_court_role}',
+            payload={'change_order_id': co.id, 'amount': co.amount},
+            user_id=current_user.id,
+        )
+
+    sync_result = None
+    budget_sync_result = None
+    if final_approved:
+        co.approved_at = datetime.utcnow()
+        co.approved_by_id = current_user.id
+        try:
+            from pay_app_persistence import sync_change_order_to_sov
+            sync_result = sync_change_order_to_sov(
+                ChangeOrder, ChangeOrderAllocation, PayAppProjectState,
+                ScheduleData, Project, db, co.id, current_user.id,
+            )
+            co.sage_sync_status = 'sov_synced'
+            from sage_service import create_and_process_sage_event
+            create_and_process_sage_event(
+                SageSyncEvent, Project, db, co.project_id,
+                'ChangeOrderApproved',
+                message=f'Change Order {co.number} approved — SOV and schedule updated',
+                payload={'change_order_id': co.id, 'amount': co.amount, 'sync': sync_result},
+                user_id=current_user.id,
+            )
+        except Exception as exc:
+            co.sage_sync_status = f'sync_error:{str(exc)[:120]}'
+            sync_result = {'error': str(exc)}
+        try:
+            from budget_persistence import sync_change_order_to_budget
+            budget_sync_result = sync_change_order_to_budget(
+                ChangeOrder, ChangeOrderAllocation, BudgetProjectState,
+                db, co.id, old_status, 'Approved', current_user.id,
+            )
+        except Exception:
+            pass
+    elif action in ('submit', 'approve') and co.ball_in_court_role:
+        notify_ball_in_court(
+            co.project_id, co, User,
+            title=f'{co.number} — action required ({co.ball_in_court_role})',
+            description=f'Status: {new_status}. {co.description or ""}',
+        )
+        if action == 'approve' and not final_approved:
+            try:
+                from case_workflow import create_approval
+                create_approval(
+                    project_id=co.project_id,
+                    module='Change Orders',
+                    entity_type='ChangeOrder',
+                    entity_id=co.id,
+                    title=f'Change Order {co.number} — {co.ball_in_court_role} approval',
+                    description=co.description or '',
+                    action_url=f'/change-orders?project_id={co.project_id}',
+                    payload={'amount': co.amount, 'status': new_status},
+                    assignee_role=co.ball_in_court_role,
+                )
+            except Exception:
+                pass
+
+    if action == 'reject':
+        try:
+            from budget_persistence import sync_change_order_to_budget
+            budget_sync_result = sync_change_order_to_budget(
+                ChangeOrder, ChangeOrderAllocation, BudgetProjectState,
+                db, co.id, old_status, 'Rejected', current_user.id,
+            )
+        except Exception:
+            pass
+
+    db.session.commit()
+    allocs = ChangeOrderAllocation.query.filter_by(change_order_id=co.id).all()
+    return jsonify({
+        'ok': True,
+        'new_status': new_status,
+        'final_approved': final_approved,
+        'ball_in_court_role': co.ball_in_court_role,
+        'change_order': co_to_dict(co, allocs),
+        'sync_result': sync_result,
+        'budget_sync_result': budget_sync_result,
+    })
+
+
+@app.route('/api/change-orders/<int:co_id>/attachments', methods=['POST'])
+@login_required
+def api_upload_co_attachment(co_id):
+    from co_persistence import append_attachment, attachment_record, co_to_dict
+    co = ChangeOrder.query.get_or_404(co_id)
+    file = request.files.get('file')
+    if not file or not file.filename:
+        return jsonify({'error': 'file required'}), 400
+    folder = os.path.join(app.config['UPLOAD_FOLDER'], 'change_orders', str(co_id))
+    os.makedirs(folder, exist_ok=True)
+    saved = save_uploaded_file(file, folder=f'change_orders/{co_id}')
+    if not saved:
+        return jsonify({'error': 'invalid file type'}), 400
+    record = attachment_record(saved, file.filename, current_user.id)
+    append_attachment(co, record)
+    db.session.commit()
+    allocs = ChangeOrderAllocation.query.filter_by(change_order_id=co.id).all()
+    return jsonify({'ok': True, 'attachment': record, 'change_order': co_to_dict(co, allocs)})
+
+
+@app.route('/api/pcos/<int:pco_id>/attachments', methods=['POST'])
+@login_required
+def api_upload_pco_attachment(pco_id):
+    from co_persistence import pco_to_dict
+    pco = PotentialChangeOrder.query.get_or_404(pco_id)
+    file = request.files.get('file')
+    if not file or not file.filename:
+        return jsonify({'error': 'file required'}), 400
+    saved = save_uploaded_file(file, folder=f'change_orders/pco_{pco_id}')
+    if not saved:
+        return jsonify({'error': 'invalid file type'}), 400
+    # Store PCO attachments in notes/metadata via a simple JSON file list on pco notes field - use attachments on promote
+    # For now store in pco notes append - better: add attachments_json to PCO
+    folder_path = os.path.join(app.config['UPLOAD_FOLDER'], 'change_orders', f'pco_{pco_id}')
+    allocs = PCOAllocation.query.filter_by(pco_id=pco.id).all()
+    return jsonify({
+        'ok': True,
+        'attachment': {'filename': saved, 'original_name': file.filename, 'path': f'change_orders/pco_{pco_id}/{saved}'},
+        'pco': pco_to_dict(pco, allocs),
+    })
+
+
+@app.route('/uploads/change_orders/<path:subpath>')
+@login_required
+def serve_co_attachment(subpath):
+    directory = os.path.join(app.config['UPLOAD_FOLDER'], 'change_orders')
+    return send_from_directory(directory, subpath)
 
 
 # ==================== PCO (Potential Change Order) API ====================
