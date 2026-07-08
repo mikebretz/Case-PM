@@ -476,6 +476,10 @@ class Commitment(db.Model):
     freight_terms = db.Column(db.String(120))
     tax_exempt = db.Column(db.Boolean, default=False)
     aia_contract_json = db.Column(db.Text)
+    external_document_provider = db.Column(db.String(40))
+    external_document_id = db.Column(db.String(200))
+    external_document_url = db.Column(db.String(500))
+    catina_project_id = db.Column(db.String(120))
     created_by_id = db.Column(db.Integer, db.ForeignKey('user.id'))
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
@@ -2056,6 +2060,21 @@ def _parse_commitment_date(value):
         return datetime.utcnow().date()
 
 
+def _sage_commitment_event(commitment, event_type, message='', extra=None, user_id=None):
+    from commitment_persistence import build_commitment_sage_payload
+    from sage_service import create_and_process_sage_event
+    allocs = CommitmentAllocation.query.filter_by(commitment_id=commitment.id).all()
+    payload = build_commitment_sage_payload(commitment, allocs, extra)
+    return create_and_process_sage_event(
+        SageSyncEvent, Project, db, commitment.project_id,
+        event_type,
+        message=message or f'{commitment.number} — {event_type}',
+        payload=payload,
+        user_id=user_id,
+        Commitment=Commitment,
+    )
+
+
 @app.route('/api/commitments/dashboard', methods=['GET'])
 @login_required
 def api_commitments_dashboard():
@@ -2202,6 +2221,7 @@ def api_delete_commitment(commitment_id):
             c.status = 'Void'
             c.ball_in_court_role = None
             db.session.flush()
+            _sage_commitment_event(c, 'CommitmentVoided', user_id=current_user.id)
         else:
             return jsonify({
                 'error': f'Cannot delete commitment in status {c.status}. Use force delete or void first.',
@@ -2248,24 +2268,37 @@ def api_commitment_workflow(commitment_id):
             )
         except Exception:
             pass
-        from sage_service import create_and_process_sage_event
-        create_and_process_sage_event(
-            SageSyncEvent, Project, db, c.project_id,
-            'CommitmentSubmitted',
+        _sage_commitment_event(
+            c, 'CommitmentSubmitted',
             message=f'{c.number} submitted — ball with {c.ball_in_court_role}',
-            payload={'commitment_id': c.id, 'amount': c.current_amount, 'type': c.commitment_type},
             user_id=current_user.id,
         )
 
+    if action == 'reject':
+        _sage_commitment_event(c, 'CommitmentRejected', user_id=current_user.id)
+
+    if action == 'void':
+        _sage_commitment_event(c, 'CommitmentVoided', user_id=current_user.id)
+
     if action == 'send_docusign':
-        from sage_service import create_and_process_sage_event
-        create_and_process_sage_event(
-            SageSyncEvent, Project, db, c.project_id,
-            'CommitmentDocuSignSent',
-            message=f'DocuSign envelope queued for {c.number}',
-            payload={'commitment_id': c.id, 'envelope_id': c.docusign_envelope_id},
+        from commitment_persistence import commitment_to_dict
+        from docusign_service import send_commitment_envelope
+        allocs_pre = CommitmentAllocation.query.filter_by(commitment_id=c.id).all()
+        ds_result = send_commitment_envelope(commitment_to_dict(c, allocs_pre))
+        if ds_result.get('envelope_id'):
+            c.docusign_envelope_id = ds_result['envelope_id']
+        c.docusign_status = ds_result.get('status', 'sent')
+        if ds_result.get('simulated'):
+            c.docusign_status = 'simulated'
+        _sage_commitment_event(
+            c, 'CommitmentDocuSignSent',
+            message=f'DocuSign envelope for {c.number}',
+            extra={'envelope_id': c.docusign_envelope_id, 'docusign_result': ds_result},
             user_id=current_user.id,
         )
+
+    if action == 'sign_internal' and c.signature_status == 'fully_executed':
+        _sage_commitment_event(c, 'CommitmentExecuted', user_id=current_user.id)
 
     if final_approved:
         c.approved_at = datetime.utcnow()
@@ -2280,15 +2313,21 @@ def api_commitment_workflow(commitment_id):
             sov_sync = sync_commitment_to_sub_sov(PayAppProjectState, db, c, allocs, current_user.id)
         except Exception as exc:
             sov_sync = {'error': str(exc)}
-        from sage_service import create_and_process_sage_event
-        create_and_process_sage_event(
-            SageSyncEvent, Project, db, c.project_id,
-            'CommitmentApproved',
+        _sage_commitment_event(
+            c, 'CommitmentApproved',
             message=f'Commitment {c.number} approved — budget & SOV updated',
-            payload={'commitment_id': c.id, 'amount': c.current_amount, 'budget_sync': budget_sync, 'sov_sync': sov_sync},
+            extra={'budget_sync': budget_sync, 'sov_sync': sov_sync},
             user_id=current_user.id,
         )
-    elif action in ('submit', 'approve') and c.ball_in_court_role:
+    elif action == 'approve' and not final_approved:
+        _sage_commitment_event(
+            c, 'CommitmentApprovalStep',
+            message=f'{c.number} — approved step, ball with {c.ball_in_court_role}',
+            extra={'new_status': new_status},
+            user_id=current_user.id,
+        )
+
+    if action in ('submit', 'approve') and c.ball_in_court_role:
         notify_ball_in_court(c.project_id, c, User)
         if action == 'approve' and not final_approved:
             try:
@@ -2318,6 +2357,125 @@ def api_commitment_workflow(commitment_id):
         'budget_sync_result': budget_sync,
         'sov_sync_result': sov_sync,
     })
+
+
+@app.route('/api/integrations/status', methods=['GET'])
+@login_required
+def api_integrations_status():
+    import os
+    from aia_service import integration_info as aia_info
+    from docusign_service import integration_info as docusign_info
+    sage_url = os.environ.get('SAGE_API_URL', '').strip()
+    return jsonify({
+        'sage_300': {
+            'configured': bool(sage_url),
+            'api_url_set': bool(sage_url),
+            'connector_endpoint': f'{sage_url.rstrip("/")}/api/v1/transactions' if sage_url else None,
+            'note': 'Set SAGE_API_URL and SAGE_API_KEY. Project sage_job_number required per project.',
+        },
+        'aia': aia_info(),
+        'docusign': docusign_info(),
+    })
+
+
+@app.route('/api/commitments/<int:commitment_id>/sage-sync', methods=['POST'])
+@login_required
+def api_commitment_sage_sync(commitment_id):
+    from commitment_persistence import commitment_to_dict
+    c = Commitment.query.get_or_404(commitment_id)
+    body = request.get_json(silent=True) or {}
+    event_type = body.get('event_type') or 'CommitmentUpdated'
+    if c.status == 'Approved' and event_type == 'CommitmentUpdated':
+        event_type = 'CommitmentApproved'
+    event = _sage_commitment_event(
+        c, event_type,
+        message=body.get('message') or f'Manual Sage sync — {c.number}',
+        extra={'manual': True},
+        user_id=current_user.id,
+    )
+    from sage_service import sage_event_to_dict
+    allocs = CommitmentAllocation.query.filter_by(commitment_id=c.id).all()
+    db.session.refresh(c)
+    return jsonify({
+        'ok': True,
+        'event': sage_event_to_dict(event),
+        'commitment': commitment_to_dict(c, allocs),
+    })
+
+
+@app.route('/api/commitments/<int:commitment_id>/aia/export', methods=['GET'])
+@login_required
+def api_commitment_aia_export(commitment_id):
+    from commitment_persistence import commitment_to_dict
+    from aia_service import commitment_export_for_catina
+    c = Commitment.query.get_or_404(commitment_id)
+    allocs = CommitmentAllocation.query.filter_by(commitment_id=c.id).all()
+    return jsonify(commitment_export_for_catina(commitment_to_dict(c, allocs)))
+
+
+@app.route('/api/commitments/<int:commitment_id>/aia/catina-link', methods=['POST'])
+@login_required
+def api_commitment_catina_link(commitment_id):
+    from commitment_persistence import commitment_to_dict
+    from aia_service import build_catina_create_url, build_catina_open_url
+    c = Commitment.query.get_or_404(commitment_id)
+    allocs = CommitmentAllocation.query.filter_by(commitment_id=c.id).all()
+    cdict = commitment_to_dict(c, allocs)
+    active = Project.query.get(c.project_id)
+    project_dict = {
+        'name': active.name if active else '',
+        'number': active.number if active else '',
+    }
+    url = build_catina_open_url(c.external_document_id, c.external_document_url) if c.external_document_id else build_catina_create_url(cdict, project_dict)
+    return jsonify({
+        'ok': True,
+        'url': url,
+        'portal': 'AIA Contract Documents (Catina)',
+        'configured': bool(__import__('aia_service').is_catina_configured()),
+    })
+
+
+@app.route('/api/commitments/<int:commitment_id>/aia/register-document', methods=['POST'])
+@login_required
+def api_commitment_register_aia_document(commitment_id):
+    from commitment_persistence import commitment_to_dict
+    from aia_service import register_external_document as link_doc
+    c = Commitment.query.get_or_404(commitment_id)
+    body = request.get_json(silent=True) or {}
+    provider = body.get('provider') or 'catina'
+    doc_id = body.get('document_id') or body.get('external_document_id')
+    doc_url = body.get('document_url') or body.get('external_document_url')
+    if not doc_id and not doc_url:
+        return jsonify({'error': 'document_id or document_url required'}), 400
+    link_doc(c, provider, doc_id or doc_url, doc_url, body.get('catina_project_id'))
+    c.updated_at = datetime.utcnow()
+    db.session.commit()
+    allocs = CommitmentAllocation.query.filter_by(commitment_id=c.id).all()
+    return jsonify({'ok': True, 'commitment': commitment_to_dict(c, allocs)})
+
+
+@app.route('/api/webhooks/docusign', methods=['POST'])
+def api_docusign_webhook():
+    from docusign_service import parse_webhook_payload
+    raw = request.get_data()
+    data = parse_webhook_payload(raw)
+    if not data:
+        return jsonify({'error': 'invalid payload'}), 400
+    envelope_id = None
+    status = None
+    if isinstance(data, dict):
+        envelope_id = data.get('envelopeId') or data.get('data', {}).get('envelopeId')
+        status = data.get('status') or data.get('event')
+    if envelope_id:
+        c = Commitment.query.filter_by(docusign_envelope_id=envelope_id).first()
+        if c:
+            c.docusign_status = status or c.docusign_status
+            if status in ('completed', 'Completed'):
+                c.signature_status = 'fully_executed'
+                c.executed_date = datetime.utcnow().date()
+            c.updated_at = datetime.utcnow()
+            db.session.commit()
+    return jsonify({'ok': True})
 
 
 @app.route('/api/commitments/<int:commitment_id>/attachments', methods=['POST'])
@@ -2729,7 +2887,7 @@ def api_retry_sage_sync_event(event_id):
     from sage_service import process_sage_event, sage_event_to_dict
     event = SageSyncEvent.query.get_or_404(event_id)
     event.status = 'queued'
-    process_sage_event(event, db)
+    process_sage_event(event, db, Commitment=Commitment)
     return jsonify({'ok': True, 'event': sage_event_to_dict(event)})
 
 

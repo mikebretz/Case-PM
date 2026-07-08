@@ -29,6 +29,7 @@
     stats: {},
     sageLog: [],
     auditLog: [],
+    integrations: null,
     filter: { search: '', status: '', type: '' },
     allocationRows: [],
     drawerRecord: null,
@@ -193,13 +194,26 @@
   async function loadSageLog() {
     const pid = projectId();
     if (!pid) return;
+    const types = (global.CasePMCommitmentSageSync && CasePMCommitmentSageSync.COMMITMENT_SAGE_EVENTS) || [
+      'CommitmentApproved', 'CommitmentSubmitted', 'CommitmentDocuSignSent',
+      'CommitmentApprovalStep', 'CommitmentRejected', 'CommitmentVoided', 'CommitmentUpdated', 'CommitmentExecuted',
+    ];
     try {
-      const res = await fetch(`/api/sage/sync-events?project_id=${pid}&limit=30`, { credentials: 'same-origin' });
-      const json = await res.json();
-      state.sageLog = (json.events || []).filter(e =>
-        ['CommitmentApproved', 'CommitmentSubmitted', 'CommitmentDocuSignSent'].includes(e.event_type)
-      );
+      if (global.CasePMCommitmentSageSync) {
+        state.sageLog = await CasePMCommitmentSageSync.fetchSageEvents(40);
+      } else {
+        const res = await fetch(`/api/sage/sync-events?project_id=${pid}&limit=40`, { credentials: 'same-origin' });
+        const json = await res.json();
+        state.sageLog = (json.events || []).filter(e => types.includes(e.event_type));
+      }
     } catch { state.sageLog = []; }
+    renderSageBar();
+  }
+
+  async function loadIntegrations() {
+    if (global.CasePMCommitmentSageSync) {
+      state.integrations = await CasePMCommitmentSageSync.fetchIntegrationStatus();
+    }
     renderSageBar();
   }
 
@@ -291,6 +305,7 @@
 
   function renderSageBar() {
     const el = document.getElementById('comSageStatusText');
+    const intEl = document.getElementById('comIntegrationStatus');
     if (!el) return;
     const ctx = projectCtx();
     const job = ctx.sage_job || ctx.number || '—';
@@ -298,9 +313,16 @@
     el.textContent = latest
       ? `Sage 300 · Job ${job} · ${latest.event_type} · ${latest.status} · ${new Date(latest.created_at).toLocaleString()}`
       : `Sage 300 · Job ${job} · No commitment sync events yet`;
+    if (intEl && state.integrations) {
+      const s = state.integrations.sage_300?.configured ? 'Sage ✓' : 'Sage ○';
+      const a = state.integrations.aia?.catina?.configured ? 'AIA Catina ✓' : 'AIA Catina ○';
+      const d = state.integrations.docusign?.configured ? 'DocuSign ✓' : 'DocuSign ○';
+      intEl.textContent = `${s} · ${a} · ${d}`;
+    }
   }
 
-  function openSageSyncLogModal() {
+  async function openSageSyncLogModal() {
+    await loadSageLog();
     let modal = document.getElementById('comSageSyncLogModal');
     if (!modal) {
       modal = document.createElement('dialog');
@@ -313,37 +335,103 @@
         <tr class="border-b border-zinc-800">
           <td class="py-2 pr-3 text-[10px] text-zinc-400 whitespace-nowrap">${new Date(e.created_at).toLocaleString()}</td>
           <td class="py-2 pr-3 text-xs">${esc(e.event_type)}</td>
-          <td class="py-2 pr-3 text-xs ${e.status === 'queued' ? 'text-amber-400' : e.status === 'error' ? 'text-red-400' : 'text-emerald-400'}">${esc(e.status)}</td>
+          <td class="py-2 pr-3 text-xs ${e.status === 'queued' ? 'text-amber-400' : e.status === 'error' ? 'text-red-400' : e.status === 'simulated' ? 'text-sky-400' : 'text-emerald-400'}">${esc(e.status)}</td>
           <td class="py-2 text-xs text-zinc-300">${esc(e.message || '')}</td>
+          <td class="py-2 text-right">${e.status === 'error' ? `<button type="button" onclick="CasePMCommitments.retrySageEvent(${e.id})" class="text-xs text-amber-400 underline">Retry</button>` : ''}</td>
         </tr>`).join('')
-      : '<tr><td colspan="4" class="py-6 text-center text-zinc-500 text-sm">No Sage sync events recorded yet.</td></tr>';
+      : '<tr><td colspan="5" class="py-6 text-center text-zinc-500 text-sm">No Sage sync events recorded yet.</td></tr>';
     modal.innerHTML = `
       <div class="p-5">
         <div class="flex items-center justify-between mb-4">
           <h3 class="text-lg font-semibold">Sage 300 Commitment Sync Log</h3>
           <button type="button" onclick="document.getElementById('comSageSyncLogModal').close()" class="text-zinc-400 hover:text-white"><i class="fa-solid fa-times"></i></button>
         </div>
-        <p class="text-xs text-zinc-400 mb-3">Commitment submit, approve, and DocuSign events post to Sage when SAGE_API_URL is configured.</p>
+        <p class="text-xs text-zinc-400 mb-3">PO → AP · Subcontracts → Subcontracts module · Full allocation/vendor payloads when SAGE_API_URL is configured.</p>
         <div class="max-h-80 overflow-auto">
-          <table class="w-full text-left"><thead><tr class="text-[10px] text-zinc-500 uppercase"><th class="pb-2">Time</th><th class="pb-2">Event</th><th class="pb-2">Status</th><th class="pb-2">Detail</th></tr></thead>
-          <tbody>${rows}</tbody></table>
+          <table class="w-full text-left"><thead><tr class="text-[10px] text-zinc-500 uppercase"><th class="pb-2">Time</th><th class="pb-2">Event</th><th class="pb-2">Status</th><th class="pb-2">Detail</th><th class="pb-2"></th></tr></thead>
+          <tbody id="comSageLogBody">${rows}</tbody></table>
         </div>
       </div>`;
     modal.showModal();
-    const pid = projectId();
-    if (pid) {
-      fetch(`/api/sage/sync-events?project_id=${pid}&limit=40`, { credentials: 'same-origin' })
-        .then(r => r.json())
-        .then(json => {
-          const events = (json.events || []).filter(e =>
-            ['CommitmentApproved', 'CommitmentSubmitted', 'CommitmentDocuSignSent'].includes(e.event_type)
-          );
-          if (!events.length) return;
-          state.sageLog = events;
-          openSageSyncLogModal();
-        })
-        .catch(() => {});
+  }
+
+  async function retrySageEvent(eventId) {
+    try {
+      if (global.CasePMCommitmentSageSync) {
+        await CasePMCommitmentSageSync.retryEvent(eventId);
+      }
+      await loadSageLog();
+      toast('Sage event retried');
+    } catch (err) {
+      alert(err.message);
     }
+  }
+
+  async function syncSageForCommitment(id) {
+    try {
+      const json = global.CasePMCommitmentSageSync
+        ? await CasePMCommitmentSageSync.syncCommitment(id)
+        : await api(`/api/commitments/${id}/sage-sync`, { method: 'POST', body: '{}' });
+      await refreshAll();
+      if (state.drawerRecord?.id === id) renderDrawer(json.commitment);
+      toast(`Sage sync: ${json.event?.status || 'queued'}`);
+    } catch (err) {
+      alert(err.message);
+    }
+  }
+
+  async function openCatina(id) {
+    try {
+      await CasePMCommitmentSageSync.openCatina(id);
+      toast('Opened AIA Contract Documents (Catina)');
+    } catch (err) {
+      alert(err.message);
+    }
+  }
+
+  async function registerAiaDocument(id) {
+    const docUrl = prompt('Paste the AIA Catina document URL (or document ID):');
+    if (!docUrl) return;
+    const isUrl = docUrl.startsWith('http');
+    try {
+      const json = await CasePMCommitmentSageSync.registerAiaDocument(id, isUrl ? null : docUrl, isUrl ? docUrl : null);
+      await refreshAll();
+      if (state.drawerRecord?.id === id) renderDrawer(json.commitment);
+      toast('Official AIA document linked');
+    } catch (err) {
+      alert(err.message);
+    }
+  }
+
+  function showIntegrationsModal() {
+    const i = state.integrations || {};
+    const modal = document.createElement('dialog');
+    modal.className = 'bg-zinc-900 border border-zinc-700 rounded-lg p-0 text-white max-w-lg w-full';
+    modal.innerHTML = `
+      <div class="p-5">
+        <div class="flex justify-between items-center mb-4">
+          <h3 class="text-lg font-semibold">Integrations</h3>
+          <button type="button" class="text-zinc-400 hover:text-white" onclick="this.closest('dialog').close(); this.closest('dialog').remove()"><i class="fa-solid fa-times"></i></button>
+        </div>
+        <div class="space-y-4 text-sm">
+          <div class="border border-zinc-700 rounded-md p-3">
+            <div class="font-medium text-emerald-400 mb-1">Sage 300 CRE</div>
+            <p class="text-xs text-zinc-400">${i.sage_300?.configured ? 'SAGE_API_URL configured — live posting enabled.' : 'Set SAGE_API_URL + SAGE_API_KEY on server. Events log as simulated until configured.'}</p>
+            <p class="text-xs text-zinc-500 mt-1">Project sage_job_number required per project.</p>
+          </div>
+          <div class="border border-zinc-700 rounded-md p-3">
+            <div class="font-medium text-sky-400 mb-1">AIA Contract Documents (Catina)</div>
+            <p class="text-xs text-zinc-400">Official licensed AIA forms. Use <strong>Open in Catina</strong> on a commitment, then <strong>Link AIA Document</strong> to attach the executed document.</p>
+            <p class="text-xs text-zinc-500 mt-1">Env: AIA_CATINA_ORG_ID or AIA_CATINA_ENABLED=1</p>
+          </div>
+          <div class="border border-zinc-700 rounded-md p-3">
+            <div class="font-medium text-indigo-400 mb-1">DocuSign</div>
+            <p class="text-xs text-zinc-400">${i.docusign?.configured ? 'DocuSign JWT configured — live envelopes on send.' : 'Simulated envelope IDs until DOCUSIGN_* env vars set. Prefer Catina for official AIA e-sign.'}</p>
+          </div>
+        </div>
+      </div>`;
+    document.body.appendChild(modal);
+    modal.showModal();
   }
 
   function showCommitmentAuditLog() {
@@ -852,6 +940,7 @@
         ${c.insurance_requirements ? `<p><span class="text-zinc-500">Insurance</span><br>${esc(c.insurance_requirements)}</p>` : ''}
         <p><span class="text-zinc-500">Scope</span><br>${esc(c.scope_of_work || c.description || '—')}</p>
         <p><span class="text-zinc-500">Sage</span><br>${esc(c.sage_sync_status || '—')}</p>
+        ${c.external_document_url ? `<p><span class="text-zinc-500">Official AIA</span><br><a href="${esc(c.external_document_url)}" target="_blank" rel="noopener" class="text-violet-400 underline">${esc(c.external_document_provider || 'catina')} — ${esc(c.external_document_id || 'linked')}</a></p>` : ''}
       </div>
       <div class="mt-4"><div class="text-xs text-zinc-500 uppercase mb-2">Schedule of Values / Allocations</div>
       <table class="w-full text-xs"><thead><tr class="text-zinc-500"><th class="text-left py-1">Code</th><th class="text-left py-1">Description</th><th class="text-right py-1">Amount</th></tr></thead>
@@ -863,6 +952,9 @@
     document.getElementById('drawerActions').innerHTML = `
       <button type="button" onclick="CasePMCommitments.printCommitment(${c.id})" class="px-4 py-2 bg-sky-700 hover:bg-sky-600 rounded-md text-sm"><i class="fa-solid fa-print mr-1"></i>Print</button>
       <button type="button" onclick="CasePMCommitments.editContractLanguage(${c.id})" class="px-4 py-2 bg-indigo-800 hover:bg-indigo-700 rounded-md text-sm"><i class="fa-solid fa-file-contract mr-1"></i>Contract Language</button>
+      <button type="button" onclick="CasePMCommitments.openCatina(${c.id})" class="px-4 py-2 bg-violet-800 hover:bg-violet-700 rounded-md text-sm" title="AIA Contract Documents (Catina)"><i class="fa-solid fa-building-columns mr-1"></i>Open in Catina</button>
+      <button type="button" onclick="CasePMCommitments.registerAiaDocument(${c.id})" class="px-4 py-2 bg-violet-900/60 hover:bg-violet-800 rounded-md text-sm">Link AIA Document</button>
+      <button type="button" onclick="CasePMCommitments.syncSageForCommitment(${c.id})" class="px-4 py-2 bg-amber-800 hover:bg-amber-700 rounded-md text-sm" title="Sync to Sage 300"><i class="fa-solid fa-rotate mr-1"></i>Sage Sync</button>
       ${showSubmit ? `<button type="button" onclick="CasePMCommitments.workflow(${c.id},'submit')" class="px-4 py-2 bg-amber-600 hover:bg-amber-500 rounded-md text-sm">Submit</button>` : ''}
       ${showApprove ? `<button type="button" onclick="CasePMCommitments.workflow(${c.id},'approve')" class="px-4 py-2 bg-emerald-600 hover:bg-emerald-500 rounded-md text-sm">Approve</button>
       <button type="button" onclick="CasePMCommitments.workflow(${c.id},'reject')" class="px-4 py-2 bg-zinc-800 text-red-400 rounded-md text-sm">Reject</button>` : ''}
@@ -1077,7 +1169,7 @@
   }
 
   async function refreshAll() {
-    await Promise.all([loadDashboard(), loadCommitments(), loadSageLog()]);
+    await Promise.all([loadDashboard(), loadCommitments(), loadSageLog(), loadIntegrations()]);
   }
 
   async function init() {
@@ -1115,6 +1207,11 @@
     onAiaFormChange,
     openSageSyncLogModal,
     showCommitmentAuditLog,
+    showIntegrationsModal,
+    syncSageForCommitment,
+    retrySageEvent,
+    openCatina,
+    registerAiaDocument,
     toggleContractEditor,
     loadContractTemplate,
     addContractSection,

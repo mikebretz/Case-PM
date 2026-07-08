@@ -15,6 +15,7 @@ window.COMMITMENT_PROJECT_CTX = {
     sage_job: {{ (active_project.sage_job_number or active_project.accounting_project_number if active_project else '')|tojson }},
 };
 </script>
+<script src="{{ url_for('static', filename='js/commitment-sage-sync.js') }}"></script>
 <script src="{{ url_for('static', filename='js/aia-contract-templates.js') }}"></script>
 <script src="{{ url_for('static', filename='js/commitments-app.js') }}"></script>
 
@@ -121,10 +122,12 @@ window.COMMITMENT_PROJECT_CTX = {
 
 <!-- FOOTER (Sage + Audit Log — matches Budget page) -->
 <div id="comSageSyncStatusBar" class="fixed bottom-0 left-56 right-0 bg-zinc-900 border-t border-zinc-700 px-6 py-2 text-xs text-zinc-400 flex items-center justify-between z-[60]">
-    <div class="flex items-center gap-4">
+    <div class="flex items-center gap-4 flex-wrap">
         <span id="comSageStatusText">Sage 300 Commitments · Loading…</span>
+        <span id="comIntegrationStatus" class="text-zinc-500 hidden sm:inline"></span>
         <button type="button" onclick="CasePMCommitments.openSageSyncLogModal()" class="text-emerald-400 hover:text-emerald-300 underline">View Sage Log</button>
         <button type="button" onclick="CasePMCommitments.showCommitmentAuditLog()" class="text-emerald-400 hover:text-emerald-300 underline">View Commitment Audit Log</button>
+        <button type="button" onclick="CasePMCommitments.showIntegrationsModal()" class="text-sky-400 hover:text-sky-300 underline">Integrations</button>
     </div>
     <div class="text-emerald-400">● Online</div>
 </div>
