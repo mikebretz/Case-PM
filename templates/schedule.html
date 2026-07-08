@@ -6,7 +6,7 @@
 <link rel="stylesheet" href="https://cdn.dhtmlx.com/gantt/edge/dhtmlxgantt.css">
 <link rel="stylesheet" href="{{ url_for('static', filename='css/schedule-gantt.css') }}">
 
-<div class="schedule-page-root">
+<div class="schedule-page-root schedule-theme-dark" data-schedule-theme="dark">
     <div id="scheduleChrome" class="no-print">
         <div class="flex flex-wrap items-center justify-between gap-2 mb-2 pt-0">
             <div class="min-w-0">
@@ -75,8 +75,8 @@
             </div>
             <div class="flex flex-wrap gap-1 border-r border-zinc-700 pr-2 mr-1">
                 <span class="text-[0.65rem] text-zinc-500 self-center px-1">Timescale</span>
-                <button type="button" class="schedule-toolbar-btn" data-timescale="day" onclick="ScheduleApp.setTimescale('day')" title="Day view">Days</button>
-                <button type="button" class="schedule-toolbar-btn active-tool" data-timescale="week" onclick="ScheduleApp.setTimescale('week')" title="Week view">Weeks</button>
+                <button type="button" class="schedule-toolbar-btn active-tool" data-timescale="day" onclick="ScheduleApp.setTimescale('day')" title="Day view">Days</button>
+                <button type="button" class="schedule-toolbar-btn" data-timescale="week" onclick="ScheduleApp.setTimescale('week')" title="Week view">Weeks</button>
                 <button type="button" class="schedule-toolbar-btn" data-timescale="month" onclick="ScheduleApp.setTimescale('month')" title="Month view">Months</button>
                 <button type="button" class="schedule-toolbar-btn" data-timescale="quarter" onclick="ScheduleApp.setTimescale('quarter')" title="Quarter view">Quarters</button>
                 <button type="button" class="schedule-toolbar-btn" onclick="ScheduleApp.panTimeline(-1, 'month')" title="Previous month"><i class="fa-solid fa-chevron-left"></i></button>

@@ -35,7 +35,7 @@
         data_date: typeof CasePMSchedule !== 'undefined' ? CasePMSchedule.formatDate(new Date()) : '',
         calendar: 'standard',
         lookahead_days: 14,
-        timescale: 'week',
+        timescale: 'day',
         default_bar_color: '#3b82f6',
         critical_bar_color: '#ef4444',
         progress_bar_color: '#f59e0b',
@@ -491,7 +491,7 @@
             'pointer-events:auto!important',
             'display:flex!important',
             'flex-direction:column!important',
-            'overflow:visible!important',
+            'overflow:hidden!important',
             'background:#0f0f12!important'
         ].join(';');
 
@@ -505,6 +505,7 @@
         }
         handle.style.right = (timelineW - 5) + 'px';
         syncLayoutTimelineWidth();
+        ensureTimelineScrollbar();
     }
 
     function queueChartOverlay() {
@@ -723,12 +724,35 @@
         return computeRollingCalendarBounds();
     }
 
+    function updateScaleHeight() {
+        const rows = (gantt.config.scales || []).length || 2;
+        gantt.config.scale_height = Math.max(88, rows * 44);
+    }
+
+    function bindTimelineScrollbarSync() {
+        const bindEl = el => {
+            if (!el || el.dataset.schedScrollBound) return;
+            el.dataset.schedScrollBound = '1';
+            el.addEventListener('scroll', () => {
+                if (timelineScrollProgrammatic) return;
+                setTimelineScrollX(el.scrollLeft);
+            }, { passive: true });
+        };
+        getTimelineScrollElements().forEach(bindEl);
+        document.querySelectorAll(
+            '#gantt_here .gantt_task_bg, #gantt_here .gantt_task .gantt_layout_content, ' +
+            '#gantt_here [data-cell-id="scrollHor"], #gantt_here [data-cell-id="scrollHor"] .gantt_layout_outer_scroll'
+        ).forEach(bindEl);
+    }
+
     function getTimelineScrollElements() {
         const els = new Set();
         document.querySelectorAll(
             '#gantt_here .gantt_hor_scroll, #gantt_here .gantt_scroll_hor, ' +
+            '#gantt_here [data-cell-id="scrollHor"], ' +
             '#gantt_here [data-cell-id="scrollHor"] .gantt_layout_outer_scroll, ' +
-            '#gantt_here [data-cell-id="scrollHor"] .gantt_hor_scroll'
+            '#gantt_here [data-cell-id="scrollHor"] .gantt_hor_scroll, ' +
+            '#gantt_here .gantt_task .gantt_hor_scroll'
         ).forEach(el => els.add(el));
         return [...els];
     }
@@ -750,8 +774,12 @@
         try {
             if (gantt.scrollTo) gantt.scrollTo(x, y);
         } catch (e) { /* ok */ }
-        getTimelineScrollElements().forEach(el => { el.scrollLeft = x; });
-        requestAnimationFrame(() => { timelineScrollProgrammatic = false; });
+        getTimelineScrollElements().forEach(el => {
+            if (Math.abs(el.scrollLeft - x) > 1) el.scrollLeft = x;
+        });
+        requestAnimationFrame(() => {
+            requestAnimationFrame(() => { timelineScrollProgrammatic = false; });
+        });
     }
 
     function maybeExtendTimelineOnScroll() {
@@ -852,8 +880,13 @@
         if (initTimelineEngine.bound) return;
         initTimelineEngine.bound = true;
 
-        gantt.attachEvent('onGanttScroll', function () {
+        gantt.attachEvent('onGanttScroll', function (left) {
             if (timelineScrollProgrammatic) return;
+            if (left != null) {
+                getTimelineScrollElements().forEach(el => {
+                    if (Math.abs(el.scrollLeft - left) > 1) el.scrollLeft = left;
+                });
+            }
             clearTimeout(timelineExtendTimer);
             timelineExtendTimer = setTimeout(maybeExtendTimelineOnScroll, 100);
         });
@@ -869,6 +902,21 @@
                 e.preventDefault();
                 setTimelineScrollX(readTimelineScrollX() + delta);
             }, { passive: false });
+        }
+        bindTimelineScrollbarSync();
+    }
+
+    function ensureTimelineScrollbar() {
+        bindTimelineScrollbarSync();
+        const scrollHor = document.querySelector('#gantt_here [data-cell-id="scrollHor"]');
+        if (scrollHor) {
+            scrollHor.style.pointerEvents = 'auto';
+            scrollHor.style.zIndex = '30';
+            const inner = scrollHor.querySelector('.gantt_layout_outer_scroll, .gantt_hor_scroll');
+            if (inner) {
+                inner.style.overflowX = 'auto';
+                inner.style.pointerEvents = 'auto';
+            }
         }
     }
 
@@ -1577,7 +1625,8 @@
         gantt.config.row_height = 44;
         gantt.config.bar_height = 26;
         updateRowHeightsForLabels();
-        gantt.config.scale_height = 62;
+        gantt.config.scale_height = 88;
+        updateScaleHeight();
         gantt.config.scroll_size = 20;
         gantt.config.fit_tasks = false;
         gantt.config.show_errors = false;
@@ -1597,7 +1646,7 @@
         gantt.config.show_links = true;
 
         gantt.config.min_column_width = 50;
-        applyTimescaleScales(scheduleSettings.timescale || 'week');
+        applyTimescaleScales(scheduleSettings.timescale || 'day');
 
         const todaySeed = new Date();
         gantt.config.start_date = new Date(todaySeed.getFullYear() - ROLLING_YEARS_BACK, 0, 1);
@@ -1800,6 +1849,7 @@
             refreshWbsCodes();
             updateStatusBar();
             updateDeadlineMarkers();
+            ensureTimelineScrollbar();
         });
 
         document.addEventListener('keydown', onScheduleKeyDown);
@@ -2080,19 +2130,22 @@
             ],
             week: [
                 { unit: 'month', step: 1, format: '%F %Y' },
-                { unit: 'week', step: 1, format: 'W%W' }
+                { unit: 'day', step: 1, format: '%d' }
             ],
             month: [
                 { unit: 'year', step: 1, format: '%Y' },
-                { unit: 'month', step: 1, format: '%M' }
+                { unit: 'month', step: 1, format: '%M' },
+                { unit: 'day', step: 1, format: '%d' }
             ],
             quarter: [
                 { unit: 'year', step: 1, format: '%Y' },
                 { unit: 'month', step: 3, format: '%M' }
             ]
         };
-        gantt.config.scales = scales[scale] || scales.week;
-        if (!gantt.config.min_column_width) gantt.config.min_column_width = 50;
+        gantt.config.scales = scales[scale] || scales.day;
+        const widthByScale = { day: 32, week: 28, month: 18, quarter: 40 };
+        gantt.config.min_column_width = widthByScale[scale] || 32;
+        updateScaleHeight();
     }
 
     function jumpToScheduleTasks() {
@@ -2167,6 +2220,7 @@
         if (la) la.value = scheduleSettings.lookahead_days || 14;
         applyGanttDisplayStyles();
         if (scheduleSettings.timescale) setTimescale(scheduleSettings.timescale, false);
+        else setTimescale('day', false);
         updateDataDateMarker();
     }
 
@@ -3148,13 +3202,14 @@
         if (!dlg) return showScheduleAlert('Features panel not found.', 'error');
         const list = document.getElementById('scheduleFeaturesList');
         if (!list) return;
-        const items = [
+        const installed = [
             ['Chart overlays grid (does not squeeze columns)', 'Drag green edge on chart'],
             ['CPM Schedule + float', 'Toolbar → Schedule'],
             ['Critical path highlight', 'Toolbar → Critical'],
             ['Critical-only filter', 'Toolbar → Critical Only'],
             ['EVM (CPI/SPI) + bar labels', 'Schedule then Display settings'],
             ['Baselines + variance', 'Set Baseline / Baselines manager'],
+            ['Multi-baseline comparison table', 'Baselines → compare checkboxes'],
             ['Data-date marker', 'Data Date field + Schedule'],
             ['Undo / Redo', 'Ctrl+Z / Ctrl+Y'],
             ['Copy / Paste activity', 'Ctrl+C / Ctrl+V'],
@@ -3163,26 +3218,42 @@
             ['Predecessor lag in grid', 'Lag column; edit via Predecessors FS+2'],
             ['Constraint badges', 'Cstr column + Activity modal'],
             ['Custom bar colors', 'Color column or Display settings'],
-            ['Timeline pan + Reset Calendar', '◀ ▶ · Reset Calendar · Shift+wheel'],
+            ['Timeline pan + day scale + scrollbar', 'Days button · ◀ ▶ · drag scrollbar'],
             ['Export JSON / CSV / XER / XML', 'Toolbar export buttons'],
-            ['Print Gantt + Look-ahead', 'Print buttons'],
+            ['Print setup (choose what to print)', 'Print → setup dialog'],
             ['All MS Project/P6 columns', 'All Fields button'],
             ['Activity detail modal', 'Activity tab or double-click row'],
-            ['Look-ahead + Activity table views', 'View tabs'],
+            ['Look-ahead + Activity table + Portfolio', 'View tabs'],
             ['Resource leveling', 'Resources toolbar → Level Resources'],
-            ['Multi-baseline comparison', 'Baselines → check compare boxes'],
-            ['Project EVM rollup (BAC/CPI/SPI/EAC)', 'Run Schedule · status bar + Print EVM'],
-            ['Portfolio schedule dashboard', 'Portfolio tab'],
-            ['Print setup (choose what to print)', 'Print → setup dialog'],
+            ['Project EVM rollup (BAC/CPI/SPI/EAC)', 'Run Schedule · status bar'],
             ['Keyboard shortcuts', 'Press ? on schedule page'],
             ['Reset column widths', 'Columns → Reset Widths']
         ];
-        list.innerHTML = items.map(([name, how]) =>
-            `<div class="flex justify-between gap-3 px-3 py-2 rounded-md bg-zinc-800/80 border border-zinc-700 text-sm">
-                <span class="text-zinc-200">${name}</span>
+        const planned = [
+            ['Light mode toggle (page only)', 'CSS ready — toggle not wired yet'],
+            ['Resource usage histogram', 'Planned'],
+            ['Baseline restore (revert to baseline)', 'Planned'],
+            ['EVM S-curve charts', 'Planned'],
+            ['Non-work day / holiday shading', 'Planned'],
+            ['Drag bars on chart to reschedule', 'Planned']
+        ];
+        const installedHtml = installed.map(([name, how]) =>
+            `<div class="flex justify-between gap-3 px-3 py-2 rounded-md bg-emerald-950/30 border border-emerald-800/40 text-sm">
+                <span class="text-zinc-200"><i class="fa-solid fa-check text-emerald-400 mr-1.5 text-xs"></i>${name}</span>
                 <span class="text-xs text-zinc-500 text-right">${how}</span>
             </div>`
         ).join('');
+        const plannedHtml = planned.map(([name, how]) =>
+            `<div class="flex justify-between gap-3 px-3 py-2 rounded-md bg-zinc-800/60 border border-zinc-700 text-sm">
+                <span class="text-zinc-400"><i class="fa-regular fa-circle text-zinc-600 mr-1.5 text-xs"></i>${name}</span>
+                <span class="text-xs text-zinc-600 text-right">${how}</span>
+            </div>`
+        ).join('');
+        list.innerHTML = `
+            <div class="px-3 py-2 text-xs uppercase tracking-wide text-emerald-400 font-semibold">Installed — ${installed.length} features</div>
+            ${installedHtml}
+            <div class="px-3 py-2 mt-3 text-xs uppercase tracking-wide text-amber-400 font-semibold">Not yet installed — ${planned.length} remaining</div>
+            ${plannedHtml}`;
         dlg.showModal();
     }
 
@@ -3210,7 +3281,7 @@
         await loadSchedule();
         runSchedule({ skipScroll: true });
         applyRollingCalendarRange(true);
-        applyTimescaleScales(scheduleSettings.timescale || 'week');
+        applyTimescaleScales(scheduleSettings.timescale || 'day');
         updateRowHeightsForLabels();
         gantt.render();
         requestAnimationFrame(() => {
