@@ -91,11 +91,6 @@ body.schedule-chart-resizing {
 body.schedule-chart-resizing #gantt_here .gantt_layout_cell:nth-child(3) {
     pointer-events: none !important;
 }
-.schedule-chart-width-slider {
-    accent-color: #10b981;
-    height: 4px;
-    cursor: pointer;
-}
 
 /* Toolbar uses theme tokens */
 .schedule-toolbar-btn {
@@ -168,6 +163,10 @@ body.schedule-chart-resizing #gantt_here .gantt_layout_cell:nth-child(3) {
 .schedule-overlay-mode #gantt_here .gantt_grid_column_resize_wrap {
     z-index: 50 !important;
     pointer-events: auto !important;
+    position: absolute !important;
+    margin-left: 0 !important;
+    top: 0 !important;
+    height: 100% !important;
 }
 .schedule-overlay-mode #gantt_here .gantt_grid_scale {
     overflow: visible !important;
@@ -561,6 +560,52 @@ body.schedule-chart-resizing #gantt_here .gantt_layout_cell:nth-child(3) {
     position: relative !important;
     overflow: hidden !important;
 }
+
+/* Grid cell alignment — Excel-style horizontal + vertical */
+#scheduleGanttHost[data-cell-align-h="left"] #gantt_here .gantt_grid_data .gantt_cell,
+#scheduleGanttHost[data-cell-align-h="left"] #gantt_here .gantt_grid_scale .gantt_grid_head_cell {
+    text-align: left !important;
+    justify-content: flex-start !important;
+}
+#scheduleGanttHost[data-cell-align-h="center"] #gantt_here .gantt_grid_data .gantt_cell,
+#scheduleGanttHost[data-cell-align-h="center"] #gantt_here .gantt_grid_scale .gantt_grid_head_cell {
+    text-align: center !important;
+    justify-content: center !important;
+}
+#scheduleGanttHost[data-cell-align-h="right"] #gantt_here .gantt_grid_data .gantt_cell,
+#scheduleGanttHost[data-cell-align-h="right"] #gantt_here .gantt_grid_scale .gantt_grid_head_cell {
+    text-align: right !important;
+    justify-content: flex-end !important;
+}
+#scheduleGanttHost[data-cell-align-h="center"] #gantt_here .gantt_tree_content,
+#scheduleGanttHost[data-cell-align-h="right"] #gantt_here .gantt_tree_content {
+    width: 100%;
+}
+#scheduleGanttHost[data-cell-align-v="top"] #gantt_here .gantt_grid_data .gantt_cell,
+#scheduleGanttHost[data-cell-align-v="top"] #gantt_here .gantt_grid_scale .gantt_grid_head_cell {
+    display: flex !important;
+    align-items: flex-start !important;
+}
+#scheduleGanttHost[data-cell-align-v="middle"] #gantt_here .gantt_grid_data .gantt_cell,
+#scheduleGanttHost[data-cell-align-v="middle"] #gantt_here .gantt_grid_scale .gantt_grid_head_cell {
+    display: flex !important;
+    align-items: center !important;
+}
+#scheduleGanttHost[data-cell-align-v="bottom"] #gantt_here .gantt_grid_data .gantt_cell,
+#scheduleGanttHost[data-cell-align-v="bottom"] #gantt_here .gantt_grid_scale .gantt_grid_head_cell {
+    display: flex !important;
+    align-items: flex-end !important;
+}
+#scheduleGanttHost[data-cell-align-v] #gantt_here .gantt_tree_content {
+    flex: 1 1 auto;
+    min-width: 0;
+}
+#scheduleGanttHost[data-cell-align-v="top"] #gantt_here .gantt_grid_scale .gantt_grid_head_cell,
+#scheduleGanttHost[data-cell-align-v="middle"] #gantt_here .gantt_grid_scale .gantt_grid_head_cell,
+#scheduleGanttHost[data-cell-align-v="bottom"] #gantt_here .gantt_grid_scale .gantt_grid_head_cell {
+    line-height: 1.2 !important;
+}
+
 .gantt_hor_scroll {
     overflow-x: auto !important;
 }
