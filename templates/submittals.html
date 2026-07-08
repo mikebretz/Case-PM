@@ -4,10 +4,17 @@
 
 {% block content %}
 <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+<script src="https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js"></script>
 <script>
 if (window.pdfjsLib) {
     pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
 }
+window.SUBMITTAL_PROJECT_CTX = {
+    id: {{ active_project.id if active_project else 'null' }},
+    name: {{ (active_project.name if active_project else 'ALDI Lakeland')|tojson }},
+    number: {{ (active_project.number if active_project and active_project.number else '370 / 664')|tojson }},
+    address: {{ (active_project.address if active_project and active_project.address else '6600 N SOCRUM LOOP LAKELAND, FL 33809')|tojson }}
+};
 </script>
 <style>
   .submittal-dialog {
@@ -33,8 +40,129 @@ if (window.pdfjsLib) {
   .submittal-modal-panel .drag-handle {
     cursor: move;
   }
+
+  /* Screen-only chrome; hidden when printing the submittal log */
+  #submittalPrintSheet {
+    display: none;
+  }
+
+  /* ─── Submittal Log print (ALDI-style register, not screen capture) ─── */
+  @media print {
+    @page {
+      size: landscape;
+      margin: 0.3in 0.35in;
+    }
+    body.printing-submittal-log {
+      background: #fff !important;
+      -webkit-print-color-adjust: exact;
+      print-color-adjust: exact;
+    }
+    body.printing-submittal-log #appShell > .h-14,
+    body.printing-submittal-log #appShell > .flex.flex-1 > .w-56,
+    body.printing-submittal-log #submittalChrome,
+    body.printing-submittal-log .no-print {
+      display: none !important;
+    }
+    body.printing-submittal-log #mainContent {
+      padding: 0 !important;
+      overflow: visible !important;
+      display: block !important;
+    }
+    body.printing-submittal-log #submittalPrintSheet {
+      display: block !important;
+      background: #fff !important;
+      color: #111 !important;
+      font-family: Arial, Helvetica, sans-serif;
+      font-size: 7pt;
+    }
+    .submittal-print-page {
+      page-break-after: always;
+      break-after: page;
+    }
+    .submittal-print-page:last-child {
+      page-break-after: auto;
+      break-after: auto;
+    }
+    .submittal-print-header {
+      display: grid;
+      grid-template-columns: 1fr auto;
+      gap: 8px 16px;
+      align-items: start;
+      margin-bottom: 6px;
+      border-bottom: 2px solid #111;
+      padding-bottom: 6px;
+    }
+    .submittal-print-title {
+      font-size: 16pt;
+      font-weight: 700;
+      letter-spacing: 0.5px;
+      color: #111;
+      line-height: 1.1;
+    }
+    .submittal-print-meta {
+      text-align: right;
+      font-size: 7pt;
+      line-height: 1.35;
+      color: #222;
+    }
+    .submittal-print-meta div { margin-bottom: 1px; }
+    .submittal-print-meta .label {
+      font-weight: 700;
+      text-transform: uppercase;
+      font-size: 6pt;
+      color: #444;
+    }
+    .submittal-print-table {
+      width: 100%;
+      border-collapse: collapse;
+      table-layout: fixed;
+      font-size: 6.5pt;
+      line-height: 1.2;
+    }
+    .submittal-print-table th,
+    .submittal-print-table td {
+      border: 1px solid #333;
+      padding: 2px 3px;
+      vertical-align: top;
+      word-wrap: break-word;
+      overflow-wrap: anywhere;
+    }
+    .submittal-print-table th {
+      background: #f0f0f0;
+      font-weight: 700;
+      text-align: center;
+      font-size: 5.5pt;
+      text-transform: uppercase;
+      line-height: 1.15;
+      padding: 3px 2px;
+    }
+    .submittal-print-table td.c {
+      text-align: center;
+    }
+    .submittal-print-table td.mono {
+      font-family: 'Courier New', Courier, monospace;
+      font-size: 6pt;
+    }
+    .submittal-print-table .check {
+      font-weight: 700;
+      font-size: 8pt;
+      text-align: center;
+    }
+    .submittal-print-footer {
+      display: grid;
+      grid-template-columns: 1fr auto 1fr;
+      align-items: center;
+      margin-top: 8px;
+      padding-top: 4px;
+      border-top: 1px solid #999;
+      font-size: 7pt;
+      color: #444;
+    }
+    .submittal-print-footer .center { text-align: center; }
+    .submittal-print-footer .right { text-align: right; }
+  }
 </style>
-<div class="content-wrapper py-6 px-6">
+<div id="submittalChrome" class="content-wrapper py-6 px-6">
     <!-- Header -->
     <div class="flex items-center justify-between mb-6">
         <div>
@@ -53,6 +181,12 @@ if (window.pdfjsLib) {
                     class="flex items-center gap-2 px-4 py-2 bg-zinc-800 hover:bg-zinc-700 border border-zinc-700 rounded-lg text-sm font-medium transition-colors">
                 <i class="fa-solid fa-file-pdf mr-2 text-red-400"></i>
                 Upload Specs Book (PDF)
+            </button>
+
+            <button onclick="showImportExcelLogModal()"
+                    class="flex items-center gap-2 px-4 py-2 bg-zinc-800 hover:bg-zinc-700 border border-zinc-700 rounded-lg text-sm font-medium transition-colors">
+                <i class="fa-solid fa-file-excel mr-2 text-emerald-400"></i>
+                Import Excel Log
             </button>
             <span id="specBookLoadedBadge" class="hidden text-xs text-emerald-400 flex items-center gap-1.5 px-2 py-1 bg-emerald-950/40 border border-emerald-800 rounded-lg" title="Specifications book is saved and linked to imported submittals">
                 <i class="fa-solid fa-book"></i>
@@ -177,13 +311,15 @@ if (window.pdfjsLib) {
         <div id="emptyState" class="hidden p-12 text-center">
             <i class="fa-solid fa-inbox text-5xl text-zinc-600 mb-4"></i>
             <h3 class="text-xl font-semibold text-white mb-2">No Submittals Yet</h3>
-            <p class="text-zinc-400 mb-6">Click "New Submittal" or upload a Specifications Book PDF.</p>
+            <p class="text-zinc-400 mb-6">Click "New Submittal", import an Excel log, or upload a Specifications Book PDF.</p>
             <button onclick="showNewSubmittalModal()" class="px-5 py-2 bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg text-sm font-semibold">
                 Create First Submittal
             </button>
         </div>
     </div>
 </div>
+
+<div id="submittalPrintSheet" aria-hidden="true"></div>
 
 <!-- Upload Spec Book Modal -->
 <div id="uploadSpecBookModal" class="hidden fixed inset-0 bg-black/70 flex items-center justify-center z-[60] p-4">
@@ -237,6 +373,66 @@ if (window.pdfjsLib) {
         <div class="px-6 py-4 border-t border-zinc-700 flex justify-end gap-3">
             <button onclick="closeUploadSpecBookModal()" class="px-4 py-2 bg-zinc-700 hover:bg-zinc-600 rounded-lg text-sm">Cancel</button>
             <button id="specBookImportBtn" onclick="importParsedSpecBook()" disabled
+                    class="px-5 py-2 bg-emerald-600 hover:bg-emerald-500 disabled:opacity-40 disabled:cursor-not-allowed text-white rounded-lg text-sm font-semibold flex items-center gap-2">
+                <i class="fa-solid fa-file-import"></i> Import to Submittal Log
+            </button>
+        </div>
+    </div>
+</div>
+
+<!-- Import Excel Submittal Log Modal -->
+<div id="importExcelLogModal" class="hidden fixed inset-0 bg-black/70 flex items-center justify-center z-[60] p-4">
+    <div class="submittal-modal-panel bg-zinc-900 border border-zinc-700 rounded-xl w-full max-w-2xl flex flex-col">
+        <div class="drag-handle px-6 py-4 border-b border-zinc-700 flex items-center justify-between bg-zinc-950">
+            <div>
+                <h3 class="text-xl font-semibold text-white">Import Submittal Log (Excel)</h3>
+                <p class="text-sm text-zinc-400 mt-0.5">Upload an .xlsx, .xls, or .csv submittal register</p>
+            </div>
+            <button onclick="closeImportExcelLogModal()" class="text-zinc-400 hover:text-white"><i class="fa-solid fa-times text-xl"></i></button>
+        </div>
+        <div class="p-6 space-y-4">
+            <div id="excelLogDropZone"
+                 class="border-2 border-dashed border-zinc-600 hover:border-emerald-500 rounded-xl p-8 text-center cursor-pointer transition-colors bg-zinc-800/40"
+                 onclick="document.getElementById('excelLogFileInput').click()">
+                <i class="fa-solid fa-file-excel text-4xl text-emerald-500 mb-3"></i>
+                <p class="text-white font-medium">Drop Excel file here or click to browse</p>
+                <p class="text-xs text-zinc-500 mt-1">.xlsx, .xls, or .csv — column headers are matched automatically</p>
+                <input type="file" id="excelLogFileInput" accept=".xlsx,.xls,.csv" class="hidden" onchange="handleExcelLogFileSelected(event)">
+            </div>
+            <div id="excelLogFileName" class="hidden text-sm text-zinc-300 flex items-center gap-2">
+                <i class="fa-solid fa-file text-emerald-400"></i>
+                <span id="excelLogFileNameText"></span>
+            </div>
+            <div id="excelLogProgress" class="hidden">
+                <div class="flex justify-between text-xs text-zinc-400 mb-1">
+                    <span id="excelLogProgressLabel">Reading file...</span>
+                    <span id="excelLogProgressPct">0%</span>
+                </div>
+                <div class="h-2 bg-zinc-800 rounded-full overflow-hidden">
+                    <div id="excelLogProgressBar" class="h-full bg-emerald-500 transition-all" style="width:0%"></div>
+                </div>
+            </div>
+            <div id="excelLogPreview" class="hidden text-sm bg-zinc-800/60 border border-zinc-700 rounded-lg p-4"></div>
+            <div class="flex items-center gap-4 text-sm">
+                <span class="text-zinc-400">Import mode:</span>
+                <label class="flex items-center gap-2 cursor-pointer">
+                    <input type="radio" name="excelImportMode" value="append" checked class="accent-emerald-500">
+                    <span>Append to log</span>
+                </label>
+                <label class="flex items-center gap-2 cursor-pointer">
+                    <input type="radio" name="excelImportMode" value="replace" class="accent-emerald-500">
+                    <span>Replace entire log</span>
+                </label>
+            </div>
+            <p class="text-xs text-zinc-500 leading-relaxed">
+                Recognized columns include <span class="font-mono text-zinc-400">Spec Section</span>,
+                <span class="font-mono text-zinc-400">Rev#</span>, <span class="font-mono text-zinc-400">Paragraph</span>,
+                <span class="font-mono text-zinc-400">Submittal Subject</span>, review status columns (X marks), and dates.
+            </p>
+        </div>
+        <div class="px-6 py-4 border-t border-zinc-700 flex justify-end gap-3">
+            <button onclick="closeImportExcelLogModal()" class="px-4 py-2 bg-zinc-700 hover:bg-zinc-600 rounded-lg text-sm">Cancel</button>
+            <button id="excelLogImportBtn" onclick="importParsedExcelLog()" disabled
                     class="px-5 py-2 bg-emerald-600 hover:bg-emerald-500 disabled:opacity-40 disabled:cursor-not-allowed text-white rounded-lg text-sm font-semibold flex items-center gap-2">
                 <i class="fa-solid fa-file-import"></i> Import to Submittal Log
             </button>
@@ -1723,7 +1919,510 @@ async function clearSubmittalLog() {
 }
 
 function printSubmittalLog() {
-    window.print(); // Simple version that triggers native print
+    buildSubmittalPrintSheet();
+    document.body.classList.add('printing-submittal-log');
+    const cleanup = () => {
+        document.body.classList.remove('printing-submittal-log');
+        window.removeEventListener('afterprint', cleanup);
+    };
+    window.addEventListener('afterprint', cleanup);
+    window.print();
+}
+
+function getSubmittalProjectMeta() {
+    const ctx = window.SUBMITTAL_PROJECT_CTX || {};
+    const nameEl = document.getElementById('currentProjectName');
+    return {
+        name: (nameEl?.textContent || '').trim() || ctx.name || 'ALDI Lakeland',
+        number: ctx.number || '370 / 664',
+        location: ctx.address || '6600 N SOCRUM LOOP LAKELAND, FL 33809'
+    };
+}
+
+function formatSpecSectionForPrint(specSection) {
+    const digits = String(specSection || '').replace(/\D/g, '');
+    if (digits.length >= 6) return digits.slice(0, 6);
+    return String(specSection || '').replace(/\s+/g, ' ').trim();
+}
+
+function formatPrintDate(value) {
+    if (!value && value !== 0) return '';
+    if (value instanceof Date && !isNaN(value)) {
+        return `${value.getMonth() + 1}/${value.getDate()}/${value.getFullYear()}`;
+    }
+    const raw = String(value).trim();
+    if (!raw) return '';
+    if (/^\d+(\.\d+)?$/.test(raw)) {
+        const serial = parseFloat(raw);
+        if (serial > 20000 && serial < 80000 && window.XLSX?.SSF) {
+            const parsed = XLSX.SSF.parse_date_code(serial);
+            if (parsed) return `${parsed.m}/${parsed.d}/${parsed.y}`;
+        }
+    }
+    const iso = raw.match(/^(\d{4})-(\d{2})-(\d{2})/);
+    if (iso) return `${parseInt(iso[2], 10)}/${parseInt(iso[3], 10)}/${iso[1]}`;
+    const us = raw.match(/^(\d{1,2})\/(\d{1,2})\/(\d{2,4})/);
+    if (us) {
+        const yr = us[3].length === 2 ? `20${us[3]}` : us[3];
+        return `${parseInt(us[1], 10)}/${parseInt(us[2], 10)}/${yr}`;
+    }
+    return raw;
+}
+
+function getReviewCheckmarks(item) {
+    const marks = {
+        noExceptions: '',
+        reviewedAsNoted: '',
+        reviseResubmit: '',
+        rejected: '',
+        resubmitGc: ''
+    };
+    if (item.noExceptions) marks.noExceptions = 'X';
+    if (item.reviewedAsNoted) marks.reviewedAsNoted = 'X';
+    if (item.reviseResubmit) marks.reviseResubmit = 'X';
+    if (item.rejected) marks.rejected = 'X';
+    if (item.resubmitGc) marks.resubmitGc = 'X';
+
+    const status = String(item.status || '').toLowerCase();
+    if (status === 'no exceptions taken') marks.noExceptions = 'X';
+    else if (status === 'reviewed as noted') marks.reviewedAsNoted = 'X';
+    else if (status === 'revise & resubmit') marks.reviseResubmit = 'X';
+    else if (status === 'rejected') marks.rejected = 'X';
+    else if (status.includes('gc approval')) marks.resubmitGc = 'X';
+    return marks;
+}
+
+function getPrintStatusLabel(item) {
+    if (item.status && !['Draft', 'Submitted to Architect'].includes(item.status)) {
+        return item.status.toUpperCase();
+    }
+    if (item.dateReturned || item.dateSent) return 'REFERRED';
+    return 'OPEN SUBMITTAL';
+}
+
+function buildSubmittalPrintRow(item) {
+    const checks = getReviewCheckmarks(item);
+    const esc = escapeSubmittalHtml;
+    return `<tr>
+        <td class="mono">${esc(formatSpecSectionForPrint(item.specSection))}</td>
+        <td class="c mono">${esc(item.rev ?? '')}</td>
+        <td class="mono">${esc(item.paragraph || '')}</td>
+        <td class="c">${esc(item.copiesTo || '')}</td>
+        <td>${esc(item.subject || '')}</td>
+        <td>${esc(item.type || '')}</td>
+        <td class="c">${esc(formatPrintDate(item.dateReceived))}</td>
+        <td>${esc(item.receivedFrom || '')}</td>
+        <td>${esc(item.referredTo || '')}</td>
+        <td class="c">${esc(formatPrintDate(item.dateSent))}</td>
+        <td class="c">${esc(formatPrintDate(item.dateReturned))}</td>
+        <td class="check">${checks.noExceptions}</td>
+        <td class="check">${checks.reviewedAsNoted}</td>
+        <td class="check">${checks.reviseResubmit}</td>
+        <td class="check">${checks.rejected}</td>
+        <td class="check">${checks.resubmitGc}</td>
+        <td class="c">${esc(formatPrintDate(item.subcontractorFile))}</td>
+        <td class="c">${esc(formatPrintDate(item.field))}</td>
+        <td class="c">${esc(formatPrintDate(item.fieldDocument))}</td>
+        <td>${esc(item.sectionName || '')}</td>
+        <td class="mono c">${esc(item.transmittalNumber || item.number || '')}</td>
+        <td class="c" style="font-size:5.5pt">${esc(getPrintStatusLabel(item))}</td>
+    </tr>`;
+}
+
+function buildSubmittalPrintPageHeader(meta) {
+    const esc = escapeSubmittalHtml;
+    return `<div class="submittal-print-header">
+        <div>
+            <div class="submittal-print-title">SUBMITTAL LOG</div>
+            <div style="margin-top:4px;font-size:7pt"><span class="label" style="font-weight:700">LOCATION</span><br>${esc(meta.location)}</div>
+        </div>
+        <div class="submittal-print-meta">
+            <div><span class="label">PROJECT ID</span><br>${esc(meta.number)}</div>
+            <div style="margin-top:4px"><span class="label">PROJECT NAME</span><br>${esc(meta.name)}</div>
+        </div>
+    </div>`;
+}
+
+function buildSubmittalPrintTableHead() {
+    return `<table class="submittal-print-table">
+        <thead>
+            <tr>
+                <th style="width:4.5%">Spec<br>Section</th>
+                <th style="width:2.5%">Rev#</th>
+                <th style="width:4%">Paragraph</th>
+                <th style="width:3%">Copies<br>To</th>
+                <th style="width:9%">Submittal<br>Subject</th>
+                <th style="width:7%">Submittal<br>Type</th>
+                <th style="width:4.5%">Date<br>Received</th>
+                <th style="width:6%">Received<br>From</th>
+                <th style="width:5.5%">Referred<br>To</th>
+                <th style="width:4%">Date<br>Sent</th>
+                <th style="width:4%">Date<br>Returned</th>
+                <th style="width:3.5%">No<br>Exceptions<br>Taken</th>
+                <th style="width:3.5%">Reviewed<br>As<br>Noted</th>
+                <th style="width:3.5%">Revise &amp;<br>Resubmit</th>
+                <th style="width:3%">Rejected</th>
+                <th style="width:3.5%">Resubmit<br>w/ GC<br>Approval</th>
+                <th style="width:4%">Sub-<br>Contractor<br>File</th>
+                <th style="width:3.5%">Field</th>
+                <th style="width:3.5%">Document</th>
+                <th style="width:8%">Section<br>Name</th>
+                <th style="width:4%">Transmittal<br>#</th>
+                <th style="width:5%">Status</th>
+            </tr>
+        </thead>
+        <tbody>`;
+}
+
+function buildSubmittalPrintSheet() {
+    const sheet = document.getElementById('submittalPrintSheet');
+    if (!sheet) return;
+    const meta = getSubmittalProjectMeta();
+    const rows = [...submittals].sort((a, b) => {
+        const sa = formatSpecSectionForPrint(a.specSection);
+        const sb = formatSpecSectionForPrint(b.specSection);
+        if (sa !== sb) return sa.localeCompare(sb, undefined, { numeric: true });
+        const ra = parseInt(a.rev, 10) || 0;
+        const rb = parseInt(b.rev, 10) || 0;
+        if (ra !== rb) return ra - rb;
+        return String(a.subject || '').localeCompare(String(b.subject || ''));
+    });
+    const printedOn = new Date().toLocaleDateString(undefined, { month: 'numeric', day: 'numeric', year: 'numeric' });
+    const ROWS_PER_PAGE = 28;
+    const pages = [];
+
+    if (!rows.length) {
+        pages.push(`${buildSubmittalPrintPageHeader(meta)}
+            ${buildSubmittalPrintTableHead()}
+            <tr><td colspan="22" style="text-align:center;padding:16px;color:#666">No submittals to print.</td></tr>
+            </tbody></table>
+            <div class="submittal-print-footer"><span>Confidential</span><span class="center">${printedOn}</span><span class="right">Page 1</span></div>`);
+    } else {
+        const totalPages = Math.ceil(rows.length / ROWS_PER_PAGE);
+        for (let p = 0; p < totalPages; p++) {
+            const chunk = rows.slice(p * ROWS_PER_PAGE, (p + 1) * ROWS_PER_PAGE);
+            let html = buildSubmittalPrintPageHeader(meta);
+            html += buildSubmittalPrintTableHead();
+            html += chunk.map(buildSubmittalPrintRow).join('');
+            html += `</tbody></table>
+                <div class="submittal-print-footer">
+                    <span>Confidential</span>
+                    <span class="center">${printedOn}</span>
+                    <span class="right">Page ${p + 1}</span>
+                </div>`;
+            pages.push(html);
+        }
+    }
+
+    sheet.innerHTML = pages.map((html, i) =>
+        `<div class="submittal-print-page"${i === pages.length - 1 ? '' : ''}>${html}</div>`
+    ).join('');
+}
+
+// ==================== EXCEL SUBMITTAL LOG IMPORT ====================
+
+let parsedExcelLogRows = [];
+let selectedExcelLogFile = null;
+
+const EXCEL_LOG_COLUMN_ALIASES = {
+    specSection: ['spec section', 'spec_section', 'specsection', 'csi', 'section', 'section number', 'section #'],
+    rev: ['rev', 'rev#', 'rev #', 'revision'],
+    paragraph: ['paragraph', 'para'],
+    copiesTo: ['copies to', 'copies'],
+    number: ['submittal #', 'submittal number', 'item', 'item #'],
+    subject: ['submittal subject', 'subject', 'description'],
+    type: ['submittal type', 'type'],
+    dateReceived: ['date received', 'received date'],
+    receivedFrom: ['received from', 'from'],
+    referredTo: ['referred to', 'to', 'architect'],
+    dateSent: ['date sent', 'sent date', 'sent'],
+    dateReturned: ['date returned', 'returned date', 'returned'],
+    sectionName: ['section name', 'section title', 'title'],
+    transmittalNumber: ['transmittal #', 'transmittal number', 'transmittal'],
+    status: ['status', 'referred status'],
+    subcontractorFile: ['sub-contractor file', 'subcontractor file', 'sub file', 'subcontractor'],
+    field: ['field'],
+    fieldDocument: ['document', 'field document'],
+    noExceptions: ['no exceptions taken', 'no exceptions'],
+    reviewedAsNoted: ['reviewed as noted'],
+    reviseResubmit: ['revise & resubmit', 'revise and resubmit'],
+    rejected: ['rejected'],
+    resubmitGc: ['resubmit with gc approval', 'gc approval', 'resubmit w gc']
+};
+
+function normalizeExcelHeader(value) {
+    return String(value || '')
+        .toLowerCase()
+        .replace(/[#\n\r]/g, '')
+        .replace(/\s+/g, ' ')
+        .trim();
+}
+
+function mapExcelHeaders(headerRow) {
+    const mapping = {};
+    const used = new Set();
+    headerRow.forEach((cell, idx) => {
+        const norm = normalizeExcelHeader(cell);
+        if (!norm) return;
+        for (const [field, aliases] of Object.entries(EXCEL_LOG_COLUMN_ALIASES)) {
+            if (used.has(field)) continue;
+            if (aliases.some(a => norm === a || norm.includes(a))) {
+                mapping[field] = idx;
+                used.add(field);
+                break;
+            }
+        }
+    });
+    return mapping;
+}
+
+function cellTruthyMark(value) {
+    const v = String(value ?? '').trim().toLowerCase();
+    return v === 'x' || v === 'yes' || v === 'true' || v === '1' || v === '✓' || v === 'y';
+}
+
+function inferStatusFromMarks(row) {
+    if (row.noExceptions) return 'No Exceptions Taken';
+    if (row.reviewedAsNoted) return 'Reviewed as Noted';
+    if (row.reviseResubmit) return 'Revise & Resubmit';
+    if (row.rejected) return 'Rejected';
+    if (row.resubmitGc) return 'Resubmit with GC Approval';
+    return row.status || 'Draft';
+}
+
+function parseExcelLogRow(cells, mapping) {
+    const get = (field) => {
+        const idx = mapping[field];
+        if (idx == null) return '';
+        return cells[idx] ?? '';
+    };
+    const specRaw = get('specSection');
+    if (!String(specRaw).trim() && !String(get('subject')).trim()) return null;
+
+    const row = {
+        specSection: normalizeSpecSectionNumber(specRaw) || String(specRaw).trim(),
+        rev: String(get('rev') ?? '0').trim() || '0',
+        paragraph: String(get('paragraph') || '').trim(),
+        copiesTo: String(get('copiesTo') || '').trim(),
+        number: String(get('number') || '').trim(),
+        subject: String(get('subject') || '').trim(),
+        type: String(get('type') || '').trim(),
+        dateReceived: formatPrintDate(get('dateReceived')),
+        receivedFrom: String(get('receivedFrom') || '').trim(),
+        referredTo: String(get('referredTo') || '').trim(),
+        dateSent: formatPrintDate(get('dateSent')),
+        dateReturned: formatPrintDate(get('dateReturned')),
+        sectionName: String(get('sectionName') || '').trim(),
+        transmittalNumber: String(get('transmittalNumber') || '').trim(),
+        status: String(get('status') || '').trim(),
+        subcontractorFile: formatPrintDate(get('subcontractorFile')),
+        field: formatPrintDate(get('field')),
+        fieldDocument: formatPrintDate(get('fieldDocument')),
+        noExceptions: cellTruthyMark(get('noExceptions')),
+        reviewedAsNoted: cellTruthyMark(get('reviewedAsNoted')),
+        reviseResubmit: cellTruthyMark(get('reviseResubmit')),
+        rejected: cellTruthyMark(get('rejected')),
+        resubmitGc: cellTruthyMark(get('resubmitGc'))
+    };
+    if (!row.status) row.status = inferStatusFromMarks(row);
+    if (!row.subject) row.subject = row.type || 'Submittal';
+    return row;
+}
+
+function showImportExcelLogModal() {
+    parsedExcelLogRows = [];
+    selectedExcelLogFile = null;
+    document.getElementById('excelLogFileInput').value = '';
+    document.getElementById('excelLogFileName').classList.add('hidden');
+    document.getElementById('excelLogProgress').classList.add('hidden');
+    document.getElementById('excelLogPreview').classList.add('hidden');
+    document.getElementById('excelLogImportBtn').disabled = true;
+    document.querySelector('input[name="excelImportMode"][value="append"]').checked = true;
+    document.getElementById('importExcelLogModal').classList.remove('hidden');
+    initDraggableSubmittalPanel('importExcelLogModal');
+    bindExcelLogDragDrop();
+}
+
+function closeImportExcelLogModal() {
+    document.getElementById('importExcelLogModal').classList.add('hidden');
+}
+
+function bindExcelLogDragDrop() {
+    const zone = document.getElementById('excelLogDropZone');
+    if (!zone || zone.dataset.bound === '1') return;
+    zone.dataset.bound = '1';
+    ['dragenter', 'dragover'].forEach(evt => {
+        zone.addEventListener(evt, e => {
+            e.preventDefault();
+            zone.classList.add('border-emerald-500', 'bg-emerald-950/20');
+        });
+    });
+    ['dragleave', 'drop'].forEach(evt => {
+        zone.addEventListener(evt, e => {
+            e.preventDefault();
+            zone.classList.remove('border-emerald-500', 'bg-emerald-950/20');
+        });
+    });
+    zone.addEventListener('drop', e => {
+        const file = e.dataTransfer?.files?.[0];
+        if (file) processExcelLogFile(file);
+    });
+}
+
+function handleExcelLogFileSelected(event) {
+    const file = event.target.files?.[0];
+    if (file) processExcelLogFile(file);
+}
+
+function setExcelLogProgress(pct, label) {
+    document.getElementById('excelLogProgress').classList.remove('hidden');
+    document.getElementById('excelLogProgressBar').style.width = `${pct}%`;
+    document.getElementById('excelLogProgressPct').textContent = `${Math.round(pct)}%`;
+    if (label) document.getElementById('excelLogProgressLabel').textContent = label;
+}
+
+async function processExcelLogFile(file) {
+    const ext = file.name.toLowerCase().split('.').pop();
+    if (!['xlsx', 'xls', 'csv'].includes(ext)) {
+        showCenteredAlert('Please upload an Excel (.xlsx, .xls) or CSV file.', 'warning');
+        return;
+    }
+    if (!window.XLSX) {
+        showCenteredAlert('Excel library failed to load. Please refresh the page and try again.', 'error');
+        return;
+    }
+
+    selectedExcelLogFile = file;
+    document.getElementById('excelLogFileName').classList.remove('hidden');
+    document.getElementById('excelLogFileNameText').textContent = file.name;
+    document.getElementById('excelLogImportBtn').disabled = true;
+    parsedExcelLogRows = [];
+
+    try {
+        setExcelLogProgress(10, 'Reading spreadsheet...');
+        const buffer = await file.arrayBuffer();
+        const workbook = XLSX.read(buffer, { type: 'array', cellDates: true });
+        const sheetName = workbook.SheetNames[0];
+        const worksheet = workbook.Sheets[sheetName];
+        const matrix = XLSX.utils.sheet_to_json(worksheet, { header: 1, defval: '', raw: false });
+
+        setExcelLogProgress(40, 'Detecting columns...');
+        let headerIdx = matrix.findIndex(row => row.some(c => normalizeExcelHeader(c)));
+        if (headerIdx < 0) headerIdx = 0;
+        const headerRow = matrix[headerIdx] || [];
+        const mapping = mapExcelHeaders(headerRow);
+
+        if (!mapping.specSection && !mapping.subject) {
+            showCenteredAlert('Could not find recognizable column headers.\n\nExpected columns like "Spec Section", "Submittal Subject", "Rev#", etc.', 'warning');
+            setExcelLogProgress(0, 'No matching headers');
+            return;
+        }
+
+        setExcelLogProgress(70, 'Parsing rows...');
+        for (let i = headerIdx + 1; i < matrix.length; i++) {
+            const parsed = parseExcelLogRow(matrix[i], mapping);
+            if (parsed) parsedExcelLogRows.push(parsed);
+        }
+
+        setExcelLogProgress(100, `Found ${parsedExcelLogRows.length} row(s)`);
+        const preview = document.getElementById('excelLogPreview');
+        preview.classList.remove('hidden');
+
+        if (parsedExcelLogRows.length === 0) {
+            preview.innerHTML = `<div class="text-amber-400"><i class="fa-solid fa-exclamation-triangle"></i> No data rows found below the header row.</div>`;
+            document.getElementById('excelLogImportBtn').disabled = true;
+        } else {
+            const mappedFields = Object.keys(mapping);
+            const sample = parsedExcelLogRows.slice(0, 3).map(r =>
+                `<div class="text-xs text-zinc-300 font-mono truncate">${escapeSubmittalHtml(r.specSection)} — ${escapeSubmittalHtml(r.subject)}</div>`
+            ).join('');
+            preview.innerHTML = `
+                <div class="text-emerald-400 font-medium mb-2">${parsedExcelLogRows.length} submittal row(s) ready to import</div>
+                <div class="text-xs text-zinc-400 mb-2">Mapped ${mappedFields.length} column(s): ${mappedFields.join(', ')}</div>
+                <div class="space-y-1">${sample}${parsedExcelLogRows.length > 3 ? '<div class="text-xs text-zinc-500">…and more</div>' : ''}</div>
+            `;
+            document.getElementById('excelLogImportBtn').disabled = false;
+        }
+    } catch (err) {
+        console.error('Excel import error:', err);
+        showCenteredAlert('Could not read the spreadsheet: ' + (err.message || err), 'error');
+        setExcelLogProgress(0, 'Error reading file');
+    }
+}
+
+async function importParsedExcelLog() {
+    if (!parsedExcelLogRows.length) {
+        showCenteredAlert('No rows to import.', 'warning');
+        return;
+    }
+    const mode = document.querySelector('input[name="excelImportMode"]:checked')?.value || 'append';
+    if (mode === 'replace') {
+        const ok = await showCenteredConfirm(
+            'Replace the entire submittal log with the imported spreadsheet?',
+            { title: 'Replace Submittal Log', confirmText: 'Replace All', danger: true }
+        );
+        if (!ok) return;
+        submittals = [];
+    }
+
+    const today = new Date().toISOString().split('T')[0];
+    let imported = 0;
+
+    parsedExcelLogRows.forEach(row => {
+        ensureSpecSectionRegistered(row.specSection, row.sectionName);
+
+        const item = {
+            id: Date.now() + Math.random(),
+            number: row.number || '',
+            rev: row.rev || '0',
+            specSection: row.specSection,
+            sectionName: row.sectionName || '',
+            paragraph: row.paragraph || '',
+            copiesTo: row.copiesTo || '',
+            subject: row.subject || 'Submittal',
+            type: row.type || '',
+            dateReceived: row.dateReceived || '',
+            requiredBy: '',
+            receivedFrom: row.receivedFrom || '',
+            referredTo: row.referredTo || '',
+            dateSent: row.dateSent || '',
+            dateReturned: row.dateReturned || '',
+            status: row.status || 'Draft',
+            costImpact: '',
+            scheduleDays: '',
+            impactNotes: '',
+            subcontractorFile: row.subcontractorFile || '',
+            field: row.field || '',
+            fieldDocument: row.fieldDocument || '',
+            transmittalNumber: row.transmittalNumber || '',
+            noExceptions: row.noExceptions,
+            reviewedAsNoted: row.reviewedAsNoted,
+            reviseResubmit: row.reviseResubmit,
+            rejected: row.rejected,
+            resubmitGc: row.resubmitGc,
+            history: [{
+                date: new Date().toISOString(),
+                action: `Imported from Excel${selectedExcelLogFile ? ': ' + selectedExcelLogFile.name : ''}`,
+                user: 'System'
+            }],
+            source: 'excel-import',
+            importedAt: today
+        };
+        if (!item.number) item.number = generateNextNumber(item.specSection);
+        submittals.push(item);
+        imported++;
+    });
+
+    saveData();
+    closeImportExcelLogModal();
+    renderSubmittalsTable();
+    updateMetrics();
+
+    if (imported === 0) {
+        showCenteredAlert('No rows were imported.', 'info');
+    } else {
+        showCenteredAlert(`Imported ${imported} submittal row(s) into the log.`, 'success');
+    }
 }
 
 // ==================== SPEC BOOK STORAGE & VIEWER ====================
