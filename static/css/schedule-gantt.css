@@ -751,9 +751,9 @@ body:has(.schedule-page-root) #scheduleFieldPickerModal {
         font-size: 8pt;
     }
     .sched-print-hf-col { min-height: 1.2em; }
-    .sched-print-hf-left { text-align: left; display: flex; align-items: center; gap: 8px; }
-    .sched-print-hf-center { text-align: center; font-weight: 700; font-size: 14pt; }
-    .sched-print-hf-right { text-align: right; }
+    .sched-print-hf-left { text-align: left; display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+    .sched-print-hf-center { text-align: center; font-weight: 700; font-size: 14pt; display: flex; align-items: center; justify-content: center; gap: 8px; flex-wrap: wrap; }
+    .sched-print-hf-right { text-align: right; display: flex; align-items: center; justify-content: flex-end; gap: 8px; flex-wrap: wrap; }
     .sched-print-hf-logo {
         max-height: 36px;
         max-width: 120px;

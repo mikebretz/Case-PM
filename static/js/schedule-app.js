@@ -423,14 +423,14 @@
     }
 
     function getTimelineDomWidth() {
-        const timelineCell = document.querySelector('#gantt_here .gantt_layout_root > .gantt_layout_cell:nth-child(3)');
-        if (timelineCell && timelineCell.offsetWidth > 80) return timelineCell.offsetWidth;
-        const hostW = document.getElementById('gantt_here')?.offsetWidth || 1200;
+        const hostW = document.getElementById('gantt_here')?.offsetWidth
+            || document.getElementById('scheduleGanttHost')?.clientWidth
+            || 1200;
         if (scheduleSettings.timeline_width_px >= 180) {
-            return Math.max(200, Math.min(hostW - 100, scheduleSettings.timeline_width_px));
+            return Math.max(200, Math.min(hostW - 120, scheduleSettings.timeline_width_px));
         }
         const pct = scheduleSettings.timeline_pct ?? 0.75;
-        return Math.max(240, Math.min(hostW - 100, Math.round(hostW * pct)));
+        return Math.max(240, Math.min(hostW - 120, Math.round(hostW * pct)));
     }
 
     function syncLayoutTimelineWidth() {
@@ -504,13 +504,6 @@
         }
         pan.classList.remove('hidden');
         timelineCell.querySelector(':scope > .schedule-chart-resizer')?.remove();
-    }
-
-    function getChartBoundaryClientX() {
-        const host = document.getElementById('scheduleGanttHost');
-        if (!host) return null;
-        const rect = host.getBoundingClientRect();
-        return rect.right - getTimelineWidth();
     }
 
     function setTimelineWidthFromPct(pct, persist) {
@@ -606,77 +599,42 @@
         overlayApplyTimer = setTimeout(applyChartOverlay, 16);
     }
 
-    const overlayDrag = { active: false, bound: false, startX: 0, startW: 0, pointerId: null };
-
-    function chartResizeMove(e) {
-        if (!overlayDrag.active) return;
-        e.preventDefault();
-        const hostEl = document.getElementById('gantt_here');
-        if (!hostEl) return;
-        const rect = hostEl.getBoundingClientRect();
-        const dx = overlayDrag.startX - e.clientX;
-        const timelineW = Math.max(220, Math.min(rect.width - 120, overlayDrag.startW + dx));
-        scheduleSettings.timeline_width_px = timelineW;
-        scheduleSettings.timeline_pct = timelineW / rect.width;
-        applyChartOverlay();
-    }
-
-    function chartResizeEnd() {
-        if (!overlayDrag.active) return;
-        overlayDrag.active = false;
-        document.body.classList.remove('schedule-chart-resizing');
-        const host = document.getElementById('scheduleGanttHost');
-        if (overlayDrag.pointerId != null && host) {
-            try { host.releasePointerCapture(overlayDrag.pointerId); } catch (err) { /* ok */ }
-        }
-        overlayDrag.pointerId = null;
-        queueSave();
-    }
+    const overlayDrag = { active: false, bound: false, startX: 0, startW: 0 };
 
     function bindChartResizer() {
         if (overlayDrag.bound) return;
         overlayDrag.bound = true;
 
-        const host = document.getElementById('scheduleGanttHost');
-        const handle = document.getElementById('scheduleChartResizer');
-        if (!host) return;
-
-        const tryStartDrag = (e, targetEl) => {
-            if (e.button !== 0 || overlayDrag.active) return false;
-            if (e.target.closest('.schedule-timeline-pan, .schedule-timeline-range, .gantt_task_line, .gantt_task_link, .sched-floating-cell-editor')) return false;
-            const onHandle = targetEl === handle || handle?.contains(targetEl);
-            const boundary = getChartBoundaryClientX();
-            const nearBoundary = boundary != null && Math.abs(e.clientX - boundary) <= 20;
-            if (!onHandle && !nearBoundary) return false;
+        document.addEventListener('mousedown', e => {
+            const handle = document.getElementById('scheduleChartResizer');
+            if (!handle || (e.target !== handle && !handle.contains(e.target))) return;
             overlayDrag.active = true;
             overlayDrag.startX = e.clientX;
             overlayDrag.startW = scheduleSettings.timeline_width_px >= 180
                 ? scheduleSettings.timeline_width_px
                 : getTimelineWidth();
-            overlayDrag.pointerId = e.pointerId;
-            document.body.classList.add('schedule-chart-resizing');
             e.preventDefault();
             e.stopPropagation();
-            try { host.setPointerCapture(e.pointerId); } catch (err) { /* ok */ }
-            return true;
-        };
+        });
 
-        host.addEventListener('pointerdown', e => {
-            tryStartDrag(e, e.target);
-        }, true);
+        document.addEventListener('mousemove', e => {
+            if (!overlayDrag.active) return;
+            const hostEl = document.getElementById('gantt_here');
+            if (!hostEl) return;
+            const rect = hostEl.getBoundingClientRect();
+            const dx = overlayDrag.startX - e.clientX;
+            const timelineW = Math.max(220, Math.min(rect.width - 120, overlayDrag.startW + dx));
+            scheduleSettings.timeline_width_px = timelineW;
+            scheduleSettings.timeline_pct = timelineW / rect.width;
+            applyChartOverlay();
+        });
 
-        if (handle) {
-            handle.addEventListener('pointerdown', e => {
-                tryStartDrag(e, handle);
-            }, true);
-        }
-
-        host.addEventListener('pointermove', chartResizeMove);
-        host.addEventListener('pointerup', chartResizeEnd);
-        host.addEventListener('pointercancel', chartResizeEnd);
-        document.addEventListener('pointermove', chartResizeMove);
-        document.addEventListener('pointerup', chartResizeEnd);
-        document.addEventListener('pointercancel', chartResizeEnd);
+        document.addEventListener('mouseup', () => {
+            if (!overlayDrag.active) return;
+            overlayDrag.active = false;
+            document.body.classList.remove('schedule-chart-resizing');
+            queueSave();
+        });
 
         initChartWidthSlider();
     }
@@ -1605,22 +1563,32 @@
         const failed = [];
         let added = 0;
         if (predStr && predStr.trim()) {
-            const parts = predStr.split(/[,;]+/).map(s => s.trim()).filter(Boolean);
+            refreshWbsCodes();
+            const lookup = { byWbs: new Map(), byActId: new Map(), byId: new Map() };
+            gantt.eachTask(t => {
+                if (String(t.id) === String(taskId)) return;
+                lookup.byId.set(String(t.id), t.id);
+                const wbs = String(wbsCode(t) || '').trim();
+                if (wbs) lookup.byWbs.set(wbs, t.id);
+                const actId = String(t.activity_id || '').trim();
+                if (actId) lookup.byActId.set(actId, t.id);
+            });
             const types = { FS: '0', SS: '1', FF: '2', SF: '3' };
+            const parts = predStr.split(/[,;]+/).map(s => s.trim()).filter(Boolean);
             parts.forEach(part => {
-                const m = part.match(/^([\w.%-]+?)(FS|SS|FF|SF)?([+-]?\d+)?$/i);
+                const cleaned = part.replace(/\s+/g, '');
+                const m = cleaned.match(/^([\w.%-]+?)(FS|SS|FF|SF)?([+-]?\d+)?$/i);
                 if (!m) { failed.push(part); return; }
                 const code = m[1];
                 const type = types[(m[2] || 'FS').toUpperCase()] || '0';
                 const lag = parseInt(m[3] || '0', 10) || 0;
-                let sourceId = null;
-                gantt.eachTask(t => {
-                    if (sourceId) return;
-                    if (t.id === taskId) return;
-                    const wbs = wbsCode(t);
-                    if (wbs === code || String(t.id) === code || String(t.activity_id || '') === code) sourceId = t.id;
-                });
-                if (sourceId && sourceId !== taskId) {
+                let sourceId = lookup.byWbs.get(code) || lookup.byId.get(code) || lookup.byActId.get(code);
+                if (!sourceId) {
+                    const lc = code.toLowerCase();
+                    lookup.byWbs.forEach((id, k) => { if (!sourceId && k.toLowerCase() === lc) sourceId = id; });
+                    lookup.byActId.forEach((id, k) => { if (!sourceId && k.toLowerCase() === lc) sourceId = id; });
+                }
+                if (sourceId && String(sourceId) !== String(taskId)) {
                     gantt.addLink({ source: sourceId, target: taskId, type, lag });
                     added++;
                 } else failed.push(part);
@@ -1631,7 +1599,7 @@
         if (!opts.skipSchedule) runSchedule({ skipScroll: true });
         if (!opts.skipUndo) pushUndoState();
         if (!opts.skipSave) queueSave();
-        if (failed.length) showScheduleAlert(`Could not link predecessor(s): ${failed.join(', ')}. Use WBS or Activity ID (e.g. 1.2FS+2).`, 'warning');
+        if (failed.length) showScheduleAlert(`Could not link predecessor(s): ${failed.join(', ')}. Use WBS, Activity ID, or task id (e.g. 1.2FS+2 or A101).`, 'warning');
         return added > 0 || (!predStr?.trim() && !failed.length);
     }
 
@@ -1916,7 +1884,19 @@
         registerCustomEditors();
 
         gantt.attachEvent('onBeforeTaskDisplay', function (id, task) {
-            if (filterCriticalOnly && task.type !== 'project' && !isTaskCritical(task)) return false;
+            if (filterCriticalOnly) {
+                if (task.type === 'project') return true;
+                if (isTaskCritical(task)) return true;
+                if (gantt.hasChild(id)) {
+                    let childCritical = false;
+                    gantt.eachTask(t => {
+                        if (childCritical) return;
+                        if (t.type !== 'project' && isTaskCritical(t)) childCritical = true;
+                    }, id);
+                    if (childCritical) return true;
+                }
+                return false;
+            }
             if (task.type === 'project') return true;
             if (!taskFilterQuery) return true;
             const hay = [task.text, task.activity_id, task.resource, task.owner, wbsCode(task)].join(' ').toLowerCase();
@@ -3233,23 +3213,32 @@
             include_footer: true,
             show_meta_row: true,
             header: {
-                left_text: '',
-                left_logo: null,
-                center_text: 'Project Schedule',
-                right_text: '{project}'
+                left_text: '', left_logo: null,
+                center_text: 'Project Schedule', center_logo: null,
+                right_text: '{project}', right_logo: null
             },
             footer: {
-                left_text: '',
-                center_text: 'Case PM · Project Controls',
-                right_text: 'Printed {printed}'
+                left_text: '', left_logo: null,
+                center_text: 'Case PM · Project Controls', center_logo: null,
+                right_text: 'Printed {printed}', right_logo: null
             }
         };
     }
 
     function ensureHeaderFooterSettings() {
         if (!scheduleSettings.print_settings) scheduleSettings.print_settings = {};
+        const defaults = defaultHeaderFooterSettings();
         if (!scheduleSettings.print_settings.header_footer) {
-            scheduleSettings.print_settings.header_footer = defaultHeaderFooterSettings();
+            scheduleSettings.print_settings.header_footer = defaults;
+        } else {
+            const hf = scheduleSettings.print_settings.header_footer;
+            ['header', 'footer'].forEach(section => {
+                hf[section] = Object.assign({}, defaults[section], hf[section] || {});
+                ['left', 'center', 'right'].forEach(side => {
+                    if (hf[section][side + '_logo'] === undefined) hf[section][side + '_logo'] = null;
+                    if (hf[section][side + '_text'] === undefined) hf[section][side + '_text'] = defaults[section][side + '_text'] || '';
+                });
+            });
         }
         return scheduleSettings.print_settings.header_footer;
     }
@@ -3267,13 +3256,11 @@
             .replace(/\{critical\}/gi, String(ctx.critical ?? ''));
     }
 
-    function buildPrintHfCell(cfg, section, side, ctx) {
+    function buildPrintHfCell(cfg, side, ctx) {
         const parts = [];
-        if (section === 'header' && side === 'left' && cfg.left_logo) {
-            parts.push(`<img src="${cfg.left_logo}" alt="" class="sched-print-hf-logo">`);
-        }
-        const textKey = side + '_text';
-        const text = expandPrintTokens(cfg[textKey], ctx);
+        const logo = cfg[side + '_logo'];
+        if (logo) parts.push(`<img src="${logo}" alt="" class="sched-print-hf-logo">`);
+        const text = expandPrintTokens(cfg[side + '_text'], ctx);
         if (text) parts.push(`<span class="sched-print-hf-text">${text}</span>`);
         return parts.join('') || '&nbsp;';
     }
@@ -3282,10 +3269,25 @@
         const cfg = hf[section];
         const bandClass = section === 'header' ? 'sched-print-hf-header' : 'sched-print-hf-footer';
         return `<div class="sched-print-hf ${bandClass}">
-            <div class="sched-print-hf-col sched-print-hf-left">${buildPrintHfCell(cfg, section, 'left', ctx)}</div>
-            <div class="sched-print-hf-col sched-print-hf-center">${buildPrintHfCell(cfg, section, 'center', ctx)}</div>
-            <div class="sched-print-hf-col sched-print-hf-right">${buildPrintHfCell(cfg, section, 'right', ctx)}</div>
+            <div class="sched-print-hf-col sched-print-hf-left">${buildPrintHfCell(cfg, 'left', ctx)}</div>
+            <div class="sched-print-hf-col sched-print-hf-center">${buildPrintHfCell(cfg, 'center', ctx)}</div>
+            <div class="sched-print-hf-col sched-print-hf-right">${buildPrintHfCell(cfg, 'right', ctx)}</div>
         </div>`;
+    }
+
+    function syncHeaderFooterLogoPreviews(hf) {
+        ['left', 'center', 'right'].forEach(side => {
+            const img = document.getElementById('hfHeaderLogoPreview' + side.charAt(0).toUpperCase() + side.slice(1));
+            const logo = hf.header[side + '_logo'];
+            if (!img) return;
+            if (logo) {
+                img.src = logo;
+                img.classList.remove('hidden');
+            } else {
+                img.removeAttribute('src');
+                img.classList.add('hidden');
+            }
+        });
     }
 
     function showHeaderFooterSetup() {
@@ -3301,43 +3303,27 @@
         document.getElementById('hfFooterLeft').value = hf.footer.left_text || '';
         document.getElementById('hfFooterCenter').value = hf.footer.center_text || '';
         document.getElementById('hfFooterRight').value = hf.footer.right_text || '';
-        const preview = document.getElementById('hfLogoPreview');
-        if (preview) {
-            if (hf.header.left_logo) {
-                preview.src = hf.header.left_logo;
-                preview.classList.remove('hidden');
-            } else {
-                preview.removeAttribute('src');
-                preview.classList.add('hidden');
-            }
-        }
+        syncHeaderFooterLogoPreviews(hf);
         dlg.showModal();
     }
 
-    function onHeaderLogoSelected(file) {
-        if (!file) return;
+    function onHeaderLogoSelected(file, side) {
+        if (!file || !side) return;
         const reader = new FileReader();
         reader.onload = () => {
             const hf = ensureHeaderFooterSettings();
-            hf.header.left_logo = reader.result;
-            const preview = document.getElementById('hfLogoPreview');
-            if (preview) {
-                preview.src = reader.result;
-                preview.classList.remove('hidden');
-            }
+            hf.header[side + '_logo'] = reader.result;
+            syncHeaderFooterLogoPreviews(hf);
         };
         reader.readAsDataURL(file);
     }
 
-    function clearHeaderLogo() {
+    function clearHeaderLogo(side) {
         const hf = ensureHeaderFooterSettings();
-        hf.header.left_logo = null;
-        const preview = document.getElementById('hfLogoPreview');
-        if (preview) {
-            preview.removeAttribute('src');
-            preview.classList.add('hidden');
-        }
-        document.getElementById('hfLogoInput').value = '';
+        hf.header[(side || 'left') + '_logo'] = null;
+        syncHeaderFooterLogoPreviews(hf);
+        const input = document.getElementById('hfLogoInput' + (side ? side.charAt(0).toUpperCase() + side.slice(1) : 'Left'));
+        if (input) input.value = '';
     }
 
     function saveHeaderFooterSettings() {
