@@ -30,7 +30,9 @@
             <div class="px-3 py-2 border-b border-zinc-800 flex-shrink-0 space-y-2">
                 <div class="relative">
                     <i class="fa-solid fa-magnifying-glass absolute left-3 top-2.5 text-zinc-500 text-xs"></i>
-                    <input type="text" id="emailSearchInput" placeholder="Search mail — from:, to:, subject:, has:attachment"
+                    <input type="search" id="emailSearchInput" name="mail-search-query"
+                           placeholder="Search mail — from:, to:, subject:, has:attachment"
+                           autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false"
                            class="w-full bg-zinc-900 border border-zinc-700 rounded-md pl-8 pr-3 py-2 text-sm focus:border-emerald-600">
                 </div>
                 <div class="flex items-center justify-between">
