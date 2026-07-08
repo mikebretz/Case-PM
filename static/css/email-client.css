@@ -521,6 +521,23 @@
   outline: 1px dashed rgba(16, 185, 129, 0.35);
   outline-offset: -1px;
 }
+.email-inline-compose.drag-over .email-compose-editor-main,
+.email-popout-compose-body.drag-over {
+  outline: 1px dashed rgba(16, 185, 129, 0.35);
+  outline-offset: -1px;
+}
+.email-popout-compose-body {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  padding: 0;
+}
+.email-popout-compose-body .email-inline-compose {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
 .email-attachment-chip {
   display: inline-flex;
   align-items: center;
