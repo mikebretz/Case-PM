@@ -1,14 +1,15 @@
-/* Case PM Schedule — pan bar, theme, histogram, baseline restore, EVM S-curve, non-work shading helpers */
+/* Case PM Schedule — pan slider, theme, histogram, baseline restore, EVM S-curve, non-work shading helpers */
 (function (global) {
     'use strict';
 
     let api = null;
-    const pan = { bound: false, dragging: false, startX: 0, startScroll: 0 };
-    const bgPan = { active: false, startX: 0, startScroll: 0 };
+    let rangeBound = false;
+    let rangeDragging = false;
+    const bgPan = { active: false, startX: 0, startScroll: 0, pointerId: null };
 
     function init(hooks) {
         api = hooks;
-        initTimelinePanBar();
+        initTimelineRangeSlider();
         initTimelineBackgroundPan();
         applyThemeFromSettings();
     }
@@ -36,105 +37,55 @@
         api.queueSave();
     }
 
-    function getPanEl() {
+    function getPanWrap() {
         return document.getElementById('scheduleTimelinePan');
     }
 
-    function scrollTimelineFromPan(ratio) {
-        const metrics = api.getPanMetrics();
-        if (!metrics || metrics.maxScroll <= 0) return;
-        const clamped = Math.max(0, Math.min(1, ratio));
-        api.setScrollX(clamped * metrics.maxScroll);
+    function getRangeEl() {
+        return document.getElementById('scheduleTimelineRange');
     }
 
     function updateTimelinePanBar() {
-        const bar = getPanEl();
-        if (!bar || !api?.getPanMetrics) return;
+        const wrap = getPanWrap();
+        const range = getRangeEl();
+        if (!wrap || !range || !api?.getPanMetrics) return;
         const hostWrap = document.getElementById('scheduleGanttHost');
-        const host = document.getElementById('gantt_here');
-        if (!hostWrap || !host) return;
+        if (!hostWrap) return;
         const metrics = api.getPanMetrics();
         if (!metrics || metrics.maxScroll <= 0) {
-            bar.classList.add('hidden');
+            wrap.classList.add('hidden');
             return;
         }
-        bar.classList.remove('hidden');
+        wrap.classList.remove('hidden');
         const timelineW = api.getTimelineWidth();
-        bar.style.left = Math.max(0, hostWrap.clientWidth - timelineW) + 'px';
-        bar.style.width = timelineW + 'px';
+        wrap.style.left = Math.max(0, hostWrap.clientWidth - timelineW) + 'px';
+        wrap.style.width = timelineW + 'px';
 
-        const track = bar.querySelector('.schedule-timeline-pan-track');
-        const thumb = bar.querySelector('.schedule-timeline-pan-thumb');
-        if (!track || !thumb) return;
-        const trackW = track.clientWidth || timelineW - 16;
-        const thumbW = Math.max(28, Math.round((metrics.viewW / metrics.totalW) * trackW));
-        const travel = Math.max(1, trackW - thumbW);
-        const ratio = metrics.maxScroll > 0 ? metrics.scrollX / metrics.maxScroll : 0;
-        thumb.style.width = thumbW + 'px';
-        thumb.style.left = Math.round(ratio * travel) + 'px';
+        const max = Math.max(1, Math.round(metrics.maxScroll));
+        const val = Math.max(0, Math.min(max, Math.round(metrics.scrollX)));
+        if (!rangeDragging) {
+            range.max = String(max);
+            range.value = String(val);
+        }
     }
 
-    function initTimelinePanBar() {
-        if (pan.bound) return;
-        pan.bound = true;
-        const bar = getPanEl();
-        if (!bar) return;
-        const track = bar.querySelector('.schedule-timeline-pan-track');
-        const thumb = bar.querySelector('.schedule-timeline-pan-thumb');
-        if (!track || !thumb) return;
+    function initTimelineRangeSlider() {
+        if (rangeBound) return;
+        const wrap = getPanWrap();
+        const range = getRangeEl();
+        if (!wrap || !range) return;
+        rangeBound = true;
 
-        const scrollFromClientX = clientX => {
+        range.addEventListener('pointerdown', () => { rangeDragging = true; });
+        range.addEventListener('input', () => {
             const metrics = api.getPanMetrics();
-            if (!metrics || metrics.maxScroll <= 0) return;
-            const rect = track.getBoundingClientRect();
-            const thumbW = thumb.offsetWidth;
-            const travel = Math.max(1, rect.width - thumbW);
-            const x = Math.max(0, Math.min(travel, clientX - rect.left - thumbW / 2));
-            scrollTimelineFromPan(x / travel);
-            updateTimelinePanBar();
-        };
-
-        const onPointerMove = e => {
-            if (!pan.dragging) return;
-            const metrics = api.getPanMetrics();
-            if (!metrics || metrics.maxScroll <= 0) return;
-            const rect = track.getBoundingClientRect();
-            const thumbW = thumb.offsetWidth;
-            const travel = Math.max(1, rect.width - thumbW);
-            const delta = e.clientX - pan.startX;
-            const deltaRatio = delta / travel;
-            const next = pan.startScroll + deltaRatio * metrics.maxScroll;
-            scrollTimelineFromPan(next / metrics.maxScroll);
-            updateTimelinePanBar();
-        };
-
-        const endPan = () => {
-            if (!pan.dragging) return;
-            pan.dragging = false;
-            try { thumb.releasePointerCapture(pan.pointerId); } catch (e) { /* ok */ }
-        };
-
-        thumb.addEventListener('pointerdown', e => {
-            e.preventDefault();
-            e.stopPropagation();
-            pan.dragging = true;
-            pan.startX = e.clientX;
-            pan.startScroll = api.getScrollX();
-            pan.pointerId = e.pointerId;
-            try { thumb.setPointerCapture(e.pointerId); } catch (err) { /* ok */ }
+            if (!metrics) return;
+            api.setScrollX(Number(range.value));
         });
-        track.addEventListener('pointerdown', e => {
-            if (e.target === thumb) return;
-            e.preventDefault();
-            e.stopPropagation();
-            scrollFromClientX(e.clientX);
-        });
-        thumb.addEventListener('pointermove', onPointerMove);
-        thumb.addEventListener('pointerup', endPan);
-        thumb.addEventListener('pointercancel', endPan);
-        document.addEventListener('pointermove', onPointerMove);
-        document.addEventListener('pointerup', endPan);
-        document.addEventListener('pointercancel', endPan);
+        const endDrag = () => { rangeDragging = false; updateTimelinePanBar(); };
+        range.addEventListener('pointerup', endDrag);
+        range.addEventListener('pointercancel', endDrag);
+        range.addEventListener('change', endDrag);
     }
 
     function initTimelineBackgroundPan() {
@@ -144,11 +95,11 @@
         if (!host) return;
         host.addEventListener('pointerdown', e => {
             if (e.button !== 0 && e.button !== 1) return;
+            if (e.target.closest('#scheduleOverlayControls, #scheduleChartResizer, #scheduleTimelinePan, #scheduleTimelineRange')) return;
             const onBar = e.target.closest('.gantt_task_line, .gantt_task_link, .gantt_link_arrow, .sched-floating-cell-editor');
-            const onScale = e.target.closest('.gantt_task_scale, .gantt_scale_cell');
             const inTimeline = e.target.closest('.gantt_layout_cell:nth-child(3)');
             if (!inTimeline || onBar) return;
-            if (!onScale && !e.target.closest('.gantt_task_bg, .gantt_task, .gantt_data_area')) return;
+            if (!e.target.closest('.gantt_task_scale, .gantt_scale_cell, .gantt_task_bg, .gantt_task, .gantt_data_area')) return;
             bgPan.active = true;
             bgPan.startX = e.clientX;
             bgPan.startScroll = api.getScrollX();
@@ -164,7 +115,7 @@
             api.setScrollX(Math.max(0, Math.min(metrics.maxScroll, next)));
             updateTimelinePanBar();
         };
-        const endBg = e => {
+        const endBg = () => {
             if (!bgPan.active) return;
             bgPan.active = false;
             try { host.releasePointerCapture(bgPan.pointerId); } catch (err) { /* ok */ }

@@ -145,10 +145,11 @@
         <div id="schedulePrintSheet" class="schedule-print-sheet no-screen" aria-hidden="true"></div>
         <div id="scheduleGanttHost" class="flex-1 min-h-0 relative">
             <div id="gantt_here"></div>
-            <div id="scheduleChartResizer" class="schedule-chart-resizer hidden" title="Drag to resize chart overlay" role="separator" aria-orientation="vertical"></div>
-            <div id="scheduleTimelinePan" class="schedule-timeline-pan hidden" title="Drag to pan timeline left/right" aria-label="Timeline horizontal scroll">
-                <div class="schedule-timeline-pan-track">
-                    <div class="schedule-timeline-pan-thumb"></div>
+            <div id="scheduleOverlayControls" class="schedule-overlay-controls">
+                <div id="scheduleChartResizer" class="schedule-chart-resizer hidden" title="Drag to resize chart overlay" role="separator" aria-orientation="vertical"></div>
+                <div id="scheduleTimelinePan" class="schedule-timeline-pan hidden" aria-label="Calendar horizontal scroll">
+                    <span class="schedule-timeline-pan-label">Calendar</span>
+                    <input type="range" id="scheduleTimelineRange" class="schedule-timeline-range" min="0" max="1000" value="0" step="1" aria-label="Pan calendar left and right">
                 </div>
             </div>
         </div>
