@@ -746,7 +746,7 @@ body:has(.schedule-page-root) #scheduleFieldPickerModal {
         -webkit-print-color-adjust: exact;
         print-color-adjust: exact;
     }
-    body.printing-gantt #appShell > .h-14,
+    body.printing-gantt #appShell > #appHeaderBar,
     body.printing-gantt #appShell > .flex.flex-1 > .w-56,
     body.printing-gantt #appShell .h-10.flex-shrink-0,
     body.printing-gantt #scheduleChrome,
