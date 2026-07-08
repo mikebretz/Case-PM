@@ -620,7 +620,7 @@
     setupPopoutWindow(el, id);
     if (isDraft) {
       attachRecipientAutocomplete();
-      attachComposeDropZone(el);
+      initComposeSurface(el);
     }
     if (m.unread) markMessageRead(m);
     renderMessageList();
@@ -873,6 +873,85 @@
     }
   }
 
+  function renderComposeToolbarHTML() {
+    return `
+      <div class="email-compose-rail" id="emailComposeToolbar" role="toolbar" aria-label="Formatting">
+        <button type="button" class="email-compose-rail-btn" data-cmd="bold" title="Bold"><i class="fa-solid fa-bold"></i></button>
+        <button type="button" class="email-compose-rail-btn" data-cmd="italic" title="Italic"><i class="fa-solid fa-italic"></i></button>
+        <button type="button" class="email-compose-rail-btn" data-cmd="underline" title="Underline"><i class="fa-solid fa-underline"></i></button>
+        <span class="email-compose-rail-divider"></span>
+        <select class="email-compose-rail-select" data-cmd="fontSize" title="Text size" aria-label="Text size">
+          <option value="2">S</option>
+          <option value="3" selected>N</option>
+          <option value="4">L</option>
+          <option value="5">XL</option>
+          <option value="6">XXL</option>
+        </select>
+        <input type="color" class="email-compose-color" data-cmd="foreColor" title="Text color" value="#e4e4e7" aria-label="Text color">
+        <span class="email-compose-rail-divider"></span>
+        <button type="button" class="email-compose-rail-btn" data-cmd="insertUnorderedList" title="Bullet list"><i class="fa-solid fa-list-ul"></i></button>
+        <button type="button" class="email-compose-rail-btn" data-cmd="insertOrderedList" title="Numbered list"><i class="fa-solid fa-list-ol"></i></button>
+        <span class="email-compose-rail-divider"></span>
+        <button type="button" class="email-compose-rail-btn" data-cmd="justifyLeft" title="Align left"><i class="fa-solid fa-align-left"></i></button>
+        <button type="button" class="email-compose-rail-btn" data-cmd="removeFormat" title="Clear formatting"><i class="fa-solid fa-eraser"></i></button>
+      </div>`;
+  }
+
+  function attachComposeEditor(scope) {
+    const root = scope || document;
+    const toolbar = root.querySelector('#emailComposeToolbar');
+    const body = root.querySelector('#inlineComposeBody');
+    if (!body) return;
+
+    body.style.textAlign = 'left';
+    body.setAttribute('dir', 'ltr');
+    body.querySelectorAll('p, div, li').forEach(el => { el.style.textAlign = 'left'; });
+
+    if (!toolbar) return;
+
+    function focusBody() { body.focus(); }
+
+    toolbar.querySelectorAll('button[data-cmd]').forEach(btn => {
+      btn.addEventListener('mousedown', e => e.preventDefault());
+      btn.addEventListener('click', () => {
+        focusBody();
+        const cmd = btn.dataset.cmd;
+        document.execCommand(cmd, false, null);
+        btn.classList.toggle('active', cmd === 'bold' || cmd === 'italic' || cmd === 'underline'
+          ? document.queryCommandState(cmd) : false);
+      });
+    });
+
+    const sizeSelect = toolbar.querySelector('select[data-cmd="fontSize"]');
+    if (sizeSelect) {
+      sizeSelect.addEventListener('mousedown', e => e.stopPropagation());
+      sizeSelect.addEventListener('change', () => {
+        focusBody();
+        if (sizeSelect.value) document.execCommand('fontSize', false, sizeSelect.value);
+      });
+    }
+
+    const colorInput = toolbar.querySelector('input[data-cmd="foreColor"]');
+    if (colorInput) {
+      colorInput.addEventListener('mousedown', e => e.stopPropagation());
+      colorInput.addEventListener('input', () => {
+        focusBody();
+        document.execCommand('foreColor', false, colorInput.value);
+      });
+    }
+
+    body.addEventListener('keyup', () => {
+      toolbar.querySelectorAll('button[data-cmd="bold"], button[data-cmd="italic"], button[data-cmd="underline"]').forEach(btn => {
+        btn.classList.toggle('active', document.queryCommandState(btn.dataset.cmd));
+      });
+    });
+  }
+
+  function initComposeSurface(scope) {
+    attachComposeDropZone(scope);
+    attachComposeEditor(scope);
+  }
+
   function renderInlineComposeHTML(opts) {
     const c = state.inlineCompose;
     if (!c) return '';
@@ -880,8 +959,10 @@
     const title = { new: 'New Message', reply: 'Reply', replyAll: 'Reply All', forward: 'Forward', draft: 'Edit Draft' }[c.mode] || 'Compose';
     const attachments = c.attachments || [];
     const closeFn = inPopout && c.popoutId ? `CasePMEmail.closeMessagePopout('${c.popoutId}')` : 'CasePMEmail.closeCompose()';
+    const expandedClass = inPopout || c.mode === 'new' || c.mode === 'draft' || c.mode === 'reply' || c.mode === 'replyAll' || c.mode === 'forward'
+      ? ' email-compose-expanded' : '';
     return `
-      <div class="email-inline-compose" id="emailInlineCompose">
+      <div class="email-inline-compose${expandedClass}" id="emailInlineCompose">
         ${inPopout ? '' : `<div class="email-inline-compose-header">
           <span class="text-sm font-semibold text-white">${title}</span>
           <button type="button" onclick="${closeFn}" class="text-zinc-400 hover:text-white w-8 h-8 rounded hover:bg-zinc-800"><i class="fa-solid fa-times"></i></button>
@@ -910,9 +991,14 @@
             <input type="text" id="inlineComposeSubject" value="${esc(c.subject)}" class="font-medium">
           </div>
         </div>
-        <div id="inlineComposeBody" contenteditable="true" data-compose-body class="email-inline-compose-body email-compose-dropzone">${c.body || ''}</div>
-        <div class="email-compose-dropzone" data-compose-body>Drag &amp; drop files here to attach</div>
-        <div data-compose-attachments>${renderAttachmentChips(attachments, 'CasePMEmail.removeComposeAttachment')}</div>
+        <div class="email-compose-editor-wrap">
+          ${renderComposeToolbarHTML()}
+          <div class="email-compose-editor-main">
+            <div id="inlineComposeBody" contenteditable="true" data-compose-body class="email-inline-compose-body email-compose-dropzone">${c.body || ''}</div>
+            <div class="email-compose-dropzone px-4" data-compose-body>Drag &amp; drop files here to attach</div>
+            <div data-compose-attachments class="px-4 pb-2">${renderAttachmentChips(attachments, 'CasePMEmail.removeComposeAttachment')}</div>
+          </div>
+        </div>
         <input type="file" multiple class="hidden" data-compose-file-input id="inlineComposeFileInput">
         <div id="inlineComposeScheduleRow" class="hidden px-4 pb-2">
           <label class="text-xs text-zinc-400">Schedule send</label>
@@ -1061,7 +1147,7 @@
     if (state.inlineCompose && state.inlineCompose.mode === 'new' && !state.selectedId) {
       el.innerHTML = renderInlineComposeHTML();
       attachRecipientAutocomplete();
-      attachComposeDropZone(el);
+      initComposeSurface(el);
       return;
     }
 
@@ -1085,7 +1171,7 @@
         </div>`;
       if (state.inlineCompose) {
         attachRecipientAutocomplete();
-        attachComposeDropZone(el);
+        initComposeSurface(el);
       }
       if (m.unread) markMessageRead(m);
       return;
@@ -1093,7 +1179,10 @@
 
     if (!m) {
       el.innerHTML = composeHtml;
-      if (state.inlineCompose) attachRecipientAutocomplete();
+      if (state.inlineCompose) {
+        attachRecipientAutocomplete();
+        initComposeSurface(el);
+      }
       return;
     }
 
@@ -1102,7 +1191,7 @@
     el.innerHTML = composeHtml + renderMailMessageContent(m);
     if (state.inlineCompose) {
       attachRecipientAutocomplete();
-      attachComposeDropZone(el);
+      initComposeSurface(el);
     }
   }
 
@@ -1164,14 +1253,22 @@
     if (m) { m.starred = !m.starred; persistMail(); render(); }
   }
 
+  function normalizeComposeHtml(html) {
+    if (!html) return '';
+    return html
+      .replace(/text-align\s*:\s*center/gi, 'text-align:left')
+      .replace(/text-align\s*:\s*right/gi, 'text-align:left');
+  }
+
   function compose(opts) {
+    const sigHtml = signatures.find(s => s.id === settings.defaultSignatureId)?.html || '';
     state.inlineCompose = {
       mode: opts?.draftId ? 'draft' : (opts?.mode || 'new'),
       to: opts?.to || '',
       cc: opts?.cc || '',
       bcc: opts?.bcc || '',
       subject: opts?.subject || '',
-      body: opts?.body || (signatures.find(s => s.id === settings.defaultSignatureId)?.html || ''),
+      body: opts?.body || normalizeComposeHtml(sigHtml),
       draftId: opts?.draftId || null,
       replyToId: opts?.replyToId || null,
       showCcBcc: !!(opts?.cc || opts?.bcc),
@@ -1182,7 +1279,7 @@
     renderReadingPane();
     renderMessageList();
     const pane = document.getElementById('emailReadingPane');
-    if (pane) attachComposeDropZone(pane);
+    if (pane) initComposeSurface(pane);
   }
 
   function closeCompose() {
