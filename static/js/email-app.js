@@ -407,12 +407,17 @@
       <div class="prose prose-invert max-w-none text-sm text-zinc-300">${m.body || esc(m.preview)}</div>`;
   }
 
-  function renderMailMessageContent(m) {
+  function renderMailMessageContent(m, opts) {
+    const inPopout = opts?.inPopout;
+    const popoutId = opts?.popoutId || m.id;
+    const popoutArg = inPopout ? `{inPopout:true, popoutId:'${popoutId}'}` : '';
+    const replyExtra = inPopout ? `, false, ${popoutArg}` : '';
+    const optsExtra = inPopout ? `, ${popoutArg}` : '';
     return `
       <div class="border-b border-zinc-800 px-4 py-2 flex flex-wrap gap-1 flex-shrink-0">
-        <button type="button" class="email-toolbar-btn" onclick="CasePMEmail.reply('${m.id}')"><i class="fa-solid fa-reply"></i> Reply</button>
-        <button type="button" class="email-toolbar-btn" onclick="CasePMEmail.replyAll('${m.id}')"><i class="fa-solid fa-reply-all"></i> Reply All</button>
-        <button type="button" class="email-toolbar-btn" onclick="CasePMEmail.forward('${m.id}')"><i class="fa-solid fa-share"></i> Forward</button>
+        <button type="button" class="email-toolbar-btn" onclick="CasePMEmail.reply('${m.id}'${replyExtra})"><i class="fa-solid fa-reply"></i> Reply</button>
+        <button type="button" class="email-toolbar-btn" onclick="CasePMEmail.replyAll('${m.id}'${optsExtra})"><i class="fa-solid fa-reply-all"></i> Reply All</button>
+        <button type="button" class="email-toolbar-btn" onclick="CasePMEmail.forward('${m.id}'${optsExtra})"><i class="fa-solid fa-share"></i> Forward</button>
         <button type="button" class="email-toolbar-btn" onclick="CasePMEmail.archiveSelected('${m.id}')"><i class="fa-solid fa-box-archive"></i></button>
         <button type="button" class="email-toolbar-btn" onclick="CasePMEmail.deleteSelected('${m.id}')"><i class="fa-solid fa-trash"></i></button>
         <button type="button" class="email-toolbar-btn" onclick="CasePMEmail.printMessage('${m.id}')"><i class="fa-solid fa-print"></i></button>
@@ -446,23 +451,33 @@
 
   function attachComposeDropZone(scope) {
     const root = scope || document;
+    const composeRoot = root.querySelector('#emailInlineCompose');
     const main = root.querySelector('.email-compose-editor-main');
+    const fields = root.querySelector('.email-inline-compose-fields');
+    const footer = root.querySelector('.email-inline-compose-footer');
+    const popoutBody = root.querySelector('.email-popout-body.email-popout-compose-body');
     const body = root.querySelector('#inlineComposeBody');
-    const targets = [main, body].filter(Boolean);
+    const targets = [...new Set([composeRoot, main, fields, footer, popoutBody, body].filter(Boolean))];
     if (!targets.length) return;
+    function setDragOver(on) {
+      composeRoot?.classList.toggle('drag-over', on);
+      main?.classList.toggle('drag-over', on);
+      popoutBody?.classList.toggle('drag-over', on);
+    }
     function onDragOver(e) {
       e.preventDefault();
       e.stopPropagation();
-      main?.classList.add('drag-over');
+      setDragOver(true);
     }
     function onDragLeave(e) {
       e.preventDefault();
-      if (main && !main.contains(e.relatedTarget)) main.classList.remove('drag-over');
+      const leaving = e.currentTarget;
+      if (leaving && !leaving.contains(e.relatedTarget)) setDragOver(false);
     }
     function onDrop(e) {
       e.preventDefault();
       e.stopPropagation();
-      main?.classList.remove('drag-over');
+      setDragOver(false);
       addFilesToCompose(e.dataTransfer?.files);
     }
     targets.forEach(t => {
@@ -471,7 +486,8 @@
       t.addEventListener('drop', onDrop);
     });
     const fileInput = root.querySelector('[data-compose-file-input]');
-    if (fileInput) {
+    if (fileInput && !fileInput.dataset.bound) {
+      fileInput.dataset.bound = '1';
       fileInput.addEventListener('change', () => {
         addFilesToCompose(fileInput.files);
         fileInput.value = '';
@@ -555,7 +571,71 @@
     }
     if (state.inlineCompose?.popoutId === id) {
       state.inlineCompose = null;
+      renderReadingPane();
     }
+  }
+
+  function getComposePopoutEl(popoutId) {
+    return document.getElementById('emailPopout-' + (popoutId || state.inlineCompose?.popoutId));
+  }
+
+  function isComposingInPopout() {
+    return !!state.inlineCompose?.popoutId;
+  }
+
+  function renderPopoutHeaderActions(m, inCompose) {
+    if (inCompose || state.workspace !== 'mail') return '';
+    return `
+      <button type="button" class="text-zinc-400 hover:text-white w-8 h-8 rounded hover:bg-zinc-800" onclick="CasePMEmail.reply('${m.id}', false, {inPopout:true, popoutId:'${m.id}'})" title="Reply"><i class="fa-solid fa-reply text-sm"></i></button>
+      <button type="button" class="text-zinc-400 hover:text-white w-8 h-8 rounded hover:bg-zinc-800" onclick="CasePMEmail.replyAll('${m.id}', {inPopout:true, popoutId:'${m.id}'})" title="Reply All"><i class="fa-solid fa-reply-all text-sm"></i></button>
+      <button type="button" class="text-zinc-400 hover:text-white w-8 h-8 rounded hover:bg-zinc-800" onclick="CasePMEmail.forward('${m.id}', {inPopout:true, popoutId:'${m.id}'})" title="Forward"><i class="fa-solid fa-share text-sm"></i></button>`;
+  }
+
+  function updatePopoutHeader(popoutId, title, m, inCompose) {
+    const el = getComposePopoutEl(popoutId);
+    if (!el) return;
+    const titleEl = el.querySelector('.email-popout-title');
+    if (titleEl) titleEl.textContent = title;
+    const actions = el.querySelector('.email-popout-header .flex');
+    if (actions && m) {
+      const closeFn = inCompose
+        ? 'CasePMEmail.closeCompose()'
+        : `CasePMEmail.closeMessagePopout('${m.id}')`;
+      actions.innerHTML = `
+        ${renderPopoutHeaderActions(m, inCompose)}
+        <button type="button" class="text-zinc-400 hover:text-white w-8 h-8 rounded hover:bg-zinc-800" onclick="${closeFn}"><i class="fa-solid fa-times"></i></button>`;
+    }
+  }
+
+  function rerenderPopoutCompose(popoutId) {
+    const el = getComposePopoutEl(popoutId);
+    if (!el || !state.inlineCompose) return;
+    const c = state.inlineCompose;
+    const titleMap = { new: 'New Message', reply: 'Reply', replyAll: 'Reply All', forward: 'Forward', draft: 'Edit Draft' };
+    const m = getMessage(popoutId);
+    updatePopoutHeader(popoutId, titleMap[c.mode] || 'Compose', m || { id: popoutId }, true);
+    const bodyEl = el.querySelector('.email-popout-body');
+    if (!bodyEl) return;
+    bodyEl.innerHTML = renderInlineComposeHTML({ popout: true });
+    bodyEl.classList.add('email-popout-compose-body');
+    attachRecipientAutocomplete();
+    initComposeSurface(el);
+  }
+
+  function restorePopoutMessageView(popoutId) {
+    const el = getComposePopoutEl(popoutId);
+    const m = getMessage(popoutId);
+    if (!el || !m) return;
+    const bodyEl = el.querySelector('.email-popout-body');
+    if (bodyEl) {
+      bodyEl.classList.remove('email-popout-compose-body');
+      if (state.workspace === 'internal') {
+        bodyEl.innerHTML = `<div class="p-6">${renderInternalMessageContent(m)}</div>`;
+      } else {
+        bodyEl.innerHTML = renderMailMessageContent(m, { inPopout: true, popoutId });
+      }
+    }
+    updatePopoutHeader(popoutId, m.subject, m, false);
   }
 
   function openMessagePopout(id) {
@@ -592,7 +672,9 @@
         popoutId: id,
       };
     } else {
-      state.inlineCompose = null;
+      if (!state.inlineCompose?.popoutId || state.inlineCompose.popoutId === id) {
+        if (state.inlineCompose?.popoutId !== id) state.inlineCompose = null;
+      }
     }
 
     const left = 120 + (host.children.length * 28);
@@ -608,17 +690,17 @@
     } else if (state.workspace === 'internal') {
       bodyHtml = `<div class="p-6">${renderInternalMessageContent(m)}</div>`;
     } else {
-      bodyHtml = renderMailMessageContent(m);
+      bodyHtml = renderMailMessageContent(m, { inPopout: true, popoutId: id });
     }
     el.innerHTML = `
       <div class="email-popout-header" data-popout-drag>
         <span class="email-popout-title">${title}</span>
         <div class="flex gap-1 flex-shrink-0">
-          ${!isDraft && state.workspace === 'mail' ? `<button type="button" class="text-zinc-400 hover:text-white w-8 h-8 rounded hover:bg-zinc-800" onclick="CasePMEmail.reply('${m.id}')" title="Reply"><i class="fa-solid fa-reply text-sm"></i></button>` : ''}
+          ${!isDraft ? renderPopoutHeaderActions(m, false) : ''}
           <button type="button" class="text-zinc-400 hover:text-white w-8 h-8 rounded hover:bg-zinc-800" onclick="CasePMEmail.closeMessagePopout('${m.id}')"><i class="fa-solid fa-times"></i></button>
         </div>
       </div>
-      <div class="email-popout-body">${bodyHtml}</div>
+      <div class="email-popout-body${isDraft ? ' email-popout-compose-body' : ''}">${bodyHtml}</div>
       <div class="email-popout-resize" data-popout-resize></div>`;
     host.appendChild(el);
     setupPopoutWindow(el, id);
@@ -1256,32 +1338,34 @@
     const el = document.getElementById('emailReadingPane');
     if (!el) return;
 
-    if (state.inlineCompose && state.inlineCompose.mode === 'new' && !state.selectedId) {
+    const showMainCompose = state.inlineCompose && !state.inlineCompose.popoutId;
+
+    if (showMainCompose && state.inlineCompose.mode === 'new' && !state.selectedId) {
       el.innerHTML = renderInlineComposeHTML();
       attachRecipientAutocomplete();
       initComposeSurface(el);
       return;
     }
 
-    if (settings.previewPane === 'off' && !state.inlineCompose && !state.selectedId) {
+    if (settings.previewPane === 'off' && !showMainCompose && !state.selectedId) {
       el.innerHTML = `<div class="flex-1 flex items-center justify-center text-zinc-500 text-sm p-8">Select a message to read</div>`;
       return;
     }
 
     const m = state.selectedId ? getMessage(state.selectedId) : null;
-    if (!m && !state.inlineCompose) {
+    if (!m && !showMainCompose) {
       el.innerHTML = `<div class="flex-1 flex items-center justify-center text-zinc-500 text-sm p-8"><div class="text-center"><i class="fa-solid fa-envelope-open-text text-3xl mb-3 text-zinc-600"></i>Select a message<br><span class="text-xs text-zinc-600 mt-2 block">Double-click to open</span></div></div>`;
       return;
     }
 
-    const composeHtml = state.inlineCompose ? renderInlineComposeHTML() : '';
+    const composeHtml = showMainCompose ? renderInlineComposeHTML() : '';
 
     if (state.workspace === 'internal' && m) {
       el.innerHTML = composeHtml + `
         <div class="email-reading-message overflow-auto p-6">
           ${renderInternalMessageContent(m)}
         </div>`;
-      if (state.inlineCompose) {
+      if (showMainCompose) {
         attachRecipientAutocomplete();
         initComposeSurface(el);
       }
@@ -1291,7 +1375,7 @@
 
     if (!m) {
       el.innerHTML = composeHtml;
-      if (state.inlineCompose) {
+      if (showMainCompose) {
         attachRecipientAutocomplete();
         initComposeSurface(el);
       }
@@ -1301,7 +1385,7 @@
     if (settings.markAsReadOnView && m.unread) markMessageRead(m);
 
     el.innerHTML = composeHtml + renderMailMessageContent(m);
-    if (state.inlineCompose) {
+    if (showMainCompose) {
       attachRecipientAutocomplete();
       initComposeSurface(el);
     }
@@ -1340,7 +1424,9 @@
   }
 
   function select(id) {
-    if (state.selectedId !== id) state.inlineCompose = null;
+    if (state.selectedId !== id && !state.inlineCompose?.popoutId) {
+      state.inlineCompose = null;
+    }
     state.selectedId = id;
     renderMessageList();
     renderReadingPane();
@@ -1373,6 +1459,12 @@
   }
 
   function compose(opts) {
+    const inPopout = !!(opts?.inPopout || opts?.popoutId);
+    const popoutId = inPopout ? (opts?.popoutId || state.selectedId) : null;
+    const prevPopoutId = state.inlineCompose?.popoutId;
+    if (!inPopout && prevPopoutId) {
+      restorePopoutMessageView(prevPopoutId);
+    }
     const parts = prepareComposeParts(opts || {});
     state.inlineCompose = {
       mode: opts?.draftId ? 'draft' : (opts?.mode || 'new'),
@@ -1388,9 +1480,23 @@
       replyToId: opts?.replyToId || null,
       showCcBcc: !!(opts?.cc || opts?.bcc),
       attachments: opts?.attachments || [],
+      popoutId,
     };
     if (opts?.replyToId) state.selectedId = opts.replyToId;
-    else if (!opts?.draftId) state.selectedId = null;
+    else if (!opts?.draftId && !inPopout) state.selectedId = null;
+
+    if (popoutId) {
+      let el = getComposePopoutEl(popoutId);
+      if (!el) {
+        openMessagePopout(popoutId);
+        el = getComposePopoutEl(popoutId);
+      }
+      if (el) rerenderPopoutCompose(popoutId);
+      renderReadingPane();
+      renderMessageList();
+      return;
+    }
+
     renderReadingPane();
     renderMessageList();
     const pane = document.getElementById('emailReadingPane');
@@ -1398,7 +1504,23 @@
   }
 
   function closeCompose() {
+    const popoutId = state.inlineCompose?.popoutId;
     state.inlineCompose = null;
+    if (popoutId) {
+      restorePopoutMessageView(popoutId);
+      renderReadingPane();
+      return;
+    }
+    renderReadingPane();
+  }
+
+  function finishComposeAfterSend() {
+    const popoutId = state.inlineCompose?.popoutId;
+    state.inlineCompose = null;
+    if (popoutId) {
+      closeMessagePopout(popoutId);
+      return;
+    }
     renderReadingPane();
   }
 
@@ -1428,8 +1550,10 @@
     if (idx >= 0) mailMessages[idx] = draft;
     else mailMessages.unshift(draft);
     persistMail();
+    const savedPopoutId = state.inlineCompose?.popoutId;
     state.inlineCompose = null;
     state.selectedId = draft.id;
+    if (savedPopoutId) closeMessagePopout(savedPopoutId);
     toast('Draft saved.', 'success');
     render();
   }
@@ -1460,7 +1584,7 @@
     if (settings.undoSendSeconds > 0 && !scheduled && !scheduleVal) {
       mailMessages.unshift({ ...msg, folder: 'outbox_pending' });
       persistMail();
-      closeCompose();
+      finishComposeAfterSend();
       toast(`Sending in ${settings.undoSendSeconds}s… (Undo available)`, 'info');
       clearTimeout(undoTimer);
       undoTimer = setTimeout(() => {
@@ -1471,7 +1595,7 @@
     }
     mailMessages.unshift(msg);
     persistMail();
-    closeCompose();
+    finishComposeAfterSend();
     toast(scheduled || scheduleVal ? 'Message scheduled.' : 'Message sent.', 'success');
     render();
   }
@@ -1488,31 +1612,37 @@
     }
   }
 
-  function reply(id, all) {
+  function reply(id, all, opts) {
     const m = getMessage(id);
     if (!m) return;
     const to = all
       ? [m.fromEmail, ...(m.to || []).filter(e => e !== (settings.emailAddress || ctx.userEmail))].join(', ')
       : m.fromEmail;
+    const inPopout = !!(opts?.inPopout || opts?.popoutId);
     compose({
       mode: all ? 'replyAll' : 'reply',
       to,
       subject: 'RE: ' + m.subject.replace(/^RE:\s*/i, ''),
       body: `<br><br><hr><p>On ${fmtDate(m.date)}, ${esc(m.from)} wrote:</p>${m.body || ''}`,
       replyToId: id,
+      inPopout,
+      popoutId: inPopout ? (opts?.popoutId || id) : null,
     });
   }
 
-  function replyAll(id) { reply(id, true); }
+  function replyAll(id, opts) { reply(id, true, opts); }
 
-  function forward(id) {
+  function forward(id, opts) {
     const m = getMessage(id);
     if (!m) return;
+    const inPopout = !!(opts?.inPopout || opts?.popoutId);
     compose({
       mode: 'forward',
       subject: 'FW: ' + m.subject.replace(/^FW:\s*/i, ''),
       body: `<br><br><hr><p>Forwarded message:</p>${m.body || ''}`,
       replyToId: id,
+      inPopout,
+      popoutId: inPopout ? (opts?.popoutId || id) : null,
     });
   }
 
