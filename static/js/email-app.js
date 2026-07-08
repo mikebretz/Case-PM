@@ -431,7 +431,7 @@
           <div><span class="text-zinc-500">To:</span> ${esc((m.to || []).join(', '))}</div>
           <div><span class="text-zinc-500">Date:</span> ${new Date(m.date).toLocaleString()}</div>
         </div>
-        ${m.attachments && m.attachments.length ? `<div class="mb-4 flex flex-wrap gap-2">${m.attachments.map(a => `<span class="text-xs bg-zinc-800 border border-zinc-700 px-3 py-1.5 rounded-md"><i class="fa-solid fa-paperclip mr-1"></i>${esc(a.name)} <span class="text-zinc-500">(${esc(a.size)})</span></span>`).join('')}</div>` : ''}
+        ${m.attachments && m.attachments.length ? `<div class="mb-4">${renderAttachmentIcons(m.attachments, { messageId: m.id })}</div>` : ''}
         <div class="prose prose-invert max-w-none text-sm text-zinc-300">${m.body || esc(m.preview)}</div>
       </div>`;
   }
@@ -442,11 +442,137 @@
     return (bytes / 1048576).toFixed(1) + ' MB';
   }
 
-  function renderAttachmentChips(attachments, removeFn) {
+  function getAttachmentIcon(name) {
+    const ext = (name || '').split('.').pop()?.toLowerCase() || '';
+    const icons = {
+      pdf: 'fa-file-pdf',
+      doc: 'fa-file-word', docx: 'fa-file-word',
+      xls: 'fa-file-excel', xlsx: 'fa-file-excel', csv: 'fa-file-csv',
+      ppt: 'fa-file-powerpoint', pptx: 'fa-file-powerpoint',
+      png: 'fa-file-image', jpg: 'fa-file-image', jpeg: 'fa-file-image', gif: 'fa-file-image', webp: 'fa-file-image', svg: 'fa-file-image',
+      zip: 'fa-file-zipper', rar: 'fa-file-zipper', '7z': 'fa-file-zipper',
+      txt: 'fa-file-lines', md: 'fa-file-lines',
+      mp4: 'fa-file-video', mov: 'fa-file-video', avi: 'fa-file-video',
+      mp3: 'fa-file-audio', wav: 'fa-file-audio',
+    };
+    return icons[ext] || 'fa-file';
+  }
+
+  function getAttachmentIconTone(name) {
+    const ext = (name || '').split('.').pop()?.toLowerCase() || '';
+    if (ext === 'pdf') return 'pdf';
+    if (['doc', 'docx'].includes(ext)) return 'word';
+    if (['xls', 'xlsx', 'csv'].includes(ext)) return 'excel';
+    if (['ppt', 'pptx'].includes(ext)) return 'powerpoint';
+    if (['png', 'jpg', 'jpeg', 'gif', 'webp', 'svg'].includes(ext)) return 'image';
+    if (['zip', 'rar', '7z'].includes(ext)) return 'archive';
+    return 'default';
+  }
+
+  function getMimeFromName(name, fallback) {
+    const ext = (name || '').split('.').pop()?.toLowerCase() || '';
+    const map = {
+      pdf: 'application/pdf',
+      png: 'image/png', jpg: 'image/jpeg', jpeg: 'image/jpeg', gif: 'image/gif', webp: 'image/webp',
+      txt: 'text/plain', csv: 'text/csv',
+      doc: 'application/msword', docx: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+      xls: 'application/vnd.ms-excel', xlsx: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+      zip: 'application/zip',
+    };
+    return fallback || map[ext] || 'application/octet-stream';
+  }
+
+  function readFileAsBase64(file) {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(String(reader.result || '').split(',')[1] || '');
+      reader.onerror = reject;
+      reader.readAsDataURL(file);
+    });
+  }
+
+  function serializeAttachments(atts) {
+    return (atts || []).map(a => ({
+      name: a.name,
+      size: a.size,
+      type: a.type || a.mimeType || getMimeFromName(a.name),
+      mimeType: a.mimeType || a.type || getMimeFromName(a.name),
+      dataBase64: a.dataBase64 || null,
+    }));
+  }
+
+  function getAttachmentBlob(att) {
+    const mime = att.mimeType || att.type || getMimeFromName(att.name);
+    if (att.file instanceof File) return att.file;
+    if (att.dataBase64) {
+      const binary = atob(att.dataBase64);
+      const bytes = new Uint8Array(binary.length);
+      for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+      return new Blob([bytes], { type: mime });
+    }
+    const label = att.name || 'attachment';
+    return new Blob([`Case PM attachment placeholder for ${label}`], { type: mime === 'application/pdf' ? 'application/pdf' : 'text/plain' });
+  }
+
+  function getAttachmentFile(att) {
+    const blob = getAttachmentBlob(att);
+    const mime = att.mimeType || att.type || blob.type || getMimeFromName(att.name);
+    return new File([blob], att.name || 'attachment', { type: mime });
+  }
+
+  function renderAttachmentIcons(attachments, opts = {}) {
     if (!attachments || !attachments.length) return '';
-    return `<div class="flex flex-wrap gap-1 px-4 pb-2">${attachments.map((a, i) =>
-      `<span class="email-attachment-chip"><i class="fa-solid fa-paperclip"></i>${esc(a.name)} <span class="text-zinc-500">(${esc(a.size)})</span><button type="button" onclick="${removeFn}(${i})" title="Remove">&times;</button></span>`
-    ).join('')}</div>`;
+    const removeFn = opts.removeFn;
+    const messageId = opts.messageId;
+    return `<div class="email-attachment-icons">${attachments.map((a, i) => {
+      const tone = getAttachmentIconTone(a.name);
+      const icon = getAttachmentIcon(a.name);
+      const title = `${a.name}${a.size ? ` (${a.size})` : ''} — drag to save`;
+      const removeBtn = removeFn
+        ? `<button type="button" class="email-attachment-icon-remove" onclick="${removeFn}(${i})" title="Remove">&times;</button>`
+        : '';
+      const dataAttrs = messageId
+        ? `data-email-attachment data-msg-id="${esc(messageId)}" data-att-idx="${i}"`
+        : `data-email-attachment data-compose-att-idx="${i}"`;
+      return `<div class="email-attachment-icon tone-${tone}" draggable="true" ${dataAttrs} title="${esc(title)}">
+        <i class="fa-solid ${icon}"></i>
+        <span class="email-attachment-icon-name">${esc(a.name)}</span>
+        ${removeBtn}
+      </div>`;
+    }).join('')}</div>`;
+  }
+
+  function getMessageAttachment(messageId, idx) {
+    const m = getMessage(messageId);
+    return m?.attachments?.[Number(idx)] || null;
+  }
+
+  function bindAttachmentInteractions(scope) {
+    const root = scope || document;
+    root.querySelectorAll('[data-email-attachment]').forEach(el => {
+      if (el.dataset.dragBound) return;
+      el.dataset.dragBound = '1';
+      el.addEventListener('dragstart', e => {
+        let att = null;
+        const composeIdx = el.dataset.composeAttIdx;
+        if (composeIdx !== undefined && state.inlineCompose?.attachments) {
+          att = state.inlineCompose.attachments[Number(composeIdx)];
+        } else if (el.dataset.msgId !== undefined) {
+          att = getMessageAttachment(el.dataset.msgId, el.dataset.attIdx);
+        }
+        if (!att) return;
+        const file = getAttachmentFile(att);
+        e.dataTransfer.effectAllowed = 'copy';
+        try {
+          e.dataTransfer.items.clear();
+          e.dataTransfer.items.add(file);
+        } catch {
+          e.dataTransfer.setData('DownloadURL', `${file.type}:${file.name}:data:application/octet-stream;base64,`);
+        }
+        el.classList.add('dragging');
+      });
+      el.addEventListener('dragend', () => el.classList.remove('dragging'));
+    });
   }
 
   function attachComposeDropZone(scope) {
@@ -499,12 +625,15 @@
     if (!fileList || !state.inlineCompose) return;
     if (!state.inlineCompose.attachments) state.inlineCompose.attachments = [];
     [...fileList].forEach(file => {
-      state.inlineCompose.attachments.push({
+      const entry = {
         name: file.name,
         size: formatFileSize(file.size),
-        type: file.type,
+        type: file.type || getMimeFromName(file.name),
+        mimeType: file.type || getMimeFromName(file.name),
         file,
-      });
+      };
+      state.inlineCompose.attachments.push(entry);
+      readFileAsBase64(file).then(data => { entry.dataBase64 = data; }).catch(() => {});
     });
     refreshComposeAttachmentUI();
   }
@@ -517,8 +646,11 @@
 
   function refreshComposeAttachmentUI() {
     const chips = document.querySelectorAll('[data-compose-attachments]');
-    const html = renderAttachmentChips(state.inlineCompose?.attachments || [], 'CasePMEmail.removeComposeAttachment');
-    chips.forEach(el => { el.innerHTML = html; });
+    const html = renderAttachmentIcons(state.inlineCompose?.attachments || [], { removeFn: 'CasePMEmail.removeComposeAttachment' });
+    chips.forEach(el => {
+      el.innerHTML = html;
+      bindAttachmentInteractions(el);
+    });
   }
 
   function setupPopoutWindow(el, messageId) {
@@ -564,13 +696,19 @@
   }
 
   function closeMessagePopout(id) {
+    if (state.inlineCompose?.popoutId === id) {
+      if (composeHasUnsavedContent()) {
+        saveDraftFromCompose({ notify: true });
+      } else {
+        state.inlineCompose = null;
+      }
+    }
     const el = document.getElementById('emailPopout-' + id);
     if (el) {
       if (el._popoutCleanup) el._popoutCleanup();
       el.remove();
     }
-    if (state.inlineCompose?.popoutId === id) {
-      state.inlineCompose = null;
+    if (!state.inlineCompose?.popoutId) {
       renderReadingPane();
     }
   }
@@ -622,6 +760,12 @@
     initComposeSurface(el);
   }
 
+  function bindReadingPaneAttachments() {
+    const pane = document.getElementById('emailReadingPane');
+    if (pane) bindAttachmentInteractions(pane);
+    document.querySelectorAll('.email-popout-body').forEach(el => bindAttachmentInteractions(el));
+  }
+
   function restorePopoutMessageView(popoutId) {
     const el = getComposePopoutEl(popoutId);
     const m = getMessage(popoutId);
@@ -636,6 +780,7 @@
       }
     }
     updatePopoutHeader(popoutId, m.subject, m, false);
+    bindAttachmentInteractions(el);
   }
 
   function openMessagePopout(id) {
@@ -707,6 +852,8 @@
     if (isDraft) {
       attachRecipientAutocomplete();
       initComposeSurface(el);
+    } else {
+      bindAttachmentInteractions(el);
     }
     if (m.unread) markMessageRead(m);
     renderMessageList();
@@ -1143,6 +1290,7 @@
   function initComposeSurface(scope) {
     attachComposeDropZone(scope);
     attachComposeEditor(scope);
+    bindAttachmentInteractions(scope);
   }
 
   function renderInlineComposeHTML(opts) {
@@ -1189,7 +1337,7 @@
             <div id="inlineComposeBody" contenteditable="true" data-compose-body class="email-inline-compose-body">${c.messageHtml ?? c.body ?? ''}</div>
             ${(c.signatureHtml !== undefined && c.signatureHtml !== '') || (!c.quoteHtml && c.mode !== 'draft' && !c.draftId) ? `<div id="inlineComposeSignature" contenteditable="true" data-compose-body class="email-compose-signature">${c.signatureHtml || ''}</div>` : ''}
             ${c.quoteHtml ? `<div id="inlineComposeQuote" class="email-compose-quote" contenteditable="false">${c.quoteHtml}</div>` : ''}
-            <div data-compose-attachments class="px-4 pb-2 flex-shrink-0">${renderAttachmentChips(attachments, 'CasePMEmail.removeComposeAttachment')}</div>
+            <div data-compose-attachments class="px-4 pb-2 flex-shrink-0">${renderAttachmentIcons(attachments, { removeFn: 'CasePMEmail.removeComposeAttachment' })}</div>
           </div>
         </div>
         <input type="file" multiple class="hidden" data-compose-file-input id="inlineComposeFileInput">
@@ -1389,6 +1537,7 @@
       attachRecipientAutocomplete();
       initComposeSurface(el);
     }
+    bindReadingPaneAttachments();
   }
 
   function applyLayoutClasses() {
@@ -1505,13 +1654,14 @@
 
   function closeCompose() {
     const popoutId = state.inlineCompose?.popoutId;
-    state.inlineCompose = null;
-    if (popoutId) {
-      restorePopoutMessageView(popoutId);
-      renderReadingPane();
-      return;
+    if (state.inlineCompose && composeHasUnsavedContent()) {
+      saveDraftFromCompose({ notify: true });
+    } else {
+      state.inlineCompose = null;
     }
+    if (popoutId) restorePopoutMessageView(popoutId);
     renderReadingPane();
+    renderMessageList();
   }
 
   function finishComposeAfterSend() {
@@ -1530,32 +1680,63 @@
     if (state.inlineCompose) state.inlineCompose.showCcBcc = row && !row.classList.contains('hidden');
   }
 
-  function saveDraft() {
-    const to = document.getElementById('inlineComposeTo')?.value.trim() || '';
-    const subject = document.getElementById('inlineComposeSubject')?.value.trim() || '';
-    const body = getComposeFullHtml();
+  function getComposeFieldValues() {
+    return {
+      to: document.getElementById('inlineComposeTo')?.value.trim() || '',
+      cc: document.getElementById('inlineComposeCc')?.value.trim() || '',
+      bcc: document.getElementById('inlineComposeBcc')?.value.trim() || '',
+      subject: document.getElementById('inlineComposeSubject')?.value.trim() || '',
+      body: getComposeFullHtml(),
+      messageHtml: document.getElementById('inlineComposeBody')?.innerHTML || '',
+    };
+  }
+
+  function composeHasUnsavedContent() {
+    if (!state.inlineCompose) return false;
+    const v = getComposeFieldValues();
+    const userText = (v.messageHtml || '').replace(/<[^>]+>/g, '').replace(/&nbsp;/gi, ' ').trim();
+    const hasAtts = (state.inlineCompose.attachments || []).length > 0;
+    return !!(v.to || v.cc || v.bcc || v.subject || userText || hasAtts);
+  }
+
+  function saveDraftFromCompose(opts = {}) {
+    const { notify = true, closePopout = false } = opts;
+    if (!state.inlineCompose) return null;
+    const v = getComposeFieldValues();
+    const atts = serializeAttachments(state.inlineCompose.attachments || []);
     const draft = {
-      id: state.inlineCompose?.draftId || uid(),
+      id: state.inlineCompose.draftId || uid(),
       folder: 'drafts', category: 'primary', focused: true,
       from: settings.displayName || ctx.userName, fromEmail: settings.emailAddress || ctx.userEmail,
-      to: to.split(/[,;]/).map(s => s.trim()).filter(Boolean),
-      cc: (document.getElementById('inlineComposeCc')?.value || '').split(/[,;]/).map(s => s.trim()).filter(Boolean),
-      bcc: (document.getElementById('inlineComposeBcc')?.value || '').split(/[,;]/).map(s => s.trim()).filter(Boolean),
-      subject: subject || '(No subject)', preview: body.replace(/<[^>]+>/g, '').slice(0, 120),
-      body, date: new Date().toISOString(), unread: true, starred: false, flagged: false,
-      hasAttachments: false, attachments: [], labels: [], threadId: uid(), importance: 'normal',
+      to: v.to.split(/[,;]/).map(s => s.trim()).filter(Boolean),
+      cc: v.cc.split(/[,;]/).map(s => s.trim()).filter(Boolean),
+      bcc: v.bcc.split(/[,;]/).map(s => s.trim()).filter(Boolean),
+      subject: v.subject || '(No subject)', preview: v.body.replace(/<[^>]+>/g, '').slice(0, 120),
+      body: v.body, date: new Date().toISOString(), unread: true, starred: false, flagged: false,
+      hasAttachments: atts.length > 0, attachments: atts, labels: [], threadId: uid(), importance: 'normal',
       snoozedUntil: null, scheduledFor: null, isDraft: true,
     };
     const idx = mailMessages.findIndex(m => m.id === draft.id);
     if (idx >= 0) mailMessages[idx] = draft;
     else mailMessages.unshift(draft);
     persistMail();
-    const savedPopoutId = state.inlineCompose?.popoutId;
+    const savedPopoutId = state.inlineCompose.popoutId;
     state.inlineCompose = null;
     state.selectedId = draft.id;
-    if (savedPopoutId) closeMessagePopout(savedPopoutId);
-    toast('Draft saved.', 'success');
+    if (notify) toast('Saved as draft.', 'success');
+    if (closePopout && savedPopoutId) {
+      const popoutEl = document.getElementById('emailPopout-' + savedPopoutId);
+      if (popoutEl) {
+        if (popoutEl._popoutCleanup) popoutEl._popoutCleanup();
+        popoutEl.remove();
+      }
+    }
     render();
+    return draft;
+  }
+
+  function saveDraft() {
+    saveDraftFromCompose({ notify: true, closePopout: true });
   }
 
   function sendMail(scheduled) {
@@ -1569,7 +1750,7 @@
       const di = mailMessages.findIndex(m => m.id === draftId);
       if (di >= 0) mailMessages.splice(di, 1);
     }
-    const atts = (state.inlineCompose?.attachments || []).map(a => ({ name: a.name, size: a.size }));
+    const atts = serializeAttachments(state.inlineCompose?.attachments || []);
     const msg = {
       id: uid(), folder: scheduled || scheduleVal ? 'scheduled' : 'sent', category: 'primary', focused: true,
       from: settings.displayName || ctx.userName, fromEmail: settings.emailAddress || ctx.userEmail,
