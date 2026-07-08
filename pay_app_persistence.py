@@ -35,6 +35,7 @@ SCHEDULE_IMPACT_DAYS = {
     'no impact': 0,
     'minor': 5,
     'moderate': 10,
+    'significant': 14,
     'major': 14,
     'critical': 30,
 }

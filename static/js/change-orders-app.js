@@ -1,0 +1,618 @@
+/**
+ * Case PM — Change Orders & PCO module
+ * Procore/RedTeam-style workflow with budget, pay app, and Sage integration.
+ */
+(function (global) {
+  'use strict';
+
+  const CO_STATUSES = ['Draft', 'Submitted', 'Under Review', 'Pending Owner', 'Pending Architect', 'Approved', 'Rejected', 'Void'];
+  const PCO_STATUSES = ['Open', 'Pricing', 'Pending Review', 'Approved for CO', 'Promoted', 'Void', 'Closed'];
+  const REASONS = ['Owner Request', 'Design Change', 'Unforeseen Condition', 'Code Compliance', 'Error or Omission', 'Value Engineering', 'Schedule Acceleration', 'Other'];
+  const PRIORITIES = ['Low', 'Medium', 'High', 'Critical'];
+  const CONTRACT_TYPES = ['Owner', 'Contractor', 'Subcontract'];
+
+  let state = {
+    tab: 'cos',
+    changeOrders: [],
+    pcos: [],
+    costCodes: [],
+    companies: [],
+    contacts: [],
+    stats: {},
+    sageLog: [],
+    selectedCo: null,
+    selectedPco: null,
+    allocationRows: [],
+    filter: { search: '', status: '', priority: '' },
+  };
+
+  function projectId() {
+    if (global.CASEPM_ACTIVE_PROJECT_ID) return global.CASEPM_ACTIVE_PROJECT_ID;
+    if (typeof CasePMWorkflow !== 'undefined' && CasePMWorkflow.projectId) return CasePMWorkflow.projectId();
+    const raw = localStorage.getItem('casepm_current_project_id');
+    return raw ? parseInt(raw, 10) : null;
+  }
+
+  function fmt(n) {
+    return new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(n || 0);
+  }
+
+  function fmtDate(iso) {
+    if (!iso) return '—';
+    return new Date(iso).toLocaleDateString();
+  }
+
+  function canApprove() {
+    if (typeof CasePMWorkflow !== 'undefined' && global.CASEPM_PORTAL) {
+      return CasePMWorkflow.canApprove('Change Orders');
+    }
+    return true;
+  }
+
+  function currentUserName() {
+    if (global.CASEPM_PORTAL && global.CASEPM_PORTAL.userName) return global.CASEPM_PORTAL.userName;
+    return 'User';
+  }
+
+  async function api(path, opts) {
+    const res = await fetch(path, { credentials: 'same-origin', headers: { 'Content-Type': 'application/json' }, ...opts });
+    const json = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(json.error || json.message || 'Request failed');
+    return json;
+  }
+
+  function loadCompaniesFromStorage() {
+    try {
+      state.companies = JSON.parse(localStorage.getItem('casepm_companies') || '[]');
+    } catch { state.companies = []; }
+    const users = JSON.parse(localStorage.getItem('casepm_users') || localStorage.getItem('users') || '[]');
+    state.contacts = Array.isArray(users) ? users : [];
+  }
+
+  async function loadCostCodes() {
+    const pid = projectId();
+    if (!pid) return;
+    try {
+      const json = await api(`/api/change-orders/cost-codes?project_id=${pid}`);
+      state.costCodes = json.cost_codes || [];
+    } catch {
+      if (typeof CasePMBudgetSync !== 'undefined') {
+        await CasePMBudgetSync.init().catch(() => {});
+        const lines = JSON.parse(global.casepmStore.getItem('budgetLines') || '[]');
+        state.costCodes = lines.map(l => ({ code: l.cost_code, description: l.description, cost_type: l.cost_type }));
+      }
+    }
+  }
+
+  async function loadDashboard() {
+    const pid = projectId();
+    if (!pid) return;
+    state.stats = await api(`/api/change-orders/dashboard?project_id=${pid}`);
+    renderSummary();
+  }
+
+  async function loadChangeOrders() {
+    const pid = projectId();
+    if (!pid) return;
+    const json = await api(`/api/change-orders?project_id=${pid}`);
+    state.changeOrders = json.change_orders || [];
+    renderCoTable();
+  }
+
+  async function loadPcos() {
+    const pid = projectId();
+    if (!pid) return;
+    const json = await api(`/api/pcos?project_id=${pid}`);
+    state.pcos = json.pcos || [];
+    renderPcoTable();
+  }
+
+  async function loadSageLog() {
+    const pid = projectId();
+    if (!pid) return;
+    try {
+      const res = await fetch(`/api/sage/sync-events?project_id=${pid}&limit=30`, { credentials: 'same-origin' });
+      const json = await res.json();
+      state.sageLog = (json.events || []).filter(e =>
+        ['ChangeOrderApproved', 'ChangeOrderSubmitted', 'PCOSubmitted', 'PCOPromoted'].includes(e.event_type)
+      );
+    } catch { state.sageLog = []; }
+    renderSageBar();
+  }
+
+  function statusBadge(status) {
+    const colors = {
+      Draft: 'bg-zinc-700 text-zinc-300', Open: 'bg-sky-900/50 text-sky-300', Pricing: 'bg-indigo-900/50 text-indigo-300',
+      Submitted: 'bg-amber-900/50 text-amber-300', 'Under Review': 'bg-amber-900/50 text-amber-300',
+      'Pending Owner': 'bg-orange-900/50 text-orange-300', 'Pending Architect': 'bg-purple-900/50 text-purple-300',
+      'Pending Review': 'bg-amber-900/50 text-amber-300', 'Approved for CO': 'bg-emerald-900/50 text-emerald-300',
+      Approved: 'bg-emerald-900/50 text-emerald-400', Rejected: 'bg-red-900/50 text-red-400',
+      Promoted: 'bg-zinc-600 text-zinc-200', Void: 'bg-zinc-800 text-zinc-500', Closed: 'bg-zinc-800 text-zinc-500',
+    };
+    const cls = colors[status] || 'bg-zinc-700 text-zinc-300';
+    return `<span class="inline-block px-2 py-0.5 rounded text-[10px] font-medium ${cls}">${status}</span>`;
+  }
+
+  function ballBadge(role) {
+    if (!role) return '<span class="text-zinc-600">—</span>';
+    return `<span class="text-[10px] text-amber-400"><i class="fa-solid fa-user-clock mr-1"></i>${role}</span>`;
+  }
+
+  function renderSummary() {
+    const s = state.stats;
+    const map = {
+      statTotalCo: s.total_cos || 0,
+      statApproved: s.approved_count || 0,
+      statPending: s.pending_count || 0,
+      statOpenPco: s.open_pco_count || 0,
+      statApprovedTotal: fmt(s.approved_total),
+      statPendingTotal: fmt(s.pending_total),
+      statPcoRom: fmt(s.pco_rom_total),
+      statAvgDays: s.avg_approval_days ? `${s.avg_approval_days} days` : '—',
+    };
+    Object.keys(map).forEach(id => {
+      const el = document.getElementById(id);
+      if (el) el.textContent = map[id];
+    });
+  }
+
+  function filteredCos() {
+    const { search, status, priority } = state.filter;
+    return state.changeOrders.filter(co => {
+      const text = `${co.number} ${co.title} ${co.description} ${co.company_name || ''}`.toLowerCase();
+      if (search && !text.includes(search.toLowerCase())) return false;
+      if (status && co.status !== status) return false;
+      if (priority && co.priority !== priority) return false;
+      return true;
+    });
+  }
+
+  function filteredPcos() {
+    const { search, status } = state.filter;
+    return state.pcos.filter(p => {
+      const text = `${p.number} ${p.title} ${p.description} ${p.company_name || ''}`.toLowerCase();
+      if (search && !text.includes(search.toLowerCase())) return false;
+      if (status && p.status !== status) return false;
+      return true;
+    });
+  }
+
+  function renderCoTable() {
+    const tbody = document.getElementById('coTableBody');
+    if (!tbody) return;
+    const rows = filteredCos();
+    if (!rows.length) {
+      tbody.innerHTML = '<tr><td colspan="11" class="px-6 py-12 text-center text-zinc-500">No change orders found. Create from a PCO or use New Change Order.</td></tr>';
+      return;
+    }
+    tbody.innerHTML = rows.map(co => `
+      <tr class="border-b border-zinc-800 hover:bg-zinc-800/50 cursor-pointer" onclick="CasePMChangeOrders.viewCo(${co.id})">
+        <td class="px-4 py-3 font-mono text-emerald-400 whitespace-nowrap">${co.number || '—'}</td>
+        <td class="px-4 py-3 whitespace-nowrap">${fmtDate(co.date)}</td>
+        <td class="px-4 py-3 max-w-[240px] truncate" title="${(co.title || co.description || '').replace(/"/g, '')}">${co.title || co.description}</td>
+        <td class="px-4 py-3 text-xs text-zinc-400">${co.company_name || '—'}</td>
+        <td class="px-4 py-3 font-mono text-xs">${co.cost_code || (co.allocations && co.allocations[0] ? co.allocations[0].cost_code : '—')}</td>
+        <td class="px-4 py-3 text-right font-mono">${fmt(co.amount)}</td>
+        <td class="px-4 py-3 text-center">${statusBadge(co.status)}</td>
+        <td class="px-4 py-3 text-center">${ballBadge(co.ball_in_court_role)}</td>
+        <td class="px-4 py-3 text-center text-xs">${co.schedule_impact_days || 0}d</td>
+        <td class="px-4 py-3 text-center text-[10px] ${co.sov_synced_at ? 'text-emerald-400' : co.sage_sync_status ? 'text-amber-400' : 'text-zinc-500'}">${co.sov_synced_at ? 'SOV ✓' : (co.sage_sync_status || '—')}</td>
+        <td class="px-4 py-3 text-center" onclick="event.stopPropagation()">
+          <div class="flex items-center justify-center gap-1">
+            ${co.status !== 'Approved' && canApprove() ? `<button onclick="CasePMChangeOrders.submitCo(${co.id})" class="p-1.5 text-amber-400 hover:bg-zinc-800 rounded" title="Submit"><i class="fa-solid fa-paper-plane"></i></button>` : ''}
+            ${canApprove() && ['Submitted','Under Review','Pending Owner','Pending Architect'].includes(co.status) ? `<button onclick="CasePMChangeOrders.approveCo(${co.id})" class="p-1.5 text-emerald-400 hover:bg-zinc-800 rounded" title="Approve"><i class="fa-solid fa-check"></i></button>` : ''}
+            <button onclick="CasePMChangeOrders.editCo(${co.id})" class="p-1.5 text-zinc-400 hover:bg-zinc-800 rounded" title="Edit"><i class="fa-solid fa-edit"></i></button>
+          </div>
+        </td>
+      </tr>`).join('');
+  }
+
+  function renderPcoTable() {
+    const tbody = document.getElementById('pcoTableBody');
+    if (!tbody) return;
+    const rows = filteredPcos();
+    if (!rows.length) {
+      tbody.innerHTML = '<tr><td colspan="10" class="px-6 py-12 text-center text-zinc-500">No PCOs yet. Click New PCO to log a potential change.</td></tr>';
+      return;
+    }
+    tbody.innerHTML = rows.map(p => `
+      <tr class="border-b border-zinc-800 hover:bg-zinc-800/50 cursor-pointer" onclick="CasePMChangeOrders.viewPco(${p.id})">
+        <td class="px-4 py-3 font-mono text-sky-400 whitespace-nowrap">${p.number}</td>
+        <td class="px-4 py-3 max-w-[240px] truncate">${p.title}</td>
+        <td class="px-4 py-3 text-xs text-zinc-400">${p.company_name || '—'}</td>
+        <td class="px-4 py-3 text-xs">${p.contact_name || '—'}</td>
+        <td class="px-4 py-3 font-mono text-xs">${p.cost_code || '—'}</td>
+        <td class="px-4 py-3 text-right font-mono">${fmt(p.estimated_amount)}</td>
+        <td class="px-4 py-3 text-center">${statusBadge(p.status)}</td>
+        <td class="px-4 py-3 text-center">${ballBadge(p.ball_in_court_role)}</td>
+        <td class="px-4 py-3 text-center text-xs">${p.schedule_impact_days || 0}d</td>
+        <td class="px-4 py-3 text-center" onclick="event.stopPropagation()">
+          <div class="flex items-center justify-center gap-1">
+            ${p.status !== 'Promoted' && p.status !== 'Void' ? `<button onclick="CasePMChangeOrders.promotePco(${p.id})" class="p-1.5 text-emerald-400 hover:bg-zinc-800 rounded" title="Promote to CO"><i class="fa-solid fa-arrow-right"></i></button>` : ''}
+            ${p.change_order_id ? `<span class="text-[10px] text-emerald-400">→ CO</span>` : ''}
+            <button onclick="CasePMChangeOrders.editPco(${p.id})" class="p-1.5 text-zinc-400 hover:bg-zinc-800 rounded"><i class="fa-solid fa-edit"></i></button>
+          </div>
+        </td>
+      </tr>`).join('');
+  }
+
+  function renderSageBar() {
+    const el = document.getElementById('coSageStatusText');
+    if (!el) return;
+    const latest = state.sageLog[0];
+    if (!latest) {
+      el.textContent = 'Sage 300 PCO/CO · No sync events yet';
+      return;
+    }
+    el.textContent = `Sage 300 · ${latest.event_type} · ${latest.status} · ${new Date(latest.created_at).toLocaleString()}`;
+  }
+
+  function switchTab(tab) {
+    state.tab = tab;
+    document.getElementById('tabCos').classList.toggle('hidden', tab !== 'cos');
+    document.getElementById('tabPcos').classList.toggle('hidden', tab !== 'pcos');
+    document.getElementById('btnTabCos').className = tab === 'cos'
+      ? 'px-4 py-2 rounded-md text-sm font-medium bg-emerald-600 text-white'
+      : 'px-4 py-2 rounded-md text-sm font-medium bg-zinc-800 text-zinc-300 hover:bg-zinc-700';
+    document.getElementById('btnTabPcos').className = tab === 'pcos'
+      ? 'px-4 py-2 rounded-md text-sm font-medium bg-emerald-600 text-white'
+      : 'px-4 py-2 rounded-md text-sm font-medium bg-zinc-800 text-zinc-300 hover:bg-zinc-700';
+  }
+
+  function populateSelect(id, options, selected) {
+    const el = document.getElementById(id);
+    if (!el) return;
+    el.innerHTML = options.map(o => {
+      const val = typeof o === 'string' ? o : o.value;
+      const label = typeof o === 'string' ? o : o.label;
+      return `<option value="${val}" ${val === selected ? 'selected' : ''}>${label}</option>`;
+    }).join('');
+  }
+
+  function populateCompanySelect(selectedId) {
+    const el = document.getElementById('modalCompany');
+    if (!el) return;
+    el.innerHTML = '<option value="">— Select Company —</option>' +
+      state.companies.map(c => {
+        const name = c.company_name || c.name || '';
+        const id = c.id || name;
+        return `<option value="${id}" data-name="${name.replace(/"/g, '')}" ${String(id) === String(selectedId) ? 'selected' : ''}>${name}</option>`;
+      }).join('');
+  }
+
+  function onCompanyChange() {
+    const sel = document.getElementById('modalCompany');
+    const contactSel = document.getElementById('modalContact');
+    if (!sel || !contactSel) return;
+    const companyName = sel.options[sel.selectedIndex]?.dataset?.name || sel.options[sel.selectedIndex]?.text || '';
+    const contacts = state.contacts.filter(u => {
+      const cn = u.company || u.company_name || '';
+      return cn && companyName && cn.toLowerCase() === companyName.toLowerCase();
+    });
+    contactSel.innerHTML = '<option value="">— Select Contact —</option>' +
+      contacts.map(u => {
+        const name = `${u.firstName || u.first_name || ''} ${u.lastName || u.last_name || ''}`.trim() || u.email;
+        return `<option value="${name}" data-email="${u.email || ''}" data-phone="${(u.phones && u.phones[0] && u.phones[0].number) || ''}">${name}</option>`;
+      }).join('');
+  }
+
+  function onContactChange() {
+    const sel = document.getElementById('modalContact');
+    if (!sel || sel.selectedIndex < 0) return;
+    const opt = sel.options[sel.selectedIndex];
+    const emailEl = document.getElementById('modalContactEmail');
+    const phoneEl = document.getElementById('modalContactPhone');
+    if (emailEl) emailEl.value = opt.dataset.email || '';
+    if (phoneEl) phoneEl.value = opt.dataset.phone || '';
+  }
+
+  function renderAllocationRows() {
+    const container = document.getElementById('allocationRows');
+    if (!container) return;
+    if (!state.allocationRows.length) {
+      state.allocationRows = [{ cost_code: '', amount: 0, description: '' }];
+    }
+    container.innerHTML = state.allocationRows.map((row, idx) => `
+      <div class="grid grid-cols-12 gap-2 items-center mb-2">
+        <div class="col-span-4">
+          <select class="w-full bg-zinc-800 border border-zinc-700 rounded-md px-2 py-1.5 text-xs alloc-cost-code" data-idx="${idx}">
+            <option value="">Cost code…</option>
+            ${state.costCodes.map(c => `<option value="${c.code}" ${c.code === row.cost_code ? 'selected' : ''}>${c.code} — ${c.description || ''}</option>`).join('')}
+          </select>
+        </div>
+        <div class="col-span-3"><input type="text" class="w-full bg-zinc-800 border border-zinc-700 rounded-md px-2 py-1.5 text-xs alloc-desc" data-idx="${idx}" value="${row.description || ''}" placeholder="Description"></div>
+        <div class="col-span-3"><input type="number" step="0.01" class="w-full bg-zinc-800 border border-zinc-700 rounded-md px-2 py-1.5 text-xs text-right alloc-amt" data-idx="${idx}" value="${row.amount || 0}"></div>
+        <div class="col-span-2 flex gap-1">
+          <button type="button" onclick="CasePMChangeOrders.addAllocRow()" class="px-2 py-1 text-xs bg-zinc-700 rounded">+</button>
+          ${state.allocationRows.length > 1 ? `<button type="button" onclick="CasePMChangeOrders.removeAllocRow(${idx})" class="px-2 py-1 text-xs bg-red-900/50 text-red-400 rounded">×</button>` : ''}
+        </div>
+      </div>`).join('');
+  }
+
+  function readAllocationsFromDom() {
+    const rows = [];
+    document.querySelectorAll('.alloc-cost-code').forEach((sel, idx) => {
+      const code = sel.value;
+      const desc = document.querySelector(`.alloc-desc[data-idx="${idx}"]`)?.value || '';
+      const amt = parseFloat(document.querySelector(`.alloc-amt[data-idx="${idx}"]`)?.value) || 0;
+      if (code || amt) rows.push({ cost_code: code, amount: amt, description: desc });
+    });
+    return rows;
+  }
+
+  function readModalPayload(type) {
+    const companySel = document.getElementById('modalCompany');
+    const companyName = companySel?.options[companySel.selectedIndex]?.dataset?.name || '';
+    const allocs = readAllocationsFromDom();
+    const total = allocs.reduce((s, a) => s + (a.amount || 0), 0);
+    const base = {
+      project_id: projectId(),
+      title: document.getElementById('modalTitle')?.value?.trim(),
+      description: document.getElementById('modalDescription')?.value?.trim(),
+      reason: document.getElementById('modalReason')?.value,
+      priority: document.getElementById('modalPriority')?.value,
+      schedule_impact_days: parseInt(document.getElementById('modalScheduleDays')?.value, 10) || 0,
+      company_id: companySel?.value || null,
+      company_name: companyName,
+      contact_name: document.getElementById('modalContact')?.value,
+      contact_email: document.getElementById('modalContactEmail')?.value,
+      contact_phone: document.getElementById('modalContactPhone')?.value,
+      requested_by: document.getElementById('modalRequestedBy')?.value || currentUserName(),
+      notes: document.getElementById('modalNotes')?.value,
+      contract_type: document.getElementById('modalContractType')?.value,
+      allocations: allocs,
+    };
+    if (type === 'pco') {
+      return { ...base, estimated_amount: total || parseFloat(document.getElementById('modalAmount')?.value) || 0, status: document.getElementById('modalStatus')?.value || 'Open' };
+    }
+    return { ...base, amount: total || parseFloat(document.getElementById('modalAmount')?.value) || 0, status: document.getElementById('modalStatus')?.value || 'Draft', date: document.getElementById('modalDate')?.value };
+  }
+
+  function openModal(mode, record) {
+    const modal = document.getElementById('coModal');
+    const isPco = mode === 'pco';
+    document.getElementById('modalMode').value = mode;
+    document.getElementById('modalRecordId').value = record?.id || '';
+    document.getElementById('coModalHeading').textContent = record
+      ? (isPco ? `Edit PCO ${record.number}` : `Edit ${record.number}`)
+      : (isPco ? 'New Potential Change Order (PCO)' : 'New Change Order');
+    document.getElementById('modalDateRow').classList.toggle('hidden', isPco);
+    document.getElementById('modalContractTypeRow').classList.toggle('hidden', isPco);
+    populateSelect('modalStatus', isPco ? PCO_STATUSES : CO_STATUSES, record?.status || (isPco ? 'Open' : 'Draft'));
+    populateSelect('modalReason', [''].concat(REASONS), record?.reason || '');
+    populateSelect('modalPriority', PRIORITIES, record?.priority || 'Medium');
+    populateSelect('modalContractType', CONTRACT_TYPES, record?.contract_type || 'Owner');
+    populateCompanySelect(record?.company_id);
+    document.getElementById('modalTitle').value = record?.title || '';
+    document.getElementById('modalDescription').value = record?.description || '';
+    document.getElementById('modalAmount').value = record ? (isPco ? record.estimated_amount : record.amount) : '';
+    document.getElementById('modalScheduleDays').value = record?.schedule_impact_days || 0;
+    document.getElementById('modalRequestedBy').value = record?.requested_by || currentUserName();
+    document.getElementById('modalNotes').value = record?.notes || '';
+    document.getElementById('modalDate').value = record?.date ? record.date.split('T')[0] : new Date().toISOString().split('T')[0];
+    document.getElementById('modalContactEmail').value = record?.contact_email || '';
+    document.getElementById('modalContactPhone').value = record?.contact_phone || '';
+    state.allocationRows = (record?.allocations && record.allocations.length)
+      ? record.allocations.map(a => ({ ...a }))
+      : [{ cost_code: record?.cost_code || '', amount: record?.amount || record?.estimated_amount || 0, description: '' }];
+    onCompanyChange();
+    if (record?.contact_name) {
+      const csel = document.getElementById('modalContact');
+      if (csel) csel.value = record.contact_name;
+    }
+    renderAllocationRows();
+    modal.showModal();
+  }
+
+  async function saveModal(e) {
+    e.preventDefault();
+    const mode = document.getElementById('modalMode').value;
+    const id = document.getElementById('modalRecordId').value;
+    const payload = readModalPayload(mode);
+    if (!payload.title && !payload.description) {
+      alert('Title or description is required.');
+      return;
+    }
+    try {
+      if (mode === 'pco') {
+        const json = id
+          ? await api(`/api/pcos/${id}`, { method: 'PUT', body: JSON.stringify(payload) })
+          : await api('/api/pcos', { method: 'POST', body: JSON.stringify(payload) });
+        await loadPcos();
+        await loadDashboard();
+      } else {
+        const json = id
+          ? await api(`/api/change-orders/${id}`, { method: 'PUT', body: JSON.stringify(payload) })
+          : await api('/api/change-orders', { method: 'POST', body: JSON.stringify(payload) });
+        await loadChangeOrders();
+        await loadDashboard();
+      }
+      document.getElementById('coModal').close();
+      toast('Saved successfully');
+    } catch (err) {
+      alert(err.message);
+    }
+  }
+
+  async function applyCoSync(json) {
+    if (json.sync_result && typeof CasePMPayAppSync !== 'undefined') {
+      CasePMPayAppSync.applyCoSyncResult(json.sync_result);
+    }
+    if (json.budget_sync_result && typeof CasePMBudgetSync !== 'undefined') {
+      CasePMBudgetSync.applyBudgetSyncResult(json.budget_sync_result);
+    }
+    global.dispatchEvent(new CustomEvent('casepm:co-approved', { detail: json }));
+  }
+
+  async function submitCo(id) {
+    const co = state.changeOrders.find(c => c.id === id);
+    if (!co) return;
+    if (!confirm(`Submit ${co.number} for approval?`)) return;
+    try {
+      const json = await api(`/change-orders/${id}/update-status`, {
+        method: 'POST', body: JSON.stringify({ status: 'Submitted' }),
+      });
+      if (typeof CasePMWorkflow !== 'undefined' && CasePMWorkflow.onChangeOrderSubmitted) {
+        await CasePMWorkflow.onChangeOrderSubmitted(co).catch(() => {});
+      }
+      await fetch('/api/sage/sync-events', {
+        method: 'POST', credentials: 'same-origin',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          project_id: projectId(), event_type: 'ChangeOrderSubmitted',
+          message: `${co.number} submitted for approval`,
+          payload: { change_order_id: id, amount: co.amount },
+        }),
+      });
+      await loadChangeOrders();
+      await loadDashboard();
+      await loadSageLog();
+      toast(`${co.number} submitted — ball in court: Project Manager`);
+    } catch (err) { alert(err.message); }
+  }
+
+  async function approveCo(id) {
+    const co = state.changeOrders.find(c => c.id === id);
+    if (!co || !canApprove()) { alert('You do not have permission to approve.'); return; }
+    if (!confirm(`Approve ${co.number}? This will sync to Budget, Contractor SOV, Schedule, and Sage 300.`)) return;
+    try {
+      const json = await api(`/change-orders/${id}/update-status`, {
+        method: 'POST', body: JSON.stringify({ status: 'Approved' }),
+      });
+      await applyCoSync(json);
+      await loadChangeOrders();
+      await loadDashboard();
+      await loadSageLog();
+      const applied = json.sync_result?.sov_amount_applied;
+      toast(applied != null ? `Approved — $${Number(applied).toLocaleString()} synced to SOV & budget` : 'Approved');
+    } catch (err) { alert(err.message); }
+  }
+
+  async function promotePco(id) {
+    const p = state.pcos.find(x => x.id === id);
+    if (!p) return;
+    if (!confirm(`Promote PCO ${p.number} to a formal Change Order?`)) return;
+    try {
+      const json = await api(`/api/pcos/${id}/promote`, { method: 'POST', body: '{}' });
+      await loadPcos();
+      await loadChangeOrders();
+      await loadDashboard();
+      await loadSageLog();
+      toast(`Promoted to ${json.change_order?.number}`);
+      switchTab('cos');
+    } catch (err) { alert(err.message); }
+  }
+
+  async function viewCo(id) {
+    const co = await api(`/api/change-orders/${id}`);
+    const allocs = (co.allocations || []).map(a => `${a.cost_code}: ${fmt(a.amount)}`).join('\n') || '—';
+    alert([
+      `${co.number} — Rev ${co.revision || 0}`, co.title, `Status: ${co.status}`, `Ball in court: ${co.ball_in_court_role || '—'}`,
+      `Amount: ${fmt(co.amount)}`, `Company: ${co.company_name || '—'}`, `Contact: ${co.contact_name || '—'}`,
+      `Schedule: +${co.schedule_impact_days || 0} days`, `Sage: ${co.sage_sync_status || '—'}`, `SOV synced: ${co.sov_synced_at ? 'Yes' : 'No'}`,
+      '', 'Allocations:', allocs, '', co.description || '',
+    ].join('\n'));
+  }
+
+  async function viewPco(id) {
+    const p = await api(`/api/pcos/${id}`);
+    alert([
+      `${p.number}`, p.title, `Status: ${p.status}`, `ROM: ${fmt(p.estimated_amount)}`,
+      `Company: ${p.company_name || '—'}`, `Contact: ${p.contact_name || '—'}`,
+      p.change_order_id ? `Promoted to CO #${p.change_order_id}` : 'Not yet promoted',
+      '', p.description || '',
+    ].join('\n'));
+  }
+
+  function toast(msg) {
+    const t = document.createElement('div');
+    t.className = 'fixed bottom-16 right-6 z-[70] px-4 py-2 rounded-md bg-emerald-900 text-emerald-100 text-sm shadow-lg';
+    t.textContent = msg;
+    document.body.appendChild(t);
+    setTimeout(() => t.remove(), 2800);
+  }
+
+  function exportExcel() {
+    if (typeof XLSX === 'undefined') { alert('Excel library not loaded'); return; }
+    const data = state.changeOrders.map(co => ({
+      Number: co.number, Date: co.date, Title: co.title, Company: co.company_name,
+      Amount: co.amount, Status: co.status, 'Ball In Court': co.ball_in_court_role,
+      'Schedule Days': co.schedule_impact_days, 'SOV Synced': co.sov_synced_at ? 'Yes' : 'No',
+    }));
+    const ws = XLSX.utils.json_to_sheet(data);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, 'Change Orders');
+    XLSX.writeFile(wb, `Change_Orders_${projectId() || 'project'}.xlsx`);
+  }
+
+  function openSageLog() {
+    let modal = document.getElementById('coSageLogModal');
+    if (!modal) {
+      modal = document.createElement('dialog');
+      modal.id = 'coSageLogModal';
+      modal.className = 'bg-zinc-900 border border-zinc-700 rounded-lg p-0 text-white max-w-2xl w-full';
+      document.body.appendChild(modal);
+    }
+    const rows = state.sageLog.length ? state.sageLog.map(e => `
+      <tr class="border-b border-zinc-800"><td class="py-2 text-[10px] text-zinc-400">${new Date(e.created_at).toLocaleString()}</td>
+      <td class="py-2 text-xs">${e.event_type}</td><td class="py-2 text-xs text-emerald-400">${e.status}</td>
+      <td class="py-2 text-xs">${e.message || ''}</td></tr>`).join('')
+      : '<tr><td colspan="4" class="py-6 text-center text-zinc-500">No events</td></tr>';
+    modal.innerHTML = `<div class="p-5"><div class="flex justify-between mb-4"><h3 class="font-semibold">Sage 300 PCO/CO Log</h3>
+      <button onclick="document.getElementById('coSageLogModal').close()"><i class="fa-solid fa-times"></i></button></div>
+      <table class="w-full text-left text-sm"><thead><tr class="text-[10px] text-zinc-500"><th>Time</th><th>Event</th><th>Status</th><th>Detail</th></tr></thead><tbody>${rows}</tbody></table></div>`;
+    modal.showModal();
+  }
+
+  function bindFilters() {
+    const search = document.getElementById('coSearch');
+    const status = document.getElementById('coStatusFilter');
+    const priority = document.getElementById('coPriorityFilter');
+    const rerender = () => {
+      state.filter.search = search?.value || '';
+      state.filter.status = status?.value || '';
+      state.filter.priority = priority?.value || '';
+      renderCoTable();
+      renderPcoTable();
+    };
+    if (search) search.addEventListener('input', rerender);
+    if (status) status.addEventListener('change', rerender);
+    if (priority) priority.addEventListener('change', rerender);
+  }
+
+  async function init() {
+    if (!projectId()) {
+      alert('Select a project to manage change orders.');
+      return;
+    }
+    if (typeof CasePMWorkflow !== 'undefined') await CasePMWorkflow.loadPortal().catch(() => {});
+    if (typeof CasePMBudgetSync !== 'undefined') await CasePMBudgetSync.init().catch(() => {});
+    if (typeof CasePMPayAppSync !== 'undefined') await CasePMPayAppSync.init().catch(() => {});
+    loadCompaniesFromStorage();
+    await loadCostCodes();
+    await Promise.all([loadDashboard(), loadChangeOrders(), loadPcos(), loadSageLog()]);
+    bindFilters();
+    switchTab('cos');
+    global.addEventListener('casepm:co-approved', () => {
+      loadChangeOrders();
+      loadDashboard();
+    });
+  }
+
+  global.CasePMChangeOrders = {
+    init,
+    switchTab,
+    openModal,
+    saveModal,
+    editCo: id => api(`/api/change-orders/${id}`).then(openModal.bind(null, 'co')).catch(e => alert(e.message)),
+    editPco: id => api(`/api/pcos/${id}`).then(openModal.bind(null, 'pco')).catch(e => alert(e.message)),
+    viewCo, viewPco, submitCo, approveCo, promotePco,
+    addAllocRow: () => { state.allocationRows.push({ cost_code: '', amount: 0, description: '' }); renderAllocationRows(); },
+    removeAllocRow: idx => { state.allocationRows.splice(idx, 1); renderAllocationRows(); },
+    onCompanyChange, onContactChange, exportExcel, openSageLog,
+    newPco: () => openModal('pco', null),
+    newCo: () => openModal('co', null),
+  };
+
+  document.addEventListener('DOMContentLoaded', init);
+})(window);

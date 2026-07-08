@@ -349,6 +349,18 @@ class ChangeOrder(db.Model):
     approved_by_id = db.Column(db.Integer, db.ForeignKey('user.id'))
     sov_synced_at = db.Column(db.DateTime)
     sage_sync_status = db.Column(db.String(30))
+    title = db.Column(db.String(200))
+    company_name = db.Column(db.String(200))
+    company_id = db.Column(db.String(64))
+    contact_name = db.Column(db.String(150))
+    contact_email = db.Column(db.String(150))
+    contact_phone = db.Column(db.String(50))
+    ball_in_court_role = db.Column(db.String(80))
+    source_pco_id = db.Column(db.Integer)
+    schedule_impact_days = db.Column(db.Integer, default=0)
+    contract_type = db.Column(db.String(40), default='Owner')
+    submitted_at = db.Column(db.DateTime)
+    attachments_json = db.Column(db.Text)
 
 
 class ChangeOrderAllocation(db.Model):
@@ -357,6 +369,54 @@ class ChangeOrderAllocation(db.Model):
     cost_code = db.Column(db.String(30))
     amount = db.Column(db.Float, default=0)
     sov_line_legacy_id = db.Column(db.String(64))
+    description = db.Column(db.String(200))
+
+
+class ChangeOrderRevision(db.Model):
+    __tablename__ = 'change_order_revision'
+    id = db.Column(db.Integer, primary_key=True)
+    change_order_id = db.Column(db.Integer, db.ForeignKey('change_order.id'), nullable=False)
+    revision = db.Column(db.Integer, default=0)
+    snapshot_json = db.Column(db.Text)
+    notes = db.Column(db.Text)
+    created_by_id = db.Column(db.Integer, db.ForeignKey('user.id'))
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+
+
+class PotentialChangeOrder(db.Model):
+    __tablename__ = 'potential_change_order'
+    id = db.Column(db.Integer, primary_key=True)
+    project_id = db.Column(db.Integer, db.ForeignKey('project.id'), nullable=False)
+    number = db.Column(db.String(30))
+    title = db.Column(db.String(200))
+    description = db.Column(db.Text)
+    estimated_amount = db.Column(db.Float, default=0)
+    status = db.Column(db.String(30), default='Open')
+    reason = db.Column(db.String(200))
+    priority = db.Column(db.String(20), default='Medium')
+    schedule_impact_days = db.Column(db.Integer, default=0)
+    company_name = db.Column(db.String(200))
+    company_id = db.Column(db.String(64))
+    contact_name = db.Column(db.String(150))
+    contact_email = db.Column(db.String(150))
+    contact_phone = db.Column(db.String(50))
+    requested_by = db.Column(db.String(150))
+    ball_in_court_role = db.Column(db.String(80), default='Project Manager')
+    cost_code = db.Column(db.String(30))
+    notes = db.Column(db.Text)
+    change_order_id = db.Column(db.Integer, db.ForeignKey('change_order.id'), nullable=True)
+    created_by_id = db.Column(db.Integer, db.ForeignKey('user.id'))
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+
+class PCOAllocation(db.Model):
+    __tablename__ = 'pco_allocation'
+    id = db.Column(db.Integer, primary_key=True)
+    pco_id = db.Column(db.Integer, db.ForeignKey('potential_change_order.id'), nullable=False)
+    cost_code = db.Column(db.String(30))
+    amount = db.Column(db.Float, default=0)
+    description = db.Column(db.String(200))
 
 
 class PayAppProjectState(db.Model):
@@ -1128,9 +1188,7 @@ def update_rfi_status(rfi_id):
 @app.route('/change-orders')
 @login_required
 def change_orders_page():
-    change_orders = query_for_active_project(ChangeOrder).order_by(ChangeOrder.created_at.desc()).all()
-    projects = Project.query.order_by(Project.name).all()
-    return render_template('change_orders.html', change_orders=change_orders, projects=projects)
+    return render_template('change_orders.html')
 
 
 def _parse_change_order_date(value):
@@ -1209,6 +1267,10 @@ def update_change_order_status(co_id):
 
     old_status = co.status
     co.status = new_status
+    from co_persistence import BALL_IN_COURT_MAP
+    co.ball_in_court_role = BALL_IN_COURT_MAP.get(new_status, co.ball_in_court_role)
+    if new_status == 'Submitted' and not co.submitted_at:
+        co.submitted_at = datetime.utcnow()
 
     log = AuditLog(
         user_id=current_user.id,
@@ -2209,65 +2271,109 @@ def api_retry_sage_sync_event(event_id):
     return jsonify({'ok': True, 'event': sage_event_to_dict(event)})
 
 
-# ==================== CHANGE ORDER API (SOV integration) ====================
+# ==================== CHANGE ORDER & PCO API ====================
+
+@app.route('/api/change-orders/dashboard', methods=['GET'])
+@login_required
+def api_change_orders_dashboard():
+    from co_persistence import compute_dashboard_stats
+    project_id = request.args.get('project_id', type=int) or get_current_project_id()
+    if not project_id:
+        return jsonify({'error': 'project_id required'}), 400
+    return jsonify(compute_dashboard_stats(ChangeOrder, PotentialChangeOrder, int(project_id)))
+
+
+@app.route('/api/change-orders/cost-codes', methods=['GET'])
+@login_required
+def api_change_orders_cost_codes():
+    from co_persistence import get_budget_cost_codes
+    project_id = request.args.get('project_id', type=int) or get_current_project_id()
+    if not project_id:
+        return jsonify({'error': 'project_id required'}), 400
+    return jsonify({'cost_codes': get_budget_cost_codes(BudgetProjectState, int(project_id))})
+
+
+@app.route('/api/change-orders', methods=['GET'])
+@login_required
+def api_list_change_orders():
+    from co_persistence import co_to_dict
+    project_id = request.args.get('project_id', type=int) or get_current_project_id()
+    if not project_id:
+        return jsonify({'error': 'project_id required'}), 400
+    status = request.args.get('status')
+    q = ChangeOrder.query.filter_by(project_id=int(project_id))
+    if status:
+        q = q.filter_by(status=status)
+    cos = q.order_by(ChangeOrder.created_at.desc()).all()
+    result = []
+    for co in cos:
+        allocs = ChangeOrderAllocation.query.filter_by(change_order_id=co.id).all()
+        revs = ChangeOrderRevision.query.filter_by(change_order_id=co.id).order_by(ChangeOrderRevision.revision.desc()).all()
+        revisions = [{'revision': r.revision, 'created_at': r.created_at.isoformat() if r.created_at else None, 'notes': r.notes} for r in revs]
+        result.append(co_to_dict(co, allocs, revisions))
+    return jsonify({'change_orders': result})
+
 
 @app.route('/api/change-orders/<int:co_id>', methods=['GET'])
 @login_required
 def api_get_change_order(co_id):
+    from co_persistence import co_to_dict
     co = ChangeOrder.query.get_or_404(co_id)
     allocs = ChangeOrderAllocation.query.filter_by(change_order_id=co.id).all()
-    return jsonify({
-        'id': co.id,
-        'number': co.number,
-        'description': co.description,
-        'amount': co.amount,
-        'reason': co.reason,
-        'schedule_impact': co.schedule_impact,
-        'status': co.status,
-        'date': co.date.isoformat() if co.date else None,
-        'cost_code': co.cost_code,
-        'requested_by': co.requested_by,
-        'priority': co.priority,
-        'revision': co.revision,
-        'notes': co.notes,
-        'sov_synced_at': co.sov_synced_at.isoformat() if co.sov_synced_at else None,
-        'allocations': [{'cost_code': a.cost_code, 'amount': a.amount} for a in allocs],
-    })
+    revs = ChangeOrderRevision.query.filter_by(change_order_id=co.id).order_by(ChangeOrderRevision.revision.desc()).all()
+    revisions = [{'revision': r.revision, 'created_at': r.created_at.isoformat() if r.created_at else None, 'notes': r.notes, 'snapshot': json.loads(r.snapshot_json) if r.snapshot_json else None} for r in revs]
+    return jsonify(co_to_dict(co, allocs, revisions))
 
 
 @app.route('/api/change-orders/<int:co_id>/allocate', methods=['POST'])
 @login_required
 def api_allocate_change_order(co_id):
+    from co_persistence import save_allocations
     co = ChangeOrder.query.get_or_404(co_id)
     body = request.get_json(silent=True) or {}
     allocations = body.get('allocations') or []
-    ChangeOrderAllocation.query.filter_by(change_order_id=co.id).delete()
-    for item in allocations:
-        db.session.add(ChangeOrderAllocation(
-            change_order_id=co.id,
-            cost_code=item.get('cost_code'),
-            amount=float(item.get('amount') or 0),
-        ))
-    if body.get('cost_code') and not allocations:
+    save_allocations(ChangeOrderAllocation, 'change_order_id', co.id, allocations, db)
+    if allocations:
+        co.amount = sum(float(a.get('amount') or 0) for a in allocations)
+        if len(allocations) == 1:
+            co.cost_code = allocations[0].get('cost_code')
+    elif body.get('cost_code'):
         co.cost_code = body.get('cost_code')
     db.session.commit()
-    return jsonify({'ok': True})
+    return jsonify({'ok': True, 'amount': co.amount})
 
 
 @app.route('/api/change-orders', methods=['POST'])
 @login_required
 def api_create_change_order():
+    from co_persistence import apply_co_fields, co_to_dict, save_allocations
     try:
-        fields = _change_order_from_payload(request.get_json(silent=True) or {})
-        if not fields['description']:
+        body = request.get_json(silent=True) or {}
+        project_id = body.get('project_id') or get_current_project_id()
+        if not project_id:
+            return jsonify({'error': 'project_id required'}), 400
+        description = (body.get('description') or body.get('title') or '').strip()
+        if not description:
             return jsonify({'error': 'description required'}), 400
         number = generate_next_number('CO', ChangeOrder)
-        co = ChangeOrder(number=number, created_by_id=current_user.id, **fields)
+        co = ChangeOrder(
+            project_id=int(project_id),
+            number=number,
+            description=description,
+            status=body.get('status') or 'Draft',
+            date=_parse_change_order_date(body.get('date')),
+            ball_in_court_role='Creator',
+            created_by_id=current_user.id,
+        )
+        apply_co_fields(co, body)
         db.session.add(co)
+        db.session.flush()
+        if body.get('allocations'):
+            save_allocations(ChangeOrderAllocation, 'change_order_id', co.id, body['allocations'], db)
+            co.amount = sum(float(a.get('amount') or 0) for a in body['allocations'])
         db.session.commit()
-        return jsonify({'ok': True, 'id': co.id, 'number': co.number})
-    except ValueError as exc:
-        return jsonify({'error': str(exc)}), 400
+        allocs = ChangeOrderAllocation.query.filter_by(change_order_id=co.id).all()
+        return jsonify({'ok': True, 'change_order': co_to_dict(co, allocs)})
     except Exception as exc:
         db.session.rollback()
         return jsonify({'error': str(exc)}), 500
@@ -2276,32 +2382,40 @@ def api_create_change_order():
 @app.route('/api/change-orders/<int:co_id>', methods=['PUT'])
 @login_required
 def api_update_change_order(co_id):
+    from co_persistence import apply_co_fields, co_to_dict, save_allocations
     co = ChangeOrder.query.get_or_404(co_id)
     body = request.get_json(silent=True) or {}
-    if body.get('description') is not None:
-        co.description = body['description']
-    if body.get('amount') is not None:
-        co.amount = float(body['amount'])
-    if body.get('reason') is not None:
-        co.reason = body['reason']
-    if body.get('schedule_impact') is not None:
-        co.schedule_impact = body['schedule_impact']
-    if body.get('status') is not None:
-        co.status = body['status']
-    if body.get('date') is not None:
-        co.date = _parse_change_order_date(body['date'])
-    if body.get('cost_code') is not None:
-        co.cost_code = body['cost_code']
-    if body.get('requested_by') is not None:
-        co.requested_by = body['requested_by']
-    if body.get('priority') is not None:
-        co.priority = body['priority']
-    if body.get('revision') is not None:
-        co.revision = int(body['revision'])
-    if body.get('notes') is not None:
-        co.notes = body['notes']
+    apply_co_fields(co, body)
+    if body.get('allocations') is not None:
+        save_allocations(ChangeOrderAllocation, 'change_order_id', co.id, body['allocations'], db)
+        if body['allocations']:
+            co.amount = sum(float(a.get('amount') or 0) for a in body['allocations'])
     db.session.commit()
-    return jsonify({'ok': True, 'id': co.id})
+    allocs = ChangeOrderAllocation.query.filter_by(change_order_id=co.id).all()
+    return jsonify({'ok': True, 'change_order': co_to_dict(co, allocs)})
+
+
+@app.route('/api/change-orders/<int:co_id>/revision', methods=['POST'])
+@login_required
+def api_create_co_revision(co_id):
+    from co_persistence import co_to_dict
+    co = ChangeOrder.query.get_or_404(co_id)
+    body = request.get_json(silent=True) or {}
+    co.revision = (co.revision or 0) + 1
+    allocs = ChangeOrderAllocation.query.filter_by(change_order_id=co.id).all()
+    snapshot = co_to_dict(co, allocs)
+    db.session.add(ChangeOrderRevision(
+        change_order_id=co.id,
+        revision=co.revision,
+        snapshot_json=json.dumps(snapshot),
+        notes=body.get('notes', ''),
+        created_by_id=current_user.id,
+    ))
+    if co.status == 'Approved':
+        co.status = 'Draft'
+        co.ball_in_court_role = 'Creator'
+    db.session.commit()
+    return jsonify({'ok': True, 'revision': co.revision})
 
 
 @app.route('/api/change-orders/<int:co_id>/sync-to-sov', methods=['POST'])
@@ -2317,6 +2431,156 @@ def api_sync_change_order_to_sov(co_id):
     except ValueError as exc:
         return jsonify({'error': str(exc)}), 400
     except Exception as exc:
+        return jsonify({'error': str(exc)}), 500
+
+
+# ==================== PCO (Potential Change Order) API ====================
+
+@app.route('/api/pcos', methods=['GET'])
+@login_required
+def api_list_pcos():
+    from co_persistence import pco_to_dict
+    project_id = request.args.get('project_id', type=int) or get_current_project_id()
+    if not project_id:
+        return jsonify({'error': 'project_id required'}), 400
+    status = request.args.get('status')
+    q = PotentialChangeOrder.query.filter_by(project_id=int(project_id))
+    if status:
+        q = q.filter_by(status=status)
+    pcos = q.order_by(PotentialChangeOrder.created_at.desc()).all()
+    result = []
+    for pco in pcos:
+        allocs = PCOAllocation.query.filter_by(pco_id=pco.id).all()
+        result.append(pco_to_dict(pco, allocs))
+    return jsonify({'pcos': result})
+
+
+@app.route('/api/pcos/<int:pco_id>', methods=['GET'])
+@login_required
+def api_get_pco(pco_id):
+    from co_persistence import pco_to_dict
+    pco = PotentialChangeOrder.query.get_or_404(pco_id)
+    allocs = PCOAllocation.query.filter_by(pco_id=pco.id).all()
+    return jsonify(pco_to_dict(pco, allocs))
+
+
+@app.route('/api/pcos', methods=['POST'])
+@login_required
+def api_create_pco():
+    from co_persistence import apply_pco_fields, pco_to_dict, save_allocations
+    body = request.get_json(silent=True) or {}
+    project_id = body.get('project_id') or get_current_project_id()
+    if not project_id:
+        return jsonify({'error': 'project_id required'}), 400
+    title = (body.get('title') or body.get('description') or '').strip()
+    if not title:
+        return jsonify({'error': 'title required'}), 400
+    pco = PotentialChangeOrder(
+        project_id=int(project_id),
+        number=generate_next_number('PCO', PotentialChangeOrder),
+        title=title,
+        description=body.get('description') or title,
+        status=body.get('status') or 'Open',
+        ball_in_court_role='Project Manager',
+        requested_by=body.get('requested_by') or f'{current_user.first_name} {current_user.last_name}'.strip(),
+        created_by_id=current_user.id,
+    )
+    apply_pco_fields(pco, body)
+    db.session.add(pco)
+    db.session.flush()
+    if body.get('allocations'):
+        save_allocations(PCOAllocation, 'pco_id', pco.id, body['allocations'], db)
+        pco.estimated_amount = sum(float(a.get('amount') or 0) for a in body['allocations'])
+    db.session.commit()
+    allocs = PCOAllocation.query.filter_by(pco_id=pco.id).all()
+    return jsonify({'ok': True, 'pco': pco_to_dict(pco, allocs)})
+
+
+@app.route('/api/pcos/<int:pco_id>', methods=['PUT'])
+@login_required
+def api_update_pco(pco_id):
+    from co_persistence import apply_pco_fields, pco_to_dict, save_allocations
+    pco = PotentialChangeOrder.query.get_or_404(pco_id)
+    body = request.get_json(silent=True) or {}
+    apply_pco_fields(pco, body)
+    if body.get('allocations') is not None:
+        save_allocations(PCOAllocation, 'pco_id', pco.id, body['allocations'], db)
+        if body['allocations']:
+            pco.estimated_amount = sum(float(a.get('amount') or 0) for a in body['allocations'])
+    pco.updated_at = datetime.utcnow()
+    db.session.commit()
+    allocs = PCOAllocation.query.filter_by(pco_id=pco.id).all()
+    return jsonify({'ok': True, 'pco': pco_to_dict(pco, allocs)})
+
+
+@app.route('/api/pcos/<int:pco_id>/update-status', methods=['POST'])
+@login_required
+def api_update_pco_status(pco_id):
+    from co_persistence import pco_to_dict
+    from sage_service import create_and_process_sage_event
+    pco = PotentialChangeOrder.query.get_or_404(pco_id)
+    body = request.get_json(silent=True) or {}
+    new_status = body.get('status')
+    if not new_status:
+        return jsonify({'error': 'status required'}), 400
+    old_status = pco.status
+    pco.status = new_status
+    if new_status == 'Pending Review':
+        pco.ball_in_court_role = 'Project Manager'
+        try:
+            from case_workflow import create_approval
+            create_approval(
+                project_id=pco.project_id,
+                module='Change Orders',
+                entity_type='PCO',
+                entity_id=pco.id,
+                title=f'PCO {pco.number} — {pco.title}',
+                description=pco.description or '',
+                action_url=f'/change-orders?project_id={pco.project_id}',
+                payload={'estimated_amount': pco.estimated_amount, 'status': new_status, 'type': 'pco'},
+            )
+        except Exception:
+            pass
+        create_and_process_sage_event(
+            SageSyncEvent, Project, db, pco.project_id,
+            'PCOSubmitted',
+            message=f'PCO {pco.number} submitted for review',
+            payload={'pco_id': pco.id, 'estimated_amount': pco.estimated_amount},
+            user_id=current_user.id,
+        )
+    db.session.commit()
+    allocs = PCOAllocation.query.filter_by(pco_id=pco.id).all()
+    return jsonify({'ok': True, 'pco': pco_to_dict(pco, allocs), 'old_status': old_status})
+
+
+@app.route('/api/pcos/<int:pco_id>/promote', methods=['POST'])
+@login_required
+def api_promote_pco(pco_id):
+    from co_persistence import promote_pco_to_co, co_to_dict, pco_to_dict
+    from sage_service import create_and_process_sage_event
+    try:
+        co = promote_pco_to_co(
+            PotentialChangeOrder, PCOAllocation, ChangeOrder, ChangeOrderAllocation,
+            db, pco_id, current_user.id, generate_next_number,
+        )
+        pco = PotentialChangeOrder.query.get(pco_id)
+        allocs = ChangeOrderAllocation.query.filter_by(change_order_id=co.id).all()
+        create_and_process_sage_event(
+            SageSyncEvent, Project, db, co.project_id,
+            'PCOPromoted',
+            message=f'PCO {pco.number} promoted to {co.number}',
+            payload={'pco_id': pco.id, 'change_order_id': co.id, 'amount': co.amount},
+            user_id=current_user.id,
+        )
+        return jsonify({
+            'ok': True,
+            'change_order': co_to_dict(co, allocs),
+            'pco': pco_to_dict(pco, PCOAllocation.query.filter_by(pco_id=pco.id).all()),
+        })
+    except ValueError as exc:
+        return jsonify({'error': str(exc)}), 400
+    except Exception as exc:
+        db.session.rollback()
         return jsonify({'error': str(exc)}), 500
 
 
@@ -2350,9 +2614,10 @@ with app.app_context():
         except Exception as _pe:
             print('Pay app schema:', _pe)
         try:
-            db.create_all()
-        except Exception as _be:
-            print('Budget schema:', _be)
+            from co_persistence import ensure_co_schema
+            ensure_co_schema(db.engine, db)
+        except Exception as _ce:
+            print('CO schema:', _ce)
     except Exception as _e:
         print('Workflow init:', _e)
 
