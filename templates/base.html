@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Case PM • {{ project_name if project_name else 'ALDI Lakeland' }}</title>
+    <title>Case PM • {{ project_name }}</title>
     
     <!-- Tailwind CSS + Font Awesome -->
     <script src="https://cdn.tailwindcss.com"></script>
@@ -101,7 +101,7 @@
                 <span class="text-[10px] text-zinc-400 tracking-[1px] font-medium flex-shrink-0">CURRENT PROJECT</span>
                 <button type="button" onclick="document.getElementById('projectSwitcherModal').showModal()"
                         class="flex items-center gap-2 text-sm font-semibold tracking-tight text-white hover:text-emerald-400 transition-colors min-w-0">
-                    <span id="currentProjectName" class="truncate">{{ project_name if project_name else 'ALDI Lakeland' }}</span>
+                    <span id="currentProjectName" class="truncate">{{ project_name }}</span>
                     <i class="fa-solid fa-chevron-down text-xs text-zinc-400 flex-shrink-0"></i>
                 </button>
             </div>
@@ -387,21 +387,24 @@
                 </button>
             </div>
 
-            <div class="space-y-1 max-h-80 overflow-auto">
-                <div onclick="switchProject(1)" class="flex items-center justify-between p-3 hover:bg-zinc-800 rounded-2xl cursor-pointer">
-                    <div>
-                        <div class="font-medium">ALDI Lakeland</div>
-                        <div class="text-xs text-zinc-500">Job #2024-0847 • Active</div>
+            <div class="space-y-1 max-h-80 overflow-auto" id="projectSwitcherList">
+                {% if all_projects %}
+                    {% for project in all_projects %}
+                    <div onclick="switchProject({{ project.id }})"
+                         data-project-id="{{ project.id }}"
+                         class="project-switcher-item flex items-center justify-between p-3 hover:bg-zinc-800 rounded-2xl cursor-pointer">
+                        <div class="min-w-0">
+                            <div class="font-medium truncate">{{ project.name }}</div>
+                            <div class="text-xs text-zinc-500 truncate">
+                                {% if project.number %}{{ project.number }} • {% endif %}{{ project.status or 'Active' }}
+                            </div>
+                        </div>
+                        <i class="fa-solid fa-check text-emerald-400 project-switcher-check {% if not active_project or active_project.id != project.id %}hidden{% endif %}"></i>
                     </div>
-                    <i class="fa-solid fa-check text-emerald-400"></i>
-                </div>
-                
-                <div onclick="switchProject(2)" class="flex items-center justify-between p-3 hover:bg-zinc-800 rounded-2xl cursor-pointer">
-                    <div>
-                        <div class="font-medium">Wesley Chapel Retail</div>
-                        <div class="text-xs text-zinc-500">Job #2025-0123 • Active</div>
-                    </div>
-                </div>
+                    {% endfor %}
+                {% else %}
+                    <div class="p-4 text-sm text-zinc-500 text-center">No projects yet. Create one from the Projects page.</div>
+                {% endif %}
             </div>
 
             <div class="mt-4 pt-4 border-t border-zinc-800">
@@ -572,18 +575,91 @@
             syncEl.textContent = new Date().toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'});
         }
 
-        // Project switcher (demo)
-        window.switchProject = function(projectId) {
-            const names = { 1: 'ALDI Lakeland', 2: 'Wesley Chapel Retail' };
-            const name = names[projectId] || 'ALDI Lakeland';
+        // Project switcher — global current project for project-scoped modules
+        window.CASEPM_PROJECT_REGISTRY = [
+            {% for project in all_projects %}
+            {
+                id: {{ project.id }},
+                name: {{ project.name|tojson }},
+                number: {{ (project.number or '')|tojson }},
+                status: {{ (project.status or 'Active')|tojson }}
+            }{% if not loop.last %},{% endif %}
+            {% endfor %}
+        ];
+        window.CASEPM_ACTIVE_PROJECT_ID = {{ active_project.id if active_project else 'null' }};
+
+        window.CASEPM_PROJECT_AGNOSTIC_PREFIXES = [
+            '/dashboard',
+            '/projects',
+            '/email',
+            '/companies',
+            '/user-management',
+            '/program-settings',
+            '/audit-log',
+            '/audit_log',
+            '/notifications',
+            '/profile',
+            '/search',
+        ];
+
+        window.isProjectAgnosticPath = function(path) {
+            const p = path || window.location.pathname;
+            return window.CASEPM_PROJECT_AGNOSTIC_PREFIXES.some(prefix =>
+                p === prefix || p.startsWith(prefix + '/')
+            );
+        };
+
+        window.updateProjectSwitcherChecks = function(projectId) {
+            document.querySelectorAll('.project-switcher-item').forEach(item => {
+                const check = item.querySelector('.project-switcher-check');
+                const isActive = parseInt(item.dataset.projectId, 10) === parseInt(projectId, 10);
+                if (check) check.classList.toggle('hidden', !isActive);
+            });
+        };
+
+        window.switchProject = async function(projectId) {
+            projectId = parseInt(projectId, 10);
+            if (!projectId) return;
+
+            const registry = window.CASEPM_PROJECT_REGISTRY || [];
+            const project = registry.find(p => p.id === projectId);
+            const name = project ? project.name : 'Project';
+
+            try {
+                const res = await fetch('/api/current-project', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ project_id: projectId })
+                });
+                if (!res.ok) throw new Error('Could not save project selection');
+            } catch (err) {
+                console.warn('Project switch API failed:', err);
+            }
+
+            localStorage.setItem('casepm_current_project_id', String(projectId));
+            window.CASEPM_ACTIVE_PROJECT_ID = projectId;
+
             const nameEl = document.getElementById('currentProjectName');
             if (nameEl) nameEl.textContent = name;
-            localStorage.setItem('casepm_current_project_id', String(projectId));
+            updateProjectSwitcherChecks(projectId);
             document.getElementById('projectSwitcherModal')?.close();
-            if (window.location.pathname.includes('/schedule')) {
-                window.location.href = '/schedule?project_id=' + projectId;
+
+            if (typeof window.onCasePmProjectChanged === 'function') {
+                window.onCasePmProjectChanged(projectId, project);
             }
+
+            if (window.isProjectAgnosticPath(window.location.pathname)) {
+                return;
+            }
+
+            const url = new URL(window.location.href);
+            url.searchParams.set('project_id', String(projectId));
+            window.location.href = url.toString();
         };
+
+        {% if active_project %}
+        localStorage.setItem('casepm_current_project_id', '{{ active_project.id }}');
+        {% endif %}
 
         console.log('%c[Case PM v56.0] ✅ Ultimate base.html loaded successfully with complete sidebar.', 'color:#10b981; font-weight:600');
     </script>
