@@ -6,6 +6,41 @@
 
   const S = () => global.CasePMEmail?.getSettings?.() || global.CasePMEmailSettings || {};
 
+  let lastContainerId = 'emailSettingsModalBody';
+
+  function escText(s) {
+    return String(s || '')
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;');
+  }
+
+  function loadSignatures() {
+    if (global.CasePMEmail?.getSignatures) return global.CasePMEmail.getSignatures();
+    try {
+      return JSON.parse(localStorage.getItem('casepm_email_signatures') || '[]');
+    } catch { return []; }
+  }
+
+  function renderSignatureRows(sigs, defaultId) {
+    if (!sigs.length) {
+      return `<p class="text-sm text-zinc-500">No signatures yet. Add one below.</p>`;
+    }
+    return sigs.map(sig => `
+      <div class="border border-zinc-700 rounded-lg p-3 mb-3 bg-zinc-800/40" data-sig-id="${escText(sig.id)}">
+        <div class="flex items-center gap-2 mb-2">
+          <input type="text" class="email-field-input es-sig-name flex-1" value="${escText(sig.name)}" placeholder="Signature name">
+          <label class="flex items-center gap-1.5 text-xs text-zinc-400 whitespace-nowrap cursor-pointer">
+            <input type="radio" name="es_defaultSignature" class="es-sig-default accent-emerald-600" value="${escText(sig.id)}" ${sig.id === defaultId ? 'checked' : ''}>
+            Default
+          </label>
+          <button type="button" onclick="CasePMEmailSettingsUI.removeSignature('${escText(sig.id)}')" class="text-red-400 hover:text-red-300 text-xs px-2 py-1">Delete</button>
+        </div>
+        <textarea class="email-field-input es-sig-html font-mono text-xs" rows="6" placeholder="Signature HTML — e.g. &lt;p&gt;Best regards,&lt;/p&gt;&lt;p&gt;&lt;strong&gt;Your Name&lt;/strong&gt;&lt;/p&gt;">${escText(sig.html)}</textarea>
+      </div>`).join('');
+  }
+
   function field(id, label, inputHtml, hint) {
     return `<div><label class="email-field-label" for="${id}">${label}</label>${inputHtml}${hint ? `<p class="text-[10px] text-zinc-500 mt-1">${hint}</p>` : ''}</div>`;
   }
@@ -27,9 +62,12 @@
   }
 
   function render(containerId) {
-    const el = document.getElementById(containerId);
+    lastContainerId = containerId || lastContainerId;
+    const el = document.getElementById(lastContainerId);
     if (!el) return;
     const s = S();
+    const sigs = loadSignatures();
+    const defaultSigId = s.defaultSignatureId || (sigs[0] && sigs[0].id) || 'default';
 
     el.innerHTML = `
       <div class="space-y-2 max-h-[70vh] overflow-y-auto pr-1">
@@ -105,6 +143,15 @@
           </div>
         `)}
 
+        ${section('Email Signatures', `
+          <p class="text-xs text-zinc-500 mb-3">Signatures are appended when you compose a new message. Use HTML for formatting (name, title, phone, logo, etc.). The <strong class="text-zinc-300">Default</strong> signature is inserted automatically.</p>
+          <div id="es_signaturesList">${renderSignatureRows(sigs, defaultSigId)}</div>
+          <button type="button" onclick="CasePMEmailSettingsUI.addSignature()" class="mt-1 px-4 py-2 bg-zinc-800 hover:bg-zinc-700 border border-zinc-700 rounded-md text-sm text-zinc-200">
+            <i class="fa-solid fa-plus mr-1"></i> Add Signature
+          </button>
+          <p class="text-[10px] text-zinc-500 mt-3">Tip: Drawn signatures for PDFs and submittals are managed separately under <strong class="text-zinc-400">User Management → Signature &amp; Certificate</strong>.</p>
+        `)}
+
         ${section('Vacation Responder / Out of Office', `
           <div class="mb-3">${checkbox('es_vacationEnabled', 'Enable vacation auto-reply', s.vacationEnabled)}</div>
           <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -151,6 +198,22 @@
           <button type="button" onclick="CasePMEmailSettingsUI.save()" class="px-6 py-2.5 bg-emerald-600 hover:bg-emerald-500 rounded-md text-sm font-semibold text-white">Save Email Settings</button>
         </div>
       </div>`;
+  }
+
+  function collectSignatures() {
+    const rows = document.querySelectorAll('#es_signaturesList [data-sig-id]');
+    return [...rows].map(row => ({
+      id: row.dataset.sigId,
+      name: row.querySelector('.es-sig-name')?.value?.trim() || 'Signature',
+      html: row.querySelector('.es-sig-html')?.value || '',
+    }));
+  }
+
+  function collectDefaultSignatureId() {
+    const checked = document.querySelector('input.es-sig-default:checked');
+    if (checked) return checked.value;
+    const sigs = collectSignatures();
+    return sigs[0]?.id || 'default';
   }
 
   function collect() {
@@ -206,10 +269,47 @@
       approvalRouting: cb('es_approvalRouting'),
       projectScopedInternal: cb('es_projectScopedInternal'),
       keyboardShortcuts: cb('es_keyboardShortcuts'),
+      defaultSignatureId: collectDefaultSignatureId(),
     };
   }
 
+  function saveSignaturesFromUI() {
+    const sigs = collectSignatures();
+    if (global.CasePMEmail?.saveSignatures) global.CasePMEmail.saveSignatures(sigs);
+    else localStorage.setItem('casepm_email_signatures', JSON.stringify(sigs));
+    return sigs;
+  }
+
+  function addSignature() {
+    const sigs = collectSignatures();
+    sigs.push({
+      id: 'sig_' + Date.now().toString(36),
+      name: 'New Signature',
+      html: '<p>Best regards,</p>\n<p><strong>Your Name</strong><br>Your Title<br>your.email@company.com</p>',
+    });
+    if (global.CasePMEmail?.saveSignatures) global.CasePMEmail.saveSignatures(sigs);
+    else localStorage.setItem('casepm_email_signatures', JSON.stringify(sigs));
+    render(lastContainerId);
+  }
+
+  function removeSignature(id) {
+    let sigs = collectSignatures().filter(s => s.id !== id);
+    if (!sigs.length) {
+      sigs = [{ id: 'default', name: 'Default', html: '<p>Best regards,</p>' }];
+    }
+    if (global.CasePMEmail?.saveSignatures) global.CasePMEmail.saveSignatures(sigs);
+    else localStorage.setItem('casepm_email_signatures', JSON.stringify(sigs));
+    const s = S();
+    if (s.defaultSignatureId === id) {
+      const patch = { defaultSignatureId: sigs[0].id };
+      if (global.CasePMEmail) global.CasePMEmail.saveSettings(patch);
+      else global.CasePMEmailSettings = { ...S(), ...patch };
+    }
+    render(lastContainerId);
+  }
+
   function save() {
+    saveSignaturesFromUI();
     const data = collect();
     localStorage.setItem('casepm_email_settings', JSON.stringify({ ...S(), ...data }));
     if (global.CasePMEmail) global.CasePMEmail.saveSettings(data);
@@ -238,5 +338,5 @@
     } catch { return {}; }
   }
 
-  global.CasePMEmailSettingsUI = { render, save, collect, connectGoogle, connectMicrosoft, testConnection, loadFromStorage };
+  global.CasePMEmailSettingsUI = { render, save, collect, addSignature, removeSignature, connectGoogle, connectMicrosoft, testConnection, loadFromStorage };
 })(window);

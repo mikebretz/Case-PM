@@ -273,6 +273,7 @@
   function persistInternal() { saveJson(STORAGE.internal, internalMessages); }
   function persistSettings() { saveJson(STORAGE.settings, settings); global.CasePMEmailSettings = settings; }
   function persistCustomFolders() { saveJson(STORAGE.customFolders, customFolders); }
+  function persistSignatures() { saveJson(STORAGE.signatures, signatures); }
 
   function buildContactIndex() {
     const map = new Map();
@@ -1219,6 +1220,14 @@
       render();
     }
     document.getElementById('emailSearchInput')?.addEventListener('input', e => setSearch(e.target.value));
+    const searchEl = document.getElementById('emailSearchInput');
+    if (searchEl) {
+      searchEl.value = '';
+      state.search = '';
+      searchEl.setAttribute('autocomplete', 'off');
+      searchEl.setAttribute('data-lpignore', 'true');
+      searchEl.setAttribute('data-1p-ignore', 'true');
+    }
 
     if (settings.keyboardShortcuts) {
       document.addEventListener('keydown', e => {
@@ -1247,6 +1256,8 @@
     showContacts, showAdvancedSearch, runAdvancedSearch,
     getSettings: () => settings,
     saveSettings: (s) => { settings = { ...settings, ...s }; persistSettings(); render(); },
+    getSignatures: () => signatures,
+    saveSignatures: (sigs) => { signatures = sigs; persistSignatures(); },
     STORAGE, MAIL_FOLDERS, INTERNAL_FOLDERS, DEFAULT_SETTINGS,
   };
 
