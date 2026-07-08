@@ -1,6 +1,7 @@
 {% extends "base.html" %}
 
 {% block content %}
+<link rel="stylesheet" href="{{ url_for('static', filename='css/email-client.css') }}">
 <div class="max-w-[1200px] mx-auto">
     
     <!-- Page Header -->
@@ -12,13 +13,13 @@
     <!-- Tabs -->
     <div class="flex border-b border-zinc-800 mb-6">
         <button onclick="switchSettingsTab('company')" id="tab-company"
-                class="px-6 py-3 text-sm font-medium border-b-2 border-emerald-500 text-white">Company Info</button>
+                class="settings-tab-btn px-6 py-3 text-sm font-medium border-b-2 border-emerald-500 text-white">Company Info</button>
         <button onclick="switchSettingsTab('permissions')" id="tab-permissions"
-                class="px-6 py-3 text-sm font-medium text-zinc-400 hover:text-white">User Permissions</button>
+                class="settings-tab-btn px-6 py-3 text-sm font-medium text-zinc-400 hover:text-white">User Permissions</button>
         <button onclick="switchSettingsTab('backup')" id="tab-backup"
-                class="px-6 py-3 text-sm font-medium text-zinc-400 hover:text-white">Backup & Maintenance</button>
+                class="settings-tab-btn px-6 py-3 text-sm font-medium text-zinc-400 hover:text-white">Backup & Maintenance</button>
         <button onclick="switchSettingsTab('email')" id="tab-email"
-                class="px-6 py-3 text-sm font-medium text-zinc-400 hover:text-white">Email Settings</button>
+                class="settings-tab-btn px-6 py-3 text-sm font-medium text-zinc-400 hover:text-white">Email Settings</button>
     </div>
 
     <!-- Company Info Tab -->
@@ -121,8 +122,16 @@
 
     <div id="tab-content-email" class="hidden">
         <div class="bg-zinc-900 border border-zinc-800 rounded-3xl p-8">
-            <h2 class="text-xl font-semibold mb-4">Email Settings</h2>
-            <p class="text-zinc-400">Email / SMTP configuration will be available here.</p>
+            <div class="flex items-center justify-between mb-6">
+                <div>
+                    <h2 class="text-xl font-semibold">Email Settings</h2>
+                    <p class="text-sm text-zinc-400 mt-1">Account setup, sync, inbox behavior, and internal communications — shared with the <a href="{{ url_for('email_page') }}" class="text-emerald-400 hover:underline">Email</a> module</p>
+                </div>
+                <a href="{{ url_for('email_page') }}?settings=1" class="px-4 py-2 bg-zinc-800 hover:bg-zinc-700 border border-zinc-700 rounded-2xl text-sm">
+                    <i class="fa-solid fa-envelope mr-1"></i> Open Email
+                </a>
+            </div>
+            <div id="programEmailSettingsBody"></div>
         </div>
     </div>
 
@@ -229,58 +238,18 @@
         </div>
     </div>
 
-    <!-- Email Settings Tab -->
-    <div id="tab-content-email" class="hidden">
-        <div class="bg-zinc-900 border border-zinc-800 rounded-3xl p-8">
-            <h2 class="text-xl font-semibold mb-6">Email / SMTP Settings</h2>
-            
-            <form>
-                <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
-                    <div>
-                        <label class="block text-sm text-zinc-400 mb-1.5">SMTP Server</label>
-                        <input type="text" placeholder="smtp.gmail.com" 
-                               class="w-full bg-zinc-800 border border-zinc-700 rounded-2xl px-4 py-2.5 text-sm focus:outline-none focus:border-emerald-600">
-                    </div>
-                    <div>
-                        <label class="block text-sm text-zinc-400 mb-1.5">Port</label>
-                        <input type="number" value="587"
-                               class="w-full bg-zinc-800 border border-zinc-700 rounded-2xl px-4 py-2.5 text-sm focus:outline-none focus:border-emerald-600">
-                    </div>
-                    <div>
-                        <label class="block text-sm text-zinc-400 mb-1.5">Username / Email</label>
-                        <input type="email" 
-                               class="w-full bg-zinc-800 border border-zinc-700 rounded-2xl px-4 py-2.5 text-sm focus:outline-none focus:border-emerald-600">
-                    </div>
-                    <div>
-                        <label class="block text-sm text-zinc-400 mb-1.5">Password / App Password</label>
-                        <input type="password" 
-                               class="w-full bg-zinc-800 border border-zinc-700 rounded-2xl px-4 py-2.5 text-sm focus:outline-none focus:border-emerald-600">
-                    </div>
-                </div>
-
-                <div class="mt-6 flex justify-end">
-                    <button type="button"
-                            class="px-8 py-2.5 bg-emerald-600 hover:bg-emerald-500 rounded-2xl text-sm font-medium transition-colors">
-                        Save Email Settings
-                    </button>
-                </div>
-            </form>
-        </div>
-    </div>
         <!-- JavaScript -->
+        <script src="{{ url_for('static', filename='js/email-settings-ui.js') }}"></script>
         <script>
             function switchSettingsTab(tab) {
-                // Hide all tab contents
                 document.querySelectorAll('[id^="tab-content-"]').forEach(el => {
                     el.classList.add('hidden');
                 });
 
-                // Show selected tab content
                 const content = document.getElementById('tab-content-' + tab);
                 if (content) content.classList.remove('hidden');
 
-                // Update active tab styling
-                document.querySelectorAll('[id^="tab-"]').forEach(el => {
+                document.querySelectorAll('.settings-tab-btn').forEach(el => {
                     el.classList.remove('border-b-2', 'border-emerald-500', 'text-white');
                     el.classList.add('text-zinc-400');
                 });
@@ -289,6 +258,11 @@
                 if (activeTab) {
                     activeTab.classList.add('border-b-2', 'border-emerald-500', 'text-white');
                     activeTab.classList.remove('text-zinc-400');
+                }
+
+                if (tab === 'email' && typeof CasePMEmailSettingsUI !== 'undefined') {
+                    window.CasePMEmailSettings = CasePMEmailSettingsUI.loadFromStorage();
+                    CasePMEmailSettingsUI.render('programEmailSettingsBody');
                 }
             }
 
@@ -337,13 +311,11 @@
                 }
             }
 
-            // Initialize on page load
             window.onload = function() {
                 initializeSettings();
+                const params = new URLSearchParams(window.location.search);
+                if (params.get('tab') === 'email') switchSettingsTab('email');
             };
         </script>
 
 {% endblock %}
-
-</div>
-</div>

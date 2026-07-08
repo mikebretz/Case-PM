@@ -1,0 +1,177 @@
+{% extends "base.html" %}
+
+{% block title %}Email{% endblock %}
+
+{% block content %}
+<link rel="stylesheet" href="{{ url_for('static', filename='css/email-client.css') }}">
+
+<div class="email-page-root">
+    <!-- Workspace tabs: Mail | Internal -->
+    <div id="emailWorkspaceTabs" class="email-workspace-tabs flex px-4"></div>
+
+    <div class="email-main">
+        <!-- Left sidebar -->
+        <aside class="email-sidebar">
+            <div class="p-3 flex-shrink-0">
+                <button type="button" onclick="CasePMEmail.compose()"
+                        class="w-full flex items-center justify-center gap-2 px-4 py-2.5 bg-emerald-600 hover:bg-emerald-500 rounded-lg text-sm font-semibold text-white">
+                    <i class="fa-solid fa-pen"></i> Compose
+                </button>
+            </div>
+            <div class="email-sidebar-scroll px-2 pb-2">
+                <div id="emailFolderList" class="space-y-0.5"></div>
+                <div id="emailLabelsList"></div>
+            </div>
+            <div id="emailAccountBlock" class="flex-shrink-0"></div>
+        </aside>
+
+        <!-- Message list pane -->
+        <div class="email-list-pane">
+            <div class="px-3 py-2 border-b border-zinc-800 flex-shrink-0 space-y-2">
+                <div class="relative">
+                    <i class="fa-solid fa-magnifying-glass absolute left-3 top-2.5 text-zinc-500 text-xs"></i>
+                    <input type="text" id="emailSearchInput" placeholder="Search mail — from:, to:, subject:, has:attachment"
+                           class="w-full bg-zinc-900 border border-zinc-700 rounded-md pl-8 pr-3 py-2 text-sm focus:border-emerald-600">
+                </div>
+                <div class="flex items-center justify-between">
+                    <span id="emailListCount" class="text-[10px] text-zinc-500 uppercase tracking-wide">0 messages</span>
+                    <select id="emailSortSelect" onchange="CasePMEmail.setSearch(document.getElementById('emailSearchInput').value)"
+                            class="bg-zinc-900 border border-zinc-700 rounded text-[10px] px-2 py-1 text-zinc-400">
+                        <option value="date_desc">Newest first</option>
+                        <option value="date_asc">Oldest first</option>
+                        <option value="subject">Subject A–Z</option>
+                        <option value="from">From A–Z</option>
+                    </select>
+                </div>
+            </div>
+            <div id="emailToolbar" class="px-2 py-1.5 border-b border-zinc-800 flex-shrink-0 overflow-x-auto"></div>
+            <div id="emailMessageList" class="flex-1 min-h-0 overflow-y-auto"></div>
+        </div>
+
+        <!-- Reading pane -->
+        <div id="emailReadingPane" class="email-reading-pane"></div>
+    </div>
+</div>
+
+<!-- Compose panel (Gmail/Outlook-style floating) -->
+<div id="emailComposePanel" class="email-compose-overlay hidden bg-zinc-900 border border-zinc-700 rounded-t-xl flex flex-col max-h-[85vh]">
+    <div class="px-4 py-2.5 border-b border-zinc-700 flex items-center justify-between bg-zinc-950 rounded-t-xl flex-shrink-0 cursor-move">
+        <span class="text-sm font-semibold text-white">New Message</span>
+        <div class="flex gap-1">
+            <button type="button" onclick="state && (state.composeMinimized = !state.composeMinimized)" class="text-zinc-400 hover:text-white w-8 h-8 rounded hover:bg-zinc-800 hidden"><i class="fa-solid fa-minus"></i></button>
+            <button type="button" onclick="CasePMEmail.closeCompose()" class="text-zinc-400 hover:text-white w-8 h-8 rounded hover:bg-zinc-800"><i class="fa-solid fa-times"></i></button>
+        </div>
+    </div>
+    <div class="flex-1 overflow-auto p-4 space-y-2 text-sm">
+        <div class="flex items-center gap-2 border-b border-zinc-800 pb-2">
+            <span class="text-zinc-500 w-10">To</span>
+            <input type="text" id="composeTo" class="flex-1 bg-transparent border-none outline-none text-white" placeholder="Recipients">
+            <button type="button" onclick="document.getElementById('composeCcRow').classList.toggle('hidden')" class="text-xs text-zinc-400 hover:text-white">Cc/Bcc</button>
+        </div>
+        <div id="composeCcRow" class="hidden space-y-2">
+            <div class="flex items-center gap-2"><span class="text-zinc-500 w-10">Cc</span><input type="text" id="composeCc" class="flex-1 bg-transparent border-none outline-none text-white"></div>
+            <div class="flex items-center gap-2"><span class="text-zinc-500 w-10">Bcc</span><input type="text" id="composeBcc" class="flex-1 bg-transparent border-none outline-none text-white"></div>
+        </div>
+        <div class="flex items-center gap-2 border-b border-zinc-800 pb-2">
+            <span class="text-zinc-500 w-10">Subj</span>
+            <input type="text" id="composeSubject" class="flex-1 bg-transparent border-none outline-none text-white font-medium">
+        </div>
+        <div id="composeBody" contenteditable="true" class="min-h-[200px] text-zinc-200 outline-none py-2"></div>
+        <div id="composeScheduleRow" class="hidden">
+            <label class="text-xs text-zinc-400">Schedule send</label>
+            <input type="datetime-local" id="composeScheduleAt" class="email-field-input mt-1">
+        </div>
+    </div>
+    <div class="px-4 py-3 border-t border-zinc-700 flex items-center justify-between flex-shrink-0 bg-zinc-950">
+        <div class="flex gap-1">
+            <button type="button" class="email-toolbar-btn" title="Attach file"><i class="fa-solid fa-paperclip"></i></button>
+            <button type="button" class="email-toolbar-btn" title="Insert link"><i class="fa-solid fa-link"></i></button>
+            <button type="button" class="email-toolbar-btn" title="Insert image"><i class="fa-solid fa-image"></i></button>
+            <button type="button" class="email-toolbar-btn" title="Emoji"><i class="fa-solid fa-face-smile"></i></button>
+            <button type="button" onclick="document.getElementById('composeScheduleRow').classList.toggle('hidden')" class="email-toolbar-btn" title="Schedule send"><i class="fa-solid fa-clock"></i></button>
+            <button type="button" class="email-toolbar-btn" title="Confidential mode"><i class="fa-solid fa-lock"></i></button>
+            <button type="button" class="email-toolbar-btn" title="Templates" onclick="alert('Canned responses: Weekly Owner Update, RFI Follow-up — configure in Settings')"><i class="fa-solid fa-file-lines"></i></button>
+            <button type="button" class="email-toolbar-btn" title="Request read receipt"><i class="fa-solid fa-check-double"></i></button>
+        </div>
+        <div class="flex gap-2">
+            <button type="button" onclick="CasePMEmail.undoSend()" class="text-xs text-zinc-400 hover:text-white">Undo</button>
+            <button type="button" onclick="CasePMEmail.sendMail(true)" class="px-3 py-1.5 bg-zinc-800 hover:bg-zinc-700 rounded-md text-xs">Schedule</button>
+            <button type="button" onclick="CasePMEmail.sendMail()" class="px-5 py-2 bg-emerald-600 hover:bg-emerald-500 rounded-md text-sm font-semibold text-white">Send</button>
+        </div>
+    </div>
+</div>
+
+<!-- Settings modal -->
+<div id="emailSettingsModal" class="hidden fixed inset-0 bg-black/70 flex items-center justify-center z-[85] p-4">
+    <div class="bg-zinc-900 border border-zinc-700 rounded-xl w-full max-w-4xl max-h-[92vh] flex flex-col shadow-2xl">
+        <div class="px-6 py-4 border-b border-zinc-700 flex items-center justify-between flex-shrink-0">
+            <div>
+                <h2 class="text-lg font-semibold text-white">Email Settings</h2>
+                <p class="text-xs text-zinc-500 mt-0.5">Also available in <a href="{{ url_for('program_settings') }}?tab=email" class="text-emerald-400 hover:underline">Program Settings → Email</a></p>
+            </div>
+            <button type="button" onclick="document.getElementById('emailSettingsModal').classList.add('hidden')" class="text-zinc-400 hover:text-white w-9 h-9 rounded-lg hover:bg-zinc-800"><i class="fa-solid fa-times"></i></button>
+        </div>
+        <div id="emailSettingsModalBody" class="p-6 overflow-auto flex-1"></div>
+    </div>
+</div>
+
+<!-- Rules modal -->
+<div id="emailRulesModal" class="hidden fixed inset-0 bg-black/70 flex items-center justify-center z-[85] p-4">
+    <div class="bg-zinc-900 border border-zinc-700 rounded-xl w-full max-w-lg shadow-2xl">
+        <div class="px-6 py-4 border-b border-zinc-700 flex justify-between items-center">
+            <h2 class="text-lg font-semibold">Inbox Rules & Filters</h2>
+            <button onclick="document.getElementById('emailRulesModal').classList.add('hidden')" class="text-zinc-400 hover:text-white"><i class="fa-solid fa-times"></i></button>
+        </div>
+        <div class="p-6">
+            <p class="text-xs text-zinc-500 mb-4">Outlook rules & Gmail filters: auto-move, label, forward, delete, flag importance, sweep.</p>
+            <div id="emailRulesBody"></div>
+            <button type="button" onclick="CasePMEmail.addRule()" class="mt-4 w-full py-2 bg-emerald-600 hover:bg-emerald-500 rounded-md text-sm font-medium">Add Rule</button>
+        </div>
+    </div>
+</div>
+
+<!-- Contacts modal -->
+<div id="emailContactsModal" class="hidden fixed inset-0 bg-black/70 flex items-center justify-center z-[85] p-4">
+    <div class="bg-zinc-900 border border-zinc-700 rounded-xl w-full max-w-md shadow-2xl max-h-[80vh] flex flex-col">
+        <div class="px-6 py-4 border-b border-zinc-700 flex justify-between items-center flex-shrink-0">
+            <h2 class="text-lg font-semibold">People & Contacts</h2>
+            <button onclick="document.getElementById('emailContactsModal').classList.add('hidden')" class="text-zinc-400 hover:text-white"><i class="fa-solid fa-times"></i></button>
+        </div>
+        <div id="emailContactsBody" class="p-6 overflow-auto flex-1"></div>
+    </div>
+</div>
+
+<!-- Advanced search modal -->
+<div id="emailAdvancedSearchModal" class="hidden fixed inset-0 bg-black/70 flex items-center justify-center z-[85] p-4">
+    <div class="bg-zinc-900 border border-zinc-700 rounded-xl w-full max-w-md shadow-2xl p-6">
+        <h2 class="text-lg font-semibold mb-4">Advanced Search</h2>
+        <div class="space-y-3 text-sm">
+            <div><label class="email-field-label">From</label><input type="text" id="advFrom" class="email-field-input"></div>
+            <div><label class="email-field-label">To</label><input type="text" id="advTo" class="email-field-input"></div>
+            <div><label class="email-field-label">Subject contains</label><input type="text" id="advSubject" class="email-field-input"></div>
+            <label class="flex items-center gap-2"><input type="checkbox" id="advAttachment" class="accent-emerald-600"> Has attachment</label>
+            <label class="flex items-center gap-2"><input type="checkbox" id="advUnread" class="accent-emerald-600"> Unread only</label>
+        </div>
+        <div class="flex justify-end gap-2 mt-6">
+            <button onclick="document.getElementById('emailAdvancedSearchModal').classList.add('hidden')" class="px-4 py-2 bg-zinc-800 rounded-md text-sm">Cancel</button>
+            <button onclick="CasePMEmail.runAdvancedSearch()" class="px-4 py-2 bg-emerald-600 rounded-md text-sm font-medium">Search</button>
+        </div>
+    </div>
+</div>
+
+<!-- Feature reference (collapsible) -->
+<div class="hidden" id="emailFeatureManifest" aria-hidden="true"></div>
+
+<script src="{{ url_for('static', filename='js/email-settings-ui.js') }}"></script>
+<script src="{{ url_for('static', filename='js/email-app.js') }}"></script>
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    CasePMEmail.init({
+        userName: {{ current_user.full_name|tojson }},
+        userEmail: {{ current_user.email|tojson }},
+        projectName: {{ (active_project.name if active_project else '')|tojson }},
+        users: {{ users|default([])|tojson }}
+    });
+});
+</script>
+{% endblock %}
