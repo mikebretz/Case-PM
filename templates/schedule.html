@@ -357,12 +357,28 @@
                     <input id="hfHeaderRight" type="text" class="mt-1 w-full bg-zinc-800 border border-zinc-700 rounded px-2 py-1.5 text-sm" placeholder="{project}">
                 </label>
             </div>
-            <div class="flex flex-wrap items-center gap-3 pt-1">
-                <span class="text-xs text-zinc-500">Logo (header left):</span>
-                <img id="hfLogoPreview" class="hidden h-10 max-w-[120px] object-contain bg-white rounded px-1" alt="Logo preview">
-                <input type="file" id="hfLogoInput" accept="image/*" class="text-xs text-zinc-400"
-                       onchange="ScheduleApp.onHeaderLogoSelected(this.files[0]); this.value=''">
-                <button type="button" class="text-xs text-zinc-400 hover:text-white" onclick="ScheduleApp.clearHeaderLogo()">Remove logo</button>
+            <div class="grid grid-cols-1 md:grid-cols-3 gap-3 pt-1">
+                <div class="text-xs text-zinc-500 space-y-1">
+                    <span class="text-zinc-400">Left logo</span>
+                    <img id="hfHeaderLogoPreviewLeft" class="hidden h-10 max-w-[120px] object-contain bg-white rounded px-1" alt="">
+                    <input type="file" id="hfLogoInputLeft" accept="image/*" class="block text-xs text-zinc-400 w-full"
+                           onchange="ScheduleApp.onHeaderLogoSelected(this.files[0], 'left'); this.value=''">
+                    <button type="button" class="text-xs text-zinc-400 hover:text-white" onclick="ScheduleApp.clearHeaderLogo('left')">Remove</button>
+                </div>
+                <div class="text-xs text-zinc-500 space-y-1">
+                    <span class="text-zinc-400">Center logo</span>
+                    <img id="hfHeaderLogoPreviewCenter" class="hidden h-10 max-w-[120px] object-contain bg-white rounded px-1 mx-auto" alt="">
+                    <input type="file" id="hfLogoInputCenter" accept="image/*" class="block text-xs text-zinc-400 w-full"
+                           onchange="ScheduleApp.onHeaderLogoSelected(this.files[0], 'center'); this.value=''">
+                    <button type="button" class="text-xs text-zinc-400 hover:text-white" onclick="ScheduleApp.clearHeaderLogo('center')">Remove</button>
+                </div>
+                <div class="text-xs text-zinc-500 space-y-1">
+                    <span class="text-zinc-400">Right logo</span>
+                    <img id="hfHeaderLogoPreviewRight" class="hidden h-10 max-w-[120px] object-contain bg-white rounded px-1 ml-auto" alt="">
+                    <input type="file" id="hfLogoInputRight" accept="image/*" class="block text-xs text-zinc-400 w-full"
+                           onchange="ScheduleApp.onHeaderLogoSelected(this.files[0], 'right'); this.value=''">
+                    <button type="button" class="text-xs text-zinc-400 hover:text-white" onclick="ScheduleApp.clearHeaderLogo('right')">Remove</button>
+                </div>
             </div>
         </div>
         <div class="border border-zinc-700 rounded-md p-3 space-y-2">
