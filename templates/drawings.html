@@ -54,15 +54,32 @@
   #drawViewerWrap {
     flex: 1;
     min-height: 0;
-    overflow: auto;
+    overflow: hidden;
     background: #09090b;
     position: relative;
-    display: flex;
-    align-items: center;
-    justify-content: center;
+    touch-action: none;
   }
-  #drawViewerInner { position: relative; display: inline-block; }
-  #drawPdfCanvas, #drawDiffCanvas { display: block; max-width: 100%; }
+  #drawViewerWrap.cursor-grab { cursor: grab; }
+  #drawViewerWrap.cursor-grabbing { cursor: grabbing; }
+  #drawViewerWrap.cursor-crosshair { cursor: crosshair; }
+  #drawViewerWrap.cursor-pointer { cursor: pointer; }
+  #drawPrintArea {
+    position: absolute;
+    inset: 0;
+    overflow: hidden;
+  }
+  #drawViewerStage {
+    position: absolute;
+    top: 0;
+    left: 0;
+    transform-origin: 0 0;
+    will-change: transform;
+  }
+  #drawViewerStage #drawPdfCanvas,
+  #drawViewerStage #drawDiffCanvas {
+    display: block;
+    max-width: none;
+  }
   #drawDiffCanvas {
     position: absolute;
     top: 0;
@@ -132,6 +149,9 @@
     }
     body.printing-drawing-markup #drawMarkupSvg {
       display: block !important;
+    }
+    body.printing-drawing-sheet #drawViewerStage {
+      transform: none !important;
     }
     body.printing-drawing-markup #drawDiffCanvas {
       display: none !important;
@@ -219,7 +239,9 @@
                     <button type="button" onclick="CasePMDrawings.printSheet(true)" class="block w-full text-left px-3 py-1.5 text-xs hover:bg-zinc-700">Print — with markups</button>
                 </div>
             </div>
+            <button type="button" onclick="CasePMDrawings.fitToView()" class="px-2 py-1 text-[10px] bg-zinc-800 hover:bg-zinc-700 rounded-md h-[28px]" title="Fit to view"><i class="fa-solid fa-compress-arrows-alt"></i></button>
             <button type="button" onclick="CasePMDrawings.toggleFullscreen()" id="btnFullscreen" class="px-2 py-1 text-[10px] bg-zinc-800 hover:bg-zinc-700 rounded-md h-[28px]" title="Full screen"><i class="fa-solid fa-expand"></i></button>
+            <button type="button" onclick="CasePMDrawings.deleteSelectedMarkup()" id="btnDeleteMarkup" class="px-2 py-1 text-[10px] bg-zinc-800 hover:bg-zinc-700 rounded-md h-[28px] hidden" title="Delete markup"><i class="fa-solid fa-eraser"></i></button>
             <button type="button" onclick="CasePMDrawings.deleteOpenSheet()" class="px-2 py-1 text-[10px] bg-red-900/70 hover:bg-red-800 rounded-md h-[28px] text-red-100" title="Delete sheet"><i class="fa-solid fa-trash"></i></button>
         </div>
     </div>
@@ -237,18 +259,30 @@
             <button type="button" id="tool-measure" onclick="CasePMDrawings.setTool('measure')" class="w-8 h-8 rounded hover:bg-zinc-800 text-xs" title="Measure"><i class="fa-solid fa-ruler"></i></button>
             <button type="button" id="tool-rfi_pin" onclick="CasePMDrawings.setTool('rfi_pin')" class="w-8 h-8 rounded hover:bg-zinc-800 text-orange-400 text-xs" title="RFI Pin"><i class="fa-solid fa-map-pin"></i></button>
         </div>
-        <div id="drawViewerWrap" class="flex-1">
+        <div id="drawViewerWrap" class="flex-1 cursor-grab">
             <div id="drawPrintArea">
-                <div id="drawViewerInner">
+                <div id="drawViewerStage">
                     <canvas id="drawPdfCanvas"></canvas>
                     <canvas id="drawDiffCanvas" class="hidden"></canvas>
                     <svg id="drawMarkupSvg" xmlns="http://www.w3.org/2000/svg">
-                        <defs><marker id="arrowhead" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto"><polygon points="0 0, 8 3, 0 6" fill="#38bdf8"/></marker></defs>
+                        <defs>
+                            <marker id="arrowhead" markerWidth="10" markerHeight="10" refX="8" refY="5" orient="auto" markerUnits="strokeWidth">
+                                <polygon points="0 0, 10 5, 0 10" fill="context-stroke"/>
+                            </marker>
+                        </defs>
                     </svg>
                 </div>
             </div>
         </div>
-        <div class="draw-viewer-sidebar w-44 flex-shrink-0 border-l border-zinc-800 p-2 overflow-auto text-xs no-print hidden lg:block">
+        <div class="draw-viewer-sidebar w-52 flex-shrink-0 border-l border-zinc-800 p-2 overflow-auto text-xs no-print hidden lg:block">
+            <div class="mb-3 p-2 bg-zinc-800/50 rounded-md border border-zinc-700" id="markupStylePanel">
+                <div class="text-[10px] uppercase text-zinc-500 mb-2">Markup Style</div>
+                <label class="block text-[10px] text-zinc-400 mb-1">Color</label>
+                <input type="color" id="markupColor" value="#38bdf8" class="w-full h-7 bg-zinc-900 border border-zinc-700 rounded mb-2" onchange="CasePMDrawings.setMarkupColor(this.value)">
+                <label class="block text-[10px] text-zinc-400 mb-1">Line width</label>
+                <input type="range" id="markupLineWidth" min="1" max="12" value="2" class="w-full accent-sky-500 mb-1" oninput="CasePMDrawings.setMarkupLineWidth(this.value)">
+                <div class="text-[10px] text-zinc-500 text-center" id="markupLineWidthLabel">2 px</div>
+            </div>
             <div class="flex gap-1 mb-2">
                 <button type="button" id="layer-personal" onclick="CasePMDrawings.toggleLayer('personal')" class="text-[10px] px-1.5 py-0.5 bg-sky-900/50 text-sky-300 rounded">Personal</button>
                 <button type="button" id="layer-published" onclick="CasePMDrawings.toggleLayer('published')" class="text-[10px] px-1.5 py-0.5 bg-emerald-900/50 text-emerald-300 rounded">Published</button>
