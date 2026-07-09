@@ -108,8 +108,105 @@
     height: 100%;
   }
   .draw-viewer-sidebar {
-    width: 18.5rem;
-    max-width: 18.5rem;
+    width: 22rem;
+    max-width: 22rem;
+  }
+  .draw-tool-rail {
+    width: 3.25rem;
+    min-width: 3.25rem;
+  }
+  .draw-tool-group-label {
+    font-size: 0.5rem;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: #52525b;
+    margin: 0.35rem 0 0.15rem;
+    text-align: center;
+    width: 100%;
+  }
+  .draw-tool-rail .tool-btn {
+    width: 2.25rem;
+    height: 2.25rem;
+    border-radius: 0.375rem;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: #a1a1aa;
+    transition: background 0.12s, color 0.12s;
+  }
+  .draw-tool-rail .tool-btn:hover {
+    background: #27272a;
+    color: #fff;
+  }
+  .draw-tool-rail .tool-btn.tool-active {
+    background: #0369a1;
+    color: #fff;
+    box-shadow: 0 0 0 1px #0ea5e9;
+  }
+  .draw-tool-divider {
+    width: 1.5rem;
+    height: 1px;
+    background: #3f3f46;
+    margin: 0.25rem 0;
+  }
+  .draw-viewer-status {
+    flex-shrink: 0;
+    border-top: 1px solid #27272a;
+    background: rgba(9, 9, 11, 0.95);
+    padding: 0.35rem 0.75rem;
+    font-size: 0.6875rem;
+    color: #a1a1aa;
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    flex-wrap: wrap;
+  }
+  .draw-viewer-status strong {
+    color: #e4e4e7;
+    font-weight: 600;
+  }
+  .draw-viewer-status .status-pill {
+    background: #27272a;
+    border: 1px solid #3f3f46;
+    border-radius: 9999px;
+    padding: 0.125rem 0.5rem;
+    color: #d4d4d8;
+  }
+  .markup-list-item {
+    display: flex;
+    align-items: center;
+    gap: 0.375rem;
+    padding: 0.3rem 0.4rem;
+    border-radius: 0.25rem;
+    cursor: pointer;
+    border: 1px solid transparent;
+  }
+  .markup-list-item:hover {
+    background: #27272a;
+  }
+  .markup-list-item.markup-list-selected {
+    background: #0c4a6e;
+    border-color: #0ea5e9;
+  }
+  .prop-chip:hover {
+    border-color: #52525b;
+  }
+  .scale-preset-btn {
+    font-size: 0.625rem;
+    padding: 0.25rem 0.4rem;
+    border-radius: 0.25rem;
+    border: 1px solid #3f3f46;
+    background: #18181b;
+    color: #d4d4d8;
+  }
+  .scale-preset-btn:hover {
+    background: #27272a;
+    border-color: #52525b;
+  }
+  .scale-preset-btn.scale-preset-active {
+    background: #0c4a6e;
+    border-color: #0ea5e9;
+    color: #fff;
   }
   .markup-props-section {
     border-top: 1px solid #3f3f46;
@@ -208,6 +305,7 @@
     body.printing-drawing-sheet .draw-viewer-toolbar,
     body.printing-drawing-sheet .draw-tool-rail,
     body.printing-drawing-sheet .draw-viewer-sidebar,
+    body.printing-drawing-sheet #drawViewerStatus,
     body.printing-drawing-sheet #drawPanelSections,
     body.printing-drawing-sheet #drawPanelList {
       display: none !important;
@@ -401,46 +499,64 @@
         </div>
     </div>
     <div class="flex flex-1 min-h-0">
-        <div class="draw-tool-rail w-10 flex-shrink-0 border-r border-zinc-800 flex flex-col items-center py-1.5 gap-0.5 no-print overflow-y-auto">
-            <button type="button" id="tool-pan" onclick="CasePMDrawings.setTool('pan')" class="w-8 h-8 rounded hover:bg-zinc-800 text-xs" title="Pan"><i class="fa-solid fa-hand"></i></button>
-            <button type="button" id="tool-select" onclick="CasePMDrawings.setTool('select')" class="w-8 h-8 rounded hover:bg-zinc-800 text-xs" title="Select"><i class="fa-solid fa-arrow-pointer"></i></button>
-            <button type="button" id="tool-line" onclick="CasePMDrawings.setTool('line')" class="w-8 h-8 rounded hover:bg-zinc-800 text-xs" title="Line"><i class="fa-solid fa-minus"></i></button>
-            <button type="button" id="tool-rect" onclick="CasePMDrawings.setTool('rect')" class="w-8 h-8 rounded hover:bg-zinc-800 text-xs" title="Rectangle"><i class="fa-regular fa-square"></i></button>
-            <button type="button" id="tool-ellipse" onclick="CasePMDrawings.setTool('ellipse')" class="w-8 h-8 rounded hover:bg-zinc-800 text-xs" title="Ellipse"><i class="fa-regular fa-circle"></i></button>
-            <button type="button" id="tool-cloud" onclick="CasePMDrawings.setTool('cloud')" class="w-8 h-8 rounded hover:bg-zinc-800 text-xs" title="Cloud"><i class="fa-solid fa-cloud"></i></button>
-            <button type="button" id="tool-arrow" onclick="CasePMDrawings.setTool('arrow')" class="w-8 h-8 rounded hover:bg-zinc-800 text-xs" title="Arrow"><i class="fa-solid fa-arrow-right"></i></button>
-            <button type="button" id="tool-text" onclick="CasePMDrawings.setTool('text')" class="w-8 h-8 rounded hover:bg-zinc-800 text-xs" title="Text box"><i class="fa-solid fa-font"></i></button>
-            <button type="button" id="tool-callout" onclick="CasePMDrawings.setTool('callout')" class="w-8 h-8 rounded hover:bg-zinc-800 text-xs" title="Callout"><i class="fa-solid fa-comment"></i></button>
-            <button type="button" id="tool-highlight" onclick="CasePMDrawings.setTool('highlight')" class="w-8 h-8 rounded hover:bg-zinc-800 text-xs" title="Highlight"><i class="fa-solid fa-highlighter"></i></button>
-            <button type="button" id="tool-calibrate" onclick="CasePMDrawings.setTool('calibrate')" class="w-8 h-8 rounded hover:bg-zinc-800 text-xs" title="Calibrate"><i class="fa-solid fa-ruler-combined"></i></button>
-            <button type="button" id="tool-measure" onclick="CasePMDrawings.setTool('measure')" class="w-8 h-8 rounded hover:bg-zinc-800 text-xs" title="Measure"><i class="fa-solid fa-ruler"></i></button>
-            <button type="button" id="tool-rfi_pin" onclick="CasePMDrawings.setTool('rfi_pin')" class="w-8 h-8 rounded hover:bg-zinc-800 text-orange-400 text-xs" title="RFI Pin"><i class="fa-solid fa-map-pin"></i></button>
+        <div class="draw-tool-rail flex-shrink-0 border-r border-zinc-800 flex flex-col items-center py-1.5 gap-0.5 no-print overflow-y-auto">
+            <div class="draw-tool-group-label">Nav</div>
+            <button type="button" id="tool-pan" onclick="CasePMDrawings.setTool('pan')" class="tool-btn" title="Pan (H)"><i class="fa-solid fa-hand"></i></button>
+            <button type="button" id="tool-select" onclick="CasePMDrawings.setTool('select')" class="tool-btn" title="Select (V)"><i class="fa-solid fa-arrow-pointer"></i></button>
+            <div class="draw-tool-divider"></div>
+            <div class="draw-tool-group-label">Draw</div>
+            <button type="button" id="tool-line" onclick="CasePMDrawings.setTool('line')" class="tool-btn" title="Line (L)"><i class="fa-solid fa-minus"></i></button>
+            <button type="button" id="tool-rect" onclick="CasePMDrawings.setTool('rect')" class="tool-btn" title="Rectangle (R)"><i class="fa-regular fa-square"></i></button>
+            <button type="button" id="tool-ellipse" onclick="CasePMDrawings.setTool('ellipse')" class="tool-btn" title="Ellipse"><i class="fa-regular fa-circle"></i></button>
+            <button type="button" id="tool-cloud" onclick="CasePMDrawings.setTool('cloud')" class="tool-btn" title="Revision cloud"><i class="fa-solid fa-cloud"></i></button>
+            <button type="button" id="tool-arrow" onclick="CasePMDrawings.setTool('arrow')" class="tool-btn" title="Arrow"><i class="fa-solid fa-arrow-right"></i></button>
+            <button type="button" id="tool-highlight" onclick="CasePMDrawings.setTool('highlight')" class="tool-btn" title="Highlight"><i class="fa-solid fa-highlighter"></i></button>
+            <div class="draw-tool-divider"></div>
+            <div class="draw-tool-group-label">Text</div>
+            <button type="button" id="tool-text" onclick="CasePMDrawings.setTool('text')" class="tool-btn" title="Text box (T)"><i class="fa-solid fa-font"></i></button>
+            <button type="button" id="tool-callout" onclick="CasePMDrawings.setTool('callout')" class="tool-btn" title="Callout bubble (C)"><i class="fa-solid fa-comment-dots"></i></button>
+            <div class="draw-tool-divider"></div>
+            <div class="draw-tool-group-label">Measure</div>
+            <button type="button" id="tool-measure" onclick="CasePMDrawings.setTool('measure')" class="tool-btn" title="Measure (M)"><i class="fa-solid fa-ruler"></i></button>
+            <button type="button" id="tool-calibrate" onclick="CasePMDrawings.setTool('calibrate')" class="tool-btn" title="Calibrate scale"><i class="fa-solid fa-ruler-combined"></i></button>
+            <div class="draw-tool-divider"></div>
+            <button type="button" id="tool-rfi_pin" onclick="CasePMDrawings.setTool('rfi_pin')" class="tool-btn text-orange-400" title="RFI pin"><i class="fa-solid fa-map-pin"></i></button>
         </div>
-        <div id="drawViewerWrap" class="flex-1 cursor-grab">
-            <div id="drawPrintArea">
-                <div id="drawViewerStage">
-                    <canvas id="drawPdfCanvas"></canvas>
-                    <canvas id="drawDiffCanvas" class="hidden"></canvas>
-                    <svg id="drawMarkupSvg" xmlns="http://www.w3.org/2000/svg">
-                        <defs>
-                            <marker id="arrowhead" markerWidth="10" markerHeight="10" refX="8" refY="5" orient="auto" markerUnits="strokeWidth">
-                                <polygon points="0 0, 10 5, 0 10" fill="context-stroke"/>
-                            </marker>
-                        </defs>
-                    </svg>
+        <div class="flex flex-col flex-1 min-h-0 min-w-0">
+            <div id="drawViewerWrap" class="flex-1 cursor-grab min-h-0">
+                <div id="drawPrintArea">
+                    <div id="drawViewerStage">
+                        <canvas id="drawPdfCanvas"></canvas>
+                        <canvas id="drawDiffCanvas" class="hidden"></canvas>
+                        <svg id="drawMarkupSvg" xmlns="http://www.w3.org/2000/svg">
+                            <defs>
+                                <marker id="arrowhead" markerWidth="10" markerHeight="10" refX="8" refY="5" orient="auto" markerUnits="strokeWidth">
+                                    <polygon points="0 0, 10 5, 0 10" fill="context-stroke"/>
+                                </marker>
+                            </defs>
+                        </svg>
+                    </div>
                 </div>
+            </div>
+            <div id="drawViewerStatus" class="draw-viewer-status no-print">
+                <span class="status-pill" id="statusActiveTool">Pan</span>
+                <span id="statusScale">Scale: not set</span>
+                <span id="statusHint" class="text-zinc-500 truncate">Drag to pan · scroll to zoom</span>
             </div>
         </div>
         <div class="draw-viewer-sidebar flex-shrink-0 border-l border-zinc-800 p-2 overflow-auto text-xs no-print flex flex-col min-h-0">
-            <div class="mb-3 p-2 bg-zinc-800/50 rounded-md border border-zinc-700" id="markupPropertiesPanel">
-                <div class="text-[10px] uppercase text-zinc-500 mb-2">Markup Properties</div>
+            <div class="mb-2 p-2 bg-zinc-800/50 rounded-md border border-zinc-700 flex-1 min-h-0 overflow-auto" id="markupPropertiesPanel">
+                <div class="text-[10px] uppercase text-zinc-500 mb-2">Markup tools</div>
                 <div class="text-[10px] text-zinc-500">Select a tool or markup to edit properties.</div>
             </div>
-            <div class="flex gap-1 mb-2">
-                <button type="button" id="layer-personal" onclick="CasePMDrawings.toggleLayer('personal')" class="text-[10px] px-1.5 py-0.5 bg-sky-900/50 text-sky-300 rounded">Personal</button>
-                <button type="button" id="layer-published" onclick="CasePMDrawings.toggleLayer('published')" class="text-[10px] px-1.5 py-0.5 bg-emerald-900/50 text-emerald-300 rounded">Published</button>
+            <div id="markupListPanel" class="mb-2 p-2 bg-zinc-800/30 rounded-md border border-zinc-700/80 max-h-36 overflow-auto hidden">
+                <div class="text-[10px] uppercase text-zinc-500 mb-1">On this sheet</div>
+                <div id="markupListItems"></div>
             </div>
-            <p class="text-[10px] text-zinc-600 mb-2">Markups are stored separately — print clean or with overlays.</p>
+            <div class="flex gap-1 mb-2">
+                <button type="button" id="layer-personal" onclick="CasePMDrawings.toggleLayer('personal')" class="flex-1 text-[10px] px-1.5 py-1 bg-sky-900/50 text-sky-300 rounded border border-sky-800/50">Personal</button>
+                <button type="button" id="layer-published" onclick="CasePMDrawings.toggleLayer('published')" class="flex-1 text-[10px] px-1.5 py-1 bg-emerald-900/50 text-emerald-300 rounded border border-emerald-800/50">Published</button>
+            </div>
             <div id="viewerSidebar"></div>
         </div>
     </div>

@@ -13,8 +13,188 @@
     measure: { color: '#22c55e', lineWidth: 2 },
     text: { color: '#f4f4f5', lineWidth: 1, fillOpacity: 0.9, fontSize: 14, showTextBorder: true },
     textbox: { color: '#f4f4f5', lineWidth: 1, fillOpacity: 0.9, fontSize: 14, showTextBorder: true },
-    callout: { color: '#38bdf8', lineWidth: 2, fontSize: 13 },
+    callout: { color: '#38bdf8', lineWidth: 2, fontSize: 13, fillOpacity: 0.92, showTextBorder: true, bubbleRadius: 10 },
   };
+
+  const TOOL_META = {
+    pan: { label: 'Pan', shortcut: 'H', hint: 'Drag to move the sheet. Hold Alt to pan while using any tool.' },
+    select: { label: 'Select', shortcut: 'V', hint: 'Click markups to select and drag to move. Double-click text or callouts to edit.' },
+    line: { label: 'Line', shortcut: 'L', hint: 'Click and drag to draw a straight line.' },
+    rect: { label: 'Rectangle', shortcut: 'R', hint: 'Drag a rectangle on the sheet.' },
+    ellipse: { label: 'Ellipse', shortcut: 'E', hint: 'Drag to draw an ellipse or circle.' },
+    cloud: { label: 'Revision cloud', shortcut: 'U', hint: 'Drag a box — corners become revision cloud arcs.' },
+    arrow: { label: 'Arrow', shortcut: 'A', hint: 'Drag from tail to arrowhead.' },
+    text: { label: 'Text box', shortcut: 'T', hint: 'Drag a box, then type your note. Or click a small spot for a quick text box.' },
+    callout: { label: 'Callout bubble', shortcut: 'C', hint: 'Click the point to call out, drag to size the text bubble, then type your note.' },
+    highlight: { label: 'Highlight', shortcut: 'Y', hint: 'Drag a translucent highlight over an area.' },
+    measure: { label: 'Measure', shortcut: 'M', hint: 'Drag between two points. Set scale first for feet and inches.' },
+    calibrate: { label: 'Calibrate scale', shortcut: 'K', hint: 'Click two points on a known dimension, then enter the real-world length.' },
+    rfi_pin: { label: 'RFI pin', shortcut: 'P', hint: 'Click to drop a pin linked to an RFI.' },
+  };
+
+  const TOOL_SHORTCUTS = {};
+  Object.entries(TOOL_META).forEach(([tool, meta]) => {
+    if (meta.shortcut) TOOL_SHORTCUTS[meta.shortcut.toLowerCase()] = tool;
+  });
+
+  function gcd(a, b) {
+    a = Math.abs(Math.round(a));
+    b = Math.abs(Math.round(b));
+    while (b) { const t = b; b = a % b; a = t; }
+    return a || 1;
+  }
+
+  /** Architectural feet-inches from decimal feet (e.g. 2.125 → 2'-1 1/2"). */
+  function formatFeetInches(decimalFeet, denom) {
+    denom = denom || 16;
+    if (decimalFeet == null || !Number.isFinite(decimalFeet)) return '0"';
+    const neg = decimalFeet < 0;
+    const feetDec = Math.abs(decimalFeet);
+    const totalIn = feetDec * 12;
+    let ft = Math.floor(totalIn / 12);
+    let inches = totalIn - ft * 12;
+    let inWhole = Math.floor(inches);
+    let frac = inches - inWhole;
+    let num = Math.round(frac * denom);
+    if (num >= denom) { inWhole += 1; num = 0; }
+    if (inWhole >= 12) { ft += 1; inWhole -= 12; }
+
+    let inchStr;
+    if (num === 0) {
+      inchStr = `${inWhole}`;
+    } else {
+      const g = gcd(num, denom);
+      num /= g;
+      const d = denom / g;
+      inchStr = inWhole > 0 ? `${inWhole} ${num}/${d}` : `${num}/${d}`;
+    }
+
+    const prefix = neg ? '-' : '';
+    if (ft > 0) {
+      if (inWhole === 0 && num === 0) return `${prefix}${ft}'-0"`;
+      return `${prefix}${ft}'-${inchStr}"`;
+    }
+    if (inWhole === 0 && num === 0) return '0"';
+    return `${prefix}${inchStr}"`;
+  }
+
+  function formatMeasurementDisplay(m) {
+    if (m.measurement_value == null) return '';
+    const unit = m.measurement_unit || '';
+    if (unit === 'px' || (!state.pixelsPerUnit && unit !== 'ft-in' && unit !== 'ft')) {
+      return `${Math.round(m.measurement_value)} px`;
+    }
+    const feet = parseFloat(m.measurement_value);
+    if (!Number.isFinite(feet)) return String(m.measurement_value);
+    return formatFeetInches(feet);
+  }
+
+  function calloutLeaderAnchor(bx, by, bw, bh, tipX, tipY) {
+    const cx = bx + bw / 2;
+    const cy = by + bh / 2;
+    const dx = tipX - cx;
+    const dy = tipY - cy;
+    if (Math.abs(dx) < 0.5 && Math.abs(dy) < 0.5) return { x: cx, y: by + bh };
+    const hw = bw / 2;
+    const hh = bh / 2;
+    const scaleX = dx !== 0 ? hw / Math.abs(dx) : Infinity;
+    const scaleY = dy !== 0 ? hh / Math.abs(dy) : Infinity;
+    const t = Math.min(scaleX, scaleY);
+    return { x: cx + dx * t, y: cy + dy * t };
+  }
+
+  function calloutBubbleSvg(opts) {
+    const {
+      bx, by, bw, bh, tipX, tipY, color, sw, op, fillOp, style, label, placeholder, rx,
+    } = opts;
+    const anchor = calloutLeaderAnchor(bx, by, bw, bh, tipX, tipY);
+    const fillOpVal = fillOp != null ? fillOp : 0.9;
+    const bg = `rgba(24,24,27,${fillOpVal})`;
+    const borderRx = rx || style?.bubbleRadius || 10;
+    const geom = { x: bx, y: by, w: bw, h: bh };
+    const displayLabel = label || (placeholder ? '' : '');
+    const ta = textMarkupAttrs(style || {}, geom, displayLabel || placeholder || 'Double-click to edit');
+    const textColor = style?.color || color;
+    const textOpacity = displayLabel ? op : op * 0.55;
+    return `
+      <line x1="${tipX}" y1="${tipY}" x2="${anchor.x}" y2="${anchor.y}" stroke="${color}" stroke-width="${sw}" opacity="${op}" pointer-events="none"/>
+      <circle cx="${tipX}" cy="${tipY}" r="3.5" fill="${color}" stroke="#fff" stroke-width="1" opacity="${op}" pointer-events="none"/>
+      <rect x="${bx}" y="${by}" width="${bw}" height="${bh}" rx="${borderRx}" ry="${borderRx}" stroke="${color}" stroke-width="${sw}" fill="${bg}" opacity="${op}" pointer-events="none"/>
+      <text x="${ta.tx}" y="${by + ta.pad}" text-anchor="${ta.anchor}" fill="${textColor}" font-size="${ta.fs}" font-weight="${ta.weight}" font-style="${ta.italic}" opacity="${textOpacity}" pointer-events="none">${ta.tspans}</text>`;
+  }
+
+  function measureLineVisual(x1, y1, x2, y2, color, sw, op, labelText) {
+    const ang = Math.atan2(y2 - y1, x2 - x1);
+    const cap = 7;
+    const dx = Math.cos(ang) * cap;
+    const dy = Math.sin(ang) * cap;
+    const perpX = Math.cos(ang + Math.PI / 2);
+    const perpY = Math.sin(ang + Math.PI / 2);
+    const lx = (x1 + x2) / 2 + perpX * 14;
+    const ly = (y1 + y2) / 2 + perpY * 14;
+    const label = labelText
+      ? `<text x="${lx}" y="${ly}" fill="${color}" font-size="12" font-weight="bold" text-anchor="middle" stroke="#09090b" stroke-width="3" paint-order="stroke">${esc(labelText)}</text>`
+      : '';
+    return `
+      <line x1="${x1}" y1="${y1}" x2="${x2}" y2="${y2}" stroke="${color}" stroke-width="${sw}" opacity="${op}" pointer-events="none"/>
+      <line x1="${x1 - dy}" y1="${y1 + dx}" x2="${x1 + dy}" y2="${y1 - dx}" stroke="${color}" stroke-width="${sw}" opacity="${op}" pointer-events="none"/>
+      <line x1="${x2 - dy}" y1="${y2 + dx}" x2="${x2 + dy}" y2="${y2 - dx}" stroke="${color}" stroke-width="${sw}" opacity="${op}" pointer-events="none"/>
+      ${label}`;
+  }
+
+  function updateViewerStatusBar() {
+    const toolEl = document.getElementById('statusActiveTool');
+    const scaleEl = document.getElementById('statusScale');
+    const hintEl = document.getElementById('statusHint');
+    if (!toolEl) return;
+    const meta = TOOL_META[state.tool] || { label: state.tool, hint: '' };
+    toolEl.textContent = meta.label + (meta.shortcut ? ` (${meta.shortcut})` : '');
+    if (scaleEl) {
+      if (state.scaleLabel && state.pixelsPerUnit) {
+        scaleEl.innerHTML = `Scale: <strong>${esc(state.scaleLabel)}</strong>`;
+      } else if (state.pixelsPerUnit) {
+        scaleEl.innerHTML = 'Scale: <strong>Calibrated</strong>';
+      } else {
+        scaleEl.textContent = 'Scale: not set — calibrate or pick a preset';
+      }
+    }
+    if (hintEl) hintEl.textContent = meta.hint || '';
+  }
+
+  function renderMarkupList() {
+    const panel = document.getElementById('markupListPanel');
+    const list = document.getElementById('markupListItems');
+    if (!panel || !list) return;
+    const items = visibleMarkups();
+    if (!items.length) {
+      panel.classList.add('hidden');
+      return;
+    }
+    panel.classList.remove('hidden');
+    const typeIcon = {
+      measure: 'fa-ruler', callout: 'fa-comment-dots', text: 'fa-font', textbox: 'fa-font',
+      cloud: 'fa-cloud', rfi_pin: 'fa-map-pin', arrow: 'fa-arrow-right', highlight: 'fa-highlighter',
+    };
+    list.innerHTML = items.map(m => {
+      const icon = typeIcon[m.markup_type] || 'fa-shapes';
+      let sub = m.label ? String(m.label).split('\n')[0].slice(0, 40) : '';
+      if (m.markup_type === 'measure' && m.measurement_value != null) {
+        sub = formatMeasurementDisplay(m);
+      }
+      const sel = state.selectedMarkupId === m.id ? ' markup-list-selected' : '';
+      return `<div class="markup-list-item${sel}" data-markup-list-id="${m.id}">
+        <i class="fa-solid ${icon} text-zinc-500 w-3 text-center text-[9px]"></i>
+        <span class="flex-1 min-w-0 truncate text-zinc-300">${esc(m.markup_type)}${sub ? ` · ${esc(sub)}` : ''}</span>
+      </div>`;
+    }).join('');
+    list.querySelectorAll('[data-markup-list-id]').forEach(el => {
+      el.addEventListener('click', () => {
+        state.selectedMarkupId = parseInt(el.getAttribute('data-markup-list-id'), 10);
+        setTool('select');
+        renderMarkupOverlay();
+      });
+    });
+  }
 
   function toolStyle(tool) {
     const defaults = TOOL_STYLE_DEFAULTS[tool] || {};
@@ -62,7 +242,7 @@
     drawStart: null,
     tempMarkup: null,
     pixelsPerUnit: null,
-    measureUnit: 'ft',
+    measureUnit: 'ft-in',
     compareMode: false,
     compareOverlayActive: false,
     compareOpacity: 0.7,
@@ -657,6 +837,7 @@
       ).join('');
     }
     highlightActiveTool();
+    updateViewerStatusBar();
   }
 
   function renderViewerSidebar() {
@@ -1159,6 +1340,8 @@
     });
     updateMarkupToolbar();
     renderPropertiesPanel();
+    renderMarkupList();
+    updateViewerStatusBar();
   }
 
   function markupSvg(m) {
@@ -1182,9 +1365,9 @@
       const pts = geom.points || [];
       if (pts.length < 4) return '';
       hit = `<line data-markup-id="${id}" x1="${pts[0]}" y1="${pts[1]}" x2="${pts[2]}" y2="${pts[3]}" stroke="transparent" stroke-width="22" pointer-events="stroke"/>`;
-      const label = m.markup_type === 'measure' && m.measurement_value != null
-        ? `<text x="${pts[2]}" y="${pts[3] - 8}" fill="${selStroke}" font-size="12" font-weight="bold">${m.measurement_value} ${m.measurement_unit || ''}</text>` : '';
-      visual = `<line x1="${pts[0]}" y1="${pts[1]}" x2="${pts[2]}" y2="${pts[3]}" stroke="${selStroke}" stroke-width="${selSw}" opacity="${op}"${dash} pointer-events="none"/>${label}`;
+      const measureLabel = m.markup_type === 'measure' && m.measurement_value != null
+        ? formatMeasurementDisplay(m) : '';
+      visual = measureLineVisual(pts[0], pts[1], pts[2], pts[3], selStroke, selSw, op, measureLabel);
     } else if (m.markup_type === 'rect' || m.markup_type === 'highlight') {
       hit = `<rect data-markup-id="${id}" x="${geom.x}" y="${geom.y}" width="${geom.w}" height="${geom.h}" fill="transparent" pointer-events="all"/>`;
       visual = `<rect x="${geom.x}" y="${geom.y}" width="${geom.w}" height="${geom.h}" stroke="${selStroke}" stroke-width="${selSw}" fill="${fill}" opacity="${op}"${dash} pointer-events="none"/>`;
@@ -1200,16 +1383,20 @@
       visual = `<ellipse cx="${geom.x + geom.w / 2}" cy="${geom.y + geom.h / 2}" rx="${geom.w / 2}" ry="${geom.h / 2}" stroke="${selStroke}" stroke-width="${selSw}" fill="${fill}" opacity="${op}"${dash} pointer-events="none"/>`;
     } else if (m.markup_type === 'callout' && geom.points) {
       const p = geom.points;
-      const bx = Math.min(p[0], p[2]);
-      const by = Math.min(p[1], p[3]);
-      const bw = Math.abs(p[2] - p[0]);
-      const bh = Math.abs(p[3] - p[1]);
+      let bx = Math.min(p[0], p[2]);
+      let by = Math.min(p[1], p[3]);
+      let bw = Math.max(Math.abs(p[2] - p[0]), 80);
+      let bh = Math.max(Math.abs(p[3] - p[1]), 36);
       const tipX = geom.tipX != null ? geom.tipX : p[0];
-      const tipY = geom.tipY != null ? geom.tipY : p[3];
+      const tipY = geom.tipY != null ? geom.tipY : p[1];
       hit = `<rect data-markup-id="${id}" x="${bx}" y="${by}" width="${bw}" height="${bh}" fill="transparent" pointer-events="all"/>`;
-      visual = `<line x1="${tipX}" y1="${tipY}" x2="${bx + bw / 2}" y2="${by + bh}" stroke="${selStroke}" stroke-width="${selSw}" opacity="${op}"${dash} pointer-events="none"/>
-        <rect x="${bx}" y="${by}" width="${bw}" height="${bh}" stroke="${selStroke}" stroke-width="${selSw}" fill="rgba(24,24,27,0.85)" opacity="${op}"${dash} pointer-events="none"/>
-        <text x="${bx + 8}" y="${by + 20}" fill="${selStroke}" font-size="${style.fontSize || 13}" font-weight="${style.fontWeight === 'bold' ? 'bold' : 'normal'}" pointer-events="none">${esc(m.label || '')}</text>`;
+      visual = calloutBubbleSvg({
+        bx, by, bw, bh, tipX, tipY,
+        color: selStroke, sw: selSw, op,
+        fillOp: style.fillOpacity != null ? style.fillOpacity : 0.92,
+        style, label: m.label, placeholder: !m.label,
+        rx: style.bubbleRadius || 10,
+      });
     } else if (m.markup_type === 'text' || m.markup_type === 'textbox') {
       const tw = geom.w || 180;
       const th = geom.h || 28;
@@ -1292,7 +1479,12 @@
     state.pixelsPerUnit = pdfPtsPerFoot * canvasPxPerPdfPt;
     state.scalePdfPointsPerFoot = pdfPtsPerFoot;
     state.scaleLabel = label || '';
-    if (!silent) renderPropertiesPanel();
+    if (!silent) {
+      renderPropertiesPanel();
+      renderMarkupOverlay();
+    } else {
+      updateViewerStatusBar();
+    }
     return true;
   }
 
@@ -1435,61 +1627,67 @@
     const arrowHead = style.arrowHead || 'arrow';
     const dashParts = parseStrokeDash(style.strokeDash || '');
 
+    const meta = TOOL_META[type] || {};
+    const toolHint = meta.hint || '';
+    const showScale = !!state.openDrawing;
+    const measureDisplay = isSelected && ctx?.markup_type === 'measure' && ctx.measurement_value != null
+      ? formatMeasurementDisplay(ctx) : '';
+
     el.innerHTML = `
-      <div class="text-[10px] uppercase text-zinc-500 mb-2 sticky top-0 bg-zinc-800/95 py-1 z-10 border-b border-zinc-700/80">${esc(title)}</div>
-      ${showText && !isSelected ? `<div class="markup-prop-hint">Drag a rectangle on the sheet to create a text box. Set font and border options here first.</div>` : ''}
-      ${showLine ? propSection('Stroke', `
+      <div class="text-[10px] uppercase text-zinc-500 mb-1 sticky top-0 bg-zinc-800/95 py-1 z-10 border-b border-zinc-700/80">${esc(title)}</div>
+      ${toolHint ? `<div class="markup-prop-hint mb-2">${esc(toolHint)}</div>` : ''}
+      ${showLine ? propSection('Color & stroke', `
+        ${propChips('Color', COLOR_PRESETS, color, 'color')}
         <div class="markup-prop-row">
-          <label for="propColorPicker">Color</label>
+          <label for="propColorPicker">Custom</label>
           <input type="color" id="propColorPicker" value="${color}">
         </div>
-        ${propRowText('Hex', 'propColorHex', color)}
-        ${propRow('Weight px', 'propLineWidth', lineWidth, 0.5, 48, 0.5)}
-        ${propRow('Opacity %', 'propOpacity', opacityPct, 0, 100, 1)}
+        ${propChips('Line weight', WIDTH_PRESETS, lineWidth, 'lineWidth')}
+        ${propChips('Opacity', OPACITY_PRESETS, style.opacity ?? 1, 'opacity')}
         ${propRow('Dash px', 'propDashLen', dashParts.dash, 0, 64, 1, '0 = solid')}
         ${propRow('Gap px', 'propGapLen', dashParts.gap, 0, 64, 1)}
       `) : ''}
-      ${showFill ? propSection('Fill', propRow('Opacity %', 'propFillOpacity', fillOpacityPct, 0, 100, 1)) : ''}
-      ${showCloud ? propSection('Cloud', propRow('Scallop px', 'propCloudScallop', cloudScallop, 4, 64, 1)) : ''}
+      ${showFill ? propSection('Fill', `
+        ${propChips('Fill opacity', OPACITY_PRESETS, style.fillOpacity ?? (type === 'highlight' ? 0.25 : 0.75), 'fillOpacity')}
+      `) : ''}
+      ${showCloud ? propSection('Cloud', `
+        ${propChips('Scallop size', CLOUD_PRESETS, cloudScallop, 'cloudScallop')}
+      `) : ''}
       ${showText ? propSection('Text', `
-        ${propRow('Size px', 'propFontSize', fontSize, 6, 96, 1)}
-        ${propRow('Weight', 'propFontWeight', fontWeightNum, 100, 900, 100, '400 or 700')}
-        ${propRow('Italic', 'propFontItalic', fontStyleDeg, 0, 1, 1, '0=off 1=on')}
-        ${propRow('Align', 'propTextAlign', textAlignNum, 0, 2, 1, '0=L 1=C 2=R')}
+        ${propChips('Font size', FONT_PRESETS, fontSize, 'fontSize')}
+        ${propChips('Weight', FONT_WEIGHT_PRESETS, style.fontWeight || 'normal', 'fontWeight')}
+        ${propChips('Align', TEXT_ALIGN_PRESETS, style.textAlign || 'left', 'textAlign')}
+        ${type === 'text' || type === 'textbox' ? propChips('Border', [{ label: 'On', value: '1' }, { label: 'Off', value: '0' }], showTextBorder ? '1' : '0', 'showTextBorder') : ''}
         ${propRow('Pad px', 'propTextPadding', textPadding, 0, 48, 1)}
-        ${propRow('Border', 'propShowTextBorder', showTextBorder, 0, 1, 1, '0=off 1=on')}
       `) : ''}
       ${showArrow ? propSection('Arrow', `
-        <div class="markup-prop-row">
-          <label for="propArrowHead">Head type</label>
-          <select id="propArrowHead">
-            <option value="arrow" ${arrowHead === 'arrow' ? 'selected' : ''}>Arrow</option>
-            <option value="open" ${arrowHead === 'open' ? 'selected' : ''}>Open</option>
-            <option value="none" ${arrowHead === 'none' ? 'selected' : ''}>None</option>
-          </select>
-        </div>
+        ${propChips('Head', ARROW_HEAD_PRESETS, arrowHead, 'arrowHead')}
       `) : ''}
-      ${showSize && geom ? propSection('Geometry px', `
+      ${showSize && geom ? propSection('Size', `
         ${propRow('Width', 'propGeomW', Math.round(geom.w || 0), 1, 8000, 1)}
         ${propRow('Height', 'propGeomH', Math.round(geom.h || 0), 1, 8000, 1)}
-        ${geom.w && geom.h ? `<div class="markup-prop-hint">Area <strong>${Math.round(geom.w * geom.h).toLocaleString()}</strong> sq px</div>` : ''}
       `) : ''}
+      ${isSelected && ctx?.markup_type === 'measure' && measureDisplay ? `
+        <div class="markup-prop-hint">Length: <strong>${esc(measureDisplay)}</strong></div>
+      ` : ''}
       ${isSelected && showText ? propSection('Content', `
-        <textarea id="propTextLabel" rows="4" class="w-full bg-zinc-900 border border-zinc-700 rounded p-2 text-xs text-white">${esc(ctx.label || '')}</textarea>
+        <textarea id="propTextLabel" rows="4" class="w-full bg-zinc-900 border border-zinc-700 rounded p-2 text-xs text-white" placeholder="Type your note…">${esc(ctx.label || '')}</textarea>
       `) : ''}
-      ${showMeasure ? propSection('Scale', `
+      ${showScale ? propSection('Drawing scale', `
         <div class="markup-prop-hint">
-          ${state.scaleLabel ? `Scale <strong>${esc(state.scaleLabel)}</strong><br>` : ''}
-          ${state.pixelsPerUnit ? `<strong>${state.pixelsPerUnit.toFixed(2)}</strong> px/ft` : 'Not set — values in pixels'}
+          ${state.scaleLabel ? `Active scale: <strong>${esc(state.scaleLabel)}</strong>` : (state.pixelsPerUnit ? 'Scale: <strong>Calibrated on sheet</strong>' : 'No scale set — measurements show in pixels until you set one.')}
         </div>
-        ${propRow('PDF pt/ft', 'propScalePts', state.scalePdfPointsPerFoot || '', 0.1, 200, 0.1, '72 = 1"=1\'')}
+        <div class="flex flex-wrap gap-1 mb-2">${SCALE_PRESETS.map(p => {
+          const active = state.scalePdfPointsPerFoot && Math.abs(state.scalePdfPointsPerFoot - p.pdfPtsPerFoot) < 0.05;
+          return `<button type="button" class="scale-preset-btn${active ? ' scale-preset-active' : ''}" data-scale-pts="${p.pdfPtsPerFoot}" data-scale-label="${esc(p.label)}">${esc(p.label)}</button>`;
+        }).join('')}</div>
         <div class="markup-prop-row">
-          <label for="propScaleInput">Arch scale</label>
-          <input type="text" id="propScaleInput" placeholder='1/4"=1\''>
+          <label for="propScaleInput">Custom</label>
+          <input type="text" id="propScaleInput" placeholder='1/4"=1\'' class="text-left">
         </div>
-        <button type="button" id="propScaleApplyBtn" class="w-full py-1 mb-1 bg-zinc-800 hover:bg-zinc-700 rounded text-[10px]">Apply arch scale</button>
-        <button type="button" id="propDetectScaleBtn" class="w-full py-1 mb-1 bg-sky-900/50 hover:bg-sky-900 rounded text-[10px] text-sky-200">Auto-detect</button>
-        <button type="button" id="propCalibrateBtn" class="w-full py-1 mb-1 bg-zinc-800 hover:bg-zinc-700 rounded text-[10px]">Calibrate…</button>
+        <button type="button" id="propScaleApplyBtn" class="w-full py-1.5 mb-1 bg-zinc-800 hover:bg-zinc-700 rounded text-[10px]">Apply custom scale</button>
+        <button type="button" id="propDetectScaleBtn" class="w-full py-1.5 mb-1 bg-sky-900/50 hover:bg-sky-900 rounded text-[10px] text-sky-200">Auto-detect from title block</button>
+        <button type="button" id="propCalibrateBtn" class="w-full py-1.5 mb-1 bg-zinc-800 hover:bg-zinc-700 rounded text-[10px]">Calibrate on a known dimension…</button>
       `) : ''}
       ${isSelected ? `<button type="button" id="propDeleteBtn" class="w-full mt-2 py-1.5 bg-red-900/70 hover:bg-red-800 rounded text-[10px] text-red-100">Delete markup</button>` : ''}
     `;
@@ -1502,54 +1700,36 @@
       input.addEventListener('change', run);
     };
 
-    bindLiveNum('propLineWidth', (input) => {
-      const val = parseFloat(input.value);
-      if (!Number.isNaN(val)) applyMarkupProperty({ lineWidth: val });
-      renderMarkupOverlay();
+    el.querySelectorAll('.prop-chip').forEach(chip => {
+      chip.addEventListener('click', () => {
+        const prop = chip.getAttribute('data-prop');
+        const val = chip.getAttribute('data-value');
+        if (prop === 'color') applyMarkupProperty({ color: val });
+        else if (prop === 'lineWidth') applyMarkupProperty({ lineWidth: parseFloat(val) });
+        else if (prop === 'opacity') applyMarkupProperty({ opacity: parseFloat(val) });
+        else if (prop === 'fillOpacity') applyMarkupProperty({ fillOpacity: parseFloat(val) });
+        else if (prop === 'cloudScallop') applyMarkupProperty({ cloudScallop: parseInt(val, 10) });
+        else if (prop === 'fontSize') applyMarkupProperty({ fontSize: parseInt(val, 10) });
+        else if (prop === 'fontWeight') applyMarkupProperty({ fontWeight: val });
+        else if (prop === 'textAlign') applyMarkupProperty({ textAlign: val });
+        else if (prop === 'showTextBorder') applyMarkupProperty({ showTextBorder: val === '1' });
+        else if (prop === 'arrowHead') applyMarkupProperty({ arrowHead: val });
+        renderPropertiesPanel();
+        renderMarkupOverlay();
+      });
     });
-    bindLiveNum('propOpacity', (input) => {
-      const val = parseInt(input.value, 10);
-      if (!Number.isNaN(val)) applyMarkupProperty({ opacity: Math.min(100, Math.max(0, val)) / 100 });
-      renderMarkupOverlay();
-    });
-    bindLiveNum('propFillOpacity', (input) => {
-      const val = parseInt(input.value, 10);
-      if (!Number.isNaN(val)) applyMarkupProperty({ fillOpacity: Math.min(100, Math.max(0, val)) / 100 });
-      renderMarkupOverlay();
-    });
-    bindLiveNum('propCloudScallop', (input) => {
-      const val = parseInt(input.value, 10);
-      if (!Number.isNaN(val)) applyMarkupProperty({ cloudScallop: val });
-      renderMarkupOverlay();
-    });
-    bindLiveNum('propFontSize', (input) => {
-      const val = parseInt(input.value, 10);
-      if (!Number.isNaN(val)) applyMarkupProperty({ fontSize: val });
-      renderMarkupOverlay();
-    });
-    bindLiveNum('propFontWeight', (input) => {
-      const val = parseInt(input.value, 10);
-      if (!Number.isNaN(val)) applyMarkupProperty({ fontWeight: val >= 600 ? 'bold' : 'normal' });
-      renderMarkupOverlay();
-    });
-    bindLiveNum('propFontItalic', (input) => {
-      const val = parseInt(input.value, 10);
-      if (!Number.isNaN(val)) applyMarkupProperty({ fontStyle: val ? 'italic' : 'normal' });
-      renderMarkupOverlay();
-    });
-    bindLiveNum('propTextAlign', (input) => {
-      const val = parseInt(input.value, 10);
-      if (!Number.isNaN(val)) applyMarkupProperty({ textAlign: numToTextAlign(val) });
-      renderMarkupOverlay();
+
+    el.querySelectorAll('.scale-preset-btn').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const pts = parseFloat(btn.getAttribute('data-scale-pts'));
+        const lbl = btn.getAttribute('data-scale-label');
+        applyScalePreset(pts, lbl);
+        renderPropertiesPanel();
+      });
     });
     bindLiveNum('propTextPadding', (input) => {
       const val = parseInt(input.value, 10);
       if (!Number.isNaN(val)) applyMarkupProperty({ textPadding: val });
-      renderMarkupOverlay();
-    });
-    bindLiveNum('propShowTextBorder', (input) => {
-      const val = parseInt(input.value, 10);
-      if (!Number.isNaN(val)) applyMarkupProperty({ showTextBorder: val !== 0 });
       renderMarkupOverlay();
     });
     const applyDash = () => {
@@ -1562,26 +1742,10 @@
     bindLiveNum('propDashLen', applyDash);
     bindLiveNum('propGapLen', applyDash);
 
-    bindLiveNum('propScalePts', (input) => {
-      const val = parseFloat(input.value);
-      if (!Number.isNaN(val) && val > 0) applyScalePdfPtsPerFoot(val, `1:${Math.round(72 / val)}`);
-    });
-
     const colorPicker = document.getElementById('propColorPicker');
-    const colorHex = document.getElementById('propColorHex');
     if (colorPicker) colorPicker.addEventListener('input', () => {
       applyMarkupProperty({ color: colorPicker.value });
-      if (colorHex) colorHex.value = colorPicker.value;
-      renderMarkupOverlay();
-    });
-    if (colorHex) colorHex.addEventListener('change', () => {
-      applyMarkupProperty({ color: colorHex.value });
-      renderMarkupOverlay();
-    });
-
-    const arrowSel = document.getElementById('propArrowHead');
-    if (arrowSel) arrowSel.addEventListener('change', () => {
-      applyMarkupProperty({ arrowHead: arrowSel.value });
+      renderPropertiesPanel();
       renderMarkupOverlay();
     });
 
@@ -1631,9 +1795,15 @@
 
   function formatMeasureLength(pxDist) {
     if (state.pixelsPerUnit && pxDist > 0) {
-      return { value: Math.round((pxDist / state.pixelsPerUnit) * 100) / 100, unit: state.measureUnit };
+      const feet = pxDist / state.pixelsPerUnit;
+      return {
+        value: Math.round(feet * 10000) / 10000,
+        display: formatFeetInches(feet),
+        unit: 'ft-in',
+      };
     }
-    return { value: Math.round(pxDist), unit: 'px' };
+    const px = Math.round(pxDist);
+    return { value: px, display: `${px} px`, unit: 'px' };
   }
 
   function setTool(tool) {
@@ -1653,8 +1823,9 @@
     updateViewerCursor();
     renderMarkupOverlay();
     renderPropertiesPanel();
+    updateViewerStatusBar();
     if (tool === 'measure' && !state.pixelsPerUnit) {
-      toast('Tip: Calibrate scale first for feet/inches, or measurements show in pixels');
+      toast('Set the drawing scale first — pick a preset in the side panel or calibrate on a known dimension');
     }
   }
 
@@ -1672,8 +1843,7 @@
     MARKUP_TOOLS.forEach(t => {
       const btn = document.getElementById(`tool-${t}`);
       if (!btn) return;
-      btn.classList.toggle('bg-sky-700', state.tool === t);
-      btn.classList.toggle('text-white', state.tool === t);
+      btn.classList.toggle('tool-active', state.tool === t);
     });
   }
 
@@ -1712,10 +1882,10 @@
       editor.id = 'drawTextEditor';
       editor.className = 'absolute z-50 bg-zinc-900 border border-sky-600 rounded-md shadow-xl p-2';
       editor.innerHTML = `
-        <textarea id="drawTextEditorInput" rows="3" class="w-56 bg-zinc-800 border border-zinc-700 rounded p-2 text-sm text-white mb-2" placeholder="Enter markup text…"></textarea>
+        <textarea id="drawTextEditorInput" rows="4" class="w-64 bg-zinc-800 border border-zinc-700 rounded p-2 text-sm text-white mb-2" placeholder="Type your note — Enter saves, Shift+Enter for new line"></textarea>
         <div class="flex gap-2 justify-end">
           <button type="button" id="drawTextEditorCancel" class="px-2 py-1 text-xs bg-zinc-800 rounded">Cancel</button>
-          <button type="button" id="drawTextEditorSave" class="px-2 py-1 text-xs bg-sky-700 rounded text-white">Place</button>
+          <button type="button" id="drawTextEditorSave" class="px-2 py-1 text-xs bg-sky-700 rounded text-white">Save</button>
         </div>`;
       wrap.appendChild(editor);
     }
@@ -1761,6 +1931,44 @@
     };
   }
 
+  function onViewerKeyDown(e) {
+    if (!state.openDrawing || state.view !== 'viewer') return;
+    const tag = (e.target?.tagName || '').toLowerCase();
+    if (tag === 'input' || tag === 'textarea' || tag === 'select' || e.target?.isContentEditable) return;
+    if ((e.key === 'Delete' || e.key === 'Backspace') && state.selectedMarkupId) {
+      e.preventDefault();
+      deleteSelectedMarkup();
+      return;
+    }
+    if (e.key === 'Escape') {
+      state.selectedMarkupId = null;
+      state.drawing = false;
+      state.drawStart = null;
+      state.tempMarkup = null;
+      setTool('pan');
+      return;
+    }
+    if (e.altKey || e.ctrlKey || e.metaKey) return;
+    const tool = TOOL_SHORTCUTS[e.key.toLowerCase()];
+    if (tool) {
+      e.preventDefault();
+      setTool(tool);
+    }
+  }
+
+  function onViewerDblClick(evt) {
+    if (state.tool !== 'select' && state.tool !== 'pan') return;
+    const pt = screenToDoc(evt);
+    const hit = hitTestMarkup(pt);
+    if (!hit) return;
+    if (hit.markup_type === 'text' || hit.markup_type === 'textbox' || hit.markup_type === 'callout') {
+      state.selectedMarkupId = hit.id;
+      const g = resolveGeom(hit.geometry || {});
+      showTextEditor({ x: g.x + 8, y: g.y + 8 }, hit);
+      renderMarkupOverlay();
+    }
+  }
+
   function bindViewerEvents() {
     const wrap = document.getElementById('drawViewerWrap');
     if (!wrap || wrap._bound) return;
@@ -1770,13 +1978,8 @@
     wrap.addEventListener('mouseup', onViewerUp);
     wrap.addEventListener('mouseleave', onViewerUp);
     wrap.addEventListener('wheel', onViewerWheel, { passive: false });
-    document.addEventListener('keydown', e => {
-      if (!state.openDrawing) return;
-      if ((e.key === 'Delete' || e.key === 'Backspace') && state.selectedMarkupId) {
-        e.preventDefault();
-        deleteSelectedMarkup();
-      }
-    });
+    wrap.addEventListener('dblclick', onViewerDblClick);
+    document.addEventListener('keydown', onViewerKeyDown);
     window.addEventListener('resize', () => {
       if (state.openDrawing && state.view === 'viewer') {
         clearTimeout(bindViewerEvents._resizeTimer);
@@ -1851,15 +2054,23 @@
     if (state.tool === 'calibrate') {
       const pt = screenToDoc(evt);
       if (!state.drawStart) { state.drawStart = pt; toast('Click second point for known distance'); return; }
-      const dist = prompt('Known distance (feet):', '10');
+      const dist = prompt('Known distance — enter feet and inches (e.g. 10\'-6" or 10.5):', '10\'-0"');
       if (dist) {
-        const dx = pt.x - state.drawStart.x; const dy = pt.y - state.drawStart.y;
+        const dx = pt.x - state.drawStart.x;
+        const dy = pt.y - state.drawStart.y;
         const px = Math.sqrt(dx * dx + dy * dy);
-        state.pixelsPerUnit = px / (parseFloat(dist) || 1);
-        state.scaleLabel = 'Calibrated on drawing';
+        let feet = parseFloat(dist);
+        if (!Number.isFinite(feet)) {
+          const arch = dist.match(/(\d+)\s*['′-]\s*(\d+)?/);
+          if (arch) feet = parseInt(arch[1], 10) + (parseInt(arch[2] || '0', 10) / 12);
+          else feet = parseFloat(dist) || 1;
+        }
+        state.pixelsPerUnit = px / (feet || 1);
+        state.scaleLabel = `Calibrated (${formatFeetInches(feet)})`;
         state.scalePdfPointsPerFoot = null;
         renderPropertiesPanel();
-        toast(`Scale set: ${state.pixelsPerUnit.toFixed(2)} px/ft`);
+        updateViewerStatusBar();
+        toast(`Scale set — ${formatFeetInches(feet)} on drawing`);
       }
       state.drawStart = null;
     }
@@ -1900,10 +2111,18 @@
         state.tempMarkup = `<rect x="${x}" y="${y}" width="${rw}" height="${rh}" stroke="${color}" stroke-width="${sw}" fill="none" stroke-dasharray="4 3" />`;
       }
     } else if (state.tool === 'callout') {
-      const x = Math.min(s.x, pt.x); const y = Math.min(s.y, pt.y);
-      const rw = Math.abs(pt.x - s.x); const rh = Math.abs(pt.y - s.y);
-      state.tempMarkup = `<line x1="${s.x}" y1="${s.y}" x2="${x + rw / 2}" y2="${y + rh}" stroke="${color}" stroke-width="${sw}" stroke-dasharray="4 3"/>
-        <rect x="${x}" y="${y}" width="${rw}" height="${rh}" stroke="${color}" stroke-width="${sw}" fill="rgba(24,24,27,0.5)" stroke-dasharray="4 3"/>`;
+      const x = Math.min(s.x, pt.x);
+      const y = Math.min(s.y, pt.y);
+      const rw = Math.max(Math.abs(pt.x - s.x), 80);
+      const rh = Math.max(Math.abs(pt.y - s.y), 36);
+      state.tempMarkup = calloutBubbleSvg({
+        bx: x, by: y, bw: rw, bh: rh,
+        tipX: s.x, tipY: s.y,
+        color, sw, op: 0.85,
+        fillOp: activeStyle.fillOpacity ?? 0.5,
+        style: activeStyle,
+        placeholder: true,
+      });
     } else if (state.tool === 'cloud') {
       const x = Math.min(s.x, pt.x); const y = Math.min(s.y, pt.y);
       state.tempMarkup = `<path d="${cloudPath(x, y, Math.abs(pt.x - s.x), Math.abs(pt.y - s.y), scallop)}" stroke="${color}" stroke-width="${sw}" fill="none" stroke-dasharray="4 3" />`;
@@ -1911,12 +2130,11 @@
       const marker = state.tool === 'arrow' ? ' marker-end="url(#arrowhead)"' : '';
       const pxLen = Math.hypot(pt.x - s.x, pt.y - s.y);
       const measureLabel = state.tool === 'measure'
-        ? (() => {
-          const m = formatMeasureLength(pxLen);
-          return `<text x="${pt.x + 8}" y="${pt.y - 8}" fill="${color}" font-size="12" font-weight="bold">${m.value} ${m.unit}</text>`;
-        })()
+        ? formatMeasureLength(pxLen).display
         : '';
-      state.tempMarkup = `<line x1="${s.x}" y1="${s.y}" x2="${pt.x}" y2="${pt.y}" stroke="${color}" stroke-width="${sw}" stroke-dasharray="4 3"${marker} />${measureLabel}`;
+      state.tempMarkup = state.tool === 'measure'
+        ? measureLineVisual(s.x, s.y, pt.x, pt.y, color, sw, 0.9, measureLabel)
+        : `<line x1="${s.x}" y1="${s.y}" x2="${pt.x}" y2="${pt.y}" stroke="${color}" stroke-width="${sw}" stroke-dasharray="4 3"${marker} />`;
     }
     renderMarkupOverlay();
   }
@@ -1969,19 +2187,22 @@
         return;
       }
     } else if (type === 'callout') {
+      const bx = Math.min(s.x, pt.x);
+      const by = Math.min(s.y, pt.y);
+      const bw = Math.max(Math.abs(pt.x - s.x), 80);
+      const bh = Math.max(Math.abs(pt.y - s.y), 36);
       geometry = {
-        x: Math.min(s.x, pt.x), y: Math.min(s.y, pt.y),
-        w: Math.abs(pt.x - s.x), h: Math.abs(pt.y - s.y),
-        points: [s.x, s.y, pt.x, pt.y],
+        x: bx, y: by, w: bw, h: bh,
+        points: [s.x, s.y, bx + bw, by + bh],
         tipX: s.x, tipY: s.y,
       };
-      if (geometry.w < 20 && geometry.h < 12) {
+      if (bw < 24 && bh < 20) {
         state.drawing = false;
         state.drawStart = null;
         state.tempMarkup = null;
         return;
       }
-      label = 'Callout';
+      label = '';
     } else if (['line', 'arrow', 'measure'].includes(type)) {
       const pxLen = Math.hypot(pt.x - s.x, pt.y - s.y);
       if (pxLen < 3) {
@@ -1999,17 +2220,21 @@
     state.drawing = false;
     state.drawStart = null;
     state.tempMarkup = null;
+    const measureInfo = type === 'measure' ? formatMeasureLength(Math.hypot(pt.x - s.x, pt.y - s.y)) : null;
     await saveMarkup({
       markup_type: type === 'measure' ? 'measure' : type,
       geometry,
       measurement_value,
-      measurement_unit: state.pixelsPerUnit ? state.measureUnit : 'px',
+      measurement_unit: measureInfo ? measureInfo.unit : (state.pixelsPerUnit ? state.measureUnit : 'px'),
       label,
       style: { ...toolStyle(type) },
     });
     if (type === 'callout') {
       const last = state.markups[state.markups.length - 1];
-      if (last) showTextEditor({ x: geometry.x + 8, y: geometry.y + 8 }, last);
+      if (last) {
+        const g = resolveGeom(last.geometry || {});
+        showTextEditor({ x: g.x + 8, y: g.y + 8 }, last);
+      }
     }
   }
 
