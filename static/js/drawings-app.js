@@ -39,6 +39,7 @@
     canvasSize: { w: 0, h: 0 },
     lastViewport: null,
     focusPin: null,
+    previewDrawingId: null,
   };
 
   function projectId() {
@@ -68,7 +69,6 @@
     const pid = projectId();
     if (!pid) return;
     state.stats = await api(`/api/drawings/dashboard?project_id=${pid}`);
-    renderSummary();
     renderSectionTabs();
   }
 
@@ -101,21 +101,7 @@
     return (ia < 0 ? 99 : ia) - (ib < 0 ? 99 : ib) || a.localeCompare(b);
   }
 
-  function renderSummary() {
-    const s = state.stats;
-    const map = {
-      statDrawTotal: s.total_sheets || 0,
-      statDrawCurrent: s.current_sheets || 0,
-      statDrawSections: s.section_count || 0,
-      statDrawRevisions: s.total_revisions || 0,
-      statDrawReview: s.for_review || 0,
-      statDrawSuperseded: s.superseded || 0,
-    };
-    Object.keys(map).forEach(id => {
-      const el = document.getElementById(id);
-      if (el) el.textContent = map[id];
-    });
-  }
+  function renderSummary() { /* KPI bar removed */ }
 
   function renderSectionTabs() {
     const el = document.getElementById('drawSectionTabs');
@@ -227,11 +213,12 @@
 
   function switchView(view) {
     state.view = view;
+    document.getElementById('drawPage')?.classList.toggle('draw-page-viewer-active', view === 'viewer');
     ['sections', 'list', 'viewer'].forEach(v => {
       document.getElementById(`drawPanel${v.charAt(0).toUpperCase() + v.slice(1)}`)?.classList.toggle('hidden', v !== view);
       const btn = document.getElementById(`btnView${v.charAt(0).toUpperCase() + v.slice(1)}`);
       if (btn) {
-        btn.classList.toggle('hidden', v === 'viewer' && view !== 'viewer');
+        if (v === 'viewer') btn.classList.toggle('hidden', !state.openDrawing);
         btn.classList.toggle('bg-sky-700', v === view);
         btn.classList.toggle('text-white', v === view);
         btn.classList.toggle('bg-zinc-800', v !== view);
@@ -239,6 +226,9 @@
       }
     });
     renderActiveView();
+    if (view === 'viewer' && state.openDrawing) {
+      requestAnimationFrame(() => renderPdf());
+    }
   }
 
   function selectSection(sec) {
@@ -250,15 +240,24 @@
   async function previewSheet(id) {
     const d = state.drawings.find(x => x.id === id);
     if (!d) return;
-    const el = document.getElementById('drawPreviewPane');
-    if (!el) return;
-    el.classList.remove('hidden');
-    el.innerHTML = `<div class="text-xs text-zinc-500 mb-2">Double-click to open full viewer</div>
-      <div class="font-mono text-sky-400">${esc(d.sheet_number)}</div>
-      <div class="text-sm font-medium mt-1">${esc(d.title)}</div>
-      <div class="text-xs text-zinc-500 mt-2">${esc(d.discipline)} · ${esc(d.revision_label)} · ${fmtDate(d.drawing_date)}</div>
-      <div class="text-xs text-zinc-500 mt-1">Set: ${esc(d.set_name || '—')}</div>
-      <button type="button" onclick="CasePMDrawings.openViewer(${d.id})" class="mt-3 px-3 py-1.5 text-xs bg-sky-800 hover:bg-sky-700 rounded-md">Open Viewer</button>`;
+    state.previewDrawingId = id;
+    const pane = document.getElementById('drawPreviewPane');
+    const thumb = document.getElementById('drawPreviewThumb');
+    const openBtn = document.getElementById('drawPreviewOpenBtn');
+    if (pane) {
+      pane.className = 'truncate text-zinc-300 min-w-0';
+      pane.textContent = `${d.sheet_number} — ${d.title || 'Untitled'}`;
+      pane.title = `${d.sheet_number} — ${d.title || ''} · ${d.discipline || ''}`;
+    }
+    if (thumb) {
+      thumb.classList.remove('hidden');
+      renderThumb(thumb, d);
+    }
+    openBtn?.classList.remove('hidden');
+  }
+
+  function openPreviewedSheet() {
+    if (state.previewDrawingId) openViewer(state.previewDrawingId);
   }
 
   async function openViewer(id, opts) {
@@ -274,6 +273,8 @@
     state.compareOverlayActive = false;
     state.compareBaseRevisionId = null;
     state.focusPin = opts || null;
+    state.previewDrawingId = id;
+    previewSheet(id);
     switchView('viewer');
     await renderPdf();
     renderViewerSidebar();
@@ -464,7 +465,8 @@
     if (state.renderTask) try { state.renderTask.cancel(); } catch {}
     state.pdfDoc = await pdfjsLib.getDocument({ data: buf.slice(0) }).promise;
     const page = await state.pdfDoc.getPage(state.pdfPage);
-    const baseScale = Math.min((wrap.clientWidth - 40) / page.getViewport({ scale: 1 }).width, (wrap.clientHeight - 40) / page.getViewport({ scale: 1 }).height, 2);
+    const maxScale = document.fullscreenElement ? 4 : 3;
+    const baseScale = Math.min((wrap.clientWidth - 16) / page.getViewport({ scale: 1 }).width, (wrap.clientHeight - 16) / page.getViewport({ scale: 1 }).height, maxScale);
     const viewport = page.getViewport({ scale: baseScale * state.scale });
     state.lastViewport = viewport;
     canvas.width = viewport.width;
@@ -804,8 +806,40 @@
     }
   }
 
-  function printSheet() {
+  function togglePrintMenu() {
+    document.getElementById('printMenu')?.classList.toggle('hidden');
+  }
+
+  function printSheet(withMarkups) {
+    document.getElementById('printMenu')?.classList.add('hidden');
+    if (!state.openDrawing) {
+      alert('Open a sheet in the viewer first.');
+      return;
+    }
+    if (state.view !== 'viewer') switchView('viewer');
+    const modeClass = withMarkups ? 'printing-drawing-markup' : 'printing-drawing-clean';
+    document.body.classList.add('printing-drawing-sheet', modeClass);
+    const cleanup = () => document.body.classList.remove('printing-drawing-sheet', 'printing-drawing-markup', 'printing-drawing-clean');
+    window.addEventListener('afterprint', cleanup, { once: true });
+    setTimeout(cleanup, 4000);
     window.print();
+  }
+
+  function toggleFullscreen() {
+    const el = document.getElementById('drawPanelViewer');
+    if (!el) return;
+    if (!document.fullscreenElement) {
+      (el.requestFullscreen || el.webkitRequestFullscreen)?.call(el);
+    } else {
+      (document.exitFullscreen || document.webkitExitFullscreen)?.call(document);
+    }
+  }
+
+  function onFullscreenChange() {
+    const btn = document.getElementById('btnFullscreen');
+    const on = !!document.fullscreenElement;
+    if (btn) btn.innerHTML = on ? '<i class="fa-solid fa-compress"></i>' : '<i class="fa-solid fa-expand"></i>';
+    if (state.openDrawing) setTimeout(() => renderPdf(), 100);
   }
 
   function openUploadModal(mode) {
@@ -888,6 +922,12 @@
     }
     bindFilters();
     bindViewerEvents();
+    document.addEventListener('fullscreenchange', onFullscreenChange);
+    document.addEventListener('click', e => {
+      if (!e.target.closest('#printMenu') && !e.target.closest('#btnPrintMenu')) {
+        document.getElementById('printMenu')?.classList.add('hidden');
+      }
+    });
     await Promise.all([loadDashboard(), loadDrawings(), loadRfis()]);
     await handleDeepLink();
   }
@@ -899,6 +939,7 @@
     openViewer,
     closeViewer,
     previewSheet,
+    openPreviewedSheet,
     setTool,
     toggleLayer,
     publishPersonalMarkups,
@@ -906,7 +947,9 @@
     toggleCompareOverlay,
     setCompareOpacity,
     exportTakeoffToBudget,
+    togglePrintMenu,
     printSheet,
+    toggleFullscreen,
     openUploadModal,
     openSubstituteModal,
     submitUpload,
