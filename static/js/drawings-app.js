@@ -51,7 +51,7 @@
 
   const TOOL_META = {
     pan: { label: 'Pan', shortcut: 'H', icon: 'fa-hand', hint: 'Drag to move the sheet. Hold Alt to pan while using any tool.' },
-    select: { label: 'Select', shortcut: 'V', icon: 'fa-arrow-pointer', hint: 'Click markups to select and drag to move. Double-click text or callouts to edit.' },
+    select: { label: 'Select', shortcut: 'V', icon: 'fa-arrow-pointer', hint: 'Click to select; Shift+click to add/remove. Drag a box to select everything inside. Drag selected items to move.' },
     pen: { label: 'Pen', shortcut: 'N', icon: 'fa-pen', hint: 'Draw freehand — popular for quick redlines and sketches (Bluebeam-style).' },
     line: { label: 'Line', shortcut: 'L', icon: 'fa-minus', hint: 'Click and drag to draw a straight line.' },
     polyline: { label: 'Polyline', shortcut: 'I', icon: 'fa-draw-polygon', hint: 'Click each corner. Press Enter or double-click the last point to finish.' },
@@ -65,7 +65,7 @@
     text: { label: 'Text box', shortcut: 'T', icon: 'fa-font', hint: 'Drag a box, then type your note.' },
     callout: { label: 'Callout bubble', shortcut: 'C', icon: 'fa-comment-dots', hint: 'Click the point to call out, drag to size the bubble, then type your note.' },
     stamp: { label: 'Stamp', shortcut: 'S', icon: 'fa-stamp', hint: 'Pick a stamp in the side panel, then click on the sheet to place it.' },
-    measure: { label: 'Measure', shortcut: 'M', icon: 'fa-ruler', hint: 'Drag between two points. Set scale first for feet and inches.' },
+    measure: { label: 'Measure', shortcut: 'M', icon: 'fa-ruler', hint: 'Drag between two points, or click first point then pan/zoom and click second point. Set scale first for feet & inches.' },
     area: { label: 'Area', shortcut: 'B', icon: 'fa-vector-square', hint: 'Click polygon corners, Enter to close — shows square feet when scale is set.' },
     count: { label: 'Count', shortcut: 'O', icon: 'fa-hashtag', hint: 'Click each item to count — Bluebeam-style running tally.' },
     calibrate: { label: 'Calibrate scale', shortcut: 'K', icon: 'fa-ruler-combined', hint: 'Click two points on a known dimension, then enter the real-world length.' },
@@ -294,7 +294,7 @@
       } else if (m.markup_type === 'area' && m.measurement_value != null) {
         sub = formatMeasurementDisplay(m);
       }
-      const sel = state.selectedMarkupId === m.id ? ' markup-list-selected' : '';
+      const sel = isMarkupSelected(m.id) ? ' markup-list-selected' : '';
       return `<div class="markup-list-item${sel}" data-markup-list-id="${m.id}">
         <i class="fa-solid ${icon} text-zinc-500 w-3 text-center text-[9px]"></i>
         <span class="flex-1 min-w-0 truncate text-zinc-300">${esc(m.markup_type)}${sub ? ` · ${esc(sub)}` : ''}</span>
@@ -302,7 +302,7 @@
     }).join('');
     list.querySelectorAll('[data-markup-list-id]').forEach(el => {
       el.addEventListener('click', () => {
-        state.selectedMarkupId = parseInt(el.getAttribute('data-markup-list-id'), 10);
+        setMarkupSelection(new Set([parseInt(el.getAttribute('data-markup-list-id'), 10)]));
         setTool('select');
         renderMarkupOverlay();
       });
@@ -338,6 +338,12 @@
     isPanning: false,
     panAnchor: null,
     selectedMarkupId: null,
+    selectedMarkupIds: new Set(),
+    selectMarquee: false,
+    measureAnchor: null,
+    measureDragged: false,
+    measureFromAnchor: false,
+    measureGestureOrigin: null,
     draggingMarkup: null,
     dragStartPt: null,
     dragOrigGeom: null,
@@ -436,7 +442,7 @@
     try {
       const detail = await api(`/api/drawings/${state.openDrawing.id}`);
       state.markups = detail.markups || [];
-      state.selectedMarkupId = null;
+      clearMarkupSelection();
       state.draggingMarkup = null;
       renderMarkupOverlay();
     } catch (e) { console.warn('reloadMarkups', e); }
@@ -457,7 +463,7 @@
     } catch (e) {
       if (e.status === 404) {
         state.markups = state.markups.filter(x => x.id !== m.id);
-        state.selectedMarkupId = null;
+        clearMarkupSelection();
         toast('Markup was removed — refreshed list');
       } else {
         console.warn(e);
@@ -1505,7 +1511,7 @@
       state.viewScale = 1;
       state.panX = 0;
       state.panY = 0;
-      state.selectedMarkupId = null;
+      clearMarkupSelection();
       state.compareOverlayActive = false;
       state.compareBaseRevisionId = null;
       state.compareDiffFailed = false;
@@ -1864,6 +1870,82 @@
     return best;
   }
 
+  function isMarkupSelected(id) {
+    return state.selectedMarkupIds.has(id) || state.selectedMarkupId === id;
+  }
+
+  function setMarkupSelection(ids, primaryId) {
+    state.selectedMarkupIds = ids instanceof Set ? ids : new Set(ids || []);
+    state.selectedMarkupId = primaryId != null
+      ? primaryId
+      : (state.selectedMarkupIds.size ? [...state.selectedMarkupIds][0] : null);
+    updateMarkupToolbar();
+  }
+
+  function clearMarkupSelection() {
+    state.selectedMarkupIds = new Set();
+    state.selectedMarkupId = null;
+    updateMarkupToolbar();
+  }
+
+  function markupBounds(m) {
+    const g = resolveGeom(m.geometry || {});
+    const pad = 8;
+    if (m.markup_type === 'rfi_pin' || m.markup_type === 'co_pin' || m.markup_type === 'punch_pin') {
+      const pg = resolvePinGeom(m.geometry || {});
+      const r = 16 * (pg.pinSize || 1) + pad;
+      return { x: (pg.x || 0) - r, y: (pg.y || 0) - r, w: r * 2, h: r * 2 };
+    }
+    if (g.x != null && g.w != null && g.h != null) {
+      return { x: g.x, y: g.y, w: g.w, h: g.h };
+    }
+    if (g.points && g.points.length >= 4) {
+      let minX = g.points[0];
+      let minY = g.points[1];
+      let maxX = g.points[0];
+      let maxY = g.points[1];
+      for (let i = 0; i < g.points.length; i += 2) {
+        minX = Math.min(minX, g.points[i]);
+        maxX = Math.max(maxX, g.points[i]);
+        minY = Math.min(minY, g.points[i + 1]);
+        maxY = Math.max(maxY, g.points[i + 1]);
+      }
+      return { x: minX - pad, y: minY - pad, w: maxX - minX + pad * 2, h: maxY - minY + pad * 2 };
+    }
+    if (g.x != null && g.y != null) {
+      return { x: g.x - pad, y: g.y - pad, w: pad * 2, h: pad * 2 };
+    }
+    return null;
+  }
+
+  function markupIntersectsRect(m, rect) {
+    const b = markupBounds(m);
+    if (!b) return false;
+    return b.x < rect.x + rect.w && b.x + b.w > rect.x && b.y < rect.y + rect.h && b.y + b.h > rect.y;
+  }
+
+  function measureAnchorMarkup() {
+    if (state.tool !== 'measure' || !state.measureAnchor) return '';
+    const { x, y } = state.measureAnchor;
+    return `<circle cx="${x}" cy="${y}" r="6" fill="#22c55e" stroke="#fff" stroke-width="2"/>`
+      + `<circle cx="${x}" cy="${y}" r="14" fill="none" stroke="#22c55e" stroke-width="1.5" stroke-dasharray="3 2" opacity="0.85"/>`;
+  }
+
+  async function saveMeasureLine(x1, y1, x2, y2) {
+    const pxLen = Math.hypot(x2 - x1, y2 - y1);
+    if (pxLen < 3) return;
+    const measureInfo = formatMeasureLength(pxLen);
+    await saveMarkup({
+      markup_type: 'measure',
+      geometry: { points: [x1, y1, x2, y2] },
+      measurement_value: measureInfo.value,
+      measurement_unit: measureInfo.unit,
+      style: { ...toolStyle('measure') },
+    });
+    state.measureAnchor = null;
+    state.tempMarkup = null;
+  }
+
   function focusOnPoint(x, y) {
     const { w, h } = canvasDims();
     if (!w || !h) return;
@@ -2106,7 +2188,7 @@
       <marker id="arrowhead" markerWidth="10" markerHeight="10" refX="8" refY="5" orient="auto" markerUnits="strokeWidth">
         <polygon points="0 0, 10 5, 0 10" fill="context-stroke"/>
       </marker>
-    </defs>${shapes}${state.tempMarkup || ''}`;
+    </defs>${shapes}${measureAnchorMarkup()}${state.tempMarkup || ''}`;
     updateMarkupToolbar();
     renderPropertiesPanel();
     renderMarkupList();
@@ -2121,7 +2203,7 @@
     const op = style.opacity != null ? style.opacity : 1;
     const fillOp = style.fillOpacity != null ? style.fillOpacity : 0.25;
     const fill = style.fill || (m.markup_type === 'highlight' ? `rgba(250,204,21,${fillOp})` : 'none');
-    const selected = state.selectedMarkupId === m.id;
+    const selected = isMarkupSelected(m.id);
     const selStroke = selected ? '#fbbf24' : color;
     const selSw = selected ? sw + 2 : sw;
     const scallop = style.cloudScallop || state.markupStyle.cloudScallop || 18;
@@ -2696,7 +2778,7 @@
 
   function setTool(tool) {
     if (state.tool !== tool) {
-      state.selectedMarkupId = null;
+      clearMarkupSelection();
       state.draggingMarkup = null;
       state.pendingDrag = null;
       state.drawing = false;
@@ -2704,6 +2786,11 @@
       state.tempMarkup = null;
       state.penPoints = null;
       state.pathPoints = null;
+      state.selectMarquee = false;
+      state.measureAnchor = null;
+      state.measureDragged = false;
+      state.measureFromAnchor = false;
+      state.measureGestureOrigin = null;
     }
     state.tool = tool;
     const defaults = TOOL_STYLE_DEFAULTS[tool];
@@ -2747,23 +2834,29 @@
 
   function updateMarkupToolbar() {
     const btn = document.getElementById('btnDeleteMarkup');
-    if (btn) btn.classList.toggle('hidden', !state.selectedMarkupId);
+    const hasSelection = state.selectedMarkupIds.size > 0 || state.selectedMarkupId;
+    if (btn) btn.classList.toggle('hidden', !hasSelection);
   }
 
   async function deleteSelectedMarkup() {
-    if (!state.selectedMarkupId) return;
-    const m = state.markups.find(x => x.id === state.selectedMarkupId);
-    if (!m || !await drawConfirm('Delete this markup?', { title: 'Delete markup', danger: true, confirmLabel: 'Delete' })) return;
-    try {
-      await api(`/api/drawings/markups/${m.id}`, { method: 'DELETE' });
-    } catch (e) {
-      if (e.status !== 404) { alert(e.message); return; }
+    const ids = state.selectedMarkupIds.size
+      ? [...state.selectedMarkupIds]
+      : (state.selectedMarkupId ? [state.selectedMarkupId] : []);
+    if (!ids.length) return;
+    const label = ids.length === 1 ? 'Delete this markup?' : `Delete ${ids.length} markups?`;
+    if (!await drawConfirm(label, { title: 'Delete markup', danger: true, confirmLabel: 'Delete' })) return;
+    for (const id of ids) {
+      try {
+        await api(`/api/drawings/markups/${id}`, { method: 'DELETE' });
+      } catch (e) {
+        if (e.status !== 404) { alert(e.message); return; }
+      }
     }
-    state.markups = state.markups.filter(x => x.id !== m.id);
-    state.selectedMarkupId = null;
+    state.markups = state.markups.filter(x => !ids.includes(x.id));
+    clearMarkupSelection();
     renderMarkupOverlay();
     renderPropertiesPanel();
-    toast('Markup deleted');
+    toast(ids.length === 1 ? 'Markup deleted' : `${ids.length} markups deleted`);
   }
 
   function bindTextDialog() {
@@ -2833,18 +2926,23 @@
     if (!state.openDrawing || state.view !== 'viewer') return;
     const tag = (e.target?.tagName || '').toLowerCase();
     if (tag === 'input' || tag === 'textarea' || tag === 'select' || e.target?.isContentEditable) return;
-    if ((e.key === 'Delete' || e.key === 'Backspace') && state.selectedMarkupId) {
+    if ((e.key === 'Delete' || e.key === 'Backspace') && (state.selectedMarkupIds.size || state.selectedMarkupId)) {
       e.preventDefault();
       deleteSelectedMarkup();
       return;
     }
     if (e.key === 'Escape') {
-      state.selectedMarkupId = null;
+      clearMarkupSelection();
       state.drawing = false;
       state.drawStart = null;
       state.tempMarkup = null;
       state.penPoints = null;
       state.pathPoints = null;
+      state.selectMarquee = false;
+      state.measureAnchor = null;
+      state.measureDragged = false;
+      state.measureFromAnchor = false;
+      state.measureGestureOrigin = null;
       setTool('pan');
       return;
     }
@@ -2879,7 +2977,7 @@
     }
     if (state.tool !== 'select' && state.tool !== 'pan') return;
     if (hit.markup_type === 'text' || hit.markup_type === 'textbox' || hit.markup_type === 'callout') {
-      state.selectedMarkupId = hit.id;
+      setMarkupSelection(new Set([hit.id]), hit.id);
       const g = resolveGeom(hit.geometry || {});
       showTextEditor({ x: g.x + 8, y: g.y + 8 }, hit);
       renderMarkupOverlay();
@@ -2974,24 +3072,32 @@
     if (state.tool === 'select') {
       const pt = screenToDoc(evt);
       const hit = hitTestMarkup(pt);
-      const newId = hit ? hit.id : null;
-      const selectionChanged = state.selectedMarkupId !== newId;
-      state.selectedMarkupId = newId;
       if (hit) {
-        state.pendingDrag = {
-          id: hit.id,
-          startPt: pt,
-          orig: JSON.parse(JSON.stringify(hit.geometry || {})),
-          moved: false,
-        };
-      } else {
-        state.pendingDrag = null;
-      }
-      state.draggingMarkup = null;
-      if (selectionChanged) {
+        if (evt.shiftKey) {
+          const ids = new Set(state.selectedMarkupIds);
+          if (ids.has(hit.id)) ids.delete(hit.id);
+          else ids.add(hit.id);
+          setMarkupSelection(ids, hit.id);
+        } else {
+          setMarkupSelection(new Set([hit.id]), hit.id);
+          state.pendingDrag = {
+            id: hit.id,
+            startPt: pt,
+            orig: JSON.parse(JSON.stringify(hit.geometry || {})),
+            moved: false,
+          };
+        }
+        state.draggingMarkup = null;
         renderMarkupOverlay();
         renderPropertiesPanel();
+        return;
       }
+      state.selectMarquee = true;
+      state.drawing = true;
+      state.drawStart = pt;
+      state.pendingDrag = null;
+      state.draggingMarkup = null;
+      if (!evt.shiftKey) clearMarkupSelection();
       return;
     }
     const pt = screenToDoc(evt);
@@ -3030,7 +3136,21 @@
       placePunchPin(pt);
       return;
     }
-    if (['line', 'rect', 'cloud', 'arrow', 'highlight', 'measure', 'ellipse', 'callout', 'text', 'crossout'].includes(state.tool)) {
+    if (state.tool === 'measure') {
+      if (state.measureAnchor) {
+        state.drawing = true;
+        state.drawStart = { x: state.measureAnchor.x, y: state.measureAnchor.y };
+        state.measureFromAnchor = true;
+      } else {
+        state.drawing = true;
+        state.drawStart = pt;
+        state.measureFromAnchor = false;
+      }
+      state.measureDragged = false;
+      state.measureGestureOrigin = pt;
+      return;
+    }
+    if (['line', 'rect', 'cloud', 'arrow', 'highlight', 'ellipse', 'callout', 'text', 'crossout'].includes(state.tool)) {
       state.drawing = true;
       state.drawStart = pt;
       return;
@@ -3071,6 +3191,15 @@
       applyViewTransform();
       return;
     }
+    if (state.tool === 'measure' && state.measureAnchor && !state.drawing) {
+      const pt = screenToDoc(evt);
+      const a = state.measureAnchor;
+      const pxLen = Math.hypot(pt.x - a.x, pt.y - a.y);
+      const measureLabel = formatMeasureLength(pxLen).display;
+      state.tempMarkup = measureLineVisual(a.x, a.y, pt.x, pt.y, '#22c55e', 2, 0.85, measureLabel);
+      renderMarkupOverlay();
+      return;
+    }
     if (state.pendingDrag && !state.draggingMarkup) {
       const pt = screenToDoc(evt);
       const dx = pt.x - state.pendingDrag.startPt.x;
@@ -3088,6 +3217,17 @@
       const rw = Math.abs(pt.x - s.x);
       const rh = Math.abs(pt.y - s.y);
       state.tempMarkup = `<rect x="${x}" y="${y}" width="${rw}" height="${rh}" stroke="#a78bfa" stroke-width="2" fill="rgba(167,139,250,0.15)" stroke-dasharray="4 2"/>`;
+      renderMarkupOverlay();
+      return;
+    }
+    if (state.tool === 'select' && state.selectMarquee && state.drawing && state.drawStart) {
+      const pt = screenToDoc(evt);
+      const s = state.drawStart;
+      const x = Math.min(s.x, pt.x);
+      const y = Math.min(s.y, pt.y);
+      const rw = Math.abs(pt.x - s.x);
+      const rh = Math.abs(pt.y - s.y);
+      state.tempMarkup = `<rect x="${x}" y="${y}" width="${rw}" height="${rh}" stroke="#fbbf24" stroke-width="2" fill="rgba(251,191,36,0.12)" stroke-dasharray="4 2"/>`;
       renderMarkupOverlay();
       return;
     }
@@ -3122,6 +3262,11 @@
     }
     if (!state.drawing || !state.drawStart) return;
     const pt = screenToDoc(evt);
+    if (state.tool === 'measure' && state.measureGestureOrigin) {
+      if (Math.hypot(pt.x - state.measureGestureOrigin.x, pt.y - state.measureGestureOrigin.y) > 4) {
+        state.measureDragged = true;
+      }
+    }
     const s = state.drawStart;
     const activeStyle = toolStyle(state.tool);
     const sw = activeStyle.lineWidth || 2;
@@ -3213,6 +3358,30 @@
       renderPropertiesPanel();
       return;
     }
+    if (state.tool === 'select' && state.selectMarquee && state.drawing && state.drawStart) {
+      const pt = screenToDoc(evt);
+      const s = state.drawStart;
+      const x = Math.min(s.x, pt.x);
+      const y = Math.min(s.y, pt.y);
+      const rw = Math.abs(pt.x - s.x);
+      const rh = Math.abs(pt.y - s.y);
+      state.selectMarquee = false;
+      state.drawing = false;
+      state.drawStart = null;
+      state.tempMarkup = null;
+      if (rw >= 5 && rh >= 5) {
+        const rect = { x, y, w: rw, h: rh };
+        const ids = evt.shiftKey ? new Set(state.selectedMarkupIds) : new Set();
+        visibleMarkups().forEach(m => {
+          if (markupIntersectsRect(m, rect)) ids.add(m.id);
+        });
+        const primary = ids.size ? [...ids][ids.size - 1] : null;
+        setMarkupSelection(ids, primary);
+      }
+      renderMarkupOverlay();
+      renderPropertiesPanel();
+      return;
+    }
     if (state.tool === 'pen' && state.drawing) {
       if (state.penPoints && state.penPoints.length >= 4) {
         await saveMarkup({
@@ -3224,6 +3393,33 @@
       state.drawing = false;
       state.penPoints = null;
       state.tempMarkup = null;
+      return;
+    }
+    if (state.tool === 'measure' && state.drawing && state.drawStart) {
+      const pt = screenToDoc(evt);
+      const s = state.drawStart;
+      const pxLen = Math.hypot(pt.x - s.x, pt.y - s.y);
+      state.drawing = false;
+      state.drawStart = null;
+      state.measureGestureOrigin = null;
+      state.measureFromAnchor = false;
+      if (state.measureDragged && pxLen >= 3) {
+        await saveMeasureLine(s.x, s.y, pt.x, pt.y);
+      } else if (!state.measureDragged && pxLen < 4) {
+        if (!state.measureAnchor) {
+          state.measureAnchor = { x: s.x, y: s.y };
+          state.tempMarkup = null;
+          toast('Click second point — pan/zoom as needed (Alt+drag)');
+        }
+      } else if (state.measureFromAnchor && state.measureAnchor && pxLen >= 3) {
+        await saveMeasureLine(state.measureAnchor.x, state.measureAnchor.y, pt.x, pt.y);
+      } else if (!state.measureDragged && !state.measureAnchor && pxLen >= 3) {
+        await saveMeasureLine(s.x, s.y, pt.x, pt.y);
+      } else {
+        state.tempMarkup = null;
+      }
+      state.measureDragged = false;
+      renderMarkupOverlay();
       return;
     }
     if (!state.drawing || !state.drawStart) return;
@@ -3239,7 +3435,7 @@
         if (type === 'text') {
           const hit = hitTestMarkup(pt);
           if (hit && (hit.markup_type === 'text' || hit.markup_type === 'textbox')) {
-            state.selectedMarkupId = hit.id;
+            setMarkupSelection(new Set([hit.id]), hit.id);
             showTextEditor(pt, hit);
           }
         }
@@ -3272,7 +3468,7 @@
         return;
       }
       label = '';
-    } else if (['line', 'arrow', 'measure'].includes(type)) {
+    } else if (['line', 'arrow'].includes(type)) {
       const pxLen = Math.hypot(pt.x - s.x, pt.y - s.y);
       if (pxLen < 3) {
         state.drawing = false;
@@ -3281,16 +3477,12 @@
         return;
       }
       geometry = { points: [s.x, s.y, pt.x, pt.y] };
-      if (type === 'measure') {
-        const m = formatMeasureLength(pxLen);
-        measurement_value = m.value;
-      }
     }
     state.drawing = false;
     state.drawStart = null;
     state.tempMarkup = null;
-    const measureInfo = type === 'measure' ? formatMeasureLength(Math.hypot(pt.x - s.x, pt.y - s.y)) : null;
-    const saveType = type === 'crossout' ? 'crossout' : (type === 'measure' ? 'measure' : type);
+    const measureInfo = null;
+    const saveType = type === 'crossout' ? 'crossout' : type;
     await saveMarkup({
       markup_type: saveType,
       geometry,
@@ -3365,7 +3557,7 @@
   function focusPlacedPin(markup) {
     if (!markup?.id) return;
     state.tool = 'select';
-    state.selectedMarkupId = markup.id;
+    setMarkupSelection(new Set([markup.id]), markup.id);
     state.pendingDrag = null;
     state.draggingMarkup = null;
     const g = markup.geometry || {};

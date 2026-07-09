@@ -5,7 +5,9 @@ import array
 import base64
 import io
 import math
+import os
 import re
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from typing import Any
 
 from PIL import Image
@@ -55,6 +57,33 @@ def _render_page_image(pdf_path: str, page_index: int = 0, dpi: int = 120):
         return _pixmap_to_pil(pix), pw, ph
     finally:
         doc.close()
+
+
+def _cached_page_render(path: str, dpi: int, cache: dict, numpy_mode: bool):
+    """Render or reuse a cached page image for the current search request."""
+    try:
+        mtime = os.path.getmtime(path)
+    except OSError:
+        mtime = 0
+    key = (path, dpi, mtime, numpy_mode)
+    if key in cache:
+        return cache[key]
+    if numpy_mode:
+        gray, pw, ph = _render_page_gray(path, 0, dpi=dpi)
+        if gray is None:
+            rendered = (None, 0, 0, None, True)
+        else:
+            gh, gw = gray.shape[:2]
+            rendered = (gray, gw, gh, gray, False)
+    else:
+        sheet_pil, pw, ph = _render_page_image(path, 0, dpi=dpi)
+        if sheet_pil is None:
+            rendered = (None, 0, 0, None, True)
+        else:
+            gw, gh = sheet_pil.size
+            rendered = (sheet_pil, gw, gh, sheet_pil, True)
+    cache[key] = rendered
+    return rendered
 
 
 def _render_page_gray(pdf_path: str, page_index: int = 0, dpi: int = 120):
@@ -450,7 +479,7 @@ def _match_template_pil(sheet: Image.Image, template: Image.Image, threshold: fl
                 rough.append((x, y, float(score)))
 
     refine_radius = max(step, 12)
-    seeds: list[tuple[int, int, float]] = list(rough[:12])
+    seeds: list[tuple[int, int, float]] = list(rough[:8])
     if not any(s[0] == best_xy[0] and s[1] == best_xy[1] for s in seeds):
         seeds.insert(0, (best_xy[0], best_xy[1], best_score))
     matches: list[tuple[int, int, float]] = []
@@ -492,6 +521,51 @@ def _match_template(gray, template, threshold: float = 0.82):
     return []
 
 
+def _search_shape_on_sheet(
+    drawing: dict,
+    path: str,
+    template_pil: Image.Image,
+    template_arr,
+    tw: int,
+    th: int,
+    threshold: float,
+    use_numpy: bool,
+    dpi: int,
+    cache: dict,
+) -> list[dict[str, Any]]:
+    """Search one sheet; safe to run in a worker thread."""
+    rendered, gw, gh, thumb_src, thumb_is_pil = _cached_page_render(path, dpi, cache, use_numpy)
+    if rendered is None or not gw or not gh:
+        return []
+    try:
+        if use_numpy:
+            hits = _match_template(rendered, template_arr, threshold=threshold)
+        else:
+            hits = _match_template_pil(rendered, template_pil, threshold=threshold)
+    except Exception:
+        return []
+
+    out: list[dict[str, Any]] = []
+    for x, y, score in hits:
+        if thumb_is_pil:
+            thumb = _thumb_from_pil(thumb_src, x, y, tw, th)
+        else:
+            thumb = _thumb_b64(thumb_src, x, y, tw, th)
+        out.append({
+            'drawing_id': drawing['id'],
+            'sheet_number': drawing.get('sheet_number'),
+            'title': drawing.get('title'),
+            'nx': float(x / gw),
+            'ny': float(y / gh),
+            'nw': float(tw / gw),
+            'nh': float(th / gh),
+            'score': round(score, 3),
+            'page': 0,
+            'thumb': thumb,
+        })
+    return out
+
+
 def search_shape(
     drawings: list,
     template_b64: str,
@@ -510,57 +584,47 @@ def search_shape(
 
     template_arr = _decode_template_array(template_b64)
     use_numpy = template_arr is not None
+    render_cache: dict = {}
 
-    results: list[dict[str, Any]] = []
+    jobs: list[tuple[dict, str]] = []
     for d in drawings[:max_sheets]:
         rev = d.get('_rev')
         path = resolve_drawing_file_path(rev.file_path if rev else None, upload_root)
-        if not path:
-            continue
-        try:
-            if use_numpy:
-                gray, _pw_pts, _ph_pts = _render_page_gray(path, 0, dpi=120)
-                if gray is None:
-                    continue
-                gh, gw = gray.shape[:2]
-                hits = _match_template(gray, template_arr, threshold=threshold)
-                thumb_src = gray
-                thumb_is_pil = False
-            else:
-                sheet_pil, _pw_pts, _ph_pts = _render_page_image(path, 0, dpi=120)
-                if sheet_pil is None:
-                    continue
-                gw, gh = sheet_pil.size
-                hits = _match_template_pil(sheet_pil, template_pil, threshold=threshold)
-                thumb_src = sheet_pil
-                thumb_is_pil = True
-        except Exception:
-            continue
+        if path:
+            jobs.append((d, path))
 
-        for x, y, score in hits:
-            nx = float(x / gw)
-            ny = float(y / gh)
-            nw = float(tw / gw)
-            nh = float(th / gh)
-            if thumb_is_pil:
-                thumb = _thumb_from_pil(thumb_src, x, y, tw, th)
-            else:
-                thumb = _thumb_b64(thumb_src, x, y, tw, th)
-            results.append({
-                'drawing_id': d['id'],
-                'sheet_number': d.get('sheet_number'),
-                'title': d.get('title'),
-                'nx': nx,
-                'ny': ny,
-                'nw': nw,
-                'nh': nh,
-                'score': round(score, 3),
-                'page': 0,
-                'thumb': thumb,
-            })
+    if not jobs:
+        return []
+
+    results: list[dict[str, Any]] = []
+    workers = min(6, max(1, os.cpu_count() or 2), len(jobs))
+    if workers == 1 or len(jobs) == 1:
+        for d, path in jobs:
+            results.extend(_search_shape_on_sheet(
+                d, path, template_pil, template_arr, tw, th, threshold, use_numpy, 120, render_cache,
+            ))
             if len(results) >= max_results:
-                return sorted(results, key=lambda r: r['score'], reverse=True)
-    return sorted(results, key=lambda r: r['score'], reverse=True)
+                return sorted(results, key=lambda r: r['score'], reverse=True)[:max_results]
+    else:
+        with ThreadPoolExecutor(max_workers=workers) as pool:
+            futures = {
+                pool.submit(
+                    _search_shape_on_sheet,
+                    d, path, template_pil, template_arr, tw, th, threshold, use_numpy, 120, {},
+                ): d
+                for d, path in jobs
+            }
+            for fut in as_completed(futures):
+                try:
+                    results.extend(fut.result())
+                except Exception:
+                    continue
+                if len(results) >= max_results:
+                    for pending in futures:
+                        pending.cancel()
+                    break
+
+    return sorted(results, key=lambda r: r['score'], reverse=True)[:max_results]
 
 
 def prepare_drawing_targets(Drawing, DrawingRevision, drawing_ids: list[int] | None, project_id: int):
