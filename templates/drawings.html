@@ -278,7 +278,7 @@
             <h2 class="text-lg font-semibold">Upload Drawings</h2>
             <button type="button" onclick="document.getElementById('uploadDrawingModal').close()" class="text-zinc-400 hover:text-white text-2xl">&times;</button>
         </div>
-        <p class="text-xs text-zinc-400 mb-4">Upload a single sheet or a full drawing set PDF — multi-page files are split automatically and each page is matched to its sheet number and revision from the title block (like spec book upload).</p>
+        <p class="text-xs text-zinc-400 mb-4">Upload a single sheet or a full drawing set PDF — multi-page files are split automatically. Each page is analyzed for sheet number, revision, and date from the title block. Pages that can't be read get a provisional number (filter <strong>For Review</strong> to fix them). Large sets may take a minute to process.</p>
         <div class="space-y-3 text-sm">
             <div>
                 <label class="block text-zinc-400 mb-1">Drawing Set Name</label>

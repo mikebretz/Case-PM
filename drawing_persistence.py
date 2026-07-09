@@ -31,17 +31,26 @@ DISCIPLINE_MAP = {
 }
 
 SHEET_RE = re.compile(
-    r'\b([A-Z]{1,3})[-_.\s]?(\d{1,4}(?:\.\d{2})?)\b',
+    r'\b([A-Z]{1,3})[-_.\s]?(\d{1,4}(?:\.\d{1,2})?)\b',
+    re.IGNORECASE,
+)
+CSI_SHEET_RE = re.compile(
+    r'\b([A-Z]{1,3})[-_.\s]?(\d{1,2})\.(\d{1,2})\b',
     re.IGNORECASE,
 )
 TITLE_BLOCK_RE = re.compile(
-    r'(?:SHEET|DRAWING|DWG\.?\s*NO\.?)[:\s#]*([A-Z]{1,3}[-_.\s]?\d{1,4}(?:\.\d{2})?)',
+    r'(?:SHEET|DRAWING|DWG\.?\s*NO\.?|SHT\.?)[:\s#]*([A-Z]{1,3}[-_.\s]?\d{1,4}(?:\.\d{1,2})?)',
     re.IGNORECASE,
 )
 REVISION_RE = re.compile(
     r'(?:REV(?:ISION)?\.?|REVISION)\s*[#:.]?\s*(\d{1,3}|[A-Z])',
     re.IGNORECASE,
 )
+DATE_RE = re.compile(
+    r'(?:DATE|DRAWN|ISSUE(?:D)?|REVISION\s+DATE|PROJECT\s+DATE)[:\s#]*(\d{1,2}[/.-]\d{1,2}[/.-]\d{2,4})',
+    re.IGNORECASE,
+)
+DATE_FALLBACK_RE = re.compile(r'\b(\d{1,2}[/.-]\d{1,2}[/.-]\d{2,4})\b')
 # Filename / OCR false positives (e.g. "Drawings_Rev_3.pdf" → not sheet REV-3)
 INVALID_SHEET_PREFIXES = frozenset({'REV', 'RE', 'R'})
 VALID_SHEET_PREFIXES = frozenset(DISCIPLINE_MAP.keys()) | frozenset({
@@ -88,26 +97,48 @@ def _iso(dt):
 def normalize_sheet_number(raw: str) -> str | None:
     if not raw:
         return None
-    text = str(raw).strip().upper().replace('_', '-').replace('.', '-')
+    text = str(raw).strip().upper().replace(' ', '')
+
+    # CSI / architectural: A1.01, S2.01, AD1.02
+    m = CSI_SHEET_RE.search(text)
+    if m:
+        sheet = f'{m.group(1)}-{m.group(2)}.{m.group(3)}'
+        if is_plausible_drawing_sheet(sheet):
+            return sheet
+
+    # Compact: A101, AD102, S201
+    m = re.match(r'^([A-Z]{1,3})(\d{3,4})$', text.replace('-', '').replace('_', ''))
+    if m:
+        sheet = f'{m.group(1)}-{m.group(2)}'
+        if is_plausible_drawing_sheet(sheet):
+            return sheet
+
+    text = text.replace('_', '-')
     m = SHEET_RE.search(text)
     if not m:
         return None
-    prefix, num = m.group(1).upper(), m.group(2).replace('.', '-')
-    sheet = f'{prefix}-{num}'
+    prefix, num = m.group(1).upper(), m.group(2)
+    if '.' in num:
+        sheet = f'{prefix}-{num}'
+    else:
+        sheet = f'{prefix}-{num}'
     if not is_plausible_drawing_sheet(sheet):
         return None
     return sheet
 
 
 def is_plausible_drawing_sheet(sheet_number: str) -> bool:
-    if not sheet_number or '-' not in sheet_number:
+    if not sheet_number:
+        return False
+    if sheet_number.startswith('UNASSIGNED-'):
+        return True
+    if '-' not in sheet_number:
         return False
     prefix = sheet_number.split('-')[0].upper()
     if prefix in INVALID_SHEET_PREFIXES:
         return False
     if prefix in VALID_SHEET_PREFIXES:
         return True
-    # Allow other 1–3 letter prefixes if numeric part looks like a sheet index
     num_part = sheet_number.split('-', 1)[1]
     return bool(re.match(r'^\d{1,4}', num_part)) and prefix.isalpha() and len(prefix) <= 3
 
@@ -121,6 +152,76 @@ def extract_revision_from_text(text: str) -> str | None:
             return str(m.group(1)).upper()
     m = REVISION_RE.search(text)
     return str(m.group(1)).upper() if m else None
+
+
+def extract_drawing_date_from_text(text: str) -> date | None:
+    if not text:
+        return None
+    for line in (text.splitlines() or [])[-50:]:
+        m = DATE_RE.search(line)
+        if m:
+            parsed = _parse_date_token(m.group(1))
+            if parsed:
+                return parsed
+    for line in reversed((text.splitlines() or [])[-20:]):
+        m = DATE_FALLBACK_RE.search(line)
+        if m:
+            parsed = _parse_date_token(m.group(1))
+            if parsed:
+                return parsed
+    return None
+
+
+def _parse_date_token(token: str) -> date | None:
+    if not token:
+        return None
+    for fmt in ('%m/%d/%Y', '%m-%d-%Y', '%m.%d.%Y', '%m/%d/%y', '%m-%d-%y', '%m.%d.%y'):
+        try:
+            return datetime.strptime(token.strip(), fmt).date()
+        except ValueError:
+            continue
+    return None
+
+
+def extract_pdf_page_text(pdf_path: str, page_index: int = 0) -> str:
+    """Extract embedded text from a PDF page (PyMuPDF first, then pypdf)."""
+    try:
+        import fitz
+        doc = fitz.open(pdf_path)
+        if page_index < len(doc):
+            text = doc[page_index].get_text('text') or doc[page_index].get_text() or ''
+            doc.close()
+            if text.strip():
+                return text
+        else:
+            doc.close()
+    except Exception:
+        pass
+    try:
+        from pypdf import PdfReader
+        reader = PdfReader(pdf_path)
+        if page_index < len(reader.pages):
+            return reader.pages[page_index].extract_text() or ''
+    except Exception:
+        pass
+    return ''
+
+
+def provisional_sheet_number(set_name: str, page_index: int, upload_stamp: str) -> str:
+    slug = re.sub(r'[^A-Z0-9]', '', (set_name or 'SET').upper())[:8] or 'SET'
+    stamp = re.sub(r'[^0-9]', '', upload_stamp or '')[-6:] or '000000'
+    return f'UNASSIGNED-{slug}-{stamp}-P{page_index + 1:04d}'
+
+
+def ensure_unique_sheet_number(Drawing, project_id: int, sheet_number: str) -> str:
+    """Avoid unique-constraint collisions by suffixing -2, -3, etc."""
+    base = sheet_number
+    candidate = base
+    n = 2
+    while Drawing.query.filter_by(project_id=int(project_id), sheet_number=candidate).first():
+        candidate = f'{base}-{n}'
+        n += 1
+    return candidate
 
 
 def section_prefix(sheet_number: str) -> str:
@@ -160,7 +261,11 @@ def extract_sheet_from_pdf_text(text: str) -> str | None:
     if m:
         candidates.append(normalize_sheet_number(m.group(1)))
     lines = text.splitlines()
-    for line in list(lines[:20]) + list(reversed(lines[-40:])):
+    for line in list(lines[:25]) + list(reversed(lines[-50:])):
+        for match in CSI_SHEET_RE.finditer(line):
+            cand = normalize_sheet_number(f'{match.group(1)}-{match.group(2)}.{match.group(3)}')
+            if cand:
+                candidates.append(cand)
         for match in SHEET_RE.finditer(line):
             cand = normalize_sheet_number(f'{match.group(1)}-{match.group(2)}')
             if cand:
@@ -229,6 +334,8 @@ def detect_sheet_number(
     from_combined_set: bool = False,
 ) -> tuple[str | None, str, str, str | None]:
     """Returns (sheet_number, text, method, revision_from_sheet)."""
+    if not page_text:
+        page_text = extract_pdf_page_text(pdf_path, page_index)
     revision = extract_revision_from_text(page_text or '')
     if filename and not from_combined_set:
         sheet = extract_sheet_from_filename(filename)
@@ -249,23 +356,18 @@ def detect_sheet_number(
 
 def analyze_pdf_page(pdf_path: str, page_index: int = 0, from_combined_set: bool = False, source_filename: str | None = None) -> dict:
     """Analyze one page for sheet metadata (used during set upload)."""
-    text = ''
-    try:
-        from pypdf import PdfReader
-        reader = PdfReader(pdf_path)
-        if page_index < len(reader.pages):
-            text = reader.pages[page_index].extract_text() or ''
-    except Exception:
-        pass
+    text = extract_pdf_page_text(pdf_path, page_index)
     sheet, full_text, method, revision = detect_sheet_number(
         pdf_path, source_filename, text, page_index, from_combined_set=from_combined_set,
     )
     title = extract_title_from_text(full_text, sheet)
+    drawing_date = extract_drawing_date_from_text(full_text)
     return {
         'page_index': page_index,
         'sheet_number': sheet,
         'revision': revision,
         'title': title,
+        'drawing_date': drawing_date,
         'discipline': discipline_from_sheet(sheet) if sheet else None,
         'detection_method': method,
         'text_preview': (full_text or '')[:240],
@@ -364,14 +466,38 @@ def extract_title_from_text(text: str, sheet_number: str | None) -> str:
 
 def split_pdf_to_pages(source_path: str, out_dir: str) -> list[dict]:
     """Split a PDF into single-page files. Returns metadata per page."""
+    os.makedirs(out_dir, exist_ok=True)
+    results = []
+
+    try:
+        import fitz
+        doc = fitz.open(source_path)
+        for idx in range(len(doc)):
+            new_doc = fitz.open()
+            new_doc.insert_pdf(doc, from_page=idx, to_page=idx)
+            out_name = f'page_{idx + 1:04d}.pdf'
+            out_path = os.path.join(out_dir, out_name)
+            new_doc.save(out_path)
+            new_doc.close()
+            text = doc[idx].get_text('text') or doc[idx].get_text() or ''
+            results.append({
+                'page_index': idx,
+                'file_path': out_path,
+                'filename': out_name,
+                'text': text,
+            })
+        doc.close()
+        if results:
+            return results
+    except Exception:
+        pass
+
     try:
         from pypdf import PdfReader, PdfWriter
     except ImportError:
         raise RuntimeError('pypdf is required for drawing set uploads. Install with: pip install pypdf')
 
-    os.makedirs(out_dir, exist_ok=True)
     reader = PdfReader(source_path)
-    results = []
     for idx, page in enumerate(reader.pages):
         writer = PdfWriter()
         writer.add_page(page)
@@ -549,6 +675,7 @@ def upsert_drawing_from_upload(
     uploaded_by_id,
     notes='',
     sheet_revision=None,
+    status='Current',
 ):
     """Create or revise a drawing sheet from an uploaded page."""
     sheet_number = normalize_sheet_number(sheet_number) or sheet_number
@@ -558,6 +685,7 @@ def upsert_drawing_from_upload(
     drawing = Drawing.query.filter_by(project_id=project_id, sheet_number=sheet_number).first()
     now = datetime.utcnow()
     old_rev = None
+    sheet_status = status or 'Current'
 
     if not drawing:
         drawing = Drawing(
@@ -567,7 +695,7 @@ def upsert_drawing_from_upload(
             discipline=discipline or discipline_from_sheet(sheet_number),
             section_prefix=section_prefix(sheet_number),
             sort_key=sort_key_for_sheet(sheet_number),
-            status='Current',
+            status=sheet_status,
             created_at=now,
             updated_at=now,
         )
@@ -587,7 +715,7 @@ def upsert_drawing_from_upload(
             )
         drawing.title = title or drawing.title
         drawing.discipline = discipline or drawing.discipline
-        drawing.status = 'Current'
+        drawing.status = sheet_status if sheet_status == 'For Review' else 'Current'
         drawing.updated_at = now
 
     rev_label = f'Rev {rev_num}'
@@ -631,10 +759,12 @@ def process_pages_from_upload(
     upload_source,
     manual_sheet=None,
     manual_title=None,
+    upload_stamp=None,
 ):
     """Import one or more split PDF pages into the drawing register."""
     created = []
     needs_review = []
+    stamp = upload_stamp or datetime.utcnow().strftime('%Y%m%d%H%M%S')
 
     for page in pages:
         meta = analyze_pdf_page(
@@ -643,21 +773,31 @@ def process_pages_from_upload(
             from_combined_set=from_combined_set,
             source_filename=None if from_combined_set else original_filename,
         )
-        sheet_number = manual_sheet or meta.get('sheet_number')
-        if sheet_number:
-            sheet_number = normalize_sheet_number(sheet_number) or sheet_number
-        if not sheet_number or not is_plausible_drawing_sheet(sheet_number):
+        detected_sheet = meta.get('sheet_number')
+        if manual_sheet:
+            sheet_number = normalize_sheet_number(manual_sheet) or manual_sheet
+            sheet_status = 'Current'
+        elif detected_sheet and is_plausible_drawing_sheet(detected_sheet):
+            sheet_number = detected_sheet
+            sheet_status = 'Current'
+        else:
+            sheet_number = provisional_sheet_number(set_name, page['page_index'], stamp)
+            sheet_status = 'For Review'
             needs_review.append({
                 'page': page['page_index'] + 1,
                 'file': page.get('filename') or os.path.basename(page['file_path']),
+                'assigned_sheet': sheet_number,
                 'text_preview': meta.get('text_preview'),
                 'detected_revision': meta.get('revision'),
+                'detected_date': _iso(meta.get('drawing_date')),
                 'detection_method': meta.get('detection_method'),
             })
-            continue
 
+        sheet_number = ensure_unique_sheet_number(Drawing, project_id, sheet_number)
         page_text = page.get('text') or meta.get('text_preview') or ''
         title = manual_title or meta.get('title') or extract_title_from_text(page_text, sheet_number)
+        if sheet_status == 'For Review' and not title:
+            title = f'Page {page["page_index"] + 1} — assign sheet number'
         drawing, rev, _old = upsert_drawing_from_upload(
             db, Drawing, DrawingRevision, DrawingMarkup,
             project_id=int(project_id),
@@ -667,12 +807,13 @@ def process_pages_from_upload(
             file_path=page['file_path'],
             original_filename=original_filename,
             set_name=set_name,
-            drawing_date=None,
+            drawing_date=meta.get('drawing_date'),
             received_date=date.today(),
             upload_source=upload_source,
             uploaded_by_id=uploaded_by_id,
             notes=f'Page {page["page_index"] + 1} of {original_filename}' if from_combined_set else '',
             sheet_revision=meta.get('revision'),
+            status=sheet_status,
         )
         created.append({
             'id': drawing.id,
@@ -680,10 +821,15 @@ def process_pages_from_upload(
             'title': drawing.title,
             'revision_label': rev.revision_label,
             'revision_number': rev.revision_number,
+            'drawing_date': _iso(meta.get('drawing_date')),
             'discipline': drawing.discipline,
             'page': page['page_index'] + 1,
             'detection_method': meta.get('detection_method'),
+            'needs_review': sheet_status == 'For Review',
+            'status': drawing.status,
         })
+        if len(created) % 25 == 0:
+            db.session.flush()
 
     return created, needs_review
 

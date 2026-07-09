@@ -22,7 +22,7 @@ app.config['SECRET_KEY'] = 'case-pm-ultimate-secret-key-2026'
 app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///case_pm.db'
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 app.config['UPLOAD_FOLDER'] = 'uploads'
-app.config['MAX_CONTENT_LENGTH'] = 32 * 1024 * 1024  # 32MB
+app.config['MAX_CONTENT_LENGTH'] = 200 * 1024 * 1024  # 200MB for large drawing sets
 
 db = SQLAlchemy(app)
 
@@ -2823,6 +2823,9 @@ def api_upload_drawing():
                 'text': '',
             }]
 
+        if not pages:
+            return jsonify({'error': 'Could not read PDF pages. The file may be corrupt or password-protected.'}), 400
+
         from_combined_set = len(pages) > 1
         created, needs_review = process_pages_from_upload(
             db, Drawing, DrawingRevision, DrawingMarkup,
@@ -2835,12 +2838,13 @@ def api_upload_drawing():
             upload_source='combined_set' if from_combined_set else 'individual',
             manual_sheet=manual_sheet if not from_combined_set else None,
             manual_title=manual_title if not from_combined_set else None,
+            upload_stamp=ts,
         )
 
         if not created:
             db.session.rollback()
             return jsonify({
-                'error': 'No drawing pages could be imported. Check sheet numbers in title blocks or enter manually for single-page uploads.',
+                'error': 'No drawing pages could be imported.',
                 'needs_review': needs_review,
             }), 400
 
@@ -2850,6 +2854,7 @@ def api_upload_drawing():
             'ok': True,
             'split': from_combined_set,
             'created_count': len(created),
+            'needs_review_count': len(needs_review),
             'needs_review': needs_review,
             'drawings': drawings,
             'pages': created,
