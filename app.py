@@ -2779,8 +2779,7 @@ def api_drawing_thumbnail(drawing_id):
 def api_upload_drawing():
     from drawing_persistence import (
         upsert_drawing_from_upload,
-        extract_sheet_from_filename,
-        extract_sheet_from_pdf_text,
+        detect_sheet_number,
         extract_title_from_text,
         discipline_from_sheet,
     )
@@ -2794,7 +2793,7 @@ def api_upload_drawing():
         if not allowed_file(file.filename) or not file.filename.lower().endswith('.pdf'):
             return jsonify({'error': 'PDF files only'}), 400
 
-        sheet_number = request.form.get('sheet_number') or extract_sheet_from_filename(file.filename)
+        sheet_number = request.form.get('sheet_number')
         set_name = request.form.get('set_name') or 'Upload'
         folder = _drawing_folder(project_id)
         ts = datetime.utcnow().strftime('%Y%m%d%H%M%S')
@@ -2809,7 +2808,7 @@ def api_upload_drawing():
         except Exception:
             pass
         if not sheet_number:
-            sheet_number = extract_sheet_from_pdf_text(text)
+            sheet_number, text, _method = detect_sheet_number(dest, file.filename, text)
         if not sheet_number:
             return jsonify({'error': 'Could not detect sheet number. Enter it manually or rename file (e.g. A-101.pdf).'}), 400
 
@@ -2846,8 +2845,7 @@ def api_upload_drawing_set():
     from drawing_persistence import (
         split_pdf_to_pages,
         upsert_drawing_from_upload,
-        extract_sheet_from_pdf_text,
-        extract_sheet_from_filename,
+        detect_sheet_number,
         extract_title_from_text,
         discipline_from_sheet,
     )
@@ -2873,13 +2871,13 @@ def api_upload_drawing_set():
         created = []
         needs_review = []
         for page in pages:
-            sheet_number = extract_sheet_from_pdf_text(page['text'])
-            if not sheet_number:
-                sheet_number = extract_sheet_from_filename(page['filename'])
+            sheet_number, page_text, method = detect_sheet_number(
+                page['file_path'], file.filename, page.get('text'), page['page_index']
+            )
             if not sheet_number:
                 needs_review.append({'page': page['page_index'] + 1, 'file': page['filename']})
                 continue
-            title = extract_title_from_text(page['text'], sheet_number)
+            title = extract_title_from_text(page_text, sheet_number)
             drawing, rev, _old = upsert_drawing_from_upload(
                 db, Drawing, DrawingRevision, DrawingMarkup,
                 project_id=int(project_id),
@@ -2914,10 +2912,8 @@ def api_substitute_drawings():
     """Replace existing sheets with revised pages; old revisions archived automatically."""
     from drawing_persistence import (
         upsert_drawing_from_upload,
-        extract_sheet_from_filename,
-        extract_sheet_from_pdf_text,
+        detect_sheet_number,
         extract_title_from_text,
-        discipline_from_sheet,
         split_pdf_to_pages,
     )
     try:
@@ -2949,7 +2945,7 @@ def api_substitute_drawings():
                     text = reader.pages[0].extract_text() or ''
             except Exception:
                 pass
-            sheet_number = extract_sheet_from_filename(original_name) or extract_sheet_from_pdf_text(text)
+            sheet_number, page_text, _method = detect_sheet_number(file_path, original_name, text)
             if not sheet_number:
                 skipped.append({'file': original_name, 'reason': 'Sheet number not detected'})
                 return
@@ -2957,7 +2953,7 @@ def api_substitute_drawings():
             if not existing:
                 skipped.append({'file': original_name, 'sheet': sheet_number, 'reason': 'No existing sheet to replace'})
                 return
-            title = extract_title_from_text(text, sheet_number) or existing.title
+            title = extract_title_from_text(page_text or text, sheet_number) or existing.title
             drawing, rev, old_rev = upsert_drawing_from_upload(
                 db, Drawing, DrawingRevision, DrawingMarkup,
                 project_id=int(project_id),
@@ -3039,6 +3035,7 @@ def api_drawing_markups(drawing_id):
         markup.layer = 'published'
         markup.published_at = datetime.utcnow()
     db.session.add(markup)
+    db.session.flush()
 
     if markup.markup_type == 'rfi_pin' and markup.linked_rfi_id:
         rfi = RFI.query.get(markup.linked_rfi_id)
@@ -3051,7 +3048,9 @@ def api_drawing_markups(drawing_id):
                 'drawing_sheet': drawing.sheet_number,
                 'x': geom.get('x', 0),
                 'y': geom.get('y', 0),
-                'markup_id': None,
+                'nx': geom.get('nx'),
+                'ny': geom.get('ny'),
+                'markup_id': markup.id,
                 'note': body.get('label') or '',
                 'created_at': datetime.utcnow().isoformat(),
             })
@@ -3102,6 +3101,65 @@ def api_drawings_rfis():
         return jsonify({'error': 'project_id required'}), 400
     rfis = RFI.query.filter_by(project_id=int(project_id)).filter(RFI.status != 'Void').all()
     return jsonify({'rfis': [{'id': r.id, 'number': r.number, 'subject': r.subject, 'drawing_reference': r.drawing_reference} for r in rfis]})
+
+
+@app.route('/api/drawings/by-sheet', methods=['GET'])
+@login_required
+def api_drawing_by_sheet():
+    project_id = request.args.get('project_id', type=int) or get_current_project_id()
+    sheet = request.args.get('sheet', '').strip()
+    if not project_id or not sheet:
+        return jsonify({'error': 'project_id and sheet required'}), 400
+    from drawing_persistence import normalize_sheet_number
+    norm = normalize_sheet_number(sheet) or sheet.upper()
+    drawing = Drawing.query.filter_by(project_id=int(project_id), sheet_number=norm).first()
+    if not drawing:
+        drawing = Drawing.query.filter(
+            Drawing.project_id == int(project_id),
+            Drawing.sheet_number.ilike(f'%{sheet}%'),
+        ).first()
+    if not drawing:
+        return jsonify({'error': 'Drawing not found'}), 404
+    return jsonify(_serialize_drawing(drawing))
+
+
+@app.route('/api/drawings/takeoff', methods=['GET'])
+@login_required
+def api_drawings_takeoff():
+    from drawing_persistence import collect_takeoff_items
+    project_id = request.args.get('project_id', type=int) or get_current_project_id()
+    drawing_id = request.args.get('drawing_id', type=int)
+    if not project_id:
+        return jsonify({'error': 'project_id required'}), 400
+    items = collect_takeoff_items(DrawingMarkup, Drawing, int(project_id), drawing_id)
+    return jsonify({'items': items})
+
+
+@app.route('/api/drawings/export-takeoff-to-budget', methods=['POST'])
+@login_required
+def api_export_takeoff_to_budget():
+    from budget_persistence import get_budget_state, save_budget_state, merge_state_patch
+    from drawing_persistence import collect_takeoff_items, export_takeoff_to_budget_state
+    body = request.get_json(silent=True) or {}
+    project_id = body.get('project_id') or get_current_project_id()
+    if not project_id:
+        return jsonify({'error': 'project_id required'}), 400
+    project_id = int(project_id)
+    drawing_id = body.get('drawing_id')
+    cost_code = (body.get('cost_code') or '01-000').strip()
+    cost_type = body.get('cost_type') or 'Subcontract'
+    items = collect_takeoff_items(DrawingMarkup, Drawing, project_id, drawing_id)
+    if not items:
+        return jsonify({'error': 'No takeoff measurements found'}), 400
+    record, existing = get_budget_state(BudgetProjectState, project_id)
+    merged = export_takeoff_to_budget_state(existing, items, cost_code=cost_code, cost_type=cost_type)
+    record = save_budget_state(BudgetProjectState, db, project_id, merged, current_user.id)
+    return jsonify({
+        'ok': True,
+        'imported': len(items),
+        'version': record.version,
+        'items': items,
+    })
 
 
 @app.route('/budget')

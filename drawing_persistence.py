@@ -129,6 +129,149 @@ def extract_sheet_from_pdf_text(text: str) -> str | None:
     return normalize_sheet_number(text[:500])
 
 
+def ocr_extract_sheet_from_pdf(pdf_path: str, page_index: int = 0) -> tuple[str | None, str]:
+    """Render title-block region with PyMuPDF and run Tesseract OCR when available."""
+    ocr_text = ''
+    try:
+        import fitz
+    except ImportError:
+        return None, ocr_text
+
+    try:
+        doc = fitz.open(pdf_path)
+        if page_index >= len(doc):
+            return None, ocr_text
+        page = doc[page_index]
+        embedded = page.get_text() or ''
+        sheet = extract_sheet_from_pdf_text(embedded)
+        if sheet:
+            return sheet, embedded
+
+        rect = page.rect
+        clips = [
+            fitz.Rect(rect.width * 0.55, rect.height * 0.72, rect.width, rect.height),
+            fitz.Rect(0, rect.height * 0.72, rect.width * 0.45, rect.height),
+            fitz.Rect(rect.width * 0.35, rect.height * 0.65, rect.width, rect.height),
+        ]
+        try:
+            import pytesseract
+            from PIL import Image
+            import io
+        except ImportError:
+            return None, embedded
+
+        for clip in clips:
+            try:
+                pix = page.get_pixmap(matrix=fitz.Matrix(2.5, 2.5), clip=clip, alpha=False)
+                img = Image.open(io.BytesIO(pix.tobytes('png')))
+                chunk = pytesseract.image_to_string(img) or ''
+                ocr_text += '\n' + chunk
+                sheet = extract_sheet_from_pdf_text(chunk)
+                if sheet:
+                    return sheet, ocr_text
+                sheet = normalize_sheet_number(chunk)
+                if sheet:
+                    return sheet, ocr_text
+            except Exception:
+                continue
+        return extract_sheet_from_pdf_text(ocr_text), ocr_text
+    except Exception:
+        return None, ocr_text
+
+
+def detect_sheet_number(pdf_path: str, filename: str | None = None, page_text: str | None = None, page_index: int = 0) -> tuple[str | None, str, str]:
+    """Filename → embedded PDF text → OCR. Returns (sheet, text, method)."""
+    if filename:
+        sheet = extract_sheet_from_filename(filename)
+        if sheet:
+            return sheet, page_text or '', 'filename'
+    if page_text:
+        sheet = extract_sheet_from_pdf_text(page_text)
+        if sheet:
+            return sheet, page_text, 'pdf_text'
+    sheet, ocr_text = ocr_extract_sheet_from_pdf(pdf_path, page_index)
+    if sheet:
+        return sheet, ocr_text or page_text or '', 'ocr'
+    return None, page_text or ocr_text or '', 'none'
+
+
+def collect_takeoff_items(DrawingMarkup, Drawing, project_id, drawing_id=None):
+    """Gather measure/area takeoff markups for budget export."""
+    q = db_query_markups(DrawingMarkup, Drawing, project_id, drawing_id)
+    items = []
+    for m, drawing in q:
+        if m.markup_type not in ('measure', 'rect', 'cloud'):
+            continue
+        geom = _parse_json(m.geometry_json, {})
+        val = m.measurement_value
+        unit = m.measurement_unit or 'ft'
+        label = m.label or m.markup_type
+        if m.markup_type in ('rect', 'cloud') and geom.get('w') and geom.get('h') and not val:
+            val = round((geom.get('w', 0) * geom.get('h', 0)) / 100, 2)
+            unit = 'sq ft (scaled)'
+        if val is None and m.markup_type == 'measure':
+            continue
+        items.append({
+            'markup_id': m.id,
+            'drawing_id': drawing.id,
+            'sheet_number': drawing.sheet_number,
+            'description': f'{drawing.sheet_number} — {label}',
+            'quantity': val,
+            'unit': unit,
+            'markup_type': m.markup_type,
+        })
+    return items
+
+
+def db_query_markups(DrawingMarkup, Drawing, project_id, drawing_id=None):
+    q = DrawingMarkup.query.join(Drawing, DrawingMarkup.drawing_id == Drawing.id).filter(
+        Drawing.project_id == int(project_id)
+    )
+    if drawing_id:
+        q = q.filter(DrawingMarkup.drawing_id == int(drawing_id))
+    return q.with_entities(DrawingMarkup, Drawing).all()
+
+
+def export_takeoff_to_budget_state(existing_state, takeoff_items, cost_code='01-000', cost_type='Subcontract'):
+    """Merge takeoff lines into budgetLines bundle."""
+    state = dict(existing_state or {})
+    lines = list(state.get('budgetLines') or [])
+    audit = list(state.get('budgetAuditLog') or [])
+    for item in takeoff_items:
+        desc = item['description']
+        qty = item.get('quantity') or 0
+        unit = item.get('unit') or 'ft'
+        note = f'Takeoff: {qty} {unit} from {item["sheet_number"]}'
+        existing = next((l for l in lines if l.get('cost_code') == cost_code and note in (l.get('notes') or '')), None)
+        if existing:
+            continue
+        lines.append({
+            'id': int(datetime.utcnow().timestamp() * 1000) + item['markup_id'],
+            'cost_code': cost_code,
+            'description': desc[:120],
+            'cost_type': cost_type,
+            'original_budget': 0,
+            'approved_changes': 0,
+            'pending': 0,
+            'notes': note,
+            'actual': 0,
+            'syncStatus': 'Not Synced',
+            'percent_complete': 0,
+            'takeoff_qty': qty,
+            'takeoff_unit': unit,
+            'takeoff_sheet': item['sheet_number'],
+            'source': 'drawings_takeoff',
+        })
+        audit.append({
+            'timestamp': datetime.utcnow().isoformat(),
+            'action': 'TAKEOFF_IMPORTED',
+            'details': {'sheet': item['sheet_number'], 'quantity': qty, 'unit': unit, 'description': desc},
+        })
+    state['budgetLines'] = lines
+    state['budgetAuditLog'] = audit
+    return state
+
+
 def extract_title_from_text(text: str, sheet_number: str | None) -> str:
     if not text:
         return ''

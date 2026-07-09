@@ -32,8 +32,13 @@
     pixelsPerUnit: null,
     measureUnit: 'ft',
     compareMode: false,
-    compareOpacity: 0.5,
+    compareOverlayActive: false,
+    compareOpacity: 0.7,
     compareRevisionId: null,
+    compareBaseRevisionId: null,
+    canvasSize: { w: 0, h: 0 },
+    lastViewport: null,
+    focusPin: null,
   };
 
   function projectId() {
@@ -256,7 +261,7 @@
       <button type="button" onclick="CasePMDrawings.openViewer(${d.id})" class="mt-3 px-3 py-1.5 text-xs bg-sky-800 hover:bg-sky-700 rounded-md">Open Viewer</button>`;
   }
 
-  async function openViewer(id) {
+  async function openViewer(id, opts) {
     const detail = await api(`/api/drawings/${id}`);
     state.openDrawing = state.drawings.find(x => x.id === id) || detail;
     state.openDetail = detail;
@@ -266,10 +271,15 @@
     state.scale = 1;
     state.panX = 0;
     state.panY = 0;
+    state.compareOverlayActive = false;
+    state.compareBaseRevisionId = null;
+    state.focusPin = opts || null;
     switchView('viewer');
     await renderPdf();
-    renderMarkupOverlay();
     renderViewerSidebar();
+    if (opts && (opts.focusX != null || opts.focusY != null)) {
+      focusOnPoint(opts.focusX, opts.focusY);
+    }
   }
 
   function closeViewer() {
@@ -299,9 +309,15 @@
     const revs = (state.revisions || []).map(r =>
       `<div class="text-xs py-1 border-b border-zinc-800 ${r.is_current ? 'text-emerald-400' : 'text-zinc-400'}">${esc(r.revision_label)} · ${fmtDate(r.uploaded_at)} ${r.is_current ? '· Current' : '· Archived'}</div>`
     ).join('') || '<div class="text-xs text-zinc-500">No revision history</div>';
-    const rfis = (state.openDetail.linked_rfis || []).map(r =>
-      `<a href="/rfis" class="block text-xs text-sky-400 hover:underline">${esc(r.number)} — ${esc(r.subject)}</a>`
-    ).join('') || '<div class="text-xs text-zinc-500">No linked RFIs</div>';
+    const rfis = (state.openDetail.linked_rfis || []).map(r => {
+      const pin = (state.markups || []).find(m => m.linked_rfi_id === r.id && m.markup_type === 'rfi_pin');
+      const g = pin?.geometry || {};
+      const q = new URLSearchParams({ project_id: projectId(), sheet: state.openDetail.sheet_number, rfi_id: r.id });
+      if (g.nx != null) q.set('x', g.nx);
+      if (g.ny != null) q.set('y', g.ny);
+      if (state.openDetail.id) q.set('drawing_id', state.openDetail.id);
+      return `<a href="/drawings?${q.toString()}" class="block text-xs text-sky-400 hover:underline">${esc(r.number)} — ${esc(r.subject)}</a>`;
+    }).join('') || '<div class="text-xs text-zinc-500">No linked RFIs</div>';
     el.innerHTML = `
       <div class="text-xs uppercase text-zinc-500 mb-2">Revision History</div>
       <div class="mb-4 max-h-32 overflow-auto">${revs}</div>
@@ -317,34 +333,160 @@
       </div>`;
   }
 
+  function canvasDims() {
+    const w = state.canvasSize.w || parseFloat(document.getElementById('drawMarkupSvg')?.getAttribute('width')) || 1;
+    const h = state.canvasSize.h || parseFloat(document.getElementById('drawMarkupSvg')?.getAttribute('height')) || 1;
+    return { w, h };
+  }
+
+  function normalizeGeometry(geometry) {
+    const { w, h } = canvasDims();
+    const geom = { ...(geometry || {}) };
+    if (geom.x != null && geom.y != null && w > 0 && h > 0) {
+      geom.nx = geom.nx ?? geom.x / w;
+      geom.ny = geom.ny ?? geom.y / h;
+      geom.canvasW = w;
+      geom.canvasH = h;
+    }
+    if (geom.points && geom.points.length >= 4 && w > 0 && h > 0) {
+      geom.npoints = geom.points.map((v, i) => (i % 2 === 0 ? v / w : v / h));
+    }
+    return geom;
+  }
+
+  function resolveGeom(geom) {
+    if (!geom) return {};
+    const { w, h } = canvasDims();
+    const cw = geom.canvasW || w;
+    const ch = geom.canvasH || h;
+    const out = { ...geom };
+    if (geom.nx != null && geom.ny != null) {
+      out.x = geom.nx * w;
+      out.y = geom.ny * h;
+    }
+    if (geom.npoints && geom.npoints.length >= 4) {
+      out.points = geom.npoints.map((v, i) => (i % 2 === 0 ? v * w : v * h));
+    } else if (geom.points && cw && ch && (cw !== w || ch !== h)) {
+      out.points = geom.points.map((v, i) => (i % 2 === 0 ? (v / cw) * w : (v / ch) * h));
+    }
+    if (geom.w != null && geom.h != null && cw && ch) {
+      out.w = (geom.w / cw) * w;
+      out.h = (geom.h / ch) * h;
+    }
+    return out;
+  }
+
+  function focusOnPoint(x, y) {
+    const { w, h } = canvasDims();
+    if (!w || !h) return;
+    const px = (x <= 1 && x >= 0) ? x * w : x;
+    const py = (y <= 1 && y >= 0) ? y * h : y;
+    state.scale = Math.min(2.2, Math.max(1.2, state.scale));
+    state.panX = Math.round((w / 2 - px) * 0.35);
+    state.panY = Math.round((h / 2 - py) * 0.35);
+    renderMarkupOverlay();
+    state.tempMarkup = `<circle cx="${px}" cy="${py}" r="28" fill="none" stroke="#f97316" stroke-width="3" opacity="0.9"/><circle cx="${px}" cy="${py}" r="8" fill="#f97316" opacity="0.5"/>`;
+    renderMarkupOverlay();
+    setTimeout(() => { state.tempMarkup = null; renderMarkupOverlay(); }, 3000);
+  }
+
+  async function fetchPdfBytes(url) {
+    const res = await fetch(url, { credentials: 'same-origin' });
+    return res.arrayBuffer();
+  }
+
+  async function renderPageToCanvas(pdfDoc, canvas, viewport) {
+    const page = await pdfDoc.getPage(1);
+    const vp = viewport || page.getViewport({ scale: 1 });
+    canvas.width = vp.width;
+    canvas.height = vp.height;
+    await page.render({ canvasContext: canvas.getContext('2d'), viewport: vp }).promise;
+    return vp;
+  }
+
+  function pixelDiff(oldCtx, newCtx, width, height, opacity) {
+    const oldData = oldCtx.getImageData(0, 0, width, height).data;
+    const newData = newCtx.getImageData(0, 0, width, height).data;
+    const out = newCtx.createImageData(width, height);
+    const thr = 42;
+    for (let i = 0; i < oldData.length; i += 4) {
+      const og = 0.299 * oldData[i] + 0.587 * oldData[i + 1] + 0.114 * oldData[i + 2];
+      const ng = 0.299 * newData[i] + 0.587 * newData[i + 1] + 0.114 * newData[i + 2];
+      const oldInk = og < 235;
+      const newInk = ng < 235;
+      if (!oldInk && newInk) {
+        out.data[i] = 30; out.data[i + 1] = 100; out.data[i + 2] = 255; out.data[i + 3] = Math.round(255 * opacity);
+      } else if (oldInk && !newInk) {
+        out.data[i] = 255; out.data[i + 1] = 40; out.data[i + 2] = 40; out.data[i + 3] = Math.round(255 * opacity);
+      } else if (oldInk && newInk && Math.abs(og - ng) > thr) {
+        out.data[i] = 180; out.data[i + 1] = 80; out.data[i + 2] = 255; out.data[i + 3] = Math.round(200 * opacity);
+      } else {
+        out.data[i + 3] = 0;
+      }
+    }
+    return out;
+  }
+
+  async function renderCompareDiff() {
+    const diffCanvas = document.getElementById('drawDiffCanvas');
+    if (!diffCanvas || !state.compareOverlayActive || !state.compareBaseRevisionId || !state.openDrawing || !state.pdfDoc) {
+      diffCanvas?.classList.add('hidden');
+      return;
+    }
+    try {
+      const oldBuf = await fetchPdfBytes(`/api/drawings/${state.openDrawing.id}/revisions/${state.compareBaseRevisionId}/file`);
+      const oldDoc = await pdfjsLib.getDocument({ data: oldBuf.slice(0) }).promise;
+      const vp = state.lastViewport || (await state.pdfDoc.getPage(state.pdfPage)).getViewport({ scale: 1 });
+      const offOld = document.createElement('canvas');
+      const offNew = document.createElement('canvas');
+      await renderPageToCanvas(oldDoc, offOld, vp);
+      await renderPageToCanvas(state.pdfDoc, offNew, vp);
+      diffCanvas.width = vp.width;
+      diffCanvas.height = vp.height;
+      diffCanvas.style.width = vp.width + 'px';
+      diffCanvas.style.height = vp.height + 'px';
+      const diff = pixelDiff(offOld.getContext('2d'), offNew.getContext('2d'), vp.width, vp.height, state.compareOpacity);
+      diffCanvas.getContext('2d').putImageData(diff, 0, 0);
+      diffCanvas.classList.remove('hidden');
+    } catch (e) {
+      console.warn('Compare diff failed', e);
+      diffCanvas.classList.add('hidden');
+    }
+  }
+
   async function renderPdf() {
     if (!state.openDrawing || !global.pdfjsLib) return;
     const canvas = document.getElementById('drawPdfCanvas');
     const wrap = document.getElementById('drawViewerWrap');
     if (!canvas || !wrap) return;
-    const url = state.compareMode && state.compareRevisionId
-      ? `/api/drawings/${state.openDrawing.id}/revisions/${state.compareRevisionId}/file`
-      : state.openDrawing.file_url;
-    const res = await fetch(url, { credentials: 'same-origin' });
-    const buf = await res.arrayBuffer();
+    const url = state.openDrawing.file_url;
+    const buf = await fetchPdfBytes(url);
     if (state.renderTask) try { state.renderTask.cancel(); } catch {}
     state.pdfDoc = await pdfjsLib.getDocument({ data: buf.slice(0) }).promise;
     const page = await state.pdfDoc.getPage(state.pdfPage);
     const baseScale = Math.min((wrap.clientWidth - 40) / page.getViewport({ scale: 1 }).width, (wrap.clientHeight - 40) / page.getViewport({ scale: 1 }).height, 2);
     const viewport = page.getViewport({ scale: baseScale * state.scale });
+    state.lastViewport = viewport;
     canvas.width = viewport.width;
     canvas.height = viewport.height;
+    state.canvasSize = { w: viewport.width, h: viewport.height };
     const ctx = canvas.getContext('2d');
     state.renderTask = page.render({ canvasContext: ctx, viewport });
     await state.renderTask.promise;
     const overlay = document.getElementById('drawMarkupSvg');
+    const diffCanvas = document.getElementById('drawDiffCanvas');
     if (overlay) {
       overlay.setAttribute('width', viewport.width);
       overlay.setAttribute('height', viewport.height);
       overlay.style.width = viewport.width + 'px';
       overlay.style.height = viewport.height + 'px';
     }
+    if (diffCanvas) {
+      diffCanvas.style.width = viewport.width + 'px';
+      diffCanvas.style.height = viewport.height + 'px';
+    }
     renderMarkupOverlay();
+    await renderCompareDiff();
   }
 
   function visibleMarkups() {
@@ -361,13 +503,19 @@
       el.addEventListener('click', e => {
         e.stopPropagation();
         const rfiId = el.getAttribute('data-rfi-pin');
-        if (rfiId) global.location.href = `/rfis`;
+        const pid = projectId();
+        const sheet = state.openDrawing?.sheet_number || '';
+        const nx = el.getAttribute('data-nx');
+        const ny = el.getAttribute('data-ny');
+        let href = `/rfis${rfiId ? `?rfi_id=${rfiId}` : ''}`;
+        if (pid) href += `${href.includes('?') ? '&' : '?'}project_id=${pid}`;
+        global.location.href = href;
       });
     });
   }
 
   function markupSvg(m) {
-    const geom = m.geometry || {};
+    const geom = resolveGeom(m.geometry || {});
     const style = m.style || {};
     const color = style.color || (m.layer === 'published' ? '#22c55e' : '#38bdf8');
     const sw = style.lineWidth || 2;
@@ -395,7 +543,9 @@
     }
     if (m.markup_type === 'rfi_pin') {
       const x = geom.x || 0; const y = geom.y || 0;
-      return `<g data-rfi-pin="${m.linked_rfi_id || ''}" style="cursor:pointer"><circle cx="${x}" cy="${y}" r="10" fill="#f97316" stroke="#fff" stroke-width="2"/><text x="${x}" y="${y + 4}" text-anchor="middle" fill="#fff" font-size="9" font-weight="bold">R</text></g>`;
+      const nx = (m.geometry || {}).nx ?? (geom.x / (canvasDims().w || 1));
+      const ny = (m.geometry || {}).ny ?? (geom.y / (canvasDims().h || 1));
+      return `<g data-rfi-pin="${m.linked_rfi_id || ''}" data-nx="${nx}" data-ny="${ny}" style="cursor:pointer"><circle cx="${x}" cy="${y}" r="10" fill="#f97316" stroke="#fff" stroke-width="2"/><text x="${x}" y="${y + 4}" text-anchor="middle" fill="#fff" font-size="9" font-weight="bold">R</text><title>${esc(m.label || 'RFI')}</title></g>`;
     }
     return '';
   }
@@ -534,9 +684,10 @@
 
   async function saveMarkup(payload) {
     if (!state.openDrawing) return;
+    const geometry = normalizeGeometry(payload.geometry || {});
     const body = {
       markup_type: payload.markup_type,
-      geometry: payload.geometry,
+      geometry,
       style: payload.style || { color: '#38bdf8', lineWidth: 2 },
       label: payload.label,
       linked_rfi_id: payload.linked_rfi_id,
@@ -580,16 +731,77 @@
   async function loadRevisionInViewer() {
     const revId = parseInt(document.getElementById('viewerRevisionSelect')?.value, 10);
     if (!revId || !state.openDrawing) return;
-    state.compareRevisionId = revId;
-    state.compareMode = true;
-    await renderPdf();
-    toast('Viewing selected revision — toggle Compare to overlay with current');
+    state.compareBaseRevisionId = revId;
+    const current = state.revisions.find(r => r.is_current);
+    if (current && revId === current.id) {
+      state.compareOverlayActive = false;
+      document.getElementById('drawDiffCanvas')?.classList.add('hidden');
+      toast('Select an older revision to compare against current');
+      return;
+    }
+    state.compareOverlayActive = true;
+    document.getElementById('compareOpacity')?.classList.remove('hidden');
+    document.getElementById('btnCompareOverlay')?.classList.add('bg-sky-700', 'text-white');
+    await renderCompareDiff();
+    toast('Compare overlay: blue = added, red = removed');
   }
 
   async function toggleCompareOverlay() {
-    state.compareMode = !state.compareMode;
-    if (!state.compareMode) state.compareRevisionId = null;
-    await renderPdf();
+    if (!state.compareBaseRevisionId) {
+      const revId = parseInt(document.getElementById('viewerRevisionSelect')?.value, 10);
+      if (revId) state.compareBaseRevisionId = revId;
+    }
+    state.compareOverlayActive = !state.compareOverlayActive;
+    document.getElementById('btnCompareOverlay')?.classList.toggle('bg-sky-700', state.compareOverlayActive);
+    document.getElementById('btnCompareOverlay')?.classList.toggle('text-white', state.compareOverlayActive);
+    document.getElementById('compareOpacity')?.classList.toggle('hidden', !state.compareOverlayActive);
+    if (state.compareOverlayActive) await renderCompareDiff();
+    else document.getElementById('drawDiffCanvas')?.classList.add('hidden');
+  }
+
+  function setCompareOpacity(val) {
+    state.compareOpacity = (parseInt(val, 10) || 70) / 100;
+    if (state.compareOverlayActive) renderCompareDiff();
+  }
+
+  async function exportTakeoffToBudget() {
+    const costCode = prompt('Cost code for takeoff lines:', '01-000');
+    if (costCode === null) return;
+    try {
+      const json = await api('/api/drawings/export-takeoff-to-budget', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          project_id: projectId(),
+          drawing_id: state.openDrawing?.id || null,
+          cost_code: costCode,
+        }),
+      });
+      toast(`Exported ${json.imported} takeoff item(s) to Budget`);
+      if (confirm(`Open Budget to review ${json.imported} imported takeoff line(s)?`)) {
+        global.location.href = `/budget?project_id=${projectId()}`;
+      }
+    } catch (e) { alert(e.message); }
+  }
+
+  async function handleDeepLink() {
+    const p = new URLSearchParams(global.location.search);
+    if (!p.get('drawing_id') && !p.get('sheet')) return;
+    const drawingId = parseInt(p.get('drawing_id'), 10);
+    const sheet = p.get('sheet');
+    const x = p.get('x');
+    const y = p.get('y');
+    const focus = (x != null && y != null) ? { focusX: parseFloat(x), focusY: parseFloat(y), rfiId: p.get('rfi_id') } : null;
+    if (drawingId) {
+      await openViewer(drawingId, focus);
+      return;
+    }
+    if (sheet) {
+      try {
+        const json = await api(`/api/drawings/by-sheet?project_id=${projectId()}&sheet=${encodeURIComponent(sheet)}`);
+        await openViewer(json.id, focus);
+      } catch { /* sheet not found */ }
+    }
   }
 
   function printSheet() {
@@ -677,6 +889,7 @@
     bindFilters();
     bindViewerEvents();
     await Promise.all([loadDashboard(), loadDrawings(), loadRfis()]);
+    await handleDeepLink();
   }
 
   global.CasePMDrawings = {
@@ -691,6 +904,8 @@
     publishPersonalMarkups,
     loadRevisionInViewer,
     toggleCompareOverlay,
+    setCompareOpacity,
+    exportTakeoffToBudget,
     printSheet,
     openUploadModal,
     openSubstituteModal,
