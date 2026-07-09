@@ -56,9 +56,17 @@ LOCAL_TITLE_HINT_RE = re.compile(
     r'\b(PLAN|PLANS|ELEVATION|ELEVATIONS|SECTION|SECTIONS|DETAIL|DETAILS|SCHEDULE|SCHEDULES|'
     r'FLOOR|ROOF|SITE|CEILING|FOUNDATION|FRAMING|RCP|REFLECTED|WINDOW|LIGHTING|DIAGRAM|DIAGRAMS|'
     r'ALARM|CONDUIT|POWER|PANEL|MECHANICAL|ELECTRICAL|STRUCTURAL|INTERIOR|EXTERIOR|'
-    r'SEQUENCE|OPERATIONS|OPERATION|SCHEMATIC|LAYOUT|GENERAL|NOTES|LEGEND|INDEX|COVER)\b',
+    r'SEQUENCE|OPERATIONS|OPERATION|SCHEMATIC|LAYOUT|GENERAL|NOTES|LEGEND|INDEX|COVER|'
+    r'PLUMBING|HVAC|VENT|ROOF|PIPING|SANITARY|DOMESTIC|FIRE|SPRINKLER)\b',
     re.I,
 )
+NOTE_SPEC_TITLE_RE = re.compile(
+    r'\b(ASME|ASTM|ANSI|NOMINAL|POUNDS?|SPECIFICATION|HOSE|LOW\s*CAL|DUTY|CAPACITY|'
+    r'RATED|GALLONS?|PSI|KPA|TORQUE|LOAD|CALIBER|CALIBRATION|CONTRACTOR\s*SHALL)\b',
+    re.I,
+)
+STRIP_X0_RATIO = 0.62
+STRIP_Y0_RATIO = 0.52
 NAME_STACK_CONNECTORS = frozenset({'OF', 'AND', 'OR', '&', 'THE', 'FOR', 'TO', 'AT', 'ON', 'A', 'AN'})
 GLUED_SHEET_CODE_RE = re.compile(r'^[A-Z]{3,10}\d{1,4}$', re.I)
 OPAQUE_SHEET_CODE_RE = re.compile(r'^(?=.*\d)[A-Z0-9]{3,14}$', re.I)
@@ -337,9 +345,43 @@ def _is_name_continuation_line(text: str) -> bool:
     return bool(CONTINUATION_LINE_RE.match(t) or t.startswith('&'))
 
 
+def _strip_spans_for_sheet_label(page, page_w: float, page_h: float) -> list[WordSpan]:
+    """Bottom-right vertical strip where SHEET: / stacked sheet names often live."""
+    spans = _spans_from_dict(page, min_y_ratio=STRIP_Y0_RATIO)
+    if not spans:
+        spans = _words_from_page(page, min_y_ratio=STRIP_Y0_RATIO)
+    return [
+        s for s in spans
+        if page_w * STRIP_X0_RATIO <= s.cx <= page_w * CORNER_X1_RATIO
+        and s.cy >= page_h * STRIP_Y0_RATIO
+        and not _is_stamp_or_footer(s.text)
+    ]
+
+
+def _lines_from_spans(spans: list[WordSpan]) -> list[TextLine]:
+    if not spans:
+        return []
+    med_h = _median_height(spans)
+    med_size = _median_font_size(spans)
+    y_tol = max(2.5, med_h * 0.42)
+    return _cluster_words_into_lines(spans, y_tol)
+
+
+def _has_sheet_only_label(lines: list[TextLine]) -> bool:
+    return any(SHEET_ONLY_LABEL_RE.match(ln.text.strip()) for ln in lines)
+
+
 def _dict_lines_from_page(page) -> tuple[list[TextLine], float, float, float]:
     """Build text lines from PDF dict block/line indices (most reliable for title blocks)."""
     page_w, page_h = page.rect.width, page.rect.height
+
+    strip_spans = _strip_spans_for_sheet_label(page, page_w, page_h)
+    if strip_spans:
+        strip_lines = _lines_from_spans(strip_spans)
+        if _has_sheet_only_label(strip_lines):
+            strip_med = _median_font_size(strip_spans)
+            return strip_lines, page_w, page_h, strip_med
+
     spans = _spans_from_dict(page, min_y_ratio=CORNER_Y0_RATIO)
     tb_spans = _title_block_spans(spans, page_w, page_h)
     tb_spans = [s for s in tb_spans if not _is_stamp_or_footer(s.text)]
@@ -1211,7 +1253,9 @@ def _is_plausible_drawing_title(text: str, sheet_number: str | None) -> bool:
         return False
     if ARCH_SCALE_RE.search(t) or RATIO_SCALE_RE.search(t):
         return False
-    if NOTE_FRAGMENT_RE.search(t) and not TITLE_HINT_RE.search(t) and not LOCAL_TITLE_HINT_RE.search(t):
+    if NOTE_SPEC_TITLE_RE.search(t):
+        return False
+    if re.search(r'\b\d{1,3}[,.]?\d*\s*(?:LBS?|POUNDS?|KG|PSI)\b', t, re.I):
         return False
     if re.match(r'^(?:NEW|RENOVATION|ADDITION|TI|BUILD[- ]?OUT|TENANT|COMMERCIAL|RESIDENTIAL)\b', upper):
         if not TITLE_HINT_RE.search(t) and not LOCAL_TITLE_HINT_RE.search(t):

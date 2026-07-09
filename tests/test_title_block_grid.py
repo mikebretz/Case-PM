@@ -122,6 +122,17 @@ def _make_site_plan_sheet_block():
     return FakePage(words, width=1000, height=800)
 
 
+def _make_plumbing_details_block():
+    words = [
+        WordSpan(870, 480, 960, 502, 'PLUMBING', font_size=14),
+        WordSpan(870, 508, 980, 530, 'DETAILS AND', font_size=14),
+        WordSpan(870, 536, 960, 558, 'SCHEDULES', font_size=14),
+        WordSpan(875, 580, 930, 590, 'SHEET:', font_size=7),
+        WordSpan(875, 600, 940, 626, 'OPDP2', font_size=22),
+    ]
+    return FakePage(words, width=1000, height=800)
+
+
 def _make_sequence_of_operations_block():
     words = [
         WordSpan(870, 520, 980, 542, 'SEQUENCE', font_size=16),
@@ -142,6 +153,18 @@ class TitleBlockGridTests(unittest.TestCase):
     def test_reject_false_sheet_in_note(self):
         from drawing_persistence import is_plausible_drawing_sheet
         self.assertFalse(is_plausible_drawing_sheet('IN-0.5'))
+
+    def test_label_proximity_plumbing_opdp2(self):
+        page = _make_plumbing_details_block()
+        pw, ph, lines, med = _title_block_lines_from_page(page)
+        prox = _extract_by_label_proximity(lines, pw, ph, med)
+        self.assertEqual(prox['sheet_number'], 'OPDP2')
+        self.assertEqual(prox['drawing_name'], 'PLUMBING DETAILS AND SCHEDULES')
+        self.assertTrue(prox.get('sheet_label_anchored'))
+
+    def test_reject_lf_note_sheet(self):
+        from drawing_persistence import is_plausible_drawing_sheet
+        self.assertFalse(is_plausible_drawing_sheet('LF-252'))
 
     def test_label_proximity_sequence_of_operations(self):
         page = _make_sequence_of_operations_block()
