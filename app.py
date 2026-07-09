@@ -3203,6 +3203,24 @@ def api_drawing_revisions(drawing_id):
     return jsonify({'revisions': [revision_to_dict(r) for r in revisions]})
 
 
+@app.route('/api/drawings/punch-items', methods=['GET'])
+@login_required
+def api_drawings_punch_items():
+    project_id = request.args.get('project_id', type=int) or get_current_project_id()
+    if not project_id:
+        return jsonify({'error': 'project_id required'}), 400
+    items = PunchItem.query.filter_by(project_id=int(project_id)).filter(PunchItem.status != 'Completed').all()
+    return jsonify({
+        'punch_items': [{
+            'id': p.id,
+            'number': p.number,
+            'description': (p.description or '')[:120],
+            'location': p.location,
+            'status': p.status,
+        } for p in items]
+    })
+
+
 @app.route('/api/drawings/rfis', methods=['GET'])
 @login_required
 def api_drawings_rfis():

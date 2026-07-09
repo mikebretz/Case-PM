@@ -5,37 +5,140 @@
   'use strict';
 
   const SECTION_ORDER = ['G', 'C', 'A', 'S', 'M', 'E', 'P', 'FP', 'L', 'T', 'I', 'OTHER'];
-  const MARKUP_TOOLS = ['pan', 'select', 'line', 'rect', 'ellipse', 'cloud', 'arrow', 'text', 'callout', 'highlight', 'measure', 'rfi_pin', 'calibrate'];
+  const MARKUP_TOOLS = [
+    'pan', 'select',
+    'pen', 'line', 'polyline', 'arrow', 'rect', 'ellipse', 'polygon', 'cloud', 'crossout', 'highlight',
+    'text', 'callout', 'stamp',
+    'measure', 'area', 'count', 'calibrate',
+    'rfi_pin', 'punch_pin',
+  ];
+
+  const STAMP_PRESETS = [
+    { label: 'APPROVED', value: 'APPROVED', color: '#22c55e' },
+    { label: 'REJECTED', value: 'REJECTED', color: '#ef4444' },
+    { label: 'REVISE', value: 'REVISE & RESUBMIT', color: '#f97316' },
+    { label: 'REVIEWED', value: 'REVIEWED', color: '#38bdf8' },
+    { label: 'VERIFIED', value: 'VERIFIED', color: '#a78bfa' },
+    { label: 'VOID', value: 'VOID', color: '#71717a' },
+    { label: 'AS NOTED', value: 'AS NOTED', color: '#facc15' },
+  ];
+
+  const TOOL_PALETTE_GROUPS = [
+    { label: 'Navigation', tools: ['pan', 'select'] },
+    { label: 'Freehand & lines', tools: ['pen', 'line', 'polyline', 'arrow'] },
+    { label: 'Shapes', tools: ['rect', 'ellipse', 'polygon', 'cloud', 'crossout', 'highlight'] },
+    { label: 'Text & stamps', tools: ['text', 'callout', 'stamp'] },
+    { label: 'Measure', tools: ['measure', 'area', 'count', 'calibrate'] },
+    { label: 'Field pins', tools: ['rfi_pin', 'punch_pin'] },
+  ];
 
   const TOOL_STYLE_DEFAULTS = {
     cloud: { color: '#ef4444', lineWidth: 2, opacity: 1, fillOpacity: 0, cloudScallop: 18 },
     highlight: { color: '#facc15', lineWidth: 1, opacity: 0.35, fillOpacity: 0.35 },
     measure: { color: '#22c55e', lineWidth: 2 },
+    area: { color: '#22c55e', lineWidth: 2, fillOpacity: 0.15 },
+    pen: { color: '#ef4444', lineWidth: 2, opacity: 1 },
+    sketch: { color: '#ef4444', lineWidth: 2, opacity: 1 },
+    polyline: { color: '#38bdf8', lineWidth: 2 },
+    polygon: { color: '#38bdf8', lineWidth: 2, fillOpacity: 0.12 },
+    crossout: { color: '#ef4444', lineWidth: 3 },
+    count: { color: '#f97316', lineWidth: 2 },
+    stamp: { color: '#22c55e', lineWidth: 2, fontSize: 12 },
     text: { color: '#f4f4f5', lineWidth: 1, fillOpacity: 0.9, fontSize: 14, showTextBorder: true },
     textbox: { color: '#f4f4f5', lineWidth: 1, fillOpacity: 0.9, fontSize: 14, showTextBorder: true },
     callout: { color: '#38bdf8', lineWidth: 2, fontSize: 13, fillOpacity: 0.92, showTextBorder: true, bubbleRadius: 10 },
   };
 
   const TOOL_META = {
-    pan: { label: 'Pan', shortcut: 'H', hint: 'Drag to move the sheet. Hold Alt to pan while using any tool.' },
-    select: { label: 'Select', shortcut: 'V', hint: 'Click markups to select and drag to move. Double-click text or callouts to edit.' },
-    line: { label: 'Line', shortcut: 'L', hint: 'Click and drag to draw a straight line.' },
-    rect: { label: 'Rectangle', shortcut: 'R', hint: 'Drag a rectangle on the sheet.' },
-    ellipse: { label: 'Ellipse', shortcut: 'E', hint: 'Drag to draw an ellipse or circle.' },
-    cloud: { label: 'Revision cloud', shortcut: 'U', hint: 'Drag a box — corners become revision cloud arcs.' },
-    arrow: { label: 'Arrow', shortcut: 'A', hint: 'Drag from tail to arrowhead.' },
-    text: { label: 'Text box', shortcut: 'T', hint: 'Drag a box, then type your note. Or click a small spot for a quick text box.' },
-    callout: { label: 'Callout bubble', shortcut: 'C', hint: 'Click the point to call out, drag to size the text bubble, then type your note.' },
-    highlight: { label: 'Highlight', shortcut: 'Y', hint: 'Drag a translucent highlight over an area.' },
-    measure: { label: 'Measure', shortcut: 'M', hint: 'Drag between two points. Set scale first for feet and inches.' },
-    calibrate: { label: 'Calibrate scale', shortcut: 'K', hint: 'Click two points on a known dimension, then enter the real-world length.' },
-    rfi_pin: { label: 'RFI pin', shortcut: 'P', hint: 'Click to drop a pin linked to an RFI.' },
+    pan: { label: 'Pan', shortcut: 'H', icon: 'fa-hand', hint: 'Drag to move the sheet. Hold Alt to pan while using any tool.' },
+    select: { label: 'Select', shortcut: 'V', icon: 'fa-arrow-pointer', hint: 'Click markups to select and drag to move. Double-click text or callouts to edit.' },
+    pen: { label: 'Pen', shortcut: 'N', icon: 'fa-pen', hint: 'Draw freehand — popular for quick redlines and sketches (Bluebeam-style).' },
+    line: { label: 'Line', shortcut: 'L', icon: 'fa-minus', hint: 'Click and drag to draw a straight line.' },
+    polyline: { label: 'Polyline', shortcut: 'I', icon: 'fa-draw-polygon', hint: 'Click each corner. Press Enter or double-click the last point to finish.' },
+    arrow: { label: 'Arrow', shortcut: 'A', icon: 'fa-arrow-right', hint: 'Drag from tail to arrowhead.' },
+    rect: { label: 'Rectangle', shortcut: 'R', icon: 'fa-square', hint: 'Drag a rectangle on the sheet.' },
+    ellipse: { label: 'Ellipse', shortcut: 'E', icon: 'fa-circle', hint: 'Drag to draw an ellipse or circle.' },
+    polygon: { label: 'Polygon', shortcut: 'G', icon: 'fa-shapes', hint: 'Click each vertex. Press Enter to close the shape.' },
+    cloud: { label: 'Revision cloud', shortcut: 'U', icon: 'fa-cloud', hint: 'Drag a box — corners become revision cloud arcs.' },
+    crossout: { label: 'Cross-out', shortcut: 'X', icon: 'fa-xmark', hint: 'Drag a box to place an X over content marked for removal.' },
+    highlight: { label: 'Highlight', shortcut: 'Y', icon: 'fa-highlighter', hint: 'Drag a translucent highlight over an area.' },
+    text: { label: 'Text box', shortcut: 'T', icon: 'fa-font', hint: 'Drag a box, then type your note.' },
+    callout: { label: 'Callout bubble', shortcut: 'C', icon: 'fa-comment-dots', hint: 'Click the point to call out, drag to size the bubble, then type your note.' },
+    stamp: { label: 'Stamp', shortcut: 'S', icon: 'fa-stamp', hint: 'Pick a stamp in the side panel, then click on the sheet to place it.' },
+    measure: { label: 'Measure', shortcut: 'M', icon: 'fa-ruler', hint: 'Drag between two points. Set scale first for feet and inches.' },
+    area: { label: 'Area', shortcut: 'B', icon: 'fa-vector-square', hint: 'Click polygon corners, Enter to close — shows square feet when scale is set.' },
+    count: { label: 'Count', shortcut: 'O', icon: 'fa-hashtag', hint: 'Click each item to count — Bluebeam-style running tally.' },
+    calibrate: { label: 'Calibrate scale', shortcut: 'K', icon: 'fa-ruler-combined', hint: 'Click two points on a known dimension, then enter the real-world length.' },
+    rfi_pin: { label: 'RFI pin', shortcut: 'F', icon: 'fa-map-pin', hint: 'Click to drop a pin linked to an RFI (Procore-style).' },
+    punch_pin: { label: 'Punch pin', shortcut: 'J', icon: 'fa-thumbtack', hint: 'Click to drop a pin linked to a punch list item.' },
   };
 
   const TOOL_SHORTCUTS = {};
   Object.entries(TOOL_META).forEach(([tool, meta]) => {
     if (meta.shortcut) TOOL_SHORTCUTS[meta.shortcut.toLowerCase()] = tool;
   });
+
+  async function drawConfirm(message, options) {
+    if (global.CasePMDialog?.confirm) return global.CasePMDialog.confirm(message, options || {});
+    return confirm(message);
+  }
+
+  async function drawPrompt(message, defaultValue, options) {
+    if (global.CasePMDialog?.prompt) return global.CasePMDialog.prompt(message, defaultValue, options || {});
+    return prompt(message, defaultValue);
+  }
+
+  async function drawSelect(options) {
+    if (global.CasePMDialog?.select) return global.CasePMDialog.select(options || {});
+    return null;
+  }
+
+  function pointsToPath(points, closed) {
+    if (!points || points.length < 4) return '';
+    let d = `M ${points[0]} ${points[1]}`;
+    for (let i = 2; i < points.length; i += 2) {
+      d += ` L ${points[i]} ${points[i + 1]}`;
+    }
+    if (closed) d += ' Z';
+    return d;
+  }
+
+  function polygonAreaPx(points) {
+    if (!points || points.length < 6) return 0;
+    let area = 0;
+    const n = points.length / 2;
+    for (let i = 0; i < n; i++) {
+      const j = (i + 1) % n;
+      area += points[i * 2] * points[j * 2 + 1];
+      area -= points[j * 2] * points[i * 2 + 1];
+    }
+    return Math.abs(area) / 2;
+  }
+
+  function formatAreaDisplay(pxArea) {
+    if (!state.pixelsPerUnit) return `${Math.round(pxArea).toLocaleString()} sq px`;
+    const sqFt = pxArea / (state.pixelsPerUnit * state.pixelsPerUnit);
+    return `${Math.round(sqFt).toLocaleString()} SF`;
+  }
+
+  function renderToolPaletteHtml() {
+    return `<div class="mb-3 pb-2 border-b border-zinc-700/80">
+      <div class="text-[10px] uppercase text-zinc-500 mb-2">All markup tools</div>
+      ${TOOL_PALETTE_GROUPS.map((group) => `
+        <div class="mb-2">
+          <div class="text-[9px] uppercase text-zinc-600 mb-1">${esc(group.label)}</div>
+          <div class="grid grid-cols-3 gap-1">
+            ${group.tools.map((tool) => {
+              const meta = TOOL_META[tool] || { label: tool, icon: 'fa-shapes' };
+              const active = state.tool === tool ? ' palette-active' : '';
+              return `<button type="button" class="draw-palette-btn${active}" data-palette-tool="${tool}" title="${esc(meta.hint || meta.label)}">
+                <i class="fa-solid ${meta.icon || 'fa-shapes'}"></i>${esc(meta.label)}</button>`;
+            }).join('')}
+          </div>
+        </div>
+      `).join('')}
+    </div>`;
+  }
 
   function gcd(a, b) {
     a = Math.abs(Math.round(a));
@@ -81,6 +184,10 @@
   function formatMeasurementDisplay(m) {
     if (m.measurement_value == null) return '';
     const unit = m.measurement_unit || '';
+    if (unit === 'sf' || unit === 'sq ft' || m.markup_type === 'area') {
+      const val = parseFloat(m.measurement_value);
+      if (Number.isFinite(val)) return `${Math.round(val).toLocaleString()} SF`;
+    }
     if (unit === 'px' || (!state.pixelsPerUnit && unit !== 'ft-in' && unit !== 'ft')) {
       return `${Math.round(m.measurement_value)} px`;
     }
@@ -172,13 +279,18 @@
     }
     panel.classList.remove('hidden');
     const typeIcon = {
-      measure: 'fa-ruler', callout: 'fa-comment-dots', text: 'fa-font', textbox: 'fa-font',
+      measure: 'fa-ruler', area: 'fa-vector-square', count: 'fa-hashtag', stamp: 'fa-stamp',
+      pen: 'fa-pen', sketch: 'fa-pen', polyline: 'fa-draw-polygon', polygon: 'fa-shapes',
+      crossout: 'fa-xmark', punch_pin: 'fa-thumbtack',
+      callout: 'fa-comment-dots', text: 'fa-font', textbox: 'fa-font',
       cloud: 'fa-cloud', rfi_pin: 'fa-map-pin', arrow: 'fa-arrow-right', highlight: 'fa-highlighter',
     };
     list.innerHTML = items.map(m => {
       const icon = typeIcon[m.markup_type] || 'fa-shapes';
       let sub = m.label ? String(m.label).split('\n')[0].slice(0, 40) : '';
       if (m.markup_type === 'measure' && m.measurement_value != null) {
+        sub = formatMeasurementDisplay(m);
+      } else if (m.markup_type === 'area' && m.measurement_value != null) {
         sub = formatMeasurementDisplay(m);
       }
       const sel = state.selectedMarkupId === m.id ? ' markup-list-selected' : '';
@@ -266,6 +378,12 @@
     selectionMode: false,
     selectedDrawingIds: new Set(),
     uploadLogTimer: null,
+    penPoints: null,
+    pathPoints: null,
+    countCounter: 1,
+    selectedStamp: 'APPROVED',
+    punchItems: [],
+    textDialogCtx: null,
   };
 
   function projectId() {
@@ -358,6 +476,15 @@
       const json = await api(`/api/drawings/rfis?project_id=${pid}`);
       state.rfis = json.rfis || [];
     } catch { state.rfis = []; }
+  }
+
+  async function loadPunchItems() {
+    const pid = projectId();
+    if (!pid) return;
+    try {
+      const json = await api(`/api/drawings/punch-items?project_id=${pid}`);
+      state.punchItems = json.punch_items || [];
+    } catch { state.punchItems = []; }
   }
 
   function sectionSort(a, b) {
@@ -542,7 +669,7 @@
     if (!setName) return;
     const set = state.drawingSets.find(s => s.name === setName);
     const count = set?.sheet_count || 0;
-    if (!confirm(`Delete drawing set "${setName}" and all ${count} sheet(s) currently in it? This cannot be undone.`)) return;
+    if (!await drawConfirm(`Delete drawing set "${setName}" and all ${count} sheet(s) currently in it? This cannot be undone.`, { title: 'Delete drawing set', danger: true, confirmLabel: 'Delete set' })) return;
     try {
       const json = await api('/api/drawings/delete-set', {
         method: 'POST',
@@ -562,7 +689,7 @@
     const ids = [...state.selectedDrawingIds];
     if (!ids.length) { toast('Check one or more sheets to delete'); return; }
     const labels = ids.map(id => state.drawings.find(d => d.id === id)?.sheet_number || id).join(', ');
-    if (!confirm(`Delete ${ids.length} sheet(s)?\n\n${labels}\n\nThis cannot be undone.`)) return;
+    if (!await drawConfirm(`Delete ${ids.length} sheet(s)?\n\n${labels}\n\nThis cannot be undone.`, { title: 'Delete sheets', danger: true, confirmLabel: 'Delete' })) return;
     if (state.deleting) return;
     state.deleting = true;
     toast(`Deleting ${ids.length} sheet(s)…`);
@@ -1066,6 +1193,28 @@
       } else if ((m.markup_type === 'text' || m.markup_type === 'textbox') && g.x != null) {
         const inside = pt.x >= g.x && pt.x <= g.x + (g.w || 180) && pt.y >= g.y && pt.y <= g.y + (g.h || 28);
         d = inside ? 0 : Math.hypot(pt.x - g.x, pt.y - g.y);
+      } else if (m.markup_type === 'crossout' && g.w != null) {
+        const inside = pt.x >= g.x && pt.x <= g.x + g.w && pt.y >= g.y && pt.y <= g.y + g.h;
+        d = inside ? 0 : Math.min(
+          Math.abs(pt.x - g.x), Math.abs(pt.x - (g.x + g.w)),
+          Math.abs(pt.y - g.y), Math.abs(pt.y - (g.y + g.h))
+        );
+      } else if ((m.markup_type === 'pen' || m.markup_type === 'sketch' || m.markup_type === 'polyline' || m.markup_type === 'polygon' || m.markup_type === 'area') && g.points) {
+        for (let i = 0; i < g.points.length - 2; i += 2) {
+          const seg = distToSegment(pt.x, pt.y, g.points[i], g.points[i + 1], g.points[i + 2], g.points[i + 3]);
+          d = Math.min(d, seg);
+        }
+        if (m.markup_type === 'polygon' || m.markup_type === 'area') {
+          const last = g.points.length - 2;
+          d = Math.min(d, distToSegment(pt.x, pt.y, g.points[last], g.points[last + 1], g.points[0], g.points[1]));
+        }
+      } else if (m.markup_type === 'stamp' && g.x != null) {
+        const inside = pt.x >= g.x && pt.x <= g.x + (g.w || 110) && pt.y >= g.y && pt.y <= g.y + (g.h || 32);
+        d = inside ? 0 : Math.hypot(pt.x - g.x, pt.y - g.y);
+      } else if (m.markup_type === 'count' && g.x != null) {
+        d = Math.hypot(pt.x - g.x, pt.y - g.y);
+      } else if (m.markup_type === 'punch_pin') {
+        d = Math.hypot(pt.x - (g.x || 0), pt.y - (g.y || 0));
       } else if (g.points && g.points.length >= 4) {
         d = distToSegment(pt.x, pt.y, g.points[0], g.points[1], g.points[2], g.points[3]);
       } else if (g.x != null && g.y != null) {
@@ -1329,6 +1478,16 @@
         global.location.href = href;
       });
     });
+    svg.querySelectorAll('[data-punch-pin]').forEach(el => {
+      el.addEventListener('click', e => {
+        e.stopPropagation();
+        const punchId = el.getAttribute('data-punch-pin');
+        const pid = projectId();
+        let href = `/punch-list${punchId ? `?item_id=${punchId}` : ''}`;
+        if (pid) href += `${href.includes('?') ? '&' : '?'}project_id=${pid}`;
+        global.location.href = href;
+      });
+    });
     svg.querySelectorAll('[data-markup-id]').forEach(el => {
       el.addEventListener('click', e => {
         e.stopPropagation();
@@ -1408,6 +1567,45 @@
       const ta = textMarkupAttrs(style, geom, m.label);
       visual = `${border}
         <text x="${ta.tx}" y="${geom.y + ta.pad}" text-anchor="${ta.anchor}" fill="${selStroke}" font-size="${ta.fs}" font-weight="${ta.weight}" font-style="${ta.italic}" opacity="${op}" pointer-events="none">${ta.tspans}</text>`;
+    } else if ((m.markup_type === 'pen' || m.markup_type === 'sketch') && geom.points) {
+      const pts = geom.points;
+      hit = `<path data-markup-id="${id}" d="${pointsToPath(pts, false)}" stroke="transparent" stroke-width="22" fill="none" pointer-events="stroke"/>`;
+      visual = `<path d="${pointsToPath(pts, false)}" stroke="${selStroke}" stroke-width="${selSw}" fill="none" opacity="${op}" stroke-linecap="round" stroke-linejoin="round" pointer-events="none"/>`;
+    } else if (m.markup_type === 'polyline' && geom.points) {
+      hit = `<path data-markup-id="${id}" d="${pointsToPath(geom.points, false)}" stroke="transparent" stroke-width="22" fill="none" pointer-events="stroke"/>`;
+      visual = `<path d="${pointsToPath(geom.points, false)}" stroke="${selStroke}" stroke-width="${selSw}" fill="none" opacity="${op}"${dash} pointer-events="none"/>`;
+    } else if ((m.markup_type === 'polygon' || m.markup_type === 'area') && geom.points) {
+      hit = `<path data-markup-id="${id}" d="${pointsToPath(geom.points, true)}" stroke="transparent" stroke-width="22" fill="rgba(0,0,0,0.01)" pointer-events="all"/>`;
+      const fillCol = m.markup_type === 'area' ? `rgba(34,197,94,${fillOp})` : fill;
+      const areaLabel = m.markup_type === 'area' && m.measurement_value != null ? formatMeasurementDisplay(m) : '';
+      const cx = geom.points.reduce((s, v, i) => s + (i % 2 === 0 ? v : 0), 0) / (geom.points.length / 2);
+      const cy = geom.points.reduce((s, v, i) => s + (i % 2 === 1 ? v : 0), 0) / (geom.points.length / 2);
+      visual = `<path d="${pointsToPath(geom.points, true)}" stroke="${selStroke}" stroke-width="${selSw}" fill="${fillCol}" opacity="${op}"${dash} pointer-events="none"/>
+        ${areaLabel ? `<text x="${cx}" y="${cy}" text-anchor="middle" fill="${selStroke}" font-size="12" font-weight="bold" pointer-events="none">${esc(areaLabel)}</text>` : ''}`;
+    } else if (m.markup_type === 'crossout' && geom.w != null) {
+      hit = `<rect data-markup-id="${id}" x="${geom.x}" y="${geom.y}" width="${geom.w}" height="${geom.h}" fill="transparent" pointer-events="all"/>`;
+      visual = `<line x1="${geom.x}" y1="${geom.y}" x2="${geom.x + geom.w}" y2="${geom.y + geom.h}" stroke="${selStroke}" stroke-width="${selSw}" opacity="${op}" pointer-events="none"/>
+        <line x1="${geom.x + geom.w}" y1="${geom.y}" x2="${geom.x}" y2="${geom.y + geom.h}" stroke="${selStroke}" stroke-width="${selSw}" opacity="${op}" pointer-events="none"/>`;
+    } else if (m.markup_type === 'stamp' && geom.x != null) {
+      const tw = geom.w || 110;
+      const th = geom.h || 32;
+      const stampText = m.label || style.stampType || 'STAMP';
+      const stampColor = style.color || color;
+      hit = `<rect data-markup-id="${id}" x="${geom.x}" y="${geom.y}" width="${tw}" height="${th}" fill="transparent" pointer-events="all"/>`;
+      visual = `<rect x="${geom.x}" y="${geom.y}" width="${tw}" height="${th}" rx="4" stroke="${stampColor}" stroke-width="2" fill="rgba(24,24,27,0.9)" opacity="${op}" pointer-events="none"/>
+        <text x="${geom.x + tw / 2}" y="${geom.y + th / 2 + 4}" text-anchor="middle" fill="${stampColor}" font-size="${style.fontSize || 11}" font-weight="bold" pointer-events="none">${esc(stampText)}</text>`;
+    } else if (m.markup_type === 'count' && geom.x != null) {
+      const x = geom.x;
+      const y = geom.y;
+      const num = m.label || geom.countNum || '?';
+      hit = `<circle data-markup-id="${id}" cx="${x}" cy="${y}" r="16" fill="transparent" pointer-events="all"/>`;
+      visual = `<circle cx="${x}" cy="${y}" r="12" fill="${selStroke}" stroke="#fff" stroke-width="2" opacity="${op}" pointer-events="none"/>
+        <text x="${x}" y="${y + 4}" text-anchor="middle" fill="#fff" font-size="10" font-weight="bold" pointer-events="none">${esc(String(num))}</text>`;
+    } else if (m.markup_type === 'punch_pin') {
+      const x = geom.x || 0;
+      const y = geom.y || 0;
+      const punchId = geom.linkedPunchId;
+      return `<g data-punch-pin="${punchId || ''}" data-markup-id="${id}" style="cursor:pointer"><circle cx="${x}" cy="${y}" r="14" fill="transparent"/><circle cx="${x}" cy="${y}" r="10" fill="#8b5cf6" stroke="#fff" stroke-width="2"/><text x="${x}" y="${y + 4}" text-anchor="middle" fill="#fff" font-size="9" font-weight="bold" pointer-events="none">P</text><title>${esc(m.label || 'Punch')}</title></g>`;
     } else if (m.markup_type === 'rfi_pin') {
       const x = geom.x || 0; const y = geom.y || 0;
       return `<g data-rfi-pin="${m.linked_rfi_id || ''}" data-markup-id="${id}" style="cursor:pointer"><circle cx="${x}" cy="${y}" r="14" fill="transparent"/><circle cx="${x}" cy="${y}" r="10" fill="#f97316" stroke="#fff" stroke-width="2"/><text x="${x}" y="${y + 4}" text-anchor="middle" fill="#fff" font-size="9" font-weight="bold" pointer-events="none">R</text><title>${esc(m.label || 'RFI')}</title></g>`;
@@ -1606,10 +1804,10 @@
     const isSelected = !!state.selectedMarkupId;
     const title = isSelected ? `Selected: ${type}` : `Tool: ${type}`;
     const showCloud = type === 'cloud';
-    const showLine = ['line', 'arrow', 'rect', 'ellipse', 'cloud', 'measure', 'highlight', 'callout'].includes(type);
+    const showLine = ['line', 'arrow', 'rect', 'ellipse', 'cloud', 'measure', 'highlight', 'callout', 'pen', 'sketch', 'polyline', 'polygon', 'area', 'crossout', 'count', 'stamp'].includes(type);
     const showText = type === 'text' || type === 'textbox' || type === 'callout';
     const showArrow = type === 'arrow' || type === 'line' || type === 'callout';
-    const showMeasure = type === 'measure' || (isSelected && ctx?.markup_type === 'measure');
+    const showStamp = type === 'stamp';
     const showFill = ['rect', 'highlight', 'ellipse', 'text', 'textbox', 'callout'].includes(type);
     const showSize = isSelected && ['rect', 'highlight', 'ellipse', 'cloud', 'textbox', 'callout'].includes(type);
     const geom = isSelected && ctx?.geometry ? resolveGeom(ctx.geometry) : null;
@@ -1634,6 +1832,7 @@
       ? formatMeasurementDisplay(ctx) : '';
 
     el.innerHTML = `
+      ${!isSelected ? renderToolPaletteHtml() : ''}
       <div class="text-[10px] uppercase text-zinc-500 mb-1 sticky top-0 bg-zinc-800/95 py-1 z-10 border-b border-zinc-700/80">${esc(title)}</div>
       ${toolHint ? `<div class="markup-prop-hint mb-2">${esc(toolHint)}</div>` : ''}
       ${showLine ? propSection('Color & stroke', `
@@ -1667,8 +1866,18 @@
         ${propRow('Width', 'propGeomW', Math.round(geom.w || 0), 1, 8000, 1)}
         ${propRow('Height', 'propGeomH', Math.round(geom.h || 0), 1, 8000, 1)}
       `) : ''}
+      ${showStamp ? propSection('Stamp type', `
+        <div class="flex flex-wrap gap-1 mb-2">${STAMP_PRESETS.map(s => {
+          const active = state.selectedStamp === s.value ? ' scale-preset-active' : '';
+          return `<button type="button" class="scale-preset-btn${active}" data-stamp-value="${esc(s.value)}" style="border-color:${s.color}55">${esc(s.label)}</button>`;
+        }).join('')}</div>
+        <div class="markup-prop-hint">Click on the sheet to place the selected stamp.</div>
+      `) : ''}
       ${isSelected && ctx?.markup_type === 'measure' && measureDisplay ? `
         <div class="markup-prop-hint">Length: <strong>${esc(measureDisplay)}</strong></div>
+      ` : ''}
+      ${isSelected && ctx?.markup_type === 'area' && ctx.measurement_value != null ? `
+        <div class="markup-prop-hint">Area: <strong>${esc(formatMeasurementDisplay(ctx))}</strong></div>
       ` : ''}
       ${isSelected && showText ? propSection('Content', `
         <textarea id="propTextLabel" rows="4" class="w-full bg-zinc-900 border border-zinc-700 rounded p-2 text-xs text-white" placeholder="Type your note…">${esc(ctx.label || '')}</textarea>
@@ -1727,6 +1936,21 @@
         renderPropertiesPanel();
       });
     });
+
+    el.querySelectorAll('[data-palette-tool]').forEach(btn => {
+      btn.addEventListener('click', () => {
+        setTool(btn.getAttribute('data-palette-tool'));
+      });
+    });
+
+    el.querySelectorAll('[data-stamp-value]').forEach(btn => {
+      btn.addEventListener('click', () => {
+        state.selectedStamp = btn.getAttribute('data-stamp-value');
+        const preset = STAMP_PRESETS.find(s => s.value === state.selectedStamp);
+        if (preset) applyMarkupProperty({ color: preset.color, stampType: preset.value });
+        renderPropertiesPanel();
+      });
+    });
     bindLiveNum('propTextPadding', (input) => {
       const val = parseInt(input.value, 10);
       if (!Number.isNaN(val)) applyMarkupProperty({ textPadding: val });
@@ -1774,7 +1998,7 @@
         renderMarkupOverlay();
       });
     }
-    document.getElementById('propCalibrateBtn')?.addEventListener('click', () => { setTool('calibrate'); toast('Click two points on a known distance'); });
+    document.getElementById('propCalibrateBtn')?.addEventListener('click', () => { setTool('calibrate'); toast('Click two points on a known distance on the drawing'); });
     document.getElementById('propDetectScaleBtn')?.addEventListener('click', detectScale);
     document.getElementById('propScaleApplyBtn')?.addEventListener('click', applyManualScaleInput);
     document.getElementById('propScaleInput')?.addEventListener('keydown', e => { if (e.key === 'Enter') applyManualScaleInput(); });
@@ -1813,6 +2037,8 @@
       state.drawing = false;
       state.drawStart = null;
       state.tempMarkup = null;
+      state.penPoints = null;
+      state.pathPoints = null;
     }
     state.tool = tool;
     const defaults = TOOL_STYLE_DEFAULTS[tool];
@@ -1858,7 +2084,7 @@
   async function deleteSelectedMarkup() {
     if (!state.selectedMarkupId) return;
     const m = state.markups.find(x => x.id === state.selectedMarkupId);
-    if (!m || !confirm('Delete this markup?')) return;
+    if (!m || !await drawConfirm('Delete this markup?', { title: 'Delete markup', danger: true, confirmLabel: 'Delete' })) return;
     try {
       await api(`/api/drawings/markups/${m.id}`, { method: 'DELETE' });
     } catch (e) {
@@ -1871,64 +2097,67 @@
     toast('Markup deleted');
   }
 
-  function showTextEditor(pt, existingMarkup, pendingGeometry) {
-    const wrap = document.getElementById('drawViewerWrap');
-    if (!wrap || state.textEditorOpen) return;
-    state.textEditorOpen = true;
-    state.pendingTextGeometry = pendingGeometry || null;
-    let editor = document.getElementById('drawTextEditor');
-    if (!editor) {
-      editor = document.createElement('div');
-      editor.id = 'drawTextEditor';
-      editor.className = 'absolute z-50 bg-zinc-900 border border-sky-600 rounded-md shadow-xl p-2';
-      editor.innerHTML = `
-        <textarea id="drawTextEditorInput" rows="4" class="w-64 bg-zinc-800 border border-zinc-700 rounded p-2 text-sm text-white mb-2" placeholder="Type your note — Enter saves, Shift+Enter for new line"></textarea>
-        <div class="flex gap-2 justify-end">
-          <button type="button" id="drawTextEditorCancel" class="px-2 py-1 text-xs bg-zinc-800 rounded">Cancel</button>
-          <button type="button" id="drawTextEditorSave" class="px-2 py-1 text-xs bg-sky-700 rounded text-white">Save</button>
-        </div>`;
-      wrap.appendChild(editor);
-    }
-    const rect = wrap.getBoundingClientRect();
-    editor.style.left = `${state.panX + pt.x * state.viewScale}px`;
-    editor.style.top = `${state.panY + pt.y * state.viewScale}px`;
-    editor.classList.remove('hidden');
-    const input = document.getElementById('drawTextEditorInput');
-    input.value = existingMarkup?.label || '';
-    input.focus();
-
-    const close = () => {
+  function bindTextDialog() {
+    const dialog = document.getElementById('drawTextDialog');
+    if (!dialog || dialog._bound) return;
+    dialog._bound = true;
+    const closeDialog = () => {
       state.textEditorOpen = false;
-      state.pendingTextGeometry = null;
-      editor.classList.add('hidden');
+      state.textDialogCtx = null;
+      dialog.close();
     };
-    document.getElementById('drawTextEditorCancel').onclick = close;
-    document.getElementById('drawTextEditorSave').onclick = async () => {
-      const text = input.value.trim();
-      close();
-      if (!text) return;
-      if (existingMarkup) {
-        existingMarkup.label = text;
-        await persistMarkup(existingMarkup, { label: text });
+    document.getElementById('drawTextDialogClose')?.addEventListener('click', closeDialog);
+    document.getElementById('drawTextDialogCancel')?.addEventListener('click', closeDialog);
+    document.getElementById('drawTextDialogSave')?.addEventListener('click', async () => {
+      const ctx = state.textDialogCtx;
+      const input = document.getElementById('drawTextDialogInput');
+      const text = input?.value.trim() || '';
+      closeDialog();
+      if (!text || !ctx) return;
+      if (ctx.existingMarkup) {
+        ctx.existingMarkup.label = text;
+        await persistMarkup(ctx.existingMarkup, { label: text });
         renderMarkupOverlay();
         return;
       }
       const lines = text.split('\n');
       const fontSize = state.markupStyle.fontSize || 14;
-      const geom = state.pendingTextGeometry || {
-        x: pt.x,
-        y: pt.y,
+      const geom = ctx.pendingGeometry || {
+        x: ctx.pt.x,
+        y: ctx.pt.y,
         w: 220,
         h: Math.max(28, lines.length * (fontSize + 6) + 12),
       };
-      state.pendingTextGeometry = null;
       await saveMarkup({
         markup_type: 'textbox',
         geometry: geom,
         label: text,
         style: { ...toolStyle('text'), fillOpacity: toolStyle('text').fillOpacity ?? 0.9 },
       });
-    };
+    });
+    dialog.addEventListener('cancel', (e) => {
+      e.preventDefault();
+      state.textEditorOpen = false;
+      state.textDialogCtx = null;
+    });
+  }
+
+  function showTextEditor(pt, existingMarkup, pendingGeometry) {
+    bindTextDialog();
+    const dialog = document.getElementById('drawTextDialog');
+    if (!dialog || state.textEditorOpen) return;
+    state.textEditorOpen = true;
+    state.textDialogCtx = { pt, existingMarkup, pendingGeometry };
+    const titleEl = document.getElementById('drawTextDialogTitle');
+    if (titleEl) {
+      titleEl.textContent = existingMarkup?.markup_type === 'callout' ? 'Callout note' : 'Markup text';
+    }
+    const input = document.getElementById('drawTextDialogInput');
+    if (input) {
+      input.value = existingMarkup?.label || '';
+      dialog.showModal();
+      input.focus();
+    }
   }
 
   function onViewerKeyDown(e) {
@@ -1945,7 +2174,14 @@
       state.drawing = false;
       state.drawStart = null;
       state.tempMarkup = null;
+      state.penPoints = null;
+      state.pathPoints = null;
       setTool('pan');
+      return;
+    }
+    if (e.key === 'Enter' && state.pathPoints && state.pathPoints.length >= 4) {
+      e.preventDefault();
+      finishPathTool();
       return;
     }
     if (e.altKey || e.ctrlKey || e.metaKey) return;
@@ -2016,7 +2252,7 @@
     });
   }
 
-  function onViewerDown(evt) {
+  async function onViewerDown(evt) {
     if (evt.button !== 0) return;
     if (state.tool === 'pan' || evt.altKey) {
       state.isPanning = true;
@@ -2042,19 +2278,51 @@
       renderPropertiesPanel();
       return;
     }
-    if (['line', 'rect', 'cloud', 'arrow', 'highlight', 'measure', 'ellipse', 'callout', 'text'].includes(state.tool)) {
+    const pt = screenToDoc(evt);
+    if (state.tool === 'pen') {
       state.drawing = true;
-      state.drawStart = screenToDoc(evt);
+      state.penPoints = [pt.x, pt.y];
+      return;
+    }
+    if (['polyline', 'polygon', 'area'].includes(state.tool)) {
+      if (!state.pathPoints) state.pathPoints = [];
+      state.pathPoints.push(pt.x, pt.y);
+      const activeStyle = toolStyle(state.tool);
+      const color = activeStyle.color || '#38bdf8';
+      const closed = state.tool !== 'polyline';
+      state.tempMarkup = `<path d="${pointsToPath(state.pathPoints, closed)}" stroke="${color}" stroke-width="2" fill="${closed ? 'rgba(56,189,248,0.08)' : 'none'}" stroke-dasharray="4 3"/>`;
+      renderMarkupOverlay();
+      return;
+    }
+    if (state.tool === 'count') {
+      placeCountMarker(pt);
+      return;
+    }
+    if (state.tool === 'stamp') {
+      placeStamp(pt);
       return;
     }
     if (state.tool === 'rfi_pin') {
-      placeRfiPin(screenToDoc(evt));
+      placeRfiPin(pt);
+      return;
+    }
+    if (state.tool === 'punch_pin') {
+      placePunchPin(pt);
+      return;
+    }
+    if (['line', 'rect', 'cloud', 'arrow', 'highlight', 'measure', 'ellipse', 'callout', 'text', 'crossout'].includes(state.tool)) {
+      state.drawing = true;
+      state.drawStart = pt;
       return;
     }
     if (state.tool === 'calibrate') {
-      const pt = screenToDoc(evt);
       if (!state.drawStart) { state.drawStart = pt; toast('Click second point for known distance'); return; }
-      const dist = prompt('Known distance — enter feet and inches (e.g. 10\'-6" or 10.5):', '10\'-0"');
+      const dist = await drawPrompt('', '10\'-0"', {
+        title: 'Calibrate scale',
+        label: 'Known distance (feet & inches, e.g. 10\'-6" or 10.5)',
+        placeholder: '10\'-0"',
+        submitLabel: 'Set scale',
+      });
       if (dist) {
         const dx = pt.x - state.drawStart.x;
         const dy = pt.y - state.drawStart.y;
@@ -2095,6 +2363,20 @@
       }
       return;
     }
+    if (state.tool === 'pen' && state.drawing && state.penPoints) {
+      const pt = screenToDoc(evt);
+      const pts = state.penPoints;
+      const lx = pts[pts.length - 2];
+      const ly = pts[pts.length - 1];
+      if (Math.hypot(pt.x - lx, pt.y - ly) > 2) {
+        state.penPoints.push(pt.x, pt.y);
+        const color = toolStyle('pen').color || '#ef4444';
+        const sw = toolStyle('pen').lineWidth || 2;
+        state.tempMarkup = `<path d="${pointsToPath(state.penPoints, false)}" stroke="${color}" stroke-width="${sw}" fill="none" stroke-linecap="round" stroke-linejoin="round" opacity="0.9"/>`;
+        renderMarkupOverlay();
+      }
+      return;
+    }
     if (!state.drawing || !state.drawStart) return;
     const pt = screenToDoc(evt);
     const s = state.drawStart;
@@ -2102,7 +2384,7 @@
     const sw = activeStyle.lineWidth || 2;
     const color = activeStyle.color || '#38bdf8';
     const scallop = activeStyle.cloudScallop || 18;
-    if (['rect', 'highlight', 'ellipse', 'text'].includes(state.tool)) {
+    if (['rect', 'highlight', 'ellipse', 'text', 'crossout'].includes(state.tool)) {
       const x = Math.min(s.x, pt.x); const y = Math.min(s.y, pt.y);
       const rw = Math.abs(pt.x - s.x); const rh = Math.abs(pt.y - s.y);
       if (state.tool === 'ellipse') {
@@ -2157,6 +2439,19 @@
       renderPropertiesPanel();
       return;
     }
+    if (state.tool === 'pen' && state.drawing) {
+      if (state.penPoints && state.penPoints.length >= 4) {
+        await saveMarkup({
+          markup_type: 'sketch',
+          geometry: { points: state.penPoints.slice() },
+          style: { ...toolStyle('pen') },
+        });
+      }
+      state.drawing = false;
+      state.penPoints = null;
+      state.tempMarkup = null;
+      return;
+    }
     if (!state.drawing || !state.drawStart) return;
     const pt = screenToDoc(evt);
     const s = state.drawStart;
@@ -2164,7 +2459,7 @@
     let geometry = {};
     let measurement_value = null;
     let label = null;
-    if (['rect', 'cloud', 'highlight', 'ellipse', 'text'].includes(type)) {
+    if (['rect', 'cloud', 'highlight', 'ellipse', 'text', 'crossout'].includes(type)) {
       geometry = { x: Math.min(s.x, pt.x), y: Math.min(s.y, pt.y), w: Math.abs(pt.x - s.x), h: Math.abs(pt.y - s.y) };
       if (geometry.w < 3 && geometry.h < 3) {
         if (type === 'text') {
@@ -2221,8 +2516,9 @@
     state.drawStart = null;
     state.tempMarkup = null;
     const measureInfo = type === 'measure' ? formatMeasureLength(Math.hypot(pt.x - s.x, pt.y - s.y)) : null;
+    const saveType = type === 'crossout' ? 'crossout' : (type === 'measure' ? 'measure' : type);
     await saveMarkup({
-      markup_type: type === 'measure' ? 'measure' : type,
+      markup_type: saveType,
       geometry,
       measurement_value,
       measurement_unit: measureInfo ? measureInfo.unit : (state.pixelsPerUnit ? state.measureUnit : 'px'),
@@ -2238,17 +2534,107 @@
     }
   }
 
+  async function finishPathTool() {
+    if (!state.pathPoints || state.pathPoints.length < 4) {
+      state.pathPoints = null;
+      state.tempMarkup = null;
+      renderMarkupOverlay();
+      return;
+    }
+    const type = state.tool;
+    const points = state.pathPoints.slice();
+    let measurement_value = null;
+    let measurement_unit = null;
+    if (type === 'area') {
+      const pxArea = polygonAreaPx(points);
+      if (state.pixelsPerUnit) {
+        measurement_value = pxArea / (state.pixelsPerUnit * state.pixelsPerUnit);
+        measurement_unit = 'sf';
+      } else {
+        measurement_value = pxArea;
+        measurement_unit = 'px';
+      }
+    }
+    state.pathPoints = null;
+    state.tempMarkup = null;
+    await saveMarkup({
+      markup_type: type,
+      geometry: { points },
+      measurement_value,
+      measurement_unit,
+      style: { ...toolStyle(type) },
+    });
+  }
+
+  async function placeCountMarker(pt) {
+    const num = state.countCounter++;
+    await saveMarkup({
+      markup_type: 'count',
+      geometry: { x: pt.x, y: pt.y, countNum: num },
+      label: String(num),
+      style: { ...toolStyle('count') },
+    });
+  }
+
+  async function placeStamp(pt) {
+    const preset = STAMP_PRESETS.find(s => s.value === state.selectedStamp) || STAMP_PRESETS[0];
+    const text = preset.value;
+    const w = Math.max(90, text.length * 7 + 20);
+    await saveMarkup({
+      markup_type: 'stamp',
+      geometry: { x: pt.x - w / 2, y: pt.y - 16, w, h: 32 },
+      label: text,
+      style: { ...toolStyle('stamp'), color: preset.color, stampType: text },
+    });
+  }
+
   async function placeRfiPin(pt) {
-    const opts = state.rfis.map(r => `${r.number}: ${r.subject}`).join('\n');
-    const pick = prompt(`Link RFI pin to:\n${opts}\n\nEnter RFI number (e.g. RFI-001):`);
-    if (!pick) return;
-    const rfi = state.rfis.find(r => pick.toUpperCase().includes(r.number.toUpperCase()) || r.number.toUpperCase() === pick.toUpperCase());
-    if (!rfi) { alert('RFI not found'); return; }
+    if (!state.rfis.length) {
+      alert('No RFIs on this project. Create an RFI first.');
+      return;
+    }
+    const picked = await drawSelect({
+      title: 'Link RFI pin',
+      message: 'Choose the RFI to pin at this location on the sheet.',
+      items: state.rfis.map(r => ({ value: r.id, label: `${r.number} — ${r.subject}` })),
+      submitLabel: 'Place pin',
+      emptyLabel: 'No RFIs found on this project',
+    });
+    if (!picked) return;
+    const rfi = state.rfis.find(r => r.id === picked.value);
+    if (!rfi) return;
     await saveMarkup({
       markup_type: 'rfi_pin',
       geometry: { x: pt.x, y: pt.y },
       linked_rfi_id: rfi.id,
       label: rfi.number,
+      publish: true,
+    });
+  }
+
+  async function placePunchPin(pt) {
+    if (!state.punchItems.length) await loadPunchItems();
+    if (!state.punchItems.length) {
+      alert('No open punch list items on this project.');
+      return;
+    }
+    const picked = await drawSelect({
+      title: 'Link punch pin',
+      message: 'Choose the punch list item to pin at this location.',
+      items: state.punchItems.map(p => ({
+        value: p.id,
+        label: `${p.number || 'PL'} — ${(p.description || '').slice(0, 80)}`,
+      })),
+      submitLabel: 'Place pin',
+      emptyLabel: 'No open punch items found',
+    });
+    if (!picked) return;
+    const item = state.punchItems.find(p => p.id === picked.value);
+    if (!item) return;
+    await saveMarkup({
+      markup_type: 'punch_pin',
+      geometry: { x: pt.x, y: pt.y, linkedPunchId: item.id },
+      label: item.number || `PL-${item.id}`,
       publish: true,
     });
   }
@@ -2427,7 +2813,11 @@
   }
 
   async function exportTakeoffToBudget() {
-    const costCode = prompt('Cost code for takeoff lines:', '01-000');
+    const costCode = await drawPrompt('', '01-000', {
+      title: 'Export takeoff to budget',
+      label: 'Cost code for takeoff lines',
+      submitLabel: 'Export',
+    });
     if (costCode === null) return;
     try {
       const json = await api('/api/drawings/export-takeoff-to-budget', {
@@ -2440,7 +2830,7 @@
         }),
       });
       toast(`Exported ${json.imported} takeoff item(s) to Budget`);
-      if (confirm(`Open Budget to review ${json.imported} imported takeoff line(s)?`)) {
+      if (await drawConfirm(`Open Budget to review ${json.imported} imported takeoff line(s)?`, { title: 'Open Budget', confirmLabel: 'Open Budget' })) {
         global.location.href = `/budget?project_id=${projectId()}`;
       }
     } catch (e) { alert(e.message); }
@@ -2626,7 +3016,7 @@
     const d = state.drawings.find(x => x.id === id);
     const label = sheetLabel || d?.sheet_number || 'this sheet';
     const setNote = d?.set_name ? `\n\nSet: ${d.set_name}` : '';
-    if (!confirm(`Delete sheet ${label} and all of its revisions?${setNote}\n\nThis cannot be undone.`)) return;
+    if (!await drawConfirm(`Delete sheet ${label} and all of its revisions?${setNote}\n\nThis cannot be undone.`, { title: 'Delete sheet', danger: true, confirmLabel: 'Delete' })) return;
     state.deleting = true;
     toast(`Deleting ${label}…`);
     try {
@@ -2968,7 +3358,8 @@
         document.getElementById('printMenu')?.classList.add('hidden');
       }
     });
-    await Promise.all([loadDashboard(), loadDrawings(), loadRfis(), loadDrawingSets()]);
+    await Promise.all([loadDashboard(), loadDrawings(), loadRfis(), loadPunchItems(), loadDrawingSets()]);
+    bindTextDialog();
     await handleDeepLink();
   }
 
