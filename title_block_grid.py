@@ -1,28 +1,30 @@
 """Grid/cell-based title block parser for construction drawing PDFs.
 
-Architectural title blocks (Bluebeam AutoMark style) place the **value above**
-a small **label at the bottom of each cell**:
-  ┌─────────────────┐
-  │   A-212         │  ← largest text = drawing / sheet number
-  │ Drawing No.     │  ← tiny label tucked in bottom of cell
-  └─────────────────┘
-  ┌─────────────────┐
-  │ Interior Elev.  │  ← drawing name (cell directly above)
-  │ Drawing Name:   │
-  └─────────────────┘
+Typical architectural title block (bottom-right inside frame):
+
+  ┌──────────────────────────────────────────┐
+  │         Exterior Elevations               │  value above label
+  │         Drawing Name:                     │
+  ├──────────────┬───────────────────────────┤
+  │ Date: 05/23/25│ Project No.                │  project: label above value
+  │ Type: RETROFIT│ 2024.0565                  │
+  │ Drawn By: AM  ├───────────────────────────┤
+  │ Checked By: LS│         A-201              │  sheet: value above label
+  │               │         Drawing No.        │
+  └──────────────┴───────────────────────────┘
 
 Detection strategy (Bluebeam region + spatial index):
-1. Locate bottom-right title-block column via vector frame lines + x-position
-2. Cluster text into vertical cells (y-gap splits or vector rectangles)
-3. Within each cell: bottom line = label, largest font above = value
-4. Sheet number from southernmost cell with "Drawing No" label
-5. Drawing name from cell stacked directly above that cell
+1. Parse the full bottom-right title block (not just the narrow sheet column)
+2. Split metadata left column vs identifier right column
+3. Drawing name from full-width top band with "Drawing Name:" label at bottom
+4. Sheet number from bottom-right cell with "Drawing No." label at bottom
+5. Project number from right column cell with "Project No." label at top
 """
 from __future__ import annotations
 
 import re
 import statistics
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Any
 
 from drawing_persistence import (
@@ -42,7 +44,9 @@ from drawing_persistence import (
     normalize_sheet_number,
 )
 
-# A-212, A-102, S-201, A-102a (optional suffix letter)
+TITLE_BLOCK_X0_RATIO = 0.40
+TITLE_BLOCK_Y0_RATIO = 0.48
+
 DRAWING_NUMBER_VALUE_RE = re.compile(
     r'^([A-Z]{1,3})-(\d{1,4})([A-Za-z])?$',
     re.I,
@@ -74,6 +78,14 @@ PROJECT_TYPE_LABEL_RE = re.compile(
     r'occupancy|facility\s*type|construction\s*type)',
     re.I,
 )
+TYPE_INLINE_RE = re.compile(
+    r'^type\s*:?\s*(.+)$',
+    re.I,
+)
+METADATA_INLINE_RE = re.compile(
+    r'^(?:date|drawn\s*by|checked\s*by|designed\s*by|approved\s*by|scale|rev(?:ision)?)\s*:',
+    re.I,
+)
 REV_LABEL_BOTTOM_RE = re.compile(
     r'^rev(?:ision)?\s*(?:no\.?|num(?:ber)?)?\s*:?\s*$',
     re.I,
@@ -83,6 +95,12 @@ NOTE_FRAGMENT_RE = re.compile(
     re.I,
 )
 PROJECT_NUMBER_VALUE_RE = re.compile(r'^[A-Z0-9][A-Z0-9\-./]{2,24}$', re.I)
+WORK_TYPE_VALUE_RE = re.compile(
+    r'^(?:RETROFIT|NEW(?:\s+CONSTRUCTION)?|RENOVATION|ADDITION|TI|BUILD[- ]?OUT|TENANT(?:\s+IMPROVEMENT)?|'
+    r'COMMERCIAL|RESIDENTIAL|ALTERATION|DEMOLITION|REPAIR)$',
+    re.I,
+)
+INITIALS_RE = re.compile(r'^[A-Z]{1,3}$')
 
 
 @dataclass
@@ -119,10 +137,19 @@ class TextLine:
     words: list[WordSpan]
     height: float
     font_size: float = 0.0
+    column: str = 'full'
 
     @property
     def cy(self) -> float:
         return (self.y0 + self.y1) / 2
+
+    @property
+    def cx(self) -> float:
+        return (self.x0 + self.x1) / 2
+
+    @property
+    def width(self) -> float:
+        return max(1.0, self.x1 - self.x0)
 
 
 @dataclass
@@ -140,21 +167,12 @@ class GridRect:
     def cy(self) -> float:
         return (self.y0 + self.y1) / 2
 
-    @property
-    def width(self) -> float:
-        return max(1.0, self.x1 - self.x0)
-
-    @property
-    def height(self) -> float:
-        return max(1.0, self.y1 - self.y0)
-
     def contains_point(self, x: float, y: float, pad: float = 2.0) -> bool:
         return (self.x0 - pad) <= x <= (self.x1 + pad) and (self.y0 - pad) <= y <= (self.y1 + pad)
 
 
 @dataclass
 class LabeledCell:
-    """One title-block grid cell: value text above, label text at bottom."""
     x0: float
     y0: float
     x1: float
@@ -165,6 +183,7 @@ class LabeledCell:
     value_text: str = ''
     value_height: float = 0.0
     value_font_size: float = 0.0
+    column: str = 'full'
 
     @property
     def cx(self) -> float:
@@ -174,9 +193,12 @@ class LabeledCell:
     def cy(self) -> float:
         return (self.y0 + self.y1) / 2
 
+    @property
+    def width(self) -> float:
+        return max(1.0, self.x1 - self.x0)
 
-def _spans_from_dict(page, min_y_ratio: float = 0.50) -> list[WordSpan]:
-    """Extract positioned text spans with font sizes from PDF dict output."""
+
+def _spans_from_dict(page, min_y_ratio: float = TITLE_BLOCK_Y0_RATIO) -> list[WordSpan]:
     page_h = page.rect.height
     spans: list[WordSpan] = []
     try:
@@ -200,8 +222,7 @@ def _spans_from_dict(page, min_y_ratio: float = 0.50) -> list[WordSpan]:
     return spans
 
 
-def _words_from_page(page, min_y_ratio: float = 0.52) -> list[WordSpan]:
-    """Fallback word list when dict spans are unavailable."""
+def _words_from_page(page, min_y_ratio: float = TITLE_BLOCK_Y0_RATIO) -> list[WordSpan]:
     spans = _spans_from_dict(page, min_y_ratio)
     if spans:
         return spans
@@ -232,7 +253,7 @@ def _median_font_size(words: list[WordSpan]) -> float:
     return statistics.median(sizes) if sizes else _median_height(words)
 
 
-def _cluster_words_into_lines(words: list[WordSpan], y_tol: float) -> list[TextLine]:
+def _cluster_words_into_lines(words: list[WordSpan], y_tol: float, column: str = 'full') -> list[TextLine]:
     if not words:
         return []
     sorted_w = sorted(words, key=lambda w: (w.cy, w.x0))
@@ -252,6 +273,7 @@ def _cluster_words_into_lines(words: list[WordSpan], y_tol: float) -> list[TextL
                 ' '.join(x.text for x in bucket), bucket,
                 max(x.height for x in bucket),
                 max(sizes) if sizes else max(x.height for x in bucket),
+                column,
             ))
             bucket = [w]
             row_y = w.cy
@@ -264,6 +286,7 @@ def _cluster_words_into_lines(words: list[WordSpan], y_tol: float) -> list[TextL
             ' '.join(x.text for x in bucket), bucket,
             max(x.height for x in bucket),
             max(sizes) if sizes else max(x.height for x in bucket),
+            column,
         ))
     return lines
 
@@ -285,6 +308,81 @@ def _classify_bottom_label(text: str) -> str | None:
     return None
 
 
+def _classify_top_label(text: str) -> str | None:
+    t = text.strip()
+    if PROJECT_NO_LABEL_RE.match(t):
+        return 'project_number'
+    if PROJECT_TYPE_LABEL_RE.search(t):
+        return 'project_type'
+    return None
+
+
+def _is_metadata_value(text: str) -> bool:
+    t = text.strip()
+    if not t:
+        return True
+    if DATE_FALLBACK_RE.fullmatch(t):
+        return True
+    if WORK_TYPE_VALUE_RE.match(t):
+        return True
+    if INITIALS_RE.match(t):
+        return True
+    if METADATA_INLINE_RE.match(t):
+        return True
+    if TYPE_INLINE_RE.match(t):
+        return True
+    return False
+
+
+def _line_from_words(words: list[WordSpan], column: str) -> TextLine | None:
+    if not words:
+        return None
+    words = sorted(words, key=lambda w: w.x0)
+    sizes = [w.font_size for w in words if w.font_size > 0]
+    return TextLine(
+        min(w.y0 for w in words), max(w.y1 for w in words),
+        min(w.x0 for w in words), max(w.x1 for w in words),
+        ' '.join(w.text for w in words), words,
+        max(w.height for w in words),
+        max(sizes) if sizes else max(w.height for w in words),
+        column,
+    )
+
+
+def _split_line_by_columns(line: TextLine, split_x: float) -> list[TextLine]:
+    """Split a horizontal text line into left / right / full segments."""
+    text = line.text.strip()
+    if DRAWING_NAME_LABEL_RE.search(text) or _classify_bottom_label(text) == 'drawing_name':
+        line.column = 'full'
+        return [line]
+    if _normalize_drawing_number(text) and line.cx >= split_x:
+        line.column = 'right'
+        return [line]
+
+    left_words = [w for w in line.words if w.cx < split_x]
+    right_words = [w for w in line.words if w.cx >= split_x]
+    out: list[TextLine] = []
+    left_ln = _line_from_words(left_words, 'left')
+    right_ln = _line_from_words(right_words, 'right')
+    if left_ln and left_ln.text.strip():
+        out.append(left_ln)
+    if right_ln and right_ln.text.strip() and not _is_metadata_value(right_ln.text):
+        out.append(right_ln)
+    if not out:
+        line.column = 'full'
+        out.append(line)
+    return out
+
+
+def _column_split_x(page_w: float, vert_lines: list[float]) -> float:
+    """X coordinate separating metadata column from identifier column."""
+    candidates = [x for x in vert_lines if page_w * 0.48 <= x <= page_w * 0.78]
+    if candidates:
+        candidates.sort()
+        return candidates[0]
+    return page_w * 0.62
+
+
 def _lines_to_labeled_cell(lines: list[TextLine], med_h: float, med_size: float) -> LabeledCell | None:
     if not lines:
         return None
@@ -293,61 +391,77 @@ def _lines_to_labeled_cell(lines: list[TextLine], med_h: float, med_size: float)
     x1 = max(ln.x1 for ln in lines)
     y0 = min(ln.y0 for ln in lines)
     y1 = max(ln.y1 for ln in lines)
+    column = lines[0].column if lines else 'full'
 
     label_kind = None
     label_text = ''
     label_idx = None
     label_size = med_size
+    label_position = 'bottom'
 
-    # Label is on the bottom line(s) — much smaller font than the value above
-    for i in range(len(lines) - 1, max(-1, len(lines) - 3), -1):
-        ln = lines[i]
-        kind = _classify_bottom_label(ln.text)
-        if kind:
-            label_kind = kind
-            label_text = ln.text.strip()
-            label_idx = i
-            label_size = ln.font_size or ln.height
-            break
-        lower = ln.text.lower()
-        fs = ln.font_size or ln.height
-        is_small = fs <= med_size * 0.78 or ln.height <= med_h * 0.72
-        if is_small:
-            if 'drawing' in lower and ('no' in lower or 'number' in lower or 'num' in lower):
-                label_kind = 'drawing_number'
-                label_text = ln.text.strip()
-                label_idx = i
-                label_size = fs
-                break
-            if 'drawing' in lower and 'name' in lower:
-                label_kind = 'drawing_name'
-                label_text = ln.text.strip()
-                label_idx = i
-                label_size = fs
-                break
-            if 'project' in lower and ('no' in lower or 'number' in lower or 'num' in lower):
-                label_kind = 'project_number'
-                label_text = ln.text.strip()
-                label_idx = i
-                label_size = fs
-                break
-            if PROJECT_TYPE_LABEL_RE.search(ln.text):
-                label_kind = 'project_type'
-                label_text = ln.text.strip()
-                label_idx = i
-                label_size = fs
-                break
+    # Top-label pattern (Project No. above 2024.0565)
+    top_kind = _classify_top_label(lines[0].text)
+    if top_kind:
+        label_kind = top_kind
+        label_text = lines[0].text.strip()
+        label_idx = 0
+        label_size = lines[0].font_size or lines[0].height
+        label_position = 'top'
 
-    value_lines = lines[:label_idx] if label_idx is not None else []
-    if not value_lines and label_idx is None:
+    # Bottom-label pattern (value above Drawing No. / Drawing Name:)
+    if label_idx is None:
+        for i in range(len(lines) - 1, max(-1, len(lines) - 3), -1):
+            ln = lines[i]
+            kind = _classify_bottom_label(ln.text)
+            if kind:
+                label_kind = kind
+                label_text = ln.text.strip()
+                label_idx = i
+                label_size = ln.font_size or ln.height
+                break
+            lower = ln.text.lower()
+            fs = ln.font_size or ln.height
+            is_small = fs <= med_size * 0.78 or ln.height <= med_h * 0.72
+            if is_small:
+                if 'drawing' in lower and ('no' in lower or 'number' in lower or 'num' in lower):
+                    label_kind = 'drawing_number'
+                    label_text = ln.text.strip()
+                    label_idx = i
+                    label_size = fs
+                    break
+                if 'drawing' in lower and 'name' in lower:
+                    label_kind = 'drawing_name'
+                    label_text = ln.text.strip()
+                    label_idx = i
+                    label_size = fs
+                    break
+                if 'project' in lower and ('no' in lower or 'number' in lower or 'num' in lower):
+                    label_kind = 'project_number'
+                    label_text = ln.text.strip()
+                    label_idx = i
+                    label_size = fs
+                    label_position = 'top' if i == 0 else 'bottom'
+                    break
+                if PROJECT_TYPE_LABEL_RE.search(ln.text):
+                    label_kind = 'project_type'
+                    label_text = ln.text.strip()
+                    label_idx = i
+                    label_size = fs
+                    break
+
+    if label_idx is None:
         return None
+
+    if label_position == 'top':
+        value_lines = lines[label_idx + 1:]
+    else:
+        value_lines = lines[:label_idx]
 
     value_text = ''
     value_height = 0.0
     value_font_size = 0.0
     if value_lines:
-        # Value = largest font line(s) above the label (typically 3–5× label size)
-        size_threshold = max(med_size * 0.85, label_size * 1.35)
+        size_threshold = max(med_size * 0.82, label_size * 1.25)
         large = [ln for ln in value_lines if (ln.font_size or ln.height) >= size_threshold]
         if not large:
             large = [max(value_lines, key=lambda ln: (ln.font_size or ln.height, len(ln.text)))]
@@ -356,8 +470,11 @@ def _lines_to_labeled_cell(lines: list[TextLine], med_h: float, med_size: float)
         value_height = max(ln.height for ln in large)
         value_font_size = max(ln.font_size or ln.height for ln in large)
 
+    if not value_text:
+        return None
+
     return LabeledCell(
-        x0, y0, x1, y1, lines, label_text, label_kind, value_text, value_height, value_font_size,
+        x0, y0, x1, y1, lines, label_text, label_kind, value_text, value_height, value_font_size, column,
     )
 
 
@@ -380,16 +497,15 @@ def _cluster_lines_into_cells(lines: list[TextLine], cell_gap: float) -> list[La
     cells: list[LabeledCell] = []
     for group in groups:
         cell = _lines_to_labeled_cell(group, med_h, med_size)
-        if cell and (cell.label_kind or cell.value_text):
+        if cell:
             cells.append(cell)
     return cells
 
 
 def _extract_vector_segments(page) -> tuple[list[float], list[float]]:
-    """Horizontal and vertical line positions in bottom-right title block."""
     page_w, page_h = page.rect.width, page.rect.height
-    x_min = page_w * 0.45
-    y_min = page_h * 0.52
+    x_min = page_w * TITLE_BLOCK_X0_RATIO
+    y_min = page_h * TITLE_BLOCK_Y0_RATIO
     horiz: list[float] = []
     vert: list[float] = []
     try:
@@ -420,119 +536,90 @@ def _extract_vector_segments(page) -> tuple[list[float], list[float]]:
     return sorted(set(round(y, 1) for y in horiz)), sorted(set(round(x, 1) for x in vert))
 
 
-def _right_column_bounds(page_w: float, page_h: float, vert_lines: list[float]) -> tuple[float, float]:
-    """X bounds for the rightmost title-block column (sheet number column)."""
+def _right_column_bounds(page_w: float, vert_lines: list[float]) -> tuple[float, float]:
     br_verts = [x for x in vert_lines if x >= page_w * 0.55]
     if len(br_verts) >= 2:
         br_verts.sort()
-        # Rightmost band between last two vertical frame lines
-        x0 = br_verts[-2]
-        x1 = br_verts[-1]
-        if x1 - x0 >= page_w * 0.06:
+        x0, x1 = br_verts[-2], br_verts[-1]
+        if x1 - x0 >= page_w * 0.05:
             return x0, x1
-    return page_w * 0.68, page_w * 0.995
+    split_x = _column_split_x(page_w, vert_lines)
+    return split_x, page_w * 0.995
 
 
-def _cells_from_vector_grid(
-    horiz_lines: list[float],
-    vert_lines: list[float],
-    col_x0: float,
-    col_x1: float,
-    page_h: float,
-) -> list[GridRect]:
-    """Build rectangular cells from intersecting frame lines in the right column."""
-    y_lines = [y for y in horiz_lines if y >= page_h * 0.52]
-    x_lines = [x for x in vert_lines if col_x0 - 5 <= x <= col_x1 + 5]
-    if len(y_lines) < 2:
-        return []
-    y_lines = sorted(y_lines)
-    rects: list[GridRect] = []
-    for y0, y1 in zip(y_lines, y_lines[1:]):
-        if y1 - y0 < page_h * 0.018:
-            continue
-        if y1 < page_h * 0.55:
-            continue
-        rects.append(GridRect(col_x0, y0, col_x1, y1))
-    return rects
-
-
-def _assign_lines_to_vector_cells(lines: list[TextLine], rects: list[GridRect]) -> list[LabeledCell]:
-    if not rects:
-        return []
-    rects = sorted(rects, key=lambda r: r.y0)
-    grouped: dict[int, list[TextLine]] = {i: [] for i in range(len(rects))}
-    for ln in lines:
-        cy = ln.cy
-        cx = (ln.x0 + ln.x1) / 2
-        for i, rect in enumerate(rects):
-            if rect.contains_point(cx, cy):
-                grouped[i].append(ln)
-                break
-    cells: list[LabeledCell] = []
-    all_lines = [ln for g in grouped.values() for ln in g]
-    med_h = statistics.median([ln.height for ln in all_lines]) if all_lines else 8.0
-    med_size = statistics.median([ln.font_size or ln.height for ln in all_lines]) if all_lines else med_h
-    for i, rect in enumerate(rects):
-        group = grouped.get(i) or []
-        if not group:
-            continue
-        cell = _lines_to_labeled_cell(group, med_h, med_size)
-        if cell:
-            cell.x0, cell.y0, cell.x1, cell.y1 = rect.x0, rect.y0, rect.x1, rect.y1
-            if cell.label_kind or cell.value_text:
-                cells.append(cell)
-    return cells
-
-
-def _merge_cell_lists(primary: list[LabeledCell], secondary: list[LabeledCell]) -> list[LabeledCell]:
-    """Prefer primary cells; add secondary cells that don't overlap existing ones."""
-    merged = list(primary)
-    for sec in secondary:
-        overlap = False
-        for pri in primary:
-            if abs(sec.cy - pri.cy) < 8 and abs(sec.cx - pri.cx) < 20:
-                if pri.label_kind and not sec.label_kind:
-                    overlap = True
+def _identify_name_band_indices(lines: list[TextLine], cell_gap: float) -> set[int]:
+    """Lines belonging to the full-width drawing name row."""
+    indices: set[int] = set()
+    for i, ln in enumerate(lines):
+        if _classify_bottom_label(ln.text) == 'drawing_name' or DRAWING_NAME_LABEL_RE.search(ln.text):
+            indices.add(i)
+            for j in range(i - 1, -1, -1):
+                prev = lines[j]
+                if ln.y0 - prev.y1 <= cell_gap * 1.6:
+                    indices.add(j)
+                else:
                     break
-                if pri.value_text and sec.value_text and pri.label_kind:
-                    overlap = True
-                    break
-        if not overlap:
-            merged.append(sec)
-    return merged
+    return indices
 
 
-def _build_bottom_right_column(page) -> tuple[float, float, list[LabeledCell]]:
-    """Words in the rightmost title-block column → vertically stacked labeled cells."""
+def _build_title_block(page) -> tuple[float, float, list[LabeledCell]]:
+    """Parse full title block: name band + right identifier column."""
     page_w, page_h = page.rect.width, page.rect.height
-    words = _words_from_page(page, min_y_ratio=0.50)
+    words = _words_from_page(page)
     if not words:
         return page_w, page_h, []
 
+    tb_x0 = page_w * TITLE_BLOCK_X0_RATIO
+    tb_words = [w for w in words if w.cx >= tb_x0 and w.cy >= page_h * TITLE_BLOCK_Y0_RATIO]
+    if not tb_words:
+        return page_w, page_h, []
+
     horiz, vert = _extract_vector_segments(page)
-    col_x0, col_x1 = _right_column_bounds(page_w, page_h, vert)
+    split_x = _column_split_x(page_w, vert)
+    right_x0, right_x1 = _right_column_bounds(page_w, vert)
 
-    col_words = [w for w in words if w.cx >= col_x0 and w.cy >= page_h * 0.52]
-    if len(col_words) < 2:
-        col_words = [w for w in words if w.cx >= page_w * 0.58 and w.cy >= page_h * 0.58]
-        col_x0 = page_w * 0.58
-
-    med_h = _median_height(col_words)
-    med_size = _median_font_size(col_words)
+    med_h = _median_height(tb_words)
+    med_size = _median_font_size(tb_words)
     y_tol = max(2.5, med_h * 0.42)
-    cell_gap = max(6.0, med_size * 0.95, med_h * 1.15)
+    cell_gap = max(6.0, med_size * 0.90, med_h * 1.10)
 
-    lines = _cluster_words_into_lines(col_words, y_tol)
+    raw_lines = _cluster_words_into_lines(tb_words, y_tol)
+    name_band_idxs = _identify_name_band_indices(raw_lines, cell_gap)
 
-    vector_rects = _cells_from_vector_grid(horiz, vert, col_x0, col_x1, page_h)
-    vector_cells = _assign_lines_to_vector_cells(lines, vector_rects) if vector_rects else []
-    gap_cells = _cluster_lines_into_cells(lines, cell_gap)
+    split_lines: list[TextLine] = []
+    for i, ln in enumerate(raw_lines):
+        if i in name_band_idxs:
+            ln.column = 'full'
+            split_lines.append(ln)
+            continue
+        if ln.width >= (page_w - tb_x0) * 0.50:
+            ln.column = 'full'
+            split_lines.append(ln)
+        elif ln.cx >= split_x:
+            if not _is_metadata_value(ln.text):
+                ln.column = 'right'
+                split_lines.append(ln)
+        elif ln.x1 <= split_x - 4:
+            ln.column = 'left'
+            continue
+        else:
+            split_lines.extend(_split_line_by_columns(ln, split_x))
 
-    if vector_cells and len(vector_cells) >= 2:
-        cells = _merge_cell_lists(vector_cells, gap_cells)
-    else:
-        cells = gap_cells
+    full_lines = [ln for ln in split_lines if ln.column == 'full']
+    right_lines = [ln for ln in split_lines if ln.column == 'right' and ln.cx >= right_x0 - 6]
+    if len(right_lines) < 2:
+        right_lines = [ln for ln in split_lines if ln.column == 'right']
 
+    name_cells = _cluster_lines_into_cells(full_lines, cell_gap)
+    right_cells = _cluster_lines_into_cells(right_lines, cell_gap)
+
+    cells: list[LabeledCell] = []
+    seen: set[tuple] = set()
+    for cell in name_cells + right_cells:
+        key = (round(cell.y0, 1), cell.label_kind, cell.value_text, cell.column)
+        if key not in seen:
+            cells.append(cell)
+            seen.add(key)
     return page_w, page_h, cells
 
 
@@ -570,7 +657,18 @@ def _is_plausible_drawing_title(text: str, sheet_number: str | None) -> bool:
     upper = t.upper()
     if PROJECT_TYPE_LABEL_RE.search(t):
         return False
+    if METADATA_INLINE_RE.search(t):
+        return False
+    m = TYPE_INLINE_RE.match(t)
+    if m and WORK_TYPE_VALUE_RE.match((m.group(1) or '').strip()):
+        return False
+    if WORK_TYPE_VALUE_RE.match(t):
+        return False
+    if INITIALS_RE.match(t):
+        return False
     if _normalize_drawing_number(t):
+        return False
+    if PROJECT_NUMBER_VALUE_RE.match(t.replace(' ', '')) and '.' in t:
         return False
     if sheet_number and sheet_number.upper().replace('-', '') in upper.replace('-', '').replace(' ', ''):
         return False
@@ -615,14 +713,25 @@ def _parse_revision_token(raw: str) -> str | None:
 
 
 def _find_drawing_number_cell(cells: list[LabeledCell], page_w: float, page_h: float) -> LabeledCell | None:
-    """Southernmost-right cell with Drawing No label or largest BR sheet value."""
+    """Southernmost-right cell with Drawing No label."""
+    right_cells = [
+        c for c in cells
+        if c.column in ('right', 'full') and (c.cx >= page_w * 0.58 or c.label_kind == 'drawing_number')
+    ]
     candidates: list[tuple[float, LabeledCell]] = []
-    for cell in cells:
-        score = (cell.cy / page_h) * 0.55 + (cell.cx / page_w) * 0.45
+    for cell in right_cells:
+        score = (cell.cy / page_h) * 0.60 + (cell.cx / page_w) * 0.40
         if cell.label_kind == 'drawing_number':
-            candidates.append((score + 2.5 + cell.value_font_size * 0.02, cell))
+            candidates.append((score + 3.0 + cell.value_font_size * 0.02, cell))
         elif cell.value_text and _normalize_drawing_number(cell.value_text):
-            candidates.append((score + cell.value_font_size * 0.06 + 1.2, cell))
+            if cell.label_kind in (None, 'project_number'):
+                continue
+            candidates.append((score + cell.value_font_size * 0.05 + 1.0, cell))
+    if not candidates:
+        for cell in right_cells:
+            if cell.value_text and _normalize_drawing_number(cell.value_text):
+                score = (cell.cy / page_h) * 0.60 + (cell.cx / page_w) * 0.40
+                candidates.append((score + cell.value_font_size * 0.05, cell))
     if not candidates:
         return None
     candidates.sort(key=lambda t: t[0], reverse=True)
@@ -634,45 +743,34 @@ def _find_drawing_name_cell(
     sheet_cell: LabeledCell | None,
     page_w: float,
 ) -> LabeledCell | None:
-    """Cell directly above the sheet-number cell with Drawing Name label."""
-    if not cells:
-        return None
-
-    name_cells = [c for c in cells if c.label_kind == 'drawing_name' and c.value_text]
-    if sheet_cell:
-        col_band = max(28.0, (sheet_cell.x1 - sheet_cell.x0) * 0.55, page_w * 0.08)
-        above_labeled = [
-            c for c in name_cells
-            if c.cy < sheet_cell.cy
-            and abs(c.cx - sheet_cell.cx) <= col_band
-        ]
-        if above_labeled:
-            above_labeled.sort(key=lambda c: sheet_cell.cy - c.cy)
-            return above_labeled[0]
+    """Drawing name from full-width top band — not the metadata left column."""
+    name_cells = [
+        c for c in cells
+        if c.label_kind == 'drawing_name' and c.value_text
+        and c.column in ('full', 'right')
+    ]
+    if name_cells:
+        name_cells.sort(key=lambda c: (-(c.width / max(page_w, 1)), c.y0, -c.value_font_size))
+        for cell in name_cells:
+            if _is_plausible_drawing_title(cell.value_text, None):
+                return cell
 
     if sheet_cell:
-        col_band = max(28.0, (sheet_cell.x1 - sheet_cell.x0) * 0.55, page_w * 0.08)
-        stacked = [
+        above = [
             c for c in cells
             if c.cy < sheet_cell.cy
-            and abs(c.cx - sheet_cell.cx) <= col_band
             and c.value_text
-            and c.label_kind not in ('project_type', 'project_number', 'drawing_number', 'revision')
+            and c.label_kind not in ('project_type', 'project_number', 'drawing_number', 'revision', None)
+            and c.column in ('full', 'right')
         ]
-        if stacked:
-            stacked.sort(key=lambda c: (sheet_cell.cy - c.cy, -(c.value_font_size or c.value_height)))
-            for c in stacked:
-                if _is_plausible_drawing_title(c.value_text, None):
-                    return c
-
-    if name_cells:
-        name_cells.sort(key=lambda c: c.cy, reverse=True)
-        return name_cells[0]
+        above.sort(key=lambda c: (c.y0, -(c.width / max(page_w, 1)), -(c.value_font_size or 0)))
+        for cell in above:
+            if cell.label_kind == 'drawing_name' or _is_plausible_drawing_title(cell.value_text, None):
+                return cell
     return None
 
 
-def _ocr_bottom_right_column(pdf_path: str, page_index: int) -> list[LabeledCell]:
-    """High-DPI OCR fallback on the bottom-right column with word bounding boxes."""
+def _ocr_title_block(pdf_path: str, page_index: int) -> list[LabeledCell]:
     cells: list[LabeledCell] = []
     try:
         import fitz
@@ -685,7 +783,12 @@ def _ocr_bottom_right_column(pdf_path: str, page_index: int) -> list[LabeledCell
             return cells
         page = doc[page_index]
         rect = page.rect
-        clip = fitz.Rect(rect.width * 0.62, rect.height * 0.52, rect.width * 0.995, rect.height * 0.995)
+        clip = fitz.Rect(
+            rect.width * TITLE_BLOCK_X0_RATIO,
+            rect.height * TITLE_BLOCK_Y0_RATIO,
+            rect.width * 0.995,
+            rect.height * 0.995,
+        )
         matrix = fitz.Matrix(5.0, 5.0)
         pix = page.get_pixmap(matrix=matrix, clip=clip, alpha=False)
         img = Image.open(io.BytesIO(pix.tobytes('png')))
@@ -710,14 +813,26 @@ def _ocr_bottom_right_column(pdf_path: str, page_index: int) -> list[LabeledCell
                 y0 = clip.y0 + y * scale_y
                 x1 = x0 + w * scale_x
                 y1 = y0 + h * scale_y
-                fs = h * scale_y
-                pseudo_words.append(WordSpan(x0, y0, x1, y1, text, font_size=fs))
+                pseudo_words.append(WordSpan(x0, y0, x1, y1, text, font_size=h * scale_y))
             if pseudo_words:
                 med_h = _median_height(pseudo_words)
                 med_size = _median_font_size(pseudo_words)
                 lines = _cluster_words_into_lines(pseudo_words, max(3.0, med_h * 0.5))
-                for group in _cluster_lines_into_cells(lines, max(8.0, med_size * 1.1)):
-                    cells.append(group)
+                split_x = clip.x0 + clip.width * 0.55
+                split_lines: list[TextLine] = []
+                for ln in lines:
+                    if ln.width >= clip.width * 0.50:
+                        ln.column = 'full'
+                        split_lines.append(ln)
+                    elif ln.cx >= split_x:
+                        ln.column = 'right'
+                        split_lines.append(ln)
+                    else:
+                        split_lines.extend(_split_line_by_columns(ln, split_x))
+                full_cells = _cluster_lines_into_cells([l for l in split_lines if l.column == 'full'], max(8.0, med_size * 1.0))
+                right_cells = _cluster_lines_into_cells([l for l in split_lines if l.column == 'right'], max(8.0, med_size * 1.0))
+                cells.extend(full_cells)
+                cells.extend(right_cells)
         doc.close()
     except Exception:
         pass
@@ -725,7 +840,7 @@ def _ocr_bottom_right_column(pdf_path: str, page_index: int) -> list[LabeledCell
 
 
 def analyze_title_block_grid(pdf_path: str, page_index: int = 0) -> dict[str, Any]:
-    """Bluebeam-style bottom-right labeled cell extraction."""
+    """Bluebeam-style title block extraction from full name band + right column."""
     result: dict[str, Any] = {
         'sheet_number': None,
         'drawing_name': '',
@@ -747,13 +862,13 @@ def analyze_title_block_grid(pdf_path: str, page_index: int = 0) -> dict[str, An
             return result
         page = doc[page_index]
         embedded = page.get_text('text') or ''
-        page_w, page_h, cells = _build_bottom_right_column(page)
+        page_w, page_h, cells = _build_title_block(page)
         doc.close()
     except Exception:
         return result
 
     if len(cells) < 2:
-        ocr_cells = _ocr_bottom_right_column(pdf_path, page_index)
+        ocr_cells = _ocr_title_block(pdf_path, page_index)
         seen = {(round(c.y0, 1), c.label_kind, c.value_text) for c in cells}
         for c in ocr_cells:
             key = (round(c.y0, 1), c.label_kind, c.value_text)
@@ -783,6 +898,8 @@ def analyze_title_block_grid(pdf_path: str, page_index: int = 0) -> dict[str, An
             name_conf = 2.0 + name_cell.value_font_size * 0.03
             if name_cell.label_kind == 'drawing_name':
                 name_conf += 0.8
+            if name_cell.column == 'full':
+                name_conf += 0.4
 
     project_number = None
     for cell in cells:
@@ -827,5 +944,5 @@ def analyze_title_block_grid(pdf_path: str, page_index: int = 0) -> dict[str, An
     return result
 
 
-# Backward-compatible exports used by older imports
-build_title_block_grid = _build_bottom_right_column
+# Backward-compatible exports
+build_title_block_grid = _build_title_block
