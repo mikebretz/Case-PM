@@ -45,11 +45,11 @@ TITLE_BLOCK_RE = re.compile(
     re.IGNORECASE,
 )
 REVISION_RE = re.compile(
-    r'(?:REV(?:ISION)?\.?|REVISION)\s*[#:.]?\s*(\d{1,3}|[A-Z])',
+    r'(?:REV(?:ISION)?\.?|REVISION)\s*[#:.]?\s*(\d{1,3})',
     re.IGNORECASE,
 )
 REVISION_LOOSE_RE = re.compile(
-    r'(?:^|\s)(?:REV|REVISION)\s*[#:.]?\s*(\d{1,3}|[A-Z])(?:\s|$)',
+    r'(?:^|\s)(?:REV|REVISION)\s*[#:.]?\s*(\d{1,3})(?:\s|$)',
     re.IGNORECASE,
 )
 SHEET_LABEL_RE = re.compile(
@@ -83,11 +83,15 @@ LABEL_ONLY_RE = re.compile(
     re.IGNORECASE,
 )
 REV_NO_RE = re.compile(
-    r'REV(?:ISION)?\.?\s*(?:NO\.?|NUM|NUMBER|#)\s*[:.]?\s*(\d{1,3}|[A-Z])',
+    r'REV(?:ISION)?\.?\s*(?:NO\.?|NUM|NUMBER|#)\s*[:.]?\s*(\d{1,3})',
     re.IGNORECASE,
 )
 REV_ISSUE_RE = re.compile(
-    r'(?:ISSUE|CURRENT|LATEST)\s*(?:REV(?:ISION)?)?\.?\s*[#:.]?\s*(\d{1,3}|[A-Z])',
+    r'(?:ISSUE|CURRENT|LATEST)\s*(?:REV(?:ISION)?)?\.?\s*[#:.]?\s*(\d{1,3})',
+    re.IGNORECASE,
+)
+REV_OCR_MISREAD_RE = re.compile(
+    r'REV(?:ISION)?\.?\s*[#:.]?\s*([IL|!])',
     re.IGNORECASE,
 )
 ARCH_SCALE_RE = re.compile(
@@ -214,16 +218,34 @@ def is_plausible_drawing_sheet(sheet_number: str) -> bool:
     return bool(re.match(r'^[A-Z]{2,8}-\d{1,4}$', upper))
 
 
+def normalize_revision_number(raw: str | None) -> str | None:
+    """Return numeric revision only (1, 2, 3). Maps common OCR misreads like L/I to 1."""
+    if raw is None:
+        return None
+    text = str(raw).strip().upper()
+    if not text:
+        return None
+    if text in {'I', 'L', '|', '!' }:
+        return '1'
+    if re.fullmatch(r'\d{1,3}', text):
+        return str(int(text))
+    return None
+
+
 def extract_revision_from_text(text: str) -> str | None:
     if not text:
         return None
     for line in (text.splitlines() or [])[-50:]:
-        for pattern in (REVISION_RE, REVISION_LOOSE_RE):
+        for pattern in (REVISION_RE, REVISION_LOOSE_RE, REV_OCR_MISREAD_RE):
             m = pattern.search(line)
             if m:
-                return str(m.group(1)).upper()
-    m = REVISION_RE.search(text) or REVISION_LOOSE_RE.search(text)
-    return str(m.group(1)).upper() if m else None
+                rev = normalize_revision_number(m.group(1))
+                if rev is not None:
+                    return rev
+    m = REVISION_RE.search(text) or REVISION_LOOSE_RE.search(text) or REV_OCR_MISREAD_RE.search(text)
+    if m:
+        return normalize_revision_number(m.group(1))
+    return None
 
 
 def _plain_text_lines(text: str) -> list[dict]:
@@ -456,21 +478,26 @@ def _extract_revision_from_lines(lines: list[dict], embedded: str) -> str | None
     rev_candidates: list[str] = []
     for ln in lines:
         text = ln['text']
-        for pattern in (REV_NO_RE, REVISION_RE, REVISION_LOOSE_RE, REV_ISSUE_RE):
+        for pattern in (REV_NO_RE, REVISION_RE, REVISION_LOOSE_RE, REV_ISSUE_RE, REV_OCR_MISREAD_RE):
             m = pattern.search(text)
             if m:
-                rev_candidates.append(str(m.group(1)).upper())
+                rev = normalize_revision_number(m.group(1))
+                if rev is not None:
+                    rev_candidates.append(rev)
         parts = text.upper().split()
         for i, part in enumerate(parts):
             if part in ('REV', 'REV.', 'REVISION', 'REVISION:') and i + 1 < len(parts):
                 nxt = parts[i + 1].strip(':.#')
-                if re.fullmatch(r'\d{1,3}', nxt) or re.fullmatch(r'[A-Z]', nxt):
-                    rev_candidates.append(nxt)
+                rev = normalize_revision_number(nxt)
+                if rev is not None:
+                    rev_candidates.append(rev)
     for line in reversed(embedded.splitlines()[-80:]):
-        for pattern in (REV_NO_RE, REVISION_RE, REVISION_LOOSE_RE, REV_ISSUE_RE):
+        for pattern in (REV_NO_RE, REVISION_RE, REVISION_LOOSE_RE, REV_ISSUE_RE, REV_OCR_MISREAD_RE):
             m = pattern.search(line)
             if m:
-                rev_candidates.append(str(m.group(1)).upper())
+                rev = normalize_revision_number(m.group(1))
+                if rev is not None:
+                    rev_candidates.append(rev)
     return rev_candidates[0] if rev_candidates else None
 
 
@@ -688,12 +715,13 @@ def ensure_unique_sheet_number(
     project_id: int,
     sheet_number: str,
     reserved: set[str] | None = None,
+    page_index: int | None = None,
 ) -> str:
-    """Avoid unique-constraint collisions by suffixing -2, -3, etc.
+    """Avoid unique-constraint collisions by suffixing -P002, -P003, etc.
 
-    ``reserved`` tracks sheet numbers already assigned in the current upload batch
-    (before they are flushed to the database).
-    """
+  ``reserved`` tracks sheet numbers already assigned in the current upload batch
+  (before they are flushed to the database).
+  """
     taken = {str(s).upper() for s in (reserved or set())}
     base = sheet_number
     candidate = base
@@ -706,7 +734,10 @@ def ensure_unique_sheet_number(
         return Drawing.query.filter_by(project_id=int(project_id), sheet_number=key).first() is not None
 
     while _is_taken(candidate):
-        candidate = f'{base}-{n}'
+        if page_index is not None:
+            candidate = f'{base}-P{page_index + n:03d}'
+        else:
+            candidate = f'{base}-P{n:03d}'
         n += 1
     return preserve_assigned_sheet_number(candidate)
 
@@ -1517,14 +1548,14 @@ def upsert_drawing_from_upload(
         )
         db.session.add(drawing)
         db.session.flush()
-        rev_num = str(sheet_revision) if sheet_revision is not None else '0'
+        rev_num = str(normalize_revision_number(sheet_revision) or sheet_revision or '0')
     else:
         old_rev = DrawingRevision.query.filter_by(drawing_id=drawing.id, is_current=True).first()
         if old_rev:
             old_rev.is_current = False
             old_rev.superseded_at = now
         if sheet_revision is not None:
-            rev_num = str(sheet_revision)
+            rev_num = str(normalize_revision_number(sheet_revision) or sheet_revision)
         else:
             rev_num = next_revision_number(
                 DrawingRevision.query.filter_by(drawing_id=drawing.id).all()
@@ -1618,9 +1649,25 @@ def process_pages_from_upload(
             if norm:
                 batch_detected.add(norm)
 
-        sheet_number = ensure_unique_sheet_number(
-            Drawing, project_id, sheet_number, reserved=batch_assigned,
-        )
+        existing = Drawing.query.filter_by(project_id=int(project_id), sheet_number=sheet_number).first()
+        if existing:
+            if sheet_number.upper() in batch_assigned:
+                sheet_number = f'{sheet_number}-P{page["page_index"] + 1:03d}'
+                sheet_number = ensure_unique_sheet_number(
+                    Drawing, project_id, sheet_number, reserved=batch_assigned,
+                    page_index=page['page_index'],
+                )
+        elif sheet_number.upper() in batch_assigned:
+            sheet_number = f'{sheet_number}-P{page["page_index"] + 1:03d}'
+            sheet_number = ensure_unique_sheet_number(
+                Drawing, project_id, sheet_number, reserved=batch_assigned,
+                page_index=page['page_index'],
+            )
+        else:
+            sheet_number = ensure_unique_sheet_number(
+                Drawing, project_id, sheet_number, reserved=batch_assigned,
+                page_index=page['page_index'],
+            )
         sheet_number = preserve_assigned_sheet_number(sheet_number)
         batch_assigned.add(sheet_number.upper())
 
