@@ -61,7 +61,25 @@ TITLE_HINT_RE = re.compile(
     re.IGNORECASE,
 )
 DRAWING_NAME_LABEL_RE = re.compile(
-    r'(?:DRAWING\s*NAME|DRAWING\s*TITLE|SHEET\s*TITLE|TITLE\s*OF\s*DRAWING|DESCRIPTION)',
+    r'(?:DRAWING\s*NAME|DRAWING\s*TITLE|SHEET\s*NAME|SHEET\s*TITLE|TITLE\s*OF\s*DRAWING)',
+    re.IGNORECASE,
+)
+DRAWING_NAME_INLINE_RE = re.compile(
+    r'(?:DRAWING\s*NAME|DRAWING\s*TITLE|SHEET\s*NAME|SHEET\s*TITLE)\s*[:#]?\s*(.+)$',
+    re.IGNORECASE,
+)
+SHEET_NO_LABEL_RE = re.compile(
+    r'(?:SHEET|SH\.?|SHT\.?|DWG\.?|DRAWING)\s*(?:NO\.?|NUM(?:BER)?|#)\s*[:#]?\s*(.+)$',
+    re.IGNORECASE,
+)
+PROJECT_LABEL_RE = re.compile(
+    r'(?:PROJECT|JOB)\s*(?:NO\.?|NUM(?:BER)?|NAME|#)',
+    re.IGNORECASE,
+)
+LABEL_ONLY_RE = re.compile(
+    r'^(?:DRAWING\s*NAME|DRAWING\s*TITLE|SHEET\s*NAME|SHEET\s*TITLE|SHEET|SH\.?|SHT\.?|DWG\.?|'
+    r'DRAWING|PROJECT|JOB|DATE|SCALE|REV(?:ISION)?|REVISION|CHECKED|DRAWN|DESIGNED|APPROVED|'
+    r'SHEET\s*NO\.?|DRAWING\s*NO\.?)\s*[:#.]?\s*$',
     re.IGNORECASE,
 )
 REV_NO_RE = re.compile(
@@ -205,17 +223,20 @@ def _merge_title_block_from_ocr(result: dict, ocr_text: str, embedded: str) -> d
         return result
     ocr_lines = _plain_text_lines(ocr_text)
     merged = '\n'.join(filter(None, [embedded, ocr_text]))
-    if not result.get('sheet_number'):
-        sheet = extract_sheet_from_pdf_text(ocr_text)
-        if sheet and is_plausible_drawing_sheet(sheet):
-            result['sheet_number'] = sheet
-            result['method'] = 'ocr'
     if not result.get('revision'):
         result['revision'] = _extract_revision_from_lines(ocr_lines, ocr_text) or extract_revision_from_text(ocr_text)
     if not result.get('title'):
         title = _extract_drawing_title_from_lines(ocr_lines, result.get('sheet_number'), ocr_text)
         if title:
             result['title'] = title
+            result['drawing_name'] = title
+    if not result.get('sheet_number'):
+        labeled = _extract_sheet_number_from_lines(ocr_lines)
+        if labeled and is_plausible_drawing_sheet(labeled):
+            result['sheet_number'] = labeled
+            result['method'] = 'ocr'
+    if not result.get('revision'):
+        result['revision'] = _extract_revision_from_lines(ocr_lines, ocr_text) or extract_revision_from_text(ocr_text)
     if not result.get('scale'):
         scale = extract_scale_from_text(merged)
         if scale:
@@ -284,62 +305,132 @@ def extract_scale_from_text(text: str) -> dict | None:
     return None
 
 
+def _is_label_only_line(text: str) -> bool:
+    if not text:
+        return True
+    t = text.strip()
+    if LABEL_ONLY_RE.match(t):
+        return True
+    if DRAWING_NAME_LABEL_RE.fullmatch(t.strip()):
+        return True
+    if SHEET_NO_LABEL_RE.match(t) and not _sheet_candidates_from_text(t, 0.5):
+        return True
+    return False
+
+
+def _extract_sheet_number_from_lines(lines: list[dict], page_w: float = 0, page_h: float = 0) -> str | None:
+    """Extract sheet number from labeled title-block lines (SHEET NO, DWG NO, etc.)."""
+    candidates: list[tuple[float, str]] = []
+    for i, ln in enumerate(lines):
+        text = ln['text'].strip()
+        m = SHEET_NO_LABEL_RE.search(text)
+        if m:
+            tail = m.group(1).strip()
+            for score, cand in _sheet_candidates_from_text(tail, 0.95):
+                candidates.append((score + 0.2, cand))
+            for score, cand in _sheet_candidates_from_text(text, 0.9):
+                candidates.append((score, cand))
+        if DRAWING_NAME_LABEL_RE.search(text):
+            continue
+        if PROJECT_LABEL_RE.search(text) and not SHEET_NO_LABEL_RE.search(text):
+            continue
+        pos = _score_title_block_position(ln.get('x', 0), ln.get('y', 0), page_w or 1000, page_h or 1000)
+        for score, cand in _sheet_candidates_from_text(text, pos + 0.1):
+            if page_h and ln.get('y', 0) >= page_h * 0.68:
+                candidates.append((score + 0.25, cand))
+            else:
+                candidates.append((score, cand))
+        if i + 1 < len(lines):
+            nxt = lines[i + 1]['text'].strip()
+            if SHEET_NO_LABEL_RE.search(text) or re.search(r'^(SHEET|DWG|DRAWING)\s*NO', text, re.I):
+                for score, cand in _sheet_candidates_from_text(nxt, 0.92):
+                    candidates.append((score + 0.15, cand))
+    if not candidates:
+        return None
+    candidates.sort(key=lambda t: t[0], reverse=True)
+    return candidates[0][1]
+
+
 def _extract_drawing_title_from_lines(lines: list[dict], sheet_number: str | None, embedded: str) -> str:
-    """Drawing name sits above sheet number in the title block."""
-    sheet_key = (sheet_number or '').replace('-', '').replace('.', '').upper()
-    best = ''
+    """Drawing name from title block — typically above sheet number or after DRAWING NAME label."""
+    if not lines:
+        return ''
+    sheet_key = (sheet_number or '').replace('-', '').replace('.', '').replace(' ', '').upper()
     sheet_line_idx = None
 
     for i, ln in enumerate(lines):
-        compact = ln['text'].replace('-', '').replace(' ', '').replace('.', '').upper()
+        text = ln['text'].strip()
+        compact = text.replace('-', '').replace(' ', '').replace('.', '').upper()
         if sheet_key and sheet_key in compact:
             sheet_line_idx = i
             break
-        for score, cand in _sheet_candidates_from_text(ln['text'], 0.8):
+        for _score, cand in _sheet_candidates_from_text(text, 0.85):
             if sheet_number and cand == sheet_number:
                 sheet_line_idx = i
                 break
         if sheet_line_idx is not None:
             break
 
+    # Label on one line, value on the next (DRAWING NAME / SHEET NAME)
+    for i, ln in enumerate(lines):
+        text = ln['text'].strip()
+        m = DRAWING_NAME_INLINE_RE.match(text)
+        if m:
+            val = m.group(1).strip()
+            if _is_plausible_drawing_title(val, sheet_number):
+                return val[:200]
+        if DRAWING_NAME_LABEL_RE.search(text) and not DRAWING_NAME_INLINE_RE.match(text):
+            if i > 0:
+                above = lines[i - 1]['text'].strip()
+                if _is_plausible_drawing_title(above, sheet_number):
+                    return above[:200]
+            if i + 1 < len(lines):
+                below = lines[i + 1]['text'].strip()
+                if _is_plausible_drawing_title(below, sheet_number):
+                    return below[:200]
+
+    # Value directly above sheet number row (most common architectural layout)
     if sheet_line_idx is not None and sheet_line_idx > 0:
-        for j in range(sheet_line_idx - 1, max(-1, sheet_line_idx - 4), -1):
+        for j in range(sheet_line_idx - 1, max(-1, sheet_line_idx - 3), -1):
             candidate = lines[j]['text'].strip()
             if _is_plausible_drawing_title(candidate, sheet_number):
                 return candidate[:200]
 
-    for i, ln in enumerate(lines):
-        if DRAWING_NAME_LABEL_RE.search(ln['text']) and i + 1 < len(lines):
-            nxt = lines[i + 1]['text'].strip()
-            if _is_plausible_drawing_title(nxt, sheet_number):
-                return nxt[:200]
-        cleaned = re.sub(r'^(DRAWING\s*NAME|TITLE)\s*[:#]?\s*', '', ln['text'], flags=re.I).strip()
-        if cleaned != ln['text'] and _is_plausible_drawing_title(cleaned, sheet_number):
-            return cleaned[:200]
-
-    for ln in lines:
-        if _is_plausible_drawing_title(ln['text'], sheet_number) and len(ln['text']) > len(best):
-            best = ln['text']
-    return best[:200]
+    return ''
 
 
 def _is_plausible_drawing_title(text: str, sheet_number: str | None) -> bool:
-    if not text or len(text) < 4 or len(text) > 160:
+    if not text or len(text) < 3 or len(text) > 160:
         return False
-    upper = text.upper().strip()
-    if sheet_number and sheet_number.upper() in upper.replace(' ', ''):
+    t = text.strip()
+    if _is_label_only_line(t):
         return False
-    if SHEET_LABEL_RE.search(upper) and not TITLE_HINT_RE.search(text):
+    upper = t.upper()
+    if sheet_number and sheet_number.upper().replace('-', '') in upper.replace('-', '').replace(' ', ''):
         return False
-    if REVISION_RE.search(text) or REV_NO_RE.search(text) or DATE_RE.search(text):
+    if SHEET_NO_LABEL_RE.search(t) and _sheet_candidates_from_text(t, 0.5):
         return False
-    if upper in ('REV', 'REVISION', 'DATE', 'SCALE', 'DRAWN BY', 'CHECKED BY', 'SHEET'):
+    if PROJECT_LABEL_RE.search(upper) and not TITLE_HINT_RE.search(t):
         return False
-    if TITLE_HINT_RE.search(text):
+    if SHEET_LABEL_RE.search(upper) and not TITLE_HINT_RE.search(t):
+        return False
+    if REVISION_RE.search(t) or REV_NO_RE.search(t) or REV_ISSUE_RE.search(t):
+        return False
+    if DATE_RE.search(t) or DATE_FALLBACK_RE.fullmatch(t.strip()):
+        return False
+    if ARCH_SCALE_RE.search(t) or RATIO_SCALE_RE.search(t):
+        return False
+    if upper in ('REV', 'REVISION', 'DATE', 'SCALE', 'DRAWN BY', 'CHECKED BY', 'SHEET', 'DRAWING', 'NA', 'N/A'):
+        return False
+    if re.fullmatch(r'[\d\s./\-#:]+', t):
+        return False
+    if TITLE_HINT_RE.search(t):
         return True
-    if text.isupper() and len(text) > 8 and not re.fullmatch(r'[\d\s./-]+', text):
+    if t.isupper() and len(t) >= 6 and not re.fullmatch(r'[\d\s./-]+', t):
         return True
-    return len(text) > 14 and not re.fullmatch(r'[\d\s./-]+', text)
+    if len(t) >= 8 and re.search(r'[A-Za-z]{4,}', t):
+        return True
+    return False
 
 
 def _extract_revision_from_lines(lines: list[dict], embedded: str) -> str | None:
@@ -453,6 +544,10 @@ def extract_title_block_metadata(pdf_path: str, page_index: int = 0) -> dict:
             pos = _score_title_block_position(ln['x'], ln['y'], page_w, page_h)
             sheet_scores.extend(_sheet_candidates_from_text(ln['text'], pos + 0.12))
 
+        labeled_sheet = _extract_sheet_number_from_lines(tb_lines, page_w, page_h)
+        if labeled_sheet:
+            sheet_scores.append((1.05, labeled_sheet))
+
         for line in list(embedded.splitlines()[:30]) + list(reversed(embedded.splitlines()[-80:])):
             sheet_scores.extend(_sheet_candidates_from_text(line, 0.72))
 
@@ -462,9 +557,11 @@ def extract_title_block_metadata(pdf_path: str, page_index: int = 0) -> dict:
             result['method'] = 'layout'
 
         result['revision'] = _extract_revision_from_lines(tb_lines, embedded)
-        result['title'] = _extract_drawing_title_from_lines(tb_lines, result['sheet_number'], embedded)
+        result['drawing_name'] = _extract_drawing_title_from_lines(tb_lines, result['sheet_number'], embedded)
+        result['title'] = result['drawing_name']
         if not result['title']:
-            result['title'] = extract_title_from_text(embedded, result['sheet_number'])
+            result['title'] = extract_drawing_name_from_text(embedded, result['sheet_number'])
+            result['drawing_name'] = result['title']
 
         scale = extract_scale_from_text(embedded)
         if scale:
@@ -499,6 +596,7 @@ def ocr_title_block_regions(pdf_path: str, page_index: int = 0) -> str:
         page = doc[page_index]
         rect = page.rect
         clips = [
+            fitz.Rect(rect.width * 0.52, rect.height * 0.76, rect.width * 0.98, rect.height * 0.86),
             fitz.Rect(rect.width * 0.55, rect.height * 0.72, rect.width * 0.98, rect.height * 0.90),
             fitz.Rect(rect.width * 0.5, rect.height * 0.68, rect.width, rect.height),
             fitz.Rect(rect.width * 0.62, rect.height * 0.55, rect.width, rect.height),
@@ -787,7 +885,7 @@ def analyze_pdf_page(pdf_path: str, page_index: int = 0, from_combined_set: bool
     elif not revision:
         revision = extract_revision_from_text(full_text or text or layout.get('text_preview', ''))
 
-    title = layout.get('title') or extract_title_from_text(full_text or text or '', sheet)
+    title = layout.get('drawing_name') or layout.get('title') or extract_drawing_name_from_text(full_text or text or '', sheet)
     drawing_date = layout.get('drawing_date') or extract_drawing_date_from_text(full_text or text or '')
     scale = layout.get('scale') or extract_scale_from_text(full_text or text or '')
     ocr_text = ocr_title_block_regions(pdf_path, page_index)
@@ -812,6 +910,7 @@ def analyze_pdf_page(pdf_path: str, page_index: int = 0, from_combined_set: bool
         'sheet_number': sheet,
         'revision': revision,
         'title': title,
+        'drawing_name': title,
         'drawing_date': drawing_date,
         'scale': scale,
         'discipline': discipline_from_sheet(sheet) if sheet else None,
@@ -897,26 +996,20 @@ def export_takeoff_to_budget_state(existing_state, takeoff_items, cost_code='01-
     return state
 
 
-def extract_title_from_text(text: str, sheet_number: str | None) -> str:
+def extract_drawing_name_from_text(text: str, sheet_number: str | None) -> str:
+    """Last-resort drawing name — only scan title-block tail, never random page text."""
     if not text:
         return ''
-    sheet_key = (sheet_number or '').replace('-', '').replace('.', '')
-    best = ''
-    for ln in [ln.strip() for ln in text.splitlines() if ln.strip()]:
-        if len(ln) < 8 or len(ln) > 160:
-            continue
-        compact = ln.replace('-', '').replace(' ', '').replace('.', '').upper()
-        if sheet_key and sheet_key in compact:
-            continue
-        upper = ln.upper()
-        if SHEET_LABEL_RE.search(upper) and not TITLE_HINT_RE.search(ln):
-            continue
-        if REVISION_RE.search(ln) or DATE_RE.search(ln):
-            continue
-        if TITLE_HINT_RE.search(ln) or (ln.isupper() and len(ln) > 12):
-            if len(ln) > len(best):
-                best = ln
-    return best[:200]
+    lines = [ln.strip() for ln in text.splitlines() if ln.strip()]
+    tail = lines[-40:] if len(lines) > 40 else lines
+    pseudo = [{'y': float(i), 'x': 0.0, 'text': ln} for i, ln in enumerate(tail)]
+    found = _extract_drawing_title_from_lines(pseudo, sheet_number, text)
+    return found[:200] if found else ''
+
+
+def extract_title_from_text(text: str, sheet_number: str | None) -> str:
+    """Alias for drawing name extraction."""
+    return extract_drawing_name_from_text(text, sheet_number)
 
 
 def prepare_upload_pages(source_path: str, batch_dir: str) -> list[dict]:
@@ -1323,7 +1416,7 @@ def process_pages_from_upload(
 
         sheet_number = ensure_unique_sheet_number(Drawing, project_id, sheet_number)
         page_text = page.get('text') or meta.get('text_preview') or ''
-        title = manual_title or meta.get('title') or extract_title_from_text(page_text, sheet_number)
+        title = manual_title or meta.get('drawing_name') or meta.get('title') or extract_drawing_name_from_text(page_text, sheet_number)
         if sheet_status == 'For Review' and not title:
             title = f'Page {page["page_index"] + 1} — assign sheet number'
         drawing, rev, _old = upsert_drawing_from_upload(

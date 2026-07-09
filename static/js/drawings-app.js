@@ -67,7 +67,7 @@
     deleting: false,
     selectionMode: false,
     selectedDrawingIds: new Set(),
-    drawingSets: [],
+    uploadLogTimer: null,
   };
 
   function projectId() {
@@ -2156,7 +2156,7 @@
       html += `<table class="w-full text-xs"><thead><tr class="text-zinc-400 border-b border-zinc-700">
         <th class="text-left py-2 pr-2">Page</th><th class="text-left py-2 pr-2">Sheet #</th>
         <th class="text-left py-2 pr-2">Revision</th><th class="text-left py-2 pr-2">Date</th>
-        <th class="text-left py-2">Title</th></tr></thead><tbody>`;
+        <th class="text-left py-2 pr-2">Drawing Name</th></tr></thead><tbody>`;
       html += pages.map(p => `<tr class="border-b border-zinc-800 ${p.needs_review ? 'text-amber-200' : ''}">
         <td class="py-2 pr-2">${esc(p.page || '—')}</td>
         <td class="py-2 pr-2 font-mono ${p.needs_review ? 'text-amber-300' : 'text-sky-300'}">${esc(p.sheet_number)}</td>
@@ -2206,24 +2206,113 @@
     }
   }
 
+  async function getPdfPageCount(file) {
+    if (!file || !global.pdfjsLib) return null;
+    try {
+      const buf = await file.arrayBuffer();
+      const pdf = await pdfjsLib.getDocument({ data: buf.slice(0) }).promise;
+      return pdf.numPages;
+    } catch {
+      return null;
+    }
+  }
+
+  function appendUploadLog(msg) {
+    const log = document.getElementById('uploadProgressLog');
+    if (!log) return;
+    const line = document.createElement('div');
+    line.className = 'py-0.5 text-zinc-300';
+    line.textContent = msg;
+    log.appendChild(line);
+    while (log.children.length > 100) log.removeChild(log.firstChild);
+    log.scrollTop = log.scrollHeight;
+  }
+
+  function showUploadProgress(fileName, pageCount) {
+    const dlg = document.getElementById('uploadProgressModal');
+    const title = document.getElementById('uploadProgressTitle');
+    const log = document.getElementById('uploadProgressLog');
+    const bar = document.getElementById('uploadProgressBar');
+    if (!dlg || !log) return;
+    if (title) title.textContent = pageCount ? `Processing ${pageCount} pages — ${fileName}` : `Processing ${fileName}`;
+    log.innerHTML = '';
+    if (bar) bar.style.width = '6%';
+    appendUploadLog('Uploading PDF to server…');
+    dlg.showModal();
+    clearInterval(state.uploadLogTimer);
+    let tick = 0;
+    const generic = [
+      'Splitting PDF into individual sheets…',
+      'Scanning title block regions…',
+      'Reading sheet numbers…',
+      'Extracting drawing names…',
+      'Detecting revisions…',
+    ];
+    state.uploadLogTimer = setInterval(() => {
+      tick++;
+      if (pageCount && pageCount > 0) {
+        const page = Math.min(pageCount, Math.max(1, Math.ceil((tick * pageCount) / Math.max(pageCount, 12))));
+        appendUploadLog(`Analyzing page ${page} of ${pageCount} — title block OCR…`);
+        if (bar) bar.style.width = `${Math.min(94, 6 + (page / pageCount) * 88)}%`;
+      } else {
+        appendUploadLog(generic[tick % generic.length]);
+        if (bar) bar.style.width = `${Math.min(94, 6 + tick * 4)}%`;
+      }
+    }, pageCount && pageCount > 40 ? 350 : 550);
+  }
+
+  function finishUploadProgress(json) {
+    clearInterval(state.uploadLogTimer);
+    state.uploadLogTimer = null;
+    const bar = document.getElementById('uploadProgressBar');
+    if (bar) bar.style.width = '100%';
+    const pages = json.pages || json.drawings || [];
+    if (pages.length) {
+      appendUploadLog('— Results —');
+      pages.forEach(p => {
+        const name = p.title || p.drawing_name || '—';
+        const flag = p.needs_review ? ' · needs review' : '';
+        appendUploadLog(`Page ${p.page || '?'} → ${p.sheet_number} · ${name}${flag}`);
+      });
+    } else {
+      appendUploadLog('Import complete.');
+    }
+    setTimeout(() => document.getElementById('uploadProgressModal')?.close(), pages.length > 8 ? 2200 : 1400);
+  }
+
+  function cancelUploadProgress() {
+    clearInterval(state.uploadLogTimer);
+    state.uploadLogTimer = null;
+    document.getElementById('uploadProgressModal')?.close();
+  }
+
   async function uploadPdfFile(file, setName, extra) {
     if (!file) return null;
     const opts = extra || {};
+    const pageCount = await getPdfPageCount(file);
+    showUploadProgress(file.name, pageCount);
     const fd = new FormData();
     fd.append('project_id', projectId());
     fd.append('file', file);
     fd.append('set_name', setName || file.name.replace(/\.pdf$/i, '') || 'Drawing Upload');
     if (opts.sheet_number) fd.append('sheet_number', opts.sheet_number);
     if (opts.title) fd.append('title', opts.title);
-    const res = await fetch('/api/drawings/upload', { method: 'POST', body: fd, credentials: 'same-origin' });
-    const json = await res.json().catch(() => ({}));
-    if (!res.ok) {
-      const detail = json.needs_review?.length
-        ? `\n\n${json.needs_review.length} page(s) listed for review.`
-        : '';
-      throw new Error((json.error || 'Upload failed') + detail);
+    try {
+      const res = await fetch('/api/drawings/upload', { method: 'POST', body: fd, credentials: 'same-origin' });
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        cancelUploadProgress();
+        const detail = json.needs_review?.length
+          ? `\n\n${json.needs_review.length} page(s) listed for review.`
+          : '';
+        throw new Error((json.error || 'Upload failed') + detail);
+      }
+      finishUploadProgress(json);
+      return json;
+    } catch (e) {
+      cancelUploadProgress();
+      throw e;
     }
-    return json;
   }
 
   function bindSectionDropZone() {
@@ -2266,7 +2355,7 @@
         return;
       }
       try {
-        toast(`Uploading ${file.name}…`);
+        document.getElementById('uploadDrawingModal')?.close();
         const json = await uploadPdfFile(file, file.name.replace(/\.pdf$/i, ''));
         const count = json.created_count || json.drawings?.length || 1;
         const reviewNote = json.needs_review_count ? ` (${json.needs_review_count} need sheet numbers)` : '';
@@ -2290,6 +2379,7 @@
       submitBtn.textContent = 'Processing…';
     }
     try {
+      document.getElementById('uploadDrawingModal').close();
       const json = await uploadPdfFile(
         file,
         document.getElementById('uploadSetName').value || 'Drawing Upload',
@@ -2298,7 +2388,6 @@
           title: document.getElementById('uploadTitle')?.value || '',
         }
       );
-      document.getElementById('uploadDrawingModal').close();
       const count = json.created_count || json.drawings?.length || 1;
       const reviewNote = json.needs_review_count ? ` (${json.needs_review_count} need sheet numbers)` : '';
       toast(json.split ? `Imported ${count} sheets from drawing set${reviewNote}` : `Uploaded ${json.drawing?.sheet_number || count + ' sheet(s)'}`);

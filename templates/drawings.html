@@ -208,6 +208,25 @@
     background: #7f1d1d !important;
     color: #fecaca !important;
   }
+  #uploadProgressLog {
+    max-height: 220px;
+    overflow-y: auto;
+    scroll-behavior: smooth;
+  }
+  #uploadProgressLog::-webkit-scrollbar {
+    width: 6px;
+  }
+  #uploadProgressLog::-webkit-scrollbar-thumb {
+    background: #3f3f46;
+    border-radius: 3px;
+  }
+  @keyframes upload-progress-pulse {
+    0%, 100% { opacity: 0.55; }
+    50% { opacity: 1; }
+  }
+  .upload-progress-pulse {
+    animation: upload-progress-pulse 1.4s ease-in-out infinite;
+  }
 </style>
 
 <div class="draw-page" id="drawPage">
@@ -275,7 +294,7 @@
                 <tr>
                     <th class="px-2 py-2 text-center text-zinc-400 font-medium text-xs w-8"><input type="checkbox" id="drawTableSelectAll" class="accent-sky-500" onchange="CasePMDrawings.toggleSelectAllVisible(this.checked)" title="Select all"></th>
                     <th class="px-4 py-2 text-left text-zinc-400 font-medium text-xs">Sheet #</th>
-                    <th class="px-4 py-2 text-left text-zinc-400 font-medium text-xs">Title</th>
+                    <th class="px-4 py-2 text-left text-zinc-400 font-medium text-xs">Drawing Name</th>
                     <th class="px-4 py-2 text-left text-zinc-400 font-medium text-xs">Drawing Set</th>
                     <th class="px-4 py-2 text-left text-zinc-400 font-medium text-xs">Discipline</th>
                     <th class="px-4 py-2 text-left text-zinc-400 font-medium text-xs">Section</th>
@@ -386,7 +405,7 @@
             <h2 class="text-lg font-semibold">Upload Drawings</h2>
             <button type="button" onclick="document.getElementById('uploadDrawingModal').close()" class="text-zinc-400 hover:text-white text-2xl">&times;</button>
         </div>
-        <p class="text-xs text-zinc-400 mb-4">Upload a single sheet or a full drawing set PDF — multi-page files are split automatically. Each page is analyzed for sheet number, revision, and date from the title block. Pages that can't be read get a provisional number (filter <strong>For Review</strong> to fix them). Large sets may take a minute to process.</p>
+        <p class="text-xs text-zinc-400 mb-4">Upload a single sheet or a full drawing set PDF — multi-page files are split automatically. Each page is analyzed for <strong>sheet number</strong> and <strong>drawing name</strong> from the title block (the name above the sheet number). Pages that can't be read get a provisional number (filter <strong>For Review</strong> to fix them).</p>
         <div class="space-y-3 text-sm">
             <div>
                 <label class="block text-zinc-400 mb-1">Drawing Set Name</label>
@@ -395,8 +414,8 @@
             <div id="uploadIndividualFields">
                 <label class="block text-zinc-400 mb-1">Sheet Number <span class="text-zinc-600">(optional — single-page only)</span></label>
                 <input type="text" id="uploadSheetNumber" class="w-full bg-zinc-800 border border-zinc-700 rounded-md px-3 py-2 font-mono" placeholder="A-101">
-                <label class="block text-zinc-400 mb-1 mt-2">Title <span class="text-zinc-600">(optional)</span></label>
-                <input type="text" id="uploadTitle" class="w-full bg-zinc-800 border border-zinc-700 rounded-md px-3 py-2">
+                <label class="block text-zinc-400 mb-1 mt-2">Drawing Name <span class="text-zinc-600">(optional)</span></label>
+                <input type="text" id="uploadTitle" class="w-full bg-zinc-800 border border-zinc-700 rounded-md px-3 py-2" placeholder="Auto-detected from title block">
             </div>
             <div>
                 <label class="block text-zinc-400 mb-1">PDF File</label>
@@ -408,6 +427,23 @@
             <button type="submit" class="flex-1 py-2 bg-emerald-600 hover:bg-emerald-500 rounded-md font-medium">Upload</button>
         </div>
     </form>
+</dialog>
+
+<!-- UPLOAD PROGRESS MODAL -->
+<dialog id="uploadProgressModal" class="modal rounded-md w-full max-w-lg p-0 text-white" style="background:#18181b;border:1px solid #3f3f46;">
+    <div class="p-6">
+        <div class="flex items-center gap-3 mb-3">
+            <div class="w-8 h-8 rounded-full border-2 border-sky-500 border-t-transparent animate-spin flex-shrink-0"></div>
+            <div class="min-w-0">
+                <h2 id="uploadProgressTitle" class="text-sm font-semibold truncate">Processing drawing set…</h2>
+                <p class="text-[11px] text-zinc-500 upload-progress-pulse">Splitting pages · reading title blocks · detecting sheet numbers & drawing names</p>
+            </div>
+        </div>
+        <div class="h-1.5 bg-zinc-800 rounded-full overflow-hidden mb-3">
+            <div id="uploadProgressBar" class="h-full bg-sky-500 transition-all duration-300" style="width:8%"></div>
+        </div>
+        <div id="uploadProgressLog" class="bg-zinc-900/80 border border-zinc-800 rounded-md p-2 font-mono text-[11px]"></div>
+    </div>
 </dialog>
 
 <!-- UPLOAD RESULTS MODAL -->
