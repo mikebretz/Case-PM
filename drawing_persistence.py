@@ -38,6 +38,15 @@ TITLE_BLOCK_RE = re.compile(
     r'(?:SHEET|DRAWING|DWG\.?\s*NO\.?)[:\s#]*([A-Z]{1,3}[-_.\s]?\d{1,4}(?:\.\d{2})?)',
     re.IGNORECASE,
 )
+REVISION_RE = re.compile(
+    r'(?:REV(?:ISION)?\.?|REVISION)\s*[#:.]?\s*(\d{1,3}|[A-Z])',
+    re.IGNORECASE,
+)
+# Filename / OCR false positives (e.g. "Drawings_Rev_3.pdf" → not sheet REV-3)
+INVALID_SHEET_PREFIXES = frozenset({'REV', 'RE', 'R'})
+VALID_SHEET_PREFIXES = frozenset(DISCIPLINE_MAP.keys()) | frozenset({
+    'A', 'S', 'M', 'E', 'P', 'C', 'G', 'L', 'T', 'I', 'H', 'FP', 'FA', 'AD', 'AR', 'ST', 'EL', 'PL', 'CI', 'LA', 'HVAC',
+})
 
 
 def ensure_drawing_schema(engine, db):
@@ -84,7 +93,34 @@ def normalize_sheet_number(raw: str) -> str | None:
     if not m:
         return None
     prefix, num = m.group(1).upper(), m.group(2).replace('.', '-')
-    return f'{prefix}-{num}'
+    sheet = f'{prefix}-{num}'
+    if not is_plausible_drawing_sheet(sheet):
+        return None
+    return sheet
+
+
+def is_plausible_drawing_sheet(sheet_number: str) -> bool:
+    if not sheet_number or '-' not in sheet_number:
+        return False
+    prefix = sheet_number.split('-')[0].upper()
+    if prefix in INVALID_SHEET_PREFIXES:
+        return False
+    if prefix in VALID_SHEET_PREFIXES:
+        return True
+    # Allow other 1–3 letter prefixes if numeric part looks like a sheet index
+    num_part = sheet_number.split('-', 1)[1]
+    return bool(re.match(r'^\d{1,4}', num_part)) and prefix.isalpha() and len(prefix) <= 3
+
+
+def extract_revision_from_text(text: str) -> str | None:
+    if not text:
+        return None
+    for line in (text.splitlines() or [])[-40:]:
+        m = REVISION_RE.search(line)
+        if m:
+            return str(m.group(1)).upper()
+    m = REVISION_RE.search(text)
+    return str(m.group(1)).upper() if m else None
 
 
 def section_prefix(sheet_number: str) -> str:
@@ -119,14 +155,20 @@ def extract_sheet_from_filename(filename: str) -> str | None:
 def extract_sheet_from_pdf_text(text: str) -> str | None:
     if not text:
         return None
+    candidates = []
     m = TITLE_BLOCK_RE.search(text)
     if m:
-        return normalize_sheet_number(m.group(1))
-    for line in text.splitlines()[:40]:
-        found = normalize_sheet_number(line)
-        if found:
-            return found
-    return normalize_sheet_number(text[:500])
+        candidates.append(normalize_sheet_number(m.group(1)))
+    lines = text.splitlines()
+    for line in list(lines[:20]) + list(reversed(lines[-40:])):
+        for match in SHEET_RE.finditer(line):
+            cand = normalize_sheet_number(f'{match.group(1)}-{match.group(2)}')
+            if cand:
+                candidates.append(cand)
+    for cand in candidates:
+        if cand and is_plausible_drawing_sheet(cand):
+            return cand
+    return None
 
 
 def ocr_extract_sheet_from_pdf(pdf_path: str, page_index: int = 0) -> tuple[str | None, str]:
@@ -179,20 +221,55 @@ def ocr_extract_sheet_from_pdf(pdf_path: str, page_index: int = 0) -> tuple[str 
         return None, ocr_text
 
 
-def detect_sheet_number(pdf_path: str, filename: str | None = None, page_text: str | None = None, page_index: int = 0) -> tuple[str | None, str, str]:
-    """Filename → embedded PDF text → OCR. Returns (sheet, text, method)."""
-    if filename:
+def detect_sheet_number(
+    pdf_path: str,
+    filename: str | None = None,
+    page_text: str | None = None,
+    page_index: int = 0,
+    from_combined_set: bool = False,
+) -> tuple[str | None, str, str, str | None]:
+    """Returns (sheet_number, text, method, revision_from_sheet)."""
+    revision = extract_revision_from_text(page_text or '')
+    if filename and not from_combined_set:
         sheet = extract_sheet_from_filename(filename)
-        if sheet:
-            return sheet, page_text or '', 'filename'
+        if sheet and is_plausible_drawing_sheet(sheet):
+            return sheet, page_text or '', 'filename', revision
     if page_text:
         sheet = extract_sheet_from_pdf_text(page_text)
         if sheet:
-            return sheet, page_text, 'pdf_text'
+            rev = revision or extract_revision_from_text(page_text)
+            return sheet, page_text, 'pdf_text', rev
     sheet, ocr_text = ocr_extract_sheet_from_pdf(pdf_path, page_index)
-    if sheet:
-        return sheet, ocr_text or page_text or '', 'ocr'
-    return None, page_text or ocr_text or '', 'none'
+    combined_text = '\n'.join(filter(None, [page_text, ocr_text]))
+    rev = revision or extract_revision_from_text(combined_text)
+    if sheet and is_plausible_drawing_sheet(sheet):
+        return sheet, combined_text or page_text or '', 'ocr', rev
+    return None, combined_text or page_text or ocr_text or '', 'none', rev
+
+
+def analyze_pdf_page(pdf_path: str, page_index: int = 0, from_combined_set: bool = False, source_filename: str | None = None) -> dict:
+    """Analyze one page for sheet metadata (used during set upload)."""
+    text = ''
+    try:
+        from pypdf import PdfReader
+        reader = PdfReader(pdf_path)
+        if page_index < len(reader.pages):
+            text = reader.pages[page_index].extract_text() or ''
+    except Exception:
+        pass
+    sheet, full_text, method, revision = detect_sheet_number(
+        pdf_path, source_filename, text, page_index, from_combined_set=from_combined_set,
+    )
+    title = extract_title_from_text(full_text, sheet)
+    return {
+        'page_index': page_index,
+        'sheet_number': sheet,
+        'revision': revision,
+        'title': title,
+        'discipline': discipline_from_sheet(sheet) if sheet else None,
+        'detection_method': method,
+        'text_preview': (full_text or '')[:240],
+    }
 
 
 def collect_takeoff_items(DrawingMarkup, Drawing, project_id, drawing_id=None):
@@ -471,6 +548,7 @@ def upsert_drawing_from_upload(
     upload_source,
     uploaded_by_id,
     notes='',
+    sheet_revision=None,
 ):
     """Create or revise a drawing sheet from an uploaded page."""
     sheet_number = normalize_sheet_number(sheet_number) or sheet_number
@@ -495,15 +573,18 @@ def upsert_drawing_from_upload(
         )
         db.session.add(drawing)
         db.session.flush()
-        rev_num = '0'
+        rev_num = str(sheet_revision) if sheet_revision is not None else '0'
     else:
         old_rev = DrawingRevision.query.filter_by(drawing_id=drawing.id, is_current=True).first()
         if old_rev:
             old_rev.is_current = False
             old_rev.superseded_at = now
-        rev_num = next_revision_number(
-            DrawingRevision.query.filter_by(drawing_id=drawing.id).all()
-        )
+        if sheet_revision is not None:
+            rev_num = str(sheet_revision)
+        else:
+            rev_num = next_revision_number(
+                DrawingRevision.query.filter_by(drawing_id=drawing.id).all()
+            )
         drawing.title = title or drawing.title
         drawing.discipline = discipline or drawing.discipline
         drawing.status = 'Current'
@@ -533,3 +614,100 @@ def upsert_drawing_from_upload(
         inherit_markups_to_revision(db, DrawingMarkup, drawing.id, old_rev.id, new_rev.id)
 
     return drawing, new_rev, old_rev
+
+
+def process_pages_from_upload(
+    db,
+    Drawing,
+    DrawingRevision,
+    DrawingMarkup,
+    *,
+    project_id,
+    pages,
+    original_filename,
+    set_name,
+    uploaded_by_id,
+    from_combined_set,
+    upload_source,
+    manual_sheet=None,
+    manual_title=None,
+):
+    """Import one or more split PDF pages into the drawing register."""
+    created = []
+    needs_review = []
+
+    for page in pages:
+        meta = analyze_pdf_page(
+            page['file_path'],
+            page_index=0,
+            from_combined_set=from_combined_set,
+            source_filename=None if from_combined_set else original_filename,
+        )
+        sheet_number = manual_sheet or meta.get('sheet_number')
+        if sheet_number:
+            sheet_number = normalize_sheet_number(sheet_number) or sheet_number
+        if not sheet_number or not is_plausible_drawing_sheet(sheet_number):
+            needs_review.append({
+                'page': page['page_index'] + 1,
+                'file': page.get('filename') or os.path.basename(page['file_path']),
+                'text_preview': meta.get('text_preview'),
+                'detected_revision': meta.get('revision'),
+                'detection_method': meta.get('detection_method'),
+            })
+            continue
+
+        page_text = page.get('text') or meta.get('text_preview') or ''
+        title = manual_title or meta.get('title') or extract_title_from_text(page_text, sheet_number)
+        drawing, rev, _old = upsert_drawing_from_upload(
+            db, Drawing, DrawingRevision, DrawingMarkup,
+            project_id=int(project_id),
+            sheet_number=sheet_number,
+            title=title,
+            discipline=meta.get('discipline') or discipline_from_sheet(sheet_number),
+            file_path=page['file_path'],
+            original_filename=original_filename,
+            set_name=set_name,
+            drawing_date=None,
+            received_date=date.today(),
+            upload_source=upload_source,
+            uploaded_by_id=uploaded_by_id,
+            notes=f'Page {page["page_index"] + 1} of {original_filename}' if from_combined_set else '',
+            sheet_revision=meta.get('revision'),
+        )
+        created.append({
+            'id': drawing.id,
+            'sheet_number': drawing.sheet_number,
+            'title': drawing.title,
+            'revision_label': rev.revision_label,
+            'revision_number': rev.revision_number,
+            'discipline': drawing.discipline,
+            'page': page['page_index'] + 1,
+            'detection_method': meta.get('detection_method'),
+        })
+
+    return created, needs_review
+
+
+def delete_drawing_record(db, Drawing, DrawingRevision, DrawingMarkup, drawing):
+    """Remove drawing, revisions, markups, and page files from disk."""
+    drawing_id = drawing.id
+    revisions = DrawingRevision.query.filter_by(drawing_id=drawing_id).all()
+    paths = {rev.file_path for rev in revisions if rev.file_path}
+    dirs = set()
+    for p in paths:
+        if p and os.path.isfile(p):
+            try:
+                os.remove(p)
+            except OSError:
+                pass
+            dirs.add(os.path.dirname(p))
+    DrawingMarkup.query.filter_by(drawing_id=drawing_id).delete()
+    DrawingRevision.query.filter_by(drawing_id=drawing_id).delete()
+    db.session.delete(drawing)
+    for d in dirs:
+        try:
+            if os.path.isdir(d) and not os.listdir(d):
+                os.rmdir(d)
+        except OSError:
+            pass
+

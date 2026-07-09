@@ -153,6 +153,7 @@
     <div id="drawTopPreview" class="flex items-center gap-2 px-2 py-1 bg-zinc-900 border border-zinc-700 rounded-md text-xs min-w-0 h-[32px]">
         <canvas id="drawPreviewThumb" width="44" height="32" class="hidden rounded"></canvas>
         <div id="drawPreviewPane" class="truncate text-zinc-500 min-w-0">Sheet preview — click a thumbnail</div>
+        <button type="button" id="drawPreviewDeleteBtn" onclick="CasePMDrawings.deletePreviewedSheet()" class="hidden shrink-0 px-2 py-0.5 bg-red-900/70 hover:bg-red-800 rounded text-[10px] text-red-100" title="Delete sheet"><i class="fa-solid fa-trash"></i></button>
         <button type="button" id="drawPreviewOpenBtn" onclick="CasePMDrawings.openPreviewedSheet()" class="hidden shrink-0 px-2 py-0.5 bg-sky-800 hover:bg-sky-700 rounded text-[10px]">Open</button>
     </div>
     <div class="flex-1 min-w-[8px]"></div>
@@ -167,8 +168,7 @@
         <option>Current</option><option>For Review</option><option>Superseded</option>
     </select>
     <button type="button" onclick="CasePMDrawings.openSubstituteModal()" class="px-2 py-1.5 bg-zinc-800 hover:bg-zinc-700 rounded-md text-xs h-[32px]" title="Substitute pages"><i class="fa-solid fa-shuffle"></i></button>
-    <button type="button" onclick="CasePMDrawings.openUploadModal('set')" class="px-2 py-1.5 bg-zinc-800 hover:bg-zinc-700 rounded-md text-xs h-[32px]" title="Upload set"><i class="fa-solid fa-file-pdf"></i></button>
-    <button type="button" onclick="CasePMDrawings.openUploadModal('individual')" class="px-3 py-1.5 bg-white text-zinc-900 hover:bg-zinc-100 rounded-md text-xs font-semibold h-[32px]"><i class="fa-solid fa-upload mr-1"></i>Upload</button>
+    <button type="button" onclick="CasePMDrawings.openUploadModal()" class="px-3 py-1.5 bg-white text-zinc-900 hover:bg-zinc-100 rounded-md text-xs font-semibold h-[32px]"><i class="fa-solid fa-upload mr-1"></i>Upload</button>
 </div>
 
 <!-- SECTIONS PANEL -->
@@ -191,6 +191,7 @@
                     <th class="px-4 py-2 text-center text-zinc-400 font-medium text-xs">Date</th>
                     <th class="px-4 py-2 text-center text-zinc-400 font-medium text-xs">Status</th>
                     <th class="px-4 py-2 text-center text-zinc-400 font-medium text-xs">Revs</th>
+                    <th class="px-4 py-2 text-center text-zinc-400 font-medium text-xs w-12"></th>
                 </tr>
             </thead>
             <tbody id="drawTableBody" class="divide-y divide-zinc-800"></tbody>
@@ -219,6 +220,7 @@
                 </div>
             </div>
             <button type="button" onclick="CasePMDrawings.toggleFullscreen()" id="btnFullscreen" class="px-2 py-1 text-[10px] bg-zinc-800 hover:bg-zinc-700 rounded-md h-[28px]" title="Full screen"><i class="fa-solid fa-expand"></i></button>
+            <button type="button" onclick="CasePMDrawings.deleteOpenSheet()" class="px-2 py-1 text-[10px] bg-red-900/70 hover:bg-red-800 rounded-md h-[28px] text-red-100" title="Delete sheet"><i class="fa-solid fa-trash"></i></button>
         </div>
     </div>
     <div class="flex flex-1 min-h-0">
@@ -272,20 +274,20 @@
 <!-- UPLOAD MODAL -->
 <dialog id="uploadDrawingModal" class="modal rounded-md w-full max-w-lg p-0 text-white" style="background:#18181b;border:1px solid #3f3f46;">
     <form class="p-6" onsubmit="CasePMDrawings.submitUpload(event)">
-        <input type="hidden" id="uploadMode" value="individual">
         <div class="flex justify-between items-center mb-4">
             <h2 class="text-lg font-semibold">Upload Drawings</h2>
             <button type="button" onclick="document.getElementById('uploadDrawingModal').close()" class="text-zinc-400 hover:text-white text-2xl">&times;</button>
         </div>
+        <p class="text-xs text-zinc-400 mb-4">Upload a single sheet or a full drawing set PDF — multi-page files are split automatically and each page is matched to its sheet number and revision from the title block (like spec book upload).</p>
         <div class="space-y-3 text-sm">
             <div>
                 <label class="block text-zinc-400 mb-1">Drawing Set Name</label>
                 <input type="text" id="uploadSetName" class="w-full bg-zinc-800 border border-zinc-700 rounded-md px-3 py-2" placeholder="IFC Set March 2026">
             </div>
             <div id="uploadIndividualFields">
-                <label class="block text-zinc-400 mb-1">Sheet Number <span class="text-zinc-600">(optional if in filename)</span></label>
+                <label class="block text-zinc-400 mb-1">Sheet Number <span class="text-zinc-600">(optional — single-page only)</span></label>
                 <input type="text" id="uploadSheetNumber" class="w-full bg-zinc-800 border border-zinc-700 rounded-md px-3 py-2 font-mono" placeholder="A-101">
-                <label class="block text-zinc-400 mb-1 mt-2">Title</label>
+                <label class="block text-zinc-400 mb-1 mt-2">Title <span class="text-zinc-600">(optional)</span></label>
                 <input type="text" id="uploadTitle" class="w-full bg-zinc-800 border border-zinc-700 rounded-md px-3 py-2">
             </div>
             <div>
@@ -298,6 +300,20 @@
             <button type="submit" class="flex-1 py-2 bg-emerald-600 hover:bg-emerald-500 rounded-md font-medium">Upload</button>
         </div>
     </form>
+</dialog>
+
+<!-- UPLOAD RESULTS MODAL -->
+<dialog id="uploadResultsModal" class="modal rounded-md w-full max-w-2xl p-0 text-white" style="background:#18181b;border:1px solid #3f3f46;">
+    <div class="p-6">
+        <div class="flex justify-between items-center mb-4">
+            <h2 class="text-lg font-semibold">Upload Results</h2>
+            <button type="button" onclick="document.getElementById('uploadResultsModal').close()" class="text-zinc-400 hover:text-white text-2xl">&times;</button>
+        </div>
+        <div id="uploadResultsBody" class="max-h-[60vh] overflow-auto"></div>
+        <div class="flex justify-end mt-5">
+            <button type="button" onclick="document.getElementById('uploadResultsModal').close()" class="px-4 py-2 bg-zinc-800 hover:bg-zinc-700 rounded-md text-sm">Close</button>
+        </div>
+    </div>
 </dialog>
 
 <!-- SUBSTITUTE PAGES MODAL -->
