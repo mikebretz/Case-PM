@@ -48,8 +48,15 @@
     compareMode: false,
     compareOverlayActive: false,
     compareOpacity: 0.7,
+    compareRenderMode: 'diff',
     compareRevisionId: null,
     compareBaseRevisionId: null,
+    compareDiffPending: false,
+    compareDiffFailed: false,
+    viewingRevisionId: null,
+    pdfPageWidthPts: 0,
+    scalePdfPointsPerFoot: null,
+    scaleLabel: '',
     canvasSize: { w: 0, h: 0 },
     lastViewport: null,
     focusPin: null,
@@ -386,6 +393,10 @@
     state.selectedMarkupId = null;
     state.compareOverlayActive = false;
     state.compareBaseRevisionId = null;
+    state.compareDiffFailed = false;
+    state.compareRenderMode = 'diff';
+    const currentRev = (detail.revisions || []).find(r => r.is_current);
+    state.viewingRevisionId = currentRev?.id || detail.revisions?.[0]?.id || null;
     state.focusPin = opts || null;
     state.previewDrawingId = id;
     previewSheet(id);
@@ -677,11 +688,54 @@
 
   async function fetchPdfBytes(url) {
     const res = await fetch(url, { credentials: 'same-origin' });
-    return res.arrayBuffer();
+    if (!res.ok) {
+      let detail = `Drawing file not found (HTTP ${res.status})`;
+      try {
+        const err = await res.json();
+        detail = err.error || detail;
+      } catch (_) { /* ignore */ }
+      const e = new Error(detail);
+      e.status = res.status;
+      throw e;
+    }
+    const buf = await res.arrayBuffer();
+    if (!buf || buf.byteLength < 64) {
+      throw new Error('Drawing file is empty or unreadable');
+    }
+    return buf;
   }
 
-  async function renderPageToCanvas(pdfDoc, canvas, viewport) {
-    const page = await pdfDoc.getPage(1);
+  function getViewerPdfUrl() {
+    if (!state.openDrawing) return null;
+    const current = state.revisions.find(r => r.is_current);
+    const revId = state.viewingRevisionId || current?.id;
+    if (!revId || (current && revId === current.id)) {
+      return `/api/drawings/${state.openDrawing.id}/file`;
+    }
+    return `/api/drawings/${state.openDrawing.id}/revisions/${revId}/file`;
+  }
+
+  function showViewerPdfError(message) {
+    const canvas = document.getElementById('drawPdfCanvas');
+    if (!canvas) return;
+    const ctx = canvas.getContext('2d');
+    canvas.width = Math.max(640, state.baseCanvasSize.w || 640);
+    canvas.height = Math.max(320, state.baseCanvasSize.h || 320);
+    ctx.fillStyle = '#18181b';
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+    ctx.fillStyle = '#fca5a5';
+    ctx.font = '14px sans-serif';
+    const lines = String(message || 'Could not load drawing PDF').split('\n');
+    lines.forEach((line, i) => ctx.fillText(line, 32, 48 + i * 22));
+    ctx.fillStyle = '#a1a1aa';
+    ctx.font = '12px sans-serif';
+    ctx.fillText('Re-upload this sheet or pick another revision from the dropdown.', 32, 48 + lines.length * 22 + 12);
+    document.getElementById('drawDiffCanvas')?.classList.add('hidden');
+  }
+
+  async function renderPageToCanvas(pdfDoc, canvas, viewport, pageNum) {
+    if (!pdfDoc) throw new Error('PDF document is not loaded');
+    const page = await pdfDoc.getPage(pageNum || 1);
     const vp = viewport || page.getViewport({ scale: 1, rotation: page.rotate });
     canvas.width = vp.width;
     canvas.height = vp.height;
@@ -718,24 +772,40 @@
       diffCanvas?.classList.add('hidden');
       return;
     }
+    if (state.compareDiffPending || state.compareDiffFailed) return;
+    state.compareDiffPending = true;
     try {
       const oldBuf = await fetchPdfBytes(`/api/drawings/${state.openDrawing.id}/revisions/${state.compareBaseRevisionId}/file`);
       const oldDoc = await pdfjsLib.getDocument({ data: oldBuf.slice(0) }).promise;
-      const vp = state.lastViewport || (await state.pdfDoc.getPage(state.pdfPage)).getViewport({ scale: 1, rotation: (await state.pdfDoc.getPage(state.pdfPage)).rotate });
+      const curPage = await state.pdfDoc.getPage(state.pdfPage || 1);
+      const vp = state.lastViewport || curPage.getViewport({ scale: 1, rotation: curPage.rotate });
       const offOld = document.createElement('canvas');
       const offNew = document.createElement('canvas');
-      await renderPageToCanvas(oldDoc, offOld, vp);
-      await renderPageToCanvas(state.pdfDoc, offNew, vp);
+      await renderPageToCanvas(oldDoc, offOld, vp, 1);
+      await renderPageToCanvas(state.pdfDoc, offNew, vp, state.pdfPage || 1);
       diffCanvas.width = vp.width;
       diffCanvas.height = vp.height;
       diffCanvas.style.width = vp.width + 'px';
       diffCanvas.style.height = vp.height + 'px';
-      const diff = pixelDiff(offOld.getContext('2d'), offNew.getContext('2d'), vp.width, vp.height, state.compareOpacity);
-      diffCanvas.getContext('2d').putImageData(diff, 0, 0);
+      const dctx = diffCanvas.getContext('2d');
+      dctx.clearRect(0, 0, vp.width, vp.height);
+      if (state.compareRenderMode === 'overlay') {
+        dctx.globalAlpha = state.compareOpacity;
+        dctx.drawImage(offOld, 0, 0);
+        dctx.globalAlpha = 1;
+      } else {
+        const diff = pixelDiff(offOld.getContext('2d'), offNew.getContext('2d'), vp.width, vp.height, state.compareOpacity);
+        dctx.putImageData(diff, 0, 0);
+      }
       diffCanvas.classList.remove('hidden');
+      state.compareDiffFailed = false;
     } catch (e) {
       console.warn('Compare diff failed', e);
+      state.compareDiffFailed = true;
       diffCanvas.classList.add('hidden');
+      toast(e.message || 'Could not load comparison revision — re-upload or pick another');
+    } finally {
+      state.compareDiffPending = false;
     }
   }
 
@@ -745,7 +815,7 @@
     const wrap = document.getElementById('drawViewerWrap');
     if (!canvas || !wrap) return;
 
-    const url = state.openDrawing.file_url;
+    const url = getViewerPdfUrl();
     const gen = ++state.renderGen;
 
     if (forceReload || !state.pdfDoc || state.pdfUrl !== url) {
@@ -754,14 +824,24 @@
         state.renderTask = null;
       }
       state.pdfUrl = url;
-      const buf = await fetchPdfBytes(url);
-      if (gen !== state.renderGen) return;
-      state.pdfBytes = buf;
-      state.pdfDoc = await pdfjsLib.getDocument({ data: buf.slice(0) }).promise;
+      try {
+        const buf = await fetchPdfBytes(url);
+        if (gen !== state.renderGen) return;
+        state.pdfBytes = buf;
+        state.pdfDoc = await pdfjsLib.getDocument({ data: buf.slice(0) }).promise;
+      } catch (e) {
+        if (gen !== state.renderGen) return;
+        state.pdfDoc = null;
+        state.pdfBytes = null;
+        showViewerPdfError(e.message);
+        return;
+      }
     }
 
-    const page = await state.pdfDoc.getPage(state.pdfPage);
+    if (!state.pdfDoc) return;
+    const page = await state.pdfDoc.getPage(state.pdfPage || 1);
     const unscaled = page.getViewport({ scale: 1, rotation: page.rotate });
+    state.pdfPageWidthPts = unscaled.width;
     const fitScale = Math.min(
       (wrap.clientWidth - 32) / unscaled.width,
       (wrap.clientHeight - 32) / unscaled.height,
@@ -807,7 +887,14 @@
     }
     fitToView();
     renderMarkupOverlay();
-    await renderCompareDiff();
+    if (state.pixelsPerUnit && state.scalePdfPointsPerFoot) {
+      applyScalePdfPtsPerFoot(state.scalePdfPointsPerFoot, state.scaleLabel, true);
+    } else {
+      await tryAutoDetectScale();
+    }
+    if (state.compareOverlayActive && !state.compareDiffFailed) {
+      await renderCompareDiff();
+    }
   }
 
   function visibleMarkups() {
@@ -944,6 +1031,81 @@
     { label: '10', value: 10 }, { label: '12', value: 12 }, { label: '14', value: 14 },
     { label: '18', value: 18 }, { label: '24', value: 24 }, { label: '32', value: 32 },
   ];
+  const SCALE_PRESETS = [
+    { label: '1/8"=1\'', pdfPtsPerFoot: 9 },
+    { label: '1/4"=1\'', pdfPtsPerFoot: 18 },
+    { label: '1/2"=1\'', pdfPtsPerFoot: 36 },
+    { label: '1"=1\'', pdfPtsPerFoot: 72 },
+    { label: '1"=10\'', pdfPtsPerFoot: 7.2 },
+    { label: '1"=20\'', pdfPtsPerFoot: 3.6 },
+    { label: '1"=30\'', pdfPtsPerFoot: 2.4 },
+    { label: '1"=40\'', pdfPtsPerFoot: 1.8 },
+    { label: '1:50', pdfPtsPerFoot: 1.44 },
+    { label: '1:100', pdfPtsPerFoot: 0.72 },
+  ];
+
+  function applyScalePdfPtsPerFoot(pdfPtsPerFoot, label, silent) {
+    if (!pdfPtsPerFoot || !state.pdfPageWidthPts || !state.baseCanvasSize.w) return false;
+    const canvasPxPerPdfPt = state.baseCanvasSize.w / state.pdfPageWidthPts;
+    state.pixelsPerUnit = pdfPtsPerFoot * canvasPxPerPdfPt;
+    state.scalePdfPointsPerFoot = pdfPtsPerFoot;
+    state.scaleLabel = label || '';
+    if (!silent) renderPropertiesPanel();
+    return true;
+  }
+
+  async function tryAutoDetectScale() {
+    if (state.pixelsPerUnit || !state.openDrawing || !state.pdfPageWidthPts) return;
+    try {
+      const json = await api(`/api/drawings/${state.openDrawing.id}/detect-scale`);
+      if (json.scale?.pdf_points_per_foot) {
+        applyScalePdfPtsPerFoot(json.scale.pdf_points_per_foot, json.scale.scale_text, true);
+      }
+    } catch { /* optional */ }
+  }
+
+  async function detectScale() {
+    if (!state.openDrawing) return;
+    try {
+      const json = await api(`/api/drawings/${state.openDrawing.id}/detect-scale`);
+      if (!json.scale?.pdf_points_per_foot) {
+        toast(json.message || 'No scale found on this sheet');
+        return;
+      }
+      if (applyScalePdfPtsPerFoot(json.scale.pdf_points_per_foot, json.scale.scale_text)) {
+        toast(`Scale detected: ${json.scale.scale_text}`);
+      }
+    } catch (e) { toast(e.message); }
+  }
+
+  function applyScalePreset(pdfPtsPerFoot, label) {
+    if (applyScalePdfPtsPerFoot(pdfPtsPerFoot, label)) {
+      toast(`Scale set: ${label}`);
+    }
+  }
+
+  function applyManualScaleInput() {
+    const raw = document.getElementById('propScaleInput')?.value?.trim();
+    if (!raw) return;
+    const arch = raw.match(/^(\d+)\s*\/\s*(\d+)\s*["″]?\s*=\s*(\d+)\s*(?:['′\-]\s*(\d{1,2})|['′])?$/i);
+    if (arch) {
+      const num = parseInt(arch[1], 10);
+      const denom = parseInt(arch[2], 10);
+      const feet = parseInt(arch[3], 10);
+      const inches = parseInt(arch[4] || '0', 10);
+      const paperIn = num / Math.max(denom, 1);
+      const realFt = feet + inches / 12;
+      const pdfPts = (paperIn / realFt) * 72;
+      applyScalePreset(pdfPts, raw);
+      return;
+    }
+    const ratio = raw.match(/^1\s*[:/]\s*(\d+)$/i);
+    if (ratio) {
+      applyScalePreset(72 / parseInt(ratio[1], 10), `1:${ratio[1]}`);
+      return;
+    }
+    toast('Use format like 1/4"=1\' or 1:50');
+  }
 
   function renderPropertiesPanel() {
     const el = document.getElementById('markupPropertiesPanel');
@@ -973,9 +1135,17 @@
       ` : ''}
       ${showMeasure ? `
         <div class="text-[10px] text-zinc-400 mb-2 p-2 bg-zinc-900 rounded border border-zinc-700">
-          Scale: ${state.pixelsPerUnit ? `${state.pixelsPerUnit.toFixed(2)} px/${state.measureUnit}` : 'Not calibrated — measurements show in pixels'}
+          ${state.scaleLabel ? `Scale: <span class="text-sky-300">${esc(state.scaleLabel)}</span><br>` : ''}
+          ${state.pixelsPerUnit ? `${state.pixelsPerUnit.toFixed(2)} px/ft` : 'Not set — measurements show in pixels'}
         </div>
-        <button type="button" id="propCalibrateBtn" class="w-full py-1.5 mb-2 bg-zinc-800 hover:bg-zinc-700 rounded text-[10px]">Calibrate scale…</button>
+        ${propChips('Preset scale', SCALE_PRESETS.map(s => ({ label: s.label, value: s.pdfPtsPerFoot })), state.scalePdfPointsPerFoot || '', 'scalePreset')}
+        <label class="block text-[10px] text-zinc-400 mb-1">Manual scale</label>
+        <div class="flex gap-1 mb-2">
+          <input type="text" id="propScaleInput" placeholder='1/4"=1\'' class="flex-1 bg-zinc-900 border border-zinc-700 rounded px-2 py-1 text-[10px]">
+          <button type="button" id="propScaleApplyBtn" class="px-2 py-1 bg-zinc-800 hover:bg-zinc-700 rounded text-[10px]">Set</button>
+        </div>
+        <button type="button" id="propDetectScaleBtn" class="w-full py-1.5 mb-2 bg-sky-900/50 hover:bg-sky-900 rounded text-[10px] text-sky-200">Auto-detect from sheet</button>
+        <button type="button" id="propCalibrateBtn" class="w-full py-1.5 mb-2 bg-zinc-800 hover:bg-zinc-700 rounded text-[10px]">Calibrate on drawing…</button>
       ` : ''}
       ${isSelected ? `<button type="button" id="propDeleteBtn" class="w-full py-1.5 bg-red-900/70 hover:bg-red-800 rounded text-[10px] text-red-100">Delete markup</button>` : ''}
     `;
@@ -984,6 +1154,12 @@
       btn.addEventListener('click', () => {
         const key = btn.dataset.prop;
         let val = btn.dataset.value;
+        if (key === 'scalePreset') {
+          const preset = SCALE_PRESETS.find(s => String(s.pdfPtsPerFoot) === String(val));
+          if (preset) applyScalePreset(preset.pdfPtsPerFoot, preset.label);
+          renderPropertiesPanel();
+          return;
+        }
         if (['lineWidth', 'cloudScallop', 'fontSize'].includes(key)) val = parseInt(val, 10);
         if (['opacity', 'fillOpacity'].includes(key)) val = parseFloat(val);
         applyMarkupProperty({ [key]: val });
@@ -1001,6 +1177,9 @@
       });
     }
     document.getElementById('propCalibrateBtn')?.addEventListener('click', () => { setTool('calibrate'); toast('Click two points on a known distance'); });
+    document.getElementById('propDetectScaleBtn')?.addEventListener('click', detectScale);
+    document.getElementById('propScaleApplyBtn')?.addEventListener('click', applyManualScaleInput);
+    document.getElementById('propScaleInput')?.addEventListener('keydown', e => { if (e.key === 'Enter') applyManualScaleInput(); });
     document.getElementById('propDeleteBtn')?.addEventListener('click', deleteSelectedMarkup);
   }
 
@@ -1241,6 +1420,9 @@
         const dx = pt.x - state.drawStart.x; const dy = pt.y - state.drawStart.y;
         const px = Math.sqrt(dx * dx + dy * dy);
         state.pixelsPerUnit = px / (parseFloat(dist) || 1);
+        state.scaleLabel = 'Calibrated on drawing';
+        state.scalePdfPointsPerFoot = null;
+        renderPropertiesPanel();
         toast(`Scale set: ${state.pixelsPerUnit.toFixed(2)} px/ft`);
       }
       state.drawStart = null;
@@ -1442,40 +1624,125 @@
     renderMarkupOverlay();
   }
 
-  async function loadRevisionInViewer() {
+  async function viewRevisionInViewer() {
     const revId = parseInt(document.getElementById('viewerRevisionSelect')?.value, 10);
     if (!revId || !state.openDrawing) return;
-    state.compareBaseRevisionId = revId;
-    const current = state.revisions.find(r => r.is_current);
-    if (current && revId === current.id) {
-      state.compareOverlayActive = false;
-      document.getElementById('drawDiffCanvas')?.classList.add('hidden');
-      toast('Select an older revision to compare against current');
+    state.viewingRevisionId = revId;
+    state.compareOverlayActive = false;
+    state.compareDiffFailed = false;
+    state.compareBaseRevisionId = null;
+    document.getElementById('drawDiffCanvas')?.classList.add('hidden');
+    document.getElementById('btnCompareOverlay')?.classList.remove('bg-sky-700', 'text-white');
+    document.getElementById('compareOpacity')?.classList.add('hidden');
+    document.getElementById('compareModeSelect')?.classList.add('hidden');
+    await renderPdf(true);
+    const rev = state.revisions.find(r => r.id === revId);
+    toast(rev?.is_current ? 'Viewing current revision' : `Viewing ${rev?.revision_label || 'archived revision'}`);
+  }
+
+  function openCompareDialog() {
+    if (!state.openDrawing) {
+      toast('Open a sheet in the viewer first');
       return;
     }
+    const dialog = document.getElementById('compareDialog');
+    if (!dialog) return;
+    const current = state.revisions.find(r => r.is_current) || state.revisions[0];
+    const sorted = [...state.revisions].sort((a, b) => new Date(b.uploaded_at || 0) - new Date(a.uploaded_at || 0));
+    const viewingId = state.viewingRevisionId || current?.id;
+    const viewing = state.revisions.find(r => r.id === viewingId) || current;
+    const prev = sorted.find(r => r.id !== viewing?.id);
+    const summary = document.getElementById('compareDialogSummary');
+    if (summary) {
+      summary.innerHTML = `Compare <strong>${esc(state.openDrawing.sheet_number)}</strong> — viewing <strong>${esc(viewing?.revision_label || 'current')}</strong>`;
+    }
+    const prevBtn = document.getElementById('comparePreviousBtn');
+    if (prevBtn) {
+      prevBtn.disabled = !prev;
+      prevBtn.textContent = prev ? `Compare to previous revision (${prev.revision_label})` : 'No previous revision available';
+      prevBtn.dataset.revId = prev?.id || '';
+    }
+    const pick = document.getElementById('compareRevisionPick');
+    if (pick) {
+      const options = state.revisions.filter(r => r.id !== viewing?.id);
+      pick.innerHTML = options.length
+        ? options.map(r => `<option value="${r.id}">${esc(r.revision_label)} · ${fmtDate(r.uploaded_at)}${r.set_name ? ` · ${esc(r.set_name)}` : ''}</option>`).join('')
+        : '<option value="">No other revisions</option>';
+    }
+    const setPick = document.getElementById('compareSetPick');
+    if (setPick) {
+      const sets = [...new Set(state.revisions.map(r => r.set_name).filter(Boolean))];
+      setPick.innerHTML = '<option value="">— Compare to another drawing set —</option>'
+        + sets.filter(s => s !== viewing?.set_name).map(s => `<option value="${esc(s)}">${esc(s)}</option>`).join('');
+    }
+    dialog.showModal();
+  }
+
+  async function startCompare(mode) {
+    const dialog = document.getElementById('compareDialog');
+    const viewingId = state.viewingRevisionId || state.revisions.find(r => r.is_current)?.id;
+    let baseRevId = null;
+    if (mode === 'previous') {
+      baseRevId = parseInt(document.getElementById('comparePreviousBtn')?.dataset.revId, 10);
+    } else if (mode === 'set') {
+      const setName = document.getElementById('compareSetPick')?.value;
+      const rev = state.revisions.find(r => r.set_name === setName);
+      baseRevId = rev?.id;
+      if (!baseRevId) { toast('No revision from that set for this sheet'); return; }
+    } else {
+      baseRevId = parseInt(document.getElementById('compareRevisionPick')?.value, 10);
+    }
+    if (!baseRevId) { toast('Select a revision to compare against'); return; }
+    if (baseRevId === viewingId) { toast('Pick a different revision than the one you are viewing'); return; }
+    state.compareRenderMode = document.querySelector('input[name="compareMode"]:checked')?.value || 'diff';
+    state.compareBaseRevisionId = baseRevId;
     state.compareOverlayActive = true;
-    document.getElementById('compareOpacity')?.classList.remove('hidden');
+    state.compareDiffFailed = false;
+    dialog?.close();
     document.getElementById('btnCompareOverlay')?.classList.add('bg-sky-700', 'text-white');
+    document.getElementById('compareOpacity')?.classList.remove('hidden');
+    const modeSel = document.getElementById('compareModeSelect');
+    if (modeSel) {
+      modeSel.classList.remove('hidden');
+      modeSel.value = state.compareRenderMode;
+    }
     await renderCompareDiff();
-    toast('Compare overlay: blue = added, red = removed');
+    toast(state.compareRenderMode === 'overlay'
+      ? 'Overlay: previous revision shown in gray on top'
+      : 'Change highlights: blue = added, red = removed');
+  }
+
+  function stopCompare() {
+    state.compareOverlayActive = false;
+    state.compareBaseRevisionId = null;
+    state.compareDiffFailed = false;
+    document.getElementById('drawDiffCanvas')?.classList.add('hidden');
+    document.getElementById('btnCompareOverlay')?.classList.remove('bg-sky-700', 'text-white');
+    document.getElementById('compareOpacity')?.classList.add('hidden');
+    document.getElementById('compareModeSelect')?.classList.add('hidden');
+  }
+
+  function setCompareRenderMode(mode) {
+    state.compareRenderMode = mode || 'diff';
+    state.compareDiffFailed = false;
+    if (state.compareOverlayActive) renderCompareDiff();
+  }
+
+  async function loadRevisionInViewer() {
+    await viewRevisionInViewer();
   }
 
   async function toggleCompareOverlay() {
-    if (!state.compareBaseRevisionId) {
-      const revId = parseInt(document.getElementById('viewerRevisionSelect')?.value, 10);
-      if (revId) state.compareBaseRevisionId = revId;
+    if (state.compareOverlayActive) {
+      stopCompare();
+      return;
     }
-    state.compareOverlayActive = !state.compareOverlayActive;
-    document.getElementById('btnCompareOverlay')?.classList.toggle('bg-sky-700', state.compareOverlayActive);
-    document.getElementById('btnCompareOverlay')?.classList.toggle('text-white', state.compareOverlayActive);
-    document.getElementById('compareOpacity')?.classList.toggle('hidden', !state.compareOverlayActive);
-    if (state.compareOverlayActive) await renderCompareDiff();
-    else document.getElementById('drawDiffCanvas')?.classList.add('hidden');
+    openCompareDialog();
   }
 
   function setCompareOpacity(val) {
     state.compareOpacity = (parseInt(val, 10) || 70) / 100;
-    if (state.compareOverlayActive) renderCompareDiff();
+    if (state.compareOverlayActive && !state.compareDiffFailed) renderCompareDiff();
   }
 
   async function exportTakeoffToBudget() {
@@ -1796,8 +2063,15 @@
     toggleLayer,
     publishPersonalMarkups,
     loadRevisionInViewer,
+    viewRevisionInViewer,
+    openCompareDialog,
+    startCompare,
+    stopCompare,
+    setCompareRenderMode,
     toggleCompareOverlay,
     setCompareOpacity,
+    detectScale,
+    applyScalePreset,
     exportTakeoffToBudget,
     togglePrintMenu,
     printSheet,

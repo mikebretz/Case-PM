@@ -248,8 +248,12 @@
             <div id="viewerSheetTitle" class="text-xs font-medium truncate max-w-[200px] sm:max-w-none">Drawing Viewer</div>
         </div>
         <div class="flex items-center gap-1 flex-wrap">
-            <select id="viewerRevisionSelect" onchange="CasePMDrawings.loadRevisionInViewer()" class="bg-zinc-800 border border-zinc-700 rounded px-2 py-1 text-[10px] max-w-[160px] h-[28px]"></select>
-            <button type="button" onclick="CasePMDrawings.toggleCompareOverlay()" id="btnCompareOverlay" class="px-2 py-1 text-[10px] bg-zinc-800 hover:bg-zinc-700 rounded-md h-[28px]" title="Compare revisions">Compare</button>
+            <select id="viewerRevisionSelect" onchange="CasePMDrawings.viewRevisionInViewer()" class="bg-zinc-800 border border-zinc-700 rounded px-2 py-1 text-[10px] max-w-[160px] h-[28px]" title="View a revision"></select>
+            <button type="button" onclick="CasePMDrawings.openCompareDialog()" id="btnCompareOverlay" class="px-2 py-1 text-[10px] bg-zinc-800 hover:bg-zinc-700 rounded-md h-[28px]" title="Compare revisions">Compare</button>
+            <select id="compareModeSelect" onchange="CasePMDrawings.setCompareRenderMode(this.value)" class="hidden bg-zinc-800 border border-zinc-700 rounded px-2 py-1 text-[10px] h-[28px]" title="Compare display mode">
+                <option value="diff">Highlight changes</option>
+                <option value="overlay">Ghost overlay</option>
+            </select>
             <input type="range" id="compareOpacity" min="20" max="100" value="70" class="w-14 accent-sky-500 hidden h-[28px]" oninput="CasePMDrawings.setCompareOpacity(this.value)">
             <button type="button" onclick="CasePMDrawings.exportTakeoffToBudget()" class="px-2 py-1 text-[10px] bg-violet-900 hover:bg-violet-800 rounded-md h-[28px] hidden sm:inline">Takeoff → Budget</button>
             <button type="button" onclick="CasePMDrawings.publishPersonalMarkups()" class="px-2 py-1 text-[10px] bg-emerald-900 hover:bg-emerald-800 rounded-md h-[28px]">Publish</button>
@@ -365,6 +369,51 @@
         <div id="uploadResultsBody" class="max-h-[60vh] overflow-auto"></div>
         <div class="flex justify-end mt-5">
             <button type="button" onclick="document.getElementById('uploadResultsModal').close()" class="px-4 py-2 bg-zinc-800 hover:bg-zinc-700 rounded-md text-sm">Close</button>
+        </div>
+    </div>
+</dialog>
+
+<!-- COMPARE REVISIONS MODAL -->
+<dialog id="compareDialog" class="modal rounded-md w-full max-w-lg p-0 text-white" style="background:#18181b;border:1px solid #3f3f46;">
+    <div class="p-6">
+        <div class="flex justify-between items-center mb-4">
+            <h2 class="text-lg font-semibold">Compare Sheets</h2>
+            <button type="button" onclick="document.getElementById('compareDialog').close()" class="text-zinc-400 hover:text-white text-2xl">&times;</button>
+        </div>
+        <p id="compareDialogSummary" class="text-sm text-zinc-300 mb-4">Select how you want to compare this sheet.</p>
+
+        <div class="space-y-3 mb-4">
+            <button type="button" id="comparePreviousBtn" onclick="CasePMDrawings.startCompare('previous')" class="w-full py-2.5 px-3 bg-sky-800 hover:bg-sky-700 rounded-md text-sm font-medium text-left">
+                Compare to previous revision
+            </button>
+            <div class="p-3 bg-zinc-800/60 rounded-md border border-zinc-700">
+                <label class="block text-xs text-zinc-400 mb-1">Or pick a specific revision</label>
+                <div class="flex gap-2">
+                    <select id="compareRevisionPick" class="flex-1 bg-zinc-900 border border-zinc-700 rounded px-2 py-1.5 text-xs"></select>
+                    <button type="button" onclick="CasePMDrawings.startCompare('pick')" class="px-3 py-1.5 bg-zinc-700 hover:bg-zinc-600 rounded text-xs whitespace-nowrap">Compare</button>
+                </div>
+            </div>
+            <div class="p-3 bg-zinc-800/60 rounded-md border border-zinc-700">
+                <label class="block text-xs text-zinc-400 mb-1">Compare to another drawing set (same sheet)</label>
+                <div class="flex gap-2">
+                    <select id="compareSetPick" class="flex-1 bg-zinc-900 border border-zinc-700 rounded px-2 py-1.5 text-xs"></select>
+                    <button type="button" onclick="CasePMDrawings.startCompare('set')" class="px-3 py-1.5 bg-zinc-700 hover:bg-zinc-600 rounded text-xs whitespace-nowrap">Compare set</button>
+                </div>
+            </div>
+        </div>
+
+        <fieldset class="mb-4">
+            <legend class="text-xs uppercase text-zinc-500 mb-2">Display mode</legend>
+            <div class="flex flex-col gap-2 text-sm">
+                <label class="flex items-center gap-2 cursor-pointer"><input type="radio" name="compareMode" value="diff" checked class="accent-sky-500"> Highlight changes (blue added, red removed)</label>
+                <label class="flex items-center gap-2 cursor-pointer"><input type="radio" name="compareMode" value="overlay" class="accent-sky-500"> Ghost overlay (previous revision on top)</label>
+            </div>
+        </fieldset>
+
+        <p class="text-[11px] text-zinc-500 mb-4">Tip: use the revision dropdown in the toolbar to view an older revision, then compare it to current.</p>
+        <div class="flex gap-2 justify-end">
+            <button type="button" onclick="CasePMDrawings.stopCompare(); document.getElementById('compareDialog').close()" class="px-4 py-2 bg-zinc-800 hover:bg-zinc-700 rounded-md text-sm">Clear compare</button>
+            <button type="button" onclick="document.getElementById('compareDialog').close()" class="px-4 py-2 bg-zinc-800 hover:bg-zinc-700 rounded-md text-sm">Close</button>
         </div>
     </div>
 </dialog>

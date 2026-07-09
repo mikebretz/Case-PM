@@ -2743,6 +2743,67 @@ def api_get_drawing(drawing_id):
     return jsonify(data)
 
 
+@app.route('/api/drawings/<int:drawing_id>/detect-scale', methods=['GET'])
+@login_required
+def api_detect_drawing_scale(drawing_id):
+    """Detect drawing scale from the current revision PDF title block."""
+    from drawing_persistence import (
+        extract_pdf_page_text,
+        extract_scale_from_text,
+        extract_title_block_metadata,
+        resolve_drawing_file_path,
+        ocr_title_block_regions,
+    )
+    drawing = Drawing.query.get_or_404(drawing_id)
+    rev = DrawingRevision.query.get(drawing.current_revision_id) if drawing.current_revision_id else None
+    if not rev:
+        rev = DrawingRevision.query.filter_by(drawing_id=drawing.id, is_current=True).first()
+    upload_root = app.config.get('UPLOAD_FOLDER')
+    path = resolve_drawing_file_path(rev.file_path if rev else None, upload_root)
+    if not path:
+        return jsonify({'error': 'Drawing file not found'}), 404
+    layout = extract_title_block_metadata(path, 0)
+    text = extract_pdf_page_text(path, 0)
+    ocr = ocr_title_block_regions(path, 0)
+    combined = '\n'.join(filter(None, [text, ocr, layout.get('text_preview')]))
+    scale = layout.get('scale') or extract_scale_from_text(combined)
+    if not scale:
+        return jsonify({'ok': True, 'scale': None, 'message': 'No scale found on sheet'})
+    return jsonify({'ok': True, 'scale': scale})
+
+
+@app.route('/api/drawings/sets', methods=['GET'])
+@login_required
+def api_drawing_sets():
+    """List drawing set names for compare workflows."""
+    project_id = request.args.get('project_id', type=int) or get_current_project_id()
+    if not project_id:
+        return jsonify({'error': 'project_id required'}), 400
+    revisions = (
+        DrawingRevision.query.join(Drawing, DrawingRevision.drawing_id == Drawing.id)
+        .filter(Drawing.project_id == int(project_id))
+        .order_by(DrawingRevision.uploaded_at.desc())
+        .all()
+    )
+    sets = {}
+    for rev in revisions:
+        name = rev.set_name or 'Unnamed Set'
+        sets.setdefault(name, {'name': name, 'revision_count': 0, 'sheet_count': 0, 'latest_upload': None})
+        sets[name]['revision_count'] += 1
+        if not sets[name]['latest_upload'] or (rev.uploaded_at and rev.uploaded_at.isoformat() > sets[name]['latest_upload']):
+            sets[name]['latest_upload'] = rev.uploaded_at.isoformat() if rev.uploaded_at else None
+    drawing_sets = {}
+    for d in Drawing.query.filter_by(project_id=int(project_id)).all():
+        rev = DrawingRevision.query.get(d.current_revision_id) if d.current_revision_id else None
+        if not rev:
+            continue
+        name = rev.set_name or 'Unnamed Set'
+        drawing_sets[name] = drawing_sets.get(name, 0) + 1
+    for name in sets:
+        sets[name]['sheet_count'] = drawing_sets.get(name, 0)
+    return jsonify({'sets': sorted(sets.values(), key=lambda s: s.get('latest_upload') or '', reverse=True)})
+
+
 @app.route('/api/drawings/<int:drawing_id>/file', methods=['GET'])
 @login_required
 def api_serve_drawing_file(drawing_id):
