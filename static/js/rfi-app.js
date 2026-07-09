@@ -307,6 +307,20 @@
     state.drawerRecord = null;
   }
 
+  function drawingPinHref(pin, rfiId) {
+    const pid = projectId();
+    const q = new URLSearchParams();
+    if (pid) q.set('project_id', pid);
+    if (pin.drawing_id) q.set('drawing_id', pin.drawing_id);
+    else if (pin.drawing_sheet) q.set('sheet', pin.drawing_sheet);
+    const nx = pin.nx != null ? pin.nx : (pin.x <= 1 && pin.x >= 0 ? pin.x : null);
+    const ny = pin.ny != null ? pin.ny : (pin.y <= 1 && pin.y >= 0 ? pin.y : null);
+    if (nx != null) q.set('x', nx);
+    if (ny != null) q.set('y', ny);
+    if (rfiId) q.set('rfi_id', rfiId);
+    return `/drawings?${q.toString()}`;
+  }
+
   function renderDrawer(r) {
     const el = document.getElementById('rfiDrawerContent');
     if (!el) return;
@@ -321,7 +335,7 @@
 
     const pins = (r.plan_pins || []).map((p, i) => `
       <div class="text-xs bg-zinc-800 rounded px-2 py-1 flex justify-between">
-        <a href="/drawings" class="hover:text-sky-300"><i class="fa-solid fa-map-pin text-sky-400 mr-1"></i>${esc(p.drawing_sheet || r.drawing_reference || 'Sheet')} @ (${p.x || 0}, ${p.y || 0})</a>
+        <a href="${drawingPinHref(p, r.id)}" class="hover:text-sky-300"><i class="fa-solid fa-map-pin text-sky-400 mr-1"></i>${esc(p.drawing_sheet || r.drawing_reference || 'Sheet')}${p.nx != null ? '' : ` @ (${p.x || 0}, ${p.y || 0})`}</a>
         <button onclick="CasePMRfis.removePin(${r.id}, ${i})" class="text-red-400"><i class="fa-solid fa-times"></i></button>
       </div>`).join('') || '<p class="text-zinc-500 text-xs">No plan pins yet. Open <a href="/drawings" class="text-sky-400 underline">Drawings</a> to place RFI pins on sheets.</p>';
 
@@ -412,13 +426,13 @@
   }
 
   async function addPlanPin(id) {
-    const sheet = prompt('Drawing sheet number (e.g. A-201):', state.drawerRecord?.drawing_reference || '');
-    if (!sheet) return;
-    const r = state.drawerRecord || await api(`/api/rfis/${id}`);
-    const pins = [...(r.plan_pins || []), { drawing_sheet: sheet, x: 50, y: 50, note: 'Plan pin — markup UI coming soon', created_at: new Date().toISOString() }];
-    await api(`/api/rfis/${id}`, { method: 'PUT', body: JSON.stringify({ plan_pins: pins }) });
-    toast('Plan pin added');
-    view(id);
+    const sheet = state.drawerRecord?.drawing_reference || '';
+    const q = new URLSearchParams();
+    const pid = projectId();
+    if (pid) q.set('project_id', pid);
+    if (sheet) q.set('sheet', sheet);
+    q.set('rfi_id', id);
+    global.location.href = `/drawings?${q.toString()}`;
   }
 
   async function removePin(id, index) {
