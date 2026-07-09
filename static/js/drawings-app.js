@@ -212,18 +212,22 @@
     });
   }
 
+  const SECTION_GRID_CLASS = 'flex-1 overflow-auto p-3 grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-2 content-start min-h-0';
+
   function renderSectionGrid() {
     const grid = document.getElementById('drawSectionGrid');
     if (!grid) return;
     const items = (state.sections[state.activeSection] || []).filter(d => filteredDrawings().some(f => f.id === d.id));
     if (!items.length) {
-      grid.innerHTML = `<div id="drawDropZone" class="col-span-full py-16 text-center border-2 border-dashed border-zinc-700 rounded-lg text-zinc-500 transition-colors">
+      grid.className = 'flex-1 overflow-auto p-3 flex flex-col min-h-0';
+      grid.innerHTML = `<div id="drawDropZone" class="flex-1 w-full min-h-[240px] flex flex-col items-center justify-center text-center border-2 border-dashed border-zinc-700 rounded-lg text-zinc-500 transition-colors">
         <i class="fa-solid fa-cloud-arrow-up text-2xl mb-2 block text-zinc-600"></i>
         <div class="text-sm">Drop a full drawing set PDF here</div>
         <div class="text-xs mt-1 text-zinc-600">or use Upload — pages are split automatically</div>
       </div>`;
       return;
     }
+    grid.className = SECTION_GRID_CLASS;
     grid.innerHTML = items.map(d => `
       <div class="bg-zinc-800 border border-zinc-700 rounded-md overflow-hidden hover:border-sky-600 cursor-pointer group relative" ondblclick="CasePMDrawings.openViewer(${d.id})" onclick="CasePMDrawings.previewSheet(${d.id})">
         <button type="button" onclick="event.stopPropagation(); CasePMDrawings.deleteDrawing(${d.id})" class="absolute bottom-2 right-2 z-10 opacity-0 group-hover:opacity-100 px-2 py-1 rounded bg-red-900/90 hover:bg-red-800 text-[10px] text-red-100" title="Delete sheet"><i class="fa-solid fa-trash"></i></button>
@@ -1451,8 +1455,14 @@
     if (!panel || panel._dropBound) return;
     panel._dropBound = true;
     let dragDepth = 0;
-    const highlight = () => panel.classList.add('ring-2', 'ring-sky-500', 'ring-inset');
-    const unhighlight = () => panel.classList.remove('ring-2', 'ring-sky-500', 'ring-inset');
+    const highlight = () => {
+      panel.classList.add('draw-drop-active');
+      document.getElementById('drawDropZone')?.classList.add('border-sky-500', 'bg-sky-950/20');
+    };
+    const unhighlight = () => {
+      panel.classList.remove('draw-drop-active');
+      document.getElementById('drawDropZone')?.classList.remove('border-sky-500', 'bg-sky-950/20');
+    };
     const hasFiles = (e) => [...(e.dataTransfer?.types || [])].includes('Files');
     panel.addEventListener('dragenter', (e) => {
       if (!hasFiles(e)) return;

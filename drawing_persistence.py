@@ -4,6 +4,8 @@ from __future__ import annotations
 import json
 import os
 import re
+import subprocess
+import sys
 from datetime import datetime, date
 
 DISCIPLINE_MAP = {
@@ -181,6 +183,47 @@ def _parse_date_token(token: str) -> date | None:
         except ValueError:
             continue
     return None
+
+
+def _missing_pdf_libraries() -> list[str]:
+    """Return requirement specifiers for PDF libraries that are not importable."""
+    missing = []
+    try:
+        import fitz  # noqa: F401
+    except ImportError:
+        missing.append('pymupdf>=1.24.0')
+    try:
+        from pypdf import PdfReader  # noqa: F401
+    except ImportError:
+        missing.append('pypdf>=4.0.0')
+    return missing
+
+
+def ensure_drawing_dependencies() -> None:
+    """Install PDF libraries needed for drawing set upload/split if they are missing."""
+    missing = _missing_pdf_libraries()
+    if not missing:
+        return
+    try:
+        subprocess.check_call(
+            [sys.executable, '-m', 'pip', 'install', '--disable-pip-version-check', *missing],
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            timeout=180,
+        )
+    except Exception as exc:
+        pkgs = ' and '.join(missing)
+        raise RuntimeError(
+            f'PDF libraries ({pkgs}) are required for drawing uploads. '
+            f'Run: {sys.executable} -m pip install -r requirements.txt'
+        ) from exc
+    still_missing = _missing_pdf_libraries()
+    if still_missing:
+        pkgs = ' and '.join(still_missing)
+        raise RuntimeError(
+            f'PDF libraries ({pkgs}) could not be loaded after install. '
+            f'Run: {sys.executable} -m pip install -r requirements.txt'
+        )
 
 
 def extract_pdf_page_text(pdf_path: str, page_index: int = 0) -> str:
@@ -466,6 +509,7 @@ def extract_title_from_text(text: str, sheet_number: str | None) -> str:
 
 def prepare_upload_pages(source_path: str, batch_dir: str) -> list[dict]:
     """Split a PDF into individual page files for import (always attempts split)."""
+    ensure_drawing_dependencies()
     os.makedirs(batch_dir, exist_ok=True)
     expected_pages = count_pdf_pages(source_path)
     pages = split_pdf_to_pages(source_path, batch_dir)
@@ -501,11 +545,15 @@ def count_pdf_pages(source_path: str) -> int:
 
 def split_pdf_to_pages_pypdf(source_path: str, out_dir: str) -> list[dict]:
     """Split using pypdf only (fallback when PyMuPDF split under-counts pages)."""
+    ensure_drawing_dependencies()
     os.makedirs(out_dir, exist_ok=True)
     try:
         from pypdf import PdfReader, PdfWriter
-    except ImportError:
-        raise RuntimeError('pypdf is required for drawing set uploads. Install with: pip install pypdf')
+    except ImportError as exc:
+        raise RuntimeError(
+            f'pypdf is required for drawing set uploads. '
+            f'Run: {sys.executable} -m pip install -r requirements.txt'
+        ) from exc
 
     results = []
     reader = PdfReader(source_path)
@@ -531,8 +579,10 @@ def split_pdf_to_pages_pypdf(source_path: str, out_dir: str) -> list[dict]:
 
 def split_pdf_to_pages(source_path: str, out_dir: str) -> list[dict]:
     """Split a PDF into single-page files. Returns metadata per page."""
+    ensure_drawing_dependencies()
     os.makedirs(out_dir, exist_ok=True)
     results = []
+    fitz_error = None
 
     try:
         import fitz
@@ -554,10 +604,18 @@ def split_pdf_to_pages(source_path: str, out_dir: str) -> list[dict]:
         doc.close()
         if results:
             return results
-    except Exception:
-        pass
+    except Exception as exc:
+        fitz_error = exc
 
-    return split_pdf_to_pages_pypdf(source_path, out_dir)
+    try:
+        return split_pdf_to_pages_pypdf(source_path, out_dir)
+    except Exception as exc:
+        if fitz_error:
+            raise RuntimeError(
+                f'Could not split PDF with PyMuPDF ({fitz_error}) or pypdf ({exc}). '
+                f'Run: {sys.executable} -m pip install -r requirements.txt'
+            ) from exc
+        raise
 
 
 def next_revision_number(existing_revisions: list) -> str:
