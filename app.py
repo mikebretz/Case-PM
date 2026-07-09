@@ -14,6 +14,7 @@ from werkzeug.security import generate_password_hash, check_password_hash
 from werkzeug.utils import secure_filename
 from datetime import datetime, date
 import os
+import sys
 import json
 from functools import wraps
 
@@ -2782,8 +2783,9 @@ def api_drawing_thumbnail(drawing_id):
 @login_required
 def api_upload_drawing():
     """Upload one or more drawing pages. Multi-page PDFs are split automatically."""
-    from drawing_persistence import prepare_upload_pages, process_pages_from_upload
+    from drawing_persistence import ensure_drawing_dependencies, prepare_upload_pages, process_pages_from_upload
     try:
+        ensure_drawing_dependencies()
         project_id = request.form.get('project_id', type=int) or get_current_project_id()
         if not project_id:
             return jsonify({'error': 'project_id required'}), 400
@@ -2876,12 +2878,14 @@ def api_delete_drawing(drawing_id):
 def api_substitute_drawings():
     """Replace existing sheets with revised pages; old revisions archived automatically."""
     from drawing_persistence import (
+        ensure_drawing_dependencies,
         upsert_drawing_from_upload,
         detect_sheet_number,
         extract_title_from_text,
         split_pdf_to_pages,
     )
     try:
+        ensure_drawing_dependencies()
         project_id = request.form.get('project_id', type=int) or get_current_project_id()
         if not project_id:
             return jsonify({'error': 'project_id required'}), 400
@@ -4645,6 +4649,14 @@ if __name__ == '__main__':
         os.makedirs(os.path.join(app.config['UPLOAD_FOLDER'], 'coi'), exist_ok=True)
         os.makedirs(os.path.join(app.config['UPLOAD_FOLDER'], 'documents'), exist_ok=True)
         os.makedirs(os.path.join(app.config['UPLOAD_FOLDER'], 'attachments'), exist_ok=True)
+
+        try:
+            from drawing_persistence import ensure_drawing_dependencies
+            ensure_drawing_dependencies()
+            print('✅ Drawing PDF libraries ready (pypdf, pymupdf)')
+        except Exception as dep_exc:
+            print(f'⚠️  Drawing upload libraries not available: {dep_exc}')
+            print(f'   Run: {sys.executable} -m pip install -r requirements.txt')
 
     # Start the Flask development server
     print("\n" + "=" * 75)

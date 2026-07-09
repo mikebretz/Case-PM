@@ -31,8 +31,8 @@ if not exist "venv\Scripts\activate.bat" (
 :: Activate virtual environment
 call venv\Scripts\activate.bat
 
-:: Check if requirements are installed (by checking for Flask)
-python -c "import flask" >nul 2>&1
+:: Check if requirements are installed (Flask + drawing PDF libraries)
+python -c "import flask, pypdf, fitz" >nul 2>&1
 if errorlevel 1 (
     echo Installing required packages...
     echo This may take a minute on first run...
