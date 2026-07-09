@@ -873,20 +873,25 @@
     const pages = json.pages || json.drawings || [];
     const review = json.needs_review || [];
     let html = '';
+    if (json.needs_review_count > 0) {
+      html += `<p class="text-amber-400 text-xs mb-3">${json.needs_review_count} page(s) imported with provisional sheet numbers — filter by <strong>For Review</strong> to assign correct numbers.</p>`;
+    }
     if (pages.length) {
       html += `<table class="w-full text-xs"><thead><tr class="text-zinc-400 border-b border-zinc-700">
         <th class="text-left py-2 pr-2">Page</th><th class="text-left py-2 pr-2">Sheet #</th>
-        <th class="text-left py-2 pr-2">Revision</th><th class="text-left py-2">Title</th></tr></thead><tbody>`;
-      html += pages.map(p => `<tr class="border-b border-zinc-800">
+        <th class="text-left py-2 pr-2">Revision</th><th class="text-left py-2 pr-2">Date</th>
+        <th class="text-left py-2">Title</th></tr></thead><tbody>`;
+      html += pages.map(p => `<tr class="border-b border-zinc-800 ${p.needs_review ? 'text-amber-200' : ''}">
         <td class="py-2 pr-2">${esc(p.page || '—')}</td>
-        <td class="py-2 pr-2 font-mono text-sky-300">${esc(p.sheet_number)}</td>
+        <td class="py-2 pr-2 font-mono ${p.needs_review ? 'text-amber-300' : 'text-sky-300'}">${esc(p.sheet_number)}</td>
         <td class="py-2 pr-2">${esc(p.revision_label || p.revision_number || '—')}</td>
-        <td class="py-2 truncate max-w-[200px]">${esc(p.title || '—')}</td></tr>`).join('');
+        <td class="py-2 pr-2">${esc(p.drawing_date ? fmtDate(p.drawing_date) : '—')}</td>
+        <td class="py-2 truncate max-w-[180px]">${esc(p.title || '—')}</td></tr>`).join('');
       html += '</tbody></table>';
     }
-    if (review.length) {
+    if (review.length && !pages.length) {
       html += `<p class="text-amber-400 text-xs mt-3 mb-1">${review.length} page(s) could not be matched to a sheet number:</p>
-        <ul class="text-xs text-zinc-400 list-disc pl-4">${review.map(r => `<li>Page ${esc(r.page)}${r.detected_revision ? ` (rev ${esc(r.detected_revision)} detected)` : ''}</li>`).join('')}</ul>`;
+        <ul class="text-xs text-zinc-400 list-disc pl-4">${review.map(r => `<li>Page ${esc(r.page)} → ${esc(r.assigned_sheet || 'skipped')}${r.detected_revision ? ` (rev ${esc(r.detected_revision)} detected)` : ''}</li>`).join('')}</ul>`;
     }
     body.innerHTML = html || '<p class="text-zinc-400 text-sm">No pages imported.</p>';
     dialog.showModal();
@@ -919,6 +924,12 @@
     e.preventDefault();
     const file = document.getElementById('uploadFile').files[0];
     if (!file) { alert('Select a PDF'); return; }
+    const submitBtn = e.target.querySelector('button[type="submit"]');
+    const origLabel = submitBtn?.textContent;
+    if (submitBtn) {
+      submitBtn.disabled = true;
+      submitBtn.textContent = 'Processing…';
+    }
     const fd = new FormData();
     fd.append('project_id', projectId());
     fd.append('file', file);
@@ -929,14 +940,27 @@
     if (title) fd.append('title', title);
     try {
       const res = await fetch('/api/drawings/upload', { method: 'POST', body: fd, credentials: 'same-origin' });
-      const json = await res.json();
-      if (!res.ok) throw new Error(json.error || 'Upload failed');
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        const detail = json.needs_review?.length
+          ? `\n\n${json.needs_review.length} page(s) listed for review.`
+          : '';
+        throw new Error((json.error || 'Upload failed') + detail);
+      }
       document.getElementById('uploadDrawingModal').close();
       const count = json.created_count || json.drawings?.length || 1;
-      toast(json.split ? `Imported ${count} sheets from drawing set` : `Uploaded ${json.drawing?.sheet_number || count + ' sheet(s)'}`);
+      const reviewNote = json.needs_review_count ? ` (${json.needs_review_count} need sheet numbers)` : '';
+      toast(json.split ? `Imported ${count} sheets from drawing set${reviewNote}` : `Uploaded ${json.drawing?.sheet_number || count + ' sheet(s)'}`);
       showUploadResults(json);
       await Promise.all([loadDashboard(), loadDrawings()]);
-    } catch (err) { alert(err.message); }
+    } catch (err) {
+      alert(err.message);
+    } finally {
+      if (submitBtn) {
+        submitBtn.disabled = false;
+        submitBtn.textContent = origLabel || 'Upload';
+      }
+    }
   }
 
   async function submitSubstitute(e) {
