@@ -71,6 +71,32 @@ def _make_full_title_block(sheet: str = 'A-201'):
     return FakePage(words)
 
 
+def _make_window_elevations_block():
+    words = [
+        WordSpan(480, 580, 760, 608, 'Window Elevations & Details', font_size=20),
+        WordSpan(485, 612, 570, 622, 'Drawing Name:', font_size=7),
+        WordSpan(700, 640, 770, 652, 'Project No.', font_size=7),
+        WordSpan(700, 658, 790, 678, '2024.0565', font_size=16),
+        WordSpan(720, 700, 800, 730, 'A-602', font_size=24),
+        WordSpan(725, 734, 790, 744, 'Drawing No.', font_size=7),
+        WordSpan(420, 760, 700, 772, 'AGUMOA - 06/04/2026 3:11:00 PM', font_size=8),
+    ]
+    return FakePage(words)
+
+
+def _make_lighting_block():
+    words = [
+        WordSpan(480, 560, 700, 582, 'Lighting Schedules', font_size=18),
+        WordSpan(480, 586, 620, 608, 'and Diagrams', font_size=18),
+        WordSpan(485, 612, 570, 622, 'Drawing Name:', font_size=7),
+        WordSpan(700, 640, 770, 652, 'Project No.', font_size=7),
+        WordSpan(700, 658, 790, 678, '2024.0565', font_size=16),
+        WordSpan(720, 700, 800, 730, 'E-102', font_size=24),
+        WordSpan(725, 734, 790, 744, 'Drawing No.', font_size=7),
+    ]
+    return FakePage(words)
+
+
 def _make_fire_alarm_block():
     words = [
         WordSpan(480, 600, 680, 622, 'Fire Alarm', font_size=18),
@@ -106,6 +132,21 @@ class TitleBlockGridTests(unittest.TestCase):
         prox = _extract_by_label_proximity(lines, pw, ph, med)
         self.assertEqual(prox['sheet_number'], 'A-202')
         self.assertEqual(prox['drawing_name'], 'Exterior Elevations')
+
+    def test_label_proximity_a602_window(self):
+        page = _make_window_elevations_block()
+        pw, ph, lines, med = _title_block_lines_from_page(page)
+        prox = _extract_by_label_proximity(lines, pw, ph, med)
+        self.assertEqual(prox['sheet_number'], 'A-602')
+        self.assertEqual(prox['drawing_name'], 'Window Elevations & Details')
+
+    def test_label_proximity_e102_lighting(self):
+        page = _make_lighting_block()
+        pw, ph, lines, med = _title_block_lines_from_page(page)
+        prox = _extract_by_label_proximity(lines, pw, ph, med)
+        self.assertEqual(prox['sheet_number'], 'E-102')
+        self.assertEqual(prox['drawing_name'], 'Lighting Schedules and Diagrams')
+        self.assertTrue(prox.get('label_anchored'))
 
     def test_label_proximity_clp_fire_alarm(self):
         page = _make_fire_alarm_block()

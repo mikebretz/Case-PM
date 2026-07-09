@@ -45,7 +45,20 @@ from drawing_persistence import (
 )
 
 TITLE_BLOCK_X0_RATIO = 0.40
-TITLE_BLOCK_Y0_RATIO = 0.48
+TITLE_BLOCK_Y0_RATIO = 0.45
+
+LOCAL_TITLE_HINT_RE = re.compile(
+    r'\b(PLAN|PLANS|ELEVATION|ELEVATIONS|SECTION|SECTIONS|DETAIL|DETAILS|SCHEDULE|SCHEDULES|'
+    r'FLOOR|ROOF|SITE|CEILING|FOUNDATION|FRAMING|RCP|REFLECTED|WINDOW|LIGHTING|DIAGRAM|DIAGRAMS|'
+    r'ALARM|CONDUIT|POWER|PANEL|MECHANICAL|ELECTRICAL|STRUCTURAL|INTERIOR|EXTERIOR)\b',
+    re.I,
+)
+STAMP_FOOTER_RE = re.compile(
+    r'^[A-Z]{2,14}\s*-\s*\d{1,2}/\d{1,2}/\d{2,4}|'
+    r'\d{1,2}/\d{1,2}/\d{2,4}\s+\d{1,2}:\d{2}:\d{2}\s*(?:AM|PM)?',
+    re.I,
+)
+CONTINUATION_LINE_RE = re.compile(r'^(?:and|or|&|\+|/|-)\b', re.I)
 
 DRAWING_NUMBER_VALUE_RE = re.compile(
     r'^([A-Z]{1,4})-(\d{1,4})([A-Za-z])?$',
@@ -213,6 +226,79 @@ class LabeledCell:
     @property
     def width(self) -> float:
         return max(1.0, self.x1 - self.x0)
+
+
+def _is_stamp_or_footer(text: str) -> bool:
+    t = text.strip()
+    if not t:
+        return True
+    if STAMP_FOOTER_RE.search(t):
+        return True
+    if re.search(r'\b\d{1,2}:\d{2}:\d{2}\s*(?:AM|PM)\b', t, re.I):
+        return True
+    return False
+
+
+def _is_drawing_name_label_text(text: str) -> bool:
+    t = text.strip()
+    if not t:
+        return False
+    if re.search(r'project\s*name', t, re.I):
+        return False
+    if DRAWING_NAME_LABEL_RE.match(t) or PAGE_NAME_LABEL_RE.match(t):
+        return True
+    return bool(re.search(r'(?:drawing|sheet|page)\s*name\s*:?\s*$', t, re.I))
+
+
+def _is_drawing_number_label_text(text: str) -> bool:
+    t = text.strip()
+    if not t:
+        return False
+    if DRAWING_NO_LABEL_RE.match(t) or SHEET_NO_LABEL_RE.match(t) or PAGE_NO_LABEL_RE.match(t):
+        return True
+    return bool(re.search(r'(?:drawing|sheet|page|dwg|sht)\s*(?:no|num|number)\.?\s*:?\s*$', t, re.I))
+
+
+def _is_name_continuation_line(text: str) -> bool:
+    t = text.strip()
+    return bool(CONTINUATION_LINE_RE.match(t) or t.startswith('&'))
+
+
+def _dict_lines_from_page(page) -> tuple[list[TextLine], float, float, float]:
+    """Build text lines from PDF dict block/line indices (most reliable for title blocks)."""
+    page_w, page_h = page.rect.width, page.rect.height
+    spans = _spans_from_dict(page, min_y_ratio=TITLE_BLOCK_Y0_RATIO)
+    tb_spans = [
+        s for s in spans
+        if s.cx >= page_w * TITLE_BLOCK_X0_RATIO
+        and s.cy >= page_h * TITLE_BLOCK_Y0_RATIO
+        and not _is_stamp_or_footer(s.text)
+    ]
+    if not tb_spans:
+        return [], page_w, page_h, 8.0
+
+    groups: dict[tuple[int, int], list[WordSpan]] = {}
+    for s in tb_spans:
+        groups.setdefault((s.block, s.line), []).append(s)
+
+    lines: list[TextLine] = []
+    for parts in groups.values():
+        parts.sort(key=lambda p: p.x0)
+        text = ' '.join(p.text for p in parts).strip()
+        if not text or _is_stamp_or_footer(text):
+            continue
+        sizes = [p.font_size for p in parts if p.font_size > 0]
+        lines.append(TextLine(
+            min(p.y0 for p in parts), max(p.y1 for p in parts),
+            min(p.x0 for p in parts), max(p.x1 for p in parts),
+            text, parts,
+            max(p.height for p in parts),
+            max(sizes) if sizes else max(p.height for p in parts),
+            'full',
+        ))
+    lines.sort(key=lambda ln: ln.y0)
+    med_size = _median_font_size(tb_spans)
+    return lines, page_w, page_h, med_size
 
 
 def _spans_from_dict(page, min_y_ratio: float = TITLE_BLOCK_Y0_RATIO) -> list[WordSpan]:
@@ -652,21 +738,11 @@ def _detect_label_anchors(lines: list[TextLine]) -> list[LabelAnchor]:
         t = ln.text.strip()
         if not t:
             continue
-        lower = t.lower()
-        if (
-            DRAWING_NAME_LABEL_RE.match(t)
-            or PAGE_NAME_LABEL_RE.match(t)
-            or re.search(r'^(?:drawing|sheet|page)\s*name\b', lower)
-        ):
+        if _is_drawing_name_label_text(t):
             anchors.append(LabelAnchor('drawing_name', i, ln, 'above'))
-        elif (
-            DRAWING_NO_LABEL_RE.match(t)
-            or SHEET_NO_LABEL_RE.match(t)
-            or PAGE_NO_LABEL_RE.match(t)
-            or re.search(r'^(?:drawing|sheet|page|dwg|sht)\s*(?:no|num|number)\.?\s*:?\s*$', lower)
-        ):
+        elif _is_drawing_number_label_text(t):
             anchors.append(LabelAnchor('drawing_number', i, ln, 'above'))
-        elif PROJECT_NO_LABEL_RE.match(t) or re.search(r'^(?:project|job)\s*(?:no|num|number)\.?\s*:?\s*$', lower):
+        elif PROJECT_NO_LABEL_RE.match(t) or re.search(r'^(?:project|job)\s*(?:no|num|number)\.?\s*:?\s*$', t, re.I):
             anchors.append(LabelAnchor('project_number', i, ln, 'below'))
     return anchors
 
@@ -706,8 +782,8 @@ def _large_text_near_label(
     page_w: float,
     med_size: float,
     *,
-    max_lines: int = 6,
-    max_gap: float = 32.0,
+    max_lines: int = 8,
+    max_gap: float = 40.0,
 ) -> str:
     """Collect the largest text line(s) adjacent to a label anchor."""
     idx = anchor.line_idx
@@ -724,25 +800,22 @@ def _large_text_near_label(
 
     for j in indices:
         ln = lines[j]
-        if _is_label_line(ln.text):
+        if _is_label_line(ln.text) and not _is_name_continuation_line(ln.text):
             break
-        if _is_metadata_value(ln.text):
+        if _is_metadata_value(ln.text) or _is_stamp_or_footer(ln.text):
             continue
         gap = abs(edge - (ln.y1 if direction == 'above' else ln.y0))
         if collected and gap > max_gap:
             break
         size = ln.font_size or ln.height
         align = _horizontal_alignment(anchor_ln, ln, page_w, anchor.kind)
-        if align < 0.2:
+        if align < 0.15 and not _is_name_continuation_line(ln.text):
             continue
         if anchor.kind == 'drawing_number' and _is_project_number_value(ln.text):
             continue
         if anchor.kind == 'drawing_number':
             maybe = _normalize_drawing_number(ln.text)
-            if not maybe and size < med_size * 0.9:
-                continue
-        if anchor.kind == 'drawing_name' and not _is_plausible_drawing_title(ln.text, None):
-            if size < med_size * 1.1:
+            if not maybe and size < med_size * 0.82:
                 continue
         collected.append((align, size, ln))
         edge = ln.y0 if direction == 'above' else ln.y1
@@ -754,7 +827,19 @@ def _large_text_near_label(
     if anchor.kind == 'drawing_number':
         best = max(collected, key=lambda t: (t[1], t[0]))
         return best[2].text.strip()
-    return ' '.join(t[2].text.strip() for t in collected).strip()
+
+    parts: list[str] = []
+    for _, _, ln in collected:
+        text = ln.text.strip()
+        if not text:
+            continue
+        if parts and _is_name_continuation_line(text):
+            parts.append(text)
+        elif not parts:
+            parts.append(text)
+        elif (ln.font_size or ln.height) >= med_size * 0.72:
+            parts.append(text)
+    return ' '.join(parts).strip()
 
 
 def _extract_by_label_proximity(
@@ -776,6 +861,8 @@ def _extract_by_label_proximity(
     anchors = _detect_label_anchors(lines)
     sheet_scores: list[tuple[float, str]] = []
     name_scores: list[tuple[float, str]] = []
+    labeled_sheet = False
+    labeled_name = False
 
     for anchor in anchors:
         value = _large_text_near_label(lines, anchor, page_w, med_size)
@@ -784,15 +871,20 @@ def _extract_by_label_proximity(
         if anchor.kind == 'drawing_number':
             sheet = _normalize_drawing_number(value)
             if sheet and not _is_project_number_value(value):
+                labeled_sheet = True
                 pos = (anchor.line.cy / page_h) * 0.55 + (anchor.line.cx / page_w) * 0.45
                 size = anchor.line.font_size or anchor.line.height
-                score = 3.2 + pos + size * 0.03
+                score = 3.5 + pos + size * 0.03
                 sheet_scores.append((score, sheet))
         elif anchor.kind == 'drawing_name':
             if _is_plausible_drawing_title(value, None):
+                labeled_name = True
                 pos = 1.0 - (anchor.line.cy / page_h) * 0.35
-                best_size = max((ln.font_size or ln.height) for ln in lines[max(0, anchor.line_idx - 4):anchor.line_idx] or [anchor.line])
-                name_scores.append((2.8 + pos + best_size * 0.02, value))
+                best_size = max(
+                    (ln.font_size or ln.height)
+                    for ln in lines[max(0, anchor.line_idx - 6):anchor.line_idx]
+                ) if anchor.line_idx else anchor.line.font_size
+                name_scores.append((3.0 + pos + best_size * 0.02, value))
         elif anchor.kind == 'project_number':
             if _is_plausible_project_number(value):
                 out['project_number'] = value.strip().upper()
@@ -808,14 +900,23 @@ def _extract_by_label_proximity(
         out['drawing_name'] = name_scores[0][1][:200]
         out['confidence']['name'] = name_scores[0][0]
 
+    out['label_anchored'] = labeled_sheet and labeled_name
     return out
 
 
 def _title_block_lines_from_page(page) -> tuple[float, float, list[TextLine], float]:
+    dict_lines, page_w, page_h, med_size = _dict_lines_from_page(page)
+    if dict_lines:
+        return page_w, page_h, dict_lines, med_size
     page_w, page_h = page.rect.width, page.rect.height
     words = _words_from_page(page)
     tb_x0 = page_w * TITLE_BLOCK_X0_RATIO
-    tb_words = [w for w in words if w.cx >= tb_x0 and w.cy >= page_h * TITLE_BLOCK_Y0_RATIO]
+    tb_words = [
+        w for w in words
+        if w.cx >= tb_x0
+        and w.cy >= page_h * TITLE_BLOCK_Y0_RATIO
+        and not _is_stamp_or_footer(w.text)
+    ]
     med_h = _median_height(tb_words) if tb_words else 8.0
     med_size = _median_font_size(tb_words) if tb_words else med_h
     y_tol = max(2.5, med_h * 0.42)
@@ -878,12 +979,12 @@ def _is_plausible_drawing_title(text: str, sheet_number: str | None) -> bool:
         return False
     if ARCH_SCALE_RE.search(t) or RATIO_SCALE_RE.search(t):
         return False
-    if NOTE_FRAGMENT_RE.search(t) and not TITLE_HINT_RE.search(t):
+    if NOTE_FRAGMENT_RE.search(t) and not TITLE_HINT_RE.search(t) and not LOCAL_TITLE_HINT_RE.search(t):
         return False
     if re.match(r'^(?:NEW|RENOVATION|ADDITION|TI|BUILD[- ]?OUT|TENANT|COMMERCIAL|RESIDENTIAL)\b', upper):
-        if not TITLE_HINT_RE.search(t):
+        if not TITLE_HINT_RE.search(t) and not LOCAL_TITLE_HINT_RE.search(t):
             return False
-    if TITLE_HINT_RE.search(t):
+    if TITLE_HINT_RE.search(t) or LOCAL_TITLE_HINT_RE.search(t):
         return True
     if len(t) >= 6 and re.search(r'[A-Za-z]{3,}', t):
         return True
@@ -1053,6 +1154,7 @@ def analyze_title_block_grid(pdf_path: str, page_index: int = 0) -> dict[str, An
         'text_preview': '',
         'confidence': {},
         'grid_cells': 0,
+        'label_anchored': False,
     }
     try:
         import fitz
@@ -1144,6 +1246,10 @@ def analyze_title_block_grid(pdf_path: str, page_index: int = 0) -> dict[str, An
     result['drawing_date'] = extract_drawing_date_from_text(merged_text)
     result['scale'] = extract_scale_from_text(merged_text)
     result['text_preview'] = merged_text[:400]
+    result['label_anchored'] = bool(
+        proximity.get('label_anchored')
+        or (final_sheet and drawing_name and sheet_conf >= 3.0 and name_conf >= 2.5)
+    )
     result['confidence'] = {
         'sheet': round(sheet_conf, 2),
         'name': round(name_conf, 2),
