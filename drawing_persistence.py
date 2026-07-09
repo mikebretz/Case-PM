@@ -640,12 +640,28 @@ def provisional_sheet_number(set_name: str, page_index: int, upload_stamp: str) 
     return f'UNASSIGNED-{slug}-{stamp}-P{page_index + 1:04d}'
 
 
-def ensure_unique_sheet_number(Drawing, project_id: int, sheet_number: str) -> str:
-    """Avoid unique-constraint collisions by suffixing -2, -3, etc."""
+def ensure_unique_sheet_number(
+    Drawing,
+    project_id: int,
+    sheet_number: str,
+    reserved: set[str] | None = None,
+) -> str:
+    """Avoid unique-constraint collisions by suffixing -2, -3, etc.
+
+    ``reserved`` tracks sheet numbers already assigned in the current upload batch
+    (before they are flushed to the database).
+    """
+    taken = {str(s).upper() for s in (reserved or set())}
     base = sheet_number
     candidate = base
     n = 2
-    while Drawing.query.filter_by(project_id=int(project_id), sheet_number=candidate).first():
+
+    def _is_taken(name: str) -> bool:
+        if name.upper() in taken:
+            return True
+        return Drawing.query.filter_by(project_id=int(project_id), sheet_number=name).first() is not None
+
+    while _is_taken(candidate):
         candidate = f'{base}-{n}'
         n += 1
     return candidate
@@ -1342,7 +1358,8 @@ def process_pages_from_upload(
     created = []
     needs_review = []
     stamp = upload_stamp or datetime.utcnow().strftime('%Y%m%d%H%M%S')
-    batch_assigned = set()
+    batch_assigned: set[str] = set()
+    batch_detected: set[str] = set()
 
     for page in pages:
         meta = analyze_pdf_page(
@@ -1372,18 +1389,17 @@ def process_pages_from_upload(
             })
 
         if from_combined_set:
-            base_key = sheet_number
-            if base_key in batch_assigned:
+            norm = (normalize_sheet_number(sheet_number) or sheet_number or '').upper()
+            if norm in batch_detected:
                 sheet_number = f'{sheet_number}-P{page["page_index"] + 1:03d}'
+            if norm:
+                batch_detected.add(norm)
 
-        sheet_number = ensure_unique_sheet_number(Drawing, project_id, sheet_number)
+        sheet_number = ensure_unique_sheet_number(
+            Drawing, project_id, sheet_number, reserved=batch_assigned,
+        )
+        batch_assigned.add(sheet_number)
 
-        if from_combined_set:
-            while sheet_number in batch_assigned:
-                sheet_number = ensure_unique_sheet_number(
-                    Drawing, project_id, f'{base_key}-P{page["page_index"] + 1:03d}',
-                )
-            batch_assigned.add(sheet_number)
         page_text = page.get('text') or meta.get('text_preview') or ''
         title = manual_title or meta.get('drawing_name') or meta.get('title') or extract_drawing_name_from_text(page_text, sheet_number)
         if sheet_status == 'For Review' and not title:
@@ -1419,7 +1435,7 @@ def process_pages_from_upload(
             'needs_review': sheet_status == 'For Review',
             'status': drawing.status,
         })
-        if len(created) % 25 == 0:
+        if from_combined_set or len(created) % 25 == 0:
             db.session.flush()
 
     return created, needs_review
