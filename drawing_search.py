@@ -6,29 +6,58 @@ import io
 import re
 from typing import Any
 
-import numpy as np
 from PIL import Image
 
 from drawing_persistence import resolve_drawing_file_path
+
+
+class DrawingSearchError(Exception):
+    """User-visible search failure (missing deps, bad input, etc.)."""
+
+
+def _np():
+    try:
+        import numpy as np
+    except ImportError as exc:
+        raise DrawingSearchError(
+            'Drawing search requires numpy. Run: pip install -r requirements.txt'
+        ) from exc
+    return np
+
+
+def _pixmap_to_gray_array(pix):
+    """Convert a PyMuPDF grayscale pixmap to a 2-D uint8 array."""
+    np = _np()
+    samples = np.frombuffer(pix.samples, dtype=np.uint8)
+    row_bytes = pix.stride or pix.width
+    if row_bytes * pix.height != len(samples):
+        if pix.width * pix.height == len(samples):
+            return samples.reshape(pix.height, pix.width)
+        raise DrawingSearchError('Could not decode PDF page image for search')
+    arr = samples.reshape(pix.height, row_bytes)
+    if row_bytes != pix.width:
+        arr = arr[:, :pix.width].copy()
+    return arr
 
 
 def _render_page_gray(pdf_path: str, page_index: int = 0, dpi: int = 120):
     import fitz
 
     doc = fitz.open(pdf_path)
-    if page_index >= len(doc):
+    try:
+        if page_index >= len(doc):
+            return None, 0, 0
+        page = doc[page_index]
+        pw, ph = page.rect.width, page.rect.height
+        mat = fitz.Matrix(dpi / 72.0, dpi / 72.0)
+        pix = page.get_pixmap(matrix=mat, colorspace=fitz.csGRAY, alpha=False)
+        arr = _pixmap_to_gray_array(pix)
+        return arr, pw, ph
+    finally:
         doc.close()
-        return None, 0, 0
-    page = doc[page_index]
-    pw, ph = page.rect.width, page.rect.height
-    mat = fitz.Matrix(dpi / 72.0, dpi / 72.0)
-    pix = page.get_pixmap(matrix=mat, colorspace=fitz.csGRAY, alpha=False)
-    arr = np.frombuffer(pix.samples, dtype=np.uint8).reshape(pix.height, pix.width)
-    doc.close()
-    return arr, pw, ph
 
 
-def _thumb_b64(gray: np.ndarray, x: int, y: int, w: int, h: int, max_size: int = 96) -> str:
+def _thumb_b64(gray, x: int, y: int, w: int, h: int, max_size: int = 96) -> str:
     h_img, w_img = gray.shape[:2]
     x0 = max(0, min(x, w_img - 1))
     y0 = max(0, min(y, h_img - 1))
@@ -51,38 +80,38 @@ def extract_page_text_lines(pdf_path: str, page_index: int = 0) -> list[dict[str
     lines_out: list[dict[str, Any]] = []
     try:
         doc = fitz.open(pdf_path)
-        if page_index >= len(doc):
-            doc.close()
-            return lines_out
-        page = doc[page_index]
-        pw, ph = page.rect.width, page.rect.height
-        if pw <= 0 or ph <= 0:
-            doc.close()
-            return lines_out
-        data = page.get_text('dict') or {}
-        for block in data.get('blocks', []):
-            if block.get('type') != 0:
-                continue
-            for line in block.get('lines', []):
-                parts = [s.get('text', '') for s in line.get('spans', [])]
-                text = ''.join(parts).strip()
-                if not text:
+        try:
+            if page_index >= len(doc):
+                return lines_out
+            page = doc[page_index]
+            pw, ph = page.rect.width, page.rect.height
+            if pw <= 0 or ph <= 0:
+                return lines_out
+            data = page.get_text('dict') or {}
+            for block in data.get('blocks', []):
+                if block.get('type') != 0:
                     continue
-                x0, y0, x1, y1 = line.get('bbox', (0, 0, 0, 0))
-                lines_out.append({
-                    'text': text,
-                    'nx': x0 / pw,
-                    'ny': y0 / ph,
-                    'nw': max(0.001, (x1 - x0) / pw),
-                    'nh': max(0.001, (y1 - y0) / ph),
-                })
-        doc.close()
+                for line in block.get('lines', []):
+                    parts = [s.get('text', '') for s in line.get('spans', [])]
+                    text = ''.join(parts).strip()
+                    if not text:
+                        continue
+                    x0, y0, x1, y1 = line.get('bbox', (0, 0, 0, 0))
+                    lines_out.append({
+                        'text': text,
+                        'nx': float(x0 / pw),
+                        'ny': float(y0 / ph),
+                        'nw': float(max(0.001, (x1 - x0) / pw)),
+                        'nh': float(max(0.001, (y1 - y0) / ph)),
+                    })
+        finally:
+            doc.close()
     except Exception:
         pass
 
     if len(lines_out) < 2:
         try:
-            gray, pw_pts, ph_pts = _render_page_gray(pdf_path, page_index, dpi=150)
+            gray, _pw_pts, _ph_pts = _render_page_gray(pdf_path, page_index, dpi=150)
             if gray is not None:
                 import pytesseract
 
@@ -112,10 +141,10 @@ def extract_page_text_lines(pdf_path: str, page_index: int = 0) -> list[dict[str
                     x0, y0, x1, y1 = boxes[key]
                     lines_out.append({
                         'text': text,
-                        'nx': x0 / w,
-                        'ny': y0 / h,
-                        'nw': max(0.001, (x1 - x0) / w),
-                        'nh': max(0.001, (y1 - y0) / h),
+                        'nx': float(x0 / w),
+                        'ny': float(y0 / h),
+                        'nw': float(max(0.001, (x1 - x0) / w)),
+                        'nh': float(max(0.001, (y1 - y0) / h)),
                     })
         except Exception:
             pass
@@ -139,7 +168,11 @@ def search_text(
         path = resolve_drawing_file_path(rev.file_path if rev else None, upload_root)
         if not path:
             continue
-        for line in extract_page_text_lines(path, 0):
+        try:
+            lines = extract_page_text_lines(path, 0)
+        except Exception:
+            continue
+        for line in lines:
             if q_lower not in line['text'].lower() and not pattern.search(line['text']):
                 continue
             snippet = line['text']
@@ -169,13 +202,15 @@ def search_text(
     return results
 
 
-def _decode_template(template_b64: str) -> np.ndarray:
+def _decode_template(template_b64: str):
+    np = _np()
     raw = base64.b64decode(template_b64.split(',')[-1] if ',' in template_b64 else template_b64)
     pil = Image.open(io.BytesIO(raw)).convert('L')
-    return np.array(pil)
+    return np.array(pil, dtype=np.uint8)
 
 
-def _interior_mask(h: int, w: int, margin_ratio: float = 0.1) -> np.ndarray:
+def _interior_mask(h: int, w: int, margin_ratio: float = 0.1):
+    np = _np()
     mask = np.ones((h, w), dtype=np.uint8) * 255
     margin = max(2, int(min(h, w) * margin_ratio))
     mask[:margin, :] = 0
@@ -185,8 +220,9 @@ def _interior_mask(h: int, w: int, margin_ratio: float = 0.1) -> np.ndarray:
     return mask
 
 
-def _match_template(gray: np.ndarray, template: np.ndarray, threshold: float = 0.82):
+def _match_template(gray, template, threshold: float = 0.82):
     """Find template matches; prefers cv2 when available."""
+    np = _np()
     th, tw = template.shape[:2]
     gh, gw = gray.shape[:2]
     if th < 8 or tw < 8 or th >= gh or tw >= gw:
@@ -230,7 +266,7 @@ def _match_template(gray: np.ndarray, template: np.ndarray, threshold: float = 0
         return []
     t_f = t.astype(np.float32)
     t_f -= t_f.mean()
-    denom = np.sqrt(np.sum(t_f * t_f)) or 1.0
+    denom = float(np.sqrt(np.sum(t_f * t_f)) or 1.0)
     matches = []
     step = max(2, int(min(th, tw) / 4))
     for y in range(0, gh - th, step):
@@ -238,7 +274,7 @@ def _match_template(gray: np.ndarray, template: np.ndarray, threshold: float = 0
             patch = g[y:y + th, x:x + tw].astype(np.float32)
             patch -= patch.mean()
             num = np.sum(patch * t_f)
-            den = np.sqrt(np.sum(patch * patch)) * denom
+            den = float(np.sqrt(np.sum(patch * patch)) * denom)
             score = float(num / den) if den else 0.0
             if score >= threshold:
                 matches.append((int(x / scale), int(y / scale), score))
@@ -262,7 +298,10 @@ def search_shape(
     max_results: int = 120,
     max_sheets: int = 80,
 ) -> list[dict[str, Any]]:
-    template = _decode_template(template_b64)
+    try:
+        template = _decode_template(template_b64)
+    except Exception as exc:
+        raise DrawingSearchError('Invalid shape template image') from exc
     th, tw = template.shape[:2]
     if th < 6 or tw < 6:
         return []
@@ -273,16 +312,22 @@ def search_shape(
         path = resolve_drawing_file_path(rev.file_path if rev else None, upload_root)
         if not path:
             continue
-        gray, pw_pts, ph_pts = _render_page_gray(path, 0, dpi=120)
+        try:
+            gray, _pw_pts, _ph_pts = _render_page_gray(path, 0, dpi=120)
+        except Exception:
+            continue
         if gray is None:
             continue
         gh, gw = gray.shape[:2]
-        hits = _match_template(gray, template, threshold=threshold)
+        try:
+            hits = _match_template(gray, template, threshold=threshold)
+        except Exception:
+            continue
         for x, y, score in hits:
-            nx = x / gw
-            ny = y / gh
-            nw = tw / gw
-            nh = th / gh
+            nx = float(x / gw)
+            ny = float(y / gh)
+            nw = float(tw / gw)
+            nh = float(th / gh)
             thumb = _thumb_b64(gray, x, y, tw, th)
             results.append({
                 'drawing_id': d['id'],
