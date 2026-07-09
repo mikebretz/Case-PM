@@ -471,11 +471,11 @@ def _merge_grid_and_legacy(grid: dict, legacy: dict) -> dict:
     gconf = grid.get('confidence') or {}
     grid_sheet_conf = float(gconf.get('sheet', 0) or 0)
     grid_name_conf = float(gconf.get('name', 0) or 0)
-    grid_trusted = bool(grid.get('label_anchored')) or (
+    grid_trusted = bool(grid.get('sheet_label_anchored')) or bool(grid.get('label_anchored')) or (
         grid_sheet_conf >= 3.0 and (grid_name_conf >= 2.5 or bool((grid.get('drawing_name') or '').strip()))
     )
 
-    if grid_trusted:
+    if grid_trusted or grid.get('sheet_label_anchored'):
         out = dict(grid)
         out['method'] = 'grid'
         for key in ('revision', 'drawing_date', 'scale'):

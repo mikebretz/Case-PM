@@ -46,7 +46,7 @@ from drawing_persistence import (
 
 # Aldi / typical arch title block sits in the bottom-right corner inside the frame.
 CORNER_X0_RATIO = 0.86
-CORNER_Y0_RATIO = 0.68
+CORNER_Y0_RATIO = 0.62
 CORNER_X1_RATIO = 0.985
 # Wider fallback when corner has almost no text (non-standard layouts).
 TITLE_BLOCK_X0_RATIO = CORNER_X0_RATIO
@@ -55,9 +55,14 @@ TITLE_BLOCK_Y0_RATIO = CORNER_Y0_RATIO
 LOCAL_TITLE_HINT_RE = re.compile(
     r'\b(PLAN|PLANS|ELEVATION|ELEVATIONS|SECTION|SECTIONS|DETAIL|DETAILS|SCHEDULE|SCHEDULES|'
     r'FLOOR|ROOF|SITE|CEILING|FOUNDATION|FRAMING|RCP|REFLECTED|WINDOW|LIGHTING|DIAGRAM|DIAGRAMS|'
-    r'ALARM|CONDUIT|POWER|PANEL|MECHANICAL|ELECTRICAL|STRUCTURAL|INTERIOR|EXTERIOR)\b',
+    r'ALARM|CONDUIT|POWER|PANEL|MECHANICAL|ELECTRICAL|STRUCTURAL|INTERIOR|EXTERIOR|'
+    r'SEQUENCE|OPERATIONS|OPERATION|SCHEMATIC|LAYOUT|GENERAL|NOTES|LEGEND|INDEX|COVER)\b',
     re.I,
 )
+NAME_STACK_CONNECTORS = frozenset({'OF', 'AND', 'OR', '&', 'THE', 'FOR', 'TO', 'AT', 'ON', 'A', 'AN'})
+GLUED_SHEET_CODE_RE = re.compile(r'^[A-Z]{3,10}\d{1,4}$', re.I)
+OPAQUE_SHEET_CODE_RE = re.compile(r'^(?=.*\d)[A-Z0-9]{3,14}$', re.I)
+WIDE_CORNER_X0_RATIO = 0.72
 STAMP_FOOTER_RE = re.compile(
     r'^[A-Z]{2,14}\s*-\s*\d{1,2}/\d{1,2}/\d{2,4}|'
     r'\d{1,2}/\d{1,2}/\d{2,4}\s+\d{1,2}:\d{2}:\d{2}\s*(?:AM|PM)?',
@@ -266,8 +271,16 @@ def _corner_spans(spans: list[WordSpan], page_w: float, page_h: float) -> list[W
 
 
 def _title_block_spans(spans: list[WordSpan], page_w: float, page_h: float) -> list[WordSpan]:
-    """Prefer bottom-right corner; fall back to wider band for non-standard layouts."""
+    """Prefer bottom-right corner; widen when SHEET: label sits in a vertical strip."""
     corner = _corner_spans(spans, page_w, page_h)
+    wide = [
+        s for s in spans
+        if page_w * WIDE_CORNER_X0_RATIO <= s.cx <= page_w * CORNER_X1_RATIO
+        and s.cy >= page_h * 0.60
+    ]
+    has_sheet_label = any(SHEET_ONLY_LABEL_RE.match(s.text.strip()) for s in wide)
+    if has_sheet_label and len(wide) >= 3:
+        return wide
     if len(corner) >= 6:
         return corner
     return [
@@ -484,7 +497,7 @@ def _is_metadata_value(text: str) -> bool:
         return True
     if WORK_TYPE_VALUE_RE.match(t):
         return True
-    if INITIALS_RE.match(t):
+    if INITIALS_RE.match(t) and t.upper() not in NAME_STACK_CONNECTORS:
         return True
     if METADATA_INLINE_RE.match(t):
         return True
@@ -966,6 +979,7 @@ def _extract_by_label_proximity(
         'drawing_name': '',
         'project_number': None,
         'confidence': {'sheet': 0.0, 'name': 0.0, 'project': 0.0},
+        'sheet_label_anchored': False,
     }
     if not lines:
         return out
@@ -976,17 +990,27 @@ def _extract_by_label_proximity(
     labeled_sheet = False
     labeled_name = False
 
+    sheet_anchor_for_name: LabelAnchor | None = None
+
     for anchor in anchors:
         value = _large_text_near_label(lines, anchor, page_w, med_size)
         if not value:
             continue
         if anchor.kind == 'drawing_number':
-            sheet = _normalize_sheet_from_title_block(value)
+            is_sheet_only = bool(SHEET_ONLY_LABEL_RE.match(anchor.line.text.strip()))
+            sheet = (
+                _normalize_anchored_sheet_value(value)
+                if is_sheet_only
+                else _normalize_sheet_from_title_block(value)
+            )
             if sheet and not _is_project_number_value(value):
                 labeled_sheet = True
+                if is_sheet_only:
+                    out['sheet_label_anchored'] = True
+                    sheet_anchor_for_name = anchor
                 pos = (anchor.line.cy / page_h) * 0.55 + (anchor.line.cx / page_w) * 0.45
                 size = anchor.line.font_size or anchor.line.height
-                score = 3.5 + pos + size * 0.03
+                score = (8.5 if is_sheet_only else 3.5) + pos + size * 0.03
                 sheet_scores.append((score, sheet))
         elif anchor.kind == 'drawing_name':
             if _is_plausible_drawing_title(value, None):
@@ -1012,18 +1036,20 @@ def _extract_by_label_proximity(
         out['drawing_name'] = name_scores[0][1][:200]
         out['confidence']['name'] = name_scores[0][0]
 
-    if not out['drawing_name'] and sheet_scores:
-        sheet_anchor = next(
+    if not out['drawing_name'] and (sheet_scores or out.get('sheet_label_anchored')):
+        sheet_anchor = sheet_anchor_for_name or next(
             (a for a in anchors if a.kind == 'drawing_number'),
             None,
         )
         inferred = _infer_drawing_name_above_sheet(lines, sheet_anchor, med_size)
         if inferred:
             out['drawing_name'] = inferred
-            out['confidence']['name'] = 2.8
+            out['confidence']['name'] = 3.2 if out.get('sheet_label_anchored') else 2.8
             labeled_name = True
 
     out['label_anchored'] = labeled_sheet and (labeled_name or bool(out['drawing_name']))
+    if out.get('sheet_label_anchored') and out.get('sheet_number'):
+        out['label_anchored'] = True
     return out
 
 
@@ -1052,11 +1078,32 @@ def _title_block_lines_from_page(page) -> tuple[float, float, list[TextLine], fl
     return page_w, page_h, lines, med_size
 
 
-def _normalize_custom_sheet_code(raw: str) -> str | None:
-    """Project-specific sheet IDs like OPDSP1 / OPDSP-1 from a SHEET: title block."""
+def _is_name_stack_line(text: str) -> bool:
+    t = text.strip()
+    if not t:
+        return False
+    if t.upper() in NAME_STACK_CONNECTORS:
+        return True
+    return _is_plausible_drawing_title(t, None)
+
+
+def _normalize_anchored_sheet_value(raw: str) -> str | None:
+    """Sheet numbers read directly from a SHEET:/Drawing No. label cell."""
     if not raw:
         return None
     compact = re.sub(r'\s+', '', raw.upper())
+    if GLUED_SHEET_CODE_RE.match(compact) or OPAQUE_SHEET_CODE_RE.match(compact):
+        return compact
+    return _normalize_drawing_number(raw)
+
+
+def _normalize_custom_sheet_code(raw: str) -> str | None:
+    """Project-specific sheet IDs like OPDSP1 / OPDBAS2 from a SHEET: title block."""
+    if not raw:
+        return None
+    compact = re.sub(r'\s+', '', raw.upper())
+    if GLUED_SHEET_CODE_RE.match(compact) or OPAQUE_SHEET_CODE_RE.match(compact):
+        return compact
     m = CUSTOM_SHEET_VALUE_RE.match(compact)
     if m:
         return f'{m.group(1).upper()}-{m.group(2)}'
@@ -1104,22 +1151,32 @@ def _infer_drawing_name_above_sheet(
         return ''
     parts: list[str] = []
     edge = sheet_anchor.line.y0
-    for j in range(sheet_anchor.line_idx - 1, max(-1, sheet_anchor.line_idx - 8), -1):
+    anchor_x0 = sheet_anchor.line.x0
+    anchor_x1 = sheet_anchor.line.x1
+    for j in range(sheet_anchor.line_idx - 1, max(-1, sheet_anchor.line_idx - 14), -1):
         ln = lines[j]
         if _should_break_upward_walk(ln.text, 'drawing_name'):
             break
         if _should_skip_upward_line(ln.text, 'drawing_name'):
             continue
-        if _is_drawing_number_label_text(ln.text) or _normalize_sheet_from_title_block(ln.text):
+        if _is_drawing_number_label_text(ln.text) or _normalize_anchored_sheet_value(ln.text):
             break
+        overlap = min(anchor_x1, ln.x1) - max(anchor_x0, ln.x0)
+        if overlap <= 0 and abs(ln.cx - sheet_anchor.line.cx) > max(anchor_x1 - anchor_x0, 40) * 1.8:
+            if parts:
+                break
+            continue
         gap = edge - ln.y1
-        if parts and gap > 36:
+        if parts and gap > 40:
             break
         size = ln.font_size or ln.height
-        if size < max(med_size * 0.95, 13):
+        min_size = max(med_size * 0.72, 9.0) if parts else max(med_size * 0.85, 11.0)
+        if size < min_size and not (
+            parts and ln.text.strip().upper() in NAME_STACK_CONNECTORS
+        ):
             continue
         text = ln.text.strip()
-        if not _is_plausible_drawing_title(text, None):
+        if not _is_name_stack_line(text):
             continue
         parts.insert(0, text)
         edge = ln.y0
@@ -1142,7 +1199,7 @@ def _is_plausible_drawing_title(text: str, sheet_number: str | None) -> bool:
         return False
     if INITIALS_RE.match(t):
         return False
-    if _normalize_drawing_number(t):
+    if _normalize_anchored_sheet_value(t) and ' ' not in t:
         return False
     if PROJECT_NUMBER_VALUE_RE.match(t.replace(' ', '')) and '.' in t:
         return False
@@ -1330,6 +1387,7 @@ def analyze_title_block_grid(pdf_path: str, page_index: int = 0) -> dict[str, An
         'confidence': {},
         'grid_cells': 0,
         'label_anchored': False,
+        'sheet_label_anchored': False,
     }
     try:
         import fitz
@@ -1426,8 +1484,10 @@ def analyze_title_block_grid(pdf_path: str, page_index: int = 0) -> dict[str, An
     result['text_preview'] = merged_text[:400]
     result['label_anchored'] = bool(
         proximity.get('label_anchored')
+        or proximity.get('sheet_label_anchored')
         or (final_sheet and drawing_name and sheet_conf >= 3.0 and name_conf >= 2.5)
     )
+    result['sheet_label_anchored'] = bool(proximity.get('sheet_label_anchored'))
     result['confidence'] = {
         'sheet': round(sheet_conf, 2),
         'name': round(name_conf, 2),

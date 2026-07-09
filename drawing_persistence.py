@@ -184,18 +184,27 @@ def is_plausible_drawing_sheet(sheet_number: str) -> bool:
         return False
     if sheet_number.startswith('UNASSIGNED-'):
         return True
-    if '-' not in sheet_number:
+    upper = sheet_number.upper()
+    # Reject note fragments like insulation callouts (IN-0.5, 1/2 IN, etc.).
+    if re.search(r'-\d*\.\d', upper):
         return False
+    if '-' not in sheet_number:
+        return bool(
+            re.match(r'^[A-Z]{3,10}\d{1,4}$', upper)
+            or re.match(r'^(?=.*\d)[A-Z0-9]{3,14}$', upper)
+        )
     prefix = sheet_number.split('-')[0].upper()
     if prefix in INVALID_SHEET_PREFIXES:
+        return False
+    if prefix in {'IN', 'FT', 'MM', 'CM'}:
         return False
     if prefix in VALID_SHEET_PREFIXES:
         return True
     num_part = sheet_number.split('-', 1)[1]
     if bool(re.match(r'^\d{1,4}', num_part)) and prefix.isalpha() and len(prefix) <= 4:
         return True
-    # Project-specific sheet IDs from SHEET: title blocks (e.g. OPDSP-1).
-    return bool(re.match(r'^[A-Z]{2,8}-\d{1,4}$', sheet_number))
+    # Project-specific sheet IDs from SHEET: title blocks (e.g. OPDBAS-2, OPDSP-1).
+    return bool(re.match(r'^[A-Z]{2,8}-\d{1,4}$', upper))
 
 
 def extract_revision_from_text(text: str) -> str | None:
@@ -820,7 +829,12 @@ def analyze_pdf_page(pdf_path: str, page_index: int = 0, from_combined_set: bool
     layout_conf = layout.get('confidence') or {}
     sheet_conf = float(layout_conf.get('sheet', 0) or 0)
     name_conf = float(layout_conf.get('name', 0) or 0)
-    layout_trusted = bool(layout.get('label_anchored')) or sheet_conf >= 3.0 or name_conf >= 2.5
+    layout_trusted = (
+        bool(layout.get('sheet_label_anchored'))
+        or bool(layout.get('label_anchored'))
+        or sheet_conf >= 3.0
+        or name_conf >= 2.5
+    )
     text = extract_pdf_page_text(pdf_path, page_index)
     sheet, full_text, method, revision = detect_sheet_number(
         pdf_path, source_filename, text, page_index, from_combined_set=from_combined_set,
