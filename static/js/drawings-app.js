@@ -1589,11 +1589,15 @@
     const rw = Math.min(w, canvas.width - x0);
     const rh = Math.min(h, canvas.height - y0);
     if (rw < 4 || rh < 4) return null;
+    const maxSide = 220;
+    const scale = Math.min(1, maxSide / Math.max(rw, rh));
+    const outW = Math.max(4, Math.round(rw * scale));
+    const outH = Math.max(4, Math.round(rh * scale));
     const tmp = document.createElement('canvas');
-    tmp.width = rw;
-    tmp.height = rh;
-    tmp.getContext('2d').drawImage(canvas, x0, y0, rw, rh, 0, 0, rw, rh);
-    return tmp.toDataURL('image/png');
+    tmp.width = outW;
+    tmp.height = outH;
+    tmp.getContext('2d').drawImage(canvas, x0, y0, rw, rh, 0, 0, outW, outH);
+    return { dataUrl: tmp.toDataURL('image/png'), docW: rw, docH: rh };
   }
 
   function startShapeSnip() {
@@ -1621,7 +1625,8 @@
       return;
     }
     const thresh = parseInt(document.getElementById('drawShapeThreshold')?.value || '82', 10) / 100;
-    setSearchStatus('Finding similar shapes…', true);
+    const scopeLabel = state.searchScope === 'project' ? 'project' : 'sheet';
+    setSearchStatus(`Quick scan (${scopeLabel})…`, true);
     state.searchBusy = true;
     try {
       const json = await api('/api/drawings/search/shape', {
@@ -1633,6 +1638,9 @@
           drawing_id: state.openDrawing?.id,
           template: state.searchTemplate,
           threshold: thresh,
+          render_scale: state.lastPdfRenderScale || null,
+          snip_w: state.searchSnipDocW || null,
+          snip_h: state.searchSnipDocH || null,
         }),
       });
       state.searchResults = json.results || [];
@@ -3590,12 +3598,14 @@
       state.tempMarkup = null;
       updateViewerCursor();
       if (rw >= 8 && rh >= 8) {
-        const dataUrl = captureCanvasRegion(x, y, rw, rh);
-        if (dataUrl) {
-          state.searchTemplate = dataUrl;
+        const captured = captureCanvasRegion(x, y, rw, rh);
+        if (captured?.dataUrl) {
+          state.searchTemplate = captured.dataUrl;
+          state.searchSnipDocW = captured.docW;
+          state.searchSnipDocH = captured.docH;
           const prev = document.getElementById('drawSearchShapePreview');
           if (prev) {
-            prev.src = dataUrl;
+            prev.src = captured.dataUrl;
             prev.classList.remove('hidden');
           }
           await runShapeSearch();
