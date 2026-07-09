@@ -208,6 +208,39 @@
     border-color: #0ea5e9;
     color: #fff;
   }
+  .draw-page dialog.modal {
+    border-radius: 8px !important;
+    margin: auto !important;
+    position: fixed !important;
+    top: 50% !important;
+    left: 50% !important;
+    transform: translate(-50%, -50%) !important;
+    z-index: 100002 !important;
+    border: none;
+    padding: 0;
+    max-height: 90vh;
+    overflow: auto;
+  }
+  .draw-page dialog.modal::backdrop {
+    background: rgba(0, 0, 0, 0.75);
+  }
+  .draw-palette-btn {
+    font-size: 0.625rem;
+    padding: 0.35rem 0.25rem;
+    border-radius: 0.25rem;
+    border: 1px solid #3f3f46;
+    background: #18181b;
+    color: #d4d4d8;
+    text-align: center;
+    line-height: 1.2;
+  }
+  .draw-palette-btn:hover { background: #27272a; border-color: #52525b; }
+  .draw-palette-btn.palette-active {
+    background: #0c4a6e;
+    border-color: #0ea5e9;
+    color: #fff;
+  }
+  .draw-palette-btn i { display: block; margin-bottom: 0.15rem; font-size: 0.75rem; }
   .markup-props-section {
     border-top: 1px solid #3f3f46;
     padding-top: 0.5rem;
@@ -267,8 +300,8 @@
   #drawPanelViewer:fullscreen .draw-viewer-sidebar {
     display: flex !important;
     flex-direction: column;
-    width: 280px;
-    min-width: 280px;
+    width: 22rem;
+    min-width: 22rem;
     max-height: 100vh;
     overflow: auto;
     background: #09090b;
@@ -349,12 +382,6 @@
     min-height: 100%;
     width: 100%;
     box-sizing: border-box;
-  }
-  #drawTextEditor {
-    min-width: 240px;
-  }
-  #drawTextEditor.hidden {
-    display: none;
   }
   #drawPanelSections.draw-drop-active {
     box-shadow: inset 0 0 0 2px #0ea5e9;
@@ -511,16 +538,25 @@
             <button type="button" id="tool-cloud" onclick="CasePMDrawings.setTool('cloud')" class="tool-btn" title="Revision cloud"><i class="fa-solid fa-cloud"></i></button>
             <button type="button" id="tool-arrow" onclick="CasePMDrawings.setTool('arrow')" class="tool-btn" title="Arrow"><i class="fa-solid fa-arrow-right"></i></button>
             <button type="button" id="tool-highlight" onclick="CasePMDrawings.setTool('highlight')" class="tool-btn" title="Highlight"><i class="fa-solid fa-highlighter"></i></button>
+            <button type="button" id="tool-pen" onclick="CasePMDrawings.setTool('pen')" class="tool-btn" title="Pen (P)"><i class="fa-solid fa-pen"></i></button>
+            <button type="button" id="tool-polyline" onclick="CasePMDrawings.setTool('polyline')" class="tool-btn" title="Polyline"><i class="fa-solid fa-draw-polygon"></i></button>
+            <button type="button" id="tool-polygon" onclick="CasePMDrawings.setTool('polygon')" class="tool-btn" title="Polygon"><i class="fa-solid fa-shapes"></i></button>
+            <button type="button" id="tool-crossout" onclick="CasePMDrawings.setTool('crossout')" class="tool-btn" title="Cross-out"><i class="fa-solid fa-xmark"></i></button>
             <div class="draw-tool-divider"></div>
             <div class="draw-tool-group-label">Text</div>
             <button type="button" id="tool-text" onclick="CasePMDrawings.setTool('text')" class="tool-btn" title="Text box (T)"><i class="fa-solid fa-font"></i></button>
             <button type="button" id="tool-callout" onclick="CasePMDrawings.setTool('callout')" class="tool-btn" title="Callout bubble (C)"><i class="fa-solid fa-comment-dots"></i></button>
+            <button type="button" id="tool-stamp" onclick="CasePMDrawings.setTool('stamp')" class="tool-btn" title="Stamp"><i class="fa-solid fa-stamp"></i></button>
             <div class="draw-tool-divider"></div>
             <div class="draw-tool-group-label">Measure</div>
             <button type="button" id="tool-measure" onclick="CasePMDrawings.setTool('measure')" class="tool-btn" title="Measure (M)"><i class="fa-solid fa-ruler"></i></button>
+            <button type="button" id="tool-area" onclick="CasePMDrawings.setTool('area')" class="tool-btn" title="Area"><i class="fa-solid fa-vector-square"></i></button>
+            <button type="button" id="tool-count" onclick="CasePMDrawings.setTool('count')" class="tool-btn" title="Count"><i class="fa-solid fa-hashtag"></i></button>
             <button type="button" id="tool-calibrate" onclick="CasePMDrawings.setTool('calibrate')" class="tool-btn" title="Calibrate scale"><i class="fa-solid fa-ruler-combined"></i></button>
             <div class="draw-tool-divider"></div>
+            <div class="draw-tool-group-label">Pins</div>
             <button type="button" id="tool-rfi_pin" onclick="CasePMDrawings.setTool('rfi_pin')" class="tool-btn text-orange-400" title="RFI pin"><i class="fa-solid fa-map-pin"></i></button>
+            <button type="button" id="tool-punch_pin" onclick="CasePMDrawings.setTool('punch_pin')" class="tool-btn text-violet-400" title="Punch pin"><i class="fa-solid fa-thumbtack"></i></button>
         </div>
         <div class="flex flex-col flex-1 min-h-0 min-w-0">
             <div id="drawViewerWrap" class="flex-1 cursor-grab min-h-0">
@@ -729,6 +765,22 @@
             <button type="submit" class="flex-1 py-2 bg-violet-600 hover:bg-violet-500 rounded-md font-medium">Substitute</button>
         </div>
     </form>
+</dialog>
+
+<!-- CENTERED VIEWER DIALOGS -->
+<dialog id="drawTextDialog" class="modal rounded-md w-full max-w-md p-0 text-white" style="background:#18181b;border:1px solid #3f3f46;">
+    <div class="p-6">
+        <div class="casepm-drag-handle flex justify-between items-center mb-3 cursor-move select-none">
+            <h2 id="drawTextDialogTitle" class="text-lg font-semibold">Markup text</h2>
+            <button type="button" id="drawTextDialogClose" class="text-zinc-400 hover:text-white text-2xl cursor-pointer">&times;</button>
+        </div>
+        <p class="text-xs text-zinc-400 mb-3">Enter the note for this text box or callout bubble.</p>
+        <textarea id="drawTextDialogInput" rows="5" class="w-full bg-zinc-800 border border-zinc-700 rounded-md p-3 text-sm text-white mb-4" placeholder="Type your note…"></textarea>
+        <div class="flex gap-2">
+            <button type="button" id="drawTextDialogCancel" class="flex-1 py-2 bg-zinc-800 hover:bg-zinc-700 rounded-md text-sm">Cancel</button>
+            <button type="button" id="drawTextDialogSave" class="flex-1 py-2 bg-sky-600 hover:bg-sky-500 rounded-md text-sm font-medium">Save</button>
+        </div>
+    </div>
 </dialog>
 
 {% endblock %}
