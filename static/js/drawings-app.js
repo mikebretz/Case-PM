@@ -3379,6 +3379,14 @@
   }
 
   async function onViewerUp(evt) {
+    if (state.tool === 'measure' && state.measurePointerDown && evt.type === 'mouseleave') {
+      state.measurePointerDown = false;
+      state.measureDownPt = null;
+      state.measureDidDrag = false;
+      state.tempMarkup = null;
+      renderMarkupOverlay();
+      return;
+    }
     if (state.searchSnipping && state.drawing && state.drawStart) {
       const pt = screenToDoc(evt);
       const s = state.drawStart;
