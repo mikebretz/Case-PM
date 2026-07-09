@@ -1454,6 +1454,7 @@
     document.getElementById('btnSearchPanel')?.classList.toggle('tool-active', next);
     if (!next) {
       state.searchSnipping = false;
+      clearSearchHighlight();
       updateViewerCursor();
     }
   }
@@ -1511,6 +1512,35 @@
     }).join('');
   }
 
+  function searchHighlightMarkup() {
+    const r = state.searchHighlight;
+    if (!r || r.nx == null) return '';
+    const { w, h } = canvasDims();
+    if (!w || !h) return '';
+    const x = (r.nx || 0) * w;
+    const y = (r.ny || 0) * h;
+    const rw = Math.max(12, (r.nw || 0.05) * w);
+    const rh = Math.max(12, (r.nh || 0.05) * h);
+    const cx = x + rw / 2;
+    const cy = y + rh / 2;
+    const pad = Math.max(10, Math.max(rw, rh) * 0.22);
+    if (state.searchMode === 'shape') {
+      const radius = Math.hypot(rw, rh) / 2 + pad;
+      return `<g class="search-hit-shape" pointer-events="none">
+        <circle cx="${cx}" cy="${cy}" r="${radius}" fill="rgba(250, 204, 21, 0.58)" stroke="#facc15" stroke-width="3"/>
+        <circle cx="${cx}" cy="${cy}" r="${radius + 5}" fill="none" stroke="rgba(250, 204, 21, 0.4)" stroke-width="2"/>
+      </g>`;
+    }
+    return `<rect class="search-hit-text" x="${x}" y="${y}" width="${rw}" height="${rh}" fill="rgba(250, 204, 21, 0.38)" stroke="#facc15" stroke-width="2" rx="3" pointer-events="none"/>`;
+  }
+
+  function clearSearchHighlight() {
+    state.searchHighlight = null;
+    state.selectedSearchIdx = null;
+    renderMarkupOverlay();
+    renderSearchResults();
+  }
+
   async function jumpToSearchResult(idx) {
     const r = state.searchResults[idx];
     if (!r) return;
@@ -1527,23 +1557,8 @@
   }
 
   function renderSearchHighlight() {
-    const r = state.searchHighlight;
-    if (!r || r.nx == null) return;
-    const { w, h } = canvasDims();
-    if (!w || !h) return;
-    const x = (r.nx || 0) * w;
-    const y = (r.ny || 0) * h;
-    const rw = Math.max(12, (r.nw || 0.05) * w);
-    const rh = Math.max(12, (r.nh || 0.05) * h);
-    state.tempMarkup = `<rect class="search-hit" x="${x}" y="${y}" width="${rw}" height="${rh}" fill="none" stroke="#fbbf24" stroke-width="3" stroke-dasharray="6 4" opacity="0.95"/>`;
+    if (!state.searchHighlight) return;
     renderMarkupOverlay();
-    clearTimeout(renderSearchHighlight._timer);
-    renderSearchHighlight._timer = setTimeout(() => {
-      if (state.searchHighlight === r) {
-        state.tempMarkup = null;
-        renderMarkupOverlay();
-      }
-    }, 4500);
   }
 
   async function runTextSearch() {
@@ -1558,6 +1573,8 @@
     }
     setSearchStatus('Searching text…', true);
     state.searchBusy = true;
+    state.searchHighlight = null;
+    state.selectedSearchIdx = null;
     try {
       const json = await api('/api/drawings/search/text', {
         method: 'POST',
@@ -1628,6 +1645,8 @@
     const scopeLabel = state.searchScope === 'project' ? 'project' : 'sheet';
     setSearchStatus(`Quick scan (${scopeLabel})…`, true);
     state.searchBusy = true;
+    state.searchHighlight = null;
+    state.selectedSearchIdx = null;
     try {
       const json = await api('/api/drawings/search/shape', {
         method: 'POST',
@@ -2486,7 +2505,7 @@
       <marker id="arrowhead" markerWidth="10" markerHeight="10" refX="8" refY="5" orient="auto" markerUnits="strokeWidth">
         <polygon points="0 0, 10 5, 0 10" fill="context-stroke"/>
       </marker>
-    </defs>${shapes}${pointToolPreviewMarkup()}${state.tempMarkup || ''}`;
+    </defs>${shapes}${pointToolPreviewMarkup()}${state.tempMarkup || ''}${searchHighlightMarkup()}`;
     updateMarkupToolbar();
     renderPropertiesPanel();
     renderMarkupList();
