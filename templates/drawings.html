@@ -169,6 +169,12 @@
     width: 100%;
     box-sizing: border-box;
   }
+  #drawTextEditor {
+    min-width: 240px;
+  }
+  #drawTextEditor.hidden {
+    display: none;
+  }
   #drawPanelSections.draw-drop-active {
     box-shadow: inset 0 0 0 2px #0ea5e9;
   }
@@ -266,9 +272,11 @@
             <button type="button" id="tool-select" onclick="CasePMDrawings.setTool('select')" class="w-8 h-8 rounded hover:bg-zinc-800 text-xs" title="Select"><i class="fa-solid fa-arrow-pointer"></i></button>
             <button type="button" id="tool-line" onclick="CasePMDrawings.setTool('line')" class="w-8 h-8 rounded hover:bg-zinc-800 text-xs" title="Line"><i class="fa-solid fa-minus"></i></button>
             <button type="button" id="tool-rect" onclick="CasePMDrawings.setTool('rect')" class="w-8 h-8 rounded hover:bg-zinc-800 text-xs" title="Rectangle"><i class="fa-regular fa-square"></i></button>
+            <button type="button" id="tool-ellipse" onclick="CasePMDrawings.setTool('ellipse')" class="w-8 h-8 rounded hover:bg-zinc-800 text-xs" title="Ellipse"><i class="fa-regular fa-circle"></i></button>
             <button type="button" id="tool-cloud" onclick="CasePMDrawings.setTool('cloud')" class="w-8 h-8 rounded hover:bg-zinc-800 text-xs" title="Cloud"><i class="fa-solid fa-cloud"></i></button>
             <button type="button" id="tool-arrow" onclick="CasePMDrawings.setTool('arrow')" class="w-8 h-8 rounded hover:bg-zinc-800 text-xs" title="Arrow"><i class="fa-solid fa-arrow-right"></i></button>
-            <button type="button" id="tool-text" onclick="CasePMDrawings.setTool('text')" class="w-8 h-8 rounded hover:bg-zinc-800 text-xs" title="Text"><i class="fa-solid fa-font"></i></button>
+            <button type="button" id="tool-text" onclick="CasePMDrawings.setTool('text')" class="w-8 h-8 rounded hover:bg-zinc-800 text-xs" title="Text box"><i class="fa-solid fa-font"></i></button>
+            <button type="button" id="tool-callout" onclick="CasePMDrawings.setTool('callout')" class="w-8 h-8 rounded hover:bg-zinc-800 text-xs" title="Callout"><i class="fa-solid fa-comment"></i></button>
             <button type="button" id="tool-highlight" onclick="CasePMDrawings.setTool('highlight')" class="w-8 h-8 rounded hover:bg-zinc-800 text-xs" title="Highlight"><i class="fa-solid fa-highlighter"></i></button>
             <button type="button" id="tool-calibrate" onclick="CasePMDrawings.setTool('calibrate')" class="w-8 h-8 rounded hover:bg-zinc-800 text-xs" title="Calibrate"><i class="fa-solid fa-ruler-combined"></i></button>
             <button type="button" id="tool-measure" onclick="CasePMDrawings.setTool('measure')" class="w-8 h-8 rounded hover:bg-zinc-800 text-xs" title="Measure"><i class="fa-solid fa-ruler"></i></button>

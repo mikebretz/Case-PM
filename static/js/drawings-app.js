@@ -5,7 +5,7 @@
   'use strict';
 
   const SECTION_ORDER = ['G', 'C', 'A', 'S', 'M', 'E', 'P', 'FP', 'L', 'T', 'I', 'OTHER'];
-  const MARKUP_TOOLS = ['pan', 'select', 'line', 'rect', 'cloud', 'arrow', 'text', 'highlight', 'measure', 'rfi_pin', 'calibrate'];
+  const MARKUP_TOOLS = ['pan', 'select', 'line', 'rect', 'ellipse', 'cloud', 'arrow', 'text', 'callout', 'highlight', 'measure', 'rfi_pin', 'calibrate'];
 
   let state = {
     drawings: [],
@@ -56,6 +56,7 @@
     previewDrawingId: null,
     wheelRaf: null,
     wheelPending: null,
+    textEditorOpen: false,
   };
 
   function projectId() {
@@ -77,8 +78,46 @@
   async function api(path, opts) {
     const res = await fetch(path, { credentials: 'same-origin', ...opts });
     const json = await res.json().catch(() => ({}));
-    if (!res.ok) throw new Error(json.error || json.message || 'Request failed');
+    if (!res.ok) {
+      const err = new Error(json.error || json.message || 'Request failed');
+      err.status = res.status;
+      throw err;
+    }
     return json;
+  }
+
+  async function reloadMarkups() {
+    if (!state.openDrawing) return;
+    try {
+      const detail = await api(`/api/drawings/${state.openDrawing.id}`);
+      state.markups = detail.markups || [];
+      state.selectedMarkupId = null;
+      state.draggingMarkup = null;
+      renderMarkupOverlay();
+    } catch (e) { console.warn('reloadMarkups', e); }
+  }
+
+  async function persistMarkup(m, payload) {
+    if (!m?.id) return;
+    try {
+      const json = await api(`/api/drawings/markups/${m.id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      });
+      if (json.markup) {
+        const idx = state.markups.findIndex(x => x.id === m.id);
+        if (idx >= 0) state.markups[idx] = json.markup;
+      }
+    } catch (e) {
+      if (e.status === 404) {
+        state.markups = state.markups.filter(x => x.id !== m.id);
+        state.selectedMarkupId = null;
+        toast('Markup was removed — refreshed list');
+      } else {
+        console.warn(e);
+      }
+    }
   }
 
   async function loadDashboard() {
@@ -431,6 +470,10 @@
       geom.nw = geom.nw ?? geom.w / w;
       geom.nh = geom.nh ?? geom.h / h;
     }
+    if (geom.tipX != null && geom.tipY != null) {
+      geom.ntipX = geom.ntipX ?? geom.tipX / w;
+      geom.ntipY = geom.ntipY ?? geom.tipY / h;
+    }
     if (geom.points && geom.points.length >= 4) {
       geom.npoints = geom.npoints ?? geom.points.map((v, i) => (i % 2 === 0 ? v / w : v / h));
     }
@@ -445,6 +488,12 @@
     if (geom.ny != null) out.y = geom.ny * h;
     if (geom.nw != null) out.w = geom.nw * w;
     if (geom.nh != null) out.h = geom.nh * h;
+    if (geom.ntipX != null) out.tipX = geom.ntipX * w;
+    if (geom.ntipY != null) out.tipY = geom.ntipY * h;
+    if (geom.tipX != null && geom.canvasW && geom.canvasW !== w) {
+      out.tipX = (geom.tipX / geom.canvasW) * w;
+      out.tipY = (geom.tipY / geom.canvasH) * h;
+    }
     if (geom.npoints && geom.npoints.length >= 4) {
       out.points = geom.npoints.map((v, i) => (i % 2 === 0 ? v * w : v * h));
     } else if (geom.points && geom.canvasW && geom.canvasH && (geom.canvasW !== w || geom.canvasH !== h)) {
@@ -472,6 +521,8 @@
     }
     if (g.nx != null) g.nx += ndx;
     if (g.ny != null) g.ny += ndy;
+    if (g.ntipX != null) g.ntipX += ndx;
+    if (g.ntipY != null) g.ntipY += ndy;
     if (g.x != null) g.x += dx;
     if (g.y != null) g.y += dy;
     if (w && h) {
@@ -512,43 +563,39 @@
   }
 
   function revisionCloudPath(x, y, w, h, scallopRadius) {
-    let r = scallopRadius || state.markupStyle.cloudScallop || 18;
-    r = Math.max(8, Math.min(r, w / 3, h / 3));
-    if (w < r * 2 || h < r * 2) return `M ${x} ${y} L ${x + w} ${y} L ${x + w} ${y + h} L ${x} ${y + h} Z`;
+    const r = Math.max(6, Math.min(scallopRadius || state.markupStyle.cloudScallop || 18, w / 4, h / 4));
+    if (w < r * 2 || h < r * 2) {
+      return `M ${x} ${y} L ${x + w} ${y} L ${x + w} ${y + h} L ${x} ${y + h} Z`;
+    }
 
-    function edge(x1, y1, x2, y2, bulgeOut) {
-      const dx = x2 - x1;
-      const dy = y2 - y1;
-      const len = Math.hypot(dx, dy);
-      const ux = dx / len;
-      const uy = dy / len;
-      const px = -uy * bulgeOut;
-      const py = ux * bulgeOut;
+    function scallopEdge(x1, y1, x2, y2, ox, oy) {
+      const len = Math.hypot(x2 - x1, y2 - y1);
+      if (len < 1) return '';
+      const ux = (x2 - x1) / len;
+      const uy = (y2 - y1) / len;
       let d = '';
       let dist = 0;
       let cx = x1;
       let cy = y1;
-      while (dist < len - 0.5) {
-        const seg = Math.min(r * 2, len - dist);
-        const mx = cx + ux * (seg / 2);
-        const my = cy + uy * (seg / 2);
-        const bx = mx + px * r;
-        const by = my + py * r;
-        const ex = cx + ux * seg;
-        const ey = cy + uy * seg;
-        d += ` Q ${bx} ${by} ${ex} ${ey}`;
+      while (dist + 0.25 < len) {
+        const step = Math.min(r * 2, len - dist);
+        const mx = cx + ux * step * 0.5;
+        const my = cy + uy * step * 0.5;
+        const ex = cx + ux * step;
+        const ey = cy + uy * step;
+        d += ` Q ${mx + ox * r} ${my + oy * r} ${ex} ${ey}`;
         cx = ex;
         cy = ey;
-        dist += seg;
+        dist += step;
       }
       return d;
     }
 
     let d = `M ${x} ${y + h}`;
-    d += edge(x, y + h, x, y, -1);
-    d += edge(x, y, x + w, y, 1);
-    d += edge(x + w, y, x + w, y + h, 1);
-    d += edge(x + w, y + h, x, y + h, -1);
+    d += scallopEdge(x, y + h, x, y, -1, 0);
+    d += scallopEdge(x, y, x + w, y, 0, -1);
+    d += scallopEdge(x + w, y, x + w, y + h, 1, 0);
+    d += scallopEdge(x + w, y + h, x, y + h, 0, 1);
     return d + ' Z';
   }
 
@@ -581,6 +628,24 @@
           Math.abs(pt.x - g.x), Math.abs(pt.x - (g.x + g.w)),
           Math.abs(pt.y - g.y), Math.abs(pt.y - (g.y + g.h))
         );
+      } else if (m.markup_type === 'ellipse' && g.w && g.h) {
+        const cx = g.x + g.w / 2;
+        const cy = g.y + g.h / 2;
+        const rx = Math.max(g.w / 2, 1);
+        const ry = Math.max(g.h / 2, 1);
+        const nx = (pt.x - cx) / rx;
+        const ny = (pt.y - cy) / ry;
+        d = Math.abs(nx * nx + ny * ny - 1) * Math.min(rx, ry);
+      } else if (m.markup_type === 'callout' && g.points && g.points.length >= 4) {
+        const bx = Math.min(g.points[0], g.points[2]);
+        const by = Math.min(g.points[1], g.points[3]);
+        const bw = Math.abs(g.points[2] - g.points[0]);
+        const bh = Math.abs(g.points[3] - g.points[1]);
+        const inside = pt.x >= bx && pt.x <= bx + bw && pt.y >= by && pt.y <= by + bh;
+        d = inside ? 0 : distToSegment(pt.x, pt.y, g.tipX ?? g.points[0], g.tipY ?? g.points[3], bx + bw / 2, by + bh);
+      } else if ((m.markup_type === 'text' || m.markup_type === 'textbox') && g.x != null) {
+        const inside = pt.x >= g.x && pt.x <= g.x + (g.w || 180) && pt.y >= g.y && pt.y <= g.y + (g.h || 28);
+        d = inside ? 0 : Math.hypot(pt.x - g.x, pt.y - g.y);
       } else if (g.points && g.points.length >= 4) {
         d = distToSegment(pt.x, pt.y, g.points[0], g.points[1], g.points[2], g.points[3]);
       } else if (g.x != null && g.y != null) {
@@ -814,9 +879,28 @@
       const p = geom.points;
       hit = `<line data-markup-id="${id}" x1="${p[0]}" y1="${p[1]}" x2="${p[2]}" y2="${p[3]}" stroke="transparent" stroke-width="22" pointer-events="stroke"/>`;
       visual = `<line x1="${p[0]}" y1="${p[1]}" x2="${p[2]}" y2="${p[3]}" stroke="${selStroke}" stroke-width="${selSw}" opacity="${op}" marker-end="url(#arrowhead)" pointer-events="none"/>`;
-    } else if (m.markup_type === 'text') {
-      hit = `<rect data-markup-id="${id}" x="${(geom.x || 0) - 4}" y="${(geom.y || 0) - 18}" width="160" height="28" fill="transparent" pointer-events="all"/>`;
-      visual = `<text x="${geom.x}" y="${geom.y}" fill="${selStroke}" font-size="${style.fontSize || 14}" opacity="${op}" pointer-events="none">${esc(m.label || '')}</text>`;
+    } else if (m.markup_type === 'ellipse') {
+      hit = `<ellipse data-markup-id="${id}" cx="${geom.x + geom.w / 2}" cy="${geom.y + geom.h / 2}" rx="${geom.w / 2}" ry="${geom.h / 2}" fill="transparent" pointer-events="all"/>`;
+      visual = `<ellipse cx="${geom.x + geom.w / 2}" cy="${geom.y + geom.h / 2}" rx="${geom.w / 2}" ry="${geom.h / 2}" stroke="${selStroke}" stroke-width="${selSw}" fill="${fill}" opacity="${op}" pointer-events="none"/>`;
+    } else if (m.markup_type === 'callout' && geom.points) {
+      const p = geom.points;
+      const bx = Math.min(p[0], p[2]);
+      const by = Math.min(p[1], p[3]);
+      const bw = Math.abs(p[2] - p[0]);
+      const bh = Math.abs(p[3] - p[1]);
+      const tipX = geom.tipX != null ? geom.tipX : p[0];
+      const tipY = geom.tipY != null ? geom.tipY : p[3];
+      hit = `<rect data-markup-id="${id}" x="${bx}" y="${by}" width="${bw}" height="${bh}" fill="transparent" pointer-events="all"/>`;
+      visual = `<line x1="${tipX}" y1="${tipY}" x2="${bx + bw / 2}" y2="${by + bh}" stroke="${selStroke}" stroke-width="${selSw}" opacity="${op}" pointer-events="none"/>
+        <rect x="${bx}" y="${by}" width="${bw}" height="${bh}" stroke="${selStroke}" stroke-width="${selSw}" fill="rgba(24,24,27,0.85)" opacity="${op}" pointer-events="none"/>
+        <text x="${bx + 8}" y="${by + 20}" fill="${selStroke}" font-size="${style.fontSize || 13}" pointer-events="none">${esc(m.label || '')}</text>`;
+    } else if (m.markup_type === 'text' || m.markup_type === 'textbox') {
+      const tw = geom.w || 180;
+      const th = geom.h || 28;
+      hit = `<rect data-markup-id="${id}" x="${geom.x}" y="${geom.y}" width="${tw}" height="${th}" fill="transparent" pointer-events="all"/>`;
+      const bg = style.fillOpacity != null ? `rgba(24,24,27,${style.fillOpacity})` : 'rgba(24,24,27,0.75)';
+      visual = `<rect x="${geom.x}" y="${geom.y}" width="${tw}" height="${th}" fill="${bg}" stroke="${selStroke}" stroke-width="${selected ? 2 : 1}" opacity="${op}" pointer-events="none"/>
+        <text x="${geom.x + 6}" y="${geom.y + (style.fontSize || 14) + 4}" fill="${selStroke}" font-size="${style.fontSize || 14}" opacity="${op}" pointer-events="none">${esc(m.label || '')}</text>`;
     } else if (m.markup_type === 'rfi_pin') {
       const x = geom.x || 0; const y = geom.y || 0;
       return `<g data-rfi-pin="${m.linked_rfi_id || ''}" data-markup-id="${id}" style="cursor:pointer"><circle cx="${x}" cy="${y}" r="14" fill="transparent"/><circle cx="${x}" cy="${y}" r="10" fill="#f97316" stroke="#fff" stroke-width="2"/><text x="${x}" y="${y + 4}" text-anchor="middle" fill="#fff" font-size="9" font-weight="bold" pointer-events="none">R</text><title>${esc(m.label || 'RFI')}</title></g>`;
@@ -833,6 +917,34 @@
     return { markup_type: state.tool, style: { ...state.markupStyle } };
   }
 
+  function propChips(label, options, current, dataAttr) {
+    return `<label class="block text-[10px] text-zinc-400 mb-1">${esc(label)}</label>
+      <div class="flex flex-wrap gap-1 mb-2">${options.map(o => {
+        const active = String(o.value) === String(current);
+        return `<button type="button" class="prop-chip px-2 py-1 rounded text-[10px] border ${active ? 'bg-sky-700 border-sky-500 text-white' : 'bg-zinc-800 border-zinc-700 text-zinc-300'}" data-prop="${dataAttr}" data-value="${o.value}">${esc(o.label)}</button>`;
+      }).join('')}</div>`;
+  }
+
+  const COLOR_PRESETS = [
+    { label: 'Blue', value: '#38bdf8' }, { label: 'Red', value: '#ef4444' },
+    { label: 'Green', value: '#22c55e' }, { label: 'Yellow', value: '#facc15' },
+    { label: 'Orange', value: '#f97316' }, { label: 'White', value: '#f4f4f5' },
+  ];
+  const WIDTH_PRESETS = [
+    { label: 'Hairline', value: 1 }, { label: 'Thin', value: 2 }, { label: 'Medium', value: 4 },
+    { label: 'Thick', value: 6 }, { label: 'Heavy', value: 10 },
+  ];
+  const OPACITY_PRESETS = [
+    { label: '100%', value: 1 }, { label: '75%', value: 0.75 }, { label: '50%', value: 0.5 }, { label: '25%', value: 0.25 },
+  ];
+  const CLOUD_PRESETS = [
+    { label: 'Tight', value: 10 }, { label: 'Standard', value: 18 }, { label: 'Large', value: 28 }, { label: 'XL', value: 36 },
+  ];
+  const FONT_PRESETS = [
+    { label: '10', value: 10 }, { label: '12', value: 12 }, { label: '14', value: 14 },
+    { label: '18', value: 18 }, { label: '24', value: 24 }, { label: '32', value: 32 },
+  ];
+
   function renderPropertiesPanel() {
     const el = document.getElementById('markupPropertiesPanel');
     if (!el) return;
@@ -842,57 +954,52 @@
     const isSelected = !!state.selectedMarkupId;
     const title = isSelected ? `Selected: ${type}` : `Tool: ${type}`;
     const showCloud = type === 'cloud';
-    const showLine = ['line', 'arrow', 'rect', 'cloud', 'measure', 'highlight'].includes(type);
-    const showText = type === 'text';
+    const showLine = ['line', 'arrow', 'rect', 'ellipse', 'cloud', 'measure', 'highlight', 'callout'].includes(type);
+    const showText = type === 'text' || type === 'textbox' || type === 'callout';
     const showMeasure = type === 'measure' || (isSelected && ctx?.markup_type === 'measure');
-    const showRect = type === 'rect' || type === 'highlight';
+    const showFill = ['rect', 'highlight', 'ellipse', 'text', 'textbox'].includes(type);
 
     el.innerHTML = `
       <div class="text-[10px] uppercase text-zinc-500 mb-2">${esc(title)}</div>
-      ${showLine ? `
-        <label class="block text-[10px] text-zinc-400 mb-1">Stroke color</label>
-        <input type="color" id="propColor" value="${esc(style.color || '#38bdf8')}" class="w-full h-7 bg-zinc-900 border border-zinc-700 rounded mb-2">
-        <label class="block text-[10px] text-zinc-400 mb-1">Line width</label>
-        <input type="range" id="propLineWidth" min="1" max="16" value="${style.lineWidth || 2}" class="w-full accent-sky-500 mb-1">
-        <div class="text-[10px] text-zinc-500 text-center mb-2" id="propLineWidthLabel">${style.lineWidth || 2} px</div>
-        <label class="block text-[10px] text-zinc-400 mb-1">Opacity</label>
-        <input type="range" id="propOpacity" min="20" max="100" value="${Math.round((style.opacity ?? 1) * 100)}" class="w-full accent-sky-500 mb-2">
-      ` : ''}
-      ${type === 'highlight' || showRect ? `
-        <label class="block text-[10px] text-zinc-400 mb-1">Fill opacity</label>
-        <input type="range" id="propFillOpacity" min="5" max="80" value="${Math.round((style.fillOpacity ?? (type === 'highlight' ? 0.25 : 0)) * 100)}" class="w-full accent-amber-500 mb-2">
-      ` : ''}
-      ${showCloud ? `
-        <label class="block text-[10px] text-zinc-400 mb-1">Cloud scallop size</label>
-        <input type="range" id="propCloudScallop" min="8" max="40" value="${style.cloudScallop || state.markupStyle.cloudScallop || 18}" class="w-full accent-sky-500 mb-1">
-        <div class="text-[10px] text-zinc-500 text-center mb-2" id="propCloudScallopLabel">${style.cloudScallop || 18} px</div>
-      ` : ''}
-      ${showText ? `
-        <label class="block text-[10px] text-zinc-400 mb-1">Font size</label>
-        <input type="range" id="propFontSize" min="10" max="36" value="${style.fontSize || 14}" class="w-full accent-sky-500 mb-2">
+      ${showLine ? propChips('Color', COLOR_PRESETS, style.color || '#38bdf8', 'color') : ''}
+      ${showLine ? propChips('Line weight', WIDTH_PRESETS, style.lineWidth || 2, 'lineWidth') : ''}
+      ${showLine ? propChips('Opacity', OPACITY_PRESETS, style.opacity ?? 1, 'opacity') : ''}
+      ${showFill ? propChips('Fill', OPACITY_PRESETS, style.fillOpacity ?? (type === 'highlight' ? 0.25 : 0.75), 'fillOpacity') : ''}
+      ${showCloud ? propChips('Cloud size', CLOUD_PRESETS, style.cloudScallop || 18, 'cloudScallop') : ''}
+      ${showText ? propChips('Font size', FONT_PRESETS, style.fontSize || 14, 'fontSize') : ''}
+      ${isSelected && showText ? `
+        <label class="block text-[10px] text-zinc-400 mb-1">Text</label>
+        <textarea id="propTextLabel" rows="3" class="w-full bg-zinc-900 border border-zinc-700 rounded p-2 text-xs mb-2">${esc(ctx.label || '')}</textarea>
       ` : ''}
       ${showMeasure ? `
         <div class="text-[10px] text-zinc-400 mb-2 p-2 bg-zinc-900 rounded border border-zinc-700">
-          Scale: ${state.pixelsPerUnit ? `${state.pixelsPerUnit.toFixed(2)} px/${state.measureUnit}` : 'Not calibrated — use Calibrate tool or values show in pixels'}
+          Scale: ${state.pixelsPerUnit ? `${state.pixelsPerUnit.toFixed(2)} px/${state.measureUnit}` : 'Not calibrated — measurements show in pixels'}
         </div>
         <button type="button" id="propCalibrateBtn" class="w-full py-1.5 mb-2 bg-zinc-800 hover:bg-zinc-700 rounded text-[10px]">Calibrate scale…</button>
       ` : ''}
       ${isSelected ? `<button type="button" id="propDeleteBtn" class="w-full py-1.5 bg-red-900/70 hover:bg-red-800 rounded text-[10px] text-red-100">Delete markup</button>` : ''}
     `;
 
-    const bind = (id, fn) => { const n = document.getElementById(id); if (n) n.addEventListener('input', fn); };
-    bind('propColor', e => applyMarkupProperty({ color: e.target.value }));
-    bind('propLineWidth', e => {
-      document.getElementById('propLineWidthLabel').textContent = `${e.target.value} px`;
-      applyMarkupProperty({ lineWidth: parseInt(e.target.value, 10) });
+    el.querySelectorAll('.prop-chip').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const key = btn.dataset.prop;
+        let val = btn.dataset.value;
+        if (['lineWidth', 'cloudScallop', 'fontSize'].includes(key)) val = parseInt(val, 10);
+        if (['opacity', 'fillOpacity'].includes(key)) val = parseFloat(val);
+        applyMarkupProperty({ [key]: val });
+        renderPropertiesPanel();
+      });
     });
-    bind('propOpacity', e => applyMarkupProperty({ opacity: parseInt(e.target.value, 10) / 100 }));
-    bind('propFillOpacity', e => applyMarkupProperty({ fillOpacity: parseInt(e.target.value, 10) / 100 }));
-    bind('propCloudScallop', e => {
-      document.getElementById('propCloudScallopLabel').textContent = `${e.target.value} px`;
-      applyMarkupProperty({ cloudScallop: parseInt(e.target.value, 10) });
-    });
-    bind('propFontSize', e => applyMarkupProperty({ fontSize: parseInt(e.target.value, 10) }));
+    const textArea = document.getElementById('propTextLabel');
+    if (textArea && isSelected) {
+      textArea.addEventListener('change', async () => {
+        const m = state.markups.find(x => x.id === state.selectedMarkupId);
+        if (!m) return;
+        m.label = textArea.value;
+        await persistMarkup(m, { label: m.label });
+        renderMarkupOverlay();
+      });
+    }
     document.getElementById('propCalibrateBtn')?.addEventListener('click', () => { setTool('calibrate'); toast('Click two points on a known distance'); });
     document.getElementById('propDeleteBtn')?.addEventListener('click', deleteSelectedMarkup);
   }
@@ -902,14 +1009,8 @@
       const m = state.markups.find(x => x.id === state.selectedMarkupId);
       if (!m) return;
       m.style = { ...(m.style || {}), ...patch };
-      try {
-        await api(`/api/drawings/markups/${m.id}`, {
-          method: 'PUT',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ style: m.style }),
-        });
-        renderMarkupOverlay();
-      } catch (e) { console.warn(e); }
+      await persistMarkup(m, { style: m.style });
+      renderMarkupOverlay();
     } else {
       Object.assign(state.markupStyle, patch);
     }
@@ -973,12 +1074,65 @@
     if (!m || !confirm('Delete this markup?')) return;
     try {
       await api(`/api/drawings/markups/${m.id}`, { method: 'DELETE' });
-      state.markups = state.markups.filter(x => x.id !== m.id);
-      state.selectedMarkupId = null;
-      renderMarkupOverlay();
-      renderViewerSidebar();
-      toast('Markup deleted');
-    } catch (e) { alert(e.message); }
+    } catch (e) {
+      if (e.status !== 404) { alert(e.message); return; }
+    }
+    state.markups = state.markups.filter(x => x.id !== m.id);
+    state.selectedMarkupId = null;
+    renderMarkupOverlay();
+    renderPropertiesPanel();
+    toast('Markup deleted');
+  }
+
+  function showTextEditor(pt, existingMarkup) {
+    const wrap = document.getElementById('drawViewerWrap');
+    if (!wrap || state.textEditorOpen) return;
+    state.textEditorOpen = true;
+    let editor = document.getElementById('drawTextEditor');
+    if (!editor) {
+      editor = document.createElement('div');
+      editor.id = 'drawTextEditor';
+      editor.className = 'absolute z-50 bg-zinc-900 border border-sky-600 rounded-md shadow-xl p-2';
+      editor.innerHTML = `
+        <textarea id="drawTextEditorInput" rows="3" class="w-56 bg-zinc-800 border border-zinc-700 rounded p-2 text-sm text-white mb-2" placeholder="Enter markup text…"></textarea>
+        <div class="flex gap-2 justify-end">
+          <button type="button" id="drawTextEditorCancel" class="px-2 py-1 text-xs bg-zinc-800 rounded">Cancel</button>
+          <button type="button" id="drawTextEditorSave" class="px-2 py-1 text-xs bg-sky-700 rounded text-white">Place</button>
+        </div>`;
+      wrap.appendChild(editor);
+    }
+    const rect = wrap.getBoundingClientRect();
+    editor.style.left = `${state.panX + pt.x * state.viewScale}px`;
+    editor.style.top = `${state.panY + pt.y * state.viewScale}px`;
+    editor.classList.remove('hidden');
+    const input = document.getElementById('drawTextEditorInput');
+    input.value = existingMarkup?.label || '';
+    input.focus();
+
+    const close = () => {
+      state.textEditorOpen = false;
+      editor.classList.add('hidden');
+    };
+    document.getElementById('drawTextEditorCancel').onclick = close;
+    document.getElementById('drawTextEditorSave').onclick = async () => {
+      const text = input.value.trim();
+      close();
+      if (!text) return;
+      if (existingMarkup) {
+        existingMarkup.label = text;
+        await persistMarkup(existingMarkup, { label: text });
+        renderMarkupOverlay();
+        return;
+      }
+      const lines = text.split('\n');
+      const fontSize = state.markupStyle.fontSize || 14;
+      await saveMarkup({
+        markup_type: 'textbox',
+        geometry: { x: pt.x, y: pt.y, w: 220, h: Math.max(28, lines.length * (fontSize + 6) + 12) },
+        label: text,
+        style: { ...state.markupStyle, fillOpacity: 0.85 },
+      });
+    };
   }
 
   function bindViewerEvents() {
@@ -1050,6 +1204,7 @@
           id: hit.id,
           startPt: pt,
           orig: JSON.parse(JSON.stringify(hit.geometry || {})),
+          moved: false,
         };
       } else {
         state.draggingMarkup = null;
@@ -1058,15 +1213,20 @@
       renderPropertiesPanel();
       return;
     }
-    if (['line', 'rect', 'cloud', 'arrow', 'highlight', 'measure'].includes(state.tool)) {
+    if (['line', 'rect', 'cloud', 'arrow', 'highlight', 'measure', 'ellipse', 'callout'].includes(state.tool)) {
       state.drawing = true;
       state.drawStart = screenToDoc(evt);
       return;
     }
     if (state.tool === 'text') {
       const pt = screenToDoc(evt);
-      const label = prompt('Text label:');
-      if (label) saveMarkup({ markup_type: 'text', geometry: { x: pt.x, y: pt.y }, label });
+      const hit = hitTestMarkup(pt);
+      if (hit && (hit.markup_type === 'text' || hit.markup_type === 'textbox')) {
+        state.selectedMarkupId = hit.id;
+        showTextEditor(pt, hit);
+      } else {
+        showTextEditor(pt);
+      }
       return;
     }
     if (state.tool === 'rfi_pin') {
@@ -1100,6 +1260,7 @@
       if (m) {
         const dx = pt.x - state.draggingMarkup.startPt.x;
         const dy = pt.y - state.draggingMarkup.startPt.y;
+        if (Math.hypot(dx, dy) > 2) state.draggingMarkup.moved = true;
         m.geometry = translateGeometry(state.draggingMarkup.orig, dx, dy);
         renderMarkupOverlay();
       }
@@ -1111,9 +1272,19 @@
     const sw = state.markupStyle.lineWidth || 2;
     const color = state.markupStyle.color || '#38bdf8';
     const scallop = state.markupStyle.cloudScallop || 18;
-    if (['rect', 'highlight'].includes(state.tool)) {
+    if (['rect', 'highlight', 'ellipse'].includes(state.tool)) {
       const x = Math.min(s.x, pt.x); const y = Math.min(s.y, pt.y);
-      state.tempMarkup = `<rect x="${x}" y="${y}" width="${Math.abs(pt.x - s.x)}" height="${Math.abs(pt.y - s.y)}" stroke="${color}" stroke-width="${sw}" fill="none" stroke-dasharray="4 3" />`;
+      const rw = Math.abs(pt.x - s.x); const rh = Math.abs(pt.y - s.y);
+      if (state.tool === 'ellipse') {
+        state.tempMarkup = `<ellipse cx="${x + rw / 2}" cy="${y + rh / 2}" rx="${rw / 2}" ry="${rh / 2}" stroke="${color}" stroke-width="${sw}" fill="none" stroke-dasharray="4 3" />`;
+      } else {
+        state.tempMarkup = `<rect x="${x}" y="${y}" width="${rw}" height="${rh}" stroke="${color}" stroke-width="${sw}" fill="none" stroke-dasharray="4 3" />`;
+      }
+    } else if (state.tool === 'callout') {
+      const x = Math.min(s.x, pt.x); const y = Math.min(s.y, pt.y);
+      const rw = Math.abs(pt.x - s.x); const rh = Math.abs(pt.y - s.y);
+      state.tempMarkup = `<line x1="${s.x}" y1="${s.y}" x2="${x + rw / 2}" y2="${y + rh}" stroke="${color}" stroke-width="${sw}" stroke-dasharray="4 3"/>
+        <rect x="${x}" y="${y}" width="${rw}" height="${rh}" stroke="${color}" stroke-width="${sw}" fill="rgba(24,24,27,0.5)" stroke-dasharray="4 3"/>`;
     } else if (state.tool === 'cloud') {
       const x = Math.min(s.x, pt.x); const y = Math.min(s.y, pt.y);
       state.tempMarkup = `<path d="${cloudPath(x, y, Math.abs(pt.x - s.x), Math.abs(pt.y - s.y), scallop)}" stroke="${color}" stroke-width="${sw}" fill="none" stroke-dasharray="4 3" />`;
@@ -1139,16 +1310,12 @@
       return;
     }
     if (state.draggingMarkup) {
-      const m = state.markups.find(x => x.id === state.draggingMarkup.id);
+      const drag = state.draggingMarkup;
+      const m = state.markups.find(x => x.id === drag.id);
+      const moved = drag.moved;
       state.draggingMarkup = null;
-      if (m) {
-        try {
-          await api(`/api/drawings/markups/${m.id}`, {
-            method: 'PUT',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ geometry: m.geometry }),
-          });
-        } catch (e) { console.warn(e); }
+      if (m && moved) {
+        await persistMarkup(m, { geometry: m.geometry });
       }
       renderPropertiesPanel();
       return;
@@ -1159,7 +1326,8 @@
     const type = state.tool;
     let geometry = {};
     let measurement_value = null;
-    if (['rect', 'cloud', 'highlight'].includes(type)) {
+    let label = null;
+    if (['rect', 'cloud', 'highlight', 'ellipse'].includes(type)) {
       geometry = { x: Math.min(s.x, pt.x), y: Math.min(s.y, pt.y), w: Math.abs(pt.x - s.x), h: Math.abs(pt.y - s.y) };
       if (geometry.w < 3 && geometry.h < 3) {
         state.drawing = false;
@@ -1167,6 +1335,20 @@
         state.tempMarkup = null;
         return;
       }
+    } else if (type === 'callout') {
+      geometry = {
+        x: Math.min(s.x, pt.x), y: Math.min(s.y, pt.y),
+        w: Math.abs(pt.x - s.x), h: Math.abs(pt.y - s.y),
+        points: [s.x, s.y, pt.x, pt.y],
+        tipX: s.x, tipY: s.y,
+      };
+      if (geometry.w < 20 && geometry.h < 12) {
+        state.drawing = false;
+        state.drawStart = null;
+        state.tempMarkup = null;
+        return;
+      }
+      label = 'Callout';
     } else if (['line', 'arrow', 'measure'].includes(type)) {
       const pxLen = Math.hypot(pt.x - s.x, pt.y - s.y);
       if (pxLen < 3) {
@@ -1189,8 +1371,13 @@
       geometry,
       measurement_value,
       measurement_unit: state.pixelsPerUnit ? state.measureUnit : 'px',
+      label,
       style: { ...state.markupStyle },
     });
+    if (type === 'callout') {
+      const last = state.markups[state.markups.length - 1];
+      if (last) showTextEditor({ x: geometry.x + 8, y: geometry.y + 8 }, last);
+    }
   }
 
   async function placeRfiPin(pt) {

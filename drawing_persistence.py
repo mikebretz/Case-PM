@@ -48,6 +48,18 @@ REVISION_RE = re.compile(
     r'(?:REV(?:ISION)?\.?|REVISION)\s*[#:.]?\s*(\d{1,3}|[A-Z])',
     re.IGNORECASE,
 )
+REVISION_LOOSE_RE = re.compile(
+    r'(?:^|\s)(?:REV|REVISION)\s*[#:.]?\s*(\d{1,3}|[A-Z])(?:\s|$)',
+    re.IGNORECASE,
+)
+SHEET_LABEL_RE = re.compile(
+    r'(?:SHEET|SHT|DWG|DRAWING)\s*(?:NO|NUM|NUMBER|#)?',
+    re.IGNORECASE,
+)
+TITLE_HINT_RE = re.compile(
+    r'\b(PLAN|ELEVATION|SECTION|DETAIL|SCHEDULE|FLOOR|ROOF|SITE|CEILING|FOUNDATION|FRAMING|RCP|REFLECTED)\b',
+    re.IGNORECASE,
+)
 DATE_RE = re.compile(
     r'(?:DATE|DRAWN|ISSUE(?:D)?|REVISION\s+DATE|PROJECT\s+DATE)[:\s#]*(\d{1,2}[/.-]\d{1,2}[/.-]\d{2,4})',
     re.IGNORECASE,
@@ -148,12 +160,219 @@ def is_plausible_drawing_sheet(sheet_number: str) -> bool:
 def extract_revision_from_text(text: str) -> str | None:
     if not text:
         return None
-    for line in (text.splitlines() or [])[-40:]:
-        m = REVISION_RE.search(line)
-        if m:
-            return str(m.group(1)).upper()
-    m = REVISION_RE.search(text)
+    for line in (text.splitlines() or [])[-50:]:
+        for pattern in (REVISION_RE, REVISION_LOOSE_RE):
+            m = pattern.search(line)
+            if m:
+                return str(m.group(1)).upper()
+    m = REVISION_RE.search(text) or REVISION_LOOSE_RE.search(text)
     return str(m.group(1)).upper() if m else None
+
+
+def _score_title_block_position(x0: float, y0: float, page_w: float, page_h: float) -> float:
+    """Higher score = more likely title-block location (bottom-right)."""
+    if page_w <= 0 or page_h <= 0:
+        return 0.0
+    return (x0 / page_w) * 0.55 + (y0 / page_h) * 0.45
+
+
+def _sheet_candidates_from_text(text: str, position_score: float = 0.5) -> list[tuple[float, str]]:
+    found = []
+    if not text:
+        return found
+    compact = re.sub(r'\s+', '', text.upper())
+    for pattern in (CSI_SHEET_RE, SHEET_RE):
+        for match in pattern.finditer(text):
+            if pattern is CSI_SHEET_RE:
+                cand = normalize_sheet_number(f'{match.group(1)}-{match.group(2)}.{match.group(3)}')
+            else:
+                cand = normalize_sheet_number(f'{match.group(1)}-{match.group(2)}')
+            if cand and is_plausible_drawing_sheet(cand):
+                found.append((position_score, cand))
+    m = TITLE_BLOCK_RE.search(text)
+    if m:
+        cand = normalize_sheet_number(m.group(1))
+        if cand and is_plausible_drawing_sheet(cand):
+            found.append((position_score + 0.1, cand))
+    if len(compact) <= 12:
+        cand = normalize_sheet_number(compact)
+        if cand and is_plausible_drawing_sheet(cand):
+            found.append((position_score + 0.05, cand))
+    return found
+
+
+def extract_title_block_metadata(pdf_path: str, page_index: int = 0) -> dict:
+    """Spatial title-block analysis (sheet #, title, revision, date)."""
+    result = {
+        'sheet_number': None,
+        'title': '',
+        'revision': None,
+        'drawing_date': None,
+        'method': 'none',
+        'text_preview': '',
+    }
+    try:
+        import fitz
+        doc = fitz.open(pdf_path)
+        if page_index >= len(doc):
+            doc.close()
+            return result
+        page = doc[page_index]
+        rect = page.rect
+        page_w, page_h = rect.width, rect.height
+        embedded = page.get_text('text') or page.get_text() or ''
+        words = page.get_text('words') or []
+
+        sheet_scores: list[tuple[float, str]] = []
+        rev_candidates: list[str] = []
+
+        for item in words:
+            if len(item) < 5:
+                continue
+            x0, y0, x1, y1, word = float(item[0]), float(item[1]), float(item[2]), float(item[3]), str(item[4])
+            text = word.strip()
+            if not text:
+                continue
+            in_title_block = y0 >= page_h * 0.62 or (x0 >= page_w * 0.48 and y0 >= page_h * 0.5)
+            if not in_title_block:
+                continue
+            pos = _score_title_block_position(x0, y0, page_w, page_h)
+            sheet_scores.extend(_sheet_candidates_from_text(text, pos))
+
+        # Combine adjacent words on same line in title block for sheet numbers like "A - 101"
+        by_line: dict[tuple[int, int], list] = {}
+        for item in words:
+            if len(item) < 8:
+                continue
+            x0, y0, blk, ln, word = float(item[0]), float(item[1]), int(item[5]), int(item[6]), str(item[4])
+            if y0 < page_h * 0.58:
+                continue
+            by_line.setdefault((blk, ln), []).append((x0, word))
+        for parts in by_line.values():
+            parts.sort(key=lambda p: p[0])
+            joined = ' '.join(p[1] for p in parts)
+            pos = _score_title_block_position(parts[0][0], page_h * 0.85, page_w, page_h)
+            sheet_scores.extend(_sheet_candidates_from_text(joined, pos + 0.15))
+
+        for line in list(embedded.splitlines()[:30]) + list(reversed(embedded.splitlines()[-80:])):
+            sheet_scores.extend(_sheet_candidates_from_text(line, 0.72))
+
+        if sheet_scores:
+            sheet_scores.sort(key=lambda t: t[0], reverse=True)
+            result['sheet_number'] = sheet_scores[0][1]
+            result['method'] = 'layout'
+
+        for i, item in enumerate(words):
+            if len(item) < 5:
+                continue
+            text = str(item[4]).strip().upper()
+            y0 = float(item[1])
+            if y0 < page_h * 0.55:
+                continue
+            if text in ('REV', 'REV.', 'REVISION', 'REVISION:') or text.startswith('REV'):
+                for j in range(i + 1, min(i + 5, len(words))):
+                    nxt = str(words[j][4]).strip()
+                    if re.fullmatch(r'\d{1,3}', nxt) or re.fullmatch(r'[A-Z]', nxt):
+                        rev_candidates.append(nxt.upper())
+                        break
+                m = re.search(r'(\d{1,3}|[A-Z])$', text)
+                if m:
+                    rev_candidates.append(m.group(1).upper())
+
+        for line in reversed(embedded.splitlines()[-60:]):
+            m = REVISION_RE.search(line) or REVISION_LOOSE_RE.search(line)
+            if m:
+                rev_candidates.append(str(m.group(1)).upper())
+
+        if rev_candidates:
+            result['revision'] = rev_candidates[0]
+
+        title_lines = []
+        sheet_key = (result['sheet_number'] or '').replace('-', '').replace('.', '')
+        for line in embedded.splitlines():
+            line = line.strip()
+            if len(line) < 8 or len(line) > 160:
+                continue
+            compact = line.replace('-', '').replace(' ', '').replace('.', '').upper()
+            if sheet_key and sheet_key in compact:
+                continue
+            upper = line.upper()
+            if any(skip in upper for skip in ('SHEET', 'DRAWING', 'DWG NO', 'PROJECT NO', 'SCALE:', 'DATE:', 'REVISION')):
+                if not TITLE_HINT_RE.search(line):
+                    continue
+            if REVISION_RE.search(line) or DATE_RE.search(line):
+                continue
+            if TITLE_HINT_RE.search(line) or (line.isupper() and len(line) > 12):
+                title_lines.append(line)
+        if title_lines:
+            result['title'] = max(title_lines, key=len)[:200]
+
+        result['drawing_date'] = extract_drawing_date_from_text(embedded)
+        result['text_preview'] = embedded[:400]
+        doc.close()
+    except Exception:
+        pass
+    return result
+
+
+def ocr_title_block_regions(pdf_path: str, page_index: int = 0) -> str:
+    """High-DPI OCR on common title-block regions."""
+    ocr_chunks = []
+    try:
+        import fitz
+        import io
+        from PIL import Image
+        import pytesseract
+    except ImportError:
+        return ''
+
+    try:
+        doc = fitz.open(pdf_path)
+        if page_index >= len(doc):
+            doc.close()
+            return ''
+        page = doc[page_index]
+        rect = page.rect
+        clips = [
+            fitz.Rect(rect.width * 0.5, rect.height * 0.68, rect.width, rect.height),
+            fitz.Rect(rect.width * 0.62, rect.height * 0.55, rect.width, rect.height),
+            fitz.Rect(0, rect.height * 0.72, rect.width * 0.42, rect.height),
+            fitz.Rect(rect.width * 0.3, rect.height * 0.62, rect.width, rect.height),
+            fitz.Rect(0, rect.height * 0.55, rect.width, rect.height),
+        ]
+        for clip in clips:
+            try:
+                pix = page.get_pixmap(matrix=fitz.Matrix(3.5, 3.5), clip=clip, alpha=False)
+                img = Image.open(io.BytesIO(pix.tobytes('png')))
+                chunk = pytesseract.image_to_string(img, config='--psm 6') or ''
+                if chunk.strip():
+                    ocr_chunks.append(chunk)
+            except Exception:
+                continue
+        doc.close()
+    except Exception:
+        pass
+    return '\n'.join(ocr_chunks)
+
+
+def resolve_drawing_file_path(file_path: str | None, upload_root: str | None = None) -> str | None:
+    """Resolve a revision PDF path even if stored relatively or moved."""
+    if not file_path:
+        return None
+    candidates = [file_path]
+    if not os.path.isabs(file_path):
+        candidates.append(os.path.abspath(file_path))
+    if upload_root:
+        candidates.append(os.path.join(upload_root, file_path))
+        candidates.append(os.path.join(upload_root, 'drawings', file_path))
+    seen = set()
+    for path in candidates:
+        if not path or path in seen:
+            continue
+        seen.add(path)
+        if os.path.isfile(path):
+            return os.path.abspath(path)
+    return None
 
 
 def extract_drawing_date_from_text(text: str) -> date | None:
@@ -321,7 +540,14 @@ def extract_sheet_from_pdf_text(text: str) -> str | None:
 
 def ocr_extract_sheet_from_pdf(pdf_path: str, page_index: int = 0) -> tuple[str | None, str]:
     """Render title-block region with PyMuPDF and run Tesseract OCR when available."""
-    ocr_text = ''
+    ocr_text = ocr_title_block_regions(pdf_path, page_index)
+    if ocr_text:
+        sheet = extract_sheet_from_pdf_text(ocr_text)
+        if sheet:
+            return sheet, ocr_text
+        layout = extract_title_block_metadata(pdf_path, page_index)
+        if layout.get('sheet_number'):
+            return layout['sheet_number'], ocr_text
     try:
         import fitz
     except ImportError:
@@ -335,38 +561,12 @@ def ocr_extract_sheet_from_pdf(pdf_path: str, page_index: int = 0) -> tuple[str 
         embedded = page.get_text() or ''
         sheet = extract_sheet_from_pdf_text(embedded)
         if sheet:
+            doc.close()
             return sheet, embedded
-
-        rect = page.rect
-        clips = [
-            fitz.Rect(rect.width * 0.55, rect.height * 0.72, rect.width, rect.height),
-            fitz.Rect(0, rect.height * 0.72, rect.width * 0.45, rect.height),
-            fitz.Rect(rect.width * 0.35, rect.height * 0.65, rect.width, rect.height),
-        ]
-        try:
-            import pytesseract
-            from PIL import Image
-            import io
-        except ImportError:
-            return None, embedded
-
-        for clip in clips:
-            try:
-                pix = page.get_pixmap(matrix=fitz.Matrix(2.5, 2.5), clip=clip, alpha=False)
-                img = Image.open(io.BytesIO(pix.tobytes('png')))
-                chunk = pytesseract.image_to_string(img) or ''
-                ocr_text += '\n' + chunk
-                sheet = extract_sheet_from_pdf_text(chunk)
-                if sheet:
-                    return sheet, ocr_text
-                sheet = normalize_sheet_number(chunk)
-                if sheet:
-                    return sheet, ocr_text
-            except Exception:
-                continue
-        return extract_sheet_from_pdf_text(ocr_text), ocr_text
+        doc.close()
     except Exception:
-        return None, ocr_text
+        pass
+    return extract_sheet_from_pdf_text(ocr_text), ocr_text
 
 
 def detect_sheet_number(
@@ -399,12 +599,30 @@ def detect_sheet_number(
 
 def analyze_pdf_page(pdf_path: str, page_index: int = 0, from_combined_set: bool = False, source_filename: str | None = None) -> dict:
     """Analyze one page for sheet metadata (used during set upload)."""
+    layout = extract_title_block_metadata(pdf_path, page_index)
     text = extract_pdf_page_text(pdf_path, page_index)
     sheet, full_text, method, revision = detect_sheet_number(
         pdf_path, source_filename, text, page_index, from_combined_set=from_combined_set,
     )
-    title = extract_title_from_text(full_text, sheet)
-    drawing_date = extract_drawing_date_from_text(full_text)
+
+    if layout.get('sheet_number') and (not sheet or layout.get('method') == 'layout'):
+        sheet = layout['sheet_number']
+        method = layout.get('method') or method
+
+    if not sheet:
+        ocr_sheet, ocr_text = ocr_extract_sheet_from_pdf(pdf_path, page_index)
+        if ocr_sheet:
+            sheet = ocr_sheet
+            method = 'ocr'
+            full_text = '\n'.join(filter(None, [full_text, ocr_text]))
+
+    if layout.get('revision'):
+        revision = layout['revision']
+    elif not revision:
+        revision = extract_revision_from_text(full_text or text or layout.get('text_preview', ''))
+
+    title = layout.get('title') or extract_title_from_text(full_text or text or '', sheet)
+    drawing_date = layout.get('drawing_date') or extract_drawing_date_from_text(full_text or text or '')
     return {
         'page_index': page_index,
         'sheet_number': sheet,
@@ -413,7 +631,7 @@ def analyze_pdf_page(pdf_path: str, page_index: int = 0, from_combined_set: bool
         'drawing_date': drawing_date,
         'discipline': discipline_from_sheet(sheet) if sheet else None,
         'detection_method': method,
-        'text_preview': (full_text or '')[:240],
+        'text_preview': (full_text or text or layout.get('text_preview') or '')[:240],
     }
 
 
@@ -497,14 +715,23 @@ def export_takeoff_to_budget_state(existing_state, takeoff_items, cost_code='01-
 def extract_title_from_text(text: str, sheet_number: str | None) -> str:
     if not text:
         return ''
-    lines = [ln.strip() for ln in text.splitlines() if ln.strip()]
-    for ln in lines[:25]:
-        if sheet_number and sheet_number.replace('-', '') in ln.replace('-', '').replace(' ', ''):
+    sheet_key = (sheet_number or '').replace('-', '').replace('.', '')
+    best = ''
+    for ln in [ln.strip() for ln in text.splitlines() if ln.strip()]:
+        if len(ln) < 8 or len(ln) > 160:
             continue
-        if len(ln) > 8 and not SHEET_RE.fullmatch(ln.replace(' ', '-')):
-            if 'SHEET' not in ln.upper() and 'DRAWING' not in ln.upper():
-                return ln[:200]
-    return ''
+        compact = ln.replace('-', '').replace(' ', '').replace('.', '').upper()
+        if sheet_key and sheet_key in compact:
+            continue
+        upper = ln.upper()
+        if SHEET_LABEL_RE.search(upper) and not TITLE_HINT_RE.search(ln):
+            continue
+        if REVISION_RE.search(ln) or DATE_RE.search(ln):
+            continue
+        if TITLE_HINT_RE.search(ln) or (ln.isupper() and len(ln) > 12):
+            if len(ln) > len(best):
+                best = ln
+    return best[:200]
 
 
 def prepare_upload_pages(source_path: str, batch_dir: str) -> list[dict]:
@@ -673,6 +900,8 @@ def markup_to_dict(m):
 
 def drawing_to_dict(drawing, current_rev=None, revision_count=0, markup_count=0, linked_rfis=None):
     rev = current_rev
+    upload_root = os.environ.get('CASEPM_UPLOAD_ROOT') or 'uploads'
+    rev_path = resolve_drawing_file_path(rev.file_path if rev else None, upload_root)
     return {
         'id': drawing.id,
         'project_id': drawing.project_id,
@@ -690,7 +919,7 @@ def drawing_to_dict(drawing, current_rev=None, revision_count=0, markup_count=0,
         'current_revision_id': drawing.current_revision_id,
         'revision_count': revision_count,
         'markup_count': markup_count,
-        'file_url': f'/api/drawings/{drawing.id}/file' if rev and rev.file_path else None,
+        'file_url': f'/api/drawings/{drawing.id}/file' if rev and rev_path else None,
         'has_thumbnail': bool(drawing.thumbnail_path and os.path.isfile(drawing.thumbnail_path)),
         'thumbnail_url': (
             f'/api/drawings/{drawing.id}/thumbnail'
@@ -786,6 +1015,8 @@ def upsert_drawing_from_upload(
     sheet_number = normalize_sheet_number(sheet_number) or sheet_number
     if not sheet_number:
         raise ValueError('Could not determine sheet number')
+    if file_path:
+        file_path = resolve_drawing_file_path(file_path) or os.path.abspath(file_path)
 
     drawing = Drawing.query.filter_by(project_id=project_id, sheet_number=sheet_number).first()
     now = datetime.utcnow()
