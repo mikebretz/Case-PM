@@ -104,6 +104,7 @@ DATE_RE = re.compile(
 )
 DATE_FALLBACK_RE = re.compile(r'\b(\d{1,2}[/.-]\d{1,2}[/.-]\d{2,4})\b')
 # Filename / OCR false positives (e.g. "Drawings_Rev_3.pdf" → not sheet REV-3)
+INVALID_NOTE_SHEET_PREFIXES = frozenset({'LF', 'SF', 'SM', 'SY', 'KG', 'LB', 'GA', 'PSI'})
 INVALID_SHEET_PREFIXES = frozenset({'REV', 'RE', 'R'})
 VALID_SHEET_PREFIXES = frozenset(DISCIPLINE_MAP.keys()) | frozenset({
     'A', 'S', 'M', 'E', 'P', 'C', 'G', 'L', 'T', 'I', 'H', 'FP', 'FA', 'AD', 'AR', 'ST', 'EL', 'PL', 'CI', 'LA', 'HVAC',
@@ -195,6 +196,8 @@ def is_plausible_drawing_sheet(sheet_number: str) -> bool:
         )
     prefix = sheet_number.split('-')[0].upper()
     if prefix in INVALID_SHEET_PREFIXES:
+        return False
+    if prefix in INVALID_NOTE_SHEET_PREFIXES:
         return False
     if prefix in {'IN', 'FT', 'MM', 'CM'}:
         return False
@@ -835,17 +838,21 @@ def analyze_pdf_page(pdf_path: str, page_index: int = 0, from_combined_set: bool
         or sheet_conf >= 3.0
         or name_conf >= 2.5
     )
+    sheet_label_locked = bool(layout.get('sheet_label_anchored'))
     text = extract_pdf_page_text(pdf_path, page_index)
     sheet, full_text, method, revision = detect_sheet_number(
         pdf_path, source_filename, text, page_index, from_combined_set=from_combined_set,
     )
 
-    if layout.get('sheet_number'):
+    if sheet_label_locked and layout.get('sheet_number'):
+        sheet = layout['sheet_number']
+        method = layout.get('method') or 'grid'
+    elif layout.get('sheet_number'):
         if layout_trusted or not sheet or sheet_conf >= 1.2:
             sheet = layout['sheet_number']
             method = layout.get('method') or method
 
-    if not sheet:
+    if not sheet and not sheet_label_locked:
         ocr_sheet, ocr_text = ocr_extract_sheet_from_pdf(pdf_path, page_index)
         if ocr_sheet:
             sheet = ocr_sheet
@@ -858,7 +865,10 @@ def analyze_pdf_page(pdf_path: str, page_index: int = 0, from_combined_set: bool
         revision = extract_revision_from_text(full_text or text or layout.get('text_preview', ''))
 
     title = layout.get('drawing_name') or layout.get('title') or ''
-    if (not title or (name_conf < 2.0 and not layout_trusted)) and not layout_trusted:
+    if sheet_label_locked:
+        if not title:
+            title = layout.get('title') or ''
+    elif (not title or (name_conf < 2.0 and not layout_trusted)) and not layout_trusted:
         title = extract_drawing_name_from_text(full_text or text or '', sheet) or title
     drawing_date = layout.get('drawing_date') or extract_drawing_date_from_text(full_text or text or '')
     scale = layout.get('scale') or extract_scale_from_text(full_text or text or '')
@@ -868,11 +878,11 @@ def analyze_pdf_page(pdf_path: str, page_index: int = 0, from_combined_set: bool
         ocr_lines = _plain_text_lines(ocr_text)
         if not revision:
             revision = _extract_revision_from_lines(ocr_lines, ocr_text) or extract_revision_from_text(ocr_text)
-        if (not title or len(title) < 4) and not layout_trusted and name_conf < 2.0:
+        if (not title or len(title) < 4) and not layout_trusted and not sheet_label_locked and name_conf < 2.0:
             ocr_title = _extract_drawing_title_from_lines(ocr_lines, sheet, ocr_text)
             if ocr_title:
                 title = ocr_title
-        if not sheet:
+        if not sheet and not sheet_label_locked:
             ocr_sheet = extract_sheet_from_pdf_text(ocr_text)
             if ocr_sheet and is_plausible_drawing_sheet(ocr_sheet):
                 sheet = ocr_sheet
