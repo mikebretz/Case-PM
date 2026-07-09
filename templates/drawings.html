@@ -1,308 +1,284 @@
 {% extends "base.html" %}
 
 {% block content %}
-<div class="max-w-[1600px] mx-auto">
-    
-    <!-- Page Header -->
-    <div class="flex items-center justify-between mb-6">
-        <div>
-            <h1 class="text-3xl font-semibold tracking-tight">Drawings</h1>
-            <p class="text-zinc-400 mt-1">Project plans, revisions, and markups</p>
-        </div>
-        
-        <div class="flex items-center gap-3">
-            <button onclick="showUploadDrawingModal()" 
-                    class="flex items-center gap-2 px-5 py-2.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded-2xl text-sm font-medium transition-colors">
-                <i class="fa-solid fa-upload"></i>
-                <span>Upload Drawing</span>
-            </button>
-        </div>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+<script src="{{ url_for('static', filename='js/drawings-app.js') }}"></script>
+
+<style>
+  #mainContent:has(.draw-page) {
+    overflow: hidden !important;
+    display: flex;
+    flex-direction: column;
+    padding: 0 !important;
+  }
+  .draw-page {
+    display: flex;
+    flex-direction: column;
+    flex: 1;
+    min-height: 0;
+    width: 100%;
+    padding: 1rem 1rem 0;
+    overflow: hidden;
+    box-sizing: border-box;
+  }
+  .draw-stack { display: flex; flex-direction: column; flex: 1; min-height: 0; overflow: hidden; }
+  #drawPanelViewer { display: flex; flex-direction: column; flex: 1; min-height: 0; }
+  #drawViewerWrap {
+    flex: 1;
+    min-height: 0;
+    overflow: auto;
+    background: #09090b;
+    position: relative;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+  #drawViewerInner { position: relative; display: inline-block; }
+  #drawPdfCanvas { display: block; max-width: 100%; }
+  #drawMarkupSvg {
+    position: absolute;
+    top: 0;
+    left: 0;
+    pointer-events: all;
+  }
+  @media print {
+    body.printing-drawing-sheet .draw-page > *:not(#drawPrintArea),
+    body.printing-drawing-sheet #appShell > #appHeaderBar,
+    body.printing-drawing-sheet #appSidebar { display: none !important; }
+  }
+</style>
+
+<div class="draw-page">
+<div class="draw-stack">
+
+<!-- TOOLBAR -->
+<div class="flex items-center justify-between flex-shrink-0 mb-4 no-print">
+    <div class="flex items-center gap-3 min-w-0">
+        <div class="text-2xl font-semibold text-white whitespace-nowrap">Drawings</div>
+        <div class="text-xs text-zinc-500 hidden lg:block">Sets · Revisions · Substitute pages · Markup · Takeoff · RFI pins</div>
     </div>
-
-    <!-- Filters -->
-    <div class="flex flex-wrap items-center gap-3 mb-6 bg-zinc-900 border border-zinc-800 rounded-3xl p-4">
-        <div class="flex-1 min-w-[220px]">
-            <input type="text" id="drawingSearch" placeholder="Search drawings..." 
-                   class="w-full bg-zinc-800 border border-zinc-700 rounded-2xl px-4 py-2.5 text-sm focus:outline-none focus:border-emerald-600"
-                   onkeyup="filterDrawings()">
-        </div>
-
-        <select id="disciplineFilter" onchange="filterDrawings()" 
-                class="bg-zinc-800 border border-zinc-700 rounded-2xl px-4 py-2.5 text-sm focus:outline-none focus:border-emerald-600">
-            <option value="">All Disciplines</option>
-            <option value="Architectural">Architectural</option>
-            <option value="Structural">Structural</option>
-            <option value="Mechanical">Mechanical</option>
-            <option value="Electrical">Electrical</option>
-            <option value="Plumbing">Plumbing</option>
-            <option value="Civil">Civil</option>
-        </select>
-
-        <select id="statusFilter" onchange="filterDrawings()" 
-                class="bg-zinc-800 border border-zinc-700 rounded-2xl px-4 py-2.5 text-sm focus:outline-none focus:border-emerald-600">
-            <option value="">All Statuses</option>
-            <option value="Current">Current</option>
-            <option value="Superseded">Superseded</option>
-            <option value="For Review">For Review</option>
-        </select>
-
-        <button onclick="clearDrawingFilters()" 
-                class="px-4 py-2.5 text-sm bg-zinc-800 hover:bg-zinc-700 border border-zinc-700 rounded-2xl transition-colors">
-            Clear Filters
+    <div class="flex items-center gap-2 flex-wrap justify-end">
+        <button type="button" onclick="CasePMDrawings.openSubstituteModal()" class="flex items-center gap-2 px-4 py-2 bg-zinc-800 hover:bg-zinc-700 rounded-md text-sm h-[38px]">
+            <i class="fa-solid fa-shuffle"></i><span class="hidden md:inline">Substitute Pages</span>
+        </button>
+        <button type="button" onclick="CasePMDrawings.openUploadModal('set')" class="flex items-center gap-2 px-4 py-2 bg-zinc-800 hover:bg-zinc-700 rounded-md text-sm h-[38px]">
+            <i class="fa-solid fa-file-pdf"></i><span class="hidden md:inline">Upload Set</span>
+        </button>
+        <button type="button" onclick="CasePMDrawings.openUploadModal('individual')" class="flex items-center gap-2 px-5 py-2 bg-white text-zinc-900 hover:bg-zinc-100 rounded-md text-sm font-semibold h-[38px]">
+            <i class="fa-solid fa-upload"></i><span>Upload Sheet</span>
         </button>
     </div>
+</div>
 
-    <!-- Drawings Table -->
-    <div class="bg-zinc-900 border border-zinc-800 rounded-3xl overflow-hidden">
-        <table class="w-full">
-            <thead>
-                <tr class="border-b border-zinc-800 bg-zinc-950">
-                    <th class="text-left px-6 py-4 text-sm font-medium text-zinc-400">Drawing #</th>
-                    <th class="text-left px-6 py-4 text-sm font-medium text-zinc-400">Title</th>
-                    <th class="text-left px-6 py-4 text-sm font-medium text-zinc-400">Discipline</th>
-                    <th class="text-left px-6 py-4 text-sm font-medium text-zinc-400">Revision</th>
-                    <th class="text-left px-6 py-4 text-sm font-medium text-zinc-400">Date</th>
-                    <th class="text-center px-6 py-4 text-sm font-medium text-zinc-400">Status</th>
-                    <th class="w-20"></th>
+<!-- SUMMARY CARDS -->
+<div class="bg-zinc-900 border border-zinc-700 rounded-md p-4 flex-shrink-0 mb-4 no-print">
+    <div class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3">
+        <div class="bg-zinc-800 border border-zinc-700 rounded-md p-4"><div class="text-xs text-zinc-400">Total Sheets</div><div id="statDrawTotal" class="text-xl font-semibold mt-1">0</div></div>
+        <div class="bg-zinc-800 border border-zinc-700 rounded-md p-4"><div class="text-xs text-zinc-400">Current Set</div><div id="statDrawCurrent" class="text-xl font-semibold mt-1 text-emerald-400">0</div></div>
+        <div class="bg-zinc-800 border border-zinc-700 rounded-md p-4"><div class="text-xs text-zinc-400">Sections</div><div id="statDrawSections" class="text-xl font-semibold mt-1 text-sky-400">0</div></div>
+        <div class="bg-zinc-800 border border-zinc-700 rounded-md p-4"><div class="text-xs text-zinc-400">Revisions</div><div id="statDrawRevisions" class="text-xl font-semibold mt-1">0</div></div>
+        <div class="bg-zinc-800 border border-zinc-700 rounded-md p-4"><div class="text-xs text-zinc-400">For Review</div><div id="statDrawReview" class="text-xl font-semibold mt-1 text-amber-400">0</div></div>
+        <div class="bg-zinc-800 border border-zinc-700 rounded-md p-4"><div class="text-xs text-zinc-400">Archived</div><div id="statDrawSuperseded" class="text-xl font-semibold mt-1 text-zinc-500">0</div></div>
+    </div>
+</div>
+
+<!-- VIEW TABS + FILTERS -->
+<div class="flex flex-col lg:flex-row gap-3 items-start lg:items-center justify-between mb-3 flex-shrink-0 no-print">
+    <div class="flex gap-2 flex-wrap">
+        <button type="button" id="btnViewSections" onclick="CasePMDrawings.switchView('sections')" class="px-4 py-2 rounded-md text-sm font-medium bg-sky-700 text-white">Sections</button>
+        <button type="button" id="btnViewList" onclick="CasePMDrawings.switchView('list')" class="px-4 py-2 rounded-md text-sm font-medium bg-zinc-800 text-zinc-300">List</button>
+        <button type="button" id="btnViewViewer" onclick="CasePMDrawings.switchView('viewer')" class="px-4 py-2 rounded-md text-sm font-medium bg-zinc-800 text-zinc-300 hidden">Viewer</button>
+    </div>
+    <div class="flex flex-col md:flex-row gap-2 w-full lg:w-auto">
+        <input type="text" id="drawSearch" placeholder="Search sheet #, title…" class="flex-1 bg-zinc-900 border border-zinc-700 rounded-md px-4 py-2 text-sm min-w-[180px]">
+        <select id="drawDisciplineFilter" class="bg-zinc-900 border border-zinc-700 rounded-md px-4 py-2 text-sm">
+            <option value="">All Disciplines</option>
+            <option>Architectural</option><option>Structural</option><option>Mechanical</option>
+            <option>Electrical</option><option>Plumbing</option><option>Civil</option><option>General</option>
+        </select>
+        <select id="drawStatusFilter" class="bg-zinc-900 border border-zinc-700 rounded-md px-4 py-2 text-sm">
+            <option value="">All Statuses</option>
+            <option>Current</option><option>For Review</option><option>Superseded</option>
+        </select>
+    </div>
+</div>
+
+<!-- SECTIONS PANEL (thumbnail grid by A / S / M / E…) -->
+<div id="drawPanelSections" class="flex-1 min-h-0 flex gap-3 mb-20 overflow-hidden no-print">
+    <div class="w-56 flex-shrink-0 flex flex-col gap-3 hidden xl:flex">
+        <div class="bg-zinc-900 border border-zinc-700 rounded-md p-3 flex-1 min-h-0 overflow-auto">
+            <div class="text-xs uppercase text-zinc-500 mb-2">Sheet Preview</div>
+            <div id="drawPreviewPane" class="text-sm text-zinc-300 hidden"></div>
+            <div id="drawPreviewEmpty" class="text-xs text-zinc-500">Click a thumbnail for sheet details. Double-click to open the viewer.</div>
+        </div>
+        <div class="bg-zinc-900 border border-zinc-700 rounded-md p-3 text-[10px] text-zinc-500 leading-relaxed">
+            Organized by sheet prefix (A, S, M, E, P, C…). Upload combined PDFs — sheet numbers are auto-extracted from title blocks.
+        </div>
+    </div>
+    <div class="flex-1 min-h-0 flex flex-col border border-zinc-700 rounded-md bg-zinc-900 overflow-hidden">
+        <div class="px-4 py-2 border-b border-zinc-800 flex flex-wrap gap-2 items-center" id="drawSectionTabs"></div>
+        <div id="drawSectionGrid" class="flex-1 overflow-auto p-4 grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-3 content-start"></div>
+    </div>
+</div>
+
+<!-- LIST PANEL -->
+<div id="drawPanelList" class="hidden flex-1 min-h-0 flex flex-col border border-zinc-700 rounded-md bg-zinc-900 mb-20 overflow-hidden no-print">
+    <div class="flex-1 overflow-auto min-h-0">
+        <table class="w-full text-sm min-w-[1000px]">
+            <thead class="bg-zinc-800 sticky top-0 z-20 border-b border-zinc-700">
+                <tr>
+                    <th class="px-4 py-3 text-left text-zinc-400 font-medium">Sheet #</th>
+                    <th class="px-4 py-3 text-left text-zinc-400 font-medium">Title</th>
+                    <th class="px-4 py-3 text-left text-zinc-400 font-medium">Discipline</th>
+                    <th class="px-4 py-3 text-left text-zinc-400 font-medium">Section</th>
+                    <th class="px-4 py-3 text-center text-zinc-400 font-medium">Revision</th>
+                    <th class="px-4 py-3 text-center text-zinc-400 font-medium">Date</th>
+                    <th class="px-4 py-3 text-center text-zinc-400 font-medium">Status</th>
+                    <th class="px-4 py-3 text-center text-zinc-400 font-medium">Revs</th>
                 </tr>
             </thead>
-            <tbody id="drawingsTableBody" class="divide-y divide-zinc-800">
-                <!-- Populated by JavaScript -->
-            </tbody>
+            <tbody id="drawTableBody" class="divide-y divide-zinc-800"></tbody>
         </table>
     </div>
+</div>
+
+<!-- VIEWER PANEL -->
+<div id="drawPanelViewer" class="hidden flex-1 min-h-0 mb-20 border border-zinc-700 rounded-md bg-zinc-900 overflow-hidden">
+    <div class="flex items-center justify-between px-3 py-2 border-b border-zinc-800 flex-shrink-0 gap-2 flex-wrap no-print">
+        <div class="flex items-center gap-2 min-w-0">
+            <button type="button" onclick="CasePMDrawings.closeViewer()" class="px-2 py-1 text-xs bg-zinc-800 hover:bg-zinc-700 rounded-md"><i class="fa-solid fa-arrow-left"></i></button>
+            <div id="viewerSheetTitle" class="text-sm font-medium truncate">Drawing Viewer</div>
+        </div>
+        <div class="flex items-center gap-1 flex-wrap">
+            <select id="viewerRevisionSelect" onchange="CasePMDrawings.loadRevisionInViewer()" class="bg-zinc-800 border border-zinc-700 rounded px-2 py-1 text-xs max-w-[180px]"></select>
+            <button type="button" onclick="CasePMDrawings.toggleCompareOverlay()" class="px-2 py-1 text-xs bg-zinc-800 hover:bg-zinc-700 rounded-md" title="Compare revision">Compare</button>
+            <button type="button" onclick="CasePMDrawings.publishPersonalMarkups()" class="px-2 py-1 text-xs bg-emerald-900 hover:bg-emerald-800 rounded-md">Publish</button>
+            <button type="button" onclick="CasePMDrawings.printSheet()" class="px-2 py-1 text-xs bg-zinc-800 hover:bg-zinc-700 rounded-md"><i class="fa-solid fa-print"></i></button>
+        </div>
+    </div>
+    <div class="flex flex-1 min-h-0">
+        <div class="w-12 flex-shrink-0 border-r border-zinc-800 flex flex-col items-center py-2 gap-1 no-print overflow-y-auto">
+            <button type="button" id="tool-pan" onclick="CasePMDrawings.setTool('pan')" class="w-9 h-9 rounded hover:bg-zinc-800" title="Pan"><i class="fa-solid fa-hand"></i></button>
+            <button type="button" id="tool-select" onclick="CasePMDrawings.setTool('select')" class="w-9 h-9 rounded hover:bg-zinc-800" title="Select"><i class="fa-solid fa-arrow-pointer"></i></button>
+            <button type="button" id="tool-line" onclick="CasePMDrawings.setTool('line')" class="w-9 h-9 rounded hover:bg-zinc-800" title="Line"><i class="fa-solid fa-minus"></i></button>
+            <button type="button" id="tool-rect" onclick="CasePMDrawings.setTool('rect')" class="w-9 h-9 rounded hover:bg-zinc-800" title="Rectangle"><i class="fa-regular fa-square"></i></button>
+            <button type="button" id="tool-cloud" onclick="CasePMDrawings.setTool('cloud')" class="w-9 h-9 rounded hover:bg-zinc-800" title="Cloud"><i class="fa-solid fa-cloud"></i></button>
+            <button type="button" id="tool-arrow" onclick="CasePMDrawings.setTool('arrow')" class="w-9 h-9 rounded hover:bg-zinc-800" title="Arrow"><i class="fa-solid fa-arrow-right"></i></button>
+            <button type="button" id="tool-text" onclick="CasePMDrawings.setTool('text')" class="w-9 h-9 rounded hover:bg-zinc-800" title="Text"><i class="fa-solid fa-font"></i></button>
+            <button type="button" id="tool-highlight" onclick="CasePMDrawings.setTool('highlight')" class="w-9 h-9 rounded hover:bg-zinc-800" title="Highlight"><i class="fa-solid fa-highlighter"></i></button>
+            <button type="button" id="tool-calibrate" onclick="CasePMDrawings.setTool('calibrate')" class="w-9 h-9 rounded hover:bg-zinc-800" title="Calibrate scale"><i class="fa-solid fa-ruler-combined"></i></button>
+            <button type="button" id="tool-measure" onclick="CasePMDrawings.setTool('measure')" class="w-9 h-9 rounded hover:bg-zinc-800" title="Measure"><i class="fa-solid fa-ruler"></i></button>
+            <button type="button" id="tool-rfi_pin" onclick="CasePMDrawings.setTool('rfi_pin')" class="w-9 h-9 rounded hover:bg-zinc-800 text-orange-400" title="RFI Pin"><i class="fa-solid fa-map-pin"></i></button>
+        </div>
+        <div id="drawViewerWrap" class="flex-1">
+            <div id="drawPrintArea">
+                <div id="drawViewerInner">
+                    <canvas id="drawPdfCanvas"></canvas>
+                    <svg id="drawMarkupSvg" xmlns="http://www.w3.org/2000/svg">
+                        <defs><marker id="arrowhead" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto"><polygon points="0 0, 8 3, 0 6" fill="#38bdf8"/></marker></defs>
+                    </svg>
+                </div>
+            </div>
+        </div>
+        <div class="w-52 flex-shrink-0 border-l border-zinc-800 p-3 overflow-auto text-sm no-print hidden lg:block">
+            <div class="flex gap-2 mb-3">
+                <button type="button" id="layer-personal" onclick="CasePMDrawings.toggleLayer('personal')" class="text-[10px] px-2 py-1 bg-sky-900/50 text-sky-300 rounded">Personal</button>
+                <button type="button" id="layer-published" onclick="CasePMDrawings.toggleLayer('published')" class="text-[10px] px-2 py-1 bg-emerald-900/50 text-emerald-300 rounded">Published</button>
+            </div>
+            <div id="viewerSidebar"></div>
+        </div>
+    </div>
+</div>
 
 </div>
-        <!-- Upload Drawing Modal -->
-        <dialog id="uploadDrawingModal" class="bg-zinc-900 border border-zinc-700 rounded-3xl p-0 w-full max-w-lg shadow-2xl">
-            <div class="p-6">
-                <div class="flex items-center justify-between mb-5">
-                    <div class="font-semibold text-xl">Upload Drawing</div>
-                    <button onclick="document.getElementById('uploadDrawingModal').close()" class="text-zinc-400 hover:text-white text-2xl leading-none">&times;</button>
-                </div>
+</div>
 
-                <form id="uploadDrawingForm" onsubmit="uploadDrawing(event)">
-                    <div class="space-y-4">
-                        <div>
-                            <label class="block text-sm text-zinc-400 mb-1.5">Drawing Number</label>
-                            <input type="text" id="drawing_number" placeholder="e.g. A-101" required
-                                   class="w-full bg-zinc-800 border border-zinc-700 rounded-2xl px-4 py-2.5 text-sm focus:outline-none focus:border-emerald-600">
-                        </div>
+<!-- BOTTOM BAR -->
+<div class="fixed bottom-0 left-56 right-0 bg-zinc-900 border-t border-zinc-700 px-6 py-2 text-xs text-zinc-400 flex items-center justify-between z-[60] no-print">
+    <div class="flex items-center gap-4">
+        <span>Drawing sets · Auto sheet extraction · Revision history · Markup layers · RFI links</span>
+        <a href="/rfis" class="text-sky-400 hover:text-sky-300 underline">RFIs</a>
+        <a href="/change-orders" class="text-emerald-400 hover:text-emerald-300 underline">Change Orders</a>
+    </div>
+    <div class="text-emerald-400">● Online</div>
+</div>
 
-                        <div>
-                            <label class="block text-sm text-zinc-400 mb-1.5">Drawing Title</label>
-                            <input type="text" id="drawing_title" required
-                                   class="w-full bg-zinc-800 border border-zinc-700 rounded-2xl px-4 py-2.5 text-sm focus:outline-none focus:border-emerald-600">
-                        </div>
-
-                        <div class="grid grid-cols-2 gap-4">
-                            <div>
-                                <label class="block text-sm text-zinc-400 mb-1.5">Discipline</label>
-                                <select id="discipline" required
-                                        class="w-full bg-zinc-800 border border-zinc-700 rounded-2xl px-4 py-2.5 text-sm focus:outline-none focus:border-emerald-600">
-                                    <option value="Architectural">Architectural</option>
-                                    <option value="Structural">Structural</option>
-                                    <option value="Mechanical">Mechanical</option>
-                                    <option value="Electrical">Electrical</option>
-                                    <option value="Plumbing">Plumbing</option>
-                                    <option value="Civil">Civil</option>
-                                </select>
-                            </div>
-                            <div>
-                                <label class="block text-sm text-zinc-400 mb-1.5">Revision</label>
-                                <input type="text" id="revision" value="0" required
-                                       class="w-full bg-zinc-800 border border-zinc-700 rounded-2xl px-4 py-2.5 text-sm focus:outline-none focus:border-emerald-600">
-                            </div>
-                        </div>
-
-                        <div>
-                            <label class="block text-sm text-zinc-400 mb-1.5">File</label>
-                            <input type="file" id="drawing_file" required accept=".pdf,.dwg,.png,.jpg"
-                                   class="w-full text-sm file:mr-4 file:py-2 file:px-4 file:rounded-2xl file:border-0 file:bg-zinc-700 hover:file:bg-zinc-600">
-                        </div>
-                    </div>
-
-                    <div class="flex gap-3 mt-6">
-                        <button type="button" onclick="document.getElementById('uploadDrawingModal').close()"
-                                class="flex-1 py-2.5 bg-zinc-800 hover:bg-zinc-700 rounded-2xl text-sm font-medium transition-colors">
-                            Cancel
-                        </button>
-                        <button type="submit"
-                                class="flex-1 py-2.5 bg-emerald-600 hover:bg-emerald-500 rounded-2xl text-sm font-medium transition-colors">
-                            Upload Drawing
-                        </button>
-                    </div>
-                </form>
+<!-- UPLOAD MODAL -->
+<dialog id="uploadDrawingModal" class="modal rounded-md w-full max-w-lg p-0 text-white" style="background:#18181b;border:1px solid #3f3f46;">
+    <form class="p-6" onsubmit="CasePMDrawings.submitUpload(event)">
+        <input type="hidden" id="uploadMode" value="individual">
+        <div class="flex justify-between items-center mb-4">
+            <h2 class="text-lg font-semibold">Upload Drawings</h2>
+            <button type="button" onclick="document.getElementById('uploadDrawingModal').close()" class="text-zinc-400 hover:text-white text-2xl">&times;</button>
+        </div>
+        <div class="space-y-3 text-sm">
+            <div>
+                <label class="block text-zinc-400 mb-1">Drawing Set Name</label>
+                <input type="text" id="uploadSetName" class="w-full bg-zinc-800 border border-zinc-700 rounded-md px-3 py-2" placeholder="IFC Set March 2026">
             </div>
-        </dialog>
-        <!-- JavaScript -->
-        <script>
-            // Sample data (will be replaced with backend later)
-            let drawings = [
-                {
-                    id: 1,
-                    number: "A-101",
-                    title: "Floor Plan - Level 1",
-                    discipline: "Architectural",
-                    revision: "3",
-                    date: "2025-03-12",
-                    status: "Current"
-                },
-                {
-                    id: 2,
-                    number: "S-201",
-                    title: "Foundation Plan",
-                    discipline: "Structural",
-                    revision: "2",
-                    date: "2025-03-08",
-                    status: "Current"
-                },
-                {
-                    id: 3,
-                    number: "E-301",
-                    title: "Lighting Plan - Level 2",
-                    discipline: "Electrical",
-                    revision: "1",
-                    date: "2025-03-15",
-                    status: "For Review"
-                }
-            ];
+            <div id="uploadIndividualFields">
+                <label class="block text-zinc-400 mb-1">Sheet Number <span class="text-zinc-600">(optional if in filename)</span></label>
+                <input type="text" id="uploadSheetNumber" class="w-full bg-zinc-800 border border-zinc-700 rounded-md px-3 py-2 font-mono" placeholder="A-101">
+                <label class="block text-zinc-400 mb-1 mt-2">Title</label>
+                <input type="text" id="uploadTitle" class="w-full bg-zinc-800 border border-zinc-700 rounded-md px-3 py-2">
+            </div>
+            <div>
+                <label class="block text-zinc-400 mb-1">PDF File</label>
+                <input type="file" id="uploadFile" accept=".pdf,application/pdf" required class="w-full text-xs">
+                <p class="text-[10px] text-zinc-500 mt-1">Upload Set: combined multi-page PDF — sheets auto-split and numbered. Upload Sheet: single page PDF.</p>
+            </div>
+        </div>
+        <div class="flex gap-2 mt-5">
+            <button type="button" onclick="document.getElementById('uploadDrawingModal').close()" class="flex-1 py-2 bg-zinc-800 rounded-md">Cancel</button>
+            <button type="submit" class="flex-1 py-2 bg-emerald-600 hover:bg-emerald-500 rounded-md font-medium">Upload</button>
+        </div>
+    </form>
+</dialog>
 
-            function filterDrawings() {
-                const searchTerm = document.getElementById('drawingSearch').value.toLowerCase();
-                const disciplineFilter = document.getElementById('disciplineFilter').value;
-                const statusFilter = document.getElementById('statusFilter').value;
+<!-- SUBSTITUTE PAGES MODAL -->
+<dialog id="substituteModal" class="modal rounded-md w-full max-w-lg p-0 text-white" style="background:#18181b;border:1px solid #3f3f46;">
+    <form class="p-6" onsubmit="CasePMDrawings.submitSubstitute(event)">
+        <div class="flex justify-between items-center mb-4">
+            <h2 class="text-lg font-semibold">Substitute Pages</h2>
+            <button type="button" onclick="document.getElementById('substituteModal').close()" class="text-zinc-400 hover:text-white text-2xl">&times;</button>
+        </div>
+        <p class="text-xs text-zinc-400 mb-4">Upload revised sheets (e.g. 5 updated pages). Matching sheet numbers replace the current revision; previous versions are archived in revision history. Published markups carry forward (Procore-style).</p>
+        <div class="space-y-3 text-sm">
+            <div>
+                <label class="block text-zinc-400 mb-1">Revision Set Name</label>
+                <input type="text" id="substituteSetName" class="w-full bg-zinc-800 border border-zinc-700 rounded-md px-3 py-2" placeholder="ASI-03 Substitute Pages">
+            </div>
+            <div>
+                <label class="block text-zinc-400 mb-1">Revised PDF Pages</label>
+                <input type="file" id="substituteFiles" accept=".pdf,application/pdf" multiple required class="w-full text-xs">
+                <p class="text-[10px] text-zinc-500 mt-1">Name files with sheet numbers (A-101.pdf) or include numbers in title blocks.</p>
+            </div>
+        </div>
+        <div class="flex gap-2 mt-5">
+            <button type="button" onclick="document.getElementById('substituteModal').close()" class="flex-1 py-2 bg-zinc-800 rounded-md">Cancel</button>
+            <button type="submit" class="flex-1 py-2 bg-violet-600 hover:bg-violet-500 rounded-md font-medium">Substitute</button>
+        </div>
+    </form>
+</dialog>
 
-                const filtered = drawings.filter(drawing => {
-                    const matchesSearch = drawing.number.toLowerCase().includes(searchTerm) || 
-                                        drawing.title.toLowerCase().includes(searchTerm);
-                    const matchesDiscipline = !disciplineFilter || drawing.discipline === disciplineFilter;
-                    const matchesStatus = !statusFilter || drawing.status === statusFilter;
-                    return matchesSearch && matchesDiscipline && matchesStatus;
-                });
-
-                renderDrawingsTable(filtered);
-            }
-
-            function clearDrawingFilters() {
-                document.getElementById('drawingSearch').value = '';
-                document.getElementById('disciplineFilter').value = '';
-                document.getElementById('statusFilter').value = '';
-                renderDrawingsTable(drawings);
-            }
-
-            function renderDrawingsTable(drawingList) {
-                const tbody = document.getElementById('drawingsTableBody');
-                tbody.innerHTML = '';
-
-                if (drawingList.length === 0) {
-                    tbody.innerHTML = `
-                        <tr>
-                            <td colspan="7" class="px-6 py-8 text-center text-zinc-400">
-                                No drawings found.
-                            </td>
-                        </tr>
-                    `;
-                    return;
-                }
-
-                drawingList.forEach(drawing => {
-                    const statusColor = 
-                        drawing.status === 'Current' ? 'bg-emerald-600/20 text-emerald-400' :
-                        drawing.status === 'Superseded' ? 'bg-zinc-600/20 text-zinc-400' :
-                        'bg-amber-600/20 text-amber-400';
-
-                    const row = document.createElement('tr');
-                    row.className = 'hover:bg-zinc-800/60 transition-colors';
-                    row.innerHTML = `
-                        <td class="px-6 py-4 font-mono text-sm">${drawing.number}</td>
-                        <td class="px-6 py-4">${drawing.title}</td>
-                        <td class="px-6 py-4 text-sm text-zinc-400">${drawing.discipline}</td>
-                        <td class="px-6 py-4 text-center">
-                            <span class="font-mono text-sm">Rev ${drawing.revision}</span>
-                        </td>
-                        <td class="px-6 py-4 text-sm text-zinc-400">${drawing.date}</td>
-                        <td class="px-6 py-4 text-center">
-                            <span class="inline-block px-3 py-1 rounded-full text-xs font-medium ${statusColor}">
-                                ${drawing.status}
-                            </span>
-                        </td>
-                        <td class="px-4 py-4">
-                            <div class="flex items-center gap-1">
-                                <button onclick="viewDrawing(${drawing.id})" class="p-2 hover:bg-zinc-700 rounded-xl text-zinc-400 hover:text-white">
-                                    <i class="fa-solid fa-eye"></i>
-                                </button>
-                                <button onclick="editDrawing(${drawing.id})" class="p-2 hover:bg-zinc-700 rounded-xl text-zinc-400 hover:text-white">
-                                    <i class="fa-solid fa-edit"></i>
-                                </button>
-                                <button onclick="deleteDrawing(${drawing.id})" class="p-2 hover:bg-zinc-700 rounded-xl text-zinc-400 hover:text-red-400">
-                                    <i class="fa-solid fa-trash"></i>
-                                </button>
-                            </div>
-                        </td>
-                    `;
-                    tbody.appendChild(row);
-                });
-            }
-
-            function showUploadDrawingModal() {
-                document.getElementById('uploadDrawingModal').showModal();
-            }
-
-            function uploadDrawing(e) {
-                e.preventDefault();
-
-                const newDrawing = {
-                    id: Date.now(),
-                    number: document.getElementById('drawing_number').value,
-                    title: document.getElementById('drawing_title').value,
-                    discipline: document.getElementById('discipline').value,
-                    revision: document.getElementById('revision').value,
-                    date: new Date().toISOString().split('T')[0],
-                    status: "For Review"
-                };
-
-                drawings.unshift(newDrawing);
-                renderDrawingsTable(drawings);
-                document.getElementById('uploadDrawingModal').close();
-                e.target.reset();
-            }
-
-            function viewDrawing(id) {
-                const drawing = drawings.find(d => d.id === id);
-                if (!drawing) return;
-                alert(`Opening drawing: ${drawing.number} - ${drawing.title}\n\n(Drawing viewer with markup tools will be added in a future update.)`);
-            }
-
-            function editDrawing(id) {
-                const drawing = drawings.find(d => d.id === id);
-                if (!drawing) return;
-
-                // Simple edit for now - can be expanded later
-                const newRevision = prompt(`Update revision for ${drawing.number}`, drawing.revision);
-                if (newRevision !== null) {
-                    drawing.revision = newRevision;
-                    renderDrawingsTable(drawings);
-                }
-            }
-
-            function deleteDrawing(id) {
-                if (!confirm('Delete this drawing?')) return;
-                drawings = drawings.filter(d => d.id !== id);
-                renderDrawingsTable(drawings);
-            }
-
-            function initializeDrawings() {
-                renderDrawingsTable(drawings);
-            }
-
-            // Initialize on load
-            window.onload = function() {
-                initializeDrawings();
-            };
-        </script>
+<!-- TOP 10 SOFTWARE FEATURE REFERENCE (in-page guide) -->
+<details class="fixed bottom-12 right-4 z-50 max-w-sm no-print">
+    <summary class="text-[10px] px-3 py-1.5 bg-zinc-800 border border-zinc-700 rounded-full cursor-pointer text-zinc-400 hover:text-white">Drawing software feature map</summary>
+    <div class="mt-2 p-3 bg-zinc-900 border border-zinc-700 rounded-md text-[10px] text-zinc-400 max-h-64 overflow-auto shadow-xl">
+        <p class="text-zinc-300 font-medium mb-2">Top platforms &amp; capabilities included or planned:</p>
+        <ul class="space-y-1 list-disc pl-4">
+            <li><strong class="text-zinc-300">Procore</strong> — OCR sheet IDs, revision history, substitute sets, compare/overlay, markup layers, RFI links</li>
+            <li><strong class="text-zinc-300">Bluebeam Revu</strong> — PDF markup, measure/takeoff, overlays, Studio sessions, batch processing</li>
+            <li><strong class="text-zinc-300">Autodesk ACC</strong> — sheet versioning, issue pins, 2D/3D coordination, audit trails</li>
+            <li><strong class="text-zinc-300">PlanGrid/Autodesk Build</strong> — field sheet access, hyperlinked sets, task/issue pins on sheets</li>
+            <li><strong class="text-zinc-300">Fieldwire</strong> — current-set control, mobile markup, task linking on drawings</li>
+            <li><strong class="text-zinc-300">Viewpoint/Trimble</strong> — drawing log, transmittals, revision registers</li>
+            <li><strong class="text-zinc-300">e-Builder</strong> — document sets, approval workflows, revision tracking</li>
+            <li><strong class="text-zinc-300">Newforma</strong> — project correspondence + drawing issue tracking</li>
+            <li><strong class="text-zinc-300">Aconex/Oracle</strong> — transmittals, revision matrices, controlled distribution</li>
+            <li><strong class="text-zinc-300">BIM 360/ACC</strong> — sheet extraction from models, version compare, clash/issue linking</li>
+        </ul>
+    </div>
+</details>
 
 {% endblock %}
-
-</div>
-</div>
