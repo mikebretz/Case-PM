@@ -489,7 +489,12 @@ def _sheet_candidates_from_text(text: str, position_score: float = 0.5) -> list[
 
 def extract_title_block_metadata(pdf_path: str, page_index: int = 0) -> dict:
     """Spatial title-block analysis (sheet #, title, revision, date)."""
-    result = {
+    try:
+        from title_block_analyzer import analyze_title_block
+        return analyze_title_block(pdf_path, page_index)
+    except Exception:
+        pass
+    return {
         'sheet_number': None,
         'title': '',
         'revision': None,
@@ -497,126 +502,22 @@ def extract_title_block_metadata(pdf_path: str, page_index: int = 0) -> dict:
         'method': 'none',
         'text_preview': '',
     }
-    try:
-        import fitz
-        doc = fitz.open(pdf_path)
-        if page_index >= len(doc):
-            doc.close()
-            return result
-        page = doc[page_index]
-        rect = page.rect
-        page_w, page_h = rect.width, rect.height
-        embedded = page.get_text('text') or page.get_text() or ''
-        words = page.get_text('words') or []
-        tb_lines = _build_title_block_lines(words, page_h)
-
-        sheet_scores: list[tuple[float, str]] = []
-
-        for item in words:
-            if len(item) < 5:
-                continue
-            x0, y0, x1, y1, word = float(item[0]), float(item[1]), float(item[2]), float(item[3]), str(item[4])
-            text = word.strip()
-            if not text:
-                continue
-            in_title_block = y0 >= page_h * 0.62 or (x0 >= page_w * 0.48 and y0 >= page_h * 0.5)
-            if not in_title_block:
-                continue
-            pos = _score_title_block_position(x0, y0, page_w, page_h)
-            sheet_scores.extend(_sheet_candidates_from_text(text, pos))
-
-        # Combine adjacent words on same line in title block for sheet numbers like "A - 101"
-        by_line: dict[tuple[int, int], list] = {}
-        for item in words:
-            if len(item) < 8:
-                continue
-            x0, y0, blk, ln, word = float(item[0]), float(item[1]), int(item[5]), int(item[6]), str(item[4])
-            if y0 < page_h * 0.58:
-                continue
-            by_line.setdefault((blk, ln), []).append((x0, word))
-        for parts in by_line.values():
-            parts.sort(key=lambda p: p[0])
-            joined = ' '.join(p[1] for p in parts)
-            pos = _score_title_block_position(parts[0][0], page_h * 0.85, page_w, page_h)
-            sheet_scores.extend(_sheet_candidates_from_text(joined, pos + 0.15))
-
-        for ln in tb_lines:
-            pos = _score_title_block_position(ln['x'], ln['y'], page_w, page_h)
-            sheet_scores.extend(_sheet_candidates_from_text(ln['text'], pos + 0.12))
-
-        labeled_sheet = _extract_sheet_number_from_lines(tb_lines, page_w, page_h)
-        if labeled_sheet:
-            sheet_scores.append((1.05, labeled_sheet))
-
-        for line in list(embedded.splitlines()[:30]) + list(reversed(embedded.splitlines()[-80:])):
-            sheet_scores.extend(_sheet_candidates_from_text(line, 0.72))
-
-        if sheet_scores:
-            sheet_scores.sort(key=lambda t: t[0], reverse=True)
-            result['sheet_number'] = sheet_scores[0][1]
-            result['method'] = 'layout'
-
-        result['revision'] = _extract_revision_from_lines(tb_lines, embedded)
-        result['drawing_name'] = _extract_drawing_title_from_lines(tb_lines, result['sheet_number'], embedded)
-        result['title'] = result['drawing_name']
-        if not result['title']:
-            result['title'] = extract_drawing_name_from_text(embedded, result['sheet_number'])
-            result['drawing_name'] = result['title']
-
-        scale = extract_scale_from_text(embedded)
-        if scale:
-            result['scale'] = scale
-
-        result['drawing_date'] = extract_drawing_date_from_text(embedded)
-        result['text_preview'] = embedded[:400]
-        doc.close()
-        ocr_text = ocr_title_block_regions(pdf_path, page_index)
-        result = _merge_title_block_from_ocr(result, ocr_text, embedded)
-    except Exception:
-        pass
-    return result
 
 
 def ocr_title_block_regions(pdf_path: str, page_index: int = 0) -> str:
     """High-DPI OCR on common title-block regions."""
-    ocr_chunks = []
     try:
-        import fitz
-        import io
-        from PIL import Image
-        import pytesseract
-    except ImportError:
-        return ''
-
-    try:
-        doc = fitz.open(pdf_path)
-        if page_index >= len(doc):
-            doc.close()
-            return ''
-        page = doc[page_index]
-        rect = page.rect
-        clips = [
-            fitz.Rect(rect.width * 0.52, rect.height * 0.76, rect.width * 0.98, rect.height * 0.86),
-            fitz.Rect(rect.width * 0.55, rect.height * 0.72, rect.width * 0.98, rect.height * 0.90),
-            fitz.Rect(rect.width * 0.5, rect.height * 0.68, rect.width, rect.height),
-            fitz.Rect(rect.width * 0.62, rect.height * 0.55, rect.width, rect.height),
-            fitz.Rect(0, rect.height * 0.72, rect.width * 0.42, rect.height),
-            fitz.Rect(rect.width * 0.3, rect.height * 0.62, rect.width, rect.height),
-            fitz.Rect(0, rect.height * 0.55, rect.width, rect.height),
-        ]
-        for clip in clips:
-            try:
-                pix = page.get_pixmap(matrix=fitz.Matrix(3.5, 3.5), clip=clip, alpha=False)
-                img = Image.open(io.BytesIO(pix.tobytes('png')))
-                chunk = pytesseract.image_to_string(img, config='--psm 6') or ''
-                if chunk.strip():
-                    ocr_chunks.append(chunk)
-            except Exception:
-                continue
-        doc.close()
+        from title_block_analyzer import ocr_title_block_fields
+        fields = ocr_title_block_fields(pdf_path, page_index)
+        return '\n'.join(filter(None, [
+            fields.get('sheet_number', ''),
+            fields.get('drawing_name', ''),
+            fields.get('revision', ''),
+            fields.get('full', ''),
+        ]))
     except Exception:
         pass
-    return '\n'.join(ocr_chunks)
+    return ''
 
 
 def resolve_drawing_file_path(file_path: str | None, upload_root: str | None = None) -> str | None:
@@ -869,9 +770,11 @@ def analyze_pdf_page(pdf_path: str, page_index: int = 0, from_combined_set: bool
         pdf_path, source_filename, text, page_index, from_combined_set=from_combined_set,
     )
 
-    if layout.get('sheet_number') and (not sheet or layout.get('method') == 'layout'):
-        sheet = layout['sheet_number']
-        method = layout.get('method') or method
+    if layout.get('sheet_number'):
+        layout_conf = (layout.get('confidence') or {}).get('sheet', 0)
+        if not sheet or layout_conf >= 0.7 or layout.get('method') in ('layout', 'ocr', 'heuristic'):
+            sheet = layout['sheet_number']
+            method = layout.get('method') or method
 
     if not sheet:
         ocr_sheet, ocr_text = ocr_extract_sheet_from_pdf(pdf_path, page_index)
@@ -885,7 +788,10 @@ def analyze_pdf_page(pdf_path: str, page_index: int = 0, from_combined_set: bool
     elif not revision:
         revision = extract_revision_from_text(full_text or text or layout.get('text_preview', ''))
 
-    title = layout.get('drawing_name') or layout.get('title') or extract_drawing_name_from_text(full_text or text or '', sheet)
+    title = layout.get('drawing_name') or layout.get('title') or ''
+    name_conf = (layout.get('confidence') or {}).get('name', 0)
+    if not title or (name_conf < 0.5 and len(title) < 4):
+        title = extract_drawing_name_from_text(full_text or text or '', sheet) or title
     drawing_date = layout.get('drawing_date') or extract_drawing_date_from_text(full_text or text or '')
     scale = layout.get('scale') or extract_scale_from_text(full_text or text or '')
     ocr_text = ocr_title_block_regions(pdf_path, page_index)
@@ -915,6 +821,7 @@ def analyze_pdf_page(pdf_path: str, page_index: int = 0, from_combined_set: bool
         'scale': scale,
         'discipline': discipline_from_sheet(sheet) if sheet else None,
         'detection_method': method,
+        'detection_confidence': layout.get('confidence') or {},
         'text_preview': (full_text or text or layout.get('text_preview') or '')[:240],
     }
 
@@ -1012,23 +919,78 @@ def extract_title_from_text(text: str, sheet_number: str | None) -> str:
     return extract_drawing_name_from_text(text, sheet_number)
 
 
-def prepare_upload_pages(source_path: str, batch_dir: str) -> list[dict]:
-    """Split a PDF into individual page files for import (always attempts split)."""
+def _count_pdf_pages_fitz(source_path: str) -> int:
+    try:
+        import fitz
+        doc = fitz.open(source_path)
+        n = len(doc)
+        doc.close()
+        return n
+    except Exception:
+        return 0
+
+
+def _count_pdf_pages_pypdf(source_path: str) -> int:
+    try:
+        from pypdf import PdfReader
+        return len(PdfReader(source_path).pages)
+    except Exception:
+        return 0
+
+
+def prepare_upload_pages(source_path: str, batch_dir: str) -> dict:
+    """Split a PDF into individual page files for import (always attempts split).
+
+    Returns {'pages': [...], 'expected_page_count': int, 'split_engine': str, 'warnings': [...]}.
+    """
     ensure_drawing_dependencies()
     os.makedirs(batch_dir, exist_ok=True)
-    expected_pages = count_pdf_pages(source_path)
-    pages = split_pdf_to_pages(source_path, batch_dir)
-    if expected_pages > 1 and len(pages) <= 1:
-        pages = split_pdf_to_pages_pypdf(source_path, batch_dir)
-    if pages:
-        return pages
-    text = extract_pdf_page_text(source_path, 0)
-    return [{
-        'page_index': 0,
-        'file_path': source_path,
-        'filename': os.path.basename(source_path),
-        'text': text,
-    }]
+    fitz_count = _count_pdf_pages_fitz(source_path)
+    pypdf_count = _count_pdf_pages_pypdf(source_path)
+    expected_pages = max(fitz_count, pypdf_count, 1)
+    warnings: list[str] = []
+    split_engine = 'pymupdf'
+
+    pages_fitz = split_pdf_to_pages(source_path, batch_dir) if fitz_count else []
+    pages_pypdf = []
+    if pypdf_count and (expected_pages > 1 and len(pages_fitz) < expected_pages or not pages_fitz):
+        pages_pypdf = split_pdf_to_pages_pypdf(source_path, batch_dir)
+
+    if len(pages_pypdf) > len(pages_fitz):
+        pages = pages_pypdf
+        split_engine = 'pypdf'
+        if fitz_count and fitz_count < pypdf_count:
+            warnings.append(
+                f'PyMuPDF reported {fitz_count} pages but pypdf found {pypdf_count}; used pypdf split.'
+            )
+    else:
+        pages = pages_fitz or pages_pypdf
+        split_engine = 'pymupdf' if pages is pages_fitz and pages_fitz else 'pypdf'
+
+    if expected_pages > 1 and len(pages) < expected_pages:
+        warnings.append(
+            f'Expected {expected_pages} pages but split produced {len(pages)} — some sheets may be missing.'
+        )
+
+    if not pages:
+        text = extract_pdf_page_text(source_path, 0)
+        pages = [{
+            'page_index': 0,
+            'file_path': source_path,
+            'filename': os.path.basename(source_path),
+            'text': text,
+        }]
+        split_engine = 'single'
+
+    for page in pages:
+        page['split_engine'] = split_engine
+
+    return {
+        'pages': pages,
+        'expected_page_count': expected_pages,
+        'split_engine': split_engine,
+        'warnings': warnings,
+    }
 
 
 def count_pdf_pages(source_path: str) -> int:
@@ -1288,6 +1250,7 @@ def upsert_drawing_from_upload(
     notes='',
     sheet_revision=None,
     status='Current',
+    force_new=False,
 ):
     """Create or revise a drawing sheet from an uploaded page."""
     sheet_number = normalize_sheet_number(sheet_number) or sheet_number
@@ -1296,7 +1259,7 @@ def upsert_drawing_from_upload(
     if file_path:
         file_path = resolve_drawing_file_path(file_path) or os.path.abspath(file_path)
 
-    drawing = Drawing.query.filter_by(project_id=project_id, sheet_number=sheet_number).first()
+    drawing = None if force_new else Drawing.query.filter_by(project_id=project_id, sheet_number=sheet_number).first()
     now = datetime.utcnow()
     old_rev = None
     sheet_status = status or 'Current'
@@ -1409,12 +1372,18 @@ def process_pages_from_upload(
             })
 
         if from_combined_set:
-            key = sheet_number
-            if key in batch_assigned:
+            base_key = sheet_number
+            if base_key in batch_assigned:
                 sheet_number = f'{sheet_number}-P{page["page_index"] + 1:03d}'
-            batch_assigned.add(sheet_number)
 
         sheet_number = ensure_unique_sheet_number(Drawing, project_id, sheet_number)
+
+        if from_combined_set:
+            while sheet_number in batch_assigned:
+                sheet_number = ensure_unique_sheet_number(
+                    Drawing, project_id, f'{base_key}-P{page["page_index"] + 1:03d}',
+                )
+            batch_assigned.add(sheet_number)
         page_text = page.get('text') or meta.get('text_preview') or ''
         title = manual_title or meta.get('drawing_name') or meta.get('title') or extract_drawing_name_from_text(page_text, sheet_number)
         if sheet_status == 'For Review' and not title:
@@ -1435,6 +1404,7 @@ def process_pages_from_upload(
             notes=f'Page {page["page_index"] + 1} of {original_filename}' if from_combined_set else '',
             sheet_revision=meta.get('revision'),
             status=sheet_status,
+            force_new=from_combined_set,
         )
         created.append({
             'id': drawing.id,

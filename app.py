@@ -2929,7 +2929,11 @@ def api_upload_drawing():
         file.save(dest)
 
         batch_dir = os.path.join(folder, f'set_{ts}')
-        pages = prepare_upload_pages(dest, batch_dir)
+        split_result = prepare_upload_pages(dest, batch_dir)
+        pages = split_result['pages']
+        split_warnings = split_result.get('warnings') or []
+        expected_page_count = split_result.get('expected_page_count', len(pages))
+        split_engine = split_result.get('split_engine', 'unknown')
 
         if not pages:
             return jsonify({'error': 'Could not read PDF pages. The file may be corrupt or password-protected.'}), 400
@@ -2962,6 +2966,9 @@ def api_upload_drawing():
             'ok': True,
             'split': from_combined_set,
             'page_count': len(pages),
+            'expected_page_count': expected_page_count,
+            'split_engine': split_engine,
+            'warnings': split_warnings,
             'created_count': len(created),
             'needs_review_count': len(needs_review),
             'needs_review': needs_review,

@@ -399,13 +399,13 @@
 </div>
 
 <!-- UPLOAD MODAL -->
-<dialog id="uploadDrawingModal" class="modal rounded-md w-full max-w-lg p-0 text-white" style="background:#18181b;border:1px solid #3f3f46;">
+<dialog id="uploadDrawingModal" class="modal rounded-md w-full max-w-xl p-0 text-white" style="background:#18181b;border:1px solid #3f3f46;">
     <form class="p-6" onsubmit="CasePMDrawings.submitUpload(event)">
-        <div class="flex justify-between items-center mb-4">
+        <div class="casepm-drag-handle flex justify-between items-center mb-4 cursor-move select-none">
             <h2 class="text-lg font-semibold">Upload Drawings</h2>
-            <button type="button" onclick="document.getElementById('uploadDrawingModal').close()" class="text-zinc-400 hover:text-white text-2xl">&times;</button>
+            <button type="button" onclick="document.getElementById('uploadDrawingModal').close()" class="text-zinc-400 hover:text-white text-2xl cursor-pointer">&times;</button>
         </div>
-        <p class="text-xs text-zinc-400 mb-4">Upload a single sheet or a full drawing set PDF — multi-page files are split automatically. Each page is analyzed for <strong>sheet number</strong> and <strong>drawing name</strong> from the title block (the name above the sheet number). Pages that can't be read get a provisional number (filter <strong>For Review</strong> to fix them).</p>
+        <p class="text-xs text-zinc-400 mb-4">Upload a single sheet or a full drawing set PDF — multi-page files are split automatically. Each page is analyzed for <strong>sheet number</strong> and <strong>drawing name</strong> from the title block. Pages that can't be read get a provisional number (filter <strong>For Review</strong> to fix them).</p>
         <div class="space-y-3 text-sm">
             <div>
                 <label class="block text-zinc-400 mb-1">Drawing Set Name</label>
@@ -419,7 +419,17 @@
             </div>
             <div>
                 <label class="block text-zinc-400 mb-1">PDF File</label>
-                <input type="file" id="uploadFile" accept=".pdf,application/pdf" required class="w-full text-xs">
+                <div class="flex gap-3 items-stretch">
+                    <div id="uploadModalDropZone" class="flex-1 min-h-[88px] border-2 border-dashed border-zinc-600 hover:border-sky-500 rounded-md flex flex-col items-center justify-center text-center px-3 py-3 cursor-pointer transition-colors bg-zinc-900/40">
+                        <i class="fa-solid fa-file-pdf text-sky-400 text-lg mb-1"></i>
+                        <span class="text-xs text-zinc-300">Drop PDF here</span>
+                        <span id="uploadDropFileName" class="text-[10px] text-zinc-500 mt-1 truncate max-w-full"></span>
+                    </div>
+                    <div class="flex flex-col justify-center gap-2 shrink-0">
+                        <label for="uploadFile" class="px-3 py-2 bg-zinc-800 hover:bg-zinc-700 border border-zinc-600 rounded-md text-xs font-medium text-center cursor-pointer whitespace-nowrap">Choose File</label>
+                        <input type="file" id="uploadFile" accept=".pdf,application/pdf" required class="sr-only">
+                    </div>
+                </div>
             </div>
         </div>
         <div class="flex gap-2 mt-5">
