@@ -48,11 +48,11 @@ TITLE_BLOCK_X0_RATIO = 0.40
 TITLE_BLOCK_Y0_RATIO = 0.48
 
 DRAWING_NUMBER_VALUE_RE = re.compile(
-    r'^([A-Z]{1,3})-(\d{1,4})([A-Za-z])?$',
+    r'^([A-Z]{1,4})-(\d{1,4})([A-Za-z])?$',
     re.I,
 )
 DRAWING_NUMBER_LOOSE_RE = re.compile(
-    r'\b([A-Z]{1,3})\s*-\s*(\d{1,4})([A-Za-z])?\b',
+    r'\b([A-Z]{1,4})\s*-\s*(\d{1,4})([A-Za-z])?\b',
     re.I,
 )
 CSI_SHEET_IN_CELL_RE = re.compile(r'^([A-Z]{1,3})-(\d{1,2})\.(\d{2})$', re.I)
@@ -67,6 +67,14 @@ SHEET_NO_LABEL_RE = re.compile(
 )
 DRAWING_NAME_LABEL_RE = re.compile(
     r'^drawing\s*name\s*:?\s*$',
+    re.I,
+)
+PAGE_NAME_LABEL_RE = re.compile(
+    r'^(?:page|sheet)\s*name\s*:?\s*$',
+    re.I,
+)
+PAGE_NO_LABEL_RE = re.compile(
+    r'^(?:page|sheet)\s*(?:no\.?|num(?:ber)?)\s*:?\s*$',
     re.I,
 )
 PROJECT_NO_LABEL_RE = re.compile(
@@ -95,6 +103,7 @@ NOTE_FRAGMENT_RE = re.compile(
     re.I,
 )
 PROJECT_NUMBER_VALUE_RE = re.compile(r'^[A-Z0-9][A-Z0-9\-./]{2,24}$', re.I)
+DOTTED_PROJECT_NO_RE = re.compile(r'^\d{4}\.\d{3,5}$')
 WORK_TYPE_VALUE_RE = re.compile(
     r'^(?:RETROFIT|NEW(?:\s+CONSTRUCTION)?|RENOVATION|ADDITION|TI|BUILD[- ]?OUT|TENANT(?:\s+IMPROVEMENT)?|'
     r'COMMERCIAL|RESIDENTIAL|ALTERATION|DEMOLITION|REPAIR)$',
@@ -125,6 +134,14 @@ class WordSpan:
     @property
     def height(self) -> float:
         return max(1.0, self.y1 - self.y0)
+
+
+@dataclass
+class LabelAnchor:
+    kind: str
+    line_idx: int
+    line: 'TextLine'
+    value_direction: str  # 'above' or 'below'
 
 
 @dataclass
@@ -295,9 +312,9 @@ def _classify_bottom_label(text: str) -> str | None:
     t = text.strip()
     if not t:
         return None
-    if DRAWING_NO_LABEL_RE.match(t) or SHEET_NO_LABEL_RE.match(t):
+    if DRAWING_NO_LABEL_RE.match(t) or SHEET_NO_LABEL_RE.match(t) or PAGE_NO_LABEL_RE.match(t):
         return 'drawing_number'
-    if DRAWING_NAME_LABEL_RE.match(t):
+    if DRAWING_NAME_LABEL_RE.match(t) or PAGE_NAME_LABEL_RE.match(t):
         return 'drawing_name'
     if PROJECT_NO_LABEL_RE.match(t):
         return 'project_number'
@@ -623,6 +640,189 @@ def _build_title_block(page) -> tuple[float, float, list[LabeledCell]]:
     return page_w, page_h, cells
 
 
+def _is_project_number_value(text: str) -> bool:
+    t = text.strip().replace(' ', '')
+    return bool(DOTTED_PROJECT_NO_RE.match(t))
+
+
+def _detect_label_anchors(lines: list[TextLine]) -> list[LabelAnchor]:
+    """Find drawing/page name and number labels anywhere in the title block."""
+    anchors: list[LabelAnchor] = []
+    for i, ln in enumerate(lines):
+        t = ln.text.strip()
+        if not t:
+            continue
+        lower = t.lower()
+        if (
+            DRAWING_NAME_LABEL_RE.match(t)
+            or PAGE_NAME_LABEL_RE.match(t)
+            or re.search(r'^(?:drawing|sheet|page)\s*name\b', lower)
+        ):
+            anchors.append(LabelAnchor('drawing_name', i, ln, 'above'))
+        elif (
+            DRAWING_NO_LABEL_RE.match(t)
+            or SHEET_NO_LABEL_RE.match(t)
+            or PAGE_NO_LABEL_RE.match(t)
+            or re.search(r'^(?:drawing|sheet|page|dwg|sht)\s*(?:no|num|number)\.?\s*:?\s*$', lower)
+        ):
+            anchors.append(LabelAnchor('drawing_number', i, ln, 'above'))
+        elif PROJECT_NO_LABEL_RE.match(t) or re.search(r'^(?:project|job)\s*(?:no|num|number)\.?\s*:?\s*$', lower):
+            anchors.append(LabelAnchor('project_number', i, ln, 'below'))
+    return anchors
+
+
+def _horizontal_alignment(anchor: TextLine, candidate: TextLine, page_w: float, kind: str) -> float:
+    overlap = min(anchor.x1, candidate.x1) - max(anchor.x0, candidate.x0)
+    if kind == 'drawing_name':
+        if overlap > 0:
+            return 1.0
+        if abs(candidate.cx - anchor.cx) <= page_w * 0.28:
+            return 0.85
+        if candidate.cx >= anchor.x0 - page_w * 0.08:
+            return 0.55
+        return 0.15
+    if overlap > 0:
+        return 1.0
+    if abs(candidate.cx - anchor.cx) <= page_w * 0.14:
+        return 0.9
+    return 0.2
+
+
+def _is_label_line(text: str) -> bool:
+    t = text.strip()
+    if not t:
+        return True
+    return bool(
+        _classify_bottom_label(t)
+        or _classify_top_label(t)
+        or METADATA_INLINE_RE.match(t)
+        or TYPE_INLINE_RE.match(t)
+    )
+
+
+def _large_text_near_label(
+    lines: list[TextLine],
+    anchor: LabelAnchor,
+    page_w: float,
+    med_size: float,
+    *,
+    max_lines: int = 6,
+    max_gap: float = 32.0,
+) -> str:
+    """Collect the largest text line(s) adjacent to a label anchor."""
+    idx = anchor.line_idx
+    direction = anchor.value_direction
+    anchor_ln = anchor.line
+    collected: list[tuple[float, float, TextLine]] = []
+
+    if direction == 'above':
+        indices = range(idx - 1, max(-1, idx - max_lines - 1), -1)
+        edge = anchor_ln.y0
+    else:
+        indices = range(idx + 1, min(len(lines), idx + max_lines + 1))
+        edge = anchor_ln.y1
+
+    for j in indices:
+        ln = lines[j]
+        if _is_label_line(ln.text):
+            break
+        if _is_metadata_value(ln.text):
+            continue
+        gap = abs(edge - (ln.y1 if direction == 'above' else ln.y0))
+        if collected and gap > max_gap:
+            break
+        size = ln.font_size or ln.height
+        align = _horizontal_alignment(anchor_ln, ln, page_w, anchor.kind)
+        if align < 0.2:
+            continue
+        if anchor.kind == 'drawing_number' and _is_project_number_value(ln.text):
+            continue
+        if anchor.kind == 'drawing_number':
+            maybe = _normalize_drawing_number(ln.text)
+            if not maybe and size < med_size * 0.9:
+                continue
+        if anchor.kind == 'drawing_name' and not _is_plausible_drawing_title(ln.text, None):
+            if size < med_size * 1.1:
+                continue
+        collected.append((align, size, ln))
+        edge = ln.y0 if direction == 'above' else ln.y1
+
+    if not collected:
+        return ''
+
+    collected.sort(key=lambda t: t[2].y0)
+    if anchor.kind == 'drawing_number':
+        best = max(collected, key=lambda t: (t[1], t[0]))
+        return best[2].text.strip()
+    return ' '.join(t[2].text.strip() for t in collected).strip()
+
+
+def _extract_by_label_proximity(
+    lines: list[TextLine],
+    page_w: float,
+    page_h: float,
+    med_size: float,
+) -> dict[str, Any]:
+    """Primary extraction: nearest large text to drawing/page name & number labels."""
+    out: dict[str, Any] = {
+        'sheet_number': None,
+        'drawing_name': '',
+        'project_number': None,
+        'confidence': {'sheet': 0.0, 'name': 0.0, 'project': 0.0},
+    }
+    if not lines:
+        return out
+
+    anchors = _detect_label_anchors(lines)
+    sheet_scores: list[tuple[float, str]] = []
+    name_scores: list[tuple[float, str]] = []
+
+    for anchor in anchors:
+        value = _large_text_near_label(lines, anchor, page_w, med_size)
+        if not value:
+            continue
+        if anchor.kind == 'drawing_number':
+            sheet = _normalize_drawing_number(value)
+            if sheet and not _is_project_number_value(value):
+                pos = (anchor.line.cy / page_h) * 0.55 + (anchor.line.cx / page_w) * 0.45
+                size = anchor.line.font_size or anchor.line.height
+                score = 3.2 + pos + size * 0.03
+                sheet_scores.append((score, sheet))
+        elif anchor.kind == 'drawing_name':
+            if _is_plausible_drawing_title(value, None):
+                pos = 1.0 - (anchor.line.cy / page_h) * 0.35
+                best_size = max((ln.font_size or ln.height) for ln in lines[max(0, anchor.line_idx - 4):anchor.line_idx] or [anchor.line])
+                name_scores.append((2.8 + pos + best_size * 0.02, value))
+        elif anchor.kind == 'project_number':
+            if _is_plausible_project_number(value):
+                out['project_number'] = value.strip().upper()
+                out['confidence']['project'] = 1.5
+
+    if sheet_scores:
+        sheet_scores.sort(key=lambda t: t[0], reverse=True)
+        out['sheet_number'] = sheet_scores[0][1]
+        out['confidence']['sheet'] = sheet_scores[0][0]
+
+    if name_scores:
+        name_scores.sort(key=lambda t: t[0], reverse=True)
+        out['drawing_name'] = name_scores[0][1][:200]
+        out['confidence']['name'] = name_scores[0][0]
+
+    return out
+
+
+def _title_block_lines_from_page(page) -> tuple[float, float, list[TextLine], float]:
+    page_w, page_h = page.rect.width, page.rect.height
+    words = _words_from_page(page)
+    tb_x0 = page_w * TITLE_BLOCK_X0_RATIO
+    tb_words = [w for w in words if w.cx >= tb_x0 and w.cy >= page_h * TITLE_BLOCK_Y0_RATIO]
+    med_h = _median_height(tb_words) if tb_words else 8.0
+    med_size = _median_font_size(tb_words) if tb_words else med_h
+    y_tol = max(2.5, med_h * 0.42)
+    lines = _cluster_words_into_lines(tb_words, y_tol)
+    return page_w, page_h, lines, med_size
+
+
 def _normalize_drawing_number(raw: str) -> str | None:
     if not raw:
         return None
@@ -631,7 +831,7 @@ def _normalize_drawing_number(raw: str) -> str | None:
     if m:
         suffix = (m.group(3) or '').upper()
         sheet = f'{m.group(1).upper()}-{m.group(2)}' + (suffix if suffix else '')
-        if is_plausible_drawing_sheet(sheet) or re.match(r'^[A-Z]{1,3}-\d{1,4}[A-Z]?$', sheet):
+        if is_plausible_drawing_sheet(sheet) or re.match(r'^[A-Z]{1,4}-\d{1,4}[A-Za-z]?$', sheet):
             return sheet
     m = CSI_SHEET_IN_CELL_RE.match(compact)
     if m:
@@ -642,7 +842,7 @@ def _normalize_drawing_number(raw: str) -> str | None:
     if m:
         suffix = (m.group(3) or '').upper()
         sheet = f'{m.group(1).upper()}-{m.group(2)}' + (suffix if suffix else '')
-        if is_plausible_drawing_sheet(sheet) or re.match(r'^[A-Z]{1,3}-\d{1,4}[A-Z]?$', sheet):
+        if is_plausible_drawing_sheet(sheet) or re.match(r'^[A-Z]{1,4}-\d{1,4}[A-Za-z]?$', sheet):
             return sheet
     cand = normalize_sheet_number(compact)
     if cand and is_plausible_drawing_sheet(cand):
@@ -862,7 +1062,9 @@ def analyze_title_block_grid(pdf_path: str, page_index: int = 0) -> dict[str, An
             return result
         page = doc[page_index]
         embedded = page.get_text('text') or ''
+        page_w, page_h, tb_lines, med_size = _title_block_lines_from_page(page)
         page_w, page_h, cells = _build_title_block(page)
+        proximity = _extract_by_label_proximity(tb_lines, page_w, page_h, med_size)
         doc.close()
     except Exception:
         return result
@@ -879,34 +1081,41 @@ def analyze_title_block_grid(pdf_path: str, page_index: int = 0) -> dict[str, An
     result['grid_cells'] = len(cells)
 
     sheet_cell = _find_drawing_number_cell(cells, page_w, page_h)
-    final_sheet = None
-    sheet_conf = 0.0
+    final_sheet = proximity.get('sheet_number')
+    sheet_conf = float((proximity.get('confidence') or {}).get('sheet', 0))
     if sheet_cell:
-        final_sheet = _normalize_drawing_number(sheet_cell.value_text)
-        if final_sheet:
-            sheet_conf = 2.2 + sheet_cell.value_font_size * 0.04
+        cell_sheet = _normalize_drawing_number(sheet_cell.value_text)
+        cell_conf = 0.0
+        if cell_sheet:
+            cell_conf = 2.2 + sheet_cell.value_font_size * 0.04
             if sheet_cell.label_kind == 'drawing_number':
-                sheet_conf += 0.8
+                cell_conf += 0.8
+        if not final_sheet or cell_conf > sheet_conf:
+            final_sheet = cell_sheet
+            sheet_conf = cell_conf
 
     name_cell = _find_drawing_name_cell(cells, sheet_cell, page_w)
-    drawing_name = ''
-    name_conf = 0.0
+    drawing_name = (proximity.get('drawing_name') or '').strip()
+    name_conf = float((proximity.get('confidence') or {}).get('name', 0))
     if name_cell and name_cell.value_text:
         candidate = name_cell.value_text.strip()
         if _is_plausible_drawing_title(candidate, final_sheet):
-            drawing_name = candidate[:200]
-            name_conf = 2.0 + name_cell.value_font_size * 0.03
+            cell_conf = 2.0 + name_cell.value_font_size * 0.03
             if name_cell.label_kind == 'drawing_name':
-                name_conf += 0.8
+                cell_conf += 0.8
             if name_cell.column == 'full':
-                name_conf += 0.4
+                cell_conf += 0.4
+            if not drawing_name or cell_conf > name_conf:
+                drawing_name = candidate[:200]
+                name_conf = cell_conf
 
-    project_number = None
-    for cell in cells:
-        if cell.label_kind == 'project_number' and cell.value_text:
-            if _is_plausible_project_number(cell.value_text):
-                project_number = cell.value_text.strip().upper()
-                break
+    project_number = proximity.get('project_number')
+    if not project_number:
+        for cell in cells:
+            if cell.label_kind == 'project_number' and cell.value_text:
+                if _is_plausible_project_number(cell.value_text):
+                    project_number = cell.value_text.strip().upper()
+                    break
 
     revision = None
     for cell in cells:

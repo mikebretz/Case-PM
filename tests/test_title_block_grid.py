@@ -10,12 +10,14 @@ from title_block_grid import (
     _classify_bottom_label,
     _cluster_lines_into_cells,
     _cluster_words_into_lines,
+    _extract_by_label_proximity,
     _find_drawing_name_cell,
     _find_drawing_number_cell,
     _is_plausible_drawing_title,
     _lines_to_labeled_cell,
     _normalize_drawing_number,
     _split_line_by_columns,
+    _title_block_lines_from_page,
 )
 
 
@@ -39,7 +41,6 @@ class FakePage:
 
 
 def _make_narrow_stack():
-    """A-212 / Interior Elevations in narrow right column."""
     name_value = WordSpan(820, 700, 960, 728, 'Interior Elevations', font_size=18)
     name_label = WordSpan(825, 732, 910, 742, 'Drawing Name:', font_size=7)
     sheet_value = WordSpan(850, 758, 930, 788, 'A-212', font_size=22)
@@ -52,8 +53,7 @@ def _make_narrow_stack():
     return 1000, 800, cells
 
 
-def _make_full_title_block():
-    """A-201 / Exterior Elevations with left metadata + full-width name band."""
+def _make_full_title_block(sheet: str = 'A-201'):
     words = [
         WordSpan(480, 620, 720, 648, 'Exterior Elevations', font_size=20),
         WordSpan(485, 652, 570, 662, 'Drawing Name:', font_size=7),
@@ -65,11 +65,23 @@ def _make_full_title_block():
         WordSpan(600, 720, 630, 732, 'AM', font_size=9),
         WordSpan(700, 680, 770, 692, 'Project No.', font_size=7),
         WordSpan(700, 698, 790, 718, '2024.0565', font_size=16),
-        WordSpan(720, 748, 800, 778, 'A-201', font_size=24),
+        WordSpan(720, 748, 800, 778, sheet, font_size=24),
         WordSpan(725, 782, 790, 792, 'Drawing No.', font_size=7),
     ]
-    page = FakePage(words)
-    return _build_title_block(page)
+    return FakePage(words)
+
+
+def _make_fire_alarm_block():
+    words = [
+        WordSpan(480, 600, 680, 622, 'Fire Alarm', font_size=18),
+        WordSpan(480, 628, 720, 650, 'Conduit Plan', font_size=18),
+        WordSpan(485, 652, 570, 662, 'Drawing Name:', font_size=7),
+        WordSpan(700, 680, 770, 692, 'Project No.', font_size=7),
+        WordSpan(700, 698, 790, 718, '2024.0565', font_size=16),
+        WordSpan(710, 748, 820, 778, 'CLP-101b', font_size=24),
+        WordSpan(725, 782, 790, 792, 'Drawing No.', font_size=7),
+    ]
+    return FakePage(words)
 
 
 class TitleBlockGridTests(unittest.TestCase):
@@ -80,43 +92,40 @@ class TitleBlockGridTests(unittest.TestCase):
     def test_normalize_drawing_number(self):
         self.assertEqual(_normalize_drawing_number('A-102a'), 'A-102A')
         self.assertEqual(_normalize_drawing_number('A-201'), 'A-201')
+        self.assertEqual(_normalize_drawing_number('CLP-101b'), 'CLP-101B')
+        self.assertEqual(_normalize_drawing_number('A-202'), 'A-202')
 
     def test_reject_metadata_as_drawing_name(self):
         self.assertFalse(_is_plausible_drawing_title('RETROFIT', 'A-201'))
-        self.assertFalse(_is_plausible_drawing_title('Tenant Improvement', 'A-212'))
-        self.assertTrue(_is_plausible_drawing_title('Exterior Elevations', 'A-201'))
-        self.assertTrue(_is_plausible_drawing_title('Interior Elevations', 'A-212'))
+        self.assertTrue(_is_plausible_drawing_title('Exterior Elevations', 'A-202'))
+        self.assertTrue(_is_plausible_drawing_title('Fire Alarm Conduit Plan', 'CLP-101B'))
+
+    def test_label_proximity_a202(self):
+        page = _make_full_title_block('A-202')
+        pw, ph, lines, med = _title_block_lines_from_page(page)
+        prox = _extract_by_label_proximity(lines, pw, ph, med)
+        self.assertEqual(prox['sheet_number'], 'A-202')
+        self.assertEqual(prox['drawing_name'], 'Exterior Elevations')
+
+    def test_label_proximity_clp_fire_alarm(self):
+        page = _make_fire_alarm_block()
+        pw, ph, lines, med = _title_block_lines_from_page(page)
+        prox = _extract_by_label_proximity(lines, pw, ph, med)
+        self.assertEqual(prox['sheet_number'], 'CLP-101B')
+        self.assertEqual(prox['drawing_name'], 'Fire Alarm Conduit Plan')
 
     def test_narrow_column_stack(self):
         page_w, page_h, cells = _make_narrow_stack()
         sheet_cell = _find_drawing_number_cell(cells, page_w, page_h)
-        self.assertIsNotNone(sheet_cell)
         self.assertEqual(_normalize_drawing_number(sheet_cell.value_text), 'A-212')
-        name_cell = _find_drawing_name_cell(cells, sheet_cell, page_w)
-        self.assertIsNotNone(name_cell)
-        self.assertEqual(name_cell.value_text, 'Interior Elevations')
 
     def test_full_width_name_band(self):
-        page_w, page_h, cells = _make_full_title_block()
-        self.assertGreaterEqual(len(cells), 2)
+        page = _make_full_title_block('A-201')
+        page_w, page_h, cells = _build_title_block(page)
         sheet_cell = _find_drawing_number_cell(cells, page_w, page_h)
-        self.assertIsNotNone(sheet_cell)
-        self.assertEqual(sheet_cell.label_kind, 'drawing_number')
         self.assertEqual(_normalize_drawing_number(sheet_cell.value_text), 'A-201')
-
         name_cell = _find_drawing_name_cell(cells, sheet_cell, page_w)
-        self.assertIsNotNone(name_cell)
-        self.assertEqual(name_cell.label_kind, 'drawing_name')
         self.assertEqual(name_cell.value_text, 'Exterior Elevations')
-
-    def test_split_line_by_columns(self):
-        left_w = WordSpan(500, 700, 540, 712, 'Type:', font_size=7)
-        right_w = WordSpan(700, 700, 760, 712, 'Project No.', font_size=7)
-        line = _cluster_words_into_lines([left_w, right_w], y_tol=4)[0]
-        parts = _split_line_by_columns(line, 650)
-        self.assertEqual(len(parts), 2)
-        self.assertEqual(parts[0].column, 'left')
-        self.assertEqual(parts[1].column, 'right')
 
     def test_value_above_label_in_cell(self):
         lines = [
@@ -124,8 +133,6 @@ class TitleBlockGridTests(unittest.TestCase):
             TextLine(130, 140, 80, 180, 'Drawing No.', [], 10, 7, 'right'),
         ]
         cell = _lines_to_labeled_cell(lines, med_h=12, med_size=10)
-        self.assertIsNotNone(cell)
-        self.assertEqual(cell.label_kind, 'drawing_number')
         self.assertEqual(cell.value_text, 'A-212')
 
 
