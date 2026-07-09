@@ -2728,11 +2728,70 @@ def api_list_drawings():
     return jsonify({'drawings': items, 'sections': grouped})
 
 
-@app.route('/api/drawings/<int:drawing_id>', methods=['GET'])
+@app.route('/api/drawings/bulk-update', methods=['PATCH'])
+@login_required
+def api_bulk_update_drawings():
+    """Update multiple drawing sheet rows (spreadsheet-style batch save)."""
+    from drawing_persistence import update_drawing_metadata, drawing_to_dict, group_drawings_by_section
+    data = request.get_json(silent=True) or {}
+    updates = data.get('updates') or []
+    if not updates:
+        return jsonify({'error': 'updates required'}), 400
+    project_id = data.get('project_id') or get_current_project_id()
+    results = []
+    errors = []
+    for item in updates:
+        drawing_id = item.get('id')
+        if not drawing_id:
+            continue
+        drawing = Drawing.query.get(int(drawing_id))
+        if not drawing:
+            errors.append({'id': drawing_id, 'error': 'Not found'})
+            continue
+        if project_id and drawing.project_id != int(project_id):
+            errors.append({'id': drawing_id, 'error': 'Wrong project'})
+            continue
+        fields = {k: v for k, v in item.items() if k != 'id'}
+        if not fields:
+            continue
+        try:
+            drawing, rev, rev_count, markup_count = update_drawing_metadata(
+                db, Drawing, DrawingRevision, DrawingMarkup, drawing, fields,
+            )
+            results.append(drawing_to_dict(drawing, rev, rev_count, markup_count))
+        except ValueError as exc:
+            errors.append({'id': drawing_id, 'error': str(exc)})
+    if errors and not results:
+        db.session.rollback()
+        return jsonify({'error': errors[0]['error'], 'errors': errors}), 400
+    try:
+        db.session.commit()
+    except Exception as exc:
+        db.session.rollback()
+        return jsonify({'error': str(exc)}), 500
+    grouped = group_drawings_by_section(results) if results else {}
+    return jsonify({'ok': True, 'drawings': results, 'errors': errors, 'sections': grouped})
+
+
+@app.route('/api/drawings/<int:drawing_id>', methods=['GET', 'PUT'])
 @login_required
 def api_get_drawing(drawing_id):
-    from drawing_persistence import revision_to_dict, markup_to_dict
+    from drawing_persistence import revision_to_dict, markup_to_dict, update_drawing_metadata, drawing_to_dict
     drawing = Drawing.query.get_or_404(drawing_id)
+    if request.method == 'PUT':
+        body = request.get_json(silent=True) or {}
+        try:
+            drawing, rev, rev_count, markup_count = update_drawing_metadata(
+                db, Drawing, DrawingRevision, DrawingMarkup, drawing, body,
+            )
+            db.session.commit()
+            return jsonify({'ok': True, 'drawing': drawing_to_dict(drawing, rev, rev_count, markup_count)})
+        except ValueError as exc:
+            db.session.rollback()
+            return jsonify({'error': str(exc)}), 400
+        except Exception as exc:
+            db.session.rollback()
+            return jsonify({'error': str(exc)}), 500
     data = _serialize_drawing(drawing)
     revisions = DrawingRevision.query.filter_by(drawing_id=drawing.id).order_by(DrawingRevision.uploaded_at.desc()).all()
     data['revisions'] = [revision_to_dict(r) for r in revisions]

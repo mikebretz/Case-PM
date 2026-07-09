@@ -378,6 +378,8 @@
     deleting: false,
     selectionMode: false,
     selectedDrawingIds: new Set(),
+    sheetEditMode: false,
+    sheetPendingEdits: {},
     uploadLogTimer: null,
     penPoints: null,
     pathPoints: null,
@@ -909,6 +911,215 @@
 
   const SECTION_GRID_CLASS = 'flex-1 overflow-auto p-3 grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-2 content-start min-h-0';
 
+  const SHEET_EDIT_COLUMNS = [
+    'sheet_number', 'title', 'set_name', 'discipline', 'section_prefix',
+    'revision_label', 'drawing_date', 'status',
+  ];
+
+  const SHEET_STATUS_OPTIONS = ['Current', 'For Review', 'Superseded'];
+
+  function sheetCellValue(drawing, field) {
+    const pending = state.sheetPendingEdits[drawing.id];
+    if (pending && field in pending) return pending[field];
+    const val = drawing[field];
+    if (field === 'drawing_date' || field === 'received_date') {
+      if (!val) return '';
+      return String(val).slice(0, 10);
+    }
+    return val == null ? '' : String(val);
+  }
+
+  function isSheetCellDirty(drawingId, field) {
+    return state.sheetPendingEdits[drawingId] && field in state.sheetPendingEdits[drawingId];
+  }
+
+  function isSheetRowDirty(drawingId) {
+    const pending = state.sheetPendingEdits[drawingId];
+    return pending && Object.keys(pending).length > 0;
+  }
+
+  function setSheetCellValue(drawingId, field, value) {
+    const drawing = state.drawings.find(d => d.id === drawingId);
+    if (!drawing) return;
+    const original = drawing[field];
+    const norm = (v) => (v == null ? '' : String(v).trim());
+    if (norm(value) === norm(original)) {
+      if (state.sheetPendingEdits[drawingId]) {
+        delete state.sheetPendingEdits[drawingId][field];
+        if (!Object.keys(state.sheetPendingEdits[drawingId]).length) {
+          delete state.sheetPendingEdits[drawingId];
+        }
+      }
+    } else {
+      if (!state.sheetPendingEdits[drawingId]) state.sheetPendingEdits[drawingId] = {};
+      state.sheetPendingEdits[drawingId][field] = value;
+    }
+    updateSheetEditBar();
+    const row = document.querySelector(`#drawTableBody tr[data-drawing-id="${drawingId}"]`);
+    if (row) {
+      row.classList.toggle('draw-sheet-row-dirty', isSheetRowDirty(drawingId));
+      row.querySelectorAll('.draw-sheet-cell-input').forEach(inp => {
+        inp.classList.toggle('draw-sheet-cell-dirty', isSheetCellDirty(drawingId, inp.dataset.field));
+      });
+    }
+  }
+
+  function pendingSheetEditCount() {
+    let n = 0;
+    Object.values(state.sheetPendingEdits).forEach(fields => { n += Object.keys(fields).length; });
+    return n;
+  }
+
+  function updateSheetEditBar() {
+    const bar = document.getElementById('drawSheetEditBar');
+    const countEl = document.getElementById('drawSheetEditCount');
+    const panel = document.getElementById('drawPanelList');
+    const n = pendingSheetEditCount();
+    bar?.classList.toggle('hidden', !state.sheetEditMode);
+    panel?.classList.toggle('draw-sheet-edit-active', state.sheetEditMode);
+    if (countEl) {
+      countEl.textContent = n ? `${n} unsaved cell${n === 1 ? '' : 's'}` : 'No unsaved changes';
+    }
+    const btn = document.getElementById('btnSheetEditMode');
+    const lbl = document.getElementById('btnSheetEditModeLabel');
+    if (btn) {
+      btn.classList.toggle('bg-amber-700', state.sheetEditMode);
+      btn.classList.toggle('text-white', state.sheetEditMode);
+      btn.classList.toggle('bg-zinc-800', !state.sheetEditMode);
+      btn.classList.toggle('text-zinc-300', !state.sheetEditMode);
+    }
+    if (lbl) lbl.textContent = state.sheetEditMode ? 'Editing…' : 'Edit table';
+  }
+
+  function mergeDrawingUpdates(updated) {
+    (updated || []).forEach(d => {
+      const idx = state.drawings.findIndex(x => x.id === d.id);
+      if (idx >= 0) state.drawings[idx] = { ...state.drawings[idx], ...d };
+    });
+    const grouped = {};
+    state.drawings.forEach(d => {
+      const sec = d.section_prefix || 'OTHER';
+      if (!grouped[sec]) grouped[sec] = [];
+      grouped[sec].push(d);
+    });
+    Object.keys(grouped).forEach(sec => {
+      grouped[sec].sort((a, b) => String(a.sort_key || a.sheet_number).localeCompare(String(b.sort_key || b.sheet_number)));
+    });
+    state.sections = grouped;
+    renderSectionTabs();
+    populateSetFilter();
+  }
+
+  function toggleSheetEditMode(force) {
+    const next = force != null ? force : !state.sheetEditMode;
+    if (!next && pendingSheetEditCount()) {
+      drawConfirm('Discard unsaved sheet edits?', { title: 'Discard edits', danger: true, confirmLabel: 'Discard' }).then(ok => {
+        if (ok) {
+          state.sheetPendingEdits = {};
+          state.sheetEditMode = false;
+          updateSheetEditBar();
+          if (state.view !== 'list') switchView('list');
+          else renderTable();
+        }
+      });
+      return;
+    }
+    state.sheetEditMode = next;
+    if (state.sheetEditMode && state.view !== 'list') switchView('list');
+    updateSheetEditBar();
+    renderTable();
+    if (state.sheetEditMode) bindSheetTablePaste();
+  }
+
+  function discardSheetEdits() {
+    state.sheetPendingEdits = {};
+    updateSheetEditBar();
+    renderTable();
+    toast('Edits discarded');
+  }
+
+  async function saveSheetEdits() {
+    const updates = Object.entries(state.sheetPendingEdits).map(([id, fields]) => ({
+      id: parseInt(id, 10),
+      ...fields,
+    }));
+    if (!updates.length) {
+      toast('No changes to save');
+      return;
+    }
+    try {
+      const json = await api('/api/drawings/bulk-update', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ project_id: projectId(), updates }),
+      });
+      mergeDrawingUpdates(json.drawings);
+      state.sheetPendingEdits = {};
+      updateSheetEditBar();
+      renderActiveView();
+      if (json.errors?.length) {
+        toastError(`${json.errors.length} row(s) could not be saved`);
+      } else {
+        toast(`Saved ${json.drawings?.length || updates.length} sheet(s)`);
+      }
+    } catch (e) {
+      toastError(e.message || 'Could not save sheet edits');
+    }
+  }
+
+  function sheetCellInput(d, field) {
+    const val = esc(sheetCellValue(d, field));
+    const dirty = isSheetCellDirty(d.id, field) ? ' draw-sheet-cell-dirty' : '';
+    const mono = field === 'sheet_number' || field === 'section_prefix' ? ' font-mono' : '';
+    if (field === 'status') {
+      const opts = SHEET_STATUS_OPTIONS.map(s =>
+        `<option value="${s}" ${sheetCellValue(d, field) === s ? 'selected' : ''}>${s}</option>`
+      ).join('');
+      return `<select data-drawing-id="${d.id}" data-field="${field}" class="draw-sheet-cell-input${dirty}${mono}" onclick="event.stopPropagation()" onmousedown="event.stopPropagation()" onchange="CasePMDrawings.onSheetCellInput(this)">${opts}</select>`;
+    }
+    const type = field === 'drawing_date' ? 'date' : 'text';
+    return `<input type="${type}" value="${val}" data-drawing-id="${d.id}" data-field="${field}" class="draw-sheet-cell-input${dirty}${mono}" onclick="event.stopPropagation()" onmousedown="event.stopPropagation()" onchange="CasePMDrawings.onSheetCellInput(this)" oninput="CasePMDrawings.onSheetCellInput(this)">`;
+  }
+
+  function onSheetCellInput(el) {
+    const id = parseInt(el.dataset.drawingId, 10);
+    const field = el.dataset.field;
+    setSheetCellValue(id, field, el.value);
+  }
+
+  function bindSheetTablePaste() {
+    const tbody = document.getElementById('drawTableBody');
+    if (!tbody || tbody._pasteBound) return;
+    tbody._pasteBound = true;
+    tbody.addEventListener('paste', e => {
+      if (!state.sheetEditMode) return;
+      const target = e.target;
+      if (!target?.classList?.contains('draw-sheet-cell-input')) return;
+      const clip = e.clipboardData?.getData('text/plain');
+      if (!clip || (!clip.includes('\t') && !clip.includes('\n'))) return;
+      e.preventDefault();
+      const row = target.closest('tr[data-drawing-id]');
+      const rows = Array.from(document.querySelectorAll('#drawTableBody tr[data-drawing-id]'));
+      const startRow = rows.indexOf(row);
+      const startCol = SHEET_EDIT_COLUMNS.indexOf(target.dataset.field);
+      if (startRow < 0 || startCol < 0) return;
+      const lines = clip.replace(/\r\n/g, '\n').replace(/\r/g, '\n').trimEnd().split('\n');
+      lines.forEach((line, ri) => {
+        const tr = rows[startRow + ri];
+        if (!tr) return;
+        const id = parseInt(tr.dataset.drawingId, 10);
+        line.split('\t').forEach((cell, ci) => {
+          const field = SHEET_EDIT_COLUMNS[startCol + ci];
+          if (!field) return;
+          const v = cell.trim();
+          setSheetCellValue(id, field, v);
+          const inp = tr.querySelector(`[data-field="${field}"]`);
+          if (inp) inp.value = v;
+        });
+      });
+    });
+  }
+
   function renderSectionGrid() {
     const grid = document.getElementById('drawSectionGrid');
     if (!grid) return;
@@ -947,12 +1158,33 @@
   function renderTable() {
     const tbody = document.getElementById('drawTableBody');
     if (!tbody) return;
+    updateSheetEditBar();
     const rows = filteredDrawings();
     if (!rows.length) {
       tbody.innerHTML = '<tr><td colspan="11" class="px-6 py-12 text-center text-zinc-500">No drawings found.</td></tr>';
       return;
     }
-    tbody.innerHTML = rows.map(d => `
+    if (state.sheetEditMode) {
+      tbody.innerHTML = rows.map(d => `
+      <tr data-drawing-id="${d.id}" class="border-b border-zinc-800 hover:bg-zinc-800/50 ${isSheetSelected(d.id) ? 'bg-sky-950/30' : ''} ${isSheetRowDirty(d.id) ? 'draw-sheet-row-dirty' : ''}" ondblclick="CasePMDrawings.openViewer(${d.id})">
+        <td class="px-2 py-2 text-center" onclick="event.stopPropagation()">
+          <input type="checkbox" class="accent-sky-500" ${isSheetSelected(d.id) ? 'checked' : ''} onchange="CasePMDrawings.toggleSheetSelection(${d.id}, this.checked)">
+        </td>
+        <td class="px-2 py-2">${sheetCellInput(d, 'sheet_number')}</td>
+        <td class="px-2 py-2">${sheetCellInput(d, 'title')}</td>
+        <td class="px-2 py-2">${sheetCellInput(d, 'set_name')}</td>
+        <td class="px-2 py-2">${sheetCellInput(d, 'discipline')}</td>
+        <td class="px-2 py-2">${sheetCellInput(d, 'section_prefix')}</td>
+        <td class="px-2 py-2 text-center">${sheetCellInput(d, 'revision_label')}</td>
+        <td class="px-2 py-2 text-center">${sheetCellInput(d, 'drawing_date')}</td>
+        <td class="px-2 py-2 text-center">${sheetCellInput(d, 'status')}</td>
+        <td class="px-4 py-2 text-center text-xs text-zinc-500">${d.revision_count || 1}</td>
+        <td class="px-2 py-2 text-center">
+          <button type="button" onclick="event.stopPropagation(); CasePMDrawings.deleteDrawing(${d.id})" class="px-2 py-1 rounded bg-red-900/60 hover:bg-red-800 text-[10px] text-red-100" title="Delete sheet"><i class="fa-solid fa-trash"></i></button>
+        </td>
+      </tr>`).join('');
+    } else {
+      tbody.innerHTML = rows.map(d => `
       <tr class="border-b border-zinc-800 hover:bg-zinc-800/50 cursor-pointer ${isSheetSelected(d.id) ? 'bg-sky-950/30' : ''}" ondblclick="CasePMDrawings.openViewer(${d.id})" onclick="CasePMDrawings.onSheetClick(${d.id}, event)">
         <td class="px-2 py-3 text-center" onclick="event.stopPropagation()">
           <input type="checkbox" class="accent-sky-500" ${isSheetSelected(d.id) ? 'checked' : ''} onchange="CasePMDrawings.toggleSheetSelection(${d.id}, this.checked)">
@@ -970,6 +1202,7 @@
           <button type="button" onclick="event.stopPropagation(); CasePMDrawings.deleteDrawing(${d.id})" class="px-2 py-1 rounded bg-red-900/60 hover:bg-red-800 text-[10px] text-red-100" title="Delete sheet"><i class="fa-solid fa-trash"></i></button>
         </td>
       </tr>`).join('');
+    }
     const allCb = document.getElementById('drawTableSelectAll');
     if (allCb) {
       const visible = rows.map(d => d.id);
@@ -3724,6 +3957,10 @@
     toggleSelectionMode,
     toggleSheetSelection,
     onSheetClick,
+    toggleSheetEditMode,
+    saveSheetEdits,
+    discardSheetEdits,
+    onSheetCellInput,
     selectAllVisible,
     clearSelection,
     toggleSelectAllVisible,

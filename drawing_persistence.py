@@ -1306,6 +1306,77 @@ def unlink_pin_markup(markup, *, RFI, ChangeOrder, PunchItem):
                 _remove_plan_pin(item, 'plan_pins_json', markup_id)
 
 
+def parse_drawing_date(val):
+    if val is None or val == '':
+        return None
+    if isinstance(val, date) and not isinstance(val, datetime):
+        return val
+    if isinstance(val, datetime):
+        return val.date()
+    text = str(val).strip()
+    if not text:
+        return None
+    for fmt in ('%Y-%m-%d', '%m/%d/%Y', '%m-%d-%Y', '%m/%d/%y'):
+        try:
+            return datetime.strptime(text, fmt).date()
+        except ValueError:
+            continue
+    return None
+
+
+def update_drawing_metadata(db, Drawing, DrawingRevision, DrawingMarkup, drawing, data):
+    """Update drawing sheet fields and current revision metadata."""
+    rev = None
+    if drawing.current_revision_id:
+        rev = DrawingRevision.query.get(drawing.current_revision_id)
+    if not rev:
+        rev = DrawingRevision.query.filter_by(drawing_id=drawing.id, is_current=True).first()
+
+    if 'sheet_number' in data:
+        raw = str(data.get('sheet_number') or '').strip()
+        if raw:
+            new_sheet = normalize_sheet_number(raw) or raw.upper()
+            if new_sheet != drawing.sheet_number:
+                conflict = Drawing.query.filter_by(
+                    project_id=drawing.project_id,
+                    sheet_number=new_sheet,
+                ).filter(Drawing.id != drawing.id).first()
+                if conflict:
+                    raise ValueError(f'Sheet number {new_sheet} already exists on this project')
+                drawing.sheet_number = new_sheet
+                if 'section_prefix' not in data:
+                    drawing.section_prefix = section_prefix(new_sheet)
+                drawing.sort_key = sort_key_for_sheet(new_sheet)
+                if 'discipline' not in data:
+                    drawing.discipline = discipline_from_sheet(new_sheet)
+
+    for field in ('title', 'discipline', 'section_prefix', 'status'):
+        if field in data:
+            val = data[field]
+            setattr(drawing, field, (str(val).strip() if val not in (None, '') else None) if field != 'status' else (str(val).strip() or drawing.status))
+
+    if rev:
+        if 'revision_label' in data:
+            label = str(data.get('revision_label') or '').strip()
+            if label:
+                rev.revision_label = label
+        if 'revision_number' in data:
+            num = str(data.get('revision_number') or '').strip()
+            if num:
+                rev.revision_number = num
+        if 'set_name' in data:
+            rev.set_name = str(data.get('set_name') or '').strip() or None
+        if 'drawing_date' in data:
+            rev.drawing_date = parse_drawing_date(data.get('drawing_date'))
+        if 'received_date' in data:
+            rev.received_date = parse_drawing_date(data.get('received_date'))
+
+    drawing.updated_at = datetime.utcnow()
+    rev_count = DrawingRevision.query.filter_by(drawing_id=drawing.id).count()
+    markup_count = DrawingMarkup.query.filter_by(drawing_id=drawing.id).count()
+    return drawing, rev, rev_count, markup_count
+
+
 def drawing_to_dict(drawing, current_rev=None, revision_count=0, markup_count=0, linked_rfis=None):
     rev = current_rev
     upload_root = os.environ.get('CASEPM_UPLOAD_ROOT') or 'uploads'
