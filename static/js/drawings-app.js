@@ -2277,6 +2277,12 @@
     if (state.openDrawing) setTimeout(() => renderPdf(true), 100);
   }
 
+  function collectPdfFiles(fileList) {
+    return [...(fileList || [])].filter(
+      (f) => f.name?.toLowerCase().endsWith('.pdf') || f.type === 'application/pdf'
+    );
+  }
+
   function openUploadModal() {
     const dlg = document.getElementById('uploadDrawingModal');
     if (!dlg) return;
@@ -2289,14 +2295,23 @@
     if (nameEl && fileInput && !fileInput.files?.length) nameEl.textContent = '';
   }
 
-  function setUploadModalFile(file) {
+  function setUploadModalFiles(files) {
     const fileInput = document.getElementById('uploadFile');
     const nameEl = document.getElementById('uploadDropFileName');
-    if (!fileInput || !file) return;
+    const pdfs = collectPdfFiles(files);
+    if (!fileInput || !pdfs.length) return;
     const dt = new DataTransfer();
-    dt.items.add(file);
+    pdfs.forEach((f) => dt.items.add(f));
     fileInput.files = dt.files;
-    if (nameEl) nameEl.textContent = file.name;
+    if (nameEl) {
+      nameEl.textContent = pdfs.length === 1
+        ? pdfs[0].name
+        : `${pdfs.length} PDF files selected`;
+    }
+  }
+
+  function setUploadModalFile(file) {
+    setUploadModalFiles([file]);
   }
 
   function bindUploadModalDropZone() {
@@ -2304,14 +2319,16 @@
     const fileInput = document.getElementById('uploadFile');
     if (!zone || !fileInput || zone._bound) return;
     zone._bound = true;
-    const pickPdf = (files) => [...(files || [])].find(
-      (f) => f.name?.toLowerCase().endsWith('.pdf') || f.type === 'application/pdf'
-    );
+    const pickPdfs = (files) => collectPdfFiles(files);
     zone.addEventListener('click', () => fileInput.click());
     fileInput.addEventListener('change', () => {
-      const f = fileInput.files?.[0];
+      const pdfs = pickPdfs(fileInput.files);
       const nameEl = document.getElementById('uploadDropFileName');
-      if (nameEl) nameEl.textContent = f ? f.name : '';
+      if (nameEl) {
+        nameEl.textContent = !pdfs.length ? '' : pdfs.length === 1
+          ? pdfs[0].name
+          : `${pdfs.length} PDF files selected`;
+      }
     });
     ['dragenter', 'dragover'].forEach((evt) => {
       zone.addEventListener(evt, (e) => {
@@ -2328,12 +2345,12 @@
       e.preventDefault();
       e.stopPropagation();
       zone.classList.remove('border-sky-500', 'bg-sky-950/30');
-      const file = pickPdf(e.dataTransfer?.files);
-      if (!file) {
-        alert('Drop a PDF file.');
+      const pdfs = pickPdfs(e.dataTransfer?.files);
+      if (!pdfs.length) {
+        alert('Drop one or more PDF files.');
         return;
       }
-      setUploadModalFile(file);
+      setUploadModalFiles(pdfs);
     });
   }
 
@@ -2357,7 +2374,8 @@
     if (pages.length) {
       const expected = json.expected_page_count || json.page_count;
       const splitNote = json.split_engine ? ` · split via ${esc(json.split_engine)}` : '';
-      html += `<p class="text-xs text-zinc-400 mb-3">${expected ? `${expected} page(s) in file · ` : ''}${json.created_count || pages.length} sheet(s) imported${json.split ? ' (split from drawing set)' : ''}${splitNote}</p>`;
+      const fileNote = json.file_count > 1 ? ` · ${json.file_count} files` : '';
+      html += `<p class="text-xs text-zinc-400 mb-3">${expected ? `${expected} page(s) in file · ` : ''}${json.created_count || pages.length} sheet(s) imported${json.split ? ' (split from drawing set)' : ''}${fileNote}${splitNote}</p>`;
       html += `<table class="w-full text-xs"><thead><tr class="text-zinc-400 border-b border-zinc-700">
         <th class="text-left py-2 pr-2">Page</th><th class="text-left py-2 pr-2">Sheet #</th>
         <th class="text-left py-2 pr-2">Proj #</th><th class="text-left py-2 pr-2">Revision</th>
@@ -2433,13 +2451,18 @@
     log.scrollTop = log.scrollHeight;
   }
 
-  function showUploadProgress(fileName, pageCount) {
+  function showUploadProgress(fileName, pageCount, batchLabel) {
     const dlg = document.getElementById('uploadProgressModal');
     const title = document.getElementById('uploadProgressTitle');
     const log = document.getElementById('uploadProgressLog');
     const bar = document.getElementById('uploadProgressBar');
     if (!dlg || !log) return;
-    if (title) title.textContent = pageCount ? `Processing ${pageCount} pages — ${fileName}` : `Processing ${fileName}`;
+    const batchPrefix = batchLabel ? `${batchLabel} — ` : '';
+    if (title) {
+      title.textContent = pageCount
+        ? `${batchPrefix}Processing ${pageCount} pages — ${fileName}`
+        : `${batchPrefix}Processing ${fileName}`;
+    }
     log.innerHTML = '';
     if (bar) bar.style.width = '6%';
     appendUploadLog('Uploading PDF to server…');
@@ -2466,7 +2489,8 @@
     }, pageCount && pageCount > 40 ? 350 : 550);
   }
 
-  function finishUploadProgress(json) {
+  function finishUploadProgress(json, finishOpts) {
+    const opts = finishOpts || {};
     clearInterval(state.uploadLogTimer);
     state.uploadLogTimer = null;
     const bar = document.getElementById('uploadProgressBar');
@@ -2476,15 +2500,16 @@
       json.warnings.forEach((w) => appendUploadLog(`⚠ ${w}`));
     }
     if (pages.length) {
-      appendUploadLog('— Results —');
+      if (!opts.quietHeader) appendUploadLog('— Results —');
       pages.forEach(p => {
         const name = p.title || p.drawing_name || '—';
         const flag = p.needs_review ? ' · needs review' : '';
         appendUploadLog(`Page ${p.page || '?'} → ${p.sheet_number} · ${name}${flag}`);
       });
-    } else {
+    } else if (!opts.keepOpen) {
       appendUploadLog('Import complete.');
     }
+    if (opts.keepOpen) return;
     setTimeout(() => document.getElementById('uploadProgressModal')?.close(), pages.length > 8 ? 2200 : 1400);
   }
 
@@ -2498,7 +2523,7 @@
     if (!file) return null;
     const opts = extra || {};
     const pageCount = await getPdfPageCount(file);
-    showUploadProgress(file.name, pageCount);
+    showUploadProgress(file.name, pageCount, opts.batchLabel || '');
     const fd = new FormData();
     fd.append('project_id', projectId());
     fd.append('file', file);
@@ -2515,12 +2540,66 @@
           : '';
         throw new Error((json.error || 'Upload failed') + detail);
       }
-      finishUploadProgress(json);
+      if (!opts.skipFinish) {
+        finishUploadProgress(json, { keepOpen: !!opts.keepOpen, quietHeader: !!opts.keepOpen });
+      }
       return json;
     } catch (e) {
       cancelUploadProgress();
       throw e;
     }
+  }
+
+  async function uploadMultiplePdfFiles(files, setName, extra) {
+    const pdfs = collectPdfFiles(files);
+    if (!pdfs.length) return null;
+    const opts = extra || {};
+    const combined = {
+      ok: true,
+      split: false,
+      created_count: 0,
+      needs_review_count: 0,
+      pages: [],
+      drawings: [],
+      needs_review: [],
+      warnings: [],
+      file_count: pdfs.length,
+    };
+    const isBatch = pdfs.length > 1;
+    for (let i = 0; i < pdfs.length; i++) {
+      const file = pdfs[i];
+      const fileSetName = isBatch
+        ? `${setName || 'Drawing Upload'} — ${file.name.replace(/\.pdf$/i, '')}`
+        : (setName || file.name.replace(/\.pdf$/i, '') || 'Drawing Upload');
+      try {
+        const json = await uploadPdfFile(file, fileSetName, {
+          ...opts,
+          batchLabel: isBatch ? `File ${i + 1} of ${pdfs.length}` : '',
+          skipFinish: isBatch,
+          sheet_number: isBatch ? '' : opts.sheet_number,
+          title: isBatch ? '' : opts.title,
+        });
+        if (!json) continue;
+        if (isBatch) {
+          appendUploadLog(`✓ ${file.name} — ${json.created_count || json.drawings?.length || 0} sheet(s)`);
+        }
+        combined.created_count += json.created_count || json.drawings?.length || 0;
+        combined.needs_review_count += json.needs_review_count || 0;
+        combined.pages.push(...(json.pages || json.drawings || []));
+        combined.drawings.push(...(json.drawings || []));
+        combined.needs_review.push(...(json.needs_review || []));
+        combined.warnings.push(...(json.warnings || []));
+        combined.split = combined.split || !!json.split;
+        if (json.split_engine) combined.split_engine = json.split_engine;
+      } catch (err) {
+        combined.warnings.push(`${file.name}: ${err.message || 'Upload failed'}`);
+      }
+    }
+    if (!combined.created_count && !combined.needs_review.length) {
+      throw new Error(combined.warnings[0] || 'No PDF files could be imported.');
+    }
+    finishUploadProgress(combined);
+    return combined;
   }
 
   function bindSectionDropZone() {
@@ -2555,19 +2634,18 @@
       e.preventDefault();
       dragDepth = 0;
       unhighlight();
-      const file = [...(e.dataTransfer?.files || [])].find(
-        (f) => f.name.toLowerCase().endsWith('.pdf') || f.type === 'application/pdf'
-      );
-      if (!file) {
-        alert('Drop a PDF drawing set to import sheets.');
+      const pdfs = collectPdfFiles(e.dataTransfer?.files);
+      if (!pdfs.length) {
+        alert('Drop one or more PDF drawing files to import sheets.');
         return;
       }
       try {
         document.getElementById('uploadDrawingModal')?.close();
-        const json = await uploadPdfFile(file, file.name.replace(/\.pdf$/i, ''));
-        const count = json.created_count || json.drawings?.length || 1;
+        const json = await uploadMultiplePdfFiles(pdfs, 'Dropped Drawings');
+        const count = json.created_count || json.drawings?.length || 0;
+        const fileNote = json.file_count > 1 ? ` from ${json.file_count} files` : '';
         const reviewNote = json.needs_review_count ? ` (${json.needs_review_count} need sheet numbers)` : '';
-        toast(json.split ? `Imported ${count} sheets from drawing set${reviewNote}` : `Uploaded ${json.drawing?.sheet_number || count + ' sheet(s)'}`);
+        toast(`Imported ${count} sheet(s)${fileNote}${reviewNote}`);
         showUploadResults(json);
         await Promise.all([loadDashboard(), loadDrawings(), loadDrawingSets()]);
       } catch (err) {
@@ -2578,8 +2656,8 @@
 
   async function submitUpload(e) {
     e.preventDefault();
-    const file = document.getElementById('uploadFile').files[0];
-    if (!file) { alert('Select a PDF'); return; }
+    const pdfs = collectPdfFiles(document.getElementById('uploadFile').files);
+    if (!pdfs.length) { alert('Select one or more PDF files'); return; }
     const submitBtn = e.target.querySelector('button[type="submit"]');
     const origLabel = submitBtn?.textContent;
     if (submitBtn) {
@@ -2588,17 +2666,15 @@
     }
     try {
       document.getElementById('uploadDrawingModal').close();
-      const json = await uploadPdfFile(
-        file,
-        document.getElementById('uploadSetName').value || 'Drawing Upload',
-        {
-          sheet_number: document.getElementById('uploadSheetNumber')?.value || '',
-          title: document.getElementById('uploadTitle')?.value || '',
-        }
-      );
-      const count = json.created_count || json.drawings?.length || 1;
+      const setName = document.getElementById('uploadSetName').value || 'Drawing Upload';
+      const json = await uploadMultiplePdfFiles(pdfs, setName, {
+        sheet_number: document.getElementById('uploadSheetNumber')?.value || '',
+        title: document.getElementById('uploadTitle')?.value || '',
+      });
+      const count = json.created_count || json.drawings?.length || 0;
+      const fileNote = json.file_count > 1 ? ` from ${json.file_count} files` : '';
       const reviewNote = json.needs_review_count ? ` (${json.needs_review_count} need sheet numbers)` : '';
-      toast(json.split ? `Imported ${count} sheets from drawing set${reviewNote}` : `Uploaded ${json.drawing?.sheet_number || count + ' sheet(s)'}`);
+      toast(`Imported ${count} sheet(s)${fileNote}${reviewNote}`);
       showUploadResults(json);
       await Promise.all([loadDashboard(), loadDrawings(), loadDrawingSets()]);
     } catch (err) {

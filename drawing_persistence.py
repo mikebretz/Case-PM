@@ -192,7 +192,10 @@ def is_plausible_drawing_sheet(sheet_number: str) -> bool:
     if prefix in VALID_SHEET_PREFIXES:
         return True
     num_part = sheet_number.split('-', 1)[1]
-    return bool(re.match(r'^\d{1,4}', num_part)) and prefix.isalpha() and len(prefix) <= 4
+    if bool(re.match(r'^\d{1,4}', num_part)) and prefix.isalpha() and len(prefix) <= 4:
+        return True
+    # Project-specific sheet IDs from SHEET: title blocks (e.g. OPDSP-1).
+    return bool(re.match(r'^[A-Z]{2,8}-\d{1,4}$', sheet_number))
 
 
 def extract_revision_from_text(text: str) -> str | None:
