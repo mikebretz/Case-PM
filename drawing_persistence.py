@@ -860,12 +860,14 @@ def analyze_pdf_page(pdf_path: str, page_index: int = 0, from_combined_set: bool
                 method = 'ocr'
         if not scale:
             scale = extract_scale_from_text(full_text)
+    project_number = layout.get('project_number')
     return {
         'page_index': page_index,
         'sheet_number': sheet,
         'revision': revision,
         'title': title,
         'drawing_name': title,
+        'project_number': project_number,
         'drawing_date': drawing_date,
         'scale': scale,
         'discipline': discipline_from_sheet(sheet) if sheet else None,
@@ -1438,6 +1440,12 @@ def process_pages_from_upload(
         title = manual_title or meta.get('drawing_name') or meta.get('title') or extract_drawing_name_from_text(page_text, sheet_number)
         if sheet_status == 'For Review' and not title:
             title = f'Page {page["page_index"] + 1} — assign sheet number'
+        page_notes = ''
+        if from_combined_set:
+            page_notes = f'Page {page["page_index"] + 1} of {original_filename}'
+        if meta.get('project_number'):
+            page_notes = f'{page_notes} · Project No. {meta["project_number"]}'.strip(' ·')
+
         drawing, rev, _old = upsert_drawing_from_upload(
             db, Drawing, DrawingRevision, DrawingMarkup,
             project_id=int(project_id),
@@ -1451,7 +1459,7 @@ def process_pages_from_upload(
             received_date=date.today(),
             upload_source=upload_source,
             uploaded_by_id=uploaded_by_id,
-            notes=f'Page {page["page_index"] + 1} of {original_filename}' if from_combined_set else '',
+            notes=page_notes,
             sheet_revision=meta.get('revision'),
             status=sheet_status,
             force_new=from_combined_set,
@@ -1466,6 +1474,8 @@ def process_pages_from_upload(
             'discipline': drawing.discipline,
             'page': page['page_index'] + 1,
             'detection_method': meta.get('detection_method'),
+            'project_number': meta.get('project_number'),
+            'detection_confidence': meta.get('detection_confidence'),
             'needs_review': sheet_status == 'For Review',
             'status': drawing.status,
         })

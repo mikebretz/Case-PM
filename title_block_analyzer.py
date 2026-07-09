@@ -53,6 +53,7 @@ NOTE_FRAGMENT_RE = re.compile(
     r'\b(DEMO(?:\'?D)?|REINFORCING|CONTRACTOR|INSTALL|VERIFY|REFER|SEE\s+STRUCTURAL|TO\s+BE|EXISTING|NEW\s+WORK)\b',
     re.I,
 )
+OCR_PSM_MODES = ('--psm 6', '--psm 7', '--psm 11', '--psm 12')
 OCR_MATRIX = 4.5
 
 
@@ -465,12 +466,47 @@ def _vote_revision(sources: list[tuple[float, str | None]]) -> str | None:
     return max(votes.items(), key=lambda kv: kv[1])[0]
 
 
-def analyze_title_block(pdf_path: str, page_index: int = 0) -> dict:
-    """Full title-block analysis with layout + multi-region OCR consensus."""
+def _merge_grid_and_legacy(grid: dict, legacy: dict) -> dict:
+    """Prefer grid cell analysis; fill gaps from OCR/layout legacy pipeline."""
+    out = dict(legacy)
+    gconf = grid.get('confidence') or {}
+    lconf = legacy.get('confidence') or {}
+
+    if grid.get('sheet_number'):
+        if not legacy.get('sheet_number') or gconf.get('sheet', 0) >= lconf.get('sheet', 0):
+            out['sheet_number'] = grid['sheet_number']
+            out['method'] = 'grid'
+
+    if grid.get('drawing_name'):
+        if not legacy.get('drawing_name') or gconf.get('name', 0) >= lconf.get('name', 0):
+            out['drawing_name'] = grid['drawing_name']
+            out['title'] = grid['drawing_name']
+
+    if grid.get('project_number'):
+        out['project_number'] = grid['project_number']
+
+    for key in ('revision', 'drawing_date', 'scale'):
+        if not out.get(key) and grid.get(key):
+            out[key] = grid[key]
+
+    out['confidence'] = {
+        'sheet': max(gconf.get('sheet', 0), lconf.get('sheet', 0)),
+        'name': max(gconf.get('name', 0), lconf.get('name', 0)),
+        'project': gconf.get('project', 0),
+        'revision': max(gconf.get('revision', 0), lconf.get('revision', 0)),
+    }
+    if grid.get('grid_cells'):
+        out['grid_cells'] = grid['grid_cells']
+    return out
+
+
+def _analyze_title_block_legacy(pdf_path: str, page_index: int = 0) -> dict:
+    """Layout + multi-region OCR consensus (pre-grid pipeline)."""
     result: dict[str, Any] = {
         'sheet_number': None,
         'drawing_name': '',
         'title': '',
+        'project_number': None,
         'revision': None,
         'drawing_date': None,
         'scale': None,
@@ -607,3 +643,18 @@ def analyze_title_block(pdf_path: str, page_index: int = 0) -> dict:
         'revision': round(max((w for w, r in rev_sources if r == revision), default=0), 2) if revision else 0,
     }
     return result
+
+
+def analyze_title_block(pdf_path: str, page_index: int = 0) -> dict:
+    """Grid cell analysis merged with layout + OCR legacy pipeline."""
+    grid_result: dict[str, Any] = {}
+    try:
+        from title_block_grid import analyze_title_block_grid
+        grid_result = analyze_title_block_grid(pdf_path, page_index)
+    except Exception:
+        grid_result = {}
+
+    legacy = _analyze_title_block_legacy(pdf_path, page_index)
+    if grid_result:
+        return _merge_grid_and_legacy(grid_result, legacy)
+    return legacy

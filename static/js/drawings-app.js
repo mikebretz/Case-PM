@@ -1335,23 +1335,45 @@
     toast('Use format like 1/4"=1\' or 1:50');
   }
 
-  function propNum(label, id, value, min, max, step) {
-    return `<label class="flex items-center justify-between gap-2 text-[10px] text-zinc-400 mb-1.5">
-      <span>${esc(label)}</span>
-      <input type="number" id="${id}" value="${value}" min="${min}" max="${max}" step="${step}" class="w-20 bg-zinc-900 border border-zinc-700 rounded px-2 py-1 text-[10px] text-right text-white">
-    </label>`;
+  function propRow(label, id, value, min, max, step, hint) {
+    return `<div class="markup-prop-row">
+      <label for="${id}">${esc(label)}${hint ? `<span class="block text-[9px] text-zinc-600">${esc(hint)}</span>` : ''}</label>
+      <input type="number" id="${id}" value="${value}" min="${min}" max="${max}" step="${step}">
+    </div>`;
   }
 
-  function propSlider(label, id, value, min, max, step) {
-    return `<label class="block text-[10px] text-zinc-400 mb-1">${esc(label)} <span id="${id}Val" class="text-zinc-500">${value}</span></label>
-      <input type="range" id="${id}" min="${min}" max="${max}" step="${step}" value="${value}" class="w-full accent-sky-500 mb-2">`;
+  function propRowText(label, id, value) {
+    return `<div class="markup-prop-row">
+      <label for="${id}">${esc(label)}</label>
+      <input type="text" id="${id}" value="${esc(value)}">
+    </div>`;
   }
 
-  const DASH_PRESETS = [
-    { label: 'Solid', value: '' },
-    { label: 'Dashed', value: '10 6' },
-    { label: 'Dotted', value: '2 4' },
-  ];
+  function propSection(title, body) {
+    return `<div class="markup-props-section"><div class="markup-props-section-title">${esc(title)}</div>${body}</div>`;
+  }
+
+  function parseStrokeDash(strokeDash) {
+    const parts = String(strokeDash || '').trim().split(/\s+/).filter(Boolean);
+    return { dash: parseInt(parts[0], 10) || 0, gap: parseInt(parts[1], 10) || 0 };
+  }
+
+  function textAlignToNum(align) {
+    if (align === 'center') return 1;
+    if (align === 'right') return 2;
+    return 0;
+  }
+
+  function numToTextAlign(n) {
+    const v = parseInt(n, 10);
+    if (v === 1) return 'center';
+    if (v === 2) return 'right';
+    return 'left';
+  }
+
+  function fontWeightToNum(fw) {
+    return fw === 'bold' || fw === 700 || fw === '700' ? 700 : 400;
+  }
 
   function textMarkupAttrs(style, geom, label) {
     const fs = style.fontSize || 14;
@@ -1387,141 +1409,168 @@
     const geom = isSelected && ctx?.geometry ? resolveGeom(ctx.geometry) : null;
     const color = style.color || '#38bdf8';
     const lineWidth = style.lineWidth || 2;
-    const opacity = style.opacity ?? 1;
-    const fillOpacity = style.fillOpacity ?? (type === 'highlight' ? 0.25 : 0.75);
+    const opacityPct = Math.round((style.opacity ?? 1) * 100);
+    const fillOpacityPct = Math.round((style.fillOpacity ?? (type === 'highlight' ? 0.25 : 0.75)) * 100);
     const cloudScallop = style.cloudScallop || 18;
     const fontSize = style.fontSize || 14;
-    const fontWeight = style.fontWeight || 'normal';
-    const fontStyle = style.fontStyle || 'normal';
-    const textAlign = style.textAlign || 'left';
+    const fontWeightNum = fontWeightToNum(style.fontWeight);
+    const fontStyleDeg = style.fontStyle === 'italic' ? 1 : 0;
+    const textAlignNum = textAlignToNum(style.textAlign || 'left');
     const textPadding = style.textPadding ?? 6;
-    const showTextBorder = style.showTextBorder !== false;
+    const showTextBorder = style.showTextBorder !== false ? 1 : 0;
     const arrowHead = style.arrowHead || 'arrow';
-    const strokeDash = style.strokeDash || '';
+    const dashParts = parseStrokeDash(style.strokeDash || '');
 
     el.innerHTML = `
-      <div class="text-[10px] uppercase text-zinc-500 mb-2 sticky top-0 bg-zinc-800/95 py-1 z-10">${esc(title)}</div>
-      ${showText && !isSelected ? `<p class="text-[10px] text-zinc-500 mb-2">Click the sheet to place text. Adjust style here before placing.</p>` : ''}
-      ${showLine ? `
-        <label class="block text-[10px] text-zinc-400 mb-1">Color</label>
-        <div class="flex items-center gap-2 mb-2">
-          <input type="color" id="propColorPicker" value="${color}" class="w-8 h-8 rounded border border-zinc-700 bg-zinc-900 p-0.5">
-          <input type="text" id="propColorHex" value="${esc(color)}" class="flex-1 bg-zinc-900 border border-zinc-700 rounded px-2 py-1 text-[10px] font-mono">
+      <div class="text-[10px] uppercase text-zinc-500 mb-2 sticky top-0 bg-zinc-800/95 py-1 z-10 border-b border-zinc-700/80">${esc(title)}</div>
+      ${showText && !isSelected ? `<div class="markup-prop-hint">Click the sheet to place text. Set numeric values here first.</div>` : ''}
+      ${showLine ? propSection('Stroke', `
+        <div class="markup-prop-row">
+          <label for="propColorPicker">Color</label>
+          <input type="color" id="propColorPicker" value="${color}">
         </div>
-        ${propChips('Quick colors', COLOR_PRESETS, color, 'color')}
-      ` : ''}
-      ${showLine ? propNum('Line weight (px)', 'propLineWidth', lineWidth, 0.5, 24, 0.5) : ''}
-      ${showLine ? propChips('Line presets', WIDTH_PRESETS, lineWidth, 'lineWidth') : ''}
-      ${showLine ? propSlider('Stroke opacity', 'propOpacity', Math.round(opacity * 100), 5, 100, 5) : ''}
-      ${showLine ? propChips('Line style', DASH_PRESETS, strokeDash, 'strokeDash') : ''}
-      ${showFill ? propSlider('Fill opacity', 'propFillOpacity', Math.round(fillOpacity * 100), 0, 100, 5) : ''}
-      ${showCloud ? propNum('Cloud scallop (px)', 'propCloudScallop', cloudScallop, 6, 48, 1) : ''}
-      ${showCloud ? propChips('Cloud presets', CLOUD_PRESETS, cloudScallop, 'cloudScallop') : ''}
-      ${showText ? `
-        <div class="border-t border-zinc-700 pt-2 mt-1">
-          <div class="text-[10px] uppercase text-zinc-500 mb-2">Text</div>
-          ${propNum('Font size (px)', 'propFontSize', fontSize, 8, 72, 1)}
-          ${propChips('Size presets', FONT_PRESETS, fontSize, 'fontSize')}
-          ${propChips('Weight', FONT_WEIGHT_PRESETS, fontWeight, 'fontWeight')}
-          ${propChips('Style', [{ label: 'Normal', value: 'normal' }, { label: 'Italic', value: 'italic' }], fontStyle, 'fontStyle')}
-          ${propChips('Alignment', TEXT_ALIGN_PRESETS, textAlign, 'textAlign')}
-          ${propNum('Padding (px)', 'propTextPadding', textPadding, 0, 32, 1)}
-          <label class="flex items-center gap-2 text-[10px] text-zinc-400 mb-2 cursor-pointer">
-            <input type="checkbox" id="propShowTextBorder" class="rounded" ${showTextBorder ? 'checked' : ''}>
-            Show text box border
-          </label>
+        ${propRowText('Hex', 'propColorHex', color)}
+        ${propRow('Weight px', 'propLineWidth', lineWidth, 0.5, 48, 0.5)}
+        ${propRow('Opacity %', 'propOpacity', opacityPct, 0, 100, 1)}
+        ${propRow('Dash px', 'propDashLen', dashParts.dash, 0, 64, 1, '0 = solid')}
+        ${propRow('Gap px', 'propGapLen', dashParts.gap, 0, 64, 1)}
+      `) : ''}
+      ${showFill ? propSection('Fill', propRow('Opacity %', 'propFillOpacity', fillOpacityPct, 0, 100, 1)) : ''}
+      ${showCloud ? propSection('Cloud', propRow('Scallop px', 'propCloudScallop', cloudScallop, 4, 64, 1)) : ''}
+      ${showText ? propSection('Text', `
+        ${propRow('Size px', 'propFontSize', fontSize, 6, 96, 1)}
+        ${propRow('Weight', 'propFontWeight', fontWeightNum, 100, 900, 100, '400 or 700')}
+        ${propRow('Italic', 'propFontItalic', fontStyleDeg, 0, 1, 1, '0=off 1=on')}
+        ${propRow('Align', 'propTextAlign', textAlignNum, 0, 2, 1, '0=L 1=C 2=R')}
+        ${propRow('Pad px', 'propTextPadding', textPadding, 0, 48, 1)}
+        ${propRow('Border', 'propShowTextBorder', showTextBorder, 0, 1, 1, '0=off 1=on')}
+      `) : ''}
+      ${showArrow ? propSection('Arrow', `
+        <div class="markup-prop-row">
+          <label for="propArrowHead">Head type</label>
+          <select id="propArrowHead">
+            <option value="arrow" ${arrowHead === 'arrow' ? 'selected' : ''}>Arrow</option>
+            <option value="open" ${arrowHead === 'open' ? 'selected' : ''}>Open</option>
+            <option value="none" ${arrowHead === 'none' ? 'selected' : ''}>None</option>
+          </select>
         </div>
-      ` : ''}
-      ${showArrow ? propChips('Arrow head', ARROW_HEAD_PRESETS, arrowHead, 'arrowHead') : ''}
-      ${showSize && geom ? `
-        <div class="border-t border-zinc-700 pt-2 mt-2">
-          <div class="text-[10px] uppercase text-zinc-500 mb-2">Size (px)</div>
-          ${propNum('Width', 'propGeomW', Math.round(geom.w || 0), 1, 5000, 1)}
-          ${propNum('Height', 'propGeomH', Math.round(geom.h || 0), 1, 5000, 1)}
+      `) : ''}
+      ${showSize && geom ? propSection('Geometry px', `
+        ${propRow('Width', 'propGeomW', Math.round(geom.w || 0), 1, 8000, 1)}
+        ${propRow('Height', 'propGeomH', Math.round(geom.h || 0), 1, 8000, 1)}
+        ${geom.w && geom.h ? `<div class="markup-prop-hint">Area <strong>${Math.round(geom.w * geom.h).toLocaleString()}</strong> sq px</div>` : ''}
+      `) : ''}
+      ${isSelected && showText ? propSection('Content', `
+        <textarea id="propTextLabel" rows="4" class="w-full bg-zinc-900 border border-zinc-700 rounded p-2 text-xs text-white">${esc(ctx.label || '')}</textarea>
+      `) : ''}
+      ${showMeasure ? propSection('Scale', `
+        <div class="markup-prop-hint">
+          ${state.scaleLabel ? `Scale <strong>${esc(state.scaleLabel)}</strong><br>` : ''}
+          ${state.pixelsPerUnit ? `<strong>${state.pixelsPerUnit.toFixed(2)}</strong> px/ft` : 'Not set — values in pixels'}
         </div>
-      ` : ''}
-      ${isSelected && showText ? `
-        <label class="block text-[10px] text-zinc-400 mb-1">Text</label>
-        <textarea id="propTextLabel" rows="3" class="w-full bg-zinc-900 border border-zinc-700 rounded p-2 text-xs mb-2">${esc(ctx.label || '')}</textarea>
-      ` : ''}
-      ${showMeasure ? `
-        <div class="text-[10px] text-zinc-400 mb-2 p-2 bg-zinc-900 rounded border border-zinc-700">
-          ${state.scaleLabel ? `Scale: <span class="text-sky-300">${esc(state.scaleLabel)}</span><br>` : ''}
-          ${state.pixelsPerUnit ? `${state.pixelsPerUnit.toFixed(2)} px/ft` : 'Not set — measurements show in pixels'}
+        ${propRow('PDF pt/ft', 'propScalePts', state.scalePdfPointsPerFoot || '', 0.1, 200, 0.1, '72 = 1"=1\'')}
+        <div class="markup-prop-row">
+          <label for="propScaleInput">Arch scale</label>
+          <input type="text" id="propScaleInput" placeholder='1/4"=1\''>
         </div>
-        ${propChips('Preset scale', SCALE_PRESETS.map(s => ({ label: s.label, value: s.pdfPtsPerFoot })), state.scalePdfPointsPerFoot || '', 'scalePreset')}
-        <label class="block text-[10px] text-zinc-400 mb-1">Manual scale</label>
-        <div class="flex gap-1 mb-2">
-          <input type="text" id="propScaleInput" placeholder='1/4"=1\'' class="flex-1 bg-zinc-900 border border-zinc-700 rounded px-2 py-1 text-[10px]">
-          <button type="button" id="propScaleApplyBtn" class="px-2 py-1 bg-zinc-800 hover:bg-zinc-700 rounded text-[10px]">Set</button>
-        </div>
-        <button type="button" id="propDetectScaleBtn" class="w-full py-1.5 mb-2 bg-sky-900/50 hover:bg-sky-900 rounded text-[10px] text-sky-200">Auto-detect from sheet</button>
-        <button type="button" id="propCalibrateBtn" class="w-full py-1.5 mb-2 bg-zinc-800 hover:bg-zinc-700 rounded text-[10px]">Calibrate on drawing…</button>
-      ` : ''}
-      ${isSelected ? `<button type="button" id="propDeleteBtn" class="w-full py-1.5 bg-red-900/70 hover:bg-red-800 rounded text-[10px] text-red-100">Delete markup</button>` : ''}
+        <button type="button" id="propScaleApplyBtn" class="w-full py-1 mb-1 bg-zinc-800 hover:bg-zinc-700 rounded text-[10px]">Apply arch scale</button>
+        <button type="button" id="propDetectScaleBtn" class="w-full py-1 mb-1 bg-sky-900/50 hover:bg-sky-900 rounded text-[10px] text-sky-200">Auto-detect</button>
+        <button type="button" id="propCalibrateBtn" class="w-full py-1 mb-1 bg-zinc-800 hover:bg-zinc-700 rounded text-[10px]">Calibrate…</button>
+      `) : ''}
+      ${isSelected ? `<button type="button" id="propDeleteBtn" class="w-full mt-2 py-1.5 bg-red-900/70 hover:bg-red-800 rounded text-[10px] text-red-100">Delete markup</button>` : ''}
     `;
 
-    el.querySelectorAll('.prop-chip').forEach(btn => {
-      btn.addEventListener('click', () => {
-        const key = btn.dataset.prop;
-        let val = btn.dataset.value;
-        if (key === 'scalePreset') {
-          const preset = SCALE_PRESETS.find(s => String(s.pdfPtsPerFoot) === String(val));
-          if (preset) applyScalePreset(preset.pdfPtsPerFoot, preset.label);
-          renderPropertiesPanel();
-          return;
-        }
-        if (['lineWidth', 'cloudScallop', 'fontSize'].includes(key)) val = parseInt(val, 10);
-        if (['opacity', 'fillOpacity'].includes(key)) val = parseFloat(val);
-        if (key === 'strokeDash') val = val || '';
-        applyMarkupProperty({ [key]: val });
-        renderPropertiesPanel();
-      });
-    });
-    const bindNum = (id, key, scale) => {
+    const bindLiveNum = (id, applyFn) => {
       const input = document.getElementById(id);
       if (!input) return;
-      const apply = () => {
-        let val = parseFloat(input.value);
-        if (Number.isNaN(val)) return;
-        if (scale) val = val / scale;
-        applyMarkupProperty({ [key]: val });
-        renderMarkupOverlay();
-      };
-      input.addEventListener('change', apply);
-      input.addEventListener('blur', apply);
+      const run = () => applyFn(input);
+      input.addEventListener('input', run);
+      input.addEventListener('change', run);
     };
-    bindNum('propLineWidth', 'lineWidth');
-    bindNum('propCloudScallop', 'cloudScallop');
-    bindNum('propFontSize', 'fontSize');
-    bindNum('propTextPadding', 'textPadding');
-    const borderChk = document.getElementById('propShowTextBorder');
-    if (borderChk) {
-      borderChk.addEventListener('change', () => {
-        applyMarkupProperty({ showTextBorder: borderChk.checked });
-        renderMarkupOverlay();
-      });
-    }
-    const opSlider = document.getElementById('propOpacity');
-    if (opSlider) {
-      opSlider.addEventListener('input', () => {
-        document.getElementById('propOpacityVal').textContent = opSlider.value;
-        applyMarkupProperty({ opacity: parseInt(opSlider.value, 10) / 100 });
-        renderMarkupOverlay();
-      });
-    }
-    const fillSlider = document.getElementById('propFillOpacity');
-    if (fillSlider) {
-      fillSlider.addEventListener('input', () => {
-        document.getElementById('propFillOpacityVal').textContent = fillSlider.value;
-        applyMarkupProperty({ fillOpacity: parseInt(fillSlider.value, 10) / 100 });
-        renderMarkupOverlay();
-      });
-    }
+
+    bindLiveNum('propLineWidth', (input) => {
+      const val = parseFloat(input.value);
+      if (!Number.isNaN(val)) applyMarkupProperty({ lineWidth: val });
+      renderMarkupOverlay();
+    });
+    bindLiveNum('propOpacity', (input) => {
+      const val = parseInt(input.value, 10);
+      if (!Number.isNaN(val)) applyMarkupProperty({ opacity: Math.min(100, Math.max(0, val)) / 100 });
+      renderMarkupOverlay();
+    });
+    bindLiveNum('propFillOpacity', (input) => {
+      const val = parseInt(input.value, 10);
+      if (!Number.isNaN(val)) applyMarkupProperty({ fillOpacity: Math.min(100, Math.max(0, val)) / 100 });
+      renderMarkupOverlay();
+    });
+    bindLiveNum('propCloudScallop', (input) => {
+      const val = parseInt(input.value, 10);
+      if (!Number.isNaN(val)) applyMarkupProperty({ cloudScallop: val });
+      renderMarkupOverlay();
+    });
+    bindLiveNum('propFontSize', (input) => {
+      const val = parseInt(input.value, 10);
+      if (!Number.isNaN(val)) applyMarkupProperty({ fontSize: val });
+      renderMarkupOverlay();
+    });
+    bindLiveNum('propFontWeight', (input) => {
+      const val = parseInt(input.value, 10);
+      if (!Number.isNaN(val)) applyMarkupProperty({ fontWeight: val >= 600 ? 'bold' : 'normal' });
+      renderMarkupOverlay();
+    });
+    bindLiveNum('propFontItalic', (input) => {
+      const val = parseInt(input.value, 10);
+      if (!Number.isNaN(val)) applyMarkupProperty({ fontStyle: val ? 'italic' : 'normal' });
+      renderMarkupOverlay();
+    });
+    bindLiveNum('propTextAlign', (input) => {
+      const val = parseInt(input.value, 10);
+      if (!Number.isNaN(val)) applyMarkupProperty({ textAlign: numToTextAlign(val) });
+      renderMarkupOverlay();
+    });
+    bindLiveNum('propTextPadding', (input) => {
+      const val = parseInt(input.value, 10);
+      if (!Number.isNaN(val)) applyMarkupProperty({ textPadding: val });
+      renderMarkupOverlay();
+    });
+    bindLiveNum('propShowTextBorder', (input) => {
+      const val = parseInt(input.value, 10);
+      if (!Number.isNaN(val)) applyMarkupProperty({ showTextBorder: val !== 0 });
+      renderMarkupOverlay();
+    });
+    const applyDash = () => {
+      const dash = parseInt(document.getElementById('propDashLen')?.value, 10) || 0;
+      const gap = parseInt(document.getElementById('propGapLen')?.value, 10) || 0;
+      const strokeDash = dash > 0 && gap > 0 ? `${dash} ${gap}` : (dash > 0 ? `${dash} ${dash}` : '');
+      applyMarkupProperty({ strokeDash });
+      renderMarkupOverlay();
+    };
+    bindLiveNum('propDashLen', applyDash);
+    bindLiveNum('propGapLen', applyDash);
+
+    bindLiveNum('propScalePts', (input) => {
+      const val = parseFloat(input.value);
+      if (!Number.isNaN(val) && val > 0) applyScalePdfPtsPerFoot(val, `1:${Math.round(72 / val)}`);
+    });
+
     const colorPicker = document.getElementById('propColorPicker');
     const colorHex = document.getElementById('propColorHex');
-    if (colorPicker) colorPicker.addEventListener('input', () => { applyMarkupProperty({ color: colorPicker.value }); if (colorHex) colorHex.value = colorPicker.value; renderMarkupOverlay(); });
-    if (colorHex) colorHex.addEventListener('change', () => { applyMarkupProperty({ color: colorHex.value }); renderMarkupOverlay(); });
+    if (colorPicker) colorPicker.addEventListener('input', () => {
+      applyMarkupProperty({ color: colorPicker.value });
+      if (colorHex) colorHex.value = colorPicker.value;
+      renderMarkupOverlay();
+    });
+    if (colorHex) colorHex.addEventListener('change', () => {
+      applyMarkupProperty({ color: colorHex.value });
+      renderMarkupOverlay();
+    });
+
+    const arrowSel = document.getElementById('propArrowHead');
+    if (arrowSel) arrowSel.addEventListener('change', () => {
+      applyMarkupProperty({ arrowHead: arrowSel.value });
+      renderMarkupOverlay();
+    });
+
     const applyGeomSize = async () => {
       if (!state.selectedMarkupId) return;
       const m = state.markups.find(x => x.id === state.selectedMarkupId);
@@ -1534,11 +1583,12 @@
       await persistMarkup(m, { geometry: m.geometry });
       renderMarkupOverlay();
     };
-    document.getElementById('propGeomW')?.addEventListener('change', applyGeomSize);
-    document.getElementById('propGeomH')?.addEventListener('change', applyGeomSize);
+    document.getElementById('propGeomW')?.addEventListener('input', applyGeomSize);
+    document.getElementById('propGeomH')?.addEventListener('input', applyGeomSize);
+
     const textArea = document.getElementById('propTextLabel');
     if (textArea && isSelected) {
-      textArea.addEventListener('change', async () => {
+      textArea.addEventListener('input', async () => {
         const m = state.markups.find(x => x.id === state.selectedMarkupId);
         if (!m) return;
         m.label = textArea.value;
@@ -2279,14 +2329,14 @@
       html += `<p class="text-xs text-zinc-400 mb-3">${expected ? `${expected} page(s) in file · ` : ''}${json.created_count || pages.length} sheet(s) imported${json.split ? ' (split from drawing set)' : ''}${splitNote}</p>`;
       html += `<table class="w-full text-xs"><thead><tr class="text-zinc-400 border-b border-zinc-700">
         <th class="text-left py-2 pr-2">Page</th><th class="text-left py-2 pr-2">Sheet #</th>
-        <th class="text-left py-2 pr-2">Revision</th><th class="text-left py-2 pr-2">Date</th>
+        <th class="text-left py-2 pr-2">Proj #</th><th class="text-left py-2 pr-2">Revision</th>
         <th class="text-left py-2 pr-2">Drawing Name</th></tr></thead><tbody>`;
       html += pages.map(p => `<tr class="border-b border-zinc-800 ${p.needs_review ? 'text-amber-200' : ''}">
         <td class="py-2 pr-2">${esc(p.page || '—')}</td>
         <td class="py-2 pr-2 font-mono ${p.needs_review ? 'text-amber-300' : 'text-sky-300'}">${esc(p.sheet_number)}</td>
+        <td class="py-2 pr-2 font-mono text-zinc-400">${esc(p.project_number || '—')}</td>
         <td class="py-2 pr-2">${esc(p.revision_label || p.revision_number || '—')}</td>
-        <td class="py-2 pr-2">${esc(p.drawing_date ? fmtDate(p.drawing_date) : '—')}</td>
-        <td class="py-2 truncate max-w-[180px]">${esc(p.title || '—')}</td></tr>`).join('');
+        <td class="py-2 truncate max-w-[200px]">${esc(p.title || '—')}</td></tr>`).join('');
       html += '</tbody></table>';
     }
     if (review.length && !pages.length) {
