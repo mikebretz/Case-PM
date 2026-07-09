@@ -7,6 +7,20 @@
   const SECTION_ORDER = ['G', 'C', 'A', 'S', 'M', 'E', 'P', 'FP', 'L', 'T', 'I', 'OTHER'];
   const MARKUP_TOOLS = ['pan', 'select', 'line', 'rect', 'ellipse', 'cloud', 'arrow', 'text', 'callout', 'highlight', 'measure', 'rfi_pin', 'calibrate'];
 
+  const TOOL_STYLE_DEFAULTS = {
+    cloud: { color: '#ef4444', lineWidth: 2, opacity: 1, fillOpacity: 0, cloudScallop: 18 },
+    highlight: { color: '#facc15', lineWidth: 1, opacity: 0.35, fillOpacity: 0.35 },
+    measure: { color: '#22c55e', lineWidth: 2 },
+    text: { color: '#f4f4f5', lineWidth: 1, fillOpacity: 0.9, fontSize: 14, showTextBorder: true },
+    textbox: { color: '#f4f4f5', lineWidth: 1, fillOpacity: 0.9, fontSize: 14, showTextBorder: true },
+    callout: { color: '#38bdf8', lineWidth: 2, fontSize: 13 },
+  };
+
+  function toolStyle(tool) {
+    const defaults = TOOL_STYLE_DEFAULTS[tool] || {};
+    return { ...state.markupStyle, ...defaults };
+  }
+
   let state = {
     drawings: [],
     sections: {},
@@ -1423,7 +1437,7 @@
 
     el.innerHTML = `
       <div class="text-[10px] uppercase text-zinc-500 mb-2 sticky top-0 bg-zinc-800/95 py-1 z-10 border-b border-zinc-700/80">${esc(title)}</div>
-      ${showText && !isSelected ? `<div class="markup-prop-hint">Click the sheet to place text. Set numeric values here first.</div>` : ''}
+      ${showText && !isSelected ? `<div class="markup-prop-hint">Drag a rectangle on the sheet to create a text box. Set font and border options here first.</div>` : ''}
       ${showLine ? propSection('Stroke', `
         <div class="markup-prop-row">
           <label for="propColorPicker">Color</label>
@@ -1631,6 +1645,10 @@
       state.tempMarkup = null;
     }
     state.tool = tool;
+    const defaults = TOOL_STYLE_DEFAULTS[tool];
+    if (defaults) {
+      Object.assign(state.markupStyle, defaults);
+    }
     highlightActiveTool();
     updateViewerCursor();
     renderMarkupOverlay();
@@ -1683,10 +1701,11 @@
     toast('Markup deleted');
   }
 
-  function showTextEditor(pt, existingMarkup) {
+  function showTextEditor(pt, existingMarkup, pendingGeometry) {
     const wrap = document.getElementById('drawViewerWrap');
     if (!wrap || state.textEditorOpen) return;
     state.textEditorOpen = true;
+    state.pendingTextGeometry = pendingGeometry || null;
     let editor = document.getElementById('drawTextEditor');
     if (!editor) {
       editor = document.createElement('div');
@@ -1710,6 +1729,7 @@
 
     const close = () => {
       state.textEditorOpen = false;
+      state.pendingTextGeometry = null;
       editor.classList.add('hidden');
     };
     document.getElementById('drawTextEditorCancel').onclick = close;
@@ -1725,11 +1745,18 @@
       }
       const lines = text.split('\n');
       const fontSize = state.markupStyle.fontSize || 14;
+      const geom = state.pendingTextGeometry || {
+        x: pt.x,
+        y: pt.y,
+        w: 220,
+        h: Math.max(28, lines.length * (fontSize + 6) + 12),
+      };
+      state.pendingTextGeometry = null;
       await saveMarkup({
         markup_type: 'textbox',
-        geometry: { x: pt.x, y: pt.y, w: 220, h: Math.max(28, lines.length * (fontSize + 6) + 12) },
+        geometry: geom,
         label: text,
-        style: { ...state.markupStyle, fillOpacity: 0.85 },
+        style: { ...toolStyle('text'), fillOpacity: toolStyle('text').fillOpacity ?? 0.9 },
       });
     };
   }
@@ -1812,20 +1839,9 @@
       renderPropertiesPanel();
       return;
     }
-    if (['line', 'rect', 'cloud', 'arrow', 'highlight', 'measure', 'ellipse', 'callout'].includes(state.tool)) {
+    if (['line', 'rect', 'cloud', 'arrow', 'highlight', 'measure', 'ellipse', 'callout', 'text'].includes(state.tool)) {
       state.drawing = true;
       state.drawStart = screenToDoc(evt);
-      return;
-    }
-    if (state.tool === 'text') {
-      const pt = screenToDoc(evt);
-      const hit = hitTestMarkup(pt);
-      if (hit && (hit.markup_type === 'text' || hit.markup_type === 'textbox')) {
-        state.selectedMarkupId = hit.id;
-        showTextEditor(pt, hit);
-      } else {
-        showTextEditor(pt);
-      }
       return;
     }
     if (state.tool === 'rfi_pin') {
@@ -1871,10 +1887,11 @@
     if (!state.drawing || !state.drawStart) return;
     const pt = screenToDoc(evt);
     const s = state.drawStart;
-    const sw = state.markupStyle.lineWidth || 2;
-    const color = state.markupStyle.color || '#38bdf8';
-    const scallop = state.markupStyle.cloudScallop || 18;
-    if (['rect', 'highlight', 'ellipse'].includes(state.tool)) {
+    const activeStyle = toolStyle(state.tool);
+    const sw = activeStyle.lineWidth || 2;
+    const color = activeStyle.color || '#38bdf8';
+    const scallop = activeStyle.cloudScallop || 18;
+    if (['rect', 'highlight', 'ellipse', 'text'].includes(state.tool)) {
       const x = Math.min(s.x, pt.x); const y = Math.min(s.y, pt.y);
       const rw = Math.abs(pt.x - s.x); const rh = Math.abs(pt.y - s.y);
       if (state.tool === 'ellipse') {
@@ -1929,12 +1946,26 @@
     let geometry = {};
     let measurement_value = null;
     let label = null;
-    if (['rect', 'cloud', 'highlight', 'ellipse'].includes(type)) {
+    if (['rect', 'cloud', 'highlight', 'ellipse', 'text'].includes(type)) {
       geometry = { x: Math.min(s.x, pt.x), y: Math.min(s.y, pt.y), w: Math.abs(pt.x - s.x), h: Math.abs(pt.y - s.y) };
       if (geometry.w < 3 && geometry.h < 3) {
+        if (type === 'text') {
+          const hit = hitTestMarkup(pt);
+          if (hit && (hit.markup_type === 'text' || hit.markup_type === 'textbox')) {
+            state.selectedMarkupId = hit.id;
+            showTextEditor(pt, hit);
+          }
+        }
         state.drawing = false;
         state.drawStart = null;
         state.tempMarkup = null;
+        return;
+      }
+      if (type === 'text') {
+        state.drawing = false;
+        state.drawStart = null;
+        state.tempMarkup = null;
+        showTextEditor({ x: geometry.x + 8, y: geometry.y + 8 }, null, geometry);
         return;
       }
     } else if (type === 'callout') {
@@ -1974,7 +2005,7 @@
       measurement_value,
       measurement_unit: state.pixelsPerUnit ? state.measureUnit : 'px',
       label,
-      style: { ...state.markupStyle },
+      style: { ...toolStyle(type) },
     });
     if (type === 'callout') {
       const last = state.markups[state.markups.length - 1];
