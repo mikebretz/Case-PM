@@ -3301,6 +3301,15 @@ def api_drawings_search_shape():
             threshold = float(body.get('threshold') or 0.82)
         except (TypeError, ValueError):
             threshold = 0.82
+        try:
+            render_scale = float(body.get('render_scale') or 0) or None
+        except (TypeError, ValueError):
+            render_scale = None
+        try:
+            snip_w = float(body.get('snip_w') or 0) or None
+            snip_h = float(body.get('snip_h') or 0) or None
+        except (TypeError, ValueError):
+            snip_w = snip_h = None
         if not project_id:
             return jsonify({'error': 'project_id required'}), 400
         if not template_b64:
@@ -3321,6 +3330,9 @@ def api_drawings_search_shape():
             threshold=max(0.65, min(0.98, threshold)),
             max_results=150,
             max_sheets=100 if scope == 'project' else 1,
+            render_scale=render_scale,
+            snip_w=snip_w,
+            snip_h=snip_h,
         )
         return jsonify({'ok': True, 'scope': scope, 'count': len(results), 'results': results})
     except DrawingSearchError as exc:

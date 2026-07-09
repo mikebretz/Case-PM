@@ -690,7 +690,7 @@
             <div id="drawSearchShapePane" class="hidden px-2 py-2 border-b border-zinc-800 shrink-0 space-y-2">
                 <img id="drawSearchShapePreview" class="draw-search-shape-preview hidden" alt="Snipped shape">
                 <button type="button" onclick="CasePMDrawings.startShapeSnip()" class="w-full py-1.5 bg-violet-800 hover:bg-violet-700 rounded text-xs font-medium"><i class="fa-solid fa-crop-simple mr-1"></i>Snip shape on sheet</button>
-                <p class="text-[10px] text-zinc-500 leading-snug">Drag a box around a symbol (like Snipping Tool). Matches the interior — symbols that only touch the edge are ignored.</p>
+                <p class="text-[10px] text-zinc-500 leading-snug">Drag a box around a symbol. Project-wide search uses a quick low-res pass first, then refines matches — usually seconds, not minutes.</p>
                 <div class="flex items-center gap-2 text-[10px] text-zinc-400">
                     <span class="shrink-0">Match</span>
                     <input type="range" id="drawShapeThreshold" min="70" max="95" value="82" class="flex-1 accent-violet-500">
