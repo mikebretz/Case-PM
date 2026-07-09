@@ -34,7 +34,11 @@
     draggingMarkup: null,
     dragStartPt: null,
     dragOrigGeom: null,
-    markupStyle: { color: '#38bdf8', lineWidth: 2, opacity: 1, fillOpacity: 0.25, cloudScallop: 18, fontSize: 14 },
+    markupStyle: {
+      color: '#38bdf8', lineWidth: 2, opacity: 1, fillOpacity: 0.25, cloudScallop: 18,
+      fontSize: 14, fontWeight: 'normal', fontStyle: 'normal', textAlign: 'left',
+      textPadding: 6, showTextBorder: true, arrowHead: 'arrow',
+    },
     thumbQueue: [],
     thumbBusy: false,
     pdfDoc: null,
@@ -1191,14 +1195,18 @@
       hit = `<rect data-markup-id="${id}" x="${bx}" y="${by}" width="${bw}" height="${bh}" fill="transparent" pointer-events="all"/>`;
       visual = `<line x1="${tipX}" y1="${tipY}" x2="${bx + bw / 2}" y2="${by + bh}" stroke="${selStroke}" stroke-width="${selSw}" opacity="${op}"${dash} pointer-events="none"/>
         <rect x="${bx}" y="${by}" width="${bw}" height="${bh}" stroke="${selStroke}" stroke-width="${selSw}" fill="rgba(24,24,27,0.85)" opacity="${op}"${dash} pointer-events="none"/>
-        <text x="${bx + 8}" y="${by + 20}" fill="${selStroke}" font-size="${style.fontSize || 13}" pointer-events="none">${esc(m.label || '')}</text>`;
+        <text x="${bx + 8}" y="${by + 20}" fill="${selStroke}" font-size="${style.fontSize || 13}" font-weight="${style.fontWeight === 'bold' ? 'bold' : 'normal'}" pointer-events="none">${esc(m.label || '')}</text>`;
     } else if (m.markup_type === 'text' || m.markup_type === 'textbox') {
       const tw = geom.w || 180;
       const th = geom.h || 28;
       hit = `<rect data-markup-id="${id}" x="${geom.x}" y="${geom.y}" width="${tw}" height="${th}" fill="transparent" pointer-events="all"/>`;
       const bg = style.fillOpacity != null ? `rgba(24,24,27,${style.fillOpacity})` : 'rgba(24,24,27,0.75)';
-      visual = `<rect x="${geom.x}" y="${geom.y}" width="${tw}" height="${th}" fill="${bg}" stroke="${selStroke}" stroke-width="${selected ? 2 : 1}" opacity="${op}" pointer-events="none"/>
-        <text x="${geom.x + 6}" y="${geom.y + (style.fontSize || 14) + 4}" fill="${selStroke}" font-size="${style.fontSize || 14}" opacity="${op}" pointer-events="none">${esc(m.label || '')}</text>`;
+      const border = style.showTextBorder !== false
+        ? `<rect x="${geom.x}" y="${geom.y}" width="${tw}" height="${th}" fill="${bg}" stroke="${selStroke}" stroke-width="${selected ? 2 : 1}" opacity="${op}" pointer-events="none"/>`
+        : `<rect x="${geom.x}" y="${geom.y}" width="${tw}" height="${th}" fill="${bg}" stroke="none" opacity="${op}" pointer-events="none"/>`;
+      const ta = textMarkupAttrs(style, geom, m.label);
+      visual = `${border}
+        <text x="${ta.tx}" y="${geom.y + ta.pad}" text-anchor="${ta.anchor}" fill="${selStroke}" font-size="${ta.fs}" font-weight="${ta.weight}" font-style="${ta.italic}" opacity="${op}" pointer-events="none">${ta.tspans}</text>`;
     } else if (m.markup_type === 'rfi_pin') {
       const x = geom.x || 0; const y = geom.y || 0;
       return `<g data-rfi-pin="${m.linked_rfi_id || ''}" data-markup-id="${id}" style="cursor:pointer"><circle cx="${x}" cy="${y}" r="14" fill="transparent"/><circle cx="${x}" cy="${y}" r="10" fill="#f97316" stroke="#fff" stroke-width="2"/><text x="${x}" y="${y + 4}" text-anchor="middle" fill="#fff" font-size="9" font-weight="bold" pointer-events="none">R</text><title>${esc(m.label || 'RFI')}</title></g>`;
@@ -1241,6 +1249,15 @@
   const FONT_PRESETS = [
     { label: '10', value: 10 }, { label: '12', value: 12 }, { label: '14', value: 14 },
     { label: '18', value: 18 }, { label: '24', value: 24 }, { label: '32', value: 32 },
+  ];
+  const FONT_WEIGHT_PRESETS = [
+    { label: 'Regular', value: 'normal' }, { label: 'Bold', value: 'bold' },
+  ];
+  const TEXT_ALIGN_PRESETS = [
+    { label: 'Left', value: 'left' }, { label: 'Center', value: 'center' }, { label: 'Right', value: 'right' },
+  ];
+  const ARROW_HEAD_PRESETS = [
+    { label: 'Arrow', value: 'arrow' }, { label: 'Open', value: 'open' }, { label: 'None', value: 'none' },
   ];
   const SCALE_PRESETS = [
     { label: '1/8"=1\'', pdfPtsPerFoot: 9 },
@@ -1336,6 +1353,22 @@
     { label: 'Dotted', value: '2 4' },
   ];
 
+  function textMarkupAttrs(style, geom, label) {
+    const fs = style.fontSize || 14;
+    const pad = style.textPadding ?? 6;
+    const align = style.textAlign || 'left';
+    const anchor = align === 'center' ? 'middle' : (align === 'right' ? 'end' : 'start');
+    const tx = geom.x + (align === 'center' ? (geom.w || 180) / 2 : (align === 'right' ? (geom.w || 180) - pad : pad));
+    const weight = style.fontWeight === 'bold' ? 'bold' : 'normal';
+    const italic = style.fontStyle === 'italic' ? 'italic' : 'normal';
+    const lines = String(label || '').split('\n');
+    const lineH = fs + 4;
+    const tspans = lines.map((line, i) =>
+      `<tspan x="${tx}" dy="${i === 0 ? fs + pad : lineH}">${esc(line)}</tspan>`
+    ).join('');
+    return { fs, pad, anchor, tx, weight, italic, tspans, lineH };
+  }
+
   function renderPropertiesPanel() {
     const el = document.getElementById('markupPropertiesPanel');
     if (!el) return;
@@ -1347,9 +1380,10 @@
     const showCloud = type === 'cloud';
     const showLine = ['line', 'arrow', 'rect', 'ellipse', 'cloud', 'measure', 'highlight', 'callout'].includes(type);
     const showText = type === 'text' || type === 'textbox' || type === 'callout';
+    const showArrow = type === 'arrow' || type === 'line' || type === 'callout';
     const showMeasure = type === 'measure' || (isSelected && ctx?.markup_type === 'measure');
-    const showFill = ['rect', 'highlight', 'ellipse', 'text', 'textbox'].includes(type);
-    const showSize = isSelected && ['rect', 'highlight', 'ellipse', 'cloud', 'textbox'].includes(type);
+    const showFill = ['rect', 'highlight', 'ellipse', 'text', 'textbox', 'callout'].includes(type);
+    const showSize = isSelected && ['rect', 'highlight', 'ellipse', 'cloud', 'textbox', 'callout'].includes(type);
     const geom = isSelected && ctx?.geometry ? resolveGeom(ctx.geometry) : null;
     const color = style.color || '#38bdf8';
     const lineWidth = style.lineWidth || 2;
@@ -1357,10 +1391,17 @@
     const fillOpacity = style.fillOpacity ?? (type === 'highlight' ? 0.25 : 0.75);
     const cloudScallop = style.cloudScallop || 18;
     const fontSize = style.fontSize || 14;
+    const fontWeight = style.fontWeight || 'normal';
+    const fontStyle = style.fontStyle || 'normal';
+    const textAlign = style.textAlign || 'left';
+    const textPadding = style.textPadding ?? 6;
+    const showTextBorder = style.showTextBorder !== false;
+    const arrowHead = style.arrowHead || 'arrow';
     const strokeDash = style.strokeDash || '';
 
     el.innerHTML = `
       <div class="text-[10px] uppercase text-zinc-500 mb-2 sticky top-0 bg-zinc-800/95 py-1 z-10">${esc(title)}</div>
+      ${showText && !isSelected ? `<p class="text-[10px] text-zinc-500 mb-2">Click the sheet to place text. Adjust style here before placing.</p>` : ''}
       ${showLine ? `
         <label class="block text-[10px] text-zinc-400 mb-1">Color</label>
         <div class="flex items-center gap-2 mb-2">
@@ -1376,8 +1417,22 @@
       ${showFill ? propSlider('Fill opacity', 'propFillOpacity', Math.round(fillOpacity * 100), 0, 100, 5) : ''}
       ${showCloud ? propNum('Cloud scallop (px)', 'propCloudScallop', cloudScallop, 6, 48, 1) : ''}
       ${showCloud ? propChips('Cloud presets', CLOUD_PRESETS, cloudScallop, 'cloudScallop') : ''}
-      ${showText ? propNum('Font size (px)', 'propFontSize', fontSize, 8, 72, 1) : ''}
-      ${showText ? propChips('Font presets', FONT_PRESETS, fontSize, 'fontSize') : ''}
+      ${showText ? `
+        <div class="border-t border-zinc-700 pt-2 mt-1">
+          <div class="text-[10px] uppercase text-zinc-500 mb-2">Text</div>
+          ${propNum('Font size (px)', 'propFontSize', fontSize, 8, 72, 1)}
+          ${propChips('Size presets', FONT_PRESETS, fontSize, 'fontSize')}
+          ${propChips('Weight', FONT_WEIGHT_PRESETS, fontWeight, 'fontWeight')}
+          ${propChips('Style', [{ label: 'Normal', value: 'normal' }, { label: 'Italic', value: 'italic' }], fontStyle, 'fontStyle')}
+          ${propChips('Alignment', TEXT_ALIGN_PRESETS, textAlign, 'textAlign')}
+          ${propNum('Padding (px)', 'propTextPadding', textPadding, 0, 32, 1)}
+          <label class="flex items-center gap-2 text-[10px] text-zinc-400 mb-2 cursor-pointer">
+            <input type="checkbox" id="propShowTextBorder" class="rounded" ${showTextBorder ? 'checked' : ''}>
+            Show text box border
+          </label>
+        </div>
+      ` : ''}
+      ${showArrow ? propChips('Arrow head', ARROW_HEAD_PRESETS, arrowHead, 'arrowHead') : ''}
       ${showSize && geom ? `
         <div class="border-t border-zinc-700 pt-2 mt-2">
           <div class="text-[10px] uppercase text-zinc-500 mb-2">Size (px)</div>
@@ -1439,6 +1494,14 @@
     bindNum('propLineWidth', 'lineWidth');
     bindNum('propCloudScallop', 'cloudScallop');
     bindNum('propFontSize', 'fontSize');
+    bindNum('propTextPadding', 'textPadding');
+    const borderChk = document.getElementById('propShowTextBorder');
+    if (borderChk) {
+      borderChk.addEventListener('change', () => {
+        applyMarkupProperty({ showTextBorder: borderChk.checked });
+        renderMarkupOverlay();
+      });
+    }
     const opSlider = document.getElementById('propOpacity');
     if (opSlider) {
       opSlider.addEventListener('input', () => {
@@ -2134,7 +2197,63 @@
   }
 
   function openUploadModal() {
-    document.getElementById('uploadDrawingModal')?.showModal();
+    const dlg = document.getElementById('uploadDrawingModal');
+    if (!dlg) return;
+    dlg.showModal();
+    if (global.CasePMDialog?.makeDraggable) {
+      global.CasePMDialog.makeDraggable(dlg, '.casepm-drag-handle');
+    }
+    const fileInput = document.getElementById('uploadFile');
+    const nameEl = document.getElementById('uploadDropFileName');
+    if (nameEl && fileInput && !fileInput.files?.length) nameEl.textContent = '';
+  }
+
+  function setUploadModalFile(file) {
+    const fileInput = document.getElementById('uploadFile');
+    const nameEl = document.getElementById('uploadDropFileName');
+    if (!fileInput || !file) return;
+    const dt = new DataTransfer();
+    dt.items.add(file);
+    fileInput.files = dt.files;
+    if (nameEl) nameEl.textContent = file.name;
+  }
+
+  function bindUploadModalDropZone() {
+    const zone = document.getElementById('uploadModalDropZone');
+    const fileInput = document.getElementById('uploadFile');
+    if (!zone || !fileInput || zone._bound) return;
+    zone._bound = true;
+    const pickPdf = (files) => [...(files || [])].find(
+      (f) => f.name?.toLowerCase().endsWith('.pdf') || f.type === 'application/pdf'
+    );
+    zone.addEventListener('click', () => fileInput.click());
+    fileInput.addEventListener('change', () => {
+      const f = fileInput.files?.[0];
+      const nameEl = document.getElementById('uploadDropFileName');
+      if (nameEl) nameEl.textContent = f ? f.name : '';
+    });
+    ['dragenter', 'dragover'].forEach((evt) => {
+      zone.addEventListener(evt, (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        zone.classList.add('border-sky-500', 'bg-sky-950/30');
+      });
+    });
+    zone.addEventListener('dragleave', (e) => {
+      e.preventDefault();
+      zone.classList.remove('border-sky-500', 'bg-sky-950/30');
+    });
+    zone.addEventListener('drop', (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      zone.classList.remove('border-sky-500', 'bg-sky-950/30');
+      const file = pickPdf(e.dataTransfer?.files);
+      if (!file) {
+        alert('Drop a PDF file.');
+        return;
+      }
+      setUploadModalFile(file);
+    });
   }
 
   function openSubstituteModal() {
@@ -2151,8 +2270,13 @@
     if (json.needs_review_count > 0) {
       html += `<p class="text-amber-400 text-xs mb-3">${json.needs_review_count} page(s) imported with provisional sheet numbers — filter by <strong>For Review</strong> to assign correct numbers.</p>`;
     }
+    if (json.warnings?.length) {
+      html += `<div class="text-amber-300 text-xs mb-3 p-2 bg-amber-950/30 border border-amber-800/50 rounded-md">${json.warnings.map(w => esc(w)).join('<br>')}</div>`;
+    }
     if (pages.length) {
-      html += `<p class="text-xs text-zinc-400 mb-3">${json.page_count ? `${json.page_count} page(s) in file · ` : ''}${json.created_count || pages.length} sheet(s) imported${json.split ? ' (split from drawing set)' : ''}</p>`;
+      const expected = json.expected_page_count || json.page_count;
+      const splitNote = json.split_engine ? ` · split via ${esc(json.split_engine)}` : '';
+      html += `<p class="text-xs text-zinc-400 mb-3">${expected ? `${expected} page(s) in file · ` : ''}${json.created_count || pages.length} sheet(s) imported${json.split ? ' (split from drawing set)' : ''}${splitNote}</p>`;
       html += `<table class="w-full text-xs"><thead><tr class="text-zinc-400 border-b border-zinc-700">
         <th class="text-left py-2 pr-2">Page</th><th class="text-left py-2 pr-2">Sheet #</th>
         <th class="text-left py-2 pr-2">Revision</th><th class="text-left py-2 pr-2">Date</th>
@@ -2267,6 +2391,9 @@
     const bar = document.getElementById('uploadProgressBar');
     if (bar) bar.style.width = '100%';
     const pages = json.pages || json.drawings || [];
+    if (json.warnings?.length) {
+      json.warnings.forEach((w) => appendUploadLog(`⚠ ${w}`));
+    }
     if (pages.length) {
       appendUploadLog('— Results —');
       pages.forEach(p => {
@@ -2452,6 +2579,7 @@
     bindFilters();
     bindViewerEvents();
     bindSectionDropZone();
+    bindUploadModalDropZone();
     document.addEventListener('fullscreenchange', onFullscreenChange);
     document.addEventListener('click', e => {
       if (!e.target.closest('#printMenu') && !e.target.closest('#btnPrintMenu')) {
