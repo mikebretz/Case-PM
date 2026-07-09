@@ -149,6 +149,43 @@
     background: #3f3f46;
     margin: 0.25rem 0;
   }
+  .draw-sheet-edit-bar {
+    flex-shrink: 0;
+    border-bottom: 1px solid #27272a;
+    background: rgba(14, 116, 144, 0.12);
+    padding: 0.4rem 0.75rem;
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    flex-wrap: wrap;
+    font-size: 0.75rem;
+  }
+  .draw-sheet-cell-input {
+    width: 100%;
+    min-width: 0;
+    background: rgba(24, 24, 27, 0.6);
+    border: 1px solid #3f3f46;
+    border-radius: 0.25rem;
+    padding: 0.25rem 0.4rem;
+    font-size: 0.75rem;
+    color: #fafafa;
+  }
+  .draw-sheet-cell-input:focus {
+    outline: none;
+    border-color: #38bdf8;
+    background: #18181b;
+    box-shadow: 0 0 0 1px rgba(56, 189, 248, 0.35);
+  }
+  .draw-sheet-cell-input.draw-sheet-cell-dirty {
+    border-color: #f59e0b;
+    background: rgba(120, 53, 15, 0.15);
+  }
+  tr.draw-sheet-row-dirty {
+    background: rgba(120, 53, 15, 0.08);
+  }
+  #drawPanelList.draw-sheet-edit-active thead th {
+    color: #7dd3fc;
+  }
   .draw-viewer-status {
     flex-shrink: 0;
     border-top: 1px solid #27272a;
@@ -423,6 +460,7 @@
     <div class="flex gap-1">
         <button type="button" id="btnViewSections" onclick="CasePMDrawings.switchView('sections')" class="px-3 py-1.5 rounded-md text-xs font-medium bg-sky-700 text-white h-[32px]">Sections</button>
         <button type="button" id="btnViewList" onclick="CasePMDrawings.switchView('list')" class="px-3 py-1.5 rounded-md text-xs font-medium bg-zinc-800 text-zinc-300 h-[32px]">Sheets</button>
+        <button type="button" id="btnSheetEditMode" onclick="CasePMDrawings.toggleSheetEditMode()" class="px-3 py-1.5 rounded-md text-xs font-medium bg-zinc-800 text-zinc-300 h-[32px]" title="Edit sheet numbers, revisions, dates in the table"><i class="fa-solid fa-table-cells mr-1"></i><span id="btnSheetEditModeLabel">Edit table</span></button>
         <button type="button" id="btnViewViewer" onclick="CasePMDrawings.switchView('viewer')" class="hidden px-3 py-1.5 rounded-md text-xs font-medium bg-zinc-800 text-zinc-300 h-[32px]">Viewer</button>
     </div>
     <div id="drawTopPreview" class="flex items-center gap-2 px-2 py-1 bg-zinc-900 border border-zinc-700 rounded-md text-xs min-w-0 h-[32px]">
@@ -473,6 +511,13 @@
 
 <!-- LIST PANEL -->
 <div id="drawPanelList" class="hidden flex-1 min-h-0 flex flex-col border border-zinc-700 rounded-md bg-zinc-900 mb-2 overflow-hidden no-print">
+    <div id="drawSheetEditBar" class="draw-sheet-edit-bar hidden">
+        <i class="fa-solid fa-pen-to-square text-sky-400"></i>
+        <span class="text-sky-200">Spreadsheet edit — click cells to change sheet #, revision, dates, etc. Tab between cells; paste from Excel.</span>
+        <span id="drawSheetEditCount" class="text-amber-300 font-medium ml-auto"></span>
+        <button type="button" onclick="CasePMDrawings.saveSheetEdits()" class="px-2.5 py-1 bg-sky-700 hover:bg-sky-600 rounded text-xs font-medium text-white">Save changes</button>
+        <button type="button" onclick="CasePMDrawings.discardSheetEdits()" class="px-2.5 py-1 bg-zinc-800 hover:bg-zinc-700 rounded text-xs">Discard</button>
+    </div>
     <div class="flex-1 overflow-auto min-h-0">
         <table class="w-full text-sm min-w-[1000px]">
             <thead class="bg-zinc-800 sticky top-0 z-20 border-b border-zinc-700">
