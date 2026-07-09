@@ -3153,13 +3153,15 @@ def api_drawing_markups(drawing_id):
             from rfi_persistence import _parse_json
             pins = _parse_json(rfi.plan_pins_json, [])
             geom = body.get('geometry') or {}
+            pin_x = geom.get('anchorX', geom.get('x', 0))
+            pin_y = geom.get('anchorY', geom.get('y', 0))
             pins.append({
                 'drawing_id': drawing.id,
                 'drawing_sheet': drawing.sheet_number,
-                'x': geom.get('x', 0),
-                'y': geom.get('y', 0),
-                'nx': geom.get('nx'),
-                'ny': geom.get('ny'),
+                'x': pin_x,
+                'y': pin_y,
+                'nx': geom.get('nanchorX', geom.get('nx')),
+                'ny': geom.get('nanchorY', geom.get('ny')),
                 'markup_id': markup.id,
                 'note': body.get('label') or '',
                 'created_at': datetime.utcnow().isoformat(),
@@ -3218,6 +3220,23 @@ def api_drawings_punch_items():
             'location': p.location,
             'status': p.status,
         } for p in items]
+    })
+
+
+@app.route('/api/drawings/change-orders', methods=['GET'])
+@login_required
+def api_drawings_change_orders():
+    project_id = request.args.get('project_id', type=int) or get_current_project_id()
+    if not project_id:
+        return jsonify({'error': 'project_id required'}), 400
+    cos = ChangeOrder.query.filter_by(project_id=int(project_id)).filter(ChangeOrder.status != 'Void').all()
+    return jsonify({
+        'change_orders': [{
+            'id': c.id,
+            'number': c.number,
+            'title': getattr(c, 'title', None) or (c.description or '')[:80],
+            'status': c.status,
+        } for c in cos],
     })
 
 

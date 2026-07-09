@@ -10,7 +10,7 @@
     'pen', 'line', 'polyline', 'arrow', 'rect', 'ellipse', 'polygon', 'cloud', 'crossout', 'highlight',
     'text', 'callout', 'stamp',
     'measure', 'area', 'count', 'calibrate',
-    'rfi_pin', 'punch_pin',
+    'rfi_pin', 'punch_pin', 'co_pin',
   ];
 
   const STAMP_PRESETS = [
@@ -29,7 +29,7 @@
     { label: 'Shapes', tools: ['rect', 'ellipse', 'polygon', 'cloud', 'crossout', 'highlight'] },
     { label: 'Text & stamps', tools: ['text', 'callout', 'stamp'] },
     { label: 'Measure', tools: ['measure', 'area', 'count', 'calibrate'] },
-    { label: 'Field pins', tools: ['rfi_pin', 'punch_pin'] },
+    { label: 'Field pins', tools: ['rfi_pin', 'co_pin', 'punch_pin'] },
   ];
 
   const TOOL_STYLE_DEFAULTS = {
@@ -69,8 +69,9 @@
     area: { label: 'Area', shortcut: 'B', icon: 'fa-vector-square', hint: 'Click polygon corners, Enter to close — shows square feet when scale is set.' },
     count: { label: 'Count', shortcut: 'O', icon: 'fa-hashtag', hint: 'Click each item to count — Bluebeam-style running tally.' },
     calibrate: { label: 'Calibrate scale', shortcut: 'K', icon: 'fa-ruler-combined', hint: 'Click two points on a known dimension, then enter the real-world length.' },
-    rfi_pin: { label: 'RFI pin', shortcut: 'F', icon: 'fa-map-pin', hint: 'Click to drop a pin linked to an RFI (Procore-style).' },
-    punch_pin: { label: 'Punch pin', shortcut: 'J', icon: 'fa-thumbtack', hint: 'Click to drop a pin linked to a punch list item.' },
+    rfi_pin: { label: 'RFI pin', shortcut: 'F', icon: 'fa-map-pin', hint: 'Click the exact spot on the plan, then drag the label out of the way. Double-click the label to open that RFI.' },
+    co_pin: { label: 'CO pin', shortcut: 'D', icon: 'fa-file-signature', hint: 'Pin a change order to the sheet. Drag the label aside; double-click to open the CO.' },
+    punch_pin: { label: 'Punch pin', shortcut: 'J', icon: 'fa-thumbtack', hint: 'Pin a punch list item. Drag the label aside; double-click to open the item.' },
   };
 
   const TOOL_SHORTCUTS = {};
@@ -281,7 +282,7 @@
     const typeIcon = {
       measure: 'fa-ruler', area: 'fa-vector-square', count: 'fa-hashtag', stamp: 'fa-stamp',
       pen: 'fa-pen', sketch: 'fa-pen', polyline: 'fa-draw-polygon', polygon: 'fa-shapes',
-      crossout: 'fa-xmark', punch_pin: 'fa-thumbtack',
+      crossout: 'fa-xmark', punch_pin: 'fa-thumbtack', co_pin: 'fa-file-signature',
       callout: 'fa-comment-dots', text: 'fa-font', textbox: 'fa-font',
       cloud: 'fa-cloud', rfi_pin: 'fa-map-pin', arrow: 'fa-arrow-right', highlight: 'fa-highlighter',
     };
@@ -383,7 +384,10 @@
     countCounter: 1,
     selectedStamp: 'APPROVED',
     punchItems: [],
+    changeOrders: [],
     textDialogCtx: null,
+    pdfRerenderTimer: null,
+    lastPdfRenderScale: 0,
   };
 
   function projectId() {
@@ -485,6 +489,77 @@
       const json = await api(`/api/drawings/punch-items?project_id=${pid}`);
       state.punchItems = json.punch_items || [];
     } catch { state.punchItems = []; }
+  }
+
+  async function loadChangeOrders() {
+    const pid = projectId();
+    if (!pid) return;
+    try {
+      const json = await api(`/api/drawings/change-orders?project_id=${pid}`);
+      state.changeOrders = json.change_orders || [];
+    } catch { state.changeOrders = []; }
+  }
+
+  function navigateToRfi(rfiId) {
+    const pid = projectId();
+    const q = new URLSearchParams({ rfi_id: String(rfiId), open: '1' });
+    if (pid) q.set('project_id', String(pid));
+    global.location.href = `/rfis?${q.toString()}`;
+  }
+
+  function navigateToChangeOrder(coId) {
+    const pid = projectId();
+    const q = new URLSearchParams({ co_id: String(coId), open: '1' });
+    if (pid) q.set('project_id', String(pid));
+    global.location.href = `/change-orders?${q.toString()}`;
+  }
+
+  /** Leader pin: anchor = exact point on plan; x/y = draggable label badge. */
+  function resolvePinGeom(geom) {
+    const g = resolveGeom(geom || {});
+    if (g.anchorX == null && g.x != null) {
+      g.anchorX = g.x;
+      g.anchorY = g.y;
+      g.x = g.x + 56;
+      g.y = g.y - 56;
+    }
+    return g;
+  }
+
+  function leaderPinSvg(opts) {
+    const {
+      id, anchorX, anchorY, badgeX, badgeY, color, letter, pinType, linkId, label, selected,
+    } = opts;
+    const stroke = selected ? '#fbbf24' : color;
+    const title = esc(label || letter);
+    return `<g class="markup-item leader-pin${selected ? ' markup-selected' : ''}">
+      <line x1="${anchorX}" y1="${anchorY}" x2="${badgeX}" y2="${badgeY}" stroke="${stroke}" stroke-width="1.5" opacity="0.9" pointer-events="none"/>
+      <circle cx="${anchorX}" cy="${anchorY}" r="3.5" fill="${color}" stroke="#fff" stroke-width="1.5" pointer-events="none"/>
+      <circle data-markup-id="${id}" data-pin-badge="1" data-pin-type="${pinType}" data-pin-link="${linkId || ''}" cx="${badgeX}" cy="${badgeY}" r="16" fill="transparent" pointer-events="all"/>
+      <circle cx="${badgeX}" cy="${badgeY}" r="11" fill="${color}" stroke="${selected ? '#fbbf24' : '#fff'}" stroke-width="2" pointer-events="none"/>
+      <text x="${badgeX}" y="${badgeY + 4}" text-anchor="middle" fill="#fff" font-size="9" font-weight="bold" pointer-events="none">${esc(letter)}</text>
+      <title>${title}</title>
+    </g>`;
+  }
+
+  function computePdfRenderScale(unscaled, wrap) {
+    const fitScale = Math.min(
+      (wrap.clientWidth - 32) / unscaled.width,
+      (wrap.clientHeight - 32) / unscaled.height,
+    );
+    const dpr = global.devicePixelRatio || 1;
+    const minQuality = 200 / 72;
+    const zoomBoost = Math.max(1, state.viewScale * 0.9);
+    return Math.min(8, Math.max(minQuality, fitScale * dpr * zoomBoost, 2.5));
+  }
+
+  function schedulePdfQualityRerender() {
+    if (!state.openDrawing || !state.pdfDoc) return;
+    clearTimeout(state.pdfRerenderTimer);
+    state.pdfRerenderTimer = setTimeout(() => {
+      state.pdfRerenderTimer = null;
+      renderPdf(false, { qualityOnly: true });
+    }, 280);
   }
 
   function sectionSort(a, b) {
@@ -977,8 +1052,10 @@
       const pin = (state.markups || []).find(m => m.linked_rfi_id === r.id && m.markup_type === 'rfi_pin');
       const g = pin?.geometry || {};
       const q = new URLSearchParams({ project_id: projectId(), sheet: state.openDetail.sheet_number, rfi_id: r.id });
-      if (g.nx != null) q.set('x', g.nx);
-      if (g.ny != null) q.set('y', g.ny);
+      const fx = g.nanchorX != null ? g.nanchorX : g.nx;
+      const fy = g.nanchorY != null ? g.nanchorY : g.ny;
+      if (fx != null) q.set('x', fx);
+      if (fy != null) q.set('y', fy);
       if (state.openDetail.id) q.set('drawing_id', state.openDetail.id);
       return `<a href="/drawings?${q.toString()}" class="block text-xs text-sky-400 hover:underline">${esc(r.number)} — ${esc(r.subject)}</a>`;
     }).join('') || '<div class="text-xs text-zinc-500">No linked RFIs</div>';
@@ -1021,6 +1098,10 @@
       geom.ntipX = geom.ntipX ?? geom.tipX / w;
       geom.ntipY = geom.ntipY ?? geom.tipY / h;
     }
+    if (geom.anchorX != null && geom.anchorY != null) {
+      geom.nanchorX = geom.nanchorX ?? geom.anchorX / w;
+      geom.nanchorY = geom.nanchorY ?? geom.anchorY / h;
+    }
     if (geom.points && geom.points.length >= 4) {
       geom.npoints = geom.npoints ?? geom.points.map((v, i) => (i % 2 === 0 ? v / w : v / h));
     }
@@ -1037,6 +1118,12 @@
     if (geom.nh != null) out.h = geom.nh * h;
     if (geom.ntipX != null) out.tipX = geom.ntipX * w;
     if (geom.ntipY != null) out.tipY = geom.ntipY * h;
+    if (geom.nanchorX != null) out.anchorX = geom.nanchorX * w;
+    if (geom.nanchorY != null) out.anchorY = geom.nanchorY * h;
+    if (geom.anchorX != null && geom.canvasW && geom.canvasW !== w) {
+      out.anchorX = (geom.anchorX / geom.canvasW) * w;
+      out.anchorY = (geom.anchorY / geom.canvasH) * h;
+    }
     if (geom.tipX != null && geom.canvasW && geom.canvasW !== w) {
       out.tipX = (geom.tipX / geom.canvasW) * w;
       out.tipY = (geom.tipY / geom.canvasH) * h;
@@ -1070,6 +1157,27 @@
     if (g.ny != null) g.ny += ndy;
     if (g.ntipX != null) g.ntipX += ndx;
     if (g.ntipY != null) g.ntipY += ndy;
+    if (g.nanchorX != null) g.nanchorX += ndx;
+    if (g.nanchorY != null) g.nanchorY += ndy;
+    if (g.x != null) g.x += dx;
+    if (g.y != null) g.y += dy;
+    if (g.anchorX != null) g.anchorX += dx;
+    if (g.anchorY != null) g.anchorY += dy;
+    if (w && h) {
+      g.canvasW = w;
+      g.canvasH = h;
+    }
+    return g;
+  }
+
+  /** Move only the draggable badge on leader pins; anchor stays on the plan. */
+  function translatePinBadgeGeometry(geom, dx, dy) {
+    const { w, h } = canvasDims();
+    const g = JSON.parse(JSON.stringify(geom || {}));
+    const ndx = w ? dx / w : 0;
+    const ndy = h ? dy / h : 0;
+    if (g.nx != null) g.nx += ndx;
+    if (g.ny != null) g.ny += ndy;
     if (g.x != null) g.x += dx;
     if (g.y != null) g.y += dy;
     if (w && h) {
@@ -1077,6 +1185,16 @@
       g.canvasH = h;
     }
     return g;
+  }
+
+  function pinGeometryAt(anchorPt) {
+    const offset = 56;
+    return {
+      anchorX: anchorPt.x,
+      anchorY: anchorPt.y,
+      x: anchorPt.x + offset,
+      y: anchorPt.y - offset,
+    };
   }
 
   function applyViewTransform() {
@@ -1167,7 +1285,8 @@
     visibleMarkups().forEach(m => {
       const g = resolveGeom(m.geometry || {});
       let d = Infinity;
-      if (m.markup_type === 'rfi_pin') {
+      if (m.markup_type === 'rfi_pin' || m.markup_type === 'co_pin' || m.markup_type === 'punch_pin') {
+        const g = resolvePinGeom(m.geometry || {});
         d = Math.hypot(pt.x - (g.x || 0), pt.y - (g.y || 0));
       } else if (['rect', 'cloud', 'highlight'].includes(m.markup_type)) {
         const inside = pt.x >= g.x && pt.x <= g.x + g.w && pt.y >= g.y && pt.y <= g.y + g.h;
@@ -1213,8 +1332,6 @@
         d = inside ? 0 : Math.hypot(pt.x - g.x, pt.y - g.y);
       } else if (m.markup_type === 'count' && g.x != null) {
         d = Math.hypot(pt.x - g.x, pt.y - g.y);
-      } else if (m.markup_type === 'punch_pin') {
-        d = Math.hypot(pt.x - (g.x || 0), pt.y - (g.y || 0));
       } else if (g.points && g.points.length >= 4) {
         d = distToSegment(pt.x, pt.y, g.points[0], g.points[1], g.points[2], g.points[3]);
       } else if (g.x != null && g.y != null) {
@@ -1367,8 +1484,9 @@
     }
   }
 
-  async function renderPdf(forceReload) {
+  async function renderPdf(forceReload, opts) {
     if (!state.openDrawing || !global.pdfjsLib) return;
+    const qualityOnly = opts?.qualityOnly;
     const canvas = document.getElementById('drawPdfCanvas');
     const wrap = document.getElementById('drawViewerWrap');
     if (!canvas || !wrap) return;
@@ -1376,7 +1494,7 @@
     const url = getViewerPdfUrl();
     const gen = ++state.renderGen;
 
-    if (forceReload || !state.pdfDoc || state.pdfUrl !== url) {
+    if (!qualityOnly && (forceReload || !state.pdfDoc || state.pdfUrl !== url)) {
       if (state.renderTask) {
         try { await state.renderTask.cancel(); } catch { /* cancelled */ }
         state.renderTask = null;
@@ -1400,14 +1518,12 @@
     const page = await state.pdfDoc.getPage(state.pdfPage || 1);
     const unscaled = page.getViewport({ scale: 1, rotation: page.rotate });
     state.pdfPageWidthPts = unscaled.width;
-    const fitScale = Math.min(
-      (wrap.clientWidth - 32) / unscaled.width,
-      (wrap.clientHeight - 32) / unscaled.height,
-      2.5
-    );
-    const viewport = page.getViewport({ scale: Math.max(0.5, fitScale), rotation: page.rotate });
+    const renderScale = computePdfRenderScale(unscaled, wrap);
+    if (qualityOnly && Math.abs(renderScale - state.lastPdfRenderScale) < 0.15) return;
+    const viewport = page.getViewport({ scale: renderScale, rotation: page.rotate });
     if (gen !== state.renderGen) return;
 
+    state.lastPdfRenderScale = renderScale;
     state.lastViewport = viewport;
     canvas.width = viewport.width;
     canvas.height = viewport.height;
@@ -1443,15 +1559,19 @@
       diffCanvas.style.width = viewport.width + 'px';
       diffCanvas.style.height = viewport.height + 'px';
     }
-    fitToView();
-    renderMarkupOverlay();
-    if (state.pixelsPerUnit && state.scalePdfPointsPerFoot) {
-      applyScalePdfPtsPerFoot(state.scalePdfPointsPerFoot, state.scaleLabel, true);
+    if (!qualityOnly) {
+      fitToView();
+      renderMarkupOverlay();
+      if (state.pixelsPerUnit && state.scalePdfPointsPerFoot) {
+        applyScalePdfPtsPerFoot(state.scalePdfPointsPerFoot, state.scaleLabel, true);
+      } else {
+        await tryAutoDetectScale();
+      }
+      if (state.compareOverlayActive && !state.compareDiffFailed) {
+        await renderCompareDiff();
+      }
     } else {
-      await tryAutoDetectScale();
-    }
-    if (state.compareOverlayActive && !state.compareDiffFailed) {
-      await renderCompareDiff();
+      renderMarkupOverlay();
     }
   }
 
@@ -1468,24 +1588,14 @@
         <polygon points="0 0, 10 5, 0 10" fill="context-stroke"/>
       </marker>
     </defs>${shapes}${state.tempMarkup || ''}`;
-    svg.querySelectorAll('[data-rfi-pin]').forEach(el => {
-      el.addEventListener('click', e => {
+    svg.querySelectorAll('[data-pin-badge]').forEach(el => {
+      el.addEventListener('dblclick', e => {
         e.stopPropagation();
-        const rfiId = el.getAttribute('data-rfi-pin');
-        const pid = projectId();
-        let href = `/rfis${rfiId ? `?rfi_id=${rfiId}` : ''}`;
-        if (pid) href += `${href.includes('?') ? '&' : '?'}project_id=${pid}`;
-        global.location.href = href;
-      });
-    });
-    svg.querySelectorAll('[data-punch-pin]').forEach(el => {
-      el.addEventListener('click', e => {
-        e.stopPropagation();
-        const punchId = el.getAttribute('data-punch-pin');
-        const pid = projectId();
-        let href = `/punch-list${punchId ? `?item_id=${punchId}` : ''}`;
-        if (pid) href += `${href.includes('?') ? '&' : '?'}project_id=${pid}`;
-        global.location.href = href;
+        const pinType = el.getAttribute('data-pin-type');
+        const linkId = el.getAttribute('data-pin-link');
+        if (!linkId) return;
+        if (pinType === 'rfi') navigateToRfi(linkId);
+        else if (pinType === 'co') navigateToChangeOrder(linkId);
       });
     });
     svg.querySelectorAll('[data-markup-id]').forEach(el => {
@@ -1602,13 +1712,27 @@
       visual = `<circle cx="${x}" cy="${y}" r="12" fill="${selStroke}" stroke="#fff" stroke-width="2" opacity="${op}" pointer-events="none"/>
         <text x="${x}" y="${y + 4}" text-anchor="middle" fill="#fff" font-size="10" font-weight="bold" pointer-events="none">${esc(String(num))}</text>`;
     } else if (m.markup_type === 'punch_pin') {
-      const x = geom.x || 0;
-      const y = geom.y || 0;
-      const punchId = geom.linkedPunchId;
-      return `<g data-punch-pin="${punchId || ''}" data-markup-id="${id}" style="cursor:pointer"><circle cx="${x}" cy="${y}" r="14" fill="transparent"/><circle cx="${x}" cy="${y}" r="10" fill="#8b5cf6" stroke="#fff" stroke-width="2"/><text x="${x}" y="${y + 4}" text-anchor="middle" fill="#fff" font-size="9" font-weight="bold" pointer-events="none">P</text><title>${esc(m.label || 'Punch')}</title></g>`;
+      const g = resolvePinGeom(m.geometry || {});
+      return leaderPinSvg({
+        id, anchorX: g.anchorX, anchorY: g.anchorY, badgeX: g.x, badgeY: g.y,
+        color: '#8b5cf6', letter: 'P', pinType: 'punch', linkId: g.linkedPunchId || '',
+        label: m.label || 'Punch', selected,
+      });
+    } else if (m.markup_type === 'co_pin') {
+      const g = resolvePinGeom(m.geometry || {});
+      const coId = g.linkedCoId || m.linked_co_id;
+      return leaderPinSvg({
+        id, anchorX: g.anchorX, anchorY: g.anchorY, badgeX: g.x, badgeY: g.y,
+        color: '#10b981', letter: 'CO', pinType: 'co', linkId: coId || '',
+        label: m.label || 'Change Order', selected,
+      });
     } else if (m.markup_type === 'rfi_pin') {
-      const x = geom.x || 0; const y = geom.y || 0;
-      return `<g data-rfi-pin="${m.linked_rfi_id || ''}" data-markup-id="${id}" style="cursor:pointer"><circle cx="${x}" cy="${y}" r="14" fill="transparent"/><circle cx="${x}" cy="${y}" r="10" fill="#f97316" stroke="#fff" stroke-width="2"/><text x="${x}" y="${y + 4}" text-anchor="middle" fill="#fff" font-size="9" font-weight="bold" pointer-events="none">R</text><title>${esc(m.label || 'RFI')}</title></g>`;
+      const g = resolvePinGeom(m.geometry || {});
+      return leaderPinSvg({
+        id, anchorX: g.anchorX, anchorY: g.anchorY, badgeX: g.x, badgeY: g.y,
+        color: '#f97316', letter: 'R', pinType: 'rfi', linkId: m.linked_rfi_id || '',
+        label: m.label || 'RFI', selected,
+      });
     } else {
       return '';
     }
@@ -2197,6 +2321,16 @@
     const pt = screenToDoc(evt);
     const hit = hitTestMarkup(pt);
     if (!hit) return;
+    if (hit.markup_type === 'rfi_pin' && hit.linked_rfi_id) {
+      navigateToRfi(hit.linked_rfi_id);
+      return;
+    }
+    if (hit.markup_type === 'co_pin') {
+      const g = resolvePinGeom(hit.geometry || {});
+      const coId = g.linkedCoId;
+      if (coId) navigateToChangeOrder(coId);
+      return;
+    }
     if (hit.markup_type === 'text' || hit.markup_type === 'textbox' || hit.markup_type === 'callout') {
       state.selectedMarkupId = hit.id;
       const g = resolveGeom(hit.geometry || {});
@@ -2249,6 +2383,7 @@
       state.panY = p.my - ((p.my - state.panY) * newScale) / oldScale;
       state.viewScale = newScale;
       applyViewTransform();
+      schedulePdfQualityRerender();
     });
   }
 
@@ -2306,6 +2441,10 @@
       placeRfiPin(pt);
       return;
     }
+    if (state.tool === 'co_pin') {
+      placeCoPin(pt);
+      return;
+    }
     if (state.tool === 'punch_pin') {
       placePunchPin(pt);
       return;
@@ -2358,7 +2497,10 @@
         const dx = pt.x - state.draggingMarkup.startPt.x;
         const dy = pt.y - state.draggingMarkup.startPt.y;
         if (Math.hypot(dx, dy) > 2) state.draggingMarkup.moved = true;
-        m.geometry = translateGeometry(state.draggingMarkup.orig, dx, dy);
+        const pinTypes = ['rfi_pin', 'co_pin', 'punch_pin'];
+        m.geometry = pinTypes.includes(m.markup_type)
+          ? translatePinBadgeGeometry(state.draggingMarkup.orig, dx, dy)
+          : translateGeometry(state.draggingMarkup.orig, dx, dy);
         renderMarkupOverlay();
       }
       return;
@@ -2434,6 +2576,7 @@
       const moved = drag.moved;
       state.draggingMarkup = null;
       if (m && moved) {
+        m.geometry = normalizeGeometry(m.geometry || {});
         await persistMarkup(m, { geometry: m.geometry });
       }
       renderPropertiesPanel();
@@ -2605,9 +2748,38 @@
     if (!rfi) return;
     await saveMarkup({
       markup_type: 'rfi_pin',
-      geometry: { x: pt.x, y: pt.y },
+      geometry: pinGeometryAt(pt),
       linked_rfi_id: rfi.id,
       label: rfi.number,
+      publish: true,
+    });
+  }
+
+  async function placeCoPin(pt) {
+    if (!state.changeOrders.length) await loadChangeOrders();
+    if (!state.changeOrders.length) {
+      alert('No change orders on this project. Create a change order first.');
+      return;
+    }
+    const picked = await drawSelect({
+      title: 'Link change order pin',
+      message: 'Choose the change order to pin at this location on the sheet.',
+      items: state.changeOrders.map(c => ({
+        value: c.id,
+        label: `${c.number} — ${(c.title || c.description || '').slice(0, 80)}`,
+      })),
+      submitLabel: 'Place pin',
+      emptyLabel: 'No change orders found on this project',
+    });
+    if (!picked) return;
+    const co = state.changeOrders.find(c => c.id === picked.value);
+    if (!co) return;
+    const geom = pinGeometryAt(pt);
+    geom.linkedCoId = co.id;
+    await saveMarkup({
+      markup_type: 'co_pin',
+      geometry: geom,
+      label: co.number,
       publish: true,
     });
   }
@@ -2631,9 +2803,11 @@
     if (!picked) return;
     const item = state.punchItems.find(p => p.id === picked.value);
     if (!item) return;
+    const geom = pinGeometryAt(pt);
+    geom.linkedPunchId = item.id;
     await saveMarkup({
       markup_type: 'punch_pin',
-      geometry: { x: pt.x, y: pt.y, linkedPunchId: item.id },
+      geometry: geom,
       label: item.number || `PL-${item.id}`,
       publish: true,
     });
@@ -3358,7 +3532,7 @@
         document.getElementById('printMenu')?.classList.add('hidden');
       }
     });
-    await Promise.all([loadDashboard(), loadDrawings(), loadRfis(), loadPunchItems(), loadDrawingSets()]);
+    await Promise.all([loadDashboard(), loadDrawings(), loadRfis(), loadPunchItems(), loadChangeOrders(), loadDrawingSets()]);
     bindTextDialog();
     await handleDeepLink();
   }

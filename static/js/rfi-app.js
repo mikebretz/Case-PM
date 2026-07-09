@@ -538,6 +538,11 @@
     loadCompanies();
     bindFilters();
     await Promise.all([loadDashboard(), loadRfis(), loadLinkOptions()]);
+    const params = new URLSearchParams(window.location.search);
+    if (params.get('open') === '1' && params.get('rfi_id')) {
+      const id = parseInt(params.get('rfi_id'), 10);
+      if (id) await view(id);
+    }
     if (new URLSearchParams(window.location.search).get('action') === 'new') {
       openModal('create');
     }

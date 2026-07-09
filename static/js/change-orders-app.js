@@ -905,6 +905,11 @@
     await Promise.all([loadLinkOptions(), loadDashboard(), loadChangeOrders(), loadPcos(), loadSageLog()]);
     bindFilters();
     switchTab('cos');
+    const params = new URLSearchParams(window.location.search);
+    if (params.get('open') === '1' && params.get('co_id')) {
+      const id = parseInt(params.get('co_id'), 10);
+      if (id) await viewCo(id);
+    }
     global.addEventListener('casepm:co-approved', () => {
       loadChangeOrders();
       loadDashboard();
