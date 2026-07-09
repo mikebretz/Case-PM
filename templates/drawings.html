@@ -186,6 +186,66 @@
   #drawPanelList.draw-sheet-edit-active thead th {
     color: #7dd3fc;
   }
+  .draw-search-panel {
+    width: 17rem;
+    min-width: 17rem;
+    max-width: 17rem;
+    border-right: 1px solid #27272a;
+    background: rgba(9, 9, 11, 0.98);
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+  }
+  .draw-search-panel.hidden { display: none !important; }
+  .draw-search-tab {
+    flex: 1;
+    padding: 0.35rem 0.5rem;
+    font-size: 0.65rem;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    border-radius: 0.25rem;
+    color: #a1a1aa;
+    background: transparent;
+    border: 1px solid transparent;
+  }
+  .draw-search-tab.active {
+    color: #e0f2fe;
+    background: #0c4a6e;
+    border-color: #0369a1;
+  }
+  .draw-search-result {
+    display: flex;
+    gap: 0.5rem;
+    padding: 0.5rem;
+    border-radius: 0.375rem;
+    border: 1px solid #3f3f46;
+    background: #18181b;
+    cursor: pointer;
+    text-align: left;
+    width: 100%;
+  }
+  .draw-search-result:hover, .draw-search-result.active {
+    border-color: #38bdf8;
+    background: rgba(12, 74, 110, 0.25);
+  }
+  .draw-search-result-thumb {
+    width: 52px;
+    height: 52px;
+    flex-shrink: 0;
+    object-fit: contain;
+    background: #09090b;
+    border-radius: 0.25rem;
+    border: 1px solid #3f3f46;
+  }
+  .draw-search-shape-preview {
+    width: 100%;
+    max-height: 88px;
+    object-fit: contain;
+    background: #09090b;
+    border: 1px solid #3f3f46;
+    border-radius: 0.25rem;
+  }
+  #drawViewerWrap.search-snipping { cursor: crosshair; }
   .draw-viewer-status {
     flex-shrink: 0;
     border-top: 1px solid #27272a;
@@ -575,6 +635,7 @@
             <div class="draw-tool-group-label">Nav</div>
             <button type="button" id="tool-pan" onclick="CasePMDrawings.setTool('pan')" class="tool-btn" title="Pan (H)"><i class="fa-solid fa-hand"></i></button>
             <button type="button" id="tool-select" onclick="CasePMDrawings.setTool('select')" class="tool-btn" title="Select (V)"><i class="fa-solid fa-arrow-pointer"></i></button>
+            <button type="button" id="btnSearchPanel" onclick="CasePMDrawings.toggleSearchPanel()" class="tool-btn text-sky-400" title="Search text & shapes"><i class="fa-solid fa-magnifying-glass"></i></button>
             <div class="draw-tool-divider"></div>
             <div class="draw-tool-group-label">Draw</div>
             <button type="button" id="tool-line" onclick="CasePMDrawings.setTool('line')" class="tool-btn" title="Line (L)"><i class="fa-solid fa-minus"></i></button>
@@ -604,6 +665,42 @@
             <button type="button" id="tool-co_pin" onclick="CasePMDrawings.setTool('co_pin')" class="tool-btn text-emerald-400" title="Change order pin"><i class="fa-solid fa-file-signature"></i></button>
             <button type="button" id="tool-punch_pin" onclick="CasePMDrawings.setTool('punch_pin')" class="tool-btn text-violet-400" title="Punch pin"><i class="fa-solid fa-thumbtack"></i></button>
         </div>
+        <aside id="drawSearchPanel" class="draw-search-panel hidden no-print">
+            <div class="flex items-center justify-between px-2 py-2 border-b border-zinc-800 shrink-0">
+                <span class="text-[10px] uppercase tracking-wide text-sky-400 font-semibold"><i class="fa-solid fa-magnifying-glass mr-1"></i>Search</span>
+                <button type="button" onclick="CasePMDrawings.toggleSearchPanel(false)" class="text-zinc-500 hover:text-white text-sm">&times;</button>
+            </div>
+            <div class="flex gap-1 px-2 py-2 border-b border-zinc-800 shrink-0">
+                <button type="button" id="drawSearchTabText" class="draw-search-tab active" onclick="CasePMDrawings.setSearchMode('text')">Text</button>
+                <button type="button" id="drawSearchTabShape" class="draw-search-tab" onclick="CasePMDrawings.setSearchMode('shape')">Shape</button>
+            </div>
+            <div class="px-2 py-2 border-b border-zinc-800 shrink-0 space-y-1.5">
+                <div class="text-[10px] uppercase text-zinc-500">Search in</div>
+                <label class="flex items-center gap-2 text-[11px] text-zinc-300 cursor-pointer">
+                    <input type="radio" name="drawSearchScope" value="sheet" checked class="accent-sky-500" onchange="CasePMDrawings.setSearchScope('sheet')"> This sheet
+                </label>
+                <label class="flex items-center gap-2 text-[11px] text-zinc-300 cursor-pointer">
+                    <input type="radio" name="drawSearchScope" value="project" class="accent-sky-500" onchange="CasePMDrawings.setSearchScope('project')"> All drawings
+                </label>
+            </div>
+            <div id="drawSearchTextPane" class="px-2 py-2 border-b border-zinc-800 shrink-0 space-y-2">
+                <input type="text" id="drawSearchTextInput" placeholder="Door, RFI note, room #…" class="w-full bg-zinc-900 border border-zinc-700 rounded px-2 py-1.5 text-xs text-white" onkeydown="if(event.key==='Enter')CasePMDrawings.runTextSearch()">
+                <button type="button" onclick="CasePMDrawings.runTextSearch()" class="w-full py-1.5 bg-sky-700 hover:bg-sky-600 rounded text-xs font-medium">Search text</button>
+            </div>
+            <div id="drawSearchShapePane" class="hidden px-2 py-2 border-b border-zinc-800 shrink-0 space-y-2">
+                <img id="drawSearchShapePreview" class="draw-search-shape-preview hidden" alt="Snipped shape">
+                <button type="button" onclick="CasePMDrawings.startShapeSnip()" class="w-full py-1.5 bg-violet-800 hover:bg-violet-700 rounded text-xs font-medium"><i class="fa-solid fa-crop-simple mr-1"></i>Snip shape on sheet</button>
+                <p class="text-[10px] text-zinc-500 leading-snug">Drag a box around a symbol (like Snipping Tool). Matches the interior — symbols that only touch the edge are ignored.</p>
+                <div class="flex items-center gap-2 text-[10px] text-zinc-400">
+                    <span class="shrink-0">Match</span>
+                    <input type="range" id="drawShapeThreshold" min="70" max="95" value="82" class="flex-1 accent-violet-500">
+                    <span id="drawShapeThresholdLabel" class="w-8 text-right">82%</span>
+                </div>
+                <button type="button" onclick="CasePMDrawings.runShapeSearch()" class="w-full py-1.5 bg-violet-900 hover:bg-violet-800 rounded text-xs">Find similar shapes</button>
+            </div>
+            <div id="drawSearchStatus" class="px-2 py-1 text-[10px] text-zinc-500 border-b border-zinc-800 shrink-0 hidden"></div>
+            <div id="drawSearchResults" class="flex-1 overflow-auto p-2 space-y-1.5 min-h-0"></div>
+        </aside>
         <div class="flex flex-col flex-1 min-h-0 min-w-0">
             <div id="drawViewerWrap" class="flex-1 cursor-grab min-h-0">
                 <div id="drawPrintArea">

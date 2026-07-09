@@ -380,6 +380,15 @@
     selectedDrawingIds: new Set(),
     sheetEditMode: false,
     sheetPendingEdits: {},
+    searchPanelOpen: false,
+    searchMode: 'text',
+    searchScope: 'sheet',
+    searchResults: [],
+    searchBusy: false,
+    searchTemplate: null,
+    searchSnipping: false,
+    searchHighlight: null,
+    selectedSearchIdx: null,
     uploadLogTimer: null,
     penPoints: null,
     pathPoints: null,
@@ -1118,6 +1127,217 @@
         });
       });
     });
+  }
+
+  function toggleSearchPanel(force) {
+    const next = force != null ? !!force : !state.searchPanelOpen;
+    state.searchPanelOpen = next;
+    document.getElementById('drawSearchPanel')?.classList.toggle('hidden', !next);
+    document.getElementById('btnSearchPanel')?.classList.toggle('tool-active', next);
+    if (!next) {
+      state.searchSnipping = false;
+      updateViewerCursor();
+    }
+  }
+
+  function setSearchMode(mode) {
+    state.searchMode = mode;
+    document.getElementById('drawSearchTabText')?.classList.toggle('active', mode === 'text');
+    document.getElementById('drawSearchTabShape')?.classList.toggle('active', mode === 'shape');
+    document.getElementById('drawSearchTextPane')?.classList.toggle('hidden', mode !== 'text');
+    document.getElementById('drawSearchShapePane')?.classList.toggle('hidden', mode !== 'shape');
+    renderSearchResults();
+  }
+
+  function setSearchScope(scope) {
+    state.searchScope = scope;
+    const radios = document.querySelectorAll('input[name="drawSearchScope"]');
+    radios.forEach(r => { r.checked = r.value === scope; });
+  }
+
+  function setSearchStatus(msg, busy) {
+    const el = document.getElementById('drawSearchStatus');
+    if (!el) return;
+    el.classList.toggle('hidden', !msg && !busy);
+    el.innerHTML = busy
+      ? `<i class="fa-solid fa-spinner fa-spin mr-1"></i>${esc(msg || 'Searching…')}`
+      : esc(msg || '');
+  }
+
+  function renderSearchResults() {
+    const el = document.getElementById('drawSearchResults');
+    if (!el) return;
+    const results = state.searchResults || [];
+    if (!results.length) {
+      el.innerHTML = `<div class="text-[10px] text-zinc-500 p-2">${state.searchMode === 'text'
+        ? 'Search finds text line-by-line in the current sheet or every drawing in the project.'
+        : 'Snip a symbol on the sheet, then find very similar shapes elsewhere. Edge-touching matches are filtered out.'}</div>`;
+      return;
+    }
+    el.innerHTML = results.map((r, i) => {
+      const active = state.selectedSearchIdx === i ? ' active' : '';
+      const thumb = r.thumb
+        ? `<img src="data:image/png;base64,${r.thumb}" class="draw-search-result-thumb" alt="">`
+        : `<div class="draw-search-result-thumb flex items-center justify-center text-zinc-600"><i class="fa-solid fa-file-lines"></i></div>`;
+      const sub = state.searchMode === 'shape'
+        ? `${Math.round((r.score || 0) * 100)}% match`
+        : esc(r.snippet || r.line_text || '');
+      return `<button type="button" class="draw-search-result${active}" data-search-idx="${i}" onclick="CasePMDrawings.jumpToSearchResult(${i})">
+        ${thumb}
+        <div class="min-w-0 flex-1">
+          <div class="font-mono text-sky-400 text-[11px] truncate">${esc(r.sheet_number || '')}</div>
+          <div class="text-[10px] text-zinc-500 truncate">${esc(r.title || '')}</div>
+          <div class="text-[10px] text-zinc-300 mt-0.5 line-clamp-2">${sub}</div>
+        </div>
+      </button>`;
+    }).join('');
+  }
+
+  async function jumpToSearchResult(idx) {
+    const r = state.searchResults[idx];
+    if (!r) return;
+    state.selectedSearchIdx = idx;
+    state.searchHighlight = r;
+    renderSearchResults();
+    if (!state.openDrawing || state.openDrawing.id !== r.drawing_id) {
+      await openViewer(r.drawing_id);
+    }
+    const cx = (r.nx || 0) + (r.nw || 0.02) / 2;
+    const cy = (r.ny || 0) + (r.nh || 0.02) / 2;
+    focusOnPoint(cx, cy);
+    renderSearchHighlight();
+  }
+
+  function renderSearchHighlight() {
+    const r = state.searchHighlight;
+    if (!r || r.nx == null) return;
+    const { w, h } = canvasDims();
+    if (!w || !h) return;
+    const x = (r.nx || 0) * w;
+    const y = (r.ny || 0) * h;
+    const rw = Math.max(12, (r.nw || 0.05) * w);
+    const rh = Math.max(12, (r.nh || 0.05) * h);
+    state.tempMarkup = `<rect class="search-hit" x="${x}" y="${y}" width="${rw}" height="${rh}" fill="none" stroke="#fbbf24" stroke-width="3" stroke-dasharray="6 4" opacity="0.95"/>`;
+    renderMarkupOverlay();
+    clearTimeout(renderSearchHighlight._timer);
+    renderSearchHighlight._timer = setTimeout(() => {
+      if (state.searchHighlight === r) {
+        state.tempMarkup = null;
+        renderMarkupOverlay();
+      }
+    }, 4500);
+  }
+
+  async function runTextSearch() {
+    const query = document.getElementById('drawSearchTextInput')?.value?.trim();
+    if (!query || query.length < 2) {
+      toast('Enter at least 2 characters to search');
+      return;
+    }
+    if (state.searchScope === 'sheet' && !state.openDrawing) {
+      toast('Open a sheet first, or search all drawings');
+      return;
+    }
+    setSearchStatus('Searching text…', true);
+    state.searchBusy = true;
+    try {
+      const json = await api('/api/drawings/search/text', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          project_id: projectId(),
+          query,
+          scope: state.searchScope,
+          drawing_id: state.openDrawing?.id,
+        }),
+      });
+      state.searchResults = json.results || [];
+      state.selectedSearchIdx = null;
+      setSearchStatus(`${state.searchResults.length} line${state.searchResults.length === 1 ? '' : 's'} found`, false);
+      renderSearchResults();
+      if (!state.searchResults.length) toast('No text matches found');
+    } catch (e) {
+      setSearchStatus('', false);
+      toastError(e.message || 'Text search failed');
+    }
+    state.searchBusy = false;
+  }
+
+  function captureCanvasRegion(x, y, w, h) {
+    const canvas = document.getElementById('drawPdfCanvas');
+    if (!canvas || w < 4 || h < 4) return null;
+    const x0 = Math.max(0, Math.min(x, canvas.width - 1));
+    const y0 = Math.max(0, Math.min(y, canvas.height - 1));
+    const rw = Math.min(w, canvas.width - x0);
+    const rh = Math.min(h, canvas.height - y0);
+    if (rw < 4 || rh < 4) return null;
+    const tmp = document.createElement('canvas');
+    tmp.width = rw;
+    tmp.height = rh;
+    tmp.getContext('2d').drawImage(canvas, x0, y0, rw, rh, 0, 0, rw, rh);
+    return tmp.toDataURL('image/png');
+  }
+
+  function startShapeSnip() {
+    if (!state.openDrawing) {
+      toast('Open a sheet to snip a shape from it');
+      return;
+    }
+    toggleSearchPanel(true);
+    setSearchMode('shape');
+    state.searchSnipping = true;
+    state.drawing = false;
+    state.drawStart = null;
+    state.tempMarkup = null;
+    updateViewerCursor();
+    toast('Drag a box around the shape to search for');
+  }
+
+  async function runShapeSearch() {
+    if (!state.searchTemplate) {
+      toast('Snip a shape on the sheet first');
+      return;
+    }
+    if (state.searchScope === 'sheet' && !state.openDrawing) {
+      toast('Open a sheet first');
+      return;
+    }
+    const thresh = parseInt(document.getElementById('drawShapeThreshold')?.value || '82', 10) / 100;
+    setSearchStatus('Finding similar shapes…', true);
+    state.searchBusy = true;
+    try {
+      const json = await api('/api/drawings/search/shape', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          project_id: projectId(),
+          scope: state.searchScope,
+          drawing_id: state.openDrawing?.id,
+          template: state.searchTemplate,
+          threshold: thresh,
+        }),
+      });
+      state.searchResults = json.results || [];
+      state.selectedSearchIdx = null;
+      setSearchStatus(`${state.searchResults.length} match${state.searchResults.length === 1 ? '' : 'es'}`, false);
+      renderSearchResults();
+      if (!state.searchResults.length) toast('No similar shapes found — try lowering match %');
+    } catch (e) {
+      setSearchStatus('', false);
+      toastError(e.message || 'Shape search failed');
+    }
+    state.searchBusy = false;
+  }
+
+  function bindSearchPanel() {
+    const slider = document.getElementById('drawShapeThreshold');
+    const lbl = document.getElementById('drawShapeThresholdLabel');
+    if (slider && !slider._bound) {
+      slider._bound = true;
+      slider.addEventListener('input', () => {
+        if (lbl) lbl.textContent = `${slider.value}%`;
+      });
+    }
   }
 
   function renderSectionGrid() {
@@ -2503,7 +2723,11 @@
   function updateViewerCursor() {
     const wrap = document.getElementById('drawViewerWrap');
     if (!wrap) return;
-    wrap.classList.remove('cursor-grab', 'cursor-grabbing', 'cursor-crosshair', 'cursor-pointer');
+    wrap.classList.remove('cursor-grab', 'cursor-grabbing', 'cursor-crosshair', 'cursor-pointer', 'search-snipping');
+    if (state.searchSnipping) {
+      wrap.classList.add('search-snipping', 'cursor-crosshair');
+      return;
+    }
     if (state.isPanning) wrap.classList.add('cursor-grabbing');
     else if (state.tool === 'pan') wrap.classList.add('cursor-grab');
     else if (state.tool === 'select') wrap.classList.add('cursor-pointer');
@@ -2735,6 +2959,12 @@
 
   async function onViewerDown(evt) {
     if (evt.button !== 0) return;
+    if (state.searchSnipping) {
+      evt.preventDefault();
+      state.drawing = true;
+      state.drawStart = screenToDoc(evt);
+      return;
+    }
     if (state.tool === 'pan' || evt.altKey) {
       state.isPanning = true;
       state.panAnchor = { x: evt.clientX - state.panX, y: evt.clientY - state.panY };
@@ -2850,6 +3080,17 @@
         state.pendingDrag = null;
       }
     }
+    if (state.searchSnipping && state.drawing && state.drawStart) {
+      const pt = screenToDoc(evt);
+      const s = state.drawStart;
+      const x = Math.min(s.x, pt.x);
+      const y = Math.min(s.y, pt.y);
+      const rw = Math.abs(pt.x - s.x);
+      const rh = Math.abs(pt.y - s.y);
+      state.tempMarkup = `<rect x="${x}" y="${y}" width="${rw}" height="${rh}" stroke="#a78bfa" stroke-width="2" fill="rgba(167,139,250,0.15)" stroke-dasharray="4 2"/>`;
+      renderMarkupOverlay();
+      return;
+    }
     if (state.draggingMarkup) {
       const pt = screenToDoc(evt);
       const m = state.markups.find(x => x.id === state.draggingMarkup.id);
@@ -2924,6 +3165,33 @@
   }
 
   async function onViewerUp(evt) {
+    if (state.searchSnipping && state.drawing && state.drawStart) {
+      const pt = screenToDoc(evt);
+      const s = state.drawStart;
+      const x = Math.min(s.x, pt.x);
+      const y = Math.min(s.y, pt.y);
+      const rw = Math.abs(pt.x - s.x);
+      const rh = Math.abs(pt.y - s.y);
+      state.drawing = false;
+      state.drawStart = null;
+      state.searchSnipping = false;
+      state.tempMarkup = null;
+      updateViewerCursor();
+      if (rw >= 8 && rh >= 8) {
+        const dataUrl = captureCanvasRegion(x, y, rw, rh);
+        if (dataUrl) {
+          state.searchTemplate = dataUrl;
+          const prev = document.getElementById('drawSearchShapePreview');
+          if (prev) {
+            prev.src = dataUrl;
+            prev.classList.remove('hidden');
+          }
+          await runShapeSearch();
+        }
+      }
+      renderMarkupOverlay();
+      return;
+    }
     if (state.isPanning) {
       state.isPanning = false;
       state.panAnchor = null;
@@ -3915,6 +4183,7 @@
     });
     await Promise.all([loadDashboard(), loadDrawings(), loadRfis(), loadPunchItems(), loadChangeOrders(), loadDrawingSets()]);
     bindTextDialog();
+    bindSearchPanel();
     await handleDeepLink();
   }
 
@@ -3961,6 +4230,13 @@
     saveSheetEdits,
     discardSheetEdits,
     onSheetCellInput,
+    toggleSearchPanel,
+    setSearchMode,
+    setSearchScope,
+    runTextSearch,
+    startShapeSnip,
+    runShapeSearch,
+    jumpToSearchResult,
     selectAllVisible,
     clearSelection,
     toggleSelectAllVisible,
