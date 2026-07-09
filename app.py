@@ -2832,7 +2832,7 @@ def api_bulk_delete_drawings():
     if not drawing_ids:
         return jsonify({'error': 'drawing_ids required'}), 400
     try:
-        deleted = delete_drawings_bulk(db, Drawing, DrawingRevision, DrawingMarkup, int(project_id), drawing_ids)
+        deleted = delete_drawings_bulk(db, Drawing, DrawingRevision, DrawingMarkup, int(project_id), drawing_ids, upload_root=app.config.get('UPLOAD_FOLDER'))
         db.session.commit()
         return jsonify({'ok': True, 'deleted_count': len(deleted), 'deleted_ids': deleted})
     except Exception as exc:
@@ -2853,7 +2853,7 @@ def api_delete_drawing_set():
     if not set_name:
         return jsonify({'error': 'set_name required'}), 400
     try:
-        deleted = delete_drawings_by_set_name(db, Drawing, DrawingRevision, DrawingMarkup, int(project_id), set_name)
+        deleted = delete_drawings_by_set_name(db, Drawing, DrawingRevision, DrawingMarkup, int(project_id), set_name, upload_root=app.config.get('UPLOAD_FOLDER'))
         db.session.commit()
         return jsonify({'ok': True, 'deleted_count': len(deleted), 'deleted_ids': deleted, 'set_name': set_name})
     except Exception as exc:
@@ -2989,7 +2989,10 @@ def api_delete_drawing(drawing_id):
     from drawing_persistence import delete_drawing_record
     drawing = Drawing.query.get_or_404(drawing_id)
     try:
-        delete_drawing_record(db, Drawing, DrawingRevision, DrawingMarkup, drawing)
+        delete_drawing_record(
+            db, Drawing, DrawingRevision, DrawingMarkup, drawing,
+            upload_root=app.config.get('UPLOAD_FOLDER'),
+        )
         db.session.commit()
         return jsonify({'ok': True, 'deleted_id': drawing_id})
     except Exception as exc:

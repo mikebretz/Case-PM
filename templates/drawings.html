@@ -201,6 +201,13 @@
   #drawPanelSections.draw-drop-active {
     box-shadow: inset 0 0 0 2px #0ea5e9;
   }
+  #drawSelectionBar {
+    flex-basis: 100%;
+  }
+  .draw-toast-error {
+    background: #7f1d1d !important;
+    color: #fecaca !important;
+  }
 </style>
 
 <div class="draw-page" id="drawPage">
@@ -216,9 +223,17 @@
     </div>
     <div id="drawTopPreview" class="flex items-center gap-2 px-2 py-1 bg-zinc-900 border border-zinc-700 rounded-md text-xs min-w-0 h-[32px]">
         <canvas id="drawPreviewThumb" width="44" height="32" class="hidden rounded"></canvas>
-        <div id="drawPreviewPane" class="truncate text-zinc-500 min-w-0">Sheet preview — click a thumbnail</div>
-        <button type="button" id="drawPreviewDeleteBtn" onclick="CasePMDrawings.deletePreviewedSheet()" class="hidden shrink-0 px-2 py-0.5 bg-red-900/70 hover:bg-red-800 rounded text-[10px] text-red-100" title="Delete sheet"><i class="fa-solid fa-trash"></i></button>
+        <div id="drawPreviewPane" class="truncate text-zinc-500 min-w-0">Click a sheet to preview</div>
+        <button type="button" id="drawPreviewDeleteBtn" onclick="CasePMDrawings.deletePreviewedSheet()" class="hidden shrink-0 px-2 py-0.5 bg-red-900/70 hover:bg-red-800 rounded text-[10px] text-red-100" title="Delete this sheet"><i class="fa-solid fa-trash mr-1"></i>Delete</button>
         <button type="button" id="drawPreviewOpenBtn" onclick="CasePMDrawings.openPreviewedSheet()" class="hidden shrink-0 px-2 py-0.5 bg-sky-800 hover:bg-sky-700 rounded text-[10px]">Open</button>
+    </div>
+    <div id="drawSelectionBar" class="hidden flex items-center gap-2 px-3 py-1.5 bg-sky-950/60 border border-sky-800 rounded-md text-xs">
+        <i class="fa-regular fa-square-check text-sky-400"></i>
+        <span id="drawBulkCountTop" class="text-sky-200 font-medium">0 selected</span>
+        <button type="button" onclick="CasePMDrawings.selectAllVisible()" class="px-2 py-0.5 bg-zinc-800 hover:bg-zinc-700 rounded">All visible</button>
+        <button type="button" onclick="CasePMDrawings.clearSelection()" class="px-2 py-0.5 bg-zinc-800 hover:bg-zinc-700 rounded">Clear</button>
+        <button type="button" onclick="CasePMDrawings.deleteSelectedDrawings()" class="px-2 py-0.5 bg-red-800 hover:bg-red-700 rounded text-red-50 font-medium"><i class="fa-solid fa-trash mr-1"></i>Delete selected</button>
+        <button type="button" onclick="CasePMDrawings.toggleSelectionMode()" class="px-2 py-0.5 bg-zinc-800 hover:bg-zinc-700 rounded text-zinc-400">Done</button>
     </div>
     <div class="flex-1 min-w-[8px]"></div>
     <input type="text" id="drawSearch" placeholder="Search…" class="w-28 sm:w-36 bg-zinc-900 border border-zinc-700 rounded-md px-2 py-1.5 text-xs h-[32px]">
@@ -234,7 +249,7 @@
     <select id="drawSetFilter" class="bg-zinc-900 border border-zinc-700 rounded-md px-2 py-1.5 text-xs h-[32px] hidden md:block max-w-[160px]" title="Filter by drawing set">
         <option value="">All sets</option>
     </select>
-    <button type="button" id="btnSelectSheets" onclick="CasePMDrawings.toggleSelectionMode()" class="px-2 py-1.5 bg-zinc-800 hover:bg-zinc-700 rounded-md text-xs h-[32px]" title="Select multiple sheets"><i class="fa-regular fa-square-check mr-1"></i>Select</button>
+    <button type="button" id="btnSelectSheets" onclick="CasePMDrawings.toggleSelectionMode()" class="px-2 py-1.5 bg-zinc-800 hover:bg-zinc-700 rounded-md text-xs h-[32px]" title="Select multiple sheets to delete"><i class="fa-regular fa-square-check mr-1"></i><span id="btnSelectSheetsLabel">Select sheets</span></button>
     <button type="button" onclick="CasePMDrawings.openSetsModal()" class="px-2 py-1.5 bg-zinc-800 hover:bg-zinc-700 rounded-md text-xs h-[32px]" title="Manage drawing sets"><i class="fa-solid fa-layer-group mr-1"></i>Sets</button>
     <button type="button" onclick="CasePMDrawings.openSubstituteModal()" class="px-2 py-1.5 bg-zinc-800 hover:bg-zinc-700 rounded-md text-xs h-[32px]" title="Substitute pages"><i class="fa-solid fa-shuffle"></i></button>
     <button type="button" onclick="CasePMDrawings.openUploadModal()" class="px-3 py-1.5 bg-white text-zinc-900 hover:bg-zinc-100 rounded-md text-xs font-semibold h-[32px]"><i class="fa-solid fa-upload mr-1"></i>Upload</button>
@@ -358,7 +373,7 @@
 <!-- BOTTOM BAR -->
 <div class="draw-bottom-bar fixed bottom-0 left-56 right-0 bg-zinc-900 border-t border-zinc-700 px-6 py-2 text-xs text-zinc-400 flex items-center justify-between z-[60] no-print">
     <div class="flex items-center gap-4">
-        <span>Double-click a sheet to open viewer · Full screen for largest view</span>
+        <span>Click to preview · double-click to open · check boxes to select & delete · <strong>Sets</strong> manages uploads</span>
         <a href="/rfis" class="text-sky-400 hover:text-sky-300 underline">RFIs</a>
     </div>
     <div class="text-emerald-400">● Online</div>
