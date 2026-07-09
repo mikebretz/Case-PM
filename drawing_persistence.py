@@ -814,14 +814,17 @@ def detect_sheet_number(
 def analyze_pdf_page(pdf_path: str, page_index: int = 0, from_combined_set: bool = False, source_filename: str | None = None) -> dict:
     """Analyze one page for sheet metadata (used during set upload)."""
     layout = extract_title_block_metadata(pdf_path, page_index)
+    layout_conf = layout.get('confidence') or {}
+    sheet_conf = float(layout_conf.get('sheet', 0) or 0)
+    name_conf = float(layout_conf.get('name', 0) or 0)
+    layout_trusted = bool(layout.get('label_anchored')) or sheet_conf >= 3.0 or name_conf >= 2.5
     text = extract_pdf_page_text(pdf_path, page_index)
     sheet, full_text, method, revision = detect_sheet_number(
         pdf_path, source_filename, text, page_index, from_combined_set=from_combined_set,
     )
 
     if layout.get('sheet_number'):
-        layout_conf = (layout.get('confidence') or {}).get('sheet', 0)
-        if not sheet or layout_conf >= 0.7 or layout.get('method') in ('layout', 'ocr', 'heuristic'):
+        if layout_trusted or not sheet or sheet_conf >= 1.2:
             sheet = layout['sheet_number']
             method = layout.get('method') or method
 
@@ -838,8 +841,7 @@ def analyze_pdf_page(pdf_path: str, page_index: int = 0, from_combined_set: bool
         revision = extract_revision_from_text(full_text or text or layout.get('text_preview', ''))
 
     title = layout.get('drawing_name') or layout.get('title') or ''
-    name_conf = (layout.get('confidence') or {}).get('name', 0)
-    if not title or (name_conf < 0.5 and len(title) < 4):
+    if (not title or (name_conf < 2.0 and not layout_trusted)) and not layout_trusted:
         title = extract_drawing_name_from_text(full_text or text or '', sheet) or title
     drawing_date = layout.get('drawing_date') or extract_drawing_date_from_text(full_text or text or '')
     scale = layout.get('scale') or extract_scale_from_text(full_text or text or '')
@@ -849,7 +851,7 @@ def analyze_pdf_page(pdf_path: str, page_index: int = 0, from_combined_set: bool
         ocr_lines = _plain_text_lines(ocr_text)
         if not revision:
             revision = _extract_revision_from_lines(ocr_lines, ocr_text) or extract_revision_from_text(ocr_text)
-        if not title or len(title) < 4:
+        if (not title or len(title) < 4) and not layout_trusted and name_conf < 2.0:
             ocr_title = _extract_drawing_title_from_lines(ocr_lines, sheet, ocr_text)
             if ocr_title:
                 title = ocr_title

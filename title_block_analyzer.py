@@ -467,14 +467,32 @@ def _vote_revision(sources: list[tuple[float, str | None]]) -> str | None:
 
 
 def _merge_grid_and_legacy(grid: dict, legacy: dict) -> dict:
-    """Prefer grid cell analysis; fill gaps from OCR/layout legacy pipeline."""
-    out = dict(legacy)
+    """Prefer grid label-proximity analysis; legacy only fills gaps."""
     gconf = grid.get('confidence') or {}
-    lconf = legacy.get('confidence') or {}
-    grid_cells = int(grid.get('grid_cells') or 0)
     grid_sheet_conf = float(gconf.get('sheet', 0) or 0)
     grid_name_conf = float(gconf.get('name', 0) or 0)
-    grid_trusted = grid_cells >= 2 and grid_sheet_conf >= 2.0
+    grid_trusted = bool(grid.get('label_anchored')) or (
+        grid_sheet_conf >= 3.0 and (grid_name_conf >= 2.5 or bool((grid.get('drawing_name') or '').strip()))
+    )
+
+    if grid_trusted:
+        out = dict(grid)
+        out['method'] = 'grid'
+        for key in ('revision', 'drawing_date', 'scale'):
+            if not out.get(key) and legacy.get(key):
+                out[key] = legacy[key]
+        out['confidence'] = {
+            'sheet': grid_sheet_conf,
+            'name': grid_name_conf,
+            'project': gconf.get('project', 0),
+            'revision': max(gconf.get('revision', 0), (legacy.get('confidence') or {}).get('revision', 0)),
+        }
+        if grid.get('grid_cells'):
+            out['grid_cells'] = grid['grid_cells']
+        return out
+
+    out = dict(legacy)
+    lconf = legacy.get('confidence') or {}
 
     if grid.get('sheet_number'):
         l_sheet = lconf.get('sheet', 0)
@@ -488,8 +506,7 @@ def _merge_grid_and_legacy(grid: dict, legacy: dict) -> dict:
         if not legacy.get('drawing_name') or grid_name_conf >= 1.5 or grid_name_conf >= l_name:
             out['drawing_name'] = grid_name
             out['title'] = grid_name
-    elif grid_trusted:
-        # Grid found the sheet column but no drawing name — don't let legacy grab project type
+    elif grid_sheet_conf >= 2.8:
         if lconf.get('name', 0) < 1.15:
             out['drawing_name'] = ''
             out['title'] = ''
@@ -503,12 +520,12 @@ def _merge_grid_and_legacy(grid: dict, legacy: dict) -> dict:
 
     out['confidence'] = {
         'sheet': max(grid_sheet_conf, lconf.get('sheet', 0)),
-        'name': max(grid_name_conf, lconf.get('name', 0) if not grid_trusted else grid_name_conf),
+        'name': max(grid_name_conf, lconf.get('name', 0)),
         'project': gconf.get('project', 0),
         'revision': max(gconf.get('revision', 0), lconf.get('revision', 0)),
     }
-    if grid_cells:
-        out['grid_cells'] = grid_cells
+    if grid.get('grid_cells'):
+        out['grid_cells'] = grid['grid_cells']
     return out
 
 
