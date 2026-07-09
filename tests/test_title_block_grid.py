@@ -122,16 +122,40 @@ def _make_site_plan_sheet_block():
     return FakePage(words, width=1000, height=800)
 
 
+def _make_sequence_of_operations_block():
+    words = [
+        WordSpan(870, 520, 980, 542, 'SEQUENCE', font_size=16),
+        WordSpan(870, 548, 900, 568, 'OF', font_size=16),
+        WordSpan(870, 574, 980, 596, 'OPERATIONS', font_size=16),
+        WordSpan(875, 612, 930, 622, 'SHEET:', font_size=7),
+        WordSpan(875, 632, 960, 658, 'OPDBAS2', font_size=22),
+    ]
+    return FakePage(words, width=1000, height=800)
+
+
 class TitleBlockGridTests(unittest.TestCase):
     def test_normalize_custom_sheet_code(self):
-        self.assertEqual(_normalize_drawing_number('OPDSP1'), 'OPDSP-1')
+        self.assertEqual(_normalize_drawing_number('OPDSP1'), 'OPDSP1')
+        self.assertEqual(_normalize_drawing_number('OPDBAS2'), 'OPDBAS2')
         self.assertEqual(_normalize_drawing_number('OPDSP-1'), 'OPDSP-1')
+
+    def test_reject_false_sheet_in_note(self):
+        from drawing_persistence import is_plausible_drawing_sheet
+        self.assertFalse(is_plausible_drawing_sheet('IN-0.5'))
+
+    def test_label_proximity_sequence_of_operations(self):
+        page = _make_sequence_of_operations_block()
+        pw, ph, lines, med = _title_block_lines_from_page(page)
+        prox = _extract_by_label_proximity(lines, pw, ph, med)
+        self.assertEqual(prox['sheet_number'], 'OPDBAS2')
+        self.assertEqual(prox['drawing_name'], 'SEQUENCE OF OPERATIONS')
+        self.assertTrue(prox.get('sheet_label_anchored'))
 
     def test_label_proximity_sheet_only_site_plan(self):
         page = _make_site_plan_sheet_block()
         pw, ph, lines, med = _title_block_lines_from_page(page)
         prox = _extract_by_label_proximity(lines, pw, ph, med)
-        self.assertEqual(prox['sheet_number'], 'OPDSP-1')
+        self.assertEqual(prox['sheet_number'], 'OPDSP1')
         self.assertEqual(prox['drawing_name'], 'SITE PLAN')
         self.assertTrue(prox.get('label_anchored'))
 
