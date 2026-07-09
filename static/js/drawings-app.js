@@ -31,7 +31,10 @@
     isPanning: false,
     panAnchor: null,
     selectedMarkupId: null,
-    markupStyle: { color: '#38bdf8', lineWidth: 2 },
+    draggingMarkup: null,
+    dragStartPt: null,
+    dragOrigGeom: null,
+    markupStyle: { color: '#38bdf8', lineWidth: 2, opacity: 1, fillOpacity: 0.25, cloudScallop: 18, fontSize: 14 },
     thumbQueue: [],
     thumbBusy: false,
     pdfDoc: null,
@@ -51,6 +54,8 @@
     lastViewport: null,
     focusPin: null,
     previewDrawingId: null,
+    wheelRaf: null,
+    wheelPending: null,
   };
 
   function projectId() {
@@ -161,7 +166,7 @@
       ctx.font = '11px sans-serif';
       ctx.fillText(label || drawing.sheet_number, 8, 20);
     };
-    if (drawing.thumbnail_url) {
+    if (drawing.has_thumbnail && drawing.thumbnail_url) {
       try {
         const res = await fetch(drawing.thumbnail_url, { credentials: 'same-origin' });
         if (res.ok && res.headers.get('content-type')?.includes('image')) {
@@ -212,7 +217,11 @@
     if (!grid) return;
     const items = (state.sections[state.activeSection] || []).filter(d => filteredDrawings().some(f => f.id === d.id));
     if (!items.length) {
-      grid.innerHTML = '<div class="col-span-full py-16 text-center text-zinc-500">No drawings in this section. Upload a drawing set or individual sheets.</div>';
+      grid.innerHTML = `<div id="drawDropZone" class="col-span-full py-16 text-center border-2 border-dashed border-zinc-700 rounded-lg text-zinc-500 transition-colors">
+        <i class="fa-solid fa-cloud-arrow-up text-2xl mb-2 block text-zinc-600"></i>
+        <div class="text-sm">Drop a full drawing set PDF here</div>
+        <div class="text-xs mt-1 text-zinc-600">or use Upload — pages are split automatically</div>
+      </div>`;
       return;
     }
     grid.innerHTML = items.map(d => `
@@ -339,6 +348,7 @@
     previewSheet(id);
     switchView('viewer');
     updateViewerCursor();
+    renderPropertiesPanel();
     await renderPdf(true);
     renderViewerSidebar();
     if (opts && (opts.focusX != null || opts.focusY != null)) {
@@ -445,6 +455,28 @@
     return out;
   }
 
+  function translateGeometry(geom, dx, dy) {
+    const { w, h } = canvasDims();
+    const g = JSON.parse(JSON.stringify(geom || {}));
+    const ndx = w ? dx / w : 0;
+    const ndy = h ? dy / h : 0;
+    if (g.npoints && g.npoints.length >= 4) {
+      g.npoints = g.npoints.map((v, i) => v + (i % 2 === 0 ? ndx : ndy));
+    } else if (g.points && g.points.length >= 4) {
+      g.points = g.points.map((v, i) => v + (i % 2 === 0 ? dx : dy));
+      if (w && h) g.npoints = g.points.map((v, i) => (i % 2 === 0 ? v / w : v / h));
+    }
+    if (g.nx != null) g.nx += ndx;
+    if (g.ny != null) g.ny += ndy;
+    if (g.x != null) g.x += dx;
+    if (g.y != null) g.y += dy;
+    if (w && h) {
+      g.canvasW = w;
+      g.canvasH = h;
+    }
+    return g;
+  }
+
   function applyViewTransform() {
     const stage = document.getElementById('drawViewerStage');
     if (!stage) return;
@@ -475,36 +507,49 @@
     };
   }
 
-  function cloudPath(x, y, w, h) {
-    const scallop = Math.min(16, Math.max(8, Math.min(w, h) / 6));
-    const bump = scallop / 2;
-    const edges = [
-      { x0: x, y0: y + h, x1: x, y1: y, bulge: -bump },
-      { x0: x, y0: y, x1: x + w, y1: y, bulge: bump },
-      { x0: x + w, y0: y, x1: x + w, y1: y + h, bulge: bump },
-      { x0: x + w, y0: y + h, x1: x, y1: y + h, bulge: -bump },
-    ];
-    let d = `M ${x} ${y + h}`;
-    edges.forEach(edge => {
-      const len = Math.hypot(edge.x1 - edge.x0, edge.y1 - edge.y0);
-      const steps = Math.max(2, Math.ceil(len / scallop));
-      const ux = (edge.x1 - edge.x0) / steps;
-      const uy = (edge.y1 - edge.y0) / steps;
-      let px = edge.x0;
-      let py = edge.y0;
-      const nx = edge.bulge > 0 ? -uy : uy;
-      const ny = edge.bulge > 0 ? ux : -ux;
-      for (let i = 0; i < steps; i++) {
-        const qx = px + ux * 0.5 + nx * Math.abs(edge.bulge);
-        const qy = py + uy * 0.5 + ny * Math.abs(edge.bulge);
-        const ex = px + ux;
-        const ey = py + uy;
-        d += ` Q ${qx} ${qy} ${ex} ${ey}`;
-        px = ex;
-        py = ey;
+  function revisionCloudPath(x, y, w, h, scallopRadius) {
+    let r = scallopRadius || state.markupStyle.cloudScallop || 18;
+    r = Math.max(8, Math.min(r, w / 3, h / 3));
+    if (w < r * 2 || h < r * 2) return `M ${x} ${y} L ${x + w} ${y} L ${x + w} ${y + h} L ${x} ${y + h} Z`;
+
+    function edge(x1, y1, x2, y2, bulgeOut) {
+      const dx = x2 - x1;
+      const dy = y2 - y1;
+      const len = Math.hypot(dx, dy);
+      const ux = dx / len;
+      const uy = dy / len;
+      const px = -uy * bulgeOut;
+      const py = ux * bulgeOut;
+      let d = '';
+      let dist = 0;
+      let cx = x1;
+      let cy = y1;
+      while (dist < len - 0.5) {
+        const seg = Math.min(r * 2, len - dist);
+        const mx = cx + ux * (seg / 2);
+        const my = cy + uy * (seg / 2);
+        const bx = mx + px * r;
+        const by = my + py * r;
+        const ex = cx + ux * seg;
+        const ey = cy + uy * seg;
+        d += ` Q ${bx} ${by} ${ex} ${ey}`;
+        cx = ex;
+        cy = ey;
+        dist += seg;
       }
-    });
+      return d;
+    }
+
+    let d = `M ${x} ${y + h}`;
+    d += edge(x, y + h, x, y, -1);
+    d += edge(x, y, x + w, y, 1);
+    d += edge(x + w, y, x + w, y + h, 1);
+    d += edge(x + w, y + h, x, y + h, -1);
     return d + ' Z';
+  }
+
+  function cloudPath(x, y, w, h, scallopRadius) {
+    return revisionCloudPath(x, y, w, h, scallopRadius);
   }
 
   function distToSegment(px, py, x1, y1, x2, y2) {
@@ -518,7 +563,7 @@
   }
 
   function hitTestMarkup(pt) {
-    const tol = 10 / state.viewScale;
+    const tol = Math.max(18, 14 / state.viewScale);
     let best = null;
     let bestDist = tol;
     visibleMarkups().forEach(m => {
@@ -729,6 +774,7 @@
       });
     });
     updateMarkupToolbar();
+    renderPropertiesPanel();
   }
 
   function markupSvg(m) {
@@ -736,60 +782,158 @@
     const style = m.style || {};
     const color = style.color || (m.layer === 'published' ? '#22c55e' : '#38bdf8');
     const sw = style.lineWidth || 2;
-    const fill = style.fill || (m.markup_type === 'highlight' ? 'rgba(250,204,21,0.25)' : 'none');
+    const op = style.opacity != null ? style.opacity : 1;
+    const fillOp = style.fillOpacity != null ? style.fillOpacity : 0.25;
+    const fill = style.fill || (m.markup_type === 'highlight' ? `rgba(250,204,21,${fillOp})` : 'none');
     const selected = state.selectedMarkupId === m.id;
-    const sel = selected ? ' stroke="#fbbf24" stroke-width="' + (sw + 2) + '" opacity="1"' : '';
-    const dataId = ` data-markup-id="${m.id}"`;
+    const selStroke = selected ? '#fbbf24' : color;
+    const selSw = selected ? sw + 2 : sw;
+    const scallop = style.cloudScallop || state.markupStyle.cloudScallop || 18;
+    const id = m.id;
+    let hit = '';
+    let visual = '';
+
     if (m.markup_type === 'line' || m.markup_type === 'measure') {
       const pts = geom.points || [];
       if (pts.length < 4) return '';
-      const label = m.markup_type === 'measure' && m.measurement_value
-        ? `<text x="${pts[2]}" y="${pts[3] - 6}" fill="${color}" font-size="11">${m.measurement_value} ${m.measurement_unit || ''}</text>` : '';
-      return `<line${dataId} x1="${pts[0]}" y1="${pts[1]}" x2="${pts[2]}" y2="${pts[3]}" stroke="${color}" stroke-width="${sw}"${sel} />${label}`;
-    }
-    if (m.markup_type === 'rect' || m.markup_type === 'highlight') {
-      return `<rect${dataId} x="${geom.x}" y="${geom.y}" width="${geom.w}" height="${geom.h}" stroke="${color}" stroke-width="${sw}" fill="${fill}"${sel} />`;
-    }
-    if (m.markup_type === 'cloud') {
-      const x = geom.x || 0; const y = geom.y || 0; const w = geom.w || 80; const h = geom.h || 50;
-      return `<path${dataId} d="${cloudPath(x, y, w, h)}" stroke="${color}" stroke-width="${sw}" fill="none"${sel} />`;
-    }
-    if (m.markup_type === 'arrow' && geom.points) {
+      hit = `<line data-markup-id="${id}" x1="${pts[0]}" y1="${pts[1]}" x2="${pts[2]}" y2="${pts[3]}" stroke="transparent" stroke-width="22" pointer-events="stroke"/>`;
+      const label = m.markup_type === 'measure' && m.measurement_value != null
+        ? `<text x="${pts[2]}" y="${pts[3] - 8}" fill="${selStroke}" font-size="12" font-weight="bold">${m.measurement_value} ${m.measurement_unit || ''}</text>` : '';
+      visual = `<line x1="${pts[0]}" y1="${pts[1]}" x2="${pts[2]}" y2="${pts[3]}" stroke="${selStroke}" stroke-width="${selSw}" opacity="${op}" pointer-events="none"/>${label}`;
+    } else if (m.markup_type === 'rect' || m.markup_type === 'highlight') {
+      hit = `<rect data-markup-id="${id}" x="${geom.x}" y="${geom.y}" width="${geom.w}" height="${geom.h}" fill="transparent" pointer-events="all"/>`;
+      visual = `<rect x="${geom.x}" y="${geom.y}" width="${geom.w}" height="${geom.h}" stroke="${selStroke}" stroke-width="${selSw}" fill="${fill}" opacity="${op}" pointer-events="none"/>`;
+    } else if (m.markup_type === 'cloud') {
+      hit = `<rect data-markup-id="${id}" x="${geom.x}" y="${geom.y}" width="${geom.w}" height="${geom.h}" fill="transparent" pointer-events="all"/>`;
+      visual = `<path d="${revisionCloudPath(geom.x, geom.y, geom.w, geom.h, scallop)}" stroke="${selStroke}" stroke-width="${selSw}" fill="none" opacity="${op}" pointer-events="none"/>`;
+    } else if (m.markup_type === 'arrow' && geom.points) {
       const p = geom.points;
-      return `<line${dataId} x1="${p[0]}" y1="${p[1]}" x2="${p[2]}" y2="${p[3]}" stroke="${color}" stroke-width="${sw}" marker-end="url(#arrowhead)"${sel} />`;
-    }
-    if (m.markup_type === 'text') {
-      return `<text${dataId} x="${geom.x}" y="${geom.y}" fill="${color}" font-size="${style.fontSize || 14}">${esc(m.label || '')}</text>`;
-    }
-    if (m.markup_type === 'rfi_pin') {
+      hit = `<line data-markup-id="${id}" x1="${p[0]}" y1="${p[1]}" x2="${p[2]}" y2="${p[3]}" stroke="transparent" stroke-width="22" pointer-events="stroke"/>`;
+      visual = `<line x1="${p[0]}" y1="${p[1]}" x2="${p[2]}" y2="${p[3]}" stroke="${selStroke}" stroke-width="${selSw}" opacity="${op}" marker-end="url(#arrowhead)" pointer-events="none"/>`;
+    } else if (m.markup_type === 'text') {
+      hit = `<rect data-markup-id="${id}" x="${(geom.x || 0) - 4}" y="${(geom.y || 0) - 18}" width="160" height="28" fill="transparent" pointer-events="all"/>`;
+      visual = `<text x="${geom.x}" y="${geom.y}" fill="${selStroke}" font-size="${style.fontSize || 14}" opacity="${op}" pointer-events="none">${esc(m.label || '')}</text>`;
+    } else if (m.markup_type === 'rfi_pin') {
       const x = geom.x || 0; const y = geom.y || 0;
-      return `<g data-rfi-pin="${m.linked_rfi_id || ''}" style="cursor:pointer"><circle cx="${x}" cy="${y}" r="10" fill="#f97316" stroke="#fff" stroke-width="2"/><text x="${x}" y="${y + 4}" text-anchor="middle" fill="#fff" font-size="9" font-weight="bold">R</text><title>${esc(m.label || 'RFI')}</title></g>`;
+      return `<g data-rfi-pin="${m.linked_rfi_id || ''}" data-markup-id="${id}" style="cursor:pointer"><circle cx="${x}" cy="${y}" r="14" fill="transparent"/><circle cx="${x}" cy="${y}" r="10" fill="#f97316" stroke="#fff" stroke-width="2"/><text x="${x}" y="${y + 4}" text-anchor="middle" fill="#fff" font-size="9" font-weight="bold" pointer-events="none">R</text><title>${esc(m.label || 'RFI')}</title></g>`;
+    } else {
+      return '';
     }
-    return '';
+    return `<g class="markup-item${selected ? ' markup-selected' : ''}">${hit}${visual}</g>`;
   }
 
-  function updateMarkupToolbar() {
-    const btn = document.getElementById('btnDeleteMarkup');
-    if (btn) btn.classList.toggle('hidden', !state.selectedMarkupId);
-    const selected = state.markups.find(m => m.id === state.selectedMarkupId);
-    if (selected?.style) {
-      const colorEl = document.getElementById('markupColor');
-      const widthEl = document.getElementById('markupLineWidth');
-      if (colorEl && selected.style.color) colorEl.value = selected.style.color;
-      if (widthEl && selected.style.lineWidth) {
-        widthEl.value = selected.style.lineWidth;
-        const lbl = document.getElementById('markupLineWidthLabel');
-        if (lbl) lbl.textContent = `${selected.style.lineWidth} px`;
-      }
+  function activeMarkupContext() {
+    if (state.selectedMarkupId) {
+      return state.markups.find(m => m.id === state.selectedMarkupId) || null;
     }
+    return { markup_type: state.tool, style: { ...state.markupStyle } };
+  }
+
+  function renderPropertiesPanel() {
+    const el = document.getElementById('markupPropertiesPanel');
+    if (!el) return;
+    const ctx = activeMarkupContext();
+    const type = ctx?.markup_type || state.tool;
+    const style = ctx?.style || state.markupStyle;
+    const isSelected = !!state.selectedMarkupId;
+    const title = isSelected ? `Selected: ${type}` : `Tool: ${type}`;
+    const showCloud = type === 'cloud';
+    const showLine = ['line', 'arrow', 'rect', 'cloud', 'measure', 'highlight'].includes(type);
+    const showText = type === 'text';
+    const showMeasure = type === 'measure' || (isSelected && ctx?.markup_type === 'measure');
+    const showRect = type === 'rect' || type === 'highlight';
+
+    el.innerHTML = `
+      <div class="text-[10px] uppercase text-zinc-500 mb-2">${esc(title)}</div>
+      ${showLine ? `
+        <label class="block text-[10px] text-zinc-400 mb-1">Stroke color</label>
+        <input type="color" id="propColor" value="${esc(style.color || '#38bdf8')}" class="w-full h-7 bg-zinc-900 border border-zinc-700 rounded mb-2">
+        <label class="block text-[10px] text-zinc-400 mb-1">Line width</label>
+        <input type="range" id="propLineWidth" min="1" max="16" value="${style.lineWidth || 2}" class="w-full accent-sky-500 mb-1">
+        <div class="text-[10px] text-zinc-500 text-center mb-2" id="propLineWidthLabel">${style.lineWidth || 2} px</div>
+        <label class="block text-[10px] text-zinc-400 mb-1">Opacity</label>
+        <input type="range" id="propOpacity" min="20" max="100" value="${Math.round((style.opacity ?? 1) * 100)}" class="w-full accent-sky-500 mb-2">
+      ` : ''}
+      ${type === 'highlight' || showRect ? `
+        <label class="block text-[10px] text-zinc-400 mb-1">Fill opacity</label>
+        <input type="range" id="propFillOpacity" min="5" max="80" value="${Math.round((style.fillOpacity ?? (type === 'highlight' ? 0.25 : 0)) * 100)}" class="w-full accent-amber-500 mb-2">
+      ` : ''}
+      ${showCloud ? `
+        <label class="block text-[10px] text-zinc-400 mb-1">Cloud scallop size</label>
+        <input type="range" id="propCloudScallop" min="8" max="40" value="${style.cloudScallop || state.markupStyle.cloudScallop || 18}" class="w-full accent-sky-500 mb-1">
+        <div class="text-[10px] text-zinc-500 text-center mb-2" id="propCloudScallopLabel">${style.cloudScallop || 18} px</div>
+      ` : ''}
+      ${showText ? `
+        <label class="block text-[10px] text-zinc-400 mb-1">Font size</label>
+        <input type="range" id="propFontSize" min="10" max="36" value="${style.fontSize || 14}" class="w-full accent-sky-500 mb-2">
+      ` : ''}
+      ${showMeasure ? `
+        <div class="text-[10px] text-zinc-400 mb-2 p-2 bg-zinc-900 rounded border border-zinc-700">
+          Scale: ${state.pixelsPerUnit ? `${state.pixelsPerUnit.toFixed(2)} px/${state.measureUnit}` : 'Not calibrated — use Calibrate tool or values show in pixels'}
+        </div>
+        <button type="button" id="propCalibrateBtn" class="w-full py-1.5 mb-2 bg-zinc-800 hover:bg-zinc-700 rounded text-[10px]">Calibrate scale…</button>
+      ` : ''}
+      ${isSelected ? `<button type="button" id="propDeleteBtn" class="w-full py-1.5 bg-red-900/70 hover:bg-red-800 rounded text-[10px] text-red-100">Delete markup</button>` : ''}
+    `;
+
+    const bind = (id, fn) => { const n = document.getElementById(id); if (n) n.addEventListener('input', fn); };
+    bind('propColor', e => applyMarkupProperty({ color: e.target.value }));
+    bind('propLineWidth', e => {
+      document.getElementById('propLineWidthLabel').textContent = `${e.target.value} px`;
+      applyMarkupProperty({ lineWidth: parseInt(e.target.value, 10) });
+    });
+    bind('propOpacity', e => applyMarkupProperty({ opacity: parseInt(e.target.value, 10) / 100 }));
+    bind('propFillOpacity', e => applyMarkupProperty({ fillOpacity: parseInt(e.target.value, 10) / 100 }));
+    bind('propCloudScallop', e => {
+      document.getElementById('propCloudScallopLabel').textContent = `${e.target.value} px`;
+      applyMarkupProperty({ cloudScallop: parseInt(e.target.value, 10) });
+    });
+    bind('propFontSize', e => applyMarkupProperty({ fontSize: parseInt(e.target.value, 10) }));
+    document.getElementById('propCalibrateBtn')?.addEventListener('click', () => { setTool('calibrate'); toast('Click two points on a known distance'); });
+    document.getElementById('propDeleteBtn')?.addEventListener('click', deleteSelectedMarkup);
+  }
+
+  async function applyMarkupProperty(patch) {
+    if (state.selectedMarkupId) {
+      const m = state.markups.find(x => x.id === state.selectedMarkupId);
+      if (!m) return;
+      m.style = { ...(m.style || {}), ...patch };
+      try {
+        await api(`/api/drawings/markups/${m.id}`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ style: m.style }),
+        });
+        renderMarkupOverlay();
+      } catch (e) { console.warn(e); }
+    } else {
+      Object.assign(state.markupStyle, patch);
+    }
+  }
+
+  function formatMeasureLength(pxDist) {
+    if (state.pixelsPerUnit && pxDist > 0) {
+      return { value: Math.round((pxDist / state.pixelsPerUnit) * 100) / 100, unit: state.measureUnit };
+    }
+    return { value: Math.round(pxDist), unit: 'px' };
   }
 
   function setTool(tool) {
+    if (state.tool !== tool) {
+      state.selectedMarkupId = null;
+      state.draggingMarkup = null;
+      state.drawing = false;
+      state.drawStart = null;
+      state.tempMarkup = null;
+    }
     state.tool = tool;
-    state.selectedMarkupId = null;
     highlightActiveTool();
     updateViewerCursor();
     renderMarkupOverlay();
+    renderPropertiesPanel();
+    if (tool === 'measure' && !state.pixelsPerUnit) {
+      toast('Tip: Calibrate scale first for feet/inches, or measurements show in pixels');
+    }
   }
 
   function updateViewerCursor() {
@@ -811,31 +955,12 @@
     });
   }
 
-  function setMarkupColor(color) {
-    state.markupStyle.color = color;
-    if (state.selectedMarkupId) updateSelectedMarkupStyle({ color });
-  }
+  function setMarkupColor(color) { applyMarkupProperty({ color }); }
+  function setMarkupLineWidth(width) { applyMarkupProperty({ lineWidth: parseInt(width, 10) || 2 }); }
 
-  function setMarkupLineWidth(width) {
-    const w = parseInt(width, 10) || 2;
-    state.markupStyle.lineWidth = w;
-    const lbl = document.getElementById('markupLineWidthLabel');
-    if (lbl) lbl.textContent = `${w} px`;
-    if (state.selectedMarkupId) updateSelectedMarkupStyle({ lineWidth: w });
-  }
-
-  async function updateSelectedMarkupStyle(patch) {
-    const m = state.markups.find(x => x.id === state.selectedMarkupId);
-    if (!m) return;
-    m.style = { ...(m.style || {}), ...patch };
-    try {
-      await api(`/api/drawings/markups/${m.id}`, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ style: m.style }),
-      });
-      renderMarkupOverlay();
-    } catch (e) { console.warn(e); }
+  function updateMarkupToolbar() {
+    const btn = document.getElementById('btnDeleteMarkup');
+    if (btn) btn.classList.toggle('hidden', !state.selectedMarkupId);
   }
 
   async function deleteSelectedMarkup() {
@@ -883,13 +1008,25 @@
     const rect = wrap.getBoundingClientRect();
     const mx = e.clientX - rect.left;
     const my = e.clientY - rect.top;
-    const oldScale = state.viewScale;
     const factor = e.deltaY < 0 ? 1.08 : 1 / 1.08;
-    const newScale = Math.max(0.2, Math.min(8, oldScale * factor));
-    state.panX = mx - ((mx - state.panX) * newScale) / oldScale;
-    state.panY = my - ((my - state.panY) * newScale) / oldScale;
-    state.viewScale = newScale;
-    applyViewTransform();
+    const pending = state.wheelPending || { mx, my, factor: 1 };
+    pending.mx = mx;
+    pending.my = my;
+    pending.factor *= factor;
+    state.wheelPending = pending;
+    if (state.wheelRaf) return;
+    state.wheelRaf = requestAnimationFrame(() => {
+      const p = state.wheelPending;
+      state.wheelPending = null;
+      state.wheelRaf = null;
+      if (!p) return;
+      const oldScale = state.viewScale;
+      const newScale = Math.max(0.2, Math.min(8, oldScale * p.factor));
+      state.panX = p.mx - ((p.mx - state.panX) * newScale) / oldScale;
+      state.panY = p.my - ((p.my - state.panY) * newScale) / oldScale;
+      state.viewScale = newScale;
+      applyViewTransform();
+    });
   }
 
   function onViewerDown(evt) {
@@ -904,7 +1041,17 @@
       const pt = screenToDoc(evt);
       const hit = hitTestMarkup(pt);
       state.selectedMarkupId = hit ? hit.id : null;
+      if (hit) {
+        state.draggingMarkup = {
+          id: hit.id,
+          startPt: pt,
+          orig: JSON.parse(JSON.stringify(hit.geometry || {})),
+        };
+      } else {
+        state.draggingMarkup = null;
+      }
       renderMarkupOverlay();
+      renderPropertiesPanel();
       return;
     }
     if (['line', 'rect', 'cloud', 'arrow', 'highlight', 'measure'].includes(state.tool)) {
@@ -943,20 +1090,39 @@
       applyViewTransform();
       return;
     }
+    if (state.draggingMarkup) {
+      const pt = screenToDoc(evt);
+      const m = state.markups.find(x => x.id === state.draggingMarkup.id);
+      if (m) {
+        const dx = pt.x - state.draggingMarkup.startPt.x;
+        const dy = pt.y - state.draggingMarkup.startPt.y;
+        m.geometry = translateGeometry(state.draggingMarkup.orig, dx, dy);
+        renderMarkupOverlay();
+      }
+      return;
+    }
     if (!state.drawing || !state.drawStart) return;
     const pt = screenToDoc(evt);
     const s = state.drawStart;
     const sw = state.markupStyle.lineWidth || 2;
     const color = state.markupStyle.color || '#38bdf8';
+    const scallop = state.markupStyle.cloudScallop || 18;
     if (['rect', 'highlight'].includes(state.tool)) {
       const x = Math.min(s.x, pt.x); const y = Math.min(s.y, pt.y);
       state.tempMarkup = `<rect x="${x}" y="${y}" width="${Math.abs(pt.x - s.x)}" height="${Math.abs(pt.y - s.y)}" stroke="${color}" stroke-width="${sw}" fill="none" stroke-dasharray="4 3" />`;
     } else if (state.tool === 'cloud') {
       const x = Math.min(s.x, pt.x); const y = Math.min(s.y, pt.y);
-      state.tempMarkup = `<path d="${cloudPath(x, y, Math.abs(pt.x - s.x), Math.abs(pt.y - s.y))}" stroke="${color}" stroke-width="${sw}" fill="none" stroke-dasharray="4 3" />`;
+      state.tempMarkup = `<path d="${cloudPath(x, y, Math.abs(pt.x - s.x), Math.abs(pt.y - s.y), scallop)}" stroke="${color}" stroke-width="${sw}" fill="none" stroke-dasharray="4 3" />`;
     } else if (['line', 'arrow', 'measure'].includes(state.tool)) {
       const marker = state.tool === 'arrow' ? ' marker-end="url(#arrowhead)"' : '';
-      state.tempMarkup = `<line x1="${s.x}" y1="${s.y}" x2="${pt.x}" y2="${pt.y}" stroke="${color}" stroke-width="${sw}" stroke-dasharray="4 3"${marker} />`;
+      const pxLen = Math.hypot(pt.x - s.x, pt.y - s.y);
+      const measureLabel = state.tool === 'measure'
+        ? (() => {
+          const m = formatMeasureLength(pxLen);
+          return `<text x="${pt.x + 8}" y="${pt.y - 8}" fill="${color}" font-size="12" font-weight="bold">${m.value} ${m.unit}</text>`;
+        })()
+        : '';
+      state.tempMarkup = `<line x1="${s.x}" y1="${s.y}" x2="${pt.x}" y2="${pt.y}" stroke="${color}" stroke-width="${sw}" stroke-dasharray="4 3"${marker} />${measureLabel}`;
     }
     renderMarkupOverlay();
   }
@@ -968,6 +1134,21 @@
       updateViewerCursor();
       return;
     }
+    if (state.draggingMarkup) {
+      const m = state.markups.find(x => x.id === state.draggingMarkup.id);
+      state.draggingMarkup = null;
+      if (m) {
+        try {
+          await api(`/api/drawings/markups/${m.id}`, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ geometry: m.geometry }),
+          });
+        } catch (e) { console.warn(e); }
+      }
+      renderPropertiesPanel();
+      return;
+    }
     if (!state.drawing || !state.drawStart) return;
     const pt = screenToDoc(evt);
     const s = state.drawStart;
@@ -976,22 +1157,34 @@
     let measurement_value = null;
     if (['rect', 'cloud', 'highlight'].includes(type)) {
       geometry = { x: Math.min(s.x, pt.x), y: Math.min(s.y, pt.y), w: Math.abs(pt.x - s.x), h: Math.abs(pt.y - s.y) };
+      if (geometry.w < 3 && geometry.h < 3) {
+        state.drawing = false;
+        state.drawStart = null;
+        state.tempMarkup = null;
+        return;
+      }
     } else if (['line', 'arrow', 'measure'].includes(type)) {
+      const pxLen = Math.hypot(pt.x - s.x, pt.y - s.y);
+      if (pxLen < 3) {
+        state.drawing = false;
+        state.drawStart = null;
+        state.tempMarkup = null;
+        return;
+      }
       geometry = { points: [s.x, s.y, pt.x, pt.y] };
-      if (type === 'measure' && state.pixelsPerUnit) {
-        const dx = pt.x - s.x; const dy = pt.y - s.y;
-        measurement_value = Math.round((Math.sqrt(dx * dx + dy * dy) / state.pixelsPerUnit) * 100) / 100;
+      if (type === 'measure') {
+        const m = formatMeasureLength(pxLen);
+        measurement_value = m.value;
       }
     }
     state.drawing = false;
     state.drawStart = null;
     state.tempMarkup = null;
-    if ((geometry.w === 0 && geometry.h === 0) && !geometry.points) return;
     await saveMarkup({
       markup_type: type === 'measure' ? 'measure' : type,
       geometry,
       measurement_value,
-      measurement_unit: state.measureUnit,
+      measurement_unit: state.pixelsPerUnit ? state.measureUnit : 'px',
       style: { ...state.markupStyle },
     });
   }
@@ -1189,6 +1382,7 @@
       html += `<p class="text-amber-400 text-xs mb-3">${json.needs_review_count} page(s) imported with provisional sheet numbers — filter by <strong>For Review</strong> to assign correct numbers.</p>`;
     }
     if (pages.length) {
+      html += `<p class="text-xs text-zinc-400 mb-3">${json.page_count ? `${json.page_count} page(s) in file · ` : ''}${json.created_count || pages.length} sheet(s) imported${json.split ? ' (split from drawing set)' : ''}</p>`;
       html += `<table class="w-full text-xs"><thead><tr class="text-zinc-400 border-b border-zinc-700">
         <th class="text-left py-2 pr-2">Page</th><th class="text-left py-2 pr-2">Sheet #</th>
         <th class="text-left py-2 pr-2">Revision</th><th class="text-left py-2 pr-2">Date</th>
@@ -1232,6 +1426,73 @@
     } catch (err) { alert(err.message); }
   }
 
+  async function uploadPdfFile(file, setName, extra) {
+    if (!file) return null;
+    const opts = extra || {};
+    const fd = new FormData();
+    fd.append('project_id', projectId());
+    fd.append('file', file);
+    fd.append('set_name', setName || file.name.replace(/\.pdf$/i, '') || 'Drawing Upload');
+    if (opts.sheet_number) fd.append('sheet_number', opts.sheet_number);
+    if (opts.title) fd.append('title', opts.title);
+    const res = await fetch('/api/drawings/upload', { method: 'POST', body: fd, credentials: 'same-origin' });
+    const json = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      const detail = json.needs_review?.length
+        ? `\n\n${json.needs_review.length} page(s) listed for review.`
+        : '';
+      throw new Error((json.error || 'Upload failed') + detail);
+    }
+    return json;
+  }
+
+  function bindSectionDropZone() {
+    const panel = document.getElementById('drawPanelSections');
+    if (!panel || panel._dropBound) return;
+    panel._dropBound = true;
+    let dragDepth = 0;
+    const highlight = () => panel.classList.add('ring-2', 'ring-sky-500', 'ring-inset');
+    const unhighlight = () => panel.classList.remove('ring-2', 'ring-sky-500', 'ring-inset');
+    const hasFiles = (e) => [...(e.dataTransfer?.types || [])].includes('Files');
+    panel.addEventListener('dragenter', (e) => {
+      if (!hasFiles(e)) return;
+      e.preventDefault();
+      dragDepth++;
+      highlight();
+    });
+    panel.addEventListener('dragover', (e) => {
+      if (!hasFiles(e)) return;
+      e.preventDefault();
+    });
+    panel.addEventListener('dragleave', () => {
+      dragDepth = Math.max(0, dragDepth - 1);
+      if (!dragDepth) unhighlight();
+    });
+    panel.addEventListener('drop', async (e) => {
+      e.preventDefault();
+      dragDepth = 0;
+      unhighlight();
+      const file = [...(e.dataTransfer?.files || [])].find(
+        (f) => f.name.toLowerCase().endsWith('.pdf') || f.type === 'application/pdf'
+      );
+      if (!file) {
+        alert('Drop a PDF drawing set to import sheets.');
+        return;
+      }
+      try {
+        toast(`Uploading ${file.name}…`);
+        const json = await uploadPdfFile(file, file.name.replace(/\.pdf$/i, ''));
+        const count = json.created_count || json.drawings?.length || 1;
+        const reviewNote = json.needs_review_count ? ` (${json.needs_review_count} need sheet numbers)` : '';
+        toast(json.split ? `Imported ${count} sheets from drawing set${reviewNote}` : `Uploaded ${json.drawing?.sheet_number || count + ' sheet(s)'}`);
+        showUploadResults(json);
+        await Promise.all([loadDashboard(), loadDrawings()]);
+      } catch (err) {
+        alert(err.message);
+      }
+    });
+  }
+
   async function submitUpload(e) {
     e.preventDefault();
     const file = document.getElementById('uploadFile').files[0];
@@ -1242,23 +1503,15 @@
       submitBtn.disabled = true;
       submitBtn.textContent = 'Processing…';
     }
-    const fd = new FormData();
-    fd.append('project_id', projectId());
-    fd.append('file', file);
-    fd.append('set_name', document.getElementById('uploadSetName').value || 'Drawing Upload');
-    const sheet = document.getElementById('uploadSheetNumber').value;
-    if (sheet) fd.append('sheet_number', sheet);
-    const title = document.getElementById('uploadTitle').value;
-    if (title) fd.append('title', title);
     try {
-      const res = await fetch('/api/drawings/upload', { method: 'POST', body: fd, credentials: 'same-origin' });
-      const json = await res.json().catch(() => ({}));
-      if (!res.ok) {
-        const detail = json.needs_review?.length
-          ? `\n\n${json.needs_review.length} page(s) listed for review.`
-          : '';
-        throw new Error((json.error || 'Upload failed') + detail);
-      }
+      const json = await uploadPdfFile(
+        file,
+        document.getElementById('uploadSetName').value || 'Drawing Upload',
+        {
+          sheet_number: document.getElementById('uploadSheetNumber')?.value || '',
+          title: document.getElementById('uploadTitle')?.value || '',
+        }
+      );
       document.getElementById('uploadDrawingModal').close();
       const count = json.created_count || json.drawings?.length || 1;
       const reviewNote = json.needs_review_count ? ` (${json.needs_review_count} need sheet numbers)` : '';
@@ -1319,6 +1572,7 @@
     }
     bindFilters();
     bindViewerEvents();
+    bindSectionDropZone();
     document.addEventListener('fullscreenchange', onFullscreenChange);
     document.addEventListener('click', e => {
       if (!e.target.closest('#printMenu') && !e.target.closest('#btnPrintMenu')) {
