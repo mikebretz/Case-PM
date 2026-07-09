@@ -468,6 +468,7 @@ class ChangeOrder(db.Model):
     linked_rfi_id = db.Column(db.Integer, db.ForeignKey('rfi.id'), nullable=True)
     linked_commitment_ref = db.Column(db.String(80))
     approval_stage = db.Column(db.Integer, default=0)
+    plan_pins_json = db.Column(db.Text)
 
 
 class ChangeOrderAllocation(db.Model):
@@ -663,6 +664,7 @@ class PunchItem(db.Model):
     assigned_to = db.Column(db.String(100))
     created_by_id = db.Column(db.Integer, db.ForeignKey('user.id'))
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    plan_pins_json = db.Column(db.Text)
 
 
 class SafetyReport(db.Model):
@@ -2832,7 +2834,11 @@ def api_bulk_delete_drawings():
     if not drawing_ids:
         return jsonify({'error': 'drawing_ids required'}), 400
     try:
-        deleted = delete_drawings_bulk(db, Drawing, DrawingRevision, DrawingMarkup, int(project_id), drawing_ids, upload_root=app.config.get('UPLOAD_FOLDER'))
+        deleted = delete_drawings_bulk(
+            db, Drawing, DrawingRevision, DrawingMarkup, int(project_id), drawing_ids,
+            upload_root=app.config.get('UPLOAD_FOLDER'),
+            RFI=RFI, ChangeOrder=ChangeOrder, PunchItem=PunchItem,
+        )
         db.session.commit()
         return jsonify({'ok': True, 'deleted_count': len(deleted), 'deleted_ids': deleted})
     except Exception as exc:
@@ -2853,7 +2859,11 @@ def api_delete_drawing_set():
     if not set_name:
         return jsonify({'error': 'set_name required'}), 400
     try:
-        deleted = delete_drawings_by_set_name(db, Drawing, DrawingRevision, DrawingMarkup, int(project_id), set_name, upload_root=app.config.get('UPLOAD_FOLDER'))
+        deleted = delete_drawings_by_set_name(
+            db, Drawing, DrawingRevision, DrawingMarkup, int(project_id), set_name,
+            upload_root=app.config.get('UPLOAD_FOLDER'),
+            RFI=RFI, ChangeOrder=ChangeOrder, PunchItem=PunchItem,
+        )
         db.session.commit()
         return jsonify({'ok': True, 'deleted_count': len(deleted), 'deleted_ids': deleted, 'set_name': set_name})
     except Exception as exc:
@@ -2999,6 +3009,7 @@ def api_delete_drawing(drawing_id):
         delete_drawing_record(
             db, Drawing, DrawingRevision, DrawingMarkup, drawing,
             upload_root=app.config.get('UPLOAD_FOLDER'),
+            RFI=RFI, ChangeOrder=ChangeOrder, PunchItem=PunchItem,
         )
         db.session.commit()
         return jsonify({'ok': True, 'deleted_id': drawing_id})
@@ -3116,7 +3127,7 @@ def api_substitute_drawings():
 @app.route('/api/drawings/<int:drawing_id>/markups', methods=['GET', 'POST'])
 @login_required
 def api_drawing_markups(drawing_id):
-    from drawing_persistence import markup_to_dict
+    from drawing_persistence import markup_to_dict, link_pin_markup
     drawing = Drawing.query.get_or_404(drawing_id)
     if request.method == 'GET':
         revision_id = request.args.get('revision_id', type=int) or drawing.current_revision_id
@@ -3147,27 +3158,12 @@ def api_drawing_markups(drawing_id):
     db.session.add(markup)
     db.session.flush()
 
-    if markup.markup_type == 'rfi_pin' and markup.linked_rfi_id:
-        rfi = RFI.query.get(markup.linked_rfi_id)
-        if rfi:
-            from rfi_persistence import _parse_json
-            pins = _parse_json(rfi.plan_pins_json, [])
-            geom = body.get('geometry') or {}
-            pin_x = geom.get('anchorX', geom.get('x', 0))
-            pin_y = geom.get('anchorY', geom.get('y', 0))
-            pins.append({
-                'drawing_id': drawing.id,
-                'drawing_sheet': drawing.sheet_number,
-                'x': pin_x,
-                'y': pin_y,
-                'nx': geom.get('nanchorX', geom.get('nx')),
-                'ny': geom.get('nanchorY', geom.get('ny')),
-                'markup_id': markup.id,
-                'note': body.get('label') or '',
-                'created_at': datetime.utcnow().isoformat(),
-            })
-            rfi.plan_pins_json = json.dumps(pins)
-            rfi.drawing_reference = drawing.sheet_number
+    geom = body.get('geometry') or {}
+    if markup.markup_type in ('rfi_pin', 'co_pin', 'punch_pin'):
+        link_pin_markup(
+            markup, drawing, geom, body.get('label'),
+            RFI=RFI, ChangeOrder=ChangeOrder, PunchItem=PunchItem,
+        )
 
     db.session.commit()
     return jsonify({'ok': True, 'markup': markup_to_dict(markup)})
@@ -3176,9 +3172,11 @@ def api_drawing_markups(drawing_id):
 @app.route('/api/drawings/markups/<int:markup_id>', methods=['PUT', 'DELETE'])
 @login_required
 def api_drawing_markup_item(markup_id):
-    from drawing_persistence import markup_to_dict
+    from drawing_persistence import markup_to_dict, unlink_pin_markup
     markup = DrawingMarkup.query.get_or_404(markup_id)
     if request.method == 'DELETE':
+        if markup.markup_type in ('rfi_pin', 'co_pin', 'punch_pin'):
+            unlink_pin_markup(markup, RFI=RFI, ChangeOrder=ChangeOrder, PunchItem=PunchItem)
         db.session.delete(markup)
         db.session.commit()
         return jsonify({'ok': True})
