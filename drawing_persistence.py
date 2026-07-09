@@ -640,6 +640,30 @@ def provisional_sheet_number(set_name: str, page_index: int, upload_stamp: str) 
     return f'UNASSIGNED-{slug}-{stamp}-P{page_index + 1:04d}'
 
 
+def preserve_assigned_sheet_number(raw: str) -> str:
+    """Normalize detected sheet numbers without stripping upload disambiguators.
+
+    ``normalize_sheet_number('S-1-P002')`` incorrectly returns ``S-1`` because the
+    regex matches the leading sheet token. That caused UNIQUE constraint failures when
+    multiple pages in one upload were assigned distinct suffixes.
+    """
+    if not raw:
+        return raw
+    s = str(raw).strip().upper()
+    if s.startswith('UNASSIGNED-'):
+        return s
+    if re.search(r'-P\d{3,4}$', s):
+        return s
+    m = re.match(r'^(.+)-(\d+)$', s)
+    if m:
+        base = normalize_sheet_number(m.group(1)) or m.group(1)
+        suffix = m.group(2)
+        if suffix.isdigit() and int(suffix) >= 2 and is_plausible_drawing_sheet(base):
+            return f'{base}-{suffix}'
+    normalized = normalize_sheet_number(s)
+    return normalized or s
+
+
 def ensure_unique_sheet_number(
     Drawing,
     project_id: int,
@@ -657,20 +681,25 @@ def ensure_unique_sheet_number(
     n = 2
 
     def _is_taken(name: str) -> bool:
-        if name.upper() in taken:
+        key = preserve_assigned_sheet_number(name).upper()
+        if key in taken:
             return True
-        return Drawing.query.filter_by(project_id=int(project_id), sheet_number=name).first() is not None
+        return Drawing.query.filter_by(project_id=int(project_id), sheet_number=key).first() is not None
 
     while _is_taken(candidate):
         candidate = f'{base}-{n}'
         n += 1
-    return candidate
+    return preserve_assigned_sheet_number(candidate)
 
 
 def section_prefix(sheet_number: str) -> str:
     if not sheet_number:
         return 'OTHER'
-    return sheet_number.split('-')[0].upper()
+    base = re.sub(r'-P\d{3,4}$', '', sheet_number, flags=re.I)
+    m = re.match(r'^(.+)-(\d+)$', base)
+    if m and m.group(2).isdigit() and int(m.group(2)) >= 2:
+        base = m.group(1)
+    return base.split('-')[0].upper()
 
 
 def discipline_from_sheet(sheet_number: str) -> str:
@@ -683,7 +712,11 @@ def discipline_from_sheet(sheet_number: str) -> str:
 def sort_key_for_sheet(sheet_number: str) -> str:
     if not sheet_number:
         return 'ZZZZ-9999'
-    norm = normalize_sheet_number(sheet_number) or sheet_number
+    base = re.sub(r'-P\d{3,4}$', '', sheet_number, flags=re.I)
+    m = re.match(r'^(.+)-(\d+)$', base)
+    if m and m.group(2).isdigit() and int(m.group(2)) >= 2:
+        base = m.group(1)
+    norm = normalize_sheet_number(base) or base
     parts = norm.split('-', 1)
     prefix = parts[0]
     num = parts[1] if len(parts) > 1 else '0'
@@ -1269,7 +1302,7 @@ def upsert_drawing_from_upload(
     force_new=False,
 ):
     """Create or revise a drawing sheet from an uploaded page."""
-    sheet_number = normalize_sheet_number(sheet_number) or sheet_number
+    sheet_number = preserve_assigned_sheet_number(sheet_number)
     if not sheet_number:
         raise ValueError('Could not determine sheet number')
     if file_path:
@@ -1398,7 +1431,8 @@ def process_pages_from_upload(
         sheet_number = ensure_unique_sheet_number(
             Drawing, project_id, sheet_number, reserved=batch_assigned,
         )
-        batch_assigned.add(sheet_number)
+        sheet_number = preserve_assigned_sheet_number(sheet_number)
+        batch_assigned.add(sheet_number.upper())
 
         page_text = page.get('text') or meta.get('text_preview') or ''
         title = manual_title or meta.get('drawing_name') or meta.get('title') or extract_drawing_name_from_text(page_text, sheet_number)
