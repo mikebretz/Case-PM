@@ -44,8 +44,13 @@ from drawing_persistence import (
     normalize_sheet_number,
 )
 
-TITLE_BLOCK_X0_RATIO = 0.40
-TITLE_BLOCK_Y0_RATIO = 0.45
+# Aldi / typical arch title block sits in the bottom-right corner inside the frame.
+CORNER_X0_RATIO = 0.86
+CORNER_Y0_RATIO = 0.68
+CORNER_X1_RATIO = 0.985
+# Wider fallback when corner has almost no text (non-standard layouts).
+TITLE_BLOCK_X0_RATIO = CORNER_X0_RATIO
+TITLE_BLOCK_Y0_RATIO = CORNER_Y0_RATIO
 
 LOCAL_TITLE_HINT_RE = re.compile(
     r'\b(PLAN|PLANS|ELEVATION|ELEVATIONS|SECTION|SECTIONS|DETAIL|DETAILS|SCHEDULE|SCHEDULES|'
@@ -107,6 +112,19 @@ METADATA_INLINE_RE = re.compile(
     r'^(?:date|drawn\s*by|checked\s*by|designed\s*by|approved\s*by|scale|rev(?:ision)?)\s*:',
     re.I,
 )
+SKIP_UPWARD_RE = re.compile(
+    r'^(?:date|drawn\s*by|checked\s*by|designed\s*by|approved\s*by|type)\s*:?',
+    re.I,
+)
+BREAK_UPWARD_RE = re.compile(
+    r'(?:project\s*name\s*&\s*location|drawing\s*no|drawing\s*name|project\s*no|page\s*no|page\s*name|sheet\s*no|sheet\s*name)\b',
+    re.I,
+)
+DATE_INLINE_RE = re.compile(
+    r'\bdate\s*:\s*(\d{1,2}[/\-.]\d{1,2}[/\-.]\d{2,4})\b',
+    re.I,
+)
+PROJECT_NAME_LOCATION_RE = re.compile(r'project\s*name\s*&\s*location', re.I)
 REV_LABEL_BOTTOM_RE = re.compile(
     r'^rev(?:ision)?\s*(?:no\.?|num(?:ber)?)?\s*:?\s*$',
     re.I,
@@ -228,6 +246,30 @@ class LabeledCell:
         return max(1.0, self.x1 - self.x0)
 
 
+def _in_corner_box(cx: float, cy: float, page_w: float, page_h: float) -> bool:
+    return (
+        page_w * CORNER_X0_RATIO <= cx <= page_w * CORNER_X1_RATIO
+        and page_h * CORNER_Y0_RATIO <= cy <= page_h * 0.995
+    )
+
+
+def _corner_spans(spans: list[WordSpan], page_w: float, page_h: float) -> list[WordSpan]:
+    return [s for s in spans if _in_corner_box(s.cx, s.cy, page_w, page_h)]
+
+
+def _title_block_spans(spans: list[WordSpan], page_w: float, page_h: float) -> list[WordSpan]:
+    """Prefer bottom-right corner; fall back to wider band for non-standard layouts."""
+    corner = _corner_spans(spans, page_w, page_h)
+    if len(corner) >= 6:
+        return corner
+    return [
+        s for s in spans
+        if s.cx >= page_w * 0.40
+        and s.cy >= page_h * 0.45
+        and s.cx <= page_w * CORNER_X1_RATIO
+    ]
+
+
 def _is_stamp_or_footer(text: str) -> bool:
     t = text.strip()
     if not t:
@@ -267,13 +309,9 @@ def _is_name_continuation_line(text: str) -> bool:
 def _dict_lines_from_page(page) -> tuple[list[TextLine], float, float, float]:
     """Build text lines from PDF dict block/line indices (most reliable for title blocks)."""
     page_w, page_h = page.rect.width, page.rect.height
-    spans = _spans_from_dict(page, min_y_ratio=TITLE_BLOCK_Y0_RATIO)
-    tb_spans = [
-        s for s in spans
-        if s.cx >= page_w * TITLE_BLOCK_X0_RATIO
-        and s.cy >= page_h * TITLE_BLOCK_Y0_RATIO
-        and not _is_stamp_or_footer(s.text)
-    ]
+    spans = _spans_from_dict(page, min_y_ratio=CORNER_Y0_RATIO)
+    tb_spans = _title_block_spans(spans, page_w, page_h)
+    tb_spans = [s for s in tb_spans if not _is_stamp_or_footer(s.text)]
     if not tb_spans:
         return [], page_w, page_h, 8.0
 
@@ -607,8 +645,8 @@ def _cluster_lines_into_cells(lines: list[TextLine], cell_gap: float) -> list[La
 
 def _extract_vector_segments(page) -> tuple[list[float], list[float]]:
     page_w, page_h = page.rect.width, page.rect.height
-    x_min = page_w * TITLE_BLOCK_X0_RATIO
-    y_min = page_h * TITLE_BLOCK_Y0_RATIO
+    x_min = page_w * CORNER_X0_RATIO
+    y_min = page_h * CORNER_Y0_RATIO
     horiz: list[float] = []
     vert: list[float] = []
     try:
@@ -672,8 +710,8 @@ def _build_title_block(page) -> tuple[float, float, list[LabeledCell]]:
     if not words:
         return page_w, page_h, []
 
-    tb_x0 = page_w * TITLE_BLOCK_X0_RATIO
-    tb_words = [w for w in words if w.cx >= tb_x0 and w.cy >= page_h * TITLE_BLOCK_Y0_RATIO]
+    tb_words = _title_block_spans(words, page_w, page_h)
+    tb_words = [w for w in tb_words if not _is_stamp_or_footer(w.text)]
     if not tb_words:
         return page_w, page_h, []
 
@@ -689,13 +727,16 @@ def _build_title_block(page) -> tuple[float, float, list[LabeledCell]]:
     raw_lines = _cluster_words_into_lines(tb_words, y_tol)
     name_band_idxs = _identify_name_band_indices(raw_lines, cell_gap)
 
+    tb_x0 = page_w * CORNER_X0_RATIO
+    tb_left = min(w.x0 for w in tb_words)
+    tb_width = max(page_w * CORNER_X1_RATIO, max(w.x1 for w in tb_words)) - tb_left
     split_lines: list[TextLine] = []
     for i, ln in enumerate(raw_lines):
         if i in name_band_idxs:
             ln.column = 'full'
             split_lines.append(ln)
             continue
-        if ln.width >= (page_w - tb_x0) * 0.50:
+        if ln.width >= tb_width * 0.45 and ln.x0 <= tb_left + tb_width * 0.10:
             ln.column = 'full'
             split_lines.append(ln)
         elif ln.cx >= split_x:
@@ -764,6 +805,40 @@ def _horizontal_alignment(anchor: TextLine, candidate: TextLine, page_w: float, 
     return 0.2
 
 
+def _should_skip_upward_line(text: str, kind: str) -> bool:
+    t = text.strip()
+    if not t:
+        return True
+    if _is_stamp_or_footer(t):
+        return True
+    if SKIP_UPWARD_RE.match(t):
+        return True
+    if TYPE_INLINE_RE.match(t):
+        return True
+    if _is_metadata_value(t):
+        return True
+    if kind == 'drawing_number' and _is_project_number_value(t):
+        return True
+    if kind == 'drawing_name' and re.search(r'^(?:aldi|store\s*#|polk\s*county)\b', t, re.I):
+        return True
+    if kind == 'drawing_name' and re.search(r'\b(?:loop\s*rd|fax|haines\s*city)\b', t, re.I):
+        return True
+    return False
+
+
+def _should_break_upward_walk(text: str, kind: str) -> bool:
+    t = text.strip()
+    if not t:
+        return False
+    if PROJECT_NAME_LOCATION_RE.search(t):
+        return True
+    if BREAK_UPWARD_RE.search(t):
+        return True
+    if kind == 'drawing_name' and _classify_bottom_label(t) == 'drawing_number':
+        return True
+    return False
+
+
 def _is_label_line(text: str) -> bool:
     t = text.strip()
     if not t:
@@ -800,9 +875,14 @@ def _large_text_near_label(
 
     for j in indices:
         ln = lines[j]
-        if _is_label_line(ln.text) and not _is_name_continuation_line(ln.text):
-            break
-        if _is_metadata_value(ln.text) or _is_stamp_or_footer(ln.text):
+        if direction == 'above':
+            if _should_break_upward_walk(ln.text, anchor.kind):
+                break
+            if _should_skip_upward_line(ln.text, anchor.kind):
+                continue
+        elif _is_label_line(ln.text) and not _is_name_continuation_line(ln.text):
+            continue
+        elif _is_metadata_value(ln.text) or _is_stamp_or_footer(ln.text):
             continue
         gap = abs(edge - (ln.y1 if direction == 'above' else ln.y0))
         if collected and gap > max_gap:
@@ -813,6 +893,10 @@ def _large_text_near_label(
             continue
         if anchor.kind == 'drawing_number' and _is_project_number_value(ln.text):
             continue
+        if anchor.kind == 'drawing_name':
+            min_name_size = max(med_size * 1.05, 16.0)
+            if size < min_name_size and not _is_name_continuation_line(ln.text):
+                continue
         if anchor.kind == 'drawing_number':
             maybe = _normalize_drawing_number(ln.text)
             if not maybe and size < med_size * 0.82:
@@ -825,6 +909,14 @@ def _large_text_near_label(
 
     collected.sort(key=lambda t: t[2].y0)
     if anchor.kind == 'drawing_number':
+        sheet_matches = [
+            (align, size, ln)
+            for align, size, ln in collected
+            if _normalize_drawing_number(ln.text)
+        ]
+        if sheet_matches:
+            best = max(sheet_matches, key=lambda t: (t[1], t[0]))
+            return best[2].text.strip()
         best = max(collected, key=lambda t: (t[1], t[0]))
         return best[2].text.strip()
 
@@ -904,19 +996,24 @@ def _extract_by_label_proximity(
     return out
 
 
+def _extract_date_from_lines(lines: list[TextLine]):
+    for ln in lines:
+        m = DATE_INLINE_RE.search(ln.text)
+        if m:
+            parsed = extract_drawing_date_from_text(m.group(1))
+            if parsed:
+                return parsed
+    return None
+
+
 def _title_block_lines_from_page(page) -> tuple[float, float, list[TextLine], float]:
     dict_lines, page_w, page_h, med_size = _dict_lines_from_page(page)
     if dict_lines:
         return page_w, page_h, dict_lines, med_size
     page_w, page_h = page.rect.width, page.rect.height
     words = _words_from_page(page)
-    tb_x0 = page_w * TITLE_BLOCK_X0_RATIO
-    tb_words = [
-        w for w in words
-        if w.cx >= tb_x0
-        and w.cy >= page_h * TITLE_BLOCK_Y0_RATIO
-        and not _is_stamp_or_footer(w.text)
-    ]
+    tb_words = _title_block_spans(words, page_w, page_h)
+    tb_words = [w for w in tb_words if not _is_stamp_or_footer(w.text)]
     med_h = _median_height(tb_words) if tb_words else 8.0
     med_size = _median_font_size(tb_words) if tb_words else med_h
     y_tol = max(2.5, med_h * 0.42)
@@ -1085,9 +1182,9 @@ def _ocr_title_block(pdf_path: str, page_index: int) -> list[LabeledCell]:
         page = doc[page_index]
         rect = page.rect
         clip = fitz.Rect(
-            rect.width * TITLE_BLOCK_X0_RATIO,
-            rect.height * TITLE_BLOCK_Y0_RATIO,
-            rect.width * 0.995,
+            rect.width * CORNER_X0_RATIO,
+            rect.height * CORNER_Y0_RATIO,
+            rect.width * CORNER_X1_RATIO,
             rect.height * 0.995,
         )
         matrix = fitz.Matrix(5.0, 5.0)
@@ -1243,7 +1340,10 @@ def analyze_title_block_grid(pdf_path: str, page_index: int = 0) -> dict[str, An
     result['title'] = drawing_name
     result['project_number'] = project_number
     result['revision'] = revision
-    result['drawing_date'] = extract_drawing_date_from_text(merged_text)
+    corner_date = _extract_date_from_lines(tb_lines)
+    result['drawing_date'] = corner_date or extract_drawing_date_from_text(
+        '\n'.join(ln.text for ln in tb_lines if not _is_stamp_or_footer(ln.text))
+    )
     result['scale'] = extract_scale_from_text(merged_text)
     result['text_preview'] = merged_text[:400]
     result['label_anchored'] = bool(

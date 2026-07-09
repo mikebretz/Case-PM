@@ -1,6 +1,7 @@
 """Unit tests for title_block_grid labeled-cell parsing."""
 from __future__ import annotations
 
+import os
 import unittest
 
 from title_block_grid import (
@@ -18,6 +19,7 @@ from title_block_grid import (
     _normalize_drawing_number,
     _split_line_by_columns,
     _title_block_lines_from_page,
+    analyze_title_block_grid,
 )
 
 
@@ -175,6 +177,61 @@ class TitleBlockGridTests(unittest.TestCase):
         ]
         cell = _lines_to_labeled_cell(lines, med_h=12, med_size=10)
         self.assertEqual(cell.value_text, 'A-212')
+
+
+ALDI_PDF_CASES = [
+    (
+        '/home/ubuntu/.cursor/projects/workspace/uploads/001_Aldi_0664_G-001_Cover_Sheet_Rev.3_0336.pdf',
+        'G-001',
+        'Cover Sheet',
+    ),
+    (
+        '/home/ubuntu/.cursor/projects/workspace/uploads/003_Aldi_0664_G-002b_Egress_Plan_Rev.3_7594.pdf',
+        'G-002B',
+        'Egress Plan',
+    ),
+    (
+        '/home/ubuntu/.cursor/projects/workspace/uploads/086_Aldi_0664_E-102_Lighting_Schedules_and_Diagrams_Rev.3_b4ab.pdf',
+        'E-102',
+        'Lighting Schedules and Diagrams',
+    ),
+    (
+        '/home/ubuntu/.cursor/projects/workspace/uploads/099_Aldi_0664_CLP-101a_Fire_Alarm_Conduit_Plan_Rev.3_e2c9.pdf',
+        'CLP-101A',
+        'Fire Alarm Conduit Plan',
+    ),
+    (
+        '/home/ubuntu/.cursor/projects/workspace/uploads/092_Aldi_0664_E-401b_One-line_Diagram_Rev.3_512f.pdf',
+        'E-401B',
+        'One-line Diagram',
+    ),
+    (
+        '/home/ubuntu/.cursor/projects/workspace/uploads/069_Aldi_0664_FP-101a_Fire_Protection_Floor_Plan_Rev.3_7f18.pdf',
+        'FP-101A',
+        'Fire Protection Floor Plan',
+    ),
+    (
+        '/home/ubuntu/.cursor/projects/workspace/uploads/074_Aldi_0664_HD-101b_HVAC_Demolition_Plan_Rev.3_7ef8.pdf',
+        'HD-101B',
+        'HVAC Demolition Plan',
+    ),
+]
+
+
+@unittest.skipUnless(
+    all(os.path.isfile(path) for path, _, _ in ALDI_PDF_CASES),
+    'Aldi sample PDFs not available',
+)
+class AldiTitleBlockIntegrationTests(unittest.TestCase):
+    def test_aldi_corner_title_blocks(self):
+        for path, expected_sheet, expected_name in ALDI_PDF_CASES:
+            with self.subTest(path=os.path.basename(path)):
+                result = analyze_title_block_grid(path, 0)
+                self.assertEqual(result['sheet_number'], expected_sheet)
+                self.assertIn(expected_name, result['drawing_name'])
+                self.assertEqual(result['project_number'], '2024.0565')
+                self.assertEqual(str(result['drawing_date']), '2025-05-23')
+                self.assertTrue(result.get('label_anchored'))
 
 
 if __name__ == '__main__':
