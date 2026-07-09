@@ -705,6 +705,8 @@
     searchBusy: false,
     searchTemplate: null,
     searchSnipping: false,
+    docSnipping: false,
+    pendingDocSnip: null,
     searchHighlight: null,
     selectedSearchIdx: null,
     uploadLogTimer: null,
@@ -1454,6 +1456,7 @@
     document.getElementById('btnSearchPanel')?.classList.toggle('tool-active', next);
     if (!next) {
       state.searchSnipping = false;
+      clearSearchHighlight();
       updateViewerCursor();
     }
   }
@@ -1511,6 +1514,35 @@
     }).join('');
   }
 
+  function searchHighlightMarkup() {
+    const r = state.searchHighlight;
+    if (!r || r.nx == null) return '';
+    const { w, h } = canvasDims();
+    if (!w || !h) return '';
+    const x = (r.nx || 0) * w;
+    const y = (r.ny || 0) * h;
+    const rw = Math.max(12, (r.nw || 0.05) * w);
+    const rh = Math.max(12, (r.nh || 0.05) * h);
+    const cx = x + rw / 2;
+    const cy = y + rh / 2;
+    const pad = Math.max(10, Math.max(rw, rh) * 0.22);
+    if (state.searchMode === 'shape') {
+      const radius = Math.hypot(rw, rh) / 2 + pad;
+      return `<g class="search-hit-shape" pointer-events="none">
+        <circle cx="${cx}" cy="${cy}" r="${radius}" fill="rgba(250, 204, 21, 0.58)" stroke="#facc15" stroke-width="3"/>
+        <circle cx="${cx}" cy="${cy}" r="${radius + 5}" fill="none" stroke="rgba(250, 204, 21, 0.4)" stroke-width="2"/>
+      </g>`;
+    }
+    return `<rect class="search-hit-text" x="${x}" y="${y}" width="${rw}" height="${rh}" fill="rgba(250, 204, 21, 0.38)" stroke="#facc15" stroke-width="2" rx="3" pointer-events="none"/>`;
+  }
+
+  function clearSearchHighlight() {
+    state.searchHighlight = null;
+    state.selectedSearchIdx = null;
+    renderMarkupOverlay();
+    renderSearchResults();
+  }
+
   async function jumpToSearchResult(idx) {
     const r = state.searchResults[idx];
     if (!r) return;
@@ -1527,23 +1559,8 @@
   }
 
   function renderSearchHighlight() {
-    const r = state.searchHighlight;
-    if (!r || r.nx == null) return;
-    const { w, h } = canvasDims();
-    if (!w || !h) return;
-    const x = (r.nx || 0) * w;
-    const y = (r.ny || 0) * h;
-    const rw = Math.max(12, (r.nw || 0.05) * w);
-    const rh = Math.max(12, (r.nh || 0.05) * h);
-    state.tempMarkup = `<rect class="search-hit" x="${x}" y="${y}" width="${rw}" height="${rh}" fill="none" stroke="#fbbf24" stroke-width="3" stroke-dasharray="6 4" opacity="0.95"/>`;
+    if (!state.searchHighlight) return;
     renderMarkupOverlay();
-    clearTimeout(renderSearchHighlight._timer);
-    renderSearchHighlight._timer = setTimeout(() => {
-      if (state.searchHighlight === r) {
-        state.tempMarkup = null;
-        renderMarkupOverlay();
-      }
-    }, 4500);
   }
 
   async function runTextSearch() {
@@ -1558,6 +1575,8 @@
     }
     setSearchStatus('Searching text…', true);
     state.searchBusy = true;
+    state.searchHighlight = null;
+    state.selectedSearchIdx = null;
     try {
       const json = await api('/api/drawings/search/text', {
         method: 'POST',
@@ -1581,7 +1600,8 @@
     state.searchBusy = false;
   }
 
-  function captureCanvasRegion(x, y, w, h) {
+  function captureCanvasRegion(x, y, w, h, opts) {
+    const fullRes = opts && opts.fullRes;
     const canvas = document.getElementById('drawPdfCanvas');
     if (!canvas || w < 4 || h < 4) return null;
     const x0 = Math.max(0, Math.min(x, canvas.width - 1));
@@ -1589,15 +1609,129 @@
     const rw = Math.min(w, canvas.width - x0);
     const rh = Math.min(h, canvas.height - y0);
     if (rw < 4 || rh < 4) return null;
-    const maxSide = 220;
-    const scale = Math.min(1, maxSide / Math.max(rw, rh));
-    const outW = Math.max(4, Math.round(rw * scale));
-    const outH = Math.max(4, Math.round(rh * scale));
+    let outW = rw;
+    let outH = rh;
+    if (!fullRes) {
+      const maxSide = 220;
+      const scale = Math.min(1, maxSide / Math.max(rw, rh));
+      outW = Math.max(4, Math.round(rw * scale));
+      outH = Math.max(4, Math.round(rh * scale));
+    }
     const tmp = document.createElement('canvas');
     tmp.width = outW;
     tmp.height = outH;
     tmp.getContext('2d').drawImage(canvas, x0, y0, rw, rh, 0, 0, outW, outH);
     return { dataUrl: tmp.toDataURL('image/png'), docW: rw, docH: rh };
+  }
+
+  function isViewerSnipping() {
+    return state.searchSnipping || state.docSnipping;
+  }
+
+  function snipRectPreview(x, y, rw, rh) {
+    if (state.docSnipping) {
+      return `<rect x="${x}" y="${y}" width="${rw}" height="${rh}" stroke="#34d399" stroke-width="2" fill="rgba(52,211,153,0.2)" stroke-dasharray="4 2"/>`;
+    }
+    return `<rect x="${x}" y="${y}" width="${rw}" height="${rh}" stroke="#a78bfa" stroke-width="2" fill="rgba(167,139,250,0.15)" stroke-dasharray="4 2"/>`;
+  }
+
+  function cancelDocSnip() {
+    state.docSnipping = false;
+    state.pendingDocSnip = null;
+    state.drawing = false;
+    state.drawStart = null;
+    state.tempMarkup = null;
+    updateViewerCursor();
+    renderMarkupOverlay();
+  }
+
+  function startDocSnip() {
+    if (!state.openDrawing) {
+      toast('Open a sheet first');
+      return;
+    }
+    state.searchSnipping = false;
+    state.docSnipping = true;
+    state.pendingDocSnip = null;
+    state.drawing = false;
+    state.drawStart = null;
+    state.tempMarkup = null;
+    updateViewerCursor();
+    toast('Drag a box around the area to snip — like Windows Snipping Tool');
+  }
+
+  function openDocSnipSaveDialog(captured) {
+    state.pendingDocSnip = captured;
+    const dlg = document.getElementById('docSnipSaveDialog');
+    const preview = document.getElementById('docSnipPreview');
+    const nameEl = document.getElementById('docSnipName');
+    if (!dlg || !captured?.dataUrl) return;
+    const sheet = state.openDrawing?.sheet_number || 'Sheet';
+    const title = state.openDrawing?.title ? ` — ${state.openDrawing.title}` : '';
+    const date = new Date().toLocaleDateString();
+    if (preview) preview.src = captured.dataUrl;
+    if (nameEl) nameEl.value = `${sheet}${title} — snip ${date}`;
+    dlg.showModal();
+  }
+
+  async function saveDocSnipToDocuments() {
+    const captured = state.pendingDocSnip;
+    const name = document.getElementById('docSnipName')?.value?.trim();
+    const docType = document.getElementById('docSnipType')?.value || 'Drawing';
+    if (!captured?.dataUrl) {
+      toast('Nothing to save');
+      return;
+    }
+    if (!name) {
+      toast('Enter a document name');
+      return;
+    }
+    if (!projectId()) {
+      toast('Select a project first');
+      return;
+    }
+    const saveBtn = document.getElementById('docSnipSave');
+    if (saveBtn) saveBtn.disabled = true;
+    try {
+      const json = await api('/api/documents', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          project_id: projectId(),
+          name,
+          document_type: docType,
+          image_data: captured.dataUrl,
+          source_drawing_id: state.openDrawing?.id,
+          source_sheet: state.openDrawing?.sheet_number,
+          source_metadata: {
+            title: state.openDrawing?.title,
+            revision_id: state.viewingRevisionId,
+          },
+        }),
+      });
+      document.getElementById('docSnipSaveDialog')?.close();
+      state.pendingDocSnip = null;
+      toast(`Saved to Documents — ${json.document?.name || name}`);
+    } catch (e) {
+      toastError(e.message || 'Failed to save document');
+    } finally {
+      if (saveBtn) saveBtn.disabled = false;
+    }
+  }
+
+  function bindDocSnipDialog() {
+    document.getElementById('docSnipSave')?.addEventListener('click', () => saveDocSnipToDocuments());
+    document.getElementById('docSnipCancel')?.addEventListener('click', () => {
+      document.getElementById('docSnipSaveDialog')?.close();
+      state.pendingDocSnip = null;
+    });
+    document.getElementById('docSnipDialogClose')?.addEventListener('click', () => {
+      document.getElementById('docSnipSaveDialog')?.close();
+      state.pendingDocSnip = null;
+    });
+    document.getElementById('docSnipSaveDialog')?.addEventListener('cancel', () => {
+      state.pendingDocSnip = null;
+    });
   }
 
   function startShapeSnip() {
@@ -1628,6 +1762,8 @@
     const scopeLabel = state.searchScope === 'project' ? 'project' : 'sheet';
     setSearchStatus(`Quick scan (${scopeLabel})…`, true);
     state.searchBusy = true;
+    state.searchHighlight = null;
+    state.selectedSearchIdx = null;
     try {
       const json = await api('/api/drawings/search/shape', {
         method: 'POST',
@@ -2486,7 +2622,7 @@
       <marker id="arrowhead" markerWidth="10" markerHeight="10" refX="8" refY="5" orient="auto" markerUnits="strokeWidth">
         <polygon points="0 0, 10 5, 0 10" fill="context-stroke"/>
       </marker>
-    </defs>${shapes}${pointToolPreviewMarkup()}${state.tempMarkup || ''}`;
+    </defs>${shapes}${pointToolPreviewMarkup()}${state.tempMarkup || ''}${searchHighlightMarkup()}`;
     updateMarkupToolbar();
     renderPropertiesPanel();
     renderMarkupList();
@@ -3108,9 +3244,13 @@
   function updateViewerCursor() {
     const wrap = document.getElementById('drawViewerWrap');
     if (!wrap) return;
-    wrap.classList.remove('cursor-grab', 'cursor-grabbing', 'cursor-crosshair', 'cursor-pointer', 'search-snipping');
+    wrap.classList.remove('cursor-grab', 'cursor-grabbing', 'cursor-crosshair', 'cursor-pointer', 'search-snipping', 'doc-snipping');
     if (state.searchSnipping) {
       wrap.classList.add('search-snipping', 'cursor-crosshair');
+      return;
+    }
+    if (state.docSnipping) {
+      wrap.classList.add('doc-snipping', 'cursor-crosshair');
       return;
     }
     if (state.isPanning) wrap.classList.add('cursor-grabbing');
@@ -3230,6 +3370,21 @@
       return;
     }
     if (e.key === 'Escape') {
+      if (state.docSnipping) {
+        e.preventDefault();
+        cancelDocSnip();
+        return;
+      }
+      if (state.searchSnipping) {
+        e.preventDefault();
+        state.searchSnipping = false;
+        state.drawing = false;
+        state.drawStart = null;
+        state.tempMarkup = null;
+        updateViewerCursor();
+        renderMarkupOverlay();
+        return;
+      }
       clearMarkupSelection();
       state.drawing = false;
       state.drawStart = null;
@@ -3352,7 +3507,7 @@
 
   async function onViewerDown(evt) {
     if (evt.button !== 0) return;
-    if (state.searchSnipping) {
+    if (isViewerSnipping()) {
       evt.preventDefault();
       state.drawing = true;
       state.drawStart = screenToDoc(evt);
@@ -3486,14 +3641,14 @@
         state.pendingDrag = null;
       }
     }
-    if (state.searchSnipping && state.drawing && state.drawStart) {
+    if (isViewerSnipping() && state.drawing && state.drawStart) {
       const pt = screenToDoc(evt);
       const s = state.drawStart;
       const x = Math.min(s.x, pt.x);
       const y = Math.min(s.y, pt.y);
       const rw = Math.abs(pt.x - s.x);
       const rh = Math.abs(pt.y - s.y);
-      state.tempMarkup = `<rect x="${x}" y="${y}" width="${rw}" height="${rh}" stroke="#a78bfa" stroke-width="2" fill="rgba(167,139,250,0.15)" stroke-dasharray="4 2"/>`;
+      state.tempMarkup = snipRectPreview(x, y, rw, rh);
       renderMarkupOverlay();
       return;
     }
@@ -3582,6 +3737,27 @@
       state.pointDownPt = null;
       state.pointDidDrag = false;
       state.tempMarkup = null;
+      renderMarkupOverlay();
+      return;
+    }
+    if (state.docSnipping && state.drawing && state.drawStart) {
+      const pt = screenToDoc(evt);
+      const s = state.drawStart;
+      const x = Math.min(s.x, pt.x);
+      const y = Math.min(s.y, pt.y);
+      const rw = Math.abs(pt.x - s.x);
+      const rh = Math.abs(pt.y - s.y);
+      state.drawing = false;
+      state.drawStart = null;
+      state.docSnipping = false;
+      state.tempMarkup = null;
+      updateViewerCursor();
+      if (rw >= 8 && rh >= 8) {
+        const captured = captureCanvasRegion(x, y, rw, rh, { fullRes: true });
+        if (captured?.dataUrl) openDocSnipSaveDialog(captured);
+      } else {
+        toast('Drag a larger box to snip');
+      }
       renderMarkupOverlay();
       return;
     }
@@ -4637,6 +4813,7 @@
     await Promise.all([loadDashboard(), loadDrawings(), loadRfis(), loadPunchItems(), loadChangeOrders(), loadDrawingSets()]);
     bindTextDialog();
     bindSearchPanel();
+    bindDocSnipDialog();
     await handleDeepLink();
   }
 
@@ -4688,6 +4865,8 @@
     setSearchScope,
     runTextSearch,
     startShapeSnip,
+    startDocSnip,
+    saveDocSnipToDocuments,
     runShapeSearch,
     jumpToSearchResult,
     selectAllVisible,

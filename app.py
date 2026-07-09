@@ -743,6 +743,22 @@ class Photo(db.Model):
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
 
 
+class Document(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    project_id = db.Column(db.Integer, db.ForeignKey('project.id'), nullable=False)
+    name = db.Column(db.String(300), nullable=False)
+    document_type = db.Column(db.String(80), nullable=False, default='Other')
+    filename = db.Column(db.String(300), nullable=False)
+    original_filename = db.Column(db.String(300))
+    file_size = db.Column(db.Integer, default=0)
+    mime_type = db.Column(db.String(120))
+    source_drawing_id = db.Column(db.Integer)
+    source_sheet = db.Column(db.String(80))
+    source_metadata_json = db.Column(db.Text)
+    uploaded_by_id = db.Column(db.Integer, db.ForeignKey('user.id'))
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+
+
 class WeeklyReport(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     project_id = db.Column(db.Integer, db.ForeignKey('project.id'))
@@ -2656,7 +2672,141 @@ def photos_page():
 @app.route('/documents')
 @login_required
 def documents_page():
-    return render_template('documents.html')
+    projects = Project.query.order_by(Project.name).all()
+    return render_template('documents.html', projects=projects)
+
+
+@app.route('/api/documents', methods=['GET'])
+@login_required
+def api_documents_list():
+    from document_persistence import document_to_dict
+    project_id = request.args.get('project_id', type=int) or get_current_project_id()
+    q = Document.query
+    if project_id:
+        q = q.filter_by(project_id=int(project_id))
+    docs = q.order_by(Document.created_at.desc()).limit(500).all()
+    projects = {p.id: p.name for p in Project.query.filter(Project.id.in_({d.project_id for d in docs})).all()} if docs else {}
+    return jsonify({
+        'ok': True,
+        'documents': [document_to_dict(d, projects.get(d.project_id)) for d in docs],
+    })
+
+
+@app.route('/api/documents', methods=['POST'])
+@login_required
+def api_documents_create():
+    import base64 as b64mod
+    from document_persistence import document_folder, document_to_dict
+
+    upload_root = app.config.get('UPLOAD_FOLDER', 'uploads')
+    project_id = None
+    name = None
+    document_type = 'Other'
+    source_drawing_id = None
+    source_sheet = None
+    source_metadata = {}
+    file_bytes = None
+    original_filename = None
+    mime_type = 'application/octet-stream'
+
+    if request.content_type and 'multipart/form-data' in request.content_type:
+        project_id = request.form.get('project_id', type=int) or get_current_project_id()
+        name = (request.form.get('name') or '').strip()
+        document_type = (request.form.get('document_type') or request.form.get('type') or 'Other').strip()
+        source_drawing_id = request.form.get('source_drawing_id', type=int)
+        source_sheet = (request.form.get('source_sheet') or '').strip() or None
+        up = request.files.get('file')
+        if not up or not up.filename:
+            return jsonify({'error': 'File is required'}), 400
+        file_bytes = up.read()
+        original_filename = secure_filename(up.filename)
+        mime_type = up.mimetype or mime_type
+    else:
+        body = request.get_json(silent=True) or {}
+        project_id = body.get('project_id') or get_current_project_id()
+        name = (body.get('name') or '').strip()
+        document_type = (body.get('document_type') or body.get('type') or 'Drawing').strip()
+        source_drawing_id = body.get('source_drawing_id')
+        source_sheet = (body.get('source_sheet') or '').strip() or None
+        source_metadata = body.get('source_metadata') or {}
+        image_data = body.get('image_data') or body.get('template')
+        if not image_data:
+            return jsonify({'error': 'image_data or file is required'}), 400
+        if ',' in image_data:
+            image_data = image_data.split(',', 1)[1]
+        try:
+            file_bytes = b64mod.b64decode(image_data)
+        except Exception:
+            return jsonify({'error': 'Invalid image data'}), 400
+        original_filename = secure_filename(body.get('filename') or 'drawing-snip.png')
+        if not original_filename.lower().endswith('.png'):
+            original_filename += '.png'
+        mime_type = 'image/png'
+
+    if not project_id:
+        return jsonify({'error': 'project_id required'}), 400
+    if not Project.query.get(int(project_id)):
+        return jsonify({'error': 'Project not found'}), 404
+    if not file_bytes:
+        return jsonify({'error': 'Empty file'}), 400
+    if not name:
+        base = original_filename.rsplit('.', 1)[0] if original_filename else 'Document'
+        name = base.replace('_', ' ')
+
+    ext = original_filename.rsplit('.', 1)[-1].lower() if original_filename and '.' in original_filename else 'png'
+    if ext not in ALLOWED_EXTENSIONS:
+        return jsonify({'error': f'File type .{ext} not allowed'}), 400
+
+    stamp = datetime.utcnow().strftime('%Y%m%d%H%M%S')
+    stored_name = f'{stamp}_{secure_filename(name).replace(" ", "_")[:80]}.{ext}'
+    folder = document_folder(upload_root, int(project_id))
+    file_path = os.path.join(folder, stored_name)
+    with open(file_path, 'wb') as fh:
+        fh.write(file_bytes)
+
+    doc = Document(
+        project_id=int(project_id),
+        name=name,
+        document_type=document_type or 'Other',
+        filename=stored_name,
+        original_filename=original_filename,
+        file_size=len(file_bytes),
+        mime_type=mime_type,
+        source_drawing_id=int(source_drawing_id) if source_drawing_id else None,
+        source_sheet=source_sheet,
+        source_metadata_json=json.dumps(source_metadata) if source_metadata else None,
+        uploaded_by_id=current_user.id,
+        created_at=datetime.utcnow(),
+    )
+    db.session.add(doc)
+    db.session.commit()
+    project = Project.query.get(doc.project_id)
+    return jsonify({'ok': True, 'document': document_to_dict(doc, project.name if project else None)}), 201
+
+
+@app.route('/api/documents/<int:doc_id>', methods=['DELETE'])
+@login_required
+def api_documents_delete(doc_id):
+    doc = Document.query.get_or_404(doc_id)
+    upload_root = app.config.get('UPLOAD_FOLDER', 'uploads')
+    file_path = os.path.join(upload_root, 'documents', str(doc.project_id), doc.filename)
+    if os.path.isfile(file_path):
+        try:
+            os.remove(file_path)
+        except OSError:
+            pass
+    db.session.delete(doc)
+    db.session.commit()
+    return jsonify({'ok': True})
+
+
+@app.route('/uploads/documents/<int:project_id>/<path:filename>')
+@login_required
+def serve_document_file(project_id, filename):
+    directory = os.path.join(app.config['UPLOAD_FOLDER'], 'documents', str(project_id))
+    if not os.path.isfile(os.path.join(directory, filename)):
+        return 'Not found', 404
+    return send_from_directory(directory, filename)
 
 
 @app.route('/drawings')
@@ -4922,6 +5072,11 @@ with app.app_context():
             ensure_commitment_schema(db.engine, db)
         except Exception as _cm:
             print('Commitment schema:', _cm)
+        try:
+            from document_persistence import ensure_document_schema
+            ensure_document_schema(db.engine, db)
+        except Exception as _doc:
+            print('Document schema:', _doc)
     except Exception as _e:
         print('Workflow init:', _e)
 
