@@ -1362,7 +1362,7 @@ def process_pages_from_upload(
     return created, needs_review
 
 
-def delete_drawings_by_set_name(db, Drawing, DrawingRevision, DrawingMarkup, project_id, set_name):
+def delete_drawings_by_set_name(db, Drawing, DrawingRevision, DrawingMarkup, project_id, set_name, upload_root=None):
     """Delete every sheet whose current revision belongs to the given drawing set name."""
     target = (set_name or '').strip() or 'Unnamed Set'
     drawings = Drawing.query.filter_by(project_id=int(project_id)).all()
@@ -1373,26 +1373,35 @@ def delete_drawings_by_set_name(db, Drawing, DrawingRevision, DrawingMarkup, pro
             rev = DrawingRevision.query.filter_by(drawing_id=drawing.id, is_current=True).first()
         rev_set = (rev.set_name if rev else None) or 'Unnamed Set'
         if rev_set == target:
-            delete_drawing_record(db, Drawing, DrawingRevision, DrawingMarkup, drawing)
+            delete_drawing_record(db, Drawing, DrawingRevision, DrawingMarkup, drawing, upload_root=upload_root)
             deleted_ids.append(drawing.id)
     return deleted_ids
 
 
-def delete_drawings_bulk(db, Drawing, DrawingRevision, DrawingMarkup, project_id, drawing_ids):
+def delete_drawings_bulk(db, Drawing, DrawingRevision, DrawingMarkup, project_id, drawing_ids, upload_root=None):
     """Delete multiple drawing sheets by id."""
     deleted_ids = []
     for drawing_id in drawing_ids:
         drawing = Drawing.query.filter_by(id=int(drawing_id), project_id=int(project_id)).first()
         if not drawing:
             continue
-        delete_drawing_record(db, Drawing, DrawingRevision, DrawingMarkup, drawing)
+        delete_drawing_record(db, Drawing, DrawingRevision, DrawingMarkup, drawing, upload_root=upload_root)
         deleted_ids.append(drawing.id)
     return deleted_ids
 
+
+def delete_drawing_record(db, Drawing, DrawingRevision, DrawingMarkup, drawing, upload_root=None):
     """Remove drawing, revisions, markups, and page files from disk."""
     drawing_id = drawing.id
     revisions = DrawingRevision.query.filter_by(drawing_id=drawing_id).all()
-    paths = {rev.file_path for rev in revisions if rev.file_path}
+    paths = set()
+    for rev in revisions:
+        if rev.file_path:
+            resolved = resolve_drawing_file_path(rev.file_path, upload_root)
+            paths.add(resolved or rev.file_path)
+    if drawing.thumbnail_path:
+        thumb = resolve_drawing_file_path(drawing.thumbnail_path, upload_root)
+        paths.add(thumb or drawing.thumbnail_path)
     dirs = set()
     for p in paths:
         if p and os.path.isfile(p):
@@ -1401,8 +1410,10 @@ def delete_drawings_bulk(db, Drawing, DrawingRevision, DrawingMarkup, project_id
             except OSError:
                 pass
             dirs.add(os.path.dirname(p))
-    DrawingMarkup.query.filter_by(drawing_id=drawing_id).delete()
-    DrawingRevision.query.filter_by(drawing_id=drawing_id).delete()
+    DrawingMarkup.query.filter_by(drawing_id=drawing_id).delete(synchronize_session=False)
+    drawing.current_revision_id = None
+    db.session.flush()
+    DrawingRevision.query.filter_by(drawing_id=drawing_id).delete(synchronize_session=False)
     db.session.delete(drawing)
     for d in dirs:
         try:

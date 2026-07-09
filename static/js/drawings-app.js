@@ -64,6 +64,7 @@
     wheelRaf: null,
     wheelPending: null,
     textEditorOpen: false,
+    deleting: false,
     selectionMode: false,
     selectedDrawingIds: new Set(),
     drawingSets: [],
@@ -212,16 +213,23 @@
 
   function updateBulkBar() {
     const bar = document.getElementById('drawBulkBar');
+    const topBar = document.getElementById('drawSelectionBar');
     const countEl = document.getElementById('drawBulkCount');
+    const countTop = document.getElementById('drawBulkCountTop');
     const n = state.selectedDrawingIds.size;
     const show = state.selectionMode || n > 0;
     bar?.classList.toggle('hidden', !show);
-    if (countEl) countEl.textContent = `${n} selected`;
+    topBar?.classList.toggle('hidden', !show);
+    const label = n === 1 ? '1 sheet selected' : `${n} sheets selected`;
+    if (countEl) countEl.textContent = label;
+    if (countTop) countTop.textContent = label;
     const btn = document.getElementById('btnSelectSheets');
+    const btnLabel = document.getElementById('btnSelectSheetsLabel');
     if (btn) {
       btn.classList.toggle('bg-sky-700', state.selectionMode);
       btn.classList.toggle('text-white', state.selectionMode);
     }
+    if (btnLabel) btnLabel.textContent = state.selectionMode ? (n ? `Selecting (${n})` : 'Selecting…') : 'Select sheets';
   }
 
   function toggleSelectionMode() {
@@ -233,8 +241,13 @@
 
   function toggleSheetSelection(id, force) {
     const on = force != null ? force : !state.selectedDrawingIds.has(id);
-    if (on) state.selectedDrawingIds.add(id);
-    else state.selectedDrawingIds.delete(id);
+    if (on) {
+      state.selectedDrawingIds.add(id);
+      state.selectionMode = true;
+    } else {
+      state.selectedDrawingIds.delete(id);
+      if (!state.selectedDrawingIds.size) state.selectionMode = false;
+    }
     updateBulkBar();
     renderActiveView();
   }
@@ -349,8 +362,12 @@
 
   async function deleteSelectedDrawings() {
     const ids = [...state.selectedDrawingIds];
-    if (!ids.length) { toast('Select one or more sheets first'); return; }
-    if (!confirm(`Delete ${ids.length} selected sheet(s) and all their revisions?`)) return;
+    if (!ids.length) { toast('Check one or more sheets to delete'); return; }
+    const labels = ids.map(id => state.drawings.find(d => d.id === id)?.sheet_number || id).join(', ');
+    if (!confirm(`Delete ${ids.length} sheet(s)?\n\n${labels}\n\nThis cannot be undone.`)) return;
+    if (state.deleting) return;
+    state.deleting = true;
+    toast(`Deleting ${ids.length} sheet(s)…`);
     try {
       const json = await api('/api/drawings/bulk-delete', {
         method: 'POST',
@@ -360,9 +377,14 @@
       toast(`Deleted ${json.deleted_count} sheet(s)`);
       if (state.openDrawing && json.deleted_ids?.includes(state.openDrawing.id)) closeViewer();
       state.selectedDrawingIds.clear();
+      state.selectionMode = false;
       updateBulkBar();
       await Promise.all([loadDashboard(), loadDrawings(), loadDrawingSets()]);
-    } catch (e) { alert(e.message); }
+    } catch (e) {
+      toastError(e.message || 'Bulk delete failed');
+    } finally {
+      state.deleting = false;
+    }
   }
 
   async function renderThumbJob(canvas, drawing) {
@@ -441,7 +463,7 @@
     grid.className = SECTION_GRID_CLASS;
     grid.innerHTML = items.map(d => `
       <div class="bg-zinc-800 border border-zinc-700 rounded-md overflow-hidden hover:border-sky-600 cursor-pointer group relative ${isSheetSelected(d.id) ? 'draw-sheet-selected' : ''}" ondblclick="CasePMDrawings.openViewer(${d.id})" onclick="CasePMDrawings.onSheetClick(${d.id}, event)">
-        ${state.selectionMode ? `<input type="checkbox" class="draw-select-checkbox" ${isSheetSelected(d.id) ? 'checked' : ''} onclick="event.stopPropagation(); CasePMDrawings.toggleSheetSelection(${d.id})">` : ''}
+        <input type="checkbox" class="draw-select-checkbox ${isSheetSelected(d.id) ? 'opacity-100' : 'opacity-60 group-hover:opacity-100'}" ${isSheetSelected(d.id) ? 'checked' : ''} onclick="event.stopPropagation(); CasePMDrawings.toggleSheetSelection(${d.id})" title="Select sheet">
         <button type="button" onclick="event.stopPropagation(); CasePMDrawings.deleteDrawing(${d.id})" class="absolute bottom-2 right-2 z-10 opacity-0 group-hover:opacity-100 px-2 py-1 rounded bg-red-900/90 hover:bg-red-800 text-[10px] text-red-100" title="Delete sheet"><i class="fa-solid fa-trash"></i></button>
         <div class="aspect-[4/3] bg-zinc-900 relative">
           <canvas id="thumb-${d.id}" class="w-full h-full object-contain"></canvas>
@@ -2152,9 +2174,13 @@
   }
 
   async function deleteDrawing(id, sheetLabel) {
+    if (state.deleting) return;
     const d = state.drawings.find(x => x.id === id);
     const label = sheetLabel || d?.sheet_number || 'this sheet';
-    if (!confirm(`Delete ${label} and all of its revisions? This cannot be undone.`)) return;
+    const setNote = d?.set_name ? `\n\nSet: ${d.set_name}` : '';
+    if (!confirm(`Delete sheet ${label} and all of its revisions?${setNote}\n\nThis cannot be undone.`)) return;
+    state.deleting = true;
+    toast(`Deleting ${label}…`);
     try {
       await api(`/api/drawings/${id}`, { method: 'DELETE' });
       if (state.openDrawing?.id === id) closeViewer();
@@ -2173,7 +2199,11 @@
       updateBulkBar();
       toast(`Deleted ${label}`);
       await Promise.all([loadDashboard(), loadDrawings(), loadDrawingSets()]);
-    } catch (err) { alert(err.message); }
+    } catch (err) {
+      toastError(err.message || 'Delete failed');
+    } finally {
+      state.deleting = false;
+    }
   }
 
   async function uploadPdfFile(file, setName, extra) {
@@ -2313,12 +2343,16 @@
     });
   }
 
-  function toast(msg) {
+  function toast(msg, isError) {
     const t = document.createElement('div');
-    t.className = 'fixed bottom-16 right-6 z-[70] px-4 py-2 rounded-md bg-emerald-900 text-emerald-100 text-sm shadow-lg';
+    t.className = `fixed bottom-16 right-6 z-[70] px-4 py-2 rounded-md text-sm shadow-lg max-w-sm ${isError ? 'draw-toast-error' : 'bg-emerald-900 text-emerald-100'}`;
     t.textContent = msg;
     document.body.appendChild(t);
-    setTimeout(() => t.remove(), 2800);
+    setTimeout(() => t.remove(), isError ? 4500 : 2800);
+  }
+
+  function toastError(msg) {
+    toast(msg, true);
   }
 
   async function init() {
