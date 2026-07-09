@@ -127,6 +127,10 @@ def ensure_drawing_schema(engine, db):
     for name, col_type in additions.items():
         if name not in cols:
             db.session.execute(text(f'ALTER TABLE drawing ADD COLUMN {name} {col_type}'))
+    if 'punch_item' in tables:
+        punch_cols = {c['name'] for c in inspector.get_columns('punch_item')}
+        if 'plan_pins_json' not in punch_cols:
+            db.session.execute(text('ALTER TABLE punch_item ADD COLUMN plan_pins_json TEXT'))
     db.session.commit()
 
 
@@ -1218,6 +1222,90 @@ def markup_to_dict(m):
     }
 
 
+def build_plan_pin_entry(drawing, markup_id, geom, label=None):
+    pin_x = geom.get('anchorX', geom.get('x', 0))
+    pin_y = geom.get('anchorY', geom.get('y', 0))
+    return {
+        'drawing_id': drawing.id,
+        'drawing_sheet': drawing.sheet_number,
+        'x': pin_x,
+        'y': pin_y,
+        'nx': geom.get('nanchorX', geom.get('nx')),
+        'ny': geom.get('nanchorY', geom.get('ny')),
+        'markup_id': markup_id,
+        'note': label or '',
+        'created_at': datetime.utcnow().isoformat(),
+    }
+
+
+def _append_plan_pin(record, attr, entry):
+    pins = _parse_json(getattr(record, attr, None), [])
+    markup_id = entry.get('markup_id')
+    if markup_id is not None:
+        pins = [p for p in pins if p.get('markup_id') != markup_id]
+    pins.append(entry)
+    setattr(record, attr, json.dumps(pins))
+
+
+def _remove_plan_pin(record, attr, markup_id):
+    pins = _parse_json(getattr(record, attr, None), [])
+    filtered = [p for p in pins if p.get('markup_id') != markup_id]
+    if len(filtered) == len(pins):
+        return False
+    setattr(record, attr, json.dumps(filtered))
+    return True
+
+
+def link_pin_markup(markup, drawing, geom, label, *, RFI, ChangeOrder, PunchItem):
+    """Attach a drawing pin markup to its parent RFI / CO / punch list record."""
+    if not markup or not drawing:
+        return
+    entry = build_plan_pin_entry(drawing, markup.id, geom or {}, label)
+    mt = markup.markup_type
+    if mt == 'rfi_pin' and markup.linked_rfi_id:
+        rfi = RFI.query.get(markup.linked_rfi_id)
+        if rfi:
+            _append_plan_pin(rfi, 'plan_pins_json', entry)
+            rfi.drawing_reference = drawing.sheet_number
+    elif mt == 'co_pin':
+        co_id = (geom or {}).get('linkedCoId')
+        if co_id:
+            co = ChangeOrder.query.get(int(co_id))
+            if co:
+                _append_plan_pin(co, 'plan_pins_json', entry)
+    elif mt == 'punch_pin':
+        punch_id = (geom or {}).get('linkedPunchId')
+        if punch_id:
+            item = PunchItem.query.get(int(punch_id))
+            if item:
+                _append_plan_pin(item, 'plan_pins_json', entry)
+
+
+def unlink_pin_markup(markup, *, RFI, ChangeOrder, PunchItem):
+    """Remove plan pin reference from parent record when markup is deleted."""
+    if not markup:
+        return
+    geom = _parse_json(markup.geometry_json, {})
+    markup_id = markup.id
+    mt = markup.markup_type
+    if mt == 'rfi_pin' and markup.linked_rfi_id:
+        rfi = RFI.query.get(markup.linked_rfi_id)
+        if rfi:
+            _remove_plan_pin(rfi, 'plan_pins_json', markup_id)
+    elif mt == 'co_pin':
+        co_id = geom.get('linkedCoId')
+        if co_id:
+            co = ChangeOrder.query.get(int(co_id))
+            if co:
+                _remove_plan_pin(co, 'plan_pins_json', markup_id)
+    elif mt == 'punch_pin':
+        punch_id = geom.get('linkedPunchId')
+        if punch_id:
+            item = PunchItem.query.get(int(punch_id))
+            if item:
+                _remove_plan_pin(item, 'plan_pins_json', markup_id)
+
+
 def drawing_to_dict(drawing, current_rev=None, revision_count=0, markup_count=0, linked_rfis=None):
     rev = current_rev
     upload_root = os.environ.get('CASEPM_UPLOAD_ROOT') or 'uploads'
@@ -1514,7 +1602,7 @@ def process_pages_from_upload(
     return created, needs_review
 
 
-def delete_drawings_by_set_name(db, Drawing, DrawingRevision, DrawingMarkup, project_id, set_name, upload_root=None):
+def delete_drawings_by_set_name(db, Drawing, DrawingRevision, DrawingMarkup, project_id, set_name, upload_root=None, *, RFI=None, ChangeOrder=None, PunchItem=None):
     """Delete every sheet whose current revision belongs to the given drawing set name."""
     target = (set_name or '').strip() or 'Unnamed Set'
     drawings = Drawing.query.filter_by(project_id=int(project_id)).all()
@@ -1525,24 +1613,30 @@ def delete_drawings_by_set_name(db, Drawing, DrawingRevision, DrawingMarkup, pro
             rev = DrawingRevision.query.filter_by(drawing_id=drawing.id, is_current=True).first()
         rev_set = (rev.set_name if rev else None) or 'Unnamed Set'
         if rev_set == target:
-            delete_drawing_record(db, Drawing, DrawingRevision, DrawingMarkup, drawing, upload_root=upload_root)
+            delete_drawing_record(
+                db, Drawing, DrawingRevision, DrawingMarkup, drawing, upload_root=upload_root,
+                RFI=RFI, ChangeOrder=ChangeOrder, PunchItem=PunchItem,
+            )
             deleted_ids.append(drawing.id)
     return deleted_ids
 
 
-def delete_drawings_bulk(db, Drawing, DrawingRevision, DrawingMarkup, project_id, drawing_ids, upload_root=None):
+def delete_drawings_bulk(db, Drawing, DrawingRevision, DrawingMarkup, project_id, drawing_ids, upload_root=None, *, RFI=None, ChangeOrder=None, PunchItem=None):
     """Delete multiple drawing sheets by id."""
     deleted_ids = []
     for drawing_id in drawing_ids:
         drawing = Drawing.query.filter_by(id=int(drawing_id), project_id=int(project_id)).first()
         if not drawing:
             continue
-        delete_drawing_record(db, Drawing, DrawingRevision, DrawingMarkup, drawing, upload_root=upload_root)
+        delete_drawing_record(
+            db, Drawing, DrawingRevision, DrawingMarkup, drawing, upload_root=upload_root,
+            RFI=RFI, ChangeOrder=ChangeOrder, PunchItem=PunchItem,
+        )
         deleted_ids.append(drawing.id)
     return deleted_ids
 
 
-def delete_drawing_record(db, Drawing, DrawingRevision, DrawingMarkup, drawing, upload_root=None):
+def delete_drawing_record(db, Drawing, DrawingRevision, DrawingMarkup, drawing, upload_root=None, *, RFI=None, ChangeOrder=None, PunchItem=None):
     """Remove drawing, revisions, markups, and page files from disk."""
     drawing_id = drawing.id
     revisions = DrawingRevision.query.filter_by(drawing_id=drawing_id).all()
@@ -1562,6 +1656,13 @@ def delete_drawing_record(db, Drawing, DrawingRevision, DrawingMarkup, drawing, 
             except OSError:
                 pass
             dirs.add(os.path.dirname(p))
+    pin_markups = DrawingMarkup.query.filter(
+        DrawingMarkup.drawing_id == drawing_id,
+        DrawingMarkup.markup_type.in_(('rfi_pin', 'co_pin', 'punch_pin')),
+    ).all()
+    if pin_markups and RFI and ChangeOrder and PunchItem:
+        for m in pin_markups:
+            unlink_pin_markup(m, RFI=RFI, ChangeOrder=ChangeOrder, PunchItem=PunchItem)
     DrawingMarkup.query.filter_by(drawing_id=drawing_id).delete(synchronize_session=False)
     drawing.current_revision_id = None
     db.session.flush()

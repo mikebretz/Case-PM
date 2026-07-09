@@ -373,7 +373,7 @@
         <div class="space-y-2 max-h-48 overflow-auto">${responses}</div>
       </div>
       <div class="mb-4">
-        <h3 class="text-xs uppercase text-zinc-500 mb-2">Plan Pins <span class="text-zinc-600 normal-case">(drawing markup — coming soon)</span></h3>
+        <h3 class="text-xs uppercase text-zinc-500 mb-2">Plan Pins</h3>
         <div class="space-y-1 mb-2">${pins}</div>
         <button type="button" onclick="CasePMRfis.addPlanPin(${r.id})" class="text-xs px-2 py-1 bg-zinc-800 hover:bg-zinc-700 rounded border border-zinc-700"><i class="fa-solid fa-map-pin mr-1"></i>Add Plan Pin</button>
       </div>
@@ -438,8 +438,19 @@
   async function removePin(id, index) {
     const r = await api(`/api/rfis/${id}`);
     const pins = [...(r.plan_pins || [])];
-    pins.splice(index, 1);
-    await api(`/api/rfis/${id}`, { method: 'PUT', body: JSON.stringify({ plan_pins: pins }) });
+    const removed = pins[index];
+    if (!removed) return;
+    if (removed.markup_id) {
+      try {
+        await api(`/api/drawings/markups/${removed.markup_id}`, { method: 'DELETE' });
+      } catch {
+        pins.splice(index, 1);
+        await api(`/api/rfis/${id}`, { method: 'PUT', body: JSON.stringify({ plan_pins: pins }) });
+      }
+    } else {
+      pins.splice(index, 1);
+      await api(`/api/rfis/${id}`, { method: 'PUT', body: JSON.stringify({ plan_pins: pins }) });
+    }
     view(id);
   }
 

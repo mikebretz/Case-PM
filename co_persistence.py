@@ -68,6 +68,7 @@ def ensure_co_schema(engine, db):
             'linked_rfi_id': 'INTEGER',
             'linked_commitment_ref': 'VARCHAR(80)',
             'approval_stage': 'INTEGER DEFAULT 0',
+            'plan_pins_json': 'TEXT',
         }
         for name, col_type in additions.items():
             if name not in cols:
@@ -154,6 +155,7 @@ def co_to_dict(co, allocations=None, revisions=None):
         'attachments': _parse_json(getattr(co, 'attachments_json', None), []),
         'linked_rfi_id': getattr(co, 'linked_rfi_id', None),
         'linked_commitment_ref': getattr(co, 'linked_commitment_ref', None),
+        'plan_pins': _parse_json(getattr(co, 'plan_pins_json', None), []),
         'approval_stage': getattr(co, 'approval_stage', 0) or 0,
         'allocations': [{'cost_code': a.cost_code, 'amount': a.amount, 'description': getattr(a, 'description', '')} for a in (allocs or [])],
         'revisions': revisions or [],
