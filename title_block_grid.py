@@ -83,6 +83,14 @@ SHEET_NO_LABEL_RE = re.compile(
     r'^(?:sheet|sht|dwg)\s*(?:no\.?|num(?:ber)?)\s*:?\s*$',
     re.I,
 )
+SHEET_ONLY_LABEL_RE = re.compile(
+    r'^sheet\s*:?\s*$',
+    re.I,
+)
+CUSTOM_SHEET_VALUE_RE = re.compile(
+    r'^([A-Z]{2,8})-?(\d{1,4})$',
+    re.I,
+)
 DRAWING_NAME_LABEL_RE = re.compile(
     r'^drawing\s*name\s*:?\s*$',
     re.I,
@@ -296,9 +304,19 @@ def _is_drawing_number_label_text(text: str) -> bool:
     t = text.strip()
     if not t:
         return False
+    if SHEET_ONLY_LABEL_RE.match(t):
+        return True
     if DRAWING_NO_LABEL_RE.match(t) or SHEET_NO_LABEL_RE.match(t) or PAGE_NO_LABEL_RE.match(t):
         return True
     return bool(re.search(r'(?:drawing|sheet|page|dwg|sht)\s*(?:no|num|number)\.?\s*:?\s*$', t, re.I))
+
+
+def _sheet_label_value_direction(text: str) -> str:
+    """Most layouts put the sheet number above the label; plain SHEET: puts it below."""
+    t = text.strip()
+    if SHEET_ONLY_LABEL_RE.match(t):
+        return 'below'
+    return 'above'
 
 
 def _is_name_continuation_line(text: str) -> bool:
@@ -436,7 +454,7 @@ def _classify_bottom_label(text: str) -> str | None:
     t = text.strip()
     if not t:
         return None
-    if DRAWING_NO_LABEL_RE.match(t) or SHEET_NO_LABEL_RE.match(t) or PAGE_NO_LABEL_RE.match(t):
+    if SHEET_ONLY_LABEL_RE.match(t) or DRAWING_NO_LABEL_RE.match(t) or SHEET_NO_LABEL_RE.match(t) or PAGE_NO_LABEL_RE.match(t):
         return 'drawing_number'
     if DRAWING_NAME_LABEL_RE.match(t) or PAGE_NAME_LABEL_RE.match(t):
         return 'drawing_name'
@@ -782,7 +800,9 @@ def _detect_label_anchors(lines: list[TextLine]) -> list[LabelAnchor]:
         if _is_drawing_name_label_text(t):
             anchors.append(LabelAnchor('drawing_name', i, ln, 'above'))
         elif _is_drawing_number_label_text(t):
-            anchors.append(LabelAnchor('drawing_number', i, ln, 'above'))
+            anchors.append(LabelAnchor(
+                'drawing_number', i, ln, _sheet_label_value_direction(t),
+            ))
         elif PROJECT_NO_LABEL_RE.match(t) or re.search(r'^(?:project|job)\s*(?:no|num|number)\.?\s*:?\s*$', t, re.I):
             anchors.append(LabelAnchor('project_number', i, ln, 'below'))
     return anchors
@@ -898,7 +918,7 @@ def _large_text_near_label(
             if size < min_name_size and not _is_name_continuation_line(ln.text):
                 continue
         if anchor.kind == 'drawing_number':
-            maybe = _normalize_drawing_number(ln.text)
+            maybe = _normalize_sheet_from_title_block(ln.text)
             if not maybe and size < med_size * 0.82:
                 continue
         collected.append((align, size, ln))
@@ -912,7 +932,7 @@ def _large_text_near_label(
         sheet_matches = [
             (align, size, ln)
             for align, size, ln in collected
-            if _normalize_drawing_number(ln.text)
+            if _normalize_sheet_from_title_block(ln.text)
         ]
         if sheet_matches:
             best = max(sheet_matches, key=lambda t: (t[1], t[0]))
@@ -961,7 +981,7 @@ def _extract_by_label_proximity(
         if not value:
             continue
         if anchor.kind == 'drawing_number':
-            sheet = _normalize_drawing_number(value)
+            sheet = _normalize_sheet_from_title_block(value)
             if sheet and not _is_project_number_value(value):
                 labeled_sheet = True
                 pos = (anchor.line.cy / page_h) * 0.55 + (anchor.line.cx / page_w) * 0.45
@@ -992,7 +1012,18 @@ def _extract_by_label_proximity(
         out['drawing_name'] = name_scores[0][1][:200]
         out['confidence']['name'] = name_scores[0][0]
 
-    out['label_anchored'] = labeled_sheet and labeled_name
+    if not out['drawing_name'] and sheet_scores:
+        sheet_anchor = next(
+            (a for a in anchors if a.kind == 'drawing_number'),
+            None,
+        )
+        inferred = _infer_drawing_name_above_sheet(lines, sheet_anchor, med_size)
+        if inferred:
+            out['drawing_name'] = inferred
+            out['confidence']['name'] = 2.8
+            labeled_name = True
+
+    out['label_anchored'] = labeled_sheet and (labeled_name or bool(out['drawing_name']))
     return out
 
 
@@ -1021,6 +1052,17 @@ def _title_block_lines_from_page(page) -> tuple[float, float, list[TextLine], fl
     return page_w, page_h, lines, med_size
 
 
+def _normalize_custom_sheet_code(raw: str) -> str | None:
+    """Project-specific sheet IDs like OPDSP1 / OPDSP-1 from a SHEET: title block."""
+    if not raw:
+        return None
+    compact = re.sub(r'\s+', '', raw.upper())
+    m = CUSTOM_SHEET_VALUE_RE.match(compact)
+    if m:
+        return f'{m.group(1).upper()}-{m.group(2)}'
+    return None
+
+
 def _normalize_drawing_number(raw: str) -> str | None:
     if not raw:
         return None
@@ -1045,7 +1087,43 @@ def _normalize_drawing_number(raw: str) -> str | None:
     cand = normalize_sheet_number(compact)
     if cand and is_plausible_drawing_sheet(cand):
         return cand
-    return None
+    return _normalize_custom_sheet_code(compact)
+
+
+def _normalize_sheet_from_title_block(raw: str) -> str | None:
+    return _normalize_drawing_number(raw)
+
+
+def _infer_drawing_name_above_sheet(
+    lines: list[TextLine],
+    sheet_anchor: LabelAnchor | None,
+    med_size: float,
+) -> str:
+    """Layouts with only SHEET: — large drawing title sits in the box above, no name label."""
+    if not sheet_anchor:
+        return ''
+    parts: list[str] = []
+    edge = sheet_anchor.line.y0
+    for j in range(sheet_anchor.line_idx - 1, max(-1, sheet_anchor.line_idx - 8), -1):
+        ln = lines[j]
+        if _should_break_upward_walk(ln.text, 'drawing_name'):
+            break
+        if _should_skip_upward_line(ln.text, 'drawing_name'):
+            continue
+        if _is_drawing_number_label_text(ln.text) or _normalize_sheet_from_title_block(ln.text):
+            break
+        gap = edge - ln.y1
+        if parts and gap > 36:
+            break
+        size = ln.font_size or ln.height
+        if size < max(med_size * 0.95, 13):
+            continue
+        text = ln.text.strip()
+        if not _is_plausible_drawing_title(text, None):
+            continue
+        parts.insert(0, text)
+        edge = ln.y0
+    return ' '.join(parts).strip()[:200]
 
 
 def _is_plausible_drawing_title(text: str, sheet_number: str | None) -> bool:

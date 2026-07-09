@@ -112,7 +112,29 @@ def _make_fire_alarm_block():
     return FakePage(words)
 
 
+def _make_site_plan_sheet_block():
+    """SHEET: label with value below; drawing name above without a name label."""
+    words = [
+        WordSpan(870, 560, 980, 582, 'SITE PLAN', font_size=18),
+        WordSpan(875, 612, 930, 622, 'SHEET:', font_size=7),
+        WordSpan(875, 632, 960, 658, 'OPDSP1', font_size=22),
+    ]
+    return FakePage(words, width=1000, height=800)
+
+
 class TitleBlockGridTests(unittest.TestCase):
+    def test_normalize_custom_sheet_code(self):
+        self.assertEqual(_normalize_drawing_number('OPDSP1'), 'OPDSP-1')
+        self.assertEqual(_normalize_drawing_number('OPDSP-1'), 'OPDSP-1')
+
+    def test_label_proximity_sheet_only_site_plan(self):
+        page = _make_site_plan_sheet_block()
+        pw, ph, lines, med = _title_block_lines_from_page(page)
+        prox = _extract_by_label_proximity(lines, pw, ph, med)
+        self.assertEqual(prox['sheet_number'], 'OPDSP-1')
+        self.assertEqual(prox['drawing_name'], 'SITE PLAN')
+        self.assertTrue(prox.get('label_anchored'))
+
     def test_classify_labels(self):
         self.assertEqual(_classify_bottom_label('Drawing No.'), 'drawing_number')
         self.assertEqual(_classify_bottom_label('Drawing Name:'), 'drawing_name')
