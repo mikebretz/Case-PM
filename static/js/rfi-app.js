@@ -321,9 +321,9 @@
 
     const pins = (r.plan_pins || []).map((p, i) => `
       <div class="text-xs bg-zinc-800 rounded px-2 py-1 flex justify-between">
-        <span><i class="fa-solid fa-map-pin text-sky-400 mr-1"></i>${esc(p.drawing_sheet || r.drawing_reference || 'Sheet')} @ (${p.x || 0}, ${p.y || 0})</span>
+        <a href="/drawings" class="hover:text-sky-300"><i class="fa-solid fa-map-pin text-sky-400 mr-1"></i>${esc(p.drawing_sheet || r.drawing_reference || 'Sheet')} @ (${p.x || 0}, ${p.y || 0})</a>
         <button onclick="CasePMRfis.removePin(${r.id}, ${i})" class="text-red-400"><i class="fa-solid fa-times"></i></button>
-      </div>`).join('') || '<p class="text-zinc-500 text-xs">No plan pins yet. Use Add Plan Pin to tag this RFI on a drawing (full markup coming soon).</p>';
+      </div>`).join('') || '<p class="text-zinc-500 text-xs">No plan pins yet. Open <a href="/drawings" class="text-sky-400 underline">Drawings</a> to place RFI pins on sheets.</p>';
 
     const linked = [
       ...(r.linked_change_orders || []).map(c => `<a href="/change-orders" class="text-emerald-400 text-xs">${esc(c.number)} — ${esc(c.title)}</a>`),

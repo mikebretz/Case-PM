@@ -378,6 +378,59 @@ class RFI(db.Model):
     discipline = db.Column(db.String(80))
 
 
+class Drawing(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    project_id = db.Column(db.Integer, db.ForeignKey('project.id'), nullable=False)
+    sheet_number = db.Column(db.String(40), nullable=False)
+    title = db.Column(db.String(300))
+    discipline = db.Column(db.String(80))
+    section_prefix = db.Column(db.String(10))
+    sort_key = db.Column(db.String(40))
+    status = db.Column(db.String(30), default='Current')
+    current_revision_id = db.Column(db.Integer)
+    thumbnail_path = db.Column(db.String(500))
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow)
+
+    __table_args__ = (db.UniqueConstraint('project_id', 'sheet_number', name='uq_drawing_project_sheet'),)
+
+
+class DrawingRevision(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    drawing_id = db.Column(db.Integer, db.ForeignKey('drawing.id'), nullable=False)
+    revision_number = db.Column(db.String(20), default='0')
+    revision_label = db.Column(db.String(40))
+    drawing_date = db.Column(db.Date)
+    received_date = db.Column(db.Date)
+    set_name = db.Column(db.String(150))
+    file_path = db.Column(db.String(500), nullable=False)
+    original_filename = db.Column(db.String(300))
+    is_current = db.Column(db.Boolean, default=True)
+    superseded_at = db.Column(db.DateTime)
+    upload_source = db.Column(db.String(40))
+    uploaded_by_id = db.Column(db.Integer, db.ForeignKey('user.id'))
+    uploaded_at = db.Column(db.DateTime, default=datetime.utcnow)
+    notes = db.Column(db.Text)
+
+
+class DrawingMarkup(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    drawing_id = db.Column(db.Integer, db.ForeignKey('drawing.id'), nullable=False)
+    revision_id = db.Column(db.Integer, db.ForeignKey('drawing_revision.id'))
+    user_id = db.Column(db.Integer, db.ForeignKey('user.id'))
+    user_name = db.Column(db.String(150))
+    layer = db.Column(db.String(20), default='personal')
+    markup_type = db.Column(db.String(30), nullable=False)
+    geometry_json = db.Column(db.Text)
+    style_json = db.Column(db.Text)
+    label = db.Column(db.String(300))
+    linked_rfi_id = db.Column(db.Integer, db.ForeignKey('rfi.id'))
+    measurement_value = db.Column(db.Float)
+    measurement_unit = db.Column(db.String(20))
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    published_at = db.Column(db.DateTime)
+
+
 class ChangeOrder(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     project_id = db.Column(db.Integer, db.ForeignKey('project.id'))
@@ -736,6 +789,8 @@ os.makedirs(os.path.join(UPLOAD_FOLDER, 'spec_books'), exist_ok=True)
 os.makedirs(os.path.join(UPLOAD_FOLDER, 'contracts'), exist_ok=True)
 os.makedirs(os.path.join(UPLOAD_FOLDER, 'projects'), exist_ok=True)
 os.makedirs(os.path.join(UPLOAD_FOLDER, 'commitments'), exist_ok=True)
+os.makedirs(os.path.join(UPLOAD_FOLDER, 'drawings'), exist_ok=True)
+os.makedirs(os.path.join(UPLOAD_FOLDER, 'rfis'), exist_ok=True)
 
 LOGO_EXTENSIONS = {'png', 'jpg', 'jpeg', 'gif', 'webp', 'svg'}
 
@@ -2607,6 +2662,448 @@ def drawings_page():
     return render_template('drawings.html')
 
 
+# ==================== DRAWINGS REST API ====================
+
+def _drawing_folder(project_id):
+    path = os.path.join(app.config['UPLOAD_FOLDER'], 'drawings', str(project_id))
+    os.makedirs(path, exist_ok=True)
+    return path
+
+
+def _serialize_drawing(drawing):
+    from drawing_persistence import drawing_to_dict, revision_to_dict
+    from sqlalchemy import func
+
+    rev = None
+    if drawing.current_revision_id:
+        rev = DrawingRevision.query.get(drawing.current_revision_id)
+    if not rev:
+        rev = DrawingRevision.query.filter_by(drawing_id=drawing.id, is_current=True).first()
+    rev_count = DrawingRevision.query.filter_by(drawing_id=drawing.id).count()
+    markup_count = DrawingMarkup.query.filter_by(drawing_id=drawing.id).count()
+    linked_rfis = []
+    pins = DrawingMarkup.query.filter_by(drawing_id=drawing.id, markup_type='rfi_pin').all()
+    for p in pins:
+        if p.linked_rfi_id:
+            rfi = RFI.query.get(p.linked_rfi_id)
+            if rfi:
+                linked_rfis.append({'id': rfi.id, 'number': rfi.number, 'subject': rfi.subject})
+    d = drawing_to_dict(drawing, rev, rev_count, markup_count, linked_rfis)
+    return d
+
+
+@app.route('/api/drawings/dashboard', methods=['GET'])
+@login_required
+def api_drawings_dashboard():
+    from drawing_persistence import compute_drawing_dashboard
+    project_id = request.args.get('project_id', type=int) or get_current_project_id()
+    if not project_id:
+        return jsonify({'error': 'project_id required'}), 400
+    return jsonify(compute_drawing_dashboard(Drawing, DrawingRevision, int(project_id)))
+
+
+@app.route('/api/drawings', methods=['GET'])
+@login_required
+def api_list_drawings():
+    from drawing_persistence import group_drawings_by_section
+    project_id = request.args.get('project_id', type=int) or get_current_project_id()
+    if not project_id:
+        return jsonify({'error': 'project_id required'}), 400
+    section = request.args.get('section')
+    discipline = request.args.get('discipline')
+    status = request.args.get('status')
+    q = Drawing.query.filter_by(project_id=int(project_id))
+    if section:
+        q = q.filter_by(section_prefix=section.upper())
+    if discipline:
+        q = q.filter_by(discipline=discipline)
+    if status:
+        q = q.filter_by(status=status)
+    drawings = q.order_by(Drawing.sort_key, Drawing.sheet_number).all()
+    items = [_serialize_drawing(d) for d in drawings]
+    grouped = group_drawings_by_section(items)
+    return jsonify({'drawings': items, 'sections': grouped})
+
+
+@app.route('/api/drawings/<int:drawing_id>', methods=['GET'])
+@login_required
+def api_get_drawing(drawing_id):
+    from drawing_persistence import revision_to_dict, markup_to_dict
+    drawing = Drawing.query.get_or_404(drawing_id)
+    data = _serialize_drawing(drawing)
+    revisions = DrawingRevision.query.filter_by(drawing_id=drawing.id).order_by(DrawingRevision.uploaded_at.desc()).all()
+    data['revisions'] = [revision_to_dict(r) for r in revisions]
+    rev_id = drawing.current_revision_id
+    markups = DrawingMarkup.query.filter(
+        DrawingMarkup.drawing_id == drawing.id,
+        db.or_(DrawingMarkup.revision_id == rev_id, DrawingMarkup.revision_id.is_(None)),
+    ).all()
+    data['markups'] = [markup_to_dict(m) for m in markups]
+    return jsonify(data)
+
+
+@app.route('/api/drawings/<int:drawing_id>/file', methods=['GET'])
+@login_required
+def api_serve_drawing_file(drawing_id):
+    drawing = Drawing.query.get_or_404(drawing_id)
+    rev = DrawingRevision.query.get(drawing.current_revision_id) if drawing.current_revision_id else None
+    if not rev:
+        rev = DrawingRevision.query.filter_by(drawing_id=drawing.id, is_current=True).first_or_404()
+    directory = os.path.dirname(rev.file_path)
+    filename = os.path.basename(rev.file_path)
+    return send_from_directory(directory, filename, mimetype='application/pdf')
+
+
+@app.route('/api/drawings/<int:drawing_id>/revisions/<int:revision_id>/file', methods=['GET'])
+@login_required
+def api_serve_drawing_revision_file(drawing_id, revision_id):
+    rev = DrawingRevision.query.filter_by(id=revision_id, drawing_id=drawing_id).first_or_404()
+    directory = os.path.dirname(rev.file_path)
+    filename = os.path.basename(rev.file_path)
+    return send_from_directory(directory, filename, mimetype='application/pdf')
+
+
+@app.route('/api/drawings/<int:drawing_id>/thumbnail', methods=['GET'])
+@login_required
+def api_drawing_thumbnail(drawing_id):
+    drawing = Drawing.query.get_or_404(drawing_id)
+    if drawing.thumbnail_path and os.path.isfile(drawing.thumbnail_path):
+        directory = os.path.dirname(drawing.thumbnail_path)
+        filename = os.path.basename(drawing.thumbnail_path)
+        return send_from_directory(directory, filename, mimetype='image/png')
+    return jsonify({'use_pdf': True, 'file_url': f'/api/drawings/{drawing_id}/file'}), 404
+
+
+@app.route('/api/drawings/upload', methods=['POST'])
+@login_required
+def api_upload_drawing():
+    from drawing_persistence import (
+        upsert_drawing_from_upload,
+        extract_sheet_from_filename,
+        extract_sheet_from_pdf_text,
+        extract_title_from_text,
+        discipline_from_sheet,
+    )
+    try:
+        project_id = request.form.get('project_id', type=int) or get_current_project_id()
+        if not project_id:
+            return jsonify({'error': 'project_id required'}), 400
+        file = request.files.get('file')
+        if not file or not file.filename:
+            return jsonify({'error': 'file required'}), 400
+        if not allowed_file(file.filename) or not file.filename.lower().endswith('.pdf'):
+            return jsonify({'error': 'PDF files only'}), 400
+
+        sheet_number = request.form.get('sheet_number') or extract_sheet_from_filename(file.filename)
+        set_name = request.form.get('set_name') or 'Upload'
+        folder = _drawing_folder(project_id)
+        ts = datetime.utcnow().strftime('%Y%m%d%H%M%S')
+        safe = secure_filename(file.filename)
+        dest = os.path.join(folder, f'{ts}_{safe}')
+        file.save(dest)
+
+        text = ''
+        try:
+            from pypdf import PdfReader
+            text = (PdfReader(dest).pages[0].extract_text() or '') if PdfReader(dest).pages else ''
+        except Exception:
+            pass
+        if not sheet_number:
+            sheet_number = extract_sheet_from_pdf_text(text)
+        if not sheet_number:
+            return jsonify({'error': 'Could not detect sheet number. Enter it manually or rename file (e.g. A-101.pdf).'}), 400
+
+        title = request.form.get('title') or extract_title_from_text(text, sheet_number)
+        discipline = request.form.get('discipline') or discipline_from_sheet(sheet_number)
+        drawing_date = None
+        if request.form.get('drawing_date'):
+            drawing_date = datetime.strptime(request.form.get('drawing_date'), '%Y-%m-%d').date()
+
+        drawing, rev, _old = upsert_drawing_from_upload(
+            db, Drawing, DrawingRevision, DrawingMarkup,
+            project_id=int(project_id),
+            sheet_number=sheet_number,
+            title=title,
+            discipline=discipline,
+            file_path=dest,
+            original_filename=file.filename,
+            set_name=set_name,
+            drawing_date=drawing_date,
+            received_date=date.today(),
+            upload_source='individual',
+            uploaded_by_id=current_user.id,
+        )
+        db.session.commit()
+        return jsonify({'ok': True, 'drawing': _serialize_drawing(drawing), 'revision': rev.revision_label})
+    except Exception as exc:
+        db.session.rollback()
+        return jsonify({'error': str(exc)}), 500
+
+
+@app.route('/api/drawings/upload-set', methods=['POST'])
+@login_required
+def api_upload_drawing_set():
+    from drawing_persistence import (
+        split_pdf_to_pages,
+        upsert_drawing_from_upload,
+        extract_sheet_from_pdf_text,
+        extract_sheet_from_filename,
+        extract_title_from_text,
+        discipline_from_sheet,
+    )
+    try:
+        project_id = request.form.get('project_id', type=int) or get_current_project_id()
+        if not project_id:
+            return jsonify({'error': 'project_id required'}), 400
+        file = request.files.get('file')
+        if not file or not file.filename:
+            return jsonify({'error': 'file required'}), 400
+        if not file.filename.lower().endswith('.pdf'):
+            return jsonify({'error': 'PDF required'}), 400
+
+        set_name = request.form.get('set_name') or os.path.splitext(file.filename)[0]
+        folder = _drawing_folder(project_id)
+        ts = datetime.utcnow().strftime('%Y%m%d%H%M%S')
+        batch_dir = os.path.join(folder, f'set_{ts}')
+        os.makedirs(batch_dir, exist_ok=True)
+        combined_path = os.path.join(batch_dir, secure_filename(file.filename))
+        file.save(combined_path)
+
+        pages = split_pdf_to_pages(combined_path, batch_dir)
+        created = []
+        needs_review = []
+        for page in pages:
+            sheet_number = extract_sheet_from_pdf_text(page['text'])
+            if not sheet_number:
+                sheet_number = extract_sheet_from_filename(page['filename'])
+            if not sheet_number:
+                needs_review.append({'page': page['page_index'] + 1, 'file': page['filename']})
+                continue
+            title = extract_title_from_text(page['text'], sheet_number)
+            drawing, rev, _old = upsert_drawing_from_upload(
+                db, Drawing, DrawingRevision, DrawingMarkup,
+                project_id=int(project_id),
+                sheet_number=sheet_number,
+                title=title,
+                discipline=discipline_from_sheet(sheet_number),
+                file_path=page['file_path'],
+                original_filename=file.filename,
+                set_name=set_name,
+                drawing_date=None,
+                received_date=date.today(),
+                upload_source='combined_set',
+                uploaded_by_id=current_user.id,
+                notes=f'Page {page["page_index"] + 1} from {file.filename}',
+            )
+            created.append(_serialize_drawing(drawing))
+        db.session.commit()
+        return jsonify({
+            'ok': True,
+            'created_count': len(created),
+            'needs_review': needs_review,
+            'drawings': created,
+        })
+    except Exception as exc:
+        db.session.rollback()
+        return jsonify({'error': str(exc)}), 500
+
+
+@app.route('/api/drawings/substitute', methods=['POST'])
+@login_required
+def api_substitute_drawings():
+    """Replace existing sheets with revised pages; old revisions archived automatically."""
+    from drawing_persistence import (
+        upsert_drawing_from_upload,
+        extract_sheet_from_filename,
+        extract_sheet_from_pdf_text,
+        extract_title_from_text,
+        discipline_from_sheet,
+        split_pdf_to_pages,
+    )
+    try:
+        project_id = request.form.get('project_id', type=int) or get_current_project_id()
+        if not project_id:
+            return jsonify({'error': 'project_id required'}), 400
+        set_name = request.form.get('set_name') or 'Substitute Pages'
+        files = request.files.getlist('files')
+        if not files:
+            single = request.files.get('file')
+            if single:
+                files = [single]
+        if not files:
+            return jsonify({'error': 'Upload one or more PDF pages'}), 400
+
+        folder = _drawing_folder(project_id)
+        ts = datetime.utcnow().strftime('%Y%m%d%H%M%S')
+        sub_dir = os.path.join(folder, f'substitute_{ts}')
+        os.makedirs(sub_dir, exist_ok=True)
+        substituted = []
+        skipped = []
+
+        def process_page(file_path, original_name, page_note=''):
+            text = ''
+            try:
+                from pypdf import PdfReader
+                reader = PdfReader(file_path)
+                if reader.pages:
+                    text = reader.pages[0].extract_text() or ''
+            except Exception:
+                pass
+            sheet_number = extract_sheet_from_filename(original_name) or extract_sheet_from_pdf_text(text)
+            if not sheet_number:
+                skipped.append({'file': original_name, 'reason': 'Sheet number not detected'})
+                return
+            existing = Drawing.query.filter_by(project_id=int(project_id), sheet_number=sheet_number).first()
+            if not existing:
+                skipped.append({'file': original_name, 'sheet': sheet_number, 'reason': 'No existing sheet to replace'})
+                return
+            title = extract_title_from_text(text, sheet_number) or existing.title
+            drawing, rev, old_rev = upsert_drawing_from_upload(
+                db, Drawing, DrawingRevision, DrawingMarkup,
+                project_id=int(project_id),
+                sheet_number=sheet_number,
+                title=title,
+                discipline=existing.discipline,
+                file_path=file_path,
+                original_filename=original_name,
+                set_name=set_name,
+                drawing_date=None,
+                received_date=date.today(),
+                upload_source='substitute',
+                uploaded_by_id=current_user.id,
+                notes=page_note or 'Substitute page upload',
+            )
+            substituted.append({
+                'sheet_number': sheet_number,
+                'new_revision': rev.revision_label,
+                'previous_revision': old_rev.revision_label if old_rev else None,
+                'drawing_id': drawing.id,
+            })
+
+        for f in files:
+            if not f or not f.filename:
+                continue
+            if not f.filename.lower().endswith('.pdf'):
+                skipped.append({'file': f.filename, 'reason': 'Not a PDF'})
+                continue
+            dest = os.path.join(sub_dir, secure_filename(f.filename))
+            f.save(dest)
+            try:
+                from pypdf import PdfReader
+                reader = PdfReader(dest)
+                if len(reader.pages) > 1:
+                    pages = split_pdf_to_pages(dest, sub_dir)
+                    for page in pages:
+                        process_page(page['file_path'], f.filename, f'Substitute page {page["page_index"] + 1}')
+                else:
+                    process_page(dest, f.filename)
+            except Exception:
+                process_page(dest, f.filename)
+
+        db.session.commit()
+        return jsonify({'ok': True, 'substituted': substituted, 'skipped': skipped})
+    except Exception as exc:
+        db.session.rollback()
+        return jsonify({'error': str(exc)}), 500
+
+
+@app.route('/api/drawings/<int:drawing_id>/markups', methods=['GET', 'POST'])
+@login_required
+def api_drawing_markups(drawing_id):
+    from drawing_persistence import markup_to_dict
+    drawing = Drawing.query.get_or_404(drawing_id)
+    if request.method == 'GET':
+        revision_id = request.args.get('revision_id', type=int) or drawing.current_revision_id
+        q = DrawingMarkup.query.filter_by(drawing_id=drawing.id)
+        if revision_id:
+            q = q.filter(db.or_(DrawingMarkup.revision_id == revision_id, DrawingMarkup.revision_id.is_(None)))
+        return jsonify({'markups': [markup_to_dict(m) for m in q.all()]})
+
+    body = request.get_json(silent=True) or {}
+    user_name = f'{current_user.first_name} {current_user.last_name}'.strip() or current_user.email
+    markup = DrawingMarkup(
+        drawing_id=drawing.id,
+        revision_id=body.get('revision_id') or drawing.current_revision_id,
+        user_id=current_user.id,
+        user_name=user_name,
+        layer=body.get('layer') or 'personal',
+        markup_type=body.get('markup_type') or 'line',
+        geometry_json=json.dumps(body.get('geometry') or {}),
+        style_json=json.dumps(body.get('style') or {}),
+        label=body.get('label'),
+        linked_rfi_id=body.get('linked_rfi_id'),
+        measurement_value=body.get('measurement_value'),
+        measurement_unit=body.get('measurement_unit'),
+    )
+    if body.get('publish'):
+        markup.layer = 'published'
+        markup.published_at = datetime.utcnow()
+    db.session.add(markup)
+
+    if markup.markup_type == 'rfi_pin' and markup.linked_rfi_id:
+        rfi = RFI.query.get(markup.linked_rfi_id)
+        if rfi:
+            from rfi_persistence import _parse_json
+            pins = _parse_json(rfi.plan_pins_json, [])
+            geom = body.get('geometry') or {}
+            pins.append({
+                'drawing_id': drawing.id,
+                'drawing_sheet': drawing.sheet_number,
+                'x': geom.get('x', 0),
+                'y': geom.get('y', 0),
+                'markup_id': None,
+                'note': body.get('label') or '',
+                'created_at': datetime.utcnow().isoformat(),
+            })
+            rfi.plan_pins_json = json.dumps(pins)
+            rfi.drawing_reference = drawing.sheet_number
+
+    db.session.commit()
+    return jsonify({'ok': True, 'markup': markup_to_dict(markup)})
+
+
+@app.route('/api/drawings/markups/<int:markup_id>', methods=['PUT', 'DELETE'])
+@login_required
+def api_drawing_markup_item(markup_id):
+    from drawing_persistence import markup_to_dict
+    markup = DrawingMarkup.query.get_or_404(markup_id)
+    if request.method == 'DELETE':
+        db.session.delete(markup)
+        db.session.commit()
+        return jsonify({'ok': True})
+    body = request.get_json(silent=True) or {}
+    if 'geometry' in body:
+        markup.geometry_json = json.dumps(body['geometry'])
+    if 'style' in body:
+        markup.style_json = json.dumps(body['style'])
+    if 'label' in body:
+        markup.label = body['label']
+    if body.get('publish'):
+        markup.layer = 'published'
+        markup.published_at = datetime.utcnow()
+    db.session.commit()
+    return jsonify({'ok': True, 'markup': markup_to_dict(markup)})
+
+
+@app.route('/api/drawings/<int:drawing_id>/revisions', methods=['GET'])
+@login_required
+def api_drawing_revisions(drawing_id):
+    from drawing_persistence import revision_to_dict
+    drawing = Drawing.query.get_or_404(drawing_id)
+    revisions = DrawingRevision.query.filter_by(drawing_id=drawing.id).order_by(DrawingRevision.uploaded_at.desc()).all()
+    return jsonify({'revisions': [revision_to_dict(r) for r in revisions]})
+
+
+@app.route('/api/drawings/rfis', methods=['GET'])
+@login_required
+def api_drawings_rfis():
+    project_id = request.args.get('project_id', type=int) or get_current_project_id()
+    if not project_id:
+        return jsonify({'error': 'project_id required'}), 400
+    rfis = RFI.query.filter_by(project_id=int(project_id)).filter(RFI.status != 'Void').all()
+    return jsonify({'rfis': [{'id': r.id, 'number': r.number, 'subject': r.subject, 'drawing_reference': r.drawing_reference} for r in rfis]})
+
+
 @app.route('/budget')
 @login_required
 def budget_page():
@@ -4064,6 +4561,11 @@ with app.app_context():
             ensure_rfi_schema(db.engine, db)
         except Exception as _re:
             print('RFI schema:', _re)
+        try:
+            from drawing_persistence import ensure_drawing_schema
+            ensure_drawing_schema(db.engine, db)
+        except Exception as _dr:
+            print('Drawing schema:', _dr)
         try:
             from commitment_persistence import ensure_commitment_schema
             ensure_commitment_schema(db.engine, db)
