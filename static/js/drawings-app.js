@@ -385,6 +385,9 @@
     selectedStamp: 'APPROVED',
     punchItems: [],
     changeOrders: [],
+    pinSize: 1,
+    pendingDrag: null,
+    lastPinTap: { key: '', t: 0 },
     textDialogCtx: null,
     pdfRerenderTimer: null,
     lastPdfRenderScale: 0,
@@ -514,14 +517,67 @@
     global.location.href = `/change-orders?${q.toString()}`;
   }
 
+  function openPinLink(pinType, linkId) {
+    const id = linkId != null && linkId !== '' ? String(linkId) : '';
+    if (!id) return;
+    if (pinType === 'rfi') navigateToRfi(id);
+    else if (pinType === 'co') navigateToChangeOrder(id);
+  }
+
+  function pinLinkFromMarkup(m) {
+    if (!m) return { pinType: '', linkId: '' };
+    if (m.markup_type === 'rfi_pin') {
+      return { pinType: 'rfi', linkId: m.linked_rfi_id || '' };
+    }
+    if (m.markup_type === 'co_pin') {
+      const g = resolvePinGeom(m.geometry || {});
+      return { pinType: 'co', linkId: g.linkedCoId || m.linked_co_id || '' };
+    }
+    if (m.markup_type === 'punch_pin') {
+      const g = resolvePinGeom(m.geometry || {});
+      return { pinType: 'punch', linkId: g.linkedPunchId || '' };
+    }
+    return { pinType: '', linkId: '' };
+  }
+
+  function handlePinBadgeActivate(badgeEl) {
+    if (!badgeEl) return;
+    const pinType = badgeEl.getAttribute('data-pin-type');
+    let linkId = badgeEl.getAttribute('data-pin-link');
+    if (!linkId) {
+      const markupId = parseInt(badgeEl.getAttribute('data-markup-id'), 10);
+      const m = state.markups.find(x => x.id === markupId);
+      const resolved = pinLinkFromMarkup(m);
+      pinType = resolved.pinType || pinType;
+      linkId = resolved.linkId;
+    }
+    openPinLink(pinType, linkId);
+  }
+
+  function registerPinBadgeTap(badgeEl) {
+    const markupId = badgeEl.getAttribute('data-markup-id');
+    const linkId = badgeEl.getAttribute('data-pin-link') || markupId;
+    const key = `${markupId}:${linkId}`;
+    const now = Date.now();
+    if (state.lastPinTap.key === key && now - state.lastPinTap.t < 450) {
+      state.lastPinTap = { key: '', t: 0 };
+      handlePinBadgeActivate(badgeEl);
+      return true;
+    }
+    state.lastPinTap = { key, t: now };
+    return false;
+  }
+
   /** Leader pin: anchor = exact point on plan; x/y = draggable label badge. */
   function resolvePinGeom(geom) {
     const g = resolveGeom(geom || {});
+    if (g.pinSize == null && geom?.pinSize != null) g.pinSize = geom.pinSize;
     if (g.anchorX == null && g.x != null) {
+      const off = 56 * (g.pinSize || 1);
       g.anchorX = g.x;
       g.anchorY = g.y;
-      g.x = g.x + 56;
-      g.y = g.y - 56;
+      g.x = g.x + off;
+      g.y = g.y - off;
     }
     return g;
   }
@@ -529,15 +585,21 @@
   function leaderPinSvg(opts) {
     const {
       id, anchorX, anchorY, badgeX, badgeY, color, letter, pinType, linkId, label, selected,
+      pinSize = 1,
     } = opts;
+    const scale = Math.max(0.5, Math.min(3, pinSize || 1));
+    const badgeR = 11 * scale;
+    const hitR = Math.max(14, 16 * scale);
+    const anchorR = 3.5 * scale;
+    const fontSize = Math.round(9 * scale);
     const stroke = selected ? '#fbbf24' : color;
     const title = esc(label || letter);
     return `<g class="markup-item leader-pin${selected ? ' markup-selected' : ''}">
-      <line x1="${anchorX}" y1="${anchorY}" x2="${badgeX}" y2="${badgeY}" stroke="${stroke}" stroke-width="1.5" opacity="0.9" pointer-events="none"/>
-      <circle cx="${anchorX}" cy="${anchorY}" r="3.5" fill="${color}" stroke="#fff" stroke-width="1.5" pointer-events="none"/>
-      <circle data-markup-id="${id}" data-pin-badge="1" data-pin-type="${pinType}" data-pin-link="${linkId || ''}" cx="${badgeX}" cy="${badgeY}" r="16" fill="transparent" pointer-events="all"/>
-      <circle cx="${badgeX}" cy="${badgeY}" r="11" fill="${color}" stroke="${selected ? '#fbbf24' : '#fff'}" stroke-width="2" pointer-events="none"/>
-      <text x="${badgeX}" y="${badgeY + 4}" text-anchor="middle" fill="#fff" font-size="9" font-weight="bold" pointer-events="none">${esc(letter)}</text>
+      <line x1="${anchorX}" y1="${anchorY}" x2="${badgeX}" y2="${badgeY}" stroke="${stroke}" stroke-width="${1.5 * scale}" opacity="0.9" pointer-events="none"/>
+      <circle cx="${anchorX}" cy="${anchorY}" r="${anchorR}" fill="${color}" stroke="#fff" stroke-width="${1.5 * scale}" pointer-events="none"/>
+      <circle data-markup-id="${id}" data-pin-badge="1" data-pin-type="${pinType}" data-pin-link="${linkId || ''}" cx="${badgeX}" cy="${badgeY}" r="${hitR}" fill="transparent" pointer-events="all"/>
+      <circle cx="${badgeX}" cy="${badgeY}" r="${badgeR}" fill="${color}" stroke="${selected ? '#fbbf24' : '#fff'}" stroke-width="${2 * scale}" pointer-events="none"/>
+      <text x="${badgeX}" y="${badgeY + fontSize * 0.45}" text-anchor="middle" fill="#fff" font-size="${fontSize}" font-weight="bold" pointer-events="none">${esc(letter)}</text>
       <title>${title}</title>
     </g>`;
   }
@@ -1001,6 +1063,7 @@
       state.previewDrawingId = id;
       previewSheet(id);
       switchView('viewer');
+      bindMarkupSvgEvents();
       updateViewerCursor();
       renderPropertiesPanel();
       await renderPdf(true);
@@ -1188,12 +1251,13 @@
   }
 
   function pinGeometryAt(anchorPt) {
-    const offset = 56;
+    const offset = 56 * (state.pinSize || 1);
     return {
       anchorX: anchorPt.x,
       anchorY: anchorPt.y,
       x: anchorPt.x + offset,
       y: anchorPt.y - offset,
+      pinSize: state.pinSize || 1,
     };
   }
 
@@ -1286,8 +1350,10 @@
       const g = resolveGeom(m.geometry || {});
       let d = Infinity;
       if (m.markup_type === 'rfi_pin' || m.markup_type === 'co_pin' || m.markup_type === 'punch_pin') {
-        const g = resolvePinGeom(m.geometry || {});
-        d = Math.hypot(pt.x - (g.x || 0), pt.y - (g.y || 0));
+        const pg = resolvePinGeom(m.geometry || {});
+        const hitR = 16 * (pg.pinSize || 1);
+        d = Math.hypot(pt.x - (pg.x || 0), pt.y - (pg.y || 0));
+        if (d <= hitR + 4) d = 0;
       } else if (['rect', 'cloud', 'highlight'].includes(m.markup_type)) {
         const inside = pt.x >= g.x && pt.x <= g.x + g.w && pt.y >= g.y && pt.y <= g.y + g.h;
         d = inside ? 0 : Math.min(
@@ -1588,25 +1654,6 @@
         <polygon points="0 0, 10 5, 0 10" fill="context-stroke"/>
       </marker>
     </defs>${shapes}${state.tempMarkup || ''}`;
-    svg.querySelectorAll('[data-pin-badge]').forEach(el => {
-      el.addEventListener('dblclick', e => {
-        e.stopPropagation();
-        const pinType = el.getAttribute('data-pin-type');
-        const linkId = el.getAttribute('data-pin-link');
-        if (!linkId) return;
-        if (pinType === 'rfi') navigateToRfi(linkId);
-        else if (pinType === 'co') navigateToChangeOrder(linkId);
-      });
-    });
-    svg.querySelectorAll('[data-markup-id]').forEach(el => {
-      el.addEventListener('click', e => {
-        e.stopPropagation();
-        if (state.tool !== 'select') return;
-        state.selectedMarkupId = parseInt(el.getAttribute('data-markup-id'), 10);
-        renderMarkupOverlay();
-        updateMarkupToolbar();
-      });
-    });
     updateMarkupToolbar();
     renderPropertiesPanel();
     renderMarkupList();
@@ -1716,7 +1763,7 @@
       return leaderPinSvg({
         id, anchorX: g.anchorX, anchorY: g.anchorY, badgeX: g.x, badgeY: g.y,
         color: '#8b5cf6', letter: 'P', pinType: 'punch', linkId: g.linkedPunchId || '',
-        label: m.label || 'Punch', selected,
+        label: m.label || 'Punch', selected, pinSize: g.pinSize || 1,
       });
     } else if (m.markup_type === 'co_pin') {
       const g = resolvePinGeom(m.geometry || {});
@@ -1724,14 +1771,14 @@
       return leaderPinSvg({
         id, anchorX: g.anchorX, anchorY: g.anchorY, badgeX: g.x, badgeY: g.y,
         color: '#10b981', letter: 'CO', pinType: 'co', linkId: coId || '',
-        label: m.label || 'Change Order', selected,
+        label: m.label || 'Change Order', selected, pinSize: g.pinSize || 1,
       });
     } else if (m.markup_type === 'rfi_pin') {
       const g = resolvePinGeom(m.geometry || {});
       return leaderPinSvg({
         id, anchorX: g.anchorX, anchorY: g.anchorY, badgeX: g.x, badgeY: g.y,
         color: '#f97316', letter: 'R', pinType: 'rfi', linkId: m.linked_rfi_id || '',
-        label: m.label || 'RFI', selected,
+        label: m.label || 'RFI', selected, pinSize: g.pinSize || 1,
       });
     } else {
       return '';
@@ -1768,6 +1815,9 @@
   ];
   const CLOUD_PRESETS = [
     { label: 'Tight', value: 10 }, { label: 'Standard', value: 18 }, { label: 'Large', value: 28 }, { label: 'XL', value: 36 },
+  ];
+  const PIN_SIZE_PRESETS = [
+    { label: 'Small', value: 0.75 }, { label: 'Medium', value: 1 }, { label: 'Large', value: 1.5 }, { label: 'XL', value: 2 },
   ];
   const FONT_PRESETS = [
     { label: '10', value: 10 }, { label: '12', value: 12 }, { label: '14', value: 14 },
@@ -1933,8 +1983,12 @@
     const showArrow = type === 'arrow' || type === 'line' || type === 'callout';
     const showStamp = type === 'stamp';
     const showFill = ['rect', 'highlight', 'ellipse', 'text', 'textbox', 'callout'].includes(type);
-    const showSize = isSelected && ['rect', 'highlight', 'ellipse', 'cloud', 'textbox', 'callout'].includes(type);
     const geom = isSelected && ctx?.geometry ? resolveGeom(ctx.geometry) : null;
+    const showSize = isSelected && ['rect', 'highlight', 'ellipse', 'cloud', 'textbox', 'callout'].includes(type);
+    const isPinType = ['rfi_pin', 'co_pin', 'punch_pin'].includes(type);
+    const showPinSize = isPinType && (isSelected || ['rfi_pin', 'co_pin', 'punch_pin'].includes(state.tool));
+    const pinSize = isSelected && geom?.pinSize ? geom.pinSize : (state.pinSize || 1);
+    const pinLink = isSelected ? pinLinkFromMarkup(ctx) : null;
     const color = style.color || '#38bdf8';
     const lineWidth = style.lineWidth || 2;
     const opacityPct = Math.round((style.opacity ?? 1) * 100);
@@ -1990,6 +2044,16 @@
         ${propRow('Width', 'propGeomW', Math.round(geom.w || 0), 1, 8000, 1)}
         ${propRow('Height', 'propGeomH', Math.round(geom.h || 0), 1, 8000, 1)}
       `) : ''}
+      ${showPinSize ? propSection('Pin size', `
+        ${propChips('Badge size', PIN_SIZE_PRESETS, pinSize, 'pinSize')}
+        <div class="markup-prop-hint">Double-click the pin badge to open the linked record.</div>
+      `) : ''}
+      ${isSelected && pinLink?.linkId && pinLink.pinType === 'rfi' ? `
+        <button type="button" id="propOpenRfiBtn" class="w-full mt-2 px-2 py-1.5 rounded text-xs bg-orange-900/50 border border-orange-700 text-orange-200 hover:bg-orange-900">Open linked RFI</button>
+      ` : ''}
+      ${isSelected && pinLink?.linkId && pinLink.pinType === 'co' ? `
+        <button type="button" id="propOpenCoBtn" class="w-full mt-2 px-2 py-1.5 rounded text-xs bg-emerald-900/50 border border-emerald-700 text-emerald-200 hover:bg-emerald-900">Open linked change order</button>
+      ` : ''}
       ${showStamp ? propSection('Stamp type', `
         <div class="flex flex-wrap gap-1 mb-2">${STAMP_PRESETS.map(s => {
           const active = state.selectedStamp === s.value ? ' scale-preset-active' : '';
@@ -2047,6 +2111,7 @@
         else if (prop === 'textAlign') applyMarkupProperty({ textAlign: val });
         else if (prop === 'showTextBorder') applyMarkupProperty({ showTextBorder: val === '1' });
         else if (prop === 'arrowHead') applyMarkupProperty({ arrowHead: val });
+        else if (prop === 'pinSize') applyPinSize(parseFloat(val));
         renderPropertiesPanel();
         renderMarkupOverlay();
       });
@@ -2127,6 +2192,28 @@
     document.getElementById('propScaleApplyBtn')?.addEventListener('click', applyManualScaleInput);
     document.getElementById('propScaleInput')?.addEventListener('keydown', e => { if (e.key === 'Enter') applyManualScaleInput(); });
     document.getElementById('propDeleteBtn')?.addEventListener('click', deleteSelectedMarkup);
+    document.getElementById('propOpenRfiBtn')?.addEventListener('click', () => {
+      const link = pinLinkFromMarkup(ctx);
+      if (link.linkId) openPinLink('rfi', link.linkId);
+    });
+    document.getElementById('propOpenCoBtn')?.addEventListener('click', () => {
+      const link = pinLinkFromMarkup(ctx);
+      if (link.linkId) openPinLink('co', link.linkId);
+    });
+  }
+
+  async function applyPinSize(size) {
+    const val = Math.max(0.5, Math.min(3, parseFloat(size) || 1));
+    state.pinSize = val;
+    if (state.selectedMarkupId) {
+      const m = state.markups.find(x => x.id === state.selectedMarkupId);
+      if (m && ['rfi_pin', 'co_pin', 'punch_pin'].includes(m.markup_type)) {
+        m.geometry = normalizeGeometry({ ...(m.geometry || {}), pinSize: val });
+        await persistMarkup(m, { geometry: m.geometry });
+        renderMarkupOverlay();
+      }
+    }
+    renderPropertiesPanel();
   }
 
   async function applyMarkupProperty(patch) {
@@ -2158,6 +2245,7 @@
     if (state.tool !== tool) {
       state.selectedMarkupId = null;
       state.draggingMarkup = null;
+      state.pendingDrag = null;
       state.drawing = false;
       state.drawStart = null;
       state.tempMarkup = null;
@@ -2317,20 +2405,22 @@
   }
 
   function onViewerDblClick(evt) {
-    if (state.tool !== 'select' && state.tool !== 'pan') return;
+    const badge = evt.target.closest?.('[data-pin-badge]');
+    if (badge) {
+      evt.preventDefault();
+      evt.stopPropagation();
+      handlePinBadgeActivate(badge);
+      return;
+    }
     const pt = screenToDoc(evt);
     const hit = hitTestMarkup(pt);
     if (!hit) return;
-    if (hit.markup_type === 'rfi_pin' && hit.linked_rfi_id) {
-      navigateToRfi(hit.linked_rfi_id);
+    if (hit.markup_type === 'rfi_pin' || hit.markup_type === 'co_pin') {
+      const link = pinLinkFromMarkup(hit);
+      if (link.linkId) openPinLink(link.pinType, link.linkId);
       return;
     }
-    if (hit.markup_type === 'co_pin') {
-      const g = resolvePinGeom(hit.geometry || {});
-      const coId = g.linkedCoId;
-      if (coId) navigateToChangeOrder(coId);
-      return;
-    }
+    if (state.tool !== 'select' && state.tool !== 'pan') return;
     if (hit.markup_type === 'text' || hit.markup_type === 'textbox' || hit.markup_type === 'callout') {
       state.selectedMarkupId = hit.id;
       const g = resolveGeom(hit.geometry || {});
@@ -2339,10 +2429,33 @@
     }
   }
 
+  function bindMarkupSvgEvents() {
+    const svg = document.getElementById('drawMarkupSvg');
+    if (!svg || svg._pinEventsBound) return;
+    svg._pinEventsBound = true;
+    svg.addEventListener('click', e => {
+      const badge = e.target.closest('[data-pin-badge]');
+      if (!badge) return;
+      e.stopPropagation();
+      if (registerPinBadgeTap(badge)) {
+        e.preventDefault();
+      }
+    });
+    svg.addEventListener('dblclick', e => {
+      const badge = e.target.closest('[data-pin-badge]');
+      if (!badge) return;
+      e.preventDefault();
+      e.stopPropagation();
+      state.lastPinTap = { key: '', t: 0 };
+      handlePinBadgeActivate(badge);
+    });
+  }
+
   function bindViewerEvents() {
     const wrap = document.getElementById('drawViewerWrap');
     if (!wrap || wrap._bound) return;
     wrap._bound = true;
+    bindMarkupSvgEvents();
     wrap.addEventListener('mousedown', onViewerDown);
     wrap.addEventListener('mousemove', onViewerMove);
     wrap.addEventListener('mouseup', onViewerUp);
@@ -2398,19 +2511,24 @@
     if (state.tool === 'select') {
       const pt = screenToDoc(evt);
       const hit = hitTestMarkup(pt);
-      state.selectedMarkupId = hit ? hit.id : null;
+      const newId = hit ? hit.id : null;
+      const selectionChanged = state.selectedMarkupId !== newId;
+      state.selectedMarkupId = newId;
       if (hit) {
-        state.draggingMarkup = {
+        state.pendingDrag = {
           id: hit.id,
           startPt: pt,
           orig: JSON.parse(JSON.stringify(hit.geometry || {})),
           moved: false,
         };
       } else {
-        state.draggingMarkup = null;
+        state.pendingDrag = null;
       }
-      renderMarkupOverlay();
-      renderPropertiesPanel();
+      state.draggingMarkup = null;
+      if (selectionChanged) {
+        renderMarkupOverlay();
+        renderPropertiesPanel();
+      }
       return;
     }
     const pt = screenToDoc(evt);
@@ -2489,6 +2607,15 @@
       state.panY = evt.clientY - state.panAnchor.y;
       applyViewTransform();
       return;
+    }
+    if (state.pendingDrag && !state.draggingMarkup) {
+      const pt = screenToDoc(evt);
+      const dx = pt.x - state.pendingDrag.startPt.x;
+      const dy = pt.y - state.pendingDrag.startPt.y;
+      if (Math.hypot(dx, dy) > 4) {
+        state.draggingMarkup = { ...state.pendingDrag };
+        state.pendingDrag = null;
+      }
     }
     if (state.draggingMarkup) {
       const pt = screenToDoc(evt);
@@ -2569,6 +2696,9 @@
       state.panAnchor = null;
       updateViewerCursor();
       return;
+    }
+    if (state.pendingDrag && !state.draggingMarkup) {
+      state.pendingDrag = null;
     }
     if (state.draggingMarkup) {
       const drag = state.draggingMarkup;
@@ -2731,6 +2861,20 @@
     });
   }
 
+  function focusPlacedPin(markup) {
+    if (!markup?.id) return;
+    state.tool = 'select';
+    state.selectedMarkupId = markup.id;
+    state.pendingDrag = null;
+    state.draggingMarkup = null;
+    const g = markup.geometry || {};
+    if (g.pinSize != null) state.pinSize = g.pinSize;
+    highlightActiveTool();
+    updateViewerCursor();
+    renderMarkupOverlay();
+    renderPropertiesPanel();
+  }
+
   async function placeRfiPin(pt) {
     if (!state.rfis.length) {
       alert('No RFIs on this project. Create an RFI first.');
@@ -2746,13 +2890,14 @@
     if (!picked) return;
     const rfi = state.rfis.find(r => r.id === picked.value);
     if (!rfi) return;
-    await saveMarkup({
+    const markup = await saveMarkup({
       markup_type: 'rfi_pin',
       geometry: pinGeometryAt(pt),
       linked_rfi_id: rfi.id,
       label: rfi.number,
       publish: true,
     });
+    focusPlacedPin(markup);
   }
 
   async function placeCoPin(pt) {
@@ -2776,12 +2921,13 @@
     if (!co) return;
     const geom = pinGeometryAt(pt);
     geom.linkedCoId = co.id;
-    await saveMarkup({
+    const markup = await saveMarkup({
       markup_type: 'co_pin',
       geometry: geom,
       label: co.number,
       publish: true,
     });
+    focusPlacedPin(markup);
   }
 
   async function placePunchPin(pt) {
@@ -2805,12 +2951,13 @@
     if (!item) return;
     const geom = pinGeometryAt(pt);
     geom.linkedPunchId = item.id;
-    await saveMarkup({
+    const markup = await saveMarkup({
       markup_type: 'punch_pin',
       geometry: geom,
       label: item.number || `PL-${item.id}`,
       publish: true,
     });
+    focusPlacedPin(markup);
   }
 
   async function saveMarkup(payload) {
@@ -2837,6 +2984,7 @@
     renderMarkupOverlay();
     renderViewerSidebar();
     toast('Markup saved');
+    return json.markup;
   }
 
   async function publishPersonalMarkups() {
