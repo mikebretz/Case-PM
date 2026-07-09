@@ -49,7 +49,10 @@ REV_LABEL_PATTERNS = (
     re.compile(r'^(?:CURRENT|LATEST|ISSUE)\s*(?:REV(?:ISION)?)?\.?\s*[:#.]?\s*(.*)$', re.I),
 )
 
-OCR_PSM_MODES = ('--psm 6', '--psm 7', '--psm 11', '--psm 12')
+NOTE_FRAGMENT_RE = re.compile(
+    r'\b(DEMO(?:\'?D)?|REINFORCING|CONTRACTOR|INSTALL|VERIFY|REFER|SEE\s+STRUCTURAL|TO\s+BE|EXISTING|NEW\s+WORK)\b',
+    re.I,
+)
 OCR_MATRIX = 4.5
 
 
@@ -121,6 +124,12 @@ def _is_plausible_drawing_title(text: str, sheet_number: str | None) -> bool:
     if upper in ('REV', 'REVISION', 'DATE', 'SCALE', 'DRAWN BY', 'CHECKED BY', 'SHEET', 'DRAWING', 'NA', 'N/A'):
         return False
     if re.fullmatch(r'[\d\s./\-#:]+', t):
+        return False
+    if t.upper().startswith('FROM ') and not TITLE_HINT_RE.search(t):
+        return False
+    if NOTE_FRAGMENT_RE.search(t) and not TITLE_HINT_RE.search(t):
+        return False
+    if abs(t.count('(') - t.count(')')) > 0 and not TITLE_HINT_RE.search(t):
         return False
     if TITLE_HINT_RE.search(t):
         return True
