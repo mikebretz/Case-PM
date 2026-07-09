@@ -49,21 +49,23 @@
     callout: { color: '#38bdf8', lineWidth: 2, fontSize: 13, fillOpacity: 0.92, showTextBorder: true, bubbleRadius: 10 },
   };
 
+  const TWO_POINT_HINT = 'Click two points (pan/zoom between clicks with Alt+drag), or click-hold and drag.';
+
   const TOOL_META = {
     pan: { label: 'Pan', shortcut: 'H', icon: 'fa-hand', hint: 'Drag to move the sheet. Hold Alt to pan while using any tool.' },
     select: { label: 'Select', shortcut: 'V', icon: 'fa-arrow-pointer', hint: 'Click to select; Shift+click to add/remove. Drag a box to select everything inside. Drag selected items to move.' },
     pen: { label: 'Pen', shortcut: 'N', icon: 'fa-pen', hint: 'Draw freehand — popular for quick redlines and sketches (Bluebeam-style).' },
-    line: { label: 'Line', shortcut: 'L', icon: 'fa-minus', hint: 'Click and drag to draw a straight line.' },
+    line: { label: 'Line', shortcut: 'L', icon: 'fa-minus', hint: TWO_POINT_HINT },
     polyline: { label: 'Polyline', shortcut: 'I', icon: 'fa-draw-polygon', hint: 'Click each corner. Press Enter or double-click the last point to finish.' },
-    arrow: { label: 'Arrow', shortcut: 'A', icon: 'fa-arrow-right', hint: 'Drag from tail to arrowhead.' },
-    rect: { label: 'Rectangle', shortcut: 'R', icon: 'fa-square', hint: 'Drag a rectangle on the sheet.' },
-    ellipse: { label: 'Ellipse', shortcut: 'E', icon: 'fa-circle', hint: 'Drag to draw an ellipse or circle.' },
+    arrow: { label: 'Arrow', shortcut: 'A', icon: 'fa-arrow-right', hint: TWO_POINT_HINT },
+    rect: { label: 'Rectangle', shortcut: 'R', icon: 'fa-square', hint: TWO_POINT_HINT },
+    ellipse: { label: 'Ellipse', shortcut: 'E', icon: 'fa-circle', hint: TWO_POINT_HINT },
     polygon: { label: 'Polygon', shortcut: 'G', icon: 'fa-shapes', hint: 'Click each vertex. Press Enter to close the shape.' },
-    cloud: { label: 'Revision cloud', shortcut: 'U', icon: 'fa-cloud', hint: 'Drag a box — corners become revision cloud arcs.' },
-    crossout: { label: 'Cross-out', shortcut: 'X', icon: 'fa-xmark', hint: 'Drag a box to place an X over content marked for removal.' },
-    highlight: { label: 'Highlight', shortcut: 'Y', icon: 'fa-highlighter', hint: 'Drag a translucent highlight over an area.' },
-    text: { label: 'Text box', shortcut: 'T', icon: 'fa-font', hint: 'Drag a box, then type your note.' },
-    callout: { label: 'Callout bubble', shortcut: 'C', icon: 'fa-comment-dots', hint: 'Click the point to call out, drag to size the bubble, then type your note.' },
+    cloud: { label: 'Revision cloud', shortcut: 'U', icon: 'fa-cloud', hint: TWO_POINT_HINT },
+    crossout: { label: 'Cross-out', shortcut: 'X', icon: 'fa-xmark', hint: TWO_POINT_HINT },
+    highlight: { label: 'Highlight', shortcut: 'Y', icon: 'fa-highlighter', hint: TWO_POINT_HINT },
+    text: { label: 'Text box', shortcut: 'T', icon: 'fa-font', hint: TWO_POINT_HINT },
+    callout: { label: 'Callout bubble', shortcut: 'C', icon: 'fa-comment-dots', hint: 'Click the callout point, then the opposite corner of the bubble — or drag. Pan/zoom between clicks.' },
     stamp: { label: 'Stamp', shortcut: 'S', icon: 'fa-stamp', hint: 'Pick a stamp in the side panel, then click on the sheet to place it.' },
     measure: { label: 'Measure', shortcut: 'M', icon: 'fa-ruler', hint: 'Click two points (pan/zoom between clicks), then click to place the dimension line with extension lines — or drag A→B in one motion.' },
     area: { label: 'Area', shortcut: 'B', icon: 'fa-vector-square', hint: 'Click polygon corners, Enter to close — shows square feet when scale is set.' },
@@ -78,6 +80,14 @@
   Object.entries(TOOL_META).forEach(([tool, meta]) => {
     if (meta.shortcut) TOOL_SHORTCUTS[meta.shortcut.toLowerCase()] = tool;
   });
+
+  const TWO_POINT_CLICK_TOOLS = [
+    'line', 'rect', 'cloud', 'arrow', 'highlight', 'ellipse', 'callout', 'text', 'crossout', 'calibrate',
+  ];
+
+  function isTwoPointClickTool(tool) {
+    return tool === 'measure' || TWO_POINT_CLICK_TOOLS.includes(tool);
+  }
 
   async function drawConfirm(message, options) {
     if (global.CasePMDialog?.confirm) return global.CasePMDialog.confirm(message, options || {});
@@ -272,36 +282,266 @@
     return (px - ax) * vx + (py - ay) * vy;
   }
 
-  function resetMeasureState() {
-    state.measurePhase = null;
-    state.measureA = null;
-    state.measureB = null;
-    state.measureOffset = 0;
-    state.measurePointerDown = false;
-    state.measureDownPt = null;
-    state.measureDidDrag = false;
-    state.measureAnchor = null;
-    state.measureDragged = false;
-    state.measureFromAnchor = false;
-    state.measureGestureOrigin = null;
+  function resetPointToolState() {
+    state.pointPhase = null;
+    state.pointA = null;
+    state.pointB = null;
+    state.pointOffset = 0;
+    state.pointPointerDown = false;
+    state.pointDownPt = null;
+    state.pointDidDrag = false;
+    state.drawing = false;
+    state.drawStart = null;
   }
 
-  function measurePreviewMarkup() {
-    const color = toolStyle('measure').color || '#22c55e';
-    const sw = toolStyle('measure').lineWidth || 2;
-    if (state.measurePhase === 'offset' && state.measureA && state.measureB) {
-      const pxLen = Math.hypot(state.measureB.x - state.measureA.x, state.measureB.y - state.measureA.y);
-      const label = formatMeasureLength(pxLen).display;
+  function resetMeasureState() {
+    resetPointToolState();
+  }
+
+  function pointToolPreviewMarkup() {
+    const color = toolStyle(state.tool).color || '#38bdf8';
+    const sw = toolStyle(state.tool).lineWidth || 2;
+    if (state.tool === 'measure' && state.pointPhase === 'offset' && state.pointA && state.pointB) {
+      const pxLen = Math.hypot(state.pointB.x - state.pointA.x, state.pointB.y - state.pointA.y);
       return measureDimensionVisual(
-        state.measureA.x, state.measureA.y,
-        state.measureB.x, state.measureB.y,
-        state.measureOffset, color, sw, 0.9, label,
+        state.pointA.x, state.pointA.y,
+        state.pointB.x, state.pointB.y,
+        state.pointOffset, color, sw, 0.9,
+        formatMeasureLength(pxLen).display,
       );
     }
-    if (state.measurePhase === 'second' && state.measureA) {
-      return measureAnchorMarkup(state.measureA);
+    if (state.pointPhase === 'second' && state.pointA) {
+      return pointAnchorMarkup(state.pointA, color);
     }
     return '';
+  }
+
+  function pointAnchorMarkup(anchor, color) {
+    const pt = anchor || state.pointA;
+    if (!pt || !isTwoPointClickTool(state.tool)) return '';
+    const c = color || toolStyle(state.tool).color || '#38bdf8';
+    return `<circle cx="${pt.x}" cy="${pt.y}" r="6" fill="${c}" stroke="#fff" stroke-width="2"/>`
+      + `<circle cx="${pt.x}" cy="${pt.y}" r="14" fill="none" stroke="${c}" stroke-width="1.5" stroke-dasharray="3 2" opacity="0.85"/>`;
+  }
+
+  function buildTwoPointPreview(tool, ax, ay, bx, by) {
+    const activeStyle = toolStyle(tool);
+    const sw = activeStyle.lineWidth || 2;
+    const color = activeStyle.color || '#38bdf8';
+    const scallop = activeStyle.cloudScallop || 18;
+    if (['rect', 'highlight', 'ellipse', 'text', 'crossout'].includes(tool)) {
+      const x = Math.min(ax, bx);
+      const y = Math.min(ay, by);
+      const rw = Math.abs(bx - ax);
+      const rh = Math.abs(by - ay);
+      if (tool === 'ellipse') {
+        return `<ellipse cx="${x + rw / 2}" cy="${y + rh / 2}" rx="${rw / 2}" ry="${rh / 2}" stroke="${color}" stroke-width="${sw}" fill="none" stroke-dasharray="4 3" />`;
+      }
+      return `<rect x="${x}" y="${y}" width="${rw}" height="${rh}" stroke="${color}" stroke-width="${sw}" fill="none" stroke-dasharray="4 3" />`;
+    }
+    if (tool === 'callout') {
+      const x = Math.min(ax, bx);
+      const y = Math.min(ay, by);
+      const rw = Math.max(Math.abs(bx - ax), 80);
+      const rh = Math.max(Math.abs(by - ay), 36);
+      return calloutBubbleSvg({
+        bx: x, by: y, bw: rw, bh: rh,
+        tipX: ax, tipY: ay,
+        color, sw, op: 0.85,
+        fillOp: activeStyle.fillOpacity ?? 0.5,
+        style: activeStyle,
+        placeholder: true,
+      });
+    }
+    if (tool === 'cloud') {
+      const x = Math.min(ax, bx);
+      const y = Math.min(ay, by);
+      return `<path d="${cloudPath(x, y, Math.abs(bx - ax), Math.abs(by - ay), scallop)}" stroke="${color}" stroke-width="${sw}" fill="none" stroke-dasharray="4 3" />`;
+    }
+    if (tool === 'line' || tool === 'arrow' || tool === 'calibrate') {
+      const marker = tool === 'arrow' ? ' marker-end="url(#arrowhead)"' : '';
+      return `<line x1="${ax}" y1="${ay}" x2="${bx}" y2="${by}" stroke="${color}" stroke-width="${sw}" stroke-dasharray="4 3"${marker} />`;
+    }
+    if (tool === 'measure') {
+      const pxLen = Math.hypot(bx - ax, by - ay);
+      return measureLineVisual(ax, ay, bx, by, color, sw, 0.85, formatMeasureLength(pxLen).display);
+    }
+    return '';
+  }
+
+  async function runCalibrateBetween(ax, ay, bx, by) {
+    const dist = await drawPrompt('', '10\'-0"', {
+      title: 'Calibrate scale',
+      label: 'Known distance (feet & inches, e.g. 10\'-6" or 10.5)',
+      placeholder: '10\'-0"',
+      submitLabel: 'Set scale',
+    });
+    if (!dist) return;
+    const px = Math.hypot(bx - ax, by - ay);
+    if (px < 3) return;
+    let feet = parseFloat(dist);
+    if (!Number.isFinite(feet)) {
+      const arch = dist.match(/(\d+)\s*['′-]\s*(\d+)?/);
+      if (arch) feet = parseInt(arch[1], 10) + (parseInt(arch[2] || '0', 10) / 12);
+      else feet = parseFloat(dist) || 1;
+    }
+    state.pixelsPerUnit = px / (feet || 1);
+    state.scaleLabel = `Calibrated (${formatFeetInches(feet)})`;
+    state.scalePdfPointsPerFoot = null;
+    renderPropertiesPanel();
+    updateViewerStatusBar();
+    toast(`Scale set — ${formatFeetInches(feet)} on drawing`);
+  }
+
+  async function finishTwoPointMarkup(tool, ax, ay, bx, by, opts) {
+    if (tool === 'measure') {
+      await saveMeasureLine(ax, ay, bx, by, opts?.offset || 0);
+      return;
+    }
+    if (tool === 'calibrate') {
+      await runCalibrateBetween(ax, ay, bx, by);
+      resetPointToolState();
+      state.tempMarkup = null;
+      renderMarkupOverlay();
+      return;
+    }
+    let geometry = {};
+    let measurement_value = null;
+    let label = null;
+    if (['rect', 'cloud', 'highlight', 'ellipse', 'text', 'crossout'].includes(tool)) {
+      geometry = { x: Math.min(ax, bx), y: Math.min(ay, by), w: Math.abs(bx - ax), h: Math.abs(by - ay) };
+      if (geometry.w < 3 && geometry.h < 3) {
+        if (tool === 'text') {
+          const hit = hitTestMarkup({ x: bx, y: by });
+          if (hit && (hit.markup_type === 'text' || hit.markup_type === 'textbox')) {
+            setMarkupSelection(new Set([hit.id]), hit.id);
+            showTextEditor({ x: bx, y: by }, hit);
+          }
+        }
+        resetPointToolState();
+        state.tempMarkup = null;
+        renderMarkupOverlay();
+        return;
+      }
+      if (tool === 'text') {
+        resetPointToolState();
+        state.tempMarkup = null;
+        showTextEditor({ x: geometry.x + 8, y: geometry.y + 8 }, null, geometry);
+        return;
+      }
+    } else if (tool === 'callout') {
+      const bxx = Math.min(ax, bx);
+      const byy = Math.min(ay, by);
+      const bw = Math.max(Math.abs(bx - ax), 80);
+      const bh = Math.max(Math.abs(by - ay), 36);
+      geometry = {
+        x: bxx, y: byy, w: bw, h: bh,
+        points: [ax, ay, bxx + bw, byy + bh],
+        tipX: ax, tipY: ay,
+      };
+      if (bw < 24 && bh < 20) {
+        resetPointToolState();
+        state.tempMarkup = null;
+        renderMarkupOverlay();
+        return;
+      }
+      label = '';
+    } else if (['line', 'arrow'].includes(tool)) {
+      if (Math.hypot(bx - ax, by - ay) < 3) {
+        resetPointToolState();
+        state.tempMarkup = null;
+        renderMarkupOverlay();
+        return;
+      }
+      geometry = { points: [ax, ay, bx, by] };
+    }
+    resetPointToolState();
+    state.tempMarkup = null;
+    const saveType = tool === 'crossout' ? 'crossout' : tool;
+    await saveMarkup({
+      markup_type: saveType,
+      geometry,
+      measurement_value,
+      measurement_unit: state.pixelsPerUnit ? state.measureUnit : 'px',
+      label,
+      style: { ...toolStyle(tool) },
+    });
+    if (tool === 'callout') {
+      const last = state.markups[state.markups.length - 1];
+      if (last) {
+        const g = resolveGeom(last.geometry || {});
+        showTextEditor({ x: g.x + 8, y: g.y + 8 }, last);
+      }
+    }
+    renderMarkupOverlay();
+  }
+
+  async function handlePointToolUp(pt, didDrag, down) {
+    const tool = state.tool;
+    if (!isTwoPointClickTool(tool)) return false;
+
+    if (tool === 'measure' && state.pointPhase === 'offset' && state.pointA && state.pointB) {
+      state.pointOffset = measurePerpOffset(
+        state.pointA.x, state.pointA.y,
+        state.pointB.x, state.pointB.y,
+        pt.x, pt.y,
+      );
+      await saveMeasureLine(
+        state.pointA.x, state.pointA.y,
+        state.pointB.x, state.pointB.y,
+        state.pointOffset,
+      );
+      renderMarkupOverlay();
+      return true;
+    }
+
+    if (state.pointPhase === 'second' && state.pointA) {
+      if (Math.hypot(pt.x - state.pointA.x, pt.y - state.pointA.y) < 3) {
+        toast('Pick a point farther from the first');
+        state.tempMarkup = null;
+        renderMarkupOverlay();
+        return true;
+      }
+      if (tool === 'measure') {
+        state.pointB = { x: pt.x, y: pt.y };
+        state.pointPhase = 'offset';
+        state.pointOffset = measurePerpOffset(
+          state.pointA.x, state.pointA.y, pt.x, pt.y, pt.x, pt.y,
+        );
+        state.tempMarkup = null;
+        toast('Click to place dimension line (extension lines to measured points)');
+        renderMarkupOverlay();
+        return true;
+      }
+      await finishTwoPointMarkup(tool, state.pointA.x, state.pointA.y, pt.x, pt.y);
+      return true;
+    }
+
+    if (!state.pointPhase) {
+      if (didDrag && Math.hypot(pt.x - down.x, pt.y - down.y) >= 3) {
+        if (tool === 'measure') {
+          state.pointA = { x: down.x, y: down.y };
+          state.pointB = { x: pt.x, y: pt.y };
+          state.pointPhase = 'offset';
+          state.pointOffset = measurePerpOffset(down.x, down.y, pt.x, pt.y, pt.x, pt.y);
+          state.tempMarkup = null;
+          toast('Click to place dimension line (extension lines to measured points)');
+        } else {
+          await finishTwoPointMarkup(tool, down.x, down.y, pt.x, pt.y);
+        }
+        renderMarkupOverlay();
+        return true;
+      }
+      state.pointA = { x: down.x, y: down.y };
+      state.pointPhase = 'second';
+      state.tempMarkup = null;
+      toast(tool === 'measure'
+        ? 'Click second point — pan/zoom as needed (Alt+drag)'
+        : 'Click second point — pan/zoom between clicks (Alt+drag)');
+      renderMarkupOverlay();
+      return true;
+    }
+    return true;
   }
 
   async function saveMeasureLine(x1, y1, x2, y2, offset) {
@@ -315,16 +555,8 @@
       measurement_unit: measureInfo.unit,
       style: { ...toolStyle('measure') },
     });
-    resetMeasureState();
+    resetPointToolState();
     state.tempMarkup = null;
-  }
-
-  function measureAnchorMarkup(anchor) {
-    const pt = anchor || state.measureA || state.measureAnchor;
-    if (state.tool !== 'measure' || !pt) return '';
-    const { x, y } = pt;
-    return `<circle cx="${x}" cy="${y}" r="6" fill="#22c55e" stroke="#fff" stroke-width="2"/>`
-      + `<circle cx="${x}" cy="${y}" r="14" fill="none" stroke="#22c55e" stroke-width="1.5" stroke-dasharray="3 2" opacity="0.85"/>`;
   }
 
   function updateViewerStatusBar() {
@@ -417,15 +649,13 @@
     selectedMarkupId: null,
     selectedMarkupIds: new Set(),
     selectMarquee: false,
-    measureAnchor: null,
-    measurePhase: null,
-    measureA: null,
-    measureB: null,
-    measureOffset: 0,
-    measurePointerDown: false,
-    measureDownPt: null,
-    measureDidDrag: false,
-    measureDragged: false,
+    pointPhase: null,
+    pointA: null,
+    pointB: null,
+    pointOffset: 0,
+    pointPointerDown: false,
+    pointDownPt: null,
+    pointDidDrag: false,
     draggingMarkup: null,
     dragStartPt: null,
     dragOrigGeom: null,
@@ -2248,7 +2478,7 @@
       <marker id="arrowhead" markerWidth="10" markerHeight="10" refX="8" refY="5" orient="auto" markerUnits="strokeWidth">
         <polygon points="0 0, 10 5, 0 10" fill="context-stroke"/>
       </marker>
-    </defs>${shapes}${measurePreviewMarkup()}${state.tempMarkup || ''}`;
+    </defs>${shapes}${pointToolPreviewMarkup()}${state.tempMarkup || ''}`;
     updateMarkupToolbar();
     renderPropertiesPanel();
     renderMarkupList();
@@ -3193,43 +3423,11 @@
       placePunchPin(pt);
       return;
     }
-    if (state.tool === 'measure') {
-      state.measurePointerDown = true;
-      state.measureDownPt = pt;
-      state.measureDidDrag = false;
+    if (isTwoPointClickTool(state.tool)) {
+      state.pointPointerDown = true;
+      state.pointDownPt = pt;
+      state.pointDidDrag = false;
       return;
-    }
-    if (['line', 'rect', 'cloud', 'arrow', 'highlight', 'ellipse', 'callout', 'text', 'crossout'].includes(state.tool)) {
-      state.drawing = true;
-      state.drawStart = pt;
-      return;
-    }
-    if (state.tool === 'calibrate') {
-      if (!state.drawStart) { state.drawStart = pt; toast('Click second point for known distance'); return; }
-      const dist = await drawPrompt('', '10\'-0"', {
-        title: 'Calibrate scale',
-        label: 'Known distance (feet & inches, e.g. 10\'-6" or 10.5)',
-        placeholder: '10\'-0"',
-        submitLabel: 'Set scale',
-      });
-      if (dist) {
-        const dx = pt.x - state.drawStart.x;
-        const dy = pt.y - state.drawStart.y;
-        const px = Math.sqrt(dx * dx + dy * dy);
-        let feet = parseFloat(dist);
-        if (!Number.isFinite(feet)) {
-          const arch = dist.match(/(\d+)\s*['′-]\s*(\d+)?/);
-          if (arch) feet = parseInt(arch[1], 10) + (parseInt(arch[2] || '0', 10) / 12);
-          else feet = parseFloat(dist) || 1;
-        }
-        state.pixelsPerUnit = px / (feet || 1);
-        state.scaleLabel = `Calibrated (${formatFeetInches(feet)})`;
-        state.scalePdfPointsPerFoot = null;
-        renderPropertiesPanel();
-        updateViewerStatusBar();
-        toast(`Scale set — ${formatFeetInches(feet)} on drawing`);
-      }
-      state.drawStart = null;
     }
   }
 
@@ -3240,42 +3438,33 @@
       applyViewTransform();
       return;
     }
-    if (state.tool === 'measure') {
+    if (isTwoPointClickTool(state.tool)) {
       const pt = screenToDoc(evt);
-      if (state.measurePointerDown && state.measureDownPt) {
-        if (Math.hypot(pt.x - state.measureDownPt.x, pt.y - state.measureDownPt.y) > 4) {
-          state.measureDidDrag = true;
+      if (state.pointPointerDown && state.pointDownPt) {
+        if (Math.hypot(pt.x - state.pointDownPt.x, pt.y - state.pointDownPt.y) > 4) {
+          state.pointDidDrag = true;
         }
       }
-      if (state.measurePhase === 'offset' && state.measureA && state.measureB) {
-        state.measureOffset = measurePerpOffset(
-          state.measureA.x, state.measureA.y,
-          state.measureB.x, state.measureB.y,
+      if (state.tool === 'measure' && state.pointPhase === 'offset' && state.pointA && state.pointB) {
+        state.pointOffset = measurePerpOffset(
+          state.pointA.x, state.pointA.y,
+          state.pointB.x, state.pointB.y,
           pt.x, pt.y,
         );
         state.tempMarkup = null;
         renderMarkupOverlay();
         return;
       }
-      if (state.measurePhase === 'second' && state.measureA) {
-        const color = toolStyle('measure').color || '#22c55e';
-        const sw = toolStyle('measure').lineWidth || 2;
-        const pxLen = Math.hypot(pt.x - state.measureA.x, pt.y - state.measureA.y);
-        state.tempMarkup = measureLineVisual(
-          state.measureA.x, state.measureA.y, pt.x, pt.y, color, sw, 0.85,
-          formatMeasureLength(pxLen).display,
+      if (state.pointPhase === 'second' && state.pointA) {
+        state.tempMarkup = buildTwoPointPreview(
+          state.tool, state.pointA.x, state.pointA.y, pt.x, pt.y,
         );
         renderMarkupOverlay();
         return;
       }
-      if (state.measurePointerDown && state.measureDidDrag && state.measureDownPt) {
-        const color = toolStyle('measure').color || '#22c55e';
-        const sw = toolStyle('measure').lineWidth || 2;
-        const pxLen = Math.hypot(pt.x - state.measureDownPt.x, pt.y - state.measureDownPt.y);
-        state.tempMarkup = measureLineVisual(
-          state.measureDownPt.x, state.measureDownPt.y, pt.x, pt.y, color, sw, 0.85,
-          formatMeasureLength(pxLen).display,
-        );
+      if (state.pointPointerDown && state.pointDidDrag && state.pointDownPt) {
+        const down = state.pointDownPt;
+        state.tempMarkup = buildTwoPointPreview(state.tool, down.x, down.y, pt.x, pt.y);
         renderMarkupOverlay();
         return;
       }
@@ -3341,6 +3530,7 @@
       return;
     }
     if (!state.drawing || !state.drawStart) return;
+    if (isTwoPointClickTool(state.tool)) return;
     const pt = screenToDoc(evt);
     const s = state.drawStart;
     const activeStyle = toolStyle(state.tool);
@@ -3379,10 +3569,10 @@
   }
 
   async function onViewerUp(evt) {
-    if (state.tool === 'measure' && state.measurePointerDown && evt.type === 'mouseleave') {
-      state.measurePointerDown = false;
-      state.measureDownPt = null;
-      state.measureDidDrag = false;
+    if (isTwoPointClickTool(state.tool) && state.pointPointerDown && evt.type === 'mouseleave') {
+      state.pointPointerDown = false;
+      state.pointDownPt = null;
+      state.pointDidDrag = false;
       state.tempMarkup = null;
       renderMarkupOverlay();
       return;
@@ -3472,66 +3662,18 @@
       state.tempMarkup = null;
       return;
     }
-    if (state.tool === 'measure' && state.measurePointerDown) {
+    if (isTwoPointClickTool(state.tool) && state.pointPointerDown) {
       const pt = screenToDoc(evt);
-      state.measurePointerDown = false;
-      const down = state.measureDownPt;
-      state.measureDownPt = null;
-      const didDrag = state.measureDidDrag;
-      state.measureDidDrag = false;
-
-      if (state.measurePhase === 'offset' && state.measureA && state.measureB) {
-        state.measureOffset = measurePerpOffset(
-          state.measureA.x, state.measureA.y,
-          state.measureB.x, state.measureB.y,
-          pt.x, pt.y,
-        );
-        await saveMeasureLine(
-          state.measureA.x, state.measureA.y,
-          state.measureB.x, state.measureB.y,
-          state.measureOffset,
-        );
-        renderMarkupOverlay();
-        return;
-      }
-
-      if (state.measurePhase === 'second' && state.measureA) {
-        if (Math.hypot(pt.x - state.measureA.x, pt.y - state.measureA.y) < 3) {
-          toast('Pick a point farther from the first');
-          state.tempMarkup = null;
-          renderMarkupOverlay();
-          return;
-        }
-        state.measureB = { x: pt.x, y: pt.y };
-        state.measurePhase = 'offset';
-        state.measureOffset = measurePerpOffset(
-          state.measureA.x, state.measureA.y, pt.x, pt.y, pt.x, pt.y,
-        );
-        state.tempMarkup = null;
-        toast('Click to place dimension line (extension lines to measured points)');
-        renderMarkupOverlay();
-        return;
-      }
-
-      if (!state.measurePhase) {
-        if (didDrag && Math.hypot(pt.x - down.x, pt.y - down.y) >= 3) {
-          state.measureA = { x: down.x, y: down.y };
-          state.measureB = { x: pt.x, y: pt.y };
-          state.measurePhase = 'offset';
-          state.measureOffset = measurePerpOffset(down.x, down.y, pt.x, pt.y, pt.x, pt.y);
-          state.tempMarkup = null;
-          toast('Click to place dimension line (extension lines to measured points)');
-        } else {
-          state.measureA = { x: down.x, y: down.y };
-          state.measurePhase = 'second';
-          state.tempMarkup = null;
-          toast('Click second point — pan/zoom as needed (Alt+drag)');
-        }
-        renderMarkupOverlay();
-        return;
-      }
+      state.pointPointerDown = false;
+      const down = state.pointDownPt;
+      state.pointDownPt = null;
+      const didDrag = state.pointDidDrag;
+      state.pointDidDrag = false;
+      await handlePointToolUp(pt, didDrag, down);
+      return;
     }
     if (!state.drawing || !state.drawStart) return;
+    if (isTwoPointClickTool(state.tool)) return;
     const pt = screenToDoc(evt);
     const s = state.drawStart;
     const type = state.tool;
