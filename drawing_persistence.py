@@ -464,6 +464,71 @@ def extract_title_from_text(text: str, sheet_number: str | None) -> str:
     return ''
 
 
+def prepare_upload_pages(source_path: str, batch_dir: str) -> list[dict]:
+    """Split a PDF into individual page files for import (always attempts split)."""
+    os.makedirs(batch_dir, exist_ok=True)
+    expected_pages = count_pdf_pages(source_path)
+    pages = split_pdf_to_pages(source_path, batch_dir)
+    if expected_pages > 1 and len(pages) <= 1:
+        pages = split_pdf_to_pages_pypdf(source_path, batch_dir)
+    if pages:
+        return pages
+    text = extract_pdf_page_text(source_path, 0)
+    return [{
+        'page_index': 0,
+        'file_path': source_path,
+        'filename': os.path.basename(source_path),
+        'text': text,
+    }]
+
+
+def count_pdf_pages(source_path: str) -> int:
+    counts = []
+    try:
+        import fitz
+        doc = fitz.open(source_path)
+        counts.append(len(doc))
+        doc.close()
+    except Exception:
+        pass
+    try:
+        from pypdf import PdfReader
+        counts.append(len(PdfReader(source_path).pages))
+    except Exception:
+        pass
+    return max(counts) if counts else 1
+
+
+def split_pdf_to_pages_pypdf(source_path: str, out_dir: str) -> list[dict]:
+    """Split using pypdf only (fallback when PyMuPDF split under-counts pages)."""
+    os.makedirs(out_dir, exist_ok=True)
+    try:
+        from pypdf import PdfReader, PdfWriter
+    except ImportError:
+        raise RuntimeError('pypdf is required for drawing set uploads. Install with: pip install pypdf')
+
+    results = []
+    reader = PdfReader(source_path)
+    for idx, page in enumerate(reader.pages):
+        writer = PdfWriter()
+        writer.add_page(page)
+        out_name = f'page_{idx + 1:04d}.pdf'
+        out_path = os.path.join(out_dir, out_name)
+        with open(out_path, 'wb') as out_f:
+            writer.write(out_f)
+        try:
+            text = page.extract_text() or ''
+        except Exception:
+            text = ''
+        results.append({
+            'page_index': idx,
+            'file_path': out_path,
+            'filename': out_name,
+            'text': text,
+        })
+    return results
+
+
 def split_pdf_to_pages(source_path: str, out_dir: str) -> list[dict]:
     """Split a PDF into single-page files. Returns metadata per page."""
     os.makedirs(out_dir, exist_ok=True)
@@ -492,30 +557,7 @@ def split_pdf_to_pages(source_path: str, out_dir: str) -> list[dict]:
     except Exception:
         pass
 
-    try:
-        from pypdf import PdfReader, PdfWriter
-    except ImportError:
-        raise RuntimeError('pypdf is required for drawing set uploads. Install with: pip install pypdf')
-
-    reader = PdfReader(source_path)
-    for idx, page in enumerate(reader.pages):
-        writer = PdfWriter()
-        writer.add_page(page)
-        out_name = f'page_{idx + 1:04d}.pdf'
-        out_path = os.path.join(out_dir, out_name)
-        with open(out_path, 'wb') as out_f:
-            writer.write(out_f)
-        try:
-            text = page.extract_text() or ''
-        except Exception:
-            text = ''
-        results.append({
-            'page_index': idx,
-            'file_path': out_path,
-            'filename': out_name,
-            'text': text,
-        })
-    return results
+    return split_pdf_to_pages_pypdf(source_path, out_dir)
 
 
 def next_revision_number(existing_revisions: list) -> str:
@@ -590,8 +632,13 @@ def drawing_to_dict(drawing, current_rev=None, revision_count=0, markup_count=0,
         'current_revision_id': drawing.current_revision_id,
         'revision_count': revision_count,
         'markup_count': markup_count,
-        'file_url': f'/api/drawings/{drawing.id}/file' if rev else None,
-        'thumbnail_url': f'/api/drawings/{drawing.id}/thumbnail',
+        'file_url': f'/api/drawings/{drawing.id}/file' if rev and rev.file_path else None,
+        'has_thumbnail': bool(drawing.thumbnail_path and os.path.isfile(drawing.thumbnail_path)),
+        'thumbnail_url': (
+            f'/api/drawings/{drawing.id}/thumbnail'
+            if drawing.thumbnail_path and os.path.isfile(drawing.thumbnail_path)
+            else None
+        ),
         'updated_at': _iso(drawing.updated_at),
         'linked_rfis': linked_rfis or [],
     }
@@ -765,6 +812,7 @@ def process_pages_from_upload(
     created = []
     needs_review = []
     stamp = upload_stamp or datetime.utcnow().strftime('%Y%m%d%H%M%S')
+    batch_assigned = set()
 
     for page in pages:
         meta = analyze_pdf_page(
@@ -792,6 +840,12 @@ def process_pages_from_upload(
                 'detected_date': _iso(meta.get('drawing_date')),
                 'detection_method': meta.get('detection_method'),
             })
+
+        if from_combined_set:
+            key = sheet_number
+            if key in batch_assigned:
+                sheet_number = f'{sheet_number}-P{page["page_index"] + 1:03d}'
+            batch_assigned.add(sheet_number)
 
         sheet_number = ensure_unique_sheet_number(Drawing, project_id, sheet_number)
         page_text = page.get('text') or meta.get('text_preview') or ''

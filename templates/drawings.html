@@ -194,7 +194,7 @@
 <!-- SECTIONS PANEL -->
 <div id="drawPanelSections" class="flex-1 min-h-0 flex flex-col border border-zinc-700 rounded-md bg-zinc-900 mb-2 overflow-hidden no-print">
     <div class="px-3 py-1.5 border-b border-zinc-800 flex flex-wrap gap-1.5 items-center" id="drawSectionTabs"></div>
-    <div id="drawSectionGrid" class="flex-1 overflow-auto p-3 grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-2 content-start"></div>
+    <div id="drawSectionGrid" class="flex-1 overflow-auto p-3 grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-2 content-start" title="Drag and drop a PDF drawing set here"></div>
 </div>
 
 <!-- LIST PANEL -->
@@ -275,13 +275,9 @@
             </div>
         </div>
         <div class="draw-viewer-sidebar w-52 flex-shrink-0 border-l border-zinc-800 p-2 overflow-auto text-xs no-print hidden lg:block">
-            <div class="mb-3 p-2 bg-zinc-800/50 rounded-md border border-zinc-700" id="markupStylePanel">
-                <div class="text-[10px] uppercase text-zinc-500 mb-2">Markup Style</div>
-                <label class="block text-[10px] text-zinc-400 mb-1">Color</label>
-                <input type="color" id="markupColor" value="#38bdf8" class="w-full h-7 bg-zinc-900 border border-zinc-700 rounded mb-2" onchange="CasePMDrawings.setMarkupColor(this.value)">
-                <label class="block text-[10px] text-zinc-400 mb-1">Line width</label>
-                <input type="range" id="markupLineWidth" min="1" max="12" value="2" class="w-full accent-sky-500 mb-1" oninput="CasePMDrawings.setMarkupLineWidth(this.value)">
-                <div class="text-[10px] text-zinc-500 text-center" id="markupLineWidthLabel">2 px</div>
+            <div class="mb-3 p-2 bg-zinc-800/50 rounded-md border border-zinc-700" id="markupPropertiesPanel">
+                <div class="text-[10px] uppercase text-zinc-500 mb-2">Markup Properties</div>
+                <div class="text-[10px] text-zinc-500">Select a tool or markup to edit properties.</div>
             </div>
             <div class="flex gap-1 mb-2">
                 <button type="button" id="layer-personal" onclick="CasePMDrawings.toggleLayer('personal')" class="text-[10px] px-1.5 py-0.5 bg-sky-900/50 text-sky-300 rounded">Personal</button>

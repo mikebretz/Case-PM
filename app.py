@@ -2748,8 +2748,10 @@ def api_serve_drawing_file(drawing_id):
     drawing = Drawing.query.get_or_404(drawing_id)
     rev = DrawingRevision.query.get(drawing.current_revision_id) if drawing.current_revision_id else None
     if not rev:
-        rev = DrawingRevision.query.filter_by(drawing_id=drawing.id, is_current=True).first_or_404()
-    directory = os.path.dirname(rev.file_path)
+        rev = DrawingRevision.query.filter_by(drawing_id=drawing.id, is_current=True).first()
+    if not rev or not rev.file_path or not os.path.isfile(rev.file_path):
+        return jsonify({'error': 'Drawing file not found on server'}), 404
+    directory = os.path.dirname(os.path.abspath(rev.file_path))
     filename = os.path.basename(rev.file_path)
     return send_from_directory(directory, filename, mimetype='application/pdf')
 
@@ -2758,7 +2760,9 @@ def api_serve_drawing_file(drawing_id):
 @login_required
 def api_serve_drawing_revision_file(drawing_id, revision_id):
     rev = DrawingRevision.query.filter_by(id=revision_id, drawing_id=drawing_id).first_or_404()
-    directory = os.path.dirname(rev.file_path)
+    if not rev.file_path or not os.path.isfile(rev.file_path):
+        return jsonify({'error': 'Revision file not found on server'}), 404
+    directory = os.path.dirname(os.path.abspath(rev.file_path))
     filename = os.path.basename(rev.file_path)
     return send_from_directory(directory, filename, mimetype='application/pdf')
 
@@ -2768,17 +2772,17 @@ def api_serve_drawing_revision_file(drawing_id, revision_id):
 def api_drawing_thumbnail(drawing_id):
     drawing = Drawing.query.get_or_404(drawing_id)
     if drawing.thumbnail_path and os.path.isfile(drawing.thumbnail_path):
-        directory = os.path.dirname(drawing.thumbnail_path)
+        directory = os.path.dirname(os.path.abspath(drawing.thumbnail_path))
         filename = os.path.basename(drawing.thumbnail_path)
         return send_from_directory(directory, filename, mimetype='image/png')
-    return jsonify({'use_pdf': True, 'file_url': f'/api/drawings/{drawing_id}/file'}), 404
+    return jsonify({'use_pdf': True, 'file_url': f'/api/drawings/{drawing_id}/file'}), 200
 
 
 @app.route('/api/drawings/upload', methods=['POST'])
 @login_required
 def api_upload_drawing():
     """Upload one or more drawing pages. Multi-page PDFs are split automatically."""
-    from drawing_persistence import split_pdf_to_pages, process_pages_from_upload, extract_pdf_page_text
+    from drawing_persistence import prepare_upload_pages, process_pages_from_upload
     try:
         project_id = request.form.get('project_id', type=int) or get_current_project_id()
         if not project_id:
@@ -2798,47 +2802,8 @@ def api_upload_drawing():
         dest = os.path.join(folder, f'{ts}_{safe}')
         file.save(dest)
 
-        pages = []
-        try:
-            import fitz
-            doc = fitz.open(dest)
-            page_count = len(doc)
-            doc.close()
-            if page_count > 1:
-                batch_dir = os.path.join(folder, f'set_{ts}')
-                pages = split_pdf_to_pages(dest, batch_dir)
-            else:
-                text = extract_pdf_page_text(dest, 0) if page_count == 1 else ''
-                pages = [{
-                    'page_index': 0,
-                    'file_path': dest,
-                    'filename': safe,
-                    'text': text,
-                }]
-        except Exception:
-            try:
-                from pypdf import PdfReader
-                reader = PdfReader(dest)
-                if len(reader.pages) > 1:
-                    batch_dir = os.path.join(folder, f'set_{ts}')
-                    pages = split_pdf_to_pages(dest, batch_dir)
-                else:
-                    text = ''
-                    if reader.pages:
-                        text = reader.pages[0].extract_text() or ''
-                    pages = [{
-                        'page_index': 0,
-                        'file_path': dest,
-                        'filename': safe,
-                        'text': text,
-                    }]
-            except Exception:
-                pages = [{
-                    'page_index': 0,
-                    'file_path': dest,
-                    'filename': safe,
-                    'text': '',
-                }]
+        batch_dir = os.path.join(folder, f'set_{ts}')
+        pages = prepare_upload_pages(dest, batch_dir)
 
         if not pages:
             return jsonify({'error': 'Could not read PDF pages. The file may be corrupt or password-protected.'}), 400
@@ -2870,6 +2835,7 @@ def api_upload_drawing():
         return jsonify({
             'ok': True,
             'split': from_combined_set,
+            'page_count': len(pages),
             'created_count': len(created),
             'needs_review_count': len(needs_review),
             'needs_review': needs_review,
