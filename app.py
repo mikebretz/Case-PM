@@ -3253,6 +3253,58 @@ def api_drawing_markup_item(markup_id):
     return jsonify({'ok': True, 'markup': markup_to_dict(markup)})
 
 
+@app.route('/api/drawings/search/text', methods=['POST'])
+@login_required
+def api_drawings_search_text():
+    from drawing_search import prepare_drawing_targets, search_text
+    body = request.get_json(silent=True) or {}
+    project_id = body.get('project_id') or get_current_project_id()
+    query = (body.get('query') or '').strip()
+    scope = body.get('scope') or 'project'
+    drawing_id = body.get('drawing_id')
+    if not project_id:
+        return jsonify({'error': 'project_id required'}), 400
+    if len(query) < 2:
+        return jsonify({'error': 'Enter at least 2 characters'}), 400
+    ids = [int(drawing_id)] if scope == 'sheet' and drawing_id else None
+    targets = prepare_drawing_targets(Drawing, DrawingRevision, ids, int(project_id))
+    if scope == 'sheet' and not targets:
+        return jsonify({'error': 'Drawing not found'}), 404
+    results = search_text(
+        targets, query, upload_root=app.config.get('UPLOAD_FOLDER'), max_results=250,
+    )
+    return jsonify({'ok': True, 'query': query, 'scope': scope, 'count': len(results), 'results': results})
+
+
+@app.route('/api/drawings/search/shape', methods=['POST'])
+@login_required
+def api_drawings_search_shape():
+    from drawing_search import prepare_drawing_targets, search_shape
+    body = request.get_json(silent=True) or {}
+    project_id = body.get('project_id') or get_current_project_id()
+    scope = body.get('scope') or 'project'
+    drawing_id = body.get('drawing_id')
+    template_b64 = body.get('template') or body.get('template_png')
+    threshold = float(body.get('threshold') or 0.82)
+    if not project_id:
+        return jsonify({'error': 'project_id required'}), 400
+    if not template_b64:
+        return jsonify({'error': 'template image required'}), 400
+    ids = [int(drawing_id)] if scope == 'sheet' and drawing_id else None
+    targets = prepare_drawing_targets(Drawing, DrawingRevision, ids, int(project_id))
+    if scope == 'sheet' and not targets:
+        return jsonify({'error': 'Drawing not found'}), 404
+    results = search_shape(
+        targets,
+        template_b64,
+        upload_root=app.config.get('UPLOAD_FOLDER'),
+        threshold=max(0.65, min(0.98, threshold)),
+        max_results=150,
+        max_sheets=100 if scope == 'project' else 1,
+    )
+    return jsonify({'ok': True, 'scope': scope, 'count': len(results), 'results': results})
+
+
 @app.route('/api/drawings/<int:drawing_id>/revisions', methods=['GET'])
 @login_required
 def api_drawing_revisions(drawing_id):
