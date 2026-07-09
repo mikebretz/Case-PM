@@ -2746,25 +2746,31 @@ def api_get_drawing(drawing_id):
 @app.route('/api/drawings/<int:drawing_id>/file', methods=['GET'])
 @login_required
 def api_serve_drawing_file(drawing_id):
+    from drawing_persistence import resolve_drawing_file_path
     drawing = Drawing.query.get_or_404(drawing_id)
     rev = DrawingRevision.query.get(drawing.current_revision_id) if drawing.current_revision_id else None
     if not rev:
         rev = DrawingRevision.query.filter_by(drawing_id=drawing.id, is_current=True).first()
-    if not rev or not rev.file_path or not os.path.isfile(rev.file_path):
+    upload_root = app.config.get('UPLOAD_FOLDER')
+    resolved = resolve_drawing_file_path(rev.file_path if rev else None, upload_root)
+    if not rev or not resolved:
         return jsonify({'error': 'Drawing file not found on server'}), 404
-    directory = os.path.dirname(os.path.abspath(rev.file_path))
-    filename = os.path.basename(rev.file_path)
+    directory = os.path.dirname(resolved)
+    filename = os.path.basename(resolved)
     return send_from_directory(directory, filename, mimetype='application/pdf')
 
 
 @app.route('/api/drawings/<int:drawing_id>/revisions/<int:revision_id>/file', methods=['GET'])
 @login_required
 def api_serve_drawing_revision_file(drawing_id, revision_id):
+    from drawing_persistence import resolve_drawing_file_path
     rev = DrawingRevision.query.filter_by(id=revision_id, drawing_id=drawing_id).first_or_404()
-    if not rev.file_path or not os.path.isfile(rev.file_path):
+    upload_root = app.config.get('UPLOAD_FOLDER')
+    resolved = resolve_drawing_file_path(rev.file_path, upload_root)
+    if not resolved:
         return jsonify({'error': 'Revision file not found on server'}), 404
-    directory = os.path.dirname(os.path.abspath(rev.file_path))
-    filename = os.path.basename(rev.file_path)
+    directory = os.path.dirname(resolved)
+    filename = os.path.basename(resolved)
     return send_from_directory(directory, filename, mimetype='application/pdf')
 
 
