@@ -2777,12 +2777,8 @@ def api_drawing_thumbnail(drawing_id):
 @app.route('/api/drawings/upload', methods=['POST'])
 @login_required
 def api_upload_drawing():
-    from drawing_persistence import (
-        upsert_drawing_from_upload,
-        detect_sheet_number,
-        extract_title_from_text,
-        discipline_from_sheet,
-    )
+    """Upload one or more drawing pages. Multi-page PDFs are split automatically."""
+    from drawing_persistence import split_pdf_to_pages, process_pages_from_upload
     try:
         project_id = request.form.get('project_id', type=int) or get_current_project_id()
         if not project_id:
@@ -2793,47 +2789,73 @@ def api_upload_drawing():
         if not allowed_file(file.filename) or not file.filename.lower().endswith('.pdf'):
             return jsonify({'error': 'PDF files only'}), 400
 
-        sheet_number = request.form.get('sheet_number')
-        set_name = request.form.get('set_name') or 'Upload'
+        set_name = request.form.get('set_name') or os.path.splitext(file.filename)[0]
+        manual_sheet = (request.form.get('sheet_number') or '').strip()
+        manual_title = (request.form.get('title') or '').strip()
         folder = _drawing_folder(project_id)
         ts = datetime.utcnow().strftime('%Y%m%d%H%M%S')
         safe = secure_filename(file.filename)
         dest = os.path.join(folder, f'{ts}_{safe}')
         file.save(dest)
 
-        text = ''
+        pages = []
         try:
             from pypdf import PdfReader
-            text = (PdfReader(dest).pages[0].extract_text() or '') if PdfReader(dest).pages else ''
+            reader = PdfReader(dest)
+            if len(reader.pages) > 1:
+                batch_dir = os.path.join(folder, f'set_{ts}')
+                pages = split_pdf_to_pages(dest, batch_dir)
+            else:
+                text = ''
+                if reader.pages:
+                    text = reader.pages[0].extract_text() or ''
+                pages = [{
+                    'page_index': 0,
+                    'file_path': dest,
+                    'filename': safe,
+                    'text': text,
+                }]
         except Exception:
-            pass
-        if not sheet_number:
-            sheet_number, text, _method = detect_sheet_number(dest, file.filename, text)
-        if not sheet_number:
-            return jsonify({'error': 'Could not detect sheet number. Enter it manually or rename file (e.g. A-101.pdf).'}), 400
+            pages = [{
+                'page_index': 0,
+                'file_path': dest,
+                'filename': safe,
+                'text': '',
+            }]
 
-        title = request.form.get('title') or extract_title_from_text(text, sheet_number)
-        discipline = request.form.get('discipline') or discipline_from_sheet(sheet_number)
-        drawing_date = None
-        if request.form.get('drawing_date'):
-            drawing_date = datetime.strptime(request.form.get('drawing_date'), '%Y-%m-%d').date()
-
-        drawing, rev, _old = upsert_drawing_from_upload(
+        from_combined_set = len(pages) > 1
+        created, needs_review = process_pages_from_upload(
             db, Drawing, DrawingRevision, DrawingMarkup,
             project_id=int(project_id),
-            sheet_number=sheet_number,
-            title=title,
-            discipline=discipline,
-            file_path=dest,
+            pages=pages,
             original_filename=file.filename,
             set_name=set_name,
-            drawing_date=drawing_date,
-            received_date=date.today(),
-            upload_source='individual',
             uploaded_by_id=current_user.id,
+            from_combined_set=from_combined_set,
+            upload_source='combined_set' if from_combined_set else 'individual',
+            manual_sheet=manual_sheet if not from_combined_set else None,
+            manual_title=manual_title if not from_combined_set else None,
         )
+
+        if not created:
+            db.session.rollback()
+            return jsonify({
+                'error': 'No drawing pages could be imported. Check sheet numbers in title blocks or enter manually for single-page uploads.',
+                'needs_review': needs_review,
+            }), 400
+
         db.session.commit()
-        return jsonify({'ok': True, 'drawing': _serialize_drawing(drawing), 'revision': rev.revision_label})
+        drawings = [_serialize_drawing(Drawing.query.get(item['id'])) for item in created]
+        return jsonify({
+            'ok': True,
+            'split': from_combined_set,
+            'created_count': len(created),
+            'needs_review': needs_review,
+            'drawings': drawings,
+            'pages': created,
+            'drawing': drawings[0] if len(drawings) == 1 else None,
+            'revision': drawings[0].get('revision_label') if len(drawings) == 1 else None,
+        })
     except Exception as exc:
         db.session.rollback()
         return jsonify({'error': str(exc)}), 500
@@ -2842,65 +2864,20 @@ def api_upload_drawing():
 @app.route('/api/drawings/upload-set', methods=['POST'])
 @login_required
 def api_upload_drawing_set():
-    from drawing_persistence import (
-        split_pdf_to_pages,
-        upsert_drawing_from_upload,
-        detect_sheet_number,
-        extract_title_from_text,
-        discipline_from_sheet,
-    )
+    """Upload a multi-page PDF drawing set (alias — splits automatically)."""
+    return api_upload_drawing()
+
+
+@app.route('/api/drawings/<int:drawing_id>', methods=['DELETE'])
+@login_required
+def api_delete_drawing(drawing_id):
+    """Delete a drawing sheet and all of its revisions."""
+    from drawing_persistence import delete_drawing_record
+    drawing = Drawing.query.get_or_404(drawing_id)
     try:
-        project_id = request.form.get('project_id', type=int) or get_current_project_id()
-        if not project_id:
-            return jsonify({'error': 'project_id required'}), 400
-        file = request.files.get('file')
-        if not file or not file.filename:
-            return jsonify({'error': 'file required'}), 400
-        if not file.filename.lower().endswith('.pdf'):
-            return jsonify({'error': 'PDF required'}), 400
-
-        set_name = request.form.get('set_name') or os.path.splitext(file.filename)[0]
-        folder = _drawing_folder(project_id)
-        ts = datetime.utcnow().strftime('%Y%m%d%H%M%S')
-        batch_dir = os.path.join(folder, f'set_{ts}')
-        os.makedirs(batch_dir, exist_ok=True)
-        combined_path = os.path.join(batch_dir, secure_filename(file.filename))
-        file.save(combined_path)
-
-        pages = split_pdf_to_pages(combined_path, batch_dir)
-        created = []
-        needs_review = []
-        for page in pages:
-            sheet_number, page_text, method = detect_sheet_number(
-                page['file_path'], file.filename, page.get('text'), page['page_index']
-            )
-            if not sheet_number:
-                needs_review.append({'page': page['page_index'] + 1, 'file': page['filename']})
-                continue
-            title = extract_title_from_text(page_text, sheet_number)
-            drawing, rev, _old = upsert_drawing_from_upload(
-                db, Drawing, DrawingRevision, DrawingMarkup,
-                project_id=int(project_id),
-                sheet_number=sheet_number,
-                title=title,
-                discipline=discipline_from_sheet(sheet_number),
-                file_path=page['file_path'],
-                original_filename=file.filename,
-                set_name=set_name,
-                drawing_date=None,
-                received_date=date.today(),
-                upload_source='combined_set',
-                uploaded_by_id=current_user.id,
-                notes=f'Page {page["page_index"] + 1} from {file.filename}',
-            )
-            created.append(_serialize_drawing(drawing))
+        delete_drawing_record(db, Drawing, DrawingRevision, DrawingMarkup, drawing)
         db.session.commit()
-        return jsonify({
-            'ok': True,
-            'created_count': len(created),
-            'needs_review': needs_review,
-            'drawings': created,
-        })
+        return jsonify({'ok': True, 'deleted_id': drawing_id})
     except Exception as exc:
         db.session.rollback()
         return jsonify({'error': str(exc)}), 500
@@ -2936,7 +2913,7 @@ def api_substitute_drawings():
         substituted = []
         skipped = []
 
-        def process_page(file_path, original_name, page_note=''):
+        def process_page(file_path, original_name, page_note='', from_combined_set=False):
             text = ''
             try:
                 from pypdf import PdfReader
@@ -2945,7 +2922,9 @@ def api_substitute_drawings():
                     text = reader.pages[0].extract_text() or ''
             except Exception:
                 pass
-            sheet_number, page_text, _method = detect_sheet_number(file_path, original_name, text)
+            sheet_number, page_text, _method, revision = detect_sheet_number(
+                file_path, original_name, text, 0, from_combined_set=from_combined_set,
+            )
             if not sheet_number:
                 skipped.append({'file': original_name, 'reason': 'Sheet number not detected'})
                 return
@@ -2968,6 +2947,7 @@ def api_substitute_drawings():
                 upload_source='substitute',
                 uploaded_by_id=current_user.id,
                 notes=page_note or 'Substitute page upload',
+                sheet_revision=revision,
             )
             substituted.append({
                 'sheet_number': sheet_number,
@@ -2990,7 +2970,11 @@ def api_substitute_drawings():
                 if len(reader.pages) > 1:
                     pages = split_pdf_to_pages(dest, sub_dir)
                     for page in pages:
-                        process_page(page['file_path'], f.filename, f'Substitute page {page["page_index"] + 1}')
+                        process_page(
+                            page['file_path'], f.filename,
+                            f'Substitute page {page["page_index"] + 1}',
+                            from_combined_set=True,
+                        )
                 else:
                     process_page(dest, f.filename)
             except Exception:

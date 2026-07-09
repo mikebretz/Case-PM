@@ -173,7 +173,8 @@
       return;
     }
     grid.innerHTML = items.map(d => `
-      <div class="bg-zinc-800 border border-zinc-700 rounded-md overflow-hidden hover:border-sky-600 cursor-pointer group" ondblclick="CasePMDrawings.openViewer(${d.id})" onclick="CasePMDrawings.previewSheet(${d.id})">
+      <div class="bg-zinc-800 border border-zinc-700 rounded-md overflow-hidden hover:border-sky-600 cursor-pointer group relative" ondblclick="CasePMDrawings.openViewer(${d.id})" onclick="CasePMDrawings.previewSheet(${d.id})">
+        <button type="button" onclick="event.stopPropagation(); CasePMDrawings.deleteDrawing(${d.id})" class="absolute bottom-2 right-2 z-10 opacity-0 group-hover:opacity-100 px-2 py-1 rounded bg-red-900/90 hover:bg-red-800 text-[10px] text-red-100" title="Delete sheet"><i class="fa-solid fa-trash"></i></button>
         <div class="aspect-[4/3] bg-zinc-900 relative">
           <canvas id="thumb-${d.id}" class="w-full h-full object-contain"></canvas>
           <div class="absolute top-2 left-2 font-mono text-xs bg-black/60 px-2 py-0.5 rounded text-sky-300">${esc(d.sheet_number)}</div>
@@ -195,7 +196,7 @@
     if (!tbody) return;
     const rows = filteredDrawings();
     if (!rows.length) {
-      tbody.innerHTML = '<tr><td colspan="8" class="px-6 py-12 text-center text-zinc-500">No drawings found.</td></tr>';
+      tbody.innerHTML = '<tr><td colspan="9" class="px-6 py-12 text-center text-zinc-500">No drawings found.</td></tr>';
       return;
     }
     tbody.innerHTML = rows.map(d => `
@@ -208,6 +209,9 @@
         <td class="px-4 py-3 text-center text-xs">${fmtDate(d.drawing_date)}</td>
         <td class="px-4 py-3 text-center"><span class="px-2 py-0.5 rounded-full text-[10px] ${d.status === 'Current' ? 'bg-emerald-900/50 text-emerald-300' : 'bg-zinc-700 text-zinc-400'}">${esc(d.status)}</span></td>
         <td class="px-4 py-3 text-center text-xs text-zinc-500">${d.revision_count || 1}</td>
+        <td class="px-4 py-3 text-center">
+          <button type="button" onclick="event.stopPropagation(); CasePMDrawings.deleteDrawing(${d.id})" class="px-2 py-1 rounded bg-red-900/60 hover:bg-red-800 text-[10px] text-red-100" title="Delete sheet"><i class="fa-solid fa-trash"></i></button>
+        </td>
       </tr>`).join('');
   }
 
@@ -254,6 +258,18 @@
       renderThumb(thumb, d);
     }
     openBtn?.classList.remove('hidden');
+    document.getElementById('drawPreviewDeleteBtn')?.classList.remove('hidden');
+  }
+
+  function deletePreviewedSheet() {
+    if (!state.previewDrawingId) return;
+    const d = state.drawings.find(x => x.id === state.previewDrawingId);
+    deleteDrawing(state.previewDrawingId, d?.sheet_number);
+  }
+
+  function deleteOpenSheet() {
+    if (!state.openDrawing) return;
+    deleteDrawing(state.openDrawing.id, state.openDrawing.sheet_number);
   }
 
   function openPreviewedSheet() {
@@ -842,8 +858,7 @@
     if (state.openDrawing) setTimeout(() => renderPdf(), 100);
   }
 
-  function openUploadModal(mode) {
-    document.getElementById('uploadMode').value = mode || 'individual';
+  function openUploadModal() {
     document.getElementById('uploadDrawingModal')?.showModal();
   }
 
@@ -851,29 +866,75 @@
     document.getElementById('substituteModal')?.showModal();
   }
 
+  function showUploadResults(json) {
+    const body = document.getElementById('uploadResultsBody');
+    const dialog = document.getElementById('uploadResultsModal');
+    if (!body || !dialog) return;
+    const pages = json.pages || json.drawings || [];
+    const review = json.needs_review || [];
+    let html = '';
+    if (pages.length) {
+      html += `<table class="w-full text-xs"><thead><tr class="text-zinc-400 border-b border-zinc-700">
+        <th class="text-left py-2 pr-2">Page</th><th class="text-left py-2 pr-2">Sheet #</th>
+        <th class="text-left py-2 pr-2">Revision</th><th class="text-left py-2">Title</th></tr></thead><tbody>`;
+      html += pages.map(p => `<tr class="border-b border-zinc-800">
+        <td class="py-2 pr-2">${esc(p.page || '—')}</td>
+        <td class="py-2 pr-2 font-mono text-sky-300">${esc(p.sheet_number)}</td>
+        <td class="py-2 pr-2">${esc(p.revision_label || p.revision_number || '—')}</td>
+        <td class="py-2 truncate max-w-[200px]">${esc(p.title || '—')}</td></tr>`).join('');
+      html += '</tbody></table>';
+    }
+    if (review.length) {
+      html += `<p class="text-amber-400 text-xs mt-3 mb-1">${review.length} page(s) could not be matched to a sheet number:</p>
+        <ul class="text-xs text-zinc-400 list-disc pl-4">${review.map(r => `<li>Page ${esc(r.page)}${r.detected_revision ? ` (rev ${esc(r.detected_revision)} detected)` : ''}</li>`).join('')}</ul>`;
+    }
+    body.innerHTML = html || '<p class="text-zinc-400 text-sm">No pages imported.</p>';
+    dialog.showModal();
+  }
+
+  async function deleteDrawing(id, sheetLabel) {
+    const d = state.drawings.find(x => x.id === id);
+    const label = sheetLabel || d?.sheet_number || 'this sheet';
+    if (!confirm(`Delete ${label} and all of its revisions? This cannot be undone.`)) return;
+    try {
+      await api(`/api/drawings/${id}`, { method: 'DELETE' });
+      if (state.openDrawing?.id === id) closeViewer();
+      if (state.previewDrawingId === id) {
+        state.previewDrawingId = null;
+        const pane = document.getElementById('drawPreviewPane');
+        if (pane) {
+          pane.textContent = 'Sheet preview — click a thumbnail';
+          pane.className = 'truncate text-zinc-500 min-w-0';
+        }
+        document.getElementById('drawPreviewThumb')?.classList.add('hidden');
+        document.getElementById('drawPreviewOpenBtn')?.classList.add('hidden');
+        document.getElementById('drawPreviewDeleteBtn')?.classList.add('hidden');
+      }
+      toast(`Deleted ${label}`);
+      await Promise.all([loadDashboard(), loadDrawings()]);
+    } catch (err) { alert(err.message); }
+  }
+
   async function submitUpload(e) {
     e.preventDefault();
-    const mode = document.getElementById('uploadMode').value;
     const file = document.getElementById('uploadFile').files[0];
     if (!file) { alert('Select a PDF'); return; }
     const fd = new FormData();
     fd.append('project_id', projectId());
     fd.append('file', file);
     fd.append('set_name', document.getElementById('uploadSetName').value || 'Drawing Upload');
-    if (mode === 'individual') {
-      const sheet = document.getElementById('uploadSheetNumber').value;
-      if (sheet) fd.append('sheet_number', sheet);
-      const title = document.getElementById('uploadTitle').value;
-      if (title) fd.append('title', title);
-    }
-    const url = mode === 'set' ? '/api/drawings/upload-set' : '/api/drawings/upload';
+    const sheet = document.getElementById('uploadSheetNumber').value;
+    if (sheet) fd.append('sheet_number', sheet);
+    const title = document.getElementById('uploadTitle').value;
+    if (title) fd.append('title', title);
     try {
-      const res = await fetch(url, { method: 'POST', body: fd, credentials: 'same-origin' });
+      const res = await fetch('/api/drawings/upload', { method: 'POST', body: fd, credentials: 'same-origin' });
       const json = await res.json();
       if (!res.ok) throw new Error(json.error || 'Upload failed');
       document.getElementById('uploadDrawingModal').close();
-      toast(mode === 'set' ? `Processed ${json.created_count} sheets` : `Uploaded ${json.drawing?.sheet_number}`);
-      if (json.needs_review?.length) alert(`${json.needs_review.length} page(s) need manual sheet numbers.`);
+      const count = json.created_count || json.drawings?.length || 1;
+      toast(json.split ? `Imported ${count} sheets from drawing set` : `Uploaded ${json.drawing?.sheet_number || count + ' sheet(s)'}`);
+      showUploadResults(json);
       await Promise.all([loadDashboard(), loadDrawings()]);
     } catch (err) { alert(err.message); }
   }
@@ -954,6 +1015,10 @@
     openSubstituteModal,
     submitUpload,
     submitSubstitute,
+    deleteDrawing,
+    deletePreviewedSheet,
+    deleteOpenSheet,
+    showUploadResults,
   };
 
   document.addEventListener('DOMContentLoaded', init);
