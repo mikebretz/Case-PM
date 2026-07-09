@@ -31,8 +31,21 @@ if not exist "venv\Scripts\activate.bat" (
 :: Activate virtual environment
 call venv\Scripts\activate.bat
 
-:: Check if requirements are installed (Flask + drawing/search libraries)
-python -c "import flask, pypdf, fitz, numpy, cv2" >nul 2>&1
+:: Ensure search libraries are present (install individually if missing)
+python -c "import numpy" >nul 2>&1
+if errorlevel 1 (
+    echo Installing numpy for drawing search...
+    pip install "numpy>=1.24.0"
+)
+
+python -c "import cv2" >nul 2>&1
+if errorlevel 1 (
+    echo Installing opencv for shape search...
+    pip install "opencv-python-headless>=4.8.0"
+)
+
+:: Check if core requirements are installed
+python -c "import flask, pypdf, fitz" >nul 2>&1
 if errorlevel 1 (
     echo Installing required packages...
     echo This may take a minute on first run...

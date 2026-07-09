@@ -1,8 +1,10 @@
 """Drawing text and visual shape search across PDF sheets."""
 from __future__ import annotations
 
+import array
 import base64
 import io
+import math
 import re
 from typing import Any
 
@@ -15,32 +17,31 @@ class DrawingSearchError(Exception):
     """User-visible search failure (missing deps, bad input, etc.)."""
 
 
-def _np():
+_NP = None
+_NP_TRIED = False
+
+
+def _numpy():
+    """Return numpy module when installed; otherwise None."""
+    global _NP, _NP_TRIED
+    if _NP_TRIED:
+        return _NP
+    _NP_TRIED = True
     try:
         import numpy as np
-    except ImportError as exc:
-        raise DrawingSearchError(
-            'Drawing search requires numpy. Run: pip install -r requirements.txt'
-        ) from exc
-    return np
+        _NP = np
+    except ImportError:
+        _NP = None
+    return _NP
 
 
-def _pixmap_to_gray_array(pix):
-    """Convert a PyMuPDF grayscale pixmap to a 2-D uint8 array."""
-    np = _np()
-    samples = np.frombuffer(pix.samples, dtype=np.uint8)
-    row_bytes = pix.stride or pix.width
-    if row_bytes * pix.height != len(samples):
-        if pix.width * pix.height == len(samples):
-            return samples.reshape(pix.height, pix.width)
-        raise DrawingSearchError('Could not decode PDF page image for search')
-    arr = samples.reshape(pix.height, row_bytes)
-    if row_bytes != pix.width:
-        arr = arr[:, :pix.width].copy()
-    return arr
+def _pixmap_to_pil(pix) -> Image.Image:
+    """Convert a PyMuPDF pixmap to a grayscale PIL image (handles stride safely)."""
+    return Image.open(io.BytesIO(pix.tobytes('png'))).convert('L')
 
 
-def _render_page_gray(pdf_path: str, page_index: int = 0, dpi: int = 120):
+def _render_page_image(pdf_path: str, page_index: int = 0, dpi: int = 120):
+    """Render a PDF page as a grayscale PIL image."""
     import fitz
 
     doc = fitz.open(pdf_path)
@@ -51,22 +52,71 @@ def _render_page_gray(pdf_path: str, page_index: int = 0, dpi: int = 120):
         pw, ph = page.rect.width, page.rect.height
         mat = fitz.Matrix(dpi / 72.0, dpi / 72.0)
         pix = page.get_pixmap(matrix=mat, colorspace=fitz.csGRAY, alpha=False)
-        arr = _pixmap_to_gray_array(pix)
+        return _pixmap_to_pil(pix), pw, ph
+    finally:
+        doc.close()
+
+
+def _render_page_gray(pdf_path: str, page_index: int = 0, dpi: int = 120):
+    """Render a PDF page as a numpy grayscale array (requires numpy)."""
+    np = _numpy()
+    if np is None:
+        return None, 0, 0
+    import fitz
+
+    doc = fitz.open(pdf_path)
+    try:
+        if page_index >= len(doc):
+            return None, 0, 0
+        page = doc[page_index]
+        pw, ph = page.rect.width, page.rect.height
+        mat = fitz.Matrix(dpi / 72.0, dpi / 72.0)
+        pix = page.get_pixmap(matrix=mat, colorspace=fitz.csGRAY, alpha=False)
+        samples = np.frombuffer(pix.samples, dtype=np.uint8)
+        row_bytes = pix.stride or pix.width
+        if row_bytes * pix.height == len(samples):
+            arr = samples.reshape(pix.height, row_bytes)
+            if row_bytes != pix.width:
+                arr = arr[:, :pix.width].copy()
+        elif pix.width * pix.height == len(samples):
+            arr = samples.reshape(pix.height, pix.width)
+        else:
+            arr = np.array(_pixmap_to_pil(pix), dtype=np.uint8)
         return arr, pw, ph
     finally:
         doc.close()
 
 
-def _thumb_b64(gray, x: int, y: int, w: int, h: int, max_size: int = 96) -> str:
-    h_img, w_img = gray.shape[:2]
-    x0 = max(0, min(x, w_img - 1))
-    y0 = max(0, min(y, h_img - 1))
-    x1 = max(x0 + 1, min(x + w, w_img))
-    y1 = max(y0 + 1, min(y + h, h_img))
-    crop = gray[y0:y1, x0:x1]
-    if crop.size == 0:
+def _thumb_from_pil(img: Image.Image, x: int, y: int, w: int, h: int, max_size: int = 96) -> str:
+    iw, ih = img.size
+    x0 = max(0, min(x, iw - 1))
+    y0 = max(0, min(y, ih - 1))
+    x1 = max(x0 + 1, min(x + w, iw))
+    y1 = max(y0 + 1, min(y + h, ih))
+    crop = img.crop((x0, y0, x1, y1))
+    if crop.width == 0 or crop.height == 0:
         return ''
-    pil = Image.fromarray(crop)
+    crop.thumbnail((max_size, max_size), Image.Resampling.LANCZOS)
+    buf = io.BytesIO()
+    crop.save(buf, format='PNG')
+    return base64.b64encode(buf.getvalue()).decode('ascii')
+
+
+def _thumb_b64(gray, x: int, y: int, w: int, h: int, max_size: int = 96) -> str:
+    np = _numpy()
+    if np is not None and hasattr(gray, 'shape'):
+        h_img, w_img = gray.shape[:2]
+        x0 = max(0, min(x, w_img - 1))
+        y0 = max(0, min(y, h_img - 1))
+        x1 = max(x0 + 1, min(x + w, w_img))
+        y1 = max(y0 + 1, min(y + h, h_img))
+        crop = gray[y0:y1, x0:x1]
+        if crop.size == 0:
+            return ''
+        pil = Image.fromarray(crop)
+    else:
+        pil = gray
+        return _thumb_from_pil(pil, x, y, w, h, max_size)
     pil.thumbnail((max_size, max_size), Image.Resampling.LANCZOS)
     buf = io.BytesIO()
     pil.save(buf, format='PNG')
@@ -111,13 +161,12 @@ def extract_page_text_lines(pdf_path: str, page_index: int = 0) -> list[dict[str
 
     if len(lines_out) < 2:
         try:
-            gray, _pw_pts, _ph_pts = _render_page_gray(pdf_path, page_index, dpi=150)
-            if gray is not None:
+            page_img, _pw_pts, _ph_pts = _render_page_image(pdf_path, page_index, dpi=150)
+            if page_img is not None:
                 import pytesseract
 
-                pil = Image.fromarray(gray)
-                ocr = pytesseract.image_to_data(pil, output_type=pytesseract.Output.DICT)
-                h, w = gray.shape[:2]
+                ocr = pytesseract.image_to_data(page_img, output_type=pytesseract.Output.DICT)
+                w, h = page_img.size
                 by_line: dict[tuple[int, int, int], list[str]] = {}
                 boxes: dict[tuple[int, int, int], list[int]] = {}
                 n = len(ocr.get('text', []))
@@ -202,15 +251,20 @@ def search_text(
     return results
 
 
-def _decode_template(template_b64: str):
-    np = _np()
+def _decode_template_pil(template_b64: str) -> Image.Image:
     raw = base64.b64decode(template_b64.split(',')[-1] if ',' in template_b64 else template_b64)
-    pil = Image.open(io.BytesIO(raw)).convert('L')
-    return np.array(pil, dtype=np.uint8)
+    return Image.open(io.BytesIO(raw)).convert('L')
+
+
+def _decode_template_array(template_b64: str):
+    np = _numpy()
+    if np is None:
+        return None
+    return np.array(_decode_template_pil(template_b64), dtype=np.uint8)
 
 
 def _interior_mask(h: int, w: int, margin_ratio: float = 0.1):
-    np = _np()
+    np = _numpy()
     mask = np.ones((h, w), dtype=np.uint8) * 255
     margin = max(2, int(min(h, w) * margin_ratio))
     mask[:margin, :] = 0
@@ -220,9 +274,11 @@ def _interior_mask(h: int, w: int, margin_ratio: float = 0.1):
     return mask
 
 
-def _match_template(gray, template, threshold: float = 0.82):
-    """Find template matches; prefers cv2 when available."""
-    np = _np()
+def _match_template_cv(gray, template, threshold: float = 0.82):
+    """OpenCV template match when available."""
+    np = _numpy()
+    if np is None:
+        return None
     th, tw = template.shape[:2]
     gh, gw = gray.shape[:2]
     if th < 8 or tw < 8 or th >= gh or tw >= gw:
@@ -249,9 +305,18 @@ def _match_template(gray, template, threshold: float = 0.82):
                 break
         return filtered
     except Exception:
-        pass
+        return None
 
-    # Numpy fallback — downsample for speed
+
+def _match_template_numpy(gray, template, threshold: float = 0.82):
+    np = _numpy()
+    if np is None:
+        return None
+    th, tw = template.shape[:2]
+    gh, gw = gray.shape[:2]
+    if th < 8 or tw < 8 or th >= gh or tw >= gw:
+        return []
+
     scale = 0.5 if max(gh, gw) > 2000 else 1.0
     g = gray
     t = template
@@ -290,6 +355,143 @@ def _match_template(gray, template, threshold: float = 0.82):
     return filtered
 
 
+def _ncc_score_at(
+    sheet_data: array.array,
+    sw: int,
+    t_centered: array.array,
+    t_norm: float,
+    tw: int,
+    th: int,
+    x: int,
+    y: int,
+    margin: int,
+    inner_w: int,
+    inner_h: int,
+    inner_n: int,
+) -> float:
+    base_y = y * sw
+    patch_centered = array.array('f', (0.0,) * inner_n)
+    idx = 0
+    s_sum = 0.0
+    for dy in range(margin, th - margin if margin else th):
+        row = base_y + dy * sw + x + margin
+        for dx in range(inner_w):
+            sv = sheet_data[row + dx]
+            s_sum += sv
+            patch_centered[idx] = sv
+            idx += 1
+    s_mean = s_sum / inner_n
+    s_norm = 0.0
+    for i in range(inner_n):
+        d = patch_centered[i] - s_mean
+        patch_centered[i] = d
+        s_norm += d * d
+    s_norm = math.sqrt(s_norm) or 1.0
+    cross = 0.0
+    for dy in range(inner_h):
+        for dx in range(inner_w):
+            cross += patch_centered[dy * inner_w + dx] * t_centered[(dy + margin) * tw + (dx + margin)]
+    return cross / (s_norm * t_norm)
+
+
+def _match_template_pil(sheet: Image.Image, template: Image.Image, threshold: float = 0.82):
+    """Pure-PIL normalized cross-correlation (no numpy/opencv required)."""
+    sw, sh = sheet.size
+    tw, th = template.size
+    if th < 8 or tw < 8 or th >= sh or tw >= sw:
+        return []
+
+    inv_scale = 1.0
+    max_side = 2400
+    if max(sw, sh) > max_side:
+        scale = max_side / max(sw, sh)
+        inv_scale = 1.0 / scale
+        sheet = sheet.resize((max(1, int(sw * scale)), max(1, int(sh * scale))), Image.Resampling.BILINEAR)
+        template = template.resize((max(1, int(tw * scale)), max(1, int(th * scale))), Image.Resampling.BILINEAR)
+        sw, sh = sheet.size
+        tw, th = template.size
+        if th < 8 or tw < 8 or th >= sh or tw >= sw:
+            return []
+
+    sheet_data = array.array('B', sheet.tobytes())
+    tmpl_data = array.array('B', template.tobytes())
+    n = tw * th
+    t_mean = sum(tmpl_data) / n
+    t_centered = array.array('f', (0.0,) * n)
+    t_norm = 0.0
+    for i in range(n):
+        d = tmpl_data[i] - t_mean
+        t_centered[i] = d
+        t_norm += d * d
+    t_norm = math.sqrt(t_norm) or 1.0
+
+    margin = max(2, int(min(tw, th) * 0.12))
+    inner_w = tw - 2 * margin
+    inner_h = th - 2 * margin
+    if inner_w < 4 or inner_h < 4:
+        margin = 0
+        inner_w, inner_h = tw, th
+    inner_n = inner_w * inner_h
+
+    step = max(2, min(tw, th) // 8)
+    rough: list[tuple[int, int, float]] = []
+    best_score = -1.0
+    best_xy = (0, 0)
+    for y in range(0, sh - th, step):
+        for x in range(0, sw - tw, step):
+            score = _ncc_score_at(
+                sheet_data, sw, t_centered, t_norm, tw, th, x, y,
+                margin, inner_w, inner_h, inner_n,
+            )
+            if score > best_score:
+                best_score = score
+                best_xy = (x, y)
+            if score >= threshold:
+                rough.append((x, y, float(score)))
+
+    refine_radius = max(step, 12)
+    seeds: list[tuple[int, int, float]] = list(rough[:12])
+    if not any(s[0] == best_xy[0] and s[1] == best_xy[1] for s in seeds):
+        seeds.insert(0, (best_xy[0], best_xy[1], best_score))
+    matches: list[tuple[int, int, float]] = []
+    seen_seed: set[tuple[int, int]] = set()
+    for sx, sy, _ in seeds:
+        if (sx, sy) in seen_seed:
+            continue
+        seen_seed.add((sx, sy))
+        for y in range(max(0, sy - refine_radius), min(sh - th, sy + refine_radius) + 1, 2):
+            for x in range(max(0, sx - refine_radius), min(sw - tw, sx + refine_radius) + 1, 2):
+                score = _ncc_score_at(
+                    sheet_data, sw, t_centered, t_norm, tw, th, x, y,
+                    margin, inner_w, inner_h, inner_n,
+                )
+                if score >= threshold:
+                    ox = int(x * inv_scale)
+                    oy = int(y * inv_scale)
+                    matches.append((ox, oy, float(score)))
+
+    matches.sort(key=lambda m: m[2], reverse=True)
+    filtered = []
+    min_dist = max(int(tw * inv_scale), int(th * inv_scale)) * 0.55
+    for x, y, score in matches:
+        if any(abs(x - fx) < min_dist and abs(y - fy) < min_dist for fx, fy, _ in filtered):
+            continue
+        filtered.append((x, y, score))
+        if len(filtered) >= 16:
+            break
+    return filtered
+
+
+def _match_template(gray, template, threshold: float = 0.82):
+    hits = _match_template_cv(gray, template, threshold)
+    if hits is not None:
+        return hits
+    hits = _match_template_numpy(gray, template, threshold)
+    if hits is not None:
+        return hits
+    return []
+
+
 def search_shape(
     drawings: list,
     template_b64: str,
@@ -299,12 +501,15 @@ def search_shape(
     max_sheets: int = 80,
 ) -> list[dict[str, Any]]:
     try:
-        template = _decode_template(template_b64)
+        template_pil = _decode_template_pil(template_b64)
     except Exception as exc:
-        raise DrawingSearchError('Invalid shape template image') from exc
-    th, tw = template.shape[:2]
+        raise DrawingSearchError('Invalid shape template — snip a box on the sheet and try again') from exc
+    tw, th = template_pil.size
     if th < 6 or tw < 6:
         return []
+
+    template_arr = _decode_template_array(template_b64)
+    use_numpy = template_arr is not None
 
     results: list[dict[str, Any]] = []
     for d in drawings[:max_sheets]:
@@ -313,22 +518,34 @@ def search_shape(
         if not path:
             continue
         try:
-            gray, _pw_pts, _ph_pts = _render_page_gray(path, 0, dpi=120)
+            if use_numpy:
+                gray, _pw_pts, _ph_pts = _render_page_gray(path, 0, dpi=120)
+                if gray is None:
+                    continue
+                gh, gw = gray.shape[:2]
+                hits = _match_template(gray, template_arr, threshold=threshold)
+                thumb_src = gray
+                thumb_is_pil = False
+            else:
+                sheet_pil, _pw_pts, _ph_pts = _render_page_image(path, 0, dpi=120)
+                if sheet_pil is None:
+                    continue
+                gw, gh = sheet_pil.size
+                hits = _match_template_pil(sheet_pil, template_pil, threshold=threshold)
+                thumb_src = sheet_pil
+                thumb_is_pil = True
         except Exception:
             continue
-        if gray is None:
-            continue
-        gh, gw = gray.shape[:2]
-        try:
-            hits = _match_template(gray, template, threshold=threshold)
-        except Exception:
-            continue
+
         for x, y, score in hits:
             nx = float(x / gw)
             ny = float(y / gh)
             nw = float(tw / gw)
             nh = float(th / gh)
-            thumb = _thumb_b64(gray, x, y, tw, th)
+            if thumb_is_pil:
+                thumb = _thumb_from_pil(thumb_src, x, y, tw, th)
+            else:
+                thumb = _thumb_b64(thumb_src, x, y, tw, th)
             results.append({
                 'drawing_id': d['id'],
                 'sheet_number': d.get('sheet_number'),
