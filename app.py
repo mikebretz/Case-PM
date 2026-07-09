@@ -2788,7 +2788,13 @@ def api_drawing_sets():
     sets = {}
     for rev in revisions:
         name = rev.set_name or 'Unnamed Set'
-        sets.setdefault(name, {'name': name, 'revision_count': 0, 'sheet_count': 0, 'latest_upload': None})
+        sets.setdefault(name, {
+            'name': name,
+            'revision_count': 0,
+            'sheet_count': 0,
+            'drawing_ids': [],
+            'latest_upload': None,
+        })
         sets[name]['revision_count'] += 1
         if not sets[name]['latest_upload'] or (rev.uploaded_at and rev.uploaded_at.isoformat() > sets[name]['latest_upload']):
             sets[name]['latest_upload'] = rev.uploaded_at.isoformat() if rev.uploaded_at else None
@@ -2799,9 +2805,60 @@ def api_drawing_sets():
             continue
         name = rev.set_name or 'Unnamed Set'
         drawing_sets[name] = drawing_sets.get(name, 0) + 1
+        if d.id not in sets.get(name, {}).get('drawing_ids', []):
+            sets.setdefault(name, {
+                'name': name,
+                'revision_count': 0,
+                'sheet_count': 0,
+                'drawing_ids': [],
+                'latest_upload': None,
+            })
+            sets[name]['drawing_ids'].append(d.id)
     for name in sets:
-        sets[name]['sheet_count'] = drawing_sets.get(name, 0)
+        sets[name]['sheet_count'] = drawing_sets.get(name, len(sets[name]['drawing_ids']))
     return jsonify({'sets': sorted(sets.values(), key=lambda s: s.get('latest_upload') or '', reverse=True)})
+
+
+@app.route('/api/drawings/bulk-delete', methods=['POST'])
+@login_required
+def api_bulk_delete_drawings():
+    """Delete multiple drawing sheets at once."""
+    from drawing_persistence import delete_drawings_bulk
+    data = request.get_json(silent=True) or {}
+    project_id = data.get('project_id') or get_current_project_id()
+    drawing_ids = data.get('drawing_ids') or []
+    if not project_id:
+        return jsonify({'error': 'project_id required'}), 400
+    if not drawing_ids:
+        return jsonify({'error': 'drawing_ids required'}), 400
+    try:
+        deleted = delete_drawings_bulk(db, Drawing, DrawingRevision, DrawingMarkup, int(project_id), drawing_ids)
+        db.session.commit()
+        return jsonify({'ok': True, 'deleted_count': len(deleted), 'deleted_ids': deleted})
+    except Exception as exc:
+        db.session.rollback()
+        return jsonify({'error': str(exc)}), 500
+
+
+@app.route('/api/drawings/delete-set', methods=['POST'])
+@login_required
+def api_delete_drawing_set():
+    """Delete all sheets whose current revision belongs to a drawing set upload name."""
+    from drawing_persistence import delete_drawings_by_set_name
+    data = request.get_json(silent=True) or {}
+    project_id = data.get('project_id') or get_current_project_id()
+    set_name = (data.get('set_name') or '').strip()
+    if not project_id:
+        return jsonify({'error': 'project_id required'}), 400
+    if not set_name:
+        return jsonify({'error': 'set_name required'}), 400
+    try:
+        deleted = delete_drawings_by_set_name(db, Drawing, DrawingRevision, DrawingMarkup, int(project_id), set_name)
+        db.session.commit()
+        return jsonify({'ok': True, 'deleted_count': len(deleted), 'deleted_ids': deleted, 'set_name': set_name})
+    except Exception as exc:
+        db.session.rollback()
+        return jsonify({'error': str(exc)}), 500
 
 
 @app.route('/api/drawings/<int:drawing_id>/file', methods=['GET'])

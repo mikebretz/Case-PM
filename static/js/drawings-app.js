@@ -64,6 +64,9 @@
     wheelRaf: null,
     wheelPending: null,
     textEditorOpen: false,
+    selectionMode: false,
+    selectedDrawingIds: new Set(),
+    drawingSets: [],
   };
 
   function projectId() {
@@ -146,6 +149,7 @@
     }
     renderSectionTabs();
     renderActiveView();
+    populateSetFilter();
   }
 
   async function loadRfis() {
@@ -191,13 +195,174 @@
     const search = (document.getElementById('drawSearch')?.value || '').toLowerCase();
     const discipline = document.getElementById('drawDisciplineFilter')?.value || '';
     const status = document.getElementById('drawStatusFilter')?.value || '';
+    const setFilter = document.getElementById('drawSetFilter')?.value || '';
     return state.drawings.filter(d => {
-      const text = `${d.sheet_number} ${d.title} ${d.discipline}`.toLowerCase();
+      const text = `${d.sheet_number} ${d.title} ${d.discipline} ${d.set_name || ''}`.toLowerCase();
       if (search && !text.includes(search)) return false;
       if (discipline && d.discipline !== discipline) return false;
       if (status && d.status !== status) return false;
+      if (setFilter && (d.set_name || 'Unnamed Set') !== setFilter) return false;
       return true;
     });
+  }
+
+  function isSheetSelected(id) {
+    return state.selectedDrawingIds.has(id);
+  }
+
+  function updateBulkBar() {
+    const bar = document.getElementById('drawBulkBar');
+    const countEl = document.getElementById('drawBulkCount');
+    const n = state.selectedDrawingIds.size;
+    const show = state.selectionMode || n > 0;
+    bar?.classList.toggle('hidden', !show);
+    if (countEl) countEl.textContent = `${n} selected`;
+    const btn = document.getElementById('btnSelectSheets');
+    if (btn) {
+      btn.classList.toggle('bg-sky-700', state.selectionMode);
+      btn.classList.toggle('text-white', state.selectionMode);
+    }
+  }
+
+  function toggleSelectionMode() {
+    state.selectionMode = !state.selectionMode;
+    if (!state.selectionMode) state.selectedDrawingIds.clear();
+    updateBulkBar();
+    renderActiveView();
+  }
+
+  function toggleSheetSelection(id, force) {
+    const on = force != null ? force : !state.selectedDrawingIds.has(id);
+    if (on) state.selectedDrawingIds.add(id);
+    else state.selectedDrawingIds.delete(id);
+    updateBulkBar();
+    renderActiveView();
+  }
+
+  function onSheetClick(id, evt) {
+    if (state.selectionMode || evt?.ctrlKey || evt?.metaKey) {
+      evt?.stopPropagation();
+      toggleSheetSelection(id);
+      return;
+    }
+    previewSheet(id);
+  }
+
+  function selectAllVisible() {
+    filteredDrawings().forEach(d => state.selectedDrawingIds.add(d.id));
+    updateBulkBar();
+    renderActiveView();
+  }
+
+  function clearSelection() {
+    state.selectedDrawingIds.clear();
+    updateBulkBar();
+    renderActiveView();
+  }
+
+  function toggleSelectAllVisible(checked) {
+    const rows = filteredDrawings();
+    if (checked) rows.forEach(d => state.selectedDrawingIds.add(d.id));
+    else rows.forEach(d => state.selectedDrawingIds.delete(d.id));
+    updateBulkBar();
+    renderActiveView();
+  }
+
+  async function loadDrawingSets() {
+    const pid = projectId();
+    if (!pid) return;
+    try {
+      const json = await api(`/api/drawings/sets?project_id=${pid}`);
+      state.drawingSets = json.sets || [];
+      populateSetFilter();
+    } catch { state.drawingSets = []; }
+  }
+
+  function populateSetFilter() {
+    const sel = document.getElementById('drawSetFilter');
+    if (!sel) return;
+    const current = sel.value;
+    const names = [...new Set(state.drawings.map(d => d.set_name || 'Unnamed Set'))].sort();
+    sel.innerHTML = '<option value="">All sets</option>'
+      + names.map(n => `<option value="${esc(n)}">${esc(n)}</option>`).join('');
+    if (current && names.includes(current)) sel.value = current;
+  }
+
+  function openSetsModal() {
+    renderSetsModal();
+    document.getElementById('drawingSetsModal')?.showModal();
+  }
+
+  function renderSetsModal() {
+    const body = document.getElementById('drawingSetsBody');
+    if (!body) return;
+    const sets = state.drawingSets.length ? state.drawingSets : [];
+    if (!sets.length) {
+      body.innerHTML = '<p class="text-zinc-500 text-sm">No drawing sets yet. Upload a PDF and name the set to create one.</p>';
+      return;
+    }
+    body.innerHTML = `<table class="w-full text-xs"><thead><tr class="text-zinc-400 border-b border-zinc-700">
+      <th class="text-left py-2 pr-2">Set name</th>
+      <th class="text-center py-2 px-2">Sheets</th>
+      <th class="text-center py-2 px-2">Revisions</th>
+      <th class="text-left py-2 px-2">Latest upload</th>
+      <th class="text-right py-2"></th>
+    </tr></thead><tbody>${sets.map(s => `<tr class="border-b border-zinc-800">
+      <td class="py-2 pr-2 font-medium text-sky-300">${esc(s.name)}</td>
+      <td class="py-2 px-2 text-center">${s.sheet_count || 0}</td>
+      <td class="py-2 px-2 text-center text-zinc-500">${s.revision_count || 0}</td>
+      <td class="py-2 px-2">${s.latest_upload ? fmtDate(s.latest_upload) : '—'}</td>
+      <td class="py-2 text-right">
+        <button type="button" onclick="CasePMDrawings.filterBySet(${JSON.stringify(s.name)})" class="px-2 py-1 bg-zinc-800 hover:bg-zinc-700 rounded mr-1">Show</button>
+        <button type="button" onclick="CasePMDrawings.deleteDrawingSet(${JSON.stringify(s.name)})" class="px-2 py-1 bg-red-900/70 hover:bg-red-800 rounded text-red-100">Delete set</button>
+      </td>
+    </tr>`).join('')}</tbody></table>`;
+  }
+
+  function filterBySet(name) {
+    const sel = document.getElementById('drawSetFilter');
+    if (sel) sel.value = name;
+    document.getElementById('drawingSetsModal')?.close();
+    switchView('list');
+    renderActiveView();
+  }
+
+  async function deleteDrawingSet(setName) {
+    if (!setName) return;
+    const set = state.drawingSets.find(s => s.name === setName);
+    const count = set?.sheet_count || 0;
+    if (!confirm(`Delete drawing set "${setName}" and all ${count} sheet(s) currently in it? This cannot be undone.`)) return;
+    try {
+      const json = await api('/api/drawings/delete-set', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ project_id: projectId(), set_name: setName }),
+      });
+      toast(`Deleted ${json.deleted_count} sheet(s) from "${setName}"`);
+      if (state.openDrawing && json.deleted_ids?.includes(state.openDrawing.id)) closeViewer();
+      state.selectedDrawingIds.clear();
+      updateBulkBar();
+      document.getElementById('drawingSetsModal')?.close();
+      await Promise.all([loadDashboard(), loadDrawings(), loadDrawingSets()]);
+    } catch (e) { alert(e.message); }
+  }
+
+  async function deleteSelectedDrawings() {
+    const ids = [...state.selectedDrawingIds];
+    if (!ids.length) { toast('Select one or more sheets first'); return; }
+    if (!confirm(`Delete ${ids.length} selected sheet(s) and all their revisions?`)) return;
+    try {
+      const json = await api('/api/drawings/bulk-delete', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ project_id: projectId(), drawing_ids: ids }),
+      });
+      toast(`Deleted ${json.deleted_count} sheet(s)`);
+      if (state.openDrawing && json.deleted_ids?.includes(state.openDrawing.id)) closeViewer();
+      state.selectedDrawingIds.clear();
+      updateBulkBar();
+      await Promise.all([loadDashboard(), loadDrawings(), loadDrawingSets()]);
+    } catch (e) { alert(e.message); }
   }
 
   async function renderThumbJob(canvas, drawing) {
@@ -275,7 +440,8 @@
     }
     grid.className = SECTION_GRID_CLASS;
     grid.innerHTML = items.map(d => `
-      <div class="bg-zinc-800 border border-zinc-700 rounded-md overflow-hidden hover:border-sky-600 cursor-pointer group relative" ondblclick="CasePMDrawings.openViewer(${d.id})" onclick="CasePMDrawings.previewSheet(${d.id})">
+      <div class="bg-zinc-800 border border-zinc-700 rounded-md overflow-hidden hover:border-sky-600 cursor-pointer group relative ${isSheetSelected(d.id) ? 'draw-sheet-selected' : ''}" ondblclick="CasePMDrawings.openViewer(${d.id})" onclick="CasePMDrawings.onSheetClick(${d.id}, event)">
+        ${state.selectionMode ? `<input type="checkbox" class="draw-select-checkbox" ${isSheetSelected(d.id) ? 'checked' : ''} onclick="event.stopPropagation(); CasePMDrawings.toggleSheetSelection(${d.id})">` : ''}
         <button type="button" onclick="event.stopPropagation(); CasePMDrawings.deleteDrawing(${d.id})" class="absolute bottom-2 right-2 z-10 opacity-0 group-hover:opacity-100 px-2 py-1 rounded bg-red-900/90 hover:bg-red-800 text-[10px] text-red-100" title="Delete sheet"><i class="fa-solid fa-trash"></i></button>
         <div class="aspect-[4/3] bg-zinc-900 relative">
           <canvas id="thumb-${d.id}" class="w-full h-full object-contain"></canvas>
@@ -284,6 +450,7 @@
         </div>
         <div class="p-2">
           <div class="text-xs font-medium truncate">${esc(d.title || 'Untitled')}</div>
+          <div class="text-[10px] text-violet-300/90 truncate" title="${esc(d.set_name || '')}">${esc(d.set_name || 'Unnamed Set')}</div>
           <div class="text-[10px] text-zinc-500 mt-0.5">${esc(d.discipline)} · ${fmtDate(d.drawing_date)}</div>
         </div>
       </div>`).join('');
@@ -298,13 +465,17 @@
     if (!tbody) return;
     const rows = filteredDrawings();
     if (!rows.length) {
-      tbody.innerHTML = '<tr><td colspan="9" class="px-6 py-12 text-center text-zinc-500">No drawings found.</td></tr>';
+      tbody.innerHTML = '<tr><td colspan="11" class="px-6 py-12 text-center text-zinc-500">No drawings found.</td></tr>';
       return;
     }
     tbody.innerHTML = rows.map(d => `
-      <tr class="border-b border-zinc-800 hover:bg-zinc-800/50 cursor-pointer" ondblclick="CasePMDrawings.openViewer(${d.id})">
+      <tr class="border-b border-zinc-800 hover:bg-zinc-800/50 cursor-pointer ${isSheetSelected(d.id) ? 'bg-sky-950/30' : ''}" ondblclick="CasePMDrawings.openViewer(${d.id})" onclick="CasePMDrawings.onSheetClick(${d.id}, event)">
+        <td class="px-2 py-3 text-center" onclick="event.stopPropagation()">
+          <input type="checkbox" class="accent-sky-500" ${isSheetSelected(d.id) ? 'checked' : ''} onchange="CasePMDrawings.toggleSheetSelection(${d.id}, this.checked)">
+        </td>
         <td class="px-4 py-3 font-mono text-sky-400">${esc(d.sheet_number)}</td>
-        <td class="px-4 py-3 max-w-[280px] truncate">${esc(d.title)}</td>
+        <td class="px-4 py-3 max-w-[220px] truncate">${esc(d.title)}</td>
+        <td class="px-4 py-3 text-xs text-violet-300 max-w-[140px] truncate" title="${esc(d.set_name || '')}">${esc(d.set_name || '—')}</td>
         <td class="px-4 py-3 text-xs">${esc(d.discipline)}</td>
         <td class="px-4 py-3 text-xs font-mono">${esc(d.section_prefix)}</td>
         <td class="px-4 py-3 text-center text-xs">${esc(d.revision_label || '—')}</td>
@@ -315,6 +486,12 @@
           <button type="button" onclick="event.stopPropagation(); CasePMDrawings.deleteDrawing(${d.id})" class="px-2 py-1 rounded bg-red-900/60 hover:bg-red-800 text-[10px] text-red-100" title="Delete sheet"><i class="fa-solid fa-trash"></i></button>
         </td>
       </tr>`).join('');
+    const allCb = document.getElementById('drawTableSelectAll');
+    if (allCb) {
+      const visible = rows.map(d => d.id);
+      allCb.checked = visible.length > 0 && visible.every(id => state.selectedDrawingIds.has(id));
+      allCb.indeterminate = visible.some(id => state.selectedDrawingIds.has(id)) && !allCb.checked;
+    }
   }
 
   function switchView(view) {
@@ -379,34 +556,44 @@
   }
 
   async function openViewer(id, opts) {
-    const detail = await api(`/api/drawings/${id}`);
-    state.openDrawing = state.drawings.find(x => x.id === id) || detail;
-    state.openDetail = detail;
-    state.revisions = detail.revisions || [];
-    state.markups = detail.markups || [];
-    state.pdfDoc = null;
-    state.pdfBytes = null;
-    state.pdfUrl = null;
-    state.viewScale = 1;
-    state.panX = 0;
-    state.panY = 0;
-    state.selectedMarkupId = null;
-    state.compareOverlayActive = false;
-    state.compareBaseRevisionId = null;
-    state.compareDiffFailed = false;
-    state.compareRenderMode = 'diff';
-    const currentRev = (detail.revisions || []).find(r => r.is_current);
-    state.viewingRevisionId = currentRev?.id || detail.revisions?.[0]?.id || null;
-    state.focusPin = opts || null;
-    state.previewDrawingId = id;
-    previewSheet(id);
-    switchView('viewer');
-    updateViewerCursor();
-    renderPropertiesPanel();
-    await renderPdf(true);
-    renderViewerSidebar();
-    if (opts && (opts.focusX != null || opts.focusY != null)) {
-      focusOnPoint(opts.focusX, opts.focusY);
+    try {
+      const detail = await api(`/api/drawings/${id}`);
+      state.openDrawing = state.drawings.find(x => x.id === id) || detail;
+      state.openDetail = detail;
+      state.revisions = detail.revisions || [];
+      state.markups = detail.markups || [];
+      state.pdfDoc = null;
+      state.pdfBytes = null;
+      state.pdfUrl = null;
+      state.viewScale = 1;
+      state.panX = 0;
+      state.panY = 0;
+      state.selectedMarkupId = null;
+      state.compareOverlayActive = false;
+      state.compareBaseRevisionId = null;
+      state.compareDiffFailed = false;
+      state.compareRenderMode = 'diff';
+      const currentRev = (detail.revisions || []).find(r => r.is_current);
+      state.viewingRevisionId = currentRev?.id || detail.revisions?.[0]?.id || null;
+      state.focusPin = opts || null;
+      state.previewDrawingId = id;
+      previewSheet(id);
+      switchView('viewer');
+      updateViewerCursor();
+      renderPropertiesPanel();
+      await renderPdf(true);
+      renderViewerSidebar();
+      if (opts && (opts.focusX != null || opts.focusY != null)) {
+        focusOnPoint(opts.focusX, opts.focusY);
+      }
+    } catch (e) {
+      toast(e.message || 'Drawing not found — it may have been deleted');
+      const p = new URLSearchParams(global.location.search);
+      if (p.get('drawing_id')) {
+        p.delete('drawing_id');
+        const qs = p.toString();
+        global.history.replaceState({}, '', qs ? `${global.location.pathname}?${qs}` : global.location.pathname);
+      }
     }
   }
 
@@ -420,7 +607,8 @@
   function renderViewerChrome() {
     const title = document.getElementById('viewerSheetTitle');
     if (title && state.openDrawing) {
-      title.textContent = `${state.openDrawing.sheet_number} — ${state.openDrawing.title || ''}`;
+      const setLabel = state.openDrawing.set_name ? ` · ${state.openDrawing.set_name}` : '';
+      title.textContent = `${state.openDrawing.sheet_number} — ${state.openDrawing.title || ''}${setLabel}`;
     }
     const revSel = document.getElementById('viewerRevisionSelect');
     if (revSel && state.revisions.length) {
@@ -945,6 +1133,7 @@
     const selStroke = selected ? '#fbbf24' : color;
     const selSw = selected ? sw + 2 : sw;
     const scallop = style.cloudScallop || state.markupStyle.cloudScallop || 18;
+    const dash = style.strokeDash ? ` stroke-dasharray="${style.strokeDash}"` : '';
     const id = m.id;
     let hit = '';
     let visual = '';
@@ -955,20 +1144,20 @@
       hit = `<line data-markup-id="${id}" x1="${pts[0]}" y1="${pts[1]}" x2="${pts[2]}" y2="${pts[3]}" stroke="transparent" stroke-width="22" pointer-events="stroke"/>`;
       const label = m.markup_type === 'measure' && m.measurement_value != null
         ? `<text x="${pts[2]}" y="${pts[3] - 8}" fill="${selStroke}" font-size="12" font-weight="bold">${m.measurement_value} ${m.measurement_unit || ''}</text>` : '';
-      visual = `<line x1="${pts[0]}" y1="${pts[1]}" x2="${pts[2]}" y2="${pts[3]}" stroke="${selStroke}" stroke-width="${selSw}" opacity="${op}" pointer-events="none"/>${label}`;
+      visual = `<line x1="${pts[0]}" y1="${pts[1]}" x2="${pts[2]}" y2="${pts[3]}" stroke="${selStroke}" stroke-width="${selSw}" opacity="${op}"${dash} pointer-events="none"/>${label}`;
     } else if (m.markup_type === 'rect' || m.markup_type === 'highlight') {
       hit = `<rect data-markup-id="${id}" x="${geom.x}" y="${geom.y}" width="${geom.w}" height="${geom.h}" fill="transparent" pointer-events="all"/>`;
-      visual = `<rect x="${geom.x}" y="${geom.y}" width="${geom.w}" height="${geom.h}" stroke="${selStroke}" stroke-width="${selSw}" fill="${fill}" opacity="${op}" pointer-events="none"/>`;
+      visual = `<rect x="${geom.x}" y="${geom.y}" width="${geom.w}" height="${geom.h}" stroke="${selStroke}" stroke-width="${selSw}" fill="${fill}" opacity="${op}"${dash} pointer-events="none"/>`;
     } else if (m.markup_type === 'cloud') {
       hit = `<rect data-markup-id="${id}" x="${geom.x}" y="${geom.y}" width="${geom.w}" height="${geom.h}" fill="transparent" pointer-events="all"/>`;
-      visual = `<path d="${revisionCloudPath(geom.x, geom.y, geom.w, geom.h, scallop)}" stroke="${selStroke}" stroke-width="${selSw}" fill="none" opacity="${op}" pointer-events="none"/>`;
+      visual = `<path d="${revisionCloudPath(geom.x, geom.y, geom.w, geom.h, scallop)}" stroke="${selStroke}" stroke-width="${selSw}" fill="none" opacity="${op}"${dash} pointer-events="none"/>`;
     } else if (m.markup_type === 'arrow' && geom.points) {
       const p = geom.points;
       hit = `<line data-markup-id="${id}" x1="${p[0]}" y1="${p[1]}" x2="${p[2]}" y2="${p[3]}" stroke="transparent" stroke-width="22" pointer-events="stroke"/>`;
-      visual = `<line x1="${p[0]}" y1="${p[1]}" x2="${p[2]}" y2="${p[3]}" stroke="${selStroke}" stroke-width="${selSw}" opacity="${op}" marker-end="url(#arrowhead)" pointer-events="none"/>`;
+      visual = `<line x1="${p[0]}" y1="${p[1]}" x2="${p[2]}" y2="${p[3]}" stroke="${selStroke}" stroke-width="${selSw}" opacity="${op}"${dash} marker-end="url(#arrowhead)" pointer-events="none"/>`;
     } else if (m.markup_type === 'ellipse') {
       hit = `<ellipse data-markup-id="${id}" cx="${geom.x + geom.w / 2}" cy="${geom.y + geom.h / 2}" rx="${geom.w / 2}" ry="${geom.h / 2}" fill="transparent" pointer-events="all"/>`;
-      visual = `<ellipse cx="${geom.x + geom.w / 2}" cy="${geom.y + geom.h / 2}" rx="${geom.w / 2}" ry="${geom.h / 2}" stroke="${selStroke}" stroke-width="${selSw}" fill="${fill}" opacity="${op}" pointer-events="none"/>`;
+      visual = `<ellipse cx="${geom.x + geom.w / 2}" cy="${geom.y + geom.h / 2}" rx="${geom.w / 2}" ry="${geom.h / 2}" stroke="${selStroke}" stroke-width="${selSw}" fill="${fill}" opacity="${op}"${dash} pointer-events="none"/>`;
     } else if (m.markup_type === 'callout' && geom.points) {
       const p = geom.points;
       const bx = Math.min(p[0], p[2]);
@@ -978,8 +1167,8 @@
       const tipX = geom.tipX != null ? geom.tipX : p[0];
       const tipY = geom.tipY != null ? geom.tipY : p[3];
       hit = `<rect data-markup-id="${id}" x="${bx}" y="${by}" width="${bw}" height="${bh}" fill="transparent" pointer-events="all"/>`;
-      visual = `<line x1="${tipX}" y1="${tipY}" x2="${bx + bw / 2}" y2="${by + bh}" stroke="${selStroke}" stroke-width="${selSw}" opacity="${op}" pointer-events="none"/>
-        <rect x="${bx}" y="${by}" width="${bw}" height="${bh}" stroke="${selStroke}" stroke-width="${selSw}" fill="rgba(24,24,27,0.85)" opacity="${op}" pointer-events="none"/>
+      visual = `<line x1="${tipX}" y1="${tipY}" x2="${bx + bw / 2}" y2="${by + bh}" stroke="${selStroke}" stroke-width="${selSw}" opacity="${op}"${dash} pointer-events="none"/>
+        <rect x="${bx}" y="${by}" width="${bw}" height="${bh}" stroke="${selStroke}" stroke-width="${selSw}" fill="rgba(24,24,27,0.85)" opacity="${op}"${dash} pointer-events="none"/>
         <text x="${bx + 8}" y="${by + 20}" fill="${selStroke}" font-size="${style.fontSize || 13}" pointer-events="none">${esc(m.label || '')}</text>`;
     } else if (m.markup_type === 'text' || m.markup_type === 'textbox') {
       const tw = geom.w || 180;
@@ -1107,6 +1296,24 @@
     toast('Use format like 1/4"=1\' or 1:50');
   }
 
+  function propNum(label, id, value, min, max, step) {
+    return `<label class="flex items-center justify-between gap-2 text-[10px] text-zinc-400 mb-1.5">
+      <span>${esc(label)}</span>
+      <input type="number" id="${id}" value="${value}" min="${min}" max="${max}" step="${step}" class="w-20 bg-zinc-900 border border-zinc-700 rounded px-2 py-1 text-[10px] text-right text-white">
+    </label>`;
+  }
+
+  function propSlider(label, id, value, min, max, step) {
+    return `<label class="block text-[10px] text-zinc-400 mb-1">${esc(label)} <span id="${id}Val" class="text-zinc-500">${value}</span></label>
+      <input type="range" id="${id}" min="${min}" max="${max}" step="${step}" value="${value}" class="w-full accent-sky-500 mb-2">`;
+  }
+
+  const DASH_PRESETS = [
+    { label: 'Solid', value: '' },
+    { label: 'Dashed', value: '10 6' },
+    { label: 'Dotted', value: '2 4' },
+  ];
+
   function renderPropertiesPanel() {
     const el = document.getElementById('markupPropertiesPanel');
     if (!el) return;
@@ -1120,15 +1327,42 @@
     const showText = type === 'text' || type === 'textbox' || type === 'callout';
     const showMeasure = type === 'measure' || (isSelected && ctx?.markup_type === 'measure');
     const showFill = ['rect', 'highlight', 'ellipse', 'text', 'textbox'].includes(type);
+    const showSize = isSelected && ['rect', 'highlight', 'ellipse', 'cloud', 'textbox'].includes(type);
+    const geom = isSelected && ctx?.geometry ? resolveGeom(ctx.geometry) : null;
+    const color = style.color || '#38bdf8';
+    const lineWidth = style.lineWidth || 2;
+    const opacity = style.opacity ?? 1;
+    const fillOpacity = style.fillOpacity ?? (type === 'highlight' ? 0.25 : 0.75);
+    const cloudScallop = style.cloudScallop || 18;
+    const fontSize = style.fontSize || 14;
+    const strokeDash = style.strokeDash || '';
 
     el.innerHTML = `
-      <div class="text-[10px] uppercase text-zinc-500 mb-2">${esc(title)}</div>
-      ${showLine ? propChips('Color', COLOR_PRESETS, style.color || '#38bdf8', 'color') : ''}
-      ${showLine ? propChips('Line weight', WIDTH_PRESETS, style.lineWidth || 2, 'lineWidth') : ''}
-      ${showLine ? propChips('Opacity', OPACITY_PRESETS, style.opacity ?? 1, 'opacity') : ''}
-      ${showFill ? propChips('Fill', OPACITY_PRESETS, style.fillOpacity ?? (type === 'highlight' ? 0.25 : 0.75), 'fillOpacity') : ''}
-      ${showCloud ? propChips('Cloud size', CLOUD_PRESETS, style.cloudScallop || 18, 'cloudScallop') : ''}
-      ${showText ? propChips('Font size', FONT_PRESETS, style.fontSize || 14, 'fontSize') : ''}
+      <div class="text-[10px] uppercase text-zinc-500 mb-2 sticky top-0 bg-zinc-800/95 py-1 z-10">${esc(title)}</div>
+      ${showLine ? `
+        <label class="block text-[10px] text-zinc-400 mb-1">Color</label>
+        <div class="flex items-center gap-2 mb-2">
+          <input type="color" id="propColorPicker" value="${color}" class="w-8 h-8 rounded border border-zinc-700 bg-zinc-900 p-0.5">
+          <input type="text" id="propColorHex" value="${esc(color)}" class="flex-1 bg-zinc-900 border border-zinc-700 rounded px-2 py-1 text-[10px] font-mono">
+        </div>
+        ${propChips('Quick colors', COLOR_PRESETS, color, 'color')}
+      ` : ''}
+      ${showLine ? propNum('Line weight (px)', 'propLineWidth', lineWidth, 0.5, 24, 0.5) : ''}
+      ${showLine ? propChips('Line presets', WIDTH_PRESETS, lineWidth, 'lineWidth') : ''}
+      ${showLine ? propSlider('Stroke opacity', 'propOpacity', Math.round(opacity * 100), 5, 100, 5) : ''}
+      ${showLine ? propChips('Line style', DASH_PRESETS, strokeDash, 'strokeDash') : ''}
+      ${showFill ? propSlider('Fill opacity', 'propFillOpacity', Math.round(fillOpacity * 100), 0, 100, 5) : ''}
+      ${showCloud ? propNum('Cloud scallop (px)', 'propCloudScallop', cloudScallop, 6, 48, 1) : ''}
+      ${showCloud ? propChips('Cloud presets', CLOUD_PRESETS, cloudScallop, 'cloudScallop') : ''}
+      ${showText ? propNum('Font size (px)', 'propFontSize', fontSize, 8, 72, 1) : ''}
+      ${showText ? propChips('Font presets', FONT_PRESETS, fontSize, 'fontSize') : ''}
+      ${showSize && geom ? `
+        <div class="border-t border-zinc-700 pt-2 mt-2">
+          <div class="text-[10px] uppercase text-zinc-500 mb-2">Size (px)</div>
+          ${propNum('Width', 'propGeomW', Math.round(geom.w || 0), 1, 5000, 1)}
+          ${propNum('Height', 'propGeomH', Math.round(geom.h || 0), 1, 5000, 1)}
+        </div>
+      ` : ''}
       ${isSelected && showText ? `
         <label class="block text-[10px] text-zinc-400 mb-1">Text</label>
         <textarea id="propTextLabel" rows="3" class="w-full bg-zinc-900 border border-zinc-700 rounded p-2 text-xs mb-2">${esc(ctx.label || '')}</textarea>
@@ -1162,10 +1396,61 @@
         }
         if (['lineWidth', 'cloudScallop', 'fontSize'].includes(key)) val = parseInt(val, 10);
         if (['opacity', 'fillOpacity'].includes(key)) val = parseFloat(val);
+        if (key === 'strokeDash') val = val || '';
         applyMarkupProperty({ [key]: val });
         renderPropertiesPanel();
       });
     });
+    const bindNum = (id, key, scale) => {
+      const input = document.getElementById(id);
+      if (!input) return;
+      const apply = () => {
+        let val = parseFloat(input.value);
+        if (Number.isNaN(val)) return;
+        if (scale) val = val / scale;
+        applyMarkupProperty({ [key]: val });
+        renderMarkupOverlay();
+      };
+      input.addEventListener('change', apply);
+      input.addEventListener('blur', apply);
+    };
+    bindNum('propLineWidth', 'lineWidth');
+    bindNum('propCloudScallop', 'cloudScallop');
+    bindNum('propFontSize', 'fontSize');
+    const opSlider = document.getElementById('propOpacity');
+    if (opSlider) {
+      opSlider.addEventListener('input', () => {
+        document.getElementById('propOpacityVal').textContent = opSlider.value;
+        applyMarkupProperty({ opacity: parseInt(opSlider.value, 10) / 100 });
+        renderMarkupOverlay();
+      });
+    }
+    const fillSlider = document.getElementById('propFillOpacity');
+    if (fillSlider) {
+      fillSlider.addEventListener('input', () => {
+        document.getElementById('propFillOpacityVal').textContent = fillSlider.value;
+        applyMarkupProperty({ fillOpacity: parseInt(fillSlider.value, 10) / 100 });
+        renderMarkupOverlay();
+      });
+    }
+    const colorPicker = document.getElementById('propColorPicker');
+    const colorHex = document.getElementById('propColorHex');
+    if (colorPicker) colorPicker.addEventListener('input', () => { applyMarkupProperty({ color: colorPicker.value }); if (colorHex) colorHex.value = colorPicker.value; renderMarkupOverlay(); });
+    if (colorHex) colorHex.addEventListener('change', () => { applyMarkupProperty({ color: colorHex.value }); renderMarkupOverlay(); });
+    const applyGeomSize = async () => {
+      if (!state.selectedMarkupId) return;
+      const m = state.markups.find(x => x.id === state.selectedMarkupId);
+      if (!m) return;
+      const w = parseFloat(document.getElementById('propGeomW')?.value);
+      const h = parseFloat(document.getElementById('propGeomH')?.value);
+      if (Number.isNaN(w) || Number.isNaN(h)) return;
+      const g = resolveGeom(m.geometry || {});
+      m.geometry = normalizeGeometry({ x: g.x, y: g.y, w, h });
+      await persistMarkup(m, { geometry: m.geometry });
+      renderMarkupOverlay();
+    };
+    document.getElementById('propGeomW')?.addEventListener('change', applyGeomSize);
+    document.getElementById('propGeomH')?.addEventListener('change', applyGeomSize);
     const textArea = document.getElementById('propTextLabel');
     if (textArea && isSelected) {
       textArea.addEventListener('change', async () => {
@@ -1645,6 +1930,7 @@
       toast('Open a sheet in the viewer first');
       return;
     }
+    loadDrawingSets().then(() => {
     const dialog = document.getElementById('compareDialog');
     if (!dialog) return;
     const current = state.revisions.find(r => r.is_current) || state.revisions[0];
@@ -1671,11 +1957,15 @@
     }
     const setPick = document.getElementById('compareSetPick');
     if (setPick) {
-      const sets = [...new Set(state.revisions.map(r => r.set_name).filter(Boolean))];
+      const viewing = state.revisions.find(r => r.id === (state.viewingRevisionId || state.revisions.find(x => x.is_current)?.id));
+      const names = state.drawingSets.length
+        ? state.drawingSets.map(s => s.name)
+        : [...new Set(state.revisions.map(r => r.set_name).filter(Boolean))];
       setPick.innerHTML = '<option value="">— Compare to another drawing set —</option>'
-        + sets.filter(s => s !== viewing?.set_name).map(s => `<option value="${esc(s)}">${esc(s)}</option>`).join('');
+        + names.filter(s => s !== viewing?.set_name).map(s => `<option value="${esc(s)}">${esc(s)}</option>`).join('');
     }
     dialog.showModal();
+    });
   }
 
   async function startCompare(mode) {
@@ -1879,8 +2169,10 @@
         document.getElementById('drawPreviewOpenBtn')?.classList.add('hidden');
         document.getElementById('drawPreviewDeleteBtn')?.classList.add('hidden');
       }
+      state.selectedDrawingIds.delete(id);
+      updateBulkBar();
       toast(`Deleted ${label}`);
-      await Promise.all([loadDashboard(), loadDrawings()]);
+      await Promise.all([loadDashboard(), loadDrawings(), loadDrawingSets()]);
     } catch (err) { alert(err.message); }
   }
 
@@ -1950,7 +2242,7 @@
         const reviewNote = json.needs_review_count ? ` (${json.needs_review_count} need sheet numbers)` : '';
         toast(json.split ? `Imported ${count} sheets from drawing set${reviewNote}` : `Uploaded ${json.drawing?.sheet_number || count + ' sheet(s)'}`);
         showUploadResults(json);
-        await Promise.all([loadDashboard(), loadDrawings()]);
+        await Promise.all([loadDashboard(), loadDrawings(), loadDrawingSets()]);
       } catch (err) {
         alert(err.message);
       }
@@ -1981,7 +2273,7 @@
       const reviewNote = json.needs_review_count ? ` (${json.needs_review_count} need sheet numbers)` : '';
       toast(json.split ? `Imported ${count} sheets from drawing set${reviewNote}` : `Uploaded ${json.drawing?.sheet_number || count + ' sheet(s)'}`);
       showUploadResults(json);
-      await Promise.all([loadDashboard(), loadDrawings()]);
+      await Promise.all([loadDashboard(), loadDrawings(), loadDrawingSets()]);
     } catch (err) {
       alert(err.message);
     } finally {
@@ -2009,12 +2301,12 @@
       if (json.skipped?.length) alert(`${msg}. Skipped: ${json.skipped.length}. See console.`);
       else toast(msg);
       console.log('Substitute result', json);
-      await Promise.all([loadDashboard(), loadDrawings()]);
+      await Promise.all([loadDashboard(), loadDrawings(), loadDrawingSets()]);
     } catch (err) { alert(err.message); }
   }
 
   function bindFilters() {
-    ['drawSearch', 'drawDisciplineFilter', 'drawStatusFilter'].forEach(id => {
+    ['drawSearch', 'drawDisciplineFilter', 'drawStatusFilter', 'drawSetFilter'].forEach(id => {
       const el = document.getElementById(id);
       if (!el) return;
       el.addEventListener(el.tagName === 'INPUT' ? 'input' : 'change', () => renderActiveView());
@@ -2043,7 +2335,7 @@
         document.getElementById('printMenu')?.classList.add('hidden');
       }
     });
-    await Promise.all([loadDashboard(), loadDrawings(), loadRfis()]);
+    await Promise.all([loadDashboard(), loadDrawings(), loadRfis(), loadDrawingSets()]);
     await handleDeepLink();
   }
 
@@ -2081,6 +2373,17 @@
     submitUpload,
     submitSubstitute,
     deleteDrawing,
+    deleteSelectedDrawings,
+    deleteDrawingSet,
+    toggleSelectionMode,
+    toggleSheetSelection,
+    onSheetClick,
+    selectAllVisible,
+    clearSelection,
+    toggleSelectAllVisible,
+    openSetsModal,
+    filterBySet,
+    loadDrawingSets,
     deletePreviewedSheet,
     deleteOpenSheet,
     showUploadResults,

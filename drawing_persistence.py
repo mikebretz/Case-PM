@@ -1362,7 +1362,33 @@ def process_pages_from_upload(
     return created, needs_review
 
 
-def delete_drawing_record(db, Drawing, DrawingRevision, DrawingMarkup, drawing):
+def delete_drawings_by_set_name(db, Drawing, DrawingRevision, DrawingMarkup, project_id, set_name):
+    """Delete every sheet whose current revision belongs to the given drawing set name."""
+    target = (set_name or '').strip() or 'Unnamed Set'
+    drawings = Drawing.query.filter_by(project_id=int(project_id)).all()
+    deleted_ids = []
+    for drawing in drawings:
+        rev = DrawingRevision.query.get(drawing.current_revision_id) if drawing.current_revision_id else None
+        if not rev:
+            rev = DrawingRevision.query.filter_by(drawing_id=drawing.id, is_current=True).first()
+        rev_set = (rev.set_name if rev else None) or 'Unnamed Set'
+        if rev_set == target:
+            delete_drawing_record(db, Drawing, DrawingRevision, DrawingMarkup, drawing)
+            deleted_ids.append(drawing.id)
+    return deleted_ids
+
+
+def delete_drawings_bulk(db, Drawing, DrawingRevision, DrawingMarkup, project_id, drawing_ids):
+    """Delete multiple drawing sheets by id."""
+    deleted_ids = []
+    for drawing_id in drawing_ids:
+        drawing = Drawing.query.filter_by(id=int(drawing_id), project_id=int(project_id)).first()
+        if not drawing:
+            continue
+        delete_drawing_record(db, Drawing, DrawingRevision, DrawingMarkup, drawing)
+        deleted_ids.append(drawing.id)
+    return deleted_ids
+
     """Remove drawing, revisions, markups, and page files from disk."""
     drawing_id = drawing.id
     revisions = DrawingRevision.query.filter_by(drawing_id=drawing_id).all()
