@@ -2778,7 +2778,7 @@ def api_drawing_thumbnail(drawing_id):
 @login_required
 def api_upload_drawing():
     """Upload one or more drawing pages. Multi-page PDFs are split automatically."""
-    from drawing_persistence import split_pdf_to_pages, process_pages_from_upload
+    from drawing_persistence import split_pdf_to_pages, process_pages_from_upload, extract_pdf_page_text
     try:
         project_id = request.form.get('project_id', type=int) or get_current_project_id()
         if not project_id:
@@ -2800,15 +2800,15 @@ def api_upload_drawing():
 
         pages = []
         try:
-            from pypdf import PdfReader
-            reader = PdfReader(dest)
-            if len(reader.pages) > 1:
+            import fitz
+            doc = fitz.open(dest)
+            page_count = len(doc)
+            doc.close()
+            if page_count > 1:
                 batch_dir = os.path.join(folder, f'set_{ts}')
                 pages = split_pdf_to_pages(dest, batch_dir)
             else:
-                text = ''
-                if reader.pages:
-                    text = reader.pages[0].extract_text() or ''
+                text = extract_pdf_page_text(dest, 0) if page_count == 1 else ''
                 pages = [{
                     'page_index': 0,
                     'file_path': dest,
@@ -2816,12 +2816,29 @@ def api_upload_drawing():
                     'text': text,
                 }]
         except Exception:
-            pages = [{
-                'page_index': 0,
-                'file_path': dest,
-                'filename': safe,
-                'text': '',
-            }]
+            try:
+                from pypdf import PdfReader
+                reader = PdfReader(dest)
+                if len(reader.pages) > 1:
+                    batch_dir = os.path.join(folder, f'set_{ts}')
+                    pages = split_pdf_to_pages(dest, batch_dir)
+                else:
+                    text = ''
+                    if reader.pages:
+                        text = reader.pages[0].extract_text() or ''
+                    pages = [{
+                        'page_index': 0,
+                        'file_path': dest,
+                        'filename': safe,
+                        'text': text,
+                    }]
+            except Exception:
+                pages = [{
+                    'page_index': 0,
+                    'file_path': dest,
+                    'filename': safe,
+                    'text': '',
+                }]
 
         if not pages:
             return jsonify({'error': 'Could not read PDF pages. The file may be corrupt or password-protected.'}), 400

@@ -21,8 +21,19 @@
     tool: 'pan',
     layerFilter: { personal: true, published: true },
     scale: 1,
+    viewScale: 1,
     panX: 0,
     panY: 0,
+    baseCanvasSize: { w: 0, h: 0 },
+    pdfBytes: null,
+    pdfUrl: null,
+    renderGen: 0,
+    isPanning: false,
+    panAnchor: null,
+    selectedMarkupId: null,
+    markupStyle: { color: '#38bdf8', lineWidth: 2 },
+    thumbQueue: [],
+    thumbBusy: false,
     pdfDoc: null,
     pdfPage: 1,
     renderTask: null,
@@ -138,14 +149,33 @@
     });
   }
 
-  async function renderThumb(canvas, drawing) {
-    if (!global.pdfjsLib || !drawing.file_url) {
-      const ctx = canvas.getContext('2d');
+  async function renderThumbJob(canvas, drawing) {
+    if (!canvas) return;
+    const ctx = canvas.getContext('2d');
+    const drawPlaceholder = (label) => {
+      canvas.width = 160;
+      canvas.height = 120;
       ctx.fillStyle = '#27272a';
       ctx.fillRect(0, 0, canvas.width, canvas.height);
       ctx.fillStyle = '#71717a';
-      ctx.font = '12px sans-serif';
-      ctx.fillText(drawing.sheet_number, 10, 24);
+      ctx.font = '11px sans-serif';
+      ctx.fillText(label || drawing.sheet_number, 8, 20);
+    };
+    if (drawing.thumbnail_url) {
+      try {
+        const res = await fetch(drawing.thumbnail_url, { credentials: 'same-origin' });
+        if (res.ok && res.headers.get('content-type')?.includes('image')) {
+          const blob = await res.blob();
+          const img = await createImageBitmap(blob);
+          canvas.width = img.width;
+          canvas.height = img.height;
+          ctx.drawImage(img, 0, 0);
+          return;
+        }
+      } catch { /* fall through to PDF */ }
+    }
+    if (!global.pdfjsLib || !drawing.file_url) {
+      drawPlaceholder(drawing.sheet_number);
       return;
     }
     try {
@@ -153,15 +183,28 @@
       const buf = await res.arrayBuffer();
       const pdf = await pdfjsLib.getDocument({ data: buf.slice(0) }).promise;
       const page = await pdf.getPage(1);
-      const viewport = page.getViewport({ scale: 0.25 });
+      const viewport = page.getViewport({ scale: 0.2, rotation: page.rotate });
       canvas.width = viewport.width;
       canvas.height = viewport.height;
-      await page.render({ canvasContext: canvas.getContext('2d'), viewport }).promise;
+      await page.render({ canvasContext: ctx, viewport }).promise;
     } catch {
-      const ctx = canvas.getContext('2d');
-      ctx.fillStyle = '#27272a';
-      ctx.fillRect(0, 0, canvas.width, canvas.height);
+      drawPlaceholder(drawing.sheet_number);
     }
+  }
+
+  function renderThumb(canvas, drawing) {
+    state.thumbQueue.push({ canvas, drawing });
+    pumpThumbQueue();
+  }
+
+  function pumpThumbQueue() {
+    if (state.thumbBusy || !state.thumbQueue.length) return;
+    state.thumbBusy = true;
+    const job = state.thumbQueue.shift();
+    renderThumbJob(job.canvas, job.drawing).finally(() => {
+      state.thumbBusy = false;
+      if (state.thumbQueue.length) requestAnimationFrame(pumpThumbQueue);
+    });
   }
 
   function renderSectionGrid() {
@@ -283,16 +326,20 @@
     state.revisions = detail.revisions || [];
     state.markups = detail.markups || [];
     state.pdfDoc = null;
-    state.scale = 1;
+    state.pdfBytes = null;
+    state.pdfUrl = null;
+    state.viewScale = 1;
     state.panX = 0;
     state.panY = 0;
+    state.selectedMarkupId = null;
     state.compareOverlayActive = false;
     state.compareBaseRevisionId = null;
     state.focusPin = opts || null;
     state.previewDrawingId = id;
     previewSheet(id);
     switchView('viewer');
-    await renderPdf();
+    updateViewerCursor();
+    await renderPdf(true);
     renderViewerSidebar();
     if (opts && (opts.focusX != null || opts.focusY != null)) {
       focusOnPoint(opts.focusX, opts.focusY);
@@ -351,22 +398,27 @@
   }
 
   function canvasDims() {
-    const w = state.canvasSize.w || parseFloat(document.getElementById('drawMarkupSvg')?.getAttribute('width')) || 1;
-    const h = state.canvasSize.h || parseFloat(document.getElementById('drawMarkupSvg')?.getAttribute('height')) || 1;
+    const w = state.baseCanvasSize.w || parseFloat(document.getElementById('drawMarkupSvg')?.getAttribute('width')) || 1;
+    const h = state.baseCanvasSize.h || parseFloat(document.getElementById('drawMarkupSvg')?.getAttribute('height')) || 1;
     return { w, h };
   }
 
   function normalizeGeometry(geometry) {
     const { w, h } = canvasDims();
     const geom = { ...(geometry || {}) };
-    if (geom.x != null && geom.y != null && w > 0 && h > 0) {
+    if (!w || !h) return geom;
+    geom.canvasW = w;
+    geom.canvasH = h;
+    if (geom.x != null && geom.y != null) {
       geom.nx = geom.nx ?? geom.x / w;
       geom.ny = geom.ny ?? geom.y / h;
-      geom.canvasW = w;
-      geom.canvasH = h;
     }
-    if (geom.points && geom.points.length >= 4 && w > 0 && h > 0) {
-      geom.npoints = geom.points.map((v, i) => (i % 2 === 0 ? v / w : v / h));
+    if (geom.w != null && geom.h != null) {
+      geom.nw = geom.nw ?? geom.w / w;
+      geom.nh = geom.nh ?? geom.h / h;
+    }
+    if (geom.points && geom.points.length >= 4) {
+      geom.npoints = geom.npoints ?? geom.points.map((v, i) => (i % 2 === 0 ? v / w : v / h));
     }
     return geom;
   }
@@ -374,23 +426,123 @@
   function resolveGeom(geom) {
     if (!geom) return {};
     const { w, h } = canvasDims();
-    const cw = geom.canvasW || w;
-    const ch = geom.canvasH || h;
     const out = { ...geom };
-    if (geom.nx != null && geom.ny != null) {
-      out.x = geom.nx * w;
-      out.y = geom.ny * h;
-    }
+    if (geom.nx != null) out.x = geom.nx * w;
+    if (geom.ny != null) out.y = geom.ny * h;
+    if (geom.nw != null) out.w = geom.nw * w;
+    if (geom.nh != null) out.h = geom.nh * h;
     if (geom.npoints && geom.npoints.length >= 4) {
       out.points = geom.npoints.map((v, i) => (i % 2 === 0 ? v * w : v * h));
-    } else if (geom.points && cw && ch && (cw !== w || ch !== h)) {
-      out.points = geom.points.map((v, i) => (i % 2 === 0 ? (v / cw) * w : (v / ch) * h));
+    } else if (geom.points && geom.canvasW && geom.canvasH && (geom.canvasW !== w || geom.canvasH !== h)) {
+      out.points = geom.points.map((v, i) => (i % 2 === 0 ? (v / geom.canvasW) * w : (v / geom.canvasH) * h));
+    } else if (geom.points) {
+      out.points = geom.points.slice();
     }
-    if (geom.w != null && geom.h != null && cw && ch) {
-      out.w = (geom.w / cw) * w;
-      out.h = (geom.h / ch) * h;
+    if (geom.w != null && geom.h != null && geom.canvasW && geom.canvasH) {
+      out.w = (geom.w / geom.canvasW) * w;
+      out.h = (geom.h / geom.canvasH) * h;
     }
     return out;
+  }
+
+  function applyViewTransform() {
+    const stage = document.getElementById('drawViewerStage');
+    if (!stage) return;
+    stage.style.transform = `translate(${state.panX}px, ${state.panY}px) scale(${state.viewScale})`;
+  }
+
+  function fitToView() {
+    const wrap = document.getElementById('drawViewerWrap');
+    const { w, h } = state.baseCanvasSize;
+    if (!wrap || !w || !h) return;
+    const pad = 24;
+    const sx = (wrap.clientWidth - pad) / w;
+    const sy = (wrap.clientHeight - pad) / h;
+    state.viewScale = Math.max(0.15, Math.min(sx, sy, 4));
+    state.panX = Math.max(0, (wrap.clientWidth - w * state.viewScale) / 2);
+    state.panY = Math.max(0, (wrap.clientHeight - h * state.viewScale) / 2);
+    applyViewTransform();
+  }
+
+  function screenToDoc(evt) {
+    const wrap = document.getElementById('drawViewerWrap');
+    const rect = wrap.getBoundingClientRect();
+    const sx = evt.clientX - rect.left;
+    const sy = evt.clientY - rect.top;
+    return {
+      x: (sx - state.panX) / state.viewScale,
+      y: (sy - state.panY) / state.viewScale,
+    };
+  }
+
+  function cloudPath(x, y, w, h) {
+    const scallop = Math.min(16, Math.max(8, Math.min(w, h) / 6));
+    const bump = scallop / 2;
+    const edges = [
+      { x0: x, y0: y + h, x1: x, y1: y, bulge: -bump },
+      { x0: x, y0: y, x1: x + w, y1: y, bulge: bump },
+      { x0: x + w, y0: y, x1: x + w, y1: y + h, bulge: bump },
+      { x0: x + w, y0: y + h, x1: x, y1: y + h, bulge: -bump },
+    ];
+    let d = `M ${x} ${y + h}`;
+    edges.forEach(edge => {
+      const len = Math.hypot(edge.x1 - edge.x0, edge.y1 - edge.y0);
+      const steps = Math.max(2, Math.ceil(len / scallop));
+      const ux = (edge.x1 - edge.x0) / steps;
+      const uy = (edge.y1 - edge.y0) / steps;
+      let px = edge.x0;
+      let py = edge.y0;
+      const nx = edge.bulge > 0 ? -uy : uy;
+      const ny = edge.bulge > 0 ? ux : -ux;
+      for (let i = 0; i < steps; i++) {
+        const qx = px + ux * 0.5 + nx * Math.abs(edge.bulge);
+        const qy = py + uy * 0.5 + ny * Math.abs(edge.bulge);
+        const ex = px + ux;
+        const ey = py + uy;
+        d += ` Q ${qx} ${qy} ${ex} ${ey}`;
+        px = ex;
+        py = ey;
+      }
+    });
+    return d + ' Z';
+  }
+
+  function distToSegment(px, py, x1, y1, x2, y2) {
+    const dx = x2 - x1;
+    const dy = y2 - y1;
+    const len2 = dx * dx + dy * dy;
+    if (!len2) return Math.hypot(px - x1, py - y1);
+    let t = ((px - x1) * dx + (py - y1) * dy) / len2;
+    t = Math.max(0, Math.min(1, t));
+    return Math.hypot(px - (x1 + t * dx), py - (y1 + t * dy));
+  }
+
+  function hitTestMarkup(pt) {
+    const tol = 10 / state.viewScale;
+    let best = null;
+    let bestDist = tol;
+    visibleMarkups().forEach(m => {
+      const g = resolveGeom(m.geometry || {});
+      let d = Infinity;
+      if (m.markup_type === 'rfi_pin') {
+        d = Math.hypot(pt.x - (g.x || 0), pt.y - (g.y || 0));
+      } else if (['rect', 'cloud', 'highlight'].includes(m.markup_type)) {
+        const inside = pt.x >= g.x && pt.x <= g.x + g.w && pt.y >= g.y && pt.y <= g.y + g.h;
+        d = inside ? 0 : Math.min(
+          Math.abs(pt.x - g.x), Math.abs(pt.x - (g.x + g.w)),
+          Math.abs(pt.y - g.y), Math.abs(pt.y - (g.y + g.h))
+        );
+      } else if (g.points && g.points.length >= 4) {
+        d = distToSegment(pt.x, pt.y, g.points[0], g.points[1], g.points[2], g.points[3]);
+      } else if (g.x != null && g.y != null) {
+        d = Math.hypot(pt.x - g.x, pt.y - g.y);
+      }
+      if (d <= bestDist) {
+        bestDist = d;
+        best = m;
+      }
+    });
+    return best;
   }
 
   function focusOnPoint(x, y) {
@@ -398,10 +550,12 @@
     if (!w || !h) return;
     const px = (x <= 1 && x >= 0) ? x * w : x;
     const py = (y <= 1 && y >= 0) ? y * h : y;
-    state.scale = Math.min(2.2, Math.max(1.2, state.scale));
-    state.panX = Math.round((w / 2 - px) * 0.35);
-    state.panY = Math.round((h / 2 - py) * 0.35);
-    renderMarkupOverlay();
+    const wrap = document.getElementById('drawViewerWrap');
+    if (!wrap) return;
+    state.viewScale = Math.min(2.5, Math.max(1, state.viewScale));
+    state.panX = wrap.clientWidth / 2 - px * state.viewScale;
+    state.panY = wrap.clientHeight / 2 - py * state.viewScale;
+    applyViewTransform();
     state.tempMarkup = `<circle cx="${px}" cy="${py}" r="28" fill="none" stroke="#f97316" stroke-width="3" opacity="0.9"/><circle cx="${px}" cy="${py}" r="8" fill="#f97316" opacity="0.5"/>`;
     renderMarkupOverlay();
     setTimeout(() => { state.tempMarkup = null; renderMarkupOverlay(); }, 3000);
@@ -414,7 +568,7 @@
 
   async function renderPageToCanvas(pdfDoc, canvas, viewport) {
     const page = await pdfDoc.getPage(1);
-    const vp = viewport || page.getViewport({ scale: 1 });
+    const vp = viewport || page.getViewport({ scale: 1, rotation: page.rotate });
     canvas.width = vp.width;
     canvas.height = vp.height;
     await page.render({ canvasContext: canvas.getContext('2d'), viewport: vp }).promise;
@@ -453,7 +607,7 @@
     try {
       const oldBuf = await fetchPdfBytes(`/api/drawings/${state.openDrawing.id}/revisions/${state.compareBaseRevisionId}/file`);
       const oldDoc = await pdfjsLib.getDocument({ data: oldBuf.slice(0) }).promise;
-      const vp = state.lastViewport || (await state.pdfDoc.getPage(state.pdfPage)).getViewport({ scale: 1 });
+      const vp = state.lastViewport || (await state.pdfDoc.getPage(state.pdfPage)).getViewport({ scale: 1, rotation: (await state.pdfDoc.getPage(state.pdfPage)).rotate });
       const offOld = document.createElement('canvas');
       const offNew = document.createElement('canvas');
       await renderPageToCanvas(oldDoc, offOld, vp);
@@ -471,26 +625,58 @@
     }
   }
 
-  async function renderPdf() {
+  async function renderPdf(forceReload) {
     if (!state.openDrawing || !global.pdfjsLib) return;
     const canvas = document.getElementById('drawPdfCanvas');
     const wrap = document.getElementById('drawViewerWrap');
     if (!canvas || !wrap) return;
+
     const url = state.openDrawing.file_url;
-    const buf = await fetchPdfBytes(url);
-    if (state.renderTask) try { state.renderTask.cancel(); } catch {}
-    state.pdfDoc = await pdfjsLib.getDocument({ data: buf.slice(0) }).promise;
+    const gen = ++state.renderGen;
+
+    if (forceReload || !state.pdfDoc || state.pdfUrl !== url) {
+      if (state.renderTask) {
+        try { await state.renderTask.cancel(); } catch { /* cancelled */ }
+        state.renderTask = null;
+      }
+      state.pdfUrl = url;
+      const buf = await fetchPdfBytes(url);
+      if (gen !== state.renderGen) return;
+      state.pdfBytes = buf;
+      state.pdfDoc = await pdfjsLib.getDocument({ data: buf.slice(0) }).promise;
+    }
+
     const page = await state.pdfDoc.getPage(state.pdfPage);
-    const maxScale = document.fullscreenElement ? 4 : 3;
-    const baseScale = Math.min((wrap.clientWidth - 16) / page.getViewport({ scale: 1 }).width, (wrap.clientHeight - 16) / page.getViewport({ scale: 1 }).height, maxScale);
-    const viewport = page.getViewport({ scale: baseScale * state.scale });
+    const unscaled = page.getViewport({ scale: 1, rotation: page.rotate });
+    const fitScale = Math.min(
+      (wrap.clientWidth - 32) / unscaled.width,
+      (wrap.clientHeight - 32) / unscaled.height,
+      2.5
+    );
+    const viewport = page.getViewport({ scale: Math.max(0.5, fitScale), rotation: page.rotate });
+    if (gen !== state.renderGen) return;
+
     state.lastViewport = viewport;
     canvas.width = viewport.width;
     canvas.height = viewport.height;
-    state.canvasSize = { w: viewport.width, h: viewport.height };
+    state.baseCanvasSize = { w: viewport.width, h: viewport.height };
+
     const ctx = canvas.getContext('2d');
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
+    if (state.renderTask) {
+      try { await state.renderTask.cancel(); } catch { /* cancelled */ }
+    }
     state.renderTask = page.render({ canvasContext: ctx, viewport });
-    await state.renderTask.promise;
+    try {
+      await state.renderTask.promise;
+    } catch (err) {
+      if (err?.name === 'RenderingCancelledException') return;
+      console.warn('PDF render failed', err);
+      return;
+    }
+    if (gen !== state.renderGen) return;
+    state.renderTask = null;
+
     const overlay = document.getElementById('drawMarkupSvg');
     const diffCanvas = document.getElementById('drawDiffCanvas');
     if (overlay) {
@@ -500,9 +686,12 @@
       overlay.style.height = viewport.height + 'px';
     }
     if (diffCanvas) {
+      diffCanvas.width = viewport.width;
+      diffCanvas.height = viewport.height;
       diffCanvas.style.width = viewport.width + 'px';
       diffCanvas.style.height = viewport.height + 'px';
     }
+    fitToView();
     renderMarkupOverlay();
     await renderCompareDiff();
   }
@@ -514,22 +703,32 @@
   function renderMarkupOverlay() {
     const svg = document.getElementById('drawMarkupSvg');
     if (!svg) return;
-    const g = state.panX || state.panY ? `transform="translate(${state.panX},${state.panY})"` : '';
     const shapes = visibleMarkups().map(m => markupSvg(m)).join('');
-    svg.innerHTML = `<g ${g}>${shapes}${state.tempMarkup || ''}</g>`;
+    svg.innerHTML = `<defs>
+      <marker id="arrowhead" markerWidth="10" markerHeight="10" refX="8" refY="5" orient="auto" markerUnits="strokeWidth">
+        <polygon points="0 0, 10 5, 0 10" fill="context-stroke"/>
+      </marker>
+    </defs>${shapes}${state.tempMarkup || ''}`;
     svg.querySelectorAll('[data-rfi-pin]').forEach(el => {
       el.addEventListener('click', e => {
         e.stopPropagation();
         const rfiId = el.getAttribute('data-rfi-pin');
         const pid = projectId();
-        const sheet = state.openDrawing?.sheet_number || '';
-        const nx = el.getAttribute('data-nx');
-        const ny = el.getAttribute('data-ny');
         let href = `/rfis${rfiId ? `?rfi_id=${rfiId}` : ''}`;
         if (pid) href += `${href.includes('?') ? '&' : '?'}project_id=${pid}`;
         global.location.href = href;
       });
     });
+    svg.querySelectorAll('[data-markup-id]').forEach(el => {
+      el.addEventListener('click', e => {
+        e.stopPropagation();
+        if (state.tool !== 'select') return;
+        state.selectedMarkupId = parseInt(el.getAttribute('data-markup-id'), 10);
+        renderMarkupOverlay();
+        updateMarkupToolbar();
+      });
+    });
+    updateMarkupToolbar();
   }
 
   function markupSvg(m) {
@@ -538,39 +737,69 @@
     const color = style.color || (m.layer === 'published' ? '#22c55e' : '#38bdf8');
     const sw = style.lineWidth || 2;
     const fill = style.fill || (m.markup_type === 'highlight' ? 'rgba(250,204,21,0.25)' : 'none');
+    const selected = state.selectedMarkupId === m.id;
+    const sel = selected ? ' stroke="#fbbf24" stroke-width="' + (sw + 2) + '" opacity="1"' : '';
+    const dataId = ` data-markup-id="${m.id}"`;
     if (m.markup_type === 'line' || m.markup_type === 'measure') {
       const pts = geom.points || [];
       if (pts.length < 4) return '';
       const label = m.markup_type === 'measure' && m.measurement_value
         ? `<text x="${pts[2]}" y="${pts[3] - 6}" fill="${color}" font-size="11">${m.measurement_value} ${m.measurement_unit || ''}</text>` : '';
-      return `<line x1="${pts[0]}" y1="${pts[1]}" x2="${pts[2]}" y2="${pts[3]}" stroke="${color}" stroke-width="${sw}" />${label}`;
+      return `<line${dataId} x1="${pts[0]}" y1="${pts[1]}" x2="${pts[2]}" y2="${pts[3]}" stroke="${color}" stroke-width="${sw}"${sel} />${label}`;
     }
     if (m.markup_type === 'rect' || m.markup_type === 'highlight') {
-      return `<rect x="${geom.x}" y="${geom.y}" width="${geom.w}" height="${geom.h}" stroke="${color}" stroke-width="${sw}" fill="${fill}" />`;
+      return `<rect${dataId} x="${geom.x}" y="${geom.y}" width="${geom.w}" height="${geom.h}" stroke="${color}" stroke-width="${sw}" fill="${fill}"${sel} />`;
     }
     if (m.markup_type === 'cloud') {
       const x = geom.x || 0; const y = geom.y || 0; const w = geom.w || 80; const h = geom.h || 50;
-      return `<rect x="${x}" y="${y}" width="${w}" height="${h}" rx="12" stroke="${color}" stroke-width="${sw}" fill="none" stroke-dasharray="6 4" />`;
+      return `<path${dataId} d="${cloudPath(x, y, w, h)}" stroke="${color}" stroke-width="${sw}" fill="none"${sel} />`;
     }
     if (m.markup_type === 'arrow' && geom.points) {
       const p = geom.points;
-      return `<line x1="${p[0]}" y1="${p[1]}" x2="${p[2]}" y2="${p[3]}" stroke="${color}" stroke-width="${sw}" marker-end="url(#arrowhead)" />`;
+      return `<line${dataId} x1="${p[0]}" y1="${p[1]}" x2="${p[2]}" y2="${p[3]}" stroke="${color}" stroke-width="${sw}" marker-end="url(#arrowhead)"${sel} />`;
     }
     if (m.markup_type === 'text') {
-      return `<text x="${geom.x}" y="${geom.y}" fill="${color}" font-size="13">${esc(m.label || '')}</text>`;
+      return `<text${dataId} x="${geom.x}" y="${geom.y}" fill="${color}" font-size="${style.fontSize || 14}">${esc(m.label || '')}</text>`;
     }
     if (m.markup_type === 'rfi_pin') {
       const x = geom.x || 0; const y = geom.y || 0;
-      const nx = (m.geometry || {}).nx ?? (geom.x / (canvasDims().w || 1));
-      const ny = (m.geometry || {}).ny ?? (geom.y / (canvasDims().h || 1));
-      return `<g data-rfi-pin="${m.linked_rfi_id || ''}" data-nx="${nx}" data-ny="${ny}" style="cursor:pointer"><circle cx="${x}" cy="${y}" r="10" fill="#f97316" stroke="#fff" stroke-width="2"/><text x="${x}" y="${y + 4}" text-anchor="middle" fill="#fff" font-size="9" font-weight="bold">R</text><title>${esc(m.label || 'RFI')}</title></g>`;
+      return `<g data-rfi-pin="${m.linked_rfi_id || ''}" style="cursor:pointer"><circle cx="${x}" cy="${y}" r="10" fill="#f97316" stroke="#fff" stroke-width="2"/><text x="${x}" y="${y + 4}" text-anchor="middle" fill="#fff" font-size="9" font-weight="bold">R</text><title>${esc(m.label || 'RFI')}</title></g>`;
     }
     return '';
   }
 
+  function updateMarkupToolbar() {
+    const btn = document.getElementById('btnDeleteMarkup');
+    if (btn) btn.classList.toggle('hidden', !state.selectedMarkupId);
+    const selected = state.markups.find(m => m.id === state.selectedMarkupId);
+    if (selected?.style) {
+      const colorEl = document.getElementById('markupColor');
+      const widthEl = document.getElementById('markupLineWidth');
+      if (colorEl && selected.style.color) colorEl.value = selected.style.color;
+      if (widthEl && selected.style.lineWidth) {
+        widthEl.value = selected.style.lineWidth;
+        const lbl = document.getElementById('markupLineWidthLabel');
+        if (lbl) lbl.textContent = `${selected.style.lineWidth} px`;
+      }
+    }
+  }
+
   function setTool(tool) {
     state.tool = tool;
+    state.selectedMarkupId = null;
     highlightActiveTool();
+    updateViewerCursor();
+    renderMarkupOverlay();
+  }
+
+  function updateViewerCursor() {
+    const wrap = document.getElementById('drawViewerWrap');
+    if (!wrap) return;
+    wrap.classList.remove('cursor-grab', 'cursor-grabbing', 'cursor-crosshair', 'cursor-pointer');
+    if (state.isPanning) wrap.classList.add('cursor-grabbing');
+    else if (state.tool === 'pan') wrap.classList.add('cursor-grab');
+    else if (state.tool === 'select') wrap.classList.add('cursor-pointer');
+    else wrap.classList.add('cursor-crosshair');
   }
 
   function highlightActiveTool() {
@@ -582,50 +811,119 @@
     });
   }
 
-  function viewerCoords(evt) {
-    const svg = document.getElementById('drawMarkupSvg');
-    const rect = svg.getBoundingClientRect();
-    return { x: evt.clientX - rect.left - state.panX, y: evt.clientY - rect.top - state.panY };
+  function setMarkupColor(color) {
+    state.markupStyle.color = color;
+    if (state.selectedMarkupId) updateSelectedMarkupStyle({ color });
+  }
+
+  function setMarkupLineWidth(width) {
+    const w = parseInt(width, 10) || 2;
+    state.markupStyle.lineWidth = w;
+    const lbl = document.getElementById('markupLineWidthLabel');
+    if (lbl) lbl.textContent = `${w} px`;
+    if (state.selectedMarkupId) updateSelectedMarkupStyle({ lineWidth: w });
+  }
+
+  async function updateSelectedMarkupStyle(patch) {
+    const m = state.markups.find(x => x.id === state.selectedMarkupId);
+    if (!m) return;
+    m.style = { ...(m.style || {}), ...patch };
+    try {
+      await api(`/api/drawings/markups/${m.id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ style: m.style }),
+      });
+      renderMarkupOverlay();
+    } catch (e) { console.warn(e); }
+  }
+
+  async function deleteSelectedMarkup() {
+    if (!state.selectedMarkupId) return;
+    const m = state.markups.find(x => x.id === state.selectedMarkupId);
+    if (!m || !confirm('Delete this markup?')) return;
+    try {
+      await api(`/api/drawings/markups/${m.id}`, { method: 'DELETE' });
+      state.markups = state.markups.filter(x => x.id !== m.id);
+      state.selectedMarkupId = null;
+      renderMarkupOverlay();
+      renderViewerSidebar();
+      toast('Markup deleted');
+    } catch (e) { alert(e.message); }
   }
 
   function bindViewerEvents() {
-    const svg = document.getElementById('drawMarkupSvg');
-    if (!svg || svg._bound) return;
-    svg._bound = true;
-    svg.addEventListener('mousedown', onViewerDown);
-    svg.addEventListener('mousemove', onViewerMove);
-    svg.addEventListener('mouseup', onViewerUp);
-    svg.addEventListener('wheel', e => {
+    const wrap = document.getElementById('drawViewerWrap');
+    if (!wrap || wrap._bound) return;
+    wrap._bound = true;
+    wrap.addEventListener('mousedown', onViewerDown);
+    wrap.addEventListener('mousemove', onViewerMove);
+    wrap.addEventListener('mouseup', onViewerUp);
+    wrap.addEventListener('mouseleave', onViewerUp);
+    wrap.addEventListener('wheel', onViewerWheel, { passive: false });
+    document.addEventListener('keydown', e => {
       if (!state.openDrawing) return;
-      e.preventDefault();
-      state.scale = Math.max(0.4, Math.min(4, state.scale + (e.deltaY < 0 ? 0.1 : -0.1)));
-      renderPdf();
-    }, { passive: false });
+      if ((e.key === 'Delete' || e.key === 'Backspace') && state.selectedMarkupId) {
+        e.preventDefault();
+        deleteSelectedMarkup();
+      }
+    });
+    window.addEventListener('resize', () => {
+      if (state.openDrawing && state.view === 'viewer') {
+        clearTimeout(bindViewerEvents._resizeTimer);
+        bindViewerEvents._resizeTimer = setTimeout(() => renderPdf(true), 150);
+      }
+    });
+  }
+
+  function onViewerWheel(e) {
+    if (!state.openDrawing) return;
+    e.preventDefault();
+    const wrap = document.getElementById('drawViewerWrap');
+    const rect = wrap.getBoundingClientRect();
+    const mx = e.clientX - rect.left;
+    const my = e.clientY - rect.top;
+    const oldScale = state.viewScale;
+    const factor = e.deltaY < 0 ? 1.08 : 1 / 1.08;
+    const newScale = Math.max(0.2, Math.min(8, oldScale * factor));
+    state.panX = mx - ((mx - state.panX) * newScale) / oldScale;
+    state.panY = my - ((my - state.panY) * newScale) / oldScale;
+    state.viewScale = newScale;
+    applyViewTransform();
   }
 
   function onViewerDown(evt) {
-    if (state.tool === 'pan') {
-      state.drawing = true;
-      state.drawStart = { x: evt.clientX - state.panX, y: evt.clientY - state.panY, pan: true };
+    if (evt.button !== 0) return;
+    if (state.tool === 'pan' || evt.altKey) {
+      state.isPanning = true;
+      state.panAnchor = { x: evt.clientX - state.panX, y: evt.clientY - state.panY };
+      updateViewerCursor();
+      return;
+    }
+    if (state.tool === 'select') {
+      const pt = screenToDoc(evt);
+      const hit = hitTestMarkup(pt);
+      state.selectedMarkupId = hit ? hit.id : null;
+      renderMarkupOverlay();
       return;
     }
     if (['line', 'rect', 'cloud', 'arrow', 'highlight', 'measure'].includes(state.tool)) {
       state.drawing = true;
-      state.drawStart = viewerCoords(evt);
+      state.drawStart = screenToDoc(evt);
       return;
     }
     if (state.tool === 'text') {
-      const pt = viewerCoords(evt);
+      const pt = screenToDoc(evt);
       const label = prompt('Text label:');
       if (label) saveMarkup({ markup_type: 'text', geometry: { x: pt.x, y: pt.y }, label });
       return;
     }
     if (state.tool === 'rfi_pin') {
-      const pt = viewerCoords(evt);
-      placeRfiPin(pt);
+      placeRfiPin(screenToDoc(evt));
+      return;
     }
     if (state.tool === 'calibrate') {
-      const pt = viewerCoords(evt);
+      const pt = screenToDoc(evt);
       if (!state.drawStart) { state.drawStart = pt; toast('Click second point for known distance'); return; }
       const dist = prompt('Known distance (feet):', '10');
       if (dist) {
@@ -639,32 +937,39 @@
   }
 
   function onViewerMove(evt) {
-    if (!state.drawing || !state.drawStart) return;
-    if (state.drawStart.pan) {
-      state.panX = evt.clientX - state.drawStart.x;
-      state.panY = evt.clientY - state.drawStart.y;
-      renderMarkupOverlay();
+    if (state.isPanning && state.panAnchor) {
+      state.panX = evt.clientX - state.panAnchor.x;
+      state.panY = evt.clientY - state.panAnchor.y;
+      applyViewTransform();
       return;
     }
-    const pt = viewerCoords(evt);
+    if (!state.drawing || !state.drawStart) return;
+    const pt = screenToDoc(evt);
     const s = state.drawStart;
-    if (['rect', 'cloud', 'highlight'].includes(state.tool)) {
+    const sw = state.markupStyle.lineWidth || 2;
+    const color = state.markupStyle.color || '#38bdf8';
+    if (['rect', 'highlight'].includes(state.tool)) {
       const x = Math.min(s.x, pt.x); const y = Math.min(s.y, pt.y);
-      state.tempMarkup = `<rect x="${x}" y="${y}" width="${Math.abs(pt.x - s.x)}" height="${Math.abs(pt.y - s.y)}" stroke="#38bdf8" stroke-width="2" fill="none" stroke-dasharray="4 3" />`;
+      state.tempMarkup = `<rect x="${x}" y="${y}" width="${Math.abs(pt.x - s.x)}" height="${Math.abs(pt.y - s.y)}" stroke="${color}" stroke-width="${sw}" fill="none" stroke-dasharray="4 3" />`;
+    } else if (state.tool === 'cloud') {
+      const x = Math.min(s.x, pt.x); const y = Math.min(s.y, pt.y);
+      state.tempMarkup = `<path d="${cloudPath(x, y, Math.abs(pt.x - s.x), Math.abs(pt.y - s.y))}" stroke="${color}" stroke-width="${sw}" fill="none" stroke-dasharray="4 3" />`;
     } else if (['line', 'arrow', 'measure'].includes(state.tool)) {
-      state.tempMarkup = `<line x1="${s.x}" y1="${s.y}" x2="${pt.x}" y2="${pt.y}" stroke="#38bdf8" stroke-width="2" stroke-dasharray="4 3" />`;
+      const marker = state.tool === 'arrow' ? ' marker-end="url(#arrowhead)"' : '';
+      state.tempMarkup = `<line x1="${s.x}" y1="${s.y}" x2="${pt.x}" y2="${pt.y}" stroke="${color}" stroke-width="${sw}" stroke-dasharray="4 3"${marker} />`;
     }
     renderMarkupOverlay();
   }
 
   async function onViewerUp(evt) {
-    if (!state.drawing || !state.drawStart || state.drawStart.pan) {
-      state.drawing = false;
-      state.drawStart = null;
-      state.tempMarkup = null;
+    if (state.isPanning) {
+      state.isPanning = false;
+      state.panAnchor = null;
+      updateViewerCursor();
       return;
     }
-    const pt = viewerCoords(evt);
+    if (!state.drawing || !state.drawStart) return;
+    const pt = screenToDoc(evt);
     const s = state.drawStart;
     const type = state.tool;
     let geometry = {};
@@ -682,7 +987,13 @@
     state.drawStart = null;
     state.tempMarkup = null;
     if ((geometry.w === 0 && geometry.h === 0) && !geometry.points) return;
-    await saveMarkup({ markup_type: type === 'measure' ? 'measure' : type, geometry, measurement_value, measurement_unit: state.measureUnit });
+    await saveMarkup({
+      markup_type: type === 'measure' ? 'measure' : type,
+      geometry,
+      measurement_value,
+      measurement_unit: state.measureUnit,
+      style: { ...state.markupStyle },
+    });
   }
 
   async function placeRfiPin(pt) {
@@ -703,10 +1014,11 @@
   async function saveMarkup(payload) {
     if (!state.openDrawing) return;
     const geometry = normalizeGeometry(payload.geometry || {});
+    const style = payload.style || { ...state.markupStyle };
     const body = {
       markup_type: payload.markup_type,
       geometry,
-      style: payload.style || { color: '#38bdf8', lineWidth: 2 },
+      style,
       label: payload.label,
       linked_rfi_id: payload.linked_rfi_id,
       measurement_value: payload.measurement_value,
@@ -855,7 +1167,7 @@
     const btn = document.getElementById('btnFullscreen');
     const on = !!document.fullscreenElement;
     if (btn) btn.innerHTML = on ? '<i class="fa-solid fa-compress"></i>' : '<i class="fa-solid fa-expand"></i>';
-    if (state.openDrawing) setTimeout(() => renderPdf(), 100);
+    if (state.openDrawing) setTimeout(() => renderPdf(true), 100);
   }
 
   function openUploadModal() {
@@ -1026,6 +1338,10 @@
     previewSheet,
     openPreviewedSheet,
     setTool,
+    setMarkupColor,
+    setMarkupLineWidth,
+    deleteSelectedMarkup,
+    fitToView,
     toggleLayer,
     publishPersonalMarkups,
     loadRevisionInViewer,
