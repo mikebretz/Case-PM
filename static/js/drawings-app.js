@@ -1119,11 +1119,20 @@
       <td class="py-2 px-2 text-center text-zinc-500">${s.revision_count || 0}</td>
       <td class="py-2 px-2">${s.latest_upload ? fmtDate(s.latest_upload) : '—'}</td>
       <td class="py-2 text-right">
-        <button type="button" onclick="CasePMDrawings.filterBySet(${JSON.stringify(s.name)})" class="px-2 py-1 bg-zinc-800 hover:bg-zinc-700 rounded mr-1">Show</button>
-        <button type="button" onclick="CasePMDrawings.exportDrawingSetToDocuments(${JSON.stringify(s.name)})" class="px-2 py-1 bg-sky-900 hover:bg-sky-800 rounded mr-1 text-sky-100" title="Export all sheets to Documents">Docs</button>
-        <button type="button" onclick="CasePMDrawings.deleteDrawingSet(${JSON.stringify(s.name)})" class="px-2 py-1 bg-red-900/70 hover:bg-red-800 rounded text-red-100">Delete set</button>
+        <button type="button" data-draw-set-action="show" data-set-name="${esc(s.name)}" class="px-2 py-1 bg-zinc-800 hover:bg-zinc-700 rounded mr-1">Show</button>
+        <button type="button" data-draw-set-action="export" data-set-name="${esc(s.name)}" class="px-2 py-1 bg-sky-900 hover:bg-sky-800 rounded mr-1 text-sky-100" title="Export all sheets to Documents">Docs</button>
+        <button type="button" data-draw-set-action="delete" data-set-name="${esc(s.name)}" class="px-2 py-1 bg-red-900/70 hover:bg-red-800 rounded text-red-100">Delete set</button>
       </td>
     </tr>`).join('')}</tbody></table>`;
+    body.querySelectorAll('[data-draw-set-action]').forEach(btn => {
+      const setName = btn.getAttribute('data-set-name') || '';
+      const action = btn.getAttribute('data-draw-set-action');
+      btn.addEventListener('click', () => {
+        if (action === 'show') filterBySet(setName);
+        else if (action === 'export') exportDrawingSetToDocuments(setName);
+        else if (action === 'delete') deleteDrawingSet(setName);
+      });
+    });
   }
 
   function filterBySet(name) {
@@ -1682,9 +1691,7 @@
   }
 
   async function autoSaveDocSnip(captured) {
-    const name = defaultDocSnipName();
-    const asPdf = getSnipFormat() === 'pdf';
-    await saveDocSnipToDocuments(captured, { name, auto: true, saveAsPdf: asPdf });
+    openDocSnipSaveDialog(captured);
   }
 
   async function saveDocSnipToDocuments(captured, opts) {
@@ -1704,8 +1711,9 @@
       return;
     }
     const saveBtn = document.getElementById('docSnipSave');
-    if (saveBtn && !opts?.auto) saveBtn.disabled = true;
-    const asPdf = !!opts?.saveAsPdf;
+    if (saveBtn) saveBtn.disabled = true;
+    const fmtSel = document.getElementById('docSnipFormat');
+    const asPdf = (fmtSel?.value || getSnipFormat()) === 'pdf';
     try {
       const json = await api('/api/documents', {
         method: 'POST',
@@ -1724,34 +1732,40 @@
           source_metadata: {
             title: state.openDrawing?.title,
             revision_id: state.viewingRevisionId,
-            snip_format: 'png',
+            snip_format: asPdf ? 'pdf' : 'png',
           },
         }),
       });
-      document.getElementById('docSnipSaveDialog')?.close();
-      state.pendingDocSnip = null;
+      closeDocSnipSaveDialog();
       toast(`Saved to Documents › Drawings › Snips — ${json.document?.name || name}${asPdf ? ' (PDF)' : ' (PNG)'}`);
     } catch (e) {
       toastError(e.message || 'Failed to save document');
     } finally {
-      if (saveBtn && !opts?.auto) saveBtn.disabled = false;
+      if (saveBtn) saveBtn.disabled = false;
     }
   }
 
+  function closeDocSnipSaveDialog() {
+    document.getElementById('docSnipSaveDialog')?.close();
+    state.pendingDocSnip = null;
+  }
+
+  function discardDocSnip() {
+    closeDocSnipSaveDialog();
+    toast('Snip discarded');
+  }
+
   function openDocSnipSaveDialog(captured) {
-    if (localStorage.getItem('casepm_snip_auto_save') !== '0') {
-      autoSaveDocSnip(captured);
-      return;
-    }
+    if (!captured?.dataUrl) return;
     state.pendingDocSnip = captured;
     const dlg = document.getElementById('docSnipSaveDialog');
     const preview = document.getElementById('docSnipPreview');
     const nameEl = document.getElementById('docSnipName');
-    if (!captured?.dataUrl) return;
+    const fmtSel = document.getElementById('docSnipFormat');
     if (preview) preview.src = captured.dataUrl;
     if (nameEl) nameEl.value = defaultDocSnipName();
-    if (dlg) dlg.showModal();
-    else saveDocSnipToDocuments(captured, { name: defaultDocSnipName() });
+    if (fmtSel) fmtSel.value = getSnipFormat();
+    dlg?.showModal();
   }
 
   async function exportCurrentSheetToDocuments() {
@@ -1798,17 +1812,9 @@
     document.getElementById('docSnipSave')?.addEventListener('click', () => {
       saveDocSnipToDocuments(state.pendingDocSnip);
     });
-    document.getElementById('docSnipCancel')?.addEventListener('click', () => {
-      document.getElementById('docSnipSaveDialog')?.close();
-      state.pendingDocSnip = null;
-    });
-    document.getElementById('docSnipDialogClose')?.addEventListener('click', () => {
-      document.getElementById('docSnipSaveDialog')?.close();
-      state.pendingDocSnip = null;
-    });
-    document.getElementById('docSnipSaveDialog')?.addEventListener('cancel', () => {
-      state.pendingDocSnip = null;
-    });
+    document.getElementById('docSnipDelete')?.addEventListener('click', discardDocSnip);
+    document.getElementById('docSnipDialogClose')?.addEventListener('click', discardDocSnip);
+    document.getElementById('docSnipSaveDialog')?.addEventListener('cancel', discardDocSnip);
   }
 
   function startShapeSnip() {
@@ -3831,7 +3837,7 @@
       updateViewerCursor();
       if (rw >= 8 && rh >= 8) {
         const captured = captureCanvasRegion(x, y, rw, rh, { fullRes: true });
-        if (captured?.dataUrl) autoSaveDocSnip(captured);
+        if (captured?.dataUrl) openDocSnipSaveDialog(captured);
       } else {
         toast('Drag a larger box to snip');
       }

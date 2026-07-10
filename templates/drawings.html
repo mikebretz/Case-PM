@@ -929,31 +929,41 @@
     </div>
 </dialog>
 
-<dialog id="docSnipSaveDialog" class="modal rounded-md w-full max-w-md p-0 text-white" style="background:#18181b;border:1px solid #3f3f46;">
+<dialog id="docSnipSaveDialog" class="doc-snip-dialog modal rounded-xl w-full max-w-2xl p-0 text-white border border-zinc-600 shadow-2xl" style="background:#18181b;">
     <div class="p-6">
-        <div class="flex justify-between items-center mb-3">
-            <h2 class="text-lg font-semibold">Save snip to Documents</h2>
-            <p class="text-xs text-zinc-500 mb-3">Saved to <strong>Drawings › Snips</strong></p>
-            <button type="button" id="docSnipDialogClose" class="text-zinc-400 hover:text-white text-2xl cursor-pointer">&times;</button>
+        <div class="flex justify-between items-start mb-4 gap-3">
+            <div>
+                <h2 class="text-lg font-semibold">Snip preview</h2>
+                <p class="text-xs text-zinc-500 mt-1">Review your snip, then save to <strong>Drawings › Snips</strong> or delete it.</p>
+            </div>
+            <button type="button" id="docSnipDialogClose" class="text-zinc-400 hover:text-white text-2xl cursor-pointer leading-none" title="Discard snip">&times;</button>
         </div>
-        <img id="docSnipPreview" class="w-full max-h-36 object-contain bg-zinc-950 border border-zinc-700 rounded-md mb-4" alt="Snip preview">
-        <label class="block text-xs text-zinc-400 mb-1">Save format</label>
-        <select id="docSnipFormat" class="w-full bg-zinc-800 border border-zinc-700 rounded-md px-3 py-2 text-sm mb-3">
-            <option value="png">PNG image</option>
-            <option value="pdf">PDF (single page)</option>
-        </select>
+        <div class="flex justify-center mb-4">
+            <img id="docSnipPreview" class="max-w-full max-h-[50vh] object-contain bg-zinc-950 border border-zinc-700 rounded-lg" alt="Snip preview">
+        </div>
+        <div class="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-4">
+            <div>
+                <label class="block text-xs text-zinc-400 mb-1">Save format</label>
+                <select id="docSnipFormat" class="w-full bg-zinc-800 border border-zinc-700 rounded-md px-3 py-2 text-sm">
+                    <option value="png">PNG image</option>
+                    <option value="pdf">PDF (single page)</option>
+                </select>
+            </div>
+            <div>
+                <label class="block text-xs text-zinc-400 mb-1">Type</label>
+                <select id="docSnipType" class="w-full bg-zinc-800 border border-zinc-700 rounded-md px-3 py-2 text-sm">
+                    <option value="Drawing" selected>Drawing</option>
+                    <option value="Specification">Specification</option>
+                    <option value="Submittal">Submittal</option>
+                    <option value="Other">Other</option>
+                </select>
+            </div>
+        </div>
         <label class="block text-xs text-zinc-400 mb-1">Document name</label>
-        <input type="text" id="docSnipName" class="w-full bg-zinc-800 border border-zinc-700 rounded-md px-3 py-2 text-sm mb-3" placeholder="Drawing snip">
-        <label class="block text-xs text-zinc-400 mb-1">Type</label>
-        <select id="docSnipType" class="w-full bg-zinc-800 border border-zinc-700 rounded-md px-3 py-2 text-sm mb-4">
-            <option value="Drawing" selected>Drawing</option>
-            <option value="Specification">Specification</option>
-            <option value="Submittal">Submittal</option>
-            <option value="Other">Other</option>
-        </select>
+        <input type="text" id="docSnipName" class="w-full bg-zinc-800 border border-zinc-700 rounded-md px-3 py-2 text-sm mb-4" placeholder="Drawing snip">
         <div class="flex gap-2">
-            <button type="button" id="docSnipCancel" class="flex-1 py-2 bg-zinc-800 hover:bg-zinc-700 rounded-md text-sm">Cancel</button>
-            <button type="button" id="docSnipSave" class="flex-1 py-2 bg-emerald-600 hover:bg-emerald-500 rounded-md text-sm font-medium">Save</button>
+            <button type="button" id="docSnipDelete" class="flex-1 py-2.5 bg-red-900/80 hover:bg-red-800 rounded-md text-sm font-medium"><i class="fa-solid fa-trash-can mr-1"></i> Delete</button>
+            <button type="button" id="docSnipSave" class="flex-1 py-2.5 bg-emerald-600 hover:bg-emerald-500 rounded-md text-sm font-medium"><i class="fa-solid fa-floppy-disk mr-1"></i> Save to Documents</button>
         </div>
     </div>
 </dialog>
