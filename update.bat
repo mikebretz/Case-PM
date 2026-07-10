@@ -27,13 +27,11 @@ echo Current branch:
 git branch --show-current
 echo.
 
-set BRANCH=cursor/documents-checkout-ab10
-echo Switching to %BRANCH% and pulling updates...
-git checkout %BRANCH%
+set BRANCH=main
+echo Pulling latest updates from %BRANCH%...
+git checkout %BRANCH% 2>nul
 if errorlevel 1 (
-    echo ERROR: Could not switch to %BRANCH%
-    pause
-    exit /b 1
+    echo Could not switch to %BRANCH% - pulling into current branch instead...
 )
 
 git pull origin %BRANCH%
