@@ -73,4 +73,11 @@ def print_startup_banner(host: str, port: int, remote: bool) -> None:
     print('  Default login: admin@casepm.local / admin123')
     if remote:
         print('  SECURITY: change the admin password before sharing remote access.')
+    if remote:
+        print()
+        print('  TROUBLESHOOTING "connection refused" on other computers:')
+        print('    1. Use RUN-AS-SERVER.bat (not run.bat)')
+        print('    2. Run ALLOW-REMOTE-ACCESS.bat once (Windows Firewall)')
+        print('    3. Share http://YOUR-LAN-IP:5000 — never use 127.0.0.1 from another PC')
+        print('    4. Different network? Use START-INTERNET-TUNNEL.bat')
     print('=' * 75 + '\n')
