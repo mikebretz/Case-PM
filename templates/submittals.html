@@ -1813,7 +1813,7 @@ async function processSpecBookFromArrayBuffer(arrayBuffer, filename, options = {
         setSpecBookProgress(90, 'Saving specifications book...');
         const blob = new Blob([bytes], { type: 'application/pdf' });
         const file = new File([blob], filename, { type: 'application/pdf' });
-        await saveSpecBookArchive(file, { pageCount, sectionPageMap, parsedEntries: parsedSpecBookEntries });
+        await saveSpecBookArchive(file, { pageCount, sectionPageMap, contentSectionPageMap: sectionPageMap, parsedEntries: parsedSpecBookEntries });
         updateSpecBookLoadedBadge();
         updateSpecBookExistingPanel();
     } else if (updateParsedCache) {
@@ -3044,6 +3044,7 @@ async function saveSpecBookArchive(file, meta) {
         uploadedAt: new Date().toISOString(),
         pageCount: meta.pageCount,
         sectionPageMap: meta.sectionPageMap || {},
+        contentSectionPageMap: meta.contentSectionPageMap || meta.sectionPageMap || {},
         parsedEntries: meta.parsedEntries || null,
         data: bytes
     };
@@ -3069,6 +3070,7 @@ async function saveSpecBookArchive(file, meta) {
         uploadedAt: record.uploadedAt,
         pageCount: record.pageCount,
         sectionPageMap: record.sectionPageMap,
+        contentSectionPageMap: record.contentSectionPageMap || record.sectionPageMap,
         pdfBytes: bytes.slice(0),
         blobUrl: URL.createObjectURL(blob)
     };
@@ -3122,6 +3124,7 @@ async function loadSpecBookArchive() {
             uploadedAt: record.uploadedAt || meta.uploadedAt,
             pageCount: record.pageCount || meta.pageCount,
             sectionPageMap: record.sectionPageMap || meta.sectionPageMap || {},
+            contentSectionPageMap: record.contentSectionPageMap || record.sectionPageMap || meta.sectionPageMap || {},
             pdfBytes: bytes.slice(0),
             blobUrl: URL.createObjectURL(blob)
         };
@@ -3145,22 +3148,169 @@ function updateSpecBookLoadedBadge() {
     }
 }
 
-function buildSectionPageMap(pageTexts) {
-    const map = {};
-    const patterns = [
-        /(?:SECTION\s+)?(\d{2}\s+\d{2}\s+\d{2})/gi,
-        /\b(\d{6})\b/g
+function isTocSectionReferenceLine(line) {
+    const trimmed = String(line || '').replace(/\s+/g, ' ').trim();
+    if (!trimmed) return false;
+    return /(?:\d{2}\s+\d{2}\s+\d{2}|\d{6}).*\.{2,}\s*\d{1,4}\s*$/.test(trimmed);
+}
+
+function isTocOrIndexPage(text) {
+    const lines = String(text || '').split('\n').map(l => l.replace(/\s+/g, ' ').trim()).filter(Boolean);
+    const tocLines = lines.filter(isTocSectionReferenceLine).length;
+    if (/\bTABLE\s+OF\s+CONTENTS\b/i.test(text)) return true;
+    if (/\bGLOSSARY\b/i.test(text) && !/\bPART\s+1\b/i.test(text)) return true;
+    if (tocLines >= 4) return true;
+    if (tocLines >= 2 && lines.length <= tocLines + 4) return true;
+    return false;
+}
+
+function detectSectionStartsOnPage(text) {
+    if (isTocOrIndexPage(text)) return [];
+
+    const found = [];
+    const lines = String(text || '').split('\n').map(l => l.replace(/\s+/g, ' ').trim()).filter(Boolean);
+    const headerPatterns = [
+        /^SECTION\s+(\d{2}\s*\d{2}\s*\d{2})(?:\s*[-–—:]\s*|\s{2,})(.+)$/i,
+        /^(\d{2}\s+\d{2}\s+\d{2})(?:\s*[-–—:]\s*|\s{2,})([A-Z].+)$/,
+        /^(\d{6})\s+([A-Z].+)$/
     ];
+
+    lines.slice(0, 10).forEach(line => {
+        if (isTocSectionReferenceLine(line)) return;
+        for (const re of headerPatterns) {
+            const m = line.match(re);
+            if (!m) continue;
+            const num = normalizeSpecSectionNumber(m[1]);
+            const title = cleanSectionTitle(m[2]);
+            if (!num || title.length < 3) continue;
+            if (/^(PAGE|DIVISION|TABLE OF|INDEX|END OF)/i.test(title)) continue;
+            found.push(num);
+            break;
+        }
+    });
+
+    if (!found.length && /\bPART\s+1\b/i.test(text)) {
+        const bodyPatterns = [
+            /SECTION\s+(\d{2}\s*\d{2}\s*\d{2})/i,
+            /\b(\d{2}\s+\d{2}\s+\d{2})\s{2,}[A-Z]/,
+            /\b(\d{6})\s+[A-Z]/
+        ];
+        for (const re of bodyPatterns) {
+            const m = text.match(re);
+            if (!m || isTocSectionReferenceLine(m[0])) continue;
+            const num = normalizeSpecSectionNumber(m[1]);
+            if (num) found.push(num);
+            break;
+        }
+    }
+
+    return [...new Set(found)];
+}
+
+function scoreSectionContentPage(text, sectionNumber) {
+    if (isTocOrIndexPage(text)) return -100;
+
+    let score = 0;
+    const sec = normalizeSpecSectionNumber(sectionNumber);
+    const secDigits = sec.replace(/\D/g, '');
+    const compact = String(text || '').replace(/\s+/g, ' ');
+
+    if (new RegExp(`SECTION\\s+${secDigits.slice(0, 2)}\\s*${secDigits.slice(2, 4)}\\s*${secDigits.slice(4, 6)}`, 'i').test(compact)) score += 15;
+    if (new RegExp(`\\b${secDigits.slice(0, 2)}\\s+${secDigits.slice(2, 4)}\\s+${secDigits.slice(4, 6)}\\b`).test(compact)) score += 8;
+
+    if (/\bPART\s+1\b/i.test(text)) score += 5;
+    if (/\bPART\s+2\b/i.test(text)) score += 3;
+    if (/\b1\.\d{2}\s+GENERAL\b/i.test(text)) score += 6;
+    if (/\bSECTION\s+INCLUDES\b/i.test(text)) score += 4;
+    if (/\bSUBMITTALS\b/i.test(text)) score += 2;
+    if (/\bREFERENCES\b/i.test(text)) score += 2;
+
+    const tocRefs = String(text || '').split('\n').filter(isTocSectionReferenceLine).length;
+    score -= tocRefs * 5;
+
+    return score;
+}
+
+function buildSectionPageMap(pageTexts) {
+    const candidates = {};
+
     pageTexts.forEach(({ page, text }) => {
-        patterns.forEach(re => {
-            let m;
-            while ((m = re.exec(text)) !== null) {
-                const num = normalizeSpecSectionNumber(m[1]);
-                if (num && !map[num]) map[num] = page;
-            }
+        const starts = detectSectionStartsOnPage(text);
+        starts.forEach(sec => {
+            const score = scoreSectionContentPage(text, sec);
+            if (score < 8) return;
+            if (!candidates[sec]) candidates[sec] = [];
+            candidates[sec].push({ page, score });
         });
+
+        if (!starts.length && /\bPART\s+1\b/i.test(text) && !isTocOrIndexPage(text)) {
+            [/(\d{2}\s+\d{2}\s+\d{2})/g, /\b(\d{6})\b/g].forEach(re => {
+                let m;
+                while ((m = re.exec(text)) !== null) {
+                    const sec = normalizeSpecSectionNumber(m[1]);
+                    if (!sec) continue;
+                    const score = scoreSectionContentPage(text, sec);
+                    if (score < 10) continue;
+                    if (!candidates[sec]) candidates[sec] = [];
+                    candidates[sec].push({ page, score });
+                }
+            });
+        }
+    });
+
+    const map = {};
+    Object.entries(candidates).forEach(([sec, hits]) => {
+        hits.sort((a, b) => b.score - a.score || b.page - a.page);
+        map[sec] = hits[0].page;
     });
     return map;
+}
+
+function getContentSectionPageMap() {
+    if (!specBookArchive) return {};
+    return specBookArchive.contentSectionPageMap || specBookArchive.sectionPageMap || {};
+}
+
+function getNextSpecSectionInBook(specSection, map) {
+    const targetDigits = normalizeSpecSectionNumber(specSection).replace(/\D/g, '');
+    if (targetDigits.length < 6) return null;
+    const ordered = Object.keys(map || {})
+        .map(section => ({ section, digits: normalizeSpecSectionNumber(section).replace(/\D/g, '') }))
+        .filter(entry => entry.digits.length >= 6)
+        .sort((a, b) => a.digits.localeCompare(b.digits));
+    const idx = ordered.findIndex(entry => entry.digits === targetDigits);
+    if (idx < 0 || idx >= ordered.length - 1) return null;
+    return ordered[idx + 1].section;
+}
+
+let specBookContentMapPromise = null;
+
+async function ensureContentSectionPageMap() {
+    if (!specBookArchive) return {};
+    if (specBookArchive.contentSectionPageMap) return specBookArchive.contentSectionPageMap;
+    if (!specBookContentMapPromise) {
+        specBookContentMapPromise = rebuildContentSectionPageMap().finally(() => {
+            specBookContentMapPromise = null;
+        });
+    }
+    return specBookContentMapPromise;
+}
+
+async function rebuildContentSectionPageMap() {
+    const pdf = await getSpecBookPdfDocument();
+    const pageCount = pdf.numPages || specBookArchive?.pageCount || 0;
+    const pageTexts = [];
+    for (let i = 1; i <= pageCount; i++) {
+        const page = await pdf.getPage(i);
+        const text = await extractPdfPageTextFromPage(page);
+        pageTexts.push({ page: i, text });
+    }
+    const contentSectionPageMap = buildSectionPageMap(pageTexts);
+    if (specBookArchive) {
+        specBookArchive.contentSectionPageMap = contentSectionPageMap;
+        specBookArchive.sectionPageMap = contentSectionPageMap;
+    }
+    return contentSectionPageMap;
 }
 
 function enrichParsedEntriesWithSpecBookPages(entries, pageTexts, sectionPageMap) {
@@ -3195,25 +3345,21 @@ function findBestSpecBookPageForEntry(entry, pageTexts, sectionPageMap) {
 function resolveSpecBookPageForSubmittal(item) {
     if (!item) return 1;
     if (item.specBookPage) return Number(item.specBookPage) || 1;
-    const map = (specBookArchive && specBookArchive.sectionPageMap) || {};
+    const map = getContentSectionPageMap();
     const sec = normalizeSpecSectionNumber(item.specSection);
     return map[sec] || 1;
 }
 
 function resolveSpecBookPageRangeForSection(specSection) {
-    const map = (specBookArchive && specBookArchive.sectionPageMap) || {};
+    const map = getContentSectionPageMap();
     const sec = normalizeSpecSectionNumber(specSection);
     const maxPage = Number(specBookArchive?.pageCount) || 1;
-    const startPage = Math.max(1, Number(map[sec]) || resolveSpecBookPageForSubmittal({ specSection: sec }) || 1);
+    const startPage = Math.max(1, Number(map[sec]) || 1);
 
     let endPage = maxPage;
-    const laterSections = Object.entries(map)
-        .map(([section, page]) => ({ section, page: Number(page) || 1 }))
-        .filter(entry => entry.page > startPage)
-        .sort((a, b) => a.page - b.page || a.section.localeCompare(b.section));
-
-    if (laterSections.length) {
-        endPage = laterSections[0].page - 1;
+    const nextSection = getNextSpecSectionInBook(sec, map);
+    if (nextSection && Number(map[nextSection]) > startPage) {
+        endPage = Number(map[nextSection]) - 1;
     }
 
     endPage = Math.max(startPage, Math.min(endPage, maxPage));
@@ -3268,8 +3414,13 @@ async function openSpecSectionFromSubmittal(id) {
 async function viewSpecSectionInSpecBook(item) {
     if (!item?.specSection) return;
     if (!(await ensureSpecBookReadyForViewer())) return;
+    await ensureContentSectionPageMap();
 
     const range = resolveSpecBookPageRangeForSection(item.specSection);
+    if (!range.startPage || range.startPage < 1) {
+        showCenteredAlert(`Could not locate section ${item.specSection} in the specifications book body. Try re-uploading the spec book PDF.`, 'warning');
+        return;
+    }
     const para = item.paragraph ? `Paragraph ${item.paragraph}` : '';
     const subtitleParts = [item.sectionName || '', para, item.type || ''].filter(Boolean);
 
