@@ -4,6 +4,7 @@
 <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
 <script src="{{ url_for('static', filename='js/casepm-workflow.js') }}"></script>
 <script src="{{ url_for('static', filename='js/pay-app-sync.js') }}"></script>
+<script src="{{ url_for('static', filename='js/accounting-reconcile.js') }}"></script>
 
 <style>
   /* Exact match to budget.html aesthetics */
@@ -8858,7 +8859,9 @@ function printSubcontractorG703(companyId) {
     // ==================== INITIALIZATION ====================
     function initializePayApplications() {
         const boot = async () => {
-            if (typeof CasePMPayAppSync !== 'undefined') {
+            if (typeof CasePMAccountingReconcile !== 'undefined') {
+                await CasePMAccountingReconcile.initAndReconcile();
+            } else if (typeof CasePMPayAppSync !== 'undefined') {
                 await CasePMPayAppSync.init();
             } else if (typeof CasePMWorkflow !== 'undefined') {
                 CasePMWorkflow.loadPortal().catch(() => {});
@@ -8881,6 +8884,10 @@ function printSubcontractorG703(companyId) {
         };
         boot();
 
+        window.addEventListener('casepm:accounting-reconciled', () => {
+            reloadPayAppStateFromStorage();
+            renderPayAppContent();
+        });
         window.addEventListener('casepm:co-approved', () => {
             refreshProjectFinancialSummary().then(() => {
                 if (typeof CasePMPayAppSync !== 'undefined') {

@@ -953,7 +953,10 @@
     }
     try {
       const url = `/api/change-orders/${id}${approved ? '?force=1' : ''}`;
-      await api(url, { method: 'DELETE' });
+      const json = await api(url, { method: 'DELETE' });
+      if (json.reconcile_result && typeof CasePMAccountingReconcile !== 'undefined') {
+        CasePMAccountingReconcile.applyReconcileResult(json.reconcile_result);
+      }
       closeDrawer();
       await loadChangeOrders();
       await loadDashboard();
@@ -1168,8 +1171,12 @@
       return;
     }
     if (typeof CasePMWorkflow !== 'undefined') await CasePMWorkflow.loadPortal().catch(() => {});
-    if (typeof CasePMBudgetSync !== 'undefined') await CasePMBudgetSync.init().catch(() => {});
-    if (typeof CasePMPayAppSync !== 'undefined') await CasePMPayAppSync.init().catch(() => {});
+    if (typeof CasePMAccountingReconcile !== 'undefined') {
+      await CasePMAccountingReconcile.initAndReconcile().catch(() => {});
+    } else {
+      if (typeof CasePMBudgetSync !== 'undefined') await CasePMBudgetSync.init().catch(() => {});
+      if (typeof CasePMPayAppSync !== 'undefined') await CasePMPayAppSync.init().catch(() => {});
+    }
     loadCompaniesFromStorage();
     await loadCostCodes();
     await Promise.all([loadLinkOptions(), loadDashboard(), loadChangeOrders(), loadPcos(), loadSageLog()]);
@@ -1182,6 +1189,10 @@
       if (id) await viewCo(id);
     }
     global.addEventListener('casepm:co-approved', () => {
+      loadChangeOrders();
+      loadDashboard();
+    });
+    global.addEventListener('casepm:accounting-reconciled', () => {
       loadChangeOrders();
       loadDashboard();
     });

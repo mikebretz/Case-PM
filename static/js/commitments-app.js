@@ -863,11 +863,16 @@
     try {
       const json = await api(`/api/commitments/${id}/workflow`, { method: 'POST', body: JSON.stringify({ action }) });
       logCommitmentAudit(`COMMITMENT_${action.toUpperCase()}`, { number: c.number, new_status: json.new_status });
-      if (json.final_approved && typeof CasePMBudgetSync !== 'undefined') {
+      if (typeof CasePMAccountingReconcile !== 'undefined') {
+        CasePMAccountingReconcile.applyReconcileResult({
+          budget_sync_result: json.budget_sync_result,
+          sync_result: json.sov_sync_result,
+        });
+      } else if (json.final_approved && typeof CasePMBudgetSync !== 'undefined') {
         await CasePMBudgetSync.init().catch(() => {});
         await CasePMBudgetSync.loadFromServer().catch(() => {});
       }
-      if (json.final_approved && typeof CasePMPayAppSync !== 'undefined') {
+      if (typeof CasePMAccountingReconcile === 'undefined' && json.final_approved && typeof CasePMPayAppSync !== 'undefined') {
         await CasePMPayAppSync.init().catch(() => {});
         await CasePMPayAppSync.loadFromServer().catch(() => {});
       }
@@ -1181,13 +1186,20 @@
     }
     loadAuditLog();
     if (typeof CasePMWorkflow !== 'undefined') await CasePMWorkflow.loadPortal().catch(() => {});
-    if (typeof CasePMBudgetSync !== 'undefined') await CasePMBudgetSync.init().catch(() => {});
-    if (typeof CasePMPayAppSync !== 'undefined') await CasePMPayAppSync.init().catch(() => {});
+    if (typeof CasePMAccountingReconcile !== 'undefined') {
+      await CasePMAccountingReconcile.initAndReconcile().catch(() => {});
+    } else {
+      if (typeof CasePMBudgetSync !== 'undefined') await CasePMBudgetSync.init().catch(() => {});
+      if (typeof CasePMPayAppSync !== 'undefined') await CasePMPayAppSync.init().catch(() => {});
+    }
     loadCompanies();
     await loadCostCodes();
     bindFilters();
     await refreshAll();
     renderTable();
+    global.addEventListener('casepm:accounting-reconciled', () => {
+      refreshAll().then(() => renderTable());
+    });
   }
 
   global.CasePMCommitments = {
