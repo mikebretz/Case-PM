@@ -73,10 +73,12 @@
             align-items: center;
             justify-content: center;
             box-shadow: 0 0 120px rgba(16, 185, 129, 0.12);
+            /* em context so the icon scales with the tile, not body text */
+            font-size: 100dvh;
         }
 
         .login-watermark-tile i {
-            font-size: 58%;
+            font-size: 0.58em;
             color: #ffffff;
             line-height: 1;
         }
