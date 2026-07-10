@@ -15,6 +15,9 @@
         <div class="text-lg font-semibold text-white whitespace-nowrap border-l border-zinc-700 pl-4">Documents</div>
     </div>
     <div class="flex items-center gap-2 flex-wrap">
+        <button type="button" id="docsBtnTemplate" class="docs-btn docs-btn-secondary" title="Apply folder template">
+            <i class="fa-solid fa-layer-group"></i> Template
+        </button>
         <button type="button" id="docsBtnShareLinks" class="docs-btn docs-btn-secondary" title="Manage all share links for this project">
             <i class="fa-solid fa-link"></i> Share links
         </button>
@@ -52,6 +55,13 @@
                 <input type="checkbox" id="docsSearchAll" class="rounded border-zinc-600">
                 All folders
             </label>
+        </div>
+        <div id="docsBulkBar" class="docs-bulk-bar hidden flex flex-wrap items-center gap-2 mb-2 p-2 bg-zinc-800/80 border border-zinc-700 rounded-md text-sm">
+            <span><strong id="docsBulkCount">0</strong> selected</span>
+            <button type="button" id="docsBulkMove" class="docs-btn docs-btn-secondary text-xs">Move here</button>
+            <button type="button" id="docsBulkDelete" class="docs-btn docs-btn-secondary text-xs">Delete</button>
+            <button type="button" id="docsBulkZip" class="docs-btn docs-btn-secondary text-xs">Download ZIP</button>
+            <button type="button" id="docsBulkClear" class="docs-btn docs-btn-secondary text-xs">Clear</button>
         </div>
 
         <div class="docs-file-panel flex flex-col flex-1 min-h-0 border border-zinc-700 rounded-md bg-zinc-900 overflow-hidden">
@@ -102,6 +112,8 @@
         <h2 class="text-lg font-semibold mb-1">Share link</h2>
         <p class="text-xs text-zinc-500 mb-4">Anyone with this link can download the file — like Dropbox or OneDrive.</p>
         <p class="text-xs text-zinc-500 mb-3">Optional password (leave blank for no password)</p>
+        <label class="text-xs text-zinc-500 block mb-1">Link expires after (days)</label>
+        <input type="number" id="docsShareExpiryDays" class="docs-input w-full mb-3" min="1" max="365" value="30">
         <input type="password" id="docsSharePassword" class="docs-input w-full mb-3" placeholder="Password (optional)" autocomplete="new-password">
         <input type="text" id="docsShareUrl" class="docs-input w-full mb-3" readonly>
         <div class="flex gap-2">
@@ -120,6 +132,8 @@
             <input type="checkbox" id="docsFolderShareUpload" class="rounded border-zinc-600">
             Allow uploads (request files)
         </label>
+        <label class="text-xs text-zinc-500 block mb-1">Link expires after (days)</label>
+        <input type="number" id="docsFolderShareExpiryDays" class="docs-input w-full mb-3" min="1" max="365" value="30">
         <input type="password" id="docsFolderSharePassword" class="docs-input w-full mb-3" placeholder="Password (optional)" autocomplete="new-password">
         <input type="text" id="docsFolderShareUrl" class="docs-input w-full mb-3" readonly>
         <div class="flex gap-2">
@@ -164,5 +178,8 @@
 
 <input type="file" id="docsVersionInput" class="hidden">
 
+<script>
+  window.CASEPM_CURRENT_USER_ID = {{ current_user.id }};
+</script>
 <script src="{{ url_for('static', filename='js/documents-app.js') }}"></script>
 {% endblock %}

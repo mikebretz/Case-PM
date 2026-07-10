@@ -1661,18 +1661,97 @@
     toast('Drag a box around the area to snip — like Windows Snipping Tool');
   }
 
+  function defaultDocSnipName() {
+    const sheet = state.openDrawing?.sheet_number || 'Sheet';
+    const title = state.openDrawing?.title ? ` — ${state.openDrawing.title}` : '';
+    const date = new Date().toLocaleDateString();
+    return `${sheet}${title} — snip ${date}`;
+  }
+
+  function docSnipFilename(name) {
+    const base = String(name || 'snip').replace(/[^\w.\- ]+/g, '_').trim() || 'snip';
+    return base.toLowerCase().endsWith('.png') ? base : `${base}.png`;
+  }
+
+  function getSnipFormat() {
+    return localStorage.getItem('casepm_snip_format') === 'pdf' ? 'pdf' : 'png';
+  }
+
+  function setSnipFormat(fmt) {
+    localStorage.setItem('casepm_snip_format', fmt === 'pdf' ? 'pdf' : 'png');
+  }
+
+  async function autoSaveDocSnip(captured) {
+    const name = defaultDocSnipName();
+    const asPdf = getSnipFormat() === 'pdf';
+    await saveDocSnipToDocuments(captured, { name, auto: true, saveAsPdf: asPdf });
+  }
+
+  async function saveDocSnipToDocuments(captured, opts) {
+    const payload = captured || state.pendingDocSnip;
+    const name = (opts?.name || document.getElementById('docSnipName')?.value || defaultDocSnipName()).trim();
+    const docType = document.getElementById('docSnipType')?.value || 'Drawing';
+    if (!payload?.dataUrl) {
+      toast('Nothing to save');
+      return;
+    }
+    if (!name) {
+      toast('Enter a document name');
+      return;
+    }
+    if (!projectId()) {
+      toast('Select a project first');
+      return;
+    }
+    const saveBtn = document.getElementById('docSnipSave');
+    if (saveBtn && !opts?.auto) saveBtn.disabled = true;
+    const asPdf = !!opts?.saveAsPdf;
+    try {
+      const json = await api('/api/documents', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          project_id: projectId(),
+          name,
+          filename: asPdf ? docSnipFilename(name).replace(/\.png$/i, '.pdf') : docSnipFilename(name),
+          mime_type: asPdf ? 'application/pdf' : 'image/png',
+          save_as_pdf: asPdf,
+          document_type: docType,
+          image_data: payload.dataUrl,
+          source_drawing_id: state.openDrawing?.id,
+          source_sheet: state.openDrawing?.sheet_number,
+          system_folder_key: 'drawing-snips',
+          source_metadata: {
+            title: state.openDrawing?.title,
+            revision_id: state.viewingRevisionId,
+            snip_format: 'png',
+          },
+        }),
+      });
+      document.getElementById('docSnipSaveDialog')?.close();
+      state.pendingDocSnip = null;
+      toast(`Saved to Documents › Drawings › Snips — ${json.document?.name || name}${asPdf ? ' (PDF)' : ' (PNG)'}`);
+    } catch (e) {
+      toastError(e.message || 'Failed to save document');
+    } finally {
+      if (saveBtn && !opts?.auto) saveBtn.disabled = false;
+    }
+  }
+
   function openDocSnipSaveDialog(captured) {
+    if (localStorage.getItem('casepm_snip_auto_save') !== '0') {
+      autoSaveDocSnip(captured);
+      return;
+    }
     state.pendingDocSnip = captured;
     const dlg = document.getElementById('docSnipSaveDialog');
     const preview = document.getElementById('docSnipPreview');
     const nameEl = document.getElementById('docSnipName');
-    if (!dlg || !captured?.dataUrl) return;
-    const sheet = state.openDrawing?.sheet_number || 'Sheet';
-    const title = state.openDrawing?.title ? ` — ${state.openDrawing.title}` : '';
-    const date = new Date().toLocaleDateString();
+    if (!captured?.dataUrl) return;
     if (preview) preview.src = captured.dataUrl;
-    if (nameEl) nameEl.value = `${sheet}${title} — snip ${date}`;
-    dlg.showModal();
+    if (nameEl) nameEl.value = defaultDocSnipName();
+    if (dlg) dlg.showModal();
+    else saveDocSnipToDocuments(captured, { name: defaultDocSnipName() });
   }
 
   async function exportCurrentSheetToDocuments() {
@@ -1710,54 +1789,15 @@
     }
   }
 
-  async function saveDocSnipToDocuments() {
-    const captured = state.pendingDocSnip;
-    const name = document.getElementById('docSnipName')?.value?.trim();
-    const docType = document.getElementById('docSnipType')?.value || 'Drawing';
-    if (!captured?.dataUrl) {
-      toast('Nothing to save');
-      return;
-    }
-    if (!name) {
-      toast('Enter a document name');
-      return;
-    }
-    if (!projectId()) {
-      toast('Select a project first');
-      return;
-    }
-    const saveBtn = document.getElementById('docSnipSave');
-    if (saveBtn) saveBtn.disabled = true;
-    try {
-      const json = await api('/api/documents', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          project_id: projectId(),
-          name,
-          document_type: docType,
-          image_data: captured.dataUrl,
-          source_drawing_id: state.openDrawing?.id,
-          source_sheet: state.openDrawing?.sheet_number,
-          system_folder_key: 'drawing-snips',
-          source_metadata: {
-            title: state.openDrawing?.title,
-            revision_id: state.viewingRevisionId,
-          },
-        }),
-      });
-      document.getElementById('docSnipSaveDialog')?.close();
-      state.pendingDocSnip = null;
-      toast(`Saved to Documents — ${json.document?.name || name}`);
-    } catch (e) {
-      toastError(e.message || 'Failed to save document');
-    } finally {
-      if (saveBtn) saveBtn.disabled = false;
-    }
-  }
-
   function bindDocSnipDialog() {
-    document.getElementById('docSnipSave')?.addEventListener('click', () => saveDocSnipToDocuments());
+    const fmtSel = document.getElementById('docSnipFormat');
+    if (fmtSel) {
+      fmtSel.value = getSnipFormat();
+      fmtSel.addEventListener('change', () => setSnipFormat(fmtSel.value));
+    }
+    document.getElementById('docSnipSave')?.addEventListener('click', () => {
+      saveDocSnipToDocuments(state.pendingDocSnip);
+    });
     document.getElementById('docSnipCancel')?.addEventListener('click', () => {
       document.getElementById('docSnipSaveDialog')?.close();
       state.pendingDocSnip = null;
@@ -3791,7 +3831,7 @@
       updateViewerCursor();
       if (rw >= 8 && rh >= 8) {
         const captured = captureCanvasRegion(x, y, rw, rh, { fullRes: true });
-        if (captured?.dataUrl) openDocSnipSaveDialog(captured);
+        if (captured?.dataUrl) autoSaveDocSnip(captured);
       } else {
         toast('Drag a larger box to snip');
       }

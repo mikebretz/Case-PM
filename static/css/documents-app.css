@@ -343,6 +343,10 @@
 .docs-share-link-row .meta { flex: 1; min-width: 10rem; }
 .docs-share-link-row .actions { display: flex; gap: 0.35rem; flex-shrink: 0; }
 
+.docs-bulk-bar { font-size: 0.8rem; }
+.docs-item-badge.checkout { background: rgba(251, 191, 36, 0.2); color: #fbbf24; }
+.docs-bulk-cb { margin-right: 0.25rem; accent-color: #10b981; }
+
 .docs-dialog::backdrop { background: rgba(0, 0, 0, 0.65); }
 
 .docs-preview-tab {

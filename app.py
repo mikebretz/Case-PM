@@ -764,6 +764,14 @@ class Document(db.Model):
     updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
     deleted_at = db.Column(db.DateTime)
     version_count = db.Column(db.Integer, default=1)
+    checked_out_by_id = db.Column(db.Integer, db.ForeignKey('user.id'))
+    checked_out_at = db.Column(db.DateTime)
+    checkout_note = db.Column(db.String(500))
+    tags_json = db.Column(db.Text)
+    custom_metadata_json = db.Column(db.Text)
+    content_hash = db.Column(db.String(64))
+    retention_until = db.Column(db.DateTime)
+    legal_hold = db.Column(db.Boolean, default=False)
 
 
 class DocumentFolder(db.Model):
@@ -791,6 +799,9 @@ class DocumentShareLink(db.Model):
     created_by_id = db.Column(db.Integer, db.ForeignKey('user.id'))
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     revoked_at = db.Column(db.DateTime)
+    approval_status = db.Column(db.String(20), default='approved')
+    approved_by_id = db.Column(db.Integer, db.ForeignKey('user.id'))
+    approved_at = db.Column(db.DateTime)
 
 
 class DocumentFolderShareLink(db.Model):
@@ -808,6 +819,9 @@ class DocumentFolderShareLink(db.Model):
     created_by_id = db.Column(db.Integer, db.ForeignKey('user.id'))
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     revoked_at = db.Column(db.DateTime)
+    approval_status = db.Column(db.String(20), default='approved')
+    approved_by_id = db.Column(db.Integer, db.ForeignKey('user.id'))
+    approved_at = db.Column(db.DateTime)
 
 
 class DocumentVersion(db.Model):
@@ -852,6 +866,17 @@ class DocumentFolderPermission(db.Model):
     can_manage = db.Column(db.Boolean, default=False)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     __table_args__ = (db.UniqueConstraint('folder_id', 'user_id', name='uq_folder_user_perm'),)
+
+
+class DocumentFolderTemplate(db.Model):
+    __tablename__ = 'document_folder_template'
+    id = db.Column(db.Integer, primary_key=True)
+    name = db.Column(db.String(200), nullable=False)
+    project_type = db.Column(db.String(80))
+    description = db.Column(db.String(500))
+    folders_json = db.Column(db.Text, nullable=False)
+    is_system = db.Column(db.Boolean, default=False)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
 
 
 class WeeklyReport(db.Model):
@@ -3056,7 +3081,44 @@ def _document_dict_with_user(doc):
         project.name if project else None,
         folder.name if folder else None,
         _user_display_name(doc.uploaded_by_id),
+        checkout=_document_checkout_fields(doc),
     )
+
+
+def _document_checkout_fields(doc):
+    uid = current_user.id if current_user.is_authenticated else None
+    role = getattr(current_user, 'role', '') or ''
+    co_id = getattr(doc, 'checked_out_by_id', None)
+    folder = DocumentFolder.query.get(doc.folder_id) if doc.folder_id else None
+    can_manage = role == 'Admin' or (folder and _folder_access(folder, 'manage'))
+    is_system = bool(doc.is_system_locked)
+    return {
+        'checked_out_by_id': co_id,
+        'checked_out_by_name': _user_display_name(co_id) if co_id else None,
+        'checked_out_at': doc.checked_out_at.isoformat() if getattr(doc, 'checked_out_at', None) else None,
+        'checkout_note': getattr(doc, 'checkout_note', None),
+        'is_checked_out': bool(co_id),
+        'is_checked_out_by_me': bool(co_id and uid and co_id == uid),
+        'is_edit_locked': bool(co_id and uid and co_id != uid),
+        'can_check_out': not is_system and not co_id,
+        'can_check_in': bool(co_id and uid and co_id == uid),
+        'can_force_unlock': bool(co_id and can_manage),
+    }
+
+
+def _document_edit_lock_error(doc):
+    """Return (response, status_code) if edits are blocked by checkout, else None."""
+    if doc.is_system_locked:
+        return None
+    co_id = getattr(doc, 'checked_out_by_id', None)
+    if co_id and co_id != current_user.id:
+        name = _user_display_name(co_id)
+        return jsonify({
+            'error': f'This file is checked out by {name}. They must check it in before you can edit it.',
+            'checked_out_by_id': co_id,
+            'checked_out_by_name': name,
+        }), 423
+    return None
 
 
 def _log_doc_activity(project_id, action, document_id=None, folder_id=None, detail=None):
@@ -3221,8 +3283,11 @@ def _save_document_bytes(
     source_drawing_id=None,
     source_sheet=None,
     source_metadata=None,
+    tags=None,
+    custom_metadata=None,
 ):
-    from document_persistence import document_folder, document_to_dict, ensure_system_folders, resolve_folder_by_key
+    from document_features import file_content_hash, project_document_settings, retention_until_from_years, parse_tags
+    from document_persistence import document_folder, ensure_system_folders, resolve_folder_by_key
 
     upload_root = app.config.get('UPLOAD_FOLDER', 'uploads')
     ensure_system_folders(db, DocumentFolder, project_id, current_user.id if current_user.is_authenticated else None, Document=Document)
@@ -3241,6 +3306,11 @@ def _save_document_bytes(
     with open(file_path, 'wb') as fh:
         fh.write(file_bytes)
 
+    project = Project.query.get(int(project_id))
+    settings = project_document_settings(project) if project else {}
+    content_hash = file_content_hash(file_bytes)
+    tag_list = parse_tags(tags) if tags is not None else []
+
     doc = Document(
         project_id=int(project_id),
         folder_id=int(folder_id) if folder_id else None,
@@ -3257,12 +3327,25 @@ def _save_document_bytes(
         uploaded_by_id=current_user.id if current_user.is_authenticated else None,
         created_at=datetime.utcnow(),
         updated_at=datetime.utcnow(),
+        content_hash=content_hash,
+        tags_json=json.dumps(tag_list) if tag_list else None,
+        custom_metadata_json=json.dumps(custom_metadata) if custom_metadata else None,
+        retention_until=retention_until_from_years(settings.get('retention_years', 7)),
     )
     db.session.add(doc)
     db.session.commit()
     _log_doc_activity(project_id, 'upload', document_id=doc.id, folder_id=doc.folder_id, detail={'name': doc.name})
     db.session.commit()
     return _document_dict_with_user(doc)
+
+
+def _find_duplicate_document(project_id: int, content_hash: str, exclude_id: int | None = None):
+    if not content_hash:
+        return None
+    q = _active_documents().filter_by(project_id=int(project_id), content_hash=content_hash)
+    if exclude_id:
+        q = q.filter(Document.id != int(exclude_id))
+    return q.first()
 
 
 @app.route('/api/document-folders', methods=['GET'])
@@ -3475,6 +3558,33 @@ def api_documents_list():
     })
 
 
+def _infer_data_url_upload(raw_input, mime_type=None, filename=None):
+    """Infer MIME type and stored filename for base64 / data-URL uploads."""
+    data_url = str(raw_input or '')
+    if data_url.startswith('data:'):
+        header = data_url.split(',', 1)[0].lower()
+        if 'image/png' in header:
+            return 'image/png', secure_filename(filename or 'upload.png')
+        if 'image/jpeg' in header or 'image/jpg' in header:
+            return 'image/jpeg', secure_filename(filename or 'upload.jpg')
+        if 'image/webp' in header:
+            return 'image/webp', secure_filename(filename or 'upload.webp')
+        if 'application/pdf' in header:
+            return 'application/pdf', secure_filename(filename or 'upload.pdf')
+    mime_ext = {
+        'image/png': 'png',
+        'image/jpeg': 'jpg',
+        'image/jpg': 'jpg',
+        'image/webp': 'webp',
+        'application/pdf': 'pdf',
+    }
+    mt = (mime_type or '').lower()
+    if mt in mime_ext:
+        base = (filename or 'upload').rsplit('.', 1)[0]
+        return mt, secure_filename(f'{base}.{mime_ext[mt]}')
+    return 'image/png', secure_filename(filename or 'upload.png')
+
+
 @app.route('/api/documents', methods=['POST'])
 @login_required
 def api_documents_create():
@@ -3538,8 +3648,17 @@ def api_documents_create():
                 file_bytes = b64mod.b64decode(raw)
             except Exception:
                 return jsonify({'error': 'Invalid file data'}), 400
-            original_filename = secure_filename(body.get('filename') or 'upload.bin')
-            mime_type = body.get('mime_type') or mime_type
+            mime_type, original_filename = _infer_data_url_upload(
+                image_data or file_b64,
+                body.get('mime_type'),
+                body.get('filename') or (f'{name}.png' if name else None),
+            )
+            if body.get('save_as_pdf'):
+                from document_features import image_bytes_to_pdf
+                file_bytes = image_bytes_to_pdf(file_bytes)
+                mime_type = 'application/pdf'
+                base = (name or 'snip').rsplit('.', 1)[0]
+                original_filename = secure_filename(f'{base}.pdf')
         else:
             return jsonify({'error': 'file or image_data required'}), 400
 
@@ -3550,11 +3669,27 @@ def api_documents_create():
     if not file_bytes:
         return jsonify({'error': 'Empty file'}), 400
 
+    from document_features import file_content_hash
+    dup = _find_duplicate_document(int(project_id), file_content_hash(file_bytes))
+    duplicate_warning = None
+    if dup:
+        duplicate_warning = {
+            'id': dup.id,
+            'name': dup.name,
+            'folder_id': dup.folder_id,
+            'message': f'A file with identical content already exists: "{dup.name}"',
+        }
+
+    tags = request.form.get('tags') if (request.content_type and 'multipart/form-data' in request.content_type) else (request.get_json(silent=True) or {}).get('tags')
+    custom_metadata = None if (request.content_type and 'multipart/form-data' in request.content_type) else (request.get_json(silent=True) or {}).get('custom_metadata')
+
     try:
         doc_dict = _save_document_bytes(
             int(project_id), file_bytes, name or 'Document', original_filename or 'file.bin',
             mime_type, document_type, folder_id, is_system_locked,
             source_drawing_id, source_sheet, source_metadata,
+            tags=tags,
+            custom_metadata=custom_metadata,
         )
     except ValueError as exc:
         return jsonify({'error': str(exc)}), 400
@@ -3573,7 +3708,12 @@ def api_documents_create():
             f'/documents?project_id={project_id}',
         )
 
-    return jsonify({'ok': True, 'document': doc_dict, 'share_link': share}), 201
+    return jsonify({
+        'ok': True,
+        'document': doc_dict,
+        'share_link': share,
+        'duplicate_warning': duplicate_warning,
+    }), 201
 
 
 @app.route('/api/documents/printed-output', methods=['POST'])
@@ -3611,32 +3751,51 @@ def api_documents_printed_output():
 
 
 def _create_document_share_link(document_id: int, days: int = 30, max_downloads: int | None = None, password: str | None = None):
+    from document_features import clamp_share_expiry_days, project_document_settings
     from document_persistence import default_share_expiry, hash_share_password, new_share_token, share_link_to_dict
 
     doc = Document.query.get_or_404(document_id)
+    project = Project.query.get(doc.project_id)
+    settings = project_document_settings(project) if project else {}
+    expiry_days = clamp_share_expiry_days(days, settings)
+    needs_approval = bool(settings.get('share_requires_approval')) and getattr(current_user, 'role', '') not in ('Admin', 'Project Manager')
+    approval_status = 'pending' if needs_approval else 'approved'
     link = DocumentShareLink(
         document_id=doc.id,
         token=new_share_token(),
         label=doc.name,
         password_hash=hash_share_password(password),
-        expires_at=default_share_expiry(days),
+        expires_at=default_share_expiry(expiry_days),
         max_downloads=max_downloads,
         download_count=0,
         allow_download=True,
         created_by_id=current_user.id,
         created_at=datetime.utcnow(),
+        approval_status=approval_status,
+        approved_at=datetime.utcnow() if approval_status == 'approved' else None,
+        approved_by_id=current_user.id if approval_status == 'approved' else None,
     )
     db.session.add(link)
     db.session.commit()
-    _log_doc_activity(doc.project_id, 'share', document_id=doc.id, detail={'type': 'file_link'})
+    _log_doc_activity(doc.project_id, 'share', document_id=doc.id, detail={'type': 'file_link', 'approval_status': approval_status})
     db.session.commit()
     share = share_link_to_dict(link, _documents_base_url())
-    _notify_documents_team(
-        doc.project_id,
-        'Document share link created',
-        f'A download link was created for "{doc.name}".',
-        share.get('share_url'),
-    )
+    if approval_status == 'pending':
+        _notify_documents_team(
+            doc.project_id,
+            'Share link pending approval',
+            f'A share link for "{doc.name}" needs PM approval before it goes live.',
+            '/documents',
+        )
+    else:
+        _notify_documents_team(
+            doc.project_id,
+            'Document share link created',
+            f'A download link was created for "{doc.name}". Expires in {expiry_days} days.',
+            share.get('share_url'),
+        )
+    share['approval_status'] = approval_status
+    share['expires_in_days'] = expiry_days
     return share
 
 
@@ -3644,6 +3803,9 @@ def _create_document_share_link(document_id: int, days: int = 30, max_downloads:
 @login_required
 def api_documents_patch(doc_id):
     doc = Document.query.get_or_404(doc_id)
+    lock_err = _document_edit_lock_error(doc)
+    if lock_err:
+        return lock_err
     body = request.get_json(silent=True) or {}
     if doc.is_system_locked:
         if 'name' in body and body.get('name') and body['name'] != doc.name:
@@ -3663,7 +3825,80 @@ def api_documents_patch(doc_id):
             doc.folder_id = folder.id
         else:
             doc.folder_id = None
+    if 'tags' in body:
+        from document_features import parse_tags
+        doc.tags_json = json.dumps(parse_tags(body.get('tags')))
+    if 'custom_metadata' in body and isinstance(body.get('custom_metadata'), dict):
+        doc.custom_metadata_json = json.dumps(body['custom_metadata'])
+    if 'legal_hold' in body and getattr(current_user, 'role', '') in ('Admin', 'Project Manager'):
+        doc.legal_hold = bool(body.get('legal_hold'))
     doc.updated_at = datetime.utcnow()
+    db.session.commit()
+    return jsonify({'ok': True, 'document': _document_dict_with_user(doc)})
+
+
+@app.route('/api/documents/<int:doc_id>/checkout', methods=['POST'])
+@login_required
+def api_documents_checkout(doc_id):
+    doc = Document.query.get_or_404(doc_id)
+    if doc.deleted_at:
+        return jsonify({'error': 'Document is in recycle bin'}), 400
+    if doc.is_system_locked:
+        return jsonify({'error': 'System job files cannot be checked out'}), 403
+    folder = DocumentFolder.query.get(doc.folder_id) if doc.folder_id else None
+    if folder and not _folder_access(folder, 'upload'):
+        return jsonify({'error': 'No upload permission for this folder'}), 403
+    co_id = getattr(doc, 'checked_out_by_id', None)
+    if co_id and co_id != current_user.id:
+        return jsonify({
+            'error': f'Already checked out by {_user_display_name(co_id)}',
+            'checked_out_by_name': _user_display_name(co_id),
+        }), 423
+    body = request.get_json(silent=True) or {}
+    note = (body.get('note') or '').strip()[:500] or None
+    doc.checked_out_by_id = current_user.id
+    doc.checked_out_at = datetime.utcnow()
+    doc.checkout_note = note
+    _log_doc_activity(doc.project_id, 'checkout', document_id=doc.id, folder_id=doc.folder_id, detail={'note': note})
+    db.session.commit()
+    return jsonify({'ok': True, 'document': _document_dict_with_user(doc)})
+
+
+@app.route('/api/documents/<int:doc_id>/checkin', methods=['POST'])
+@login_required
+def api_documents_checkin(doc_id):
+    doc = Document.query.get_or_404(doc_id)
+    co_id = getattr(doc, 'checked_out_by_id', None)
+    if not co_id:
+        return jsonify({'error': 'File is not checked out'}), 400
+    if co_id != current_user.id:
+        return jsonify({'error': 'Only the user who checked out this file can check it in'}), 403
+    doc.checked_out_by_id = None
+    doc.checked_out_at = None
+    doc.checkout_note = None
+    _log_doc_activity(doc.project_id, 'checkin', document_id=doc.id, folder_id=doc.folder_id, detail={'name': doc.name})
+    db.session.commit()
+    return jsonify({'ok': True, 'document': _document_dict_with_user(doc)})
+
+
+@app.route('/api/documents/<int:doc_id>/force-unlock', methods=['POST'])
+@login_required
+def api_documents_force_unlock(doc_id):
+    doc = Document.query.get_or_404(doc_id)
+    co_id = getattr(doc, 'checked_out_by_id', None)
+    if not co_id:
+        return jsonify({'error': 'File is not checked out'}), 400
+    fields = _document_checkout_fields(doc)
+    if not fields.get('can_force_unlock'):
+        return jsonify({'error': 'Admin or folder manage permission required'}), 403
+    prev_user = _user_display_name(co_id)
+    doc.checked_out_by_id = None
+    doc.checked_out_at = None
+    doc.checkout_note = None
+    _log_doc_activity(
+        doc.project_id, 'force_unlock', document_id=doc.id, folder_id=doc.folder_id,
+        detail={'previous_user': prev_user},
+    )
     db.session.commit()
     return jsonify({'ok': True, 'document': _document_dict_with_user(doc)})
 
@@ -3720,6 +3955,9 @@ def api_share_links_revoke(link_id):
 @login_required
 def api_documents_delete(doc_id):
     doc = Document.query.get_or_404(doc_id)
+    lock_err = _document_edit_lock_error(doc)
+    if lock_err:
+        return lock_err
     if doc.is_system_locked:
         return jsonify({'error': 'This file is locked (job/print output) and cannot be deleted'}), 403
     if doc.deleted_at:
@@ -3819,6 +4057,8 @@ def api_documents_permanent_delete(doc_id):
         return jsonify({'error': 'Move to recycle bin first'}), 400
     if doc.is_system_locked:
         return jsonify({'error': 'Locked file cannot be permanently deleted'}), 403
+    if doc.legal_hold:
+        return jsonify({'error': 'File is on legal hold and cannot be deleted'}), 403
     upload_root = app.config.get('UPLOAD_FOLDER', 'uploads')
     file_path = os.path.join(upload_root, 'documents', str(doc.project_id), doc.filename)
     if os.path.isfile(file_path):
@@ -3853,6 +4093,9 @@ def api_document_versions_upload(doc_id):
     doc = Document.query.get_or_404(doc_id)
     if doc.deleted_at:
         return jsonify({'error': 'Document is in recycle bin'}), 400
+    lock_err = _document_edit_lock_error(doc)
+    if lock_err:
+        return lock_err
     folder = DocumentFolder.query.get(doc.folder_id) if doc.folder_id else None
     if folder and not _folder_access(folder, 'upload'):
         return jsonify({'error': 'No upload permission'}), 403
@@ -3895,6 +4138,9 @@ def api_document_version_download(doc_id, ver_id):
 def api_document_version_restore(doc_id, ver_id):
     from document_persistence import version_storage_path
     doc = Document.query.get_or_404(doc_id)
+    lock_err = _document_edit_lock_error(doc)
+    if lock_err:
+        return lock_err
     ver = DocumentVersion.query.filter_by(id=ver_id, document_id=doc_id).first_or_404()
     ver_dir = version_storage_path(app.config['UPLOAD_FOLDER'], doc.project_id, doc.id)
     src = os.path.join(ver_dir, ver.filename)
@@ -3976,15 +4222,21 @@ def api_project_document_activity():
 
 
 def _create_folder_share_link(folder_id, days=30, max_downloads=None, password=None, allow_upload=False):
+    from document_features import clamp_share_expiry_days, project_document_settings
     from document_persistence import default_share_expiry, folder_share_link_to_dict, hash_share_password, new_share_token
 
     folder = DocumentFolder.query.get_or_404(folder_id)
+    project = Project.query.get(folder.project_id)
+    settings = project_document_settings(project) if project else {}
+    expiry_days = clamp_share_expiry_days(days, settings)
+    needs_approval = bool(settings.get('share_requires_approval')) and getattr(current_user, 'role', '') not in ('Admin', 'Project Manager')
+    approval_status = 'pending' if needs_approval else 'approved'
     link = DocumentFolderShareLink(
         folder_id=folder.id,
         token=new_share_token(),
         label=folder.name,
         password_hash=hash_share_password(password),
-        expires_at=default_share_expiry(days),
+        expires_at=default_share_expiry(expiry_days),
         max_downloads=max_downloads,
         download_count=0,
         allow_browse=True,
@@ -3992,18 +4244,31 @@ def _create_folder_share_link(folder_id, days=30, max_downloads=None, password=N
         allow_upload=bool(allow_upload),
         created_by_id=current_user.id,
         created_at=datetime.utcnow(),
+        approval_status=approval_status,
+        approved_at=datetime.utcnow() if approval_status == 'approved' else None,
+        approved_by_id=current_user.id if approval_status == 'approved' else None,
     )
     db.session.add(link)
-    _log_doc_activity(folder.project_id, 'share', folder_id=folder.id, detail={'type': 'folder_link', 'allow_upload': allow_upload})
+    _log_doc_activity(folder.project_id, 'share', folder_id=folder.id, detail={'type': 'folder_link', 'allow_upload': allow_upload, 'approval_status': approval_status})
     db.session.commit()
     share = folder_share_link_to_dict(link, _documents_base_url())
     kind = 'Request-files' if allow_upload else 'Folder share'
-    _notify_documents_team(
-        folder.project_id,
-        f'{kind} link created',
-        f'A link was created for folder "{folder.name}".',
-        share.get('share_url'),
-    )
+    if approval_status == 'pending':
+        _notify_documents_team(
+            folder.project_id,
+            f'{kind} link pending approval',
+            f'A share link for folder "{folder.name}" needs PM approval.',
+            '/documents',
+        )
+    else:
+        _notify_documents_team(
+            folder.project_id,
+            f'{kind} link created',
+            f'A link was created for folder "{folder.name}". Expires in {expiry_days} days.',
+            share.get('share_url'),
+        )
+    share['approval_status'] = approval_status
+    share['expires_in_days'] = expiry_days
     return share
 
 
@@ -4326,6 +4591,254 @@ def api_documents_share_links_admin_revoke(link_kind, link_id):
         return jsonify({'error': 'Invalid link kind'}), 400
     db.session.commit()
     return jsonify({'ok': True})
+
+
+@app.route('/api/documents/bulk', methods=['POST'])
+@login_required
+def api_documents_bulk():
+    """Bulk move, delete, or download documents."""
+    import io
+    import zipfile
+
+    body = request.get_json(silent=True) or {}
+    action = (body.get('action') or '').strip().lower()
+    doc_ids = [int(x) for x in (body.get('document_ids') or []) if x]
+    if not doc_ids:
+        return jsonify({'error': 'document_ids required'}), 400
+
+    docs = [_active_documents().filter_by(id=did).first() for did in doc_ids]
+    docs = [d for d in docs if d]
+    if not docs:
+        return jsonify({'error': 'No documents found'}), 404
+
+    if action == 'move':
+        folder_id = body.get('folder_id')
+        if not folder_id:
+            return jsonify({'error': 'folder_id required'}), 400
+        folder = DocumentFolder.query.get_or_404(int(folder_id))
+        moved = 0
+        for doc in docs:
+            if doc.is_system_locked or doc.legal_hold:
+                continue
+            lock_err = _document_edit_lock_error(doc)
+            if lock_err:
+                continue
+            if doc.project_id != folder.project_id:
+                continue
+            doc.folder_id = folder.id
+            doc.updated_at = datetime.utcnow()
+            moved += 1
+        db.session.commit()
+        return jsonify({'ok': True, 'moved_count': moved})
+
+    if action == 'delete':
+        deleted = 0
+        for doc in docs:
+            if doc.is_system_locked or doc.legal_hold:
+                continue
+            lock_err = _document_edit_lock_error(doc)
+            if lock_err:
+                continue
+            if not doc.deleted_at:
+                doc.deleted_at = datetime.utcnow()
+                _log_doc_activity(doc.project_id, 'delete', document_id=doc.id, detail={'name': doc.name, 'bulk': True})
+                deleted += 1
+        db.session.commit()
+        return jsonify({'ok': True, 'deleted_count': deleted})
+
+    if action == 'download_zip':
+        upload_root = app.config.get('UPLOAD_FOLDER', 'uploads')
+        buf = io.BytesIO()
+        with zipfile.ZipFile(buf, 'w', zipfile.ZIP_DEFLATED) as zf:
+            used: set[str] = set()
+            for doc in docs:
+                path = os.path.join(upload_root, 'documents', str(doc.project_id), doc.filename)
+                if not os.path.isfile(path):
+                    continue
+                arc = (doc.original_filename or doc.name or doc.filename).replace('\\', '/').split('/')[-1]
+                name = arc
+                n = 1
+                while name in used:
+                    base, dot, ext = arc.rpartition('.')
+                    name = f'{base} ({n}).{ext}' if dot else f'{arc} ({n})'
+                    n += 1
+                used.add(name)
+                zf.write(path, name)
+        if not used:
+            return jsonify({'error': 'No files to download'}), 404
+        buf.seek(0)
+        return send_file(buf, mimetype='application/zip', as_attachment=True, download_name='documents.zip')
+
+    return jsonify({'error': 'Invalid action — use move, delete, or download_zip'}), 400
+
+
+@app.route('/api/documents/folder-templates', methods=['GET'])
+@login_required
+def api_document_folder_templates_list():
+    project_type = request.args.get('project_type')
+    q = DocumentFolderTemplate.query.order_by(DocumentFolderTemplate.name)
+    if project_type:
+        q = q.filter(
+            db.or_(
+                DocumentFolderTemplate.project_type.is_(None),
+                DocumentFolderTemplate.project_type == '',
+                DocumentFolderTemplate.project_type == project_type,
+            )
+        )
+    templates = q.all()
+    return jsonify({
+        'ok': True,
+        'templates': [{
+            'id': t.id,
+            'name': t.name,
+            'project_type': t.project_type,
+            'description': t.description,
+            'is_system': bool(t.is_system),
+        } for t in templates],
+    })
+
+
+@app.route('/api/documents/folder-templates/<int:template_id>/apply', methods=['POST'])
+@login_required
+def api_document_folder_template_apply(template_id):
+    from document_features import apply_folder_template
+
+    template = DocumentFolderTemplate.query.get_or_404(template_id)
+    body = request.get_json(silent=True) or {}
+    project_id = body.get('project_id') or get_current_project_id()
+    if not project_id:
+        return jsonify({'error': 'project_id required'}), 400
+    created = apply_folder_template(db, DocumentFolder, template, int(project_id), current_user.id)
+    db.session.commit()
+    return jsonify({'ok': True, 'created_folder_ids': created, 'created_count': len(created)})
+
+
+@app.route('/api/projects/<int:project_id>/document-settings', methods=['GET'])
+@login_required
+def api_project_document_settings_get(project_id):
+    from document_features import project_document_settings
+
+    project = Project.query.get_or_404(project_id)
+    return jsonify({'ok': True, 'settings': project_document_settings(project)})
+
+
+@app.route('/api/projects/<int:project_id>/document-settings', methods=['PATCH'])
+@login_required
+def api_project_document_settings_patch(project_id):
+    from document_features import project_document_settings
+
+    if getattr(current_user, 'role', '') not in ('Admin', 'Project Manager'):
+        return jsonify({'error': 'Admin or PM required'}), 403
+    project = Project.query.get_or_404(project_id)
+    body = request.get_json(silent=True) or {}
+    details = project.get_details()
+    docs = details.get('documents') or {}
+    for key in ('share_requires_approval', 'default_share_expiry_days', 'max_share_expiry_days', 'retention_years'):
+        if key in body:
+            docs[key] = body[key]
+    details['documents'] = docs
+    project.set_details(details)
+    db.session.commit()
+    return jsonify({'ok': True, 'settings': project_document_settings(project)})
+
+
+@app.route('/api/documents/share-links/<string:link_kind>/<int:link_id>/approve', methods=['POST'])
+@login_required
+def api_share_link_approve(link_kind, link_id):
+    if getattr(current_user, 'role', '') not in ('Admin', 'Project Manager'):
+        return jsonify({'error': 'Admin or PM required'}), 403
+    body = request.get_json(silent=True) or {}
+    approve = body.get('approve', True)
+    if link_kind == 'file':
+        link = DocumentShareLink.query.get_or_404(link_id)
+    elif link_kind == 'folder':
+        link = DocumentFolderShareLink.query.get_or_404(link_id)
+    else:
+        return jsonify({'error': 'Invalid link kind'}), 400
+    link.approval_status = 'approved' if approve else 'rejected'
+    link.approved_by_id = current_user.id
+    link.approved_at = datetime.utcnow()
+    db.session.commit()
+    return jsonify({'ok': True, 'approval_status': link.approval_status})
+
+
+@app.route('/api/submittals/sync', methods=['POST'])
+@login_required
+def api_submittal_sync():
+    """Upsert a submittal from the UI and return server id for attachments."""
+    body = request.get_json(silent=True) or {}
+    project_id = body.get('project_id') or get_current_project_id()
+    number = (body.get('number') or '').strip()
+    description = (body.get('description') or body.get('subject') or 'Submittal').strip()
+    if not project_id or not number:
+        return jsonify({'error': 'project_id and number required'}), 400
+    submittal = Submittal.query.filter_by(project_id=int(project_id), number=number).first()
+    if not submittal:
+        submittal = Submittal(
+            project_id=int(project_id),
+            number=number,
+            description=description[:200],
+            spec_section=body.get('spec_section'),
+            status=body.get('status') or 'Pending',
+            priority=body.get('priority') or 'Medium',
+            submitted_by=body.get('submitted_by') or _user_display_name(current_user.id),
+            date=datetime.utcnow().date(),
+        )
+        db.session.add(submittal)
+    else:
+        submittal.description = description[:200]
+        if body.get('status'):
+            submittal.status = body['status']
+        if body.get('spec_section'):
+            submittal.spec_section = body['spec_section']
+    db.session.commit()
+    from rfi_persistence import _parse_json
+    attachments = _parse_json(submittal.attachments_json, [])
+    return jsonify({'ok': True, 'submittal_id': submittal.id, 'number': submittal.number, 'attachments': attachments})
+
+
+@app.route('/api/submittals/<int:submittal_id>/attachments', methods=['GET'])
+@login_required
+def api_submittal_list_attachments(submittal_id):
+    from rfi_persistence import _parse_json
+    submittal = Submittal.query.get_or_404(submittal_id)
+    attachments = _parse_json(submittal.attachments_json, [])
+    for a in attachments:
+        a['url'] = url_for('serve_submittal_attachment', submittal_id=submittal_id, filename=a.get('filename', ''))
+    return jsonify({'ok': True, 'attachments': attachments})
+
+
+@app.route('/api/daily-logs/<int:log_id>', methods=['GET'])
+@login_required
+def api_daily_log_get(log_id):
+    from rfi_persistence import _parse_json
+    log = DailyLog.query.get_or_404(log_id)
+    attachments = _parse_json(log.attachments_json, [])
+    for a in attachments:
+        a['url'] = url_for('serve_daily_log_attachment', log_id=log_id, filename=a.get('filename', ''))
+    return jsonify({
+        'ok': True,
+        'log': {
+            'id': log.id,
+            'project_id': log.project_id,
+            'date': log.date.isoformat() if log.date else None,
+            'weather': log.weather,
+            'work_performed': log.work_performed,
+            'notes': log.notes,
+            'attachments': attachments,
+        },
+    })
+
+
+@app.route('/api/daily-logs/<int:log_id>/attachments', methods=['GET'])
+@login_required
+def api_daily_log_list_attachments(log_id):
+    from rfi_persistence import _parse_json
+    log = DailyLog.query.get_or_404(log_id)
+    attachments = _parse_json(log.attachments_json, [])
+    for a in attachments:
+        a['url'] = url_for('serve_daily_log_attachment', log_id=log_id, filename=a.get('filename', ''))
+    return jsonify({'ok': True, 'attachments': attachments})
 
 
 @app.route('/drawings')

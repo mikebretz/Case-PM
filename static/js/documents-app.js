@@ -25,7 +25,13 @@
     previewTab: 'details',
     permissionsFolderId: null,
     versionUploadId: null,
+    bulkSelected: new Set(),
+    bulkMode: false,
   };
+
+  function currentUserId() {
+    return global.CASEPM_CURRENT_USER_ID || null;
+  }
 
   function projectId() {
     if (global.CASEPM_ACTIVE_PROJECT_ID) return global.CASEPM_ACTIVE_PROJECT_ID;
@@ -340,8 +346,10 @@
       const sel = state.selected?.kind === 'file' && state.selected.id === f.id ? ' selected' : '';
       const fi = fileIcon(f.name, f.mime_type);
       const lock = f.is_system_locked ? '<span class="docs-item-badge">Job</span>' : '';
-      html += `<div class="docs-item file ${fi.cls}${sel}" data-kind="file" data-id="${f.id}" data-locked="${f.is_system_locked ? '1' : ''}" draggable="${f.is_system_locked ? 'false' : 'true'}">
-        ${lock}
+      const co = f.is_checked_out ? `<span class="docs-item-badge checkout" title="Checked out by ${esc(f.checked_out_by_name || '')}"><i class="fa-solid fa-lock text-[9px]"></i></span>` : '';
+      const bulk = state.browseMode === 'normal' ? `<input type="checkbox" class="docs-bulk-cb" data-bulk-id="${f.id}" ${state.bulkSelected.has(f.id) ? 'checked' : ''}>` : '';
+      html += `<div class="docs-item file ${fi.cls}${sel}" data-kind="file" data-id="${f.id}" data-locked="${f.is_system_locked ? '1' : ''}" data-edit-locked="${f.is_edit_locked ? '1' : ''}" draggable="${f.is_system_locked || f.is_edit_locked ? 'false' : 'true'}">
+        ${lock}${co}${bulk}
         <div class="docs-item-icon"><i class="fa-solid ${fi.icon}"></i></div>
         <div class="docs-item-name">${esc(f.name)}</div>
         <div class="docs-item-meta">${esc(f.size || '')}</div>
@@ -373,8 +381,8 @@
     files.forEach(f => {
       const sel = state.selected?.kind === 'file' && state.selected.id === f.id ? ' selected' : '';
       const fi = fileIcon(f.name, f.mime_type);
-      html += `<tr class="${sel}" data-kind="file" data-id="${f.id}" data-locked="${f.is_system_locked ? '1' : ''}" draggable="${f.is_system_locked ? 'false' : 'true'}">
-        <td class="docs-row-icon ${fi.cls}"><i class="fa-solid ${fi.icon}"></i></td>
+      html += `<tr class="${sel}" data-kind="file" data-id="${f.id}" data-locked="${f.is_system_locked ? '1' : ''}" data-edit-locked="${f.is_edit_locked ? '1' : ''}" draggable="${f.is_system_locked || f.is_edit_locked ? 'false' : 'true'}">
+        <td class="docs-row-icon ${fi.cls}">${state.browseMode === 'normal' ? `<input type="checkbox" class="docs-bulk-cb" data-bulk-id="${f.id}" ${state.bulkSelected.has(f.id) ? 'checked' : ''}>` : ''}<i class="fa-solid ${fi.icon}"></i>${f.is_checked_out ? ' <i class="fa-solid fa-lock text-amber-400 text-[10px]" title="Checked out"></i>' : ''}</td>
         <td>${esc(f.name)}</td>
         <td class="text-xs text-zinc-500">${esc(f.document_type || '')}</td>
         <td class="text-xs">${esc(f.size || '')}</td>
@@ -425,8 +433,12 @@
         selectItem(el.dataset.kind, parseInt(el.dataset.id, 10), el.dataset.locked === '1', el.dataset.system === '1');
         showContextMenu(e.clientX, e.clientY);
       });
-      if (el.dataset.kind === 'file' && el.dataset.locked !== '1') bindFileDrag(el);
+      if (el.dataset.kind === 'file' && el.dataset.locked !== '1' && el.dataset.editLocked !== '1') bindFileDrag(el);
       if (el.dataset.kind === 'folder') bindFolderDropTarget(el, parseInt(el.dataset.dropFolder, 10));
+    });
+    container.querySelectorAll('.docs-bulk-cb').forEach(cb => {
+      cb.addEventListener('click', e => e.stopPropagation());
+      cb.addEventListener('change', () => toggleBulkSelect(parseInt(cb.dataset.bulkId, 10), cb.checked));
     });
   }
 
@@ -583,12 +595,23 @@
         <dt>Type</dt><dd>${esc(doc.document_type || doc.mime_type || '—')}</dd>
         <dt>Folder</dt><dd>${esc(doc.folder_name || '—')}</dd>
         ${doc.is_system_locked ? '<dt>Status</dt><dd class="text-violet-300">Locked job file</dd>' : ''}
+        ${doc.is_checked_out ? `<dt>Checked out</dt><dd class="text-amber-300">${esc(doc.checked_out_by_name || 'Someone')}${doc.checked_out_at ? ' · ' + esc(doc.checked_out_at.slice(0, 16).replace('T', ' ')) : ''}</dd>` : ''}
+        ${doc.legal_hold ? '<dt>Legal hold</dt><dd class="text-red-300">On hold — cannot delete</dd>' : ''}
+        ${(doc.tags || []).length ? `<dt>Tags</dt><dd>${esc((doc.tags || []).join(', '))}</dd>` : ''}
       </dl>
       <div class="docs-preview-actions">
         <button type="button" class="docs-btn docs-btn-secondary" id="docsPreviewDownload"><i class="fa-solid fa-download"></i> Download</button>
         <button type="button" class="docs-btn docs-btn-secondary" id="docsPreviewShare"><i class="fa-solid fa-link"></i> Share</button>
-        ${!doc.is_system_locked ? '<button type="button" class="docs-btn docs-btn-secondary" id="docsPreviewNewVersion"><i class="fa-solid fa-clock-rotate-left"></i> New version</button>' : ''}
-      </div>`;
+        ${doc.can_check_out ? '<button type="button" class="docs-btn docs-btn-secondary" id="docsPreviewCheckout"><i class="fa-solid fa-lock"></i> Check out</button>' : ''}
+        ${doc.can_check_in ? '<button type="button" class="docs-btn docs-btn-secondary" id="docsPreviewCheckin"><i class="fa-solid fa-lock-open"></i> Check in</button>' : ''}
+        ${doc.can_force_unlock ? '<button type="button" class="docs-btn docs-btn-secondary" id="docsPreviewForceUnlock"><i class="fa-solid fa-unlock"></i> Force unlock</button>' : ''}
+        ${!doc.is_system_locked && !doc.is_edit_locked ? '<button type="button" class="docs-btn docs-btn-secondary" id="docsPreviewNewVersion"><i class="fa-solid fa-clock-rotate-left"></i> New version</button>' : ''}
+      </div>
+      ${!doc.is_system_locked ? `<div class="mt-3 pt-3 border-t border-zinc-800">
+        <label class="text-xs text-zinc-500 block mb-1">Tags (comma-separated)</label>
+        <input type="text" id="docsPreviewTags" class="docs-input w-full text-xs mb-2" value="${esc((doc.tags || []).join(', '))}">
+        <button type="button" class="docs-btn docs-btn-secondary w-full text-xs" id="docsPreviewSaveTags">Save tags</button>
+      </div>` : ''}`;
   }
 
   async function renderPreviewVersions(fileId, doc) {
@@ -627,6 +650,19 @@
   function bindPreviewActions(doc) {
     document.getElementById('docsPreviewDownload')?.addEventListener('click', () => downloadFile(doc.id));
     document.getElementById('docsPreviewShare')?.addEventListener('click', () => copyShareLink(doc.id));
+    document.getElementById('docsPreviewCheckout')?.addEventListener('click', () => checkoutDocument(doc.id));
+    document.getElementById('docsPreviewCheckin')?.addEventListener('click', () => checkinDocument(doc.id));
+    document.getElementById('docsPreviewForceUnlock')?.addEventListener('click', () => forceUnlockDocument(doc.id));
+    document.getElementById('docsPreviewSaveTags')?.addEventListener('click', async () => {
+      const tags = document.getElementById('docsPreviewTags')?.value || '';
+      await api(`/api/documents/${doc.id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ tags: tags.split(',').map(t => t.trim()).filter(Boolean) }),
+      });
+      toast('Tags saved');
+      await loadPreview(doc.id);
+    });
     document.getElementById('docsPreviewNewVersion')?.addEventListener('click', () => {
       state.versionUploadId = doc.id;
       document.getElementById('docsVersionInput')?.click();
@@ -691,6 +727,10 @@
     } else {
       items.push({ label: 'Preview', action: () => showPreview(state.selected.id) });
       items.push({ label: 'Download', action: () => downloadFile(state.selected.id) });
+      const file = state.files.find(f => f.id === state.selected.id) || state.previewDoc;
+      if (file?.can_check_out) items.push({ label: 'Check out', action: () => checkoutDocument(state.selected.id) });
+      if (file?.can_check_in) items.push({ label: 'Check in', action: () => checkinDocument(state.selected.id) });
+      if (file?.can_force_unlock) items.push({ label: 'Force unlock', action: () => forceUnlockDocument(state.selected.id) });
       items.push({ label: 'Get shareable link (copy)', action: () => copyShareLink(state.selected.id) });
       items.push({ label: 'Share link options…', action: () => createShareLink(state.selected.id) });
       items.push({ label: 'Rename', action: () => startRename('file', state.selected.id), disabled: state.selected.locked });
@@ -811,17 +851,22 @@
     else console.log(msg);
   }
 
-  async function copyShareLink(fileId, password) {
+  async function copyShareLink(fileId, password, expiresDays) {
     try {
+      const days = expiresDays || parseInt(document.getElementById('docsShareExpiryDays')?.value || '30', 10);
       const json = await api(`/api/documents/${fileId}/share-links`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ expires_days: 30, password: password || undefined }),
+        body: JSON.stringify({ expires_days: days, password: password || undefined }),
       });
       const url = json.share_link?.share_url || '';
       if (!url) throw new Error('No share link returned');
+      if (json.share_link?.approval_status === 'pending') {
+        toast('Share link submitted for PM approval — it will not work until approved');
+        return;
+      }
       await navigator.clipboard.writeText(url);
-      toast('Share link copied — recipients can download this file');
+      toast(`Share link copied — expires in ${json.share_link?.expires_in_days || days} days`);
     } catch (err) {
       alert(err.message || 'Could not create share link');
     }
@@ -829,15 +874,18 @@
 
   async function createShareLink(fileId) {
     const password = document.getElementById('docsSharePassword')?.value || '';
+    const days = parseInt(document.getElementById('docsShareExpiryDays')?.value || '30', 10);
     const json = await api(`/api/documents/${fileId}/share-links`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ expires_days: 30, password: password || undefined }),
+      body: JSON.stringify({ expires_days: days, password: password || undefined }),
     });
     const url = json.share_link?.share_url || '';
     state.shareUrl = url;
     document.getElementById('docsShareUrl').value = url;
-    document.getElementById('docsShareMeta').textContent = json.share_link?.expires_at
+    document.getElementById('docsShareMeta').textContent = json.share_link?.approval_status === 'pending'
+      ? 'Pending PM approval — link inactive until approved'
+      : json.share_link?.expires_at
       ? `Expires ${json.share_link.expires_at.slice(0, 10)} · ${json.share_link.download_count || 0} downloads`
       : '';
     document.getElementById('docsShareDialog')?.showModal();
@@ -845,11 +893,12 @@
 
   async function createFolderShareLink(folderId, allowUpload) {
     const password = document.getElementById('docsFolderSharePassword')?.value || '';
+    const days = parseInt(document.getElementById('docsFolderShareExpiryDays')?.value || '30', 10);
     const json = await api(`/api/document-folders/${folderId}/share-links`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        expires_days: 30,
+        expires_days: days,
         password: password || undefined,
         allow_upload: !!allowUpload,
       }),
@@ -860,7 +909,9 @@
     document.getElementById('docsFolderShareDialog')?.showModal();
     if (url) {
       await navigator.clipboard.writeText(url);
-      toast(allowUpload ? 'Request-files link copied' : 'Folder share link copied');
+      toast(json.share_link?.approval_status === 'pending'
+        ? 'Link pending PM approval'
+        : allowUpload ? 'Request-files link copied' : 'Folder share link copied');
     }
   }
 
@@ -928,6 +979,118 @@
     await loadTrash();
   }
 
+  async function checkoutDocument(id) {
+    await api(`/api/documents/${id}/checkout`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' });
+    toast('File checked out — you have exclusive edit access');
+    if (state.previewFileId === id) await loadPreview(id);
+    await loadBrowse(state.folderId);
+  }
+
+  async function checkinDocument(id) {
+    await api(`/api/documents/${id}/checkin`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' });
+    toast('File checked in');
+    if (state.previewFileId === id) await loadPreview(id);
+    await loadBrowse(state.folderId);
+  }
+
+  async function forceUnlockDocument(id) {
+    if (!confirm('Force unlock this file? The person who checked it out will lose edit access.')) return;
+    await api(`/api/documents/${id}/force-unlock`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' });
+    toast('File unlocked');
+    if (state.previewFileId === id) await loadPreview(id);
+    await loadBrowse(state.folderId);
+  }
+
+  function toggleBulkSelect(id, checked) {
+    if (checked) state.bulkSelected.add(id);
+    else state.bulkSelected.delete(id);
+    updateBulkToolbar();
+  }
+
+  function updateBulkToolbar() {
+    const bar = document.getElementById('docsBulkBar');
+    const count = document.getElementById('docsBulkCount');
+    if (count) count.textContent = String(state.bulkSelected.size);
+    if (bar) bar.classList.toggle('hidden', state.bulkSelected.size === 0);
+  }
+
+  async function bulkMove() {
+    const ids = [...state.bulkSelected];
+    if (!ids.length || state.folderId == null) {
+      toast('Select files and open a destination folder');
+      return;
+    }
+    await api('/api/documents/bulk', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action: 'move', document_ids: ids, folder_id: state.folderId }),
+    });
+    state.bulkSelected.clear();
+    updateBulkToolbar();
+    toast('Files moved');
+    await loadBrowse(state.folderId);
+  }
+
+  async function bulkDelete() {
+    const ids = [...state.bulkSelected];
+    if (!ids.length || !confirm(`Move ${ids.length} file(s) to recycle bin?`)) return;
+    await api('/api/documents/bulk', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action: 'delete', document_ids: ids }),
+    });
+    state.bulkSelected.clear();
+    updateBulkToolbar();
+    toast('Files moved to trash');
+    await loadBrowse(state.folderId);
+  }
+
+  function bulkDownloadZip() {
+    const ids = [...state.bulkSelected];
+    if (!ids.length) return;
+    fetch('/api/documents/bulk', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action: 'download_zip', document_ids: ids }),
+      credentials: 'same-origin',
+    }).then(async res => {
+      if (!res.ok) {
+        const j = await res.json().catch(() => ({}));
+        alert(j.error || 'Download failed');
+        return;
+      }
+      const blob = await res.blob();
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(blob);
+      a.download = 'documents.zip';
+      a.click();
+      URL.revokeObjectURL(a.href);
+    });
+  }
+
+  async function applyFolderTemplate() {
+    const pid = projectId();
+    if (!pid) return;
+    const json = await api(`/api/documents/folder-templates?project_id=${pid}`);
+    const templates = json.templates || [];
+    if (!templates.length) {
+      toast('No folder templates available');
+      return;
+    }
+    const names = templates.map((t, i) => `${i + 1}. ${t.name}${t.project_type ? ` (${t.project_type})` : ''}`).join('\n');
+    const pick = prompt(`Apply folder template:\n${names}\n\nEnter number:`);
+    const idx = parseInt(pick, 10) - 1;
+    if (Number.isNaN(idx) || !templates[idx]) return;
+    await api(`/api/documents/folder-templates/${templates[idx].id}/apply`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ project_id: pid }),
+    });
+    toast(`Template "${templates[idx].name}" applied`);
+    await loadTree();
+    await loadBrowse(state.folderId);
+  }
+
   function downloadFile(id) {
     window.open(`/api/documents/${id}/download`, '_blank');
   }
@@ -954,6 +1117,7 @@
     if (link.has_password) parts.push('Password');
     if (link.allow_upload) parts.push('Uploads allowed');
     if (link.expires_at) parts.push(`Expires ${link.expires_at.slice(0, 10)}`);
+    if (link.approval_status === 'pending') parts.push('Pending approval');
     parts.push(`${link.download_count || 0} downloads`);
     return parts.join(' · ');
   }
@@ -973,6 +1137,7 @@
       <div class="actions">
         ${link.share_url && !link.revoked ? `<button type="button" class="docs-btn docs-btn-secondary text-xs" data-copy-url="${esc(link.share_url)}">Copy</button>` : ''}
         ${!link.revoked ? `<button type="button" class="docs-btn docs-btn-secondary text-xs text-red-300" data-revoke-link="${kind}:${link.id}">Revoke</button>` : ''}
+        ${link.approval_status === 'pending' ? `<button type="button" class="docs-btn docs-btn-secondary text-xs text-emerald-300" data-approve-link="${kind}:${link.id}">Approve</button>` : ''}
       </div>
     </div>`;
   }
@@ -1010,6 +1175,19 @@
           if (!kind || !id || !confirm('Revoke this share link? Recipients will no longer be able to use it.')) return;
           await api(`/api/documents/share-links/admin/${kind}/${id}`, { method: 'DELETE' });
           toast('Link revoked');
+          await openShareLinksAdmin();
+        });
+      });
+      body.querySelectorAll('[data-approve-link]').forEach(btn => {
+        btn.addEventListener('click', async () => {
+          const [kind, id] = (btn.dataset.approveLink || '').split(':');
+          if (!kind || !id) return;
+          await api(`/api/documents/share-links/${kind}/${id}/approve`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ approve: true }),
+          });
+          toast('Link approved');
           await openShareLinksAdmin();
         });
       });
@@ -1094,8 +1272,10 @@
     });
     document.getElementById('docsFileInput')?.addEventListener('change', async e => {
       try {
-        await uploadFiles(e.target.files);
+        const results = await uploadFiles(e.target.files);
         toast('Upload complete');
+        const dup = results?.find(r => r?.duplicate_warning);
+        if (dup?.duplicate_warning) toast(dup.duplicate_warning.message);
       } catch (err) {
         alert(err.message);
       }
@@ -1109,6 +1289,15 @@
     });
     document.getElementById('docsBtnShareLinks')?.addEventListener('click', openShareLinksAdmin);
     document.getElementById('docsBtnDownloadZip')?.addEventListener('click', () => downloadFolderZip());
+    document.getElementById('docsBtnTemplate')?.addEventListener('click', applyFolderTemplate);
+    document.getElementById('docsBulkMove')?.addEventListener('click', bulkMove);
+    document.getElementById('docsBulkDelete')?.addEventListener('click', bulkDelete);
+    document.getElementById('docsBulkZip')?.addEventListener('click', bulkDownloadZip);
+    document.getElementById('docsBulkClear')?.addEventListener('click', () => {
+      state.bulkSelected.clear();
+      updateBulkToolbar();
+      render();
+    });
     document.getElementById('docsShareLinksAdminClose')?.addEventListener('click', () => {
       document.getElementById('docsShareLinksAdminDialog')?.close();
     });

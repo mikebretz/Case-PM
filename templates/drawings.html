@@ -937,6 +937,11 @@
             <button type="button" id="docSnipDialogClose" class="text-zinc-400 hover:text-white text-2xl cursor-pointer">&times;</button>
         </div>
         <img id="docSnipPreview" class="w-full max-h-36 object-contain bg-zinc-950 border border-zinc-700 rounded-md mb-4" alt="Snip preview">
+        <label class="block text-xs text-zinc-400 mb-1">Save format</label>
+        <select id="docSnipFormat" class="w-full bg-zinc-800 border border-zinc-700 rounded-md px-3 py-2 text-sm mb-3">
+            <option value="png">PNG image</option>
+            <option value="pdf">PDF (single page)</option>
+        </select>
         <label class="block text-xs text-zinc-400 mb-1">Document name</label>
         <input type="text" id="docSnipName" class="w-full bg-zinc-800 border border-zinc-700 rounded-md px-3 py-2 text-sm mb-3" placeholder="Drawing snip">
         <label class="block text-xs text-zinc-400 mb-1">Type</label>
