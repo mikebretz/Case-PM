@@ -1366,12 +1366,12 @@ def _ocr_title_block(pdf_path: str, page_index: int) -> list[LabeledCell]:
             rect.width * CORNER_X1_RATIO,
             rect.height * 0.995,
         )
-        matrix = fitz.Matrix(5.0, 5.0)
+        matrix = fitz.Matrix(4.0, 4.0)
         pix = page.get_pixmap(matrix=matrix, clip=clip, alpha=False)
         img = Image.open(io.BytesIO(pix.tobytes('png')))
         scale_x = clip.width / img.width
         scale_y = clip.height / img.height
-        for psm in ('--psm 6', '--psm 4', '--psm 11'):
+        for psm in ('--psm 6', '--psm 11'):
             try:
                 data = pytesseract.image_to_data(img, config=psm, output_type=pytesseract.Output.DICT)
             except Exception:
@@ -1410,6 +1410,8 @@ def _ocr_title_block(pdf_path: str, page_index: int) -> list[LabeledCell]:
                 right_cells = _cluster_lines_into_cells([l for l in split_lines if l.column == 'right'], max(8.0, med_size * 1.0))
                 cells.extend(full_cells)
                 cells.extend(right_cells)
+                if len(cells) >= 2:
+                    break
         doc.close()
     except Exception:
         pass
@@ -1448,7 +1450,16 @@ def analyze_title_block_grid(pdf_path: str, page_index: int = 0) -> dict[str, An
     except Exception:
         return result
 
-    if len(cells) < 2:
+    prox_conf = proximity.get('confidence') or {}
+    prox_sheet = proximity.get('sheet_number')
+    prox_name = (proximity.get('drawing_name') or '').strip()
+    proximity_complete = bool(
+        prox_sheet
+        and len(prox_name) >= 3
+        and float(prox_conf.get('sheet', 0) or 0) >= 1.5
+    )
+
+    if len(cells) < 2 and not proximity_complete:
         ocr_cells = _ocr_title_block(pdf_path, page_index)
         seen = {(round(c.y0, 1), c.label_kind, c.value_text) for c in cells}
         for c in ocr_cells:

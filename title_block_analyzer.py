@@ -53,8 +53,14 @@ NOTE_FRAGMENT_RE = re.compile(
     r'\b(DEMO(?:\'?D)?|REINFORCING|CONTRACTOR|INSTALL|VERIFY|REFER|SEE\s+STRUCTURAL|TO\s+BE|EXISTING|NEW\s+WORK)\b',
     re.I,
 )
-OCR_PSM_MODES = ('--psm 6', '--psm 7', '--psm 11', '--psm 12')
-OCR_MATRIX = 4.5
+OCR_PSM_MODES = ('--psm 6', '--psm 11')
+OCR_MATRIX = 3.5
+
+_ocr_fields_cache: dict[tuple[str, int], dict[str, str]] = {}
+
+
+def clear_title_block_ocr_cache() -> None:
+    _ocr_fields_cache.clear()
 
 
 def _score_title_block_position(x0: float, y0: float, page_w: float, page_h: float) -> float:
@@ -206,7 +212,6 @@ def _ocr_clip(page, clip, psm_modes: tuple[str, ...] = OCR_PSM_MODES) -> str:
         import fitz
     except ImportError:
         return ''
-    chunks = []
     try:
         pix = page.get_pixmap(matrix=fitz.Matrix(OCR_MATRIX, OCR_MATRIX), clip=clip, alpha=False)
         img = Image.open(io.BytesIO(pix.tobytes('png')))
@@ -214,37 +219,49 @@ def _ocr_clip(page, clip, psm_modes: tuple[str, ...] = OCR_PSM_MODES) -> str:
             try:
                 chunk = pytesseract.image_to_string(img, config=psm) or ''
                 if chunk.strip():
-                    chunks.append(chunk)
+                    return chunk
             except Exception:
                 continue
     except Exception:
         pass
-    return '\n'.join(chunks)
+    return ''
 
 
 def ocr_title_block_fields(pdf_path: str, page_index: int = 0) -> dict[str, str]:
-    """Run targeted OCR on sheet-number, drawing-name, and revision regions."""
+    """Run a single targeted OCR pass on the title-block corner (cached per page)."""
+    import os
+
+    cache_key = (os.path.abspath(pdf_path), int(page_index))
+    cached = _ocr_fields_cache.get(cache_key)
+    if cached is not None:
+        return dict(cached)
+
     result = {'sheet_number': '', 'drawing_name': '', 'revision': '', 'full': ''}
     try:
         import fitz
         doc = fitz.open(pdf_path)
         if page_index >= len(doc):
             doc.close()
+            _ocr_fields_cache[cache_key] = result
             return result
         page = doc[page_index]
         rect = page.rect
         clips = _title_block_clips(rect.width, rect.height)
-        for field, regions in clips.items():
-            parts = []
-            for clip in regions:
-                text = _ocr_clip(page, clip)
-                if text.strip():
-                    parts.append(text)
-            result[field if field != 'full_block' else 'full'] = '\n'.join(parts)
+        full_text = ''
+        for clip in clips.get('full_block', []):
+            full_text = _ocr_clip(page, clip)
+            if full_text.strip():
+                break
         doc.close()
+        if full_text.strip():
+            result['full'] = full_text
+            result['sheet_number'] = full_text
+            result['drawing_name'] = full_text
+            result['revision'] = full_text
     except Exception:
         pass
-    return result
+    _ocr_fields_cache[cache_key] = result
+    return dict(result)
 
 
 def _extract_labeled_value(lines: list[dict], label_patterns: tuple, validator=None) -> str | None:
@@ -529,7 +546,20 @@ def _merge_grid_and_legacy(grid: dict, legacy: dict) -> dict:
     return out
 
 
-def _analyze_title_block_legacy(pdf_path: str, page_index: int = 0) -> dict:
+def _grid_result_trusted(grid: dict) -> bool:
+    if not grid:
+        return False
+    sheet = grid.get('sheet_number')
+    name = (grid.get('drawing_name') or grid.get('title') or '').strip()
+    if not sheet or len(name) < 3:
+        return False
+    if grid.get('sheet_label_anchored'):
+        return True
+    conf = grid.get('confidence') or {}
+    return float(conf.get('sheet', 0) or 0) >= 2.5 and float(conf.get('name', 0) or 0) >= 2.0
+
+
+def _analyze_title_block_legacy(pdf_path: str, page_index: int = 0, *, skip_ocr: bool = False) -> dict:
     """Layout + multi-region OCR consensus (pre-grid pipeline)."""
     result: dict[str, Any] = {
         'sheet_number': None,
@@ -601,8 +631,10 @@ def _analyze_title_block_legacy(pdf_path: str, page_index: int = 0) -> dict:
     if layout_rev:
         rev_sources.append((1.0, layout_rev))
 
-    # Targeted OCR per field
-    ocr_fields = ocr_title_block_fields(pdf_path, page_index)
+    ocr_fields = {'sheet_number': '', 'drawing_name': '', 'revision': '', 'full': ''}
+    need_ocr = not skip_ocr and (not labeled_sheet or not layout_name)
+    if need_ocr:
+        ocr_fields = ocr_title_block_fields(pdf_path, page_index)
     merged_text = '\n'.join(filter(None, [embedded, ocr_fields.get('full', '')]))
 
     for field_key, weight in (('sheet_number', 1.05), ('drawing_name', 1.08), ('revision', 1.02)):
@@ -683,7 +715,14 @@ def analyze_title_block(pdf_path: str, page_index: int = 0) -> dict:
     except Exception:
         grid_result = {}
 
-    legacy = _analyze_title_block_legacy(pdf_path, page_index)
+    if _grid_result_trusted(grid_result):
+        return grid_result
+
+    legacy = _analyze_title_block_legacy(
+        pdf_path,
+        page_index,
+        skip_ocr=_grid_result_trusted(grid_result),
+    )
     if grid_result:
         return _merge_grid_and_legacy(grid_result, legacy)
     return legacy
