@@ -99,15 +99,26 @@
     state.folderId = folderId;
     state.browseMode = 'normal';
     const q = folderId != null ? `&folder_id=${folderId}` : '';
-    const json = await api(`/api/documents/browse?project_id=${pid}${q}`);
-    state.folders = json.folders || [];
-    state.files = json.files || [];
-    state.breadcrumbs = json.breadcrumbs || [];
-    if (state.previewFileId && !state.files.some(f => f.id === state.previewFileId)) {
-      closePreview();
+    try {
+      const json = await api(`/api/documents/browse?project_id=${pid}${q}`);
+      state.folders = json.folders || [];
+      state.files = json.files || [];
+      state.breadcrumbs = json.breadcrumbs || [];
+      if (state.previewFileId && !state.files.some(f => f.id === state.previewFileId)) {
+        closePreview();
+      }
+      render();
+      loadTree();
+      updateDownloadZipButton();
+    } catch (err) {
+      if (folderId != null && String(err.message || '').includes('access')) {
+        toast('You do not have access to that folder');
+        state.folderId = null;
+        await openRoot();
+        return;
+      }
+      throw err;
     }
-    render();
-    loadTree();
   }
 
   function openFolder(id) {
@@ -234,12 +245,14 @@
       empty?.classList.remove('hidden');
       if (empty) empty.innerHTML = '<p class="text-zinc-500">No matches found.</p>';
       gridWrap?.classList.add('hidden');
+      updateDownloadZipButton();
       return;
     }
     empty?.classList.add('hidden');
     gridWrap?.classList.remove('hidden');
     if (state.viewMode === 'list') renderList(folders, files);
     else renderGrid(folders, files);
+    updateDownloadZipButton();
   }
 
   async function loadTrash() {
@@ -253,6 +266,7 @@
     state.breadcrumbs = [{ id: 0, name: 'Recycle bin' }];
     closePreview();
     renderBrowseResults();
+    updateDownloadZipButton();
   }
 
   async function exitTrash() {
@@ -382,12 +396,14 @@
       document.getElementById('docsTableBody').innerHTML = '';
       empty?.classList.remove('hidden');
       gridWrap?.classList.add('hidden');
+      updateDownloadZipButton();
       return;
     }
     empty?.classList.add('hidden');
     gridWrap?.classList.remove('hidden');
     if (state.viewMode === 'list') renderList(folders, files);
     else renderGrid(folders, files);
+    updateDownloadZipButton();
   }
 
   function bindItemEvents(container) {
@@ -664,6 +680,7 @@
       }
     } else if (state.selected.kind === 'folder') {
       items.push({ label: 'Open', action: () => openFolder(state.selected.id) });
+      items.push({ label: 'Download folder as ZIP', action: () => downloadFolderZip(state.selected.id) });
       items.push({ label: 'Share folder link…', action: () => createFolderShareLink(state.selected.id) });
       items.push({ label: 'Request files link…', action: () => createFolderShareLink(state.selected.id, true) });
       items.push({ label: 'Folder permissions…', action: () => openPermissions(state.selected.id) });
@@ -865,12 +882,12 @@
     if (!el || !state.permissionsFolderId) return;
     const json = await api(`/api/document-folders/${state.permissionsFolderId}/permissions`);
     el.innerHTML = (json.permissions || []).map(p => `
-      <div class="flex flex-wrap items-center gap-2 p-2 bg-zinc-800 rounded border border-zinc-700">
-        <span class="flex-1 min-w-0 truncate">${esc(p.user_name)} <span class="text-zinc-500 text-xs">${esc(p.user_email)}</span></span>
+      <div class="docs-perm-row">
+        <span class="flex-1 min-w-[10rem] truncate">${esc(p.user_name)} <span class="text-zinc-500 text-xs">${esc(p.user_email)}</span></span>
         <label class="text-xs"><input type="checkbox" data-pid="${p.id}" data-k="can_view" ${p.can_view ? 'checked' : ''}> View</label>
         <label class="text-xs"><input type="checkbox" data-pid="${p.id}" data-k="can_upload" ${p.can_upload ? 'checked' : ''}> Upload</label>
         <label class="text-xs"><input type="checkbox" data-pid="${p.id}" data-k="can_manage" ${p.can_manage ? 'checked' : ''}> Manage</label>
-        <button type="button" class="text-red-400 text-xs" data-del-pid="${p.id}">Remove</button>
+        <button type="button" class="text-red-400 text-xs shrink-0" data-del-pid="${p.id}">Remove</button>
       </div>`).join('') || '<p class="text-zinc-500 text-xs">No restrictions — folder is open to all project users.</p>';
     el.querySelectorAll('[data-del-pid]').forEach(btn => {
       btn.addEventListener('click', async () => {
@@ -913,6 +930,92 @@
 
   function downloadFile(id) {
     window.open(`/api/documents/${id}/download`, '_blank');
+  }
+
+  function downloadFolderZip(folderId) {
+    const fid = folderId ?? state.folderId;
+    if (!fid) {
+      toast('Select a folder first');
+      return;
+    }
+    window.location.href = `/api/document-folders/${fid}/download-zip`;
+  }
+
+  function updateDownloadZipButton() {
+    const btn = document.getElementById('docsBtnDownloadZip');
+    if (!btn) return;
+    const show = state.browseMode === 'normal' && state.folderId != null;
+    btn.classList.toggle('hidden', !show);
+  }
+
+  function formatShareLinkMeta(link) {
+    const parts = [];
+    if (link.revoked) parts.push('Revoked');
+    if (link.has_password) parts.push('Password');
+    if (link.allow_upload) parts.push('Uploads allowed');
+    if (link.expires_at) parts.push(`Expires ${link.expires_at.slice(0, 10)}`);
+    parts.push(`${link.download_count || 0} downloads`);
+    return parts.join(' · ');
+  }
+
+  function renderShareLinkRow(link) {
+    const kind = link.target_type === 'folder' ? 'folder' : 'file';
+    const revoked = link.revoked ? ' revoked' : '';
+    const typeLabel = kind === 'folder'
+      ? (link.allow_upload ? 'Request files' : 'Folder')
+      : 'File';
+    return `<div class="docs-share-link-row${revoked}" data-link-kind="${kind}" data-link-id="${link.id}">
+      <div class="meta min-w-0">
+        <div class="font-medium truncate">${esc(link.target_name || link.label || 'Link')}</div>
+        <div class="text-xs text-zinc-500">${esc(typeLabel)} · ${esc(formatShareLinkMeta(link))}</div>
+        <div class="text-[10px] text-zinc-600 truncate mt-0.5">${esc(link.share_url || '')}</div>
+      </div>
+      <div class="actions">
+        ${link.share_url && !link.revoked ? `<button type="button" class="docs-btn docs-btn-secondary text-xs" data-copy-url="${esc(link.share_url)}">Copy</button>` : ''}
+        ${!link.revoked ? `<button type="button" class="docs-btn docs-btn-secondary text-xs text-red-300" data-revoke-link="${kind}:${link.id}">Revoke</button>` : ''}
+      </div>
+    </div>`;
+  }
+
+  async function openShareLinksAdmin() {
+    const pid = projectId();
+    if (!pid) {
+      toast('Select a project first');
+      return;
+    }
+    const body = document.getElementById('docsShareLinksAdminBody');
+    if (body) body.innerHTML = '<p class="text-zinc-500 text-sm">Loading…</p>';
+    document.getElementById('docsShareLinksAdminDialog')?.showModal();
+    try {
+      const json = await api(`/api/documents/share-links/admin?project_id=${pid}`);
+      const fileLinks = json.file_links || [];
+      const folderLinks = json.folder_links || [];
+      const all = [...fileLinks, ...folderLinks].sort((a, b) =>
+        String(b.created_at || '').localeCompare(String(a.created_at || '')));
+      if (!body) return;
+      if (!all.length) {
+        body.innerHTML = '<p class="text-zinc-500 text-sm">No share links yet. Right-click a file or folder to create one.</p>';
+        return;
+      }
+      body.innerHTML = all.map(renderShareLinkRow).join('');
+      body.querySelectorAll('[data-copy-url]').forEach(btn => {
+        btn.addEventListener('click', async () => {
+          await navigator.clipboard.writeText(btn.dataset.copyUrl || '');
+          toast('Link copied');
+        });
+      });
+      body.querySelectorAll('[data-revoke-link]').forEach(btn => {
+        btn.addEventListener('click', async () => {
+          const [kind, id] = (btn.dataset.revokeLink || '').split(':');
+          if (!kind || !id || !confirm('Revoke this share link? Recipients will no longer be able to use it.')) return;
+          await api(`/api/documents/share-links/admin/${kind}/${id}`, { method: 'DELETE' });
+          toast('Link revoked');
+          await openShareLinksAdmin();
+        });
+      });
+    } catch (err) {
+      if (body) body.innerHTML = `<p class="text-red-400 text-sm">${esc(err.message)}</p>`;
+    }
   }
 
   async function deleteFile(id) {
@@ -1004,6 +1107,11 @@
       if (state.browseMode === 'trash') exitTrash();
       else loadTrash();
     });
+    document.getElementById('docsBtnShareLinks')?.addEventListener('click', openShareLinksAdmin);
+    document.getElementById('docsBtnDownloadZip')?.addEventListener('click', () => downloadFolderZip());
+    document.getElementById('docsShareLinksAdminClose')?.addEventListener('click', () => {
+      document.getElementById('docsShareLinksAdminDialog')?.close();
+    });
     document.getElementById('docsSearch')?.addEventListener('input', e => {
       state.search = e.target.value;
       if (state.searchAll) runGlobalSearch();
@@ -1044,11 +1152,16 @@
     document.getElementById('docsPermAdd')?.addEventListener('click', async () => {
       const uid = document.getElementById('docsPermUser')?.value;
       if (!uid || !state.permissionsFolderId) return;
-      await api(`/api/document-folders/${state.permissionsFolderId}/permissions`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ user_id: parseInt(uid, 10), can_view: true, can_upload: false, can_manage: false }),
-      });
+    await api(`/api/document-folders/${state.permissionsFolderId}/permissions`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        user_id: parseInt(uid, 10),
+        can_view: true,
+        can_upload: false,
+        can_manage: false,
+      }),
+    });
       await refreshPermissionsList();
     });
     document.getElementById('docsVersionInput')?.addEventListener('change', async e => {

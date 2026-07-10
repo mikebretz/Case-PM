@@ -1120,6 +1120,7 @@
       <td class="py-2 px-2">${s.latest_upload ? fmtDate(s.latest_upload) : '—'}</td>
       <td class="py-2 text-right">
         <button type="button" onclick="CasePMDrawings.filterBySet(${JSON.stringify(s.name)})" class="px-2 py-1 bg-zinc-800 hover:bg-zinc-700 rounded mr-1">Show</button>
+        <button type="button" onclick="CasePMDrawings.exportDrawingSetToDocuments(${JSON.stringify(s.name)})" class="px-2 py-1 bg-sky-900 hover:bg-sky-800 rounded mr-1 text-sky-100" title="Export all sheets to Documents">Docs</button>
         <button type="button" onclick="CasePMDrawings.deleteDrawingSet(${JSON.stringify(s.name)})" class="px-2 py-1 bg-red-900/70 hover:bg-red-800 rounded text-red-100">Delete set</button>
       </td>
     </tr>`).join('')}</tbody></table>`;
@@ -1674,6 +1675,41 @@
     dlg.showModal();
   }
 
+  async function exportCurrentSheetToDocuments() {
+    if (!state.openDrawing?.id) {
+      toast('Open a sheet first');
+      return;
+    }
+    try {
+      const json = await api(`/api/drawings/${state.openDrawing.id}/export-to-documents`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({}),
+      });
+      toast(`Saved to Documents › Drawing Sets — ${json.document?.name || 'Drawing'}`);
+    } catch (e) {
+      toastError(e.message || 'Export failed');
+    }
+  }
+
+  async function exportDrawingSetToDocuments(setName) {
+    const name = setName || state.openDrawing?.set_name;
+    if (!name) {
+      toast('No drawing set selected');
+      return;
+    }
+    try {
+      const json = await api('/api/drawings/export-set-to-documents', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ project_id: projectId(), set_name: name }),
+      });
+      toast(`Exported ${json.exported_count || 0} sheet(s) to Documents › Drawing Sets`);
+    } catch (e) {
+      toastError(e.message || 'Set export failed');
+    }
+  }
+
   async function saveDocSnipToDocuments() {
     const captured = state.pendingDocSnip;
     const name = document.getElementById('docSnipName')?.value?.trim();
@@ -1703,7 +1739,7 @@
           image_data: captured.dataUrl,
           source_drawing_id: state.openDrawing?.id,
           source_sheet: state.openDrawing?.sheet_number,
-          system_folder_key: 'my-files',
+          system_folder_key: 'drawing-snips',
           source_metadata: {
             title: state.openDrawing?.title,
             revision_id: state.viewingRevisionId,
@@ -4867,6 +4903,8 @@
     runTextSearch,
     startShapeSnip,
     startDocSnip,
+    exportCurrentSheetToDocuments,
+    exportDrawingSetToDocuments,
     saveDocSnipToDocuments,
     runShapeSearch,
     jumpToSearchResult,

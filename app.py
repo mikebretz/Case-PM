@@ -7,7 +7,7 @@
 # Cleaned & Completed Full Version (vFinal)
 # ============================================================
 
-from flask import Flask, render_template, request, redirect, url_for, flash, jsonify, session, send_from_directory
+from flask import Flask, render_template, request, redirect, url_for, flash, jsonify, session, send_from_directory, send_file
 from flask_sqlalchemy import SQLAlchemy
 from flask_login import LoginManager, UserMixin, login_user, logout_user, login_required, current_user
 from werkzeug.security import generate_password_hash, check_password_hash
@@ -317,6 +317,7 @@ class DailyLog(db.Model):
     weather = db.Column(db.String(100))
     work_performed = db.Column(db.Text)
     notes = db.Column(db.Text)
+    attachments_json = db.Column(db.Text)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
 
 
@@ -648,6 +649,7 @@ class Submittal(db.Model):
     due_date = db.Column(db.Date)
     ball_in_court = db.Column(db.String(50))
     review_comments = db.Column(db.Text)
+    attachments_json = db.Column(db.Text)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
 
 
@@ -1523,6 +1525,57 @@ def create_daily_log():
         return redirect_with_project('daily_log')
 
 
+@app.route('/api/daily-logs/<int:log_id>/attachments', methods=['POST'])
+@login_required
+def api_daily_log_upload_attachment(log_id):
+    from rfi_persistence import _parse_json
+
+    log = DailyLog.query.get_or_404(log_id)
+    if 'file' not in request.files:
+        return jsonify({'error': 'file required'}), 400
+    f = request.files['file']
+    if not f.filename:
+        return jsonify({'error': 'empty filename'}), 400
+    safe = secure_filename(f.filename)
+    folder = os.path.join(app.config['UPLOAD_FOLDER'], 'daily_logs', str(log_id))
+    os.makedirs(folder, exist_ok=True)
+    path = os.path.join(folder, safe)
+    f.save(path)
+    attachments = _parse_json(log.attachments_json, [])
+    attachments.append({
+        'filename': safe,
+        'original_name': f.filename,
+        'uploaded_at': datetime.utcnow().isoformat(),
+        'uploaded_by': f'{current_user.first_name} {current_user.last_name}'.strip(),
+    })
+    log.attachments_json = json.dumps(attachments)
+    db.session.commit()
+    try:
+        with open(path, 'rb') as fh:
+            fb = fh.read()
+        label = f'Daily log {log.date} — {safe}' if log.date else safe
+        _mirror_to_system_folder(
+            log.project_id, fb, label, f.filename, 'daily-logs', 'Daily Log',
+            {'daily_log_id': log.id, 'log_date': log.date.isoformat() if log.date else None},
+        )
+        _notify_documents_team(
+            log.project_id,
+            'Daily log attachment filed',
+            f'"{f.filename}" was archived to Documents › Daily Logs.',
+            f'/documents?project_id={log.project_id}',
+        )
+    except Exception:
+        pass
+    return jsonify({'ok': True, 'attachments': attachments})
+
+
+@app.route('/uploads/daily_logs/<int:log_id>/<path:filename>')
+@login_required
+def serve_daily_log_attachment(log_id, filename):
+    folder = os.path.join(app.config['UPLOAD_FOLDER'], 'daily_logs', str(log_id))
+    return send_from_directory(folder, filename)
+
+
 # ==================== FILE UPLOAD ROUTES ====================
 
 @app.route('/photos/upload', methods=['POST'])
@@ -1544,6 +1597,24 @@ def upload_photo():
         )
         db.session.add(photo)
         db.session.commit()
+        try:
+            full_path = os.path.join(app.config['UPLOAD_FOLDER'], 'photos', filename)
+            if os.path.isfile(full_path):
+                with open(full_path, 'rb') as fh:
+                    fb = fh.read()
+                label = (caption or filename).strip() or filename
+                _mirror_to_system_folder(
+                    int(project_id), fb, label, file.filename, 'photos', 'Photo',
+                    {'photo_id': photo.id, 'caption': caption},
+                )
+                _notify_documents_team(
+                    int(project_id),
+                    'Photo filed to Documents',
+                    f'"{label}" was copied to Documents › Photos.',
+                    f'/documents?project_id={project_id}',
+                )
+        except Exception:
+            pass
         flash('Photo uploaded successfully!', 'success')
     else:
         flash('Invalid file type. Only images and PDFs are allowed.', 'error')
@@ -1789,6 +1860,21 @@ def api_rfi_upload_attachment(rfi_id):
     })
     apply_rfi_fields(rfi, {'attachments': attachments})
     db.session.commit()
+    try:
+        with open(path, 'rb') as fh:
+            fb = fh.read()
+        _mirror_to_system_folder(
+            rfi.project_id, fb, f'{rfi.number} — {safe}', f.filename, 'rfis', 'RFI',
+            {'rfi_id': rfi.id, 'rfi_number': rfi.number},
+        )
+        _notify_documents_team(
+            rfi.project_id,
+            'RFI attachment filed',
+            f'"{f.filename}" was archived to Documents › RFIs.',
+            f'/documents?project_id={rfi.project_id}',
+        )
+    except Exception:
+        pass
     return jsonify({'ok': True, 'attachments': attachments})
 
 
@@ -2060,6 +2146,56 @@ def update_submittal_status(submittal_id):
     return jsonify({'success': False}), 400
 
 
+@app.route('/api/submittals/<int:submittal_id>/attachments', methods=['POST'])
+@login_required
+def api_submittal_upload_attachment(submittal_id):
+    from rfi_persistence import _parse_json
+
+    submittal = Submittal.query.get_or_404(submittal_id)
+    if 'file' not in request.files:
+        return jsonify({'error': 'file required'}), 400
+    f = request.files['file']
+    if not f.filename:
+        return jsonify({'error': 'empty filename'}), 400
+    safe = secure_filename(f.filename)
+    folder = os.path.join(app.config['UPLOAD_FOLDER'], 'submittals', str(submittal_id))
+    os.makedirs(folder, exist_ok=True)
+    path = os.path.join(folder, safe)
+    f.save(path)
+    attachments = _parse_json(submittal.attachments_json, [])
+    attachments.append({
+        'filename': safe,
+        'original_name': f.filename,
+        'uploaded_at': datetime.utcnow().isoformat(),
+        'uploaded_by': f'{current_user.first_name} {current_user.last_name}'.strip(),
+    })
+    submittal.attachments_json = json.dumps(attachments)
+    db.session.commit()
+    try:
+        with open(path, 'rb') as fh:
+            fb = fh.read()
+        _mirror_to_system_folder(
+            submittal.project_id, fb, f'{submittal.number} — {safe}', f.filename, 'submittals', 'Submittal',
+            {'submittal_id': submittal.id, 'submittal_number': submittal.number},
+        )
+        _notify_documents_team(
+            submittal.project_id,
+            'Submittal attachment filed',
+            f'"{f.filename}" was archived to Documents › Submittals.',
+            f'/documents?project_id={submittal.project_id}',
+        )
+    except Exception:
+        pass
+    return jsonify({'ok': True, 'attachments': attachments})
+
+
+@app.route('/uploads/submittals/<int:submittal_id>/<path:filename>')
+@login_required
+def serve_submittal_attachment(submittal_id, filename):
+    folder = os.path.join(app.config['UPLOAD_FOLDER'], 'submittals', str(submittal_id))
+    return send_from_directory(folder, filename)
+
+
 @app.route('/api/submittals/spec-book', methods=['GET'])
 @login_required
 def api_get_spec_book():
@@ -2113,6 +2249,22 @@ def api_upload_spec_book():
     with open(os.path.join(folder, 'meta.json'), 'w', encoding='utf-8') as fh:
         json.dump(meta, fh)
 
+    try:
+        with open(pdf_path, 'rb') as fh:
+            fb = fh.read()
+        _mirror_to_system_folder(
+            int(project_id), fb, meta['filename'], file.filename, 'specifications', 'Specification',
+            {'spec_book': True},
+        )
+        _notify_documents_team(
+            int(project_id),
+            'Specifications book filed',
+            f'"{meta["filename"]}" was archived to Documents › Specifications.',
+            f'/documents?project_id={project_id}',
+        )
+    except Exception:
+        pass
+
     meta['ok'] = True
     meta['url'] = url_for('serve_spec_book_pdf', project_id=int(project_id))
     return jsonify(meta)
@@ -2161,6 +2313,22 @@ def api_upload_original_contract(project_id):
     }
     with open(os.path.join(folder, 'meta.json'), 'w', encoding='utf-8') as fh:
         json.dump(meta, fh)
+
+    try:
+        with open(pdf_path, 'rb') as fh:
+            fb = fh.read()
+        _mirror_to_system_folder(
+            int(project_id), fb, meta['filename'], file.filename, 'contracts', 'Contract',
+            {'original_contract': True},
+        )
+        _notify_documents_team(
+            int(project_id),
+            'Contract filed to Documents',
+            f'"{meta["filename"]}" was archived to Documents › Contracts.',
+            f'/documents?project_id={project_id}',
+        )
+    except Exception:
+        pass
 
     meta['ok'] = True
     meta['url'] = url_for('serve_original_contract_pdf', project_id=int(project_id))
@@ -2934,15 +3102,25 @@ def _active_folders():
 
 
 def _folder_access(folder, required='view'):
-    """Check folder permission. No rows = open to all project users; Admin always allowed."""
+    """Check folder permission. No rows = open to all project users; Admin/PM always allowed."""
     if not folder or not current_user.is_authenticated:
         return False
-    if getattr(current_user, 'role', '') == 'Admin':
+    role = (getattr(current_user, 'role', '') or '').strip()
+    if role in ('Admin', 'Project Manager'):
+        return True
+    if folder.created_by_id == current_user.id:
+        return True
+    # Locked system folders stay available to all project users (permissions apply to custom folders only).
+    if getattr(folder, 'is_system', False):
+        if required == 'manage':
+            return role == 'Admin'
         return True
     perms = DocumentFolderPermission.query.filter_by(folder_id=folder.id).all()
     if not perms:
         return True
-    user_perm = DocumentFolderPermission.query.filter_by(folder_id=folder.id, user_id=current_user.id).first()
+    user_perm = DocumentFolderPermission.query.filter_by(
+        folder_id=folder.id, user_id=current_user.id,
+    ).first()
     if not user_perm:
         return False
     if required == 'manage':
@@ -2979,6 +3157,56 @@ def _archive_document_version(doc, notes=None):
     )
     db.session.add(ver)
     doc.version_count = ver_no + 1
+
+
+def _mirror_to_system_folder(
+    project_id,
+    file_bytes,
+    name,
+    original_filename,
+    system_folder_key,
+    document_type='Other',
+    source_metadata=None,
+):
+    from document_persistence import ensure_system_folders, resolve_folder_by_key
+
+    ensure_system_folders(db, DocumentFolder, int(project_id), current_user.id if current_user.is_authenticated else None, Document=Document)
+    folder = resolve_folder_by_key(db, DocumentFolder, int(project_id), system_folder_key)
+    if not folder:
+        return None
+    meta = {**(source_metadata or {}), 'mirrored_from_module': True, 'system_folder_key': system_folder_key}
+    try:
+        from document_integration import guess_mime
+        return _save_document_bytes(
+            int(project_id), file_bytes, name, original_filename,
+            guess_mime(original_filename), document_type, folder.id, False,
+            None, None, meta,
+        )
+    except ValueError:
+        return None
+
+
+def _notify_documents_team(project_id, title, message, link=None):
+    from document_integration import notify_documents_team
+    notify_documents_team(db, User, int(project_id), title=title, message=message, link=link)
+
+
+def _ensure_module_attachment_columns():
+    from sqlalchemy import inspect, text
+
+    insp = inspect(db.engine)
+    tables = set(insp.get_table_names())
+    migrations = [
+        ('submittal', 'attachments_json', 'TEXT'),
+        ('daily_log', 'attachments_json', 'TEXT'),
+    ]
+    for table, column, typedef in migrations:
+        if table not in tables:
+            continue
+        cols = {c['name'] for c in insp.get_columns(table)}
+        if column not in cols:
+            db.session.execute(text(f'ALTER TABLE {table} ADD COLUMN {column} {typedef}'))
+    db.session.commit()
 
 
 def _save_document_bytes(
@@ -3335,6 +3563,16 @@ def api_documents_create():
     if create_share_link:
         share = _create_document_share_link(doc_dict['id'])
 
+    meta = source_metadata if isinstance(source_metadata, dict) else {}
+    if not meta.get('mirrored_from_module') and not meta.get('shared_upload'):
+        uploader = _user_display_name(current_user.id) if current_user.is_authenticated else 'Someone'
+        _notify_documents_team(
+            int(project_id),
+            'Document uploaded',
+            f'{uploader} uploaded "{doc_dict.get("name")}" to Documents.',
+            f'/documents?project_id={project_id}',
+        )
+
     return jsonify({'ok': True, 'document': doc_dict, 'share_link': share}), 201
 
 
@@ -3392,7 +3630,14 @@ def _create_document_share_link(document_id: int, days: int = 30, max_downloads:
     db.session.commit()
     _log_doc_activity(doc.project_id, 'share', document_id=doc.id, detail={'type': 'file_link'})
     db.session.commit()
-    return share_link_to_dict(link, _documents_base_url())
+    share = share_link_to_dict(link, _documents_base_url())
+    _notify_documents_team(
+        doc.project_id,
+        'Document share link created',
+        f'A download link was created for "{doc.name}".',
+        share.get('share_url'),
+    )
+    return share
 
 
 @app.route('/api/documents/<int:doc_id>', methods=['PATCH'])
@@ -3751,7 +3996,15 @@ def _create_folder_share_link(folder_id, days=30, max_downloads=None, password=N
     db.session.add(link)
     _log_doc_activity(folder.project_id, 'share', folder_id=folder.id, detail={'type': 'folder_link', 'allow_upload': allow_upload})
     db.session.commit()
-    return folder_share_link_to_dict(link, _documents_base_url())
+    share = folder_share_link_to_dict(link, _documents_base_url())
+    kind = 'Request-files' if allow_upload else 'Folder share'
+    _notify_documents_team(
+        folder.project_id,
+        f'{kind} link created',
+        f'A link was created for folder "{folder.name}".',
+        share.get('share_url'),
+    )
+    return share
 
 
 @app.route('/api/document-folders/<int:folder_id>/share-links', methods=['GET'])
@@ -3880,6 +4133,12 @@ def public_folder_share_upload(token):
         )
     except ValueError as exc:
         return jsonify({'error': str(exc)}), 400
+    _notify_documents_team(
+        folder.project_id,
+        'File uploaded via shared link',
+        f'"{file.filename}" was uploaded to folder "{folder.name}" via a request-files link.',
+        f'/documents?project_id={folder.project_id}',
+    )
     return jsonify({'ok': True, 'document': doc_dict}), 201
 
 
@@ -3916,6 +4175,20 @@ def api_folder_permissions_set(folder_id):
     perm.can_view = bool(body.get('can_view', True))
     perm.can_upload = bool(body.get('can_upload', False))
     perm.can_manage = bool(body.get('can_manage', False))
+    # Never lock out the user who is setting permissions.
+    if current_user.id != int(user_id):
+        mgr = DocumentFolderPermission.query.filter_by(folder_id=folder_id, user_id=current_user.id).first()
+        if not mgr:
+            mgr = DocumentFolderPermission(
+                folder_id=folder_id, user_id=current_user.id,
+                can_view=True, can_upload=True, can_manage=True,
+                created_at=datetime.utcnow(),
+            )
+            db.session.add(mgr)
+        else:
+            mgr.can_view = True
+            mgr.can_upload = True
+            mgr.can_manage = True
     db.session.commit()
     u = User.query.get(perm.user_id)
     return jsonify({'ok': True, 'permission': permission_to_dict(perm, _user_display_name(perm.user_id), u.email if u else None)})
@@ -3941,6 +4214,118 @@ def api_users_list_short():
         'ok': True,
         'users': [{'id': u.id, 'name': _user_display_name(u.id), 'email': u.email} for u in users],
     })
+
+
+@app.route('/api/document-folders/<int:folder_id>/download-zip')
+@login_required
+def api_document_folder_download_zip(folder_id):
+    import io
+    import zipfile
+    from document_integration import iter_folder_documents
+
+    folder = DocumentFolder.query.get_or_404(folder_id)
+    if not _folder_access(folder, 'view'):
+        return jsonify({'error': 'No access to this folder'}), 403
+    upload_root = app.config.get('UPLOAD_FOLDER', 'uploads')
+    entries = iter_folder_documents(Document, DocumentFolder, upload_root, folder.id)
+    if not entries:
+        return jsonify({'error': 'Folder has no files to download'}), 404
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, 'w', zipfile.ZIP_DEFLATED) as zf:
+        used: set[str] = set()
+        for arc, path in entries:
+            name = arc
+            n = 1
+            while name in used:
+                base, dot, ext = arc.rpartition('.')
+                if dot:
+                    name = f'{base} ({n}).{ext}'
+                else:
+                    name = f'{arc} ({n})'
+                n += 1
+            used.add(name)
+            zf.write(path, name)
+    buf.seek(0)
+    safe = secure_filename(folder.name) or 'folder'
+    return send_file(buf, mimetype='application/zip', as_attachment=True, download_name=f'{safe}.zip')
+
+
+@app.route('/share/folder/<token>/download-zip')
+def public_folder_share_download_zip(token):
+    import io
+    import zipfile
+    from document_integration import iter_folder_documents
+    from document_persistence import share_link_is_valid
+
+    link = DocumentFolderShareLink.query.filter_by(token=token).first_or_404()
+    if not share_link_is_valid(link):
+        return jsonify({'error': 'Link unavailable'}), 410
+    if link.password_hash and not _share_is_unlocked(link):
+        return jsonify({'error': 'Password required'}), 403
+    if not link.allow_download:
+        return jsonify({'error': 'Download disabled'}), 403
+    folder = DocumentFolder.query.get_or_404(link.folder_id)
+    upload_root = app.config.get('UPLOAD_FOLDER', 'uploads')
+    entries = iter_folder_documents(Document, DocumentFolder, upload_root, folder.id)
+    if not entries:
+        return jsonify({'error': 'Folder has no files'}), 404
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, 'w', zipfile.ZIP_DEFLATED) as zf:
+        for arc, path in entries:
+            zf.write(path, arc)
+    buf.seek(0)
+    link.download_count = (link.download_count or 0) + 1
+    db.session.commit()
+    safe = secure_filename(folder.name) or 'shared-folder'
+    return send_file(buf, mimetype='application/zip', as_attachment=True, download_name=f'{safe}.zip')
+
+
+@app.route('/api/documents/share-links/admin', methods=['GET'])
+@login_required
+def api_documents_share_links_admin():
+    from document_persistence import folder_share_link_to_dict, share_link_to_dict
+
+    project_id = request.args.get('project_id', type=int) or get_current_project_id()
+    if not project_id:
+        return jsonify({'error': 'project_id required'}), 400
+    base = _documents_base_url()
+    docs = _active_documents().filter_by(project_id=int(project_id)).all()
+    doc_ids = [d.id for d in docs]
+    file_links = []
+    if doc_ids:
+        for link in DocumentShareLink.query.filter(DocumentShareLink.document_id.in_(doc_ids)).order_by(DocumentShareLink.created_at.desc()).all():
+            doc = Document.query.get(link.document_id)
+            row = share_link_to_dict(link, base)
+            row['target_name'] = doc.name if doc else 'File'
+            row['target_type'] = 'file'
+            file_links.append(row)
+    folders = _active_folders().filter_by(project_id=int(project_id)).all()
+    folder_ids = [f.id for f in folders]
+    folder_links = []
+    if folder_ids:
+        for link in DocumentFolderShareLink.query.filter(DocumentFolderShareLink.folder_id.in_(folder_ids)).order_by(DocumentFolderShareLink.created_at.desc()).all():
+            folder = DocumentFolder.query.get(link.folder_id)
+            row = folder_share_link_to_dict(link, base)
+            row['target_name'] = folder.name if folder else 'Folder'
+            row['target_type'] = 'folder'
+            row['allow_upload'] = bool(link.allow_upload)
+            folder_links.append(row)
+    return jsonify({'ok': True, 'file_links': file_links, 'folder_links': folder_links})
+
+
+@app.route('/api/documents/share-links/admin/<string:link_kind>/<int:link_id>', methods=['DELETE'])
+@login_required
+def api_documents_share_links_admin_revoke(link_kind, link_id):
+    if link_kind == 'file':
+        link = DocumentShareLink.query.get_or_404(link_id)
+        link.revoked_at = datetime.utcnow()
+    elif link_kind == 'folder':
+        link = DocumentFolderShareLink.query.get_or_404(link_id)
+        link.revoked_at = datetime.utcnow()
+    else:
+        return jsonify({'error': 'Invalid link kind'}), 400
+    db.session.commit()
+    return jsonify({'ok': True})
 
 
 @app.route('/drawings')
@@ -4212,6 +4597,104 @@ def api_delete_drawing_set():
     except Exception as exc:
         db.session.rollback()
         return jsonify({'error': str(exc)}), 500
+
+
+@app.route('/api/drawings/<int:drawing_id>/export-to-documents', methods=['POST'])
+@login_required
+def api_drawing_export_to_documents(drawing_id):
+    """Copy current drawing sheet PDF into Documents › Drawings › Drawing Sets."""
+    from drawing_persistence import resolve_drawing_file_path, resolve_folder_by_key
+
+    drawing = Drawing.query.get_or_404(drawing_id)
+    body = request.get_json(silent=True) or {}
+    create_share = bool(body.get('create_share_link'))
+    rev = DrawingRevision.query.get(drawing.current_revision_id) if drawing.current_revision_id else None
+    if not rev:
+        rev = DrawingRevision.query.filter_by(drawing_id=drawing.id, is_current=True).first()
+    upload_root = app.config.get('UPLOAD_FOLDER')
+    resolved = resolve_drawing_file_path(rev.file_path if rev else None, upload_root)
+    if not rev or not resolved or not os.path.isfile(resolved):
+        return jsonify({'error': 'Drawing file not found'}), 404
+    with open(resolved, 'rb') as fh:
+        file_bytes = fh.read()
+    folder = resolve_folder_by_key(db, DocumentFolder, drawing.project_id, 'drawing-sets')
+    if not folder:
+        return jsonify({'error': 'Drawing Sets folder missing'}), 500
+    name = f'{drawing.sheet_number or "Sheet"} — {drawing.title or drawing.set_name or "Drawing"}'.strip(' —')
+    try:
+        doc_dict = _save_document_bytes(
+            drawing.project_id, file_bytes, name, os.path.basename(resolved),
+            'application/pdf', 'Drawing', folder.id, False,
+            source_drawing_id=drawing.id,
+            source_sheet=drawing.sheet_number,
+            source_metadata={
+                'set_name': drawing.set_name,
+                'discipline': drawing.discipline,
+                'revision': rev.revision_label if rev else None,
+                'exported_from': 'drawings',
+                'mirrored_from_module': True,
+            },
+        )
+    except ValueError as exc:
+        return jsonify({'error': str(exc)}), 400
+    share = _create_document_share_link(doc_dict['id']) if create_share else None
+    _notify_documents_team(
+        drawing.project_id,
+        'Drawing exported to Documents',
+        f'"{name}" was saved to Documents › Drawings › Drawing Sets.',
+        f'/documents?project_id={drawing.project_id}',
+    )
+    return jsonify({'ok': True, 'document': doc_dict, 'share_link': share}), 201
+
+
+@app.route('/api/drawings/export-set-to-documents', methods=['POST'])
+@login_required
+def api_drawing_set_export_to_documents():
+    """Export all sheets in a drawing set to Documents › Drawings › Drawing Sets."""
+    from drawing_persistence import resolve_drawing_file_path, resolve_folder_by_key
+
+    body = request.get_json(silent=True) or {}
+    project_id = body.get('project_id') or get_current_project_id()
+    set_name = (body.get('set_name') or '').strip()
+    if not project_id or not set_name:
+        return jsonify({'error': 'project_id and set_name required'}), 400
+    folder = resolve_folder_by_key(db, DocumentFolder, int(project_id), 'drawing-sets')
+    if not folder:
+        return jsonify({'error': 'Drawing Sets folder missing'}), 500
+    drawings = Drawing.query.filter_by(project_id=int(project_id), set_name=set_name).order_by(Drawing.sheet_number).all()
+    if not drawings:
+        return jsonify({'error': 'No sheets in this set'}), 404
+    upload_root = app.config.get('UPLOAD_FOLDER')
+    exported = []
+    for drawing in drawings:
+        rev = DrawingRevision.query.get(drawing.current_revision_id) if drawing.current_revision_id else None
+        if not rev:
+            rev = DrawingRevision.query.filter_by(drawing_id=drawing.id, is_current=True).first()
+        resolved = resolve_drawing_file_path(rev.file_path if rev else None, upload_root)
+        if not rev or not resolved or not os.path.isfile(resolved):
+            continue
+        with open(resolved, 'rb') as fh:
+            file_bytes = fh.read()
+        name = f'{drawing.sheet_number or "Sheet"} — {drawing.title or set_name}'.strip(' —')
+        try:
+            doc_dict = _save_document_bytes(
+                int(project_id), file_bytes, name, os.path.basename(resolved),
+                'application/pdf', 'Drawing', folder.id, False,
+                source_drawing_id=drawing.id,
+                source_sheet=drawing.sheet_number,
+                source_metadata={'set_name': set_name, 'exported_from': 'drawings_set', 'mirrored_from_module': True},
+            )
+            exported.append(doc_dict)
+        except ValueError:
+            continue
+    if exported:
+        _notify_documents_team(
+            int(project_id),
+            'Drawing set exported to Documents',
+            f'{len(exported)} sheet(s) from "{set_name}" were saved to Documents › Drawings › Drawing Sets.',
+            f'/documents?project_id={project_id}',
+        )
+    return jsonify({'ok': True, 'exported_count': len(exported), 'documents': exported})
 
 
 @app.route('/api/drawings/<int:drawing_id>/file', methods=['GET'])
@@ -5226,6 +5709,23 @@ def api_upload_commitment_attachment(commitment_id):
     })
     c.attachments_json = json.dumps(items)
     db.session.commit()
+    try:
+        full_path = os.path.join(app.config['UPLOAD_FOLDER'], 'commitments', str(commitment_id), saved)
+        if os.path.isfile(full_path):
+            with open(full_path, 'rb') as fh:
+                fb = fh.read()
+            _mirror_to_system_folder(
+                c.project_id, fb, f'{c.number or "Commitment"} — {file.filename}', file.filename, 'contracts', 'Contract',
+                {'commitment_id': c.id},
+            )
+            _notify_documents_team(
+                c.project_id,
+                'Commitment attachment filed',
+                f'"{file.filename}" was archived to Documents › Contracts.',
+                f'/documents?project_id={c.project_id}',
+            )
+    except Exception:
+        pass
     allocs = CommitmentAllocation.query.filter_by(commitment_id=c.id).all()
     return jsonify({'ok': True, 'commitment': commitment_to_dict(c, allocs)})
 
@@ -5974,6 +6474,23 @@ def api_upload_co_attachment(co_id):
     record = attachment_record(saved, file.filename, current_user.id)
     append_attachment(co, record)
     db.session.commit()
+    try:
+        full_path = os.path.join(app.config['UPLOAD_FOLDER'], 'change_orders', str(co_id), saved)
+        if os.path.isfile(full_path):
+            with open(full_path, 'rb') as fh:
+                fb = fh.read()
+            _mirror_to_system_folder(
+                co.project_id, fb, f'{co.number or "CO"} — {file.filename}', file.filename, 'contracts', 'Change Order',
+                {'change_order_id': co.id},
+            )
+            _notify_documents_team(
+                co.project_id,
+                'Change order attachment filed',
+                f'"{file.filename}" was archived to Documents › Contracts.',
+                f'/documents?project_id={co.project_id}',
+            )
+    except Exception:
+        pass
     allocs = ChangeOrderAllocation.query.filter_by(change_order_id=co.id).all()
     return jsonify({'ok': True, 'attachment': record, 'change_order': co_to_dict(co, allocs)})
 
@@ -5989,6 +6506,23 @@ def api_upload_pco_attachment(pco_id):
     saved = save_uploaded_file(file, folder=f'change_orders/pco_{pco_id}')
     if not saved:
         return jsonify({'error': 'invalid file type'}), 400
+    try:
+        full_path = os.path.join(app.config['UPLOAD_FOLDER'], 'change_orders', f'pco_{pco_id}', saved)
+        if os.path.isfile(full_path):
+            with open(full_path, 'rb') as fh:
+                fb = fh.read()
+            _mirror_to_system_folder(
+                pco.project_id, fb, f'{pco.number or "PCO"} — {file.filename}', file.filename, 'contracts', 'PCO',
+                {'pco_id': pco.id},
+            )
+            _notify_documents_team(
+                pco.project_id,
+                'PCO attachment filed',
+                f'"{file.filename}" was archived to Documents › Contracts.',
+                f'/documents?project_id={pco.project_id}',
+            )
+    except Exception:
+        pass
     # Store PCO attachments in notes/metadata via a simple JSON file list on pco notes field - use attachments on promote
     # For now store in pco notes append - better: add attachments_json to PCO
     folder_path = os.path.join(app.config['UPLOAD_FOLDER'], 'change_orders', f'pco_{pco_id}')
@@ -6211,6 +6745,10 @@ with app.app_context():
             ensure_document_schema(db.engine, db)
         except Exception as _doc:
             print('Document schema:', _doc)
+        try:
+            _ensure_module_attachment_columns()
+        except Exception as _att:
+            print('Attachment columns:', _att)
     except Exception as _e:
         print('Workflow init:', _e)
 
