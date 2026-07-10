@@ -304,7 +304,9 @@
         <div class="p-6 overflow-auto flex-1 text-sm space-y-3" id="dailyLogDetailBody"></div>
         <div class="px-6 py-4 border-t border-zinc-700">
             <label class="block text-xs text-zinc-500 mb-2">Attachments (filed to Documents › Daily Logs)</label>
-            <input type="file" id="dailyLogAttachmentInput" multiple class="text-sm text-zinc-400 file:mr-3 file:px-3 file:py-1.5 file:rounded file:border-0 file:bg-zinc-700 file:text-white">
+            <div id="dailyLogAttachmentActions" class="flex flex-wrap items-center gap-2">
+                <input type="file" id="dailyLogAttachmentInput" multiple class="text-sm text-zinc-400 file:mr-3 file:px-3 file:py-1.5 file:rounded file:border-0 file:bg-zinc-700 file:text-white">
+            </div>
             <div id="dailyLogAttachmentList" class="mt-2 space-y-1 text-xs text-zinc-400"></div>
         </div>
     </div>
@@ -530,6 +532,24 @@
         e.target.value = '';
         openDailyLogDetailModal(currentDailyLogId);
     });
+
+    function bindDailyLogDocumentPicker() {
+        const container = document.getElementById('dailyLogAttachmentActions');
+        if (!container || !window.CasePMDocPicker) return;
+        window.CasePMDocPicker.addBrowseButton(container, {
+            title: 'Attach from Documents',
+            entityType: 'daily_log',
+            getEntityId: () => currentDailyLogId,
+            onPick: async () => {
+                if (!currentDailyLogId) {
+                    alert('Open a daily log first.');
+                    return;
+                }
+                openDailyLogDetailModal(currentDailyLogId);
+            },
+        });
+    }
+    document.addEventListener('DOMContentLoaded', bindDailyLogDocumentPicker);
 
     function editDailyLog(logId) {
         // Placeholder for future edit functionality

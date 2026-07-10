@@ -76,7 +76,18 @@
   }
 
   function attachmentHref(parentId, att) {
+    if (att.document_id || att.linked_from_documents) {
+      return `/api/documents/${att.document_id}/download`;
+    }
     return `/uploads/change_orders/${parentId}/${att.filename}`;
+  }
+
+  function attachmentLabel(att) {
+    const name = esc(att.original_name || att.filename || 'File');
+    if (att.linked_from_documents || att.document_id) {
+      return `${name} <span class="text-zinc-500">(Documents)</span>`;
+    }
+    return name;
   }
 
   function canApprove() {
@@ -517,8 +528,41 @@
       return;
     }
     el.innerHTML = atts.map(a =>
-      `<a href="${attachmentHref(record.id, a)}" target="_blank" rel="noopener" class="text-emerald-400 hover:underline">${esc(a.original_name || a.filename)}</a>`
+      `<a href="${attachmentHref(record.id, a)}" target="_blank" rel="noopener" class="text-emerald-400 hover:underline">${attachmentLabel(a)}</a>`
     ).join(' · ');
+  }
+
+  async function refreshModalAttachments() {
+    const mode = document.getElementById('modalMode')?.value;
+    const id = document.getElementById('modalRecordId')?.value;
+    if (mode !== 'co' || !id) return;
+    try {
+      const json = await api(`/api/change-orders/${id}`);
+      renderModalAttachmentList(json.change_order, mode);
+    } catch (e) {
+      console.warn('Could not refresh attachments', e);
+    }
+  }
+
+  function bindAttachmentBrowse() {
+    const container = document.getElementById('coAttachmentActions');
+    if (!container || !global.CasePMDocPicker) return;
+    global.CasePMDocPicker.addBrowseButton(container, {
+      title: 'Attach from Documents',
+      entityType: 'change_order',
+      getEntityId: () => {
+        const id = document.getElementById('modalRecordId')?.value;
+        return id ? parseInt(id, 10) : null;
+      },
+      onPick: async () => {
+        const id = document.getElementById('modalRecordId')?.value;
+        if (!id) {
+          alert('Save the change order first, then attach files from Documents.');
+          return;
+        }
+        await refreshModalAttachments();
+      },
+    });
   }
 
   async function uploadModalAttachments(coId) {
@@ -749,7 +793,7 @@
       `<tr class="border-b border-zinc-800"><td class="py-2 font-mono text-xs">${esc(a.cost_code)}</td><td class="py-2 text-xs text-zinc-400">${esc(a.cost_type || '—')}</td><td class="py-2">${esc(a.description || '')}</td><td class="py-2 text-right font-mono">${fmt(a.amount)}</td></tr>`
     ).join('');
     const atts = (co.attachments || []).map(a =>
-      `<a href="${attachmentHref(co.id, a)}" target="_blank" rel="noopener" class="text-emerald-400 hover:underline">${esc(a.original_name || a.filename)}</a>`
+      `<a href="${attachmentHref(co.id, a)}" target="_blank" rel="noopener" class="text-emerald-400 hover:underline">${attachmentLabel(a)}</a>`
     ).join(' · ') || '—';
     document.getElementById('drawerBody').innerHTML = `
       <div class="space-y-2">
@@ -1092,6 +1136,7 @@
     await loadCostCodes();
     await Promise.all([loadLinkOptions(), loadDashboard(), loadChangeOrders(), loadPcos(), loadSageLog()]);
     bindFilters();
+    bindAttachmentBrowse();
     switchTab('cos');
     const params = new URLSearchParams(window.location.search);
     if (params.get('open') === '1' && params.get('co_id')) {

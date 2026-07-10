@@ -184,13 +184,39 @@
       || dialog.querySelector(':scope > div:first-child');
   }
 
+  function centerDialogElement(dialog) {
+    if (!dialog || dialog.classList.contains('casepm-dragged')) return;
+    dialog.style.position = 'fixed';
+    dialog.style.margin = '0';
+    dialog.style.top = '50%';
+    dialog.style.left = '50%';
+    dialog.style.right = 'auto';
+    dialog.style.bottom = 'auto';
+    dialog.style.transform = 'translate(-50%, -50%)';
+  }
+
   function patchDialogElement(dialog) {
-    if (!dialog || dialog.tagName !== 'DIALOG' || dialog.dataset.casepmDraggable === '1') return;
-    let handle = findDialogHandle(dialog);
-    if (handle && !handle.classList.contains('casepm-drag-handle') && !handle.classList.contains('drag-handle')) {
-      handle.classList.add('casepm-drag-handle');
+    if (!dialog || dialog.tagName !== 'DIALOG' || dialog.dataset.casepmCenterPatched === '1') return;
+    dialog.dataset.casepmCenterPatched = '1';
+    const originalShowModal = dialog.showModal.bind(dialog);
+    dialog.showModal = function patchedShowModal() {
+      centerDialogElement(dialog);
+      return originalShowModal();
+    };
+    dialog.addEventListener('close', () => {
+      if (!dialog.classList.contains('casepm-dragged')) {
+        dialog.style.top = '';
+        dialog.style.left = '';
+        dialog.style.transform = '';
+      }
+    });
+    if (dialog.dataset.casepmDraggable === 'true') {
+      let handle = findDialogHandle(dialog);
+      if (handle && !handle.classList.contains('casepm-drag-handle') && !handle.classList.contains('drag-handle')) {
+        handle.classList.add('casepm-drag-handle');
+      }
+      makeDraggable(dialog, handle);
     }
-    makeDraggable(dialog, handle);
   }
 
   function initAllDialogs(root) {
@@ -233,6 +259,12 @@
     return result;
   }
 
+  function openCenteredDialog(dialog) {
+    patchDialogElement(dialog);
+    centerDialogElement(dialog);
+    dialog.showModal();
+  }
+
   function showCenteredAlert(message, type = 'info') {
     ensureStyles();
     return new Promise((resolve) => {
@@ -248,7 +280,7 @@
         </div>`;
       document.body.appendChild(dialog);
       makeDraggable(dialog, '.casepm-dialog-title');
-      dialog.showModal();
+      openCenteredDialog(dialog);
       dialog.querySelector('[data-action="ok"]').onclick = () => resolve(closeDialog(dialog, true));
       dialog.addEventListener('cancel', (e) => {
         e.preventDefault();
@@ -284,7 +316,7 @@
       document.body.appendChild(dialog);
       makeDraggable(dialog, '.casepm-dialog-title');
       const input = dialog.querySelector('#casepm-prompt-input');
-      dialog.showModal();
+      openCenteredDialog(dialog);
       input.focus();
       input.select();
       const submit = () => {
@@ -369,7 +401,7 @@
 
       renderList('');
       searchEl.addEventListener('input', () => renderList(searchEl.value));
-      dialog.showModal();
+      openCenteredDialog(dialog);
       searchEl.focus();
       dialog.querySelector('[data-action="cancel"]').onclick = () => resolve(closeDialog(dialog, null));
       confirmBtn.onclick = () => resolve(closeDialog(dialog, selected));
@@ -400,7 +432,7 @@
         </div>`;
       document.body.appendChild(dialog);
       makeDraggable(dialog, '.casepm-dialog-title');
-      dialog.showModal();
+      openCenteredDialog(dialog);
       dialog.querySelector('[data-action="cancel"]').onclick = () => resolve(closeDialog(dialog, false));
       dialog.querySelector('[data-action="confirm"]').onclick = () => resolve(closeDialog(dialog, true));
       dialog.addEventListener('cancel', (e) => {
@@ -423,17 +455,23 @@
     confirm: showCenteredConfirm,
     prompt: showCenteredPrompt,
     select: showSelectDialog,
+    open: openCenteredDialog,
     makeDraggable,
     initAllDialogs,
     observeDialogs,
+    centerDialogElement,
   };
 
-  // Route native alert() through centered dialog app-wide.
+  // Route native alert/confirm through centered dialogs app-wide.
   global.showCenteredAlert = showCenteredAlert;
   if (!global.__casepmAlertPatched) {
     global.__casepmNativeAlert = global.alert.bind(global);
+    global.__casepmNativeConfirm = global.confirm.bind(global);
     global.alert = function (message) {
       showCenteredAlert(String(message ?? ''), 'info');
+    };
+    global.confirm = function (message) {
+      return showCenteredConfirm(String(message ?? ''), { title: 'Confirm' });
     };
     global.__casepmAlertPatched = true;
   }
