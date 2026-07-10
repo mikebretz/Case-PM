@@ -841,6 +841,7 @@ def detect_sheet_number(
     page_text: str | None = None,
     page_index: int = 0,
     from_combined_set: bool = False,
+    skip_ocr: bool = False,
 ) -> tuple[str | None, str, str, str | None]:
     """Returns (sheet_number, text, method, revision_from_sheet)."""
     if not page_text:
@@ -855,12 +856,51 @@ def detect_sheet_number(
         if sheet:
             rev = revision or extract_revision_from_text(page_text)
             return sheet, page_text, 'pdf_text', rev
+    if skip_ocr:
+        return None, page_text or '', 'pdf_text', revision
     sheet, ocr_text = ocr_extract_sheet_from_pdf(pdf_path, page_index)
     combined_text = '\n'.join(filter(None, [page_text, ocr_text]))
     rev = revision or extract_revision_from_text(combined_text)
     if sheet and is_plausible_drawing_sheet(sheet):
         return sheet, combined_text or page_text or '', 'ocr', rev
     return None, combined_text or page_text or ocr_text or '', 'none', rev
+
+
+def analyze_pdf_page_fast(
+    pdf_path: str,
+    page_index: int = 0,
+    *,
+    page_text: str | None = None,
+    from_combined_set: bool = False,
+    source_filename: str | None = None,
+) -> dict:
+    """Fast metadata extraction for large drawing sets — embedded PDF text only, no OCR."""
+    text = page_text or extract_pdf_page_text(pdf_path, page_index)
+    sheet, full_text, method, revision = detect_sheet_number(
+        pdf_path,
+        source_filename,
+        text,
+        page_index,
+        from_combined_set=from_combined_set,
+        skip_ocr=True,
+    )
+    title = extract_drawing_name_from_text(full_text or text or '', sheet) or ''
+    drawing_date = extract_drawing_date_from_text(full_text or text or '')
+    scale = extract_scale_from_text(full_text or text or '')
+    return {
+        'page_index': page_index,
+        'sheet_number': sheet,
+        'revision': revision,
+        'title': title,
+        'drawing_name': title,
+        'project_number': None,
+        'drawing_date': drawing_date,
+        'scale': scale,
+        'discipline': discipline_from_sheet(sheet) if sheet else None,
+        'detection_method': method,
+        'detection_confidence': {},
+        'text_preview': (full_text or text or '')[:240],
+    }
 
 
 def analyze_pdf_page(pdf_path: str, page_index: int = 0, from_combined_set: bool = False, source_filename: str | None = None) -> dict:
@@ -1609,6 +1649,8 @@ def process_pages_from_upload(
     manual_sheet=None,
     manual_title=None,
     upload_stamp=None,
+    fast_analysis=False,
+    progress_callback=None,
 ):
     """Import one or more split PDF pages into the drawing register."""
     created = []
@@ -1616,14 +1658,24 @@ def process_pages_from_upload(
     stamp = upload_stamp or datetime.utcnow().strftime('%Y%m%d%H%M%S')
     batch_assigned: set[str] = set()
     batch_detected: set[str] = set()
+    total_pages = len(pages)
 
     for page in pages:
-        meta = analyze_pdf_page(
-            page['file_path'],
-            page_index=0,
-            from_combined_set=from_combined_set,
-            source_filename=None if from_combined_set else original_filename,
-        )
+        if fast_analysis:
+            meta = analyze_pdf_page_fast(
+                page['file_path'],
+                page_index=0,
+                page_text=page.get('text'),
+                from_combined_set=from_combined_set,
+                source_filename=None if from_combined_set else original_filename,
+            )
+        else:
+            meta = analyze_pdf_page(
+                page['file_path'],
+                page_index=0,
+                from_combined_set=from_combined_set,
+                source_filename=None if from_combined_set else original_filename,
+            )
         detected_sheet = meta.get('sheet_number')
         if manual_sheet:
             sheet_number = normalize_sheet_number(manual_sheet) or manual_sheet
@@ -1722,6 +1774,9 @@ def process_pages_from_upload(
             commit_with_retry(db.session)
         elif len(created) % 25 == 0:
             flush_with_retry(db.session)
+
+        if progress_callback:
+            progress_callback(len(created), total_pages, page['page_index'] + 1)
 
     return created, needs_review
 
