@@ -903,8 +903,19 @@ def analyze_pdf_page_fast(
     }
 
 
-def analyze_pdf_page(pdf_path: str, page_index: int = 0, from_combined_set: bool = False, source_filename: str | None = None) -> dict:
-    """Analyze one page for sheet metadata (used during set upload)."""
+def analyze_pdf_page(
+    pdf_path: str,
+    page_index: int = 0,
+    from_combined_set: bool = False,
+    source_filename: str | None = None,
+    *,
+    set_upload: bool = False,
+) -> dict:
+    """Analyze one page for sheet metadata (used during set upload).
+
+    When set_upload=True, prioritizes bottom-right title block grid/OCR and avoids
+    redundant full-page OCR passes when sheet number and drawing name are found.
+    """
     layout = extract_title_block_metadata(pdf_path, page_index)
     layout_conf = layout.get('confidence') or {}
     sheet_conf = float(layout_conf.get('sheet', 0) or 0)
@@ -949,23 +960,31 @@ def analyze_pdf_page(pdf_path: str, page_index: int = 0, from_combined_set: bool
         title = extract_drawing_name_from_text(full_text or text or '', sheet) or title
     drawing_date = layout.get('drawing_date') or extract_drawing_date_from_text(full_text or text or '')
     scale = layout.get('scale') or extract_scale_from_text(full_text or text or '')
-    ocr_text = ocr_title_block_regions(pdf_path, page_index)
-    if ocr_text:
-        full_text = '\n'.join(filter(None, [full_text, text, ocr_text]))
-        ocr_lines = _plain_text_lines(ocr_text)
-        if not revision:
-            revision = _extract_revision_from_lines(ocr_lines, ocr_text) or extract_revision_from_text(ocr_text)
-        if (not title or len(title) < 4) and not layout_trusted and not sheet_label_locked and name_conf < 2.0:
-            ocr_title = _extract_drawing_title_from_lines(ocr_lines, sheet, ocr_text)
-            if ocr_title:
-                title = ocr_title
-        if not sheet and not sheet_label_locked:
-            ocr_sheet = extract_sheet_from_pdf_text(ocr_text)
-            if ocr_sheet and is_plausible_drawing_sheet(ocr_sheet):
-                sheet = ocr_sheet
-                method = 'ocr'
-        if not scale:
-            scale = extract_scale_from_text(full_text)
+
+    layout_has_sheet = bool(sheet and is_plausible_drawing_sheet(sheet))
+    layout_has_title = bool(title and len(str(title).strip()) >= 3)
+    skip_extra_ocr = set_upload and layout_has_sheet and layout_has_title and (
+        layout_trusted or sheet_label_locked or sheet_conf >= 2.0
+    )
+
+    if not skip_extra_ocr:
+        ocr_text = ocr_title_block_regions(pdf_path, page_index)
+        if ocr_text:
+            full_text = '\n'.join(filter(None, [full_text, text, ocr_text]))
+            ocr_lines = _plain_text_lines(ocr_text)
+            if not revision:
+                revision = _extract_revision_from_lines(ocr_lines, ocr_text) or extract_revision_from_text(ocr_text)
+            if (not title or len(title) < 4) and not layout_trusted and not sheet_label_locked and name_conf < 2.0:
+                ocr_title = _extract_drawing_title_from_lines(ocr_lines, sheet, ocr_text)
+                if ocr_title:
+                    title = ocr_title
+            if not sheet and not sheet_label_locked:
+                ocr_sheet = extract_sheet_from_pdf_text(ocr_text)
+                if ocr_sheet and is_plausible_drawing_sheet(ocr_sheet):
+                    sheet = ocr_sheet
+                    method = 'ocr'
+            if not scale:
+                scale = extract_scale_from_text(full_text)
     project_number = layout.get('project_number')
     return {
         'page_index': page_index,
@@ -1661,21 +1680,19 @@ def process_pages_from_upload(
     total_pages = len(pages)
 
     for page in pages:
-        if fast_analysis:
-            meta = analyze_pdf_page_fast(
-                page['file_path'],
-                page_index=0,
-                page_text=page.get('text'),
-                from_combined_set=from_combined_set,
-                source_filename=None if from_combined_set else original_filename,
-            )
-        else:
-            meta = analyze_pdf_page(
-                page['file_path'],
-                page_index=0,
-                from_combined_set=from_combined_set,
-                source_filename=None if from_combined_set else original_filename,
-            )
+        meta = analyze_pdf_page(
+            page['file_path'],
+            page_index=0,
+            from_combined_set=from_combined_set,
+            source_filename=None if from_combined_set else original_filename,
+            set_upload=from_combined_set and not fast_analysis,
+        ) if not fast_analysis else analyze_pdf_page_fast(
+            page['file_path'],
+            page_index=0,
+            page_text=page.get('text'),
+            from_combined_set=from_combined_set,
+            source_filename=None if from_combined_set else original_filename,
+        )
         detected_sheet = meta.get('sheet_number')
         if manual_sheet:
             sheet_number = normalize_sheet_number(manual_sheet) or manual_sheet

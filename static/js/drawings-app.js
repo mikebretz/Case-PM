@@ -1150,16 +1150,23 @@
       <th class="text-center py-2 px-2">Sheets</th>
       <th class="text-center py-2 px-2">Revisions</th>
       <th class="text-left py-2 px-2">Latest upload</th>
+      <th class="text-left py-2 px-2">Documents</th>
       <th class="text-right py-2"></th>
     </tr></thead><tbody>${sets.map(s => `<tr class="border-b border-zinc-800">
       <td class="py-2 pr-2 font-medium text-sky-300">${esc(s.name)}</td>
       <td class="py-2 px-2 text-center">${s.sheet_count || 0}</td>
       <td class="py-2 px-2 text-center text-zinc-500">${s.revision_count || 0}</td>
       <td class="py-2 px-2">${s.latest_upload ? fmtDate(s.latest_upload) : '—'}</td>
-      <td class="py-2 text-right">
+      <td class="py-2 px-2">
+        ${s.documents_url
+          ? `<a href="${esc(s.documents_url)}" class="text-sky-400 hover:text-sky-300 underline">Open folder</a>${s.full_set_download_url ? ` · <a href="${esc(s.full_set_download_url)}" class="text-emerald-400 hover:text-emerald-300 underline" target="_blank" rel="noopener">Full set PDF</a>` : ''}`
+          : '<span class="text-zinc-500">Upload to create</span>'}
+      </td>
+      <td class="py-2 text-right whitespace-nowrap">
         <button type="button" data-draw-set-action="show" data-set-name="${esc(s.name)}" class="px-2 py-1 bg-zinc-800 hover:bg-zinc-700 rounded mr-1">Show</button>
-        <button type="button" data-draw-set-action="export" data-set-name="${esc(s.name)}" class="px-2 py-1 bg-sky-900 hover:bg-sky-800 rounded mr-1 text-sky-100" title="Export all sheets to Documents">Docs</button>
-        <button type="button" data-draw-set-action="delete" data-set-name="${esc(s.name)}" class="px-2 py-1 bg-red-900/70 hover:bg-red-800 rounded text-red-100">Delete set</button>
+        ${s.documents_url ? `<button type="button" data-draw-set-action="folder" data-set-name="${esc(s.name)}" class="px-2 py-1 bg-emerald-900 hover:bg-emerald-800 rounded mr-1 text-emerald-100" title="Open set folder in Documents">Folder</button>` : ''}
+        ${!s.documents_url ? `<button type="button" data-draw-set-action="export" data-set-name="${esc(s.name)}" class="px-2 py-1 bg-sky-900 hover:bg-sky-800 rounded mr-1 text-sky-100" title="Export sheets to Documents">Save to Docs</button>` : ''}
+        <button type="button" data-draw-set-action="delete" data-set-name="${esc(s.name)}" class="px-2 py-1 bg-red-900/70 hover:bg-red-800 rounded text-red-100">Delete</button>
       </td>
     </tr>`).join('')}</tbody></table>`;
     body.querySelectorAll('[data-draw-set-action]').forEach(btn => {
@@ -1167,10 +1174,31 @@
       const action = btn.getAttribute('data-draw-set-action');
       btn.addEventListener('click', () => {
         if (action === 'show') filterBySet(setName);
+        else if (action === 'folder') openSetDocumentsFolder(setName);
         else if (action === 'export') exportDrawingSetToDocuments(setName);
         else if (action === 'delete') deleteDrawingSet(setName);
       });
     });
+  }
+
+  function openSetDocumentsFolder(setName) {
+    const set = state.drawingSets.find(s => s.name === setName);
+    if (set?.documents_url) {
+      window.location.href = set.documents_url;
+      return;
+    }
+    toast('No Documents folder for this set yet — upload or use Save to Docs.');
+  }
+
+  function openDrawingSetsInDocuments() {
+    const pid = projectId();
+    const withFolder = state.drawingSets.find(s => s.documents_url);
+    if (withFolder?.documents_url) {
+      const base = withFolder.documents_url.replace(/folder_id=\d+/, '');
+      window.location.href = `/documents?project_id=${pid}`;
+      return;
+    }
+    window.location.href = `/documents?project_id=${pid}`;
   }
 
   function filterBySet(name) {
@@ -4847,7 +4875,7 @@
         const page = Math.min(pageCount, Math.max(1, Math.ceil((tick * pageCount) / Math.max(pageCount, 12))));
         if (page > lastLoggedPage) {
           lastLoggedPage = page;
-          appendUploadLog(`Analyzing page ${page} of ${pageCount} — title block OCR…`);
+          appendUploadLog(`Reading title block page ${page} of ${pageCount}…`);
           if (bar) bar.style.width = `${Math.min(94, 6 + (page / pageCount) * 88)}%`;
         }
         if (page >= pageCount) {
@@ -5249,6 +5277,8 @@
     clearSelection,
     toggleSelectAllVisible,
     openSetsModal,
+    openSetDocumentsFolder,
+    openDrawingSetsInDocuments,
     filterBySet,
     loadDrawingSets,
     deletePreviewedSheet,

@@ -662,6 +662,35 @@ def ensure_system_folders(db, DocumentFolder, project_id: int, user_id: int | No
                 db.session.commit()
 
 
+def get_or_create_child_folder(db, DocumentFolder, project_id: int, parent_id: int, name: str, user_id: int | None = None):
+    """Return a project subfolder under parent_id, creating it when missing."""
+    clean = (name or 'Unnamed').strip()[:200]
+    if not clean:
+        clean = 'Unnamed'
+    q = DocumentFolder.query.filter_by(
+        project_id=int(project_id),
+        parent_id=int(parent_id),
+        name=clean,
+    )
+    if hasattr(DocumentFolder, 'deleted_at'):
+        q = q.filter(DocumentFolder.deleted_at.is_(None))
+    existing = q.first()
+    if existing:
+        return existing
+    folder = DocumentFolder(
+        project_id=int(project_id),
+        parent_id=int(parent_id),
+        name=clean,
+        is_system=False,
+        system_key=None,
+        created_by_id=user_id,
+        created_at=datetime.utcnow(),
+    )
+    db.session.add(folder)
+    db.session.flush()
+    return folder
+
+
 def resolve_folder_by_key(db, DocumentFolder, project_id: int, system_key: str):
     ensure_system_folders(db, DocumentFolder, project_id)
     return DocumentFolder.query.filter_by(
