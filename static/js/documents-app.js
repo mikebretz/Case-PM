@@ -19,6 +19,7 @@
     previewFileId: null,
     previewDoc: null,
     draggingFileId: null,
+    draggingFolderId: null,
   };
 
   function projectId() {
@@ -128,12 +129,13 @@
       const expanded = state.expandedFolders.has(node.id);
       const active = state.folderId === node.id ? ' active' : '';
       const sys = node.is_system ? ' system' : '';
+      const draggable = node.is_system ? '' : ' draggable="true"';
       const chevron = hasChildren
         ? `<button type="button" class="docs-tree-chevron" data-toggle="${node.id}" aria-label="Toggle"><i class="fa-solid fa-chevron-${expanded ? 'down' : 'right'} text-[9px]"></i></button>`
         : '<span class="docs-tree-chevron placeholder"></span>';
 
       let html = `<div class="docs-tree-node" data-tree-folder="${node.id}">
-        <div class="docs-tree-row${active}${sys}" data-folder-id="${node.id}" data-drop-folder="${node.id}">
+        <div class="docs-tree-row${active}${sys}" data-folder-id="${node.id}" data-drop-folder="${node.id}" data-system="${node.is_system ? '1' : ''}"${draggable}>
           ${chevron}
           <i class="fa-solid fa-folder${node.is_system ? '-tree' : ''} text-amber-400 text-xs"></i>
           <span class="truncate flex-1">${esc(node.name)}</span>
@@ -145,7 +147,11 @@
       return html;
     };
 
-    el.innerHTML = state.tree.map(n => renderNode(n, 0)).join('');
+    el.innerHTML = `<div class="docs-tree-root-drop" data-drop-root="1" title="Drop folder here to move to top level">Top level</div>`
+      + state.tree.map(n => renderNode(n, 0)).join('');
+
+    const rootDrop = el.querySelector('[data-drop-root]');
+    if (rootDrop) bindFolderDropTarget(rootDrop, null);
 
     el.querySelectorAll('[data-toggle]').forEach(btn => {
       btn.addEventListener('click', e => toggleFolderExpand(parseInt(btn.dataset.toggle, 10), e));
@@ -153,9 +159,11 @@
     el.querySelectorAll('[data-folder-id]').forEach(row => {
       row.addEventListener('click', e => {
         if (e.target.closest('[data-toggle]')) return;
+        if (state.draggingFolderId) return;
         openFolder(parseInt(row.dataset.folderId, 10));
       });
-      bindFolderDropTarget(row);
+      bindFolderDropTarget(row, parseInt(row.dataset.folderId, 10));
+      if (row.dataset.system !== '1') bindFolderDrag(row, parseInt(row.dataset.folderId, 10));
     });
   }
 
@@ -184,6 +192,40 @@
     return { folders, files };
   }
 
+  function findNodeInTree(id) {
+    let found = null;
+    const walk = (nodes) => {
+      for (const n of nodes || []) {
+        if (n.id === id) { found = n; return; }
+        walk(n.children);
+      }
+    };
+    walk(state.tree);
+    return found;
+  }
+
+  function isNodeInSubtree(node, searchId) {
+    if (!node) return false;
+    if (node.id === searchId) return true;
+    return (node.children || []).some(c => isNodeInSubtree(c, searchId));
+  }
+
+  function canDropFolderOn(dragId, targetId) {
+    if (!dragId || !targetId || dragId === targetId) return false;
+    const dragNode = findNodeInTree(dragId);
+    return !(dragNode && isNodeInSubtree(dragNode, targetId));
+  }
+
+  function setViewMode(mode) {
+    state.viewMode = mode;
+    const wrap = document.getElementById('docsGridWrap');
+    wrap?.classList.toggle('view-grid', mode === 'grid');
+    wrap?.classList.toggle('view-list', mode === 'list');
+    document.getElementById('docsViewGrid')?.classList.toggle('active', mode === 'grid');
+    document.getElementById('docsViewList')?.classList.toggle('active', mode === 'list');
+    render();
+  }
+
   function selectItem(kind, id, locked, system) {
     state.selected = { kind, id, locked: !!locked, system: !!system };
     document.querySelectorAll('.docs-item.selected, .docs-table tr.selected').forEach(x => x.classList.remove('selected'));
@@ -195,12 +237,10 @@
 
   function renderGrid(folders, files) {
     const grid = document.getElementById('docsGrid');
-    const table = document.getElementById('docsTable');
     const tableBody = document.getElementById('docsTableBody');
-    if (!grid || !table || !tableBody) return;
+    if (!grid || !tableBody) return;
 
-    grid.classList.remove('hidden');
-    table.classList.add('hidden');
+    tableBody.innerHTML = '';
 
     let html = '';
     folders.forEach(f => {
@@ -230,12 +270,10 @@
 
   function renderList(folders, files) {
     const grid = document.getElementById('docsGrid');
-    const table = document.getElementById('docsTable');
     const tableBody = document.getElementById('docsTableBody');
-    if (!grid || !table || !tableBody) return;
+    if (!grid || !tableBody) return;
 
-    grid.classList.add('hidden');
-    table.classList.remove('hidden');
+    grid.innerHTML = '';
 
     let html = '';
     folders.forEach(f => {
@@ -286,7 +324,7 @@
   function bindItemEvents(container) {
     container.querySelectorAll('[data-kind]').forEach(el => {
       el.addEventListener('click', e => {
-        if (state.draggingFileId) return;
+        if (state.draggingFileId || state.draggingFolderId) return;
         const kind = el.dataset.kind;
         const id = parseInt(el.dataset.id, 10);
         if (e.detail === 2) {
@@ -303,7 +341,22 @@
         showContextMenu(e.clientX, e.clientY);
       });
       if (el.dataset.kind === 'file' && el.dataset.locked !== '1') bindFileDrag(el);
-      if (el.dataset.kind === 'folder') bindFolderDropTarget(el);
+      if (el.dataset.kind === 'folder') bindFolderDropTarget(el, parseInt(el.dataset.dropFolder, 10));
+    });
+  }
+
+  function bindFolderDrag(el, folderId) {
+    el.addEventListener('dragstart', e => {
+      state.draggingFolderId = folderId;
+      el.classList.add('dragging');
+      e.dataTransfer.effectAllowed = 'move';
+      e.dataTransfer.setData('application/x-docs-folder', String(folderId));
+      e.stopPropagation();
+    });
+    el.addEventListener('dragend', () => {
+      state.draggingFolderId = null;
+      el.classList.remove('dragging');
+      clearDropHighlights();
     });
   }
 
@@ -313,7 +366,7 @@
       state.draggingFileId = id;
       el.classList.add('dragging');
       e.dataTransfer.effectAllowed = 'move';
-      e.dataTransfer.setData('text/plain', String(id));
+      e.dataTransfer.setData('application/x-docs-file', String(id));
     });
     el.addEventListener('dragend', () => {
       state.draggingFileId = null;
@@ -322,11 +375,10 @@
     });
   }
 
-  function bindFolderDropTarget(el) {
-    const folderId = parseInt(el.dataset.dropFolder || el.dataset.folderId, 10);
-    if (!folderId) return;
+  function bindFolderDropTarget(el, folderId) {
     el.addEventListener('dragover', e => {
-      if (!state.draggingFileId) return;
+      if (!state.draggingFileId && !state.draggingFolderId) return;
+      if (state.draggingFolderId && folderId != null && !canDropFolderOn(state.draggingFolderId, folderId)) return;
       e.preventDefault();
       e.dataTransfer.dropEffect = 'move';
       el.classList.add('drop-target');
@@ -335,8 +387,12 @@
     el.addEventListener('drop', async e => {
       e.preventDefault();
       el.classList.remove('drop-target');
-      const fileId = state.draggingFileId || parseInt(e.dataTransfer.getData('text/plain'), 10);
-      if (!fileId) return;
+      if (state.draggingFolderId) {
+        await moveFolderToParent(state.draggingFolderId, folderId);
+        return;
+      }
+      const fileId = state.draggingFileId || parseInt(e.dataTransfer.getData('application/x-docs-file'), 10);
+      if (!fileId || folderId == null) return;
       await moveFileToFolder(fileId, folderId);
     });
   }
@@ -346,9 +402,9 @@
   }
 
   async function moveFileToFolder(fileId, folderId) {
-    const file = state.files.find(f => f.id === fileId);
-    if (!file || file.is_system_locked) return;
-    if (file.folder_id === folderId) return;
+    const file = state.files.find(f => f.id === fileId) || state.previewDoc;
+    if (file?.is_system_locked) return;
+    if (file?.folder_id === folderId) return;
     try {
       await api(`/api/documents/${fileId}`, {
         method: 'PATCH',
@@ -360,6 +416,26 @@
       await loadBrowse(state.folderId);
     } catch (err) {
       alert(err.message || 'Could not move file');
+    }
+  }
+
+  async function moveFolderToParent(folderId, parentId) {
+    const node = findNodeInTree(folderId);
+    if (!node || node.is_system) return;
+    if (parentId != null && !canDropFolderOn(folderId, parentId)) return;
+    const currentParent = node.parent_id ?? null;
+    const nextParent = parentId ?? null;
+    if (currentParent === nextParent) return;
+    try {
+      await api(`/api/document-folders/${folderId}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ parent_id: nextParent }),
+      });
+      toast('Folder moved');
+      await loadBrowse(state.folderId);
+    } catch (err) {
+      alert(err.message || 'Could not move folder');
     }
   }
 
@@ -404,7 +480,7 @@
           <button type="button" class="docs-btn docs-btn-secondary" id="docsPreviewShare"><i class="fa-solid fa-link"></i> Share</button>
         </div>`;
       document.getElementById('docsPreviewDownload')?.addEventListener('click', () => downloadFile(doc.id));
-      document.getElementById('docsPreviewShare')?.addEventListener('click', () => createShareLink(doc.id));
+      document.getElementById('docsPreviewShare')?.addEventListener('click', () => copyShareLink(doc.id));
     } catch (err) {
       body.innerHTML = `<p class="text-red-400 text-sm">${esc(err.message)}</p>`;
     }
@@ -438,7 +514,8 @@
     } else {
       items.push({ label: 'Preview', action: () => showPreview(state.selected.id) });
       items.push({ label: 'Download', action: () => downloadFile(state.selected.id) });
-      items.push({ label: 'Copy share link', action: () => createShareLink(state.selected.id) });
+      items.push({ label: 'Get shareable link (copy)', action: () => copyShareLink(state.selected.id) });
+      items.push({ label: 'Share link options…', action: () => createShareLink(state.selected.id) });
       items.push({ label: 'Rename', action: () => startRename('file', state.selected.id), disabled: state.selected.locked });
       items.push({ label: 'Delete', action: () => deleteFile(state.selected.id), danger: true, disabled: state.selected.locked });
     }
@@ -557,6 +634,22 @@
     else console.log(msg);
   }
 
+  async function copyShareLink(fileId) {
+    try {
+      const json = await api(`/api/documents/${fileId}/share-links`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ expires_days: 30 }),
+      });
+      const url = json.share_link?.share_url || '';
+      if (!url) throw new Error('No share link returned');
+      await navigator.clipboard.writeText(url);
+      toast('Share link copied — recipients can download this file');
+    } catch (err) {
+      alert(err.message || 'Could not create share link');
+    }
+  }
+
   async function createShareLink(fileId) {
     const json = await api(`/api/documents/${fileId}/share-links`, {
       method: 'POST',
@@ -665,18 +758,8 @@
       state.search = e.target.value;
       render();
     });
-    document.getElementById('docsViewGrid')?.addEventListener('click', () => {
-      state.viewMode = 'grid';
-      document.getElementById('docsViewGrid')?.classList.add('active');
-      document.getElementById('docsViewList')?.classList.remove('active');
-      render();
-    });
-    document.getElementById('docsViewList')?.addEventListener('click', () => {
-      state.viewMode = 'list';
-      document.getElementById('docsViewList')?.classList.add('active');
-      document.getElementById('docsViewGrid')?.classList.remove('active');
-      render();
-    });
+    document.getElementById('docsViewGrid')?.addEventListener('click', () => setViewMode('grid'));
+    document.getElementById('docsViewList')?.addEventListener('click', () => setViewMode('list'));
     document.getElementById('docsShareCopy')?.addEventListener('click', async () => {
       const url = document.getElementById('docsShareUrl')?.value;
       if (url) {
@@ -697,20 +780,20 @@
     if (drop) {
       ['dragenter', 'dragover'].forEach(ev => {
         drop.addEventListener(ev, e => {
-          if (state.draggingFileId) return;
+          if (state.draggingFileId || state.draggingFolderId) return;
           e.preventDefault();
           drop.classList.add('drag-over');
         });
       });
       ['dragleave', 'drop'].forEach(ev => {
         drop.addEventListener(ev, e => {
-          if (state.draggingFileId) return;
+          if (state.draggingFileId || state.draggingFolderId) return;
           e.preventDefault();
           drop.classList.remove('drag-over');
         });
       });
       drop.addEventListener('drop', async e => {
-        if (state.draggingFileId) return;
+        if (state.draggingFileId || state.draggingFolderId) return;
         try {
           await uploadFiles(e.dataTransfer?.files);
           toast('Upload complete');

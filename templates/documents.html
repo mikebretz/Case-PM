@@ -34,8 +34,8 @@
     <div class="docs-center flex flex-col flex-1 min-w-0 min-h-0">
         <div class="docs-toolbar flex flex-wrap items-center gap-2 mb-2 shrink-0">
             <nav id="docsBreadcrumbs" class="docs-breadcrumbs flex-1 min-w-0"></nav>
-            <div class="flex items-center gap-1">
-                <button type="button" id="docsViewGrid" class="docs-icon-btn active" title="Grid view"><i class="fa-solid fa-grip"></i></button>
+            <div class="flex items-center gap-1 docs-view-toggle" role="group" aria-label="View mode">
+                <button type="button" id="docsViewGrid" class="docs-icon-btn active" title="Icon view"><i class="fa-solid fa-grip"></i></button>
                 <button type="button" id="docsViewList" class="docs-icon-btn" title="List view"><i class="fa-solid fa-list"></i></button>
             </div>
             <input type="search" id="docsSearch" class="docs-search" placeholder="Search this folder…">
@@ -43,9 +43,9 @@
 
         <div class="docs-file-panel flex flex-col flex-1 min-h-0 border border-zinc-700 rounded-md bg-zinc-900 overflow-hidden">
             <div id="docsDropZone" class="docs-dropzone flex-1 min-h-0 overflow-hidden flex flex-col">
-                <div id="docsGridWrap" class="docs-grid-wrap flex-1 min-h-0 overflow-auto p-3">
+                <div id="docsGridWrap" class="docs-grid-wrap view-grid flex-1 min-h-0 overflow-auto p-3">
                     <div id="docsGrid" class="docs-grid"></div>
-                    <table id="docsTable" class="docs-table hidden w-full text-sm">
+                    <table id="docsTable" class="docs-table w-full text-sm">
                         <thead class="bg-zinc-800 sticky top-0 z-10 border-b border-zinc-700">
                             <tr>
                                 <th class="docs-th w-10"></th>
