@@ -1402,7 +1402,10 @@ def create_project():
     try:
         name = request.form.get('name')
         if not name:
-            flash('Project name is required.', 'error')
+            msg = 'Project name is required.'
+            if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
+                return jsonify({'error': msg}), 400
+            flash(msg, 'error')
             return redirect(url_for('projects_page'))
 
         next_num = Project.query.count() + 1
@@ -1410,7 +1413,10 @@ def create_project():
         number = _normalize_project_number(raw_number)
         conflict = _project_number_conflict(number)
         if conflict:
-            flash(f'Project number "{number}" is already used by "{conflict.name}". Project numbers are not case-sensitive.', 'error')
+            msg = f'Project number "{number}" is already used by "{conflict.name}". Project numbers are not case-sensitive.'
+            if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
+                return jsonify({'error': msg}), 400
+            flash(msg, 'error')
             return redirect(url_for('projects_page'))
 
         project = Project(
@@ -1433,15 +1439,20 @@ def create_project():
         db.session.commit()
 
         flash(f'Project "{name}" created successfully!', 'success')
+        if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
+            return jsonify({'ok': True, 'project_id': project.id, 'project': project.to_dict()})
         return redirect(url_for('projects_page'))
 
     except Exception as e:
         db.session.rollback()
         err = str(e)
         if 'UNIQUE constraint failed' in err and 'project.number' in err:
-            flash('That project number is already in use (not case-sensitive).', 'error')
+            msg = 'That project number is already in use (not case-sensitive).'
         else:
-            flash(f'Error creating project: {err}', 'error')
+            msg = f'Error creating project: {err}'
+        if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
+            return jsonify({'error': msg}), 400
+        flash(msg, 'error')
         return redirect(url_for('projects_page'))
 
 
