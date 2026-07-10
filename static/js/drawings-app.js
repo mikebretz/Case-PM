@@ -4784,6 +4784,7 @@
     const title = document.getElementById('uploadProgressTitle');
     const log = document.getElementById('uploadProgressLog');
     const bar = document.getElementById('uploadProgressBar');
+    const subtitle = dlg?.querySelector('.upload-progress-pulse');
     if (!dlg || !log) return;
     const batchPrefix = batchLabel ? `${batchLabel} — ` : '';
     if (title) {
@@ -4791,12 +4792,18 @@
         ? `${batchPrefix}Processing ${pageCount} pages — ${fileName}`
         : `${batchPrefix}Processing ${fileName}`;
     }
+    if (subtitle) {
+      subtitle.textContent = 'Splitting pages · reading title blocks · detecting sheet numbers & drawing names';
+    }
     log.innerHTML = '';
     if (bar) bar.style.width = '6%';
     appendUploadLog('Uploading PDF to server…');
     dlg.showModal();
     clearInterval(state.uploadLogTimer);
+    state.uploadFinalizingShown = false;
     let tick = 0;
+    let lastLoggedPage = 0;
+    let lastGenericIdx = -1;
     const generic = [
       'Splitting PDF into individual sheets…',
       'Scanning title block regions…',
@@ -4804,23 +4811,45 @@
       'Extracting drawing names…',
       'Detecting revisions…',
     ];
+    const intervalMs = pageCount && pageCount > 40 ? 350 : 550;
     state.uploadLogTimer = setInterval(() => {
       tick++;
       if (pageCount && pageCount > 0) {
         const page = Math.min(pageCount, Math.max(1, Math.ceil((tick * pageCount) / Math.max(pageCount, 12))));
-        appendUploadLog(`Analyzing page ${page} of ${pageCount} — title block OCR…`);
-        if (bar) bar.style.width = `${Math.min(94, 6 + (page / pageCount) * 88)}%`;
+        if (page > lastLoggedPage) {
+          lastLoggedPage = page;
+          appendUploadLog(`Analyzing page ${page} of ${pageCount} — title block OCR…`);
+          if (bar) bar.style.width = `${Math.min(94, 6 + (page / pageCount) * 88)}%`;
+        }
+        if (page >= pageCount && !state.uploadFinalizingShown) {
+          state.uploadFinalizingShown = true;
+          appendUploadLog(`All ${pageCount} pages analyzed — waiting for server to finish import…`);
+          if (bar) bar.style.width = '94%';
+          if (subtitle) {
+            subtitle.textContent = 'Saving sheets to project — large sets may take a few minutes';
+          }
+        }
       } else {
-        appendUploadLog(generic[tick % generic.length]);
+        const idx = (tick - 1) % generic.length;
+        if (idx !== lastGenericIdx) {
+          lastGenericIdx = idx;
+          appendUploadLog(generic[idx]);
+        }
         if (bar) bar.style.width = `${Math.min(94, 6 + tick * 4)}%`;
+        if (tick >= generic.length && !state.uploadFinalizingShown) {
+          state.uploadFinalizingShown = true;
+          appendUploadLog('Waiting for server to finish import…');
+          if (subtitle) subtitle.textContent = 'Saving sheets to project';
+        }
       }
-    }, pageCount && pageCount > 40 ? 350 : 550);
+    }, intervalMs);
   }
 
   function finishUploadProgress(json, finishOpts) {
     const opts = finishOpts || {};
     clearInterval(state.uploadLogTimer);
     state.uploadLogTimer = null;
+    state.uploadFinalizingShown = false;
     const bar = document.getElementById('uploadProgressBar');
     if (bar) bar.style.width = '100%';
     const pages = json.pages || json.drawings || [];
@@ -4844,6 +4873,7 @@
   function cancelUploadProgress() {
     clearInterval(state.uploadLogTimer);
     state.uploadLogTimer = null;
+    state.uploadFinalizingShown = false;
     document.getElementById('uploadProgressModal')?.close();
   }
 
