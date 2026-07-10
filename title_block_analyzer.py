@@ -54,7 +54,7 @@ NOTE_FRAGMENT_RE = re.compile(
     re.I,
 )
 OCR_PSM_MODES = ('--psm 6', '--psm 11')
-OCR_MATRIX = 3.5
+OCR_MATRIX = 4.0
 
 _ocr_fields_cache: dict[tuple[str, int], dict[str, str]] = {}
 

@@ -10,6 +10,11 @@ from datetime import datetime, date
 
 from db_sqlite import commit_with_retry, flush_with_retry
 
+try:
+    from sqlalchemy.exc import IntegrityError
+except ImportError:
+    IntegrityError = Exception  # type: ignore
+
 DISCIPLINE_MAP = {
     'A': 'Architectural',
     'AD': 'Architectural',
@@ -975,13 +980,10 @@ def analyze_pdf_page(
 
     layout_has_sheet = bool(sheet and is_plausible_drawing_sheet(sheet))
     layout_has_title = bool(title and len(str(title).strip()) >= 3)
-    skip_extra_ocr = set_upload and (
+    skip_extra_ocr = set_upload and layout_has_sheet and layout_has_title and (
         layout_complete
-        or (
-            layout_has_sheet
-            and layout_has_title
-            and (layout_trusted or sheet_label_locked or sheet_conf >= 2.0)
-        )
+        or sheet_label_locked
+        or (sheet_conf >= 2.0 and name_conf >= 2.0)
     )
 
     if not skip_extra_ocr:
@@ -1737,32 +1739,37 @@ def process_pages_from_upload(
             })
 
         if from_combined_set:
-            norm = (normalize_sheet_number(sheet_number) or sheet_number or '').upper()
-            if norm in batch_detected:
-                sheet_number = f'{sheet_number}-P{page["page_index"] + 1:03d}'
-            if norm:
-                batch_detected.add(norm)
-
-        existing = Drawing.query.filter_by(project_id=int(project_id), sheet_number=sheet_number).first()
-        if existing:
-            if sheet_number.upper() in batch_assigned:
-                sheet_number = f'{sheet_number}-P{page["page_index"] + 1:03d}'
+            base_key = (normalize_sheet_number(sheet_number) or sheet_number or '').upper()
+            if base_key and base_key in batch_detected:
                 sheet_number = ensure_unique_sheet_number(
                     Drawing, project_id, sheet_number, reserved=batch_assigned,
                     page_index=page['page_index'],
                 )
-        elif sheet_number.upper() in batch_assigned:
-            sheet_number = f'{sheet_number}-P{page["page_index"] + 1:03d}'
+            if base_key:
+                batch_detected.add(base_key)
+
+        sheet_number = preserve_assigned_sheet_number(sheet_number)
+        reserved_key = sheet_number.upper()
+        existing = Drawing.query.filter_by(project_id=int(project_id), sheet_number=sheet_number).first()
+        force_new_for_page = from_combined_set
+
+        if reserved_key in batch_assigned:
             sheet_number = ensure_unique_sheet_number(
                 Drawing, project_id, sheet_number, reserved=batch_assigned,
                 page_index=page['page_index'],
             )
+            sheet_number = preserve_assigned_sheet_number(sheet_number)
+            force_new_for_page = True
+        elif existing:
+            # Sheet already on project — add a revision instead of inserting a duplicate row
+            force_new_for_page = False
         else:
             sheet_number = ensure_unique_sheet_number(
                 Drawing, project_id, sheet_number, reserved=batch_assigned,
                 page_index=page['page_index'],
             )
-        sheet_number = preserve_assigned_sheet_number(sheet_number)
+            sheet_number = preserve_assigned_sheet_number(sheet_number)
+
         batch_assigned.add(sheet_number.upper())
 
         page_text = page.get('text') or meta.get('text_preview') or ''
@@ -1775,24 +1782,39 @@ def process_pages_from_upload(
         if meta.get('project_number'):
             page_notes = f'{page_notes} · Project No. {meta["project_number"]}'.strip(' ·')
 
-        drawing, rev, _old = upsert_drawing_from_upload(
-            db, Drawing, DrawingRevision, DrawingMarkup,
-            project_id=int(project_id),
-            sheet_number=sheet_number,
-            title=title,
-            discipline=meta.get('discipline') or discipline_from_sheet(sheet_number),
-            file_path=page['file_path'],
-            original_filename=original_filename,
-            set_name=set_name,
-            drawing_date=meta.get('drawing_date'),
-            received_date=date.today(),
-            upload_source=upload_source,
-            uploaded_by_id=uploaded_by_id,
-            notes=page_notes,
-            sheet_revision=meta.get('revision'),
-            status=sheet_status,
-            force_new=from_combined_set,
-        )
+        drawing, rev, _old = None, None, None
+        for _upsert_attempt in range(4):
+            try:
+                drawing, rev, _old = upsert_drawing_from_upload(
+                    db, Drawing, DrawingRevision, DrawingMarkup,
+                    project_id=int(project_id),
+                    sheet_number=sheet_number,
+                    title=title,
+                    discipline=meta.get('discipline') or discipline_from_sheet(sheet_number),
+                    file_path=page['file_path'],
+                    original_filename=original_filename,
+                    set_name=set_name,
+                    drawing_date=meta.get('drawing_date'),
+                    received_date=date.today(),
+                    upload_source=upload_source,
+                    uploaded_by_id=uploaded_by_id,
+                    notes=page_notes,
+                    sheet_revision=meta.get('revision'),
+                    status=sheet_status,
+                    force_new=force_new_for_page,
+                )
+                break
+            except IntegrityError:
+                db.session.rollback()
+                sheet_number = ensure_unique_sheet_number(
+                    Drawing, project_id, sheet_number, reserved=batch_assigned,
+                    page_index=page['page_index'],
+                )
+                sheet_number = preserve_assigned_sheet_number(sheet_number)
+                force_new_for_page = True
+                batch_assigned.add(sheet_number.upper())
+        if drawing is None or rev is None:
+            raise ValueError(f'Could not assign a unique sheet number for page {page["page_index"] + 1}')
         created.append({
             'id': drawing.id,
             'sheet_number': drawing.sheet_number,
