@@ -5116,7 +5116,8 @@ def api_delete_drawing_set():
 @login_required
 def api_drawing_export_to_documents(drawing_id):
     """Copy current drawing sheet PDF into Documents › Drawings › Drawing Sets."""
-    from drawing_persistence import resolve_drawing_file_path, resolve_folder_by_key
+    from drawing_persistence import resolve_drawing_file_path
+    from document_persistence import resolve_folder_by_key
 
     drawing = Drawing.query.get_or_404(drawing_id)
     body = request.get_json(silent=True) or {}
@@ -5164,7 +5165,8 @@ def api_drawing_export_to_documents(drawing_id):
 @login_required
 def api_drawing_set_export_to_documents():
     """Export all sheets in a drawing set to Documents › Drawings › Drawing Sets."""
-    from drawing_persistence import resolve_drawing_file_path, resolve_folder_by_key
+    from drawing_persistence import resolve_drawing_file_path
+    from document_persistence import resolve_folder_by_key
 
     body = request.get_json(silent=True) or {}
     project_id = body.get('project_id') or get_current_project_id()
