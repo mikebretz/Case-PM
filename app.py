@@ -22,10 +22,16 @@ app = Flask(__name__)
 app.config['SECRET_KEY'] = 'case-pm-ultimate-secret-key-2026'
 app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///case_pm.db'
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
-app.config['UPLOAD_FOLDER'] = 'uploads'
-app.config['MAX_CONTENT_LENGTH'] = 200 * 1024 * 1024  # 200MB for large drawing sets
+app.config['SQLALCHEMY_ENGINE_OPTIONS'] = {
+    'connect_args': {'timeout': 60},
+}
+
+from db_sqlite import register_sqlite_pragmas
+register_sqlite_pragmas()
 
 db = SQLAlchemy(app)
+app.config['UPLOAD_FOLDER'] = 'uploads'
+app.config['MAX_CONTENT_LENGTH'] = 200 * 1024 * 1024  # 200MB for large drawing sets
 
 login_manager = LoginManager()
 login_manager.init_app(app)
@@ -5566,7 +5572,7 @@ def api_upload_drawing():
                 'needs_review': needs_review,
             }), 400
 
-        db.session.commit()
+        commit_with_retry(db.session)
         drawings = [_serialize_drawing(Drawing.query.get(item['id'])) for item in created]
         return jsonify({
             'ok': True,
