@@ -12,6 +12,7 @@
         body {
             font-family: 'Inter', system-ui, sans-serif;
             background-color: #09090b;
+            overflow-x: hidden;
         }
 
         .font-display {
@@ -23,12 +24,13 @@
             position: relative;
             min-height: 100vh;
             min-height: 100dvh;
-            overflow: hidden;
+            z-index: 1;
         }
 
         .login-bg-grid {
             position: fixed;
             inset: 0;
+            z-index: 0;
             background-image:
                 linear-gradient(rgba(255, 255, 255, 0.03) 1px, transparent 1px),
                 linear-gradient(90deg, rgba(255, 255, 255, 0.03) 1px, transparent 1px);
@@ -37,21 +39,26 @@
             pointer-events: none;
         }
 
+        /* Full viewport-height logo — fixed to screen, scales with browser zoom */
         .login-watermark {
             position: fixed;
-            inset: 0;
-            display: flex;
-            align-items: center;
-            justify-content: center;
+            top: 0;
+            left: 50%;
+            transform: translateX(-50%);
+            height: 100vh;
+            height: 100dvh;
+            height: 100svh;
+            width: 100vh;
+            width: 100dvh;
+            width: 100svh;
             pointer-events: none;
             z-index: 0;
+            opacity: 0.15;
         }
 
-        /* Same mark as header: emerald tile + Font Awesome hard-hat */
         .login-watermark-logo {
-            width: min(72vmin, 520px);
-            height: min(72vmin, 520px);
-            opacity: 0.13;
+            width: 100%;
+            height: 100%;
             display: flex;
             align-items: center;
             justify-content: center;
@@ -95,17 +102,17 @@
     </style>
 </head>
 <body>
-    <div class="login-shell flex items-center justify-center px-4 py-10">
-        <div class="login-bg-grid" aria-hidden="true"></div>
+    <div class="login-bg-grid" aria-hidden="true"></div>
 
-        <div class="login-watermark" aria-hidden="true">
-            <div class="login-watermark-logo">
-                <div class="login-watermark-tile">
-                    <i class="fa-solid fa-hard-hat"></i>
-                </div>
+    <div class="login-watermark" aria-hidden="true">
+        <div class="login-watermark-logo">
+            <div class="login-watermark-tile">
+                <i class="fa-solid fa-hard-hat"></i>
             </div>
         </div>
+    </div>
 
+    <div class="login-shell flex items-center justify-center px-4 py-10">
         <div class="relative z-10 w-full max-w-[400px]">
             <div class="flex items-center justify-center gap-2.5 mb-6">
                 <div class="w-9 h-9 bg-emerald-600 rounded-lg flex items-center justify-center shadow-lg shadow-emerald-900/30">
@@ -117,7 +124,7 @@
                 </div>
             </div>
 
-            <div class="login-card bg-zinc-900/95 border border-zinc-800 rounded-lg p-6 shadow-2xl shadow-black/40 backdrop-blur-sm">
+            <div class="login-card bg-zinc-900/55 border border-zinc-800/80 rounded-lg p-6 shadow-2xl shadow-black/40 backdrop-blur-md">
                 <div class="mb-5">
                     <h1 class="font-display text-xl text-white">Sign in</h1>
                     <p class="text-zinc-400 text-sm mt-1">Access your projects and field tools</p>
