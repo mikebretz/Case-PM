@@ -2314,34 +2314,23 @@ def update_change_order_status(co_id):
     if new_status == 'Approved' and old_status != 'Approved':
         co.approved_at = datetime.utcnow()
         co.approved_by_id = current_user.id
-        try:
-            from pay_app_persistence import sync_change_order_to_sov
-            sync_result = sync_change_order_to_sov(
-                ChangeOrder, ChangeOrderAllocation, PayAppProjectState,
-                ScheduleData, Project, db, co.id, current_user.id,
-                Commitment=Commitment,
-            )
-            co.sage_sync_status = 'sov_synced'
-            from sage_service import create_and_process_sage_event
-            create_and_process_sage_event(
-                SageSyncEvent, Project, db, co.project_id,
-                'ChangeOrderApproved',
-                message=f'Change Order {co.number} approved — SOV and schedule updated',
-                payload={'change_order_id': co.id, 'amount': co.amount, 'sync': sync_result},
-                user_id=current_user.id,
-            )
-        except Exception as exc:
-            co.sage_sync_status = f'sync_error:{str(exc)[:120]}'
-            sync_result = {'error': str(exc)}
 
-    try:
-        from budget_persistence import sync_change_order_to_budget
-        budget_sync_result = sync_change_order_to_budget(
-            ChangeOrder, ChangeOrderAllocation, BudgetProjectState,
-            db, co.id, old_status, new_status, current_user.id,
-        )
-    except Exception:
-        pass
+    from co_persistence import run_change_order_accounting_sync
+    accounting = run_change_order_accounting_sync(
+        co, old_status, new_status, current_user.id,
+        ChangeOrder=ChangeOrder,
+        ChangeOrderAllocation=ChangeOrderAllocation,
+        PayAppProjectState=PayAppProjectState,
+        ScheduleData=ScheduleData,
+        Project=Project,
+        BudgetProjectState=BudgetProjectState,
+        db=db,
+        Commitment=Commitment,
+        SageSyncEvent=SageSyncEvent,
+        queue_sage_event=(new_status == 'Approved' and old_status != 'Approved'),
+    )
+    sync_result = accounting.get('sync_result')
+    budget_sync_result = accounting.get('budget_sync_result')
 
     db.session.commit()
     return jsonify({
@@ -7508,7 +7497,7 @@ def api_allocate_change_order(co_id):
 @app.route('/api/change-orders', methods=['POST'])
 @login_required
 def api_create_change_order():
-    from co_persistence import apply_co_fields, co_to_dict, save_allocations, validate_allocations
+    from co_persistence import apply_co_fields, co_to_dict, run_change_order_accounting_sync, save_allocations, validate_allocations
     try:
         body = request.get_json(silent=True) or {}
         project_id = body.get('project_id') or get_current_project_id()
@@ -7539,9 +7528,32 @@ def api_create_change_order():
             co.amount = sum(float(a.get('amount') or 0) for a in allocations)
             if len(allocations) == 1:
                 co.cost_code = allocations[0].get('cost_code')
+        sync_result = None
+        budget_sync_result = None
+        if status == 'Approved':
+            co.approved_by_id = current_user.id
+            accounting = run_change_order_accounting_sync(
+                co, 'Draft', status, current_user.id,
+                ChangeOrder=ChangeOrder,
+                ChangeOrderAllocation=ChangeOrderAllocation,
+                PayAppProjectState=PayAppProjectState,
+                ScheduleData=ScheduleData,
+                Project=Project,
+                BudgetProjectState=BudgetProjectState,
+                db=db,
+                Commitment=Commitment,
+                SageSyncEvent=SageSyncEvent,
+            )
+            sync_result = accounting.get('sync_result')
+            budget_sync_result = accounting.get('budget_sync_result')
         db.session.commit()
         allocs = ChangeOrderAllocation.query.filter_by(change_order_id=co.id).all()
-        return jsonify({'ok': True, 'change_order': co_to_dict(co, allocs)})
+        return jsonify({
+            'ok': True,
+            'change_order': co_to_dict(co, allocs),
+            'sync_result': sync_result,
+            'budget_sync_result': budget_sync_result,
+        })
     except ValueError as exc:
         db.session.rollback()
         return jsonify({'error': str(exc)}), 400
@@ -7553,9 +7565,12 @@ def api_create_change_order():
 @app.route('/api/change-orders/<int:co_id>', methods=['PUT'])
 @login_required
 def api_update_change_order(co_id):
-    from co_persistence import apply_co_fields, co_to_dict, save_allocations, validate_allocations
+    from co_persistence import apply_co_fields, co_to_dict, run_change_order_accounting_sync, save_allocations, validate_allocations
     co = ChangeOrder.query.get_or_404(co_id)
     body = request.get_json(silent=True) or {}
+    old_status = co.status
+    sync_result = None
+    budget_sync_result = None
     try:
         apply_co_fields(co, body)
         if body.get('allocations') is not None:
@@ -7568,12 +7583,55 @@ def api_update_change_order(co_id):
                 co.amount = sum(float(a.get('amount') or 0) for a in allocations)
                 if len(allocations) == 1:
                     co.cost_code = allocations[0].get('cost_code')
+        new_status = co.status
+        if new_status == 'Approved' and old_status != 'Approved':
+            co.approved_by_id = current_user.id
+        if new_status == 'Approved' or (
+            new_status in ('Submitted', 'Under Review', 'Pending Architect', 'Pending Owner')
+            and old_status not in ('Submitted', 'Under Review', 'Pending Architect', 'Pending Owner')
+        ) or new_status == 'Rejected':
+            accounting = run_change_order_accounting_sync(
+                co, old_status, new_status, current_user.id,
+                ChangeOrder=ChangeOrder,
+                ChangeOrderAllocation=ChangeOrderAllocation,
+                PayAppProjectState=PayAppProjectState,
+                ScheduleData=ScheduleData,
+                Project=Project,
+                BudgetProjectState=BudgetProjectState,
+                db=db,
+                Commitment=Commitment,
+                SageSyncEvent=SageSyncEvent,
+                queue_sage_event=(new_status == 'Approved' and old_status != 'Approved'),
+            )
+            sync_result = accounting.get('sync_result')
+            budget_sync_result = accounting.get('budget_sync_result')
+        elif new_status == 'Approved' and old_status == 'Approved' and body.get('allocations') is not None:
+            accounting = run_change_order_accounting_sync(
+                co, old_status, new_status, current_user.id,
+                ChangeOrder=ChangeOrder,
+                ChangeOrderAllocation=ChangeOrderAllocation,
+                PayAppProjectState=PayAppProjectState,
+                ScheduleData=ScheduleData,
+                Project=Project,
+                BudgetProjectState=BudgetProjectState,
+                db=db,
+                Commitment=Commitment,
+                SageSyncEvent=SageSyncEvent,
+                queue_sage_event=False,
+            )
+            sync_result = accounting.get('sync_result')
         db.session.commit()
     except ValueError as exc:
         db.session.rollback()
         return jsonify({'error': str(exc)}), 400
     allocs = ChangeOrderAllocation.query.filter_by(change_order_id=co.id).all()
-    return jsonify({'ok': True, 'change_order': co_to_dict(co, allocs)})
+    return jsonify({
+        'ok': True,
+        'change_order': co_to_dict(co, allocs),
+        'sync_result': sync_result,
+        'budget_sync_result': budget_sync_result,
+        'accounting_synced': bool(sync_result or budget_sync_result),
+    })
 
 
 @app.route('/api/change-orders/<int:co_id>', methods=['DELETE'])
@@ -7669,7 +7727,7 @@ def api_change_orders_link_options():
 @app.route('/api/change-orders/<int:co_id>/workflow', methods=['POST'])
 @login_required
 def api_change_order_workflow(co_id):
-    from co_persistence import co_workflow_action, notify_ball_in_court, co_to_dict, append_approval_history
+    from co_persistence import co_workflow_action, notify_ball_in_court, co_to_dict, append_approval_history, run_change_order_accounting_sync
     co = ChangeOrder.query.get_or_404(co_id)
     body = request.get_json(silent=True) or {}
     action = body.get('action')
@@ -7732,45 +7790,37 @@ def api_change_order_workflow(co_id):
     sync_result = None
     budget_sync_result = None
     if action == 'submit' and new_status == 'Submitted':
-        try:
-            from budget_persistence import sync_change_order_to_budget
-            budget_sync_result = sync_change_order_to_budget(
-                ChangeOrder, ChangeOrderAllocation, BudgetProjectState,
-                db, co.id, old_status, new_status, current_user.id,
-            )
-        except Exception:
-            pass
+        accounting = run_change_order_accounting_sync(
+            co, old_status, new_status, current_user.id,
+            ChangeOrder=ChangeOrder,
+            ChangeOrderAllocation=ChangeOrderAllocation,
+            PayAppProjectState=PayAppProjectState,
+            ScheduleData=ScheduleData,
+            Project=Project,
+            BudgetProjectState=BudgetProjectState,
+            db=db,
+            Commitment=Commitment,
+            SageSyncEvent=SageSyncEvent,
+            queue_sage_event=False,
+        )
+        budget_sync_result = accounting.get('budget_sync_result')
 
     if final_approved:
-        co.approved_at = datetime.utcnow()
         co.approved_by_id = current_user.id
-        try:
-            from pay_app_persistence import sync_change_order_to_sov
-            sync_result = sync_change_order_to_sov(
-                ChangeOrder, ChangeOrderAllocation, PayAppProjectState,
-                ScheduleData, Project, db, co.id, current_user.id,
-                Commitment=Commitment,
-            )
-            co.sage_sync_status = 'sov_synced'
-            from sage_service import create_and_process_sage_event
-            create_and_process_sage_event(
-                SageSyncEvent, Project, db, co.project_id,
-                'ChangeOrderApproved',
-                message=f'Change Order {co.number} approved — SOV and schedule updated',
-                payload={'change_order_id': co.id, 'amount': co.amount, 'sync': sync_result},
-                user_id=current_user.id,
-            )
-        except Exception as exc:
-            co.sage_sync_status = f'sync_error:{str(exc)[:120]}'
-            sync_result = {'error': str(exc)}
-        try:
-            from budget_persistence import sync_change_order_to_budget
-            budget_sync_result = sync_change_order_to_budget(
-                ChangeOrder, ChangeOrderAllocation, BudgetProjectState,
-                db, co.id, old_status, 'Approved', current_user.id,
-            )
-        except Exception:
-            pass
+        accounting = run_change_order_accounting_sync(
+            co, old_status, 'Approved', current_user.id,
+            ChangeOrder=ChangeOrder,
+            ChangeOrderAllocation=ChangeOrderAllocation,
+            PayAppProjectState=PayAppProjectState,
+            ScheduleData=ScheduleData,
+            Project=Project,
+            BudgetProjectState=BudgetProjectState,
+            db=db,
+            Commitment=Commitment,
+            SageSyncEvent=SageSyncEvent,
+        )
+        sync_result = accounting.get('sync_result')
+        budget_sync_result = accounting.get('budget_sync_result') or budget_sync_result
     elif action in ('submit', 'approve') and co.ball_in_court_role:
         notify_ball_in_court(
             co.project_id, co, User,
@@ -7795,14 +7845,20 @@ def api_change_order_workflow(co_id):
                 pass
 
     if action == 'reject':
-        try:
-            from budget_persistence import sync_change_order_to_budget
-            budget_sync_result = sync_change_order_to_budget(
-                ChangeOrder, ChangeOrderAllocation, BudgetProjectState,
-                db, co.id, old_status, 'Rejected', current_user.id,
-            )
-        except Exception:
-            pass
+        accounting = run_change_order_accounting_sync(
+            co, old_status, 'Rejected', current_user.id,
+            ChangeOrder=ChangeOrder,
+            ChangeOrderAllocation=ChangeOrderAllocation,
+            PayAppProjectState=PayAppProjectState,
+            ScheduleData=ScheduleData,
+            Project=Project,
+            BudgetProjectState=BudgetProjectState,
+            db=db,
+            Commitment=Commitment,
+            SageSyncEvent=SageSyncEvent,
+            queue_sage_event=False,
+        )
+        budget_sync_result = accounting.get('budget_sync_result') or budget_sync_result
 
     db.session.commit()
     allocs = ChangeOrderAllocation.query.filter_by(change_order_id=co.id).all()

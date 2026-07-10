@@ -6,6 +6,7 @@
   'use strict';
 
   const CO_STATUSES = ['Draft', 'Submitted', 'Under Review', 'Pending Owner', 'Pending Architect', 'Approved', 'Rejected', 'Void'];
+  const CO_EDITABLE_STATUSES = ['Draft', 'Submitted', 'Under Review', 'Pending Owner', 'Pending Architect', 'Rejected', 'Void'];
   const PCO_STATUSES = ['Open', 'Pricing', 'Pending Review', 'Approved for CO', 'Promoted', 'Void', 'Closed'];
   const REASONS = ['Owner Request', 'Design Change', 'Unforeseen Condition', 'Code Compliance', 'Error or Omission', 'Value Engineering', 'Schedule Acceleration', 'Other'];
   const PRIORITIES = ['Low', 'Medium', 'High', 'Critical'];
@@ -587,7 +588,9 @@
       : (isPco ? 'New Potential Change Order (PCO)' : 'New Change Order');
     document.getElementById('modalDateRow').classList.toggle('hidden', isPco);
     document.getElementById('modalContractTypeRow').classList.toggle('hidden', isPco);
-    populateSelect('modalStatus', isPco ? PCO_STATUSES : CO_STATUSES, record?.status || (isPco ? 'Open' : 'Draft'));
+    populateSelect('modalStatus', isPco ? PCO_STATUSES : (
+      record?.status === 'Approved' ? CO_STATUSES : CO_EDITABLE_STATUSES
+    ), record?.status || (isPco ? 'Open' : 'Draft'));
     populateSelect('modalReason', [''].concat(REASONS), record?.reason || '');
     populateSelect('modalPriority', PRIORITIES, record?.priority || 'Medium');
     populateSelect('modalContractType', CONTRACT_TYPES, record?.contract_type || 'Owner');
@@ -650,30 +653,48 @@
           : await api('/api/pcos', { method: 'POST', body: JSON.stringify(payload) });
         await loadPcos();
         await loadDashboard();
+        document.getElementById('coModal').close();
+        toast('Saved successfully');
       } else {
         const json = id
           ? await api(`/api/change-orders/${id}`, { method: 'PUT', body: JSON.stringify(payload) })
           : await api('/api/change-orders', { method: 'POST', body: JSON.stringify(payload) });
         const coId = id || json.change_order?.id;
         if (coId) await uploadModalAttachments(coId);
+        await applyCoSync(json);
         await loadChangeOrders();
         await loadDashboard();
+        document.getElementById('coModal').close();
+        const synced = json.sync_result && !json.sync_result.error;
+        const budgetSynced = !!json.budget_sync_result;
+        if (synced) {
+          toast('Saved — amounts synced to Budget & Pay Application SOV');
+        } else if (budgetSynced) {
+          toast('Saved — pending amounts synced to Budget');
+        } else if (json.sync_result?.error) {
+          toast(`Saved, but SOV sync failed: ${json.sync_result.error}`);
+        } else {
+          toast('Saved successfully');
+        }
       }
-      document.getElementById('coModal').close();
-      toast('Saved successfully');
     } catch (err) {
       alert(err.message);
     }
   }
 
   async function applyCoSync(json) {
+    if (!json) return false;
+    let updated = false;
     if (json.sync_result && typeof CasePMPayAppSync !== 'undefined') {
-      CasePMPayAppSync.applyCoSyncResult(json.sync_result);
+      updated = CasePMPayAppSync.applyCoSyncResult(json.sync_result) || updated;
     }
     if (json.budget_sync_result && typeof CasePMBudgetSync !== 'undefined') {
-      CasePMBudgetSync.applyBudgetSyncResult(json.budget_sync_result);
+      updated = CasePMBudgetSync.applyBudgetSyncResult(json.budget_sync_result) || updated;
     }
-    global.dispatchEvent(new CustomEvent('casepm:co-approved', { detail: json }));
+    if (updated || json.sync_result || json.budget_sync_result) {
+      global.dispatchEvent(new CustomEvent('casepm:co-approved', { detail: json }));
+    }
+    return updated;
   }
 
   async function resyncSov(coId) {
@@ -762,9 +783,7 @@
         method: 'POST',
         body: JSON.stringify({ action, comments: comments || '' }),
       });
-      if (json.final_approved) {
-        await applyCoSync(json);
-      }
+      await applyCoSync(json);
       if (action === 'submit' && typeof CasePMWorkflow !== 'undefined' && CasePMWorkflow.onChangeOrderSubmitted) {
         await CasePMWorkflow.onChangeOrderSubmitted(json.change_order || co).catch(() => {});
       }
