@@ -662,3 +662,80 @@ def delete_change_order(
     RevisionModel.query.filter_by(change_order_id=co.id).delete()
     db.session.delete(co)
 
+
+def run_change_order_accounting_sync(
+    co,
+    old_status,
+    new_status,
+    user_id,
+    *,
+    ChangeOrder,
+    ChangeOrderAllocation,
+    PayAppProjectState,
+    ScheduleData,
+    Project,
+    BudgetProjectState,
+    db,
+    Commitment=None,
+    SageSyncEvent=None,
+    queue_sage_event=True,
+):
+    """Push change order amounts to budget and pay app SOV when status warrants it."""
+    result = {'sync_result': None, 'budget_sync_result': None, 'errors': []}
+
+    try:
+        from budget_persistence import sync_change_order_to_budget
+        result['budget_sync_result'] = sync_change_order_to_budget(
+            ChangeOrder,
+            ChangeOrderAllocation,
+            BudgetProjectState,
+            db,
+            co.id,
+            old_status,
+            new_status,
+            user_id,
+        )
+    except Exception as exc:
+        result['errors'].append({'target': 'budget', 'error': str(exc)})
+
+    if new_status != 'Approved':
+        return result
+
+    if old_status != 'Approved':
+        co.approved_at = co.approved_at or datetime.utcnow()
+
+    try:
+        from pay_app_persistence import sync_change_order_to_sov
+        sync_result = sync_change_order_to_sov(
+            ChangeOrder,
+            ChangeOrderAllocation,
+            PayAppProjectState,
+            ScheduleData,
+            Project,
+            db,
+            co.id,
+            user_id,
+            Commitment=Commitment,
+        )
+        result['sync_result'] = sync_result
+        if not sync_result.get('error'):
+            co.sage_sync_status = 'sov_synced'
+            if queue_sage_event and SageSyncEvent is not None and old_status != 'Approved':
+                from sage_service import create_and_process_sage_event
+                create_and_process_sage_event(
+                    SageSyncEvent,
+                    Project,
+                    db,
+                    co.project_id,
+                    'ChangeOrderApproved',
+                    message=f'Change Order {co.number} approved — SOV and schedule updated',
+                    payload={'change_order_id': co.id, 'amount': co.amount, 'sync': sync_result},
+                    user_id=user_id,
+                )
+    except Exception as exc:
+        co.sage_sync_status = f'sync_error:{str(exc)[:120]}'
+        result['sync_result'] = {'error': str(exc)}
+        result['errors'].append({'target': 'sov', 'error': str(exc)})
+
+    return result
+
