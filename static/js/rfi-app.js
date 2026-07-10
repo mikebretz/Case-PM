@@ -49,6 +49,37 @@
     return rest;
   }
 
+  function attachmentCount(r) {
+    return (r?.attachments || []).length;
+  }
+
+  function totalModalAttachmentCount() {
+    return state.modalAttachments.length + state.pendingFiles.length + state.pendingDocLinks.length;
+  }
+
+  function updateAttachmentBadge() {
+    const count = totalModalAttachmentCount();
+    const badge = document.getElementById('rfiAttachmentCountBadge');
+    const text = document.getElementById('rfiAttachmentCountText');
+    if (!badge || !text) return;
+    if (count > 0) {
+      badge.classList.remove('hidden');
+      badge.classList.add('inline-flex');
+      text.textContent = String(count);
+    } else {
+      badge.classList.add('hidden');
+      badge.classList.remove('inline-flex');
+    }
+  }
+
+  function scrollToAttachments() {
+    document.getElementById('rfiAttachmentsSection')?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+  }
+
+  function setActiveRfiForAttachments(rfiId) {
+    state.modalRfiId = rfiId || null;
+  }
+
   function resetModalAttachments() {
     state.modalRfiId = null;
     state.modalAttachments = [];
@@ -84,8 +115,12 @@
       });
     });
     if (!items.length) {
-      el.innerHTML = '<p class="text-xs text-zinc-500">No attachments yet. Drop files above or attach from Documents.</p>';
-      if (hint) hint.textContent = rfiId ? 'Uploads are filed to Documents › RFIs' : 'Files attach when you save the RFI';
+      el.innerHTML = `<div class="flex items-center gap-3 rounded-lg border border-dashed border-zinc-700 bg-zinc-900/40 px-4 py-3 text-xs text-zinc-500">
+        <i class="fa-solid fa-file-circle-plus text-lg text-zinc-600"></i>
+        <span>No files attached yet — use the upload area above to add supporting documents.</span>
+      </div>`;
+      if (hint) hint.textContent = rfiId ? 'Saved to Documents › RFIs' : 'Files attach automatically when you save';
+      updateAttachmentBadge();
       return;
     }
     if (hint) {
@@ -115,6 +150,7 @@
     el.querySelectorAll('[data-rfi-att-remove]').forEach(btn => {
       btn.addEventListener('click', () => removeModalAttachment(parseInt(btn.dataset.rfiAttRemove, 10)));
     });
+    updateAttachmentBadge();
   }
 
   async function loadModalAttachments(rfiId) {
@@ -205,6 +241,49 @@
     renderModalAttachments();
   }
 
+  function bindDrawerAttachmentHandlers(rfiId) {
+    const dropZone = document.getElementById('rfiDrawerDropZone');
+    const fileInput = document.getElementById('rfiDrawerAttachmentInput');
+    if (!dropZone || !fileInput) return;
+
+    const onFiles = async (files) => {
+      const list = Array.from(files || []).filter(f => f?.name);
+      if (!list.length) return;
+      setActiveRfiForAttachments(rfiId);
+      try {
+        await uploadFilesToRfi(rfiId, list);
+        toast('File(s) attached');
+        await view(rfiId);
+      } catch (e) { alert(e.message); }
+      fileInput.value = '';
+    };
+
+    dropZone.onclick = e => {
+      if (e.target.closest('[data-drawer-docs]')) return;
+      fileInput.click();
+    };
+    fileInput.onchange = e => { onFiles(e.target.files); };
+    dropZone.querySelector('[data-drawer-docs]')?.addEventListener('click', e => {
+      e.stopPropagation();
+      setActiveRfiForAttachments(rfiId);
+      openDocumentPicker();
+    });
+
+    ['dragenter', 'dragover'].forEach(evt => {
+      dropZone.addEventListener(evt, e => {
+        e.preventDefault();
+        dropZone.classList.add('rfi-drop-active');
+      });
+    });
+    ['dragleave', 'drop'].forEach(evt => {
+      dropZone.addEventListener(evt, e => {
+        e.preventDefault();
+        if (evt === 'drop') onFiles(e.dataTransfer?.files);
+        dropZone.classList.remove('rfi-drop-active');
+      });
+    });
+  }
+
   function bindAttachmentHandlers() {
     const dropZone = document.getElementById('rfiAttachmentDropZone');
     const fileInput = document.getElementById('rfiAttachmentInput');
@@ -213,7 +292,10 @@
 
     browseBtn?.addEventListener('click', e => { e.stopPropagation(); fileInput?.click(); });
     docsBtn?.addEventListener('click', e => { e.stopPropagation(); openDocumentPicker(); });
-    dropZone?.addEventListener('click', () => fileInput?.click());
+    dropZone?.addEventListener('click', e => {
+      if (e.target.closest('button')) return;
+      fileInput?.click();
+    });
     fileInput?.addEventListener('change', e => {
       handleAttachmentFiles(e.target.files);
       e.target.value = '';
@@ -381,6 +463,7 @@
         await linkDocumentsToRfi(state.modalRfiId, selectedIds);
         renderModalAttachments();
         toast('Document(s) attached');
+        if (state.drawerRecord?.id === state.modalRfiId) await view(state.modalRfiId);
       } catch (e) { alert(e.message); }
       return;
     }
@@ -508,10 +591,15 @@
     if (!tbody) return;
     const rows = filteredRfis();
     if (!rows.length) {
-      tbody.innerHTML = '<tr><td colspan="11" class="px-6 py-12 text-center text-zinc-500">No RFIs found. Create your first RFI.</td></tr>';
+      tbody.innerHTML = '<tr><td colspan="12" class="px-6 py-12 text-center text-zinc-500">No RFIs found. Create your first RFI.</td></tr>';
       return;
     }
-    tbody.innerHTML = rows.map(r => `
+    tbody.innerHTML = rows.map(r => {
+      const attCount = attachmentCount(r);
+      const attCell = attCount
+        ? `<span class="inline-flex items-center gap-1 text-emerald-400" title="${attCount} attachment(s)"><i class="fa-solid fa-paperclip"></i>${attCount}</span>`
+        : '<span class="text-zinc-600">—</span>';
+      return `
       <tr class="border-b border-zinc-800 hover:bg-zinc-800/50 cursor-pointer ${r.is_overdue ? 'bg-red-950/10' : ''}" onclick="CasePMRfis.view(${r.id})">
         <td class="px-4 py-3 font-mono text-sky-400 whitespace-nowrap">${esc(r.number)}</td>
         <td class="px-4 py-3 max-w-[280px]">
@@ -526,13 +614,15 @@
         <td class="px-4 py-3 text-center">${statusBadge(r.status)}</td>
         <td class="px-4 py-3 text-center">${ballBadge(r.ball_in_court_role)}</td>
         <td class="px-4 py-3 text-center text-xs whitespace-nowrap ${r.is_overdue ? 'text-red-400 font-semibold' : 'text-zinc-400'}">${fmtDate(r.due_date)}</td>
+        <td class="px-4 py-3 text-center text-xs">${attCell}</td>
         <td class="px-4 py-3 text-center" onclick="event.stopPropagation()">
           <div class="flex items-center justify-center gap-1">
             <button onclick="CasePMRfis.respond(${r.id})" class="p-1.5 text-emerald-400 hover:bg-zinc-800 rounded" title="Respond"><i class="fa-solid fa-reply"></i></button>
             <button onclick="CasePMRfis.edit(${r.id})" class="p-1.5 text-zinc-400 hover:bg-zinc-800 rounded" title="Edit"><i class="fa-solid fa-edit"></i></button>
           </div>
         </td>
-      </tr>`).join('');
+      </tr>`;
+    }).join('');
   }
 
   function bindFilters() {
@@ -612,6 +702,8 @@
       document.getElementById('modalRfiNumber').textContent = record.number;
     }
     populateCompanySelects();
+    const details = document.getElementById('rfiDetailsSection');
+    if (details) details.open = mode !== 'create';
     if (mode === 'create') {
       resetModalAttachments();
     } else if (record?.id) {
@@ -625,6 +717,15 @@
       resetModalAttachments();
     }
     dlg.showModal();
+    if (mode === 'create') {
+      requestAnimationFrame(() => scrollToAttachments());
+    }
+  }
+
+  async function focusAttachments(id) {
+    if (id) await edit(id);
+    else scrollToAttachments();
+    setTimeout(scrollToAttachments, 200);
   }
 
   function modalPayload() {
@@ -733,14 +834,14 @@
       ...(r.linked_pcos || []).map(p => `<a href="/change-orders" class="text-sky-400 text-xs">${esc(p.number)} — ${esc(p.title)}</a>`),
     ].join('<br>') || '<span class="text-zinc-500 text-xs">No linked COs/PCOs</span>';
 
-    const attachments = (r.attachments || []).map(att => {
+    const attList = (r.attachments || []).map(att => {
       const name = esc(att.original_name || att.filename || 'File');
       const href = esc(attachmentHref(att, r.id));
       const icon = att.document_id || att.linked_from_documents ? 'fa-file-lines text-sky-400' : 'fa-paperclip text-zinc-400';
-      return `<a href="${href}" target="_blank" rel="noopener" class="flex items-center gap-2 text-xs bg-zinc-800 rounded px-2 py-1.5 hover:bg-zinc-700">
+      return `<a href="${href}" target="_blank" rel="noopener" class="flex items-center gap-2 text-xs bg-zinc-800 rounded px-2 py-1.5 hover:bg-zinc-700 border border-zinc-700">
         <i class="fa-solid ${icon}"></i><span class="truncate">${name}</span>
       </a>`;
-    }).join('') || '<p class="text-zinc-500 text-xs">No attachments</p>';
+    }).join('');
 
     el.innerHTML = `
       <div class="flex items-start justify-between mb-4">
@@ -765,6 +866,17 @@
         <h3 class="text-xs uppercase text-zinc-500 mb-1">Question</h3>
         <p class="text-sm whitespace-pre-wrap bg-zinc-800/50 rounded-md p-3 border border-zinc-700">${esc(r.question || '—')}</p>
       </div>
+      <div class="mb-4 rfi-attachments-card">
+        <div class="flex items-center justify-between mb-2">
+          <h3 class="text-xs uppercase text-emerald-400 font-semibold tracking-wide"><i class="fa-solid fa-paperclip mr-1"></i>Attachments</h3>
+          <span class="text-[10px] text-zinc-500">${(r.attachments || []).length} file(s)</span>
+        </div>
+        <div id="rfiDrawerDropZone" class="border-2 border-dashed border-emerald-700/40 hover:border-emerald-500 rounded-lg p-3 text-center cursor-pointer bg-zinc-950/50 mb-2 transition-all">
+          <div class="text-xs text-zinc-400"><i class="fa-solid fa-cloud-arrow-up text-emerald-500 mr-1"></i>Drop files here or click to upload</div>
+          <button type="button" data-drawer-docs class="mt-2 text-xs px-2 py-1 rounded bg-sky-900/50 text-sky-200 border border-sky-700/50 hover:bg-sky-800/60">Browse Documents</button>
+        </div>
+        <div class="space-y-1">${attList || '<p class="text-zinc-500 text-xs px-1">No files attached yet</p>'}</div>
+      </div>
       ${r.official_answer ? `<div class="mb-4"><h3 class="text-xs uppercase text-emerald-500 mb-1">Official Answer</h3><p class="text-sm whitespace-pre-wrap bg-emerald-950/20 rounded-md p-3 border border-emerald-800">${esc(r.official_answer)}</p></div>` : ''}
       <div class="mb-4">
         <h3 class="text-xs uppercase text-zinc-500 mb-2">Responses</h3>
@@ -774,10 +886,6 @@
         <h3 class="text-xs uppercase text-zinc-500 mb-2">Plan Pins</h3>
         <div class="space-y-1 mb-2">${pins}</div>
         <button type="button" onclick="CasePMRfis.addPlanPin(${r.id})" class="text-xs px-2 py-1 bg-zinc-800 hover:bg-zinc-700 rounded border border-zinc-700"><i class="fa-solid fa-map-pin mr-1"></i>Add Plan Pin</button>
-      </div>
-      <div class="mb-4">
-        <h3 class="text-xs uppercase text-zinc-500 mb-2">Attachments</h3>
-        <div class="space-y-1">${attachments}</div>
       </div>
       <div class="mb-4">
         <h3 class="text-xs uppercase text-zinc-500 mb-1">Linked Change Orders / PCOs</h3>
@@ -792,6 +900,7 @@
         <button onclick="CasePMRfis.promotePco(${r.id})" class="px-3 py-1.5 text-xs bg-violet-800 hover:bg-violet-700 rounded-md"><i class="fa-solid fa-lightbulb mr-1"></i>Create PCO</button>
         <button onclick="CasePMRfis.edit(${r.id})" class="px-3 py-1.5 text-xs bg-zinc-800 hover:bg-zinc-700 rounded-md"><i class="fa-solid fa-edit mr-1"></i>Edit</button>
       </div>`;
+    bindDrawerAttachmentHandlers(r.id);
   }
 
   async function respond(id) {
@@ -977,6 +1086,7 @@
     closeDrawer,
     exportExcel,
     printLog,
+    focusAttachments,
   };
 
   document.addEventListener('DOMContentLoaded', init);
