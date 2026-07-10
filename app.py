@@ -2704,8 +2704,7 @@ def photos_page():
 @app.route('/documents')
 @login_required
 def documents_page():
-    projects = Project.query.order_by(Project.name).all()
-    return render_template('documents.html', projects=projects)
+    return render_template('documents.html')
 
 
 @app.route('/share/<token>')
@@ -2762,6 +2761,29 @@ def _documents_base_url():
     return request.url_root.rstrip('/')
 
 
+def _user_display_name(user_id):
+    if not user_id:
+        return None
+    user = User.query.get(user_id)
+    if not user:
+        return None
+    name = f'{user.first_name or ""} {user.last_name or ""}'.strip()
+    return name or user.email
+
+
+def _document_dict_with_user(doc):
+    from document_persistence import document_to_dict
+
+    project = Project.query.get(doc.project_id)
+    folder = DocumentFolder.query.get(doc.folder_id) if doc.folder_id else None
+    return document_to_dict(
+        doc,
+        project.name if project else None,
+        folder.name if folder else None,
+        _user_display_name(doc.uploaded_by_id),
+    )
+
+
 def _save_document_bytes(
     project_id: int,
     file_bytes: bytes,
@@ -2813,9 +2835,7 @@ def _save_document_bytes(
     )
     db.session.add(doc)
     db.session.commit()
-    project = Project.query.get(doc.project_id)
-    folder = DocumentFolder.query.get(doc.folder_id) if doc.folder_id else None
-    return document_to_dict(doc, project.name if project else None, folder.name if folder else None)
+    return _document_dict_with_user(doc)
 
 
 @app.route('/api/document-folders', methods=['GET'])
@@ -2991,8 +3011,15 @@ def api_documents_browse():
         'folder_id': current_folder.id if current_folder else None,
         'breadcrumbs': breadcrumbs,
         'folders': folder_nodes,
-        'files': [document_to_dict(d, project.name if project else None, current_folder.name if current_folder else None) for d in docs],
+        'files': [_document_dict_with_user(d) for d in docs],
     })
+
+
+@app.route('/api/documents/<int:doc_id>', methods=['GET'])
+@login_required
+def api_documents_get(doc_id):
+    doc = Document.query.get_or_404(doc_id)
+    return jsonify({'ok': True, 'document': _document_dict_with_user(doc)})
 
 
 @app.route('/api/documents', methods=['GET'])
@@ -3010,11 +3037,9 @@ def api_documents_list():
     if folder_id:
         q = q.filter_by(folder_id=int(folder_id))
     docs = q.order_by(Document.created_at.desc()).limit(1000).all()
-    projects = {p.id: p.name for p in Project.query.filter(Project.id.in_({d.project_id for d in docs})).all()} if docs else {}
-    folders = {f.id: f.name for f in DocumentFolder.query.filter(DocumentFolder.id.in_({d.folder_id for d in docs if d.folder_id})).all()} if docs else {}
     return jsonify({
         'ok': True,
-        'documents': [document_to_dict(d, projects.get(d.project_id), folders.get(d.folder_id)) for d in docs],
+        'documents': [_document_dict_with_user(d) for d in docs],
     })
 
 
@@ -3166,13 +3191,15 @@ def _create_document_share_link(document_id: int, days: int = 30, max_downloads:
 @app.route('/api/documents/<int:doc_id>', methods=['PATCH'])
 @login_required
 def api_documents_patch(doc_id):
-    from document_persistence import document_to_dict
-
     doc = Document.query.get_or_404(doc_id)
     body = request.get_json(silent=True) or {}
-    if doc.is_system_locked and (body.get('folder_id') is not None or body.get('name')):
-        if body.get('name') and body.get('name') != doc.name:
+    if doc.is_system_locked:
+        if 'name' in body and body.get('name') and body['name'] != doc.name:
             return jsonify({'error': 'Locked job files cannot be renamed'}), 403
+        if 'folder_id' in body:
+            new_fid = int(body['folder_id']) if body['folder_id'] else None
+            if new_fid != doc.folder_id:
+                return jsonify({'error': 'Locked job files cannot be moved'}), 403
     if 'name' in body and body['name']:
         doc.name = str(body['name']).strip()[:300]
     if 'folder_id' in body and not doc.is_system_locked:
@@ -3186,9 +3213,7 @@ def api_documents_patch(doc_id):
             doc.folder_id = None
     doc.updated_at = datetime.utcnow()
     db.session.commit()
-    project = Project.query.get(doc.project_id)
-    folder = DocumentFolder.query.get(doc.folder_id) if doc.folder_id else None
-    return jsonify({'ok': True, 'document': document_to_dict(doc, project.name if project else None, folder.name if folder else None)})
+    return jsonify({'ok': True, 'document': _document_dict_with_user(doc)})
 
 
 @app.route('/api/documents/<int:doc_id>/download')

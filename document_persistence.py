@@ -142,7 +142,7 @@ def folder_to_dict(folder, child_count: int = 0, file_count: int = 0) -> dict[st
     }
 
 
-def document_to_dict(doc, project_name: str | None = None, folder_name: str | None = None) -> dict[str, Any]:
+def document_to_dict(doc, project_name: str | None = None, folder_name: str | None = None, uploaded_by_name: str | None = None) -> dict[str, Any]:
     meta = {}
     if doc.source_metadata_json:
         try:
@@ -169,6 +169,7 @@ def document_to_dict(doc, project_name: str | None = None, folder_name: str | No
         'source_drawing_id': doc.source_drawing_id,
         'source_sheet': doc.source_sheet,
         'source_metadata': meta,
+        'uploaded_by_name': uploaded_by_name,
         'uploaded': doc.created_at.date().isoformat() if doc.created_at else None,
         'created_at': doc.created_at.isoformat() if doc.created_at else None,
         'updated_at': doc.updated_at.isoformat() if getattr(doc, 'updated_at', None) else None,
