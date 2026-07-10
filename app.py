@@ -760,6 +760,8 @@ class Document(db.Model):
     uploaded_by_id = db.Column(db.Integer, db.ForeignKey('user.id'))
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    deleted_at = db.Column(db.DateTime)
+    version_count = db.Column(db.Integer, default=1)
 
 
 class DocumentFolder(db.Model):
@@ -771,6 +773,7 @@ class DocumentFolder(db.Model):
     system_key = db.Column(db.String(80))
     created_by_id = db.Column(db.Integer, db.ForeignKey('user.id'))
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    deleted_at = db.Column(db.DateTime)
 
 
 class DocumentShareLink(db.Model):
@@ -778,6 +781,7 @@ class DocumentShareLink(db.Model):
     document_id = db.Column(db.Integer, db.ForeignKey('document.id'), nullable=False)
     token = db.Column(db.String(80), unique=True, nullable=False, index=True)
     label = db.Column(db.String(200))
+    password_hash = db.Column(db.String(256))
     expires_at = db.Column(db.DateTime)
     max_downloads = db.Column(db.Integer)
     download_count = db.Column(db.Integer, default=0)
@@ -785,6 +789,67 @@ class DocumentShareLink(db.Model):
     created_by_id = db.Column(db.Integer, db.ForeignKey('user.id'))
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     revoked_at = db.Column(db.DateTime)
+
+
+class DocumentFolderShareLink(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    folder_id = db.Column(db.Integer, db.ForeignKey('document_folder.id'), nullable=False)
+    token = db.Column(db.String(80), unique=True, nullable=False, index=True)
+    label = db.Column(db.String(200))
+    password_hash = db.Column(db.String(256))
+    expires_at = db.Column(db.DateTime)
+    max_downloads = db.Column(db.Integer)
+    download_count = db.Column(db.Integer, default=0)
+    allow_browse = db.Column(db.Boolean, default=True)
+    allow_download = db.Column(db.Boolean, default=True)
+    allow_upload = db.Column(db.Boolean, default=False)
+    created_by_id = db.Column(db.Integer, db.ForeignKey('user.id'))
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    revoked_at = db.Column(db.DateTime)
+
+
+class DocumentVersion(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    document_id = db.Column(db.Integer, db.ForeignKey('document.id'), nullable=False)
+    version_no = db.Column(db.Integer, nullable=False)
+    filename = db.Column(db.String(300), nullable=False)
+    original_filename = db.Column(db.String(300))
+    file_size = db.Column(db.Integer, default=0)
+    mime_type = db.Column(db.String(120))
+    uploaded_by_id = db.Column(db.Integer, db.ForeignKey('user.id'))
+    notes = db.Column(db.String(500))
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+
+
+class DocumentComment(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    document_id = db.Column(db.Integer, db.ForeignKey('document.id'), nullable=False)
+    user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
+    body = db.Column(db.Text, nullable=False)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+
+class DocumentActivity(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    project_id = db.Column(db.Integer, db.ForeignKey('project.id'), nullable=False)
+    document_id = db.Column(db.Integer, db.ForeignKey('document.id'))
+    folder_id = db.Column(db.Integer, db.ForeignKey('document_folder.id'))
+    user_id = db.Column(db.Integer, db.ForeignKey('user.id'))
+    action = db.Column(db.String(80), nullable=False)
+    detail_json = db.Column(db.Text)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+
+
+class DocumentFolderPermission(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    folder_id = db.Column(db.Integer, db.ForeignKey('document_folder.id'), nullable=False)
+    user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
+    can_view = db.Column(db.Boolean, default=True)
+    can_upload = db.Column(db.Boolean, default=False)
+    can_manage = db.Column(db.Boolean, default=False)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    __table_args__ = (db.UniqueConstraint('folder_id', 'user_id', name='uq_folder_user_perm'),)
 
 
 class WeeklyReport(db.Model):
@@ -2709,15 +2774,16 @@ def documents_page():
 
 @app.route('/share/<token>')
 def public_share_page(token):
+    from document_persistence import document_to_dict, format_file_size, share_link_is_valid
+
     link = DocumentShareLink.query.filter_by(token=token).first_or_404()
     doc = Document.query.get_or_404(link.document_id)
-    if link.revoked_at:
-        return render_template('share_download.html', error='This link has been revoked.', doc=None, link=None), 410
-    if link.expires_at and link.expires_at < datetime.utcnow():
-        return render_template('share_download.html', error='This link has expired.', doc=None, link=None), 410
-    if link.max_downloads and (link.download_count or 0) >= link.max_downloads:
-        return render_template('share_download.html', error='Download limit reached.', doc=None, link=None), 410
-    from document_persistence import document_to_dict, format_file_size
+    if not share_link_is_valid(link):
+        err = 'This link has been revoked.' if link.revoked_at else 'This link has expired or reached its download limit.'
+        return render_template('share_download.html', error=err, doc=None, link=None, needs_password=False), 410
+    needs_password = bool(link.password_hash) and not _share_is_unlocked(link)
+    if needs_password:
+        return render_template('share_download.html', error=None, doc=None, link={'token': token}, needs_password=True)
     return render_template(
         'share_download.html',
         error=None,
@@ -2728,18 +2794,59 @@ def public_share_page(token):
             'expires_at': link.expires_at.isoformat() if link.expires_at else None,
             'size': format_file_size(doc.file_size),
         },
+        needs_password=False,
     )
+
+
+@app.route('/share/<token>/unlock', methods=['POST'])
+def public_share_unlock(token):
+    link = DocumentShareLink.query.filter_by(token=token).first_or_404()
+    body = request.get_json(silent=True) or {}
+    password = body.get('password') or request.form.get('password')
+    if _unlock_share(link, password):
+        return jsonify({'ok': True})
+    return jsonify({'error': 'Incorrect password'}), 403
+
+
+@app.route('/share/folder/<token>')
+def public_folder_share_page(token):
+    from document_persistence import share_link_is_valid
+
+    link = DocumentFolderShareLink.query.filter_by(token=token).first_or_404()
+    if not share_link_is_valid(link):
+        err = 'This link has been revoked.' if link.revoked_at else 'This link has expired or reached its limit.'
+        return render_template('share_folder.html', error=err, token=None), 410
+    needs_password = bool(link.password_hash) and not _share_is_unlocked(link)
+    folder = DocumentFolder.query.get_or_404(link.folder_id)
+    return render_template(
+        'share_folder.html',
+        error=None,
+        token=token,
+        needs_password=needs_password,
+        folder_name=folder.name,
+        allow_upload=bool(link.allow_upload),
+    )
+
+
+@app.route('/share/folder/<token>/unlock', methods=['POST'])
+def public_folder_share_unlock(token):
+    link = DocumentFolderShareLink.query.filter_by(token=token).first_or_404()
+    body = request.get_json(silent=True) or {}
+    password = body.get('password') or request.form.get('password')
+    if _unlock_share(link, password):
+        return jsonify({'ok': True})
+    return jsonify({'error': 'Incorrect password'}), 403
 
 
 @app.route('/share/<token>/download')
 def public_share_download(token):
+    from document_persistence import share_link_is_valid
+
     link = DocumentShareLink.query.filter_by(token=token).first_or_404()
-    if link.revoked_at:
-        return jsonify({'error': 'Link revoked'}), 410
-    if link.expires_at and link.expires_at < datetime.utcnow():
-        return jsonify({'error': 'Link expired'}), 410
-    if link.max_downloads and (link.download_count or 0) >= link.max_downloads:
-        return jsonify({'error': 'Download limit reached'}), 410
+    if not share_link_is_valid(link):
+        return jsonify({'error': 'Link unavailable'}), 410
+    if link.password_hash and not _share_is_unlocked(link):
+        return jsonify({'error': 'Password required'}), 403
     if not link.allow_download:
         return jsonify({'error': 'Download disabled'}), 403
     doc = Document.query.get_or_404(link.document_id)
@@ -2782,6 +2889,96 @@ def _document_dict_with_user(doc):
         folder.name if folder else None,
         _user_display_name(doc.uploaded_by_id),
     )
+
+
+def _log_doc_activity(project_id, action, document_id=None, folder_id=None, detail=None):
+    try:
+        act = DocumentActivity(
+            project_id=int(project_id),
+            document_id=document_id,
+            folder_id=folder_id,
+            user_id=current_user.id if current_user.is_authenticated else None,
+            action=action,
+            detail_json=json.dumps(detail or {}),
+            created_at=datetime.utcnow(),
+        )
+        db.session.add(act)
+    except Exception:
+        pass
+
+
+def _share_session_key(token):
+    return f'share_unlocked_{token}'
+
+
+def _share_is_unlocked(link):
+    if not getattr(link, 'password_hash', None):
+        return True
+    return bool(session.get(_share_session_key(link.token)))
+
+
+def _unlock_share(link, password):
+    from document_persistence import verify_share_password
+    if verify_share_password(getattr(link, 'password_hash', None), password):
+        session[_share_session_key(link.token)] = True
+        return True
+    return False
+
+
+def _active_documents():
+    return Document.query.filter(Document.deleted_at.is_(None))
+
+
+def _active_folders():
+    return DocumentFolder.query.filter(DocumentFolder.deleted_at.is_(None))
+
+
+def _folder_access(folder, required='view'):
+    """Check folder permission. No rows = open to all project users; Admin always allowed."""
+    if not folder or not current_user.is_authenticated:
+        return False
+    if getattr(current_user, 'role', '') == 'Admin':
+        return True
+    perms = DocumentFolderPermission.query.filter_by(folder_id=folder.id).all()
+    if not perms:
+        return True
+    user_perm = DocumentFolderPermission.query.filter_by(folder_id=folder.id, user_id=current_user.id).first()
+    if not user_perm:
+        return False
+    if required == 'manage':
+        return bool(user_perm.can_manage)
+    if required == 'upload':
+        return bool(user_perm.can_upload or user_perm.can_manage)
+    return bool(user_perm.can_view or user_perm.can_upload or user_perm.can_manage)
+
+
+def _archive_document_version(doc, notes=None):
+    from document_persistence import version_storage_path
+    import shutil
+
+    upload_root = app.config.get('UPLOAD_FOLDER', 'uploads')
+    src_dir = os.path.join(upload_root, 'documents', str(doc.project_id))
+    src_path = os.path.join(src_dir, doc.filename)
+    if not os.path.isfile(src_path):
+        return
+    ver_no = doc.version_count or 1
+    ver_dir = version_storage_path(upload_root, doc.project_id, doc.id)
+    archived_name = f'v{ver_no}_{doc.filename}'
+    dst_path = os.path.join(ver_dir, archived_name)
+    shutil.copy2(src_path, dst_path)
+    ver = DocumentVersion(
+        document_id=doc.id,
+        version_no=ver_no,
+        filename=archived_name,
+        original_filename=doc.original_filename,
+        file_size=doc.file_size,
+        mime_type=doc.mime_type,
+        uploaded_by_id=doc.uploaded_by_id,
+        notes=notes,
+        created_at=datetime.utcnow(),
+    )
+    db.session.add(ver)
+    doc.version_count = ver_no + 1
 
 
 def _save_document_bytes(
@@ -2835,6 +3032,8 @@ def _save_document_bytes(
     )
     db.session.add(doc)
     db.session.commit()
+    _log_doc_activity(project_id, 'upload', document_id=doc.id, folder_id=doc.folder_id, detail={'name': doc.name})
+    db.session.commit()
     return _document_dict_with_user(doc)
 
 
@@ -2871,7 +3070,7 @@ def api_document_folders_tree():
     if not project_id:
         return jsonify({'error': 'project_id required'}), 400
     ensure_system_folders(db, DocumentFolder, project_id, current_user.id, Document=Document)
-    all_folders = DocumentFolder.query.filter_by(project_id=int(project_id)).order_by(
+    all_folders = _active_folders().filter_by(project_id=int(project_id)).order_by(
         DocumentFolder.is_system.desc(), DocumentFolder.name,
     ).all()
     by_parent: dict = {}
@@ -2880,7 +3079,7 @@ def api_document_folders_tree():
 
     def build_node(folder):
         children = [build_node(c) for c in by_parent.get(folder.id, [])]
-        file_count = Document.query.filter_by(folder_id=folder.id).count()
+        file_count = _active_documents().filter_by(folder_id=folder.id).count()
         node = folder_to_dict(folder, len(children), file_count)
         node['children'] = children
         return node
@@ -2950,11 +3149,12 @@ def api_document_folders_delete(folder_id):
     folder = DocumentFolder.query.get_or_404(folder_id)
     if folder.is_system:
         return jsonify({'error': 'System folders cannot be deleted'}), 403
-    if DocumentFolder.query.filter_by(parent_id=folder.id).count():
+    if _active_folders().filter_by(parent_id=folder.id).count():
         return jsonify({'error': 'Folder is not empty (contains subfolders)'}), 400
-    if Document.query.filter_by(folder_id=folder.id).count():
+    if _active_documents().filter_by(folder_id=folder.id).count():
         return jsonify({'error': 'Folder is not empty (contains files)'}), 400
-    db.session.delete(folder)
+    folder.deleted_at = datetime.utcnow()
+    _log_doc_activity(folder.project_id, 'delete', folder_id=folder.id, detail={'name': folder.name})
     db.session.commit()
     return jsonify({'ok': True})
 
@@ -2971,24 +3171,28 @@ def api_documents_browse():
     ensure_system_folders(db, DocumentFolder, project_id, current_user.id, Document=Document)
     project = Project.query.get(int(project_id))
 
-    fq = DocumentFolder.query.filter_by(project_id=int(project_id))
+    fq = _active_folders().filter_by(project_id=int(project_id))
     if folder_id in (None, '', 'null'):
         fq = fq.filter(DocumentFolder.parent_id.is_(None))
         current_folder = None
     else:
-        current_folder = DocumentFolder.query.get(int(folder_id))
+        current_folder = _active_folders().filter_by(id=int(folder_id)).first()
         if not current_folder or current_folder.project_id != int(project_id):
             return jsonify({'error': 'Folder not found'}), 404
+        if not _folder_access(current_folder, 'view'):
+            return jsonify({'error': 'No access to this folder'}), 403
         fq = fq.filter_by(parent_id=current_folder.id)
 
     folders = fq.order_by(DocumentFolder.is_system.desc(), DocumentFolder.name).all()
     folder_nodes = []
     for f in folders:
-        child_count = DocumentFolder.query.filter_by(parent_id=f.id).count()
-        file_count = Document.query.filter_by(folder_id=f.id).count()
+        if not _folder_access(f, 'view'):
+            continue
+        child_count = _active_folders().filter_by(parent_id=f.id).count()
+        file_count = _active_documents().filter_by(folder_id=f.id).count()
         folder_nodes.append(folder_to_dict(f, child_count, file_count))
 
-    dq = Document.query.filter_by(project_id=int(project_id))
+    dq = _active_documents().filter_by(project_id=int(project_id))
     if folder_id in (None, '', 'null'):
         dq = dq.filter(Document.folder_id.is_(None))
     else:
@@ -3168,14 +3372,15 @@ def api_documents_printed_output():
     return jsonify({'ok': True, 'document': doc_dict}), 201
 
 
-def _create_document_share_link(document_id: int, days: int = 30, max_downloads: int | None = None):
-    from document_persistence import default_share_expiry, new_share_token, share_link_to_dict
+def _create_document_share_link(document_id: int, days: int = 30, max_downloads: int | None = None, password: str | None = None):
+    from document_persistence import default_share_expiry, hash_share_password, new_share_token, share_link_to_dict
 
     doc = Document.query.get_or_404(document_id)
     link = DocumentShareLink(
         document_id=doc.id,
         token=new_share_token(),
         label=doc.name,
+        password_hash=hash_share_password(password),
         expires_at=default_share_expiry(days),
         max_downloads=max_downloads,
         download_count=0,
@@ -3184,6 +3389,8 @@ def _create_document_share_link(document_id: int, days: int = 30, max_downloads:
         created_at=datetime.utcnow(),
     )
     db.session.add(link)
+    db.session.commit()
+    _log_doc_activity(doc.project_id, 'share', document_id=doc.id, detail={'type': 'file_link'})
     db.session.commit()
     return share_link_to_dict(link, _documents_base_url())
 
@@ -3248,7 +3455,10 @@ def api_document_share_links_create(doc_id):
     body = request.get_json(silent=True) or {}
     days = int(body.get('expires_days') or 30)
     max_dl = body.get('max_downloads')
-    share = _create_document_share_link(doc_id, days=days, max_downloads=int(max_dl) if max_dl else None)
+    password = body.get('password')
+    share = _create_document_share_link(
+        doc_id, days=days, max_downloads=int(max_dl) if max_dl else None, password=password,
+    )
     return jsonify({'ok': True, 'share_link': share}), 201
 
 
@@ -3267,15 +3477,10 @@ def api_documents_delete(doc_id):
     doc = Document.query.get_or_404(doc_id)
     if doc.is_system_locked:
         return jsonify({'error': 'This file is locked (job/print output) and cannot be deleted'}), 403
-    upload_root = app.config.get('UPLOAD_FOLDER', 'uploads')
-    file_path = os.path.join(upload_root, 'documents', str(doc.project_id), doc.filename)
-    if os.path.isfile(file_path):
-        try:
-            os.remove(file_path)
-        except OSError:
-            pass
-    DocumentShareLink.query.filter_by(document_id=doc.id).delete()
-    db.session.delete(doc)
+    if doc.deleted_at:
+        return jsonify({'ok': True})
+    doc.deleted_at = datetime.utcnow()
+    _log_doc_activity(doc.project_id, 'delete', document_id=doc.id, folder_id=doc.folder_id, detail={'name': doc.name})
     db.session.commit()
     return jsonify({'ok': True})
 
@@ -3287,6 +3492,455 @@ def serve_document_file(project_id, filename):
     if not os.path.isfile(os.path.join(directory, filename)):
         return 'Not found', 404
     return send_from_directory(directory, filename)
+
+
+# ==================== DOCUMENTS — SEARCH, TRASH, VERSIONS, COMMENTS, FOLDER SHARES ====================
+
+@app.route('/api/documents/search', methods=['GET'])
+@login_required
+def api_documents_search():
+    from document_persistence import folder_to_dict
+
+    project_id = request.args.get('project_id', type=int) or get_current_project_id()
+    q = (request.args.get('q') or '').strip()
+    if not project_id:
+        return jsonify({'error': 'project_id required'}), 400
+    if not q:
+        return jsonify({'ok': True, 'files': [], 'folders': []})
+    like = f'%{q}%'
+    files = _active_documents().filter(
+        Document.project_id == int(project_id),
+        Document.name.ilike(like),
+    ).order_by(Document.name).limit(200).all()
+    folders = _active_folders().filter(
+        DocumentFolder.project_id == int(project_id),
+        DocumentFolder.name.ilike(like),
+    ).order_by(DocumentFolder.name).limit(100).all()
+    return jsonify({
+        'ok': True,
+        'files': [_document_dict_with_user(d) for d in files if not d.folder_id or _folder_access(DocumentFolder.query.get(d.folder_id), 'view')],
+        'folders': [folder_to_dict(f) for f in folders if _folder_access(f, 'view')],
+    })
+
+
+@app.route('/api/documents/trash', methods=['GET'])
+@login_required
+def api_documents_trash():
+    project_id = request.args.get('project_id', type=int) or get_current_project_id()
+    if not project_id:
+        return jsonify({'error': 'project_id required'}), 400
+    files = Document.query.filter(
+        Document.project_id == int(project_id),
+        Document.deleted_at.isnot(None),
+    ).order_by(Document.deleted_at.desc()).limit(500).all()
+    folders = DocumentFolder.query.filter(
+        DocumentFolder.project_id == int(project_id),
+        DocumentFolder.deleted_at.isnot(None),
+    ).order_by(DocumentFolder.deleted_at.desc()).limit(200).all()
+    from document_persistence import folder_to_dict
+    return jsonify({
+        'ok': True,
+        'files': [_document_dict_with_user(d) for d in files],
+        'folders': [folder_to_dict(f) for f in folders],
+    })
+
+
+@app.route('/api/documents/<int:doc_id>/restore', methods=['POST'])
+@login_required
+def api_documents_restore(doc_id):
+    doc = Document.query.get_or_404(doc_id)
+    doc.deleted_at = None
+    _log_doc_activity(doc.project_id, 'restore', document_id=doc.id, detail={'name': doc.name})
+    db.session.commit()
+    return jsonify({'ok': True, 'document': _document_dict_with_user(doc)})
+
+
+@app.route('/api/document-folders/<int:folder_id>/restore', methods=['POST'])
+@login_required
+def api_document_folders_restore(folder_id):
+    from document_persistence import folder_to_dict
+    folder = DocumentFolder.query.get_or_404(folder_id)
+    folder.deleted_at = None
+    _log_doc_activity(folder.project_id, 'restore', folder_id=folder.id, detail={'name': folder.name})
+    db.session.commit()
+    return jsonify({'ok': True, 'folder': folder_to_dict(folder)})
+
+
+@app.route('/api/documents/<int:doc_id>/permanent', methods=['DELETE'])
+@login_required
+def api_documents_permanent_delete(doc_id):
+    doc = Document.query.get_or_404(doc_id)
+    if not doc.deleted_at:
+        return jsonify({'error': 'Move to recycle bin first'}), 400
+    if doc.is_system_locked:
+        return jsonify({'error': 'Locked file cannot be permanently deleted'}), 403
+    upload_root = app.config.get('UPLOAD_FOLDER', 'uploads')
+    file_path = os.path.join(upload_root, 'documents', str(doc.project_id), doc.filename)
+    if os.path.isfile(file_path):
+        try:
+            os.remove(file_path)
+        except OSError:
+            pass
+    DocumentShareLink.query.filter_by(document_id=doc.id).delete()
+    DocumentVersion.query.filter_by(document_id=doc.id).delete()
+    DocumentComment.query.filter_by(document_id=doc.id).delete()
+    db.session.delete(doc)
+    db.session.commit()
+    return jsonify({'ok': True})
+
+
+@app.route('/api/documents/<int:doc_id>/versions', methods=['GET'])
+@login_required
+def api_document_versions_list(doc_id):
+    from document_persistence import version_to_dict
+    Document.query.get_or_404(doc_id)
+    versions = DocumentVersion.query.filter_by(document_id=doc_id).order_by(DocumentVersion.version_no.desc()).all()
+    return jsonify({
+        'ok': True,
+        'versions': [version_to_dict(v, _user_display_name(v.uploaded_by_id)) for v in versions],
+        'current_version': Document.query.get(doc_id).version_count or 1,
+    })
+
+
+@app.route('/api/documents/<int:doc_id>/versions', methods=['POST'])
+@login_required
+def api_document_versions_upload(doc_id):
+    doc = Document.query.get_or_404(doc_id)
+    if doc.deleted_at:
+        return jsonify({'error': 'Document is in recycle bin'}), 400
+    folder = DocumentFolder.query.get(doc.folder_id) if doc.folder_id else None
+    if folder and not _folder_access(folder, 'upload'):
+        return jsonify({'error': 'No upload permission'}), 403
+    file = request.files.get('file')
+    if not file:
+        return jsonify({'error': 'file required'}), 400
+    file_bytes = file.read()
+    notes = (request.form.get('notes') or '').strip()[:500]
+    _archive_document_version(doc, notes=notes or 'Replaced with new upload')
+    ext = (file.filename or 'bin').rsplit('.', 1)[-1].lower()
+    stamp = datetime.utcnow().strftime('%Y%m%d%H%M%S%f')
+    stored_name = f'{stamp}_{secure_filename(doc.name).replace(" ", "_")[:80]}.{ext}'
+    directory = os.path.join(app.config['UPLOAD_FOLDER'], 'documents', str(doc.project_id))
+    with open(os.path.join(directory, stored_name), 'wb') as fh:
+        fh.write(file_bytes)
+    old_name = doc.filename
+    doc.filename = stored_name
+    doc.file_size = len(file_bytes)
+    doc.mime_type = file.mimetype or doc.mime_type
+    doc.original_filename = file.filename
+    doc.uploaded_by_id = current_user.id
+    doc.updated_at = datetime.utcnow()
+    _log_doc_activity(doc.project_id, 'version', document_id=doc.id, detail={'from': old_name, 'to': stored_name})
+    db.session.commit()
+    return jsonify({'ok': True, 'document': _document_dict_with_user(doc)}), 201
+
+
+@app.route('/api/documents/<int:doc_id>/versions/<int:ver_id>/download')
+@login_required
+def api_document_version_download(doc_id, ver_id):
+    from document_persistence import version_storage_path
+    doc = Document.query.get_or_404(doc_id)
+    ver = DocumentVersion.query.filter_by(id=ver_id, document_id=doc_id).first_or_404()
+    directory = version_storage_path(app.config['UPLOAD_FOLDER'], doc.project_id, doc.id)
+    return send_from_directory(directory, ver.filename, as_attachment=True, download_name=ver.original_filename or ver.filename)
+
+
+@app.route('/api/documents/<int:doc_id>/versions/<int:ver_id>/restore', methods=['POST'])
+@login_required
+def api_document_version_restore(doc_id, ver_id):
+    from document_persistence import version_storage_path
+    doc = Document.query.get_or_404(doc_id)
+    ver = DocumentVersion.query.filter_by(id=ver_id, document_id=doc_id).first_or_404()
+    ver_dir = version_storage_path(app.config['UPLOAD_FOLDER'], doc.project_id, doc.id)
+    src = os.path.join(ver_dir, ver.filename)
+    if not os.path.isfile(src):
+        return jsonify({'error': 'Version file missing'}), 404
+    _archive_document_version(doc, notes=f'Before restore v{ver.version_no}')
+    directory = os.path.join(app.config['UPLOAD_FOLDER'], 'documents', str(doc.project_id))
+    stamp = datetime.utcnow().strftime('%Y%m%d%H%M%S%f')
+    stored_name = f'{stamp}_restored_{ver.filename}'
+    import shutil
+    shutil.copy2(src, os.path.join(directory, stored_name))
+    doc.filename = stored_name
+    doc.file_size = ver.file_size
+    doc.mime_type = ver.mime_type
+    doc.original_filename = ver.original_filename
+    doc.updated_at = datetime.utcnow()
+    _log_doc_activity(doc.project_id, 'restore_version', document_id=doc.id, detail={'version_no': ver.version_no})
+    db.session.commit()
+    return jsonify({'ok': True, 'document': _document_dict_with_user(doc)})
+
+
+@app.route('/api/documents/<int:doc_id>/comments', methods=['GET'])
+@login_required
+def api_document_comments_list(doc_id):
+    from document_persistence import comment_to_dict
+    Document.query.get_or_404(doc_id)
+    comments = DocumentComment.query.filter_by(document_id=doc_id).order_by(DocumentComment.created_at.asc()).all()
+    return jsonify({
+        'ok': True,
+        'comments': [comment_to_dict(c, _user_display_name(c.user_id)) for c in comments],
+    })
+
+
+@app.route('/api/documents/<int:doc_id>/comments', methods=['POST'])
+@login_required
+def api_document_comments_create(doc_id):
+    from document_persistence import comment_to_dict
+    doc = Document.query.get_or_404(doc_id)
+    body = request.get_json(silent=True) or {}
+    text = (body.get('body') or '').strip()
+    if not text:
+        return jsonify({'error': 'body required'}), 400
+    comment = DocumentComment(document_id=doc_id, user_id=current_user.id, body=text[:5000], created_at=datetime.utcnow())
+    db.session.add(comment)
+    _log_doc_activity(doc.project_id, 'comment', document_id=doc.id, detail={'preview': text[:120]})
+    db.session.commit()
+    return jsonify({'ok': True, 'comment': comment_to_dict(comment, _user_display_name(current_user.id))}), 201
+
+
+@app.route('/api/documents/comments/<int:comment_id>', methods=['DELETE'])
+@login_required
+def api_document_comments_delete(comment_id):
+    comment = DocumentComment.query.get_or_404(comment_id)
+    if comment.user_id != current_user.id and getattr(current_user, 'role', '') != 'Admin':
+        return jsonify({'error': 'Not allowed'}), 403
+    db.session.delete(comment)
+    db.session.commit()
+    return jsonify({'ok': True})
+
+
+@app.route('/api/documents/<int:doc_id>/activity', methods=['GET'])
+@login_required
+def api_document_activity(doc_id):
+    from document_persistence import activity_to_dict
+    doc = Document.query.get_or_404(doc_id)
+    acts = DocumentActivity.query.filter_by(document_id=doc_id).order_by(DocumentActivity.created_at.desc()).limit(100).all()
+    return jsonify({'ok': True, 'activity': [activity_to_dict(a, _user_display_name(a.user_id)) for a in acts]})
+
+
+@app.route('/api/documents/activity', methods=['GET'])
+@login_required
+def api_project_document_activity():
+    from document_persistence import activity_to_dict
+    project_id = request.args.get('project_id', type=int) or get_current_project_id()
+    if not project_id:
+        return jsonify({'error': 'project_id required'}), 400
+    acts = DocumentActivity.query.filter_by(project_id=int(project_id)).order_by(DocumentActivity.created_at.desc()).limit(200).all()
+    return jsonify({'ok': True, 'activity': [activity_to_dict(a, _user_display_name(a.user_id)) for a in acts]})
+
+
+def _create_folder_share_link(folder_id, days=30, max_downloads=None, password=None, allow_upload=False):
+    from document_persistence import default_share_expiry, folder_share_link_to_dict, hash_share_password, new_share_token
+
+    folder = DocumentFolder.query.get_or_404(folder_id)
+    link = DocumentFolderShareLink(
+        folder_id=folder.id,
+        token=new_share_token(),
+        label=folder.name,
+        password_hash=hash_share_password(password),
+        expires_at=default_share_expiry(days),
+        max_downloads=max_downloads,
+        download_count=0,
+        allow_browse=True,
+        allow_download=True,
+        allow_upload=bool(allow_upload),
+        created_by_id=current_user.id,
+        created_at=datetime.utcnow(),
+    )
+    db.session.add(link)
+    _log_doc_activity(folder.project_id, 'share', folder_id=folder.id, detail={'type': 'folder_link', 'allow_upload': allow_upload})
+    db.session.commit()
+    return folder_share_link_to_dict(link, _documents_base_url())
+
+
+@app.route('/api/document-folders/<int:folder_id>/share-links', methods=['GET'])
+@login_required
+def api_folder_share_links_list(folder_id):
+    from document_persistence import folder_share_link_to_dict
+    DocumentFolder.query.get_or_404(folder_id)
+    links = DocumentFolderShareLink.query.filter_by(folder_id=folder_id).order_by(DocumentFolderShareLink.created_at.desc()).all()
+    base = _documents_base_url()
+    return jsonify({'ok': True, 'links': [folder_share_link_to_dict(l, base) for l in links]})
+
+
+@app.route('/api/document-folders/<int:folder_id>/share-links', methods=['POST'])
+@login_required
+def api_folder_share_links_create(folder_id):
+    body = request.get_json(silent=True) or {}
+    days = int(body.get('expires_days') or 30)
+    max_dl = body.get('max_downloads')
+    share = _create_folder_share_link(
+        folder_id,
+        days=days,
+        max_downloads=int(max_dl) if max_dl else None,
+        password=body.get('password'),
+        allow_upload=bool(body.get('allow_upload')),
+    )
+    return jsonify({'ok': True, 'share_link': share}), 201
+
+
+@app.route('/api/folder-share-links/<int:link_id>', methods=['DELETE'])
+@login_required
+def api_folder_share_links_revoke(link_id):
+    link = DocumentFolderShareLink.query.get_or_404(link_id)
+    link.revoked_at = datetime.utcnow()
+    db.session.commit()
+    return jsonify({'ok': True})
+
+
+@app.route('/share/folder/<token>/browse')
+def public_folder_share_browse(token):
+    from document_persistence import folder_is_under_root_share, folder_to_dict, share_link_is_valid
+
+    link = DocumentFolderShareLink.query.filter_by(token=token).first_or_404()
+    if not share_link_is_valid(link):
+        return jsonify({'error': 'Link unavailable'}), 410
+    if link.password_hash and not _share_is_unlocked(link):
+        return jsonify({'error': 'Password required'}), 403
+    if not link.allow_browse:
+        return jsonify({'error': 'Browse disabled'}), 403
+    root = DocumentFolder.query.get_or_404(link.folder_id)
+    folder_id = request.args.get('folder_id', type=int) or root.id
+    if not folder_is_under_root_share(db, DocumentFolder, folder_id, root.id):
+        return jsonify({'error': 'Folder not in shared scope'}), 403
+    current = DocumentFolder.query.get(folder_id)
+    subfolders = _active_folders().filter_by(parent_id=folder_id).order_by(DocumentFolder.name).all()
+    files = _active_documents().filter_by(folder_id=folder_id).order_by(Document.name).all()
+    breadcrumbs = []
+    if current:
+        chain = [current]
+        parent = DocumentFolder.query.get(current.parent_id) if current.parent_id else None
+        while parent:
+            if parent.id == root.id:
+                chain.insert(0, parent)
+                break
+            chain.insert(0, parent)
+            parent = DocumentFolder.query.get(parent.parent_id) if parent.parent_id else None
+        breadcrumbs = [{'id': f.id, 'name': f.name} for f in chain]
+    return jsonify({
+        'ok': True,
+        'root_folder_id': root.id,
+        'folder_id': folder_id,
+        'folder_name': current.name if current else root.name,
+        'breadcrumbs': breadcrumbs,
+        'allow_upload': bool(link.allow_upload),
+        'allow_download': bool(link.allow_download),
+        'folders': [folder_to_dict(f, _active_folders().filter_by(parent_id=f.id).count(), _active_documents().filter_by(folder_id=f.id).count()) for f in subfolders],
+        'files': [{'id': d.id, 'name': d.name, 'size': d.file_size, 'mime_type': d.mime_type, 'document_type': d.document_type} for d in files],
+    })
+
+
+@app.route('/share/folder/<token>/download/<int:doc_id>')
+def public_folder_share_download(token, doc_id):
+    from document_persistence import folder_is_under_root_share, format_file_size, share_link_is_valid
+
+    link = DocumentFolderShareLink.query.filter_by(token=token).first_or_404()
+    if not share_link_is_valid(link):
+        return jsonify({'error': 'Link unavailable'}), 410
+    if link.password_hash and not _share_is_unlocked(link):
+        return jsonify({'error': 'Password required'}), 403
+    if not link.allow_download:
+        return jsonify({'error': 'Download disabled'}), 403
+    doc = _active_documents().filter_by(id=doc_id).first_or_404()
+    if not folder_is_under_root_share(db, DocumentFolder, doc.folder_id, link.folder_id):
+        return jsonify({'error': 'File not in shared folder'}), 403
+    directory = os.path.join(app.config['UPLOAD_FOLDER'], 'documents', str(doc.project_id))
+    if not os.path.isfile(os.path.join(directory, doc.filename)):
+        return jsonify({'error': 'File not found'}), 404
+    link.download_count = (link.download_count or 0) + 1
+    db.session.commit()
+    return send_from_directory(directory, doc.filename, as_attachment=True, download_name=doc.original_filename or doc.name)
+
+
+@app.route('/share/folder/<token>/upload', methods=['POST'])
+def public_folder_share_upload(token):
+    from document_persistence import folder_is_under_root_share, share_link_is_valid
+
+    link = DocumentFolderShareLink.query.filter_by(token=token).first_or_404()
+    if not share_link_is_valid(link):
+        return jsonify({'error': 'Link unavailable'}), 410
+    if link.password_hash and not _share_is_unlocked(link):
+        return jsonify({'error': 'Password required'}), 403
+    if not link.allow_upload:
+        return jsonify({'error': 'Upload disabled'}), 403
+    folder_id = request.form.get('folder_id', type=int) or link.folder_id
+    if not folder_is_under_root_share(db, DocumentFolder, folder_id, link.folder_id):
+        return jsonify({'error': 'Invalid folder'}), 403
+    file = request.files.get('file')
+    if not file:
+        return jsonify({'error': 'file required'}), 400
+    folder = DocumentFolder.query.get_or_404(folder_id)
+    file_bytes = file.read()
+    try:
+        doc_dict = _save_document_bytes(
+            folder.project_id, file_bytes, file.filename, file.filename,
+            file.mimetype or 'application/octet-stream', 'Shared upload', folder.id, False,
+            source_metadata={'shared_upload': True, 'share_token': token},
+        )
+    except ValueError as exc:
+        return jsonify({'error': str(exc)}), 400
+    return jsonify({'ok': True, 'document': doc_dict}), 201
+
+
+@app.route('/api/document-folders/<int:folder_id>/permissions', methods=['GET'])
+@login_required
+def api_folder_permissions_list(folder_id):
+    from document_persistence import permission_to_dict
+    folder = DocumentFolder.query.get_or_404(folder_id)
+    if not _folder_access(folder, 'manage') and getattr(current_user, 'role', '') != 'Admin':
+        return jsonify({'error': 'Manage permission required'}), 403
+    perms = DocumentFolderPermission.query.filter_by(folder_id=folder_id).all()
+    out = []
+    for p in perms:
+        u = User.query.get(p.user_id)
+        out.append(permission_to_dict(p, _user_display_name(p.user_id), u.email if u else None))
+    return jsonify({'ok': True, 'permissions': out})
+
+
+@app.route('/api/document-folders/<int:folder_id>/permissions', methods=['POST'])
+@login_required
+def api_folder_permissions_set(folder_id):
+    from document_persistence import permission_to_dict
+    folder = DocumentFolder.query.get_or_404(folder_id)
+    if not _folder_access(folder, 'manage') and getattr(current_user, 'role', '') != 'Admin':
+        return jsonify({'error': 'Manage permission required'}), 403
+    body = request.get_json(silent=True) or {}
+    user_id = body.get('user_id')
+    if not user_id:
+        return jsonify({'error': 'user_id required'}), 400
+    perm = DocumentFolderPermission.query.filter_by(folder_id=folder_id, user_id=int(user_id)).first()
+    if not perm:
+        perm = DocumentFolderPermission(folder_id=folder_id, user_id=int(user_id), created_at=datetime.utcnow())
+        db.session.add(perm)
+    perm.can_view = bool(body.get('can_view', True))
+    perm.can_upload = bool(body.get('can_upload', False))
+    perm.can_manage = bool(body.get('can_manage', False))
+    db.session.commit()
+    u = User.query.get(perm.user_id)
+    return jsonify({'ok': True, 'permission': permission_to_dict(perm, _user_display_name(perm.user_id), u.email if u else None)})
+
+
+@app.route('/api/document-folders/permissions/<int:perm_id>', methods=['DELETE'])
+@login_required
+def api_folder_permissions_delete(perm_id):
+    perm = DocumentFolderPermission.query.get_or_404(perm_id)
+    folder = DocumentFolder.query.get_or_404(perm.folder_id)
+    if not _folder_access(folder, 'manage') and getattr(current_user, 'role', '') != 'Admin':
+        return jsonify({'error': 'Manage permission required'}), 403
+    db.session.delete(perm)
+    db.session.commit()
+    return jsonify({'ok': True})
+
+
+@app.route('/api/users/list', methods=['GET'])
+@login_required
+def api_users_list_short():
+    users = User.query.filter_by(status='Active').order_by(User.first_name, User.last_name).limit(500).all()
+    return jsonify({
+        'ok': True,
+        'users': [{'id': u.id, 'name': _user_display_name(u.id), 'email': u.email} for u in users],
+    })
 
 
 @app.route('/drawings')

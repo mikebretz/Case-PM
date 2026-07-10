@@ -19,6 +19,12 @@
     previewFileId: null,
     previewDoc: null,
     draggingFileId: null,
+    draggingFolderId: null,
+    browseMode: 'normal',
+    searchAll: false,
+    previewTab: 'details',
+    permissionsFolderId: null,
+    versionUploadId: null,
   };
 
   function projectId() {
@@ -91,6 +97,7 @@
     if (!pid) return;
     state.projectId = pid;
     state.folderId = folderId;
+    state.browseMode = 'normal';
     const q = folderId != null ? `&folder_id=${folderId}` : '';
     const json = await api(`/api/documents/browse?project_id=${pid}${q}`);
     state.folders = json.folders || [];
@@ -128,12 +135,13 @@
       const expanded = state.expandedFolders.has(node.id);
       const active = state.folderId === node.id ? ' active' : '';
       const sys = node.is_system ? ' system' : '';
+      const draggable = node.is_system ? '' : ' draggable="true"';
       const chevron = hasChildren
         ? `<button type="button" class="docs-tree-chevron" data-toggle="${node.id}" aria-label="Toggle"><i class="fa-solid fa-chevron-${expanded ? 'down' : 'right'} text-[9px]"></i></button>`
         : '<span class="docs-tree-chevron placeholder"></span>';
 
       let html = `<div class="docs-tree-node" data-tree-folder="${node.id}">
-        <div class="docs-tree-row${active}${sys}" data-folder-id="${node.id}" data-drop-folder="${node.id}">
+        <div class="docs-tree-row${active}${sys}" data-folder-id="${node.id}" data-drop-folder="${node.id}" data-system="${node.is_system ? '1' : ''}"${draggable}>
           ${chevron}
           <i class="fa-solid fa-folder${node.is_system ? '-tree' : ''} text-amber-400 text-xs"></i>
           <span class="truncate flex-1">${esc(node.name)}</span>
@@ -145,7 +153,11 @@
       return html;
     };
 
-    el.innerHTML = state.tree.map(n => renderNode(n, 0)).join('');
+    el.innerHTML = `<div class="docs-tree-root-drop" data-drop-root="1" title="Drop folder here to move to top level">Top level</div>`
+      + state.tree.map(n => renderNode(n, 0)).join('');
+
+    const rootDrop = el.querySelector('[data-drop-root]');
+    if (rootDrop) bindFolderDropTarget(rootDrop, null);
 
     el.querySelectorAll('[data-toggle]').forEach(btn => {
       btn.addEventListener('click', e => toggleFolderExpand(parseInt(btn.dataset.toggle, 10), e));
@@ -153,9 +165,11 @@
     el.querySelectorAll('[data-folder-id]').forEach(row => {
       row.addEventListener('click', e => {
         if (e.target.closest('[data-toggle]')) return;
+        if (state.draggingFolderId) return;
         openFolder(parseInt(row.dataset.folderId, 10));
       });
-      bindFolderDropTarget(row);
+      bindFolderDropTarget(row, parseInt(row.dataset.folderId, 10));
+      if (row.dataset.system !== '1') bindFolderDrag(row, parseInt(row.dataset.folderId, 10));
     });
   }
 
@@ -179,9 +193,106 @@
 
   function filteredItems() {
     const q = state.search.trim().toLowerCase();
+    if (state.browseMode === 'trash') {
+      return { folders: state.folders, files: state.files };
+    }
     const folders = state.folders.filter(f => !q || f.name.toLowerCase().includes(q));
     const files = state.files.filter(f => !q || f.name.toLowerCase().includes(q));
     return { folders, files };
+  }
+
+  let searchTimer = null;
+  async function runGlobalSearch() {
+    const pid = projectId();
+    const q = state.search.trim();
+    if (!state.searchAll || !q || !pid) {
+      render();
+      return;
+    }
+    clearTimeout(searchTimer);
+    searchTimer = setTimeout(async () => {
+      try {
+        const json = await api(`/api/documents/search?project_id=${pid}&q=${encodeURIComponent(q)}`);
+        state.folders = json.folders || [];
+        state.files = json.files || [];
+        state.browseMode = 'search';
+        renderBrowseResults();
+      } catch (e) {
+        console.error(e);
+      }
+    }, 300);
+  }
+
+  function renderBrowseResults() {
+    renderBreadcrumbs();
+    const empty = document.getElementById('docsEmpty');
+    const gridWrap = document.getElementById('docsGridWrap');
+    const { folders, files } = { folders: state.folders, files: state.files };
+    if (!folders.length && !files.length) {
+      document.getElementById('docsGrid').innerHTML = '';
+      document.getElementById('docsTableBody').innerHTML = '';
+      empty?.classList.remove('hidden');
+      if (empty) empty.innerHTML = '<p class="text-zinc-500">No matches found.</p>';
+      gridWrap?.classList.add('hidden');
+      return;
+    }
+    empty?.classList.add('hidden');
+    gridWrap?.classList.remove('hidden');
+    if (state.viewMode === 'list') renderList(folders, files);
+    else renderGrid(folders, files);
+  }
+
+  async function loadTrash() {
+    const pid = projectId();
+    if (!pid) return;
+    state.browseMode = 'trash';
+    state.folderId = null;
+    const json = await api(`/api/documents/trash?project_id=${pid}`);
+    state.folders = json.folders || [];
+    state.files = json.files || [];
+    state.breadcrumbs = [{ id: 0, name: 'Recycle bin' }];
+    closePreview();
+    renderBrowseResults();
+  }
+
+  async function exitTrash() {
+    state.browseMode = 'normal';
+    await loadBrowse(null);
+    openRoot();
+  }
+
+  function findNodeInTree(id) {
+    let found = null;
+    const walk = (nodes) => {
+      for (const n of nodes || []) {
+        if (n.id === id) { found = n; return; }
+        walk(n.children);
+      }
+    };
+    walk(state.tree);
+    return found;
+  }
+
+  function isNodeInSubtree(node, searchId) {
+    if (!node) return false;
+    if (node.id === searchId) return true;
+    return (node.children || []).some(c => isNodeInSubtree(c, searchId));
+  }
+
+  function canDropFolderOn(dragId, targetId) {
+    if (!dragId || !targetId || dragId === targetId) return false;
+    const dragNode = findNodeInTree(dragId);
+    return !(dragNode && isNodeInSubtree(dragNode, targetId));
+  }
+
+  function setViewMode(mode) {
+    state.viewMode = mode;
+    const wrap = document.getElementById('docsGridWrap');
+    wrap?.classList.toggle('view-grid', mode === 'grid');
+    wrap?.classList.toggle('view-list', mode === 'list');
+    document.getElementById('docsViewGrid')?.classList.toggle('active', mode === 'grid');
+    document.getElementById('docsViewList')?.classList.toggle('active', mode === 'list');
+    render();
   }
 
   function selectItem(kind, id, locked, system) {
@@ -195,12 +306,10 @@
 
   function renderGrid(folders, files) {
     const grid = document.getElementById('docsGrid');
-    const table = document.getElementById('docsTable');
     const tableBody = document.getElementById('docsTableBody');
-    if (!grid || !table || !tableBody) return;
+    if (!grid || !tableBody) return;
 
-    grid.classList.remove('hidden');
-    table.classList.add('hidden');
+    tableBody.innerHTML = '';
 
     let html = '';
     folders.forEach(f => {
@@ -230,12 +339,10 @@
 
   function renderList(folders, files) {
     const grid = document.getElementById('docsGrid');
-    const table = document.getElementById('docsTable');
     const tableBody = document.getElementById('docsTableBody');
-    if (!grid || !table || !tableBody) return;
+    if (!grid || !tableBody) return;
 
-    grid.classList.add('hidden');
-    table.classList.remove('hidden');
+    grid.innerHTML = '';
 
     let html = '';
     folders.forEach(f => {
@@ -286,7 +393,7 @@
   function bindItemEvents(container) {
     container.querySelectorAll('[data-kind]').forEach(el => {
       el.addEventListener('click', e => {
-        if (state.draggingFileId) return;
+        if (state.draggingFileId || state.draggingFolderId) return;
         const kind = el.dataset.kind;
         const id = parseInt(el.dataset.id, 10);
         if (e.detail === 2) {
@@ -303,7 +410,22 @@
         showContextMenu(e.clientX, e.clientY);
       });
       if (el.dataset.kind === 'file' && el.dataset.locked !== '1') bindFileDrag(el);
-      if (el.dataset.kind === 'folder') bindFolderDropTarget(el);
+      if (el.dataset.kind === 'folder') bindFolderDropTarget(el, parseInt(el.dataset.dropFolder, 10));
+    });
+  }
+
+  function bindFolderDrag(el, folderId) {
+    el.addEventListener('dragstart', e => {
+      state.draggingFolderId = folderId;
+      el.classList.add('dragging');
+      e.dataTransfer.effectAllowed = 'move';
+      e.dataTransfer.setData('application/x-docs-folder', String(folderId));
+      e.stopPropagation();
+    });
+    el.addEventListener('dragend', () => {
+      state.draggingFolderId = null;
+      el.classList.remove('dragging');
+      clearDropHighlights();
     });
   }
 
@@ -313,7 +435,7 @@
       state.draggingFileId = id;
       el.classList.add('dragging');
       e.dataTransfer.effectAllowed = 'move';
-      e.dataTransfer.setData('text/plain', String(id));
+      e.dataTransfer.setData('application/x-docs-file', String(id));
     });
     el.addEventListener('dragend', () => {
       state.draggingFileId = null;
@@ -322,11 +444,10 @@
     });
   }
 
-  function bindFolderDropTarget(el) {
-    const folderId = parseInt(el.dataset.dropFolder || el.dataset.folderId, 10);
-    if (!folderId) return;
+  function bindFolderDropTarget(el, folderId) {
     el.addEventListener('dragover', e => {
-      if (!state.draggingFileId) return;
+      if (!state.draggingFileId && !state.draggingFolderId) return;
+      if (state.draggingFolderId && folderId != null && !canDropFolderOn(state.draggingFolderId, folderId)) return;
       e.preventDefault();
       e.dataTransfer.dropEffect = 'move';
       el.classList.add('drop-target');
@@ -335,8 +456,12 @@
     el.addEventListener('drop', async e => {
       e.preventDefault();
       el.classList.remove('drop-target');
-      const fileId = state.draggingFileId || parseInt(e.dataTransfer.getData('text/plain'), 10);
-      if (!fileId) return;
+      if (state.draggingFolderId) {
+        await moveFolderToParent(state.draggingFolderId, folderId);
+        return;
+      }
+      const fileId = state.draggingFileId || parseInt(e.dataTransfer.getData('application/x-docs-file'), 10);
+      if (!fileId || folderId == null) return;
       await moveFileToFolder(fileId, folderId);
     });
   }
@@ -346,9 +471,9 @@
   }
 
   async function moveFileToFolder(fileId, folderId) {
-    const file = state.files.find(f => f.id === fileId);
-    if (!file || file.is_system_locked) return;
-    if (file.folder_id === folderId) return;
+    const file = state.files.find(f => f.id === fileId) || state.previewDoc;
+    if (file?.is_system_locked) return;
+    if (file?.folder_id === folderId) return;
     try {
       await api(`/api/documents/${fileId}`, {
         method: 'PATCH',
@@ -363,6 +488,26 @@
     }
   }
 
+  async function moveFolderToParent(folderId, parentId) {
+    const node = findNodeInTree(folderId);
+    if (!node || node.is_system) return;
+    if (parentId != null && !canDropFolderOn(folderId, parentId)) return;
+    const currentParent = node.parent_id ?? null;
+    const nextParent = parentId ?? null;
+    if (currentParent === nextParent) return;
+    try {
+      await api(`/api/document-folders/${folderId}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ parent_id: nextParent }),
+      });
+      toast('Folder moved');
+      await loadBrowse(state.folderId);
+    } catch (err) {
+      alert(err.message || 'Could not move folder');
+    }
+  }
+
   async function showPreview(fileId) {
     state.previewFileId = fileId;
     const panel = document.getElementById('docsPreviewPanel');
@@ -370,44 +515,125 @@
     await loadPreview(fileId);
   }
 
-  async function loadPreview(fileId) {
+  async function loadPreview(fileId, tab) {
+    state.previewTab = tab || state.previewTab || 'details';
     const body = document.getElementById('docsPreviewBody');
     if (!body) return;
     try {
       const json = await api(`/api/documents/${fileId}`);
       const doc = json.document;
       state.previewDoc = doc;
-      const kind = isPreviewable(doc);
-      let media = '';
-      if (kind === 'image') {
-        media = `<img class="docs-preview-media" src="${esc(doc.file_url)}" alt="${esc(doc.name)}">`;
-      } else if (kind === 'pdf') {
-        media = `<iframe class="docs-preview-frame" src="${esc(doc.file_url)}" title="${esc(doc.name)}"></iframe>`;
-      } else {
-        const fi = fileIcon(doc.name, doc.mime_type);
-        media = `<div class="text-center py-8"><i class="fa-solid ${fi.icon} text-5xl ${fi.cls} text-amber-400"></i><p class="text-sm text-zinc-400 mt-3">No preview for this file type</p></div>`;
-      }
-      body.innerHTML = `
-        ${media}
-        <h3 class="text-sm font-semibold text-white mt-3 break-words">${esc(doc.name)}</h3>
-        <dl class="docs-preview-meta">
-          <dt>Uploaded by</dt><dd>${esc(doc.uploaded_by_name || 'Unknown')}</dd>
-          <dt>Uploaded</dt><dd>${esc(doc.created_at ? doc.created_at.slice(0, 16).replace('T', ' ') : '—')}</dd>
-          <dt>Modified</dt><dd>${esc(doc.updated_at ? doc.updated_at.slice(0, 16).replace('T', ' ') : '—')}</dd>
-          <dt>Size</dt><dd>${esc(doc.size || '—')}</dd>
-          <dt>Type</dt><dd>${esc(doc.document_type || doc.mime_type || '—')}</dd>
-          <dt>Folder</dt><dd>${esc(doc.folder_name || '—')}</dd>
-          ${doc.is_system_locked ? '<dt>Status</dt><dd class="text-violet-300">Locked job file</dd>' : ''}
-        </dl>
-        <div class="docs-preview-actions">
-          <button type="button" class="docs-btn docs-btn-secondary" id="docsPreviewDownload"><i class="fa-solid fa-download"></i> Download</button>
-          <button type="button" class="docs-btn docs-btn-secondary" id="docsPreviewShare"><i class="fa-solid fa-link"></i> Share</button>
+      const tabs = `
+        <div class="flex gap-1 mb-3 flex-wrap">
+          ${['details', 'versions', 'comments', 'activity'].map(t =>
+            `<button type="button" class="docs-preview-tab${state.previewTab === t ? ' active' : ''}" data-ptab="${t}">${t.charAt(0).toUpperCase() + t.slice(1)}</button>`
+          ).join('')}
         </div>`;
-      document.getElementById('docsPreviewDownload')?.addEventListener('click', () => downloadFile(doc.id));
-      document.getElementById('docsPreviewShare')?.addEventListener('click', () => createShareLink(doc.id));
+      let content = '';
+      if (state.previewTab === 'details') content = renderPreviewDetails(doc);
+      else if (state.previewTab === 'versions') content = await renderPreviewVersions(fileId, doc);
+      else if (state.previewTab === 'comments') content = await renderPreviewComments(fileId);
+      else content = await renderPreviewActivity(fileId);
+      body.innerHTML = tabs + content;
+      body.querySelectorAll('[data-ptab]').forEach(btn => {
+        btn.addEventListener('click', () => loadPreview(fileId, btn.dataset.ptab));
+      });
+      bindPreviewActions(doc);
     } catch (err) {
       body.innerHTML = `<p class="text-red-400 text-sm">${esc(err.message)}</p>`;
     }
+  }
+
+  function renderPreviewDetails(doc) {
+    const kind = isPreviewable(doc);
+    let media = '';
+    if (kind === 'image') {
+      media = `<img class="docs-preview-media" src="${esc(doc.file_url)}" alt="${esc(doc.name)}">`;
+    } else if (kind === 'pdf') {
+      media = `<iframe class="docs-preview-frame" src="${esc(doc.file_url)}" title="${esc(doc.name)}"></iframe>`;
+    } else {
+      const fi = fileIcon(doc.name, doc.mime_type);
+      media = `<div class="text-center py-8"><i class="fa-solid ${fi.icon} text-5xl ${fi.cls} text-amber-400"></i><p class="text-sm text-zinc-400 mt-3">No preview for this file type</p></div>`;
+    }
+    return `
+      ${media}
+      <h3 class="text-sm font-semibold text-white mt-3 break-words">${esc(doc.name)}</h3>
+      <dl class="docs-preview-meta">
+        <dt>Uploaded by</dt><dd>${esc(doc.uploaded_by_name || 'Unknown')}</dd>
+        <dt>Uploaded</dt><dd>${esc(doc.created_at ? doc.created_at.slice(0, 16).replace('T', ' ') : '—')}</dd>
+        <dt>Modified</dt><dd>${esc(doc.updated_at ? doc.updated_at.slice(0, 16).replace('T', ' ') : '—')}</dd>
+        <dt>Size</dt><dd>${esc(doc.size || '—')}</dd>
+        <dt>Versions</dt><dd>${esc(doc.version_count || 1)}</dd>
+        <dt>Type</dt><dd>${esc(doc.document_type || doc.mime_type || '—')}</dd>
+        <dt>Folder</dt><dd>${esc(doc.folder_name || '—')}</dd>
+        ${doc.is_system_locked ? '<dt>Status</dt><dd class="text-violet-300">Locked job file</dd>' : ''}
+      </dl>
+      <div class="docs-preview-actions">
+        <button type="button" class="docs-btn docs-btn-secondary" id="docsPreviewDownload"><i class="fa-solid fa-download"></i> Download</button>
+        <button type="button" class="docs-btn docs-btn-secondary" id="docsPreviewShare"><i class="fa-solid fa-link"></i> Share</button>
+        ${!doc.is_system_locked ? '<button type="button" class="docs-btn docs-btn-secondary" id="docsPreviewNewVersion"><i class="fa-solid fa-clock-rotate-left"></i> New version</button>' : ''}
+      </div>`;
+  }
+
+  async function renderPreviewVersions(fileId, doc) {
+    const json = await api(`/api/documents/${fileId}/versions`);
+    const rows = (json.versions || []).map(v =>
+      `<div class="flex items-center justify-between gap-2 py-2 border-b border-zinc-800 text-xs">
+        <span>v${v.version_no} · ${esc(v.size)} · ${esc(v.created_at?.slice(0, 10) || '')}</span>
+        <span class="flex gap-1">
+          <a class="text-sky-400" href="/api/documents/${fileId}/versions/${v.id}/download">DL</a>
+          <button type="button" class="text-emerald-400" data-restore-ver="${v.id}">Restore</button>
+        </span>
+      </div>`
+    ).join('');
+    return `<p class="text-xs text-zinc-500 mb-2">Current: v${json.current_version || 1}</p>${rows || '<p class="text-zinc-500 text-sm">No prior versions yet.</p>'}`;
+  }
+
+  async function renderPreviewComments(fileId) {
+    const json = await api(`/api/documents/${fileId}/comments`);
+    const list = (json.comments || []).map(c =>
+      `<div class="mb-2 p-2 bg-zinc-800/50 rounded text-xs"><div class="text-zinc-400">${esc(c.user_name)} · ${esc(c.created_at?.slice(0, 16).replace('T', ' ') || '')}</div><div class="mt-1">${esc(c.body)}</div></div>`
+    ).join('');
+    return `${list || '<p class="text-zinc-500 text-sm">No comments yet.</p>'}
+      <textarea id="docsNewComment" class="docs-input w-full mt-2 text-xs" rows="3" placeholder="Add a comment…"></textarea>
+      <button type="button" class="docs-btn docs-btn-primary mt-2 w-full" id="docsPostComment">Post comment</button>`;
+  }
+
+  async function renderPreviewActivity(fileId) {
+    const json = await api(`/api/documents/${fileId}/activity`);
+    const rows = (json.activity || []).map(a =>
+      `<div class="py-1.5 border-b border-zinc-800 text-xs"><span class="text-zinc-300">${esc(a.action)}</span>
+        <span class="text-zinc-500"> · ${esc(a.user_name || 'System')} · ${esc(a.created_at?.slice(0, 16).replace('T', ' ') || '')}</span></div>`
+    ).join('');
+    return rows || '<p class="text-zinc-500 text-sm">No activity recorded.</p>';
+  }
+
+  function bindPreviewActions(doc) {
+    document.getElementById('docsPreviewDownload')?.addEventListener('click', () => downloadFile(doc.id));
+    document.getElementById('docsPreviewShare')?.addEventListener('click', () => copyShareLink(doc.id));
+    document.getElementById('docsPreviewNewVersion')?.addEventListener('click', () => {
+      state.versionUploadId = doc.id;
+      document.getElementById('docsVersionInput')?.click();
+    });
+    document.getElementById('docsPostComment')?.addEventListener('click', async () => {
+      const text = document.getElementById('docsNewComment')?.value?.trim();
+      if (!text) return;
+      await api(`/api/documents/${doc.id}/comments`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ body: text }),
+      });
+      await loadPreview(doc.id, 'comments');
+    });
+    document.querySelectorAll('[data-restore-ver]').forEach(btn => {
+      btn.addEventListener('click', async () => {
+        if (!confirm('Restore this version as the current file?')) return;
+        await api(`/api/documents/${doc.id}/versions/${btn.dataset.restoreVer}/restore`, { method: 'POST' });
+        toast('Version restored');
+        await loadPreview(doc.id, 'versions');
+        await loadBrowse(state.folderId);
+      });
+    });
   }
 
   function closePreview() {
@@ -429,16 +655,27 @@
     const menu = document.createElement('div');
     menu.className = 'docs-context';
     const items = [];
-    if (state.selected.kind === 'folder') {
+    if (state.browseMode === 'trash') {
+      if (state.selected.kind === 'file') {
+        items.push({ label: 'Restore', action: () => restoreFile(state.selected.id) });
+        items.push({ label: 'Delete permanently', action: () => permanentDeleteFile(state.selected.id), danger: true });
+      } else {
+        items.push({ label: 'Restore folder', action: () => restoreFolder(state.selected.id) });
+      }
+    } else if (state.selected.kind === 'folder') {
+      items.push({ label: 'Open', action: () => openFolder(state.selected.id) });
+      items.push({ label: 'Share folder link…', action: () => createFolderShareLink(state.selected.id) });
+      items.push({ label: 'Request files link…', action: () => createFolderShareLink(state.selected.id, true) });
+      items.push({ label: 'Folder permissions…', action: () => openPermissions(state.selected.id) });
       if (!state.selected.system) {
         items.push({ label: 'Rename', action: () => startRename('folder', state.selected.id) });
         items.push({ label: 'Delete', action: () => deleteFolder(state.selected.id), danger: true });
       }
-      items.push({ label: 'Open', action: () => openFolder(state.selected.id) });
     } else {
       items.push({ label: 'Preview', action: () => showPreview(state.selected.id) });
       items.push({ label: 'Download', action: () => downloadFile(state.selected.id) });
-      items.push({ label: 'Copy share link', action: () => createShareLink(state.selected.id) });
+      items.push({ label: 'Get shareable link (copy)', action: () => copyShareLink(state.selected.id) });
+      items.push({ label: 'Share link options…', action: () => createShareLink(state.selected.id) });
       items.push({ label: 'Rename', action: () => startRename('file', state.selected.id), disabled: state.selected.locked });
       items.push({ label: 'Delete', action: () => deleteFile(state.selected.id), danger: true, disabled: state.selected.locked });
     }
@@ -557,11 +794,28 @@
     else console.log(msg);
   }
 
+  async function copyShareLink(fileId, password) {
+    try {
+      const json = await api(`/api/documents/${fileId}/share-links`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ expires_days: 30, password: password || undefined }),
+      });
+      const url = json.share_link?.share_url || '';
+      if (!url) throw new Error('No share link returned');
+      await navigator.clipboard.writeText(url);
+      toast('Share link copied — recipients can download this file');
+    } catch (err) {
+      alert(err.message || 'Could not create share link');
+    }
+  }
+
   async function createShareLink(fileId) {
+    const password = document.getElementById('docsSharePassword')?.value || '';
     const json = await api(`/api/documents/${fileId}/share-links`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ expires_days: 30 }),
+      body: JSON.stringify({ expires_days: 30, password: password || undefined }),
     });
     const url = json.share_link?.share_url || '';
     state.shareUrl = url;
@@ -570,6 +824,91 @@
       ? `Expires ${json.share_link.expires_at.slice(0, 10)} · ${json.share_link.download_count || 0} downloads`
       : '';
     document.getElementById('docsShareDialog')?.showModal();
+  }
+
+  async function createFolderShareLink(folderId, allowUpload) {
+    const password = document.getElementById('docsFolderSharePassword')?.value || '';
+    const json = await api(`/api/document-folders/${folderId}/share-links`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        expires_days: 30,
+        password: password || undefined,
+        allow_upload: !!allowUpload,
+      }),
+    });
+    const url = json.share_link?.share_url || '';
+    document.getElementById('docsFolderShareUrl').value = url;
+    document.getElementById('docsFolderShareUpload').checked = !!allowUpload;
+    document.getElementById('docsFolderShareDialog')?.showModal();
+    if (url) {
+      await navigator.clipboard.writeText(url);
+      toast(allowUpload ? 'Request-files link copied' : 'Folder share link copied');
+    }
+  }
+
+  async function openPermissions(folderId) {
+    state.permissionsFolderId = folderId;
+    const usersJson = await api('/api/users/list');
+    const sel = document.getElementById('docsPermUser');
+    if (sel) {
+      sel.innerHTML = (usersJson.users || []).map(u =>
+        `<option value="${u.id}">${esc(u.name)} (${esc(u.email)})</option>`
+      ).join('');
+    }
+    await refreshPermissionsList();
+    document.getElementById('docsPermissionsDialog')?.showModal();
+  }
+
+  async function refreshPermissionsList() {
+    const el = document.getElementById('docsPermList');
+    if (!el || !state.permissionsFolderId) return;
+    const json = await api(`/api/document-folders/${state.permissionsFolderId}/permissions`);
+    el.innerHTML = (json.permissions || []).map(p => `
+      <div class="flex flex-wrap items-center gap-2 p-2 bg-zinc-800 rounded border border-zinc-700">
+        <span class="flex-1 min-w-0 truncate">${esc(p.user_name)} <span class="text-zinc-500 text-xs">${esc(p.user_email)}</span></span>
+        <label class="text-xs"><input type="checkbox" data-pid="${p.id}" data-k="can_view" ${p.can_view ? 'checked' : ''}> View</label>
+        <label class="text-xs"><input type="checkbox" data-pid="${p.id}" data-k="can_upload" ${p.can_upload ? 'checked' : ''}> Upload</label>
+        <label class="text-xs"><input type="checkbox" data-pid="${p.id}" data-k="can_manage" ${p.can_manage ? 'checked' : ''}> Manage</label>
+        <button type="button" class="text-red-400 text-xs" data-del-pid="${p.id}">Remove</button>
+      </div>`).join('') || '<p class="text-zinc-500 text-xs">No restrictions — folder is open to all project users.</p>';
+    el.querySelectorAll('[data-del-pid]').forEach(btn => {
+      btn.addEventListener('click', async () => {
+        await api(`/api/document-folders/permissions/${btn.dataset.delPid}`, { method: 'DELETE' });
+        await refreshPermissionsList();
+      });
+    });
+    el.querySelectorAll('input[data-pid]').forEach(ch => {
+      ch.addEventListener('change', async () => {
+        const perm = (json.permissions || []).find(x => x.id === parseInt(ch.dataset.pid, 10));
+        if (!perm) return;
+        const body = { user_id: perm.user_id, can_view: false, can_upload: false, can_manage: false };
+        el.querySelectorAll(`input[data-pid="${ch.dataset.pid}"]`).forEach(c => { body[c.dataset.k] = c.checked; });
+        await api(`/api/document-folders/${state.permissionsFolderId}/permissions`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(body),
+        });
+      });
+    });
+  }
+
+  async function restoreFile(id) {
+    await api(`/api/documents/${id}/restore`, { method: 'POST' });
+    toast('File restored');
+    await loadTrash();
+  }
+
+  async function restoreFolder(id) {
+    await api(`/api/document-folders/${id}/restore`, { method: 'POST' });
+    toast('Folder restored');
+    await loadTrash();
+  }
+
+  async function permanentDeleteFile(id) {
+    if (!confirm('Permanently delete? This cannot be undone.')) return;
+    await api(`/api/documents/${id}/permanent`, { method: 'DELETE' });
+    await loadTrash();
   }
 
   function downloadFile(id) {
@@ -661,22 +1000,22 @@
     });
     document.getElementById('docsBtnNewFolder')?.addEventListener('click', newSubFolder);
     document.getElementById('docsBtnNewMainFolder')?.addEventListener('click', newMainFolder);
+    document.getElementById('docsBtnTrash')?.addEventListener('click', () => {
+      if (state.browseMode === 'trash') exitTrash();
+      else loadTrash();
+    });
     document.getElementById('docsSearch')?.addEventListener('input', e => {
       state.search = e.target.value;
-      render();
+      if (state.searchAll) runGlobalSearch();
+      else render();
     });
-    document.getElementById('docsViewGrid')?.addEventListener('click', () => {
-      state.viewMode = 'grid';
-      document.getElementById('docsViewGrid')?.classList.add('active');
-      document.getElementById('docsViewList')?.classList.remove('active');
-      render();
+    document.getElementById('docsSearchAll')?.addEventListener('change', e => {
+      state.searchAll = e.target.checked;
+      if (state.searchAll && state.search.trim()) runGlobalSearch();
+      else { state.browseMode = 'normal'; render(); }
     });
-    document.getElementById('docsViewList')?.addEventListener('click', () => {
-      state.viewMode = 'list';
-      document.getElementById('docsViewList')?.classList.add('active');
-      document.getElementById('docsViewGrid')?.classList.remove('active');
-      render();
-    });
+    document.getElementById('docsViewGrid')?.addEventListener('click', () => setViewMode('grid'));
+    document.getElementById('docsViewList')?.addEventListener('click', () => setViewMode('list'));
     document.getElementById('docsShareCopy')?.addEventListener('click', async () => {
       const url = document.getElementById('docsShareUrl')?.value;
       if (url) {
@@ -692,25 +1031,61 @@
       document.getElementById('docsRenameDialog')?.close();
     });
     document.getElementById('docsPreviewClose')?.addEventListener('click', closePreview);
+    document.getElementById('docsFolderShareCopy')?.addEventListener('click', async () => {
+      const url = document.getElementById('docsFolderShareUrl')?.value;
+      if (url) { await navigator.clipboard.writeText(url); toast('Link copied'); }
+    });
+    document.getElementById('docsFolderShareClose')?.addEventListener('click', () => {
+      document.getElementById('docsFolderShareDialog')?.close();
+    });
+    document.getElementById('docsPermClose')?.addEventListener('click', () => {
+      document.getElementById('docsPermissionsDialog')?.close();
+    });
+    document.getElementById('docsPermAdd')?.addEventListener('click', async () => {
+      const uid = document.getElementById('docsPermUser')?.value;
+      if (!uid || !state.permissionsFolderId) return;
+      await api(`/api/document-folders/${state.permissionsFolderId}/permissions`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ user_id: parseInt(uid, 10), can_view: true, can_upload: false, can_manage: false }),
+      });
+      await refreshPermissionsList();
+    });
+    document.getElementById('docsVersionInput')?.addEventListener('change', async e => {
+      const file = e.target.files?.[0];
+      const docId = state.versionUploadId;
+      e.target.value = '';
+      if (!file || !docId) return;
+      const fd = new FormData();
+      fd.append('file', file);
+      const res = await fetch(`/api/documents/${docId}/versions`, { method: 'POST', body: fd, credentials: 'same-origin' });
+      const json = await res.json();
+      if (!res.ok) alert(json.error || 'Version upload failed');
+      else {
+        toast('New version uploaded');
+        await loadPreview(docId, 'versions');
+        await loadBrowse(state.folderId);
+      }
+    });
 
     const drop = document.getElementById('docsDropZone');
     if (drop) {
       ['dragenter', 'dragover'].forEach(ev => {
         drop.addEventListener(ev, e => {
-          if (state.draggingFileId) return;
+          if (state.draggingFileId || state.draggingFolderId) return;
           e.preventDefault();
           drop.classList.add('drag-over');
         });
       });
       ['dragleave', 'drop'].forEach(ev => {
         drop.addEventListener(ev, e => {
-          if (state.draggingFileId) return;
+          if (state.draggingFileId || state.draggingFolderId) return;
           e.preventDefault();
           drop.classList.remove('drag-over');
         });
       });
       drop.addEventListener('drop', async e => {
-        if (state.draggingFileId) return;
+        if (state.draggingFileId || state.draggingFolderId) return;
         try {
           await uploadFiles(e.dataTransfer?.files);
           toast('Upload complete');

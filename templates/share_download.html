@@ -13,6 +13,33 @@
         <div class="text-red-400 text-5xl mb-4"><i class="fa-solid fa-link-slash"></i></div>
         <h1 class="text-xl font-semibold mb-2">Link unavailable</h1>
         <p class="text-zinc-400 text-sm">{{ error }}</p>
+        {% elif needs_password %}
+        <div class="text-sky-400 text-5xl mb-4"><i class="fa-solid fa-lock"></i></div>
+        <h1 class="text-xl font-semibold mb-2">Password required</h1>
+        <p class="text-zinc-500 text-sm mb-4">This shared file is protected. Enter the password to continue.</p>
+        <form id="shareUnlockForm" class="text-left space-y-3">
+            <input type="password" id="sharePassword" class="w-full bg-zinc-800 border border-zinc-600 rounded-lg px-3 py-2 text-sm" placeholder="Password" required>
+            <p id="shareUnlockError" class="text-red-400 text-xs hidden"></p>
+            <button type="submit" class="w-full px-4 py-2.5 bg-emerald-600 hover:bg-emerald-500 rounded-lg font-medium">Continue</button>
+        </form>
+        <script>
+        document.getElementById('shareUnlockForm').addEventListener('submit', async e => {
+            e.preventDefault();
+            const err = document.getElementById('shareUnlockError');
+            err.classList.add('hidden');
+            const res = await fetch('/share/{{ link.token }}/unlock', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ password: document.getElementById('sharePassword').value }),
+            });
+            if (res.ok) location.reload();
+            else {
+                const j = await res.json().catch(() => ({}));
+                err.textContent = j.error || 'Incorrect password';
+                err.classList.remove('hidden');
+            }
+        });
+        </script>
         {% else %}
         <div class="text-emerald-400 text-5xl mb-4"><i class="fa-solid fa-file-arrow-down"></i></div>
         <h1 class="text-xl font-semibold mb-1">{{ doc.name }}</h1>

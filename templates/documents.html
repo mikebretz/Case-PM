@@ -15,6 +15,9 @@
         <div class="text-lg font-semibold text-white whitespace-nowrap border-l border-zinc-700 pl-4">Documents</div>
     </div>
     <div class="flex items-center gap-2 flex-wrap">
+        <button type="button" id="docsBtnTrash" class="docs-btn docs-btn-secondary" title="Recycle bin">
+            <i class="fa-solid fa-trash-can"></i> Trash
+        </button>
         <button type="button" id="docsBtnNewMainFolder" class="docs-btn docs-btn-secondary" title="Add a top-level folder">
             <i class="fa-solid fa-folder-tree"></i> Main folder
         </button>
@@ -34,18 +37,22 @@
     <div class="docs-center flex flex-col flex-1 min-w-0 min-h-0">
         <div class="docs-toolbar flex flex-wrap items-center gap-2 mb-2 shrink-0">
             <nav id="docsBreadcrumbs" class="docs-breadcrumbs flex-1 min-w-0"></nav>
-            <div class="flex items-center gap-1">
-                <button type="button" id="docsViewGrid" class="docs-icon-btn active" title="Grid view"><i class="fa-solid fa-grip"></i></button>
+            <div class="flex items-center gap-1 docs-view-toggle" role="group" aria-label="View mode">
+                <button type="button" id="docsViewGrid" class="docs-icon-btn active" title="Icon view"><i class="fa-solid fa-grip"></i></button>
                 <button type="button" id="docsViewList" class="docs-icon-btn" title="List view"><i class="fa-solid fa-list"></i></button>
             </div>
             <input type="search" id="docsSearch" class="docs-search" placeholder="Search this folder…">
+            <label class="flex items-center gap-1.5 text-xs text-zinc-400 cursor-pointer whitespace-nowrap">
+                <input type="checkbox" id="docsSearchAll" class="rounded border-zinc-600">
+                All folders
+            </label>
         </div>
 
         <div class="docs-file-panel flex flex-col flex-1 min-h-0 border border-zinc-700 rounded-md bg-zinc-900 overflow-hidden">
             <div id="docsDropZone" class="docs-dropzone flex-1 min-h-0 overflow-hidden flex flex-col">
-                <div id="docsGridWrap" class="docs-grid-wrap flex-1 min-h-0 overflow-auto p-3">
+                <div id="docsGridWrap" class="docs-grid-wrap view-grid flex-1 min-h-0 overflow-auto p-3">
                     <div id="docsGrid" class="docs-grid"></div>
-                    <table id="docsTable" class="docs-table hidden w-full text-sm">
+                    <table id="docsTable" class="docs-table w-full text-sm">
                         <thead class="bg-zinc-800 sticky top-0 z-10 border-b border-zinc-700">
                             <tr>
                                 <th class="docs-th w-10"></th>
@@ -88,12 +95,44 @@
     <div class="p-6">
         <h2 class="text-lg font-semibold mb-1">Share link</h2>
         <p class="text-xs text-zinc-500 mb-4">Anyone with this link can download the file — like Dropbox or OneDrive.</p>
+        <p class="text-xs text-zinc-500 mb-3">Optional password (leave blank for no password)</p>
+        <input type="password" id="docsSharePassword" class="docs-input w-full mb-3" placeholder="Password (optional)" autocomplete="new-password">
         <input type="text" id="docsShareUrl" class="docs-input w-full mb-3" readonly>
         <div class="flex gap-2">
             <button type="button" id="docsShareCopy" class="docs-btn docs-btn-primary flex-1"><i class="fa-solid fa-copy"></i> Copy link</button>
             <button type="button" id="docsShareClose" class="docs-btn docs-btn-secondary flex-1">Close</button>
         </div>
         <div id="docsShareMeta" class="text-[10px] text-zinc-500 mt-3"></div>
+    </div>
+</dialog>
+
+<dialog id="docsFolderShareDialog" class="docs-dialog">
+    <div class="p-6">
+        <h2 class="text-lg font-semibold mb-1">Share folder</h2>
+        <p class="text-xs text-zinc-500 mb-4">Recipients can browse this folder and download files — like a Dropbox shared folder.</p>
+        <label class="flex items-center gap-2 text-sm mb-3 cursor-pointer">
+            <input type="checkbox" id="docsFolderShareUpload" class="rounded border-zinc-600">
+            Allow uploads (request files)
+        </label>
+        <input type="password" id="docsFolderSharePassword" class="docs-input w-full mb-3" placeholder="Password (optional)" autocomplete="new-password">
+        <input type="text" id="docsFolderShareUrl" class="docs-input w-full mb-3" readonly>
+        <div class="flex gap-2">
+            <button type="button" id="docsFolderShareCopy" class="docs-btn docs-btn-primary flex-1"><i class="fa-solid fa-copy"></i> Copy link</button>
+            <button type="button" id="docsFolderShareClose" class="docs-btn docs-btn-secondary flex-1">Close</button>
+        </div>
+    </div>
+</dialog>
+
+<dialog id="docsPermissionsDialog" class="docs-dialog">
+    <div class="p-6 max-h-[80vh] overflow-auto">
+        <h2 class="text-lg font-semibold mb-1">Folder permissions</h2>
+        <p class="text-xs text-zinc-500 mb-4">Restrict who can view, upload, or manage this folder. No entries = open to all project users.</p>
+        <div class="flex gap-2 mb-4">
+            <select id="docsPermUser" class="docs-input flex-1 text-sm"></select>
+            <button type="button" id="docsPermAdd" class="docs-btn docs-btn-primary">Add</button>
+        </div>
+        <div id="docsPermList" class="space-y-2 text-sm"></div>
+        <button type="button" id="docsPermClose" class="docs-btn docs-btn-secondary w-full mt-4">Close</button>
     </div>
 </dialog>
 
@@ -107,6 +146,8 @@
         </div>
     </div>
 </dialog>
+
+<input type="file" id="docsVersionInput" class="hidden">
 
 <script src="{{ url_for('static', filename='js/documents-app.js') }}"></script>
 {% endblock %}
