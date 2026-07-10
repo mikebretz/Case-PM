@@ -717,6 +717,9 @@
     punchItems: [],
     changeOrders: [],
     pinSize: 1,
+    viewerContext: 'drawing',
+    openDocument: null,
+    documentViewerPage: false,
     pendingDrag: null,
     lastPinTap: { key: '', t: 0 },
     textDialogCtx: null,
@@ -751,11 +754,43 @@
     return json;
   }
 
+  function isDocumentViewer() {
+    return state.viewerContext === 'document' || state.documentViewerPage;
+  }
+
+  function viewerIsOpen() {
+    return !!(state.openDrawing || state.openDocument);
+  }
+
+  function isImageDocument() {
+    const doc = state.openDocument;
+    if (!doc) return false;
+    const mime = (doc.mime_type || '').toLowerCase();
+    const ext = (doc.name || '').split('.').pop()?.toLowerCase() || '';
+    return mime.startsWith('image/') || ['png', 'jpg', 'jpeg', 'gif', 'webp', 'bmp'].includes(ext);
+  }
+
+  function markupCollectionUrl() {
+    if (state.openDocument) return `/api/documents/${state.openDocument.id}/markups`;
+    if (state.openDrawing) return `/api/drawings/${state.openDrawing.id}/markups`;
+    return null;
+  }
+
+  function markupItemUrl(markupId) {
+    if (state.openDocument) return `/api/documents/markups/${markupId}`;
+    return `/api/drawings/markups/${markupId}`;
+  }
+
   async function reloadMarkups() {
-    if (!state.openDrawing) return;
+    if (!viewerIsOpen()) return;
     try {
-      const detail = await api(`/api/drawings/${state.openDrawing.id}`);
-      state.markups = detail.markups || [];
+      if (state.openDocument) {
+        const json = await api(`/api/documents/${state.openDocument.id}/markups`);
+        state.markups = json.markups || [];
+      } else {
+        const detail = await api(`/api/drawings/${state.openDrawing.id}`);
+        state.markups = detail.markups || [];
+      }
       clearMarkupSelection();
       state.draggingMarkup = null;
       renderMarkupOverlay();
@@ -765,7 +800,7 @@
   async function persistMarkup(m, payload) {
     if (!m?.id) return;
     try {
-      const json = await api(`/api/drawings/markups/${m.id}`, {
+      const json = await api(markupItemUrl(m.id), {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload),
@@ -1983,7 +2018,7 @@
       document.getElementById(`drawPanel${v.charAt(0).toUpperCase() + v.slice(1)}`)?.classList.toggle('hidden', v !== view);
       const btn = document.getElementById(`btnView${v.charAt(0).toUpperCase() + v.slice(1)}`);
       if (btn) {
-        if (v === 'viewer') btn.classList.toggle('hidden', !state.openDrawing);
+        if (v === 'viewer') btn.classList.toggle('hidden', !viewerIsOpen());
         btn.classList.toggle('bg-sky-700', v === view);
         btn.classList.toggle('text-white', v === view);
         btn.classList.toggle('bg-zinc-800', v !== view);
@@ -1991,8 +2026,8 @@
       }
     });
     renderActiveView();
-    if (view === 'viewer' && state.openDrawing) {
-      requestAnimationFrame(() => renderPdf());
+    if (view === 'viewer' && viewerIsOpen()) {
+      requestAnimationFrame(() => renderViewerContent());
     }
   }
 
@@ -2039,6 +2074,8 @@
 
   async function openViewer(id, opts) {
     try {
+      state.viewerContext = 'drawing';
+      state.openDocument = null;
       const detail = await api(`/api/drawings/${id}`);
       state.openDrawing = state.drawings.find(x => x.id === id) || detail;
       state.openDetail = detail;
@@ -2064,7 +2101,7 @@
       bindMarkupSvgEvents();
       updateViewerCursor();
       renderPropertiesPanel();
-      await renderPdf(true);
+      await renderViewerContent(true);
       renderViewerSidebar();
       if (opts && (opts.focusX != null || opts.focusY != null)) {
         focusOnPoint(opts.focusX, opts.focusY);
@@ -2081,15 +2118,82 @@
   }
 
   function closeViewer() {
+    if (state.documentViewerPage) {
+      const pid = projectId();
+      global.location.href = pid ? `/documents?project_id=${pid}` : '/documents';
+      return;
+    }
     state.openDrawing = null;
+    state.openDocument = null;
+    state.viewerContext = 'drawing';
     state.openDetail = null;
     state.pdfDoc = null;
     switchView('sections');
   }
 
+  async function openDocumentViewer(docId) {
+    try {
+      state.viewerContext = 'document';
+      const json = await api(`/api/documents/${docId}?markups=1`);
+      const doc = json.document;
+      if (!doc) throw new Error('Document not found');
+      state.openDocument = doc;
+      state.openDrawing = { id: docId, sheet_number: '', title: doc.name, set_name: null };
+      state.openDetail = { ...doc, linked_rfis: [], discipline: doc.document_type || 'Document' };
+      state.revisions = [];
+      state.markups = json.markups || [];
+      state.viewingRevisionId = null;
+      state.compareOverlayActive = false;
+      state.pdfDoc = null;
+      state.pdfUrl = null;
+      switchView('viewer');
+      bindMarkupSvgEvents();
+      updateViewerCursor();
+      renderPropertiesPanel();
+      renderViewerChrome();
+      await renderViewerContent(true);
+      renderViewerSidebar();
+    } catch (e) {
+      toast(e.message || 'Could not open document');
+      if (state.documentViewerPage) {
+        const pid = projectId();
+        global.location.href = pid ? `/documents?project_id=${pid}` : '/documents';
+      }
+    }
+  }
+
+  async function initDocumentViewer() {
+    const params = new URLSearchParams(global.location.search);
+    const docId = parseInt(params.get('doc_id') || params.get('document_id'), 10);
+    const pid = parseInt(params.get('project_id'), 10);
+    if (pid) localStorage.setItem('casepm_current_project_id', String(pid));
+    if (!docId) {
+      alert('No document specified');
+      global.location.href = '/documents';
+      return;
+    }
+    state.documentViewerPage = true;
+    state.viewerContext = 'document';
+    if (global.pdfjsLib) {
+      pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+    }
+    bindViewerEvents();
+    bindTextDialog();
+    bindDocSnipDialog();
+    document.addEventListener('fullscreenchange', onFullscreenChange);
+    document.addEventListener('click', e => {
+      if (!e.target.closest('#printMenu') && !e.target.closest('#btnPrintMenu')) {
+        document.getElementById('printMenu')?.classList.add('hidden');
+      }
+    });
+    await openDocumentViewer(docId);
+  }
+
   function renderViewerChrome() {
     const title = document.getElementById('viewerSheetTitle');
-    if (title && state.openDrawing) {
+    if (title && state.openDocument) {
+      title.textContent = state.openDocument.name || 'Document';
+    } else if (title && state.openDrawing) {
       const setLabel = state.openDrawing.set_name ? ` · ${state.openDrawing.set_name}` : '';
       title.textContent = `${state.openDrawing.sheet_number} — ${state.openDrawing.title || ''}${setLabel}`;
     }
@@ -2106,6 +2210,23 @@
   function renderViewerSidebar() {
     const el = document.getElementById('viewerSidebar');
     if (!el || !state.openDetail) return;
+    if (state.openDocument) {
+      const doc = state.openDocument;
+      const drawingLink = doc.source_drawing_id
+        ? `<a href="/drawings?project_id=${projectId()}&drawing_id=${doc.source_drawing_id}" class="block text-xs text-sky-400 hover:underline mt-1">Open source drawing</a>`
+        : '';
+      el.innerHTML = `
+        <div class="text-xs uppercase text-zinc-500 mb-2">Document Info</div>
+        <div class="text-xs space-y-1 text-zinc-400">
+          <div>Type: ${esc(doc.document_type || '—')}</div>
+          <div>Folder: ${esc(doc.folder_name || '—')}</div>
+          <div>Uploaded: ${esc(doc.uploaded || doc.created_at?.slice(0, 10) || '—')}</div>
+          <div>Size: ${esc(doc.size || '—')}</div>
+          <div>Markups: ${state.markups.length}</div>
+          ${drawingLink}
+        </div>`;
+      return;
+    }
     const revs = (state.revisions || []).map(r =>
       `<div class="text-xs py-1 border-b border-zinc-800 ${r.is_current ? 'text-emerald-400' : 'text-zinc-400'}">${esc(r.revision_label)} · ${fmtDate(r.uploaded_at)} ${r.is_current ? '· Current' : '· Archived'}</div>`
     ).join('') || '<div class="text-xs text-zinc-500">No revision history</div>';
@@ -2499,6 +2620,9 @@
   }
 
   function getViewerPdfUrl() {
+    if (state.openDocument) {
+      return state.openDocument.file_url || `/api/documents/${state.openDocument.id}/download`;
+    }
     if (!state.openDrawing) return null;
     const current = state.revisions.find(r => r.is_current);
     const revId = state.viewingRevisionId || current?.id;
@@ -2602,8 +2726,60 @@
     }
   }
 
+  async function renderViewerContent(forceReload, opts) {
+    if (isDocumentViewer() && isImageDocument()) {
+      return renderImageDocument(forceReload);
+    }
+    return renderPdf(forceReload, opts);
+  }
+
+  async function renderImageDocument(forceReload) {
+    const canvas = document.getElementById('drawPdfCanvas');
+    const wrap = document.getElementById('drawViewerWrap');
+    if (!canvas || !wrap || !state.openDocument) return;
+    const url = getViewerPdfUrl();
+    if (!forceReload && state.pdfUrl === url && state.baseCanvasSize.w) {
+      renderMarkupOverlay();
+      return;
+    }
+    state.pdfUrl = url;
+    state.pdfDoc = null;
+    const img = new Image();
+    img.crossOrigin = 'anonymous';
+    try {
+      await new Promise((resolve, reject) => {
+        img.onload = resolve;
+        img.onerror = () => reject(new Error('Could not load image'));
+        img.src = url;
+      });
+    } catch (e) {
+      showViewerPdfError(e.message);
+      return;
+    }
+    const maxW = Math.max(wrap.clientWidth * 0.95, 320);
+    const maxH = Math.max(wrap.clientHeight * 0.95, 240);
+    const scale = Math.min(maxW / img.width, maxH / img.height, 2);
+    canvas.width = Math.max(1, Math.round(img.width * scale));
+    canvas.height = Math.max(1, Math.round(img.height * scale));
+    state.baseCanvasSize = { w: canvas.width, h: canvas.height };
+    const ctx = canvas.getContext('2d');
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+    const overlay = document.getElementById('drawMarkupSvg');
+    if (overlay) {
+      overlay.setAttribute('width', canvas.width);
+      overlay.setAttribute('height', canvas.height);
+      overlay.style.width = canvas.width + 'px';
+      overlay.style.height = canvas.height + 'px';
+    }
+    applyViewTransform();
+    renderMarkupOverlay();
+  }
+
   async function renderPdf(forceReload, opts) {
-    if (!state.openDrawing || !global.pdfjsLib) return;
+    if (!viewerIsOpen() || !global.pdfjsLib) return;
+    if (isImageDocument()) return renderImageDocument(forceReload);
     const qualityOnly = opts?.qualityOnly;
     const canvas = document.getElementById('drawPdfCanvas');
     const wrap = document.getElementById('drawViewerWrap');
@@ -3368,7 +3544,7 @@
     if (!await drawConfirm(label, { title: 'Delete markup', danger: true, confirmLabel: 'Delete' })) return;
     for (const id of ids) {
       try {
-        await api(`/api/drawings/markups/${id}`, { method: 'DELETE' });
+        await api(markupItemUrl(id), { method: 'DELETE' });
       } catch (e) {
         if (e.status !== 404) { alert(e.message); return; }
       }
@@ -4174,7 +4350,7 @@
   }
 
   async function saveMarkup(payload) {
-    if (!state.openDrawing) return;
+    if (!viewerIsOpen()) return;
     const geometry = normalizeGeometry(payload.geometry || {});
     const style = payload.style || { ...state.markupStyle };
     const body = {
@@ -4188,7 +4364,9 @@
       layer: payload.publish ? 'published' : 'personal',
       publish: !!payload.publish,
     };
-    const json = await api(`/api/drawings/${state.openDrawing.id}/markups`, {
+    const url = markupCollectionUrl();
+    if (!url) return;
+    const json = await api(url, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(body),
@@ -4203,7 +4381,7 @@
   async function publishPersonalMarkups() {
     const personal = state.markups.filter(m => m.layer === 'personal' && m.user_id);
     for (const m of personal) {
-      await api(`/api/drawings/markups/${m.id}`, {
+      await api(markupItemUrl(m.id), {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ publish: true }),
@@ -4905,6 +5083,8 @@
     switchView,
     selectSection,
     openViewer,
+    openDocumentViewer,
+    initDocumentViewer,
     closeViewer,
     previewSheet,
     openPreviewedSheet,
@@ -4965,5 +5145,8 @@
     showUploadResults,
   };
 
-  document.addEventListener('DOMContentLoaded', init);
+  document.addEventListener('DOMContentLoaded', () => {
+    if (document.querySelector('.doc-viewer-page')) return;
+    if (document.getElementById('drawPage')) init();
+  });
 })(window);

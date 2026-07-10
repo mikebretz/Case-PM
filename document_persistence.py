@@ -259,7 +259,54 @@ def ensure_document_schema(engine, db) -> None:
                 {'n': name, 't': ptype, 'd': desc, 'f': folders, 'c': datetime.utcnow().isoformat()},
             )
 
+    if 'document_markup' not in tables:
+        db.session.execute(text("""
+            CREATE TABLE document_markup (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                document_id INTEGER NOT NULL,
+                user_id INTEGER,
+                user_name VARCHAR(150),
+                layer VARCHAR(20) DEFAULT 'personal',
+                markup_type VARCHAR(30) NOT NULL,
+                geometry_json TEXT,
+                style_json TEXT,
+                label VARCHAR(300),
+                measurement_value FLOAT,
+                measurement_unit VARCHAR(20),
+                created_at DATETIME,
+                published_at DATETIME
+            )
+        """))
+
     db.session.commit()
+
+
+def document_markup_to_dict(m):
+    import json
+    def _parse(raw, default):
+        if not raw:
+            return default
+        try:
+            return json.loads(raw)
+        except (TypeError, json.JSONDecodeError):
+            return default
+    def _iso(dt):
+        return dt.isoformat() if dt else None
+    return {
+        'id': m.id,
+        'document_id': m.document_id,
+        'user_id': m.user_id,
+        'user_name': m.user_name,
+        'layer': m.layer,
+        'markup_type': m.markup_type,
+        'geometry': _parse(m.geometry_json, {}),
+        'style': _parse(m.style_json, {}),
+        'label': m.label,
+        'measurement_value': m.measurement_value,
+        'measurement_unit': m.measurement_unit,
+        'created_at': _iso(m.created_at),
+        'published_at': _iso(m.published_at),
+    }
 
 
 def storage_path(upload_root: str, project_id: int) -> str:

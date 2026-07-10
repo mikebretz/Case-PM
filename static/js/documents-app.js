@@ -422,7 +422,7 @@
         const id = parseInt(el.dataset.id, 10);
         if (e.detail === 2) {
           if (kind === 'folder') openFolder(id);
-          else downloadFile(id);
+          else openDocumentViewerFromList(id);
           return;
         }
         selectItem(kind, id, el.dataset.locked === '1', el.dataset.system === '1');
@@ -600,6 +600,7 @@
         ${(doc.tags || []).length ? `<dt>Tags</dt><dd>${esc((doc.tags || []).join(', '))}</dd>` : ''}
       </dl>
       <div class="docs-preview-actions">
+        ${kind ? '<button type="button" class="docs-btn docs-btn-primary" id="docsPreviewOpen"><i class="fa-solid fa-pen-ruler"></i> Open &amp; markup</button>' : ''}
         <button type="button" class="docs-btn docs-btn-secondary" id="docsPreviewDownload"><i class="fa-solid fa-download"></i> Download</button>
         <button type="button" class="docs-btn docs-btn-secondary" id="docsPreviewShare"><i class="fa-solid fa-link"></i> Share</button>
         ${doc.can_check_out ? '<button type="button" class="docs-btn docs-btn-secondary" id="docsPreviewCheckout"><i class="fa-solid fa-lock"></i> Check out</button>' : ''}
@@ -648,6 +649,7 @@
   }
 
   function bindPreviewActions(doc) {
+    document.getElementById('docsPreviewOpen')?.addEventListener('click', () => openDocumentViewerFromList(doc.id));
     document.getElementById('docsPreviewDownload')?.addEventListener('click', () => downloadFile(doc.id));
     document.getElementById('docsPreviewShare')?.addEventListener('click', () => copyShareLink(doc.id));
     document.getElementById('docsPreviewCheckout')?.addEventListener('click', () => checkoutDocument(doc.id));
@@ -725,9 +727,12 @@
         items.push({ label: 'Delete', action: () => deleteFolder(state.selected.id), danger: true });
       }
     } else {
+      const file = state.files.find(f => f.id === state.selected.id) || state.previewDoc;
+      if (file && isPreviewable(file)) {
+        items.push({ label: 'Open & markup', action: () => openDocumentViewerFromList(state.selected.id) });
+      }
       items.push({ label: 'Preview', action: () => showPreview(state.selected.id) });
       items.push({ label: 'Download', action: () => downloadFile(state.selected.id) });
-      const file = state.files.find(f => f.id === state.selected.id) || state.previewDoc;
       if (file?.can_check_out) items.push({ label: 'Check out', action: () => checkoutDocument(state.selected.id) });
       if (file?.can_check_in) items.push({ label: 'Check in', action: () => checkinDocument(state.selected.id) });
       if (file?.can_force_unlock) items.push({ label: 'Force unlock', action: () => forceUnlockDocument(state.selected.id) });
@@ -1093,6 +1098,16 @@
 
   function downloadFile(id) {
     window.open(`/api/documents/${id}/download`, '_blank');
+  }
+
+  function openDocumentViewerFromList(id) {
+    const doc = state.files.find(f => f.id === id);
+    if (!doc || !isPreviewable(doc)) {
+      downloadFile(id);
+      return;
+    }
+    const pid = projectId();
+    global.location.href = `/documents/viewer?doc_id=${id}${pid ? `&project_id=${pid}` : ''}`;
   }
 
   function downloadFolderZip(folderId) {
