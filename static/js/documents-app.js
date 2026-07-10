@@ -109,6 +109,7 @@
       }
       render();
       loadTree();
+      updateDownloadZipButton();
     } catch (err) {
       if (folderId != null && String(err.message || '').includes('access')) {
         toast('You do not have access to that folder');
@@ -244,12 +245,14 @@
       empty?.classList.remove('hidden');
       if (empty) empty.innerHTML = '<p class="text-zinc-500">No matches found.</p>';
       gridWrap?.classList.add('hidden');
+      updateDownloadZipButton();
       return;
     }
     empty?.classList.add('hidden');
     gridWrap?.classList.remove('hidden');
     if (state.viewMode === 'list') renderList(folders, files);
     else renderGrid(folders, files);
+    updateDownloadZipButton();
   }
 
   async function loadTrash() {
@@ -263,6 +266,7 @@
     state.breadcrumbs = [{ id: 0, name: 'Recycle bin' }];
     closePreview();
     renderBrowseResults();
+    updateDownloadZipButton();
   }
 
   async function exitTrash() {
@@ -392,12 +396,14 @@
       document.getElementById('docsTableBody').innerHTML = '';
       empty?.classList.remove('hidden');
       gridWrap?.classList.add('hidden');
+      updateDownloadZipButton();
       return;
     }
     empty?.classList.add('hidden');
     gridWrap?.classList.remove('hidden');
     if (state.viewMode === 'list') renderList(folders, files);
     else renderGrid(folders, files);
+    updateDownloadZipButton();
   }
 
   function bindItemEvents(container) {
@@ -674,6 +680,7 @@
       }
     } else if (state.selected.kind === 'folder') {
       items.push({ label: 'Open', action: () => openFolder(state.selected.id) });
+      items.push({ label: 'Download folder as ZIP', action: () => downloadFolderZip(state.selected.id) });
       items.push({ label: 'Share folder link…', action: () => createFolderShareLink(state.selected.id) });
       items.push({ label: 'Request files link…', action: () => createFolderShareLink(state.selected.id, true) });
       items.push({ label: 'Folder permissions…', action: () => openPermissions(state.selected.id) });
@@ -925,6 +932,92 @@
     window.open(`/api/documents/${id}/download`, '_blank');
   }
 
+  function downloadFolderZip(folderId) {
+    const fid = folderId ?? state.folderId;
+    if (!fid) {
+      toast('Select a folder first');
+      return;
+    }
+    window.location.href = `/api/document-folders/${fid}/download-zip`;
+  }
+
+  function updateDownloadZipButton() {
+    const btn = document.getElementById('docsBtnDownloadZip');
+    if (!btn) return;
+    const show = state.browseMode === 'normal' && state.folderId != null;
+    btn.classList.toggle('hidden', !show);
+  }
+
+  function formatShareLinkMeta(link) {
+    const parts = [];
+    if (link.revoked) parts.push('Revoked');
+    if (link.has_password) parts.push('Password');
+    if (link.allow_upload) parts.push('Uploads allowed');
+    if (link.expires_at) parts.push(`Expires ${link.expires_at.slice(0, 10)}`);
+    parts.push(`${link.download_count || 0} downloads`);
+    return parts.join(' · ');
+  }
+
+  function renderShareLinkRow(link) {
+    const kind = link.target_type === 'folder' ? 'folder' : 'file';
+    const revoked = link.revoked ? ' revoked' : '';
+    const typeLabel = kind === 'folder'
+      ? (link.allow_upload ? 'Request files' : 'Folder')
+      : 'File';
+    return `<div class="docs-share-link-row${revoked}" data-link-kind="${kind}" data-link-id="${link.id}">
+      <div class="meta min-w-0">
+        <div class="font-medium truncate">${esc(link.target_name || link.label || 'Link')}</div>
+        <div class="text-xs text-zinc-500">${esc(typeLabel)} · ${esc(formatShareLinkMeta(link))}</div>
+        <div class="text-[10px] text-zinc-600 truncate mt-0.5">${esc(link.share_url || '')}</div>
+      </div>
+      <div class="actions">
+        ${link.share_url && !link.revoked ? `<button type="button" class="docs-btn docs-btn-secondary text-xs" data-copy-url="${esc(link.share_url)}">Copy</button>` : ''}
+        ${!link.revoked ? `<button type="button" class="docs-btn docs-btn-secondary text-xs text-red-300" data-revoke-link="${kind}:${link.id}">Revoke</button>` : ''}
+      </div>
+    </div>`;
+  }
+
+  async function openShareLinksAdmin() {
+    const pid = projectId();
+    if (!pid) {
+      toast('Select a project first');
+      return;
+    }
+    const body = document.getElementById('docsShareLinksAdminBody');
+    if (body) body.innerHTML = '<p class="text-zinc-500 text-sm">Loading…</p>';
+    document.getElementById('docsShareLinksAdminDialog')?.showModal();
+    try {
+      const json = await api(`/api/documents/share-links/admin?project_id=${pid}`);
+      const fileLinks = json.file_links || [];
+      const folderLinks = json.folder_links || [];
+      const all = [...fileLinks, ...folderLinks].sort((a, b) =>
+        String(b.created_at || '').localeCompare(String(a.created_at || '')));
+      if (!body) return;
+      if (!all.length) {
+        body.innerHTML = '<p class="text-zinc-500 text-sm">No share links yet. Right-click a file or folder to create one.</p>';
+        return;
+      }
+      body.innerHTML = all.map(renderShareLinkRow).join('');
+      body.querySelectorAll('[data-copy-url]').forEach(btn => {
+        btn.addEventListener('click', async () => {
+          await navigator.clipboard.writeText(btn.dataset.copyUrl || '');
+          toast('Link copied');
+        });
+      });
+      body.querySelectorAll('[data-revoke-link]').forEach(btn => {
+        btn.addEventListener('click', async () => {
+          const [kind, id] = (btn.dataset.revokeLink || '').split(':');
+          if (!kind || !id || !confirm('Revoke this share link? Recipients will no longer be able to use it.')) return;
+          await api(`/api/documents/share-links/admin/${kind}/${id}`, { method: 'DELETE' });
+          toast('Link revoked');
+          await openShareLinksAdmin();
+        });
+      });
+    } catch (err) {
+      if (body) body.innerHTML = `<p class="text-red-400 text-sm">${esc(err.message)}</p>`;
+    }
+  }
+
   async function deleteFile(id) {
     if (!confirm('Delete this file?')) return;
     await api(`/api/documents/${id}`, { method: 'DELETE' });
@@ -1013,6 +1106,11 @@
     document.getElementById('docsBtnTrash')?.addEventListener('click', () => {
       if (state.browseMode === 'trash') exitTrash();
       else loadTrash();
+    });
+    document.getElementById('docsBtnShareLinks')?.addEventListener('click', openShareLinksAdmin);
+    document.getElementById('docsBtnDownloadZip')?.addEventListener('click', () => downloadFolderZip());
+    document.getElementById('docsShareLinksAdminClose')?.addEventListener('click', () => {
+      document.getElementById('docsShareLinksAdminDialog')?.close();
     });
     document.getElementById('docsSearch')?.addEventListener('input', e => {
       state.search = e.target.value;

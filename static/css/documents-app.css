@@ -328,6 +328,21 @@
 .docs-perm-list label {
   white-space: nowrap;
 }
+
+.docs-share-link-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.65rem 0.75rem;
+  background: rgba(39, 39, 42, 0.6);
+  border: 1px solid #3f3f46;
+  border-radius: 0.4rem;
+}
+.docs-share-link-row.revoked { opacity: 0.55; }
+.docs-share-link-row .meta { flex: 1; min-width: 10rem; }
+.docs-share-link-row .actions { display: flex; gap: 0.35rem; flex-shrink: 0; }
+
 .docs-dialog::backdrop { background: rgba(0, 0, 0, 0.65); }
 
 .docs-preview-tab {

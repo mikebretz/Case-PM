@@ -46,12 +46,17 @@
                 <p class="text-xs text-zinc-500 uppercase tracking-wide">Shared folder</p>
                 <h1 class="text-xl font-semibold" id="sfTitle">{{ folder_name }}</h1>
             </div>
+            <div class="flex flex-wrap items-center gap-2">
+            <a href="/share/folder/{{ token }}/download-zip" class="inline-flex items-center gap-2 px-4 py-2 bg-zinc-800 hover:bg-zinc-700 border border-zinc-600 rounded-lg text-sm font-medium">
+                <i class="fa-solid fa-file-zipper"></i> Download all as ZIP
+            </a>
             {% if allow_upload %}
             <label class="inline-flex items-center gap-2 px-4 py-2 bg-emerald-600 hover:bg-emerald-500 rounded-lg text-sm font-medium cursor-pointer">
                 <i class="fa-solid fa-upload"></i> Upload file
                 <input type="file" id="sfUploadInput" class="hidden">
             </label>
             {% endif %}
+            </div>
         </header>
         <nav id="sfBreadcrumbs" class="text-sm text-sky-400 mb-3 flex flex-wrap gap-1"></nav>
         <div class="bg-zinc-900 border border-zinc-700 rounded-xl overflow-hidden">
