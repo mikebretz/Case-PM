@@ -927,9 +927,21 @@ def analyze_pdf_page(
         or name_conf >= 2.5
     )
     sheet_label_locked = bool(layout.get('sheet_label_anchored'))
+    layout_title = (layout.get('drawing_name') or layout.get('title') or '').strip()
+    layout_has_sheet = bool(layout.get('sheet_number') and is_plausible_drawing_sheet(layout['sheet_number']))
+    layout_has_title = len(layout_title) >= 3
+    layout_complete = layout_has_sheet and layout_has_title and (
+        layout_trusted or sheet_label_locked or (sheet_conf >= 2.0 and name_conf >= 1.8)
+    )
+
     text = extract_pdf_page_text(pdf_path, page_index)
     sheet, full_text, method, revision = detect_sheet_number(
-        pdf_path, source_filename, text, page_index, from_combined_set=from_combined_set,
+        pdf_path,
+        source_filename,
+        text,
+        page_index,
+        from_combined_set=from_combined_set,
+        skip_ocr=layout_complete or sheet_label_locked or (layout_has_sheet and sheet_conf >= 2.0),
     )
 
     if sheet_label_locked and layout.get('sheet_number'):
@@ -940,7 +952,7 @@ def analyze_pdf_page(
             sheet = layout['sheet_number']
             method = layout.get('method') or method
 
-    if not sheet and not sheet_label_locked:
+    if not sheet and not sheet_label_locked and not layout_complete:
         ocr_sheet, ocr_text = ocr_extract_sheet_from_pdf(pdf_path, page_index)
         if ocr_sheet:
             sheet = ocr_sheet
@@ -952,7 +964,7 @@ def analyze_pdf_page(
     elif not revision:
         revision = extract_revision_from_text(full_text or text or layout.get('text_preview', ''))
 
-    title = layout.get('drawing_name') or layout.get('title') or ''
+    title = layout_title
     if sheet_label_locked:
         if not title:
             title = layout.get('title') or ''
@@ -963,8 +975,13 @@ def analyze_pdf_page(
 
     layout_has_sheet = bool(sheet and is_plausible_drawing_sheet(sheet))
     layout_has_title = bool(title and len(str(title).strip()) >= 3)
-    skip_extra_ocr = set_upload and layout_has_sheet and layout_has_title and (
-        layout_trusted or sheet_label_locked or sheet_conf >= 2.0
+    skip_extra_ocr = set_upload and (
+        layout_complete
+        or (
+            layout_has_sheet
+            and layout_has_title
+            and (layout_trusted or sheet_label_locked or sheet_conf >= 2.0)
+        )
     )
 
     if not skip_extra_ocr:
@@ -1679,6 +1696,12 @@ def process_pages_from_upload(
     batch_detected: set[str] = set()
     total_pages = len(pages)
 
+    try:
+        from title_block_analyzer import clear_title_block_ocr_cache
+        clear_title_block_ocr_cache()
+    except ImportError:
+        clear_title_block_ocr_cache = None
+
     for page in pages:
         meta = analyze_pdf_page(
             page['file_path'],
@@ -1794,6 +1817,9 @@ def process_pages_from_upload(
 
         if progress_callback:
             progress_callback(len(created), total_pages, page['page_index'] + 1)
+
+    if clear_title_block_ocr_cache:
+        clear_title_block_ocr_cache()
 
     return created, needs_review
 
