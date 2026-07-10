@@ -43,6 +43,16 @@ DEFAULT_COST_TYPES = (
     'Labor', 'Material', 'Subcontract', 'Equipment', 'General Conditions', 'Other',
 )
 
+SCHEDULE_IMPACT_OPTIONS = {
+    'none': 0,
+    'no impact': 0,
+    'minor': 5,
+    'moderate': 10,
+    'significant': 14,
+    'major': 14,
+    'critical': 30,
+}
+
 
 def ensure_co_schema(engine, db):
     from sqlalchemy import inspect, text
@@ -135,6 +145,11 @@ def co_to_dict(co, allocations=None, revisions=None):
     allocs = allocations
     if allocs is None and hasattr(co, '_allocations_cache'):
         allocs = co._allocations_cache
+    days_val = getattr(co, 'schedule_impact_days', None)
+    if days_val is None:
+        days_val = schedule_impact_to_days(co.schedule_impact)
+    else:
+        days_val = int(days_val or 0)
     return {
         'id': co.id,
         'project_id': co.project_id,
@@ -144,7 +159,7 @@ def co_to_dict(co, allocations=None, revisions=None):
         'amount': co.amount or 0,
         'reason': co.reason,
         'schedule_impact': co.schedule_impact,
-        'schedule_impact_days': getattr(co, 'schedule_impact_days', None) or schedule_impact_to_days(co.schedule_impact),
+        'schedule_impact_days': days_val,
         'status': co.status,
         'date': co.date.isoformat() if co.date else None,
         'cost_code': co.cost_code,
