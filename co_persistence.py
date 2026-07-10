@@ -39,9 +39,9 @@ REASON_CODES = (
     'Owner Request', 'Design Change', 'Unforeseen Condition', 'Code Compliance',
     'Error or Omission', 'Value Engineering', 'Schedule Acceleration', 'Other',
 )
-SCHEDULE_IMPACT_OPTIONS = {
-    'none': 0, 'no impact': 0, 'minor': 5, 'moderate': 10, 'significant': 14, 'major': 14, 'critical': 30,
-}
+DEFAULT_COST_TYPES = (
+    'Labor', 'Material', 'Subcontract', 'Equipment', 'General Conditions', 'Other',
+)
 
 
 def ensure_co_schema(engine, db):
@@ -77,8 +77,19 @@ def ensure_co_schema(engine, db):
 
     if 'change_order_allocation' in tables:
         cols = {c['name'] for c in inspector.get_columns('change_order_allocation')}
-        if 'description' not in cols:
-            db.session.execute(text('ALTER TABLE change_order_allocation ADD COLUMN description VARCHAR(200)'))
+        alloc_additions = {
+            'description': 'VARCHAR(200)',
+            'cost_type': 'VARCHAR(80)',
+        }
+        for name, col_type in alloc_additions.items():
+            if name not in cols:
+                db.session.execute(text(f'ALTER TABLE change_order_allocation ADD COLUMN {name} {col_type}'))
+        db.session.commit()
+
+    if 'pco_allocation' in tables:
+        cols = {c['name'] for c in inspector.get_columns('pco_allocation')}
+        if 'cost_type' not in cols:
+            db.session.execute(text('ALTER TABLE pco_allocation ADD COLUMN cost_type VARCHAR(80)'))
             db.session.commit()
 
     if 'potential_change_order' in tables:
@@ -157,8 +168,12 @@ def co_to_dict(co, allocations=None, revisions=None):
         'linked_commitment_ref': getattr(co, 'linked_commitment_ref', None),
         'plan_pins': _parse_json(getattr(co, 'plan_pins_json', None), []),
         'approval_stage': getattr(co, 'approval_stage', 0) or 0,
-        'allocations': [{'cost_code': a.cost_code, 'amount': a.amount, 'description': getattr(a, 'description', '')} for a in (allocs or [])],
-        'revisions': revisions or [],
+        'allocations': [{
+            'cost_code': a.cost_code,
+            'cost_type': getattr(a, 'cost_type', None) or '',
+            'amount': a.amount,
+            'description': getattr(a, 'description', ''),
+        } for a in (allocs or [])],
         'created_at': co.created_at.isoformat() if co.created_at else None,
     }
 
@@ -188,8 +203,12 @@ def pco_to_dict(pco, allocations=None):
         'change_order_id': pco.change_order_id,
         'linked_rfi_id': getattr(pco, 'linked_rfi_id', None),
         'linked_commitment_ref': getattr(pco, 'linked_commitment_ref', None),
-        'allocations': [{'cost_code': a.cost_code, 'amount': a.amount, 'description': getattr(a, 'description', '')} for a in (allocs or [])],
-        'created_at': pco.created_at.isoformat() if pco.created_at else None,
+        'allocations': [{
+            'cost_code': a.cost_code,
+            'cost_type': getattr(a, 'cost_type', None) or '',
+            'amount': a.amount,
+            'description': getattr(a, 'description', ''),
+        } for a in (allocs or [])],
         'updated_at': pco.updated_at.isoformat() if pco.updated_at else None,
     }
 
@@ -270,6 +289,40 @@ def apply_pco_fields(pco, data):
         pco.schedule_impact_days = int(data['schedule_impact_days'])
 
 
+def normalize_allocation_rows(allocations):
+    """Return non-empty allocation rows from request payload."""
+    rows = []
+    for item in allocations or []:
+        code = (item.get('cost_code') or '').strip()
+        ctype = (item.get('cost_type') or '').strip()
+        desc = (item.get('description') or '').strip()
+        amt = float(item.get('amount') or 0)
+        if code or ctype or desc or amt:
+            rows.append({
+                'cost_code': code,
+                'cost_type': ctype,
+                'amount': amt,
+                'description': desc,
+            })
+    return rows
+
+
+def validate_allocations(allocations, *, require_rows=True, require_amount=False):
+    rows = normalize_allocation_rows(allocations)
+    if require_rows and not rows:
+        raise ValueError('At least one cost code allocation is required (cost code, cost type, and amount).')
+    cleaned = []
+    for i, item in enumerate(rows, 1):
+        if not item['cost_code']:
+            raise ValueError(f'Allocation row {i}: cost code is required.')
+        if not item['cost_type']:
+            raise ValueError(f'Allocation row {i}: cost type is required.')
+        if require_amount and item['amount'] == 0:
+            raise ValueError(f'Allocation row {i}: amount must be non-zero.')
+        cleaned.append(item)
+    return cleaned
+
+
 def save_allocations(AllocationModel, parent_id_field, parent_id, allocations, db, extra_fields=None):
     AllocationModel.query.filter(getattr(AllocationModel, parent_id_field) == parent_id).delete()
     for item in allocations or []:
@@ -283,6 +336,8 @@ def save_allocations(AllocationModel, parent_id_field, parent_id, allocations, d
         row = AllocationModel(**kwargs)
         if hasattr(row, 'description'):
             row.description = item.get('description', '')
+        if hasattr(row, 'cost_type'):
+            row.cost_type = item.get('cost_type', '')
         db.session.add(row)
 
 
@@ -306,6 +361,13 @@ def promote_pco_to_co(
 
     allocs = PCOAllocation.query.filter_by(pco_id=pco.id).all()
     total = sum(a.amount for a in allocs) if allocs else (pco.estimated_amount or 0)
+    alloc_payload = [{
+        'cost_code': a.cost_code,
+        'cost_type': getattr(a, 'cost_type', None),
+        'amount': a.amount,
+        'description': getattr(a, 'description', ''),
+    } for a in allocs]
+    validate_allocations(alloc_payload, require_rows=True, require_amount=True)
 
     co = ChangeOrder(
         project_id=pco.project_id,
@@ -341,12 +403,15 @@ def promote_pco_to_co(
             db.session.add(ChangeOrderAllocation(
                 change_order_id=co.id,
                 cost_code=a.cost_code,
+                cost_type=getattr(a, 'cost_type', None) or '',
                 amount=a.amount,
+                description=getattr(a, 'description', '') or '',
             ))
     elif pco.cost_code and total:
         db.session.add(ChangeOrderAllocation(
             change_order_id=co.id,
             cost_code=pco.cost_code,
+            cost_type='Other',
             amount=total,
         ))
 
@@ -386,6 +451,17 @@ def compute_dashboard_stats(ChangeOrder, PotentialChangeOrder, project_id):
         'pco_rom_total': pco_rom,
         'avg_approval_days': avg_days,
     }
+
+
+def get_budget_cost_types(BudgetProjectState, project_id):
+    from budget_persistence import get_budget_state
+    _, state = get_budget_state(BudgetProjectState, project_id)
+    types = state.get('costTypes') or []
+    merged = list(DEFAULT_COST_TYPES)
+    for t in types:
+        if t and t not in merged:
+            merged.append(t)
+    return merged
 
 
 def get_budget_cost_codes(BudgetProjectState, project_id):
@@ -477,8 +553,10 @@ def notify_ball_in_court(project_id, co, User, title=None, description=None):
         pass
 
 
-def co_workflow_action(co, action, user, User):
+def co_workflow_action(co, action, user, User, allocations=None):
     action = (action or '').lower()
+    if action in ('submit', 'approve'):
+        validate_allocations(allocations or [], require_rows=True, require_amount=True)
     if action == 'submit':
         if co.status not in ('Draft',):
             raise ValueError('Only draft change orders can be submitted')
@@ -525,4 +603,25 @@ def append_attachment(co, record):
     items.append(record)
     co.attachments_json = json.dumps(items)
     return items
+
+
+def delete_change_order(
+    co,
+    db,
+    AllocationModel,
+    RevisionModel,
+    PotentialChangeOrder,
+    *,
+    force=False,
+):
+    if co.status == 'Approved' and not force:
+        raise ValueError('Approved change orders require force delete for testing.')
+    pcos = PotentialChangeOrder.query.filter_by(change_order_id=co.id).all()
+    for pco in pcos:
+        pco.change_order_id = None
+        if pco.status == 'Promoted':
+            pco.status = 'Approved for CO'
+    AllocationModel.query.filter_by(change_order_id=co.id).delete()
+    RevisionModel.query.filter_by(change_order_id=co.id).delete()
+    db.session.delete(co)
 

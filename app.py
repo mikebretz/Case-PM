@@ -503,6 +503,7 @@ class ChangeOrderAllocation(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     change_order_id = db.Column(db.Integer, db.ForeignKey('change_order.id'), nullable=False)
     cost_code = db.Column(db.String(30))
+    cost_type = db.Column(db.String(80))
     amount = db.Column(db.Float, default=0)
     sov_line_legacy_id = db.Column(db.String(64))
     description = db.Column(db.String(200))
@@ -554,6 +555,7 @@ class PCOAllocation(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     pco_id = db.Column(db.Integer, db.ForeignKey('potential_change_order.id'), nullable=False)
     cost_code = db.Column(db.String(30))
+    cost_type = db.Column(db.String(80))
     amount = db.Column(db.Float, default=0)
     description = db.Column(db.String(200))
 
@@ -7290,11 +7292,14 @@ def api_change_orders_dashboard():
 @app.route('/api/change-orders/cost-codes', methods=['GET'])
 @login_required
 def api_change_orders_cost_codes():
-    from co_persistence import get_budget_cost_codes
+    from co_persistence import get_budget_cost_codes, get_budget_cost_types
     project_id = request.args.get('project_id', type=int) or get_current_project_id()
     if not project_id:
         return jsonify({'error': 'project_id required'}), 400
-    return jsonify({'cost_codes': get_budget_cost_codes(BudgetProjectState, int(project_id))})
+    return jsonify({
+        'cost_codes': get_budget_cost_codes(BudgetProjectState, int(project_id)),
+        'cost_types': get_budget_cost_types(BudgetProjectState, int(project_id)),
+    })
 
 
 @app.route('/api/change-orders', methods=['GET'])
@@ -7332,15 +7337,19 @@ def api_get_change_order(co_id):
 @app.route('/api/change-orders/<int:co_id>/allocate', methods=['POST'])
 @login_required
 def api_allocate_change_order(co_id):
-    from co_persistence import save_allocations
+    from co_persistence import save_allocations, validate_allocations
     co = ChangeOrder.query.get_or_404(co_id)
     body = request.get_json(silent=True) or {}
     allocations = body.get('allocations') or []
-    save_allocations(ChangeOrderAllocation, 'change_order_id', co.id, allocations, db)
-    if allocations:
-        co.amount = sum(float(a.get('amount') or 0) for a in allocations)
-        if len(allocations) == 1:
-            co.cost_code = allocations[0].get('cost_code')
+    try:
+        cleaned = validate_allocations(allocations, require_rows=True, require_amount=True)
+    except ValueError as exc:
+        return jsonify({'error': str(exc)}), 400
+    save_allocations(ChangeOrderAllocation, 'change_order_id', co.id, cleaned, db)
+    if cleaned:
+        co.amount = sum(float(a.get('amount') or 0) for a in cleaned)
+        if len(cleaned) == 1:
+            co.cost_code = cleaned[0].get('cost_code')
     elif body.get('cost_code'):
         co.cost_code = body.get('cost_code')
     db.session.commit()
@@ -7350,7 +7359,7 @@ def api_allocate_change_order(co_id):
 @app.route('/api/change-orders', methods=['POST'])
 @login_required
 def api_create_change_order():
-    from co_persistence import apply_co_fields, co_to_dict, save_allocations
+    from co_persistence import apply_co_fields, co_to_dict, save_allocations, validate_allocations
     try:
         body = request.get_json(silent=True) or {}
         project_id = body.get('project_id') or get_current_project_id()
@@ -7359,12 +7368,16 @@ def api_create_change_order():
         description = (body.get('description') or body.get('title') or '').strip()
         if not description:
             return jsonify({'error': 'description required'}), 400
+        status = body.get('status') or 'Draft'
+        allocations = body.get('allocations') or []
+        if status != 'Draft':
+            allocations = validate_allocations(allocations, require_rows=True, require_amount=True)
         number = generate_next_number('CO', ChangeOrder)
         co = ChangeOrder(
             project_id=int(project_id),
             number=number,
             description=description,
-            status=body.get('status') or 'Draft',
+            status=status,
             date=_parse_change_order_date(body.get('date')),
             ball_in_court_role='Creator',
             created_by_id=current_user.id,
@@ -7372,12 +7385,17 @@ def api_create_change_order():
         apply_co_fields(co, body)
         db.session.add(co)
         db.session.flush()
-        if body.get('allocations'):
-            save_allocations(ChangeOrderAllocation, 'change_order_id', co.id, body['allocations'], db)
-            co.amount = sum(float(a.get('amount') or 0) for a in body['allocations'])
+        if allocations:
+            save_allocations(ChangeOrderAllocation, 'change_order_id', co.id, allocations, db)
+            co.amount = sum(float(a.get('amount') or 0) for a in allocations)
+            if len(allocations) == 1:
+                co.cost_code = allocations[0].get('cost_code')
         db.session.commit()
         allocs = ChangeOrderAllocation.query.filter_by(change_order_id=co.id).all()
         return jsonify({'ok': True, 'change_order': co_to_dict(co, allocs)})
+    except ValueError as exc:
+        db.session.rollback()
+        return jsonify({'error': str(exc)}), 400
     except Exception as exc:
         db.session.rollback()
         return jsonify({'error': str(exc)}), 500
@@ -7386,17 +7404,52 @@ def api_create_change_order():
 @app.route('/api/change-orders/<int:co_id>', methods=['PUT'])
 @login_required
 def api_update_change_order(co_id):
-    from co_persistence import apply_co_fields, co_to_dict, save_allocations
+    from co_persistence import apply_co_fields, co_to_dict, save_allocations, validate_allocations
     co = ChangeOrder.query.get_or_404(co_id)
     body = request.get_json(silent=True) or {}
-    apply_co_fields(co, body)
-    if body.get('allocations') is not None:
-        save_allocations(ChangeOrderAllocation, 'change_order_id', co.id, body['allocations'], db)
-        if body['allocations']:
-            co.amount = sum(float(a.get('amount') or 0) for a in body['allocations'])
-    db.session.commit()
+    try:
+        apply_co_fields(co, body)
+        if body.get('allocations') is not None:
+            status = body.get('status') or co.status
+            allocations = body['allocations']
+            if status != 'Draft':
+                allocations = validate_allocations(allocations, require_rows=True, require_amount=True)
+            save_allocations(ChangeOrderAllocation, 'change_order_id', co.id, allocations, db)
+            if allocations:
+                co.amount = sum(float(a.get('amount') or 0) for a in allocations)
+                if len(allocations) == 1:
+                    co.cost_code = allocations[0].get('cost_code')
+        db.session.commit()
+    except ValueError as exc:
+        db.session.rollback()
+        return jsonify({'error': str(exc)}), 400
     allocs = ChangeOrderAllocation.query.filter_by(change_order_id=co.id).all()
     return jsonify({'ok': True, 'change_order': co_to_dict(co, allocs)})
+
+
+@app.route('/api/change-orders/<int:co_id>', methods=['DELETE'])
+@login_required
+def api_delete_change_order(co_id):
+    from co_persistence import delete_change_order
+    co = ChangeOrder.query.get_or_404(co_id)
+    force = request.args.get('force') == '1'
+    body = request.get_json(silent=True) or {}
+    if body.get('force'):
+        force = True
+    try:
+        delete_change_order(
+            co,
+            db,
+            ChangeOrderAllocation,
+            ChangeOrderRevision,
+            PotentialChangeOrder,
+            force=force,
+        )
+        db.session.commit()
+    except ValueError as exc:
+        db.session.rollback()
+        return jsonify({'error': str(exc), 'can_force': co.status == 'Approved'}), 400
+    return jsonify({'ok': True, 'deleted_id': co_id})
 
 
 @app.route('/api/change-orders/<int:co_id>/revision', methods=['POST'])
@@ -7471,8 +7524,15 @@ def api_change_order_workflow(co_id):
     body = request.get_json(silent=True) or {}
     action = body.get('action')
     old_status = co.status
+    allocs = ChangeOrderAllocation.query.filter_by(change_order_id=co.id).all()
+    alloc_payload = [{
+        'cost_code': a.cost_code,
+        'cost_type': getattr(a, 'cost_type', None),
+        'amount': a.amount,
+        'description': getattr(a, 'description', ''),
+    } for a in allocs]
     try:
-        new_status, final_approved = co_workflow_action(co, action, current_user, User)
+        new_status, final_approved = co_workflow_action(co, action, current_user, User, alloc_payload)
     except ValueError as exc:
         return jsonify({'error': str(exc)}), 400
 
@@ -7695,7 +7755,7 @@ def api_get_pco(pco_id):
 @app.route('/api/pcos', methods=['POST'])
 @login_required
 def api_create_pco():
-    from co_persistence import apply_pco_fields, pco_to_dict, save_allocations
+    from co_persistence import apply_pco_fields, pco_to_dict, save_allocations, validate_allocations
     body = request.get_json(silent=True) or {}
     project_id = body.get('project_id') or get_current_project_id()
     if not project_id:
@@ -7703,40 +7763,56 @@ def api_create_pco():
     title = (body.get('title') or body.get('description') or '').strip()
     if not title:
         return jsonify({'error': 'title required'}), 400
-    pco = PotentialChangeOrder(
-        project_id=int(project_id),
-        number=generate_next_number('PCO', PotentialChangeOrder),
-        title=title,
-        description=body.get('description') or title,
-        status=body.get('status') or 'Open',
-        ball_in_court_role='Project Manager',
-        requested_by=body.get('requested_by') or f'{current_user.first_name} {current_user.last_name}'.strip(),
-        created_by_id=current_user.id,
-    )
-    apply_pco_fields(pco, body)
-    db.session.add(pco)
-    db.session.flush()
-    if body.get('allocations'):
-        save_allocations(PCOAllocation, 'pco_id', pco.id, body['allocations'], db)
-        pco.estimated_amount = sum(float(a.get('amount') or 0) for a in body['allocations'])
-    db.session.commit()
-    allocs = PCOAllocation.query.filter_by(pco_id=pco.id).all()
-    return jsonify({'ok': True, 'pco': pco_to_dict(pco, allocs)})
+    try:
+        status = body.get('status') or 'Open'
+        allocations = body.get('allocations') or []
+        if status not in ('Open', 'Draft'):
+            allocations = validate_allocations(allocations, require_rows=True, require_amount=True)
+        pco = PotentialChangeOrder(
+            project_id=int(project_id),
+            number=generate_next_number('PCO', PotentialChangeOrder),
+            title=title,
+            description=body.get('description') or title,
+            status=status,
+            ball_in_court_role='Project Manager',
+            requested_by=body.get('requested_by') or f'{current_user.first_name} {current_user.last_name}'.strip(),
+            created_by_id=current_user.id,
+        )
+        apply_pco_fields(pco, body)
+        db.session.add(pco)
+        db.session.flush()
+        if allocations:
+            save_allocations(PCOAllocation, 'pco_id', pco.id, allocations, db)
+            pco.estimated_amount = sum(float(a.get('amount') or 0) for a in allocations)
+        db.session.commit()
+        allocs = PCOAllocation.query.filter_by(pco_id=pco.id).all()
+        return jsonify({'ok': True, 'pco': pco_to_dict(pco, allocs)})
+    except ValueError as exc:
+        db.session.rollback()
+        return jsonify({'error': str(exc)}), 400
 
 
 @app.route('/api/pcos/<int:pco_id>', methods=['PUT'])
 @login_required
 def api_update_pco(pco_id):
-    from co_persistence import apply_pco_fields, pco_to_dict, save_allocations
+    from co_persistence import apply_pco_fields, pco_to_dict, save_allocations, validate_allocations
     pco = PotentialChangeOrder.query.get_or_404(pco_id)
     body = request.get_json(silent=True) or {}
-    apply_pco_fields(pco, body)
-    if body.get('allocations') is not None:
-        save_allocations(PCOAllocation, 'pco_id', pco.id, body['allocations'], db)
-        if body['allocations']:
-            pco.estimated_amount = sum(float(a.get('amount') or 0) for a in body['allocations'])
-    pco.updated_at = datetime.utcnow()
-    db.session.commit()
+    try:
+        apply_pco_fields(pco, body)
+        if body.get('allocations') is not None:
+            status = body.get('status') or pco.status
+            allocations = body['allocations']
+            if status not in ('Open', 'Draft'):
+                allocations = validate_allocations(allocations, require_rows=True, require_amount=True)
+            save_allocations(PCOAllocation, 'pco_id', pco.id, allocations, db)
+            if allocations:
+                pco.estimated_amount = sum(float(a.get('amount') or 0) for a in allocations)
+        pco.updated_at = datetime.utcnow()
+        db.session.commit()
+    except ValueError as exc:
+        db.session.rollback()
+        return jsonify({'error': str(exc)}), 400
     allocs = PCOAllocation.query.filter_by(pco_id=pco.id).all()
     return jsonify({'ok': True, 'pco': pco_to_dict(pco, allocs)})
 
