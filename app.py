@@ -26,7 +26,7 @@ app.config['SQLALCHEMY_ENGINE_OPTIONS'] = {
     'connect_args': {'timeout': 60},
 }
 
-from db_sqlite import register_sqlite_pragmas
+from db_sqlite import commit_with_retry, register_sqlite_pragmas
 register_sqlite_pragmas()
 
 db = SQLAlchemy(app)
@@ -5520,6 +5520,13 @@ def api_drawing_thumbnail(drawing_id):
 def api_upload_drawing():
     """Upload one or more drawing pages. Multi-page PDFs are split automatically."""
     from drawing_persistence import ensure_drawing_dependencies, prepare_upload_pages, process_pages_from_upload
+    from drawing_upload_jobs import (
+        create_job,
+        mark_complete,
+        mark_progress,
+        should_run_async,
+        start_job,
+    )
     try:
         ensure_drawing_dependencies()
         project_id = request.form.get('project_id', type=int) or get_current_project_id()
@@ -5551,8 +5558,8 @@ def api_upload_drawing():
             return jsonify({'error': 'Could not read PDF pages. The file may be corrupt or password-protected.'}), 400
 
         from_combined_set = len(pages) > 1
-        created, needs_review = process_pages_from_upload(
-            db, Drawing, DrawingRevision, DrawingMarkup,
+        use_fast_analysis = from_combined_set
+        upload_kwargs = dict(
             project_id=int(project_id),
             pages=pages,
             original_filename=file.filename,
@@ -5563,6 +5570,69 @@ def api_upload_drawing():
             manual_sheet=manual_sheet if not from_combined_set else None,
             manual_title=manual_title if not from_combined_set else None,
             upload_stamp=ts,
+            fast_analysis=use_fast_analysis,
+        )
+
+        if should_run_async(len(pages)):
+            job = create_job(int(project_id), len(pages))
+
+            def run_import(job_id=job.id):
+                with app.app_context():
+                    try:
+                        def on_progress(done, total, current_page):
+                            mark_progress(
+                                job_id,
+                                done,
+                                total,
+                                current_page,
+                                f'Imported sheet {done} of {total} (page {current_page})…',
+                            )
+
+                        created, needs_review = process_pages_from_upload(
+                            db, Drawing, DrawingRevision, DrawingMarkup,
+                            progress_callback=on_progress,
+                            **upload_kwargs,
+                        )
+                        if not created:
+                            db.session.rollback()
+                            raise RuntimeError('No drawing pages could be imported.')
+                        commit_with_retry(db.session)
+                        drawings = [_serialize_drawing(Drawing.query.get(item['id'])) for item in created]
+                        mark_complete(job_id, {
+                            'ok': True,
+                            'split': from_combined_set,
+                            'page_count': len(pages),
+                            'expected_page_count': expected_page_count,
+                            'split_engine': split_engine,
+                            'warnings': split_warnings,
+                            'created_count': len(created),
+                            'needs_review_count': len(needs_review),
+                            'needs_review': needs_review,
+                            'drawings': drawings,
+                            'pages': created,
+                            'drawing': drawings[0] if len(drawings) == 1 else None,
+                            'revision': drawings[0].get('revision_label') if len(drawings) == 1 else None,
+                            'fast_import': use_fast_analysis,
+                        })
+                    except Exception:
+                        db.session.rollback()
+                        raise
+                    finally:
+                        db.session.remove()
+
+            start_job(job.id, run_import)
+            return jsonify({
+                'ok': True,
+                'async': True,
+                'job_id': job.id,
+                'page_count': len(pages),
+                'expected_page_count': expected_page_count,
+                'message': f'Importing {len(pages)} sheets in the background…',
+            }), 202
+
+        created, needs_review = process_pages_from_upload(
+            db, Drawing, DrawingRevision, DrawingMarkup,
+            **upload_kwargs,
         )
 
         if not created:
@@ -5588,10 +5658,34 @@ def api_upload_drawing():
             'pages': created,
             'drawing': drawings[0] if len(drawings) == 1 else None,
             'revision': drawings[0].get('revision_label') if len(drawings) == 1 else None,
+            'fast_import': use_fast_analysis,
         })
     except Exception as exc:
         db.session.rollback()
-        return jsonify({'error': str(exc)}), 500
+        msg = str(exc)
+        if 'database is locked' in msg.lower() or 'database is busy' in msg.lower():
+            msg = (
+                'The database was busy during import (another Case PM request may have been writing at the same time). '
+                'Close extra browser tabs, wait a few seconds, and try the upload again.'
+            )
+        return jsonify({'error': msg}), 500
+
+
+@app.route('/api/drawings/upload-jobs/<job_id>', methods=['GET'])
+@login_required
+def api_get_drawing_upload_job(job_id):
+    from drawing_upload_jobs import get_job
+    job = get_job(job_id)
+    if not job:
+        return jsonify({'error': 'Upload job not found'}), 404
+    current = get_current_project_id()
+    if not current or int(job.project_id) != int(current):
+        return jsonify({'error': 'Upload job not found'}), 404
+    payload = job.to_dict()
+    if job.status == 'complete' and job.result:
+        payload['ok'] = True
+        payload.update(job.result)
+    return jsonify(payload)
 
 
 @app.route('/api/drawings/upload-set', methods=['POST'])

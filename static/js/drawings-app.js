@@ -711,6 +711,7 @@
     selectedSearchIdx: null,
     uploadLogTimer: null,
     uploadFinalizingShown: false,
+    uploadPollLastProcessed: 0,
     uploadInFlight: false,
     penPoints: null,
     pathPoints: null,
@@ -4896,6 +4897,54 @@
     document.getElementById('uploadProgressModal')?.close();
   }
 
+  function updateUploadJobProgress(jobJson, pageCount, fileName) {
+    stopUploadProgressTimer();
+    state.uploadFinalizingShown = true;
+    const bar = document.getElementById('uploadProgressBar');
+    const subtitle = document.getElementById('uploadProgressSubtitle');
+    const title = document.getElementById('uploadProgressTitle');
+    const total = jobJson.total_pages || pageCount || 1;
+    const processed = jobJson.processed_pages || 0;
+    if (title) {
+      title.textContent = `Importing ${processed} of ${total} sheets — ${fileName}`;
+    }
+    if (subtitle) {
+      subtitle.classList.remove('upload-progress-pulse');
+      subtitle.textContent = jobJson.message || 'Server import in progress — please wait';
+    }
+    if (bar) {
+      bar.style.width = `${Math.min(94, 6 + (processed / total) * 88)}%`;
+    }
+    if (processed !== state.uploadPollLastProcessed) {
+      state.uploadPollLastProcessed = processed;
+      if (processed > 0) {
+        appendUploadLog(jobJson.message || `Imported ${processed} of ${total} sheets…`);
+      }
+    }
+  }
+
+  async function pollDrawingUploadJob(jobId, pageCount, fileName) {
+    const maxWaitMs = 60 * 60 * 1000;
+    const started = Date.now();
+    state.uploadPollLastProcessed = 0;
+    while (Date.now() - started < maxWaitMs) {
+      const res = await fetch(`/api/drawings/upload-jobs/${jobId}`, { credentials: 'same-origin' });
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        throw new Error(json.error || 'Upload job not found');
+      }
+      updateUploadJobProgress(json, pageCount, fileName);
+      if (json.status === 'complete') {
+        return json.result || json;
+      }
+      if (json.status === 'error') {
+        throw new Error(json.error || 'Drawing import failed');
+      }
+      await new Promise((resolve) => setTimeout(resolve, 1200));
+    }
+    throw new Error('Drawing import timed out. The file may still be processing — refresh the Drawings list in a minute.');
+  }
+
   async function uploadPdfFile(file, setName, extra) {
     if (!file) return null;
     const opts = extra || {};
@@ -4911,13 +4960,18 @@
     if (opts.title) fd.append('title', opts.title);
     try {
       const res = await fetch('/api/drawings/upload', { method: 'POST', body: fd, credentials: 'same-origin' });
-      const json = await res.json().catch(() => ({}));
-      if (!res.ok) {
+      let json = await res.json().catch(() => ({}));
+      if (!res.ok && res.status !== 202) {
         cancelUploadProgress();
         const detail = json.needs_review?.length
           ? `\n\n${json.needs_review.length} page(s) listed for review.`
           : '';
         throw new Error((json.error || 'Upload failed') + detail);
+      }
+      if (json.async && json.job_id) {
+        enterUploadFinalizingPhase(pageCount || json.page_count, document.getElementById('uploadProgressBar'), document.getElementById('uploadProgressSubtitle'), document.getElementById('uploadProgressTitle'), file.name);
+        appendUploadLog(`Large set detected — importing ${json.page_count || pageCount || '?'} sheets in the background…`);
+        json = await pollDrawingUploadJob(json.job_id, pageCount || json.page_count, file.name);
       }
       if (!opts.skipFinish) {
         finishUploadProgress(json, { keepOpen: !!opts.keepOpen, quietHeader: !!opts.keepOpen });
