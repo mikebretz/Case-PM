@@ -1,0 +1,125 @@
+{% extends "base.html" %}
+
+{% block content %}
+<script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+<script src="{{ url_for('static', filename='js/drawings-app.js') }}"></script>
+<link rel="stylesheet" href="{{ url_for('static', filename='css/draw-viewer.css') }}">
+
+<div class="draw-page doc-viewer-page draw-page-viewer-active" id="drawPage">
+<div class="draw-stack">
+
+<div id="drawPanelViewer" class="flex-1 min-h-0 mb-2 border border-zinc-700 rounded-md bg-zinc-900 overflow-hidden">
+    <div class="draw-viewer-toolbar flex items-center justify-between px-2 py-1.5 border-b border-zinc-800 flex-shrink-0 gap-2 flex-wrap no-print">
+        <div class="flex items-center gap-2 min-w-0">
+            <button type="button" onclick="CasePMDrawings.closeViewer()" class="px-2 py-1 text-xs bg-zinc-800 hover:bg-zinc-700 rounded-md h-[28px]"><i class="fa-solid fa-arrow-left"></i> Documents</button>
+            <div id="viewerSheetTitle" class="text-xs font-medium truncate max-w-[50vw]">Document Viewer</div>
+        </div>
+        <div class="flex items-center gap-1 flex-wrap">
+            <button type="button" onclick="CasePMDrawings.publishPersonalMarkups()" class="px-2 py-1 text-[10px] bg-emerald-900 hover:bg-emerald-800 rounded-md h-[28px]">Publish</button>
+            <button type="button" onclick="CasePMDrawings.startDocSnip()" class="px-2 py-1 text-[10px] bg-emerald-900 hover:bg-emerald-800 rounded-md h-[28px]" title="Snip region"><i class="fa-solid fa-scissors mr-0.5"></i>Snip</button>
+            <div class="relative">
+                <button type="button" id="btnPrintMenu" onclick="CasePMDrawings.togglePrintMenu()" class="px-2 py-1 text-[10px] bg-zinc-800 hover:bg-zinc-700 rounded-md h-[28px]" title="Print"><i class="fa-solid fa-print"></i></button>
+                <div id="printMenu" class="hidden absolute bg-zinc-800 border border-zinc-700 rounded-md shadow-xl py-1 z-50">
+                    <button type="button" onclick="CasePMDrawings.printSheet(false)" class="block w-full text-left px-3 py-1.5 text-xs hover:bg-zinc-700">Print — clean</button>
+                    <button type="button" onclick="CasePMDrawings.printSheet(true)" class="block w-full text-left px-3 py-1.5 text-xs hover:bg-zinc-700">Print — with markups</button>
+                </div>
+            </div>
+            <button type="button" onclick="CasePMDrawings.fitToView()" class="px-2 py-1 text-[10px] bg-zinc-800 hover:bg-zinc-700 rounded-md h-[28px]" title="Fit to view"><i class="fa-solid fa-compress-arrows-alt"></i></button>
+            <button type="button" onclick="CasePMDrawings.toggleFullscreen()" id="btnFullscreen" class="px-2 py-1 text-[10px] bg-zinc-800 hover:bg-zinc-700 rounded-md h-[28px]" title="Full screen"><i class="fa-solid fa-expand"></i></button>
+            <button type="button" onclick="CasePMDrawings.deleteSelectedMarkup()" id="btnDeleteMarkup" class="px-2 py-1 text-[10px] bg-zinc-800 hover:bg-zinc-700 rounded-md h-[28px] hidden" title="Delete markup"><i class="fa-solid fa-eraser"></i></button>
+        </div>
+    </div>
+    <div class="flex flex-1 min-h-0">
+        <div class="draw-tool-rail flex-shrink-0 border-r border-zinc-800 flex flex-col items-center py-1.5 gap-0.5 no-print overflow-y-auto">
+            <div class="draw-tool-group-label">Nav</div>
+            <button type="button" id="tool-pan" onclick="CasePMDrawings.setTool('pan')" class="tool-btn" title="Pan (H)"><i class="fa-solid fa-hand"></i></button>
+            <button type="button" id="tool-select" onclick="CasePMDrawings.setTool('select')" class="tool-btn" title="Select (V)"><i class="fa-solid fa-arrow-pointer"></i></button>
+            <div class="draw-tool-divider"></div>
+            <div class="draw-tool-group-label">Draw</div>
+            <button type="button" id="tool-line" onclick="CasePMDrawings.setTool('line')" class="tool-btn" title="Line"><i class="fa-solid fa-minus"></i></button>
+            <button type="button" id="tool-rect" onclick="CasePMDrawings.setTool('rect')" class="tool-btn" title="Rectangle"><i class="fa-regular fa-square"></i></button>
+            <button type="button" id="tool-ellipse" onclick="CasePMDrawings.setTool('ellipse')" class="tool-btn" title="Ellipse"><i class="fa-regular fa-circle"></i></button>
+            <button type="button" id="tool-cloud" onclick="CasePMDrawings.setTool('cloud')" class="tool-btn" title="Cloud"><i class="fa-solid fa-cloud"></i></button>
+            <button type="button" id="tool-arrow" onclick="CasePMDrawings.setTool('arrow')" class="tool-btn" title="Arrow"><i class="fa-solid fa-arrow-right"></i></button>
+            <button type="button" id="tool-highlight" onclick="CasePMDrawings.setTool('highlight')" class="tool-btn" title="Highlight"><i class="fa-solid fa-highlighter"></i></button>
+            <button type="button" id="tool-pen" onclick="CasePMDrawings.setTool('pen')" class="tool-btn" title="Pen"><i class="fa-solid fa-pen"></i></button>
+            <button type="button" id="tool-polyline" onclick="CasePMDrawings.setTool('polyline')" class="tool-btn" title="Polyline"><i class="fa-solid fa-draw-polygon"></i></button>
+            <button type="button" id="tool-polygon" onclick="CasePMDrawings.setTool('polygon')" class="tool-btn" title="Polygon"><i class="fa-solid fa-shapes"></i></button>
+            <button type="button" id="tool-crossout" onclick="CasePMDrawings.setTool('crossout')" class="tool-btn" title="Cross-out"><i class="fa-solid fa-xmark"></i></button>
+            <div class="draw-tool-divider"></div>
+            <div class="draw-tool-group-label">Text</div>
+            <button type="button" id="tool-text" onclick="CasePMDrawings.setTool('text')" class="tool-btn" title="Text"><i class="fa-solid fa-font"></i></button>
+            <button type="button" id="tool-callout" onclick="CasePMDrawings.setTool('callout')" class="tool-btn" title="Callout"><i class="fa-solid fa-comment-dots"></i></button>
+            <button type="button" id="tool-stamp" onclick="CasePMDrawings.setTool('stamp')" class="tool-btn" title="Stamp"><i class="fa-solid fa-stamp"></i></button>
+            <div class="draw-tool-divider"></div>
+            <div class="draw-tool-group-label">Measure</div>
+            <button type="button" id="tool-measure" onclick="CasePMDrawings.setTool('measure')" class="tool-btn" title="Measure"><i class="fa-solid fa-ruler"></i></button>
+            <button type="button" id="tool-area" onclick="CasePMDrawings.setTool('area')" class="tool-btn" title="Area"><i class="fa-solid fa-vector-square"></i></button>
+            <button type="button" id="tool-count" onclick="CasePMDrawings.setTool('count')" class="tool-btn" title="Count"><i class="fa-solid fa-hashtag"></i></button>
+            <button type="button" id="tool-calibrate" onclick="CasePMDrawings.setTool('calibrate')" class="tool-btn" title="Calibrate"><i class="fa-solid fa-ruler-combined"></i></button>
+        </div>
+        <div class="flex flex-col flex-1 min-h-0 min-w-0">
+            <div id="drawViewerWrap" class="flex-1 cursor-grab min-h-0">
+                <div id="drawPrintArea">
+                    <div id="drawViewerStage">
+                        <canvas id="drawPdfCanvas"></canvas>
+                        <canvas id="drawDiffCanvas" class="hidden"></canvas>
+                        <svg id="drawMarkupSvg" xmlns="http://www.w3.org/2000/svg">
+                            <defs>
+                                <marker id="arrowhead" markerWidth="10" markerHeight="10" refX="8" refY="5" orient="auto" markerUnits="strokeWidth">
+                                    <polygon points="0 0, 10 5, 0 10" fill="context-stroke"/>
+                                </marker>
+                            </defs>
+                        </svg>
+                    </div>
+                </div>
+            </div>
+            <div id="drawViewerStatus" class="draw-viewer-status no-print">
+                <span class="status-pill" id="statusActiveTool">Pan</span>
+                <span id="statusScale">Scale: not set</span>
+                <span id="statusHint" class="text-zinc-500 truncate">Drag to pan · scroll to zoom</span>
+            </div>
+        </div>
+        <div class="draw-viewer-sidebar flex-shrink-0 border-l border-zinc-800 p-2 overflow-auto text-xs no-print flex flex-col min-h-0">
+            <div class="mb-2 p-2 bg-zinc-800/50 rounded-md border border-zinc-700 flex-1 min-h-0 overflow-auto" id="markupPropertiesPanel">
+                <div class="text-[10px] uppercase text-zinc-500 mb-2">Markup tools</div>
+                <div class="text-[10px] text-zinc-500">Select a tool or markup to edit properties.</div>
+            </div>
+            <div id="markupListPanel" class="mb-2 p-2 bg-zinc-800/30 rounded-md border border-zinc-700/80 max-h-36 overflow-auto hidden">
+                <div class="text-[10px] uppercase text-zinc-500 mb-1">On this document</div>
+                <div id="markupListItems"></div>
+            </div>
+            <div class="flex gap-1 mb-2">
+                <button type="button" id="layer-personal" onclick="CasePMDrawings.toggleLayer('personal')" class="flex-1 text-[10px] px-1.5 py-1 bg-sky-900/50 text-sky-300 rounded border border-sky-800/50">Personal</button>
+                <button type="button" id="layer-published" onclick="CasePMDrawings.toggleLayer('published')" class="flex-1 text-[10px] px-1.5 py-1 bg-emerald-900/50 text-emerald-300 rounded border border-emerald-800/50">Published</button>
+            </div>
+            <div id="viewerSidebar"></div>
+        </div>
+    </div>
+</div>
+
+</div>
+</div>
+
+<dialog id="drawTextDialog" class="modal rounded-md w-full max-w-md p-0 text-white" style="background:#18181b;border:1px solid #3f3f46;">
+    <div class="p-6">
+        <div class="casepm-drag-handle flex justify-between items-center mb-3 cursor-move select-none">
+            <h2 id="drawTextDialogTitle" class="text-lg font-semibold">Markup text</h2>
+            <button type="button" id="drawTextDialogClose" class="text-zinc-400 hover:text-white text-2xl cursor-pointer">&times;</button>
+        </div>
+        <textarea id="drawTextDialogInput" rows="5" class="w-full bg-zinc-800 border border-zinc-700 rounded-md p-3 text-sm text-white mb-4" placeholder="Type your note…"></textarea>
+        <div class="flex gap-2">
+            <button type="button" id="drawTextDialogCancel" class="flex-1 py-2 bg-zinc-800 hover:bg-zinc-700 rounded-md text-sm">Cancel</button>
+            <button type="button" id="drawTextDialogSave" class="flex-1 py-2 bg-sky-600 hover:bg-sky-500 rounded-md text-sm font-medium">Save</button>
+        </div>
+    </div>
+</dialog>
+
+<script>
+  document.addEventListener('DOMContentLoaded', () => {
+    if (window.CasePMDrawings?.initDocumentViewer) {
+      CasePMDrawings.initDocumentViewer();
+    }
+  });
+</script>
+{% endblock %}

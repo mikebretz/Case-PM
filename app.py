@@ -857,6 +857,22 @@ class DocumentActivity(db.Model):
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
 
 
+class DocumentMarkup(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    document_id = db.Column(db.Integer, db.ForeignKey('document.id'), nullable=False)
+    user_id = db.Column(db.Integer, db.ForeignKey('user.id'))
+    user_name = db.Column(db.String(150))
+    layer = db.Column(db.String(20), default='personal')
+    markup_type = db.Column(db.String(30), nullable=False)
+    geometry_json = db.Column(db.Text)
+    style_json = db.Column(db.Text)
+    label = db.Column(db.String(300))
+    measurement_value = db.Column(db.Float)
+    measurement_unit = db.Column(db.String(20))
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    published_at = db.Column(db.DateTime)
+
+
 class DocumentFolderPermission(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     folder_id = db.Column(db.Integer, db.ForeignKey('document_folder.id'), nullable=False)
@@ -2965,6 +2981,12 @@ def documents_page():
     return render_template('documents.html')
 
 
+@app.route('/documents/viewer')
+@login_required
+def document_viewer_page():
+    return render_template('document_viewer.html')
+
+
 @app.route('/share/<token>')
 def public_share_page(token):
     from document_persistence import document_to_dict, format_file_size, share_link_is_valid
@@ -3535,7 +3557,75 @@ def api_documents_browse():
 @login_required
 def api_documents_get(doc_id):
     doc = Document.query.get_or_404(doc_id)
-    return jsonify({'ok': True, 'document': _document_dict_with_user(doc)})
+    payload = {'ok': True, 'document': _document_dict_with_user(doc)}
+    if request.args.get('markups'):
+        from document_persistence import document_markup_to_dict
+        markups = DocumentMarkup.query.filter_by(document_id=doc.id).all()
+        payload['markups'] = [document_markup_to_dict(m) for m in markups]
+    return jsonify(payload)
+
+
+@app.route('/api/documents/<int:doc_id>/markups', methods=['GET', 'POST'])
+@login_required
+def api_document_markups(doc_id):
+    from document_persistence import document_markup_to_dict
+
+    doc = Document.query.get_or_404(doc_id)
+    lock = _document_edit_lock_error(doc)
+    if lock and request.method == 'POST':
+        return lock
+    if request.method == 'GET':
+        rows = DocumentMarkup.query.filter_by(document_id=doc.id).all()
+        return jsonify({'markups': [document_markup_to_dict(m) for m in rows]})
+
+    body = request.get_json(silent=True) or {}
+    user_name = f'{current_user.first_name} {current_user.last_name}'.strip() or current_user.email
+    markup = DocumentMarkup(
+        document_id=doc.id,
+        user_id=current_user.id,
+        user_name=user_name,
+        layer=body.get('layer') or 'personal',
+        markup_type=body.get('markup_type') or 'line',
+        geometry_json=json.dumps(body.get('geometry') or {}),
+        style_json=json.dumps(body.get('style') or {}),
+        label=body.get('label'),
+        measurement_value=body.get('measurement_value'),
+        measurement_unit=body.get('measurement_unit'),
+    )
+    if body.get('publish'):
+        markup.layer = 'published'
+        markup.published_at = datetime.utcnow()
+    db.session.add(markup)
+    db.session.commit()
+    return jsonify({'ok': True, 'markup': document_markup_to_dict(markup)})
+
+
+@app.route('/api/documents/markups/<int:markup_id>', methods=['PUT', 'DELETE'])
+@login_required
+def api_document_markup_item(markup_id):
+    from document_persistence import document_markup_to_dict
+
+    markup = DocumentMarkup.query.get_or_404(markup_id)
+    doc = Document.query.get_or_404(markup.document_id)
+    lock = _document_edit_lock_error(doc)
+    if lock:
+        return lock
+    if request.method == 'DELETE':
+        db.session.delete(markup)
+        db.session.commit()
+        return jsonify({'ok': True})
+    body = request.get_json(silent=True) or {}
+    if 'geometry' in body:
+        markup.geometry_json = json.dumps(body['geometry'])
+    if 'style' in body:
+        markup.style_json = json.dumps(body['style'])
+    if 'label' in body:
+        markup.label = body['label']
+    if body.get('publish'):
+        markup.layer = 'published'
+        markup.published_at = datetime.utcnow()
+    db.session.commit()
+    return jsonify({'ok': True, 'markup': document_markup_to_dict(markup)})
 
 
 @app.route('/api/documents', methods=['GET'])
