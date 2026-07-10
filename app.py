@@ -3289,6 +3289,7 @@ def _save_document_bytes(
     from document_features import file_content_hash, project_document_settings, retention_until_from_years, parse_tags
     from document_persistence import document_folder, ensure_system_folders, resolve_folder_by_key
 
+    ensure_project_schema()
     upload_root = app.config.get('UPLOAD_FOLDER', 'uploads')
     ensure_system_folders(db, DocumentFolder, project_id, current_user.id if current_user.is_authenticated else None, Document=Document)
     if not folder_id:
@@ -5164,48 +5165,65 @@ def api_drawing_export_to_documents(drawing_id):
 def api_drawing_set_export_to_documents():
     """Export all sheets in a drawing set to Documents › Drawings › Drawing Sets."""
     from drawing_persistence import resolve_drawing_file_path, current_revision_for_drawing, drawings_by_set_name
-    from document_persistence import resolve_folder_by_key
+    from document_persistence import ensure_document_schema, resolve_folder_by_key
 
-    body = request.get_json(silent=True) or {}
-    project_id = body.get('project_id') or get_current_project_id()
-    set_name = (body.get('set_name') or '').strip()
-    if not project_id or not set_name:
-        return jsonify({'error': 'project_id and set_name required'}), 400
-    folder = resolve_folder_by_key(db, DocumentFolder, int(project_id), 'drawing-sets')
-    if not folder:
-        return jsonify({'error': 'Drawing Sets folder missing'}), 500
-    drawings = drawings_by_set_name(db, Drawing, DrawingRevision, int(project_id), set_name)
-    if not drawings:
-        return jsonify({'error': 'No sheets in this set'}), 404
-    upload_root = app.config.get('UPLOAD_FOLDER')
-    exported = []
-    for drawing in drawings:
-        rev = current_revision_for_drawing(DrawingRevision, drawing)
-        resolved = resolve_drawing_file_path(rev.file_path if rev else None, upload_root)
-        if not rev or not resolved or not os.path.isfile(resolved):
-            continue
-        with open(resolved, 'rb') as fh:
-            file_bytes = fh.read()
-        name = f'{drawing.sheet_number or "Sheet"} — {drawing.title or set_name}'.strip(' —')
-        try:
-            doc_dict = _save_document_bytes(
-                int(project_id), file_bytes, name, os.path.basename(resolved),
-                'application/pdf', 'Drawing', folder.id, False,
-                source_drawing_id=drawing.id,
-                source_sheet=drawing.sheet_number,
-                source_metadata={'set_name': set_name, 'exported_from': 'drawings_set', 'mirrored_from_module': True},
-            )
-            exported.append(doc_dict)
-        except ValueError:
-            continue
-    if exported:
-        _notify_documents_team(
-            int(project_id),
-            'Drawing set exported to Documents',
-            f'{len(exported)} sheet(s) from "{set_name}" were saved to Documents › Drawings › Drawing Sets.',
-            f'/documents?project_id={project_id}',
-        )
-    return jsonify({'ok': True, 'exported_count': len(exported), 'documents': exported})
+    try:
+        ensure_project_schema()
+        ensure_document_schema(db.engine, db)
+        body = request.get_json(silent=True) or {}
+        project_id = body.get('project_id') or get_current_project_id()
+        set_name = (body.get('set_name') or '').strip()
+        if not project_id or not set_name:
+            return jsonify({'error': 'project_id and set_name required'}), 400
+        folder = resolve_folder_by_key(db, DocumentFolder, int(project_id), 'drawing-sets')
+        if not folder:
+            return jsonify({'error': 'Drawing Sets folder missing'}), 500
+        drawings = drawings_by_set_name(db, Drawing, DrawingRevision, int(project_id), set_name)
+        if not drawings:
+            return jsonify({'error': 'No sheets in this set'}), 404
+        upload_root = app.config.get('UPLOAD_FOLDER')
+        exported = []
+        errors = []
+        for drawing in drawings:
+            rev = current_revision_for_drawing(DrawingRevision, drawing)
+            resolved = resolve_drawing_file_path(rev.file_path if rev else None, upload_root)
+            if not rev or not resolved or not os.path.isfile(resolved):
+                errors.append(f'{drawing.sheet_number}: file not found')
+                continue
+            with open(resolved, 'rb') as fh:
+                file_bytes = fh.read()
+            name = f'{drawing.sheet_number or "Sheet"} — {drawing.title or set_name}'.strip(' —')
+            try:
+                doc_dict = _save_document_bytes(
+                    int(project_id), file_bytes, name, os.path.basename(resolved),
+                    'application/pdf', 'Drawing', folder.id, False,
+                    source_drawing_id=drawing.id,
+                    source_sheet=drawing.sheet_number,
+                    source_metadata={'set_name': set_name, 'exported_from': 'drawings_set', 'mirrored_from_module': True},
+                )
+                exported.append(doc_dict)
+            except ValueError as exc:
+                errors.append(f'{drawing.sheet_number}: {exc}')
+            except Exception as exc:
+                db.session.rollback()
+                errors.append(f'{drawing.sheet_number}: {exc}')
+        if exported:
+            try:
+                _notify_documents_team(
+                    int(project_id),
+                    'Drawing set exported to Documents',
+                    f'{len(exported)} sheet(s) from "{set_name}" were saved to Documents › Drawings › Drawing Sets.',
+                    f'/documents?project_id={project_id}',
+                )
+            except Exception:
+                db.session.rollback()
+        if not exported and errors:
+            return jsonify({'error': errors[0], 'errors': errors}), 500
+        return jsonify({'ok': True, 'exported_count': len(exported), 'documents': exported, 'errors': errors})
+    except Exception as exc:
+        db.session.rollback()
+        app.logger.exception('export-set-to-documents failed')
+        return jsonify({'error': str(exc)}), 500
 
 
 @app.route('/api/drawings/<int:drawing_id>/file', methods=['GET'])
@@ -7257,6 +7275,10 @@ with app.app_context():
         except Exception as _doc:
             print('Document schema:', _doc)
         try:
+            ensure_project_schema()
+        except Exception as _proj:
+            print('Project schema:', _proj)
+        try:
             _ensure_module_attachment_columns()
         except Exception as _att:
             print('Attachment columns:', _att)
@@ -7271,6 +7293,15 @@ if __name__ == '__main__':
         try:
             import case_workflow as cw
             cw.ensure_workflow_schema(db.engine)
+        except Exception:
+            pass
+        try:
+            from document_persistence import ensure_document_schema
+            ensure_document_schema(db.engine, db)
+        except Exception:
+            pass
+        try:
+            ensure_project_schema()
         except Exception:
             pass
 
