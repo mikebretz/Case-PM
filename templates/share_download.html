@@ -1,0 +1,27 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Download — Case PM</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+</head>
+<body class="bg-zinc-950 text-zinc-100 min-h-screen flex items-center justify-center p-6">
+    <div class="max-w-md w-full bg-zinc-900 border border-zinc-700 rounded-2xl p-8 text-center shadow-2xl">
+        {% if error %}
+        <div class="text-red-400 text-5xl mb-4"><i class="fa-solid fa-link-slash"></i></div>
+        <h1 class="text-xl font-semibold mb-2">Link unavailable</h1>
+        <p class="text-zinc-400 text-sm">{{ error }}</p>
+        {% else %}
+        <div class="text-emerald-400 text-5xl mb-4"><i class="fa-solid fa-file-arrow-down"></i></div>
+        <h1 class="text-xl font-semibold mb-1">{{ doc.name }}</h1>
+        <p class="text-zinc-500 text-sm mb-6">{{ link.size }}{% if link.expires_at %} · expires {{ link.expires_at[:10] }}{% endif %}</p>
+        <a href="{{ link.download_url }}" class="inline-flex items-center gap-2 px-6 py-3 bg-emerald-600 hover:bg-emerald-500 rounded-xl font-medium transition-colors">
+            <i class="fa-solid fa-download"></i> Download file
+        </a>
+        <p class="text-zinc-600 text-xs mt-6">Shared via Case PM Documents</p>
+        {% endif %}
+    </div>
+</body>
+</html>

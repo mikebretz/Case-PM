@@ -1,288 +1,72 @@
 {% extends "base.html" %}
 
 {% block content %}
-<div class="max-w-[1600px] mx-auto">
-    
-    <!-- Page Header -->
-    <div class="flex items-center justify-between mb-6">
+<link rel="stylesheet" href="{{ url_for('static', filename='css/documents-app.css') }}">
+
+<div class="docs-app max-w-[1800px] mx-auto flex flex-col h-[calc(100vh-5rem)] min-h-[600px]">
+    <header class="docs-header flex flex-wrap items-center justify-between gap-3 mb-4 shrink-0">
         <div>
-            <h1 class="text-3xl font-semibold tracking-tight">Documents</h1>
-            <p class="text-zinc-400 mt-1">Project documentation and files</p>
+            <h1 class="text-2xl font-semibold tracking-tight">Documents</h1>
+            <p class="text-zinc-500 text-sm mt-0.5">Project files — folders, sharing, and downloads like Dropbox</p>
         </div>
-        
-        <button onclick="showUploadDocumentModal()" 
-                class="flex items-center gap-2 px-5 py-2.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded-2xl text-sm font-medium transition-colors">
-            <i class="fa-solid fa-upload"></i>
-            <span>Upload Document</span>
-        </button>
-    </div>
-
-    <!-- Filters -->
-    <div class="flex flex-wrap items-center gap-3 mb-6 bg-zinc-900 border border-zinc-800 rounded-3xl p-4">
-        <div class="flex-1 min-w-[220px]">
-            <input type="text" id="documentSearch" placeholder="Search documents..." 
-                   class="w-full bg-zinc-800 border border-zinc-700 rounded-2xl px-4 py-2.5 text-sm focus:outline-none focus:border-emerald-600"
-                   onkeyup="filterDocuments()">
-        </div>
-
-        <select id="typeFilter" onchange="filterDocuments()" 
-                class="bg-zinc-800 border border-zinc-700 rounded-2xl px-4 py-2.5 text-sm focus:outline-none focus:border-emerald-600">
-            <option value="">All Types</option>
-            <option value="Specification">Specifications</option>
-            <option value="Contract">Contracts</option>
-            <option value="Drawing">Drawings</option>
-            <option value="Submittal">Submittals</option>
-            <option value="Other">Other</option>
-        </select>
-
-        <select id="projectFilter" onchange="filterDocuments()" 
-                class="bg-zinc-800 border border-zinc-700 rounded-2xl px-4 py-2.5 text-sm focus:outline-none focus:border-emerald-600">
-            <option value="">All Projects</option>
-            {% for p in projects %}
-            <option value="{{ p.id }}" {% if active_project and active_project.id == p.id %}selected{% endif %}>{{ p.name }}</option>
-            {% endfor %}
-        </select>
-
-        <button onclick="clearDocumentFilters()" 
-                class="px-4 py-2.5 text-sm bg-zinc-800 hover:bg-zinc-700 border border-zinc-700 rounded-2xl transition-colors">
-            Clear Filters
-        </button>
-    </div>
-
-    <!-- Documents Table -->
-    <div class="bg-zinc-900 border border-zinc-800 rounded-3xl overflow-hidden">
-        <table class="w-full">
-            <thead>
-                <tr class="border-b border-zinc-800 bg-zinc-950">
-                    <th class="text-left px-6 py-4 text-sm font-medium text-zinc-400">Document Name</th>
-                    <th class="text-left px-6 py-4 text-sm font-medium text-zinc-400">Type</th>
-                    <th class="text-left px-6 py-4 text-sm font-medium text-zinc-400">Project</th>
-                    <th class="text-left px-6 py-4 text-sm font-medium text-zinc-400">Uploaded</th>
-                    <th class="text-center px-6 py-4 text-sm font-medium text-zinc-400">Size</th>
-                    <th class="w-20"></th>
-                </tr>
-            </thead>
-            <tbody id="documentsTableBody" class="divide-y divide-zinc-800">
-                <!-- Populated by JavaScript -->
-            </tbody>
-        </table>
-    </div>
-
-</div>
-        <!-- Upload Document Modal -->
-        <dialog id="uploadDocumentModal" class="bg-zinc-900 border border-zinc-700 rounded-3xl p-0 w-full max-w-lg shadow-2xl">
-            <div class="p-6">
-                <div class="flex items-center justify-between mb-5">
-                    <div class="font-semibold text-xl">Upload Document</div>
-                    <button onclick="document.getElementById('uploadDocumentModal').close()" class="text-zinc-400 hover:text-white text-2xl leading-none">&times;</button>
-                </div>
-
-                <form id="uploadDocumentForm" onsubmit="uploadDocument(event)">
-                    <div class="space-y-4">
-                        <div>
-                            <label class="block text-sm text-zinc-400 mb-1.5">Document Name</label>
-                            <input type="text" id="doc_name" required
-                                   class="w-full bg-zinc-800 border border-zinc-700 rounded-2xl px-4 py-2.5 text-sm focus:outline-none focus:border-emerald-600">
-                        </div>
-
-                        <div>
-                            <label class="block text-sm text-zinc-400 mb-1.5">Document Type</label>
-                            <select id="doc_type" required
-                                    class="w-full bg-zinc-800 border border-zinc-700 rounded-2xl px-4 py-2.5 text-sm focus:outline-none focus:border-emerald-600">
-                                <option value="Specification">Specification</option>
-                                <option value="Contract">Contract</option>
-                                <option value="Drawing">Drawing</option>
-                                <option value="Submittal">Submittal</option>
-                                <option value="Other">Other</option>
-                            </select>
-                        </div>
-
-                        <div>
-                            <label class="block text-sm text-zinc-400 mb-1.5">Project</label>
-                            <select id="doc_project" required
-                                    class="w-full bg-zinc-800 border border-zinc-700 rounded-2xl px-4 py-2.5 text-sm focus:outline-none focus:border-emerald-600">
-                                <option value="">Select Project</option>
-                                {% for p in projects %}
-                                <option value="{{ p.id }}" {% if active_project and active_project.id == p.id %}selected{% endif %}>{{ p.name }}</option>
-                                {% endfor %}
-                            </select>
-                        </div>
-
-                        <div>
-                            <label class="block text-sm text-zinc-400 mb-1.5">File</label>
-                            <input type="file" id="doc_file" required
-                                   class="w-full text-sm file:mr-4 file:py-2 file:px-4 file:rounded-2xl file:border-0 file:bg-zinc-700 hover:file:bg-zinc-600">
-                        </div>
-                    </div>
-
-                    <div class="flex gap-3 mt-6">
-                        <button type="button" onclick="document.getElementById('uploadDocumentModal').close()"
-                                class="flex-1 py-2.5 bg-zinc-800 hover:bg-zinc-700 rounded-2xl text-sm font-medium transition-colors">
-                            Cancel
-                        </button>
-                        <button type="submit"
-                                class="flex-1 py-2.5 bg-emerald-600 hover:bg-emerald-500 rounded-2xl text-sm font-medium transition-colors">
-                            Upload
-                        </button>
-                    </div>
-                </form>
-            </div>
-        </dialog>
-        <!-- JavaScript -->
-        <script>
-            let documents = [];
-            const projectNames = {
-                {% for p in projects %}{{ p.id }}: {{ p.name|tojson }},
+        <div class="flex items-center gap-2 flex-wrap">
+            <select id="docsProjectSelect" class="docs-select" title="Project">
+                {% for p in projects %}
+                <option value="{{ p.id }}" {% if active_project and active_project.id == p.id %}selected{% endif %}>{{ p.name }}</option>
                 {% endfor %}
-            };
+            </select>
+            <button type="button" id="docsBtnNewFolder" class="docs-btn docs-btn-secondary"><i class="fa-solid fa-folder-plus"></i> New folder</button>
+            <button type="button" id="docsBtnUpload" class="docs-btn docs-btn-primary"><i class="fa-solid fa-upload"></i> Upload</button>
+            <input type="file" id="docsFileInput" class="hidden" multiple>
+        </div>
+    </header>
 
-            function projectIdFromPage() {
-                if (window.CASEPM_ACTIVE_PROJECT_ID) return window.CASEPM_ACTIVE_PROJECT_ID;
-                const raw = localStorage.getItem('casepm_current_project_id');
-                return raw ? parseInt(raw, 10) : null;
-            }
+    <div class="docs-toolbar flex flex-wrap items-center gap-2 mb-3 shrink-0">
+        <nav id="docsBreadcrumbs" class="docs-breadcrumbs flex-1 min-w-0"></nav>
+        <div class="flex items-center gap-1">
+            <button type="button" id="docsViewGrid" class="docs-icon-btn active" title="Grid view"><i class="fa-solid fa-grip"></i></button>
+            <button type="button" id="docsViewList" class="docs-icon-btn" title="List view"><i class="fa-solid fa-list"></i></button>
+        </div>
+        <input type="search" id="docsSearch" class="docs-search" placeholder="Search this folder…">
+    </div>
 
-            async function loadDocuments() {
-                const pid = document.getElementById('projectFilter')?.value || projectIdFromPage() || '';
-                const url = pid ? `/api/documents?project_id=${pid}` : '/api/documents';
-                try {
-                    const res = await fetch(url, { credentials: 'same-origin' });
-                    const json = await res.json();
-                    if (!res.ok) throw new Error(json.error || 'Failed to load documents');
-                    documents = (json.documents || []).map(d => ({
-                        ...d,
-                        project: d.project_name || projectNames[d.project_id] || '—',
-                    }));
-                    filterDocuments();
-                } catch (e) {
-                    console.error(e);
-                    renderDocumentsTable([]);
-                }
-            }
+    <div class="docs-body flex flex-1 min-h-0 gap-3">
+        <aside id="docsTree" class="docs-tree shrink-0 hidden lg:block"></aside>
+        <main class="docs-main flex-1 min-w-0 flex flex-col bg-zinc-900 border border-zinc-800 rounded-xl overflow-hidden">
+            <div id="docsDropZone" class="docs-dropzone flex-1 overflow-auto p-4">
+                <div id="docsGrid" class="docs-grid"></div>
+                <div id="docsEmpty" class="hidden text-center text-zinc-500 py-16">
+                    <i class="fa-solid fa-folder-open text-4xl mb-3 block text-zinc-600"></i>
+                    <p>Drop files here or use Upload</p>
+                </div>
+            </div>
+        </main>
+    </div>
+</div>
 
-            function filterDocuments() {
-                const searchTerm = document.getElementById('documentSearch').value.toLowerCase();
-                const typeFilter = document.getElementById('typeFilter').value;
-                const projectFilter = document.getElementById('projectFilter').value;
+<dialog id="docsShareDialog" class="docs-dialog">
+    <div class="p-6">
+        <h2 class="text-lg font-semibold mb-1">Share link</h2>
+        <p class="text-xs text-zinc-500 mb-4">Anyone with this link can download the file — like Dropbox or OneDrive.</p>
+        <input type="text" id="docsShareUrl" class="docs-input w-full mb-3" readonly>
+        <div class="flex gap-2">
+            <button type="button" id="docsShareCopy" class="docs-btn docs-btn-primary flex-1"><i class="fa-solid fa-copy"></i> Copy link</button>
+            <button type="button" id="docsShareClose" class="docs-btn docs-btn-secondary flex-1">Close</button>
+        </div>
+        <div id="docsShareMeta" class="text-[10px] text-zinc-500 mt-3"></div>
+    </div>
+</dialog>
 
-                const filtered = documents.filter(doc => {
-                    const matchesSearch = doc.name.toLowerCase().includes(searchTerm);
-                    const matchesType = !typeFilter || doc.type === typeFilter;
-                    const matchesProject = !projectFilter || String(doc.project_id) === String(projectFilter);
-                    return matchesSearch && matchesType && matchesProject;
-                });
+<dialog id="docsRenameDialog" class="docs-dialog">
+    <div class="p-6">
+        <h2 class="text-lg font-semibold mb-3">Rename</h2>
+        <input type="text" id="docsRenameInput" class="docs-input w-full mb-4">
+        <div class="flex gap-2">
+            <button type="button" id="docsRenameCancel" class="docs-btn docs-btn-secondary flex-1">Cancel</button>
+            <button type="button" id="docsRenameSave" class="docs-btn docs-btn-primary flex-1">Save</button>
+        </div>
+    </div>
+</dialog>
 
-                renderDocumentsTable(filtered);
-            }
-
-            function clearDocumentFilters() {
-                document.getElementById('documentSearch').value = '';
-                document.getElementById('typeFilter').value = '';
-                const pid = projectIdFromPage();
-                document.getElementById('projectFilter').value = pid ? String(pid) : '';
-                filterDocuments();
-            }
-
-            function renderDocumentsTable(docs) {
-                const tbody = document.getElementById('documentsTableBody');
-                tbody.innerHTML = '';
-
-                if (docs.length === 0) {
-                    tbody.innerHTML = `
-                        <tr>
-                            <td colspan="6" class="px-6 py-8 text-center text-zinc-400">
-                                No documents found. Snip from Drawings or upload a file.
-                            </td>
-                        </tr>
-                    `;
-                    return;
-                }
-
-                docs.forEach(doc => {
-                    const row = document.createElement('tr');
-                    row.className = 'hover:bg-zinc-800/60 transition-colors';
-                    const sourceHint = doc.source_sheet ? `<div class="text-[10px] text-zinc-500 mt-0.5">From sheet ${doc.source_sheet}</div>` : '';
-                    row.innerHTML = `
-                        <td class="px-6 py-4 font-medium">${escapeHtml(doc.name)}${sourceHint}</td>
-                        <td class="px-6 py-4">
-                            <span class="inline-block px-3 py-1 rounded-full text-xs font-medium bg-zinc-700 text-zinc-300">
-                                ${escapeHtml(doc.type)}
-                            </span>
-                        </td>
-                        <td class="px-6 py-4 text-sm text-zinc-400">${escapeHtml(doc.project)}</td>
-                        <td class="px-6 py-4 text-sm text-zinc-400">${doc.uploaded || '—'}</td>
-                        <td class="px-6 py-4 text-center text-sm text-zinc-400">${doc.size || '—'}</td>
-                        <td class="px-4 py-4">
-                            <div class="flex items-center gap-1">
-                                <button onclick="viewDocument(${doc.id})" class="p-2 hover:bg-zinc-700 rounded-xl text-zinc-400 hover:text-white" title="Open">
-                                    <i class="fa-solid fa-eye"></i>
-                                </button>
-                                <button onclick="deleteDocument(${doc.id})" class="p-2 hover:bg-zinc-700 rounded-xl text-zinc-400 hover:text-red-400" title="Delete">
-                                    <i class="fa-solid fa-trash"></i>
-                                </button>
-                            </div>
-                        </td>
-                    `;
-                    tbody.appendChild(row);
-                });
-            }
-
-            function escapeHtml(s) {
-                if (s == null) return '';
-                return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
-            }
-
-            function showUploadDocumentModal() {
-                const pid = projectIdFromPage();
-                if (pid) document.getElementById('doc_project').value = String(pid);
-                document.getElementById('uploadDocumentModal').showModal();
-            }
-
-            async function uploadDocument(e) {
-                e.preventDefault();
-                const fd = new FormData();
-                fd.append('name', document.getElementById('doc_name').value);
-                fd.append('document_type', document.getElementById('doc_type').value);
-                fd.append('project_id', document.getElementById('doc_project').value);
-                const fileInput = document.getElementById('doc_file');
-                if (!fileInput.files.length) return;
-                fd.append('file', fileInput.files[0]);
-                try {
-                    const res = await fetch('/api/documents', { method: 'POST', body: fd, credentials: 'same-origin' });
-                    const json = await res.json();
-                    if (!res.ok) throw new Error(json.error || 'Upload failed');
-                    document.getElementById('uploadDocumentModal').close();
-                    e.target.reset();
-                    await loadDocuments();
-                } catch (err) {
-                    alert(err.message || 'Upload failed');
-                }
-            }
-
-            function viewDocument(id) {
-                const doc = documents.find(d => d.id === id);
-                if (!doc) return;
-                const url = doc.file_url || `/uploads/documents/${doc.project_id}/${doc.filename}`;
-                window.open(url, '_blank');
-            }
-
-            async function deleteDocument(id) {
-                if (!confirm('Delete this document?')) return;
-                try {
-                    const res = await fetch(`/api/documents/${id}`, { method: 'DELETE', credentials: 'same-origin' });
-                    const json = await res.json();
-                    if (!res.ok) throw new Error(json.error || 'Delete failed');
-                    await loadDocuments();
-                } catch (err) {
-                    alert(err.message || 'Delete failed');
-                }
-            }
-
-            window.onload = function() {
-                const pid = projectIdFromPage();
-                if (pid) document.getElementById('projectFilter').value = String(pid);
-                loadDocuments();
-            };
-        </script>
-
+<script src="{{ url_for('static', filename='js/documents-app.js') }}"></script>
 {% endblock %}

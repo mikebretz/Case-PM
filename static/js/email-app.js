@@ -625,6 +625,10 @@
     if (!fileList || !state.inlineCompose) return;
     if (!state.inlineCompose.attachments) state.inlineCompose.attachments = [];
     [...fileList].forEach(file => {
+      if (file.size > (global.CasePMDocs?.LARGE_FILE_BYTES || 10 * 1024 * 1024) && global.CasePMDocs?.offerLinkInstead) {
+        global.CasePMDocs.offerLinkInstead(file, state.inlineCompose);
+        return;
+      }
       const entry = {
         name: file.name,
         size: formatFileSize(file.size),
@@ -2134,6 +2138,7 @@
     setSearch, toggleFilter, toggleStar,
     compose, closeCompose, toggleCcBcc, saveDraft, sendMail, undoSend, reply, replyAll, forward,
     removeComposeAttachment,
+    refreshComposeAttachmentUI,
     archiveSelected, deleteSelected, markReadToggle, flagSelected, starSelected,
     snoozeSelected, moveSelected, labelSelected, reportPhishing,
     addCustomFolder, renameCustomFolder, deleteCustomFolder,

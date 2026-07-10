@@ -746,17 +746,45 @@ class Photo(db.Model):
 class Document(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     project_id = db.Column(db.Integer, db.ForeignKey('project.id'), nullable=False)
+    folder_id = db.Column(db.Integer, db.ForeignKey('document_folder.id'))
     name = db.Column(db.String(300), nullable=False)
     document_type = db.Column(db.String(80), nullable=False, default='Other')
     filename = db.Column(db.String(300), nullable=False)
     original_filename = db.Column(db.String(300))
     file_size = db.Column(db.Integer, default=0)
     mime_type = db.Column(db.String(120))
+    is_system_locked = db.Column(db.Boolean, default=False)
     source_drawing_id = db.Column(db.Integer)
     source_sheet = db.Column(db.String(80))
     source_metadata_json = db.Column(db.Text)
     uploaded_by_id = db.Column(db.Integer, db.ForeignKey('user.id'))
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+
+class DocumentFolder(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    project_id = db.Column(db.Integer, db.ForeignKey('project.id'), nullable=False)
+    parent_id = db.Column(db.Integer, db.ForeignKey('document_folder.id'))
+    name = db.Column(db.String(200), nullable=False)
+    is_system = db.Column(db.Boolean, default=False)
+    system_key = db.Column(db.String(80))
+    created_by_id = db.Column(db.Integer, db.ForeignKey('user.id'))
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+
+
+class DocumentShareLink(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    document_id = db.Column(db.Integer, db.ForeignKey('document.id'), nullable=False)
+    token = db.Column(db.String(80), unique=True, nullable=False, index=True)
+    label = db.Column(db.String(200))
+    expires_at = db.Column(db.DateTime)
+    max_downloads = db.Column(db.Integer)
+    download_count = db.Column(db.Integer, default=0)
+    allow_download = db.Column(db.Boolean, default=True)
+    created_by_id = db.Column(db.Integer, db.ForeignKey('user.id'))
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    revoked_at = db.Column(db.DateTime)
 
 
 class WeeklyReport(db.Model):
@@ -794,7 +822,11 @@ class Notification(db.Model):
 
 # ==================== FILE UPLOAD HELPERS ====================
 UPLOAD_FOLDER = 'uploads'
-ALLOWED_EXTENSIONS = {'png', 'jpg', 'jpeg', 'pdf', 'docx', 'xlsx'}
+ALLOWED_EXTENSIONS = {
+    'png', 'jpg', 'jpeg', 'gif', 'webp', 'bmp', 'tif', 'tiff',
+    'pdf', 'doc', 'docx', 'xls', 'xlsx', 'ppt', 'pptx', 'csv', 'txt', 'rtf',
+    'zip', 'rar', '7z', 'dwg', 'dxf',
+}
 
 app.config['UPLOAD_FOLDER'] = UPLOAD_FOLDER
 
@@ -2676,19 +2708,313 @@ def documents_page():
     return render_template('documents.html', projects=projects)
 
 
+@app.route('/share/<token>')
+def public_share_page(token):
+    link = DocumentShareLink.query.filter_by(token=token).first_or_404()
+    doc = Document.query.get_or_404(link.document_id)
+    if link.revoked_at:
+        return render_template('share_download.html', error='This link has been revoked.', doc=None, link=None), 410
+    if link.expires_at and link.expires_at < datetime.utcnow():
+        return render_template('share_download.html', error='This link has expired.', doc=None, link=None), 410
+    if link.max_downloads and (link.download_count or 0) >= link.max_downloads:
+        return render_template('share_download.html', error='Download limit reached.', doc=None, link=None), 410
+    from document_persistence import document_to_dict, format_file_size
+    return render_template(
+        'share_download.html',
+        error=None,
+        doc=document_to_dict(doc),
+        link={
+            'token': link.token,
+            'download_url': url_for('public_share_download', token=token),
+            'expires_at': link.expires_at.isoformat() if link.expires_at else None,
+            'size': format_file_size(doc.file_size),
+        },
+    )
+
+
+@app.route('/share/<token>/download')
+def public_share_download(token):
+    link = DocumentShareLink.query.filter_by(token=token).first_or_404()
+    if link.revoked_at:
+        return jsonify({'error': 'Link revoked'}), 410
+    if link.expires_at and link.expires_at < datetime.utcnow():
+        return jsonify({'error': 'Link expired'}), 410
+    if link.max_downloads and (link.download_count or 0) >= link.max_downloads:
+        return jsonify({'error': 'Download limit reached'}), 410
+    if not link.allow_download:
+        return jsonify({'error': 'Download disabled'}), 403
+    doc = Document.query.get_or_404(link.document_id)
+    directory = os.path.join(app.config['UPLOAD_FOLDER'], 'documents', str(doc.project_id))
+    path = os.path.join(directory, doc.filename)
+    if not os.path.isfile(path):
+        return jsonify({'error': 'File not found'}), 404
+    link.download_count = (link.download_count or 0) + 1
+    db.session.commit()
+    return send_from_directory(
+        directory,
+        doc.filename,
+        as_attachment=True,
+        download_name=doc.original_filename or doc.name,
+    )
+
+
+def _documents_base_url():
+    return request.url_root.rstrip('/')
+
+
+def _save_document_bytes(
+    project_id: int,
+    file_bytes: bytes,
+    name: str,
+    original_filename: str,
+    mime_type: str,
+    document_type: str = 'Other',
+    folder_id: int | None = None,
+    is_system_locked: bool = False,
+    source_drawing_id=None,
+    source_sheet=None,
+    source_metadata=None,
+):
+    from document_persistence import document_folder, document_to_dict, ensure_system_folders, resolve_folder_by_key
+
+    upload_root = app.config.get('UPLOAD_FOLDER', 'uploads')
+    ensure_system_folders(db, DocumentFolder, project_id, current_user.id if current_user.is_authenticated else None, Document=Document)
+    if not folder_id:
+        default_folder = resolve_folder_by_key(db, DocumentFolder, project_id, 'my-files')
+        folder_id = default_folder.id if default_folder else None
+
+    ext = original_filename.rsplit('.', 1)[-1].lower() if original_filename and '.' in original_filename else 'bin'
+    if ext not in ALLOWED_EXTENSIONS:
+        raise ValueError(f'File type .{ext} not allowed')
+
+    stamp = datetime.utcnow().strftime('%Y%m%d%H%M%S%f')
+    stored_name = f'{stamp}_{secure_filename(name).replace(" ", "_")[:80]}.{ext}'
+    folder_path = document_folder(upload_root, int(project_id))
+    file_path = os.path.join(folder_path, stored_name)
+    with open(file_path, 'wb') as fh:
+        fh.write(file_bytes)
+
+    doc = Document(
+        project_id=int(project_id),
+        folder_id=int(folder_id) if folder_id else None,
+        name=name,
+        document_type=document_type or 'Other',
+        filename=stored_name,
+        original_filename=original_filename,
+        file_size=len(file_bytes),
+        mime_type=mime_type,
+        is_system_locked=bool(is_system_locked),
+        source_drawing_id=int(source_drawing_id) if source_drawing_id else None,
+        source_sheet=source_sheet,
+        source_metadata_json=json.dumps(source_metadata) if source_metadata else None,
+        uploaded_by_id=current_user.id if current_user.is_authenticated else None,
+        created_at=datetime.utcnow(),
+        updated_at=datetime.utcnow(),
+    )
+    db.session.add(doc)
+    db.session.commit()
+    project = Project.query.get(doc.project_id)
+    folder = DocumentFolder.query.get(doc.folder_id) if doc.folder_id else None
+    return document_to_dict(doc, project.name if project else None, folder.name if folder else None)
+
+
+@app.route('/api/document-folders', methods=['GET'])
+@login_required
+def api_document_folders_list():
+    from document_persistence import ensure_system_folders, folder_to_dict
+
+    project_id = request.args.get('project_id', type=int) or get_current_project_id()
+    parent_id = request.args.get('parent_id')
+    if not project_id:
+        return jsonify({'error': 'project_id required'}), 400
+    ensure_system_folders(db, DocumentFolder, project_id, current_user.id, Document=Document)
+    q = DocumentFolder.query.filter_by(project_id=int(project_id))
+    if parent_id == 'null' or parent_id == '':
+        q = q.filter(DocumentFolder.parent_id.is_(None))
+    elif parent_id is not None:
+        q = q.filter_by(parent_id=int(parent_id))
+    folders = q.order_by(DocumentFolder.is_system.desc(), DocumentFolder.name).all()
+    out = []
+    for f in folders:
+        child_count = DocumentFolder.query.filter_by(parent_id=f.id).count()
+        file_count = Document.query.filter_by(folder_id=f.id).count()
+        out.append(folder_to_dict(f, child_count, file_count))
+    return jsonify({'ok': True, 'folders': out})
+
+
+@app.route('/api/document-folders/tree', methods=['GET'])
+@login_required
+def api_document_folders_tree():
+    from document_persistence import ensure_system_folders, folder_to_dict
+
+    project_id = request.args.get('project_id', type=int) or get_current_project_id()
+    if not project_id:
+        return jsonify({'error': 'project_id required'}), 400
+    ensure_system_folders(db, DocumentFolder, project_id, current_user.id, Document=Document)
+    all_folders = DocumentFolder.query.filter_by(project_id=int(project_id)).order_by(
+        DocumentFolder.is_system.desc(), DocumentFolder.name,
+    ).all()
+    by_parent: dict = {}
+    for f in all_folders:
+        by_parent.setdefault(f.parent_id, []).append(f)
+
+    def build_node(folder):
+        children = [build_node(c) for c in by_parent.get(folder.id, [])]
+        file_count = Document.query.filter_by(folder_id=folder.id).count()
+        node = folder_to_dict(folder, len(children), file_count)
+        node['children'] = children
+        return node
+
+    roots = [build_node(f) for f in by_parent.get(None, [])]
+    return jsonify({'ok': True, 'tree': roots})
+
+
+@app.route('/api/document-folders', methods=['POST'])
+@login_required
+def api_document_folders_create():
+    from document_persistence import ensure_system_folders, folder_to_dict
+
+    body = request.get_json(silent=True) or {}
+    project_id = body.get('project_id') or get_current_project_id()
+    name = (body.get('name') or '').strip()
+    parent_id = body.get('parent_id')
+    if not project_id or not name:
+        return jsonify({'error': 'project_id and name required'}), 400
+    ensure_system_folders(db, DocumentFolder, project_id, current_user.id, Document=Document)
+    if parent_id:
+        parent = DocumentFolder.query.get(int(parent_id))
+        if not parent or parent.project_id != int(project_id):
+            return jsonify({'error': 'Parent folder not found'}), 404
+    folder = DocumentFolder(
+        project_id=int(project_id),
+        parent_id=int(parent_id) if parent_id else None,
+        name=name,
+        is_system=False,
+        created_by_id=current_user.id,
+        created_at=datetime.utcnow(),
+    )
+    db.session.add(folder)
+    db.session.commit()
+    return jsonify({'ok': True, 'folder': folder_to_dict(folder)}), 201
+
+
+@app.route('/api/document-folders/<int:folder_id>', methods=['PATCH'])
+@login_required
+def api_document_folders_patch(folder_id):
+    from document_persistence import folder_is_descendant, folder_to_dict
+
+    folder = DocumentFolder.query.get_or_404(folder_id)
+    if folder.is_system:
+        return jsonify({'error': 'System folders cannot be modified'}), 403
+    body = request.get_json(silent=True) or {}
+    if 'name' in body and body['name']:
+        folder.name = str(body['name']).strip()[:200]
+    if 'parent_id' in body:
+        new_parent = body['parent_id']
+        if new_parent:
+            parent = DocumentFolder.query.get(int(new_parent))
+            if not parent or parent.project_id != folder.project_id:
+                return jsonify({'error': 'Invalid parent folder'}), 400
+            if folder_is_descendant(db, DocumentFolder, int(new_parent), folder.id):
+                return jsonify({'error': 'Cannot move folder into itself'}), 400
+            folder.parent_id = int(new_parent)
+        else:
+            folder.parent_id = None
+    db.session.commit()
+    return jsonify({'ok': True, 'folder': folder_to_dict(folder)})
+
+
+@app.route('/api/document-folders/<int:folder_id>', methods=['DELETE'])
+@login_required
+def api_document_folders_delete(folder_id):
+    folder = DocumentFolder.query.get_or_404(folder_id)
+    if folder.is_system:
+        return jsonify({'error': 'System folders cannot be deleted'}), 403
+    if DocumentFolder.query.filter_by(parent_id=folder.id).count():
+        return jsonify({'error': 'Folder is not empty (contains subfolders)'}), 400
+    if Document.query.filter_by(folder_id=folder.id).count():
+        return jsonify({'error': 'Folder is not empty (contains files)'}), 400
+    db.session.delete(folder)
+    db.session.commit()
+    return jsonify({'ok': True})
+
+
+@app.route('/api/documents/browse', methods=['GET'])
+@login_required
+def api_documents_browse():
+    from document_persistence import document_to_dict, ensure_system_folders, folder_to_dict
+
+    project_id = request.args.get('project_id', type=int) or get_current_project_id()
+    folder_id = request.args.get('folder_id')
+    if not project_id:
+        return jsonify({'error': 'project_id required'}), 400
+    ensure_system_folders(db, DocumentFolder, project_id, current_user.id, Document=Document)
+    project = Project.query.get(int(project_id))
+
+    fq = DocumentFolder.query.filter_by(project_id=int(project_id))
+    if folder_id in (None, '', 'null'):
+        fq = fq.filter(DocumentFolder.parent_id.is_(None))
+        current_folder = None
+    else:
+        current_folder = DocumentFolder.query.get(int(folder_id))
+        if not current_folder or current_folder.project_id != int(project_id):
+            return jsonify({'error': 'Folder not found'}), 404
+        fq = fq.filter_by(parent_id=current_folder.id)
+
+    folders = fq.order_by(DocumentFolder.is_system.desc(), DocumentFolder.name).all()
+    folder_nodes = []
+    for f in folders:
+        child_count = DocumentFolder.query.filter_by(parent_id=f.id).count()
+        file_count = Document.query.filter_by(folder_id=f.id).count()
+        folder_nodes.append(folder_to_dict(f, child_count, file_count))
+
+    dq = Document.query.filter_by(project_id=int(project_id))
+    if folder_id in (None, '', 'null'):
+        dq = dq.filter(Document.folder_id.is_(None))
+    else:
+        dq = dq.filter_by(folder_id=int(folder_id))
+    docs = dq.order_by(Document.name).all()
+
+    breadcrumbs = []
+    if current_folder:
+        chain = [current_folder]
+        parent = DocumentFolder.query.get(current_folder.parent_id) if current_folder.parent_id else None
+        while parent:
+            chain.insert(0, parent)
+            parent = DocumentFolder.query.get(parent.parent_id) if parent.parent_id else None
+        breadcrumbs = [{'id': f.id, 'name': f.name, 'is_system': f.is_system} for f in chain]
+
+    return jsonify({
+        'ok': True,
+        'project_id': int(project_id),
+        'project_name': project.name if project else None,
+        'folder_id': current_folder.id if current_folder else None,
+        'breadcrumbs': breadcrumbs,
+        'folders': folder_nodes,
+        'files': [document_to_dict(d, project.name if project else None, current_folder.name if current_folder else None) for d in docs],
+    })
+
+
 @app.route('/api/documents', methods=['GET'])
 @login_required
 def api_documents_list():
-    from document_persistence import document_to_dict
+    from document_persistence import document_to_dict, ensure_system_folders
+
     project_id = request.args.get('project_id', type=int) or get_current_project_id()
+    folder_id = request.args.get('folder_id')
+    if project_id:
+        ensure_system_folders(db, DocumentFolder, project_id, current_user.id, Document=Document)
     q = Document.query
     if project_id:
         q = q.filter_by(project_id=int(project_id))
-    docs = q.order_by(Document.created_at.desc()).limit(500).all()
+    if folder_id:
+        q = q.filter_by(folder_id=int(folder_id))
+    docs = q.order_by(Document.created_at.desc()).limit(1000).all()
     projects = {p.id: p.name for p in Project.query.filter(Project.id.in_({d.project_id for d in docs})).all()} if docs else {}
+    folders = {f.id: f.name for f in DocumentFolder.query.filter(DocumentFolder.id.in_({d.folder_id for d in docs if d.folder_id})).all()} if docs else {}
     return jsonify({
         'ok': True,
-        'documents': [document_to_dict(d, projects.get(d.project_id)) for d in docs],
+        'documents': [document_to_dict(d, projects.get(d.project_id), folders.get(d.folder_id)) for d in docs],
     })
 
 
@@ -2696,52 +3022,69 @@ def api_documents_list():
 @login_required
 def api_documents_create():
     import base64 as b64mod
-    from document_persistence import document_folder, document_to_dict
+    from document_persistence import resolve_folder_by_key
 
     upload_root = app.config.get('UPLOAD_FOLDER', 'uploads')
     project_id = None
     name = None
     document_type = 'Other'
+    folder_id = None
     source_drawing_id = None
     source_sheet = None
     source_metadata = {}
     file_bytes = None
     original_filename = None
     mime_type = 'application/octet-stream'
+    is_system_locked = False
+    create_share_link = False
 
     if request.content_type and 'multipart/form-data' in request.content_type:
         project_id = request.form.get('project_id', type=int) or get_current_project_id()
         name = (request.form.get('name') or '').strip()
         document_type = (request.form.get('document_type') or request.form.get('type') or 'Other').strip()
+        folder_id = request.form.get('folder_id', type=int)
         source_drawing_id = request.form.get('source_drawing_id', type=int)
         source_sheet = (request.form.get('source_sheet') or '').strip() or None
+        create_share_link = request.form.get('create_share_link') in ('1', 'true', 'yes')
         up = request.files.get('file')
         if not up or not up.filename:
             return jsonify({'error': 'File is required'}), 400
         file_bytes = up.read()
         original_filename = secure_filename(up.filename)
         mime_type = up.mimetype or mime_type
+        if not name:
+            name = original_filename
     else:
         body = request.get_json(silent=True) or {}
         project_id = body.get('project_id') or get_current_project_id()
         name = (body.get('name') or '').strip()
         document_type = (body.get('document_type') or body.get('type') or 'Drawing').strip()
+        folder_id = body.get('folder_id')
         source_drawing_id = body.get('source_drawing_id')
         source_sheet = (body.get('source_sheet') or '').strip() or None
         source_metadata = body.get('source_metadata') or {}
+        is_system_locked = bool(body.get('is_system_locked'))
+        create_share_link = bool(body.get('create_share_link'))
+        system_folder_key = body.get('system_folder_key')
+        if system_folder_key and project_id:
+            sf = resolve_folder_by_key(db, DocumentFolder, int(project_id), system_folder_key)
+            if sf:
+                folder_id = sf.id
+                is_system_locked = is_system_locked or system_folder_key == 'printed-output'
         image_data = body.get('image_data') or body.get('template')
-        if not image_data:
-            return jsonify({'error': 'image_data or file is required'}), 400
-        if ',' in image_data:
-            image_data = image_data.split(',', 1)[1]
-        try:
-            file_bytes = b64mod.b64decode(image_data)
-        except Exception:
-            return jsonify({'error': 'Invalid image data'}), 400
-        original_filename = secure_filename(body.get('filename') or 'drawing-snip.png')
-        if not original_filename.lower().endswith('.png'):
-            original_filename += '.png'
-        mime_type = 'image/png'
+        file_b64 = body.get('file_base64')
+        if image_data or file_b64:
+            raw = image_data or file_b64
+            if ',' in str(raw):
+                raw = str(raw).split(',', 1)[1]
+            try:
+                file_bytes = b64mod.b64decode(raw)
+            except Exception:
+                return jsonify({'error': 'Invalid file data'}), 400
+            original_filename = secure_filename(body.get('filename') or 'upload.bin')
+            mime_type = body.get('mime_type') or mime_type
+        else:
+            return jsonify({'error': 'file or image_data required'}), 400
 
     if not project_id:
         return jsonify({'error': 'project_id required'}), 400
@@ -2749,45 +3092,156 @@ def api_documents_create():
         return jsonify({'error': 'Project not found'}), 404
     if not file_bytes:
         return jsonify({'error': 'Empty file'}), 400
-    if not name:
-        base = original_filename.rsplit('.', 1)[0] if original_filename else 'Document'
-        name = base.replace('_', ' ')
 
-    ext = original_filename.rsplit('.', 1)[-1].lower() if original_filename and '.' in original_filename else 'png'
-    if ext not in ALLOWED_EXTENSIONS:
-        return jsonify({'error': f'File type .{ext} not allowed'}), 400
+    try:
+        doc_dict = _save_document_bytes(
+            int(project_id), file_bytes, name or 'Document', original_filename or 'file.bin',
+            mime_type, document_type, folder_id, is_system_locked,
+            source_drawing_id, source_sheet, source_metadata,
+        )
+    except ValueError as exc:
+        return jsonify({'error': str(exc)}), 400
 
-    stamp = datetime.utcnow().strftime('%Y%m%d%H%M%S')
-    stored_name = f'{stamp}_{secure_filename(name).replace(" ", "_")[:80]}.{ext}'
-    folder = document_folder(upload_root, int(project_id))
-    file_path = os.path.join(folder, stored_name)
-    with open(file_path, 'wb') as fh:
-        fh.write(file_bytes)
+    share = None
+    if create_share_link:
+        share = _create_document_share_link(doc_dict['id'])
 
-    doc = Document(
-        project_id=int(project_id),
-        name=name,
-        document_type=document_type or 'Other',
-        filename=stored_name,
-        original_filename=original_filename,
-        file_size=len(file_bytes),
-        mime_type=mime_type,
-        source_drawing_id=int(source_drawing_id) if source_drawing_id else None,
-        source_sheet=source_sheet,
-        source_metadata_json=json.dumps(source_metadata) if source_metadata else None,
-        uploaded_by_id=current_user.id,
+    return jsonify({'ok': True, 'document': doc_dict, 'share_link': share}), 201
+
+
+@app.route('/api/documents/printed-output', methods=['POST'])
+@login_required
+def api_documents_printed_output():
+    """Save a print/PDF output into the locked Printed Output system folder."""
+    import base64 as b64mod
+    from document_persistence import resolve_folder_by_key
+
+    body = request.get_json(silent=True) or {}
+    project_id = body.get('project_id') or get_current_project_id()
+    name = (body.get('name') or 'Printed document').strip()
+    pdf_data = body.get('pdf_base64') or body.get('file_base64')
+    source_module = body.get('source_module') or 'unknown'
+    if not project_id or not pdf_data:
+        return jsonify({'error': 'project_id and pdf_base64 required'}), 400
+    if ',' in pdf_data:
+        pdf_data = pdf_data.split(',', 1)[1]
+    try:
+        file_bytes = b64mod.b64decode(pdf_data)
+    except Exception:
+        return jsonify({'error': 'Invalid PDF data'}), 400
+    folder = resolve_folder_by_key(db, DocumentFolder, int(project_id), 'printed-output')
+    if not folder:
+        return jsonify({'error': 'Printed Output folder missing'}), 500
+    try:
+        doc_dict = _save_document_bytes(
+            int(project_id), file_bytes, name, secure_filename(f'{name}.pdf'),
+            'application/pdf', 'Printed', folder.id, True,
+            source_metadata={'source_module': source_module, 'printed_at': datetime.utcnow().isoformat()},
+        )
+    except ValueError as exc:
+        return jsonify({'error': str(exc)}), 400
+    return jsonify({'ok': True, 'document': doc_dict}), 201
+
+
+def _create_document_share_link(document_id: int, days: int = 30, max_downloads: int | None = None):
+    from document_persistence import default_share_expiry, new_share_token, share_link_to_dict
+
+    doc = Document.query.get_or_404(document_id)
+    link = DocumentShareLink(
+        document_id=doc.id,
+        token=new_share_token(),
+        label=doc.name,
+        expires_at=default_share_expiry(days),
+        max_downloads=max_downloads,
+        download_count=0,
+        allow_download=True,
+        created_by_id=current_user.id,
         created_at=datetime.utcnow(),
     )
-    db.session.add(doc)
+    db.session.add(link)
+    db.session.commit()
+    return share_link_to_dict(link, _documents_base_url())
+
+
+@app.route('/api/documents/<int:doc_id>', methods=['PATCH'])
+@login_required
+def api_documents_patch(doc_id):
+    from document_persistence import document_to_dict
+
+    doc = Document.query.get_or_404(doc_id)
+    body = request.get_json(silent=True) or {}
+    if doc.is_system_locked and (body.get('folder_id') is not None or body.get('name')):
+        if body.get('name') and body.get('name') != doc.name:
+            return jsonify({'error': 'Locked job files cannot be renamed'}), 403
+    if 'name' in body and body['name']:
+        doc.name = str(body['name']).strip()[:300]
+    if 'folder_id' in body and not doc.is_system_locked:
+        fid = body['folder_id']
+        if fid:
+            folder = DocumentFolder.query.get(int(fid))
+            if not folder or folder.project_id != doc.project_id:
+                return jsonify({'error': 'Invalid folder'}), 400
+            doc.folder_id = folder.id
+        else:
+            doc.folder_id = None
+    doc.updated_at = datetime.utcnow()
     db.session.commit()
     project = Project.query.get(doc.project_id)
-    return jsonify({'ok': True, 'document': document_to_dict(doc, project.name if project else None)}), 201
+    folder = DocumentFolder.query.get(doc.folder_id) if doc.folder_id else None
+    return jsonify({'ok': True, 'document': document_to_dict(doc, project.name if project else None, folder.name if folder else None)})
+
+
+@app.route('/api/documents/<int:doc_id>/download')
+@login_required
+def api_documents_download(doc_id):
+    doc = Document.query.get_or_404(doc_id)
+    directory = os.path.join(app.config['UPLOAD_FOLDER'], 'documents', str(doc.project_id))
+    if not os.path.isfile(os.path.join(directory, doc.filename)):
+        return jsonify({'error': 'File not found'}), 404
+    return send_from_directory(
+        directory,
+        doc.filename,
+        as_attachment=True,
+        download_name=doc.original_filename or doc.name,
+    )
+
+
+@app.route('/api/documents/<int:doc_id>/share-links', methods=['GET'])
+@login_required
+def api_document_share_links_list(doc_id):
+    from document_persistence import share_link_to_dict
+
+    Document.query.get_or_404(doc_id)
+    links = DocumentShareLink.query.filter_by(document_id=doc_id).order_by(DocumentShareLink.created_at.desc()).all()
+    base = _documents_base_url()
+    return jsonify({'ok': True, 'links': [share_link_to_dict(l, base) for l in links]})
+
+
+@app.route('/api/documents/<int:doc_id>/share-links', methods=['POST'])
+@login_required
+def api_document_share_links_create(doc_id):
+    body = request.get_json(silent=True) or {}
+    days = int(body.get('expires_days') or 30)
+    max_dl = body.get('max_downloads')
+    share = _create_document_share_link(doc_id, days=days, max_downloads=int(max_dl) if max_dl else None)
+    return jsonify({'ok': True, 'share_link': share}), 201
+
+
+@app.route('/api/share-links/<int:link_id>', methods=['DELETE'])
+@login_required
+def api_share_links_revoke(link_id):
+    link = DocumentShareLink.query.get_or_404(link_id)
+    link.revoked_at = datetime.utcnow()
+    db.session.commit()
+    return jsonify({'ok': True})
 
 
 @app.route('/api/documents/<int:doc_id>', methods=['DELETE'])
 @login_required
 def api_documents_delete(doc_id):
     doc = Document.query.get_or_404(doc_id)
+    if doc.is_system_locked:
+        return jsonify({'error': 'This file is locked (job/print output) and cannot be deleted'}), 403
     upload_root = app.config.get('UPLOAD_FOLDER', 'uploads')
     file_path = os.path.join(upload_root, 'documents', str(doc.project_id), doc.filename)
     if os.path.isfile(file_path):
@@ -2795,6 +3249,7 @@ def api_documents_delete(doc_id):
             os.remove(file_path)
         except OSError:
             pass
+    DocumentShareLink.query.filter_by(document_id=doc.id).delete()
     db.session.delete(doc)
     db.session.commit()
     return jsonify({'ok': True})
