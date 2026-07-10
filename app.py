@@ -3475,6 +3475,33 @@ def api_documents_list():
     })
 
 
+def _infer_data_url_upload(raw_input, mime_type=None, filename=None):
+    """Infer MIME type and stored filename for base64 / data-URL uploads."""
+    data_url = str(raw_input or '')
+    if data_url.startswith('data:'):
+        header = data_url.split(',', 1)[0].lower()
+        if 'image/png' in header:
+            return 'image/png', secure_filename(filename or 'upload.png')
+        if 'image/jpeg' in header or 'image/jpg' in header:
+            return 'image/jpeg', secure_filename(filename or 'upload.jpg')
+        if 'image/webp' in header:
+            return 'image/webp', secure_filename(filename or 'upload.webp')
+        if 'application/pdf' in header:
+            return 'application/pdf', secure_filename(filename or 'upload.pdf')
+    mime_ext = {
+        'image/png': 'png',
+        'image/jpeg': 'jpg',
+        'image/jpg': 'jpg',
+        'image/webp': 'webp',
+        'application/pdf': 'pdf',
+    }
+    mt = (mime_type or '').lower()
+    if mt in mime_ext:
+        base = (filename or 'upload').rsplit('.', 1)[0]
+        return mt, secure_filename(f'{base}.{mime_ext[mt]}')
+    return 'image/png', secure_filename(filename or 'upload.png')
+
+
 @app.route('/api/documents', methods=['POST'])
 @login_required
 def api_documents_create():
@@ -3538,8 +3565,11 @@ def api_documents_create():
                 file_bytes = b64mod.b64decode(raw)
             except Exception:
                 return jsonify({'error': 'Invalid file data'}), 400
-            original_filename = secure_filename(body.get('filename') or 'upload.bin')
-            mime_type = body.get('mime_type') or mime_type
+            mime_type, original_filename = _infer_data_url_upload(
+                image_data or file_b64,
+                body.get('mime_type'),
+                body.get('filename') or (f'{name}.png' if name else None),
+            )
         else:
             return jsonify({'error': 'file or image_data required'}), 400
 
