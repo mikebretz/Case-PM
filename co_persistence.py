@@ -69,6 +69,7 @@ def ensure_co_schema(engine, db):
             'linked_commitment_ref': 'VARCHAR(80)',
             'approval_stage': 'INTEGER DEFAULT 0',
             'plan_pins_json': 'TEXT',
+            'approval_history_json': 'TEXT',
         }
         for name, col_type in additions.items():
             if name not in cols:
@@ -168,6 +169,7 @@ def co_to_dict(co, allocations=None, revisions=None):
         'linked_commitment_ref': getattr(co, 'linked_commitment_ref', None),
         'plan_pins': _parse_json(getattr(co, 'plan_pins_json', None), []),
         'approval_stage': getattr(co, 'approval_stage', 0) or 0,
+        'approval_history': _parse_json(getattr(co, 'approval_history_json', None), []),
         'allocations': [{
             'cost_code': a.cost_code,
             'cost_type': getattr(a, 'cost_type', None) or '',
@@ -551,6 +553,26 @@ def notify_ball_in_court(project_id, co, User, title=None, description=None):
             )
     except Exception:
         pass
+
+
+def append_approval_history(co, action, user, comment='', status_from='', status_to=''):
+    history = _parse_json(getattr(co, 'approval_history_json', None), [])
+    name = ''
+    if user:
+        name = f'{getattr(user, "first_name", "")} {getattr(user, "last_name", "")}'.strip() or getattr(user, 'email', '')
+    history.append({
+        'action': action,
+        'status_from': status_from,
+        'status_to': status_to,
+        'role': getattr(user, 'role', None),
+        'user_name': name,
+        'comment': (comment or '').strip(),
+        'at': datetime.utcnow().isoformat() + 'Z',
+    })
+    co.approval_history_json = json.dumps(history)
+    if comment and action == 'reject':
+        prefix = f'[{datetime.utcnow().strftime("%Y-%m-%d")} Rejected] {comment}'
+        co.notes = f'{prefix}\n{co.notes}'.strip() if co.notes else prefix
 
 
 def co_workflow_action(co, action, user, User, allocations=None):

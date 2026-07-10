@@ -14,76 +14,77 @@
   #cost_code {
     appearance: none;
   }
+  #mainContent:has(.budget-page) {
+    overflow: hidden !important;
+    display: flex;
+    flex-direction: column;
+    padding: 0 !important;
+  }
+  .budget-page {
+    display: flex;
+    flex-direction: column;
+    flex: 1;
+    min-height: 0;
+    width: 100%;
+    padding: 1rem 1rem 0;
+    overflow: hidden;
+    box-sizing: border-box;
+  }
+  .budget-stack {
+    display: flex;
+    flex-direction: column;
+    flex: 1;
+    min-height: 0;
+    overflow: hidden;
+  }
 </style>
 
-<!-- HEADER (same as attached) -->
-<div class="h-16 border-b border-zinc-800 bg-zinc-900 flex items-center px-6 flex-shrink-0">
-    <div class="w-1/3">
-        <div class="text-[10px] text-zinc-400 tracking-[1px] font-medium">CURRENT PROJECT</div>
-        <div class="text-xl font-semibold tracking-tight text-white">{{ project_name }}</div>
-    </div>
+<div class="budget-page">
+<div class="budget-stack">
 
-    <div class="w-1/3 flex justify-start pl-0">
-        <div class="flex items-center gap-3">
-            <div class="text-2xl font-semibold text-white">Budget</div>
-            <div id="revisionBadge" onclick="showVersionHistory()" 
-                 class="cursor-pointer text-lg font-bold px-4 py-1 bg-zinc-800 hover:bg-zinc-700 border border-zinc-700 text-emerald-400 rounded-2xl font-mono transition-colors">
-                Rev 01
-            </div>
-            <div id="unsavedDot" class="hidden w-2.5 h-2.5 bg-amber-500 rounded-full"></div>
+<!-- TOOLBAR (matches Pay Apps / Commitments / Change Orders) -->
+<div class="flex items-center justify-between flex-shrink-0 mb-4 gap-3">
+    <div class="flex items-center gap-3 min-w-0">
+        <div class="text-2xl font-semibold text-white whitespace-nowrap">Budget</div>
+        <div id="revisionBadge" onclick="showVersionHistory()"
+             class="cursor-pointer text-lg font-bold px-4 py-1 bg-zinc-800 hover:bg-zinc-700 border border-zinc-700 text-emerald-400 rounded-2xl font-mono transition-colors">
+            Rev 01
         </div>
+        <div id="unsavedDot" class="hidden w-2.5 h-2.5 bg-amber-500 rounded-full"></div>
+        <div class="text-xs text-zinc-500 hidden lg:block">Contract · SOV · Sage 300</div>
     </div>
-
-    <div class="w-1/3 flex items-center justify-end gap-2 flex-nowrap">
-        <button onclick="exportBudget()" class="flex items-center gap-2 px-4 py-2 bg-zinc-800 hover:bg-zinc-700 rounded-md text-sm font-medium transition-colors h-[38px]">
-            <i class="fa-solid fa-download"></i><span>Export</span>
+    <div class="flex items-center gap-2 flex-wrap justify-end">
+        <button onclick="exportBudget()" class="flex items-center gap-2 px-4 py-2 bg-zinc-800 hover:bg-zinc-700 rounded-md text-sm font-medium h-[38px]">
+            <i class="fa-solid fa-download"></i><span class="hidden md:inline">Export</span>
         </button>
-
-        <button id="importBtn" onclick="importBudget()" class="flex items-center gap-2 px-4 py-2 bg-zinc-800 hover:bg-zinc-700 rounded-md text-sm font-medium transition-colors h-[38px]">
-            <i class="fa-solid fa-upload"></i><span>Import</span>
+        <button id="importBtn" onclick="importBudget()" class="flex items-center gap-2 px-4 py-2 bg-zinc-800 hover:bg-zinc-700 rounded-md text-sm font-medium h-[38px]">
+            <i class="fa-solid fa-upload"></i><span class="hidden md:inline">Import</span>
         </button>
-
-        <button onclick="printBudget()" class="flex items-center gap-2 px-4 py-2 bg-zinc-800 hover:bg-zinc-700 rounded-md text-sm font-medium transition-colors h-[38px]">
-            <i class="fa-solid fa-print"></i><span>Print</span>
+        <button onclick="printBudget()" class="flex items-center gap-2 px-4 py-2 bg-zinc-800 hover:bg-zinc-700 rounded-md text-sm font-medium h-[38px]">
+            <i class="fa-solid fa-print"></i><span class="hidden md:inline">Print</span>
         </button>
-
-        <button onclick="viewPendingChanges()" class="flex items-center gap-2 px-5 py-2 min-w-[210px] whitespace-nowrap bg-amber-600 hover:bg-amber-500 rounded-md text-sm font-medium transition-colors h-[38px]">
-            <i class="fa-solid fa-clock"></i><span>View Pending Changes</span>
+        <button onclick="viewPendingChanges()" class="flex items-center gap-2 px-4 py-2 bg-amber-600 hover:bg-amber-500 rounded-md text-sm font-medium h-[38px]">
+            <i class="fa-solid fa-clock"></i><span class="hidden md:inline">Pending COs</span>
         </button>
-
-        <button onclick="saveBudget()" class="flex items-center gap-2 px-5 py-2 min-w-[145px] whitespace-nowrap bg-zinc-700 hover:bg-zinc-600 rounded-md text-sm font-medium transition-colors h-[38px]">
-            <i class="fa-solid fa-save"></i><span>Save Budget</span>
+        <button onclick="saveBudget()" class="flex items-center gap-2 px-4 py-2 bg-zinc-700 hover:bg-zinc-600 rounded-md text-sm font-medium h-[38px]">
+            <i class="fa-solid fa-save"></i><span>Save</span>
         </button>
-
-        <button id="publishBtn" onclick="publishBudget()" class="flex items-center gap-2 px-5 py-2 min-w-[160px] whitespace-nowrap bg-emerald-600 hover:bg-emerald-500 rounded-md text-sm font-semibold transition-colors h-[38px]">
-            <i class="fa-solid fa-upload"></i><span>Publish Budget</span>
+        <button id="publishBtn" onclick="publishBudget()" class="flex items-center gap-2 px-4 py-2 bg-emerald-600 hover:bg-emerald-500 rounded-md text-sm font-semibold h-[38px]">
+            <i class="fa-solid fa-upload"></i><span>Publish</span>
         </button>
-
-        <button id="addLineBtn" onclick="showAddBudgetLineModal()" class="flex items-center gap-2 px-5 py-2 min-w-[195px] whitespace-nowrap bg-white text-zinc-900 hover:bg-zinc-100 rounded-md text-sm font-semibold transition-colors h-[38px]">
-            <i class="fa-solid fa-plus"></i><span>Add Budget Line Item</span>
+        <button id="addLineBtn" onclick="showAddBudgetLineModal()" class="flex items-center gap-2 px-5 py-2 bg-white text-zinc-900 hover:bg-zinc-100 rounded-md text-sm font-semibold h-[38px]">
+            <i class="fa-solid fa-plus"></i><span>Add Line</span>
         </button>
-
         <button onclick="showSettingsModal()" class="w-10 h-10 flex items-center justify-center bg-zinc-800 hover:bg-zinc-700 rounded-md">
             <i class="fa-solid fa-cog"></i>
         </button>
-
-        <!-- Compact 2-line User Profile -->
-        <div class="flex items-center gap-2 pl-3 border-l border-zinc-700 cursor-pointer flex-shrink-0" onclick="showUserProfileModal()">
-            <div class="w-8 h-8 bg-zinc-700 rounded-full overflow-hidden flex-shrink-0">
-                <img src="https://i.pravatar.cc/32?img=68" class="w-full h-full object-cover">
-            </div>
-            <div class="text-sm leading-none">
-                <div class="font-medium whitespace-nowrap">Michael Bretz</div>
-                <div class="text-[10px] text-zinc-500 whitespace-nowrap">Project Manager</div>
-            </div>
-        </div>
     </div>
 </div>
 
-<!-- SUMMARY CARDS (sticky) -->
-<div class="bg-zinc-900 border border-zinc-700 mx-6 mt-4 rounded-md p-4 flex-shrink-0 sticky top-0 z-30">
-    <div class="grid grid-cols-1 md:grid-cols-8 gap-4">
-        <div class="bg-zinc-800 border border-zinc-700 rounded-md p-5">
+<!-- SUMMARY CARDS -->
+<div class="bg-zinc-900 border border-zinc-700 rounded-md p-4 flex-shrink-0 mb-4">
+        <div class="grid grid-cols-1 md:grid-cols-8 gap-4">
+        <div class="bg-zinc-800 border border-zinc-700 rounded-md p-4">
             <div class="text-sm text-zinc-400">Contract Amount</div>
             <div id="contractAmount" class="text-xl font-semibold mt-1">$2,450,000</div>
             <div id="contractAmountSource" class="text-[10px] text-zinc-500 mt-0.5"></div>
@@ -119,8 +120,8 @@
     </div>
 </div>
 
-<!-- Search + Quick Filters (fixed) -->
-<div class="flex flex-col md:flex-row gap-4 mx-6 mt-4 mb-2 flex-shrink-0 items-center">
+<!-- Search + Quick Filters -->
+<div class="flex flex-col md:flex-row gap-4 mb-3 flex-shrink-0 items-center">
     <input type="text" id="searchInput" placeholder="Search budget lines..." class="flex-1 bg-zinc-900 border border-zinc-700 rounded-md px-4 py-2.5 text-sm focus:border-emerald-600">
     <select id="costTypeFilter" class="bg-zinc-900 border border-zinc-700 rounded-md px-4 py-2.5 text-sm focus:border-emerald-600">
         <option value="">All Cost Types</option>
@@ -139,9 +140,9 @@
     </div>
 </div>
 
-<!-- TABLE CONTAINER (ONLY data rows scroll; thead sticky) -->
-<div class="mx-6 mb-6 flex-1 overflow-hidden flex flex-col border border-zinc-700 rounded-md bg-zinc-900">
-    <div class="flex-1 overflow-auto" id="tableScrollContainer" style="max-height: calc(100vh - 380px);">
+<!-- TABLE CONTAINER -->
+<div class="flex-1 min-h-0 flex flex-col border border-zinc-700 rounded-md bg-zinc-900 mb-20 overflow-hidden">
+    <div class="flex-1 overflow-auto min-h-0" id="tableScrollContainer">
         <table class="w-full text-sm min-w-[2000px]">
             <thead class="bg-zinc-800 sticky z-20 border-b border-zinc-700" style="top: 0; position: sticky;">
                 <tr>
@@ -168,6 +169,9 @@
         </table>
     </div>
     <div class="h-px bg-zinc-700 flex-shrink-0"></div>
+</div>
+
+</div>
 </div>
 
 <!-- Fixed Bottom Status Bar -->
@@ -2590,15 +2594,21 @@
     function initializeBudget() {
         const boot = async () => {
             if (typeof CasePMBudgetSync !== 'undefined') {
-                await CasePMBudgetSync.init();
+                const loaded = await CasePMBudgetSync.init();
+                if (loaded?.contract_synced) {
+                    console.info('[Budget] Contract amount synced from project file.');
+                }
             } else if (typeof CasePMWorkflow !== 'undefined') {
                 await CasePMWorkflow.loadPortal().catch(() => {});
             }
             reloadBudgetStateFromStorage();
             const serverAmt = resolveServerContractAmount();
-            if (serverAmt && !casepmStore.getItem('budgetContractAmount')) {
-                contractAmount = serverAmt;
-                casepmStore.setItem('budgetContractAmount', String(contractAmount));
+            if (serverAmt != null) {
+                const stored = parseFloat(casepmStore.getItem('budgetContractAmount') || '');
+                if (!stored || Math.abs(stored - serverAmt) > 0.01) {
+                    contractAmount = serverAmt;
+                    casepmStore.setItem('budgetContractAmount', String(contractAmount));
+                }
             }
             await loadPendingChangeOrders();
 

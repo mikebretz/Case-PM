@@ -326,8 +326,8 @@
         <td class="px-4 py-3 text-center" onclick="event.stopPropagation()">
           <div class="flex items-center justify-center gap-1">
             ${showSubmit ? `<button onclick="CasePMChangeOrders.workflowCo(${co.id},'submit')" class="p-1.5 text-amber-400 hover:bg-zinc-800 rounded" title="Submit"><i class="fa-solid fa-paper-plane"></i></button>` : ''}
-            ${showApprove ? `<button onclick="CasePMChangeOrders.workflowCo(${co.id},'approve')" class="p-1.5 text-emerald-400 hover:bg-zinc-800 rounded" title="${approveLabel}"><i class="fa-solid fa-check"></i></button>` : ''}
-            ${showReject ? `<button onclick="CasePMChangeOrders.workflowCo(${co.id},'reject')" class="p-1.5 text-red-400 hover:bg-zinc-800 rounded" title="Reject"><i class="fa-solid fa-times"></i></button>` : ''}
+            ${showApprove ? `<button onclick="CasePMChangeOrders.openApprovalModal(${co.id},'approve')" class="p-1.5 text-emerald-400 hover:bg-zinc-800 rounded" title="${approveLabel}"><i class="fa-solid fa-check"></i></button>` : ''}
+            ${showReject ? `<button onclick="CasePMChangeOrders.openApprovalModal(${co.id},'reject')" class="p-1.5 text-red-400 hover:bg-zinc-800 rounded" title="Reject"><i class="fa-solid fa-times"></i></button>` : ''}
             <button onclick="CasePMChangeOrders.editCo(${co.id})" class="p-1.5 text-zinc-400 hover:bg-zinc-800 rounded"><i class="fa-solid fa-edit"></i></button>
             <button onclick="CasePMChangeOrders.deleteCo(${co.id})" class="p-1.5 text-red-400 hover:bg-zinc-800 rounded" title="Delete (testing)"><i class="fa-solid fa-trash"></i></button>
           </div>
@@ -632,23 +632,73 @@
     global.dispatchEvent(new CustomEvent('casepm:co-approved', { detail: json }));
   }
 
-  async function workflowCo(id, action) {
-    const co = state.changeOrders.find(c => c.id === id);
+  let approvalContext = { coId: null };
+
+  function openApprovalModal(coId, intent) {
+    const co = state.changeOrders.find(c => c.id === coId) || (state.drawerRecord?.id === coId ? state.drawerRecord : null);
+    if (!co) return;
+    const allocCheck = validateAllocations(co.allocations || [], { requireRows: true, requireAmount: true });
+    if (!allocCheck.ok) {
+      alert(`${allocCheck.message}\n\nComplete Schedule of Values allocations before approval.`);
+      return;
+    }
+    approvalContext = { coId };
+    const modal = document.getElementById('coApprovalModal');
+    document.getElementById('coApprovalTitle').textContent = 'Review Change Order';
+    document.getElementById('coApprovalSubtitle').textContent = `${co.number} · ${co.ball_in_court_role || 'Approver'} review`;
+    const allocLines = (co.allocations || []).map(a =>
+      `<div class="flex justify-between gap-3 text-xs"><span class="font-mono text-emerald-400">${esc(a.cost_code)}</span><span class="text-zinc-400">${esc(a.cost_type || '')}</span><span class="font-mono">${fmt(a.amount)}</span></div>`
+    ).join('') || '<div class="text-zinc-500">No allocations</div>';
+    document.getElementById('coApprovalSummary').innerHTML = `
+      <div class="flex justify-between"><span class="text-zinc-500">Title</span><span class="text-right max-w-[65%]">${esc(co.title || co.description)}</span></div>
+      <div class="flex justify-between"><span class="text-zinc-500">Amount</span><span class="font-mono text-emerald-400">${fmt(co.amount)}</span></div>
+      <div class="flex justify-between"><span class="text-zinc-500">Status</span><span>${statusBadge(co.status)}</span></div>
+      <div class="pt-2 border-t border-zinc-800">
+        <div class="text-[10px] uppercase tracking-wide text-zinc-500 mb-1">SOV Allocations</div>
+        ${allocLines}
+      </div>`;
+    const commentsEl = document.getElementById('coApprovalComments');
+    if (commentsEl) {
+      commentsEl.value = '';
+      commentsEl.placeholder = intent === 'reject'
+        ? 'Rejection reason (required)…'
+        : 'Optional approval notes…';
+    }
+    document.getElementById('coApprovalCommentsRequired')?.classList.add('hidden');
+    document.getElementById('coApprovalApproveBtn')?.classList.remove('hidden');
+    document.getElementById('coApprovalRejectBtn')?.classList.remove('hidden');
+    modal?.showModal();
+    if (intent === 'reject') commentsEl?.focus();
+  }
+
+  async function confirmApprovalAction(action) {
+    const coId = approvalContext.coId;
+    if (!coId || !action) return;
+    const comments = document.getElementById('coApprovalComments')?.value?.trim() || '';
+    if (action === 'reject' && !comments) {
+      alert('Please enter a rejection comment.');
+      return;
+    }
+    document.getElementById('coApprovalModal')?.close();
+    await workflowCo(coId, action, comments);
+    approvalContext = { coId: null };
+  }
+
+  async function workflowCo(id, action, comments) {
+    const co = state.changeOrders.find(c => c.id === id) || state.drawerRecord;
     if (!co) return;
     const allocCheck = validateAllocations(co.allocations || [], { requireRows: true, requireAmount: true });
     if (!allocCheck.ok && (action === 'submit' || action === 'approve')) {
       alert(`${allocCheck.message}\n\nEdit the change order and complete the Schedule of Values allocations first.`);
       return;
     }
-    const verb = action === 'submit' ? 'Submit' : action === 'reject' ? 'Reject' : 'Approve';
-    const extra = action === 'approve' && co.status === 'Pending Owner'
-      ? ' Final approval will sync to Budget, SOV, Schedule, and Sage 300.'
-      : '';
-    if (!confirm(`${verb} ${co.number}?${extra}`)) return;
+    if (action === 'submit') {
+      if (!confirm(`Submit ${co.number} for approval?`)) return;
+    }
     try {
       const json = await api(`/api/change-orders/${id}/workflow`, {
         method: 'POST',
-        body: JSON.stringify({ action }),
+        body: JSON.stringify({ action, comments: comments || '' }),
       });
       if (json.final_approved) {
         await applyCoSync(json);
@@ -714,8 +764,10 @@
         ${co.source_pco_id ? `<p><span class="text-zinc-500">Source PCO</span><br>#${co.source_pco_id}</p>` : ''}
         <p><span class="text-zinc-500">Linked RFI</span><br>${co.linked_rfi_id ? `<a href="/rfis" class="text-sky-400 hover:underline">${esc(linkedRfiLabel(co.linked_rfi_id))}</a>` : '—'}</p>
         <p><span class="text-zinc-500">Linked commitment</span><br>${esc(co.linked_commitment_ref || '—')}</p>
-        <p><span class="text-zinc-500">Sage / SOV</span><br>${co.sov_synced_at ? '<span class="text-emerald-400">SOV synced</span>' : esc(co.sage_sync_status || '—')}</p>
+        <p><span class="text-zinc-500">Sage / SOV</span><br>        ${co.sov_synced_at ? '<span class="text-emerald-400">SOV synced</span>' : esc(co.sage_sync_status || '—')}</p>
       </div>
+      ${(co.approval_history || []).length ? `<div class="mt-4"><div class="text-xs text-zinc-500 uppercase tracking-wide mb-2">Approval history</div>
+        <div class="space-y-2">${co.approval_history.map(h => `<div class="text-xs border border-zinc-800 rounded p-2"><div class="text-zinc-400">${esc(h.user_name || '')} · ${esc(h.action)} · ${h.at ? new Date(h.at).toLocaleString() : ''}</div>${h.comment ? `<div class="mt-1">${esc(h.comment)}</div>` : ''}</div>`).join('')}</div></div>` : ''}
       <div class="mt-4">
         <div class="text-xs text-zinc-500 uppercase tracking-wide mb-2">Cost code allocations</div>
         <table class="w-full text-xs"><thead><tr class="text-zinc-500"><th class="text-left py-1">Code</th><th class="text-left py-1">Type</th><th class="text-left py-1">Description</th><th class="text-right py-1">Amount</th></tr></thead>
@@ -729,8 +781,8 @@
     const showApprove = ['Submitted', 'Pending Architect', 'Pending Owner'].includes(co.status) && canActOnBall(co.ball_in_court_role);
     document.getElementById('drawerActions').innerHTML = `
       ${showSubmit ? `<button type="button" onclick="CasePMChangeOrders.workflowCo(${co.id},'submit')" class="px-4 py-2 bg-amber-600 hover:bg-amber-500 rounded-md text-sm">Submit</button>` : ''}
-      ${showApprove ? `<button type="button" onclick="CasePMChangeOrders.workflowCo(${co.id},'approve')" class="px-4 py-2 bg-emerald-600 hover:bg-emerald-500 rounded-md text-sm">Approve</button>
-      <button type="button" onclick="CasePMChangeOrders.workflowCo(${co.id},'reject')" class="px-4 py-2 bg-zinc-800 hover:bg-zinc-700 rounded-md text-sm text-red-400">Reject</button>` : ''}
+      ${showApprove ? `<button type="button" onclick="CasePMChangeOrders.openApprovalModal(${co.id},'approve')" class="px-4 py-2 bg-emerald-600 hover:bg-emerald-500 rounded-md text-sm">Approve</button>
+      <button type="button" onclick="CasePMChangeOrders.openApprovalModal(${co.id},'reject')" class="px-4 py-2 bg-zinc-800 hover:bg-zinc-700 rounded-md text-sm text-red-400">Reject</button>` : ''}
       <button type="button" onclick="CasePMChangeOrders.editCo(${co.id})" class="px-4 py-2 bg-zinc-800 hover:bg-zinc-700 rounded-md text-sm">Edit</button>
       <button type="button" onclick="CasePMChangeOrders.deleteCo(${co.id})" class="px-4 py-2 bg-red-950 hover:bg-red-900 border border-red-800 rounded-md text-sm text-red-300">Delete</button>`;
     openDrawer();
@@ -1059,7 +1111,7 @@
     saveModal,
     editCo: id => api(`/api/change-orders/${id}`).then(openModal.bind(null, 'co')).catch(e => alert(e.message)),
     editPco: id => api(`/api/pcos/${id}`).then(openModal.bind(null, 'pco')).catch(e => alert(e.message)),
-    viewCo, viewPco, workflowCo, closeDrawer, promotePco, deleteCo,
+    viewCo, viewPco, workflowCo, openApprovalModal, confirmApprovalAction, closeDrawer, promotePco, deleteCo,
     addAllocRow: () => { state.allocationRows.push({ cost_code: '', cost_type: '', amount: 0, description: '' }); renderAllocationRows(); },
     removeAllocRow: idx => { state.allocationRows.splice(idx, 1); renderAllocationRows(); },
     onCompanyChange, onContactChange, onAllocCostCodeChange, updateAllocationTotal, exportExcel, printLog, openSageLog,

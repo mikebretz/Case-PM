@@ -193,7 +193,7 @@
       try { await CasePMWorkflow.loadPortal(); } catch { /* ignore */ }
     }
     await importLocalIfServerEmpty();
-    await loadFromServer();
+    return loadFromServer();
   }
 
   global.CasePMBudgetSync = {
