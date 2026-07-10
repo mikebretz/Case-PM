@@ -1284,6 +1284,18 @@ def _project_contract_amount(project):
     return None
 
 
+def _project_approved_change_orders_total(project_id):
+    """Sum of approved change order amounts for a project."""
+    if not project_id:
+        return 0.0
+    from sqlalchemy import func
+    total = db.session.query(func.coalesce(func.sum(ChangeOrder.amount), 0)).filter(
+        ChangeOrder.project_id == int(project_id),
+        ChangeOrder.status == 'Approved',
+    ).scalar()
+    return float(total or 0)
+
+
 def _project_financial_context(project):
     """Shared contract/retainage defaults for budget and pay applications."""
     if not project:
@@ -1292,24 +1304,32 @@ def _project_financial_context(project):
             'contract_value': None,
             'contract_amount': None,
             'contract_amount_source': None,
+            'approved_change_orders_total': 0.0,
+            'current_contract_value': None,
             'default_retainage_percent': None,
             'sage_job': '',
         }
     details = project.get_details()
     original = _parse_float(details.get('original_contract_amount'))
     contract_value = float(project.contract_value) if project.contract_value else None
+    approved_co_total = _project_approved_change_orders_total(project.id)
     if original is not None:
         amount, source = original, 'original_contract'
+        current_contract_value = original + approved_co_total
     elif contract_value is not None:
         amount, source = contract_value, 'contract_value'
+        current_contract_value = contract_value
     else:
         amount, source = None, None
+        current_contract_value = approved_co_total if approved_co_total else None
     retainage = _parse_float(details.get('default_retainage_percent'))
     return {
         'original_contract_amount': original,
         'contract_value': contract_value,
         'contract_amount': amount,
         'contract_amount_source': source,
+        'approved_change_orders_total': approved_co_total,
+        'current_contract_value': current_contract_value,
         'default_retainage_percent': retainage,
         'sage_job': project.sage_job_number or project.accounting_project_number or '',
     }
@@ -6516,9 +6536,33 @@ def pay_applications_page():
         project_contract_value=fin['contract_value'],
         project_contract_amount=fin['contract_amount'],
         project_contract_amount_source=fin['contract_amount_source'],
+        project_approved_change_orders_total=fin['approved_change_orders_total'],
+        project_current_contract_value=fin['current_contract_value'],
         project_default_retainage_percent=fin['default_retainage_percent'],
         project_sage_job=fin['sage_job'],
     )
+
+
+@app.route('/api/projects/financial-summary', methods=['GET'])
+@login_required
+def api_project_financial_summary():
+    """Contract amounts from project file + approved change orders."""
+    project_id = request.args.get('project_id', type=int) or get_current_project_id()
+    if not project_id:
+        return jsonify({'error': 'project_id required'}), 400
+    project = Project.query.get(int(project_id))
+    if not project:
+        return jsonify({'error': 'project not found'}), 404
+    fin = _project_financial_context(project)
+    return jsonify({
+        'project_id': project.id,
+        'original_contract_amount': fin['original_contract_amount'],
+        'approved_change_orders_total': fin['approved_change_orders_total'],
+        'current_contract_value': fin['current_contract_value'],
+        'contract_value': fin['contract_value'],
+        'contract_amount': fin['contract_amount'],
+        'contract_amount_source': fin['contract_amount_source'],
+    })
 
 
 @app.route('/program-settings')
