@@ -81,8 +81,16 @@ echo.
 echo Login: admin@casepm.local
 echo Password: admin123
 echo.
+echo For REMOTE access (others on your network or internet),
+echo use RUN-AS-SERVER.bat instead of this file.
+echo.
 echo The application will open in your browser shortly...
 echo.
+
+set "CASEPM_HOST=127.0.0.1"
+set "CASEPM_PORT=5000"
+set "CASEPM_REMOTE=0"
+set "CASEPM_DEBUG=1"
 
 start "" "%PY%" app.py
 

@@ -7488,14 +7488,21 @@ if __name__ == '__main__':
             print(f'   Run: {sys.executable} -m pip install -r requirements.txt')
 
     # Start the Flask development server
-    print("\n" + "=" * 75)
-    print("🚀 CASE PM - ULTIMATE VERSION STARTING")
-    print("=" * 75)
-    print("   Access the application at: http://127.0.0.1:5000")
-    print("   Press CTRL+C to stop the server")
-    print("=" * 75 + "\n")
+    host = os.environ.get('CASEPM_HOST', '127.0.0.1')
+    port = int(os.environ.get('CASEPM_PORT', '5000'))
+    remote = os.environ.get('CASEPM_REMOTE', '').lower() in ('1', 'true', 'yes')
+    debug = os.environ.get('CASEPM_DEBUG', '0' if remote else '1').lower() not in ('0', 'false', 'no')
 
-    app.run(debug=True, host='0.0.0.0', port=5000)
+    from case_server import print_startup_banner
+    print_startup_banner(host, port, remote)
+
+    app.run(
+        debug=debug,
+        host=host,
+        port=port,
+        threaded=True,
+        use_reloader=debug,
+    )
 
 
 # ==================== END OF APPLICATION ====================
