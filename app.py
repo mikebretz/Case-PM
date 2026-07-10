@@ -1804,7 +1804,9 @@ def api_get_rfi(rfi_id):
     from rfi_persistence import rfi_to_dict, get_linked_records
     rfi = RFI.query.get_or_404(rfi_id)
     linked_cos, linked_pcos = get_linked_records(rfi.id, ChangeOrder, PotentialChangeOrder)
-    return jsonify(rfi_to_dict(rfi, linked_cos, linked_pcos))
+    payload = rfi_to_dict(rfi, linked_cos, linked_pcos)
+    payload['attachments'] = _enrich_rfi_attachments(rfi_id, payload.get('attachments') or [])
+    return jsonify(payload)
 
 
 @app.route('/api/rfis', methods=['POST'])
@@ -1877,10 +1879,32 @@ def api_rfi_workflow(rfi_id):
         return jsonify({'error': str(exc)}), 400
 
 
+def _enrich_rfi_attachments(rfi_id, attachments):
+    from rfi_persistence import _parse_json
+    items = _parse_json(attachments, []) if not isinstance(attachments, list) else list(attachments)
+    for a in items:
+        if a.get('document_id'):
+            a['url'] = url_for('api_documents_download', doc_id=a['document_id'])
+            a['source'] = 'documents'
+        elif a.get('filename'):
+            a['url'] = url_for('serve_rfi_attachment', rfi_id=rfi_id, filename=a['filename'])
+            a['source'] = 'upload'
+    return items
+
+
+@app.route('/api/rfis/<int:rfi_id>/attachments', methods=['GET'])
+@login_required
+def api_rfi_list_attachments(rfi_id):
+    from rfi_persistence import _parse_json
+    rfi = RFI.query.get_or_404(rfi_id)
+    attachments = _enrich_rfi_attachments(rfi_id, _parse_json(rfi.attachments_json, []))
+    return jsonify({'ok': True, 'attachments': attachments})
+
+
 @app.route('/api/rfis/<int:rfi_id>/attachments', methods=['POST'])
 @login_required
 def api_rfi_upload_attachment(rfi_id):
-    from rfi_persistence import apply_rfi_fields, rfi_to_dict, _parse_json
+    from rfi_persistence import apply_rfi_fields, _parse_json
     rfi = RFI.query.get_or_404(rfi_id)
     if 'file' not in request.files:
         return jsonify({'error': 'file required'}), 400
@@ -1916,7 +1940,36 @@ def api_rfi_upload_attachment(rfi_id):
         )
     except Exception:
         pass
-    return jsonify({'ok': True, 'attachments': attachments})
+    return jsonify({'ok': True, 'attachments': _enrich_rfi_attachments(rfi_id, attachments)})
+
+
+@app.route('/api/rfis/<int:rfi_id>/attachments/link', methods=['POST'])
+@login_required
+def api_rfi_link_document_attachment(rfi_id):
+    from rfi_persistence import apply_rfi_fields, _parse_json
+    rfi = RFI.query.get_or_404(rfi_id)
+    body = request.get_json(silent=True) or {}
+    doc_id = body.get('document_id')
+    if not doc_id:
+        return jsonify({'error': 'document_id required'}), 400
+    doc = Document.query.get_or_404(int(doc_id))
+    if doc.project_id != rfi.project_id:
+        return jsonify({'error': 'Document belongs to a different project'}), 400
+    if doc.deleted_at:
+        return jsonify({'error': 'Document is in trash'}), 400
+    attachments = _parse_json(rfi.attachments_json, [])
+    if any(a.get('document_id') == doc.id for a in attachments):
+        return jsonify({'ok': True, 'attachments': _enrich_rfi_attachments(rfi_id, attachments)})
+    attachments.append({
+        'document_id': doc.id,
+        'original_name': doc.name or doc.original_filename or doc.filename,
+        'linked_from_documents': True,
+        'uploaded_at': datetime.utcnow().isoformat(),
+        'uploaded_by': f'{current_user.first_name} {current_user.last_name}'.strip(),
+    })
+    apply_rfi_fields(rfi, {'attachments': attachments})
+    db.session.commit()
+    return jsonify({'ok': True, 'attachments': _enrich_rfi_attachments(rfi_id, attachments)})
 
 
 @app.route('/api/rfis/<int:rfi_id>/promote-pco', methods=['POST'])

@@ -18,8 +18,378 @@
     filter: { search: '', status: '', priority: '', ball: '' },
     drawerRecord: null,
     modalMode: 'create',
+    modalRfiId: null,
+    modalAttachments: [],
+    pendingFiles: [],
+    pendingDocLinks: [],
+    docPickerFolderId: null,
+    docPickerSelected: new Set(),
+    docPickerFiles: [],
+    docPickerFolders: [],
+    docPickerBreadcrumbs: [],
     allocationRows: [],
   };
+
+  function fmtFileSize(bytes) {
+    if (!bytes && bytes !== 0) return '';
+    if (bytes < 1024) return `${bytes} B`;
+    if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+    return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+  }
+
+  function attachmentHref(att, rfiId) {
+    if (att.url) return att.url;
+    if (att.document_id) return `/api/documents/${att.document_id}/download`;
+    if (att.filename && rfiId) return `/uploads/rfis/${rfiId}/${att.filename}`;
+    return '#';
+  }
+
+  function stripAttachmentMeta(att) {
+    const { url, source, pending, file_size, ...rest } = att;
+    return rest;
+  }
+
+  function resetModalAttachments() {
+    state.modalRfiId = null;
+    state.modalAttachments = [];
+    state.pendingFiles = [];
+    state.pendingDocLinks = [];
+    renderModalAttachments();
+  }
+
+  function renderModalAttachments() {
+    const el = document.getElementById('rfiAttachmentList');
+    const hint = document.getElementById('rfiAttachmentHint');
+    if (!el) return;
+    const rfiId = state.modalRfiId;
+    const pendingCount = state.pendingFiles.length + state.pendingDocLinks.length;
+    const items = [...state.modalAttachments];
+    state.pendingFiles.forEach((file, i) => {
+      items.push({
+        original_name: file.name,
+        pending: true,
+        pending_type: 'file',
+        pending_index: i,
+        file_size: file.size,
+      });
+    });
+    state.pendingDocLinks.forEach((doc, i) => {
+      items.push({
+        document_id: doc.id,
+        original_name: doc.name,
+        linked_from_documents: true,
+        pending: true,
+        pending_type: 'document',
+        pending_index: i,
+      });
+    });
+    if (!items.length) {
+      el.innerHTML = '<p class="text-xs text-zinc-500">No attachments yet. Drop files above or attach from Documents.</p>';
+      if (hint) hint.textContent = rfiId ? 'Uploads are filed to Documents › RFIs' : 'Files attach when you save the RFI';
+      return;
+    }
+    if (hint) {
+      hint.textContent = rfiId
+        ? 'Uploads are filed to Documents › RFIs'
+        : `${pendingCount ? pendingCount + ' file(s) ready — ' : ''}will attach when you save`;
+    }
+    el.innerHTML = items.map((att, idx) => {
+      const name = esc(att.original_name || att.filename || 'File');
+      const badge = att.linked_from_documents || att.document_id
+        ? '<span class="text-[10px] px-1.5 py-0.5 rounded bg-sky-900/50 text-sky-300">Documents</span>'
+        : att.pending
+          ? '<span class="text-[10px] px-1.5 py-0.5 rounded bg-amber-900/50 text-amber-300">Pending</span>'
+          : '<span class="text-[10px] px-1.5 py-0.5 rounded bg-zinc-700 text-zinc-300">Upload</span>';
+      const size = att.file_size ? `<span class="text-zinc-500">${fmtFileSize(att.file_size)}</span>` : '';
+      const link = att.pending
+        ? `<span class="text-zinc-200 truncate flex-1">${name}</span>`
+        : `<a href="${esc(attachmentHref(att, rfiId))}" target="_blank" rel="noopener" class="text-sky-400 hover:underline truncate flex-1">${name}</a>`;
+      return `<div class="rfi-attachment-row">
+        <i class="fa-solid ${att.document_id || att.linked_from_documents ? 'fa-file-lines text-sky-400' : 'fa-paperclip text-zinc-400'}"></i>
+        ${link}
+        ${size}
+        ${badge}
+        <button type="button" class="text-zinc-500 hover:text-red-400 p-1" data-rfi-att-remove="${idx}" title="Remove"><i class="fa-solid fa-times"></i></button>
+      </div>`;
+    }).join('');
+    el.querySelectorAll('[data-rfi-att-remove]').forEach(btn => {
+      btn.addEventListener('click', () => removeModalAttachment(parseInt(btn.dataset.rfiAttRemove, 10)));
+    });
+  }
+
+  async function loadModalAttachments(rfiId) {
+    if (!rfiId) {
+      resetModalAttachments();
+      return;
+    }
+    state.modalRfiId = rfiId;
+    state.pendingFiles = [];
+    state.pendingDocLinks = [];
+    try {
+      const json = await api(`/api/rfis/${rfiId}/attachments`);
+      state.modalAttachments = json.attachments || [];
+    } catch {
+      state.modalAttachments = [];
+    }
+    renderModalAttachments();
+  }
+
+  async function uploadFilesToRfi(rfiId, files) {
+    if (!rfiId || !files?.length) return;
+    for (const file of files) {
+      const fd = new FormData();
+      fd.append('file', file);
+      const res = await fetch(`/api/rfis/${rfiId}/attachments`, { method: 'POST', body: fd, credentials: 'same-origin' });
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(json.error || 'Upload failed');
+      if (json.attachments) state.modalAttachments = json.attachments;
+    }
+  }
+
+  async function linkDocumentsToRfi(rfiId, docIds) {
+    if (!rfiId || !docIds?.length) return;
+    for (const docId of docIds) {
+      const json = await api(`/api/rfis/${rfiId}/attachments/link`, {
+        method: 'POST',
+        body: JSON.stringify({ document_id: docId }),
+      });
+      if (json.attachments) state.modalAttachments = json.attachments;
+    }
+  }
+
+  async function flushPendingAttachments(rfiId) {
+    if (!rfiId) return;
+    const files = [...state.pendingFiles];
+    const docs = [...state.pendingDocLinks];
+    state.pendingFiles = [];
+    state.pendingDocLinks = [];
+    if (files.length) await uploadFilesToRfi(rfiId, files);
+    if (docs.length) await linkDocumentsToRfi(rfiId, docs.map(d => d.id));
+    state.modalRfiId = rfiId;
+    await loadModalAttachments(rfiId);
+  }
+
+  async function removeModalAttachment(displayIndex) {
+    const rfiId = state.modalRfiId;
+    const savedCount = state.modalAttachments.length;
+    if (displayIndex < savedCount) {
+      if (!rfiId) return;
+      const next = state.modalAttachments.filter((_, i) => i !== displayIndex).map(stripAttachmentMeta);
+      await api(`/api/rfis/${rfiId}`, { method: 'PUT', body: JSON.stringify({ attachments: next }) });
+      state.modalAttachments = next;
+      renderModalAttachments();
+      return;
+    }
+    const pendingIdx = displayIndex - savedCount;
+    const filePendingCount = state.pendingFiles.length;
+    if (pendingIdx < filePendingCount) {
+      state.pendingFiles.splice(pendingIdx, 1);
+    } else {
+      state.pendingDocLinks.splice(pendingIdx - filePendingCount, 1);
+    }
+    renderModalAttachments();
+  }
+
+  async function handleAttachmentFiles(fileList) {
+    const files = Array.from(fileList || []).filter(f => f && f.name);
+    if (!files.length) return;
+    if (state.modalRfiId) {
+      try {
+        await uploadFilesToRfi(state.modalRfiId, files);
+        renderModalAttachments();
+        toast('File(s) attached');
+      } catch (e) { alert(e.message); }
+      return;
+    }
+    state.pendingFiles.push(...files);
+    renderModalAttachments();
+  }
+
+  function bindAttachmentHandlers() {
+    const dropZone = document.getElementById('rfiAttachmentDropZone');
+    const fileInput = document.getElementById('rfiAttachmentInput');
+    const browseBtn = document.getElementById('rfiBrowseFilesBtn');
+    const docsBtn = document.getElementById('rfiBrowseDocumentsBtn');
+
+    browseBtn?.addEventListener('click', e => { e.stopPropagation(); fileInput?.click(); });
+    docsBtn?.addEventListener('click', e => { e.stopPropagation(); openDocumentPicker(); });
+    dropZone?.addEventListener('click', () => fileInput?.click());
+    fileInput?.addEventListener('change', e => {
+      handleAttachmentFiles(e.target.files);
+      e.target.value = '';
+    });
+
+    if (dropZone) {
+      ['dragenter', 'dragover'].forEach(evt => {
+        dropZone.addEventListener(evt, e => {
+          e.preventDefault();
+          e.stopPropagation();
+          dropZone.classList.add('rfi-drop-active');
+        });
+      });
+      ['dragleave', 'drop'].forEach(evt => {
+        dropZone.addEventListener(evt, e => {
+          e.preventDefault();
+          e.stopPropagation();
+          if (evt === 'drop') handleAttachmentFiles(e.dataTransfer?.files);
+          dropZone.classList.remove('rfi-drop-active');
+        });
+      });
+    }
+
+    document.getElementById('rfiDocumentPickerClose')?.addEventListener('click', closeDocumentPicker);
+    document.getElementById('rfiDocPickerCancel')?.addEventListener('click', closeDocumentPicker);
+    document.getElementById('rfiDocPickerAttach')?.addEventListener('click', confirmDocPickerAttach);
+    document.getElementById('rfiDocPickerSearchBtn')?.addEventListener('click', () => {
+      const q = document.getElementById('rfiDocPickerSearch')?.value?.trim();
+      if (q) searchDocPicker(q);
+      else loadDocPickerBrowse(state.docPickerFolderId);
+    });
+    document.getElementById('rfiDocPickerSearch')?.addEventListener('keydown', e => {
+      if (e.key === 'Enter') {
+        e.preventDefault();
+        const q = e.target.value?.trim();
+        if (q) searchDocPicker(q);
+        else loadDocPickerBrowse(state.docPickerFolderId);
+      }
+    });
+  }
+
+  function updateDocPickerSelectionUi() {
+    const count = state.docPickerSelected.size;
+    const el = document.getElementById('rfiDocPickerSelectedCount');
+    const btn = document.getElementById('rfiDocPickerAttach');
+    if (el) el.textContent = `${count} selected`;
+    if (btn) btn.disabled = count === 0;
+  }
+
+  function renderDocPickerBreadcrumbs() {
+    const el = document.getElementById('rfiDocPickerBreadcrumbs');
+    if (!el) return;
+    const crumbs = [{ id: null, name: 'All folders' }, ...(state.docPickerBreadcrumbs || [])];
+    el.innerHTML = crumbs.map((c, i) => {
+      const isLast = i === crumbs.length - 1;
+      const label = esc(c.name);
+      if (isLast) return `<span class="text-zinc-300">${label}</span>`;
+      return `<button type="button" class="text-sky-400 hover:underline" data-rfi-crumb="${c.id ?? ''}">${label}</button><span class="text-zinc-600">/</span>`;
+    }).join('');
+    el.querySelectorAll('[data-rfi-crumb]').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const raw = btn.dataset.rfiCrumb;
+        loadDocPickerBrowse(raw === '' ? null : parseInt(raw, 10));
+      });
+    });
+  }
+
+  function renderDocPickerBody() {
+    const body = document.getElementById('rfiDocPickerBody');
+    if (!body) return;
+    const folders = state.docPickerFolders || [];
+    const files = state.docPickerFiles || [];
+    if (!folders.length && !files.length) {
+      body.innerHTML = '<div class="p-6 text-center text-zinc-500 text-sm">No folders or files here.</div>';
+      return;
+    }
+    const folderRows = folders.map(f => `
+      <button type="button" class="rfi-doc-picker-row w-full flex items-center gap-3 px-4 py-2.5 text-left border-b border-zinc-800/80" data-rfi-folder="${f.id}">
+        <i class="fa-solid fa-folder text-amber-400"></i>
+        <span class="flex-1 truncate text-sm">${esc(f.name)}</span>
+        <span class="text-xs text-zinc-500">${f.file_count || 0} files</span>
+        <i class="fa-solid fa-chevron-right text-zinc-600 text-xs"></i>
+      </button>`).join('');
+    const fileRows = files.map(f => {
+      const checked = state.docPickerSelected.has(f.id) ? 'checked' : '';
+      return `<label class="rfi-doc-picker-row flex items-center gap-3 px-4 py-2.5 border-b border-zinc-800/80 cursor-pointer">
+        <input type="checkbox" class="rounded border-zinc-600 bg-zinc-800" data-rfi-doc-id="${f.id}" ${checked}>
+        <i class="fa-solid fa-file text-zinc-400"></i>
+        <span class="flex-1 truncate text-sm">${esc(f.name)}</span>
+        <span class="text-xs text-zinc-500">${fmtFileSize(f.file_size)}</span>
+      </label>`;
+    }).join('');
+    body.innerHTML = folderRows + fileRows;
+    body.querySelectorAll('[data-rfi-folder]').forEach(btn => {
+      btn.addEventListener('click', () => loadDocPickerBrowse(parseInt(btn.dataset.rfiFolder, 10)));
+    });
+    body.querySelectorAll('[data-rfi-doc-id]').forEach(cb => {
+      cb.addEventListener('change', () => {
+        const id = parseInt(cb.dataset.rfiDocId, 10);
+        if (cb.checked) state.docPickerSelected.add(id);
+        else state.docPickerSelected.delete(id);
+        updateDocPickerSelectionUi();
+      });
+    });
+  }
+
+  async function loadDocPickerBrowse(folderId) {
+    const pid = projectId();
+    if (!pid) return;
+    state.docPickerFolderId = folderId;
+    const body = document.getElementById('rfiDocPickerBody');
+    if (body) body.innerHTML = '<div class="p-6 text-center text-zinc-500 text-sm">Loading…</div>';
+    const q = folderId != null ? `&folder_id=${folderId}` : '';
+    try {
+      const json = await api(`/api/documents/browse?project_id=${pid}${q}`);
+      state.docPickerFolders = json.folders || [];
+      state.docPickerFiles = json.files || [];
+      state.docPickerBreadcrumbs = json.breadcrumbs || [];
+      renderDocPickerBreadcrumbs();
+      renderDocPickerBody();
+    } catch (e) {
+      if (body) body.innerHTML = `<div class="p-6 text-center text-red-400 text-sm">${esc(e.message)}</div>`;
+    }
+  }
+
+  async function searchDocPicker(query) {
+    const pid = projectId();
+    if (!pid) return;
+    const body = document.getElementById('rfiDocPickerBody');
+    if (body) body.innerHTML = '<div class="p-6 text-center text-zinc-500 text-sm">Searching…</div>';
+    try {
+      const json = await api(`/api/documents/search?project_id=${pid}&q=${encodeURIComponent(query)}`);
+      state.docPickerFolders = json.folders || [];
+      state.docPickerFiles = json.files || [];
+      state.docPickerBreadcrumbs = [{ id: null, name: `Search: ${query}` }];
+      renderDocPickerBreadcrumbs();
+      renderDocPickerBody();
+    } catch (e) {
+      if (body) body.innerHTML = `<div class="p-6 text-center text-red-400 text-sm">${esc(e.message)}</div>`;
+    }
+  }
+
+  async function openDocumentPicker() {
+    const dlg = document.getElementById('rfiDocumentPicker');
+    if (!dlg) return;
+    state.docPickerSelected = new Set();
+    state.docPickerFolderId = null;
+    document.getElementById('rfiDocPickerSearch').value = '';
+    updateDocPickerSelectionUi();
+    dlg.showModal();
+    await loadDocPickerBrowse(null);
+  }
+
+  function closeDocumentPicker() {
+    document.getElementById('rfiDocumentPicker')?.close();
+  }
+
+  async function confirmDocPickerAttach() {
+    const selectedIds = [...state.docPickerSelected];
+    if (!selectedIds.length) return;
+    const selectedDocs = (state.docPickerFiles || []).filter(f => selectedIds.includes(f.id));
+    closeDocumentPicker();
+    if (state.modalRfiId) {
+      try {
+        await linkDocumentsToRfi(state.modalRfiId, selectedIds);
+        renderModalAttachments();
+        toast('Document(s) attached');
+      } catch (e) { alert(e.message); }
+      return;
+    }
+    selectedIds.forEach(id => {
+      const doc = selectedDocs.find(d => d.id === id) || { id, name: `Document #${id}` };
+      if (!state.pendingDocLinks.some(d => d.id === id)) state.pendingDocLinks.push({ id: doc.id, name: doc.name });
+    });
+    renderModalAttachments();
+  }
 
   function projectId() {
     if (global.CASEPM_ACTIVE_PROJECT_ID) return global.CASEPM_ACTIVE_PROJECT_ID;
@@ -242,6 +612,18 @@
       document.getElementById('modalRfiNumber').textContent = record.number;
     }
     populateCompanySelects();
+    if (mode === 'create') {
+      resetModalAttachments();
+    } else if (record?.id) {
+      state.modalRfiId = record.id;
+      state.modalAttachments = (record.attachments || []).map(a => ({ ...a }));
+      state.pendingFiles = [];
+      state.pendingDocLinks = [];
+      renderModalAttachments();
+      loadModalAttachments(record.id);
+    } else {
+      resetModalAttachments();
+    }
     dlg.showModal();
   }
 
@@ -277,13 +659,20 @@
     const payload = modalPayload();
     if (!payload.subject) { alert('Subject is required.'); return; }
     try {
+      let rfiId = state.modalRfiId;
       if (state.modalMode === 'create') {
         payload.project_id = projectId();
         if (createAsOpen) payload.create_as_open = true;
-        await api('/api/rfis', { method: 'POST', body: JSON.stringify(payload) });
+        const json = await api('/api/rfis', { method: 'POST', body: JSON.stringify(payload) });
+        rfiId = json.rfi?.id;
+        if (rfiId) await flushPendingAttachments(rfiId);
         toast('RFI created');
       } else if (state.drawerRecord) {
-        await api(`/api/rfis/${state.drawerRecord.id}`, { method: 'PUT', body: JSON.stringify(payload) });
+        rfiId = state.drawerRecord.id;
+        await api(`/api/rfis/${rfiId}`, { method: 'PUT', body: JSON.stringify(payload) });
+        if (state.pendingFiles.length || state.pendingDocLinks.length) {
+          await flushPendingAttachments(rfiId);
+        }
         toast('RFI updated');
       }
       document.getElementById('rfiModal')?.close();
@@ -344,6 +733,15 @@
       ...(r.linked_pcos || []).map(p => `<a href="/change-orders" class="text-sky-400 text-xs">${esc(p.number)} — ${esc(p.title)}</a>`),
     ].join('<br>') || '<span class="text-zinc-500 text-xs">No linked COs/PCOs</span>';
 
+    const attachments = (r.attachments || []).map(att => {
+      const name = esc(att.original_name || att.filename || 'File');
+      const href = esc(attachmentHref(att, r.id));
+      const icon = att.document_id || att.linked_from_documents ? 'fa-file-lines text-sky-400' : 'fa-paperclip text-zinc-400';
+      return `<a href="${href}" target="_blank" rel="noopener" class="flex items-center gap-2 text-xs bg-zinc-800 rounded px-2 py-1.5 hover:bg-zinc-700">
+        <i class="fa-solid ${icon}"></i><span class="truncate">${name}</span>
+      </a>`;
+    }).join('') || '<p class="text-zinc-500 text-xs">No attachments</p>';
+
     el.innerHTML = `
       <div class="flex items-start justify-between mb-4">
         <div>
@@ -376,6 +774,10 @@
         <h3 class="text-xs uppercase text-zinc-500 mb-2">Plan Pins</h3>
         <div class="space-y-1 mb-2">${pins}</div>
         <button type="button" onclick="CasePMRfis.addPlanPin(${r.id})" class="text-xs px-2 py-1 bg-zinc-800 hover:bg-zinc-700 rounded border border-zinc-700"><i class="fa-solid fa-map-pin mr-1"></i>Add Plan Pin</button>
+      </div>
+      <div class="mb-4">
+        <h3 class="text-xs uppercase text-zinc-500 mb-2">Attachments</h3>
+        <div class="space-y-1">${attachments}</div>
       </div>
       <div class="mb-4">
         <h3 class="text-xs uppercase text-zinc-500 mb-1">Linked Change Orders / PCOs</h3>
@@ -548,6 +950,7 @@
     if (typeof CasePMWorkflow !== 'undefined') await CasePMWorkflow.loadPortal().catch(() => {});
     loadCompanies();
     bindFilters();
+    bindAttachmentHandlers();
     await Promise.all([loadDashboard(), loadRfis(), loadLinkOptions()]);
     const params = new URLSearchParams(window.location.search);
     if (params.get('open') === '1' && params.get('rfi_id')) {
