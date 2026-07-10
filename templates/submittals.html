@@ -494,7 +494,7 @@ window.SUBMITTAL_PROJECT_CTX = {
             <div class="flex items-center gap-2">
                 <button id="viewInSpecBookBtn" type="button" onclick="viewSubmittalInSpecBook()"
                         class="hidden px-4 py-2 bg-sky-700 hover:bg-sky-600 text-white rounded-lg text-sm font-semibold flex items-center gap-2"
-                        title="Open the uploaded specifications book at this section/paragraph">
+                        title="Open the full spec section in the uploaded specifications book">
                     <i class="fa-solid fa-book-open"></i> View in Spec Book
                 </button>
                 <button onclick="saveSubmittalFromModal()" class="px-4 py-2 bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg text-sm font-semibold flex items-center gap-2">
@@ -1064,7 +1064,7 @@ function renderSubmittalsTable(list) {
         row.innerHTML = `
             <td class="px-4 py-2 font-mono text-emerald-400 font-semibold">${item.number || '<span class="text-zinc-500 italic">Draft</span>'}</td>
             <td class="px-3 py-2 text-center font-mono">${item.rev}</td>
-            <td class="px-3 py-2">${item.specSection}</td>
+            <td class="px-3 py-2 font-mono text-sky-400 hover:underline cursor-pointer" title="View full spec section in specifications book" onclick="event.stopPropagation(); openSpecSectionFromSubmittal(${item.id})">${item.specSection}</td>
             <td class="px-3 py-2 text-xs text-zinc-400">${item.paragraph || '-'}</td>
             <td class="px-4 py-2"><div class="font-medium">${item.subject}</div>${item.sectionName ? `<div class="text-xs text-zinc-500 mt-0.5">${item.sectionName}</div>` : ''}</td>
             <td class="px-3 py-2 text-xs">${item.type || '-'}</td>
@@ -3200,43 +3200,92 @@ function resolveSpecBookPageForSubmittal(item) {
     return map[sec] || 1;
 }
 
+function resolveSpecBookPageRangeForSection(specSection) {
+    const map = (specBookArchive && specBookArchive.sectionPageMap) || {};
+    const sec = normalizeSpecSectionNumber(specSection);
+    const maxPage = Number(specBookArchive?.pageCount) || 1;
+    const startPage = Math.max(1, Number(map[sec]) || resolveSpecBookPageForSubmittal({ specSection: sec }) || 1);
+
+    let endPage = maxPage;
+    const laterSections = Object.entries(map)
+        .map(([section, page]) => ({ section, page: Number(page) || 1 }))
+        .filter(entry => entry.page > startPage)
+        .sort((a, b) => a.page - b.page || a.section.localeCompare(b.section));
+
+    if (laterSections.length) {
+        endPage = laterSections[0].page - 1;
+    }
+
+    endPage = Math.max(startPage, Math.min(endPage, maxPage));
+    return { startPage, endPage, pageCount: endPage - startPage + 1 };
+}
+
+function formatSpecBookPageLabel({ specSection, paragraph, safePage, maxPage, sectionPageRange }) {
+    const sectionText = `Section ${specSection || '—'}${paragraph ? ` • ¶ ${paragraph}` : ''}`;
+    if (sectionPageRange && sectionPageRange.endPage > sectionPageRange.startPage) {
+        const sectionIndex = safePage - sectionPageRange.startPage + 1;
+        const sectionTotal = sectionPageRange.endPage - sectionPageRange.startPage + 1;
+        return `${sectionText} — Page ${sectionIndex} of ${sectionTotal} (spec book pp. ${sectionPageRange.startPage}–${sectionPageRange.endPage})`;
+    }
+    return `${sectionText} — Page ${safePage} of ${maxPage}`;
+}
+
 function updateViewInSpecBookButton() {
     const btn = document.getElementById('viewInSpecBookBtn');
     if (!btn) return;
     const canView = !!(specBookArchive && currentModalItem && currentModalItem.specSection);
     btn.classList.toggle('hidden', !canView);
     if (canView) {
-        const page = resolveSpecBookPageForSubmittal(currentModalItem);
-        const para = currentModalItem.paragraph ? ` • ¶ ${currentModalItem.paragraph}` : '';
-        btn.title = `Open specifications book at Section ${currentModalItem.specSection}${para} (page ${page})`;
+        const range = resolveSpecBookPageRangeForSection(currentModalItem.specSection);
+        btn.title = `Open full spec section ${currentModalItem.specSection} (pages ${range.startPage}–${range.endPage})`;
     }
 }
 
-async function viewSubmittalInSpecBook() {
-    if (!currentModalItem) return;
+async function ensureSpecBookReadyForViewer() {
     if (!window.pdfjsLib) {
         showCenteredAlert('PDF library failed to load. Please refresh the page and try again.', 'error');
-        return;
+        return false;
     }
     await ensureSpecBookArchiveLoaded();
     if (!specBookArchive) {
         showCenteredAlert('No specifications book on file. Use Upload Specs Book (PDF) to add one.', 'warning');
-        return;
+        return false;
     }
     const bytes = await ensureSpecBookPdfBytes();
     if (!bytes) {
         showCenteredAlert('Specifications book data is missing or corrupt. Please re-upload the specifications book PDF.', 'warning');
-        return;
+        return false;
     }
-    const page = resolveSpecBookPageForSubmittal(currentModalItem);
-    const para = currentModalItem.paragraph ? `Paragraph ${currentModalItem.paragraph}` : 'Submittals article';
+    return true;
+}
+
+async function openSpecSectionFromSubmittal(id) {
+    const item = submittals.find(s => s.id === id);
+    if (!item?.specSection) return;
+    await viewSpecSectionInSpecBook(item);
+}
+
+async function viewSpecSectionInSpecBook(item) {
+    if (!item?.specSection) return;
+    if (!(await ensureSpecBookReadyForViewer())) return;
+
+    const range = resolveSpecBookPageRangeForSection(item.specSection);
+    const para = item.paragraph ? `Paragraph ${item.paragraph}` : '';
+    const subtitleParts = [item.sectionName || '', para, item.type || ''].filter(Boolean);
+
     await openSpecBookViewer({
-        page,
-        title: `Specifications — Section ${currentModalItem.specSection}`,
-        subtitle: `${currentModalItem.sectionName || ''} • ${para} • ${currentModalItem.type || ''}`.replace(/^ • | • $/g, ''),
-        specSection: currentModalItem.specSection,
-        paragraph: currentModalItem.paragraph
+        page: range.startPage,
+        title: `Specifications — Section ${item.specSection}`,
+        subtitle: subtitleParts.join(' • '),
+        specSection: item.specSection,
+        paragraph: item.paragraph,
+        sectionPageRange: range
     });
+}
+
+async function viewSubmittalInSpecBook() {
+    if (!currentModalItem) return;
+    await viewSpecSectionInSpecBook(currentModalItem);
 }
 
 function closeSpecBookViewer(trigger) {
@@ -3247,7 +3296,7 @@ function closeSpecBookViewer(trigger) {
     }
 }
 
-async function openSpecBookViewer({ page, title, subtitle, specSection, paragraph }) {
+async function openSpecBookViewer({ page, title, subtitle, specSection, paragraph, sectionPageRange }) {
     if (!specBookArchive) {
         showCenteredAlert('Specifications book file is not available.', 'error');
         return;
@@ -3265,7 +3314,10 @@ async function openSpecBookViewer({ page, title, subtitle, specSection, paragrap
     }
 
     const maxPage = pdf.numPages || specBookArchive.pageCount || 1;
-    const pageNum = Math.max(1, Math.min(Number(page) || 1, maxPage));
+    const rangeStart = Math.max(1, Number(sectionPageRange?.startPage) || 1);
+    const rangeEnd = Math.max(rangeStart, Math.min(Number(sectionPageRange?.endPage) || maxPage, maxPage));
+    const boundedRange = sectionPageRange ? { startPage: rangeStart, endPage: rangeEnd } : null;
+    const pageNum = Math.max(rangeStart, Math.min(Number(page) || rangeStart, rangeEnd));
     specBookViewerState.page = pageNum;
 
     document.querySelectorAll('.submittal-spec-viewer').forEach(el => {
@@ -3283,11 +3335,11 @@ async function openSpecBookViewer({ page, title, subtitle, specSection, paragrap
             <div class="min-w-0">
                 <div class="font-semibold text-lg text-white truncate">${escapeSubmittalHtml(title || 'Specifications Book')}</div>
                 <div class="text-sm text-zinc-400 truncate">${escapeSubmittalHtml(subtitle || '')}</div>
-                <div id="specBookPageLabel" class="text-xs text-sky-400 mt-0.5 font-mono">Section ${escapeSubmittalHtml(specSection || '—')}${paragraph ? ` • ¶ ${escapeSubmittalHtml(paragraph)}` : ''} — Page ${pageNum} of ${maxPage}</div>
+                <div id="specBookPageLabel" class="text-xs text-sky-400 mt-0.5 font-mono">${escapeSubmittalHtml(formatSpecBookPageLabel({ specSection, paragraph, safePage: pageNum, maxPage, sectionPageRange: boundedRange }))}</div>
             </div>
             <div class="flex items-center gap-2 flex-shrink-0">
-                <button type="button" id="specBookPrevBtn" class="px-3 py-1.5 bg-zinc-700 hover:bg-zinc-600 rounded text-xs" ${pageNum <= 1 ? 'disabled' : ''}>Prev</button>
-                <button type="button" id="specBookNextBtn" class="px-3 py-1.5 bg-zinc-700 hover:bg-zinc-600 rounded text-xs" ${pageNum >= maxPage ? 'disabled' : ''}>Next</button>
+                <button type="button" id="specBookPrevBtn" class="px-3 py-1.5 bg-zinc-700 hover:bg-zinc-600 rounded text-xs" ${pageNum <= rangeStart ? 'disabled' : ''}>Prev</button>
+                <button type="button" id="specBookNextBtn" class="px-3 py-1.5 bg-zinc-700 hover:bg-zinc-600 rounded text-xs" ${pageNum >= rangeEnd ? 'disabled' : ''}>Next</button>
             </div>
         </div>
         <div class="p-4 bg-zinc-950 overflow-auto" style="max-height: calc(90vh - 130px);">
@@ -3308,7 +3360,7 @@ async function openSpecBookViewer({ page, title, subtitle, specSection, paragrap
         </div>
     `;
 
-    modal._specBookContext = { specSection, paragraph, title, subtitle };
+    modal._specBookContext = { specSection, paragraph, title, subtitle, sectionPageRange: boundedRange };
     modal.addEventListener('close', () => {
         specBookViewerState.modal = null;
         modal.remove();
@@ -3322,7 +3374,7 @@ async function openSpecBookViewer({ page, title, subtitle, specSection, paragrap
     modal.querySelector('#specBookPrevBtn')?.addEventListener('click', () => jumpSpecBookPage(pageNum - 1));
     modal.querySelector('#specBookNextBtn')?.addEventListener('click', () => jumpSpecBookPage(pageNum + 1));
 
-    await renderSpecBookViewerPage(pageNum, { specSection, paragraph, maxPage });
+    await renderSpecBookViewerPage(pageNum, { specSection, paragraph, maxPage, sectionPageRange: boundedRange });
 }
 
 async function renderSpecBookViewerPage(pageNum, ctx = {}) {
@@ -3343,7 +3395,11 @@ async function renderSpecBookViewerPage(pageNum, ctx = {}) {
     try {
         const pdf = await getSpecBookPdfDocument();
         const maxPage = pdf.numPages || specBookArchive?.pageCount || 1;
-        const safePage = Math.max(1, Math.min(pageNum, maxPage));
+        const rangeStart = Math.max(1, Number(ctx.sectionPageRange?.startPage) || 1);
+        const rangeEnd = Math.max(rangeStart, Math.min(Number(ctx.sectionPageRange?.endPage) || maxPage, maxPage));
+        const safePage = ctx.sectionPageRange
+            ? Math.max(rangeStart, Math.min(pageNum, rangeEnd))
+            : Math.max(1, Math.min(pageNum, maxPage));
         specBookViewerState.page = safePage;
 
         if (!canvas) throw new Error('PDF canvas not found');
@@ -3358,12 +3414,18 @@ async function renderSpecBookViewerPage(pageNum, ctx = {}) {
         if (errorEl) errorEl.classList.add('hidden');
         canvas.classList.remove('hidden');
 
-        const { specSection, paragraph } = ctx;
+        const { specSection, paragraph, sectionPageRange } = ctx;
         if (pageLabel) {
-            pageLabel.textContent = `Section ${specSection || '—'}${paragraph ? ` • ¶ ${paragraph}` : ''} — Page ${safePage} of ${maxPage}`;
+            pageLabel.textContent = formatSpecBookPageLabel({
+                specSection,
+                paragraph,
+                safePage,
+                maxPage,
+                sectionPageRange
+            });
         }
-        if (prevBtn) prevBtn.disabled = safePage <= 1;
-        if (nextBtn) nextBtn.disabled = safePage >= maxPage;
+        if (prevBtn) prevBtn.disabled = safePage <= (sectionPageRange?.startPage || 1);
+        if (nextBtn) nextBtn.disabled = safePage >= (sectionPageRange?.endPage || maxPage);
     } catch (err) {
         console.error('Spec book page render error:', err);
         if (loading) loading.classList.add('hidden');
@@ -3379,7 +3441,11 @@ function jumpSpecBookPage(page) {
     const modal = specBookViewerState.modal || document.querySelector('.submittal-spec-viewer');
     if (!modal || !specBookArchive) return;
     const ctx = modal._specBookContext || {};
-    const target = Math.max(1, page);
+    const rangeStart = Math.max(1, Number(ctx.sectionPageRange?.startPage) || 1);
+    const rangeEnd = Math.max(rangeStart, Number(ctx.sectionPageRange?.endPage) || Number(specBookArchive?.pageCount) || 1);
+    const minPage = ctx.sectionPageRange ? rangeStart : 1;
+    const maxPage = ctx.sectionPageRange ? rangeEnd : (Number(specBookArchive?.pageCount) || 1);
+    const target = Math.max(minPage, Math.min(page, maxPage));
     if (modal.querySelector('#specBookPdfCanvas')) {
         renderSpecBookViewerPage(target, ctx);
         return;
@@ -3389,7 +3455,8 @@ function jumpSpecBookPage(page) {
         title: ctx.title,
         subtitle: ctx.subtitle,
         specSection: ctx.specSection,
-        paragraph: ctx.paragraph
+        paragraph: ctx.paragraph,
+        sectionPageRange: ctx.sectionPageRange
     });
 }
 
