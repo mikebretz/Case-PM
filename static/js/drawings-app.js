@@ -4895,6 +4895,14 @@
     }, intervalMs);
   }
 
+  async function refreshDrawingsAfterUpload() {
+    try {
+      await Promise.all([loadDashboard(), loadDrawings(), loadDrawingSets()]);
+    } catch (e) {
+      console.warn('Could not refresh drawings after upload', e);
+    }
+  }
+
   function finishUploadProgress(json, finishOpts) {
     const opts = finishOpts || {};
     stopUploadProgressTimer();
@@ -4915,6 +4923,7 @@
     } else if (!opts.keepOpen) {
       appendUploadLog('Import complete.');
     }
+    refreshDrawingsAfterUpload();
     if (opts.keepOpen) return;
     setTimeout(() => document.getElementById('uploadProgressModal')?.close(), pages.length > 8 ? 2200 : 1400);
   }
@@ -4963,6 +4972,7 @@
       }
       updateUploadJobProgress(json, pageCount, fileName);
       if (json.status === 'complete') {
+        state.uploadPollLastProcessed = json.processed_pages || json.created_count || pageCount || 0;
         return json.result || json;
       }
       if (json.status === 'error') {
@@ -5007,6 +5017,11 @@
       return json;
     } catch (e) {
       cancelUploadProgress();
+      if (state.uploadPollLastProcessed > 0) {
+        e.partialImport = true;
+        e.importedCount = state.uploadPollLastProcessed;
+        await refreshDrawingsAfterUpload();
+      }
       throw e;
     }
   }
@@ -5059,7 +5074,12 @@
         combined.split = combined.split || !!json.split;
         if (json.split_engine) combined.split_engine = json.split_engine;
       } catch (err) {
-        combined.warnings.push(`${file.name}: ${err.message || 'Upload failed'}`);
+        if (err.partialImport && err.importedCount) {
+          combined.created_count += err.importedCount;
+          combined.warnings.push(`${file.name}: ${err.importedCount} sheet(s) imported — ${err.message}`);
+        } else {
+          combined.warnings.push(`${file.name}: ${err.message || 'Upload failed'}`);
+        }
       }
     }
     if (!combined.created_count && !combined.needs_review.length) {
@@ -5138,14 +5158,18 @@
         sheet_number: document.getElementById('uploadSheetNumber')?.value || '',
         title: document.getElementById('uploadTitle')?.value || '',
       });
-      const count = json.created_count || json.drawings?.length || 0;
+      const count = json.created_count || json.drawings?.length || json.pages?.length || 0;
       const fileNote = json.file_count > 1 ? ` from ${json.file_count} files` : '';
       const reviewNote = json.needs_review_count ? ` (${json.needs_review_count} need sheet numbers)` : '';
-      toast(`Imported ${count} sheet(s)${fileNote}${reviewNote}`);
+      const warnNote = json.warnings?.length ? ` — see progress log for ${json.warnings.length} notice(s)` : '';
+      toast(`Imported ${count} sheet(s)${fileNote}${reviewNote}${warnNote}`);
       showUploadResults(json);
-      await Promise.all([loadDashboard(), loadDrawings(), loadDrawingSets()]);
     } catch (err) {
-      alert(err.message);
+      if (state.uploadPollLastProcessed > 0) {
+        toastError(`Sheets were imported but finished with an error: ${err.message}`);
+      } else {
+        alert(err.message);
+      }
     } finally {
       if (submitBtn) {
         submitBtn.disabled = false;

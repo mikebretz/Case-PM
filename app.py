@@ -3461,6 +3461,20 @@ def _notify_documents_team(project_id, title, message, link=None):
     notify_documents_team(db, User, int(project_id), title=title, message=message, link=link)
 
 
+def _slim_documents_archive(docs_info):
+    """Keep upload job payloads small and JSON-safe."""
+    if not docs_info:
+        return None
+    return {
+        'folder_id': docs_info.get('folder_id'),
+        'folder_name': docs_info.get('folder_name'),
+        'documents_url': docs_info.get('documents_url'),
+        'document_count': len(docs_info.get('documents') or []),
+        'skipped_individual_sheets': docs_info.get('skipped_individual_sheets', 0),
+        'archive_error': docs_info.get('archive_error'),
+    }
+
+
 def _archive_drawing_set_to_documents(project_id, set_name, source_pdf_path, created, uploaded_by_id):
     """Save uploaded drawing set PDFs into Documents › Drawings › Drawing Sets › {set_name}/."""
     from document_persistence import ensure_document_schema, resolve_folder_by_key, get_or_create_child_folder, ensure_system_folders
@@ -3486,8 +3500,10 @@ def _archive_drawing_set_to_documents(project_id, set_name, source_pdf_path, cre
         'documents_url': f'/documents?project_id={project_id}&folder_id={set_folder.id}',
         'documents': [],
         'full_set': None,
+        'skipped_individual_sheets': 0,
     }
     stamp = datetime.utcnow().strftime('%Y-%m-%d')
+    mirror_individual = len(created) <= 20
 
     if source_pdf_path and os.path.isfile(source_pdf_path):
         with open(source_pdf_path, 'rb') as fh:
@@ -3508,39 +3524,43 @@ def _archive_drawing_set_to_documents(project_id, set_name, source_pdf_path, cre
             )
             saved['full_set'] = doc
             saved['documents'].append(doc)
-        except ValueError:
-            pass
+        except (ValueError, OSError) as exc:
+            saved['archive_error'] = f'Could not save full set PDF to Documents: {exc}'
 
-    for item in created:
-        drawing = Drawing.query.get(item['id'])
-        if not drawing:
-            continue
-        rev = current_revision_for_drawing(DrawingRevision, drawing)
-        path = resolve_drawing_file_path(rev.file_path if rev else None, upload_root)
-        if not path or not os.path.isfile(path):
-            continue
-        with open(path, 'rb') as fh:
-            sheet_bytes = fh.read()
-        sheet_label = f'{drawing.sheet_number or "Sheet"} — {drawing.title or set_name}'.strip(' —')
-        try:
-            doc = _save_document_bytes(
-                int(project_id), sheet_bytes, sheet_label, os.path.basename(path),
-                'application/pdf', 'Drawing', set_folder.id, False,
-                drawing.id, drawing.sheet_number,
-                {
-                    'set_name': set_name,
-                    'mirrored_from_module': True,
-                    'source': 'drawing_set_upload',
-                    'revision_label': item.get('revision_label'),
-                },
-                uploaded_by_id=uploaded_by_id,
-            )
-            saved['documents'].append(doc)
-        except ValueError:
-            continue
+    if mirror_individual:
+        for item in created:
+            drawing = Drawing.query.get(item['id'])
+            if not drawing:
+                continue
+            rev = current_revision_for_drawing(DrawingRevision, drawing)
+            path = resolve_drawing_file_path(rev.file_path if rev else None, upload_root)
+            if not path or not os.path.isfile(path):
+                saved['skipped_individual_sheets'] += 1
+                continue
+            with open(path, 'rb') as fh:
+                sheet_bytes = fh.read()
+            sheet_label = f'{drawing.sheet_number or "Sheet"} — {drawing.title or set_name}'.strip(' —')
+            try:
+                doc = _save_document_bytes(
+                    int(project_id), sheet_bytes, sheet_label, os.path.basename(path),
+                    'application/pdf', 'Drawing', set_folder.id, False,
+                    drawing.id, drawing.sheet_number,
+                    {
+                        'set_name': set_name,
+                        'mirrored_from_module': True,
+                        'source': 'drawing_set_upload',
+                        'revision_label': item.get('revision_label'),
+                    },
+                    uploaded_by_id=uploaded_by_id,
+                )
+                saved['documents'].append(doc)
+            except (ValueError, OSError):
+                saved['skipped_individual_sheets'] += 1
+                continue
+    elif len(created) > 20:
+        saved['skipped_individual_sheets'] = len(created)
 
     if saved['documents']:
-        commit_with_retry(db.session)
         try:
             _notify_documents_team(
                 int(project_id),
@@ -5745,17 +5765,42 @@ def api_upload_drawing():
                             db.session.rollback()
                             raise RuntimeError('No drawing pages could be imported.')
                         commit_with_retry(db.session)
-                        drawings = [_serialize_drawing(Drawing.query.get(item['id'])) for item in created]
+                        mark_progress(
+                            job_id,
+                            len(created),
+                            len(pages),
+                            len(pages),
+                            'Finalizing import…',
+                        )
+                        drawings = []
+                        if len(created) <= 30:
+                            drawings = [
+                                _serialize_drawing(Drawing.query.get(item['id']))
+                                for item in created
+                                if item.get('id') and Drawing.query.get(item['id'])
+                            ]
                         docs_info = None
-                        if from_combined_set:
-                            docs_info = _archive_drawing_set_to_documents(
-                                int(project_id), set_name, dest, created, upload_kwargs['uploaded_by_id'],
-                            )
                         result_warnings = list(split_warnings)
-                        if docs_info and docs_info.get('documents_url'):
-                            result_warnings.append(
-                                f'Set archived to Documents › Drawing Sets › {set_name}.'
-                            )
+                        if from_combined_set:
+                            try:
+                                docs_info = _archive_drawing_set_to_documents(
+                                    int(project_id), set_name, dest, created, upload_kwargs['uploaded_by_id'],
+                                )
+                            except Exception as archive_exc:
+                                result_warnings.append(
+                                    f'Drawings imported, but Documents archive failed: {archive_exc}'
+                                )
+                            else:
+                                if docs_info and docs_info.get('documents_url'):
+                                    result_warnings.append(
+                                        f'Set archived to Documents › Drawing Sets › {set_name}.'
+                                    )
+                                if docs_info and docs_info.get('skipped_individual_sheets', 0) > 20:
+                                    result_warnings.append(
+                                        'Full set PDF saved to Documents (individual sheet copies skipped for large sets).'
+                                    )
+                                if docs_info and docs_info.get('archive_error'):
+                                    result_warnings.append(str(docs_info['archive_error']))
                         mark_complete(job_id, {
                             'ok': True,
                             'split': from_combined_set,
@@ -5770,7 +5815,7 @@ def api_upload_drawing():
                             'pages': created,
                             'drawing': drawings[0] if len(drawings) == 1 else None,
                             'revision': drawings[0].get('revision_label') if len(drawings) == 1 else None,
-                            'documents': docs_info,
+                            'documents': _slim_documents_archive(docs_info),
                         })
                     except Exception:
                         db.session.rollback()
@@ -5801,15 +5846,31 @@ def api_upload_drawing():
             }), 400
 
         commit_with_retry(db.session)
-        drawings = [_serialize_drawing(Drawing.query.get(item['id'])) for item in created]
+        drawings = []
+        if len(created) <= 30:
+            drawings = [
+                _serialize_drawing(Drawing.query.get(item['id']))
+                for item in created
+                if item.get('id') and Drawing.query.get(item['id'])
+            ]
         docs_info = None
-        if from_combined_set:
-            docs_info = _archive_drawing_set_to_documents(
-                int(project_id), set_name, dest, created, current_user.id,
-            )
         response_warnings = list(split_warnings)
-        if docs_info and docs_info.get('documents_url'):
-            response_warnings.append(f'Set archived to Documents › Drawing Sets › {set_name}.')
+        if from_combined_set:
+            try:
+                docs_info = _archive_drawing_set_to_documents(
+                    int(project_id), set_name, dest, created, current_user.id,
+                )
+            except Exception as archive_exc:
+                response_warnings.append(f'Drawings imported, but Documents archive failed: {archive_exc}')
+            else:
+                if docs_info and docs_info.get('documents_url'):
+                    response_warnings.append(f'Set archived to Documents › Drawing Sets › {set_name}.')
+                if docs_info and docs_info.get('skipped_individual_sheets', 0) > 20:
+                    response_warnings.append(
+                        'Full set PDF saved to Documents (individual sheet copies skipped for large sets).'
+                    )
+                if docs_info and docs_info.get('archive_error'):
+                    response_warnings.append(str(docs_info['archive_error']))
         return jsonify({
             'ok': True,
             'split': from_combined_set,
@@ -5824,7 +5885,7 @@ def api_upload_drawing():
             'pages': created,
             'drawing': drawings[0] if len(drawings) == 1 else None,
             'revision': drawings[0].get('revision_label') if len(drawings) == 1 else None,
-            'documents': docs_info,
+            'documents': _slim_documents_archive(docs_info),
         })
     except Exception as exc:
         db.session.rollback()
