@@ -3,6 +3,7 @@
 {% block content %}
 <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
 <script src="{{ url_for('static', filename='js/budget-sync.js') }}"></script>
+<script src="{{ url_for('static', filename='js/accounting-reconcile.js') }}"></script>
 
 <style>
   /* Hide native datalist dropdown arrow for cleaner look - we use "view all codes" for full selector */
@@ -1636,12 +1637,16 @@
         const container = document.getElementById('pendingChangesContent');
         container.innerHTML = '';
         if (pendingChanges.length === 0) {
-            container.innerHTML = `<div class="text-center py-8 text-zinc-400">No pending change orders at this time.</div>`;
+            container.innerHTML = `<div class="text-center py-8 text-zinc-400">No pending change orders, commitments, or purchase orders at this time.</div>`;
         } else {
             pendingChanges.forEach(change => {
                 const div = document.createElement('div');
                 div.className = 'border border-zinc-700 rounded-md p-4 mb-3';
-                div.innerHTML = `<div class="flex justify-between"><div><div class="font-semibold">${change.number || 'CO-' + change.id}</div><div class="text-sm text-zinc-400">${change.description}</div>${change.cost_code ? `<div class="text-xs text-zinc-500 mt-1">Cost Code: ${change.cost_code}</div>` : ''}</div><div class="text-right"><div class="font-semibold text-orange-400">${formatCurrency(change.amount)}</div><div class="text-xs text-zinc-400">${change.status}</div></div></div>`;
+                const typeLabel = change.entity_type === 'commitment'
+                    ? (change.commitment_type || 'Commitment')
+                    : 'Change Order';
+                const company = change.company_name ? `<div class="text-xs text-zinc-500 mt-1">${change.company_name}</div>` : '';
+                div.innerHTML = `<div class="flex justify-between"><div><div class="text-[10px] uppercase tracking-wide text-zinc-500">${typeLabel}</div><div class="font-semibold">${change.number || (change.entity_type === 'commitment' ? 'COM-' : 'CO-') + change.id}</div><div class="text-sm text-zinc-400">${change.description || ''}</div>${change.cost_code ? `<div class="text-xs text-zinc-500 mt-1">Cost Code: ${change.cost_code}</div>` : ''}${company}</div><div class="text-right"><div class="font-semibold text-orange-400">${formatCurrency(change.amount)}</div><div class="text-xs text-zinc-400">${change.status}</div></div></div>`;
                 container.appendChild(div);
             });
         }
@@ -2564,7 +2569,9 @@
     // ==================== FINAL INITIALIZATION ====================
     function initializeBudget() {
         const boot = async () => {
-            if (typeof CasePMBudgetSync !== 'undefined') {
+            if (typeof CasePMAccountingReconcile !== 'undefined') {
+                await CasePMAccountingReconcile.initAndReconcile();
+            } else if (typeof CasePMBudgetSync !== 'undefined') {
                 const loaded = await CasePMBudgetSync.init();
                 if (loaded?.contract_synced) {
                     console.info('[Budget] Contract amount synced from project file.');
@@ -2614,6 +2621,11 @@
             if (searchInput) searchInput.addEventListener('input', filterBudgetLines);
             if (typeFilter) typeFilter.addEventListener('change', filterBudgetLines);
 
+            window.addEventListener('casepm:accounting-reconciled', () => {
+                reloadBudgetStateFromStorage();
+                renderBudgetTable(budgetLines);
+                updateTotals();
+            });
             window.addEventListener('casepm:co-approved', () => {
                 if (typeof CasePMBudgetSync !== 'undefined') {
                     CasePMBudgetSync.refreshFromServer().then(() => {

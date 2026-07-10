@@ -2326,6 +2326,7 @@ def update_change_order_status(co_id):
         BudgetProjectState=BudgetProjectState,
         db=db,
         Commitment=Commitment,
+        CommitmentAllocation=CommitmentAllocation,
         SageSyncEvent=SageSyncEvent,
         queue_sage_event=(new_status == 'Approved' and old_status != 'Approved'),
     )
@@ -6671,6 +6672,7 @@ def api_commitment_workflow(commitment_id):
 
     budget_sync = None
     sov_sync = None
+    reconcile_result = None
 
     if action == 'submit' and not c.submitted_at:
         c.submitted_at = datetime.utcnow()
@@ -6734,6 +6736,23 @@ def api_commitment_workflow(commitment_id):
             sov_sync = sync_commitment_to_sub_sov(PayAppProjectState, db, c, allocs, current_user.id)
         except Exception as exc:
             sov_sync = {'error': str(exc)}
+        try:
+            from accounting_reconcile import reconcile_project_accounting
+            reconcile_result = reconcile_project_accounting(
+                c.project_id,
+                current_user.id,
+                ChangeOrder=ChangeOrder,
+                ChangeOrderAllocation=ChangeOrderAllocation,
+                Commitment=Commitment,
+                CommitmentAllocation=CommitmentAllocation,
+                BudgetProjectState=BudgetProjectState,
+                PayAppProjectState=PayAppProjectState,
+                db=db,
+            )
+            budget_sync = reconcile_result.get('budget_sync_result') or budget_sync
+            sov_sync = reconcile_result.get('sync_result') or sov_sync
+        except Exception as exc:
+            reconcile_result = {'error': str(exc)}
         _sage_commitment_event(
             c, 'CommitmentApproved',
             message=f'Commitment {c.number} approved — budget & SOV updated',
@@ -7246,18 +7265,50 @@ def api_import_budget_local():
     return jsonify({'ok': True, 'version': record.version})
 
 
+@app.route('/api/accounting/reconcile', methods=['POST'])
+@login_required
+def api_accounting_reconcile():
+    from accounting_reconcile import reconcile_project_accounting
+    project_id = request.args.get('project_id', type=int) or get_current_project_id()
+    if not project_id:
+        return jsonify({'error': 'project_id required'}), 400
+    try:
+        result = reconcile_project_accounting(
+            int(project_id),
+            current_user.id,
+            ChangeOrder=ChangeOrder,
+            ChangeOrderAllocation=ChangeOrderAllocation,
+            Commitment=Commitment,
+            CommitmentAllocation=CommitmentAllocation,
+            BudgetProjectState=BudgetProjectState,
+            PayAppProjectState=PayAppProjectState,
+            db=db,
+        )
+        return jsonify(result)
+    except Exception as exc:
+        db.session.rollback()
+        return jsonify({'error': str(exc)}), 500
+
+
 @app.route('/api/budget/pending-change-orders', methods=['GET'])
 @login_required
 def api_budget_pending_change_orders():
+    from accounting_reconcile import list_pending_budget_items, _collect_alloc_maps
     from budget_persistence import PENDING_CO_STATUSES
     project_id = request.args.get('project_id', type=int) or get_current_project_id()
     if not project_id:
         return jsonify({'error': 'project_id required'}), 400
     cos = ChangeOrder.query.filter(
         ChangeOrder.project_id == project_id,
-        ChangeOrder.status.in_(list(PENDING_CO_STATUSES) + ['Pending', 'Draft']),
+        ChangeOrder.status.in_(list(PENDING_CO_STATUSES)),
     ).order_by(ChangeOrder.created_at.desc()).all()
+    commitments = Commitment.query.filter_by(project_id=project_id).order_by(Commitment.created_at.desc()).all()
+    co_ids = [c.id for c in cos]
+    com_ids = [c.id for c in commitments]
+    co_map, com_map = _collect_alloc_maps(ChangeOrderAllocation, CommitmentAllocation, co_ids, com_ids)
+    pending_items = list_pending_budget_items(cos, commitments, co_map, com_map)
     return jsonify({
+        'pending_items': pending_items,
         'change_orders': [{
             'id': co.id,
             'number': co.number,
@@ -7265,6 +7316,7 @@ def api_budget_pending_change_orders():
             'amount': co.amount,
             'status': co.status,
             'cost_code': co.cost_code,
+            'entity_type': 'change_order',
         } for co in cos if co.status not in ('Approved', 'Rejected')],
     })
 
@@ -7542,6 +7594,7 @@ def api_create_change_order():
                 BudgetProjectState=BudgetProjectState,
                 db=db,
                 Commitment=Commitment,
+                CommitmentAllocation=CommitmentAllocation,
                 SageSyncEvent=SageSyncEvent,
             )
             sync_result = accounting.get('sync_result')
@@ -7600,6 +7653,7 @@ def api_update_change_order(co_id):
                 BudgetProjectState=BudgetProjectState,
                 db=db,
                 Commitment=Commitment,
+                CommitmentAllocation=CommitmentAllocation,
                 SageSyncEvent=SageSyncEvent,
                 queue_sage_event=(new_status == 'Approved' and old_status != 'Approved'),
             )
@@ -7616,6 +7670,7 @@ def api_update_change_order(co_id):
                 BudgetProjectState=BudgetProjectState,
                 db=db,
                 Commitment=Commitment,
+                CommitmentAllocation=CommitmentAllocation,
                 SageSyncEvent=SageSyncEvent,
                 queue_sage_event=False,
             )
@@ -7643,6 +7698,7 @@ def api_delete_change_order(co_id):
     body = request.get_json(silent=True) or {}
     if body.get('force'):
         force = True
+    project_id = co.project_id
     try:
         delete_change_order(
             co,
@@ -7656,7 +7712,23 @@ def api_delete_change_order(co_id):
     except ValueError as exc:
         db.session.rollback()
         return jsonify({'error': str(exc), 'can_force': co.status == 'Approved'}), 400
-    return jsonify({'ok': True, 'deleted_id': co_id})
+    reconcile_result = None
+    try:
+        from accounting_reconcile import reconcile_project_accounting
+        reconcile_result = reconcile_project_accounting(
+            project_id,
+            current_user.id,
+            ChangeOrder=ChangeOrder,
+            ChangeOrderAllocation=ChangeOrderAllocation,
+            Commitment=Commitment,
+            CommitmentAllocation=CommitmentAllocation,
+            BudgetProjectState=BudgetProjectState,
+            PayAppProjectState=PayAppProjectState,
+            db=db,
+        )
+    except Exception as exc:
+        reconcile_result = {'error': str(exc)}
+    return jsonify({'ok': True, 'deleted_id': co_id, 'reconcile_result': reconcile_result})
 
 
 @app.route('/api/change-orders/<int:co_id>/revision', methods=['POST'])
@@ -7800,6 +7872,7 @@ def api_change_order_workflow(co_id):
             BudgetProjectState=BudgetProjectState,
             db=db,
             Commitment=Commitment,
+            CommitmentAllocation=CommitmentAllocation,
             SageSyncEvent=SageSyncEvent,
             queue_sage_event=False,
         )
@@ -7817,6 +7890,7 @@ def api_change_order_workflow(co_id):
             BudgetProjectState=BudgetProjectState,
             db=db,
             Commitment=Commitment,
+            CommitmentAllocation=CommitmentAllocation,
             SageSyncEvent=SageSyncEvent,
         )
         sync_result = accounting.get('sync_result')
@@ -7855,6 +7929,7 @@ def api_change_order_workflow(co_id):
             BudgetProjectState=BudgetProjectState,
             db=db,
             Commitment=Commitment,
+            CommitmentAllocation=CommitmentAllocation,
             SageSyncEvent=SageSyncEvent,
             queue_sage_event=False,
         )

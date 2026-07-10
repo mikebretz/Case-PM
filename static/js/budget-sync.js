@@ -165,7 +165,7 @@
       const res = await fetch(`/api/budget/pending-change-orders?project_id=${pid}`, { credentials: 'same-origin' });
       if (!res.ok) return [];
       const json = await res.json();
-      return json.change_orders || [];
+      return json.pending_items || json.change_orders || [];
     } catch {
       return [];
     }

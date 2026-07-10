@@ -677,48 +677,44 @@ def run_change_order_accounting_sync(
     BudgetProjectState,
     db,
     Commitment=None,
+    CommitmentAllocation=None,
     SageSyncEvent=None,
     queue_sage_event=True,
 ):
-    """Push change order amounts to budget and pay app SOV when status warrants it."""
+    """Reconcile change order amounts across budget, SOV, and commitments."""
     result = {'sync_result': None, 'budget_sync_result': None, 'errors': []}
 
-    try:
-        from budget_persistence import sync_change_order_to_budget
-        result['budget_sync_result'] = sync_change_order_to_budget(
-            ChangeOrder,
-            ChangeOrderAllocation,
-            BudgetProjectState,
-            db,
-            co.id,
-            old_status,
-            new_status,
-            user_id,
-        )
-    except Exception as exc:
-        result['errors'].append({'target': 'budget', 'error': str(exc)})
+    if new_status == 'Approved' and old_status != 'Approved':
+        co.approved_at = co.approved_at or datetime.utcnow()
+        try:
+            from pay_app_persistence import apply_schedule_impact
+            apply_schedule_impact(
+                ScheduleData, Project, db, co.project_id,
+                co.schedule_impact, co.number, co.description,
+            )
+        except Exception as exc:
+            result['errors'].append({'target': 'schedule', 'error': str(exc)})
 
-    if new_status != 'Approved':
+    if Commitment is None or CommitmentAllocation is None:
         return result
 
-    if old_status != 'Approved':
-        co.approved_at = co.approved_at or datetime.utcnow()
-
     try:
-        from pay_app_persistence import sync_change_order_to_sov
-        sync_result = sync_change_order_to_sov(
-            ChangeOrder,
-            ChangeOrderAllocation,
-            PayAppProjectState,
-            ScheduleData,
-            Project,
-            db,
-            co.id,
+        from accounting_reconcile import reconcile_project_accounting
+        recon = reconcile_project_accounting(
+            co.project_id,
             user_id,
+            ChangeOrder=ChangeOrder,
+            ChangeOrderAllocation=ChangeOrderAllocation,
             Commitment=Commitment,
+            CommitmentAllocation=CommitmentAllocation,
+            BudgetProjectState=BudgetProjectState,
+            PayAppProjectState=PayAppProjectState,
+            db=db,
         )
-        result['sync_result'] = sync_result
-        if not sync_result.get('error'):
+        result['sync_result'] = recon.get('sync_result')
+        result['budget_sync_result'] = recon.get('budget_sync_result')
+        if new_status == 'Approved':
+            co.sov_synced_at = co.sov_synced_at or datetime.utcnow()
             co.sage_sync_status = 'sov_synced'
             if queue_sage_event and SageSyncEvent is not None and old_status != 'Approved':
                 from sage_service import create_and_process_sage_event
@@ -728,14 +724,14 @@ def run_change_order_accounting_sync(
                     db,
                     co.project_id,
                     'ChangeOrderApproved',
-                    message=f'Change Order {co.number} approved — SOV and schedule updated',
-                    payload={'change_order_id': co.id, 'amount': co.amount, 'sync': sync_result},
+                    message=f'Change Order {co.number} approved — accounting reconciled',
+                    payload={'change_order_id': co.id, 'amount': co.amount, 'sync': result['sync_result']},
                     user_id=user_id,
                 )
     except Exception as exc:
         co.sage_sync_status = f'sync_error:{str(exc)[:120]}'
         result['sync_result'] = {'error': str(exc)}
-        result['errors'].append({'target': 'sov', 'error': str(exc)})
+        result['errors'].append({'target': 'reconcile', 'error': str(exc)})
 
     return result
 

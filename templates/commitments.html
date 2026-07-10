@@ -6,6 +6,7 @@
 <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
 <script src="{{ url_for('static', filename='js/budget-sync.js') }}"></script>
 <script src="{{ url_for('static', filename='js/pay-app-sync.js') }}"></script>
+<script src="{{ url_for('static', filename='js/accounting-reconcile.js') }}"></script>
 <script>
 window.COMMITMENT_PROJECT_CTX = {
     id: {{ active_project.id if active_project else 'null' }},
