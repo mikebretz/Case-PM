@@ -2,7 +2,7 @@
 
 {% block content %}
 <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
-<script src="{{ url_for('static', filename='js/drawings-app.js') }}"></script>
+<script src="{{ url_for('static', filename='js/drawings-app.js') }}?v=20260710c"></script>
 
 <style>
   #mainContent:has(.draw-page) {
@@ -804,7 +804,7 @@
             <div class="w-8 h-8 rounded-full border-2 border-sky-500 border-t-transparent animate-spin flex-shrink-0"></div>
             <div class="min-w-0">
                 <h2 id="uploadProgressTitle" class="text-sm font-semibold truncate">Processing drawing set…</h2>
-                <p class="text-[11px] text-zinc-500 upload-progress-pulse">Splitting pages · reading title blocks · detecting sheet numbers & drawing names</p>
+                <p id="uploadProgressSubtitle" class="text-[11px] text-zinc-500 upload-progress-pulse">Splitting pages · reading title blocks · detecting sheet numbers & drawing names</p>
             </div>
         </div>
         <div class="h-1.5 bg-zinc-800 rounded-full overflow-hidden mb-3">
