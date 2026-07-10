@@ -204,6 +204,156 @@ def apply_co_to_contractor_sov(state_data, amount, cost_code=None, description=N
     return state_data, applied
 
 
+def _find_sub_sov_keys_for_company(sub_sov, company_id=None, company_name=None):
+    """Resolve subcontractorSOV dict keys for a vendor (numeric id and/or name)."""
+    keys = []
+    seen = set()
+    sub_sov = sub_sov or {}
+
+    def add(key):
+        k = str(key).strip() if key is not None else ''
+        if k and k not in seen:
+            seen.add(k)
+            keys.append(k)
+
+    if company_id is not None and str(company_id).strip() != '':
+        add(company_id)
+    if company_name:
+        add(company_name.strip())
+        name_lower = company_name.strip().lower()
+        for k in sub_sov:
+            if str(k).strip().lower() == name_lower:
+                add(k)
+
+    return keys
+
+
+def resolve_sub_sov_targets_for_allocation(co, sub_sov, allocation, Commitment=None):
+    """Determine which subcontractor SOV buckets should receive a CO allocation."""
+    targets = []
+    seen = set()
+    sub_sov = sub_sov or {}
+
+    def add(key):
+        k = str(key).strip() if key is not None else ''
+        if k and k not in seen:
+            seen.add(k)
+            targets.append(k)
+
+    company_id = getattr(co, 'company_id', None)
+    company_name = getattr(co, 'company_name', None)
+    for k in _find_sub_sov_keys_for_company(sub_sov, company_id, company_name):
+        add(k)
+
+    linked_ref = getattr(co, 'linked_commitment_ref', None)
+    if linked_ref and Commitment is not None:
+        commitment = Commitment.query.filter_by(
+            project_id=co.project_id,
+            number=linked_ref,
+        ).first()
+        if commitment:
+            for k in _find_sub_sov_keys_for_company(
+                sub_sov, getattr(commitment, 'company_id', None), commitment.company_name,
+            ):
+                add(k)
+
+    cost_code = getattr(allocation, 'cost_code', None)
+    if isinstance(allocation, dict):
+        cost_code = allocation.get('cost_code')
+    target_norm = normalize_cost_code(cost_code)
+    if target_norm:
+        for company_key, lines in sub_sov.items():
+            for line in lines or []:
+                if normalize_cost_code(line.get('cost_code')) == target_norm:
+                    add(company_key)
+                    break
+
+    contract_type = (getattr(co, 'contract_type', None) or '').strip()
+    if not targets and contract_type in ('Subcontract', 'Subcontractor'):
+        if company_id is not None and str(company_id).strip() != '':
+            add(str(company_id))
+        elif company_name:
+            add(company_name.strip())
+
+    return targets
+
+
+def apply_co_to_subcontractor_sov(state_data, company_key, amount, cost_code=None, description=None, co_number=None):
+    """Add approved change order amount to a subcontractor SOV line (change_orders column)."""
+    sub_sov = state_data.get('subcontractorSOV') or {}
+    if not isinstance(sub_sov, dict):
+        sub_sov = {}
+    lines = sub_sov.get(company_key) or []
+    if not isinstance(lines, list):
+        lines = []
+
+    remaining = float(amount or 0)
+    target_norm = normalize_cost_code(cost_code)
+    line_desc = (description or '').strip() or (
+        f'CO {co_number} — {cost_code}' if co_number and cost_code else f'Change Order {co_number or ""}'.strip()
+    )
+    applied = 0.0
+
+    if target_norm:
+        for line in lines:
+            if normalize_cost_code(line.get('cost_code')) == target_norm:
+                if co_number and line.get('from_change_order') == co_number:
+                    return state_data, 0.0
+                line['change_orders'] = float(line.get('change_orders') or 0) + remaining
+                orig = float(line.get('original_commitment') or 0)
+                line['scheduled_value'] = orig + float(line.get('change_orders') or 0)
+                if co_number:
+                    line['from_change_order'] = co_number
+                applied = remaining
+                remaining = 0
+                break
+        if remaining > 0:
+            lines.append({
+                'id': f'co-{co_number or "new"}-{target_norm}-{int(datetime.utcnow().timestamp() * 1000)}',
+                'cost_code': cost_code,
+                'description': line_desc,
+                'original_commitment': 0,
+                'change_orders': remaining,
+                'scheduled_value': remaining,
+                'billed_to_date': 0,
+                'co_billed_to_date': 0,
+                'work_this_period': 0,
+                'materials_stored': 0,
+                'notes': f'Auto-created from approved change order {co_number or ""}'.strip(),
+                'from_change_order': co_number,
+            })
+            applied += remaining
+    elif remaining > 0:
+        if lines:
+            line = lines[0]
+            line['change_orders'] = float(line.get('change_orders') or 0) + remaining
+            orig = float(line.get('original_commitment') or 0)
+            line['scheduled_value'] = orig + float(line.get('change_orders') or 0)
+            if co_number:
+                line['from_change_order'] = co_number
+            applied = remaining
+        else:
+            lines.append({
+                'id': f'co-{co_number or "new"}-unalloc-{int(datetime.utcnow().timestamp() * 1000)}',
+                'cost_code': '01-0000',
+                'description': line_desc or 'Unallocated Change Orders',
+                'original_commitment': 0,
+                'change_orders': remaining,
+                'scheduled_value': remaining,
+                'billed_to_date': 0,
+                'co_billed_to_date': 0,
+                'work_this_period': 0,
+                'materials_stored': 0,
+                'notes': f'Auto-created from approved change order {co_number or ""}'.strip(),
+                'from_change_order': co_number,
+            })
+            applied = remaining
+
+    sub_sov[company_key] = lines
+    state_data['subcontractorSOV'] = sub_sov
+    return state_data, applied
+
+
 def schedule_impact_to_days(schedule_impact):
     if not schedule_impact:
         return 0
@@ -276,6 +426,7 @@ def sync_change_order_to_sov(
     db,
     co_id,
     user_id=None,
+    Commitment=None,
 ):
     co = ChangeOrder.query.get(co_id)
     if not co:
@@ -284,31 +435,80 @@ def sync_change_order_to_sov(
         raise ValueError('Change order must be Approved to sync to SOV')
 
     record, state = get_pay_app_state(PayAppProjectState, co.project_id)
+    already_contractor_synced = bool(co.sov_synced_at)
+
     allocations = ChangeOrderAllocation.query.filter_by(change_order_id=co.id).all()
+    sub_sov = state.get('subcontractorSOV') or {}
 
     total_applied = 0.0
+    sub_total_applied = 0.0
+    sub_updates = []
+
     if allocations:
+        if not already_contractor_synced:
+            for alloc in allocations:
+                state, applied = apply_co_to_contractor_sov(
+                    state,
+                    alloc.amount,
+                    alloc.cost_code,
+                    getattr(alloc, 'description', None),
+                )
+                total_applied += applied
+
         for alloc in allocations:
-            state, applied = apply_co_to_contractor_sov(
-                state,
-                alloc.amount,
-                alloc.cost_code,
-                getattr(alloc, 'description', None),
-            )
-            total_applied += applied
-    else:
+            targets = resolve_sub_sov_targets_for_allocation(co, sub_sov, alloc, Commitment)
+            sub_sov = state.get('subcontractorSOV') or sub_sov
+            for company_key in targets:
+                state, sub_applied = apply_co_to_subcontractor_sov(
+                    state,
+                    company_key,
+                    alloc.amount,
+                    alloc.cost_code,
+                    getattr(alloc, 'description', None),
+                    co.number,
+                )
+                if sub_applied:
+                    sub_total_applied += sub_applied
+                    sub_updates.append({
+                        'company_key': company_key,
+                        'cost_code': alloc.cost_code,
+                        'amount': sub_applied,
+                    })
+            sub_sov = state.get('subcontractorSOV') or sub_sov
+    elif not already_contractor_synced:
         state, applied = apply_co_to_contractor_sov(state, co.amount, getattr(co, 'cost_code', None))
         total_applied += applied
 
-    save_pay_app_state(PayAppProjectState, db, co.project_id, state, user_id)
-    co.sov_synced_at = datetime.utcnow()
-    schedule_result = apply_schedule_impact(
-        ScheduleData, Project, db, co.project_id,
-        co.schedule_impact, co.number, co.description,
-    )
-    db.session.commit()
+    if not already_contractor_synced or sub_total_applied > 0:
+        save_pay_app_state(PayAppProjectState, db, co.project_id, state, user_id)
+    if not already_contractor_synced:
+        co.sov_synced_at = datetime.utcnow()
+        schedule_result = apply_schedule_impact(
+            ScheduleData, Project, db, co.project_id,
+            co.schedule_impact, co.number, co.description,
+        )
+    else:
+        schedule_result = None
+        if sub_total_applied > 0:
+            db.session.commit()
+        else:
+            return {
+                'already_synced': True,
+                'sov_amount_applied': 0,
+                'sub_sov_amount_applied': 0,
+                'contractorSOV': state.get('contractorSOV'),
+                'subcontractorSOV': state.get('subcontractorSOV'),
+                'sub_sov_updates': [],
+            }
+
+    if not already_contractor_synced:
+        db.session.commit()
     return {
+        'already_synced': already_contractor_synced,
         'sov_amount_applied': total_applied,
+        'sub_sov_amount_applied': sub_total_applied,
+        'sub_sov_updates': sub_updates,
         'contractorSOV': state.get('contractorSOV'),
+        'subcontractorSOV': state.get('subcontractorSOV'),
         'schedule': schedule_result,
     }
