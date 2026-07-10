@@ -2,60 +2,74 @@
 cd /d "%~dp0"
 
 echo ================================================
-echo   Starting Case PM - Ultimate Version
+echo   Starting Case PM
 echo ================================================
 echo.
 
-:: Check if Python is available
-python --version >nul 2>&1
-if errorlevel 1 (
-    echo ERROR: Python is not installed or not added to PATH.
-    echo Please install Python 3.12 or 3.13 and try again.
+:: Find Python
+set "PY="
+where python >nul 2>&1
+if not errorlevel 1 set "PY=python"
+
+if not defined PY (
+    echo ERROR: Python is not installed or not in PATH.
+    echo.
+    echo Install Python 3.12+ from https://www.python.org/downloads/
+    echo IMPORTANT: Check "Add python.exe to PATH" during install.
+    echo.
     pause
-    exit /b
+    exit /b 1
 )
 
-:: Create virtual environment if it doesn't exist
-if not exist "venv\Scripts\activate.bat" (
+%PY% --version
+if errorlevel 1 (
+    echo ERROR: Python found but does not run.
+    pause
+    exit /b 1
+)
+
+:: Create virtual environment if missing
+if not exist "venv\Scripts\python.exe" (
     echo Creating virtual environment...
-    python -m venv venv
+    %PY% -m venv venv
     if errorlevel 1 (
         echo ERROR: Failed to create virtual environment.
         pause
-        exit /b
+        exit /b 1
     )
-    echo Virtual environment created successfully.
+    echo Virtual environment created.
     echo.
 )
 
-:: Activate virtual environment
-call venv\Scripts\activate.bat
-
-:: Ensure search libraries are present (install individually if missing)
-python -c "import numpy" >nul 2>&1
-if errorlevel 1 (
-    echo Installing numpy for drawing search...
-    pip install "numpy>=1.24.0"
+:: Always use venv Python (works even if activate.bat has issues)
+set "PY=venv\Scripts\python.exe"
+if not exist "%PY%" (
+    echo ERROR: venv\Scripts\python.exe not found.
+    pause
+    exit /b 1
 )
 
-python -c "import cv2" >nul 2>&1
+:: Upgrade pip inside venv (use python -m pip — never bare "pip")
+echo Checking pip...
+"%PY%" -m pip --version >nul 2>&1
 if errorlevel 1 (
-    echo Installing opencv for shape search...
-    pip install "opencv-python-headless>=4.8.0"
+    echo Installing pip into virtual environment...
+    "%PY%" -m ensurepip --upgrade
 )
+"%PY%" -m pip install --upgrade pip --quiet
 
-:: Check if core requirements are installed
-python -c "import flask, pypdf, fitz" >nul 2>&1
+:: Install requirements if Flask not present
+"%PY%" -c "import flask" >nul 2>&1
 if errorlevel 1 (
-    echo Installing required packages...
-    echo This may take a minute on first run...
+    echo Installing required packages — first run may take a few minutes...
     echo.
-    pip install -r requirements.txt
+    "%PY%" -m pip install -r requirements.txt
     if errorlevel 1 (
         echo.
         echo ERROR: Failed to install requirements.
+        echo Try running INSTALL-PACKAGES.bat manually.
         pause
-        exit /b
+        exit /b 1
     )
     echo.
     echo Packages installed successfully.
@@ -70,13 +84,9 @@ echo.
 echo The application will open in your browser shortly...
 echo.
 
-:: Start the Flask app in a new window
-start "" python app.py
+start "" "%PY%" app.py
 
-:: Wait a few seconds for the server to fully start
 timeout /t 5 /nobreak >nul
-
-:: Open browser automatically
 start http://127.0.0.1:5000
 
 echo.
