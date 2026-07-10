@@ -5116,14 +5116,13 @@ def api_delete_drawing_set():
 @login_required
 def api_drawing_export_to_documents(drawing_id):
     """Copy current drawing sheet PDF into Documents › Drawings › Drawing Sets."""
-    from drawing_persistence import resolve_drawing_file_path, resolve_folder_by_key
+    from drawing_persistence import resolve_drawing_file_path, current_revision_for_drawing, drawings_by_set_name
+    from document_persistence import resolve_folder_by_key
 
     drawing = Drawing.query.get_or_404(drawing_id)
     body = request.get_json(silent=True) or {}
     create_share = bool(body.get('create_share_link'))
-    rev = DrawingRevision.query.get(drawing.current_revision_id) if drawing.current_revision_id else None
-    if not rev:
-        rev = DrawingRevision.query.filter_by(drawing_id=drawing.id, is_current=True).first()
+    rev = current_revision_for_drawing(DrawingRevision, drawing)
     upload_root = app.config.get('UPLOAD_FOLDER')
     resolved = resolve_drawing_file_path(rev.file_path if rev else None, upload_root)
     if not rev or not resolved or not os.path.isfile(resolved):
@@ -5133,7 +5132,7 @@ def api_drawing_export_to_documents(drawing_id):
     folder = resolve_folder_by_key(db, DocumentFolder, drawing.project_id, 'drawing-sets')
     if not folder:
         return jsonify({'error': 'Drawing Sets folder missing'}), 500
-    name = f'{drawing.sheet_number or "Sheet"} — {drawing.title or drawing.set_name or "Drawing"}'.strip(' —')
+    name = f'{drawing.sheet_number or "Sheet"} — {drawing.title or (rev.set_name if rev else None) or "Drawing"}'.strip(' —')
     try:
         doc_dict = _save_document_bytes(
             drawing.project_id, file_bytes, name, os.path.basename(resolved),
@@ -5141,7 +5140,7 @@ def api_drawing_export_to_documents(drawing_id):
             source_drawing_id=drawing.id,
             source_sheet=drawing.sheet_number,
             source_metadata={
-                'set_name': drawing.set_name,
+                'set_name': rev.set_name if rev else None,
                 'discipline': drawing.discipline,
                 'revision': rev.revision_label if rev else None,
                 'exported_from': 'drawings',
@@ -5164,7 +5163,8 @@ def api_drawing_export_to_documents(drawing_id):
 @login_required
 def api_drawing_set_export_to_documents():
     """Export all sheets in a drawing set to Documents › Drawings › Drawing Sets."""
-    from drawing_persistence import resolve_drawing_file_path, resolve_folder_by_key
+    from drawing_persistence import resolve_drawing_file_path, current_revision_for_drawing, drawings_by_set_name
+    from document_persistence import resolve_folder_by_key
 
     body = request.get_json(silent=True) or {}
     project_id = body.get('project_id') or get_current_project_id()
@@ -5174,15 +5174,13 @@ def api_drawing_set_export_to_documents():
     folder = resolve_folder_by_key(db, DocumentFolder, int(project_id), 'drawing-sets')
     if not folder:
         return jsonify({'error': 'Drawing Sets folder missing'}), 500
-    drawings = Drawing.query.filter_by(project_id=int(project_id), set_name=set_name).order_by(Drawing.sheet_number).all()
+    drawings = drawings_by_set_name(db, Drawing, DrawingRevision, int(project_id), set_name)
     if not drawings:
         return jsonify({'error': 'No sheets in this set'}), 404
     upload_root = app.config.get('UPLOAD_FOLDER')
     exported = []
     for drawing in drawings:
-        rev = DrawingRevision.query.get(drawing.current_revision_id) if drawing.current_revision_id else None
-        if not rev:
-            rev = DrawingRevision.query.filter_by(drawing_id=drawing.id, is_current=True).first()
+        rev = current_revision_for_drawing(DrawingRevision, drawing)
         resolved = resolve_drawing_file_path(rev.file_path if rev else None, upload_root)
         if not rev or not resolved or not os.path.isfile(resolved):
             continue

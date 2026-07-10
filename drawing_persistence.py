@@ -1720,22 +1720,39 @@ def process_pages_from_upload(
     return created, needs_review
 
 
+def current_revision_for_drawing(DrawingRevision, drawing):
+    rev = DrawingRevision.query.get(drawing.current_revision_id) if drawing.current_revision_id else None
+    if not rev:
+        rev = DrawingRevision.query.filter_by(drawing_id=drawing.id, is_current=True).first()
+    return rev
+
+
+def drawing_set_name(rev) -> str:
+    return (rev.set_name if rev else None) or 'Unnamed Set'
+
+
+def drawings_by_set_name(db, Drawing, DrawingRevision, project_id, set_name):
+    """Return drawings whose current revision belongs to the given set name."""
+    target = (set_name or '').strip() or 'Unnamed Set'
+    matches = []
+    for drawing in Drawing.query.filter_by(project_id=int(project_id)).order_by(Drawing.sheet_number).all():
+        rev = current_revision_for_drawing(DrawingRevision, drawing)
+        if drawing_set_name(rev) == target:
+            matches.append(drawing)
+    return matches
+
+
 def delete_drawings_by_set_name(db, Drawing, DrawingRevision, DrawingMarkup, project_id, set_name, upload_root=None, *, RFI=None, ChangeOrder=None, PunchItem=None):
     """Delete every sheet whose current revision belongs to the given drawing set name."""
     target = (set_name or '').strip() or 'Unnamed Set'
-    drawings = Drawing.query.filter_by(project_id=int(project_id)).all()
+    drawings = drawings_by_set_name(db, Drawing, DrawingRevision, project_id, target)
     deleted_ids = []
     for drawing in drawings:
-        rev = DrawingRevision.query.get(drawing.current_revision_id) if drawing.current_revision_id else None
-        if not rev:
-            rev = DrawingRevision.query.filter_by(drawing_id=drawing.id, is_current=True).first()
-        rev_set = (rev.set_name if rev else None) or 'Unnamed Set'
-        if rev_set == target:
-            delete_drawing_record(
-                db, Drawing, DrawingRevision, DrawingMarkup, drawing, upload_root=upload_root,
-                RFI=RFI, ChangeOrder=ChangeOrder, PunchItem=PunchItem,
-            )
-            deleted_ids.append(drawing.id)
+        delete_drawing_record(
+            db, Drawing, DrawingRevision, DrawingMarkup, drawing, upload_root=upload_root,
+            RFI=RFI, ChangeOrder=ChangeOrder, PunchItem=PunchItem,
+        )
+        deleted_ids.append(drawing.id)
     return deleted_ids
 
 
