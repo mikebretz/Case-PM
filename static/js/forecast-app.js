@@ -1,10 +1,11 @@
 /**
- * Financial Forecast — progress projection and category bar chart.
+ * Financial Forecast — monthly progress report and escalating trend chart.
+ * Styled to match Budget / Pay Apps module aesthetics.
  */
 (function (global) {
   'use strict';
 
-  let chart = null;
+  let trendChart = null;
   let summary = null;
   let horizon = 'full_job';
 
@@ -19,6 +20,24 @@
     return new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 0 }).format(n || 0);
   }
 
+  function fmtDate(iso) {
+    if (!iso) return '—';
+    try {
+      return new Date(iso).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+    } catch {
+      return iso;
+    }
+  }
+
+  function esc(s) {
+    if (s == null) return '';
+    return String(s)
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;');
+  }
+
   async function loadSummary() {
     const pid = projectId();
     if (!pid) throw new Error('Select a project first.');
@@ -31,23 +50,28 @@
 
   function renderKpis(data) {
     const map = {
+      kpiContract: data.contract_amount,
+      kpiOriginal: data.original_budget,
+      kpiApprovedCo: data.approved_changes,
       kpiRevised: data.revised_budget,
       kpiActual: data.actual_cost,
-      kpiVariance: data.variance,
-      kpiPaid: data.paid_out,
-      kpiPending: data.pending_changes,
-      kpiCommitted: data.committed,
+      kpiFtc: data.forecast_to_complete,
+      kpiEac: data.estimated_cost_at_completion,
       kpiPct: `${data.percent_complete || 0}%`,
     };
-    Object.keys(map).forEach(id => {
+    Object.entries(map).forEach(([id, val]) => {
       const el = document.getElementById(id);
       if (!el) return;
-      el.textContent = id === 'kpiPct' ? map[id] : fmt(map[id]);
-      if (id === 'kpiVariance') {
-        el.classList.toggle('text-emerald-400', (data.variance || 0) >= 0);
-        el.classList.toggle('text-red-400', (data.variance || 0) < 0);
-      }
+      el.textContent = id === 'kpiPct' ? val : fmt(val);
     });
+    const badge = document.getElementById('forecastAsOfBadge');
+    if (badge && data.progress_report) {
+      badge.textContent = fmtDate(data.progress_report.as_of_date);
+    }
+    const status = document.getElementById('forecastStatusText');
+    if (status) {
+      status.textContent = `Financial Forecast · Revised ${fmt(data.revised_budget)} · EAC ${fmt(data.estimated_cost_at_completion)} · Variance ${fmt(data.projected_over_under)}`;
+    }
   }
 
   function renderProjection(data) {
@@ -55,73 +79,116 @@
     const el = document.getElementById('projectionPanel');
     if (!el) return;
     const label = {
-      week: 'Next 1 Week',
-      two_weeks: 'Next 2 Weeks',
-      four_weeks: 'Next 4 Weeks',
-      full_job: 'Through Expected Completion',
-    }[horizon] || 'Projection';
+      week: '1-week',
+      two_weeks: '2-week',
+      four_weeks: '4-week',
+      full_job: 'full-job',
+    }[horizon] || '';
+    const varClass = (proj.projected_variance || 0) >= 0 ? 'text-emerald-400' : 'text-red-400';
     el.innerHTML = `
-      <div class="text-sm text-zinc-400 mb-1">${label}</div>
-      <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
-        <div><div class="text-xs text-zinc-500">Projected Cost</div><div class="text-xl font-semibold text-sky-400">${fmt(proj.projected_cost)}</div></div>
-        <div><div class="text-xs text-zinc-500">Projected Variance</div><div class="text-xl font-semibold ${(proj.projected_variance || 0) >= 0 ? 'text-emerald-400' : 'text-red-400'}">${fmt(proj.projected_variance)}</div></div>
-        <div><div class="text-xs text-zinc-500">Est. % Complete</div><div class="text-xl font-semibold text-violet-400">${proj.projected_percent_complete || 0}%</div></div>
-      </div>
-      <div class="text-xs text-zinc-500 mt-3">Based on ${fmt(data.burn_rate_weekly || 0)}/week burn rate · ${data.days_remaining || 0} days remaining on schedule</div>`;
+      <span class="text-zinc-500">${label} projection:</span>
+      <span class="text-sky-400 font-mono ml-1">${fmt(proj.projected_cost)}</span>
+      <span class="text-zinc-600 mx-1">·</span>
+      <span class="text-zinc-500">variance</span>
+      <span class="${varClass} font-mono ml-1">${fmt(proj.projected_variance)}</span>
+      <span class="text-zinc-600 mx-1">·</span>
+      <span class="text-zinc-500">${proj.projected_percent_complete || 0}% est.</span>`;
   }
 
-  function renderChart(data) {
-    const canvas = document.getElementById('forecastChart');
-    if (!canvas || typeof Chart === 'undefined') return;
-    const cats = data.categories || [];
-    const labels = cats.map(c => c.label);
-    const amounts = cats.map(c => Math.abs(c.amount || 0));
-    const colors = cats.map(c => c.color);
+  function renderProgressTable(data) {
+    const tbody = document.getElementById('progressReportBody');
+    if (!tbody) return;
+    const rows = data.monthly_trends || (data.progress_report ? [data.progress_report] : []);
+    if (!rows.length) {
+      tbody.innerHTML = '<tr><td colspan="12" class="px-6 py-8 text-center text-zinc-500">No progress history yet.</td></tr>';
+      return;
+    }
+    tbody.innerHTML = rows.map((r, i) => {
+      const isLatest = i === rows.length - 1;
+      const rowClass = isLatest ? 'bg-zinc-800/40' : 'hover:bg-zinc-800/60';
+      return `<tr class="${rowClass} transition-colors">
+        <td class="px-4 py-2 font-medium text-white">${esc(r.month)}</td>
+        <td class="px-4 py-2 text-zinc-400 text-xs">${fmtDate(r.as_of_date)}</td>
+        <td class="px-4 py-2 text-right font-mono">${fmt(r.subtotal_budget)}</td>
+        <td class="px-4 py-2 text-right font-mono text-orange-300">${fmt(r.subtotal_projected)}</td>
+        <td class="px-4 py-2 text-right font-mono text-sky-400">${fmt(r.cost_to_date)}</td>
+        <td class="px-4 py-2 text-right font-mono text-amber-400">${fmt(r.approved_changes)}</td>
+        <td class="px-4 py-2 text-right font-mono text-emerald-400">${fmt(r.revised_contract)}</td>
+        <td class="px-4 py-2 text-right font-mono text-indigo-400">${fmt(r.payments_received)}</td>
+        <td class="px-4 py-2 text-right font-mono text-orange-400">${fmt(r.payments_pending)}</td>
+        <td class="px-4 py-2 text-right font-mono font-semibold">${fmt(r.total_payments)}</td>
+        <td class="px-4 py-2 text-center font-mono text-xs">${r.pct_complete || 0}%</td>
+        <td class="px-6 py-2 text-xs text-zinc-500">${esc(r.notes || '')}</td>
+      </tr>`;
+    }).join('');
+  }
 
-    if (chart) chart.destroy();
-    chart = new Chart(canvas, {
-      type: 'bar',
-      data: {
-        labels,
-        datasets: [{
-          label: 'Amount',
-          data: amounts,
-          backgroundColor: colors.map(c => c + 'cc'),
-          borderColor: colors,
-          borderWidth: 1,
-          borderRadius: 10,
-          borderSkipped: false,
-        }],
-      },
+  function renderTrendChart(data) {
+    const canvas = document.getElementById('forecastTrendChart');
+    if (!canvas || typeof Chart === 'undefined') return;
+    const rows = data.monthly_trends || [];
+    const labels = rows.map(r => r.month || fmtDate(r.as_of_date));
+
+    const datasets = [
+      { label: 'Cost to Date', key: 'cost_to_date', border: '#38bdf8', bg: 'rgba(56,189,248,0.12)' },
+      { label: 'Approved Changes', key: 'approved_changes', border: '#fbbf24', bg: 'rgba(251,191,36,0.08)' },
+      { label: 'Revised Contract', key: 'revised_contract', border: '#34d399', bg: 'rgba(52,211,153,0.06)' },
+      { label: 'Payments Received', key: 'payments_received', border: '#818cf8', bg: 'rgba(129,140,248,0.06)' },
+      { label: 'Payments Pending', key: 'payments_pending', border: '#fb923c', bg: 'rgba(251,146,60,0.05)' },
+      { label: 'Total Payments', key: 'total_payments', border: '#a78bfa', bg: 'rgba(167,139,250,0.05)' },
+    ].map(ds => ({
+      label: ds.label,
+      data: rows.map(r => r[ds.key] || 0),
+      borderColor: ds.border,
+      backgroundColor: ds.bg,
+      borderWidth: 2.5,
+      pointRadius: 4,
+      pointHoverRadius: 6,
+      tension: 0.35,
+      fill: false,
+    }));
+
+    if (trendChart) trendChart.destroy();
+    trendChart = new Chart(canvas, {
+      type: 'line',
+      data: { labels, datasets },
       options: {
         responsive: true,
         maintainAspectRatio: false,
+        interaction: { mode: 'index', intersect: false },
         plugins: {
-          legend: { display: false },
+          legend: {
+            display: true,
+            position: 'bottom',
+            labels: { color: '#a1a1aa', boxWidth: 12, padding: 16, font: { size: 11 } },
+          },
           tooltip: {
+            backgroundColor: '#18181b',
+            borderColor: '#3f3f46',
+            borderWidth: 1,
+            titleColor: '#fff',
+            bodyColor: '#d4d4d8',
             callbacks: {
               label(ctx) {
-                const raw = cats[ctx.dataIndex];
-                const sign = raw && raw.key === 'variance' && (raw.amount || 0) < 0 ? '-' : '';
-                return `${ctx.label}: ${sign}${fmt(ctx.parsed.y)}`;
+                return `${ctx.dataset.label}: ${fmt(ctx.parsed.y)}`;
               },
             },
           },
         },
         scales: {
           x: {
-            grid: { color: 'rgba(63,63,70,0.4)' },
-            ticks: { color: '#a1a1aa', maxRotation: 45, minRotation: 0, font: { size: 11 } },
+            grid: { color: 'rgba(63,63,70,0.35)' },
+            ticks: { color: '#a1a1aa', font: { size: 11 } },
           },
           y: {
-            grid: { color: 'rgba(63,63,70,0.4)' },
+            grid: { color: 'rgba(63,63,70,0.35)' },
             ticks: {
               color: '#a1a1aa',
               callback: v => '$' + Number(v).toLocaleString(),
             },
           },
         },
-        animation: { duration: 800, easing: 'easeOutQuart' },
+        animation: { duration: 900, easing: 'easeOutQuart' },
       },
     });
   }
@@ -129,11 +196,31 @@
   function setHorizon(h) {
     horizon = h;
     document.querySelectorAll('[data-forecast-horizon]').forEach(btn => {
-      btn.classList.toggle('bg-emerald-600', btn.dataset.forecastHorizon === h);
-      btn.classList.toggle('text-white', btn.dataset.forecastHorizon === h);
-      btn.classList.toggle('bg-zinc-800', btn.dataset.forecastHorizon !== h);
+      const active = btn.dataset.forecastHorizon === h;
+      btn.classList.toggle('bg-emerald-900/50', active);
+      btn.classList.toggle('text-emerald-400', active);
+      btn.classList.toggle('ring-1', active);
+      btn.classList.toggle('ring-emerald-700', active);
+      btn.classList.toggle('bg-zinc-800', !active);
+      btn.classList.toggle('text-zinc-300', !active);
     });
     if (summary) renderProjection(summary);
+  }
+
+  async function refresh() {
+    try {
+      const data = await loadSummary();
+      renderKpis(data);
+      renderProjection(data);
+      renderProgressTable(data);
+      renderTrendChart(data);
+    } catch (err) {
+      alert(err.message);
+    }
+  }
+
+  function printReport() {
+    window.print();
   }
 
   async function init() {
@@ -146,20 +233,13 @@
     } else if (typeof CasePMBudgetSync !== 'undefined') {
       await CasePMBudgetSync.init().catch(() => {});
     }
-    try {
-      const data = await loadSummary();
-      renderKpis(data);
-      renderProjection(data);
-      renderChart(data);
-    } catch (err) {
-      alert(err.message);
-    }
     document.querySelectorAll('[data-forecast-horizon]').forEach(btn => {
       btn.addEventListener('click', () => setHorizon(btn.dataset.forecastHorizon));
     });
     setHorizon(horizon);
+    await refresh();
   }
 
-  global.CasePMForecast = { init, loadSummary, setHorizon };
+  global.CasePMForecast = { init, refresh, loadSummary, setHorizon, printReport };
   document.addEventListener('DOMContentLoaded', init);
 })(window);

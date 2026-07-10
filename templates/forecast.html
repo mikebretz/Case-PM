@@ -6,62 +6,167 @@
 <script src="{{ url_for('static', filename='js/accounting-reconcile.js') }}"></script>
 <script src="{{ url_for('static', filename='js/forecast-app.js') }}"></script>
 
-<div class="p-4 md:p-6 max-w-[1600px] mx-auto space-y-4">
-    <div class="flex flex-col md:flex-row md:items-center justify-between gap-4">
+<style>
+  #mainContent:has(.forecast-page) {
+    overflow: hidden !important;
+    display: flex;
+    flex-direction: column;
+    padding: 0 !important;
+  }
+  .forecast-page {
+    display: flex;
+    flex-direction: column;
+    flex: 1;
+    min-height: 0;
+    width: 100%;
+    padding: 1rem 1rem 0;
+    overflow: hidden;
+    box-sizing: border-box;
+  }
+  .forecast-stack {
+    display: flex;
+    flex-direction: column;
+    flex: 1;
+    min-height: 0;
+    overflow: hidden;
+  }
+</style>
+
+<div class="forecast-page">
+<div class="forecast-stack">
+
+<!-- TOOLBAR (matches Budget / Pay Apps / Commitments) -->
+<div class="flex items-center justify-between flex-shrink-0 mb-4 gap-3">
+    <div class="flex items-center gap-3 min-w-0">
+        <div class="text-2xl font-semibold text-white whitespace-nowrap">Forecast</div>
+        <div id="forecastAsOfBadge"
+             class="text-lg font-bold px-4 py-1 bg-zinc-800 border border-zinc-700 text-violet-400 rounded-2xl font-mono">
+            — 
+        </div>
+        <div class="text-xs text-zinc-500 hidden lg:block">Progress · EAC · Monthly Trends</div>
+    </div>
+    <div class="flex items-center gap-2 flex-wrap justify-end">
+        <button type="button" onclick="CasePMForecast.refresh()" class="flex items-center gap-2 px-4 py-2 bg-zinc-800 hover:bg-zinc-700 rounded-md text-sm font-medium h-[38px]">
+            <i class="fa-solid fa-rotate"></i><span class="hidden md:inline">Refresh</span>
+        </button>
+        <button type="button" onclick="CasePMForecast.printReport()" class="flex items-center gap-2 px-4 py-2 bg-zinc-800 hover:bg-zinc-700 rounded-md text-sm font-medium h-[38px]">
+            <i class="fa-solid fa-print"></i><span class="hidden md:inline">Print</span>
+        </button>
+        <a href="{{ url_for('budget_page', project_id=active_project.id) if active_project else url_for('budget_page') }}" class="flex items-center gap-2 px-4 py-2 bg-emerald-600 hover:bg-emerald-500 rounded-md text-sm font-semibold h-[38px]">
+            <i class="fa-solid fa-chart-pie"></i><span>Budget</span>
+        </a>
+    </div>
+</div>
+
+<!-- SUMMARY CARDS (same grid as Budget) -->
+<div class="bg-zinc-900 border border-zinc-700 rounded-md p-4 flex-shrink-0 mb-4">
+    <div class="grid grid-cols-1 md:grid-cols-4 lg:grid-cols-8 gap-4">
+        <div class="bg-zinc-800 border border-zinc-700 rounded-md p-4">
+            <div class="text-sm text-zinc-400">Contract Amount</div>
+            <div id="kpiContract" class="text-xl font-semibold mt-1">$0</div>
+        </div>
+        <div class="bg-zinc-800 border border-zinc-700 rounded-md p-5">
+            <div class="text-sm text-zinc-400">Original Budget</div>
+            <div id="kpiOriginal" class="text-xl font-semibold mt-1">$0</div>
+        </div>
+        <div class="bg-zinc-800 border border-zinc-700 rounded-md p-5">
+            <div class="text-sm text-zinc-400">Approved Changes</div>
+            <div id="kpiApprovedCo" class="text-xl font-semibold mt-1 text-amber-400">$0</div>
+        </div>
+        <div class="bg-zinc-800 border border-zinc-700 rounded-md p-5">
+            <div class="text-sm text-zinc-400">Revised Budget</div>
+            <div id="kpiRevised" class="text-xl font-semibold mt-1 text-emerald-400">$0</div>
+        </div>
+        <div class="bg-zinc-800 border border-zinc-700 rounded-md p-5">
+            <div class="text-sm text-zinc-400">Cost to Date</div>
+            <div id="kpiActual" class="text-xl font-semibold mt-1 text-sky-400">$0</div>
+        </div>
+        <div class="bg-zinc-800 border border-zinc-700 rounded-md p-5">
+            <div class="text-sm text-zinc-400">Forecast to Complete</div>
+            <div id="kpiFtc" class="text-xl font-semibold mt-1 text-orange-400">$0</div>
+        </div>
+        <div class="bg-zinc-800 border border-zinc-700 rounded-md p-5">
+            <div class="text-sm text-zinc-400">Est. Cost at Completion</div>
+            <div id="kpiEac" class="text-xl font-semibold mt-1 text-violet-400">$0</div>
+        </div>
+        <div class="bg-zinc-800 border border-zinc-700 rounded-md p-5">
+            <div class="text-sm text-zinc-400">% Complete (Payments)</div>
+            <div id="kpiPct" class="text-xl font-semibold mt-1 text-white">0%</div>
+        </div>
+    </div>
+</div>
+
+<!-- Horizon filters (matches Budget quick filters row) -->
+<div class="flex flex-col md:flex-row gap-4 mb-3 flex-shrink-0 items-center">
+    <div class="text-sm text-zinc-400">Projection horizon:</div>
+    <div class="flex gap-2 flex-wrap">
+        <button type="button" data-forecast-horizon="week" class="px-3 py-1 text-xs bg-zinc-800 hover:bg-zinc-700 rounded-full text-zinc-300">1 Week</button>
+        <button type="button" data-forecast-horizon="two_weeks" class="px-3 py-1 text-xs bg-zinc-800 hover:bg-zinc-700 rounded-full text-zinc-300">2 Weeks</button>
+        <button type="button" data-forecast-horizon="four_weeks" class="px-3 py-1 text-xs bg-zinc-800 hover:bg-zinc-700 rounded-full text-zinc-300">4 Weeks</button>
+        <button type="button" data-forecast-horizon="full_job" class="px-3 py-1 text-xs bg-zinc-800 hover:bg-zinc-700 rounded-full text-emerald-400">Full Job</button>
+    </div>
+    <div id="projectionPanel" class="flex-1 text-sm text-zinc-400 md:text-right"></div>
+</div>
+
+<!-- PROGRESS REPORT TABLE -->
+<div class="flex-1 min-h-0 flex flex-col border border-zinc-700 rounded-md bg-zinc-900 mb-3 overflow-hidden" style="max-height: 38%;">
+    <div class="px-4 py-2 border-b border-zinc-700 bg-zinc-800 flex-shrink-0">
+        <span class="text-sm font-medium text-zinc-300">Monthly Financial Progress</span>
+        <span class="text-xs text-zinc-500 ml-2">Cost to date, contract changes, and payments over time</span>
+    </div>
+    <div class="flex-1 overflow-auto min-h-0">
+        <table class="w-full text-sm min-w-[1400px]">
+            <thead class="bg-zinc-800 sticky z-20 border-b border-zinc-700" style="top: 0; position: sticky;">
+                <tr>
+                    <th class="px-4 py-3 text-left font-medium text-zinc-400 w-28">Month</th>
+                    <th class="px-4 py-3 text-left font-medium text-zinc-400 w-28">As of</th>
+                    <th class="px-4 py-3 text-right font-medium text-zinc-400 w-32">Subtotal Budget</th>
+                    <th class="px-4 py-3 text-right font-medium text-zinc-400 w-32">Subtotal Projected</th>
+                    <th class="px-4 py-3 text-right font-medium text-zinc-400 w-32">Cost to Date</th>
+                    <th class="px-4 py-3 text-right font-medium text-zinc-400 w-28">Approved COs</th>
+                    <th class="px-4 py-3 text-right font-medium text-zinc-400 w-32">Revised Contract</th>
+                    <th class="px-4 py-3 text-right font-medium text-indigo-400 w-32">Payments Received</th>
+                    <th class="px-4 py-3 text-right font-medium text-orange-400 w-28">Payments Pending</th>
+                    <th class="px-4 py-3 text-right font-medium text-zinc-300 w-32">Total Payments</th>
+                    <th class="px-4 py-3 text-center font-medium text-zinc-400 w-20">% Complete</th>
+                    <th class="px-6 py-3 text-left font-medium text-zinc-400 min-w-[200px]">Notes</th>
+                </tr>
+            </thead>
+            <tbody id="progressReportBody" class="divide-y divide-zinc-800 text-sm">
+                <tr><td colspan="12" class="px-6 py-8 text-center text-zinc-500">Loading progress data…</td></tr>
+            </tbody>
+        </table>
+    </div>
+</div>
+
+<!-- TREND CHART PANEL -->
+<div class="flex-1 min-h-0 flex flex-col border border-zinc-700 rounded-md bg-zinc-900 mb-20 overflow-hidden">
+    <div class="px-4 py-2 border-b border-zinc-700 bg-zinc-800 flex-shrink-0 flex items-center justify-between">
         <div>
-            <h1 class="text-2xl font-bold text-white">Financial Forecast</h1>
-            <p class="text-sm text-zinc-400 mt-1">Job cost progress, burn rate, and projected completion</p>
+            <span class="text-sm font-medium text-zinc-300">Cost to Date vs Payments Over Time</span>
+            <span class="text-xs text-zinc-500 ml-2">Monthly escalation trend</span>
         </div>
-        <div class="flex flex-wrap gap-2">
-            <button type="button" data-forecast-horizon="week" class="px-3 py-2 rounded-md text-sm bg-zinc-800 hover:bg-zinc-700">1 Week</button>
-            <button type="button" data-forecast-horizon="two_weeks" class="px-3 py-2 rounded-md text-sm bg-zinc-800 hover:bg-zinc-700">2 Weeks</button>
-            <button type="button" data-forecast-horizon="four_weeks" class="px-3 py-2 rounded-md text-sm bg-zinc-800 hover:bg-zinc-700">4 Weeks</button>
-            <button type="button" data-forecast-horizon="full_job" class="px-3 py-2 rounded-md text-sm bg-emerald-600 text-white">Full Job</button>
-            <a href="{{ url_for('budget_page', project_id=active_project.id) if active_project else url_for('budget_page') }}" class="px-3 py-2 rounded-md text-sm bg-zinc-800 hover:bg-zinc-700 text-emerald-400">← Budget</a>
+        <div class="flex items-center gap-3 text-[10px] text-zinc-500">
+            <span class="flex items-center gap-1"><span class="w-3 h-0.5 bg-sky-400 inline-block"></span> Cost to Date</span>
+            <span class="flex items-center gap-1"><span class="w-3 h-0.5 bg-amber-400 inline-block"></span> Approved COs</span>
+            <span class="flex items-center gap-1"><span class="w-3 h-0.5 bg-emerald-400 inline-block"></span> Revised Contract</span>
+            <span class="flex items-center gap-1"><span class="w-3 h-0.5 bg-indigo-400 inline-block"></span> Payments Received</span>
         </div>
     </div>
+    <div class="flex-1 min-h-[280px] p-4 relative">
+        <canvas id="forecastTrendChart"></canvas>
+    </div>
+</div>
 
-    <div class="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-7 gap-3">
-        <div class="bg-zinc-900 border border-zinc-700 rounded-lg p-4">
-            <div class="text-xs text-zinc-500 uppercase tracking-wide">Revised Budget</div>
-            <div id="kpiRevised" class="text-lg font-semibold text-emerald-400 mt-1">$0</div>
-        </div>
-        <div class="bg-zinc-900 border border-zinc-700 rounded-lg p-4">
-            <div class="text-xs text-zinc-500 uppercase tracking-wide">Actual Cost</div>
-            <div id="kpiActual" class="text-lg font-semibold text-sky-400 mt-1">$0</div>
-        </div>
-        <div class="bg-zinc-900 border border-zinc-700 rounded-lg p-4">
-            <div class="text-xs text-zinc-500 uppercase tracking-wide">Variance</div>
-            <div id="kpiVariance" class="text-lg font-semibold mt-1">$0</div>
-        </div>
-        <div class="bg-zinc-900 border border-zinc-700 rounded-lg p-4">
-            <div class="text-xs text-zinc-500 uppercase tracking-wide">Paid Out</div>
-            <div id="kpiPaid" class="text-lg font-semibold text-indigo-400 mt-1">$0</div>
-        </div>
-        <div class="bg-zinc-900 border border-zinc-700 rounded-lg p-4">
-            <div class="text-xs text-zinc-500 uppercase tracking-wide">Pending</div>
-            <div id="kpiPending" class="text-lg font-semibold text-orange-400 mt-1">$0</div>
-        </div>
-        <div class="bg-zinc-900 border border-zinc-700 rounded-lg p-4">
-            <div class="text-xs text-zinc-500 uppercase tracking-wide">Committed</div>
-            <div id="kpiCommitted" class="text-lg font-semibold text-violet-400 mt-1">$0</div>
-        </div>
-        <div class="bg-zinc-900 border border-zinc-700 rounded-lg p-4">
-            <div class="text-xs text-zinc-500 uppercase tracking-wide">% Complete</div>
-            <div id="kpiPct" class="text-lg font-semibold text-white mt-1">0%</div>
-        </div>
-    </div>
+</div>
+</div>
 
-    <div class="bg-zinc-900 border border-zinc-700 rounded-lg p-5">
-        <div id="projectionPanel" class="text-white"></div>
+<!-- Fixed Bottom Status Bar (matches Budget) -->
+<div id="forecastStatusBar" class="fixed bottom-0 left-56 right-0 bg-zinc-900 border-t border-zinc-700 px-6 py-2 text-xs text-zinc-400 flex items-center justify-between z-[60]">
+    <div class="flex items-center gap-4">
+        <span id="forecastStatusText">Financial Forecast · Loading…</span>
+        <a href="{{ url_for('budget_page', project_id=active_project.id) if active_project else url_for('budget_page') }}" class="text-emerald-400 hover:text-emerald-300 underline">Open Budget</a>
     </div>
-
-    <div class="bg-zinc-900 border border-zinc-700 rounded-lg p-5 min-h-[420px] flex flex-col">
-        <h2 class="text-sm font-medium text-zinc-400 uppercase tracking-wide mb-4">Financial Breakdown</h2>
-        <div class="flex-1 min-h-[360px] relative">
-            <canvas id="forecastChart"></canvas>
-        </div>
-        <p class="text-xs text-zinc-500 mt-4">Original budget, approved change orders, pending items, commitments, revised budget, actual job cost, amounts paid out, and variance (revised − actual). Forecast projections use current burn rate.</p>
-    </div>
+    <div class="text-emerald-400">● Online</div>
 </div>
 {% endblock %}

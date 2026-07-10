@@ -43,6 +43,37 @@ def _sum_sub_paid(pay_state):
     return total
 
 
+def _sum_payments_pending(pay_state):
+    """Pending subcontractor pay app submissions not yet approved."""
+    total = 0.0
+    pending = pay_state.get('subPendingSubmissions') or {}
+    if isinstance(pending, dict):
+        for entry in pending.values():
+            if isinstance(entry, dict) and not entry.get('archived'):
+                total += float(entry.get('totalBilledThisPeriod') or 0)
+    return total
+
+
+def _progress_row(month_label, as_of, original, projected, actual, approved_changes, revised,
+                  payments_received, payments_pending, notes=''):
+    total_payments = payments_received + payments_pending
+    pct = (total_payments / revised * 100) if revised else 0
+    return {
+        'month': month_label,
+        'as_of_date': as_of,
+        'subtotal_budget': original,
+        'subtotal_projected': projected,
+        'cost_to_date': actual,
+        'approved_changes': approved_changes,
+        'revised_contract': revised,
+        'payments_received': payments_received,
+        'payments_pending': payments_pending,
+        'total_payments': total_payments,
+        'pct_complete': round(min(100.0, pct), 1),
+        'notes': notes,
+    }
+
+
 def build_forecast_summary(project, budget_state, pay_state, approved_co_total=0.0):
     """Build forecast chart categories and projection inputs."""
     lines = budget_state.get('budgetLines') or []
@@ -80,7 +111,32 @@ def build_forecast_summary(project, budget_state, pay_state, approved_co_total=0
     days_remaining = max((end - today).days, 0) if end else max(days_total - days_elapsed, 0)
 
     burn_daily = actual / days_elapsed if days_elapsed else 0
-    pct_complete = min(100.0, (actual / revised * 100) if revised else 0)
+    projected_subtotal = revised + pending
+    ftc = max(0.0, revised - actual)
+    eac = actual + ftc
+    projected_over_under = revised - eac
+    payments_pending = _sum_payments_pending(pay_state)
+    pct_cost = min(100.0, (actual / revised * 100) if revised else 0)
+    pct_payments = min(100.0, (paid_out / revised * 100) if revised else 0)
+
+    history = budget_state.get('financialProgressHistory') or []
+    if not isinstance(history, list):
+        history = []
+    current_row = _progress_row(
+        today.strftime('%B'),
+        today.isoformat(),
+        original,
+        projected_subtotal,
+        actual,
+        approved_changes,
+        revised or contract or 0,
+        paid_out,
+        payments_pending,
+        'Current period — auto-synced from Case PM',
+    )
+    monthly_trends = history if history else [current_row]
+    if not history or history[-1].get('as_of_date', '')[:7] != today.isoformat()[:7]:
+        monthly_trends = history + [current_row] if history else [current_row]
 
     categories = [
         {'key': 'original', 'label': 'Original Budget', 'amount': original, 'color': '#34d399'},
@@ -104,9 +160,15 @@ def build_forecast_summary(project, budget_state, pay_state, approved_co_total=0
         'paid_out': paid_out,
         'owner_paid': owner_paid,
         'sub_paid': sub_paid,
+        'payments_pending': payments_pending,
+        'projected_subtotal': projected_subtotal,
+        'forecast_to_complete': ftc,
+        'estimated_cost_at_completion': eac,
+        'projected_over_under': projected_over_under,
         'contract_amount': contract,
         'approved_co_total': float(approved_co_total or 0),
-        'percent_complete': round(pct_complete, 1),
+        'percent_complete': round(pct_payments, 1),
+        'percent_complete_cost': round(pct_cost, 1),
         'burn_rate_daily': burn_daily,
         'burn_rate_weekly': burn_daily * 7,
         'days_elapsed': days_elapsed,
@@ -115,6 +177,8 @@ def build_forecast_summary(project, budget_state, pay_state, approved_co_total=0
         'start_date': start.isoformat() if start else None,
         'end_date': end.isoformat() if end else None,
         'categories': categories,
+        'progress_report': current_row,
+        'monthly_trends': monthly_trends,
         'projections': _build_projections(
             revised, actual, burn_daily, days_remaining, days_total, days_elapsed,
         ),
