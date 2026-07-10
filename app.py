@@ -7837,14 +7837,15 @@ if __name__ == '__main__':
             pass
 
         # Create default admin user if it doesn't exist
-        if not User.query.filter_by(email='admin@casepm.local').first():
+        admin = User.query.filter_by(email='admin@casepm.local').first()
+        if not admin:
             admin = User(
                 first_name='Admin',
                 last_name='User',
                 email='admin@casepm.local',
                 role='Admin',
                 status='Active',
-                must_change_password=True,
+                must_change_password=False,
                 require_2fa=False
             )
             admin.set_password('admin123')
@@ -7857,9 +7858,10 @@ if __name__ == '__main__':
             print("   Email:    admin@casepm.local")
             print("   Password: admin123")
             print("   Role:     Admin")
-            print("-" * 75)
-            print("   ⚠️  IMPORTANT: You will be forced to change the password on first login.")
             print("=" * 75 + "\n")
+        elif admin.must_change_password:
+            admin.must_change_password = False
+            db.session.commit()
 
         # Create uploads directory structure if it doesn't exist
         os.makedirs(os.path.join(app.config['UPLOAD_FOLDER'], 'photos'), exist_ok=True)
