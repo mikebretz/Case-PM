@@ -494,18 +494,61 @@
     const SERVER_CONTRACT_VALUE = {{ project_contract_value|tojson if project_contract_value is not none else 'null' }};
     const SERVER_CONTRACT_AMOUNT = {{ project_contract_amount|tojson if project_contract_amount is not none else 'null' }};
     const SERVER_CONTRACT_AMOUNT_SOURCE = {{ project_contract_amount_source|tojson if project_contract_amount_source else 'null' }};
+    const SERVER_APPROVED_CHANGE_ORDERS_TOTAL = {{ project_approved_change_orders_total|tojson if project_approved_change_orders_total is not none else '0' }};
+    const SERVER_CURRENT_CONTRACT_VALUE = {{ project_current_contract_value|tojson if project_current_contract_value is not none else 'null' }};
     const SERVER_DEFAULT_RETAINAGE_PERCENT = {{ project_default_retainage_percent|tojson if project_default_retainage_percent is not none else 'null' }};
 
+    let projectOriginalContractAmount = null;
+    let projectApprovedChangeOrdersTotal = 0;
+    let projectCurrentContractValue = null;
+
     function resolveServerContractAmount() {
-        return SERVER_CONTRACT_AMOUNT || SERVER_ORIGINAL_CONTRACT_AMOUNT || SERVER_CONTRACT_VALUE || null;
+        return SERVER_ORIGINAL_CONTRACT_AMOUNT ?? SERVER_CONTRACT_AMOUNT ?? SERVER_CONTRACT_VALUE ?? null;
+    }
+
+    function applyProjectFinancialFromServer(summary) {
+        const original = summary?.original_contract_amount ?? SERVER_ORIGINAL_CONTRACT_AMOUNT;
+        const approvedCo = summary?.approved_change_orders_total ?? SERVER_APPROVED_CHANGE_ORDERS_TOTAL ?? 0;
+        const current = summary?.current_contract_value ?? SERVER_CURRENT_CONTRACT_VALUE;
+
+        if (original != null && !Number.isNaN(parseFloat(original))) {
+            projectOriginalContractAmount = parseFloat(original);
+            budgetContractAmount = projectOriginalContractAmount;
+            casepmStore.setItem('budgetContractAmount', String(budgetContractAmount));
+        } else {
+            const stored = parseFloat(casepmStore.getItem('budgetContractAmount') || '');
+            const fallback = resolveServerContractAmount();
+            projectOriginalContractAmount = (!Number.isNaN(stored) && stored > 0) ? stored : (fallback != null ? parseFloat(fallback) : null);
+            budgetContractAmount = projectOriginalContractAmount || 0;
+        }
+
+        projectApprovedChangeOrdersTotal = parseFloat(approvedCo) || 0;
+        if (current != null && !Number.isNaN(parseFloat(current))) {
+            projectCurrentContractValue = parseFloat(current);
+        } else if (projectOriginalContractAmount != null) {
+            projectCurrentContractValue = projectOriginalContractAmount + projectApprovedChangeOrdersTotal;
+        } else {
+            projectCurrentContractValue = null;
+        }
+    }
+
+    async function refreshProjectFinancialSummary() {
+        const pid = (typeof CasePMWorkflow !== 'undefined' && CasePMWorkflow.projectId)
+            ? CasePMWorkflow.projectId()
+            : parseInt(localStorage.getItem('casepm_current_project_id') || '', 10);
+        if (!pid) return;
+        try {
+            const res = await fetch(`/api/projects/financial-summary?project_id=${pid}`, { credentials: 'same-origin' });
+            if (!res.ok) return;
+            const summary = await res.json();
+            applyProjectFinancialFromServer(summary);
+        } catch (e) {
+            console.warn('[PayApp] financial summary refresh failed', e);
+        }
     }
 
     function seedProjectContractDefaults() {
-        const serverAmt = resolveServerContractAmount();
-        if (serverAmt && !casepmStore.getItem('budgetContractAmount')) {
-            budgetContractAmount = parseFloat(serverAmt);
-            casepmStore.setItem('budgetContractAmount', String(budgetContractAmount));
-        }
+        applyProjectFinancialFromServer();
         if (SERVER_DEFAULT_RETAINAGE_PERCENT != null && !casepmStore.getItem('payAppRetainagePercent')) {
             defaultRetainagePercent = parseFloat(SERVER_DEFAULT_RETAINAGE_PERCENT) || 10;
             casepmStore.setItem('payAppRetainagePercent', String(defaultRetainagePercent));
@@ -554,8 +597,8 @@ let mainLienWaiver = JSON.parse(casepmStore.getItem('mainLienWaiver') || '{}'); 
     // History of previous (Approved) Pay Applications
     let payAppHistory = JSON.parse(casepmStore.getItem('payAppHistory')) || [];
 
-    // Budget Contract Amount (from Budget page — synced via budgetContractAmount key)
-    let budgetContractAmount = parseFloat(casepmStore.getItem('budgetContractAmount')) || 2450000;
+    // Original contract amount from project Financial & Contract tab (synced via budgetContractAmount key)
+    let budgetContractAmount = 0;
 
     // Demo seed removed (v76.43) — contractorSOV and subcontractorSOV no longer auto-populate test data on empty.
     // This ensures user "Clear All / Reset to start from scratch" stays clean on hard refresh.
@@ -1070,7 +1113,7 @@ let mainLienWaiver = JSON.parse(casepmStore.getItem('mainLienWaiver') || '{}'); 
         mainLienWaiver = JSON.parse(casepmStore.getItem('mainLienWaiver') || '{}');
         defaultRetainagePercent = parseFloat(casepmStore.getItem('payAppRetainagePercent') || '10');
         sageSyncAutoEnabled = casepmStore.getItem('sageSyncAutoEnabled') !== 'false';
-        budgetContractAmount = parseFloat(casepmStore.getItem('budgetContractAmount')) || resolveServerContractAmount() || budgetContractAmount || 2450000;
+        budgetContractAmount = projectOriginalContractAmount || parseFloat(casepmStore.getItem('budgetContractAmount')) || resolveServerContractAmount() || 0;
     }
 
     function renderSageSyncStatus() {
@@ -2879,29 +2922,29 @@ let mainLienWaiver = JSON.parse(casepmStore.getItem('mainLienWaiver') || '{}'); 
             }
         });
 
+        const originalContractAmount = projectOriginalContractAmount ?? budgetContractAmount;
+        const contractSumFromProject = projectCurrentContractValue ?? (originalContractAmount + projectApprovedChangeOrdersTotal);
+
         // Summary Cards
-        // Warning only triggers if the ORIGINAL column total mismatches the Budget.
-        // Change Orders are tracked separately and do NOT trigger this warning on the Original Contract card.
-        // WARNING SCOPE: Only compares sum of the 'Original' column against Budget.
-        // Change Orders (column or card) are deliberately ignored for this specific check.
-        const mismatchWarning = (totalOriginal !== budgetContractAmount) 
-            ? `<div class="text-[10px] text-amber-400 mt-1">⚠️ Original Contract Amount in SOV does not match the Budget Contract Amount (${formatCurrency(budgetContractAmount)})</div>` 
+        // Warning only triggers if the ORIGINAL column total mismatches the project original contract.
+        const mismatchWarning = (originalContractAmount > 0 && Math.abs(totalOriginal - originalContractAmount) > 0.99)
+            ? `<div class="text-[10px] text-amber-400 mt-1">⚠️ Original Contract Amount in SOV does not match the Project Original Contract Amount (${formatCurrency(originalContractAmount)})</div>`
             : '';
 
         cardsContainer.innerHTML = `
             <div class="g702-summary-grid grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-8 gap-1.5">
                 <div class="summary-metric-card bg-zinc-800 border border-zinc-700 rounded-md">
                     <div class="metric-label text-zinc-400">Original Contract</div>
-                    <div class="font-semibold metric-value">${formatCurrency(budgetContractAmount)}</div>
+                    <div class="font-semibold metric-value">${formatCurrency(originalContractAmount)}</div>
                     ${mismatchWarning}
                 </div>
                 <div class="summary-metric-card bg-zinc-800 border border-zinc-700 rounded-md">
                     <div class="metric-label text-zinc-400">Net Change Orders</div>
-                    <div class="font-semibold metric-value text-amber-400">${formatCurrency(totalCO)}</div>
+                    <div class="font-semibold metric-value text-amber-400">${formatCurrency(projectApprovedChangeOrdersTotal)}</div>
                 </div>
                 <div class="summary-metric-card bg-zinc-800 border border-zinc-700 rounded-md">
                     <div class="metric-label text-zinc-400">Contract Sum to Date</div>
-                    <div class="font-semibold metric-value text-emerald-400">${formatCurrency(contractSumToDate)}</div>
+                    <div class="font-semibold metric-value text-emerald-400">${formatCurrency(contractSumFromProject)}</div>
                 </div>
                 <div class="summary-metric-card bg-zinc-800 border border-zinc-700 rounded-md">
                     <div class="metric-label text-zinc-400">Total Completed &amp; Stored</div>
@@ -3516,11 +3559,12 @@ let mainLienWaiver = JSON.parse(casepmStore.getItem('mainLienWaiver') || '{}'); 
         contractorSOV.forEach(l => {
             sovTotalOriginal += (l.original || 0);
         });
+        const originalContractAmount = projectOriginalContractAmount ?? budgetContractAmount;
 
-        if (Math.abs(sovTotalOriginal - budgetContractAmount) > 0.99) {
-            const mismatch = formatCurrency(Math.abs(sovTotalOriginal - budgetContractAmount));
+        if (originalContractAmount > 0 && Math.abs(sovTotalOriginal - originalContractAmount) > 0.99) {
+            const mismatch = formatCurrency(Math.abs(sovTotalOriginal - originalContractAmount));
             showCenteredAlert(
-                `BLOCKED: Cannot submit Pay Application. The sum of the Original column in the Schedule of Values (${formatCurrency(sovTotalOriginal)}) does NOT match the Budget Contract Amount (${formatCurrency(budgetContractAmount)}). Difference: ${mismatch}. Change Orders are tracked separately and do not affect this check. Please reconcile the Original amounts on the Contractor Schedule of Values tab.`,
+                `BLOCKED: Cannot submit Pay Application. The sum of the Original column in the Schedule of Values (${formatCurrency(sovTotalOriginal)}) does NOT match the Project Original Contract Amount (${formatCurrency(originalContractAmount)}). Difference: ${mismatch}. Change Orders are tracked separately and do not affect this check. Please reconcile the Original amounts on the Contractor Schedule of Values tab.`,
                 'warning'
             );
             const cards = document.getElementById('payAppSummaryCards');
@@ -3580,7 +3624,7 @@ let mainLienWaiver = JSON.parse(casepmStore.getItem('mainLienWaiver') || '{}'); 
 
         currentPayAppPeriod.status = "Submitted";
         casepmStore.setItem('currentPayAppPeriod', JSON.stringify(currentPayAppPeriod));
-        logPayAppAudit('APPLICATION_SUBMITTED', { periodNumber: currentPayAppPeriod.periodNumber, validatedAgainstBudget: budgetContractAmount });
+        logPayAppAudit('APPLICATION_SUBMITTED', { periodNumber: currentPayAppPeriod.periodNumber, validatedAgainstProjectOriginal: originalContractAmount });
         queueSageSync('G702Submitted', { periodNumber: currentPayAppPeriod.periodNumber }, `G702 period ${currentPayAppPeriod.periodNumber} submitted — queued for Sage progress billing review`);
         renderPayAppContent();
         if (typeof CasePMWorkflow !== 'undefined') {
@@ -3831,25 +3875,27 @@ let mainLienWaiver = JSON.parse(casepmStore.getItem('mainLienWaiver') || '{}'); 
             totalBalance += curr - (line.billed_to_date || 0);
         });
 
-        // Use the same Budget Contract Amount as the G702 tab for consistency
-        const sovMismatchNote = (totalOriginal !== budgetContractAmount) 
-            ? `<div class="text-[10px] text-amber-400 mt-1">⚠️ Original column total does not match Budget Contract Amount</div>` 
+        // Use the same project contract amounts as the G702 tab for consistency
+        const originalContractAmount = projectOriginalContractAmount ?? budgetContractAmount;
+        const currentContractValue = projectCurrentContractValue ?? (originalContractAmount + projectApprovedChangeOrdersTotal);
+        const sovMismatchNote = (originalContractAmount > 0 && Math.abs(totalOriginal - originalContractAmount) > 0.99)
+            ? `<div class="text-[10px] text-amber-400 mt-1">⚠️ Original column total does not match Project Original Contract Amount</div>`
             : '';
 
         cardsContainer.innerHTML = `
             <div class="grid grid-cols-2 md:grid-cols-4 gap-4">
                 <div class="bg-zinc-800 border border-zinc-700 rounded-md p-5">
-                    <div class="text-xs text-zinc-400">Original Contract Amount (from Budget)</div>
-                    <div class="text-2xl font-semibold mt-1 text-emerald-400">${formatCurrency(budgetContractAmount)}</div>
+                    <div class="text-xs text-zinc-400">Original Contract Amount (from Project)</div>
+                    <div class="text-2xl font-semibold mt-1 text-emerald-400">${formatCurrency(originalContractAmount)}</div>
                     ${sovMismatchNote}
                 </div>
                 <div class="bg-zinc-800 border border-zinc-700 rounded-md p-5">
                     <div class="text-xs text-zinc-400">Approved Change Orders</div>
-                    <div class="text-2xl font-semibold mt-1 text-amber-400">${formatCurrency(totalCO)}</div>
+                    <div class="text-2xl font-semibold mt-1 text-amber-400">${formatCurrency(projectApprovedChangeOrdersTotal)}</div>
                 </div>
                 <div class="bg-zinc-800 border border-zinc-700 rounded-md p-5">
                     <div class="text-xs text-zinc-400">Current Contract Value</div>
-                    <div class="text-2xl font-semibold mt-1 text-emerald-400">${formatCurrency(totalOriginal + totalCO)}</div>
+                    <div class="text-2xl font-semibold mt-1 text-emerald-400">${formatCurrency(currentContractValue)}</div>
                 </div>
                 <div class="bg-zinc-800 border border-zinc-700 rounded-md p-5">
                     <div class="text-xs text-zinc-400">Total Subcontracted (from Sub SOVs)</div>
@@ -4311,7 +4357,8 @@ let mainLienWaiver = JSON.parse(casepmStore.getItem('mainLienWaiver') || '{}'); 
         const co_amount = parseFloat(coStr) || 0;
 
         // Strict Global Original Contract Amount Validation
-        // The sum of all 'original' amounts across Contractor SOV must equal the Budget Contract Amount.
+        // The sum of all 'original' amounts across Contractor SOV must equal the Project Original Contract Amount.
+        const originalContractAmount = projectOriginalContractAmount ?? budgetContractAmount;
         // We calculate what the new total would be after this save/edit.
         let projectedTotalOriginal = contractorSOV.reduce((sum, l) => sum + (l.original || 0), 0);
         if (id) {
@@ -4321,13 +4368,13 @@ let mainLienWaiver = JSON.parse(casepmStore.getItem('mainLienWaiver') || '{}'); 
         }
         projectedTotalOriginal += original;
 
-        if (projectedTotalOriginal > budgetContractAmount) {
-            alert(`ERROR: This change would make the total Original Contract Amount (${formatCurrency(projectedTotalOriginal)}) exceed the Budget Contract Amount (${formatCurrency(budgetContractAmount)}).\n\nPlease correct the Original Amount for this line so the grand total matches exactly.`);
+        if (originalContractAmount > 0 && projectedTotalOriginal > originalContractAmount) {
+            alert(`ERROR: This change would make the total Original Contract Amount (${formatCurrency(projectedTotalOriginal)}) exceed the Project Original Contract Amount (${formatCurrency(originalContractAmount)}).\n\nPlease correct the Original Amount for this line so the grand total matches exactly.`);
             return;
         }
-        if (id === null && projectedTotalOriginal !== budgetContractAmount && contractorSOV.length > 0) {
+        if (originalContractAmount > 0 && id === null && projectedTotalOriginal !== originalContractAmount && contractorSOV.length > 0) {
             // For new lines, if it causes mismatch (and there are existing lines), warn/block for strict matching
-            if (!confirm(`Warning: Adding this line would make Total Original (${formatCurrency(projectedTotalOriginal)}) different from Budget Contract Amount (${formatCurrency(budgetContractAmount)}). The Original column must total exactly to the contract amount. Continue?`)) {
+            if (!confirm(`Warning: Adding this line would make Total Original (${formatCurrency(projectedTotalOriginal)}) different from Project Original Contract Amount (${formatCurrency(originalContractAmount)}). The Original column must total exactly to the contract amount. Continue?`)) {
                 return;
             }
         }
@@ -6909,7 +6956,9 @@ function printSubcontractorG703(companyId) {
         const totalPrevious = rollup.grand.prev - (rollup.grand.thisPeriod + rollup.grand.materials + rollup.changeOrders.thisPeriod);
         const cumulativeCompleted = rollup.grand.completed;
 
-        const contractSumToDate = totalOriginal + totalCO;
+        const g702Original = projectOriginalContractAmount ?? totalOriginal;
+        const g702ChangeOrders = projectApprovedChangeOrdersTotal ?? totalCO;
+        const contractSumToDate = projectCurrentContractValue ?? (g702Original + g702ChangeOrders);
         const earnedLessRetainage = cumulativeCompleted - totalRetainage;
         const previousEarnedLessRetainage = Math.max(0, (rollup.grand.prev) - (rollup.grand.prev * retainageRate));
         const currentDue = earnedLessRetainage - previousEarnedLessRetainage;
@@ -7000,8 +7049,8 @@ function printSubcontractorG703(companyId) {
                         <div style="margin:4px 0 2px; font-size:8.5px;">Application is made for payment, as shown below, in connection with the contract. Continuation Sheet, AIA Document G703, is attached.</div>
 
                         <table class="summary">
-                            <tr><td>1. ORIGINAL CONTRACT SUM</td><td class="right">${formatCurrency(totalOriginal)}</td></tr>
-                            <tr><td>2. Net change by Change Orders</td><td class="right">${formatCurrency(totalCO)}</td></tr>
+                            <tr><td>1. ORIGINAL CONTRACT SUM</td><td class="right">${formatCurrency(g702Original)}</td></tr>
+                            <tr><td>2. Net change by Change Orders</td><td class="right">${formatCurrency(g702ChangeOrders)}</td></tr>
                             <tr><td class="bold">3. CONTRACT SUM TO DATE (Line 1 + 2)</td><td class="right bold">${formatCurrency(contractSumToDate)}</td></tr>
                             <tr><td>4. TOTAL COMPLETED &amp; STORED TO DATE (Column G on G703)</td><td class="right">${formatCurrency(cumulativeCompleted)}</td></tr>
                             <tr><td>5. RETAINAGE:</td><td class="right"></td></tr>
@@ -8079,7 +8128,9 @@ function printSubcontractorG703(companyId) {
             totalRetainage += thisPeriod * retainageRate;
         });
 
-        const contractSumToDate = totalOriginal + totalCO;
+        const g702Original = projectOriginalContractAmount ?? totalOriginal;
+        const g702ChangeOrders = projectApprovedChangeOrdersTotal ?? totalCO;
+        const contractSumToDate = projectCurrentContractValue ?? (g702Original + g702ChangeOrders);
         const earnedLessRetainage = totalCurrent - totalRetainage;
         const currentDue = earnedLessRetainage - totalPrevious;
         const balanceToFinish = contractSumToDate - totalCurrent;
@@ -8108,8 +8159,8 @@ function printSubcontractorG703(companyId) {
             ["", "", "", "", "", "", "", "", ""],
             ["CONTRACTOR'S APPLICATION FOR PAYMENT", "", "", "", "", "", "", "", ""],
             ["", "", "", "", "", "", "", "", ""],
-            ["1. ORIGINAL CONTRACT SUM", "", "", "", formatCurrency(totalOriginal), "", "", "", ""],
-            ["2. Net change by Change Orders", "", "", "", formatCurrency(totalCO), "", "", "", ""],
+            ["1. ORIGINAL CONTRACT SUM", "", "", "", formatCurrency(g702Original), "", "", "", ""],
+            ["2. Net change by Change Orders", "", "", "", formatCurrency(g702ChangeOrders), "", "", "", ""],
             ["3. CONTRACT SUM TO DATE (Line 1 + 2)", "", "", "", formatCurrency(contractSumToDate), "", "", "", ""],
             ["4. TOTAL COMPLETED & STORED TO DATE", "", "", "", formatCurrency(totalCurrent), "", "", "", ""],
             ["5. RETAINAGE", "", "", "", "", "", "", "", ""],
@@ -8842,6 +8893,7 @@ function printSubcontractorG703(companyId) {
                 CasePMWorkflow.loadPortal().catch(() => {});
             }
             seedProjectContractDefaults();
+            await refreshProjectFinancialSummary();
             reloadPayAppStateFromStorage();
             seedDemoDataIfNeeded();
             bindPayAppSettingsAutoSave();
@@ -8859,12 +8911,16 @@ function printSubcontractorG703(companyId) {
         boot();
 
         window.addEventListener('casepm:co-approved', () => {
-            if (typeof CasePMPayAppSync !== 'undefined') {
-                CasePMPayAppSync.refreshFromServer().then(() => {
-                    reloadPayAppStateFromStorage();
+            refreshProjectFinancialSummary().then(() => {
+                if (typeof CasePMPayAppSync !== 'undefined') {
+                    CasePMPayAppSync.refreshFromServer().then(() => {
+                        reloadPayAppStateFromStorage();
+                        renderPayAppContent();
+                    });
+                } else {
                     renderPayAppContent();
-                });
-            }
+                }
+            });
         });
         window.addEventListener('casepm:payapp-state-refreshed', () => {
             reloadPayAppStateFromStorage();
