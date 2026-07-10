@@ -1703,6 +1703,7 @@
           image_data: captured.dataUrl,
           source_drawing_id: state.openDrawing?.id,
           source_sheet: state.openDrawing?.sheet_number,
+          system_folder_key: 'my-files',
           source_metadata: {
             title: state.openDrawing?.title,
             revision_id: state.viewingRevisionId,
