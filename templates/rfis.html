@@ -40,6 +40,21 @@
   }
   #rfiDetailDrawer.open { transform: translateX(0); }
   #rfiPrintSheet { display: none; }
+  #rfiAttachmentDropZone.rfi-drop-active {
+    border-color: #34d399;
+    background: rgba(16, 185, 129, 0.08);
+  }
+  .rfi-attachment-row {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    padding: 0.5rem 0.75rem;
+    background: #27272a;
+    border: 1px solid #3f3f46;
+    border-radius: 0.375rem;
+    font-size: 0.75rem;
+  }
+  .rfi-doc-picker-row:hover { background: #27272a; }
 </style>
 
 <div id="rfiPrintSheet" aria-hidden="true"></div>
@@ -273,10 +288,61 @@
             <textarea id="modalRfiNotes" rows="2" class="w-full bg-zinc-800 border border-zinc-700 rounded-md px-4 py-2 text-sm resize-y"></textarea>
         </div>
 
+        <div class="mb-6 pt-4 border-t border-zinc-700">
+            <div class="flex items-center justify-between mb-2">
+                <label class="block text-sm text-zinc-400">Attachments</label>
+                <span id="rfiAttachmentHint" class="text-xs text-zinc-500">Uploads are filed to Documents › RFIs</span>
+            </div>
+            <div id="rfiAttachmentDropZone"
+                 class="border-2 border-dashed border-zinc-700 hover:border-emerald-600 transition-colors rounded-xl p-6 text-center cursor-pointer bg-zinc-950/50">
+                <i class="fa-solid fa-cloud-arrow-up text-3xl text-zinc-500 mb-2"></i>
+                <div class="text-sm text-zinc-300">Drag &amp; drop files here, or <span class="text-emerald-400">click to browse</span></div>
+                <div class="text-xs text-zinc-500 mt-1">PDF, images, Office files, and more</div>
+                <div class="flex flex-wrap items-center justify-center gap-2 mt-4">
+                    <button type="button" id="rfiBrowseFilesBtn" class="px-3 py-1.5 text-xs bg-zinc-800 hover:bg-zinc-700 border border-zinc-600 rounded-md">
+                        <i class="fa-solid fa-folder-open mr-1"></i>Choose files
+                    </button>
+                    <button type="button" id="rfiBrowseDocumentsBtn" class="px-3 py-1.5 text-xs bg-sky-900/60 hover:bg-sky-800 border border-sky-700 rounded-md text-sky-200">
+                        <i class="fa-solid fa-file-lines mr-1"></i>From Documents
+                    </button>
+                </div>
+            </div>
+            <input type="file" id="rfiAttachmentInput" multiple class="hidden">
+            <div id="rfiAttachmentList" class="mt-3 space-y-2"></div>
+        </div>
+
         <div class="flex flex-wrap gap-2 pt-2 border-t border-zinc-700">
             <button type="button" onclick="document.getElementById('rfiModal').close()" class="px-4 py-2 bg-zinc-800 hover:bg-zinc-700 rounded-md text-sm">Cancel</button>
             <button type="button" onclick="CasePMRfis.saveModal()" class="px-4 py-2 bg-zinc-700 hover:bg-zinc-600 rounded-md text-sm">Save Draft</button>
             <button type="button" onclick="CasePMRfis.saveAsOpen()" class="px-5 py-2 bg-emerald-600 hover:bg-emerald-500 rounded-md text-sm font-semibold">Save &amp; Open</button>
+        </div>
+    </div>
+</dialog>
+
+<!-- DOCUMENT PICKER (attach from Documents module) -->
+<dialog id="rfiDocumentPicker" class="modal rounded-md w-full max-w-3xl p-0 text-white" style="background:#18181b;border:1px solid #3f3f46;">
+    <div class="p-5 max-h-[85vh] flex flex-col">
+        <div class="flex justify-between items-center mb-4 flex-shrink-0">
+            <div>
+                <h3 class="text-lg font-semibold">Attach from Documents</h3>
+                <p class="text-xs text-zinc-500 mt-0.5">Select one or more files from your project document library</p>
+            </div>
+            <button type="button" id="rfiDocumentPickerClose" class="text-zinc-400 hover:text-white text-2xl">&times;</button>
+        </div>
+        <div class="flex gap-2 mb-3 flex-shrink-0">
+            <input type="text" id="rfiDocPickerSearch" placeholder="Search documents…" class="flex-1 bg-zinc-800 border border-zinc-700 rounded-md px-3 py-2 text-sm">
+            <button type="button" id="rfiDocPickerSearchBtn" class="px-3 py-2 bg-zinc-800 hover:bg-zinc-700 border border-zinc-700 rounded-md text-sm">Search</button>
+        </div>
+        <div id="rfiDocPickerBreadcrumbs" class="text-xs text-zinc-500 mb-2 flex flex-wrap gap-1 flex-shrink-0"></div>
+        <div id="rfiDocPickerBody" class="flex-1 min-h-[240px] max-h-[50vh] overflow-auto border border-zinc-800 rounded-md bg-zinc-950/40">
+            <div class="p-6 text-center text-zinc-500 text-sm">Loading documents…</div>
+        </div>
+        <div class="flex items-center justify-between mt-4 pt-3 border-t border-zinc-700 flex-shrink-0">
+            <span id="rfiDocPickerSelectedCount" class="text-xs text-zinc-500">0 selected</span>
+            <div class="flex gap-2">
+                <button type="button" id="rfiDocPickerCancel" class="px-4 py-2 bg-zinc-800 hover:bg-zinc-700 rounded-md text-sm">Cancel</button>
+                <button type="button" id="rfiDocPickerAttach" class="px-4 py-2 bg-emerald-600 hover:bg-emerald-500 rounded-md text-sm font-semibold" disabled>Attach selected</button>
+            </div>
         </div>
     </div>
 </dialog>
