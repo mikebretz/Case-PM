@@ -99,15 +99,25 @@
     state.folderId = folderId;
     state.browseMode = 'normal';
     const q = folderId != null ? `&folder_id=${folderId}` : '';
-    const json = await api(`/api/documents/browse?project_id=${pid}${q}`);
-    state.folders = json.folders || [];
-    state.files = json.files || [];
-    state.breadcrumbs = json.breadcrumbs || [];
-    if (state.previewFileId && !state.files.some(f => f.id === state.previewFileId)) {
-      closePreview();
+    try {
+      const json = await api(`/api/documents/browse?project_id=${pid}${q}`);
+      state.folders = json.folders || [];
+      state.files = json.files || [];
+      state.breadcrumbs = json.breadcrumbs || [];
+      if (state.previewFileId && !state.files.some(f => f.id === state.previewFileId)) {
+        closePreview();
+      }
+      render();
+      loadTree();
+    } catch (err) {
+      if (folderId != null && String(err.message || '').includes('access')) {
+        toast('You do not have access to that folder');
+        state.folderId = null;
+        await openRoot();
+        return;
+      }
+      throw err;
     }
-    render();
-    loadTree();
   }
 
   function openFolder(id) {
@@ -865,12 +875,12 @@
     if (!el || !state.permissionsFolderId) return;
     const json = await api(`/api/document-folders/${state.permissionsFolderId}/permissions`);
     el.innerHTML = (json.permissions || []).map(p => `
-      <div class="flex flex-wrap items-center gap-2 p-2 bg-zinc-800 rounded border border-zinc-700">
-        <span class="flex-1 min-w-0 truncate">${esc(p.user_name)} <span class="text-zinc-500 text-xs">${esc(p.user_email)}</span></span>
+      <div class="docs-perm-row">
+        <span class="flex-1 min-w-[10rem] truncate">${esc(p.user_name)} <span class="text-zinc-500 text-xs">${esc(p.user_email)}</span></span>
         <label class="text-xs"><input type="checkbox" data-pid="${p.id}" data-k="can_view" ${p.can_view ? 'checked' : ''}> View</label>
         <label class="text-xs"><input type="checkbox" data-pid="${p.id}" data-k="can_upload" ${p.can_upload ? 'checked' : ''}> Upload</label>
         <label class="text-xs"><input type="checkbox" data-pid="${p.id}" data-k="can_manage" ${p.can_manage ? 'checked' : ''}> Manage</label>
-        <button type="button" class="text-red-400 text-xs" data-del-pid="${p.id}">Remove</button>
+        <button type="button" class="text-red-400 text-xs shrink-0" data-del-pid="${p.id}">Remove</button>
       </div>`).join('') || '<p class="text-zinc-500 text-xs">No restrictions — folder is open to all project users.</p>';
     el.querySelectorAll('[data-del-pid]').forEach(btn => {
       btn.addEventListener('click', async () => {
@@ -1044,11 +1054,16 @@
     document.getElementById('docsPermAdd')?.addEventListener('click', async () => {
       const uid = document.getElementById('docsPermUser')?.value;
       if (!uid || !state.permissionsFolderId) return;
-      await api(`/api/document-folders/${state.permissionsFolderId}/permissions`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ user_id: parseInt(uid, 10), can_view: true, can_upload: false, can_manage: false }),
-      });
+    await api(`/api/document-folders/${state.permissionsFolderId}/permissions`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        user_id: parseInt(uid, 10),
+        can_view: true,
+        can_upload: false,
+        can_manage: false,
+      }),
+    });
       await refreshPermissionsList();
     });
     document.getElementById('docsVersionInput')?.addEventListener('change', async e => {

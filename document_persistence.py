@@ -14,7 +14,17 @@ SYSTEM_FOLDERS = [
     {'system_key': 'printed-output', 'name': 'Printed Output', 'description': 'Auto-saved prints from Case PM (locked)'},
     {'system_key': 'contracts', 'name': 'Contracts', 'description': 'Project contracts and agreements (locked)'},
     {'system_key': 'specifications', 'name': 'Specifications', 'description': 'Spec books and divisions (locked)'},
+    {'system_key': 'drawings', 'name': 'Drawings', 'description': 'Drawing sets, sheets, and exports from the Drawings module (locked)'},
+    {'system_key': 'rfis', 'name': 'RFIs', 'description': 'RFI attachments and exports (locked)'},
+    {'system_key': 'submittals', 'name': 'Submittals', 'description': 'Submittal packages and shop drawings (locked)'},
+    {'system_key': 'photos', 'name': 'Photos', 'description': 'Project photos and site images (locked)'},
+    {'system_key': 'daily-logs', 'name': 'Daily Logs', 'description': 'Daily log attachments and exports (locked)'},
     {'system_key': 'my-files', 'name': 'My Files', 'description': 'Your project uploads'},
+]
+
+SYSTEM_SUBFOLDERS = [
+    {'system_key': 'drawing-sets', 'name': 'Drawing Sets', 'parent_key': 'drawings', 'description': 'Full drawing sheets exported for sharing'},
+    {'system_key': 'drawing-snips', 'name': 'Snips', 'parent_key': 'drawings', 'description': 'Snips captured from the Drawings viewer'},
 ]
 
 LARGE_FILE_LINK_THRESHOLD = 10 * 1024 * 1024  # 10 MB — email offers link instead
@@ -435,6 +445,38 @@ def ensure_system_folders(db, DocumentFolder, project_id: int, user_id: int | No
         )
         db.session.add(folder)
     db.session.commit()
+
+    key_to_id = {
+        f.system_key: f.id
+        for f in DocumentFolder.query.filter_by(project_id=int(project_id), is_system=True).all()
+        if f.system_key
+    }
+    for spec in SYSTEM_SUBFOLDERS:
+        existing = DocumentFolder.query.filter_by(
+            project_id=int(project_id),
+            system_key=spec['system_key'],
+        ).first()
+        if existing:
+            if existing.parent_id != key_to_id.get(spec['parent_key']):
+                parent_id = key_to_id.get(spec['parent_key'])
+                if parent_id:
+                    existing.parent_id = parent_id
+            continue
+        parent_id = key_to_id.get(spec['parent_key'])
+        if not parent_id:
+            continue
+        folder = DocumentFolder(
+            project_id=int(project_id),
+            parent_id=parent_id,
+            name=spec['name'],
+            is_system=True,
+            system_key=spec['system_key'],
+            created_by_id=user_id,
+            created_at=datetime.utcnow(),
+        )
+        db.session.add(folder)
+    db.session.commit()
+
     if Document is not None:
         my_files = DocumentFolder.query.filter_by(
             project_id=int(project_id),

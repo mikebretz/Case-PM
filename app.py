@@ -2934,15 +2934,25 @@ def _active_folders():
 
 
 def _folder_access(folder, required='view'):
-    """Check folder permission. No rows = open to all project users; Admin always allowed."""
+    """Check folder permission. No rows = open to all project users; Admin/PM always allowed."""
     if not folder or not current_user.is_authenticated:
         return False
-    if getattr(current_user, 'role', '') == 'Admin':
+    role = (getattr(current_user, 'role', '') or '').strip()
+    if role in ('Admin', 'Project Manager'):
+        return True
+    if folder.created_by_id == current_user.id:
+        return True
+    # Locked system folders stay available to all project users (permissions apply to custom folders only).
+    if getattr(folder, 'is_system', False):
+        if required == 'manage':
+            return role == 'Admin'
         return True
     perms = DocumentFolderPermission.query.filter_by(folder_id=folder.id).all()
     if not perms:
         return True
-    user_perm = DocumentFolderPermission.query.filter_by(folder_id=folder.id, user_id=current_user.id).first()
+    user_perm = DocumentFolderPermission.query.filter_by(
+        folder_id=folder.id, user_id=current_user.id,
+    ).first()
     if not user_perm:
         return False
     if required == 'manage':
@@ -3916,6 +3926,20 @@ def api_folder_permissions_set(folder_id):
     perm.can_view = bool(body.get('can_view', True))
     perm.can_upload = bool(body.get('can_upload', False))
     perm.can_manage = bool(body.get('can_manage', False))
+    # Never lock out the user who is setting permissions.
+    if current_user.id != int(user_id):
+        mgr = DocumentFolderPermission.query.filter_by(folder_id=folder_id, user_id=current_user.id).first()
+        if not mgr:
+            mgr = DocumentFolderPermission(
+                folder_id=folder_id, user_id=current_user.id,
+                can_view=True, can_upload=True, can_manage=True,
+                created_at=datetime.utcnow(),
+            )
+            db.session.add(mgr)
+        else:
+            mgr.can_view = True
+            mgr.can_upload = True
+            mgr.can_manage = True
     db.session.commit()
     u = User.query.get(perm.user_id)
     return jsonify({'ok': True, 'permission': permission_to_dict(perm, _user_display_name(perm.user_id), u.email if u else None)})
@@ -4212,6 +4236,90 @@ def api_delete_drawing_set():
     except Exception as exc:
         db.session.rollback()
         return jsonify({'error': str(exc)}), 500
+
+
+@app.route('/api/drawings/<int:drawing_id>/export-to-documents', methods=['POST'])
+@login_required
+def api_drawing_export_to_documents(drawing_id):
+    """Copy current drawing sheet PDF into Documents › Drawings › Drawing Sets."""
+    from drawing_persistence import resolve_drawing_file_path, resolve_folder_by_key
+
+    drawing = Drawing.query.get_or_404(drawing_id)
+    body = request.get_json(silent=True) or {}
+    create_share = bool(body.get('create_share_link'))
+    rev = DrawingRevision.query.get(drawing.current_revision_id) if drawing.current_revision_id else None
+    if not rev:
+        rev = DrawingRevision.query.filter_by(drawing_id=drawing.id, is_current=True).first()
+    upload_root = app.config.get('UPLOAD_FOLDER')
+    resolved = resolve_drawing_file_path(rev.file_path if rev else None, upload_root)
+    if not rev or not resolved or not os.path.isfile(resolved):
+        return jsonify({'error': 'Drawing file not found'}), 404
+    with open(resolved, 'rb') as fh:
+        file_bytes = fh.read()
+    folder = resolve_folder_by_key(db, DocumentFolder, drawing.project_id, 'drawing-sets')
+    if not folder:
+        return jsonify({'error': 'Drawing Sets folder missing'}), 500
+    name = f'{drawing.sheet_number or "Sheet"} — {drawing.title or drawing.set_name or "Drawing"}'.strip(' —')
+    try:
+        doc_dict = _save_document_bytes(
+            drawing.project_id, file_bytes, name, os.path.basename(resolved),
+            'application/pdf', 'Drawing', folder.id, False,
+            source_drawing_id=drawing.id,
+            source_sheet=drawing.sheet_number,
+            source_metadata={
+                'set_name': drawing.set_name,
+                'discipline': drawing.discipline,
+                'revision': rev.revision_label if rev else None,
+                'exported_from': 'drawings',
+            },
+        )
+    except ValueError as exc:
+        return jsonify({'error': str(exc)}), 400
+    share = _create_document_share_link(doc_dict['id']) if create_share else None
+    return jsonify({'ok': True, 'document': doc_dict, 'share_link': share}), 201
+
+
+@app.route('/api/drawings/export-set-to-documents', methods=['POST'])
+@login_required
+def api_drawing_set_export_to_documents():
+    """Export all sheets in a drawing set to Documents › Drawings › Drawing Sets."""
+    from drawing_persistence import resolve_drawing_file_path, resolve_folder_by_key
+
+    body = request.get_json(silent=True) or {}
+    project_id = body.get('project_id') or get_current_project_id()
+    set_name = (body.get('set_name') or '').strip()
+    if not project_id or not set_name:
+        return jsonify({'error': 'project_id and set_name required'}), 400
+    folder = resolve_folder_by_key(db, DocumentFolder, int(project_id), 'drawing-sets')
+    if not folder:
+        return jsonify({'error': 'Drawing Sets folder missing'}), 500
+    drawings = Drawing.query.filter_by(project_id=int(project_id), set_name=set_name).order_by(Drawing.sheet_number).all()
+    if not drawings:
+        return jsonify({'error': 'No sheets in this set'}), 404
+    upload_root = app.config.get('UPLOAD_FOLDER')
+    exported = []
+    for drawing in drawings:
+        rev = DrawingRevision.query.get(drawing.current_revision_id) if drawing.current_revision_id else None
+        if not rev:
+            rev = DrawingRevision.query.filter_by(drawing_id=drawing.id, is_current=True).first()
+        resolved = resolve_drawing_file_path(rev.file_path if rev else None, upload_root)
+        if not rev or not resolved or not os.path.isfile(resolved):
+            continue
+        with open(resolved, 'rb') as fh:
+            file_bytes = fh.read()
+        name = f'{drawing.sheet_number or "Sheet"} — {drawing.title or set_name}'.strip(' —')
+        try:
+            doc_dict = _save_document_bytes(
+                int(project_id), file_bytes, name, os.path.basename(resolved),
+                'application/pdf', 'Drawing', folder.id, False,
+                source_drawing_id=drawing.id,
+                source_sheet=drawing.sheet_number,
+                source_metadata={'set_name': set_name, 'exported_from': 'drawings_set'},
+            )
+            exported.append(doc_dict)
+        except ValueError:
+            continue
+    return jsonify({'ok': True, 'exported_count': len(exported), 'documents': exported})
 
 
 @app.route('/api/drawings/<int:drawing_id>/file', methods=['GET'])

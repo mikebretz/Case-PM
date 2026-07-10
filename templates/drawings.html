@@ -618,7 +618,8 @@
             <input type="range" id="compareOpacity" min="20" max="100" value="70" class="w-14 accent-sky-500 hidden h-[28px]" oninput="CasePMDrawings.setCompareOpacity(this.value)">
             <button type="button" onclick="CasePMDrawings.exportTakeoffToBudget()" class="px-2 py-1 text-[10px] bg-violet-900 hover:bg-violet-800 rounded-md h-[28px] hidden sm:inline">Takeoff → Budget</button>
             <button type="button" onclick="CasePMDrawings.publishPersonalMarkups()" class="px-2 py-1 text-[10px] bg-emerald-900 hover:bg-emerald-800 rounded-md h-[28px]">Publish</button>
-            <button type="button" onclick="CasePMDrawings.startDocSnip()" class="px-2 py-1 text-[10px] bg-emerald-900 hover:bg-emerald-800 rounded-md h-[28px]" title="Snip region and save to Documents"><i class="fa-solid fa-scissors mr-0.5"></i>Snip</button>
+            <button type="button" onclick="CasePMDrawings.startDocSnip()" class="px-2 py-1 text-[10px] bg-emerald-900 hover:bg-emerald-800 rounded-md h-[28px]" title="Snip region → Documents › Drawings › Snips"><i class="fa-solid fa-scissors mr-0.5"></i>Snip</button>
+            <button type="button" onclick="CasePMDrawings.exportCurrentSheetToDocuments()" class="px-2 py-1 text-[10px] bg-sky-900 hover:bg-sky-800 rounded-md h-[28px]" title="Save sheet PDF to Documents for sharing"><i class="fa-solid fa-folder-open mr-0.5"></i>Docs</button>
             <div class="relative">
                 <button type="button" id="btnPrintMenu" onclick="CasePMDrawings.togglePrintMenu()" class="px-2 py-1 text-[10px] bg-zinc-800 hover:bg-zinc-700 rounded-md h-[28px]" title="Print"><i class="fa-solid fa-print"></i></button>
                 <div id="printMenu" class="hidden absolute bg-zinc-800 border border-zinc-700 rounded-md shadow-xl py-1">
@@ -932,6 +933,7 @@
     <div class="p-6">
         <div class="flex justify-between items-center mb-3">
             <h2 class="text-lg font-semibold">Save snip to Documents</h2>
+            <p class="text-xs text-zinc-500 mb-3">Saved to <strong>Drawings › Snips</strong></p>
             <button type="button" id="docSnipDialogClose" class="text-zinc-400 hover:text-white text-2xl cursor-pointer">&times;</button>
         </div>
         <img id="docSnipPreview" class="w-full max-h-36 object-contain bg-zinc-950 border border-zinc-700 rounded-md mb-4" alt="Snip preview">

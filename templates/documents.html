@@ -123,15 +123,15 @@
     </div>
 </dialog>
 
-<dialog id="docsPermissionsDialog" class="docs-dialog">
+<dialog id="docsPermissionsDialog" class="docs-dialog docs-dialog-wide">
     <div class="p-6 max-h-[80vh] overflow-auto">
         <h2 class="text-lg font-semibold mb-1">Folder permissions</h2>
         <p class="text-xs text-zinc-500 mb-4">Restrict who can view, upload, or manage this folder. No entries = open to all project users.</p>
-        <div class="flex gap-2 mb-4">
-            <select id="docsPermUser" class="docs-input flex-1 text-sm"></select>
-            <button type="button" id="docsPermAdd" class="docs-btn docs-btn-primary">Add</button>
+        <div class="docs-perm-add-row">
+            <select id="docsPermUser" class="docs-input text-sm"></select>
+            <button type="button" id="docsPermAdd" class="docs-btn docs-btn-primary">Add user</button>
         </div>
-        <div id="docsPermList" class="space-y-2 text-sm"></div>
+        <div id="docsPermList" class="docs-perm-list space-y-2 text-sm"></div>
         <button type="button" id="docsPermClose" class="docs-btn docs-btn-secondary w-full mt-4">Close</button>
     </div>
 </dialog>
