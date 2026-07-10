@@ -1,0 +1,67 @@
+{% extends "base.html" %}
+
+{% block content %}
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+<script src="{{ url_for('static', filename='js/budget-sync.js') }}"></script>
+<script src="{{ url_for('static', filename='js/accounting-reconcile.js') }}"></script>
+<script src="{{ url_for('static', filename='js/forecast-app.js') }}"></script>
+
+<div class="p-4 md:p-6 max-w-[1600px] mx-auto space-y-4">
+    <div class="flex flex-col md:flex-row md:items-center justify-between gap-4">
+        <div>
+            <h1 class="text-2xl font-bold text-white">Financial Forecast</h1>
+            <p class="text-sm text-zinc-400 mt-1">Job cost progress, burn rate, and projected completion</p>
+        </div>
+        <div class="flex flex-wrap gap-2">
+            <button type="button" data-forecast-horizon="week" class="px-3 py-2 rounded-md text-sm bg-zinc-800 hover:bg-zinc-700">1 Week</button>
+            <button type="button" data-forecast-horizon="two_weeks" class="px-3 py-2 rounded-md text-sm bg-zinc-800 hover:bg-zinc-700">2 Weeks</button>
+            <button type="button" data-forecast-horizon="four_weeks" class="px-3 py-2 rounded-md text-sm bg-zinc-800 hover:bg-zinc-700">4 Weeks</button>
+            <button type="button" data-forecast-horizon="full_job" class="px-3 py-2 rounded-md text-sm bg-emerald-600 text-white">Full Job</button>
+            <a href="{{ url_for('budget_page', project_id=active_project.id) if active_project else url_for('budget_page') }}" class="px-3 py-2 rounded-md text-sm bg-zinc-800 hover:bg-zinc-700 text-emerald-400">← Budget</a>
+        </div>
+    </div>
+
+    <div class="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-7 gap-3">
+        <div class="bg-zinc-900 border border-zinc-700 rounded-lg p-4">
+            <div class="text-xs text-zinc-500 uppercase tracking-wide">Revised Budget</div>
+            <div id="kpiRevised" class="text-lg font-semibold text-emerald-400 mt-1">$0</div>
+        </div>
+        <div class="bg-zinc-900 border border-zinc-700 rounded-lg p-4">
+            <div class="text-xs text-zinc-500 uppercase tracking-wide">Actual Cost</div>
+            <div id="kpiActual" class="text-lg font-semibold text-sky-400 mt-1">$0</div>
+        </div>
+        <div class="bg-zinc-900 border border-zinc-700 rounded-lg p-4">
+            <div class="text-xs text-zinc-500 uppercase tracking-wide">Variance</div>
+            <div id="kpiVariance" class="text-lg font-semibold mt-1">$0</div>
+        </div>
+        <div class="bg-zinc-900 border border-zinc-700 rounded-lg p-4">
+            <div class="text-xs text-zinc-500 uppercase tracking-wide">Paid Out</div>
+            <div id="kpiPaid" class="text-lg font-semibold text-indigo-400 mt-1">$0</div>
+        </div>
+        <div class="bg-zinc-900 border border-zinc-700 rounded-lg p-4">
+            <div class="text-xs text-zinc-500 uppercase tracking-wide">Pending</div>
+            <div id="kpiPending" class="text-lg font-semibold text-orange-400 mt-1">$0</div>
+        </div>
+        <div class="bg-zinc-900 border border-zinc-700 rounded-lg p-4">
+            <div class="text-xs text-zinc-500 uppercase tracking-wide">Committed</div>
+            <div id="kpiCommitted" class="text-lg font-semibold text-violet-400 mt-1">$0</div>
+        </div>
+        <div class="bg-zinc-900 border border-zinc-700 rounded-lg p-4">
+            <div class="text-xs text-zinc-500 uppercase tracking-wide">% Complete</div>
+            <div id="kpiPct" class="text-lg font-semibold text-white mt-1">0%</div>
+        </div>
+    </div>
+
+    <div class="bg-zinc-900 border border-zinc-700 rounded-lg p-5">
+        <div id="projectionPanel" class="text-white"></div>
+    </div>
+
+    <div class="bg-zinc-900 border border-zinc-700 rounded-lg p-5 min-h-[420px] flex flex-col">
+        <h2 class="text-sm font-medium text-zinc-400 uppercase tracking-wide mb-4">Financial Breakdown</h2>
+        <div class="flex-1 min-h-[360px] relative">
+            <canvas id="forecastChart"></canvas>
+        </div>
+        <p class="text-xs text-zinc-500 mt-4">Original budget, approved change orders, pending items, commitments, revised budget, actual job cost, amounts paid out, and variance (revised − actual). Forecast projections use current burn rate.</p>
+    </div>
+</div>
+{% endblock %}
