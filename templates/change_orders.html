@@ -40,8 +40,28 @@
   .alloc-sheet tbody tr:nth-child(even) { background: rgba(39, 39, 42, 0.35); }
   .alloc-sheet tbody tr:hover { background: rgba(39, 39, 42, 0.65); }
   .alloc-sheet input, .alloc-sheet select {
-    width: 100%; background: transparent; border: 0; color: #fff;
-    padding: 0.45rem 0.5rem; font-size: 12px; outline: none;
+    width: 100%;
+    background: #18181b;
+    border: 0;
+    color: #fff;
+    padding: 0.45rem 0.5rem;
+    font-size: 12px;
+    outline: none;
+    appearance: none;
+    -webkit-appearance: none;
+  }
+  .alloc-sheet select option {
+    background: #27272a;
+    color: #fff;
+  }
+  .alloc-sheet input[type="number"]::-webkit-outer-spin-button,
+  .alloc-sheet input[type="number"]::-webkit-inner-spin-button {
+    -webkit-appearance: none;
+    margin: 0;
+  }
+  .alloc-sheet input[type="number"] {
+    -moz-appearance: textfield;
+    appearance: textfield;
   }
   .alloc-sheet input:focus, .alloc-sheet select:focus { background: rgba(16, 185, 129, 0.08); box-shadow: inset 0 0 0 1px rgba(16, 185, 129, 0.35); }
   .alloc-sheet .alloc-num { color: #71717a; text-align: center; padding: 0.45rem 0.35rem; width: 2rem; }
@@ -162,6 +182,30 @@
     <div id="drawerActions" class="p-4 border-t border-zinc-800 flex flex-wrap gap-2 flex-shrink-0"></div>
 </div>
 <div id="coDrawerBackdrop" class="fixed inset-0 bg-black/40 z-[54] hidden" onclick="CasePMChangeOrders.closeDrawer()"></div>
+
+<!-- APPROVAL MODAL (approver-focused — Procore / RedTeam style) -->
+<dialog id="coApprovalModal" class="modal rounded-md w-full max-w-lg p-0 text-white" style="background:#18181b;border:1px solid #3f3f46;">
+    <div class="p-6">
+        <div class="flex justify-between items-start mb-4">
+            <div>
+                <h2 id="coApprovalTitle" class="text-xl font-semibold">Review Change Order</h2>
+                <p id="coApprovalSubtitle" class="text-sm text-zinc-400 mt-1"></p>
+            </div>
+            <button type="button" onclick="document.getElementById('coApprovalModal').close()" class="text-zinc-400 hover:text-white text-2xl leading-none">&times;</button>
+        </div>
+        <div id="coApprovalSummary" class="bg-zinc-900 border border-zinc-700 rounded-md p-4 text-sm space-y-2 mb-4"></div>
+        <div class="mb-4">
+            <label for="coApprovalComments" class="block text-sm text-zinc-400 mb-1.5">Comments <span id="coApprovalCommentsRequired" class="text-red-400 hidden">*</span></label>
+            <textarea id="coApprovalComments" rows="3" placeholder="Add approval notes or rejection reason for the project record…" class="w-full bg-zinc-800 border border-zinc-700 rounded-md px-3 py-2 text-sm text-white placeholder:text-zinc-600"></textarea>
+            <p class="text-[11px] text-zinc-500 mt-1">External approvers (Owner, Architect) see this summary without the full change order screen.</p>
+        </div>
+        <div class="flex justify-end gap-3">
+            <button type="button" onclick="document.getElementById('coApprovalModal').close()" class="px-5 py-2.5 bg-zinc-800 hover:bg-zinc-700 rounded-md text-sm">Cancel</button>
+            <button type="button" id="coApprovalRejectBtn" onclick="CasePMChangeOrders.confirmApprovalAction('reject')" class="px-5 py-2.5 bg-red-950 hover:bg-red-900 border border-red-800 rounded-md text-sm text-red-300">Reject</button>
+            <button type="button" id="coApprovalApproveBtn" onclick="CasePMChangeOrders.confirmApprovalAction('approve')" class="px-5 py-2.5 bg-emerald-600 hover:bg-emerald-500 rounded-md text-sm font-semibold">Approve</button>
+        </div>
+    </div>
+</dialog>
 
 <!-- BOTTOM BAR -->
 <div class="fixed bottom-0 left-56 right-0 bg-zinc-900 border-t border-zinc-700 px-6 py-2 text-xs text-zinc-400 flex items-center justify-between z-[60]">

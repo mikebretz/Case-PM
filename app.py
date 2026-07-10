@@ -1524,6 +1524,17 @@ def update_project(project_id):
 
         _apply_project_form(project, request.form)
         db.session.commit()
+        try:
+            from budget_persistence import get_budget_state, save_budget_state, reconcile_budget_contract_from_project
+            project_amt = _project_contract_amount(project)
+            if project_amt is not None:
+                record, state = get_budget_state(BudgetProjectState, project_id)
+                state = state or {}
+                state, changed = reconcile_budget_contract_from_project(state, project_amt)
+                if changed:
+                    save_budget_state(BudgetProjectState, db, project_id, state, current_user.id)
+        except Exception:
+            pass
         if request.headers.get('X-Requested-With') == 'XMLHttpRequest' or request.is_json:
             return jsonify({'ok': True, 'project': project.to_dict()})
         flash(f'Project "{project.name}" updated successfully!', 'success')
@@ -7055,25 +7066,43 @@ def global_search():
 @app.route('/api/budget/state', methods=['GET'])
 @login_required
 def api_get_budget_state():
-    from budget_persistence import get_budget_state as load_state
+    from budget_persistence import get_budget_state as load_state, save_budget_state, reconcile_budget_contract_from_project
     project_id = request.args.get('project_id', type=int) or get_current_project_id()
     if not project_id:
         return jsonify({'error': 'project_id required'}), 400
+    project_id = int(project_id)
+    project = Project.query.get(project_id)
+    project_amt = _project_contract_amount(project)
     record, data = load_state(BudgetProjectState, project_id)
+    contract_synced = False
+    if data is None:
+        data = {}
+    if project_amt is not None:
+        data, contract_synced = reconcile_budget_contract_from_project(data, project_amt)
+        if contract_synced:
+            record = save_budget_state(BudgetProjectState, db, project_id, data, current_user.id)
     if not record:
-        return jsonify({'project_id': project_id, 'data': None, 'version': 0})
+        return jsonify({
+            'project_id': project_id,
+            'data': data if data else None,
+            'version': 0,
+            'project_contract_amount': project_amt,
+            'contract_synced': contract_synced,
+        })
     return jsonify({
         'project_id': project_id,
         'data': data,
         'version': record.version,
         'updated_at': record.updated_at.isoformat() if record.updated_at else None,
+        'project_contract_amount': project_amt,
+        'contract_synced': contract_synced,
     })
 
 
 @app.route('/api/budget/state', methods=['PUT'])
 @login_required
 def api_save_budget_state():
-    from budget_persistence import merge_state_patch, save_budget_state as persist_state, get_budget_state as load_state
+    from budget_persistence import merge_state_patch, save_budget_state as persist_state, get_budget_state as load_state, push_budget_contract_to_project
     body = request.get_json(silent=True) or {}
     project_id = body.get('project_id') or get_current_project_id()
     if not project_id:
@@ -7087,11 +7116,20 @@ def api_save_budget_state():
     else:
         merged = merge_state_patch(existing, patch)
     record = persist_state(BudgetProjectState, db, project_id, merged, current_user.id)
+    project_updated = False
+    budget_contract = merged.get('budgetContractAmount')
+    if budget_contract not in (None, ''):
+        project = Project.query.get(project_id)
+        if project:
+            project_updated = push_budget_contract_to_project(project, budget_contract)
+            if project_updated:
+                db.session.commit()
     return jsonify({
         'ok': True,
         'project_id': project_id,
         'version': record.version,
         'updated_at': record.updated_at.isoformat() if record.updated_at else None,
+        'project_contract_updated': project_updated,
     })
 
 
@@ -7519,10 +7557,13 @@ def api_change_orders_link_options():
 @app.route('/api/change-orders/<int:co_id>/workflow', methods=['POST'])
 @login_required
 def api_change_order_workflow(co_id):
-    from co_persistence import co_workflow_action, notify_ball_in_court, co_to_dict
+    from co_persistence import co_workflow_action, notify_ball_in_court, co_to_dict, append_approval_history
     co = ChangeOrder.query.get_or_404(co_id)
     body = request.get_json(silent=True) or {}
     action = body.get('action')
+    comments = (body.get('comments') or '').strip()
+    if action == 'reject' and not comments:
+        return jsonify({'error': 'Rejection requires a comment.'}), 400
     old_status = co.status
     allocs = ChangeOrderAllocation.query.filter_by(change_order_id=co.id).all()
     alloc_payload = [{
@@ -7535,6 +7576,20 @@ def api_change_order_workflow(co_id):
         new_status, final_approved = co_workflow_action(co, action, current_user, User, alloc_payload)
     except ValueError as exc:
         return jsonify({'error': str(exc)}), 400
+
+    append_approval_history(co, action, current_user, comments, old_status, new_status)
+
+    try:
+        from case_workflow import ApprovalRequest, decide_approval
+        pending = ApprovalRequest.query.filter_by(
+            entity_type='ChangeOrder',
+            entity_id=str(co.id),
+            status='pending',
+        ).order_by(ApprovalRequest.created_at.desc()).first()
+        if pending and action in ('approve', 'reject'):
+            decide_approval(pending.id, action, comments)
+    except Exception:
+        pass
 
     if action == 'submit' and not co.submitted_at:
         co.submitted_at = datetime.utcnow()

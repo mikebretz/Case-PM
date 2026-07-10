@@ -226,3 +226,38 @@ def mark_budget_lines_sage_status(state_data, status):
             line['syncStatus'] = status
     state_data['budgetLines'] = lines
     return state_data
+
+
+def _parse_budget_contract_amount(value):
+    if value in (None, ''):
+        return None
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def reconcile_budget_contract_from_project(state_data, project_contract_amount):
+    """Align budget contract amount with project file when they differ."""
+    if project_contract_amount is None:
+        return state_data, False
+    project_amt = float(project_contract_amount)
+    budget_amt = _parse_budget_contract_amount(state_data.get('budgetContractAmount'))
+    if budget_amt is not None and abs(budget_amt - project_amt) < 0.01:
+        return state_data, False
+    state_data = dict(state_data or {})
+    state_data['budgetContractAmount'] = project_amt
+    return state_data, True
+
+
+def push_budget_contract_to_project(project, budget_contract_amount):
+    """Write budget contract amount back to project original contract + contract value."""
+    if not project or budget_contract_amount is None:
+        return False
+    amt = float(budget_contract_amount)
+    details = project.get_details()
+    details['original_contract_amount'] = str(amt)
+    project.set_details(details)
+    project.contract_value = amt
+    project.updated_at = datetime.utcnow()
+    return True
