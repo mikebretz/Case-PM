@@ -6440,12 +6440,39 @@ def budget_page():
     fin = _project_financial_context(active)
     return render_template(
         'budget.html',
+        active_project=active,
         project_original_contract_amount=fin['original_contract_amount'],
         project_contract_value=fin['contract_value'],
         project_contract_amount=fin['contract_amount'],
         project_contract_amount_source=fin['contract_amount_source'],
         project_sage_job=fin['sage_job'],
     )
+
+
+@app.route('/forecast')
+@login_required
+def forecast_page():
+    active = get_active_project()
+    return render_template('forecast.html', active_project=active)
+
+
+@app.route('/api/forecast/summary', methods=['GET'])
+@login_required
+def api_forecast_summary():
+    from budget_persistence import get_budget_state
+    from pay_app_persistence import get_pay_app_state
+    from forecast_persistence import build_forecast_summary
+
+    project_id = request.args.get('project_id', type=int) or get_current_project_id()
+    if not project_id:
+        return jsonify({'error': 'project_id required'}), 400
+    project = Project.query.get(int(project_id))
+    if not project:
+        return jsonify({'error': 'project not found'}), 404
+    _, budget_state = get_budget_state(BudgetProjectState, int(project_id))
+    _, pay_state = get_pay_app_state(PayAppProjectState, int(project_id))
+    approved_co_total = _project_approved_change_orders_total(int(project_id))
+    return jsonify(build_forecast_summary(project, budget_state, pay_state, approved_co_total))
 
 
 @app.route('/commitments')

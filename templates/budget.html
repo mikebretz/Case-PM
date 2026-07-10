@@ -79,6 +79,9 @@
         <button onclick="showSettingsModal()" class="w-10 h-10 flex items-center justify-center bg-zinc-800 hover:bg-zinc-700 rounded-md">
             <i class="fa-solid fa-cog"></i>
         </button>
+        <a href="{{ url_for('forecast_page', project_id=active_project.id) if active_project else url_for('forecast_page') }}" class="flex items-center gap-2 px-4 py-2 bg-violet-900/50 hover:bg-violet-800/60 border border-violet-700 rounded-md text-sm font-medium h-[38px] text-violet-200">
+            <i class="fa-solid fa-chart-line"></i><span>Forecast</span>
+        </a>
     </div>
 </div>
 
@@ -103,20 +106,20 @@
             <div id="pendingChangesTotal" class="text-xl font-semibold mt-1 text-orange-400">$0</div>
         </div>
         <div class="bg-zinc-800 border border-zinc-700 rounded-md p-5">
-            <div class="text-sm text-zinc-400">Current Budget</div>
+            <div class="text-sm text-zinc-400">Revised Budget</div>
             <div id="currentBudgetTotal" class="text-xl font-semibold mt-1 text-emerald-400">$0</div>
         </div>
         <div class="bg-zinc-800 border border-zinc-700 rounded-md p-5">
-            <div class="text-sm text-zinc-400">Projected Final Cost</div>
-            <div id="projectedFinalTotal" class="text-xl font-semibold mt-1 text-emerald-400">$0</div>
-        </div>
-        <div class="bg-zinc-800 border border-zinc-700 rounded-md p-5">
-            <div class="text-sm text-zinc-400">Variance</div>
-            <div id="varianceTotal" class="text-xl font-semibold mt-1 text-emerald-400">$0</div>
+            <div class="text-sm text-zinc-400">Committed</div>
+            <div id="committedTotal" class="text-xl font-semibold mt-1 text-violet-400">$0</div>
         </div>
         <div class="bg-zinc-800 border border-zinc-700 rounded-md p-5">
             <div class="text-sm text-zinc-400">Actual Cost</div>
             <div id="actualCostTotal" class="text-xl font-semibold mt-1 text-sky-400">$0</div>
+        </div>
+        <div class="bg-zinc-800 border border-zinc-700 rounded-md p-5">
+            <div class="text-sm text-zinc-400">Variance</div>
+            <div id="varianceTotal" class="text-xl font-semibold mt-1 text-emerald-400">$0</div>
         </div>
     </div>
 </div>
@@ -152,11 +155,12 @@
                     <th class="px-6 py-3 text-left font-medium text-zinc-400 min-w-[280px]">Description</th>
                     <th class="px-6 py-3 text-center font-medium text-zinc-400 w-32">Cost Type</th>
                     <th class="px-6 py-3 text-right font-medium text-zinc-400 w-28">Original</th>
-                    <th class="px-6 py-3 text-right font-medium text-zinc-400 w-24">Changes</th>
+                    <th class="px-6 py-3 text-right font-medium text-zinc-400 w-24">Approved COs</th>
                     <th class="px-6 py-3 text-right font-medium text-zinc-400 w-24">Pending</th>
-                    <th class="px-6 py-3 text-right font-medium text-zinc-400 w-28">Current</th>
-                    <th class="px-6 py-3 text-right font-medium text-zinc-400 w-28">Forecast</th>
+                    <th class="px-6 py-3 text-right font-medium text-zinc-400 w-24">Committed</th>
+                    <th class="px-6 py-3 text-right font-medium text-zinc-400 w-28">Revised</th>
                     <th class="px-6 py-3 text-right font-medium text-zinc-400 w-28">Actual</th>
+                    <th class="px-6 py-3 text-right font-medium text-zinc-400 w-28">Variance</th>
                     <th class="px-6 py-3 text-center font-medium text-zinc-400 w-20">% Complete</th>
                     <th class="px-6 py-3 text-center font-medium text-zinc-400 min-w-[140px]">Sync</th>
                     <th class="px-6 py-3 text-center font-medium text-zinc-400 w-24">Health</th>
@@ -659,7 +663,7 @@
                 header.className = 'bg-zinc-800 cursor-pointer hover:bg-zinc-700';
                 header.onclick = () => toggleDivision(division);
                 header.innerHTML = `
-                    <td colspan="15" class="px-6 py-2 text-emerald-400 font-semibold text-base">
+                    <td colspan="17" class="px-6 py-2 text-emerald-400 font-semibold text-base">
                         <i class="fa-solid fa-chevron-${isCollapsed ? 'right' : 'down'} mr-2 transition-transform"></i>
                         Division ${division} — ${divisionNames[division] || 'Other'}
                     </td>
@@ -669,13 +673,14 @@
 
             if (!collapsedDivisions.has(division)) {
                 const pending = line.pending || 0;
-                const forecast = (line.original_budget || 0) + (line.approved_changes || 0) + pending;
+                const committed = line.committed || 0;
                 const actual = line.actual || 0;
+                const revised = budgetRevised(line);
+                const variance = budgetVariance(line);
                 const percentComplete = line.percent_complete || 0;
 
                 let healthBadge = '';
-                const currentBudget = (line.original_budget || 0) + (line.approved_changes || 0);
-                if (pending > 50000 || currentBudget > contractAmount * 0.9) {
+                if (variance < 0 || actual > revised) {
                     healthBadge = `<span class="px-2 py-0.5 text-xs rounded-full bg-red-900/60 text-red-400">Over</span>`;
                 } else if (pending > 10000) {
                     healthBadge = `<span class="px-2 py-0.5 text-xs rounded-full bg-amber-900/60 text-amber-400">High Pending</span>`;
@@ -702,9 +707,10 @@
                     <td class="px-6 py-1.5 text-center w-28">${formatCurrency(line.original_budget)}</td>
                     <td class="px-6 py-1.5 text-center text-amber-400 w-24">${formatCurrency(line.approved_changes)}</td>
                     <td class="px-6 py-1.5 text-center text-orange-400 w-24">${formatCurrency(pending)}</td>
-                    <td class="px-6 py-1.5 text-center font-semibold text-emerald-400 w-28">${formatCurrency(line.original_budget + line.approved_changes)}</td>
-                    <td class="px-6 py-1.5 text-center font-semibold text-emerald-400 w-28">${formatCurrency(forecast)}</td>
+                    <td class="px-6 py-1.5 text-center text-violet-400 w-24">${formatCurrency(committed)}</td>
+                    <td class="px-6 py-1.5 text-center font-semibold text-emerald-400 w-28">${formatCurrency(revised)}</td>
                     <td class="px-6 py-1.5 text-center font-semibold text-sky-400 w-28">${formatCurrency(actual)}</td>
+                    <td class="px-6 py-1.5 text-center font-semibold w-28 ${varianceColorClass(variance)}">${formatCurrency(variance)}</td>
                     <td class="px-6 py-1.5 text-center w-20 font-mono text-xs">${percentComplete}%</td>
                     <td class="px-6 py-1.5 text-center w-24">${syncBadge}</td>
                     <td class="px-6 py-1.5 text-center w-24">${healthBadge}</td>
@@ -724,6 +730,18 @@
         updateRevisionBadge();
     }
 
+    function budgetRevised(line) {
+        return (line.original_budget || 0) + (line.approved_changes || 0);
+    }
+
+    function budgetVariance(line) {
+        return budgetRevised(line) - (line.actual || 0);
+    }
+
+    function varianceColorClass(value) {
+        return (value || 0) >= 0 ? 'text-emerald-400' : 'text-red-400';
+    }
+
     function toggleDivision(division) {
         if (collapsedDivisions.has(division)) {
             collapsedDivisions.delete(division);
@@ -734,30 +752,35 @@
     }
 
     function updateTotals() {
-        let original = 0, changes = 0, pending = 0, actual = 0;
+        let original = 0, changes = 0, pending = 0, committed = 0, actual = 0;
         budgetLines.forEach(l => {
             original += l.original_budget || 0;
             changes += l.approved_changes || 0;
             pending += (l.pending || 0);
+            committed += (l.committed || 0);
             actual += l.actual || 0;
         });
-        const current = original + changes;
-        const forecast = current + pending;
-        const variance = contractAmount - forecast;
+        const revised = original + changes;
+        const variance = revised - actual;
 
         document.getElementById('originalBudgetTotal').textContent = formatCurrency(original);
         document.getElementById('approvedChangesTotal').textContent = formatCurrency(changes);
         document.getElementById('pendingChangesTotal').textContent = formatCurrency(pending);
-        document.getElementById('currentBudgetTotal').textContent = formatCurrency(current);
-        document.getElementById('projectedFinalTotal').textContent = formatCurrency(forecast);
-        const varEl = document.getElementById('varianceTotal');
-        if (varEl) varEl.textContent = formatCurrency(variance);
+        document.getElementById('currentBudgetTotal').textContent = formatCurrency(revised);
+        const committedEl = document.getElementById('committedTotal');
+        if (committedEl) committedEl.textContent = formatCurrency(committed);
         const actualEl = document.getElementById('actualCostTotal');
         if (actualEl) actualEl.textContent = formatCurrency(actual);
+        const varEl = document.getElementById('varianceTotal');
+        if (varEl) {
+            varEl.textContent = formatCurrency(variance);
+            varEl.classList.remove('text-emerald-400', 'text-red-400');
+            varEl.classList.add(variance >= 0 ? 'text-emerald-400' : 'text-red-400');
+        }
 
         const currentCard = document.getElementById('currentBudgetTotal');
         if (currentCard) {
-            if (current > contractAmount) {
+            if (revised > contractAmount) {
                 currentCard.classList.add('text-red-500', 'font-bold');
             } else {
                 currentCard.classList.remove('text-red-500', 'font-bold');
@@ -1309,11 +1332,12 @@
                 "Description": line.description,
                 "Cost Type": line.cost_type,
                 "Original Budget": line.original_budget || 0,
-                "Approved Changes": line.approved_changes || 0,
+                "Approved COs": line.approved_changes || 0,
                 "Pending Changes": line.pending || 0,
-                "Current Budget": (line.original_budget || 0) + (line.approved_changes || 0),
-                "Forecast": (line.original_budget || 0) + (line.approved_changes || 0) + (line.pending || 0),
+                "Committed": line.committed || 0,
+                "Revised Budget": budgetRevised(line),
                 "Actual Cost": line.actual || 0,
+                "Variance": budgetVariance(line),
                 "% Complete": line.percent_complete || 0,
                 "Sync Status": line.syncStatus || "Not Synced",
                 "Notes": line.notes || ""
@@ -1443,11 +1467,13 @@
         sorted.forEach(line => {
             const division = line.cost_code.substring(0, 2);
             const pending = line.pending || 0;
-            const forecast = (line.original_budget || 0) + (line.approved_changes || 0) + pending;
+            const committed = line.committed || 0;
             const actual = line.actual || 0;
+            const revised = budgetRevised(line);
+            const variance = budgetVariance(line);
             if (division !== currentDivision) {
                 currentDivision = division;
-                tableRows += `<tr style="background:#f3f4f6; font-weight:600;"><td colspan="10" style="padding:8px; border:1px solid #ccc;">Division ${division} — ${divisionNames[division] || 'Other'}</td></tr>`;
+                tableRows += `<tr style="background:#f3f4f6; font-weight:600;"><td colspan="11" style="padding:8px; border:1px solid #ccc;">Division ${division} — ${divisionNames[division] || 'Other'}</td></tr>`;
             }
             tableRows += `<tr>
                 <td style="border:1px solid #ccc; padding:6px; font-family:monospace;">${line.cost_code}</td>
@@ -1456,9 +1482,10 @@
                 <td style="border:1px solid #ccc; padding:6px; text-align:right;">${formatCurrency(line.original_budget)}</td>
                 <td style="border:1px solid #ccc; padding:6px; text-align:right;">${formatCurrency(line.approved_changes)}</td>
                 <td style="border:1px solid #ccc; padding:6px; text-align:right;">${formatCurrency(pending)}</td>
-                <td style="border:1px solid #ccc; padding:6px; text-align:right;">${formatCurrency(line.original_budget + line.approved_changes)}</td>
-                <td style="border:1px solid #ccc; padding:6px; text-align:right;">${formatCurrency(forecast)}</td>
+                <td style="border:1px solid #ccc; padding:6px; text-align:right;">${formatCurrency(committed)}</td>
+                <td style="border:1px solid #ccc; padding:6px; text-align:right;">${formatCurrency(revised)}</td>
                 <td style="border:1px solid #ccc; padding:6px; text-align:right;">${formatCurrency(actual)}</td>
+                <td style="border:1px solid #ccc; padding:6px; text-align:right;">${formatCurrency(variance)}</td>
                 <td style="border:1px solid #ccc; padding:6px; text-align:right;">${line.percent_complete || 0}%</td>
             </tr>`;
         });
@@ -1478,9 +1505,9 @@
                 <table>
                     <thead><tr>
                         <th>Cost Code</th><th>Description</th><th>Cost Type</th>
-                        <th style="text-align:right">Original</th><th style="text-align:right">Changes</th>
-                        <th style="text-align:right">Pending</th><th style="text-align:right">Current</th>
-                        <th style="text-align:right">Forecast</th><th style="text-align:right">Actual</th>
+                        <th style="text-align:right">Original</th><th style="text-align:right">Approved COs</th>
+                        <th style="text-align:right">Pending</th><th style="text-align:right">Committed</th><th style="text-align:right">Revised</th>
+                        <th style="text-align:right">Actual</th><th style="text-align:right">Variance</th>
                         <th style="text-align:right">% Complete</th>
                     </tr></thead>
                     <tbody>${tableRows}</tbody>
@@ -1875,10 +1902,7 @@
 
     // ==================== QUICK FILTERS ====================
     function filterOverBudget() {
-        const filtered = budgetLines.filter(line => {
-            const current = (line.original_budget || 0) + (line.approved_changes || 0);
-            return current > contractAmount;
-        });
+        const filtered = budgetLines.filter(line => budgetVariance(line) < 0);
         renderBudgetTable(filtered);
     }
     function filterHasPending() {
