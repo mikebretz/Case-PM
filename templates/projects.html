@@ -301,11 +301,8 @@
                         <label class="project-field-label">Client / Owner <span class="text-red-400">*</span></label>
                         <select name="client" id="fld_client" class="project-field-input" required>
                             <option value="">Select client...</option>
-                            {% for company in companies %}
-                            <option value="{{ company.name }}">{{ company.name }}</option>
-                            {% endfor %}
                         </select>
-                        <p class="text-[10px] text-zinc-500 mt-1">Add companies under <a href="{{ url_for('companies_page') }}" class="text-sky-400 hover:underline">Companies</a> if none appear here.</p>
+                        <p class="text-[10px] text-zinc-500 mt-1">Shows companies with type <strong class="text-zinc-400">Client / Owner</strong> from <a href="{{ url_for('companies_page') }}" class="text-sky-400 hover:underline">Companies</a>.</p>
                     </div>
 
                     <div class="mt-4 border border-zinc-700 rounded-lg p-4 bg-zinc-950/40">
@@ -869,6 +866,46 @@
 </div>
 
 <script>
+const CASEPM_SERVER_COMPANIES = {{ companies_for_js|tojson }};
+
+function escHtml(s) {
+    if (s == null) return '';
+    return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+}
+
+function isClientOwnerCompany(company) {
+    const t = (company.company_type || company.type || '').toLowerCase();
+    return !t || t === 'client' || t.includes('client') || t.includes('owner');
+}
+
+function populateClientSelect(selectedValue) {
+    const sel = document.getElementById('fld_client');
+    if (!sel) return;
+    const names = new Set();
+
+    try {
+        const ls = JSON.parse(localStorage.getItem('casepm_companies') || '[]');
+        ls.filter(isClientOwnerCompany).forEach(c => {
+            const n = (c.company_name || c.name || '').trim();
+            if (n) names.add(n);
+        });
+    } catch { /* ignore */ }
+
+    (CASEPM_SERVER_COMPANIES || []).filter(isClientOwnerCompany).forEach(c => {
+        const n = (c.name || '').trim();
+        if (n) names.add(n);
+    });
+
+    const current = selectedValue != null ? selectedValue : sel.value;
+    const sorted = [...names].sort((a, b) => a.localeCompare(b));
+    sel.innerHTML = '<option value="">Select client...</option>' +
+        sorted.map(n => `<option value="${escHtml(n)}"${n === current ? ' selected' : ''}>${escHtml(n)}</option>`).join('');
+
+    if (!sorted.length) {
+        sel.innerHTML += '<option value="" disabled>— No Client / Owner companies yet —</option>';
+    }
+}
+
 const PROJECT_FIELD_IDS = [
     'number','accounting_project_number','sage_job_number','name','status','stage','project_type',
     'bid_type','delivery_method','program','departments','description',
@@ -921,17 +958,22 @@ function openProjectModal(mode, projectId) {
         document.getElementById('fld_number').value = "PRJ-{{ '%03d' % (projects|length + 1) }}";
         document.getElementById('fld_country').value = 'United States';
         document.getElementById('fld_status').value = 'Active';
+        switchProjectTab('general');
+        populateClientSelect();
     } else {
         title.textContent = 'Edit Project';
         submitBtn.textContent = 'Save Project';
         form.action = `/projects/${projectId}/update`;
+        switchProjectTab('general');
         fetch(`/api/projects/${projectId}`)
             .then(r => r.json())
-            .then(data => populateProjectForm(data))
+            .then(data => {
+                populateProjectForm(data);
+                populateClientSelect(data.client);
+            })
             .catch(() => alert('Could not load project details.'));
     }
 
-    switchProjectTab('general');
     document.getElementById('projectModal').classList.remove('hidden');
     const numErr = document.getElementById('projectNumberError');
     if (numErr) numErr.classList.add('hidden');
