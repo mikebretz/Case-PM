@@ -76,14 +76,20 @@ def merge_state_patch(existing, patch):
     return merged
 
 
-def _find_budget_line(lines, cost_code):
+def _find_budget_line(lines, cost_code, cost_type=None):
     target = normalize_cost_code(cost_code)
     if not target:
         return None
-    for line in lines:
-        if normalize_cost_code(line.get('cost_code')) == target:
-            return line
-    return None
+    matches = [line for line in lines if normalize_cost_code(line.get('cost_code')) == target]
+    if not matches:
+        return None
+    if cost_type:
+        ctype = str(cost_type).strip()
+        for line in matches:
+            if (line.get('cost_type') or '').strip() == ctype:
+                return line
+        return None
+    return matches[0]
 
 
 def apply_co_amount_to_budget_line(line, amount, mode):
@@ -103,15 +109,16 @@ def apply_co_amount_to_budget_line(line, amount, mode):
     return line
 
 
-def apply_co_to_budget_lines(state_data, amount, cost_code=None, mode='approved'):
+def apply_co_to_budget_lines(state_data, amount, cost_code=None, cost_type=None, description=None, mode='approved'):
     lines = state_data.get('budgetLines') or []
     if not isinstance(lines, list):
         lines = []
     remaining = float(amount or 0)
     applied = 0.0
+    line_desc = (description or '').strip() or (f'Change Order — {cost_code}' if cost_code else 'Change Order')
 
     if cost_code:
-        line = _find_budget_line(lines, cost_code)
+        line = _find_budget_line(lines, cost_code, cost_type)
         if line:
             apply_co_amount_to_budget_line(line, remaining, mode)
             applied = remaining
@@ -119,8 +126,8 @@ def apply_co_to_budget_lines(state_data, amount, cost_code=None, mode='approved'
             new_line = {
                 'id': int(datetime.utcnow().timestamp() * 1000),
                 'cost_code': cost_code,
-                'description': f'Change Order — {cost_code}',
-                'cost_type': 'Other',
+                'description': line_desc,
+                'cost_type': cost_type or 'Other',
                 'original_budget': 0,
                 'approved_changes': remaining if mode == 'approved' else 0,
                 'pending': remaining if mode == 'pending' else 0,
@@ -189,7 +196,14 @@ def sync_change_order_to_budget(
 
     if allocations:
         for alloc in allocations:
-            state, applied = apply_co_to_budget_lines(state, alloc.amount, alloc.cost_code, mode)
+            state, applied = apply_co_to_budget_lines(
+                state,
+                alloc.amount,
+                alloc.cost_code,
+                getattr(alloc, 'cost_type', None),
+                getattr(alloc, 'description', None),
+                mode,
+            )
             total_applied += applied
     else:
         state, applied = apply_co_to_budget_lines(

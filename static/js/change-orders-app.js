@@ -11,11 +11,14 @@
   const PRIORITIES = ['Low', 'Medium', 'High', 'Critical'];
   const CONTRACT_TYPES = ['Owner', 'Contractor', 'Subcontract'];
 
+  const DEFAULT_COST_TYPES = ['Labor', 'Material', 'Subcontract', 'Equipment', 'General Conditions', 'Other'];
+
   let state = {
     tab: 'cos',
     changeOrders: [],
     pcos: [],
     costCodes: [],
+    costTypes: DEFAULT_COST_TYPES.slice(),
     companies: [],
     contacts: [],
     stats: {},
@@ -109,13 +112,66 @@
     try {
       const json = await api(`/api/change-orders/cost-codes?project_id=${pid}`);
       state.costCodes = json.cost_codes || [];
+      state.costTypes = json.cost_types?.length ? json.cost_types : DEFAULT_COST_TYPES.slice();
     } catch {
       if (typeof CasePMBudgetSync !== 'undefined') {
         await CasePMBudgetSync.init().catch(() => {});
         const lines = JSON.parse(global.casepmStore.getItem('budgetLines') || '[]');
         state.costCodes = lines.map(l => ({ code: l.cost_code, description: l.description, cost_type: l.cost_type }));
+        state.costTypes = JSON.parse(global.casepmStore.getItem('costTypes') || 'null') || DEFAULT_COST_TYPES.slice();
       }
     }
+  }
+
+  function lookupCostCodeMeta(code) {
+    if (!code) return null;
+    const norm = String(code).replace(/[\s-]/g, '').toUpperCase();
+    return state.costCodes.find(c => String(c.code).replace(/[\s-]/g, '').toUpperCase() === norm) || null;
+  }
+
+  function validateAllocations(allocations, { requireRows = true, requireAmount = false } = {}) {
+    const rows = (allocations || []).filter(a => a.cost_code || a.cost_type || a.description || a.amount);
+    if (requireRows && !rows.length) {
+      return { ok: false, message: 'At least one cost code allocation is required (cost code, cost type, and amount).' };
+    }
+    for (let i = 0; i < rows.length; i += 1) {
+      const row = rows[i];
+      if (!row.cost_code) return { ok: false, message: `Row ${i + 1}: cost code is required.` };
+      if (!row.cost_type) return { ok: false, message: `Row ${i + 1}: cost type is required.` };
+      if (requireAmount && !Number(row.amount)) return { ok: false, message: `Row ${i + 1}: amount must be non-zero.` };
+    }
+    return { ok: true, rows };
+  }
+
+  function showAllocationValidation(message) {
+    const el = document.getElementById('allocationValidation');
+    if (!el) return;
+    if (!message) {
+      el.classList.add('hidden');
+      el.textContent = '';
+      return;
+    }
+    el.textContent = message;
+    el.classList.remove('hidden');
+  }
+
+  function updateAllocationTotal() {
+    const total = readAllocationsFromDom().reduce((sum, row) => sum + (Number(row.amount) || 0), 0);
+    const el = document.getElementById('allocationTotal');
+    if (el) el.textContent = fmt(total);
+    const amountInput = document.getElementById('modalAmount');
+    if (amountInput && total) amountInput.value = total.toFixed(2);
+  }
+
+  function onAllocCostCodeChange(idx) {
+    const sel = document.querySelector(`.alloc-cost-code[data-idx="${idx}"]`);
+    if (!sel) return;
+    const meta = lookupCostCodeMeta(sel.value);
+    if (!meta) return;
+    const typeSel = document.querySelector(`.alloc-cost-type[data-idx="${idx}"]`);
+    const descInput = document.querySelector(`.alloc-desc[data-idx="${idx}"]`);
+    if (typeSel && meta.cost_type) typeSel.value = meta.cost_type;
+    if (descInput && !descInput.value && meta.description) descInput.value = meta.description;
   }
 
   async function loadDashboard() {
@@ -273,6 +329,7 @@
             ${showApprove ? `<button onclick="CasePMChangeOrders.workflowCo(${co.id},'approve')" class="p-1.5 text-emerald-400 hover:bg-zinc-800 rounded" title="${approveLabel}"><i class="fa-solid fa-check"></i></button>` : ''}
             ${showReject ? `<button onclick="CasePMChangeOrders.workflowCo(${co.id},'reject')" class="p-1.5 text-red-400 hover:bg-zinc-800 rounded" title="Reject"><i class="fa-solid fa-times"></i></button>` : ''}
             <button onclick="CasePMChangeOrders.editCo(${co.id})" class="p-1.5 text-zinc-400 hover:bg-zinc-800 rounded"><i class="fa-solid fa-edit"></i></button>
+            <button onclick="CasePMChangeOrders.deleteCo(${co.id})" class="p-1.5 text-red-400 hover:bg-zinc-800 rounded" title="Delete (testing)"><i class="fa-solid fa-trash"></i></button>
           </div>
         </td>
       </tr>`;
@@ -379,32 +436,42 @@
     const container = document.getElementById('allocationRows');
     if (!container) return;
     if (!state.allocationRows.length) {
-      state.allocationRows = [{ cost_code: '', amount: 0, description: '' }];
+      state.allocationRows = [{ cost_code: '', cost_type: '', amount: 0, description: '' }];
     }
+    const typeOptions = state.costTypes.length ? state.costTypes : DEFAULT_COST_TYPES;
     container.innerHTML = state.allocationRows.map((row, idx) => `
-      <div class="grid grid-cols-12 gap-2 items-center mb-2">
-        <div class="col-span-4">
-          <select class="w-full bg-zinc-800 border border-zinc-700 rounded-md px-2 py-1.5 text-xs alloc-cost-code" data-idx="${idx}">
-            <option value="">Cost code…</option>
-            ${state.costCodes.map(c => `<option value="${c.code}" ${c.code === row.cost_code ? 'selected' : ''}>${c.code} — ${c.description || ''}</option>`).join('')}
+      <tr>
+        <td class="alloc-num">${idx + 1}</td>
+        <td>
+          <select class="alloc-cost-code" data-idx="${idx}" onchange="CasePMChangeOrders.onAllocCostCodeChange(${idx})">
+            <option value="">Select code…</option>
+            ${state.costCodes.map(c => `<option value="${esc(c.code)}" ${c.code === row.cost_code ? 'selected' : ''}>${esc(c.code)}${c.description ? ` — ${esc(c.description)}` : ''}</option>`).join('')}
           </select>
-        </div>
-        <div class="col-span-3"><input type="text" class="w-full bg-zinc-800 border border-zinc-700 rounded-md px-2 py-1.5 text-xs alloc-desc" data-idx="${idx}" value="${row.description || ''}" placeholder="Description"></div>
-        <div class="col-span-3"><input type="number" step="0.01" class="w-full bg-zinc-800 border border-zinc-700 rounded-md px-2 py-1.5 text-xs text-right alloc-amt" data-idx="${idx}" value="${row.amount || 0}"></div>
-        <div class="col-span-2 flex gap-1">
-          <button type="button" onclick="CasePMChangeOrders.addAllocRow()" class="px-2 py-1 text-xs bg-zinc-700 rounded">+</button>
-          ${state.allocationRows.length > 1 ? `<button type="button" onclick="CasePMChangeOrders.removeAllocRow(${idx})" class="px-2 py-1 text-xs bg-red-900/50 text-red-400 rounded">×</button>` : ''}
-        </div>
-      </div>`).join('');
+        </td>
+        <td>
+          <select class="alloc-cost-type" data-idx="${idx}">
+            <option value="">Select type…</option>
+            ${typeOptions.map(t => `<option value="${esc(t)}" ${t === row.cost_type ? 'selected' : ''}>${esc(t)}</option>`).join('')}
+          </select>
+        </td>
+        <td><input type="text" class="alloc-desc" data-idx="${idx}" value="${esc(row.description || '')}" placeholder="SOV / budget line description"></td>
+        <td class="alloc-amt-cell"><input type="number" step="0.01" class="alloc-amt" data-idx="${idx}" value="${row.amount || 0}" oninput="CasePMChangeOrders.updateAllocationTotal()"></td>
+        <td class="text-center">
+          ${state.allocationRows.length > 1 ? `<button type="button" onclick="CasePMChangeOrders.removeAllocRow(${idx})" class="px-1.5 py-1 text-red-400 hover:text-red-300" title="Remove row"><i class="fa-solid fa-times"></i></button>` : ''}
+        </td>
+      </tr>`).join('');
+    updateAllocationTotal();
+    showAllocationValidation('');
   }
 
   function readAllocationsFromDom() {
     const rows = [];
     document.querySelectorAll('.alloc-cost-code').forEach((sel, idx) => {
-      const code = sel.value;
-      const desc = document.querySelector(`.alloc-desc[data-idx="${idx}"]`)?.value || '';
+      const code = sel.value?.trim();
+      const costType = document.querySelector(`.alloc-cost-type[data-idx="${idx}"]`)?.value?.trim() || '';
+      const desc = document.querySelector(`.alloc-desc[data-idx="${idx}"]`)?.value?.trim() || '';
       const amt = parseFloat(document.querySelector(`.alloc-amt[data-idx="${idx}"]`)?.value) || 0;
-      if (code || amt) rows.push({ cost_code: code, amount: amt, description: desc });
+      if (code || costType || desc || amt) rows.push({ cost_code: code, cost_type: costType, amount: amt, description: desc });
     });
     return rows;
   }
@@ -491,8 +558,13 @@
     document.getElementById('modalContactEmail').value = record?.contact_email || '';
     document.getElementById('modalContactPhone').value = record?.contact_phone || '';
     state.allocationRows = (record?.allocations && record.allocations.length)
-      ? record.allocations.map(a => ({ ...a }))
-      : [{ cost_code: record?.cost_code || '', amount: record?.amount || record?.estimated_amount || 0, description: '' }];
+      ? record.allocations.map(a => ({
+        cost_code: a.cost_code || '',
+        cost_type: a.cost_type || lookupCostCodeMeta(a.cost_code)?.cost_type || '',
+        amount: a.amount || 0,
+        description: a.description || '',
+      }))
+      : [{ cost_code: record?.cost_code || '', cost_type: '', amount: record?.amount || record?.estimated_amount || 0, description: '' }];
     onCompanyChange();
     if (record?.contact_name) {
       const csel = document.getElementById('modalContact');
@@ -513,6 +585,20 @@
       alert('Title or description is required.');
       return;
     }
+    const status = payload.status || (mode === 'pco' ? 'Open' : 'Draft');
+    const needsAlloc = mode === 'pco'
+      ? !['Open', 'Draft'].includes(status)
+      : status !== 'Draft';
+    const allocCheck = validateAllocations(payload.allocations, {
+      requireRows: needsAlloc,
+      requireAmount: needsAlloc,
+    });
+    if (!allocCheck.ok) {
+      showAllocationValidation(allocCheck.message);
+      alert(allocCheck.message);
+      return;
+    }
+    showAllocationValidation('');
     try {
       if (mode === 'pco') {
         const json = id
@@ -549,6 +635,11 @@
   async function workflowCo(id, action) {
     const co = state.changeOrders.find(c => c.id === id);
     if (!co) return;
+    const allocCheck = validateAllocations(co.allocations || [], { requireRows: true, requireAmount: true });
+    if (!allocCheck.ok && (action === 'submit' || action === 'approve')) {
+      alert(`${allocCheck.message}\n\nEdit the change order and complete the Schedule of Values allocations first.`);
+      return;
+    }
     const verb = action === 'submit' ? 'Submit' : action === 'reject' ? 'Reject' : 'Approve';
     const extra = action === 'approve' && co.status === 'Pending Owner'
       ? ' Final approval will sync to Budget, SOV, Schedule, and Sage 300.'
@@ -605,7 +696,7 @@
   function renderDrawerCo(co) {
     document.getElementById('drawerTitle').textContent = `${co.number} — ${co.title || 'Change Order'}`;
     const allocs = (co.allocations || []).map(a =>
-      `<tr class="border-b border-zinc-800"><td class="py-2 font-mono text-xs">${esc(a.cost_code)}</td><td class="py-2">${esc(a.description || '')}</td><td class="py-2 text-right font-mono">${fmt(a.amount)}</td></tr>`
+      `<tr class="border-b border-zinc-800"><td class="py-2 font-mono text-xs">${esc(a.cost_code)}</td><td class="py-2 text-xs text-zinc-400">${esc(a.cost_type || '—')}</td><td class="py-2">${esc(a.description || '')}</td><td class="py-2 text-right font-mono">${fmt(a.amount)}</td></tr>`
     ).join('');
     const atts = (co.attachments || []).map(a =>
       `<a href="${attachmentHref(co.id, a)}" target="_blank" rel="noopener" class="text-emerald-400 hover:underline">${esc(a.original_name || a.filename)}</a>`
@@ -627,8 +718,8 @@
       </div>
       <div class="mt-4">
         <div class="text-xs text-zinc-500 uppercase tracking-wide mb-2">Cost code allocations</div>
-        <table class="w-full text-xs"><thead><tr class="text-zinc-500"><th class="text-left py-1">Code</th><th class="text-left py-1">Description</th><th class="text-right py-1">Amount</th></tr></thead>
-        <tbody>${allocs || '<tr><td colspan="3" class="py-3 text-zinc-500">No allocations</td></tr>'}</tbody></table>
+        <table class="w-full text-xs"><thead><tr class="text-zinc-500"><th class="text-left py-1">Code</th><th class="text-left py-1">Type</th><th class="text-left py-1">Description</th><th class="text-right py-1">Amount</th></tr></thead>
+        <tbody>${allocs || '<tr><td colspan="4" class="py-3 text-zinc-500">No allocations</td></tr>'}</tbody></table>
       </div>
       <div class="mt-4">
         <div class="text-xs text-zinc-500 uppercase tracking-wide mb-2">Attachments</div>
@@ -640,14 +731,15 @@
       ${showSubmit ? `<button type="button" onclick="CasePMChangeOrders.workflowCo(${co.id},'submit')" class="px-4 py-2 bg-amber-600 hover:bg-amber-500 rounded-md text-sm">Submit</button>` : ''}
       ${showApprove ? `<button type="button" onclick="CasePMChangeOrders.workflowCo(${co.id},'approve')" class="px-4 py-2 bg-emerald-600 hover:bg-emerald-500 rounded-md text-sm">Approve</button>
       <button type="button" onclick="CasePMChangeOrders.workflowCo(${co.id},'reject')" class="px-4 py-2 bg-zinc-800 hover:bg-zinc-700 rounded-md text-sm text-red-400">Reject</button>` : ''}
-      <button type="button" onclick="CasePMChangeOrders.editCo(${co.id})" class="px-4 py-2 bg-zinc-800 hover:bg-zinc-700 rounded-md text-sm">Edit</button>`;
+      <button type="button" onclick="CasePMChangeOrders.editCo(${co.id})" class="px-4 py-2 bg-zinc-800 hover:bg-zinc-700 rounded-md text-sm">Edit</button>
+      <button type="button" onclick="CasePMChangeOrders.deleteCo(${co.id})" class="px-4 py-2 bg-red-950 hover:bg-red-900 border border-red-800 rounded-md text-sm text-red-300">Delete</button>`;
     openDrawer();
   }
 
   function renderDrawerPco(p) {
     document.getElementById('drawerTitle').textContent = `${p.number} — ${p.title || 'PCO'}`;
     const allocs = (p.allocations || []).map(a =>
-      `<tr class="border-b border-zinc-800"><td class="py-2 font-mono text-xs">${esc(a.cost_code)}</td><td class="py-2">${esc(a.description || '')}</td><td class="py-2 text-right font-mono">${fmt(a.amount)}</td></tr>`
+      `<tr class="border-b border-zinc-800"><td class="py-2 font-mono text-xs">${esc(a.cost_code)}</td><td class="py-2 text-xs text-zinc-400">${esc(a.cost_type || '—')}</td><td class="py-2">${esc(a.description || '')}</td><td class="py-2 text-right font-mono">${fmt(a.amount)}</td></tr>`
     ).join('');
     document.getElementById('drawerBody').innerHTML = `
       <div class="space-y-2">
@@ -661,8 +753,8 @@
       </div>
       <div class="mt-4">
         <div class="text-xs text-zinc-500 uppercase tracking-wide mb-2">Allocations</div>
-        <table class="w-full text-xs"><thead><tr class="text-zinc-500"><th class="text-left py-1">Code</th><th class="text-left py-1">Description</th><th class="text-right py-1">Amount</th></tr></thead>
-        <tbody>${allocs || '<tr><td colspan="3" class="py-3 text-zinc-500">No allocations</td></tr>'}</tbody></table>
+        <table class="w-full text-xs"><thead><tr class="text-zinc-500"><th class="text-left py-1">Code</th><th class="text-left py-1">Type</th><th class="text-left py-1">Description</th><th class="text-right py-1">Amount</th></tr></thead>
+        <tbody>${allocs || '<tr><td colspan="4" class="py-3 text-zinc-500">No allocations</td></tr>'}</tbody></table>
       </div>`;
     document.getElementById('drawerActions').innerHTML = `
       ${p.status !== 'Promoted' && p.status !== 'Void' ? `<button type="button" onclick="CasePMChangeOrders.promotePco(${p.id})" class="px-4 py-2 bg-emerald-600 hover:bg-emerald-500 rounded-md text-sm">Promote to CO</button>` : ''}
@@ -673,6 +765,11 @@
   async function promotePco(id) {
     const p = state.pcos.find(x => x.id === id);
     if (!p) return;
+    const allocCheck = validateAllocations(p.allocations || [], { requireRows: true, requireAmount: true });
+    if (!allocCheck.ok) {
+      alert(`${allocCheck.message}\n\nEdit the PCO and complete cost code allocations before promoting.`);
+      return;
+    }
     if (!confirm(`Promote PCO ${p.number} to a formal Change Order?`)) return;
     try {
       const json = await api(`/api/pcos/${id}/promote`, { method: 'POST', body: '{}' });
@@ -704,6 +801,45 @@
       renderDrawerPco(p);
     } catch (err) {
       alert(err.message);
+    }
+  }
+
+  async function deleteCo(id) {
+    const co = state.changeOrders.find(c => c.id === id) || (state.drawerRecord?.id === id ? state.drawerRecord : null);
+    if (!co) return;
+    const approved = co.status === 'Approved';
+    const prompt = approved
+      ? `DELETE approved change order ${co.number}?\n\nThis is for testing only. Type DELETE to confirm.`
+      : `Delete change order ${co.number}?`;
+    if (approved) {
+      const typed = window.prompt(prompt);
+      if (typed !== 'DELETE') return;
+    } else if (!confirm(prompt)) {
+      return;
+    }
+    try {
+      const url = `/api/change-orders/${id}${approved ? '?force=1' : ''}`;
+      await api(url, { method: 'DELETE' });
+      closeDrawer();
+      await loadChangeOrders();
+      await loadDashboard();
+      toast(`${co.number} deleted`);
+    } catch (err) {
+      if (err.message && err.message.includes('force')) {
+        const typed = window.prompt(`${err.message}\n\nType DELETE to force-delete this approved CO for testing.`);
+        if (typed !== 'DELETE') return;
+        try {
+          await api(`/api/change-orders/${id}?force=1`, { method: 'DELETE' });
+          closeDrawer();
+          await loadChangeOrders();
+          await loadDashboard();
+          toast(`${co.number} deleted`);
+        } catch (e2) {
+          alert(e2.message);
+        }
+      } else {
+        alert(err.message);
+      }
     }
   }
 
@@ -923,10 +1059,10 @@
     saveModal,
     editCo: id => api(`/api/change-orders/${id}`).then(openModal.bind(null, 'co')).catch(e => alert(e.message)),
     editPco: id => api(`/api/pcos/${id}`).then(openModal.bind(null, 'pco')).catch(e => alert(e.message)),
-    viewCo, viewPco, workflowCo, closeDrawer, promotePco,
-    addAllocRow: () => { state.allocationRows.push({ cost_code: '', amount: 0, description: '' }); renderAllocationRows(); },
+    viewCo, viewPco, workflowCo, closeDrawer, promotePco, deleteCo,
+    addAllocRow: () => { state.allocationRows.push({ cost_code: '', cost_type: '', amount: 0, description: '' }); renderAllocationRows(); },
     removeAllocRow: idx => { state.allocationRows.splice(idx, 1); renderAllocationRows(); },
-    onCompanyChange, onContactChange, exportExcel, printLog, openSageLog,
+    onCompanyChange, onContactChange, onAllocCostCodeChange, updateAllocationTotal, exportExcel, printLog, openSageLog,
     newPco: () => openModal('pco', null),
     newCo: () => openModal('co', null),
   };

@@ -154,7 +154,7 @@ def normalize_cost_code(code):
     return str(code).replace(' ', '').replace('-', '').upper()
 
 
-def apply_co_to_contractor_sov(state_data, amount, cost_code=None):
+def apply_co_to_contractor_sov(state_data, amount, cost_code=None, description=None):
     """Add approved change order amount to contractor SOV co_amount."""
     lines = state_data.get('contractorSOV') or []
     if not isinstance(lines, list):
@@ -162,6 +162,7 @@ def apply_co_to_contractor_sov(state_data, amount, cost_code=None):
     target_norm = normalize_cost_code(cost_code)
     applied = 0.0
     remaining = float(amount or 0)
+    line_desc = (description or '').strip() or (f'Change Order — {cost_code}' if cost_code else 'Change Order')
 
     if target_norm:
         for line in lines:
@@ -174,7 +175,7 @@ def apply_co_to_contractor_sov(state_data, amount, cost_code=None):
             lines.append({
                 'id': int(datetime.utcnow().timestamp() * 1000),
                 'cost_code': cost_code,
-                'description': f'Change Order — {cost_code}',
+                'description': line_desc,
                 'original': 0,
                 'co_amount': remaining,
                 'billed_to_date': 0,
@@ -288,7 +289,12 @@ def sync_change_order_to_sov(
     total_applied = 0.0
     if allocations:
         for alloc in allocations:
-            state, applied = apply_co_to_contractor_sov(state, alloc.amount, alloc.cost_code)
+            state, applied = apply_co_to_contractor_sov(
+                state,
+                alloc.amount,
+                alloc.cost_code,
+                getattr(alloc, 'description', None),
+            )
             total_applied += applied
     else:
         state, applied = apply_co_to_contractor_sov(state, co.amount, getattr(co, 'cost_code', None))
