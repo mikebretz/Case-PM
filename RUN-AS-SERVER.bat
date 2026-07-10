@@ -49,7 +49,10 @@ echo Checking Windows Firewall...
 netsh advfirewall firewall show rule name="Case PM Server (TCP 5000)" >nul 2>&1
 if errorlevel 1 (
     echo.
-    echo NOTE: Firewall rule not found. For LAN access, run ALLOW-REMOTE-ACCESS.bat once.
+    echo *** FIREWALL NOT CONFIGURED ***
+    echo Other computers will get "connection refused" until you run:
+    echo   ALLOW-REMOTE-ACCESS.bat   ^(one time, as admin^)
+    echo Or use REMOTE-LOGIN-SETUP.bat to do everything automatically.
     echo.
 )
 
