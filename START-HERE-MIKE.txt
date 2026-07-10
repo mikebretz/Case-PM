@@ -1,0 +1,52 @@
+START HERE - YOU DO NOT COMMIT ANYTHING ON GITHUB
+==================================================
+
+The fixes are ALREADY committed on GitHub by Cursor.
+YOU do not click Commit on the GitHub website.
+YOU download the code to your PC.
+
+
+HOW TO KNOW YOU GOT THE UPDATE
+-------------------------------
+After restarting Case PM, browser console must say:
+
+  Case PM v57.0
+
+If it still says v56.0, you do not have the update yet.
+
+
+EASIEST WAY (if git works on your PC)
+--------------------------------------
+1. Close Case PM
+2. Double-click: MIKE-DOWNLOAD-UPDATES.bat
+3. Double-click: run.bat
+4. Ctrl+F5 in browser
+5. Check console for v57.0
+
+
+IF YOU DON'T HAVE GIT
+---------------------
+1. Go to: https://github.com/mikebretz/Case-PM
+2. Click the branch dropdown (says "main")
+3. Type and select: cursor/mike-download-this-ab10
+4. Click green "Code" button
+5. Click "Download ZIP"
+6. Unzip to a new folder
+7. Copy these from your OLD Case PM folder into the NEW one:
+     - instance  (folder - your database)
+     - uploads   (folder - your files)
+8. Run run.bat from the NEW folder
+
+
+GITHUB BRANCH TO USE
+--------------------
+  cursor/mike-download-this-ab10
+
+Direct link:
+  https://github.com/mikebretz/Case-PM/tree/cursor/mike-download-this-ab10
+
+
+WHAT THIS UPDATE FIXES
+----------------------
+  - Drawing set Export to Documents (Docs button)
+  - Snip preview with Save / Delete
