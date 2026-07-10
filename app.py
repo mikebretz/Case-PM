@@ -1366,6 +1366,7 @@ def projects_page():
     projects = Project.query.order_by(Project.created_at.desc()).all()
     companies = Company.query.order_by(Company.name).all()
     users = User.query.filter_by(status='Active').order_by(User.last_name, User.first_name).all()
+    companies_for_js = [{'name': c.name, 'type': c.type or ''} for c in companies]
     active_projects = [p for p in projects if p.status == 'Active']
     latest_sage_events = latest_sage_events_by_project(SageSyncEvent, [p.id for p in projects])
     sage_statuses = {
@@ -1389,6 +1390,7 @@ def projects_page():
         'projects.html',
         projects=projects,
         companies=companies,
+        companies_for_js=companies_for_js,
         users=users,
         stats=stats,
         sage_statuses=sage_statuses,
@@ -2877,7 +2879,72 @@ def create_schedule_task():
 @login_required
 def companies_page():
     companies = Company.query.order_by(Company.name.asc()).all()
-    return render_template('companies.html', companies=companies)
+    companies_for_js = [{'id': c.id, 'name': c.name, 'type': c.type or ''} for c in companies]
+    return render_template('companies.html', companies=companies, companies_for_js=companies_for_js)
+
+
+@app.route('/api/companies/sync', methods=['POST'])
+@login_required
+def api_sync_company():
+    """Upsert a company from the Companies UI (localStorage) into the database."""
+    body = request.get_json(silent=True) or {}
+    name = (body.get('company_name') or body.get('name') or '').strip()
+    if not name:
+        return jsonify({'error': 'Company name is required'}), 400
+
+    company_type = (body.get('company_type') or body.get('type') or 'Client').strip()
+    email = (body.get('primary_email') or body.get('email') or '').strip() or None
+    phone = (body.get('primary_phone') or body.get('phone') or '').strip() or None
+    tax_id = (body.get('tax_id') or '').strip() or None
+    license_number = (body.get('license_number') or '').strip() or None
+
+    from sqlalchemy import func
+    existing = Company.query.filter(func.lower(Company.name) == name.lower()).first()
+    if existing:
+        existing.type = company_type
+        if email:
+            existing.email = email
+        if phone:
+            existing.phone = phone
+        if tax_id:
+            existing.tax_id = tax_id
+        if license_number:
+            existing.license_number = license_number
+        company = existing
+    else:
+        company = Company(
+            name=name,
+            type=company_type,
+            email=email,
+            phone=phone,
+            tax_id=tax_id,
+            license_number=license_number,
+        )
+        db.session.add(company)
+
+    try:
+        db.session.commit()
+    except Exception as exc:
+        db.session.rollback()
+        return jsonify({'error': str(exc)}), 400
+
+    return jsonify({
+        'ok': True,
+        'company': {'id': company.id, 'name': company.name, 'type': company.type or ''},
+    })
+
+
+@app.route('/api/companies/clients', methods=['GET'])
+@login_required
+def api_client_companies():
+    """Client / Owner companies for project dropdowns."""
+    rows = Company.query.order_by(Company.name.asc()).all()
+    clients = []
+    for c in rows:
+        t = (c.type or '').lower()
+        if not t or 'client' in t or 'owner' in t:
+            clients.append({'id': c.id, 'name': c.name, 'type': c.type or ''})
+    return jsonify({'ok': True, 'clients': clients})
 
 
 @app.route('/companies/create', methods=['POST'])

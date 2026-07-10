@@ -388,6 +388,7 @@
 // ==================== FULL JAVASCRIPT ====================
 
 let companies = [];
+const CASEPM_SERVER_COMPANIES = {{ companies_for_js|tojson }};
 let originalCompanyData = null;
 let companyAuditLog = JSON.parse(localStorage.getItem('companyAuditLog') || '[]');
 
@@ -914,6 +915,7 @@ function saveCompany(e) {
     }
 
     localStorage.setItem('casepm_companies', JSON.stringify(companies));
+    syncCompanyToServer(newCompany);
     document.getElementById('companyModal').close();
     renderCompaniesTable(companies);
     showAlertModal("Success", "Company saved successfully.");
@@ -2115,9 +2117,51 @@ function showFullCompanyAuditLog() {
     modal.showModal();
 }
 
+function mergeServerCompaniesIntoLocal() {
+    if (!CASEPM_SERVER_COMPANIES?.length) return;
+    let changed = false;
+    CASEPM_SERVER_COMPANIES.forEach(sc => {
+        const exists = companies.some(c => (c.company_name || '').toLowerCase() === (sc.name || '').toLowerCase());
+        if (!exists && sc.name) {
+            companies.push({
+                id: sc.id || Date.now() + Math.floor(Math.random() * 1000),
+                company_name: sc.name,
+                company_type: sc.type || 'Client',
+                status: 'Active',
+                contacts: [],
+                cois: [],
+                primary_contact_user_id: null,
+            });
+            changed = true;
+        }
+    });
+    if (changed) localStorage.setItem('casepm_companies', JSON.stringify(companies));
+}
+
+async function syncCompanyToServer(company) {
+    if (!company?.company_name) return;
+    try {
+        const res = await fetch('/api/companies/sync', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            credentials: 'same-origin',
+            body: JSON.stringify(company),
+        });
+        if (!res.ok) {
+            const json = await res.json().catch(() => ({}));
+            console.warn('Company sync failed:', json.error || res.status);
+        }
+    } catch (e) {
+        console.warn('Company sync to server failed', e);
+    }
+}
+
 function initializeCompaniesPage() {
     const saved = localStorage.getItem('casepm_companies');
     if (saved) companies = JSON.parse(saved);
+
+    mergeServerCompaniesIntoLocal();
+    companies.forEach(c => syncCompanyToServer(c));
 
     renderCompaniesTable(companies);
     updateSummaryCards();
