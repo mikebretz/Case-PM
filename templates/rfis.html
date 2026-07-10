@@ -40,9 +40,17 @@
   }
   #rfiDetailDrawer.open { transform: translateX(0); }
   #rfiPrintSheet { display: none; }
-  #rfiAttachmentDropZone.rfi-drop-active {
+  #rfiAttachmentDropZone.rfi-drop-active,
+  #rfiDrawerDropZone.rfi-drop-active {
     border-color: #34d399;
-    background: rgba(16, 185, 129, 0.08);
+    background: rgba(16, 185, 129, 0.12);
+    transform: scale(1.01);
+  }
+  .rfi-attachments-card {
+    background: linear-gradient(180deg, rgba(16, 185, 129, 0.08) 0%, rgba(24, 24, 27, 0.4) 100%);
+    border: 1px solid rgba(52, 211, 153, 0.35);
+    border-radius: 0.75rem;
+    padding: 1rem 1.25rem;
   }
   .rfi-attachment-row {
     display: flex;
@@ -137,11 +145,12 @@
                     <th class="px-4 py-3 text-center text-zinc-400 font-medium">Status</th>
                     <th class="px-4 py-3 text-center text-zinc-400 font-medium">Ball in Court</th>
                     <th class="px-4 py-3 text-center text-zinc-400 font-medium">Due</th>
+                    <th class="px-4 py-3 text-center text-zinc-400 font-medium w-16" title="Attachments"><i class="fa-solid fa-paperclip"></i></th>
                     <th class="px-4 py-3 text-center text-zinc-400 font-medium w-24">Actions</th>
                 </tr>
             </thead>
             <tbody id="rfiTableBody" class="divide-y divide-zinc-800">
-                <tr><td colspan="11" class="px-6 py-12 text-center text-zinc-500">Loading RFIs…</td></tr>
+                <tr><td colspan="12" class="px-6 py-12 text-center text-zinc-500">Loading RFIs…</td></tr>
             </tbody>
         </table>
     </div>
@@ -155,6 +164,7 @@
     <div id="rfiDrawerContent"></div>
 </div>
 <div id="rfiDrawerBackdrop" class="fixed inset-0 bg-black/40 z-[54] hidden" onclick="CasePMRfis.closeDrawer()"></div>
+<input type="file" id="rfiDrawerAttachmentInput" multiple class="hidden">
 
 <!-- BOTTOM BAR -->
 <div class="fixed bottom-0 left-56 right-0 bg-zinc-900 border-t border-zinc-700 px-6 py-2 text-xs text-zinc-400 flex items-center justify-between z-[60]">
@@ -169,7 +179,12 @@
 <dialog id="rfiModal" class="modal rounded-md w-full max-w-4xl p-0 text-white" style="background:#18181b;border:1px solid #3f3f46;">
     <div class="p-6 max-h-[90vh] overflow-auto">
         <div class="flex justify-between items-center mb-5">
-            <h2 id="rfiModalTitle" class="text-xl font-semibold">New RFI</h2>
+            <div class="flex items-center gap-3 min-w-0">
+                <h2 id="rfiModalTitle" class="text-xl font-semibold">New RFI</h2>
+                <span id="rfiAttachmentCountBadge" class="hidden items-center gap-1 px-2 py-0.5 rounded-full text-xs bg-emerald-900/50 text-emerald-300 border border-emerald-700/50">
+                    <i class="fa-solid fa-paperclip text-[10px]"></i><span id="rfiAttachmentCountText">0</span>
+                </span>
+            </div>
             <button type="button" onclick="document.getElementById('rfiModal').close()" class="text-zinc-400 hover:text-white text-2xl">&times;</button>
         </div>
 
@@ -204,10 +219,49 @@
 
         <div class="mb-4">
             <label class="block text-sm text-zinc-400 mb-1">Question / Description</label>
-            <textarea id="modalRfiQuestion" rows="4" class="w-full bg-zinc-800 border border-zinc-700 rounded-md px-4 py-2 text-sm resize-y" placeholder="Detailed question for the design team…"></textarea>
+            <textarea id="modalRfiQuestion" rows="3" class="w-full bg-zinc-800 border border-zinc-700 rounded-md px-4 py-2 text-sm resize-y" placeholder="Detailed question for the design team…"></textarea>
         </div>
 
-        <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+        <div id="rfiAttachmentsSection" class="mb-5 rfi-attachments-card">
+            <div class="flex items-start justify-between gap-3 mb-3">
+                <div>
+                    <div class="flex items-center gap-2 text-sm font-semibold text-emerald-300">
+                        <i class="fa-solid fa-paperclip"></i>
+                        <span>Attachments</span>
+                    </div>
+                    <p class="text-xs text-zinc-400 mt-1">Add sketches, photos, or specs — drag files here, upload from your computer, or pick from Documents.</p>
+                </div>
+                <span id="rfiAttachmentHint" class="text-xs text-zinc-500 text-right shrink-0 max-w-[180px]">Saved to Documents › RFIs</span>
+            </div>
+            <div id="rfiAttachmentDropZone"
+                 class="border-2 border-dashed border-emerald-700/50 hover:border-emerald-500 transition-all rounded-xl p-5 text-center cursor-pointer bg-zinc-950/60">
+                <div class="flex flex-col sm:flex-row items-center justify-center gap-4">
+                    <div class="text-center sm:text-left">
+                        <i class="fa-solid fa-cloud-arrow-up text-4xl text-emerald-500/80 mb-2"></i>
+                        <div class="text-sm text-zinc-200 font-medium">Drop files here</div>
+                        <div class="text-xs text-zinc-500 mt-0.5">PDF · images · Word · Excel</div>
+                    </div>
+                    <div class="flex flex-col gap-2 w-full sm:w-auto">
+                        <button type="button" id="rfiBrowseFilesBtn" class="w-full px-4 py-2.5 text-sm bg-zinc-800 hover:bg-zinc-700 border border-zinc-600 rounded-lg font-medium">
+                            <i class="fa-solid fa-upload mr-2 text-emerald-400"></i>Upload from computer
+                        </button>
+                        <button type="button" id="rfiBrowseDocumentsBtn" class="w-full px-4 py-2.5 text-sm bg-sky-900/50 hover:bg-sky-800/70 border border-sky-600/50 rounded-lg text-sky-100 font-medium">
+                            <i class="fa-solid fa-folder-tree mr-2"></i>Browse Documents
+                        </button>
+                    </div>
+                </div>
+            </div>
+            <input type="file" id="rfiAttachmentInput" multiple class="hidden">
+            <div id="rfiAttachmentList" class="mt-3 space-y-2"></div>
+        </div>
+
+        <details id="rfiDetailsSection" class="mb-4 group">
+            <summary class="cursor-pointer list-none flex items-center gap-2 text-sm text-zinc-400 hover:text-zinc-200 mb-3 select-none">
+                <i class="fa-solid fa-chevron-right text-xs transition-transform group-open:rotate-90"></i>
+                <span>More RFI details</span>
+                <span class="text-zinc-600 text-xs">(parties, drawing, spec, impacts…)</span>
+            </summary>
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4 pt-1">
             <div>
                 <label class="block text-sm text-zinc-400 mb-1">From (Submitted By)</label>
                 <input type="text" id="modalRfiFrom" class="w-full bg-zinc-800 border border-zinc-700 rounded-md px-4 py-2 text-sm">
@@ -283,35 +337,13 @@
             </div>
         </div>
 
-        <div class="mb-6">
+        <div class="mb-4">
             <label class="block text-sm text-zinc-400 mb-1">Notes / Additional Information</label>
             <textarea id="modalRfiNotes" rows="2" class="w-full bg-zinc-800 border border-zinc-700 rounded-md px-4 py-2 text-sm resize-y"></textarea>
         </div>
+        </details>
 
-        <div class="mb-6 pt-4 border-t border-zinc-700">
-            <div class="flex items-center justify-between mb-2">
-                <label class="block text-sm text-zinc-400">Attachments</label>
-                <span id="rfiAttachmentHint" class="text-xs text-zinc-500">Uploads are filed to Documents › RFIs</span>
-            </div>
-            <div id="rfiAttachmentDropZone"
-                 class="border-2 border-dashed border-zinc-700 hover:border-emerald-600 transition-colors rounded-xl p-6 text-center cursor-pointer bg-zinc-950/50">
-                <i class="fa-solid fa-cloud-arrow-up text-3xl text-zinc-500 mb-2"></i>
-                <div class="text-sm text-zinc-300">Drag &amp; drop files here, or <span class="text-emerald-400">click to browse</span></div>
-                <div class="text-xs text-zinc-500 mt-1">PDF, images, Office files, and more</div>
-                <div class="flex flex-wrap items-center justify-center gap-2 mt-4">
-                    <button type="button" id="rfiBrowseFilesBtn" class="px-3 py-1.5 text-xs bg-zinc-800 hover:bg-zinc-700 border border-zinc-600 rounded-md">
-                        <i class="fa-solid fa-folder-open mr-1"></i>Choose files
-                    </button>
-                    <button type="button" id="rfiBrowseDocumentsBtn" class="px-3 py-1.5 text-xs bg-sky-900/60 hover:bg-sky-800 border border-sky-700 rounded-md text-sky-200">
-                        <i class="fa-solid fa-file-lines mr-1"></i>From Documents
-                    </button>
-                </div>
-            </div>
-            <input type="file" id="rfiAttachmentInput" multiple class="hidden">
-            <div id="rfiAttachmentList" class="mt-3 space-y-2"></div>
-        </div>
-
-        <div class="flex flex-wrap gap-2 pt-2 border-t border-zinc-700">
+        <div class="flex flex-wrap gap-2 pt-2 border-t border-zinc-700 sticky bottom-0 bg-[#18181b] pb-1">
             <button type="button" onclick="document.getElementById('rfiModal').close()" class="px-4 py-2 bg-zinc-800 hover:bg-zinc-700 rounded-md text-sm">Cancel</button>
             <button type="button" onclick="CasePMRfis.saveModal()" class="px-4 py-2 bg-zinc-700 hover:bg-zinc-600 rounded-md text-sm">Save Draft</button>
             <button type="button" onclick="CasePMRfis.saveAsOpen()" class="px-5 py-2 bg-emerald-600 hover:bg-emerald-500 rounded-md text-sm font-semibold">Save &amp; Open</button>
