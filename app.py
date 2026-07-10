@@ -38,8 +38,14 @@ def _acting_user_id(explicit_user_id=None):
         from flask import has_request_context
         if not has_request_context():
             return None
-        if current_user.is_authenticated:
-            return current_user.id
+        user = current_user._get_current_object() if hasattr(current_user, '_get_current_object') else current_user
+    except Exception:
+        return None
+    if user is None:
+        return None
+    try:
+        if getattr(user, 'is_authenticated', False):
+            return user.id
     except Exception:
         return None
     return None
@@ -3265,7 +3271,7 @@ def _user_display_name(user_id):
     return name or user.email
 
 
-def _document_dict_with_user(doc):
+def _document_dict_with_user(doc, actor_id=None):
     from document_persistence import document_to_dict
 
     project = Project.query.get(doc.project_id)
@@ -3275,16 +3281,24 @@ def _document_dict_with_user(doc):
         project.name if project else None,
         folder.name if folder else None,
         _user_display_name(doc.uploaded_by_id),
-        checkout=_document_checkout_fields(doc),
+        checkout=_document_checkout_fields(doc, actor_id=actor_id),
     )
 
 
-def _document_checkout_fields(doc):
-    uid = current_user.id if current_user.is_authenticated else None
-    role = getattr(current_user, 'role', '') or ''
+def _document_checkout_fields(doc, actor_id=None):
+    uid = _acting_user_id(actor_id)
+    role = ''
+    if uid:
+        user = User.query.get(uid)
+        role = getattr(user, 'role', '') if user else ''
     co_id = getattr(doc, 'checked_out_by_id', None)
     folder = DocumentFolder.query.get(doc.folder_id) if doc.folder_id else None
-    can_manage = role == 'Admin' or (folder and _folder_access(folder, 'manage'))
+    can_manage = role == 'Admin'
+    if not can_manage and folder and uid:
+        if getattr(folder, 'is_system', False):
+            can_manage = False
+        elif folder.created_by_id == uid:
+            can_manage = True
     is_system = bool(doc.is_system_locked)
     return {
         'checked_out_by_id': co_id,
@@ -3315,13 +3329,13 @@ def _document_edit_lock_error(doc):
     return None
 
 
-def _log_doc_activity(project_id, action, document_id=None, folder_id=None, detail=None):
+def _log_doc_activity(project_id, action, document_id=None, folder_id=None, detail=None, actor_id=None):
     try:
         act = DocumentActivity(
             project_id=int(project_id),
             document_id=document_id,
             folder_id=folder_id,
-            user_id=current_user.id if current_user.is_authenticated else None,
+            user_id=_acting_user_id(actor_id),
             action=action,
             detail_json=json.dumps(detail or {}),
             created_at=datetime.utcnow(),
@@ -3623,9 +3637,9 @@ def _save_document_bytes(
     )
     db.session.add(doc)
     db.session.commit()
-    _log_doc_activity(project_id, 'upload', document_id=doc.id, folder_id=doc.folder_id, detail={'name': doc.name})
+    _log_doc_activity(project_id, 'upload', document_id=doc.id, folder_id=doc.folder_id, detail={'name': doc.name}, actor_id=actor_id)
     db.session.commit()
-    return _document_dict_with_user(doc)
+    return _document_dict_with_user(doc, actor_id=actor_id)
 
 
 def _find_duplicate_document(project_id: int, content_hash: str, exclude_id: int | None = None):
