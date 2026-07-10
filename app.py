@@ -29,6 +29,21 @@ app.config['SQLALCHEMY_ENGINE_OPTIONS'] = {
 from db_sqlite import commit_with_retry, register_sqlite_pragmas
 register_sqlite_pragmas()
 
+
+def _acting_user_id(explicit_user_id=None):
+    """Resolve user id for background jobs (no Flask request / current_user)."""
+    if explicit_user_id is not None:
+        return explicit_user_id
+    try:
+        from flask import has_request_context
+        if not has_request_context():
+            return None
+        if current_user.is_authenticated:
+            return current_user.id
+    except Exception:
+        return None
+    return None
+
 db = SQLAlchemy(app)
 app.config['UPLOAD_FOLDER'] = 'uploads'
 app.config['MAX_CONTENT_LENGTH'] = 200 * 1024 * 1024  # 200MB for large drawing sets
@@ -3475,6 +3490,7 @@ def _archive_drawing_set_to_documents(project_id, set_name, source_pdf_path, cre
                     'source': 'drawing_set_upload',
                     'is_full_set': True,
                 },
+                uploaded_by_id=uploaded_by_id,
             )
             saved['full_set'] = doc
             saved['documents'].append(doc)
@@ -3503,6 +3519,7 @@ def _archive_drawing_set_to_documents(project_id, set_name, source_pdf_path, cre
                     'source': 'drawing_set_upload',
                     'revision_label': item.get('revision_label'),
                 },
+                uploaded_by_id=uploaded_by_id,
             )
             saved['documents'].append(doc)
         except ValueError:
@@ -3554,13 +3571,15 @@ def _save_document_bytes(
     source_metadata=None,
     tags=None,
     custom_metadata=None,
+    uploaded_by_id=None,
 ):
     from document_features import file_content_hash, project_document_settings, retention_until_from_years, parse_tags
     from document_persistence import document_folder, ensure_system_folders, resolve_folder_by_key
 
     ensure_project_schema()
     upload_root = app.config.get('UPLOAD_FOLDER', 'uploads')
-    ensure_system_folders(db, DocumentFolder, project_id, current_user.id if current_user.is_authenticated else None, Document=Document)
+    actor_id = _acting_user_id(uploaded_by_id)
+    ensure_system_folders(db, DocumentFolder, project_id, actor_id, Document=Document)
     if not folder_id:
         default_folder = resolve_folder_by_key(db, DocumentFolder, project_id, 'my-files')
         folder_id = default_folder.id if default_folder else None
@@ -3594,7 +3613,7 @@ def _save_document_bytes(
         source_drawing_id=int(source_drawing_id) if source_drawing_id else None,
         source_sheet=source_sheet,
         source_metadata_json=json.dumps(source_metadata) if source_metadata else None,
-        uploaded_by_id=current_user.id if current_user.is_authenticated else None,
+        uploaded_by_id=actor_id,
         created_at=datetime.utcnow(),
         updated_at=datetime.utcnow(),
         content_hash=content_hash,
