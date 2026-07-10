@@ -274,7 +274,7 @@
             <button type="button" class="project-tab-btn px-4 py-3 text-sm font-medium text-zinc-400 whitespace-nowrap" data-tab="other" onclick="switchProjectTab('other')">Other</button>
         </div>
 
-        <form id="projectForm" method="POST" class="flex-1 overflow-auto">
+        <form id="projectForm" method="POST" class="flex-1 overflow-auto" novalidate>
             <div class="p-6 space-y-4">
                 <div id="projectTab-general" class="project-tab-panel">
                     <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
@@ -297,6 +297,16 @@
                         <label class="project-field-label">Project Name <span class="text-red-400">*</span></label>
                         <input type="text" name="name" id="fld_name" class="project-field-input" required>
                     </div>
+                    <div class="mt-4">
+                        <label class="project-field-label">Client / Owner <span class="text-red-400">*</span></label>
+                        <select name="client" id="fld_client" class="project-field-input" required>
+                            <option value="">Select client...</option>
+                            {% for company in companies %}
+                            <option value="{{ company.name }}">{{ company.name }}</option>
+                            {% endfor %}
+                        </select>
+                        <p class="text-[10px] text-zinc-500 mt-1">Add companies under <a href="{{ url_for('companies_page') }}" class="text-sky-400 hover:underline">Companies</a> if none appear here.</p>
+                    </div>
 
                     <div class="mt-4 border border-zinc-700 rounded-lg p-4 bg-zinc-950/40">
                         <div class="text-sm font-medium text-white mb-2"><i class="fa-solid fa-image text-sky-400 mr-2"></i>Project Logo</div>
@@ -307,7 +317,7 @@
                                 <span id="projectLogoPlaceholder" class="text-[10px] text-zinc-600 text-center px-1">No logo</span>
                             </div>
                             <div class="flex-1 min-w-[200px]">
-                                <div id="projectLogoStatus" class="text-xs text-zinc-500 mb-2">Save project first, then choose an image file.</div>
+                                <div id="projectLogoStatus" class="text-xs text-zinc-500 mb-2">Choose a logo now — it uploads when you save the project.</div>
                                 <div class="flex flex-wrap gap-2 items-center">
                                     <input type="file" id="projectLogoFile" accept="image/png,image/jpeg,image/jpg,image/gif,image/webp,image/svg+xml" class="text-xs text-zinc-400 file:mr-3 file:py-1.5 file:px-3 file:rounded file:border-0 file:bg-zinc-700 file:text-zinc-200">
                                     <button type="button" id="deleteLogoBtn" onclick="deleteProjectLogo()" class="hidden px-4 py-2 bg-red-900/50 hover:bg-red-800 rounded-md text-xs text-red-300">Remove</button>
@@ -693,15 +703,6 @@
                 <div id="projectTab-team" class="project-tab-panel hidden">
                     <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
                         <div>
-                            <label class="project-field-label">Client / Owner <span class="text-red-400">*</span></label>
-                            <select name="client" id="fld_client" class="project-field-input" required>
-                                <option value="">Select client...</option>
-                                {% for company in companies %}
-                                <option value="{{ company.name }}">{{ company.name }}</option>
-                                {% endfor %}
-                            </select>
-                        </div>
-                        <div>
                             <label class="project-field-label">Project Manager</label>
                             <select name="project_manager" id="fld_project_manager" class="project-field-input">
                                 <option value="">Select PM...</option>
@@ -916,6 +917,7 @@ function openProjectModal(mode, projectId) {
         submitBtn.textContent = 'Create Project';
         form.action = "{{ url_for('create_project') }}";
         form.reset();
+        pendingProjectLogoFile = null;
         document.getElementById('fld_number').value = "PRJ-{{ '%03d' % (projects|length + 1) }}";
         document.getElementById('fld_country').value = 'United States';
         document.getElementById('fld_status').value = 'Active';
@@ -989,11 +991,40 @@ function resetProjectLogoUI() {
     const preview = document.getElementById('projectLogoPreview');
     const placeholder = document.getElementById('projectLogoPlaceholder');
     const fileInput = document.getElementById('projectLogoFile');
-    if (statusEl) statusEl.textContent = 'Save project first, then choose an image file.';
+    if (statusEl) statusEl.textContent = 'Choose a logo now — it uploads when you save the project.';
     if (deleteBtn) deleteBtn.classList.add('hidden');
-    if (fileInput) fileInput.disabled = true;
+    if (fileInput) {
+        fileInput.disabled = false;
+        fileInput.onchange = onProjectLogoFileChosen;
+    }
     if (preview) { preview.src = ''; preview.classList.add('hidden'); }
     if (placeholder) placeholder.classList.remove('hidden');
+}
+
+let pendingProjectLogoFile = null;
+
+function onProjectLogoFileChosen() {
+    const fileInput = document.getElementById('projectLogoFile');
+    const preview = document.getElementById('projectLogoPreview');
+    const placeholder = document.getElementById('projectLogoPlaceholder');
+    const statusEl = document.getElementById('projectLogoStatus');
+    const file = fileInput?.files?.[0];
+    if (!file) {
+        pendingProjectLogoFile = null;
+        return;
+    }
+    pendingProjectLogoFile = file;
+    if (preview) {
+        preview.src = URL.createObjectURL(file);
+        preview.classList.remove('hidden');
+    }
+    if (placeholder) placeholder.classList.add('hidden');
+    if (statusEl) {
+        statusEl.innerHTML = editingProjectId
+            ? `<span class="text-emerald-400">Ready:</span> ${file.name} — click Save or upload now`
+            : `<span class="text-amber-300">Ready:</span> ${file.name} — will upload when you create the project`;
+    }
+    if (editingProjectId) uploadProjectLogo();
 }
 
 function setContractStatusUI(json) {
@@ -1051,9 +1082,7 @@ async function loadProjectLogoStatus(projectId) {
     if (!projectId) { resetProjectLogoUI(); return; }
     if (fileInput) {
         fileInput.disabled = false;
-        fileInput.onchange = () => {
-            if (fileInput.files?.length) uploadProjectLogo();
-        };
+        fileInput.onchange = onProjectLogoFileChosen;
     }
     try {
         const res = await fetch(`/api/projects/${projectId}/logo`, { credentials: 'same-origin' });
@@ -1074,27 +1103,31 @@ async function loadProjectLogoStatus(projectId) {
     }
 }
 
-async function uploadProjectLogo() {
-    if (!editingProjectId) {
-        alert('Save the project first.');
-        return;
+async function uploadProjectLogo(projectId) {
+    const targetId = projectId || editingProjectId;
+    if (!targetId) {
+        return false;
     }
-    const fileInput = document.getElementById('projectLogoFile');
-    if (!fileInput?.files?.length) return;
+    const file = pendingProjectLogoFile || document.getElementById('projectLogoFile')?.files?.[0];
+    if (!file) return false;
     const fd = new FormData();
-    fd.append('file', fileInput.files[0]);
+    fd.append('file', file);
     try {
-        const res = await fetch(`/api/projects/${editingProjectId}/logo`, { method: 'POST', body: fd, credentials: 'same-origin' });
+        const res = await fetch(`/api/projects/${targetId}/logo`, { method: 'POST', body: fd, credentials: 'same-origin' });
         const json = await res.json();
         if (!res.ok) throw new Error(json.error || 'Upload failed');
-        await loadProjectLogoStatus(editingProjectId);
-        fileInput.value = '';
-        if (parseInt(window.CASEPM_ACTIVE_PROJECT_ID, 10) === editingProjectId && typeof refreshHeaderProjectLogo === 'function') {
+        pendingProjectLogoFile = null;
+        editingProjectId = targetId;
+        await loadProjectLogoStatus(targetId);
+        const fileInput = document.getElementById('projectLogoFile');
+        if (fileInput) fileInput.value = '';
+        if (parseInt(window.CASEPM_ACTIVE_PROJECT_ID, 10) === targetId && typeof refreshHeaderProjectLogo === 'function') {
             await refreshHeaderProjectLogo();
         }
-        CasePMDialog.alert('Project logo saved.', 'success');
+        return true;
     } catch (e) {
         CasePMDialog.alert(e.message, 'error');
+        return false;
     }
 }
 
@@ -1266,9 +1299,85 @@ document.addEventListener('keydown', e => {
     if (e.key === 'Escape') closeProjectModal();
 });
 
+function validateProjectFormFields() {
+    const nameEl = document.getElementById('fld_name');
+    const clientEl = document.getElementById('fld_client');
+    const name = nameEl?.value?.trim();
+    if (!name) {
+        switchProjectTab('general');
+        nameEl?.focus();
+        CasePMDialog.alert('Project name is required.', 'error');
+        return false;
+    }
+    const client = clientEl?.value?.trim();
+    if (!client) {
+        switchProjectTab('general');
+        clientEl?.focus();
+        CasePMDialog.alert('Please select a client / owner. Add a company first if the list is empty.', 'error');
+        return false;
+    }
+    return true;
+}
+
+async function submitProjectForm(form) {
+    const nameEl = document.getElementById('fld_name');
+    if (!validateProjectFormFields()) return;
+    const numberOk = await validateProjectNumber(true);
+    if (!numberOk) {
+        switchProjectTab('general');
+        document.getElementById('fld_number')?.focus();
+        return;
+    }
+
+    const submitBtn = document.getElementById('projectFormSubmitBtn');
+    if (submitBtn) submitBtn.disabled = true;
+    const projectName = nameEl?.value?.trim() || 'Project';
+
+    try {
+        if (projectModalMode === 'create') {
+            const res = await fetch(form.action, {
+                method: 'POST',
+                body: new FormData(form),
+                credentials: 'same-origin',
+                headers: { 'X-Requested-With': 'XMLHttpRequest' },
+            });
+            const json = await res.json().catch(() => ({}));
+            if (!res.ok) throw new Error(json.error || 'Could not create project.');
+            editingProjectId = json.project_id || json.project?.id;
+            projectModalMode = 'edit';
+            if (editingProjectId && pendingProjectLogoFile) {
+                await uploadProjectLogo(editingProjectId);
+            }
+            CasePMDialog.alert(`Project "${json.project?.name || projectName}" created successfully!`, 'success');
+            closeProjectModal();
+            window.location.reload();
+            return;
+        }
+
+        const res = await fetch(form.action, {
+            method: 'POST',
+            body: new FormData(form),
+            credentials: 'same-origin',
+            headers: { 'X-Requested-With': 'XMLHttpRequest' },
+        });
+        const json = await res.json().catch(() => ({}));
+        if (!res.ok) throw new Error(json.error || 'Could not save project.');
+        if (editingProjectId && pendingProjectLogoFile) {
+            await uploadProjectLogo(editingProjectId);
+        }
+        CasePMDialog.alert('Project saved successfully!', 'success');
+        closeProjectModal();
+        window.location.reload();
+    } catch (e) {
+        CasePMDialog.alert(e.message, 'error');
+    } finally {
+        if (submitBtn) submitBtn.disabled = false;
+    }
+}
+
 document.getElementById('projectForm')?.addEventListener('submit', async (e) => {
-    const ok = await validateProjectNumber(true);
-    if (!ok) e.preventDefault();
+    e.preventDefault();
+    await submitProjectForm(e.target);
 });
 </script>
 {% endblock %}
