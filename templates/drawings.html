@@ -2,7 +2,7 @@
 
 {% block content %}
 <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
-<script src="{{ url_for('static', filename='js/drawings-app.js') }}?v=20260710d"></script>
+<script src="{{ url_for('static', filename='js/drawings-app.js') }}?v=20260710e"></script>
 
 <style>
   #mainContent:has(.draw-page) {
@@ -554,6 +554,7 @@
     </select>
     <button type="button" id="btnSelectSheets" onclick="CasePMDrawings.toggleSelectionMode()" class="px-2 py-1.5 bg-zinc-800 hover:bg-zinc-700 rounded-md text-xs h-[32px]" title="Select multiple sheets to delete"><i class="fa-regular fa-square-check mr-1"></i><span id="btnSelectSheetsLabel">Select sheets</span></button>
     <button type="button" onclick="CasePMDrawings.openSetsModal()" class="px-2 py-1.5 bg-zinc-800 hover:bg-zinc-700 rounded-md text-xs h-[32px]" title="Manage drawing sets"><i class="fa-solid fa-layer-group mr-1"></i>Sets</button>
+    <button type="button" onclick="CasePMDrawings.openDrawingSetsInDocuments()" class="px-2 py-1.5 bg-zinc-800 hover:bg-zinc-700 rounded-md text-xs h-[32px] hidden md:inline-flex" title="Open Drawing Sets in Documents"><i class="fa-solid fa-folder-tree mr-1"></i>Set Files</button>
     <button type="button" onclick="CasePMDrawings.openSubstituteModal()" class="px-2 py-1.5 bg-zinc-800 hover:bg-zinc-700 rounded-md text-xs h-[32px]" title="Substitute pages"><i class="fa-solid fa-shuffle"></i></button>
     <button type="button" onclick="CasePMDrawings.openUploadModal()" class="px-3 py-1.5 bg-white text-zinc-900 hover:bg-zinc-100 rounded-md text-xs font-semibold h-[32px]"><i class="fa-solid fa-upload mr-1"></i>Upload</button>
 </div>

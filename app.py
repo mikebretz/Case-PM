@@ -3432,6 +3432,96 @@ def _notify_documents_team(project_id, title, message, link=None):
     notify_documents_team(db, User, int(project_id), title=title, message=message, link=link)
 
 
+def _archive_drawing_set_to_documents(project_id, set_name, source_pdf_path, created, uploaded_by_id):
+    """Save uploaded drawing set PDFs into Documents › Drawings › Drawing Sets › {set_name}/."""
+    from document_persistence import ensure_document_schema, resolve_folder_by_key, get_or_create_child_folder, ensure_system_folders
+    from drawing_persistence import resolve_drawing_file_path, current_revision_for_drawing
+
+    if not created or not (set_name or '').strip():
+        return None
+
+    ensure_project_schema()
+    ensure_document_schema(db.engine, db)
+    ensure_system_folders(db, DocumentFolder, int(project_id), uploaded_by_id, Document=Document)
+    parent = resolve_folder_by_key(db, DocumentFolder, int(project_id), 'drawing-sets')
+    if not parent:
+        return None
+
+    set_folder = get_or_create_child_folder(
+        db, DocumentFolder, int(project_id), parent.id, set_name.strip(), uploaded_by_id,
+    )
+    upload_root = app.config.get('UPLOAD_FOLDER')
+    saved = {
+        'folder_id': set_folder.id,
+        'folder_name': set_folder.name,
+        'documents_url': f'/documents?project_id={project_id}&folder_id={set_folder.id}',
+        'documents': [],
+        'full_set': None,
+    }
+    stamp = datetime.utcnow().strftime('%Y-%m-%d')
+
+    if source_pdf_path and os.path.isfile(source_pdf_path):
+        with open(source_pdf_path, 'rb') as fh:
+            full_bytes = fh.read()
+        full_name = f'{set_name.strip()} — Full Set ({stamp}).pdf'
+        try:
+            doc = _save_document_bytes(
+                int(project_id), full_bytes, full_name, os.path.basename(source_pdf_path),
+                'application/pdf', 'Drawing', set_folder.id, False,
+                None, None,
+                {
+                    'set_name': set_name,
+                    'mirrored_from_module': True,
+                    'source': 'drawing_set_upload',
+                    'is_full_set': True,
+                },
+            )
+            saved['full_set'] = doc
+            saved['documents'].append(doc)
+        except ValueError:
+            pass
+
+    for item in created:
+        drawing = Drawing.query.get(item['id'])
+        if not drawing:
+            continue
+        rev = current_revision_for_drawing(DrawingRevision, drawing)
+        path = resolve_drawing_file_path(rev.file_path if rev else None, upload_root)
+        if not path or not os.path.isfile(path):
+            continue
+        with open(path, 'rb') as fh:
+            sheet_bytes = fh.read()
+        sheet_label = f'{drawing.sheet_number or "Sheet"} — {drawing.title or set_name}'.strip(' —')
+        try:
+            doc = _save_document_bytes(
+                int(project_id), sheet_bytes, sheet_label, os.path.basename(path),
+                'application/pdf', 'Drawing', set_folder.id, False,
+                drawing.id, drawing.sheet_number,
+                {
+                    'set_name': set_name,
+                    'mirrored_from_module': True,
+                    'source': 'drawing_set_upload',
+                    'revision_label': item.get('revision_label'),
+                },
+            )
+            saved['documents'].append(doc)
+        except ValueError:
+            continue
+
+    if saved['documents']:
+        commit_with_retry(db.session)
+        try:
+            _notify_documents_team(
+                int(project_id),
+                'Drawing set saved to Documents',
+                f'"{set_name}" ({len(saved["documents"])} file(s)) is in Documents › Drawings › Drawing Sets › {set_name}.',
+                saved['documents_url'],
+            )
+        except Exception:
+            db.session.rollback()
+    return saved
+
+
 def _ensure_module_attachment_columns():
     from sqlalchemy import inspect, text
 
@@ -5267,6 +5357,7 @@ def api_detect_drawing_scale(drawing_id):
 @login_required
 def api_drawing_sets():
     """List drawing set names for compare workflows."""
+    from document_persistence import resolve_folder_by_key
     project_id = request.args.get('project_id', type=int) or get_current_project_id()
     if not project_id:
         return jsonify({'error': 'project_id required'}), 400
@@ -5307,6 +5398,30 @@ def api_drawing_sets():
             sets[name]['drawing_ids'].append(d.id)
     for name in sets:
         sets[name]['sheet_count'] = drawing_sets.get(name, len(sets[name]['drawing_ids']))
+    parent = resolve_folder_by_key(db, DocumentFolder, int(project_id), 'drawing-sets')
+    folder_by_name = {}
+    if parent:
+        child_q = DocumentFolder.query.filter_by(project_id=int(project_id), parent_id=parent.id)
+        if hasattr(DocumentFolder, 'deleted_at'):
+            child_q = child_q.filter(DocumentFolder.deleted_at.is_(None))
+        for folder in child_q.all():
+            folder_by_name[folder.name] = folder
+    for name, info in sets.items():
+        folder = folder_by_name.get(name)
+        if not folder:
+            continue
+        info['documents_folder_id'] = folder.id
+        info['documents_url'] = f'/documents?project_id={project_id}&folder_id={folder.id}'
+        full_doc = (
+            Document.query.filter_by(project_id=int(project_id), folder_id=folder.id)
+            .filter(Document.deleted_at.is_(None) if hasattr(Document, 'deleted_at') else True)
+            .filter(Document.name.ilike('%Full Set%'))
+            .order_by(Document.created_at.desc())
+            .first()
+        )
+        if full_doc:
+            info['full_set_document_id'] = full_doc.id
+            info['full_set_download_url'] = f'/api/documents/{full_doc.id}/download'
     return jsonify({'sets': sorted(sets.values(), key=lambda s: s.get('latest_upload') or '', reverse=True)})
 
 
@@ -5558,7 +5673,7 @@ def api_upload_drawing():
             return jsonify({'error': 'Could not read PDF pages. The file may be corrupt or password-protected.'}), 400
 
         from_combined_set = len(pages) > 1
-        use_fast_analysis = from_combined_set
+        use_fast_analysis = False
         upload_kwargs = dict(
             project_id=int(project_id),
             pages=pages,
@@ -5585,7 +5700,7 @@ def api_upload_drawing():
                                 done,
                                 total,
                                 current_page,
-                                f'Imported sheet {done} of {total} (page {current_page})…',
+                                f'Reading title block {done} of {total} (page {current_page})…',
                             )
 
                         created, needs_review = process_pages_from_upload(
@@ -5598,13 +5713,23 @@ def api_upload_drawing():
                             raise RuntimeError('No drawing pages could be imported.')
                         commit_with_retry(db.session)
                         drawings = [_serialize_drawing(Drawing.query.get(item['id'])) for item in created]
+                        docs_info = None
+                        if from_combined_set:
+                            docs_info = _archive_drawing_set_to_documents(
+                                int(project_id), set_name, dest, created, upload_kwargs['uploaded_by_id'],
+                            )
+                        result_warnings = list(split_warnings)
+                        if docs_info and docs_info.get('documents_url'):
+                            result_warnings.append(
+                                f'Set archived to Documents › Drawing Sets › {set_name}.'
+                            )
                         mark_complete(job_id, {
                             'ok': True,
                             'split': from_combined_set,
                             'page_count': len(pages),
                             'expected_page_count': expected_page_count,
                             'split_engine': split_engine,
-                            'warnings': split_warnings,
+                            'warnings': result_warnings,
                             'created_count': len(created),
                             'needs_review_count': len(needs_review),
                             'needs_review': needs_review,
@@ -5612,7 +5737,7 @@ def api_upload_drawing():
                             'pages': created,
                             'drawing': drawings[0] if len(drawings) == 1 else None,
                             'revision': drawings[0].get('revision_label') if len(drawings) == 1 else None,
-                            'fast_import': use_fast_analysis,
+                            'documents': docs_info,
                         })
                     except Exception:
                         db.session.rollback()
@@ -5644,13 +5769,21 @@ def api_upload_drawing():
 
         commit_with_retry(db.session)
         drawings = [_serialize_drawing(Drawing.query.get(item['id'])) for item in created]
+        docs_info = None
+        if from_combined_set:
+            docs_info = _archive_drawing_set_to_documents(
+                int(project_id), set_name, dest, created, current_user.id,
+            )
+        response_warnings = list(split_warnings)
+        if docs_info and docs_info.get('documents_url'):
+            response_warnings.append(f'Set archived to Documents › Drawing Sets › {set_name}.')
         return jsonify({
             'ok': True,
             'split': from_combined_set,
             'page_count': len(pages),
             'expected_page_count': expected_page_count,
             'split_engine': split_engine,
-            'warnings': split_warnings,
+            'warnings': response_warnings,
             'created_count': len(created),
             'needs_review_count': len(needs_review),
             'needs_review': needs_review,
@@ -5658,7 +5791,7 @@ def api_upload_drawing():
             'pages': created,
             'drawing': drawings[0] if len(drawings) == 1 else None,
             'revision': drawings[0].get('revision_label') if len(drawings) == 1 else None,
-            'fast_import': use_fast_analysis,
+            'documents': docs_info,
         })
     except Exception as exc:
         db.session.rollback()
