@@ -293,6 +293,23 @@
         </form>
     </div>
 </div>
+
+<!-- Daily Log Detail Modal -->
+<div id="dailyLogDetailModal" class="hidden fixed inset-0 bg-black/70 flex items-center justify-center z-50 p-4">
+    <div class="bg-zinc-900 border border-zinc-700 rounded-xl w-full max-w-2xl max-h-[90vh] flex flex-col">
+        <div class="px-6 py-4 border-b border-zinc-700 flex justify-between items-center">
+            <h3 class="text-lg font-semibold" id="dailyLogDetailTitle">Daily Log</h3>
+            <button type="button" onclick="closeDailyLogDetailModal()" class="text-zinc-400 hover:text-white text-2xl">&times;</button>
+        </div>
+        <div class="p-6 overflow-auto flex-1 text-sm space-y-3" id="dailyLogDetailBody"></div>
+        <div class="px-6 py-4 border-t border-zinc-700">
+            <label class="block text-xs text-zinc-500 mb-2">Attachments (filed to Documents › Daily Logs)</label>
+            <input type="file" id="dailyLogAttachmentInput" multiple class="text-sm text-zinc-400 file:mr-3 file:px-3 file:py-1.5 file:rounded file:border-0 file:bg-zinc-700 file:text-white">
+            <div id="dailyLogAttachmentList" class="mt-2 space-y-1 text-xs text-zinc-400"></div>
+        </div>
+    </div>
+</div>
+
                 <!-- PHOTO UPLOAD SECTION -->
                 <div>
                     <label class="block text-sm text-zinc-400 mb-2">Photos</label>
@@ -466,9 +483,53 @@
     }
     // ==================== VIEW / EDIT DAILY LOG ====================
     function viewDailyLog(logId) {
-        // Placeholder for future detail view
-        window.location.href = `/daily-log/${logId}`;
+        openDailyLogDetailModal(logId);
     }
+
+    let currentDailyLogId = null;
+
+    async function openDailyLogDetailModal(logId) {
+        currentDailyLogId = logId;
+        try {
+            const res = await fetch(`/api/daily-logs/${logId}`, { credentials: 'same-origin' });
+            const json = await res.json();
+            if (!res.ok) throw new Error(json.error || 'Failed to load');
+            const log = json.log;
+            document.getElementById('dailyLogDetailTitle').textContent = `Daily Log — ${log.date || ''}`;
+            document.getElementById('dailyLogDetailBody').innerHTML = `
+                <p><span class="text-zinc-500">Weather:</span> ${log.weather || '—'}</p>
+                <p><span class="text-zinc-500">Work performed:</span><br>${(log.work_performed || '—').replace(/</g,'&lt;')}</p>
+                <p><span class="text-zinc-500">Notes:</span><br>${(log.notes || '—').replace(/</g,'&lt;')}</p>`;
+            renderDailyLogAttachments(log.attachments || []);
+            document.getElementById('dailyLogDetailModal').classList.remove('hidden');
+        } catch (e) {
+            alert(e.message || 'Could not load daily log');
+        }
+    }
+
+    function closeDailyLogDetailModal() {
+        document.getElementById('dailyLogDetailModal').classList.add('hidden');
+        currentDailyLogId = null;
+    }
+
+    function renderDailyLogAttachments(list) {
+        const el = document.getElementById('dailyLogAttachmentList');
+        if (!el) return;
+        el.innerHTML = list.length ? list.map(a =>
+            `<div><a href="${a.url}" class="text-sky-400 hover:underline" target="_blank">${a.original_name || a.filename}</a></div>`
+        ).join('') : '<p class="text-zinc-500">No attachments yet</p>';
+    }
+
+    document.getElementById('dailyLogAttachmentInput')?.addEventListener('change', async e => {
+        if (!currentDailyLogId || !e.target.files?.length) return;
+        for (const file of e.target.files) {
+            const fd = new FormData();
+            fd.append('file', file);
+            await fetch(`/api/daily-logs/${currentDailyLogId}/attachments`, { method: 'POST', body: fd, credentials: 'same-origin' });
+        }
+        e.target.value = '';
+        openDailyLogDetailModal(currentDailyLogId);
+    });
 
     function editDailyLog(logId) {
         // Placeholder for future edit functionality

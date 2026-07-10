@@ -182,6 +182,22 @@ def ensure_document_schema(engine, db) -> None:
             migrations.append('ALTER TABLE document ADD COLUMN deleted_at DATETIME')
         if 'version_count' not in cols:
             migrations.append('ALTER TABLE document ADD COLUMN version_count INTEGER DEFAULT 1')
+        if 'checked_out_by_id' not in cols:
+            migrations.append('ALTER TABLE document ADD COLUMN checked_out_by_id INTEGER')
+        if 'checked_out_at' not in cols:
+            migrations.append('ALTER TABLE document ADD COLUMN checked_out_at DATETIME')
+        if 'checkout_note' not in cols:
+            migrations.append('ALTER TABLE document ADD COLUMN checkout_note VARCHAR(500)')
+        if 'tags_json' not in cols:
+            migrations.append('ALTER TABLE document ADD COLUMN tags_json TEXT')
+        if 'custom_metadata_json' not in cols:
+            migrations.append('ALTER TABLE document ADD COLUMN custom_metadata_json TEXT')
+        if 'content_hash' not in cols:
+            migrations.append('ALTER TABLE document ADD COLUMN content_hash VARCHAR(64)')
+        if 'retention_until' not in cols:
+            migrations.append('ALTER TABLE document ADD COLUMN retention_until DATETIME')
+        if 'legal_hold' not in cols:
+            migrations.append('ALTER TABLE document ADD COLUMN legal_hold INTEGER DEFAULT 0')
         for sql in migrations:
             db.session.execute(text(sql))
 
@@ -194,6 +210,54 @@ def ensure_document_schema(engine, db) -> None:
             scols = {c['name'] for c in insp.get_columns('document_share_link')}
             if 'password_hash' not in scols:
                 db.session.execute(text('ALTER TABLE document_share_link ADD COLUMN password_hash VARCHAR(256)'))
+            if 'approval_status' not in scols:
+                db.session.execute(text("ALTER TABLE document_share_link ADD COLUMN approval_status VARCHAR(20) DEFAULT 'approved'"))
+            if 'approved_by_id' not in scols:
+                db.session.execute(text('ALTER TABLE document_share_link ADD COLUMN approved_by_id INTEGER'))
+            if 'approved_at' not in scols:
+                db.session.execute(text('ALTER TABLE document_share_link ADD COLUMN approved_at DATETIME'))
+
+        if 'document_folder_share_link' in tables:
+            fscols = {c['name'] for c in insp.get_columns('document_folder_share_link')}
+            if 'password_hash' not in fscols:
+                db.session.execute(text('ALTER TABLE document_folder_share_link ADD COLUMN password_hash VARCHAR(256)'))
+            if 'approval_status' not in fscols:
+                db.session.execute(text("ALTER TABLE document_folder_share_link ADD COLUMN approval_status VARCHAR(20) DEFAULT 'approved'"))
+            if 'approved_by_id' not in fscols:
+                db.session.execute(text('ALTER TABLE document_folder_share_link ADD COLUMN approved_by_id INTEGER'))
+            if 'approved_at' not in fscols:
+                db.session.execute(text('ALTER TABLE document_folder_share_link ADD COLUMN approved_at DATETIME'))
+
+    if 'document_folder_template' not in tables:
+        db.session.execute(text("""
+            CREATE TABLE document_folder_template (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                name VARCHAR(200) NOT NULL,
+                project_type VARCHAR(80),
+                description VARCHAR(500),
+                folders_json TEXT NOT NULL,
+                is_system INTEGER DEFAULT 0,
+                created_at DATETIME
+            )
+        """))
+        # Seed default templates
+        defaults = [
+            ('Commercial GC', 'Commercial', 'Standard commercial job folders', json.dumps([
+                {'name': '01 — Bidding', 'children': [{'name': 'Estimates'}, {'name': 'Proposals'}]},
+                {'name': '02 — Contracts', 'children': [{'name': 'Prime Contract'}, {'name': 'Subcontracts'}]},
+                {'name': '03 — Meetings', 'children': [{'name': 'OAC Minutes'}, {'name': 'Internal'}]},
+                {'name': '04 — Closeout', 'children': [{'name': 'Warranties'}, {'name': 'O&M Manuals'}]},
+            ])),
+            ('Healthcare', 'Healthcare', 'Healthcare / OSHPD style folders', json.dumps([
+                {'name': 'Compliance', 'children': [{'name': 'ICRA'}, {'name': 'Inspections'}]},
+                {'name': 'Commissioning', 'children': [{'name': 'TAB Reports'}, {'name': 'Functional Tests'}]},
+            ])),
+        ]
+        for name, ptype, desc, folders in defaults:
+            db.session.execute(
+                text('INSERT INTO document_folder_template (name, project_type, description, folders_json, is_system, created_at) VALUES (:n,:t,:d,:f,1,:c)'),
+                {'n': name, 't': ptype, 'd': desc, 'f': folders, 'c': datetime.utcnow().isoformat()},
+            )
 
     db.session.commit()
 
@@ -268,13 +332,20 @@ def folder_to_dict(folder, child_count: int = 0, file_count: int = 0) -> dict[st
     }
 
 
-def document_to_dict(doc, project_name: str | None = None, folder_name: str | None = None, uploaded_by_name: str | None = None) -> dict[str, Any]:
+def document_to_dict(
+    doc,
+    project_name: str | None = None,
+    folder_name: str | None = None,
+    uploaded_by_name: str | None = None,
+    checkout: dict[str, Any] | None = None,
+) -> dict[str, Any]:
     meta = {}
     if doc.source_metadata_json:
         try:
             meta = json.loads(doc.source_metadata_json)
         except (TypeError, json.JSONDecodeError):
             meta = {}
+    co = checkout or {}
     return {
         'id': doc.id,
         'project_id': doc.project_id,
@@ -291,8 +362,31 @@ def document_to_dict(doc, project_name: str | None = None, folder_name: str | No
         'mime_type': doc.mime_type,
         'version_count': getattr(doc, 'version_count', 1) or 1,
         'is_system_locked': bool(getattr(doc, 'is_system_locked', False)),
-        'can_delete': not bool(getattr(doc, 'is_system_locked', False)),
-        'can_move': not bool(getattr(doc, 'is_system_locked', False)),
+        'can_delete': (
+            not bool(getattr(doc, 'is_system_locked', False))
+            and not co.get('is_edit_locked')
+            and not bool(getattr(doc, 'legal_hold', False))
+        ),
+        'can_move': (
+            not bool(getattr(doc, 'is_system_locked', False))
+            and not co.get('is_edit_locked')
+            and not bool(getattr(doc, 'legal_hold', False))
+        ),
+        'checked_out_by_id': co.get('checked_out_by_id'),
+        'checked_out_by_name': co.get('checked_out_by_name'),
+        'checked_out_at': co.get('checked_out_at'),
+        'checkout_note': co.get('checkout_note'),
+        'is_checked_out': bool(co.get('is_checked_out')),
+        'is_checked_out_by_me': bool(co.get('is_checked_out_by_me')),
+        'is_edit_locked': bool(co.get('is_edit_locked')),
+        'can_check_out': bool(co.get('can_check_out')),
+        'can_check_in': bool(co.get('can_check_in')),
+        'can_force_unlock': bool(co.get('can_force_unlock')),
+        'tags': _parse_tags_field(getattr(doc, 'tags_json', None)),
+        'custom_metadata': _parse_metadata_field(getattr(doc, 'custom_metadata_json', None)),
+        'content_hash': getattr(doc, 'content_hash', None),
+        'retention_until': doc.retention_until.isoformat() if getattr(doc, 'retention_until', None) else None,
+        'legal_hold': bool(getattr(doc, 'legal_hold', False)),
         'source_drawing_id': doc.source_drawing_id,
         'source_sheet': doc.source_sheet,
         'source_metadata': meta,
@@ -321,6 +415,8 @@ def share_link_to_dict(link, base_url: str = '') -> dict[str, Any]:
         'max_downloads': link.max_downloads,
         'download_count': link.download_count or 0,
         'revoked': bool(link.revoked_at),
+        'approval_status': getattr(link, 'approval_status', None) or 'approved',
+        'approved_at': link.approved_at.isoformat() if getattr(link, 'approved_at', None) else None,
         'created_at': link.created_at.isoformat() if link.created_at else None,
     }
 
@@ -341,6 +437,8 @@ def folder_share_link_to_dict(link, base_url: str = '') -> dict[str, Any]:
         'max_downloads': link.max_downloads,
         'download_count': link.download_count or 0,
         'revoked': bool(link.revoked_at),
+        'approval_status': getattr(link, 'approval_status', None) or 'approved',
+        'approved_at': link.approved_at.isoformat() if getattr(link, 'approved_at', None) else None,
         'created_at': link.created_at.isoformat() if link.created_at else None,
     }
 
@@ -415,8 +513,33 @@ def default_share_expiry(days: int = 30) -> datetime:
     return datetime.utcnow() + timedelta(days=days)
 
 
+def _parse_tags_field(raw) -> list[str]:
+    if not raw:
+        return []
+    try:
+        data = json.loads(raw) if isinstance(raw, str) else raw
+    except (TypeError, json.JSONDecodeError):
+        return []
+    if isinstance(data, list):
+        return [str(t).strip() for t in data if str(t).strip()][:50]
+    return []
+
+
+def _parse_metadata_field(raw) -> dict[str, Any]:
+    if not raw:
+        return {}
+    try:
+        data = json.loads(raw) if isinstance(raw, str) else raw
+    except (TypeError, json.JSONDecodeError):
+        return {}
+    return data if isinstance(data, dict) else {}
+
+
 def share_link_is_valid(link) -> bool:
     if link.revoked_at:
+        return False
+    status = getattr(link, 'approval_status', None) or 'approved'
+    if status in ('pending', 'rejected'):
         return False
     if link.expires_at and link.expires_at < datetime.utcnow():
         return False

@@ -1673,6 +1673,20 @@
     return base.toLowerCase().endsWith('.png') ? base : `${base}.png`;
   }
 
+  function getSnipFormat() {
+    return localStorage.getItem('casepm_snip_format') === 'pdf' ? 'pdf' : 'png';
+  }
+
+  function setSnipFormat(fmt) {
+    localStorage.setItem('casepm_snip_format', fmt === 'pdf' ? 'pdf' : 'png');
+  }
+
+  async function autoSaveDocSnip(captured) {
+    const name = defaultDocSnipName();
+    const asPdf = getSnipFormat() === 'pdf';
+    await saveDocSnipToDocuments(captured, { name, auto: true, saveAsPdf: asPdf });
+  }
+
   async function saveDocSnipToDocuments(captured, opts) {
     const payload = captured || state.pendingDocSnip;
     const name = (opts?.name || document.getElementById('docSnipName')?.value || defaultDocSnipName()).trim();
@@ -1690,7 +1704,8 @@
       return;
     }
     const saveBtn = document.getElementById('docSnipSave');
-    if (saveBtn) saveBtn.disabled = true;
+    if (saveBtn && !opts?.auto) saveBtn.disabled = true;
+    const asPdf = !!opts?.saveAsPdf;
     try {
       const json = await api('/api/documents', {
         method: 'POST',
@@ -1698,8 +1713,9 @@
         body: JSON.stringify({
           project_id: projectId(),
           name,
-          filename: docSnipFilename(name),
-          mime_type: 'image/png',
+          filename: asPdf ? docSnipFilename(name).replace(/\.png$/i, '.pdf') : docSnipFilename(name),
+          mime_type: asPdf ? 'application/pdf' : 'image/png',
+          save_as_pdf: asPdf,
           document_type: docType,
           image_data: payload.dataUrl,
           source_drawing_id: state.openDrawing?.id,
@@ -1714,15 +1730,19 @@
       });
       document.getElementById('docSnipSaveDialog')?.close();
       state.pendingDocSnip = null;
-      toast(`Saved to Documents › Drawings › Snips — ${json.document?.name || name}`);
+      toast(`Saved to Documents › Drawings › Snips — ${json.document?.name || name}${asPdf ? ' (PDF)' : ' (PNG)'}`);
     } catch (e) {
       toastError(e.message || 'Failed to save document');
     } finally {
-      if (saveBtn) saveBtn.disabled = false;
+      if (saveBtn && !opts?.auto) saveBtn.disabled = false;
     }
   }
 
   function openDocSnipSaveDialog(captured) {
+    if (localStorage.getItem('casepm_snip_auto_save') !== '0') {
+      autoSaveDocSnip(captured);
+      return;
+    }
     state.pendingDocSnip = captured;
     const dlg = document.getElementById('docSnipSaveDialog');
     const preview = document.getElementById('docSnipPreview');
@@ -1770,6 +1790,11 @@
   }
 
   function bindDocSnipDialog() {
+    const fmtSel = document.getElementById('docSnipFormat');
+    if (fmtSel) {
+      fmtSel.value = getSnipFormat();
+      fmtSel.addEventListener('change', () => setSnipFormat(fmtSel.value));
+    }
     document.getElementById('docSnipSave')?.addEventListener('click', () => {
       saveDocSnipToDocuments(state.pendingDocSnip);
     });
@@ -3806,7 +3831,7 @@
       updateViewerCursor();
       if (rw >= 8 && rh >= 8) {
         const captured = captureCanvasRegion(x, y, rw, rh, { fullRes: true });
-        if (captured?.dataUrl) openDocSnipSaveDialog(captured);
+        if (captured?.dataUrl) autoSaveDocSnip(captured);
       } else {
         toast('Drag a larger box to snip');
       }
