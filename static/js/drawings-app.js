@@ -5141,6 +5141,65 @@
     });
   }
 
+  async function importDrawingsFromDocuments(docs) {
+    const setName = document.getElementById('uploadSetName')?.value || 'Drawing Upload';
+    const extra = {
+      sheet_number: document.getElementById('uploadSheetNumber')?.value || '',
+      title: document.getElementById('uploadTitle')?.value || '',
+    };
+    document.getElementById('uploadDrawingModal')?.close();
+    const combined = {
+      ok: true,
+      created_count: 0,
+      needs_review_count: 0,
+      pages: [],
+      drawings: [],
+      needs_review: [],
+      warnings: [],
+      file_count: docs.length,
+    };
+    for (const doc of docs) {
+      const res = await fetch(`/api/documents/${doc.id}/download`, { credentials: 'same-origin' });
+      if (!res.ok) throw new Error(`Could not download ${doc.name || 'document'}`);
+      const blob = await res.blob();
+      const baseName = doc.name || doc.original_filename || doc.filename || 'drawing.pdf';
+      const fileName = baseName.toLowerCase().endsWith('.pdf') ? baseName : `${baseName}.pdf`;
+      const file = new File([blob], fileName, { type: 'application/pdf' });
+      const json = await uploadPdfFile(file, setName, { ...extra, keepOpen: true, batchLabel: `from Documents: ${fileName}` });
+      if (json) {
+        combined.created_count += json.created_count || json.pages?.length || 0;
+        combined.needs_review_count += json.needs_review_count || 0;
+        combined.pages.push(...(json.pages || []));
+        combined.drawings.push(...(json.drawings || []));
+        combined.needs_review.push(...(json.needs_review || []));
+        combined.warnings.push(...(json.warnings || []));
+      }
+    }
+    finishUploadProgress(combined);
+    const count = combined.created_count || 0;
+    toast(`Imported ${count} sheet(s) from Documents`);
+    showUploadResults(combined);
+  }
+
+  function bindDrawingDocumentPicker() {
+    const wrap = document.getElementById('drawingDocPickerWrap');
+    if (!wrap || !global.CasePMDocPicker) return;
+    global.CasePMDocPicker.addBrowseButton(wrap, {
+      title: 'Import PDFs from Documents',
+      multiple: true,
+      accept: 'pdf',
+      className: 'px-3 py-2 bg-zinc-800 hover:bg-zinc-700 border border-zinc-600 rounded-md text-xs font-medium text-center whitespace-nowrap w-full',
+      onPick: async (docs) => {
+        if (!docs.length) return;
+        try {
+          await importDrawingsFromDocuments(docs);
+        } catch (e) {
+          alert(e.message || 'Import from Documents failed');
+        }
+      },
+    });
+  }
+
   async function submitUpload(e) {
     e.preventDefault();
     const pdfs = collectPdfFiles(document.getElementById('uploadFile').files);
@@ -5228,6 +5287,7 @@
     bindViewerEvents();
     bindSectionDropZone();
     bindUploadModalDropZone();
+    bindDrawingDocumentPicker();
     document.addEventListener('fullscreenchange', onFullscreenChange);
     document.addEventListener('click', e => {
       if (!e.target.closest('#printMenu') && !e.target.closest('#btnPrintMenu')) {

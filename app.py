@@ -2045,6 +2045,107 @@ def api_rfi_link_document_attachment(rfi_id):
     return jsonify({'ok': True, 'attachments': _enrich_rfi_attachments(rfi_id, attachments)})
 
 
+def _attachment_user_label():
+    return f'{current_user.first_name} {current_user.last_name}'.strip() or current_user.email or 'User'
+
+
+def _link_document_to_json_attachments(entity, project_id, doc_ids, attachments_json):
+    from rfi_persistence import _parse_json
+    attachments = _parse_json(attachments_json, [])
+    linked = []
+    for raw_id in doc_ids or []:
+        doc_id = int(raw_id)
+        doc = Document.query.get(doc_id)
+        if not doc or doc.project_id != int(project_id) or doc.deleted_at:
+            raise ValueError(f'Document #{doc_id} is not available for this project')
+        if any(a.get('document_id') == doc.id for a in attachments):
+            continue
+        attachments.append({
+            'document_id': doc.id,
+            'original_name': doc.name or doc.original_filename or doc.filename,
+            'linked_from_documents': True,
+            'uploaded_at': datetime.utcnow().isoformat(),
+            'uploaded_by': _attachment_user_label(),
+        })
+        linked.append(doc.id)
+    return attachments, linked
+
+
+@app.route('/api/attachments/link', methods=['POST'])
+@login_required
+def api_link_documents_to_entity():
+    from rfi_persistence import _parse_json, apply_rfi_fields
+    from co_persistence import append_attachment
+    body = request.get_json(silent=True) or {}
+    entity_type = (body.get('entity_type') or '').lower().replace('-', '_')
+    entity_id = body.get('entity_id')
+    doc_ids = body.get('document_ids') or []
+    if body.get('document_id'):
+        doc_ids.append(body.get('document_id'))
+    if not entity_type or not entity_id or not doc_ids:
+        return jsonify({'error': 'entity_type, entity_id, and document_ids required'}), 400
+    entity_id = int(entity_id)
+    try:
+        if entity_type == 'rfi':
+            rfi = RFI.query.get_or_404(entity_id)
+            attachments, linked = _link_document_to_json_attachments(rfi, rfi.project_id, doc_ids, rfi.attachments_json)
+            apply_rfi_fields(rfi, {'attachments': attachments})
+            db.session.commit()
+            return jsonify({'ok': True, 'linked': linked, 'attachments': _enrich_rfi_attachments(rfi.id, attachments)})
+        if entity_type == 'submittal':
+            submittal = Submittal.query.get_or_404(entity_id)
+            attachments, linked = _link_document_to_json_attachments(submittal, submittal.project_id, doc_ids, submittal.attachments_json)
+            submittal.attachments_json = json.dumps(attachments)
+            db.session.commit()
+            for a in attachments:
+                if a.get('filename'):
+                    a['url'] = url_for('serve_submittal_attachment', submittal_id=submittal.id, filename=a.get('filename', ''))
+                elif a.get('document_id'):
+                    a['url'] = url_for('api_documents_download', doc_id=a['document_id'])
+            return jsonify({'ok': True, 'linked': linked, 'attachments': attachments})
+        if entity_type == 'daily_log':
+            log = DailyLog.query.get_or_404(entity_id)
+            attachments, linked = _link_document_to_json_attachments(log, log.project_id, doc_ids, log.attachments_json)
+            log.attachments_json = json.dumps(attachments)
+            db.session.commit()
+            for a in attachments:
+                if a.get('document_id'):
+                    a['url'] = url_for('api_documents_download', doc_id=a['document_id'])
+                elif a.get('filename'):
+                    a['url'] = url_for('serve_daily_log_attachment', log_id=log.id, filename=a.get('filename', ''))
+            return jsonify({'ok': True, 'linked': linked, 'attachments': attachments})
+        if entity_type in ('change_order', 'co'):
+            co = ChangeOrder.query.get_or_404(entity_id)
+            for raw_id in doc_ids:
+                doc = Document.query.get_or_404(int(raw_id))
+                if doc.project_id != co.project_id:
+                    return jsonify({'error': 'Document belongs to a different project'}), 400
+                items = append_attachment(co, {
+                    'document_id': doc.id,
+                    'filename': None,
+                    'original_name': doc.name or doc.original_filename or doc.filename,
+                    'linked_from_documents': True,
+                    'uploaded_at': datetime.utcnow().isoformat() + 'Z',
+                    'uploaded_by_id': current_user.id,
+                })
+            db.session.commit()
+            from co_persistence import co_to_dict
+            allocs = ChangeOrderAllocation.query.filter_by(change_order_id=co.id).all()
+            return jsonify({'ok': True, 'linked': [int(x) for x in doc_ids], 'change_order': co_to_dict(co, allocs), 'attachments': items})
+        if entity_type == 'commitment':
+            c = Commitment.query.get_or_404(entity_id)
+            attachments, linked = _link_document_to_json_attachments(c, c.project_id, doc_ids, c.attachments_json)
+            c.attachments_json = json.dumps(attachments)
+            db.session.commit()
+            from commitment_persistence import commitment_to_dict
+            allocs = CommitmentAllocation.query.filter_by(commitment_id=c.id).all()
+            return jsonify({'ok': True, 'linked': linked, 'attachments': attachments, 'commitment': commitment_to_dict(c, allocs)})
+        return jsonify({'error': f'Unsupported entity_type: {entity_type}'}), 400
+    except ValueError as exc:
+        db.session.rollback()
+        return jsonify({'error': str(exc)}), 400
+
+
 @app.route('/api/rfis/<int:rfi_id>/promote-pco', methods=['POST'])
 @login_required
 def api_rfi_promote_pco(rfi_id):
@@ -5208,7 +5309,10 @@ def api_submittal_list_attachments(submittal_id):
     submittal = Submittal.query.get_or_404(submittal_id)
     attachments = _parse_json(submittal.attachments_json, [])
     for a in attachments:
-        a['url'] = url_for('serve_submittal_attachment', submittal_id=submittal_id, filename=a.get('filename', ''))
+        if a.get('document_id'):
+            a['url'] = url_for('api_documents_download', doc_id=a['document_id'])
+        elif a.get('filename'):
+            a['url'] = url_for('serve_submittal_attachment', submittal_id=submittal_id, filename=a.get('filename', ''))
     return jsonify({'ok': True, 'attachments': attachments})
 
 
@@ -5219,7 +5323,10 @@ def api_daily_log_get(log_id):
     log = DailyLog.query.get_or_404(log_id)
     attachments = _parse_json(log.attachments_json, [])
     for a in attachments:
-        a['url'] = url_for('serve_daily_log_attachment', log_id=log_id, filename=a.get('filename', ''))
+        if a.get('document_id'):
+            a['url'] = url_for('api_documents_download', doc_id=a['document_id'])
+        elif a.get('filename'):
+            a['url'] = url_for('serve_daily_log_attachment', log_id=log_id, filename=a.get('filename', ''))
     return jsonify({
         'ok': True,
         'log': {
@@ -5241,7 +5348,10 @@ def api_daily_log_list_attachments(log_id):
     log = DailyLog.query.get_or_404(log_id)
     attachments = _parse_json(log.attachments_json, [])
     for a in attachments:
-        a['url'] = url_for('serve_daily_log_attachment', log_id=log_id, filename=a.get('filename', ''))
+        if a.get('document_id'):
+            a['url'] = url_for('api_documents_download', doc_id=a['document_id'])
+        elif a.get('filename'):
+            a['url'] = url_for('serve_daily_log_attachment', log_id=log_id, filename=a.get('filename', ''))
     return jsonify({'ok': True, 'attachments': attachments})
 
 

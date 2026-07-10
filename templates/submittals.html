@@ -383,6 +383,7 @@ window.SUBMITTAL_PROJECT_CTX = {
                 <div class="text-sm text-zinc-400 mt-1">or click to browse — PDF only</div>
                 <input type="file" id="specBookFileInput" accept=".pdf,application/pdf" class="hidden" onchange="handleSpecBookFileSelected(event)">
             </div>
+            <div id="specBookDocPickerWrap" class="mt-3 flex justify-center"></div>
             <div id="specBookFileName" class="hidden text-sm text-emerald-400 flex items-center gap-2">
                 <i class="fa-solid fa-check-circle"></i>
                 <span id="specBookFileNameText"></span>
@@ -631,7 +632,9 @@ window.SUBMITTAL_PROJECT_CTX = {
                 <div class="mt-6 pt-4 border-t border-zinc-700">
                     <h4 class="font-semibold text-white mb-2">Attachments</h4>
                     <p class="text-xs text-zinc-500 mb-2">Files are filed to Documents › Submittals automatically.</p>
-                    <input type="file" id="submittalAttachmentInput" multiple class="text-sm text-zinc-400 file:mr-3 file:px-3 file:py-1.5 file:rounded file:border-0 file:bg-zinc-700 file:text-white mb-2">
+                    <div id="submittalAttachmentActions" class="flex flex-wrap items-center gap-2 mb-2">
+                        <input type="file" id="submittalAttachmentInput" multiple class="text-sm text-zinc-400 file:mr-3 file:px-3 file:py-1.5 file:rounded file:border-0 file:bg-zinc-700 file:text-white">
+                    </div>
                     <div id="submittalAttachmentList" class="space-y-1 text-xs text-zinc-400"></div>
                 </div>
             </div>
@@ -823,76 +826,15 @@ function initDraggableSubmittalPanel(overlayId) {
 }
 
 function showCenteredAlert(message, type = 'info') {
-    const dialog = document.createElement('dialog');
-    dialog.className = 'submittal-dialog';
-    dialog.style.width = 'min(520px, 92vw)';
-
-    let headerClass = 'bg-zinc-950 border-b border-zinc-700';
-    let icon = '<i class="fa-solid fa-info-circle text-sky-400"></i>';
-    let title = 'Notice';
-    if (type === 'success') {
-        icon = '<i class="fa-solid fa-check-circle text-emerald-400"></i>';
-        title = 'Success';
-        headerClass = 'bg-emerald-950/40 border-b border-emerald-800';
-    } else if (type === 'warning') {
-        icon = '<i class="fa-solid fa-exclamation-triangle text-amber-400"></i>';
-        title = 'Warning';
-        headerClass = 'bg-amber-950/30 border-b border-amber-800';
-    } else if (type === 'error') {
-        icon = '<i class="fa-solid fa-circle-xmark text-red-400"></i>';
-        title = 'Error';
-        headerClass = 'bg-red-950/30 border-b border-red-800';
-    }
-
-    dialog.innerHTML = `
-        <div class="drag-handle px-5 py-3 ${headerClass} flex items-center gap-2">
-            ${icon}
-            <span class="font-semibold text-sm">${title}</span>
-        </div>
-        <div class="px-5 py-4 text-sm text-zinc-200 leading-relaxed" style="white-space: pre-wrap;">${escapeSubmittalHtml(message)}</div>
-        <div class="px-5 py-3 border-t border-zinc-700 bg-zinc-950 flex justify-end">
-            <button type="button" class="px-6 py-2 bg-emerald-600 hover:bg-emerald-500 rounded-md text-sm font-medium">OK</button>
-        </div>
-    `;
-    document.body.appendChild(dialog);
-    const close = () => { dialog.close(); dialog.remove(); };
-    dialog.querySelector('button').onclick = close;
-    dialog.addEventListener('cancel', (e) => { e.preventDefault(); close(); });
-    dialog.showModal();
-    makeSubmittalModalDraggable(dialog);
+    return window.showCenteredAlert(message, type);
 }
 
 function showCenteredConfirm(message, options = {}) {
-    const {
-        title = 'Confirm',
-        confirmText = 'Yes',
-        cancelText = 'Cancel',
-        danger = false
-    } = options;
-
-    return new Promise(resolve => {
-        const dialog = document.createElement('dialog');
-        dialog.className = 'submittal-dialog';
-        dialog.style.width = 'min(520px, 92vw)';
-
-        dialog.innerHTML = `
-            <div class="drag-handle px-5 py-3 bg-zinc-950 border-b border-zinc-700 flex items-center gap-2">
-                <i class="fa-solid fa-question-circle text-sky-400"></i>
-                <span class="font-semibold text-sm">${escapeSubmittalHtml(title)}</span>
-            </div>
-            <div class="px-5 py-4 text-sm text-zinc-200 leading-relaxed" style="white-space: pre-wrap;">${escapeSubmittalHtml(message)}</div>
-            <div class="px-5 py-3 border-t border-zinc-700 bg-zinc-950 flex justify-end gap-2">
-                <button type="button" data-action="cancel" class="px-4 py-2 bg-zinc-700 hover:bg-zinc-600 rounded-md text-sm">${escapeSubmittalHtml(cancelText)}</button>
-                <button type="button" data-action="confirm" class="px-5 py-2 ${danger ? 'bg-red-600 hover:bg-red-500' : 'bg-emerald-600 hover:bg-emerald-500'} rounded-md text-sm font-medium">${escapeSubmittalHtml(confirmText)}</button>
-            </div>
-        `;
-        document.body.appendChild(dialog);
-        const finish = (result) => { dialog.close(); dialog.remove(); resolve(result); };
-        dialog.querySelector('[data-action="cancel"]').onclick = () => finish(false);
-        dialog.querySelector('[data-action="confirm"]').onclick = () => finish(true);
-        dialog.addEventListener('cancel', (e) => { e.preventDefault(); finish(false); });
-        dialog.showModal();
-        makeSubmittalModalDraggable(dialog);
+    return window.CasePMDialog.confirm(message, {
+        title: options.title,
+        confirmLabel: options.confirmText || options.confirmLabel || 'Yes',
+        cancelLabel: options.cancelText || options.cancelLabel || 'Cancel',
+        danger: options.danger,
     });
 }
 
@@ -942,7 +884,8 @@ function showCenteredPrompt(fields, options = {}) {
         };
         dialog.querySelector('[data-action="cancel"]').onclick = () => finish(null);
         dialog.addEventListener('cancel', (e) => { e.preventDefault(); finish(null); });
-        dialog.showModal();
+        if (window.CasePMDialog?.open) window.CasePMDialog.open(dialog);
+        else dialog.showModal();
         makeSubmittalModalDraggable(dialog);
         const firstInput = inputEls[0];
         if (firstInput) {
@@ -1285,6 +1228,54 @@ document.getElementById('submittalAttachmentInput')?.addEventListener('change', 
     await uploadSubmittalAttachments(sid, e.target.files);
     e.target.value = '';
 });
+
+function bindSubmittalDocumentPickers() {
+    const attContainer = document.getElementById('submittalAttachmentActions');
+    if (attContainer && window.CasePMDocPicker) {
+        window.CasePMDocPicker.addBrowseButton(attContainer, {
+            title: 'Attach from Documents',
+            onPick: async (docs, ids) => {
+                if (!currentModalItem) return;
+                let sid = currentModalItem.serverId;
+                if (!sid) {
+                    await syncSubmittalToServer(currentModalItem);
+                    sid = currentModalItem.serverId;
+                }
+                if (!sid) {
+                    showCenteredAlert('Save the submittal first to attach files.', 'warning');
+                    return;
+                }
+                await window.CasePMDocPicker.linkToEntity('submittal', sid, ids);
+                await loadSubmittalAttachments(sid);
+            },
+        });
+    }
+    const specWrap = document.getElementById('specBookDocPickerWrap');
+    if (specWrap && window.CasePMDocPicker) {
+        window.CasePMDocPicker.addBrowseButton(specWrap, {
+            title: 'Select Specifications PDF from Documents',
+            multiple: false,
+            accept: 'pdf',
+            className: 'px-4 py-2 text-sm font-medium bg-zinc-800 hover:bg-zinc-700 border border-zinc-600 rounded-lg text-zinc-200',
+            onPick: async (docs) => {
+                const doc = docs[0];
+                if (!doc) return;
+                try {
+                    const res = await fetch(`/api/documents/${doc.id}/download`, { credentials: 'same-origin' });
+                    if (!res.ok) throw new Error('Could not download document');
+                    const buf = await res.arrayBuffer();
+                    const name = doc.name || doc.original_filename || doc.filename || 'Specifications.pdf';
+                    document.getElementById('specBookProgress')?.classList.remove('hidden');
+                    await processSpecBookFromArrayBuffer(buf, name, { fromDocuments: true });
+                } catch (e) {
+                    showCenteredAlert(e.message || 'Could not load document', 'error');
+                }
+            },
+        });
+    }
+}
+
+document.addEventListener('DOMContentLoaded', bindSubmittalDocumentPickers);
 
 function generateNextNumber(specSection) {
     const existing = submittals.filter(s => s.specSection === specSection);
@@ -3518,7 +3509,8 @@ async function openSpecBookViewer({ page, title, subtitle, specSection, paragrap
     });
     modal.addEventListener('cancel', e => { e.preventDefault(); closeSpecBookViewer(modal); });
     document.body.appendChild(modal);
-    modal.showModal();
+    if (window.CasePMDialog?.open) window.CasePMDialog.open(modal);
+    else modal.showModal();
     makeSubmittalModalDraggable(modal);
 
     specBookViewerState.modal = modal;

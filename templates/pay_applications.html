@@ -8610,37 +8610,8 @@ function printSubcontractorG703(companyId) {
         alert("Version history for Pay Applications will be available after first publish (similar to Budget).");
     }
 
-    // ==================== CENTERED ALERT (matching budget.html style) ====================
-    function showCenteredAlert(message, type = 'info') {
-        const dialog = document.createElement('dialog');
-        dialog.className = 'modal rounded-md p-6 text-white';
-        dialog.style.backgroundColor = '#18181b';
-        dialog.style.border = '1px solid #3f3f46';
-        dialog.style.width = 'fit-content';
-        dialog.style.maxWidth = '90vw';
-        dialog.style.zIndex = '999999';
-
-        let icon = '';
-        if (type === 'success') icon = '<i class="fa-solid fa-check-circle text-emerald-400 mr-2"></i>';
-        else if (type === 'warning') icon = '<i class="fa-solid fa-exclamation-triangle text-amber-400 mr-2"></i>';
-        else icon = '<i class="fa-solid fa-info-circle text-sky-400 mr-2"></i>';
-
-        dialog.innerHTML = `
-            <div class="flex items-center text-base mb-5 whitespace-nowrap">
-                ${icon}
-                <span>${message}</span>
-            </div>
-            <div class="flex justify-end">
-                <button class="px-6 py-2 bg-emerald-600 hover:bg-emerald-500 rounded-md text-sm font-medium">OK</button>
-            </div>
-        `;
-        document.body.appendChild(dialog);
-        dialog.showModal();
-        dialog.querySelector('button').onclick = () => {
-            dialog.close();
-            dialog.remove();
-        };
-    }
+    // ==================== CENTERED ALERT ====================
+    // Uses global showCenteredAlert from casepm-dialog.js (loaded in base.html)
 
     // Dedicated error modal (prominent centered pop-up for validation / blocking errors)
     function showErrorModal(message) {
