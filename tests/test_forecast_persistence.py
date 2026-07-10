@@ -33,6 +33,16 @@ class ForecastSummaryTests(unittest.TestCase):
         self.assertEqual(result['paid_out'], 30000)
         self.assertIn('full_job', result['projections'])
 
+    def test_contract_includes_approved_change_orders(self):
+        project = SimpleNamespace(
+            contract_value=1000000,
+            start_date=date(2026, 1, 1),
+            end_date=date(2026, 12, 31),
+            get_details=lambda: {},
+        )
+        result = build_forecast_summary(project, {'budgetLines': []}, {}, approved_co_total=75000)
+        self.assertEqual(result['contract_amount'], 1075000)
+
 
 if __name__ == '__main__':
     unittest.main()

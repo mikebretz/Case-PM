@@ -94,9 +94,11 @@ def build_forecast_summary(project, budget_state, pay_state, approved_co_total=0
     if project:
         orig_contract = details.get('original_contract_amount')
         if orig_contract not in (None, ''):
-            contract = float(orig_contract)
+            contract = float(orig_contract) + float(approved_co_total or 0)
         elif project.contract_value:
-            contract = float(project.contract_value)
+            contract = float(project.contract_value) + float(approved_co_total or 0)
+        elif approved_co_total:
+            contract = float(approved_co_total)
 
     start = getattr(project, 'start_date', None) if project else None
     end = getattr(project, 'end_date', None) if project else None

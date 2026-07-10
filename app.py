@@ -1314,15 +1314,20 @@ def _project_contract_amount(project):
 
 
 def _project_approved_change_orders_total(project_id):
-    """Sum of approved change order amounts for a project."""
+    """Sum approved change order amounts — allocation rows when present, else header amount."""
     if not project_id:
         return 0.0
-    from sqlalchemy import func
-    total = db.session.query(func.coalesce(func.sum(ChangeOrder.amount), 0)).filter(
-        ChangeOrder.project_id == int(project_id),
-        ChangeOrder.status == 'Approved',
-    ).scalar()
-    return float(total or 0)
+    cos = ChangeOrder.query.filter_by(project_id=int(project_id), status='Approved').all()
+    if not cos:
+        return 0.0
+    total = 0.0
+    for co in cos:
+        allocs = ChangeOrderAllocation.query.filter_by(change_order_id=co.id).all()
+        if allocs:
+            total += sum(float(a.amount or 0) for a in allocs)
+        else:
+            total += float(co.amount or 0)
+    return round(total, 2)
 
 
 def _project_financial_context(project):
@@ -1344,12 +1349,16 @@ def _project_financial_context(project):
     approved_co_total = _project_approved_change_orders_total(project.id)
     if original is not None:
         amount, source = original, 'original_contract'
-        current_contract_value = original + approved_co_total
+        base_contract = original
     elif contract_value is not None:
         amount, source = contract_value, 'contract_value'
-        current_contract_value = contract_value
+        base_contract = contract_value
     else:
         amount, source = None, None
+        base_contract = None
+    if base_contract is not None:
+        current_contract_value = base_contract + approved_co_total
+    else:
         current_contract_value = approved_co_total if approved_co_total else None
     retainage = _parse_float(details.get('default_retainage_percent'))
     return {
@@ -6726,9 +6735,43 @@ def api_commitment_workflow(commitment_id):
 
     if action == 'reject':
         _sage_commitment_event(c, 'CommitmentRejected', user_id=current_user.id)
+        try:
+            from accounting_reconcile import reconcile_project_accounting
+            reconcile_result = reconcile_project_accounting(
+                c.project_id,
+                current_user.id,
+                ChangeOrder=ChangeOrder,
+                ChangeOrderAllocation=ChangeOrderAllocation,
+                Commitment=Commitment,
+                CommitmentAllocation=CommitmentAllocation,
+                BudgetProjectState=BudgetProjectState,
+                PayAppProjectState=PayAppProjectState,
+                db=db,
+            )
+            budget_sync = reconcile_result.get('budget_sync_result')
+            sov_sync = reconcile_result.get('sync_result')
+        except Exception as exc:
+            reconcile_result = {'error': str(exc)}
 
     if action == 'void':
         _sage_commitment_event(c, 'CommitmentVoided', user_id=current_user.id)
+        try:
+            from accounting_reconcile import reconcile_project_accounting
+            reconcile_result = reconcile_project_accounting(
+                c.project_id,
+                current_user.id,
+                ChangeOrder=ChangeOrder,
+                ChangeOrderAllocation=ChangeOrderAllocation,
+                Commitment=Commitment,
+                CommitmentAllocation=CommitmentAllocation,
+                BudgetProjectState=BudgetProjectState,
+                PayAppProjectState=PayAppProjectState,
+                db=db,
+            )
+            budget_sync = reconcile_result.get('budget_sync_result')
+            sov_sync = reconcile_result.get('sync_result')
+        except Exception as exc:
+            reconcile_result = {'error': str(exc)}
 
     if action == 'send_docusign':
         from commitment_persistence import commitment_to_dict
@@ -7311,6 +7354,22 @@ def api_accounting_reconcile():
             PayAppProjectState=PayAppProjectState,
             db=db,
         )
+        try:
+            from sage_service import create_and_process_sage_event
+            create_and_process_sage_event(
+                SageSyncEvent, Project, db, int(project_id),
+                'AccountingReconciled',
+                message='Budget, SOV, and commitment totals reconciled',
+                payload={
+                    'actual_cost_applied': result.get('actual_cost_applied'),
+                    'commitment_updates': result.get('commitment_updates'),
+                    'invoiced_updates': result.get('invoiced_updates'),
+                    'budget_line_count': len(result.get('budgetLines') or []),
+                },
+                user_id=current_user.id,
+            )
+        except Exception:
+            pass
         return jsonify(result)
     except Exception as exc:
         db.session.rollback()
@@ -7428,11 +7487,28 @@ def api_save_pay_app_state():
     else:
         merged = merge_state_patch(existing, patch)
     record = persist_state(PayAppProjectState, db, project_id, merged, current_user.id)
+    reconcile_result = None
+    try:
+        from accounting_reconcile import reconcile_project_accounting
+        reconcile_result = reconcile_project_accounting(
+            project_id,
+            current_user.id,
+            ChangeOrder=ChangeOrder,
+            ChangeOrderAllocation=ChangeOrderAllocation,
+            Commitment=Commitment,
+            CommitmentAllocation=CommitmentAllocation,
+            BudgetProjectState=BudgetProjectState,
+            PayAppProjectState=PayAppProjectState,
+            db=db,
+        )
+    except Exception as exc:
+        reconcile_result = {'error': str(exc)}
     return jsonify({
         'ok': True,
         'project_id': project_id,
         'version': record.version,
         'updated_at': record.updated_at.isoformat() if record.updated_at else None,
+        'reconcile_result': reconcile_result,
     })
 
 

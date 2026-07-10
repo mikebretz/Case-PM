@@ -3,11 +3,16 @@ import unittest
 
 from accounting_reconcile import (
     _co_links_to_commitment,
+    apply_budget_actual_reconcile,
     apply_budget_reconcile,
     apply_contractor_sov_reconcile,
+    compute_budget_actual_targets,
     compute_budget_derivatives,
     compute_contractor_sov_co_amounts,
+    compute_company_invoiced_totals,
+    normalize_sub_sov_keys,
     reconcile_commitment_approved_changes,
+    reconcile_commitment_invoiced_amounts,
 )
 
 
@@ -43,6 +48,7 @@ class FakeCommitment:
         self.current_amount = kwargs.get('current_amount', 100000)
         self.company_id = kwargs.get('company_id', '42')
         self.company_name = kwargs.get('company_name', 'Titan Electrical')
+        self.invoiced_amount = kwargs.get('invoiced_amount', 0)
 
 
 class AccountingReconcileTests(unittest.TestCase):
@@ -104,6 +110,71 @@ class AccountingReconcileTests(unittest.TestCase):
         self.assertEqual(len(updates), 1)
         self.assertEqual(com.approved_changes, 7500)
         self.assertEqual(com.current_amount, 107500)
+
+    def test_normalize_sub_sov_keys_merges_duplicate_vendor(self):
+        sub_sov = {
+            '42': [{'cost_code': '26-1000', 'billed_to_date': 1000, 'original_commitment': 50000}],
+            'Titan Electrical': [{'cost_code': '26-1000', 'billed_to_date': 2000, 'original_commitment': 0}],
+        }
+        merged = normalize_sub_sov_keys(sub_sov)
+        self.assertEqual(len(merged), 2)
+        total_billed = sum(
+            float(l.get('billed_to_date') or 0)
+            for lines in merged.values() for l in lines
+        )
+        self.assertEqual(total_billed, 3000)
+
+    def test_compute_budget_actual_targets_from_sub_sov(self):
+        pay_state = {
+            'subcontractorSOV': {
+                '42': [{
+                    'cost_code': '26-1000',
+                    'billed_to_date': 12000,
+                    'co_billed_to_date': 3000,
+                }],
+            },
+        }
+        targets = compute_budget_actual_targets(pay_state, [], {})
+        key = ('261000', 'Subcontract')
+        self.assertEqual(targets[key], 15000)
+
+    def test_apply_budget_actual_reconcile(self):
+        state = {
+            'budgetLines': [{
+                'cost_code': '26-1000',
+                'cost_type': 'Subcontract',
+                'original_budget': 50000,
+                'actual': 0,
+            }],
+        }
+        key = ('261000', 'Subcontract')
+        state = apply_budget_actual_reconcile(state, {key: 15000})
+        self.assertEqual(state['budgetLines'][0]['actual'], 15000)
+        self.assertEqual(state['budgetLines'][0]['actual_source'], 'reconciled')
+
+    def test_compute_company_invoiced_totals(self):
+        com = FakeCommitment(company_id='42', commitment_type='Subcontract')
+        pay_state = {
+            'subPayAppHistory': {
+                '42': {
+                    '1': {'status': 'Approved', 'totalBilledThisPeriod': 8500},
+                    '2': {'status': 'Pending Approval', 'totalBilledThisPeriod': 1000},
+                },
+            },
+        }
+        totals = compute_company_invoiced_totals(pay_state, [com])
+        self.assertEqual(totals[com.id], 8500)
+
+    def test_reconcile_commitment_invoiced_amounts(self):
+        com = FakeCommitment(company_id='42', invoiced_amount=0)
+        pay_state = {
+            'subPayAppHistory': {
+                '42': {'1': {'status': 'Approved', 'totalBilledThisPeriod': 12000}},
+            },
+        }
+        updates = reconcile_commitment_invoiced_amounts([com], pay_state)
+        self.assertEqual(len(updates), 1)
+        self.assertEqual(com.invoiced_amount, 12000)
 
 
 if __name__ == '__main__':

@@ -18,6 +18,7 @@ SAGE_EVENT_MAP = {
     'BudgetSaved': {'module': 'JobCost', 'action': 'save_budget'},
     'BudgetPublished': {'module': 'JobCost', 'action': 'publish_budget'},
     'BudgetSageSync': {'module': 'JobCost', 'action': 'sync_cost_codes'},
+    'AccountingReconciled': {'module': 'JobCost', 'action': 'reconcile_actuals'},
     'CommitmentSubmitted': {'module': 'AP', 'action': 'submit_commitment'},
     'CommitmentApproved': {'module': 'AP', 'action': 'post_commitment'},
     'CommitmentApprovalStep': {'module': 'AP', 'action': 'approval_step'},
