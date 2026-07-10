@@ -39,22 +39,30 @@
 
         .login-watermark {
             position: fixed;
-            inset: 0;
+            top: 0;
+            left: 0;
+            width: 100vw;
+            height: 100vh;
+            height: 100dvh;
             display: flex;
             align-items: center;
             justify-content: center;
             pointer-events: none;
             z-index: 0;
+            overflow: hidden;
         }
 
-        /* Same mark as header: emerald tile + Font Awesome hard-hat */
+        /* Full viewport-height logo mark (fixed to screen, scales with zoom) */
         .login-watermark-logo {
-            width: min(72vmin, 520px);
-            height: min(72vmin, 520px);
-            opacity: 0.13;
+            height: 100dvh;
+            width: 100dvh;
+            max-width: 100vw;
+            max-height: 100dvh;
+            opacity: 0.15;
             display: flex;
             align-items: center;
             justify-content: center;
+            flex-shrink: 0;
         }
 
         .login-watermark-tile {
@@ -106,7 +114,7 @@
             </div>
         </div>
 
-        <div class="relative z-10 w-full max-w-[400px]">
+        <div class="relative z-10 w-full max-w-[400px] isolate">
             <div class="flex items-center justify-center gap-2.5 mb-6">
                 <div class="w-9 h-9 bg-emerald-600 rounded-lg flex items-center justify-center shadow-lg shadow-emerald-900/30">
                     <i class="fa-solid fa-hard-hat text-white text-base"></i>
