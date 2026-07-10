@@ -8,6 +8,8 @@ import subprocess
 import sys
 from datetime import datetime, date
 
+from db_sqlite import commit_with_retry, flush_with_retry
+
 DISCIPLINE_MAP = {
     'A': 'Architectural',
     'AD': 'Architectural',
@@ -1547,7 +1549,7 @@ def upsert_drawing_from_upload(
             updated_at=now,
         )
         db.session.add(drawing)
-        db.session.flush()
+        flush_with_retry(db.session)
         rev_num = str(normalize_revision_number(sheet_revision) or sheet_revision or '0')
     else:
         old_rev = DrawingRevision.query.filter_by(drawing_id=drawing.id, is_current=True).first()
@@ -1582,7 +1584,7 @@ def upsert_drawing_from_upload(
         notes=notes,
     )
     db.session.add(new_rev)
-    db.session.flush()
+    flush_with_retry(db.session)
     drawing.current_revision_id = new_rev.id
 
     if old_rev:
@@ -1714,8 +1716,12 @@ def process_pages_from_upload(
             'needs_review': sheet_status == 'For Review',
             'status': drawing.status,
         })
-        if from_combined_set or len(created) % 25 == 0:
-            db.session.flush()
+        # Commit each sheet immediately for multi-page sets so OCR between pages
+        # does not hold a SQLite write lock open for the entire batch.
+        if from_combined_set:
+            commit_with_retry(db.session)
+        elif len(created) % 25 == 0:
+            flush_with_retry(db.session)
 
     return created, needs_review
 
