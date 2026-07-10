@@ -166,12 +166,25 @@
     return true;
   }
 
+  function applySubSovToLocal(subSov) {
+    const store = global.casepmStore;
+    if (!store || !subSov || typeof subSov !== 'object') return false;
+    store.setItem('subcontractorSOV', JSON.stringify(subSov));
+    return true;
+  }
+
   function applyCoSyncResult(syncResult) {
     if (!syncResult || syncResult.error) return false;
+    let updated = false;
     if (syncResult.contractorSOV) {
       applyContractorSovToLocal(syncResult.contractorSOV);
+      updated = true;
     }
-    return true;
+    if (syncResult.subcontractorSOV) {
+      applySubSovToLocal(syncResult.subcontractorSOV);
+      updated = true;
+    }
+    return updated;
   }
 
   async function refreshFromServer() {
@@ -198,6 +211,7 @@
     collectLocalBundle,
     applyBundleToLocal,
     applyContractorSovToLocal,
+    applySubSovToLocal,
     applyCoSyncResult,
     refreshFromServer,
     queueSageEvent,

@@ -468,7 +468,7 @@ def sync_commitment_to_sub_sov(PayAppProjectState, db, commitment, allocations, 
     """Seed subcontractor SOV from approved subcontract commitment."""
     if commitment.commitment_type != 'Subcontract':
         return {'skipped': True, 'reason': 'not_subcontract'}
-    company_key = str(commitment.company_id or commitment.company_name or '')
+    company_key = str(commitment.company_id) if commitment.company_id else str(commitment.company_name or '')
     if not company_key:
         return {'skipped': True, 'reason': 'no_company'}
 

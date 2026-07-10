@@ -676,6 +676,24 @@
     global.dispatchEvent(new CustomEvent('casepm:co-approved', { detail: json }));
   }
 
+  async function resyncSov(coId) {
+    try {
+      const json = await api(`/api/change-orders/${coId}/sync-to-sov`, { method: 'POST', body: '{}' });
+      await applyCoSync({ sync_result: json });
+      const subAmt = json.sub_sov_amount_applied || json.sync_result?.sub_sov_amount_applied;
+      const msg = subAmt
+        ? `Synced to Pay App SOV. Subcontractor SOV updated: ${fmt(subAmt)}.`
+        : (json.already_synced || json.sync_result?.already_synced)
+          ? 'Already synced to contractor SOV. No new subcontractor SOV lines matched.'
+          : 'Synced to Budget & Pay Application SOV.';
+      toast(msg);
+      await loadChangeOrders();
+      if (state.drawerRecord?.id === coId) await viewCo(coId);
+    } catch (err) {
+      alert(err.message);
+    }
+  }
+
   let approvalContext = { coId: null };
 
   function openApprovalModal(coId, intent) {
@@ -808,7 +826,7 @@
         ${co.source_pco_id ? `<p><span class="text-zinc-500">Source PCO</span><br>#${co.source_pco_id}</p>` : ''}
         <p><span class="text-zinc-500">Linked RFI</span><br>${co.linked_rfi_id ? `<a href="/rfis" class="text-sky-400 hover:underline">${esc(linkedRfiLabel(co.linked_rfi_id))}</a>` : '—'}</p>
         <p><span class="text-zinc-500">Linked commitment</span><br>${esc(co.linked_commitment_ref || '—')}</p>
-        <p><span class="text-zinc-500">Sage / SOV</span><br>        ${co.sov_synced_at ? '<span class="text-emerald-400">SOV synced</span>' : esc(co.sage_sync_status || '—')}</p>
+        <p><span class="text-zinc-500">Sage / SOV</span><br>${co.sov_synced_at ? '<span class="text-emerald-400">Synced to Budget &amp; SOV</span>' : esc(co.sage_sync_status || '—')}</p>
       </div>
       ${(co.approval_history || []).length ? `<div class="mt-4"><div class="text-xs text-zinc-500 uppercase tracking-wide mb-2">Approval history</div>
         <div class="space-y-2">${co.approval_history.map(h => `<div class="text-xs border border-zinc-800 rounded p-2"><div class="text-zinc-400">${esc(h.user_name || '')} · ${esc(h.action)} · ${h.at ? new Date(h.at).toLocaleString() : ''}</div>${h.comment ? `<div class="mt-1">${esc(h.comment)}</div>` : ''}</div>`).join('')}</div></div>` : ''}
@@ -827,6 +845,7 @@
       ${showSubmit ? `<button type="button" onclick="CasePMChangeOrders.workflowCo(${co.id},'submit')" class="px-4 py-2 bg-amber-600 hover:bg-amber-500 rounded-md text-sm">Submit</button>` : ''}
       ${showApprove ? `<button type="button" onclick="CasePMChangeOrders.openApprovalModal(${co.id},'approve')" class="px-4 py-2 bg-emerald-600 hover:bg-emerald-500 rounded-md text-sm">Approve</button>
       <button type="button" onclick="CasePMChangeOrders.openApprovalModal(${co.id},'reject')" class="px-4 py-2 bg-zinc-800 hover:bg-zinc-700 rounded-md text-sm text-red-400">Reject</button>` : ''}
+      ${co.status === 'Approved' ? `<button type="button" onclick="CasePMChangeOrders.resyncSov(${co.id})" class="px-4 py-2 bg-violet-800 hover:bg-violet-700 rounded-md text-sm">Re-sync to Pay App / Sub SOV</button>` : ''}
       <button type="button" onclick="CasePMChangeOrders.editCo(${co.id})" class="px-4 py-2 bg-zinc-800 hover:bg-zinc-700 rounded-md text-sm">Edit</button>
       <button type="button" onclick="CasePMChangeOrders.deleteCo(${co.id})" class="px-4 py-2 bg-red-950 hover:bg-red-900 border border-red-800 rounded-md text-sm text-red-300">Delete</button>`;
     openDrawer();
@@ -1156,7 +1175,7 @@
     saveModal,
     editCo: id => api(`/api/change-orders/${id}`).then(openModal.bind(null, 'co')).catch(e => alert(e.message)),
     editPco: id => api(`/api/pcos/${id}`).then(openModal.bind(null, 'pco')).catch(e => alert(e.message)),
-    viewCo, viewPco, workflowCo, openApprovalModal, confirmApprovalAction, closeDrawer, promotePco, deleteCo,
+    viewCo, viewPco, workflowCo, resyncSov, openApprovalModal, confirmApprovalAction, closeDrawer, promotePco, deleteCo,
     addAllocRow: () => { state.allocationRows.push({ cost_code: '', cost_type: '', amount: 0, description: '' }); renderAllocationRows(); },
     removeAllocRow: idx => { state.allocationRows.splice(idx, 1); renderAllocationRows(); },
     onCompanyChange, onContactChange, onAllocCostCodeChange, updateAllocationTotal, exportExcel, printLog, openSageLog,

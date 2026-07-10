@@ -2319,6 +2319,7 @@ def update_change_order_status(co_id):
             sync_result = sync_change_order_to_sov(
                 ChangeOrder, ChangeOrderAllocation, PayAppProjectState,
                 ScheduleData, Project, db, co.id, current_user.id,
+                Commitment=Commitment,
             )
             co.sage_sync_status = 'sov_synced'
             from sage_service import create_and_process_sage_event
@@ -7631,6 +7632,7 @@ def api_sync_change_order_to_sov(co_id):
         result = sync_change_order_to_sov(
             ChangeOrder, ChangeOrderAllocation, PayAppProjectState,
             ScheduleData, Project, db, co_id, current_user.id,
+            Commitment=Commitment,
         )
         return jsonify({'ok': True, **result})
     except ValueError as exc:
@@ -7729,6 +7731,16 @@ def api_change_order_workflow(co_id):
 
     sync_result = None
     budget_sync_result = None
+    if action == 'submit' and new_status == 'Submitted':
+        try:
+            from budget_persistence import sync_change_order_to_budget
+            budget_sync_result = sync_change_order_to_budget(
+                ChangeOrder, ChangeOrderAllocation, BudgetProjectState,
+                db, co.id, old_status, new_status, current_user.id,
+            )
+        except Exception:
+            pass
+
     if final_approved:
         co.approved_at = datetime.utcnow()
         co.approved_by_id = current_user.id
@@ -7737,6 +7749,7 @@ def api_change_order_workflow(co_id):
             sync_result = sync_change_order_to_sov(
                 ChangeOrder, ChangeOrderAllocation, PayAppProjectState,
                 ScheduleData, Project, db, co.id, current_user.id,
+                Commitment=Commitment,
             )
             co.sage_sync_status = 'sov_synced'
             from sage_service import create_and_process_sage_event
