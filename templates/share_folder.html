@@ -1,0 +1,143 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Shared folder — Case PM</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+</head>
+<body class="bg-zinc-950 text-zinc-100 min-h-screen p-4 md:p-8">
+    <div class="max-w-4xl mx-auto">
+        {% if error %}
+        <div class="bg-zinc-900 border border-zinc-700 rounded-xl p-8 text-center">
+            <div class="text-red-400 text-4xl mb-3"><i class="fa-solid fa-link-slash"></i></div>
+            <h1 class="text-lg font-semibold">Link unavailable</h1>
+            <p class="text-zinc-500 text-sm mt-2">{{ error }}</p>
+        </div>
+        {% elif needs_password %}
+        <div class="max-w-md mx-auto bg-zinc-900 border border-zinc-700 rounded-xl p-8 text-center mt-12">
+            <div class="text-sky-400 text-4xl mb-3"><i class="fa-solid fa-lock"></i></div>
+            <h1 class="text-lg font-semibold">{{ folder_name }}</h1>
+            <p class="text-zinc-500 text-sm mt-2 mb-4">Enter the password to browse this folder.</p>
+            <form id="folderUnlockForm" class="text-left space-y-3">
+                <input type="password" id="folderPassword" class="w-full bg-zinc-800 border border-zinc-600 rounded-lg px-3 py-2 text-sm" required>
+                <p id="folderUnlockError" class="text-red-400 text-xs hidden"></p>
+                <button type="submit" class="w-full px-4 py-2.5 bg-emerald-600 hover:bg-emerald-500 rounded-lg font-medium">Open folder</button>
+            </form>
+        </div>
+        <script>
+        document.getElementById('folderUnlockForm').addEventListener('submit', async e => {
+            e.preventDefault();
+            const err = document.getElementById('folderUnlockError');
+            err.classList.add('hidden');
+            const res = await fetch('/share/folder/{{ token }}/unlock', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ password: document.getElementById('folderPassword').value }),
+            });
+            if (res.ok) location.reload();
+            else { err.textContent = (await res.json().catch(() => ({}))).error || 'Incorrect password'; err.classList.remove('hidden'); }
+        });
+        </script>
+        {% else %}
+        <header class="mb-4 flex flex-wrap items-center justify-between gap-3">
+            <div>
+                <p class="text-xs text-zinc-500 uppercase tracking-wide">Shared folder</p>
+                <h1 class="text-xl font-semibold" id="sfTitle">{{ folder_name }}</h1>
+            </div>
+            {% if allow_upload %}
+            <label class="inline-flex items-center gap-2 px-4 py-2 bg-emerald-600 hover:bg-emerald-500 rounded-lg text-sm font-medium cursor-pointer">
+                <i class="fa-solid fa-upload"></i> Upload file
+                <input type="file" id="sfUploadInput" class="hidden">
+            </label>
+            {% endif %}
+        </header>
+        <nav id="sfBreadcrumbs" class="text-sm text-sky-400 mb-3 flex flex-wrap gap-1"></nav>
+        <div class="bg-zinc-900 border border-zinc-700 rounded-xl overflow-hidden">
+            <table class="w-full text-sm">
+                <thead class="bg-zinc-800 border-b border-zinc-700">
+                    <tr>
+                        <th class="text-left p-3 font-medium text-zinc-400">Name</th>
+                        <th class="text-left p-3 font-medium text-zinc-400 w-24">Type</th>
+                        <th class="text-right p-3 font-medium text-zinc-400 w-28"></th>
+                    </tr>
+                </thead>
+                <tbody id="sfTableBody"></tbody>
+            </table>
+            <p id="sfEmpty" class="hidden text-center text-zinc-500 py-12 text-sm">This folder is empty.</p>
+        </div>
+        <p class="text-zinc-600 text-xs mt-4 text-center">Shared via Case PM Documents</p>
+        <script>
+        (function () {
+            const TOKEN = {{ token|tojson }};
+            const ALLOW_UPLOAD = {{ allow_upload|tojson }};
+            let currentFolderId = null;
+            let rootFolderId = null;
+
+            function esc(s) { return String(s || '').replace(/&/g,'&amp;').replace(/</g,'&lt;'); }
+            function fmtSize(n) {
+                n = n || 0;
+                if (n < 1024) return n + ' B';
+                if (n < 1048576) return (n/1024).toFixed(1) + ' KB';
+                return (n/1048576).toFixed(1) + ' MB';
+            }
+
+            async function load(folderId) {
+                const q = folderId ? '?folder_id=' + folderId : '';
+                const res = await fetch('/share/folder/' + TOKEN + '/browse' + q);
+                const json = await res.json();
+                if (!res.ok) { alert(json.error || 'Failed to load'); return; }
+                rootFolderId = json.root_folder_id;
+                currentFolderId = json.folder_id;
+                document.getElementById('sfTitle').textContent = json.folder_name;
+                const crumbs = json.breadcrumbs || [];
+                document.getElementById('sfBreadcrumbs').innerHTML = crumbs.map((c, i) =>
+                    (i ? '<span class="text-zinc-600">/</span>' : '') +
+                    `<button type="button" class="hover:underline" data-fid="${c.id}">${esc(c.name)}</button>`
+                ).join('');
+                document.getElementById('sfBreadcrumbs').querySelectorAll('button').forEach(btn => {
+                    btn.addEventListener('click', () => load(parseInt(btn.dataset.fid, 10)));
+                });
+                let html = '';
+                (json.folders || []).forEach(f => {
+                    html += `<tr class="border-b border-zinc-800 hover:bg-zinc-800/50 cursor-pointer" data-kind="folder" data-id="${f.id}">
+                        <td class="p-3"><i class="fa-solid fa-folder text-amber-400 mr-2"></i>${esc(f.name)}</td>
+                        <td class="p-3 text-zinc-500">Folder</td><td></td></tr>`;
+                });
+                (json.files || []).forEach(f => {
+                    html += `<tr class="border-b border-zinc-800 hover:bg-zinc-800/50">
+                        <td class="p-3"><i class="fa-solid fa-file text-zinc-400 mr-2"></i>${esc(f.name)}</td>
+                        <td class="p-3 text-zinc-500">${esc(f.document_type || '')}</td>
+                        <td class="p-3 text-right"><a class="text-sky-400 hover:underline" href="/share/folder/${TOKEN}/download/${f.id}">Download</a></td></tr>`;
+                });
+                const body = document.getElementById('sfTableBody');
+                body.innerHTML = html;
+                document.getElementById('sfEmpty').classList.toggle('hidden', html.length > 0);
+                body.querySelectorAll('[data-kind="folder"]').forEach(row => {
+                    row.addEventListener('click', () => load(parseInt(row.dataset.id, 10)));
+                });
+            }
+
+            if (ALLOW_UPLOAD) {
+                document.getElementById('sfUploadInput').addEventListener('change', async e => {
+                    const file = e.target.files?.[0];
+                    if (!file) return;
+                    const fd = new FormData();
+                    fd.append('file', file);
+                    fd.append('folder_id', currentFolderId);
+                    const res = await fetch('/share/folder/' + TOKEN + '/upload', { method: 'POST', body: fd });
+                    const json = await res.json().catch(() => ({}));
+                    if (!res.ok) alert(json.error || 'Upload failed');
+                    else { alert('Uploaded ' + file.name); load(currentFolderId); }
+                    e.target.value = '';
+                });
+            }
+
+            load(null);
+        })();
+        </script>
+        {% endif %}
+    </div>
+</body>
+</html>

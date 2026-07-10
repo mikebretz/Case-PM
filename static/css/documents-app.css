@@ -299,6 +299,20 @@
 }
 .docs-dialog::backdrop { background: rgba(0, 0, 0, 0.65); }
 
+.docs-preview-tab {
+  font-size: 0.65rem;
+  padding: 0.25rem 0.5rem;
+  border-radius: 0.25rem;
+  background: #27272a;
+  color: #a1a1aa;
+  border: 1px solid #3f3f46;
+}
+.docs-preview-tab.active {
+  background: #0c4a6e;
+  color: #e0f2fe;
+  border-color: #0369a1;
+}
+
 @media (max-width: 1279px) {
   .docs-preview-panel.open {
     position: fixed;
