@@ -186,7 +186,7 @@ def record_audit(db, AuditLog, user, **fields):
         target_type=(fields.get('target_type') or '')[:50] or None,
         target_id=fields.get('target_id'),
         details=str(detail)[:4000] if detail else None,
-        timestamp=fields.get('timestamp') or datetime.utcnow(),
+        timestamp=_coerce_timestamp(fields.get('timestamp')),
         module=(fields.get('module') or 'app')[:80],
         user_name=(fields.get('user_name') or (user.full_name if user else ''))[:150] or None,
         user_email=(fields.get('user_email') or (getattr(user, 'email', '') if user else ''))[:120] or None,
@@ -210,19 +210,61 @@ def record_audit_batch(db, AuditLog, user, events):
     for ev in events or []:
         if not isinstance(ev, dict):
             continue
-        created.append(record_audit(db, AuditLog, user, **ev))
+        try:
+            with db.session.begin_nested():
+                created.append(record_audit(db, AuditLog, user, **ev))
+        except Exception:
+            continue
     return created
 
 
 def _parse_date(val):
     if not val:
         return None
-    for fmt in ('%Y-%m-%d', '%Y-%m-%dT%H:%M:%S', '%Y-%m-%dT%H:%M:%SZ'):
+    if isinstance(val, datetime):
+        return val
+    s = str(val).strip()
+    if not s:
+        return None
+    normalized = s.replace('Z', '').replace('z', '')
+    if '+' in normalized:
+        normalized = normalized.split('+', 1)[0]
+    if normalized.endswith(' UTC'):
+        normalized = normalized[:-4].strip()
+    for fmt in (
+        '%Y-%m-%dT%H:%M:%S.%f',
+        '%Y-%m-%dT%H:%M:%S',
+        '%Y-%m-%d %H:%M:%S',
+        '%Y-%m-%d',
+    ):
         try:
-            return datetime.strptime(val.replace('Z', ''), fmt.replace('Z', ''))
+            return datetime.strptime(normalized, fmt)
         except ValueError:
             continue
-    return None
+    try:
+        return datetime.fromisoformat(s.replace('Z', '+00:00')).replace(tzinfo=None)
+    except ValueError:
+        return None
+
+
+def _coerce_timestamp(val):
+    """Accept datetime, ISO strings, or epoch numbers for audit_log.timestamp."""
+    if val is None:
+        return datetime.utcnow()
+    if isinstance(val, datetime):
+        return val
+    if hasattr(val, 'year') and hasattr(val, 'month') and not isinstance(val, datetime):
+        return datetime.combine(val, datetime.min.time())
+    if isinstance(val, (int, float)):
+        try:
+            ts = float(val)
+            if ts > 1e12:
+                ts /= 1000.0
+            return datetime.utcfromtimestamp(ts)
+        except (OSError, ValueError, OverflowError):
+            return datetime.utcnow()
+    parsed = _parse_date(val)
+    return parsed or datetime.utcnow()
 
 
 def query_audit_logs(AuditLog, args):
