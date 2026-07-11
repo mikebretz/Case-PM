@@ -19,9 +19,16 @@
     speakers: [], transcriptSegments: [], agenda: [], actionItems: [], attendees: [],
     listening: false, recording: false, recognition: null, mediaRecorder: null,
     audioChunks: [], audioStream: null, audioContext: null, analyser: null,
-    activeSpeakerId: 'sp1', speakerPitches: {}, lastPitch: null,
     recordingStartedAt: null, recordingTimer: null,
+    voiceEngine: null, playbackHighlightIdx: -1,
   };
+
+  function voice() {
+    if (!state.voiceEngine && global.CasePMVoiceDiarization) {
+      state.voiceEngine = global.CasePMVoiceDiarization.createSpeakerEngine();
+    }
+    return state.voiceEngine;
+  }
 
   function projectId() {
     return ctx.projectId || (function () {
@@ -143,11 +150,14 @@
   function resetModal() {
     stopAllCapture();
     state.editId = null;
-    state.speakers = JSON.parse(JSON.stringify(state.catalog?.default_speakers || []));
     state.transcriptSegments = [];
     state.agenda = [];
     state.actionItems = [];
     state.attendees = [];
+    state.playbackHighlightIdx = -1;
+    const eng = voice();
+    state.speakers = eng.initSpeakers(state.catalog?.default_speakers || [], projectId());
+    eng.setAutoDetect(el('mmAutoDetect')?.checked !== false);
     el('mmModalTitle').textContent = 'New Meeting';
     ['mmSubject', 'mmLocation', 'mmVirtualLink', 'mmOrganizer', 'mmDiscussion', 'mmMinutesBody', 'mmAttendeesRaw'].forEach((id) => {
       if (el(id)) el(id).value = '';
@@ -177,8 +187,15 @@
     if (!m) return;
     resetModal();
     state.editId = id;
-    state.speakers = m.speakers?.length ? m.speakers : JSON.parse(JSON.stringify(state.catalog?.default_speakers || []));
-    state.transcriptSegments = m.transcript_segments || [];
+    const eng = voice();
+    state.speakers = eng.initSpeakers(
+      m.speakers?.length ? m.speakers : (state.catalog?.default_speakers || []),
+      projectId(),
+    );
+    state.transcriptSegments = (m.transcript_segments || []).map((s, i) => ({
+      ...s,
+      id: s.id || `seg-${i}-${Date.now()}`,
+    }));
     state.agenda = m.agenda || [];
     state.actionItems = m.action_items || [];
     state.attendees = m.attendees || [];
@@ -200,8 +217,10 @@
     el('mmSyncedBadge').classList.toggle('hidden', !m.synced_to_schedule);
     el('mmDelete').classList.remove('hidden');
     if (m.has_recording) {
-      el('mmRecordingPlayer').src = `/api/meeting-minutes/${m.id}/recording`;
-      el('mmRecordingPlayer').classList.remove('hidden');
+      const player = el('mmRecordingPlayer');
+      player.src = `/api/meeting-minutes/${m.id}/recording`;
+      player.classList.remove('hidden');
+      player.ontimeupdate = onPlaybackTimeUpdate;
     }
     setTab('details');
     el('mmModal').showModal();
@@ -235,56 +254,172 @@
   function renderSpeakerBar() {
     const host = el('mmSpeakerBar');
     if (!host) return;
-    host.innerHTML = state.speakers.map((sp) => `
-      <button type="button" class="mm-speaker-btn px-3 py-1.5 rounded-full text-xs font-medium border transition-colors ${sp.id === state.activeSpeakerId ? 'ring-2 ring-white' : 'opacity-80'}"
-        data-sp="${sp.id}" style="background:${sp.color}33;border-color:${sp.color};color:${sp.color}">
-        <i class="fa-solid fa-user mr-1"></i>${esc(sp.name || sp.label)}
-      </button>`).join('') + `
-      <button type="button" id="mmAddSpeaker" class="px-2 py-1.5 rounded-full text-xs bg-zinc-800 border border-zinc-600 text-zinc-400"><i class="fa-solid fa-plus"></i></button>`;
+    const eng = voice();
+    const activeId = eng.getActiveSpeakerId();
+    state.speakers = eng.getSpeakers();
+    host.innerHTML = state.speakers.map((sp) => {
+      const trained = sp.voice_profile?.trained_count > 0;
+      const conf = sp.voice_profile?.confidence ? Math.round(sp.voice_profile.confidence * 100) : 0;
+      return `
+      <button type="button" class="mm-speaker-btn px-3 py-1.5 rounded-full text-xs font-medium border transition-colors ${sp.id === activeId ? 'ring-2 ring-white' : 'opacity-80'}"
+        data-sp="${sp.id}" style="background:${sp.color}33;border-color:${sp.color};color:${sp.color}" title="${trained ? `Voice trained (${conf}% confidence) — double-click to rename` : 'Double-click to rename'}">
+        <i class="fa-solid fa-user mr-1"></i>${esc(sp.name || sp.label)}${trained ? ` <i class="fa-solid fa-brain text-[9px] opacity-70"></i>` : ''}
+      </button>`;
+    }).join('') + `
+      <button type="button" id="mmAddSpeaker" class="px-2 py-1.5 rounded-full text-xs bg-zinc-800 border border-zinc-600 text-zinc-400" title="Add speaker manually"><i class="fa-solid fa-plus"></i></button>`;
     host.querySelectorAll('[data-sp]').forEach((btn) => {
       btn.addEventListener('click', () => {
-        state.activeSpeakerId = btn.getAttribute('data-sp');
+        eng.setActiveSpeakerId(btn.getAttribute('data-sp'));
         renderSpeakerBar();
       });
-      btn.addEventListener('dblclick', () => {
+      btn.addEventListener('dblclick', (e) => {
+        e.preventDefault();
         const sp = state.speakers.find((s) => s.id === btn.getAttribute('data-sp'));
         const name = prompt('Speaker name (e.g. Mike B., Superintendent):', sp?.name || sp?.label || '');
-        if (name != null && sp) { sp.name = name.trim(); renderSpeakerBar(); }
+        if (name != null && sp) {
+          eng.renameSpeaker(sp.id, name.trim());
+          state.speakers = eng.getSpeakers();
+          state.transcriptSegments.forEach((seg) => {
+            if (seg.speaker_id === sp.id) seg.speaker_label = sp.name || sp.label;
+          });
+          renderSpeakerBar();
+          renderTranscriptView();
+        }
       });
     });
     el('mmAddSpeaker')?.addEventListener('click', () => {
-      const n = state.speakers.length + 1;
-      const colors = ['#6366f1', '#f59e0b', '#14b8a6', '#ec4899', '#22c55e', '#0ea5e9'];
-      state.speakers.push({ id: `sp${n}`, label: `Person ${n}`, name: '', color: colors[n % colors.length] });
+      eng.createSpeaker(null);
+      state.speakers = eng.getSpeakers();
       renderSpeakerBar();
     });
   }
 
   function activeSpeaker() {
-    return state.speakers.find((s) => s.id === state.activeSpeakerId) || state.speakers[0] || { id: 'sp1', label: 'Person 1', name: '' };
+    const eng = voice();
+    const sp = eng.getSpeakers().find((s) => s.id === eng.getActiveSpeakerId());
+    return sp || { id: 'sp1', label: 'Person 1', name: '' };
   }
 
-  function appendTranscript(text, pitch) {
-    const sp = activeSpeaker();
-    const label = sp.name || sp.label || 'Speaker';
+  function appendTranscript(text, fingerprint) {
+    const eng = voice();
+    const speakerId = eng.autoAssignSpeaker(fingerprint);
+    const sp = eng.getSpeakers().find((s) => s.id === speakerId) || activeSpeaker();
+    const label = eng.speakerLabel(sp);
+    const match = eng.matchSpeaker(fingerprint);
     const last = state.transcriptSegments[state.transcriptSegments.length - 1];
-    if (last && last.speaker_id === sp.id && Date.now() - (last._ts || 0) < 8000) {
+    const offsetMs = eng.audioOffsetMs();
+
+    if (last && last.speaker_id === speakerId && Date.now() - (last._ts || 0) < 6000) {
       last.text = `${last.text} ${text}`.trim();
       last._ts = Date.now();
-      if (pitch) last.pitch_hz = pitch;
+      if (fingerprint) last.voice_fingerprint = fingerprint;
+      last.confidence = match.confidence;
     } else {
       state.transcriptSegments.push({
-        speaker_id: sp.id, speaker_label: label, text: text.trim(),
-        ts: new Date().toISOString(), pitch_hz: pitch || null, _ts: Date.now(),
+        id: `seg-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+        speaker_id: speakerId,
+        speaker_label: label,
+        text: text.trim(),
+        ts: new Date().toISOString(),
+        audio_offset_ms: offsetMs,
+        voice_fingerprint: fingerprint || null,
+        auto_assigned: true,
+        user_corrected: false,
+        confidence: match.confidence,
+        _ts: Date.now(),
       });
     }
-    if (pitch) {
-      const arr = state.speakerPitches[sp.id] || (state.speakerPitches[sp.id] = []);
-      arr.push(pitch);
-      if (arr.length > 20) arr.shift();
-    }
+    state.speakers = eng.getSpeakers();
+    renderSpeakerBar();
     renderTranscriptView();
     syncDiscussionFromTranscript();
+  }
+
+  function reassignSegment(segIdx, newSpeakerId) {
+    const eng = voice();
+    const seg = state.transcriptSegments[segIdx];
+    if (!seg) return;
+    const sp = eng.getSpeakers().find((s) => s.id === newSpeakerId);
+    if (!sp) return;
+    seg.speaker_id = newSpeakerId;
+    seg.speaker_label = eng.speakerLabel(sp);
+    seg.user_corrected = true;
+    seg.auto_assigned = false;
+    if (seg.voice_fingerprint) eng.trainFromCorrection(newSpeakerId, seg.voice_fingerprint);
+    state.speakers = eng.getSpeakers();
+    eng.persistProfiles(projectId());
+    renderSpeakerBar();
+    renderTranscriptView();
+    syncDiscussionFromTranscript();
+    if (global.showToast) global.showToast(`Tagged as ${seg.speaker_label} — voice learned`);
+  }
+
+  function reprocessAllSegments() {
+    const eng = voice();
+    state.transcriptSegments = eng.reprocessSegments(state.transcriptSegments);
+    eng.persistProfiles(projectId());
+    renderTranscriptView();
+    syncDiscussionFromTranscript();
+    if (global.showToast) global.showToast('Re-applied learned voices to transcript');
+  }
+
+  function onPlaybackTimeUpdate() {
+    const player = el('mmRecordingPlayer');
+    if (!player || player.classList.contains('hidden')) return;
+    const tMs = player.currentTime * 1000;
+    let idx = -1;
+    state.transcriptSegments.forEach((seg, i) => {
+      if (seg.audio_offset_ms != null && seg.audio_offset_ms <= tMs) idx = i;
+    });
+    if (idx !== state.playbackHighlightIdx) {
+      state.playbackHighlightIdx = idx;
+      renderTranscriptView();
+    }
+  }
+
+  function jumpToSegment(segIdx) {
+    const seg = state.transcriptSegments[segIdx];
+    const player = el('mmRecordingPlayer');
+    if (!seg || !player || !player.src) return;
+    if (seg.audio_offset_ms != null) player.currentTime = seg.audio_offset_ms / 1000;
+    player.play().catch(() => {});
+    state.playbackHighlightIdx = segIdx;
+    renderTranscriptView();
+  }
+
+  function showSpeakerPicker(segIdx, anchorEl) {
+    const eng = voice();
+    const existing = document.getElementById('mmSpeakerPicker');
+    if (existing) existing.remove();
+    const pop = document.createElement('div');
+    pop.id = 'mmSpeakerPicker';
+    pop.className = 'fixed z-[100001] bg-zinc-900 border border-zinc-600 rounded-lg shadow-xl p-2 min-w-[180px]';
+    pop.innerHTML = `<div class="text-[10px] uppercase text-zinc-500 px-2 py-1 mb-1">Assign speaker</div>
+      ${eng.getSpeakers().map((sp) => `
+        <button type="button" class="w-full text-left px-3 py-2 text-sm rounded-md hover:bg-zinc-800 mm-pick-sp" data-sp="${sp.id}" style="color:${sp.color}">
+          <i class="fa-solid fa-user mr-2"></i>${esc(sp.name || sp.label)}
+        </button>`).join('')}
+      <button type="button" class="w-full text-left px-3 py-2 text-xs text-emerald-400 hover:bg-zinc-800 mt-1 border-t border-zinc-700 mm-pick-new">+ New person</button>`;
+    document.body.appendChild(pop);
+    const rect = anchorEl.getBoundingClientRect();
+    pop.style.left = `${Math.min(rect.left, window.innerWidth - 200)}px`;
+    pop.style.top = `${rect.bottom + 4}px`;
+    pop.querySelectorAll('.mm-pick-sp').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        reassignSegment(segIdx, btn.getAttribute('data-sp'));
+        pop.remove();
+      });
+    });
+    pop.querySelector('.mm-pick-new')?.addEventListener('click', () => {
+      const sp = eng.createSpeaker(state.transcriptSegments[segIdx]?.voice_fingerprint);
+      state.speakers = eng.getSpeakers();
+      reassignSegment(segIdx, sp.id);
+      pop.remove();
+    });
+    const close = (e) => {
+      if (!pop.contains(e.target)) { pop.remove(); document.removeEventListener('click', close); }
+    };
+    setTimeout(() => document.addEventListener('click', close), 0);
   }
 
   function syncDiscussionFromTranscript() {
@@ -296,14 +431,49 @@
     const host = el('mmTranscriptView');
     if (!host) return;
     if (!state.transcriptSegments.length) {
-      host.innerHTML = '<div class="text-zinc-500 text-sm py-4">No transcript yet. Use Live Capture to dictate with speaker tags.</div>';
+      host.innerHTML = '<div class="text-zinc-500 text-sm py-4">No transcript yet. Start Record — speakers are detected automatically. Click any line to correct who said it; the app learns voices from your corrections.</div>';
       return;
     }
-    host.innerHTML = state.transcriptSegments.map((s, i) => `
-      <div class="mb-3 p-2 rounded-md bg-zinc-800/50 border border-zinc-700">
-        <div class="text-xs font-semibold text-violet-300 mb-1">${esc(s.speaker_label)}${s.pitch_hz ? ` <span class="text-zinc-500 font-normal">(~${Math.round(s.pitch_hz)} Hz)</span>` : ''}</div>
-        <div class="text-sm text-zinc-200">${esc(s.text)}</div>
-      </div>`).join('');
+    host.innerHTML = state.transcriptSegments.map((s, i) => {
+      const sp = state.speakers.find((x) => x.id === s.speaker_id);
+      const color = sp?.color || '#8b5cf6';
+      const highlight = i === state.playbackHighlightIdx;
+      const timeLabel = s.audio_offset_ms != null ? formatOffset(s.audio_offset_ms) : '';
+      const conf = s.confidence ? Math.round(s.confidence * 100) : null;
+      const corrected = s.user_corrected ? '<i class="fa-solid fa-user-check text-emerald-400 text-[10px] ml-1" title="You corrected this"></i>' : '';
+      const auto = s.auto_assigned && !s.user_corrected ? '<i class="fa-solid fa-wand-magic-sparkles text-violet-400 text-[10px] ml-1" title="Auto-detected"></i>' : '';
+      return `
+      <div class="mb-2 p-2 rounded-md border transition-colors mm-seg-row ${highlight ? 'bg-violet-900/30 border-violet-500' : 'bg-zinc-800/50 border-zinc-700'}" data-seg="${i}">
+        <div class="flex items-center justify-between gap-2 mb-1">
+          <button type="button" class="text-xs font-semibold mm-seg-speaker cursor-pointer hover:underline" data-seg="${i}" style="color:${color}">
+            ${esc(s.speaker_label)}${corrected}${auto}${conf != null ? ` <span class="text-zinc-500 font-normal">(${conf}%)</span>` : ''}
+          </button>
+          <div class="flex items-center gap-2">
+            ${timeLabel ? `<button type="button" class="text-[10px] text-zinc-500 hover:text-sky-400 mm-seg-play" data-seg="${i}" title="Play from here"><i class="fa-solid fa-play mr-0.5"></i>${timeLabel}</button>` : ''}
+          </div>
+        </div>
+        <div class="text-sm text-zinc-200 mm-seg-text cursor-pointer" data-seg="${i}">${esc(s.text)}</div>
+      </div>`;
+    }).join('');
+    host.querySelectorAll('.mm-seg-speaker, .mm-seg-text').forEach((node) => {
+      node.addEventListener('click', (e) => {
+        e.stopPropagation();
+        showSpeakerPicker(parseInt(node.getAttribute('data-seg'), 10), node);
+      });
+    });
+    host.querySelectorAll('.mm-seg-play').forEach((node) => {
+      node.addEventListener('click', (e) => {
+        e.stopPropagation();
+        jumpToSegment(parseInt(node.getAttribute('data-seg'), 10));
+      });
+    });
+  }
+
+  function formatOffset(ms) {
+    const sec = Math.floor(ms / 1000);
+    const m = Math.floor(sec / 60);
+    const s = sec % 60;
+    return `${m}:${String(s).padStart(2, '0')}`;
   }
 
   function renderAgendaEditor() {
@@ -402,7 +572,7 @@
       discussion_notes: el('mmDiscussion').value.trim(),
       minutes_body: el('mmMinutesBody').value.trim(),
       transcript_segments: state.transcriptSegments.map(({ _ts, ...rest }) => rest),
-      speakers: state.speakers,
+      speakers: voice().getSpeakers(),
       action_items: state.actionItems,
       push_to_schedule: el('mmPush').checked,
     };
@@ -420,6 +590,7 @@
       if (state.audioChunks.length && j.meeting?.id) {
         await uploadRecording(j.meeting.id);
       }
+      voice().persistProfiles(projectId());
       el('mmModal').close();
       stopAllCapture();
       await load();
@@ -508,54 +679,6 @@
     } catch (e) { alert(e.message); }
   }
 
-  // ── Voice: pitch estimation (rough speaker-change hint) ─────────────────
-  function estimatePitch() {
-    if (!state.analyser) return null;
-    const buf = new Float32Array(state.analyser.fftSize);
-    state.analyser.getFloatTimeDomainData(buf);
-    let bestLag = -1;
-    let bestCorr = 0;
-    const minLag = Math.floor(state.audioContext.sampleRate / 400);
-    const maxLag = Math.floor(state.audioContext.sampleRate / 80);
-    for (let lag = minLag; lag < maxLag; lag++) {
-      let corr = 0;
-      for (let i = 0; i < buf.length - lag; i++) corr += buf[i] * buf[i + lag];
-      if (corr > bestCorr) { bestCorr = corr; bestLag = lag; }
-    }
-    if (bestLag <= 0 || bestCorr < 0.01) return null;
-    return state.audioContext.sampleRate / bestLag;
-  }
-
-  function suggestSpeakerFromPitch(pitch) {
-    if (!pitch) return null;
-    let bestId = null;
-    let bestDiff = Infinity;
-    Object.keys(state.speakerPitches).forEach((sid) => {
-      const arr = state.speakerPitches[sid];
-      if (!arr?.length) return;
-      const avg = arr.reduce((a, b) => a + b, 0) / arr.length;
-      const diff = Math.abs(avg - pitch) / avg;
-      if (diff < bestDiff && diff < 0.12) { bestDiff = diff; bestId = sid; }
-    });
-    return bestId;
-  }
-
-  function maybeSwitchSpeaker(pitch) {
-    if (!pitch || !state.listening) return;
-    const current = state.speakerPitches[state.activeSpeakerId];
-    if (!current?.length) return;
-    const avg = current.reduce((a, b) => a + b, 0) / current.length;
-    const delta = Math.abs(pitch - avg) / avg;
-    if (delta > 0.18) {
-      const suggested = suggestSpeakerFromPitch(pitch);
-      if (suggested && suggested !== state.activeSpeakerId) {
-        state.activeSpeakerId = suggested;
-        renderSpeakerBar();
-        if (global.showToast) global.showToast('Speaker voice change detected — switched tag');
-      }
-    }
-  }
-
   async function startAudioAnalysis() {
     try {
       if (!state.audioStream) {
@@ -566,12 +689,15 @@
       state.analyser = state.audioContext.createAnalyser();
       state.analyser.fftSize = 2048;
       src.connect(state.analyser);
+      voice().setAnalyser(state.audioContext, state.analyser);
     } catch (_) {}
   }
 
   function startDictation() {
     const SR = global.SpeechRecognition || global.webkitSpeechRecognition;
     const hint = el('mmCaptureHint');
+    const eng = voice();
+    eng.setAutoDetect(el('mmAutoDetect')?.checked !== false);
     if (!window.isSecureContext) {
       if (hint) hint.innerHTML = '<span class="text-amber-400">Voice needs HTTPS. Type notes manually or use recording only.</span>';
       return;
@@ -595,14 +721,16 @@
           if (event.results[i].isFinal) finalText += t;
           else interim += t;
         }
-        const pitch = estimatePitch();
-        if (pitch) maybeSwitchSpeaker(pitch);
+        const fingerprint = eng.captureFingerprint();
+        if (fingerprint && eng.getActiveSpeakerId()) eng.autoAssignSpeaker(fingerprint);
         if (finalText && finalText !== lastFinal) {
-          appendTranscript(finalText.trim(), pitch);
+          appendTranscript(finalText.trim(), fingerprint);
           lastFinal = finalText;
         } else if (interim && el('mmLivePreview')) {
-          el('mmLivePreview').textContent = `${activeSpeaker().name || activeSpeaker().label}: ${interim}`;
+          const sp = activeSpeaker();
+          el('mmLivePreview').textContent = `${sp.name || sp.label}: ${interim}`;
         }
+        renderSpeakerBar();
       };
       rec.onerror = () => stopDictation();
       rec.onend = () => { if (state.listening) { try { rec.start(); } catch (_) { stopDictation(); } } };
@@ -611,7 +739,7 @@
       state.listening = true;
       el('mmDictateBtn')?.classList.add('ring-2', 'ring-red-500');
       el('mmDictateLabel').textContent = 'Stop dictation';
-      if (hint) hint.textContent = 'Listening… tap a speaker chip if the wrong person is tagged.';
+      if (hint) hint.textContent = 'Auto-detecting speakers by voice. Click any transcript line later to correct — the app learns from fixes.';
       startAudioAnalysis();
     } catch (e) {
       if (hint) hint.textContent = 'Could not start dictation: ' + e.message;
@@ -640,6 +768,7 @@
       state.mediaRecorder = rec;
       state.recording = true;
       state.recordingStartedAt = Date.now();
+      voice().setRecordingStart(state.recordingStartedAt);
       el('mmRecordBtn')?.classList.add('ring-2', 'ring-red-500');
       el('mmRecordLabel').textContent = 'Stop recording';
       state.recordingTimer = setInterval(() => {
@@ -658,6 +787,9 @@
     el('mmRecordBtn')?.classList.remove('ring-2', 'ring-red-500');
     if (el('mmRecordLabel')) el('mmRecordLabel').textContent = 'Record';
     clearInterval(state.recordingTimer);
+    if (state.transcriptSegments.length) {
+      reprocessAllSegments();
+    }
   }
 
   function stopAllCapture() {
@@ -690,6 +822,8 @@
     });
     el('mmDictateBtn')?.addEventListener('click', () => state.listening ? stopDictation() : startDictation());
     el('mmRecordBtn')?.addEventListener('click', () => state.recording ? stopRecording() : startRecording());
+    el('mmAutoDetect')?.addEventListener('change', (e) => voice().setAutoDetect(e.target.checked));
+    el('mmRetrainVoices')?.addEventListener('click', reprocessAllSegments);
     ['mmSearch', 'mmTypeFilter', 'mmStatusFilter'].forEach((id) => {
       const node = el(id);
       if (node) { node.addEventListener('input', renderList); node.addEventListener('change', renderList); }
