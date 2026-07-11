@@ -13,9 +13,11 @@
     onPick: null,
     multiple: true,
     title: 'Browse Documents',
+    projectIdOverride: null,
   };
 
   function projectId() {
+    if (state.projectIdOverride != null) return state.projectIdOverride;
     if (global.CASEPM_ACTIVE_PROJECT_ID) return global.CASEPM_ACTIVE_PROJECT_ID;
     const raw = localStorage.getItem('casepm_current_project_id');
     return raw ? parseInt(raw, 10) : null;
@@ -42,7 +44,10 @@
     const el = document.getElementById('casepmDocPickerCount');
     const btn = document.getElementById('casepmDocPickerAttach');
     if (el) el.textContent = `${count} selected`;
-    if (btn) btn.disabled = count === 0;
+    if (btn) {
+      btn.disabled = count === 0;
+      btn.textContent = state.multiple ? 'Attach' : 'Select';
+    }
   }
 
   function renderBreadcrumbs() {
@@ -147,6 +152,7 @@
   function close() {
     dlg()?.close();
     state.onPick = null;
+    state.projectIdOverride = null;
   }
 
   async function confirmPick() {
@@ -170,7 +176,7 @@
 
   /**
    * Open document picker.
-   * @param {{ title?: string, multiple?: boolean, accept?: string, onPick: (docs: object[], ids: number[]) => void|Promise }} options
+   * @param {{ title?: string, multiple?: boolean, accept?: string, projectId?: number, onPick: (docs: object[], ids: number[]) => void|Promise }} options
    */
   async function open(options = {}) {
     const modal = dlg();
@@ -183,6 +189,9 @@
     state.accept = (options.accept || '').toLowerCase();
     state.selected = new Set();
     state.title = options.title || 'Browse Documents';
+    state.projectIdOverride = options.projectId != null ? parseInt(options.projectId, 10) : null;
+    const attachBtn = document.getElementById('casepmDocPickerAttach');
+    if (attachBtn) attachBtn.textContent = state.multiple ? 'Attach' : 'Select';
     const titleEl = document.getElementById('casepmDocPickerTitle');
     if (titleEl) titleEl.textContent = state.title;
     const searchEl = document.getElementById('casepmDocPickerSearch');
@@ -214,10 +223,18 @@
     btn.className = options.className || 'px-3 py-1.5 text-xs font-medium bg-zinc-800 hover:bg-zinc-700 border border-zinc-700 rounded-md text-zinc-200';
     btn.innerHTML = '<i class="fa-solid fa-folder-tree mr-1.5"></i>Browse Documents';
     btn.addEventListener('click', () => {
+      const pid = typeof options.getProjectId === 'function'
+        ? options.getProjectId()
+        : options.projectId;
+      if (!pid) {
+        alert(options.projectRequiredMessage || 'Save the project first, then choose from Documents.');
+        return;
+      }
       open({
         title: options.title || 'Select from Documents',
         multiple: options.multiple !== false,
         accept: options.accept,
+        projectId: pid,
         onPick: async (docs, ids) => {
           const entityId = typeof options.getEntityId === 'function'
             ? options.getEntityId()

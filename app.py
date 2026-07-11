@@ -3354,6 +3354,91 @@ def api_get_original_contract(project_id):
     return jsonify(meta)
 
 
+def _save_original_contract_bytes(project_id, file_bytes, display_name, original_filename, *, source_document_id=None):
+    """Write original_contract.pdf + meta.json for a project."""
+    folder = os.path.join(app.config['UPLOAD_FOLDER'], 'contracts', str(project_id))
+    os.makedirs(folder, exist_ok=True)
+    pdf_path = os.path.join(folder, 'original_contract.pdf')
+    with open(pdf_path, 'wb') as fh:
+        fh.write(file_bytes)
+
+    meta = {
+        'filename': secure_filename(display_name) or display_name or 'original_contract.pdf',
+        'uploadedAt': datetime.utcnow().isoformat() + 'Z',
+        'uploadedById': current_user.id,
+        'uploadedByName': getattr(current_user, 'full_name', None) or current_user.email,
+        'aiaForm': '',
+        'executedDate': '',
+    }
+    if source_document_id:
+        meta['source'] = 'documents'
+        meta['sourceDocumentId'] = int(source_document_id)
+    else:
+        meta['source'] = 'upload'
+
+    with open(os.path.join(folder, 'meta.json'), 'w', encoding='utf-8') as fh:
+        json.dump(meta, fh)
+
+    meta['ok'] = True
+    meta['found'] = True
+    meta['url'] = url_for('serve_original_contract_pdf', project_id=int(project_id))
+    return meta
+
+
+@app.route('/api/projects/<int:project_id>/original-contract/from-document', methods=['POST'])
+@login_required
+def api_set_original_contract_from_document(project_id):
+    """Copy a PDF from project Documents to the original prime contract slot."""
+    project = Project.query.get_or_404(project_id)
+    body = request.get_json(silent=True) or {}
+    try:
+        document_id = int(body.get('document_id'))
+    except (TypeError, ValueError):
+        return jsonify({'error': 'document_id required'}), 400
+
+    doc = Document.query.get_or_404(document_id)
+    if int(doc.project_id) != int(project_id):
+        return jsonify({'error': 'Document must belong to this project'}), 400
+    if doc.deleted_at:
+        return jsonify({'error': 'Document is deleted'}), 400
+
+    name = (doc.original_filename or doc.name or doc.filename or '').lower()
+    mime = (doc.mime_type or '').lower()
+    if not (name.endswith('.pdf') or mime == 'application/pdf'):
+        return jsonify({'error': 'PDF file required'}), 400
+
+    src_path = os.path.join(app.config['UPLOAD_FOLDER'], 'documents', str(doc.project_id), doc.filename)
+    if not os.path.isfile(src_path):
+        return jsonify({'error': 'Document file not found on disk'}), 404
+
+    with open(src_path, 'rb') as fh:
+        file_bytes = fh.read()
+
+    details = project.get_details()
+    meta = _save_original_contract_bytes(
+        project_id,
+        file_bytes,
+        doc.original_filename or doc.name or doc.filename,
+        doc.original_filename or doc.filename,
+        source_document_id=doc.id,
+    )
+    meta['aiaForm'] = (details.get('prime_aia_form') or '').strip()
+    meta['executedDate'] = (details.get('contract_execution_date') or '').strip()
+    with open(os.path.join(app.config['UPLOAD_FOLDER'], 'contracts', str(project_id), 'meta.json'), 'w', encoding='utf-8') as fh:
+        json.dump({
+            'filename': meta['filename'],
+            'uploadedAt': meta['uploadedAt'],
+            'uploadedById': meta['uploadedById'],
+            'uploadedByName': meta['uploadedByName'],
+            'aiaForm': meta['aiaForm'],
+            'executedDate': meta['executedDate'],
+            'source': 'documents',
+            'sourceDocumentId': doc.id,
+        }, fh)
+    meta['url'] = url_for('serve_original_contract_pdf', project_id=int(project_id))
+    return jsonify(meta)
+
+
 @app.route('/api/projects/<int:project_id>/original-contract', methods=['POST'])
 @login_required
 def api_upload_original_contract(project_id):
@@ -3364,27 +3449,29 @@ def api_upload_original_contract(project_id):
     if not allowed_file(file.filename) or not file.filename.lower().endswith('.pdf'):
         return jsonify({'error': 'PDF file required'}), 400
 
-    folder = os.path.join(app.config['UPLOAD_FOLDER'], 'contracts', str(project_id))
-    os.makedirs(folder, exist_ok=True)
-    pdf_path = os.path.join(folder, 'original_contract.pdf')
-    file.save(pdf_path)
-
-    meta = {
-        'filename': secure_filename(file.filename) or file.filename,
-        'uploadedAt': datetime.utcnow().isoformat() + 'Z',
-        'uploadedById': current_user.id,
-        'uploadedByName': getattr(current_user, 'full_name', None) or current_user.email,
-        'aiaForm': (request.form.get('aia_form') or '').strip(),
-        'executedDate': (request.form.get('executed_date') or '').strip(),
-    }
-    with open(os.path.join(folder, 'meta.json'), 'w', encoding='utf-8') as fh:
-        json.dump(meta, fh)
+    file_bytes = file.read()
+    meta = _save_original_contract_bytes(
+        project_id,
+        file_bytes,
+        secure_filename(file.filename) or file.filename,
+        file.filename,
+    )
+    meta['aiaForm'] = (request.form.get('aia_form') or '').strip()
+    meta['executedDate'] = (request.form.get('executed_date') or '').strip()
+    with open(os.path.join(app.config['UPLOAD_FOLDER'], 'contracts', str(project_id), 'meta.json'), 'w', encoding='utf-8') as fh:
+        json.dump({
+            'filename': meta['filename'],
+            'uploadedAt': meta['uploadedAt'],
+            'uploadedById': meta['uploadedById'],
+            'uploadedByName': meta['uploadedByName'],
+            'aiaForm': meta['aiaForm'],
+            'executedDate': meta['executedDate'],
+            'source': 'upload',
+        }, fh)
 
     try:
-        with open(pdf_path, 'rb') as fh:
-            fb = fh.read()
         _mirror_to_system_folder(
-            int(project_id), fb, meta['filename'], file.filename, 'contracts', 'Contract',
+            int(project_id), file_bytes, meta['filename'], file.filename, 'contracts', 'Contract',
             {'original_contract': True},
         )
         _notify_documents_team(
@@ -3396,7 +3483,6 @@ def api_upload_original_contract(project_id):
     except Exception:
         pass
 
-    meta['ok'] = True
     meta['url'] = url_for('serve_original_contract_pdf', project_id=int(project_id))
     return jsonify(meta)
 
