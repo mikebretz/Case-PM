@@ -723,6 +723,28 @@ class SafetyReport(db.Model):
     due_date = db.Column(db.Date)
     reported_by_id = db.Column(db.Integer, db.ForeignKey('user.id'))
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    report_date = db.Column(db.Date)
+    attachments_json = db.Column(db.Text)
+    details_json = db.Column(db.Text)
+
+
+class SafetyCertification(db.Model):
+    """Personnel OSHA / safety training records (OSHA 10/30, First Aid, CPR, etc.)."""
+    id = db.Column(db.Integer, primary_key=True)
+    project_id = db.Column(db.Integer, db.ForeignKey('project.id'), nullable=True)
+    person_name = db.Column(db.String(150), nullable=False)
+    company = db.Column(db.String(150))
+    trade = db.Column(db.String(80))
+    cert_type = db.Column(db.String(120), nullable=False)  # OSHA 10, OSHA 30, First Aid, CPR, etc.
+    issuer = db.Column(db.String(150))
+    card_number = db.Column(db.String(80))
+    issued_date = db.Column(db.Date)
+    expiration_date = db.Column(db.Date)
+    notes = db.Column(db.Text)
+    attachments_json = db.Column(db.Text)
+    created_by_id = db.Column(db.Integer, db.ForeignKey('user.id'))
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
 
 class ScheduleTask(db.Model):
@@ -3351,9 +3373,293 @@ def update_punch_status(item_id):
 @app.route('/safety')
 @login_required
 def safety_page():
-    reports = query_for_active_project(SafetyReport).order_by(SafetyReport.created_at.desc()).limit(50).all()
     projects = Project.query.order_by(Project.name).all()
-    return render_template('safety.html', reports=reports, projects=projects)
+    return render_template('safety.html', projects=projects, active_project=get_active_project())
+
+
+def _safety_url_helpers():
+    return {
+        'doc': lambda doc_id: url_for('api_documents_download', doc_id=doc_id),
+        'attachment': lambda rid, filename: url_for('serve_safety_attachment', report_id=rid, filename=filename),
+    }
+
+
+@app.route('/uploads/safety/<int:report_id>/<path:filename>')
+@login_required
+def serve_safety_attachment(report_id, filename):
+    folder = os.path.join(app.config['UPLOAD_FOLDER'], 'safety', str(report_id))
+    return send_from_directory(folder, filename)
+
+
+# ---- Safety observations / incidents ----
+
+@app.route('/api/safety/reports', methods=['GET'])
+@login_required
+def api_safety_reports_list():
+    from safety_persistence import serialize_report, report_stats, REPORT_TYPES, SEVERITIES, REPORT_STATUSES
+    project_id = request.args.get('project_id', type=int) or get_current_project_id()
+    q = SafetyReport.query
+    if project_id:
+        q = q.filter_by(project_id=int(project_id))
+    rows = q.order_by(SafetyReport.created_at.desc()).limit(300).all()
+    return jsonify({
+        'ok': True,
+        'reports': [serialize_report(r, User=User, summary=True) for r in rows],
+        'stats': report_stats(SafetyReport, project_id),
+        'types': list(REPORT_TYPES),
+        'severities': list(SEVERITIES),
+        'statuses': list(REPORT_STATUSES),
+        'project_id': project_id,
+    })
+
+
+def _safety_report_apply(r, body):
+    for field in ('type', 'description', 'location', 'severity', 'status', 'immediate_actions', 'root_cause', 'corrective_actions', 'assigned_to'):
+        if field in body:
+            setattr(r, field, body[field])
+    for dfield in ('due_date', 'report_date'):
+        if dfield in body:
+            val = body.get(dfield)
+            try:
+                setattr(r, dfield, datetime.strptime(val, '%Y-%m-%d').date() if val else None)
+            except (TypeError, ValueError):
+                pass
+
+
+@app.route('/api/safety/reports', methods=['POST'])
+@login_required
+def api_safety_reports_create():
+    from safety_persistence import serialize_report
+    body = request.get_json(silent=True) or {}
+    project_id = body.get('project_id') or get_current_project_id()
+    description = (body.get('description') or '').strip()
+    if not project_id or not description:
+        return jsonify({'error': 'project_id and description required'}), 400
+    r = SafetyReport(
+        project_id=int(project_id),
+        number=generate_next_number('SAF', SafetyReport),
+        type=body.get('type') or 'Observation',
+        description=description,
+        severity=body.get('severity') or 'Medium',
+        status=body.get('status') or 'Open',
+        reported_by_id=current_user.id,
+        report_date=datetime.utcnow().date(),
+    )
+    _safety_report_apply(r, body)
+    db.session.add(r)
+    db.session.commit()
+    return jsonify({'ok': True, 'report': serialize_report(r, User=User, url_helpers=_safety_url_helpers())})
+
+
+@app.route('/api/safety/reports/<int:report_id>', methods=['GET'])
+@login_required
+def api_safety_report_get(report_id):
+    from safety_persistence import serialize_report
+    r = SafetyReport.query.get_or_404(report_id)
+    return jsonify({'ok': True, 'report': serialize_report(r, User=User, url_helpers=_safety_url_helpers())})
+
+
+@app.route('/api/safety/reports/<int:report_id>', methods=['PUT'])
+@login_required
+def api_safety_reports_update(report_id):
+    from safety_persistence import serialize_report
+    r = SafetyReport.query.get_or_404(report_id)
+    _safety_report_apply(r, request.get_json(silent=True) or {})
+    db.session.commit()
+    return jsonify({'ok': True, 'report': serialize_report(r, User=User, url_helpers=_safety_url_helpers())})
+
+
+@app.route('/api/safety/reports/<int:report_id>', methods=['DELETE'])
+@login_required
+def api_safety_reports_delete(report_id):
+    r = SafetyReport.query.get_or_404(report_id)
+    db.session.delete(r)
+    db.session.commit()
+    return jsonify({'ok': True})
+
+
+@app.route('/api/safety/reports/<int:report_id>/attachments', methods=['POST'])
+@login_required
+def api_safety_report_attachment(report_id):
+    from rfi_persistence import _parse_json
+    from safety_persistence import serialize_report
+    r = SafetyReport.query.get_or_404(report_id)
+    if 'file' not in request.files:
+        return jsonify({'error': 'file required'}), 400
+    f = request.files['file']
+    if not f.filename:
+        return jsonify({'error': 'empty filename'}), 400
+    custom_name = (request.form.get('name') or '').strip()
+    kind = (request.form.get('kind') or '').strip()
+    _, ext = os.path.splitext(f.filename)
+    folder = os.path.join(app.config['UPLOAD_FOLDER'], 'safety', str(report_id))
+    os.makedirs(folder, exist_ok=True)
+    if custom_name:
+        base = secure_filename(custom_name) or 'photo'
+        display_name = custom_name if custom_name.lower().endswith(ext.lower()) else f'{custom_name}{ext}'
+        safe = f'{base}{ext.lower()}'
+        if os.path.exists(os.path.join(folder, safe)):
+            safe = f'{base}-{int(datetime.utcnow().timestamp())}{ext.lower()}'
+    else:
+        safe = secure_filename(f.filename)
+        display_name = f.filename
+    f.save(os.path.join(folder, safe))
+    attachments = _parse_json(r.attachments_json, [])
+    att = {'filename': safe, 'original_name': display_name, 'kind': kind or None,
+           'uploaded_at': datetime.utcnow().isoformat(),
+           'uploaded_by': f'{current_user.first_name} {current_user.last_name}'.strip()}
+    attachments.append(att)
+    r.attachments_json = json.dumps(attachments)
+    db.session.commit()
+    try:
+        with open(os.path.join(folder, safe), 'rb') as fh:
+            fb = fh.read()
+        sub_name = (r.number or f'SAF-{r.id}').strip()
+        doc = _mirror_to_system_subfolder(
+            r.project_id, fb, display_name, f.filename, 'photos', f'Safety — {sub_name}', 'Photo',
+            {'safety_report_id': r.id, 'safety_number': r.number}, is_system_locked=True, uploaded_by_id=current_user.id,
+        )
+        if doc and doc.get('id'):
+            att['document_id'] = doc['id']
+            r.attachments_json = json.dumps(attachments)
+            db.session.commit()
+    except Exception:
+        db.session.rollback()
+    return jsonify({'ok': True, 'report': serialize_report(r, User=User, url_helpers=_safety_url_helpers())})
+
+
+# ---- Personnel training / certifications ----
+
+@app.route('/api/safety/certifications', methods=['GET'])
+@login_required
+def api_safety_certs_list():
+    from safety_persistence import serialize_cert, cert_stats, CERT_TYPES
+    project_id = request.args.get('project_id', type=int) or get_current_project_id()
+    q = SafetyCertification.query
+    if project_id:
+        q = q.filter(
+            (SafetyCertification.project_id == int(project_id)) | (SafetyCertification.project_id.is_(None))
+        )
+    rows = q.order_by(SafetyCertification.person_name.asc()).all()
+    return jsonify({
+        'ok': True,
+        'certifications': [serialize_cert(c, summary=True) for c in rows],
+        'stats': cert_stats(SafetyCertification, project_id),
+        'cert_types': list(CERT_TYPES),
+        'project_id': project_id,
+    })
+
+
+def _cert_apply(c, body):
+    for field in ('person_name', 'company', 'trade', 'cert_type', 'issuer', 'card_number', 'notes'):
+        if field in body:
+            setattr(c, field, body[field])
+    for dfield in ('issued_date', 'expiration_date'):
+        if dfield in body:
+            val = body.get(dfield)
+            try:
+                setattr(c, dfield, datetime.strptime(val, '%Y-%m-%d').date() if val else None)
+            except (TypeError, ValueError):
+                pass
+
+
+@app.route('/api/safety/certifications', methods=['POST'])
+@login_required
+def api_safety_certs_create():
+    from safety_persistence import serialize_cert
+    body = request.get_json(silent=True) or {}
+    person = (body.get('person_name') or '').strip()
+    cert_type = (body.get('cert_type') or '').strip()
+    if not person or not cert_type:
+        return jsonify({'error': 'person_name and cert_type required'}), 400
+    project_id = body.get('project_id') or get_current_project_id()
+    c = SafetyCertification(
+        project_id=int(project_id) if project_id else None,
+        person_name=person,
+        cert_type=cert_type,
+        created_by_id=current_user.id,
+    )
+    _cert_apply(c, body)
+    db.session.add(c)
+    db.session.commit()
+    return jsonify({'ok': True, 'certification': serialize_cert(c)})
+
+
+@app.route('/api/safety/certifications/<int:cert_id>', methods=['PUT'])
+@login_required
+def api_safety_certs_update(cert_id):
+    from safety_persistence import serialize_cert
+    c = SafetyCertification.query.get_or_404(cert_id)
+    _cert_apply(c, request.get_json(silent=True) or {})
+    db.session.commit()
+    return jsonify({'ok': True, 'certification': serialize_cert(c)})
+
+
+@app.route('/api/safety/certifications/<int:cert_id>', methods=['DELETE'])
+@login_required
+def api_safety_certs_delete(cert_id):
+    c = SafetyCertification.query.get_or_404(cert_id)
+    db.session.delete(c)
+    db.session.commit()
+    return jsonify({'ok': True})
+
+
+# ---- OSHA reference library ----
+
+@app.route('/api/safety/osha-library', methods=['GET'])
+@login_required
+def api_safety_osha_library():
+    from osha_library import library_for_page
+    return jsonify({'ok': True, 'library': library_for_page(lambda p: url_for('static', filename=p))})
+
+
+@app.route('/api/safety/osha-library/save-to-documents', methods=['POST'])
+@login_required
+def api_safety_osha_save_to_documents():
+    """Download OSHA reference PDFs (bundled + official) into Documents › Safety › OSHA Reference."""
+    import urllib.request
+    from osha_library import OSHA_LIBRARY
+    project_id = request.args.get('project_id', type=int) or get_current_project_id()
+    if not project_id:
+        return jsonify({'error': 'project_id required'}), 400
+    body = request.get_json(silent=True) or {}
+    keys = body.get('keys')
+    saved, failed = [], []
+    for item in OSHA_LIBRARY:
+        if keys and item['key'] not in keys:
+            continue
+        data = None
+        fname = item.get('bundled_file') or f"{item['key']}.pdf"
+        # Prefer the bundled local file; fall back to the official PDF URL.
+        if item.get('bundled_file'):
+            local = os.path.join(app.root_path, 'static', 'osha', item['bundled_file'])
+            if os.path.isfile(local):
+                with open(local, 'rb') as fh:
+                    data = fh.read()
+        if data is None and item.get('pdf_url'):
+            try:
+                req = urllib.request.Request(item['pdf_url'], headers={'User-Agent': 'CasePM/1.0'})
+                with urllib.request.urlopen(req, timeout=30) as resp:
+                    data = resp.read()
+            except Exception:
+                data = None
+        if not data:
+            failed.append(item['title'])
+            continue
+        try:
+            doc = _mirror_to_system_subfolder(
+                int(project_id), data, f"{item['pub'] + ' — ' if item.get('pub') else ''}{item['title']}", fname,
+                'safety', 'OSHA Reference', 'Safety',
+                {'osha_key': item['key'], 'source': 'OSHA', 'url': item.get('pdf_url') or item.get('topic_url')},
+                is_system_locked=True, uploaded_by_id=current_user.id,
+            )
+            if doc and doc.get('id'):
+                saved.append(item['title'])
+            else:
+                failed.append(item['title'])
+        except Exception:
+            failed.append(item['title'])
+    return jsonify({'ok': True, 'saved': saved, 'failed': failed, 'saved_count': len(saved)})
 
 
 @app.route('/safety/create', methods=['POST'])
@@ -4544,6 +4850,9 @@ def _ensure_module_attachment_columns():
         ('punch_item', 'updated_at', 'DATETIME'),
         ('punch_item', 'details_json', 'TEXT'),
         ('punch_item', 'attachments_json', 'TEXT'),
+        ('safety_report', 'report_date', 'DATE'),
+        ('safety_report', 'attachments_json', 'TEXT'),
+        ('safety_report', 'details_json', 'TEXT'),
     ]
     for table, column, typedef in migrations:
         if table not in tables:

@@ -1,525 +1,196 @@
 {% extends "base.html" %}
 
 {% block content %}
-<div class="p-8 max-w-[1600px] mx-auto">
+<script>
+window.CASEPM_SAFETY_CTX = {
+  projectId: {{ active_project.id if active_project else 'null' }},
+  projectName: {{ (active_project.name if active_project else '')|tojson }},
+  projects: [
+    {% for p in projects %}{ id: {{ p.id }}, name: {{ p.name|tojson }} }{% if not loop.last %},{% endif %}{% endfor %}
+  ],
+};
+</script>
+<script src="{{ url_for('static', filename='js/safety-app.js') }}"></script>
 
-    <!-- Header -->
-    <div class="flex items-center justify-between mb-8">
-        <div>
-            <h1 class="text-3xl font-semibold tracking-tight">Safety</h1>
-            <p class="text-zinc-400 mt-1">ALDI Lakeland • Safety Reports, Observations & Toolbox Talks</p>
-        </div>
-        <div class="flex items-center gap-3">
-            <button onclick="showCreateSafetyModal()"
-                    class="flex items-center gap-2 bg-emerald-600 hover:bg-emerald-500 transition-colors px-5 py-2.5 rounded-2xl text-sm font-medium">
-                <i class="fa-solid fa-plus"></i>
-                <span>New Safety Report</span>
-            </button>
-            <button onclick="showToolboxTalkModal()"
-                    class="flex items-center gap-2 bg-zinc-800 hover:bg-zinc-700 transition-colors px-5 py-2.5 rounded-2xl text-sm font-medium">
-                <i class="fa-solid fa-users"></i>
-                <span>Log Toolbox Talk</span>
-            </button>
-        </div>
-    </div>
+<style>
+  #mainContent:has(.saf-page) { overflow: hidden !important; display: flex; flex-direction: column; padding: 0 !important; }
+  .saf-page { display: flex; flex-direction: column; flex: 1; min-height: 0; width: 100%; padding: 1rem 1rem 0; box-sizing: border-box; }
+  .saf-stack { display: flex; flex-direction: column; flex: 1; min-height: 0; overflow: hidden; }
+  .saf-input { width: 100%; background: #27272a; border: 1px solid #3f3f46; border-radius: 0.5rem; padding: 0.5rem 0.65rem; font-size: 0.875rem; color: #fff; }
+  .saf-input:focus { outline: none; border-color: #10b981; }
+  .saf-chip { padding: 0.15rem 0.55rem; border-radius: 9999px; font-size: 0.7rem; font-weight: 500; white-space: nowrap; }
+  .saf-tab { padding: 0.5rem 1rem; border-radius: 0.5rem 0.5rem 0 0; font-size: 0.875rem; font-weight: 500; color: #a1a1aa; cursor: pointer; border-bottom: 2px solid transparent; }
+  .saf-tab.active { color: #fff; border-bottom-color: #10b981; background: #18181b; }
+  .saf-row { display: flex; align-items: center; gap: 0.75rem; padding: 0.6rem 0.75rem; border-bottom: 1px solid #27272a; cursor: pointer; }
+  .saf-row:hover { background: #202023; }
+  .saf-meta { font-size: 0.72rem; color: #a1a1aa; display: flex; gap: 0.75rem; flex-wrap: wrap; margin-top: 2px; }
+  .saf-card { background: #18181b; border: 1px solid #3f3f46; border-radius: 0.5rem; padding: 0.75rem; }
+  .saf-lib-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 0.75rem; }
+  @media (max-width: 640px) { .saf-hide-mobile { display: none !important; } }
+</style>
 
-    <!-- KPI Summary Cards -->
-    <div class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-4 mb-8">
-        <div class="bg-zinc-900 border border-zinc-800 rounded-3xl p-5">
-            <div class="text-zinc-400 text-sm">Total Reports</div>
-            <div class="text-3xl font-semibold mt-1">67</div>
-        </div>
-        <div class="bg-zinc-900 border border-zinc-800 rounded-3xl p-5">
-            <div class="text-zinc-400 text-sm">Open Incidents</div>
-            <div class="text-3xl font-semibold mt-1 text-red-400">4</div>
-        </div>
-        <div class="bg-zinc-900 border border-zinc-800 rounded-3xl p-5">
-            <div class="text-zinc-400 text-sm">Near Misses</div>
-            <div class="text-3xl font-semibold mt-1 text-yellow-400">19</div>
-        </div>
-        <div class="bg-zinc-900 border border-zinc-800 rounded-3xl p-5">
-            <div class="text-zinc-400 text-sm">Safety Observations</div>
-            <div class="text-3xl font-semibold mt-1 text-emerald-400">38</div>
-        </div>
-        <div class="bg-zinc-900 border border-zinc-800 rounded-3xl p-5">
-            <div class="text-zinc-400 text-sm">Toolbox Talks (This Month)</div>
-            <div class="text-3xl font-semibold mt-1">12</div>
-        </div>
-    </div>
+<div class="saf-page">
+<div class="saf-stack">
 
-    <!-- Filters -->
-    <div class="flex flex-col md:flex-row gap-3 mb-6">
-        <div class="flex-1">
-            <input type="text" id="safetySearch" onkeyup="filterSafetyReports()"
-                   placeholder="Search reports, descriptions, or locations..." 
-                   class="w-full bg-zinc-900 border border-zinc-700 rounded-2xl px-4 py-2.5 text-sm focus:outline-none focus:border-emerald-600">
-        </div>
-        
-        <select id="safetyTypeFilter" onchange="filterSafetyReports()"
-                class="bg-zinc-900 border border-zinc-700 rounded-2xl px-4 py-2.5 text-sm">
-            <option value="">All Types</option>
-            <option value="Incident">Incident</option>
-            <option value="Near Miss">Near Miss</option>
-            <option value="Observation">Safety Observation</option>
-            <option value="Toolbox Talk">Toolbox Talk</option>
-        </select>
-
-        <select id="safetyStatusFilter" onchange="filterSafetyReports()"
-                class="bg-zinc-900 border border-zinc-700 rounded-2xl px-4 py-2.5 text-sm">
-            <option value="">All Statuses</option>
-            <option value="Open">Open</option>
-            <option value="Under Review">Under Review</option>
-            <option value="Closed">Closed</option>
-        </select>
-
-        <button onclick="exportSafetyReports()"
-                class="flex items-center gap-2 px-4 py-2.5 bg-zinc-800 hover:bg-zinc-700 rounded-2xl text-sm transition-colors">
-            <i class="fa-solid fa-download"></i>
-            <span>Export</span>
-        </button>
-    </div>
-
-    <!-- Safety Reports Table -->
-    <div class="bg-zinc-900 border border-zinc-800 rounded-3xl overflow-hidden">
-        <table class="w-full">
-            <thead class="bg-zinc-950 border-b border-zinc-800">
-                <tr>
-                    <th class="text-left px-6 py-4 text-sm font-medium text-zinc-400 w-24">Report #</th>
-                    <th class="text-left px-6 py-4 text-sm font-medium text-zinc-400">Description</th>
-                    <th class="text-left px-6 py-4 text-sm font-medium text-zinc-400 w-32">Type</th>
-                    <th class="text-left px-6 py-4 text-sm font-medium text-zinc-400 w-36">Location</th>
-                    <th class="text-center px-6 py-4 text-sm font-medium text-zinc-400 w-28">Date</th>
-                    <th class="text-center px-6 py-4 text-sm font-medium text-zinc-400 w-28">Reported By</th>
-                    <th class="text-center px-6 py-4 text-sm font-medium text-zinc-400 w-28">Status</th>
-                    <th class="text-center px-6 py-4 text-sm font-medium text-zinc-400 w-28">Actions</th>
-                </tr>
-            </thead>
-            <tbody class="divide-y divide-zinc-800 text-sm">
-
-                {% for report in safety_reports %}
-                <tr class="border-b border-zinc-800 hover:bg-zinc-800/60 transition-colors">
-                    <td class="px-6 py-4 font-mono text-emerald-400">{{ report.number }}</td>
-                    <td class="px-6 py-4">
-                        <div class="font-medium">{{ report.description }}</div>
-                        {% if report.corrective_action %}
-                        <div class="text-xs text-zinc-500 mt-0.5">Corrective Action: {{ report.corrective_action }}</div>
-                        {% endif %}
-                    </td>
-                    
-                    <!-- Type -->
-                    <td class="px-6 py-4">
-                        {% if report.type == 'Incident' %}
-                            <span class="inline-flex items-center px-3 py-1 rounded-full text-xs font-medium bg-red-500/20 text-red-400">Incident</span>
-                        {% elif report.type == 'Near Miss' %}
-                            <span class="inline-flex items-center px-3 py-1 rounded-full text-xs font-medium bg-yellow-500/20 text-yellow-400">Near Miss</span>
-                        {% elif report.type == 'Observation' %}
-                            <span class="inline-flex items-center px-3 py-1 rounded-full text-xs font-medium bg-emerald-500/20 text-emerald-400">Observation</span>
-                        {% else %}
-                            <span class="inline-flex items-center px-3 py-1 rounded-full text-xs font-medium bg-blue-500/20 text-blue-400">Toolbox Talk</span>
-                        {% endif %}
-                    </td>
-
-                    <td class="px-6 py-4 text-zinc-300">{{ report.location }}</td>
-                    <td class="px-6 py-4 text-center text-sm">{{ report.date.strftime('%m/%d/%Y') if report.date else '—' }}</td>
-                    <td class="px-6 py-4 text-center text-sm">{{ report.reported_by }}</td>
-
-                    <!-- Status -->
-                    <td class="px-6 py-4 text-center">
-                        <select onchange="updateSafetyStatus({{ report.id }}, this.value)"
-                                class="bg-zinc-800 border border-zinc-700 rounded-xl px-3 py-1 text-xs">
-                            <option value="Open" {% if report.status == 'Open' %}selected{% endif %}>Open</option>
-                            <option value="Under Review" {% if report.status == 'Under Review' %}selected{% endif %}>Under Review</option>
-                            <option value="Closed" {% if report.status == 'Closed' %}selected{% endif %}>Closed</option>
-                        </select>
-                    </td>
-
-                    <td class="px-6 py-4 text-center">
-                        <div class="flex items-center justify-center gap-1">
-                            <button onclick="viewSafetyReport({{ report.id }})" 
-                                    class="p-2 text-emerald-400 hover:text-emerald-300 hover:bg-zinc-800 rounded-xl transition-colors" title="View Details">
-                                <i class="fa-solid fa-eye"></i>
-                            </button>
-                            
-                            <button onclick="editSafetyReport({{ report.id }})" 
-                                    class="p-2 text-emerald-400 hover:text-emerald-300 hover:bg-zinc-800 rounded-xl transition-colors" title="Edit">
-                                <i class="fa-solid fa-edit"></i>
-                            </button>
-
-                            <button onclick="addFollowUp({{ report.id }})" 
-                                    class="p-2 text-emerald-400 hover:text-emerald-300 hover:bg-zinc-800 rounded-xl transition-colors" title="Add Follow-up / Corrective Action">
-                                <i class="fa-solid fa-tasks"></i>
-                            </button>
-
-                            {% if report.status != 'Closed' %}
-                            <button onclick="closeSafetyReport({{ report.id }})" 
-                                    class="p-2 text-emerald-400 hover:text-emerald-300 hover:bg-zinc-800 rounded-xl transition-colors" title="Close Report">
-                                <i class="fa-solid fa-check-double"></i>
-                            </button>
-                            {% endif %}
-                        </div>
-                    </td>
-                </tr>
-                {% else %}
-                <tr>
-                    <td colspan="8" class="px-6 py-12 text-center text-zinc-400">
-                        No safety reports found. Create your first one!
-                    </td>
-                </tr>
-                {% endfor %}
-            </tbody>
-        </table>
-    </div>
-
+<!-- TOOLBAR -->
+<div class="flex items-center justify-between flex-shrink-0 mb-3 gap-3">
+  <div class="flex items-center gap-3 min-w-0">
+    <div class="text-2xl font-semibold text-white whitespace-nowrap">Safety</div>
+    <div id="safProjectBadge" class="text-xs px-3 py-1 bg-zinc-800 border border-zinc-700 text-zinc-400 rounded-md font-mono truncate max-w-[200px] saf-hide-mobile">—</div>
+  </div>
+  <div class="flex items-center gap-2 flex-wrap justify-end">
+    <button type="button" id="safBtnRefresh" class="flex items-center gap-2 px-4 py-2 bg-zinc-800 hover:bg-zinc-700 rounded-md text-sm font-medium h-[38px] saf-hide-mobile"><i class="fa-solid fa-rotate"></i><span class="hidden md:inline">Refresh</span></button>
+    <button type="button" id="safBtnNew" class="flex items-center gap-2 px-5 py-2 bg-emerald-600 hover:bg-emerald-500 rounded-md text-sm font-semibold h-[38px]"><i class="fa-solid fa-plus"></i><span id="safBtnNewLabel">New Report</span></button>
+  </div>
 </div>
 
-<!-- ==================== CREATE / EDIT SAFETY REPORT MODAL ==================== -->
-<dialog id="safetyModal" class="bg-zinc-900 border border-zinc-700 rounded-3xl p-0 w-full max-w-4xl">
-    <div class="p-6">
-        <div class="flex items-center justify-between mb-6">
-            <h2 id="safetyModalTitle" class="text-xl font-semibold">New Safety Report</h2>
-            <button onclick="closeSafetyModal()" class="text-zinc-400 hover:text-white">
-                <i class="fa-solid fa-times text-xl"></i>
-            </button>
-        </div>
+<!-- TABS -->
+<div class="flex gap-1 border-b border-zinc-700 flex-shrink-0 mb-3">
+  <div class="saf-tab active" data-tab="reports"><i class="fa-solid fa-triangle-exclamation mr-1"></i>Observations &amp; Incidents</div>
+  <div class="saf-tab" data-tab="training"><i class="fa-solid fa-id-card mr-1"></i>Training &amp; Certifications</div>
+  <div class="saf-tab" data-tab="library"><i class="fa-solid fa-book mr-1"></i>OSHA Library</div>
+</div>
 
-        <form id="safetyForm" method="POST" action="{{ url_for('create_safety_report') }}">
-            <input type="hidden" id="safetyId" name="safety_id">
-
-            <div class="grid grid-cols-1 md:grid-cols-4 gap-4 mb-4">
-                <!-- Report Number -->
-                <div class="md:col-span-1">
-                    <label class="block text-sm text-zinc-400 mb-1.5">Report #</label>
-                    <input type="text" id="safetyNumber" name="number" 
-                           class="w-full bg-zinc-800 border border-zinc-700 rounded-2xl px-4 py-2.5 text-sm font-mono" readonly>
-                </div>
-
-                <!-- Date -->
-                <div>
-                    <label class="block text-sm text-zinc-400 mb-1.5">Date of Incident / Observation</label>
-                    <input type="date" id="safetyDate" name="date" 
-                           class="w-full bg-zinc-800 border border-zinc-700 rounded-2xl px-4 py-2.5 text-sm" required>
-                </div>
-
-                <!-- Type -->
-                <div>
-                    <label class="block text-sm text-zinc-400 mb-1.5">Report Type <span class="text-red-400">*</span></label>
-                    <select id="safetyType" name="type" class="w-full bg-zinc-800 border border-zinc-700 rounded-2xl px-4 py-2.5 text-sm" required>
-                        <option value="Observation">Safety Observation</option>
-                        <option value="Near Miss">Near Miss</option>
-                        <option value="Incident">Incident / Injury</option>
-                        <option value="Toolbox Talk">Toolbox Talk</option>
-                    </select>
-                </div>
-
-                <!-- Severity -->
-                <div>
-                    <label class="block text-sm text-zinc-400 mb-1.5">Severity / Risk Level</label>
-                    <select id="safetySeverity" name="severity" class="w-full bg-zinc-800 border border-zinc-700 rounded-2xl px-4 py-2.5 text-sm">
-                        <option value="Low">Low</option>
-                        <option value="Medium" selected>Medium</option>
-                        <option value="High">High</option>
-                        <option value="Critical">Critical</option>
-                    </select>
-                </div>
-            </div>
-
-            <!-- Location -->
-            <div class="mb-4">
-                <label class="block text-sm text-zinc-400 mb-1.5">Location / Area on Site</label>
-                <input type="text" id="safetyLocation" name="location" 
-                       class="w-full bg-zinc-800 border border-zinc-700 rounded-2xl px-4 py-2.5 text-sm"
-                       placeholder="e.g. Sales Floor - East Wall, Column Line D-4">
-            </div>
-
-            <!-- Description -->
-            <div class="mb-4">
-                <label class="block text-sm text-zinc-400 mb-1.5">Description <span class="text-red-400">*</span></label>
-                <textarea id="safetyDescription" name="description" rows="4" 
-                          class="w-full bg-zinc-800 border border-zinc-700 rounded-2xl px-4 py-3 text-sm resize-y" required
-                          placeholder="Describe what happened or what was observed in detail..."></textarea>
-            </div>
-
-            <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
-                <!-- Immediate Actions Taken -->
-                <div>
-                    <label class="block text-sm text-zinc-400 mb-1.5">Immediate Actions Taken</label>
-                    <textarea id="safetyImmediateActions" name="immediate_actions" rows="3" 
-                              class="w-full bg-zinc-800 border border-zinc-700 rounded-2xl px-4 py-3 text-sm resize-y"
-                              placeholder="What was done immediately to address the situation?"></textarea>
-                </div>
-
-                <!-- Root Cause -->
-                <div>
-                    <label class="block text-sm text-zinc-400 mb-1.5">Root Cause (if applicable)</label>
-                    <textarea id="safetyRootCause" name="root_cause" rows="3" 
-                              class="w-full bg-zinc-800 border border-zinc-700 rounded-2xl px-4 py-3 text-sm resize-y"
-                              placeholder="What was the root cause? (For incidents & near misses)"></textarea>
-                </div>
-            </div>
-
-            <!-- Corrective / Preventive Actions -->
-            <div class="mb-4">
-                <label class="block text-sm text-zinc-400 mb-1.5">Corrective / Preventive Actions</label>
-                <textarea id="safetyCorrectiveActions" name="corrective_actions" rows="3" 
-                          class="w-full bg-zinc-800 border border-zinc-700 rounded-2xl px-4 py-3 text-sm resize-y"
-                          placeholder="What actions will be taken to prevent recurrence?"></textarea>
-            </div>
-
-            <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
-                <!-- Assigned To -->
-                <div>
-                    <label class="block text-sm text-zinc-400 mb-1.5">Assigned To (Follow-up)</label>
-                    <select id="safetyAssignedTo" name="assigned_to" class="w-full bg-zinc-800 border border-zinc-700 rounded-2xl px-4 py-2.5 text-sm">
-                        <option value="">Unassigned</option>
-                        <option value="Mike Bretz">Mike Bretz</option>
-                        <option value="Sarah Kline">Sarah Kline</option>
-                        <option value="Tom Rivera">Tom Rivera</option>
-                        <option value="Safety Manager">Safety Manager</option>
-                    </select>
-                </div>
-
-                <!-- Due Date -->
-                <div>
-                    <label class="block text-sm text-zinc-400 mb-1.5">Follow-up Due Date</label>
-                    <input type="date" id="safetyDueDate" name="due_date" 
-                           class="w-full bg-zinc-800 border border-zinc-700 rounded-2xl px-4 py-2.5 text-sm">
-                </div>
-
-                <!-- Status -->
-                <div>
-                    <label class="block text-sm text-zinc-400 mb-1.5">Status</label>
-                    <select id="safetyStatus" name="status" class="w-full bg-zinc-800 border border-zinc-700 rounded-2xl px-4 py-2.5 text-sm">
-                        <option value="Open">Open</option>
-                        <option value="Under Review">Under Review</option>
-                        <option value="Closed">Closed</option>
-                    </select>
-                </div>
-            </div>
-
-            <!-- Photo / Attachment Upload -->
-            <div class="mb-6">
-                <label class="block text-sm text-zinc-400 mb-1.5">Photos / Attachments</label>
-                <div class="border border-dashed border-zinc-700 rounded-2xl p-6 text-center hover:border-emerald-600 transition-colors cursor-pointer"
-                     onclick="document.getElementById('safetyPhotoUpload').click()">
-                    <i class="fa-solid fa-camera text-2xl text-zinc-500 mb-2"></i>
-                    <p class="text-sm text-zinc-400">Click to upload photos or drag & drop here</p>
-                    <input type="file" id="safetyPhotoUpload" name="photos" multiple accept="image/*" class="hidden">
-                </div>
-                <div id="safetyPhotoPreview" class="mt-3 flex flex-wrap gap-2"></div>
-            </div>
-
-            <div class="flex gap-3 mt-8">
-                <button type="button" onclick="closeSafetyModal()"
-                        class="flex-1 bg-zinc-800 hover:bg-zinc-700 rounded-2xl py-3 text-sm font-medium transition-colors">
-                    Cancel
-                </button>
-                <button type="submit"
-                        class="flex-1 bg-emerald-600 hover:bg-emerald-500 rounded-2xl py-3 text-sm font-medium transition-colors">
-                    Save Safety Report
-                </button>
-            </div>
-        </form>
+<!-- ===== REPORTS TAB ===== -->
+<div id="safTabReports" class="flex-1 min-h-0 flex flex-col">
+  <div class="bg-zinc-900 border border-zinc-700 rounded-md p-4 flex-shrink-0 mb-3">
+    <div class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3">
+      <div class="bg-zinc-800 border border-zinc-700 rounded-md p-3"><div class="text-xs text-zinc-400">Days w/o Incident</div><div id="rstatDays" class="text-2xl font-semibold mt-1 text-emerald-400">—</div></div>
+      <div class="bg-zinc-800 border border-zinc-700 rounded-md p-3"><div class="text-xs text-zinc-400">Incidents YTD</div><div id="rstatIncidents" class="text-2xl font-semibold mt-1 text-red-400">0</div></div>
+      <div class="bg-zinc-800 border border-zinc-700 rounded-md p-3"><div class="text-xs text-zinc-400">Near Misses</div><div id="rstatNear" class="text-2xl font-semibold mt-1 text-amber-400">0</div></div>
+      <div class="bg-zinc-800 border border-zinc-700 rounded-md p-3"><div class="text-xs text-zinc-400">Observations</div><div id="rstatObs" class="text-2xl font-semibold mt-1 text-sky-400">0</div></div>
+      <div class="bg-zinc-800 border border-zinc-700 rounded-md p-3"><div class="text-xs text-zinc-400">Open Items</div><div id="rstatOpen" class="text-2xl font-semibold mt-1">0</div></div>
+      <div class="bg-zinc-800 border border-zinc-700 rounded-md p-3"><div class="text-xs text-zinc-400">Total</div><div id="rstatTotal" class="text-2xl font-semibold mt-1">0</div></div>
     </div>
+  </div>
+  <div class="flex flex-wrap items-center gap-2 mb-2 flex-shrink-0">
+    <input type="text" id="rSearch" placeholder="Search reports…" class="saf-input" style="flex:1 1 240px;min-width:180px;width:auto;">
+    <select id="rTypeFilter" class="saf-input" style="flex:0 0 auto;width:150px;"><option value="">All Types</option></select>
+    <select id="rStatusFilter" class="saf-input" style="flex:0 0 auto;width:160px;"><option value="">All Statuses</option></select>
+  </div>
+  <div class="flex-1 min-h-0 overflow-auto border border-zinc-700 rounded-md bg-zinc-900 mb-12"><div id="rList"></div></div>
+</div>
+
+<!-- ===== TRAINING TAB ===== -->
+<div id="safTabTraining" class="flex-1 min-h-0 flex flex-col hidden">
+  <div class="bg-zinc-900 border border-zinc-700 rounded-md p-4 flex-shrink-0 mb-3">
+    <div class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3">
+      <div class="bg-zinc-800 border border-zinc-700 rounded-md p-3"><div class="text-xs text-zinc-400">People</div><div id="cstatPeople" class="text-2xl font-semibold mt-1">0</div></div>
+      <div class="bg-zinc-800 border border-zinc-700 rounded-md p-3"><div class="text-xs text-zinc-400">Certifications</div><div id="cstatTotal" class="text-2xl font-semibold mt-1">0</div></div>
+      <div class="bg-zinc-800 border border-zinc-700 rounded-md p-3"><div class="text-xs text-zinc-400">OSHA Cards</div><div id="cstatOsha" class="text-2xl font-semibold mt-1 text-emerald-400">0</div></div>
+      <div class="bg-zinc-800 border border-zinc-700 rounded-md p-3"><div class="text-xs text-zinc-400">Valid</div><div id="cstatValid" class="text-2xl font-semibold mt-1 text-emerald-400">0</div></div>
+      <div class="bg-zinc-800 border border-zinc-700 rounded-md p-3"><div class="text-xs text-zinc-400">Expiring Soon</div><div id="cstatExpiring" class="text-2xl font-semibold mt-1 text-amber-400">0</div></div>
+      <div class="bg-zinc-800 border border-zinc-700 rounded-md p-3"><div class="text-xs text-zinc-400">Expired</div><div id="cstatExpired" class="text-2xl font-semibold mt-1 text-red-400">0</div></div>
+    </div>
+  </div>
+  <div class="flex flex-wrap items-center gap-2 mb-2 flex-shrink-0">
+    <input type="text" id="cSearch" placeholder="Search person, company, cert…" class="saf-input" style="flex:1 1 240px;min-width:180px;width:auto;">
+    <select id="cTypeFilter" class="saf-input" style="flex:0 0 auto;width:170px;"><option value="">All Cert Types</option></select>
+    <select id="cStatusFilter" class="saf-input" style="flex:0 0 auto;width:150px;"><option value="">All Statuses</option><option>Valid</option><option>Expiring Soon</option><option>Expired</option></select>
+  </div>
+  <div class="flex-1 min-h-0 overflow-auto border border-zinc-700 rounded-md bg-zinc-900 mb-12">
+    <table class="w-full text-sm">
+      <thead class="bg-zinc-800 sticky top-0 z-10 border-b border-zinc-700"><tr>
+        <th class="px-4 py-3 text-left font-medium text-zinc-400">Person</th>
+        <th class="px-4 py-3 text-left font-medium text-zinc-400 saf-hide-mobile">Company</th>
+        <th class="px-4 py-3 text-left font-medium text-zinc-400">Certification</th>
+        <th class="px-4 py-3 text-left font-medium text-zinc-400 saf-hide-mobile">Issued</th>
+        <th class="px-4 py-3 text-left font-medium text-zinc-400">Expires</th>
+        <th class="px-4 py-3 text-center font-medium text-zinc-400 w-32">Status</th>
+      </tr></thead>
+      <tbody id="cList" class="divide-y divide-zinc-800"></tbody>
+    </table>
+  </div>
+</div>
+
+<!-- ===== OSHA LIBRARY TAB ===== -->
+<div id="safTabLibrary" class="flex-1 min-h-0 flex flex-col hidden">
+  <div class="flex items-center justify-between flex-shrink-0 mb-3">
+    <div class="text-sm text-zinc-400">Official OSHA reference documents. Bundled documents open instantly; all can be saved into this project's Documents.</div>
+    <button type="button" id="safImportAll" class="px-4 py-2 bg-sky-600 hover:bg-sky-500 rounded-md text-sm font-semibold whitespace-nowrap"><i class="fa-solid fa-download mr-1"></i>Save all to Documents</button>
+  </div>
+  <div class="flex-1 min-h-0 overflow-auto mb-12"><div id="safLibrary" class="saf-lib-grid"></div></div>
+</div>
+
+<!-- STATUS BAR -->
+<div class="flex-shrink-0 border-t border-zinc-700 bg-zinc-900 px-4 py-2 text-xs text-zinc-500 flex items-center justify-between">
+  <span id="safStatusText">—</span>
+  <span id="safUpdatedAt">—</span>
+</div>
+
+</div>
+</div>
+
+<!-- ===== REPORT MODAL ===== -->
+<dialog id="rModal" class="modal casepm-dialog bg-zinc-900 border border-zinc-700 rounded-lg w-full max-w-2xl p-0">
+  <div class="px-5 py-4 border-b border-zinc-700 flex items-center justify-between">
+    <h3 id="rModalTitle" class="font-semibold text-lg">New Safety Report</h3>
+    <button type="button" id="rModalClose" class="text-zinc-400 hover:text-white text-xl px-1">&times;</button>
+  </div>
+  <div class="p-5 overflow-y-auto space-y-3" style="max-height:74vh;">
+    <div class="grid grid-cols-1 md:grid-cols-3 gap-3">
+      <div><label class="block text-xs text-zinc-400 mb-1">Type</label><select id="rType" class="saf-input"></select></div>
+      <div><label class="block text-xs text-zinc-400 mb-1">Severity</label><select id="rSeverity" class="saf-input"></select></div>
+      <div><label class="block text-xs text-zinc-400 mb-1">Status</label><select id="rStatus" class="saf-input"></select></div>
+    </div>
+    <div><label class="block text-xs text-zinc-400 mb-1">Description</label><textarea id="rDesc" rows="2" class="saf-input resize-y" placeholder="What happened / what was observed?"></textarea></div>
+    <div class="grid grid-cols-1 md:grid-cols-3 gap-3">
+      <div><label class="block text-xs text-zinc-400 mb-1">Location</label><input id="rLocation" class="saf-input"></div>
+      <div><label class="block text-xs text-zinc-400 mb-1">Assigned To</label><input id="rAssigned" class="saf-input"></div>
+      <div><label class="block text-xs text-zinc-400 mb-1">Due Date</label><input type="date" id="rDue" class="saf-input"></div>
+    </div>
+    <div><label class="block text-xs text-zinc-400 mb-1">Immediate Actions Taken</label><textarea id="rImmediate" rows="2" class="saf-input resize-y"></textarea></div>
+    <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
+      <div><label class="block text-xs text-zinc-400 mb-1">Root Cause</label><textarea id="rRoot" rows="2" class="saf-input resize-y"></textarea></div>
+      <div><label class="block text-xs text-zinc-400 mb-1">Corrective Actions</label><textarea id="rCorrective" rows="2" class="saf-input resize-y"></textarea></div>
+    </div>
+    <div class="border border-zinc-700 rounded-lg p-3">
+      <div class="flex items-center justify-between mb-2"><span class="font-medium text-sm"><i class="fa-solid fa-camera text-sky-400 mr-2"></i>Photos <span id="rPhotoCount" class="text-xs text-zinc-500"></span></span>
+        <button type="button" id="rBrowseBtn" class="px-3 py-1.5 bg-zinc-800 hover:bg-zinc-700 rounded-md text-xs"><i class="fa-solid fa-folder-open"></i> Add photos</button></div>
+      <input type="file" id="rBrowseInput" accept="image/*" multiple class="hidden">
+      <div id="rPhotoGrid" class="grid grid-cols-3 md:grid-cols-5 gap-2"></div>
+    </div>
+  </div>
+  <div class="px-5 py-3 border-t border-zinc-700 flex items-center justify-between">
+    <button type="button" id="rDelete" class="px-3 py-2 text-sm text-red-400 hover:text-red-300 hidden"><i class="fa-solid fa-trash mr-1"></i>Delete</button>
+    <div class="flex gap-2 ml-auto">
+      <button type="button" id="rCancel" class="px-4 py-2 text-sm rounded-md border border-zinc-700 hover:bg-zinc-800">Cancel</button>
+      <button type="button" id="rSave" class="px-6 py-2 text-sm bg-emerald-600 hover:bg-emerald-500 rounded-md font-semibold">Save</button>
+    </div>
+  </div>
 </dialog>
 
-<!-- ==================== JAVASCRIPT ==================== -->
-<script>
-    // ==================== FILTERING ====================
-    function filterSafetyReports() {
-        const search = document.getElementById('safetySearch').value.toLowerCase();
-        const typeFilter = document.getElementById('safetyTypeFilter').value;
-        const statusFilter = document.getElementById('safetyStatusFilter').value;
+<!-- ===== CERTIFICATION MODAL ===== -->
+<dialog id="cModal" class="modal casepm-dialog bg-zinc-900 border border-zinc-700 rounded-lg w-full max-w-2xl p-0">
+  <div class="px-5 py-4 border-b border-zinc-700 flex items-center justify-between">
+    <h3 id="cModalTitle" class="font-semibold text-lg">New Certification</h3>
+    <button type="button" id="cModalClose" class="text-zinc-400 hover:text-white text-xl px-1">&times;</button>
+  </div>
+  <div class="p-5 overflow-y-auto space-y-3" style="max-height:74vh;">
+    <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
+      <div><label class="block text-xs text-zinc-400 mb-1">Person Name</label><input id="cPerson" class="saf-input" placeholder="Full name"></div>
+      <div><label class="block text-xs text-zinc-400 mb-1">Company</label><input id="cCompany" class="saf-input" list="cCompanyList"></div>
+    </div>
+    <div class="grid grid-cols-1 md:grid-cols-3 gap-3">
+      <div><label class="block text-xs text-zinc-400 mb-1">Certification</label><select id="cType" class="saf-input"></select></div>
+      <div><label class="block text-xs text-zinc-400 mb-1">Trade</label><input id="cTrade" class="saf-input"></div>
+      <div><label class="block text-xs text-zinc-400 mb-1">Card / Cert #</label><input id="cCard" class="saf-input"></div>
+    </div>
+    <div class="grid grid-cols-1 md:grid-cols-3 gap-3">
+      <div><label class="block text-xs text-zinc-400 mb-1">Issuer / Trainer</label><input id="cIssuer" class="saf-input"></div>
+      <div><label class="block text-xs text-zinc-400 mb-1">Issued Date</label><input type="date" id="cIssued" class="saf-input"></div>
+      <div><label class="block text-xs text-zinc-400 mb-1">Expiration Date</label><input type="date" id="cExpiration" class="saf-input"></div>
+    </div>
+    <div><label class="block text-xs text-zinc-400 mb-1">Notes</label><textarea id="cNotes" rows="2" class="saf-input resize-y"></textarea></div>
+  </div>
+  <div class="px-5 py-3 border-t border-zinc-700 flex items-center justify-between">
+    <button type="button" id="cDelete" class="px-3 py-2 text-sm text-red-400 hover:text-red-300 hidden"><i class="fa-solid fa-trash mr-1"></i>Delete</button>
+    <div class="flex gap-2 ml-auto">
+      <button type="button" id="cCancel" class="px-4 py-2 text-sm rounded-md border border-zinc-700 hover:bg-zinc-800">Cancel</button>
+      <button type="button" id="cSave" class="px-6 py-2 text-sm bg-emerald-600 hover:bg-emerald-500 rounded-md font-semibold">Save</button>
+    </div>
+  </div>
+</dialog>
 
-        document.querySelectorAll('tbody tr').forEach(row => {
-            const text = row.textContent.toLowerCase();
-            const statusSelect = row.querySelector('select');
-            const rowStatus = statusSelect ? statusSelect.value : '';
-            const rowType = row.textContent;
-
-            let show = true;
-
-            if (search && !text.includes(search)) show = false;
-            if (typeFilter && !rowType.includes(typeFilter)) show = false;
-            if (statusFilter && rowStatus !== statusFilter) show = false;
-
-            row.style.display = show ? '' : 'none';
-        });
-    }
-
-    // ==================== MODAL FUNCTIONS ====================
-    function showCreateSafetyModal() {
-        const modal = document.getElementById('safetyModal');
-        const form = document.getElementById('safetyForm');
-
-        // Reset form
-        form.reset();
-        document.getElementById('safetyId').value = '';
-        document.getElementById('safetyModalTitle').textContent = 'New Safety Report';
-        document.getElementById('safetyPhotoPreview').innerHTML = '';
-
-        // Auto-generate next report number
-        const nextNumber = 'SAF-' + String({{ (safety_reports|length + 1) }}).padStart(3, '0');
-        document.getElementById('safetyNumber').value = nextNumber;
-
-        // Set today's date
-        const today = new Date().toISOString().split('T')[0];
-        document.getElementById('safetyDate').value = today;
-
-        modal.showModal();
-    }
-
-    function closeSafetyModal() {
-        document.getElementById('safetyModal').close();
-    }
-
-    // ==================== ACTION FUNCTIONS ====================
-    function updateSafetyStatus(id, newStatus) {
-        console.log(`Updating Safety Report #${id} to status: ${newStatus}`);
-        showToast(`Safety report status updated to ${newStatus}`);
-    }
-
-    function viewSafetyReport(id) {
-        alert(`Viewing full details for Safety Report #${id}\n(Detail view with photos and history coming soon)`);
-    }
-
-    function editSafetyReport(id) {
-        const modal = document.getElementById('safetyModal');
-        document.getElementById('safetyModalTitle').textContent = `Edit Safety Report #${id}`;
-        document.getElementById('safetyId').value = id;
-
-        // TODO: Fetch existing data and populate form in production
-        modal.showModal();
-    }
-
-    function addFollowUp(id) {
-        const action = prompt("Enter follow-up or corrective action:");
-        if (action && action.trim() !== "") {
-            console.log(`Follow-up added to Safety Report #${id}: ${action}`);
-            showToast("Follow-up / Corrective action recorded");
-        }
-    }
-
-    function closeSafetyReport(id) {
-        if (confirm('Mark this safety report as closed?')) {
-            console.log(`Closing Safety Report #${id}`);
-            showToast('Safety report closed successfully');
-            // TODO: Update backend and refresh
-        }
-    }
-
-    // ==================== PHOTO PREVIEW IN MODAL ====================
-    document.getElementById('safetyPhotoUpload').addEventListener('change', function() {
-        const preview = document.getElementById('safetyPhotoPreview');
-        preview.innerHTML = '';
-
-        Array.from(this.files).forEach(file => {
-            const reader = new FileReader();
-            reader.onload = function(e) {
-                const div = document.createElement('div');
-                div.className = 'relative w-20 h-20 rounded-xl overflow-hidden border border-zinc-700';
-                div.innerHTML = `
-                    <img src="${e.target.result}" class="w-full h-full object-cover">
-                    <button type="button" onclick="this.parentElement.remove()" 
-                            class="absolute top-1 right-1 bg-black/70 text-white rounded-full w-5 h-5 flex items-center justify-center text-xs">
-                        ×
-                    </button>
-                `;
-                preview.appendChild(div);
-            };
-            reader.readAsDataURL(file);
-        });
-    });
-
-    // ==================== TOAST NOTIFICATION ====================
-    function showToast(message) {
-        const toast = document.createElement('div');
-        toast.className = `fixed bottom-6 right-6 bg-zinc-800 border border-zinc-700 text-white px-5 py-3 rounded-2xl shadow-xl flex items-center gap-3 z-[9999]`;
-        toast.innerHTML = `
-            <i class="fa-solid fa-check-circle text-emerald-400"></i>
-            <span>${message}</span>
-        `;
-        document.body.appendChild(toast);
-
-        setTimeout(() => {
-            toast.style.transition = 'all 0.3s ease';
-            toast.style.opacity = '0';
-            setTimeout(() => toast.remove(), 300);
-        }, 2800);
-    }
-
-    // ==================== KEYBOARD SHORTCUTS ====================
-    document.addEventListener('keydown', function(e) {
-        if (e.key === "/" && document.activeElement.tagName === "BODY") {
-            e.preventDefault();
-            const search = document.getElementById('safetySearch');
-            if (search) search.focus();
-        }
-
-        if (e.key.toLowerCase() === "n" && e.target.tagName === "BODY") {
-            e.preventDefault();
-            showCreateSafetyModal();
-        }
-    });
-
-    // ==================== INITIALIZATION ====================
-    function initializeSafetyPage() {
-        console.log('%c[Case PM] Safety page initialized with full features.', 'color:#10b981');
-    }
-
-    window.addEventListener('load', initializeSafetyPage);
-</script>
-
-<!-- ==================== FINAL ENHANCEMENTS ==================== -->
-<script>
-    // ==================== EXPORT SAFETY REPORTS TO CSV ====================
-    function exportSafetyReports() {
-        const table = document.querySelector('table');
-        if (!table) return;
-
-        let csv = [];
-        const rows = table.querySelectorAll('tr');
-
-        rows.forEach(row => {
-            const cols = row.querySelectorAll('th, td');
-            let rowData = [];
-            cols.forEach(col => {
-                let text = col.innerText.trim().replace(/"/g, '""');
-                rowData.push(`"${text}"`);
-            });
-            csv.push(rowData.join(','));
-        });
-
-        const csvContent = csv.join('\n');
-        const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
-        const link = document.createElement('a');
-        const url = URL.createObjectURL(blob);
-        
-        link.setAttribute('href', url);
-        link.setAttribute('download', `safety_log_${new Date().toISOString().split('T')[0]}.csv`);
-        link.style.visibility = 'hidden';
-        document.body.appendChild(link);
-        link.click();
-        document.body.removeChild(link);
-
-        showToast('Safety log exported successfully');
-    }
-
-    // ==================== BULK ACTIONS (Future Ready) ====================
-    function bulkUpdateSafetyStatus() {
-        const selected = document.querySelectorAll('table tbody input[type="checkbox"]:checked');
-        if (selected.length === 0) {
-            alert("Please select safety reports to update.");
-            return;
-        }
-        alert(`Bulk status update for ${selected.length} safety reports will be available here.`);
-    }
-
-    // ==================== FINAL INITIALIZATION ====================
-    function finalSafetyInitialization() {
-        console.log('%c[Case PM] safety.html fully loaded with maximum features.', 'color:#10b981');
-    }
-
-    window.addEventListener('load', finalSafetyInitialization);
-</script>
-
+<datalist id="cCompanyList"></datalist>
 {% endblock %}
