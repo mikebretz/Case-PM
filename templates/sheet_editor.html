@@ -25,17 +25,37 @@
   #luckysheet { position: absolute; inset: 0; }
   #sheetStatus { font-size: 0.75rem; color: #71717a; margin-left: auto; }
   #sheetLoading { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; background: #09090b; z-index: 5; color: #a1a1aa; }
+  .sheet-zoom { display: inline-flex; align-items: center; gap: 0.35rem; background: #18181b; border: 1px solid #3f3f46; border-radius: 0.375rem; padding: 0.2rem 0.4rem; }
+  .sheet-zoom-btn { color: #d4d4d8; padding: 0.15rem 0.35rem; border-radius: 0.25rem; }
+  .sheet-zoom-btn:hover { background: #3f3f46; }
+  #sheetZoomLabel { font-size: 0.75rem; color: #a1a1aa; min-width: 38px; text-align: center; }
+
+  /* Green Luckysheet toolbar with slightly larger, easier-to-see icons */
+  .luckysheet-wa-editor { background: #0f3d2e !important; }
+  .luckysheet-wa-editor .luckysheet-toolbar-menu,
+  .luckysheet-share-logo { background: #0f3d2e !important; }
+  #luckysheet .luckysheet-toolbar-button,
+  #luckysheet .luckysheet-toolbar-combo-button { transform: scale(1.12); transform-origin: center; }
+  #luckysheet .luckysheet-toolbar-button:hover { background: #14532d !important; }
+  #luckysheet .luckysheet-toolbar-button-inner-box i,
+  #luckysheet .luckysheet-toolbar-menu-button-inner-box i { font-size: 1.05em !important; }
 </style>
 
 <div class="sheet-page">
   <div class="sheet-toolbar">
-    <a href="{{ url_for('documents_page') }}" class="sheet-btn" title="Back to Documents"><i class="fa-solid fa-arrow-left"></i><span class="hidden md:inline">Documents</span></a>
+    <button type="button" id="sheetBackBtn" class="sheet-btn" title="Back to Documents"><i class="fa-solid fa-arrow-left"></i><span class="hidden md:inline">Documents</span></button>
     <i class="fa-solid fa-table-cells text-emerald-400"></i>
     <input type="text" id="sheetNameInput" placeholder="Untitled Spreadsheet">
-    <button type="button" id="sheetSaveBtn" class="sheet-btn primary"><i class="fa-solid fa-floppy-disk"></i> Save</button>
+    <button type="button" id="sheetSaveBtn" class="sheet-btn primary"><i class="fa-solid fa-floppy-disk"></i> Save to Documents</button>
+    <button type="button" id="sheetPrintBtn" class="sheet-btn"><i class="fa-solid fa-print"></i><span class="hidden md:inline"> Print</span></button>
     <button type="button" id="sheetExportBtn" class="sheet-btn"><i class="fa-solid fa-file-excel"></i><span class="hidden md:inline"> Export .xlsx</span></button>
     <button type="button" id="sheetImportBtn" class="sheet-btn"><i class="fa-solid fa-file-import"></i><span class="hidden md:inline"> Import</span></button>
     <input type="file" id="sheetImportInput" accept=".xlsx,.xls,.csv" class="hidden">
+    <div class="sheet-zoom" title="Ctrl + scroll to zoom the cells">
+      <button type="button" id="sheetZoomOut" class="sheet-zoom-btn"><i class="fa-solid fa-magnifying-glass-minus"></i></button>
+      <span id="sheetZoomLabel">100%</span>
+      <button type="button" id="sheetZoomIn" class="sheet-zoom-btn"><i class="fa-solid fa-magnifying-glass-plus"></i></button>
+    </div>
     <span id="sheetStatus">New spreadsheet</span>
   </div>
   <div id="luckysheetHost">
@@ -57,6 +77,14 @@
   function setStatus(t) { statusEl.textContent = t; }
   function hideLoading() { loadingEl.style.display = 'none'; }
 
+  let dirty = false;
+  let zoom = 1;
+
+  function setDirty(v) {
+    dirty = v;
+    if (v) setStatus('Unsaved changes');
+  }
+
   const BASE_OPTIONS = {
     container: 'luckysheet',
     lang: 'en',
@@ -64,6 +92,11 @@
     showsheetbarConfig: { add: true, menu: true, sheet: true },
     enableAddRow: true,
     enableAddBackTop: true,
+    hook: {
+      cellUpdated: function () { setDirty(true); },
+      cellEditBefore: function () { setDirty(true); },
+      rangePasteBefore: function () { setDirty(true); return true; },
+    },
   };
 
   function createEmpty() {
@@ -199,12 +232,89 @@
       const url = new URL(location.href);
       url.searchParams.set('doc_id', String(docId));
       history.replaceState(null, '', url);
+      dirty = false;
       setStatus('Saved to Documents · ' + new Date().toLocaleTimeString());
       if (window.showToast) window.showToast('Saved to Documents');
+      return true;
     } catch (e) {
       setStatus('Error: ' + e.message);
       alert(e.message);
+      return false;
     }
+  }
+
+  // ---- Zoom (Ctrl + scroll on the cells) ----
+  function applyZoom(z) {
+    zoom = Math.max(0.4, Math.min(4, Math.round(z * 10) / 10));
+    document.getElementById('sheetZoomLabel').textContent = Math.round(zoom * 100) + '%';
+    try { if (window.luckysheet && window.luckysheet.setZoom) window.luckysheet.setZoom(zoom); } catch (_) {}
+  }
+  function bindZoom() {
+    const host = document.getElementById('luckysheetHost');
+    host.addEventListener('wheel', function (e) {
+      if (!e.ctrlKey && !e.metaKey) return;
+      e.preventDefault();
+      applyZoom(zoom + (e.deltaY < 0 ? 0.1 : -0.1));
+    }, { passive: false });
+    document.getElementById('sheetZoomIn').addEventListener('click', () => applyZoom(zoom + 0.1));
+    document.getElementById('sheetZoomOut').addEventListener('click', () => applyZoom(zoom - 0.1));
+  }
+
+  // ---- Print current sheet ----
+  function printSheet() {
+    let grid = [];
+    try { grid = window.luckysheet.getSheetData(); } catch (_) { grid = []; }
+    let maxC = 0;
+    grid.forEach((row) => { if (row) row.forEach((cell, c) => { if (cell != null && c > maxC) maxC = c; }); });
+    let rows = '';
+    grid.forEach((row) => {
+      if (!row) return;
+      let tds = '';
+      let hasContent = false;
+      for (let c = 0; c <= maxC; c++) {
+        const cell = row[c];
+        const val = cell == null ? '' : (cell.m != null ? cell.m : (cell.v != null ? cell.v : ''));
+        if (val !== '') hasContent = true;
+        tds += `<td>${String(val).replace(/</g, '&lt;')}</td>`;
+      }
+      rows += `<tr>${tds}</tr>`;
+    });
+    const w = window.open('', '_blank');
+    if (!w) return;
+    w.document.write(`<html><head><title>${(nameInput.value || 'Spreadsheet')}</title>
+      <style>body{font-family:Arial,sans-serif;padding:0.5in;} h2{margin:0 0 12px;}
+      table{border-collapse:collapse;width:100%;} td{border:1px solid #999;padding:3px 6px;font-size:11px;white-space:nowrap;}</style>
+      </head><body><h2>${(nameInput.value || 'Spreadsheet')}</h2><table>${rows}</table></body></html>`);
+    w.document.close();
+    w.focus();
+    setTimeout(() => w.print(), 300);
+  }
+
+  // ---- Exit with unsaved-changes prompt ----
+  function confirmExit() {
+    const target = '{{ url_for("documents_page") }}';
+    if (!dirty) { window.location.href = target; return; }
+    showExitModal(target);
+  }
+  function showExitModal(target) {
+    const overlay = document.createElement('div');
+    overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.6);z-index:9999;display:flex;align-items:center;justify-content:center;';
+    overlay.innerHTML = `<div style="background:#18181b;border:1px solid #3f3f46;border-radius:0.5rem;max-width:380px;padding:1.25rem;color:#fff;">
+      <div style="font-weight:600;margin-bottom:0.5rem;">Save before leaving?</div>
+      <div style="font-size:0.85rem;color:#a1a1aa;margin-bottom:1rem;">You have unsaved changes in this spreadsheet.</div>
+      <div style="display:flex;gap:0.5rem;justify-content:flex-end;">
+        <button id="exitCancel" class="sheet-btn">Cancel</button>
+        <button id="exitDiscard" class="sheet-btn">Discard</button>
+        <button id="exitSave" class="sheet-btn primary">Save to Documents</button>
+      </div></div>`;
+    document.body.appendChild(overlay);
+    overlay.querySelector('#exitCancel').onclick = () => overlay.remove();
+    overlay.querySelector('#exitDiscard').onclick = () => { dirty = false; window.location.href = target; };
+    overlay.querySelector('#exitSave').onclick = async () => {
+      const ok = await save();
+      if (ok) window.location.href = target;
+      else overlay.remove();
+    };
   }
 
   function exportXlsx() {
@@ -226,7 +336,10 @@
   }
 
   document.getElementById('sheetSaveBtn').addEventListener('click', save);
+  document.getElementById('sheetPrintBtn').addEventListener('click', printSheet);
   document.getElementById('sheetExportBtn').addEventListener('click', exportXlsx);
+  document.getElementById('sheetBackBtn').addEventListener('click', confirmExit);
+  document.getElementById('sheetNameInput').addEventListener('input', () => setDirty(true));
   document.getElementById('sheetImportBtn').addEventListener('click', () => document.getElementById('sheetImportInput').click());
   document.getElementById('sheetImportInput').addEventListener('change', (e) => {
     const file = e.target.files[0];
@@ -240,12 +353,19 @@
       importFromExcelFile(file, nm);
     }
     e.target.value = '';
+    setDirty(true);
   });
   window.addEventListener('keydown', (e) => {
     if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 's') { e.preventDefault(); save(); }
   });
+  window.addEventListener('beforeunload', (e) => {
+    if (dirty) { e.preventDefault(); e.returnValue = ''; }
+  });
 
-  waitForLuckysheet(() => { if (docId) loadExisting(); else createEmpty(); });
+  waitForLuckysheet(() => {
+    if (docId) loadExisting(); else createEmpty();
+    bindZoom();
+  });
 })();
 </script>
 {% endblock %}

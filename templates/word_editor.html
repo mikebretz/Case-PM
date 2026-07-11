@@ -16,20 +16,37 @@
   .word-btn.primary:hover { background: #10b981; }
   #wordNameInput { background: #18181b; border: 1px solid #3f3f46; border-radius: 0.375rem; padding: 0.4rem 0.7rem; color: #fff; font-size: 0.9rem; min-width: 240px; }
   #wordStatus { font-size: 0.75rem; color: #71717a; margin-left: auto; }
+  .word-zoom { display: inline-flex; align-items: center; gap: 0.35rem; background: #18181b; border: 1px solid #3f3f46; border-radius: 0.375rem; padding: 0.2rem 0.4rem; }
+  .word-zoom-btn { color: #d4d4d8; padding: 0.15rem 0.35rem; border-radius: 0.25rem; }
+  .word-zoom-btn:hover { background: #3f3f46; }
+  #wordZoomLabel { font-size: 0.75rem; color: #a1a1aa; min-width: 38px; text-align: center; }
   #wordEditorHost { flex: 1; min-height: 0; display: flex; flex-direction: column; }
   .tox-tinymce { flex: 1 !important; border-radius: 0.375rem !important; }
+  /* Green toolbar to match the Sheet editor and make icons easier to see */
+  .tox .tox-editor-header { background: #0f3d2e !important; }
+  .tox .tox-toolbar__primary, .tox .tox-toolbar, .tox .tox-menubar { background: #0f3d2e !important; }
+  .tox .tox-tbtn svg { fill: #e6fff4 !important; }
+  .tox .tox-tbtn { transform: scale(1.06); }
+  .tox .tox-tbtn:hover { background: #14532d !important; }
+  .tox .tox-mbtn { color: #d1fae5 !important; }
 </style>
 
 <div class="word-page">
   <div class="word-toolbar">
-    <a href="{{ url_for('documents_page') }}" class="word-btn" title="Back to Documents"><i class="fa-solid fa-arrow-left"></i><span class="hidden md:inline">Documents</span></a>
+    <button type="button" id="wordBackBtn" class="word-btn" title="Back to Documents"><i class="fa-solid fa-arrow-left"></i><span class="hidden md:inline">Documents</span></button>
     <i class="fa-solid fa-file-word text-sky-400"></i>
     <input type="text" id="wordNameInput" placeholder="Untitled Document">
-    <button type="button" id="wordSaveBtn" class="word-btn primary"><i class="fa-solid fa-floppy-disk"></i> Save</button>
+    <button type="button" id="wordSaveBtn" class="word-btn primary"><i class="fa-solid fa-floppy-disk"></i> Save to Documents</button>
     <button type="button" id="wordExportDocxBtn" class="word-btn"><i class="fa-solid fa-file-word"></i><span class="hidden md:inline"> Export .docx</span></button>
     <button type="button" id="wordExportPdfBtn" class="word-btn"><i class="fa-solid fa-print"></i><span class="hidden md:inline"> Print / PDF</span></button>
     <button type="button" id="wordImportBtn" class="word-btn"><i class="fa-solid fa-file-import"></i><span class="hidden md:inline"> Import</span></button>
     <input type="file" id="wordImportInput" accept=".docx,.txt,.html,.htm,.rtf" class="hidden">
+    <button type="button" id="wordViewToggle" class="word-btn" title="Toggle paper / wide view"><i class="fa-solid fa-file-lines"></i><span class="hidden md:inline"> Paper</span></button>
+    <div class="word-zoom" title="Ctrl + scroll to zoom the page">
+      <button type="button" id="wordZoomOut" class="word-zoom-btn"><i class="fa-solid fa-magnifying-glass-minus"></i></button>
+      <span id="wordZoomLabel">100%</span>
+      <button type="button" id="wordZoomIn" class="word-zoom-btn"><i class="fa-solid fa-magnifying-glass-plus"></i></button>
+    </div>
     <span id="wordStatus">New document</span>
   </div>
   <div id="wordEditorHost">
@@ -46,9 +63,38 @@
   const nameInput = document.getElementById('wordNameInput');
   const statusEl = document.getElementById('wordStatus');
   let ready = false;
+  let dirty = false;
+  let zoom = 1;
+  let paperView = true;
 
   function setStatus(t) { statusEl.textContent = t; }
+  function setDirty(v) { dirty = v; if (v) setStatus('Unsaved changes'); }
   function editor() { return window.tinymce && window.tinymce.get('wordEditor'); }
+
+  // Paper-on-dark styling: white 8.5in "page" centered on a dark canvas.
+  const PAPER_STYLE = 'html{background:#26262b;} body{font-family:Calibri,Arial,sans-serif;font-size:12pt;width:8.5in;min-height:10in;margin:24px auto;background:#fff;color:#111;padding:1in;box-shadow:0 6px 30px rgba(0,0,0,0.5);box-sizing:border-box;} @media(max-width:900px){body{width:auto;margin:12px;padding:0.5in;}}';
+  const WIDE_STYLE = 'html{background:#fff;} body{font-family:Calibri,Arial,sans-serif;font-size:12pt;margin:16px;background:#fff;color:#111;}';
+
+  function applyContentStyle() {
+    const ed = editor();
+    if (!ed) return;
+    const doc = ed.getDoc();
+    if (!doc) return;
+    let styleEl = doc.getElementById('wordViewStyle');
+    if (!styleEl) {
+      styleEl = doc.createElement('style');
+      styleEl.id = 'wordViewStyle';
+      doc.head.appendChild(styleEl);
+    }
+    styleEl.textContent = paperView ? PAPER_STYLE : WIDE_STYLE;
+  }
+
+  function applyZoom(z) {
+    zoom = Math.max(0.5, Math.min(3, Math.round(z * 10) / 10));
+    document.getElementById('wordZoomLabel').textContent = Math.round(zoom * 100) + '%';
+    const ed = editor();
+    if (ed && ed.getBody()) ed.getBody().style.zoom = String(zoom);
+  }
 
   tinymce.init({
     selector: '#wordEditor',
@@ -60,15 +106,27 @@
     toolbar: 'undo redo | blocks fontfamily fontsize | bold italic underline strikethrough | forecolor backcolor | alignleft aligncenter alignright alignjustify | bullist numlist outdent indent | link image table | removeformat | searchreplace | pagebreak | code fullscreen',
     skin: 'oxide-dark',
     content_css: 'default',
-    content_style: 'body{font-family:Calibri,Arial,sans-serif;font-size:12pt;max-width:8.5in;margin:1in auto;background:#fff;color:#111;padding:0 0.25in;} @media(max-width:900px){body{margin:0.5in auto;}}',
+    content_style: PAPER_STYLE,
     branding: false,
     promotion: false,
     setup: function (ed) {
       ed.on('init', function () {
         ready = true;
+        applyContentStyle();
+        // Ctrl + scroll zoom on the page (inside the editor iframe).
+        const doc = ed.getDoc();
+        if (doc) {
+          doc.addEventListener('wheel', function (e) {
+            if (!e.ctrlKey && !e.metaKey) return;
+            e.preventDefault();
+            applyZoom(zoom + (e.deltaY < 0 ? 0.1 : -0.1));
+          }, { passive: false });
+        }
         if (docId) loadExisting();
         else setStatus('New document');
       });
+      ed.on('input undo redo ExecCommand', function () { setDirty(true); });
+      ed.on('keyup', function (e) { if (!e.ctrlKey && !e.metaKey) setDirty(true); });
     },
   });
 
@@ -125,9 +183,39 @@
       const url = new URL(location.href);
       url.searchParams.set('doc_id', String(docId));
       history.replaceState(null, '', url);
+      dirty = false;
       setStatus('Saved to Documents · ' + new Date().toLocaleTimeString());
       if (window.showToast) window.showToast('Saved to Documents');
-    } catch (e) { setStatus('Error: ' + e.message); alert(e.message); }
+      return true;
+    } catch (e) { setStatus('Error: ' + e.message); alert(e.message); return false; }
+  }
+
+  function toggleView() {
+    paperView = !paperView;
+    document.querySelector('#wordViewToggle span').textContent = paperView ? ' Paper' : ' Wide';
+    applyContentStyle();
+  }
+
+  function confirmExit() {
+    const target = '{{ url_for("documents_page") }}';
+    if (!dirty) { window.location.href = target; return; }
+    const overlay = document.createElement('div');
+    overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.6);z-index:9999;display:flex;align-items:center;justify-content:center;';
+    overlay.innerHTML = `<div style="background:#18181b;border:1px solid #3f3f46;border-radius:0.5rem;max-width:380px;padding:1.25rem;color:#fff;">
+      <div style="font-weight:600;margin-bottom:0.5rem;">Save before leaving?</div>
+      <div style="font-size:0.85rem;color:#a1a1aa;margin-bottom:1rem;">You have unsaved changes in this document.</div>
+      <div style="display:flex;gap:0.5rem;justify-content:flex-end;">
+        <button id="wExitCancel" class="word-btn">Cancel</button>
+        <button id="wExitDiscard" class="word-btn">Discard</button>
+        <button id="wExitSave" class="word-btn primary">Save to Documents</button>
+      </div></div>`;
+    document.body.appendChild(overlay);
+    overlay.querySelector('#wExitCancel').onclick = () => overlay.remove();
+    overlay.querySelector('#wExitDiscard').onclick = () => { dirty = false; window.location.href = target; };
+    overlay.querySelector('#wExitSave').onclick = async () => {
+      const ok = await save();
+      if (ok) window.location.href = target; else overlay.remove();
+    };
   }
 
   function exportDocx() {
@@ -154,6 +242,11 @@
   document.getElementById('wordSaveBtn').addEventListener('click', save);
   document.getElementById('wordExportDocxBtn').addEventListener('click', exportDocx);
   document.getElementById('wordExportPdfBtn').addEventListener('click', printDoc);
+  document.getElementById('wordBackBtn').addEventListener('click', confirmExit);
+  document.getElementById('wordViewToggle').addEventListener('click', toggleView);
+  document.getElementById('wordZoomIn').addEventListener('click', () => applyZoom(zoom + 0.1));
+  document.getElementById('wordZoomOut').addEventListener('click', () => applyZoom(zoom - 0.1));
+  document.getElementById('wordNameInput').addEventListener('input', () => setDirty(true));
   document.getElementById('wordImportBtn').addEventListener('click', () => document.getElementById('wordImportInput').click());
   document.getElementById('wordImportInput').addEventListener('change', async (e) => {
     const file = e.target.files[0];
@@ -173,11 +266,15 @@
         editor().setContent('<p>' + txt.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/\n/g, '</p><p>') + '</p>');
       }
       setStatus('Imported ' + file.name);
+      setDirty(true);
     } catch (err) { alert('Import failed: ' + err.message); }
     e.target.value = '';
   });
   window.addEventListener('keydown', (e) => {
     if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 's') { e.preventDefault(); save(); }
+  });
+  window.addEventListener('beforeunload', (e) => {
+    if (dirty) { e.preventDefault(); e.returnValue = ''; }
   });
 })();
 </script>
