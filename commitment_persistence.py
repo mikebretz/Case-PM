@@ -320,8 +320,9 @@ def _resolve_next_status(commitment, default_next):
     return default_next
 
 
-def commitment_workflow_action(commitment, action, user):
+def commitment_workflow_action(commitment, action, user, body=None):
     action = (action or '').lower()
+    body = body or {}
     if action == 'submit':
         if commitment.status not in ('Draft',):
             raise ValueError('Only draft commitments can be submitted')
@@ -352,16 +353,12 @@ def commitment_workflow_action(commitment, action, user):
         return commitment.status, False
 
     if action == 'sign_internal':
-        sigs = _parse_json(getattr(commitment, 'certified_signatures_json', None), [])
-        sigs.append({
-            'signed_at': datetime.utcnow().isoformat() + 'Z',
-            'signed_by_id': user.id,
-            'signed_by_name': getattr(user, 'full_name', None) or user.email,
-            'method': 'internal',
-        })
-        commitment.certified_signatures_json = json.dumps(sigs)
-        commitment.signature_status = 'fully_executed' if commitment.status == 'Approved' else 'partially_signed'
-        commitment.executed_date = datetime.utcnow().date()
+        from user_signature_persistence import verify_user_signature_attestation, append_commitment_signature
+        sig_hash = (body.get('signature_hash') or '').strip()
+        if not body.get('signature_attestation'):
+            raise ValueError('Electronic signature attestation is required')
+        verify_user_signature_attestation(user, sig_hash)
+        append_commitment_signature(commitment, user, method='internal')
         return commitment.status, False
 
     if action == 'send_docusign':

@@ -900,12 +900,26 @@
   }
 
   async function signInternal(id) {
-    if (!confirm('Apply your certified digital signature to this commitment?')) return;
+    if (typeof CasePMEsign === 'undefined') {
+      alert('E-sign module not loaded.');
+      return;
+    }
+    let payload;
     try {
-      await api(`/api/commitments/${id}/workflow`, { method: 'POST', body: JSON.stringify({ action: 'sign_internal' }) });
+      payload = await CasePMEsign.buildAttestationPayload();
+    } catch (err) {
+      alert(err.message || 'Set up your signature in User Management first.');
+      return;
+    }
+    if (!confirm('Apply your certified electronic signature to this commitment? This will be locked to your profile signature hash.')) return;
+    try {
+      await api(`/api/commitments/${id}/workflow`, {
+        method: 'POST',
+        body: JSON.stringify({ action: 'sign_internal', ...payload }),
+      });
       logCommitmentAudit('COMMITMENT_SIGNED', { number: state.drawerRecord?.number });
       await refreshAll();
-      toast('Signature recorded');
+      toast('Electronic signature recorded and document locked');
     } catch (err) {
       alert(err.message);
     }
@@ -966,8 +980,8 @@
       ${showApprove ? `<button type="button" onclick="CasePMCommitments.workflow(${c.id},'approve')" class="px-4 py-2 bg-emerald-600 hover:bg-emerald-500 rounded-md text-sm">Approve</button>
       <button type="button" onclick="CasePMCommitments.workflow(${c.id},'reject')" class="px-4 py-2 bg-zinc-800 text-red-400 rounded-md text-sm">Reject</button>` : ''}
       ${c.status === 'Approved' && c.signature_status !== 'fully_executed' ? `
-        <button type="button" onclick="CasePMCommitments.signInternal(${c.id})" class="px-4 py-2 bg-sky-700 hover:bg-sky-600 rounded-md text-sm">Certified Sign</button>
-        <button type="button" onclick="CasePMCommitments.sendDocuSign(${c.id})" class="px-4 py-2 bg-indigo-700 hover:bg-indigo-600 rounded-md text-sm"><i class="fa-solid fa-file-signature mr-1"></i>DocuSign</button>` : ''}
+        <button type="button" onclick="CasePMCommitments.signInternal(${c.id})" class="px-4 py-2 bg-sky-700 hover:bg-sky-600 rounded-md text-sm" title="Sign with your User Management e-signature">E-Sign (My Signature)</button>
+        <button type="button" onclick="CasePMCommitments.sendDocuSign(${c.id})" class="px-4 py-2 bg-indigo-700 hover:bg-indigo-600 rounded-md text-sm" title="Send via DocuSign for third-party certified signing"><i class="fa-solid fa-file-signature mr-1"></i>DocuSign</button>` : ''}
       <button type="button" onclick="CasePMCommitments.edit(${c.id})" class="px-4 py-2 bg-zinc-800 hover:bg-zinc-700 rounded-md text-sm">Edit</button>
       ${showAdminDelete ? `<button type="button" onclick="CasePMCommitments.deleteCommitment(${c.id})" class="px-4 py-2 bg-red-900/70 hover:bg-red-800 text-red-200 rounded-md text-sm" title="${isDirectlyDeletable(c) ? 'Delete' : 'Void & delete'}"><i class="fa-solid fa-trash mr-1"></i>Delete</button>` : ''}`;
     openDrawer();

@@ -5,6 +5,7 @@
 <script src="{{ url_for('static', filename='js/budget-sync.js') }}"></script>
 <script src="{{ url_for('static', filename='js/pay-app-sync.js') }}"></script>
 <script src="{{ url_for('static', filename='js/accounting-reconcile.js') }}"></script>
+<script src="{{ url_for('static', filename='js/casepm-esign.js') }}"></script>
 <script src="{{ url_for('static', filename='js/change-orders-app.js') }}"></script>
 
 <style>
@@ -189,6 +190,7 @@
             <button type="button" onclick="document.getElementById('coApprovalModal').close()" class="text-zinc-400 hover:text-white text-2xl leading-none">&times;</button>
         </div>
         <div id="coApprovalSummary" class="bg-zinc-900 border border-zinc-700 rounded-md p-4 text-sm space-y-2 mb-4"></div>
+        <div id="coApprovalSignPanel" class="mb-4 hidden"></div>
         <div class="mb-4">
             <label for="coApprovalComments" class="block text-sm text-zinc-400 mb-1.5">Comments <span id="coApprovalCommentsRequired" class="text-red-400 hidden">*</span></label>
             <textarea id="coApprovalComments" rows="3" placeholder="Add approval notes or rejection reason for the project record…" class="w-full bg-zinc-800 border border-zinc-700 rounded-md px-3 py-2 text-sm text-white placeholder:text-zinc-600"></textarea>

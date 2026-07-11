@@ -132,6 +132,13 @@ class User(db.Model, UserMixin):
     status = db.Column(db.String(20), default='Active')
     must_change_password = db.Column(db.Boolean, default=True)
     require_2fa = db.Column(db.Boolean, default=False)
+    signature_path = db.Column(db.String(300))
+    signature_hash = db.Column(db.String(64))
+    signature_legal_name = db.Column(db.String(150))
+    signature_initials = db.Column(db.String(20))
+    signature_set_at = db.Column(db.DateTime)
+    signature_audit_json = db.Column(db.Text)
+    certificate_meta_json = db.Column(db.Text)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     last_login = db.Column(db.DateTime)
 
@@ -501,6 +508,9 @@ class ChangeOrder(db.Model):
     linked_commitment_ref = db.Column(db.String(80))
     approval_stage = db.Column(db.Integer, default=0)
     plan_pins_json = db.Column(db.Text)
+    approval_history_json = db.Column(db.Text)
+    approval_signatures_json = db.Column(db.Text)
+    executed_locked = db.Column(db.Boolean, default=False)
 
 
 class ChangeOrderAllocation(db.Model):
@@ -4180,8 +4190,97 @@ def create_company():
 @app.route('/user-management')
 @login_required
 def user_management():
+    from user_signature_persistence import ensure_user_signature_schema
+    ensure_user_signature_schema(db)
     users = User.query.order_by(User.created_at.desc()).all()
-    return render_template('user_management.html', users=users)
+    return render_template(
+        'user_management.html',
+        users=users,
+        current_user_payload={
+            'id': current_user.id,
+            'email': current_user.email,
+            'role': current_user.role,
+            'full_name': current_user.full_name,
+        },
+        server_users_for_js=[{'id': u.id, 'email': u.email, 'full_name': u.full_name} for u in users],
+    )
+
+
+@app.route('/api/users/me/signature', methods=['GET'])
+@login_required
+def api_my_signature():
+    from user_signature_persistence import ensure_user_signature_schema, signature_public_view
+    ensure_user_signature_schema(db)
+    return jsonify({'ok': True, 'signature': signature_public_view(current_user)})
+
+
+@app.route('/api/users/<int:user_id>/signature', methods=['GET'])
+@login_required
+def api_user_signature(user_id):
+    from user_signature_persistence import ensure_user_signature_schema, signature_public_view
+    ensure_user_signature_schema(db)
+    user = User.query.get_or_404(user_id)
+    return jsonify({'ok': True, 'signature': signature_public_view(user)})
+
+
+@app.route('/api/users/<int:user_id>/signature/image', methods=['GET'])
+@login_required
+def api_user_signature_image(user_id):
+    from user_signature_persistence import ensure_user_signature_schema
+    ensure_user_signature_schema(db)
+    user = User.query.get_or_404(user_id)
+    path = getattr(user, 'signature_path', None)
+    if not path or not os.path.isfile(path):
+        return jsonify({'error': 'No signature on file'}), 404
+    from flask import send_file
+    return send_file(path, mimetype='image/png', max_age=3600)
+
+
+@app.route('/api/users/me/signature', methods=['PUT'])
+@login_required
+def api_save_my_signature():
+    """Only the authenticated user may update their own signature — admins cannot override."""
+    from user_signature_persistence import ensure_user_signature_schema, save_user_signature, signature_public_view
+    ensure_user_signature_schema(db)
+    body = request.get_json(silent=True) or {}
+    data_url = body.get('signature_png') or body.get('signatureDataURL') or body.get('data_url')
+    if not data_url:
+        return jsonify({'error': 'signature_png is required'}), 400
+    try:
+        save_user_signature(
+            current_user,
+            data_url,
+            legal_name=body.get('legal_name'),
+            initials=body.get('initials'),
+        )
+        cert_name = (body.get('certificate_file_name') or '').strip()
+        if cert_name:
+            import json as _json
+            current_user.certificate_meta_json = _json.dumps({
+                'file_name': cert_name,
+                'uploaded_at': datetime.utcnow().isoformat() + 'Z',
+                'note': 'Certificate metadata only — private keys are never stored on server',
+            })
+        db.session.commit()
+    except ValueError as exc:
+        db.session.rollback()
+        return jsonify({'error': str(exc)}), 400
+    except Exception as exc:
+        db.session.rollback()
+        return jsonify({'error': str(exc)}), 500
+    return jsonify({'ok': True, 'signature': signature_public_view(current_user)})
+
+
+@app.route('/api/users/me/signature/audit', methods=['GET'])
+@login_required
+def api_my_signature_audit():
+    from user_signature_persistence import ensure_user_signature_schema
+    ensure_user_signature_schema(db)
+    try:
+        audit = json.loads(current_user.signature_audit_json or '[]')
+    except (TypeError, json.JSONDecodeError):
+        audit = []
+    return jsonify({'ok': True, 'audit': audit[:50]})
 
 
 @app.route('/users/create', methods=['POST'])
@@ -8226,7 +8325,7 @@ def api_commitment_workflow(commitment_id):
     body = request.get_json(silent=True) or {}
     action = body.get('action')
     try:
-        new_status, final_approved = commitment_workflow_action(c, action, current_user)
+        new_status, final_approved = commitment_workflow_action(c, action, current_user, body=body)
     except ValueError as exc:
         return jsonify({'error': str(exc)}), 400
 
@@ -10329,6 +10428,9 @@ def api_change_order_workflow(co_id):
     if action == 'reject' and not comments:
         return jsonify({'error': 'Rejection requires a comment.'}), 400
     old_status = co.status
+    old_ball_role = co.ball_in_court_role
+    if getattr(co, 'executed_locked', False) and action in ('submit', 'approve'):
+        return jsonify({'error': 'This change order is executed and locked under owner e-signature.'}), 403
     allocs = ChangeOrderAllocation.query.filter_by(change_order_id=co.id).all()
     alloc_payload = [{
         'cost_code': a.cost_code,
@@ -10337,11 +10439,20 @@ def api_change_order_workflow(co_id):
         'description': getattr(a, 'description', ''),
     } for a in allocs]
     try:
+        if action == 'approve' and old_ball_role in ('Owner', 'Architect'):
+            from user_signature_persistence import verify_user_signature_attestation
+            if not body.get('signature_attestation'):
+                return jsonify({'error': 'Electronic signature attestation is required for Owner and Architect approvals.'}), 400
+            verify_user_signature_attestation(current_user, (body.get('signature_hash') or '').strip())
         new_status, final_approved = co_workflow_action(co, action, current_user, User, alloc_payload)
     except ValueError as exc:
         return jsonify({'error': str(exc)}), 400
 
     append_approval_history(co, action, current_user, comments, old_status, new_status)
+
+    if action == 'approve' and old_ball_role in ('Owner', 'Architect'):
+        from user_signature_persistence import append_co_approval_signature
+        append_co_approval_signature(co, current_user, old_ball_role, comments, action='approve')
 
     try:
         from case_workflow import ApprovalRequest, decide_approval
