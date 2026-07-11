@@ -165,6 +165,13 @@ window.CASEPM_MEETINGS_CTX = {
         <button type="button" id="mmRetrainVoices" class="px-3 py-1.5 text-xs bg-violet-600 hover:bg-violet-500 rounded-md font-medium">
           <i class="fa-solid fa-brain mr-1"></i>Re-apply learned voices
         </button>
+        <button type="button" id="mmTrainFromReview" class="px-3 py-1.5 text-xs bg-emerald-700 hover:bg-emerald-600 rounded-md font-medium">
+          <i class="fa-solid fa-graduation-cap mr-1"></i>Train from review
+        </button>
+        <button type="button" id="mmVoiceSelfTest" class="px-3 py-1.5 text-xs bg-zinc-700 hover:bg-zinc-600 rounded-md font-medium">
+          <i class="fa-solid fa-vial mr-1"></i>Voice detection test
+        </button>
+        <span id="mmVoiceTestResult" class="text-[10px] text-zinc-500"></span>
       </div>
       <audio id="mmRecordingPlayer" controls class="w-full mb-3 hidden"></audio>
       <div id="mmTranscriptView"></div>

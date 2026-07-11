@@ -328,8 +328,72 @@
       addTrainingSample,
       persistProfiles,
       loadProjectProfiles,
+      trainFromTranscriptReview,
+      runVoiceSelfTest,
     };
   }
 
-  global.CasePMVoiceDiarization = { createSpeakerEngine, loadProjectProfiles, saveProjectProfiles, SPEAKER_COLORS };
+  /** Batch-train profiles from user-corrected transcript lines. */
+  function trainFromTranscriptReview(engine, segments) {
+    if (!engine) return { trained: 0 };
+    let trained = 0;
+    (segments || []).forEach((seg) => {
+      if (seg.user_corrected && seg.voice_fingerprint && seg.speaker_id) {
+        engine.trainFromCorrection(seg.speaker_id, seg.voice_fingerprint);
+        trained++;
+      }
+    });
+    return { trained };
+  }
+
+  /**
+   * Synthetic two-voice self-test — trains two profiles then verifies matching.
+   * Uses pitch/spectral fingerprints (no external audio file required).
+   */
+  function runVoiceSelfTest(engine) {
+    if (!engine) return { accuracy: 0, correct: 0, total: 0, details: [], error: 'No engine' };
+    const speakers = engine.getSpeakers();
+    const spA = speakers[0] || engine.createSpeaker(null);
+    let spB = speakers[1];
+    if (!spB || spB.id === spA.id) spB = engine.createSpeaker(null);
+
+    const fpA = { pitch_hz: 142, spectral_centroid: 820, energy_ratio: 0.38 };
+    const fpB = { pitch_hz: 218, spectral_centroid: 1240, energy_ratio: 0.56 };
+    for (let i = 0; i < 6; i++) {
+      engine.trainFromCorrection(spA.id, {
+        pitch_hz: fpA.pitch_hz + (i - 3) * 4,
+        spectral_centroid: fpA.spectral_centroid + i * 8,
+        energy_ratio: fpA.energy_ratio,
+      });
+      engine.trainFromCorrection(spB.id, {
+        pitch_hz: fpB.pitch_hz + (i - 3) * 5,
+        spectral_centroid: fpB.spectral_centroid + i * 10,
+        energy_ratio: fpB.energy_ratio,
+      });
+    }
+
+    const tests = [
+      { fp: fpA, expect: spA.id, label: 'Speaker A baseline' },
+      { fp: fpB, expect: spB.id, label: 'Speaker B baseline' },
+      { fp: { pitch_hz: 148, spectral_centroid: 850, energy_ratio: 0.4 }, expect: spA.id, label: 'Speaker A variant' },
+      { fp: { pitch_hz: 210, spectral_centroid: 1210, energy_ratio: 0.54 }, expect: spB.id, label: 'Speaker B variant' },
+    ];
+    let correct = 0;
+    const details = tests.map((t) => {
+      const m = engine.matchSpeaker(t.fp);
+      const ok = m.speakerId === t.expect;
+      if (ok) correct++;
+      return { ok, label: t.label, expected: t.expect, got: m.speakerId, confidence: m.confidence };
+    });
+    return { accuracy: correct / tests.length, correct, total: tests.length, details };
+  }
+
+  global.CasePMVoiceDiarization = {
+    createSpeakerEngine,
+    loadProjectProfiles,
+    saveProjectProfiles,
+    SPEAKER_COLORS,
+    trainFromTranscriptReview,
+    runVoiceSelfTest,
+  };
 })(window);

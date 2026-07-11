@@ -25,12 +25,16 @@
     document.querySelectorAll('.saf-tab').forEach((t) => t.classList.toggle('active', t.getAttribute('data-tab') === tab));
     el('safTabReports').classList.toggle('hidden', tab !== 'reports');
     el('safTabTraining').classList.toggle('hidden', tab !== 'training');
+    el('safTabToolbox').classList.toggle('hidden', tab !== 'toolbox');
     el('safTabLibrary').classList.toggle('hidden', tab !== 'library');
     const label = el('safBtnNewLabel');
     el('safBtnNew').style.display = (tab === 'library') ? 'none' : '';
-    if (label) label.textContent = tab === 'training' ? 'Add Certification' : 'New Report';
+    if (label) {
+      label.textContent = tab === 'training' ? 'Add Certification' : tab === 'toolbox' ? 'New Toolbox Meeting' : 'New Report';
+    }
     if (tab === 'library' && !state.library.length) loadLibrary();
     if (tab === 'training' && !state.certs.length) loadCerts();
+    if (tab === 'toolbox' && global.CasePMSafetyToolbox) global.CasePMSafetyToolbox.refresh();
   }
 
   // ---------------- Reports ----------------
@@ -259,7 +263,11 @@
   function bind() {
     document.querySelectorAll('.saf-tab').forEach((t) => t.addEventListener('click', () => setTab(t.getAttribute('data-tab'))));
     el('safBtnRefresh')?.addEventListener('click', () => { loadReports(); if (state.tab === 'training') loadCerts(); });
-    el('safBtnNew').addEventListener('click', () => { state.tab === 'training' ? openCertCreate() : openReportCreate(); });
+    el('safBtnNew').addEventListener('click', () => {
+      if (state.tab === 'training') openCertCreate();
+      else if (state.tab === 'toolbox' && global.CasePMSafetyToolbox) global.CasePMSafetyToolbox.openCreate();
+      else openReportCreate();
+    });
 
     el('rModalClose').addEventListener('click', () => el('rModal').close());
     el('rCancel').addEventListener('click', () => el('rModal').close());

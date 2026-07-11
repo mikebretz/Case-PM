@@ -363,6 +363,28 @@
     if (global.showToast) global.showToast('Re-applied learned voices to transcript');
   }
 
+  function trainFromReview() {
+    const eng = voice();
+    const result = global.CasePMVoiceDiarization?.trainFromTranscriptReview(eng, state.transcriptSegments) || { trained: 0 };
+    eng.persistProfiles(projectId());
+    if (global.showToast) {
+      global.showToast(result.trained
+        ? `Trained ${result.trained} voice sample(s) from your corrections`
+        : 'No corrected lines to train from — click transcript lines to fix speakers first');
+    }
+  }
+
+  function runVoiceSelfTest() {
+    const eng = voice();
+    const result = global.CasePMVoiceDiarization?.runVoiceSelfTest(eng) || { accuracy: 0, correct: 0, total: 0 };
+    eng.persistProfiles(projectId());
+    const pct = Math.round((result.accuracy || 0) * 100);
+    const msg = `Voice test: ${result.correct}/${result.total} correct (${pct}%)`;
+    const node = el('mmVoiceTestResult');
+    if (node) node.textContent = msg;
+    if (global.showToast) global.showToast(msg);
+  }
+
   function onPlaybackTimeUpdate() {
     const player = el('mmRecordingPlayer');
     if (!player || player.classList.contains('hidden')) return;
@@ -824,6 +846,8 @@
     el('mmRecordBtn')?.addEventListener('click', () => state.recording ? stopRecording() : startRecording());
     el('mmAutoDetect')?.addEventListener('change', (e) => voice().setAutoDetect(e.target.checked));
     el('mmRetrainVoices')?.addEventListener('click', reprocessAllSegments);
+    el('mmTrainFromReview')?.addEventListener('click', trainFromReview);
+    el('mmVoiceSelfTest')?.addEventListener('click', runVoiceSelfTest);
     ['mmSearch', 'mmTypeFilter', 'mmStatusFilter'].forEach((id) => {
       const node = el(id);
       if (node) { node.addEventListener('input', renderList); node.addEventListener('change', renderList); }
