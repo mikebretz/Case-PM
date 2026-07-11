@@ -38,6 +38,24 @@
     min-height: 0;
     overflow: hidden;
   }
+  .budget-sticky-0 {
+    position: sticky;
+    left: 0;
+    z-index: 12;
+    background: #27272a;
+  }
+  tbody .budget-sticky-0 { background: #18181b; }
+  tr:hover td.budget-sticky-0 { background: #27272a; }
+  .budget-sticky-1 {
+    position: sticky;
+    left: 3rem;
+    z-index: 12;
+    background: #27272a;
+  }
+  tbody .budget-sticky-1 { background: #18181b; }
+  tr:hover td.budget-sticky-1 { background: #27272a; }
+  thead .budget-sticky-0,
+  thead .budget-sticky-1 { z-index: 22; }
 </style>
 
 <div class="budget-page">
@@ -150,8 +168,8 @@
         <table class="w-full text-sm min-w-[2000px]">
             <thead class="bg-zinc-800 sticky z-20 border-b border-zinc-700" style="top: 0; position: sticky;">
                 <tr>
-                    <th class="px-4 py-3 text-center font-medium text-zinc-400 w-12">#</th>
-                    <th class="px-6 py-3 text-left font-medium text-zinc-400 w-36 min-w-[140px]">Cost Code</th>
+                    <th class="px-4 py-3 text-center font-medium text-zinc-400 w-12 budget-sticky-0">#</th>
+                    <th class="px-6 py-3 text-left font-medium text-zinc-400 w-36 min-w-[140px] budget-sticky-1">Cost Code</th>
                     <th class="px-6 py-3 text-left font-medium text-zinc-400 min-w-[280px]">Description</th>
                     <th class="px-6 py-3 text-center font-medium text-zinc-400 w-32">Cost Type</th>
                     <th class="px-6 py-3 text-right font-medium text-zinc-400 w-28">Original</th>
@@ -698,8 +716,8 @@
                 row.className = 'hover:bg-zinc-800/60 transition-colors cursor-pointer';
                 row.ondblclick = () => editBudgetLine(line.id);
                 row.innerHTML = `
-                    <td class="px-4 py-1.5 text-center font-mono text-xs text-zinc-500">${index + 1}</td>
-                    <td class="px-6 py-1.5 font-mono text-emerald-400">${line.cost_code}</td>
+                    <td class="px-4 py-1.5 text-center font-mono text-xs text-zinc-500 budget-sticky-0">${index + 1}</td>
+                    <td class="px-6 py-1.5 font-mono text-emerald-400 budget-sticky-1">${line.cost_code}</td>
                     <td class="px-6 py-1.5">${line.description}</td>
                     <td class="px-6 py-1.5 text-center w-32 whitespace-nowrap">
                         <span class="inline-block px-2.5 py-0.5 rounded-full text-xs font-medium bg-zinc-700 text-zinc-300">${line.cost_type}</span>

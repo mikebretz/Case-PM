@@ -1,18 +1,23 @@
 {% extends "base.html" %}
 
 {% block content %}
-<div class="max-w-[1600px] mx-auto">
+<style>
+  #mainContent:has(.photos-page) { overflow: hidden !important; display: flex; flex-direction: column; padding: 0 !important; }
+  .photos-page { display: flex; flex-direction: column; flex: 1; min-height: 0; width: 100%; padding: 1rem 1rem 0; overflow: hidden; box-sizing: border-box; }
+  .photos-stack { display: flex; flex-direction: column; flex: 1; min-height: 0; overflow: hidden; }
+</style>
+<div class="photos-page"><div class="photos-stack">
     
     <!-- Page Header -->
-    <div class="flex items-center justify-between mb-6">
+    <div class="flex items-center justify-between mb-4 flex-shrink-0">
         <div>
-            <h1 class="text-3xl font-semibold tracking-tight">Photos</h1>
-            <p class="text-zinc-400 mt-1">Project photos and documentation</p>
+            <h1 class="text-2xl font-semibold tracking-tight">Photos</h1>
+            <p class="text-zinc-400 text-sm mt-0.5">Project photos and documentation</p>
         </div>
         
         <div class="flex items-center gap-3">
             <button onclick="showUploadModal()" 
-                    class="flex items-center gap-2 px-5 py-2.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded-2xl text-sm font-medium transition-colors">
+                    class="flex items-center gap-2 px-5 py-2.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded-md text-sm font-medium transition-colors">
                 <i class="fa-solid fa-upload"></i>
                 <span>Upload Photos</span>
             </button>
@@ -20,20 +25,20 @@
     </div>
 
     <!-- Filters -->
-    <div class="flex flex-wrap items-center gap-3 mb-6 bg-zinc-900 border border-zinc-800 rounded-3xl p-4">
+    <div class="flex flex-wrap items-center gap-3 mb-3 bg-zinc-900 border border-zinc-700 rounded-md p-3 flex-shrink-0">
         <div class="flex-1 min-w-[220px]">
             <input type="text" id="photoSearch" placeholder="Search photos..." 
-                   class="w-full bg-zinc-800 border border-zinc-700 rounded-2xl px-4 py-2.5 text-sm focus:outline-none focus:border-emerald-600"
+                   class="w-full bg-zinc-800 border border-zinc-700 rounded-md px-4 py-2.5 text-sm focus:outline-none focus:border-emerald-600"
                    onkeyup="filterPhotos()">
         </div>
 
         <select id="locationFilter" onchange="filterPhotos()" 
-                class="bg-zinc-800 border border-zinc-700 rounded-2xl px-4 py-2.5 text-sm focus:outline-none focus:border-emerald-600">
+                class="bg-zinc-800 border border-zinc-700 rounded-md px-4 py-2.5 text-sm focus:outline-none focus:border-emerald-600">
             <option value="">All Locations</option>
         </select>
 
         <select id="dateFilter" onchange="filterPhotos()" 
-                class="bg-zinc-800 border border-zinc-700 rounded-2xl px-4 py-2.5 text-sm focus:outline-none focus:border-emerald-600">
+                class="bg-zinc-800 border border-zinc-700 rounded-md px-4 py-2.5 text-sm focus:outline-none focus:border-emerald-600">
             <option value="">All Dates</option>
             <option value="today">Today</option>
             <option value="week">This Week</option>
@@ -41,12 +46,13 @@
         </select>
 
         <button onclick="clearPhotoFilters()" 
-                class="px-4 py-2.5 text-sm bg-zinc-800 hover:bg-zinc-700 border border-zinc-700 rounded-2xl transition-colors">
+                class="px-4 py-2.5 text-sm bg-zinc-800 hover:bg-zinc-700 border border-zinc-700 rounded-md transition-colors">
             Clear Filters
         </button>
     </div>
 
-    <!-- Photos Grid -->
+    <!-- Photos Grid (scrolls) -->
+    <div class="flex-1 min-h-0 overflow-auto mb-2">
     <div id="photosGrid" class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4">
         <!-- Photos will be populated here via JavaScript -->
     </div>
@@ -57,8 +63,9 @@
         <h3 class="text-xl font-semibold mb-2">No photos found</h3>
         <p class="text-zinc-400">Upload photos or adjust your filters.</p>
     </div>
+    </div>
 
-</div>
+</div></div>
         <!-- Upload Photos Modal -->
         <dialog id="uploadModal" class="bg-zinc-900 border border-zinc-700 rounded-3xl p-0 w-full max-w-lg shadow-2xl">
             <div class="p-6">

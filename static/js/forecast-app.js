@@ -107,8 +107,8 @@
       const isLatest = i === rows.length - 1;
       const rowClass = isLatest ? 'bg-zinc-800/40' : 'hover:bg-zinc-800/60';
       return `<tr class="${rowClass} transition-colors">
-        <td class="px-4 py-2 font-medium text-white">${esc(r.month)}</td>
-        <td class="px-4 py-2 text-zinc-400 text-xs">${fmtDate(r.as_of_date)}</td>
+        <td class="px-4 py-2 font-medium text-white forecast-sticky-0">${esc(r.month)}</td>
+        <td class="px-4 py-2 text-zinc-400 text-xs forecast-sticky-1">${fmtDate(r.as_of_date)}</td>
         <td class="px-4 py-2 text-right font-mono">${fmt(r.subtotal_budget)}</td>
         <td class="px-4 py-2 text-right font-mono text-orange-300">${fmt(r.subtotal_projected)}</td>
         <td class="px-4 py-2 text-right font-mono text-sky-400">${fmt(r.cost_to_date)}</td>

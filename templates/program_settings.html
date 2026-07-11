@@ -2,27 +2,34 @@
 
 {% block content %}
 <link rel="stylesheet" href="{{ url_for('static', filename='css/email-client.css') }}">
-<div class="max-w-[1200px] mx-auto">
+<style>
+  #mainContent:has(.settings-page) { overflow: hidden !important; display: flex; flex-direction: column; padding: 0 !important; }
+  .settings-page { display: flex; flex-direction: column; flex: 1; min-height: 0; width: 100%; padding: 1rem 1rem 0; overflow: hidden; box-sizing: border-box; }
+  .settings-stack { display: flex; flex-direction: column; flex: 1; min-height: 0; overflow: hidden; max-width: 1200px; margin: 0 auto; width: 100%; }
+</style>
+<div class="settings-page"><div class="settings-stack">
     
     <!-- Page Header -->
-    <div class="mb-8">
-        <h1 class="text-3xl font-semibold tracking-tight">Program Settings</h1>
-        <p class="text-zinc-400 mt-1">Configure company information, permissions, and system preferences</p>
+    <div class="mb-4 flex-shrink-0">
+        <h1 class="text-2xl font-semibold tracking-tight">Program Settings</h1>
+        <p class="text-zinc-400 text-sm mt-1">Configure company information, permissions, and system preferences</p>
     </div>
 
     <!-- Tabs -->
-    <div class="flex border-b border-zinc-800 mb-6">
+    <div class="flex border-b border-zinc-800 mb-4 flex-shrink-0 overflow-x-auto">
         <button onclick="switchSettingsTab('company')" id="tab-company"
-                class="settings-tab-btn px-6 py-3 text-sm font-medium border-b-2 border-emerald-500 text-white">Company Info</button>
+                class="settings-tab-btn px-6 py-3 text-sm font-medium border-b-2 border-emerald-500 text-white whitespace-nowrap">Company Info</button>
         <button onclick="switchSettingsTab('permissions')" id="tab-permissions"
-                class="settings-tab-btn px-6 py-3 text-sm font-medium text-zinc-400 hover:text-white">User Permissions</button>
+                class="settings-tab-btn px-6 py-3 text-sm font-medium text-zinc-400 hover:text-white whitespace-nowrap">User Permissions</button>
         <button onclick="switchSettingsTab('backup')" id="tab-backup"
-                class="settings-tab-btn px-6 py-3 text-sm font-medium text-zinc-400 hover:text-white">Backup & Maintenance</button>
+                class="settings-tab-btn px-6 py-3 text-sm font-medium text-zinc-400 hover:text-white whitespace-nowrap">Backup & Maintenance</button>
         <button onclick="switchSettingsTab('email')" id="tab-email"
-                class="settings-tab-btn px-6 py-3 text-sm font-medium text-zinc-400 hover:text-white">Email Settings</button>
+                class="settings-tab-btn px-6 py-3 text-sm font-medium text-zinc-400 hover:text-white whitespace-nowrap">Email Settings</button>
         <button onclick="switchSettingsTab('sage')" id="tab-sage"
-                class="settings-tab-btn px-6 py-3 text-sm font-medium text-zinc-400 hover:text-white">Sage 300</button>
+                class="settings-tab-btn px-6 py-3 text-sm font-medium text-zinc-400 hover:text-white whitespace-nowrap">Sage 300</button>
     </div>
+
+    <div class="flex-1 min-h-0 overflow-auto mb-2">
 
     <!-- Company Info Tab -->
     <div id="tab-content-company">
@@ -107,21 +114,6 @@
         </div>
     </div>
 
-    <!-- Other tabs will be added in Part 2 and 3 -->
-    <div id="tab-content-permissions" class="hidden">
-        <div class="bg-zinc-900 border border-zinc-800 rounded-3xl p-8">
-            <h2 class="text-xl font-semibold mb-4">User Permissions</h2>
-            <p class="text-zinc-400">Permission settings will be available here.</p>
-        </div>
-    </div>
-
-    <div id="tab-content-backup" class="hidden">
-        <div class="bg-zinc-900 border border-zinc-800 rounded-3xl p-8">
-            <h2 class="text-xl font-semibold mb-4">Backup & Maintenance</h2>
-            <p class="text-zinc-400">Backup settings will be available here.</p>
-        </div>
-    </div>
-
     <div id="tab-content-email" class="hidden">
         <div class="bg-zinc-900 border border-zinc-800 rounded-3xl p-8">
             <div class="flex items-center justify-between mb-6">
@@ -137,7 +129,6 @@
         </div>
     </div>
 
-</div>
     <!-- User Permissions Tab -->
     <div id="tab-content-permissions" class="hidden">
         <div class="bg-zinc-900 border border-zinc-800 rounded-3xl p-8">
@@ -339,6 +330,9 @@
             </form>
         </div>
     </div>
+
+    </div><!-- end settings scroll -->
+</div></div><!-- end settings-stack / settings-page -->
 
         <!-- JavaScript -->
         <script src="{{ url_for('static', filename='js/email-settings-ui.js') }}"></script>

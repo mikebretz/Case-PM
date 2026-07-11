@@ -3,8 +3,13 @@
 {% block title %}Notifications{% endblock %}
 
 {% block content %}
-<div class="max-w-3xl mx-auto">
-    <div class="flex items-center justify-between mb-6">
+<style>
+  #mainContent:has(.notif-page) { overflow: hidden !important; display: flex; flex-direction: column; padding: 0 !important; }
+  .notif-page { display: flex; flex-direction: column; flex: 1; min-height: 0; width: 100%; padding: 1rem 1rem 0; overflow: hidden; box-sizing: border-box; }
+  .notif-stack { display: flex; flex-direction: column; flex: 1; min-height: 0; overflow: hidden; max-width: 48rem; margin: 0 auto; width: 100%; }
+</style>
+<div class="notif-page"><div class="notif-stack">
+    <div class="flex items-center justify-between mb-4 flex-shrink-0">
         <div>
             <h1 class="text-2xl font-semibold tracking-tight">Notifications</h1>
             <p class="text-sm text-zinc-400 mt-1">Approvals, alerts, and workflow updates</p>
@@ -15,7 +20,7 @@
         </div>
     </div>
 
-    <div class="bg-zinc-900 border border-zinc-700 rounded-lg divide-y divide-zinc-800" id="notificationsList">
+    <div class="flex-1 min-h-0 overflow-auto bg-zinc-900 border border-zinc-700 rounded-lg divide-y divide-zinc-800 mb-2" id="notificationsList">
         {% for n in notifications %}
         <a href="{{ n.link or url_for('email_page') }}?tab=internal"
            class="block px-5 py-4 hover:bg-zinc-800/50 transition-colors {% if not n.is_read %}border-l-2 border-emerald-500{% endif %}"
@@ -35,7 +40,7 @@
         </div>
         {% endfor %}
     </div>
-</div>
+</div></div>
 
 <script>
 async function markAllRead() {
