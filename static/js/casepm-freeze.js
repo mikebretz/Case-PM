@@ -1,7 +1,7 @@
 /**
  * Case PM — freeze shell chrome so only page tables/content panes scroll.
- * Pages that already use a *-page / *-page-root flex stack are left alone.
- * Unstructured pages get a legacy inner scroll wrapper so header/sidebar/footer stay put.
+ * Chrome is viewport-fixed in base.html; this script blocks Ctrl+scroll browser
+ * zoom on header/sidebar/footer and wraps unstructured pages.
  */
 (function () {
   const KNOWN_ROOTS = [
@@ -35,7 +35,39 @@
     '.submittals-page',
   ].join(',');
 
-  function init() {
+  const ZOOM_ALLOWED = [
+    '.casepm-zoom-allowed',
+    '#luckysheet',
+    '#luckysheetcellsheet',
+    '.luckysheet-wa-calculate',
+    '.tox-edit-area',
+    '.tox-tinymce',
+    '#gantt_here',
+    '#scheduleGanttHost',
+    '#drawViewerWrap',
+    '#drawViewerCanvas',
+    '.draw-viewer-stage',
+    '.word-page',
+    '.sheet-page',
+  ].join(',');
+
+  const CHROME = '#appHeaderBar, #appSidebar, #appFooterBar, .portal-banner-sub, .portal-banner-architect';
+
+  function isInChrome(el) {
+    return el && el.closest && el.closest(CHROME);
+  }
+
+  function isZoomAllowed(el) {
+    return el && el.closest && el.closest(ZOOM_ALLOWED);
+  }
+
+  function blockBrowserZoom(e) {
+    if (!(e.ctrlKey || e.metaKey)) return;
+    if (isZoomAllowed(e.target)) return;
+    e.preventDefault();
+  }
+
+  function initLegacyScrollWrap() {
     const mc = document.getElementById('mainContent');
     if (!mc || mc.dataset.freezeInit === '1') return;
     mc.dataset.freezeInit = '1';
@@ -57,6 +89,19 @@
     wrap.className = 'casepm-legacy-scroll';
     kids.forEach((n) => wrap.appendChild(n));
     mc.appendChild(wrap);
+  }
+
+  function initChromeZoomGuard() {
+    document.addEventListener('wheel', blockBrowserZoom, { passive: false, capture: true });
+    // Safari trackpad pinch sometimes fires gesture events
+    document.addEventListener('gesturestart', (e) => {
+      if (isInChrome(e.target) && !isZoomAllowed(e.target)) e.preventDefault();
+    }, { passive: false, capture: true });
+  }
+
+  function init() {
+    initLegacyScrollWrap();
+    initChromeZoomGuard();
   }
 
   if (document.readyState === 'loading') {
