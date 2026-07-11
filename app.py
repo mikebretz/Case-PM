@@ -698,6 +698,13 @@ class PunchItem(db.Model):
     created_by_id = db.Column(db.Integer, db.ForeignKey('user.id'))
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     plan_pins_json = db.Column(db.Text)
+    category = db.Column(db.String(80))
+    assigned_company = db.Column(db.String(150))
+    completed_at = db.Column(db.DateTime)
+    completed_by_id = db.Column(db.Integer)
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    details_json = db.Column(db.Text)
+    attachments_json = db.Column(db.Text)
 
 
 class SafetyReport(db.Model):
@@ -3077,9 +3084,209 @@ def serve_spec_book_pdf(project_id):
 @app.route('/punch-list')
 @login_required
 def punch_list_page():
-    punch_items = query_for_active_project(PunchItem).order_by(PunchItem.created_at.desc()).all()
     projects = Project.query.order_by(Project.name).all()
-    return render_template('punch_list.html', punch_items=punch_items, projects=projects)
+    return render_template('punch_list.html', projects=projects, active_project=get_active_project())
+
+
+def _punch_url_helpers():
+    return {
+        'doc': lambda doc_id: url_for('api_documents_download', doc_id=doc_id),
+        'attachment': lambda item_id, filename: url_for('serve_punch_attachment', item_id=item_id, filename=filename),
+    }
+
+
+@app.route('/uploads/punch/<int:item_id>/<path:filename>')
+@login_required
+def serve_punch_attachment(item_id, filename):
+    folder = os.path.join(app.config['UPLOAD_FOLDER'], 'punch', str(item_id))
+    return send_from_directory(folder, filename)
+
+
+@app.route('/api/punch-items', methods=['GET'])
+@login_required
+def api_punch_items_list():
+    from punch_persistence import serialize_item, compute_stats, CATEGORIES, STATUSES, PRIORITIES
+    project_id = request.args.get('project_id', type=int) or get_current_project_id()
+    q = PunchItem.query
+    if project_id:
+        q = q.filter_by(project_id=int(project_id))
+    items = q.order_by(PunchItem.created_at.desc()).all()
+    return jsonify({
+        'ok': True,
+        'items': [serialize_item(i, User=User, summary=True) for i in items],
+        'stats': compute_stats(PunchItem, project_id),
+        'categories': list(CATEGORIES),
+        'statuses': list(STATUSES),
+        'priorities': list(PRIORITIES),
+        'project_id': project_id,
+    })
+
+
+def _punch_apply(item, body):
+    from punch_persistence import build_details
+    for field in ('description', 'location', 'trade', 'category', 'priority', 'assigned_to', 'assigned_company'):
+        if field in body:
+            setattr(item, field, body[field])
+    if 'due_date' in body:
+        due = body.get('due_date')
+        try:
+            item.due_date = datetime.strptime(due, '%Y-%m-%d').date() if due else None
+        except (TypeError, ValueError):
+            pass
+    if 'status' in body and body['status']:
+        _punch_set_status(item, body['status'])
+    if 'subtasks' in body:
+        details = json.loads(item.details_json) if item.details_json else {}
+        details['subtasks'] = build_details(body)['subtasks']
+        item.details_json = json.dumps(details)
+
+
+def _punch_set_status(item, status):
+    from punch_persistence import OPEN_STATUSES
+    item.status = status
+    if status == 'Closed':
+        item.completed_at = datetime.utcnow()
+        item.completed_by_id = current_user.id
+    elif status in OPEN_STATUSES:
+        item.completed_at = None
+        item.completed_by_id = None
+
+
+@app.route('/api/punch-items', methods=['POST'])
+@login_required
+def api_punch_items_create():
+    from punch_persistence import serialize_item
+    body = request.get_json(silent=True) or {}
+    project_id = body.get('project_id') or get_current_project_id()
+    description = (body.get('description') or '').strip()
+    if not project_id or not description:
+        return jsonify({'error': 'project_id and description required'}), 400
+    item = PunchItem(
+        project_id=int(project_id),
+        number=generate_next_number('PL', PunchItem),
+        description=description,
+        priority=body.get('priority') or 'Medium',
+        status=body.get('status') or 'Open',
+        created_by_id=current_user.id,
+    )
+    _punch_apply(item, body)
+    db.session.add(item)
+    db.session.commit()
+    return jsonify({'ok': True, 'item': serialize_item(item, User=User, url_helpers=_punch_url_helpers())})
+
+
+@app.route('/api/punch-items/<int:item_id>', methods=['GET'])
+@login_required
+def api_punch_item_get(item_id):
+    from punch_persistence import serialize_item
+    item = PunchItem.query.get_or_404(item_id)
+    return jsonify({'ok': True, 'item': serialize_item(item, User=User, url_helpers=_punch_url_helpers())})
+
+
+@app.route('/api/punch-items/<int:item_id>', methods=['PUT'])
+@login_required
+def api_punch_items_update(item_id):
+    from punch_persistence import serialize_item
+    item = PunchItem.query.get_or_404(item_id)
+    body = request.get_json(silent=True) or {}
+    _punch_apply(item, body)
+    db.session.commit()
+    return jsonify({'ok': True, 'item': serialize_item(item, User=User, url_helpers=_punch_url_helpers())})
+
+
+@app.route('/api/punch-items/<int:item_id>/status', methods=['POST'])
+@login_required
+def api_punch_item_status(item_id):
+    """Fast check-off / status change for field use."""
+    from punch_persistence import serialize_item
+    item = PunchItem.query.get_or_404(item_id)
+    body = request.get_json(silent=True) or {}
+    status = body.get('status')
+    if not status:
+        return jsonify({'error': 'status required'}), 400
+    _punch_set_status(item, status)
+    db.session.commit()
+    return jsonify({'ok': True, 'item': serialize_item(item, User=User, summary=True)})
+
+
+@app.route('/api/punch-items/<int:item_id>/comment', methods=['POST'])
+@login_required
+def api_punch_item_comment(item_id):
+    from punch_persistence import add_comment, serialize_item
+    item = PunchItem.query.get_or_404(item_id)
+    body = request.get_json(silent=True) or {}
+    text = (body.get('text') or '').strip()
+    if not text:
+        return jsonify({'error': 'text required'}), 400
+    author = f'{current_user.first_name} {current_user.last_name}'.strip()
+    add_comment(item, text, author)
+    db.session.commit()
+    return jsonify({'ok': True, 'item': serialize_item(item, User=User, url_helpers=_punch_url_helpers())})
+
+
+@app.route('/api/punch-items/<int:item_id>', methods=['DELETE'])
+@login_required
+def api_punch_items_delete(item_id):
+    item = PunchItem.query.get_or_404(item_id)
+    db.session.delete(item)
+    db.session.commit()
+    return jsonify({'ok': True})
+
+
+@app.route('/api/punch-items/<int:item_id>/attachments', methods=['POST'])
+@login_required
+def api_punch_item_upload_attachment(item_id):
+    from rfi_persistence import _parse_json
+    item = PunchItem.query.get_or_404(item_id)
+    if 'file' not in request.files:
+        return jsonify({'error': 'file required'}), 400
+    f = request.files['file']
+    if not f.filename:
+        return jsonify({'error': 'empty filename'}), 400
+    custom_name = (request.form.get('name') or '').strip()
+    kind = (request.form.get('kind') or '').strip()
+    _, ext = os.path.splitext(f.filename)
+    folder = os.path.join(app.config['UPLOAD_FOLDER'], 'punch', str(item_id))
+    os.makedirs(folder, exist_ok=True)
+    if custom_name:
+        base = secure_filename(custom_name) or 'photo'
+        display_name = custom_name if custom_name.lower().endswith(ext.lower()) else f'{custom_name}{ext}'
+        safe = f'{base}{ext.lower()}'
+        if os.path.exists(os.path.join(folder, safe)):
+            safe = f'{base}-{int(datetime.utcnow().timestamp())}{ext.lower()}'
+    else:
+        safe = secure_filename(f.filename)
+        display_name = f.filename
+    path = os.path.join(folder, safe)
+    f.save(path)
+    attachments = _parse_json(item.attachments_json, [])
+    att = {
+        'filename': safe,
+        'original_name': display_name,
+        'kind': kind or None,
+        'uploaded_at': datetime.utcnow().isoformat(),
+        'uploaded_by': f'{current_user.first_name} {current_user.last_name}'.strip(),
+    }
+    attachments.append(att)
+    item.attachments_json = json.dumps(attachments)
+    db.session.commit()
+    try:
+        with open(path, 'rb') as fh:
+            fb = fh.read()
+        sub_name = (item.number or f'Punch-{item.id}').strip()
+        doc = _mirror_to_system_subfolder(
+            item.project_id, fb, display_name, f.filename, 'photos', f'Punch List — {sub_name}', 'Photo',
+            {'punch_item_id': item.id, 'punch_number': item.number, 'photo_label': custom_name or display_name},
+            is_system_locked=True, uploaded_by_id=current_user.id,
+        )
+        if doc and doc.get('id'):
+            att['document_id'] = doc['id']
+            item.attachments_json = json.dumps(attachments)
+            db.session.commit()
+    except Exception:
+        db.session.rollback()
+    from punch_persistence import serialize_item
+    return jsonify({'ok': True, 'item': serialize_item(item, User=User, url_helpers=_punch_url_helpers())})
 
 
 @app.route('/punch-list/create', methods=['POST'])
@@ -4330,6 +4537,13 @@ def _ensure_module_attachment_columns():
         ('weekly_report', 'period_type', 'VARCHAR(20)'),
         ('weekly_report', 'details_json', 'TEXT'),
         ('weekly_report', 'notes', 'TEXT'),
+        ('punch_item', 'category', 'VARCHAR(80)'),
+        ('punch_item', 'assigned_company', 'VARCHAR(150)'),
+        ('punch_item', 'completed_at', 'DATETIME'),
+        ('punch_item', 'completed_by_id', 'INTEGER'),
+        ('punch_item', 'updated_at', 'DATETIME'),
+        ('punch_item', 'details_json', 'TEXT'),
+        ('punch_item', 'attachments_json', 'TEXT'),
     ]
     for table, column, typedef in migrations:
         if table not in tables:
