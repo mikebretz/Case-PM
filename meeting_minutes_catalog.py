@@ -89,16 +89,17 @@ AGENDA_TEMPLATES = {
         {'topic': 'Action items', 'presenter': '', 'minutes': 5},
     ],
     'toolbox_talk': [
-        {'topic': 'Roll call / attendance & sign-in', 'presenter': 'Foreman / Safety', 'minutes': 3},
-        {'topic': 'Safety moment — topic of the day', 'presenter': 'Safety', 'minutes': 5},
-        {'topic': 'Work planned today & associated hazards', 'presenter': 'Superintendent', 'minutes': 8},
-        {'topic': 'JHA / safe work procedures review', 'presenter': 'Foreman', 'minutes': 7},
+        {'topic': 'Roll call / attendance & sign-in sheet', 'presenter': 'Foreman / Safety', 'minutes': 3},
+        {'topic': 'Review prior meeting action items', 'presenter': 'Foreman', 'minutes': 3},
+        {'topic': 'Safety moment — topic of the day (OSHA focus)', 'presenter': 'Safety', 'minutes': 5},
+        {'topic': 'Work planned today & associated hazards (JHA)', 'presenter': 'Superintendent', 'minutes': 8},
+        {'topic': 'Safe work procedures & permit requirements', 'presenter': 'Foreman', 'minutes': 5},
         {'topic': 'PPE requirements for today\'s tasks', 'presenter': 'Safety', 'minutes': 5},
-        {'topic': 'Equipment & tool safety checks', 'presenter': 'Foreman', 'minutes': 5},
-        {'topic': 'Housekeeping, access & fall protection', 'presenter': 'Superintendent', 'minutes': 5},
-        {'topic': 'Emergency response & muster point', 'presenter': 'Safety', 'minutes': 3},
+        {'topic': 'Equipment, tools & inspection checks', 'presenter': 'Foreman', 'minutes': 5},
+        {'topic': 'Housekeeping, access, slips/trips & fall protection', 'presenter': 'Superintendent', 'minutes': 5},
+        {'topic': 'Emergency response, muster point & first aid', 'presenter': 'Safety', 'minutes': 3},
         {'topic': 'Questions, concerns & crew feedback', 'presenter': '', 'minutes': 4},
-        {'topic': 'Sign-off & documentation', 'presenter': 'Foreman', 'minutes': 2},
+        {'topic': 'New action items & sign-off / documentation', 'presenter': 'Foreman', 'minutes': 4},
     ],
     'precon': [
         {'topic': 'Project goals & constraints', 'presenter': 'PM', 'minutes': 15},
@@ -154,3 +155,91 @@ AGENDA_TEMPLATES = {
 
 def get_agenda_template(meeting_type):
     return [dict(x) for x in AGENDA_TEMPLATES.get(meeting_type, AGENDA_TEMPLATES['other'])]
+
+
+# OSHA / Cal-OSHA aligned toolbox talk reference library (Procore / Autodesk-style topic picker).
+TOOLBOX_COMPLIANCE = {
+    'title': 'Toolbox / Tailgate Safety Meeting',
+    'osha_refs': [
+        '29 CFR 1926.21(b)(2) — safety training and hazard recognition',
+        '29 CFR 1926.20(b) — accident prevention programs',
+        'Cal/OSHA Title 8 §1509 — tailgate safety meetings (construction)',
+    ],
+    'duration_minutes': '10–15',
+    'requirements': [
+        'Hold before shift or when work/tasks change',
+        'Document date, topic, presenter, attendees, and hazards discussed',
+        'Review prior action items; record new hazards and follow-ups',
+        'Keep records on site — typical retention 3+ years',
+    ],
+}
+
+TOOLBOX_TOPIC_LIBRARY = [
+    {
+        'category': 'Fall Protection',
+        'topics': [
+            {'title': 'Leading edge & unprotected sides', 'osha_ref': '1926.501', 'points': ['6 ft trigger height', 'Guardrails, nets, or PFAS', 'Hole covers secured and labeled'], 'ppe': ['Harness', 'Lanyard / SRL', 'Hard hat']},
+            {'title': 'Ladders & stairways', 'osha_ref': '1926.1053', 'points': ['3-point contact', 'Extend 3 ft above landing', 'Do not use top step'], 'ppe': ['Hard hat', 'Non-slip footwear']},
+            {'title': 'Scaffolds', 'osha_ref': '1926.451', 'points': ['Competent person inspection', 'Full planking & guardrails', 'No climbing cross-braces'], 'ppe': ['Hard hat', 'Harness when required']},
+        ],
+    },
+    {
+        'category': 'Excavation & Trenching',
+        'topics': [
+            {'title': 'Trenching & excavation', 'osha_ref': '1926.651', 'points': ['Competent person daily', 'Sloping/benching/shoring/shielding', 'Keep spoils 2 ft back', 'Access/egress every 25 ft'], 'ppe': ['Hard hat', 'High-vis', 'Boots']},
+            {'title': 'Utility locate & potholing', 'osha_ref': '1926.651', 'points': ['Call 811 / verify locates', 'Hand dig within tolerance zone', 'Stop work if unmarked line'], 'ppe': ['Hard hat', 'Gloves', 'Eye protection']},
+        ],
+    },
+    {
+        'category': 'Electrical',
+        'topics': [
+            {'title': 'Electrical safety & GFCI', 'osha_ref': '1926.404', 'points': ['GFCI on temp power', 'Inspect cords — no frays', 'Maintain clearance from lines'], 'ppe': ['Insulated gloves when required', 'Arc-rated PPE for qualified work']},
+            {'title': 'Lockout / tagout awareness', 'osha_ref': '1926.417', 'points': ['Only authorized LOTO', 'Verify zero energy', 'Never remove another\'s lock'], 'ppe': ['As required by task']},
+        ],
+    },
+    {
+        'category': 'Cranes & Rigging',
+        'topics': [
+            {'title': 'Crane & hoist safety', 'osha_ref': '1926.1400', 'points': ['Lift director / signal person', 'Stay out of swing radius', 'Never walk under suspended load'], 'ppe': ['Hard hat', 'High-vis', 'Steel-toe']},
+            {'title': 'Rigging & slings', 'osha_ref': '1926.251', 'points': ['Inspect slings before use', 'Know load weight & center of gravity', 'Proper hitch & angle limits'], 'ppe': ['Hard hat', 'Gloves', 'High-vis']},
+        ],
+    },
+    {
+        'category': 'PPE & Health',
+        'topics': [
+            {'title': 'Head, eye & face protection', 'osha_ref': '1926.100–102', 'points': ['Hard hats where overhead hazard', 'Safety glasses — side shields', 'Face shield for grinding/cutting'], 'ppe': ['Hard hat', 'Safety glasses', 'Face shield']},
+            {'title': 'Hearing conservation', 'osha_ref': '1926.52', 'points': ['85 dBA action level', 'Double protection in high noise', 'Limit exposure time'], 'ppe': ['Earplugs', 'Earmuffs']},
+            {'title': 'Silica & dust control', 'osha_ref': '1926.1153', 'points': ['Wet methods / vacuum / enclosure', 'Table 1 controls when applicable', 'No dry sweeping'], 'ppe': ['Respirator per exposure assessment']},
+            {'title': 'Heat illness prevention', 'osha_ref': '1926.28', 'points': ['Water, rest, shade', 'Acclimatization for new workers', 'Buddy system in high heat'], 'ppe': ['Light-colored clothing', 'Sun protection']},
+        ],
+    },
+    {
+        'category': 'Site Conditions',
+        'topics': [
+            {'title': 'Housekeeping & slips/trips', 'osha_ref': '1926.25', 'points': ['Clear walkways & stairs', 'Secure cords and hoses', 'Dispose of debris promptly'], 'ppe': ['Non-slip footwear', 'Hard hat']},
+            {'title': 'Traffic control & flagging', 'osha_ref': '1926.200', 'points': ['Approved TCP / MOT plan', 'High-vis and escape route', 'Stay alert in work zones'], 'ppe': ['Class 2/3 high-vis', 'Hard hat']},
+            {'title': 'Fire prevention & hot work', 'osha_ref': '1926.352', 'points': ['Hot work permit', 'Fire watch 30 min after', 'Extinguishers within 25 ft'], 'ppe': ['Welding hood', 'Fire-resistant clothing', 'Gloves']},
+            {'title': 'Confined space awareness', 'osha_ref': '1926.1200', 'points': ['Permit-required spaces identified', 'Never enter without authorization', 'Atmospheric testing & attendant'], 'ppe': ['As required by entry permit']},
+        ],
+    },
+    {
+        'category': 'Tools & Equipment',
+        'topics': [
+            {'title': 'Hand & power tools', 'osha_ref': '1926.300', 'points': ['Inspect before use', 'Guards in place', 'Right tool for the job'], 'ppe': ['Eye protection', 'Gloves', 'Hearing protection']},
+            {'title': 'Aerial & scissor lifts', 'osha_ref': '1926.453', 'points': ['Trained operators only', 'Tie-off in boom lifts', 'Survey ground & overhead'], 'ppe': ['Harness & lanyard in boom', 'Hard hat']},
+            {'title': 'Forklifts / PIT', 'osha_ref': '1926.602', 'points': ['Certified operators', 'No riders unless designed', 'Sound horn at intersections'], 'ppe': ['Hard hat', 'High-vis', 'Steel-toe']},
+        ],
+    },
+    {
+        'category': 'Emergency & General',
+        'topics': [
+            {'title': 'Emergency action & muster', 'osha_ref': '1926.35', 'points': ['Know muster point & routes', 'Report all injuries immediately', 'AED / first aid location'], 'ppe': []},
+            {'title': 'Near-miss reporting', 'osha_ref': '1926.20', 'points': ['Report near misses same day', 'No blame — fix the hazard', 'Share lessons with crew'], 'ppe': []},
+            {'title': 'Hazard communication (GHS)', 'osha_ref': '1926.59', 'points': ['Read SDS before use', 'Label secondary containers', 'Wash after chemical contact'], 'ppe': ['Chemical gloves', 'Goggles', 'Respirator per SDS']},
+        ],
+    },
+]
+
+
+def get_toolbox_topic_library():
+    return [dict(cat, topics=[dict(t) for t in cat['topics']]) for cat in TOOLBOX_TOPIC_LIBRARY]

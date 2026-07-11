@@ -8,7 +8,7 @@
   const MEETING_TYPE = 'toolbox_talk';
   const state = {
     meetings: [], catalog: null, editId: null, tab: 'details',
-    agenda: [], transcriptSegments: [], speakers: [],
+    agenda: [], actionItems: [], transcriptSegments: [], speakers: [],
     recording: false, listening: false, recordChunks: [],
     audioStream: null, mediaRecorder: null, audioContext: null, analyser: null,
     recordingStartedAt: null, recordTimer: null, recognition: null,
@@ -83,6 +83,105 @@
       el(`tbTab${t}`)?.classList.toggle('active', key === tab);
       el(`tbPanel${t}`)?.classList.toggle('hidden', key !== tab);
     });
+    if (tab === 'agenda') {
+      renderTopicLibrary();
+      renderActionEditor();
+    }
+  }
+
+  function renderTopicLibrary() {
+    const grid = el('tbTopicGrid');
+    const catSel = el('tbTopicCategory');
+    if (!grid || !state.catalog) return;
+    const lib = state.catalog.toolbox_topic_library || [];
+    if (catSel && catSel.options.length <= 1) {
+      lib.forEach((c) => catSel.add(new Option(c.category, c.category)));
+    }
+    const filter = catSel?.value || '';
+    let html = '';
+    lib.forEach((cat) => {
+      if (filter && cat.category !== filter) return;
+      (cat.topics || []).forEach((t, i) => {
+        const key = `${cat.category}::${i}`;
+        html += `<button type="button" class="tb-topic-btn" data-topic="${esc(key)}">
+          <div class="font-medium text-zinc-200">${esc(t.title)}</div>
+          <div class="text-[10px] text-zinc-500 mt-0.5">${esc(cat.category)} · OSHA ${esc(t.osha_ref || '')}</div>
+        </button>`;
+      });
+    });
+    grid.innerHTML = html || '<div class="text-xs text-zinc-500 col-span-full">No topics match.</div>';
+    grid.querySelectorAll('[data-topic]').forEach((btn) => {
+      btn.addEventListener('click', () => applyTopic(btn.getAttribute('data-topic')));
+    });
+  }
+
+  function findTopic(key) {
+    if (!key || !state.catalog) return null;
+    const [catName, idxStr] = key.split('::');
+    const idx = parseInt(idxStr, 10);
+    const cat = (state.catalog.toolbox_topic_library || []).find((c) => c.category === catName);
+    return cat?.topics?.[idx] || null;
+  }
+
+  function applyTopic(key) {
+    const t = findTopic(key);
+    if (!t) return;
+    const subject = el('tbSubject');
+    if (subject && !subject.value.trim()) subject.value = t.title;
+    const notes = [
+      `Topic: ${t.title}`,
+      t.osha_ref ? `OSHA reference: 29 CFR 1926.${t.osha_ref.replace(/^1926\./, '')}` : '',
+      '',
+      'Key points:',
+      ...(t.points || []).map((p) => `• ${p}`),
+      (t.ppe || []).length ? '\nRequired PPE:\n' + t.ppe.map((p) => `• ${p}`).join('\n') : '',
+    ].filter(Boolean).join('\n');
+    const disc = el('tbDiscussion');
+    if (disc) {
+      const existing = disc.value.trim();
+      disc.value = existing ? `${existing}\n\n---\n${notes}` : notes;
+    }
+    const safetyRow = state.agenda.find((r) => /safety moment|topic of the day/i.test(r.topic || ''));
+    if (safetyRow) {
+      safetyRow.notes = notes;
+      renderAgenda();
+    }
+    if (global.showToast) global.showToast(`Applied topic: ${t.title}`);
+  }
+
+  function renderActionEditor() {
+    const host = el('tbActionEditor');
+    if (!host) return;
+    const items = state.actionItems.length ? state.actionItems : [];
+    const statuses = state.catalog?.action_statuses || ['Open', 'In Progress', 'Complete'];
+    const priorities = state.catalog?.action_priorities || ['Normal', 'High'];
+    host.innerHTML = (items.length ? items : []).map((a, i) => `
+      <div class="grid grid-cols-12 gap-2 mb-2 items-center" data-tb-action="${i}">
+        <div class="col-span-4"><input class="saf-input text-xs tb-act-desc" value="${esc(a.description || '')}" placeholder="Action / follow-up"></div>
+        <div class="col-span-2"><input class="saf-input text-xs tb-act-assign" value="${esc(a.assigned_to || '')}" placeholder="Assigned"></div>
+        <div class="col-span-2"><input type="date" class="saf-input text-xs tb-act-due" value="${esc(a.due_date || '')}"></div>
+        <div class="col-span-2"><select class="saf-input text-xs tb-act-status">${statuses.map((s) => `<option ${s === (a.status || 'Open') ? 'selected' : ''}>${s}</option>`).join('')}</select></div>
+        <div class="col-span-1"><select class="saf-input text-xs tb-act-pri">${priorities.map((p) => `<option ${p === (a.priority || 'Normal') ? 'selected' : ''}>${p}</option>`).join('')}</select></div>
+        <div class="col-span-1"><button type="button" class="text-red-400 tb-act-del" data-i="${i}"><i class="fa-solid fa-trash"></i></button></div>
+      </div>`).join('') || '<div class="text-xs text-zinc-500 mb-2">No action items yet.</div>';
+    host.querySelectorAll('.tb-act-del').forEach((b) => b.addEventListener('click', () => {
+      state.actionItems.splice(parseInt(b.getAttribute('data-i'), 10), 1);
+      renderActionEditor();
+    }));
+  }
+
+  function collectActions() {
+    const host = el('tbActionEditor');
+    if (!host) return state.actionItems;
+    return [...host.querySelectorAll('[data-tb-action]')].map((row, i) => ({
+      id: state.actionItems[i]?.id,
+      item_number: state.actionItems[i]?.item_number || `AI-${String(i + 1).padStart(2, '0')}`,
+      description: row.querySelector('.tb-act-desc')?.value.trim() || '',
+      assigned_to: row.querySelector('.tb-act-assign')?.value.trim() || '',
+      due_date: row.querySelector('.tb-act-due')?.value || '',
+      status: row.querySelector('.tb-act-status')?.value || 'Open',
+      priority: row.querySelector('.tb-act-pri')?.value || 'Normal',
+    })).filter((x) => x.description);
   }
 
   function loadAgendaTemplate() {
@@ -225,6 +324,7 @@
     state.editId = null;
     state.transcriptSegments = [];
     state.agenda = [];
+    state.actionItems = [];
     stopAllCapture();
     el('tbModalTitle').textContent = 'New Toolbox Meeting';
     el('tbDelete').classList.add('hidden');
@@ -241,6 +341,8 @@
     eng.initSpeakers((state.catalog?.default_speakers) || [], projectId());
     state.speakers = eng.getSpeakers();
     loadAgendaTemplate();
+    renderTopicLibrary();
+    renderActionEditor();
     renderSpeakerBar();
     renderTranscript();
     setTab('details');
@@ -269,6 +371,9 @@
     state.agenda = m.agenda || [];
     if (!state.agenda.length) loadAgendaTemplate();
     else renderAgenda();
+    state.actionItems = m.action_items || [];
+    renderActionEditor();
+    renderTopicLibrary();
     state.transcriptSegments = m.transcript_segments || [];
     const eng = voice();
     eng.initSpeakers(m.speakers || state.catalog?.default_speakers || [], projectId());
@@ -299,6 +404,7 @@
       discussion_notes: el('tbDiscussion').value,
       minutes_body: el('tbMinutesBody').value,
       agenda: state.agenda,
+      action_items: collectActions(),
       transcript_segments: state.transcriptSegments,
       speakers: voice().getSpeakers(),
     };
@@ -342,14 +448,20 @@
     const date = el('tbDate')?.value || new Date().toISOString().slice(0, 10);
     const subject = blank ? 'Toolbox / Tailgate Talk' : (el('tbSubject').value || 'Toolbox Talk');
     const rows = blank ? (state.catalog?.agenda_templates?.[MEETING_TYPE] || []) : state.agenda;
+    const compliance = state.catalog?.toolbox_compliance || {};
+    const actions = blank ? [] : collectActions();
+    const refs = (compliance.osha_refs || []).map((r) => `<li>${esc(r)}</li>`).join('');
+    const reqs = (compliance.requirements || []).map((r) => `<li>${esc(r)}</li>`).join('');
     const html = `<!DOCTYPE html><html><head><title>Toolbox Agenda</title>
-      <style>body{font-family:Arial,sans-serif;padding:24px;color:#111}h1{font-size:18px}table{width:100%;border-collapse:collapse;margin-top:16px}th,td{border:1px solid #ccc;padding:8px;text-align:left;font-size:12px}th{background:#f4f4f5}.meta{font-size:12px;color:#444;margin:8px 0}.sign{margin-top:32px;font-size:11px} .sign td{height:28px}</style></head><body>
-      <h1>Toolbox / Tailgate Safety Meeting</h1>
-      <div class="meta"><strong>Project:</strong> ${esc(project)} &nbsp; <strong>Date:</strong> ${esc(date)} &nbsp; <strong>Topic:</strong> ${esc(subject)}</div>
-      <p style="font-size:11px;color:#555">OSHA 1926.21(b)(2) — employers must instruct employees on hazards, safe practices, and emergency procedures. Document attendance and topics covered.</p>
+      <style>body{font-family:Arial,sans-serif;padding:24px;color:#111}h1{font-size:18px}table{width:100%;border-collapse:collapse;margin-top:16px}th,td{border:1px solid #ccc;padding:8px;text-align:left;font-size:12px}th{background:#f4f4f5}.meta{font-size:12px;color:#444;margin:8px 0}.sign{margin-top:32px;font-size:11px} .sign td{height:28px} ul{font-size:11px;color:#444}</style></head><body>
+      <h1>${esc(compliance.title || 'Toolbox / Tailgate Safety Meeting')}</h1>
+      <div class="meta"><strong>Project:</strong> ${esc(project)} &nbsp; <strong>Date:</strong> ${esc(date)} &nbsp; <strong>Topic:</strong> ${esc(subject)} &nbsp; <strong>Duration:</strong> ${esc(compliance.duration_minutes || '10–15')} min</div>
+      ${refs ? `<p style="font-size:11px"><strong>Regulatory basis:</strong><ul>${refs}</ul></p>` : ''}
+      ${reqs ? `<p style="font-size:11px"><strong>Documentation requirements:</strong><ul>${reqs}</ul></p>` : ''}
       <table><thead><tr><th>#</th><th>Agenda item</th><th>Led by</th><th>Min</th><th>Notes / discussion</th></tr></thead><tbody>
       ${rows.map((r, i) => `<tr><td>${i + 1}</td><td>${esc(r.topic || '')}</td><td>${esc(r.presenter || '')}</td><td>${r.minutes || ''}</td><td>${blank ? '' : esc(r.notes || '')}</td></tr>`).join('')}
       </tbody></table>
+      ${actions.length ? `<h3 style="font-size:13px;margin-top:20px">Action items</h3><table><thead><tr><th>#</th><th>Action</th><th>Assigned</th><th>Due</th><th>Status</th></tr></thead><tbody>${actions.map((a, i) => `<tr><td>${i + 1}</td><td>${esc(a.description)}</td><td>${esc(a.assigned_to || '')}</td><td>${esc(a.due_date || '')}</td><td>${esc(a.status || 'Open')}</td></tr>`).join('')}</tbody></table>` : '<h3 style="font-size:13px;margin-top:20px">Action items</h3><table class="sign"><tr><td>Action:</td><td>Assigned:</td><td>Due:</td><td>Status:</td></tr><tr><td colspan="4">&nbsp;</td></tr></table>'}
       <table class="sign"><tr><td>Foreman / safety lead signature:</td><td>Date:</td></tr></table>
       <table class="sign"><tr><td colspan="2"><strong>Attendance (print names & sign):</strong></td></tr>
       ${[1,2,3,4,5,6,7,8].map(() => '<tr><td>Name: _________________________</td><td>Company: _____________ Signature: _____________</td></tr>').join('')}
@@ -457,6 +569,11 @@
 
   function bind() {
     el('tbSearch')?.addEventListener('input', renderList);
+    el('tbTopicCategory')?.addEventListener('change', renderTopicLibrary);
+    el('tbAddAction')?.addEventListener('click', () => {
+      state.actionItems.push({ description: '', assigned_to: '', due_date: '', status: 'Open', priority: 'Normal' });
+      renderActionEditor();
+    });
     el('tbPrintBlankAgenda')?.addEventListener('click', async () => { await loadCatalog(); printAgenda(true); });
     el('tbModalClose')?.addEventListener('click', () => { stopAllCapture(); el('tbModal').close(); });
     el('tbCancel')?.addEventListener('click', () => { stopAllCapture(); el('tbModal').close(); });
