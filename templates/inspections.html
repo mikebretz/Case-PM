@@ -1,331 +1,198 @@
 {% extends "base.html" %}
 
 {% block content %}
+<script>
+window.CASEPM_PERMITS_CTX = {
+  projectId: {{ active_project.id if active_project else 'null' }},
+  projectName: {{ (active_project.name if active_project else '')|tojson }},
+  scheduleUrl: {{ url_for('schedule_page')|tojson }},
+};
+</script>
+<script src="{{ url_for('static', filename='js/permits-inspections-app.js') }}"></script>
+
 <style>
-.insp-page { display: flex; flex-direction: column; flex: 1; min-height: 0; width: 100%; padding: 1rem 1rem 0; overflow: hidden; box-sizing: border-box; }
-  .insp-stack { display: flex; flex-direction: column; flex: 1; min-height: 0; overflow: hidden; }
+.pi-page { display: flex; flex-direction: column; flex: 1; min-height: 0; width: 100%; padding: 1rem 1rem 0; box-sizing: border-box; }
+  .pi-stack { display: flex; flex-direction: column; flex: 1; min-height: 0; overflow: hidden; }
+  .pi-input { width: 100%; background: #27272a; border: 1px solid #3f3f46; border-radius: 0.5rem; padding: 0.5rem 0.65rem; font-size: 0.875rem; color: #fff; }
+  .pi-input:focus { outline: none; border-color: #f97316; }
+  .pi-chip { padding: 0.15rem 0.55rem; border-radius: 9999px; font-size: 0.7rem; font-weight: 500; white-space: nowrap; }
+
+  .cal-grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 1px; background: #27272a; border: 1px solid #3f3f46; border-radius: 0.5rem; overflow: hidden; }
+  .cal-dow { background: #18181b; padding: 0.4rem; text-align: center; font-size: 0.7rem; font-weight: 600; color: #a1a1aa; text-transform: uppercase; }
+  .cal-cell { background: #0f0f11; min-height: 96px; padding: 0.3rem; display: flex; flex-direction: column; gap: 2px; cursor: pointer; }
+  .cal-cell:hover { background: #18181b; }
+  .cal-cell.other { background: #0a0a0b; opacity: 0.5; }
+  .cal-cell.today .cal-num { background: #f97316; color: #fff; border-radius: 9999px; }
+  .cal-num { font-size: 0.72rem; color: #d4d4d8; width: 20px; height: 20px; display: inline-flex; align-items: center; justify-content: center; }
+  .cal-ev { font-size: 0.66rem; padding: 1px 5px; border-radius: 4px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; cursor: pointer; }
+  @media (max-width: 640px) { .pi-hide-mobile { display: none !important; } .cal-cell { min-height: 64px; } }
 </style>
-<div class="insp-page"><div class="insp-stack">
-    
-    <!-- Page Header -->
-    <div class="flex items-center justify-between mb-4 flex-shrink-0">
-        <div>
-            <h1 class="text-2xl font-semibold tracking-tight">Inspections</h1>
-            <p class="text-zinc-400 text-sm mt-0.5">Track scheduled and completed inspections</p>
+
+<div class="pi-page">
+<div class="pi-stack">
+
+<!-- TOOLBAR -->
+<div class="flex items-center justify-between flex-shrink-0 mb-3 gap-3">
+  <div class="flex items-center gap-3 min-w-0">
+    <div class="text-2xl font-semibold text-white whitespace-nowrap">Permits &amp; Inspections</div>
+    <div id="piProjectBadge" class="text-xs px-3 py-1 bg-zinc-800 border border-zinc-700 text-zinc-400 rounded-md font-mono truncate max-w-[200px] pi-hide-mobile">—</div>
+  </div>
+  <div class="flex items-center gap-2 flex-wrap justify-end">
+    <div class="flex items-center rounded-md overflow-hidden border border-zinc-700 pi-hide-mobile">
+      <button type="button" id="piTabTracker" class="px-3 py-2 text-sm bg-zinc-700">Tracker</button>
+      <button type="button" id="piTabDirectory" class="px-3 py-2 text-sm bg-zinc-800">Florida Directory</button>
+    </div>
+    <div class="flex items-center rounded-md overflow-hidden border border-zinc-700 pi-hide-mobile">
+      <button type="button" id="piViewCal" class="px-3 py-2 text-sm bg-zinc-700"><i class="fa-solid fa-calendar-days"></i></button>
+      <button type="button" id="piViewList" class="px-3 py-2 text-sm bg-zinc-800"><i class="fa-solid fa-list"></i></button>
+    </div>
+    <button type="button" id="piImportSchedule" class="flex items-center gap-2 px-3 py-2 bg-zinc-800 hover:bg-zinc-700 rounded-md text-sm h-[38px] pi-hide-mobile" title="Import inspection milestones from Schedule"><i class="fa-solid fa-arrow-right-from-bracket"></i></button>
+    <button type="button" id="piPushAll" class="flex items-center gap-2 px-4 py-2 bg-sky-600 hover:bg-sky-500 rounded-md text-sm font-semibold h-[38px]" title="Push all dated items to Schedule"><i class="fa-solid fa-arrow-right-to-bracket"></i><span class="hidden md:inline">Push to Schedule</span></button>
+    <button type="button" id="piBtnRefresh" class="flex items-center gap-2 px-4 py-2 bg-zinc-800 hover:bg-zinc-700 rounded-md text-sm font-medium h-[38px] pi-hide-mobile"><i class="fa-solid fa-rotate"></i></button>
+    <button type="button" id="piBtnNew" class="flex items-center gap-2 px-5 py-2 bg-emerald-600 hover:bg-emerald-500 rounded-md text-sm font-semibold h-[38px]"><i class="fa-solid fa-plus"></i><span>Add</span></button>
+  </div>
+</div>
+
+<!-- SUMMARY CARDS -->
+<div class="bg-zinc-900 border border-zinc-700 rounded-md p-4 flex-shrink-0 mb-3">
+  <div class="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-8 gap-3">
+    <div class="bg-zinc-800 border border-zinc-700 rounded-md p-3"><div class="text-xs text-zinc-400">Total</div><div id="pistatTotal" class="text-2xl font-semibold mt-1">0</div></div>
+    <div class="bg-zinc-800 border border-zinc-700 rounded-md p-3"><div class="text-xs text-zinc-400">Permits</div><div id="pistatPermits" class="text-2xl font-semibold mt-1 text-cyan-400">0</div></div>
+    <div class="bg-zinc-800 border border-zinc-700 rounded-md p-3"><div class="text-xs text-zinc-400">Inspections</div><div id="pistatInspections" class="text-2xl font-semibold mt-1 text-violet-400">0</div></div>
+    <div class="bg-zinc-800 border border-zinc-700 rounded-md p-3"><div class="text-xs text-zinc-400">This Week</div><div id="pistatWeek" class="text-2xl font-semibold mt-1 text-orange-400">0</div></div>
+    <div class="bg-zinc-800 border border-zinc-700 rounded-md p-3"><div class="text-xs text-zinc-400">Upcoming</div><div id="pistatUpcoming" class="text-2xl font-semibold mt-1 text-sky-400">0</div></div>
+    <div class="bg-zinc-800 border border-zinc-700 rounded-md p-3"><div class="text-xs text-zinc-400">Passed</div><div id="pistatPassed" class="text-2xl font-semibold mt-1 text-emerald-400">0</div></div>
+    <div class="bg-zinc-800 border border-zinc-700 rounded-md p-3"><div class="text-xs text-zinc-400">Failed / Open</div><div id="pistatFailed" class="text-2xl font-semibold mt-1 text-red-400">0</div></div>
+    <div class="bg-zinc-800 border border-zinc-700 rounded-md p-3"><div class="text-xs text-zinc-400">On Schedule</div><div id="pistatSynced" class="text-2xl font-semibold mt-1 text-violet-400">0</div></div>
+  </div>
+</div>
+
+<!-- FBC TEMPLATE IMPORT (tracker only) -->
+<div id="piTemplatePanel" class="bg-zinc-900 border border-zinc-700 rounded-md p-3 flex-shrink-0 mb-3 flex flex-wrap items-end gap-3">
+  <div class="text-xs text-zinc-500 uppercase tracking-wide w-full mb-1">Import FBC 8th Ed. checklist by trade</div>
+  <div class="flex-1 min-w-[140px]">
+    <label class="block text-xs text-zinc-400 mb-1">Trade</label>
+    <select id="piTemplateTrade" class="pi-input"><option value="">Select trade…</option></select>
+  </div>
+  <div>
+    <label class="block text-xs text-zinc-400 mb-1">Start date</label>
+    <input type="date" id="piTemplateDate" class="pi-input">
+  </div>
+  <label class="flex items-center gap-2 text-sm cursor-pointer pb-2"><input type="checkbox" id="piTemplatePush" class="accent-sky-500"> Push to Schedule</label>
+  <button type="button" id="piImportTemplate" class="px-4 py-2 bg-orange-600 hover:bg-orange-500 rounded-md text-sm font-semibold h-[38px]"><i class="fa-solid fa-list-check mr-1"></i>Import Checklist</button>
+</div>
+
+<!-- FILTERS -->
+<div id="piTrackerFilters" class="flex flex-wrap items-center gap-2 mb-3 flex-shrink-0">
+  <input type="text" id="piSearch" placeholder="Search permit #, title, jurisdiction, inspector…" class="pi-input" style="flex:1 1 220px;min-width:170px;width:auto;">
+  <select id="piKindFilter" class="pi-input" style="flex:0 0 auto;width:130px;">
+    <option value="">All Types</option>
+    <option value="permit">Permit</option>
+    <option value="inspection">Inspection</option>
+  </select>
+  <select id="piTradeFilter" class="pi-input" style="flex:0 0 auto;width:160px;"><option value="">All Trades</option></select>
+  <select id="piStatusFilter" class="pi-input" style="flex:0 0 auto;width:150px;"><option value="">All Statuses</option></select>
+  <div id="piCalNav" class="flex items-center gap-2">
+    <button type="button" id="piPrev" class="px-3 py-2 bg-zinc-800 hover:bg-zinc-700 rounded-md text-sm"><i class="fa-solid fa-chevron-left"></i></button>
+    <div id="piMonthLabel" class="text-sm font-semibold min-w-[150px] text-center">—</div>
+    <button type="button" id="piNext" class="px-3 py-2 bg-zinc-800 hover:bg-zinc-700 rounded-md text-sm"><i class="fa-solid fa-chevron-right"></i></button>
+    <button type="button" id="piToday" class="px-3 py-2 bg-zinc-800 hover:bg-zinc-700 rounded-md text-sm">Today</button>
+  </div>
+</div>
+
+<div id="piDirFilters" class="hidden flex flex-wrap items-center gap-2 mb-3 flex-shrink-0">
+  <input type="text" id="piDirSearch" placeholder="Search counties, cities, utilities, authorities…" class="pi-input" style="flex:1 1 260px;min-width:200px;width:auto;">
+  <select id="piDirCategory" class="pi-input" style="flex:0 0 auto;width:180px;">
+    <option value="all">All categories</option>
+    <option value="county">Counties (67)</option>
+    <option value="city">Cities</option>
+    <option value="state">State authorities</option>
+    <option value="utility">Utilities</option>
+    <option value="water_management">Water management</option>
+    <option value="fire">Fire districts</option>
+  </select>
+</div>
+
+<!-- CALENDAR / LIST / DIRECTORY -->
+<div class="flex-1 min-h-0 overflow-auto mb-12">
+  <div id="piCalHost">
+    <div class="cal-grid mb-1">
+      <div class="cal-dow">Sun</div><div class="cal-dow">Mon</div><div class="cal-dow">Tue</div><div class="cal-dow">Wed</div><div class="cal-dow">Thu</div><div class="cal-dow">Fri</div><div class="cal-dow">Sat</div>
+    </div>
+    <div id="piCalBody" class="cal-grid"></div>
+  </div>
+  <div id="piListHost" class="hidden border border-zinc-700 rounded-md bg-zinc-900"></div>
+</div>
+
+<!-- STATUS BAR -->
+<div class="flex-shrink-0 border-t border-zinc-700 bg-zinc-900 px-4 py-2 text-xs text-zinc-500 flex items-center justify-between">
+  <span id="piStatusText">—</span>
+  <span id="piUpdatedAt">—</span>
+</div>
+
+</div>
+</div>
+
+<!-- MODAL -->
+<dialog id="piModal" class="modal casepm-dialog bg-zinc-900 border border-zinc-700 rounded-lg w-full max-w-3xl p-0">
+  <div class="px-5 py-4 border-b border-zinc-700 flex items-center justify-between">
+    <h3 id="piModalTitle" class="font-semibold text-lg">New Permit / Inspection</h3>
+    <button type="button" id="piModalClose" class="text-zinc-400 hover:text-white text-xl px-1">&times;</button>
+  </div>
+  <div class="p-5 overflow-y-auto space-y-3" style="max-height:74vh;">
+    <div class="grid grid-cols-1 md:grid-cols-3 gap-3">
+      <div><label class="block text-xs text-zinc-400 mb-1">Record type</label><select id="piRecordKind" class="pi-input"><option value="inspection">Inspection</option><option value="permit">Permit</option></select></div>
+      <div><label class="block text-xs text-zinc-400 mb-1">Trade / sub-permit</label><select id="piTrade" class="pi-input"><option value="building">Building</option></select></div>
+      <div><label class="block text-xs text-zinc-400 mb-1">Phase</label><input id="piPhase" class="pi-input" placeholder="foundation, rough-in, final…"></div>
+    </div>
+    <div><label class="block text-xs text-zinc-400 mb-1">Title</label><input id="piTitle" class="pi-input" placeholder="e.g. Electrical Rough-In Inspection"></div>
+    <div><label class="block text-xs text-zinc-400 mb-1">Description / scope</label><textarea id="piDescription" rows="2" class="pi-input resize-y"></textarea></div>
+    <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
+      <div><label class="block text-xs text-zinc-400 mb-1">Permit number</label><input id="piPermitNumber" class="pi-input"></div>
+      <div><label class="block text-xs text-zinc-400 mb-1">FBC reference</label><input id="piFbcRef" class="pi-input" placeholder="FBC 110.3 Electrical #2"></div>
+    </div>
+    <div class="grid grid-cols-1 md:grid-cols-4 gap-3">
+      <div><label class="block text-xs text-zinc-400 mb-1">Scheduled date</label><input type="date" id="piDate" class="pi-input"></div>
+      <div><label class="block text-xs text-zinc-400 mb-1">Time window</label><input id="piTime" class="pi-input" placeholder="8–10 AM"></div>
+      <div><label class="block text-xs text-zinc-400 mb-1">Days on schedule</label><input type="number" id="piDuration" class="pi-input" value="1" min="1"></div>
+      <div><label class="block text-xs text-zinc-400 mb-1">Status</label><select id="piStatus" class="pi-input"></select></div>
+    </div>
+    <div class="border border-zinc-700 rounded-md p-3 space-y-3 bg-zinc-950/50">
+      <div class="text-xs text-zinc-500 uppercase tracking-wide">Jurisdiction &amp; authority (pick from Florida Directory tab)</div>
+      <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
+        <div><label class="block text-xs text-zinc-400 mb-1">Jurisdiction level</label>
+          <select id="piJurisdictionLevel" class="pi-input">
+            <option value="county">County</option>
+            <option value="city">City</option>
+            <option value="state">State</option>
+            <option value="utility">Utility</option>
+            <option value="special_district">Special district</option>
+            <option value="fire_district">Fire district</option>
+            <option value="water_management">Water management</option>
+          </select>
         </div>
-        
-        <button onclick="showAddInspectionModal()" 
-                class="flex items-center gap-2 px-5 py-2.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded-md text-sm font-medium transition-colors">
-            <i class="fa-solid fa-plus"></i>
-            <span>Schedule Inspection</span>
-        </button>
+        <div><label class="block text-xs text-zinc-400 mb-1">Jurisdiction name</label><input id="piJurisdictionName" class="pi-input" placeholder="e.g. Hillsborough County"></div>
+      </div>
+      <div class="grid grid-cols-1 md:grid-cols-3 gap-3">
+        <div><label class="block text-xs text-zinc-400 mb-1">Authority / building dept</label><input id="piAuthorityName" class="pi-input"></div>
+        <div><label class="block text-xs text-zinc-400 mb-1">Phone</label><input id="piAuthorityPhone" class="pi-input"></div>
+        <div><label class="block text-xs text-zinc-400 mb-1">Website / portal URL</label><input id="piAuthorityUrl" class="pi-input" placeholder="https://"></div>
+      </div>
     </div>
-
-    <!-- Filters -->
-    <div class="flex flex-wrap items-center gap-3 mb-3 bg-zinc-900 border border-zinc-700 rounded-md p-3 flex-shrink-0">
-        <div class="flex-1 min-w-[220px]">
-            <input type="text" id="inspectionSearch" placeholder="Search inspections..." 
-                   class="w-full bg-zinc-800 border border-zinc-700 rounded-md px-4 py-2.5 text-sm focus:outline-none focus:border-emerald-600"
-                   onkeyup="filterInspections()">
-        </div>
-
-        <select id="typeFilter" onchange="filterInspections()" 
-                class="bg-zinc-800 border border-zinc-700 rounded-md px-4 py-2.5 text-sm focus:outline-none focus:border-emerald-600">
-            <option value="">All Types</option>
-            <option value="Building">Building</option>
-            <option value="Electrical">Electrical</option>
-            <option value="Plumbing">Plumbing</option>
-            <option value="Mechanical">Mechanical</option>
-            <option value="Fire">Fire</option>
-            <option value="Other">Other</option>
-        </select>
-
-        <select id="statusFilter" onchange="filterInspections()" 
-                class="bg-zinc-800 border border-zinc-700 rounded-md px-4 py-2.5 text-sm focus:outline-none focus:border-emerald-600">
-            <option value="">All Statuses</option>
-            <option value="Scheduled">Scheduled</option>
-            <option value="Passed">Passed</option>
-            <option value="Failed">Failed</option>
-            <option value="Pending">Pending</option>
-        </select>
-
-        <button onclick="clearInspectionFilters()" 
-                class="px-4 py-2.5 text-sm bg-zinc-800 hover:bg-zinc-700 border border-zinc-700 rounded-md transition-colors">
-            Clear Filters
-        </button>
+    <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
+      <div><label class="block text-xs text-zinc-400 mb-1">Inspector</label><input id="piInspector" class="pi-input"></div>
+      <div><label class="block text-xs text-zinc-400 mb-1">Location / area</label><input id="piLocation" class="pi-input"></div>
     </div>
-
-    <!-- Inspections Table (scrolls) -->
-    <div class="flex-1 min-h-0 overflow-auto border border-zinc-700 rounded-md bg-zinc-900 mb-2">
-        <table class="w-full">
-            <thead class="sticky top-0 z-10 bg-zinc-950">
-                <tr class="border-b border-zinc-800">
-                    <th class="text-left px-6 py-4 text-sm font-medium text-zinc-400">Inspection #</th>
-                    <th class="text-left px-6 py-4 text-sm font-medium text-zinc-400">Type</th>
-                    <th class="text-left px-6 py-4 text-sm font-medium text-zinc-400">Date</th>
-                    <th class="text-left px-6 py-4 text-sm font-medium text-zinc-400">Inspector</th>
-                    <th class="text-left px-6 py-4 text-sm font-medium text-zinc-400">Location</th>
-                    <th class="text-center px-6 py-4 text-sm font-medium text-zinc-400">Status</th>
-                    <th class="w-20"></th>
-                </tr>
-            </thead>
-            <tbody id="inspectionsTableBody" class="divide-y divide-zinc-800">
-                <!-- Populated by JavaScript -->
-            </tbody>
-        </table>
+    <div><label class="block text-xs text-zinc-400 mb-1">Result notes</label><textarea id="piResultNotes" rows="2" class="pi-input resize-y"></textarea></div>
+    <div><label class="block text-xs text-zinc-400 mb-1">Corrections / re-inspection notes</label><textarea id="piCorrectionNotes" rows="2" class="pi-input resize-y"></textarea></div>
+    <label class="flex items-center gap-2 text-sm cursor-pointer"><input type="checkbox" id="piPush" class="accent-sky-500"> <span>Push to Schedule as milestone / line item</span> <span id="piSyncedBadge" class="pi-chip bg-violet-500/15 text-violet-400 hidden">On schedule</span></label>
+  </div>
+  <div class="px-5 py-3 border-t border-zinc-700 flex items-center justify-between">
+    <button type="button" id="piDelete" class="px-3 py-2 text-sm text-red-400 hover:text-red-300 hidden"><i class="fa-solid fa-trash mr-1"></i>Delete</button>
+    <div class="flex gap-2 ml-auto">
+      <button type="button" id="piCancel" class="px-4 py-2 text-sm rounded-md border border-zinc-700 hover:bg-zinc-800">Cancel</button>
+      <button type="button" id="piSave" class="px-6 py-2 text-sm bg-emerald-600 hover:bg-emerald-500 rounded-md font-semibold">Save</button>
     </div>
-
-</div></div>
-        <!-- Add / Edit Inspection Modal -->
-        <dialog id="inspectionModal" class="bg-zinc-900 border border-zinc-700 rounded-3xl p-0 w-full max-w-lg shadow-2xl">
-            <div class="p-6">
-                <div class="flex items-center justify-between mb-5">
-                    <div class="font-semibold text-xl" id="modalTitle">Schedule Inspection</div>
-                    <button onclick="document.getElementById('inspectionModal').close()" class="text-zinc-400 hover:text-white text-2xl leading-none">&times;</button>
-                </div>
-
-                <form id="inspectionForm" onsubmit="saveInspection(event)">
-                    <input type="hidden" id="inspectionId">
-
-                    <div class="space-y-4">
-                        <div>
-                            <label class="block text-sm text-zinc-400 mb-1.5">Inspection Type</label>
-                            <select id="inspection_type" required
-                                    class="w-full bg-zinc-800 border border-zinc-700 rounded-2xl px-4 py-2.5 text-sm focus:outline-none focus:border-emerald-600">
-                                <option value="Building">Building</option>
-                                <option value="Electrical">Electrical</option>
-                                <option value="Plumbing">Plumbing</option>
-                                <option value="Mechanical">Mechanical</option>
-                                <option value="Fire">Fire</option>
-                                <option value="Other">Other</option>
-                            </select>
-                        </div>
-
-                        <div class="grid grid-cols-2 gap-4">
-                            <div>
-                                <label class="block text-sm text-zinc-400 mb-1.5">Scheduled Date</label>
-                                <input type="date" id="scheduled_date" required
-                                       class="w-full bg-zinc-800 border border-zinc-700 rounded-2xl px-4 py-2.5 text-sm focus:outline-none focus:border-emerald-600">
-                            </div>
-                            <div>
-                                <label class="block text-sm text-zinc-400 mb-1.5">Time</label>
-                                <input type="time" id="scheduled_time"
-                                       class="w-full bg-zinc-800 border border-zinc-700 rounded-2xl px-4 py-2.5 text-sm focus:outline-none focus:border-emerald-600">
-                            </div>
-                        </div>
-
-                        <div>
-                            <label class="block text-sm text-zinc-400 mb-1.5">Inspector / Agency</label>
-                            <input type="text" id="inspector" required
-                                   class="w-full bg-zinc-800 border border-zinc-700 rounded-2xl px-4 py-2.5 text-sm focus:outline-none focus:border-emerald-600">
-                        </div>
-
-                        <div>
-                            <label class="block text-sm text-zinc-400 mb-1.5">Location / Area</label>
-                            <input type="text" id="location" required
-                                   class="w-full bg-zinc-800 border border-zinc-700 rounded-2xl px-4 py-2.5 text-sm focus:outline-none focus:border-emerald-600">
-                        </div>
-
-                        <div>
-                            <label class="block text-sm text-zinc-400 mb-1.5">Notes</label>
-                            <textarea id="notes" rows="2"
-                                      class="w-full bg-zinc-800 border border-zinc-700 rounded-2xl px-4 py-2.5 text-sm focus:outline-none focus:border-emerald-600"></textarea>
-                        </div>
-                    </div>
-
-                    <div class="flex gap-3 mt-6">
-                        <button type="button" onclick="document.getElementById('inspectionModal').close()"
-                                class="flex-1 py-2.5 bg-zinc-800 hover:bg-zinc-700 rounded-2xl text-sm font-medium transition-colors">
-                            Cancel
-                        </button>
-                        <button type="submit"
-                                class="flex-1 py-2.5 bg-emerald-600 hover:bg-emerald-500 rounded-2xl text-sm font-medium transition-colors">
-                            Save Inspection
-                        </button>
-                    </div>
-                </form>
-            </div>
-        </dialog>
-        <!-- JavaScript -->
-        <script>
-            // Sample data (will be replaced with backend later)
-            let inspections = [
-                {
-                    id: 1,
-                    inspection_number: "INSP-014",
-                    type: "Electrical",
-                    scheduled_date: "2025-04-08",
-                    scheduled_time: "09:00",
-                    inspector: "County Electrical Inspector",
-                    location: "2nd Floor Electrical Room",
-                    status: "Scheduled",
-                    notes: "Rough-in inspection"
-                },
-                {
-                    id: 2,
-                    inspection_number: "INSP-013",
-                    type: "Plumbing",
-                    scheduled_date: "2025-04-03",
-                    scheduled_time: "14:00",
-                    inspector: "City Plumbing Dept.",
-                    location: "Main Restrooms",
-                    status: "Passed",
-                    notes: "All fixtures installed correctly"
-                },
-                {
-                    id: 3,
-                    inspection_number: "INSP-015",
-                    type: "Building",
-                    scheduled_date: "2025-04-10",
-                    scheduled_time: "10:30",
-                    inspector: "Building Official",
-                    location: "Entire Building",
-                    status: "Pending",
-                    notes: "Final building inspection"
-                }
-            ];
-
-            function filterInspections() {
-                const searchTerm = document.getElementById('inspectionSearch').value.toLowerCase();
-                const typeFilter = document.getElementById('typeFilter').value;
-                const statusFilter = document.getElementById('statusFilter').value;
-
-                const filtered = inspections.filter(inspection => {
-                    const matchesSearch = inspection.inspection_number.toLowerCase().includes(searchTerm) || 
-                                        inspection.inspector.toLowerCase().includes(searchTerm);
-                    const matchesType = !typeFilter || inspection.type === typeFilter;
-                    const matchesStatus = !statusFilter || inspection.status === statusFilter;
-                    return matchesSearch && matchesType && matchesStatus;
-                });
-
-                renderInspectionsTable(filtered);
-            }
-
-            function clearInspectionFilters() {
-                document.getElementById('inspectionSearch').value = '';
-                document.getElementById('typeFilter').value = '';
-                document.getElementById('statusFilter').value = '';
-                renderInspectionsTable(inspections);
-            }
-
-            function renderInspectionsTable(inspectionList) {
-                const tbody = document.getElementById('inspectionsTableBody');
-                tbody.innerHTML = '';
-
-                if (inspectionList.length === 0) {
-                    tbody.innerHTML = `
-                        <tr>
-                            <td colspan="7" class="px-6 py-8 text-center text-zinc-400">
-                                No inspections found.
-                            </td>
-                        </tr>
-                    `;
-                    return;
-                }
-
-                inspectionList.forEach(inspection => {
-                    const statusColor = 
-                        inspection.status === 'Passed' ? 'bg-emerald-600/20 text-emerald-400' :
-                        inspection.status === 'Failed' ? 'bg-red-600/20 text-red-400' :
-                        inspection.status === 'Scheduled' ? 'bg-blue-600/20 text-blue-400' :
-                        'bg-amber-600/20 text-amber-400';
-
-                    const row = document.createElement('tr');
-                    row.className = 'hover:bg-zinc-800/60 transition-colors';
-                    row.innerHTML = `
-                        <td class="px-6 py-4 font-mono text-sm">${inspection.inspection_number}</td>
-                        <td class="px-6 py-4">${inspection.type}</td>
-                        <td class="px-6 py-4 text-sm text-zinc-400">${inspection.scheduled_date} ${inspection.scheduled_time || ''}</td>
-                        <td class="px-6 py-4">${inspection.inspector}</td>
-                        <td class="px-6 py-4 text-sm text-zinc-400">${inspection.location}</td>
-                        <td class="px-6 py-4 text-center">
-                            <span class="inline-block px-3 py-1 rounded-full text-xs font-medium ${statusColor}">
-                                ${inspection.status}
-                            </span>
-                        </td>
-                        <td class="px-4 py-4">
-                            <div class="flex items-center gap-1">
-                                <button onclick="editInspection(${inspection.id})" class="p-2 hover:bg-zinc-700 rounded-xl text-zinc-400 hover:text-white">
-                                    <i class="fa-solid fa-edit"></i>
-                                </button>
-                                <button onclick="deleteInspection(${inspection.id})" class="p-2 hover:bg-zinc-700 rounded-xl text-zinc-400 hover:text-red-400">
-                                    <i class="fa-solid fa-trash"></i>
-                                </button>
-                            </div>
-                        </td>
-                    `;
-                    tbody.appendChild(row);
-                });
-            }
-
-            function showAddInspectionModal() {
-                document.getElementById('modalTitle').innerText = 'Schedule Inspection';
-                document.getElementById('inspectionForm').reset();
-                document.getElementById('inspectionId').value = '';
-                document.getElementById('inspectionModal').showModal();
-            }
-
-            function editInspection(id) {
-                const inspection = inspections.find(i => i.id === id);
-                if (!inspection) return;
-
-                document.getElementById('modalTitle').innerText = 'Edit Inspection';
-                document.getElementById('inspectionId').value = inspection.id;
-                document.getElementById('inspection_type').value = inspection.type;
-                document.getElementById('scheduled_date').value = inspection.scheduled_date;
-                document.getElementById('scheduled_time').value = inspection.scheduled_time || '';
-                document.getElementById('inspector').value = inspection.inspector;
-                document.getElementById('location').value = inspection.location;
-                document.getElementById('notes').value = inspection.notes || '';
-
-                document.getElementById('inspectionModal').showModal();
-            }
-
-            function saveInspection(e) {
-                e.preventDefault();
-
-                const id = document.getElementById('inspectionId').value;
-
-                const newInspection = {
-                    id: id ? parseInt(id) : Date.now(),
-                    inspection_number: id ? inspections.find(i => i.id == id).inspection_number : `INSP-${String(inspections.length + 1).padStart(3, '0')}`,
-                    type: document.getElementById('inspection_type').value,
-                    scheduled_date: document.getElementById('scheduled_date').value,
-                    scheduled_time: document.getElementById('scheduled_time').value,
-                    inspector: document.getElementById('inspector').value,
-                    location: document.getElementById('location').value,
-                    status: id ? inspections.find(i => i.id == id).status : 'Scheduled',
-                    notes: document.getElementById('notes').value
-                };
-
-                if (id) {
-                    const index = inspections.findIndex(i => i.id == id);
-                    inspections[index] = newInspection;
-                } else {
-                    inspections.push(newInspection);
-                }
-
-                renderInspectionsTable(inspections);
-                document.getElementById('inspectionModal').close();
-            }
-
-            function deleteInspection(id) {
-                if (!confirm('Delete this inspection?')) return;
-                inspections = inspections.filter(i => i.id !== id);
-                renderInspectionsTable(inspections);
-            }
-
-            function initializeInspections() {
-                renderInspectionsTable(inspections);
-            }
-
-            // Initialize on load
-            window.onload = function() {
-                initializeInspections();
-            };
-        </script>
-
+  </div>
+</dialog>
 {% endblock %}
-
-</div>
-</div>
