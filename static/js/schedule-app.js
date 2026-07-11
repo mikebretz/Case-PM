@@ -503,8 +503,20 @@
         });
     }
 
+    function syncColumnWidthsToConfig() {
+        if (!ganttReady || !gantt.config.columns) return;
+        gantt.config.columns.forEach((col, index) => {
+            const saved = columnWidths[col.name];
+            if (saved) {
+                col.width = saved;
+                gantt.config.columns[index].width = saved;
+            }
+        });
+    }
+
     function applyGridColumnWidthStyles() {
         if (!ganttReady || !gantt.config.columns) return;
+        syncColumnWidthsToConfig();
         const key = columnWidthsKey();
         if (key === lastHeaderWidthsKey) {
             syncColumnResizeHandlePositions();
@@ -1457,17 +1469,31 @@
                 );
                 cell.classList.add(`sched-align-h-${a.h}`, `sched-align-v-${a.v}`);
                 cell.style.fontSize = getCellFontSize(task, col.name) + 'px';
-                if (gridSelection.type === 'cell'
-                    && String(gridSelection.taskId) === String(taskId)
-                    && gridSelection.colName === col.name) {
-                    cell.classList.add('sched-cell-selected');
-                }
             });
         });
+        applyRowHighlight();
         document.querySelectorAll('#gantt_here .gantt_grid_scale .gantt_grid_head_cell').forEach((head, i) => {
             const col = gantt.config.columns[i];
             head.classList.toggle('sched-col-selected', !!(gridSelection.type === 'column' && col && gridSelection.colName === col.name));
         });
+    }
+
+    function getActiveRowTaskId() {
+        if (gridSelection.type === 'row' || gridSelection.type === 'cell') return gridSelection.taskId;
+        return gantt.getSelectedId();
+    }
+
+    function applyRowHighlight() {
+        if (!ganttReady) return;
+        const activeId = getActiveRowTaskId();
+        const match = (row) => {
+            let taskId = null;
+            try { taskId = gantt.locate(row); } catch (e) { /* ok */ }
+            const on = !!(activeId && taskId && String(taskId) === String(activeId));
+            row.classList.toggle('sched-row-active', on);
+        };
+        document.querySelectorAll('#gantt_here .gantt_grid_data .gantt_row').forEach(match);
+        document.querySelectorAll('#gantt_here .gantt_task_row').forEach(match);
     }
 
     function highlightGridSelection() {
@@ -2044,12 +2070,9 @@
             const types = { FS: '0', SS: '1', FF: '2', SF: '3' };
             const parts = predStr.split(/[,;]+/).map(s => s.trim()).filter(Boolean);
             parts.forEach(part => {
-                const cleaned = part.replace(/\s+/g, '');
-                const m = cleaned.match(/^([\w.%-]+?)(FS|SS|FF|SF)?([+-]?\d+)?$/i);
-                if (!m) { failed.push(part); return; }
-                const code = m[1];
-                const type = types[(m[2] || 'FS').toUpperCase()] || '0';
-                const lag = parseInt(m[3] || '0', 10) || 0;
+                const parsed = parsePredecessorToken(part);
+                if (!parsed) { failed.push(part); return; }
+                const { code, type, lag } = parsed;
                 let sourceId = lookup.byWbs.get(code) || lookup.byId.get(code) || lookup.byActId.get(code);
                 if (!sourceId) {
                     const lc = code.toLowerCase();
@@ -2069,6 +2092,27 @@
         if (!opts.skipSave) queueSave();
         if (failed.length) showScheduleAlert(`Could not link predecessor(s): ${failed.join(', ')}. Use WBS, Activity ID, or task id (e.g. 1.2FS+2 or A101).`, 'warning');
         return added > 0 || (!predStr?.trim() && !failed.length);
+    }
+
+    function parsePredecessorToken(part) {
+        const types = { FS: '0', SS: '1', FF: '2', SF: '3' };
+        let rest = String(part || '').replace(/\s+/g, '');
+        if (!rest) return null;
+        let lag = 0;
+        const lagM = rest.match(/([+-]\d+)$/);
+        if (lagM) {
+            lag = parseInt(lagM[1], 10) || 0;
+            rest = rest.slice(0, -lagM[1].length);
+        }
+        let type = '0';
+        const typeM = rest.match(/(FS|SS|FF|SF)$/i);
+        if (typeM) {
+            type = types[typeM[1].toUpperCase()] || '0';
+            rest = rest.slice(0, -typeM[1].length);
+        }
+        const code = rest;
+        if (!code) return null;
+        return { code, type, lag };
     }
 
     function getBuiltinColumnDefs() {
@@ -2265,7 +2309,10 @@
             if (!floatingEditorActive) return;
             saveFloatingEditor(id, colName, input.value);
             closeFloatingEditor();
+            syncColumnWidthsToConfig();
             gantt.refreshTask(id);
+            lastHeaderWidthsKey = '';
+            queueGridHeaderSync();
         };
         input.addEventListener('keydown', e => {
             e.stopPropagation();
@@ -2547,6 +2594,7 @@
         });
         gantt.attachEvent('onGanttRender', () => {
             refreshWbsCodes();
+            syncColumnWidthsToConfig();
             updateStatusBar();
             updateDeadlineMarkers();
             ensureTimelineScrollbar();

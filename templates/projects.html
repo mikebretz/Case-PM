@@ -509,11 +509,10 @@
                         <div class="flex flex-wrap gap-2 items-center">
                             <input type="file" id="originalContractFile" accept=".pdf,application/pdf" class="text-xs text-zinc-400 file:mr-3 file:py-1.5 file:px-3 file:rounded file:border-0 file:bg-zinc-700 file:text-zinc-200">
                             <span id="originalContractDocActions"></span>
-                            <button type="button" id="uploadContractBtn" onclick="uploadOriginalContract()" class="px-4 py-2 bg-emerald-700 hover:bg-emerald-600 rounded-md text-xs font-medium text-white" disabled>Upload PDF</button>
                             <a id="viewContractLink" href="#" target="_blank" rel="noopener" class="hidden px-4 py-2 bg-zinc-700 hover:bg-zinc-600 rounded-md text-xs text-sky-300">View Contract</a>
                             <button type="button" id="deleteContractBtn" onclick="deleteOriginalContract()" class="hidden px-4 py-2 bg-red-900/50 hover:bg-red-800 rounded-md text-xs text-red-300">Remove</button>
                         </div>
-                        <p class="text-[10px] text-zinc-500 mt-2">Tip: Save the project first, then upload from your computer or pick a PDF from this project's Documents.</p>
+                        <p class="text-[10px] text-zinc-500 mt-2">Tip: Save the project first, then choose a PDF from your computer (uploads automatically) or pick one from Documents.</p>
                     </div>
 
                     <div class="text-xs text-zinc-500 uppercase tracking-wide mb-3">Contract amounts</div>
@@ -1266,8 +1265,7 @@ function populateProjectForm(data) {
 }
 
 function resetOriginalContractUI() {
-    document.getElementById('originalContractStatus').textContent = 'Save project first, then upload contract PDF.';
-    document.getElementById('uploadContractBtn').disabled = true;
+    document.getElementById('originalContractStatus').textContent = 'Save project first, then choose a contract PDF.';
     document.getElementById('viewContractLink').classList.add('hidden');
     document.getElementById('deleteContractBtn').classList.add('hidden');
     const catinaBtn = document.getElementById('openCatinaProjectBtn');
@@ -1344,12 +1342,23 @@ function setContractStatusUI(json) {
     }
 }
 
+function onOriginalContractFileChosen() {
+    const fileInput = document.getElementById('originalContractFile');
+    const statusEl = document.getElementById('originalContractStatus');
+    const file = fileInput?.files?.[0];
+    if (!file) return;
+    if (!editingProjectId) {
+        if (statusEl) statusEl.innerHTML = `<span class="text-amber-300">Ready:</span> ${file.name} — save the project first, then choose the file again`;
+        return;
+    }
+    if (statusEl) statusEl.innerHTML = `<span class="text-emerald-400">Uploading:</span> ${file.name}…`;
+    uploadOriginalContract();
+}
+
 async function loadOriginalContractStatus(projectId) {
-    const uploadBtn = document.getElementById('uploadContractBtn');
     const catinaBtn = document.getElementById('openCatinaProjectBtn');
     const fileInput = document.getElementById('originalContractFile');
     if (!projectId) { resetOriginalContractUI(); return; }
-    if (uploadBtn) uploadBtn.disabled = false;
     if (catinaBtn) catinaBtn.classList.remove('hidden');
     bindOriginalContractDocPicker();
     try {
@@ -1364,7 +1373,7 @@ async function loadOriginalContractStatus(projectId) {
         if (mirror) mirror.textContent = err;
     }
     if (fileInput) {
-        fileInput.onchange = () => { if (uploadBtn) uploadBtn.disabled = !fileInput.files?.length; };
+        fileInput.onchange = onOriginalContractFileChosen;
     }
 }
 

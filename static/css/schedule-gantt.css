@@ -473,13 +473,26 @@ body.schedule-chart-resizing #gantt_here .gantt_layout_cell:nth-child(3) {
     letter-spacing: 0.02em !important;
 }
 
-/* Faint full-row selection — grid + timeline (not bar edges) */
+/* Faint full-row selection — grid + timeline */
+.gantt_grid_data .gantt_row.sched-row-active,
+.gantt_grid_data .gantt_row.sched-row-active .gantt_cell,
+.gantt_grid_data .gantt_row.sched-row-active.odd,
+.gantt_grid_data .gantt_row.sched-row-active.odd .gantt_cell,
+.gantt_task_row.sched-row-active,
+.gantt_task_row.sched-row-active .gantt_task_cell,
+.gantt_task_row.sched-row-active.odd,
+.gantt_task_row.sched-row-active.odd .gantt_task_cell {
+    background-color: rgba(113, 113, 122, 0.24) !important;
+    color: #f4f4f5 !important;
+    box-shadow: none !important;
+    outline: none !important;
+}
 .gantt_grid_data .gantt_row.gantt_selected,
 .gantt_grid_data .gantt_row.gantt_selected .gantt_cell,
 .gantt_grid_data .gantt_cell.gantt_selected,
 .gantt_grid_data .gantt_row.gantt_selected.odd,
 .gantt_grid_data .gantt_row.gantt_selected.odd .gantt_cell {
-    background-color: rgba(148, 163, 184, 0.07) !important;
+    background-color: rgba(113, 113, 122, 0.24) !important;
     color: #f4f4f5 !important;
     box-shadow: none !important;
     outline: none !important;
@@ -488,7 +501,7 @@ body.schedule-chart-resizing #gantt_here .gantt_layout_cell:nth-child(3) {
 .gantt_task_row.gantt_selected .gantt_task_cell,
 .gantt_task_row.gantt_selected.odd,
 .gantt_task_row.gantt_selected.odd .gantt_task_cell {
-    background-color: rgba(148, 163, 184, 0.06) !important;
+    background-color: rgba(113, 113, 122, 0.2) !important;
     box-shadow: none !important;
     outline: none !important;
 }
@@ -682,9 +695,7 @@ body.schedule-chart-resizing #gantt_here .gantt_layout_cell:nth-child(3) {
     min-width: 0;
 }
 .gantt_grid_data .gantt_cell.sched-cell-selected {
-    outline: 1px solid #10b981 !important;
-    outline-offset: -1px;
-    z-index: 2;
+    outline: none !important;
 }
 .gantt_grid_scale .gantt_grid_head_cell.sched-col-selected {
     background: rgba(16, 185, 129, 0.18) !important;
