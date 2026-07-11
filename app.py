@@ -129,6 +129,44 @@ def permission_required(permission):
 
 
 _user_signature_schema_ready = False
+_audit_schema_ready = False
+
+
+@app.before_request
+def _migrate_audit_log_schema():
+    global _audit_schema_ready
+    if _audit_schema_ready:
+        return
+    try:
+        from audit_log_persistence import ensure_audit_log_schema
+        ensure_audit_log_schema(db)
+        _audit_schema_ready = True
+    except Exception:
+        pass
+
+
+def write_audit(action, detail='', module='app', commit=False, **kwargs):
+    """Server-side audit helper — safe to call from any route."""
+    try:
+        from audit_log_persistence import record_audit, ensure_audit_log_schema
+        ensure_audit_log_schema(db)
+        user = current_user if current_user.is_authenticated else None
+        project = get_active_project() if user else None
+        fields = {
+            'action': action,
+            'detail': detail,
+            'module': module,
+            'project_id': kwargs.get('project_id') or (project.id if project else None),
+            'project_name': kwargs.get('project_name') or (project.name if project else ''),
+            **kwargs,
+        }
+        record_audit(db, AuditLog, user, **fields)
+        if commit:
+            db.session.commit()
+        else:
+            db.session.flush()
+    except Exception:
+        db.session.rollback()
 
 
 @app.before_request
@@ -375,13 +413,22 @@ def inject_project_context():
 
 @app.context_processor
 def inject_developer_flag():
+    from audit_log_persistence import ENDPOINT_TO_MODULE
+    ep = request.endpoint or ''
+    page_module = ENDPOINT_TO_MODULE.get(ep, 'app')
     if not current_user.is_authenticated:
-        return {'is_developer': False}
+        return {'is_developer': False, 'page_module': page_module, 'is_admin_user': False}
     try:
         from developer_tools import is_developer
-        return {'is_developer': is_developer(current_user)}
+        dev = is_developer(current_user)
     except Exception:
-        return {'is_developer': False}
+        dev = False
+    is_admin = getattr(current_user, 'role', None) == 'Admin' or dev
+    return {
+        'is_developer': dev,
+        'page_module': page_module,
+        'is_admin_user': is_admin,
+    }
 
 
 class DailyLog(db.Model):
@@ -1858,15 +1905,16 @@ def create_project():
         db.session.add(project)
         db.session.commit()
 
-        log = AuditLog(
-            user_id=current_user.id,
-            action='Created Project',
+        write_audit(
+            'Created Project',
+            f'Project "{name}" ({number}) was created',
+            module='projects',
+            category='create',
             target_type='Project',
             target_id=project.id,
-            details=f'Project "{name}" was created'
+            entity_ref=number,
+            commit=True,
         )
-        db.session.add(log)
-        db.session.commit()
 
         flash(f'Project "{name}" created successfully!', 'success')
         if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
@@ -2825,14 +2873,18 @@ def update_change_order_status(co_id):
     if new_status == 'Submitted' and not co.submitted_at:
         co.submitted_at = datetime.utcnow()
 
-    log = AuditLog(
-        user_id=current_user.id,
-        action='Updated Change Order Status',
+    write_audit(
+        'Updated Change Order Status',
+        f"CO {co.number or co.id}: '{old_status}' → '{new_status}'",
+        module='change_orders',
+        category='approve' if new_status == 'Approved' else ('reject' if new_status == 'Rejected' else 'update'),
+        change_order_id=co.id,
         target_type='ChangeOrder',
         target_id=co.id,
-        details=f"Changed status from '{old_status}' to '{new_status}'",
+        entity_ref=co.number or f'CO-{co.id}',
+        project_id=co.project_id,
+        severity='warning' if new_status == 'Rejected' else 'info',
     )
-    db.session.add(log)
 
     if new_status in ('Submitted', 'Under Review'):
         try:
@@ -9890,8 +9942,84 @@ def forbidden(e):
 @login_required
 @admin_required
 def audit_log():
-    logs = AuditLog.query.order_by(AuditLog.timestamp.desc()).limit(100).all()
-    return render_template('audit_log.html', logs=logs)
+    from audit_log_persistence import AUDIT_MODULES, AUDIT_CATEGORIES, ensure_audit_log_schema
+    ensure_audit_log_schema(db)
+    return render_template(
+        'audit_log.html',
+        audit_modules=AUDIT_MODULES,
+        audit_categories=AUDIT_CATEGORIES,
+    )
+
+
+@app.route('/audit_log')
+@login_required
+@admin_required
+def audit_log_page():
+    from audit_log_persistence import AUDIT_MODULES, AUDIT_CATEGORIES, ensure_audit_log_schema
+    ensure_audit_log_schema(db)
+    return render_template(
+        'audit_log.html',
+        audit_modules=AUDIT_MODULES,
+        audit_categories=AUDIT_CATEGORIES,
+    )
+
+
+@app.route('/api/audit-log/events', methods=['GET'])
+@login_required
+@admin_required
+def api_audit_log_list():
+    from audit_log_persistence import ensure_audit_log_schema, query_audit_logs, serialize_log
+    ensure_audit_log_schema(db)
+    rows, total = query_audit_logs(AuditLog, request.args)
+    return jsonify({
+        'ok': True,
+        'events': [serialize_log(r) for r in rows],
+        'total': total,
+        'limit': request.args.get('limit', 100),
+        'offset': request.args.get('offset', 0),
+    })
+
+
+@app.route('/api/audit-log/events', methods=['POST'])
+@login_required
+@admin_required
+def api_audit_log_create():
+    from audit_log_persistence import ensure_audit_log_schema, record_audit, serialize_log
+    ensure_audit_log_schema(db)
+    body = request.get_json(silent=True) or {}
+    row = record_audit(db, AuditLog, current_user, **body)
+    db.session.commit()
+    return jsonify({'ok': True, 'event': serialize_log(row, current_user)})
+
+
+@app.route('/api/audit-log/events/batch', methods=['POST'])
+@login_required
+@admin_required
+def api_audit_log_batch():
+    from audit_log_persistence import ensure_audit_log_schema, record_audit_batch
+    ensure_audit_log_schema(db)
+    body = request.get_json(silent=True) or {}
+    events = body.get('events') or []
+    record_audit_batch(db, AuditLog, current_user, events)
+    db.session.commit()
+    return jsonify({'ok': True, 'imported': len(events)})
+
+
+@app.route('/api/audit-log/stats', methods=['GET'])
+@login_required
+@admin_required
+def api_audit_log_stats():
+    from audit_log_persistence import ensure_audit_log_schema, audit_stats
+    ensure_audit_log_schema(db)
+    return jsonify({'ok': True, 'stats': audit_stats(AuditLog)})
+
+
+@app.route('/api/audit-log/modules', methods=['GET'])
+@login_required
+@admin_required
+def api_audit_log_modules():
+    from audit_log_persistence import AUDIT_MODULES, AUDIT_CATEGORIES
+    return jsonify({'ok': True, 'modules': AUDIT_MODULES, 'categories': AUDIT_CATEGORIES})
 
 
 # ==================== EMAIL PAGE ====================
@@ -9903,14 +10031,6 @@ def email_page():
         'email.html',
         users=[{'name': u.full_name, 'email': u.email} for u in users],
     )
-
-
-# ==================== AUDIT LOG PAGE (Clean route for sidebar) ====================
-@app.route('/audit_log')
-@login_required
-def audit_log_page():
-    logs = AuditLog.query.order_by(AuditLog.timestamp.desc()).limit(100).all()
-    return render_template('audit_log.html', logs=logs)
 
 
 # ==================== NOTIFICATIONS ====================

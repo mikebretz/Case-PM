@@ -191,7 +191,13 @@
     <script src="{{ url_for('static', filename='js/casepm-print.js') }}"></script>
     <script src="{{ url_for('static', filename='js/casepm-workflow.js') }}"></script>
 </head>
-<body class="bg-zinc-950 text-zinc-200 h-screen overflow-hidden {% if is_sub_portal %}portal-sub{% elif is_architect_portal %}portal-architect{% else %}portal-staff{% endif %}">
+<body class="bg-zinc-950 text-zinc-200 h-screen overflow-hidden {% if is_sub_portal %}portal-sub{% elif is_architect_portal %}portal-architect{% else %}portal-staff{% endif %}"
+      data-page-module="{{ page_module|default('app') }}"
+      data-current-user="{{ current_user.full_name if current_user.is_authenticated else '' }}"
+      data-current-user-id="{{ current_user.id if current_user.is_authenticated else '' }}"
+      data-is-admin="{{ '1' if is_admin_user else '0' }}"
+      data-active-project-id="{{ active_project.id if active_project else '' }}"
+      data-active-project-name="{{ active_project.name if active_project else '' }}">
 
     {% if current_user.is_authenticated %}
 
@@ -466,11 +472,12 @@
                 </a>
                 {% endif %}
 
-                <!-- NEW: Audit Log -->
+                {% if is_admin_user %}
                 <a href="{{ url_for('audit_log_page') }}" class="nav-link nav-staff-only flex items-center gap-2.5 px-3 py-1.5 rounded-xl mb-0.5 {% if request.endpoint == 'audit_log_page' %}active{% endif %}">
                     <i class="fa-solid fa-history w-5"></i>
                     <span>Audit Log</span>
                 </a>
+                {% endif %}
             </div>
 
             <!-- Sidebar Footer -->
@@ -491,10 +498,13 @@
             <div id="appFooterBar" class="h-10 flex-shrink-0 border-t border-zinc-800 bg-zinc-900 px-4 flex items-center justify-between text-xs text-zinc-500">
                 <div class="flex items-center gap-3 min-w-0 flex-1">
                     <div class="whitespace-nowrap">Last synced: <span id="lastSyncTime">just now</span></div>
-                    <button type="button" onclick="typeof CasePMActivityLog !== 'undefined' && CasePMActivityLog.showLogModal()" class="text-emerald-400 hover:text-emerald-300 underline whitespace-nowrap flex-shrink-0">Activity Log</button>
+                    {% if is_admin_user %}
+                    <button type="button" onclick="typeof CasePMActivityLog !== 'undefined' && CasePMActivityLog.showLogModal({moduleOnly: true})" class="text-emerald-400 hover:text-emerald-300 underline whitespace-nowrap flex-shrink-0">Activity Log</button>
+                    <a href="{{ url_for('audit_log_page') }}" class="text-emerald-400/80 hover:text-emerald-300 underline whitespace-nowrap flex-shrink-0 hidden sm:inline">Full Audit Log</a>
+                    {% endif %}
                     <span id="footerActivityPreview" class="hidden lg:inline truncate text-zinc-600 max-w-[320px]"></span>
-                    {% if request.endpoint == 'pay_applications_page' %}
-                    <button type="button" onclick="typeof showPayAppAuditLog === 'function' && showPayAppAuditLog()" class="text-emerald-400 hover:text-emerald-300 underline whitespace-nowrap flex-shrink-0">Pay App Audit Log</button>
+                    {% if request.endpoint == 'pay_applications_page' and is_admin_user %}
+                    <button type="button" onclick="typeof showPayAppAuditLog === 'function' && showPayAppAuditLog()" class="text-emerald-400 hover:text-emerald-300 underline whitespace-nowrap flex-shrink-0">Pay App Log</button>
                     {% endif %}
                 </div>
                 <div class="flex items-center gap-4 flex-shrink-0">
@@ -672,25 +682,36 @@
         </div>
     </dialog>
     <!-- ==================== GLOBAL ACTIVITY LOG ==================== -->
-    <dialog id="globalActivityLogModal" class="rounded-md w-full max-w-4xl p-0 text-white shadow-2xl" style="background-color:#18181b;border:1px solid #3f3f46;">
+    <dialog id="globalActivityLogModal" class="rounded-md w-full max-w-5xl p-0 text-white shadow-2xl" style="background-color:#18181b;border:1px solid #3f3f46;">
         <div class="p-5 border-b border-zinc-700 flex items-center justify-between">
             <div>
-                <h3 class="text-lg font-semibold">Activity Log</h3>
-                <p class="text-xs text-zinc-500 mt-0.5">Page actions across Case PM — searchable for audit export</p>
+                <h3 class="text-lg font-semibold">Page Activity Log</h3>
+                <p class="text-xs text-zinc-500 mt-0.5">This module only — admins can open <a href="{{ url_for('audit_log_page') }}" class="text-emerald-400 hover:underline">Full Audit Log</a> for all modules</p>
             </div>
             <button type="button" onclick="document.getElementById('globalActivityLogModal').close()" class="text-zinc-400 hover:text-white"><i class="fa-solid fa-times text-xl"></i></button>
         </div>
         <div class="px-5 py-3 border-b border-zinc-800 flex flex-wrap gap-3 items-center">
-            <input type="text" id="globalActivityLogSearch" placeholder="Search actions…" class="flex-1 min-w-[180px] bg-zinc-800 border border-zinc-700 rounded-md px-3 py-2 text-sm">
+            <input type="text" id="globalActivityLogSearch" placeholder="Search actions, users, companies, CO#…" class="flex-1 min-w-[180px] bg-zinc-800 border border-zinc-700 rounded-md px-3 py-2 text-sm">
             <select id="globalActivityLogModule" class="bg-zinc-800 border border-zinc-700 rounded-md px-3 py-2 text-sm">
                 <option value="all">All modules</option>
+                <option value="dashboard">Dashboard</option>
+                <option value="projects">Projects</option>
+                <option value="daily_log">Daily Log</option>
+                <option value="rfis">RFIs</option>
+                <option value="change_orders">Change Orders</option>
+                <option value="submittals">Submittals</option>
+                <option value="punch_list">Punch List</option>
+                <option value="safety">Safety</option>
                 <option value="schedule">Schedule</option>
                 <option value="budget">Budget</option>
                 <option value="pay_applications">Pay Applications</option>
-                <option value="submittals">Submittals</option>
-                <option value="rfis">RFIs</option>
+                <option value="commitments">Commitments</option>
                 <option value="companies">Companies</option>
                 <option value="users">Users</option>
+                <option value="documents">Documents</option>
+                <option value="drawings">Drawings</option>
+                <option value="email">Email</option>
+                <option value="program_settings">Program Settings</option>
                 <option value="app">General</option>
             </select>
             <button type="button" onclick="CasePMActivityLog.exportLog()" class="px-3 py-2 bg-zinc-800 hover:bg-zinc-700 border border-zinc-700 rounded-md text-sm"><i class="fa-solid fa-download mr-1"></i> Export</button>
@@ -703,6 +724,8 @@
                         <th class="text-left px-3 py-2">Module</th>
                         <th class="text-left px-3 py-2">Action</th>
                         <th class="text-left px-3 py-2">Detail</th>
+                        <th class="text-left px-3 py-2">User</th>
+                        <th class="text-left px-3 py-2">Refs</th>
                     </tr>
                 </thead>
                 <tbody id="globalActivityLogBody"></tbody>
