@@ -821,12 +821,16 @@ class Photo(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     project_id = db.Column(db.Integer, db.ForeignKey('project.id'))
     daily_log_id = db.Column(db.Integer, db.ForeignKey('daily_log.id'))
+    document_id = db.Column(db.Integer, db.ForeignKey('document.id'))
     filename = db.Column(db.String(200), nullable=False)
     caption = db.Column(db.String(300))
+    location = db.Column(db.String(150))
     category = db.Column(db.String(50))
+    taken_date = db.Column(db.Date)
     taken_at = db.Column(db.DateTime)
     uploaded_by_id = db.Column(db.Integer, db.ForeignKey('user.id'))
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    uploader = db.relationship('User', foreign_keys=[uploaded_by_id])
 
 
 class Document(db.Model):
@@ -4237,16 +4241,198 @@ def create_weekly_report():
         return redirect_with_project('weekly_report')
 
 
-# ==================== PLACEHOLDER ROUTES (Prevent BuildError) ====================
-# These modules have templates but limited backend logic.
-# They will be expanded in future updates.
+# ==================== PHOTOS MODULE ====================
+
+def _photo_url_helpers():
+    return {
+        'doc': lambda doc_id: url_for('api_documents_download', doc_id=doc_id),
+        'photo': lambda project_id, filename: url_for('serve_project_photo', project_id=project_id, filename=filename),
+    }
+
 
 @app.route('/photos')
 @login_required
 def photos_page():
     projects = Project.query.order_by(Project.name).all()
-    photos = query_for_active_project(Photo).order_by(Photo.created_at.desc()).limit(50).all()
-    return render_template('photos.html', projects=projects, photos=photos)
+    return render_template('photos.html', projects=projects)
+
+
+@app.route('/api/photos', methods=['GET'])
+@login_required
+def api_photos_list():
+    from photo_persistence import (
+        serialize_photo, group_photos_by_date, filter_photos_by_range, compute_photo_stats,
+    )
+
+    project = get_active_project()
+    if not project:
+        return jsonify({'photos': [], 'groups': [], 'stats': compute_photo_stats([])})
+
+    q = Photo.query.filter_by(project_id=project.id).order_by(
+        Photo.taken_date.desc(), Photo.created_at.desc()
+    )
+    search = (request.args.get('search') or '').strip().lower()
+    location = (request.args.get('location') or '').strip().lower()
+    date_range = (request.args.get('date_range') or '').strip()
+    group_mode = (request.args.get('group') or 'day').strip() or 'day'
+    if group_mode not in ('day', 'week', 'month'):
+        group_mode = 'day'
+
+    rows = q.all()
+    serialized = [
+        serialize_photo(p, url_helpers=_photo_url_helpers())
+        for p in rows
+    ]
+    if search:
+        serialized = [
+            p for p in serialized
+            if search in (p.get('caption') or '').lower()
+            or search in (p.get('location') or '').lower()
+            or search in (p.get('uploaded_by') or '').lower()
+        ]
+    if location:
+        serialized = [p for p in serialized if location in (p.get('location') or '').lower()]
+    serialized = filter_photos_by_range(serialized, date_range)
+    groups = group_photos_by_date(serialized, group_mode)
+    stats = compute_photo_stats(serialized)
+    return jsonify({
+        'ok': True,
+        'project_id': project.id,
+        'photos': serialized,
+        'groups': groups,
+        'stats': stats,
+        'group_mode': group_mode,
+    })
+
+
+@app.route('/api/photos', methods=['POST'])
+@login_required
+def api_photos_upload():
+    from photo_persistence import serialize_photo
+
+    project = get_active_project()
+    if not project:
+        return jsonify({'error': 'Select a project first'}), 400
+    if 'file' not in request.files:
+        return jsonify({'error': 'file required'}), 400
+    f = request.files['file']
+    if not f.filename:
+        return jsonify({'error': 'empty filename'}), 400
+
+    custom_name = (request.form.get('name') or request.form.get('caption') or '').strip()
+    location = (request.form.get('location') or '').strip()
+    taken_date_str = (request.form.get('taken_date') or '').strip()
+    taken_date = None
+    if taken_date_str:
+        try:
+            taken_date = datetime.strptime(taken_date_str[:10], '%Y-%m-%d').date()
+        except ValueError:
+            taken_date = date.today()
+    else:
+        taken_date = date.today()
+
+    _, ext = os.path.splitext(f.filename)
+    if not ext:
+        ext = '.jpg'
+    if custom_name:
+        base = secure_filename(custom_name) or 'photo'
+        display_name = custom_name if custom_name.lower().endswith(ext.lower()) else f'{custom_name}{ext}'
+        safe = f'{base}{ext.lower()}'
+    else:
+        safe = secure_filename(f.filename)
+        display_name = f.filename
+
+    folder = os.path.join(app.config['UPLOAD_FOLDER'], 'photos', str(project.id))
+    os.makedirs(folder, exist_ok=True)
+    if os.path.exists(os.path.join(folder, safe)):
+        base, ext2 = os.path.splitext(safe)
+        safe = f'{base}-{int(datetime.utcnow().timestamp())}{ext2}'
+    path = os.path.join(folder, safe)
+    f.save(path)
+
+    now = datetime.utcnow()
+    photo = Photo(
+        project_id=project.id,
+        filename=safe,
+        caption=custom_name or display_name,
+        location=location or None,
+        category=location or None,
+        taken_date=taken_date,
+        taken_at=now,
+        uploaded_by_id=current_user.id,
+    )
+    db.session.add(photo)
+    db.session.commit()
+
+    try:
+        with open(path, 'rb') as fh:
+            fb = fh.read()
+        sub_name = taken_date.strftime('%m-%d-%Y')
+        doc = _mirror_to_system_subfolder(
+            project.id, fb, display_name, f.filename, 'photos', sub_name, 'Photo',
+            {
+                'photo_id': photo.id,
+                'caption': photo.caption,
+                'location': location,
+                'taken_date': taken_date.isoformat(),
+                'photo_label': custom_name or display_name,
+            },
+            is_system_locked=True, uploaded_by_id=current_user.id,
+        )
+        if doc and doc.get('id'):
+            photo.document_id = doc['id']
+            db.session.commit()
+        _notify_documents_team(
+            project.id,
+            'Photo filed to Documents',
+            f'"{photo.caption}" filed to Documents › Photos › {sub_name}.',
+            f'/documents?project_id={project.id}',
+        )
+    except Exception:
+        db.session.rollback()
+
+    return jsonify({
+        'ok': True,
+        'photo': serialize_photo(photo, user=current_user, url_helpers=_photo_url_helpers()),
+    })
+
+
+@app.route('/api/photos/<int:photo_id>', methods=['GET'])
+@login_required
+def api_photo_get(photo_id):
+    from photo_persistence import serialize_photo
+
+    photo = Photo.query.get_or_404(photo_id)
+    project = get_active_project()
+    if project and photo.project_id != project.id:
+        return jsonify({'error': 'Not found'}), 404
+    return jsonify({'ok': True, 'photo': serialize_photo(photo, url_helpers=_photo_url_helpers())})
+
+
+@app.route('/api/photos/<int:photo_id>', methods=['DELETE'])
+@login_required
+def api_photo_delete(photo_id):
+    photo = Photo.query.get_or_404(photo_id)
+    project = get_active_project()
+    if project and photo.project_id != project.id:
+        return jsonify({'error': 'Not found'}), 404
+    try:
+        folder = os.path.join(app.config['UPLOAD_FOLDER'], 'photos', str(photo.project_id))
+        file_path = os.path.join(folder, photo.filename)
+        if os.path.isfile(file_path):
+            os.remove(file_path)
+    except OSError:
+        pass
+    db.session.delete(photo)
+    db.session.commit()
+    return jsonify({'ok': True})
+
+
+@app.route('/uploads/photos/<int:project_id>/<path:filename>')
+@login_required
+def serve_project_photo(project_id, filename):
+    folder = os.path.join(app.config['UPLOAD_FOLDER'], 'photos', str(project_id))
+    return send_from_directory(folder, filename)
 
 
 @app.route('/documents')
@@ -4884,6 +5070,9 @@ def _ensure_module_attachment_columns():
         ('safety_report', 'report_date', 'DATE'),
         ('safety_report', 'attachments_json', 'TEXT'),
         ('safety_report', 'details_json', 'TEXT'),
+        ('photo', 'document_id', 'INTEGER'),
+        ('photo', 'location', 'VARCHAR(150)'),
+        ('photo', 'taken_date', 'DATE'),
     ]
     for table, column, typedef in migrations:
         if table not in tables:
