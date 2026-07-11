@@ -117,6 +117,23 @@ def permission_required(permission):
     return decorator
 
 
+_user_signature_schema_ready = False
+
+
+@app.before_request
+def _migrate_user_signature_schema():
+    """Run before login loads User — new signature columns must exist first."""
+    global _user_signature_schema_ready
+    if _user_signature_schema_ready:
+        return
+    try:
+        from user_signature_persistence import ensure_user_signature_schema
+        ensure_user_signature_schema(db)
+        _user_signature_schema_ready = True
+    except Exception:
+        pass
+
+
 # ==================== USER MODEL ====================
 class User(db.Model, UserMixin):
     id = db.Column(db.Integer, primary_key=True)
@@ -10892,6 +10909,11 @@ with app.app_context():
             _ensure_module_attachment_columns()
         except Exception as _att:
             print('Attachment columns:', _att)
+        try:
+            from user_signature_persistence import ensure_user_signature_schema
+            ensure_user_signature_schema(db)
+        except Exception as _sig:
+            print('User signature schema:', _sig)
     except Exception as _e:
         print('Workflow init:', _e)
 
