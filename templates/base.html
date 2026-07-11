@@ -187,6 +187,7 @@
             flex-direction: column;
             overflow: hidden;
             min-width: 0;
+            min-height: 0;
             z-index: 1;
         }
 
@@ -220,12 +221,46 @@
 
         /* Main content never scrolls as a whole — pages freeze toolbars; tables scroll */
         #mainContent {
-            flex: 1 1 auto;
+            flex: 1 1 0%;
             min-height: 0;
+            max-height: 100%;
             overflow: hidden !important;
             display: flex !important;
             flex-direction: column !important;
             padding: 0 !important;
+        }
+
+        /* Page roots must shrink so inner .overflow-auto regions get a bounded height */
+        #mainContent > :is(
+            .budget-page, .forecast-page, .pay-app-page, .com-page, .co-page, .rfi-page,
+            .dlog-page, .wlog-page, .punch-page, .saf-page, .del-page, .dash-page,
+            .docs-page, .draw-page, .sheet-page, .word-page, .projects-page-root,
+            .schedule-page-root, .email-page-root, .photos-page, .insp-page, .mm-page,
+            .companies-page, .um-page, .settings-page, .notif-page, .submittals-page,
+            .casepm-freeze-page, .casepm-legacy-scroll
+        ) {
+            flex: 1 1 0%;
+            min-height: 0;
+            max-height: 100%;
+            overflow: hidden;
+        }
+
+        #mainContent > script,
+        #mainContent > style,
+        #mainContent > link {
+            flex: 0 0 auto;
+        }
+
+        /* Scrollable table/list panes inside frozen pages */
+        .casepm-scroll-pane,
+        #tableScrollContainer,
+        #submittalTableScroll,
+        #payAppTableScrollContainer {
+            flex: 1 1 0%;
+            min-height: 0;
+            overflow: auto !important;
+            -webkit-overflow-scrolling: touch;
+            overscroll-behavior: contain;
         }
 
         .casepm-freeze-page,
@@ -323,6 +358,56 @@
             border: 1px solid #3f3f46;
             border-radius: 0.5rem;
             padding: 0.125rem;
+        }
+
+        /* Print: release frozen screen layout so documents scale to the page */
+        @media print {
+            html, body {
+                height: auto !important;
+                max-height: none !important;
+                overflow: visible !important;
+                position: static !important;
+            }
+            #appShell,
+            #appMainPane,
+            #mainContent {
+                position: static !important;
+                inset: auto !important;
+                left: auto !important;
+                right: auto !important;
+                top: auto !important;
+                bottom: auto !important;
+                width: auto !important;
+                height: auto !important;
+                max-height: none !important;
+                overflow: visible !important;
+                display: block !important;
+            }
+            .casepm-chrome-fixed,
+            #appHeaderBar,
+            #appSidebar,
+            #appFooterBar,
+            .casepm-page-status-bar,
+            .portal-banner-sub,
+            .portal-banner-architect {
+                display: none !important;
+            }
+            .budget-page, .forecast-page, .pay-app-page, .submittals-page,
+            .co-page, .rfi-page, .com-page, [class*="-page"] {
+                overflow: visible !important;
+                max-height: none !important;
+                height: auto !important;
+                padding: 0 !important;
+            }
+            .casepm-scroll-pane,
+            #tableScrollContainer,
+            #submittalTableScroll,
+            .casepm-freeze-scroll,
+            .casepm-legacy-scroll {
+                overflow: visible !important;
+                max-height: none !important;
+                height: auto !important;
+            }
         }
 
     </style>

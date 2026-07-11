@@ -139,35 +139,49 @@
         }
         body.${cls} #appShell > #appHeaderBar,
         body.${cls} #appSidebar,
-        body.${cls} #appShell > .flex.flex-1 > div.h-10,
+        body.${cls} #appFooterBar,
+        body.${cls} #appMainPane,
         body.${cls} #submittalChrome,
         body.${cls} .co-page,
         body.${cls} #scheduleChrome,
         body.${cls} .no-print,
         body.casepm-printing #appShell > #appHeaderBar,
         body.casepm-printing #appSidebar,
-        body.casepm-printing #appShell > .flex.flex-1 > div.h-10,
+        body.casepm-printing #appFooterBar,
+        body.casepm-printing #appMainPane,
         body.casepm-printing #submittalChrome,
         body.casepm-printing .co-page,
         body.casepm-printing #scheduleChrome,
         body.casepm-printing .no-print,
         body.printing-submittal-log #appShell > #appHeaderBar,
         body.printing-submittal-log #appSidebar,
-        body.printing-submittal-log #appShell > .flex.flex-1 > div.h-10,
+        body.printing-submittal-log #appFooterBar,
+        body.printing-submittal-log #appMainPane,
         body.printing-submittal-log #submittalChrome,
         body.printing-submittal-log .no-print,
         body.printing-co-log #appShell > #appHeaderBar,
         body.printing-co-log #appSidebar,
-        body.printing-co-log #appShell > .flex.flex-1 > div.h-10,
+        body.printing-co-log #appFooterBar,
+        body.printing-co-log #appMainPane,
         body.printing-co-log .co-page > *:not(#coPrintSheet),
         body.printing-co-log .no-print,
         body.printing-rfi-log #appShell > #appHeaderBar,
         body.printing-rfi-log #appSidebar,
-        body.printing-rfi-log #appShell > .flex.flex-1 > div.h-10,
+        body.printing-rfi-log #appFooterBar,
+        body.printing-rfi-log #appMainPane,
         body.printing-rfi-log .rfi-page > *:not(#rfiPrintSheet),
         body.printing-rfi-log #rfiDetailDrawer,
         body.printing-rfi-log .no-print {
           display: none !important;
+        }
+        html, body {
+          height: auto !important;
+          overflow: visible !important;
+        }
+        #appShell, #appMainPane {
+          position: static !important;
+          height: auto !important;
+          overflow: visible !important;
         }
         body.${cls} #mainContent,
         body.casepm-printing #mainContent,
@@ -177,6 +191,9 @@
           padding: 0 !important;
           overflow: visible !important;
           display: block !important;
+          position: static !important;
+          height: auto !important;
+          max-height: none !important;
         }
         body.${cls} #casepmPrintRoot,
         body.${cls} #submittalPrintSheet,
@@ -447,6 +464,38 @@
     return container;
   }
 
+  /** Print self-contained HTML in a sized off-screen iframe (G702/G703, etc.). */
+  function printHtmlInIframe(html, options) {
+    const opts = options || {};
+    const landscape = opts.landscape !== false;
+    const delay = opts.delay || 500;
+    const iframe = document.createElement('iframe');
+    iframe.setAttribute('aria-hidden', 'true');
+    iframe.style.cssText = [
+      'position:fixed',
+      'left:-10000px',
+      'top:0',
+      landscape ? 'width:11in' : 'width:8.5in',
+      landscape ? 'height:8.5in' : 'height:11in',
+      'border:0',
+      'visibility:hidden',
+    ].join(';');
+    document.body.appendChild(iframe);
+    const win = iframe.contentWindow;
+    const doc = win.document;
+    doc.open();
+    doc.write(html);
+    doc.close();
+    setTimeout(() => {
+      try {
+        win.focus();
+        win.print();
+      } finally {
+        setTimeout(() => iframe.remove(), 900);
+      }
+    }, delay);
+  }
+
   /** Opens the browser print preview directly — no new tab/window. */
   function triggerPrintPreview(bodyHtml, options) {
     ensureStyles();
@@ -477,6 +526,7 @@
     buildPrintTable,
     buildPrintDocument,
     buildPageBlock,
+    printHtmlInIframe,
     triggerPrintPreview,
     openPrintWindow,
   };
