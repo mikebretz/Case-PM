@@ -1,7 +1,4 @@
-#mainContent:has(.email-page-root) {
-  padding: 0;
-  overflow: hidden;
-}
+
 .email-page-root {
   height: 100%;
   min-height: 0;

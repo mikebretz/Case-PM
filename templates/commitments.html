@@ -49,13 +49,7 @@ window.COMMITMENT_PROJECT_CTX = {
 <script src="{{ url_for('static', filename='js/commitments-app.js') }}"></script>
 
 <style>
-  #mainContent:has(.com-page) {
-    overflow: hidden !important;
-    display: flex;
-    flex-direction: column;
-    padding: 0 !important;
-  }
-  .com-page {
+.com-page {
     display: flex;
     flex-direction: column;
     flex: 1;
@@ -150,7 +144,7 @@ window.COMMITMENT_PROJECT_CTX = {
 <div id="comDrawerBackdrop" class="fixed inset-0 bg-black/40 z-[79] hidden" onclick="CasePMCommitments.closeDrawer()"></div>
 
 <!-- FOOTER (Sage + Audit Log — matches Budget page) -->
-<div id="comSageSyncStatusBar" class="fixed bottom-0 left-56 right-0 casepm-page-status-bar bg-zinc-900 border-t border-zinc-700 px-6 py-2 text-xs text-zinc-400 flex items-center justify-between z-[60]">
+<div id="comSageSyncStatusBar" class="fixed bottom-0 left-56 right-0 bg-zinc-900 border-t border-zinc-700 px-6 py-2 text-xs text-zinc-400 flex items-center justify-between z-[60]">
     <div class="flex items-center gap-4 flex-wrap">
         <span id="comSageStatusText">Sage 300 Commitments · Loading…</span>
         <span id="comIntegrationStatus" class="text-zinc-500 hidden sm:inline"></span>

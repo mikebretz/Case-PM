@@ -1,9 +1,4 @@
-#mainContent:has(.draw-page) {
-  overflow: hidden !important;
-  display: flex;
-  flex-direction: column;
-  padding: 0 !important;
-}
+
 .draw-page {
   display: flex;
   flex-direction: column;
