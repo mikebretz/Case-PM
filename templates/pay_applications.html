@@ -121,13 +121,6 @@
     border: 1px solid #3f3f46;
     border-radius: 6px;
   }
-  /* Pay Applications page: pin toolbar through workflow; only table scrolls */
-  #mainContent:has(.pay-app-page) {
-    overflow: hidden !important;
-    display: flex;
-    flex-direction: column;
-    padding: 0 !important;
-  }
   .pay-app-page {
     display: flex;
     flex-direction: column;
@@ -6868,9 +6861,10 @@ function printSubcontractorG703(companyId) {
     const printHTML = `
         <html><head><title>G703 — ${companyName} — Pay App #${appNum}</title>
         <style>
-            @page { size: letter landscape; margin: 0.4in; }
-            body { font-family: Arial, sans-serif; padding: 10px; font-size: 9px; }
-            table { width:100%; border-collapse:collapse; font-size: 8.5px; }
+            @page { size: letter landscape; margin: 0.25in; }
+            html, body { margin: 0; padding: 0; width: 100%; box-sizing: border-box; }
+            body { font-family: Arial, sans-serif; padding: 8px; font-size: 8.5pt; }
+            table { width:100%; border-collapse:collapse; font-size: 8pt; table-layout: fixed; }
             th, td { border:1px solid #222; padding:3px 4px; }
             th { background:#e8e8e8; font-weight:700; font-size: 8px; }
             .right { text-align:right; font-family: "Courier New", monospace; }
@@ -6925,21 +6919,22 @@ function printSubcontractorG703(companyId) {
         </body></html>
     `;
 
-    const iframe = document.createElement('iframe');
-    iframe.style.position = 'fixed';
-    iframe.style.width = '0';
-    iframe.style.height = '0';
-    iframe.style.border = 'none';
-    document.body.appendChild(iframe);
-    const doc = iframe.contentWindow.document;
-    doc.open();
-    doc.write(printHTML);
-    doc.close();
-    setTimeout(() => {
-        iframe.contentWindow.focus();
-        iframe.contentWindow.print();
-        setTimeout(() => document.body.removeChild(iframe), 700);
-    }, 450);
+    if (typeof CasePMPrint !== 'undefined' && CasePMPrint.printHtmlInIframe) {
+        CasePMPrint.printHtmlInIframe(printHTML, { landscape: true, delay: 450 });
+    } else {
+        const iframe = document.createElement('iframe');
+        iframe.style.cssText = 'position:fixed;left:-10000px;top:0;width:11in;height:8.5in;border:0;visibility:hidden';
+        document.body.appendChild(iframe);
+        const doc = iframe.contentWindow.document;
+        doc.open();
+        doc.write(printHTML);
+        doc.close();
+        setTimeout(() => {
+            iframe.contentWindow.focus();
+            iframe.contentWindow.print();
+            setTimeout(() => document.body.removeChild(iframe), 700);
+        }, 450);
+    }
 
     logPayAppAudit('SUB_G703_PRINTED', { company: companyName, payAppNumber: appNum });
 }
@@ -6973,9 +6968,10 @@ function printSubcontractorG703(companyId) {
             <head>
                 <title>AIA G702 - Application and Certificate for Payment #${period.periodNumber}</title>
                 <style>
-                    @page { size: letter landscape; margin: 0.35in; }
+                    @page { size: letter landscape; margin: 0.25in; }
+                    html, body { margin: 0; padding: 0; width: 100%; }
                     @media print { body { -webkit-print-color-adjust: exact; print-color-adjust: exact; } }
-                    body { font-family: "Times New Roman", Times, serif; padding: 8px 12px; font-size: 9.5px; line-height: 1.2; color: #000; }
+                    body { font-family: "Times New Roman", Times, serif; padding: 4px 8px; font-size: 9pt; line-height: 1.15; color: #000; box-sizing: border-box; }
                     .main-header { border: 2px solid #000; padding: 4px 8px; margin-bottom: 4px; }
                     .header-top { display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid #000; padding-bottom: 3px; margin-bottom: 4px; }
                     .header-title { font-size: 13px; font-weight: bold; letter-spacing: 0.5px; }
@@ -7140,21 +7136,22 @@ function printSubcontractorG703(companyId) {
             </html>
         `;
 
-        const iframe = document.createElement('iframe');
-        iframe.style.position = 'fixed';
-        iframe.style.width = '0';
-        iframe.style.height = '0';
-        iframe.style.border = 'none';
-        document.body.appendChild(iframe);
-        const doc = iframe.contentWindow.document;
-        doc.open();
-        doc.write(printHTML);
-        doc.close();
-        setTimeout(() => {
-            iframe.contentWindow.focus();
-            iframe.contentWindow.print();
-            setTimeout(() => document.body.removeChild(iframe), 900);
-        }, 600);
+        if (typeof CasePMPrint !== 'undefined' && CasePMPrint.printHtmlInIframe) {
+            CasePMPrint.printHtmlInIframe(printHTML, { landscape: true, delay: 600 });
+        } else {
+            const iframe = document.createElement('iframe');
+            iframe.style.cssText = 'position:fixed;left:-10000px;top:0;width:11in;height:8.5in;border:0;visibility:hidden';
+            document.body.appendChild(iframe);
+            const doc = iframe.contentWindow.document;
+            doc.open();
+            doc.write(printHTML);
+            doc.close();
+            setTimeout(() => {
+                iframe.contentWindow.focus();
+                iframe.contentWindow.print();
+                setTimeout(() => document.body.removeChild(iframe), 900);
+            }, 600);
+        }
 
         logPayAppAudit('G702_PRINTED', { period: period.periodNumber });
     }
@@ -7199,10 +7196,11 @@ function printSubcontractorG703(companyId) {
         const printHTML = `
             <html><head><title>AIA G703 Continuation Sheet - Period ${period.periodNumber}</title>
             <style>
-                @page { size: letter landscape; margin: 0.4in; }
+                @page { size: letter landscape; margin: 0.25in; }
+                html, body { margin: 0; padding: 0; width: 100%; }
                 @media print { body { -webkit-print-color-adjust: exact; print-color-adjust: exact; } body::before, body::after { display: none !important; } }
-                body { font-family: Arial, sans-serif; padding: 12px 16px; font-size: 9px; }
-                table { width:100%; border-collapse:collapse; font-size: 8.5px; }
+                body { font-family: Arial, sans-serif; padding: 8px 12px; font-size: 8.5pt; box-sizing: border-box; }
+                table { width: 100%; border-collapse: collapse; font-size: 8pt; table-layout: fixed; }
                 th, td { border:1px solid #222; padding:3px 4px; vertical-align: top; }
                 th { background:#e8e8e8; font-weight:700; font-size: 8px; text-align:center; }
                 .right { text-align:right; font-family: "Courier New", monospace; }
@@ -7287,21 +7285,22 @@ function printSubcontractorG703(companyId) {
             </body></html>
         `;
 
-        const iframe = document.createElement('iframe');
-        iframe.style.position = 'fixed';
-        iframe.style.width = '0';
-        iframe.style.height = '0';
-        iframe.style.border = 'none';
-        document.body.appendChild(iframe);
-        const doc = iframe.contentWindow.document;
-        doc.open();
-        doc.write(printHTML);
-        doc.close();
-        setTimeout(() => {
-            iframe.contentWindow.focus();
-            iframe.contentWindow.print();
-            setTimeout(() => document.body.removeChild(iframe), 800);
-        }, 500);
+        if (typeof CasePMPrint !== 'undefined' && CasePMPrint.printHtmlInIframe) {
+            CasePMPrint.printHtmlInIframe(printHTML, { landscape: true, delay: 500 });
+        } else {
+            const iframe = document.createElement('iframe');
+            iframe.style.cssText = 'position:fixed;left:-10000px;top:0;width:11in;height:8.5in;border:0;visibility:hidden';
+            document.body.appendChild(iframe);
+            const doc = iframe.contentWindow.document;
+            doc.open();
+            doc.write(printHTML);
+            doc.close();
+            setTimeout(() => {
+                iframe.contentWindow.focus();
+                iframe.contentWindow.print();
+                setTimeout(() => document.body.removeChild(iframe), 800);
+            }, 500);
+        }
 
         logPayAppAudit('G703_PRINTED', { period: period.periodNumber });
     }
@@ -7900,9 +7899,10 @@ function printSubcontractorG703(companyId) {
         const printHTML = `
             <html><head><title>G703 — ${companyName} — Historical Pay App #${periodNumber}</title>
             <style>
-                @page { size: letter landscape; margin: 0.4in; }
-                body { font-family: Arial, sans-serif; padding: 10px; font-size: 9px; }
-                table { width:100%; border-collapse:collapse; font-size: 8.5px; }
+                @page { size: letter landscape; margin: 0.25in; }
+                html, body { margin: 0; padding: 0; width: 100%; box-sizing: border-box; }
+                body { font-family: Arial, sans-serif; padding: 8px; font-size: 8.5pt; }
+                table { width:100%; border-collapse:collapse; font-size: 8pt; table-layout: fixed; }
                 th, td { border:1px solid #222; padding:3px 4px; }
                 th { background:#e8e8e8; font-weight:700; font-size: 8px; }
                 .right { text-align:right; font-family: "Courier New", monospace; }
@@ -7956,21 +7956,22 @@ function printSubcontractorG703(companyId) {
             </body></html>
         `;
 
-        const iframe = document.createElement('iframe');
-        iframe.style.position = 'fixed';
-        iframe.style.width = '0';
-        iframe.style.height = '0';
-        iframe.style.border = 'none';
-        document.body.appendChild(iframe);
-        const doc = iframe.contentWindow.document;
-        doc.open();
-        doc.write(printHTML);
-        doc.close();
-        setTimeout(() => {
-            iframe.contentWindow.focus();
-            iframe.contentWindow.print();
-            setTimeout(() => document.body.removeChild(iframe), 600);
-        }, 400);
+        if (typeof CasePMPrint !== 'undefined' && CasePMPrint.printHtmlInIframe) {
+            CasePMPrint.printHtmlInIframe(printHTML, { landscape: true, delay: 400 });
+        } else {
+            const iframe = document.createElement('iframe');
+            iframe.style.cssText = 'position:fixed;left:-10000px;top:0;width:11in;height:8.5in;border:0;visibility:hidden';
+            document.body.appendChild(iframe);
+            const doc = iframe.contentWindow.document;
+            doc.open();
+            doc.write(printHTML);
+            doc.close();
+            setTimeout(() => {
+                iframe.contentWindow.focus();
+                iframe.contentWindow.print();
+                setTimeout(() => document.body.removeChild(iframe), 600);
+            }, 400);
+        }
     }
 
     // View historical lien waiver from snapshot

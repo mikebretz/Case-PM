@@ -7,13 +7,7 @@
 <script src="{{ url_for('static', filename='js/forecast-app.js') }}"></script>
 
 <style>
-  #mainContent:has(.forecast-page) {
-    overflow: hidden !important;
-    display: flex;
-    flex-direction: column;
-    padding: 0 !important;
-  }
-  .forecast-page {
+.forecast-page {
     display: flex;
     flex-direction: column;
     flex: 1;
@@ -181,7 +175,7 @@
 </div>
 
 <!-- Fixed Bottom Status Bar (matches Budget) -->
-<div id="forecastStatusBar" class="fixed bottom-0 left-56 right-0 casepm-page-status-bar bg-zinc-900 border-t border-zinc-700 px-6 py-2 text-xs text-zinc-400 flex items-center justify-between z-[60]">
+<div id="forecastStatusBar" class="fixed bottom-0 left-56 right-0 bg-zinc-900 border-t border-zinc-700 px-6 py-2 text-xs text-zinc-400 flex items-center justify-between z-[60]">
     <div class="flex items-center gap-4">
         <span id="forecastStatusText">Financial Forecast · Loading…</span>
         <a href="{{ url_for('budget_page', project_id=active_project.id) if active_project else url_for('budget_page') }}" class="text-emerald-400 hover:text-emerald-300 underline">Open Budget</a>

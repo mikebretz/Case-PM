@@ -97,103 +97,9 @@
             }
         }
 
-        /* ── Locked app chrome: viewport-fixed, immune to page scroll / browser zoom ── */
-        :root {
-            --casepm-header-h: 4.25rem;
-            --casepm-footer-h: 2.5rem;
-            --casepm-sidebar-w: 14rem;
-            --casepm-banner-h: 0px;
-        }
-
-        body.portal-sub,
-        body.portal-architect {
-            --casepm-banner-h: 1.75rem;
-        }
-
-        body.sidebar-collapsed {
-            --casepm-sidebar-w: 3.5rem;
-        }
-
-        html {
-            height: 100%;
-            overflow: hidden;
-        }
-
-        body {
-            height: 100%;
-            overflow: hidden;
-            overscroll-behavior: none;
-        }
-
-        #appShell {
-            position: relative;
-            height: 100vh;
-            height: 100dvh;
-            overflow: hidden;
-        }
-
-        .casepm-chrome-fixed {
-            position: fixed;
-            z-index: 180;
-            flex-shrink: 0;
-            contain: layout style;
-        }
-
-        .portal-banner-sub,
-        .portal-banner-architect {
-            top: 0;
-            left: 0;
-            right: 0;
-            height: var(--casepm-banner-h);
-            z-index: 190;
-        }
-
-        #appHeaderBar.casepm-chrome-fixed {
-            top: var(--casepm-banner-h);
-            left: 0;
-            right: 0;
-            height: var(--casepm-header-h);
-            min-height: var(--casepm-header-h);
-            max-height: var(--casepm-header-h);
-        }
-
-        #appSidebar.casepm-chrome-fixed {
-            top: calc(var(--casepm-banner-h) + var(--casepm-header-h));
-            left: 0;
-            bottom: var(--casepm-footer-h);
-            width: var(--casepm-sidebar-w);
-            min-width: var(--casepm-sidebar-w);
-            max-width: var(--casepm-sidebar-w);
-            overflow: hidden;
-        }
-
-        #appFooterBar.casepm-chrome-fixed {
-            left: 0;
-            right: 0;
-            bottom: 0;
-            height: var(--casepm-footer-h);
-            min-height: var(--casepm-footer-h);
-            max-height: var(--casepm-footer-h);
-            z-index: 185;
-        }
-
-        #appMainPane {
-            position: fixed;
-            top: calc(var(--casepm-banner-h) + var(--casepm-header-h));
-            left: var(--casepm-sidebar-w);
-            right: 0;
-            bottom: var(--casepm-footer-h);
-            display: flex;
-            flex-direction: column;
-            overflow: hidden;
-            min-width: 0;
-            z-index: 1;
-        }
-
-        /* Page status bars that sit above the global footer */
-        .casepm-page-status-bar {
-            left: var(--casepm-sidebar-w) !important;
-            bottom: var(--casepm-footer-h) !important;
+        .app-header-bar {
+            height: 4.25rem;
+            min-height: 4.25rem;
         }
 
         #projectSwitcherMenu {
@@ -215,64 +121,12 @@
         }
 
         .app-sidebar {
-            transition: width 0.2s ease, min-width 0.2s ease, max-width 0.2s ease;
+            width: 14rem;
+            transition: width 0.2s ease;
         }
 
-        /* Main content never scrolls as a whole — pages freeze toolbars; tables scroll */
-        #mainContent {
-            flex: 1 1 auto;
-            min-height: 0;
-            overflow: hidden !important;
-            display: flex !important;
-            flex-direction: column !important;
-            padding: 0 !important;
-        }
-
-        .casepm-freeze-page,
-        .casepm-legacy-scroll {
-            display: flex;
-            flex-direction: column;
-            flex: 1;
-            min-height: 0;
-            width: 100%;
-            overflow: hidden;
-            box-sizing: border-box;
-        }
-
-        .casepm-freeze-page {
-            padding: 1rem 1rem 0;
-        }
-
-        .casepm-freeze-stack {
-            display: flex;
-            flex-direction: column;
-            flex: 1;
-            min-height: 0;
-            overflow: hidden;
-        }
-
-        .casepm-freeze-chrome {
-            flex-shrink: 0;
-        }
-
-        .casepm-freeze-scroll {
-            flex: 1;
-            min-height: 0;
-            overflow: auto;
-        }
-
-        .casepm-legacy-scroll {
-            overflow: auto;
-            padding: 1rem;
-        }
-
-        /* Sticky table headers inside scroll panes */
-        .casepm-freeze-scroll thead th,
-        .casepm-freeze-scroll thead.sticky,
-        #mainContent .casepm-freeze-scroll table thead th {
-            position: sticky;
-            top: 0;
-            z-index: 15;
+        body.sidebar-collapsed .app-sidebar {
+            width: 3.5rem;
         }
 
         body.sidebar-collapsed .nav-link > span,
@@ -341,21 +195,21 @@
 
     {% if current_user.is_authenticated %}
 
-    <div id="appShell">
+    <div id="appShell" class="flex flex-col h-full min-h-0 overflow-hidden">
 
     {% if is_sub_portal or is_architect_portal %}
-    <div class="portal-banner-sub casepm-chrome-fixed hidden items-center justify-between px-5 py-1.5 bg-amber-950/80 border-b border-amber-800 text-xs text-amber-200">
+    <div class="portal-banner-sub hidden items-center justify-between px-5 py-1.5 bg-amber-950/80 border-b border-amber-800 text-xs text-amber-200 flex-shrink-0">
         <span><i class="fa-solid fa-hard-hat mr-2"></i><strong>Subcontractor Portal</strong> — submit pay apps, submittals, and respond to RFIs</span>
         <a href="{{ url_for('email_page') }}?tab=internal" class="text-amber-400 hover:underline">Internal messages</a>
     </div>
-    <div class="portal-banner-architect casepm-chrome-fixed hidden items-center justify-between px-5 py-1.5 bg-sky-950/80 border-b border-sky-800 text-xs text-sky-200">
+    <div class="portal-banner-architect hidden items-center justify-between px-5 py-1.5 bg-sky-950/80 border-b border-sky-800 text-xs text-sky-200 flex-shrink-0">
         <span><i class="fa-solid fa-compass-drafting mr-2"></i><strong>Architect Portal</strong> — review submittals, RFIs, and change orders</span>
         <a href="{{ url_for('email_page') }}?tab=internal" class="text-sky-400 hover:underline">Approvals inbox</a>
     </div>
     {% endif %}
     
     <!-- ==================== TOP HEADER BAR (brand + project + user) ==================== -->
-    <div id="appHeaderBar" class="casepm-chrome-fixed app-header-bar border-b border-zinc-800 bg-zinc-900 flex items-center justify-between px-5">
+    <div id="appHeaderBar" class="app-header-bar border-b border-zinc-800 bg-zinc-900 flex items-center justify-between px-5 flex-shrink-0">
         <!-- Left: Case PM brand -->
         <div class="flex items-center gap-2.5 flex-shrink-0">
             <div class="w-9 h-9 bg-emerald-600 rounded-xl flex items-center justify-center flex-shrink-0">
@@ -437,8 +291,11 @@
         </div>
     </div>
 
-    <!-- SIDEBAR (viewport-fixed) -->
-    <div id="appSidebar" class="casepm-chrome-fixed app-sidebar bg-zinc-900 border-r border-zinc-800 flex flex-col">
+    <!-- ==================== MAIN LAYOUT ==================== -->
+    <div class="flex flex-1 min-h-0 overflow-hidden">
+        
+        <!-- SIDEBAR -->
+        <div id="appSidebar" class="app-sidebar bg-zinc-900 border-r border-zinc-800 flex flex-col flex-shrink-0">
 
             <!-- Collapse toggle -->
             <div class="flex items-center justify-between px-2 py-2 border-b border-zinc-800 flex-shrink-0">
@@ -615,29 +472,32 @@
             </div>
         </div>
 
-    <!-- GLOBAL FOOTER (viewport-fixed) -->
-    <div id="appFooterBar" class="casepm-chrome-fixed app-footer-bar border-t border-zinc-800 bg-zinc-900 px-4 flex items-center justify-between text-xs text-zinc-500">
-        <div class="flex items-center gap-3 min-w-0 flex-1">
-            <div class="whitespace-nowrap">Last synced: <span id="lastSyncTime">just now</span></div>
-            <button type="button" onclick="typeof CasePMActivityLog !== 'undefined' && CasePMActivityLog.showLogModal()" class="text-emerald-400 hover:text-emerald-300 underline whitespace-nowrap flex-shrink-0">Activity Log</button>
-            <span id="footerActivityPreview" class="hidden lg:inline truncate text-zinc-600 max-w-[320px]"></span>
-            {% if request.endpoint == 'pay_applications_page' %}
-            <button type="button" onclick="typeof showPayAppAuditLog === 'function' && showPayAppAuditLog()" class="text-emerald-400 hover:text-emerald-300 underline whitespace-nowrap flex-shrink-0">Pay App Audit Log</button>
-            {% endif %}
-        </div>
-        <div class="flex items-center gap-4 flex-shrink-0">
-            <div class="flex items-center gap-1.5">
-                <div class="w-2 h-2 bg-emerald-500 rounded-full status-dot"></div>
-                <span>Connected</span>
-            </div>
-            <span>Case PM v57.0</span>
-        </div>
-    </div>
+        <!-- MAIN CONTENT AREA -->
+        <div class="flex-1 flex flex-col overflow-hidden min-w-0">
 
-    <!-- MAIN CONTENT (only this region scrolls internally) -->
-    <div id="appMainPane">
-        <div id="mainContent" class="flex-1 min-h-0 overflow-hidden flex flex-col p-0">
-            {% block content %}{% endblock %}
+            <!-- Main Content Block -->
+            <div id="mainContent" class="flex-1 min-h-0 overflow-auto p-4">
+                {% block content %}{% endblock %}
+            </div>
+            
+            <!-- Footer Bar -->
+            <div id="appFooterBar" class="h-10 flex-shrink-0 border-t border-zinc-800 bg-zinc-900 px-4 flex items-center justify-between text-xs text-zinc-500">
+                <div class="flex items-center gap-3 min-w-0 flex-1">
+                    <div class="whitespace-nowrap">Last synced: <span id="lastSyncTime">just now</span></div>
+                    <button type="button" onclick="typeof CasePMActivityLog !== 'undefined' && CasePMActivityLog.showLogModal()" class="text-emerald-400 hover:text-emerald-300 underline whitespace-nowrap flex-shrink-0">Activity Log</button>
+                    <span id="footerActivityPreview" class="hidden lg:inline truncate text-zinc-600 max-w-[320px]"></span>
+                    {% if request.endpoint == 'pay_applications_page' %}
+                    <button type="button" onclick="typeof showPayAppAuditLog === 'function' && showPayAppAuditLog()" class="text-emerald-400 hover:text-emerald-300 underline whitespace-nowrap flex-shrink-0">Pay App Audit Log</button>
+                    {% endif %}
+                </div>
+                <div class="flex items-center gap-4 flex-shrink-0">
+                    <div class="flex items-center gap-1.5">
+                        <div class="w-2 h-2 bg-emerald-500 rounded-full status-dot"></div>
+                        <span>Connected</span>
+                    </div>
+                    <span>Case PM v57.0</span>
+                </div>
+            </div>
         </div>
     </div>
     </div>
@@ -861,7 +721,6 @@
     </dialog>
 
     <script src="{{ url_for('static', filename='js/activity-log.js') }}"></script>
-    <script src="{{ url_for('static', filename='js/casepm-freeze.js') }}"></script>
     <!-- ==================== FINAL ENHANCEMENTS & VERIFICATION ==================== -->
     <script>
         // Force dark mode

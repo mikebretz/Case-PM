@@ -1,9 +1,3 @@
-#mainContent:has(.docs-page) {
-  overflow: hidden !important;
-  display: flex;
-  flex-direction: column;
-  padding: 0 !important;
-}
 
 .docs-page {
   display: flex;
