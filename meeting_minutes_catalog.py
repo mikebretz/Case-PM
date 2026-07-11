@@ -1,7 +1,7 @@
 """
 Meeting minutes catalog — types, statuses, agenda templates.
 
-Patterns from Procore, Autodesk Build, BuilderTrend, Fieldwire, PlanGrid,
+Patterns from common construction meeting workflows,
 e-Builder, Viewpoint, Smartsheet, Monday.com, and Microsoft Project.
 """
 
@@ -38,7 +38,7 @@ DEFAULT_SPEAKERS = [
     {'id': 'sp3', 'label': 'Person 3', 'name': '', 'color': '#14b8a6'},
 ]
 
-# Default agenda templates by meeting type (Procore / BuilderTrend style)
+# Default agenda templates by meeting type
 AGENDA_TEMPLATES = {
     'oac': [
         {'topic': 'Call to order / attendance', 'presenter': '', 'minutes': 5},

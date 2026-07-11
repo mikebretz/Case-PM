@@ -746,7 +746,37 @@ let mainLienWaiver = JSON.parse(casepmStore.getItem('mainLienWaiver') || '{}'); 
     }
 
     function formatCurrency(amount) {
-        return new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(amount || 0);
+        if (window.CasePMMoney) {
+            if (amount == null || amount === '' || !Number.isFinite(Number(amount))) return '$0.00';
+            return CasePMMoney.formatUSD(Number(amount));
+        }
+        return new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(amount || 0);
+    }
+
+    function parseMoneyInput(elOrValue) {
+        if (elOrValue && typeof elOrValue === 'object' && 'value' in elOrValue) {
+            if (window.CasePMMoney) return CasePMMoney.readMoneyInput(elOrValue) ?? 0;
+            return parseFloat(String(elOrValue.value).replace(/[^0-9.-]/g, '')) || 0;
+        }
+        const s = String(elOrValue ?? '');
+        if (window.CasePMMoney) return CasePMMoney.parseUSD(s) ?? 0;
+        return parseFloat(s.replace(/[^0-9.-]/g, '')) || 0;
+    }
+
+    function moneyInputValue(amount) {
+        const n = typeof amount === 'number' ? amount : parseFloat(amount);
+        if (!n) return '';
+        return formatCurrency(n);
+    }
+
+    function setupAccountingFormat(inputId) {
+        const el = typeof inputId === 'string' ? document.getElementById(inputId) : inputId;
+        if (!el) return;
+        if (window.CasePMMoney) CasePMMoney.setupMoneyInput(el);
+    }
+
+    function setupMoneyFields(root) {
+        if (window.CasePMMoney) CasePMMoney.setupMoneyInputs(root || document);
     }
 
     function parseLocalDate(dateStr) {
@@ -1178,7 +1208,7 @@ let mainLienWaiver = JSON.parse(casepmStore.getItem('mainLienWaiver') || '{}'); 
                     <h3 class="text-lg font-semibold">Sage 300 Sync Log</h3>
                     <button type="button" onclick="document.getElementById('sageSyncLogModal').close()" class="text-zinc-400 hover:text-white"><i class="fa-solid fa-times"></i></button>
                 </div>
-                <p class="text-xs text-zinc-400 mb-3">Events post to Sage when SAGE_API_URL is configured; otherwise they are validated and marked simulated until the connector is live.</p>
+                <p class="text-xs text-zinc-400 mb-3">Events post to Sage when SAGE_API_URL is configured; otherwise they are validated and logged until the connector is live.</p>
                 <div class="max-h-80 overflow-auto">
                     <table class="w-full text-left"><thead><tr class="text-[10px] text-zinc-500 uppercase"><th class="pb-2">Time</th><th class="pb-2">Event</th><th class="pb-2">Status</th><th class="pb-2">Detail</th></tr></thead><tbody id="sageSyncLogTableBody">${renderRows([])}</tbody></table>
                 </div>
@@ -3366,9 +3396,9 @@ let mainLienWaiver = JSON.parse(casepmStore.getItem('mainLienWaiver') || '{}'); 
         const line = contractorSOV.find(l => l.id === sovLineId);
         if (!line) return;
 
-        const workVal = parseFloat(newValue) || 0;
+        const workVal = parseMoneyInput(newValue);
         const matInput = document.getElementById('materialsStoredInput');
-        const matVal = matInput ? (parseFloat(matInput.value) || 0) : 0;
+        const matVal = matInput ? parseMoneyInput(matInput) : 0;
 
         // The "Remaining to Bill Total" at the top is the authoritative source for what was remaining before this entry.
         // The bottom "Remaining to Bill after this entry" = Top Remaining Total - Work - Materials.
@@ -3434,13 +3464,13 @@ let mainLienWaiver = JSON.parse(casepmStore.getItem('mainLienWaiver') || '{}'); 
             <div class="space-y-4">
                 <div>
                     <label class="block text-xs text-zinc-400 mb-1">Work Completed This Period</label>
-                    <input type="number" id="workThisPeriodInput" value="${Math.max(billing.workThisPeriod || 0, getCurrentSubBilledThisPeriodForCode(line.cost_code))}" step="0.01"
-                           class="w-full bg-zinc-800 border border-zinc-700 rounded-md px-4 py-2.5 text-sm" oninput="updateWorkThisPeriodLive(${sovLineId}, this.value)">
+                    <input type="text" id="workThisPeriodInput" value="${moneyInputValue(Math.max(billing.workThisPeriod || 0, getCurrentSubBilledThisPeriodForCode(line.cost_code)))}"
+                           class="w-full bg-zinc-800 border border-zinc-700 rounded-md px-4 py-2.5 text-sm casepm-money-input text-right" oninput="updateWorkThisPeriodLive(${sovLineId}, this.value)">
                 </div>
                 <div>
                     <label class="block text-xs text-zinc-400 mb-1">Materials Stored This Period</label>
-                    <input type="number" id="materialsStoredInput" value="${billing.materialsStored || 0}" step="0.01"
-                           class="w-full bg-zinc-800 border border-zinc-700 rounded-md px-4 py-2.5 text-sm" oninput="updateWorkThisPeriodLive(${sovLineId}, this.value)">
+                    <input type="text" id="materialsStoredInput" value="${moneyInputValue(billing.materialsStored || 0)}"
+                           class="w-full bg-zinc-800 border border-zinc-700 rounded-md px-4 py-2.5 text-sm casepm-money-input text-right" oninput="updateWorkThisPeriodLive(${sovLineId}, this.value)">
                     
                     <div class="grid grid-cols-2 gap-3 mt-1.5 text-xs">
                         <div>
@@ -3463,8 +3493,8 @@ let mainLienWaiver = JSON.parse(casepmStore.getItem('mainLienWaiver') || '{}'); 
                     
                     <div>
                         <label class="block text-xs text-amber-300 mb-1">Change Order Work This Period</label>
-                        <input type="number" id="coWorkThisPeriodInput" value="${coWorkThis}" step="0.01"
-                               class="w-full bg-zinc-800 border border-amber-500 rounded-md px-4 py-2 text-sm font-mono"
+                        <input type="text" id="coWorkThisPeriodInput" value="${moneyInputValue(coWorkThis)}"
+                               class="w-full bg-zinc-800 border border-amber-500 rounded-md px-4 py-2 text-sm font-mono casepm-money-input text-right"
                                oninput="updateCOLiveCalculations(${sovLineId}, this.value)">
                         <div class="text-[10px] text-amber-400 mt-0.5">Enter amount to bill against this line's Change Order this period. Affects CO remaining only.</div>
                         
@@ -3493,6 +3523,7 @@ let mainLienWaiver = JSON.parse(casepmStore.getItem('mainLienWaiver') || '{}'); 
 
         // Attach live updater if CO section exists
         setTimeout(() => {
+            setupMoneyFields(document.getElementById('editBillingModal'));
             const coInput = document.getElementById('coWorkThisPeriodInput');
             if (coInput) {
                 coInput.oninput = function() {
@@ -3509,7 +3540,7 @@ let mainLienWaiver = JSON.parse(casepmStore.getItem('mainLienWaiver') || '{}'); 
 
         const coTotal = getContractorLineCoAmount(line);
         const coBilledPreviously = line.co_billed_to_date || 0;
-        const coWorkThis = parseFloat(newCoWorkValue) || 0;
+        const coWorkThis = parseMoneyInput(newCoWorkValue);
         const coRemainingAfter = Math.max(0, coTotal - coBilledPreviously - coWorkThis);
 
         const prevEl = document.getElementById('coPreviouslyBilledDisplay');
@@ -3534,9 +3565,9 @@ let mainLienWaiver = JSON.parse(casepmStore.getItem('mainLienWaiver') || '{}'); 
         const coWorkInput = document.getElementById('coWorkThisPeriodInput');
         if (!workInput || !matInput) return;
 
-        const workThisPeriod = parseFloat(workInput.value) || 0;
-        const materialsStored = parseFloat(matInput.value) || 0;
-        const coWorkThisPeriod = coWorkInput ? (parseFloat(coWorkInput.value) || 0) : 0;
+        const workThisPeriod = parseMoneyInput(workInput);
+        const materialsStored = parseMoneyInput(matInput);
+        const coWorkThisPeriod = coWorkInput ? parseMoneyInput(coWorkInput) : 0;
 
         const line = contractorSOV.find(l => l.id === sovLineId);
         if (!line) return;
@@ -4262,11 +4293,11 @@ let mainLienWaiver = JSON.parse(casepmStore.getItem('mainLienWaiver') || '{}'); 
                 <div class="grid grid-cols-2 gap-4">
                     <div>
                         <label class="block text-sm mb-1.5 text-zinc-300">Original Amount</label>
-                        <input type="text" id="sovOriginal" class="w-full bg-zinc-800 border border-zinc-700 rounded-md px-4 py-2.5 text-sm" value="$0">
+                        <input type="text" id="sovOriginal" class="w-full bg-zinc-800 border border-zinc-700 rounded-md px-4 py-2.5 text-sm casepm-money-input text-right" value="">
                     </div>
                     <div>
                         <label class="block text-sm mb-1.5 text-zinc-300">Approved CO Amount</label>
-                        <input type="text" id="sovCO" class="w-full bg-zinc-800 border border-zinc-700 rounded-md px-4 py-2.5 text-sm" value="$0">
+                        <input type="text" id="sovCO" class="w-full bg-zinc-800 border border-zinc-700 rounded-md px-4 py-2.5 text-sm casepm-money-input text-right" value="">
                     </div>
                 </div>
                 <div>
@@ -4312,11 +4343,11 @@ let mainLienWaiver = JSON.parse(casepmStore.getItem('mainLienWaiver') || '{}'); 
                 <div class="grid grid-cols-2 gap-4">
                     <div>
                         <label class="block text-sm mb-1.5 text-zinc-300">Original Amount</label>
-                        <input type="text" id="sovOriginal" class="w-full bg-zinc-800 border border-zinc-700 rounded-md px-4 py-2.5 text-sm" value="${formatCurrency(line.original || 0)}" ${isLocked ? 'readonly' : ''}>
+                        <input type="text" id="sovOriginal" class="w-full bg-zinc-800 border border-zinc-700 rounded-md px-4 py-2.5 text-sm casepm-money-input text-right" value="${moneyInputValue(line.original || 0)}" ${isLocked ? 'readonly' : ''}>
                     </div>
                     <div>
                         <label class="block text-sm mb-1.5 text-zinc-300">Approved CO Amount</label>
-                        <input type="text" id="sovCO" class="w-full bg-zinc-800 border border-zinc-700 rounded-md px-4 py-2.5 text-sm" value="${formatCurrency(line.co_amount || 0)}" ${isLocked ? 'readonly' : ''}>
+                        <input type="text" id="sovCO" class="w-full bg-zinc-800 border border-zinc-700 rounded-md px-4 py-2.5 text-sm casepm-money-input text-right" value="${moneyInputValue(line.co_amount || 0)}" ${isLocked ? 'readonly' : ''}>
                     </div>
                 </div>
                 <div>
@@ -4371,10 +4402,11 @@ let mainLienWaiver = JSON.parse(casepmStore.getItem('mainLienWaiver') || '{}'); 
         }
 
         setTimeout(() => {
+            setupAccountingFormat('sovOriginal');
+            setupAccountingFormat('sovCO');
             const codeInput = document.getElementById('sovCostCode');
             if (codeInput) {
                 codeInput.oninput = updateSubRollup;
-                // Initial population
                 updateSubRollup();
             }
         }, 120);
@@ -4383,17 +4415,14 @@ let mainLienWaiver = JSON.parse(casepmStore.getItem('mainLienWaiver') || '{}'); 
     async function saveContractorSOVLine(id, btn) {
         const costCode = document.getElementById('sovCostCode').value.trim();
         const desc = document.getElementById('sovDescription').value.trim();
-        const origStr = document.getElementById('sovOriginal').value.replace(/[^0-9.-]/g, '');
-        const coStr = document.getElementById('sovCO').value.replace(/[^0-9.-]/g, '');
+        const original = parseMoneyInput(document.getElementById('sovOriginal'));
+        const co_amount = parseMoneyInput(document.getElementById('sovCO'));
         const notes = document.getElementById('sovNotes').value.trim();
 
         if (!costCode || !desc) {
             alert("Cost Code and Description are required.");
             return;
         }
-
-        const original = parseFloat(origStr) || 0;
-        const co_amount = parseFloat(coStr) || 0;
 
         // Strict Global Original Contract Amount Validation
         // The sum of all 'original' amounts across Contractor SOV must equal the Project Original Contract Amount.
@@ -4952,7 +4981,7 @@ let mainLienWaiver = JSON.parse(casepmStore.getItem('mainLienWaiver') || '{}'); 
                 </div>
             `;
         } else if (currentStatus === 'Approved') {
-            // === CLEAN PROCORE-STYLE MONTHLY BILLING FLOW (stays on this tab) ===
+            // === CLEAN MONTHLY BILLING FLOW (stays on this tab) ===
             const cid = String(selectedSubCompanyId);
             const subPayAppNum = subPayAppNumbers[cid] || subPayAppNumbers[selectedSubCompanyId] || 1;
             const mainP = getCurrentG702PeriodNum();
@@ -5459,12 +5488,12 @@ let mainLienWaiver = JSON.parse(casepmStore.getItem('mainLienWaiver') || '{}'); 
                 <div class="grid grid-cols-2 gap-4">
                     <div>
                         <label class="block text-sm mb-1.5 text-zinc-300">Original Commitment</label>
-                        <input type="text" id="subOriginal" class="w-full bg-zinc-800 border border-zinc-700 rounded-md px-4 py-2.5 text-sm" value="${line ? formatCurrency(line.original_commitment || 0) : '$0'}" ${!canEditStructure ? 'readonly' : ''} oninput="updateCostCodeTotalDisplay()">
+                        <input type="text" id="subOriginal" class="w-full bg-zinc-800 border border-zinc-700 rounded-md px-4 py-2.5 text-sm casepm-money-input text-right" value="${line ? moneyInputValue(line.original_commitment || 0) : ''}" ${!canEditStructure ? 'readonly' : ''} oninput="updateCostCodeTotalDisplay()">
                         ${!canEditStructure ? '<div class="text-xs text-zinc-500 mt-1">Locked (Approved SOV)</div>' : ''}
                     </div>
                     <div>
                         <label class="block text-sm mb-1.5 text-zinc-300">Change Orders</label>
-                        <input type="text" id="subCO" class="w-full bg-zinc-800 border border-zinc-700 rounded-md px-4 py-2.5 text-sm" value="${line ? formatCurrency(line.change_orders || 0) : '$0'}" ${!canEditStructure ? 'readonly' : ''} oninput="updateCostCodeTotalDisplay()">
+                        <input type="text" id="subCO" class="w-full bg-zinc-800 border border-zinc-700 rounded-md px-4 py-2.5 text-sm casepm-money-input text-right" value="${line ? moneyInputValue(line.change_orders || 0) : ''}" ${!canEditStructure ? 'readonly' : ''} oninput="updateCostCodeTotalDisplay()">
                     </div>
                 </div>
 
@@ -5495,6 +5524,8 @@ let mainLienWaiver = JSON.parse(casepmStore.getItem('mainLienWaiver') || '{}'); 
 
         // Initialize live Cost Code total display (aesthetic helper only — does not affect any workflow or data saving)
         setTimeout(() => {
+            setupAccountingFormat('subOriginal');
+            setupAccountingFormat('subCO');
             const costCodeInput = document.getElementById('subCostCode');
             if (costCodeInput && costCodeInput.value.trim()) {
                 updateCostCodeTotalDisplay();
@@ -5563,14 +5594,8 @@ let mainLienWaiver = JSON.parse(casepmStore.getItem('mainLienWaiver') || '{}'); 
 
         // === 3. What the user is currently typing in Original Commitment + Change Orders ===
         let thisEntry = 0;
-        if (originalEl) {
-            const rawOrig = (originalEl.value || '').replace(/[$,]/g, '');
-            thisEntry += parseFloat(rawOrig) || 0;
-        }
-        if (coEl) {
-            const rawCO = (coEl.value || '').replace(/[$,]/g, '');
-            thisEntry += parseFloat(rawCO) || 0;
-        }
+        if (originalEl) thisEntry += parseMoneyInput(originalEl);
+        if (coEl) thisEntry += parseMoneyInput(coEl);
 
         const totalAfterThisEntry = otherSubsCommitted + thisEntry;
         const leftAfterThisEntry = gcG703Total - totalAfterThisEntry;
@@ -5614,13 +5639,13 @@ let mainLienWaiver = JSON.parse(casepmStore.getItem('mainLienWaiver') || '{}'); 
             <div class="space-y-4">
                 <div>
                     <label class="block text-xs text-zinc-400 mb-1">Work Completed This Period</label>
-                    <input type="number" id="subWorkThisPeriodInput" value="${line.work_this_period || 0}" step="0.01"
-                           class="w-full bg-zinc-800 border border-zinc-700 rounded-md px-4 py-2.5 text-sm">
+                    <input type="text" id="subWorkThisPeriodInput" value="${moneyInputValue(line.work_this_period || 0)}"
+                           class="w-full bg-zinc-800 border border-zinc-700 rounded-md px-4 py-2.5 text-sm casepm-money-input text-right">
                 </div>
                 <div>
                     <label class="block text-xs text-zinc-400 mb-1">Materials Stored This Period</label>
-                    <input type="number" id="subMaterialsStoredInput" value="${line.materials_stored || 0}" step="0.01"
-                           class="w-full bg-zinc-800 border border-zinc-700 rounded-md px-4 py-2.5 text-sm">
+                    <input type="text" id="subMaterialsStoredInput" value="${moneyInputValue(line.materials_stored || 0)}"
+                           class="w-full bg-zinc-800 border border-zinc-700 rounded-md px-4 py-2.5 text-sm casepm-money-input text-right">
                     <div class="text-[10px] text-zinc-500 mt-1">Amount Previously Billed: <span class="font-mono">${formatCurrency(previousBilled)}</span></div>
                     <div id="subRemainingToBill" class="text-[10px] text-emerald-400 mt-0.5">Remaining after this entry: ${formatCurrency(remaining)}</div>
                 </div>
@@ -5634,8 +5659,8 @@ let mainLienWaiver = JSON.parse(casepmStore.getItem('mainLienWaiver') || '{}'); 
                     
                     <div>
                         <label class="block text-xs text-amber-300 mb-1">Change Order Work This Period</label>
-                        <input type="number" id="subCoWorkThisPeriodInput" value="${line.co_billed_this_period || 0}" step="0.01"
-                               class="w-full bg-zinc-800 border border-amber-500 rounded-md px-4 py-2 text-sm font-mono"
+                        <input type="text" id="subCoWorkThisPeriodInput" value="${moneyInputValue(line.co_billed_this_period || 0)}"
+                               class="w-full bg-zinc-800 border border-amber-500 rounded-md px-4 py-2 text-sm font-mono casepm-money-input text-right"
                                oninput="updateSubCOLiveCalculations(${companyId}, ${lineId}, this.value)">
                         <div class="text-[10px] text-amber-400 mt-0.5">Affects CO remaining only. Does not affect Original Contract remaining.</div>
                         
@@ -5664,23 +5689,27 @@ let mainLienWaiver = JSON.parse(casepmStore.getItem('mainLienWaiver') || '{}'); 
 
         // Live update for remaining (Work + Materials affect the same remaining bucket)
         setTimeout(() => {
+            setupMoneyFields(document.getElementById('editBillingModal'));
             const workInput = document.getElementById('subWorkThisPeriodInput');
             const matInput = document.getElementById('subMaterialsStoredInput');
             const remainingEl = document.getElementById('subRemainingToBill');
             if (workInput && matInput && remainingEl) {
                 const updateRemaining = () => {
-                    let w = parseFloat(workInput.value) || 0;
-                    let m = parseFloat(matInput.value) || 0;
+                    let w = parseMoneyInput(workInput);
+                    let m = parseMoneyInput(matInput);
                     let total = w + m;
                     if (total > remaining) {
                         if (m > remaining) {
                             m = Math.max(0, remaining);
-                            matInput.value = m % 1 === 0 ? String(m) : m.toFixed(2);
+                            if (window.CasePMMoney) CasePMMoney.setMoneyInput(matInput, m);
+                            else matInput.value = moneyInputValue(m);
                             w = 0;
-                            workInput.value = '0';
+                            if (window.CasePMMoney) CasePMMoney.setMoneyInput(workInput, 0);
+                            else workInput.value = '';
                         } else {
                             w = Math.max(0, remaining - m);
-                            workInput.value = w % 1 === 0 ? String(w) : w.toFixed(2);
+                            if (window.CasePMMoney) CasePMMoney.setMoneyInput(workInput, w);
+                            else workInput.value = moneyInputValue(w);
                         }
                         total = w + m;
                     }
@@ -5701,7 +5730,7 @@ let mainLienWaiver = JSON.parse(casepmStore.getItem('mainLienWaiver') || '{}'); 
 
         const coTotal = line.change_orders || 0;
         const coBilledPreviously = line.co_billed_to_date || 0;
-        const coWorkThis = parseFloat(newCoWorkValue) || 0;
+        const coWorkThis = parseMoneyInput(newCoWorkValue);
         const coRemaining = Math.max(0, coTotal - coBilledPreviously);
         const clampedCoWork = Math.min(coWorkThis, coRemaining);
         const coRemainingAfter = Math.max(0, coRemaining - clampedCoWork);
@@ -5733,9 +5762,9 @@ let mainLienWaiver = JSON.parse(casepmStore.getItem('mainLienWaiver') || '{}'); 
         const coWorkInput = document.getElementById('subCoWorkThisPeriodInput');
         if (!workInput || !matInput) return;
 
-        const workThis = parseFloat(workInput.value) || 0;
-        const mats = parseFloat(matInput.value) || 0;
-        const coWork = coWorkInput ? (parseFloat(coWorkInput.value) || 0) : 0;
+        const workThis = parseMoneyInput(workInput);
+        const mats = parseMoneyInput(matInput);
+        const coWork = coWorkInput ? parseMoneyInput(coWorkInput) : 0;
 
         const lines = subcontractorSOV[companyId] || subcontractorSOV[String(companyId)] || [];
         const line = lines.find(l => l.id === lineId);
@@ -5787,12 +5816,9 @@ let mainLienWaiver = JSON.parse(casepmStore.getItem('mainLienWaiver') || '{}'); 
 
         const costCode = document.getElementById('subCostCode').value.trim();
         const desc = document.getElementById('subDescription').value.trim();
-        const origStr = document.getElementById('subOriginal').value.replace(/[^0-9.-]/g, '');
-        const coStr = document.getElementById('subCO').value.replace(/[^0-9.-]/g, '');
+        const original = parseMoneyInput(document.getElementById('subOriginal'));
+        const changeOrders = parseMoneyInput(document.getElementById('subCO'));
         const notes = document.getElementById('subNotes').value.trim();
-
-        const original = parseFloat(origStr) || 0;
-        const changeOrders = parseFloat(coStr) || 0;
 
         // === HARD VALIDATION: Required fields ===
         if (!costCode || !desc) {
@@ -6305,7 +6331,7 @@ let mainLienWaiver = JSON.parse(casepmStore.getItem('mainLienWaiver') || '{}'); 
      */
     // NEW: Two-step approval workflow for Subcontractor periodic billing
     // Step 1: Sub clicks "Submit Application" → sets status to Pending Approval (does NOT commit numbers yet)
-    // NEW CLEAN FLOW (matches Procore/RedTeam style):
+    // NEW CLEAN FLOW:
     // - SOV is approved ONCE → locks original commitment amounts forever.
     // - Every month the sub enters "Work This Period" + uploads lien waiver.
     // - Sub clicks "Submit Pay Application" → snapshots current billing + waiver into subPayAppHistory (SOV status stays "Approved").

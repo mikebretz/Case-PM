@@ -439,7 +439,7 @@
     }
 
     /**
-     * Intelligent construction look-ahead (Procore / P6 style).
+     * Intelligent construction look-ahead.
      * Returns scored activities — not everything, only what matters in the window.
      */
     function computeLookAhead(tasks, links, options) {

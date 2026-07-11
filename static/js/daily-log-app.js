@@ -1,5 +1,5 @@
 /**
- * Case PM Daily Log — full field report (Procore/Buildertrend/RedTeam-class).
+ * Case PM Daily Log — full field report.
  * Sections: manpower (company dropdown), equipment, deliveries, materials, delays,
  * visitors, phone calls, inspections, safety, accidents, quantities, dumpsters,
  * scheduled work. Photos are captured in-app via the device camera and uploaded

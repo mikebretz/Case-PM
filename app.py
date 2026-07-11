@@ -2952,7 +2952,7 @@ def api_link_documents_to_entity():
 @app.route('/api/rfis/<int:rfi_id>/promote-pco', methods=['POST'])
 @login_required
 def api_rfi_promote_pco(rfi_id):
-    """Create a PCO from an RFI (RedTeam / Procore style)."""
+    """Create a PCO from an RFI."""
     from co_persistence import pco_to_dict
     rfi = RFI.query.get_or_404(rfi_id)
     body = request.get_json(silent=True) or {}

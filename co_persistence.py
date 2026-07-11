@@ -22,7 +22,7 @@ BALL_IN_COURT_MAP = {
     'Void': None,
 }
 
-# Sequential approval chain (Procore / RedTeam style)
+# Sequential approval chain
 APPROVAL_CHAIN = (
     {'from_status': 'Submitted', 'role': 'Project Manager', 'next_status': 'Pending Architect'},
     {'from_status': 'Pending Architect', 'role': 'Architect', 'next_status': 'Pending Owner'},
