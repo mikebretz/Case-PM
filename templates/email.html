@@ -126,7 +126,10 @@
 <script src="{{ url_for('static', filename='js/email-settings-ui.js') }}"></script>
 <script src="{{ url_for('static', filename='js/email-app.js') }}"></script>
 <script>
-document.addEventListener('DOMContentLoaded', function() {
+document.addEventListener('DOMContentLoaded', async function() {
+    if (window.CasePMEmailSettingsUI?.ensureLoaded) {
+        await CasePMEmailSettingsUI.ensureLoaded();
+    }
     CasePMEmail.init({
         userName: {{ current_user.full_name|tojson }},
         userEmail: {{ current_user.email|tojson }},

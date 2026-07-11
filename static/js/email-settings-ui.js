@@ -311,11 +311,53 @@
   function save() {
     saveSignaturesFromUI();
     const data = collect();
-    localStorage.setItem('casepm_email_settings', JSON.stringify({ ...S(), ...data }));
+    const merged = { ...S(), ...data };
+    localStorage.setItem('casepm_email_settings', JSON.stringify(merged));
     if (global.CasePMEmail) global.CasePMEmail.saveSettings(data);
-    else global.CasePMEmailSettings = { ...S(), ...data };
-    alert('Email settings saved.');
+    else global.CasePMEmailSettings = merged;
+    pushEmailToServer(merged);
+    global.dispatchEvent(new CustomEvent('casepm-email-settings-changed', { detail: merged }));
+    alert('Email settings saved and synced with Program Settings.');
     if (global.CasePMEmail) global.CasePMEmail.refresh?.();
+  }
+
+  async function pushEmailToServer(settings) {
+    try {
+      await fetch('/api/program-settings/email', {
+        method: 'PUT',
+        credentials: 'same-origin',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(settings),
+      });
+    } catch (_) { /* admin may be offline */ }
+  }
+
+  async function loadFromServer() {
+    try {
+      const res = await fetch('/api/program-settings/email', { credentials: 'same-origin' });
+      if (!res.ok) return null;
+      const json = await res.json();
+      const email = json.email;
+      if (email && typeof email === 'object' && Object.keys(email).length) {
+        localStorage.setItem('casepm_email_settings', JSON.stringify(email));
+        if (global.CasePMEmail) global.CasePMEmail.saveSettings(email);
+        else global.CasePMEmailSettings = email;
+        return email;
+      }
+    } catch (_) {}
+    return null;
+  }
+
+  async function ensureLoaded() {
+    const server = await loadFromServer();
+    if (!server) {
+      const local = loadFromStorage();
+      if (local && Object.keys(local).length) {
+        if (global.CasePMEmail) global.CasePMEmail.saveSettings(local);
+        else global.CasePMEmailSettings = { ...S(), ...local };
+      }
+    }
+    return S();
   }
 
   function connectGoogle() {
@@ -338,5 +380,17 @@
     } catch { return {}; }
   }
 
-  global.CasePMEmailSettingsUI = { render, save, collect, addSignature, removeSignature, connectGoogle, connectMicrosoft, testConnection, loadFromStorage };
+  global.CasePMEmailSettingsUI = {
+    render, save, collect, addSignature, removeSignature,
+    connectGoogle, connectMicrosoft, testConnection,
+    loadFromStorage, loadFromServer, ensureLoaded, pushEmailToServer,
+  };
+
+  global.addEventListener('casepm-email-settings-changed', (ev) => {
+    if (ev.detail && document.getElementById(lastContainerId)) {
+      if (global.CasePMEmail) global.CasePMEmail.saveSettings(ev.detail);
+      else global.CasePMEmailSettings = ev.detail;
+      render(lastContainerId);
+    }
+  });
 })(window);
