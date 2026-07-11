@@ -1,0 +1,82 @@
+{% extends "base.html" %}
+
+{% block content %}
+<style>
+.dev-page { max-width: 1100px; margin: 0 auto; padding: 1rem; }
+.dev-card { background: #18181b; border: 1px solid #3f3f46; border-radius: 1rem; padding: 1.5rem; margin-bottom: 1rem; }
+</style>
+
+<div class="dev-page">
+    <div class="mb-6 flex items-center justify-between">
+        <div>
+            <h1 class="text-2xl font-semibold text-red-400"><i class="fa-solid fa-code mr-2"></i>Developer Console</h1>
+            <p class="text-sm text-zinc-400 mt-1">Override locked records, sequential IDs, and approved data. Not visible to standard admins.</p>
+        </div>
+        <a href="{{ url_for('program_settings') }}" class="text-sm text-emerald-400 hover:underline">← Program Settings</a>
+    </div>
+
+    <div class="dev-card border-red-900/50">
+        <h2 class="font-semibold text-amber-400 mb-2">⚠ Developer overrides</h2>
+        <p class="text-xs text-zinc-400">These actions bypass normal business rules. All uses should be logged in your change management process.</p>
+    </div>
+
+    <div class="dev-card">
+        <h2 class="font-semibold mb-3">Override project number</h2>
+        <p class="text-xs text-zinc-500 mb-3">Change a project number even if it is sequential or already assigned.</p>
+        <div class="grid grid-cols-1 md:grid-cols-3 gap-3">
+            <input type="number" id="dev_project_id" placeholder="Project ID" class="bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-sm">
+            <input type="text" id="dev_project_number" placeholder="New number e.g. 2026-014" class="bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-sm font-mono">
+            <button type="button" onclick="devOverrideProjectNumber()" class="px-4 py-2 bg-red-700 hover:bg-red-600 rounded-lg text-sm font-medium">Apply override</button>
+        </div>
+    </div>
+
+    <div class="dev-card">
+        <h2 class="font-semibold mb-3">Unlock executed change order</h2>
+        <p class="text-xs text-zinc-500 mb-3">Remove owner e-signature lock so the CO can be edited or re-approved.</p>
+        <div class="grid grid-cols-1 md:grid-cols-3 gap-3">
+            <input type="number" id="dev_co_id" placeholder="Change Order ID" class="bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-sm">
+            <button type="button" onclick="devUnlockChangeOrder()" class="px-4 py-2 bg-red-700 hover:bg-red-600 rounded-lg text-sm font-medium">Unlock CO</button>
+        </div>
+    </div>
+
+    <div class="dev-card">
+        <h2 class="font-semibold mb-3">Raw program settings (read-only)</h2>
+        <pre class="text-xs text-zinc-400 overflow-auto max-h-64 bg-zinc-950 p-3 rounded-lg border border-zinc-800">{{ raw_settings | tojson(indent=2) }}</pre>
+    </div>
+</div>
+
+<script>
+async function devApi(path, body) {
+    const res = await fetch(path, {
+        method: 'POST',
+        credentials: 'same-origin',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+    });
+    const json = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(json.error || 'Request failed');
+    return json;
+}
+
+async function devOverrideProjectNumber() {
+    const project_id = document.getElementById('dev_project_id').value;
+    const number = document.getElementById('dev_project_number').value.trim();
+    if (!project_id || !number) { alert('Enter project ID and new number.'); return; }
+    if (!confirm(`Override project #${project_id} to "${number}"?`)) return;
+    try {
+        const json = await devApi('/api/developer/override-project-number', { project_id: parseInt(project_id, 10), number });
+        alert(`Updated: ${json.project?.number}`);
+    } catch (e) { alert(e.message); }
+}
+
+async function devUnlockChangeOrder() {
+    const change_order_id = document.getElementById('dev_co_id').value;
+    if (!change_order_id) { alert('Enter change order ID.'); return; }
+    if (!confirm(`Unlock change order #${change_order_id}?`)) return;
+    try {
+        await devApi('/api/developer/unlock-change-order', { change_order_id: parseInt(change_order_id, 10) });
+        alert('Change order unlocked.');
+    } catch (e) { alert(e.message); }
+}
+</script>
+{% endblock %}

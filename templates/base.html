@@ -459,6 +459,13 @@
                     <span>Program Settings</span>
                 </a>
 
+                {% if is_developer %}
+                <a href="{{ url_for('developer_console') }}" class="nav-link flex items-center gap-2.5 px-3 py-1.5 rounded-xl mb-0.5 text-red-400/90 hover:text-red-300 {% if request.endpoint == 'developer_console' %}active{% endif %}">
+                    <i class="fa-solid fa-code w-5"></i>
+                    <span>Developer</span>
+                </a>
+                {% endif %}
+
                 <!-- NEW: Audit Log -->
                 <a href="{{ url_for('audit_log_page') }}" class="nav-link nav-staff-only flex items-center gap-2.5 px-3 py-1.5 rounded-xl mb-0.5 {% if request.endpoint == 'audit_log_page' %}active{% endif %}">
                     <i class="fa-solid fa-history w-5"></i>
@@ -644,6 +651,12 @@
                     <i class="fa-solid fa-cog w-4"></i>
                     <span>Program Settings</span>
                 </a>
+                {% if is_developer %}
+                <a href="{{ url_for('developer_console') }}" class="flex items-center gap-3 px-4 py-2.5 hover:bg-red-950/30 text-red-400 rounded-2xl text-sm">
+                    <i class="fa-solid fa-code w-4"></i>
+                    <span>Developer Console</span>
+                </a>
+                {% endif %}
                 <a href="{{ url_for('user_management') }}" class="flex items-center gap-3 px-4 py-2.5 hover:bg-zinc-800 rounded-2xl text-sm">
                     <i class="fa-solid fa-users w-4"></i>
                     <span>User Management</span>

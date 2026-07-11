@@ -105,6 +105,17 @@ def admin_required(f):
     return decorated_function
 
 
+def developer_required(f):
+    @wraps(f)
+    def decorated_function(*args, **kwargs):
+        from developer_tools import is_developer
+        if not current_user.is_authenticated or not is_developer(current_user):
+            flash("Developer access only.", "error")
+            return redirect(url_for('dashboard'))
+        return f(*args, **kwargs)
+    return decorated_function
+
+
 def permission_required(permission):
     def decorator(f):
         @wraps(f)
@@ -360,6 +371,17 @@ def inject_project_context():
         'all_projects': Project.query.order_by(Project.name).all(),
         **portal,
     }
+
+
+@app.context_processor
+def inject_developer_flag():
+    if not current_user.is_authenticated:
+        return {'is_developer': False}
+    try:
+        from developer_tools import is_developer
+        return {'is_developer': is_developer(current_user)}
+    except Exception:
+        return {'is_developer': False}
 
 
 class DailyLog(db.Model):
@@ -9631,13 +9653,167 @@ def api_project_financial_summary():
 
 @app.route('/program-settings')
 @login_required
+@admin_required
 def program_settings():
+    from program_settings_persistence import settings_summary_for_ui
+    from developer_tools import is_developer
+    summary = settings_summary_for_ui()
+    return render_template(
+        'program_settings.html',
+        sage_defaults=summary['sage'],
+        company_info=summary['company'],
+        backup_settings=summary['backup'],
+        maintenance_settings=summary['maintenance'],
+        is_developer=is_developer(current_user),
+    )
+
+
+@app.route('/developer')
+@login_required
+@developer_required
+def developer_console():
+    from program_settings_persistence import load_program_settings
+    return render_template('developer.html', raw_settings=load_program_settings())
+
+
+@app.route('/api/program-settings', methods=['GET'])
+@login_required
+@admin_required
+def api_get_program_settings():
+    from program_settings_persistence import settings_summary_for_ui
+    return jsonify({'ok': True, 'settings': settings_summary_for_ui()})
+
+
+@app.route('/api/program-settings/company', methods=['GET', 'PUT'])
+@login_required
+@admin_required
+def api_program_settings_company():
+    from program_settings_persistence import load_company_info, save_company_info
+    if request.method == 'GET':
+        return jsonify({'ok': True, 'company': load_company_info()})
+    body = request.get_json(silent=True) or {}
+    company = save_company_info(body)
+    return jsonify({'ok': True, 'company': company})
+
+
+@app.route('/api/program-settings/backup', methods=['GET', 'PUT'])
+@login_required
+@admin_required
+def api_program_settings_backup():
+    from program_settings_persistence import load_backup_settings, save_backup_settings, load_maintenance_settings, save_maintenance_settings
+    if request.method == 'GET':
+        return jsonify({
+            'ok': True,
+            'backup': load_backup_settings(),
+            'maintenance': load_maintenance_settings(),
+        })
+    body = request.get_json(silent=True) or {}
+    backup = save_backup_settings(body.get('backup') or body)
+    maintenance = save_maintenance_settings(body.get('maintenance') or {})
+    return jsonify({'ok': True, 'backup': backup, 'maintenance': maintenance})
+
+
+@app.route('/api/program-settings/backup/run', methods=['POST'])
+@login_required
+@admin_required
+def api_run_program_backup():
+    from backup_service import run_configured_backup, list_backups
+    from program_settings_persistence import load_backup_settings, save_backup_settings
+    cfg = load_backup_settings()
+    try:
+        result = run_configured_backup(cfg)
+        cfg['last_run_at'] = result.get('created_at', '')
+        cfg['last_run_status'] = 'success'
+        save_backup_settings(cfg)
+        return jsonify({'ok': True, 'result': result, 'backups': list_backups()})
+    except Exception as exc:
+        cfg['last_run_status'] = f'error: {exc}'
+        save_backup_settings(cfg)
+        return jsonify({'error': str(exc)}), 500
+
+
+@app.route('/api/program-settings/backup/list', methods=['GET'])
+@login_required
+@admin_required
+def api_list_program_backups():
+    from backup_service import list_backups
+    return jsonify({'ok': True, 'backups': list_backups()})
+
+
+@app.route('/api/program-settings/email', methods=['GET', 'PUT'])
+@login_required
+@admin_required
+def api_program_settings_email():
+    """Server mirror of email settings — synced with Email module UI."""
+    from program_settings_persistence import load_email_settings_mirror, save_email_settings_mirror
+    if request.method == 'GET':
+        return jsonify({'ok': True, 'email': load_email_settings_mirror()})
+    body = request.get_json(silent=True) or {}
+    email = save_email_settings_mirror(body.get('email') or body)
+    return jsonify({'ok': True, 'email': email})
+
+
+@app.route('/api/program-settings/sage/test', methods=['POST'])
+@login_required
+@admin_required
+def api_test_sage_connection():
+    import os
     from program_settings_persistence import load_sage_defaults
-    return render_template('program_settings.html', sage_defaults=load_sage_defaults())
+    sage = load_sage_defaults()
+    api_url = (sage.get('sage_api_url') or os.environ.get('SAGE_API_URL', '')).strip()
+    if not api_url:
+        return jsonify({
+            'ok': True,
+            'mode': 'simulated',
+            'message': 'No live API URL — Sage database defaults saved; sync will log/simulate until SAGE_API_URL is set.',
+            'database': sage.get('sage_database'),
+            'company_code': sage.get('sage_company_code'),
+        })
+    return jsonify({
+        'ok': True,
+        'mode': 'configured',
+        'message': f'API endpoint configured: {api_url}',
+        'database': sage.get('sage_database'),
+        'company_code': sage.get('sage_company_code'),
+    })
+
+
+@app.route('/api/developer/override-project-number', methods=['POST'])
+@login_required
+@developer_required
+def api_developer_override_project_number():
+    body = request.get_json(silent=True) or {}
+    project_id = body.get('project_id')
+    new_number = body.get('number')
+    if not project_id or not new_number:
+        return jsonify({'error': 'project_id and number required'}), 400
+    project = Project.query.get_or_404(int(project_id))
+    from developer_tools import override_project_number
+    override_project_number(project, new_number, _normalize_project_number)
+    db.session.commit()
+    return jsonify({'ok': True, 'project': project.to_dict()})
+
+
+@app.route('/api/developer/unlock-change-order', methods=['POST'])
+@login_required
+@developer_required
+def api_developer_unlock_change_order():
+    body = request.get_json(silent=True) or {}
+    co_id = body.get('change_order_id')
+    if not co_id:
+        return jsonify({'error': 'change_order_id required'}), 400
+    co = ChangeOrder.query.get_or_404(int(co_id))
+    from developer_tools import unlock_change_order
+    unlock_change_order(co)
+    db.session.commit()
+    from co_persistence import co_to_dict
+    allocs = ChangeOrderAllocation.query.filter_by(change_order_id=co.id).all()
+    return jsonify({'ok': True, 'change_order': co_to_dict(co, allocs)})
 
 
 @app.route('/api/program-settings/sage', methods=['GET'])
 @login_required
+@admin_required
 def api_get_sage_program_settings():
     from program_settings_persistence import load_sage_defaults, SAGE_DEFAULT_KEYS
     sage = load_sage_defaults()
@@ -9646,9 +9822,8 @@ def api_get_sage_program_settings():
 
 @app.route('/api/program-settings/sage', methods=['PUT'])
 @login_required
+@admin_required
 def api_save_sage_program_settings():
-    if current_user.role != 'Admin':
-        return jsonify({'error': 'Admin only'}), 403
     from program_settings_persistence import save_sage_defaults
     body = request.get_json(silent=True) or {}
     sage = save_sage_defaults(body.get('sage') or body)
