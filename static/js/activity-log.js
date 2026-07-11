@@ -46,6 +46,16 @@
     localStorage.setItem(STORAGE_KEY, JSON.stringify(entries.slice(0, MAX_LOCAL)));
   }
 
+  function coerceTimestamp(val) {
+    if (val == null || val === '') return new Date().toISOString();
+    if (typeof val === 'number') {
+      const d = new Date(val > 1e12 ? val : val * 1000);
+      return Number.isNaN(d.getTime()) ? new Date().toISOString() : d.toISOString();
+    }
+    const d = new Date(val);
+    return Number.isNaN(d.getTime()) ? new Date().toISOString() : d.toISOString();
+  }
+
   function formatTime(iso) {
     const d = new Date(iso);
     if (Number.isNaN(d.getTime())) return iso || '';
@@ -77,7 +87,7 @@
       target_id: m.target_id ?? null,
       entity_ref: m.entity_ref || '',
       metadata: m.metadata || m.details || {},
-      timestamp: m.timestamp || new Date().toISOString(),
+      timestamp: coerceTimestamp(m.timestamp),
     };
   }
 
@@ -277,14 +287,25 @@
       return;
     }
     try {
+      const events = batch.slice(0, 500).map((e) => ({ ...e, timestamp: coerceTimestamp(e.timestamp) }));
       const res = await fetch('/api/audit-log/events/batch', {
         method: 'POST',
         credentials: 'same-origin',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ events: batch.slice(0, 500) }),
+        body: JSON.stringify({ events }),
       });
-      if (res.ok) localStorage.setItem(SYNC_FLAG, '1');
-    } catch (_) {}
+      if (res.ok) {
+        localStorage.setItem(SYNC_FLAG, '1');
+      } else if (!global.__casepmAuditSyncWarned) {
+        global.__casepmAuditSyncWarned = true;
+        console.warn('[ActivityLog] Legacy audit sync failed:', res.status);
+      }
+    } catch (err) {
+      if (!global.__casepmAuditSyncWarned) {
+        global.__casepmAuditSyncWarned = true;
+        console.warn('[ActivityLog] Legacy audit sync failed:', err.message || err);
+      }
+    }
   }
 
   function init() {

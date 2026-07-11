@@ -582,6 +582,20 @@ let requireAllSubPayAppsBeforeG702Submit = casepmStore.getItem('requireAllSubPay
         return casepmStore.getItem('contractorSOVLocked') === 'true' && !devUnlockActive();
     }
 
+    function escHtmlAttr(val) {
+        return String(val ?? '')
+            .replace(/&/g, '&amp;')
+            .replace(/"/g, '&quot;')
+            .replace(/</g, '&lt;');
+    }
+
+    async function payAppConfirm(message, options = {}) {
+        if (typeof showCenteredConfirm === 'function') {
+            return !!(await showCenteredConfirm(String(message ?? ''), options));
+        }
+        return !!(globalThis.__casepmNativeConfirm && globalThis.__casepmNativeConfirm(message));
+    }
+
 // Main Contractor (GC) Lien Waiver for current period (separate from Sub waivers)
 let mainLienWaiver = JSON.parse(casepmStore.getItem('mainLienWaiver') || '{}'); // { periodNumber: { filename, dataUrl, uploadedDate } }
 
@@ -2677,8 +2691,10 @@ let mainLienWaiver = JSON.parse(casepmStore.getItem('mainLienWaiver') || '{}'); 
         // === CLEAN TOP BANNER CONFIRMATION (no HTML escaping, no leakage) ===
         const workflowBar = document.getElementById('payAppWorkflowBar');
         if (!workflowBar) {
-            if (!confirm("This will push Period " + periodData.periodNumber + " back to the Pay Application (G702) as Draft. Continue?")) return;
-            performRevisionRestore(periodId);
+            payAppConfirm(
+                "This will push Period " + periodData.periodNumber + " back to the Pay Application (G702) as Draft. Continue?",
+                { title: 'Confirm Revision', danger: true }
+            ).then((ok) => { if (ok) performRevisionRestore(periodId); });
             return;
         }
 
@@ -3278,8 +3294,11 @@ let mainLienWaiver = JSON.parse(casepmStore.getItem('mainLienWaiver') || '{}'); 
         renderPayAppContent();
     }
 
-    function clearAllSubPayAppData() {
-        if (!confirm("This will DELETE all Subcontractor SOVs, Pay App numbers, history, pending submissions, lien waivers, Previous Sub Pay Apps archive, and status. Are you sure?")) {
+    async function clearAllSubPayAppData() {
+        if (!await payAppConfirm(
+            "This will DELETE all Subcontractor SOVs, Pay App numbers, history, pending submissions, lien waivers, Previous Sub Pay Apps archive, and status. Are you sure?",
+            { title: 'Clear All Sub Data', danger: true }
+        )) {
             return;
         }
         casepmStore.removeItem('subcontractorSOV');
@@ -3307,8 +3326,11 @@ let mainLienWaiver = JSON.parse(casepmStore.getItem('mainLienWaiver') || '{}'); 
         }, 400);
     }
 
-    function clearPreviousSubPayAppsData() {
-        if (!confirm("This will DELETE all archived Previous Sub Pay Apps (chronological summary and history). Active Tracker and Sub SOV data will be kept. Continue?")) {
+    async function clearPreviousSubPayAppsData() {
+        if (!await payAppConfirm(
+            "This will DELETE all archived Previous Sub Pay Apps (chronological summary and history). Active Tracker and Sub SOV data will be kept. Continue?",
+            { title: 'Clear Previous Sub Pay Apps', danger: true }
+        )) {
             return;
         }
 
@@ -3828,8 +3850,8 @@ let mainLienWaiver = JSON.parse(casepmStore.getItem('mainLienWaiver') || '{}'); 
         renderPayAppContent();
     }
 
-    function resetContractorG703AndPreviousPeriods() {
-        const confirmed = confirm(
+    async function resetContractorG703AndPreviousPeriods() {
+        const confirmed = await payAppConfirm(
             "⚠️ WARNING — NUCLEAR RESET (Fresh Project Start)\n\n" +
             "This will PERMANENTLY DELETE / RESET on the Contractor side:\n" +
             "• ALL line items on the G703 (Schedule of Values) — including every billed_to_date amount\n" +
@@ -3838,7 +3860,8 @@ let mainLienWaiver = JSON.parse(casepmStore.getItem('mainLienWaiver') || '{}'); 
             "• The current G702 period — resets to Period 1 Draft with $0 billed everywhere\n\n" +
             "Result: A completely fresh project start. Nothing billed, nothing saved on the main G702/G703. Clean slate.\n\n" +
             "Subcontractor data (Sub SOVs, Sub Pay App Tracker, Previous Sub Pay Apps) will NOT be affected.\n\n" +
-            "Are you 100% sure you want to do this?"
+            "Are you 100% sure you want to do this?",
+            { title: 'Nuclear Reset', danger: true, confirmLabel: 'Yes, reset everything' }
         );
         if (!confirmed) return;
 
@@ -4112,11 +4135,10 @@ let mainLienWaiver = JSON.parse(casepmStore.getItem('mainLienWaiver') || '{}'); 
             const desc = item.description || item.desc || '';
             if (code && !seen.has(code)) {
                 seen.add(code);
-                const safeDesc = desc.replace(/'/g, "\\'");
                 html += `
-                    <tr class="hover:bg-zinc-800/70 cursor-pointer" onclick="selectSOVCodeFromList('${code}', '${safeDesc}', this.closest('dialog'))">
-                        <td class="px-3 py-1.5 font-mono text-emerald-400 text-xs">${code}</td>
-                        <td class="px-3 py-1.5 text-sm">${desc}</td>
+                    <tr class="hover:bg-zinc-800/70 cursor-pointer sov-code-pick-row" data-code="${escHtmlAttr(code)}" data-desc="${escHtmlAttr(desc)}">
+                        <td class="px-3 py-1.5 font-mono text-emerald-400 text-xs">${escHtmlAttr(code)}</td>
+                        <td class="px-3 py-1.5 text-sm">${escHtmlAttr(desc)}</td>
                     </tr>
                 `;
             }
@@ -4132,6 +4154,11 @@ let mainLienWaiver = JSON.parse(casepmStore.getItem('mainLienWaiver') || '{}'); 
 
         modal.innerHTML = html;
         document.body.appendChild(modal);
+        modal.querySelectorAll('.sov-code-pick-row').forEach((row) => {
+            row.addEventListener('click', () => {
+                selectSOVCodeFromList(row.dataset.code || '', row.dataset.desc || '', modal);
+            });
+        });
         modal.showModal();
 
         // Position to the right of the active SOV modal (Contractor or Sub)
@@ -4353,7 +4380,7 @@ let mainLienWaiver = JSON.parse(casepmStore.getItem('mainLienWaiver') || '{}'); 
         }, 120);
     }
 
-    function saveContractorSOVLine(id, btn) {
+    async function saveContractorSOVLine(id, btn) {
         const costCode = document.getElementById('sovCostCode').value.trim();
         const desc = document.getElementById('sovDescription').value.trim();
         const origStr = document.getElementById('sovOriginal').value.replace(/[^0-9.-]/g, '');
@@ -4386,7 +4413,10 @@ let mainLienWaiver = JSON.parse(casepmStore.getItem('mainLienWaiver') || '{}'); 
         }
         if (originalContractAmount > 0 && id === null && projectedTotalOriginal !== originalContractAmount && contractorSOV.length > 0) {
             // For new lines, if it causes mismatch (and there are existing lines), warn/block for strict matching
-            if (!confirm(`Warning: Adding this line would make Total Original (${formatCurrency(projectedTotalOriginal)}) different from Project Original Contract Amount (${formatCurrency(originalContractAmount)}). The Original column must total exactly to the contract amount. Continue?`)) {
+            if (!await payAppConfirm(
+                `Warning: Adding this line would make Total Original (${formatCurrency(projectedTotalOriginal)}) different from Project Original Contract Amount (${formatCurrency(originalContractAmount)}). The Original column must total exactly to the contract amount. Continue?`,
+                { title: 'Contract Amount Mismatch' }
+            )) {
                 return;
             }
         }
@@ -4398,7 +4428,10 @@ let mainLienWaiver = JSON.parse(casepmStore.getItem('mainLienWaiver') || '{}'); 
             .reduce((sum, b) => sum + (b.original_budget || 0), 0);
 
         if (budgetTotalForCode > 0 && original > budgetTotalForCode) {
-            if (!confirm(`Warning: Original Amount (${formatCurrency(original)}) exceeds Budget total for ${costCode} (${formatCurrency(budgetTotalForCode)}). Continue anyway?`)) {
+            if (!await payAppConfirm(
+                `Warning: Original Amount (${formatCurrency(original)}) exceeds Budget total for ${costCode} (${formatCurrency(budgetTotalForCode)}). Continue anyway?`,
+                { title: 'Exceeds Budget' }
+            )) {
                 return;
             }
         }
@@ -5344,8 +5377,11 @@ let mainLienWaiver = JSON.parse(casepmStore.getItem('mainLienWaiver') || '{}'); 
         // No success popup per rules — the UI update (sub disappears from dropdown, tables empty) is the confirmation.
     }
 
-    function clearAllSubcontractorsForFreshJob() {
-        if (!confirm('⚠️ CLEAR ALL SUBCONTRACTORS FOR FRESH JOB (TEST BUTTON)\n\nThis will permanently delete:\n• All subcontractor SOV line items\n• All pay app history & G703 snapshots\n• All lien waivers\n• Pending submissions & counters\n\nThis is for starting a completely new/fresh job with an EMPTY subcontractor dropdown.\nYou will need to use "Add New" to add subcontractors back for this project.\n\nContinue?')) {
+    async function clearAllSubcontractorsForFreshJob() {
+        if (!await payAppConfirm(
+            '⚠️ CLEAR ALL SUBCONTRACTORS FOR FRESH JOB (TEST BUTTON)\n\nThis will permanently delete:\n• All subcontractor SOV line items\n• All pay app history & G703 snapshots\n• All lien waivers\n• Pending submissions & counters\n\nThis is for starting a completely new/fresh job with an EMPTY subcontractor dropdown.\nYou will need to use "Add New" to add subcontractors back for this project.\n\nContinue?',
+            { title: 'Clear All Subcontractors', danger: true }
+        )) {
             return;
         }
         // Clear all sub-related data (keep contractorSOV, main pay periods, companies list, etc.)
@@ -5838,8 +5874,8 @@ let mainLienWaiver = JSON.parse(casepmStore.getItem('mainLienWaiver') || '{}'); 
         renderPayAppContent();
     }
 
-    function deleteSubSOVLine(companyId, lineId) {
-        if (!confirm("Delete this line from the subcontractor's SOV?")) return;
+    async function deleteSubSOVLine(companyId, lineId) {
+        if (!await payAppConfirm("Delete this line from the subcontractor's SOV?", { title: 'Delete Line', danger: true })) return;
         if (subcontractorSOV[companyId]) {
             subcontractorSOV[companyId] = subcontractorSOV[companyId].filter(l => l.id !== lineId);
             casepmStore.setItem('subcontractorSOV', JSON.stringify(subcontractorSOV));
@@ -9364,6 +9400,8 @@ function printSubcontractorG703(companyId) {
             ? `<span class="px-3 py-0.5 text-xs rounded-full bg-amber-900/70 text-amber-400 font-medium">${status}</span>`
             : `<span class="px-3 py-0.5 text-xs rounded-full bg-zinc-700 text-zinc-400 font-medium">${status}</span>`;
 
+        const revisionArg = revisionHistoryKey ? `, ${JSON.stringify(revisionHistoryKey)}` : '';
+
         container.innerHTML = `
             <div class="flex items-start justify-between mb-3">
                 <div>
@@ -9414,7 +9452,7 @@ function printSubcontractorG703(companyId) {
 
             <div class="flex flex-wrap gap-2 pt-2 border-t border-zinc-700">
                 ${canRequestRevision ? `
-                    <button onclick="requestRevisionSubPayApp(${companyId}${revisionHistoryKey ? `, '${revisionHistoryKey}'` : ''});" 
+                    <button onclick="requestRevisionSubPayApp(${companyId}${revisionArg});" 
                             class="px-4 py-1.5 bg-amber-600 hover:bg-amber-500 text-white text-xs rounded font-medium flex items-center gap-1.5">
                         <i class="fa-solid fa-redo"></i> <span>Request Revision (Push back to Sub SOV)</span>
                     </button>
