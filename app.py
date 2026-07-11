@@ -1772,6 +1772,48 @@ def _daily_log_url_helpers():
     }
 
 
+@app.route('/api/daily-logs/companies', methods=['GET'])
+@login_required
+def api_daily_log_companies():
+    """On-site companies for the manpower dropdown.
+
+    Pulls subs/vendors that actually have commitments on the project (so the list
+    reflects who is contracted and likely on site), plus the full company directory.
+    """
+    project_id = request.args.get('project_id', type=int) or get_current_project_id()
+    seen = {}
+
+    def add(name, company_id=None, source=None, contact=None, phone=None, ctype=None):
+        key = (name or '').strip().lower()
+        if not key:
+            return
+        if key not in seen:
+            seen[key] = {
+                'name': name.strip(),
+                'company_id': str(company_id) if company_id is not None else None,
+                'sources': [],
+                'contact': contact or '',
+                'phone': phone or '',
+                'type': ctype or '',
+            }
+        if source and source not in seen[key]['sources']:
+            seen[key]['sources'].append(source)
+
+    if project_id:
+        for c in Commitment.query.filter_by(project_id=int(project_id)).all():
+            if c.company_name:
+                label = 'Subcontract' if c.commitment_type == 'Subcontract' else 'Commitment'
+                add(c.company_name, c.company_id, label,
+                    contact=getattr(c, 'contact_name', None), phone=getattr(c, 'contact_phone', None))
+
+    for c in Company.query.order_by(Company.name.asc()).all():
+        contact = f'{c.contact_first_name or ""} {c.contact_last_name or ""}'.strip()
+        add(c.name, c.id, 'Directory', contact=contact, phone=c.phone, ctype=c.type)
+
+    companies = sorted(seen.values(), key=lambda x: (0 if ('Subcontract' in x['sources'] or 'Commitment' in x['sources']) else 1, x['name'].lower()))
+    return jsonify({'ok': True, 'companies': companies})
+
+
 @app.route('/api/daily-logs', methods=['GET'])
 @login_required
 def api_daily_logs_list():

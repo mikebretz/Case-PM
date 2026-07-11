@@ -13,15 +13,22 @@ from datetime import date, datetime, timedelta
 # Sections stored inside details_json (manpower & equipment use their own tables).
 DETAIL_SECTIONS = (
     'deliveries',      # [{item, supplier, quantity, notes}]
+    'materials',       # [{material, supplier, quantity, unit, location}]
     'visitors',        # [{name, company, purpose, time}]
+    'phone_calls',     # [{contact, company, subject, notes}]
     'delays',          # [{type, description, hours_lost}]
-    'safety',          # [{type, description}]
-    'inspections',     # [{type, agency, result, notes}]
+    'safety',          # [{type, description, action}]
+    'accidents',       # [{person, company, description, treatment}]
+    'inspections',     # [{type, agency, inspector, result, notes}]
     'quantities',      # [{description, quantity, unit, cost_code}]
+    'dumpsters',       # [{type, size, hauler, hauls}]
+    'scheduled_work',  # [{activity, status, notes}]
 )
 
-DELAY_TYPES = ('Weather', 'Labor', 'Material', 'Equipment', 'Owner', 'Design/RFI', 'Other')
-SAFETY_TYPES = ('Observation', 'Near Miss', 'Incident', 'Toolbox Talk', 'Violation')
+DELAY_TYPES = ('Weather', 'Labor Shortage', 'Material', 'Equipment', 'Owner', 'Design/RFI', 'Inspection', 'Utility', 'Other')
+SAFETY_TYPES = ('Observation', 'Near Miss', 'Incident', 'Toolbox Talk', 'Violation', 'JHA/JSA', 'PPE Check')
+INSPECTION_RESULTS = ('Pass', 'Fail', 'Partial', 'Pending', 'N/A')
+SCHEDULED_WORK_STATUS = ('On Track', 'Ahead', 'Behind', 'Complete', 'Not Started')
 
 
 def _parse(value, default):
@@ -65,15 +72,24 @@ def build_details(payload):
     payload = payload or {}
     details = {
         'temperature': payload.get('temperature'),
+        'temp_low': payload.get('temp_low'),
         'wind': payload.get('wind'),
+        'humidity': payload.get('humidity'),
         'precipitation': payload.get('precipitation'),
+        'ground_condition': payload.get('ground_condition'),
         'weather_impact': payload.get('weather_impact'),
+        'work_hours': payload.get('work_hours'),
         'deliveries': _clean_rows(payload.get('deliveries'), ('item', 'supplier', 'quantity', 'notes')),
+        'materials': _clean_rows(payload.get('materials'), ('material', 'supplier', 'quantity', 'unit', 'location')),
         'visitors': _clean_rows(payload.get('visitors'), ('name', 'company', 'purpose', 'time')),
+        'phone_calls': _clean_rows(payload.get('phone_calls'), ('contact', 'company', 'subject', 'notes')),
         'delays': _clean_rows(payload.get('delays'), ('type', 'description', 'hours_lost')),
-        'safety': _clean_rows(payload.get('safety'), ('type', 'description')),
-        'inspections': _clean_rows(payload.get('inspections'), ('type', 'agency', 'result', 'notes')),
+        'safety': _clean_rows(payload.get('safety'), ('type', 'description', 'action')),
+        'accidents': _clean_rows(payload.get('accidents'), ('person', 'company', 'description', 'treatment')),
+        'inspections': _clean_rows(payload.get('inspections'), ('type', 'agency', 'inspector', 'result', 'notes')),
         'quantities': _clean_rows(payload.get('quantities'), ('description', 'quantity', 'unit', 'cost_code')),
+        'dumpsters': _clean_rows(payload.get('dumpsters'), ('type', 'size', 'hauler', 'hauls')),
+        'scheduled_work': _clean_rows(payload.get('scheduled_work'), ('activity', 'status', 'notes')),
     }
     return details
 
