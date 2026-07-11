@@ -819,8 +819,9 @@ body:has(.schedule-page-root) #scheduleFieldPickerModal {
         print-color-adjust: exact;
     }
     body.printing-gantt #appShell > #appHeaderBar,
-    body.printing-gantt #appShell > .flex.flex-1 > .w-56,
-    body.printing-gantt #appShell .h-10.flex-shrink-0,
+    body.printing-gantt #appSidebar,
+    body.printing-gantt #appFooterBar,
+    body.printing-gantt #appMainPane,
     body.printing-gantt #scheduleChrome,
     body.printing-gantt #scheduleStatusBar,
     body.printing-gantt #scheduleGanttHost,
