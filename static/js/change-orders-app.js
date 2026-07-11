@@ -715,7 +715,12 @@
     }
   }
 
-  let approvalContext = { coId: null };
+  let approvalContext = { coId: null, signPanel: null };
+
+  function approvalRequiresEsign(co) {
+    const role = co?.ball_in_court_role;
+    return role === 'Owner' || role === 'Architect';
+  }
 
   function openApprovalModal(coId, intent) {
     const co = state.changeOrders.find(c => c.id === coId) || (state.drawerRecord?.id === coId ? state.drawerRecord : null);
@@ -750,6 +755,21 @@
     document.getElementById('coApprovalCommentsRequired')?.classList.add('hidden');
     document.getElementById('coApprovalApproveBtn')?.classList.remove('hidden');
     document.getElementById('coApprovalRejectBtn')?.classList.remove('hidden');
+    const signHost = document.getElementById('coApprovalSignPanel');
+    if (approvalContext.signPanel) {
+      approvalContext.signPanel.destroy();
+      approvalContext.signPanel = null;
+    }
+    if (intent === 'approve' && approvalRequiresEsign(co) && signHost && typeof CasePMEsign !== 'undefined') {
+      signHost.classList.remove('hidden');
+      approvalContext.signPanel = CasePMEsign.mountSignPanel(signHost, {
+        title: `${co.ball_in_court_role} Approval — Electronic Signature`,
+        requireSignature: true,
+      });
+    } else if (signHost) {
+      signHost.classList.add('hidden');
+      signHost.innerHTML = '';
+    }
     modal?.showModal();
     if (intent === 'reject') commentsEl?.focus();
   }
@@ -762,12 +782,25 @@
       alert('Please enter a rejection comment.');
       return;
     }
+    let extra = {};
+    if (action === 'approve' && approvalContext.signPanel) {
+      try {
+        extra = await approvalContext.signPanel.getPayload();
+      } catch (err) {
+        alert(err.message || 'Complete the electronic signature attestation.');
+        return;
+      }
+    }
     document.getElementById('coApprovalModal')?.close();
-    await workflowCo(coId, action, comments);
-    approvalContext = { coId: null };
+    await workflowCo(coId, action, comments, extra);
+    if (approvalContext.signPanel) {
+      approvalContext.signPanel.destroy();
+      approvalContext.signPanel = null;
+    }
+    approvalContext = { coId: null, signPanel: null };
   }
 
-  async function workflowCo(id, action, comments) {
+  async function workflowCo(id, action, comments, esignPayload) {
     const co = state.changeOrders.find(c => c.id === id) || state.drawerRecord;
     if (!co) return;
     const allocCheck = validateAllocations(co.allocations || [], { requireRows: true, requireAmount: true });
@@ -781,7 +814,7 @@
     try {
       const json = await api(`/api/change-orders/${id}/workflow`, {
         method: 'POST',
-        body: JSON.stringify({ action, comments: comments || '' }),
+        body: JSON.stringify({ action, comments: comments || '', ...(esignPayload || {}) }),
       });
       await applyCoSync(json);
       if (action === 'submit' && typeof CasePMWorkflow !== 'undefined' && CasePMWorkflow.onChangeOrderSubmitted) {

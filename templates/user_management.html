@@ -1,6 +1,7 @@
 {% extends "base.html" %}
 
 {% block content %}
+<script src="{{ url_for('static', filename='js/casepm-esign.js') }}"></script>
 <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
 
 <style>
@@ -309,30 +310,59 @@
                 </div>
             </div>
 
-            <!-- SIGNATURE TAB (widened canvas) -->
+            <!-- SIGNATURE TAB — viewable by all, editable only by the user -->
             <div id="tab-content-signature" class="hidden">
-                <div class="mb-4">
-                    <label class="block text-sm mb-2 text-zinc-300">Draw Signature Below</label>
-                    <div class="border border-zinc-700 rounded-md bg-white p-1 inline-block">
-                        <canvas id="signatureCanvas" width="560" height="160" class="cursor-crosshair rounded"></canvas>
-                    </div>
-                    <div class="flex gap-2 mt-2">
-                        <button type="button" onclick="clearSignature()" class="px-4 py-1.5 text-xs bg-zinc-700 hover:bg-zinc-600 rounded">Clear Canvas</button>
-                        <button type="button" onclick="saveSignatureToUser()" class="px-4 py-1.5 text-xs bg-emerald-600 hover:bg-emerald-500 rounded">Save This Signature</button>
-                    </div>
+                <div id="signatureSelfOnlyBanner" class="mb-4 px-4 py-3 rounded-md border border-sky-800/60 bg-sky-950/30 text-xs text-sky-200 hidden">
+                    <i class="fa-solid fa-lock mr-1"></i>
+                    <strong>Private signature.</strong> Everyone can view this signature for approvals and documents, but only <span id="signatureOwnerName"></span> can create or change it — not even administrators.
                 </div>
-                <div class="mt-4">
-                    <label class="block text-sm mb-2 text-zinc-300">Or Upload Signature Image (PNG/JPG)</label>
-                    <input type="file" id="signatureUpload" accept="image/*" class="text-sm file:mr-3 file:px-3 file:py-1.5 file:rounded file:border-0 file:bg-zinc-700 file:text-white hover:file:bg-zinc-600">
-                    <div id="signatureUploadStatus" class="text-xs text-emerald-400 mt-1"></div>
+                <div id="signatureViewOnlyBanner" class="mb-4 px-4 py-3 rounded-md border border-amber-800/60 bg-amber-950/30 text-xs text-amber-200 hidden">
+                    <i class="fa-solid fa-eye mr-1"></i> View only. Signatures are controlled by each user in their own profile.
                 </div>
 
-                <!-- Certificate Upload (combined under Signature tab) -->
-                <div class="mt-6 pt-4 border-t border-zinc-700">
-                    <label class="block text-sm mb-2 text-zinc-300">Upload Digital Signature Certificate (optional)</label>
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+                    <div>
+                        <label class="block text-sm mb-1.5 text-zinc-300">Legal name on signature</label>
+                        <input type="text" id="signatureLegalName" class="w-full bg-zinc-800 border border-zinc-700 rounded-md px-4 py-2 text-sm" placeholder="As it appears on contracts">
+                    </div>
+                    <div>
+                        <label class="block text-sm mb-1.5 text-zinc-300">Initials</label>
+                        <input type="text" id="signatureInitials" maxlength="8" class="w-full bg-zinc-800 border border-zinc-700 rounded-md px-4 py-2 text-sm font-mono uppercase" placeholder="MB">
+                    </div>
+                </div>
+
+                <div class="mb-4">
+                    <label class="block text-sm mb-2 text-zinc-300">Draw your signature</label>
+                    <div class="border border-zinc-700 rounded-md bg-white p-1 inline-block w-full max-w-xl">
+                        <canvas id="signatureCanvas" width="560" height="160" class="cursor-crosshair rounded w-full"></canvas>
+                    </div>
+                    <div class="flex flex-wrap gap-2 mt-2" id="signatureEditControls">
+                        <button type="button" onclick="clearSignature()" class="px-4 py-1.5 text-xs bg-zinc-700 hover:bg-zinc-600 rounded">Clear</button>
+                        <button type="button" onclick="saveSignatureToServer()" class="px-4 py-1.5 text-xs bg-emerald-600 hover:bg-emerald-500 rounded font-medium">Save My Signature</button>
+                    </div>
+                    <div id="signatureUploadStatus" class="text-xs text-emerald-400 mt-2"></div>
+                    <div id="signatureHashDisplay" class="text-[10px] font-mono text-zinc-500 mt-1"></div>
+                </div>
+
+                <div class="mt-4" id="signatureUploadSection">
+                    <label class="block text-sm mb-2 text-zinc-300">Or upload signature image (PNG/JPG)</label>
+                    <input type="file" id="signatureUpload" accept="image/*" class="text-sm file:mr-3 file:px-3 file:py-1.5 file:rounded file:border-0 file:bg-zinc-700 file:text-white hover:file:bg-zinc-600">
+                </div>
+
+                <div class="mt-6 pt-4 border-t border-zinc-700" id="certificateSection">
+                    <label class="block text-sm mb-2 text-zinc-300">Digital certificate <span class="text-zinc-500">(optional)</span></label>
+                    <p class="text-[11px] text-zinc-500 mb-2">For DocuSign or PKI-backed signing. We store certificate <em>metadata</em> only — private keys never leave your device.</p>
                     <input type="file" id="certificateUpload" accept=".pdf,.pfx,.p12,image/*" class="text-sm file:mr-3 file:px-3 file:py-1.5 file:rounded file:border-0 file:bg-zinc-700 file:text-white hover:file:bg-zinc-600">
                     <div id="certificateStatus" class="text-xs text-emerald-400 mt-1"></div>
-                    <div class="text-[10px] text-zinc-500 mt-1">Accepted: PDF, PFX, P12, or image. Stored securely with profile.</div>
+                </div>
+
+                <div class="mt-6 pt-4 border-t border-zinc-700">
+                    <div class="text-sm font-medium text-zinc-300 mb-2">Used for</div>
+                    <ul class="text-xs text-zinc-500 space-y-1 list-disc pl-4">
+                        <li>Change Order approvals (Owner &amp; Architect)</li>
+                        <li>Commitment execution (internal e-sign or DocuSign)</li>
+                        <li>Pay applications &amp; formal document packages</li>
+                    </ul>
                 </div>
             </div>
 
@@ -386,8 +416,15 @@
     let phoneNumbers = []; // For dynamic phone rows
     let userAuditLog = JSON.parse(localStorage.getItem('userAuditLog')) || [];
 
-    // Demo: Current logged-in user email (matches header avatar). Determines if the viewer can edit signature/certificate in the admin modal.
-    let currentUserEmail = "michael.bretz@casepm.com";
+    const CASEPM_CURRENT_USER = {{ current_user_payload|tojson }};
+    const CASEPM_SERVER_USERS = {{ server_users_for_js|tojson }};
+    let currentUserEmail = CASEPM_CURRENT_USER.email || "michael.bretz@casepm.com";
+
+    function resolveServerUserId(localUser) {
+        if (!localUser) return null;
+        const match = (CASEPM_SERVER_USERS || []).find(u => (u.email || '').toLowerCase() === (localUser.email || '').toLowerCase());
+        return match?.id || localUser.server_id || localUser.id;
+    }
 
     // ==================== AUDIT LOGGING (operable user activity logs) ====================
     function logUserAudit(action, targetUserId, details = {}) {
@@ -710,12 +747,76 @@
     }
 
     function saveSignatureToUser() {
+        saveSignatureToServer();
+    }
+
+    async function saveSignatureToServer() {
         if (!signatureCanvas) return;
-        currentSignatureDataURL = signatureCanvas.toDataURL('image/png');
+        const editingId = parseInt(document.getElementById('userId')?.value || '0');
+        const editingUser = users.find(u => u.id === editingId);
+        const ownerEmail = (editingUser?.email || '').toLowerCase();
+        if (ownerEmail !== currentUserEmail.toLowerCase()) {
+            showCenteredAlert('Only the user themselves can save a signature. Admins cannot override.', 'warning');
+            return;
+        }
+        const dataURL = signatureCanvas.toDataURL('image/png');
         const status = document.getElementById('signatureUploadStatus');
-        if (status) {
-            status.textContent = 'Signature saved to profile.';
-            setTimeout(() => { status.textContent = ''; }, 2000);
+        try {
+            const saved = await CasePMEsign.saveMySignature({
+                signature_png: dataURL,
+                legal_name: document.getElementById('signatureLegalName')?.value?.trim() || '',
+                initials: document.getElementById('signatureInitials')?.value?.trim() || '',
+                certificate_file_name: currentCertificateFileName || undefined,
+            });
+            currentSignatureDataURL = dataURL;
+            if (editingUser) {
+                editingUser.signatureDataURL = dataURL;
+                editingUser.signature_hash = saved.hash;
+                localStorage.setItem('users', JSON.stringify(users));
+            }
+            if (status) {
+                status.textContent = 'Signature saved securely to your profile.';
+                setTimeout(() => { if (status.textContent.includes('saved')) status.textContent = ''; }, 3000);
+            }
+            const hashEl = document.getElementById('signatureHashDisplay');
+            if (hashEl && saved.hash) hashEl.textContent = `Verification hash: ${saved.hash}`;
+            logUserAudit('SIGNATURE_SAVED', editingId, { hash: saved.hash });
+        } catch (err) {
+            if (status) status.textContent = '';
+            showCenteredAlert(err.message || 'Could not save signature', 'error');
+        }
+    }
+
+    async function loadServerSignatureForUser(userId) {
+        const localUser = users.find(u => u.id == userId);
+        const serverId = resolveServerUserId(localUser) || userId;
+        try {
+            const sig = await CasePMEsign.fetchUserSignature(serverId);
+            const hashEl = document.getElementById('signatureHashDisplay');
+            if (sig.has_signature) {
+                if (sig.image_url) {
+                    currentSignatureDataURL = sig.image_url;
+                    const img = new Image();
+                    img.crossOrigin = 'anonymous';
+                    img.onload = () => {
+                        if (signatureCtx && signatureCanvas) {
+                            signatureCtx.clearRect(0, 0, signatureCanvas.width, signatureCanvas.height);
+                            signatureCtx.drawImage(img, 0, 0, signatureCanvas.width, signatureCanvas.height);
+                        }
+                    };
+                    img.src = sig.image_url + '?t=' + Date.now();
+                }
+                const ln = document.getElementById('signatureLegalName');
+                const ini = document.getElementById('signatureInitials');
+                if (ln && sig.legal_name) ln.value = sig.legal_name;
+                if (ini && sig.initials) ini.value = sig.initials;
+                if (hashEl && sig.hash) hashEl.textContent = `Verification hash: ${sig.hash}`;
+            } else if (hashEl) {
+                hashEl.textContent = '';
+            }
+            return sig;
+        } catch (_) {
+            return null;
         }
     }
 
@@ -849,59 +950,40 @@
         renderPermissionsDropdowns('permissionsContainer', user.permissions || {});
         setTimeout(() => setPermissionsToDropdowns(user.permissions || {}), 80);
 
-        // Determine if the current viewer is the owner of this profile (can edit signature/certificate)
+        // Signature — server-backed, self-edit only
         const isOwner = (user.email && user.email.toLowerCase() === currentUserEmail.toLowerCase());
-        window.currentEditIsOwner = isOwner; // Expose for other functions
-
-        // Signature (load with watermark if admin viewing someone else's signature)
-        currentSignatureDataURL = user.signatureDataURL || null;
-        if (currentSignatureDataURL) {
-            setTimeout(() => {
-                if (signatureCanvas && signatureCtx) {
-                    const img = new Image();
-                    img.onload = () => {
-                        signatureCtx.clearRect(0, 0, signatureCanvas.width, signatureCanvas.height);
-                        signatureCtx.drawImage(img, 0, 0, signatureCanvas.width, signatureCanvas.height);
-                        
-                        // If admin (not owner) is viewing, apply a visible watermark
-                        if (!isOwner) {
-                            drawSignatureWatermark();
-                        }
-                    };
-                    img.src = currentSignatureDataURL;
-                }
-            }, 220);
-        }
-
-        // Certificate
-        currentCertificateFileName = user.certificateFileName || null;
-        const certStatus = document.getElementById('certificateStatus');
-        if (certStatus && currentCertificateFileName) {
-            certStatus.textContent = 'Certificate on file: ' + currentCertificateFileName;
-        }
+        window.currentEditIsOwner = isOwner;
+        document.getElementById('signatureSelfOnlyBanner')?.classList.toggle('hidden', !isOwner);
+        document.getElementById('signatureViewOnlyBanner')?.classList.toggle('hidden', isOwner);
+        const ownerNameEl = document.getElementById('signatureOwnerName');
+        if (ownerNameEl) ownerNameEl.textContent = `${user.firstName || ''} ${user.lastName || ''}`.trim() || user.email;
 
         switchTab('general');
         document.getElementById('userModal').showModal();
 
-        setTimeout(() => {
-            initSignatureCanvas(!isOwner); // Pass viewOnly flag
+        setTimeout(async () => {
+            initSignatureCanvas(!isOwner);
             setupCertificateUpload(!isOwner);
+            await loadServerSignatureForUser(user.id);
+            if (!isOwner && currentSignatureDataURL) drawSignatureWatermark();
 
-            // Hide/disable signature editing controls for non-owners (admins viewing others)
-            const clearBtn = document.querySelector('#tab-content-signature button[onclick*="clearSignature"]');
-            const saveSigBtn = document.querySelector('#tab-content-signature button[onclick*="saveSignatureToUser"]');
-            const sigUpload = document.getElementById('signatureUpload');
-            const sigStatus = document.getElementById('signatureUploadStatus');
-
+            const editControls = document.getElementById('signatureEditControls');
+            const uploadSection = document.getElementById('signatureUploadSection');
+            const certSection = document.getElementById('certificateSection');
+            const ln = document.getElementById('signatureLegalName');
+            const ini = document.getElementById('signatureInitials');
             if (!isOwner) {
-                if (clearBtn) { clearBtn.style.display = 'none'; }
-                if (saveSigBtn) { saveSigBtn.style.display = 'none'; }
-                if (sigUpload) { sigUpload.style.display = 'none'; }
-                if (sigStatus) { sigStatus.textContent = 'View Only — Only the user themselves can draw or upload a new signature.'; }
+                if (editControls) editControls.style.display = 'none';
+                if (uploadSection) uploadSection.style.display = 'none';
+                if (certSection) certSection.style.opacity = '0.5';
+                if (ln) ln.disabled = true;
+                if (ini) ini.disabled = true;
             } else {
-                if (clearBtn) { clearBtn.style.display = ''; }
-                if (saveSigBtn) { saveSigBtn.style.display = ''; }
-                if (sigUpload) { sigUpload.style.display = ''; }
+                if (editControls) editControls.style.display = '';
+                if (uploadSection) uploadSection.style.display = '';
+                if (certSection) certSection.style.opacity = '1';
+                if (ln) ln.disabled = false;
+                if (ini) ini.disabled = false;
             }
         }, 160);
     }
@@ -974,10 +1056,9 @@
             const phones = getPhoneNumbersFromUI();
             const companyName = document.getElementById('companySelect').value;
 
-            // Certificate
-            const certInput = document.getElementById('certificateUpload');
-            if (certInput && certInput.files.length > 0) {
-                currentCertificateFileName = certInput.files[0].name;
+            let oldUserForLog = null;
+            if (id) {
+                oldUserForLog = users.find(u => u.id == id);
             }
 
             const userData = {
@@ -994,23 +1075,22 @@
                 accessEnabled: accessEnabled,
                 twoFactorEnabled: document.getElementById('twoFactorEnabled') ? document.getElementById('twoFactorEnabled').checked : false,
                 permissions: permissions,
-                signatureDataURL: currentSignatureDataURL,
-                certificateFileName: currentCertificateFileName,
                 profileImage: document.getElementById('profileImg').src,
                 notes: document.getElementById('notes').value.trim(),
                 lastUpdated: new Date().toISOString()
             };
 
+            // Signatures are NEVER saved via admin Save User — only via saveSignatureToServer() by the user themselves
+            if (oldUserForLog) {
+                userData.signatureDataURL = oldUserForLog.signatureDataURL;
+                userData.signature_hash = oldUserForLog.signature_hash;
+                userData.certificateFileName = oldUserForLog.certificateFileName;
+            }
+
             // Password handling (never store plain if possible, but for demo we store temp only if newly set)
             const tempPass = document.getElementById('tempPassword').value.trim();
             if (tempPass) {
                 userData.tempPassword = tempPass; // In real app: hash + force change flag
-            }
-
-            // Capture old user BEFORE updating array so we can compute detailed diff for audit log
-            let oldUserForLog = null;
-            if (id) {
-                oldUserForLog = users.find(u => u.id == id);
             }
 
             const existingIndex = users.findIndex(u => u.id == userData.id);
@@ -1799,14 +1879,24 @@
         }
     }
 
-    function saveProfileSignature(userId) {
+    async function saveProfileSignature(userId) {
         if (!profileSignatureCanvas) return;
         const dataURL = profileSignatureCanvas.toDataURL('image/png');
-        const user = users.find(u => u.id == userId);
-        if (user) {
-            user.signatureDataURL = dataURL;
-            localStorage.setItem('users', JSON.stringify(users));
-            showCenteredAlert('Signature saved successfully.', 'success');
+        try {
+            const saved = await CasePMEsign.saveMySignature({
+                signature_png: dataURL,
+                legal_name: document.getElementById('profileSignatureLegalName')?.value?.trim() || '',
+                initials: document.getElementById('profileSignatureInitials')?.value?.trim() || '',
+            });
+            const user = users.find(u => u.id == userId);
+            if (user) {
+                user.signatureDataURL = dataURL;
+                user.signature_hash = saved.hash;
+                localStorage.setItem('users', JSON.stringify(users));
+            }
+            showCenteredAlert('Signature saved securely to your profile.', 'success');
+        } catch (err) {
+            showCenteredAlert(err.message || 'Could not save signature', 'error');
         }
     }
 

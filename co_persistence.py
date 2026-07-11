@@ -80,6 +80,8 @@ def ensure_co_schema(engine, db):
             'approval_stage': 'INTEGER DEFAULT 0',
             'plan_pins_json': 'TEXT',
             'approval_history_json': 'TEXT',
+            'approval_signatures_json': 'TEXT',
+            'executed_locked': 'INTEGER DEFAULT 0',
         }
         for name, col_type in additions.items():
             if name not in cols:
@@ -185,6 +187,8 @@ def co_to_dict(co, allocations=None, revisions=None):
         'plan_pins': _parse_json(getattr(co, 'plan_pins_json', None), []),
         'approval_stage': getattr(co, 'approval_stage', 0) or 0,
         'approval_history': _parse_json(getattr(co, 'approval_history_json', None), []),
+        'approval_signatures': _parse_json(getattr(co, 'approval_signatures_json', None), []),
+        'executed_locked': bool(getattr(co, 'executed_locked', False)),
         'allocations': [{
             'cost_code': a.cost_code,
             'cost_type': getattr(a, 'cost_type', None) or '',
