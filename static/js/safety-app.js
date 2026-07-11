@@ -7,6 +7,8 @@
   const ctx = global.CASEPM_SAFETY_CTX || {};
   const state = {
     tab: 'reports',
+    reportsScope: 'project',
+    toolboxScope: 'project',
     reports: [], rStats: {}, rTypes: [], rSeverities: [], rStatuses: [], rEditId: null,
     rPhotos: [], rExisting: [], rPendingDocIds: [],
     photoSeq: 0, armedPhoto: null, stream: null, facingMode: 'environment',
@@ -26,6 +28,36 @@
   async function api(url, opts) { const r = await fetch(url, opts); const j = await r.json().catch(() => ({})); if (!r.ok) throw new Error(j.error || 'Request failed'); return j; }
   function fillSelect(sel, opts, val, blank) { sel.innerHTML = (blank ? `<option value="">${blank}</option>` : '') + opts.map((o) => `<option ${o === val ? 'selected' : ''}>${esc(o)}</option>`).join(''); }
 
+  function projectName(pid) {
+    const p = (ctx.projects || []).find((x) => x.id === pid);
+    return p ? p.name : '';
+  }
+
+  function updateScopeChrome() {
+    const tab = state.tab;
+    el('safReportsScope')?.classList.toggle('hidden', tab !== 'reports');
+    el('safToolboxScope')?.classList.toggle('hidden', tab !== 'toolbox');
+    el('safCompanyBadge')?.classList.toggle('hidden', tab !== 'training' && tab !== 'library');
+    const badge = el('safProjectBadge');
+    if (!badge) return;
+    if (tab === 'training' || tab === 'library') {
+      badge.textContent = 'Company-wide';
+      badge.classList.remove('hidden');
+    } else if (tab === 'toolbox' && state.toolboxScope === 'company') {
+      badge.textContent = 'Company weekly agendas';
+      badge.classList.remove('hidden');
+    } else if (tab === 'reports' && state.reportsScope === 'all') {
+      badge.textContent = 'All projects';
+      badge.classList.remove('hidden');
+    } else if (tab === 'toolbox' && state.toolboxScope === 'all') {
+      badge.textContent = 'All meetings';
+      badge.classList.remove('hidden');
+    } else {
+      badge.textContent = ctx.projectName || 'Select a project';
+      badge.classList.toggle('hidden', !ctx.projectName);
+    }
+  }
+
   // ---------------- Tabs ----------------
   function setTab(tab) {
     state.tab = tab;
@@ -35,10 +67,14 @@
     el('safTabToolbox').classList.toggle('hidden', tab !== 'toolbox');
     el('safTabLibrary').classList.toggle('hidden', tab !== 'library');
     const label = el('safBtnNewLabel');
-    el('safBtnNew').style.display = (tab === 'library') ? 'none' : '';
+    const newBtn = el('safBtnNew');
+    if (newBtn) newBtn.style.display = (tab === 'library') ? 'none' : '';
     if (label) {
-      label.textContent = tab === 'training' ? 'Add Certification' : tab === 'toolbox' ? 'New Toolbox Meeting' : 'New Report';
+      if (tab === 'training') label.textContent = 'Add Certification';
+      else if (tab === 'toolbox') label.textContent = (ctx.isAdmin && state.toolboxScope === 'company') ? 'New Weekly Agenda' : 'New Toolbox Meeting';
+      else label.textContent = 'New Report';
     }
+    updateScopeChrome();
     if (tab === 'library' && !state.library.length) loadLibrary();
     if (tab === 'training' && !state.certs.length) loadCerts();
     if (tab === 'training' && global.CasePMSafetyCalendar) global.CasePMSafetyCalendar.loadCalendar().catch(() => {});
@@ -94,7 +130,8 @@
   }
 
   async function loadReports() {
-    const pid = projectId();
+    const scope = state.reportsScope || el('safReportsScope')?.value || 'project';
+    const pid = scope === 'all' ? 'all' : projectId();
     el('safStatusText').textContent = 'Loading…';
     try {
       const j = await api(`/api/safety/reports${pid ? `?project_id=${pid}` : ''}`);
@@ -104,7 +141,9 @@
       buildIncidentFields();
       if (el('rTypeFilter').options.length <= 1) state.rTypes.forEach((t) => el('rTypeFilter').add(new Option(t, t)));
       if (el('rStatusFilter').options.length <= 1) state.rStatuses.forEach((t) => el('rStatusFilter').add(new Option(t, t)));
-      const badge = el('safProjectBadge'); if (badge) badge.textContent = ctx.projectName || 'All projects';
+      const pf = el('rProjectFilter');
+      if (pf && pf.options.length <= 1) (ctx.projects || []).forEach((p) => pf.add(new Option(p.name, String(p.id))));
+      updateScopeChrome();
       renderReportStats(); renderReports();
       el('safUpdatedAt').textContent = `Updated ${new Date().toLocaleTimeString()}`;
       el('safStatusText').textContent = `${state.reports.length} report(s)`;
@@ -125,14 +164,17 @@
   function renderReports() {
     const term = (el('rSearch').value || '').toLowerCase();
     const tf = el('rTypeFilter').value, sf = el('rStatusFilter').value;
+    const pj = el('rProjectFilter')?.value || '';
     const rows = state.reports.filter((r) => {
       if (tf && r.type !== tf) return false;
       if (sf && r.status !== sf) return false;
-      if (term && !`${r.number} ${r.description} ${r.location || ''} ${r.assigned_to || ''}`.toLowerCase().includes(term)) return false;
+      if (pj && String(r.project_id) !== pj) return false;
+      if (term && !`${r.number} ${r.description} ${r.location || ''} ${r.assigned_to || ''} ${projectName(r.project_id)}`.toLowerCase().includes(term)) return false;
       return true;
     });
     const host = el('rList');
     if (!rows.length) { host.innerHTML = `<div class="px-6 py-12 text-center text-zinc-500"><i class="fa-solid fa-shield-heart text-4xl mb-3 block text-zinc-600"></i>No safety reports yet.</div>`; return; }
+    const showProject = state.reportsScope === 'all';
     host.innerHTML = rows.map((r) => `
       <div class="saf-row" data-open="${r.id}">
         <i class="fa-solid ${typeIcon(r.type)} text-lg w-6 text-center"></i>
@@ -141,6 +183,7 @@
           <div class="saf-meta">
             <span class="font-mono">${esc(r.number || '')}</span>
             <span>${esc(r.type || '')}</span>
+            ${showProject && r.project_id ? `<span><i class="fa-solid fa-folder"></i> ${esc(projectName(r.project_id))}</span>` : ''}
             ${r.location ? `<span><i class="fa-solid fa-location-dot"></i> ${esc(r.location)}</span>` : ''}
             ${r.assigned_to ? `<span><i class="fa-solid fa-user"></i> ${esc(r.assigned_to)}</span>` : ''}
             ${r.report_date ? `<span><i class="fa-solid fa-calendar"></i> ${fmtDate(r.report_date)}</span>` : ''}
@@ -403,9 +446,8 @@
 
   // ---------------- Certifications ----------------
   async function loadCerts() {
-    const pid = projectId();
     try {
-      const j = await api(`/api/safety/certifications${pid ? `?project_id=${pid}` : ''}`);
+      const j = await api('/api/safety/certifications?project_id=all');
       state.certs = j.certifications || []; state.cStats = j.stats || {}; state.cTypes = j.cert_types || [];
       if (el('cTypeFilter').options.length <= 1) state.cTypes.forEach((t) => el('cTypeFilter').add(new Option(t, t)));
       const dl = el('cCompanyList'); const set = new Set(); state.certs.forEach((c) => { if (c.company) set.add(c.company); });
@@ -513,9 +555,42 @@
     } catch (e) { el('safStatusText').textContent = 'Error: ' + e.message; alert(e.message); }
   }
 
+  async function checkLibraryUpdates() {
+    const banner = el('safUpdateBanner');
+    const btn = el('safCheckUpdates');
+    if (btn) { btn.disabled = true; btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin mr-1"></i>Checking…'; }
+    try {
+      const j = await api('/api/safety/osha-library/check-updates');
+      const n = j.summary?.update_available || 0;
+      if (banner) {
+        if (n) {
+          const names = (j.items || []).filter((i) => i.status === 'update_available').map((i) => i.title).slice(0, 4);
+          banner.classList.remove('hidden');
+          banner.innerHTML = `<i class="fa-solid fa-circle-exclamation mr-1"></i><b>${n} update(s) available</b> on OSHA.gov${names.length ? `: ${names.map(esc).join(', ')}${n > 4 ? '…' : ''}` : ''}. Use <b>Save</b> on each card to pull the latest into Documents.`;
+        } else {
+          banner.classList.remove('hidden');
+          banner.className = 'mb-3 text-xs bg-emerald-900/30 border border-emerald-700 text-emerald-200 rounded-md px-3 py-2';
+          banner.innerHTML = '<i class="fa-solid fa-check mr-1"></i>Bundled OSHA PDFs match the latest official versions checked just now.';
+        }
+      }
+      el('safStatusText').textContent = `OSHA library checked — ${n} update(s) available`;
+    } catch (e) {
+      if (banner) { banner.classList.remove('hidden'); banner.className = 'mb-3 text-xs bg-red-900/30 border border-red-700 text-red-200 rounded-md px-3 py-2'; banner.textContent = e.message; }
+    } finally {
+      if (btn) { btn.disabled = false; btn.innerHTML = '<i class="fa-solid fa-rotate mr-1"></i>Check for updates'; }
+    }
+  }
+
   // ---------------- Init ----------------
   function bind() {
     document.querySelectorAll('.saf-tab').forEach((t) => t.addEventListener('click', () => setTab(t.getAttribute('data-tab'))));
+    el('safReportsScope')?.addEventListener('change', (e) => { state.reportsScope = e.target.value; loadReports(); });
+    el('safToolboxScope')?.addEventListener('change', (e) => {
+      state.toolboxScope = e.target.value;
+      updateScopeChrome();
+      if (global.CasePMSafetyToolbox) global.CasePMSafetyToolbox.setScope(e.target.value);
+      setTab('toolbox');
+    });
     el('safBtnRefresh')?.addEventListener('click', () => { loadReports(); if (state.tab === 'training') loadCerts(); });
     el('safBtnNew').addEventListener('click', () => {
       if (state.tab === 'training') openCertCreate();
@@ -541,7 +616,7 @@
     el('rCamShoot')?.addEventListener('click', onCamShoot);
     el('rCamName')?.addEventListener('click', onCamName);
     el('rCamSwitch')?.addEventListener('click', () => { state.facingMode = state.facingMode === 'environment' ? 'user' : 'environment'; startStream(); });
-    ['rSearch', 'rTypeFilter', 'rStatusFilter'].forEach((id) => { el(id).addEventListener('input', renderReports); el(id).addEventListener('change', renderReports); });
+    ['rSearch', 'rTypeFilter', 'rStatusFilter', 'rProjectFilter'].forEach((id) => { el(id)?.addEventListener('input', renderReports); el(id)?.addEventListener('change', renderReports); });
 
     el('cModalClose').addEventListener('click', () => el('cModal').close());
     el('cCancel').addEventListener('click', () => el('cModal').close());
@@ -550,11 +625,18 @@
     ['cSearch', 'cTypeFilter', 'cStatusFilter'].forEach((id) => { el(id).addEventListener('input', renderCerts); el(id).addEventListener('change', renderCerts); });
 
     el('safImportAll').addEventListener('click', () => saveToDocuments(null));
+    el('safCheckUpdates')?.addEventListener('click', () => checkLibraryUpdates().catch((e) => alert(e.message)));
 
-    global.addEventListener('casepm:project-changed', () => { loadReports(); state.certs = []; state.library = []; });
-    global.onCasePmProjectChanged = (pid) => { ctx.projectId = pid; loadReports(); state.certs = []; state.library = []; };
+    global.addEventListener('casepm:project-changed', () => { loadReports(); state.certs = []; state.library = []; updateScopeChrome(); });
+    global.onCasePmProjectChanged = (pid, name) => { ctx.projectId = pid; ctx.projectName = name || projectName(pid); loadReports(); state.certs = []; state.library = []; updateScopeChrome(); };
   }
-  function init() { bind(); loadReports(); }
+  function init() {
+    if (el('safReportsScope')) state.reportsScope = el('safReportsScope').value;
+    if (el('safToolboxScope')) state.toolboxScope = el('safToolboxScope').value;
+    bind();
+    loadReports();
+    updateScopeChrome();
+  }
   global.CasePMSafety = { refresh: loadReports, refreshCerts: loadCerts, getCertTypes: () => state.cTypes };
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', init);
   else init();

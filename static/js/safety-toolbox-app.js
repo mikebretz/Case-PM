@@ -8,6 +8,7 @@
   const MEETING_TYPE = 'toolbox_talk';
   const state = {
     meetings: [], catalog: null, editId: null, tab: 'details',
+    scope: 'project', isCompanyAgenda: false, sourceMeetingId: null, hasSignIn: false,
     agenda: [], actionItems: [], transcriptSegments: [], speakers: [],
     recording: false, listening: false, recordChunks: [],
     audioStream: null, mediaRecorder: null, audioContext: null, analyser: null,
@@ -70,50 +71,115 @@
     return j;
   }
 
+  function isAdmin() { return !!ctx.isAdmin; }
+  function fridayOfWeek(d) {
+    const dt = d ? new Date(d + 'T12:00:00') : new Date();
+    const day = dt.getDay();
+    const diff = (5 - day + 7) % 7;
+    if (day === 6) dt.setDate(dt.getDate() - 1);
+    else if (day === 0) dt.setDate(dt.getDate() - 2);
+    else dt.setDate(dt.getDate() + diff);
+    return dt.toISOString().slice(0, 10);
+  }
+
+  function currentScope() {
+    return state.scope || el('safToolboxScope')?.value || 'project';
+  }
+
   async function refresh() {
-    const pid = projectId();
     if (!el('tbList')) return;
+    const scope = currentScope();
+    const pid = projectId();
+    let url = `/api/meeting-minutes?meeting_type=${MEETING_TYPE}&scope=${encodeURIComponent(scope)}`;
+    if (scope === 'project' && pid) url += `&project_id=${pid}`;
+    else if (scope === 'all' && pid) url += `&project_id=${pid}`;
     try {
-      const j = await api(`/api/meeting-minutes?meeting_type=${MEETING_TYPE}${pid ? `&project_id=${pid}` : ''}`);
+      const j = await api(url);
       state.meetings = j.meetings || [];
       renderList();
+      updateAdoptButton();
     } catch (e) {
       if (el('tbList')) el('tbList').innerHTML = `<div class="px-6 py-8 text-center text-red-400 text-sm">${esc(e.message)}</div>`;
     }
+  }
+
+  function setScope(scope) {
+    state.scope = scope;
+    refresh();
+  }
+
+  function updateAdoptButton() {
+    const btn = el('tbAdoptWeekly');
+    if (!btn) return;
+    const scope = currentScope();
+    const pid = projectId();
+    const companyAgendas = state.meetings.filter((m) => m.is_company_agenda || m.scope === 'company');
+    const show = scope !== 'company' && pid && companyAgendas.length > 0;
+    btn.classList.toggle('hidden', !show);
+    if (show) {
+      const latest = companyAgendas[0];
+      btn.dataset.adoptId = latest.id;
+      btn.title = `Copy "${latest.subject}" to this project`;
+    }
+  }
+
+  function meetingBadges(m) {
+    const pills = [];
+    if (m.is_company_agenda || m.scope === 'company') pills.push('<span class="tb-scope-pill company">Company agenda</span>');
+    if (m.source_meeting_id) pills.push('<span class="tb-scope-pill">Adopted</span>');
+    if (m.status === 'Completed') pills.push('<span class="tb-scope-pill done">Completed</span>');
+    if (m.has_sign_in) pills.push('<span class="tb-scope-pill done"><i class="fa-solid fa-file-signature mr-0.5"></i>Sign-in</span>');
+    return pills.join(' ');
   }
 
   function renderList() {
     const host = el('tbList');
     if (!host) return;
     const term = (el('tbSearch')?.value || '').toLowerCase();
+    const scope = currentScope();
     const rows = state.meetings.filter((m) => {
       if (!term) return true;
-      return `${m.subject} ${m.location || ''} ${m.organizer || ''}`.toLowerCase().includes(term);
+      return `${m.subject} ${m.location || ''} ${m.organizer || ''} ${m.week_ending || ''}`.toLowerCase().includes(term);
     });
     if (!rows.length) {
-      host.innerHTML = '<div class="px-6 py-12 text-center text-zinc-500"><i class="fa-solid fa-toolbox text-4xl mb-3 block text-zinc-600"></i>No toolbox meetings yet. Start with <b>New Toolbox Meeting</b>.</div>';
+      const hint = scope === 'company'
+        ? (isAdmin() ? 'No company weekly agendas yet. Use <b>New Weekly Agenda</b> to publish one for all active projects.' : 'No company agendas published yet.')
+        : 'No toolbox meetings yet. Adopt the company weekly agenda or start with <b>New Toolbox Meeting</b>.';
+      host.innerHTML = `<div class="px-6 py-12 text-center text-zinc-500"><i class="fa-solid fa-toolbox text-4xl mb-3 block text-zinc-600"></i>${hint}</div>`;
       return;
     }
     host.innerHTML = rows.map((m) => `
-      <div class="saf-row" data-tb-open="${m.id}">
+      <div class="saf-row" data-tb-open="${m.id}" data-tb-company="${m.is_company_agenda ? '1' : '0'}">
         <i class="fa-solid fa-toolbox text-emerald-400 text-lg w-6 text-center"></i>
         <div class="min-w-0 flex-1">
           <div class="text-sm truncate">${esc(m.subject || 'Toolbox talk')}</div>
           <div class="saf-meta">
             <span><i class="fa-solid fa-calendar"></i> ${fmtDate(m.meeting_date)}</span>
+            ${m.week_ending ? `<span>Week ending ${fmtDate(m.week_ending)}</span>` : ''}
             ${m.location ? `<span><i class="fa-solid fa-location-dot"></i> ${esc(m.location)}</span>` : ''}
             ${m.organizer ? `<span><i class="fa-solid fa-user"></i> ${esc(m.organizer)}</span>` : ''}
             ${m.has_recording ? '<span><i class="fa-solid fa-microphone text-red-400"></i> Recording</span>' : ''}
+            ${meetingBadges(m)}
           </div>
         </div>
-        <span class="saf-chip bg-zinc-700 text-zinc-300">${esc(m.status || 'Draft')}</span>
+        <div class="flex items-center gap-2 shrink-0">
+          ${(m.is_company_agenda && scope !== 'company' && projectId()) ? `<button type="button" class="px-2 py-1 text-[10px] bg-emerald-700 hover:bg-emerald-600 rounded-md font-semibold" data-tb-adopt="${m.id}">Adopt &amp; run</button>` : ''}
+          <span class="saf-chip bg-zinc-700 text-zinc-300">${esc(m.status || 'Draft')}</span>
+        </div>
       </div>`).join('');
-    host.querySelectorAll('[data-tb-open]').forEach((n) => n.addEventListener('click', () => openMeeting(parseInt(n.getAttribute('data-tb-open'), 10))));
+    host.querySelectorAll('[data-tb-open]').forEach((n) => n.addEventListener('click', (e) => {
+      if (e.target.closest('[data-tb-adopt]')) return;
+      openMeeting(parseInt(n.getAttribute('data-tb-open'), 10));
+    }));
+    host.querySelectorAll('[data-tb-adopt]').forEach((b) => b.addEventListener('click', (e) => {
+      e.stopPropagation();
+      adoptMeeting(parseInt(b.getAttribute('data-tb-adopt'), 10), true).catch((err) => alert(err.message));
+    }));
   }
 
   function setTab(tab) {
     state.tab = tab;
-    const tabs = ['Details', 'Agenda', 'Run', 'Capture', 'Transcript', 'Minutes'];
+    const tabs = ['Details', 'Agenda', 'Run', 'Complete', 'Capture', 'Transcript', 'Minutes'];
     tabs.forEach((t) => {
       const key = t.toLowerCase();
       el(`tbTab${t}`)?.classList.toggle('active', key === tab);
@@ -261,20 +327,35 @@
   function renderAgenda() {
     const host = el('tbAgendaEditor');
     if (!host) return;
-    host.innerHTML = `<div class="grid grid-cols-12 gap-2 mb-1 text-[10px] text-zinc-500 uppercase"><div class="col-span-1">#</div><div class="col-span-4">Item</div><div class="col-span-2">Led by</div><div class="col-span-1">Min</div><div class="col-span-4">Notes / topic</div></div>` +
-      state.agenda.map((row, i) => `
-      <div class="mb-3 border border-zinc-800 rounded-md p-2">
-        <div class="grid grid-cols-12 gap-2 items-start">
-          <div class="col-span-1 text-xs text-zinc-500 pt-2">${i + 1}</div>
-          <div class="col-span-4"><input class="saf-input text-xs" data-agenda-field="topic" data-agenda-i="${i}" value="${esc(row.topic || '')}">${topicContentHtml(row)}</div>
-          <div class="col-span-2"><input class="saf-input text-xs" data-agenda-field="presenter" data-agenda-i="${i}" value="${esc(row.presenter || '')}"></div>
-          <div class="col-span-1"><input type="number" class="saf-input text-xs" data-agenda-field="minutes" data-agenda-i="${i}" value="${row.minutes || ''}"></div>
-          <div class="col-span-4">
-            <input class="saf-input text-xs mb-1" data-agenda-field="notes" data-agenda-i="${i}" value="${esc(row.notes || '')}" placeholder="Notes">
+    host.innerHTML = state.agenda.map((row, i) => `
+      <div class="tb-agenda-card ${row.covered ? 'covered' : ''}" data-agenda-card="${i}">
+        <div class="flex items-start justify-between gap-2 mb-2">
+          <div class="text-xs text-zinc-500 font-mono">#${i + 1}</div>
+          <div class="flex gap-2">
             <button type="button" class="text-[10px] text-sky-400 hover:underline" data-attach-topic="${i}"><i class="fa-solid fa-book mr-1"></i>${row.topic_key ? 'Change topic' : 'Attach OSHA topic'}</button>
+            ${row.covered ? '<span class="text-[10px] text-emerald-400"><i class="fa-solid fa-check"></i> Covered</span>' : ''}
           </div>
         </div>
-        ${row.briefing ? `<details class="mt-2 text-xs text-zinc-400"><summary class="cursor-pointer text-zinc-500">Briefing script</summary><pre class="whitespace-pre-wrap mt-1 text-zinc-300 bg-zinc-950 p-2 rounded">${esc(row.briefing)}</pre></details>` : ''}
+        <div class="grid grid-cols-1 md:grid-cols-12 gap-2 items-start">
+          <div class="md:col-span-5">
+            <label class="block text-[10px] text-zinc-500 mb-1">Agenda item</label>
+            <input class="saf-input text-sm" data-agenda-field="topic" data-agenda-i="${i}" value="${esc(row.topic || '')}">
+            ${topicContentHtml(row)}
+          </div>
+          <div class="md:col-span-2">
+            <label class="block text-[10px] text-zinc-500 mb-1">Led by</label>
+            <input class="saf-input text-xs" data-agenda-field="presenter" data-agenda-i="${i}" value="${esc(row.presenter || '')}">
+          </div>
+          <div class="md:col-span-1">
+            <label class="block text-[10px] text-zinc-500 mb-1">Min</label>
+            <input type="number" class="saf-input text-xs" data-agenda-field="minutes" data-agenda-i="${i}" value="${row.minutes || ''}">
+          </div>
+          <div class="md:col-span-4">
+            <label class="block text-[10px] text-zinc-500 mb-1">Notes for crew / superintendent</label>
+            <textarea rows="2" class="saf-input text-xs resize-y" data-agenda-field="notes" data-agenda-i="${i}">${esc(row.notes || '')}</textarea>
+          </div>
+        </div>
+        ${row.briefing ? `<details class="mt-2 text-xs text-zinc-400"><summary class="cursor-pointer text-zinc-500">OSHA briefing script</summary><pre class="whitespace-pre-wrap mt-1 text-zinc-300 bg-zinc-950 p-2 rounded">${esc(row.briefing)}</pre></details>` : ''}
       </div>`).join('');
     host.querySelectorAll('[data-agenda-field]').forEach((inp) => {
       inp.addEventListener('input', () => {
@@ -403,8 +484,32 @@
     if (el('tbDiscussion')) el('tbDiscussion').value = lines.join('\n\n');
   }
 
+  function syncCompanyUi() {
+    const company = state.isCompanyAgenda;
+    el('tbCompanyBanner')?.classList.toggle('hidden', !company);
+    el('tbWeekEndingWrap')?.classList.toggle('hidden', !company);
+    el('tbCompanyWideWrap')?.classList.toggle('hidden', !isAdmin() || !!state.editId);
+    if (el('tbCompanyWide')) el('tbCompanyWide').checked = company;
+  }
+
+  function updateSignInUi(m) {
+    state.hasSignIn = !!(m?.has_sign_in);
+    const view = el('tbSignInView');
+    const status = el('tbSignInStatus');
+    if (state.hasSignIn && m?.id) {
+      if (view) { view.href = `/api/meeting-minutes/${m.id}/sign-in`; view.classList.remove('hidden'); }
+      if (status) status.textContent = m.sign_in_attachment?.original_name || 'Sign-in sheet uploaded';
+    } else {
+      if (view) view.classList.add('hidden');
+      if (status) status.textContent = '';
+    }
+  }
+
   function resetModal() {
     state.editId = null;
+    state.isCompanyAgenda = currentScope() === 'company';
+    state.sourceMeetingId = null;
+    state.hasSignIn = false;
     state.transcriptSegments = [];
     state.agenda = [];
     state.actionItems = [];
@@ -412,10 +517,11 @@
     state.runStep = 0;
     clearInterval(state.runTimer);
     stopAllCapture();
-    el('tbModalTitle').textContent = 'New Toolbox Meeting';
+    el('tbModalTitle').textContent = state.isCompanyAgenda ? 'New Weekly Company Agenda' : 'New Toolbox Meeting';
     el('tbDelete').classList.add('hidden');
     el('tbSubject').value = '';
     el('tbDate').value = new Date().toISOString().slice(0, 10);
+    if (el('tbWeekEnding')) el('tbWeekEnding').value = fridayOfWeek();
     el('tbLocation').value = '';
     el('tbOrganizer').value = '';
     el('tbAttendees').value = '';
@@ -431,13 +537,33 @@
     renderActionEditor();
     renderSpeakerBar();
     renderTranscript();
+    syncCompanyUi();
+    updateSignInUi(null);
     setTab('details');
   }
 
   async function openCreate() {
     await loadCatalog();
     resetModal();
+    if (isAdmin() && currentScope() === 'company') state.isCompanyAgenda = true;
+    syncCompanyUi();
     el('tbModal').showModal();
+  }
+
+  async function adoptMeeting(sourceId, openAfter) {
+    const pid = projectId();
+    if (!pid) { alert('Select a project first.'); return; }
+    const j = await api(`/api/meeting-minutes/${sourceId}/adopt`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ project_id: pid, meeting_date: new Date().toISOString().slice(0, 10) }),
+    });
+    await refresh();
+    if (openAfter && j.meeting?.id) {
+      await openMeeting(j.meeting.id);
+      setTab('run');
+      if (global.showToast) global.showToast('Company agenda copied to this project — ready to run');
+    } else if (global.showToast) global.showToast('Company agenda adopted for this project');
   }
 
   async function openMeeting(id) {
@@ -445,10 +571,13 @@
     const j = await api(`/api/meeting-minutes/${id}`);
     const m = j.meeting;
     state.editId = id;
+    state.isCompanyAgenda = !!(m.is_company_agenda || m.scope === 'company');
+    state.sourceMeetingId = m.source_meeting_id || null;
     el('tbModalTitle').textContent = m.subject || 'Toolbox Meeting';
-    el('tbDelete').classList.remove('hidden');
+    el('tbDelete').classList.toggle('hidden', state.isCompanyAgenda && !isAdmin());
     el('tbSubject').value = m.subject || '';
     el('tbDate').value = m.meeting_date || '';
+    if (el('tbWeekEnding')) el('tbWeekEnding').value = m.week_ending || fridayOfWeek(m.meeting_date);
     el('tbLocation').value = m.location || '';
     el('tbOrganizer').value = m.organizer || '';
     el('tbAttendees').value = (m.attendees || []).map((a) => `${a.name || ''}${a.company ? ' — ' + a.company : ''}`).join('\n');
@@ -470,22 +599,24 @@
       const player = el('tbRecordingPlayer');
       if (player) { player.src = `/api/meeting-minutes/${id}/recording`; player.classList.remove('hidden'); }
     }
+    syncCompanyUi();
+    updateSignInUi(m);
     el('tbModal').showModal();
   }
 
   function collectPayload() {
+    const company = state.isCompanyAgenda || !!el('tbCompanyWide')?.checked;
     const attendees = (el('tbAttendees').value || '').split('\n').map((line) => {
       const parts = line.split('—').map((s) => s.trim());
       return { name: parts[0] || '', company: parts[1] || '' };
     }).filter((a) => a.name);
-    return {
-      project_id: projectId(),
+    const payload = {
       meeting_type: MEETING_TYPE,
-      subject: el('tbSubject').value.trim() || 'Toolbox / Tailgate Talk',
+      subject: el('tbSubject').value.trim() || (company ? 'Weekly Toolbox Agenda' : 'Toolbox / Tailgate Talk'),
       meeting_date: el('tbDate').value,
       location: el('tbLocation').value.trim(),
       organizer: el('tbOrganizer').value.trim(),
-      status: 'Completed',
+      status: company ? 'Published' : (state.editId ? undefined : 'Scheduled'),
       attendees,
       discussion_notes: el('tbDiscussion').value,
       minutes_body: el('tbMinutesBody').value,
@@ -493,16 +624,25 @@
       action_items: collectActions(),
       transcript_segments: state.transcriptSegments,
       speakers: voice().getSpeakers(),
+      scope: company ? 'company' : 'project',
+      week_ending: el('tbWeekEnding')?.value || fridayOfWeek(el('tbDate')?.value),
+      toolbox_meta: { scope: company ? 'company' : 'project', week_ending: el('tbWeekEnding')?.value || fridayOfWeek(el('tbDate')?.value) },
     };
+    if (!company) payload.project_id = projectId();
+    else payload.project_id = null;
+    return payload;
   }
 
-  async function save() {
+  async function save(keepOpen) {
     const payload = collectPayload();
-    if (!payload.project_id) { alert('Select a project first.'); return; }
+    const company = payload.scope === 'company';
+    if (!company && !payload.project_id) { alert('Select a project first.'); return; }
+    if (company && !isAdmin()) { alert('Only admins can publish company-wide agendas.'); return; }
     const url = state.editId ? `/api/meeting-minutes/${state.editId}` : '/api/meeting-minutes';
     const method = state.editId ? 'PUT' : 'POST';
     const j = await api(url, { method, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
     const meetingId = state.editId || j.meeting?.id;
+    if (j.meeting?.id) state.editId = j.meeting.id;
     voice().persistProfiles(projectId());
     if (state.recordChunks.length && meetingId) {
       const blob = new Blob(state.recordChunks, { type: state.recordChunks[0]?.type || 'audio/webm' });
@@ -511,9 +651,11 @@
       await fetch(`/api/meeting-minutes/${meetingId}/recording`, { method: 'POST', body: fd });
       state.recordChunks = [];
     }
-    stopAllCapture();
-    el('tbModal').close();
-    refresh();
+    if (!keepOpen) {
+      stopAllCapture();
+      el('tbModal').close();
+      refresh();
+    }
   }
 
   async function del() {
@@ -709,6 +851,43 @@
     renderRunStep();
   }
 
+  async function uploadSignIn(file) {
+    if (!state.editId) {
+      await save(true);
+      if (!state.editId) return;
+    }
+    const fd = new FormData();
+    fd.append('file', file);
+    const r = await fetch(`/api/meeting-minutes/${state.editId}/sign-in`, { method: 'POST', body: fd });
+    const j = await r.json().catch(() => ({}));
+    if (!r.ok) throw new Error(j.error || 'Upload failed');
+    state.hasSignIn = true;
+    updateSignInUi(j.meeting || { id: state.editId, has_sign_in: true, sign_in_attachment: j.meeting?.sign_in_attachment });
+    if (global.showToast) global.showToast('Sign-in sheet uploaded');
+    refresh();
+  }
+
+  async function markComplete() {
+    if (!state.editId) {
+      await save(true);
+      if (!state.editId) return;
+    }
+    if (!state.hasSignIn) {
+      if (!confirm('No sign-in sheet uploaded yet. Submit anyway?')) return;
+      await api(`/api/meeting-minutes/${state.editId}/complete`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ require_sign_in: false }),
+      });
+    } else {
+      await api(`/api/meeting-minutes/${state.editId}/complete`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' });
+    }
+    stopAllCapture();
+    el('tbModal').close();
+    refresh();
+    if (global.showToast) global.showToast('Toolbox meeting marked complete');
+  }
+
   function endMeeting() {
     syncRunNotesToAgenda();
     state.runActive = false;
@@ -716,8 +895,8 @@
     stopAllCapture();
     el('tbRunIdle')?.classList.remove('hidden');
     el('tbRunActive')?.classList.add('hidden');
-    if (global.showToast) global.showToast('Meeting ended — review transcript and save');
-    setTab('minutes');
+    if (global.showToast) global.showToast('Meeting ended — upload sign-in sheet on Wrap Up');
+    setTab('complete');
   }
 
   function goRunStep(delta) {
@@ -746,7 +925,21 @@
       state.actionItems.push({ description: '', assigned_to: '', due_date: '', status: 'Open', priority: 'Normal' });
       renderActionEditor();
     });
-    el('tbPrintBlankAgenda')?.addEventListener('click', async () => { await loadCatalog(); printAgenda(true); });
+    el('tbCompanyWide')?.addEventListener('change', (e) => {
+      state.isCompanyAgenda = e.target.checked;
+      syncCompanyUi();
+    });
+    el('tbAdoptWeekly')?.addEventListener('click', () => {
+      const id = parseInt(el('tbAdoptWeekly')?.dataset.adoptId || '0', 10);
+      if (id) adoptMeeting(id, true).catch((e) => alert(e.message));
+    });
+    el('tbSignInBrowse')?.addEventListener('click', () => el('tbSignInInput')?.click());
+    el('tbSignInInput')?.addEventListener('change', (e) => {
+      const f = e.target.files?.[0];
+      e.target.value = '';
+      if (f) uploadSignIn(f).catch((err) => alert(err.message));
+    });
+    el('tbMarkComplete')?.addEventListener('click', () => markComplete().catch((e) => alert(e.message)));
     el('tbModalClose')?.addEventListener('click', () => { stopAllCapture(); el('tbModal').close(); });
     el('tbCancel')?.addEventListener('click', () => { stopAllCapture(); el('tbModal').close(); });
     el('tbSave')?.addEventListener('click', () => save().catch((e) => alert(e.message)));
@@ -766,7 +959,8 @@
     el('tbRunNext')?.addEventListener('click', () => goRunStep(1));
     el('tbRunRecord')?.addEventListener('click', () => state.recording ? stopRecording() : startRecording().catch((e) => alert(e.message)));
     el('tbRunDictate')?.addEventListener('click', () => state.listening ? stopDictation() : startDictation());
-    ['Details', 'Agenda', 'Run', 'Capture', 'Transcript', 'Minutes'].forEach((t) => {
+    el('tbPrintBlankAgenda')?.addEventListener('click', async () => { await loadCatalog(); printAgenda(true); });
+    ['Details', 'Agenda', 'Run', 'Complete', 'Capture', 'Transcript', 'Minutes'].forEach((t) => {
       el(`tbTab${t}`)?.addEventListener('click', () => setTab(t.toLowerCase()));
     });
     global.addEventListener('casepm:project-changed', refresh);
@@ -778,7 +972,7 @@
     loadCatalog().then(refresh);
   }
 
-  global.CasePMSafetyToolbox = { refresh, openCreate, openMeeting };
+  global.CasePMSafetyToolbox = { refresh, openCreate, openMeeting, setScope, adoptMeeting };
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', init);
   else init();
 })(window);
