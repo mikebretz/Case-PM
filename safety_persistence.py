@@ -19,6 +19,163 @@ CERT_TYPES = (
 
 OPEN_REPORT_STATUSES = ('Open', 'Under Investigation', 'Corrective Action')
 
+INJURY_ILLNESS_TYPES = (
+    'Injury', 'Illness', 'Near Miss — No Injury', 'Property Damage Only', 'Environmental',
+)
+BODY_PARTS = (
+    'Head', 'Eye(s)', 'Neck', 'Shoulder', 'Arm', 'Hand/Wrist', 'Back', 'Chest', 'Abdomen',
+    'Hip', 'Leg', 'Knee', 'Ankle/Foot', 'Multiple', 'Internal', 'Other',
+)
+MEDICAL_TREATMENT_LEVELS = (
+    'No Treatment', 'First Aid Only', 'Medical Treatment Beyond First Aid',
+    'Emergency Room', 'Hospitalized Overnight', 'Fatality',
+)
+OSHA_RECORDABLE_OPTIONS = ('Yes', 'No', 'Under Review', 'Pending Determination')
+
+# OSHA Form 301 / employer first report of injury — field groups for UI + details_json.
+INCIDENT_FIELD_GROUPS = [
+    {
+        'key': 'when_where',
+        'label': 'When & Where',
+        'fields': [
+            {'key': 'incident_date', 'label': 'Incident date', 'type': 'date'},
+            {'key': 'incident_time', 'label': 'Incident time', 'type': 'time'},
+            {'key': 'reported_datetime', 'label': 'Date/time reported to supervisor', 'type': 'text'},
+            {'key': 'reported_to', 'label': 'Reported to (name/title)', 'type': 'text'},
+            {'key': 'site_address', 'label': 'Job site / facility address', 'type': 'text'},
+            {'key': 'specific_location', 'label': 'Specific location on site', 'type': 'text'},
+            {'key': 'weather_conditions', 'label': 'Weather conditions', 'type': 'text'},
+            {'key': 'lighting_conditions', 'label': 'Lighting / visibility', 'type': 'text'},
+        ],
+    },
+    {
+        'key': 'employee',
+        'label': 'Employee / Involved Person',
+        'fields': [
+            {'key': 'employee_name', 'label': 'Full name', 'type': 'text'},
+            {'key': 'employee_job_title', 'label': 'Job title / trade', 'type': 'text'},
+            {'key': 'employee_department', 'label': 'Department / crew', 'type': 'text'},
+            {'key': 'employee_supervisor', 'label': 'Supervisor', 'type': 'text'},
+            {'key': 'employee_phone', 'label': 'Phone', 'type': 'text'},
+            {'key': 'employee_hire_date', 'label': 'Date of hire', 'type': 'date'},
+            {'key': 'contractor_company', 'label': 'Employer / subcontractor', 'type': 'text'},
+            {'key': 'years_experience', 'label': 'Years experience (trade/task)', 'type': 'text'},
+        ],
+    },
+    {
+        'key': 'incident',
+        'label': 'What Happened',
+        'fields': [
+            {'key': 'activity_before_incident', 'label': 'Activity before incident', 'type': 'textarea'},
+            {'key': 'incident_narrative', 'label': 'Detailed description of incident', 'type': 'textarea'},
+            {'key': 'injury_illness_type', 'label': 'Injury or illness type', 'type': 'select', 'options': list(INJURY_ILLNESS_TYPES)},
+            {'key': 'body_part_affected', 'label': 'Body part(s) affected', 'type': 'select', 'options': list(BODY_PARTS)},
+            {'key': 'nature_of_injury', 'label': 'Nature of injury (cut, fracture, sprain, etc.)', 'type': 'text'},
+            {'key': 'object_substance', 'label': 'Object or substance that harmed employee', 'type': 'text'},
+            {'key': 'equipment_involved', 'label': 'Equipment / tools involved', 'type': 'text'},
+            {'key': 'ppe_in_use', 'label': 'PPE in use at time of incident', 'type': 'text'},
+        ],
+    },
+    {
+        'key': 'witnesses',
+        'label': 'Witnesses & Statements',
+        'fields': [
+            {'key': 'witnesses', 'label': 'Witness names & contact info', 'type': 'textarea'},
+            {'key': 'witness_statements', 'label': 'Witness statements summary', 'type': 'textarea'},
+            {'key': 'employee_statement', 'label': 'Employee / injured person statement', 'type': 'textarea'},
+            {'key': 'supervisor_statement', 'label': 'Supervisor statement', 'type': 'textarea'},
+        ],
+    },
+    {
+        'key': 'medical',
+        'label': 'Medical Treatment',
+        'fields': [
+            {'key': 'medical_treatment', 'label': 'Treatment level', 'type': 'select', 'options': list(MEDICAL_TREATMENT_LEVELS)},
+            {'key': 'medical_facility', 'label': 'Hospital / clinic name', 'type': 'text'},
+            {'key': 'physician_name', 'label': 'Physician / provider', 'type': 'text'},
+            {'key': 'treatment_date', 'label': 'Date of treatment', 'type': 'date'},
+            {'key': 'days_away_from_work', 'label': 'Days away from work (OSHA 300)', 'type': 'number'},
+            {'key': 'days_restricted_duty', 'label': 'Days restricted / transfer', 'type': 'number'},
+            {'key': 'date_returned_to_work', 'label': 'Date returned to work', 'type': 'date'},
+            {'key': 'fatal', 'label': 'Fatality', 'type': 'checkbox'},
+            {'key': 'hospitalized', 'label': 'Hospitalized overnight', 'type': 'checkbox'},
+        ],
+    },
+    {
+        'key': 'investigation',
+        'label': 'Investigation',
+        'fields': [
+            {'key': 'contributing_factors', 'label': 'Contributing factors', 'type': 'textarea'},
+            {'key': 'unsafe_acts', 'label': 'Unsafe acts identified', 'type': 'textarea'},
+            {'key': 'unsafe_conditions', 'label': 'Unsafe conditions identified', 'type': 'textarea'},
+            {'key': 'ergonomic_factors', 'label': 'Ergonomic factors', 'type': 'textarea'},
+            {'key': 'prevention_recommendations', 'label': 'Prevention recommendations', 'type': 'textarea'},
+            {'key': 'property_damage_estimate', 'label': 'Property damage estimate ($)', 'type': 'text'},
+            {'key': 'estimated_downtime_hours', 'label': 'Estimated downtime (hours)', 'type': 'text'},
+            {'key': 'police_report_number', 'label': 'Police / agency report #', 'type': 'text'},
+        ],
+    },
+    {
+        'key': 'osha_insurance',
+        'label': 'OSHA & Insurance',
+        'fields': [
+            {'key': 'osha_recordable', 'label': 'OSHA recordable?', 'type': 'select', 'options': list(OSHA_RECORDABLE_OPTIONS)},
+            {'key': 'osha_form_301_complete', 'label': 'OSHA Form 301 completed', 'type': 'checkbox'},
+            {'key': 'osha_log_entry_complete', 'label': 'OSHA 300 log entry complete', 'type': 'checkbox'},
+            {'key': 'osha_report_number', 'label': 'OSHA / state report number', 'type': 'text'},
+            {'key': 'insurance_carrier', 'label': 'Insurance carrier', 'type': 'text'},
+            {'key': 'insurance_claim_number', 'label': 'Claim number', 'type': 'text'},
+            {'key': 'insurance_notified', 'label': 'Carrier notified', 'type': 'checkbox'},
+            {'key': 'insurance_notified_date', 'label': 'Date carrier notified', 'type': 'date'},
+            {'key': 'workers_comp_claim_filed', 'label': 'Workers comp claim filed', 'type': 'checkbox'},
+        ],
+    },
+]
+
+TRAINING_RESOURCE_LINKS = {
+    'OSHA 10': {'label': 'OSHA Outreach Training', 'url': 'https://www.osha.gov/training/outreach'},
+    'OSHA 30': {'label': 'OSHA Outreach Training', 'url': 'https://www.osha.gov/training/outreach'},
+    'First Aid': {'label': 'American Red Cross Training', 'url': 'https://www.redcross.org/take-a-class'},
+    'CPR': {'label': 'American Red Cross CPR', 'url': 'https://www.redcross.org/take-a-class/cpr'},
+    'CPR/AED': {'label': 'American Red Cross CPR/AED', 'url': 'https://www.redcross.org/take-a-class/cpr'},
+    'Aerial/Scissor Lift': {'label': 'OSHA Aerial Lifts eTool', 'url': 'https://www.osha.gov/etools/aerial-lifts'},
+    'Forklift / Powered Industrial Truck': {'label': 'OSHA Powered Industrial Trucks', 'url': 'https://www.osha.gov/powered-industrial-trucks'},
+    'Silica Awareness': {'label': 'OSHA Silica Standard', 'url': 'https://www.osha.gov/silica-crystalline-construction'},
+    'HAZWOPER': {'label': 'OSHA HAZWOPER', 'url': 'https://www.osha.gov/hazwoper'},
+}
+
+
+def default_incident_details():
+    details = {}
+    for group in INCIDENT_FIELD_GROUPS:
+        for f in group['fields']:
+            if f['type'] == 'checkbox':
+                details[f['key']] = False
+            else:
+                details[f['key']] = ''
+    return details
+
+
+def build_details(body):
+    """Merge incident detail fields from API body into details_json dict."""
+    incoming = body.get('details') if isinstance(body.get('details'), dict) else {}
+    details = default_incident_details()
+    for key in details:
+        if key in incoming:
+            val = incoming[key]
+            if isinstance(details[key], bool):
+                details[key] = bool(val)
+            else:
+                details[key] = val if val is not None else ''
+    return details
+
+
+def parse_details(report):
+    stored = _parse(getattr(report, 'details_json', None), {})
+    base = default_incident_details()
+    base.update({k: stored.get(k, v) for k, v in base.items()})
+    return base
+
 
 def _parse(value, default):
     if not value:
@@ -76,8 +233,59 @@ def serialize_report(r, User=None, url_helpers=None, summary=False):
         'corrective_actions': r.corrective_actions,
         'attachments': attachments,
         'photos': photos,
+        'details': parse_details(r),
     })
     return base
+
+
+def serialize_training_event(ev):
+    return {
+        'id': ev.id,
+        'project_id': ev.project_id,
+        'cert_id': ev.cert_id,
+        'person_name': ev.person_name,
+        'company': ev.company,
+        'cert_type': ev.cert_type,
+        'event_type': ev.event_type or 'scheduled_training',
+        'event_date': ev.event_date.isoformat() if ev.event_date else None,
+        'training_url': ev.training_url,
+        'training_provider': ev.training_provider,
+        'notes': ev.notes,
+        'status': ev.status or 'Scheduled',
+        'notify_user_id': ev.notify_user_id,
+        'internal_task_sent': bool(ev.internal_task_sent),
+        'created_at': ev.created_at.isoformat() if ev.created_at else None,
+    }
+
+
+def calendar_events_from_certs(certs):
+    """Build calendar entries from certification expiration dates."""
+    events = []
+    for c in certs:
+        if not c.expiration_date:
+            continue
+        exp = c.expiration_date
+        today = date.today()
+        days_left = (exp - today).days
+        if exp < today:
+            status = 'expired'
+        elif days_left <= 30:
+            status = 'expiring'
+        else:
+            status = 'valid'
+        events.append({
+            'id': f'cert-{c.id}',
+            'source': 'certification',
+            'cert_id': c.id,
+            'event_type': 'expiration',
+            'event_date': exp.isoformat(),
+            'person_name': c.person_name,
+            'company': c.company,
+            'cert_type': c.cert_type,
+            'status': status,
+            'title': f'{c.cert_type} expires — {c.person_name}',
+        })
+    return events
 
 
 def report_stats(SafetyReport, project_id):

@@ -13,7 +13,42 @@
     audioStream: null, mediaRecorder: null, audioContext: null, analyser: null,
     recordingStartedAt: null, recordTimer: null, recognition: null,
     voiceEngine: null, playbackHighlightIdx: -1,
+    runStep: 0, runActive: false, runStartedAt: null, runTimer: null, topicAttachIndex: null,
   };
+
+  function inferBriefingKey(topic) {
+    const t = (topic || '').toLowerCase();
+    if (t.includes('roll call') || t.includes('attendance')) return 'roll_call';
+    if (t.includes('prior') && t.includes('action')) return 'prior_actions';
+    if (t.includes('safety moment') || t.includes('topic of the day')) return 'safety_moment';
+    if (t.includes('jha') || (t.includes('hazard') && t.includes('planned'))) return 'jha_hazards';
+    if (t.includes('safe work') || t.includes('permit')) return 'safe_work';
+    if (t.includes('ppe')) return 'ppe';
+    if (t.includes('equipment') || t.includes('tool')) return 'equipment';
+    if (t.includes('housekeeping') || t.includes('fall protection')) return 'housekeeping';
+    if (t.includes('emergency') || t.includes('muster') || t.includes('first aid')) return 'emergency';
+    if (t.includes('question') || t.includes('feedback')) return 'questions';
+    if (t.includes('action item') || t.includes('sign-off') || t.includes('documentation')) return 'wrap_up';
+    return 'general';
+  }
+
+  function enrichAgendaRow(row, i) {
+    const briefings = state.catalog?.toolbox_agenda_briefings || {};
+    const key = row.briefing_key || inferBriefingKey(row.topic);
+    const brief = briefings[key] || {};
+    return {
+      ...row,
+      idx: i + 1,
+      notes: row.notes || '',
+      briefing_key: key,
+      briefing: row.briefing || brief.briefing || '',
+      talking_points: row.talking_points || brief.talking_points || [],
+      checklist: row.checklist || brief.checklist || [],
+      topic_key: row.topic_key || '',
+      topic_title: row.topic_title || '',
+      covered: !!row.covered,
+    };
+  }
 
   function el(id) { return document.getElementById(id); }
   function esc(s) { const d = document.createElement('div'); d.textContent = s == null ? '' : String(s); return d.innerHTML; }
@@ -78,7 +113,8 @@
 
   function setTab(tab) {
     state.tab = tab;
-    ['Details', 'Agenda', 'Capture', 'Transcript', 'Minutes'].forEach((t) => {
+    const tabs = ['Details', 'Agenda', 'Run', 'Capture', 'Transcript', 'Minutes'];
+    tabs.forEach((t) => {
       const key = t.toLowerCase();
       el(`tbTab${t}`)?.classList.toggle('active', key === tab);
       el(`tbPanel${t}`)?.classList.toggle('hidden', key !== tab);
@@ -86,6 +122,10 @@
     if (tab === 'agenda') {
       renderTopicLibrary();
       renderActionEditor();
+    }
+    if (tab === 'run' && !state.runActive) {
+      el('tbRunIdle')?.classList.remove('hidden');
+      el('tbRunActive')?.classList.add('hidden');
     }
   }
 
@@ -111,7 +151,7 @@
     });
     grid.innerHTML = html || '<div class="text-xs text-zinc-500 col-span-full">No topics match.</div>';
     grid.querySelectorAll('[data-topic]').forEach((btn) => {
-      btn.addEventListener('click', () => applyTopic(btn.getAttribute('data-topic')));
+      btn.addEventListener('click', () => applyTopic(btn.getAttribute('data-topic'), state.topicAttachIndex));
     });
   }
 
@@ -123,29 +163,47 @@
     return cat?.topics?.[idx] || null;
   }
 
-  function applyTopic(key) {
+  function applyTopic(key, agendaIndex) {
     const t = findTopic(key);
     if (!t) return;
-    const subject = el('tbSubject');
-    if (subject && !subject.value.trim()) subject.value = t.title;
     const notes = [
       `Topic: ${t.title}`,
-      t.osha_ref ? `OSHA reference: 29 CFR 1926.${t.osha_ref.replace(/^1926\./, '')}` : '',
+      t.osha_ref ? `OSHA reference: 29 CFR 1926.${String(t.osha_ref).replace(/^1926\./, '')}` : '',
       '',
       'Key points:',
       ...(t.points || []).map((p) => `• ${p}`),
       (t.ppe || []).length ? '\nRequired PPE:\n' + t.ppe.map((p) => `• ${p}`).join('\n') : '',
     ].filter(Boolean).join('\n');
-    const disc = el('tbDiscussion');
-    if (disc) {
-      const existing = disc.value.trim();
-      disc.value = existing ? `${existing}\n\n---\n${notes}` : notes;
+    const topicBriefing = [
+      notes,
+      (t.points || []).length ? '\nTalking points:\n' + t.points.map((p) => `• ${p}`).join('\n') : '',
+      (t.ppe || []).length ? '\nPPE:\n' + t.ppe.map((p) => `• ${p}`).join('\n') : '',
+    ].join('');
+    let idx = agendaIndex;
+    if (idx == null || idx === '') {
+      idx = state.agenda.findIndex((r) => /safety moment|topic of the day/i.test(r.topic || ''));
+    } else {
+      idx = parseInt(idx, 10);
     }
-    const safetyRow = state.agenda.find((r) => /safety moment|topic of the day/i.test(r.topic || ''));
-    if (safetyRow) {
-      safetyRow.notes = notes;
+    if (idx >= 0 && state.agenda[idx]) {
+      const row = state.agenda[idx];
+      row.topic_key = key;
+      row.topic_title = t.title;
+      row.briefing = topicBriefing;
+      row.talking_points = t.points || [];
+      row.notes = row.notes ? `${row.notes}\n\n${notes}` : notes;
+      if (!el('tbSubject')?.value.trim()) el('tbSubject').value = t.title;
       renderAgenda();
+    } else {
+      const subject = el('tbSubject');
+      if (subject && !subject.value.trim()) subject.value = t.title;
+      const disc = el('tbDiscussion');
+      if (disc) {
+        const existing = disc.value.trim();
+        disc.value = existing ? `${existing}\n\n---\n${notes}` : notes;
+      }
     }
+    state.topicAttachIndex = null;
     if (global.showToast) global.showToast(`Applied topic: ${t.title}`);
   }
 
@@ -186,26 +244,51 @@
 
   function loadAgendaTemplate() {
     const tpl = (state.catalog?.agenda_templates || {})[MEETING_TYPE] || [];
-    state.agenda = tpl.map((row, i) => ({ ...row, idx: i + 1, notes: row.notes || '' }));
+    state.agenda = tpl.map((row, i) => enrichAgendaRow(row, i));
     renderAgenda();
+  }
+
+  function topicContentHtml(row) {
+    if (row.topic_title) {
+      return `<div class="text-[10px] text-emerald-400 mt-1"><i class="fa-solid fa-book-open mr-1"></i>${esc(row.topic_title)}</div>`;
+    }
+    if (row.briefing) {
+      return `<div class="text-[10px] text-zinc-500 mt-1 line-clamp-2">${esc((row.briefing || '').slice(0, 120))}…</div>`;
+    }
+    return '';
   }
 
   function renderAgenda() {
     const host = el('tbAgendaEditor');
     if (!host) return;
-    host.innerHTML = state.agenda.map((row, i) => `
-      <div class="grid grid-cols-12 gap-2 mb-2 items-center">
-        <div class="col-span-1 text-xs text-zinc-500">${i + 1}</div>
-        <div class="col-span-5"><input class="saf-input text-xs" data-agenda-field="topic" data-agenda-i="${i}" value="${esc(row.topic || '')}"></div>
-        <div class="col-span-2"><input class="saf-input text-xs" data-agenda-field="presenter" data-agenda-i="${i}" value="${esc(row.presenter || '')}"></div>
-        <div class="col-span-1"><input type="number" class="saf-input text-xs" data-agenda-field="minutes" data-agenda-i="${i}" value="${row.minutes || ''}"></div>
-        <div class="col-span-3"><input class="saf-input text-xs" data-agenda-field="notes" data-agenda-i="${i}" value="${esc(row.notes || '')}" placeholder="Notes"></div>
+    host.innerHTML = `<div class="grid grid-cols-12 gap-2 mb-1 text-[10px] text-zinc-500 uppercase"><div class="col-span-1">#</div><div class="col-span-4">Item</div><div class="col-span-2">Led by</div><div class="col-span-1">Min</div><div class="col-span-4">Notes / topic</div></div>` +
+      state.agenda.map((row, i) => `
+      <div class="mb-3 border border-zinc-800 rounded-md p-2">
+        <div class="grid grid-cols-12 gap-2 items-start">
+          <div class="col-span-1 text-xs text-zinc-500 pt-2">${i + 1}</div>
+          <div class="col-span-4"><input class="saf-input text-xs" data-agenda-field="topic" data-agenda-i="${i}" value="${esc(row.topic || '')}">${topicContentHtml(row)}</div>
+          <div class="col-span-2"><input class="saf-input text-xs" data-agenda-field="presenter" data-agenda-i="${i}" value="${esc(row.presenter || '')}"></div>
+          <div class="col-span-1"><input type="number" class="saf-input text-xs" data-agenda-field="minutes" data-agenda-i="${i}" value="${row.minutes || ''}"></div>
+          <div class="col-span-4">
+            <input class="saf-input text-xs mb-1" data-agenda-field="notes" data-agenda-i="${i}" value="${esc(row.notes || '')}" placeholder="Notes">
+            <button type="button" class="text-[10px] text-sky-400 hover:underline" data-attach-topic="${i}"><i class="fa-solid fa-book mr-1"></i>${row.topic_key ? 'Change topic' : 'Attach OSHA topic'}</button>
+          </div>
+        </div>
+        ${row.briefing ? `<details class="mt-2 text-xs text-zinc-400"><summary class="cursor-pointer text-zinc-500">Briefing script</summary><pre class="whitespace-pre-wrap mt-1 text-zinc-300 bg-zinc-950 p-2 rounded">${esc(row.briefing)}</pre></details>` : ''}
       </div>`).join('');
     host.querySelectorAll('[data-agenda-field]').forEach((inp) => {
       inp.addEventListener('input', () => {
-        const i = parseInt(inp.getAttribute('data-agenda-i'), 10);
+        const idx = parseInt(inp.getAttribute('data-agenda-i'), 10);
         const field = inp.getAttribute('data-agenda-field');
-        if (state.agenda[i]) state.agenda[i][field] = inp.type === 'number' ? parseInt(inp.value, 10) || 0 : inp.value;
+        if (state.agenda[idx]) state.agenda[idx][field] = inp.type === 'number' ? parseInt(inp.value, 10) || 0 : inp.value;
+      });
+    });
+    host.querySelectorAll('[data-attach-topic]').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        state.topicAttachIndex = parseInt(btn.getAttribute('data-attach-topic'), 10);
+        setTab('agenda');
+        el('tbTopicGrid')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        if (global.showToast) global.showToast('Pick a topic below to attach to this agenda item');
       });
     });
   }
@@ -325,6 +408,9 @@
     state.transcriptSegments = [];
     state.agenda = [];
     state.actionItems = [];
+    state.runActive = false;
+    state.runStep = 0;
+    clearInterval(state.runTimer);
     stopAllCapture();
     el('tbModalTitle').textContent = 'New Toolbox Meeting';
     el('tbDelete').classList.add('hidden');
@@ -370,7 +456,7 @@
     el('tbMinutesBody').value = m.minutes_body || '';
     state.agenda = m.agenda || [];
     if (!state.agenda.length) loadAgendaTemplate();
-    else renderAgenda();
+    else { state.agenda = state.agenda.map((row, i) => enrichAgendaRow(row, i)); renderAgenda(); }
     state.actionItems = m.action_items || [];
     renderActionEditor();
     renderTopicLibrary();
@@ -557,6 +643,92 @@
     alert(result.trained ? `Trained ${result.trained} sample(s) from your corrections.` : 'Correct speaker tags on transcript lines first.');
   }
 
+  function syncRunNotesFromAgenda() {
+    const row = state.agenda[state.runStep];
+    if (!row || !el('tbRunNotes')) return;
+    el('tbRunNotes').value = row.notes || '';
+    if (el('tbRunCovered')) el('tbRunCovered').checked = !!row.covered;
+  }
+
+  function syncRunNotesToAgenda() {
+    const row = state.agenda[state.runStep];
+    if (!row) return;
+    row.notes = el('tbRunNotes')?.value || '';
+    row.covered = !!el('tbRunCovered')?.checked;
+  }
+
+  function renderRunStep() {
+    const total = state.agenda.length;
+    const row = state.agenda[state.runStep];
+    if (!row) return;
+    syncRunNotesToAgenda();
+    const pct = total ? Math.round(((state.runStep + 1) / total) * 100) : 0;
+    if (el('tbRunProgressBar')) el('tbRunProgressBar').style.width = `${pct}%`;
+    if (el('tbRunStepLabel')) el('tbRunStepLabel').textContent = `Step ${state.runStep + 1} of ${total}`;
+    if (el('tbRunPresenter')) el('tbRunPresenter').textContent = row.presenter ? `Led by: ${row.presenter}` : '';
+    if (el('tbRunTopic')) el('tbRunTopic').textContent = row.topic_title || row.topic || 'Agenda item';
+    if (el('tbRunBriefing')) el('tbRunBriefing').textContent = row.briefing || 'Review this item with the crew.';
+    const tp = el('tbRunTalkingPoints');
+    if (tp) {
+      const points = row.talking_points || [];
+      tp.innerHTML = points.length ? '<div class="text-xs text-zinc-500 uppercase mb-1">Talking points</div><ul class="list-disc pl-4">' + points.map((p) => `<li>${esc(p)}</li>`).join('') + '</ul>' : '';
+    }
+    const cl = el('tbRunChecklist');
+    if (cl) {
+      const items = row.checklist || [];
+      cl.innerHTML = items.length ? items.map((c) => `<li><label class="flex items-center gap-2"><input type="checkbox" class="accent-emerald-500" disabled> ${esc(c)}</label></li>`).join('') : '';
+    }
+    const tc = el('tbRunTopicContent');
+    if (tc) {
+      if (row.topic_key && findTopic(row.topic_key)) {
+        const t = findTopic(row.topic_key);
+        tc.classList.remove('hidden');
+        tc.innerHTML = `<div class="text-xs text-emerald-400 mb-1">OSHA ${esc(t.osha_ref || '')}</div>${(t.points || []).map((p) => `<div>• ${esc(p)}</div>`).join('')}`;
+      } else {
+        tc.classList.add('hidden');
+        tc.innerHTML = '';
+      }
+    }
+    syncRunNotesFromAgenda();
+    if (el('tbRunNext')) el('tbRunNext').textContent = state.runStep >= total - 1 ? 'Finish' : 'Next';
+  }
+
+  function startMeeting() {
+    if (!state.agenda.length) loadAgendaTemplate();
+    state.runActive = true;
+    state.runStep = 0;
+    state.runStartedAt = Date.now();
+    el('tbRunIdle')?.classList.add('hidden');
+    el('tbRunActive')?.classList.remove('hidden');
+    clearInterval(state.runTimer);
+    state.runTimer = setInterval(() => {
+      if (!state.runStartedAt || !el('tbRunTimer')) return;
+      const sec = Math.floor((Date.now() - state.runStartedAt) / 1000);
+      el('tbRunTimer').textContent = `${Math.floor(sec / 60)}:${String(sec % 60).padStart(2, '0')}`;
+    }, 500);
+    renderRunStep();
+  }
+
+  function endMeeting() {
+    syncRunNotesToAgenda();
+    state.runActive = false;
+    clearInterval(state.runTimer);
+    stopAllCapture();
+    el('tbRunIdle')?.classList.remove('hidden');
+    el('tbRunActive')?.classList.add('hidden');
+    if (global.showToast) global.showToast('Meeting ended — review transcript and save');
+    setTab('minutes');
+  }
+
+  function goRunStep(delta) {
+    syncRunNotesToAgenda();
+    const next = state.runStep + delta;
+    if (next < 0) return;
+    if (next >= state.agenda.length) { endMeeting(); return; }
+    state.runStep = next;
+    renderRunStep();
+  }
+
   function runVoiceTest() {
     const eng = voice();
     const result = global.CasePMVoiceDiarization?.runVoiceSelfTest(eng) || {};
@@ -588,7 +760,13 @@
     el('tbRetrain')?.addEventListener('click', reprocessAll);
     el('tbTrainReview')?.addEventListener('click', trainFromReview);
     el('tbVoiceTest')?.addEventListener('click', runVoiceTest);
-    ['Details', 'Agenda', 'Capture', 'Transcript', 'Minutes'].forEach((t) => {
+    el('tbStartMeeting')?.addEventListener('click', startMeeting);
+    el('tbRunEnd')?.addEventListener('click', endMeeting);
+    el('tbRunPrev')?.addEventListener('click', () => goRunStep(-1));
+    el('tbRunNext')?.addEventListener('click', () => goRunStep(1));
+    el('tbRunRecord')?.addEventListener('click', () => state.recording ? stopRecording() : startRecording().catch((e) => alert(e.message)));
+    el('tbRunDictate')?.addEventListener('click', () => state.listening ? stopDictation() : startDictation());
+    ['Details', 'Agenda', 'Run', 'Capture', 'Transcript', 'Minutes'].forEach((t) => {
       el(`tbTab${t}`)?.addEventListener('click', () => setTab(t.toLowerCase()));
     });
     global.addEventListener('casepm:project-changed', refresh);

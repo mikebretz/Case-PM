@@ -13,6 +13,7 @@ window.CASEPM_SAFETY_CTX = {
 <script src="{{ url_for('static', filename='js/meeting-voice-diarization.js') }}"></script>
 <script src="{{ url_for('static', filename='js/safety-app.js') }}"></script>
 <script src="{{ url_for('static', filename='js/safety-toolbox-app.js') }}"></script>
+<script src="{{ url_for('static', filename='js/safety-training-calendar.js') }}"></script>
 
 <style>
 .saf-page { display: flex; flex-direction: column; flex: 1; min-height: 0; width: 100%; padding: 1rem 1rem 0; box-sizing: border-box; }
@@ -44,6 +45,21 @@ window.CASEPM_SAFETY_CTX = {
   .tb-topic-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 0.5rem; max-height: 200px; overflow-y: auto; }
   .tb-topic-btn { text-align: left; padding: 0.5rem 0.65rem; border-radius: 0.5rem; border: 1px solid #3f3f46; background: #18181b; font-size: 0.75rem; cursor: pointer; }
   .tb-topic-btn:hover { border-color: #10b981; background: #27272a; }
+  .saf-cal { display: grid; grid-template-columns: repeat(7, 1fr); gap: 2px; }
+  .saf-cal-h { text-align: center; font-size: 0.65rem; color: #71717a; padding: 0.35rem 0; }
+  .saf-cal-day { min-height: 72px; border: 1px solid #27272a; border-radius: 0.35rem; padding: 0.25rem; font-size: 0.65rem; background: #18181b; }
+  .saf-cal-day.other { opacity: 0.35; }
+  .saf-cal-day.today { border-color: #10b981; }
+  .saf-cal-ev { display: block; margin-top: 2px; padding: 1px 3px; border-radius: 3px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; cursor: pointer; }
+  .saf-cal-ev.expired { background: #7f1d1d; color: #fecaca; }
+  .saf-cal-ev.expiring { background: #78350f; color: #fde68a; }
+  .saf-cal-ev.scheduled { background: #1e3a5f; color: #bae6fd; }
+  .saf-cal-ev.valid { background: #14532d; color: #bbf7d0; }
+  .tb-run-card { background: #09090b; border: 1px solid #3f3f46; border-radius: 0.75rem; padding: 1rem; }
+  .tb-run-progress { height: 4px; background: #27272a; border-radius: 999px; overflow: hidden; }
+  .tb-run-progress > div { height: 100%; background: #10b981; transition: width 0.2s; }
+  .r-subtab { padding: 0.4rem 0.75rem; font-size: 0.75rem; border-radius: 0.4rem; color: #a1a1aa; cursor: pointer; }
+  .r-subtab.active { background: #27272a; color: #fff; }
   @media (max-width: 640px) { .saf-hide-mobile { display: none !important; } }
 </style>
 
@@ -106,8 +122,13 @@ window.CASEPM_SAFETY_CTX = {
     <input type="text" id="cSearch" placeholder="Search person, company, cert…" class="saf-input" style="flex:1 1 240px;min-width:180px;width:auto;">
     <select id="cTypeFilter" class="saf-input" style="flex:0 0 auto;width:170px;"><option value="">All Cert Types</option></select>
     <select id="cStatusFilter" class="saf-input" style="flex:0 0 auto;width:150px;"><option value="">All Statuses</option><option>Valid</option><option>Expiring Soon</option><option>Expired</option></select>
+    <div class="flex gap-1 flex-wrap">
+      <button type="button" id="cViewList" class="px-3 py-1.5 text-xs bg-emerald-700 hover:bg-emerald-600 rounded-md font-medium">List</button>
+      <button type="button" id="cViewCal" class="px-3 py-1.5 text-xs bg-zinc-800 hover:bg-zinc-700 rounded-md font-medium">Calendar</button>
+      <button type="button" id="cScheduleTraining" class="px-3 py-1.5 text-xs bg-sky-600 hover:bg-sky-500 rounded-md font-semibold"><i class="fa-solid fa-calendar-plus mr-1"></i>Schedule</button>
+    </div>
   </div>
-  <div class="flex-1 min-h-0 overflow-auto border border-zinc-700 rounded-md bg-zinc-900 mb-12">
+  <div id="cListWrap" class="flex-1 min-h-0 overflow-auto border border-zinc-700 rounded-md bg-zinc-900 mb-12">
     <table class="w-full text-sm">
       <thead class="bg-zinc-800 sticky top-0 z-10 border-b border-zinc-700"><tr>
         <th class="px-4 py-3 text-left font-medium text-zinc-400">Person</th>
@@ -119,6 +140,21 @@ window.CASEPM_SAFETY_CTX = {
       </tr></thead>
       <tbody id="cList" class="divide-y divide-zinc-800"></tbody>
     </table>
+  </div>
+  <div id="cCalWrap" class="flex-1 min-h-0 flex flex-col hidden mb-12">
+    <div class="flex items-center justify-between mb-2 flex-shrink-0">
+      <button type="button" id="cCalPrev" class="px-3 py-1.5 text-xs bg-zinc-800 hover:bg-zinc-700 rounded-md"><i class="fa-solid fa-chevron-left"></i></button>
+      <div id="cCalTitle" class="text-sm font-medium"></div>
+      <button type="button" id="cCalNext" class="px-3 py-1.5 text-xs bg-zinc-800 hover:bg-zinc-700 rounded-md"><i class="fa-solid fa-chevron-right"></i></button>
+    </div>
+    <div class="flex-1 min-h-0 overflow-auto border border-zinc-700 rounded-md bg-zinc-900 p-2">
+      <div id="cCalGrid" class="saf-cal"></div>
+    </div>
+    <div id="cCalLegend" class="text-[10px] text-zinc-500 mt-2 flex gap-3 flex-wrap">
+      <span><span class="inline-block w-2 h-2 rounded bg-red-800 mr-1"></span>Expired</span>
+      <span><span class="inline-block w-2 h-2 rounded bg-amber-800 mr-1"></span>Expiring ≤30d</span>
+      <span><span class="inline-block w-2 h-2 rounded bg-sky-800 mr-1"></span>Scheduled training</span>
+    </div>
   </div>
 </div>
 
@@ -158,36 +194,54 @@ window.CASEPM_SAFETY_CTX = {
 </div>
 
 <!-- ===== REPORT MODAL ===== -->
-<dialog id="rModal" class="modal casepm-dialog bg-zinc-900 border border-zinc-700 rounded-lg w-full max-w-2xl p-0">
+<dialog id="rModal" class="modal casepm-dialog bg-zinc-900 border border-zinc-700 rounded-lg w-full max-w-4xl p-0">
   <div class="px-5 py-4 border-b border-zinc-700 flex items-center justify-between">
     <h3 id="rModalTitle" class="font-semibold text-lg">New Safety Report</h3>
     <button type="button" id="rModalClose" class="text-zinc-400 hover:text-white text-xl px-1">&times;</button>
   </div>
-  <div class="p-5 overflow-y-auto space-y-3" style="max-height:74vh;">
-    <div class="grid grid-cols-1 md:grid-cols-3 gap-3">
-      <div><label class="block text-xs text-zinc-400 mb-1">Type</label><select id="rType" class="saf-input"></select></div>
-      <div><label class="block text-xs text-zinc-400 mb-1">Severity</label><select id="rSeverity" class="saf-input"></select></div>
-      <div><label class="block text-xs text-zinc-400 mb-1">Status</label><select id="rStatus" class="saf-input"></select></div>
-    </div>
-    <div><label class="block text-xs text-zinc-400 mb-1">Description</label><textarea id="rDesc" rows="2" class="saf-input resize-y" placeholder="What happened / what was observed?"></textarea></div>
-    <div class="grid grid-cols-1 md:grid-cols-3 gap-3">
-      <div><label class="block text-xs text-zinc-400 mb-1">Location</label><input id="rLocation" class="saf-input"></div>
-      <div><label class="block text-xs text-zinc-400 mb-1">Assigned To</label><input id="rAssigned" class="saf-input"></div>
-      <div><label class="block text-xs text-zinc-400 mb-1">Due Date</label><input type="date" id="rDue" class="saf-input"></div>
-    </div>
-    <div><label class="block text-xs text-zinc-400 mb-1">Immediate Actions Taken</label><textarea id="rImmediate" rows="2" class="saf-input resize-y"></textarea></div>
-    <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
-      <div><label class="block text-xs text-zinc-400 mb-1">Root Cause</label><textarea id="rRoot" rows="2" class="saf-input resize-y"></textarea></div>
-      <div><label class="block text-xs text-zinc-400 mb-1">Corrective Actions</label><textarea id="rCorrective" rows="2" class="saf-input resize-y"></textarea></div>
-    </div>
-    <div class="border border-zinc-700 rounded-lg p-3">
-      <div class="flex items-center justify-between mb-2 flex-wrap gap-2">
-        <span class="font-medium text-sm"><i class="fa-solid fa-camera text-sky-400 mr-2"></i>Photos <span id="rPhotoCount" class="text-xs text-zinc-500"></span></span>
-        <div id="rPhotoActions" class="flex gap-2 flex-wrap"></div>
+  <div class="px-5 pt-3 flex flex-wrap gap-1 border-b border-zinc-800">
+    <button type="button" class="r-subtab active" data-r-tab="overview">Overview</button>
+    <button type="button" class="r-subtab" data-r-tab="incident">Incident Details</button>
+    <button type="button" class="r-subtab" data-r-tab="injury">Injury &amp; Medical</button>
+    <button type="button" class="r-subtab" data-r-tab="witness">Witnesses</button>
+    <button type="button" class="r-subtab" data-r-tab="investigation">Investigation</button>
+    <button type="button" class="r-subtab" data-r-tab="osha">OSHA &amp; Insurance</button>
+    <button type="button" class="r-subtab" data-r-tab="photos">Photos</button>
+  </div>
+  <div class="p-5 overflow-y-auto space-y-3" style="max-height:68vh;">
+    <div id="rPanelOverview">
+      <div class="grid grid-cols-1 md:grid-cols-3 gap-3">
+        <div><label class="block text-xs text-zinc-400 mb-1">Type</label><select id="rType" class="saf-input"></select></div>
+        <div><label class="block text-xs text-zinc-400 mb-1">Severity</label><select id="rSeverity" class="saf-input"></select></div>
+        <div><label class="block text-xs text-zinc-400 mb-1">Status</label><select id="rStatus" class="saf-input"></select></div>
       </div>
-      <input type="file" id="rBrowseInput" accept="image/*" multiple class="hidden">
-      <div class="text-xs text-zinc-500 mb-2"><i class="fa-solid fa-folder-tree mr-1 text-emerald-400"></i>Photos file to Documents › Safety › Reports &amp; Observations › this report.</div>
-      <div id="rPhotoGrid" class="grid grid-cols-3 md:grid-cols-5 gap-2"></div>
+      <div class="mt-3"><label class="block text-xs text-zinc-400 mb-1">Summary description</label><textarea id="rDesc" rows="2" class="saf-input resize-y" placeholder="Brief summary — full narrative in Incident Details"></textarea></div>
+      <div class="grid grid-cols-1 md:grid-cols-3 gap-3 mt-3">
+        <div><label class="block text-xs text-zinc-400 mb-1">Location</label><input id="rLocation" class="saf-input"></div>
+        <div><label class="block text-xs text-zinc-400 mb-1">Assigned To</label><input id="rAssigned" class="saf-input"></div>
+        <div><label class="block text-xs text-zinc-400 mb-1">Due Date</label><input type="date" id="rDue" class="saf-input"></div>
+      </div>
+      <div class="mt-3"><label class="block text-xs text-zinc-400 mb-1">Immediate Actions Taken</label><textarea id="rImmediate" rows="2" class="saf-input resize-y"></textarea></div>
+      <div class="grid grid-cols-1 md:grid-cols-2 gap-3 mt-3">
+        <div><label class="block text-xs text-zinc-400 mb-1">Root Cause</label><textarea id="rRoot" rows="2" class="saf-input resize-y"></textarea></div>
+        <div><label class="block text-xs text-zinc-400 mb-1">Corrective Actions</label><textarea id="rCorrective" rows="2" class="saf-input resize-y"></textarea></div>
+      </div>
+    </div>
+    <div id="rPanelIncident" class="hidden"><div id="rFieldsIncident" class="space-y-3"></div></div>
+    <div id="rPanelInjury" class="hidden"><div id="rFieldsInjury" class="space-y-3"></div></div>
+    <div id="rPanelWitness" class="hidden"><div id="rFieldsWitness" class="space-y-3"></div></div>
+    <div id="rPanelInvestigation" class="hidden"><div id="rFieldsInvestigation" class="space-y-3"></div></div>
+    <div id="rPanelOsha" class="hidden"><div id="rFieldsOsha" class="space-y-3"></div></div>
+    <div id="rPanelPhotos" class="hidden">
+      <div class="border border-zinc-700 rounded-lg p-3">
+        <div class="flex items-center justify-between mb-2 flex-wrap gap-2">
+          <span class="font-medium text-sm"><i class="fa-solid fa-camera text-sky-400 mr-2"></i>Photos <span id="rPhotoCount" class="text-xs text-zinc-500"></span></span>
+          <div id="rPhotoActions" class="flex gap-2 flex-wrap"></div>
+        </div>
+        <input type="file" id="rBrowseInput" accept="image/*" multiple class="hidden">
+        <div class="text-xs text-zinc-500 mb-2"><i class="fa-solid fa-folder-tree mr-1 text-emerald-400"></i>Photos file to Documents › Safety › Reports &amp; Observations › this report.</div>
+        <div id="rPhotoGrid" class="grid grid-cols-3 md:grid-cols-5 gap-2"></div>
+      </div>
     </div>
   </div>
   <div class="px-5 py-3 border-t border-zinc-700 flex items-center justify-between">
@@ -273,7 +327,8 @@ window.CASEPM_SAFETY_CTX = {
   </div>
   <div class="px-5 pt-3 flex flex-wrap gap-1 border-b border-zinc-800">
     <button type="button" id="tbTabDetails" class="saf-tab active" style="border-radius:0.5rem 0.5rem 0 0">Details</button>
-    <button type="button" id="tbTabAgenda" class="saf-tab" style="border-radius:0.5rem 0.5rem 0 0">Agenda</button>
+    <button type="button" id="tbTabAgenda" class="saf-tab" style="border-radius:0.5rem 0.5rem 0 0">Plan Agenda</button>
+    <button type="button" id="tbTabRun" class="saf-tab" style="border-radius:0.5rem 0.5rem 0 0"><i class="fa-solid fa-play mr-1"></i>Run Meeting</button>
     <button type="button" id="tbTabCapture" class="saf-tab" style="border-radius:0.5rem 0.5rem 0 0"><i class="fa-solid fa-microphone mr-1"></i>Record</button>
     <button type="button" id="tbTabTranscript" class="saf-tab" style="border-radius:0.5rem 0.5rem 0 0">Transcript</button>
     <button type="button" id="tbTabMinutes" class="saf-tab" style="border-radius:0.5rem 0.5rem 0 0">Minutes</button>
@@ -305,6 +360,40 @@ window.CASEPM_SAFETY_CTX = {
         <div class="text-xs text-zinc-500 uppercase tracking-wide mb-2">Action items (carry forward to next meeting)</div>
         <div id="tbActionEditor"></div>
         <button type="button" id="tbAddAction" class="mt-2 px-3 py-1.5 text-xs bg-zinc-800 hover:bg-zinc-700 rounded-md"><i class="fa-solid fa-plus mr-1"></i>Add action</button>
+      </div>
+    </div>
+    <div id="tbPanelRun" class="hidden">
+      <div id="tbRunIdle" class="text-center py-8">
+        <i class="fa-solid fa-toolbox text-4xl text-zinc-600 mb-3"></i>
+        <p class="text-sm text-zinc-400 mb-4">Plan your agenda on the <b>Plan Agenda</b> tab, then start the meeting to walk through each item with briefing notes, checklists, and live recording.</p>
+        <button type="button" id="tbStartMeeting" class="px-6 py-3 bg-emerald-600 hover:bg-emerald-500 rounded-lg text-sm font-semibold"><i class="fa-solid fa-play mr-2"></i>Start Meeting</button>
+      </div>
+      <div id="tbRunActive" class="hidden">
+        <div class="tb-run-progress mb-3"><div id="tbRunProgressBar" style="width:0%"></div></div>
+        <div class="flex items-center justify-between text-xs text-zinc-500 mb-2">
+          <span id="tbRunStepLabel">Step 1 of 11</span>
+          <span id="tbRunTimer" class="font-mono"></span>
+        </div>
+        <div class="tb-run-card mb-3">
+          <div class="text-xs text-emerald-400 uppercase tracking-wide mb-1" id="tbRunPresenter"></div>
+          <h4 class="text-lg font-semibold text-white mb-2" id="tbRunTopic"></h4>
+          <p class="text-sm text-zinc-300 leading-relaxed mb-3" id="tbRunBriefing"></p>
+          <div id="tbRunTalkingPoints" class="text-sm text-zinc-400 mb-3"></div>
+          <ul id="tbRunChecklist" class="text-xs text-zinc-500 space-y-1 mb-3"></ul>
+          <div id="tbRunTopicContent" class="hidden bg-zinc-900 border border-zinc-700 rounded-md p-3 text-sm text-zinc-300 mb-3"></div>
+          <label class="block text-xs text-zinc-500 mb-1">Meeting notes for this item</label>
+          <textarea id="tbRunNotes" rows="3" class="saf-input resize-y text-sm"></textarea>
+        </div>
+        <div class="flex flex-wrap gap-2 mb-3">
+          <button type="button" id="tbRunRecord" class="px-4 py-2 bg-red-600 hover:bg-red-500 rounded-md text-xs font-semibold"><i class="fa-solid fa-circle text-[8px] mr-1"></i><span id="tbRunRecordLabel">Record</span></button>
+          <button type="button" id="tbRunDictate" class="px-4 py-2 bg-emerald-700 hover:bg-emerald-600 rounded-md text-xs font-semibold"><i class="fa-solid fa-microphone mr-1"></i>Dictate</button>
+          <label class="flex items-center gap-2 text-xs text-zinc-400 ml-auto"><input type="checkbox" id="tbRunCovered" class="accent-emerald-500"> Mark covered</label>
+        </div>
+        <div class="flex items-center justify-between gap-2">
+          <button type="button" id="tbRunPrev" class="px-4 py-2 bg-zinc-800 hover:bg-zinc-700 rounded-md text-sm"><i class="fa-solid fa-chevron-left mr-1"></i>Previous</button>
+          <button type="button" id="tbRunEnd" class="px-4 py-2 text-amber-400 hover:text-amber-300 text-sm">End Meeting</button>
+          <button type="button" id="tbRunNext" class="px-4 py-2 bg-emerald-600 hover:bg-emerald-500 rounded-md text-sm font-semibold">Next<i class="fa-solid fa-chevron-right ml-1"></i></button>
+        </div>
       </div>
     </div>
     <div id="tbPanelCapture" class="hidden">
@@ -346,6 +435,35 @@ window.CASEPM_SAFETY_CTX = {
       <button type="button" id="tbCancel" class="px-4 py-2 text-sm rounded-md border border-zinc-700 hover:bg-zinc-800">Cancel</button>
       <button type="button" id="tbSave" class="px-6 py-2 text-sm bg-emerald-600 hover:bg-emerald-500 rounded-md font-semibold">Save</button>
     </div>
+  </div>
+</dialog>
+
+<!-- ===== SCHEDULE TRAINING MODAL ===== -->
+<dialog id="tSchedModal" class="modal casepm-dialog bg-zinc-900 border border-zinc-700 rounded-lg w-full max-w-lg p-0">
+  <div class="px-5 py-4 border-b border-zinc-700 flex items-center justify-between">
+    <h3 class="font-semibold text-lg">Schedule Training</h3>
+    <button type="button" id="tSchedClose" class="text-zinc-400 hover:text-white text-xl px-1">&times;</button>
+  </div>
+  <div class="p-5 space-y-3">
+    <div class="grid grid-cols-2 gap-3">
+      <div><label class="block text-xs text-zinc-400 mb-1">Person</label><input id="tSchedPerson" class="saf-input" list="cCompanyList"></div>
+      <div><label class="block text-xs text-zinc-400 mb-1">Company</label><input id="tSchedCompany" class="saf-input"></div>
+    </div>
+    <div class="grid grid-cols-2 gap-3">
+      <div><label class="block text-xs text-zinc-400 mb-1">Certification / training</label><select id="tSchedType" class="saf-input"></select></div>
+      <div><label class="block text-xs text-zinc-400 mb-1">Scheduled date</label><input type="date" id="tSchedDate" class="saf-input"></div>
+    </div>
+    <div><label class="block text-xs text-zinc-400 mb-1">Training provider</label><input id="tSchedProvider" class="saf-input" placeholder="e.g. OSHA Outreach, Red Cross"></div>
+    <div><label class="block text-xs text-zinc-400 mb-1">Training link</label>
+      <div class="flex gap-2"><input id="tSchedUrl" class="saf-input flex-1" placeholder="https://…"><button type="button" id="tSchedLinkPick" class="px-3 py-1.5 text-xs bg-zinc-800 hover:bg-zinc-700 rounded-md whitespace-nowrap">Use default</button></div>
+    </div>
+    <div><label class="block text-xs text-zinc-400 mb-1">Assign internal task to</label><select id="tSchedUser" class="saf-input"><option value="">— Select user —</option></select></div>
+    <label class="flex items-center gap-2 text-sm text-zinc-300 cursor-pointer"><input type="checkbox" id="tSchedNotify" class="accent-emerald-500" checked> Send internal email task (action required)</label>
+    <div><label class="block text-xs text-zinc-400 mb-1">Notes</label><textarea id="tSchedNotes" rows="2" class="saf-input resize-y"></textarea></div>
+  </div>
+  <div class="px-5 py-3 border-t border-zinc-700 flex justify-end gap-2">
+    <button type="button" id="tSchedCancel" class="px-4 py-2 text-sm rounded-md border border-zinc-700 hover:bg-zinc-800">Cancel</button>
+    <button type="button" id="tSchedSave" class="px-6 py-2 text-sm bg-emerald-600 hover:bg-emerald-500 rounded-md font-semibold">Schedule</button>
   </div>
 </dialog>
 {% endblock %}
