@@ -13,67 +13,36 @@ window.CASEPM_DAILY_LOG_CTX = {
 <script src="{{ url_for('static', filename='js/daily-log-app.js') }}"></script>
 
 <style>
-  #mainContent:has(.dlog-page) {
-    overflow: hidden !important;
-    display: flex;
-    flex-direction: column;
-    padding: 0 !important;
-  }
-  .dlog-page {
-    display: flex;
-    flex-direction: column;
-    flex: 1;
-    min-height: 0;
-    width: 100%;
-    padding: 1rem 1rem 0;
-    overflow: hidden;
-    box-sizing: border-box;
-  }
+  #mainContent:has(.dlog-page) { overflow: hidden !important; display: flex; flex-direction: column; padding: 0 !important; }
+  .dlog-page { display: flex; flex-direction: column; flex: 1; min-height: 0; width: 100%; padding: 1rem 1rem 0; overflow: hidden; box-sizing: border-box; }
   .dlog-stack { display: flex; flex-direction: column; flex: 1; min-height: 0; overflow: hidden; }
   .dlog-section { border: 1px solid #3f3f46; border-radius: 0.5rem; background: #18181b; }
-  .dlog-section-head {
-    display: flex; align-items: center; justify-content: space-between;
-    padding: 0.75rem 1rem; cursor: pointer; user-select: none;
-  }
+  .dlog-section-head { display: flex; align-items: center; justify-content: space-between; padding: 0.7rem 1rem; cursor: pointer; user-select: none; }
+  .dlog-section-head:hover { background: #202023; }
   .dlog-section-body { padding: 0 1rem 1rem; }
-  .dlog-input {
-    width: 100%; background: #27272a; border: 1px solid #3f3f46;
-    border-radius: 0.5rem; padding: 0.5rem 0.75rem; font-size: 0.875rem; color: #fff;
-  }
+  .dlog-input { width: 100%; background: #27272a; border: 1px solid #3f3f46; border-radius: 0.5rem; padding: 0.5rem 0.65rem; font-size: 0.875rem; color: #fff; }
   .dlog-input:focus { outline: none; border-color: #10b981; }
-  .dlog-chip { padding: 0.25rem 0.625rem; border-radius: 9999px; font-size: 0.75rem; }
+  .dlog-chip { padding: 0.2rem 0.6rem; border-radius: 9999px; font-size: 0.72rem; }
+  .dlog-count-pill { background: #10b98122; color: #6ee7b7; padding: 0.05rem 0.5rem; border-radius: 9999px; font-size: 0.68rem; margin-left: 0.4rem; }
 
-  /* Mobile photo capture bar */
-  .dlog-capture-bar { display: flex; gap: 0.75rem; }
-  .dlog-capture-btn {
-    flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center;
-    gap: 0.375rem; padding: 1rem; border-radius: 0.75rem; font-weight: 600; font-size: 0.875rem;
-    border: 1px solid #3f3f46; transition: background 0.15s;
-  }
-  .dlog-capture-btn i { font-size: 1.5rem; }
-  .dlog-capture-name { background: #27272a; color: #e4e4e7; }
-  .dlog-capture-name:hover { background: #3f3f46; }
-  .dlog-capture-name.listening { background: #7c2d12; color: #fdba74; animation: dlogPulse 1.2s infinite; }
-  .dlog-capture-shoot { background: #059669; color: #fff; }
-  .dlog-capture-shoot:hover { background: #10b981; }
-  .dlog-capture-shoot.armed { background: #2563eb; }
-  @keyframes dlogPulse { 0%,100% { opacity: 1; } 50% { opacity: 0.6; } }
-
+  /* Camera / capture */
   .dlog-photo { position: relative; border-radius: 0.5rem; overflow: hidden; border: 1px solid #3f3f46; }
   .dlog-photo img { width: 100%; height: 96px; object-fit: cover; display: block; }
-  .dlog-photo-name {
-    position: absolute; bottom: 0; left: 0; right: 0; background: rgba(0,0,0,0.7);
-    color: #fff; font-size: 0.65rem; padding: 2px 4px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
-  }
-  .dlog-photo-del {
-    position: absolute; top: 4px; right: 4px; background: rgba(0,0,0,0.7); color: #fff;
-    width: 22px; height: 22px; border-radius: 9999px; display: flex; align-items: center; justify-content: center; font-size: 0.7rem;
-  }
+  .dlog-photo-name { position: absolute; bottom: 0; left: 0; right: 0; background: rgba(0,0,0,0.72); color: #fff; font-size: 0.62rem; padding: 2px 4px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .dlog-photo-del { position: absolute; top: 4px; right: 4px; background: rgba(0,0,0,0.7); color: #fff; width: 22px; height: 22px; border-radius: 9999px; display: flex; align-items: center; justify-content: center; font-size: 0.7rem; cursor: pointer; }
 
-  @media (max-width: 768px) {
-    .dlog-page { padding: 0.75rem 0.75rem 0; }
-    .dlog-hide-mobile { display: none !important; }
-  }
+  #dlogCameraModal { width: 100%; max-width: 560px; }
+  #dlogVideo, #dlogSnapCanvas { width: 100%; border-radius: 0.5rem; background: #000; max-height: 60vh; object-fit: contain; }
+  .dlog-cam-bar { display: flex; gap: 0.75rem; margin-top: 0.75rem; }
+  .dlog-cam-btn { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 0.35rem; padding: 0.9rem; border-radius: 0.75rem; font-weight: 600; font-size: 0.85rem; border: 1px solid #3f3f46; }
+  .dlog-cam-btn i { font-size: 1.4rem; }
+  .dlog-cam-name { background: #27272a; color: #e4e4e7; }
+  .dlog-cam-name.listening { background: #7c2d12; color: #fdba74; animation: dlogPulse 1.2s infinite; }
+  .dlog-cam-shoot { background: #059669; color: #fff; }
+  .dlog-cam-shoot.armed { background: #2563eb; }
+  @keyframes dlogPulse { 0%,100% { opacity: 1; } 50% { opacity: 0.6; } }
+
+  @media (max-width: 768px) { .dlog-page { padding: 0.75rem 0.75rem 0; } .dlog-hide-mobile { display: none !important; } }
 </style>
 
 <div class="dlog-page">
@@ -84,7 +53,7 @@ window.CASEPM_DAILY_LOG_CTX = {
   <div class="flex items-center gap-3 min-w-0">
     <div class="text-2xl font-semibold text-white whitespace-nowrap">Daily Log</div>
     <div id="dlogProjectBadge" class="text-xs px-3 py-1 bg-zinc-800 border border-zinc-700 text-zinc-400 rounded-md font-mono truncate max-w-[220px] dlog-hide-mobile">—</div>
-    <div class="text-xs text-zinc-500 hidden lg:block">Manpower · Weather · Photos · Delays</div>
+    <div class="text-xs text-zinc-500 hidden lg:block">Manpower · Weather · Photos · Delays · Safety</div>
   </div>
   <div class="flex items-center gap-2 flex-wrap justify-end">
     <button type="button" id="dlogBtnRefresh" class="flex items-center gap-2 px-4 py-2 bg-zinc-800 hover:bg-zinc-700 rounded-md text-sm font-medium h-[38px] dlog-hide-mobile">
@@ -132,7 +101,7 @@ window.CASEPM_DAILY_LOG_CTX = {
         <th class="px-4 py-3 text-left font-medium text-zinc-400">Work Performed</th>
         <th class="px-4 py-3 text-center font-medium text-zinc-400 w-20">Photos</th>
         <th class="px-4 py-3 text-center font-medium text-zinc-400 w-28 dlog-hide-mobile">Status</th>
-        <th class="px-4 py-3 text-center font-medium text-zinc-400 w-28">Actions</th>
+        <th class="px-4 py-3 text-center font-medium text-zinc-400 w-24">Actions</th>
       </tr>
     </thead>
     <tbody id="dlogTableBody" class="divide-y divide-zinc-800">
@@ -162,7 +131,7 @@ window.CASEPM_DAILY_LOG_CTX = {
     </div>
   </div>
 
-  <div class="p-5 overflow-y-auto space-y-4" style="max-height: 74vh;">
+  <div class="p-5 overflow-y-auto space-y-4" style="max-height: 76vh;">
     <!-- Core: project, date, weather -->
     <div class="grid grid-cols-1 md:grid-cols-3 gap-3">
       <div>
@@ -181,7 +150,29 @@ window.CASEPM_DAILY_LOG_CTX = {
       </div>
     </div>
 
-    <!-- Work performed (always visible - the simple path) -->
+    <!-- Weather conditions (detailed) -->
+    <div class="dlog-section dlog-detailed">
+      <div class="dlog-section-head" data-section-toggle="conditions">
+        <span class="font-medium text-sm"><i class="fa-solid fa-temperature-half text-sky-400 mr-2"></i>Site Conditions</span>
+        <i class="fa-solid fa-chevron-down text-xs text-zinc-500"></i>
+      </div>
+      <div class="dlog-section-body hidden" data-section-body="conditions">
+        <div class="grid grid-cols-2 md:grid-cols-4 gap-2">
+          <div><label class="text-[11px] text-zinc-500">High °F</label><input id="dlogTempHigh" type="number" class="dlog-input"></div>
+          <div><label class="text-[11px] text-zinc-500">Low °F</label><input id="dlogTempLow" type="number" class="dlog-input"></div>
+          <div><label class="text-[11px] text-zinc-500">Wind (mph)</label><input id="dlogWind" type="number" class="dlog-input"></div>
+          <div><label class="text-[11px] text-zinc-500">Humidity %</label><input id="dlogHumidity" type="number" class="dlog-input"></div>
+          <div><label class="text-[11px] text-zinc-500">Precipitation</label><input id="dlogPrecip" class="dlog-input" placeholder="0.0 in / None"></div>
+          <div><label class="text-[11px] text-zinc-500">Ground</label>
+            <select id="dlogGround" class="dlog-input"><option value="">—</option><option>Dry</option><option>Damp</option><option>Muddy</option><option>Frozen</option><option>Snow</option></select></div>
+          <div><label class="text-[11px] text-zinc-500">Work Hours</label><input id="dlogWorkHours" class="dlog-input" placeholder="7:00–15:30"></div>
+          <div><label class="text-[11px] text-zinc-500">Weather Delay</label>
+            <select id="dlogWeatherImpact" class="dlog-input"><option value="">None</option><option>Minor</option><option>Half day</option><option>Full day</option></select></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Work performed (always visible) -->
     <div>
       <label class="block text-xs text-zinc-400 mb-1">Work Performed Today</label>
       <textarea id="dlogWork" rows="3" class="dlog-input resize-y" placeholder="Describe the main activities completed on site today…"></textarea>
@@ -190,104 +181,26 @@ window.CASEPM_DAILY_LOG_CTX = {
     <!-- Photos (always visible) -->
     <div class="dlog-section">
       <div class="dlog-section-head" data-section-toggle="photos">
-        <span class="font-medium text-sm"><i class="fa-solid fa-camera text-sky-400 mr-2"></i>Photos</span>
-        <span class="text-xs text-zinc-500"><span id="dlogPhotoCount">0</span> added <i class="fa-solid fa-chevron-down ml-2"></i></span>
+        <span class="font-medium text-sm"><i class="fa-solid fa-camera text-sky-400 mr-2"></i>Photos<span id="dlogPhotoCount" class="dlog-count-pill">0</span></span>
+        <i class="fa-solid fa-chevron-down text-xs text-zinc-500"></i>
       </div>
       <div class="dlog-section-body" data-section-body="photos">
-        <!-- Mobile-first capture bar: left = name, right = capture -->
-        <div class="dlog-capture-bar mb-2">
-          <button type="button" id="dlogNameBtn" class="dlog-capture-btn dlog-capture-name">
-            <i class="fa-solid fa-microphone"></i>
-            <span id="dlogNameBtnLabel">Name (talk)</span>
+        <div class="flex gap-2 mb-2">
+          <button type="button" id="dlogOpenCamera" class="flex-1 flex items-center justify-center gap-2 px-4 py-3 bg-emerald-600 hover:bg-emerald-500 rounded-lg text-sm font-semibold">
+            <i class="fa-solid fa-camera"></i> Open Camera
           </button>
-          <button type="button" id="dlogShootBtn" class="dlog-capture-btn dlog-capture-shoot">
-            <i class="fa-solid fa-camera"></i>
-            <span id="dlogShootBtnLabel">Take Photo</span>
+          <button type="button" id="dlogBrowseBtn" class="px-4 py-3 bg-zinc-800 hover:bg-zinc-700 rounded-lg text-sm">
+            <i class="fa-solid fa-folder-open mr-1"></i>Browse
           </button>
         </div>
-        <div id="dlogNameHint" class="text-xs text-zinc-500 mb-2">
-          Tap <b>Take Photo</b> to capture. Then tap <b>Name (talk)</b> to speak/type a file name and save, or tap <b>Take Photo</b> again to save it as <span class="font-mono">Photo&nbsp;N&nbsp;·&nbsp;date</span>.
-        </div>
-        <input type="text" id="dlogNameInput" class="dlog-input mb-2 hidden" placeholder="Say or type the file name, then Save">
-        <!-- Desktop/simple fallback: browse -->
-        <input type="file" id="dlogPhotoInput" accept="image/*" capture="environment" class="hidden">
+        <div class="text-xs text-zinc-500 mb-2"><i class="fa-solid fa-shield-halved mr-1 text-emerald-400"></i>Photos are captured in-app and uploaded straight to Case PM — they are never saved to the device.</div>
         <input type="file" id="dlogBrowseInput" accept="image/*" multiple class="hidden">
-        <button type="button" id="dlogBrowseBtn" class="text-xs text-emerald-400 mb-2"><i class="fa-solid fa-folder-open mr-1"></i>Or browse files</button>
         <div id="dlogPhotoGrid" class="grid grid-cols-3 md:grid-cols-5 gap-2"></div>
       </div>
     </div>
 
-    <!-- Manpower -->
-    <div class="dlog-section dlog-detailed">
-      <div class="dlog-section-head" data-section-toggle="manpower">
-        <span class="font-medium text-sm"><i class="fa-solid fa-users text-emerald-400 mr-2"></i>Manpower</span>
-        <span class="text-xs text-zinc-500"><span id="dlogManpowerCount">0</span> crews <i class="fa-solid fa-chevron-down ml-2"></i></span>
-      </div>
-      <div class="dlog-section-body hidden" data-section-body="manpower">
-        <div id="dlogManpowerRows" class="space-y-2"></div>
-        <button type="button" class="text-xs text-emerald-400 mt-2" data-add-row="manpower"><i class="fa-solid fa-plus mr-1"></i>Add crew</button>
-      </div>
-    </div>
-
-    <!-- Equipment -->
-    <div class="dlog-section dlog-detailed">
-      <div class="dlog-section-head" data-section-toggle="equipment">
-        <span class="font-medium text-sm"><i class="fa-solid fa-truck-pickup text-zinc-300 mr-2"></i>Equipment</span>
-        <span class="text-xs text-zinc-500"><span id="dlogEquipmentCount">0</span> items <i class="fa-solid fa-chevron-down ml-2"></i></span>
-      </div>
-      <div class="dlog-section-body hidden" data-section-body="equipment">
-        <div id="dlogEquipmentRows" class="space-y-2"></div>
-        <button type="button" class="text-xs text-emerald-400 mt-2" data-add-row="equipment"><i class="fa-solid fa-plus mr-1"></i>Add equipment</button>
-      </div>
-    </div>
-
-    <!-- Deliveries -->
-    <div class="dlog-section dlog-detailed">
-      <div class="dlog-section-head" data-section-toggle="deliveries">
-        <span class="font-medium text-sm"><i class="fa-solid fa-box text-amber-400 mr-2"></i>Deliveries</span>
-        <span class="text-xs text-zinc-500"><span id="dlogDeliveriesCount">0</span> <i class="fa-solid fa-chevron-down ml-2"></i></span>
-      </div>
-      <div class="dlog-section-body hidden" data-section-body="deliveries">
-        <div id="dlogDeliveriesRows" class="space-y-2"></div>
-        <button type="button" class="text-xs text-emerald-400 mt-2" data-add-row="deliveries"><i class="fa-solid fa-plus mr-1"></i>Add delivery</button>
-      </div>
-    </div>
-
-    <!-- Delays -->
-    <div class="dlog-section dlog-detailed">
-      <div class="dlog-section-head" data-section-toggle="delays">
-        <span class="font-medium text-sm"><i class="fa-solid fa-clock text-red-400 mr-2"></i>Delays</span>
-        <span class="text-xs text-zinc-500"><span id="dlogDelaysCount">0</span> <i class="fa-solid fa-chevron-down ml-2"></i></span>
-      </div>
-      <div class="dlog-section-body hidden" data-section-body="delays">
-        <div id="dlogDelaysRows" class="space-y-2"></div>
-        <button type="button" class="text-xs text-emerald-400 mt-2" data-add-row="delays"><i class="fa-solid fa-plus mr-1"></i>Add delay</button>
-      </div>
-    </div>
-
-    <!-- Visitors -->
-    <div class="dlog-section dlog-detailed">
-      <div class="dlog-section-head" data-section-toggle="visitors">
-        <span class="font-medium text-sm"><i class="fa-solid fa-user-tie text-violet-400 mr-2"></i>Visitors</span>
-        <span class="text-xs text-zinc-500"><span id="dlogVisitorsCount">0</span> <i class="fa-solid fa-chevron-down ml-2"></i></span>
-      </div>
-      <div class="dlog-section-body hidden" data-section-body="visitors">
-        <div id="dlogVisitorsRows" class="space-y-2"></div>
-        <button type="button" class="text-xs text-emerald-400 mt-2" data-add-row="visitors"><i class="fa-solid fa-plus mr-1"></i>Add visitor</button>
-      </div>
-    </div>
-
-    <!-- Safety -->
-    <div class="dlog-section dlog-detailed">
-      <div class="dlog-section-head" data-section-toggle="safety">
-        <span class="font-medium text-sm"><i class="fa-solid fa-hard-hat text-yellow-400 mr-2"></i>Safety</span>
-        <span class="text-xs text-zinc-500"><span id="dlogSafetyCount">0</span> <i class="fa-solid fa-chevron-down ml-2"></i></span>
-      </div>
-      <div class="dlog-section-body hidden" data-section-body="safety">
-        <div id="dlogSafetyRows" class="space-y-2"></div>
-        <button type="button" class="text-xs text-emerald-400 mt-2" data-add-row="safety"><i class="fa-solid fa-plus mr-1"></i>Add safety item</button>
-      </div>
-    </div>
+    <!-- Detailed sections rendered by JS -->
+    <div id="dlogSectionsHost" class="space-y-4"></div>
 
     <!-- Notes -->
     <div>
@@ -306,6 +219,38 @@ window.CASEPM_DAILY_LOG_CTX = {
       <button type="button" id="dlogCancel" class="px-4 py-2 text-sm rounded-md border border-zinc-700 hover:bg-zinc-800">Cancel</button>
       <button type="button" id="dlogSave" class="px-6 py-2 text-sm bg-emerald-600 hover:bg-emerald-500 rounded-md font-semibold">Save Daily Log</button>
     </div>
+  </div>
+</dialog>
+
+<!-- ==================== CAMERA MODAL (in-app capture, direct upload) ==================== -->
+<dialog id="dlogCameraModal" class="modal casepm-dialog bg-zinc-900 border border-zinc-700 rounded-lg p-0">
+  <div class="px-4 py-3 border-b border-zinc-700 flex items-center justify-between">
+    <h3 class="font-semibold">Camera</h3>
+    <div class="flex items-center gap-2">
+      <button type="button" id="dlogCamSwitch" class="text-xs px-3 py-1.5 bg-zinc-800 hover:bg-zinc-700 rounded-md"><i class="fa-solid fa-camera-rotate mr-1"></i>Flip</button>
+      <button type="button" id="dlogCamClose" class="text-zinc-400 hover:text-white text-xl leading-none px-1">&times;</button>
+    </div>
+  </div>
+  <div class="p-4">
+    <video id="dlogVideo" autoplay playsinline muted></video>
+    <canvas id="dlogSnapCanvas" class="hidden"></canvas>
+    <div id="dlogCamError" class="hidden text-sm text-red-400 py-6 text-center"></div>
+    <input type="text" id="dlogCamNameInput" class="dlog-input mt-3 hidden" placeholder="Say or type a file name, then Save">
+    <div class="dlog-cam-bar">
+      <button type="button" id="dlogCamName" class="dlog-cam-btn dlog-cam-name">
+        <i class="fa-solid fa-microphone"></i><span id="dlogCamNameLabel">Name (talk)</span>
+      </button>
+      <button type="button" id="dlogCamShoot" class="dlog-cam-btn dlog-cam-shoot">
+        <i class="fa-solid fa-circle"></i><span id="dlogCamShootLabel">Capture</span>
+      </button>
+    </div>
+    <div id="dlogCamHint" class="text-xs text-zinc-500 mt-2 text-center">
+      Tap <b>Capture</b> to snap. Then tap <b>Name (talk)</b> to name &amp; save, or <b>Capture</b> again to save as <span class="font-mono">Photo N · date</span>.
+    </div>
+    <div id="dlogCamThumbs" class="grid grid-cols-4 gap-2 mt-3"></div>
+  </div>
+  <div class="px-4 py-3 border-t border-zinc-700 flex justify-end">
+    <button type="button" id="dlogCamDone" class="px-5 py-2 text-sm bg-emerald-600 hover:bg-emerald-500 rounded-md font-semibold">Done</button>
   </div>
 </dialog>
 

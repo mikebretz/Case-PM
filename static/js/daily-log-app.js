@@ -1,54 +1,126 @@
 /**
- * Case PM Daily Log — field-friendly daily reports with easy photo capture.
- * Simple path: project + date + work + photos. Detailed path: manpower, equipment,
- * deliveries, delays, visitors, safety. Mobile-optimized capture with speech-to-text naming.
+ * Case PM Daily Log — full field report (Procore/Buildertrend/RedTeam-class).
+ * Sections: manpower (company dropdown), equipment, deliveries, materials, delays,
+ * visitors, phone calls, inspections, safety, accidents, quantities, dumpsters,
+ * scheduled work. Photos are captured in-app via the device camera and uploaded
+ * straight to the server — never written to the device's storage.
  */
 (function (global) {
   'use strict';
 
   const ctx = global.CASEPM_DAILY_LOG_CTX || {};
-  const SECTIONS = ['manpower', 'equipment', 'deliveries', 'delays', 'visitors', 'safety'];
-  const DELAY_TYPES = ['Weather', 'Labor', 'Material', 'Equipment', 'Owner', 'Design/RFI', 'Other'];
-  const SAFETY_TYPES = ['Observation', 'Near Miss', 'Incident', 'Toolbox Talk', 'Violation'];
+
+  const DELAY_TYPES = ['Weather', 'Labor Shortage', 'Material', 'Equipment', 'Owner', 'Design/RFI', 'Inspection', 'Utility', 'Other'];
+  const SAFETY_TYPES = ['Observation', 'Near Miss', 'Incident', 'Toolbox Talk', 'Violation', 'JHA/JSA', 'PPE Check'];
+  const INSPECTION_RESULTS = ['Pass', 'Fail', 'Partial', 'Pending', 'N/A'];
+  const SCHED_STATUS = ['On Track', 'Ahead', 'Behind', 'Complete', 'Not Started'];
+
+  // Section definitions — each renders a collapsible block with dynamic rows.
+  const SECTIONS = [
+    { key: 'manpower', label: 'Manpower', icon: 'fa-users', color: 'text-emerald-400', always: true, fields: [
+      { k: 'company', ph: 'Company / sub', type: 'company', w: 'flex-1' },
+      { k: 'personnel_count', ph: 'Workers', type: 'number', w: 'w-20' },
+      { k: 'hours', ph: 'Hrs', type: 'number', step: '0.5', w: 'w-20' },
+      { k: 'work_performed', ph: 'Trade / work', type: 'text', w: 'flex-1', mHide: true },
+    ] },
+    { key: 'equipment', label: 'Equipment', icon: 'fa-truck-pickup', color: 'text-zinc-300', fields: [
+      { k: 'equipment_name', ph: 'Equipment', type: 'text', w: 'flex-1' },
+      { k: 'quantity', ph: 'Qty', type: 'number', w: 'w-20' },
+      { k: 'condition', ph: 'Condition / hours / notes', type: 'text', w: 'flex-1' },
+    ] },
+    { key: 'deliveries', label: 'Deliveries', icon: 'fa-box', color: 'text-amber-400', fields: [
+      { k: 'item', ph: 'Item received', type: 'text', w: 'flex-1' },
+      { k: 'supplier', ph: 'Supplier', type: 'text', w: 'flex-1', mHide: true },
+      { k: 'quantity', ph: 'Qty', type: 'text', w: 'w-24' },
+      { k: 'notes', ph: 'Notes', type: 'text', w: 'flex-1', mHide: true },
+    ] },
+    { key: 'materials', label: 'Materials Installed / Stored', icon: 'fa-cubes-stacked', color: 'text-orange-300', fields: [
+      { k: 'material', ph: 'Material', type: 'text', w: 'flex-1' },
+      { k: 'supplier', ph: 'Supplier', type: 'text', w: 'flex-1', mHide: true },
+      { k: 'quantity', ph: 'Qty', type: 'text', w: 'w-20' },
+      { k: 'unit', ph: 'Unit', type: 'text', w: 'w-20' },
+      { k: 'location', ph: 'Location', type: 'text', w: 'flex-1', mHide: true },
+    ] },
+    { key: 'delays', label: 'Delays', icon: 'fa-clock', color: 'text-red-400', fields: [
+      { k: 'type', ph: 'Type', type: 'select', options: DELAY_TYPES, w: 'w-36' },
+      { k: 'description', ph: 'What was delayed & why', type: 'text', w: 'flex-1' },
+      { k: 'hours_lost', ph: 'Hrs lost', type: 'number', step: '0.5', w: 'w-24' },
+    ] },
+    { key: 'visitors', label: 'Visitors', icon: 'fa-user-tie', color: 'text-violet-400', fields: [
+      { k: 'name', ph: 'Name', type: 'text', w: 'flex-1' },
+      { k: 'company', ph: 'Company', type: 'text', w: 'flex-1', mHide: true },
+      { k: 'purpose', ph: 'Purpose', type: 'text', w: 'flex-1' },
+      { k: 'time', ph: 'Time', type: 'text', w: 'w-24', mHide: true },
+    ] },
+    { key: 'phone_calls', label: 'Phone Calls / Communications', icon: 'fa-phone', color: 'text-sky-300', fields: [
+      { k: 'contact', ph: 'Contact', type: 'text', w: 'flex-1' },
+      { k: 'company', ph: 'Company', type: 'text', w: 'flex-1', mHide: true },
+      { k: 'subject', ph: 'Subject', type: 'text', w: 'flex-1' },
+      { k: 'notes', ph: 'Notes', type: 'text', w: 'flex-1', mHide: true },
+    ] },
+    { key: 'inspections', label: 'Inspections', icon: 'fa-clipboard-check', color: 'text-teal-300', fields: [
+      { k: 'type', ph: 'Inspection type', type: 'text', w: 'flex-1' },
+      { k: 'agency', ph: 'Agency', type: 'text', w: 'flex-1', mHide: true },
+      { k: 'inspector', ph: 'Inspector', type: 'text', w: 'flex-1', mHide: true },
+      { k: 'result', ph: 'Result', type: 'select', options: INSPECTION_RESULTS, w: 'w-28' },
+      { k: 'notes', ph: 'Notes', type: 'text', w: 'flex-1', mHide: true },
+    ] },
+    { key: 'safety', label: 'Safety', icon: 'fa-hard-hat', color: 'text-yellow-400', fields: [
+      { k: 'type', ph: 'Type', type: 'select', options: SAFETY_TYPES, w: 'w-36' },
+      { k: 'description', ph: 'Description', type: 'text', w: 'flex-1' },
+      { k: 'action', ph: 'Corrective action', type: 'text', w: 'flex-1', mHide: true },
+    ] },
+    { key: 'accidents', label: 'Accidents / Incidents', icon: 'fa-triangle-exclamation', color: 'text-red-300', fields: [
+      { k: 'person', ph: 'Person', type: 'text', w: 'flex-1' },
+      { k: 'company', ph: 'Company', type: 'text', w: 'flex-1', mHide: true },
+      { k: 'description', ph: 'Description', type: 'text', w: 'flex-1' },
+      { k: 'treatment', ph: 'Treatment', type: 'text', w: 'flex-1', mHide: true },
+    ] },
+    { key: 'quantities', label: 'Quantities / Production', icon: 'fa-ruler-combined', color: 'text-lime-300', fields: [
+      { k: 'description', ph: 'Work item', type: 'text', w: 'flex-1' },
+      { k: 'quantity', ph: 'Qty', type: 'text', w: 'w-20' },
+      { k: 'unit', ph: 'Unit', type: 'text', w: 'w-20' },
+      { k: 'cost_code', ph: 'Cost code', type: 'text', w: 'w-28', mHide: true },
+    ] },
+    { key: 'dumpsters', label: 'Dumpster / Waste', icon: 'fa-dumpster', color: 'text-zinc-400', fields: [
+      { k: 'type', ph: 'Waste type', type: 'text', w: 'flex-1' },
+      { k: 'size', ph: 'Size', type: 'text', w: 'w-24' },
+      { k: 'hauler', ph: 'Hauler', type: 'text', w: 'flex-1', mHide: true },
+      { k: 'hauls', ph: 'Hauls', type: 'number', w: 'w-20' },
+    ] },
+    { key: 'scheduled_work', label: 'Scheduled Work / Look-Ahead', icon: 'fa-calendar-week', color: 'text-indigo-300', fields: [
+      { k: 'activity', ph: 'Activity', type: 'text', w: 'flex-1' },
+      { k: 'status', ph: 'Status', type: 'select', options: SCHED_STATUS, w: 'w-32' },
+      { k: 'notes', ph: 'Notes', type: 'text', w: 'flex-1', mHide: true },
+    ] },
+  ];
+
+  const DETAIL_KEYS = SECTIONS.filter((s) => !s.always).map((s) => s.key);
 
   const state = {
-    logs: [],
-    stats: {},
-    editingId: null,
-    pendingPhotos: [],     // [{id, file, dataUrl, name}]
-    existingPhotos: [],     // already-uploaded (edit mode)
-    armedPhoto: null,       // {file, dataUrl} captured, awaiting name/save
+    logs: [], stats: {}, editingId: null,
+    pendingPhotos: [],   // {id, blob, url, name}
+    existingPhotos: [],
+    armedPhoto: null,    // {blob, url}
     photoSeq: 0,
-    listening: false,
-    recognition: null,
+    companies: [],
     detailed: true,
     mobile: false,
+    // camera
+    stream: null, facingMode: 'environment', listening: false, recognition: null,
   };
 
   function isMobile() {
     return (('ontouchstart' in window) && window.matchMedia('(max-width: 768px)').matches)
       || /Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAgent);
   }
-
   function projectId() {
-    return ctx.projectId || (function () {
-      try { return parseInt(localStorage.getItem('casepm_current_project_id'), 10) || null; } catch (_) { return null; }
-    })();
+    return ctx.projectId || (function () { try { return parseInt(localStorage.getItem('casepm_current_project_id'), 10) || null; } catch (_) { return null; } })();
   }
-
-  function esc(s) {
-    const d = document.createElement('div');
-    d.textContent = s == null ? '' : String(s);
-    return d.innerHTML;
-  }
-
-  function fmtDate(iso) {
-    if (!iso) return '—';
-    try { return new Date(iso + 'T00:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }); }
-    catch (_) { return iso; }
-  }
-
+  function esc(s) { const d = document.createElement('div'); d.textContent = s == null ? '' : String(s); return d.innerHTML; }
+  function fmtDate(iso) { if (!iso) return '—'; try { return new Date(iso + 'T00:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }); } catch (_) { return iso; } }
   function el(id) { return document.getElementById(id); }
+  function cap(s) { return s.charAt(0).toUpperCase() + s.slice(1); }
 
   // ---------------- List ----------------
   async function loadList() {
@@ -70,6 +142,17 @@
     }
   }
 
+  async function loadCompanies() {
+    const pid = projectId();
+    try {
+      const res = await fetch(`/api/daily-logs/companies${pid ? `?project_id=${pid}` : ''}`);
+      const json = await res.json();
+      state.companies = json.companies || [];
+      const dl = el('dlogCompanyList');
+      if (dl) dl.innerHTML = state.companies.map((c) => `<option value="${esc(c.name)}">${esc(c.sources.join(', '))}</option>`).join('');
+    } catch (_) { /* ignore */ }
+  }
+
   function renderStats() {
     const s = state.stats;
     el('statTotal').textContent = s.total_reports ?? 0;
@@ -89,19 +172,14 @@
     return state.logs.filter((l) => {
       if (dateF && l.date !== dateF) return false;
       if (statusF && (l.status || 'Submitted') !== statusF) return false;
-      if (term) {
-        const hay = `${l.date} ${l.weather || ''} ${l.work_performed || ''}`.toLowerCase();
-        if (!hay.includes(term)) return false;
-      }
+      if (term) { const hay = `${l.date} ${l.weather || ''} ${l.work_performed || ''}`.toLowerCase(); if (!hay.includes(term)) return false; }
       return true;
     });
   }
 
   function statusBadge(status) {
     const st = status || 'Submitted';
-    const cls = st === 'Reviewed' ? 'bg-blue-500/15 text-blue-400'
-      : st === 'Draft' ? 'bg-zinc-700 text-zinc-300'
-      : 'bg-emerald-500/15 text-emerald-400';
+    const cls = st === 'Reviewed' ? 'bg-blue-500/15 text-blue-400' : st === 'Draft' ? 'bg-zinc-700 text-zinc-300' : 'bg-emerald-500/15 text-emerald-400';
     return `<span class="dlog-chip ${cls}">${esc(st)}</span>`;
   }
 
@@ -123,239 +201,225 @@
         <td class="px-4 py-3 text-zinc-300 max-w-[360px] truncate">${esc(l.work_performed || '—')}</td>
         <td class="px-4 py-3 text-center"><span class="dlog-chip bg-zinc-800 text-zinc-300">${l.photo_count || 0}</span></td>
         <td class="px-4 py-3 text-center dlog-hide-mobile">${statusBadge(l.status)}</td>
-        <td class="px-4 py-3 text-center">
-          <button class="px-2.5 py-1 text-xs bg-zinc-800 hover:bg-zinc-700 rounded-md" data-open="${l.id}">View</button>
-        </td>
+        <td class="px-4 py-3 text-center"><button class="px-2.5 py-1 text-xs bg-zinc-800 hover:bg-zinc-700 rounded-md" data-open="${l.id}">View</button></td>
       </tr>`).join('');
-    tbody.querySelectorAll('[data-open]').forEach((n) => {
-      n.addEventListener('click', (e) => { e.stopPropagation(); openDetail(parseInt(n.getAttribute('data-open'), 10)); });
-    });
+    tbody.querySelectorAll('[data-open]').forEach((n) => n.addEventListener('click', (e) => { e.stopPropagation(); openDetail(parseInt(n.getAttribute('data-open'), 10)); }));
   }
 
-  // ---------------- Row builders ----------------
-  function rowInput(cls, ph, val, extra) {
-    return `<input type="${extra?.type || 'text'}" class="dlog-input ${cls}" placeholder="${esc(ph)}" value="${esc(val || '')}" ${extra?.attrs || ''}>`;
+  // ---------------- Sections (dynamic) ----------------
+  function buildSectionsHost() {
+    const host = el('dlogSectionsHost');
+    let dl = el('dlogCompanyList');
+    if (!dl) { dl = document.createElement('datalist'); dl.id = 'dlogCompanyList'; document.body.appendChild(dl); }
+    host.innerHTML = SECTIONS.map((s) => `
+      <div class="dlog-section ${s.always ? '' : 'dlog-detailed'}">
+        <div class="dlog-section-head" data-section-toggle="${s.key}">
+          <span class="font-medium text-sm"><i class="fa-solid ${s.icon} ${s.color} mr-2"></i>${esc(s.label)}<span id="dlogCount_${s.key}" class="dlog-count-pill">0</span></span>
+          <i class="fa-solid fa-chevron-down text-xs text-zinc-500"></i>
+        </div>
+        <div class="dlog-section-body ${s.always ? '' : 'hidden'}" data-section-body="${s.key}">
+          <div id="dlogRows_${s.key}" class="space-y-2"></div>
+          <button type="button" class="text-xs text-emerald-400 mt-2" data-add-row="${s.key}"><i class="fa-solid fa-plus mr-1"></i>Add ${esc(s.label.split(' ')[0].toLowerCase())}</button>
+        </div>
+      </div>`).join('');
+    host.querySelectorAll('[data-section-toggle]').forEach((n) => n.addEventListener('click', () => {
+      const body = host.querySelector(`[data-section-body="${n.getAttribute('data-section-toggle')}"]`);
+      if (body) body.classList.toggle('hidden');
+    }));
+    host.querySelectorAll('[data-add-row]').forEach((n) => n.addEventListener('click', () => addRow(n.getAttribute('data-add-row'))));
   }
 
-  function selectInput(cls, options, val) {
-    return `<select class="dlog-input ${cls}">${options.map((o) => `<option ${o === val ? 'selected' : ''}>${esc(o)}</option>`).join('')}</select>`;
+  function fieldHtml(field, val) {
+    const cls = `dlog-input ${field.w}${field.mHide ? ' dlog-hide-mobile' : ''}`;
+    if (field.type === 'select') {
+      return `<select class="${cls}" data-field="${field.k}">${field.options.map((o) => `<option ${o === val ? 'selected' : ''}>${esc(o)}</option>`).join('')}</select>`;
+    }
+    if (field.type === 'company') {
+      return `<input type="text" list="dlogCompanyList" class="${cls}" data-field="${field.k}" placeholder="${esc(field.ph)}" value="${esc(val || '')}">`;
+    }
+    const step = field.step ? ` step="${field.step}"` : '';
+    const min = field.type === 'number' ? ' min="0"' : '';
+    return `<input type="${field.type}" class="${cls}" data-field="${field.k}" placeholder="${esc(field.ph)}" value="${esc(val || '')}"${step}${min}>`;
   }
 
-  function removeBtn() {
-    return `<button type="button" class="text-red-400 hover:text-red-300 px-2 shrink-0" data-remove-row><i class="fa-solid fa-trash text-xs"></i></button>`;
+  function addRow(key, data) {
+    const section = SECTIONS.find((s) => s.key === key);
+    const container = el(`dlogRows_${key}`);
+    if (!section || !container) return;
+    const row = document.createElement('div');
+    row.className = 'flex gap-2 items-center';
+    row.setAttribute('data-row', '');
+    row.innerHTML = section.fields.map((f) => fieldHtml(f, (data || {})[f.k])).join('')
+      + `<button type="button" class="text-red-400 hover:text-red-300 px-2 shrink-0" data-remove-row><i class="fa-solid fa-trash text-xs"></i></button>`;
+    row.querySelector('[data-remove-row]').addEventListener('click', () => { row.remove(); updateCounts(); });
+    container.appendChild(row);
+    updateCounts();
   }
 
-  const ROW_BUILDERS = {
-    manpower: (r = {}) => `<div class="flex gap-2 items-center" data-row>
-      ${rowInput('dl-company flex-1', 'Company / sub', r.company)}
-      ${rowInput('dl-workers w-20', 'Crew', r.personnel_count, { type: 'number', attrs: 'min="0"' })}
-      ${rowInput('dl-hours w-20', 'Hrs', r.hours, { type: 'number', attrs: 'step="0.5" min="0"' })}
-      ${rowInput('dl-trade flex-1 dlog-hide-mobile', 'Trade / work', r.work_performed)}
-      ${removeBtn()}</div>`,
-    equipment: (r = {}) => `<div class="flex gap-2 items-center" data-row>
-      ${rowInput('dl-name flex-1', 'Equipment', r.equipment_name)}
-      ${rowInput('dl-qty w-20', 'Qty', r.quantity, { type: 'number', attrs: 'min="1"' })}
-      ${rowInput('dl-cond flex-1', 'Condition / notes', r.condition)}
-      ${removeBtn()}</div>`,
-    deliveries: (r = {}) => `<div class="flex gap-2 items-center" data-row>
-      ${rowInput('dl-item flex-1', 'Item received', r.item)}
-      ${rowInput('dl-supplier flex-1 dlog-hide-mobile', 'Supplier', r.supplier)}
-      ${rowInput('dl-qty w-24', 'Qty', r.quantity)}
-      ${removeBtn()}</div>`,
-    delays: (r = {}) => `<div class="flex gap-2 items-center" data-row>
-      ${selectInput('dl-type w-32', DELAY_TYPES, r.type)}
-      ${rowInput('dl-desc flex-1', 'What was delayed & why', r.description)}
-      ${rowInput('dl-hours w-24', 'Hrs lost', r.hours_lost, { type: 'number', attrs: 'step="0.5" min="0"' })}
-      ${removeBtn()}</div>`,
-    visitors: (r = {}) => `<div class="flex gap-2 items-center" data-row>
-      ${rowInput('dl-name flex-1', 'Name', r.name)}
-      ${rowInput('dl-company flex-1 dlog-hide-mobile', 'Company', r.company)}
-      ${rowInput('dl-purpose flex-1', 'Purpose', r.purpose)}
-      ${removeBtn()}</div>`,
-    safety: (r = {}) => `<div class="flex gap-2 items-center" data-row>
-      ${selectInput('dl-type w-36', SAFETY_TYPES, r.type)}
-      ${rowInput('dl-desc flex-1', 'Description', r.description)}
-      ${removeBtn()}</div>`,
-  };
-
-  function addRow(section, data) {
-    const container = el(`dlog${cap(section)}Rows`);
-    if (!container) return;
-    const wrap = document.createElement('div');
-    wrap.innerHTML = ROW_BUILDERS[section](data);
-    const node = wrap.firstElementChild;
-    node.querySelector('[data-remove-row]')?.addEventListener('click', () => {
-      node.remove();
-      updateRowCounts();
-    });
-    container.appendChild(node);
-    updateRowCounts();
-  }
-
-  function cap(s) { return s.charAt(0).toUpperCase() + s.slice(1); }
-
-  function collectRows(section) {
-    const container = el(`dlog${cap(section)}Rows`);
+  function collectRows(key) {
+    const container = el(`dlogRows_${key}`);
     if (!container) return [];
     const out = [];
     container.querySelectorAll('[data-row]').forEach((row) => {
-      const get = (sel) => row.querySelector(sel)?.value?.trim() || '';
-      if (section === 'manpower') out.push({ company: get('.dl-company'), personnel_count: get('.dl-workers'), hours: get('.dl-hours'), work_performed: get('.dl-trade') });
-      else if (section === 'equipment') out.push({ equipment_name: get('.dl-name'), quantity: get('.dl-qty'), condition: get('.dl-cond') });
-      else if (section === 'deliveries') out.push({ item: get('.dl-item'), supplier: get('.dl-supplier'), quantity: get('.dl-qty') });
-      else if (section === 'delays') out.push({ type: get('.dl-type'), description: get('.dl-desc'), hours_lost: get('.dl-hours') });
-      else if (section === 'visitors') out.push({ name: get('.dl-name'), company: get('.dl-company'), purpose: get('.dl-purpose') });
-      else if (section === 'safety') out.push({ type: get('.dl-type'), description: get('.dl-desc') });
+      const obj = {};
+      row.querySelectorAll('[data-field]').forEach((inp) => { obj[inp.getAttribute('data-field')] = (inp.value || '').trim(); });
+      out.push(obj);
     });
     return out;
   }
 
-  function updateRowCounts() {
+  function updateCounts() {
     SECTIONS.forEach((s) => {
-      const container = el(`dlog${cap(s)}Rows`);
-      const counter = el(`dlog${cap(s)}Count`);
+      const container = el(`dlogRows_${s.key}`);
+      const counter = el(`dlogCount_${s.key}`);
       if (container && counter) counter.textContent = container.querySelectorAll('[data-row]').length;
     });
     el('dlogPhotoCount').textContent = state.pendingPhotos.length + state.existingPhotos.length;
   }
 
-  // ---------------- Photos ----------------
+  // ---------------- Photos / camera ----------------
   function autoPhotoName() {
     state.photoSeq += 1;
     const d = el('dlogDate').value || new Date().toISOString().slice(0, 10);
     return `Photo ${state.photoSeq} · ${d}`;
   }
 
-  function readFile(file) {
-    return new Promise((resolve) => {
-      const reader = new FileReader();
-      reader.onload = (e) => resolve(e.target.result);
-      reader.readAsDataURL(file);
-    });
+  async function openCamera() {
+    el('dlogCamError').classList.add('hidden');
+    el('dlogCameraModal').showModal();
+    await startStream();
+    renderCamThumbs();
   }
 
-  async function onCapture(file) {
-    if (!file) return;
-    const dataUrl = await readFile(file);
-    state.armedPhoto = { file, dataUrl };
-    // Arm the shoot button to "Save", reveal name option.
-    el('dlogShootBtnLabel').textContent = 'Save Photo';
-    el('dlogShootBtn').classList.add('armed');
-    el('dlogNameHint').innerHTML = 'Captured! Tap <b>Name (talk)</b> to name it, or tap <b>Save Photo</b> to save as auto name.';
-    renderPhotoGrid(); // shows armed preview
+  async function startStream() {
+    stopStream();
+    try {
+      state.stream = await navigator.mediaDevices.getUserMedia({
+        video: { facingMode: state.facingMode }, audio: false,
+      });
+      const v = el('dlogVideo');
+      v.srcObject = state.stream;
+      v.classList.remove('hidden');
+      el('dlogCamError').classList.add('hidden');
+    } catch (e) {
+      el('dlogVideo').classList.add('hidden');
+      const err = el('dlogCamError');
+      err.textContent = 'Camera unavailable or permission denied. You can use Browse to add photos instead.';
+      err.classList.remove('hidden');
+    }
+  }
+
+  function stopStream() {
+    if (state.stream) { state.stream.getTracks().forEach((t) => t.stop()); state.stream = null; }
+  }
+
+  function captureFrame() {
+    const v = el('dlogVideo');
+    if (!v || !v.videoWidth) return null;
+    const canvas = el('dlogSnapCanvas');
+    canvas.width = v.videoWidth;
+    canvas.height = v.videoHeight;
+    canvas.getContext('2d').drawImage(v, 0, 0);
+    return canvas;
+  }
+
+  function onCamShoot() {
+    if (state.armedPhoto) { commitArmed(''); return; }
+    const canvas = captureFrame();
+    if (!canvas) return;
+    canvas.toBlob((blob) => {
+      if (!blob) return;
+      const url = URL.createObjectURL(blob);
+      state.armedPhoto = { blob, url };
+      el('dlogCamShootLabel').textContent = 'Save';
+      el('dlogCamShoot').classList.add('armed');
+      el('dlogCamHint').innerHTML = 'Captured! Tap <b>Name (talk)</b> to name &amp; save, or <b>Save</b> for auto name.';
+      renderCamThumbs();
+    }, 'image/jpeg', 0.9);
   }
 
   function commitArmed(name) {
     if (!state.armedPhoto) return;
     const finalName = (name || '').trim() || autoPhotoName();
-    state.pendingPhotos.push({
-      id: Date.now() + Math.random(),
-      file: state.armedPhoto.file,
-      dataUrl: state.armedPhoto.dataUrl,
-      name: finalName,
-    });
+    state.pendingPhotos.push({ id: Date.now() + Math.random(), blob: state.armedPhoto.blob, url: state.armedPhoto.url, name: finalName });
     state.armedPhoto = null;
     stopListening();
-    el('dlogShootBtnLabel').textContent = 'Take Photo';
-    el('dlogShootBtn').classList.remove('armed');
-    el('dlogNameInput').classList.add('hidden');
-    el('dlogNameInput').value = '';
-    el('dlogNameBtnLabel').textContent = 'Name (talk)';
-    el('dlogNameHint').innerHTML = 'Tap <b>Take Photo</b> to capture. Then tap <b>Name (talk)</b> to speak/type a file name and save, or tap <b>Take Photo</b> again to save as <span class="font-mono">Photo N · date</span>.';
+    el('dlogCamShootLabel').textContent = 'Capture';
+    el('dlogCamShoot').classList.remove('armed');
+    el('dlogCamNameInput').classList.add('hidden');
+    el('dlogCamNameInput').value = '';
+    el('dlogCamNameLabel').textContent = 'Name (talk)';
+    el('dlogCamHint').innerHTML = 'Tap <b>Capture</b> to snap. Then tap <b>Name (talk)</b> to name &amp; save, or <b>Capture</b> again to save as <span class="font-mono">Photo N · date</span>.';
+    renderCamThumbs();
     renderPhotoGrid();
-    updateRowCounts();
+    updateCounts();
+  }
+
+  function renderCamThumbs() {
+    const wrap = el('dlogCamThumbs');
+    let html = '';
+    if (state.armedPhoto) html += `<div class="dlog-photo ring-2 ring-blue-500"><img src="${state.armedPhoto.url}"><div class="dlog-photo-name">Unsaved</div></div>`;
+    state.pendingPhotos.slice(-7).forEach((p) => { html += `<div class="dlog-photo"><img src="${p.url}"><div class="dlog-photo-name">${esc(p.name)}</div></div>`; });
+    wrap.innerHTML = html;
+  }
+
+  function onCamName() {
+    if (!state.armedPhoto) { el('dlogCamHint').innerHTML = 'Capture a photo first, then name it.'; return; }
+    if (!state.listening) startListening();
+    else commitArmed(el('dlogCamNameInput').value);
+  }
+
+  function startListening() {
+    const SR = global.SpeechRecognition || global.webkitSpeechRecognition;
+    const input = el('dlogCamNameInput');
+    input.classList.remove('hidden');
+    input.focus();
+    el('dlogCamNameLabel').textContent = 'Stop & Save';
+    el('dlogCamName').classList.add('listening');
+    state.listening = true;
+    if (!SR) return;
+    try {
+      const rec = new SR(); rec.lang = 'en-US'; rec.interimResults = true; rec.continuous = true;
+      rec.onresult = (event) => { let t = ''; for (let i = 0; i < event.results.length; i++) t += event.results[i][0].transcript; input.value = t.trim(); };
+      rec.onerror = () => {};
+      rec.start(); state.recognition = rec;
+    } catch (_) { /* typing works */ }
+  }
+
+  function stopListening() {
+    state.listening = false;
+    el('dlogCamName').classList.remove('listening');
+    el('dlogCamNameLabel').textContent = 'Name (talk)';
+    if (state.recognition) { try { state.recognition.stop(); } catch (_) {} state.recognition = null; }
+  }
+
+  function closeCamera() {
+    if (state.armedPhoto) commitArmed('');
+    stopListening();
+    stopStream();
+    el('dlogCameraModal').close();
+    renderPhotoGrid();
+    updateCounts();
   }
 
   function renderPhotoGrid() {
     const grid = el('dlogPhotoGrid');
     let html = '';
-    if (state.armedPhoto) {
-      html += `<div class="dlog-photo ring-2 ring-blue-500">
-        <img src="${state.armedPhoto.dataUrl}" alt="captured">
-        <div class="dlog-photo-name">Unsaved — name or save</div>
-      </div>`;
-    }
     state.pendingPhotos.forEach((p) => {
-      html += `<div class="dlog-photo">
-        <img src="${p.dataUrl}" alt="${esc(p.name)}">
-        <div class="dlog-photo-name">${esc(p.name)}</div>
-        <div class="dlog-photo-del" data-del-pending="${p.id}"><i class="fa-solid fa-times"></i></div>
-      </div>`;
+      html += `<div class="dlog-photo"><img src="${p.url}" alt="${esc(p.name)}"><div class="dlog-photo-name">${esc(p.name)}</div><div class="dlog-photo-del" data-del-pending="${p.id}"><i class="fa-solid fa-times"></i></div></div>`;
     });
     state.existingPhotos.forEach((p) => {
-      html += `<div class="dlog-photo">
-        <img src="${esc(p.url || '')}" alt="${esc(p.original_name || '')}">
-        <div class="dlog-photo-name">${esc(p.original_name || p.filename || '')}</div>
-      </div>`;
+      html += `<div class="dlog-photo"><img src="${esc(p.url || '')}" alt="${esc(p.original_name || '')}"><div class="dlog-photo-name">${esc(p.original_name || p.filename || '')}</div></div>`;
     });
-    grid.innerHTML = html;
-    grid.querySelectorAll('[data-del-pending]').forEach((n) => {
-      n.addEventListener('click', () => {
-        const id = n.getAttribute('data-del-pending');
-        state.pendingPhotos = state.pendingPhotos.filter((p) => String(p.id) !== id);
-        renderPhotoGrid();
-        updateRowCounts();
-      });
-    });
+    grid.innerHTML = html || '<div class="text-xs text-zinc-500 col-span-full py-3 text-center">No photos yet — tap Open Camera.</div>';
+    grid.querySelectorAll('[data-del-pending]').forEach((n) => n.addEventListener('click', () => {
+      const id = n.getAttribute('data-del-pending');
+      state.pendingPhotos = state.pendingPhotos.filter((p) => String(p.id) !== id);
+      renderPhotoGrid(); updateCounts();
+    }));
   }
 
-  // Speech-to-text naming
-  function startListening() {
-    const SR = global.SpeechRecognition || global.webkitSpeechRecognition;
-    el('dlogNameInput').classList.remove('hidden');
-    el('dlogNameInput').focus();
-    el('dlogNameBtnLabel').textContent = 'Stop & Save';
-    el('dlogNameBtn').classList.add('listening');
-    state.listening = true;
-    if (!SR) return; // typing still works
-    try {
-      const rec = new SR();
-      rec.lang = 'en-US';
-      rec.interimResults = true;
-      rec.continuous = true;
-      rec.onresult = (event) => {
-        let text = '';
-        for (let i = 0; i < event.results.length; i++) text += event.results[i][0].transcript;
-        el('dlogNameInput').value = text.trim();
-      };
-      rec.onerror = () => {};
-      rec.start();
-      state.recognition = rec;
-    } catch (_) { /* fallback to typing */ }
-  }
-
-  function stopListening() {
-    state.listening = false;
-    el('dlogNameBtn').classList.remove('listening');
-    el('dlogNameBtnLabel').textContent = state.armedPhoto ? 'Save with name' : 'Name (talk)';
-    if (state.recognition) {
-      try { state.recognition.stop(); } catch (_) { /* ignore */ }
-      state.recognition = null;
-    }
-  }
-
-  function onNameButton() {
-    if (!state.armedPhoto) {
-      el('dlogNameHint').innerHTML = 'Take a photo first, then name it.';
-      return;
-    }
-    if (!state.listening) {
-      startListening();
-    } else {
-      const name = el('dlogNameInput').value;
-      commitArmed(name);
-    }
-  }
-
-  function onShootButton() {
-    if (state.armedPhoto) {
-      commitArmed(''); // auto name
-      return;
-    }
-    el('dlogPhotoInput').click();
-  }
-
-  // ---------------- Modal ----------------
+  // ---------------- Modal open/save ----------------
   function populateProjects() {
     const sel = el('dlogProject');
     sel.innerHTML = (ctx.projects || []).map((p) => `<option value="${p.id}">${esc(p.name)}</option>`).join('');
@@ -364,19 +428,16 @@
 
   function resetModal() {
     state.editingId = null;
-    state.pendingPhotos = [];
-    state.existingPhotos = [];
-    state.armedPhoto = null;
-    state.photoSeq = 0;
+    state.pendingPhotos = []; state.existingPhotos = []; state.armedPhoto = null; state.photoSeq = 0;
     el('dlogModalTitle').textContent = 'New Daily Log';
     el('dlogDate').value = new Date().toISOString().slice(0, 10);
-    el('dlogWeather').value = '';
-    el('dlogWork').value = '';
-    el('dlogNotes').value = '';
+    ['dlogWeather', 'dlogWork', 'dlogNotes', 'dlogTempHigh', 'dlogTempLow', 'dlogWind', 'dlogHumidity', 'dlogPrecip', 'dlogWorkHours'].forEach((id) => { if (el(id)) el(id).value = ''; });
+    if (el('dlogGround')) el('dlogGround').value = '';
+    if (el('dlogWeatherImpact')) el('dlogWeatherImpact').value = '';
     el('dlogStatus').value = 'Submitted';
-    SECTIONS.forEach((s) => { const c = el(`dlog${cap(s)}Rows`); if (c) c.innerHTML = ''; });
+    SECTIONS.forEach((s) => { const c = el(`dlogRows_${s.key}`); if (c) c.innerHTML = ''; });
     renderPhotoGrid();
-    updateRowCounts();
+    updateCounts();
   }
 
   function openCreate() {
@@ -402,77 +463,69 @@
       el('dlogWork').value = log.work_performed || '';
       el('dlogNotes').value = log.notes || '';
       el('dlogStatus').value = log.status || 'Submitted';
+      const d = log.details || {};
+      if (el('dlogTempHigh')) el('dlogTempHigh').value = d.temperature || '';
+      if (el('dlogTempLow')) el('dlogTempLow').value = d.temp_low || '';
+      if (el('dlogWind')) el('dlogWind').value = d.wind || '';
+      if (el('dlogHumidity')) el('dlogHumidity').value = d.humidity || '';
+      if (el('dlogPrecip')) el('dlogPrecip').value = d.precipitation || '';
+      if (el('dlogGround')) el('dlogGround').value = d.ground_condition || '';
+      if (el('dlogWorkHours')) el('dlogWorkHours').value = d.work_hours || '';
+      if (el('dlogWeatherImpact')) el('dlogWeatherImpact').value = d.weather_impact || '';
       (log.manpower || []).forEach((r) => addRow('manpower', r));
       (log.equipment || []).forEach((r) => addRow('equipment', r));
-      const d = log.details || {};
-      (d.deliveries || []).forEach((r) => addRow('deliveries', r));
-      (d.delays || []).forEach((r) => addRow('delays', r));
-      (d.visitors || []).forEach((r) => addRow('visitors', r));
-      (d.safety || []).forEach((r) => addRow('safety', r));
+      DETAIL_KEYS.forEach((k) => { if (k !== 'equipment') (d[k] || []).forEach((r) => addRow(k, r)); });
       state.existingPhotos = log.photos || [];
       renderPhotoGrid();
-      updateRowCounts();
+      updateCounts();
       el('dlogDetailModal').close();
       el('dlogModal').showModal();
-    } catch (e) {
-      alert(e.message || 'Could not open log');
-    }
+    } catch (e) { alert(e.message || 'Could not open log'); }
   }
 
-  async function save() {
-    const pid = parseInt(el('dlogProject').value, 10);
-    const date = el('dlogDate').value;
-    if (!pid || !date) { alert('Project and date are required.'); return; }
-    if (state.armedPhoto) commitArmed(''); // save any captured-but-unnamed photo
-
+  function collectPayload() {
     const payload = {
-      project_id: pid,
-      date,
+      project_id: parseInt(el('dlogProject').value, 10),
+      date: el('dlogDate').value,
       weather: el('dlogWeather').value.trim(),
       work_performed: el('dlogWork').value.trim(),
       notes: el('dlogNotes').value.trim(),
       status: el('dlogStatus').value,
-      manpower: collectRows('manpower'),
-      equipment: collectRows('equipment'),
-      deliveries: collectRows('deliveries'),
-      delays: collectRows('delays'),
-      visitors: collectRows('visitors'),
-      safety: collectRows('safety'),
+      temperature: el('dlogTempHigh').value, temp_low: el('dlogTempLow').value,
+      wind: el('dlogWind').value, humidity: el('dlogHumidity').value,
+      precipitation: el('dlogPrecip').value, ground_condition: el('dlogGround').value,
+      work_hours: el('dlogWorkHours').value, weather_impact: el('dlogWeatherImpact').value,
     };
+    SECTIONS.forEach((s) => { payload[s.key] = collectRows(s.key); });
+    return payload;
+  }
 
+  async function save() {
+    const payload = collectPayload();
+    if (!payload.project_id || !payload.date) { alert('Project and date are required.'); return; }
     const saveBtn = el('dlogSave');
-    saveBtn.disabled = true;
-    saveBtn.textContent = 'Saving…';
+    saveBtn.disabled = true; saveBtn.textContent = 'Saving…';
     try {
       const url = state.editingId ? `/api/daily-logs/${state.editingId}` : '/api/daily-logs';
       const method = state.editingId ? 'PUT' : 'POST';
-      const res = await fetch(url, {
-        method,
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload),
-      });
+      const res = await fetch(url, { method, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
       const json = await res.json();
       if (!res.ok) throw new Error(json.error || 'Save failed');
       const logId = json.log.id;
-
       for (const photo of state.pendingPhotos) {
         const fd = new FormData();
-        const ext = (photo.file.name && photo.file.name.includes('.')) ? photo.file.name.slice(photo.file.name.lastIndexOf('.')) : '.jpg';
-        fd.append('file', photo.file, `${photo.name}${ext}`);
+        fd.append('file', photo.blob, `${photo.name}.jpg`);
         fd.append('name', photo.name);
         fd.append('kind', 'photo');
         await fetch(`/api/daily-logs/${logId}/attachments`, { method: 'POST', body: fd });
       }
-
+      state.pendingPhotos.forEach((p) => { try { URL.revokeObjectURL(p.url); } catch (_) {} });
+      state.pendingPhotos = [];
       el('dlogModal').close();
       await loadList();
       if (global.showToast) global.showToast('Daily log saved');
-    } catch (e) {
-      alert(e.message || 'Could not save');
-    } finally {
-      saveBtn.disabled = false;
-      saveBtn.textContent = 'Save Daily Log';
-    }
+    } catch (e) { alert(e.message || 'Could not save'); }
+    finally { saveBtn.disabled = false; saveBtn.textContent = 'Save Daily Log'; }
   }
 
   // ---------------- Detail ----------------
@@ -482,15 +535,10 @@
       const json = await res.json();
       if (!res.ok) throw new Error(json.error || 'Failed');
       const log = json.log;
-      el('dlogDetailTitle').textContent = `Daily Log — ${fmtDate(log.date)}`;
       const d = log.details || {};
-      const section = (title, rows, render) => (rows && rows.length)
-        ? `<div><div class="text-xs uppercase tracking-wide text-zinc-500 mb-1">${title}</div>${rows.map(render).join('')}</div>` : '';
-      const photos = (log.photos || []).map((p) => `
-        <a href="${esc(p.url || '#')}" target="_blank" class="dlog-photo block">
-          <img src="${esc(p.url || '')}" alt="${esc(p.original_name || '')}">
-          <div class="dlog-photo-name">${esc(p.original_name || p.filename || '')}</div>
-        </a>`).join('');
+      el('dlogDetailTitle').textContent = `Daily Log — ${fmtDate(log.date)}`;
+      const block = (title, rows, render) => (rows && rows.length) ? `<div><div class="text-xs uppercase tracking-wide text-zinc-500 mb-1">${title}</div>${rows.map(render).join('')}</div>` : '';
+      const photos = (log.photos || []).map((p) => `<a href="${esc(p.url || '#')}" target="_blank" class="dlog-photo block"><img src="${esc(p.url || '')}"><div class="dlog-photo-name">${esc(p.original_name || p.filename || '')}</div></a>`).join('');
       el('dlogDetailBody').innerHTML = `
         <div class="flex flex-wrap gap-3 items-center">
           ${statusBadge(log.status)}
@@ -501,38 +549,38 @@
         </div>
         <div><div class="text-xs uppercase tracking-wide text-zinc-500 mb-1">Work Performed</div><div class="whitespace-pre-wrap">${esc(log.work_performed || '—')}</div></div>
         ${log.notes ? `<div><div class="text-xs uppercase tracking-wide text-zinc-500 mb-1">Notes</div><div class="whitespace-pre-wrap">${esc(log.notes)}</div></div>` : ''}
-        ${section('Manpower', log.manpower, (m) => `<div class="text-sm">• ${esc(m.company || '—')} — ${m.personnel_count || 0} × ${m.hours || 0}h ${m.work_performed ? '· ' + esc(m.work_performed) : ''}</div>`)}
-        ${section('Equipment', log.equipment, (e) => `<div class="text-sm">• ${esc(e.equipment_name)} (${e.quantity || 1}) ${e.condition ? '· ' + esc(e.condition) : ''}</div>`)}
-        ${section('Deliveries', d.deliveries, (x) => `<div class="text-sm">• ${esc(x.item)} ${x.supplier ? 'from ' + esc(x.supplier) : ''} ${x.quantity ? '· ' + esc(x.quantity) : ''}</div>`)}
-        ${section('Delays', d.delays, (x) => `<div class="text-sm text-red-300">• [${esc(x.type)}] ${esc(x.description)} ${x.hours_lost ? '· ' + esc(x.hours_lost) + 'h lost' : ''}</div>`)}
-        ${section('Visitors', d.visitors, (x) => `<div class="text-sm">• ${esc(x.name)} ${x.company ? '(' + esc(x.company) + ')' : ''} ${x.purpose ? '· ' + esc(x.purpose) : ''}</div>`)}
-        ${section('Safety', d.safety, (x) => `<div class="text-sm text-yellow-300">• [${esc(x.type)}] ${esc(x.description)}</div>`)}
+        ${block('Manpower', log.manpower, (m) => `<div class="text-sm">• ${esc(m.company || '—')} — ${m.personnel_count || 0} × ${m.hours || 0}h ${m.work_performed ? '· ' + esc(m.work_performed) : ''}</div>`)}
+        ${block('Equipment', log.equipment, (e) => `<div class="text-sm">• ${esc(e.equipment_name)} (${e.quantity || 1}) ${e.condition ? '· ' + esc(e.condition) : ''}</div>`)}
+        ${block('Deliveries', d.deliveries, (x) => `<div class="text-sm">• ${esc(x.item)} ${x.supplier ? 'from ' + esc(x.supplier) : ''} ${x.quantity ? '· ' + esc(x.quantity) : ''}</div>`)}
+        ${block('Materials', d.materials, (x) => `<div class="text-sm">• ${esc(x.material)} ${x.quantity ? esc(x.quantity) + ' ' + esc(x.unit || '') : ''} ${x.location ? '@ ' + esc(x.location) : ''}</div>`)}
+        ${block('Delays', d.delays, (x) => `<div class="text-sm text-red-300">• [${esc(x.type)}] ${esc(x.description)} ${x.hours_lost ? '· ' + esc(x.hours_lost) + 'h lost' : ''}</div>`)}
+        ${block('Visitors', d.visitors, (x) => `<div class="text-sm">• ${esc(x.name)} ${x.company ? '(' + esc(x.company) + ')' : ''} ${x.purpose ? '· ' + esc(x.purpose) : ''}</div>`)}
+        ${block('Phone Calls', d.phone_calls, (x) => `<div class="text-sm">• ${esc(x.contact)} ${x.company ? '(' + esc(x.company) + ')' : ''} — ${esc(x.subject || '')}</div>`)}
+        ${block('Inspections', d.inspections, (x) => `<div class="text-sm">• ${esc(x.type)} ${x.agency ? '(' + esc(x.agency) + ')' : ''} — <b>${esc(x.result || '')}</b> ${x.notes ? '· ' + esc(x.notes) : ''}</div>`)}
+        ${block('Safety', d.safety, (x) => `<div class="text-sm text-yellow-300">• [${esc(x.type)}] ${esc(x.description)} ${x.action ? '→ ' + esc(x.action) : ''}</div>`)}
+        ${block('Accidents', d.accidents, (x) => `<div class="text-sm text-red-300">• ${esc(x.person)} ${x.company ? '(' + esc(x.company) + ')' : ''} — ${esc(x.description || '')}</div>`)}
+        ${block('Quantities', d.quantities, (x) => `<div class="text-sm">• ${esc(x.description)} — ${esc(x.quantity || '')} ${esc(x.unit || '')} ${x.cost_code ? '· ' + esc(x.cost_code) : ''}</div>`)}
+        ${block('Dumpster / Waste', d.dumpsters, (x) => `<div class="text-sm">• ${esc(x.type)} ${x.size ? '(' + esc(x.size) + ')' : ''} ${x.hauls ? '· ' + esc(x.hauls) + ' hauls' : ''}</div>`)}
+        ${block('Scheduled Work', d.scheduled_work, (x) => `<div class="text-sm">• ${esc(x.activity)} — <b>${esc(x.status || '')}</b> ${x.notes ? '· ' + esc(x.notes) : ''}</div>`)}
         ${photos ? `<div><div class="text-xs uppercase tracking-wide text-zinc-500 mb-1">Photos</div><div class="grid grid-cols-3 md:grid-cols-4 gap-2">${photos}</div></div>` : ''}
       `;
       el('dlogDetailEdit').onclick = () => openEdit(id);
       el('dlogDetailModal').showModal();
-    } catch (e) {
-      alert(e.message || 'Could not load');
-    }
+    } catch (e) { alert(e.message || 'Could not load'); }
   }
 
-  // ---------------- Weather ----------------
   async function fetchWeather() {
     try {
       const res = await fetch('/api/dashboard/weather');
       const w = await res.json();
       if (w.ok) {
         el('dlogWeather').value = `${w.description}, ${w.temperature}°F (H${w.high}/L${w.low}), wind ${w.wind_mph} mph`;
-      } else if (global.showToast) {
-        global.showToast(w.error || 'Weather unavailable', 'error');
-      }
+        if (el('dlogTempHigh')) el('dlogTempHigh').value = w.high ?? '';
+        if (el('dlogTempLow')) el('dlogTempLow').value = w.low ?? '';
+        if (el('dlogWind')) el('dlogWind').value = w.wind_mph ?? '';
+        if (el('dlogHumidity')) el('dlogHumidity').value = w.humidity ?? '';
+      } else if (global.showToast) { global.showToast(w.error || 'Weather unavailable', 'error'); }
     } catch (_) { /* ignore */ }
-  }
-
-  // ---------------- Sections toggle & mode ----------------
-  function toggleSection(name) {
-    const body = document.querySelector(`[data-section-body="${name}"]`);
-    if (body) body.classList.toggle('hidden');
   }
 
   function setMode(detailed) {
@@ -541,7 +589,6 @@
     document.querySelectorAll('.dlog-detailed').forEach((n) => n.classList.toggle('hidden', !detailed));
   }
 
-  // ---------------- Init ----------------
   function bind() {
     el('dlogBtnNew').addEventListener('click', openCreate);
     el('dlogBtnRefresh')?.addEventListener('click', loadList);
@@ -552,25 +599,29 @@
     el('dlogWeatherFetch').addEventListener('click', fetchWeather);
     el('dlogModeToggle').addEventListener('click', () => setMode(!state.detailed));
 
-    el('dlogShootBtn').addEventListener('click', onShootButton);
-    el('dlogNameBtn').addEventListener('click', onNameButton);
-    el('dlogPhotoInput').addEventListener('change', (e) => { onCapture(e.target.files[0]); e.target.value = ''; });
-    el('dlogBrowseBtn').addEventListener('click', () => el('dlogBrowseInput').click());
-    el('dlogBrowseInput').addEventListener('change', async (e) => {
-      for (const f of e.target.files) {
-        const dataUrl = await readFile(f);
-        state.pendingPhotos.push({ id: Date.now() + Math.random(), file: f, dataUrl, name: autoPhotoName() });
-      }
-      e.target.value = '';
-      renderPhotoGrid();
-      updateRowCounts();
+    // Conditions toggle (static section in template)
+    document.querySelectorAll('[data-section-toggle="conditions"], [data-section-toggle="photos"]').forEach((n) => {
+      n.addEventListener('click', () => {
+        const body = document.querySelector(`[data-section-body="${n.getAttribute('data-section-toggle')}"]`);
+        if (body) body.classList.toggle('hidden');
+      });
     });
 
-    document.querySelectorAll('[data-section-toggle]').forEach((n) => {
-      n.addEventListener('click', () => toggleSection(n.getAttribute('data-section-toggle')));
-    });
-    document.querySelectorAll('[data-add-row]').forEach((n) => {
-      n.addEventListener('click', () => addRow(n.getAttribute('data-add-row')));
+    el('dlogOpenCamera').addEventListener('click', openCamera);
+    el('dlogCamClose').addEventListener('click', closeCamera);
+    el('dlogCamDone').addEventListener('click', closeCamera);
+    el('dlogCamShoot').addEventListener('click', onCamShoot);
+    el('dlogCamName').addEventListener('click', onCamName);
+    el('dlogCamSwitch').addEventListener('click', () => { state.facingMode = state.facingMode === 'environment' ? 'user' : 'environment'; startStream(); });
+
+    el('dlogBrowseBtn').addEventListener('click', () => el('dlogBrowseInput').click());
+    el('dlogBrowseInput').addEventListener('change', (e) => {
+      for (const f of e.target.files) {
+        const url = URL.createObjectURL(f);
+        state.pendingPhotos.push({ id: Date.now() + Math.random(), blob: f, url, name: autoPhotoName() });
+      }
+      e.target.value = '';
+      renderPhotoGrid(); updateCounts();
     });
 
     ['dlogSearch', 'dlogDateFilter', 'dlogStatusFilter'].forEach((id) => {
@@ -578,19 +629,19 @@
       el(id).addEventListener('change', renderList);
     });
 
-    global.addEventListener('casepm:project-changed', loadList);
-    global.onCasePmProjectChanged = function (pid) { ctx.projectId = pid; loadList(); };
+    global.addEventListener('casepm:project-changed', onProjectChange);
+    global.onCasePmProjectChanged = (pid) => { ctx.projectId = pid; onProjectChange(); };
   }
+
+  function onProjectChange() { loadList(); loadCompanies(); }
 
   function init() {
     state.mobile = isMobile();
-    if (state.mobile) {
-      // On phones, start in Simple mode and open detail sections on demand.
-      document.body.classList.add('dlog-mobile');
-    }
+    buildSectionsHost();
     bind();
     if (state.mobile) setMode(false);
     loadList();
+    loadCompanies();
   }
 
   global.CasePMDailyLog = { refresh: loadList, openCreate };
