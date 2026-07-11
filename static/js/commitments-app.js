@@ -1,9 +1,26 @@
 /**
  * Case PM — Commitments module (PO, Subcontract, Supply, Service)
- * Procore/RedTeam-style workflow · AIA forms · Sage 300 · DocuSign-ready
+ * AIA forms · Sage 300 · DocuSign-ready
  */
 (function (global) {
   'use strict';
+
+  function readMoney(id) {
+    const el = document.getElementById(id);
+    if (!el) return 0;
+    if (global.CasePMMoney) {
+      const n = CasePMMoney.readMoneyInput(el);
+      return n == null ? 0 : n;
+    }
+    return parseFloat(el.value) || 0;
+  }
+
+  function setMoneyVal(id, amount) {
+    const el = document.getElementById(id);
+    if (!el) return;
+    if (global.CasePMMoney) CasePMMoney.setMoneyInput(el, amount);
+    else el.value = amount || '';
+  }
 
   const TYPES = ['Purchase Order', 'Subcontract', 'Material Supply', 'Service Agreement'];
   const STATUSES = ['Draft', 'Submitted', 'Pending PM', 'Pending Accounting', 'Pending Owner', 'Approved', 'Rejected', 'Partially Invoiced', 'Closed', 'Void'];
@@ -743,7 +760,8 @@
     setVal('modalStartDate', record?.start_date ? record.start_date.split('T')[0] : '');
     setVal('modalEndDate', record?.end_date ? record.end_date.split('T')[0] : '');
     setVal('modalDeliveryDate', record?.delivery_date ? record.delivery_date.split('T')[0] : '');
-    setVal('modalAmount', record?.original_amount || '');
+    setMoneyVal('modalAmount', record?.original_amount || '');
+    if (global.CasePMMoney) CasePMMoney.setupMoneyInput(document.getElementById('modalAmount'));
     setVal('modalOwnerName', record?.owner_name || ctx.owner_legal_name || ctx.client || '');
     setVal('modalContractorName', record?.contractor_name || ctx.contractor_legal_name || 'Case Contracting');
     setVal('modalArchitectEngineer', record?.architect_engineer || ctx.architect_of_record || '');
@@ -797,7 +815,7 @@
       bond_required: document.getElementById('modalBondRequired')?.checked || false,
       tax_exempt: document.getElementById('modalTaxExempt')?.checked || false,
       insurance_requirements: document.getElementById('modalInsuranceRequirements')?.value.trim() || null,
-      original_amount: total || parseFloat(document.getElementById('modalAmount').value) || 0,
+      original_amount: total || readMoney('modalAmount'),
       allocations: allocs,
       aia_contract: readContractFromForm(),
     };

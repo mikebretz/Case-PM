@@ -1,9 +1,26 @@
 /**
  * Case PM — Change Orders & PCO module
- * Procore/RedTeam-style workflow with budget, pay app, and Sage integration.
+ * Workflow with budget, pay app, and Sage integration.
  */
 (function (global) {
   'use strict';
+
+  function readMoney(id) {
+    const el = document.getElementById(id);
+    if (!el) return 0;
+    if (global.CasePMMoney) {
+      const n = CasePMMoney.readMoneyInput(el);
+      return n == null ? 0 : n;
+    }
+    return parseFloat(el.value) || 0;
+  }
+
+  function setMoney(id, amount) {
+    const el = document.getElementById(id);
+    if (!el) return;
+    if (global.CasePMMoney) CasePMMoney.setMoneyInput(el, amount);
+    else el.value = amount || '';
+  }
 
   const CO_STATUSES = ['Draft', 'Submitted', 'Under Review', 'Pending Owner', 'Pending Architect', 'Approved', 'Rejected', 'Void'];
   const CO_EDITABLE_STATUSES = ['Draft', 'Submitted', 'Under Review', 'Pending Owner', 'Pending Architect', 'Rejected', 'Void'];
@@ -176,7 +193,7 @@
     const el = document.getElementById('allocationTotal');
     if (el) el.textContent = fmt(total);
     const amountInput = document.getElementById('modalAmount');
-    if (amountInput && total) amountInput.value = total.toFixed(2);
+    if (amountInput && total) setMoney('modalAmount', total);
   }
 
   function onAllocCostCodeChange(idx) {
@@ -517,14 +534,14 @@
       allocations: allocs,
     };
     if (type === 'pco') {
-      const payload = { ...base, estimated_amount: total || parseFloat(document.getElementById('modalAmount')?.value) || 0, status: document.getElementById('modalStatus')?.value || 'Open' };
+      const payload = { ...base, estimated_amount: total || readMoney('modalAmount'), status: document.getElementById('modalStatus')?.value || 'Open' };
       if (devUnlock()) {
         const num = document.getElementById('modalNumber')?.value?.trim();
         if (num) payload.number = num;
       }
       return payload;
     }
-    const coPayload = { ...base, amount: total || parseFloat(document.getElementById('modalAmount')?.value) || 0, status: document.getElementById('modalStatus')?.value || 'Draft', date: document.getElementById('modalDate')?.value };
+    const coPayload = { ...base, amount: total || readMoney('modalAmount'), status: document.getElementById('modalStatus')?.value || 'Draft', date: document.getElementById('modalDate')?.value };
     if (devUnlock()) {
       const num = document.getElementById('modalNumber')?.value?.trim();
       if (num) coPayload.number = num;
@@ -614,7 +631,8 @@
     populateCompanySelect(record?.company_id);
     document.getElementById('modalTitle').value = record?.title || '';
     document.getElementById('modalDescription').value = record?.description || '';
-    document.getElementById('modalAmount').value = record ? (isPco ? record.estimated_amount : record.amount) : '';
+    setMoney('modalAmount', record ? (isPco ? record.estimated_amount : record.amount) : '');
+    if (global.CasePMMoney) CasePMMoney.setupMoneyInput(document.getElementById('modalAmount'));
     document.getElementById('modalScheduleDays').value = record?.schedule_impact_days || 0;
     document.getElementById('modalRequestedBy').value = record?.requested_by || currentUserName();
     document.getElementById('modalNotes').value = record?.notes || '';

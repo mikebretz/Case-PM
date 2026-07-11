@@ -179,7 +179,7 @@
 </div>
 <div id="coDrawerBackdrop" class="fixed inset-0 bg-black/40 z-[54] hidden" onclick="CasePMChangeOrders.closeDrawer()"></div>
 
-<!-- APPROVAL MODAL (approver-focused — Procore / RedTeam style) -->
+<!-- APPROVAL MODAL (approver-focused workflow) -->
 <dialog id="coApprovalModal" class="modal rounded-md w-full max-w-lg p-0 text-white" style="background:#18181b;border:1px solid #3f3f46;">
     <div class="p-6">
         <div class="flex justify-between items-start mb-4">
@@ -282,7 +282,7 @@
                 </div>
                 <div>
                     <label class="block text-sm text-zinc-400 mb-1">Amount</label>
-                    <input type="number" step="0.01" id="modalAmount" class="w-full bg-zinc-800 border border-zinc-700 rounded-md px-4 py-2 text-sm">
+                    <input type="text" id="modalAmount" class="w-full bg-zinc-800 border border-zinc-700 rounded-md px-4 py-2 text-sm casepm-money-input" data-casepm-money>
                 </div>
                 <div>
                     <label class="block text-sm text-zinc-400 mb-1">Requested By</label>

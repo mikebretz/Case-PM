@@ -329,20 +329,38 @@
         }
     }
 
-    function buildEmptySchedule() {
+    function buildEmptySchedule(opts) {
         const today = CasePMSchedule.formatDate(new Date());
+        const start = (opts && opts.start) ? opts.start : today;
+        const end = (opts && opts.end) ? opts.end : start;
+        const text = (opts && opts.label) ? opts.label : 'Default Construction Project';
         return {
             data: [{
                 id: 1,
-                text: 'Default Construction Project',
+                text: text,
                 type: 'project',
                 open: true,
-                start_date: today,
+                start_date: start,
+                end_date: end,
                 duration: 0,
                 progress: 0
             }],
             links: []
         };
+    }
+
+    async function fetchProjectScheduleDefaults(projectId) {
+        if (!projectId) return null;
+        try {
+            const res = await fetch(`/api/projects/${projectId}`);
+            if (!res.ok) return null;
+            const p = await res.json();
+            if (!p.start_date || !p.end_date) return null;
+            const label = p.number ? `${p.number} — ${p.name}` : (p.name || 'Project Schedule');
+            return { start: p.start_date, end: p.end_date, label };
+        } catch (e) {
+            return null;
+        }
     }
 
     function wbsCode(task) {
@@ -2755,7 +2773,7 @@
             } catch (e) { /* ignore */ }
         }
 
-        loadSchedulePayload(buildEmptySchedule());
+        loadSchedulePayload(buildEmptySchedule(await fetchProjectScheduleDefaults(projectId)));
         setSaveStatus('Empty schedule — add activities or import');
     }
 
@@ -2763,7 +2781,7 @@
         if (!confirm('Clear the entire schedule? This cannot be undone.')) return;
         const projectId = getSelectedProjectId();
         localStorage.removeItem(`${STORAGE_KEY}_${projectId}`);
-        loadSchedulePayload(buildEmptySchedule());
+        loadSchedulePayload(buildEmptySchedule(await fetchProjectScheduleDefaults(projectId)));
         try {
             await fetch('/api/schedule', {
                 method: 'PUT',

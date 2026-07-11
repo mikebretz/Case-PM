@@ -630,7 +630,7 @@ window.SUBMITTAL_PROJECT_CTX = {
                 <div class="mt-6 grid grid-cols-1 lg:grid-cols-3 gap-4">
                     <div>
                         <label class="block text-xs uppercase tracking-wider text-zinc-500 mb-1.5">Potential Cost Impact ($)</label>
-                        <input type="number" id="modalCostImpact" step="0.01" class="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-sm">
+                        <input type="text" id="modalCostImpact" class="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-sm casepm-money-input" data-casepm-money>
                     </div>
                     <div>
                         <label class="block text-xs uppercase tracking-wider text-zinc-500 mb-1.5">Schedule Impact?</label>
@@ -1069,7 +1069,13 @@ function openDetailModal(id, isNew = false, newData = null) {
     document.getElementById('modalStatus').value = currentModalItem.status || 'Draft';
     
     // New fields
-    document.getElementById('modalCostImpact').value = currentModalItem.costImpact || '';
+    const costEl = document.getElementById('modalCostImpact');
+    if (window.CasePMMoney) {
+        CasePMMoney.setMoneyInput(costEl, currentModalItem.costImpact || '');
+        CasePMMoney.setupMoneyInput(costEl);
+    } else if (costEl) {
+        costEl.value = currentModalItem.costImpact || '';
+    }
     document.getElementById('modalScheduleDays').value = currentModalItem.scheduleDays || '';
     document.getElementById('modalImpactNotes').value = currentModalItem.impactNotes || '';
     
@@ -1141,7 +1147,8 @@ function saveSubmittalFromModal() {
     currentModalItem.dateReceived = document.getElementById('modalDateReceived').value;
     currentModalItem.requiredBy = document.getElementById('modalRequiredBy').value;
     currentModalItem.status = document.getElementById('modalStatus').value;
-    currentModalItem.costImpact = document.getElementById('modalCostImpact').value;
+    const costEl = document.getElementById('modalCostImpact');
+    currentModalItem.costImpact = window.CasePMMoney ? (CasePMMoney.readMoneyInput(costEl) ?? '') : (costEl?.value || '');
     currentModalItem.scheduleDays = document.getElementById('modalScheduleDays').value;
     currentModalItem.impactNotes = document.getElementById('modalImpactNotes').value;
     const contactSel = document.getElementById('modalAssignedContact');
