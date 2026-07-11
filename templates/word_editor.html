@@ -1,0 +1,184 @@
+{% extends "base.html" %}
+
+{% block content %}
+<!-- TinyMCE (self-hosted via CDN — no API key), mammoth (docx→html), html-docx (html→docx) -->
+<script src="https://cdn.jsdelivr.net/npm/tinymce@6.8.2/tinymce.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/mammoth@1.6.0/mammoth.browser.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/html-docx-js@0.3.1/dist/html-docx.js"></script>
+
+<style>
+  #mainContent:has(.word-page) { overflow: hidden !important; display: flex; flex-direction: column; padding: 0 !important; }
+  .word-page { display: flex; flex-direction: column; flex: 1; min-height: 0; width: 100%; padding: 0.5rem 0.5rem 0; box-sizing: border-box; }
+  .word-toolbar { display: flex; align-items: center; gap: 0.5rem; flex-wrap: wrap; flex-shrink: 0; margin-bottom: 0.5rem; }
+  .word-btn { display: inline-flex; align-items: center; gap: 0.4rem; padding: 0.45rem 0.8rem; border-radius: 0.375rem; font-size: 0.85rem; font-weight: 500; background: #27272a; border: 1px solid #3f3f46; color: #fff; }
+  .word-btn:hover { background: #3f3f46; }
+  .word-btn.primary { background: #059669; border-color: #059669; }
+  .word-btn.primary:hover { background: #10b981; }
+  #wordNameInput { background: #18181b; border: 1px solid #3f3f46; border-radius: 0.375rem; padding: 0.4rem 0.7rem; color: #fff; font-size: 0.9rem; min-width: 240px; }
+  #wordStatus { font-size: 0.75rem; color: #71717a; margin-left: auto; }
+  #wordEditorHost { flex: 1; min-height: 0; display: flex; flex-direction: column; }
+  .tox-tinymce { flex: 1 !important; border-radius: 0.375rem !important; }
+</style>
+
+<div class="word-page">
+  <div class="word-toolbar">
+    <a href="{{ url_for('documents_page') }}" class="word-btn" title="Back to Documents"><i class="fa-solid fa-arrow-left"></i><span class="hidden md:inline">Documents</span></a>
+    <i class="fa-solid fa-file-word text-sky-400"></i>
+    <input type="text" id="wordNameInput" placeholder="Untitled Document">
+    <button type="button" id="wordSaveBtn" class="word-btn primary"><i class="fa-solid fa-floppy-disk"></i> Save</button>
+    <button type="button" id="wordExportDocxBtn" class="word-btn"><i class="fa-solid fa-file-word"></i><span class="hidden md:inline"> Export .docx</span></button>
+    <button type="button" id="wordExportPdfBtn" class="word-btn"><i class="fa-solid fa-print"></i><span class="hidden md:inline"> Print / PDF</span></button>
+    <button type="button" id="wordImportBtn" class="word-btn"><i class="fa-solid fa-file-import"></i><span class="hidden md:inline"> Import</span></button>
+    <input type="file" id="wordImportInput" accept=".docx,.txt,.html,.htm,.rtf" class="hidden">
+    <span id="wordStatus">New document</span>
+  </div>
+  <div id="wordEditorHost">
+    <textarea id="wordEditor"></textarea>
+  </div>
+</div>
+
+<script>
+(function () {
+  'use strict';
+  const params = new URLSearchParams(location.search);
+  let docId = params.get('doc_id') ? parseInt(params.get('doc_id'), 10) : null;
+  const projectId = {{ active_project.id if active_project else 'null' }};
+  const nameInput = document.getElementById('wordNameInput');
+  const statusEl = document.getElementById('wordStatus');
+  let ready = false;
+
+  function setStatus(t) { statusEl.textContent = t; }
+  function editor() { return window.tinymce && window.tinymce.get('wordEditor'); }
+
+  tinymce.init({
+    selector: '#wordEditor',
+    base_url: 'https://cdn.jsdelivr.net/npm/tinymce@6.8.2',
+    suffix: '.min',
+    height: '100%',
+    menubar: 'file edit view insert format tools table help',
+    plugins: 'advlist autolink lists link image charmap preview anchor searchreplace visualblocks code fullscreen insertdatetime media table wordcount help pagebreak nonbreaking directionality',
+    toolbar: 'undo redo | blocks fontfamily fontsize | bold italic underline strikethrough | forecolor backcolor | alignleft aligncenter alignright alignjustify | bullist numlist outdent indent | link image table | removeformat | searchreplace | pagebreak | code fullscreen',
+    skin: 'oxide-dark',
+    content_css: 'default',
+    content_style: 'body{font-family:Calibri,Arial,sans-serif;font-size:12pt;max-width:8.5in;margin:1in auto;background:#fff;color:#111;padding:0 0.25in;} @media(max-width:900px){body{margin:0.5in auto;}}',
+    branding: false,
+    promotion: false,
+    setup: function (ed) {
+      ed.on('init', function () {
+        ready = true;
+        if (docId) loadExisting();
+        else setStatus('New document');
+      });
+    },
+  });
+
+  async function loadExisting() {
+    setStatus('Loading…');
+    try {
+      const res = await fetch(`/api/documents/${docId}/editor-content`);
+      const info = await res.json();
+      if (!res.ok) throw new Error(info.error || 'Load failed');
+      nameInput.value = (info.name || 'Document').replace(/\.(docx|doc|txt|rtf|html?|json)$/i, '');
+      if (info.editor_content) { editor().setContent(info.editor_content); setStatus('Loaded'); return; }
+      const dl = await fetch(info.download_url);
+      const fname = (info.original_filename || info.name || '').toLowerCase();
+      if (fname.endsWith('.docx')) {
+        const buf = await dl.arrayBuffer();
+        const result = await window.mammoth.convertToHtml({ arrayBuffer: buf });
+        editor().setContent(result.value || '');
+        setStatus('Imported .docx');
+      } else if (fname.endsWith('.html') || fname.endsWith('.htm')) {
+        editor().setContent(await dl.text());
+        setStatus('Imported HTML');
+      } else {
+        const txt = await dl.text();
+        editor().setContent('<p>' + txt.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/\n/g, '</p><p>') + '</p>');
+        setStatus('Imported text');
+      }
+    } catch (e) {
+      setStatus('Error: ' + e.message);
+    }
+  }
+
+  function buildDocxBlob() {
+    const html = `<!DOCTYPE html><html><head><meta charset="utf-8"></head><body>${editor().getContent()}</body></html>`;
+    return window.htmlDocx.asBlob(html);
+  }
+
+  async function save() {
+    if (!ready) return;
+    setStatus('Saving…');
+    const name = (nameInput.value || 'Untitled Document').trim();
+    const content = editor().getContent();
+    const fd = new FormData();
+    if (docId) fd.append('doc_id', String(docId));
+    if (projectId) fd.append('project_id', String(projectId));
+    fd.append('kind', 'doc');
+    fd.append('name', name);
+    fd.append('content', content);
+    try { fd.append('file', buildDocxBlob(), `${name}.docx`); } catch (e) { /* save state without file */ }
+    try {
+      const res = await fetch('/api/documents/editor/save', { method: 'POST', body: fd });
+      const json = await res.json();
+      if (!res.ok) throw new Error(json.error || 'Save failed');
+      docId = json.id;
+      const url = new URL(location.href);
+      url.searchParams.set('doc_id', String(docId));
+      history.replaceState(null, '', url);
+      setStatus('Saved to Documents · ' + new Date().toLocaleTimeString());
+      if (window.showToast) window.showToast('Saved to Documents');
+    } catch (e) { setStatus('Error: ' + e.message); alert(e.message); }
+  }
+
+  function exportDocx() {
+    try {
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(buildDocxBlob());
+      a.download = `${(nameInput.value || 'document').trim()}.docx`;
+      a.click();
+      setTimeout(() => URL.revokeObjectURL(a.href), 4000);
+    } catch (e) { alert('Export failed: ' + e.message); }
+  }
+
+  function printDoc() {
+    const w = window.open('', '_blank');
+    if (!w) return;
+    w.document.write(`<html><head><title>${nameInput.value || 'Document'}</title>
+      <style>body{font-family:Calibri,Arial,sans-serif;font-size:12pt;max-width:8.5in;margin:1in auto;color:#111;}</style>
+      </head><body>${editor().getContent()}</body></html>`);
+    w.document.close();
+    w.focus();
+    setTimeout(() => { w.print(); }, 300);
+  }
+
+  document.getElementById('wordSaveBtn').addEventListener('click', save);
+  document.getElementById('wordExportDocxBtn').addEventListener('click', exportDocx);
+  document.getElementById('wordExportPdfBtn').addEventListener('click', printDoc);
+  document.getElementById('wordImportBtn').addEventListener('click', () => document.getElementById('wordImportInput').click());
+  document.getElementById('wordImportInput').addEventListener('change', async (e) => {
+    const file = e.target.files[0];
+    if (!file || !ready) return;
+    const nm = file.name.replace(/\.(docx|doc|txt|rtf|html?)$/i, '');
+    nameInput.value = nm;
+    const lower = file.name.toLowerCase();
+    try {
+      if (lower.endsWith('.docx')) {
+        const buf = await file.arrayBuffer();
+        const result = await window.mammoth.convertToHtml({ arrayBuffer: buf });
+        editor().setContent(result.value || '');
+      } else if (lower.endsWith('.html') || lower.endsWith('.htm')) {
+        editor().setContent(await file.text());
+      } else {
+        const txt = await file.text();
+        editor().setContent('<p>' + txt.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/\n/g, '</p><p>') + '</p>');
+      }
+      setStatus('Imported ' + file.name);
+    } catch (err) { alert('Import failed: ' + err.message); }
+    e.target.value = '';
+  });
+  window.addEventListener('keydown', (e) => {
+    if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 's') { e.preventDefault(); save(); }
+  });
+})();
+</script>
+{% endblock %}

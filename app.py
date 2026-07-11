@@ -803,6 +803,8 @@ class Document(db.Model):
     content_hash = db.Column(db.String(64))
     retention_until = db.Column(db.DateTime)
     legal_hold = db.Column(db.Boolean, default=False)
+    editor_kind = db.Column(db.String(20))   # 'sheet' | 'doc' — opens in built-in editor
+    editor_content = db.Column(db.Text)      # serialized editor state (json for sheet, html for doc)
 
 
 class DocumentFolder(db.Model):
@@ -965,7 +967,12 @@ ALLOWED_EXTENSIONS = {
     'png', 'jpg', 'jpeg', 'gif', 'webp', 'bmp', 'tif', 'tiff',
     'pdf', 'doc', 'docx', 'xls', 'xlsx', 'ppt', 'pptx', 'csv', 'txt', 'rtf',
     'zip', 'rar', '7z', 'dwg', 'dxf',
+    'json', 'html', 'htm',
 }
+
+# File extensions that can be opened in the built-in editors.
+SHEET_EXTENSIONS = {'xlsx', 'xls', 'csv'}
+DOC_EDITOR_EXTENSIONS = {'docx', 'doc', 'txt', 'rtf', 'html', 'htm'}
 
 app.config['UPLOAD_FOLDER'] = UPLOAD_FOLDER
 
@@ -3591,6 +3598,149 @@ def documents_page():
 @login_required
 def document_viewer_page():
     return render_template('document_viewer.html')
+
+
+@app.route('/documents/sheet')
+@login_required
+def document_sheet_editor_page():
+    return render_template('sheet_editor.html', active_project=get_active_project())
+
+
+@app.route('/documents/word')
+@login_required
+def document_word_editor_page():
+    return render_template('word_editor.html', active_project=get_active_project())
+
+
+@app.route('/api/documents/<int:doc_id>/editor-content', methods=['GET'])
+@login_required
+def api_document_editor_content(doc_id):
+    """Return the editable content + metadata for the built-in Sheet/Word editors."""
+    from document_persistence import _editor_kind_for
+    doc = Document.query.get_or_404(doc_id)
+    kind = _editor_kind_for(doc)
+    directory = os.path.join(app.config['UPLOAD_FOLDER'], 'documents', str(doc.project_id))
+    file_path = os.path.join(directory, doc.filename)
+    return jsonify({
+        'ok': True,
+        'id': doc.id,
+        'name': doc.name,
+        'original_filename': doc.original_filename,
+        'editor_kind': kind,
+        'has_editor_content': bool(doc.editor_content),
+        'editor_content': doc.editor_content,
+        'download_url': url_for('api_documents_download', doc_id=doc.id),
+        'file_exists': os.path.isfile(file_path),
+        'folder_id': doc.folder_id,
+    })
+
+
+@app.route('/api/documents/editor/save', methods=['POST'])
+@login_required
+def api_document_editor_save():
+    """Create or update a Sheet/Word document from the built-in editors.
+
+    Accepts multipart form:
+      - doc_id (optional): update existing, else create
+      - kind: 'sheet' | 'doc'
+      - name: display name
+      - folder_id (optional): target folder for new docs
+      - content: serialized editor state (json for sheet, html for doc)
+      - file (optional): exported .xlsx/.docx/.txt blob to store as the downloadable file
+    """
+    from document_features import file_content_hash
+    from document_integration import guess_mime
+    from document_persistence import (
+        ensure_document_schema, ensure_system_folders, resolve_folder_by_key, document_folder,
+    )
+
+    ensure_project_schema()
+    ensure_document_schema(db.engine, db)
+
+    doc_id = request.form.get('doc_id', type=int)
+    kind = (request.form.get('kind') or '').strip() or 'sheet'
+    name = (request.form.get('name') or '').strip() or ('Untitled Spreadsheet' if kind == 'sheet' else 'Untitled Document')
+    content = request.form.get('content') or ''
+    project_id = request.form.get('project_id', type=int) or get_current_project_id()
+    upload_root = app.config.get('UPLOAD_FOLDER', 'uploads')
+    blob = request.files.get('file')
+
+    if doc_id:
+        doc = Document.query.get_or_404(doc_id)
+        project_id = doc.project_id
+    else:
+        if not project_id:
+            return jsonify({'error': 'No active project. Select a project first.'}), 400
+        ensure_system_folders(db, DocumentFolder, int(project_id), current_user.id, Document=Document)
+        folder_id = request.form.get('folder_id', type=int)
+        if not folder_id:
+            mine = resolve_folder_by_key(db, DocumentFolder, int(project_id), 'my-files')
+            folder_id = mine.id if mine else None
+        default_ext = 'xlsx' if kind == 'sheet' else 'docx'
+        doc = Document(
+            project_id=int(project_id),
+            folder_id=folder_id,
+            name=name,
+            document_type='Spreadsheet' if kind == 'sheet' else 'Document',
+            filename='pending',
+            original_filename=f'{name}.{default_ext}',
+            mime_type=guess_mime(f'x.{default_ext}'),
+            uploaded_by_id=current_user.id,
+            created_at=datetime.utcnow(),
+            updated_at=datetime.utcnow(),
+            editor_kind=kind,
+        )
+        db.session.add(doc)
+        db.session.flush()
+
+    doc.name = name
+    doc.editor_kind = kind
+    doc.editor_content = content
+    doc.updated_at = datetime.utcnow()
+
+    directory = document_folder(upload_root, int(project_id))
+    os.makedirs(directory, exist_ok=True)
+
+    if blob and blob.filename:
+        ext = blob.filename.rsplit('.', 1)[-1].lower() if '.' in blob.filename else ('xlsx' if kind == 'sheet' else 'docx')
+        file_bytes = blob.read()
+        stamp = datetime.utcnow().strftime('%Y%m%d%H%M%S%f')
+        stored = f'{stamp}_{secure_filename(name)[:80] or "document"}.{ext}'
+        with open(os.path.join(directory, stored), 'wb') as fh:
+            fh.write(file_bytes)
+        # Remove previous stored file if it was a real file (not the placeholder).
+        if doc.filename and doc.filename != 'pending' and doc.filename != stored:
+            old = os.path.join(directory, doc.filename)
+            if os.path.isfile(old):
+                try:
+                    os.remove(old)
+                except OSError:
+                    pass
+        doc.filename = stored
+        doc.original_filename = f'{name}.{ext}'
+        doc.file_size = len(file_bytes)
+        doc.mime_type = guess_mime(f'x.{ext}')
+        doc.content_hash = file_content_hash(file_bytes)
+    elif doc.filename == 'pending':
+        # No blob provided on create — persist the editor content itself as the file.
+        ext = 'json' if kind == 'sheet' else 'html'
+        raw = content.encode('utf-8')
+        stamp = datetime.utcnow().strftime('%Y%m%d%H%M%S%f')
+        stored = f'{stamp}_{secure_filename(name)[:80] or "document"}.{ext}'
+        with open(os.path.join(directory, stored), 'wb') as fh:
+            fh.write(raw)
+        doc.filename = stored
+        doc.file_size = len(raw)
+        doc.mime_type = guess_mime(f'x.{ext}')
+
+    db.session.commit()
+    return jsonify({
+        'ok': True,
+        'id': doc.id,
+        'name': doc.name,
+        'editor_kind': doc.editor_kind,
+        'download_url': url_for('api_documents_download', doc_id=doc.id),
+    })
 
 
 @app.route('/share/<token>')

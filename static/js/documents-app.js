@@ -728,6 +728,10 @@
       }
     } else {
       const file = state.files.find(f => f.id === state.selected.id) || state.previewDoc;
+      if (file && file.editor_kind) {
+        const editorLabel = file.editor_kind === 'sheet' ? 'Open in Spreadsheet editor' : 'Open in Document editor';
+        items.push({ label: editorLabel, action: () => openInEditor(state.selected.id, file.editor_kind) });
+      }
       if (file && isPreviewable(file)) {
         items.push({ label: 'Open & markup', action: () => openDocumentViewerFromList(state.selected.id) });
       }
@@ -1102,12 +1106,32 @@
 
   function openDocumentViewerFromList(id) {
     const doc = state.files.find(f => f.id === id);
+    // Route spreadsheets/word docs to the built-in editors.
+    if (doc && doc.editor_kind) {
+      openInEditor(id, doc.editor_kind);
+      return;
+    }
     if (!doc || !isPreviewable(doc)) {
       downloadFile(id);
       return;
     }
     const pid = projectId();
     global.location.href = `/documents/viewer?doc_id=${id}${pid ? `&project_id=${pid}` : ''}`;
+  }
+
+  function openInEditor(id, kind) {
+    const pid = projectId();
+    const page = kind === 'sheet' ? '/documents/sheet' : '/documents/word';
+    global.location.href = `${page}?doc_id=${id}${pid ? `&project_id=${pid}` : ''}`;
+  }
+
+  function newEditorDoc(kind) {
+    const pid = projectId();
+    const page = kind === 'sheet' ? '/documents/sheet' : '/documents/word';
+    const parts = [];
+    if (pid) parts.push(`project_id=${pid}`);
+    if (state.folderId) parts.push(`folder_id=${state.folderId}`);
+    global.location.href = parts.length ? `${page}?${parts.join('&')}` : page;
   }
 
   function downloadFolderZip(folderId) {
@@ -1298,6 +1322,8 @@
     });
     document.getElementById('docsBtnNewFolder')?.addEventListener('click', newSubFolder);
     document.getElementById('docsBtnNewMainFolder')?.addEventListener('click', newMainFolder);
+    document.getElementById('docsBtnNewSheet')?.addEventListener('click', () => newEditorDoc('sheet'));
+    document.getElementById('docsBtnNewDoc')?.addEventListener('click', () => newEditorDoc('doc'));
     document.getElementById('docsBtnTrash')?.addEventListener('click', () => {
       if (state.browseMode === 'trash') exitTrash();
       else loadTrash();
