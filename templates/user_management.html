@@ -421,7 +421,22 @@
     function resolveServerUserId(localUser) {
         if (!localUser) return null;
         const match = (CASEPM_SERVER_USERS || []).find(u => (u.email || '').toLowerCase() === (localUser.email || '').toLowerCase());
-        return match?.id || localUser.server_id || localUser.id;
+        if (match?.id) return match.id;
+        if (localUser.server_id) return localUser.server_id;
+        return null;
+    }
+
+    function syncLocalUsersWithServer() {
+        let changed = false;
+        users = users.map(u => {
+            const sid = resolveServerUserId(u);
+            if (sid && u.server_id !== sid) {
+                changed = true;
+                return { ...u, server_id: sid };
+            }
+            return u;
+        });
+        if (changed) localStorage.setItem('users', JSON.stringify(users));
     }
 
     // ==================== AUDIT LOGGING (operable user activity logs) ====================
@@ -750,7 +765,8 @@
 
     async function loadServerSignatureForUser(userId) {
         const localUser = users.find(u => u.id == userId);
-        const serverId = resolveServerUserId(localUser) || userId;
+        const serverId = resolveServerUserId(localUser);
+        if (!serverId) return null;
         try {
             const sig = await CasePMEsign.fetchUserSignature(serverId);
             const hashEl = document.getElementById('signatureHashDisplay');
@@ -1982,6 +1998,7 @@
             localStorage.setItem('casepm_companies', JSON.stringify(companies));
         }
 
+        syncLocalUsersWithServer();
         renderUsersTable();
         updateSummaryCards();
 

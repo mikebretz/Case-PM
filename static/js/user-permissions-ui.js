@@ -23,6 +23,10 @@
   async function loadCatalog() {
     if (catalog) return catalog;
     const res = await fetch('/api/permissions/catalog', { credentials: 'same-origin' });
+    if (!res.ok) {
+      const text = await res.text();
+      throw new Error(`Could not load permissions catalog (${res.status})`);
+    }
     const json = await res.json();
     catalog = json.catalog || json;
     return catalog;
@@ -171,9 +175,14 @@
 
   async function applyTemplate(role) {
     const res = await fetch(`/api/permissions/template/${encodeURIComponent(role)}`, { credentials: 'same-origin' });
+    if (!res.ok) {
+      console.error('Template load failed', role, res.status);
+      return;
+    }
     const json = await res.json();
     if (json.permissions) {
-      render(document.querySelector('[id^="permissionsContainer"]')?.id || 'permissionsContainer', json.permissions, { showGlobal: true });
+      const hostId = document.getElementById('permissionsContainer')?.id || 'permissionsContainer';
+      render(hostId, json.permissions, { showGlobal: true });
     }
   }
 

@@ -131,6 +131,64 @@ def permission_required(permission):
 _user_signature_schema_ready = False
 _audit_schema_ready = False
 
+# Page routes enforced by per-user module permissions (non-admin).
+MODULE_ROUTE_GUARD = {
+    'budget_page': 'budget',
+    'forecast_page': 'forecast',
+    'pay_applications_page': 'pay_applications',
+    'commitments_page': 'commitments',
+    'companies_page': 'companies',
+    'user_management': 'users',
+    'program_settings': 'program_settings',
+    'audit_log_page': 'audit_log',
+    'audit_log': 'audit_log',
+    'developer_console': 'developer',
+    'rfis_page': 'rfis',
+    'submittals_page': 'submittals',
+    'change_orders_page': 'change_orders',
+    'daily_log': 'daily_log',
+    'weekly_report': 'weekly_report',
+    'punch_list_page': 'punch_list',
+    'safety_page': 'safety',
+    'photos_page': 'photos',
+    'inspections_page': 'inspections',
+    'schedule_page': 'schedule',
+    'documents_page': 'documents',
+    'drawings_page': 'drawings',
+    'deliveries_page': 'deliveries',
+    'meeting_minutes_page': 'meeting_minutes',
+    'email_page': 'email',
+    'projects_page': 'projects',
+    'project_detail': 'projects',
+}
+
+
+@app.before_request
+def _guard_module_route_access():
+    if not current_user.is_authenticated:
+        return
+    if getattr(current_user, 'role', None) == 'Admin':
+        return
+    ep = request.endpoint or ''
+    module_key = MODULE_ROUTE_GUARD.get(ep)
+    if not module_key:
+        return
+    try:
+        from developer_tools import is_developer
+        if is_developer(current_user):
+            return
+    except Exception:
+        pass
+    try:
+        from case_workflow import user_has_module_access
+        if not user_has_module_access(current_user, module_key, 'view'):
+            if request.path.startswith('/api/'):
+                return jsonify({'error': 'You do not have permission to access this module.'}), 403
+            flash(f'You do not have permission to access {module_key.replace("_", " ").title()}.', 'error')
+            return redirect(url_for('dashboard'))
+    except Exception:
+        return
+
 
 @app.before_request
 def _migrate_audit_log_schema():
@@ -415,17 +473,35 @@ def inject_developer_flag():
     ep = request.endpoint or ''
     page_module = ENDPOINT_TO_MODULE.get(ep, 'app')
     if not current_user.is_authenticated:
-        return {'is_developer': False, 'page_module': page_module, 'is_admin_user': False}
+        return {'is_developer': False, 'page_module': page_module, 'is_admin_user': False, 'can_access_module': lambda m, min_access='view': False, 'allowed_modules': {}}
     try:
         from developer_tools import is_developer
         dev = is_developer(current_user)
     except Exception:
         dev = False
     is_admin = getattr(current_user, 'role', None) == 'Admin' or dev
+    try:
+        from case_workflow import user_has_module_access
+        from permissions_catalog import all_module_keys
+        def can_access_module(module_key, min_access='view'):
+            if is_admin:
+                return True
+            return user_has_module_access(current_user, module_key, min_access)
+        allowed_modules = (
+            {k: True for k in all_module_keys()}
+            if is_admin else
+            {k: user_has_module_access(current_user, k, 'view') for k in all_module_keys()}
+        )
+    except Exception:
+        def can_access_module(module_key, min_access='view'):
+            return True
+        allowed_modules = {}
     return {
         'is_developer': dev,
         'page_module': page_module,
         'is_admin_user': is_admin,
+        'can_access_module': can_access_module,
+        'allowed_modules': allowed_modules,
     }
 
 
@@ -1190,6 +1266,19 @@ class AuditLog(db.Model):
     target_id = db.Column(db.Integer)
     details = db.Column(db.Text)
     timestamp = db.Column(db.DateTime, default=datetime.utcnow)
+    module = db.Column(db.String(80))
+    user_name = db.Column(db.String(150))
+    user_email = db.Column(db.String(120))
+    project_id = db.Column(db.Integer)
+    project_name = db.Column(db.String(200))
+    company_id = db.Column(db.Integer)
+    company_name = db.Column(db.String(200))
+    change_order_id = db.Column(db.Integer)
+    entity_ref = db.Column(db.String(120))
+    category = db.Column(db.String(40))
+    severity = db.Column(db.String(20))
+    metadata_json = db.Column(db.Text)
+    client_id = db.Column(db.String(80))
 
 
 class Notification(db.Model):
@@ -4318,7 +4407,11 @@ def api_permissions_catalog():
 @admin_required
 def api_permissions_template(role_name):
     from user_permissions_persistence import apply_role_template
-    return jsonify({'ok': True, 'permissions': apply_role_template(role_name)})
+    try:
+        perms = apply_role_template(role_name)
+        return jsonify({'ok': True, 'permissions': perms})
+    except Exception as exc:
+        return jsonify({'error': str(exc)}), 400
 
 
 @app.route('/api/users/<int:user_id>/permissions', methods=['GET'])
@@ -10059,9 +10152,13 @@ def api_audit_log_batch():
     ensure_audit_log_schema(db)
     body = request.get_json(silent=True) or {}
     events = body.get('events') or []
-    record_audit_batch(db, AuditLog, current_user, events)
-    db.session.commit()
-    return jsonify({'ok': True, 'imported': len(events)})
+    try:
+        record_audit_batch(db, AuditLog, current_user, events)
+        db.session.commit()
+        return jsonify({'ok': True, 'imported': len(events)})
+    except Exception as exc:
+        db.session.rollback()
+        return jsonify({'error': str(exc)}), 500
 
 
 @app.route('/api/audit-log/stats', methods=['GET'])
