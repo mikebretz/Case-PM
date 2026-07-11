@@ -65,6 +65,32 @@ window.SUBMITTAL_PROJECT_CTX = {
     display: none;
   }
 
+  #mainContent:has(.submittals-page) {
+    overflow: hidden !important;
+    display: flex;
+    flex-direction: column;
+    padding: 0 !important;
+  }
+  .submittals-page {
+    display: flex;
+    flex-direction: column;
+    flex: 1;
+    min-height: 0;
+    width: 100%;
+    overflow: hidden;
+    box-sizing: border-box;
+  }
+  .submittals-stack {
+    display: flex;
+    flex-direction: column;
+    flex: 1;
+    min-height: 0;
+    overflow: hidden;
+    padding: 1rem 1.5rem 0;
+  }
+  #submittalChrome { flex-shrink: 0; display: flex; flex-direction: column; flex: 1; min-height: 0; overflow: hidden; padding: 0; }
+  #submittalTableScroll { flex: 1; min-height: 0; overflow: auto; }
+
   /* ─── Submittal Log print (ALDI-style register, not screen capture) ─── */
   @media print {
     @page {
@@ -182,9 +208,10 @@ window.SUBMITTAL_PROJECT_CTX = {
     .submittal-print-footer .right { text-align: right; }
   }
 </style>
-<div id="submittalChrome" class="content-wrapper py-6 px-6">
+<div class="submittals-page"><div class="submittals-stack">
+<div id="submittalChrome" class="content-wrapper">
     <!-- Header -->
-    <div class="flex items-center justify-between mb-6">
+    <div class="flex items-center justify-between mb-4 flex-shrink-0">
         <div>
             <div class="text-xs uppercase tracking-wider text-zinc-500 font-medium">SUBMITTALS</div>
             <div class="text-2xl font-semibold text-white">Submittal Log</div>
@@ -234,7 +261,7 @@ window.SUBMITTAL_PROJECT_CTX = {
     </div>
 
     <!-- Summary Cards -->
-    <div class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4 mb-6">
+    <div class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4 mb-3 flex-shrink-0">
         <div class="bg-zinc-800 border border-zinc-700 rounded-lg p-4">
             <div class="text-xs uppercase tracking-wider text-zinc-500">Total Submittals</div>
             <div id="metricTotal" class="text-3xl font-semibold text-white mt-1">0</div>
@@ -262,7 +289,7 @@ window.SUBMITTAL_PROJECT_CTX = {
     </div>
 
     <!-- Filters -->
-    <div class="bg-zinc-800 border border-zinc-700 rounded-lg p-4 mb-4 sticky top-0 z-10">
+    <div class="bg-zinc-800 border border-zinc-700 rounded-lg p-3 mb-3 flex-shrink-0">
         <div class="flex flex-wrap items-center gap-3">
             <div class="flex-1 min-w-[260px]">
                 <input type="text" id="searchInput" placeholder="Search submittals..." 
@@ -304,10 +331,10 @@ window.SUBMITTAL_PROJECT_CTX = {
     </div>
 
     <!-- Table -->
-    <div class="bg-zinc-800 border border-zinc-700 rounded-lg overflow-hidden">
-        <div class="overflow-x-auto" style="max-height: calc(100dvh - 295px); overflow-y: auto;">
+    <div class="bg-zinc-800 border border-zinc-700 rounded-lg overflow-hidden flex-1 min-h-0 flex flex-col mb-2">
+        <div id="submittalTableScroll" class="overflow-auto">
             <table class="w-full text-sm min-w-[1800px]">
-                <thead class="bg-zinc-900 border-b border-zinc-700 sticky top-0">
+                <thead class="bg-zinc-900 border-b border-zinc-700 sticky top-0 z-10">
                     <tr>
                         <th class="px-4 py-3 text-left font-semibold text-zinc-300 w-36">Submittal #</th>
                         <th class="px-3 py-3 text-left font-semibold text-zinc-300 w-16">Rev</th>
@@ -340,6 +367,7 @@ window.SUBMITTAL_PROJECT_CTX = {
         </div>
     </div>
 </div>
+</div></div>
 
 <div id="submittalPrintSheet" aria-hidden="true"></div>
 

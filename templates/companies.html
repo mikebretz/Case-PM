@@ -28,9 +28,14 @@
         padding-top: 6px !important;
         padding-bottom: 6px !important;
     }
+    #mainContent:has(.companies-page) { overflow: hidden !important; display: flex; flex-direction: column; padding: 0 !important; }
+    .companies-page { display: flex; flex-direction: column; flex: 1; min-height: 0; width: 100%; overflow: hidden; }
+    .companies-stack { display: flex; flex-direction: column; flex: 1; min-height: 0; overflow: hidden; }
+    #companiesTableWrap thead th { position: sticky; top: 0; z-index: 10; background: #27272a; }
 </style>
 
-<div class="flex-1 flex flex-col overflow-hidden">
+<div class="companies-page">
+<div class="companies-stack">
 
     <!-- Header -->
     <div class="h-16 border-b border-zinc-800 bg-zinc-900 flex items-center justify-between px-6 flex-shrink-0">
@@ -65,10 +70,10 @@
         </div>
     </div>
 
-    <div class="flex-1 overflow-auto p-6">
+    <div class="flex-1 min-h-0 flex flex-col overflow-hidden p-6 pt-4 pb-2">
 
         <!-- Summary Cards -->
-        <div class="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-7 gap-4 mb-6">
+        <div class="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-7 gap-4 mb-4 flex-shrink-0">
             <div onclick="filterAll()" class="bg-zinc-900 border border-zinc-700 rounded-md p-4 cursor-pointer hover:border-emerald-600 transition-colors">
                 <div class="text-xs text-zinc-400">Total Companies</div>
                 <div id="totalCompanies" class="text-3xl font-semibold mt-1">0</div>
@@ -100,7 +105,7 @@
         </div>
 
         <!-- Search & Filters -->
-        <div class="flex flex-col md:flex-row gap-4 mb-4">
+        <div class="flex flex-col md:flex-row gap-4 mb-3 flex-shrink-0">
             <input type="text" id="searchInput" placeholder="Search companies..." class="flex-1 bg-zinc-900 border border-zinc-700 rounded-md px-4 py-2.5 text-sm focus:border-emerald-600">
             <select id="typeFilter" class="bg-zinc-900 border border-zinc-700 rounded-md px-4 py-2.5 text-sm focus:border-emerald-600">
                 <option value="">All Types</option>
@@ -117,8 +122,8 @@
             <button onclick="clearCompanyFilters()" class="px-4 py-2 bg-zinc-800 hover:bg-zinc-700 rounded-md text-sm">Clear Filters</button>
         </div>
 
-        <!-- Table -->
-        <div class="bg-zinc-900 border border-zinc-700 rounded-md overflow-hidden">
+        <!-- Table (scrolls) -->
+        <div id="companiesTableWrap" class="flex-1 min-h-0 overflow-auto border border-zinc-700 rounded-md bg-zinc-900 mb-16">
             <table class="w-full text-sm">
                 <thead class="bg-zinc-800 text-zinc-400">
                     <tr>
@@ -139,6 +144,9 @@
         </div>
     </div>
 
+</div>
+</div>
+
     <!-- FIXED BOTTOM COMPANIES ACTIVITY LOG FOOTER (matches budget.html + user_management.html style) -->
     <div class="fixed bottom-0 left-56 right-0 bg-zinc-900 border-t border-zinc-700 px-6 py-2 text-xs text-zinc-400 flex items-center justify-between z-[60]">
         <div class="flex items-center gap-4">
@@ -147,7 +155,6 @@
         </div>
         <div class="text-emerald-400">● Online</div>
     </div>
-</div>
 
 <!-- View Company Modal -->
 <dialog id="viewCompanyModal" class="bg-zinc-900 border border-zinc-700 text-white rounded-md w-full max-w-5xl p-0 shadow-2xl">

@@ -30,6 +30,25 @@
     min-height: 0;
     overflow: hidden;
   }
+  /* Freeze early columns while horizontally scrolling the progress table */
+  .forecast-sticky-0 {
+    position: sticky;
+    left: 0;
+    z-index: 12;
+    background: #27272a;
+  }
+  tbody .forecast-sticky-0 { background: #18181b; }
+  tr:hover td.forecast-sticky-0 { background: #27272a; }
+  .forecast-sticky-1 {
+    position: sticky;
+    left: 7rem;
+    z-index: 12;
+    background: #27272a;
+  }
+  tbody .forecast-sticky-1 { background: #18181b; }
+  tr:hover td.forecast-sticky-1 { background: #27272a; }
+  thead .forecast-sticky-0,
+  thead .forecast-sticky-1 { z-index: 22; }
 </style>
 
 <div class="forecast-page">
@@ -118,8 +137,8 @@
         <table class="w-full text-sm min-w-[1400px]">
             <thead class="bg-zinc-800 sticky z-20 border-b border-zinc-700" style="top: 0; position: sticky;">
                 <tr>
-                    <th class="px-4 py-3 text-left font-medium text-zinc-400 w-28">Month</th>
-                    <th class="px-4 py-3 text-left font-medium text-zinc-400 w-28">As of</th>
+                    <th class="px-4 py-3 text-left font-medium text-zinc-400 w-28 forecast-sticky-0">Month</th>
+                    <th class="px-4 py-3 text-left font-medium text-zinc-400 w-28 forecast-sticky-1">As of</th>
                     <th class="px-4 py-3 text-right font-medium text-zinc-400 w-32">Subtotal Budget</th>
                     <th class="px-4 py-3 text-right font-medium text-zinc-400 w-32">Subtotal Projected</th>
                     <th class="px-4 py-3 text-right font-medium text-zinc-400 w-32">Cost to Date</th>
