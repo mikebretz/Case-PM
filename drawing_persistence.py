@@ -1551,7 +1551,7 @@ def group_drawings_by_section(drawings_dicts):
 
 
 def inherit_markups_to_revision(db, DrawingMarkup, drawing_id, old_revision_id, new_revision_id):
-    """Copy published markups (not sketches) to new revision — Procore-style inheritance."""
+    """Copy published markups (not sketches) to new revision."""
     if not old_revision_id:
         return
     markups = DrawingMarkup.query.filter_by(

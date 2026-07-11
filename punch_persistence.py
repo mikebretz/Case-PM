@@ -1,6 +1,6 @@
 """Punch list persistence — field-friendly deficiency tracking.
 
-Feature set modeled on Procore / Fieldwire / Buildertrend / PlanGrid punch lists:
+Feature set for construction punch lists:
 quick check-off, status verification workflow, priority, assignee/company, trade,
 location, category, due dates with overdue flags, photos, comments, and sub-tasks.
 """

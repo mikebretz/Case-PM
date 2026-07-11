@@ -1,6 +1,6 @@
 """Daily log persistence — structured field-report sections, stats, and serialization.
 
-Feature set modeled on the most-used daily logs in Procore / Buildertrend / RedTeam:
+Feature set for construction daily field reports:
 manpower, equipment, deliveries, visitors, delays, safety, plus a free-form work
 summary and notes. Structured sections that don't have dedicated tables are stored
 in DailyLog.details_json so the log stays flexible and simple.

@@ -49,7 +49,7 @@ def serialize_photo(photo, user=None, url_helpers=None):
 
 
 def group_photos_by_date(photos_serialized, group_mode='day'):
-    """Group serialized photos into timeline sections (Procore-style day/week/month)."""
+    """Group serialized photos into timeline sections (day/week/month)."""
     buckets = OrderedDict()
 
     def bucket_key(d: date):

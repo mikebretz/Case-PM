@@ -1,5 +1,5 @@
 /**
- * Case PM — Drawings module (Procore / Bluebeam / ACC / Fieldwire parity)
+ * Case PM — Drawings module
  */
 (function (global) {
   'use strict';

@@ -1,5 +1,5 @@
 /**
- * Case PM — RFI module (Procore / RedTeam / ACC feature parity)
+ * Case PM — RFI module
  */
 (function (global) {
   'use strict';

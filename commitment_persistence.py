@@ -32,7 +32,7 @@ BALL_IN_COURT_MAP = {
     'Closed': None,
 }
 
-# Procore / RedTeam style sequential approval
+# Sequential approval workflow
 APPROVAL_CHAIN = (
     {'from_status': 'Submitted', 'role': 'Project Manager', 'next_status': 'Pending Accounting'},
     {'from_status': 'Pending PM', 'role': 'Project Manager', 'next_status': 'Pending Accounting'},
