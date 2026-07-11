@@ -2,7 +2,8 @@
 
 {% block content %}
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/sortablejs@1.15.2/Sortable.min.js"></script>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/gridstack@10.3.1/dist/gridstack.min.css">
+<script src="https://cdn.jsdelivr.net/npm/gridstack@10.3.1/dist/gridstack-all.js"></script>
 <script>
 window.CASEPM_DASHBOARD_CTX = {
   userId: {{ current_user.id }},
@@ -56,51 +57,56 @@ window.CASEPM_DASHBOARD_CTX = {
     overflow-y: auto;
     padding-bottom: 5rem;
   }
-  .dash-grid {
-    display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
-    gap: 1rem;
-    align-items: start;
-  }
-  .dash-tile {
+  /* GridStack tile styling */
+  .grid-stack { background: transparent; }
+  .grid-stack-item-content {
+    display: flex;
+    flex-direction: column;
+    overflow: hidden !important;
     background: #18181b;
     border: 1px solid #3f3f46;
     border-radius: 0.375rem;
-    min-height: 120px;
-    transition: box-shadow 0.2s, border-color 0.2s;
-  }
-  .dash-tile[data-span="2"] {
-    grid-column: span 2;
-  }
-  .dash-tile[data-span="full"] {
-    grid-column: 1 / -1;
-  }
-  @media (max-width: 768px) {
-    .dash-tile[data-span="2"] { grid-column: span 1; }
   }
   .dash-tile-head {
     display: flex;
     align-items: center;
     justify-content: space-between;
-    padding: 0.75rem 1rem;
+    padding: 0.625rem 1rem;
     border-bottom: 1px solid #3f3f46;
     background: #27272a;
-    border-radius: 0.375rem 0.375rem 0 0;
+    flex-shrink: 0;
   }
-  .dash-tile-body { padding: 1rem; }
-  .dash-tile--unlocked {
+  .dash-tile-body {
+    flex: 1;
+    min-height: 0;
+    overflow-y: auto;
+    overflow-x: hidden;
+    padding: 1rem;
+  }
+  /* Unlocked (edit) mode visuals */
+  .grid-stack.dash-editing .grid-stack-item-content { border-color: #10b98155; }
+  .grid-stack.dash-editing .dash-tile-head {
     cursor: grab;
-    border-color: #10b98166;
-  }
-  .dash-tile--unlocked .dash-tile-head {
     background: #14532d33;
   }
-  .dash-tile--dragging {
-    opacity: 0.85;
-    box-shadow: 0 8px 30px rgba(0,0,0,0.45);
-    cursor: grabbing;
+  .grid-stack.dash-editing .dash-tile-head:active { cursor: grabbing; }
+  .grid-stack.dash-editing .dash-tile-head::before {
+    content: "\f58e";
+    font-family: "Font Awesome 6 Free";
+    font-weight: 900;
+    color: #10b981;
+    margin-right: 0.5rem;
+    font-size: 0.75rem;
   }
-  .dash-tile--hidden { display: none !important; }
+  .grid-stack-item.ui-draggable-dragging .grid-stack-item-content {
+    box-shadow: 0 12px 40px rgba(0,0,0,0.5);
+    opacity: 0.95;
+  }
+  .grid-stack > .grid-stack-placeholder > .placeholder-content {
+    background: #10b98122;
+    border: 1px dashed #10b98188;
+    border-radius: 0.375rem;
+  }
   .dash-kpi-grid {
     display: grid;
     grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
@@ -170,13 +176,13 @@ window.CASEPM_DASHBOARD_CTX = {
 </div>
 
 <div id="dashUnlockBanner" class="dash-unlock-banner flex-shrink-0">
-  <i class="fa-solid fa-grip-vertical"></i>
-  <span>Layout unlocked — drag tiles to rearrange. Click <strong>Settings</strong> to lock or choose visible tiles.</span>
+  <i class="fa-solid fa-up-down-left-right"></i>
+  <span>Layout unlocked — drag tiles by their header and drag the corner to resize. Short tiles pack in beside tall ones automatically. Click <strong>Settings</strong> to lock.</span>
 </div>
 
 <!-- TILE GRID -->
 <div class="dash-scroll">
-  <div id="dashboardGrid" class="dash-grid"></div>
+  <div id="dashboardGrid" class="grid-stack"></div>
 </div>
 
 <!-- STATUS BAR -->
@@ -197,8 +203,8 @@ window.CASEPM_DASHBOARD_CTX = {
   <div class="p-5 space-y-5 max-h-[70vh] overflow-y-auto">
     <label class="flex items-center justify-between gap-4 p-3 bg-zinc-800 border border-zinc-700 rounded-md cursor-pointer">
       <div>
-        <div class="font-medium text-sm">Unlock layout</div>
-        <div class="text-xs text-zinc-500">Drag tiles to rearrange (header buttons stay fixed)</div>
+        <div class="font-medium text-sm">Unlock layout (edit mode)</div>
+        <div class="text-xs text-zinc-500">Drag tiles by their header to move, drag the corner to resize. Tiles auto-pack to fill space.</div>
       </div>
       <input type="checkbox" id="dashUnlockToggle" class="accent-emerald-500 w-5 h-5">
     </label>

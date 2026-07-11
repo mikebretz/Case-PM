@@ -5,22 +5,30 @@
   'use strict';
 
   const ctx = global.CASEPM_DASHBOARD_CTX || {};
-  const STORAGE_KEY = `casepm_dashboard_layout_v1_u${ctx.userId || 0}`;
+  const STORAGE_KEY = `casepm_dashboard_layout_v2_u${ctx.userId || 0}`;
+  const COLUMNS = 12;
 
+  // w = grid columns (of 12), h = row units (1 unit ≈ the small weather tile height).
+  // minH/minW keep tiles usable. Content scrolls inside a fixed-size tile.
   const TILE_DEFS = {
-    kpis: { label: 'KPI Summary', span: 'full', icon: 'fa-chart-simple', default: true },
-    weather: { label: 'Weather', span: 1, icon: 'fa-cloud-sun', default: true },
-    assigned: { label: 'Assigned to Me', span: 1, icon: 'fa-inbox', default: true },
-    financial: { label: 'Financial Snapshot', span: 1, icon: 'fa-dollar-sign', default: true },
-    forecast_chart: { label: 'Forecast Trend', span: 2, icon: 'fa-chart-line', default: true },
-    open_items: { label: 'Open Items', span: 1, icon: 'fa-triangle-exclamation', default: true },
-    daily_logs: { label: 'Recent Daily Logs', span: 2, icon: 'fa-clipboard-list', default: true },
-    schedule: { label: 'Key Tasks', span: 1, icon: 'fa-calendar-week', default: true },
-    commitments: { label: 'Commitments', span: 1, icon: 'fa-file-contract', default: true },
-    change_orders: { label: 'Change Orders', span: 1, icon: 'fa-arrows-rotate', default: true },
-    safety: { label: 'Safety This Week', span: 1, icon: 'fa-hard-hat', default: true },
-    progress: { label: 'Schedule Progress', span: 1, icon: 'fa-bars-progress', default: true },
-    activity: { label: 'Recent Activity', span: 2, icon: 'fa-clock-rotate-left', default: true },
+    kpis:          { label: 'KPI Summary',        icon: 'fa-chart-simple',        default: true, w: 12, h: 3, minW: 4, minH: 2 },
+    weather:       { label: 'Weather',            icon: 'fa-cloud-sun',           default: true, w: 3,  h: 3, minW: 2, minH: 2 },
+    assigned:      { label: 'Assigned to Me',     icon: 'fa-inbox',               default: true, w: 3,  h: 5, minW: 2, minH: 2 },
+    financial:     { label: 'Financial Snapshot', icon: 'fa-dollar-sign',         default: true, w: 3,  h: 3, minW: 2, minH: 2 },
+    forecast_chart:{ label: 'Forecast Trend',     icon: 'fa-chart-line',          default: true, w: 6,  h: 4, minW: 3, minH: 3 },
+    open_items:    { label: 'Open Items',         icon: 'fa-triangle-exclamation',default: true, w: 3,  h: 4, minW: 2, minH: 2 },
+    daily_logs:    { label: 'Recent Daily Logs',  icon: 'fa-clipboard-list',      default: true, w: 6,  h: 4, minW: 3, minH: 2 },
+    schedule:      { label: 'Key Tasks',          icon: 'fa-calendar-week',       default: true, w: 3,  h: 4, minW: 2, minH: 2 },
+    commitments:   { label: 'Commitments',        icon: 'fa-file-contract',       default: true, w: 3,  h: 3, minW: 2, minH: 2 },
+    change_orders: { label: 'Change Orders',      icon: 'fa-arrows-rotate',       default: true, w: 3,  h: 3, minW: 2, minH: 2 },
+    safety:        { label: 'Safety This Week',   icon: 'fa-hard-hat',            default: true, w: 3,  h: 3, minW: 2, minH: 2 },
+    progress:      { label: 'Schedule Progress',  icon: 'fa-bars-progress',       default: true, w: 3,  h: 4, minW: 2, minH: 2 },
+    activity:      { label: 'Recent Activity',    icon: 'fa-clock-rotate-left',   default: true, w: 3,  h: 5, minW: 2, minH: 2 },
+    quick_actions: { label: 'Quick Actions',      icon: 'fa-bolt',                default: true, w: 3,  h: 3, minW: 2, minH: 2 },
+    project_info:  { label: 'Project Info',       icon: 'fa-circle-info',         default: false, w: 3, h: 3, minW: 2, minH: 2 },
+    submittals:    { label: 'Submittals',         icon: 'fa-file-arrow-up',       default: false, w: 3, h: 3, minW: 2, minH: 2 },
+    budget_breakdown:{ label: 'Budget Breakdown', icon: 'fa-table-cells',         default: false, w: 4, h: 4, minW: 3, minH: 3 },
+    contract:      { label: 'Contract Summary',   icon: 'fa-file-signature',      default: false, w: 3, h: 3, minW: 2, minH: 2 },
   };
 
   const DEFAULT_ORDER = Object.keys(TILE_DEFS);
@@ -29,8 +37,9 @@
     data: null,
     weather: null,
     layout: loadLayout(),
-    sortable: null,
+    grid: null,
     forecastChart: null,
+    suppressSave: false,
   };
 
   function loadLayout() {
@@ -39,19 +48,40 @@
       if (raw) {
         const parsed = JSON.parse(raw);
         return {
+          tiles: mergeTiles(parsed.tiles),
           order: Array.isArray(parsed.order) ? parsed.order : DEFAULT_ORDER.slice(),
-          visible: { ...defaultVisible(), ...(parsed.visible || {}) },
           locked: parsed.locked !== false,
         };
       }
     } catch (_) { /* ignore */ }
-    return { order: DEFAULT_ORDER.slice(), visible: defaultVisible(), locked: true };
+    return { tiles: defaultTiles(), order: DEFAULT_ORDER.slice(), locked: true };
   }
 
-  function defaultVisible() {
-    const v = {};
-    Object.keys(TILE_DEFS).forEach((id) => { v[id] = TILE_DEFS[id].default; });
-    return v;
+  function defaultTiles() {
+    const t = {};
+    Object.keys(TILE_DEFS).forEach((id) => {
+      const def = TILE_DEFS[id];
+      t[id] = { visible: def.default, w: def.w, h: def.h, x: undefined, y: undefined };
+    });
+    return t;
+  }
+
+  function mergeTiles(saved) {
+    const base = defaultTiles();
+    if (saved && typeof saved === 'object') {
+      Object.keys(base).forEach((id) => {
+        if (saved[id]) {
+          base[id] = {
+            visible: saved[id].visible !== false ? (saved[id].visible !== undefined ? saved[id].visible : base[id].visible) : false,
+            w: saved[id].w || base[id].w,
+            h: saved[id].h || base[id].h,
+            x: saved[id].x,
+            y: saved[id].y,
+          };
+        }
+      });
+    }
+    return base;
   }
 
   function saveLayout() {
@@ -188,7 +218,7 @@
   }
 
   function renderForecastChart(d) {
-    return `<div class="dash-tile-body"><div style="height:200px;position:relative"><canvas id="dashForecastCanvas"></canvas></div></div>`;
+    return `<div class="dash-tile-body"><div style="position:relative;height:100%;min-height:140px"><canvas id="dashForecastCanvas"></canvas></div></div>`;
   }
 
   function renderOpenItems(d) {
@@ -329,6 +359,77 @@
       </a>`).join('')}</div>`;
   }
 
+  function renderQuickActions() {
+    const u = ctx.urls || {};
+    const actions = [
+      { label: 'Daily Log', icon: 'fa-clipboard-list text-emerald-400', url: u.dailyLog },
+      { label: 'New RFI', icon: 'fa-circle-question text-yellow-400', url: (u.rfis || '') + '?action=new' },
+      { label: 'Change Order', icon: 'fa-arrows-rotate text-orange-400', url: (u.changeOrders || '') + '?action=new' },
+      { label: 'Submittal', icon: 'fa-file-arrow-up text-blue-400', url: (u.submittals || '') + '?action=new' },
+      { label: 'Punch Item', icon: 'fa-list-check text-red-400', url: (u.punchList || '') + '?action=new' },
+      { label: 'Upload Photos', icon: 'fa-camera text-purple-400', url: (u.photos || '') + '?action=upload' },
+    ];
+    return `<div class="dash-tile-body grid grid-cols-2 gap-2">${actions.map((a) => `
+      <a href="${esc(a.url)}" class="flex flex-col items-center justify-center gap-1.5 p-3 bg-zinc-950 hover:bg-zinc-800 border border-zinc-800 rounded-md text-center">
+        <i class="fa-solid ${a.icon} text-lg"></i>
+        <span class="text-xs">${esc(a.label)}</span>
+      </a>`).join('')}</div>`;
+  }
+
+  function renderProjectInfo(d) {
+    const p = d.project || {};
+    const loc = d.location || {};
+    const locStr = [loc.city, loc.state].filter(Boolean).join(', ') || loc.address || '—';
+    return `<div class="dash-tile-body space-y-2 text-sm">
+      <div class="flex justify-between"><span class="text-zinc-400">Name</span><span class="font-medium truncate ml-2">${esc(p.name || '—')}</span></div>
+      <div class="flex justify-between"><span class="text-zinc-400">Number</span><span class="font-mono">${esc(p.number || '—')}</span></div>
+      <div class="flex justify-between"><span class="text-zinc-400">Status</span><span class="text-emerald-400">${esc(p.status || '—')}</span></div>
+      <div class="flex justify-between"><span class="text-zinc-400">Location</span><span class="truncate ml-2">${esc(locStr)}</span></div>
+    </div>`;
+  }
+
+  function renderSubmittals(d) {
+    const k = d.kpis || {};
+    const u = ctx.urls || {};
+    return `<div class="dash-tile-body flex flex-col items-center justify-center text-center gap-2 h-full">
+      <i class="fa-solid fa-file-arrow-up text-3xl text-blue-400/40"></i>
+      <div class="text-4xl font-semibold">${k.open_submittals ?? 0}</div>
+      <div class="text-xs text-zinc-400">Open submittals</div>
+      <a href="${esc(u.submittals)}" class="text-xs text-emerald-400 mt-1">Open submittals →</a>
+    </div>`;
+  }
+
+  function renderBudgetBreakdown(d) {
+    const f = d.financial || {};
+    const rows = [
+      { label: 'Original Budget', value: f.original_budget, color: 'text-white' },
+      { label: 'Revised Budget', value: f.revised_budget, color: 'text-emerald-400' },
+      { label: 'Committed', value: f.committed, color: 'text-sky-400' },
+      { label: 'Cost to Date', value: f.actual_cost, color: 'text-amber-400' },
+      { label: 'Variance', value: f.variance, color: (f.variance || 0) >= 0 ? 'text-emerald-400' : 'text-red-400' },
+    ];
+    return `<div class="dash-tile-body space-y-2">${rows.map((r) => `
+      <div class="flex justify-between items-center text-sm py-1.5 border-b border-zinc-800 last:border-0">
+        <span class="text-zinc-400">${esc(r.label)}</span>
+        <span class="font-mono ${r.color}">${fmtMoney(r.value)}</span>
+      </div>`).join('')}</div>`;
+  }
+
+  function renderContract(d) {
+    const f = d.financial || {};
+    const u = ctx.urls || {};
+    const pct = f.pct_complete != null ? Math.min(100, f.pct_complete) : 0;
+    return `<div class="dash-tile-body space-y-3">
+      <div><div class="text-xs text-zinc-400">Contract to Date</div><div class="text-2xl font-semibold">${fmtMoney(f.contract_amount)}</div></div>
+      <div>
+        <div class="flex justify-between text-xs mb-1"><span class="text-zinc-400">Billed</span><span>${f.pct_complete != null ? f.pct_complete + '%' : '—'}</span></div>
+        <div class="dash-progress-bar"><span style="width:${pct}%"></span></div>
+      </div>
+      <div class="text-sm flex justify-between"><span class="text-zinc-400">Paid out</span><span>${fmtMoney(f.paid_out)}</span></div>
+      <a href="${esc(u.payApps)}" class="text-xs text-emerald-400">Pay applications →</a>
+    </div>`;
+  }
+
   const RENDERERS = {
     kpis: (d) => renderKpis(d),
     weather: () => renderWeather(),
@@ -343,6 +444,11 @@
     safety: (d) => renderSafety(d),
     progress: (d) => renderProgress(d),
     activity: (d) => renderActivity(d),
+    quick_actions: () => renderQuickActions(),
+    project_info: (d) => renderProjectInfo(d),
+    submittals: (d) => renderSubmittals(d),
+    budget_breakdown: (d) => renderBudgetBreakdown(d),
+    contract: (d) => renderContract(d),
   };
 
   const TILE_LINKS = {
@@ -353,33 +459,97 @@
     forecast_chart: { url: () => ctx.urls?.forecast, label: 'Forecast' },
   };
 
-  function buildTile(id, data) {
+  function tileInnerHTML(id, data) {
     const def = TILE_DEFS[id];
     if (!def) return '';
     const link = TILE_LINKS[id];
     const head = tileHead(def.label, link?.url?.(), link?.label);
     const body = (RENDERERS[id] || (() => ''))(data);
-    const hidden = state.layout.visible[id] === false ? ' dash-tile--hidden' : '';
-    const unlocked = !state.layout.locked ? ' dash-tile--unlocked' : '';
-    return `<div class="dash-tile${hidden}${unlocked}" data-tile-id="${id}" data-span="${def.span}">
-      ${head}${body}
-    </div>`;
+    return `${head}${body}`;
+  }
+
+  function initGrid() {
+    if (state.grid || !global.GridStack) return;
+    const el = document.getElementById('dashboardGrid');
+    if (!el) return;
+    state.grid = global.GridStack.init({
+      column: COLUMNS,
+      cellHeight: 78,
+      margin: 8,
+      float: false,
+      animate: true,
+      handle: '.dash-tile-head',
+      disableDrag: state.layout.locked,
+      disableResize: state.layout.locked,
+      resizable: { handles: 'e, se, s' },
+      draggable: { handle: '.dash-tile-head' },
+    }, el);
+
+    state.grid.on('change', (event, items) => {
+      if (state.suppressSave) return;
+      (items || []).forEach((node) => {
+        const id = node.id || (node.el && node.el.getAttribute('gs-id'));
+        if (id && state.layout.tiles[id]) {
+          state.layout.tiles[id].x = node.x;
+          state.layout.tiles[id].y = node.y;
+          state.layout.tiles[id].w = node.w;
+          state.layout.tiles[id].h = node.h;
+        }
+      });
+      saveLayout();
+    });
+
+    state.grid.on('resizestop', () => {
+      if (state.forecastChart) state.forecastChart.resize();
+    });
+  }
+
+  function addTile(id, data) {
+    const def = TILE_DEFS[id];
+    const t = state.layout.tiles[id] || {};
+    if (!def || t.visible === false) return;
+
+    const wrapper = document.createElement('div');
+    wrapper.className = 'grid-stack-item';
+    wrapper.setAttribute('gs-id', id);
+    wrapper.setAttribute('gs-w', String(t.w || def.w));
+    wrapper.setAttribute('gs-h', String(t.h || def.h));
+    wrapper.setAttribute('gs-min-w', String(def.minW || 2));
+    wrapper.setAttribute('gs-min-h', String(def.minH || 2));
+    if (Number.isInteger(t.x)) wrapper.setAttribute('gs-x', String(t.x));
+    if (Number.isInteger(t.y)) wrapper.setAttribute('gs-y', String(t.y));
+
+    const content = document.createElement('div');
+    content.className = 'grid-stack-item-content';
+    content.setAttribute('data-tile-id', id);
+    content.innerHTML = tileInnerHTML(id, data);
+    wrapper.appendChild(content);
+
+    state.grid.el.appendChild(wrapper);
+    state.grid.makeWidget(wrapper);
   }
 
   function renderGrid() {
-    const grid = document.getElementById('dashboardGrid');
-    if (!grid) return;
+    initGrid();
+    if (!state.grid) return;
     const data = state.data || {};
-    const order = state.layout.order.filter((id) => TILE_DEFS[id]);
-    grid.innerHTML = order.map((id) => buildTile(id, data)).join('');
 
-    grid.querySelectorAll('.dash-kpi[data-href]').forEach((el) => {
+    state.suppressSave = true;
+    state.grid.removeAll();
+    const order = state.layout.order.filter((id) => TILE_DEFS[id]);
+    // Include any tiles not in saved order (newly added defs).
+    Object.keys(TILE_DEFS).forEach((id) => { if (!order.includes(id)) order.push(id); });
+    state.grid.batchUpdate();
+    order.forEach((id) => addTile(id, data));
+    state.grid.commit();
+    state.suppressSave = false;
+
+    document.querySelectorAll('#dashboardGrid .dash-kpi[data-href]').forEach((el) => {
       const href = el.getAttribute('data-href');
       if (href) el.addEventListener('click', () => { window.location.href = href; });
     });
 
     mountForecastChart();
-    applySortable();
     updateUnlockUI();
   }
 
@@ -429,35 +599,19 @@
     });
   }
 
-  function applySortable() {
-    const grid = document.getElementById('dashboardGrid');
-    if (!grid || !global.Sortable) return;
-    if (state.sortable) {
-      state.sortable.destroy();
-      state.sortable = null;
-    }
-    if (state.layout.locked) return;
-    state.sortable = global.Sortable.create(grid, {
-      animation: 180,
-      handle: '.dash-tile-head',
-      draggable: '.dash-tile:not(.dash-tile--hidden)',
-      ghostClass: 'dash-tile--dragging',
-      onEnd() {
-        const order = [...grid.querySelectorAll('.dash-tile')].map((el) => el.getAttribute('data-tile-id'));
-        state.layout.order = order;
-        saveLayout();
-      },
-    });
+  function applyLockState() {
+    if (!state.grid) return;
+    state.grid.setStatic(state.layout.locked);
+    const el = document.getElementById('dashboardGrid');
+    if (el) el.classList.toggle('dash-editing', !state.layout.locked);
   }
 
   function updateUnlockUI() {
     const banner = document.getElementById('dashUnlockBanner');
     if (banner) banner.classList.toggle('visible', !state.layout.locked);
-    document.querySelectorAll('.dash-tile').forEach((el) => {
-      el.classList.toggle('dash-tile--unlocked', !state.layout.locked);
-    });
     const toggle = document.getElementById('dashUnlockToggle');
     if (toggle) toggle.checked = !state.layout.locked;
+    applyLockState();
   }
 
   function buildChecklist() {
@@ -465,7 +619,7 @@
     if (!box) return;
     box.innerHTML = Object.keys(TILE_DEFS).map((id) => {
       const def = TILE_DEFS[id];
-      const checked = state.layout.visible[id] !== false;
+      const checked = state.layout.tiles[id] ? state.layout.tiles[id].visible !== false : def.default;
       return `<label class="flex items-center gap-3 p-2 hover:bg-zinc-800 rounded-md cursor-pointer">
         <input type="checkbox" class="dash-tile-check accent-emerald-500" data-tile="${id}" ${checked ? 'checked' : ''}>
         <i class="fa-solid ${def.icon} text-zinc-500 w-4"></i>
@@ -534,7 +688,7 @@
     document.getElementById('dashSettingsSave')?.addEventListener('click', () => {
       document.querySelectorAll('.dash-tile-check').forEach((cb) => {
         const id = cb.getAttribute('data-tile');
-        state.layout.visible[id] = cb.checked;
+        if (state.layout.tiles[id]) state.layout.tiles[id].visible = cb.checked;
       });
       saveLayout();
       renderGrid();
@@ -543,10 +697,10 @@
     document.getElementById('dashUnlockToggle')?.addEventListener('change', (e) => {
       state.layout.locked = !e.target.checked;
       saveLayout();
-      renderGrid();
+      updateUnlockUI();
     });
     document.getElementById('dashResetLayout')?.addEventListener('click', () => {
-      state.layout = { order: DEFAULT_ORDER.slice(), visible: defaultVisible(), locked: true };
+      state.layout = { tiles: defaultTiles(), order: DEFAULT_ORDER.slice(), locked: true };
       saveLayout();
       buildChecklist();
       renderGrid();
