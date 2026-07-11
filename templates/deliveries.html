@@ -1,302 +1,137 @@
 {% extends "base.html" %}
 
 {% block content %}
-<div class="max-w-[1600px] mx-auto">
-    
-    <!-- Page Header -->
-    <div class="flex items-center justify-between mb-6">
-        <div>
-            <h1 class="text-3xl font-semibold tracking-tight">Deliveries</h1>
-            <p class="text-zinc-400 mt-1">Track material and equipment deliveries</p>
-        </div>
-        
-        <button onclick="showAddDeliveryModal()" 
-                class="flex items-center gap-2 px-5 py-2.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded-2xl text-sm font-medium transition-colors">
-            <i class="fa-solid fa-plus"></i>
-            <span>Log Delivery</span>
-        </button>
+<script>
+window.CASEPM_DELIVERIES_CTX = {
+  projectId: {{ active_project.id if active_project else 'null' }},
+  projectName: {{ (active_project.name if active_project else '')|tojson }},
+  scheduleUrl: {{ url_for('schedule_page')|tojson }},
+};
+</script>
+<script src="{{ url_for('static', filename='js/deliveries-app.js') }}"></script>
+
+<style>
+  #mainContent:has(.del-page) { overflow: hidden !important; display: flex; flex-direction: column; padding: 0 !important; }
+  .del-page { display: flex; flex-direction: column; flex: 1; min-height: 0; width: 100%; padding: 1rem 1rem 0; box-sizing: border-box; }
+  .del-stack { display: flex; flex-direction: column; flex: 1; min-height: 0; overflow: hidden; }
+  .del-input { width: 100%; background: #27272a; border: 1px solid #3f3f46; border-radius: 0.5rem; padding: 0.5rem 0.65rem; font-size: 0.875rem; color: #fff; }
+  .del-input:focus { outline: none; border-color: #10b981; }
+  .del-chip { padding: 0.15rem 0.55rem; border-radius: 9999px; font-size: 0.7rem; font-weight: 500; white-space: nowrap; }
+
+  /* Calendar */
+  .cal-grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 1px; background: #27272a; border: 1px solid #3f3f46; border-radius: 0.5rem; overflow: hidden; }
+  .cal-dow { background: #18181b; padding: 0.4rem; text-align: center; font-size: 0.7rem; font-weight: 600; color: #a1a1aa; text-transform: uppercase; }
+  .cal-cell { background: #0f0f11; min-height: 96px; padding: 0.3rem; display: flex; flex-direction: column; gap: 2px; cursor: pointer; }
+  .cal-cell:hover { background: #18181b; }
+  .cal-cell.other { background: #0a0a0b; opacity: 0.5; }
+  .cal-cell.today .cal-num { background: #10b981; color: #fff; border-radius: 9999px; }
+  .cal-num { font-size: 0.72rem; color: #d4d4d8; width: 20px; height: 20px; display: inline-flex; align-items: center; justify-content: center; }
+  .cal-ev { font-size: 0.66rem; padding: 1px 5px; border-radius: 4px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; cursor: pointer; }
+  .del-list-row { display: flex; align-items: center; gap: 0.75rem; padding: 0.6rem 0.75rem; border-bottom: 1px solid #27272a; cursor: pointer; }
+  .del-list-row:hover { background: #202023; }
+  @media (max-width: 640px) { .del-hide-mobile { display: none !important; } .cal-cell { min-height: 64px; } }
+</style>
+
+<div class="del-page">
+<div class="del-stack">
+
+<!-- TOOLBAR -->
+<div class="flex items-center justify-between flex-shrink-0 mb-3 gap-3">
+  <div class="flex items-center gap-3 min-w-0">
+    <div class="text-2xl font-semibold text-white whitespace-nowrap">Deliveries</div>
+    <div id="delProjectBadge" class="text-xs px-3 py-1 bg-zinc-800 border border-zinc-700 text-zinc-400 rounded-md font-mono truncate max-w-[200px] del-hide-mobile">—</div>
+  </div>
+  <div class="flex items-center gap-2 flex-wrap justify-end">
+    <div class="flex items-center rounded-md overflow-hidden border border-zinc-700 del-hide-mobile">
+      <button type="button" id="delViewCal" class="px-3 py-2 text-sm bg-zinc-700"><i class="fa-solid fa-calendar-days"></i></button>
+      <button type="button" id="delViewList" class="px-3 py-2 text-sm bg-zinc-800"><i class="fa-solid fa-list"></i></button>
     </div>
+    <button type="button" id="delPushAll" class="flex items-center gap-2 px-4 py-2 bg-sky-600 hover:bg-sky-500 rounded-md text-sm font-semibold h-[38px]" title="Push all deliveries to the Schedule"><i class="fa-solid fa-arrow-right-to-bracket"></i><span class="hidden md:inline">Push all to Schedule</span></button>
+    <button type="button" id="delBtnRefresh" class="flex items-center gap-2 px-4 py-2 bg-zinc-800 hover:bg-zinc-700 rounded-md text-sm font-medium h-[38px] del-hide-mobile"><i class="fa-solid fa-rotate"></i></button>
+    <button type="button" id="delBtnNew" class="flex items-center gap-2 px-5 py-2 bg-emerald-600 hover:bg-emerald-500 rounded-md text-sm font-semibold h-[38px]"><i class="fa-solid fa-plus"></i><span>Delivery</span></button>
+  </div>
+</div>
 
-    <!-- Filters -->
-    <div class="flex flex-wrap items-center gap-3 mb-6 bg-zinc-900 border border-zinc-800 rounded-3xl p-4">
-        <div class="flex-1 min-w-[220px]">
-            <input type="text" id="deliverySearch" placeholder="Search deliveries..." 
-                   class="w-full bg-zinc-800 border border-zinc-700 rounded-2xl px-4 py-2.5 text-sm focus:outline-none focus:border-emerald-600"
-                   onkeyup="filterDeliveries()">
-        </div>
+<!-- SUMMARY CARDS -->
+<div class="bg-zinc-900 border border-zinc-700 rounded-md p-4 flex-shrink-0 mb-3">
+  <div class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3">
+    <div class="bg-zinc-800 border border-zinc-700 rounded-md p-3"><div class="text-xs text-zinc-400">Total</div><div id="dstatTotal" class="text-2xl font-semibold mt-1">0</div></div>
+    <div class="bg-zinc-800 border border-zinc-700 rounded-md p-3"><div class="text-xs text-zinc-400">This Week</div><div id="dstatWeek" class="text-2xl font-semibold mt-1 text-emerald-400">0</div></div>
+    <div class="bg-zinc-800 border border-zinc-700 rounded-md p-3"><div class="text-xs text-zinc-400">Upcoming</div><div id="dstatUpcoming" class="text-2xl font-semibold mt-1 text-sky-400">0</div></div>
+    <div class="bg-zinc-800 border border-zinc-700 rounded-md p-3"><div class="text-xs text-zinc-400">Delivered</div><div id="dstatDelivered" class="text-2xl font-semibold mt-1">0</div></div>
+    <div class="bg-zinc-800 border border-zinc-700 rounded-md p-3"><div class="text-xs text-zinc-400">Delayed / Overdue</div><div id="dstatDelayed" class="text-2xl font-semibold mt-1 text-red-400">0</div></div>
+    <div class="bg-zinc-800 border border-zinc-700 rounded-md p-3"><div class="text-xs text-zinc-400">On Schedule</div><div id="dstatSynced" class="text-2xl font-semibold mt-1 text-violet-400">0</div></div>
+  </div>
+</div>
 
-        <select id="statusFilter" onchange="filterDeliveries()" 
-                class="bg-zinc-800 border border-zinc-700 rounded-2xl px-4 py-2.5 text-sm focus:outline-none focus:border-emerald-600">
-            <option value="">All Statuses</option>
-            <option value="Pending">Pending</option>
-            <option value="Received">Received</option>
-            <option value="Partial">Partial</option>
-            <option value="Delayed">Delayed</option>
-        </select>
+<!-- FILTERS + CAL NAV -->
+<div class="flex flex-wrap items-center gap-2 mb-3 flex-shrink-0">
+  <input type="text" id="delSearch" placeholder="Search supplier, item, PO…" class="del-input" style="flex:1 1 220px;min-width:170px;width:auto;">
+  <select id="delStatusFilter" class="del-input" style="flex:0 0 auto;width:150px;"><option value="">All Statuses</option></select>
+  <div id="delCalNav" class="flex items-center gap-2">
+    <button type="button" id="delPrev" class="px-3 py-2 bg-zinc-800 hover:bg-zinc-700 rounded-md text-sm"><i class="fa-solid fa-chevron-left"></i></button>
+    <div id="delMonthLabel" class="text-sm font-semibold min-w-[150px] text-center">—</div>
+    <button type="button" id="delNext" class="px-3 py-2 bg-zinc-800 hover:bg-zinc-700 rounded-md text-sm"><i class="fa-solid fa-chevron-right"></i></button>
+    <button type="button" id="delToday" class="px-3 py-2 bg-zinc-800 hover:bg-zinc-700 rounded-md text-sm">Today</button>
+  </div>
+</div>
 
-        <select id="supplierFilter" onchange="filterDeliveries()" 
-                class="bg-zinc-800 border border-zinc-700 rounded-2xl px-4 py-2.5 text-sm focus:outline-none focus:border-emerald-600">
-            <option value="">All Suppliers</option>
-        </select>
-
-        <button onclick="clearDeliveryFilters()" 
-                class="px-4 py-2.5 text-sm bg-zinc-800 hover:bg-zinc-700 border border-zinc-700 rounded-2xl transition-colors">
-            Clear Filters
-        </button>
+<!-- CALENDAR / LIST -->
+<div class="flex-1 min-h-0 overflow-auto mb-12">
+  <div id="delCalHost">
+    <div class="cal-grid mb-1">
+      <div class="cal-dow">Sun</div><div class="cal-dow">Mon</div><div class="cal-dow">Tue</div><div class="cal-dow">Wed</div><div class="cal-dow">Thu</div><div class="cal-dow">Fri</div><div class="cal-dow">Sat</div>
     </div>
+    <div id="delCalBody" class="cal-grid"></div>
+  </div>
+  <div id="delListHost" class="hidden border border-zinc-700 rounded-md bg-zinc-900"></div>
+</div>
 
-    <!-- Deliveries Table -->
-    <div class="bg-zinc-900 border border-zinc-800 rounded-3xl overflow-hidden">
-        <table class="w-full">
-            <thead>
-                <tr class="border-b border-zinc-800 bg-zinc-950">
-                    <th class="text-left px-6 py-4 text-sm font-medium text-zinc-400">Delivery #</th>
-                    <th class="text-left px-6 py-4 text-sm font-medium text-zinc-400">Date</th>
-                    <th class="text-left px-6 py-4 text-sm font-medium text-zinc-400">Supplier</th>
-                    <th class="text-left px-6 py-4 text-sm font-medium text-zinc-400">Description</th>
-                    <th class="text-center px-6 py-4 text-sm font-medium text-zinc-400">Status</th>
-                    <th class="text-center px-6 py-4 text-sm font-medium text-zinc-400">Received By</th>
-                    <th class="w-20"></th>
-                </tr>
-            </thead>
-            <tbody id="deliveriesTableBody" class="divide-y divide-zinc-800">
-                <!-- Populated by JavaScript -->
-            </tbody>
-        </table>
-    </div>
+<!-- STATUS BAR -->
+<div class="flex-shrink-0 border-t border-zinc-700 bg-zinc-900 px-4 py-2 text-xs text-zinc-500 flex items-center justify-between">
+  <span id="delStatusText">—</span>
+  <span id="delUpdatedAt">—</span>
+</div>
 
 </div>
-        <!-- Add / Edit Delivery Modal -->
-        <dialog id="deliveryModal" class="bg-zinc-900 border border-zinc-700 rounded-3xl p-0 w-full max-w-lg shadow-2xl">
-            <div class="p-6">
-                <div class="flex items-center justify-between mb-5">
-                    <div class="font-semibold text-xl" id="modalTitle">Log New Delivery</div>
-                    <button onclick="document.getElementById('deliveryModal').close()" class="text-zinc-400 hover:text-white text-2xl leading-none">&times;</button>
-                </div>
+</div>
 
-                <form id="deliveryForm" onsubmit="saveDelivery(event)">
-                    <input type="hidden" id="deliveryId">
-
-                    <div class="space-y-4">
-                        <div>
-                            <label class="block text-sm text-zinc-400 mb-1.5">Supplier / Vendor</label>
-                            <input type="text" id="supplier" required
-                                   class="w-full bg-zinc-800 border border-zinc-700 rounded-2xl px-4 py-2.5 text-sm focus:outline-none focus:border-emerald-600">
-                        </div>
-
-                        <div>
-                            <label class="block text-sm text-zinc-400 mb-1.5">Description</label>
-                            <textarea id="description" rows="2" required
-                                      class="w-full bg-zinc-800 border border-zinc-700 rounded-2xl px-4 py-2.5 text-sm focus:outline-none focus:border-emerald-600"></textarea>
-                        </div>
-
-                        <div class="grid grid-cols-2 gap-4">
-                            <div>
-                                <label class="block text-sm text-zinc-400 mb-1.5">Delivery Date</label>
-                                <input type="date" id="delivery_date" required
-                                       class="w-full bg-zinc-800 border border-zinc-700 rounded-2xl px-4 py-2.5 text-sm focus:outline-none focus:border-emerald-600">
-                            </div>
-                            <div>
-                                <label class="block text-sm text-zinc-400 mb-1.5">Status</label>
-                                <select id="status" required
-                                        class="w-full bg-zinc-800 border border-zinc-700 rounded-2xl px-4 py-2.5 text-sm focus:outline-none focus:border-emerald-600">
-                                    <option value="Pending">Pending</option>
-                                    <option value="Received">Received</option>
-                                    <option value="Partial">Partial</option>
-                                    <option value="Delayed">Delayed</option>
-                                </select>
-                            </div>
-                        </div>
-
-                        <div>
-                            <label class="block text-sm text-zinc-400 mb-1.5">Received By</label>
-                            <input type="text" id="received_by"
-                                   class="w-full bg-zinc-800 border border-zinc-700 rounded-2xl px-4 py-2.5 text-sm focus:outline-none focus:border-emerald-600">
-                        </div>
-                    </div>
-
-                    <div class="flex gap-3 mt-6">
-                        <button type="button" onclick="document.getElementById('deliveryModal').close()"
-                                class="flex-1 py-2.5 bg-zinc-800 hover:bg-zinc-700 rounded-2xl text-sm font-medium transition-colors">
-                            Cancel
-                        </button>
-                        <button type="submit"
-                                class="flex-1 py-2.5 bg-emerald-600 hover:bg-emerald-500 rounded-2xl text-sm font-medium transition-colors">
-                            Save Delivery
-                        </button>
-                    </div>
-                </form>
-            </div>
-        </dialog>
-        <!-- JavaScript -->
-        <script>
-            // Sample data (will be replaced with backend later)
-            let deliveries = [
-                {
-                    id: 1,
-                    delivery_number: "DEL-008",
-                    date: "2025-04-02",
-                    supplier: "ABC Concrete LLC",
-                    description: "4000 PSI Concrete - 12 yards",
-                    status: "Received",
-                    received_by: "Mike B."
-                },
-                {
-                    id: 2,
-                    delivery_number: "DEL-009",
-                    date: "2025-04-05",
-                    supplier: "Steel Dynamics LLC",
-                    description: "Rebar #4 & #5 - Various lengths",
-                    status: "Pending",
-                    received_by: ""
-                },
-                {
-                    id: 3,
-                    delivery_number: "DEL-010",
-                    date: "2025-04-03",
-                    supplier: "PowerTech Electric",
-                    description: "Conduit and wire - 2nd floor",
-                    status: "Partial",
-                    received_by: "John D."
-                }
-            ];
-
-            function filterDeliveries() {
-                const searchTerm = document.getElementById('deliverySearch').value.toLowerCase();
-                const statusFilter = document.getElementById('statusFilter').value;
-
-                const filtered = deliveries.filter(delivery => {
-                    const matchesSearch = delivery.supplier.toLowerCase().includes(searchTerm) || 
-                                        delivery.description.toLowerCase().includes(searchTerm);
-                    const matchesStatus = !statusFilter || delivery.status === statusFilter;
-                    return matchesSearch && matchesStatus;
-                });
-
-                renderDeliveriesTable(filtered);
-            }
-
-            function clearDeliveryFilters() {
-                document.getElementById('deliverySearch').value = '';
-                document.getElementById('statusFilter').value = '';
-                document.getElementById('supplierFilter').value = '';
-                renderDeliveriesTable(deliveries);
-            }
-
-            function renderDeliveriesTable(deliveryList) {
-                const tbody = document.getElementById('deliveriesTableBody');
-                tbody.innerHTML = '';
-
-                if (deliveryList.length === 0) {
-                    tbody.innerHTML = `
-                        <tr>
-                            <td colspan="7" class="px-6 py-8 text-center text-zinc-400">
-                                No deliveries found.
-                            </td>
-                        </tr>
-                    `;
-                    return;
-                }
-
-                deliveryList.forEach(delivery => {
-                    const statusColor = 
-                        delivery.status === 'Received' ? 'bg-emerald-600/20 text-emerald-400' :
-                        delivery.status === 'Partial' ? 'bg-amber-600/20 text-amber-400' :
-                        delivery.status === 'Delayed' ? 'bg-red-600/20 text-red-400' :
-                        'bg-zinc-600/20 text-zinc-400';
-
-                    const row = document.createElement('tr');
-                    row.className = 'hover:bg-zinc-800/60 transition-colors';
-                    row.innerHTML = `
-                        <td class="px-6 py-4 font-mono text-sm">${delivery.delivery_number}</td>
-                        <td class="px-6 py-4 text-sm text-zinc-400">${delivery.date}</td>
-                        <td class="px-6 py-4">${delivery.supplier}</td>
-                        <td class="px-6 py-4">${delivery.description}</td>
-                        <td class="px-6 py-4 text-center">
-                            <span class="inline-block px-3 py-1 rounded-full text-xs font-medium ${statusColor}">
-                                ${delivery.status}
-                            </span>
-                        </td>
-                        <td class="px-6 py-4 text-center text-sm text-zinc-400">${delivery.received_by || '-'}</td>
-                        <td class="px-4 py-4">
-                            <div class="flex items-center gap-1">
-                                <button onclick="editDelivery(${delivery.id})" class="p-2 hover:bg-zinc-700 rounded-xl text-zinc-400 hover:text-white">
-                                    <i class="fa-solid fa-edit"></i>
-                                </button>
-                                <button onclick="deleteDelivery(${delivery.id})" class="p-2 hover:bg-zinc-700 rounded-xl text-zinc-400 hover:text-red-400">
-                                    <i class="fa-solid fa-trash"></i>
-                                </button>
-                            </div>
-                        </td>
-                    `;
-                    tbody.appendChild(row);
-                });
-            }
-
-            function showAddDeliveryModal() {
-                document.getElementById('modalTitle').innerText = 'Log New Delivery';
-                document.getElementById('deliveryForm').reset();
-                document.getElementById('deliveryId').value = '';
-                document.getElementById('deliveryModal').showModal();
-            }
-
-            function editDelivery(id) {
-                const delivery = deliveries.find(d => d.id === id);
-                if (!delivery) return;
-
-                document.getElementById('modalTitle').innerText = 'Edit Delivery';
-                document.getElementById('deliveryId').value = delivery.id;
-                document.getElementById('supplier').value = delivery.supplier;
-                document.getElementById('description').value = delivery.description;
-                document.getElementById('delivery_date').value = delivery.date;
-                document.getElementById('status').value = delivery.status;
-                document.getElementById('received_by').value = delivery.received_by || '';
-
-                document.getElementById('deliveryModal').showModal();
-            }
-
-            function saveDelivery(e) {
-                e.preventDefault();
-
-                const id = document.getElementById('deliveryId').value;
-
-                const newDelivery = {
-                    id: id ? parseInt(id) : Date.now(),
-                    delivery_number: id ? deliveries.find(d => d.id == id).delivery_number : `DEL-${String(deliveries.length + 1).padStart(3, '0')}`,
-                    date: document.getElementById('delivery_date').value,
-                    supplier: document.getElementById('supplier').value,
-                    description: document.getElementById('description').value,
-                    status: document.getElementById('status').value,
-                    received_by: document.getElementById('received_by').value
-                };
-
-                if (id) {
-                    const index = deliveries.findIndex(d => d.id == id);
-                    deliveries[index] = newDelivery;
-                } else {
-                    deliveries.push(newDelivery);
-                }
-
-                renderDeliveriesTable(deliveries);
-                document.getElementById('deliveryModal').close();
-            }
-
-            function deleteDelivery(id) {
-                if (!confirm('Delete this delivery record?')) return;
-                deliveries = deliveries.filter(d => d.id !== id);
-                renderDeliveriesTable(deliveries);
-            }
-
-            function initializeDeliveries() {
-                renderDeliveriesTable(deliveries);
-            }
-
-            // Initialize on load
-            window.onload = function() {
-                initializeDeliveries();
-            };
-        </script>
-
+<!-- ===== DELIVERY MODAL ===== -->
+<dialog id="delModal" class="modal casepm-dialog bg-zinc-900 border border-zinc-700 rounded-lg w-full max-w-2xl p-0">
+  <div class="px-5 py-4 border-b border-zinc-700 flex items-center justify-between">
+    <h3 id="delModalTitle" class="font-semibold text-lg">New Delivery</h3>
+    <button type="button" id="delModalClose" class="text-zinc-400 hover:text-white text-xl px-1">&times;</button>
+  </div>
+  <div class="p-5 overflow-y-auto space-y-3" style="max-height:74vh;">
+    <div><label class="block text-xs text-zinc-400 mb-1">Description / Materials</label><textarea id="dDesc" rows="2" class="del-input resize-y" placeholder="What's being delivered?"></textarea></div>
+    <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
+      <div><label class="block text-xs text-zinc-400 mb-1">Supplier / Vendor</label><input id="dSupplier" class="del-input"></div>
+      <div><label class="block text-xs text-zinc-400 mb-1">Carrier</label><input id="dCarrier" class="del-input"></div>
+    </div>
+    <div class="grid grid-cols-1 md:grid-cols-4 gap-3">
+      <div><label class="block text-xs text-zinc-400 mb-1">Delivery Date</label><input type="date" id="dDate" class="del-input"></div>
+      <div><label class="block text-xs text-zinc-400 mb-1">Time Window</label><input id="dTime" class="del-input" placeholder="8-10 AM"></div>
+      <div><label class="block text-xs text-zinc-400 mb-1">Days on Schedule</label><input type="number" id="dDuration" class="del-input" value="1" min="1"></div>
+      <div><label class="block text-xs text-zinc-400 mb-1">Status</label><select id="dStatus" class="del-input"></select></div>
+    </div>
+    <div class="grid grid-cols-1 md:grid-cols-3 gap-3">
+      <div><label class="block text-xs text-zinc-400 mb-1">Quantity</label><input id="dQuantity" class="del-input"></div>
+      <div><label class="block text-xs text-zinc-400 mb-1">PO / Commitment #</label><input id="dPo" class="del-input"></div>
+      <div><label class="block text-xs text-zinc-400 mb-1">Location</label><input id="dLocation" class="del-input"></div>
+    </div>
+    <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
+      <div><label class="block text-xs text-zinc-400 mb-1">Responsible</label><input id="dResponsible" class="del-input"></div>
+      <div><label class="block text-xs text-zinc-400 mb-1">Received By</label><input id="dReceived" class="del-input"></div>
+    </div>
+    <div><label class="block text-xs text-zinc-400 mb-1">Notes</label><textarea id="dNotes" rows="2" class="del-input resize-y"></textarea></div>
+    <label class="flex items-center gap-2 text-sm cursor-pointer"><input type="checkbox" id="dPush" class="accent-sky-500"> <span>Push to Schedule as a line item</span> <span id="dSyncedBadge" class="del-chip bg-violet-500/15 text-violet-400 hidden">On schedule</span></label>
+  </div>
+  <div class="px-5 py-3 border-t border-zinc-700 flex items-center justify-between">
+    <button type="button" id="dDelete" class="px-3 py-2 text-sm text-red-400 hover:text-red-300 hidden"><i class="fa-solid fa-trash mr-1"></i>Delete</button>
+    <div class="flex gap-2 ml-auto">
+      <button type="button" id="dCancel" class="px-4 py-2 text-sm rounded-md border border-zinc-700 hover:bg-zinc-800">Cancel</button>
+      <button type="button" id="dSave" class="px-6 py-2 text-sm bg-emerald-600 hover:bg-emerald-500 rounded-md font-semibold">Save</button>
+    </div>
+  </div>
+</dialog>
 {% endblock %}
-
-</div>
-</div>

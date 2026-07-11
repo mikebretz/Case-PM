@@ -772,6 +772,30 @@ class ScheduleData(db.Model):
     updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
 
+class Delivery(db.Model):
+    """Scheduled material/equipment delivery — syncs to the Schedule as a line item."""
+    id = db.Column(db.Integer, primary_key=True)
+    project_id = db.Column(db.Integer, db.ForeignKey('project.id'))
+    delivery_number = db.Column(db.String(30))
+    supplier = db.Column(db.String(200))
+    description = db.Column(db.Text, nullable=False)
+    delivery_date = db.Column(db.Date, nullable=False)
+    time_window = db.Column(db.String(60))       # e.g. "8:00 AM - 10:00 AM"
+    duration_days = db.Column(db.Integer, default=1)
+    status = db.Column(db.String(30), default='Scheduled')
+    location = db.Column(db.String(150))
+    quantity = db.Column(db.String(80))
+    po_number = db.Column(db.String(80))
+    carrier = db.Column(db.String(150))
+    responsible = db.Column(db.String(120))
+    received_by = db.Column(db.String(120))
+    notes = db.Column(db.Text)
+    schedule_task_id = db.Column(db.String(60))   # id of the synced task in ScheduleData payload
+    created_by_id = db.Column(db.Integer, db.ForeignKey('user.id'))
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+
 class Company(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     name = db.Column(db.String(150), nullable=False, unique=True)
@@ -3824,7 +3848,14 @@ def api_save_schedule():
             record = ScheduleData(project_id=int(project_id), payload=payload_json)
             db.session.add(record)
         db.session.commit()
-        return jsonify({'ok': True, 'project_id': project_id})
+        # Reverse sync: adjustments to delivery-linked tasks flow back to Deliveries.
+        deliveries_updated = 0
+        try:
+            from deliveries_persistence import apply_schedule_to_deliveries
+            deliveries_updated = apply_schedule_to_deliveries(payload, Delivery, db)
+        except Exception:
+            db.session.rollback()
+        return jsonify({'ok': True, 'project_id': project_id, 'deliveries_updated': deliveries_updated})
     except Exception as e:
         db.session.rollback()
         return jsonify({'error': str(e)}), 500
@@ -8186,7 +8217,182 @@ def serve_commitment_attachment(subpath):
 @app.route('/deliveries')
 @login_required
 def deliveries_page():
-    return render_template('deliveries.html')
+    return render_template('deliveries.html', active_project=get_active_project())
+
+
+@app.route('/api/deliveries', methods=['GET'])
+@login_required
+def api_deliveries_list():
+    from deliveries_persistence import serialize_delivery, compute_stats, STATUSES
+    project_id = request.args.get('project_id', type=int) or get_current_project_id()
+    q = Delivery.query
+    if project_id:
+        q = q.filter_by(project_id=int(project_id))
+    rows = q.order_by(Delivery.delivery_date.asc()).all()
+    return jsonify({
+        'ok': True,
+        'deliveries': [serialize_delivery(d, User=User) for d in rows],
+        'stats': compute_stats(Delivery, project_id),
+        'statuses': list(STATUSES),
+        'project_id': project_id,
+    })
+
+
+def _delivery_apply(d, body):
+    for field in ('supplier', 'description', 'time_window', 'status', 'location', 'quantity',
+                  'po_number', 'carrier', 'responsible', 'received_by', 'notes'):
+        if field in body:
+            setattr(d, field, body[field])
+    if 'duration_days' in body:
+        try:
+            d.duration_days = max(1, int(body['duration_days']))
+        except (TypeError, ValueError):
+            d.duration_days = 1
+    if 'delivery_date' in body and body['delivery_date']:
+        try:
+            d.delivery_date = datetime.strptime(body['delivery_date'], '%Y-%m-%d').date()
+        except (TypeError, ValueError):
+            pass
+
+
+def _sync_delivery_to_schedule(delivery):
+    """Upsert this delivery into the project's schedule payload."""
+    from deliveries_persistence import upsert_delivery_tasks, task_id_for
+    record = ScheduleData.query.filter_by(project_id=delivery.project_id).first()
+    payload = {}
+    if record and record.payload:
+        try:
+            payload = json.loads(record.payload)
+        except json.JSONDecodeError:
+            payload = {}
+    payload = upsert_delivery_tasks(payload, [delivery])
+    if not delivery.schedule_task_id:
+        delivery.schedule_task_id = task_id_for(delivery)
+    payload_json = json.dumps(payload)
+    if record:
+        record.payload = payload_json
+        record.updated_at = datetime.utcnow()
+    else:
+        db.session.add(ScheduleData(project_id=delivery.project_id, payload=payload_json))
+
+
+@app.route('/api/deliveries', methods=['POST'])
+@login_required
+def api_deliveries_create():
+    from deliveries_persistence import serialize_delivery
+    body = request.get_json(silent=True) or {}
+    project_id = body.get('project_id') or get_current_project_id()
+    description = (body.get('description') or '').strip()
+    date_str = body.get('delivery_date')
+    if not project_id or not description or not date_str:
+        return jsonify({'error': 'project_id, description and delivery_date required'}), 400
+    try:
+        ddate = datetime.strptime(date_str, '%Y-%m-%d').date()
+    except (TypeError, ValueError):
+        return jsonify({'error': 'invalid delivery_date'}), 400
+    last = Delivery.query.filter_by(project_id=int(project_id)).order_by(Delivery.id.desc()).first()
+    seq = 1
+    if last and last.delivery_number and last.delivery_number.startswith('DEL-'):
+        try:
+            seq = int(last.delivery_number.split('-')[-1]) + 1
+        except (ValueError, IndexError):
+            seq = (Delivery.query.filter_by(project_id=int(project_id)).count() or 0) + 1
+    else:
+        seq = (Delivery.query.filter_by(project_id=int(project_id)).count() or 0) + 1
+    d = Delivery(
+        project_id=int(project_id),
+        delivery_number=f'DEL-{seq:03d}',
+        description=description,
+        delivery_date=ddate,
+        status=body.get('status') or 'Scheduled',
+        created_by_id=current_user.id,
+    )
+    _delivery_apply(d, body)
+    db.session.add(d)
+    db.session.flush()
+    if body.get('push_to_schedule'):
+        _sync_delivery_to_schedule(d)
+    db.session.commit()
+    return jsonify({'ok': True, 'delivery': serialize_delivery(d, User=User)})
+
+
+@app.route('/api/deliveries/<int:delivery_id>', methods=['GET'])
+@login_required
+def api_delivery_get(delivery_id):
+    from deliveries_persistence import serialize_delivery
+    d = Delivery.query.get_or_404(delivery_id)
+    return jsonify({'ok': True, 'delivery': serialize_delivery(d, User=User)})
+
+
+@app.route('/api/deliveries/<int:delivery_id>', methods=['PUT'])
+@login_required
+def api_deliveries_update(delivery_id):
+    from deliveries_persistence import serialize_delivery
+    d = Delivery.query.get_or_404(delivery_id)
+    _delivery_apply(d, request.get_json(silent=True) or {})
+    # Keep the schedule in sync if this delivery is already pushed.
+    if d.schedule_task_id:
+        _sync_delivery_to_schedule(d)
+    db.session.commit()
+    return jsonify({'ok': True, 'delivery': serialize_delivery(d, User=User)})
+
+
+@app.route('/api/deliveries/<int:delivery_id>', methods=['DELETE'])
+@login_required
+def api_deliveries_delete(delivery_id):
+    d = Delivery.query.get_or_404(delivery_id)
+    # Remove the linked schedule task if present.
+    if d.schedule_task_id:
+        record = ScheduleData.query.filter_by(project_id=d.project_id).first()
+        if record and record.payload:
+            try:
+                payload = json.loads(record.payload)
+                payload['data'] = [t for t in (payload.get('data') or []) if str(t.get('id')) != str(d.schedule_task_id)]
+                record.payload = json.dumps(payload)
+                record.updated_at = datetime.utcnow()
+            except json.JSONDecodeError:
+                pass
+    db.session.delete(d)
+    db.session.commit()
+    return jsonify({'ok': True})
+
+
+@app.route('/api/deliveries/push-to-schedule', methods=['POST'])
+@login_required
+def api_deliveries_push_to_schedule():
+    """Push selected (or all) deliveries into the Schedule as line items."""
+    from deliveries_persistence import upsert_delivery_tasks, task_id_for
+    project_id = request.args.get('project_id', type=int) or get_current_project_id()
+    if not project_id:
+        return jsonify({'error': 'project_id required'}), 400
+    body = request.get_json(silent=True) or {}
+    ids = body.get('ids')
+    q = Delivery.query.filter_by(project_id=int(project_id))
+    if ids:
+        q = q.filter(Delivery.id.in_(ids))
+    deliveries = q.all()
+    if not deliveries:
+        return jsonify({'ok': True, 'pushed': 0})
+    record = ScheduleData.query.filter_by(project_id=int(project_id)).first()
+    payload = {}
+    if record and record.payload:
+        try:
+            payload = json.loads(record.payload)
+        except json.JSONDecodeError:
+            payload = {}
+    payload = upsert_delivery_tasks(payload, deliveries)
+    for d in deliveries:
+        if not d.schedule_task_id:
+            d.schedule_task_id = task_id_for(d)
+    payload_json = json.dumps(payload)
+    if record:
+        record.payload = payload_json
+        record.updated_at = datetime.utcnow()
+    else:
+        db.session.add(ScheduleData(project_id=int(project_id), payload=payload_json))
+    db.session.commit()
+    return jsonify({'ok': True, 'pushed': len(deliveries),
+                    'schedule_url': url_for('schedule_page') + f'?project_id={project_id}'})
 
 
 @app.route('/inspections')
