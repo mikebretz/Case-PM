@@ -1146,20 +1146,170 @@ def force_change_password():
 @app.route('/dashboard')
 @login_required
 def dashboard():
-    stats = get_dashboard_stats()
-    projects = Project.query.order_by(Project.created_at.desc()).limit(8).all()
-    recent_daily_logs = DailyLog.query.order_by(DailyLog.date.desc()).limit(6).all()
-    upcoming_tasks = ScheduleTask.query.filter(
-        ScheduleTask.status.in_(['Not Started', 'In Progress'])
-    ).order_by(ScheduleTask.end_date.asc()).limit(8).all()
+    active = get_active_project()
+    return render_template('dashboard.html', active_project=active)
 
-    return render_template(
-        'dashboard.html',
-        stats=stats,
-        projects=projects,
-        recent_daily_logs=recent_daily_logs,
-        upcoming_tasks=upcoming_tasks
+
+@app.route('/api/dashboard/summary', methods=['GET'])
+@login_required
+def api_dashboard_summary():
+    from budget_persistence import get_budget_state
+    from pay_app_persistence import get_pay_app_state
+    from forecast_persistence import build_forecast_summary
+    from dashboard_persistence import build_dashboard_summary
+    from commitment_persistence import compute_dashboard_stats as commitment_dashboard
+    from co_persistence import compute_dashboard_stats as co_dashboard
+
+    project_id = request.args.get('project_id', type=int) or get_current_project_id()
+    InternalMessage = None
+    ApprovalRequest = None
+    try:
+        from case_workflow import InternalMessage as IM, ApprovalRequest as AR
+        InternalMessage = IM
+        ApprovalRequest = AR
+    except Exception:
+        pass
+
+    budget_state = {}
+    pay_state = {}
+    forecast_summary = {}
+    commitment_stats = {}
+    co_stats = {}
+    if project_id:
+        _, budget_state = get_budget_state(BudgetProjectState, int(project_id))
+        _, pay_state = get_pay_app_state(PayAppProjectState, int(project_id))
+        project = Project.query.get(int(project_id))
+        approved_co = _project_approved_change_orders_total(int(project_id))
+        if project:
+            forecast_summary = build_forecast_summary(project, budget_state, pay_state, approved_co)
+        commitment_stats = commitment_dashboard(Commitment, int(project_id))
+        co_stats = co_dashboard(ChangeOrder, PotentialChangeOrder, int(project_id))
+
+    payload = build_dashboard_summary(
+        project_id,
+        current_user.id,
+        Project=Project,
+        DailyLog=DailyLog,
+        ManpowerEntry=ManpowerEntry,
+        RFI=RFI,
+        ChangeOrder=ChangeOrder,
+        PunchItem=PunchItem,
+        Submittal=Submittal,
+        SafetyReport=SafetyReport,
+        ScheduleTask=ScheduleTask,
+        ScheduleData=ScheduleData,
+        Commitment=Commitment,
+        User=User,
+        InternalMessage=InternalMessage,
+        ApprovalRequest=ApprovalRequest,
+        budget_state=budget_state,
+        pay_state=pay_state,
+        forecast_summary=forecast_summary,
+        commitment_stats=commitment_stats,
+        co_stats=co_stats,
     )
+    return jsonify(payload)
+
+
+@app.route('/api/dashboard/weather', methods=['GET'])
+@login_required
+def api_dashboard_weather():
+    """Live weather via Open-Meteo (geocode + current conditions)."""
+    import urllib.error
+    import urllib.parse
+    import urllib.request
+
+    city = (request.args.get('city') or '').strip()
+    state = (request.args.get('state') or '').strip()
+    if not city:
+        active = get_active_project()
+        if active:
+            city = (active.city or '').strip()
+            state = (active.state or '').strip()
+            if not city and active.address:
+                parts = [p.strip() for p in active.address.split(',')]
+                if len(parts) >= 2:
+                    city = parts[-2]
+                    state = parts[-1][:2].strip()
+    if not city:
+        return jsonify({'error': 'No project location configured', 'ok': False}), 404
+
+    query = urllib.parse.urlencode({'name': city, 'count': 5, 'language': 'en', 'format': 'json'})
+    try:
+        with urllib.request.urlopen(
+            f'https://geocoding-api.open-meteo.com/v1/search?{query}',
+            timeout=10,
+        ) as resp:
+            geo = json.loads(resp.read().decode('utf-8'))
+    except (urllib.error.URLError, TimeoutError, json.JSONDecodeError) as exc:
+        return jsonify({'error': str(exc), 'ok': False}), 502
+
+    results = geo.get('results') or []
+    if not results:
+        return jsonify({'error': f'Location not found: {city}', 'ok': False}), 404
+
+    match = results[0]
+    if state:
+        state_up = state.upper()
+        for r in results:
+            admin = (r.get('admin1_code') or r.get('admin1') or '').upper()
+            if state_up in admin or admin.startswith(state_up):
+                match = r
+                break
+
+    lat = match.get('latitude')
+    lon = match.get('longitude')
+    label = ', '.join(filter(None, [match.get('name'), match.get('admin1')]))
+
+    forecast_url = (
+        'https://api.open-meteo.com/v1/forecast?'
+        + urllib.parse.urlencode({
+            'latitude': lat,
+            'longitude': lon,
+            'current': 'temperature_2m,relative_humidity_2m,weather_code,wind_speed_10m,apparent_temperature',
+            'daily': 'temperature_2m_max,temperature_2m_min,precipitation_probability_max',
+            'temperature_unit': 'fahrenheit',
+            'wind_speed_unit': 'mph',
+            'timezone': 'auto',
+            'forecast_days': 1,
+        })
+    )
+    try:
+        with urllib.request.urlopen(forecast_url, timeout=10) as resp:
+            wx = json.loads(resp.read().decode('utf-8'))
+    except (urllib.error.URLError, TimeoutError, json.JSONDecodeError) as exc:
+        return jsonify({'error': str(exc), 'ok': False}), 502
+
+    current = wx.get('current') or {}
+    daily = wx.get('daily') or {}
+    code = int(current.get('weather_code') or 0)
+    descriptions = {
+        0: 'Clear sky', 1: 'Mainly clear', 2: 'Partly cloudy', 3: 'Overcast',
+        45: 'Foggy', 48: 'Depositing rime fog', 51: 'Light drizzle', 53: 'Drizzle',
+        55: 'Dense drizzle', 61: 'Slight rain', 63: 'Rain', 65: 'Heavy rain',
+        71: 'Slight snow', 73: 'Snow', 75: 'Heavy snow', 80: 'Rain showers',
+        81: 'Moderate showers', 82: 'Violent showers', 95: 'Thunderstorm',
+    }
+    precip = 0
+    if daily.get('precipitation_probability_max'):
+        precip = daily['precipitation_probability_max'][0]
+
+    return jsonify({
+        'ok': True,
+        'location': label,
+        'city': match.get('name'),
+        'state': match.get('admin1'),
+        'temperature': round(float(current.get('temperature_2m') or 0)),
+        'feels_like': round(float(current.get('apparent_temperature') or 0)),
+        'humidity': int(current.get('relative_humidity_2m') or 0),
+        'wind_mph': round(float(current.get('wind_speed_10m') or 0)),
+        'high': round(float((daily.get('temperature_2m_max') or [0])[0])),
+        'low': round(float((daily.get('temperature_2m_min') or [0])[0])),
+        'precip_chance': int(precip or 0),
+        'description': descriptions.get(code, 'Current conditions'),
+        'weather_code': code,
+        'updated_at': current.get('time'),
+    })
 
 
 @app.route('/api/current-project', methods=['GET', 'POST'])
