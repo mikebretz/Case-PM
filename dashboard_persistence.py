@@ -310,3 +310,203 @@ def build_dashboard_summary(
         'commitments': commitments,
         'change_orders': change_orders,
     }
+
+
+def get_accessible_projects(Project, user, ProjectMembership=None):
+    """Projects the user may view on the portfolio dashboard."""
+    if getattr(user, 'role', None) == 'Admin':
+        return Project.query.order_by(Project.name).all()
+
+    allowed_ids = set()
+    if ProjectMembership is not None:
+        for row in ProjectMembership.query.filter_by(user_id=user.id).all():
+            allowed_ids.add(int(row.project_id))
+
+    company_id = getattr(user, 'company_id', None)
+    if company_id:
+        for p in Project.query.filter_by(client_company_id=company_id).all():
+            allowed_ids.add(int(p.id))
+
+    if allowed_ids:
+        return Project.query.filter(Project.id.in_(sorted(allowed_ids))).order_by(Project.name).all()
+
+    return Project.query.order_by(Project.name).all()
+
+
+def _schedule_pct_from_payload(payload):
+    tasks_data = payload.get('data') or []
+    progs = []
+    for t in tasks_data:
+        if t.get('type') == 'project':
+            continue
+        p = t.get('progress') or 0
+        if p > 1:
+            p = p / 100.0
+        progs.append(p)
+    return round(sum(progs) / len(progs) * 100) if progs else None
+
+
+def build_project_snapshot(
+    project,
+    *,
+    RFI,
+    ChangeOrder,
+    PotentialChangeOrder,
+    PunchItem,
+    Submittal,
+    ScheduleData,
+    budget_state=None,
+    forecast_summary=None,
+    co_stats=None,
+    rfi_stats=None,
+):
+    """Lightweight per-project metrics for the all-projects dashboard."""
+    pid = int(project.id)
+    today = datetime.utcnow().date()
+
+    if rfi_stats is None:
+        open_rfi_statuses = ('Open', 'Awaiting Response', 'Under Review')
+        rfis = RFI.query.filter_by(project_id=pid).all()
+        open_rfis = sum(1 for r in rfis if r.status in open_rfi_statuses)
+        overdue_rfis = sum(
+            1 for r in rfis
+            if r.status in open_rfi_statuses and r.due_date and r.due_date < today
+        )
+        rfi_stats = {'open': open_rfis, 'overdue': overdue_rfis, 'total': len(rfis)}
+
+    if co_stats is None:
+        from co_persistence import compute_dashboard_stats
+        co_stats = compute_dashboard_stats(ChangeOrder, PotentialChangeOrder, pid)
+
+    open_punch = PunchItem.query.filter(
+        PunchItem.project_id == pid,
+        PunchItem.status != 'Completed',
+    ).count()
+    open_submittals = Submittal.query.filter(
+        Submittal.project_id == pid,
+        ~Submittal.status.in_(('Approved', 'Closed', 'Rejected')),
+    ).count()
+
+    schedule_pct = None
+    record = ScheduleData.query.filter_by(project_id=pid).first()
+    if record and record.payload:
+        try:
+            schedule_pct = _schedule_pct_from_payload(json.loads(record.payload))
+        except (TypeError, json.JSONDecodeError):
+            pass
+    if schedule_pct is None and getattr(project, 'percent_complete', None) is not None:
+        schedule_pct = int(project.percent_complete)
+
+    financial = forecast_summary or {}
+    start = getattr(project, 'start_date', None)
+    end = getattr(project, 'end_date', None)
+    year = None
+    if start:
+        year = start.year
+    elif getattr(project, 'created_at', None):
+        year = project.created_at.year
+
+    return {
+        'id': pid,
+        'number': project.number or '',
+        'name': project.name or '',
+        'status': project.status or '',
+        'location': project.location_label() if hasattr(project, 'location_label') else '',
+        'client': project.client or '',
+        'project_manager': project.project_manager or '',
+        'year': year,
+        'start_date': start.isoformat() if start else None,
+        'end_date': end.isoformat() if end else None,
+        'schedule_pct': schedule_pct,
+        'rfis': {
+            'open': rfi_stats.get('open', 0),
+            'overdue': rfi_stats.get('overdue', 0),
+            'total': rfi_stats.get('total', 0),
+        },
+        'change_orders': {
+            'approved_count': co_stats.get('approved_count', 0),
+            'approved_total': round(float(co_stats.get('approved_total') or 0), 2),
+            'pending_count': co_stats.get('pending_count', 0),
+            'pending_total': round(float(co_stats.get('pending_total') or 0), 2),
+            'open_pco_count': co_stats.get('open_pco_count', 0),
+            'pco_rom_total': round(float(co_stats.get('pco_rom_total') or 0), 2),
+        },
+        'open_punch': open_punch,
+        'open_submittals': open_submittals,
+        'financial': {
+            'contract_amount': financial.get('contract_amount'),
+            'original_budget': financial.get('original_budget'),
+            'revised_budget': financial.get('revised_budget'),
+            'actual_cost': financial.get('actual_cost'),
+            'variance': financial.get('variance'),
+            'forecast_to_complete': financial.get('forecast_to_complete'),
+            'estimated_cost_at_completion': financial.get('estimated_cost_at_completion'),
+            'projected_over_under': financial.get('projected_over_under'),
+            'pct_complete': financial.get('percent_complete'),
+            'pct_complete_cost': financial.get('percent_complete_cost'),
+            'paid_out': financial.get('paid_out'),
+            'pending_changes': financial.get('pending_changes'),
+        },
+    }
+
+
+def build_portfolio_dashboard(
+    user,
+    *,
+    Project,
+    RFI,
+    ChangeOrder,
+    PotentialChangeOrder,
+    PunchItem,
+    Submittal,
+    ScheduleData,
+    BudgetProjectState,
+    PayAppProjectState,
+    ProjectMembership=None,
+    approved_co_fn=None,
+    get_budget_state=None,
+    get_pay_app_state=None,
+    build_forecast_summary=None,
+    compute_rfi_dashboard=None,
+    compute_co_dashboard=None,
+):
+    """Aggregate snapshot cards for all projects the user can access."""
+    projects = get_accessible_projects(Project, user, ProjectMembership)
+    snapshots = []
+
+    for project in projects:
+        pid = int(project.id)
+        budget_state = {}
+        pay_state = {}
+        forecast_summary = {}
+        if get_budget_state and BudgetProjectState is not None:
+            _, budget_state = get_budget_state(BudgetProjectState, pid)
+        if get_pay_app_state and PayAppProjectState is not None:
+            _, pay_state = get_pay_app_state(PayAppProjectState, pid)
+        approved_co = approved_co_fn(pid) if approved_co_fn else 0.0
+        if build_forecast_summary:
+            forecast_summary = build_forecast_summary(project, budget_state, pay_state, approved_co)
+        rfi_stats = compute_rfi_dashboard(RFI, pid) if compute_rfi_dashboard else None
+        co_stats = compute_co_dashboard(ChangeOrder, PotentialChangeOrder, pid) if compute_co_dashboard else None
+
+        snapshots.append(build_project_snapshot(
+            project,
+            RFI=RFI,
+            ChangeOrder=ChangeOrder,
+            PotentialChangeOrder=PotentialChangeOrder,
+            PunchItem=PunchItem,
+            Submittal=Submittal,
+            ScheduleData=ScheduleData,
+            budget_state=budget_state,
+            forecast_summary=forecast_summary,
+            co_stats=co_stats,
+            rfi_stats=rfi_stats,
+        ))
+
+    active_statuses = {'Active', 'Pre-Construction'}
+    return {
+        'generated_at': datetime.utcnow().isoformat() + 'Z',
+        'accessible_count': len(snapshots),
+        'active_count': sum(1 for p in projects if (p.status or '') in active_statuses),
+        'projects': snapshots,
+    }

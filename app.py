@@ -1560,6 +1560,45 @@ def api_dashboard_summary():
     return jsonify(payload)
 
 
+@app.route('/api/dashboard/portfolio', methods=['GET'])
+@login_required
+def api_dashboard_portfolio():
+    from budget_persistence import get_budget_state
+    from pay_app_persistence import get_pay_app_state
+    from forecast_persistence import build_forecast_summary
+    from dashboard_persistence import build_portfolio_dashboard
+    from co_persistence import compute_dashboard_stats as co_dashboard
+    from rfi_persistence import compute_rfi_dashboard
+
+    ProjectMembership = None
+    try:
+        from case_workflow import ProjectMembership as PM
+        ProjectMembership = PM
+    except Exception:
+        pass
+
+    payload = build_portfolio_dashboard(
+        current_user,
+        Project=Project,
+        RFI=RFI,
+        ChangeOrder=ChangeOrder,
+        PotentialChangeOrder=PotentialChangeOrder,
+        PunchItem=PunchItem,
+        Submittal=Submittal,
+        ScheduleData=ScheduleData,
+        BudgetProjectState=BudgetProjectState,
+        PayAppProjectState=PayAppProjectState,
+        ProjectMembership=ProjectMembership,
+        approved_co_fn=_project_approved_change_orders_total,
+        get_budget_state=get_budget_state,
+        get_pay_app_state=get_pay_app_state,
+        build_forecast_summary=build_forecast_summary,
+        compute_rfi_dashboard=compute_rfi_dashboard,
+        compute_co_dashboard=co_dashboard,
+    )
+    return jsonify(payload)
+
+
 @app.route('/api/dashboard/weather', methods=['GET'])
 @login_required
 def api_dashboard_weather():

@@ -6,6 +6,8 @@
 
   const ctx = global.CASEPM_DASHBOARD_CTX || {};
   const STORAGE_KEY = `casepm_dashboard_layout_v3_u${ctx.userId || 0}`;
+  const PORTFOLIO_PREFS_KEY = `casepm_portfolio_prefs_v1_u${ctx.userId || 0}`;
+  const VIEW_MODE_KEY = `casepm_dashboard_view_u${ctx.userId || 0}`;
   const COLUMNS = 12;
   const TILE_W = 3;          // fixed width — 4 tiles across (12 / 3)
   const MIN_H = 1;           // 1 block tall
@@ -39,11 +41,46 @@
   let state = {
     data: null,
     weather: null,
+    portfolio: null,
+    viewMode: loadViewMode(),
+    portfolioPrefs: loadPortfolioPrefs(),
     layout: loadLayout(),
     grid: null,
     forecastChart: null,
     suppressSave: false,
   };
+
+  function loadViewMode() {
+    try {
+      const v = localStorage.getItem(VIEW_MODE_KEY);
+      return v === 'portfolio' ? 'portfolio' : 'project';
+    } catch (_) {
+      return 'project';
+    }
+  }
+
+  function saveViewMode(mode) {
+    localStorage.setItem(VIEW_MODE_KEY, mode);
+  }
+
+  function loadPortfolioPrefs() {
+    const defaults = { filter: 'all_active', customIds: [] };
+    try {
+      const raw = localStorage.getItem(PORTFOLIO_PREFS_KEY);
+      if (raw) {
+        const parsed = JSON.parse(raw);
+        return {
+          filter: parsed.filter || 'all_active',
+          customIds: Array.isArray(parsed.customIds) ? parsed.customIds.map(Number) : [],
+        };
+      }
+    } catch (_) { /* ignore */ }
+    return defaults;
+  }
+
+  function savePortfolioPrefs() {
+    localStorage.setItem(PORTFOLIO_PREFS_KEY, JSON.stringify(state.portfolioPrefs));
+  }
 
   function loadLayout() {
     try {
@@ -642,6 +679,210 @@
     }).join('');
   }
 
+  async function fetchPortfolio() {
+    const res = await fetch('/api/dashboard/portfolio');
+    if (!res.ok) throw new Error('Failed to load portfolio dashboard');
+    return res.json();
+  }
+
+  function filterPortfolioProjects(projects) {
+    const prefs = state.portfolioPrefs;
+    const currentYear = new Date().getFullYear();
+    const activeStatuses = new Set(['Active', 'Pre-Construction']);
+
+    if (prefs.filter === 'custom' && prefs.customIds.length) {
+      const idSet = new Set(prefs.customIds.map(Number));
+      return projects.filter((p) => idSet.has(Number(p.id)));
+    }
+    if (prefs.filter === 'all_year') {
+      return projects.filter((p) => Number(p.year) === currentYear);
+    }
+    return projects.filter((p) => activeStatuses.has(p.status || ''));
+  }
+
+  function projectUrl(path, pid) {
+    const base = path || '/dashboard';
+    const sep = base.includes('?') ? '&' : '?';
+    return `${base}${sep}project_id=${pid}`;
+  }
+
+  function statusBadgeClass(status) {
+    const s = (status || '').toLowerCase();
+    if (s === 'active') return 'bg-emerald-900/60 text-emerald-400';
+    if (s === 'pre-construction') return 'bg-sky-900/60 text-sky-400';
+    if (s === 'completed' || s === 'closed') return 'bg-zinc-700 text-zinc-400';
+    return 'bg-amber-900/60 text-amber-400';
+  }
+
+  function renderPortfolioCard(p) {
+    const f = p.financial || {};
+    const rfis = p.rfis || {};
+    const cos = p.change_orders || {};
+    const u = ctx.urls || {};
+    const pct = f.pct_complete != null ? Math.min(100, Number(f.pct_complete)) : (p.schedule_pct != null ? Math.min(100, Number(p.schedule_pct)) : 0);
+    const variance = Number(f.variance);
+    const varianceCls = Number.isFinite(variance) && variance < 0 ? 'text-red-400' : 'text-emerald-400';
+    const title = p.number ? `${p.number} · ${p.name}` : p.name;
+
+    return `<article class="dash-portfolio-card" data-project-id="${p.id}" tabindex="0" role="button" aria-label="Open ${esc(title)}">
+      <div class="dash-portfolio-card-head">
+        <div class="flex items-start justify-between gap-2">
+          <div class="min-w-0">
+            <div class="font-semibold text-white truncate">${esc(title)}</div>
+            <div class="text-xs text-zinc-500 truncate mt-0.5">${esc(p.location || p.client || '')}</div>
+          </div>
+          <span class="text-[10px] px-2 py-0.5 rounded-full shrink-0 ${statusBadgeClass(p.status)}">${esc(p.status || '—')}</span>
+        </div>
+        ${p.project_manager ? `<div class="text-[10px] text-zinc-500 mt-1">PM: ${esc(p.project_manager)}</div>` : ''}
+      </div>
+      <div class="dash-portfolio-card-body space-y-3">
+        <div>
+          <div class="flex justify-between text-xs mb-1">
+            <span class="text-zinc-400">Budget / Forecast</span>
+            <span class="text-zinc-300">${pct ? pct + '% billed' : '—'}</span>
+          </div>
+          <div class="dash-portfolio-mini-bar"><span style="width:${pct}%"></span></div>
+          <div class="grid grid-cols-2 gap-2 mt-2">
+            <div class="dash-portfolio-stat">
+              <div class="dash-portfolio-stat-label">Revised Budget</div>
+              <div class="dash-portfolio-stat-value text-emerald-400">${fmtMoney(f.revised_budget)}</div>
+            </div>
+            <div class="dash-portfolio-stat">
+              <div class="dash-portfolio-stat-label">Cost to Date</div>
+              <div class="dash-portfolio-stat-value text-sky-400">${fmtMoney(f.actual_cost)}</div>
+            </div>
+            <div class="dash-portfolio-stat">
+              <div class="dash-portfolio-stat-label">EAC</div>
+              <div class="dash-portfolio-stat-value">${fmtMoney(f.estimated_cost_at_completion)}</div>
+            </div>
+            <div class="dash-portfolio-stat">
+              <div class="dash-portfolio-stat-label">Variance</div>
+              <div class="dash-portfolio-stat-value ${varianceCls}">${fmtMoney(f.variance)}</div>
+            </div>
+          </div>
+        </div>
+        <div class="grid grid-cols-3 gap-2 text-center">
+          <div class="dash-portfolio-stat">
+            <div class="dash-portfolio-stat-label">Open RFIs</div>
+            <div class="dash-portfolio-stat-value text-yellow-400">${rfis.open ?? 0}</div>
+            ${rfis.overdue ? `<div class="text-[9px] text-red-400">${rfis.overdue} overdue</div>` : ''}
+          </div>
+          <div class="dash-portfolio-stat">
+            <div class="dash-portfolio-stat-label">Pending COs</div>
+            <div class="dash-portfolio-stat-value text-orange-400">${cos.pending_count ?? 0}</div>
+            <div class="text-[9px] text-zinc-500">${fmtMoney(cos.pending_total)}</div>
+          </div>
+          <div class="dash-portfolio-stat">
+            <div class="dash-portfolio-stat-label">Open PCOs</div>
+            <div class="dash-portfolio-stat-value text-amber-300">${cos.open_pco_count ?? 0}</div>
+            <div class="text-[9px] text-zinc-500">${fmtMoney(cos.pco_rom_total)} ROM</div>
+          </div>
+        </div>
+        <div class="flex flex-wrap gap-3 text-xs text-zinc-500 pt-1 border-t border-zinc-800">
+          <span><i class="fa-solid fa-check-double text-emerald-500 mr-1"></i>${cos.approved_count ?? 0} approved COs</span>
+          <span><i class="fa-solid fa-list-check text-red-400 mr-1"></i>${p.open_punch ?? 0} punch</span>
+          <span><i class="fa-solid fa-file-arrow-up text-blue-400 mr-1"></i>${p.open_submittals ?? 0} submittals</span>
+        </div>
+      </div>
+    </article>`;
+  }
+
+  function renderPortfolio() {
+    const container = document.getElementById('dashboardPortfolio');
+    if (!container) return;
+    const all = state.portfolio?.projects || [];
+    const filtered = filterPortfolioProjects(all);
+
+    if (!filtered.length) {
+      container.innerHTML = `<div class="dash-portfolio-empty col-span-full">
+        <i class="fa-solid fa-folder-open text-4xl text-zinc-600 mb-3"></i>
+        <div class="text-lg font-medium text-zinc-400 mb-1">No projects match your filter</div>
+        <div class="text-sm">Open <button type="button" id="dashEmptySettings" class="text-emerald-400 hover:underline">Settings</button> to choose which projects appear here.</div>
+      </div>`;
+      document.getElementById('dashEmptySettings')?.addEventListener('click', openSettings);
+      return;
+    }
+
+    container.innerHTML = filtered.map(renderPortfolioCard).join('');
+    container.querySelectorAll('.dash-portfolio-card').forEach((card) => {
+      const pid = parseInt(card.getAttribute('data-project-id'), 10);
+      const openProject = () => {
+        if (typeof global.switchProject === 'function') {
+          global.switchProject(pid);
+        } else {
+          localStorage.setItem('casepm_current_project_id', String(pid));
+          window.location.href = projectUrl(ctx.urls?.dashboard || '/dashboard', pid);
+        }
+        setViewMode('project');
+      };
+      card.addEventListener('click', openProject);
+      card.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter' || e.key === ' ') {
+          e.preventDefault();
+          openProject();
+        }
+      });
+    });
+  }
+
+  function setViewMode(mode) {
+    state.viewMode = mode === 'portfolio' ? 'portfolio' : 'project';
+    saveViewMode(state.viewMode);
+
+    const projectPanel = document.getElementById('dashProjectPanel');
+    const portfolioPanel = document.getElementById('dashPortfolioPanel');
+    const unlockBanner = document.getElementById('dashUnlockBanner');
+    const btnProject = document.getElementById('dashViewProject');
+    const btnPortfolio = document.getElementById('dashViewPortfolio');
+
+    if (projectPanel) projectPanel.classList.toggle('hidden', state.viewMode !== 'project');
+    if (portfolioPanel) portfolioPanel.classList.toggle('hidden', state.viewMode !== 'portfolio');
+    if (unlockBanner) unlockBanner.classList.toggle('visible', state.viewMode === 'project' && !state.layout.locked);
+    if (btnProject) {
+      btnProject.classList.toggle('active', state.viewMode === 'project');
+      btnProject.setAttribute('aria-selected', state.viewMode === 'project' ? 'true' : 'false');
+    }
+    if (btnPortfolio) {
+      btnPortfolio.classList.toggle('active', state.viewMode === 'portfolio');
+      btnPortfolio.setAttribute('aria-selected', state.viewMode === 'portfolio' ? 'true' : 'false');
+    }
+
+    refresh();
+  }
+
+  function buildPortfolioProjectList() {
+    const box = document.getElementById('dashPortfolioProjectList');
+    if (!box || !state.portfolio?.projects) return;
+    const search = (document.getElementById('dashPortfolioSearch')?.value || '').trim().toLowerCase();
+    const selected = new Set((state.portfolioPrefs.customIds || []).map(Number));
+
+    const items = state.portfolio.projects.filter((p) => {
+      if (!search) return true;
+      const hay = `${p.number || ''} ${p.name || ''} ${p.client || ''}`.toLowerCase();
+      return hay.includes(search);
+    });
+
+    box.innerHTML = items.map((p) => {
+      const label = p.number ? `${p.number} — ${p.name}` : p.name;
+      const checked = selected.has(Number(p.id));
+      return `<label class="flex items-center gap-2 p-2 hover:bg-zinc-800 rounded-md cursor-pointer text-sm">
+        <input type="checkbox" class="dash-portfolio-project-check accent-emerald-500" data-project-id="${p.id}" ${checked ? 'checked' : ''}>
+        <span class="truncate">${esc(label)}</span>
+        <span class="ml-auto text-[10px] text-zinc-500 shrink-0">${esc(p.status || '')}</span>
+      </label>`;
+    }).join('') || '<div class="p-3 text-sm text-zinc-500 text-center">No projects found</div>';
+  }
+
+  function syncPortfolioSettingsUI() {
+    const filter = state.portfolioPrefs.filter || 'all_active';
+    document.querySelectorAll('input[name="dashPortfolioFilter"]').forEach((radio) => {
+      radio.checked = radio.value === filter;
+    });
+    const picker = document.getElementById('dashPortfolioPicker');
+    if (picker) picker.classList.toggle('hidden', filter !== 'custom');
+    buildPortfolioProjectList();
+  }
+
   async function fetchSummary() {
     const pid = projectId();
     const q = pid ? `?project_id=${pid}` : '';
@@ -662,30 +903,59 @@
     return res.json();
   }
 
-  async function refresh() {
+  async function refreshProject() {
     const status = document.getElementById('dashStatusText');
     const updated = document.getElementById('dashUpdatedAt');
-    const badge = document.getElementById('dashProjectBadge');
     if (status) status.textContent = 'Refreshing…';
 
+    state.data = await fetchSummary();
+    state.weather = await fetchWeather(state.data.location);
+    renderGrid();
+    const p = state.data.project;
+    const pLabel = p?.number ? `${p.number} · ${p.name}` : (p?.name || 'Current project');
+    if (status) status.textContent = `This project · ${pLabel}`;
+    if (updated) updated.textContent = `Updated ${new Date().toLocaleTimeString()}`;
+  }
+
+  async function refreshPortfolio() {
+    const status = document.getElementById('dashStatusText');
+    const updated = document.getElementById('dashUpdatedAt');
+    if (status) status.textContent = 'Refreshing portfolio…';
+
+    state.portfolio = await fetchPortfolio();
+    renderPortfolio();
+    const shown = filterPortfolioProjects(state.portfolio.projects || []).length;
+    const total = state.portfolio.accessible_count ?? shown;
+    if (status) status.textContent = `All projects · ${shown} of ${total} shown`;
+    if (updated) updated.textContent = `Updated ${new Date().toLocaleTimeString()}`;
+  }
+
+  async function refresh() {
     try {
-      state.data = await fetchSummary();
-      if (badge) {
-        const p = state.data.project;
-        badge.textContent = p?.number ? `${p.number} · ${p.name}` : (p?.name || 'No project selected');
+      if (state.viewMode === 'portfolio') {
+        await refreshPortfolio();
+      } else {
+        await refreshProject();
       }
-      state.weather = await fetchWeather(state.data.location);
-      renderGrid();
-      if (status) status.textContent = `Dashboard · ${state.data.kpis?.active_projects ?? 0} active project(s)`;
-      if (updated) updated.textContent = `Updated ${new Date().toLocaleTimeString()}`;
     } catch (err) {
+      const status = document.getElementById('dashStatusText');
       if (status) status.textContent = `Error: ${err.message}`;
       if (global.showToast) global.showToast(err.message, 'error');
     }
   }
 
-  function openSettings() {
+  async function openSettings() {
     buildChecklist();
+    if (!state.portfolio) {
+      try {
+        state.portfolio = await fetchPortfolio();
+      } catch (_) { /* picker may be empty until refresh */ }
+    }
+    syncPortfolioSettingsUI();
+    const projectSection = document.getElementById('dashProjectSettingsSection');
+    const portfolioSection = document.getElementById('dashPortfolioSettingsSection');
+    if (projectSection) projectSection.classList.toggle('hidden', state.viewMode === 'portfolio');
+    if (portfolioSection) portfolioSection.classList.toggle('hidden', state.viewMode !== 'portfolio');
     const modal = document.getElementById('dashSettingsModal');
     if (modal) modal.showModal();
   }
@@ -698,14 +968,31 @@
   function bindEvents() {
     document.getElementById('dashBtnRefresh')?.addEventListener('click', refresh);
     document.getElementById('dashBtnSettings')?.addEventListener('click', openSettings);
+    document.getElementById('dashViewProject')?.addEventListener('click', () => setViewMode('project'));
+    document.getElementById('dashViewPortfolio')?.addEventListener('click', () => setViewMode('portfolio'));
     document.getElementById('dashSettingsClose')?.addEventListener('click', closeSettings);
     document.getElementById('dashSettingsSave')?.addEventListener('click', () => {
-      document.querySelectorAll('.dash-tile-check').forEach((cb) => {
-        const id = cb.getAttribute('data-tile');
-        if (state.layout.tiles[id]) state.layout.tiles[id].visible = cb.checked;
-      });
-      saveLayout();
-      renderGrid();
+      if (state.viewMode === 'project') {
+        document.querySelectorAll('.dash-tile-check').forEach((cb) => {
+          const id = cb.getAttribute('data-tile');
+          if (state.layout.tiles[id]) state.layout.tiles[id].visible = cb.checked;
+        });
+        saveLayout();
+        renderGrid();
+      } else {
+        const selectedFilter = document.querySelector('input[name="dashPortfolioFilter"]:checked');
+        state.portfolioPrefs.filter = selectedFilter ? selectedFilter.value : 'all_active';
+        if (state.portfolioPrefs.filter === 'custom') {
+          const ids = [];
+          document.querySelectorAll('.dash-portfolio-project-check:checked').forEach((cb) => {
+            const id = parseInt(cb.getAttribute('data-project-id'), 10);
+            if (id) ids.push(id);
+          });
+          state.portfolioPrefs.customIds = ids;
+        }
+        savePortfolioPrefs();
+        renderPortfolio();
+      }
       closeSettings();
     });
     document.getElementById('dashUnlockToggle')?.addEventListener('change', (e) => {
@@ -720,20 +1007,38 @@
       renderGrid();
       if (global.showToast) global.showToast('Layout reset to default');
     });
+    document.querySelectorAll('input[name="dashPortfolioFilter"]').forEach((radio) => {
+      radio.addEventListener('change', () => {
+        const picker = document.getElementById('dashPortfolioPicker');
+        if (picker) picker.classList.toggle('hidden', radio.value !== 'custom' || !radio.checked);
+        if (radio.checked && radio.value === 'custom') buildPortfolioProjectList();
+      });
+    });
+    document.getElementById('dashPortfolioSearch')?.addEventListener('input', buildPortfolioProjectList);
 
-    global.addEventListener('casepm:project-changed', refresh);
-    window.onCasePmProjectChanged = function (projectId) {
-      ctx.projectId = projectId;
-      refresh();
+    global.addEventListener('casepm:project-changed', () => {
+      if (state.viewMode === 'project') refresh();
+    });
+    window.onCasePmProjectChanged = function (newProjectId) {
+      ctx.projectId = newProjectId;
+      if (state.viewMode === 'project') refresh();
     };
   }
 
   function init() {
     bindEvents();
+    const projectPanel = document.getElementById('dashProjectPanel');
+    const portfolioPanel = document.getElementById('dashPortfolioPanel');
+    const btnProject = document.getElementById('dashViewProject');
+    const btnPortfolio = document.getElementById('dashViewPortfolio');
+    if (projectPanel) projectPanel.classList.toggle('hidden', state.viewMode !== 'project');
+    if (portfolioPanel) portfolioPanel.classList.toggle('hidden', state.viewMode !== 'portfolio');
+    if (btnProject) btnProject.classList.toggle('active', state.viewMode === 'project');
+    if (btnPortfolio) btnPortfolio.classList.toggle('active', state.viewMode === 'portfolio');
     refresh();
   }
 
-  global.CasePMDashboard = { refresh, openSettings };
+  global.CasePMDashboard = { refresh, openSettings, setViewMode };
 
   if (document.readyState === 'loading') {
     document.addEventListener('DOMContentLoaded', init);
