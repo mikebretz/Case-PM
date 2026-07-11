@@ -8,6 +8,7 @@ window.CASEPM_MEETINGS_CTX = {
   scheduleUrl: {{ url_for('schedule_page')|tojson }},
 };
 </script>
+<script src="{{ url_for('static', filename='js/meeting-voice-diarization.js') }}"></script>
 <script src="{{ url_for('static', filename='js/meeting-minutes-app.js') }}"></script>
 
 <style>
@@ -120,7 +121,6 @@ window.CASEPM_MEETINGS_CTX = {
         <label class="block text-xs text-zinc-400 mb-1">Discussion notes</label>
         <textarea id="mmDiscussion" rows="4" class="mm-input resize-y"></textarea>
       </div>
-      <audio id="mmRecordingPlayer" controls class="w-full mt-3 hidden"></audio>
       <label class="flex items-center gap-2 text-sm cursor-pointer mt-3"><input type="checkbox" id="mmPush" class="accent-sky-500"> Push to Schedule as milestone <span id="mmSyncedBadge" class="mm-chip bg-violet-500/15 text-violet-400 hidden">On schedule</span></label>
     </div>
 
@@ -136,7 +136,13 @@ window.CASEPM_MEETINGS_CTX = {
     <!-- LIVE CAPTURE -->
     <div id="mmPanelCapture" class="hidden">
       <div class="bg-zinc-950 border border-zinc-700 rounded-md p-4">
-        <div class="text-xs text-zinc-500 uppercase tracking-wide mb-2">Active speaker — click to tag voice; double-click to name</div>
+        <div class="flex flex-wrap items-center justify-between gap-2 mb-2">
+          <div class="text-xs text-zinc-500 uppercase tracking-wide">Detected speakers — auto-switches by voice; double-click to name</div>
+          <label class="flex items-center gap-2 text-xs text-zinc-400 cursor-pointer">
+            <input type="checkbox" id="mmAutoDetect" class="accent-violet-500" checked>
+            Auto-detect speakers
+          </label>
+        </div>
         <div id="mmSpeakerBar" class="flex flex-wrap gap-2 mb-4"></div>
         <div class="flex flex-wrap gap-3 mb-3">
           <button type="button" id="mmRecordBtn" class="flex items-center gap-2 px-4 py-2 bg-red-600 hover:bg-red-500 rounded-md text-sm font-semibold">
@@ -147,13 +153,20 @@ window.CASEPM_MEETINGS_CTX = {
             <i class="fa-solid fa-microphone"></i><span id="mmDictateLabel">Dictate</span>
           </button>
         </div>
-        <p id="mmCaptureHint" class="text-xs text-zinc-500 mb-2">Record saves audio to the meeting. Dictation uses your browser speech engine with speaker tags. Pitch-based voice hints may auto-switch speakers when voices differ noticeably.</p>
+        <p id="mmCaptureHint" class="text-xs text-zinc-500 mb-2">Speakers are tagged automatically as voices change (up to 12 people). Wrong tag? Open the Transcript tab, click any line, and pick the correct person — the app learns that voice for the rest of the meeting and future meetings on this project.</p>
         <div id="mmLivePreview" class="text-sm text-zinc-300 italic min-h-[1.5rem] border-t border-zinc-800 pt-2"></div>
       </div>
     </div>
 
     <!-- TRANSCRIPT -->
     <div id="mmPanelTranscript" class="hidden">
+      <div class="flex flex-wrap items-center justify-between gap-2 mb-3">
+        <div class="text-xs text-zinc-500">Click a speaker name or line to reassign. Use <i class="fa-solid fa-play text-[10px]"></i> to jump the recording. Trained voices show a brain icon.</div>
+        <button type="button" id="mmRetrainVoices" class="px-3 py-1.5 text-xs bg-violet-600 hover:bg-violet-500 rounded-md font-medium">
+          <i class="fa-solid fa-brain mr-1"></i>Re-apply learned voices
+        </button>
+      </div>
+      <audio id="mmRecordingPlayer" controls class="w-full mb-3 hidden"></audio>
       <div id="mmTranscriptView"></div>
     </div>
 
