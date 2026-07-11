@@ -796,6 +796,40 @@ class Delivery(db.Model):
     updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
 
+class PermitInspectionItem(db.Model):
+    """Permit or inspection event — syncs to Schedule; tracks Florida AHJ workflow."""
+    id = db.Column(db.Integer, primary_key=True)
+    project_id = db.Column(db.Integer, db.ForeignKey('project.id'))
+    item_number = db.Column(db.String(30))
+    record_kind = db.Column(db.String(20), default='inspection')  # permit | inspection
+    trade = db.Column(db.String(40), default='building')
+    inspection_phase = db.Column(db.String(60))
+    title = db.Column(db.String(300), nullable=False)
+    description = db.Column(db.Text)
+    fbc_reference = db.Column(db.String(120))
+    permit_number = db.Column(db.String(80))
+    parent_id = db.Column(db.Integer, db.ForeignKey('permit_inspection_item.id'))
+    jurisdiction_level = db.Column(db.String(40))
+    jurisdiction_name = db.Column(db.String(150))
+    authority_name = db.Column(db.String(200))
+    authority_phone = db.Column(db.String(60))
+    authority_url = db.Column(db.String(300))
+    scheduled_date = db.Column(db.Date)
+    scheduled_time = db.Column(db.String(30))
+    duration_days = db.Column(db.Integer, default=1)
+    status = db.Column(db.String(40), default='Not Started')
+    inspector = db.Column(db.String(120))
+    location = db.Column(db.String(150))
+    result_notes = db.Column(db.Text)
+    correction_notes = db.Column(db.Text)
+    schedule_task_id = db.Column(db.String(60))
+    catalog_source = db.Column(db.String(40))
+    details_json = db.Column(db.Text)
+    created_by_id = db.Column(db.Integer, db.ForeignKey('user.id'))
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+
 class Company(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     name = db.Column(db.String(150), nullable=False, unique=True)
@@ -3854,12 +3888,22 @@ def api_save_schedule():
         db.session.commit()
         # Reverse sync: adjustments to delivery-linked tasks flow back to Deliveries.
         deliveries_updated = 0
+        inspections_updated = 0
         try:
             from deliveries_persistence import apply_schedule_to_deliveries
             deliveries_updated = apply_schedule_to_deliveries(payload, Delivery, db)
         except Exception:
             db.session.rollback()
-        return jsonify({'ok': True, 'project_id': project_id, 'deliveries_updated': deliveries_updated})
+        try:
+            from permits_inspections_persistence import apply_schedule_to_items
+            inspections_updated = apply_schedule_to_items(payload, PermitInspectionItem, db)
+        except Exception:
+            db.session.rollback()
+        return jsonify({
+            'ok': True, 'project_id': project_id,
+            'deliveries_updated': deliveries_updated,
+            'inspections_updated': inspections_updated,
+        })
     except Exception as e:
         db.session.rollback()
         return jsonify({'error': str(e)}), 500
@@ -8587,7 +8631,331 @@ def api_deliveries_push_to_schedule():
 @app.route('/inspections')
 @login_required
 def inspections_page():
-    return render_template('inspections.html')
+    return render_template('inspections.html', active_project=get_active_project())
+
+
+def _next_permit_inspection_number(project_id, prefix='INSP'):
+    from sqlalchemy import func
+    q = PermitInspectionItem.query.filter_by(project_id=int(project_id))
+    last = q.order_by(PermitInspectionItem.id.desc()).first()
+    n = 1
+    if last and last.item_number:
+        try:
+            n = int(str(last.item_number).split('-')[-1]) + 1
+        except (ValueError, IndexError):
+            n = (last.id or 0) + 1
+    return f'{prefix}-{n:03d}'
+
+
+def _apply_permit_inspection_item(item, body):
+    for field in (
+        'record_kind', 'trade', 'inspection_phase', 'title', 'description', 'fbc_reference',
+        'permit_number', 'jurisdiction_level', 'jurisdiction_name', 'authority_name',
+        'authority_phone', 'authority_url', 'scheduled_time', 'status', 'inspector',
+        'location', 'result_notes', 'correction_notes', 'catalog_source',
+    ):
+        if field in body:
+            setattr(item, field, body[field])
+    if 'parent_id' in body:
+        item.parent_id = int(body['parent_id']) if body['parent_id'] else None
+    if 'duration_days' in body:
+        try:
+            item.duration_days = max(1, int(body['duration_days']))
+        except (TypeError, ValueError):
+            item.duration_days = 1
+    if 'scheduled_date' in body:
+        if body['scheduled_date']:
+            try:
+                item.scheduled_date = datetime.strptime(body['scheduled_date'][:10], '%Y-%m-%d').date()
+            except (TypeError, ValueError):
+                pass
+        else:
+            item.scheduled_date = None
+    if 'details' in body:
+        item.details_json = json.dumps(body['details'] or {})
+
+
+def _sync_permit_inspection_to_schedule(item):
+    from permits_inspections_persistence import upsert_inspection_tasks, task_id_for
+    record = ScheduleData.query.filter_by(project_id=item.project_id).first()
+    payload = {}
+    if record and record.payload:
+        try:
+            payload = json.loads(record.payload)
+        except json.JSONDecodeError:
+            payload = {}
+    payload = upsert_inspection_tasks(payload, [item])
+    if not item.schedule_task_id:
+        item.schedule_task_id = task_id_for(item)
+    payload_json = json.dumps(payload)
+    if record:
+        record.payload = payload_json
+        record.updated_at = datetime.utcnow()
+    else:
+        db.session.add(ScheduleData(project_id=item.project_id, payload=payload_json))
+    db.session.commit()
+
+
+@app.route('/api/permits-inspections/catalog', methods=['GET'])
+@login_required
+def api_permits_inspections_catalog():
+    from florida_permit_catalog import (
+        PERMIT_TRADES, FBC_INSPECTION_TEMPLATES, FLORIDA_STATE_AUTHORITIES,
+        FLORIDA_UTILITIES, FLORIDA_WMD, STATUSES,
+    )
+    from florida_jurisdiction_directory import get_full_directory
+    trade = request.args.get('trade')
+    return jsonify({
+        'ok': True,
+        'trades': PERMIT_TRADES,
+        'statuses': list(STATUSES),
+        'fbc_templates': FBC_INSPECTION_TEMPLATES.get(trade, []) if trade else FBC_INSPECTION_TEMPLATES,
+        'directory': get_full_directory(),
+        'state_authorities': FLORIDA_STATE_AUTHORITIES,
+        'utilities': FLORIDA_UTILITIES,
+        'water_management_districts': FLORIDA_WMD,
+    })
+
+
+@app.route('/api/permits-inspections/directory', methods=['GET'])
+@login_required
+def api_permits_inspections_directory():
+    from florida_jurisdiction_directory import search_directory
+    q = request.args.get('q', '')
+    category = request.args.get('category', 'all')
+    return jsonify({'ok': True, 'results': search_directory(q, category)})
+
+
+@app.route('/api/permits-inspections', methods=['GET'])
+@login_required
+def api_permits_inspections_list():
+    from permits_inspections_persistence import serialize_item, compute_stats, STATUSES
+    from florida_permit_catalog import PERMIT_TRADES
+    project_id = request.args.get('project_id', type=int) or get_current_project_id()
+    q = PermitInspectionItem.query
+    if project_id:
+        q = q.filter_by(project_id=int(project_id))
+    trade = request.args.get('trade')
+    status = request.args.get('status')
+    kind = request.args.get('record_kind')
+    if trade:
+        q = q.filter_by(trade=trade)
+    if status:
+        q = q.filter_by(status=status)
+    if kind:
+        q = q.filter_by(record_kind=kind)
+    rows = q.order_by(PermitInspectionItem.scheduled_date.asc(), PermitInspectionItem.id.asc()).all()
+    return jsonify({
+        'ok': True,
+        'items': [serialize_item(r) for r in rows],
+        'stats': compute_stats(PermitInspectionItem, project_id),
+        'statuses': list(STATUSES),
+        'trades': PERMIT_TRADES,
+        'project_id': project_id,
+        'schedule_url': url_for('schedule_page'),
+    })
+
+
+@app.route('/api/permits-inspections/from-template', methods=['POST'])
+@login_required
+def api_permits_inspections_from_template():
+    """Bulk-create FBC checklist items for a trade."""
+    from florida_permit_catalog import build_checklist_items
+    from permits_inspections_persistence import serialize_item
+    body = request.get_json(silent=True) or {}
+    project_id = body.get('project_id') or get_current_project_id()
+    trade = body.get('trade', 'building')
+    if not project_id:
+        return jsonify({'error': 'project_id required'}), 400
+    jurisdiction = body.get('jurisdiction') or {}
+    scheduled_date = body.get('scheduled_date')
+    push = bool(body.get('push_to_schedule'))
+    created = []
+    for tpl in build_checklist_items(trade, jurisdiction):
+        item = PermitInspectionItem(
+            project_id=int(project_id),
+            item_number=_next_permit_inspection_number(project_id),
+            record_kind=tpl.get('record_kind', 'inspection'),
+            trade=tpl.get('trade', trade),
+            inspection_phase=tpl.get('inspection_phase', ''),
+            title=tpl.get('title', 'Inspection'),
+            description=tpl.get('description', ''),
+            fbc_reference=tpl.get('fbc_reference', ''),
+            jurisdiction_name=tpl.get('jurisdiction_name', ''),
+            authority_name=tpl.get('authority_name', ''),
+            authority_phone=tpl.get('authority_phone', ''),
+            authority_url=tpl.get('authority_url', ''),
+            status=tpl.get('status', 'Not Started'),
+            catalog_source='fbc_template',
+            created_by_id=current_user.id,
+        )
+        if scheduled_date:
+            try:
+                item.scheduled_date = datetime.strptime(scheduled_date[:10], '%Y-%m-%d').date()
+            except (TypeError, ValueError):
+                pass
+        db.session.add(item)
+        db.session.flush()
+        if push and item.scheduled_date:
+            try:
+                _sync_permit_inspection_to_schedule(item)
+            except Exception:
+                db.session.rollback()
+        created.append(serialize_item(item))
+    db.session.commit()
+    return jsonify({'ok': True, 'created': created, 'count': len(created)})
+
+
+@app.route('/api/permits-inspections', methods=['POST'])
+@login_required
+def api_permits_inspections_create():
+    from permits_inspections_persistence import serialize_item
+    body = request.get_json(silent=True) or {}
+    project_id = body.get('project_id') or get_current_project_id()
+    title = (body.get('title') or '').strip()
+    if not project_id or not title:
+        return jsonify({'error': 'project_id and title required'}), 400
+    item = PermitInspectionItem(
+        project_id=int(project_id),
+        item_number=_next_permit_inspection_number(project_id),
+        title=title,
+        created_by_id=current_user.id,
+    )
+    _apply_permit_inspection_item(item, body)
+    db.session.add(item)
+    db.session.commit()
+    if body.get('push_to_schedule') and item.scheduled_date:
+        try:
+            _sync_permit_inspection_to_schedule(item)
+        except Exception:
+            pass
+    return jsonify({'ok': True, 'item': serialize_item(item)})
+
+
+@app.route('/api/permits-inspections/<int:item_id>', methods=['PUT'])
+@login_required
+def api_permits_inspections_update(item_id):
+    from permits_inspections_persistence import serialize_item
+    item = PermitInspectionItem.query.get_or_404(item_id)
+    body = request.get_json(silent=True) or {}
+    _apply_permit_inspection_item(item, body)
+    item.updated_at = datetime.utcnow()
+    db.session.commit()
+    if body.get('push_to_schedule') or item.schedule_task_id:
+        try:
+            _sync_permit_inspection_to_schedule(item)
+        except Exception:
+            pass
+    return jsonify({'ok': True, 'item': serialize_item(item)})
+
+
+@app.route('/api/permits-inspections/<int:item_id>', methods=['DELETE'])
+@login_required
+def api_permits_inspections_delete(item_id):
+    item = PermitInspectionItem.query.get_or_404(item_id)
+    if item.schedule_task_id:
+        record = ScheduleData.query.filter_by(project_id=item.project_id).first()
+        if record and record.payload:
+            try:
+                payload = json.loads(record.payload)
+                data = payload.get('data') or []
+                payload['data'] = [t for t in data if str(t.get('id')) != str(item.schedule_task_id)]
+                record.payload = json.dumps(payload)
+            except json.JSONDecodeError:
+                pass
+    db.session.delete(item)
+    db.session.commit()
+    return jsonify({'ok': True})
+
+
+@app.route('/api/permits-inspections/push-to-schedule', methods=['POST'])
+@login_required
+def api_permits_inspections_push_to_schedule():
+    from permits_inspections_persistence import upsert_inspection_tasks, task_id_for
+    project_id = request.args.get('project_id', type=int) or get_current_project_id()
+    if not project_id:
+        return jsonify({'error': 'project_id required'}), 400
+    body = request.get_json(silent=True) or {}
+    ids = body.get('ids')
+    q = PermitInspectionItem.query.filter_by(project_id=int(project_id))
+    if ids:
+        q = q.filter(PermitInspectionItem.id.in_(ids))
+    else:
+        q = q.filter(PermitInspectionItem.scheduled_date.isnot(None))
+    items = q.all()
+    if not items:
+        return jsonify({'ok': True, 'pushed': 0})
+    record = ScheduleData.query.filter_by(project_id=int(project_id)).first()
+    payload = {}
+    if record and record.payload:
+        try:
+            payload = json.loads(record.payload)
+        except json.JSONDecodeError:
+            payload = {}
+    payload = upsert_inspection_tasks(payload, items)
+    for item in items:
+        if not item.schedule_task_id:
+            item.schedule_task_id = task_id_for(item)
+    payload_json = json.dumps(payload)
+    if record:
+        record.payload = payload_json
+        record.updated_at = datetime.utcnow()
+    else:
+        db.session.add(ScheduleData(project_id=int(project_id), payload=payload_json))
+    db.session.commit()
+    return jsonify({
+        'ok': True, 'pushed': len(items),
+        'schedule_url': url_for('schedule_page') + f'?project_id={project_id}',
+    })
+
+
+@app.route('/api/permits-inspections/import-from-schedule', methods=['POST'])
+@login_required
+def api_permits_inspections_import_from_schedule():
+    """Import permit_inspection / milestone tasks from schedule into this module."""
+    from permits_inspections_persistence import serialize_item
+    project_id = request.args.get('project_id', type=int) or get_current_project_id()
+    if not project_id:
+        return jsonify({'error': 'project_id required'}), 400
+    record = ScheduleData.query.filter_by(project_id=int(project_id)).first()
+    if not record or not record.payload:
+        return jsonify({'ok': True, 'imported': 0})
+    try:
+        payload = json.loads(record.payload)
+    except json.JSONDecodeError:
+        return jsonify({'ok': True, 'imported': 0})
+    imported = []
+    for t in payload.get('data') or []:
+        if not isinstance(t, dict):
+            continue
+        if t.get('permit_inspection_id'):
+            continue
+        is_pi = t.get('source') == 'permit_inspection'
+        is_milestone = t.get('type') == 'milestone' and 'inspect' in (t.get('text') or '').lower()
+        if not is_pi and not is_milestone:
+            continue
+        start = t.get('start_date')
+        try:
+            sched = datetime.strptime(str(start)[:10], '%Y-%m-%d').date() if start else None
+        except (TypeError, ValueError):
+            sched = None
+        item = PermitInspectionItem(
+            project_id=int(project_id),
+            item_number=_next_permit_inspection_number(project_id),
+            record_kind='inspection',
+            trade='milestone',
+            title=(t.get('text') or 'Schedule Milestone')[:300],
+            scheduled_date=sched,
+            status='Scheduled',
+            schedule_task_id=str(t.get('id')),
+            catalog_source='schedule_import',
+            created_by_id=current_user.id,
+        )
+        db.session.add(item)
+        db.session.flush()
+        imported.append(serialize_item(item))
+    db.session.commit()
+    return jsonify({'ok': True, 'imported': len(imported), 'items': imported})
 
 
 @app.route('/meeting-minutes')
