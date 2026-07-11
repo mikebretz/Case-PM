@@ -4092,6 +4092,38 @@ def api_sync_company():
     })
 
 
+@app.route('/api/sage/companies', methods=['GET'])
+@login_required
+def api_sage_companies_list():
+    """Simple Sage vendor/customer directory for Companies import."""
+    from companies_persistence import ensure_company_schema
+    from sage_companies_service import list_sage_companies
+
+    ensure_company_schema(db)
+    search = (request.args.get('search') or '').strip()
+    company_type = (request.args.get('company_type') or '').strip()
+    rows = list_sage_companies(search=search, company_type=company_type, Company=Company)
+    return jsonify({'ok': True, 'companies': rows, 'live_api': bool(os.environ.get('SAGE_API_URL', '').strip())})
+
+
+@app.route('/api/sage/companies/lookup', methods=['GET'])
+@login_required
+def api_sage_company_lookup():
+    """Look up a single Sage vendor/customer # and return name + basics."""
+    from companies_persistence import ensure_company_schema
+    from sage_companies_service import lookup_sage_company
+
+    ensure_company_schema(db)
+    code = (request.args.get('code') or request.args.get('sage_number') or '').strip()
+    company_type = (request.args.get('company_type') or '').strip()
+    if not code:
+        return jsonify({'error': 'Sage number is required'}), 400
+    match = lookup_sage_company(code, company_type=company_type, Company=Company)
+    if not match:
+        return jsonify({'ok': False, 'found': False, 'code': code}), 404
+    return jsonify({'ok': True, 'found': True, 'company': match})
+
+
 @app.route('/api/companies/clients', methods=['GET'])
 @login_required
 def api_client_companies():

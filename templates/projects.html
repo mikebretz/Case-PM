@@ -937,7 +937,10 @@ function onClientCompanySelected() {
         const oln = document.getElementById('fld_owner_legal_name');
         if (oln && !oln.value) oln.value = company.dba_name || company.company_name || name;
         const sageAr = document.getElementById('fld_sage_ar_customer_code');
-        if (sageAr && !sageAr.value && company.sage_ar_customer_code) sageAr.value = company.sage_ar_customer_code;
+        if (sageAr && !sageAr.value) {
+            const num = company.sage_number || company.sage_ar_customer_code || company.external_id;
+            if (num) sageAr.value = num;
+        }
     } catch (_) {}
 }
 

@@ -5,7 +5,7 @@ import json
 
 COMPANY_DETAIL_FIELDS = (
     'trade', 'dba_name', 'website', 'payment_terms', 'w9_on_file', 'prequal_status',
-    'sage_ap_vendor_code', 'sage_ar_customer_code', 'union_status', 'minority_owned',
+    'sage_ap_vendor_code', 'sage_ar_customer_code', 'sage_number', 'union_status', 'minority_owned',
     'financial_phone', 'financial_email', 'billing_address', 'shipping_address',
     'license_expiration', 'license_status',
     'gl_carrier', 'gl_policy', 'gl_expiration',
@@ -47,6 +47,9 @@ def ensure_company_schema(db):
 
 def apply_company_payload(company, body):
     """Map Companies UI JSON → Company model."""
+    from sage_companies_service import apply_sage_number_fields
+
+    body = apply_sage_number_fields(dict(body))
     name = (body.get('company_name') or body.get('name') or '').strip()
     if name:
         company.name = name
@@ -74,7 +77,16 @@ def apply_company_payload(company, body):
 
 
 def serialize_company(company, projects=None):
+    from sage_companies_service import resolve_sage_number
+
     details = _parse_json(company.details_json, {})
+    sage_number = resolve_sage_number(
+        company.type or '',
+        details.get('external_id') or '',
+        details.get('sage_ap_vendor_code') or '',
+        details.get('sage_ar_customer_code') or '',
+        details.get('sage_number') or '',
+    )
     return {
         'id': company.id,
         'server_id': company.id,
@@ -93,7 +105,8 @@ def serialize_company(company, projects=None):
         'financial_contact_user_id': company.financial_contact_user_id,
         'financial_phone': details.get('financial_phone') or '',
         'financial_email': details.get('financial_email') or '',
-        'external_id': details.get('external_id') or '',
+        'external_id': details.get('external_id') or sage_number,
+        'sage_number': sage_number,
         'status': details.get('status') or 'Active',
         'billing_address': details.get('billing_address') or '',
         'shipping_address': details.get('shipping_address') or '',
