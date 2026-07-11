@@ -109,6 +109,14 @@
     };
     state.auditLog.unshift(entry);
     saveAuditLog();
+    if (global.CasePMActivityLog) {
+      CasePMActivityLog.log(action, typeof details === 'string' ? details : (details.summary || details.description || ''), 'commitments', {
+        category: details.category || 'update',
+        entity_ref: details.number || details.commitment_number || '',
+        company_name: details.company_name || '',
+        metadata: details,
+      });
+    }
   }
 
   function fmt(n) {
