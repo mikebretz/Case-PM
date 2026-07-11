@@ -504,15 +504,16 @@
                 <div id="projectTab-financial" class="project-tab-panel hidden">
                     <div class="border border-red-900/40 bg-red-950/20 rounded-lg p-4 mb-5">
                         <div class="text-sm font-medium text-white mb-1"><i class="fa-solid fa-file-pdf text-red-400 mr-2"></i>Original Prime Contract (PDF)</div>
-                        <p class="text-xs text-zinc-400 mb-3">Upload the executed owner–GC agreement here. This is the signed contract on file — used for pay applications, budget reference, and audit.</p>
+                        <p class="text-xs text-zinc-400 mb-3">Upload the executed owner–GC agreement here, or choose a PDF already filed in Documents. Used for pay applications, budget reference, and audit.</p>
                         <div id="originalContractStatus" class="text-xs text-zinc-500 mb-3">No contract uploaded.</div>
                         <div class="flex flex-wrap gap-2 items-center">
                             <input type="file" id="originalContractFile" accept=".pdf,application/pdf" class="text-xs text-zinc-400 file:mr-3 file:py-1.5 file:px-3 file:rounded file:border-0 file:bg-zinc-700 file:text-zinc-200">
+                            <span id="originalContractDocActions"></span>
                             <button type="button" id="uploadContractBtn" onclick="uploadOriginalContract()" class="px-4 py-2 bg-emerald-700 hover:bg-emerald-600 rounded-md text-xs font-medium text-white" disabled>Upload PDF</button>
                             <a id="viewContractLink" href="#" target="_blank" rel="noopener" class="hidden px-4 py-2 bg-zinc-700 hover:bg-zinc-600 rounded-md text-xs text-sky-300">View Contract</a>
                             <button type="button" id="deleteContractBtn" onclick="deleteOriginalContract()" class="hidden px-4 py-2 bg-red-900/50 hover:bg-red-800 rounded-md text-xs text-red-300">Remove</button>
                         </div>
-                        <p class="text-[10px] text-zinc-500 mt-2">Tip: Save the project first if you are creating a new job, then return to this tab to upload.</p>
+                        <p class="text-[10px] text-zinc-500 mt-2">Tip: Save the project first, then upload from your computer or pick a PDF from this project's Documents.</p>
                     </div>
 
                     <div class="text-xs text-zinc-500 uppercase tracking-wide mb-3">Contract amounts</div>
@@ -1326,7 +1327,8 @@ function setContractStatusUI(json) {
     const mirror = document.getElementById('contractTabMirrorStatus');
     const badge = document.getElementById('tabBadgeFinancial');
     if (json.found) {
-        const label = `<span class="text-emerald-400">Uploaded:</span> ${json.filename || 'original_contract.pdf'} · ${json.uploadedAt ? new Date(json.uploadedAt).toLocaleString() : ''}`;
+        const sourceNote = json.source === 'documents' ? ' <span class="text-sky-400">(from Documents)</span>' : '';
+        const label = `<span class="text-emerald-400">Uploaded:</span> ${json.filename || 'original_contract.pdf'}${sourceNote} · ${json.uploadedAt ? new Date(json.uploadedAt).toLocaleString() : ''}`;
         if (statusEl) statusEl.innerHTML = label;
         if (mirror) mirror.innerHTML = label;
         if (viewLink) { viewLink.href = json.url; viewLink.classList.remove('hidden'); }
@@ -1349,6 +1351,7 @@ async function loadOriginalContractStatus(projectId) {
     if (!projectId) { resetOriginalContractUI(); return; }
     if (uploadBtn) uploadBtn.disabled = false;
     if (catinaBtn) catinaBtn.classList.remove('hidden');
+    bindOriginalContractDocPicker();
     try {
         const res = await fetch(`/api/projects/${projectId}/original-contract`, { credentials: 'same-origin' });
         const json = await res.json();
@@ -1434,6 +1437,47 @@ async function deleteProjectLogo() {
         if (parseInt(window.CASEPM_ACTIVE_PROJECT_ID, 10) === editingProjectId && typeof refreshHeaderProjectLogo === 'function') {
             await refreshHeaderProjectLogo();
         }
+    } catch (e) {
+        CasePMDialog.alert(e.message, 'error');
+    }
+}
+
+function bindOriginalContractDocPicker() {
+    const container = document.getElementById('originalContractDocActions');
+    if (!container || container.dataset.bound === '1') return;
+    if (!window.CasePMDocPicker) return;
+    container.dataset.bound = '1';
+    CasePMDocPicker.addBrowseButton(container, {
+        title: 'Select contract PDF from Documents',
+        multiple: false,
+        accept: 'pdf',
+        className: 'px-4 py-2 bg-zinc-800 hover:bg-zinc-700 border border-zinc-700 rounded-md text-xs font-medium text-zinc-200 h-[30px]',
+        getProjectId: () => editingProjectId,
+        onPick: async (docs) => {
+            if (!editingProjectId || !docs?.length) return;
+            await setOriginalContractFromDocument(docs[0].id);
+        },
+    });
+}
+
+async function setOriginalContractFromDocument(documentId) {
+    if (!editingProjectId) {
+        CasePMDialog.alert('Save the project first.', 'error');
+        return;
+    }
+    try {
+        const res = await fetch(`/api/projects/${editingProjectId}/original-contract/from-document`, {
+            method: 'POST',
+            credentials: 'same-origin',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ document_id: documentId }),
+        });
+        const json = await res.json();
+        if (!res.ok) throw new Error(json.error || 'Could not use document');
+        await loadOriginalContractStatus(editingProjectId);
+        const fileInput = document.getElementById('originalContractFile');
+        if (fileInput) fileInput.value = '';
+        CasePMDialog.alert('Original contract set from Documents.', 'success');
     } catch (e) {
         CasePMDialog.alert(e.message, 'error');
     }
