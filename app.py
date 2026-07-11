@@ -830,6 +830,53 @@ class PermitInspectionItem(db.Model):
     updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
 
+class MeetingMinute(db.Model):
+    """Project meeting record — voice transcript, recording, action items, schedule sync."""
+    id = db.Column(db.Integer, primary_key=True)
+    project_id = db.Column(db.Integer, db.ForeignKey('project.id'))
+    meeting_number = db.Column(db.String(30))
+    meeting_date = db.Column(db.Date)
+    start_time = db.Column(db.String(20))
+    end_time = db.Column(db.String(20))
+    meeting_type = db.Column(db.String(60), default='other')
+    status = db.Column(db.String(40), default='Draft')
+    subject = db.Column(db.String(300), nullable=False)
+    location = db.Column(db.String(200))
+    virtual_link = db.Column(db.String(300))
+    organizer = db.Column(db.String(120))
+    attendees_json = db.Column(db.Text)
+    agenda_json = db.Column(db.Text)
+    discussion_notes = db.Column(db.Text)
+    decisions_json = db.Column(db.Text)
+    transcript_json = db.Column(db.Text)
+    speakers_json = db.Column(db.Text)
+    minutes_body = db.Column(db.Text)
+    distribution_json = db.Column(db.Text)
+    recording_filename = db.Column(db.String(200))
+    recording_duration_sec = db.Column(db.Integer)
+    document_id = db.Column(db.Integer, db.ForeignKey('document.id'))
+    schedule_task_id = db.Column(db.String(60))
+    next_meeting_date = db.Column(db.Date)
+    created_by_id = db.Column(db.Integer, db.ForeignKey('user.id'))
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    action_items = db.relationship('MeetingActionItem', backref='meeting', lazy=True, cascade='all, delete-orphan')
+
+
+class MeetingActionItem(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    meeting_id = db.Column(db.Integer, db.ForeignKey('meeting_minute.id'))
+    project_id = db.Column(db.Integer, db.ForeignKey('project.id'))
+    item_number = db.Column(db.String(20))
+    description = db.Column(db.Text, nullable=False)
+    assigned_to = db.Column(db.String(120))
+    due_date = db.Column(db.Date)
+    status = db.Column(db.String(30), default='Open')
+    priority = db.Column(db.String(20), default='Normal')
+    notes = db.Column(db.Text)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+
+
 class Company(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     name = db.Column(db.String(150), nullable=False, unique=True)
@@ -3889,6 +3936,7 @@ def api_save_schedule():
         # Reverse sync: adjustments to delivery-linked tasks flow back to Deliveries.
         deliveries_updated = 0
         inspections_updated = 0
+        meetings_updated = 0
         try:
             from deliveries_persistence import apply_schedule_to_deliveries
             deliveries_updated = apply_schedule_to_deliveries(payload, Delivery, db)
@@ -3899,10 +3947,16 @@ def api_save_schedule():
             inspections_updated = apply_schedule_to_items(payload, PermitInspectionItem, db)
         except Exception:
             db.session.rollback()
+        try:
+            from meeting_minutes_persistence import apply_schedule_to_meetings
+            meetings_updated = apply_schedule_to_meetings(payload, MeetingMinute, db)
+        except Exception:
+            db.session.rollback()
         return jsonify({
             'ok': True, 'project_id': project_id,
             'deliveries_updated': deliveries_updated,
             'inspections_updated': inspections_updated,
+            'meetings_updated': meetings_updated,
         })
     except Exception as e:
         db.session.rollback()
@@ -8961,7 +9015,403 @@ def api_permits_inspections_import_from_schedule():
 @app.route('/meeting-minutes')
 @login_required
 def meeting_minutes_page():
-    return render_template('meeting_minutes.html')
+    return render_template('meeting_minutes.html', active_project=get_active_project())
+
+
+def _next_meeting_number(project_id, prefix='MM'):
+    q = MeetingMinute.query.filter_by(project_id=int(project_id))
+    last = q.order_by(MeetingMinute.id.desc()).first()
+    n = 1
+    if last and last.meeting_number:
+        try:
+            n = int(str(last.meeting_number).split('-')[-1]) + 1
+        except (ValueError, IndexError):
+            n = (last.id or 0) + 1
+    return f'{prefix}-{n:03d}'
+
+
+def _apply_meeting_minute(m, body):
+    for field in (
+        'meeting_number', 'start_time', 'end_time', 'meeting_type', 'status',
+        'subject', 'location', 'virtual_link', 'organizer', 'discussion_notes', 'minutes_body',
+    ):
+        if field in body:
+            setattr(m, field, body[field])
+    for json_field, attr in (
+        ('attendees', 'attendees_json'),
+        ('agenda', 'agenda_json'),
+        ('decisions', 'decisions_json'),
+        ('transcript_segments', 'transcript_json'),
+        ('speakers', 'speakers_json'),
+        ('distribution', 'distribution_json'),
+    ):
+        if json_field in body:
+            setattr(m, attr, json.dumps(body[json_field] or []))
+    if 'meeting_date' in body:
+        if body['meeting_date']:
+            try:
+                m.meeting_date = datetime.strptime(body['meeting_date'][:10], '%Y-%m-%d').date()
+            except (TypeError, ValueError):
+                pass
+        else:
+            m.meeting_date = None
+    if 'next_meeting_date' in body:
+        if body['next_meeting_date']:
+            try:
+                m.next_meeting_date = datetime.strptime(body['next_meeting_date'][:10], '%Y-%m-%d').date()
+            except (TypeError, ValueError):
+                pass
+        else:
+            m.next_meeting_date = None
+    if 'recording_duration_sec' in body:
+        try:
+            m.recording_duration_sec = int(body['recording_duration_sec'] or 0)
+        except (TypeError, ValueError):
+            pass
+
+
+def _sync_meeting_to_schedule(meeting):
+    from meeting_minutes_persistence import upsert_meeting_tasks, task_id_for
+    record = ScheduleData.query.filter_by(project_id=meeting.project_id).first()
+    payload = {}
+    if record and record.payload:
+        try:
+            payload = json.loads(record.payload)
+        except json.JSONDecodeError:
+            payload = {}
+    payload = upsert_meeting_tasks(payload, [meeting])
+    if not meeting.schedule_task_id:
+        meeting.schedule_task_id = task_id_for(meeting)
+    payload_json = json.dumps(payload)
+    if record:
+        record.payload = payload_json
+        record.updated_at = datetime.utcnow()
+    else:
+        db.session.add(ScheduleData(project_id=meeting.project_id, payload=payload_json))
+    db.session.commit()
+
+
+def _save_meeting_action_items(meeting, items):
+    if items is None:
+        return
+    keep_ids = []
+    for i, raw in enumerate(items or []):
+        if not isinstance(raw, dict):
+            continue
+        desc = (raw.get('description') or '').strip()
+        if not desc:
+            continue
+        aid = raw.get('id')
+        item = None
+        if aid:
+            item = MeetingActionItem.query.filter_by(id=int(aid), meeting_id=meeting.id).first()
+        if not item:
+            item = MeetingActionItem(meeting_id=meeting.id, project_id=meeting.project_id)
+            db.session.add(item)
+        item.item_number = raw.get('item_number') or f'AI-{i + 1:02d}'
+        item.description = desc
+        item.assigned_to = raw.get('assigned_to') or ''
+        item.status = raw.get('status') or 'Open'
+        item.priority = raw.get('priority') or 'Normal'
+        item.notes = raw.get('notes') or ''
+        if raw.get('due_date'):
+            try:
+                item.due_date = datetime.strptime(raw['due_date'][:10], '%Y-%m-%d').date()
+            except (TypeError, ValueError):
+                item.due_date = None
+        else:
+            item.due_date = None
+        db.session.flush()
+        keep_ids.append(item.id)
+    for old in MeetingActionItem.query.filter_by(meeting_id=meeting.id).all():
+        if old.id not in keep_ids:
+            db.session.delete(old)
+
+
+@app.route('/api/meeting-minutes/catalog', methods=['GET'])
+@login_required
+def api_meeting_minutes_catalog():
+    from meeting_minutes_catalog import (
+        MEETING_TYPES, STATUSES, ACTION_STATUSES, ACTION_PRIORITIES,
+        DEFAULT_SPEAKERS, AGENDA_TEMPLATES, get_agenda_template,
+    )
+    mtype = request.args.get('type')
+    return jsonify({
+        'ok': True,
+        'meeting_types': MEETING_TYPES,
+        'statuses': list(STATUSES),
+        'action_statuses': list(ACTION_STATUSES),
+        'action_priorities': list(ACTION_PRIORITIES),
+        'default_speakers': DEFAULT_SPEAKERS,
+        'agenda_template': get_agenda_template(mtype) if mtype else None,
+        'agenda_templates': AGENDA_TEMPLATES,
+    })
+
+
+@app.route('/api/meeting-minutes', methods=['GET'])
+@login_required
+def api_meeting_minutes_list():
+    from meeting_minutes_persistence import serialize_meeting, compute_stats
+    from meeting_minutes_catalog import MEETING_TYPES, STATUSES
+    project_id = request.args.get('project_id', type=int) or get_current_project_id()
+    q = MeetingMinute.query
+    if project_id:
+        q = q.filter_by(project_id=int(project_id))
+    status = request.args.get('status')
+    mtype = request.args.get('meeting_type')
+    if status:
+        q = q.filter_by(status=status)
+    if mtype:
+        q = q.filter_by(meeting_type=mtype)
+    rows = q.order_by(MeetingMinute.meeting_date.desc(), MeetingMinute.id.desc()).all()
+    return jsonify({
+        'ok': True,
+        'meetings': [serialize_meeting(r, ActionItem=MeetingActionItem) for r in rows],
+        'stats': compute_stats(MeetingMinute, MeetingActionItem, project_id),
+        'meeting_types': MEETING_TYPES,
+        'statuses': list(STATUSES),
+        'project_id': project_id,
+        'schedule_url': url_for('schedule_page'),
+    })
+
+
+@app.route('/api/meeting-minutes', methods=['POST'])
+@login_required
+def api_meeting_minutes_create():
+    from meeting_minutes_persistence import serialize_meeting, generate_simple_minutes
+    from meeting_minutes_catalog import get_agenda_template, DEFAULT_SPEAKERS
+    body = request.get_json(silent=True) or {}
+    project_id = body.get('project_id') or get_current_project_id()
+    subject = (body.get('subject') or '').strip()
+    if not project_id or not subject:
+        return jsonify({'error': 'project_id and subject required'}), 400
+    mtype = body.get('meeting_type') or 'other'
+    m = MeetingMinute(
+        project_id=int(project_id),
+        meeting_number=body.get('meeting_number') or _next_meeting_number(project_id),
+        subject=subject,
+        meeting_type=mtype,
+        created_by_id=current_user.id,
+    )
+    if not body.get('agenda'):
+        m.agenda_json = json.dumps(get_agenda_template(mtype))
+    if not body.get('speakers'):
+        m.speakers_json = json.dumps(DEFAULT_SPEAKERS)
+    _apply_meeting_minute(m, body)
+    db.session.add(m)
+    db.session.flush()
+    _save_meeting_action_items(m, body.get('action_items'))
+    if body.get('auto_generate_minutes'):
+        data = serialize_meeting(m, ActionItem=MeetingActionItem)
+        m.minutes_body = generate_simple_minutes(data)
+    db.session.commit()
+    if body.get('push_to_schedule') and m.meeting_date:
+        try:
+            _sync_meeting_to_schedule(m)
+        except Exception:
+            pass
+    return jsonify({'ok': True, 'meeting': serialize_meeting(m, ActionItem=MeetingActionItem)})
+
+
+@app.route('/api/meeting-minutes/<int:meeting_id>', methods=['GET'])
+@login_required
+def api_meeting_minutes_get(meeting_id):
+    from meeting_minutes_persistence import serialize_meeting
+    m = MeetingMinute.query.get_or_404(meeting_id)
+    return jsonify({'ok': True, 'meeting': serialize_meeting(m, ActionItem=MeetingActionItem)})
+
+
+@app.route('/api/meeting-minutes/<int:meeting_id>', methods=['PUT'])
+@login_required
+def api_meeting_minutes_update(meeting_id):
+    from meeting_minutes_persistence import serialize_meeting, generate_simple_minutes
+    m = MeetingMinute.query.get_or_404(meeting_id)
+    body = request.get_json(silent=True) or {}
+    _apply_meeting_minute(m, body)
+    m.updated_at = datetime.utcnow()
+    if 'action_items' in body:
+        _save_meeting_action_items(m, body.get('action_items'))
+    if body.get('auto_generate_minutes'):
+        data = serialize_meeting(m, ActionItem=MeetingActionItem)
+        m.minutes_body = generate_simple_minutes(data)
+    db.session.commit()
+    if body.get('push_to_schedule') or m.schedule_task_id:
+        try:
+            _sync_meeting_to_schedule(m)
+        except Exception:
+            pass
+    return jsonify({'ok': True, 'meeting': serialize_meeting(m, ActionItem=MeetingActionItem)})
+
+
+@app.route('/api/meeting-minutes/<int:meeting_id>', methods=['DELETE'])
+@login_required
+def api_meeting_minutes_delete(meeting_id):
+    m = MeetingMinute.query.get_or_404(meeting_id)
+    if m.schedule_task_id:
+        record = ScheduleData.query.filter_by(project_id=m.project_id).first()
+        if record and record.payload:
+            try:
+                payload = json.loads(record.payload)
+                data = payload.get('data') or []
+                payload['data'] = [t for t in data if str(t.get('id')) != str(m.schedule_task_id)]
+                record.payload = json.dumps(payload)
+            except json.JSONDecodeError:
+                pass
+    try:
+        folder = os.path.join(app.config['UPLOAD_FOLDER'], 'meetings', str(m.project_id), str(m.id))
+        if os.path.isdir(folder):
+            for fn in os.listdir(folder):
+                try:
+                    os.remove(os.path.join(folder, fn))
+                except OSError:
+                    pass
+            try:
+                os.rmdir(folder)
+            except OSError:
+                pass
+    except OSError:
+        pass
+    db.session.delete(m)
+    db.session.commit()
+    return jsonify({'ok': True})
+
+
+@app.route('/api/meeting-minutes/<int:meeting_id>/generate', methods=['POST'])
+@login_required
+def api_meeting_minutes_generate(meeting_id):
+    from meeting_minutes_persistence import serialize_meeting, generate_simple_minutes, extract_action_items_from_text
+    m = MeetingMinute.query.get_or_404(meeting_id)
+    data = serialize_meeting(m, ActionItem=MeetingActionItem)
+    m.minutes_body = generate_simple_minutes(data)
+    if request.args.get('extract_actions') == '1':
+        found = extract_action_items_from_text(m.minutes_body)
+        existing = {a.description for a in m.action_items}
+        for i, raw in enumerate(found):
+            if raw['description'] in existing:
+                continue
+            item = MeetingActionItem(
+                meeting_id=m.id,
+                project_id=m.project_id,
+                item_number=f'AI-{len(m.action_items) + i + 1:02d}',
+                description=raw['description'],
+                status='Open',
+                priority='Normal',
+            )
+            db.session.add(item)
+    m.updated_at = datetime.utcnow()
+    db.session.commit()
+    return jsonify({'ok': True, 'meeting': serialize_meeting(m, ActionItem=MeetingActionItem)})
+
+
+@app.route('/api/meeting-minutes/<int:meeting_id>/recording', methods=['POST'])
+@login_required
+def api_meeting_minutes_upload_recording(meeting_id):
+    m = MeetingMinute.query.get_or_404(meeting_id)
+    if 'file' not in request.files:
+        return jsonify({'error': 'file required'}), 400
+    f = request.files['file']
+    if not f.filename:
+        return jsonify({'error': 'empty filename'}), 400
+    _, ext = os.path.splitext(f.filename)
+    if not ext:
+        ext = '.webm'
+    safe = secure_filename(f'recording{ext.lower()}') or f'recording{ext.lower()}'
+    folder = os.path.join(app.config['UPLOAD_FOLDER'], 'meetings', str(m.project_id), str(m.id))
+    os.makedirs(folder, exist_ok=True)
+    path = os.path.join(folder, safe)
+    f.save(path)
+    m.recording_filename = safe
+    try:
+        m.recording_duration_sec = int(request.form.get('duration_sec') or 0)
+    except (TypeError, ValueError):
+        pass
+    m.updated_at = datetime.utcnow()
+    db.session.commit()
+    return jsonify({
+        'ok': True,
+        'recording_url': url_for('api_meeting_minutes_serve_recording', meeting_id=m.id),
+        'recording_filename': safe,
+        'recording_duration_sec': m.recording_duration_sec or 0,
+    })
+
+
+@app.route('/api/meeting-minutes/<int:meeting_id>/recording', methods=['GET'])
+@login_required
+def api_meeting_minutes_serve_recording(meeting_id):
+    m = MeetingMinute.query.get_or_404(meeting_id)
+    if not m.recording_filename:
+        return jsonify({'error': 'No recording'}), 404
+    folder = os.path.join(app.config['UPLOAD_FOLDER'], 'meetings', str(m.project_id), str(m.id))
+    return send_from_directory(folder, m.recording_filename)
+
+
+@app.route('/api/meeting-minutes/<int:meeting_id>/file-to-documents', methods=['POST'])
+@login_required
+def api_meeting_minutes_file_to_documents(meeting_id):
+    from meeting_minutes_persistence import serialize_meeting, generate_simple_minutes
+    m = MeetingMinute.query.get_or_404(meeting_id)
+    if not m.minutes_body:
+        data = serialize_meeting(m, ActionItem=MeetingActionItem)
+        m.minutes_body = generate_simple_minutes(data)
+    sub_name = (m.meeting_date.strftime('%m-%d-%Y') if m.meeting_date else 'undated')
+    fname = f'{m.meeting_number or "MM"}_{sub_name}_minutes.txt'
+    body_bytes = (m.minutes_body or '').encode('utf-8')
+    doc = _mirror_to_system_subfolder(
+        m.project_id, body_bytes, fname, fname, 'meeting-minutes', sub_name, 'Meeting Minutes',
+        {'meeting_id': m.id, 'meeting_number': m.meeting_number, 'subject': m.subject},
+        is_system_locked=True, uploaded_by_id=current_user.id,
+    )
+    if doc and doc.get('id'):
+        m.document_id = doc['id']
+        db.session.commit()
+        _notify_documents_team(
+            m.project_id,
+            'Meeting minutes filed to Documents',
+            f'"{m.subject}" filed to Documents › Meeting Minutes › {sub_name}.',
+            f'/documents?project_id={m.project_id}',
+        )
+    return jsonify({'ok': True, 'document': doc, 'meeting': serialize_meeting(m, ActionItem=MeetingActionItem)})
+
+
+@app.route('/api/meeting-minutes/push-to-schedule', methods=['POST'])
+@login_required
+def api_meeting_minutes_push_to_schedule():
+    from meeting_minutes_persistence import upsert_meeting_tasks, task_id_for
+    project_id = request.args.get('project_id', type=int) or get_current_project_id()
+    if not project_id:
+        return jsonify({'error': 'project_id required'}), 400
+    body = request.get_json(silent=True) or {}
+    ids = body.get('ids')
+    q = MeetingMinute.query.filter_by(project_id=int(project_id))
+    if ids:
+        q = q.filter(MeetingMinute.id.in_(ids))
+    else:
+        q = q.filter(MeetingMinute.meeting_date.isnot(None))
+    meetings = q.all()
+    if not meetings:
+        return jsonify({'ok': True, 'pushed': 0})
+    record = ScheduleData.query.filter_by(project_id=int(project_id)).first()
+    payload = {}
+    if record and record.payload:
+        try:
+            payload = json.loads(record.payload)
+        except json.JSONDecodeError:
+            payload = {}
+    payload = upsert_meeting_tasks(payload, meetings)
+    for m in meetings:
+        if not m.schedule_task_id:
+            m.schedule_task_id = task_id_for(m)
+    payload_json = json.dumps(payload)
+    if record:
+        record.payload = payload_json
+        record.updated_at = datetime.utcnow()
+    else:
+        db.session.add(ScheduleData(project_id=int(project_id), payload=payload_json))
+    db.session.commit()
+    return jsonify({
+        'ok': True, 'pushed': len(meetings),
+        'schedule_url': url_for('schedule_page') + f'?project_id={project_id}',
+    })
 
 
 @app.route('/pay-applications')
