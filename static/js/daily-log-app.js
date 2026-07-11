@@ -207,6 +207,21 @@
   }
 
   // ---------------- Sections (dynamic) ----------------
+  // Flex-basis / min-width per field-width hint so cells wrap instead of collapsing.
+  const CELL_STYLE = {
+    'flex-1': 'flex:1 1 170px; min-width:150px;',
+    'w-20': 'flex:0 1 84px; min-width:70px;',
+    'w-24': 'flex:0 1 96px; min-width:80px;',
+    'w-28': 'flex:0 1 112px; min-width:96px;',
+    'w-32': 'flex:0 1 130px; min-width:110px;',
+    'w-36': 'flex:0 1 150px; min-width:130px;',
+  };
+
+  function cellStyle(field) {
+    if (field.type === 'company') return 'flex:2 1 220px; min-width:190px;';
+    return CELL_STYLE[field.w] || 'flex:1 1 150px; min-width:130px;';
+  }
+
   function buildSectionsHost() {
     const host = el('dlogSectionsHost');
     let dl = el('dlogCompanyList');
@@ -218,7 +233,7 @@
           <i class="fa-solid fa-chevron-down text-xs text-zinc-500"></i>
         </div>
         <div class="dlog-section-body ${s.always ? '' : 'hidden'}" data-section-body="${s.key}">
-          <div id="dlogRows_${s.key}" class="space-y-2"></div>
+          <div id="dlogRows_${s.key}"></div>
           <button type="button" class="text-xs text-emerald-400 mt-2" data-add-row="${s.key}"><i class="fa-solid fa-plus mr-1"></i>Add ${esc(s.label.split(' ')[0].toLowerCase())}</button>
         </div>
       </div>`).join('');
@@ -230,16 +245,17 @@
   }
 
   function fieldHtml(field, val) {
-    const cls = `dlog-input ${field.w}${field.mHide ? ' dlog-hide-mobile' : ''}`;
+    const cls = `dlog-cell${field.mHide ? ' dlog-hide-mobile' : ''}`;
+    const style = cellStyle(field);
     if (field.type === 'select') {
-      return `<select class="${cls}" data-field="${field.k}">${field.options.map((o) => `<option ${o === val ? 'selected' : ''}>${esc(o)}</option>`).join('')}</select>`;
+      return `<select class="${cls}" style="${style}" data-field="${field.k}">${field.options.map((o) => `<option ${o === val ? 'selected' : ''}>${esc(o)}</option>`).join('')}</select>`;
     }
     if (field.type === 'company') {
-      return `<input type="text" list="dlogCompanyList" class="${cls}" data-field="${field.k}" placeholder="${esc(field.ph)}" value="${esc(val || '')}">`;
+      return `<input type="text" list="dlogCompanyList" class="${cls}" style="${style}" data-field="${field.k}" placeholder="${esc(field.ph)}" value="${esc(val || '')}">`;
     }
     const step = field.step ? ` step="${field.step}"` : '';
     const min = field.type === 'number' ? ' min="0"' : '';
-    return `<input type="${field.type}" class="${cls}" data-field="${field.k}" placeholder="${esc(field.ph)}" value="${esc(val || '')}"${step}${min}>`;
+    return `<input type="${field.type}" class="${cls}" style="${style}" data-field="${field.k}" placeholder="${esc(field.ph)}" value="${esc(val || '')}"${step}${min}>`;
   }
 
   function addRow(key, data) {
@@ -247,10 +263,10 @@
     const container = el(`dlogRows_${key}`);
     if (!section || !container) return;
     const row = document.createElement('div');
-    row.className = 'flex gap-2 items-center';
+    row.className = 'dlog-row';
     row.setAttribute('data-row', '');
     row.innerHTML = section.fields.map((f) => fieldHtml(f, (data || {})[f.k])).join('')
-      + `<button type="button" class="text-red-400 hover:text-red-300 px-2 shrink-0" data-remove-row><i class="fa-solid fa-trash text-xs"></i></button>`;
+      + `<button type="button" class="text-red-400 hover:text-red-300 px-2 shrink-0" style="flex:0 0 24px" data-remove-row title="Remove"><i class="fa-solid fa-trash text-xs"></i></button>`;
     row.querySelector('[data-remove-row]').addEventListener('click', () => { row.remove(); updateCounts(); });
     container.appendChild(row);
     updateCounts();
@@ -304,7 +320,13 @@
     } catch (e) {
       el('dlogVideo').classList.add('hidden');
       const err = el('dlogCamError');
-      err.textContent = 'Camera unavailable or permission denied. You can use Browse to add photos instead.';
+      if (!window.isSecureContext) {
+        err.innerHTML = 'The in-app camera needs a secure (HTTPS) connection. Open Case PM over HTTPS (or localhost), or use <b>Browse</b> to add photos.';
+      } else if (e && e.name === 'NotAllowedError') {
+        err.innerHTML = 'Camera permission was denied. Allow camera access in your browser, or use <b>Browse</b> to add photos.';
+      } else {
+        err.innerHTML = 'Camera unavailable on this device. Use <b>Browse</b> to add photos instead.';
+      }
       err.classList.remove('hidden');
     }
   }
@@ -372,18 +394,38 @@
   function startListening() {
     const SR = global.SpeechRecognition || global.webkitSpeechRecognition;
     const input = el('dlogCamNameInput');
+    const hint = el('dlogCamHint');
     input.classList.remove('hidden');
     input.focus();
     el('dlogCamNameLabel').textContent = 'Stop & Save';
     el('dlogCamName').classList.add('listening');
     state.listening = true;
-    if (!SR) return;
+    if (!window.isSecureContext) {
+      hint.innerHTML = '<span class="text-amber-400">Voice needs a secure (HTTPS) connection. Type the name, then tap Stop &amp; Save.</span>';
+      return;
+    }
+    if (!SR) {
+      hint.innerHTML = '<span class="text-amber-400">Voice isn\'t supported in this browser (try Chrome, Edge, or Safari). Type the name, then tap Stop &amp; Save.</span>';
+      return;
+    }
     try {
-      const rec = new SR(); rec.lang = 'en-US'; rec.interimResults = true; rec.continuous = true;
+      const rec = new SR();
+      rec.lang = 'en-US';
+      rec.interimResults = true;
+      rec.continuous = true;
+      rec.onstart = () => { hint.innerHTML = '<span class="text-emerald-400"><i class="fa-solid fa-microphone"></i> Listening… say the file name, then tap Stop &amp; Save.</span>'; };
       rec.onresult = (event) => { let t = ''; for (let i = 0; i < event.results.length; i++) t += event.results[i][0].transcript; input.value = t.trim(); };
-      rec.onerror = () => {};
-      rec.start(); state.recognition = rec;
-    } catch (_) { /* typing works */ }
+      rec.onerror = (e) => {
+        const msg = e && e.error === 'not-allowed'
+          ? 'Microphone permission denied. Allow mic access, or type the name.'
+          : 'Voice error — type the name, then tap Stop & Save.';
+        hint.innerHTML = `<span class="text-amber-400">${msg}</span>`;
+      };
+      rec.start();
+      state.recognition = rec;
+    } catch (_) {
+      hint.innerHTML = '<span class="text-amber-400">Voice unavailable — type the name, then tap Stop &amp; Save.</span>';
+    }
   }
 
   function stopListening() {
