@@ -321,18 +321,18 @@
                     <div class="section-header px-2 mb-0.5">Main</div>
                 </div>
                 
-                <a href="{{ url_for('dashboard') }}" class="nav-link flex items-center gap-2.5 px-3 py-1.5 rounded-xl mb-0.5 {% if request.endpoint == 'dashboard' %}active{% endif %}">
+                <a href="{{ url_for('dashboard') }}" data-nav-module="dashboard" class="nav-link flex items-center gap-2.5 px-3 py-1.5 rounded-xl mb-0.5 {% if request.endpoint == 'dashboard' %}active{% endif %}">
                     <i class="fa-solid fa-home w-5"></i>
                     <span>Dashboard</span>
                 </a>
                 
-                <a href="{{ url_for('projects_page') }}" class="nav-link nav-staff-only flex items-center gap-2.5 px-3 py-1.5 rounded-xl mb-0.5 {% if request.endpoint == 'projects_page' %}active{% endif %}">
+                <a href="{{ url_for('projects_page') }}" data-nav-module="projects" class="nav-link nav-staff-only flex items-center gap-2.5 px-3 py-1.5 rounded-xl mb-0.5 {% if request.endpoint == 'projects_page' %}active{% endif %}">
                     <i class="fa-solid fa-folder w-5"></i>
                     <span>Projects</span>
                 </a>
 
                 <!-- NEW: Email -->
-                <a href="{{ url_for('email_page') }}" class="nav-link flex items-center gap-2.5 px-3 py-1.5 rounded-xl mb-0.5 {% if request.endpoint == 'email_page' %}active{% endif %}">
+                <a href="{{ url_for('email_page') }}" data-nav-module="email" class="nav-link flex items-center gap-2.5 px-3 py-1.5 rounded-xl mb-0.5 {% if request.endpoint == 'email_page' %}active{% endif %}">
                     <i class="fa-solid fa-envelope w-5"></i>
                     <span>Email</span>
                 </a>
@@ -342,7 +342,7 @@
                     <div class="section-header px-2 mb-0.5">Core Modules</div>
                 </div>
 
-                <a href="{{ url_for('daily_log', project_id=active_project.id) if active_project else url_for('daily_log') }}" class="nav-link nav-staff-only flex items-center gap-2.5 px-3 py-1.5 rounded-xl mb-0.5 {% if request.endpoint == 'daily_log' %}active{% endif %}">
+                <a href="{{ url_for('daily_log', project_id=active_project.id) if active_project else url_for('daily_log') }}" data-nav-module="daily_log" class="nav-link nav-staff-only flex items-center gap-2.5 px-3 py-1.5 rounded-xl mb-0.5 {% if request.endpoint == 'daily_log' %}active{% endif %}">
                     <i class="fa-solid fa-clipboard-list w-5"></i>
                     <span>Daily Log</span>
                 </a>
@@ -357,17 +357,17 @@
                     <span>Schedule</span>
                 </a>
 
-                <a href="{{ url_for('rfis_page', project_id=active_project.id) if active_project else url_for('rfis_page') }}" class="nav-link flex items-center gap-2.5 px-3 py-1.5 rounded-xl mb-0.5 {% if request.endpoint == 'rfis_page' %}active{% endif %}">
+                <a href="{{ url_for('rfis_page', project_id=active_project.id) if active_project else url_for('rfis_page') }}" data-nav-module="rfis" class="nav-link flex items-center gap-2.5 px-3 py-1.5 rounded-xl mb-0.5 {% if request.endpoint == 'rfis_page' %}active{% endif %}">
                     <i class="fa-solid fa-question-circle w-5"></i>
                     <span>RFIs</span>
                 </a>
 
-                <a href="{{ url_for('change_orders_page', project_id=active_project.id) if active_project else url_for('change_orders_page') }}" class="nav-link nav-hide-sub flex items-center gap-2.5 px-3 py-1.5 rounded-xl mb-0.5 {% if request.endpoint == 'change_orders_page' %}active{% endif %}">
+                <a href="{{ url_for('change_orders_page', project_id=active_project.id) if active_project else url_for('change_orders_page') }}" data-nav-module="change_orders" class="nav-link nav-hide-sub flex items-center gap-2.5 px-3 py-1.5 rounded-xl mb-0.5 {% if request.endpoint == 'change_orders_page' %}active{% endif %}">
                     <i class="fa-solid fa-exchange-alt w-5"></i>
                     <span>Change Orders</span>
                 </a>
 
-                <a href="{{ url_for('submittals_page', project_id=active_project.id) if active_project else url_for('submittals_page') }}" class="nav-link flex items-center gap-2.5 px-3 py-1.5 rounded-xl mb-0.5 {% if request.endpoint == 'submittals_page' %}active{% endif %}">
+                <a href="{{ url_for('submittals_page', project_id=active_project.id) if active_project else url_for('submittals_page') }}" data-nav-module="submittals" class="nav-link flex items-center gap-2.5 px-3 py-1.5 rounded-xl mb-0.5 {% if request.endpoint == 'submittals_page' %}active{% endif %}">
                     <i class="fa-solid fa-file-upload w-5"></i>
                     <span>Submittals</span>
                 </a>
@@ -387,7 +387,7 @@
                     <div class="section-header px-2 mb-0.5">Financial</div>
                 </div>
 
-                <a href="{{ url_for('budget_page', project_id=active_project.id) if active_project else url_for('budget_page') }}" class="nav-link nav-staff-only flex items-center gap-2.5 px-3 py-1.5 rounded-xl mb-0.5 {% if request.endpoint == 'budget_page' %}active{% endif %}">
+                <a href="{{ url_for('budget_page', project_id=active_project.id) if active_project else url_for('budget_page') }}" data-nav-module="budget" class="nav-link nav-staff-only flex items-center gap-2.5 px-3 py-1.5 rounded-xl mb-0.5 {% if request.endpoint == 'budget_page' %}active{% endif %}">
                     <i class="fa-solid fa-chart-pie w-5"></i>
                     <span>Budget</span>
                 </a>
@@ -397,7 +397,7 @@
                     <span>Forecast</span>
                 </a>
 
-                <a href="{{ url_for('commitments_page', project_id=active_project.id) if active_project else url_for('commitments_page') }}" class="nav-link nav-staff-only flex items-center gap-2.5 px-3 py-1.5 rounded-xl mb-0.5 {% if request.endpoint == 'commitments_page' %}active{% endif %}">
+                <a href="{{ url_for('commitments_page', project_id=active_project.id) if active_project else url_for('commitments_page') }}" data-nav-module="commitments" class="nav-link nav-staff-only flex items-center gap-2.5 px-3 py-1.5 rounded-xl mb-0.5 {% if request.endpoint == 'commitments_page' %}active{% endif %}">
                     <i class="fa-solid fa-handshake w-5"></i>
                     <span>Commitments</span>
                 </a>
@@ -406,7 +406,7 @@
                     <div class="section-header px-2 mb-0.5">Billing</div>
                 </div>
 
-                <a href="{{ url_for('pay_applications_page', project_id=active_project.id) if active_project else url_for('pay_applications_page') }}" class="nav-link nav-hide-architect flex items-center gap-2.5 px-3 py-1.5 rounded-xl mb-0.5 {% if request.endpoint == 'pay_applications_page' %}active{% endif %}">
+                <a href="{{ url_for('pay_applications_page', project_id=active_project.id) if active_project else url_for('pay_applications_page') }}" data-nav-module="pay_applications" class="nav-link nav-hide-architect flex items-center gap-2.5 px-3 py-1.5 rounded-xl mb-0.5 {% if request.endpoint == 'pay_applications_page' %}active{% endif %}">
                     <i class="fa-solid fa-file-invoice-dollar w-5"></i>
                     <span>Pay Applications</span>
                 </a>
@@ -455,12 +455,12 @@
                     <span>Companies / Vendors</span>
                 </a>
 
-                <a href="{{ url_for('user_management') }}" class="nav-link nav-staff-only flex items-center gap-2.5 px-3 py-1.5 rounded-xl mb-0.5 {% if request.endpoint == 'user_management' %}active{% endif %}">
+                <a href="{{ url_for('user_management') }}" data-nav-module="users" class="nav-link nav-staff-only flex items-center gap-2.5 px-3 py-1.5 rounded-xl mb-0.5 {% if request.endpoint == 'user_management' %}active{% endif %}">
                     <i class="fa-solid fa-users w-5"></i>
                     <span>User Management</span>
                 </a>
 
-                <a href="{{ url_for('program_settings') }}" class="nav-link nav-staff-only flex items-center gap-2.5 px-3 py-1.5 rounded-xl mb-0.5 {% if request.endpoint == 'program_settings' %}active{% endif %}">
+                <a href="{{ url_for('program_settings') }}" data-nav-module="program_settings" class="nav-link nav-staff-only flex items-center gap-2.5 px-3 py-1.5 rounded-xl mb-0.5 {% if request.endpoint == 'program_settings' %}active{% endif %}">
                     <i class="fa-solid fa-cog w-5"></i>
                     <span>Program Settings</span>
                 </a>
@@ -757,6 +757,18 @@
     </dialog>
 
     <script src="{{ url_for('static', filename='js/activity-log.js') }}"></script>
+    {% if current_user.is_authenticated %}
+    <script>
+    (function () {
+        const allowed = {{ allowed_modules|tojson }};
+        if (!allowed || Object.keys(allowed).length === 0) return;
+        document.querySelectorAll('[data-nav-module]').forEach(el => {
+            const mod = el.getAttribute('data-nav-module');
+            if (mod && allowed[mod] === false) el.classList.add('hidden');
+        });
+    })();
+    </script>
+    {% endif %}
     <!-- ==================== FINAL ENHANCEMENTS & VERIFICATION ==================== -->
     <script>
         // Force dark mode

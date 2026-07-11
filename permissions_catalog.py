@@ -166,6 +166,7 @@ def _set_modules(perms_dict, **overrides):
             perms_dict[key] = {'access': val[0], 'approve': val[1]}
         else:
             perms_dict[key] = {'access': val, 'approve': perms_dict.get(key, {}).get('approve', 'none')}
+    return perms_dict
 
 
 ROLE_TEMPLATES = {
