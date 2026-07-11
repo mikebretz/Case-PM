@@ -1281,6 +1281,11 @@ function normalizeProjectNumberField() {
 }
 
 async function validateProjectNumber(showAlert) {
+    if (typeof CasePMDeveloperUnlock !== 'undefined' && CasePMDeveloperUnlock.isActive()) {
+        const errEl = document.getElementById('projectNumberError');
+        if (errEl) errEl.classList.add('hidden');
+        return true;
+    }
     const el = document.getElementById('fld_number');
     const errEl = document.getElementById('projectNumberError');
     if (!el) return true;

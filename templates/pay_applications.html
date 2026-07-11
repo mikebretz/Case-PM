@@ -575,6 +575,13 @@ let submissionDeadlineDay = casepmStore.getItem('submissionDeadlineDay') || '';
 let allowZeroDollarSubPayApps = casepmStore.getItem('allowZeroDollarSubPayApps') === 'true';
 let requireAllSubPayAppsBeforeG702Submit = casepmStore.getItem('requireAllSubPayAppsBeforeG702Submit') !== 'false'; // Default ON (true)
 
+    function devUnlockActive() {
+        return typeof CasePMDeveloperUnlock !== 'undefined' && CasePMDeveloperUnlock.isActive();
+    }
+    function contractorSovIsLocked() {
+        return casepmStore.getItem('contractorSOVLocked') === 'true' && !devUnlockActive();
+    }
+
 // Main Contractor (GC) Lien Waiver for current period (separate from Sub waivers)
 let mainLienWaiver = JSON.parse(casepmStore.getItem('mainLienWaiver') || '{}'); // { periodNumber: { filename, dataUrl, uploadedDate } }
 
@@ -3911,7 +3918,7 @@ let mainLienWaiver = JSON.parse(casepmStore.getItem('mainLienWaiver') || '{}'); 
         `;
 
         // Workflow bar - with Lock/Unlock for Admin control
-        const isLocked = casepmStore.getItem('contractorSOVLocked') === 'true';
+        const isLocked = contractorSovIsLocked();
         let lockBtnHTML = '';
         if (isLocked) {
             lockBtnHTML = `<button onclick="unlockContractorSOV()" class="px-4 py-2 bg-amber-600 hover:bg-amber-500 rounded-md text-sm font-medium flex items-center gap-2 ml-auto">
@@ -4208,7 +4215,7 @@ let mainLienWaiver = JSON.parse(casepmStore.getItem('mainLienWaiver') || '{}'); 
     }
 
     function showAddContractorSOVLine() {
-        const isLocked = casepmStore.getItem('contractorSOVLocked') === 'true';
+        const isLocked = contractorSovIsLocked();
         // Allow modal to open even when locked, but fields will be disabled except Notes
         const modal = document.getElementById('contractorSOVModal');
         const content = document.getElementById('contractorSOVModalContent');
@@ -4255,7 +4262,7 @@ let mainLienWaiver = JSON.parse(casepmStore.getItem('mainLienWaiver') || '{}'); 
     function editContractorSOVLine(id) {
         const line = contractorSOV.find(l => l.id === id);
         if (!line) return;
-        const isLocked = casepmStore.getItem('contractorSOVLocked') === 'true';
+        const isLocked = contractorSovIsLocked();
         const modal = document.getElementById('contractorSOVModal');
         const content = document.getElementById('contractorSOVModalContent');
         content.innerHTML = `
@@ -5384,7 +5391,7 @@ let mainLienWaiver = JSON.parse(casepmStore.getItem('mainLienWaiver') || '{}'); 
         const isApproved = statusData.status === 'Approved';
         const isUnlocked = statusData.status === 'Draft' && statusData.unlockedBy;
         // When adding a new line (!lineId), always allow editing structure (button is hidden when Approved)
-        const canEditStructure = !lineId || !isApproved || isUnlocked;
+        const canEditStructure = devUnlockActive() || !lineId || !isApproved || isUnlocked;
 
         let line = null;
         if (lineId && subcontractorSOV[companyId]) {

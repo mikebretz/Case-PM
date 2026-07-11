@@ -223,6 +223,10 @@
         <form onsubmit="CasePMChangeOrders.saveModal(event)">
             <input type="hidden" id="modalMode" value="co">
             <input type="hidden" id="modalRecordId" value="">
+            <div id="modalNumberRow" class="hidden md:col-span-2">
+                <label class="block text-sm text-red-400 mb-1">CO / PCO Number <span class="text-[10px] text-zinc-500">(unlock mode)</span></label>
+                <input type="text" id="modalNumber" class="w-full bg-zinc-800 border border-red-900/50 rounded-md px-4 py-2 text-sm font-mono" placeholder="e.g. CO-014">
+            </div>
             <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
                 <div class="md:col-span-2">
                     <label class="block text-sm text-zinc-400 mb-1">Title <span class="text-red-400">*</span></label>

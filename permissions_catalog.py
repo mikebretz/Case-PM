@@ -274,11 +274,6 @@ ROLE_TEMPLATES = {
         'description': 'Read-only across permitted modules',
         'modules': default_module_perms('view', 'none'),
     },
-    'Developer': {
-        'portal': 'staff',
-        'description': 'Technical override access (Developer Console)',
-        'modules': default_module_perms('admin', 'approve_reject'),
-    },
 }
 
 

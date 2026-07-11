@@ -292,6 +292,14 @@ def apply_co_fields(co, data):
         co.linked_rfi_id = int(data['linked_rfi_id']) if data['linked_rfi_id'] else None
     if data.get('linked_commitment_ref') is not None:
         co.linked_commitment_ref = data['linked_commitment_ref']
+    if data.get('date') is not None:
+        from datetime import datetime
+        raw = data['date']
+        if isinstance(raw, str) and raw:
+            try:
+                co.date = datetime.strptime(raw[:10], '%Y-%m-%d').date()
+            except ValueError:
+                pass
 
 
 def apply_pco_fields(pco, data):

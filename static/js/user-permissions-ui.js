@@ -71,7 +71,7 @@
         </div>
         <div class="md:col-span-2 flex flex-wrap gap-2 items-end">
           <span class="text-[10px] uppercase text-zinc-500 w-full">Role templates</span>
-          ${Object.keys(catalog.role_templates || {}).map(role =>
+          ${Object.keys(catalog.role_templates || {}).filter(role => role !== 'Developer').map(role =>
             `<button type="button" class="px-2.5 py-1 text-xs bg-zinc-700 hover:bg-zinc-600 rounded-lg" onclick="CasePMPermissionsUI.applyTemplate('${esc(role)}')">${esc(role)}</button>`
           ).join('')}
           <button type="button" class="px-2.5 py-1 text-xs bg-zinc-800 border border-zinc-600 rounded-lg" onclick="CasePMPermissionsUI.setAllAccess('none')">Clear all</button>
