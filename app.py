@@ -345,6 +345,8 @@ class DailyLog(db.Model):
     work_performed = db.Column(db.Text)
     notes = db.Column(db.Text)
     attachments_json = db.Column(db.Text)
+    details_json = db.Column(db.Text)
+    status = db.Column(db.String(30), default='Submitted')
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
 
 
@@ -1758,9 +1760,94 @@ def project_detail(project_id):
 @app.route('/daily-log')
 @login_required
 def daily_log():
-    logs = query_for_active_project(DailyLog).order_by(DailyLog.date.desc()).limit(30).all()
     projects = Project.query.order_by(Project.name).all()
-    return render_template('daily_log.html', logs=logs, projects=projects)
+    active = get_active_project()
+    return render_template('daily_log.html', projects=projects, active_project=active)
+
+
+def _daily_log_url_helpers():
+    return {
+        'doc': lambda doc_id: url_for('api_documents_download', doc_id=doc_id),
+        'attachment': lambda log_id, filename: url_for('serve_daily_log_attachment', log_id=log_id, filename=filename),
+    }
+
+
+@app.route('/api/daily-logs', methods=['GET'])
+@login_required
+def api_daily_logs_list():
+    from daily_log_persistence import serialize_log, compute_stats
+    project_id = request.args.get('project_id', type=int) or get_current_project_id()
+    q = DailyLog.query
+    if project_id:
+        q = q.filter_by(project_id=int(project_id))
+    logs = q.order_by(DailyLog.date.desc(), DailyLog.id.desc()).limit(200).all()
+    items = [serialize_log(l, ManpowerEntry, EquipmentEntry, User=User, summary=True) for l in logs]
+    stats = compute_stats(DailyLog, ManpowerEntry, project_id)
+    return jsonify({'ok': True, 'logs': items, 'stats': stats, 'project_id': project_id})
+
+
+@app.route('/api/daily-logs', methods=['POST'])
+@login_required
+def api_daily_logs_create():
+    from daily_log_persistence import build_details, sync_manpower, sync_equipment, serialize_log
+    body = request.get_json(silent=True) or {}
+    project_id = body.get('project_id') or get_current_project_id()
+    date_str = body.get('date')
+    if not project_id or not date_str:
+        return jsonify({'error': 'project_id and date required'}), 400
+    try:
+        log_date = datetime.strptime(date_str, '%Y-%m-%d').date()
+    except (TypeError, ValueError):
+        return jsonify({'error': 'invalid date'}), 400
+
+    log = DailyLog(
+        project_id=int(project_id),
+        user_id=current_user.id,
+        date=log_date,
+        weather=body.get('weather'),
+        work_performed=body.get('work_performed'),
+        notes=body.get('notes'),
+        status=body.get('status') or 'Submitted',
+        details_json=json.dumps(build_details(body)),
+    )
+    db.session.add(log)
+    db.session.flush()
+    sync_manpower(db, ManpowerEntry, log.id, body.get('manpower'))
+    sync_equipment(db, EquipmentEntry, log.id, body.get('equipment'))
+    db.session.commit()
+    return jsonify({'ok': True, 'log': serialize_log(log, ManpowerEntry, EquipmentEntry, User=User, url_helpers=_daily_log_url_helpers())})
+
+
+@app.route('/api/daily-logs/<int:log_id>', methods=['PUT'])
+@login_required
+def api_daily_logs_update(log_id):
+    from daily_log_persistence import build_details, sync_manpower, sync_equipment, serialize_log
+    log = DailyLog.query.get_or_404(log_id)
+    body = request.get_json(silent=True) or {}
+    if body.get('date'):
+        try:
+            log.date = datetime.strptime(body['date'], '%Y-%m-%d').date()
+        except (TypeError, ValueError):
+            return jsonify({'error': 'invalid date'}), 400
+    for field in ('weather', 'work_performed', 'notes', 'status'):
+        if field in body:
+            setattr(log, field, body[field])
+    log.details_json = json.dumps(build_details(body))
+    sync_manpower(db, ManpowerEntry, log.id, body.get('manpower'))
+    sync_equipment(db, EquipmentEntry, log.id, body.get('equipment'))
+    db.session.commit()
+    return jsonify({'ok': True, 'log': serialize_log(log, ManpowerEntry, EquipmentEntry, User=User, url_helpers=_daily_log_url_helpers())})
+
+
+@app.route('/api/daily-logs/<int:log_id>', methods=['DELETE'])
+@login_required
+def api_daily_logs_delete(log_id):
+    log = DailyLog.query.get_or_404(log_id)
+    ManpowerEntry.query.filter_by(daily_log_id=log.id).delete()
+    EquipmentEntry.query.filter_by(daily_log_id=log.id).delete()
+    db.session.delete(log)
+    db.session.commit()
+    return jsonify({'ok': True})
 
 
 @app.route('/daily-log/create', methods=['POST'])
@@ -1809,7 +1896,21 @@ def api_daily_log_upload_attachment(log_id):
     f = request.files['file']
     if not f.filename:
         return jsonify({'error': 'empty filename'}), 400
-    safe = secure_filename(f.filename)
+    custom_name = (request.form.get('name') or '').strip()
+    kind = (request.form.get('kind') or '').strip()
+    _, ext = os.path.splitext(f.filename)
+    if custom_name:
+        base = secure_filename(custom_name) or 'photo'
+        display_name = custom_name if custom_name.lower().endswith(ext.lower()) else f'{custom_name}{ext}'
+        safe = f'{base}{ext.lower()}'
+        # Avoid collisions with existing files in the folder.
+        folder = os.path.join(app.config['UPLOAD_FOLDER'], 'daily_logs', str(log_id))
+        os.makedirs(folder, exist_ok=True)
+        if os.path.exists(os.path.join(folder, safe)):
+            safe = f'{base}-{int(datetime.utcnow().timestamp())}{ext.lower()}'
+    else:
+        safe = secure_filename(f.filename)
+        display_name = f.filename
     folder = os.path.join(app.config['UPLOAD_FOLDER'], 'daily_logs', str(log_id))
     os.makedirs(folder, exist_ok=True)
     path = os.path.join(folder, safe)
@@ -1817,7 +1918,8 @@ def api_daily_log_upload_attachment(log_id):
     attachments = _parse_json(log.attachments_json, [])
     attachments.append({
         'filename': safe,
-        'original_name': f.filename,
+        'original_name': display_name,
+        'kind': kind or None,
         'uploaded_at': datetime.utcnow().isoformat(),
         'uploaded_by': f'{current_user.first_name} {current_user.last_name}'.strip(),
     })
@@ -3845,6 +3947,8 @@ def _ensure_module_attachment_columns():
     migrations = [
         ('submittal', 'attachments_json', 'TEXT'),
         ('daily_log', 'attachments_json', 'TEXT'),
+        ('daily_log', 'details_json', 'TEXT'),
+        ('daily_log', 'status', 'VARCHAR(30)'),
     ]
     for table, column, typedef in migrations:
         if table not in tables:
@@ -5469,25 +5573,14 @@ def api_submittal_list_attachments(submittal_id):
 @app.route('/api/daily-logs/<int:log_id>', methods=['GET'])
 @login_required
 def api_daily_log_get(log_id):
-    from rfi_persistence import _parse_json
+    from daily_log_persistence import serialize_log
     log = DailyLog.query.get_or_404(log_id)
-    attachments = _parse_json(log.attachments_json, [])
-    for a in attachments:
-        if a.get('document_id'):
-            a['url'] = url_for('api_documents_download', doc_id=a['document_id'])
-        elif a.get('filename'):
-            a['url'] = url_for('serve_daily_log_attachment', log_id=log_id, filename=a.get('filename', ''))
     return jsonify({
         'ok': True,
-        'log': {
-            'id': log.id,
-            'project_id': log.project_id,
-            'date': log.date.isoformat() if log.date else None,
-            'weather': log.weather,
-            'work_performed': log.work_performed,
-            'notes': log.notes,
-            'attachments': attachments,
-        },
+        'log': serialize_log(
+            log, ManpowerEntry, EquipmentEntry, User=User,
+            url_helpers=_daily_log_url_helpers(),
+        ),
     })
 
 
