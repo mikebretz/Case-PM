@@ -1,758 +1,324 @@
 {% extends "base.html" %}
 
 {% block content %}
-<div class="p-8 max-w-[1700px] mx-auto">
-
-    <!-- Page Header -->
-    <div class="flex items-center justify-between mb-8">
-        <div>
-            <h1 class="text-3xl font-semibold tracking-tight">Daily Log</h1>
-            <p class="text-zinc-400 mt-1">Daily construction reports with manpower, equipment & photos</p>
-        </div>
-
-        <button onclick="showCreateDailyLogModal()"
-                class="flex items-center gap-2 px-6 py-2.5 bg-emerald-600 hover:bg-emerald-500 transition-colors rounded-2xl text-sm font-medium">
-            <i class="fa-solid fa-plus mr-1"></i>
-            <span>New Daily Log</span>
-        </button>
-    </div>
-
-    <!-- Summary Cards -->
-    <div class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 xl:grid-cols-6 gap-4 mb-8">
-        
-        <div class="bg-zinc-900 border border-zinc-800 rounded-3xl p-5">
-            <div class="text-sm text-zinc-400">Total Reports</div>
-            <div class="text-3xl font-semibold mt-1">{{ logs|length if logs else 0 }}</div>
-        </div>
-
-        <div class="bg-zinc-900 border border-zinc-800 rounded-3xl p-5">
-            <div class="text-sm text-zinc-400">This Week</div>
-            <div class="text-3xl font-semibold mt-1 text-emerald-400">18</div>
-        </div>
-
-        <div class="bg-zinc-900 border border-zinc-800 rounded-3xl p-5">
-            <div class="text-sm text-zinc-400">Total Man Hours</div>
-            <div class="text-3xl font-semibold mt-1">1,284</div>
-        </div>
-
-        <div class="bg-zinc-900 border border-zinc-800 rounded-3xl p-5">
-            <div class="text-sm text-zinc-400">Avg. Crew Size</div>
-            <div class="text-3xl font-semibold mt-1">14</div>
-        </div>
-
-        <div class="bg-zinc-900 border border-zinc-800 rounded-3xl p-5">
-            <div class="text-sm text-zinc-400">Photos Uploaded</div>
-            <div class="text-3xl font-semibold mt-1 text-emerald-400">312</div>
-        </div>
-
-        <div class="bg-zinc-900 border border-zinc-800 rounded-3xl p-5">
-            <div class="text-sm text-zinc-400">Open Safety Items</div>
-            <div class="text-3xl font-semibold mt-1 text-yellow-400">7</div>
-        </div>
-    </div>
-
-    <!-- Filters -->
-    <div class="flex flex-col lg:flex-row gap-3 mb-4">
-        <div class="flex-1">
-            <input type="text" id="dailyLogSearch" placeholder="Search date, weather, work performed..." 
-                   onkeyup="filterDailyLogs()"
-                   class="w-full bg-zinc-900 border border-zinc-700 rounded-2xl px-4 py-2.5 text-sm">
-        </div>
-
-        <div>
-            <input type="date" id="dailyLogDateFilter" onchange="filterDailyLogs()"
-                   class="bg-zinc-900 border border-zinc-700 rounded-2xl px-4 py-2.5 text-sm">
-        </div>
-
-        <div>
-            <select id="dailyLogProjectFilter" onchange="filterDailyLogs()"
-                    class="bg-zinc-900 border border-zinc-700 rounded-2xl px-4 py-2.5 text-sm min-w-[180px]">
-                <option value="">All Projects</option>
-                {% for project in projects %}
-                <option value="{{ project.id }}">{{ project.name }}</option>
-                {% endfor %}
-            </select>
-        </div>
-
-        <div>
-            <select id="dailyLogStatusFilter" onchange="filterDailyLogs()"
-                    class="bg-zinc-900 border border-zinc-700 rounded-2xl px-4 py-2.5 text-sm min-w-[140px]">
-                <option value="">All Statuses</option>
-                <option value="Draft">Draft</option>
-                <option value="Submitted">Submitted</option>
-                <option value="Reviewed">Reviewed</option>
-            </select>
-        </div>
-    </div>
-
-    <!-- Main Daily Logs Table -->
-    <div class="bg-zinc-900 border border-zinc-800 rounded-3xl overflow-hidden">
-        <table class="w-full text-sm">
-            <thead>
-                <tr class="bg-zinc-950 border-b border-zinc-800">
-                    <th class="px-6 py-4 text-left font-medium text-zinc-400 w-36">Date</th>
-                    <th class="px-6 py-4 text-left font-medium text-zinc-400">Project</th>
-                    <th class="px-6 py-4 text-left font-medium text-zinc-400">Weather</th>
-                    <th class="px-6 py-4 text-center font-medium text-zinc-400 w-24">Crew</th>
-                    <th class="px-6 py-4 text-center font-medium text-zinc-400 w-24">Man Hours</th>
-                    <th class="px-6 py-4 text-left font-medium text-zinc-400">Work Performed</th>
-                    <th class="px-6 py-4 text-center font-medium text-zinc-400 w-20">Photos</th>
-                    <th class="px-6 py-4 text-center font-medium text-zinc-400 w-28">Status</th>
-                    <th class="px-6 py-4 text-center font-medium text-zinc-400 w-32">Actions</th>
-                </tr>
-            </thead>
-            <tbody id="dailyLogTableBody">
-                <!-- Rows will be populated here -->
-                {% if logs %}
-                    {% for log in logs %}
-                    <tr class="border-b border-zinc-800 hover:bg-zinc-950 transition-colors">
-                        <td class="px-6 py-4 font-medium whitespace-nowrap">
-                            {{ log.date.strftime('%b %d, %Y') if log.date else '—' }}
-                        </td>
-                        <td class="px-6 py-4 text-zinc-300">
-                            {{ log.project.name if log.project else '—' }}
-                        </td>
-                        <td class="px-6 py-4 text-zinc-300">
-                            {{ log.weather or '—' }}
-                        </td>
-                        <td class="px-6 py-4 text-center text-zinc-300">
-                            {{ log.total_personnel or '—' }}
-                        </td>
-                        <td class="px-6 py-4 text-center text-zinc-300">
-                            {{ log.total_man_hours or '—' }}
-                        </td>
-                        <td class="px-6 py-4 text-zinc-300 max-w-[420px] truncate">
-                            {{ log.work_performed[:100] + '...' if log.work_performed and log.work_performed|length > 100 else log.work_performed or '—' }}
-                        </td>
-                        <td class="px-6 py-4 text-center">
-                            <span class="inline-flex items-center justify-center px-2.5 py-1 text-xs bg-zinc-800 rounded-xl">
-                                {{ log.photo_count or 0 }}
-                            </span>
-                        </td>
-                        <td class="px-6 py-4 text-center">
-                            {% if log.status == 'Submitted' %}
-                                <span class="px-3 py-1 text-xs rounded-full bg-emerald-500/10 text-emerald-400">Submitted</span>
-                            {% elif log.status == 'Reviewed' %}
-                                <span class="px-3 py-1 text-xs rounded-full bg-blue-500/10 text-blue-400">Reviewed</span>
-                            {% else %}
-                                <span class="px-3 py-1 text-xs rounded-full bg-zinc-700 text-zinc-400">Draft</span>
-                            {% endif %}
-                        </td>
-                        <td class="px-6 py-4">
-                            <div class="flex items-center justify-center gap-2">
-                                <button onclick="viewDailyLog({{ log.id }})"
-                                        class="px-3 py-1.5 text-xs bg-zinc-800 hover:bg-zinc-700 rounded-xl transition-colors">
-                                    View
-                                </button>
-                                <button onclick="editDailyLog({{ log.id }})"
-                                        class="px-3 py-1.5 text-xs bg-zinc-800 hover:bg-zinc-700 rounded-xl transition-colors">
-                                    Edit
-                                </button>
-                            </div>
-                        </td>
-                    </tr>
-                    {% endfor %}
-                {% else %}
-                    <tr>
-                        <td colspan="9" class="px-6 py-16 text-center">
-                            <div class="flex flex-col items-center justify-center text-zinc-500">
-                                <i class="fa-solid fa-clipboard-list text-5xl mb-4"></i>
-                                <div class="text-lg font-medium text-zinc-400">No daily logs found</div>
-                                <p class="text-sm mt-1">Click the "New Daily Log" button to create the first report.</p>
-                            </div>
-                        </td>
-                    </tr>
-                {% endif %}
-            </tbody>
-        </table>
-    </div>
-
-</div>
-<!-- ==================== CREATE DAILY LOG MODAL ==================== -->
-<div id="createDailyLogModal" class="hidden fixed inset-0 bg-black/70 flex items-center justify-center z-50">
-    <div class="bg-zinc-900 border border-zinc-700 rounded-3xl w-full max-w-4xl mx-4 max-h-[90vh] flex flex-col">
-        
-        <!-- Modal Header -->
-        <div class="flex items-center justify-between px-6 py-4 border-b border-zinc-700 flex-shrink-0">
-            <h3 class="text-xl font-semibold">Create New Daily Log</h3>
-            <button onclick="closeCreateDailyLogModal()" class="text-zinc-400 hover:text-white text-2xl leading-none">
-                &times;
-            </button>
-        </div>
-
-        <form id="createDailyLogForm" method="POST" action="{{ url_for('create_daily_log') }}" class="flex flex-col flex-1 overflow-hidden">
-            
-            <div class="p-6 overflow-auto flex-1 space-y-6">
-
-                <!-- Project + Date + Weather -->
-                <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
-                    <div>
-                        <label class="block text-sm text-zinc-400 mb-1.5">Project</label>
-                        <select name="project_id" required class="w-full bg-zinc-800 border border-zinc-700 rounded-2xl px-4 py-2.5 text-sm">
-                            {% for project in projects %}
-                            <option value="{{ project.id }}">{{ project.name }}</option>
-                            {% endfor %}
-                        </select>
-                    </div>
-                    <div>
-                        <label class="block text-sm text-zinc-400 mb-1.5">Date</label>
-                        <input type="date" name="date" value="{{ today }}" required 
-                               class="w-full bg-zinc-800 border border-zinc-700 rounded-2xl px-4 py-2.5 text-sm">
-                    </div>
-                    <div>
-                        <label class="block text-sm text-zinc-400 mb-1.5">Weather</label>
-                        <input type="text" name="weather" placeholder="Sunny, 68°F" 
-                               class="w-full bg-zinc-800 border border-zinc-700 rounded-2xl px-4 py-2.5 text-sm">
-                    </div>
-                </div>
-
-                <!-- Work Performed -->
-                <div>
-                    <label class="block text-sm text-zinc-400 mb-1.5">Work Performed Today</label>
-                    <textarea name="work_performed" rows="4" required
-                              class="w-full bg-zinc-800 border border-zinc-700 rounded-2xl px-4 py-3 text-sm resize-y"
-                              placeholder="Describe the main construction activities completed today..."></textarea>
-                </div>
-
-                <!-- Notes -->
-                <div>
-                    <label class="block text-sm text-zinc-400 mb-1.5">Additional Notes / Issues / Observations</label>
-                    <textarea name="notes" rows="3"
-                              class="w-full bg-zinc-800 border border-zinc-700 rounded-2xl px-4 py-3 text-sm resize-y"
-                              placeholder="Any delays, safety concerns, visitor notes, or other observations..."></textarea>
-                </div>
-
-                <!-- MANPOWER SECTION -->
-                <div>
-                    <div class="flex items-center justify-between mb-2">
-                        <label class="text-sm text-zinc-400">Manpower</label>
-                        <button type="button" onclick="addManpowerRow()"
-                                class="text-xs px-3 py-1.5 bg-zinc-800 hover:bg-zinc-700 rounded-xl flex items-center gap-1">
-                            <i class="fa-solid fa-plus text-xs"></i>
-                            <span>Add Row</span>
-                        </button>
-                    </div>
-                    <div class="bg-zinc-950 border border-zinc-800 rounded-2xl p-3">
-                        <table class="w-full text-sm" id="manpowerTable">
-                            <thead>
-                                <tr class="text-zinc-400 text-xs">
-                                    <th class="text-left pb-2 px-2">Company / Subcontractor</th>
-                                    <th class="text-center pb-2 px-2 w-24">Personnel</th>
-                                    <th class="text-center pb-2 px-2 w-24">Hours</th>
-                                    <th class="w-8"></th>
-                                </tr>
-                            </thead>
-                            <tbody>
-                                <!-- Dynamic rows added by JavaScript -->
-                            </tbody>
-                        </table>
-                    </div>
-                </div>
-
-                <!-- EQUIPMENT SECTION -->
-                <div>
-                    <div class="flex items-center justify-between mb-2">
-                        <label class="text-sm text-zinc-400">Equipment On Site</label>
-                        <button type="button" onclick="addEquipmentRow()"
-                                class="text-xs px-3 py-1.5 bg-zinc-800 hover:bg-zinc-700 rounded-xl flex items-center gap-1">
-                            <i class="fa-solid fa-plus text-xs"></i>
-                            <span>Add Equipment</span>
-                        </button>
-                    </div>
-                    <div class="bg-zinc-950 border border-zinc-800 rounded-2xl p-3">
-                        <table class="w-full text-sm" id="equipmentTable">
-                            <thead>
-                                <tr class="text-zinc-400 text-xs">
-                                    <th class="text-left pb-2 px-2">Equipment</th>
-                                    <th class="text-center pb-2 px-2 w-20">Qty</th>
-                                    <th class="text-left pb-2 px-2">Condition / Notes</th>
-                                    <th class="w-8"></th>
-                                </tr>
-                            </thead>
-                            <tbody>
-                                <!-- Dynamic rows added by JavaScript -->
-                            </tbody>
-                        </table>
-                    </div>
-                </div>
-
-            </div>
-
-            <!-- Modal Footer -->
-            <div class="flex justify-end gap-3 px-6 py-4 border-t border-zinc-700 flex-shrink-0">
-                <button type="button" onclick="closeCreateDailyLogModal()"
-                        class="px-5 py-2.5 text-sm rounded-2xl border border-zinc-700 hover:bg-zinc-800 transition-colors">
-                    Cancel
-                </button>
-                <button type="submit"
-                        class="px-8 py-2.5 text-sm bg-emerald-600 hover:bg-emerald-500 rounded-2xl font-medium transition-colors">
-                    Save Daily Log
-                </button>
-            </div>
-
-        </form>
-    </div>
-</div>
-
-<!-- Daily Log Detail Modal -->
-<div id="dailyLogDetailModal" class="hidden fixed inset-0 bg-black/70 flex items-center justify-center z-50 p-4">
-    <div class="bg-zinc-900 border border-zinc-700 rounded-xl w-full max-w-2xl max-h-[90vh] flex flex-col">
-        <div class="px-6 py-4 border-b border-zinc-700 flex justify-between items-center">
-            <h3 class="text-lg font-semibold" id="dailyLogDetailTitle">Daily Log</h3>
-            <button type="button" onclick="closeDailyLogDetailModal()" class="text-zinc-400 hover:text-white text-2xl">&times;</button>
-        </div>
-        <div class="p-6 overflow-auto flex-1 text-sm space-y-3" id="dailyLogDetailBody"></div>
-        <div class="px-6 py-4 border-t border-zinc-700">
-            <label class="block text-xs text-zinc-500 mb-2">Attachments (filed to Documents › Daily Logs)</label>
-            <div id="dailyLogAttachmentActions" class="flex flex-wrap items-center gap-2">
-                <input type="file" id="dailyLogAttachmentInput" multiple class="text-sm text-zinc-400 file:mr-3 file:px-3 file:py-1.5 file:rounded file:border-0 file:bg-zinc-700 file:text-white">
-            </div>
-            <div id="dailyLogAttachmentList" class="mt-2 space-y-1 text-xs text-zinc-400"></div>
-        </div>
-    </div>
-</div>
-
-                <!-- PHOTO UPLOAD SECTION -->
-                <div>
-                    <label class="block text-sm text-zinc-400 mb-2">Photos</label>
-                    
-                    <div class="bg-zinc-950 border border-zinc-800 rounded-2xl p-4">
-                        
-                        <!-- Upload Area -->
-                        <div id="photoDropZone"
-                             class="border-2 border-dashed border-zinc-700 hover:border-emerald-600 transition-colors rounded-2xl p-8 text-center cursor-pointer"
-                             onclick="document.getElementById('photoUploadInput').click()">
-                            <i class="fa-solid fa-cloud-upload-alt text-3xl text-zinc-500 mb-2"></i>
-                            <div class="text-sm text-zinc-400">
-                                Drag & drop photos here, or <span class="text-emerald-400">click to browse</span>
-                            </div>
-                            <div class="text-xs text-zinc-500 mt-1">PNG, JPG up to 10MB each</div>
-                        </div>
-
-                        <input type="file" id="photoUploadInput" multiple accept="image/*" class="hidden" onchange="handlePhotoUpload(event)">
-
-                        <!-- Photo Preview Grid -->
-                        <div id="photoPreviewGrid" class="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-3 mt-4">
-                            <!-- Photo thumbnails will be added here dynamically by JavaScript -->
-                        </div>
-
-                    </div>
-                </div>
-
-            </div> <!-- End of scrollable content -->
-
-        </form>
-    </div>
-</div>
-
-<!-- ==================== JAVASCRIPT ==================== -->
 <script>
-    // ==================== MODAL CONTROLS ====================
-    function showCreateDailyLogModal() {
-        const modal = document.getElementById('createDailyLogModal');
-        modal.classList.remove('hidden');
-        modal.classList.add('flex');
-
-        // Clear previous dynamic rows when opening new modal
-        clearDynamicRows();
-    }
-
-    function closeCreateDailyLogModal() {
-        const modal = document.getElementById('createDailyLogModal');
-        modal.classList.remove('flex');
-        modal.classList.add('hidden');
-    }
-
-    function clearDynamicRows() {
-        const manpowerTbody = document.querySelector('#manpowerTable tbody');
-        const equipmentTbody = document.querySelector('#equipmentTable tbody');
-        if (manpowerTbody) manpowerTbody.innerHTML = '';
-        if (equipmentTbody) equipmentTbody.innerHTML = '';
-        
-        // Clear photo previews
-        const photoGrid = document.getElementById('photoPreviewGrid');
-        if (photoGrid) photoGrid.innerHTML = '';
-    }
-
-    // ==================== MANPOWER ROWS ====================
-    let manpowerRowCount = 0;
-
-    function addManpowerRow() {
-        const tbody = document.querySelector('#manpowerTable tbody');
-        const row = document.createElement('tr');
-        row.innerHTML = `
-            <td class="px-2 py-1.5">
-                <input type="text" name="manpower_company[]" placeholder="Company name" 
-                       class="w-full bg-zinc-900 border border-zinc-700 rounded-xl px-3 py-1.5 text-sm">
-            </td>
-            <td class="px-2 py-1.5">
-                <input type="number" name="manpower_personnel[]" value="1" min="1"
-                       class="w-full bg-zinc-900 border border-zinc-700 rounded-xl px-3 py-1.5 text-sm text-center">
-            </td>
-            <td class="px-2 py-1.5">
-                <input type="number" name="manpower_hours[]" value="8" step="0.5" min="0"
-                       class="w-full bg-zinc-900 border border-zinc-700 rounded-xl px-3 py-1.5 text-sm text-center">
-            </td>
-            <td class="px-2 py-1.5 text-center">
-                <button type="button" onclick="this.closest('tr').remove()" 
-                        class="text-red-400 hover:text-red-500 px-2">
-                    <i class="fa-solid fa-trash text-sm"></i>
-                </button>
-            </td>
-        `;
-        tbody.appendChild(row);
-        manpowerRowCount++;
-    }
-
-    // ==================== EQUIPMENT ROWS ====================
-    let equipmentRowCount = 0;
-
-    function addEquipmentRow() {
-        const tbody = document.querySelector('#equipmentTable tbody');
-        const row = document.createElement('tr');
-        row.innerHTML = `
-            <td class="px-2 py-1.5">
-                <input type="text" name="equipment_name[]" placeholder="Equipment name" 
-                       class="w-full bg-zinc-900 border border-zinc-700 rounded-xl px-3 py-1.5 text-sm">
-            </td>
-            <td class="px-2 py-1.5">
-                <input type="number" name="equipment_qty[]" value="1" min="1"
-                       class="w-full bg-zinc-900 border border-zinc-700 rounded-xl px-3 py-1.5 text-sm text-center">
-            </td>
-            <td class="px-2 py-1.5">
-                <input type="text" name="equipment_condition[]" placeholder="Good / Needs repair" 
-                       class="w-full bg-zinc-900 border border-zinc-700 rounded-xl px-3 py-1.5 text-sm">
-            </td>
-            <td class="px-2 py-1.5 text-center">
-                <button type="button" onclick="this.closest('tr').remove()" 
-                        class="text-red-400 hover:text-red-500 px-2">
-                    <i class="fa-solid fa-trash text-sm"></i>
-                </button>
-            </td>
-        `;
-        tbody.appendChild(row);
-        equipmentRowCount++;
-    }
-
-    // ==================== PHOTO HANDLING ====================
-    let uploadedPhotos = [];
-
-    function handlePhotoUpload(event) {
-        const files = event.target.files;
-        const previewGrid = document.getElementById('photoPreviewGrid');
-
-        for (let file of files) {
-            if (!file.type.startsWith('image/')) continue;
-
-            const reader = new FileReader();
-            reader.onload = function(e) {
-                const photoId = Date.now() + Math.random();
-                uploadedPhotos.push({ id: photoId, file: file });
-
-                const div = document.createElement('div');
-                div.className = 'relative group';
-                div.innerHTML = `
-                    <img src="${e.target.result}" class="w-full h-24 object-cover rounded-xl border border-zinc-700">
-                    <button type="button" onclick="removePhoto(this, ${photoId})"
-                            class="absolute top-1 right-1 bg-black/70 text-white w-6 h-6 rounded-full flex items-center justify-center text-xs opacity-0 group-hover:opacity-100 transition-opacity">
-                        <i class="fa-solid fa-times"></i>
-                    </button>
-                `;
-                previewGrid.appendChild(div);
-            };
-            reader.readAsDataURL(file);
-        }
-
-        // Reset input so same file can be selected again if needed
-        event.target.value = '';
-    }
-
-    function removePhoto(element, photoId) {
-        element.parentElement.remove();
-        uploadedPhotos = uploadedPhotos.filter(p => p.id !== photoId);
-    }
-
-    // ==================== FILTER FUNCTION ====================
-    function filterDailyLogs() {
-        // Basic client-side filtering (can be improved later)
-        const searchTerm = document.getElementById('dailyLogSearch').value.toLowerCase();
-        const rows = document.querySelectorAll('#dailyLogTableBody tr');
-
-        rows.forEach(row => {
-            const text = row.textContent.toLowerCase();
-            row.style.display = text.includes(searchTerm) ? '' : 'none';
-        });
-    }
-    // ==================== VIEW / EDIT DAILY LOG ====================
-    function viewDailyLog(logId) {
-        openDailyLogDetailModal(logId);
-    }
-
-    let currentDailyLogId = null;
-
-    async function openDailyLogDetailModal(logId) {
-        currentDailyLogId = logId;
-        try {
-            const res = await fetch(`/api/daily-logs/${logId}`, { credentials: 'same-origin' });
-            const json = await res.json();
-            if (!res.ok) throw new Error(json.error || 'Failed to load');
-            const log = json.log;
-            document.getElementById('dailyLogDetailTitle').textContent = `Daily Log — ${log.date || ''}`;
-            document.getElementById('dailyLogDetailBody').innerHTML = `
-                <p><span class="text-zinc-500">Weather:</span> ${log.weather || '—'}</p>
-                <p><span class="text-zinc-500">Work performed:</span><br>${(log.work_performed || '—').replace(/</g,'&lt;')}</p>
-                <p><span class="text-zinc-500">Notes:</span><br>${(log.notes || '—').replace(/</g,'&lt;')}</p>`;
-            renderDailyLogAttachments(log.attachments || []);
-            document.getElementById('dailyLogDetailModal').classList.remove('hidden');
-        } catch (e) {
-            alert(e.message || 'Could not load daily log');
-        }
-    }
-
-    function closeDailyLogDetailModal() {
-        document.getElementById('dailyLogDetailModal').classList.add('hidden');
-        currentDailyLogId = null;
-    }
-
-    function renderDailyLogAttachments(list) {
-        const el = document.getElementById('dailyLogAttachmentList');
-        if (!el) return;
-        el.innerHTML = list.length ? list.map(a =>
-            `<div><a href="${a.url}" class="text-sky-400 hover:underline" target="_blank">${a.original_name || a.filename}</a></div>`
-        ).join('') : '<p class="text-zinc-500">No attachments yet</p>';
-    }
-
-    document.getElementById('dailyLogAttachmentInput')?.addEventListener('change', async e => {
-        if (!currentDailyLogId || !e.target.files?.length) return;
-        for (const file of e.target.files) {
-            const fd = new FormData();
-            fd.append('file', file);
-            await fetch(`/api/daily-logs/${currentDailyLogId}/attachments`, { method: 'POST', body: fd, credentials: 'same-origin' });
-        }
-        e.target.value = '';
-        openDailyLogDetailModal(currentDailyLogId);
-    });
-
-    function bindDailyLogDocumentPicker() {
-        const container = document.getElementById('dailyLogAttachmentActions');
-        if (!container || !window.CasePMDocPicker) return;
-        window.CasePMDocPicker.addBrowseButton(container, {
-            title: 'Attach from Documents',
-            entityType: 'daily_log',
-            getEntityId: () => currentDailyLogId,
-            onPick: async () => {
-                if (!currentDailyLogId) {
-                    alert('Open a daily log first.');
-                    return;
-                }
-                openDailyLogDetailModal(currentDailyLogId);
-            },
-        });
-    }
-    document.addEventListener('DOMContentLoaded', bindDailyLogDocumentPicker);
-
-    function editDailyLog(logId) {
-        // Placeholder for future edit functionality
-        window.location.href = `/daily-log/${logId}/edit`;
-    }
-
-    // ==================== KEYBOARD SHORTCUTS ====================
-    document.addEventListener('keydown', function(e) {
-        if (e.key === '/' && document.activeElement.tagName === 'BODY') {
-            e.preventDefault();
-            const search = document.getElementById('dailyLogSearch');
-            if (search) search.focus();
-        }
-
-        if (e.key.toLowerCase() === 'n' && document.activeElement.tagName === 'BODY') {
-            e.preventDefault();
-            showCreateDailyLogModal();
-        }
-
-        if (e.key === 'Escape') {
-            const modal = document.getElementById('createDailyLogModal');
-            if (!modal.classList.contains('hidden')) {
-                closeCreateDailyLogModal();
-            }
-        }
-    });
-
-    // ==================== DRAG & DROP FOR PHOTOS ====================
-    const dropZone = document.getElementById('photoDropZone');
-    if (dropZone) {
-        dropZone.addEventListener('dragover', function(e) {
-            e.preventDefault();
-            dropZone.classList.add('border-emerald-500', 'bg-zinc-900');
-        });
-
-        dropZone.addEventListener('dragleave', function() {
-            dropZone.classList.remove('border-emerald-500', 'bg-zinc-900');
-        });
-
-        dropZone.addEventListener('drop', function(e) {
-            e.preventDefault();
-            dropZone.classList.remove('border-emerald-500', 'bg-zinc-900');
-
-            const files = e.dataTransfer.files;
-            const input = document.getElementById('photoUploadInput');
-            
-            // Create a new DataTransfer to simulate file input
-            const dt = new DataTransfer();
-            for (let file of files) {
-                if (file.type.startsWith('image/')) {
-                    dt.items.add(file);
-                }
-            }
-            input.files = dt.files;
-            handlePhotoUpload({ target: input });
-        });
-    }
-
-    // ==================== INITIALIZATION ====================
-    console.log('%c[Case PM] daily_log.html (Rich Version) loaded successfully', 'color:#10b981');
+window.CASEPM_DAILY_LOG_CTX = {
+  projectId: {{ active_project.id if active_project else 'null' }},
+  projectName: {{ (active_project.name if active_project else '')|tojson }},
+  projects: [
+    {% for p in projects %}{ id: {{ p.id }}, name: {{ p.name|tojson }} }{% if not loop.last %},{% endif %}{% endfor %}
+  ],
+};
 </script>
+<script src="{{ url_for('static', filename='js/daily-log-app.js') }}"></script>
 
-                <!-- STATUS + SUBMISSION OPTIONS -->
-                <div class="grid grid-cols-1 md:grid-cols-2 gap-4 pt-2">
-                    <div>
-                        <label class="block text-sm text-zinc-400 mb-1.5">Status</label>
-                        <select name="status" class="w-full bg-zinc-800 border border-zinc-700 rounded-2xl px-4 py-2.5 text-sm">
-                            <option value="Draft">Draft (Save for later)</option>
-                            <option value="Submitted" selected>Submitted (Ready for review)</option>
-                        </select>
-                    </div>
+<style>
+  #mainContent:has(.dlog-page) {
+    overflow: hidden !important;
+    display: flex;
+    flex-direction: column;
+    padding: 0 !important;
+  }
+  .dlog-page {
+    display: flex;
+    flex-direction: column;
+    flex: 1;
+    min-height: 0;
+    width: 100%;
+    padding: 1rem 1rem 0;
+    overflow: hidden;
+    box-sizing: border-box;
+  }
+  .dlog-stack { display: flex; flex-direction: column; flex: 1; min-height: 0; overflow: hidden; }
+  .dlog-section { border: 1px solid #3f3f46; border-radius: 0.5rem; background: #18181b; }
+  .dlog-section-head {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 0.75rem 1rem; cursor: pointer; user-select: none;
+  }
+  .dlog-section-body { padding: 0 1rem 1rem; }
+  .dlog-input {
+    width: 100%; background: #27272a; border: 1px solid #3f3f46;
+    border-radius: 0.5rem; padding: 0.5rem 0.75rem; font-size: 0.875rem; color: #fff;
+  }
+  .dlog-input:focus { outline: none; border-color: #10b981; }
+  .dlog-chip { padding: 0.25rem 0.625rem; border-radius: 9999px; font-size: 0.75rem; }
 
-                    <div class="flex items-end">
-                        <div class="text-xs text-zinc-500">
-                            <i class="fa-solid fa-info-circle mr-1"></i>
-                            Drafts can be edited later. Submitted logs are locked for review.
-                        </div>
-                    </div>
-                </div>
+  /* Mobile photo capture bar */
+  .dlog-capture-bar { display: flex; gap: 0.75rem; }
+  .dlog-capture-btn {
+    flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center;
+    gap: 0.375rem; padding: 1rem; border-radius: 0.75rem; font-weight: 600; font-size: 0.875rem;
+    border: 1px solid #3f3f46; transition: background 0.15s;
+  }
+  .dlog-capture-btn i { font-size: 1.5rem; }
+  .dlog-capture-name { background: #27272a; color: #e4e4e7; }
+  .dlog-capture-name:hover { background: #3f3f46; }
+  .dlog-capture-name.listening { background: #7c2d12; color: #fdba74; animation: dlogPulse 1.2s infinite; }
+  .dlog-capture-shoot { background: #059669; color: #fff; }
+  .dlog-capture-shoot:hover { background: #10b981; }
+  .dlog-capture-shoot.armed { background: #2563eb; }
+  @keyframes dlogPulse { 0%,100% { opacity: 1; } 50% { opacity: 0.6; } }
 
-            </div> <!-- End of form content -->
+  .dlog-photo { position: relative; border-radius: 0.5rem; overflow: hidden; border: 1px solid #3f3f46; }
+  .dlog-photo img { width: 100%; height: 96px; object-fit: cover; display: block; }
+  .dlog-photo-name {
+    position: absolute; bottom: 0; left: 0; right: 0; background: rgba(0,0,0,0.7);
+    color: #fff; font-size: 0.65rem; padding: 2px 4px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  }
+  .dlog-photo-del {
+    position: absolute; top: 4px; right: 4px; background: rgba(0,0,0,0.7); color: #fff;
+    width: 22px; height: 22px; border-radius: 9999px; display: flex; align-items: center; justify-content: center; font-size: 0.7rem;
+  }
 
-            <!-- Modal Footer -->
-            <div class="flex justify-between items-center gap-3 px-6 py-4 border-t border-zinc-700 flex-shrink-0 bg-zinc-900 rounded-b-3xl">
-                <div class="text-xs text-zinc-500">
-                    All changes are saved automatically when submitted.
-                </div>
-                
-                <div class="flex gap-3">
-                    <button type="button" onclick="closeCreateDailyLogModal()"
-                            class="px-5 py-2.5 text-sm rounded-2xl border border-zinc-700 hover:bg-zinc-800 transition-colors">
-                        Cancel
-                    </button>
-                    
-                    <button type="submit" name="submit_type" value="draft"
-                            class="px-6 py-2.5 text-sm bg-zinc-700 hover:bg-zinc-600 rounded-2xl font-medium transition-colors">
-                        Save as Draft
-                    </button>
-                    
-                    <button type="submit" name="submit_type" value="submit"
-                            class="px-8 py-2.5 text-sm bg-emerald-600 hover:bg-emerald-500 rounded-2xl font-medium transition-colors">
-                        Submit Daily Log
-                    </button>
-                </div>
-            </div>
+  @media (max-width: 768px) {
+    .dlog-page { padding: 0.75rem 0.75rem 0; }
+    .dlog-hide-mobile { display: none !important; }
+  }
+</style>
 
-        </form>
-    </div>
-</div>
-                <!-- FUTURE FEATURES PLACEHOLDER -->
-                <div class="pt-4 border-t border-zinc-800">
-                    <div class="flex items-center gap-2 text-xs text-zinc-500 mb-2">
-                        <i class="fa-solid fa-tools"></i>
-                        <span class="font-medium">Advanced Features (Coming Soon)</span>
-                    </div>
-                    <div class="grid grid-cols-1 md:grid-cols-3 gap-3 text-xs">
-                        <div class="bg-zinc-950 border border-zinc-800 rounded-2xl p-3">
-                            <div class="flex items-center gap-2 text-emerald-400">
-                                <i class="fa-solid fa-pencil-alt"></i>
-                                <span class="font-medium">Drawing on Photos</span>
-                            </div>
-                            <div class="text-zinc-500 mt-1">Mark up photos with annotations, dimensions, and notes.</div>
-                        </div>
-                        <div class="bg-zinc-950 border border-zinc-800 rounded-2xl p-3">
-                            <div class="flex items-center gap-2 text-emerald-400">
-                                <i class="fa-solid fa-robot"></i>
-                                <span class="font-medium">Auto-Filing</span>
-                            </div>
-                            <div class="text-zinc-500 mt-1">Automatically organize uploaded plans and documents into the correct folders.</div>
-                        </div>
-                        <div class="bg-zinc-950 border border-zinc-800 rounded-2xl p-3">
-                            <div class="flex items-center gap-2 text-emerald-400">
-                                <i class="fa-solid fa-magic"></i>
-                                <span class="font-medium">Smart Suggestions</span>
-                            </div>
-                            <div class="text-zinc-500 mt-1">AI-assisted work descriptions and safety observations based on previous logs.</div>
-                        </div>
-                    </div>
-                </div>
+<div class="dlog-page">
+<div class="dlog-stack">
 
-            </div> <!-- End of scrollable form content -->
-
-            <!-- Modal Footer -->
-            <div class="flex justify-between items-center gap-3 px-6 py-4 border-t border-zinc-700 flex-shrink-0 bg-zinc-900 rounded-b-3xl">
-                <div>
-                    <button type="button" onclick="saveAsDraft()"
-                            class="px-5 py-2.5 text-sm rounded-2xl border border-zinc-700 hover:bg-zinc-800 transition-colors flex items-center gap-2">
-                        <i class="fa-solid fa-save"></i>
-                        <span>Save Draft</span>
-                    </button>
-                </div>
-
-                <div class="flex gap-3">
-                    <button type="button" onclick="closeCreateDailyLogModal()"
-                            class="px-5 py-2.5 text-sm rounded-2xl border border-zinc-700 hover:bg-zinc-800 transition-colors">
-                        Cancel
-                    </button>
-                    <button type="submit"
-                            class="px-8 py-2.5 text-sm bg-emerald-600 hover:bg-emerald-500 rounded-2xl font-medium transition-colors flex items-center gap-2">
-                        <i class="fa-solid fa-check"></i>
-                        <span>Submit Daily Log</span>
-                    </button>
-                </div>
-            </div>
-
-        </form>
-    </div>
-</div>
-            </div> <!-- End of main content wrapper -->
-
-        </div> <!-- End of scrollable area -->
-
-    </div>
+<!-- TOOLBAR -->
+<div class="flex items-center justify-between flex-shrink-0 mb-4 gap-3">
+  <div class="flex items-center gap-3 min-w-0">
+    <div class="text-2xl font-semibold text-white whitespace-nowrap">Daily Log</div>
+    <div id="dlogProjectBadge" class="text-xs px-3 py-1 bg-zinc-800 border border-zinc-700 text-zinc-400 rounded-md font-mono truncate max-w-[220px] dlog-hide-mobile">—</div>
+    <div class="text-xs text-zinc-500 hidden lg:block">Manpower · Weather · Photos · Delays</div>
+  </div>
+  <div class="flex items-center gap-2 flex-wrap justify-end">
+    <button type="button" id="dlogBtnRefresh" class="flex items-center gap-2 px-4 py-2 bg-zinc-800 hover:bg-zinc-700 rounded-md text-sm font-medium h-[38px] dlog-hide-mobile">
+      <i class="fa-solid fa-rotate"></i><span class="hidden md:inline">Refresh</span>
+    </button>
+    <button type="button" id="dlogBtnNew" class="flex items-center gap-2 px-5 py-2 bg-emerald-600 hover:bg-emerald-500 rounded-md text-sm font-semibold h-[38px]">
+      <i class="fa-solid fa-plus"></i><span>New Daily Log</span>
+    </button>
+  </div>
 </div>
 
-<!-- ==================== FINAL JAVASCRIPT ==================== -->
-<script>
-    // ==================== AUTO ADD FIRST MANPOWER ROW ====================
-    function initializeFirstManpowerRow() {
-        const tbody = document.querySelector('#manpowerTable tbody');
-        if (tbody && tbody.children.length === 0) {
-            // Add one empty row by default when modal opens
-            // This is optional - you can remove this if you prefer empty tables
-        }
-    }
+<!-- SUMMARY CARDS -->
+<div class="bg-zinc-900 border border-zinc-700 rounded-md p-4 flex-shrink-0 mb-4">
+  <div class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3">
+    <div class="bg-zinc-800 border border-zinc-700 rounded-md p-4"><div class="text-xs text-zinc-400">Total Reports</div><div id="statTotal" class="text-2xl font-semibold mt-1">0</div></div>
+    <div class="bg-zinc-800 border border-zinc-700 rounded-md p-4"><div class="text-xs text-zinc-400">This Week</div><div id="statWeek" class="text-2xl font-semibold mt-1 text-emerald-400">0</div></div>
+    <div class="bg-zinc-800 border border-zinc-700 rounded-md p-4"><div class="text-xs text-zinc-400">Man Hours</div><div id="statHours" class="text-2xl font-semibold mt-1">0</div></div>
+    <div class="bg-zinc-800 border border-zinc-700 rounded-md p-4"><div class="text-xs text-zinc-400">Avg Crew</div><div id="statCrew" class="text-2xl font-semibold mt-1">0</div></div>
+    <div class="bg-zinc-800 border border-zinc-700 rounded-md p-4"><div class="text-xs text-zinc-400">Photos</div><div id="statPhotos" class="text-2xl font-semibold mt-1 text-sky-400">0</div></div>
+    <div class="bg-zinc-800 border border-zinc-700 rounded-md p-4"><div class="text-xs text-zinc-400">Delays Logged</div><div id="statDelays" class="text-2xl font-semibold mt-1 text-amber-400">0</div></div>
+  </div>
+</div>
 
-    // ==================== FORM SUBMISSION HANDLER ====================
-    const createForm = document.getElementById('createDailyLogForm');
-    if (createForm) {
-        createForm.addEventListener('submit', function(e) {
-            // You can add client-side validation here later if needed
-            console.log('%c[Case PM] Daily Log form submitted', 'color:#10b981');
-        });
-    }
+<!-- FILTERS -->
+<div class="flex flex-col md:flex-row gap-2 mb-3 flex-shrink-0">
+  <input type="text" id="dlogSearch" placeholder="Search date, work performed, weather…" class="dlog-input flex-1">
+  <input type="date" id="dlogDateFilter" class="dlog-input md:w-44">
+  <select id="dlogStatusFilter" class="dlog-input md:w-40">
+    <option value="">All Statuses</option>
+    <option value="Draft">Draft</option>
+    <option value="Submitted">Submitted</option>
+    <option value="Reviewed">Reviewed</option>
+  </select>
+</div>
 
-    // ==================== INITIALIZE ON PAGE LOAD ====================
-    document.addEventListener('DOMContentLoaded', function() {
-        console.log('%c[Case PM] daily_log.html (Rich Version) fully loaded', 'color:#10b981');
-        
-        // Optional: Pre-populate one manpower row when the page loads
-        // Uncomment the line below if you want a default row
-        // addManpowerRow();
-    });
-</script>
+<!-- LIST -->
+<div class="flex-1 min-h-0 overflow-auto border border-zinc-700 rounded-md bg-zinc-900 mb-16">
+  <table class="w-full text-sm">
+    <thead class="bg-zinc-800 sticky top-0 z-10 border-b border-zinc-700">
+      <tr>
+        <th class="px-4 py-3 text-left font-medium text-zinc-400 w-32">Date</th>
+        <th class="px-4 py-3 text-left font-medium text-zinc-400 dlog-hide-mobile">Weather</th>
+        <th class="px-4 py-3 text-center font-medium text-zinc-400 w-20">Crew</th>
+        <th class="px-4 py-3 text-center font-medium text-zinc-400 w-24 dlog-hide-mobile">Hours</th>
+        <th class="px-4 py-3 text-left font-medium text-zinc-400">Work Performed</th>
+        <th class="px-4 py-3 text-center font-medium text-zinc-400 w-20">Photos</th>
+        <th class="px-4 py-3 text-center font-medium text-zinc-400 w-28 dlog-hide-mobile">Status</th>
+        <th class="px-4 py-3 text-center font-medium text-zinc-400 w-28">Actions</th>
+      </tr>
+    </thead>
+    <tbody id="dlogTableBody" class="divide-y divide-zinc-800">
+      <tr><td colspan="8" class="px-6 py-12 text-center text-zinc-500">Loading daily logs…</td></tr>
+    </tbody>
+  </table>
+</div>
+
+<!-- STATUS BAR -->
+<div class="flex-shrink-0 border-t border-zinc-700 bg-zinc-900 px-4 py-2 text-xs text-zinc-500 flex items-center justify-between">
+  <span id="dlogStatusText">—</span>
+  <span id="dlogUpdatedAt">—</span>
+</div>
+
+</div>
+</div>
+
+<!-- ==================== CREATE / EDIT MODAL ==================== -->
+<dialog id="dlogModal" class="modal casepm-dialog bg-zinc-900 border border-zinc-700 rounded-lg w-full max-w-3xl p-0">
+  <div class="px-5 py-4 border-b border-zinc-700 flex items-center justify-between flex-shrink-0">
+    <h3 id="dlogModalTitle" class="font-semibold text-lg">New Daily Log</h3>
+    <div class="flex items-center gap-2">
+      <button type="button" id="dlogModeToggle" class="text-xs px-3 py-1.5 bg-zinc-800 hover:bg-zinc-700 rounded-md">
+        <i class="fa-solid fa-sliders mr-1"></i><span id="dlogModeLabel">Detailed</span>
+      </button>
+      <button type="button" id="dlogModalClose" class="text-zinc-400 hover:text-white text-xl leading-none px-1">&times;</button>
+    </div>
+  </div>
+
+  <div class="p-5 overflow-y-auto space-y-4" style="max-height: 74vh;">
+    <!-- Core: project, date, weather -->
+    <div class="grid grid-cols-1 md:grid-cols-3 gap-3">
+      <div>
+        <label class="block text-xs text-zinc-400 mb-1">Project</label>
+        <select id="dlogProject" class="dlog-input"></select>
+      </div>
+      <div>
+        <label class="block text-xs text-zinc-400 mb-1">Date</label>
+        <input type="date" id="dlogDate" class="dlog-input">
+      </div>
+      <div>
+        <label class="block text-xs text-zinc-400 mb-1">Weather
+          <button type="button" id="dlogWeatherFetch" class="text-emerald-400 ml-1 text-[11px]"><i class="fa-solid fa-cloud-sun"></i> Auto</button>
+        </label>
+        <input type="text" id="dlogWeather" class="dlog-input" placeholder="Sunny, 72°F">
+      </div>
+    </div>
+
+    <!-- Work performed (always visible - the simple path) -->
+    <div>
+      <label class="block text-xs text-zinc-400 mb-1">Work Performed Today</label>
+      <textarea id="dlogWork" rows="3" class="dlog-input resize-y" placeholder="Describe the main activities completed on site today…"></textarea>
+    </div>
+
+    <!-- Photos (always visible) -->
+    <div class="dlog-section">
+      <div class="dlog-section-head" data-section-toggle="photos">
+        <span class="font-medium text-sm"><i class="fa-solid fa-camera text-sky-400 mr-2"></i>Photos</span>
+        <span class="text-xs text-zinc-500"><span id="dlogPhotoCount">0</span> added <i class="fa-solid fa-chevron-down ml-2"></i></span>
+      </div>
+      <div class="dlog-section-body" data-section-body="photos">
+        <!-- Mobile-first capture bar: left = name, right = capture -->
+        <div class="dlog-capture-bar mb-2">
+          <button type="button" id="dlogNameBtn" class="dlog-capture-btn dlog-capture-name">
+            <i class="fa-solid fa-microphone"></i>
+            <span id="dlogNameBtnLabel">Name (talk)</span>
+          </button>
+          <button type="button" id="dlogShootBtn" class="dlog-capture-btn dlog-capture-shoot">
+            <i class="fa-solid fa-camera"></i>
+            <span id="dlogShootBtnLabel">Take Photo</span>
+          </button>
+        </div>
+        <div id="dlogNameHint" class="text-xs text-zinc-500 mb-2">
+          Tap <b>Take Photo</b> to capture. Then tap <b>Name (talk)</b> to speak/type a file name and save, or tap <b>Take Photo</b> again to save it as <span class="font-mono">Photo&nbsp;N&nbsp;·&nbsp;date</span>.
+        </div>
+        <input type="text" id="dlogNameInput" class="dlog-input mb-2 hidden" placeholder="Say or type the file name, then Save">
+        <!-- Desktop/simple fallback: browse -->
+        <input type="file" id="dlogPhotoInput" accept="image/*" capture="environment" class="hidden">
+        <input type="file" id="dlogBrowseInput" accept="image/*" multiple class="hidden">
+        <button type="button" id="dlogBrowseBtn" class="text-xs text-emerald-400 mb-2"><i class="fa-solid fa-folder-open mr-1"></i>Or browse files</button>
+        <div id="dlogPhotoGrid" class="grid grid-cols-3 md:grid-cols-5 gap-2"></div>
+      </div>
+    </div>
+
+    <!-- Manpower -->
+    <div class="dlog-section dlog-detailed">
+      <div class="dlog-section-head" data-section-toggle="manpower">
+        <span class="font-medium text-sm"><i class="fa-solid fa-users text-emerald-400 mr-2"></i>Manpower</span>
+        <span class="text-xs text-zinc-500"><span id="dlogManpowerCount">0</span> crews <i class="fa-solid fa-chevron-down ml-2"></i></span>
+      </div>
+      <div class="dlog-section-body hidden" data-section-body="manpower">
+        <div id="dlogManpowerRows" class="space-y-2"></div>
+        <button type="button" class="text-xs text-emerald-400 mt-2" data-add-row="manpower"><i class="fa-solid fa-plus mr-1"></i>Add crew</button>
+      </div>
+    </div>
+
+    <!-- Equipment -->
+    <div class="dlog-section dlog-detailed">
+      <div class="dlog-section-head" data-section-toggle="equipment">
+        <span class="font-medium text-sm"><i class="fa-solid fa-truck-pickup text-zinc-300 mr-2"></i>Equipment</span>
+        <span class="text-xs text-zinc-500"><span id="dlogEquipmentCount">0</span> items <i class="fa-solid fa-chevron-down ml-2"></i></span>
+      </div>
+      <div class="dlog-section-body hidden" data-section-body="equipment">
+        <div id="dlogEquipmentRows" class="space-y-2"></div>
+        <button type="button" class="text-xs text-emerald-400 mt-2" data-add-row="equipment"><i class="fa-solid fa-plus mr-1"></i>Add equipment</button>
+      </div>
+    </div>
+
+    <!-- Deliveries -->
+    <div class="dlog-section dlog-detailed">
+      <div class="dlog-section-head" data-section-toggle="deliveries">
+        <span class="font-medium text-sm"><i class="fa-solid fa-box text-amber-400 mr-2"></i>Deliveries</span>
+        <span class="text-xs text-zinc-500"><span id="dlogDeliveriesCount">0</span> <i class="fa-solid fa-chevron-down ml-2"></i></span>
+      </div>
+      <div class="dlog-section-body hidden" data-section-body="deliveries">
+        <div id="dlogDeliveriesRows" class="space-y-2"></div>
+        <button type="button" class="text-xs text-emerald-400 mt-2" data-add-row="deliveries"><i class="fa-solid fa-plus mr-1"></i>Add delivery</button>
+      </div>
+    </div>
+
+    <!-- Delays -->
+    <div class="dlog-section dlog-detailed">
+      <div class="dlog-section-head" data-section-toggle="delays">
+        <span class="font-medium text-sm"><i class="fa-solid fa-clock text-red-400 mr-2"></i>Delays</span>
+        <span class="text-xs text-zinc-500"><span id="dlogDelaysCount">0</span> <i class="fa-solid fa-chevron-down ml-2"></i></span>
+      </div>
+      <div class="dlog-section-body hidden" data-section-body="delays">
+        <div id="dlogDelaysRows" class="space-y-2"></div>
+        <button type="button" class="text-xs text-emerald-400 mt-2" data-add-row="delays"><i class="fa-solid fa-plus mr-1"></i>Add delay</button>
+      </div>
+    </div>
+
+    <!-- Visitors -->
+    <div class="dlog-section dlog-detailed">
+      <div class="dlog-section-head" data-section-toggle="visitors">
+        <span class="font-medium text-sm"><i class="fa-solid fa-user-tie text-violet-400 mr-2"></i>Visitors</span>
+        <span class="text-xs text-zinc-500"><span id="dlogVisitorsCount">0</span> <i class="fa-solid fa-chevron-down ml-2"></i></span>
+      </div>
+      <div class="dlog-section-body hidden" data-section-body="visitors">
+        <div id="dlogVisitorsRows" class="space-y-2"></div>
+        <button type="button" class="text-xs text-emerald-400 mt-2" data-add-row="visitors"><i class="fa-solid fa-plus mr-1"></i>Add visitor</button>
+      </div>
+    </div>
+
+    <!-- Safety -->
+    <div class="dlog-section dlog-detailed">
+      <div class="dlog-section-head" data-section-toggle="safety">
+        <span class="font-medium text-sm"><i class="fa-solid fa-hard-hat text-yellow-400 mr-2"></i>Safety</span>
+        <span class="text-xs text-zinc-500"><span id="dlogSafetyCount">0</span> <i class="fa-solid fa-chevron-down ml-2"></i></span>
+      </div>
+      <div class="dlog-section-body hidden" data-section-body="safety">
+        <div id="dlogSafetyRows" class="space-y-2"></div>
+        <button type="button" class="text-xs text-emerald-400 mt-2" data-add-row="safety"><i class="fa-solid fa-plus mr-1"></i>Add safety item</button>
+      </div>
+    </div>
+
+    <!-- Notes -->
+    <div>
+      <label class="block text-xs text-zinc-400 mb-1">Additional Notes / Observations</label>
+      <textarea id="dlogNotes" rows="2" class="dlog-input resize-y" placeholder="Delays, issues, observations…"></textarea>
+    </div>
+  </div>
+
+  <div class="px-5 py-3 border-t border-zinc-700 flex items-center justify-between flex-shrink-0">
+    <select id="dlogStatus" class="dlog-input w-40">
+      <option value="Draft">Draft</option>
+      <option value="Submitted" selected>Submitted</option>
+      <option value="Reviewed">Reviewed</option>
+    </select>
+    <div class="flex gap-2">
+      <button type="button" id="dlogCancel" class="px-4 py-2 text-sm rounded-md border border-zinc-700 hover:bg-zinc-800">Cancel</button>
+      <button type="button" id="dlogSave" class="px-6 py-2 text-sm bg-emerald-600 hover:bg-emerald-500 rounded-md font-semibold">Save Daily Log</button>
+    </div>
+  </div>
+</dialog>
+
+<!-- ==================== DETAIL MODAL ==================== -->
+<dialog id="dlogDetailModal" class="modal casepm-dialog bg-zinc-900 border border-zinc-700 rounded-lg w-full max-w-2xl p-0">
+  <div class="px-5 py-4 border-b border-zinc-700 flex items-center justify-between">
+    <h3 id="dlogDetailTitle" class="font-semibold text-lg">Daily Log</h3>
+    <button type="button" id="dlogDetailClose" class="text-zinc-400 hover:text-white text-xl leading-none px-1">&times;</button>
+  </div>
+  <div id="dlogDetailBody" class="p-5 overflow-y-auto space-y-4 text-sm" style="max-height: 74vh;"></div>
+  <div class="px-5 py-3 border-t border-zinc-700 flex justify-end gap-2">
+    <button type="button" id="dlogDetailEdit" class="px-4 py-2 text-sm bg-zinc-800 hover:bg-zinc-700 rounded-md"><i class="fa-solid fa-pen mr-1"></i>Edit</button>
+  </div>
+</dialog>
 
 {% endblock %}
