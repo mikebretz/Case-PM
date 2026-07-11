@@ -937,6 +937,11 @@ class WeeklyReport(db.Model):
     status = db.Column(db.String(30), default='Draft')
     created_by_id = db.Column(db.Integer, db.ForeignKey('user.id'))
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    period_start = db.Column(db.Date)
+    period_end = db.Column(db.Date)
+    period_type = db.Column(db.String(20), default='weekly')  # 'weekly' | 'biweekly'
+    details_json = db.Column(db.Text)
+    notes = db.Column(db.Text)
 
 
 class AuditLog(db.Model):
@@ -3537,9 +3542,121 @@ def delete_user(user_id):
 @app.route('/weekly-report')
 @login_required
 def weekly_report():
-    reports = query_for_active_project(WeeklyReport).order_by(WeeklyReport.week_ending.desc()).limit(20).all()
     projects = Project.query.order_by(Project.name).all()
-    return render_template('weekly_report.html', reports=reports, projects=projects)
+    return render_template('weekly_report.html', projects=projects, active_project=get_active_project())
+
+
+@app.route('/api/weekly-reports', methods=['GET'])
+@login_required
+def api_weekly_reports_list():
+    from weekly_report_persistence import serialize_report, compute_stats
+    project_id = request.args.get('project_id', type=int) or get_current_project_id()
+    q = WeeklyReport.query
+    if project_id:
+        q = q.filter_by(project_id=int(project_id))
+    reports = q.order_by(WeeklyReport.week_ending.desc(), WeeklyReport.id.desc()).limit(200).all()
+    items = [serialize_report(r, User=User, summary=True) for r in reports]
+    stats = compute_stats(WeeklyReport, project_id)
+    return jsonify({'ok': True, 'reports': items, 'stats': stats, 'project_id': project_id})
+
+
+@app.route('/api/weekly-reports/compile', methods=['GET'])
+@login_required
+def api_weekly_reports_compile():
+    from weekly_report_persistence import compile_from_daily_logs, default_period
+    project_id = request.args.get('project_id', type=int) or get_current_project_id()
+    if not project_id:
+        return jsonify({'error': 'project_id required'}), 400
+    period_type = request.args.get('period_type') or 'weekly'
+    start_s = request.args.get('start')
+    end_s = request.args.get('end')
+    try:
+        if start_s and end_s:
+            start = datetime.strptime(start_s, '%Y-%m-%d').date()
+            end = datetime.strptime(end_s, '%Y-%m-%d').date()
+        else:
+            start, end = default_period(period_type)
+    except (TypeError, ValueError):
+        return jsonify({'error': 'invalid dates'}), 400
+    result = compile_from_daily_logs(DailyLog, ManpowerEntry, EquipmentEntry, int(project_id), start, end)
+    result['start'] = start.isoformat()
+    result['end'] = end.isoformat()
+    result['ok'] = True
+    return jsonify(result)
+
+
+def _weekly_report_apply(report, body):
+    from weekly_report_persistence import build_details
+    if body.get('period_start'):
+        try:
+            report.period_start = datetime.strptime(body['period_start'], '%Y-%m-%d').date()
+        except (TypeError, ValueError):
+            pass
+    if body.get('period_end'):
+        try:
+            report.period_end = datetime.strptime(body['period_end'], '%Y-%m-%d').date()
+            report.week_ending = report.period_end
+        except (TypeError, ValueError):
+            pass
+    for field in ('work_performed', 'safety_notes', 'notes', 'status', 'period_type'):
+        if field in body:
+            setattr(report, field, body[field])
+    report.details_json = json.dumps(build_details(body))
+
+
+@app.route('/api/weekly-reports', methods=['POST'])
+@login_required
+def api_weekly_reports_create():
+    from weekly_report_persistence import serialize_report
+    body = request.get_json(silent=True) or {}
+    project_id = body.get('project_id') or get_current_project_id()
+    if not project_id:
+        return jsonify({'error': 'project_id required'}), 400
+    end_s = body.get('period_end') or body.get('week_ending')
+    if not end_s:
+        return jsonify({'error': 'period_end required'}), 400
+    try:
+        week_ending = datetime.strptime(end_s, '%Y-%m-%d').date()
+    except (TypeError, ValueError):
+        return jsonify({'error': 'invalid period_end'}), 400
+    report = WeeklyReport(
+        project_id=int(project_id),
+        week_ending=week_ending,
+        status=body.get('status') or 'Submitted',
+        created_by_id=current_user.id,
+    )
+    _weekly_report_apply(report, body)
+    db.session.add(report)
+    db.session.commit()
+    return jsonify({'ok': True, 'report': serialize_report(report, User=User)})
+
+
+@app.route('/api/weekly-reports/<int:report_id>', methods=['GET'])
+@login_required
+def api_weekly_report_get(report_id):
+    from weekly_report_persistence import serialize_report
+    report = WeeklyReport.query.get_or_404(report_id)
+    return jsonify({'ok': True, 'report': serialize_report(report, User=User)})
+
+
+@app.route('/api/weekly-reports/<int:report_id>', methods=['PUT'])
+@login_required
+def api_weekly_reports_update(report_id):
+    from weekly_report_persistence import serialize_report
+    report = WeeklyReport.query.get_or_404(report_id)
+    body = request.get_json(silent=True) or {}
+    _weekly_report_apply(report, body)
+    db.session.commit()
+    return jsonify({'ok': True, 'report': serialize_report(report, User=User)})
+
+
+@app.route('/api/weekly-reports/<int:report_id>', methods=['DELETE'])
+@login_required
+def api_weekly_reports_delete(report_id):
+    report = WeeklyReport.query.get_or_404(report_id)
+    db.session.delete(report)
+    db.session.commit()
+    return jsonify({'ok': True})
 
 
 @app.route('/weekly-report/create', methods=['POST'])
@@ -4208,6 +4325,11 @@ def _ensure_module_attachment_columns():
         ('daily_log', 'attachments_json', 'TEXT'),
         ('daily_log', 'details_json', 'TEXT'),
         ('daily_log', 'status', 'VARCHAR(30)'),
+        ('weekly_report', 'period_start', 'DATE'),
+        ('weekly_report', 'period_end', 'DATE'),
+        ('weekly_report', 'period_type', 'VARCHAR(20)'),
+        ('weekly_report', 'details_json', 'TEXT'),
+        ('weekly_report', 'notes', 'TEXT'),
     ]
     for table, column, typedef in migrations:
         if table not in tables:
