@@ -7,7 +7,10 @@
   const ctx = global.CASEPM_SAFETY_CTX || {};
   const state = {
     tab: 'reports',
-    reports: [], rStats: {}, rTypes: [], rSeverities: [], rStatuses: [], rEditId: null, rPhotos: [], rExisting: [],
+    reports: [], rStats: {}, rTypes: [], rSeverities: [], rStatuses: [], rEditId: null,
+    rPhotos: [], rExisting: [], rPendingDocIds: [],
+    photoSeq: 0, armedPhoto: null, stream: null, facingMode: 'environment',
+    listening: false, recognition: null,
     certs: [], cStats: {}, cTypes: [], cEditId: null,
     library: [],
   };
@@ -96,7 +99,8 @@
   }
 
   function resetReportModal() {
-    state.rEditId = null; state.rPhotos = []; state.rExisting = [];
+    state.rEditId = null; state.rPhotos = []; state.rExisting = []; state.rPendingDocIds = [];
+    state.photoSeq = 0; state.armedPhoto = null;
     el('rModalTitle').textContent = 'New Safety Report';
     fillSelect(el('rType'), state.rTypes, 'Observation');
     fillSelect(el('rSeverity'), state.rSeverities, 'Medium');
@@ -104,6 +108,176 @@
     ['rDesc', 'rLocation', 'rAssigned', 'rDue', 'rImmediate', 'rRoot', 'rCorrective'].forEach((id) => { el(id).value = ''; });
     el('rDelete').classList.add('hidden');
     renderRPhotos();
+  }
+
+  function autoPhotoName() {
+    state.photoSeq += 1;
+    const rtype = el('rType')?.value || 'Safety';
+    return `${rtype} photo ${state.photoSeq}`;
+  }
+
+  async function openCamera() {
+    el('rCamError').classList.add('hidden');
+    el('rCameraModal').showModal();
+    await startStream();
+    renderCamThumbs();
+  }
+
+  async function startStream() {
+    stopStream();
+    try {
+      state.stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: state.facingMode }, audio: false });
+      const v = el('rVideo');
+      v.srcObject = state.stream;
+      v.classList.remove('hidden');
+      el('rCamError').classList.add('hidden');
+    } catch (e) {
+      el('rVideo').classList.add('hidden');
+      const err = el('rCamError');
+      if (!window.isSecureContext) err.innerHTML = 'Camera needs HTTPS (or localhost). Use <b>Browse</b> or <b>Browse Documents</b>.';
+      else if (e && e.name === 'NotAllowedError') err.innerHTML = 'Camera permission denied. Use <b>Browse</b> or <b>Browse Documents</b>.';
+      else err.innerHTML = 'Camera unavailable. Use <b>Browse</b> or <b>Browse Documents</b>.';
+      err.classList.remove('hidden');
+    }
+  }
+
+  function stopStream() {
+    if (state.stream) { state.stream.getTracks().forEach((t) => t.stop()); state.stream = null; }
+  }
+
+  function captureFrame() {
+    const v = el('rVideo');
+    if (!v || !v.videoWidth) return null;
+    const canvas = el('rSnapCanvas');
+    canvas.width = v.videoWidth;
+    canvas.height = v.videoHeight;
+    canvas.getContext('2d').drawImage(v, 0, 0);
+    return canvas;
+  }
+
+  function onCamShoot() {
+    if (state.armedPhoto) { commitArmed(''); return; }
+    const canvas = captureFrame();
+    if (!canvas) return;
+    canvas.toBlob((blob) => {
+      if (!blob) return;
+      state.armedPhoto = { blob, url: URL.createObjectURL(blob) };
+      el('rCamShootLabel').textContent = 'Save';
+      el('rCamShoot').classList.add('armed');
+      el('rCamHint').innerHTML = 'Captured! Tap <b>Name (talk)</b> to name &amp; save, or <b>Save</b> for auto name.';
+      renderCamThumbs();
+    }, 'image/jpeg', 0.9);
+  }
+
+  function commitArmed(name) {
+    if (!state.armedPhoto) return;
+    const finalName = (name || '').trim() || autoPhotoName();
+    state.rPhotos.push({ id: Date.now() + Math.random(), blob: state.armedPhoto.blob, url: state.armedPhoto.url, name: finalName });
+    state.armedPhoto = null;
+    stopListening();
+    el('rCamShootLabel').textContent = 'Capture';
+    el('rCamShoot').classList.remove('armed');
+    el('rCamNameInput').classList.add('hidden');
+    el('rCamNameInput').value = '';
+    el('rCamNameLabel').textContent = 'Name (talk)';
+    el('rCamHint').innerHTML = 'Tap <b>Capture</b> to snap. Then tap <b>Name (talk)</b> to name &amp; save, or <b>Capture</b> again for auto name.';
+    renderCamThumbs();
+    renderRPhotos();
+  }
+
+  function renderCamThumbs() {
+    const wrap = el('rCamThumbs');
+    if (!wrap) return;
+    let html = '';
+    if (state.armedPhoto) html += `<div class="saf-photo ring-2 ring-blue-500"><img src="${state.armedPhoto.url}"><div class="saf-photo-name">Unsaved</div></div>`;
+    state.rPhotos.slice(-7).forEach((p) => { html += `<div class="saf-photo"><img src="${p.url}"><div class="saf-photo-name">${esc(p.name)}</div></div>`; });
+    wrap.innerHTML = html;
+  }
+
+  function onCamName() {
+    if (!state.armedPhoto) { el('rCamHint').innerHTML = 'Capture a photo first, then name it.'; return; }
+    if (!state.listening) startListening();
+    else commitArmed(el('rCamNameInput').value);
+  }
+
+  function startListening() {
+    const SR = global.SpeechRecognition || global.webkitSpeechRecognition;
+    const input = el('rCamNameInput');
+    const hint = el('rCamHint');
+    input.classList.remove('hidden');
+    input.focus();
+    el('rCamNameLabel').textContent = 'Stop & Save';
+    el('rCamName').classList.add('listening');
+    state.listening = true;
+    if (!window.isSecureContext) {
+      hint.innerHTML = '<span class="text-amber-400">Voice needs HTTPS. Type the name, then tap Stop &amp; Save.</span>';
+      return;
+    }
+    if (!SR) {
+      hint.innerHTML = '<span class="text-amber-400">Voice not supported — type the name, then tap Stop &amp; Save.</span>';
+      return;
+    }
+    try {
+      const rec = new SR();
+      rec.lang = 'en-US';
+      rec.interimResults = true;
+      rec.continuous = true;
+      rec.onstart = () => { hint.innerHTML = '<span class="text-emerald-400"><i class="fa-solid fa-microphone"></i> Listening… say the file name.</span>'; };
+      rec.onresult = (event) => { let t = ''; for (let i = 0; i < event.results.length; i++) t += event.results[i][0].transcript; input.value = t.trim(); };
+      rec.onerror = () => { hint.innerHTML = '<span class="text-amber-400">Voice error — type the name, then tap Stop & Save.</span>'; };
+      rec.start();
+      state.recognition = rec;
+    } catch (_) {
+      hint.innerHTML = '<span class="text-amber-400">Voice unavailable — type the name, then tap Stop &amp; Save.</span>';
+    }
+  }
+
+  function stopListening() {
+    state.listening = false;
+    el('rCamName')?.classList.remove('listening');
+    if (el('rCamNameLabel')) el('rCamNameLabel').textContent = 'Name (talk)';
+    if (state.recognition) { try { state.recognition.stop(); } catch (_) {} state.recognition = null; }
+  }
+
+  function closeCamera() {
+    if (state.armedPhoto) commitArmed('');
+    stopListening();
+    stopStream();
+    el('rCameraModal').close();
+    renderRPhotos();
+  }
+
+  function setupPhotoActions() {
+    const host = el('rPhotoActions');
+    if (!host || host.dataset.bound) return;
+    host.dataset.bound = '1';
+    host.innerHTML = `
+      <button type="button" id="rOpenCamera" class="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-500 rounded-md text-xs font-semibold"><i class="fa-solid fa-camera mr-1"></i>Open Camera</button>
+      <button type="button" id="rBrowseBtn" class="px-3 py-1.5 bg-zinc-800 hover:bg-zinc-700 rounded-md text-xs"><i class="fa-solid fa-folder-open mr-1"></i>Browse</button>`;
+    el('rOpenCamera').addEventListener('click', openCamera);
+    el('rBrowseBtn').addEventListener('click', () => el('rBrowseInput').click());
+    if (global.CasePMDocPicker) {
+      global.CasePMDocPicker.addBrowseButton(host, {
+        className: 'px-3 py-1.5 bg-zinc-800 hover:bg-zinc-700 rounded-md text-xs',
+        title: 'Select photos from Documents',
+        accept: 'image',
+        getProjectId: projectId,
+        getEntityId: () => state.rEditId,
+        entityType: 'safety_report',
+        projectRequiredMessage: 'Select a project first.',
+        onPick: async (_docs, ids) => {
+          if (state.rEditId) {
+            const j = await api(`/api/safety/reports/${state.rEditId}`);
+            state.rExisting = j.report?.photos || [];
+            renderRPhotos();
+          } else if (ids?.length) {
+            state.rPendingDocIds.push(...ids);
+            renderRPhotos();
+            if (global.showToast) global.showToast(`${ids.length} document(s) will attach when you save`);
+          }
+        },
+      });
+    }
   }
   function openReportCreate() { resetReportModal(); el('rModal').showModal(); }
   async function openReport(id) {
@@ -123,11 +297,23 @@
   }
   function renderRPhotos() {
     const grid = el('rPhotoGrid'); let html = '';
-    state.rPhotos.forEach((p) => { html += `<div class="relative rounded overflow-hidden border border-zinc-700"><img src="${p.url}" style="width:100%;height:72px;object-fit:cover;"><button data-delp="${p.id}" class="absolute top-1 right-1 bg-black/70 text-white w-5 h-5 rounded-full text-xs">×</button></div>`; });
-    state.rExisting.forEach((p) => { html += `<div class="rounded overflow-hidden border border-zinc-700"><img src="${esc(p.url || '')}" style="width:100%;height:72px;object-fit:cover;"></div>`; });
-    grid.innerHTML = html || '<div class="text-xs text-zinc-500 col-span-full py-2 text-center">No photos.</div>';
+    state.rPhotos.forEach((p) => {
+      html += `<div class="saf-photo"><img src="${p.url}" alt="${esc(p.name)}"><div class="saf-photo-name">${esc(p.name)}</div><div class="saf-photo-del" data-delp="${p.id}"><i class="fa-solid fa-times"></i></div></div>`;
+    });
+    state.rExisting.forEach((p) => {
+      html += `<div class="saf-photo"><img src="${esc(p.url || '')}" alt="${esc(p.original_name || '')}"><div class="saf-photo-name">${esc(p.original_name || p.filename || '')}</div></div>`;
+    });
+    if (state.rPendingDocIds.length && !state.rEditId) {
+      html += `<div class="col-span-full text-xs text-amber-400 py-1">${state.rPendingDocIds.length} document(s) from Documents will attach on save.</div>`;
+    }
+    grid.innerHTML = html || '<div class="text-xs text-zinc-500 col-span-full py-2 text-center">No photos — tap Open Camera.</div>';
     el('rPhotoCount').textContent = (state.rPhotos.length + state.rExisting.length) ? `(${state.rPhotos.length + state.rExisting.length})` : '';
-    grid.querySelectorAll('[data-delp]').forEach((n) => n.addEventListener('click', () => { const id = n.getAttribute('data-delp'); state.rPhotos = state.rPhotos.filter((p) => String(p.id) !== id); renderRPhotos(); }));
+    grid.querySelectorAll('[data-delp]').forEach((n) => n.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const id = n.getAttribute('data-delp');
+      state.rPhotos = state.rPhotos.filter((p) => String(p.id) !== id);
+      renderRPhotos();
+    }));
   }
   async function saveReport() {
     const pid = projectId(); const desc = el('rDesc').value.trim();
@@ -140,7 +326,17 @@
       const url = state.rEditId ? `/api/safety/reports/${state.rEditId}` : '/api/safety/reports';
       const j = await api(url, { method: state.rEditId ? 'PUT' : 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
       const rid = j.report.id;
-      for (const p of state.rPhotos) { const fd = new FormData(); fd.append('file', p.blob, `${p.name}.jpg`); fd.append('name', p.name); fd.append('kind', 'photo'); await fetch(`/api/safety/reports/${rid}/attachments`, { method: 'POST', body: fd }); }
+      for (const p of state.rPhotos) {
+        const fd = new FormData();
+        fd.append('file', p.blob, `${p.name}.jpg`);
+        fd.append('name', p.name);
+        fd.append('kind', 'photo');
+        await fetch(`/api/safety/reports/${rid}/attachments`, { method: 'POST', body: fd });
+      }
+      if (state.rPendingDocIds.length) {
+        await global.CasePMDocPicker?.linkToEntity('safety_report', rid, state.rPendingDocIds);
+        state.rPendingDocIds = [];
+      }
       state.rPhotos = []; el('rModal').close(); await loadReports();
       if (global.showToast) global.showToast('Safety report saved');
     } catch (e) { alert(e.message); } finally { btn.disabled = false; btn.textContent = 'Save'; }
@@ -273,8 +469,19 @@
     el('rCancel').addEventListener('click', () => el('rModal').close());
     el('rSave').addEventListener('click', saveReport);
     el('rDelete').addEventListener('click', delReport);
-    el('rBrowseBtn').addEventListener('click', () => el('rBrowseInput').click());
-    el('rBrowseInput').addEventListener('change', (e) => { for (const f of e.target.files) { state.rPhotos.push({ id: Date.now() + Math.random(), blob: f, url: URL.createObjectURL(f), name: `Safety photo ${state.rPhotos.length + 1}` }); } e.target.value = ''; renderRPhotos(); });
+    setupPhotoActions();
+    el('rBrowseInput').addEventListener('change', (e) => {
+      for (const f of e.target.files) {
+        state.rPhotos.push({ id: Date.now() + Math.random(), blob: f, url: URL.createObjectURL(f), name: autoPhotoName() });
+      }
+      e.target.value = '';
+      renderRPhotos();
+    });
+    el('rCamClose')?.addEventListener('click', closeCamera);
+    el('rCamDone')?.addEventListener('click', closeCamera);
+    el('rCamShoot')?.addEventListener('click', onCamShoot);
+    el('rCamName')?.addEventListener('click', onCamName);
+    el('rCamSwitch')?.addEventListener('click', () => { state.facingMode = state.facingMode === 'environment' ? 'user' : 'environment'; startStream(); });
     ['rSearch', 'rTypeFilter', 'rStatusFilter'].forEach((id) => { el(id).addEventListener('input', renderReports); el(id).addEventListener('change', renderReports); });
 
     el('cModalClose').addEventListener('click', () => el('cModal').close());

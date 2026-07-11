@@ -2946,6 +2946,26 @@ def api_link_documents_to_entity():
             from commitment_persistence import commitment_to_dict
             allocs = CommitmentAllocation.query.filter_by(commitment_id=c.id).all()
             return jsonify({'ok': True, 'linked': linked, 'attachments': attachments, 'commitment': commitment_to_dict(c, allocs)})
+        if entity_type == 'safety_report':
+            from safety_persistence import serialize_report
+            r = SafetyReport.query.get_or_404(entity_id)
+            attachments, linked = _link_document_to_json_attachments(r, r.project_id, doc_ids, r.attachments_json)
+            for a in attachments:
+                if not a.get('kind') and a.get('document_id'):
+                    doc = Document.query.get(a['document_id'])
+                    if doc:
+                        fname = (doc.original_filename or doc.filename or doc.name or '').lower()
+                        if fname.endswith(('.jpg', '.jpeg', '.png', '.gif', '.webp', '.heic')):
+                            a['kind'] = 'photo'
+            r.attachments_json = json.dumps(attachments)
+            db.session.commit()
+            helpers = _safety_url_helpers()
+            return jsonify({
+                'ok': True,
+                'linked': linked,
+                'attachments': attachments,
+                'report': serialize_report(r, User=User, url_helpers=helpers),
+            })
         return jsonify({'error': f'Unsupported entity_type: {entity_type}'}), 400
     except ValueError as exc:
         db.session.rollback()
@@ -4046,15 +4066,30 @@ def api_safety_report_attachment(report_id):
     try:
         with open(os.path.join(folder, safe), 'rb') as fh:
             fb = fh.read()
-        sub_name = (r.number or f'SAF-{r.id}').strip()
-        doc = _mirror_to_system_subfolder(
-            r.project_id, fb, display_name, f.filename, 'photos', f'Safety — {sub_name}', 'Photo',
-            {'safety_report_id': r.id, 'safety_number': r.number}, is_system_locked=True, uploaded_by_id=current_user.id,
+        doc_filename = safe if custom_name else (display_name or safe)
+        doc = _mirror_to_system_nested_subfolder(
+            r.project_id, fb, display_name, doc_filename, 'safety',
+            _safety_report_doc_subfolder(r), 'Photo',
+            {
+                'safety_report_id': r.id,
+                'safety_number': r.number,
+                'report_type': r.type,
+                'photo_label': custom_name or display_name,
+            },
+            is_system_locked=True, uploaded_by_id=current_user.id,
+            preserve_original_filename=True,
         )
         if doc and doc.get('id'):
             att['document_id'] = doc['id']
             r.attachments_json = json.dumps(attachments)
             db.session.commit()
+        folder_label = ' › '.join(['Safety'] + _safety_report_doc_subfolder(r))
+        _notify_documents_team(
+            r.project_id,
+            'Safety report photo filed',
+            f'"{display_name}" filed to Documents › {folder_label}.',
+            f'/documents?project_id={r.project_id}',
+        )
     except Exception:
         db.session.rollback()
     return jsonify({'ok': True, 'report': serialize_report(r, User=User, url_helpers=_safety_url_helpers())})
@@ -5643,6 +5678,61 @@ def _mirror_to_system_subfolder(
         )
     except ValueError:
         return None
+
+
+def _mirror_to_system_nested_subfolder(
+    project_id,
+    file_bytes,
+    name,
+    original_filename,
+    system_folder_key,
+    subfolder_path,
+    document_type='Other',
+    source_metadata=None,
+    is_system_locked=True,
+    uploaded_by_id=None,
+    preserve_original_filename=False,
+):
+    """Mirror into Documents › system folder › nested subfolders (e.g. Safety › Reports › Report #1)."""
+    from document_persistence import (
+        ensure_system_folders, resolve_folder_by_key, get_or_create_child_folder,
+    )
+
+    actor = _acting_user_id(uploaded_by_id)
+    ensure_system_folders(db, DocumentFolder, int(project_id), actor, Document=Document)
+    parent = resolve_folder_by_key(db, DocumentFolder, int(project_id), system_folder_key)
+    if not parent:
+        return None
+    current = parent
+    path_names = [p for p in (subfolder_path or []) if (p or '').strip()]
+    for part in path_names:
+        current = get_or_create_child_folder(
+            db, DocumentFolder, int(project_id), current.id, part.strip(), actor,
+        )
+    db.session.commit()
+    meta = {
+        **(source_metadata or {}),
+        'mirrored_from_module': True,
+        'system_folder_key': system_folder_key,
+        'subfolder_path': path_names,
+    }
+    try:
+        from document_integration import guess_mime
+        return _save_document_bytes(
+            int(project_id), file_bytes, name, original_filename,
+            guess_mime(original_filename), document_type, current.id, bool(is_system_locked),
+            None, None, meta, uploaded_by_id=actor,
+            preserve_original_filename=preserve_original_filename,
+        )
+    except ValueError:
+        return None
+
+
+def _safety_report_doc_subfolder(r):
+    """Documents › Safety › Reports & Observations › {report folder}."""
+    sub_name = (r.number or f'SAF-{r.id}').strip()
+    rtype = (r.type or 'Report').strip()
+    return ['Reports & Observations', f'Report #{r.id} — {sub_name} ({rtype})']
 
 
 def _notify_documents_team(project_id, title, message, link=None):
@@ -9766,6 +9856,7 @@ def api_meeting_minutes_catalog():
     from meeting_minutes_catalog import (
         MEETING_TYPES, STATUSES, ACTION_STATUSES, ACTION_PRIORITIES,
         DEFAULT_SPEAKERS, AGENDA_TEMPLATES, get_agenda_template,
+        TOOLBOX_COMPLIANCE, get_toolbox_topic_library,
     )
     mtype = request.args.get('type')
     return jsonify({
@@ -9777,6 +9868,8 @@ def api_meeting_minutes_catalog():
         'default_speakers': DEFAULT_SPEAKERS,
         'agenda_template': get_agenda_template(mtype) if mtype else None,
         'agenda_templates': AGENDA_TEMPLATES,
+        'toolbox_compliance': TOOLBOX_COMPLIANCE,
+        'toolbox_topic_library': get_toolbox_topic_library(),
     })
 
 
