@@ -956,6 +956,26 @@ class SafetyCertification(db.Model):
     updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
 
+class SafetyTrainingEvent(db.Model):
+    """Scheduled training, renewal reminders, and calendar events for certifications."""
+    id = db.Column(db.Integer, primary_key=True)
+    project_id = db.Column(db.Integer, db.ForeignKey('project.id'), nullable=True)
+    cert_id = db.Column(db.Integer, db.ForeignKey('safety_certification.id'), nullable=True)
+    person_name = db.Column(db.String(150), nullable=False)
+    company = db.Column(db.String(150))
+    cert_type = db.Column(db.String(120))
+    event_type = db.Column(db.String(40), default='scheduled_training')  # scheduled_training, renewal_reminder
+    event_date = db.Column(db.Date, nullable=False)
+    training_url = db.Column(db.String(500))
+    training_provider = db.Column(db.String(200))
+    notes = db.Column(db.Text)
+    status = db.Column(db.String(30), default='Scheduled')  # Scheduled, Completed, Cancelled, Skipped
+    notify_user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=True)
+    internal_task_sent = db.Column(db.Boolean, default=False)
+    created_by_id = db.Column(db.Integer, db.ForeignKey('user.id'))
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+
+
 class ScheduleTask(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     project_id = db.Column(db.Integer, db.ForeignKey('project.id'))
@@ -3948,7 +3968,7 @@ def serve_safety_attachment(report_id, filename):
 @app.route('/api/safety/reports', methods=['GET'])
 @login_required
 def api_safety_reports_list():
-    from safety_persistence import serialize_report, report_stats, REPORT_TYPES, SEVERITIES, REPORT_STATUSES
+    from safety_persistence import serialize_report, report_stats, REPORT_TYPES, SEVERITIES, REPORT_STATUSES, INCIDENT_FIELD_GROUPS
     project_id = request.args.get('project_id', type=int) or get_current_project_id()
     q = SafetyReport.query
     if project_id:
@@ -3961,11 +3981,13 @@ def api_safety_reports_list():
         'types': list(REPORT_TYPES),
         'severities': list(SEVERITIES),
         'statuses': list(REPORT_STATUSES),
+        'incident_field_groups': INCIDENT_FIELD_GROUPS,
         'project_id': project_id,
     })
 
 
 def _safety_report_apply(r, body):
+    from safety_persistence import build_details
     for field in ('type', 'description', 'location', 'severity', 'status', 'immediate_actions', 'root_cause', 'corrective_actions', 'assigned_to'):
         if field in body:
             setattr(r, field, body[field])
@@ -3976,6 +3998,8 @@ def _safety_report_apply(r, body):
                 setattr(r, dfield, datetime.strptime(val, '%Y-%m-%d').date() if val else None)
             except (TypeError, ValueError):
                 pass
+    if 'details' in body:
+        r.details_json = json.dumps(build_details(body))
 
 
 @app.route('/api/safety/reports', methods=['POST'])
@@ -4169,6 +4193,157 @@ def api_safety_certs_delete(cert_id):
     db.session.delete(c)
     db.session.commit()
     return jsonify({'ok': True})
+
+
+def _training_event_apply(ev, body):
+    for field in ('person_name', 'company', 'cert_type', 'event_type', 'training_url', 'training_provider', 'notes', 'status'):
+        if field in body:
+            setattr(ev, field, body[field])
+    if 'cert_id' in body:
+        ev.cert_id = int(body['cert_id']) if body.get('cert_id') else None
+    if 'notify_user_id' in body:
+        ev.notify_user_id = int(body['notify_user_id']) if body.get('notify_user_id') else None
+    if 'event_date' in body:
+        val = body.get('event_date')
+        try:
+            ev.event_date = datetime.strptime(val, '%Y-%m-%d').date() if val else ev.event_date
+        except (TypeError, ValueError):
+            pass
+
+
+def _send_training_internal_task(ev, user_id=None):
+    """Create an internal email task for scheduled training."""
+    import case_workflow as cw
+    uid = user_id or ev.notify_user_id or current_user.id
+    link = ev.training_url or f'/safety?project_id={ev.project_id or ""}'
+    body_html = f'''<p><strong>Training required:</strong> {ev.cert_type or "Safety training"}</p>
+<p><strong>Person:</strong> {ev.person_name}{f" ({ev.company})" if ev.company else ""}</p>
+<p><strong>Scheduled:</strong> {ev.event_date.strftime("%B %d, %Y") if ev.event_date else "TBD"}</p>
+{f'<p><strong>Provider:</strong> {ev.training_provider}</p>' if ev.training_provider else ""}
+{f'<p><a href="{link}">Open training link</a></p>' if ev.training_url else ""}
+{f"<p>{ev.notes}</p>" if ev.notes else ""}'''
+    cw.create_internal_message(
+        int(uid),
+        folder='action-required',
+        msg_type='alert',
+        subject=f'Training due: {ev.cert_type or "Safety"} — {ev.person_name}',
+        preview=f'Complete {ev.cert_type or "training"} by {ev.event_date}' if ev.event_date else ev.person_name,
+        body=body_html,
+        project_id=ev.project_id,
+        from_label='Safety',
+        from_user_id=current_user.id,
+        module='Safety',
+        action_url=link if link.startswith('/') else ev.training_url,
+        action_label='Open Training',
+        priority='high',
+        requires_action=True,
+    )
+    ev.internal_task_sent = True
+    ev.notify_user_id = int(uid)
+
+
+@app.route('/api/safety/training-calendar', methods=['GET'])
+@login_required
+def api_safety_training_calendar():
+    from safety_persistence import serialize_cert, serialize_training_event, calendar_events_from_certs, TRAINING_RESOURCE_LINKS
+    project_id = request.args.get('project_id', type=int) or get_current_project_id()
+    start_s = request.args.get('start')
+    end_s = request.args.get('end')
+    cq = SafetyCertification.query
+    if project_id:
+        cq = cq.filter(
+            (SafetyCertification.project_id == int(project_id)) | (SafetyCertification.project_id.is_(None))
+        )
+    certs = cq.all()
+    eq = SafetyTrainingEvent.query
+    if project_id:
+        eq = eq.filter(
+            (SafetyTrainingEvent.project_id == int(project_id)) | (SafetyTrainingEvent.project_id.is_(None))
+        )
+    if start_s:
+        try:
+            start_d = datetime.strptime(start_s, '%Y-%m-%d').date()
+            eq = eq.filter(SafetyTrainingEvent.event_date >= start_d)
+        except ValueError:
+            pass
+    if end_s:
+        try:
+            end_d = datetime.strptime(end_s, '%Y-%m-%d').date()
+            eq = eq.filter(SafetyTrainingEvent.event_date <= end_d)
+        except ValueError:
+            pass
+    scheduled = [serialize_training_event(e) for e in eq.order_by(SafetyTrainingEvent.event_date.asc()).all()]
+    cert_events = calendar_events_from_certs(certs)
+    users = User.query.filter_by(status='Active').order_by(User.last_name, User.first_name).all()
+    return jsonify({
+        'ok': True,
+        'cert_events': cert_events,
+        'scheduled_events': scheduled,
+        'training_links': TRAINING_RESOURCE_LINKS,
+        'users': [{'id': u.id, 'name': u.full_name, 'email': u.email} for u in users],
+        'certifications': [serialize_cert(c, summary=True) for c in certs],
+    })
+
+
+@app.route('/api/safety/training-events', methods=['POST'])
+@login_required
+def api_safety_training_events_create():
+    from safety_persistence import serialize_training_event
+    body = request.get_json(silent=True) or {}
+    person = (body.get('person_name') or '').strip()
+    event_date = body.get('event_date')
+    if not person or not event_date:
+        return jsonify({'error': 'person_name and event_date required'}), 400
+    try:
+        ed = datetime.strptime(event_date, '%Y-%m-%d').date()
+    except (TypeError, ValueError):
+        return jsonify({'error': 'invalid event_date'}), 400
+    ev = SafetyTrainingEvent(
+        project_id=body.get('project_id') or get_current_project_id(),
+        person_name=person,
+        event_date=ed,
+        created_by_id=current_user.id,
+    )
+    _training_event_apply(ev, body)
+    db.session.add(ev)
+    db.session.flush()
+    if body.get('send_internal_task'):
+        _send_training_internal_task(ev, body.get('notify_user_id'))
+    db.session.commit()
+    return jsonify({'ok': True, 'event': serialize_training_event(ev)})
+
+
+@app.route('/api/safety/training-events/<int:event_id>', methods=['PUT'])
+@login_required
+def api_safety_training_events_update(event_id):
+    from safety_persistence import serialize_training_event
+    ev = SafetyTrainingEvent.query.get_or_404(event_id)
+    body = request.get_json(silent=True) or {}
+    _training_event_apply(ev, body)
+    if body.get('send_internal_task') and not ev.internal_task_sent:
+        _send_training_internal_task(ev, body.get('notify_user_id'))
+    db.session.commit()
+    return jsonify({'ok': True, 'event': serialize_training_event(ev)})
+
+
+@app.route('/api/safety/training-events/<int:event_id>', methods=['DELETE'])
+@login_required
+def api_safety_training_events_delete(event_id):
+    ev = SafetyTrainingEvent.query.get_or_404(event_id)
+    db.session.delete(ev)
+    db.session.commit()
+    return jsonify({'ok': True})
+
+
+@app.route('/api/safety/training-events/<int:event_id>/notify', methods=['POST'])
+@login_required
+def api_safety_training_events_notify(event_id):
+    from safety_persistence import serialize_training_event
+    ev = SafetyTrainingEvent.query.get_or_404(event_id)
+    body = request.get_json(silent=True) or {}
+    _send_training_internal_task(ev, body.get('notify_user_id'))
+    db.session.commit()
+    return jsonify({'ok': True, 'event': serialize_training_event(ev)})
 
 
 # ---- OSHA reference library ----
@@ -9856,7 +10031,7 @@ def api_meeting_minutes_catalog():
     from meeting_minutes_catalog import (
         MEETING_TYPES, STATUSES, ACTION_STATUSES, ACTION_PRIORITIES,
         DEFAULT_SPEAKERS, AGENDA_TEMPLATES, get_agenda_template,
-        TOOLBOX_COMPLIANCE, get_toolbox_topic_library,
+        TOOLBOX_COMPLIANCE, get_toolbox_topic_library, TOOLBOX_AGENDA_BRIEFINGS,
     )
     mtype = request.args.get('type')
     return jsonify({
@@ -9870,6 +10045,7 @@ def api_meeting_minutes_catalog():
         'agenda_templates': AGENDA_TEMPLATES,
         'toolbox_compliance': TOOLBOX_COMPLIANCE,
         'toolbox_topic_library': get_toolbox_topic_library(),
+        'toolbox_agenda_briefings': TOOLBOX_AGENDA_BRIEFINGS,
     })
 
 

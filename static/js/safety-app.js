@@ -13,7 +13,11 @@
     listening: false, recognition: null,
     certs: [], cStats: {}, cTypes: [], cEditId: null,
     library: [],
+    rFieldGroups: [], rDetails: {}, rTab: 'overview',
   };
+
+  const R_TAB_PANELS = { overview: 'rPanelOverview', incident: 'rPanelIncident', injury: 'rPanelInjury', witness: 'rPanelWitness', investigation: 'rPanelInvestigation', osha: 'rPanelOsha', photos: 'rPanelPhotos' };
+  const R_TAB_GROUP_MAP = { rFieldsIncident: ['when_where', 'employee'], rFieldsInjury: ['incident', 'medical'], rFieldsWitness: ['witnesses'], rFieldsInvestigation: ['investigation'], rFieldsOsha: ['osha_insurance'] };
 
   function projectId() { return ctx.projectId || (function () { try { return parseInt(localStorage.getItem('casepm_current_project_id'), 10) || null; } catch (_) { return null; } })(); }
   function esc(s) { const d = document.createElement('div'); d.textContent = s == null ? '' : String(s); return d.innerHTML; }
@@ -37,10 +41,58 @@
     }
     if (tab === 'library' && !state.library.length) loadLibrary();
     if (tab === 'training' && !state.certs.length) loadCerts();
+    if (tab === 'training' && global.CasePMSafetyCalendar) global.CasePMSafetyCalendar.loadCalendar().catch(() => {});
     if (tab === 'toolbox' && global.CasePMSafetyToolbox) global.CasePMSafetyToolbox.refresh();
   }
 
-  // ---------------- Reports ----------------
+  function setReportTab(tab) {
+    state.rTab = tab;
+    document.querySelectorAll('.r-subtab').forEach((b) => b.classList.toggle('active', b.getAttribute('data-r-tab') === tab));
+    Object.entries(R_TAB_PANELS).forEach(([key, panelId]) => {
+      const panel = el(panelId);
+      if (panel) panel.classList.toggle('hidden', key !== tab);
+    });
+  }
+
+  function fieldInputHtml(f, val) {
+    const id = `rd_${f.key}`;
+    const v = val == null ? '' : val;
+    if (f.type === 'textarea') return `<div><label class="block text-xs text-zinc-400 mb-1">${esc(f.label)}</label><textarea id="${id}" data-rd="${f.key}" rows="2" class="saf-input resize-y text-sm">${esc(v)}</textarea></div>`;
+    if (f.type === 'select') return `<div><label class="block text-xs text-zinc-400 mb-1">${esc(f.label)}</label><select id="${id}" data-rd="${f.key}" class="saf-input text-sm">${(f.options || []).map((o) => `<option ${o === v ? 'selected' : ''}>${esc(o)}</option>`).join('')}</select></div>`;
+    if (f.type === 'checkbox') return `<label class="flex items-center gap-2 text-sm text-zinc-300 cursor-pointer"><input type="checkbox" id="${id}" data-rd="${f.key}" class="accent-emerald-500" ${v ? 'checked' : ''}> ${esc(f.label)}</label>`;
+    const type = f.type === 'date' || f.type === 'time' || f.type === 'number' ? f.type : 'text';
+    return `<div><label class="block text-xs text-zinc-400 mb-1">${esc(f.label)}</label><input type="${type}" id="${id}" data-rd="${f.key}" class="saf-input text-sm" value="${esc(v)}"></div>`;
+  }
+
+  function buildIncidentFields() {
+    if (!state.rFieldGroups.length) return;
+    Object.entries(R_TAB_GROUP_MAP).forEach(([hostId, groupKeys]) => {
+      const host = el(hostId);
+      if (!host) return;
+      const groups = state.rFieldGroups.filter((g) => groupKeys.includes(g.key));
+      host.innerHTML = groups.map((g) => `
+        <div class="border border-zinc-800 rounded-md p-3">
+          <div class="text-xs font-semibold text-zinc-400 uppercase tracking-wide mb-2">${esc(g.label)}</div>
+          <div class="grid grid-cols-1 md:grid-cols-2 gap-3">${g.fields.map((f) => fieldInputHtml(f, state.rDetails[f.key])).join('')}</div>
+        </div>`).join('');
+    });
+  }
+
+  function collectDetails() {
+    const details = { ...state.rDetails };
+    document.querySelectorAll('[data-rd]').forEach((inp) => {
+      const key = inp.getAttribute('data-rd');
+      if (inp.type === 'checkbox') details[key] = inp.checked;
+      else details[key] = inp.value;
+    });
+    return details;
+  }
+
+  function populateDetails(details) {
+    state.rDetails = details || {};
+    buildIncidentFields();
+  }
+
   async function loadReports() {
     const pid = projectId();
     el('safStatusText').textContent = 'Loading…';
@@ -48,6 +100,8 @@
       const j = await api(`/api/safety/reports${pid ? `?project_id=${pid}` : ''}`);
       state.reports = j.reports || []; state.rStats = j.stats || {};
       state.rTypes = j.types || []; state.rSeverities = j.severities || []; state.rStatuses = j.statuses || [];
+      state.rFieldGroups = j.incident_field_groups || [];
+      buildIncidentFields();
       if (el('rTypeFilter').options.length <= 1) state.rTypes.forEach((t) => el('rTypeFilter').add(new Option(t, t)));
       if (el('rStatusFilter').options.length <= 1) state.rStatuses.forEach((t) => el('rStatusFilter').add(new Option(t, t)));
       const badge = el('safProjectBadge'); if (badge) badge.textContent = ctx.projectName || 'All projects';
@@ -100,13 +154,15 @@
 
   function resetReportModal() {
     state.rEditId = null; state.rPhotos = []; state.rExisting = []; state.rPendingDocIds = [];
-    state.photoSeq = 0; state.armedPhoto = null;
+    state.photoSeq = 0; state.armedPhoto = null; state.rDetails = {};
     el('rModalTitle').textContent = 'New Safety Report';
     fillSelect(el('rType'), state.rTypes, 'Observation');
     fillSelect(el('rSeverity'), state.rSeverities, 'Medium');
     fillSelect(el('rStatus'), state.rStatuses, 'Open');
     ['rDesc', 'rLocation', 'rAssigned', 'rDue', 'rImmediate', 'rRoot', 'rCorrective'].forEach((id) => { el(id).value = ''; });
     el('rDelete').classList.add('hidden');
+    setReportTab('overview');
+    buildIncidentFields();
     renderRPhotos();
   }
 
@@ -290,6 +346,7 @@
       fillSelect(el('rStatus'), state.rStatuses, r.status);
       el('rDesc').value = r.description || ''; el('rLocation').value = r.location || ''; el('rAssigned').value = r.assigned_to || '';
       el('rDue').value = r.due_date || ''; el('rImmediate').value = r.immediate_actions || ''; el('rRoot').value = r.root_cause || ''; el('rCorrective').value = r.corrective_actions || '';
+      populateDetails(r.details || {});
       state.rExisting = r.photos || []; renderRPhotos();
       el('rDelete').classList.remove('hidden');
       el('rModal').showModal();
@@ -320,7 +377,8 @@
     if (!pid || !desc) { alert('Description is required.'); return; }
     const payload = { project_id: pid, type: el('rType').value, severity: el('rSeverity').value, status: el('rStatus').value,
       description: desc, location: el('rLocation').value.trim(), assigned_to: el('rAssigned').value.trim(), due_date: el('rDue').value,
-      immediate_actions: el('rImmediate').value.trim(), root_cause: el('rRoot').value.trim(), corrective_actions: el('rCorrective').value.trim() };
+      immediate_actions: el('rImmediate').value.trim(), root_cause: el('rRoot').value.trim(), corrective_actions: el('rCorrective').value.trim(),
+      details: collectDetails() };
     const btn = el('rSave'); btn.disabled = true; btn.textContent = 'Saving…';
     try {
       const url = state.rEditId ? `/api/safety/reports/${state.rEditId}` : '/api/safety/reports';
@@ -469,6 +527,7 @@
     el('rCancel').addEventListener('click', () => el('rModal').close());
     el('rSave').addEventListener('click', saveReport);
     el('rDelete').addEventListener('click', delReport);
+    document.querySelectorAll('.r-subtab').forEach((b) => b.addEventListener('click', () => setReportTab(b.getAttribute('data-r-tab'))));
     setupPhotoActions();
     el('rBrowseInput').addEventListener('change', (e) => {
       for (const f of e.target.files) {
@@ -496,7 +555,7 @@
     global.onCasePmProjectChanged = (pid) => { ctx.projectId = pid; loadReports(); state.certs = []; state.library = []; };
   }
   function init() { bind(); loadReports(); }
-  global.CasePMSafety = { refresh: loadReports };
+  global.CasePMSafety = { refresh: loadReports, refreshCerts: loadCerts, getCertTypes: () => state.cTypes };
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', init);
   else init();
 })(window);

@@ -154,7 +154,109 @@ AGENDA_TEMPLATES = {
 
 
 def get_agenda_template(meeting_type):
-    return [dict(x) for x in AGENDA_TEMPLATES.get(meeting_type, AGENDA_TEMPLATES['other'])]
+    rows = [dict(x) for x in AGENDA_TEMPLATES.get(meeting_type, AGENDA_TEMPLATES['other'])]
+    if meeting_type == 'toolbox_talk':
+        for row in rows:
+            key = row.get('briefing_key') or _briefing_key_for_topic(row.get('topic', ''))
+            brief = TOOLBOX_AGENDA_BRIEFINGS.get(key)
+            if brief:
+                row['briefing_key'] = key
+                row['briefing'] = brief.get('briefing', '')
+                row['checklist'] = brief.get('checklist', [])
+                row['talking_points'] = brief.get('talking_points', [])
+    return rows
+
+
+def _briefing_key_for_topic(topic):
+    t = (topic or '').lower()
+    if 'roll call' in t or 'attendance' in t:
+        return 'roll_call'
+    if 'prior' in t and 'action' in t:
+        return 'prior_actions'
+    if 'safety moment' in t or 'topic of the day' in t:
+        return 'safety_moment'
+    if 'jha' in t or 'hazards' in t and 'planned' in t:
+        return 'jha_hazards'
+    if 'safe work' in t or 'permit' in t:
+        return 'safe_work'
+    if 'ppe' in t:
+        return 'ppe'
+    if 'equipment' in t or 'tool' in t:
+        return 'equipment'
+    if 'housekeeping' in t or 'fall protection' in t:
+        return 'housekeeping'
+    if 'emergency' in t or 'muster' in t or 'first aid' in t:
+        return 'emergency'
+    if 'question' in t or 'feedback' in t:
+        return 'questions'
+    if 'action item' in t or 'sign-off' in t or 'documentation' in t:
+        return 'wrap_up'
+    return 'general'
+
+
+# Built-in briefing scripts for each standard toolbox agenda item (meeting runner).
+TOOLBOX_AGENDA_BRIEFINGS = {
+    'roll_call': {
+        'briefing': 'Welcome crew. Confirm everyone is present and signed in. Verify visitors and new workers are accounted for. Note any absentees and whether they received briefing notes.',
+        'talking_points': ['Pass around sign-in sheet or use digital attendance', 'Confirm crew size matches work plan', 'Identify any workers new to this task or site'],
+        'checklist': ['Sign-in sheet started', 'All trades represented', 'Visitors identified'],
+    },
+    'prior_actions': {
+        'briefing': 'Review open action items from the last toolbox talk or safety meeting. Confirm each item is closed, in progress, or carried forward with an owner and due date.',
+        'talking_points': ['Read each open action item aloud', 'Ask responsible person for status', 'Escalate overdue items to superintendent'],
+        'checklist': ['Prior actions reviewed', 'Owners confirmed', 'New due dates set'],
+    },
+    'safety_moment': {
+        'briefing': 'Present today\'s focused safety topic. Use the topic library to cover OSHA requirements, real-world examples, and site-specific hazards. Allow questions.',
+        'talking_points': ['State the topic clearly', 'Cover key hazards and controls', 'Reference applicable OSHA standard', 'Tie topic to work planned today'],
+        'checklist': ['Topic stated', 'Hazards discussed', 'Questions answered'],
+    },
+    'jha_hazards': {
+        'briefing': 'Walk through work planned today by area and trade. Identify hazards for each activity using JHA thinking: what can go wrong, and how do we prevent it?',
+        'talking_points': ['Review today\'s critical activities', 'Identify top hazards per activity', 'Confirm permits (hot work, confined space, excavation)', 'Coordinate overlapping trades'],
+        'checklist': ['Work areas identified', 'Hazards listed per task', 'Permits verified'],
+    },
+    'safe_work': {
+        'briefing': 'Review safe work procedures, SOPs, and permit requirements for today\'s high-risk tasks. Confirm only qualified workers perform restricted work.',
+        'talking_points': ['Review applicable SOPs', 'Confirm permit status', 'Verify competent persons assigned', 'Stop work if conditions change'],
+        'checklist': ['SOPs referenced', 'Permits in place', 'Qualified personnel confirmed'],
+    },
+    'ppe': {
+        'briefing': 'State required PPE for each task today. Inspect PPE condition. No exemptions without written approval and substitution per hazard assessment.',
+        'talking_points': ['Hard hat, eye, foot protection minimums', 'Task-specific PPE (respirator, harness, etc.)', 'Inspect before use — replace damaged PPE', 'High-vis in active zones'],
+        'checklist': ['PPE requirements stated', 'Crew PPE inspected', 'Specialty PPE available'],
+    },
+    'equipment': {
+        'briefing': 'Confirm tools and equipment are inspected, guarded, and operated by trained users. Tag out defective equipment. Review lifting/rigging plans if applicable.',
+        'talking_points': ['Pre-use inspection', 'Guards and safety devices in place', 'Qualified operators only', 'Spotters and exclusion zones for lifts'],
+        'checklist': ['Equipment inspected', 'Defective items tagged out', 'Lift plan reviewed if needed'],
+    },
+    'housekeeping': {
+        'briefing': 'Maintain clean walkways, secure materials, and proper fall protection at edges and openings. Good housekeeping prevents slips, trips, and falls.',
+        'talking_points': ['Clear access/egress routes', 'Secure materials and debris', 'Cover/protect floor openings', 'Fall protection at leading edges'],
+        'checklist': ['Walkways clear', 'Openings covered', 'Fall protection verified'],
+    },
+    'emergency': {
+        'briefing': 'Confirm everyone knows the emergency plan: muster point, first aid kit/AED location, how to report injuries, and who to call. Verify communication works on site.',
+        'talking_points': ['Muster point location', 'First aid / AED location', 'Emergency contacts posted', 'Report all injuries immediately — no matter how minor'],
+        'checklist': ['Muster point confirmed', 'First aid location known', 'Emergency numbers posted'],
+    },
+    'questions': {
+        'briefing': 'Open the floor for questions, concerns, and near-miss reports. Encourage speaking up — no retaliation. Document all concerns raised.',
+        'talking_points': ['Ask "Does anyone see a hazard we missed?"', 'Welcome near-miss reports', 'Document concerns for follow-up'],
+        'checklist': ['Questions answered', 'Concerns documented', 'Near misses captured'],
+    },
+    'wrap_up': {
+        'briefing': 'Summarize new action items with owners and due dates. Confirm everyone understands today\'s hazards and controls. Complete sign-in sheet and file this record.',
+        'talking_points': ['Recap top hazards', 'Assign action items', 'Collect sign-in sheet', 'Adjourn — work safe'],
+        'checklist': ['Action items assigned', 'Sign-in complete', 'Record filed'],
+    },
+    'general': {
+        'briefing': 'Discuss this agenda item with the crew. Cover relevant hazards, controls, and any site-specific requirements.',
+        'talking_points': ['State the topic', 'Cover hazards and controls', 'Confirm understanding'],
+        'checklist': ['Topic covered', 'Questions answered'],
+    },
+}
 
 
 # OSHA / Cal-OSHA aligned toolbox talk reference library (Procore / Autodesk-style topic picker).
