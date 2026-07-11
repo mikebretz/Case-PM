@@ -2451,17 +2451,20 @@ def api_daily_log_upload_attachment(log_id):
     try:
         with open(path, 'rb') as fh:
             fb = fh.read()
-        # File everything into Documents › Daily Logs › "Daily Log MM-DD-YYYY" (locked).
-        sub_name = f"Daily Log {log.date.strftime('%m-%d-%Y')}" if log.date else 'Daily Log'
+        # File into Documents › Daily Logs › "Daily Log #id — MM-DD-YYYY" (one folder per log).
+        date_label = log.date.strftime('%m-%d-%Y') if log.date else 'Undated'
+        sub_name = f'Daily Log #{log.id} — {date_label}'
         doctype = 'Photo' if (kind or '').lower() == 'photo' else 'Daily Log'
+        doc_filename = safe if custom_name else (display_name or safe)
         doc = _mirror_to_system_subfolder(
-            log.project_id, fb, display_name, f.filename, 'daily-logs', sub_name, doctype,
+            log.project_id, fb, display_name, doc_filename, 'daily-logs', sub_name, doctype,
             {
                 'daily_log_id': log.id,
                 'log_date': log.date.isoformat() if log.date else None,
                 'photo_label': custom_name or display_name,
             },
             is_system_locked=True, uploaded_by_id=current_user.id,
+            preserve_original_filename=True,
         )
         if doc and doc.get('id'):
             att['document_id'] = doc['id']
@@ -5604,6 +5607,7 @@ def _mirror_to_system_subfolder(
     source_metadata=None,
     is_system_locked=True,
     uploaded_by_id=None,
+    preserve_original_filename=False,
 ):
     """Mirror a file into Documents › <system folder> › <subfolder>, locked by default.
 
@@ -5635,6 +5639,7 @@ def _mirror_to_system_subfolder(
             int(project_id), file_bytes, name, original_filename,
             guess_mime(original_filename), document_type, sub.id, bool(is_system_locked),
             None, None, meta, uploaded_by_id=actor,
+            preserve_original_filename=preserve_original_filename,
         )
     except ValueError:
         return None
@@ -5810,6 +5815,7 @@ def _save_document_bytes(
     tags=None,
     custom_metadata=None,
     uploaded_by_id=None,
+    preserve_original_filename: bool = False,
 ):
     from document_features import file_content_hash, project_document_settings, retention_until_from_years, parse_tags
     from document_persistence import document_folder, ensure_system_folders, resolve_folder_by_key
@@ -5826,10 +5832,22 @@ def _save_document_bytes(
     if ext not in ALLOWED_EXTENSIONS:
         raise ValueError(f'File type .{ext} not allowed')
 
-    stamp = datetime.utcnow().strftime('%Y%m%d%H%M%S%f')
-    stored_name = f'{stamp}_{secure_filename(name).replace(" ", "_")[:80]}.{ext}'
     folder_path = document_folder(upload_root, int(project_id))
-    file_path = os.path.join(folder_path, stored_name)
+    if preserve_original_filename:
+        base_name = secure_filename(original_filename or name or f'file.{ext}')
+        if not base_name:
+            base_name = f'file.{ext}'
+        stored_name = base_name
+        file_path = os.path.join(folder_path, stored_name)
+        if os.path.exists(file_path):
+            stem, dot, suffix = stored_name.rpartition('.')
+            stamp = datetime.utcnow().strftime('%Y%m%d%H%M%S')
+            stored_name = f'{stem}-{stamp}{dot}{suffix}' if dot else f'{stored_name}-{stamp}'
+            file_path = os.path.join(folder_path, stored_name)
+    else:
+        stamp = datetime.utcnow().strftime('%Y%m%d%H%M%S%f')
+        stored_name = f'{stamp}_{secure_filename(name).replace(" ", "_")[:80]}.{ext}'
+        file_path = os.path.join(folder_path, stored_name)
     with open(file_path, 'wb') as fh:
         fh.write(file_bytes)
 

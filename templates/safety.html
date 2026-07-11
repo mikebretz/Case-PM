@@ -10,7 +10,9 @@ window.CASEPM_SAFETY_CTX = {
   ],
 };
 </script>
+<script src="{{ url_for('static', filename='js/meeting-voice-diarization.js') }}"></script>
 <script src="{{ url_for('static', filename='js/safety-app.js') }}"></script>
+<script src="{{ url_for('static', filename='js/safety-toolbox-app.js') }}"></script>
 
 <style>
 .saf-page { display: flex; flex-direction: column; flex: 1; min-height: 0; width: 100%; padding: 1rem 1rem 0; box-sizing: border-box; }
@@ -47,6 +49,7 @@ window.CASEPM_SAFETY_CTX = {
 <div class="flex gap-1 border-b border-zinc-700 flex-shrink-0 mb-3">
   <div class="saf-tab active" data-tab="reports"><i class="fa-solid fa-triangle-exclamation mr-1"></i>Observations &amp; Incidents</div>
   <div class="saf-tab" data-tab="training"><i class="fa-solid fa-id-card mr-1"></i>Training &amp; Certifications</div>
+  <div class="saf-tab" data-tab="toolbox"><i class="fa-solid fa-toolbox mr-1"></i>Toolbox Meetings</div>
   <div class="saf-tab" data-tab="library"><i class="fa-solid fa-book mr-1"></i>OSHA Library</div>
 </div>
 
@@ -100,6 +103,23 @@ window.CASEPM_SAFETY_CTX = {
       <tbody id="cList" class="divide-y divide-zinc-800"></tbody>
     </table>
   </div>
+</div>
+
+<!-- ===== TOOLBOX MEETINGS TAB ===== -->
+<div id="safTabToolbox" class="flex-1 min-h-0 flex flex-col hidden">
+  <div class="bg-zinc-900 border border-zinc-700 rounded-md p-4 flex-shrink-0 mb-3">
+    <div class="flex flex-wrap items-start justify-between gap-3">
+      <div>
+        <div class="text-sm font-medium text-white mb-1">Toolbox / Tailgate Talks</div>
+        <p class="text-xs text-zinc-400 max-w-2xl">OSHA-style daily crew safety briefings. Use the printable agenda, record the meeting, and dictate notes — speaker voices are detected automatically and improve when you correct the transcript.</p>
+      </div>
+      <button type="button" id="tbPrintBlankAgenda" class="px-4 py-2 bg-zinc-800 hover:bg-zinc-700 rounded-md text-xs font-medium whitespace-nowrap"><i class="fa-solid fa-print mr-1"></i>Print blank agenda</button>
+    </div>
+  </div>
+  <div class="flex flex-wrap items-center gap-2 mb-2 flex-shrink-0">
+    <input type="text" id="tbSearch" placeholder="Search toolbox meetings…" class="saf-input" style="flex:1 1 240px;min-width:180px;width:auto;">
+  </div>
+  <div class="flex-1 min-h-0 overflow-auto border border-zinc-700 rounded-md bg-zinc-900 mb-12"><div id="tbList"></div></div>
 </div>
 
 <!-- ===== OSHA LIBRARY TAB ===== -->
@@ -192,4 +212,76 @@ window.CASEPM_SAFETY_CTX = {
 </dialog>
 
 <datalist id="cCompanyList"></datalist>
+
+<!-- ===== TOOLBOX MEETING MODAL ===== -->
+<dialog id="tbModal" class="modal casepm-dialog bg-zinc-900 border border-zinc-700 rounded-lg w-full max-w-4xl p-0">
+  <div class="px-5 py-4 border-b border-zinc-700 flex items-center justify-between">
+    <h3 id="tbModalTitle" class="font-semibold text-lg">Toolbox Meeting</h3>
+    <button type="button" id="tbModalClose" class="text-zinc-400 hover:text-white text-xl px-1">&times;</button>
+  </div>
+  <div class="px-5 pt-3 flex flex-wrap gap-1 border-b border-zinc-800">
+    <button type="button" id="tbTabDetails" class="saf-tab active" style="border-radius:0.5rem 0.5rem 0 0">Details</button>
+    <button type="button" id="tbTabAgenda" class="saf-tab" style="border-radius:0.5rem 0.5rem 0 0">Agenda</button>
+    <button type="button" id="tbTabCapture" class="saf-tab" style="border-radius:0.5rem 0.5rem 0 0"><i class="fa-solid fa-microphone mr-1"></i>Record</button>
+    <button type="button" id="tbTabTranscript" class="saf-tab" style="border-radius:0.5rem 0.5rem 0 0">Transcript</button>
+    <button type="button" id="tbTabMinutes" class="saf-tab" style="border-radius:0.5rem 0.5rem 0 0">Minutes</button>
+  </div>
+  <div class="p-5 overflow-y-auto space-y-3" style="max-height:62vh;">
+    <div id="tbPanelDetails">
+      <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
+        <div><label class="block text-xs text-zinc-400 mb-1">Topic / subject</label><input id="tbSubject" class="saf-input" placeholder="e.g. Fall protection — leading edge work"></div>
+        <div><label class="block text-xs text-zinc-400 mb-1">Date</label><input type="date" id="tbDate" class="saf-input"></div>
+      </div>
+      <div class="grid grid-cols-1 md:grid-cols-2 gap-3 mt-3">
+        <div><label class="block text-xs text-zinc-400 mb-1">Location</label><input id="tbLocation" class="saf-input" placeholder="Job site / grid area"></div>
+        <div><label class="block text-xs text-zinc-400 mb-1">Led by</label><input id="tbOrganizer" class="saf-input" placeholder="Foreman / Safety lead"></div>
+      </div>
+      <div class="mt-3"><label class="block text-xs text-zinc-400 mb-1">Attendees (one per line)</label><textarea id="tbAttendees" rows="3" class="saf-input resize-y" placeholder="Name — Company"></textarea></div>
+      <div class="mt-3"><label class="block text-xs text-zinc-400 mb-1">Discussion notes</label><textarea id="tbDiscussion" rows="4" class="saf-input resize-y"></textarea></div>
+    </div>
+    <div id="tbPanelAgenda" class="hidden">
+      <div class="flex justify-end mb-2"><button type="button" id="tbPrintAgenda" class="px-3 py-1.5 text-xs bg-zinc-800 hover:bg-zinc-700 rounded-md"><i class="fa-solid fa-print mr-1"></i>Print agenda</button></div>
+      <div id="tbAgendaEditor"></div>
+    </div>
+    <div id="tbPanelCapture" class="hidden">
+      <div class="bg-zinc-950 border border-zinc-700 rounded-md p-4">
+        <div class="flex flex-wrap items-center justify-between gap-2 mb-2">
+          <div class="text-xs text-zinc-500 uppercase tracking-wide">Detected speakers</div>
+          <label class="flex items-center gap-2 text-xs text-zinc-400 cursor-pointer"><input type="checkbox" id="tbAutoDetect" class="accent-emerald-500" checked> Auto-detect voices</label>
+        </div>
+        <div id="tbSpeakerBar" class="flex flex-wrap gap-2 mb-4"></div>
+        <div class="flex flex-wrap gap-3 mb-3">
+          <button type="button" id="tbRecordBtn" class="flex items-center gap-2 px-4 py-2 bg-red-600 hover:bg-red-500 rounded-md text-sm font-semibold"><i class="fa-solid fa-circle text-[10px]"></i><span id="tbRecordLabel">Record</span> <span id="tbRecordTimer" class="text-xs opacity-80">0:00</span></button>
+          <button type="button" id="tbDictateBtn" class="flex items-center gap-2 px-4 py-2 bg-emerald-700 hover:bg-emerald-600 rounded-md text-sm font-semibold"><i class="fa-solid fa-microphone"></i><span id="tbDictateLabel">Dictate</span></button>
+        </div>
+        <p class="text-xs text-zinc-500 mb-2">Record the toolbox talk and dictate key points. Click transcript lines to correct speakers — the app learns voices for this project.</p>
+        <div id="tbLivePreview" class="text-sm text-zinc-300 italic min-h-[1.5rem] border-t border-zinc-800 pt-2"></div>
+      </div>
+    </div>
+    <div id="tbPanelTranscript" class="hidden">
+      <div class="flex flex-wrap items-center gap-2 mb-3">
+        <button type="button" id="tbRetrain" class="px-3 py-1.5 text-xs bg-violet-600 hover:bg-violet-500 rounded-md"><i class="fa-solid fa-brain mr-1"></i>Re-apply voices</button>
+        <button type="button" id="tbTrainReview" class="px-3 py-1.5 text-xs bg-emerald-700 hover:bg-emerald-600 rounded-md"><i class="fa-solid fa-graduation-cap mr-1"></i>Train from review</button>
+        <button type="button" id="tbVoiceTest" class="px-3 py-1.5 text-xs bg-zinc-700 hover:bg-zinc-600 rounded-md"><i class="fa-solid fa-vial mr-1"></i>Voice test</button>
+        <span id="tbVoiceTestResult" class="text-[10px] text-zinc-500"></span>
+      </div>
+      <audio id="tbRecordingPlayer" controls class="w-full mb-3 hidden"></audio>
+      <div id="tbTranscriptView"></div>
+    </div>
+    <div id="tbPanelMinutes" class="hidden">
+      <div class="flex gap-2 mb-2">
+        <button type="button" id="tbGenerate" class="px-3 py-1.5 text-xs bg-sky-700 hover:bg-sky-600 rounded-md">Generate minutes</button>
+        <button type="button" id="tbPrintMinutes" class="px-3 py-1.5 text-xs bg-zinc-800 hover:bg-zinc-700 rounded-md"><i class="fa-solid fa-print mr-1"></i>Print</button>
+      </div>
+      <textarea id="tbMinutesBody" rows="14" class="saf-input resize-y font-mono text-sm" style="line-height:1.5;"></textarea>
+    </div>
+  </div>
+  <div class="px-5 py-3 border-t border-zinc-700 flex items-center justify-between">
+    <button type="button" id="tbDelete" class="px-3 py-2 text-sm text-red-400 hover:text-red-300 hidden"><i class="fa-solid fa-trash mr-1"></i>Delete</button>
+    <div class="flex gap-2 ml-auto">
+      <button type="button" id="tbCancel" class="px-4 py-2 text-sm rounded-md border border-zinc-700 hover:bg-zinc-800">Cancel</button>
+      <button type="button" id="tbSave" class="px-6 py-2 text-sm bg-emerald-600 hover:bg-emerald-500 rounded-md font-semibold">Save</button>
+    </div>
+  </div>
+</dialog>
 {% endblock %}
