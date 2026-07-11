@@ -52,6 +52,17 @@
     { id: 'internal-archive', label: 'Archive', icon: 'fa-box-archive' },
   ];
 
+  const INTERNAL_TYPE_FILTERS = [
+    { id: '', label: 'All types' },
+    { id: 'action', label: 'Needs action' },
+    { id: 'approval', label: 'Approval' },
+    { id: 'alert', label: 'Alert' },
+    { id: 'update', label: 'Update' },
+    { id: 'message', label: 'Message' },
+    { id: 'mention', label: 'Mention' },
+    { id: 'announce', label: 'Announcement' },
+  ];
+
   const DEFAULT_SETTINGS = {
     provider: 'none',
     googleConnected: false,
@@ -114,6 +125,7 @@
     selectedIds: new Set(),
     search: '',
     searchAdvanced: null,
+    internalTypeFilter: '',
     sort: 'date_desc',
     settingsOpen: false,
     rulesOpen: false,
@@ -922,12 +934,43 @@
     return mailMessages.filter(m => m.folder === folderId && m.unread).length;
   }
 
+  function sortMessages(list) {
+    return [...list].sort((a, b) => {
+      if (state.sort === 'date_asc') return new Date(a.date) - new Date(b.date);
+      if (state.sort === 'subject') return (a.subject || '').localeCompare(b.subject || '');
+      if (state.sort === 'from') return (a.from || '').localeCompare(b.from || '');
+      return new Date(b.date) - new Date(a.date);
+    });
+  }
+
+  function filterBySearch(list, fields) {
+    if (!state.search) return list;
+    const q = state.search.toLowerCase();
+    return list.filter(m => fields.some(field => (m[field] || '').toLowerCase().includes(q)));
+  }
+
+  function applyInternalListFilters(list) {
+    let filtered = list;
+    if (state.internalTypeFilter === 'action') {
+      filtered = filtered.filter(m => m.requiresAction);
+    } else if (state.internalTypeFilter) {
+      filtered = filtered.filter(m => (m.type || 'alert') === state.internalTypeFilter);
+    }
+    if (state.filterUnread) filtered = filtered.filter(m => m.unread);
+    filtered = filterBySearch(filtered, ['subject', 'from', 'preview', 'module', 'project']);
+    return sortMessages(filtered);
+  }
+
   function activeMessages() {
     if (state.workspace === 'internal') {
+      if (state.folder === 'internal-archive') {
+        return applyInternalListFilters(internalMessages.filter(m => m.archived));
+      }
       let list = internalMessages.filter(m => !m.archived);
-      if (state.folder === 'internal-inbox') return list;
-      if (state.folder === 'internal-archive') return internalMessages.filter(m => m.archived);
-      return list.filter(m => m.folder === state.folder);
+      if (state.folder !== 'internal-inbox') {
+        list = list.filter(m => m.folder === state.folder);
+      }
+      return applyInternalListFilters(list);
     }
     let list = mailMessages.filter(m => {
       if (state.folder === 'starred') return m.starred && m.folder !== 'trash';
@@ -941,15 +984,7 @@
     if (state.filterUnread) list = list.filter(m => m.unread);
     if (state.filterFlagged) list = list.filter(m => m.flagged || m.starred);
     if (state.filterAttachments) list = list.filter(m => m.hasAttachments);
-    if (state.search) {
-      const q = state.search.toLowerCase();
-      list = list.filter(m =>
-        (m.subject || '').toLowerCase().includes(q) ||
-        (m.from || '').toLowerCase().includes(q) ||
-        (m.preview || '').toLowerCase().includes(q) ||
-        (m.fromEmail || '').toLowerCase().includes(q)
-      );
-    }
+    list = filterBySearch(list, ['subject', 'from', 'preview', 'fromEmail']);
     if (state.searchAdvanced) {
       const a = state.searchAdvanced;
       if (a.from) list = list.filter(m => (m.fromEmail || '').toLowerCase().includes(a.from.toLowerCase()));
@@ -958,13 +993,7 @@
       if (a.hasAttachment) list = list.filter(m => m.hasAttachments);
       if (a.unread) list = list.filter(m => m.unread);
     }
-    list.sort((a, b) => {
-      if (state.sort === 'date_asc') return new Date(a.date) - new Date(b.date);
-      if (state.sort === 'subject') return (a.subject || '').localeCompare(b.subject || '');
-      if (state.sort === 'from') return (a.from || '').localeCompare(b.from || '');
-      return new Date(b.date) - new Date(a.date);
-    });
-    return list;
+    return sortMessages(list);
   }
 
   function getMessage(id) {
@@ -975,9 +1004,40 @@
   function render() {
     renderHeader();
     renderSidebar();
+    updateListControls();
     renderMessageList();
     renderReadingPane();
     applyLayoutClasses();
+  }
+
+  function updateListControls() {
+    const typeEl = document.getElementById('emailInternalTypeFilter');
+    const searchEl = document.getElementById('emailSearchInput');
+    const sortEl = document.getElementById('emailSortSelect');
+    const isInternal = state.workspace === 'internal';
+
+    if (typeEl) {
+      typeEl.classList.toggle('hidden', !isInternal);
+      typeEl.value = state.internalTypeFilter || '';
+    }
+    if (searchEl) {
+      searchEl.placeholder = isInternal
+        ? 'Search internal — subject, sender, project, module'
+        : 'Search mail — from:, to:, subject:, has:attachment';
+      if (state.search) searchEl.value = state.search;
+    }
+    if (sortEl) sortEl.value = state.sort || 'date_desc';
+  }
+
+  function resetSearchInput() {
+    state.search = '';
+    state.searchAdvanced = null;
+    const searchEl = document.getElementById('emailSearchInput');
+    if (!searchEl) return;
+    searchEl.value = '';
+    requestAnimationFrame(() => {
+      if (!state.search && searchEl.value) searchEl.value = '';
+    });
   }
 
   function renderToolbarHTML() {
@@ -1442,7 +1502,7 @@
 
     if (state.workspace === 'internal') {
       el.innerHTML = messages.map(m => {
-        const badgeClass = { approval: 'email-internal-badge-approval', alert: 'email-internal-badge-alert', message: 'email-internal-badge-message', mention: 'email-internal-badge-mention', announce: 'email-internal-badge-announce' }[m.type] || 'email-internal-badge-alert';
+        const badgeClass = { approval: 'email-internal-badge-approval', alert: 'email-internal-badge-alert', message: 'email-internal-badge-message', mention: 'email-internal-badge-mention', announce: 'email-internal-badge-announce', update: 'email-internal-badge-update' }[m.type] || 'email-internal-badge-alert';
         return `
         <div class="email-msg-row ${m.unread ? 'unread' : ''} ${state.selectedId === m.id ? 'active' : ''}" onclick="CasePMEmail.select('${m.id}')" ondblclick="CasePMEmail.openMessage('${m.id}')" data-id="${m.id}">
           <div class="flex items-start gap-2">
@@ -1559,8 +1619,10 @@
     state.workspace = ws;
     state.folder = ws === 'internal' ? 'internal-inbox' : 'inbox';
     state.category = null;
+    state.internalTypeFilter = '';
     state.selectedId = null;
     state.inlineCompose = null;
+    resetSearchInput();
     render();
   }
 
@@ -1591,6 +1653,16 @@
 
   function setSearch(q) {
     state.search = q;
+    renderMessageList();
+  }
+
+  function setSort(sort) {
+    state.sort = sort || 'date_desc';
+    renderMessageList();
+  }
+
+  function setInternalTypeFilter(type) {
+    state.internalTypeFilter = type || '';
     renderMessageList();
   }
 
@@ -2110,11 +2182,15 @@
     document.getElementById('emailSearchInput')?.addEventListener('input', e => setSearch(e.target.value));
     const searchEl = document.getElementById('emailSearchInput');
     if (searchEl) {
-      searchEl.value = '';
-      state.search = '';
+      resetSearchInput();
       searchEl.setAttribute('autocomplete', 'off');
+      searchEl.setAttribute('data-form-type', 'other');
       searchEl.setAttribute('data-lpignore', 'true');
       searchEl.setAttribute('data-1p-ignore', 'true');
+      searchEl.addEventListener('focus', () => searchEl.removeAttribute('readonly'));
+      // Browsers may autofill saved login emails into search fields after init.
+      setTimeout(() => resetSearchInput(), 50);
+      setTimeout(() => resetSearchInput(), 300);
     }
 
     if (settings.keyboardShortcuts) {
@@ -2135,7 +2211,7 @@
 
   global.CasePMEmail = {
     init, setWorkspace, setFolder, setCategory, select, openMessage, openMessagePopout, closeMessagePopout,
-    setSearch, toggleFilter, toggleStar,
+    setSearch, setSort, setInternalTypeFilter, toggleFilter, toggleStar,
     compose, closeCompose, toggleCcBcc, saveDraft, sendMail, undoSend, reply, replyAll, forward,
     removeComposeAttachment,
     refreshComposeAttachmentUI,
@@ -2149,7 +2225,7 @@
     saveSettings: (s) => { settings = { ...settings, ...s }; persistSettings(); render(); },
     getSignatures: () => signatures,
     saveSignatures: (sigs) => { signatures = sigs; persistSignatures(); },
-    STORAGE, MAIL_FOLDERS, INTERNAL_FOLDERS, DEFAULT_SETTINGS,
+    STORAGE, MAIL_FOLDERS, INTERNAL_FOLDERS, INTERNAL_TYPE_FILTERS, DEFAULT_SETTINGS,
   };
 
   global.CasePMEmailSettings = settings;

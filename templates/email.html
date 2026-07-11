@@ -30,20 +30,34 @@
             <div class="px-3 py-2 border-b border-zinc-800 flex-shrink-0 space-y-2">
                 <div class="relative">
                     <i class="fa-solid fa-magnifying-glass absolute left-3 top-2.5 text-zinc-500 text-xs"></i>
-                    <input type="search" id="emailSearchInput" name="mail-search-query"
+                    <input type="text" id="emailSearchInput" name="casepm-email-thread-filter"
                            placeholder="Search mail — from:, to:, subject:, has:attachment"
                            autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false"
+                           readonly
                            class="w-full bg-zinc-900 border border-zinc-700 rounded-md pl-8 pr-3 py-2 text-sm focus:border-emerald-600">
                 </div>
-                <div class="flex items-center justify-between">
-                    <span id="emailListCount" class="text-[10px] text-zinc-500 uppercase tracking-wide">0 messages</span>
-                    <select id="emailSortSelect" onchange="CasePMEmail.setSearch(document.getElementById('emailSearchInput').value)"
-                            class="bg-zinc-900 border border-zinc-700 rounded text-[10px] px-2 py-1 text-zinc-400">
-                        <option value="date_desc">Newest first</option>
-                        <option value="date_asc">Oldest first</option>
-                        <option value="subject">Subject A–Z</option>
-                        <option value="from">From A–Z</option>
-                    </select>
+                <div class="flex items-center justify-between gap-2">
+                    <span id="emailListCount" class="text-[10px] text-zinc-500 uppercase tracking-wide flex-shrink-0">0 messages</span>
+                    <div class="flex items-center gap-2 flex-shrink-0">
+                        <select id="emailInternalTypeFilter" onchange="CasePMEmail.setInternalTypeFilter(this.value)"
+                                class="hidden bg-zinc-900 border border-zinc-700 rounded text-[10px] px-2 py-1 text-zinc-400 max-w-[9.5rem]">
+                            <option value="">All types</option>
+                            <option value="action">Needs action</option>
+                            <option value="approval">Approval</option>
+                            <option value="alert">Alert</option>
+                            <option value="update">Update</option>
+                            <option value="message">Message</option>
+                            <option value="mention">Mention</option>
+                            <option value="announce">Announcement</option>
+                        </select>
+                        <select id="emailSortSelect" onchange="CasePMEmail.setSort(this.value)"
+                                class="bg-zinc-900 border border-zinc-700 rounded text-[10px] px-2 py-1 text-zinc-400">
+                            <option value="date_desc">Newest first</option>
+                            <option value="date_asc">Oldest first</option>
+                            <option value="subject">Subject A–Z</option>
+                            <option value="from">From A–Z</option>
+                        </select>
+                    </div>
                 </div>
             </div>
             <div id="emailMessageList" class="flex-1 min-h-0 overflow-y-auto"></div>

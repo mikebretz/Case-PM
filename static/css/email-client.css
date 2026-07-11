@@ -387,6 +387,7 @@
 .email-internal-badge-message { background: #14532d; color: #86efac; }
 .email-internal-badge-mention { background: #4c1d95; color: #c4b5fd; }
 .email-internal-badge-announce { background: #713f12; color: #fde68a; }
+.email-internal-badge-update { background: #164e63; color: #a5f3fc; }
 .email-preview-bottom .email-list-pane { width: 100%; border-right: none; }
 .email-preview-bottom .email-reading-pane {
   border-top: 1px solid #27272a;
