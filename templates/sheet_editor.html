@@ -1,0 +1,251 @@
+{% extends "base.html" %}
+
+{% block content %}
+<!-- Luckysheet (Excel-like spreadsheet) -->
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/luckysheet@2.1.13/dist/plugins/css/pluginsCss.css">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/luckysheet@2.1.13/dist/plugins/plugins.css">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/luckysheet@2.1.13/dist/css/luckysheet.css">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/luckysheet@2.1.13/dist/assets/iconfont/iconfont.css">
+<script src="https://cdn.jsdelivr.net/npm/luckysheet@2.1.13/dist/plugins/js/plugin.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/luckysheet@2.1.13/dist/luckysheet.umd.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/luckyexcel@1.0.1/dist/luckyexcel.umd.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+
+<style>
+  #mainContent:has(.sheet-page) { overflow: hidden !important; display: flex; flex-direction: column; padding: 0 !important; }
+  .sheet-page { display: flex; flex-direction: column; flex: 1; min-height: 0; width: 100%; padding: 0.5rem 0.5rem 0; box-sizing: border-box; }
+  .sheet-toolbar { display: flex; align-items: center; gap: 0.5rem; flex-wrap: wrap; flex-shrink: 0; margin-bottom: 0.5rem; }
+  .sheet-btn { display: inline-flex; align-items: center; gap: 0.4rem; padding: 0.45rem 0.8rem; border-radius: 0.375rem; font-size: 0.85rem; font-weight: 500; background: #27272a; border: 1px solid #3f3f46; color: #fff; }
+  .sheet-btn:hover { background: #3f3f46; }
+  .sheet-btn.primary { background: #059669; border-color: #059669; }
+  .sheet-btn.primary:hover { background: #10b981; }
+  #sheetNameInput { background: #18181b; border: 1px solid #3f3f46; border-radius: 0.375rem; padding: 0.4rem 0.7rem; color: #fff; font-size: 0.9rem; min-width: 240px; }
+  #luckysheetHost { position: relative; flex: 1; min-height: 0; width: 100%; }
+  /* Luckysheet needs an absolutely-positioned container */
+  #luckysheet { position: absolute; inset: 0; }
+  #sheetStatus { font-size: 0.75rem; color: #71717a; margin-left: auto; }
+  #sheetLoading { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; background: #09090b; z-index: 5; color: #a1a1aa; }
+</style>
+
+<div class="sheet-page">
+  <div class="sheet-toolbar">
+    <a href="{{ url_for('documents_page') }}" class="sheet-btn" title="Back to Documents"><i class="fa-solid fa-arrow-left"></i><span class="hidden md:inline">Documents</span></a>
+    <i class="fa-solid fa-table-cells text-emerald-400"></i>
+    <input type="text" id="sheetNameInput" placeholder="Untitled Spreadsheet">
+    <button type="button" id="sheetSaveBtn" class="sheet-btn primary"><i class="fa-solid fa-floppy-disk"></i> Save</button>
+    <button type="button" id="sheetExportBtn" class="sheet-btn"><i class="fa-solid fa-file-excel"></i><span class="hidden md:inline"> Export .xlsx</span></button>
+    <button type="button" id="sheetImportBtn" class="sheet-btn"><i class="fa-solid fa-file-import"></i><span class="hidden md:inline"> Import</span></button>
+    <input type="file" id="sheetImportInput" accept=".xlsx,.xls,.csv" class="hidden">
+    <span id="sheetStatus">New spreadsheet</span>
+  </div>
+  <div id="luckysheetHost">
+    <div id="luckysheet"></div>
+    <div id="sheetLoading"><i class="fa-solid fa-spinner fa-spin mr-2"></i> Loading editor…</div>
+  </div>
+</div>
+
+<script>
+(function () {
+  'use strict';
+  const params = new URLSearchParams(location.search);
+  let docId = params.get('doc_id') ? parseInt(params.get('doc_id'), 10) : null;
+  const projectId = {{ active_project.id if active_project else 'null' }};
+  const nameInput = document.getElementById('sheetNameInput');
+  const statusEl = document.getElementById('sheetStatus');
+  const loadingEl = document.getElementById('sheetLoading');
+
+  function setStatus(t) { statusEl.textContent = t; }
+  function hideLoading() { loadingEl.style.display = 'none'; }
+
+  const BASE_OPTIONS = {
+    container: 'luckysheet',
+    lang: 'en',
+    showinfobar: false,
+    showsheetbarConfig: { add: true, menu: true, sheet: true },
+    enableAddRow: true,
+    enableAddBackTop: true,
+  };
+
+  function createEmpty() {
+    window.luckysheet.create(Object.assign({}, BASE_OPTIONS, {
+      title: nameInput.value || 'Untitled Spreadsheet',
+      data: [{ name: 'Sheet1', color: '', status: 1, order: 0, index: 0, row: 100, column: 26, celldata: [], config: {} }],
+    }));
+    hideLoading();
+  }
+
+  function createFromSheets(sheets) {
+    window.luckysheet.create(Object.assign({}, BASE_OPTIONS, {
+      title: nameInput.value || 'Spreadsheet',
+      data: (sheets && sheets.length) ? sheets : [{ name: 'Sheet1', status: 1, order: 0, index: 0, row: 100, column: 26, celldata: [], config: {} }],
+    }));
+    hideLoading();
+  }
+
+  function importFromExcelFile(file, name) {
+    if (!window.LuckyExcel) { setStatus('Import library unavailable'); createEmpty(); return; }
+    window.LuckyExcel.transformExcelToLucky(file, function (exportJson) {
+      if (!exportJson || !exportJson.sheets || !exportJson.sheets.length) {
+        setStatus('Could not read workbook — starting blank'); createEmpty(); return;
+      }
+      if (name) nameInput.value = name;
+      createFromSheets(exportJson.sheets);
+      setStatus('Imported ' + (name || file.name || 'workbook'));
+    });
+  }
+
+  function importCsvArrayBuffer(buf, name) {
+    const wb = XLSX.read(buf, { type: 'array' });
+    const firstName = wb.SheetNames[0];
+    const aoa = XLSX.utils.sheet_to_json(wb.Sheets[firstName], { header: 1 });
+    const celldata = [];
+    aoa.forEach((row, r) => row.forEach((val, c) => {
+      if (val !== '' && val != null) celldata.push({ r, c, v: { v: val, m: String(val) } });
+    }));
+    createFromSheets([{ name: firstName || 'Sheet1', status: 1, order: 0, index: 0, row: Math.max(100, aoa.length + 10), column: 26, celldata, config: {} }]);
+    if (name) nameInput.value = name;
+  }
+
+  async function loadExisting() {
+    setStatus('Loading…');
+    try {
+      const res = await fetch(`/api/documents/${docId}/editor-content`);
+      const info = await res.json();
+      if (!res.ok) throw new Error(info.error || 'Load failed');
+      nameInput.value = (info.name || 'Spreadsheet').replace(/\.(xlsx|xls|csv|json)$/i, '');
+      if (info.editor_content) {
+        try { createFromSheets(JSON.parse(info.editor_content)); setStatus('Loaded'); return; }
+        catch (_) { /* fall through to file import */ }
+      }
+      // No saved editor state — import the stored file.
+      const dl = await fetch(info.download_url);
+      const buf = await dl.arrayBuffer();
+      const fname = (info.original_filename || info.name || '').toLowerCase();
+      if (fname.endsWith('.csv')) {
+        importCsvArrayBuffer(buf, nameInput.value);
+        setStatus('Imported CSV');
+      } else {
+        const file = new File([buf], info.original_filename || 'workbook.xlsx');
+        importFromExcelFile(file, nameInput.value);
+      }
+    } catch (e) {
+      setStatus('Error: ' + e.message);
+      createEmpty();
+    }
+  }
+
+  // Build an .xlsx Blob from the current Luckysheet workbook (values + formulas).
+  function buildXlsxBlob() {
+    const sheets = window.luckysheet.getAllSheets();
+    const wb = XLSX.utils.book_new();
+    sheets.forEach((s) => {
+      const data = s.data || [];
+      const ws = {};
+      let maxR = 0, maxC = 0;
+      const grid = data.length ? data : luckyCelldataToGrid(s.celldata || []);
+      grid.forEach((row, r) => {
+        if (!row) return;
+        row.forEach((cell, c) => {
+          if (cell == null) return;
+          const v = (typeof cell === 'object') ? cell.v : cell;
+          const f = (typeof cell === 'object') ? cell.f : null;
+          if (v == null && !f) return;
+          const ref = XLSX.utils.encode_cell({ r, c });
+          const out = {};
+          if (typeof v === 'number') { out.t = 'n'; out.v = v; }
+          else if (typeof v === 'boolean') { out.t = 'b'; out.v = v; }
+          else { out.t = 's'; out.v = v == null ? '' : String(v); }
+          if (f) out.f = String(f).replace(/^=/, '');
+          ws[ref] = out;
+          if (r > maxR) maxR = r;
+          if (c > maxC) maxC = c;
+        });
+      });
+      ws['!ref'] = XLSX.utils.encode_range({ s: { r: 0, c: 0 }, e: { r: maxR, c: maxC } });
+      XLSX.utils.book_append_sheet(wb, ws, (s.name || 'Sheet').slice(0, 31));
+    });
+    const out = XLSX.write(wb, { bookType: 'xlsx', type: 'array' });
+    return new Blob([out], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+  }
+
+  function luckyCelldataToGrid(celldata) {
+    const grid = [];
+    celldata.forEach((c) => {
+      grid[c.r] = grid[c.r] || [];
+      grid[c.r][c.c] = c.v;
+    });
+    return grid;
+  }
+
+  async function save() {
+    setStatus('Saving…');
+    const name = (nameInput.value || 'Untitled Spreadsheet').trim();
+    const content = JSON.stringify(window.luckysheet.getAllSheets());
+    const fd = new FormData();
+    if (docId) fd.append('doc_id', String(docId));
+    if (projectId) fd.append('project_id', String(projectId));
+    fd.append('kind', 'sheet');
+    fd.append('name', name);
+    fd.append('content', content);
+    try {
+      const blob = buildXlsxBlob();
+      fd.append('file', blob, `${name}.xlsx`);
+    } catch (e) { /* still save editor state without file */ }
+    try {
+      const res = await fetch('/api/documents/editor/save', { method: 'POST', body: fd });
+      const json = await res.json();
+      if (!res.ok) throw new Error(json.error || 'Save failed');
+      docId = json.id;
+      const url = new URL(location.href);
+      url.searchParams.set('doc_id', String(docId));
+      history.replaceState(null, '', url);
+      setStatus('Saved to Documents · ' + new Date().toLocaleTimeString());
+      if (window.showToast) window.showToast('Saved to Documents');
+    } catch (e) {
+      setStatus('Error: ' + e.message);
+      alert(e.message);
+    }
+  }
+
+  function exportXlsx() {
+    try {
+      const blob = buildXlsxBlob();
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(blob);
+      a.download = `${(nameInput.value || 'spreadsheet').trim()}.xlsx`;
+      a.click();
+      setTimeout(() => URL.revokeObjectURL(a.href), 4000);
+    } catch (e) { alert('Export failed: ' + e.message); }
+  }
+
+  function waitForLuckysheet(cb, tries) {
+    tries = tries || 0;
+    if (window.luckysheet && window.luckysheet.create) { cb(); return; }
+    if (tries > 60) { loadingEl.innerHTML = 'Spreadsheet engine failed to load. Check your connection and retry.'; return; }
+    setTimeout(() => waitForLuckysheet(cb, tries + 1), 100);
+  }
+
+  document.getElementById('sheetSaveBtn').addEventListener('click', save);
+  document.getElementById('sheetExportBtn').addEventListener('click', exportXlsx);
+  document.getElementById('sheetImportBtn').addEventListener('click', () => document.getElementById('sheetImportInput').click());
+  document.getElementById('sheetImportInput').addEventListener('change', (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+    const nm = file.name.replace(/\.(xlsx|xls|csv)$/i, '');
+    if (file.name.toLowerCase().endsWith('.csv')) {
+      const reader = new FileReader();
+      reader.onload = (ev) => importCsvArrayBuffer(ev.target.result, nm);
+      reader.readAsArrayBuffer(file);
+    } else {
+      importFromExcelFile(file, nm);
+    }
+    e.target.value = '';
+  });
+  window.addEventListener('keydown', (e) => {
+    if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 's') { e.preventDefault(); save(); }
+  });
+
+  waitForLuckysheet(() => { if (docId) loadExisting(); else createEmpty(); });
+})();
+</script>
+{% endblock %}

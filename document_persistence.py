@@ -198,6 +198,10 @@ def ensure_document_schema(engine, db) -> None:
             migrations.append('ALTER TABLE document ADD COLUMN retention_until DATETIME')
         if 'legal_hold' not in cols:
             migrations.append('ALTER TABLE document ADD COLUMN legal_hold INTEGER DEFAULT 0')
+        if 'editor_kind' not in cols:
+            migrations.append('ALTER TABLE document ADD COLUMN editor_kind VARCHAR(20)')
+        if 'editor_content' not in cols:
+            migrations.append('ALTER TABLE document ADD COLUMN editor_content TEXT')
         for sql in migrations:
             db.session.execute(text(sql))
 
@@ -444,7 +448,22 @@ def document_to_dict(
         'deleted_at': doc.deleted_at.isoformat() if getattr(doc, 'deleted_at', None) else None,
         'file_url': f'/uploads/documents/{doc.project_id}/{doc.filename}',
         'download_url': f'/api/documents/{doc.id}/download',
+        'editor_kind': _editor_kind_for(doc),
     }
+
+
+def _editor_kind_for(doc):
+    """Which built-in editor can open this document (explicit or inferred by extension)."""
+    explicit = getattr(doc, 'editor_kind', None)
+    if explicit:
+        return explicit
+    name = (doc.original_filename or doc.filename or doc.name or '').lower()
+    ext = name.rsplit('.', 1)[-1] if '.' in name else ''
+    if ext in ('xlsx', 'xls', 'csv'):
+        return 'sheet'
+    if ext in ('docx', 'doc', 'txt', 'rtf', 'html', 'htm'):
+        return 'doc'
+    return None
 
 
 def share_link_to_dict(link, base_url: str = '') -> dict[str, Any]:
