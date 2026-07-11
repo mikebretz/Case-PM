@@ -7,17 +7,235 @@ from datetime import datetime
 from budget_persistence import (
     PENDING_CO_STATUSES,
     get_budget_state,
-    normalize_cost_code,
     save_budget_state,
 )
 from pay_app_persistence import (
     _find_sub_sov_keys_for_company,
     get_pay_app_state,
+    normalize_cost_code,
     resolve_sub_sov_targets_for_allocation,
     save_pay_app_state,
 )
 
 APPROVED_CO_STATUS = 'Approved'
+APPROVED_SUB_PAY_APP_STATUSES = ('Approved', 'Approved — Lien Waiver Received')
+
+
+def _canonical_company_key(company_id=None, company_name=None):
+    """Prefer stable vendor id; fall back to trimmed company name."""
+    cid = str(company_id).strip() if company_id is not None and str(company_id).strip() != '' else ''
+    if cid:
+        return cid
+    return (company_name or '').strip()
+
+
+def _match_company_keys(company_id=None, company_name=None):
+    """All dict keys that may refer to the same vendor in pay-app state."""
+    keys = []
+    seen = set()
+
+    def add(key):
+        k = str(key).strip() if key is not None else ''
+        if k and k not in seen:
+            seen.add(k)
+            keys.append(k)
+
+    add(company_id)
+    add(company_name)
+    return keys
+
+
+def normalize_sub_sov_keys(sub_sov):
+    """Merge subcontractor SOV buckets that share the same vendor id or name."""
+    sub_sov = sub_sov or {}
+    if not isinstance(sub_sov, dict):
+        return {}
+
+    canonical_for_key = {}
+    for key in sub_sov:
+        canonical_for_key[key] = key
+
+    keys = list(sub_sov.keys())
+    for i, key_a in enumerate(keys):
+        for key_b in keys[i + 1:]:
+            lines_a = sub_sov.get(key_a) or []
+            lines_b = sub_sov.get(key_b) or []
+            match = False
+            if str(key_a).strip() == str(key_b).strip():
+                match = True
+            elif lines_a and lines_b:
+                ids_a = {str(l.get('from_commitment') or '') for l in lines_a}
+                ids_b = {str(l.get('from_commitment') or '') for l in lines_b}
+                if ids_a & ids_b - {''}:
+                    match = True
+            if match:
+                canon = canonical_for_key[key_a]
+                canonical_for_key[key_b] = canon
+
+    merged = {}
+    for key, lines in sub_sov.items():
+        canon = canonical_for_key.get(key, key)
+        if canon not in merged:
+            merged[canon] = []
+        for line in lines or []:
+            norm = normalize_cost_code(line.get('cost_code'))
+            existing = None
+            for target in merged[canon]:
+                if normalize_cost_code(target.get('cost_code')) == norm:
+                    existing = target
+                    break
+            if existing:
+                for field in (
+                    'original_commitment', 'change_orders', 'scheduled_value',
+                    'billed_to_date', 'co_billed_to_date', 'work_this_period', 'materials_stored',
+                ):
+                    existing[field] = float(existing.get(field) or 0) + float(line.get(field) or 0)
+                if line.get('from_change_order') and line['from_change_order'] != existing.get('from_change_order'):
+                    prior = existing.get('from_change_order') or ''
+                    nums = [n.strip() for n in prior.split(',') if n.strip()]
+                    if line['from_change_order'] not in nums:
+                        nums.append(line['from_change_order'])
+                    existing['from_change_order'] = ', '.join(nums)
+            else:
+                merged[canon].append(dict(line))
+    return merged
+
+
+def _sum_approved_sub_pay_apps(pay_state):
+    """Total approved subcontractor billing per company key."""
+    totals = defaultdict(float)
+    sub_hist = pay_state.get('subPayAppHistory') or {}
+    if not isinstance(sub_hist, dict):
+        return totals
+    for company_key, periods in sub_hist.items():
+        if not isinstance(periods, dict):
+            continue
+        for entry in periods.values():
+            if not isinstance(entry, dict):
+                continue
+            status = (entry.get('status') or '').strip()
+            if entry.get('archived'):
+                continue
+            if status and 'Approved' not in status:
+                continue
+            totals[str(company_key)] += float(entry.get('totalBilledThisPeriod') or 0)
+    return totals
+
+
+def compute_company_invoiced_totals(pay_state, commitments):
+    """Map commitment id -> invoiced amount from approved sub pay apps."""
+    pay_totals = _sum_approved_sub_pay_apps(pay_state)
+    result = {}
+    for com in commitments:
+        if com.status not in APPROVED_COMMITMENT_STATUSES:
+            continue
+        invoiced = 0.0
+        for key in _match_company_keys(getattr(com, 'company_id', None), com.company_name):
+            invoiced += pay_totals.get(key, 0.0)
+        if invoiced <= 0 and com.commitment_type in ('Purchase Order', 'Material Supply'):
+            invoiced = float(getattr(com, 'invoiced_amount', 0) or 0)
+        result[com.id] = round(invoiced, 2)
+    return result
+
+
+def reconcile_commitment_invoiced_amounts(commitments, pay_state):
+    """Update commitment.invoiced_amount from approved pay applications."""
+    totals = compute_company_invoiced_totals(pay_state, commitments)
+    updated = []
+    for com in commitments:
+        new_invoiced = totals.get(com.id, 0.0)
+        if float(getattr(com, 'invoiced_amount', 0) or 0) != new_invoiced:
+            com.invoiced_amount = new_invoiced
+            updated.append({
+                'commitment_id': com.id,
+                'number': com.number,
+                'invoiced_amount': new_invoiced,
+            })
+    return updated
+
+
+def compute_budget_actual_targets(pay_state, commitments, com_alloc_map):
+    """Roll up cost-to-date for budget lines from SOV billing and PO invoicing."""
+    targets = defaultdict(float)
+    sub_sov = normalize_sub_sov_keys(pay_state.get('subcontractorSOV') or {})
+
+    for _company_key, lines in sub_sov.items():
+        for line in lines or []:
+            code = line.get('cost_code')
+            if not code:
+                continue
+            norm = normalize_cost_code(code)
+            billed = float(line.get('billed_to_date') or 0) + float(line.get('co_billed_to_date') or 0)
+            if billed:
+                targets[_budget_line_key(code, 'Subcontract')] += billed
+
+    company_invoiced = compute_company_invoiced_totals(pay_state, commitments)
+    for com in commitments:
+        if com.commitment_type not in ('Purchase Order', 'Material Supply'):
+            continue
+        invoiced = company_invoiced.get(com.id, 0.0)
+        if invoiced <= 0:
+            continue
+        allocs = com_alloc_map.get(com.id, [])
+        ctype = _commitment_cost_type(com)
+        if not allocs:
+            targets[_budget_line_key('01-0000', ctype)] += invoiced
+            continue
+        alloc_total = sum(float(a.amount or 0) for a in allocs)
+        if alloc_total <= 0:
+            share_each = invoiced / len(allocs)
+            for alloc in allocs:
+                code = alloc.cost_code or '01-0000'
+                targets[_budget_line_key(code, ctype)] += share_each
+        else:
+            for alloc in allocs:
+                code = alloc.cost_code or '01-0000'
+                share = invoiced * (float(alloc.amount or 0) / alloc_total)
+                targets[_budget_line_key(code, ctype)] += share
+
+    return {k: round(v, 2) for k, v in targets.items()}
+
+
+def apply_budget_actual_reconcile(state, actual_targets):
+    """Set budget line actual (cost to date) from reconciled pay-app / PO totals."""
+    lines = state.get('budgetLines') or []
+    if not isinstance(lines, list):
+        lines = []
+
+    indexed = {}
+    for line in lines:
+        key = _budget_line_key(line.get('cost_code'), line.get('cost_type'))
+        indexed[key] = line
+
+    seen = set()
+    for key, amt in (actual_targets or {}).items():
+        seen.add(key)
+        line = indexed.get(key)
+        if not line:
+            code, ctype = key
+            line = {
+                'id': int(datetime.utcnow().timestamp() * 1000) + len(indexed),
+                'cost_code': code if isinstance(code, str) and '-' in code else key[0],
+                'description': f'Auto — {key[0]}',
+                'cost_type': key[1] or 'Other',
+                'original_budget': 0,
+                'actual': 0,
+                'syncStatus': 'Pending',
+                'percent_complete': 0,
+                'notes': 'Reconciled cost to date',
+            }
+            lines.append(line)
+            indexed[key] = line
+        line['actual'] = float(amt or 0)
+        line['actual_source'] = 'reconciled'
+
+    for key, line in indexed.items():
+        if key not in seen and line.get('actual_source') == 'reconciled':
+            line['actual'] = 0
+
+    state['budgetLines'] = lines
+    return state
+
 APPROVED_COMMITMENT_STATUSES = ('Approved', 'Partially Invoiced', 'Closed')
 PENDING_COMMITMENT_STATUSES = ('Submitted', 'Pending PM', 'Pending Accounting', 'Pending Owner')
 
@@ -198,16 +416,17 @@ def compute_contractor_sov_co_amounts(cos, co_alloc_map):
 
 def compute_sub_sov_derivatives(cos, commitments, co_alloc_map, com_alloc_map, existing_sub_sov, Commitment):
     originals = defaultdict(lambda: defaultdict(float))
-    changes = defaultdict(lambda: defaultdict(lambda: {'amount': 0.0, 'co_number': None, 'description': ''}))
+    changes = defaultdict(lambda: defaultdict(lambda: {'amount': 0.0, 'co_numbers': [], 'description': ''}))
     display_codes = defaultdict(dict)
-    sub_sov = existing_sub_sov or {}
+    sub_sov = normalize_sub_sov_keys(existing_sub_sov or {})
 
     for com in commitments:
         if com.commitment_type != 'Subcontract':
             continue
         if com.status not in APPROVED_COMMITMENT_STATUSES:
             continue
-        keys = _find_sub_sov_keys_for_company(sub_sov, com.company_id, com.company_name)
+        canon = _canonical_company_key(com.company_id, com.company_name)
+        keys = _find_sub_sov_keys_for_company(sub_sov, com.company_id, com.company_name) or [canon]
         for alloc in com_alloc_map.get(com.id, []):
             code = alloc.cost_code
             if not code:
@@ -237,7 +456,8 @@ def compute_sub_sov_derivatives(cos, commitments, co_alloc_map, com_alloc_map, e
             for key in targets:
                 bucket = changes[key][norm]
                 bucket['amount'] += amt
-                bucket['co_number'] = co.number
+                if co.number and co.number not in bucket['co_numbers']:
+                    bucket['co_numbers'].append(co.number)
                 bucket['description'] = getattr(alloc, 'description', None) or co.description
                 display_codes[key][norm] = getattr(alloc, 'cost_code', None) or co.cost_code
 
@@ -292,7 +512,9 @@ def apply_sub_sov_reconcile(state, originals, changes, display_codes):
                 'work_this_period': billing.get('work_this_period', 0),
                 'materials_stored': billing.get('materials_stored', 0),
             }
-            if chg_info.get('co_number'):
+            if chg_info.get('co_numbers'):
+                line['from_change_order'] = ', '.join(chg_info['co_numbers'])
+            elif chg_info.get('co_number'):
                 line['from_change_order'] = chg_info['co_number']
             new_lines.append(line)
         sub_sov[company_key] = new_lines
@@ -430,9 +652,14 @@ def reconcile_project_accounting(
     budget_targets = compute_budget_derivatives(cos, commitments, co_alloc_map, com_alloc_map)
     _, budget_state = get_budget_state(BudgetProjectState, project_id)
     budget_state = apply_budget_reconcile(budget_state, budget_targets)
-    save_budget_state(BudgetProjectState, db, project_id, budget_state, user_id)
 
     _, pay_state = get_pay_app_state(PayAppProjectState, project_id)
+    pay_state['subcontractorSOV'] = normalize_sub_sov_keys(pay_state.get('subcontractorSOV') or {})
+
+    actual_targets = compute_budget_actual_targets(pay_state, commitments, com_alloc_map)
+    budget_state = apply_budget_actual_reconcile(budget_state, actual_targets)
+    save_budget_state(BudgetProjectState, db, project_id, budget_state, user_id)
+
     co_totals, co_display = compute_contractor_sov_co_amounts(cos, co_alloc_map)
     pay_state = apply_contractor_sov_reconcile(pay_state, co_totals, co_display)
     originals, changes, display_codes = compute_sub_sov_derivatives(
@@ -443,6 +670,7 @@ def reconcile_project_accounting(
     save_pay_app_state(PayAppProjectState, db, project_id, pay_state, user_id)
 
     commitment_updates = reconcile_commitment_approved_changes(cos, commitments, co_alloc_map)
+    invoiced_updates = reconcile_commitment_invoiced_amounts(commitments, pay_state)
     pending_items = list_pending_budget_items(cos, commitments, co_alloc_map, com_alloc_map)
 
     db.session.commit()
@@ -452,9 +680,12 @@ def reconcile_project_accounting(
         'contractorSOV': pay_state.get('contractorSOV'),
         'subcontractorSOV': pay_state.get('subcontractorSOV'),
         'commitment_updates': commitment_updates,
+        'invoiced_updates': invoiced_updates,
+        'actual_cost_applied': sum(actual_targets.values()),
         'pending_items': pending_items,
         'budget_sync_result': {
             'budget_amount_applied': sum(v['approved_changes'] + v['pending'] + v['committed'] for v in budget_targets.values()),
+            'actual_cost_applied': sum(actual_targets.values()),
             'budgetLines': budget_state.get('budgetLines'),
         },
         'sync_result': {
