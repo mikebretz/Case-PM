@@ -86,10 +86,10 @@ window.CASEPM_DAILY_LOG_CTX = {
 </div>
 
 <!-- FILTERS -->
-<div class="flex flex-col md:flex-row gap-2 mb-3 flex-shrink-0">
-  <input type="text" id="dlogSearch" placeholder="Search date, work performed, weather…" class="dlog-input flex-1">
-  <input type="date" id="dlogDateFilter" class="dlog-input md:w-44">
-  <select id="dlogStatusFilter" class="dlog-input md:w-40">
+<div class="flex flex-wrap items-center gap-2 mb-3 flex-shrink-0">
+  <input type="text" id="dlogSearch" placeholder="Search date, work performed, weather…" class="dlog-input" style="flex:1 1 320px; min-width:200px; width:auto;">
+  <input type="date" id="dlogDateFilter" class="dlog-input" style="flex:0 0 auto; width:160px;">
+  <select id="dlogStatusFilter" class="dlog-input" style="flex:0 0 auto; width:140px;">
     <option value="">All Statuses</option>
     <option value="Draft">Draft</option>
     <option value="Submitted">Submitted</option>
