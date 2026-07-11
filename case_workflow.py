@@ -204,6 +204,18 @@ def ensure_workflow_schema(engine):
 def get_role_permissions(user):
     if not user:
         return {}
+    try:
+        from user_permissions_persistence import get_user_permissions
+        perms = get_user_permissions(user)
+        # Legacy compat for JS that checks modules === '*'
+        if user.role == 'Admin':
+            legacy = dict(perms)
+            legacy['modules'] = '*'
+            legacy['approve'] = '*'
+            return legacy
+        return perms
+    except Exception:
+        pass
     if getattr(user, 'permissions_json', None):
         try:
             return json.loads(user.permissions_json)
@@ -212,7 +224,42 @@ def get_role_permissions(user):
     return ROLE_PERMISSIONS.get(user.role or 'Viewer', ROLE_PERMISSIONS['Viewer'])
 
 
-def user_can_approve(user, module):
+def _resolve_module_key(module):
+    from permissions_catalog import WORKFLOW_MODULE_MAP, LEGACY_MODULE_MAP, all_module_keys
+    if module in all_module_keys():
+        return module
+    return WORKFLOW_MODULE_MAP.get(module) or LEGACY_MODULE_MAP.get(module) or module
+
+
+def user_module_perms(user, module):
+    if not user:
+        return {'access': 'none', 'approve': 'none'}
+    if user.role == 'Admin':
+        return {'access': 'admin', 'approve': 'approve_reject'}
+    perms = get_role_permissions(user)
+    if perms.get('modules') == '*':
+        return {'access': 'admin', 'approve': 'approve_reject'}
+    modules = perms.get('modules') or {}
+    if isinstance(modules, list):
+        # legacy list format
+        key = _resolve_module_key(module)
+        if key in modules or module in modules:
+            return {'access': 'edit', 'approve': 'none'}
+        return {'access': 'view' if perms.get('modules') == 'view' else 'none', 'approve': 'none'}
+    key = _resolve_module_key(module)
+    return modules.get(key, {'access': 'none', 'approve': 'none'})
+
+
+def user_has_module_access(user, module, min_access='view'):
+    from permissions_catalog import ACCESS_RANK
+    if user.role == 'Admin':
+        return True
+    mp = user_module_perms(user, module)
+    level = mp.get('access', 'none')
+    return ACCESS_RANK.get(level, 0) >= ACCESS_RANK.get(min_access, 0)
+
+
+def user_can_approve(user, module, action='approve'):
     if not user:
         return False
     if user.role == 'Admin':
@@ -221,7 +268,18 @@ def user_can_approve(user, module):
     approve = perms.get('approve', [])
     if approve == '*':
         return True
-    return module in approve
+    # Legacy list format
+    if isinstance(approve, list) and module in approve:
+        return action in ('approve', 'submit')
+    mp = user_module_perms(user, module)
+    ap = mp.get('approve', 'none')
+    if action == 'approve':
+        return ap in ('approve', 'approve_reject')
+    if action == 'reject':
+        return ap in ('reject', 'approve_reject')
+    if action == 'submit':
+        return ap in ('submit', 'approve', 'approve_reject')
+    return ap == 'approve_reject'
 
 
 def user_portal_type(user):

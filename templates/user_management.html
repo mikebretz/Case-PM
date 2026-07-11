@@ -2,6 +2,7 @@
 
 {% block content %}
 <script src="{{ url_for('static', filename='js/casepm-esign.js') }}"></script>
+<script src="{{ url_for('static', filename='js/user-permissions-ui.js') }}"></script>
 <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
 
 <style>
@@ -34,7 +35,7 @@
 <!-- HEADER - Clean, no duplicate title in center, no project designation (global page) -->
 <div class="h-16 border-b border-zinc-800 bg-zinc-900 flex items-center px-6 flex-shrink-0">
     <div class="w-1/3">
-        <div class="text-[10px] text-zinc-400 tracking-[1px] font-medium">GLOBAL ADMINISTRATION</div>
+        <div class="text-[10px] text-zinc-400 tracking-[1px] font-medium">GLOBAL ADMINISTRATION · ADMIN ONLY</div>
         <div class="text-xl font-semibold tracking-tight text-white">User Management</div>
     </div>
 
@@ -170,7 +171,9 @@
         <!-- TABS -->
         <div class="flex border-b border-zinc-700 mb-6">
             <button onclick="switchTab('general')" id="tab-general" class="px-6 py-3 text-sm font-medium border-b-2 border-emerald-500 text-white">General</button>
-            <button onclick="switchTab('permissions')" id="tab-permissions" class="px-6 py-3 text-sm font-medium text-zinc-400 hover:text-white">Permissions</button>
+            <button onclick="switchTab('permissions')" id="tab-permissions" class="px-6 py-3 text-sm font-medium text-zinc-400 hover:text-white">
+                <i class="fa-solid fa-shield-halved mr-1 text-amber-400/80"></i> Permissions <span class="text-[9px] uppercase text-amber-500/90 ml-1">Admin</span>
+            </button>
             <button onclick="switchTab('signature')" id="tab-signature" class="px-6 py-3 text-sm font-medium text-zinc-400 hover:text-white">Signature &amp; Certificate</button>
         </div>
 
@@ -293,20 +296,13 @@
                 </div>
             </div>
 
-            <!-- PERMISSIONS TAB -->
+            <!-- PERMISSIONS TAB (admin only — this page is admin-restricted) -->
             <div id="tab-content-permissions" class="hidden">
-                <div class="text-sm text-zinc-400 mb-4">Set module access levels and approval rights. Use Role Templates for quick setup.</div>
-                
-                <div class="flex gap-2 mb-4 flex-wrap">
-                    <button type="button" onclick="applyRoleTemplate('Admin')" class="px-3 py-1 text-xs bg-zinc-700 hover:bg-zinc-600 rounded">Admin Template</button>
-                    <button type="button" onclick="applyRoleTemplate('Project Manager')" class="px-3 py-1 text-xs bg-zinc-700 hover:bg-zinc-600 rounded">PM Template</button>
-                    <button type="button" onclick="applyRoleTemplate('Contractor Accounting')" class="px-3 py-1 text-xs bg-zinc-700 hover:bg-zinc-600 rounded">Accounting Template</button>
-                    <button type="button" onclick="applyRoleTemplate('Company User')" class="px-3 py-1 text-xs bg-zinc-700 hover:bg-zinc-600 rounded">Company User Template</button>
-                    <button type="button" onclick="applyRoleTemplate('Viewer')" class="px-3 py-1 text-xs bg-zinc-700 hover:bg-zinc-600 rounded">Viewer Template</button>
+                <div class="rounded-lg border border-amber-900/40 bg-amber-950/20 px-4 py-3 mb-4 text-xs text-amber-200/90">
+                    <strong>Module access matrix.</strong> Set per-module access (none → client view → view → entry → edit → admin) and approval rights (submit, approve, reject). Changes apply when you save the user and sync to the server account.
                 </div>
-
-                <div id="permissionsContainer" class="space-y-2 max-h-[380px] overflow-auto pr-2">
-                    <!-- Dynamically populated -->
+                <div id="permissionsContainer" class="max-h-[52vh] overflow-auto pr-1">
+                    <div class="text-sm text-zinc-500 py-8 text-center">Loading permissions matrix…</div>
                 </div>
             </div>
 
@@ -418,6 +414,8 @@
 
     const CASEPM_CURRENT_USER = {{ current_user_payload|tojson }};
     const CASEPM_SERVER_USERS = {{ server_users_for_js|tojson }};
+    const CASEPM_PERMISSIONS_CATALOG = {{ permissions_catalog|tojson }};
+    const CASEPM_IS_ADMIN = true;
     let currentUserEmail = CASEPM_CURRENT_USER.email || "michael.bretz@casepm.com";
 
     function resolveServerUserId(localUser) {
@@ -441,24 +439,63 @@
         localStorage.setItem('userAuditLog', JSON.stringify(userAuditLog));
     }
 
-    const modules = [
-        "Dashboard", "Projects", "Budget", "Commitments", "Pay Applications",
-        "Daily Log", "Weekly Reports", "RFIs", "Submittals", "Change Orders",
-        "Punch List", "Safety", "Schedule", "Documents", "Drawings", "Photos",
-        "Companies / Vendors", "User Management", "Program Settings", "Logs"
-    ];
-    const workflowModules = ["Submittals", "RFIs", "Change Orders", "Budget", "Daily Reports", "Documents"];
+    const modules = []; // legacy — matrix uses permissions_catalog
+    const workflowModules = [];
 
-    const roleTemplates = {
-        "Admin": { access: "Edit", approve: "Approve & Reject" },
-        "Project Manager": { access: "Edit", approve: "Approve & Reject" },
-        "Superintendent": { access: "Edit", approve: "Approve Only" },
-        "Architect": { access: "Edit", approve: "Approve Only" },
-        "Owner": { access: "View", approve: "Approve & Reject" },
-        "Contractor Accounting": { access: "Edit", approve: "Approve & Reject" },
-        "Company User": { access: "View", approve: "None" },
-        "Viewer": { access: "View", approve: "None" }
-    };
+    // ==================== PERMISSIONS (v2 matrix) ====================
+    let currentPermissionsMatrix = null;
+
+    async function loadPermissionsForUser(localUser) {
+        const serverId = resolveServerUserId(localUser);
+        if (serverId) {
+            try {
+                const res = await fetch(`/api/users/${serverId}/permissions`, { credentials: 'same-origin' });
+                if (res.ok) {
+                    const json = await res.json();
+                    return json.permissions || null;
+                }
+            } catch (_) {}
+        }
+        if (localUser?.permissions_v2) return localUser.permissions_v2;
+        if (localUser?.permissions && localUser.permissions.version === 2) return localUser.permissions;
+        return null;
+    }
+
+    async function renderPermissionsTab(localUser) {
+        const matrix = await loadPermissionsForUser(localUser);
+        const role = document.getElementById('role')?.value || localUser?.role || 'Viewer';
+        if (typeof CasePMPermissionsUI !== 'undefined') {
+            await CasePMPermissionsUI.initAndRender(
+                'permissionsContainer',
+                matrix || null,
+                { showGlobal: true }
+            );
+            if (!matrix && role) {
+                await CasePMPermissionsUI.applyTemplate(role);
+            }
+            currentPermissionsMatrix = CasePMPermissionsUI.getMatrix();
+        }
+    }
+
+    function getPermissionsFromMatrix() {
+        if (typeof CasePMPermissionsUI !== 'undefined') {
+            return CasePMPermissionsUI.getMatrix();
+        }
+        return currentPermissionsMatrix;
+    }
+
+    async function applyRoleTemplate(templateRole) {
+        const role = templateRole || document.getElementById('role')?.value;
+        if (role && typeof CasePMPermissionsUI !== 'undefined') {
+            await CasePMPermissionsUI.applyTemplate(role);
+            currentPermissionsMatrix = CasePMPermissionsUI.getMatrix();
+        }
+    }
+
+    // Legacy stubs (table/export may reference)
+    function renderPermissionsDropdowns() {}
+    function getPermissionsFromDropdowns() { return getPermissionsFromMatrix(); }
+    function setPermissionsToDropdowns() {}
 
     // ==================== COMPANY DROPDOWN (connected to Companies page) ====================
     function populateCompanyDropdown(selectedCompanyName = '') {
@@ -545,78 +582,6 @@
         }
     }
 
-    // ==================== PERMISSIONS ====================
-    function renderPermissionsDropdowns(containerId, existingPermissions = {}) {
-        const container = document.getElementById(containerId);
-        if (!container) return;
-        container.innerHTML = '';
-
-        modules.forEach(mod => {
-            const isWorkflow = workflowModules.includes(mod);
-            const perm = existingPermissions[mod] || { access: 'No Access', approve: 'None' };
-
-            const row = document.createElement('div');
-            row.className = 'flex items-center justify-between bg-zinc-800 border border-zinc-700 rounded-md px-4 py-2 text-sm';
-            
-            let html = `
-                <div class="font-medium w-48 flex-shrink-0">${mod}</div>
-                <div class="flex items-center gap-3">
-                    <select class="bg-zinc-900 border border-zinc-700 rounded px-3 py-1 text-sm min-w-[120px]" data-module="${mod}" data-type="access">
-                        <option value="No Access" ${perm.access === 'No Access' ? 'selected' : ''}>No Access</option>
-                        <option value="View" ${perm.access === 'View' ? 'selected' : ''}>View</option>
-                        <option value="Edit" ${perm.access === 'Edit' ? 'selected' : ''}>Edit</option>
-                    </select>
-            `;
-
-            if (isWorkflow) {
-                html += `
-                    <select class="bg-zinc-900 border border-zinc-700 rounded px-3 py-1 text-sm min-w-[140px]" data-module="${mod}" data-type="approve">
-                        <option value="None" ${perm.approve === 'None' ? 'selected' : ''}>None</option>
-                        <option value="Approve Only" ${perm.approve === 'Approve Only' ? 'selected' : ''}>Approve Only</option>
-                        <option value="Reject Only" ${perm.approve === 'Reject Only' ? 'selected' : ''}>Reject Only</option>
-                        <option value="Approve & Reject" ${perm.approve === 'Approve & Reject' ? 'selected' : ''}>Approve & Reject</option>
-                    </select>
-                `;
-            }
-            html += `</div>`;
-            row.innerHTML = html;
-            container.appendChild(row);
-        });
-    }
-
-    function getPermissionsFromDropdowns() {
-        const permissions = {};
-        document.querySelectorAll('#permissionsContainer select').forEach(select => {
-            const mod = select.dataset.module;
-            const type = select.dataset.type;
-            if (!permissions[mod]) permissions[mod] = { access: 'No Access', approve: 'None' };
-            permissions[mod][type] = select.value;
-        });
-        return permissions;
-    }
-
-    function setPermissionsToDropdowns(permissions) {
-        document.querySelectorAll('#permissionsContainer select').forEach(select => {
-            const mod = select.dataset.module;
-            const type = select.dataset.type;
-            if (permissions[mod] && permissions[mod][type]) {
-                select.value = permissions[mod][type];
-            }
-        });
-    }
-
-    function applyRoleTemplate(templateRole = null) {
-        const roleSelect = document.getElementById('role');
-        const role = templateRole || (roleSelect ? roleSelect.value : 'Viewer');
-        const template = roleTemplates[role] || roleTemplates["Viewer"];
-
-        document.querySelectorAll('#permissionsContainer select').forEach(select => {
-            const type = select.dataset.type;
-            if (type === 'access') select.value = template.access || 'View';
-            else if (type === 'approve') select.value = template.approve || 'None';
-        });
-    }
-
     // ==================== TABS ====================
     function switchTab(tab) {
         document.querySelectorAll('[id^="tab-content-"]').forEach(el => el.classList.add('hidden'));
@@ -633,13 +598,9 @@
             activeTab.classList.remove('text-zinc-400');
         }
 
-        // Render permissions when tab is opened
         if (tab === 'permissions') {
-            const container = document.getElementById('permissionsContainer');
-            if (container && container.children.length === 0) {
-                const currentPerms = currentEditingUserId ? (users.find(u => u.id == currentEditingUserId)?.permissions || {}) : {};
-                renderPermissionsDropdowns('permissionsContainer', currentPerms);
-            }
+            const localUser = currentEditingUserId ? users.find(u => u.id == currentEditingUserId) : null;
+            renderPermissionsTab(localUser);
         }
     }
 
@@ -871,7 +832,7 @@
 
         // Permissions fresh
         const permContainer = document.getElementById('permissionsContainer');
-        if (permContainer) permContainer.innerHTML = '';
+        if (permContainer) permContainer.innerHTML = '<div class="text-sm text-zinc-500 py-4 text-center">Open Permissions tab to configure access.</div>';
         
         // Phones
         setPhoneNumbersToUI([]);
@@ -944,11 +905,8 @@
         // Phones
         setPhoneNumbersToUI(user.phones || []);
 
-        // Permissions
-        const permContainer = document.getElementById('permissionsContainer');
-        if (permContainer) permContainer.innerHTML = '';
-        renderPermissionsDropdowns('permissionsContainer', user.permissions || {});
-        setTimeout(() => setPermissionsToDropdowns(user.permissions || {}), 80);
+        // Permissions loaded when tab opened
+        currentPermissionsMatrix = null;
 
         // Signature — server-backed, self-edit only
         const isOwner = (user.email && user.email.toLowerCase() === currentUserEmail.toLowerCase());
@@ -1000,7 +958,7 @@
     }
 
     // ==================== SAVE USER (FIXED + VALIDATION) ====================
-    function saveUser(e) {
+    async function saveUser(e) {
         e.preventDefault();
 
         try {
@@ -1052,7 +1010,7 @@
                 }
             }
 
-            const permissions = getPermissionsFromDropdowns();
+            const permissions = getPermissionsFromMatrix();
             const phones = getPhoneNumbersFromUI();
             const companyName = document.getElementById('companySelect').value;
 
@@ -1075,6 +1033,7 @@
                 accessEnabled: accessEnabled,
                 twoFactorEnabled: document.getElementById('twoFactorEnabled') ? document.getElementById('twoFactorEnabled').checked : false,
                 permissions: permissions,
+                permissions_v2: permissions,
                 profileImage: document.getElementById('profileImg').src,
                 notes: document.getElementById('notes').value.trim(),
                 lastUpdated: new Date().toISOString()
@@ -1106,6 +1065,16 @@
             }
 
             localStorage.setItem('users', JSON.stringify(users));
+
+            const serverId = resolveServerUserId(userData);
+            if (serverId && permissions && permissions.version === 2 && typeof CasePMPermissionsUI !== 'undefined') {
+                try {
+                    await CasePMPermissionsUI.saveForUser(serverId, permissions);
+                } catch (permErr) {
+                    console.warn('Permissions server sync:', permErr);
+                    showCenteredAlert('User saved locally but permissions sync failed: ' + permErr.message, 'warning');
+                }
+            }
 
             // Log the action with DETAILED field-by-field changes (old → new)
             const actionType = id ? 'USER_EDITED' : 'USER_CREATED';
@@ -1286,10 +1255,13 @@
 
             // Simplified Permissions display for main table
             let permDisplay = user.role || 'User';
-            if (user.permissions) {
-                const hasEdit = Object.values(user.permissions).some(p => p.access === 'Edit');
+            const pMatrix = user.permissions_v2 || (user.permissions?.version === 2 ? user.permissions : null);
+            if (pMatrix && typeof CasePMPermissionsUI !== 'undefined') {
+                permDisplay = CasePMPermissionsUI.summaryLabel(pMatrix);
+            } else if (user.permissions && typeof user.permissions === 'object') {
+                const hasEdit = Object.values(user.permissions).some(p => p && (p.access === 'Edit' || p.access === 'edit'));
                 if (hasEdit && !['Admin', 'Project Manager'].includes(user.role)) {
-                    permDisplay = `${user.role || 'User'} (Modified)`;
+                    permDisplay = `${user.role || 'User'} (Custom)`;
                 }
             }
             const permHtml = `<span class="px-2 py-0.5 text-[10px] rounded-full bg-zinc-700 text-emerald-300">${permDisplay}</span>`;
