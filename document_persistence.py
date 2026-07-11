@@ -20,6 +20,7 @@ SYSTEM_FOLDERS = [
     {'system_key': 'photos', 'name': 'Photos', 'description': 'Project photos and site images (locked)'},
     {'system_key': 'daily-logs', 'name': 'Daily Logs', 'description': 'Daily log attachments and exports (locked)'},
     {'system_key': 'safety', 'name': 'Safety', 'description': 'Safety records and OSHA reference documents (locked)'},
+    {'system_key': 'meeting-minutes', 'name': 'Meeting Minutes', 'description': 'OAC, superintendent, and project meeting records (locked)'},
     {'system_key': 'my-files', 'name': 'My Files', 'description': 'Your project uploads'},
 ]
 
