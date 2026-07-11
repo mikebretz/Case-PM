@@ -98,6 +98,10 @@
     return true;
   }
 
+  function devUnlock() {
+    return typeof CasePMDeveloperUnlock !== 'undefined' && CasePMDeveloperUnlock.isActive();
+  }
+
   function currentUserName() {
     if (global.CASEPM_PORTAL && global.CASEPM_PORTAL.userName) return global.CASEPM_PORTAL.userName;
     return 'User';
@@ -513,9 +517,22 @@
       allocations: allocs,
     };
     if (type === 'pco') {
-      return { ...base, estimated_amount: total || parseFloat(document.getElementById('modalAmount')?.value) || 0, status: document.getElementById('modalStatus')?.value || 'Open' };
+      const payload = { ...base, estimated_amount: total || parseFloat(document.getElementById('modalAmount')?.value) || 0, status: document.getElementById('modalStatus')?.value || 'Open' };
+      if (devUnlock()) {
+        const num = document.getElementById('modalNumber')?.value?.trim();
+        if (num) payload.number = num;
+      }
+      return payload;
     }
-    return { ...base, amount: total || parseFloat(document.getElementById('modalAmount')?.value) || 0, status: document.getElementById('modalStatus')?.value || 'Draft', date: document.getElementById('modalDate')?.value };
+    const coPayload = { ...base, amount: total || parseFloat(document.getElementById('modalAmount')?.value) || 0, status: document.getElementById('modalStatus')?.value || 'Draft', date: document.getElementById('modalDate')?.value };
+    if (devUnlock()) {
+      const num = document.getElementById('modalNumber')?.value?.trim();
+      if (num) coPayload.number = num;
+      if (document.getElementById('modalStatus')?.value === 'Approved' || document.getElementById('modalStatus')?.value === 'Draft') {
+        coPayload.executed_locked = false;
+      }
+    }
+    return coPayload;
   }
 
   function renderModalAttachmentList(record, mode) {
@@ -589,7 +606,7 @@
     document.getElementById('modalDateRow').classList.toggle('hidden', isPco);
     document.getElementById('modalContractTypeRow').classList.toggle('hidden', isPco);
     populateSelect('modalStatus', isPco ? PCO_STATUSES : (
-      record?.status === 'Approved' ? CO_STATUSES : CO_EDITABLE_STATUSES
+      (record?.status === 'Approved' && !devUnlock()) ? CO_STATUSES : CO_STATUSES
     ), record?.status || (isPco ? 'Open' : 'Draft'));
     populateSelect('modalReason', [''].concat(REASONS), record?.reason || '');
     populateSelect('modalPriority', PRIORITIES, record?.priority || 'Medium');
@@ -602,6 +619,14 @@
     document.getElementById('modalRequestedBy').value = record?.requested_by || currentUserName();
     document.getElementById('modalNotes').value = record?.notes || '';
     document.getElementById('modalDate').value = record?.date ? record.date.split('T')[0] : new Date().toISOString().split('T')[0];
+    const numRow = document.getElementById('modalNumberRow');
+    const numEl = document.getElementById('modalNumber');
+    if (numRow && numEl) {
+      const showNum = devUnlock() && !!record;
+      numRow.classList.toggle('hidden', !showNum);
+      numEl.value = record?.number || '';
+      numEl.disabled = !showNum;
+    }
     document.getElementById('modalContactEmail').value = record?.contact_email || '';
     document.getElementById('modalContactPhone').value = record?.contact_phone || '';
     state.allocationRows = (record?.allocations && record.allocations.length)
@@ -975,10 +1000,11 @@
     const co = state.changeOrders.find(c => c.id === id) || (state.drawerRecord?.id === id ? state.drawerRecord : null);
     if (!co) return;
     const approved = co.status === 'Approved';
-    const prompt = approved
+    const unlock = devUnlock();
+    const prompt = approved && !unlock
       ? `DELETE approved change order ${co.number}?\n\nThis is for testing only. Type DELETE to confirm.`
       : `Delete change order ${co.number}?`;
-    if (approved) {
+    if (approved && !unlock) {
       const typed = window.prompt(prompt);
       if (typed !== 'DELETE') return;
     } else if (!confirm(prompt)) {
@@ -1228,6 +1254,9 @@
     global.addEventListener('casepm:accounting-reconciled', () => {
       loadChangeOrders();
       loadDashboard();
+    });
+    global.addEventListener('casepm:developer-unlock-changed', () => {
+      if (typeof CasePMDeveloperUnlock !== 'undefined') CasePMDeveloperUnlock.sweep(document);
     });
   }
 

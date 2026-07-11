@@ -116,6 +116,11 @@ def developer_required(f):
     return decorated_function
 
 
+def _developer_unlock_bypass():
+    from developer_tools import developer_unlock_active
+    return developer_unlock_active()
+
+
 def permission_required(permission):
     def decorator(f):
         @wraps(f)
@@ -473,12 +478,14 @@ def inject_developer_flag():
     ep = request.endpoint or ''
     page_module = ENDPOINT_TO_MODULE.get(ep, 'app')
     if not current_user.is_authenticated:
-        return {'is_developer': False, 'page_module': page_module, 'is_admin_user': False, 'can_access_module': lambda m, min_access='view': False, 'allowed_modules': {}}
+        return {'is_developer': False, 'developer_unlock_mode': False, 'page_module': page_module, 'is_admin_user': False, 'can_access_module': lambda m, min_access='view': False, 'allowed_modules': {}}
     try:
-        from developer_tools import is_developer
+        from developer_tools import is_developer, developer_unlock_active
         dev = is_developer(current_user)
+        unlock = developer_unlock_active(current_user) if dev else False
     except Exception:
         dev = False
+        unlock = False
     is_admin = getattr(current_user, 'role', None) == 'Admin' or dev
     try:
         from case_workflow import user_has_module_access
@@ -498,6 +505,7 @@ def inject_developer_flag():
         allowed_modules = {}
     return {
         'is_developer': dev,
+        'developer_unlock_mode': unlock,
         'page_module': page_module,
         'is_admin_user': is_admin,
         'can_access_module': can_access_module,
@@ -1976,7 +1984,7 @@ def create_project():
         raw_number = request.form.get('number') or f"PRJ-{next_num:03d}"
         number = _normalize_project_number(raw_number)
         conflict = _project_number_conflict(number)
-        if conflict:
+        if conflict and not _developer_unlock_bypass():
             msg = f'Project number "{number}" is already used by "{conflict.name}". Project numbers are not case-sensitive.'
             if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
                 return jsonify({'error': msg}), 400
@@ -2029,7 +2037,7 @@ def update_project(project_id):
     try:
         new_number = _normalize_project_number(request.form.get('number') or project.number)
         conflict = _project_number_conflict(new_number, exclude_project_id=project_id)
-        if conflict:
+        if conflict and not _developer_unlock_bypass():
             msg = f'Project number "{new_number}" is already used by "{conflict.name}". Project numbers are not case-sensitive.'
             if request.headers.get('X-Requested-With') == 'XMLHttpRequest' or request.is_json:
                 return jsonify({'error': msg}), 400
@@ -2069,7 +2077,7 @@ def api_validate_project_number():
     if not number:
         return jsonify({'ok': False, 'error': 'Project number required'})
     conflict = _project_number_conflict(number, exclude_project_id=exclude_id)
-    if conflict:
+    if conflict and not _developer_unlock_bypass():
         return jsonify({
             'ok': False,
             'available': False,
@@ -6189,7 +6197,7 @@ def api_documents_patch(doc_id):
     if lock_err:
         return lock_err
     body = request.get_json(silent=True) or {}
-    if doc.is_system_locked:
+    if doc.is_system_locked and not _developer_unlock_bypass():
         if 'name' in body and body.get('name') and body['name'] != doc.name:
             return jsonify({'error': 'Locked job files cannot be renamed'}), 403
         if 'folder_id' in body:
@@ -6198,7 +6206,7 @@ def api_documents_patch(doc_id):
                 return jsonify({'error': 'Locked job files cannot be moved'}), 403
     if 'name' in body and body['name']:
         doc.name = str(body['name']).strip()[:300]
-    if 'folder_id' in body and not doc.is_system_locked:
+    if 'folder_id' in body and (not doc.is_system_locked or _developer_unlock_bypass()):
         fid = body['folder_id']
         if fid:
             folder = DocumentFolder.query.get(int(fid))
@@ -6225,7 +6233,7 @@ def api_documents_checkout(doc_id):
     doc = Document.query.get_or_404(doc_id)
     if doc.deleted_at:
         return jsonify({'error': 'Document is in recycle bin'}), 400
-    if doc.is_system_locked:
+    if doc.is_system_locked and not _developer_unlock_bypass():
         return jsonify({'error': 'System job files cannot be checked out'}), 403
     folder = DocumentFolder.query.get(doc.folder_id) if doc.folder_id else None
     if folder and not _folder_access(folder, 'upload'):
@@ -6340,7 +6348,7 @@ def api_documents_delete(doc_id):
     lock_err = _document_edit_lock_error(doc)
     if lock_err:
         return lock_err
-    if doc.is_system_locked:
+    if doc.is_system_locked and not _developer_unlock_bypass():
         return jsonify({'error': 'This file is locked (job/print output) and cannot be deleted'}), 403
     if doc.deleted_at:
         return jsonify({'ok': True})
@@ -6437,7 +6445,7 @@ def api_documents_permanent_delete(doc_id):
     doc = Document.query.get_or_404(doc_id)
     if not doc.deleted_at:
         return jsonify({'error': 'Move to recycle bin first'}), 400
-    if doc.is_system_locked:
+    if doc.is_system_locked and not _developer_unlock_bypass():
         return jsonify({'error': 'Locked file cannot be permanently deleted'}), 403
     if doc.legal_hold:
         return jsonify({'error': 'File is on legal hold and cannot be deleted'}), 403
@@ -7000,7 +7008,7 @@ def api_documents_bulk():
         folder = DocumentFolder.query.get_or_404(int(folder_id))
         moved = 0
         for doc in docs:
-            if doc.is_system_locked or doc.legal_hold:
+            if (doc.is_system_locked and not _developer_unlock_bypass()) or doc.legal_hold:
                 continue
             lock_err = _document_edit_lock_error(doc)
             if lock_err:
@@ -7016,7 +7024,7 @@ def api_documents_bulk():
     if action == 'delete':
         deleted = 0
         for doc in docs:
-            if doc.is_system_locked or doc.legal_hold:
+            if (doc.is_system_locked and not _developer_unlock_bypass()) or doc.legal_hold:
                 continue
             lock_err = _document_edit_lock_error(doc)
             if lock_err:
@@ -9877,7 +9885,37 @@ def program_settings():
 @developer_required
 def developer_console():
     from program_settings_persistence import load_program_settings
-    return render_template('developer.html', raw_settings=load_program_settings())
+    from developer_tools import developer_unlock_active
+    return render_template(
+        'developer.html',
+        raw_settings=load_program_settings(),
+        unlock_mode=developer_unlock_active(current_user),
+    )
+
+
+@app.route('/api/developer/unlock-mode', methods=['GET'])
+@login_required
+@developer_required
+def api_get_developer_unlock_mode():
+    from developer_tools import developer_unlock_active
+    return jsonify({'ok': True, 'active': developer_unlock_active(current_user)})
+
+
+@app.route('/api/developer/unlock-mode', methods=['POST'])
+@login_required
+@developer_required
+def api_set_developer_unlock_mode():
+    from developer_tools import set_developer_unlock_mode, developer_unlock_active
+    body = request.get_json(silent=True) or {}
+    active = bool(body.get('active'))
+    set_developer_unlock_mode(active)
+    write_audit(
+        'developer_unlock_on' if active else 'developer_unlock_off',
+        'Developer unlock edit mode turned on' if active else 'Developer unlock edit mode turned off',
+        module='developer',
+        commit=True,
+    )
+    return jsonify({'ok': True, 'active': developer_unlock_active(current_user)})
 
 
 @app.route('/api/program-settings', methods=['GET'])
@@ -10708,13 +10746,19 @@ def api_create_change_order():
 @login_required
 def api_update_change_order(co_id):
     from co_persistence import apply_co_fields, co_to_dict, run_change_order_accounting_sync, save_allocations, validate_allocations
+    from developer_tools import apply_immutable_co_fields
     co = ChangeOrder.query.get_or_404(co_id)
     body = request.get_json(silent=True) or {}
     old_status = co.status
     sync_result = None
     budget_sync_result = None
+    unlock = _developer_unlock_bypass()
     try:
         apply_co_fields(co, body)
+        if unlock:
+            apply_immutable_co_fields(co, body)
+            if body.get('executed_locked') is False:
+                co.executed_locked = False
         if body.get('allocations') is not None:
             status = body.get('status') or co.status
             allocations = body['allocations']
@@ -10786,6 +10830,8 @@ def api_delete_change_order(co_id):
     force = request.args.get('force') == '1'
     body = request.get_json(silent=True) or {}
     if body.get('force'):
+        force = True
+    if _developer_unlock_bypass() and co.status == 'Approved':
         force = True
     project_id = co.project_id
     try:
@@ -10897,7 +10943,7 @@ def api_change_order_workflow(co_id):
         return jsonify({'error': 'Rejection requires a comment.'}), 400
     old_status = co.status
     old_ball_role = co.ball_in_court_role
-    if getattr(co, 'executed_locked', False) and action in ('submit', 'approve'):
+    if getattr(co, 'executed_locked', False) and action in ('submit', 'approve') and not _developer_unlock_bypass():
         return jsonify({'error': 'This change order is executed and locked under owner e-signature.'}), 403
     allocs = ChangeOrderAllocation.query.filter_by(change_order_id=co.id).all()
     alloc_payload = [{
@@ -11206,10 +11252,13 @@ def api_create_pco():
 @login_required
 def api_update_pco(pco_id):
     from co_persistence import apply_pco_fields, pco_to_dict, save_allocations, validate_allocations
+    from developer_tools import apply_immutable_pco_fields
     pco = PotentialChangeOrder.query.get_or_404(pco_id)
     body = request.get_json(silent=True) or {}
     try:
         apply_pco_fields(pco, body)
+        if _developer_unlock_bypass():
+            apply_immutable_pco_fields(pco, body)
         if body.get('allocations') is not None:
             status = body.get('status') or pco.status
             allocations = body['allocations']

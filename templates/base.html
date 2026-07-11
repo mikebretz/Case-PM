@@ -190,6 +190,13 @@
     <script src="{{ url_for('static', filename='js/doc-picker.js') }}"></script>
     <script src="{{ url_for('static', filename='js/casepm-print.js') }}"></script>
     <script src="{{ url_for('static', filename='js/casepm-workflow.js') }}"></script>
+    {% if current_user.is_authenticated and is_developer %}
+    <script>
+        window.CASEPM_IS_DEVELOPER = true;
+        window.CASEPM_DEVELOPER_UNLOCK = {{ 'true' if developer_unlock_mode else 'false' }};
+    </script>
+    <script src="{{ url_for('static', filename='js/developer-unlock.js') }}"></script>
+    {% endif %}
 </head>
 <body class="bg-zinc-950 text-zinc-200 h-screen overflow-hidden {% if is_sub_portal %}portal-sub{% elif is_architect_portal %}portal-architect{% else %}portal-staff{% endif %}"
       data-page-module="{{ page_module|default('app') }}"
@@ -211,6 +218,20 @@
     <div class="portal-banner-architect hidden items-center justify-between px-5 py-1.5 bg-sky-950/80 border-b border-sky-800 text-xs text-sky-200 flex-shrink-0">
         <span><i class="fa-solid fa-compass-drafting mr-2"></i><strong>Architect Portal</strong> — review submittals, RFIs, and change orders</span>
         <a href="{{ url_for('email_page') }}?tab=internal" class="text-sky-400 hover:underline">Approvals inbox</a>
+    </div>
+    {% endif %}
+
+    {% if is_developer and developer_unlock_mode %}
+    <div id="devUnlockBanner" class="flex items-center justify-center gap-2 px-4 py-1.5 bg-red-950 border-b border-red-800 text-red-200 text-xs z-[90]">
+        <i class="fa-solid fa-unlock"></i>
+        <span><strong>Developer unlock mode</strong> — locked fields are editable. Changes bypass normal business rules.</span>
+        <a href="{{ url_for('developer_console') }}" class="underline hover:text-white ml-1">Console</a>
+    </div>
+    {% elif is_developer %}
+    <div id="devUnlockBanner" class="hidden flex items-center justify-center gap-2 px-4 py-1.5 bg-red-950 border-b border-red-800 text-red-200 text-xs z-[90]">
+        <i class="fa-solid fa-unlock"></i>
+        <span><strong>Developer unlock mode</strong> — locked fields are editable. Changes bypass normal business rules.</span>
+        <a href="{{ url_for('developer_console') }}" class="underline hover:text-white ml-1">Console</a>
     </div>
     {% endif %}
     

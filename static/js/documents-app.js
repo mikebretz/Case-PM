@@ -29,6 +29,15 @@
     bulkMode: false,
   };
 
+  function devUnlock() {
+    return typeof CasePMDeveloperUnlock !== 'undefined' && CasePMDeveloperUnlock.isActive();
+  }
+
+  function fileIsLocked(doc) {
+    if (devUnlock()) return false;
+    return !!(doc?.is_system_locked || doc?.is_edit_locked);
+  }
+
   function currentUserId() {
     return global.CASEPM_CURRENT_USER_ID || null;
   }
@@ -316,7 +325,8 @@
   }
 
   function selectItem(kind, id, locked, system) {
-    state.selected = { kind, id, locked: !!locked, system: !!system };
+    const effectiveLocked = devUnlock() ? false : !!locked;
+    state.selected = { kind, id, locked: effectiveLocked, system: !!system };
     document.querySelectorAll('.docs-item.selected, .docs-table tr.selected').forEach(x => x.classList.remove('selected'));
     const sel = kind === 'folder'
       ? document.querySelector(`.docs-item[data-kind="folder"][data-id="${id}"], tr[data-kind="folder"][data-id="${id}"]`)
@@ -348,7 +358,7 @@
       const lock = f.is_system_locked ? '<span class="docs-item-badge">Job</span>' : '';
       const co = f.is_checked_out ? `<span class="docs-item-badge checkout" title="Checked out by ${esc(f.checked_out_by_name || '')}"><i class="fa-solid fa-lock text-[9px]"></i></span>` : '';
       const bulk = state.browseMode === 'normal' ? `<input type="checkbox" class="docs-bulk-cb" data-bulk-id="${f.id}" ${state.bulkSelected.has(f.id) ? 'checked' : ''}>` : '';
-      html += `<div class="docs-item file ${fi.cls}${sel}" data-kind="file" data-id="${f.id}" data-locked="${f.is_system_locked ? '1' : ''}" data-edit-locked="${f.is_edit_locked ? '1' : ''}" draggable="${f.is_system_locked || f.is_edit_locked ? 'false' : 'true'}">
+      html += `<div class="docs-item file ${fi.cls}${sel}" data-kind="file" data-id="${f.id}" data-locked="${f.is_system_locked && !devUnlock() ? '1' : ''}" data-edit-locked="${f.is_edit_locked && !devUnlock() ? '1' : ''}" draggable="${(f.is_system_locked || f.is_edit_locked) && !devUnlock() ? 'false' : 'true'}">
         ${lock}${co}${bulk}
         <div class="docs-item-icon"><i class="fa-solid ${fi.icon}"></i></div>
         <div class="docs-item-name">${esc(f.name)}</div>
@@ -381,7 +391,7 @@
     files.forEach(f => {
       const sel = state.selected?.kind === 'file' && state.selected.id === f.id ? ' selected' : '';
       const fi = fileIcon(f.name, f.mime_type);
-      html += `<tr class="${sel}" data-kind="file" data-id="${f.id}" data-locked="${f.is_system_locked ? '1' : ''}" data-edit-locked="${f.is_edit_locked ? '1' : ''}" draggable="${f.is_system_locked || f.is_edit_locked ? 'false' : 'true'}">
+      html += `<tr class="${sel}" data-kind="file" data-id="${f.id}" data-locked="${f.is_system_locked && !devUnlock() ? '1' : ''}" data-edit-locked="${f.is_edit_locked && !devUnlock() ? '1' : ''}" draggable="${(f.is_system_locked || f.is_edit_locked) && !devUnlock() ? 'false' : 'true'}">
         <td class="docs-row-icon ${fi.cls}">${state.browseMode === 'normal' ? `<input type="checkbox" class="docs-bulk-cb" data-bulk-id="${f.id}" ${state.bulkSelected.has(f.id) ? 'checked' : ''}>` : ''}<i class="fa-solid ${fi.icon}"></i>${f.is_checked_out ? ' <i class="fa-solid fa-lock text-amber-400 text-[10px]" title="Checked out"></i>' : ''}</td>
         <td>${esc(f.name)}</td>
         <td class="text-xs text-zinc-500">${esc(f.document_type || '')}</td>
@@ -500,7 +510,7 @@
 
   async function moveFileToFolder(fileId, folderId) {
     const file = state.files.find(f => f.id === fileId) || state.previewDoc;
-    if (file?.is_system_locked) return;
+    if (fileIsLocked(file)) return;
     if (file?.folder_id === folderId) return;
     try {
       await api(`/api/documents/${fileId}`, {
@@ -594,7 +604,7 @@
         <dt>Versions</dt><dd>${esc(doc.version_count || 1)}</dd>
         <dt>Type</dt><dd>${esc(doc.document_type || doc.mime_type || '—')}</dd>
         <dt>Folder</dt><dd>${esc(doc.folder_name || '—')}</dd>
-        ${doc.is_system_locked ? '<dt>Status</dt><dd class="text-violet-300">Locked job file</dd>' : ''}
+        ${doc.is_system_locked && !devUnlock() ? '<dt>Status</dt><dd class="text-violet-300">Locked job file</dd>' : (doc.is_system_locked ? '<dt>Status</dt><dd class="text-red-300">Unlocked for editing (dev mode)</dd>' : '')}
         ${doc.is_checked_out ? `<dt>Checked out</dt><dd class="text-amber-300">${esc(doc.checked_out_by_name || 'Someone')}${doc.checked_out_at ? ' · ' + esc(doc.checked_out_at.slice(0, 16).replace('T', ' ')) : ''}</dd>` : ''}
         ${doc.legal_hold ? '<dt>Legal hold</dt><dd class="text-red-300">On hold — cannot delete</dd>' : ''}
         ${(doc.tags || []).length ? `<dt>Tags</dt><dd>${esc((doc.tags || []).join(', '))}</dd>` : ''}
@@ -606,9 +616,9 @@
         ${doc.can_check_out ? '<button type="button" class="docs-btn docs-btn-secondary" id="docsPreviewCheckout"><i class="fa-solid fa-lock"></i> Check out</button>' : ''}
         ${doc.can_check_in ? '<button type="button" class="docs-btn docs-btn-secondary" id="docsPreviewCheckin"><i class="fa-solid fa-lock-open"></i> Check in</button>' : ''}
         ${doc.can_force_unlock ? '<button type="button" class="docs-btn docs-btn-secondary" id="docsPreviewForceUnlock"><i class="fa-solid fa-unlock"></i> Force unlock</button>' : ''}
-        ${!doc.is_system_locked && !doc.is_edit_locked ? '<button type="button" class="docs-btn docs-btn-secondary" id="docsPreviewNewVersion"><i class="fa-solid fa-clock-rotate-left"></i> New version</button>' : ''}
+        ${(!doc.is_system_locked || devUnlock()) && !doc.is_edit_locked ? '<button type="button" class="docs-btn docs-btn-secondary" id="docsPreviewNewVersion"><i class="fa-solid fa-clock-rotate-left"></i> New version</button>' : ''}
       </div>
-      ${!doc.is_system_locked ? `<div class="mt-3 pt-3 border-t border-zinc-800">
+      ${(!doc.is_system_locked || devUnlock()) ? `<div class="mt-3 pt-3 border-t border-zinc-800">
         <label class="text-xs text-zinc-500 block mb-1">Tags (comma-separated)</label>
         <input type="text" id="docsPreviewTags" class="docs-input w-full text-xs mb-2" value="${esc((doc.tags || []).join(', '))}">
         <button type="button" class="docs-btn docs-btn-secondary w-full text-xs" id="docsPreviewSaveTags">Save tags</button>
@@ -742,8 +752,9 @@
       if (file?.can_force_unlock) items.push({ label: 'Force unlock', action: () => forceUnlockDocument(state.selected.id) });
       items.push({ label: 'Get shareable link (copy)', action: () => copyShareLink(state.selected.id) });
       items.push({ label: 'Share link options…', action: () => createShareLink(state.selected.id) });
-      items.push({ label: 'Rename', action: () => startRename('file', state.selected.id), disabled: state.selected.locked });
-      items.push({ label: 'Delete', action: () => deleteFile(state.selected.id), danger: true, disabled: state.selected.locked });
+      const locked = devUnlock() ? false : state.selected.locked;
+      items.push({ label: 'Rename', action: () => startRename('file', state.selected.id), disabled: locked });
+      items.push({ label: 'Delete', action: () => deleteFile(state.selected.id), danger: true, disabled: locked });
     }
     items.forEach(it => {
       if (it.disabled) return;

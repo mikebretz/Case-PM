@@ -4,79 +4,113 @@
 <style>
 .dev-page { max-width: 1100px; margin: 0 auto; padding: 1rem; }
 .dev-card { background: #18181b; border: 1px solid #3f3f46; border-radius: 1rem; padding: 1.5rem; margin-bottom: 1rem; }
+.dev-switch { position: relative; width: 3.5rem; height: 2rem; }
+.dev-switch input { opacity: 0; width: 0; height: 0; }
+.dev-slider {
+    position: absolute; cursor: pointer; inset: 0;
+    background: #3f3f46; border-radius: 999px; transition: .2s;
+}
+.dev-slider:before {
+    position: absolute; content: ""; height: 1.5rem; width: 1.5rem; left: 0.25rem; bottom: 0.25rem;
+    background: white; border-radius: 50%; transition: .2s;
+}
+.dev-switch input:checked + .dev-slider { background: #dc2626; }
+.dev-switch input:checked + .dev-slider:before { transform: translateX(1.5rem); }
+.dev-module-link {
+    display: flex; align-items: center; gap: 0.75rem; padding: 0.75rem 1rem;
+    background: #09090b; border: 1px solid #27272a; border-radius: 0.75rem;
+    color: #e4e4e7; font-size: 0.875rem; transition: border-color .15s, background .15s;
+}
+.dev-module-link:hover { border-color: #52525b; background: #18181b; }
 </style>
 
 <div class="dev-page">
-    <div class="mb-6 flex items-center justify-between">
+    <div class="mb-6 flex items-center justify-between flex-wrap gap-3">
         <div>
             <h1 class="text-2xl font-semibold text-red-400"><i class="fa-solid fa-code mr-2"></i>Developer Console</h1>
-            <p class="text-sm text-zinc-400 mt-1">Override locked records, sequential IDs, and approved data. Not visible to standard admins.</p>
+            <p class="text-sm text-zinc-400 mt-1">Turn on unlock edit mode, then browse any module and edit fields that are normally locked.</p>
         </div>
         <a href="{{ url_for('program_settings') }}" class="text-sm text-emerald-400 hover:underline">← Program Settings</a>
     </div>
 
-    <div class="dev-card border-red-900/50">
-        <h2 class="font-semibold text-amber-400 mb-2">⚠ Developer overrides</h2>
-        <p class="text-xs text-zinc-400">These actions bypass normal business rules. All uses should be logged in your change management process.</p>
-    </div>
-
-    <div class="dev-card">
-        <h2 class="font-semibold mb-3">Override project number</h2>
-        <p class="text-xs text-zinc-500 mb-3">Change a project number even if it is sequential or already assigned.</p>
-        <div class="grid grid-cols-1 md:grid-cols-3 gap-3">
-            <input type="number" id="dev_project_id" placeholder="Project ID" class="bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-sm">
-            <input type="text" id="dev_project_number" placeholder="New number e.g. 2026-014" class="bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-sm font-mono">
-            <button type="button" onclick="devOverrideProjectNumber()" class="px-4 py-2 bg-red-700 hover:bg-red-600 rounded-lg text-sm font-medium">Apply override</button>
+    <div class="dev-card border-red-900/40">
+        <div class="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
+            <div>
+                <h2 class="font-semibold text-lg text-zinc-100">Unlock Edit Mode</h2>
+                <p class="text-sm text-zinc-400 mt-1 max-w-xl">
+                    When enabled, you can open any record and edit sequential IDs, approved/locked data, SOV tables, and system-locked documents — as if creating them for the first time.
+                </p>
+                <p id="devUnlockStatus" class="text-xs mt-2 font-medium {{ 'text-red-400' if unlock_mode else 'text-zinc-500' }}">
+                    {{ 'ACTIVE — locked fields are editable across the app' if unlock_mode else 'OFF — normal business rules apply' }}
+                </p>
+            </div>
+            <label class="dev-switch flex-shrink-0" title="Toggle unlock edit mode">
+                <input type="checkbox" id="devUnlockToggle" {{ 'checked' if unlock_mode else '' }} onchange="toggleDevUnlockMode(this.checked)">
+                <span class="dev-slider"></span>
+            </label>
         </div>
     </div>
 
     <div class="dev-card">
-        <h2 class="font-semibold mb-3">Unlock executed change order</h2>
-        <p class="text-xs text-zinc-500 mb-3">Remove owner e-signature lock so the CO can be edited or re-approved.</p>
-        <div class="grid grid-cols-1 md:grid-cols-3 gap-3">
-            <input type="number" id="dev_co_id" placeholder="Change Order ID" class="bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-sm">
-            <button type="button" onclick="devUnlockChangeOrder()" class="px-4 py-2 bg-red-700 hover:bg-red-600 rounded-lg text-sm font-medium">Unlock CO</button>
+        <h2 class="font-semibold mb-3">What unlock mode opens up</h2>
+        <ul class="text-sm text-zinc-400 space-y-2 list-disc pl-5">
+            <li>Change order &amp; PCO numbers, status, and allocation tables on approved records</li>
+            <li>Executed / e-signed change orders — edit and re-workflow without separate unlock actions</li>
+            <li>Project numbers even when sequential or already assigned</li>
+            <li>Pay application SOV lines when contractor SOV is locked</li>
+            <li>System-locked job documents — rename, move, delete</li>
+            <li>Force-delete approved change orders without typing DELETE</li>
+        </ul>
+    </div>
+
+    <div class="dev-card">
+        <h2 class="font-semibold mb-3">Go to a module</h2>
+        <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2">
+            <a href="{{ url_for('change_orders_page') }}" class="dev-module-link"><i class="fa-solid fa-file-contract text-emerald-500 w-5"></i> Change Orders</a>
+            <a href="{{ url_for('projects_page') }}" class="dev-module-link"><i class="fa-solid fa-building text-sky-500 w-5"></i> Projects</a>
+            <a href="{{ url_for('pay_applications_page') }}" class="dev-module-link"><i class="fa-solid fa-file-invoice-dollar text-amber-500 w-5"></i> Pay Applications</a>
+            <a href="{{ url_for('documents_page') }}" class="dev-module-link"><i class="fa-solid fa-folder-open text-violet-500 w-5"></i> Documents</a>
+            <a href="{{ url_for('commitments_page') }}" class="dev-module-link"><i class="fa-solid fa-handshake text-orange-500 w-5"></i> Commitments</a>
+            <a href="{{ url_for('budget_page') }}" class="dev-module-link"><i class="fa-solid fa-chart-pie text-teal-500 w-5"></i> Budget</a>
+            <a href="{{ url_for('rfis_page') }}" class="dev-module-link"><i class="fa-solid fa-circle-question text-blue-500 w-5"></i> RFIs</a>
+            <a href="{{ url_for('submittals_page') }}" class="dev-module-link"><i class="fa-solid fa-clipboard-check text-pink-500 w-5"></i> Submittals</a>
+            <a href="{{ url_for('audit_log_page') }}" class="dev-module-link"><i class="fa-solid fa-list-check text-zinc-400 w-5"></i> Audit Log</a>
         </div>
     </div>
 
     <div class="dev-card">
-        <h2 class="font-semibold mb-3">Raw program settings (read-only)</h2>
+        <h2 class="font-semibold mb-3">System settings (read-only)</h2>
         <pre class="text-xs text-zinc-400 overflow-auto max-h-64 bg-zinc-950 p-3 rounded-lg border border-zinc-800">{{ raw_settings | tojson(indent=2) }}</pre>
     </div>
 </div>
 
 <script>
-async function devApi(path, body) {
-    const res = await fetch(path, {
-        method: 'POST',
-        credentials: 'same-origin',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(body),
-    });
-    const json = await res.json().catch(() => ({}));
-    if (!res.ok) throw new Error(json.error || 'Request failed');
-    return json;
-}
-
-async function devOverrideProjectNumber() {
-    const project_id = document.getElementById('dev_project_id').value;
-    const number = document.getElementById('dev_project_number').value.trim();
-    if (!project_id || !number) { alert('Enter project ID and new number.'); return; }
-    if (!confirm(`Override project #${project_id} to "${number}"?`)) return;
+async function toggleDevUnlockMode(active) {
+    const status = document.getElementById('devUnlockStatus');
     try {
-        const json = await devApi('/api/developer/override-project-number', { project_id: parseInt(project_id, 10), number });
-        alert(`Updated: ${json.project?.number}`);
-    } catch (e) { alert(e.message); }
-}
-
-async function devUnlockChangeOrder() {
-    const change_order_id = document.getElementById('dev_co_id').value;
-    if (!change_order_id) { alert('Enter change order ID.'); return; }
-    if (!confirm(`Unlock change order #${change_order_id}?`)) return;
-    try {
-        await devApi('/api/developer/unlock-change-order', { change_order_id: parseInt(change_order_id, 10) });
-        alert('Change order unlocked.');
-    } catch (e) { alert(e.message); }
+        const res = await fetch('/api/developer/unlock-mode', {
+            method: 'POST',
+            credentials: 'same-origin',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ active }),
+        });
+        const json = await res.json().catch(() => ({}));
+        if (!res.ok) throw new Error(json.error || 'Could not update unlock mode');
+        if (typeof CasePMDeveloperUnlock !== 'undefined') {
+            CasePMDeveloperUnlock.setActive(!!json.active, { skipServer: true });
+        }
+        if (status) {
+            status.textContent = json.active
+                ? 'ACTIVE — locked fields are editable across the app'
+                : 'OFF — normal business rules apply';
+            status.classList.toggle('text-red-400', !!json.active);
+            status.classList.toggle('text-zinc-500', !json.active);
+        }
+    } catch (e) {
+        alert(e.message);
+        const toggle = document.getElementById('devUnlockToggle');
+        if (toggle) toggle.checked = !active;
+    }
 }
 </script>
 {% endblock %}
