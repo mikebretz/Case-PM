@@ -222,11 +222,9 @@ class User(db.Model, UserMixin):
         if self.role == 'Admin':
             return True
         try:
-            from case_workflow import get_role_permissions, user_can_approve
-            perms = get_role_permissions(self)
-            if perms.get('modules') == '*':
-                return True
-            if permission in (perms.get('modules') or []):
+            from case_workflow import user_has_module_access, user_can_approve, _resolve_module_key
+            key = _resolve_module_key(permission)
+            if user_has_module_access(self, key, 'view'):
                 return True
             return user_can_approve(self, permission)
         except Exception:
@@ -4280,8 +4278,10 @@ def create_company():
 
 @app.route('/user-management')
 @login_required
+@admin_required
 def user_management():
     from user_signature_persistence import ensure_user_signature_schema
+    from user_permissions_persistence import catalog_payload
     ensure_user_signature_schema(db)
     users = User.query.order_by(User.created_at.desc()).all()
     return render_template(
@@ -4293,8 +4293,67 @@ def user_management():
             'role': current_user.role,
             'full_name': current_user.full_name,
         },
-        server_users_for_js=[{'id': u.id, 'email': u.email, 'full_name': u.full_name} for u in users],
+        server_users_for_js=[{
+            'id': u.id,
+            'email': u.email,
+            'full_name': u.full_name,
+            'role': u.role,
+            'has_custom_permissions': bool(u.permissions_json),
+        } for u in users],
+        permissions_catalog=catalog_payload(),
+        is_admin_user=True,
     )
+
+
+@app.route('/api/permissions/catalog', methods=['GET'])
+@login_required
+@admin_required
+def api_permissions_catalog():
+    from user_permissions_persistence import catalog_payload
+    return jsonify({'ok': True, 'catalog': catalog_payload()})
+
+
+@app.route('/api/permissions/template/<role_name>', methods=['GET'])
+@login_required
+@admin_required
+def api_permissions_template(role_name):
+    from user_permissions_persistence import apply_role_template
+    return jsonify({'ok': True, 'permissions': apply_role_template(role_name)})
+
+
+@app.route('/api/users/<int:user_id>/permissions', methods=['GET'])
+@login_required
+@admin_required
+def api_get_user_permissions(user_id):
+    from user_permissions_persistence import serialize_user_permissions
+    user = User.query.get_or_404(user_id)
+    return jsonify({'ok': True, **serialize_user_permissions(user)})
+
+
+@app.route('/api/users/<int:user_id>/permissions', methods=['PUT'])
+@login_required
+@admin_required
+def api_save_user_permissions(user_id):
+    from user_permissions_persistence import save_user_permissions, serialize_user_permissions
+    user = User.query.get_or_404(user_id)
+    body = request.get_json(silent=True) or {}
+    perms = body.get('permissions') or body
+    try:
+        save_user_permissions(user, perms, db)
+        db.session.commit()
+        write_audit(
+            'Updated user permissions',
+            f'{user.full_name} ({user.email})',
+            module='users',
+            category='settings',
+            target_type='User',
+            target_id=user.id,
+            commit=True,
+        )
+    except ValueError as exc:
+        db.session.rollback()
+        return jsonify({'error': str(exc)}), 400
+    return jsonify({'ok': True, **serialize_user_permissions(user)})
 
 
 @app.route('/api/users/me/signature', methods=['GET'])
