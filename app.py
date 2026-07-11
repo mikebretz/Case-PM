@@ -175,6 +175,7 @@ class Project(db.Model):
     number = db.Column(db.String(20), unique=True)
     name = db.Column(db.String(200), nullable=False)
     client = db.Column(db.String(150))
+    client_company_id = db.Column(db.Integer, db.ForeignKey('company.id'))
     address = db.Column(db.String(300))
     city = db.Column(db.String(100))
     state = db.Column(db.String(50))
@@ -239,6 +240,7 @@ class Project(db.Model):
             'number': self.number or '',
             'name': self.name or '',
             'client': self.client or '',
+            'client_company_id': self.client_company_id,
             'address': self.address or '',
             'city': self.city or '',
             'state': self.state or '',
@@ -887,6 +889,10 @@ class Company(db.Model):
     phone = db.Column(db.String(30))
     license_number = db.Column(db.String(50))
     tax_id = db.Column(db.String(50))
+    trade = db.Column(db.String(80))
+    primary_contact_user_id = db.Column(db.Integer)
+    financial_contact_user_id = db.Column(db.Integer)
+    details_json = db.Column(db.Text)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
 
 
@@ -1577,6 +1583,7 @@ def ensure_project_schema():
         'description': 'TEXT',
         'details_json': 'TEXT',
         'updated_at': 'DATETIME',
+        'client_company_id': 'INTEGER',
     }
     for col, typedef in additions.items():
         if col not in existing:
@@ -1695,6 +1702,18 @@ def _project_number_conflict(number, exclude_project_id=None):
 def _apply_project_form(project, form):
     project.name = (form.get('name') or '').strip()
     project.client = (form.get('client') or '').strip()
+    ccid = form.get('client_company_id')
+    if ccid:
+        try:
+            project.client_company_id = int(ccid)
+        except (TypeError, ValueError):
+            project.client_company_id = None
+    elif project.client:
+        from sqlalchemy import func
+        match = Company.query.filter(func.lower(Company.name) == project.client.lower()).first()
+        project.client_company_id = match.id if match else None
+    else:
+        project.client_company_id = None
     project.address = (form.get('address') or '').strip()
     project.city = (form.get('city') or '').strip()
     project.state = (form.get('state') or '').strip()
@@ -1726,7 +1745,7 @@ def projects_page():
     projects = Project.query.order_by(Project.created_at.desc()).all()
     companies = Company.query.order_by(Company.name).all()
     users = User.query.filter_by(status='Active').order_by(User.last_name, User.first_name).all()
-    companies_for_js = [{'name': c.name, 'type': c.type or ''} for c in companies]
+    companies_for_js = [{'id': c.id, 'name': c.name, 'type': c.type or '', 'server_id': c.id} for c in companies]
     active_projects = [p for p in projects if p.status == 'Active']
     latest_sage_events = latest_sage_events_by_project(SageSyncEvent, [p.id for p in projects])
     sage_statuses = {
@@ -4011,49 +4030,55 @@ def create_schedule_task():
 @app.route('/companies')
 @login_required
 def companies_page():
+    from companies_persistence import ensure_company_schema
+    ensure_company_schema(db)
     companies = Company.query.order_by(Company.name.asc()).all()
-    companies_for_js = [{'id': c.id, 'name': c.name, 'type': c.type or ''} for c in companies]
+    companies_for_js = [{'id': c.id, 'name': c.name, 'type': c.type or '', 'server_id': c.id} for c in companies]
     return render_template('companies.html', companies=companies, companies_for_js=companies_for_js)
+
+
+@app.route('/api/companies', methods=['GET'])
+@login_required
+def api_companies_list():
+    from companies_persistence import ensure_company_schema, serialize_company, projects_for_company
+    ensure_company_schema(db)
+    rows = Company.query.order_by(Company.name.asc()).all()
+    include_projects = request.args.get('include_projects') == '1'
+    out = []
+    for c in rows:
+        projs = projects_for_company(Project, c) if include_projects else None
+        out.append(serialize_company(c, projects=projs))
+    return jsonify({'ok': True, 'companies': out})
+
+
+@app.route('/api/companies/<int:company_id>/projects', methods=['GET'])
+@login_required
+def api_company_projects(company_id):
+    from companies_persistence import projects_for_company
+    company = Company.query.get_or_404(company_id)
+    return jsonify({'ok': True, 'projects': projects_for_company(Project, company)})
 
 
 @app.route('/api/companies/sync', methods=['POST'])
 @login_required
 def api_sync_company():
     """Upsert a company from the Companies UI (localStorage) into the database."""
+    from companies_persistence import ensure_company_schema, apply_company_payload, serialize_company
+    ensure_company_schema(db)
     body = request.get_json(silent=True) or {}
     name = (body.get('company_name') or body.get('name') or '').strip()
     if not name:
         return jsonify({'error': 'Company name is required'}), 400
 
-    company_type = (body.get('company_type') or body.get('type') or 'Client').strip()
-    email = (body.get('primary_email') or body.get('email') or '').strip() or None
-    phone = (body.get('primary_phone') or body.get('phone') or '').strip() or None
-    tax_id = (body.get('tax_id') or '').strip() or None
-    license_number = (body.get('license_number') or '').strip() or None
-
     from sqlalchemy import func
     existing = Company.query.filter(func.lower(Company.name) == name.lower()).first()
     if existing:
-        existing.type = company_type
-        if email:
-            existing.email = email
-        if phone:
-            existing.phone = phone
-        if tax_id:
-            existing.tax_id = tax_id
-        if license_number:
-            existing.license_number = license_number
         company = existing
     else:
-        company = Company(
-            name=name,
-            type=company_type,
-            email=email,
-            phone=phone,
-            tax_id=tax_id,
-            license_number=license_number,
-        )
+        company = Company(name=name)
         db.session.add(company)
+
+    apply_company_payload(company, body)
 
     try:
         db.session.commit()
@@ -4063,7 +4088,7 @@ def api_sync_company():
 
     return jsonify({
         'ok': True,
-        'company': {'id': company.id, 'name': company.name, 'type': company.type or ''},
+        'company': serialize_company(company),
     })
 
 
@@ -4071,12 +4096,14 @@ def api_sync_company():
 @login_required
 def api_client_companies():
     """Client / Owner companies for project dropdowns."""
+    from companies_persistence import ensure_company_schema, serialize_company
+    ensure_company_schema(db)
     rows = Company.query.order_by(Company.name.asc()).all()
     clients = []
     for c in rows:
         t = (c.type or '').lower()
         if not t or 'client' in t or 'owner' in t:
-            clients.append({'id': c.id, 'name': c.name, 'type': c.type or ''})
+            clients.append(serialize_company(c))
     return jsonify({'ok': True, 'clients': clients})
 
 

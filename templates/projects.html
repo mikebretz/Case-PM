@@ -293,10 +293,11 @@
                     </div>
                     <div class="mt-4">
                         <label class="project-field-label">Client / Owner <span class="text-red-400">*</span></label>
-                        <select name="client" id="fld_client" class="project-field-input" required>
+                        <select name="client" id="fld_client" class="project-field-input" required onchange="onClientCompanySelected()">
                             <option value="">Select client...</option>
                         </select>
-                        <p class="text-[10px] text-zinc-500 mt-1">Shows companies with type <strong class="text-zinc-400">Client / Owner</strong> from <a href="{{ url_for('companies_page') }}" class="text-sky-400 hover:underline">Companies</a>.</p>
+                        <input type="hidden" name="client_company_id" id="fld_client_company_id" value="">
+                        <p class="text-[10px] text-zinc-500 mt-1">Shows <strong class="text-zinc-400">Client / Owner</strong> companies from <a href="{{ url_for('companies_page') }}" class="text-sky-400 hover:underline">Companies</a>. Primary contact auto-fills owner fields.</p>
                     </div>
 
                     <div class="mt-4 border border-zinc-700 rounded-lg p-4 bg-zinc-950/40">
@@ -872,32 +873,72 @@ function isClientOwnerCompany(company) {
     return !t || t === 'client' || t.includes('client') || t.includes('owner');
 }
 
-function populateClientSelect(selectedValue) {
+function populateClientSelect(selectedValue, selectedCompanyId) {
     const sel = document.getElementById('fld_client');
+    const hid = document.getElementById('fld_client_company_id');
     if (!sel) return;
-    const names = new Set();
+    const entries = new Map();
 
     try {
         const ls = JSON.parse(localStorage.getItem('casepm_companies') || '[]');
         ls.filter(isClientOwnerCompany).forEach(c => {
             const n = (c.company_name || c.name || '').trim();
-            if (n) names.add(n);
+            if (!n) return;
+            const id = c.server_id || c.id;
+            entries.set(n, { name: n, id });
         });
     } catch { /* ignore */ }
 
     (CASEPM_SERVER_COMPANIES || []).filter(isClientOwnerCompany).forEach(c => {
         const n = (c.name || '').trim();
-        if (n) names.add(n);
+        if (n) entries.set(n, { name: n, id: c.id || c.server_id });
     });
 
     const current = selectedValue != null ? selectedValue : sel.value;
-    const sorted = [...names].sort((a, b) => a.localeCompare(b));
+    const sorted = [...entries.values()].sort((a, b) => a.name.localeCompare(b.name));
     sel.innerHTML = '<option value="">Select client...</option>' +
-        sorted.map(n => `<option value="${escHtml(n)}"${n === current ? ' selected' : ''}>${escHtml(n)}</option>`).join('');
+        sorted.map(e => `<option value="${escHtml(e.name)}" data-company-id="${e.id || ''}"${e.name === current ? ' selected' : ''}>${escHtml(e.name)}</option>`).join('');
 
     if (!sorted.length) {
         sel.innerHTML += '<option value="" disabled>— No Client / Owner companies yet —</option>';
     }
+
+    if (selectedCompanyId && hid) hid.value = selectedCompanyId;
+    else if (hid && sel.selectedOptions[0]) {
+        hid.value = sel.selectedOptions[0].getAttribute('data-company-id') || '';
+    }
+}
+
+function onClientCompanySelected() {
+    const sel = document.getElementById('fld_client');
+    const hid = document.getElementById('fld_client_company_id');
+    if (!sel || !hid) return;
+    const opt = sel.selectedOptions[0];
+    hid.value = opt ? (opt.getAttribute('data-company-id') || '') : '';
+
+    const name = sel.value;
+    if (!name) return;
+    try {
+        const ls = JSON.parse(localStorage.getItem('casepm_companies') || '[]');
+        const company = ls.find(c => (c.company_name || c.name || '').trim() === name.trim());
+        if (!company) return;
+        const users = JSON.parse(localStorage.getItem('users') || '[]');
+        if (company.primary_contact_user_id) {
+            const u = users.find(x => x.id == company.primary_contact_user_id);
+            if (u) {
+                const on = document.getElementById('fld_owner_contact_name');
+                const oe = document.getElementById('fld_owner_contact_email');
+                const op = document.getElementById('fld_owner_contact_phone');
+                if (on && !on.value) on.value = `${u.firstName || ''} ${u.lastName || ''}`.trim();
+                if (oe && !oe.value) oe.value = u.email || company.primary_email || '';
+                if (op && !op.value) op.value = (u.phones && u.phones[0]?.number) || u.phone || company.primary_phone || '';
+            }
+        }
+        const oln = document.getElementById('fld_owner_legal_name');
+        if (oln && !oln.value) oln.value = company.dba_name || company.company_name || name;
+        const sageAr = document.getElementById('fld_sage_ar_customer_code');
+        if (sageAr && !sageAr.value && company.sage_ar_customer_code) sageAr.value = company.sage_ar_customer_code;
+    } catch (_) {}
 }
 
 const PROJECT_FIELD_IDS = [
@@ -963,7 +1004,7 @@ function openProjectModal(mode, projectId) {
             .then(r => r.json())
             .then(data => {
                 populateProjectForm(data);
-                populateClientSelect(data.client);
+                populateClientSelect(data.client, data.client_company_id);
             })
             .catch(() => alert('Could not load project details.'));
     }
