@@ -5,30 +5,33 @@
   'use strict';
 
   const ctx = global.CASEPM_DASHBOARD_CTX || {};
-  const STORAGE_KEY = `casepm_dashboard_layout_v2_u${ctx.userId || 0}`;
+  const STORAGE_KEY = `casepm_dashboard_layout_v3_u${ctx.userId || 0}`;
   const COLUMNS = 12;
+  const TILE_W = 3;          // fixed width — 4 tiles across (12 / 3)
+  const MIN_H = 1;           // 1 block tall
+  const MAX_H = 3;           // up to 3 blocks tall
 
-  // w = grid columns (of 12), h = row units (1 unit ≈ the small weather tile height).
-  // minH/minW keep tiles usable. Content scrolls inside a fixed-size tile.
+  // All tiles are a fixed width (4 across). Only the HEIGHT is adjustable (1–3 blocks).
+  // h = number of blocks tall. Content is sized to fit its tile (no internal scroll).
   const TILE_DEFS = {
-    kpis:          { label: 'KPI Summary',        icon: 'fa-chart-simple',        default: true, w: 12, h: 3, minW: 4, minH: 2 },
-    weather:       { label: 'Weather',            icon: 'fa-cloud-sun',           default: true, w: 3,  h: 3, minW: 2, minH: 2 },
-    assigned:      { label: 'Assigned to Me',     icon: 'fa-inbox',               default: true, w: 3,  h: 5, minW: 2, minH: 2 },
-    financial:     { label: 'Financial Snapshot', icon: 'fa-dollar-sign',         default: true, w: 3,  h: 3, minW: 2, minH: 2 },
-    forecast_chart:{ label: 'Forecast Trend',     icon: 'fa-chart-line',          default: true, w: 6,  h: 4, minW: 3, minH: 3 },
-    open_items:    { label: 'Open Items',         icon: 'fa-triangle-exclamation',default: true, w: 3,  h: 4, minW: 2, minH: 2 },
-    daily_logs:    { label: 'Recent Daily Logs',  icon: 'fa-clipboard-list',      default: true, w: 6,  h: 4, minW: 3, minH: 2 },
-    schedule:      { label: 'Key Tasks',          icon: 'fa-calendar-week',       default: true, w: 3,  h: 4, minW: 2, minH: 2 },
-    commitments:   { label: 'Commitments',        icon: 'fa-file-contract',       default: true, w: 3,  h: 3, minW: 2, minH: 2 },
-    change_orders: { label: 'Change Orders',      icon: 'fa-arrows-rotate',       default: true, w: 3,  h: 3, minW: 2, minH: 2 },
-    safety:        { label: 'Safety This Week',   icon: 'fa-hard-hat',            default: true, w: 3,  h: 3, minW: 2, minH: 2 },
-    progress:      { label: 'Schedule Progress',  icon: 'fa-bars-progress',       default: true, w: 3,  h: 4, minW: 2, minH: 2 },
-    activity:      { label: 'Recent Activity',    icon: 'fa-clock-rotate-left',   default: true, w: 3,  h: 5, minW: 2, minH: 2 },
-    quick_actions: { label: 'Quick Actions',      icon: 'fa-bolt',                default: true, w: 3,  h: 3, minW: 2, minH: 2 },
-    project_info:  { label: 'Project Info',       icon: 'fa-circle-info',         default: false, w: 3, h: 3, minW: 2, minH: 2 },
-    submittals:    { label: 'Submittals',         icon: 'fa-file-arrow-up',       default: false, w: 3, h: 3, minW: 2, minH: 2 },
-    budget_breakdown:{ label: 'Budget Breakdown', icon: 'fa-table-cells',         default: false, w: 4, h: 4, minW: 3, minH: 3 },
-    contract:      { label: 'Contract Summary',   icon: 'fa-file-signature',      default: false, w: 3, h: 3, minW: 2, minH: 2 },
+    kpis:          { label: 'KPI Summary',        icon: 'fa-chart-simple',        default: true,  h: 2 },
+    weather:       { label: 'Weather',            icon: 'fa-cloud-sun',           default: true,  h: 2 },
+    assigned:      { label: 'Assigned to Me',     icon: 'fa-inbox',               default: true,  h: 2 },
+    financial:     { label: 'Financial Snapshot', icon: 'fa-dollar-sign',         default: true,  h: 2 },
+    forecast_chart:{ label: 'Forecast Trend',     icon: 'fa-chart-line',          default: true,  h: 2 },
+    open_items:    { label: 'Open Items',         icon: 'fa-triangle-exclamation',default: true,  h: 2 },
+    daily_logs:    { label: 'Recent Daily Logs',  icon: 'fa-clipboard-list',      default: true,  h: 2 },
+    schedule:      { label: 'Key Tasks',          icon: 'fa-calendar-week',       default: true,  h: 2 },
+    commitments:   { label: 'Commitments',        icon: 'fa-file-contract',       default: true,  h: 1 },
+    change_orders: { label: 'Change Orders',      icon: 'fa-arrows-rotate',       default: true,  h: 1 },
+    safety:        { label: 'Safety This Week',   icon: 'fa-hard-hat',            default: true,  h: 1 },
+    progress:      { label: 'Schedule Progress',  icon: 'fa-bars-progress',       default: true,  h: 2 },
+    activity:      { label: 'Recent Activity',    icon: 'fa-clock-rotate-left',   default: true,  h: 2 },
+    quick_actions: { label: 'Quick Actions',      icon: 'fa-bolt',                default: true,  h: 2 },
+    project_info:  { label: 'Project Info',       icon: 'fa-circle-info',         default: false, h: 1 },
+    submittals:    { label: 'Submittals',         icon: 'fa-file-arrow-up',       default: false, h: 1 },
+    budget_breakdown:{ label: 'Budget Breakdown', icon: 'fa-table-cells',         default: false, h: 2 },
+    contract:      { label: 'Contract Summary',   icon: 'fa-file-signature',      default: false, h: 1 },
   };
 
   const DEFAULT_ORDER = Object.keys(TILE_DEFS);
@@ -57,11 +60,17 @@
     return { tiles: defaultTiles(), order: DEFAULT_ORDER.slice(), locked: true };
   }
 
+  function clampH(h, def) {
+    const val = parseInt(h, 10);
+    if (!Number.isFinite(val)) return def;
+    return Math.max(MIN_H, Math.min(MAX_H, val));
+  }
+
   function defaultTiles() {
     const t = {};
     Object.keys(TILE_DEFS).forEach((id) => {
       const def = TILE_DEFS[id];
-      t[id] = { visible: def.default, w: def.w, h: def.h, x: undefined, y: undefined };
+      t[id] = { visible: def.default, w: TILE_W, h: def.h, x: undefined, y: undefined };
     });
     return t;
   }
@@ -71,10 +80,11 @@
     if (saved && typeof saved === 'object') {
       Object.keys(base).forEach((id) => {
         if (saved[id]) {
+          const def = TILE_DEFS[id];
           base[id] = {
-            visible: saved[id].visible !== false ? (saved[id].visible !== undefined ? saved[id].visible : base[id].visible) : false,
-            w: saved[id].w || base[id].w,
-            h: saved[id].h || base[id].h,
+            visible: saved[id].visible !== undefined ? saved[id].visible !== false : base[id].visible,
+            w: TILE_W,
+            h: clampH(saved[id].h, def.h),
             x: saved[id].x,
             y: saved[id].y,
           };
@@ -143,9 +153,9 @@
     ];
     return `<div class="dash-tile-body dash-kpi-grid">${items.map((it) => `
       <div class="dash-kpi" data-href="${esc(it.url || '')}">
-        <div class="text-xs text-zinc-400">${esc(it.label)}</div>
-        <div class="text-2xl font-semibold mt-1 ${it.color}">${esc(it.value)}</div>
-        <div class="text-[10px] text-zinc-500 mt-1">${esc(it.sub)}</div>
+        <div class="text-[10px] text-zinc-400 truncate">${esc(it.label)}</div>
+        <div class="text-lg font-semibold leading-tight ${it.color}">${esc(it.value)}</div>
+        <div class="text-[9px] text-zinc-500 truncate">${esc(it.sub)}</div>
       </div>`).join('')}</div>`;
   }
 
@@ -184,14 +194,14 @@
     if (!items.length) {
       return `<div class="dash-tile-body text-sm text-zinc-500 text-center py-6">No pending items — you're caught up.</div>`;
     }
-    return `<div class="dash-tile-body space-y-2">${items.map((it) => `
-      <a href="${esc(it.action_url || u.email)}" class="flex items-start gap-3 p-2.5 bg-zinc-950 hover:bg-zinc-800 border border-zinc-800 rounded-md block transition-colors">
-        <i class="fa-solid ${it.source === 'approval' ? 'fa-circle-check text-amber-400' : 'fa-envelope text-emerald-400'} mt-0.5"></i>
+    return `<div class="dash-tile-body space-y-1.5">${items.map((it) => `
+      <a href="${esc(it.action_url || u.email)}" class="flex items-center gap-2 p-1.5 bg-zinc-950 hover:bg-zinc-800 border border-zinc-800 rounded-md transition-colors">
+        <i class="fa-solid ${it.source === 'approval' ? 'fa-circle-check text-amber-400' : 'fa-envelope text-emerald-400'} text-xs shrink-0"></i>
         <div class="min-w-0 flex-1">
-          <div class="text-sm truncate ${it.unread ? 'text-white font-medium' : 'text-zinc-300'}">${esc(it.subject)}</div>
-          <div class="text-xs text-zinc-500 truncate">${esc(it.module || it.preview)}</div>
+          <div class="text-xs truncate ${it.unread ? 'text-white font-medium' : 'text-zinc-300'}">${esc(it.subject)}</div>
+          <div class="text-[10px] text-zinc-500 truncate">${esc(it.module || it.preview)}</div>
         </div>
-        ${it.requires_action ? '<span class="text-[10px] px-2 py-0.5 bg-amber-500/20 text-amber-400 rounded-full shrink-0">Action</span>' : ''}
+        ${it.requires_action ? '<span class="text-[9px] px-1.5 py-0.5 bg-amber-500/20 text-amber-400 rounded-full shrink-0">!</span>' : ''}
       </a>`).join('')}</div>`;
   }
 
@@ -224,17 +234,17 @@
   function renderOpenItems(d) {
     const o = d.open_items || {};
     const u = ctx.urls || {};
-    return `<div class="dash-tile-body grid grid-cols-1 gap-3">
-      <div class="flex justify-between items-center p-3 bg-zinc-950 border border-zinc-800 rounded-md">
-        <div><div class="text-xs text-zinc-400">RFIs Awaiting</div><div class="text-xl font-semibold text-yellow-400">${o.rfis_awaiting ?? 0}</div></div>
+    return `<div class="dash-tile-body grid grid-cols-1 gap-2">
+      <div class="flex justify-between items-center p-2 bg-zinc-950 border border-zinc-800 rounded-md">
+        <div><div class="text-[10px] text-zinc-400">RFIs Awaiting</div><div class="text-lg font-semibold text-yellow-400 leading-tight">${o.rfis_awaiting ?? 0}</div></div>
         <a href="${esc(u.rfis)}" class="text-xs text-emerald-400">Review →</a>
       </div>
-      <div class="flex justify-between items-center p-3 bg-zinc-950 border border-zinc-800 rounded-md">
-        <div><div class="text-xs text-zinc-400">Change Orders</div><div class="text-xl font-semibold text-orange-400">${o.change_orders_pending ?? 0}</div></div>
+      <div class="flex justify-between items-center p-2 bg-zinc-950 border border-zinc-800 rounded-md">
+        <div><div class="text-[10px] text-zinc-400">Change Orders</div><div class="text-lg font-semibold text-orange-400 leading-tight">${o.change_orders_pending ?? 0}</div></div>
         <a href="${esc(u.changeOrders)}" class="text-xs text-emerald-400">Review →</a>
       </div>
-      <div class="flex justify-between items-center p-3 bg-zinc-950 border border-zinc-800 rounded-md">
-        <div><div class="text-xs text-zinc-400">High Priority Punch</div><div class="text-xl font-semibold text-red-400">${o.high_priority_punch ?? 0}</div></div>
+      <div class="flex justify-between items-center p-2 bg-zinc-950 border border-zinc-800 rounded-md">
+        <div><div class="text-[10px] text-zinc-400">High Priority Punch</div><div class="text-lg font-semibold text-red-400 leading-tight">${o.high_priority_punch ?? 0}</div></div>
         <a href="${esc(u.punchList)}" class="text-xs text-emerald-400">View →</a>
       </div>
     </div>`;
@@ -246,15 +256,15 @@
     if (!logs.length) {
       return `<div class="dash-tile-body text-sm text-zinc-500 text-center py-6">No daily logs yet for this project.</div>`;
     }
-    return `<div class="dash-tile-body space-y-2">${logs.map((log) => `
-      <a href="${esc(u.dailyLog)}?id=${log.id}" class="flex items-center gap-4 p-3 bg-zinc-950 hover:bg-zinc-800 border border-zinc-800 rounded-md">
-        <div class="text-center w-10 shrink-0">
-          <div class="text-[10px] text-zinc-500">${fmtDate(log.date).split(' ')[0]}</div>
-          <div class="text-lg font-semibold">${log.date ? new Date(log.date).getDate() : '—'}</div>
+    return `<div class="dash-tile-body space-y-1.5">${logs.map((log) => `
+      <a href="${esc(u.dailyLog)}?id=${log.id}" class="flex items-center gap-2.5 p-1.5 bg-zinc-950 hover:bg-zinc-800 border border-zinc-800 rounded-md">
+        <div class="text-center w-8 shrink-0">
+          <div class="text-[9px] text-zinc-500">${fmtDate(log.date).split(' ')[0]}</div>
+          <div class="text-base font-semibold leading-tight">${log.date ? new Date(log.date).getDate() : '—'}</div>
         </div>
         <div class="min-w-0 flex-1">
-          <div class="text-sm truncate">${esc(log.work_performed || 'Daily log entry')}</div>
-          <div class="text-xs text-zinc-500">${esc(log.user_name)} · ${log.manpower_count} workers · ${log.hours} hrs</div>
+          <div class="text-xs truncate">${esc(log.work_performed || 'Daily log entry')}</div>
+          <div class="text-[10px] text-zinc-500 truncate">${esc(log.user_name)} · ${log.manpower_count} workers · ${log.hours} hrs</div>
         </div>
       </a>`).join('')}</div>`;
   }
@@ -265,15 +275,15 @@
     if (!tasks.length) {
       return `<div class="dash-tile-body text-sm text-zinc-500 text-center py-6">No upcoming tasks scheduled.</div>`;
     }
-    return `<div class="dash-tile-body space-y-2">${tasks.map((t) => {
+    return `<div class="dash-tile-body space-y-1.5">${tasks.map((t) => {
       const st = t.status || 'Not Started';
       const cls = st === 'Delayed' ? 'bg-red-500/20 text-red-400' : st === 'In Progress' ? 'bg-yellow-500/20 text-yellow-400' : 'bg-emerald-500/20 text-emerald-400';
-      return `<a href="${esc(u.schedule)}" class="flex items-center justify-between p-3 bg-zinc-950 border border-zinc-800 rounded-md hover:bg-zinc-800">
+      return `<a href="${esc(u.schedule)}" class="flex items-center justify-between gap-2 p-1.5 bg-zinc-950 border border-zinc-800 rounded-md hover:bg-zinc-800">
         <div class="min-w-0">
-          <div class="text-sm truncate">${esc(t.description)}</div>
-          <div class="text-xs text-zinc-500">${esc(t.phase)} · Due ${fmtDate(t.end_date)}</div>
+          <div class="text-xs truncate">${esc(t.description)}</div>
+          <div class="text-[10px] text-zinc-500 truncate">${esc(t.phase)} · Due ${fmtDate(t.end_date)}</div>
         </div>
-        <span class="text-[10px] px-2 py-0.5 rounded-full shrink-0 ${cls}">${esc(st)}</span>
+        <span class="text-[9px] px-1.5 py-0.5 rounded-full shrink-0 ${cls}">${esc(st)}</span>
       </a>`;
     }).join('')}</div>`;
   }
@@ -349,12 +359,12 @@
       daily_log: 'fa-clipboard-list text-emerald-400',
       submittal: 'fa-file-arrow-up text-blue-400',
     };
-    return `<div class="dash-tile-body space-y-3">${items.map((a) => `
-      <a href="${esc(a.url || '#')}" class="flex gap-3 text-sm hover:bg-zinc-950 p-2 rounded-md -mx-2">
-        <i class="fa-solid ${icons[a.type] || 'fa-circle-info text-zinc-400'} mt-0.5"></i>
+    return `<div class="dash-tile-body space-y-1.5">${items.map((a) => `
+      <a href="${esc(a.url || '#')}" class="flex gap-2 text-xs hover:bg-zinc-950 p-1.5 rounded-md">
+        <i class="fa-solid ${icons[a.type] || 'fa-circle-info text-zinc-400'} mt-0.5 text-[11px]"></i>
         <div class="min-w-0">
           <div class="truncate">${esc(a.message)}</div>
-          <div class="text-xs text-zinc-500">${fmtDate(a.timestamp)} ${a.user ? '· ' + esc(a.user) : ''}</div>
+          <div class="text-[10px] text-zinc-500">${fmtDate(a.timestamp)} ${a.user ? '· ' + esc(a.user) : ''}</div>
         </div>
       </a>`).join('')}</div>`;
   }
@@ -474,15 +484,14 @@
     if (!el) return;
     state.grid = global.GridStack.init({
       column: COLUMNS,
-      cellHeight: 78,
+      cellHeight: 150,
       margin: 8,
       float: false,
       animate: true,
+      staticGrid: state.layout.locked,
       handle: '.dash-tile-head',
-      disableDrag: state.layout.locked,
-      disableResize: state.layout.locked,
-      resizable: { handles: 'e, se, s' },
-      draggable: { handle: '.dash-tile-head' },
+      // Only allow vertical resize (drag the bottom edge). Width is fixed.
+      resizable: { handles: 's' },
     }, el);
 
     state.grid.on('change', (event, items) => {
@@ -492,8 +501,7 @@
         if (id && state.layout.tiles[id]) {
           state.layout.tiles[id].x = node.x;
           state.layout.tiles[id].y = node.y;
-          state.layout.tiles[id].w = node.w;
-          state.layout.tiles[id].h = node.h;
+          state.layout.tiles[id].h = clampH(node.h, TILE_DEFS[id].h);
         }
       });
       saveLayout();
@@ -512,10 +520,12 @@
     const wrapper = document.createElement('div');
     wrapper.className = 'grid-stack-item';
     wrapper.setAttribute('gs-id', id);
-    wrapper.setAttribute('gs-w', String(t.w || def.w));
-    wrapper.setAttribute('gs-h', String(t.h || def.h));
-    wrapper.setAttribute('gs-min-w', String(def.minW || 2));
-    wrapper.setAttribute('gs-min-h', String(def.minH || 2));
+    wrapper.setAttribute('gs-w', String(TILE_W));
+    wrapper.setAttribute('gs-h', String(clampH(t.h, def.h)));
+    wrapper.setAttribute('gs-min-w', String(TILE_W));
+    wrapper.setAttribute('gs-max-w', String(TILE_W));
+    wrapper.setAttribute('gs-min-h', String(MIN_H));
+    wrapper.setAttribute('gs-max-h', String(MAX_H));
     if (Number.isInteger(t.x)) wrapper.setAttribute('gs-x', String(t.x));
     if (Number.isInteger(t.y)) wrapper.setAttribute('gs-y', String(t.y));
 
@@ -601,9 +611,13 @@
 
   function applyLockState() {
     if (!state.grid) return;
-    state.grid.setStatic(state.layout.locked);
+    const locked = state.layout.locked;
+    state.grid.setStatic(locked);
+    // Explicitly toggle move/resize so drag reliably re-enables after unlock.
+    if (typeof state.grid.enableMove === 'function') state.grid.enableMove(!locked);
+    if (typeof state.grid.enableResize === 'function') state.grid.enableResize(!locked);
     const el = document.getElementById('dashboardGrid');
-    if (el) el.classList.toggle('dash-editing', !state.layout.locked);
+    if (el) el.classList.toggle('dash-editing', !locked);
   }
 
   function updateUnlockUI() {
