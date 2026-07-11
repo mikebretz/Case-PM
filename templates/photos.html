@@ -1,277 +1,159 @@
 {% extends "base.html" %}
 
 {% block content %}
+<script>
+window.CASEPM_PHOTOS_CTX = {
+  projectId: {{ active_project.id if active_project else 'null' }},
+  projectName: {{ (active_project.name if active_project else '')|tojson }},
+};
+</script>
+<script src="{{ url_for('static', filename='js/photos-app.js') }}"></script>
+
 <style>
-.photos-page { display: flex; flex-direction: column; flex: 1; min-height: 0; width: 100%; padding: 1rem 1rem 0; overflow: hidden; box-sizing: border-box; }
-  .photos-stack { display: flex; flex-direction: column; flex: 1; min-height: 0; overflow: hidden; }
+  .photos-page { padding: 0; }
+  .photos-thumb { position: relative; border-radius: 0.5rem; overflow: hidden; border: 1px solid #3f3f46; }
+  .photos-thumb img { width: 100%; height: 72px; object-fit: cover; display: block; }
+  .photos-thumb-name { position: absolute; bottom: 0; left: 0; right: 0; background: rgba(0,0,0,0.72); color: #fff; font-size: 0.62rem; padding: 2px 4px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  #photosCameraModal { width: 100%; max-width: 560px; }
+  #photosVideo, #photosSnapCanvas { width: 100%; border-radius: 0.5rem; background: #000; max-height: 60vh; object-fit: contain; }
+  .photos-cam-bar { display: flex; gap: 0.75rem; margin-top: 0.75rem; }
+  .photos-cam-btn { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 0.35rem; padding: 0.9rem; border-radius: 0.75rem; font-weight: 600; font-size: 0.85rem; border: 1px solid #3f3f46; }
+  .photos-cam-btn i { font-size: 1.4rem; }
+  .photos-cam-name { background: #27272a; color: #e4e4e7; }
+  .photos-cam-name.listening { background: #7c2d12; color: #fdba74; animation: photosPulse 1.2s infinite; }
+  .photos-cam-shoot { background: #059669; color: #fff; }
+  .photos-cam-shoot.armed { background: #2563eb; }
+  @keyframes photosPulse { 0%,100% { opacity: 1; } 50% { opacity: 0.6; } }
+  .photos-card:hover { border-color: #52525b; }
 </style>
-<div class="photos-page"><div class="photos-stack">
-    
-    <!-- Page Header -->
-    <div class="flex items-center justify-between mb-4 flex-shrink-0">
-        <div>
-            <h1 class="text-2xl font-semibold tracking-tight">Photos</h1>
-            <p class="text-zinc-400 text-sm mt-0.5">Project photos and documentation</p>
-        </div>
-        
-        <div class="flex items-center gap-3">
-            <button onclick="showUploadModal()" 
-                    class="flex items-center gap-2 px-5 py-2.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded-md text-sm font-medium transition-colors">
-                <i class="fa-solid fa-upload"></i>
-                <span>Upload Photos</span>
-            </button>
-        </div>
+
+<div class="photos-page">
+
+  <!-- Toolbar -->
+  <div class="flex items-center justify-between mb-4 gap-3 flex-wrap">
+    <div class="min-w-0">
+      <h1 class="text-2xl font-semibold tracking-tight">Photos</h1>
+      <p class="text-zinc-400 text-sm mt-0.5">Site photos organized by date — filed to Documents › Photos › <span class="font-mono text-zinc-500">MM-DD-YYYY</span></p>
     </div>
-
-    <!-- Filters -->
-    <div class="flex flex-wrap items-center gap-3 mb-3 bg-zinc-900 border border-zinc-700 rounded-md p-3 flex-shrink-0">
-        <div class="flex-1 min-w-[220px]">
-            <input type="text" id="photoSearch" placeholder="Search photos..." 
-                   class="w-full bg-zinc-800 border border-zinc-700 rounded-md px-4 py-2.5 text-sm focus:outline-none focus:border-emerald-600"
-                   onkeyup="filterPhotos()">
-        </div>
-
-        <select id="locationFilter" onchange="filterPhotos()" 
-                class="bg-zinc-800 border border-zinc-700 rounded-md px-4 py-2.5 text-sm focus:outline-none focus:border-emerald-600">
-            <option value="">All Locations</option>
-        </select>
-
-        <select id="dateFilter" onchange="filterPhotos()" 
-                class="bg-zinc-800 border border-zinc-700 rounded-md px-4 py-2.5 text-sm focus:outline-none focus:border-emerald-600">
-            <option value="">All Dates</option>
-            <option value="today">Today</option>
-            <option value="week">This Week</option>
-            <option value="month">This Month</option>
-        </select>
-
-        <button onclick="clearPhotoFilters()" 
-                class="px-4 py-2.5 text-sm bg-zinc-800 hover:bg-zinc-700 border border-zinc-700 rounded-md transition-colors">
-            Clear Filters
-        </button>
+    <div class="flex items-center gap-2 flex-wrap">
+      <button type="button" id="photosBtnRefresh" class="flex items-center gap-2 px-4 py-2 bg-zinc-800 hover:bg-zinc-700 rounded-md text-sm font-medium">
+        <i class="fa-solid fa-rotate"></i><span class="hidden sm:inline">Refresh</span>
+      </button>
+      <button type="button" id="photosBrowseBtn" class="flex items-center gap-2 px-4 py-2 bg-zinc-800 hover:bg-zinc-700 rounded-md text-sm font-medium">
+        <i class="fa-solid fa-folder-open"></i><span>Browse</span>
+      </button>
+      <button type="button" id="photosOpenCamera" class="flex items-center gap-2 px-5 py-2 bg-emerald-600 hover:bg-emerald-500 text-white rounded-md text-sm font-semibold">
+        <i class="fa-solid fa-camera"></i><span>Open Camera</span>
+      </button>
+      <input type="file" id="photosBrowseInput" accept="image/*" multiple class="hidden">
     </div>
+  </div>
 
-    <!-- Photos Grid (scrolls) -->
-    <div class="flex-1 min-h-0 overflow-auto mb-2">
-    <div id="photosGrid" class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4">
-        <!-- Photos will be populated here via JavaScript -->
+  <!-- Summary -->
+  <div class="bg-zinc-900 border border-zinc-700 rounded-md p-4 mb-4">
+    <div class="grid grid-cols-2 md:grid-cols-4 gap-3">
+      <div class="bg-zinc-800 border border-zinc-700 rounded-md p-3"><div class="text-xs text-zinc-400">Total Photos</div><div id="statPhotoTotal" class="text-2xl font-semibold mt-1">0</div></div>
+      <div class="bg-zinc-800 border border-zinc-700 rounded-md p-3"><div class="text-xs text-zinc-400">Today</div><div id="statPhotoToday" class="text-2xl font-semibold mt-1 text-emerald-400">0</div></div>
+      <div class="bg-zinc-800 border border-zinc-700 rounded-md p-3"><div class="text-xs text-zinc-400">This Week</div><div id="statPhotoWeek" class="text-2xl font-semibold mt-1">0</div></div>
+      <div class="bg-zinc-800 border border-zinc-700 rounded-md p-3"><div class="text-xs text-zinc-400">This Month</div><div id="statPhotoMonth" class="text-2xl font-semibold mt-1">0</div></div>
     </div>
+  </div>
 
-    <!-- Empty State -->
-    <div id="emptyState" class="hidden text-center py-12">
-        <i class="fa-solid fa-images text-6xl text-zinc-700 mb-4"></i>
-        <h3 class="text-xl font-semibold mb-2">No photos found</h3>
-        <p class="text-zinc-400">Upload photos or adjust your filters.</p>
+  <!-- Capture defaults (location + date for new photos) -->
+  <div class="flex flex-wrap items-end gap-3 mb-4 bg-zinc-900 border border-zinc-700 rounded-md p-3">
+    <div class="flex-1 min-w-[140px]">
+      <label class="block text-xs text-zinc-500 mb-1">Photo date (organizes in Documents)</label>
+      <input type="date" id="photoTakenDate" class="w-full bg-zinc-800 border border-zinc-700 rounded-md px-3 py-2 text-sm">
     </div>
+    <div class="flex-[2] min-w-[200px]">
+      <label class="block text-xs text-zinc-500 mb-1">Location / area (optional)</label>
+      <input type="text" id="photoLocation" placeholder="e.g. South Elevation, 2nd Floor Electrical" class="w-full bg-zinc-800 border border-zinc-700 rounded-md px-3 py-2 text-sm">
     </div>
+    <p class="text-xs text-zinc-500 flex-1 min-w-[220px] pb-2">Photos are captured in-app and uploaded to Case PM — never saved to the device. Use <b>Name (talk)</b> when capturing to dictate the file name.</p>
+  </div>
 
-</div></div>
-        <!-- Upload Photos Modal -->
-        <dialog id="uploadModal" class="bg-zinc-900 border border-zinc-700 rounded-3xl p-0 w-full max-w-lg shadow-2xl">
-            <div class="p-6">
-                <div class="flex items-center justify-between mb-5">
-                    <div class="font-semibold text-xl">Upload Photos</div>
-                    <button onclick="document.getElementById('uploadModal').close()" class="text-zinc-400 hover:text-white text-2xl leading-none">&times;</button>
-                </div>
+  <!-- Filters (Procore-style: search, location, date range, group by day/week/month) -->
+  <div class="flex flex-wrap items-center gap-3 mb-4 bg-zinc-900 border border-zinc-700 rounded-md p-3">
+    <div class="flex-1 min-w-[200px]">
+      <input type="text" id="photoSearch" placeholder="Search caption, location, uploader…" class="w-full bg-zinc-800 border border-zinc-700 rounded-md px-4 py-2.5 text-sm focus:outline-none focus:border-emerald-600">
+    </div>
+    <select id="locationFilter" class="bg-zinc-800 border border-zinc-700 rounded-md px-4 py-2.5 text-sm min-w-[160px]">
+      <option value="">All Locations</option>
+    </select>
+    <select id="dateFilter" class="bg-zinc-800 border border-zinc-700 rounded-md px-4 py-2.5 text-sm">
+      <option value="">All Dates</option>
+      <option value="today">Today</option>
+      <option value="week">This Week</option>
+      <option value="month">This Month</option>
+    </select>
+    <select id="groupMode" class="bg-zinc-800 border border-zinc-700 rounded-md px-4 py-2.5 text-sm" title="Timeline grouping (Procore-style)">
+      <option value="day">Group by Day</option>
+      <option value="week">Group by Week</option>
+      <option value="month">Group by Month</option>
+    </select>
+    <button type="button" id="photosClearFilters" class="px-4 py-2.5 text-sm bg-zinc-800 hover:bg-zinc-700 border border-zinc-700 rounded-md">Clear</button>
+  </div>
 
-                <div class="border-2 border-dashed border-zinc-700 rounded-3xl p-8 text-center mb-4 hover:border-emerald-600 transition-colors" id="dropZone">
-                    <i class="fa-solid fa-cloud-upload-alt text-4xl text-zinc-500 mb-3"></i>
-                    <p class="text-zinc-300">Drag and drop photos here</p>
-                    <p class="text-xs text-zinc-500 mt-1">or</p>
-                    <button type="button" onclick="document.getElementById('fileInput').click()" 
-                            class="mt-3 px-4 py-2 bg-zinc-800 hover:bg-zinc-700 rounded-2xl text-sm">
-                        Browse Files
-                    </button>
-                    <input type="file" id="fileInput" multiple accept="image/*" class="hidden" onchange="handleFileSelect(event)">
-                </div>
+  <!-- Timeline -->
+  <div id="photosTimeline" class="pb-8"></div>
+  <div id="emptyState" class="hidden text-center py-16">
+    <i class="fa-solid fa-images text-6xl text-zinc-700 mb-4"></i>
+    <h3 class="text-xl font-semibold mb-2">No photos yet</h3>
+    <p class="text-zinc-400 mb-4">Open the camera or browse to add site photos. They'll be organized by date in Documents.</p>
+    <button type="button" onclick="CasePMPhotos.openCamera()" class="px-5 py-2.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded-md text-sm font-semibold">
+      <i class="fa-solid fa-camera mr-2"></i>Open Camera
+    </button>
+  </div>
+</div>
 
-                <div id="selectedFiles" class="max-h-40 overflow-auto mb-4 hidden"></div>
+<!-- Camera modal (same workflow as Daily Log) -->
+<dialog id="photosCameraModal" class="modal casepm-dialog bg-zinc-900 border border-zinc-700 rounded-lg p-0">
+  <div class="px-4 py-3 border-b border-zinc-700 flex items-center justify-between">
+    <h3 class="font-semibold"><i class="fa-solid fa-camera text-sky-400 mr-2"></i>Camera</h3>
+    <div class="flex items-center gap-2">
+      <button type="button" id="photosCamSwitch" class="text-xs px-3 py-1.5 bg-zinc-800 hover:bg-zinc-700 rounded-md"><i class="fa-solid fa-camera-rotate mr-1"></i>Flip</button>
+      <button type="button" id="photosCamClose" class="text-zinc-400 hover:text-white text-xl leading-none px-1">&times;</button>
+    </div>
+  </div>
+  <div class="p-4">
+    <video id="photosVideo" autoplay playsinline muted></video>
+    <canvas id="photosSnapCanvas" class="hidden"></canvas>
+    <div id="photosCamError" class="hidden text-sm text-red-400 py-6 text-center"></div>
+    <input type="text" id="photosCamNameInput" class="w-full bg-zinc-800 border border-zinc-700 rounded-md px-3 py-2 text-sm mt-3 hidden" placeholder="Say or type a file name, then Save">
+    <div class="photos-cam-bar">
+      <button type="button" id="photosCamName" class="photos-cam-btn photos-cam-name">
+        <i class="fa-solid fa-microphone"></i><span id="photosCamNameLabel">Name (talk)</span>
+      </button>
+      <button type="button" id="photosCamShoot" class="photos-cam-btn photos-cam-shoot">
+        <i class="fa-solid fa-circle"></i><span id="photosCamShootLabel">Capture</span>
+      </button>
+    </div>
+    <div id="photosCamHint" class="text-xs text-zinc-500 mt-2 text-center">
+      Tap <b>Capture</b> to snap. Then tap <b>Name (talk)</b> to name &amp; save, or <b>Save</b> for auto name <span class="font-mono">Photo N · date</span>.
+    </div>
+    <div id="photosCamThumbs" class="grid grid-cols-4 gap-2 mt-3"></div>
+  </div>
+  <div class="px-4 py-3 border-t border-zinc-700 flex justify-end">
+    <button type="button" id="photosCamDone" class="px-5 py-2 text-sm bg-emerald-600 hover:bg-emerald-500 rounded-md font-semibold">Done</button>
+  </div>
+</dialog>
 
-                <div class="flex gap-3">
-                    <button onclick="document.getElementById('uploadModal').close()" 
-                            class="flex-1 py-2.5 bg-zinc-800 hover:bg-zinc-700 rounded-2xl text-sm font-medium transition-colors">
-                        Cancel
-                    </button>
-                    <button onclick="uploadPhotos()" 
-                            class="flex-1 py-2.5 bg-emerald-600 hover:bg-emerald-500 rounded-2xl text-sm font-medium transition-colors">
-                        Upload
-                    </button>
-                </div>
-            </div>
-        </dialog>
-        <!-- JavaScript -->
-        <script>
-            // Sample photo data (will be replaced with backend later)
-            let photos = [
-                {
-                    id: 1,
-                    url: "https://picsum.photos/id/1015/600/400",
-                    caption: "Foundation pour - South side",
-                    location: "Site - South Elevation",
-                    date: "2025-03-12",
-                    uploaded_by: "Mike B."
-                },
-                {
-                    id: 2,
-                    url: "https://picsum.photos/id/1016/600/400",
-                    caption: "Steel delivery",
-                    location: "Loading Dock",
-                    date: "2025-03-15",
-                    uploaded_by: "John D."
-                },
-                {
-                    id: 3,
-                    url: "https://picsum.photos/id/160/600/400",
-                    caption: "Electrical rough-in - 2nd floor",
-                    location: "2nd Floor - Electrical Room",
-                    date: "2025-03-18",
-                    uploaded_by: "Mike B."
-                }
-            ];
-
-            function filterPhotos() {
-                const searchTerm = document.getElementById('photoSearch').value.toLowerCase();
-                const locationFilter = document.getElementById('locationFilter').value.toLowerCase();
-
-                const filtered = photos.filter(photo => {
-                    const matchesSearch = photo.caption.toLowerCase().includes(searchTerm) || 
-                                        photo.location.toLowerCase().includes(searchTerm);
-                    const matchesLocation = !locationFilter || photo.location.toLowerCase().includes(locationFilter);
-                    return matchesSearch && matchesLocation;
-                });
-
-                renderPhotos(filtered);
-            }
-
-            function clearPhotoFilters() {
-                document.getElementById('photoSearch').value = '';
-                document.getElementById('locationFilter').value = '';
-                document.getElementById('dateFilter').value = '';
-                renderPhotos(photos);
-            }
-
-            function renderPhotos(photoList) {
-                const grid = document.getElementById('photosGrid');
-                const emptyState = document.getElementById('emptyState');
-                grid.innerHTML = '';
-
-                if (photoList.length === 0) {
-                    emptyState.classList.remove('hidden');
-                    return;
-                } else {
-                    emptyState.classList.add('hidden');
-                }
-
-                photoList.forEach(photo => {
-                    const card = document.createElement('div');
-                    card.className = 'group relative bg-zinc-900 border border-zinc-800 rounded-3xl overflow-hidden cursor-pointer';
-                    card.innerHTML = `
-                        <div class="aspect-video bg-zinc-800">
-                            <img src="${photo.url}" class="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300" alt="${photo.caption}">
-                        </div>
-                        <div class="p-3">
-                            <div class="font-medium text-sm line-clamp-2">${photo.caption}</div>
-                            <div class="flex items-center justify-between mt-2 text-xs text-zinc-400">
-                                <span>${photo.location}</span>
-                                <span>${photo.date}</span>
-                            </div>
-                        </div>
-                    `;
-                    card.onclick = () => showPhotoDetail(photo);
-                    grid.appendChild(card);
-                });
-            }
-
-            function showUploadModal() {
-                document.getElementById('uploadModal').showModal();
-                document.getElementById('selectedFiles').innerHTML = '';
-                document.getElementById('selectedFiles').classList.add('hidden');
-            }
-
-            function handleFileSelect(event) {
-                const files = event.target.files;
-                const container = document.getElementById('selectedFiles');
-                container.innerHTML = '';
-                container.classList.remove('hidden');
-
-                Array.from(files).forEach(file => {
-                    const div = document.createElement('div');
-                    div.className = 'flex items-center justify-between bg-zinc-800 px-3 py-2 rounded-2xl mb-2 text-sm';
-                    div.innerHTML = `
-                        <span class="truncate">${file.name}</span>
-                        <button type="button" class="text-red-400 hover:text-red-500" onclick="this.parentElement.remove()">×</button>
-                    `;
-                    container.appendChild(div);
-                });
-            }
-
-            function uploadPhotos() {
-                // Placeholder for actual upload logic
-                alert('Photo upload functionality will be connected to the backend in a future update.');
-                document.getElementById('uploadModal').close();
-                
-                // For now, just add a dummy photo
-                const newPhoto = {
-                    id: Date.now(),
-                    url: "https://picsum.photos/id/201/600/400",
-                    caption: "Newly uploaded photo",
-                    location: "Site - General",
-                    date: new Date().toISOString().split('T')[0],
-                    uploaded_by: "You"
-                };
-                photos.unshift(newPhoto);
-                renderPhotos(photos);
-            }
-
-            function showPhotoDetail(photo) {
-                const modal = document.createElement('dialog');
-                modal.className = 'bg-zinc-900 border border-zinc-700 rounded-3xl p-0 w-full max-w-4xl shadow-2xl';
-                modal.innerHTML = `
-                    <div class="p-6">
-                        <div class="flex justify-between items-start mb-4">
-                            <div>
-                                <div class="font-semibold text-xl">${photo.caption}</div>
-                                <div class="text-sm text-zinc-400">${photo.location} • ${photo.date} • Uploaded by ${photo.uploaded_by}</div>
-                            </div>
-                            <button onclick="this.closest('dialog').close()" class="text-zinc-400 hover:text-white text-2xl leading-none">&times;</button>
-                        </div>
-                        
-                        <img src="${photo.url}" class="w-full rounded-2xl max-h-[70vh] object-contain bg-black">
-                        
-                        <div class="flex gap-3 mt-4">
-                            <button onclick="this.closest('dialog').close()" 
-                                    class="flex-1 py-2.5 bg-zinc-800 hover:bg-zinc-700 rounded-2xl text-sm font-medium">
-                                Close
-                            </button>
-                            <button onclick="deletePhoto(${photo.id}, this.closest('dialog'))" 
-                                    class="px-6 py-2.5 bg-red-600/90 hover:bg-red-600 rounded-2xl text-sm font-medium flex items-center gap-2">
-                                <i class="fa-solid fa-trash"></i>
-                                <span>Delete</span>
-                            </button>
-                        </div>
-                    </div>
-                `;
-                document.body.appendChild(modal);
-                modal.showModal();
-            }
-
-            function deletePhoto(id, modal) {
-                if (!confirm('Delete this photo?')) return;
-                photos = photos.filter(p => p.id !== id);
-                renderPhotos(photos);
-                modal.close();
-            }
-
-            function initializePhotos() {
-                renderPhotos(photos);
-            }
-
-            // Initialize on load
-            window.onload = function() {
-                initializePhotos();
-            };
-        </script>
+<!-- Detail modal -->
+<dialog id="photoDetailModal" class="modal casepm-dialog bg-zinc-900 border border-zinc-700 rounded-lg w-full max-w-3xl p-0">
+  <div class="px-5 py-4 border-b border-zinc-700 flex items-center justify-between">
+    <div>
+      <h3 id="photoDetailTitle" class="font-semibold text-lg">Photo</h3>
+      <div id="photoDetailMeta" class="text-xs text-zinc-400 mt-1 space-y-0.5"></div>
+    </div>
+    <button type="button" id="photosDetailClose" class="text-zinc-400 hover:text-white text-xl leading-none">&times;</button>
+  </div>
+  <div class="p-5">
+    <img id="photoDetailImg" src="" alt="" class="w-full rounded-lg max-h-[65vh] object-contain bg-black mx-auto">
+  </div>
+  <div class="px-5 py-3 border-t border-zinc-700 flex justify-end gap-2">
+    <a id="photoDetailOpen" href="#" target="_blank" class="px-4 py-2 text-sm bg-zinc-800 hover:bg-zinc-700 rounded-md">Open Full Size</a>
+    <button type="button" id="photoDetailDelete" class="px-4 py-2 text-sm bg-red-800 hover:bg-red-700 rounded-md"><i class="fa-solid fa-trash mr-1"></i>Delete</button>
+  </div>
+</dialog>
 
 {% endblock %}
-
-</div>
-</div>
