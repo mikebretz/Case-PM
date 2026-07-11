@@ -71,8 +71,15 @@
     z-index: 10;
     background: #27272a;
   }
-  .project-row {
-    cursor: pointer;
+  .casepm-money-input {
+    text-align: right;
+    font-variant-numeric: tabular-nums;
+  }
+  .team-contact-row {
+    border: 1px solid #3f3f46;
+    border-radius: 0.5rem;
+    padding: 0.75rem;
+    background: #18181b;
   }
 </style>
 
@@ -118,7 +125,7 @@
                 </div>
                 <div class="bg-zinc-800 border border-zinc-700 rounded-md project-stat-tile">
                     <div class="stat-label">Portfolio Value</div>
-                    <div class="stat-value">${{ '{:,.0f}'.format(stats.contract_value) }}</div>
+                    <div class="stat-value">{{ stats.contract_value|usd(0) }}</div>
                 </div>
                 <div class="bg-zinc-800 border border-zinc-700 rounded-md project-stat-tile">
                     <div class="stat-label">Pre-Construction</div>
@@ -133,7 +140,7 @@
 
     <!-- Filters -->
     <div class="flex flex-col md:flex-row gap-2 mb-3 flex-shrink-0">
-            <input type="text" id="projectSearch" placeholder="Search project #, name, client, job #, PM..."
+            <input type="text" id="projectSearch" placeholder="Search project #, name, address, client, job #, PM..."
                    oninput="filterProjects()"
                    class="flex-1 bg-zinc-900 border border-zinc-700 rounded-md px-4 py-2 text-sm focus:border-emerald-600">
             <select id="projectStatusFilter" onchange="filterProjects()"
@@ -161,9 +168,8 @@
                 <tr class="border-b border-zinc-700 text-zinc-400 text-xs uppercase tracking-wide">
                     <th class="px-3 py-2.5 text-left font-medium w-24">Project #</th>
                     <th class="px-3 py-2.5 text-left font-medium w-24">Job #</th>
-                    <th class="px-3 py-2.5 text-left font-medium min-w-[160px]">Project Name</th>
+                    <th class="px-3 py-2.5 text-left font-medium min-w-[200px]">Project</th>
                     <th class="px-3 py-2.5 text-left font-medium min-w-[120px]">Client / Owner</th>
-                    <th class="px-3 py-2.5 text-left font-medium w-28">Location</th>
                     <th class="px-3 py-2.5 text-left font-medium w-32">Project Manager</th>
                     <th class="px-3 py-2.5 text-right font-medium w-28">Contract Value</th>
                     <th class="px-3 py-2.5 text-center font-medium w-24">Start</th>
@@ -180,14 +186,17 @@
                     data-id="{{ project.id }}"
                     data-status="{{ project.status or '' }}"
                     data-pm="{{ project.project_manager or '' }}"
-                    data-search="{{ (project.number or '')|lower }} {{ project.name|lower }} {{ (project.client or '')|lower }} {{ (project.sage_job_number or '')|lower }} {{ (project.project_manager or '')|lower }} {{ project.location_label()|lower }}"
+                    data-search="{{ (project.number or '')|lower }} {{ project.name|lower }} {{ (project.client or '')|lower }} {{ project.address_display()|lower }} {{ (project.sage_job_number or '')|lower }} {{ (project.project_manager or '')|lower }}"
                     title="Double-click to edit project">
                     <td class="px-3 py-2 font-mono text-emerald-400 text-xs">{{ project.number or '—' }}</td>
                     <td class="px-3 py-2 font-mono text-xs text-zinc-300">{{ project.sage_job_number or '—' }}</td>
-                    <td class="px-3 py-2 font-medium text-white">
-                        {{ project.name }}
+                    <td class="px-3 py-2 font-medium text-white min-w-[200px]">
+                        <div class="truncate">{{ project.name }}</div>
+                        {% if project.address_display() %}
+                        <div class="text-[11px] text-zinc-500 font-normal truncate mt-0.5" title="{{ project.address_display() }}">{{ project.address_display() }}</div>
+                        {% endif %}
                         {% if project.has_original_contract() %}
-                        <span class="ml-1.5 inline-flex text-red-400/90" title="Original contract on file"><i class="fa-solid fa-file-pdf text-[10px]"></i></span>
+                        <span class="ml-0 inline-flex text-red-400/90" title="Original contract on file"><i class="fa-solid fa-file-pdf text-[10px]"></i></span>
                         {% endif %}
                         {% set pd = project.get_details() %}
                         {% if pd.get('prime_aia_form') %}
@@ -195,9 +204,8 @@
                         {% endif %}
                     </td>
                     <td class="px-3 py-2 text-zinc-300 truncate max-w-[140px]">{{ project.client or '—' }}</td>
-                    <td class="px-3 py-2 text-zinc-400 text-xs">{{ project.location_label() }}</td>
                     <td class="px-3 py-2 text-zinc-300 text-xs truncate max-w-[120px]">{{ project.project_manager or '—' }}</td>
-                    <td class="px-3 py-2 text-right font-mono text-xs">{{ '${:,.0f}'.format(project.contract_value) if project.contract_value else '—' }}</td>
+                    <td class="px-3 py-2 text-right font-mono text-xs tabular-nums">{{ project.contract_value|usd if project.contract_value else '—' }}</td>
                     <td class="px-3 py-2 text-center text-xs text-zinc-400">{{ project.start_date.strftime('%m/%d/%y') if project.start_date else '—' }}</td>
                     <td class="px-3 py-2 text-center text-xs text-zinc-400">{{ project.end_date.strftime('%m/%d/%y') if project.end_date else '—' }}</td>
                     <td class="px-3 py-2 text-center">
@@ -455,15 +463,20 @@
                     <div class="grid grid-cols-2 md:grid-cols-3 gap-4">
                         <div>
                             <label class="project-field-label">Start Date</label>
-                            <input type="date" name="start_date" id="fld_start_date" class="project-field-input">
+                            <input type="date" name="start_date" id="fld_start_date" class="project-field-input" onchange="onProjectScheduleDatesChanged()">
+                        </div>
+                        <div>
+                            <label class="project-field-label">Duration (weeks)</label>
+                            <input type="number" name="duration_weeks" id="fld_duration_weeks" min="1" step="1" class="project-field-input" placeholder="e.g. 52" oninput="onProjectDurationWeeksChanged()">
+                            <p class="text-[10px] text-zinc-500 mt-1">Optional — calculates estimated completion from start date</p>
+                        </div>
+                        <div>
+                            <label class="project-field-label">Est. Completion</label>
+                            <input type="date" name="end_date" id="fld_end_date" class="project-field-input" onchange="onProjectScheduleDatesChanged()">
                         </div>
                         <div>
                             <label class="project-field-label">Actual Start Date</label>
                             <input type="date" name="actual_start_date" id="fld_actual_start_date" class="project-field-input">
-                        </div>
-                        <div>
-                            <label class="project-field-label">Est. Completion</label>
-                            <input type="date" name="end_date" id="fld_end_date" class="project-field-input">
                         </div>
                         <div>
                             <label class="project-field-label">Projected Finish</label>
@@ -475,7 +488,7 @@
                         </div>
                         <div>
                             <label class="project-field-label">% Complete</label>
-                            <input type="number" name="percent_complete" id="fld_percent_complete" min="0" max="100" class="project-field-input" value="0">
+                            <input type="number" name="percent_complete" id="fld_percent_complete" min="0" max="100" class="project-field-input" placeholder="">
                         </div>
                         <div>
                             <label class="project-field-label">Warranty Start</label>
@@ -506,33 +519,21 @@
                     <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
                         <div>
                             <label class="project-field-label">Current Contract Value</label>
-                            <div class="relative">
-                                <span class="absolute left-3 top-2.5 text-zinc-500">$</span>
-                                <input type="number" step="0.01" name="contract_value" id="fld_contract_value" class="project-field-input pl-7">
-                            </div>
+                            <input type="text" name="contract_value" id="fld_contract_value" class="project-field-input casepm-money-input" data-casepm-money>
                             <p class="text-[10px] text-zinc-500 mt-1">Includes approved change orders</p>
                         </div>
                         <div>
                             <label class="project-field-label">Original Contract Amount</label>
-                            <div class="relative">
-                                <span class="absolute left-3 top-2.5 text-zinc-500">$</span>
-                                <input type="number" step="0.01" name="original_contract_amount" id="fld_original_contract_amount" class="project-field-input pl-7">
-                            </div>
+                            <input type="text" name="original_contract_amount" id="fld_original_contract_amount" class="project-field-input casepm-money-input" data-casepm-money>
                             <p class="text-[10px] text-zinc-500 mt-1">G702 Line 1 — before COs</p>
                         </div>
                         <div>
                             <label class="project-field-label">Contingency</label>
-                            <div class="relative">
-                                <span class="absolute left-3 top-2.5 text-zinc-500">$</span>
-                                <input type="number" step="0.01" name="contingency_amount" id="fld_contingency_amount" class="project-field-input pl-7">
-                            </div>
+                            <input type="text" name="contingency_amount" id="fld_contingency_amount" class="project-field-input casepm-money-input" data-casepm-money>
                         </div>
                         <div>
                             <label class="project-field-label">Allowances Total</label>
-                            <div class="relative">
-                                <span class="absolute left-3 top-2.5 text-zinc-500">$</span>
-                                <input type="number" step="0.01" name="allowances_total" id="fld_allowances_total" class="project-field-input pl-7">
-                            </div>
+                            <input type="text" name="allowances_total" id="fld_allowances_total" class="project-field-input casepm-money-input" data-casepm-money>
                         </div>
                         <div>
                             <label class="project-field-label">Default Retainage %</label>
@@ -646,19 +647,19 @@
                         </div>
                         <div>
                             <label class="project-field-label">Performance Bond Amount</label>
-                            <input type="number" step="0.01" name="performance_bond_amount" id="fld_performance_bond_amount" class="project-field-input">
+                            <input type="text" name="performance_bond_amount" id="fld_performance_bond_amount" class="project-field-input casepm-money-input" data-casepm-money>
                         </div>
                         <div>
                             <label class="project-field-label">Payment Bond Amount</label>
-                            <input type="number" step="0.01" name="payment_bond_amount" id="fld_payment_bond_amount" class="project-field-input">
+                            <input type="text" name="payment_bond_amount" id="fld_payment_bond_amount" class="project-field-input casepm-money-input" data-casepm-money>
                         </div>
                         <div>
                             <label class="project-field-label">GL Insurance Limit</label>
-                            <input type="text" name="insurance_gl_limit" id="fld_insurance_gl_limit" class="project-field-input" placeholder="$1,000,000 per occurrence">
+                            <input type="text" name="insurance_gl_limit" id="fld_insurance_gl_limit" class="project-field-input casepm-money-input" data-casepm-money>
                         </div>
                         <div>
                             <label class="project-field-label">Auto Insurance Limit</label>
-                            <input type="text" name="insurance_auto_limit" id="fld_insurance_auto_limit" class="project-field-input">
+                            <input type="text" name="insurance_auto_limit" id="fld_insurance_auto_limit" class="project-field-input casepm-money-input" data-casepm-money>
                         </div>
                         <div>
                             <label class="project-field-label">OCIP / CCIP</label>
@@ -693,55 +694,19 @@
                 </div>
 
                 <div id="projectTab-team" class="project-tab-panel hidden">
-                    <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-                        <div>
-                            <label class="project-field-label">Project Manager</label>
-                            <select name="project_manager" id="fld_project_manager" class="project-field-input">
-                                <option value="">Select PM...</option>
-                                {% for user in users %}
-                                <option value="{{ user.full_name }}">{{ user.full_name }}</option>
-                                {% endfor %}
-                            </select>
-                        </div>
-                    </div>
-                    <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mt-4">
-                        <div>
-                            <label class="project-field-label">Owner Contact Name</label>
-                            <input type="text" name="owner_contact_name" id="fld_owner_contact_name" class="project-field-input">
-                        </div>
-                        <div>
-                            <label class="project-field-label">Owner Contact Email</label>
-                            <input type="email" name="owner_contact_email" id="fld_owner_contact_email" class="project-field-input">
-                        </div>
-                        <div>
-                            <label class="project-field-label">Owner Contact Phone</label>
-                            <input type="text" name="owner_contact_phone" id="fld_owner_contact_phone" class="project-field-input">
-                        </div>
-                    </div>
-                    <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mt-4">
-                        <div>
-                            <label class="project-field-label">Architect Firm</label>
-                            <input type="text" name="architect_firm" id="fld_architect_firm" class="project-field-input">
-                        </div>
-                        <div>
-                            <label class="project-field-label">Architect Contact</label>
-                            <input type="text" name="architect_contact" id="fld_architect_contact" class="project-field-input">
-                        </div>
-                        <div>
-                            <label class="project-field-label">Superintendent</label>
-                            <input type="text" name="superintendent" id="fld_superintendent" class="project-field-input">
-                        </div>
-                        <div>
-                            <label class="project-field-label">Estimator</label>
-                            <input type="text" name="estimator" id="fld_estimator" class="project-field-input">
-                        </div>
+                    <p class="text-xs text-zinc-500 mb-4">Add as many contacts as needed per role. Pick from User Management or enter details manually.</p>
+                    <input type="hidden" name="team_contacts_json" id="fld_team_contacts_json" value="[]">
+                    <div id="teamContactsSections" class="space-y-5"></div>
+                    <div class="mt-4 pt-4 border-t border-zinc-700">
+                        <label class="project-field-label">Legacy PM field (synced from first Project Manager above)</label>
+                        <input type="hidden" name="project_manager" id="fld_project_manager" value="">
                     </div>
                 </div>
 
                 <div id="projectTab-sage" class="project-tab-panel hidden">
                     <div class="border border-emerald-800/40 bg-emerald-950/20 rounded-lg p-4 mb-4">
-                        <div class="text-sm font-medium text-emerald-300 mb-1"><i class="fa-solid fa-database mr-2"></i>Sage 300 defaults are set once for the whole company</div>
-                        <p class="text-xs text-zinc-400">Configure company code, Sage database, GL accounts, and tax groups in <a href="{{ url_for('program_settings') }}?tab=sage" class="text-sky-400 hover:underline">Program Settings → Sage 300</a>. Each project only needs its own <strong class="text-zinc-300">Sage job number</strong> (General tab) unless you override defaults below.</p>
+                        <div class="text-sm font-medium text-emerald-300 mb-1"><i class="fa-solid fa-database mr-2"></i>Sage 300 CRE integration</div>
+                        <p class="text-xs text-zinc-400">Configure company-wide defaults in <a href="{{ url_for('program_settings') }}?tab=sage" class="text-sky-400 hover:underline">Program Settings → Sage 300</a>. Set job-specific fields below — they save with the project and are used when <code class="text-emerald-400">SAGE_API_URL</code> is configured.</p>
                     </div>
 
                     <div class="text-xs text-zinc-500 uppercase tracking-wide mb-3">This job only</div>
@@ -845,10 +810,6 @@
                             <input type="text" name="flag_color" id="fld_flag_color" class="project-field-input" placeholder="e.g. #10b981">
                         </div>
                     </div>
-                    <div class="mt-4">
-                        <label class="project-field-label">Notes</label>
-                        <textarea name="notes" id="fld_notes" rows="4" class="project-field-input"></textarea>
-                    </div>
                 </div>
             </div>
 
@@ -862,6 +823,233 @@
 
 <script>
 const CASEPM_SERVER_COMPANIES = {{ companies_for_js|tojson }};
+const CASEPM_PROJECT_USERS = {{ users_for_js|tojson }};
+
+const TEAM_ROLE_DEFS = [
+    { role: 'owner', label: 'Owner Contacts', showFirm: false },
+    { role: 'architect', label: 'Architect Contacts', showFirm: true },
+    { role: 'project_manager', label: 'Project Managers', showFirm: false },
+    { role: 'superintendent', label: 'Superintendents', showFirm: false },
+    { role: 'estimator', label: 'Estimators', showFirm: false },
+    { role: 'custom', label: 'Other Roles', showFirm: true, customLabel: true },
+];
+
+let teamContactsState = [];
+
+function blankTeamContact(role, roleLabel) {
+    return {
+        role,
+        role_label: roleLabel || '',
+        user_id: null,
+        name: '',
+        email: '',
+        phone: '',
+        firm: '',
+    };
+}
+
+function userOptionsHtml(selectedId) {
+    const opts = ['<option value="">— Select user —</option>'];
+    (CASEPM_PROJECT_USERS || []).forEach((u) => {
+        const sel = String(selectedId || '') === String(u.id) ? ' selected' : '';
+        opts.push(`<option value="${u.id}"${sel}>${escHtml(u.full_name)}${u.role ? ' · ' + escHtml(u.role) : ''}</option>`);
+    });
+    return opts.join('');
+}
+
+function applyUserToContact(contact, userId) {
+    const u = (CASEPM_PROJECT_USERS || []).find(x => String(x.id) === String(userId));
+    if (!u) return;
+    contact.user_id = u.id;
+    contact.name = u.full_name || '';
+    contact.email = u.email || '';
+    contact.phone = u.phone || '';
+}
+
+function renderTeamContactRow(contact, index) {
+    const def = TEAM_ROLE_DEFS.find(d => d.role === contact.role) || TEAM_ROLE_DEFS[TEAM_ROLE_DEFS.length - 1];
+    const customLabelField = def.customLabel ? `
+        <div class="md:col-span-2">
+            <label class="project-field-label">Role Title</label>
+            <input type="text" class="project-field-input team-contact-role-label" data-index="${index}" value="${escHtml(contact.role_label || '')}" placeholder="e.g. Safety Coordinator">
+        </div>` : '';
+    const firmField = def.showFirm ? `
+        <div class="md:col-span-2">
+            <label class="project-field-label">${contact.role === 'architect' ? 'Architect Firm' : 'Company / Firm'}</label>
+            <input type="text" class="project-field-input team-contact-firm" data-index="${index}" value="${escHtml(contact.firm || '')}">
+        </div>` : '';
+    return `<div class="team-contact-row" data-index="${index}">
+        <div class="flex items-center justify-between gap-2 mb-3">
+            <div class="text-xs font-medium text-zinc-400 uppercase tracking-wide">${escHtml(def.label)}</div>
+            <button type="button" class="text-xs text-red-400 hover:text-red-300 team-contact-remove" data-index="${index}"><i class="fa-solid fa-trash-can mr-1"></i>Remove</button>
+        </div>
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
+            <div class="md:col-span-2">
+                <label class="project-field-label">From User Management</label>
+                <select class="project-field-input team-contact-user" data-index="${index}">${userOptionsHtml(contact.user_id)}</select>
+            </div>
+            ${customLabelField}
+            ${firmField}
+            <div>
+                <label class="project-field-label">Name</label>
+                <input type="text" class="project-field-input team-contact-name" data-index="${index}" value="${escHtml(contact.name || '')}">
+            </div>
+            <div>
+                <label class="project-field-label">Email</label>
+                <input type="email" class="project-field-input team-contact-email" data-index="${index}" value="${escHtml(contact.email || '')}">
+            </div>
+            <div>
+                <label class="project-field-label">Phone</label>
+                <input type="text" class="project-field-input team-contact-phone" data-index="${index}" value="${escHtml(contact.phone || '')}">
+            </div>
+        </div>
+    </div>`;
+}
+
+function renderTeamContacts() {
+    const box = document.getElementById('teamContactsSections');
+    if (!box) return;
+    box.innerHTML = TEAM_ROLE_DEFS.map((def) => {
+        const rows = teamContactsState
+            .map((c, i) => ({ c, i }))
+            .filter(({ c }) => c.role === def.role)
+            .map(({ c, i }) => renderTeamContactRow(c, i))
+            .join('');
+        return `<div>
+            <div class="flex items-center justify-between mb-2">
+                <div class="text-sm font-medium text-white">${escHtml(def.label)}</div>
+                <button type="button" class="text-xs px-3 py-1.5 bg-zinc-800 hover:bg-zinc-700 border border-zinc-600 rounded-md team-contact-add" data-role="${def.role}" data-label="${escHtml(def.label)}">
+                    <i class="fa-solid fa-plus mr-1"></i>Add
+                </button>
+            </div>
+            <div class="space-y-3 team-role-group" data-role="${def.role}">${rows || '<div class="text-xs text-zinc-500 italic py-2">No contacts added.</div>'}</div>
+        </div>`;
+    }).join('');
+
+    box.querySelectorAll('.team-contact-add').forEach((btn) => {
+        btn.addEventListener('click', () => {
+            const role = btn.getAttribute('data-role');
+            const label = btn.getAttribute('data-label') || 'Contact';
+            teamContactsState.push(blankTeamContact(role, label));
+            renderTeamContacts();
+        });
+    });
+    box.querySelectorAll('.team-contact-remove').forEach((btn) => {
+        btn.addEventListener('click', () => {
+            const idx = parseInt(btn.getAttribute('data-index'), 10);
+            teamContactsState.splice(idx, 1);
+            renderTeamContacts();
+        });
+    });
+    box.querySelectorAll('.team-contact-user').forEach((sel) => {
+        sel.addEventListener('change', () => {
+            const idx = parseInt(sel.getAttribute('data-index'), 10);
+            const contact = teamContactsState[idx];
+            if (!contact) return;
+            if (sel.value) applyUserToContact(contact, sel.value);
+            else contact.user_id = null;
+            renderTeamContacts();
+        });
+    });
+    syncTeamContactsHiddenField();
+}
+
+function readTeamContactsFromDom() {
+    document.querySelectorAll('.team-contact-row').forEach((row) => {
+        const idx = parseInt(row.getAttribute('data-index'), 10);
+        const contact = teamContactsState[idx];
+        if (!contact) return;
+        const nameEl = row.querySelector('.team-contact-name');
+        const emailEl = row.querySelector('.team-contact-email');
+        const phoneEl = row.querySelector('.team-contact-phone');
+        const firmEl = row.querySelector('.team-contact-firm');
+        const labelEl = row.querySelector('.team-contact-role-label');
+        if (nameEl) contact.name = nameEl.value.trim();
+        if (emailEl) contact.email = emailEl.value.trim();
+        if (phoneEl) contact.phone = phoneEl.value.trim();
+        if (firmEl) contact.firm = firmEl.value.trim();
+        if (labelEl) contact.role_label = labelEl.value.trim();
+    });
+}
+
+function syncTeamContactsHiddenField() {
+    readTeamContactsFromDom();
+    const hidden = document.getElementById('fld_team_contacts_json');
+    if (hidden) hidden.value = JSON.stringify(teamContactsState);
+    const pm = teamContactsState.find(c => c.role === 'project_manager' && c.name);
+    const pmField = document.getElementById('fld_project_manager');
+    if (pmField) pmField.value = pm ? pm.name : '';
+}
+
+function loadTeamContactsFromData(data) {
+    if (Array.isArray(data.team_contacts) && data.team_contacts.length) {
+        teamContactsState = data.team_contacts.map(c => ({ ...blankTeamContact(c.role, c.role_label), ...c }));
+        return;
+    }
+    teamContactsState = [];
+    if (data.owner_contact_name || data.owner_contact_email || data.owner_contact_phone) {
+        teamContactsState.push({
+            role: 'owner', role_label: 'Owner Contact', user_id: null,
+            name: data.owner_contact_name || '', email: data.owner_contact_email || '', phone: data.owner_contact_phone || '', firm: '',
+        });
+    }
+    if (data.architect_firm || data.architect_contact) {
+        teamContactsState.push({
+            role: 'architect', role_label: 'Architect', user_id: null,
+            name: data.architect_contact || '', email: '', phone: '', firm: data.architect_firm || '',
+        });
+    }
+    if (data.project_manager) {
+        teamContactsState.push({
+            role: 'project_manager', role_label: 'Project Manager', user_id: null,
+            name: data.project_manager, email: '', phone: '', firm: '',
+        });
+    }
+    if (data.superintendent) {
+        teamContactsState.push({ role: 'superintendent', role_label: 'Superintendent', user_id: null, name: data.superintendent, email: '', phone: '', firm: '' });
+    }
+    if (data.estimator) {
+        teamContactsState.push({ role: 'estimator', role_label: 'Estimator', user_id: null, name: data.estimator, email: '', phone: '', firm: '' });
+    }
+}
+
+function addDaysIso(isoDate, days) {
+    if (!isoDate) return '';
+    const d = new Date(isoDate + 'T12:00:00');
+    if (Number.isNaN(d.getTime())) return '';
+    d.setDate(d.getDate() + days);
+    return d.toISOString().slice(0, 10);
+}
+
+function diffWeeksBetween(startIso, endIso) {
+    if (!startIso || !endIso) return '';
+    const s = new Date(startIso + 'T12:00:00');
+    const e = new Date(endIso + 'T12:00:00');
+    if (Number.isNaN(s.getTime()) || Number.isNaN(e.getTime()) || e < s) return '';
+    const days = Math.round((e - s) / 86400000) + 1;
+    return Math.max(1, Math.round(days / 7));
+}
+
+function onProjectDurationWeeksChanged() {
+    const start = document.getElementById('fld_start_date')?.value;
+    const weeks = parseInt(document.getElementById('fld_duration_weeks')?.value || '', 10);
+    const endEl = document.getElementById('fld_end_date');
+    if (!start || !weeks || weeks < 1 || !endEl) return;
+    endEl.value = addDaysIso(start, weeks * 7 - 1);
+}
+
+function onProjectScheduleDatesChanged() {
+    const start = document.getElementById('fld_start_date')?.value;
+    const end = document.getElementById('fld_end_date')?.value;
+    const weeksEl = document.getElementById('fld_duration_weeks');
+    if (!weeksEl || !start || !end) return;
+    const weeks = diffWeeksBetween(start, end);
+    if (weeks) weeksEl.value = weeks;
+}
+
+function initProjectMoneyFields() {
+    if (window.CasePMMoney) CasePMMoney.setupMoneyInputs(document.getElementById('projectForm'));
+}
 
 function escHtml(s) {
     if (s == null) return '';
@@ -926,12 +1114,19 @@ function onClientCompanySelected() {
         if (company.primary_contact_user_id) {
             const u = users.find(x => x.id == company.primary_contact_user_id);
             if (u) {
-                const on = document.getElementById('fld_owner_contact_name');
-                const oe = document.getElementById('fld_owner_contact_email');
-                const op = document.getElementById('fld_owner_contact_phone');
-                if (on && !on.value) on.value = `${u.firstName || ''} ${u.lastName || ''}`.trim();
-                if (oe && !oe.value) oe.value = u.email || company.primary_email || '';
-                if (op && !op.value) op.value = (u.phones && u.phones[0]?.number) || u.phone || company.primary_phone || '';
+                const hasOwner = teamContactsState.some(c => c.role === 'owner');
+                if (!hasOwner) {
+                    teamContactsState.push({
+                        role: 'owner',
+                        role_label: 'Owner Contact',
+                        user_id: u.id,
+                        name: `${u.firstName || u.first_name || ''} ${u.lastName || u.last_name || ''}`.trim(),
+                        email: u.email || company.primary_email || '',
+                        phone: (u.phones && u.phones[0]?.number) || u.phone || company.primary_phone || '',
+                        firm: '',
+                    });
+                    renderTeamContacts();
+                }
             }
         }
         const oln = document.getElementById('fld_owner_legal_name');
@@ -949,7 +1144,7 @@ const PROJECT_FIELD_IDS = [
     'bid_type','delivery_method','program','departments','description',
     'address','city','state','zip_code','county','country','region','designated_market_area',
     'timezone','latitude','longitude','store_number','phone','fax','office',
-    'start_date','actual_start_date','end_date','projected_finish_date','substantial_completion_date',
+    'start_date','actual_start_date','end_date','duration_weeks','projected_finish_date','substantial_completion_date',
     'percent_complete','warranty_start_date','warranty_end_date',
     'contract_value','original_contract_amount','contingency_amount','allowances_total',
     'default_retainage_percent','default_billing_period','square_feet','financing','owner_type',
@@ -957,13 +1152,11 @@ const PROJECT_FIELD_IDS = [
     'owner_legal_name','contractor_legal_name','architect_of_record','architect_license_number',
     'performance_bond_amount','payment_bond_amount','insurance_gl_limit','insurance_auto_limit',
     'ocip_ccip','prevailing_wage','building_permit_number','ahj_authority','lien_state',
-    'client','project_manager','owner_contact_name','owner_contact_email','owner_contact_phone',
-    'architect_firm','architect_contact','superintendent','estimator',
     'sage_contract_number','sage_account_set','sage_accounting_method','sage_ar_customer_code',
     'sage_billings_account','sage_wip_account','sage_revenue_account','sage_default_tax_group',
     'sage_company_code','sage_database','sage_ap_vendor_prefix','sage_cost_code_prefix',
     'sage_subcontract_liability_account','sage_default_cost_type','sage_sync_enabled',
-    'parent_project_id','project_template','flag_color','notes'
+    'parent_project_id','project_template','flag_color'
 ];
 
 let projectModalMode = 'create';
@@ -998,6 +1191,9 @@ function openProjectModal(mode, projectId) {
         document.getElementById('fld_status').value = 'Active';
         switchProjectTab('general');
         populateClientSelect();
+        teamContactsState = [];
+        renderTeamContacts();
+        initProjectMoneyFields();
     } else {
         title.textContent = 'Edit Project';
         submitBtn.textContent = 'Save Project';
@@ -1032,12 +1228,28 @@ function populateProjectForm(data) {
     PROJECT_FIELD_IDS.forEach(key => {
         const el = document.getElementById('fld_' + key);
         if (!el || data[key] == null) return;
+        if (el.classList.contains('casepm-money-input')) {
+            if (window.CasePMMoney) CasePMMoney.setMoneyInput(el, data[key]);
+            return;
+        }
         if (el.type === 'checkbox') {
             el.checked = data[key] === '1' || data[key] === true || data[key] === 'true';
         } else {
             el.value = data[key];
         }
     });
+    const clientEl = document.getElementById('fld_client');
+    if (clientEl && data.client != null) clientEl.value = data.client;
+    if (data.start_date && data.end_date) {
+        const weeksEl = document.getElementById('fld_duration_weeks');
+        if (weeksEl && !data.duration_weeks) {
+            const weeks = diffWeeksBetween(data.start_date, data.end_date);
+            if (weeks) weeksEl.value = weeks;
+        }
+    }
+    loadTeamContactsFromData(data);
+    renderTeamContacts();
+    initProjectMoneyFields();
     const bondEl = document.getElementById('fld_bond_required');
     if (bondEl) bondEl.checked = data.bond_required === '1' || data.bond_required === true;
     const sageSync = document.getElementById('fld_sage_sync_enabled');
@@ -1417,12 +1629,20 @@ async function submitProjectForm(form) {
     const submitBtn = document.getElementById('projectFormSubmitBtn');
     if (submitBtn) submitBtn.disabled = true;
     const projectName = nameEl?.value?.trim() || 'Project';
+    syncTeamContactsHiddenField();
+
+    const formData = new FormData(form);
+    document.querySelectorAll('#projectForm .casepm-money-input').forEach((el) => {
+        if (!el.name) return;
+        const raw = window.CasePMMoney ? CasePMMoney.readMoneyInput(el) : el.value;
+        formData.set(el.name, raw == null ? '' : String(raw));
+    });
 
     try {
         if (projectModalMode === 'create') {
             const res = await fetch(form.action, {
                 method: 'POST',
-                body: new FormData(form),
+                body: formData,
                 credentials: 'same-origin',
                 headers: { 'X-Requested-With': 'XMLHttpRequest' },
             });
@@ -1441,7 +1661,7 @@ async function submitProjectForm(form) {
 
         const res = await fetch(form.action, {
             method: 'POST',
-            body: new FormData(form),
+            body: formData,
             credentials: 'same-origin',
             headers: { 'X-Requested-With': 'XMLHttpRequest' },
         });
@@ -1463,6 +1683,10 @@ async function submitProjectForm(form) {
 document.getElementById('projectForm')?.addEventListener('submit', async (e) => {
     e.preventDefault();
     await submitProjectForm(e.target);
+});
+
+document.addEventListener('DOMContentLoaded', () => {
+    renderTeamContacts();
 });
 </script>
 {% endblock %}

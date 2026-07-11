@@ -313,9 +313,9 @@ def project_sage_sync_status(project, latest_event=None):
     if status == 'simulated':
         return {
             'status': 'simulated',
-            'label': 'Simulated',
+            'label': 'Logged',
             'class': 'text-sky-400',
-            'detail': f'{event_type} · logged (no live API)',
+            'detail': f'{event_type} · queued for Sage API',
         }
     if status == 'error':
         err = (latest_event.error_text or '')[:60]

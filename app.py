@@ -19,6 +19,19 @@ import json
 from functools import wraps
 
 app = Flask(__name__)
+
+
+@app.template_filter('usd')
+def format_usd_filter(value, cents=True):
+    if value in (None, ''):
+        return '—'
+    try:
+        n = float(value)
+    except (TypeError, ValueError):
+        return '—'
+    if cents:
+        return f'${n:,.2f}'
+    return f'${n:,.0f}'
 app.config['SECRET_KEY'] = 'case-pm-ultimate-secret-key-2026'
 app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///case_pm.db'
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
@@ -346,6 +359,18 @@ class Project(db.Model):
             return ', '.join(parts)
         return self.address or '—'
 
+    def address_display(self):
+        """Full street + city/state/zip for list views."""
+        parts = []
+        if self.address:
+            parts.append(self.address.strip())
+        city_state = ', '.join(p for p in [self.city, self.state] if p)
+        if self.zip_code:
+            city_state = f'{city_state} {self.zip_code}'.strip() if city_state else self.zip_code.strip()
+        if city_state:
+            parts.append(city_state)
+        return ', '.join(parts)
+
     def has_original_contract(self):
         pdf_path = os.path.join(
             app.config.get('UPLOAD_FOLDER', 'uploads'),
@@ -368,7 +393,9 @@ class Project(db.Model):
         return url_for('serve_project_logo', project_id=int(self.id))
 
     def to_dict(self):
+        from project_team_persistence import migrate_legacy_team_contacts, primary_project_manager_name
         d = self.get_details()
+        team_contacts = migrate_legacy_team_contacts(d)
         return {
             'id': self.id,
             'number': self.number or '',
@@ -393,6 +420,8 @@ class Project(db.Model):
             'has_original_contract': self.has_original_contract(),
             'has_project_logo': self.has_project_logo(),
             'logo_url': self.project_logo_url(),
+            'team_contacts': team_contacts,
+            'address_display': self.address_display(),
             **d,
         }
 
@@ -1773,6 +1802,7 @@ PROJECT_DETAIL_FIELDS = [
     'departments', 'office', 'county', 'country', 'region', 'designated_market_area',
     'timezone', 'latitude', 'longitude', 'phone', 'fax', 'store_number', 'flag_color',
     'actual_start_date', 'projected_finish_date', 'substantial_completion_date',
+    'duration_weeks',
     'warranty_start_date', 'warranty_end_date',
     'owner_contact_name', 'owner_contact_email', 'owner_contact_phone',
     'architect_firm', 'architect_contact', 'superintendent', 'estimator',
@@ -1949,11 +1979,18 @@ def _apply_project_form(project, form):
     project.state = (form.get('state') or '').strip()
     project.zip_code = (form.get('zip_code') or '').strip()
     project.start_date = _parse_date(form.get('start_date'))
-    project.end_date = _parse_date(form.get('end_date'))
-    project.contract_value = _parse_float(form.get('contract_value')) or 0.0
+    duration_weeks = form.get('duration_weeks')
+    end_from_form = _parse_date(form.get('end_date'))
+    if not end_from_form and project.start_date and duration_weeks:
+        from schedule_project_sync import compute_end_date_from_weeks
+        end_iso = compute_end_date_from_weeks(project.start_date, duration_weeks)
+        if end_iso:
+            end_from_form = _parse_date(end_iso)
+    project.end_date = end_from_form
+    parsed_contract = _parse_float(form.get('contract_value'))
+    project.contract_value = parsed_contract if parsed_contract is not None else None
     project.status = form.get('status') or project.status or 'Active'
     project.percent_complete = int(form.get('percent_complete') or project.percent_complete or 0)
-    project.project_manager = (form.get('project_manager') or '').strip()
     project.sage_job_number = (form.get('sage_job_number') or '').strip()
     project.accounting_project_number = (form.get('accounting_project_number') or '').strip()
     project.stage = (form.get('stage') or '').strip()
@@ -1962,6 +1999,27 @@ def _apply_project_form(project, form):
     if form.get('number'):
         project.number = _normalize_project_number(form.get('number'))
     details = {k: (form.get(k) or '').strip() for k in PROJECT_DETAIL_FIELDS}
+    from project_team_persistence import (
+        parse_team_contacts_json,
+        primary_project_manager_name,
+        sync_legacy_team_fields,
+    )
+    team_raw = form.get('team_contacts_json') or form.get('team_contacts')
+    team_contacts = parse_team_contacts_json(team_raw)
+    if not team_contacts:
+        legacy_pm = (form.get('project_manager') or '').strip()
+        if legacy_pm:
+            team_contacts.append({
+                'role': 'project_manager',
+                'role_label': 'Project Manager',
+                'user_id': None,
+                'name': legacy_pm,
+                'email': '',
+                'phone': '',
+                'firm': '',
+            })
+    details = sync_legacy_team_fields(details, team_contacts)
+    project.project_manager = primary_project_manager_name(team_contacts, form.get('project_manager') or '')
     project.set_details(details)
     project.updated_at = datetime.utcnow()
 
@@ -1975,6 +2033,15 @@ def projects_page():
     projects = Project.query.order_by(Project.created_at.desc()).all()
     companies = Company.query.order_by(Company.name).all()
     users = User.query.filter_by(status='Active').order_by(User.last_name, User.first_name).all()
+    users_for_js = [{
+        'id': u.id,
+        'first_name': u.first_name,
+        'last_name': u.last_name,
+        'full_name': u.full_name,
+        'email': u.email or '',
+        'phone': u.phone or '',
+        'role': u.role or '',
+    } for u in users]
     companies_for_js = [{'id': c.id, 'name': c.name, 'type': c.type or '', 'server_id': c.id} for c in companies]
     active_projects = [p for p in projects if p.status == 'Active']
     latest_sage_events = latest_sage_events_by_project(SageSyncEvent, [p.id for p in projects])
@@ -2001,6 +2068,7 @@ def projects_page():
         companies=companies,
         companies_for_js=companies_for_js,
         users=users,
+        users_for_js=users_for_js,
         stats=stats,
         sage_statuses=sage_statuses,
     )
@@ -2038,6 +2106,12 @@ def create_project():
 
         db.session.add(project)
         db.session.commit()
+        try:
+            from schedule_project_sync import propagate_project_dates_to_schedule
+            if propagate_project_dates_to_schedule(project, ScheduleData, db):
+                db.session.commit()
+        except Exception:
+            pass
 
         write_audit(
             'Created Project',
@@ -2085,6 +2159,12 @@ def update_project(project_id):
 
         _apply_project_form(project, request.form)
         db.session.commit()
+        try:
+            from schedule_project_sync import propagate_project_dates_to_schedule
+            if propagate_project_dates_to_schedule(project, ScheduleData, db):
+                db.session.commit()
+        except Exception:
+            pass
         try:
             from budget_persistence import get_budget_state, save_budget_state, reconcile_budget_contract_from_project
             project_amt = _project_contract_amount(project)
