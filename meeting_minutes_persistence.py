@@ -48,6 +48,25 @@ def serialize_action_item(item):
     }
 
 
+def parse_toolbox_meta(m):
+    """Toolbox scope, week, sign-in, and completion metadata."""
+    raw = getattr(m, 'toolbox_meta_json', None)
+    if not raw:
+        return {}
+    try:
+        parsed = json.loads(raw)
+        return parsed if isinstance(parsed, dict) else {}
+    except (TypeError, json.JSONDecodeError):
+        return {}
+
+
+def merge_toolbox_meta(m, updates: dict):
+    meta = parse_toolbox_meta(m)
+    meta.update(updates or {})
+    m.toolbox_meta_json = json.dumps(meta)
+    return meta
+
+
 def serialize_meeting(m, include_actions=True, ActionItem=None):
     actions = []
     if include_actions and ActionItem is not None:
@@ -55,9 +74,18 @@ def serialize_meeting(m, include_actions=True, ActionItem=None):
             serialize_action_item(a)
             for a in ActionItem.query.filter_by(meeting_id=m.id).order_by(ActionItem.id.asc()).all()
         ]
+    toolbox_meta = parse_toolbox_meta(m)
+    scope = toolbox_meta.get('scope') or ('company' if m.project_id is None else 'project')
     return {
         'id': m.id,
         'project_id': m.project_id,
+        'scope': scope,
+        'is_company_agenda': scope == 'company' or m.project_id is None,
+        'toolbox_meta': toolbox_meta,
+        'week_ending': toolbox_meta.get('week_ending') or _d(m.meeting_date),
+        'source_meeting_id': toolbox_meta.get('source_meeting_id'),
+        'has_sign_in': bool(toolbox_meta.get('sign_in_attachment')),
+        'sign_in_attachment': toolbox_meta.get('sign_in_attachment'),
         'meeting_number': m.meeting_number or '',
         'meeting_date': _d(m.meeting_date),
         'start_time': m.start_time or '',

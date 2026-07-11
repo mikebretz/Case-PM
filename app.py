@@ -94,6 +94,7 @@ PROJECT_AGNOSTIC_ENDPOINTS = frozenset({
     'profile',
     'update_profile',
     'search',
+    'safety_page',
     'login',
     'logout',
     'force_change_password',
@@ -1081,6 +1082,7 @@ class MeetingMinute(db.Model):
     speakers_json = db.Column(db.Text)
     minutes_body = db.Column(db.Text)
     distribution_json = db.Column(db.Text)
+    toolbox_meta_json = db.Column(db.Text)
     recording_filename = db.Column(db.String(200))
     recording_duration_sec = db.Column(db.Integer)
     document_id = db.Column(db.Integer, db.ForeignKey('document.id'))
@@ -3945,8 +3947,16 @@ def update_punch_status(item_id):
 @app.route('/safety')
 @login_required
 def safety_page():
+    from developer_tools import is_admin_or_developer
     projects = Project.query.order_by(Project.name).all()
-    return render_template('safety.html', projects=projects, active_project=get_active_project())
+    active = [p for p in projects if (getattr(p, 'status', None) or 'Active') == 'Active']
+    return render_template(
+        'safety.html',
+        projects=projects,
+        active_projects=active or projects,
+        active_project=get_active_project(),
+        is_admin_user=is_admin_or_developer(current_user),
+    )
 
 
 def _safety_url_helpers():
@@ -3969,7 +3979,11 @@ def serve_safety_attachment(report_id, filename):
 @login_required
 def api_safety_reports_list():
     from safety_persistence import serialize_report, report_stats, REPORT_TYPES, SEVERITIES, REPORT_STATUSES, INCIDENT_FIELD_GROUPS
-    project_id = request.args.get('project_id', type=int) or get_current_project_id()
+    pid_raw = request.args.get('project_id')
+    if pid_raw in ('all', '', '0'):
+        project_id = None
+    else:
+        project_id = request.args.get('project_id', type=int) or get_current_project_id()
     q = SafetyReport.query
     if project_id:
         q = q.filter_by(project_id=int(project_id))
@@ -4125,7 +4139,11 @@ def api_safety_report_attachment(report_id):
 @login_required
 def api_safety_certs_list():
     from safety_persistence import serialize_cert, cert_stats, CERT_TYPES
-    project_id = request.args.get('project_id', type=int) or get_current_project_id()
+    pid_raw = request.args.get('project_id')
+    if pid_raw in ('all', '', '0'):
+        project_id = None
+    else:
+        project_id = request.args.get('project_id', type=int) or get_current_project_id()
     q = SafetyCertification.query
     if project_id:
         q = q.filter(
@@ -4246,7 +4264,11 @@ def _send_training_internal_task(ev, user_id=None):
 @login_required
 def api_safety_training_calendar():
     from safety_persistence import serialize_cert, serialize_training_event, calendar_events_from_certs, TRAINING_RESOURCE_LINKS
-    project_id = request.args.get('project_id', type=int) or get_current_project_id()
+    pid_raw = request.args.get('project_id')
+    if pid_raw in ('all', '', '0'):
+        project_id = None
+    else:
+        project_id = request.args.get('project_id', type=int) or get_current_project_id()
     start_s = request.args.get('start')
     end_s = request.args.get('end')
     cq = SafetyCertification.query
@@ -4299,7 +4321,7 @@ def api_safety_training_events_create():
     except (TypeError, ValueError):
         return jsonify({'error': 'invalid event_date'}), 400
     ev = SafetyTrainingEvent(
-        project_id=body.get('project_id') or get_current_project_id(),
+        project_id=body.get('project_id') or get_current_project_id() or None,
         person_name=person,
         event_date=ed,
         created_by_id=current_user.id,
@@ -4353,6 +4375,15 @@ def api_safety_training_events_notify(event_id):
 def api_safety_osha_library():
     from osha_library import library_for_page
     return jsonify({'ok': True, 'library': library_for_page(lambda p: url_for('static', filename=p))})
+
+
+@app.route('/api/safety/osha-library/check-updates', methods=['GET'])
+@login_required
+def api_safety_osha_library_check_updates():
+    from osha_library import check_library_updates
+    static_osha = os.path.join(app.root_path, 'static', 'osha')
+    result = check_library_updates(static_root=static_osha)
+    return jsonify({'ok': True, **result})
 
 
 @app.route('/api/safety/osha-library/save-to-documents', methods=['POST'])
@@ -6052,6 +6083,7 @@ def _ensure_module_attachment_columns():
         ('safety_report', 'report_date', 'DATE'),
         ('safety_report', 'attachments_json', 'TEXT'),
         ('safety_report', 'details_json', 'TEXT'),
+        ('meeting_minute', 'toolbox_meta_json', 'TEXT'),
         ('photo', 'document_id', 'INTEGER'),
         ('photo', 'location', 'VARCHAR(150)'),
         ('photo', 'taken_date', 'DATE'),
@@ -9916,7 +9948,11 @@ def meeting_minutes_page():
 
 
 def _next_meeting_number(project_id, prefix='MM'):
-    q = MeetingMinute.query.filter_by(project_id=int(project_id))
+    if project_id is None:
+        q = MeetingMinute.query.filter(MeetingMinute.project_id.is_(None))
+        prefix = 'TB-CO'
+    else:
+        q = MeetingMinute.query.filter_by(project_id=int(project_id))
     last = q.order_by(MeetingMinute.id.desc()).first()
     n = 1
     if last and last.meeting_number:
@@ -9925,6 +9961,11 @@ def _next_meeting_number(project_id, prefix='MM'):
         except (ValueError, IndexError):
             n = (last.id or 0) + 1
     return f'{prefix}-{n:03d}'
+
+
+def _meeting_upload_folder(m):
+    pid = m.project_id if m.project_id is not None else 'company'
+    return os.path.join(app.config['UPLOAD_FOLDER'], 'meetings', str(pid), str(m.id))
 
 
 def _apply_meeting_minute(m, body):
@@ -9944,6 +9985,9 @@ def _apply_meeting_minute(m, body):
     ):
         if json_field in body:
             setattr(m, attr, json.dumps(body[json_field] or []))
+    if 'toolbox_meta' in body and isinstance(body.get('toolbox_meta'), dict):
+        from meeting_minutes_persistence import merge_toolbox_meta
+        merge_toolbox_meta(m, body['toolbox_meta'])
     if 'meeting_date' in body:
         if body['meeting_date']:
             try:
@@ -10054,16 +10098,31 @@ def api_meeting_minutes_catalog():
 def api_meeting_minutes_list():
     from meeting_minutes_persistence import serialize_meeting, compute_stats
     from meeting_minutes_catalog import MEETING_TYPES, STATUSES
-    project_id = request.args.get('project_id', type=int) or get_current_project_id()
+    from sqlalchemy import or_
+    pid_raw = request.args.get('project_id')
+    if pid_raw in ('all', '', '0'):
+        project_id = None
+    else:
+        project_id = request.args.get('project_id', type=int) or get_current_project_id()
+    scope = (request.args.get('scope') or '').lower()
     q = MeetingMinute.query
-    if project_id:
-        q = q.filter_by(project_id=int(project_id))
     status = request.args.get('status')
     mtype = request.args.get('meeting_type')
-    if status:
-        q = q.filter_by(status=status)
     if mtype:
         q = q.filter_by(meeting_type=mtype)
+    if mtype == 'toolbox_talk':
+        if scope == 'company':
+            q = q.filter(MeetingMinute.project_id.is_(None))
+        elif scope == 'project' and project_id:
+            q = q.filter(MeetingMinute.project_id == int(project_id))
+        elif project_id:
+            q = q.filter(or_(MeetingMinute.project_id.is_(None), MeetingMinute.project_id == int(project_id)))
+        elif scope != 'all':
+            q = q.filter(or_(MeetingMinute.project_id.is_(None), MeetingMinute.project_id.isnot(None)))
+    elif project_id:
+        q = q.filter_by(project_id=int(project_id))
+    if status:
+        q = q.filter_by(status=status)
     rows = q.order_by(MeetingMinute.meeting_date.desc(), MeetingMinute.id.desc()).all()
     return jsonify({
         'ok': True,
@@ -10079,19 +10138,34 @@ def api_meeting_minutes_list():
 @app.route('/api/meeting-minutes', methods=['POST'])
 @login_required
 def api_meeting_minutes_create():
-    from meeting_minutes_persistence import serialize_meeting, generate_simple_minutes
+    from meeting_minutes_persistence import serialize_meeting, generate_simple_minutes, merge_toolbox_meta
     from meeting_minutes_catalog import get_agenda_template, DEFAULT_SPEAKERS
+    from developer_tools import is_admin_or_developer
     body = request.get_json(silent=True) or {}
-    project_id = body.get('project_id') or get_current_project_id()
+    scope = (body.get('scope') or body.get('toolbox_meta', {}).get('scope') or 'project').lower()
+    project_id = body.get('project_id')
+    if project_id in ('', 0, '0'):
+        project_id = None
+    elif project_id is not None:
+        project_id = int(project_id)
+    if project_id is None and scope != 'company':
+        project_id = get_current_project_id()
     subject = (body.get('subject') or '').strip()
-    if not project_id or not subject:
-        return jsonify({'error': 'project_id and subject required'}), 400
+    if not subject:
+        return jsonify({'error': 'subject required'}), 400
+    if scope == 'company':
+        if not is_admin_or_developer(current_user):
+            return jsonify({'error': 'Only admins can create company-wide toolbox agendas'}), 403
+        project_id = None
+    elif not project_id:
+        return jsonify({'error': 'project_id required for project toolbox meetings'}), 400
     mtype = body.get('meeting_type') or 'other'
     m = MeetingMinute(
-        project_id=int(project_id),
-        meeting_number=body.get('meeting_number') or _next_meeting_number(project_id),
+        project_id=project_id,
+        meeting_number=body.get('meeting_number') or _next_meeting_number(project_id, 'TB' if mtype == 'toolbox_talk' else 'MM'),
         subject=subject,
         meeting_type=mtype,
+        status=body.get('status') or ('Published' if scope == 'company' else 'Draft'),
         created_by_id=current_user.id,
     )
     if not body.get('agenda'):
@@ -10099,6 +10173,13 @@ def api_meeting_minutes_create():
     if not body.get('speakers'):
         m.speakers_json = json.dumps(DEFAULT_SPEAKERS)
     _apply_meeting_minute(m, body)
+    meta = dict(body.get('toolbox_meta') or {})
+    meta['scope'] = scope
+    if body.get('week_ending'):
+        meta['week_ending'] = body['week_ending']
+    if scope == 'company':
+        meta['published'] = body.get('published', True)
+    merge_toolbox_meta(m, meta)
     db.session.add(m)
     db.session.flush()
     _save_meeting_action_items(m, body.get('action_items'))
@@ -10159,7 +10240,7 @@ def api_meeting_minutes_delete(meeting_id):
             except json.JSONDecodeError:
                 pass
     try:
-        folder = os.path.join(app.config['UPLOAD_FOLDER'], 'meetings', str(m.project_id), str(m.id))
+        folder = _meeting_upload_folder(m)
         if os.path.isdir(folder):
             for fn in os.listdir(folder):
                 try:
@@ -10217,7 +10298,7 @@ def api_meeting_minutes_upload_recording(meeting_id):
     if not ext:
         ext = '.webm'
     safe = secure_filename(f'recording{ext.lower()}') or f'recording{ext.lower()}'
-    folder = os.path.join(app.config['UPLOAD_FOLDER'], 'meetings', str(m.project_id), str(m.id))
+    folder = _meeting_upload_folder(m)
     os.makedirs(folder, exist_ok=True)
     path = os.path.join(folder, safe)
     f.save(path)
@@ -10242,7 +10323,7 @@ def api_meeting_minutes_serve_recording(meeting_id):
     m = MeetingMinute.query.get_or_404(meeting_id)
     if not m.recording_filename:
         return jsonify({'error': 'No recording'}), 404
-    folder = os.path.join(app.config['UPLOAD_FOLDER'], 'meetings', str(m.project_id), str(m.id))
+    folder = _meeting_upload_folder(m)
     return send_from_directory(folder, m.recording_filename)
 
 
@@ -10272,6 +10353,165 @@ def api_meeting_minutes_file_to_documents(meeting_id):
             f'/documents?project_id={m.project_id}',
         )
     return jsonify({'ok': True, 'document': doc, 'meeting': serialize_meeting(m, ActionItem=MeetingActionItem)})
+
+
+@app.route('/api/meeting-minutes/<int:meeting_id>/adopt', methods=['POST'])
+@login_required
+def api_meeting_minutes_adopt(meeting_id):
+    """Copy a company-wide toolbox agenda to a project for superintendent use."""
+    from meeting_minutes_persistence import serialize_meeting, merge_toolbox_meta, parse_toolbox_meta
+    source = MeetingMinute.query.get_or_404(meeting_id)
+    if source.meeting_type != 'toolbox_talk':
+        return jsonify({'error': 'Only toolbox meetings can be adopted'}), 400
+    src_meta = parse_toolbox_meta(source)
+    if source.project_id is not None and src_meta.get('scope') != 'company':
+        return jsonify({'error': 'Only company-wide agendas can be adopted to a project'}), 400
+    body = request.get_json(silent=True) or {}
+    project_id = body.get('project_id') or get_current_project_id()
+    if not project_id:
+        return jsonify({'error': 'project_id required'}), 400
+    meeting_date = body.get('meeting_date')
+    if meeting_date:
+        try:
+            meeting_date = datetime.strptime(meeting_date, '%Y-%m-%d').date()
+        except (TypeError, ValueError):
+            meeting_date = source.meeting_date or datetime.utcnow().date()
+    else:
+        meeting_date = source.meeting_date or datetime.utcnow().date()
+    m = MeetingMinute(
+        project_id=int(project_id),
+        meeting_number=_next_meeting_number(int(project_id), 'TB'),
+        subject=body.get('subject') or source.subject,
+        meeting_type='toolbox_talk',
+        status='Scheduled',
+        meeting_date=meeting_date,
+        agenda_json=source.agenda_json,
+        speakers_json=source.speakers_json,
+        organizer=body.get('organizer') or source.organizer or '',
+        location=body.get('location') or '',
+        created_by_id=current_user.id,
+    )
+    merge_toolbox_meta(m, {
+        'scope': 'project',
+        'source_meeting_id': source.id,
+        'week_ending': src_meta.get('week_ending'),
+        'adopted_at': datetime.utcnow().isoformat(),
+    })
+    db.session.add(m)
+    db.session.commit()
+    return jsonify({'ok': True, 'meeting': serialize_meeting(m, ActionItem=MeetingActionItem)})
+
+
+@app.route('/api/meeting-minutes/<int:meeting_id>/sign-in', methods=['POST'])
+@login_required
+def api_meeting_minutes_sign_in_upload(meeting_id):
+    from meeting_minutes_persistence import serialize_meeting, merge_toolbox_meta, parse_toolbox_meta
+    m = MeetingMinute.query.get_or_404(meeting_id)
+    if m.meeting_type != 'toolbox_talk':
+        return jsonify({'error': 'Sign-in sheets are for toolbox meetings only'}), 400
+    if 'file' not in request.files:
+        return jsonify({'error': 'file required'}), 400
+    f = request.files['file']
+    if not f.filename:
+        return jsonify({'error': 'empty filename'}), 400
+    _, ext = os.path.splitext(f.filename)
+    safe = secure_filename(f'sign-in{ext.lower()}') or f'sign-in{ext.lower()}'
+    folder = _meeting_upload_folder(m)
+    os.makedirs(folder, exist_ok=True)
+    path = os.path.join(folder, safe)
+    f.save(path)
+    att = {
+        'filename': safe,
+        'original_name': f.filename,
+        'uploaded_at': datetime.utcnow().isoformat(),
+        'uploaded_by': f'{current_user.first_name} {current_user.last_name}'.strip(),
+        'url': url_for('api_meeting_minutes_sign_in_serve', meeting_id=m.id),
+    }
+    merge_toolbox_meta(m, {'sign_in_attachment': att})
+    m.updated_at = datetime.utcnow()
+    if m.project_id:
+        try:
+            with open(path, 'rb') as fh:
+                data = fh.read()
+            sub_name = m.meeting_date.strftime('%m-%d-%Y') if m.meeting_date else 'undated'
+            doc = _mirror_to_system_subfolder(
+                m.project_id, data, f.filename, safe,
+                'safety', 'Toolbox Meetings', 'Safety',
+                {
+                    'meeting_id': m.id,
+                    'meeting_number': m.meeting_number,
+                    'subject': m.subject,
+                    'kind': 'sign_in_sheet',
+                },
+                is_system_locked=True, uploaded_by_id=current_user.id,
+            )
+            if doc and doc.get('id'):
+                att['document_id'] = doc['id']
+                merge_toolbox_meta(m, {'sign_in_attachment': att})
+            _notify_documents_team(
+                m.project_id,
+                'Toolbox sign-in sheet filed',
+                f'Sign-in sheet for "{m.subject}" filed to Documents › Safety › Toolbox Meetings.',
+                f'/documents?project_id={m.project_id}',
+            )
+        except Exception:
+            db.session.rollback()
+    db.session.commit()
+    return jsonify({'ok': True, 'meeting': serialize_meeting(m, ActionItem=MeetingActionItem)})
+
+
+@app.route('/api/meeting-minutes/<int:meeting_id>/sign-in', methods=['GET'])
+@login_required
+def api_meeting_minutes_sign_in_serve(meeting_id):
+    from meeting_minutes_persistence import parse_toolbox_meta
+    m = MeetingMinute.query.get_or_404(meeting_id)
+    meta = parse_toolbox_meta(m)
+    att = meta.get('sign_in_attachment') or {}
+    filename = att.get('filename')
+    if not filename:
+        return jsonify({'error': 'No sign-in sheet'}), 404
+    folder = _meeting_upload_folder(m)
+    return send_from_directory(folder, filename)
+
+
+@app.route('/api/meeting-minutes/<int:meeting_id>/complete', methods=['POST'])
+@login_required
+def api_meeting_minutes_complete(meeting_id):
+    from meeting_minutes_persistence import serialize_meeting, merge_toolbox_meta, parse_toolbox_meta, generate_simple_minutes
+    m = MeetingMinute.query.get_or_404(meeting_id)
+    if m.meeting_type != 'toolbox_talk':
+        return jsonify({'error': 'Only toolbox meetings can be completed here'}), 400
+    body = request.get_json(silent=True) or {}
+    meta = parse_toolbox_meta(m)
+    require_sign_in = body.get('require_sign_in', True)
+    if require_sign_in and not meta.get('sign_in_attachment'):
+        return jsonify({'error': 'Upload the crew sign-in sheet before marking complete'}), 400
+    m.status = 'Completed'
+    if not m.minutes_body:
+        data = serialize_meeting(m, ActionItem=MeetingActionItem)
+        m.minutes_body = generate_simple_minutes(data)
+    merge_toolbox_meta(m, {
+        'completed_at': datetime.utcnow().isoformat(),
+        'completed_by_id': current_user.id,
+    })
+    m.updated_at = datetime.utcnow()
+    db.session.commit()
+    if m.project_id and m.minutes_body:
+        try:
+            sub_name = m.meeting_date.strftime('%m-%d-%Y') if m.meeting_date else 'undated'
+            fname = f'{m.meeting_number or "TB"}_{sub_name}_minutes.txt'
+            doc = _mirror_to_system_subfolder(
+                m.project_id, (m.minutes_body or '').encode('utf-8'), fname, fname,
+                'safety', 'Toolbox Meetings', 'Safety',
+                {'meeting_id': m.id, 'meeting_number': m.meeting_number, 'subject': m.subject},
+                is_system_locked=True, uploaded_by_id=current_user.id,
+            )
+            if doc and doc.get('id') and not m.document_id:
+                m.document_id = doc['id']
+                db.session.commit()
+        except Exception:
+            pass
+    return jsonify({'ok': True, 'meeting': serialize_meeting(m, ActionItem=MeetingActionItem)})
 
 
 @app.route('/api/meeting-minutes/push-to-schedule', methods=['POST'])

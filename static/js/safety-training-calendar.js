@@ -31,7 +31,7 @@
     const m = state.month.getMonth();
     const start = new Date(y, m, 1).toISOString().slice(0, 10);
     const end = new Date(y, m + 1, 0).toISOString().slice(0, 10);
-    const j = await api(`/api/safety/training-calendar?project_id=${pid || ''}&start=${start}&end=${end}`);
+    const j = await api(`/api/safety/training-calendar?project_id=all&start=${start}&end=${end}`);
     state.events = j.cert_events || [];
     state.scheduled = j.scheduled_events || [];
     state.links = j.training_links || {};
@@ -103,8 +103,7 @@
     if (!typeSel || typeSel.options.length > 1) return;
     let types = global.CasePMSafety?.getCertTypes?.() || [];
     if (!types.length) {
-      const pid = projectId();
-      const j = await api(`/api/safety/certifications${pid ? `?project_id=${pid}` : ''}`);
+      const j = await api('/api/safety/certifications?project_id=all');
       types = j.cert_types || [];
     }
     typeSel.innerHTML = types.map((t) => `<option>${esc(t)}</option>`).join('');
@@ -140,7 +139,7 @@
     const eventDate = el('tSchedDate').value;
     if (!person || !eventDate) { alert('Person and date are required.'); return; }
     const payload = {
-      project_id: projectId(),
+      project_id: null,
       person_name: person,
       company: el('tSchedCompany').value.trim(),
       cert_type: el('tSchedType').value,

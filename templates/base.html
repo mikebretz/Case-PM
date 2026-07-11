@@ -359,6 +359,11 @@
                     <span>Email</span>
                 </a>
 
+                <a href="{{ url_for('safety_page', project_id=active_project.id) if active_project else url_for('safety_page') }}" data-nav-module="safety" class="nav-link nav-staff-only flex items-center gap-2.5 px-3 py-1.5 rounded-xl mb-0.5 {% if request.endpoint == 'safety_page' %}active{% endif %}">
+                    <i class="fa-solid fa-shield-alt w-5"></i>
+                    <span>Safety</span>
+                </a>
+
                 <!-- Core Modules -->
                 <div class="px-2 section-block">
                     <div class="section-header px-2 mb-0.5">Core Modules</div>
@@ -397,11 +402,6 @@
                 <a href="{{ url_for('punch_list_page', project_id=active_project.id) if active_project else url_for('punch_list_page') }}" class="nav-link nav-staff-only flex items-center gap-2.5 px-3 py-1.5 rounded-xl mb-0.5 {% if request.endpoint == 'punch_list_page' %}active{% endif %}">
                     <i class="fa-solid fa-tasks w-5"></i>
                     <span>Punch List</span>
-                </a>
-
-                <a href="{{ url_for('safety_page', project_id=active_project.id) if active_project else url_for('safety_page') }}" class="nav-link nav-staff-only flex items-center gap-2.5 px-3 py-1.5 rounded-xl mb-0.5 {% if request.endpoint == 'safety_page' %}active{% endif %}">
-                    <i class="fa-solid fa-shield-alt w-5"></i>
-                    <span>Safety</span>
                 </a>
 
                 <!-- Financial -->
