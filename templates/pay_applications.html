@@ -2374,9 +2374,20 @@ let mainLienWaiver = JSON.parse(casepmStore.getItem('mainLienWaiver') || '{}'); 
         return requireLienWaiverOnSubPayApp;
     }
 
+    function isUserFinancialContactForCompany(company) {
+        if (!company?.financial_contact_user_id) return false;
+        const allUsers = JSON.parse(casepmStore.getItem('users') || '[]');
+        const currentUserEmail = "michael@casepm.com";
+        const fu = allUsers.find(u => u.id == company.financial_contact_user_id);
+        if (!fu) return false;
+        const fullName = ((fu.firstName || '') + ' ' + (fu.lastName || '')).trim().toLowerCase();
+        return fullName.includes('michael') || (fu.email || '').toLowerCase() === currentUserEmail;
+    }
+
     // Robust Primary Contact check (matches Companies page + User Management)
     function isUserPrimaryContactForCompany(company) {
         if (!company) return false;
+        if (isUserFinancialContactForCompany(company)) return true;
         const allUsers = JSON.parse(casepmStore.getItem('users') || '[]');
         const currentUserEmail = "michael@casepm.com";
 
@@ -6054,8 +6065,21 @@ let mainLienWaiver = JSON.parse(casepmStore.getItem('mainLienWaiver') || '{}'); 
                         let pcName = 'Not set on company record';
                         let pcEmail = '';
                         let pcPhone = '';
+                        let contactRole = 'Financial';
 
-                        if (company.primary_contact_user_id) {
+                        if (company.financial_contact_user_id) {
+                            const fu = allUsers.find(u => u.id == company.financial_contact_user_id);
+                            if (fu) {
+                                pcName = `${fu.firstName || ''} ${fu.lastName || ''}`.trim() || 'Not set';
+                                pcEmail = fu.email || company.financial_email || company.email || '';
+                                pcPhone = fu.phone || company.financial_phone || company.phone || '';
+                            }
+                        } else if (company.financial_email || company.financial_phone) {
+                            pcEmail = company.financial_email || '';
+                            pcPhone = company.financial_phone || '';
+                            pcName = 'Financial contact (no user linked)';
+                        } else if (company.primary_contact_user_id) {
+                            contactRole = 'Primary';
                             const pu = allUsers.find(u => u.id == company.primary_contact_user_id);
                             if (pu) {
                                 pcName = `${pu.firstName || ''} ${pu.lastName || ''}`.trim() || 'Not set';
@@ -6077,12 +6101,13 @@ let mainLienWaiver = JSON.parse(casepmStore.getItem('mainLienWaiver') || '{}'); 
 
                         let html = '';
                         if (pcName && pcName !== 'Not set on company record' && pcName !== 'Not set') {
-                            html = `<div class="font-medium text-emerald-300">${pcName}</div>`;
+                            html = `<div class="text-[10px] uppercase text-zinc-500 mb-0.5">${contactRole} contact</div>`;
+                            html += `<div class="font-medium text-emerald-300">${pcName}</div>`;
                             if (pcEmail) html += `<div class="text-xs text-zinc-400">${pcEmail}</div>`;
                             if (pcPhone) html += `<div class="text-xs text-zinc-400">${pcPhone}</div>`;
                         } else {
                             html = `<div class="font-medium text-emerald-300">Not set on company record</div>`;
-                            html += `<div class="text-xs text-amber-400">Set Primary Contact in the Companies page (User Management link).</div>`;
+                            html += `<div class="text-xs text-amber-400">Set Financial Contact in Companies (pay apps / AP) or Primary for project coordination.</div>`;
                         }
                         contactDisplay.innerHTML = html;
                         contactInfoDiv.classList.remove('hidden');

@@ -129,7 +129,8 @@
                         <th class="px-6 py-4 text-left font-medium">Company Name</th>
                         <th class="px-4 py-4 text-left font-medium w-32">Type</th>
                         <th class="px-6 py-4 text-left font-medium">Primary Contact</th>
-                        <th class="px-4 py-4 text-left font-medium w-40 whitespace-nowrap">Phone</th>
+                        <th class="px-4 py-4 text-left font-medium w-36">Financial Contact</th>
+                        <th class="px-4 py-4 text-left font-medium w-36 whitespace-nowrap">Phone</th>
                         <th class="px-6 py-4 text-left font-medium flex-1 min-w-[240px]">Address</th>
                         <th class="px-4 py-4 text-center font-medium w-20">License</th>
                         <th class="px-4 py-4 text-center font-medium w-20">GL</th>
@@ -204,20 +205,49 @@
                             </select>
                         </div>
 
-                        <!-- External / Sage ID -->
-                        <div class="md:col-span-3">
+                        <!-- External / Sage IDs -->
+                        <div>
                             <label class="text-xs text-zinc-400">External / Sage ID</label>
                             <input type="text" id="external_id" class="w-full bg-zinc-800 text-white border border-zinc-700 rounded px-4 py-2.5 text-sm focus:border-emerald-600">
+                        </div>
+                        <div>
+                            <label class="text-xs text-zinc-400">Sage AP Vendor Code</label>
+                            <input type="text" id="sage_ap_vendor_code" class="w-full bg-zinc-800 text-white border border-zinc-700 rounded px-4 py-2.5 text-sm focus:border-emerald-600 font-mono" placeholder="Sub/vendor in Sage">
+                        </div>
+                        <div>
+                            <label class="text-xs text-zinc-400">Sage AR Customer Code</label>
+                            <input type="text" id="sage_ar_customer_code" class="w-full bg-zinc-800 text-white border border-zinc-700 rounded px-4 py-2.5 text-sm focus:border-emerald-600 font-mono" placeholder="Owner/client in Sage">
+                        </div>
+
+                        <div>
+                            <label class="text-xs text-zinc-400">Trade / CSI Division</label>
+                            <input type="text" id="trade" class="w-full bg-zinc-800 text-white border border-zinc-700 rounded px-4 py-2.5 text-sm focus:border-emerald-600" placeholder="e.g. Electrical, Concrete">
+                        </div>
+                        <div>
+                            <label class="text-xs text-zinc-400">DBA Name</label>
+                            <input type="text" id="dba_name" class="w-full bg-zinc-800 text-white border border-zinc-700 rounded px-4 py-2.5 text-sm focus:border-emerald-600">
+                        </div>
+                        <div>
+                            <label class="text-xs text-zinc-400">Website</label>
+                            <input type="url" id="website" class="w-full bg-zinc-800 text-white border border-zinc-700 rounded px-4 py-2.5 text-sm focus:border-emerald-600" placeholder="https://">
                         </div>
 
                         <!-- Primary Phone + Primary Email -->
                         <div>
-                            <label class="text-xs text-zinc-400">Primary Phone</label>
+                            <label class="text-xs text-zinc-400">Primary Phone <span class="text-zinc-600">(project contact)</span></label>
                             <input type="text" id="primary_phone" class="w-full bg-zinc-800 text-white border border-zinc-700 rounded px-4 py-2.5 text-sm focus:border-emerald-600" onblur="formatAndValidatePhone(this)">
                         </div>
                         <div>
-                            <label class="text-xs text-zinc-400">Primary Email</label>
+                            <label class="text-xs text-zinc-400">Primary Email <span class="text-zinc-600">(project contact)</span></label>
                             <input type="email" id="primary_email" class="w-full bg-zinc-800 text-white border border-zinc-700 rounded px-4 py-2.5 text-sm focus:border-emerald-600">
+                        </div>
+                        <div>
+                            <label class="text-xs text-zinc-400">Financial Phone <span class="text-zinc-600">(pay apps / AP)</span></label>
+                            <input type="text" id="financial_phone" class="w-full bg-zinc-800 text-white border border-zinc-700 rounded px-4 py-2.5 text-sm focus:border-emerald-600" onblur="formatAndValidatePhone(this)">
+                        </div>
+                        <div>
+                            <label class="text-xs text-zinc-400">Financial Email <span class="text-zinc-600">(pay apps / AP)</span></label>
+                            <input type="email" id="financial_email" class="w-full bg-zinc-800 text-white border border-zinc-700 rounded px-4 py-2.5 text-sm focus:border-emerald-600">
                         </div>
 
                         <!-- COMPANY LOGO -->
@@ -246,7 +276,31 @@
                                 <option value="Blacklisted">Blacklisted</option>
                             </select>
                         </div>
-                        <div></div>
+                        <div>
+                            <label class="text-xs text-zinc-400">Payment Terms</label>
+                            <select id="payment_terms" class="w-full bg-zinc-800 text-white border border-zinc-700 rounded px-4 py-2.5 text-sm focus:border-emerald-600">
+                                <option value="">—</option>
+                                <option value="Net 30">Net 30</option>
+                                <option value="Net 45">Net 45</option>
+                                <option value="Net 60">Net 60</option>
+                                <option value="Due on Receipt">Due on Receipt</option>
+                                <option value="Progress Billing">Progress Billing</option>
+                            </select>
+                        </div>
+                        <div>
+                            <label class="text-xs text-zinc-400">Prequalification</label>
+                            <select id="prequal_status" class="w-full bg-zinc-800 text-white border border-zinc-700 rounded px-4 py-2.5 text-sm focus:border-emerald-600">
+                                <option value="">—</option>
+                                <option value="Approved">Approved</option>
+                                <option value="Pending">Pending</option>
+                                <option value="Expired">Expired</option>
+                                <option value="Not Required">Not Required</option>
+                            </select>
+                        </div>
+                        <div class="flex flex-col justify-end gap-2">
+                            <label class="flex items-center gap-2 text-sm text-zinc-300 cursor-pointer"><input type="checkbox" id="w9_on_file" class="accent-emerald-600"> W-9 on file</label>
+                            <label class="flex items-center gap-2 text-sm text-zinc-300 cursor-pointer"><input type="checkbox" id="minority_owned" class="accent-emerald-600"> MBE / WBE / DBE</label>
+                        </div>
                     </div>
                 </div>
 
@@ -274,7 +328,7 @@
                     <div id="linkedUsersContainer" class="bg-zinc-800 border border-zinc-700 rounded-md p-3 min-h-[70px] text-sm space-y-2">
                         <!-- Populated dynamically by renderLinkedUsersForCompany() -->
                     </div>
-                    <p class="text-[10px] text-zinc-500 mt-1.5">Team members and contacts are managed exclusively in the User Management page. Assign this company to a user there to link them. Click "Set as Primary Contact" to update the Primary Phone/Email fields above for this company.</p>
+                    <p class="text-[10px] text-zinc-500 mt-1.5">Assign users in User Management. <strong class="text-zinc-400">Primary Contact</strong> = project / field coordination. <strong class="text-zinc-400">Financial Contact</strong> = pay applications, billing, AP. One person can hold both roles.</p>
                 </div>
 
                 <!-- Licenses & Insurance -->
@@ -430,6 +484,16 @@ function logCompanyAudit(action, companyId, details = {}) {
     localStorage.setItem('companyAuditLog', JSON.stringify(companyAuditLog));
 }
 
+function getContactUserName(company, role) {
+    if (!company) return '—';
+    const uid = role === 'financial' ? company.financial_contact_user_id : company.primary_contact_user_id;
+    if (!uid) return '—';
+    const allUsers = JSON.parse(localStorage.getItem('users') || '[]');
+    const pu = allUsers.find(u => u.id == uid);
+    if (!pu) return '—';
+    return `${pu.firstName || ''} ${pu.lastName || ''}`.trim() || '—';
+}
+
 // Render linked users from User Management in the company modal (replaces old contacts section)
 function renderLinkedUsersForCompany(companyName) {
     const container = document.getElementById('linkedUsersContainer');
@@ -464,19 +528,29 @@ function renderLinkedUsersForCompany(companyName) {
     linked.forEach(user => {
         const phone = (user.phones && user.phones.length > 0) ? user.phones[0].number : (user.phone || '—');
         const isPrimary = currentCompany && currentCompany.primary_contact_user_id === user.id;
+        const isFinancial = currentCompany && currentCompany.financial_contact_user_id === user.id;
+        const rowClass = isPrimary && isFinancial ? 'bg-emerald-900/40 border border-emerald-500' :
+            isPrimary ? 'bg-emerald-900/30 border border-emerald-600' :
+            isFinancial ? 'bg-sky-900/30 border border-sky-600' :
+            'bg-zinc-900 border border-zinc-700';
 
         const div = document.createElement('div');
-        div.className = `flex items-center justify-between px-3 py-2 rounded ${isPrimary ? 'bg-emerald-900/30 border border-emerald-600' : 'bg-zinc-900 border border-zinc-700'}`;
+        div.className = `flex items-center justify-between px-3 py-2 rounded ${rowClass}`;
         div.innerHTML = `
             <div class="min-w-0">
                 <div class="font-medium text-white">${user.firstName || ''} ${user.lastName || ''}</div>
                 <div class="text-xs text-zinc-400">${user.jobTitle || '—'} • ${phone} • ${user.email || ''}</div>
             </div>
-            <div class="flex items-center gap-2 flex-shrink-0">
-                ${isPrimary ? '<span class="px-2.5 py-0.5 text-xs rounded-full bg-emerald-600 text-white font-medium">Primary Contact</span>' : ''}
+            <div class="flex items-center gap-1.5 flex-shrink-0 flex-wrap justify-end">
+                ${isFinancial ? '<span class="px-2 py-0.5 text-[10px] rounded-full bg-sky-600 text-white font-medium">Financial</span>' : ''}
+                ${isPrimary ? '<span class="px-2 py-0.5 text-[10px] rounded-full bg-emerald-600 text-white font-medium">Primary</span>' : ''}
+                <button type="button" onclick="designateFinancialContact(${user.id}, '${(companyName || '').replace(/'/g, "\\'")}')" 
+                        class="px-2.5 py-1 text-xs bg-zinc-700 hover:bg-sky-600 hover:text-white rounded transition-colors whitespace-nowrap">
+                    Set Financial
+                </button>
                 <button type="button" onclick="designatePrimaryContact(${user.id}, '${(companyName || '').replace(/'/g, "\\'")}')" 
-                        class="px-3 py-1 text-xs bg-zinc-700 hover:bg-emerald-600 hover:text-white rounded transition-colors">
-                    Set as Primary Contact
+                        class="px-2.5 py-1 text-xs bg-zinc-700 hover:bg-emerald-600 hover:text-white rounded transition-colors whitespace-nowrap">
+                    Set Primary
                 </button>
             </div>
         `;
@@ -506,6 +580,7 @@ function designatePrimaryContact(userId, companyName) {
     company.primary_contact_user_id = userId;
 
     localStorage.setItem('casepm_companies', JSON.stringify(companies));
+    syncCompanyToServer(company);
 
     logCompanyAudit('PRIMARY_CONTACT_SET', companyId, { 
         user: `${user.firstName} ${user.lastName}`, 
@@ -521,7 +596,45 @@ function designatePrimaryContact(userId, companyName) {
     // Re-render the linked list with new Primary badge
     renderLinkedUsersForCompany(companyName);
 
-    showAlertModal("Primary Contact Set", `${user.firstName} ${user.lastName} is now the primary contact for this company.`);
+    showAlertModal("Primary Contact Set", `${user.firstName} ${user.lastName} is now the primary (project) contact for this company.`);
+}
+
+function designateFinancialContact(userId, companyName) {
+    const allUsers = JSON.parse(localStorage.getItem('users') || '[]');
+    const user = allUsers.find(u => u.id == userId);
+    if (!user) return;
+
+    const companyIdEl = document.getElementById('companyId');
+    const companyId = companyIdEl ? parseInt(companyIdEl.value) : null;
+    if (!companyId) {
+        showAlertModal("Save Company First", "Please save the new company before designating a financial contact.");
+        return;
+    }
+
+    const company = companies.find(c => c.id === companyId);
+    if (!company) return;
+
+    const phone = (user.phones && user.phones.length > 0) ? user.phones[0].number : (user.phone || '');
+    company.financial_phone = phone || company.financial_phone;
+    company.financial_email = user.email || company.financial_email;
+    company.financial_contact_user_id = userId;
+
+    localStorage.setItem('casepm_companies', JSON.stringify(companies));
+    syncCompanyToServer(company);
+
+    logCompanyAudit('FINANCIAL_CONTACT_SET', companyId, {
+        user: `${user.firstName} ${user.lastName}`,
+        email: user.email
+    });
+
+    const fphone = document.getElementById('financial_phone');
+    const femail = document.getElementById('financial_email');
+    if (fphone) fphone.value = company.financial_phone || '';
+    if (femail) femail.value = company.financial_email || '';
+
+    renderLinkedUsersForCompany(companyName);
+
+    showAlertModal("Financial Contact Set", `${user.firstName} ${user.lastName} is now the financial contact (pay apps / AP) for this company.`);
 }
 
 function showAlertModal(title, message) {
@@ -586,23 +699,15 @@ function renderCompaniesTable(filteredCompanies = null) {
         const wcStatus = getStatusBadge('Current', company.wc_expiration);
         const coiStatus = getCOIStatus(company.cois || []);
 
-        // Determine correct Primary Contact name from designated primary_contact_user_id (live from User Management)
-        let primaryContactName = '—';
-        if (company.primary_contact_user_id) {
-            const allUsers = JSON.parse(localStorage.getItem('users') || '[]');
-            const pu = allUsers.find(u => u.id == company.primary_contact_user_id);
-            if (pu) {
-                primaryContactName = `${pu.firstName || ''} ${pu.lastName || ''}`.trim() || '—';
-            }
-        } else if (company.contacts && company.contacts.length > 0 && company.contacts[0].name) {
-            primaryContactName = company.contacts[0].name; // fallback for legacy data
-        }
+        let primaryContactName = getContactUserName(company, 'primary');
+        let financialContactName = getContactUserName(company, 'financial');
 
         row.innerHTML = `
             <td class="px-6 py-4 font-medium">${company.company_name}</td>
             <td class="px-4 py-4 text-zinc-400 w-28">${company.company_type || ''}</td>
-            <td class="px-6 py-4 text-zinc-400">${primaryContactName}</td>
-            <td class="px-4 py-4 text-zinc-400 w-40 whitespace-nowrap">${formatPhoneDisplay(company.primary_phone)}</td>
+            <td class="px-6 py-4 text-zinc-300">${primaryContactName}</td>
+            <td class="px-4 py-4 text-zinc-300">${financialContactName}</td>
+            <td class="px-4 py-4 text-zinc-400 w-36 whitespace-nowrap">${formatPhoneDisplay(company.primary_phone)}</td>
             <td class="px-6 py-4 text-zinc-400 text-sm flex-1 min-w-[220px]">${(company.billing_address || '').split('\n')[0] || '—'}</td>
             <td class="px-4 py-4 text-center">${licenseStatus}</td>
             <td class="px-4 py-4 text-center">${glStatus}</td>
@@ -839,8 +944,19 @@ function saveCompany(e) {
         company_name: companyName,
         company_type: document.getElementById('company_type').value,
         external_id: document.getElementById('external_id').value.trim(),
+        sage_ap_vendor_code: document.getElementById('sage_ap_vendor_code')?.value.trim() || '',
+        sage_ar_customer_code: document.getElementById('sage_ar_customer_code')?.value.trim() || '',
+        trade: document.getElementById('trade')?.value.trim() || '',
+        dba_name: document.getElementById('dba_name')?.value.trim() || '',
+        website: document.getElementById('website')?.value.trim() || '',
+        payment_terms: document.getElementById('payment_terms')?.value || '',
+        prequal_status: document.getElementById('prequal_status')?.value || '',
+        w9_on_file: document.getElementById('w9_on_file')?.checked || false,
+        minority_owned: document.getElementById('minority_owned')?.checked || false,
         primary_phone: document.getElementById('primary_phone').value.trim(),
         primary_email: document.getElementById('primary_email').value.trim(),
+        financial_phone: document.getElementById('financial_phone')?.value.trim() || '',
+        financial_email: document.getElementById('financial_email')?.value.trim() || '',
         tax_id: document.getElementById('tax_id').value.trim(),
         status: document.getElementById('status').value,
         billing_address: document.getElementById('billing_address').value.trim(),
@@ -857,7 +973,9 @@ function saveCompany(e) {
         notes: document.getElementById('notes').value.trim(),
         contacts: [],
         cois: [],
-        primary_contact_user_id: null
+        primary_contact_user_id: null,
+        financial_contact_user_id: null,
+        server_id: null,
     };
 
     // If current user is Primary Contact for this company, prevent them from changing restricted fields
@@ -873,17 +991,23 @@ function saveCompany(e) {
     // Check both the original array and the live company object (in case designatePrimaryContact updated it during this edit session)
     const existingIndex = companies.findIndex(c => c.id === id);
     let preservedPrimaryId = null;
+    let preservedFinancialId = null;
     if (existingIndex !== -1 && companies[existingIndex].primary_contact_user_id) {
         preservedPrimaryId = companies[existingIndex].primary_contact_user_id;
     }
-    // Also check live in-memory company (updated by designatePrimaryContact)
+    if (existingIndex !== -1 && companies[existingIndex].financial_contact_user_id) {
+        preservedFinancialId = companies[existingIndex].financial_contact_user_id;
+    }
     const liveCompanyCheck = companies.find(c => c.id === id);
     if (liveCompanyCheck && liveCompanyCheck.primary_contact_user_id) {
         preservedPrimaryId = liveCompanyCheck.primary_contact_user_id;
     }
-    if (preservedPrimaryId) {
-        newCompany.primary_contact_user_id = preservedPrimaryId;
+    if (liveCompanyCheck && liveCompanyCheck.financial_contact_user_id) {
+        preservedFinancialId = liveCompanyCheck.financial_contact_user_id;
     }
+    if (preservedPrimaryId) newCompany.primary_contact_user_id = preservedPrimaryId;
+    if (preservedFinancialId) newCompany.financial_contact_user_id = preservedFinancialId;
+    if (liveCompanyCheck?.server_id) newCompany.server_id = liveCompanyCheck.server_id;
 
     const coiRows = document.querySelectorAll('#coiContainer .coi-row');
     coiRows.forEach(row => {
@@ -903,7 +1027,7 @@ function saveCompany(e) {
         // Detailed audit log for edits
         if (originalCompanyData) {
             let changeList = [];
-            const fields = ['company_name','company_type','primary_phone','primary_email','external_id','tax_id','status','billing_address','shipping_address','license_number','license_expiration','license_status','gl_carrier','gl_policy','gl_expiration','wc_carrier','wc_policy','wc_expiration','notes'];
+            const fields = ['company_name','company_type','primary_phone','primary_email','financial_phone','financial_email','external_id','sage_ap_vendor_code','sage_ar_customer_code','trade','dba_name','website','payment_terms','prequal_status','tax_id','status','billing_address','shipping_address','license_number','license_expiration','license_status','gl_carrier','gl_policy','gl_expiration','wc_carrier','wc_policy','wc_expiration','notes'];
             fields.forEach(f => {
                 const oldV = (originalCompanyData[f] || '').toString().trim();
                 const newV = (newCompany[f] || '').toString().trim();
@@ -995,8 +1119,19 @@ function editCompany(id) {
     document.getElementById('company_name').value = company.company_name || '';
     document.getElementById('company_type').value = company.company_type || 'Subcontractor';
     document.getElementById('external_id').value = company.external_id || '';
+    document.getElementById('sage_ap_vendor_code').value = company.sage_ap_vendor_code || '';
+    document.getElementById('sage_ar_customer_code').value = company.sage_ar_customer_code || '';
+    document.getElementById('trade').value = company.trade || '';
+    document.getElementById('dba_name').value = company.dba_name || '';
+    document.getElementById('website').value = company.website || '';
+    document.getElementById('payment_terms').value = company.payment_terms || '';
+    document.getElementById('prequal_status').value = company.prequal_status || '';
+    document.getElementById('w9_on_file').checked = !!company.w9_on_file;
+    document.getElementById('minority_owned').checked = !!company.minority_owned;
     document.getElementById('primary_phone').value = company.primary_phone || '';
     document.getElementById('primary_email').value = company.primary_email || '';
+    document.getElementById('financial_phone').value = company.financial_phone || '';
+    document.getElementById('financial_email').value = company.financial_email || '';
     document.getElementById('tax_id').value = company.tax_id || '';
     document.getElementById('status').value = company.status || 'Active';
     document.getElementById('billing_address').value = company.billing_address || '';
@@ -1313,9 +1448,19 @@ function showViewCompanyModal(id) {
 
     html += `<div class="grid grid-cols-1 md:grid-cols-2 gap-x-8 gap-y-4 text-sm">
         <div><span class="text-zinc-400">External / Sage ID:</span> <span class="font-mono">${company.external_id || '—'}</span></div>
+        <div><span class="text-zinc-400">Sage AP Vendor:</span> <span class="font-mono">${company.sage_ap_vendor_code || '—'}</span></div>
+        <div><span class="text-zinc-400">Sage AR Customer:</span> <span class="font-mono">${company.sage_ar_customer_code || '—'}</span></div>
         <div><span class="text-zinc-400">Tax ID / EIN:</span> ${company.tax_id || '—'}</div>
-        <div><span class="text-zinc-400">Primary Phone:</span> ${company.primary_phone || '—'}</div>
+        <div><span class="text-zinc-400">Trade:</span> ${company.trade || '—'}</div>
+        <div><span class="text-zinc-400">Payment Terms:</span> ${company.payment_terms || '—'}</div>
+        <div><span class="text-zinc-400">Prequalification:</span> ${company.prequal_status || '—'}</div>
+        <div><span class="text-zinc-400">W-9 on file:</span> ${company.w9_on_file ? 'Yes' : 'No'}</div>
+        <div><span class="text-zinc-400">Primary Phone:</span> ${company.primary_phone || '—'} <span class="text-zinc-600 text-xs">(project)</span></div>
         <div><span class="text-zinc-400">Primary Email:</span> ${company.primary_email || '—'}</div>
+        <div><span class="text-zinc-400">Financial Phone:</span> ${company.financial_phone || '—'} <span class="text-zinc-600 text-xs">(pay apps)</span></div>
+        <div><span class="text-zinc-400">Financial Email:</span> ${company.financial_email || '—'}</div>
+        <div><span class="text-zinc-400">Primary Contact:</span> ${getContactUserName(company, 'primary')}</div>
+        <div><span class="text-zinc-400">Financial Contact:</span> ${getContactUserName(company, 'financial')}</div>
         <div><span class="text-zinc-400">Status:</span> <span class="px-2 py-0.5 rounded text-xs ${company.status === 'Active' ? 'bg-emerald-900/60 text-emerald-400' : 'bg-zinc-700'}">${company.status || 'Active'}</span></div>
     </div>`;
 
@@ -1347,12 +1492,14 @@ function showViewCompanyModal(id) {
         linkedUsers.forEach(u => {
             const phone = (u.phones && u.phones.length > 0) ? u.phones[0].number : (u.phone || '—');
             const isPrimary = company.primary_contact_user_id && company.primary_contact_user_id === u.id;
-            html += `<div class="flex items-center gap-2 py-0.5">
+            const isFinancial = company.financial_contact_user_id && company.financial_contact_user_id === u.id;
+            html += `<div class="flex items-center gap-2 py-0.5 flex-wrap">
                 <span class="font-medium">${u.firstName || ''} ${u.lastName || ''}</span>
                 <span class="text-zinc-400">• ${u.jobTitle || '—'}</span>
                 <span class="text-zinc-400">• ${phone}</span>
                 <span class="text-zinc-400">• ${u.email || ''}</span>
-                ${isPrimary ? '<span class="ml-2 px-2 py-0.5 text-[10px] rounded-full bg-emerald-600 text-white font-medium">Primary Contact</span>' : ''}
+                ${isPrimary ? '<span class="px-2 py-0.5 text-[10px] rounded-full bg-emerald-600 text-white font-medium">Primary</span>' : ''}
+                ${isFinancial ? '<span class="px-2 py-0.5 text-[10px] rounded-full bg-sky-600 text-white font-medium">Financial</span>' : ''}
             </div>`;
         });
         html += `</div></div>`;
@@ -1395,24 +1542,11 @@ function showViewCompanyModal(id) {
         html += `</div>`;
     }
 
-    // Projects section (read-only)
-    if (company.projects && company.projects.length > 0) {
-        html += `<div>
+    // Projects section — load from server by company id
+    html += `<div id="companyProjectsSection">
             <h4 class="font-semibold text-emerald-400 mb-2">Projects</h4>
-            <div class="flex flex-wrap gap-2">`;
-        company.projects.forEach(p => {
-            html += `<button onclick="goToProject(${p.id}); return false;" 
-                class="px-3 py-1 bg-zinc-800 hover:bg-emerald-600 hover:text-white rounded text-sm transition-colors">
-                ${p.name}
-            </button>`;
-        });
-        html += `</div></div>`;
-    } else {
-        html += `<div>
-            <h4 class="font-semibold text-emerald-400 mb-2">Projects</h4>
-            <div class="text-sm text-zinc-400">No projects assigned yet. Projects are managed from the Projects module.</div>
+            <div class="text-sm text-zinc-500">Loading projects…</div>
         </div>`;
-    }
 
     if (company.notes) {
         html += `<div>
@@ -1424,7 +1558,33 @@ function showViewCompanyModal(id) {
     html += `</div>`;
     content.innerHTML = html;
 
+    loadCompanyProjectsForView(company);
+
     document.getElementById('viewCompanyModal').showModal();
+}
+
+async function loadCompanyProjectsForView(company) {
+    const host = document.getElementById('companyProjectsSection');
+    if (!host) return;
+    const sid = company.server_id || company.id;
+    try {
+        const res = await fetch(`/api/companies/${sid}/projects`, { credentials: 'same-origin' });
+        const j = await res.json();
+        const projs = j.projects || [];
+        if (!projs.length) {
+            const isOwner = (company.company_type || '').toLowerCase().includes('client') || (company.company_type || '').toLowerCase().includes('owner');
+            host.innerHTML = `<h4 class="font-semibold text-emerald-400 mb-2">Projects</h4>
+                <div class="text-sm text-zinc-400">${isOwner ? 'No projects linked yet. Select this company as Client / Owner when creating a project.' : 'No projects linked to this company.'}</div>`;
+            return;
+        }
+        host.innerHTML = `<h4 class="font-semibold text-emerald-400 mb-2">Projects (${projs.length})</h4>
+            <div class="flex flex-wrap gap-2">${projs.map(p => `
+                <button onclick="goToProject(${p.id}); return false;" class="px-3 py-1 bg-zinc-800 hover:bg-emerald-600 hover:text-white rounded text-sm transition-colors">
+                    ${p.number ? p.number + ' — ' : ''}${p.name}
+                </button>`).join('')}</div>`;
+    } catch (_) {
+        host.innerHTML = `<h4 class="font-semibold text-emerald-400 mb-2">Projects</h4><div class="text-sm text-zinc-500">Could not load projects.</div>`;
+    }
 }
 
 function goToProject(projectId) {
@@ -2131,12 +2291,14 @@ function mergeServerCompaniesIntoLocal() {
         if (!exists && sc.name) {
             companies.push({
                 id: sc.id || Date.now() + Math.floor(Math.random() * 1000),
+                server_id: sc.id || sc.server_id || null,
                 company_name: sc.name,
                 company_type: sc.type || 'Client',
                 status: 'Active',
                 contacts: [],
                 cois: [],
                 primary_contact_user_id: null,
+                financial_contact_user_id: null,
             });
             changed = true;
         }
@@ -2153,8 +2315,15 @@ async function syncCompanyToServer(company) {
             credentials: 'same-origin',
             body: JSON.stringify(company),
         });
-        if (!res.ok) {
-            const json = await res.json().catch(() => ({}));
+        const json = await res.json().catch(() => ({}));
+        if (res.ok && json.company?.id) {
+            company.server_id = json.company.id;
+            const idx = companies.findIndex(c => c.id === company.id);
+            if (idx !== -1) {
+                companies[idx].server_id = json.company.id;
+                localStorage.setItem('casepm_companies', JSON.stringify(companies));
+            }
+        } else if (!res.ok) {
             console.warn('Company sync failed:', json.error || res.status);
         }
     } catch (e) {
