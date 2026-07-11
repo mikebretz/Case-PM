@@ -22,6 +22,8 @@ window.CASEPM_DASHBOARD_CTX = {
     email: {{ url_for('email_page')|tojson }},
     payApps: {{ url_for('pay_applications_page')|tojson }},
     photos: {{ url_for('photos_page')|tojson }},
+    projects: {{ url_for('projects_page')|tojson }},
+    dashboard: {{ url_for('dashboard')|tojson }},
   },
 };
 </script>
@@ -51,6 +53,29 @@ window.CASEPM_DASHBOARD_CTX = {
     overflow-y: auto;
     padding-bottom: 5rem;
   }
+  .dash-view-toggle {
+    display: inline-flex;
+    background: #27272a;
+    border: 1px solid #3f3f46;
+    border-radius: 0.375rem;
+    padding: 2px;
+  }
+  .dash-view-toggle button {
+    padding: 0.375rem 0.875rem;
+    font-size: 0.8125rem;
+    font-weight: 500;
+    border-radius: 0.25rem;
+    color: #a1a1aa;
+    transition: background 0.15s, color 0.15s;
+  }
+  .dash-view-toggle button.active {
+    background: #10b981;
+    color: #fff;
+  }
+  .dash-view-toggle button:not(.active):hover {
+    color: #fff;
+    background: #3f3f46;
+  }
   /* GridStack tile styling */
   .grid-stack { background: transparent; }
   .grid-stack-item-content {
@@ -77,7 +102,6 @@ window.CASEPM_DASHBOARD_CTX = {
     overflow: hidden;
     padding: 0.625rem 0.75rem;
   }
-  /* Vertical-only resize handle — clearly visible in edit mode */
   .grid-stack.dash-editing .grid-stack-item > .ui-resizable-s {
     height: 14px;
     bottom: 2px;
@@ -94,7 +118,6 @@ window.CASEPM_DASHBOARD_CTX = {
     background: #10b981aa;
     border-radius: 2px;
   }
-  /* Unlocked (edit) mode visuals */
   .grid-stack.dash-editing .grid-stack-item-content { border-color: #10b98155; }
   .grid-stack.dash-editing .dash-tile-head {
     cursor: grab;
@@ -156,6 +179,67 @@ window.CASEPM_DASHBOARD_CTX = {
     display: none;
   }
   .dash-unlock-banner.visible { display: flex; align-items: center; gap: 0.5rem; }
+  /* Portfolio cards */
+  .dash-portfolio-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(340px, 1fr));
+    gap: 1rem;
+  }
+  .dash-portfolio-card {
+    background: #18181b;
+    border: 1px solid #3f3f46;
+    border-radius: 0.5rem;
+    overflow: hidden;
+    transition: border-color 0.15s, box-shadow 0.15s;
+    cursor: pointer;
+  }
+  .dash-portfolio-card:hover {
+    border-color: #10b98188;
+    box-shadow: 0 4px 20px rgba(0,0,0,0.35);
+  }
+  .dash-portfolio-card-head {
+    padding: 0.875rem 1rem;
+    border-bottom: 1px solid #3f3f46;
+    background: #27272a;
+  }
+  .dash-portfolio-card-body {
+    padding: 0.875rem 1rem;
+  }
+  .dash-portfolio-stat {
+    background: #27272a;
+    border: 1px solid #3f3f46;
+    border-radius: 0.375rem;
+    padding: 0.5rem 0.625rem;
+  }
+  .dash-portfolio-stat-label {
+    font-size: 0.625rem;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    color: #71717a;
+  }
+  .dash-portfolio-stat-value {
+    font-size: 0.9375rem;
+    font-weight: 600;
+    margin-top: 0.125rem;
+  }
+  .dash-portfolio-mini-bar {
+    height: 4px;
+    background: #3f3f46;
+    border-radius: 9999px;
+    overflow: hidden;
+    margin-top: 0.375rem;
+  }
+  .dash-portfolio-mini-bar > span {
+    display: block;
+    height: 100%;
+    background: linear-gradient(90deg, #10b981, #34d399);
+    border-radius: 9999px;
+  }
+  .dash-portfolio-empty {
+    text-align: center;
+    padding: 4rem 2rem;
+    color: #71717a;
+  }
 </style>
 
 <div class="dash-page">
@@ -163,10 +247,12 @@ window.CASEPM_DASHBOARD_CTX = {
 
 <!-- TOOLBAR -->
 <div class="flex items-center justify-between flex-shrink-0 mb-4 gap-3">
-  <div class="flex items-center gap-3 min-w-0">
+  <div class="flex items-center gap-4 min-w-0">
     <div class="text-2xl font-semibold text-white whitespace-nowrap">Dashboard</div>
-    <div id="dashProjectBadge" class="text-xs px-3 py-1 bg-zinc-800 border border-zinc-700 text-zinc-400 rounded-md font-mono truncate max-w-[200px]">—</div>
-    <div class="text-xs text-zinc-500 hidden lg:block">Project overview · Live data</div>
+    <div class="dash-view-toggle" role="tablist" aria-label="Dashboard view">
+      <button type="button" id="dashViewProject" class="active" role="tab" aria-selected="true">This Project</button>
+      <button type="button" id="dashViewPortfolio" role="tab" aria-selected="false">All Projects</button>
+    </div>
   </div>
   <div class="flex items-center gap-2 flex-wrap justify-end">
     <button type="button" id="dashBtnRefresh" class="flex items-center gap-2 px-4 py-2 bg-zinc-800 hover:bg-zinc-700 rounded-md text-sm font-medium h-[38px]">
@@ -174,15 +260,6 @@ window.CASEPM_DASHBOARD_CTX = {
     </button>
     <button type="button" id="dashBtnSettings" class="flex items-center gap-2 px-4 py-2 bg-zinc-800 hover:bg-zinc-700 rounded-md text-sm font-medium h-[38px]">
       <i class="fa-solid fa-gear"></i><span class="hidden md:inline">Settings</span>
-    </button>
-    <button type="button" onclick="window.location.href=window.CASEPM_DASHBOARD_CTX.urls.dailyLog" class="flex items-center gap-2 px-4 py-2 bg-zinc-800 hover:bg-zinc-700 rounded-md text-sm font-medium h-[38px]">
-      <i class="fa-solid fa-clipboard-list"></i><span class="hidden md:inline">Daily Log</span>
-    </button>
-    <button type="button" onclick="window.location.href=window.CASEPM_DASHBOARD_CTX.urls.rfis + '?action=new'" class="flex items-center gap-2 px-4 py-2 bg-zinc-800 hover:bg-zinc-700 rounded-md text-sm font-medium h-[38px]">
-      <i class="fa-solid fa-circle-question"></i><span class="hidden md:inline">RFI</span>
-    </button>
-    <button type="button" onclick="window.location.href=window.CASEPM_DASHBOARD_CTX.urls.changeOrders + '?action=new'" class="flex items-center gap-2 px-5 py-2 bg-emerald-600 hover:bg-emerald-500 rounded-md text-sm font-semibold h-[38px]">
-      <i class="fa-solid fa-plus"></i><span>Change Order</span>
     </button>
   </div>
 </div>
@@ -192,9 +269,14 @@ window.CASEPM_DASHBOARD_CTX = {
   <span>Layout unlocked — drag tiles by their header and drag the corner to resize. Short tiles pack in beside tall ones automatically. Click <strong>Settings</strong> to lock.</span>
 </div>
 
-<!-- TILE GRID -->
-<div class="dash-scroll">
+<!-- TILE GRID (single project) -->
+<div class="dash-scroll" id="dashProjectPanel">
   <div id="dashboardGrid" class="grid-stack"></div>
+</div>
+
+<!-- PORTFOLIO GRID (all projects) -->
+<div class="dash-scroll hidden" id="dashPortfolioPanel">
+  <div id="dashboardPortfolio" class="dash-portfolio-grid"></div>
 </div>
 
 <!-- STATUS BAR -->
@@ -213,20 +295,54 @@ window.CASEPM_DASHBOARD_CTX = {
     <button type="button" id="dashSettingsClose" class="text-zinc-400 hover:text-white"><i class="fa-solid fa-xmark"></i></button>
   </div>
   <div class="p-5 space-y-5 max-h-[70vh] overflow-y-auto">
-    <label class="flex items-center justify-between gap-4 p-3 bg-zinc-800 border border-zinc-700 rounded-md cursor-pointer">
-      <div>
-        <div class="font-medium text-sm">Unlock layout (edit mode)</div>
-        <div class="text-xs text-zinc-500">Drag tiles by their header to move, drag the corner to resize. Tiles auto-pack to fill space.</div>
+    <div id="dashProjectSettingsSection">
+      <label class="flex items-center justify-between gap-4 p-3 bg-zinc-800 border border-zinc-700 rounded-md cursor-pointer">
+        <div>
+          <div class="font-medium text-sm">Unlock layout (edit mode)</div>
+          <div class="text-xs text-zinc-500">Drag tiles by their header to move, drag the corner to resize. Tiles auto-pack to fill space.</div>
+        </div>
+        <input type="checkbox" id="dashUnlockToggle" class="accent-emerald-500 w-5 h-5">
+      </label>
+      <div class="mt-4">
+        <div class="text-sm font-medium mb-2 text-zinc-300">Visible tiles</div>
+        <div id="dashTileChecklist" class="space-y-1 max-h-64 overflow-y-auto"></div>
       </div>
-      <input type="checkbox" id="dashUnlockToggle" class="accent-emerald-500 w-5 h-5">
-    </label>
-    <div>
-      <div class="text-sm font-medium mb-2 text-zinc-300">Visible tiles</div>
-      <div id="dashTileChecklist" class="space-y-1 max-h-64 overflow-y-auto"></div>
+      <button type="button" id="dashResetLayout" class="w-full mt-4 py-2 text-sm bg-zinc-800 hover:bg-zinc-700 border border-zinc-600 rounded-md">
+        Reset to default layout
+      </button>
     </div>
-    <button type="button" id="dashResetLayout" class="w-full py-2 text-sm bg-zinc-800 hover:bg-zinc-700 border border-zinc-600 rounded-md">
-      Reset to default layout
-    </button>
+
+    <div id="dashPortfolioSettingsSection" class="hidden border-t border-zinc-700 pt-5">
+      <div class="text-sm font-medium mb-3 text-zinc-300">Projects on dashboard</div>
+      <div class="space-y-2 mb-4">
+        <label class="flex items-center gap-3 p-2.5 bg-zinc-800 border border-zinc-700 rounded-md cursor-pointer hover:border-zinc-600">
+          <input type="radio" name="dashPortfolioFilter" value="all_active" class="accent-emerald-500">
+          <div>
+            <div class="text-sm font-medium">All active projects</div>
+            <div class="text-xs text-zinc-500">Active and pre-construction only</div>
+          </div>
+        </label>
+        <label class="flex items-center gap-3 p-2.5 bg-zinc-800 border border-zinc-700 rounded-md cursor-pointer hover:border-zinc-600">
+          <input type="radio" name="dashPortfolioFilter" value="all_year" class="accent-emerald-500">
+          <div>
+            <div class="text-sm font-medium">All projects this year</div>
+            <div class="text-xs text-zinc-500">Started or created in the current calendar year</div>
+          </div>
+        </label>
+        <label class="flex items-center gap-3 p-2.5 bg-zinc-800 border border-zinc-700 rounded-md cursor-pointer hover:border-zinc-600">
+          <input type="radio" name="dashPortfolioFilter" value="custom" class="accent-emerald-500">
+          <div>
+            <div class="text-sm font-medium">Choose specific projects</div>
+            <div class="text-xs text-zinc-500">Search and pick which projects appear</div>
+          </div>
+        </label>
+      </div>
+      <div id="dashPortfolioPicker" class="hidden">
+        <input type="text" id="dashPortfolioSearch" placeholder="Search projects by name or number…"
+               class="w-full bg-zinc-950 border border-zinc-700 rounded-md px-3 py-2 text-sm mb-2 focus:border-emerald-600 focus:outline-none">
+        <div id="dashPortfolioProjectList" class="max-h-48 overflow-y-auto space-y-0.5 border border-zinc-700 rounded-md p-1"></div>
+      </div>
+    </div>
   </div>
   <div class="px-5 py-3 border-t border-zinc-700 flex justify-end">
     <button type="button" id="dashSettingsSave" class="px-5 py-2 bg-emerald-600 hover:bg-emerald-500 rounded-md text-sm font-semibold">Done</button>
