@@ -30,15 +30,28 @@
   .sheet-zoom-btn:hover { background: #3f3f46; }
   #sheetZoomLabel { font-size: 0.75rem; color: #a1a1aa; min-width: 38px; text-align: center; }
 
-  /* Green Luckysheet toolbar with slightly larger, easier-to-see icons */
-  .luckysheet-wa-editor { background: #0f3d2e !important; }
-  .luckysheet-wa-editor .luckysheet-toolbar-menu,
-  .luckysheet-share-logo { background: #0f3d2e !important; }
-  #luckysheet .luckysheet-toolbar-button,
-  #luckysheet .luckysheet-toolbar-combo-button { transform: scale(1.12); transform-origin: center; }
-  #luckysheet .luckysheet-toolbar-button:hover { background: #14532d !important; }
-  #luckysheet .luckysheet-toolbar-button-inner-box i,
-  #luckysheet .luckysheet-toolbar-menu-button-inner-box i { font-size: 1.05em !important; }
+  /* Green Luckysheet toolbar with WHITE icons/text so everything is readable */
+  .luckysheet-wa-editor,
+  .luckysheet-wa-editor .luckysheet-toolbar-menu { background: #0f3d2e !important; }
+  .luckysheet-wa-editor .luckysheet-toolbar-button-inner-box i,
+  .luckysheet-wa-editor .luckysheet-toolbar-menu-button-inner-box i,
+  .luckysheet-wa-editor .iconfont,
+  .luckysheet-wa-editor .luckysheet-toolbar-menu-button-caption,
+  .luckysheet-wa-editor .luckysheet-toolbar-combo-button-input,
+  .luckysheet-wa-editor .luckysheet-toolbar-select-input,
+  .luckysheet-wa-editor .luckysheet-toolbar-button span,
+  .luckysheet-wa-editor > span { color: #eafff5 !important; }
+  .luckysheet-wa-editor .luckysheet-toolbar-combo-button-input,
+  .luckysheet-wa-editor .luckysheet-toolbar-select-input {
+    background: rgba(255,255,255,0.12) !important;
+    border-color: rgba(255,255,255,0.25) !important;
+  }
+  .luckysheet-wa-editor .luckysheet-toolbar-button:hover,
+  .luckysheet-wa-editor .luckysheet-toolbar-menu-button:hover { background: #14532d !important; }
+  .luckysheet-wa-editor .luckysheet-toolbar-separator { border-color: rgba(255,255,255,0.22) !important; }
+  .luckysheet-wa-editor .luckysheet-toolbar-button-inner-box i,
+  .luckysheet-wa-editor .luckysheet-toolbar-menu-button-inner-box i { font-size: 16px !important; }
+  .luckysheet-wa-editor .luckysheet-toolbar-button { min-width: 26px; }
 </style>
 
 <div class="sheet-page">
@@ -78,7 +91,6 @@
   function hideLoading() { loadingEl.style.display = 'none'; }
 
   let dirty = false;
-  let zoom = 1;
 
   function setDirty(v) {
     dirty = v;
@@ -89,9 +101,17 @@
     container: 'luckysheet',
     lang: 'en',
     showinfobar: false,
+    showtoolbar: true,
+    showsheetbar: true,
+    showstatisticBar: true,
+    sheetFormulaBar: true,
+    allowCopy: true,
+    allowEdit: true,
+    showConfigWindowResize: true,
     showsheetbarConfig: { add: true, menu: true, sheet: true },
     enableAddRow: true,
     enableAddBackTop: true,
+    rowHeaderWidth: 46,
     hook: {
       cellUpdated: function () { setDirty(true); },
       cellEditBefore: function () { setDirty(true); },
@@ -243,21 +263,33 @@
     }
   }
 
-  // ---- Zoom (Ctrl + scroll on the cells) ----
-  function applyZoom(z) {
-    zoom = Math.max(0.4, Math.min(4, Math.round(z * 10) / 10));
-    document.getElementById('sheetZoomLabel').textContent = Math.round(zoom * 100) + '%';
-    try { if (window.luckysheet && window.luckysheet.setZoom) window.luckysheet.setZoom(zoom); } catch (_) {}
+  // ---- Zoom (Ctrl + scroll on the cells) — drives Luckysheet's built-in zoom ----
+  function refreshZoomLabel() {
+    const el = document.getElementById('luckysheet-zoom-hundred');
+    const txt = el && el.textContent ? el.textContent.trim() : '';
+    document.getElementById('sheetZoomLabel').textContent = txt || '100%';
   }
+  function stepZoom(dir) {
+    const btn = document.getElementById(dir > 0 ? 'luckysheet-zoom-plus' : 'luckysheet-zoom-minus');
+    if (btn) { btn.click(); setTimeout(refreshZoomLabel, 60); }
+  }
+  let wheelAccum = 0, wheelTimer = null;
   function bindZoom() {
     const host = document.getElementById('luckysheetHost');
     host.addEventListener('wheel', function (e) {
       if (!e.ctrlKey && !e.metaKey) return;
       e.preventDefault();
-      applyZoom(zoom + (e.deltaY < 0 ? 0.1 : -0.1));
+      // Debounce trackpad bursts so one gesture = one zoom step.
+      wheelAccum += e.deltaY;
+      if (wheelTimer) return;
+      wheelTimer = setTimeout(() => {
+        stepZoom(wheelAccum < 0 ? 1 : -1);
+        wheelAccum = 0; wheelTimer = null;
+      }, 40);
     }, { passive: false });
-    document.getElementById('sheetZoomIn').addEventListener('click', () => applyZoom(zoom + 0.1));
-    document.getElementById('sheetZoomOut').addEventListener('click', () => applyZoom(zoom - 0.1));
+    document.getElementById('sheetZoomIn').addEventListener('click', () => stepZoom(1));
+    document.getElementById('sheetZoomOut').addEventListener('click', () => stepZoom(-1));
+    setTimeout(refreshZoomLabel, 800);
   }
 
   // ---- Print current sheet ----
