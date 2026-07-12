@@ -213,6 +213,7 @@
         window.CASEPM_DEVELOPER_UNLOCK = {{ 'true' if developer_unlock_mode else 'false' }};
     </script>
     <script src="{{ url_for('static', filename='js/developer-unlock.js') }}"></script>
+    <script src="{{ url_for('static', filename='js/developer-actions.js') }}"></script>
     {% endif %}
 </head>
 <body class="bg-zinc-950 text-zinc-200 h-screen overflow-hidden {% if is_sub_portal %}portal-sub{% elif is_architect_portal %}portal-architect{% else %}portal-staff{% endif %}"
@@ -223,8 +224,12 @@
       data-current-user-role="{{ current_user.role if current_user.is_authenticated else '' }}"
       data-current-user-company="{{ current_user.company if current_user.is_authenticated and current_user.company else '' }}"
       data-current-user-phone="{{ current_user.phone if current_user.is_authenticated and current_user.phone else '' }}"
+      data-current-user-job-title="{{ current_user_profile.job_title if current_user.is_authenticated and current_user_profile.job_title else '' }}"
+      data-current-user-address="{{ current_user_profile.address if current_user.is_authenticated and current_user_profile.address else '' }}"
+      data-current-user-photo="{{ current_user_profile.profile_image_url if current_user.is_authenticated and current_user_profile.profile_image_url else '' }}"
       data-current-user-2fa="{{ '1' if current_user.is_authenticated and current_user.require_2fa else '0' }}"
       data-is-admin="{{ '1' if is_admin_user else '0' }}"
+      data-is-developer="{{ '1' if is_developer else '0' }}"
       data-active-project-id="{{ active_project.id if active_project else '' }}"
       data-active-project-name="{{ active_project.name if active_project else '' }}">
 
@@ -333,8 +338,8 @@
         <div class="flex items-center gap-3 cursor-pointer flex-shrink-0" onclick="typeof showUserProfileModal === 'function' && showUserProfileModal()" title="User Profile">
             <div class="flex items-center gap-2.5">
                 <div class="w-8 h-8 bg-zinc-700 rounded-full overflow-hidden flex-shrink-0">
-                    {% if current_user.profile_pic %}
-                        <img src="{{ current_user.profile_pic }}" class="w-full h-full object-cover">
+                    {% if current_user_profile.profile_image_url %}
+                        <img src="{{ current_user_profile.profile_image_url }}" class="w-full h-full object-cover" alt="">
                     {% else %}
                         <div class="w-full h-full flex items-center justify-center bg-emerald-600 text-white font-bold text-xs">
                             {{ current_user.first_name[0] }}{{ current_user.last_name[0] if current_user.last_name else '' }}
@@ -705,24 +710,16 @@
             </div>
 
             <div class="py-1">
-                <a href="{{ url_for('profile') }}" class="flex items-center gap-3 px-4 py-2.5 hover:bg-zinc-800 rounded-2xl text-sm">
+                <button type="button" onclick="typeof showUserProfileModal === 'function' && showUserProfileModal()" class="flex items-center gap-3 px-4 py-2.5 hover:bg-zinc-800 rounded-2xl text-sm w-full text-left">
                     <i class="fa-solid fa-user w-4"></i>
-                    <span>View Profile</span>
-                </a>
-                <a href="{{ url_for('program_settings') }}" class="flex items-center gap-3 px-4 py-2.5 hover:bg-zinc-800 rounded-2xl text-sm">
-                    <i class="fa-solid fa-cog w-4"></i>
-                    <span>Program Settings</span>
-                </a>
+                    <span>My Profile</span>
+                </button>
                 {% if is_developer %}
                 <a href="{{ url_for('developer_console') }}" class="flex items-center gap-3 px-4 py-2.5 hover:bg-red-950/30 text-red-400 rounded-2xl text-sm">
                     <i class="fa-solid fa-code w-4"></i>
                     <span>Developer Console</span>
                 </a>
                 {% endif %}
-                <a href="{{ url_for('user_management') }}" class="flex items-center gap-3 px-4 py-2.5 hover:bg-zinc-800 rounded-2xl text-sm">
-                    <i class="fa-solid fa-users w-4"></i>
-                    <span>User Management</span>
-                </a>
                 
                 <div class="my-1 border-t border-zinc-800"></div>
                 

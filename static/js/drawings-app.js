@@ -54,7 +54,7 @@
   const TOOL_META = {
     pan: { label: 'Pan', shortcut: 'H', icon: 'fa-hand', hint: 'Drag to move the sheet. Hold Alt to pan while using any tool.' },
     select: { label: 'Select', shortcut: 'V', icon: 'fa-arrow-pointer', hint: 'Click to select; Shift+click to add/remove. Drag a box to select everything inside. Drag selected items to move.' },
-    pen: { label: 'Pen', shortcut: 'N', icon: 'fa-pen', hint: 'Draw freehand — popular for quick redlines and sketches (Bluebeam-style).' },
+    pen: { label: 'Pen', shortcut: 'N', icon: 'fa-pen', hint: 'Draw freehand redlines and sketches.' },
     line: { label: 'Line', shortcut: 'L', icon: 'fa-minus', hint: TWO_POINT_HINT },
     polyline: { label: 'Polyline', shortcut: 'I', icon: 'fa-draw-polygon', hint: 'Click each corner. Press Enter or double-click the last point to finish.' },
     arrow: { label: 'Arrow', shortcut: 'A', icon: 'fa-arrow-right', hint: TWO_POINT_HINT },
@@ -69,7 +69,7 @@
     stamp: { label: 'Stamp', shortcut: 'S', icon: 'fa-stamp', hint: 'Pick a stamp in the side panel, then click on the sheet to place it.' },
     measure: { label: 'Measure', shortcut: 'M', icon: 'fa-ruler', hint: 'Click two points (pan/zoom between clicks), then click to place the dimension line with extension lines — or drag A→B in one motion.' },
     area: { label: 'Area', shortcut: 'B', icon: 'fa-vector-square', hint: 'Click polygon corners, Enter to close — shows square feet when scale is set.' },
-    count: { label: 'Count', shortcut: 'O', icon: 'fa-hashtag', hint: 'Click each item to count — Bluebeam-style running tally.' },
+    count: { label: 'Count', shortcut: 'O', icon: 'fa-hashtag', hint: 'Click each item to count — running tally.' },
     calibrate: { label: 'Calibrate scale', shortcut: 'K', icon: 'fa-ruler-combined', hint: 'Click two points on a known dimension, then enter the real-world length.' },
     rfi_pin: { label: 'RFI pin', shortcut: 'F', icon: 'fa-map-pin', hint: 'Click the exact spot on the plan, then drag the label out of the way. Double-click the label to open that RFI.' },
     co_pin: { label: 'CO pin', shortcut: 'D', icon: 'fa-file-signature', hint: 'Pin a change order to the sheet. Drag the label aside; double-click to open the CO.' },

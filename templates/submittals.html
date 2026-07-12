@@ -246,10 +246,6 @@ window.SUBMITTAL_PROJECT_CTX = {
                 <i class="fa-solid fa-cog text-zinc-400"></i>
             </button>
             
-            <button onclick="clearSubmittalLog()" 
-                    class="px-4 py-2 bg-red-600 hover:bg-red-500 text-white rounded-lg text-sm font-medium transition-colors">
-                Clear Log (Test)
-            </button>
         </div>
     </div>
 
@@ -3689,6 +3685,9 @@ async function initialize() {
     renderSubmittalsTable();
     updateMetrics();
     console.log('%c[Submittals] Initialized with Spec Book PDF import.', 'color:#22c55e');
+    if (typeof CasePMDevActions !== 'undefined') {
+        CasePMDevActions.consume('submittals-clear-log', clearSubmittalLog);
+    }
 }
 
 initialize();
