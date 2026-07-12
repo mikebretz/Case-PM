@@ -229,9 +229,10 @@
 
   function excelExportBackupNote(result) {
     const info = result?.excel_exports;
-    if (!info) return '';
+    if (!info) return '\n\nNote: No excel_exports info returned — update Case PM and restart run.bat, then run a new backup.';
     if (info.included && info.file_count) {
-      return `\n\nExcel exports: ${info.file_count} spreadsheet(s) in excel_exports/ inside the zip (open the .zip — not a separate uploads folder).`;
+      const fmt = info.format === 'csv' ? 'CSV (install openpyxl for .xlsx)' : 'Excel';
+      return `\n\n${fmt} exports: ${info.file_count} file(s) in excel_exports/ inside the zip.\nOpen the .zip in Explorer — the folder is not under uploads/ on disk.`;
     }
     if (info.skipped) {
       return `\n\nExcel exports were skipped: ${info.reason || 'unknown reason'}.`;

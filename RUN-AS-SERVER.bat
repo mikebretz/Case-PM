@@ -34,6 +34,10 @@ if not exist "%PY%" (
     exit /b 1
 )
 
+"%PY%" -m pip install --upgrade pip --quiet
+echo Checking required packages...
+"%PY%" -m pip install -r requirements.txt --quiet
+
 "%PY%" -c "import flask" >nul 2>&1
 if errorlevel 1 (
     echo Installing packages — first run may take a few minutes...

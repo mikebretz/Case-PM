@@ -1435,6 +1435,53 @@ class Notification(db.Model):
     user = db.relationship('User', backref='notifications')
 
 
+def _register_backup_excel_exports():
+    """Wire module Excel exports into every program backup zip."""
+    try:
+        from backup_service import register_backup_excel_exporter
+        from backup_excel_exports import build_excel_exports_to_dir
+
+        export_models = {
+            'Project': Project,
+            'RFI': RFI,
+            'ChangeOrder': ChangeOrder,
+            'PotentialChangeOrder': PotentialChangeOrder,
+            'Commitment': Commitment,
+            'Submittal': Submittal,
+            'PunchItem': PunchItem,
+            'DailyLog': DailyLog,
+            'ManpowerEntry': ManpowerEntry,
+            'EquipmentEntry': EquipmentEntry,
+            'WeeklyReport': WeeklyReport,
+            'SafetyReport': SafetyReport,
+            'SafetyCertification': SafetyCertification,
+            'ScheduleData': ScheduleData,
+            'ScheduleTask': ScheduleTask,
+            'Delivery': Delivery,
+            'PermitInspectionItem': PermitInspectionItem,
+            'MeetingMinute': MeetingMinute,
+            'MeetingActionItem': MeetingActionItem,
+            'Photo': Photo,
+            'Document': Document,
+            'Drawing': Drawing,
+            'BudgetProjectState': BudgetProjectState,
+            'PayAppProjectState': PayAppProjectState,
+            'Company': Company,
+            'User': User,
+            'AuditLog': AuditLog,
+        }
+
+        def _run_backup_excel_exports(dest_root, progress_cb=None):
+            return build_excel_exports_to_dir(dest_root, export_models, progress_cb, db=db)
+
+        register_backup_excel_exporter(_run_backup_excel_exports)
+    except Exception as exc:
+        print(f'[Case PM] Backup Excel exporter registration failed: {exc}', flush=True)
+
+
+_register_backup_excel_exports()
+
+
 # ==================== FILE UPLOAD HELPERS ====================
 UPLOAD_FOLDER = 'uploads'
 ALLOWED_EXTENSIONS = {
