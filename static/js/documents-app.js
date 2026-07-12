@@ -104,26 +104,12 @@
     if (sel) sel.value = state.iconSize;
   }
 
-  function renderFolderThumb(folder) {
-    const thumbs = folder.preview_thumbs || [];
-    if (!thumbs.length) {
-      return '<div class="docs-item-icon"><i class="fa-solid fa-folder"></i></div>';
-    }
-    const mini = thumbs.map((t) => {
-      if (t.type === 'image') return `<img src="${esc(t.url)}" alt="">`;
-      if (t.type === 'pdf') return '<div class="docs-folder-mini pdf"><i class="fa-solid fa-file-pdf"></i></div>';
-      if (t.type === 'sheet') return '<div class="docs-folder-mini sheet"><i class="fa-solid fa-file-excel"></i></div>';
-      if (t.type === 'doc') return '<div class="docs-folder-mini doc"><i class="fa-solid fa-file-word"></i></div>';
-      return '';
-    }).join('');
-    return `<div class="docs-folder-thumb"><div class="docs-folder-back"></div><div class="docs-folder-front">${mini}</div></div>`;
+  function renderFolderThumb() {
+    return '<div class="docs-item-icon docs-item-icon-folder"><i class="fa-solid fa-folder"></i></div>';
   }
 
   function renderFileThumb(f, fi) {
-    if (fi.cls === 'file-img' && f.file_url) {
-      return `<div class="docs-file-thumb"><img src="${esc(f.file_url)}" alt=""></div>`;
-    }
-    return `<div class="docs-file-thumb"><i class="fa-solid ${fi.icon} ${fi.cls}"></i></div>`;
+    return `<div class="docs-item-icon docs-item-icon-file ${fi.cls}"><i class="fa-solid ${fi.icon}"></i></div>`;
   }
 
   function sheetTableFromAoa(aoa, maxR = 20, maxC = 10) {

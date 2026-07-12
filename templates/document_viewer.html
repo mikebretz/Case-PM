@@ -8,7 +8,7 @@
 <div class="draw-page doc-viewer-page draw-page-viewer-active" id="drawPage">
 <div class="draw-stack">
 
-<div id="drawPanelViewer" class="flex-1 min-h-0 mb-2 border border-zinc-700 rounded-md bg-zinc-900 overflow-hidden">
+<div id="drawPanelViewer" class="flex-1 min-h-0 border border-zinc-700 rounded-md bg-zinc-900 overflow-hidden flex flex-col">
     <div class="draw-viewer-toolbar flex items-center justify-between px-2 py-1.5 border-b border-zinc-800 flex-shrink-0 gap-2 flex-wrap no-print">
         <div class="flex items-center gap-2 min-w-0">
             <button type="button" onclick="CasePMDrawings.closeViewer()" class="px-2 py-1 text-xs bg-zinc-800 hover:bg-zinc-700 rounded-md h-[28px]"><i class="fa-solid fa-arrow-left"></i> Documents</button>
@@ -103,7 +103,9 @@
                     </div>
                 </div>
                 <div id="drawContinuousScroller" class="draw-continuous-scroller hidden">
-                    <div id="drawContinuousPages" class="draw-continuous-pages"></div>
+                    <div id="drawContinuousStage" class="draw-continuous-stage">
+                        <div id="drawContinuousPages" class="draw-continuous-pages"></div>
+                    </div>
                 </div>
             </div>
             <div id="drawViewerStatus" class="draw-viewer-status no-print">

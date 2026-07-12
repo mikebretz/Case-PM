@@ -497,21 +497,50 @@ tr.draw-sheet-row-dirty {
   display: none;
 }
 
+/* Document viewer page — fill space between app header and footer */
+#mainContent.main-content-doc-viewer {
+  padding: 0;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+body.doc-viewer-active {
+  overflow: hidden;
+}
+
 .doc-viewer-page {
   display: flex;
   flex-direction: column;
   flex: 1;
   min-height: 0;
-  height: calc(100vh - 4.5rem);
+  height: 100%;
+  width: 100%;
+  padding: 0.35rem 0.65rem 0.35rem;
+  overflow: hidden;
+  box-sizing: border-box;
+}
+.doc-viewer-page .draw-stack {
+  flex: 1;
+  min-height: 0;
 }
 .doc-viewer-page #drawPanelViewer {
   display: flex !important;
   flex: 1;
   min-height: 0;
+  max-height: 100%;
 }
 .doc-viewer-page.draw-page-viewer-active #drawPanelViewer {
-  min-height: calc(100vh - 5rem);
+  min-height: 0;
 }
+.doc-viewer-page #drawPanelViewer > .flex.flex-1 {
+  min-height: 0;
+}
+
+.draw-continuous-stage {
+  transform-origin: 0 0;
+  will-change: transform;
+}
+
 .draw-page dialog.modal {
   border-radius: 8px !important;
   margin: auto !important;
