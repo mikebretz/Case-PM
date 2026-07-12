@@ -779,6 +779,30 @@
     return state.viewerContext === 'document' || state.documentViewerPage;
   }
 
+  function isDocumentDrawingPdf() {
+    if (!isDocumentViewer()) return true;
+    const doc = state.openDocument || state.openDetail || {};
+    if (doc.source_drawing_id) return true;
+    const kind = String(doc.document_type || doc.discipline || '').toLowerCase();
+    if (/\b(drawing|sheet|plan|elevation|detail|section|architectural|structural|mechanical|electrical|plumbing|civil)\b/.test(kind)) return true;
+    const name = String(doc.name || doc.title || doc.original_filename || '');
+    if (/\b[A-Z]{1,2}[-.]?\d{1,4}[A-Z]?\b/.test(name)) return true;
+    return false;
+  }
+
+  function computeContinuousPdfScale(unscaled, targetW) {
+    const fit = targetW / unscaled.width;
+    if (isDocumentViewer() && !isDocumentDrawingPdf()) {
+      return Math.min(1.35, Math.max(0.85, fit * 0.88));
+    }
+    if (isDocumentViewer() && isDocumentDrawingPdf()) {
+      const dpr = global.devicePixelRatio || 1;
+      return Math.min(3.0, Math.max(2.0, fit * dpr * 0.95));
+    }
+    const dpr = global.devicePixelRatio || 1;
+    return Math.min(3.5, Math.max(2.0, fit * dpr));
+  }
+
   function resetPdfPageState() {
     state.pdfPage = 1;
     state.pdfNumPages = 0;
@@ -1208,13 +1232,26 @@
     const dpr = global.devicePixelRatio || 1;
     const minQuality = 200 / 72;
     const zoomBoost = Math.max(1, state.viewScale * 0.9);
-    const floor = isDocumentViewer() ? 2.75 : 2.5;
-    return Math.min(8, Math.max(minQuality, fitScale * dpr * zoomBoost, floor));
+    const isContinuous = state.pdfViewMode === 'continuous' && state.pdfNumPages > 1;
+
+    if (isDocumentViewer() && !isDocumentDrawingPdf()) {
+      const floor = isContinuous ? 0.85 : 1.0;
+      const cap = isContinuous ? 1.35 : 1.65;
+      return Math.min(cap, Math.max(floor, fitScale * 0.9));
+    }
+
+    const floor = isDocumentViewer()
+      ? (isDocumentDrawingPdf() ? (isContinuous ? 2.0 : 2.35) : 1.0)
+      : 2.5;
+    const cap = isDocumentViewer() && isDocumentDrawingPdf()
+      ? (isContinuous ? 2.85 : 3.25)
+      : 8;
+    return Math.min(cap, Math.max(minQuality, fitScale * dpr * zoomBoost, floor));
   }
 
   function schedulePdfQualityRerender() {
     if (!viewerIsOpen() || !state.pdfDoc) return;
-    if (isDocumentViewer()) return;
+    if (isDocumentViewer() && !isDocumentDrawingPdf()) return;
     clearTimeout(state.pdfRerenderTimer);
     state.pdfRerenderTimer = setTimeout(() => {
       state.pdfRerenderTimer = null;
@@ -3340,7 +3377,7 @@
       if (gen !== state.renderGen) return;
       const page = await state.pdfDoc.getPage(i);
       const unscaled = page.getViewport({ scale: 1, rotation: page.rotate });
-      const scale = targetW / unscaled.width;
+      const scale = computeContinuousPdfScale(unscaled, targetW);
       const viewport = page.getViewport({ scale, rotation: page.rotate });
 
       const pageEl = document.createElement('div');
