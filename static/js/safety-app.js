@@ -9,6 +9,7 @@
     tab: 'reports',
     reportsScope: 'project',
     toolboxScope: 'project',
+    viewUserId: '',
     reports: [], rStats: {}, rTypes: [], rSeverities: [], rStatuses: [], rEditId: null,
     rPhotos: [], rExisting: [], rPendingDocIds: [],
     photoSeq: 0, armedPhoto: null, stream: null, facingMode: 'environment',
@@ -132,9 +133,12 @@
   async function loadReports() {
     const scope = state.reportsScope || el('safReportsScope')?.value || 'project';
     const pid = scope === 'all' ? 'all' : projectId();
+    const userId = state.viewUserId || el('safUserFilter')?.value || '';
     el('safStatusText').textContent = 'Loading…';
     try {
-      const j = await api(`/api/safety/reports${pid ? `?project_id=${pid}` : ''}`);
+      let url = `/api/safety/reports${pid ? `?project_id=${pid}` : ''}`;
+      if (userId) url += `${url.includes('?') ? '&' : '?'}reported_by_id=${encodeURIComponent(userId)}`;
+      const j = await api(url);
       state.reports = j.reports || []; state.rStats = j.stats || {};
       state.rTypes = j.types || []; state.rSeverities = j.severities || []; state.rStatuses = j.statuses || [];
       state.rFieldGroups = j.incident_field_groups || [];
@@ -584,6 +588,15 @@
   // ---------------- Init ----------------
   function bind() {
     document.querySelectorAll('.saf-tab').forEach((t) => t.addEventListener('click', () => setTab(t.getAttribute('data-tab'))));
+    const userFilter = el('safUserFilter');
+    if (userFilter && ctx.canBrowseUserSafety && (ctx.personnel || []).length) {
+      userFilter.classList.remove('hidden');
+      ctx.personnel.forEach((p) => userFilter.add(new Option(p.name, String(p.id))));
+      userFilter.addEventListener('change', (e) => {
+        state.viewUserId = e.target.value || '';
+        loadReports();
+      });
+    }
     el('safReportsScope')?.addEventListener('change', (e) => { state.reportsScope = e.target.value; loadReports(); });
     el('safToolboxScope')?.addEventListener('change', (e) => {
       state.toolboxScope = e.target.value;

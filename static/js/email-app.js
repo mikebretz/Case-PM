@@ -136,6 +136,7 @@
     inlineCompose: null,
     popoutZ: 100,
     composeAttachments: [],
+    viewUserId: null,
   };
 
   let mailMessages = [];
@@ -147,7 +148,42 @@
   let templates = [];
   let customFolders = [];
   let undoTimer = null;
-  let ctx = { userName: 'User', userEmail: '', users: [], projectName: '' };
+  let mailPersistTimer = null;
+  let ctx = {
+    userName: 'User',
+    userEmail: '',
+    users: [],
+    projectName: '',
+    currentUserId: null,
+    canBrowseOtherMailboxes: false,
+    mailboxOwners: [],
+  };
+
+  function effectiveUserId() {
+    return state.viewUserId || ctx.currentUserId || null;
+  }
+
+  function isViewingOtherMailbox() {
+    return effectiveUserId() && ctx.currentUserId && effectiveUserId() !== ctx.currentUserId;
+  }
+
+  function viewedMailboxOwner() {
+    const id = effectiveUserId();
+    return (ctx.mailboxOwners || []).find(o => o.id === id) || null;
+  }
+
+  function mailboxUserQuery() {
+    const uid = effectiveUserId();
+    if (!uid || uid === ctx.currentUserId) return '';
+    return `?user_id=${uid}`;
+  }
+
+  function canEditViewedMailbox() {
+    if (!isViewingOtherMailbox()) return true;
+    if (ctx.canBrowseOtherMailboxes) return true;
+    const owner = viewedMailboxOwner();
+    return !!(owner && owner.can_send);
+  }
 
   function loadJson(key, fallback) {
     try {
@@ -235,20 +271,82 @@
 
   function loadAll() {
     settings = { ...DEFAULT_SETTINGS, ...loadJson(STORAGE.settings, {}) };
-    mailMessages = loadJson(STORAGE.mail, null) || seedMail();
     contacts = loadJson(STORAGE.contacts, null) || seedContacts();
     rules = loadJson(STORAGE.rules, []);
     signatures = loadJson(STORAGE.signatures, null) || seedSignatures();
     templates = loadJson(STORAGE.templates, null) || seedTemplates();
     customFolders = loadJson(STORAGE.customFolders, []);
-    if (!loadJson(STORAGE.mail, null)) persistMail();
     internalMessages = [];
-    refreshInternalFromServer();
+    return loadMailboxFromServer().then((loaded) => {
+      if (!loaded) {
+        mailMessages = loadJson(STORAGE.mail, null) || seedMail();
+        if (!loadJson(STORAGE.mail, null)) persistMailLocal();
+        if (!isViewingOtherMailbox()) migrateLocalMailboxToServer();
+      }
+      return refreshInternalFromServer();
+    });
+  }
+
+  async function fetchMailboxOwners() {
+    try {
+      const res = await fetch('/api/email/mailbox-owners');
+      if (!res.ok) return;
+      const data = await res.json();
+      ctx.mailboxOwners = data.owners || [];
+      if (data.current_user_id) ctx.currentUserId = data.current_user_id;
+    } catch (e) {
+      console.warn('Mailbox owners unavailable', e);
+    }
+  }
+
+  async function loadMailboxFromServer() {
+    try {
+      const res = await fetch(`/api/email/mailbox${mailboxUserQuery()}`);
+      if (!res.ok) return false;
+      const data = await res.json();
+      mailMessages = Array.isArray(data.messages) ? data.messages : [];
+      const meta = data.meta || {};
+      if (Array.isArray(meta.contacts) && meta.contacts.length) contacts = meta.contacts;
+      if (Array.isArray(meta.rules)) rules = meta.rules;
+      if (Array.isArray(meta.signatures) && meta.signatures.length) signatures = meta.signatures;
+      if (Array.isArray(meta.templates) && meta.templates.length) templates = meta.templates;
+      if (Array.isArray(meta.customFolders)) customFolders = meta.customFolders;
+      if (!isViewingOtherMailbox()) persistMailLocal();
+      return true;
+    } catch (e) {
+      console.warn('Mailbox API unavailable, using cache', e);
+      return false;
+    }
+  }
+
+  async function migrateLocalMailboxToServer() {
+    if (!ctx.currentUserId || !mailMessages.length) return;
+    try {
+      await fetch('/api/email/mailbox', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          messages: mailMessages,
+          meta: { contacts, rules, signatures, templates, customFolders },
+        }),
+      });
+    } catch (_) { /* ignore */ }
+  }
+
+  async function setMailboxUser(userId) {
+    const next = userId ? parseInt(userId, 10) : ctx.currentUserId;
+    if (!next || next === effectiveUserId()) return;
+    state.viewUserId = next === ctx.currentUserId ? null : next;
+    state.selectedId = null;
+    state.selectedIds = new Set();
+    await loadMailboxFromServer();
+    await refreshInternalFromServer();
+    render();
   }
 
   async function refreshInternalFromServer() {
     try {
-      const res = await fetch('/api/internal-messages');
+      const res = await fetch(`/api/internal-messages${mailboxUserQuery()}`);
       if (res.ok) {
         const data = await res.json();
         internalMessages = data.map(m => ({
@@ -286,7 +384,32 @@
     render();
   }
 
-  function persistMail() { saveJson(STORAGE.mail, mailMessages); }
+  function persistMailLocal() { saveJson(STORAGE.mail, mailMessages); }
+  function persistMail() {
+    if (!isViewingOtherMailbox()) persistMailLocal();
+    if (!canEditViewedMailbox()) return;
+    clearTimeout(mailPersistTimer);
+    mailPersistTimer = setTimeout(() => { persistMailToServer(); }, 400);
+  }
+
+  async function persistMailToServer() {
+    if (!canEditViewedMailbox()) return;
+    const uid = effectiveUserId();
+    try {
+      await fetch(`/api/email/mailbox${uid && uid !== ctx.currentUserId ? `?user_id=${uid}` : ''}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          user_id: uid,
+          messages: mailMessages,
+          meta: { contacts, rules, signatures, templates, customFolders },
+        }),
+      });
+      if (!isViewingOtherMailbox()) persistMailLocal();
+    } catch (e) {
+      console.warn('Mailbox sync failed', e);
+    }
+  }
   function persistInternal() { saveJson(STORAGE.internal, internalMessages); }
   function persistSettings() { saveJson(STORAGE.settings, settings); global.CasePMEmailSettings = settings; }
   function persistCustomFolders() { saveJson(STORAGE.customFolders, customFolders); }
@@ -876,12 +999,20 @@
     renderReadingPane();
   }
 
+  function internalApiOpts() {
+    const uid = effectiveUserId();
+    if (uid && uid !== ctx.currentUserId) {
+      return { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ user_id: uid }) };
+    }
+    return { method: 'POST' };
+  }
+
   function markMessageRead(m) {
     if (state.workspace === 'internal') {
       m.unread = false;
       persistInternal();
       if (typeof m.id === 'number' || String(m.id).match(/^\d+$/)) {
-        fetch(`/api/internal-messages/${m.id}/read`, { method: 'POST' }).catch(() => {});
+        fetch(`/api/internal-messages/${m.id}/read`, internalApiOpts()).catch(() => {});
       }
     } else if (settings.markAsReadOnView) {
       m.unread = false;
@@ -1077,15 +1208,31 @@
     if (!el) return;
     const mailUnread = mailMessages.filter(m => m.folder === 'inbox' && m.unread).length;
     const internalUnread = internalMessages.filter(m => !m.archived && m.unread).length;
+    const owners = ctx.mailboxOwners || [];
+    const showMailboxPicker = owners.length > 1;
+    const viewed = viewedMailboxOwner();
+    const viewingOther = isViewingOtherMailbox();
     el.innerHTML = `
-      <div class="email-workspace-tabs flex px-4">
+      <div class="email-workspace-tabs flex px-4 items-center gap-3 flex-wrap">
         <button type="button" class="px-5 py-2.5 text-sm font-medium border-b-2 ${state.workspace === 'mail' ? 'border-emerald-500 text-white' : 'border-transparent text-zinc-400'}" onclick="CasePMEmail.setWorkspace('mail')">
           <i class="fa-solid fa-envelope mr-2"></i>Mail ${mailUnread ? `<span class="ml-1 text-xs bg-emerald-600 text-white px-1.5 py-0.5 rounded-full">${mailUnread}</span>` : ''}
         </button>
         <button type="button" class="px-5 py-2.5 text-sm font-medium border-b-2 ${state.workspace === 'internal' ? 'border-emerald-500 text-white' : 'border-transparent text-zinc-400'}" onclick="CasePMEmail.setWorkspace('internal')">
           <i class="fa-solid fa-bell mr-2"></i>Internal ${internalUnread ? `<span class="ml-1 text-xs bg-amber-600 text-white px-1.5 py-0.5 rounded-full">${internalUnread}</span>` : ''}
         </button>
+        ${showMailboxPicker ? `
+        <div class="ml-auto flex items-center gap-2 py-1">
+          <label class="text-[10px] uppercase tracking-wide text-zinc-500">Mailbox</label>
+          <select id="emailMailboxUserSelect" class="bg-zinc-900 border border-zinc-700 rounded-md text-xs px-2 py-1.5 text-zinc-200 max-w-[220px]"
+                  onchange="CasePMEmail.setMailboxUser(this.value)">
+            ${owners.map(o => `<option value="${o.id}" ${o.id === effectiveUserId() ? 'selected' : ''}>${esc(o.name)}${o.delegated ? ' (shared)' : ''}</option>`).join('')}
+          </select>
+        </div>` : ''}
       </div>
+      ${viewingOther ? `<div class="px-4 py-1.5 bg-sky-950/50 border-b border-sky-800 text-xs text-sky-200 flex items-center gap-2">
+        <i class="fa-solid fa-eye"></i>
+        <span>Viewing <strong>${esc(viewed?.name || 'user')}</strong>'s mailbox${viewed?.email ? ` (${esc(viewed.email)})` : ''}${canEditViewedMailbox() ? '' : ' — read only'}</span>
+      </div>` : ''}
       <div class="email-workspace-toolbar">${renderToolbarHTML()}</div>`;
   }
 
@@ -1684,6 +1831,7 @@
   }
 
   function compose(opts) {
+    if (!canEditViewedMailbox()) { toast('You have read-only access to this mailbox.', 'error'); return; }
     const inPopout = !!(opts?.inPopout || opts?.popoutId);
     const popoutId = inPopout ? (opts?.popoutId || state.selectedId) : null;
     const prevPopoutId = state.inlineCompose?.popoutId;
@@ -1816,6 +1964,8 @@
   }
 
   function sendMail(scheduled) {
+    if (!canEditViewedMailbox()) { toast('You have read-only access to this mailbox.', 'error'); return; }
+    const viewed = viewedMailboxOwner();
     const to = document.getElementById('inlineComposeTo')?.value.trim();
     const subject = document.getElementById('inlineComposeSubject')?.value.trim();
     const body = getComposeFullHtml();
@@ -1829,7 +1979,8 @@
     const atts = serializeAttachments(state.inlineCompose?.attachments || []);
     const msg = {
       id: uid(), folder: scheduled || scheduleVal ? 'scheduled' : 'sent', category: 'primary', focused: true,
-      from: settings.displayName || ctx.userName, fromEmail: settings.emailAddress || ctx.userEmail,
+      from: (isViewingOtherMailbox() && viewed ? viewed.name : (settings.displayName || ctx.userName)),
+      fromEmail: (isViewingOtherMailbox() && viewed ? viewed.email : (settings.emailAddress || ctx.userEmail)),
       to: to.split(/[,;]/).map(s => s.trim()).filter(Boolean),
       cc: (document.getElementById('inlineComposeCc')?.value || '').split(/[,;]/).map(s => s.trim()).filter(Boolean),
       bcc: (document.getElementById('inlineComposeBcc')?.value || '').split(/[,;]/).map(s => s.trim()).filter(Boolean),
@@ -2039,7 +2190,7 @@
       }
     }
     if (typeof m.id === 'number' || String(m.id).match(/^\d+$/)) {
-      await fetch(`/api/internal-messages/${m.id}/archive`, { method: 'POST' }).catch(() => {});
+      await fetch(`/api/internal-messages/${m.id}/archive`, internalApiOpts()).catch(() => {});
     }
     m.archived = true;
     m.unread = false;
@@ -2067,8 +2218,10 @@
       refreshInternalFromServer().then(() => toast('Internal messages synced.', 'success'));
       return;
     }
-    toast('Mailbox synced.', 'success');
-    render();
+    loadMailboxFromServer().then(() => {
+      render();
+      toast('Mailbox synced.', 'success');
+    });
   }
 
   function buildPrintDocument(m) {
@@ -2181,15 +2334,17 @@
     renderMessageList();
   }
 
-  function init(options) {
+  async function init(options) {
     ctx = { ...ctx, ...options };
-    loadAll();
+    if (!ctx.mailboxOwners || !ctx.mailboxOwners.length) await fetchMailboxOwners();
+    if (options.currentUserId) ctx.currentUserId = options.currentUserId;
+    state.viewUserId = null;
+    await loadAll();
     global.CasePMEmailSettings = settings;
     if (typeof CasePMWorkflow !== 'undefined') {
-      CasePMWorkflow.loadPortal().then(() => render());
-    } else {
-      render();
+      await CasePMWorkflow.loadPortal();
     }
+    render();
     document.getElementById('emailSearchInput')?.addEventListener('input', e => setSearch(e.target.value));
     const searchEl = document.getElementById('emailSearchInput');
     if (searchEl) {
@@ -2222,7 +2377,7 @@
 
   global.CasePMEmail = {
     init, setWorkspace, setFolder, setCategory, select, openMessage, openMessagePopout, closeMessagePopout,
-    setSearch, setSort, setInternalTypeFilter, toggleFilter, toggleStar,
+    setSearch, setSort, setInternalTypeFilter, toggleFilter, toggleStar, setMailboxUser,
     compose, closeCompose, toggleCcBcc, saveDraft, sendMail, undoSend, reply, replyAll, forward,
     removeComposeAttachment,
     refreshComposeAttachmentUI,

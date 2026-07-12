@@ -6,6 +6,8 @@ window.CASEPM_SAFETY_CTX = {
   projectId: {{ active_project.id if active_project else 'null' }},
   projectName: {{ (active_project.name if active_project else '')|tojson }},
   isAdmin: {{ is_admin_user|tojson }},
+  canBrowseUserSafety: {{ can_browse_user_safety|tojson }},
+  personnel: {{ safety_personnel|tojson }},
   projects: [
     {% for p in projects %}{ id: {{ p.id }}, name: {{ p.name|tojson }} }{% if not loop.last %},{% endif %}{% endfor %}
   ],
@@ -90,6 +92,9 @@ window.CASEPM_SAFETY_CTX = {
         <option value="all">All meetings</option>
       </select>
       <span id="safCompanyBadge" class="text-xs px-3 py-1 bg-sky-900/40 border border-sky-700 text-sky-300 rounded-md hidden">Company-wide</span>
+      <select id="safUserFilter" class="saf-input text-xs hidden" style="width:auto;min-width:190px;" title="View safety data by person">
+        <option value="">All personnel</option>
+      </select>
       <div id="safProjectBadge" class="text-xs px-3 py-1 bg-zinc-800 border border-zinc-700 text-zinc-400 rounded-md font-mono truncate max-w-[200px] saf-hide-mobile">—</div>
     </div>
   </div>

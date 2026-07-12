@@ -487,18 +487,49 @@ def register_workflow(app, _db, models):
     @app.route('/api/internal-messages')
     @login_required
     def api_internal_messages():
+        from email_mailbox_persistence import resolve_mailbox_user_id
+        from app import EmailMailboxAccess
         folder = request.args.get('folder')
         archived = request.args.get('archived') == '1'
-        q = InternalMessage.query.filter_by(user_id=current_user.id, archived=archived)
+        try:
+            mailbox_user_id = resolve_mailbox_user_id(
+                current_user,
+                request.args.get('user_id', type=int),
+                User=User,
+                EmailMailboxAccess=EmailMailboxAccess,
+            )
+        except PermissionError:
+            return jsonify({'error': 'Mailbox access denied'}), 403
+        q = InternalMessage.query.filter_by(user_id=mailbox_user_id, archived=archived)
         if folder and folder not in ('internal-inbox', ''):
             q = q.filter_by(folder=folder)
         messages = q.order_by(InternalMessage.created_at.desc()).limit(200).all()
         return jsonify([m.to_dict() for m in messages])
 
+    def _internal_message_for_actor(msg_id):
+        from email_mailbox_persistence import resolve_mailbox_user_id
+        from app import EmailMailboxAccess
+        requested = request.args.get('user_id', type=int)
+        if not requested:
+            body = request.get_json(silent=True) or {}
+            requested = body.get('user_id')
+        try:
+            mailbox_user_id = resolve_mailbox_user_id(
+                current_user, requested, User=User, EmailMailboxAccess=EmailMailboxAccess,
+            )
+        except PermissionError:
+            return None, (jsonify({'error': 'Mailbox access denied'}), 403)
+        msg = InternalMessage.query.filter_by(id=msg_id, user_id=mailbox_user_id).first()
+        if not msg:
+            return None, (jsonify({'error': 'Not found'}), 404)
+        return msg, None
+
     @app.route('/api/internal-messages/<int:msg_id>/read', methods=['POST'])
     @login_required
     def api_internal_message_read(msg_id):
-        msg = InternalMessage.query.filter_by(id=msg_id, user_id=current_user.id).first_or_404()
+        msg, err = _internal_message_for_actor(msg_id)
+        if err:
+            return err
         msg.is_read = True
         db.session.commit()
         return jsonify({'ok': True})
@@ -506,7 +537,9 @@ def register_workflow(app, _db, models):
     @app.route('/api/internal-messages/<int:msg_id>/archive', methods=['POST'])
     @login_required
     def api_internal_message_archive(msg_id):
-        msg = InternalMessage.query.filter_by(id=msg_id, user_id=current_user.id).first_or_404()
+        msg, err = _internal_message_for_actor(msg_id)
+        if err:
+            return err
         msg.archived = True
         msg.is_read = True
         msg.requires_action = False
