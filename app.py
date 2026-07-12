@@ -494,10 +494,28 @@ def inject_project_context():
         }
     except Exception:
         portal = {'portal_type': 'staff', 'is_sub_portal': False, 'is_architect_portal': False}
+    company_logo_url = ''
+    try:
+        from program_settings_persistence import load_company_info
+        company_logo_url = (load_company_info().get('logo_data_url') or '').strip()
+    except Exception:
+        pass
     return {
         'active_project': active,
         'project_name': active.name if active else 'Select Project',
         'all_projects': Project.query.order_by(Project.name).all(),
+        'company_logo_url': company_logo_url,
+        'current_user_profile': {
+            'id': current_user.id,
+            'first_name': current_user.first_name,
+            'last_name': current_user.last_name,
+            'full_name': current_user.full_name,
+            'email': current_user.email,
+            'role': current_user.role,
+            'company': current_user.company or '',
+            'phone': current_user.phone or '',
+            'require_2fa': bool(getattr(current_user, 'require_2fa', False)),
+        },
         **portal,
     }
 

@@ -521,6 +521,9 @@
             preview.src = e.target.result;
             preview.classList.remove('hidden');
             placeholder.classList.add('hidden');
+            if (window.CasePMUserProfile?.updateCompanyLogo) {
+                CasePMUserProfile.updateCompanyLogo(e.target.result);
+            }
         };
         reader.readAsDataURL(file);
     }

@@ -28,26 +28,26 @@
         padding-top: 6px !important;
         padding-bottom: 6px !important;
     }
-.companies-page { display: flex; flex-direction: column; flex: 1; min-height: 0; width: 100%; overflow: hidden; }
-    .companies-stack { display: flex; flex-direction: column; flex: 1; min-height: 0; overflow: hidden; }
+.companies-page { display: flex; flex-direction: column; flex: 1; min-height: 0; width: 100%; padding: 1rem 1rem 0; overflow: hidden; box-sizing: border-box; }
+    .companies-stack { display: flex; flex-direction: column; flex: 1; min-height: 0; overflow: hidden; max-width: 1600px; margin: 0 auto; width: 100%; }
     #companiesTableWrap thead th { position: sticky; top: 0; z-index: 10; background: #27272a; }
 </style>
 
 <div class="companies-page">
 <div class="companies-stack">
 
-    <!-- Header -->
-    <div class="h-16 border-b border-zinc-800 bg-zinc-900 flex items-center justify-between px-6 flex-shrink-0">
-        <div class="text-2xl font-semibold text-white">Companies / Vendors</div>
-        <div class="flex items-center gap-3">
-            <div class="flex gap-2">
-                <button onclick="exportCompanies('csv')" class="flex items-center gap-2 px-4 py-2 bg-zinc-800 hover:bg-zinc-700 rounded-md text-sm font-medium transition-colors">
-                    <i class="fa-solid fa-file-csv"></i><span>Export CSV</span>
-                </button>
-                <button onclick="exportCompanies('excel')" class="flex items-center gap-2 px-4 py-2 bg-zinc-800 hover:bg-zinc-700 rounded-md text-sm font-medium transition-colors">
-                    <i class="fa-solid fa-file-excel"></i><span>Export Excel</span>
-                </button>
-            </div>
+    <div class="mb-4 flex-shrink-0 flex items-start justify-between gap-4 flex-wrap">
+        <div>
+            <h1 class="text-2xl font-semibold tracking-tight">Companies / Vendors</h1>
+            <p class="text-zinc-400 text-sm mt-1">Manage clients, subcontractors, vendors, and Sage 300 directory sync.</p>
+        </div>
+        <div class="flex items-center gap-2 flex-shrink-0 flex-wrap justify-end">
+            <button onclick="exportCompanies('csv')" class="flex items-center gap-2 px-4 py-2 bg-zinc-800 hover:bg-zinc-700 rounded-md text-sm font-medium transition-colors">
+                <i class="fa-solid fa-file-csv"></i><span>Export CSV</span>
+            </button>
+            <button onclick="exportCompanies('excel')" class="flex items-center gap-2 px-4 py-2 bg-zinc-800 hover:bg-zinc-700 rounded-md text-sm font-medium transition-colors">
+                <i class="fa-solid fa-file-excel"></i><span>Export Excel</span>
+            </button>
             <button onclick="importCompanies('excel')" class="flex items-center gap-2 px-4 py-2 bg-zinc-800 hover:bg-zinc-700 rounded-md text-sm font-medium transition-colors">
                 <i class="fa-solid fa-upload"></i><span>Import Excel</span>
             </button>
@@ -57,19 +57,10 @@
             <button onclick="showAddCompanyModal()" class="flex items-center gap-2 px-5 py-2 bg-emerald-600 hover:bg-emerald-700 rounded-md text-sm font-semibold transition-colors">
                 <i class="fa-solid fa-plus"></i><span>Add Company</span>
             </button>
-            <div class="flex items-center gap-3 pl-3 border-l border-zinc-700 cursor-pointer" onclick="showUserProfileModal()">
-                <div class="w-8 h-8 bg-zinc-700 rounded-full overflow-hidden">
-                    <img src="https://i.pravatar.cc/32?img=68" class="w-full h-full object-cover">
-                </div>
-                <div class="text-sm">
-                    <div class="font-medium">Michael Bretz</div>
-                    <div class="text-[10px] text-zinc-500">Project Manager</div>
-                </div>
-            </div>
         </div>
     </div>
 
-    <div class="flex-1 min-h-0 flex flex-col overflow-hidden p-6 pt-4 pb-2">
+    <div class="flex-1 min-h-0 flex flex-col overflow-hidden pb-2">
 
         <!-- Summary Cards -->
         <div class="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-7 gap-4 mb-4 flex-shrink-0">
@@ -2147,259 +2138,6 @@ function exportCompanyAuditLog() {
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, 'Companies Audit Log');
     XLSX.writeFile(wb, 'Companies_Vendors_Audit_Log.xlsx');
-}
-
-// ==================== USER PROFILE MODAL (Self-service, same as User Management) ====================
-function showUserProfileModal() {
-    let users = JSON.parse(localStorage.getItem('users')) || [];
-    // Find Michael Bretz (the logged-in user shown in header)
-    let currentUser = users.find(u => u.firstName === "Michael" && u.lastName === "Bretz") || users[0];
-    if (!currentUser) {
-        showAlertModal("No Profile", "No user profile found.");
-        return;
-    }
-
-    const modal = document.createElement('dialog');
-    modal.className = 'modal rounded-md p-0 text-white w-full max-w-2xl';
-    modal.style.backgroundColor = '#18181b';
-    modal.style.border = '1px solid #3f3f46';
-
-    modal.innerHTML = `
-        <div class="p-6">
-            <div class="flex justify-between items-center mb-6">
-                <div class="flex items-center gap-4">
-                    <div class="w-14 h-14 bg-zinc-700 rounded-full overflow-hidden border-2 border-zinc-600">
-                        <img src="${currentUser.profileImage || 'https://i.pravatar.cc/56?img=68'}" class="w-full h-full object-cover">
-                    </div>
-                    <div>
-                        <div class="text-xl font-semibold">${currentUser.firstName} ${currentUser.lastName}</div>
-                        <div class="text-sm text-zinc-400">${currentUser.jobTitle || currentUser.role}</div>
-                    </div>
-                </div>
-                <button onclick="this.closest('dialog').close(); this.closest('dialog').remove()" class="text-zinc-400 hover:text-white">
-                    <i class="fa-solid fa-times text-xl"></i>
-                </button>
-            </div>
-
-            <div class="flex border-b border-zinc-700 mb-6">
-                <button onclick="switchProfileTab(this, 'general')" class="profile-tab px-6 py-3 text-sm font-medium border-b-2 border-emerald-500 text-white active">General</button>
-                <button onclick="switchProfileTab(this, 'signature')" class="profile-tab px-6 py-3 text-sm font-medium text-zinc-400 hover:text-white">Signature</button>
-            </div>
-
-            <div id="profile-tab-general">
-                <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    <div>
-                        <label class="block text-xs text-zinc-400 mb-1">First Name</label>
-                        <input type="text" id="profileFirstName" value="${currentUser.firstName || ''}" class="w-full bg-zinc-800 border border-zinc-700 rounded-md px-4 py-2 text-sm">
-                    </div>
-                    <div>
-                        <label class="block text-xs text-zinc-400 mb-1">Last Name</label>
-                        <input type="text" id="profileLastName" value="${currentUser.lastName || ''}" class="w-full bg-zinc-800 border border-zinc-700 rounded-md px-4 py-2 text-sm">
-                    </div>
-                    <div class="md:col-span-2">
-                        <label class="block text-xs text-zinc-400 mb-1">Email Address</label>
-                        <input type="email" id="profileEmail" value="${currentUser.email || ''}" class="w-full bg-zinc-800 border border-zinc-700 rounded-md px-4 py-2 text-sm">
-                    </div>
-                    <div>
-                        <label class="block text-xs text-zinc-400 mb-1">Job Title</label>
-                        <input type="text" id="profileJobTitle" value="${currentUser.jobTitle || ''}" class="w-full bg-zinc-800 border border-zinc-700 rounded-md px-4 py-2 text-sm">
-                    </div>
-                    <div>
-                        <label class="block text-xs text-zinc-400 mb-1">Role</label>
-                        <div class="px-4 py-2 bg-zinc-800 border border-zinc-700 rounded-md text-sm text-zinc-300">${currentUser.role}</div>
-                    </div>
-                    <div>
-                        <label class="block text-xs text-zinc-400 mb-1">Two-Factor Authentication</label>
-                        <div class="px-4 py-2 bg-zinc-800 border border-zinc-700 rounded-md text-sm text-zinc-300">
-                            ${currentUser.twoFactorEnabled ? 'Enabled' : 'Disabled'}
-                        </div>
-                    </div>
-                </div>
-            </div>
-
-            <div id="profile-tab-signature" class="hidden">
-                <div class="mb-4">
-                    <label class="block text-sm mb-2 text-zinc-300">Your Signature</label>
-                    <div class="border border-zinc-700 rounded-md bg-white p-2 inline-block">
-                        <canvas id="profileSignatureCanvas" width="520" height="140" class="cursor-crosshair rounded"></canvas>
-                    </div>
-                    <div class="flex gap-2 mt-2">
-                        <button type="button" onclick="clearProfileSignature()" class="px-4 py-1.5 text-xs bg-zinc-700 hover:bg-zinc-600 rounded">Clear</button>
-                        <button type="button" onclick="saveProfileSignature(${currentUser.id})" class="px-4 py-1.5 text-xs bg-emerald-600 hover:bg-emerald-500 rounded">Save Signature</button>
-                    </div>
-                </div>
-
-                <div class="mt-4">
-                    <label class="block text-sm mb-2 text-zinc-300">Upload Signature Image</label>
-                    <input type="file" id="profileSignatureUpload" accept="image/*" class="text-sm file:mr-3 file:px-3 file:py-1.5 file:rounded file:border-0 file:bg-zinc-700 file:text-white hover:file:bg-zinc-600">
-                    <div id="profileSignatureUploadStatus" class="text-xs text-emerald-400 mt-1"></div>
-                </div>
-
-                <div class="mt-6 pt-4 border-t border-zinc-700">
-                    <label class="block text-sm mb-2 text-zinc-300">Upload Digital Signature Certificate (optional)</label>
-                    <input type="file" id="profileCertificateUpload" accept=".pdf,.pfx,.p12,image/*" class="text-sm file:mr-3 file:px-3 file:py-1.5 file:rounded file:border-0 file:bg-zinc-700 file:text-white hover:file:bg-zinc-600">
-                    <div id="profileCertificateStatus" class="text-xs text-emerald-400 mt-1"></div>
-                    <div class="text-[10px] text-zinc-500 mt-1">Accepted: PDF, PFX, P12, or image. Only you can update this.</div>
-                </div>
-            </div>
-
-            <div class="flex justify-end gap-3 mt-8 pt-6 border-t border-zinc-700">
-                <button onclick="this.closest('dialog').close(); this.closest('dialog').remove()" class="px-6 py-2.5 rounded-md bg-zinc-700 hover:bg-zinc-600 text-sm">Close</button>
-                <button onclick="saveSelfProfile(${currentUser.id}, this)" class="px-8 py-2.5 rounded-md bg-emerald-600 hover:bg-emerald-500 text-sm font-semibold">Save Changes</button>
-            </div>
-        </div>
-    `;
-
-    document.body.appendChild(modal);
-    modal.showModal();
-
-    setTimeout(() => {
-        initProfileSignatureCanvas(currentUser);
-        setupProfileSignatureUpload(currentUser.id);
-        setupProfileCertificateUpload(currentUser.id);
-    }, 200);
-}
-
-let profileSignatureCtx = null;
-let profileSignatureCanvas = null;
-
-function initProfileSignatureCanvas(user) {
-    profileSignatureCanvas = document.getElementById('profileSignatureCanvas');
-    if (!profileSignatureCanvas) return;
-    profileSignatureCtx = profileSignatureCanvas.getContext('2d');
-    profileSignatureCtx.strokeStyle = '#111827';
-    profileSignatureCtx.lineWidth = 2.5;
-    profileSignatureCtx.lineJoin = 'round';
-    profileSignatureCtx.lineCap = 'round';
-
-    if (user.signatureDataURL) {
-        const img = new Image();
-        img.onload = () => {
-            profileSignatureCtx.clearRect(0, 0, profileSignatureCanvas.width, profileSignatureCanvas.height);
-            profileSignatureCtx.drawImage(img, 0, 0, profileSignatureCanvas.width, profileSignatureCanvas.height);
-        };
-        img.src = user.signatureDataURL;
-    }
-
-    let drawing = false;
-    let lastX = 0, lastY = 0;
-
-    profileSignatureCanvas.onmousedown = (e) => {
-        drawing = true;
-        const rect = profileSignatureCanvas.getBoundingClientRect();
-        lastX = e.clientX - rect.left;
-        lastY = e.clientY - rect.top;
-    };
-    profileSignatureCanvas.onmouseup = () => drawing = false;
-    profileSignatureCanvas.onmouseout = () => drawing = false;
-    profileSignatureCanvas.onmousemove = (e) => {
-        if (!drawing) return;
-        const rect = profileSignatureCanvas.getBoundingClientRect();
-        const x = e.clientX - rect.left;
-        const y = e.clientY - rect.top;
-        profileSignatureCtx.beginPath();
-        profileSignatureCtx.moveTo(lastX, lastY);
-        profileSignatureCtx.lineTo(x, y);
-        profileSignatureCtx.stroke();
-        lastX = x;
-        lastY = y;
-    };
-}
-
-function clearProfileSignature() {
-    if (profileSignatureCtx && profileSignatureCanvas) {
-        profileSignatureCtx.clearRect(0, 0, profileSignatureCanvas.width, profileSignatureCanvas.height);
-    }
-}
-
-function saveProfileSignature(userId) {
-    if (!profileSignatureCanvas) return;
-    const dataURL = profileSignatureCanvas.toDataURL('image/png');
-    let users = JSON.parse(localStorage.getItem('users')) || [];
-    const user = users.find(u => u.id == userId);
-    if (user) {
-        user.signatureDataURL = dataURL;
-        localStorage.setItem('users', JSON.stringify(users));
-        showAlertModal('Signature Saved', 'Your signature has been updated successfully.');
-    }
-}
-
-function setupProfileSignatureUpload(userId) {
-    const input = document.getElementById('profileSignatureUpload');
-    const status = document.getElementById('profileSignatureUploadStatus');
-    if (!input || !status) return;
-
-    input.onchange = function() {
-        if (input.files.length > 0) {
-            const reader = new FileReader();
-            reader.onload = function(ev) {
-                let users = JSON.parse(localStorage.getItem('users')) || [];
-                const user = users.find(u => u.id == userId);
-                if (user) {
-                    user.signatureDataURL = ev.target.result;
-                    localStorage.setItem('users', JSON.stringify(users));
-                    status.textContent = 'Signature image uploaded and saved.';
-                    if (profileSignatureCtx && profileSignatureCanvas) {
-                        const img = new Image();
-                        img.onload = () => {
-                            profileSignatureCtx.clearRect(0, 0, profileSignatureCanvas.width, profileSignatureCanvas.height);
-                            profileSignatureCtx.drawImage(img, 0, 0, profileSignatureCanvas.width, profileSignatureCanvas.height);
-                        };
-                        img.src = ev.target.result;
-                    }
-                }
-            };
-            reader.readAsDataURL(input.files[0]);
-        }
-    };
-}
-
-function setupProfileCertificateUpload(userId) {
-    const input = document.getElementById('profileCertificateUpload');
-    const status = document.getElementById('profileCertificateStatus');
-    if (!input || !status) return;
-
-    input.onchange = function() {
-        if (input.files.length > 0) {
-            const reader = new FileReader();
-            reader.onload = function(ev) {
-                let users = JSON.parse(localStorage.getItem('users')) || [];
-                const user = users.find(u => u.id == userId);
-                if (user) {
-                    user.certificateData = ev.target.result;
-                    user.certificateFileName = input.files[0].name;
-                    localStorage.setItem('users', JSON.stringify(users));
-                    status.textContent = 'Certificate uploaded: ' + input.files[0].name;
-                }
-            };
-            reader.readAsDataURL(input.files[0]);
-        }
-    };
-}
-
-function saveSelfProfile(userId, btn) {
-    let users = JSON.parse(localStorage.getItem('users')) || [];
-    const user = users.find(u => u.id == userId);
-    if (!user) return;
-
-    user.firstName = document.getElementById('profileFirstName').value.trim();
-    user.lastName = document.getElementById('profileLastName').value.trim();
-    user.email = document.getElementById('profileEmail').value.trim();
-    user.jobTitle = document.getElementById('profileJobTitle').value.trim();
-
-    localStorage.setItem('users', JSON.stringify(users));
-    btn.closest('dialog').close();
-    btn.closest('dialog').remove();
-    showAlertModal('Profile Updated', 'Your profile information has been saved.');
-}
-
-function switchProfileTab(btn, tab) {
-    document.querySelectorAll('.profile-tab').forEach(el => el.classList.remove('border-b-2', 'border-emerald-500', 'text-white'));
-    btn.classList.add('border-b-2', 'border-emerald-500', 'text-white');
-
-    document.getElementById('profile-tab-general').classList.add('hidden');
-    document.getElementById('profile-tab-signature').classList.add('hidden');
-    document.getElementById('profile-tab-' + tab).classList.remove('hidden');
 }
 
 // ==================== WIDEN AUDIT LOG ACTION COLUMN ====================
