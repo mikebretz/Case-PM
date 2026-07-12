@@ -21,8 +21,173 @@ SYSTEM_FOLDERS = [
     {'system_key': 'daily-logs', 'name': 'Daily Logs', 'description': 'Daily log attachments and exports (locked)'},
     {'system_key': 'safety', 'name': 'Safety', 'description': 'Safety records and OSHA reference documents (locked)'},
     {'system_key': 'meeting-minutes', 'name': 'Meeting Minutes', 'description': 'OAC, superintendent, and project meeting records (locked)'},
-    {'system_key': 'my-files', 'name': 'My Files', 'description': 'Your project uploads'},
 ]
+
+MY_FILES_LEGACY_KEY = 'my-files'
+MY_FILES_KEY_PREFIX = 'my-files'
+
+def my_files_system_key(user_id: int) -> str:
+    return f'{MY_FILES_KEY_PREFIX}-{int(user_id)}'
+
+
+def is_my_files_system_key(system_key: str | None) -> bool:
+    if not system_key:
+        return False
+    return system_key == MY_FILES_LEGACY_KEY or str(system_key).startswith(f'{MY_FILES_KEY_PREFIX}-')
+
+
+def my_files_owner_from_folder(folder) -> int | None:
+    key = getattr(folder, 'system_key', None) or ''
+    if str(key).startswith(f'{MY_FILES_KEY_PREFIX}-'):
+        try:
+            return int(str(key).rsplit('-', 1)[-1])
+        except (TypeError, ValueError):
+            return None
+    if key == MY_FILES_LEGACY_KEY:
+        return getattr(folder, 'created_by_id', None)
+    return None
+
+
+def folder_my_files_owner(db, DocumentFolder, folder_id: int | None) -> int | None:
+    if not folder_id:
+        return None
+    current = DocumentFolder.query.get(int(folder_id))
+    seen: set[int] = set()
+    while current:
+        if current.id in seen:
+            break
+        seen.add(current.id)
+        owner = my_files_owner_from_folder(current)
+        if owner is not None:
+            return int(owner)
+        if not current.parent_id:
+            break
+        current = DocumentFolder.query.get(current.parent_id)
+    return None
+
+
+def folder_is_in_my_files_tree(db, DocumentFolder, folder_id: int | None) -> bool:
+    return folder_my_files_owner(db, DocumentFolder, folder_id) is not None
+
+
+def my_files_display_name(owner_user_id: int | None, viewer_user_id: int | None, owner_name: str | None = None) -> str:
+    if owner_user_id and viewer_user_id and int(owner_user_id) == int(viewer_user_id):
+        return 'My Files'
+    label = (owner_name or '').strip() or (f'User #{owner_user_id}' if owner_user_id else 'My Files')
+    return f'My Files — {label}'
+
+
+def migrate_legacy_shared_my_files(db, DocumentFolder, project_id: int, Document=None, User=None) -> None:
+    """Move contents of the old shared my-files folder into per-user My Files roots."""
+    legacy_q = DocumentFolder.query.filter_by(
+        project_id=int(project_id),
+        system_key=MY_FILES_LEGACY_KEY,
+    )
+    if hasattr(DocumentFolder, 'deleted_at'):
+        legacy_q = legacy_q.filter(DocumentFolder.deleted_at.is_(None))
+    legacy = legacy_q.first()
+    if not legacy:
+        return
+
+    def _owner_for_folder(folder):
+        oid = getattr(folder, 'created_by_id', None)
+        return int(oid) if oid else None
+
+    child_folders = DocumentFolder.query.filter_by(
+        project_id=int(project_id),
+        parent_id=legacy.id,
+    ).all()
+    if hasattr(DocumentFolder, 'deleted_at'):
+        child_folders = [f for f in child_folders if not getattr(f, 'deleted_at', None)]
+
+    for child in child_folders:
+        owner_id = _owner_for_folder(child)
+        if not owner_id and Document is not None:
+            doc = Document.query.filter_by(folder_id=child.id, project_id=int(project_id)).first()
+            owner_id = getattr(doc, 'uploaded_by_id', None) if doc else None
+        if not owner_id:
+            continue
+        target = ensure_user_my_files_folder(db, DocumentFolder, project_id, owner_id, Document=Document, User=User)
+        child.parent_id = target.id
+        if not getattr(child, 'created_by_id', None):
+            child.created_by_id = owner_id
+
+    if Document is not None:
+        docs = Document.query.filter_by(project_id=int(project_id), folder_id=legacy.id).all()
+        if hasattr(Document, 'deleted_at'):
+            docs = [d for d in docs if not getattr(d, 'deleted_at', None)]
+        for doc in docs:
+            owner_id = getattr(doc, 'uploaded_by_id', None) or getattr(legacy, 'created_by_id', None)
+            if not owner_id:
+                continue
+            target = ensure_user_my_files_folder(db, DocumentFolder, project_id, owner_id, Document=Document, User=User)
+            doc.folder_id = target.id
+
+    if hasattr(legacy, 'deleted_at'):
+        legacy.deleted_at = datetime.utcnow()
+    db.session.commit()
+
+
+def ensure_user_my_files_folder(
+    db,
+    DocumentFolder,
+    project_id: int,
+    user_id: int,
+    Document=None,
+    User=None,
+) -> Any:
+    """Create or return this user's private My Files root for a project."""
+    ensure_system_folders(db, DocumentFolder, int(project_id), int(user_id), Document=Document)
+    key = my_files_system_key(int(user_id))
+    existing = DocumentFolder.query.filter_by(
+        project_id=int(project_id),
+        system_key=key,
+    ).first()
+    if existing:
+        return existing
+    folder = DocumentFolder(
+        project_id=int(project_id),
+        parent_id=None,
+        name='My Files',
+        is_system=True,
+        system_key=key,
+        created_by_id=int(user_id),
+        created_at=datetime.utcnow(),
+    )
+    db.session.add(folder)
+    db.session.commit()
+    return folder
+
+
+def resolve_my_files_folder(db, DocumentFolder, project_id: int, user_id: int, Document=None, User=None):
+    return ensure_user_my_files_folder(db, DocumentFolder, project_id, user_id, Document=Document, User=User)
+
+
+def list_my_files_owners(db, DocumentFolder, project_id: int, User=None) -> list[dict[str, Any]]:
+    rows = DocumentFolder.query.filter(
+        DocumentFolder.project_id == int(project_id),
+        DocumentFolder.system_key.like(f'{MY_FILES_KEY_PREFIX}-%'),
+    ).all()
+    if hasattr(DocumentFolder, 'deleted_at'):
+        rows = [r for r in rows if not getattr(r, 'deleted_at', None)]
+    owners: list[dict[str, Any]] = []
+    seen: set[int] = set()
+    for row in rows:
+        owner_id = my_files_owner_from_folder(row)
+        if not owner_id or owner_id in seen:
+            continue
+        seen.add(owner_id)
+        name = ''
+        email = ''
+        if User is not None:
+            u = User.query.get(owner_id)
+            if u:
+                name = getattr(u, 'full_name', None) or f'{getattr(u, "first_name", "")} {getattr(u, "last_name", "")}'.strip()
+                email = getattr(u, 'email', '') or ''
+        owners.append({'id': owner_id, 'name': name or f'User #{owner_id}', 'email': email, 'folder_id': row.id})
+    owners.sort(key=lambda x: (x.get('name') or '').lower())
+    return owners
+
 
 SYSTEM_SUBFOLDERS = [
     {'system_key': 'drawing-sets', 'name': 'Drawing Sets', 'parent_key': 'drawings', 'description': 'Full drawing sheets exported for sharing'},
@@ -368,14 +533,27 @@ def verify_share_password(password_hash: str | None, password: str | None) -> bo
     return check_password_hash(password_hash, str(password).strip())
 
 
-def folder_to_dict(folder, child_count: int = 0, file_count: int = 0, preview_thumbs: list | None = None) -> dict[str, Any]:
+def folder_to_dict(
+    folder,
+    child_count: int = 0,
+    file_count: int = 0,
+    preview_thumbs: list | None = None,
+    viewer_user_id: int | None = None,
+    owner_name: str | None = None,
+) -> dict[str, Any]:
+    owner_user_id = my_files_owner_from_folder(folder)
+    display_name = folder.name
+    if owner_user_id is not None and is_my_files_system_key(getattr(folder, 'system_key', None)):
+        display_name = my_files_display_name(owner_user_id, viewer_user_id, owner_name)
     return {
         'id': folder.id,
         'project_id': folder.project_id,
         'parent_id': folder.parent_id,
-        'name': folder.name,
+        'name': display_name,
+        'raw_name': folder.name,
         'is_system': bool(folder.is_system),
         'system_key': folder.system_key,
+        'owner_user_id': owner_user_id,
         'can_delete': not folder.is_system,
         'can_rename': not folder.is_system,
         'child_count': child_count,
@@ -669,19 +847,19 @@ def ensure_system_folders(db, DocumentFolder, project_id: int, user_id: int | No
         db.session.add(folder)
     db.session.commit()
 
-    if Document is not None:
-        my_files = DocumentFolder.query.filter_by(
-            project_id=int(project_id),
-            system_key='my-files',
-        ).first()
-        if my_files:
-            orphans = Document.query.filter_by(project_id=int(project_id), folder_id=None).filter(
-                Document.deleted_at.is_(None) if hasattr(Document, 'deleted_at') else True,
-            ).all()
+    if Document is not None and user_id:
+        orphans = Document.query.filter_by(project_id=int(project_id), folder_id=None).filter(
+            Document.deleted_at.is_(None) if hasattr(Document, 'deleted_at') else True,
+        ).all()
+        if orphans:
             for doc in orphans:
-                doc.folder_id = my_files.id
-            if orphans:
-                db.session.commit()
+                owner_id = getattr(doc, 'uploaded_by_id', None) or int(user_id)
+                target = ensure_user_my_files_folder(
+                    db, DocumentFolder, int(project_id), int(owner_id), Document=Document,
+                )
+                doc.folder_id = target.id
+            db.session.commit()
+    migrate_legacy_shared_my_files(db, DocumentFolder, int(project_id), Document=Document)
 
 
 def get_or_create_child_folder(db, DocumentFolder, project_id: int, parent_id: int, name: str, user_id: int | None = None):
