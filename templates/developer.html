@@ -63,17 +63,22 @@
     <div id="dev-tab-content-overview">
         <div class="dev-card border-amber-900/40">
             <h2 class="font-semibold text-lg text-amber-300 mb-2"><i class="fa-solid fa-shield-halved mr-2"></i>Recovery Access (Owner Backdoor)</h2>
-            <p class="text-sm text-zinc-400 mb-3">If normal sign-in is broken, locked out, or ransomware hits — use the <strong class="text-zinc-300">separate recovery entry</strong>. It is not shown on the normal login page.</p>
+            <p class="text-sm text-zinc-400 mb-3">Break-glass entry is separate from normal sign-in. Recovery credential details are visible only to the recovery operator account.</p>
             <div class="text-sm font-mono bg-zinc-950 border border-zinc-800 rounded-lg p-3 space-y-2">
                 <div>Status: <span class="{{ 'text-emerald-400' if recovery_status.configured else 'text-amber-400' }}">{{ 'Configured' if recovery_status.configured else 'Not configured — run SETUP-RECOVERY-ACCESS.bat' }}</span></div>
-                <div>Recovery email: <span class="text-emerald-400">{{ recovery_email }}</span></div>
+                {% if show_recovery_details %}
+                <div>Recovery email: <span class="text-emerald-400">{{ recovery_status.email }}</span></div>
                 <div>Credentials file: <span class="text-zinc-300">{{ recovery_status.access_file }}</span> (local PC only, never in git)</div>
                 <div class="text-xs text-zinc-500 mt-2 space-y-1">
                     <div><strong class="text-zinc-400">First time:</strong> double-click <code class="text-amber-300/90">SETUP-RECOVERY-ACCESS.bat</code> and set your private email + password.</div>
                     <div><strong class="text-zinc-400">Anytime locked out:</strong> double-click <code class="text-amber-300/90">RECOVERY-ACCESS.bat</code> — opens <code class="text-amber-300/90">/recovery</code> with one-click owner access.</div>
                     <div><strong class="text-zinc-400">Manual URL:</strong> <code class="text-amber-300/90">http://127.0.0.1:5000/recovery</code> (bookmark on your PC only).</div>
-                    <div>Back up <code class="text-amber-300/90">instance/recovery.access</code> off-site (USB / personal OneDrive). Without it, use env vars <code class="text-zinc-400">CASEPM_RECOVERY_EMAIL</code> / <code class="text-zinc-400">CASEPM_RECOVERY_PASSWORD</code>.</div>
+                    <div>Back up <code class="text-amber-300/90">instance/recovery.access</code> off-site (USB / personal OneDrive).</div>
                 </div>
+                {% else %}
+                <div>Recovery email: <span class="text-zinc-400">{{ recovery_status.email_masked or 'Hidden — sign in with recovery credentials to view' }}</span></div>
+                <p class="text-xs text-zinc-500 mt-2">Only the recovery operator (the account configured in <code class="text-amber-300/90">instance/recovery.access</code>) can view recovery email and file paths. Admins and other users cannot see this information.</p>
+                {% endif %}
             </div>
         </div>
 

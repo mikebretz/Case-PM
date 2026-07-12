@@ -11,6 +11,44 @@ from werkzeug.security import generate_password_hash
 from permissions_catalog import permissions_from_role
 from user_permissions_persistence import save_user_permissions
 
+DEVELOPER_ROLE = 'Developer'
+
+
+def _actor_can_see_developer_users(actor) -> bool:
+    try:
+        from developer_tools import is_developer
+        return is_developer(actor)
+    except Exception:
+        return False
+
+
+def _validate_role_change(actor, role: str | None, existing_role: str | None = None):
+    role = (role or '').strip()
+    if role == DEVELOPER_ROLE:
+        try:
+            from developer_tools import can_assign_developer_role
+            if not can_assign_developer_role(actor):
+                raise ValueError('Only a developer can assign the Developer role.')
+        except ValueError:
+            raise
+        except Exception:
+            raise ValueError('Only a developer can assign the Developer role.')
+    if existing_role == DEVELOPER_ROLE and role and role != DEVELOPER_ROLE:
+        try:
+            from developer_tools import can_assign_developer_role
+            if not can_assign_developer_role(actor):
+                raise ValueError('Only a developer can change a Developer account.')
+        except ValueError:
+            raise
+        except Exception:
+            raise ValueError('Only a developer can change a Developer account.')
+
+
+def filter_users_for_actor(users, actor):
+    if _actor_can_see_developer_users(actor):
+        return users
+    return [u for u in users if (getattr(u, 'role', None) or '') != DEVELOPER_ROLE]
+
 
 def ensure_user_admin_schema(db):
     from sqlalchemy import inspect, text
@@ -55,7 +93,10 @@ def _phones_to_json(phones: list | None) -> str | None:
     return json.dumps(cleaned) if cleaned else None
 
 
-def serialize_user(user, *, include_permissions: bool = False) -> dict:
+def serialize_user(user, *, include_permissions: bool = False, actor=None) -> dict:
+    role = user.role or 'Viewer'
+    if actor and not _actor_can_see_developer_users(actor) and role == DEVELOPER_ROLE:
+        return None
     phones = _parse_phones(user)
     access_enabled = getattr(user, 'access_enabled', None)
     if access_enabled is None:
@@ -108,7 +149,7 @@ def generate_temp_password(length: int = 14) -> str:
             return pwd
 
 
-def create_user(db, User, Company, body: dict, *, actor_id: int | None = None) -> tuple[object, str | None]:
+def create_user(db, User, Company, body: dict, *, actor_id: int | None = None, actor=None) -> tuple[object, str | None]:
     """Create user. Returns (user, temp_password_if_set)."""
     first = (body.get('firstName') or body.get('first_name') or '').strip()
     last = (body.get('lastName') or body.get('last_name') or '').strip()
@@ -121,6 +162,7 @@ def create_user(db, User, Company, body: dict, *, actor_id: int | None = None) -
         raise ValueError('A user with this email already exists.')
 
     role = body.get('role') or 'Viewer'
+    _validate_role_change(actor, role)
     access_enabled = body.get('accessEnabled', True)
     status = body.get('status') or ('Active' if access_enabled else 'Inactive')
     if not access_enabled:
@@ -167,7 +209,9 @@ def create_user(db, User, Company, body: dict, *, actor_id: int | None = None) -
     return user, generated
 
 
-def update_user(db, User, Company, user, body: dict) -> object:
+def update_user(db, User, Company, user, body: dict, *, actor=None) -> object:
+    if 'role' in body and body['role']:
+        _validate_role_change(actor, body['role'], getattr(user, 'role', None))
     if 'firstName' in body or 'first_name' in body:
         user.first_name = (body.get('firstName') or body.get('first_name') or user.first_name).strip()
     if 'lastName' in body or 'last_name' in body:

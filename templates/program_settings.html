@@ -49,6 +49,8 @@
                 class="settings-tab-btn">Backup & Maintenance</button>
         <button onclick="switchSettingsTab('email')" id="tab-email"
                 class="settings-tab-btn">Email Settings</button>
+        <button onclick="switchSettingsTab('security')" id="tab-security"
+                class="settings-tab-btn">Security</button>
         <button onclick="switchSettingsTab('sage')" id="tab-sage"
                 class="settings-tab-btn">Sage 300</button>
     </div>
@@ -389,7 +391,57 @@
                 </label>
             </div>
             <p class="text-xs text-zinc-500 mt-3">You will be signed out after installing so the restored database loads cleanly.</p>
-            <p class="text-xs text-zinc-500 mt-2">To wipe all program data and start fresh, use <a href="{{ url_for('developer_console') }}?tab=tools" class="text-emerald-400 hover:underline">Developer Console → Maintenance → Clear All Program Data</a>.</p>
+            <p class="text-xs text-zinc-500 mt-2">{% if is_developer %}To wipe all program data and start fresh, use <a href="{{ url_for('developer_console') }}?tab=tools" class="text-emerald-400 hover:underline">Developer Console → Maintenance → Clear All Program Data</a>.{% else %}Full program data wipe is available only in the Developer Console (developer personnel only).{% endif %}</p>
+        </div>
+    </div>
+
+    <!-- Security Tab -->
+    <div id="tab-content-security" class="hidden">
+        <div class="settings-panel">
+            <h2 class="text-xl font-semibold mb-2">Security &amp; Session Policy</h2>
+            <p class="text-sm text-zinc-500 mb-6">Control automatic logout for inactive users and login lockout policy. Developer Console and recovery access remain separate from these admin settings.</p>
+            <form id="securitySettingsForm" onsubmit="saveSecuritySettings(event)">
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                    <div>
+                        <label class="block text-sm text-zinc-400 mb-1.5">Session timeout (minutes)</label>
+                        <input type="number" id="session_timeout_minutes" min="0" max="480" step="5"
+                               value="{{ security_settings.get('session_timeout_minutes', 60) }}"
+                               class="settings-input">
+                        <p class="text-xs text-zinc-500 mt-1">0 = no automatic logout. Recommended: 30–120 for office use.</p>
+                    </div>
+                    <div>
+                        <label class="block text-sm text-zinc-400 mb-1.5">Warn before logout (minutes)</label>
+                        <input type="number" id="warn_before_logout_minutes" min="1" max="30"
+                               value="{{ security_settings.get('warn_before_logout_minutes', 5) }}"
+                               class="settings-input">
+                        <p class="text-xs text-zinc-500 mt-1">Browser warning shown before idle timeout (when enabled).</p>
+                    </div>
+                    <div>
+                        <label class="block text-sm text-zinc-400 mb-1.5">Max failed logins before lockout</label>
+                        <input type="number" id="max_login_attempts" min="3" max="20"
+                               value="{{ security_settings.get('max_login_attempts', 8) }}"
+                               class="settings-input">
+                    </div>
+                    <div>
+                        <label class="block text-sm text-zinc-400 mb-1.5">Lockout duration (minutes)</label>
+                        <input type="number" id="lockout_minutes" min="5" max="120"
+                               value="{{ security_settings.get('lockout_minutes', 15) }}"
+                               class="settings-input">
+                    </div>
+                    <div class="md:col-span-2">
+                        <label class="flex items-center gap-2 text-sm text-zinc-300">
+                            <input type="checkbox" id="require_strong_passwords" class="accent-emerald-600"
+                                   {{ 'checked' if security_settings.get('require_strong_passwords', True) else '' }}>
+                            Require strong passwords on user create / reset
+                        </label>
+                    </div>
+                </div>
+                <div class="mt-6 flex justify-end">
+                    <button type="submit" class="settings-btn settings-btn-primary">
+                        <i class="fa-solid fa-shield-halved"></i><span>Save Security Settings</span>
+                    </button>
+                </div>
+            </form>
         </div>
     </div>
 
@@ -538,6 +590,11 @@
         if (tab === 'backup' && window.CasePMProgramSettings) CasePMProgramSettings.loadBackupForm();
         if (tab === 'numbering' && window.CasePMProgramSettings) CasePMProgramSettings.loadNumberingForm();
         if (tab === 'payapps' && window.CasePMProgramSettings) CasePMProgramSettings.loadPayAppsForm();
+        if (tab === 'security' && window.CasePMProgramSettings) CasePMProgramSettings.loadSecurityForm();
+    }
+
+    async function saveSecuritySettings(e) {
+        if (window.CasePMProgramSettings) await CasePMProgramSettings.saveSecurityForm(e);
     }
 
     async function saveNumberingSettings(e) {

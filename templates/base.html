@@ -855,6 +855,28 @@
         });
     })();
     </script>
+    <script>
+    (function () {
+        const timeoutMin = {{ security_settings.get('session_timeout_minutes', 60)|int }};
+        const warnMin = {{ security_settings.get('warn_before_logout_minutes', 5)|int }};
+        if (!timeoutMin || timeoutMin <= 0) return;
+        let lastActivity = Date.now();
+        let warned = false;
+        const bump = () => { lastActivity = Date.now(); warned = false; };
+        ['click', 'keydown', 'mousemove', 'scroll', 'touchstart'].forEach(ev => {
+            document.addEventListener(ev, bump, { passive: true });
+        });
+        setInterval(() => {
+            const idleMin = (Date.now() - lastActivity) / 60000;
+            if (idleMin >= timeoutMin - warnMin && !warned) {
+                warned = true;
+                if (typeof CasePMDialog !== 'undefined') {
+                    CasePMDialog.alert('You will be signed out soon due to inactivity. Move the mouse or press a key to stay signed in.', 'warning');
+                }
+            }
+        }, 30000);
+    })();
+    </script>
     {% endif %}
     <!-- ==================== FINAL ENHANCEMENTS & VERIFICATION ==================== -->
     <script>

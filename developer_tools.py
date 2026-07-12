@@ -106,13 +106,21 @@ def ensure_recovery_user(db, User):
     return user
 
 
-def recovery_status_for_ui():
-    """Summary for developer console (never exposes password)."""
+def recovery_status_for_ui(*, include_sensitive=False):
+    """Summary for developer console. Email only when include_sensitive=True (recovery operator)."""
     configured = recovery_access_configured()
+    email = recovery_email() if include_sensitive else ''
+    masked = ''
+    if configured and not include_sensitive:
+        raw = recovery_email()
+        if raw and '@' in raw:
+            local, domain = raw.split('@', 1)
+            masked = (local[:1] + '***@' + domain) if local else '***'
     return {
         'configured': configured,
-        'email': recovery_email(),
-        'access_file': RECOVERY_ACCESS_FILE,
+        'email': email,
+        'email_masked': masked or ('Configured (recovery operator only)' if configured else ''),
+        'access_file': RECOVERY_ACCESS_FILE if include_sensitive else '',
         'has_token': bool(recovery_access_token()),
         'source': 'recovery.access' if configured else (
             'environment' if os.environ.get('CASEPM_RECOVERY_EMAIL') or os.environ.get('CASEPM_RECOVERY_PASSWORD')
@@ -122,19 +130,37 @@ def recovery_status_for_ui():
 
 
 def developer_emails():
-    raw = os.environ.get('CASEPM_DEVELOPER_EMAILS', 'michael.bretz@casepm.com,admin@casepm.local')
-    emails = {e.strip().lower() for e in raw.split(',') if e.strip()}
-    emails.add(recovery_email())
-    return emails
+    """Explicit developer allowlist from environment only — never includes Admin by default."""
+    raw = os.environ.get('CASEPM_DEVELOPER_EMAILS', '') or ''
+    return {e.strip().lower() for e in raw.split(',') if e.strip()}
 
 
 def is_developer(user):
+    """Developer Console access — Developer role or explicit CASEPM_DEVELOPER_EMAILS allowlist."""
     if not user:
         return False
     if getattr(user, 'role', None) == 'Developer':
         return True
     email = (getattr(user, 'email', None) or '').lower()
     return email in developer_emails()
+
+
+def is_recovery_operator(user):
+    """Break-glass / recovery credential holder — may view recovery email and secrets metadata."""
+    if not user:
+        return False
+    email = (getattr(user, 'email', None) or '').lower()
+    return email == recovery_email()
+
+
+def can_assign_developer_role(actor):
+    """Only existing developers may grant Developer role to another user."""
+    return is_developer(actor)
+
+
+def can_view_recovery_details(user):
+    """Recovery email and credential file details — recovery operators only, not regular admins."""
+    return is_recovery_operator(user)
 
 
 def is_admin_or_developer(user):

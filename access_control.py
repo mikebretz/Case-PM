@@ -11,6 +11,8 @@ from threading import Lock
 
 from flask import jsonify, request, session
 
+SESSION_ACTIVITY_KEY = 'casepm_last_activity'
+
 FINANCIAL_MODULES = frozenset({
     'budget', 'forecast', 'commitments', 'pay_applications',
 })
@@ -82,6 +84,18 @@ LOGIN_WINDOW_SECONDS = 900
 LOGIN_LOCKOUT_SECONDS = 900
 
 
+def _login_limits():
+    try:
+        from program_settings_persistence import load_security_settings
+        sec = load_security_settings()
+        return (
+            int(sec.get('max_login_attempts') or MAX_LOGIN_ATTEMPTS),
+            int(sec.get('lockout_minutes') or 15) * 60,
+        )
+    except Exception:
+        return MAX_LOGIN_ATTEMPTS, LOGIN_LOCKOUT_SECONDS
+
+
 def configure_app_security(app):
     """Apply production-oriented Flask session and cookie settings."""
     secret = os.environ.get('CASEPM_SECRET_KEY') or os.environ.get('SECRET_KEY')
@@ -104,15 +118,16 @@ def _client_key(email: str) -> str:
 
 def check_login_allowed(email: str) -> tuple[bool, int]:
     """Return (allowed, seconds_until_retry)."""
+    max_attempts, lockout_seconds = _login_limits()
     key = _client_key(email)
     now = time.time()
     with _login_lock:
         attempts = _login_attempts.get(key, [])
         attempts = [t for t in attempts if now - t < LOGIN_WINDOW_SECONDS]
         _login_attempts[key] = attempts
-        if len(attempts) >= MAX_LOGIN_ATTEMPTS:
+        if len(attempts) >= max_attempts:
             oldest = min(attempts)
-            retry = int(LOGIN_LOCKOUT_SECONDS - (now - oldest))
+            retry = int(lockout_seconds - (now - oldest))
             return False, max(retry, 1)
     return True, 0
 
@@ -232,10 +247,41 @@ def guard_api_request(current_user):
 
 
 def users_module_admin(user) -> bool:
-    if user_is_privileged(user):
+    if getattr(user, 'role', None) == 'Admin':
         return True
     try:
         from case_workflow import user_has_module_access
         return user_has_module_access(user, 'users', 'admin')
     except Exception:
         return False
+
+
+def enforce_session_idle_timeout(current_user, endpoint: str | None):
+    """
+    Log out authenticated users after configured inactivity.
+    Returns (should_logout, timeout_minutes).
+    """
+    if not getattr(current_user, 'is_authenticated', False):
+        return False, 0
+    skip = {
+        'login', 'logout', 'recovery_login', 'recovery_enter', 'force_change_password',
+        'static', 'favicon',
+    }
+    if endpoint in skip:
+        return False, 0
+    try:
+        from program_settings_persistence import load_security_settings
+        timeout_min = int(load_security_settings().get('session_timeout_minutes') or 0)
+    except Exception:
+        timeout_min = 0
+    now = time.time()
+    if timeout_min <= 0:
+        session[SESSION_ACTIVITY_KEY] = now
+        session.modified = True
+        return False, 0
+    last = session.get(SESSION_ACTIVITY_KEY)
+    if last is not None and now - float(last) > timeout_min * 60:
+        return True, timeout_min
+    session[SESSION_ACTIVITY_KEY] = now
+    session.modified = True
+    return False, timeout_min
