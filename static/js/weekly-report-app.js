@@ -55,7 +55,7 @@
     ] },
   ];
 
-  const state = { reports: [], stats: {}, editingId: null };
+  const state = { reports: [], stats: {}, editingId: null, viewingReport: null };
 
   function projectId() {
     return ctx.projectId || (function () { try { return parseInt(localStorage.getItem('casepm_current_project_id'), 10) || null; } catch (_) { return null; } })();
@@ -312,6 +312,120 @@
     finally { btn.disabled = false; btn.textContent = 'Save Weekly Log'; }
   }
 
+  // ---------- Print ----------
+  const WLOG_PRINT_COLUMNS = [
+    { key: 'period', label: 'Period', width: '18%' },
+    { key: 'type', label: 'Type', width: '8%', align: 'center' },
+    { key: 'workers', label: 'Man-Days', width: '8%', align: 'center' },
+    { key: 'hours', label: 'Hours', width: '8%', align: 'center' },
+    { key: 'work', label: 'Work<br>Performed', width: '40%' },
+    { key: 'status', label: 'Status', width: '8%', align: 'center' },
+  ];
+
+  function getPrintMeta() {
+    const nameEl = document.getElementById('currentProjectName');
+    return {
+      name: ctx.projectName || (nameEl?.textContent || '').trim() || 'Project',
+      number: projectId() || '',
+      location: '',
+    };
+  }
+
+  function reportRegisterRow(r) {
+    return {
+      period: periodLabel(r),
+      type: r.period_type || 'weekly',
+      workers: r.total_workers ?? '—',
+      hours: r.total_hours ?? '—',
+      work: (r.work_performed || '—').split('\n')[0],
+      status: r.status || 'Draft',
+    };
+  }
+
+  async function triggerWeeklyPrint(html) {
+    if (global.CasePMOutput) {
+      await global.CasePMOutput.deliverHtml({
+        title: 'Weekly Log',
+        html,
+        filenameBase: `Weekly_Log_${projectId() || 'project'}`,
+        sourceModule: 'weekly_log',
+        systemFolderKey: 'weekly-logs',
+        subfolder: 'Exports',
+        printOptions: { bodyHtml: html, containerId: 'wlogPrintSheet', bodyClass: 'printing-weekly-log' },
+      });
+      return;
+    }
+    global.CasePMPrint.triggerPrintPreview(html, { containerId: 'wlogPrintSheet', bodyClass: 'printing-weekly-log' });
+  }
+
+  async function printLog() {
+    if (typeof global.CasePMPrint === 'undefined') {
+      alert('Print module not loaded.');
+      return;
+    }
+    const rows = filtered().map(reportRegisterRow);
+    const html = global.CasePMPrint.buildPrintDocument({
+      meta: getPrintMeta(),
+      sections: [{ title: 'WEEKLY LOG REGISTER', columns: WLOG_PRINT_COLUMNS, rows, emptyMessage: 'No weekly logs to print.' }],
+      rowsPerPage: 24,
+    });
+    await triggerWeeklyPrint(html);
+  }
+
+  function buildWeeklyReportBody(r) {
+    const d = r.details || {};
+    const block = (title, rows, render) => (rows && rows.length)
+      ? `<div><h3>${esc(title)}</h3>${rows.map(render).join('')}</div>` : '';
+    return `
+      <div class="casepm-log-meta">
+        <span><strong>Status:</strong> ${esc(r.status || 'Draft')}</span>
+        <span><strong>Period:</strong> ${esc(periodLabel(r))}</span>
+        <span><strong>Type:</strong> ${esc(r.period_type || 'weekly')}</span>
+        <span><strong>Man-days:</strong> ${r.total_workers || 0}</span>
+        <span><strong>Hours:</strong> ${r.total_hours || 0}</span>
+        ${r.author ? `<span><strong>By:</strong> ${esc(r.author)}</span>` : ''}
+      </div>
+      <div><h3>Summary</h3><div class="casepm-log-block">${esc(r.work_performed || '—')}</div></div>
+      ${r.safety_notes ? `<div><h3>Safety</h3><div class="casepm-log-block">${esc(r.safety_notes)}</div></div>` : ''}
+      ${r.notes ? `<div><h3>Notes</h3><div class="casepm-log-block">${esc(r.notes)}</div></div>` : ''}
+      ${block('Manpower', d.manpower, (m) => `<div class="casepm-log-line">• ${esc(m.company || '—')} — ${m.days || 0} days · ${m.workers || 0} man-days · ${m.hours || 0} hrs</div>`)}
+      ${block('Equipment', d.equipment, (e) => `<div class="casepm-log-line">• ${esc(e.equipment_name)} ${e.days ? '· ' + esc(e.days) + ' days' : ''} ${e.notes ? '· ' + esc(e.notes) : ''}</div>`)}
+      ${block('Deliveries', d.deliveries, (x) => `<div class="casepm-log-line">• ${esc(x.item)} ${x.supplier ? 'from ' + esc(x.supplier) : ''} ${x.quantity ? '· ' + esc(x.quantity) : ''}</div>`)}
+      ${block('Delays', d.delays, (x) => `<div class="casepm-log-line">• [${esc(x.type)}] ${esc(x.description)} ${x.hours_lost ? '· ' + esc(x.hours_lost) + 'h' : ''}</div>`)}
+      ${block('Visitors', d.visitors, (x) => `<div class="casepm-log-line">• ${esc(x.name)} ${x.company ? '(' + esc(x.company) + ')' : ''} ${x.purpose ? '· ' + esc(x.purpose) : ''}</div>`)}
+      ${block('Safety', d.safety, (x) => `<div class="casepm-log-line">• [${esc(x.type)}] ${esc(x.description)} ${x.action ? '→ ' + esc(x.action) : ''}</div>`)}
+      ${block('Inspections', d.inspections, (x) => `<div class="casepm-log-line">• ${esc(x.type)} ${x.agency ? '(' + esc(x.agency) + ')' : ''} — ${esc(x.result || '')}</div>`)}
+      ${block('Daily Summaries', d.daily_summaries, (x) => `<div class="casepm-log-line">• <span style="color:#555">${esc(x.date)}</span> ${esc(x.work)}</div>`)}
+    `;
+  }
+
+  async function printDetail() {
+    if (!state.viewingReport) return;
+    if (typeof global.CasePMPrint === 'undefined') {
+      alert('Print module not loaded.');
+      return;
+    }
+    const meta = getPrintMeta();
+    const printedOn = new Date().toLocaleDateString(undefined, { month: 'numeric', day: 'numeric', year: 'numeric' });
+    const title = `WEEKLY LOG — ${periodLabel(state.viewingReport)}`;
+    const html = `<div class="casepm-print-page">
+      <div class="casepm-print-header">
+        <div><div class="casepm-print-title">${esc(title)}</div></div>
+        <div class="casepm-print-meta">
+          ${meta.number ? `<div><span class="label">PROJECT ID</span><br>${esc(meta.number)}</div>` : ''}
+          ${meta.name ? `<div style="margin-top:4px"><span class="label">PROJECT NAME</span><br>${esc(meta.name)}</div>` : ''}
+        </div>
+      </div>
+      <div class="casepm-log-report">${buildWeeklyReportBody(state.viewingReport)}</div>
+      <div class="casepm-print-footer">
+        <span>Confidential</span>
+        <span class="center">${esc(printedOn)}</span>
+        <span class="right">Page 1</span>
+      </div>
+    </div>`;
+    await triggerWeeklyPrint(html);
+  }
+
   // ---------- Detail ----------
   async function openDetail(id) {
     try {
@@ -319,6 +433,7 @@
       const json = await res.json();
       if (!res.ok) throw new Error(json.error || 'Failed');
       const r = json.report; const d = r.details || {};
+      state.viewingReport = r;
       el('wlogDetailTitle').textContent = `Weekly Log — ${periodLabel(r)}`;
       const block = (title, rows, render) => (rows && rows.length) ? `<div><div class="text-xs uppercase tracking-wide text-zinc-500 mb-1">${title}</div>${rows.map(render).join('')}</div>` : '';
       el('wlogDetailBody').innerHTML = `
@@ -341,12 +456,14 @@
         ${block('Daily Summaries', d.daily_summaries, (x) => `<div class="text-sm">• <span class="text-zinc-500">${esc(x.date)}</span> ${esc(x.work)}</div>`)}
       `;
       el('wlogDetailEdit').onclick = () => openEdit(id);
+      el('wlogDetailPrint').onclick = () => printDetail();
       el('wlogDetailModal').showModal();
     } catch (e) { alert(e.message); }
   }
 
   function bind() {
     el('wlogBtnNew').addEventListener('click', openCreate);
+    el('wlogBtnPrint')?.addEventListener('click', printLog);
     el('wlogBtnRefresh')?.addEventListener('click', loadList);
     el('wlogModalClose').addEventListener('click', () => el('wlogModal').close());
     el('wlogCancel').addEventListener('click', () => el('wlogModal').close());
@@ -362,7 +479,7 @@
 
   function init() { buildSectionsHost(); bind(); loadList(); }
 
-  global.CasePMWeekly = { refresh: loadList, openCreate };
+  global.CasePMWeekly = { refresh: loadList, openCreate, printLog, printDetail };
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', init);
   else init();
 })(window);

@@ -132,7 +132,9 @@
         body.casepm-printing,
         body.printing-submittal-log,
         body.printing-co-log,
-        body.printing-rfi-log {
+        body.printing-rfi-log,
+        body.printing-daily-log,
+        body.printing-weekly-log {
           background: #fff !important;
           -webkit-print-color-adjust: exact;
           print-color-adjust: exact;
@@ -171,14 +173,33 @@
         body.printing-rfi-log #appShell > .flex.flex-1 > div.h-10,
         body.printing-rfi-log .rfi-page > *:not(#rfiPrintSheet),
         body.printing-rfi-log #rfiDetailDrawer,
-        body.printing-rfi-log .no-print {
+        body.printing-rfi-log .no-print,
+        body.printing-daily-log #appShell > #appHeaderBar,
+        body.printing-daily-log #appSidebar,
+        body.printing-daily-log #appFooterBar,
+        body.printing-daily-log #appShell > .flex.flex-1 > div.h-10,
+        body.printing-daily-log .dlog-page > *:not(#dlogPrintSheet),
+        body.printing-daily-log #dlogModal,
+        body.printing-daily-log #dlogDetailModal,
+        body.printing-daily-log #dlogCameraModal,
+        body.printing-daily-log .no-print,
+        body.printing-weekly-log #appShell > #appHeaderBar,
+        body.printing-weekly-log #appSidebar,
+        body.printing-weekly-log #appFooterBar,
+        body.printing-weekly-log #appShell > .flex.flex-1 > div.h-10,
+        body.printing-weekly-log .wlog-page > *:not(#wlogPrintSheet),
+        body.printing-weekly-log #wlogModal,
+        body.printing-weekly-log #wlogDetailModal,
+        body.printing-weekly-log .no-print {
           display: none !important;
         }
         body.${cls} #mainContent,
         body.casepm-printing #mainContent,
         body.printing-submittal-log #mainContent,
         body.printing-co-log #mainContent,
-        body.printing-rfi-log #mainContent {
+        body.printing-rfi-log #mainContent,
+        body.printing-daily-log #mainContent,
+        body.printing-weekly-log #mainContent {
           padding: 0 !important;
           overflow: visible !important;
           display: block !important;
@@ -191,7 +212,9 @@
         body.casepm-printing #coPrintSheet,
         body.printing-submittal-log #submittalPrintSheet,
         body.printing-co-log #coPrintSheet,
-        body.printing-rfi-log #rfiPrintSheet {
+        body.printing-rfi-log #rfiPrintSheet,
+        body.printing-daily-log #dlogPrintSheet,
+        body.printing-weekly-log #wlogPrintSheet {
           display: block !important;
           background: #fff !important;
           color: #111 !important;
@@ -287,6 +310,18 @@
           margin: 12px 0 6px;
           color: #111;
         }
+        .casepm-log-report { font-size: 9pt; line-height: 1.45; color: #111; }
+        .casepm-log-report h3 {
+          font-size: 8pt;
+          text-transform: uppercase;
+          letter-spacing: 0.04em;
+          color: #555;
+          margin: 12px 0 4px;
+          font-weight: 700;
+        }
+        .casepm-log-report .casepm-log-line { margin: 2px 0; }
+        .casepm-log-report .casepm-log-meta { display: flex; flex-wrap: wrap; gap: 12px; margin-bottom: 10px; font-size: 8.5pt; color: #333; }
+        .casepm-log-report .casepm-log-block { margin-bottom: 8px; white-space: pre-wrap; }
       }
     `;
     document.head.appendChild(style);

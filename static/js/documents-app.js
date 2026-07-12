@@ -1459,11 +1459,6 @@
     createFolder(null, 'New main folder name');
   }
 
-  function updateProjectLabel() {
-    const el = document.getElementById('docsProjectName');
-    if (el) el.textContent = projectName();
-  }
-
   function bindUi() {
     applyIconSize(localStorage.getItem('casepm_docs_icon_size') || 'md');
     document.getElementById('docsIconSize')?.addEventListener('change', (e) => applyIconSize(e.target.value));
@@ -1610,7 +1605,6 @@
   }
 
   async function reloadForProject() {
-    updateProjectLabel();
     state.folderId = null;
     state.expandedFolders = new Set();
     state.selected = null;

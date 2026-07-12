@@ -61,8 +61,6 @@
       state.users = j.users || [];
       state.reminderOptions = j.reminder_options || [];
       ctx.scheduleUrl = j.schedule_url || ctx.scheduleUrl;
-      const badge = el('piProjectBadge');
-      if (badge) badge.textContent = ctx.projectName || 'Select a project';
       populateFilters();
       renderReminderOptions();
       populateNotifyUsers();
