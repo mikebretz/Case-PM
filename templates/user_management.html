@@ -199,7 +199,13 @@
                                 <option value="Contractor Accounting">Contractor Accounting</option>
                                 <option value="Company User" selected>Company User</option>
                                 <option value="Viewer">Viewer</option>
+                                {% if can_assign_developer_role %}
+                                <option value="Developer">Developer</option>
+                                {% endif %}
                             </select>
+                            {% if not can_assign_developer_role %}
+                            <p class="text-[10px] text-zinc-500 mt-1">Developer role can only be assigned by an existing developer.</p>
+                            {% endif %}
                         </div>
 
                         <!-- Company Dropdown (connected to Companies page) -->
@@ -391,6 +397,7 @@
     const CASEPM_SERVER_USERS = {{ server_users_for_js|tojson }};
     const CASEPM_PERMISSIONS_CATALOG = {{ permissions_catalog|tojson }};
     const CASEPM_IS_ADMIN = true;
+    const CASEPM_CAN_ASSIGN_DEVELOPER = {{ can_assign_developer_role|tojson }};
     let currentUserEmail = CASEPM_CURRENT_USER.email || "";
 
     function resolveServerUserId(localUser) {

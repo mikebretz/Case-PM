@@ -575,6 +575,34 @@
     }
   }
 
+  async function loadSecurityForm() {
+    const { security: s } = await api('/api/program-settings/security');
+    const set = (id, val) => { const el = document.getElementById(id); if (el && val != null) el.value = val; };
+    const setChk = (id, val) => { const el = document.getElementById(id); if (el) el.checked = !!val; };
+    set('session_timeout_minutes', s.session_timeout_minutes);
+    set('warn_before_logout_minutes', s.warn_before_logout_minutes);
+    set('max_login_attempts', s.max_login_attempts);
+    set('lockout_minutes', s.lockout_minutes);
+    setChk('require_strong_passwords', s.require_strong_passwords);
+  }
+
+  async function saveSecurityForm(e) {
+    if (e) e.preventDefault();
+    const payload = {
+      session_timeout_minutes: parseInt(document.getElementById('session_timeout_minutes')?.value || '60', 10),
+      warn_before_logout_minutes: parseInt(document.getElementById('warn_before_logout_minutes')?.value || '5', 10),
+      max_login_attempts: parseInt(document.getElementById('max_login_attempts')?.value || '8', 10),
+      lockout_minutes: parseInt(document.getElementById('lockout_minutes')?.value || '15', 10),
+      require_strong_passwords: document.getElementById('require_strong_passwords')?.checked,
+    };
+    await api('/api/program-settings/security', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    });
+    CasePMDialog?.alert('Security settings saved.', 'success');
+  }
+
   global.CasePMProgramSettings = {
     loadCompanyForm, saveCompanyForm, loadBackupForm, saveBackupForm,
     runBackupNow, refreshBackupList, chooseBackupToInstall, installBackup,
@@ -582,6 +610,6 @@
     setSageMode, testSageConnection,
     syncEmailFromServer, pushEmailToServer,
     loadNumberingForm, saveNumberingForm, loadPayAppsForm, savePayAppsForm,
-    loadPayAppDefaultsForModule,
+    loadPayAppDefaultsForModule, loadSecurityForm, saveSecurityForm,
   };
 })(window);

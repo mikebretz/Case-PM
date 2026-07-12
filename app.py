@@ -213,6 +213,22 @@ def _migrate_user_signature_schema():
 
 
 @app.before_request
+def _session_idle_timeout():
+    if not current_user.is_authenticated:
+        return
+    try:
+        from access_control import enforce_session_idle_timeout
+        from flask_login import logout_user
+        should_logout, _mins = enforce_session_idle_timeout(current_user, request.endpoint)
+        if should_logout:
+            logout_user()
+            flash('Your session expired due to inactivity. Please sign in again.', 'warning')
+            return redirect(url_for('login'))
+    except Exception:
+        return
+
+
+@app.before_request
 def _guard_api_module_access():
     if not current_user.is_authenticated:
         return
@@ -641,7 +657,7 @@ def inject_developer_flag():
     ep = request.endpoint or ''
     page_module = ENDPOINT_TO_MODULE.get(ep, 'app')
     if not getattr(current_user, 'is_authenticated', False):
-        return {'is_developer': False, 'developer_unlock_mode': False, 'page_module': page_module, 'is_admin_user': False, 'can_access_module': lambda m, min_access='view': False, 'allowed_modules': {}}
+        return {'is_developer': False, 'developer_unlock_mode': False, 'page_module': page_module, 'is_admin_user': False, 'can_access_module': lambda m, min_access='view': False, 'allowed_modules': {}, 'user_security_flags': {'hide_financials': False, 'client_portal_only': False}, 'security_settings': {'session_timeout_minutes': 60, 'warn_before_logout_minutes': 5}}
     try:
         from developer_tools import is_developer, developer_unlock_active
         dev = is_developer(current_user)
@@ -649,8 +665,14 @@ def inject_developer_flag():
     except Exception:
         dev = False
         unlock = False
-    is_admin = getattr(current_user, 'role', None) == 'Admin' or dev
+    is_admin = getattr(current_user, 'role', None) == 'Admin'
     flags = {'hide_financials': False, 'client_portal_only': False}
+    security_settings = {'session_timeout_minutes': 60, 'warn_before_logout_minutes': 5}
+    try:
+        from program_settings_persistence import load_security_settings
+        security_settings = load_security_settings()
+    except Exception:
+        pass
     try:
         from access_control import FINANCIAL_MODULES, user_global_flags
         from case_workflow import user_has_module_access
@@ -679,6 +701,7 @@ def inject_developer_flag():
         'can_access_module': can_access_module,
         'allowed_modules': allowed_modules,
         'user_security_flags': flags,
+        'security_settings': security_settings,
     }
 
 
@@ -5147,10 +5170,11 @@ def create_company():
 def user_management():
     from user_signature_persistence import ensure_user_signature_schema
     from user_permissions_persistence import catalog_payload
-    from user_management_service import ensure_user_admin_schema, serialize_user
+    from user_management_service import ensure_user_admin_schema, serialize_user, filter_users_for_actor
+    from developer_tools import is_developer, can_assign_developer_role
     ensure_user_signature_schema(db)
     ensure_user_admin_schema(db)
-    users = User.query.order_by(User.created_at.desc()).all()
+    users = filter_users_for_actor(User.query.order_by(User.created_at.desc()).all(), current_user)
     return render_template(
         'user_management.html',
         users=users,
@@ -5160,9 +5184,11 @@ def user_management():
             'role': current_user.role,
             'full_name': current_user.full_name,
         },
-        server_users_for_js=[serialize_user(u) for u in users],
+        server_users_for_js=[u for u in (serialize_user(x, actor=current_user) for x in users) if u],
         permissions_catalog=catalog_payload(),
         is_admin_user=True,
+        can_assign_developer_role=can_assign_developer_role(current_user),
+        is_developer_user=is_developer(current_user),
     )
 
 
@@ -5170,10 +5196,15 @@ def user_management():
 @login_required
 @users_module_required
 def api_users_admin_list():
-    from user_management_service import ensure_user_admin_schema, serialize_user
+    from user_management_service import ensure_user_admin_schema, serialize_user, filter_users_for_actor
+    from developer_tools import can_assign_developer_role
     ensure_user_admin_schema(db)
-    rows = User.query.order_by(User.last_name, User.first_name).all()
-    return jsonify({'ok': True, 'users': [serialize_user(u, include_permissions=False) for u in rows]})
+    rows = filter_users_for_actor(User.query.order_by(User.last_name, User.first_name).all(), current_user)
+    return jsonify({
+        'ok': True,
+        'users': [u for u in (serialize_user(x, actor=current_user) for x in rows) if u],
+        'can_assign_developer_role': can_assign_developer_role(current_user),
+    })
 
 
 @app.route('/api/users', methods=['POST'])
@@ -5184,7 +5215,7 @@ def api_users_create():
     ensure_user_admin_schema(db)
     body = request.get_json(silent=True) or {}
     try:
-        user, generated_password = create_user(db, User, Company, body, actor_id=current_user.id)
+        user, generated_password = create_user(db, User, Company, body, actor_id=current_user.id, actor=current_user)
         db.session.commit()
         write_audit(
             'Created user',
@@ -5212,8 +5243,14 @@ def api_users_create():
 @users_module_required
 def api_users_get(user_id):
     from user_management_service import serialize_user
+    from developer_tools import is_developer
     user = User.query.get_or_404(user_id)
-    return jsonify({'ok': True, 'user': serialize_user(user, include_permissions=True)})
+    if user.role == 'Developer' and not is_developer(current_user):
+        return jsonify({'error': 'Not found'}), 404
+    payload = serialize_user(user, include_permissions=True, actor=current_user)
+    if not payload:
+        return jsonify({'error': 'Not found'}), 404
+    return jsonify({'ok': True, 'user': payload})
 
 
 @app.route('/api/users/<int:user_id>', methods=['PUT'])
@@ -5224,7 +5261,7 @@ def api_users_update(user_id):
     user = User.query.get_or_404(user_id)
     body = request.get_json(silent=True) or {}
     try:
-        update_user(db, User, Company, user, body)
+        update_user(db, User, Company, user, body, actor=current_user)
         db.session.commit()
         write_audit(
             'Updated user',
@@ -5245,9 +5282,12 @@ def api_users_update(user_id):
 @login_required
 @users_module_required
 def api_users_delete(user_id):
+    from developer_tools import is_developer, can_assign_developer_role
     if user_id == current_user.id:
         return jsonify({'error': 'You cannot delete your own account.'}), 400
     user = User.query.get_or_404(user_id)
+    if user.role == 'Developer' and not can_assign_developer_role(current_user):
+        return jsonify({'error': 'Only a developer can remove Developer accounts.'}), 403
     name = user.full_name
     email = user.email
     db.session.delete(user)
@@ -11183,7 +11223,7 @@ def api_project_financial_summary():
 @login_required
 @admin_required
 def program_settings():
-    from program_settings_persistence import settings_summary_for_ui
+    from program_settings_persistence import settings_summary_for_ui, load_security_settings
     from developer_tools import is_developer
     summary = settings_summary_for_ui()
     return render_template(
@@ -11192,6 +11232,7 @@ def program_settings():
         company_info=summary['company'],
         backup_settings=summary['backup'],
         maintenance_settings=summary['maintenance'],
+        security_settings=load_security_settings(),
         is_developer=is_developer(current_user),
     )
 
@@ -11201,13 +11242,18 @@ def program_settings():
 @developer_required
 def developer_console():
     from program_settings_persistence import load_program_settings
-    from developer_tools import developer_unlock_active, recovery_email, recovery_status_for_ui
+    from developer_tools import (
+        can_view_recovery_details,
+        developer_unlock_active,
+        recovery_status_for_ui,
+    )
+    show_recovery = can_view_recovery_details(current_user)
     return render_template(
         'developer.html',
         raw_settings=load_program_settings(),
         unlock_mode=developer_unlock_active(current_user),
-        recovery_email=recovery_email(),
-        recovery_status=recovery_status_for_ui(),
+        recovery_status=recovery_status_for_ui(include_sensitive=show_recovery),
+        show_recovery_details=show_recovery,
     )
 
 
@@ -11254,6 +11300,19 @@ def api_program_settings_company():
     body = request.get_json(silent=True) or {}
     company = save_company_info(body)
     return jsonify({'ok': True, 'company': company})
+
+
+@app.route('/api/program-settings/security', methods=['GET', 'PUT'])
+@login_required
+@admin_required
+def api_program_settings_security():
+    from program_settings_persistence import load_security_settings, save_security_settings
+    if request.method == 'GET':
+        return jsonify({'ok': True, 'security': load_security_settings()})
+    body = request.get_json(silent=True) or {}
+    security = save_security_settings(body)
+    write_audit('Updated security settings', 'Program security policy', module='program_settings', category='settings', commit=True)
+    return jsonify({'ok': True, 'security': security})
 
 
 @app.route('/api/program-settings/backup', methods=['GET', 'PUT'])

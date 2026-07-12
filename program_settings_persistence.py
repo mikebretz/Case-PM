@@ -85,6 +85,14 @@ PAY_APP_DEFAULTS = {
     'sage_sync_auto_enabled': False,
 }
 
+SECURITY_DEFAULTS = {
+    'session_timeout_minutes': 60,
+    'warn_before_logout_minutes': 5,
+    'require_strong_passwords': True,
+    'max_login_attempts': 8,
+    'lockout_minutes': 15,
+}
+
 
 def _settings_path():
     return os.path.join('instance', 'program_settings.json')
@@ -297,6 +305,42 @@ def save_pay_app_defaults(payload):
     return save_section('pay_apps', clean, PAY_APP_DEFAULTS)
 
 
+def load_security_settings():
+    section = get_section('security', SECURITY_DEFAULTS)
+    out = dict(SECURITY_DEFAULTS)
+    out.update(section)
+    try:
+        out['session_timeout_minutes'] = max(0, min(int(out.get('session_timeout_minutes') or 60), 480))
+    except (TypeError, ValueError):
+        out['session_timeout_minutes'] = 60
+    try:
+        out['warn_before_logout_minutes'] = max(1, min(int(out.get('warn_before_logout_minutes') or 5), 30))
+    except (TypeError, ValueError):
+        out['warn_before_logout_minutes'] = 5
+    try:
+        out['max_login_attempts'] = max(3, min(int(out.get('max_login_attempts') or 8), 20))
+    except (TypeError, ValueError):
+        out['max_login_attempts'] = 8
+    try:
+        out['lockout_minutes'] = max(5, min(int(out.get('lockout_minutes') or 15), 120))
+    except (TypeError, ValueError):
+        out['lockout_minutes'] = 15
+    out['require_strong_passwords'] = bool(out.get('require_strong_passwords', True))
+    return out
+
+
+def save_security_settings(payload):
+    if not isinstance(payload, dict):
+        return load_security_settings()
+    return save_section('security', {
+        'session_timeout_minutes': max(0, min(int(payload.get('session_timeout_minutes') or 60), 480)),
+        'warn_before_logout_minutes': max(1, min(int(payload.get('warn_before_logout_minutes') or 5), 30)),
+        'require_strong_passwords': bool(payload.get('require_strong_passwords', True)),
+        'max_login_attempts': max(3, min(int(payload.get('max_login_attempts') or 8), 20)),
+        'lockout_minutes': max(5, min(int(payload.get('lockout_minutes') or 15), 120)),
+    }, SECURITY_DEFAULTS)
+
+
 def merge_sage_context(project_details, sage_defaults=None):
     defaults = sage_defaults if sage_defaults is not None else load_sage_defaults()
     details = project_details or {}
@@ -331,5 +375,6 @@ def settings_summary_for_ui():
         'numbering': numbering,
         'numbering_catalog': numbering_ui,
         'pay_apps': load_pay_app_defaults(),
+        'security': load_security_settings(),
         'updated_at': settings.get('updated_at'),
     }
