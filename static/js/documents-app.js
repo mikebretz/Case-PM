@@ -272,20 +272,27 @@
     loadBrowse(id);
   }
 
+  function findMyFilesNode(nodes) {
+    for (const n of nodes || []) {
+      if ((n.system_key || '').startsWith('my-files')) return n;
+      const hit = findMyFilesNode(n.children);
+      if (hit) return hit;
+    }
+    return null;
+  }
+
   function openRoot() {
     if (state.myFilesFolderId) {
       openFolder(state.myFilesFolderId);
       return;
     }
-    const myFiles = state.tree.find(n => (n.system_key || '').startsWith('my-files'))
+    const myFiles = findMyFilesNode(state.tree)
       || state.folders.find(f => (f.system_key || '').startsWith('my-files'));
     if (myFiles) {
       openFolder(myFiles.id);
       return;
     }
-    const first = state.tree[0] || state.folders[0];
-    if (first) openFolder(first.id);
-    else loadBrowse(null);
+    loadBrowse(null);
   }
 
   function renderTree() {
@@ -347,7 +354,7 @@
     el.querySelectorAll('.docs-crumb').forEach(cr => {
       cr.addEventListener('click', () => {
         const f = cr.dataset.folder;
-        if (f === 'root') openRoot();
+        if (f === 'root') loadBrowse(null);
         else loadBrowse(parseInt(f, 10));
       });
     });
@@ -1662,7 +1669,12 @@
       if (empty) empty.innerHTML = '<p class="text-zinc-500">Select a project in the header to browse documents.</p>';
       return;
     }
-    await loadBrowse(null);
+    await loadTree();
+    if (state.myFilesFolderId) {
+      await loadBrowse(state.myFilesFolderId);
+    } else {
+      await openRoot();
+    }
   }
 
   async function init() {
@@ -1673,7 +1685,9 @@
       state.myFilesUserId = val ? parseInt(val, 10) : currentUserId();
       state.folderId = null;
       state.expandedFolders = new Set();
-      await loadBrowse(null);
+      await loadTree();
+      if (state.myFilesFolderId) await loadBrowse(state.myFilesFolderId);
+      else await openRoot();
     });
     global.onCasePmProjectChanged = () => reloadForProject();
     await reloadForProject();

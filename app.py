@@ -7175,6 +7175,8 @@ def api_documents_browse():
     folder_id = request.args.get('folder_id')
     if not project_id:
         return jsonify({'error': 'project_id required'}), 400
+    if not Project.query.get(int(project_id)):
+        return jsonify({'error': 'Project not found'}), 404
     ensure_system_folders(db, DocumentFolder, project_id, current_user.id, Document=Document)
     project = Project.query.get(int(project_id))
     viewer_id = current_user.id
@@ -7182,11 +7184,8 @@ def api_documents_browse():
 
     fq = _active_folders().filter_by(project_id=int(project_id))
     if folder_id in (None, '', 'null'):
-        default_mf_id = mf_ctx.get('my_files_folder_id')
-        current_folder = _active_folders().filter_by(id=int(default_mf_id)).first() if default_mf_id else None
-        if not current_folder or not _folder_access(current_folder, 'view'):
-            return jsonify({'error': 'My Files folder not available'}), 404
-        fq = fq.filter_by(parent_id=current_folder.id)
+        fq = fq.filter(DocumentFolder.parent_id.is_(None))
+        current_folder = None
     else:
         current_folder = _active_folders().filter_by(id=int(folder_id)).first()
         if not current_folder or current_folder.project_id != int(project_id):
@@ -7212,7 +7211,7 @@ def api_documents_browse():
 
     dq = _active_documents().filter_by(project_id=int(project_id))
     if folder_id in (None, '', 'null'):
-        dq = dq.filter_by(folder_id=current_folder.id)
+        dq = dq.filter(Document.folder_id.is_(None))
     else:
         dq = dq.filter_by(folder_id=int(folder_id))
     docs = dq.order_by(Document.name).all()

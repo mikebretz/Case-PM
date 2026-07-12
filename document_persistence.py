@@ -26,6 +26,8 @@ SYSTEM_FOLDERS = [
 MY_FILES_LEGACY_KEY = 'my-files'
 MY_FILES_KEY_PREFIX = 'my-files'
 
+_LEGACY_MIGRATED_PROJECTS: set[int] = set()
+
 def my_files_system_key(user_id: int) -> str:
     return f'{MY_FILES_KEY_PREFIX}-{int(user_id)}'
 
@@ -106,8 +108,10 @@ def migrate_legacy_shared_my_files(db, DocumentFolder, project_id: int, Document
             doc = Document.query.filter_by(folder_id=child.id, project_id=int(project_id)).first()
             owner_id = getattr(doc, 'uploaded_by_id', None) if doc else None
         if not owner_id:
+            owner_id = getattr(legacy, 'created_by_id', None)
+        if not owner_id:
             continue
-        target = ensure_user_my_files_folder(db, DocumentFolder, project_id, owner_id, Document=Document, User=User)
+        target = ensure_user_my_files_folder(db, DocumentFolder, project_id, int(owner_id), Document=None, User=User)
         child.parent_id = target.id
         if not getattr(child, 'created_by_id', None):
             child.created_by_id = owner_id
@@ -120,7 +124,7 @@ def migrate_legacy_shared_my_files(db, DocumentFolder, project_id: int, Document
             owner_id = getattr(doc, 'uploaded_by_id', None) or getattr(legacy, 'created_by_id', None)
             if not owner_id:
                 continue
-            target = ensure_user_my_files_folder(db, DocumentFolder, project_id, owner_id, Document=Document, User=User)
+            target = ensure_user_my_files_folder(db, DocumentFolder, project_id, int(owner_id), Document=None, User=User)
             doc.folder_id = target.id
 
     if hasattr(legacy, 'deleted_at'):
@@ -137,7 +141,7 @@ def ensure_user_my_files_folder(
     User=None,
 ) -> Any:
     """Create or return this user's private My Files root for a project."""
-    ensure_system_folders(db, DocumentFolder, int(project_id), int(user_id), Document=Document)
+    _ensure_project_system_folders(db, DocumentFolder, int(project_id), int(user_id))
     key = my_files_system_key(int(user_id))
     existing = DocumentFolder.query.filter_by(
         project_id=int(project_id),
@@ -796,7 +800,32 @@ def share_link_is_valid(link) -> bool:
 
 
 def ensure_system_folders(db, DocumentFolder, project_id: int, user_id: int | None = None, Document=None) -> None:
-    """Create locked system folders for a project if missing."""
+    """Create shared system folders, migrate legacy My Files once, ensure user My Files."""
+    pid = int(project_id)
+    _ensure_project_system_folders(db, DocumentFolder, pid, user_id)
+    if pid not in _LEGACY_MIGRATED_PROJECTS:
+        try:
+            migrate_legacy_shared_my_files(db, DocumentFolder, pid, Document=Document)
+        except Exception:
+            db.session.rollback()
+        finally:
+            _LEGACY_MIGRATED_PROJECTS.add(pid)
+    if user_id:
+        ensure_user_my_files_folder(db, DocumentFolder, pid, int(user_id), Document=None)
+    if Document is not None and user_id:
+        orphans = Document.query.filter_by(project_id=pid, folder_id=None).filter(
+            Document.deleted_at.is_(None) if hasattr(Document, 'deleted_at') else True,
+        ).all()
+        if orphans:
+            for doc in orphans:
+                owner_id = getattr(doc, 'uploaded_by_id', None) or int(user_id)
+                target = ensure_user_my_files_folder(db, DocumentFolder, pid, int(owner_id), Document=None)
+                doc.folder_id = target.id
+            db.session.commit()
+
+
+def _ensure_project_system_folders(db, DocumentFolder, project_id: int, user_id: int | None = None) -> None:
+    """Create locked shared system folders for a project if missing."""
     for spec in SYSTEM_FOLDERS:
         existing = DocumentFolder.query.filter_by(
             project_id=int(project_id),
@@ -846,20 +875,6 @@ def ensure_system_folders(db, DocumentFolder, project_id: int, user_id: int | No
         )
         db.session.add(folder)
     db.session.commit()
-
-    if Document is not None and user_id:
-        orphans = Document.query.filter_by(project_id=int(project_id), folder_id=None).filter(
-            Document.deleted_at.is_(None) if hasattr(Document, 'deleted_at') else True,
-        ).all()
-        if orphans:
-            for doc in orphans:
-                owner_id = getattr(doc, 'uploaded_by_id', None) or int(user_id)
-                target = ensure_user_my_files_folder(
-                    db, DocumentFolder, int(project_id), int(owner_id), Document=Document,
-                )
-                doc.folder_id = target.id
-            db.session.commit()
-    migrate_legacy_shared_my_files(db, DocumentFolder, int(project_id), Document=Document)
 
 
 def get_or_create_child_folder(db, DocumentFolder, project_id: int, parent_id: int, name: str, user_id: int | None = None):
