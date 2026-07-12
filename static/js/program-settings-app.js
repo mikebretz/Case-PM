@@ -58,6 +58,84 @@
     CasePMDialog?.alert('Company information saved.', 'success');
   }
 
+  function formatBackupTime(value) {
+    if (!value) return '';
+    if (typeof value === 'string' && (value.includes(' ET') || value.includes(' EST') || value.includes(' EDT'))) {
+      return value;
+    }
+    const raw = String(value).trim();
+    const iso = raw.includes('T') ? raw : raw.replace(' ', 'T');
+    const d = new Date(iso.endsWith('Z') || /[+-]\d{2}:\d{2}$/.test(iso) ? iso : `${iso}Z`);
+    if (Number.isNaN(d.getTime())) return String(value).slice(0, 19).replace('T', ' ');
+    return new Intl.DateTimeFormat('en-US', {
+      timeZone: 'America/New_York',
+      month: 'short',
+      day: 'numeric',
+      year: 'numeric',
+      hour: 'numeric',
+      minute: '2-digit',
+      hour12: true,
+      timeZoneName: 'short',
+    }).format(d);
+  }
+
+  function setBackupRunButtonDisabled(disabled) {
+    document.querySelectorAll('[data-backup-run-btn]').forEach((btn) => {
+      btn.disabled = !!disabled;
+      btn.classList.toggle('opacity-50', !!disabled);
+      btn.classList.toggle('pointer-events-none', !!disabled);
+    });
+  }
+
+  function renderBackupProgressPanel(job) {
+    const panel = document.getElementById('backupProgressPanel');
+    const bar = document.getElementById('backupProgressBar');
+    const step = document.getElementById('backupProgressStep');
+    const pct = document.getElementById('backupProgressPercent');
+    const file = document.getElementById('backupProgressFile');
+    const destHost = document.getElementById('backupProgressDestinations');
+    if (!panel) return;
+    panel.classList.remove('hidden');
+    const progress = job?.progress ?? 0;
+    if (bar) bar.style.width = `${progress}%`;
+    if (step) step.textContent = job?.step || 'Working…';
+    if (pct) pct.textContent = `${progress}%`;
+    if (file) file.textContent = job?.current_file ? `Current: ${job.current_file}` : '';
+    if (destHost && Array.isArray(job?.destinations)) {
+      destHost.innerHTML = job.destinations.map((d) => `
+        <div class="flex gap-2 items-start text-zinc-300">
+          <i class="fa-solid fa-folder text-emerald-500 mt-0.5"></i>
+          <div class="min-w-0">
+            <div class="text-xs text-zinc-500">${escapeHtml(d.label || 'Destination')}</div>
+            <div class="font-mono text-xs break-all">${escapeHtml(d.path || '')}</div>
+            ${d.warning ? `<div class="text-amber-400 text-xs mt-0.5">${escapeHtml(d.warning)}</div>` : ''}
+          </div>
+        </div>`).join('');
+    }
+  }
+
+  function hideBackupProgressPanel() {
+    document.getElementById('backupProgressPanel')?.classList.add('hidden');
+  }
+
+  async function pollBackupJob(jobId) {
+    const maxMs = 10 * 60 * 1000;
+    const started = Date.now();
+    while (Date.now() - started < maxMs) {
+      const json = await api(`/api/program-settings/backup/run/status/${encodeURIComponent(jobId)}`);
+      const job = json.job || {};
+      renderBackupProgressPanel(job);
+      if (job.status === 'done') {
+        return job;
+      }
+      if (job.status === 'error') {
+        throw new Error(job.error || 'Backup failed');
+      }
+      await new Promise((resolve) => setTimeout(resolve, 350));
+    }
+    throw new Error('Backup timed out');
+  }
+
   function collectBackupSettingsFromForm() {
     return {
       auto_enabled: document.getElementById('backup_auto_enabled')?.checked,
@@ -107,7 +185,7 @@
     const statusEl = document.getElementById('backupLastRunStatus');
     if (statusEl) {
       statusEl.textContent = b.last_run_at
-        ? `Last backup: ${b.last_run_at} — ${b.last_run_status || 'unknown'}`
+        ? `Last backup: ${formatBackupTime(b.last_run_at)} — ${b.last_run_status || 'unknown'}`
         : 'No backups run yet.';
     }
     await refreshBackupList();
@@ -147,32 +225,52 @@
     }
     const ok = await CasePMDialog?.confirm(message, { title: 'Run backup', confirmLabel: 'Start' });
     if (!ok) return;
+
+    setBackupRunButtonDisabled(true);
     try {
-      const json = await api('/api/program-settings/backup/run', {
+      const plan = await api('/api/program-settings/backup/plan', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ backup }),
       });
-      const result = json.result || {};
+      renderBackupProgressPanel({ progress: 0, step: 'Starting backup…', destinations: plan.destinations || [] });
+
+      const start = await api('/api/program-settings/backup/run', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ backup, async: true }),
+      });
+      const job = await pollBackupJob(start.job_id);
+      const result = job.result || {};
       let detail = `Local backup created: ${result.filename}`;
+      if (result.created_at_display) {
+        detail += `\nTime: ${result.created_at_display}`;
+      }
       if (result.cloud_mirror_status === 'success') {
         detail += `\n\nCopied to off-site folder:\n${result.cloud_mirror_file || result.cloud_mirror}`;
       } else if (result.cloud_mirror_skipped) {
         detail += `\n\nOff-site copy skipped: ${result.cloud_mirror_skipped}`;
       }
       CasePMDialog?.alert(detail, result.cloud_mirror_status === 'success' ? 'success' : 'info');
-      await refreshBackupList();
+      hideBackupProgressPanel();
+      if (job.backups) {
+        renderBackupHistory(job.backups);
+      } else {
+        await refreshBackupList();
+      }
       await loadBackupForm();
     } catch (err) {
       CasePMDialog?.alert(err.message || 'Backup failed.', 'error');
+      hideBackupProgressPanel();
       await loadBackupForm();
+    } finally {
+      setBackupRunButtonDisabled(false);
     }
   }
 
-  async function refreshBackupList() {
+  function renderBackupHistory(backups) {
     const host = document.getElementById('backupHistoryList');
     if (!host) return;
-    const { backups } = await api('/api/program-settings/backup/list');
     if (!backups?.length) {
       host.innerHTML = '<div class="text-sm text-zinc-500">No backups yet. Run a backup first, or upload a backup file below.</div>';
       return;
@@ -181,13 +279,20 @@
       <div class="flex flex-wrap justify-between items-center gap-2 py-2 border-b border-zinc-800 text-sm">
         <div class="min-w-0">
           <div class="font-mono text-emerald-400 truncate">${escapeHtml(b.filename)}</div>
-          <div class="text-xs text-zinc-500">${(b.size_bytes / 1024 / 1024).toFixed(2)} MB · ${escapeHtml((b.created_at || '').slice(0, 19).replace('T', ' '))}</div>
+          <div class="text-xs text-zinc-500">${(b.size_bytes / 1024 / 1024).toFixed(2)} MB · ${escapeHtml(formatBackupTime(b.created_at_display || b.created_at))}</div>
         </div>
         <button type="button" class="px-3 py-1.5 bg-emerald-700 hover:bg-emerald-600 rounded-xl text-xs font-medium whitespace-nowrap"
                 onclick="CasePMProgramSettings.installBackup(${JSON.stringify(b.filename)})">
           <i class="fa-solid fa-rotate-left mr-1"></i> Install
         </button>
       </div>`).join('');
+  }
+
+  async function refreshBackupList() {
+    const host = document.getElementById('backupHistoryList');
+    if (!host) return;
+    const { backups } = await api('/api/program-settings/backup/list');
+    renderBackupHistory(backups);
   }
 
   function escapeHtml(value) {
@@ -232,7 +337,7 @@
       message: 'Select the backup to install. Your current data is saved automatically before replacing it.',
       items: backups.map(b => ({
         value: b.filename,
-        label: `${b.filename} — ${(b.size_bytes / 1024 / 1024).toFixed(2)} MB · ${(b.created_at || '').slice(0, 19).replace('T', ' ')}`,
+        label: `${b.filename} — ${(b.size_bytes / 1024 / 1024).toFixed(2)} MB · ${formatBackupTime(b.created_at_display || b.created_at)}`,
       })),
       submitLabel: 'Install selected backup',
       emptyLabel: 'No backups found',

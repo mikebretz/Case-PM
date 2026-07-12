@@ -10974,11 +10974,21 @@ def api_program_settings_backup():
     return jsonify({'ok': True, 'backup': backup, 'maintenance': maintenance})
 
 
+@app.route('/api/program-settings/backup/plan', methods=['POST'])
+@login_required
+@admin_required
+def api_plan_program_backup():
+    from backup_service import plan_backup_destinations
+    body = request.get_json(silent=True) or {}
+    cfg = body.get('backup') if isinstance(body.get('backup'), dict) else {}
+    return jsonify({'ok': True, 'destinations': plan_backup_destinations(cfg)})
+
+
 @app.route('/api/program-settings/backup/run', methods=['POST'])
 @login_required
 @admin_required
 def api_run_program_backup():
-    from backup_service import run_configured_backup, list_backups
+    from backup_service import get_backup_job, list_backups, start_backup_job
     from program_settings_persistence import load_backup_settings, save_backup_settings
     body = request.get_json(silent=True) or {}
     cfg = load_backup_settings()
@@ -10992,21 +11002,63 @@ def api_run_program_backup():
         }
         save_backup_settings(cfg)
         cfg = load_backup_settings()
-    try:
-        result = run_configured_backup(cfg, manual=True)
-        status = 'success'
-        if result.get('cloud_mirror_status') == 'success':
-            status = f"success — copied to {result.get('cloud_mirror')}"
-        elif result.get('cloud_mirror_skipped'):
-            status = f"success (local only) — {result.get('cloud_mirror_skipped')}"
-        cfg['last_run_at'] = result.get('created_at', '')
-        cfg['last_run_status'] = status
-        save_backup_settings(cfg)
-        return jsonify({'ok': True, 'result': result, 'backups': list_backups(cfg)})
-    except Exception as exc:
-        cfg['last_run_status'] = f'error: {exc}'
-        save_backup_settings(cfg)
-        return jsonify({'error': str(exc)}), 500
+
+    async_mode = body.get('async', True)
+    if not async_mode:
+        from backup_service import run_configured_backup, format_display_time
+        try:
+            result = run_configured_backup(cfg, manual=True)
+            status = 'success'
+            if result.get('cloud_mirror_status') == 'success':
+                status = f"success — copied to {result.get('cloud_mirror')}"
+            elif result.get('cloud_mirror_skipped'):
+                status = f"success (local only) — {result.get('cloud_mirror_skipped')}"
+            cfg['last_run_at'] = result.get('created_at_display') or result.get('created_at', '')
+            cfg['last_run_status'] = status
+            save_backup_settings(cfg)
+            return jsonify({'ok': True, 'result': result, 'backups': list_backups(cfg)})
+        except Exception as exc:
+            cfg['last_run_status'] = f'error: {exc}'
+            save_backup_settings(cfg)
+            return jsonify({'error': str(exc)}), 500
+
+    job_id = start_backup_job(app, cfg, manual=True)
+    return jsonify({'ok': True, 'job_id': job_id})
+
+
+@app.route('/api/program-settings/backup/run/status/<job_id>', methods=['GET'])
+@login_required
+@admin_required
+def api_run_program_backup_status(job_id):
+    from backup_service import format_display_time, get_backup_job, list_backups
+    from program_settings_persistence import load_backup_settings, save_backup_settings
+    job = get_backup_job(job_id)
+    if not job:
+        return jsonify({'error': 'Backup job not found'}), 404
+
+    if job.get('status') in ('done', 'error'):
+        cfg = load_backup_settings()
+        if job.get('status') == 'done' and job.get('result') and not job.get('finalized'):
+            result = job['result']
+            status = 'success'
+            if result.get('cloud_mirror_status') == 'success':
+                status = f"success — copied to {result.get('cloud_mirror')}"
+            elif result.get('cloud_mirror_skipped'):
+                status = f"success (local only) — {result.get('cloud_mirror_skipped')}"
+            cfg['last_run_at'] = result.get('created_at_display') or format_display_time(result.get('created_at'))
+            cfg['last_run_status'] = status
+            save_backup_settings(cfg)
+            from backup_service import mark_backup_job_finalized
+            mark_backup_job_finalized(job_id)
+            job = dict(job)
+            job['backups'] = list_backups(cfg)
+        elif job.get('status') == 'error' and not job.get('finalized'):
+            cfg['last_run_status'] = f"error: {job.get('error')}"
+            save_backup_settings(cfg)
+            from backup_service import mark_backup_job_finalized
+            mark_backup_job_finalized(job_id)
+
+    return jsonify({'ok': True, 'job': job})
 
 
 @app.route('/api/program-settings/backup/list', methods=['GET'])
