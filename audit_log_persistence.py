@@ -342,8 +342,16 @@ def db_or_ilike(model, pattern, *columns):
     return or_(*parts) if parts else True
 
 
+SECURITY_ACTIONS = (
+    'LOGIN_FAILED', 'LOGIN_PASSWORD_OK', '2FA_LOGIN_FAILED', '2FA_LOGIN_OK',
+    '2FA_SETUP_FAILED', '2FA_ENABLED', '2FA_DISABLED', 'CSRF_BLOCKED',
+    'PASSWORD_CHANGED', 'RECOVERY_LOGIN',
+)
+
+
 def audit_stats(AuditLog):
-    from sqlalchemy import func
+    from datetime import timedelta
+    from sqlalchemy import func, or_
     total = AuditLog.query.count()
     by_module = (
         AuditLog.query.with_entities(AuditLog.module, func.count(AuditLog.id))
@@ -353,18 +361,29 @@ def audit_stats(AuditLog):
         .all()
     )
     recent = AuditLog.query.order_by(AuditLog.timestamp.desc()).first()
+    today_start = datetime.utcnow().replace(hour=0, minute=0, second=0, microsecond=0)
+    today_count = AuditLog.query.filter(AuditLog.timestamp >= today_start).count()
+    week_start = today_start - timedelta(days=today_start.weekday())
+    week_count = AuditLog.query.filter(AuditLog.timestamp >= week_start).count()
+    security_count = AuditLog.query.filter(
+        or_(
+            AuditLog.module == 'security',
+            AuditLog.category == 'login',
+            AuditLog.action.in_(SECURITY_ACTIONS),
+        )
+    ).count()
+    failed_logins = AuditLog.query.filter(AuditLog.action == 'LOGIN_FAILED').count()
     return {
         'total': total,
+        'today': today_count,
+        'this_week': week_count,
+        'security_events': security_count,
+        'failed_logins': failed_logins,
+        'critical': critical_count,
+        'module_count': len(by_module),
         'by_module': [{'module': m or 'app', 'label': module_label(m or 'app'), 'count': c} for m, c in by_module],
         'last_event_at': recent.timestamp.isoformat() + 'Z' if recent and recent.timestamp else None,
     }
-
-
-SECURITY_ACTIONS = (
-    'LOGIN_FAILED', 'LOGIN_PASSWORD_OK', '2FA_LOGIN_FAILED', '2FA_LOGIN_OK',
-    '2FA_SETUP_FAILED', '2FA_ENABLED', '2FA_DISABLED', 'CSRF_BLOCKED',
-    'PASSWORD_CHANGED', 'RECOVERY_LOGIN',
-)
 
 
 def security_audit_summary(AuditLog, limit=25):
