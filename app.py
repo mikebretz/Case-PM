@@ -6184,7 +6184,7 @@ def api_document_editor_save():
     from document_features import file_content_hash
     from document_integration import guess_mime
     from document_persistence import (
-        ensure_document_schema, ensure_system_folders, resolve_folder_by_key, document_folder,
+        ensure_document_schema, ensure_system_folders, resolve_my_files_folder, document_folder,
     )
 
     ensure_project_schema()
@@ -6207,7 +6207,7 @@ def api_document_editor_save():
         ensure_system_folders(db, DocumentFolder, int(project_id), current_user.id, Document=Document)
         folder_id = request.form.get('folder_id', type=int)
         if not folder_id:
-            mine = resolve_folder_by_key(db, DocumentFolder, int(project_id), 'my-files')
+            mine = resolve_my_files_folder(db, DocumentFolder, int(project_id), current_user.id, Document=Document, User=User)
             folder_id = mine.id if mine else None
         default_ext = 'xlsx' if kind == 'sheet' else 'docx'
         doc = Document(
@@ -6482,10 +6482,81 @@ def _active_folders():
     return DocumentFolder.query.filter(DocumentFolder.deleted_at.is_(None))
 
 
+def _documents_privileged():
+    from developer_tools import is_admin_or_developer
+    return is_admin_or_developer(current_user)
+
+
+def _folder_owner_name(owner_id):
+    if not owner_id:
+        return None
+    u = User.query.get(int(owner_id))
+    return u.full_name if u else None
+
+
+def _effective_my_files_user_id(project_id=None):
+    from document_persistence import ensure_user_my_files_folder
+
+    pid = int(project_id or get_current_project_id() or 0)
+    requested = request.args.get('my_files_user_id', type=int)
+    if not requested and request.method in ('POST', 'PUT', 'PATCH') and request.is_json:
+        body = request.get_json(silent=True) or {}
+        requested = body.get('my_files_user_id')
+    if requested and _documents_privileged() and pid:
+        ensure_user_my_files_folder(db, DocumentFolder, pid, int(requested), Document=Document, User=User)
+        return int(requested)
+    return current_user.id
+
+
+def _folder_visible_in_browser(folder) -> bool:
+    from document_persistence import (
+        MY_FILES_LEGACY_KEY,
+        folder_my_files_owner,
+        is_my_files_system_key,
+    )
+
+    key = getattr(folder, 'system_key', None)
+    if key == MY_FILES_LEGACY_KEY:
+        return _documents_privileged()
+    owner = folder_my_files_owner(db, DocumentFolder, folder.id)
+    if owner is not None:
+        return owner == current_user.id or _documents_privileged()
+    if is_my_files_system_key(key) and folder.parent_id is None:
+        return False
+    return True
+
+
+def _documents_my_files_context(project_id: int) -> dict:
+    from document_persistence import ensure_user_my_files_folder, list_my_files_owners, resolve_my_files_folder
+
+    uid = _effective_my_files_user_id(project_id)
+    ensure_user_my_files_folder(db, DocumentFolder, int(project_id), uid, Document=Document, User=User)
+    mine = resolve_my_files_folder(db, DocumentFolder, int(project_id), uid, Document=Document, User=User)
+    ctx = {
+        'my_files_user_id': uid,
+        'my_files_folder_id': mine.id if mine else None,
+        'can_browse_other_my_files': _documents_privileged(),
+    }
+    if _documents_privileged():
+        ctx['my_files_owners'] = list_my_files_owners(db, DocumentFolder, int(project_id), User=User)
+    return ctx
+
+
 def _folder_access(folder, required='view'):
     """Check folder permission. No rows = open to all project users; Admin/PM always allowed."""
+    from document_persistence import folder_my_files_owner
+
     if not folder or not current_user.is_authenticated:
         return False
+
+    mf_owner = folder_my_files_owner(db, DocumentFolder, folder.id)
+    if mf_owner is not None:
+        if mf_owner == current_user.id:
+            return True
+        if _documents_privileged():
+            return True
+        return False
+
     role = (getattr(current_user, 'role', '') or '').strip()
     if role in ('Admin', 'Project Manager'):
         return True
@@ -6845,15 +6916,19 @@ def _save_document_bytes(
     preserve_original_filename: bool = False,
 ):
     from document_features import file_content_hash, project_document_settings, retention_until_from_years, parse_tags
-    from document_persistence import document_folder, ensure_system_folders, resolve_folder_by_key
+    from document_persistence import document_folder, ensure_system_folders, resolve_my_files_folder
 
     ensure_project_schema()
     upload_root = app.config.get('UPLOAD_FOLDER', 'uploads')
     actor_id = _acting_user_id(uploaded_by_id)
     ensure_system_folders(db, DocumentFolder, project_id, actor_id, Document=Document)
     if not folder_id:
-        default_folder = resolve_folder_by_key(db, DocumentFolder, project_id, 'my-files')
+        default_folder = resolve_my_files_folder(db, DocumentFolder, project_id, actor_id, Document=Document, User=User)
         folder_id = default_folder.id if default_folder else None
+    elif folder_id:
+        target = DocumentFolder.query.get(int(folder_id))
+        if target and not _folder_access(target, 'upload'):
+            raise ValueError('You do not have permission to upload to this folder')
 
     ext = original_filename.rsplit('.', 1)[-1].lower() if original_filename and '.' in original_filename else 'bin'
     if ext not in ALLOWED_EXTENSIONS:
@@ -6947,7 +7022,7 @@ def api_document_folders_list():
 @app.route('/api/document-folders/tree', methods=['GET'])
 @login_required
 def api_document_folders_tree():
-    from document_persistence import ensure_system_folders, folder_to_dict
+    from document_persistence import ensure_system_folders, folder_my_files_owner, folder_to_dict
 
     project_id = request.args.get('project_id', type=int) or get_current_project_id()
     if not project_id:
@@ -6956,19 +7031,28 @@ def api_document_folders_tree():
     all_folders = _active_folders().filter_by(project_id=int(project_id)).order_by(
         DocumentFolder.is_system.desc(), DocumentFolder.name,
     ).all()
+    all_folders = [f for f in all_folders if _folder_visible_in_browser(f)]
     by_parent: dict = {}
     for f in all_folders:
         by_parent.setdefault(f.parent_id, []).append(f)
+    viewer_id = current_user.id
 
     def build_node(folder):
+        owner = folder_my_files_owner(db, DocumentFolder, folder.id)
         children = [build_node(c) for c in by_parent.get(folder.id, [])]
         file_count = _active_documents().filter_by(folder_id=folder.id).count()
-        node = folder_to_dict(folder, len(children), file_count)
+        node = folder_to_dict(
+            folder, len(children), file_count,
+            viewer_user_id=viewer_id,
+            owner_name=_folder_owner_name(owner),
+        )
         node['children'] = children
         return node
 
     roots = [build_node(f) for f in by_parent.get(None, [])]
-    return jsonify({'ok': True, 'tree': roots})
+    payload = {'ok': True, 'tree': roots}
+    payload.update(_documents_my_files_context(int(project_id)))
+    return jsonify(payload)
 
 
 @app.route('/api/document-folders', methods=['POST'])
@@ -6987,6 +7071,8 @@ def api_document_folders_create():
         parent = DocumentFolder.query.get(int(parent_id))
         if not parent or parent.project_id != int(project_id):
             return jsonify({'error': 'Parent folder not found'}), 404
+        if not _folder_access(parent, 'upload'):
+            return jsonify({'error': 'No permission to create folders here'}), 403
     folder = DocumentFolder(
         project_id=int(project_id),
         parent_id=int(parent_id) if parent_id else None,
@@ -7008,6 +7094,8 @@ def api_document_folders_patch(folder_id):
     folder = DocumentFolder.query.get_or_404(folder_id)
     if folder.is_system:
         return jsonify({'error': 'System folders cannot be modified'}), 403
+    if not _folder_access(folder, 'manage'):
+        return jsonify({'error': 'No permission to modify this folder'}), 403
     body = request.get_json(silent=True) or {}
     if 'name' in body and body['name']:
         folder.name = str(body['name']).strip()[:200]
@@ -7019,6 +7107,8 @@ def api_document_folders_patch(folder_id):
                 return jsonify({'error': 'Invalid parent folder'}), 400
             if folder_is_descendant(db, DocumentFolder, int(new_parent), folder.id):
                 return jsonify({'error': 'Cannot move folder into itself'}), 400
+            if not _folder_access(parent, 'upload'):
+                return jsonify({'error': 'No permission to move folder here'}), 403
             folder.parent_id = int(new_parent)
         else:
             folder.parent_id = None
@@ -7032,6 +7122,8 @@ def api_document_folders_delete(folder_id):
     folder = DocumentFolder.query.get_or_404(folder_id)
     if folder.is_system:
         return jsonify({'error': 'System folders cannot be deleted'}), 403
+    if not _folder_access(folder, 'manage'):
+        return jsonify({'error': 'No permission to delete this folder'}), 403
     if _active_folders().filter_by(parent_id=folder.id).count():
         return jsonify({'error': 'Folder is not empty (contains subfolders)'}), 400
     if _active_documents().filter_by(folder_id=folder.id).count():
@@ -7077,7 +7169,7 @@ def _folder_preview_thumbs(folder_id, project_id, limit=3):
 @app.route('/api/documents/browse', methods=['GET'])
 @login_required
 def api_documents_browse():
-    from document_persistence import document_to_dict, ensure_system_folders, folder_to_dict
+    from document_persistence import document_to_dict, ensure_system_folders, folder_my_files_owner, folder_to_dict
 
     project_id = request.args.get('project_id', type=int) or get_current_project_id()
     folder_id = request.args.get('folder_id')
@@ -7085,11 +7177,16 @@ def api_documents_browse():
         return jsonify({'error': 'project_id required'}), 400
     ensure_system_folders(db, DocumentFolder, project_id, current_user.id, Document=Document)
     project = Project.query.get(int(project_id))
+    viewer_id = current_user.id
+    mf_ctx = _documents_my_files_context(int(project_id))
 
     fq = _active_folders().filter_by(project_id=int(project_id))
     if folder_id in (None, '', 'null'):
-        fq = fq.filter(DocumentFolder.parent_id.is_(None))
-        current_folder = None
+        default_mf_id = mf_ctx.get('my_files_folder_id')
+        current_folder = _active_folders().filter_by(id=int(default_mf_id)).first() if default_mf_id else None
+        if not current_folder or not _folder_access(current_folder, 'view'):
+            return jsonify({'error': 'My Files folder not available'}), 404
+        fq = fq.filter_by(parent_id=current_folder.id)
     else:
         current_folder = _active_folders().filter_by(id=int(folder_id)).first()
         if not current_folder or current_folder.project_id != int(project_id):
@@ -7101,16 +7198,21 @@ def api_documents_browse():
     folders = fq.order_by(DocumentFolder.is_system.desc(), DocumentFolder.name).all()
     folder_nodes = []
     for f in folders:
-        if not _folder_access(f, 'view'):
+        if not _folder_visible_in_browser(f) or not _folder_access(f, 'view'):
             continue
         child_count = _active_folders().filter_by(parent_id=f.id).count()
         file_count = _active_documents().filter_by(folder_id=f.id).count()
         preview_thumbs = _folder_preview_thumbs(f.id, f.project_id)
-        folder_nodes.append(folder_to_dict(f, child_count, file_count, preview_thumbs))
+        owner = folder_my_files_owner(db, DocumentFolder, f.id)
+        folder_nodes.append(folder_to_dict(
+            f, child_count, file_count, preview_thumbs,
+            viewer_user_id=viewer_id,
+            owner_name=_folder_owner_name(owner),
+        ))
 
     dq = _active_documents().filter_by(project_id=int(project_id))
     if folder_id in (None, '', 'null'):
-        dq = dq.filter(Document.folder_id.is_(None))
+        dq = dq.filter_by(folder_id=current_folder.id)
     else:
         dq = dq.filter_by(folder_id=int(folder_id))
     docs = dq.order_by(Document.name).all()
@@ -7122,9 +7224,15 @@ def api_documents_browse():
         while parent:
             chain.insert(0, parent)
             parent = DocumentFolder.query.get(parent.parent_id) if parent.parent_id else None
-        breadcrumbs = [{'id': f.id, 'name': f.name, 'is_system': f.is_system} for f in chain]
+        for f in chain:
+            owner = folder_my_files_owner(db, DocumentFolder, f.id)
+            breadcrumbs.append({
+                'id': f.id,
+                'name': folder_to_dict(f, viewer_user_id=viewer_id, owner_name=_folder_owner_name(owner))['name'],
+                'is_system': f.is_system,
+            })
 
-    return jsonify({
+    payload = {
         'ok': True,
         'project_id': int(project_id),
         'project_name': project.name if project else None,
@@ -7132,7 +7240,24 @@ def api_documents_browse():
         'breadcrumbs': breadcrumbs,
         'folders': folder_nodes,
         'files': [_document_dict_with_user(d) for d in docs],
-    })
+    }
+    payload.update(mf_ctx)
+    return jsonify(payload)
+
+
+@app.route('/api/documents/my-files-owners', methods=['GET'])
+@login_required
+def api_documents_my_files_owners():
+    from document_persistence import ensure_system_folders, list_my_files_owners
+
+    project_id = request.args.get('project_id', type=int) or get_current_project_id()
+    if not project_id:
+        return jsonify({'error': 'project_id required'}), 400
+    if not _documents_privileged():
+        return jsonify({'error': 'Admin or Developer access required'}), 403
+    ensure_system_folders(db, DocumentFolder, project_id, current_user.id, Document=Document)
+    owners = list_my_files_owners(db, DocumentFolder, int(project_id), User=User)
+    return jsonify({'ok': True, 'owners': owners, 'project_id': int(project_id)})
 
 
 @app.route('/api/documents/<int:doc_id>', methods=['GET'])
@@ -7341,6 +7466,11 @@ def api_documents_create():
         return jsonify({'error': 'Project not found'}), 404
     if not file_bytes:
         return jsonify({'error': 'Empty file'}), 400
+
+    if folder_id:
+        target = DocumentFolder.query.get(int(folder_id))
+        if target and not _folder_access(target, 'upload'):
+            return jsonify({'error': 'No permission to upload to this folder'}), 403
 
     from document_features import file_content_hash
     dup = _find_duplicate_document(int(project_id), file_content_hash(file_bytes))

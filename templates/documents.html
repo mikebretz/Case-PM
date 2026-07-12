@@ -48,6 +48,12 @@
     <div class="docs-center flex flex-col flex-1 min-w-0 min-h-0">
         <div class="docs-toolbar flex flex-wrap items-center gap-2 mb-2 shrink-0">
             <nav id="docsBreadcrumbs" class="docs-breadcrumbs flex-1 min-w-0"></nav>
+            <div id="docsMyFilesUserWrap" class="hidden flex items-center gap-2 shrink-0">
+                <label for="docsMyFilesUser" class="text-xs text-zinc-500 whitespace-nowrap">My Files user</label>
+                <select id="docsMyFilesUser" class="docs-select text-xs max-w-[220px]" title="Browse another user's My Files (Admin/Developer)">
+                    <option value="">My files</option>
+                </select>
+            </div>
             <div class="flex items-center gap-1 docs-view-toggle" role="group" aria-label="View mode">
                 <button type="button" id="docsViewGrid" class="docs-icon-btn active" title="Icon view"><i class="fa-solid fa-grip"></i></button>
                 <button type="button" id="docsViewList" class="docs-icon-btn" title="List view"><i class="fa-solid fa-list"></i></button>

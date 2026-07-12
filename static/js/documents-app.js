@@ -28,6 +28,10 @@
     bulkSelected: new Set(),
     bulkMode: false,
     iconSize: 'md',
+    myFilesUserId: null,
+    myFilesFolderId: null,
+    canBrowseOtherMyFiles: false,
+    myFilesOwners: [],
   };
 
   function devUnlock() {
@@ -190,11 +194,46 @@
     renderTree();
   }
 
+  function myFilesQuery() {
+    if (state.myFilesUserId) return `&my_files_user_id=${encodeURIComponent(state.myFilesUserId)}`;
+    return '';
+  }
+
+  function applyMyFilesContext(json) {
+    if (!json) return;
+    if (json.my_files_user_id != null) state.myFilesUserId = json.my_files_user_id;
+    if (json.my_files_folder_id != null) state.myFilesFolderId = json.my_files_folder_id;
+    if (json.can_browse_other_my_files != null) state.canBrowseOtherMyFiles = !!json.can_browse_other_my_files;
+    if (Array.isArray(json.my_files_owners)) state.myFilesOwners = json.my_files_owners;
+    renderMyFilesUserPicker();
+  }
+
+  function renderMyFilesUserPicker() {
+    const wrap = document.getElementById('docsMyFilesUserWrap');
+    const sel = document.getElementById('docsMyFilesUser');
+    if (!wrap || !sel) return;
+    if (!state.canBrowseOtherMyFiles) {
+      wrap.classList.add('hidden');
+      return;
+    }
+    wrap.classList.remove('hidden');
+    const current = state.myFilesUserId || currentUserId() || '';
+    const options = [`<option value="${currentUserId() || ''}">My files</option>`];
+    (state.myFilesOwners || []).forEach((o) => {
+      if (!o || o.id == null) return;
+      if (String(o.id) === String(currentUserId())) return;
+      options.push(`<option value="${o.id}">${esc(o.name || o.email || ('User #' + o.id))}</option>`);
+    });
+    sel.innerHTML = options.join('');
+    sel.value = String(current);
+  }
+
   async function loadTree() {
     const pid = projectId();
     if (!pid) return;
-    const json = await api(`/api/document-folders/tree?project_id=${pid}`);
+    const json = await api(`/api/document-folders/tree?project_id=${pid}${myFilesQuery()}`);
     state.tree = json.tree || [];
+    applyMyFilesContext(json);
     if (!state.expandedFolders.size) ensureExpandedDefaults();
     renderTree();
   }
@@ -207,10 +246,11 @@
     state.browseMode = 'normal';
     const q = folderId != null ? `&folder_id=${folderId}` : '';
     try {
-      const json = await api(`/api/documents/browse?project_id=${pid}${q}`);
+      const json = await api(`/api/documents/browse?project_id=${pid}${q}${myFilesQuery()}`);
       state.folders = json.folders || [];
       state.files = json.files || [];
       state.breadcrumbs = json.breadcrumbs || [];
+      applyMyFilesContext(json);
       if (state.previewFileId && !state.files.some(f => f.id === state.previewFileId)) {
         closePreview();
       }
@@ -233,8 +273,12 @@
   }
 
   function openRoot() {
-    const myFiles = state.tree.find(n => n.system_key === 'my-files')
-      || state.folders.find(f => f.system_key === 'my-files');
+    if (state.myFilesFolderId) {
+      openFolder(state.myFilesFolderId);
+      return;
+    }
+    const myFiles = state.tree.find(n => (n.system_key || '').startsWith('my-files'))
+      || state.folders.find(f => (f.system_key || '').startsWith('my-files'));
     if (myFiles) {
       openFolder(myFiles.id);
       return;
@@ -1606,6 +1650,8 @@
 
   async function reloadForProject() {
     state.folderId = null;
+    state.myFilesUserId = null;
+    state.myFilesFolderId = null;
     state.expandedFolders = new Set();
     state.selected = null;
     closePreview();
@@ -1617,11 +1663,18 @@
       return;
     }
     await loadBrowse(null);
-    openRoot();
   }
 
   async function init() {
     bindUi();
+    const myFilesSel = document.getElementById('docsMyFilesUser');
+    myFilesSel?.addEventListener('change', async () => {
+      const val = myFilesSel.value;
+      state.myFilesUserId = val ? parseInt(val, 10) : currentUserId();
+      state.folderId = null;
+      state.expandedFolders = new Set();
+      await loadBrowse(null);
+    });
     global.onCasePmProjectChanged = () => reloadForProject();
     await reloadForProject();
   }
