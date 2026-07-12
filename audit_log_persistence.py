@@ -37,6 +37,20 @@ AUDIT_MODULES = [
     ('app', 'General'),
 ]
 
+# Modules hidden from the admin Audit Log page (still recorded for internal use).
+AUDIT_LOG_HIDDEN_MODULES = frozenset({'developer'})
+
+
+def audit_modules_for_page():
+    """Module list for Audit Log filters — excludes hidden modules."""
+    return [(key, label) for key, label in AUDIT_MODULES if key not in AUDIT_LOG_HIDDEN_MODULES]
+
+
+def _exclude_hidden_audit_modules(query, AuditLog):
+    if not AUDIT_LOG_HIDDEN_MODULES:
+        return query
+    return query.filter(~AuditLog.module.in_(AUDIT_LOG_HIDDEN_MODULES))
+
 ENDPOINT_TO_MODULE = {
     'dashboard': 'dashboard',
     'projects_page': 'projects',
@@ -272,7 +286,11 @@ def query_audit_logs(AuditLog, args):
     q = AuditLog.query
     module = (args.get('module') or '').strip()
     if module and module != 'all':
+        if module in AUDIT_LOG_HIDDEN_MODULES:
+            return [], 0
         q = q.filter(AuditLog.module == module)
+    else:
+        q = _exclude_hidden_audit_modules(q, AuditLog)
 
     user_id = args.get('user_id')
     if user_id:
@@ -342,29 +360,48 @@ def db_or_ilike(model, pattern, *columns):
     return or_(*parts) if parts else True
 
 
-def audit_stats(AuditLog):
-    from sqlalchemy import func
-    total = AuditLog.query.count()
-    by_module = (
-        AuditLog.query.with_entities(AuditLog.module, func.count(AuditLog.id))
-        .group_by(AuditLog.module)
-        .order_by(func.count(AuditLog.id).desc())
-        .limit(20)
-        .all()
-    )
-    recent = AuditLog.query.order_by(AuditLog.timestamp.desc()).first()
-    return {
-        'total': total,
-        'by_module': [{'module': m or 'app', 'label': module_label(m or 'app'), 'count': c} for m, c in by_module],
-        'last_event_at': recent.timestamp.isoformat() + 'Z' if recent and recent.timestamp else None,
-    }
-
-
 SECURITY_ACTIONS = (
     'LOGIN_FAILED', 'LOGIN_PASSWORD_OK', '2FA_LOGIN_FAILED', '2FA_LOGIN_OK',
     '2FA_SETUP_FAILED', '2FA_ENABLED', '2FA_DISABLED', 'CSRF_BLOCKED',
     'PASSWORD_CHANGED', 'RECOVERY_LOGIN',
 )
+
+
+def audit_stats(AuditLog):
+    from datetime import timedelta
+    from sqlalchemy import func, or_
+    base = _exclude_hidden_audit_modules(AuditLog.query, AuditLog)
+    total = base.count()
+    by_module = (
+        base.with_entities(AuditLog.module, func.count(AuditLog.id))
+        .group_by(AuditLog.module)
+        .order_by(func.count(AuditLog.id).desc())
+        .limit(20)
+        .all()
+    )
+    recent = base.order_by(AuditLog.timestamp.desc()).first()
+    today_start = datetime.utcnow().replace(hour=0, minute=0, second=0, microsecond=0)
+    today_count = base.filter(AuditLog.timestamp >= today_start).count()
+    week_start = today_start - timedelta(days=today_start.weekday())
+    week_count = base.filter(AuditLog.timestamp >= week_start).count()
+    security_count = base.filter(
+        or_(
+            AuditLog.module == 'security',
+            AuditLog.category == 'login',
+            AuditLog.action.in_(SECURITY_ACTIONS),
+        )
+    ).count()
+    failed_logins = base.filter(AuditLog.action == 'LOGIN_FAILED').count()
+    return {
+        'total': total,
+        'today': today_count,
+        'this_week': week_count,
+        'security_events': security_count,
+        'failed_logins': failed_logins,
+        'module_count': len(by_module),
+        'by_module': [{'module': m or 'app', 'label': module_label(m or 'app'), 'count': c} for m, c in by_module],
+        'last_event_at': recent.timestamp.isoformat() + 'Z' if recent and recent.timestamp else None,
+    }
 
 
 def security_audit_summary(AuditLog, limit=25):
