@@ -23,6 +23,17 @@ _DISPLAY_TZ = None
 
 _BACKUP_JOBS = {}
 _BACKUP_JOBS_LOCK = threading.Lock()
+_BACKUP_EXCEL_EXPORTER = None
+
+
+def register_backup_excel_exporter(exporter):
+    """Register a callable(dest_root, progress_cb) -> summary dict from app startup."""
+    global _BACKUP_EXCEL_EXPORTER
+    _BACKUP_EXCEL_EXPORTER = exporter
+
+
+def _backup_log(message: str):
+    print(f'[Case PM Backup] {message}', flush=True)
 
 
 def utc_now_iso():
@@ -168,17 +179,20 @@ def list_backups(config=None):
 
 def _add_excel_exports_to_zip(zf, manifest, progress_cb=None):
     """Add excel_exports/ portability spreadsheets (supplementary — not used on restore)."""
+    if not _BACKUP_EXCEL_EXPORTER:
+        manifest['excel_exports'] = {
+            'included': False,
+            'error': 'Excel exporter not registered — restart Case PM after updating (run.bat).',
+        }
+        _backup_log('Excel exports skipped — exporter not registered.')
+        return
     try:
-        from flask import has_app_context
-        if not has_app_context():
-            manifest['excel_exports'] = {'skipped': True, 'reason': 'no Flask app context'}
-            return
-        from backup_excel_exports import EXCEL_ROOT, build_excel_exports_to_dir, get_backup_export_models
-        from app import db
+        from backup_excel_exports import EXCEL_ROOT
         _notify_progress(progress_cb, 57, 'Building Excel portability exports…')
+        _backup_log('Building excel_exports/ folder…')
         with tempfile.TemporaryDirectory(prefix='casepm_excel_export_') as td:
             export_root = os.path.join(td, EXCEL_ROOT)
-            summary = build_excel_exports_to_dir(export_root, get_backup_export_models(), progress_cb, db=db)
+            summary = _BACKUP_EXCEL_EXPORTER(export_root, progress_cb)
             added = 0
             for root, _, files in os.walk(export_root):
                 for fn in files:
@@ -187,23 +201,29 @@ def _add_excel_exports_to_zip(zf, manifest, progress_cb=None):
                     zf.write(full, arc)
                     manifest['files'].append(arc)
                     added += 1
+            if added == 0:
+                raise RuntimeError('Excel export builder returned no files')
             manifest['excel_exports'] = {
                 'included': True,
                 'file_count': added,
                 'projects': summary.get('projects', 0),
+                'format': summary.get('format', 'xlsx'),
                 'note': 'Portability copies only — restore uses case_pm.db and uploads/',
             }
             if summary.get('program_lists_error') or summary.get('project_errors'):
                 manifest['excel_exports']['warnings'] = {
                     k: summary[k] for k in ('program_lists_error', 'project_errors') if summary.get(k)
                 }
+            _backup_log(f'Excel exports added: {added} file(s) in excel_exports/')
     except ImportError as exc:
         manifest['excel_exports'] = {
             'included': False,
-            'error': f'Missing dependency: {exc}. Run pip install -r requirements.txt (openpyxl).',
+            'error': f'Missing dependency: {exc}. Close run.bat and run INSTALL-PACKAGES.bat, then restart.',
         }
+        _backup_log(f'Excel exports failed (missing package): {exc}')
     except Exception as exc:
         manifest['excel_exports'] = {'included': False, 'error': str(exc)}
+        _backup_log(f'Excel exports failed: {exc}')
 
 
 def create_local_backup(note='', config=None, progress_cb=None):

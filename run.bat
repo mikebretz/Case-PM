@@ -58,7 +58,15 @@ if errorlevel 1 (
 )
 "%PY%" -m pip install --upgrade pip --quiet
 
-:: Install requirements if Flask not present
+:: Keep Python packages in sync (openpyxl required for Excel exports inside backup zips)
+echo Checking required packages...
+"%PY%" -m pip install -r requirements.txt --quiet
+if errorlevel 1 (
+    echo WARNING: Could not install all requirements. Run INSTALL-PACKAGES.bat if backups fail.
+    echo.
+)
+
+:: Legacy check — install full requirements if Flask missing entirely
 "%PY%" -c "import flask" >nul 2>&1
 if errorlevel 1 (
     echo Installing required packages — first run may take a few minutes...

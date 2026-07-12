@@ -39,22 +39,37 @@ def _project_slug(project) -> str:
     return _slug('_'.join(p for p in parts if p), f'project_{project.id}')
 
 
-def _write_workbook(path: str, sheets: list[tuple[str, list[str], list[dict]]]) -> None:
-    from openpyxl import Workbook
-
+def _write_workbook(path: str, sheets: list[tuple[str, list[str], list[dict]]]) -> str:
+    """Write one workbook file. Returns actual path written (.xlsx or .csv fallback)."""
     os.makedirs(os.path.dirname(path), exist_ok=True)
-    wb = Workbook()
-    wb.remove(wb.active)
-    for sheet_name, headers, rows in sheets:
-        title = (sheet_name or 'Sheet')[:31]
-        ws = wb.create_sheet(title=title)
-        ws.append(headers)
-        for row in rows:
-            ws.append([_cell(row.get(h)) for h in headers])
-    if not wb.sheetnames:
-        ws = wb.create_sheet('Empty')
-        ws.append(['No data'])
-    wb.save(path)
+    sheet_name, headers, rows = sheets[0] if sheets else ('Sheet', ['Note'], [{'Note': 'No data'}])
+
+    try:
+        from openpyxl import Workbook
+
+        wb = Workbook()
+        wb.remove(wb.active)
+        for s_name, hdrs, sheet_rows in sheets:
+            title = (s_name or 'Sheet')[:31]
+            ws = wb.create_sheet(title=title)
+            ws.append(hdrs)
+            for row in sheet_rows:
+                ws.append([_cell(row.get(h)) for h in hdrs])
+        if not wb.sheetnames:
+            ws = wb.create_sheet('Empty')
+            ws.append(['No data'])
+        wb.save(path)
+        return path
+    except ImportError:
+        import csv
+
+        csv_path = path[:-5] + '.csv' if path.lower().endswith('.xlsx') else path + '.csv'
+        with open(csv_path, 'w', encoding='utf-8-sig', newline='') as fh:
+            writer = csv.writer(fh)
+            writer.writerow(headers)
+            for row in rows:
+                writer.writerow([_cell(row.get(h)) for h in headers])
+        return csv_path
 
 
 def _rows_from_dicts(items: list[dict], columns: list[str] | None = None) -> tuple[list[str], list[dict]]:
@@ -101,7 +116,13 @@ def build_excel_exports_to_dir(dest_root: str, models: dict, progress_cb=None, d
 
     Project = models['Project']
     projects = Project.query.order_by(Project.number, Project.name).all()
-    stats = {'files': 0, 'projects': len(projects)}
+    stats = {'files': 0, 'projects': len(projects), 'format': 'xlsx'}
+
+    try:
+        import openpyxl  # noqa: F401
+    except ImportError:
+        stats['format'] = 'csv'
+        stats['openpyxl_missing'] = True
 
     readme = os.path.join(dest_root, 'README.txt')
     os.makedirs(dest_root, exist_ok=True)
@@ -114,6 +135,8 @@ def build_excel_exports_to_dir(dest_root: str, models: dict, progress_cb=None, d
             'program backup zip for convenience.\n\n'
             'IMPORTANT: Restoring a backup uses case_pm.db and uploads/ only.\n'
             'These Excel files are NOT loaded back into Case PM automatically.\n\n'
+            'If openpyxl is not installed, files are saved as .csv instead of .xlsx.\n'
+            'Run INSTALL-PACKAGES.bat (or pip install -r requirements.txt) for .xlsx output.\n\n'
             'Folder layout:\n'
             '  program/     — company-wide lists (projects, companies, users)\n'
             '  by_project/  — one subfolder per job with module spreadsheets\n'
