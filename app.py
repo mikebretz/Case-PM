@@ -32,15 +32,30 @@ def format_usd_filter(value, cents=True):
     if cents:
         return f'${n:,.2f}'
     return f'${n:,.0f}'
-app.config['SECRET_KEY'] = os.environ.get('CASEPM_SECRET_KEY') or os.environ.get('SECRET_KEY') or 'case-pm-ultimate-secret-key-2026'
+app.config['SECRET_KEY'] = 'pending-security-init'
 app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///case_pm.db'
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 app.config['SQLALCHEMY_ENGINE_OPTIONS'] = {
     'connect_args': {'timeout': 60},
 }
 
-from access_control import configure_app_security
+from security_platform import (
+    apply_security_headers,
+    configure_app_security,
+    ensure_csrf_token,
+    get_pending_2fa_user_id,
+    guard_csrf,
+    guard_host_header,
+    guard_https_redirect,
+    is_2fa_verified,
+    load_deployment_settings,
+    mark_2fa_verified,
+    set_pending_2fa_user,
+)
+from access_control import configure_app_security as _access_control_extras
+
 configure_app_security(app)
+_access_control_extras(app)
 
 from db_sqlite import commit_with_retry, register_sqlite_pragmas
 register_sqlite_pragmas()
@@ -103,6 +118,7 @@ PROJECT_AGNOSTIC_ENDPOINTS = frozenset({
     'recovery_login',
     'recovery_enter',
     'force_change_password',
+    'verify_2fa',
     'static',
     'favicon',
     'api_stats',
@@ -210,6 +226,47 @@ def _migrate_user_signature_schema():
         _user_signature_schema_ready = True
     except Exception as exc:
         print(f'User schema migration warning: {exc}')
+
+
+@app.before_request
+def _platform_security_guards():
+    blocked = guard_https_redirect()
+    if blocked is not None:
+        return blocked
+    blocked = guard_host_header()
+    if blocked is not None:
+        return blocked
+    blocked = guard_csrf(request.endpoint)
+    if blocked is not None:
+        try:
+            write_audit('CSRF_BLOCKED', request.path, module='security', category='other')
+            db.session.commit()
+        except Exception:
+            pass
+        return blocked
+
+
+@app.after_request
+def _platform_security_headers(response):
+    return apply_security_headers(response)
+
+
+@app.before_request
+def _require_2fa_verification():
+    if not current_user.is_authenticated:
+        return
+    ep = request.endpoint or ''
+    if ep in ('verify_2fa', 'logout', 'login', 'recovery_login', 'recovery_enter', 'static', 'favicon'):
+        return
+    try:
+        from totp_auth import user_needs_2fa, user_has_totp_configured
+        if user_needs_2fa(current_user) and not is_2fa_verified():
+            if not user_has_totp_configured(current_user) and ep not in ('force_change_password',):
+                flash('Set up two-factor authentication to continue.', 'warning')
+                return redirect(url_for('verify_2fa', setup=1))
+            return redirect(url_for('verify_2fa'))
+    except Exception:
+        return
 
 
 @app.before_request
@@ -364,9 +421,11 @@ def _bootstrap_user_schema(db):
         ensure_user_admin_schema(db)
     except Exception as exc:
         print(f'User admin schema warning: {exc}')
-
-
-# ==================== USER MODEL ====================
+    try:
+        from totp_auth import ensure_totp_schema
+        ensure_totp_schema(db)
+    except Exception as exc:
+        print(f'TOTP schema warning: {exc}')
 class User(db.Model, UserMixin):
     id = db.Column(db.Integer, primary_key=True)
     first_name = db.Column(db.String(80), nullable=False)
@@ -384,6 +443,8 @@ class User(db.Model, UserMixin):
     status = db.Column(db.String(20), default='Active')
     must_change_password = db.Column(db.Boolean, default=True)
     require_2fa = db.Column(db.Boolean, default=False)
+    totp_secret = db.Column(db.String(64))
+    totp_enabled = db.Column(db.Boolean, default=False)
     signature_path = db.Column(db.String(300))
     signature_hash = db.Column(db.String(64))
     signature_legal_name = db.Column(db.String(150))
@@ -551,13 +612,14 @@ class Project(db.Model):
 
 
 def get_current_project_id():
-    """Resolve the active project id from URL, session, or first project."""
+    """Resolve the active project id from URL, session, or first accessible project."""
     if not current_user.is_authenticated:
         return None
 
     project_id = request.args.get('project_id', type=int)
     if project_id:
-        if Project.query.get(project_id):
+        from project_access import user_can_access_project
+        if Project.query.get(project_id) and user_can_access_project(current_user, project_id, Project):
             session[CURRENT_PROJECT_SESSION_KEY] = project_id
             return project_id
         return None
@@ -566,15 +628,17 @@ def get_current_project_id():
     if stored:
         try:
             stored_id = int(stored)
-            if Project.query.get(stored_id):
+            from project_access import user_can_access_project
+            if Project.query.get(stored_id) and user_can_access_project(current_user, stored_id, Project):
                 return stored_id
         except (TypeError, ValueError):
             pass
 
-    first = Project.query.order_by(Project.name).first()
+    from project_access import filter_projects_for_user
+    first = filter_projects_for_user(current_user, Project.query.order_by(Project.name).all(), Project)
     if first:
-        session[CURRENT_PROJECT_SESSION_KEY] = first.id
-        return first.id
+        session[CURRENT_PROJECT_SESSION_KEY] = first[0].id
+        return first[0].id
     return None
 
 
@@ -641,12 +705,25 @@ def inject_project_context():
                 'phone': current_user.phone or '',
                 'require_2fa': bool(getattr(current_user, 'require_2fa', False)),
             }
+    from project_access import filter_projects_for_user
+    all_projects = filter_projects_for_user(
+        current_user,
+        Project.query.order_by(Project.name).all(),
+        Project,
+    )
+    csrf_token = ''
+    try:
+        from security_platform import ensure_csrf_token
+        csrf_token = ensure_csrf_token()
+    except Exception:
+        pass
     return {
         'active_project': active,
         'project_name': active.name if active else 'Select Project',
-        'all_projects': Project.query.order_by(Project.name).all(),
+        'all_projects': all_projects,
         'company_logo_url': company_logo_url,
         'current_user_profile': profile,
+        'csrf_token': csrf_token,
         **portal,
     }
 
@@ -1702,6 +1779,8 @@ def login():
             user.last_login = datetime.utcnow()
             db.session.commit()
             record_login_success(email)
+            mark_2fa_verified(True)
+            ensure_csrf_token()
             write_audit('RECOVERY_LOGIN', 'Recovery access via normal login', module='recovery', commit=True)
             flash('Recovery access granted.', 'warning')
             return redirect(url_for('developer_console'))
@@ -1710,11 +1789,13 @@ def login():
 
         if not user:
             record_login_failure(email)
+            write_audit('LOGIN_FAILED', f'Unknown email: {email}', module='security', category='login', commit=True)
             flash('No account found with that email address.', 'error')
             return render_template('login.html')
 
         if not user.check_password(password):
             record_login_failure(email)
+            write_audit('LOGIN_FAILED', f'Bad password: {email}', module='security', category='login', commit=True)
             flash('Incorrect password. Please try again.', 'error')
             return render_template('login.html')
 
@@ -1727,6 +1808,15 @@ def login():
         user.last_login = datetime.utcnow()
         db.session.commit()
         record_login_success(email)
+
+        from totp_auth import user_needs_2fa
+        from security_platform import mark_2fa_verified
+        if user_needs_2fa(user):
+            mark_2fa_verified(False)
+            write_audit('LOGIN_PASSWORD_OK', user.email, module='security', category='login', commit=True)
+            return redirect(url_for('verify_2fa'))
+        mark_2fa_verified(True)
+        ensure_csrf_token()
 
         if user.must_change_password:
             flash('You must change your password before continuing.', 'warning')
@@ -1837,21 +1927,189 @@ def force_change_password():
 
         if new_password != confirm_password:
             flash('Passwords do not match.', 'error')
-            return render_template('force_change_password.html')
+            return render_template('force_change_password.html', csrf_token=ensure_csrf_token())
 
-        if len(new_password) < 8:
-            flash('Password must be at least 8 characters long.', 'error')
-            return render_template('force_change_password.html')
+        from password_policy import validate_password
+        ok, msg = validate_password(
+            new_password,
+            email=current_user.email,
+            names=(current_user.first_name, current_user.last_name),
+        )
+        if not ok:
+            flash(msg, 'error')
+            return render_template('force_change_password.html', csrf_token=ensure_csrf_token())
 
         current_user.set_password(new_password)
         current_user.must_change_password = False
         db.session.commit()
+        write_audit('PASSWORD_CHANGED', 'Forced password change completed', module='security', category='settings', commit=True)
 
         flash('Password changed successfully! Please log in again.', 'success')
         logout_user()
         return redirect(url_for('login'))
 
-    return render_template('force_change_password.html')
+    return render_template('force_change_password.html', csrf_token=ensure_csrf_token())
+
+
+@app.route('/verify-2fa', methods=['GET', 'POST'])
+def verify_2fa():
+    from totp_auth import (
+        enable_totp,
+        generate_secret,
+        provisioning_uri,
+        qr_code_data_url,
+        user_has_totp_configured,
+        user_needs_2fa,
+        verify_code,
+    )
+
+    if not current_user.is_authenticated:
+        flash('Sign in first.', 'warning')
+        return redirect(url_for('login'))
+
+    if not user_needs_2fa(current_user) and not request.args.get('setup'):
+        mark_2fa_verified(True)
+        return redirect(url_for('dashboard'))
+
+    setup_mode = request.args.get('setup') or not user_has_totp_configured(current_user)
+    setup_secret = session.get('pending_totp_secret')
+    if setup_mode and not setup_secret:
+        setup_secret = generate_secret()
+        session['pending_totp_secret'] = setup_secret
+
+    if request.method == 'POST':
+        code = (request.form.get('code') or '').strip()
+        if setup_mode:
+            ok, err = enable_totp(current_user, setup_secret, code, db)
+            if not ok:
+                flash(err, 'error')
+                write_audit('2FA_SETUP_FAILED', current_user.email, module='security', category='login', commit=True)
+            else:
+                session.pop('pending_totp_secret', None)
+                mark_2fa_verified(True)
+                ensure_csrf_token()
+                db.session.commit()
+                write_audit('2FA_ENABLED', current_user.email, module='security', category='settings', commit=True)
+                flash('Two-factor authentication is enabled.', 'success')
+                return redirect(url_for('dashboard'))
+        else:
+            if verify_code(current_user, code):
+                mark_2fa_verified(True)
+                ensure_csrf_token()
+                write_audit('2FA_LOGIN_OK', current_user.email, module='security', category='login', commit=True)
+                flash('Verification successful.', 'success')
+                return redirect(url_for('dashboard'))
+            write_audit('2FA_LOGIN_FAILED', current_user.email, module='security', category='login', commit=True)
+            flash('Invalid code. Try again.', 'error')
+
+    uri = provisioning_uri(current_user, setup_secret) if setup_mode else ''
+    return render_template(
+        'verify_2fa.html',
+        setup_mode=setup_mode,
+        provisioning_uri=uri,
+        qr_data_url=qr_code_data_url(uri) if setup_mode else '',
+        manual_secret=setup_secret if setup_mode else '',
+        csrf_token=ensure_csrf_token(),
+    )
+
+
+@app.route('/api/users/me/2fa', methods=['GET'])
+@login_required
+def api_my_2fa_status():
+    from totp_auth import user_has_totp_configured, user_needs_2fa
+    return jsonify({
+        'ok': True,
+        'required': user_needs_2fa(current_user),
+        'enabled': user_has_totp_configured(current_user),
+        'verified': is_2fa_verified(),
+    })
+
+
+@app.route('/api/users/me/2fa/setup', methods=['POST'])
+@login_required
+def api_my_2fa_setup():
+    from totp_auth import generate_secret, provisioning_uri, qr_code_data_url
+    secret = generate_secret()
+    session['pending_totp_secret'] = secret
+    uri = provisioning_uri(current_user, secret)
+    return jsonify({
+        'ok': True,
+        'secret': secret,
+        'provisioning_uri': uri,
+        'qr_data_url': qr_code_data_url(uri),
+    })
+
+
+@app.route('/api/users/me/2fa/enable', methods=['POST'])
+@login_required
+def api_my_2fa_enable():
+    from totp_auth import enable_totp
+    body = request.get_json(silent=True) or {}
+    secret = session.get('pending_totp_secret') or body.get('secret')
+    code = body.get('code')
+    if not secret or not code:
+        return jsonify({'error': 'secret and code required'}), 400
+    ok, err = enable_totp(current_user, secret, code, db)
+    if not ok:
+        return jsonify({'error': err}), 400
+    session.pop('pending_totp_secret', None)
+    mark_2fa_verified(True)
+    db.session.commit()
+    write_audit('2FA_ENABLED', current_user.email, module='security', category='settings', commit=True)
+    return jsonify({'ok': True})
+
+
+@app.route('/api/users/me/2fa/disable', methods=['POST'])
+@login_required
+def api_my_2fa_disable():
+    from totp_auth import disable_totp
+    body = request.get_json(silent=True) or {}
+    ok, err = disable_totp(current_user, body.get('code', ''), db)
+    if not ok:
+        return jsonify({'error': err}), 400
+    db.session.commit()
+    write_audit('2FA_DISABLED', current_user.email, module='security', category='settings', commit=True)
+    return jsonify({'ok': True})
+
+
+@app.route('/api/users/<int:user_id>/project-memberships', methods=['GET'])
+@login_required
+@users_module_required
+def api_user_project_memberships(user_id):
+    from project_access import list_memberships_for_user
+    user = User.query.get_or_404(user_id)
+    if user.role == 'Developer':
+        from developer_tools import can_assign_developer_role
+        if not can_assign_developer_role(current_user):
+            return jsonify({'error': 'Not found'}), 404
+    return jsonify({'ok': True, 'memberships': list_memberships_for_user(user_id)})
+
+
+@app.route('/api/users/<int:user_id>/project-memberships', methods=['PUT'])
+@login_required
+@users_module_required
+def api_save_user_project_memberships(user_id):
+    from project_access import save_memberships_for_user
+    user = User.query.get_or_404(user_id)
+    body = request.get_json(silent=True) or {}
+    ids = body.get('project_ids') or []
+    try:
+        saved = save_memberships_for_user(user_id, ids, db)
+        db.session.commit()
+        write_audit('Updated project access', f'{user.email}: {len(saved)} projects', module='users', category='settings', commit=True)
+    except Exception as exc:
+        db.session.rollback()
+        return jsonify({'error': str(exc)}), 400
+    return jsonify({'ok': True, 'project_ids': saved})
+
+
+@app.route('/api/audit-log/security-summary', methods=['GET'])
+@login_required
+@admin_required
+def api_audit_security_summary():
+    from audit_log_persistence import ensure_audit_log_schema, security_audit_summary
+    ensure_audit_log_schema(db)
+    return jsonify({'ok': True, 'summary': security_audit_summary(AuditLog)})
 
 
 # ==================== DASHBOARD ====================

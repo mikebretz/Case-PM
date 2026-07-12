@@ -173,6 +173,10 @@ def create_user(db, User, Company, body: dict, *, actor_id: int | None = None, a
     if not temp_password:
         temp_password = generate_temp_password()
         generated = temp_password
+    from password_policy import validate_password
+    ok, msg = validate_password(temp_password, email=email, names=(first, last))
+    if not ok:
+        raise ValueError(msg)
 
     company = _resolve_company(db, Company, body.get('company'), body.get('company_id'))
     phones = body.get('phones') or []
@@ -254,6 +258,14 @@ def update_user(db, User, Company, user, body: dict, *, actor=None) -> object:
 
     temp_password = (body.get('tempPassword') or body.get('temp_password') or '').strip()
     if temp_password:
+        from password_policy import validate_password
+        ok, msg = validate_password(
+            temp_password,
+            email=user.email,
+            names=(user.first_name, user.last_name),
+        )
+        if not ok:
+            raise ValueError(msg)
         user.set_password(temp_password)
         user.must_change_password = True
 
@@ -269,6 +281,10 @@ def update_user(db, User, Company, user, body: dict, *, actor=None) -> object:
 
 def reset_user_password(user, password: str | None = None) -> str:
     pwd = (password or '').strip() or generate_temp_password()
+    from password_policy import validate_password
+    ok, msg = validate_password(pwd, email=user.email, names=(user.first_name, user.last_name))
+    if not ok:
+        raise ValueError(msg)
     user.set_password(pwd)
     user.must_change_password = True
     return pwd

@@ -1,0 +1,33 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="min-h-[70vh] flex items-center justify-center px-4">
+    <div class="w-full max-w-md bg-zinc-900 border border-zinc-700 rounded-2xl p-8">
+        <h1 class="text-xl font-semibold mb-2">{% if setup_mode %}Set Up Two-Factor Authentication{% else %}Verify Your Identity{% endif %}</h1>
+        <p class="text-sm text-zinc-400 mb-6">
+            {% if setup_mode %}
+            Scan the QR code with Google Authenticator, Microsoft Authenticator, or another TOTP app, then enter the 6-digit code.
+            {% else %}
+            Enter the 6-digit code from your authenticator app.
+            {% endif %}
+        </p>
+
+        {% if setup_mode and qr_data_url %}
+        <div class="flex justify-center mb-4">
+            <img src="{{ qr_data_url }}" alt="2FA QR code" class="bg-white p-2 rounded-lg" width="200" height="200">
+        </div>
+        <p class="text-xs text-zinc-500 mb-4 break-all">Manual key: <code class="text-amber-300">{{ manual_secret }}</code></p>
+        {% endif %}
+
+        <form method="POST" action="{{ url_for('verify_2fa', setup=1 if setup_mode else None) }}">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+            <label class="block text-sm text-zinc-400 mb-1.5">Authentication code</label>
+            <input type="text" name="code" inputmode="numeric" pattern="[0-9]{6}" maxlength="8" required autocomplete="one-time-code"
+                   class="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-4 py-3 text-center text-lg tracking-widest mb-4"
+                   placeholder="000000">
+            <button type="submit" class="w-full bg-emerald-600 hover:bg-emerald-500 text-white font-medium py-3 rounded-lg">
+                {% if setup_mode %}Enable &amp; Continue{% else %}Verify{% endif %}
+            </button>
+        </form>
+    </div>
+</div>
+{% endblock %}

@@ -358,3 +358,34 @@ def audit_stats(AuditLog):
         'by_module': [{'module': m or 'app', 'label': module_label(m or 'app'), 'count': c} for m, c in by_module],
         'last_event_at': recent.timestamp.isoformat() + 'Z' if recent and recent.timestamp else None,
     }
+
+
+SECURITY_ACTIONS = (
+    'LOGIN_FAILED', 'LOGIN_PASSWORD_OK', '2FA_LOGIN_FAILED', '2FA_LOGIN_OK',
+    '2FA_SETUP_FAILED', '2FA_ENABLED', '2FA_DISABLED', 'CSRF_BLOCKED',
+    'PASSWORD_CHANGED', 'RECOVERY_LOGIN',
+)
+
+
+def security_audit_summary(AuditLog, limit=25):
+    """Recent security-related audit events for admin review."""
+    from sqlalchemy import or_
+    q = AuditLog.query.filter(
+        or_(
+            AuditLog.module == 'security',
+            AuditLog.action.in_(SECURITY_ACTIONS),
+            AuditLog.category == 'login',
+        )
+    ).order_by(AuditLog.timestamp.desc()).limit(limit)
+    rows = q.all()
+    failed_logins = AuditLog.query.filter(AuditLog.action == 'LOGIN_FAILED').count()
+    csrf_blocks = AuditLog.query.filter(AuditLog.action == 'CSRF_BLOCKED').count()
+    twofa_fails = AuditLog.query.filter(AuditLog.action == '2FA_LOGIN_FAILED').count()
+    return {
+        'recent': [serialize_log(r) for r in rows],
+        'counts': {
+            'failed_logins': failed_logins,
+            'csrf_blocked': csrf_blocks,
+            'twofa_failures': twofa_fails,
+        },
+    }

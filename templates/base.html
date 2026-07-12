@@ -4,7 +4,9 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Case PM • {{ project_name }}</title>
-    
+    {% if current_user.is_authenticated and csrf_token %}
+    <meta name="csrf-token" content="{{ csrf_token }}">
+    {% endif %}
     <!-- Tailwind CSS + Font Awesome -->
     <script src="https://cdn.tailwindcss.com"></script>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
@@ -200,6 +202,9 @@
     <script src="{{ url_for('static', filename='js/casepm-money.js') }}"></script>
     <script src="{{ url_for('static', filename='js/casepm-project-storage.js') }}"></script>
     <script src="{{ url_for('static', filename='js/casepm-dialog.js') }}"></script>
+    {% if current_user.is_authenticated %}
+    <script src="{{ url_for('static', filename='js/casepm-security.js') }}"></script>
+    {% endif %}
     <script src="{{ url_for('static', filename='js/doc-picker.js') }}"></script>
     <script src="{{ url_for('static', filename='js/casepm-print.js') }}"></script>
     <script src="{{ url_for('static', filename='js/casepm-output.js') }}"></script>
