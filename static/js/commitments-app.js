@@ -1167,6 +1167,19 @@
     }
     const form = c.aia_form || 'N/A';
     const printHTML = `<!DOCTYPE html><html><head><title>${esc(c.number)} — ${esc(form)}</title><style>${buildPrintStyles()}</style></head><body>${buildAiaPrintHtml(c)}</body></html>`;
+    if (global.CasePMOutput) {
+      await global.CasePMOutput.deliverHtml({
+        title: `${c.number} — ${form}`,
+        html: printHTML,
+        filenameBase: `${c.number || 'Commitment'}_${form}`.replace(/[<>:"/\\|?*]+/g, '_'),
+        sourceModule: 'commitments',
+        systemFolderKey: 'contracts',
+        subfolder: 'Exports',
+        printOptions: { landscape: true },
+      });
+      logCommitmentAudit('COMMITMENT_PRINTED', { number: c.number, form: c.aia_form });
+      return;
+    }
     const win = window.open('', '_blank', 'width=900,height=700');
     if (!win) { alert('Pop-up blocked. Allow pop-ups to print.'); return; }
     win.document.write(printHTML);
@@ -1184,7 +1197,7 @@
     setTimeout(() => t.remove(), 2800);
   }
 
-  function exportExcel() {
+  async function exportExcel() {
     if (typeof XLSX === 'undefined') { alert('Excel library not loaded'); return; }
     const data = state.commitments.map(c => ({
       Number: c.number, Type: c.commitment_type, Title: c.title, Vendor: c.company_name,
@@ -1194,7 +1207,23 @@
     const ws = XLSX.utils.json_to_sheet(data);
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, 'Commitments');
-    XLSX.writeFile(wb, `Commitments_${projectId() || 'project'}.xlsx`);
+    const filename = `Commitments_${projectId() || 'project'}.xlsx`;
+    if (global.CasePMOutput) {
+      const buf = XLSX.write(wb, { bookType: 'xlsx', type: 'array' });
+      await global.CasePMOutput.deliverBlob({
+        title: 'Export Commitments',
+        blob: new Blob([buf], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' }),
+        mimeType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+        filename,
+        filenameBase: `Commitments_${projectId() || 'project'}`,
+        sourceModule: 'commitments',
+        systemFolderKey: 'contracts',
+        subfolder: 'Exports',
+        fileLabel: 'Excel (.xlsx)',
+      });
+      return;
+    }
+    XLSX.writeFile(wb, filename);
   }
 
   function bindFilters() {

@@ -962,12 +962,37 @@ function exportCompanies(format) {
     const ws = XLSX.utils.json_to_sheet(data);
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, "Companies");
-
-    if (format === 'csv') {
-        XLSX.writeFile(wb, "companies_export.csv");
-    } else {
-        XLSX.writeFile(wb, "companies_export.xlsx");
+    const isCsv = format === 'csv';
+    const filename = isCsv ? 'companies_export.csv' : 'companies_export.xlsx';
+    if (typeof CasePMOutput !== 'undefined') {
+        if (isCsv) {
+            const csv = XLSX.utils.sheet_to_csv(ws);
+            CasePMOutput.deliverBlob({
+                title: 'Export Companies',
+                blob: new Blob([csv], { type: 'text/csv' }),
+                mimeType: 'text/csv',
+                filename,
+                filenameBase: 'companies_export',
+                sourceModule: 'companies',
+                systemFolderKey: 'printed-output',
+                fileLabel: 'CSV',
+            });
+        } else {
+            const buf = XLSX.write(wb, { bookType: 'xlsx', type: 'array' });
+            CasePMOutput.deliverBlob({
+                title: 'Export Companies',
+                blob: new Blob([buf], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' }),
+                mimeType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+                filename,
+                filenameBase: 'companies_export',
+                sourceModule: 'companies',
+                systemFolderKey: 'printed-output',
+                fileLabel: 'Excel (.xlsx)',
+            });
+        }
+        return;
     }
+    XLSX.writeFile(wb, filename);
 }
 
 function importCompanies(type) {
@@ -1376,7 +1401,53 @@ function createAuthorizedCasePMUser(contact, companyId) {
 
 function printCompanyDetails() {
     const content = document.getElementById('viewCompanyContent').innerHTML;
-
+    const printContent = `
+        <html>
+        <head>
+            <title>Company Details - Print</title>
+            <style>
+                body { font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; padding: 30px; color: #222; line-height: 1.5; }
+                .print-header {
+                    display: flex;
+                    align-items: center;
+                    justify-content: space-between;
+                    border-bottom: 4px solid #10b981;
+                    padding-bottom: 15px;
+                    margin-bottom: 25px;
+                }
+                .print-header .logo-text {
+                    font-size: 32px;
+                    font-weight: 800;
+                    color: #10b981;
+                    letter-spacing: -1.5px;
+                }
+                h2 { color: #111; border-bottom: 1px solid #ddd; padding-bottom: 8px; margin-top: 0; }
+            </style>
+        </head>
+        <body>
+            <div class="print-header">
+                <div>
+                    <div class="logo-text">CASE PM</div>
+                    <div style="font-size:13px; color:#555; margin-top:2px;">Professional Construction Management</div>
+                </div>
+                <div style="text-align:right; font-size:14px;">
+                    <strong>ALDI Lakeland</strong><br>
+                    <span style="color:#666;">Project Documentation</span>
+                </div>
+            </div>
+            ${content}
+        </body>
+        </html>`;
+    if (typeof CasePMOutput !== 'undefined') {
+        CasePMOutput.deliverHtml({
+            title: 'Company Details',
+            html: printContent,
+            filenameBase: 'Company_Details',
+            sourceModule: 'companies',
+            systemFolderKey: 'printed-output',
+        });
+        return;
+    }
     const iframe = document.createElement('iframe');
     iframe.style.position = 'absolute';
     iframe.style.width = '0';

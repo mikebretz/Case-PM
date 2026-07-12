@@ -671,7 +671,7 @@
     if (j.minutes_body) el('tbMinutesBody').value = j.minutes_body;
   }
 
-  function printAgenda(blank) {
+  function buildToolboxAgendaHtml(blank) {
     const project = ctx.projectName || 'Project';
     const date = el('tbDate')?.value || new Date().toISOString().slice(0, 10);
     const subject = blank ? 'Toolbox / Tailgate Talk' : (el('tbSubject').value || 'Toolbox Talk');
@@ -680,7 +680,7 @@
     const actions = blank ? [] : collectActions();
     const refs = (compliance.osha_refs || []).map((r) => `<li>${esc(r)}</li>`).join('');
     const reqs = (compliance.requirements || []).map((r) => `<li>${esc(r)}</li>`).join('');
-    const html = `<!DOCTYPE html><html><head><title>Toolbox Agenda</title>
+    return `<!DOCTYPE html><html><head><title>Toolbox Agenda</title>
       <style>body{font-family:Arial,sans-serif;padding:24px;color:#111}h1{font-size:18px}table{width:100%;border-collapse:collapse;margin-top:16px}th,td{border:1px solid #ccc;padding:8px;text-align:left;font-size:12px}th{background:#f4f4f5}.meta{font-size:12px;color:#444;margin:8px 0}.sign{margin-top:32px;font-size:11px} .sign td{height:28px} ul{font-size:11px;color:#444}</style></head><body>
       <h1>${esc(compliance.title || 'Toolbox / Tailgate Safety Meeting')}</h1>
       <div class="meta"><strong>Project:</strong> ${esc(project)} &nbsp; <strong>Date:</strong> ${esc(date)} &nbsp; <strong>Topic:</strong> ${esc(subject)} &nbsp; <strong>Duration:</strong> ${esc(compliance.duration_minutes || '10–15')} min</div>
@@ -694,13 +694,40 @@
       <table class="sign"><tr><td colspan="2"><strong>Attendance (print names & sign):</strong></td></tr>
       ${[1,2,3,4,5,6,7,8].map(() => '<tr><td>Name: _________________________</td><td>Company: _____________ Signature: _____________</td></tr>').join('')}
       </table></body></html>`;
+  }
+
+  async function printAgenda(blank) {
+    const html = buildToolboxAgendaHtml(blank);
+    const base = blank ? 'Toolbox_Blank_Agenda' : 'Toolbox_Agenda';
+    if (global.CasePMOutput) {
+      await global.CasePMOutput.deliverHtml({
+        title: blank ? 'Blank Toolbox Agenda' : 'Toolbox Agenda',
+        html,
+        filenameBase: base,
+        sourceModule: 'safety',
+        systemFolderKey: 'safety',
+        subfolder: 'Toolbox Meetings',
+      });
+      return;
+    }
     const w = window.open('', '_blank');
     if (w) { w.document.write(html); w.document.close(); w.focus(); w.print(); }
   }
 
-  function printMinutes() {
+  async function printMinutes() {
     const body = el('tbMinutesBody').value || el('tbDiscussion').value;
     const html = `<!DOCTYPE html><html><head><title>Toolbox Minutes</title><style>body{font-family:Arial;padding:24px;white-space:pre-wrap;font-size:12px}</style></head><body><h2>Toolbox Meeting Minutes</h2><pre>${esc(body)}</pre></body></html>`;
+    if (global.CasePMOutput) {
+      await global.CasePMOutput.deliverHtml({
+        title: 'Toolbox Minutes',
+        html,
+        filenameBase: 'Toolbox_Minutes',
+        sourceModule: 'safety',
+        systemFolderKey: 'safety',
+        subfolder: 'Toolbox Meetings',
+      });
+      return;
+    }
     const w = window.open('', '_blank');
     if (w) { w.document.write(html); w.document.close(); w.focus(); w.print(); }
   }

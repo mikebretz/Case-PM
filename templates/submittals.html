@@ -2417,8 +2417,20 @@ async function showPrintSubmittalLogPicker() {
     printSubmittalLog(picked.fields);
 }
 
-function printSubmittalLog(selectedOptionalFields) {
+async function printSubmittalLog(selectedOptionalFields) {
     const html = buildSubmittalPrintSheet(selectedOptionalFields);
+    if (typeof CasePMOutput !== 'undefined') {
+        await CasePMOutput.deliverHtml({
+            title: 'Submittal Log',
+            html,
+            filenameBase: 'Submittal_Log',
+            sourceModule: 'submittals',
+            systemFolderKey: 'submittals',
+            subfolder: 'Exports',
+            printOptions: { bodyHtml: html, containerId: 'submittalPrintSheet', bodyClass: 'printing-submittal-log' },
+        });
+        return;
+    }
     if (typeof CasePMPrint !== 'undefined') {
         CasePMPrint.triggerPrintPreview(html, {
             containerId: 'submittalPrintSheet',

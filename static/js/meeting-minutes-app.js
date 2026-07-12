@@ -673,14 +673,25 @@
     } catch (e) { alert(e.message); }
   }
 
-  function printMinutes() {
+  async function printMinutes() {
     const body = el('mmMinutesBody')?.value || '';
     const subject = el('mmSubject')?.value || 'Meeting Minutes';
     const html = `<!DOCTYPE html><html><head><title>${esc(subject)}</title>
       <style>body{font-family:Georgia,serif;max-width:720px;margin:2rem auto;line-height:1.5;white-space:pre-wrap;}</style></head>
       <body><h1>${esc(subject)}</h1><pre style="font-family:inherit;white-space:pre-wrap;">${esc(body)}</pre></body></html>`;
+    if (global.CasePMOutput) {
+      await global.CasePMOutput.deliverHtml({
+        title: 'Meeting Minutes',
+        html,
+        filenameBase: subject.replace(/[<>:"/\\|?*]+/g, '_').slice(0, 80) || 'Meeting_Minutes',
+        sourceModule: 'meeting_minutes',
+        systemFolderKey: 'meeting-minutes',
+        subfolder: 'Exports',
+      });
+      return;
+    }
     if (global.CasePMPrint?.printHtmlInIframe) {
-      global.CasePMPrint.printHtmlInIframe(html, subject);
+      global.CasePMPrint.printHtmlInIframe(html, { title: subject });
     } else {
       const w = window.open('', '_blank');
       w.document.write(html);

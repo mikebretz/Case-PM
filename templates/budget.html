@@ -1379,6 +1379,20 @@
             XLSX.utils.book_append_sheet(wb, ws, "Budget");
 
             const filename = `Budget_ALDI_Lakeland_Rev${String(currentRevision).padStart(2, '0')}.xlsx`;
+            if (typeof CasePMOutput !== 'undefined') {
+                const buf = XLSX.write(wb, { bookType: 'xlsx', type: 'array' });
+                CasePMOutput.deliverBlob({
+                    title: 'Export Budget',
+                    blob: new Blob([buf], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' }),
+                    mimeType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+                    filename,
+                    filenameBase: `Budget_Rev${String(currentRevision).padStart(2, '0')}`,
+                    sourceModule: 'budget',
+                    systemFolderKey: 'printed-output',
+                    fileLabel: 'Excel (.xlsx)',
+                });
+                return;
+            }
             XLSX.writeFile(wb, filename);
         } catch (err) {
             console.error("Export failed:", err);
@@ -1388,11 +1402,7 @@
 
     // ==================== IMPORT (main header button - fully robust) ====================
     function importBudget() {
-        const input = document.createElement('input');
-        input.type = 'file';
-        input.accept = '.xlsx,.xls,.csv';
-        input.onchange = function(e) {
-            const file = e.target.files[0];
+        const runImport = (file) => {
             if (!file) return;
             const reader = new FileReader();
             reader.onload = function(ev) {
@@ -1482,6 +1492,19 @@
             if (file.name.toLowerCase().endsWith('.csv')) reader.readAsText(file);
             else reader.readAsArrayBuffer(file);
         };
+        if (typeof CasePMOutput !== 'undefined') {
+            CasePMOutput.promptImport({
+                title: 'Import Budget',
+                accept: '.xlsx,.xls,.csv',
+                onFile: runImport,
+                onDocuments: (files) => { if (files && files[0]) runImport(files[0]); },
+            });
+            return;
+        }
+        const input = document.createElement('input');
+        input.type = 'file';
+        input.accept = '.xlsx,.xls,.csv';
+        input.onchange = (e) => runImport(e.target.files[0]);
         input.click();
     }
 
@@ -1545,6 +1568,16 @@
                 </table>
             </body></html>
         `;
+        if (typeof CasePMOutput !== 'undefined') {
+            CasePMOutput.deliverHtml({
+                title: 'Budget Report',
+                html: printContent,
+                filenameBase: `Budget_Rev${String(currentRevision).padStart(2, '0')}`,
+                sourceModule: 'budget',
+                systemFolderKey: 'printed-output',
+            }).then(() => logBudgetAudit("BUDGET_PRINTED", { revision: currentRevision }));
+            return;
+        }
         const iframe = document.createElement('iframe');
         iframe.style.position = 'fixed';
         iframe.style.width = '0';

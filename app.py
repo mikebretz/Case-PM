@@ -6629,35 +6629,95 @@ def api_documents_create():
 @app.route('/api/documents/printed-output', methods=['POST'])
 @login_required
 def api_documents_printed_output():
-    """Save a print/PDF output into the locked Printed Output system folder."""
+    """Save a print/PDF output into the locked Printed Output system folder (legacy alias)."""
+    body = request.get_json(silent=True) or {}
+    if not body.get('mime_type'):
+        body = dict(body)
+        body['mime_type'] = 'application/pdf'
+    return _api_documents_save_output_impl(body)
+
+
+@app.route('/api/documents/save-output', methods=['POST'])
+@login_required
+def api_documents_save_output():
+    """Save print/export output into Documents (Printed Output or a module system folder)."""
+    body = request.get_json(silent=True) or {}
+    return _api_documents_save_output_impl(body)
+
+
+def _api_documents_save_output_impl(body):
     import base64 as b64mod
     from document_persistence import resolve_folder_by_key
 
-    body = request.get_json(silent=True) or {}
     project_id = body.get('project_id') or get_current_project_id()
     name = (body.get('name') or 'Printed document').strip()
-    pdf_data = body.get('pdf_base64') or body.get('file_base64')
-    source_module = body.get('source_module') or 'unknown'
-    if not project_id or not pdf_data:
-        return jsonify({'error': 'project_id and pdf_base64 required'}), 400
-    if ',' in pdf_data:
-        pdf_data = pdf_data.split(',', 1)[1]
+    file_data = body.get('file_base64') or body.get('pdf_base64')
+    mime_type = (body.get('mime_type') or 'application/pdf').strip().lower()
+    source_module = body.get('source_module') or 'export'
+    system_folder_key = (body.get('system_folder_key') or 'printed-output').strip()
+    subfolder = (body.get('subfolder') or '').strip() or None
+    extension = (body.get('extension') or '').strip().lstrip('.')
+
+    if not project_id or not file_data:
+        return jsonify({'error': 'project_id and file_base64 required'}), 400
+    if ',' in str(file_data):
+        file_data = str(file_data).split(',', 1)[1]
     try:
-        file_bytes = b64mod.b64decode(pdf_data)
+        file_bytes = b64mod.b64decode(file_data)
     except Exception:
-        return jsonify({'error': 'Invalid PDF data'}), 400
-    folder = resolve_folder_by_key(db, DocumentFolder, int(project_id), 'printed-output')
-    if not folder:
-        return jsonify({'error': 'Printed Output folder missing'}), 500
-    try:
-        doc_dict = _save_document_bytes(
-            int(project_id), file_bytes, name, secure_filename(f'{name}.pdf'),
-            'application/pdf', 'Printed', folder.id, True,
-            source_metadata={'source_module': source_module, 'printed_at': datetime.utcnow().isoformat()},
+        return jsonify({'error': 'Invalid file data'}), 400
+    if not file_bytes:
+        return jsonify({'error': 'Empty file'}), 400
+
+    ext_map = {
+        'application/pdf': 'pdf',
+        'text/html': 'html',
+        'text/plain': 'txt',
+        'text/csv': 'csv',
+        'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet': 'xlsx',
+        'application/vnd.ms-excel': 'xls',
+    }
+    ext = extension or ext_map.get(mime_type, 'bin')
+    safe_base = secure_filename(name) or 'export'
+    if not safe_base.lower().endswith('.' + ext):
+        fname = f'{safe_base}.{ext}'
+    else:
+        fname = safe_base
+
+    doc_type = 'Printed' if system_folder_key == 'printed-output' else 'Export'
+    meta = {
+        'source_module': source_module,
+        'saved_at': datetime.utcnow().isoformat(),
+        'mime_type': mime_type,
+    }
+
+    if subfolder:
+        doc = _mirror_to_system_subfolder(
+            int(project_id), file_bytes, name, fname,
+            system_folder_key, subfolder, doc_type,
+            meta, is_system_locked=True, uploaded_by_id=current_user.id,
         )
-    except ValueError as exc:
-        return jsonify({'error': str(exc)}), 400
-    return jsonify({'ok': True, 'document': doc_dict}), 201
+    else:
+        folder = resolve_folder_by_key(db, DocumentFolder, int(project_id), system_folder_key)
+        if not folder:
+            return jsonify({'error': f'System folder "{system_folder_key}" missing'}), 500
+        try:
+            doc = _save_document_bytes(
+                int(project_id), file_bytes, name, fname,
+                mime_type, doc_type, folder.id, True,
+                source_metadata=meta,
+            )
+        except ValueError as exc:
+            return jsonify({'error': str(exc)}), 400
+
+    if doc and doc.get('id'):
+        _notify_documents_team(
+            int(project_id),
+            'Output saved to Documents',
+            f'"{name}" filed to Documents.',
+            f'/documents?project_id={project_id}',
+        )
+    return jsonify({'ok': True, 'document': doc}), 201
 
 
 def _create_document_share_link(document_id: int, days: int = 30, max_downloads: int | None = None, password: str | None = None):

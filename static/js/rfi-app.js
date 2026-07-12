@@ -970,7 +970,7 @@
     openModal('edit', r);
   }
 
-  function exportExcel() {
+  async function exportExcel() {
     if (typeof XLSX === 'undefined') { alert('Excel library not loaded'); return; }
     const rows = filteredRfis().map(r => ({
       Number: r.number, Subject: r.subject, Status: r.status, Priority: r.priority,
@@ -981,7 +981,23 @@
     const ws = XLSX.utils.json_to_sheet(rows);
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, 'RFI Log');
-    XLSX.writeFile(wb, `RFI_Log_${projectId() || 'project'}.xlsx`);
+    const filename = `RFI_Log_${projectId() || 'project'}.xlsx`;
+    if (global.CasePMOutput) {
+      const buf = XLSX.write(wb, { bookType: 'xlsx', type: 'array' });
+      await global.CasePMOutput.deliverBlob({
+        title: 'Export RFI Log',
+        blob: new Blob([buf], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' }),
+        mimeType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+        filename,
+        filenameBase: `RFI_Log_${projectId() || 'project'}`,
+        sourceModule: 'rfis',
+        systemFolderKey: 'rfis',
+        subfolder: 'Exports',
+        fileLabel: 'Excel (.xlsx)',
+      });
+      return;
+    }
+    XLSX.writeFile(wb, filename);
   }
 
   const RFI_BASE_PRINT_COLUMNS = [
@@ -1040,6 +1056,18 @@
       sections: [{ title: 'RFI LOG', columns, rows, emptyMessage: 'No RFIs to print.' }],
       rowsPerPage: 24,
     });
+    if (global.CasePMOutput) {
+      await global.CasePMOutput.deliverHtml({
+        title: 'RFI Log',
+        html,
+        filenameBase: `RFI_Log_${projectId() || 'project'}`,
+        sourceModule: 'rfis',
+        systemFolderKey: 'rfis',
+        subfolder: 'Exports',
+        printOptions: { bodyHtml: html, containerId: 'rfiPrintSheet', bodyClass: 'printing-rfi-log' },
+      });
+      return;
+    }
     global.CasePMPrint.triggerPrintPreview(html, { containerId: 'rfiPrintSheet', bodyClass: 'printing-rfi-log' });
   }
 

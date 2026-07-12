@@ -219,7 +219,19 @@
     }
   }
 
-  function printReport() {
+  async function printReport() {
+    const root = document.querySelector('.forecast-page') || document.getElementById('mainContent');
+    if (global.CasePMOutput && root) {
+      await global.CasePMOutput.deliverHtml({
+        title: 'Financial Forecast',
+        html: global.CasePMOutput.htmlFromElement(root, 'Financial Forecast'),
+        filenameBase: 'Financial_Forecast',
+        sourceModule: 'forecast',
+        systemFolderKey: 'printed-output',
+        onPrint: async () => { window.print(); },
+      });
+      return;
+    }
     window.print();
   }
 
