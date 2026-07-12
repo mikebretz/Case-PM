@@ -172,12 +172,15 @@ def load_backup_settings():
 
 def save_backup_settings(form_data):
     cloud = form_data.get('cloud') if isinstance(form_data.get('cloud'), dict) else {}
+    existing = get_section('backup', BACKUP_DEFAULTS)
     payload = {
         'auto_enabled': bool(form_data.get('auto_enabled')),
         'frequency': form_data.get('frequency') or 'daily',
         'retention_days': int(form_data.get('retention_days') or 30),
         'local_path': form_data.get('local_path') or BACKUP_DEFAULTS['local_path'],
         'maintenance_window': form_data.get('maintenance_window') or '02:00',
+        'last_run_at': form_data.get('last_run_at', existing.get('last_run_at', '')),
+        'last_run_status': form_data.get('last_run_status', existing.get('last_run_status', '')),
         'cloud': {
             'enabled': bool(cloud.get('enabled')),
             'provider': cloud.get('provider') or 'local_folder',

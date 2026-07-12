@@ -58,6 +58,32 @@
     CasePMDialog?.alert('Company information saved.', 'success');
   }
 
+  function collectBackupSettingsFromForm() {
+    return {
+      auto_enabled: document.getElementById('backup_auto_enabled')?.checked,
+      frequency: document.getElementById('backup_frequency')?.value,
+      retention_days: parseInt(document.getElementById('backup_retention_days')?.value || '30', 10),
+      local_path: document.getElementById('backup_local_path')?.value?.trim(),
+      maintenance_window: document.getElementById('backup_maintenance_window')?.value,
+      cloud: {
+        enabled: document.getElementById('cloud_backup_enabled')?.checked,
+        provider: document.getElementById('cloud_provider')?.value,
+        local_mirror_path: document.getElementById('cloud_mirror_path')?.value?.trim(),
+        bucket: document.getElementById('cloud_bucket')?.value?.trim(),
+        region: document.getElementById('cloud_region')?.value?.trim(),
+      },
+    };
+  }
+
+  function updateCloudProviderFields() {
+    const provider = document.getElementById('cloud_provider')?.value || 'local_folder';
+    const cloudOnly = document.getElementById('cloudBucketRegionFields');
+    const mirrorWrap = document.getElementById('cloudMirrorPathWrap');
+    const isLocal = provider === 'local_folder';
+    if (cloudOnly) cloudOnly.classList.toggle('hidden', isLocal);
+    if (mirrorWrap) mirrorWrap.classList.toggle('hidden', !isLocal);
+  }
+
   async function loadBackupForm() {
     const json = await api('/api/program-settings/backup');
     const b = json.backup || {};
@@ -77,6 +103,7 @@
     setChk('maint_db_vacuum', m.db_vacuum_enabled !== false);
     set('maint_log_retention', m.log_retention_days || 90);
     set('maint_temp_cleanup', m.temp_upload_cleanup_days || 14);
+    updateCloudProviderFields();
     const statusEl = document.getElementById('backupLastRunStatus');
     if (statusEl) {
       statusEl.textContent = b.last_run_at
@@ -88,20 +115,7 @@
 
   async function saveBackupForm() {
     const payload = {
-      backup: {
-        auto_enabled: document.getElementById('backup_auto_enabled')?.checked,
-        frequency: document.getElementById('backup_frequency')?.value,
-        retention_days: parseInt(document.getElementById('backup_retention_days')?.value || '30', 10),
-        local_path: document.getElementById('backup_local_path')?.value?.trim(),
-        maintenance_window: document.getElementById('backup_maintenance_window')?.value,
-        cloud: {
-          enabled: document.getElementById('cloud_backup_enabled')?.checked,
-          provider: document.getElementById('cloud_provider')?.value,
-          local_mirror_path: document.getElementById('cloud_mirror_path')?.value?.trim(),
-          bucket: document.getElementById('cloud_bucket')?.value?.trim(),
-          region: document.getElementById('cloud_region')?.value?.trim(),
-        },
-      },
+      backup: collectBackupSettingsFromForm(),
       maintenance: {
         db_vacuum_enabled: document.getElementById('maint_db_vacuum')?.checked,
         log_retention_days: parseInt(document.getElementById('maint_log_retention')?.value || '90', 10),
@@ -115,15 +129,44 @@
       body: JSON.stringify(payload),
     });
     CasePMDialog?.alert('Backup & maintenance settings saved.', 'success');
+    await loadBackupForm();
   }
 
   async function runBackupNow() {
-    const ok = await CasePMDialog?.confirm('Create a full local backup now (database + settings + uploads)?', { title: 'Run backup', confirmLabel: 'Start' });
+    const backup = collectBackupSettingsFromForm();
+    const mirrorPath = backup.cloud?.local_mirror_path || '';
+    const mirrorEnabled = backup.cloud?.enabled;
+    let message = 'Create a full local backup now (database + settings + uploads)?';
+    if (mirrorPath) {
+      message += `\n\nOff-site copy path:\n${mirrorPath}`;
+      if (!mirrorEnabled) {
+        message += '\n\n(Cloud mirror checkbox is off, but Run Backup Now will still copy to this folder when a path is entered.)';
+      }
+    } else if (mirrorEnabled) {
+      message += '\n\nWarning: cloud mirror is enabled but no mirror folder path is set — only a local backup will be created.';
+    }
+    const ok = await CasePMDialog?.confirm(message, { title: 'Run backup', confirmLabel: 'Start' });
     if (!ok) return;
-    const json = await api('/api/program-settings/backup/run', { method: 'POST' });
-    CasePMDialog?.alert(`Backup created: ${json.result?.filename}`, 'success');
-    await refreshBackupList();
-    await loadBackupForm();
+    try {
+      const json = await api('/api/program-settings/backup/run', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ backup }),
+      });
+      const result = json.result || {};
+      let detail = `Local backup created: ${result.filename}`;
+      if (result.cloud_mirror_status === 'success') {
+        detail += `\n\nCopied to off-site folder:\n${result.cloud_mirror_file || result.cloud_mirror}`;
+      } else if (result.cloud_mirror_skipped) {
+        detail += `\n\nOff-site copy skipped: ${result.cloud_mirror_skipped}`;
+      }
+      CasePMDialog?.alert(detail, result.cloud_mirror_status === 'success' ? 'success' : 'info');
+      await refreshBackupList();
+      await loadBackupForm();
+    } catch (err) {
+      CasePMDialog?.alert(err.message || 'Backup failed.', 'error');
+      await loadBackupForm();
+    }
   }
 
   async function refreshBackupList() {
@@ -419,7 +462,7 @@
   global.CasePMProgramSettings = {
     loadCompanyForm, saveCompanyForm, loadBackupForm, saveBackupForm,
     runBackupNow, refreshBackupList, chooseBackupToInstall, installBackup,
-    uploadBackupFile, clearAllProgramData,
+    uploadBackupFile, clearAllProgramData, updateCloudProviderFields,
     setSageMode, testSageConnection,
     syncEmailFromServer, pushEmailToServer,
     loadNumberingForm, saveNumberingForm, loadPayAppsForm, savePayAppsForm,
