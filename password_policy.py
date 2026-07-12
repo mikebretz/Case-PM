@@ -4,6 +4,7 @@ from __future__ import annotations
 import re
 
 MIN_LENGTH = 12
+MIN_TEMP_LENGTH = 4
 COMMON_PASSWORDS = frozenset({
     'password', 'password123', 'admin123', 'temppass123!', 'casepm2026',
     'welcome123', 'changeme', 'letmein', 'construction',
@@ -44,4 +45,14 @@ def validate_password(password: str, *, email: str = '', names: tuple[str, ...] 
         n = (name or '').strip().lower()
         if len(n) >= 3 and n in lower:
             return False, 'Password must not contain your name.'
+    return True, ''
+
+
+def validate_temporary_password(password: str) -> tuple[bool, str]:
+    """Admin-set initial / reset passwords — simple temporary values allowed."""
+    pwd = (password or '').strip()
+    if len(pwd) < MIN_TEMP_LENGTH:
+        return False, f'Initial password must be at least {MIN_TEMP_LENGTH} characters.'
+    if len(pwd) > 128:
+        return False, 'Password is too long.'
     return True, ''

@@ -243,7 +243,7 @@
                                 <button type="button" onclick="resetUserPassword()" class="px-4 py-2 text-xs bg-amber-600 hover:bg-amber-500 rounded whitespace-nowrap text-white font-medium">Reset Password</button>
                             </div>
                             <div id="passwordResetNote" class="text-[10px] text-amber-400 mt-1 hidden">New temporary password generated. User should change on first login.</div>
-                            <p class="text-[10px] text-zinc-500 mt-1">Leave blank to auto-generate. If set manually: at least 12 characters with upper, lower, number, and special character.</p>
+                            <p class="text-[10px] text-zinc-500 mt-1">Leave blank to auto-generate. Simple initial passwords (e.g. admin123) are fine — users are prompted to choose a strong password on first login.</p>
                         </div>
 
                         <div>
@@ -1097,23 +1097,11 @@
         }
     }
 
-    function validateTempPassword(password, email, firstName, lastName) {
+    function validateTempPassword(password) {
         const pwd = (password || '').trim();
         if (!pwd) return null;
-        if (pwd.length < 12) return 'Password must be at least 12 characters.';
-        if (!/[A-Z]/.test(pwd)) return 'Password must include an uppercase letter.';
-        if (!/[a-z]/.test(pwd)) return 'Password must include a lowercase letter.';
-        if (!/\d/.test(pwd)) return 'Password must include a number.';
-        if (!/[^A-Za-z0-9]/.test(pwd)) return 'Password must include a special character.';
-        const lower = pwd.toLowerCase();
-        if (email) {
-            const local = email.split('@')[0].toLowerCase();
-            if (local.length >= 3 && lower.includes(local)) return 'Password must not contain the email address.';
-        }
-        for (const name of [firstName, lastName]) {
-            const n = (name || '').trim().toLowerCase();
-            if (n.length >= 3 && lower.includes(n)) return 'Password must not contain the user\'s name.';
-        }
+        if (pwd.length < 4) return 'Initial password must be at least 4 characters.';
+        if (pwd.length > 128) return 'Password is too long.';
         return null;
     }
 
@@ -1195,7 +1183,7 @@
                 notes: document.getElementById('notes').value.trim(),
             };
             const tempPass = document.getElementById('tempPassword').value.trim();
-            const passwordError = validateTempPassword(tempPass, email, firstName, lastName);
+            const passwordError = validateTempPassword(tempPass);
             if (passwordError) {
                 showCenteredAlert(passwordError, 'warning');
                 switchTab('general');
