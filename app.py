@@ -12319,11 +12319,11 @@ def forbidden(e):
 @login_required
 @admin_required
 def audit_log():
-    from audit_log_persistence import AUDIT_MODULES, AUDIT_CATEGORIES, ensure_audit_log_schema
+    from audit_log_persistence import audit_modules_for_page, AUDIT_CATEGORIES, ensure_audit_log_schema
     ensure_audit_log_schema(db)
     return render_template(
         'audit_log.html',
-        audit_modules=AUDIT_MODULES,
+        audit_modules=audit_modules_for_page(),
         audit_categories=AUDIT_CATEGORIES,
     )
 
@@ -12332,11 +12332,11 @@ def audit_log():
 @login_required
 @admin_required
 def audit_log_page():
-    from audit_log_persistence import AUDIT_MODULES, AUDIT_CATEGORIES, ensure_audit_log_schema
+    from audit_log_persistence import audit_modules_for_page, AUDIT_CATEGORIES, ensure_audit_log_schema
     ensure_audit_log_schema(db)
     return render_template(
         'audit_log.html',
-        audit_modules=AUDIT_MODULES,
+        audit_modules=audit_modules_for_page(),
         audit_categories=AUDIT_CATEGORIES,
     )
 
@@ -12399,8 +12399,8 @@ def api_audit_log_stats():
 @login_required
 @admin_required
 def api_audit_log_modules():
-    from audit_log_persistence import AUDIT_MODULES, AUDIT_CATEGORIES
-    return jsonify({'ok': True, 'modules': AUDIT_MODULES, 'categories': AUDIT_CATEGORIES})
+    from audit_log_persistence import audit_modules_for_page, AUDIT_CATEGORIES
+    return jsonify({'ok': True, 'modules': audit_modules_for_page(), 'categories': AUDIT_CATEGORIES})
 
 
 # ==================== EMAIL PAGE ====================
