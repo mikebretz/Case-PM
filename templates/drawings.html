@@ -3,6 +3,7 @@
 {% block content %}
 <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
 <script src="{{ url_for('static', filename='js/drawings-app.js') }}?v=20260710f"></script>
+<link rel="stylesheet" href="{{ url_for('static', filename='css/draw-viewer.css') }}">
 
 <style>
 .draw-page {
@@ -602,6 +603,15 @@
         <div class="flex items-center gap-2 min-w-0">
             <button type="button" onclick="CasePMDrawings.closeViewer()" class="px-2 py-1 text-xs bg-zinc-800 hover:bg-zinc-700 rounded-md h-[28px]"><i class="fa-solid fa-arrow-left"></i></button>
             <div id="viewerSheetTitle" class="text-xs font-medium truncate max-w-[200px] sm:max-w-none">Drawing Viewer</div>
+            <div id="pdfPageNav" class="pdf-page-nav hidden items-center gap-0.5 no-print">
+                <button type="button" id="btnPdfPrevPage" onclick="CasePMDrawings.pdfPrevPage()" class="pdf-page-nav-btn" title="Previous page"><i class="fa-solid fa-chevron-left"></i></button>
+                <span id="pdfPageIndicator" class="pdf-page-indicator">1 / 1</span>
+                <button type="button" id="btnPdfNextPage" onclick="CasePMDrawings.pdfNextPage()" class="pdf-page-nav-btn" title="Next page"><i class="fa-solid fa-chevron-right"></i></button>
+                <span class="pdf-page-nav-divider"></span>
+                <button type="button" id="pdfViewModeSingle" onclick="CasePMDrawings.setPdfViewMode('single')" class="pdf-view-mode-btn active" title="Single page"><i class="fa-regular fa-file"></i></button>
+                <button type="button" id="pdfViewModeContinuous" onclick="CasePMDrawings.setPdfViewMode('continuous')" class="pdf-view-mode-btn" title="Continuous scroll"><i class="fa-solid fa-bars"></i></button>
+                <button type="button" id="btnTogglePageThumbs" onclick="CasePMDrawings.togglePageThumbs()" class="pdf-view-mode-btn active" title="Page thumbnails"><i class="fa-regular fa-images"></i></button>
+            </div>
         </div>
         <div class="flex items-center gap-1 flex-wrap">
             <select id="viewerRevisionSelect" onchange="CasePMDrawings.viewRevisionInViewer()" class="bg-zinc-800 border border-zinc-700 rounded px-2 py-1 text-[10px] max-w-[160px] h-[28px]" title="View a revision"></select>
@@ -629,6 +639,13 @@
         </div>
     </div>
     <div class="flex flex-1 min-h-0">
+        <aside id="drawPageThumbSidebar" class="draw-page-thumb-sidebar hidden no-print">
+            <div class="draw-page-thumb-header">
+                <span class="draw-page-thumb-title">Pages</span>
+                <button type="button" onclick="CasePMDrawings.togglePageThumbs(false)" class="draw-page-thumb-close" title="Hide thumbnails">&times;</button>
+            </div>
+            <div id="drawPageThumbList" class="draw-page-thumb-list"></div>
+        </aside>
         <div class="draw-tool-rail flex-shrink-0 border-r border-zinc-800 flex flex-col items-center py-1.5 gap-0.5 no-print overflow-y-auto">
             <div class="draw-tool-group-label">Nav</div>
             <button type="button" id="tool-pan" onclick="CasePMDrawings.setTool('pan')" class="tool-btn" title="Pan (H)"><i class="fa-solid fa-hand"></i></button>
