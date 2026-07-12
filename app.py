@@ -246,6 +246,50 @@ def write_audit(action, detail='', module='app', commit=False, **kwargs):
         db.session.rollback()
 
 
+def _alter_user_columns(db, additions):
+    """Add missing user columns — inline fallback when persistence modules are unavailable."""
+    from sqlalchemy import inspect, text
+
+    inspector = inspect(db.engine)
+    if 'user' not in inspector.get_table_names():
+        return
+    existing = {c['name'] for c in inspector.get_columns('user')}
+    for col, typedef in additions.items():
+        if col not in existing:
+            db.session.execute(text(f'ALTER TABLE user ADD COLUMN {col} {typedef}'))
+    db.session.commit()
+
+
+def _bootstrap_user_schema(db):
+    """Ensure user table columns exist before Flask-Login loads User."""
+    try:
+        from user_signature_persistence import ensure_user_signature_schema
+        ensure_user_signature_schema(db)
+    except ImportError:
+        _alter_user_columns(db, {
+            'signature_path': 'VARCHAR(300)',
+            'signature_hash': 'VARCHAR(64)',
+            'signature_legal_name': 'VARCHAR(150)',
+            'signature_initials': 'VARCHAR(20)',
+            'signature_set_at': 'DATETIME',
+            'signature_audit_json': 'TEXT',
+            'certificate_meta_json': 'TEXT',
+        })
+    except Exception as exc:
+        print(f'User signature schema warning: {exc}')
+    try:
+        from user_profile_persistence import ensure_user_profile_schema
+        ensure_user_profile_schema(db)
+    except ImportError:
+        _alter_user_columns(db, {
+            'job_title': 'VARCHAR(120)',
+            'address': 'VARCHAR(300)',
+            'profile_image_path': 'VARCHAR(300)',
+        })
+    except Exception as exc:
+        print(f'User profile schema warning: {exc}')
+
+
 @app.before_request
 def _migrate_user_signature_schema():
     """Run before login loads User — new signature columns must exist first."""
@@ -253,10 +297,7 @@ def _migrate_user_signature_schema():
     if _user_signature_schema_ready:
         return
     try:
-        from user_signature_persistence import ensure_user_signature_schema
-        from user_profile_persistence import ensure_user_profile_schema
-        ensure_user_signature_schema(db)
-        ensure_user_profile_schema(db)
+        _bootstrap_user_schema(db)
         _user_signature_schema_ready = True
     except Exception as exc:
         print(f'User schema migration warning: {exc}')
@@ -318,7 +359,18 @@ class User(db.Model, UserMixin):
 
 @login_manager.user_loader
 def load_user(user_id):
-    return User.query.get(int(user_id))
+    try:
+        return User.query.get(int(user_id))
+    except Exception as exc:
+        err = str(exc).lower()
+        if 'no such column' in err or 'has no column' in err:
+            try:
+                _bootstrap_user_schema(db)
+                db.session.rollback()
+                return User.query.get(int(user_id))
+            except Exception:
+                db.session.rollback()
+        raise
 
 
 # ==================== DATABASE MODELS ====================
@@ -485,7 +537,7 @@ def redirect_with_project(endpoint, **values):
 
 @app.context_processor
 def inject_project_context():
-    if not current_user.is_authenticated:
+    if not getattr(current_user, 'is_authenticated', False):
         return {'current_user_profile': {}}
     active = get_active_project()
     portal = {}
@@ -538,7 +590,7 @@ def inject_developer_flag():
     from audit_log_persistence import ENDPOINT_TO_MODULE
     ep = request.endpoint or ''
     page_module = ENDPOINT_TO_MODULE.get(ep, 'app')
-    if not current_user.is_authenticated:
+    if not getattr(current_user, 'is_authenticated', False):
         return {'is_developer': False, 'developer_unlock_mode': False, 'page_module': page_module, 'is_admin_user': False, 'can_access_module': lambda m, min_access='view': False, 'allowed_modules': {}}
     try:
         from developer_tools import is_developer, developer_unlock_active
@@ -11173,7 +11225,20 @@ def page_not_found(e):
 
 @app.errorhandler(500)
 def internal_server_error(e):
+    import traceback
+
     db.session.rollback()
+    debug = os.environ.get('CASEPM_DEBUG', '1').lower() not in ('0', 'false', 'no')
+    if debug:
+        print('\n=== Case PM 500 error ===')
+        if e is not None:
+            traceback.print_exception(type(e), e, getattr(e, '__traceback__', None))
+        else:
+            traceback.print_exc()
+        print('=== end 500 ===\n')
+        if app.debug:
+            body = traceback.format_exception(type(e), e, getattr(e, '__traceback__', None)) if e else traceback.format_exc()
+            return '<pre style="white-space:pre-wrap">' + ''.join(body) + '</pre>', 500
     return 'Internal server error', 500
 
 
@@ -12471,10 +12536,7 @@ with app.app_context():
         except Exception as _att:
             print('Attachment columns:', _att)
         try:
-            from user_signature_persistence import ensure_user_signature_schema
-            from user_profile_persistence import ensure_user_profile_schema
-            ensure_user_signature_schema(db)
-            ensure_user_profile_schema(db)
+            _bootstrap_user_schema(db)
         except Exception as _sig:
             print('User profile schema:', _sig)
     except Exception as _e:
@@ -12496,12 +12558,9 @@ if __name__ == '__main__':
         except Exception:
             pass
         try:
-            from user_signature_persistence import ensure_user_signature_schema
-            from user_profile_persistence import ensure_user_profile_schema
-            ensure_user_signature_schema(db)
-            ensure_user_profile_schema(db)
-        except Exception:
-            pass
+            _bootstrap_user_schema(db)
+        except Exception as exc:
+            print(f'User profile schema startup warning: {exc}')
 
         # Create default admin user if it doesn't exist
         admin = User.query.filter_by(email='admin@casepm.local').first()
