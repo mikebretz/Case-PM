@@ -254,12 +254,12 @@ def _migrate_user_signature_schema():
         return
     try:
         from user_signature_persistence import ensure_user_signature_schema
-        ensure_user_signature_schema(db)
         from user_profile_persistence import ensure_user_profile_schema
+        ensure_user_signature_schema(db)
         ensure_user_profile_schema(db)
         _user_signature_schema_ready = True
-    except Exception:
-        pass
+    except Exception as exc:
+        print(f'User schema migration warning: {exc}')
 
 
 # ==================== USER MODEL ====================
@@ -12472,9 +12472,11 @@ with app.app_context():
             print('Attachment columns:', _att)
         try:
             from user_signature_persistence import ensure_user_signature_schema
+            from user_profile_persistence import ensure_user_profile_schema
             ensure_user_signature_schema(db)
+            ensure_user_profile_schema(db)
         except Exception as _sig:
-            print('User signature schema:', _sig)
+            print('User profile schema:', _sig)
     except Exception as _e:
         print('Workflow init:', _e)
 
@@ -12494,7 +12496,10 @@ if __name__ == '__main__':
         except Exception:
             pass
         try:
-            ensure_project_schema()
+            from user_signature_persistence import ensure_user_signature_schema
+            from user_profile_persistence import ensure_user_profile_schema
+            ensure_user_signature_schema(db)
+            ensure_user_profile_schema(db)
         except Exception:
             pass
 
@@ -12536,6 +12541,7 @@ if __name__ == '__main__':
         os.makedirs(os.path.join(app.config['UPLOAD_FOLDER'], 'coi'), exist_ok=True)
         os.makedirs(os.path.join(app.config['UPLOAD_FOLDER'], 'documents'), exist_ok=True)
         os.makedirs(os.path.join(app.config['UPLOAD_FOLDER'], 'attachments'), exist_ok=True)
+        os.makedirs(os.path.join(app.config['UPLOAD_FOLDER'], 'profile_images'), exist_ok=True)
 
         try:
             from drawing_persistence import ensure_drawing_dependencies
