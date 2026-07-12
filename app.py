@@ -1810,7 +1810,6 @@ def login():
         record_login_success(email)
 
         from totp_auth import user_needs_2fa
-        from security_platform import mark_2fa_verified
         if user_needs_2fa(user):
             mark_2fa_verified(False)
             write_audit('LOGIN_PASSWORD_OK', user.email, module='security', category='login', commit=True)
@@ -5561,8 +5560,12 @@ def api_users_reset_password(user_id):
     from user_management_service import reset_user_password
     user = User.query.get_or_404(user_id)
     body = request.get_json(silent=True) or {}
-    temp_password = reset_user_password(user, body.get('password'))
-    db.session.commit()
+    try:
+        temp_password = reset_user_password(user, body.get('password'))
+        db.session.commit()
+    except ValueError as exc:
+        db.session.rollback()
+        return jsonify({'error': str(exc)}), 400
     write_audit(
         'Reset user password',
         user.email,
