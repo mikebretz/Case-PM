@@ -183,6 +183,19 @@ MODULE_ROUTE_GUARD = {
 
 
 @app.before_request
+def _migrate_user_signature_schema():
+    """Run before login loads User — new signature columns must exist first."""
+    global _user_signature_schema_ready
+    if _user_signature_schema_ready:
+        return
+    try:
+        _bootstrap_user_schema(db)
+        _user_signature_schema_ready = True
+    except Exception as exc:
+        print(f'User schema migration warning: {exc}')
+
+
+@app.before_request
 def _guard_module_route_access():
     if not current_user.is_authenticated:
         return
@@ -288,19 +301,6 @@ def _bootstrap_user_schema(db):
         })
     except Exception as exc:
         print(f'User profile schema warning: {exc}')
-
-
-@app.before_request
-def _migrate_user_signature_schema():
-    """Run before login loads User — new signature columns must exist first."""
-    global _user_signature_schema_ready
-    if _user_signature_schema_ready:
-        return
-    try:
-        _bootstrap_user_schema(db)
-        _user_signature_schema_ready = True
-    except Exception as exc:
-        print(f'User schema migration warning: {exc}')
 
 
 # ==================== USER MODEL ====================
@@ -1605,6 +1605,9 @@ def login():
 def logout():
     logout_user()
     flash('You have been logged out successfully.', 'info')
+    nxt = (request.args.get('next') or '').strip()
+    if nxt.startswith('/') and not nxt.startswith('//'):
+        return redirect(nxt)
     return redirect(url_for('login'))
 
 
@@ -10995,7 +10998,141 @@ def api_run_program_backup():
 @admin_required
 def api_list_program_backups():
     from backup_service import list_backups
-    return jsonify({'ok': True, 'backups': list_backups()})
+    from program_settings_persistence import load_backup_settings
+    return jsonify({'ok': True, 'backups': list_backups(load_backup_settings())})
+
+
+def _migrate_program_schemas():
+    """Apply schema migrations after restore, clear, or fresh install."""
+    try:
+        _bootstrap_user_schema(db)
+    except Exception:
+        pass
+    try:
+        import case_workflow as cw
+        cw.ensure_workflow_schema(db.engine)
+    except Exception:
+        pass
+    for hook in (
+        ('pay_app_persistence', 'ensure_pay_app_schema'),
+        ('co_persistence', 'ensure_co_schema'),
+        ('rfi_persistence', 'ensure_rfi_schema'),
+        ('drawing_persistence', 'ensure_drawing_schema'),
+        ('commitment_persistence', 'ensure_commitment_schema'),
+        ('document_persistence', 'ensure_document_schema'),
+    ):
+        try:
+            mod = __import__(hook[0], fromlist=[hook[1]])
+            getattr(mod, hook[1])(db.engine, db)
+        except Exception:
+            pass
+    try:
+        ensure_project_schema()
+    except Exception:
+        pass
+
+
+def _seed_fresh_program_database():
+    """Recreate an empty database with default admin + recovery accounts."""
+    db.create_all()
+    _migrate_program_schemas()
+
+    admin = User.query.filter_by(email='admin@casepm.local').first()
+    if not admin:
+        admin = User(
+            first_name='Admin',
+            last_name='User',
+            email='admin@casepm.local',
+            role='Admin',
+            status='Active',
+            must_change_password=False,
+            require_2fa=False,
+        )
+        admin.set_password('admin123')
+        db.session.add(admin)
+        db.session.commit()
+    try:
+        from developer_tools import ensure_recovery_user
+        ensure_recovery_user(db, User)
+    except Exception:
+        pass
+
+
+@app.route('/api/program-settings/backup/restore', methods=['POST'])
+@login_required
+@admin_required
+def api_restore_program_backup():
+    from backup_service import restore_from_backup, list_backups
+    from program_settings_persistence import load_backup_settings
+    body = request.get_json(silent=True) or {}
+    filename = (body.get('filename') or '').strip()
+    if not filename:
+        return jsonify({'error': 'filename is required'}), 400
+    cfg = load_backup_settings()
+    try:
+        result = restore_from_backup(filename, backup_config=cfg, db=db)
+        _migrate_program_schemas()
+        write_audit(
+            'BACKUP_RESTORED',
+            detail=f'Installed backup {result.get("restored_from")}',
+            module='program_settings',
+            commit=True,
+        )
+        return jsonify({'ok': True, 'result': result, 'backups': list_backups(cfg)})
+    except Exception as exc:
+        db.session.rollback()
+        return jsonify({'error': str(exc)}), 400
+
+
+@app.route('/api/program-settings/backup/upload', methods=['POST'])
+@login_required
+@admin_required
+def api_upload_program_backup():
+    from backup_service import save_uploaded_backup, list_backups
+    from program_settings_persistence import load_backup_settings
+    upload = request.files.get('backup')
+    cfg = load_backup_settings()
+    try:
+        saved = save_uploaded_backup(upload, backup_config=cfg)
+        write_audit(
+            'BACKUP_UPLOADED',
+            detail=f'Uploaded backup {saved.get("filename")}',
+            module='program_settings',
+            commit=True,
+        )
+        return jsonify({'ok': True, 'backup': saved, 'backups': list_backups(cfg)})
+    except Exception as exc:
+        return jsonify({'error': str(exc)}), 400
+
+
+@app.route('/api/program-settings/backup/clear-all', methods=['POST'])
+@login_required
+@admin_required
+def api_clear_all_program_data():
+    from backup_service import clear_all_program_data, list_backups
+    from program_settings_persistence import load_backup_settings
+    body = request.get_json(silent=True) or {}
+    if (body.get('confirm') or '').strip().upper() != 'DELETE ALL':
+        return jsonify({'error': 'Type DELETE ALL to confirm clearing all program data.'}), 400
+    cfg = load_backup_settings()
+    try:
+        result = clear_all_program_data(backup_config=cfg, db=db)
+        _seed_fresh_program_database()
+        write_audit(
+            'PROGRAM_DATA_CLEARED',
+            detail='All program data cleared and database reinitialized',
+            module='program_settings',
+            commit=True,
+        )
+        return jsonify({
+            'ok': True,
+            'result': result,
+            'backups': list_backups(cfg),
+            'default_login': {'email': 'admin@casepm.local', 'password': 'admin123'},
+        })
+    except Exception as exc:
+        db.session.rollback()
+        return jsonify({'error': str(exc)}), 500
 
 
 @app.route('/api/program-settings/email', methods=['GET', 'PUT'])
