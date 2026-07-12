@@ -224,9 +224,9 @@
       data-current-user-role="{{ current_user.role if current_user.is_authenticated else '' }}"
       data-current-user-company="{{ current_user.company if current_user.is_authenticated and current_user.company else '' }}"
       data-current-user-phone="{{ current_user.phone if current_user.is_authenticated and current_user.phone else '' }}"
-      data-current-user-job-title="{{ current_user_profile.job_title if current_user.is_authenticated and current_user_profile.job_title else '' }}"
-      data-current-user-address="{{ current_user_profile.address if current_user.is_authenticated and current_user_profile.address else '' }}"
-      data-current-user-photo="{{ current_user_profile.profile_image_url if current_user.is_authenticated and current_user_profile.profile_image_url else '' }}"
+      data-current-user-job-title="{{ (current_user_profile.job_title if current_user_profile else '') if current_user.is_authenticated else '' }}"
+      data-current-user-address="{{ (current_user_profile.address if current_user_profile else '') if current_user.is_authenticated else '' }}"
+      data-current-user-photo="{{ (current_user_profile.profile_image_url if current_user_profile else '') if current_user.is_authenticated else '' }}"
       data-current-user-2fa="{{ '1' if current_user.is_authenticated and current_user.require_2fa else '0' }}"
       data-is-admin="{{ '1' if is_admin_user else '0' }}"
       data-is-developer="{{ '1' if is_developer else '0' }}"
@@ -338,7 +338,7 @@
         <div class="flex items-center gap-3 cursor-pointer flex-shrink-0" onclick="typeof showUserProfileModal === 'function' && showUserProfileModal()" title="User Profile">
             <div class="flex items-center gap-2.5">
                 <div class="w-8 h-8 bg-zinc-700 rounded-full overflow-hidden flex-shrink-0">
-                    {% if current_user_profile.profile_image_url %}
+                    {% if current_user.is_authenticated and current_user_profile and current_user_profile.profile_image_url %}
                         <img src="{{ current_user_profile.profile_image_url }}" class="w-full h-full object-cover" alt="">
                     {% else %}
                         <div class="w-full h-full flex items-center justify-center bg-emerald-600 text-white font-bold text-xs">
