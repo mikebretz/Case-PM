@@ -586,6 +586,51 @@ let requireAllSubPayAppsBeforeG702Submit = casepmStore.getItem('requireAllSubPay
     function jsArg(val) {
         return JSON.stringify(val == null ? '' : val);
     }
+
+    /** Normalize subcontractor company id from select/value (never parseInt — breaks string ids). */
+    function canonicalSubCompanyId(raw) {
+        if (raw == null || raw === '') return null;
+        const s = String(raw).trim();
+        if (!s || s === 'NaN' || s === 'undefined') return null;
+        const n = Number(s);
+        if (Number.isFinite(n) && String(n) === s) return n;
+        return s;
+    }
+
+    function subCompanyKeyVariants(raw) {
+        const cid = canonicalSubCompanyId(raw);
+        if (cid == null) return [];
+        const keys = new Set([String(cid)]);
+        const n = Number(cid);
+        if (Number.isFinite(n)) keys.add(n);
+        if (typeof cid === 'string') keys.add(cid);
+        return [...keys];
+    }
+
+    function getSubCompanyMapEntry(map, companyId) {
+        if (!map || companyId == null) return undefined;
+        for (const k of subCompanyKeyVariants(companyId)) {
+            if (map[k] != null) return map[k];
+        }
+        return undefined;
+    }
+
+    function deleteSubCompanyMapKeys(map, companyId) {
+        if (!map || companyId == null) return;
+        subCompanyKeyVariants(companyId).forEach((k) => { delete map[k]; });
+    }
+
+    function subCompanyIdsInSOV(subSOVData) {
+        const seen = new Set();
+        const ids = [];
+        Object.keys(subSOVData || {}).forEach((key) => {
+            const cid = canonicalSubCompanyId(key);
+            if (cid == null || seen.has(String(cid))) return;
+            seen.add(String(cid));
+            ids.push(cid);
+        });
+        return ids;
+    }
     function contractorSovIsLocked() {
         return casepmStore.getItem('contractorSOVLocked') === 'true' && !devUnlockActive();
     }
@@ -4833,14 +4878,17 @@ let mainLienWaiver = JSON.parse(casepmStore.getItem('mainLienWaiver') || '{}'); 
         const selector = document.getElementById('subSelector');
         if (selector) {
             const subSOVData = JSON.parse(casepmStore.getItem('subcontractorSOV') || '{}');
-            companies.forEach(c => {
-                if (subSOVData[c.id]) {  // Only include if this sub has been added to the current job's SOV
-                    const opt = document.createElement('option');
-                    opt.value = c.id;
-                    opt.textContent = c.name || c.company_name || 'Unnamed Sub';
-                    if (selectedSubCompanyId && selectedSubCompanyId == c.id) opt.selected = true;
-                    selector.appendChild(opt);
+            subCompanyIdsInSOV(subSOVData).forEach((cid) => {
+                const company = companies.find((c) => String(c.id) === String(cid));
+                const opt = document.createElement('option');
+                opt.value = String(cid);
+                opt.textContent = company
+                    ? (company.name || company.company_name || 'Unnamed Sub')
+                    : `Subcontractor ${cid}`;
+                if (selectedSubCompanyId != null && String(selectedSubCompanyId) === String(cid)) {
+                    opt.selected = true;
                 }
+                selector.appendChild(opt);
             });
         }
 
@@ -4914,7 +4962,7 @@ let mainLienWaiver = JSON.parse(casepmStore.getItem('mainLienWaiver') || '{}'); 
             }
 
             // Populate the RESTRUCTURED summary totals for the selected sub (new layout)
-            const subLines = subcontractorSOV[selectedSubCompanyId] || [];
+            const subLines = getSubCompanyMapEntry(subcontractorSOV, selectedSubCompanyId) || [];
             let origTotal = 0, billedTotal = 0, coTotal = 0, coBilledTotal = 0;
             subLines.forEach(l => {
                 origTotal += (l.original_commitment || 0);
@@ -4984,7 +5032,7 @@ let mainLienWaiver = JSON.parse(casepmStore.getItem('mainLienWaiver') || '{}'); 
             const resolvedEntry = resolveSubPayAppPaperEntry(selectedSubCompanyId, activePaper);
             const activeEntry = resolvedEntry || (activePaper ? activePaper.entry : null);
             const pendingEntry = subPendingSubmissions[cid] || subPendingSubmissions[selectedSubCompanyId];
-            const subLines = subcontractorSOV[cid] || subcontractorSOV[selectedSubCompanyId] || [];
+            const subLines = getSubCompanyMapEntry(subcontractorSOV, cid) || getSubCompanyMapEntry(subcontractorSOV, selectedSubCompanyId) || [];
             const draftTotal = subLines.reduce((sum, l) =>
                 sum + (l.work_this_period || 0) + (l.materials_stored || 0) + (l.co_billed_this_period || 0), 0);
             const isZeroComplianceDraft = draftTotal === 0 && allowZeroDollarSubPayApps;
@@ -5171,7 +5219,7 @@ let mainLienWaiver = JSON.parse(casepmStore.getItem('mainLienWaiver') || '{}'); 
             return;
         }
 
-        const subLines = subcontractorSOV[selectedSubCompanyId] || [];
+        const subLines = getSubCompanyMapEntry(subcontractorSOV, selectedSubCompanyId) || [];
         const company = companies.find(c => c.id == selectedSubCompanyId);
         const isPrimaryContact = company && isUserPrimaryContactForCompany(company);
         const subStatus = getSubSOVStatus(selectedSubCompanyId);
@@ -5310,8 +5358,12 @@ let mainLienWaiver = JSON.parse(casepmStore.getItem('mainLienWaiver') || '{}'); 
     }
 
     function selectSubcontractorForSOV(companyId) {
-        selectedSubCompanyId = companyId ? parseInt(companyId) : null;
-        casepmStore.setItem('lastSelectedSubSOV', selectedSubCompanyId);
+        selectedSubCompanyId = canonicalSubCompanyId(companyId);
+        if (selectedSubCompanyId != null) {
+            casepmStore.setItem('lastSelectedSubSOV', selectedSubCompanyId);
+        } else {
+            casepmStore.removeItem('lastSelectedSubSOV');
+        }
         renderPayAppContent();
     }
 
@@ -5330,7 +5382,7 @@ let mainLienWaiver = JSON.parse(casepmStore.getItem('mainLienWaiver') || '{}'); 
         const pendingSubs = JSON.parse(casepmStore.getItem('subPendingSubmissions') || '{}');
         const payAppNums = JSON.parse(casepmStore.getItem('subPayAppNumbers') || '{}');
 
-        const histForSub = payAppHist[companyId] || {};
+        const histForSub = getSubCompanyMapEntry(payAppHist, companyId) || {};
         const hasPushedHistory = Object.keys(histForSub).some(p => {
             const entry = histForSub[p];
             return entry && entry.archived === true;
@@ -5339,7 +5391,7 @@ let mainLienWaiver = JSON.parse(casepmStore.getItem('mainLienWaiver') || '{}'); 
         const hasActiveInTracker = Object.keys(histForSub).some(p => {
             const entry = histForSub[p];
             return entry && (entry.status === 'Approved' || entry.status === 'Pending Approval') && entry.archived !== true;
-        }) || !!pendingSubs[companyId];
+        }) || !!getSubCompanyMapEntry(pendingSubs, companyId);
 
         if (hasPushedHistory) {
             showCenteredAlert(
@@ -5366,39 +5418,38 @@ let mainLienWaiver = JSON.parse(casepmStore.getItem('mainLienWaiver') || '{}'); 
         }
 
         // Safe to remove — no pushed history and no active/pending pay app
-        // Clean up all related data for this sub
-        if (subSOV[companyId]) delete subSOV[companyId];
-        if (payAppHist[companyId]) delete payAppHist[companyId];
-        if (pendingSubs[companyId]) delete pendingSubs[companyId];
-        if (payAppNums[companyId]) delete payAppNums[companyId];
-
-        // Also clean lien waivers if present
         const lienWaivers = JSON.parse(casepmStore.getItem('subLienWaivers') || '{}');
-        if (lienWaivers[companyId]) delete lienWaivers[companyId];
+        const sovStatus = JSON.parse(casepmStore.getItem('subSOVStatus') || '{}');
 
-        // Persist
+        deleteSubCompanyMapKeys(subSOV, companyId);
+        deleteSubCompanyMapKeys(payAppHist, companyId);
+        deleteSubCompanyMapKeys(pendingSubs, companyId);
+        deleteSubCompanyMapKeys(payAppNums, companyId);
+        deleteSubCompanyMapKeys(lienWaivers, companyId);
+        deleteSubCompanyMapKeys(sovStatus, companyId);
+
         casepmStore.setItem('subcontractorSOV', JSON.stringify(subSOV));
         casepmStore.setItem('subPayAppHistory', JSON.stringify(payAppHist));
         casepmStore.setItem('subPendingSubmissions', JSON.stringify(pendingSubs));
         casepmStore.setItem('subPayAppNumbers', JSON.stringify(payAppNums));
         casepmStore.setItem('subLienWaivers', JSON.stringify(lienWaivers));
+        casepmStore.setItem('subSOVStatus', JSON.stringify(sovStatus));
 
-        // Clear selection
         selectedSubCompanyId = null;
         casepmStore.removeItem('lastSelectedSubSOV');
+        reloadPayAppStateFromStorage();
 
-        // Immediately remove from the visible dropdown (for instant feedback when focused on the select)
         const selector = document.getElementById('subSelector');
         if (selector) {
-            const optToRemove = selector.querySelector(`option[value="${companyId}"]`);
-            if (optToRemove) optToRemove.remove();
-            selector.value = ''; // reset to placeholder
+            const removeValues = new Set(subCompanyKeyVariants(companyId).map((k) => String(k)));
+            Array.from(selector.options).forEach((opt) => {
+                if (removeValues.has(opt.value)) opt.remove();
+            });
+            selector.value = '';
         }
 
-        // Full re-render for safety (clears tables, cards, etc.)
         renderPayAppContent();
-
-        // No success popup per rules — the UI update (sub disappears from dropdown, tables empty) is the confirmation.
+        logPayAppAudit('SUB_REMOVED_FROM_SOV', { companyId, companyName });
     }
 
     async function clearAllSubcontractorsForFreshJob() {
@@ -5897,8 +5948,16 @@ let mainLienWaiver = JSON.parse(casepmStore.getItem('mainLienWaiver') || '{}'); 
 
     async function deleteSubSOVLine(companyId, lineId) {
         if (!await payAppConfirm("Delete this line from the subcontractor's SOV?", { title: 'Delete Line', danger: true })) return;
-        if (subcontractorSOV[companyId]) {
-            subcontractorSOV[companyId] = subcontractorSOV[companyId].filter(l => l.id !== lineId);
+        let changed = false;
+        subCompanyKeyVariants(companyId).forEach((key) => {
+            if (!subcontractorSOV[key]) return;
+            const next = subcontractorSOV[key].filter((l) => l.id !== lineId);
+            if (next.length !== subcontractorSOV[key].length) {
+                subcontractorSOV[key] = next;
+                changed = true;
+            }
+        });
+        if (changed) {
             casepmStore.setItem('subcontractorSOV', JSON.stringify(subcontractorSOV));
             renderPayAppContent();
         }
@@ -6184,14 +6243,14 @@ let mainLienWaiver = JSON.parse(casepmStore.getItem('mainLienWaiver') || '{}'); 
     // Helper for the floating modal's Add button (adapts the original confirm logic)
     function confirmAddNewSubcontractorFromFloatingModal(modalEl) {
         const select = modalEl.querySelector('#newSubCompanySelect');
-        const selectedCompanyId = select ? select.value : '';
+        const selectedCompanyId = canonicalSubCompanyId(select ? select.value : '');
         if (!selectedCompanyId) {
             showCenteredAlert("Please select a company from the list.", "warning");
             return;
         }
 
         const companiesList = JSON.parse(casepmStore.getItem('casepm_companies')) || [];
-        const selectedCompany = companiesList.find(c => c.id == selectedCompanyId);
+        const selectedCompany = companiesList.find(c => String(c.id) === String(selectedCompanyId));
         if (!selectedCompany) {
             showCenteredAlert("Selected company not found.", "error");
             return;
@@ -6199,7 +6258,7 @@ let mainLienWaiver = JSON.parse(casepmStore.getItem('mainLienWaiver') || '{}'); 
 
         // Prevent duplicates
         if (!subcontractorSOV) subcontractorSOV = JSON.parse(casepmStore.getItem('subcontractorSOV') || '{}');
-        if (subcontractorSOV[selectedCompanyId]) {
+        if (getSubCompanyMapEntry(subcontractorSOV, selectedCompanyId)) {
             showCenteredAlert("This company is already added as a subcontractor for this job.", "warning");
             return;
         }
@@ -6234,7 +6293,7 @@ let mainLienWaiver = JSON.parse(casepmStore.getItem('mainLienWaiver') || '{}'); 
     function confirmAddNewSubcontractor(btn) {
         const modal = btn.closest('dialog');
         const select = document.getElementById('newSubCompanySelect');
-        const selectedCompanyId = select ? select.value : '';
+        const selectedCompanyId = canonicalSubCompanyId(select ? select.value : '');
         if (!selectedCompanyId) {
             alert("Please select a company from the list.");
             return;
@@ -6242,7 +6301,7 @@ let mainLienWaiver = JSON.parse(casepmStore.getItem('mainLienWaiver') || '{}'); 
 
         // Find the selected company from the live list
         const companiesList = JSON.parse(casepmStore.getItem('casepm_companies')) || [];
-        const selectedCompany = companiesList.find(c => c.id == selectedCompanyId);
+        const selectedCompany = companiesList.find(c => String(c.id) === String(selectedCompanyId));
         if (!selectedCompany) {
             alert("Selected company not found. Please refresh and try again.");
             return;
@@ -6256,7 +6315,8 @@ let mainLienWaiver = JSON.parse(casepmStore.getItem('mainLienWaiver') || '{}'); 
         }
 
         // Initialize empty SOV for this sub if needed
-        if (!subcontractorSOV[selectedCompanyId]) {
+        if (!getSubCompanyMapEntry(subcontractorSOV, selectedCompanyId)) {
+            deleteSubCompanyMapKeys(subcontractorSOV, selectedCompanyId);
             subcontractorSOV[selectedCompanyId] = [];
             casepmStore.setItem('subcontractorSOV', JSON.stringify(subcontractorSOV));
         }
@@ -6286,7 +6346,7 @@ let mainLienWaiver = JSON.parse(casepmStore.getItem('mainLienWaiver') || '{}'); 
         updateSubSOVStatus(selectedSubCompanyId, 'Pending Approval', { submittedDate: new Date().toISOString() });
         logPayAppAudit('SUB_SOV_SUBMITTED_FOR_APPROVAL', { companyId: selectedSubCompanyId });
         if (typeof CasePMWorkflow !== 'undefined') {
-            const sovLines = (subcontractorSOV[selectedSubCompanyId] || []).map(line => ({
+            const sovLines = (getSubCompanyMapEntry(subcontractorSOV, selectedSubCompanyId) || []).map(line => ({
                 cost_code: line.cost_code,
                 description: line.description,
                 original: line.original,
@@ -9004,7 +9064,7 @@ function printSubcontractorG703(companyId) {
             rebuildPreviousSubPayAppArchiveFromHistory();
 
             const lastSub = casepmStore.getItem('lastSelectedSubSOV');
-            if (lastSub) selectedSubCompanyId = parseInt(lastSub);
+            if (lastSub) selectedSubCompanyId = canonicalSubCompanyId(lastSub);
 
             renderPayAppContent();
             renderSageSyncStatus();
