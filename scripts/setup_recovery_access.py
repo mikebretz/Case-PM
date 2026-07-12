@@ -10,25 +10,59 @@ import secrets
 import sys
 
 
+def _read_batch_credentials() -> tuple[str, str]:
+    """Credentials passed from SETUP-RECOVERY-ACCESS.bat (stdin-safe on Windows)."""
+    email = (os.environ.get('CASEPM_SETUP_EMAIL') or '').strip().lower()
+    password = os.environ.get('CASEPM_SETUP_PASSWORD') or ''
+    return email, password
+
+
+def _read_interactive_credentials() -> tuple[str, str]:
+    """Fallback when the script is run directly from a terminal."""
+    if not sys.stdin or not sys.stdin.isatty():
+        print(
+            'Interactive prompts are not available in this console.\n'
+            'Double-click SETUP-RECOVERY-ACCESS.bat instead, or pass --email and --password.',
+            file=sys.stderr,
+        )
+        return '', ''
+
+    email = input('Recovery email: ').strip().lower()
+    password = getpass.getpass('Recovery password: ')
+    confirm = getpass.getpass('Confirm password: ')
+    if password != confirm:
+        print('Passwords do not match.', file=sys.stderr)
+        return email, ''
+    return email, password
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description='Configure Case PM owner recovery access')
     parser.add_argument('--email', help='Recovery email (developer account)')
     parser.add_argument('--password', help='Recovery password (omit to prompt securely)')
+    parser.add_argument(
+        '--from-batch',
+        action='store_true',
+        help='Read email/password from CASEPM_SETUP_* env vars (used by SETUP-RECOVERY-ACCESS.bat)',
+    )
     parser.add_argument('--regenerate-token', action='store_true', help='Generate a new one-click access token')
     args = parser.parse_args()
 
-    email = (args.email or input('Recovery email: ')).strip().lower()
+    email = (args.email or '').strip().lower()
+    password = args.password or ''
+
+    if args.from_batch:
+        batch_email, batch_password = _read_batch_credentials()
+        email = email or batch_email
+        password = password or batch_password
+    elif not email or not password:
+        interactive_email, interactive_password = _read_interactive_credentials()
+        email = email or interactive_email
+        password = password or interactive_password
+
     if not email or '@' not in email:
         print('A valid email address is required.', file=sys.stderr)
         return 1
-
-    password = args.password
-    if not password:
-        password = getpass.getpass('Recovery password: ')
-        confirm = getpass.getpass('Confirm password: ')
-        if password != confirm:
-            print('Passwords do not match.', file=sys.stderr)
-            return 1
     if not password:
         print('Password is required.', file=sys.stderr)
         return 1
