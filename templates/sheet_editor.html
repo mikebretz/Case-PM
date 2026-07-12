@@ -92,6 +92,7 @@
   function hideLoading() { loadingEl.style.display = 'none'; }
 
   let dirty = false;
+  let allowUnload = false;
 
   function setDirty(v) {
     dirty = v;
@@ -323,31 +324,58 @@
     setTimeout(() => w.print(), 300);
   }
 
-  // ---- Exit with unsaved-changes prompt ----
-  function confirmExit() {
-    const target = '{{ url_for("documents_page") }}';
-    if (!dirty) { window.location.href = target; return; }
-    showExitModal(target);
+  function showExitDialog() {
+    return new Promise((resolve) => {
+      const dialog = document.createElement('dialog');
+      dialog.className = 'casepm-dialog';
+      dialog.innerHTML = `
+        <div class="casepm-dialog-panel">
+          <div class="casepm-dialog-title"><span>Save before leaving?</span></div>
+          <div class="casepm-dialog-body">You have unsaved changes in this spreadsheet.</div>
+          <div class="casepm-dialog-actions">
+            <button type="button" class="casepm-dialog-btn casepm-dialog-btn-secondary" data-action="cancel">Cancel</button>
+            <button type="button" class="casepm-dialog-btn casepm-dialog-btn-secondary" data-action="discard">Discard</button>
+            <button type="button" class="casepm-dialog-btn casepm-dialog-btn-primary" data-action="save">Save to Documents</button>
+          </div>
+        </div>`;
+      document.body.appendChild(dialog);
+      if (window.CasePMDialog) {
+        CasePMDialog.makeDraggable(dialog, '.casepm-dialog-title');
+        CasePMDialog.open(dialog);
+      } else {
+        dialog.showModal();
+      }
+      const close = (choice) => {
+        dialog.close();
+        dialog.remove();
+        resolve(choice);
+      };
+      dialog.querySelector('[data-action="cancel"]').onclick = () => close('cancel');
+      dialog.querySelector('[data-action="discard"]').onclick = () => close('discard');
+      dialog.querySelector('[data-action="save"]').onclick = () => close('save');
+      dialog.addEventListener('cancel', (e) => { e.preventDefault(); close('cancel'); });
+    });
   }
-  function showExitModal(target) {
-    const overlay = document.createElement('div');
-    overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.6);z-index:9999;display:flex;align-items:center;justify-content:center;';
-    overlay.innerHTML = `<div style="background:#18181b;border:1px solid #3f3f46;border-radius:0.5rem;max-width:380px;padding:1.25rem;color:#fff;">
-      <div style="font-weight:600;margin-bottom:0.5rem;">Save before leaving?</div>
-      <div style="font-size:0.85rem;color:#a1a1aa;margin-bottom:1rem;">You have unsaved changes in this spreadsheet.</div>
-      <div style="display:flex;gap:0.5rem;justify-content:flex-end;">
-        <button id="exitCancel" class="sheet-btn">Cancel</button>
-        <button id="exitDiscard" class="sheet-btn">Discard</button>
-        <button id="exitSave" class="sheet-btn primary">Save to Documents</button>
-      </div></div>`;
-    document.body.appendChild(overlay);
-    overlay.querySelector('#exitCancel').onclick = () => overlay.remove();
-    overlay.querySelector('#exitDiscard').onclick = () => { dirty = false; window.location.href = target; };
-    overlay.querySelector('#exitSave').onclick = async () => {
+
+  // ---- Exit with unsaved-changes prompt ----
+  async function confirmExit() {
+    const target = '{{ url_for("documents_page") }}';
+    if (!dirty) { allowUnload = true; window.location.href = target; return; }
+    const choice = await showExitDialog();
+    if (choice === 'cancel') return;
+    if (choice === 'discard') {
+      dirty = false;
+      allowUnload = true;
+      window.location.href = target;
+      return;
+    }
+    if (choice === 'save') {
       const ok = await save();
-      if (ok) window.location.href = target;
-      else overlay.remove();
-    };
+      if (ok) {
+        allowUnload = true;
+        window.location.href = target;
+      }
+    }
   }
 
   function exportXlsx() {
@@ -392,7 +420,7 @@
     if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 's') { e.preventDefault(); save(); }
   });
   window.addEventListener('beforeunload', (e) => {
-    if (dirty) { e.preventDefault(); e.returnValue = ''; }
+    if (dirty && !allowUnload) { e.preventDefault(); e.returnValue = ''; }
   });
 
   function resizeSheetHost() {
