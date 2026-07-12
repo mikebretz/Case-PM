@@ -769,8 +769,12 @@
     const co = state.changeOrders.find(c => c.id === coId) || (state.drawerRecord?.id === coId ? state.drawerRecord : null);
     if (!co) return;
     const allocCheck = validateAllocations(co.allocations || [], { requireRows: true, requireAmount: true });
-    if (!allocCheck.ok) {
+    if (!allocCheck.ok && intent !== 'reject') {
       alert(`${allocCheck.message}\n\nComplete Schedule of Values allocations before approval.`);
+      return;
+    }
+    if (typeof global.CasePMApprovalResponder !== 'undefined') {
+      global.CasePMApprovalResponder.open('co', coId).catch(e => alert(e.message));
       return;
     }
     approvalContext = { coId };
@@ -937,12 +941,11 @@
     const showSubmit = co.status === 'Draft';
     const showApprove = ['Submitted', 'Pending Architect', 'Pending Owner'].includes(co.status) && canActOnBall(co.ball_in_court_role);
     document.getElementById('drawerActions').innerHTML = `
-      ${showSubmit ? `<button type="button" onclick="CasePMChangeOrders.workflowCo(${co.id},'submit')" class="px-4 py-2 bg-amber-600 hover:bg-amber-500 rounded-md text-sm">Submit</button>` : ''}
-      ${showApprove ? `<button type="button" onclick="CasePMChangeOrders.openApprovalModal(${co.id},'approve')" class="px-4 py-2 bg-emerald-600 hover:bg-emerald-500 rounded-md text-sm">Approve</button>
-      <button type="button" onclick="CasePMChangeOrders.openApprovalModal(${co.id},'reject')" class="px-4 py-2 bg-zinc-800 hover:bg-zinc-700 rounded-md text-sm text-red-400">Reject</button>` : ''}
+      ${showSubmit ? `<button type="button" onclick="CasePMChangeOrders.workflowCo(${co.id},'submit')" class="px-4 py-2 bg-amber-600 hover:bg-amber-500 rounded-md text-sm">Submit for Approval</button>` : ''}
+      ${showApprove ? `<button type="button" onclick="CasePMChangeOrders.openApprovalModal(${co.id},'approve')" class="px-4 py-2 bg-emerald-600 hover:bg-emerald-500 rounded-md text-sm font-semibold">Review &amp; Approve</button>` : ''}
       ${co.status === 'Approved' ? `<button type="button" onclick="CasePMChangeOrders.resyncSov(${co.id})" class="px-4 py-2 bg-violet-800 hover:bg-violet-700 rounded-md text-sm">Re-sync to Pay App / Sub SOV</button>` : ''}
-      <button type="button" onclick="CasePMChangeOrders.editCo(${co.id})" class="px-4 py-2 bg-zinc-800 hover:bg-zinc-700 rounded-md text-sm">Edit</button>
-      <button type="button" onclick="CasePMChangeOrders.deleteCo(${co.id})" class="px-4 py-2 bg-red-950 hover:bg-red-900 border border-red-800 rounded-md text-sm text-red-300">Delete</button>`;
+      ${canApprove() ? `<button type="button" onclick="CasePMChangeOrders.editCo(${co.id})" class="px-4 py-2 bg-zinc-800 hover:bg-zinc-700 rounded-md text-sm">Edit</button>
+      <button type="button" onclick="CasePMChangeOrders.deleteCo(${co.id})" class="px-4 py-2 bg-red-950 hover:bg-red-900 border border-red-800 rounded-md text-sm text-red-300">Delete</button>` : ''}`;
     openDrawer();
   }
 
@@ -1288,8 +1291,19 @@
     bindFilters();
     bindAttachmentBrowse();
     switchTab('cos');
+    global.addEventListener('casepm:approval-responded', () => {
+      loadChangeOrders();
+      loadDashboard();
+    });
     const params = new URLSearchParams(window.location.search);
-    if (params.get('open') === '1' && params.get('co_id')) {
+    if (params.get('respond') === '1' && params.get('co_id')) {
+      const id = parseInt(params.get('co_id'), 10);
+      if (id && typeof global.CasePMApprovalResponder !== 'undefined') {
+        await global.CasePMApprovalResponder.open('co', id);
+      } else if (id) {
+        await viewCo(id);
+      }
+    } else if (params.get('open') === '1' && params.get('co_id')) {
       const id = parseInt(params.get('co_id'), 10);
       if (id) await viewCo(id);
     }

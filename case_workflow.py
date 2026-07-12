@@ -699,3 +699,60 @@ def register_workflow(app, _db, models):
                 return jsonify({'ok': True, 'approval': approval.to_dict()})
 
         return jsonify({'error': 'Unknown event'}), 400
+
+    @app.route('/api/workflow/respond/<module>/<int:entity_id>', methods=['GET', 'POST'])
+    @login_required
+    def api_workflow_respond(module, entity_id):
+        module_key = (module or '').lower().replace('-', '_')
+        try:
+            if module_key in ('rfi', 'rfis'):
+                from rfi_persistence import get_linked_records
+                from workflow_responder import get_rfi_responder_context, execute_rfi_action
+                RFI = models.get('RFI')
+                if not RFI:
+                    return jsonify({'error': 'RFI module unavailable'}), 500
+                rfi = RFI.query.get_or_404(entity_id)
+                ChangeOrder = models.get('ChangeOrder')
+                PCO = models.get('PotentialChangeOrder')
+                linked_cos, linked_pcos = get_linked_records(rfi.id, ChangeOrder, PCO) if ChangeOrder and PCO else ([], [])
+                if request.method == 'GET':
+                    ctx = get_rfi_responder_context(rfi, current_user, linked_cos, linked_pcos)
+                    return jsonify({'ok': True, **ctx})
+                body = request.get_json(silent=True) or {}
+                action = body.get('action')
+                execute_rfi_action(rfi, action, current_user, User, body)
+                db.session.commit()
+                ctx = get_rfi_responder_context(rfi, current_user, linked_cos, linked_pcos)
+                return jsonify({'ok': True, 'action': action, **ctx})
+
+            if module_key in ('co', 'change_order', 'change_orders'):
+                from workflow_responder import get_co_responder_context, execute_co_action
+                ChangeOrder = models.get('ChangeOrder')
+                ChangeOrderAllocation = models.get('ChangeOrderAllocation')
+                if not ChangeOrder:
+                    return jsonify({'error': 'Change order module unavailable'}), 500
+                co = ChangeOrder.query.get_or_404(entity_id)
+                allocs = []
+                if ChangeOrderAllocation:
+                    allocs = ChangeOrderAllocation.query.filter_by(change_order_id=co.id).all()
+                alloc_payload = [{
+                    'cost_code': a.cost_code,
+                    'cost_type': getattr(a, 'cost_type', None),
+                    'amount': a.amount,
+                    'description': getattr(a, 'description', ''),
+                } for a in allocs]
+                if request.method == 'GET':
+                    ctx = get_co_responder_context(co, current_user, alloc_payload)
+                    return jsonify({'ok': True, **ctx})
+                body = request.get_json(silent=True) or {}
+                action, co_dict = execute_co_action(
+                    co, body.get('action'), current_user, User, body, ChangeOrderAllocation,
+                )
+                db.session.commit()
+                ctx = get_co_responder_context(co, current_user, alloc_payload)
+                return jsonify({'ok': True, 'action': action, 'change_order': co_dict, **ctx})
+
+            return jsonify({'error': f'Unsupported module: {module}'}), 400
+        except ValueError as exc:
+            db.session.rollback()
+            return jsonify({'error': str(exc)}), 400

@@ -192,6 +192,7 @@
     <script src="{{ url_for('static', filename='js/casepm-print.js') }}"></script>
     <script src="{{ url_for('static', filename='js/casepm-output.js') }}"></script>
     <script src="{{ url_for('static', filename='js/casepm-workflow.js') }}"></script>
+    <script src="{{ url_for('static', filename='js/casepm-approval-responder.js') }}"></script>
     {% if current_user.is_authenticated and is_developer %}
     <script>
         window.CASEPM_IS_DEVELOPER = true;
@@ -444,7 +445,7 @@
                     <span>Photos</span>
                 </a>
 
-                <a href="{{ url_for('documents_page', project_id=active_project.id) if active_project else url_for('documents_page') }}" class="nav-link flex items-center gap-2.5 px-3 py-1.5 rounded-xl mb-0.5 {% if request.endpoint == 'documents_page' %}active{% endif %}">
+                <a href="{{ url_for('documents_page', project_id=active_project.id) if active_project else url_for('documents_page') }}" class="nav-link nav-staff-only flex items-center gap-2.5 px-3 py-1.5 rounded-xl mb-0.5 {% if request.endpoint == 'documents_page' %}active{% endif %}">
                     <i class="fa-solid fa-folder-open w-5"></i>
                     <span>Documents</span>
                 </a>
@@ -775,6 +776,44 @@
                     <button type="button" id="casepmDocPickerCancel" class="px-4 py-2 bg-zinc-800 hover:bg-zinc-700 rounded-md text-sm">Cancel</button>
                     <button type="button" id="casepmDocPickerAttach" class="px-4 py-2 bg-emerald-600 hover:bg-emerald-500 rounded-md text-sm font-medium" disabled>Attach</button>
                 </div>
+            </div>
+        </div>
+    </dialog>
+
+    <!-- Unified approval responder (RFI, Change Order, etc.) -->
+    <dialog id="casepmApprovalResponder" class="modal rounded-lg w-full max-w-2xl p-0 text-white" style="background:#18181b;border:1px solid #3f3f46;">
+        <div class="p-6 max-h-[min(92vh,880px)] overflow-auto">
+            <div class="flex justify-between items-start mb-4">
+                <div>
+                    <p class="text-[10px] uppercase tracking-widest text-emerald-500 font-semibold mb-1">Review &amp; Respond</p>
+                    <h2 id="aprTitle" class="text-2xl font-semibold leading-tight">Review Item</h2>
+                    <p id="aprSubtitle" class="text-sm text-zinc-400 mt-1"></p>
+                </div>
+                <button type="button" id="aprCloseBtn" class="text-zinc-400 hover:text-white text-2xl leading-none">&times;</button>
+            </div>
+            <div id="aprSummary" class="bg-zinc-900 border border-zinc-700 rounded-md p-4 mb-4"></div>
+            <div class="mb-4">
+                <h3 class="text-xs uppercase text-zinc-500 mb-2 tracking-wide">Attachments</h3>
+                <div id="aprAttachments" class="space-y-1 mb-2"></div>
+                <div id="aprUploadSection">
+                    <div id="aprDropZone" class="border-2 border-dashed border-zinc-700 hover:border-emerald-600 rounded-lg p-4 text-center cursor-pointer bg-zinc-950/50 transition-colors">
+                        <div class="text-sm text-zinc-400"><i class="fa-solid fa-cloud-arrow-up text-emerald-500 mr-1"></i>Drop files here or click to upload</div>
+                        <button type="button" id="aprBrowseDocs" class="mt-2 text-xs px-3 py-1.5 rounded bg-sky-900/50 text-sky-200 border border-sky-700/50 hover:bg-sky-800/60 hidden">Browse Documents</button>
+                        <input type="file" id="aprFileInput" class="hidden" multiple>
+                    </div>
+                    <div id="aprPendingFiles" class="space-y-1 mt-2"></div>
+                </div>
+            </div>
+            <div class="mb-4">
+                <h3 class="text-xs uppercase text-zinc-500 mb-2 tracking-wide">Comments</h3>
+                <div id="aprThread" class="space-y-2 max-h-40 overflow-auto mb-3"></div>
+                <label for="aprComment" class="block text-sm text-zinc-400 mb-1.5">Your response</label>
+                <textarea id="aprComment" rows="4" placeholder="Type your answer or comment here…" class="w-full bg-zinc-800 border border-zinc-700 rounded-md px-3 py-2.5 text-sm text-white placeholder:text-zinc-600"></textarea>
+            </div>
+            <div id="aprSignPanel" class="mb-4 hidden"></div>
+            <div id="aprActions" class="flex flex-wrap justify-end gap-3 pt-2 border-t border-zinc-800"></div>
+            <div class="flex justify-end mt-3">
+                <button type="button" id="aprCancelBtn" class="px-5 py-2.5 bg-zinc-800 hover:bg-zinc-700 rounded-md text-sm text-zinc-300">Cancel</button>
             </div>
         </div>
     </dialog>
