@@ -183,10 +183,20 @@
     set('maint_temp_cleanup', m.temp_upload_cleanup_days || 14);
     updateCloudProviderFields();
     const statusEl = document.getElementById('backupLastRunStatus');
+    const summaryEl = document.getElementById('backupLastRunSummary');
+    const localPathEl = document.getElementById('backupLocalPathSummary');
+    const mirrorPathEl = document.getElementById('backupMirrorPathSummary');
+    const lastLabel = b.last_run_at ? formatBackupTime(b.last_run_at) : 'No backups yet';
+    if (summaryEl) summaryEl.textContent = lastLabel;
     if (statusEl) {
       statusEl.textContent = b.last_run_at
-        ? `Last backup: ${formatBackupTime(b.last_run_at)} — ${b.last_run_status || 'unknown'}`
-        : 'No backups run yet.';
+        ? (b.last_run_status || 'unknown')
+        : 'Run a backup to protect your data.';
+    }
+    if (localPathEl) localPathEl.textContent = b.local_path || 'instance/backups';
+    if (mirrorPathEl) {
+      const mirror = (b.cloud?.local_mirror_path || '').trim();
+      mirrorPathEl.textContent = mirror || (b.cloud?.enabled ? 'Enabled — path missing' : 'Not configured');
     }
     await refreshBackupList();
   }
@@ -272,18 +282,18 @@
     const host = document.getElementById('backupHistoryList');
     if (!host) return;
     if (!backups?.length) {
-      host.innerHTML = '<div class="text-sm text-zinc-500">No backups yet. Run a backup first, or upload a backup file below.</div>';
+      host.innerHTML = '<div class="text-sm text-zinc-500 py-4 text-center">No backups yet. Run a backup first, or upload a backup file below.</div>';
       return;
     }
     host.innerHTML = backups.map(b => `
-      <div class="flex flex-wrap justify-between items-center gap-2 py-2 border-b border-zinc-800 text-sm">
-        <div class="min-w-0">
+      <div class="flex flex-wrap justify-between items-center gap-3 py-3 border-b border-zinc-800 last:border-0 text-sm hover:bg-zinc-800/40 px-1 -mx-1 rounded-md">
+        <div class="min-w-0 flex-1">
           <div class="font-mono text-emerald-400 truncate">${escapeHtml(b.filename)}</div>
-          <div class="text-xs text-zinc-500">${(b.size_bytes / 1024 / 1024).toFixed(2)} MB · ${escapeHtml(formatBackupTime(b.created_at_display || b.created_at))}</div>
+          <div class="text-xs text-zinc-500 mt-0.5">${(b.size_bytes / 1024 / 1024).toFixed(2)} MB · ${escapeHtml(formatBackupTime(b.created_at_display || b.created_at))}</div>
         </div>
-        <button type="button" class="px-3 py-1.5 bg-emerald-700 hover:bg-emerald-600 rounded-xl text-xs font-medium whitespace-nowrap"
+        <button type="button" class="settings-btn settings-btn-secondary text-xs !h-8 !px-3"
                 onclick="CasePMProgramSettings.installBackup(${JSON.stringify(b.filename)})">
-          <i class="fa-solid fa-rotate-left mr-1"></i> Install
+          <i class="fa-solid fa-rotate-left"></i><span>Install</span>
         </button>
       </div>`).join('');
   }
