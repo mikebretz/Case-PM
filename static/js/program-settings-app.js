@@ -52,6 +52,9 @@
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(payload),
     });
+    if (payload.logo_data_url && global.CasePMUserProfile?.updateCompanyLogo) {
+      global.CasePMUserProfile.updateCompanyLogo(payload.logo_data_url);
+    }
     CasePMDialog?.alert('Company information saved.', 'success');
   }
 
