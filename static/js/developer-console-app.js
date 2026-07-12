@@ -27,6 +27,7 @@
     const activeTab = document.getElementById('dev-tab-' + tab);
     if (activeTab) activeTab.classList.add('active');
     if (tab === 'updates') loadUpdatesPanel();
+    if (tab === 'tools') loadMaintenancePanel();
     const url = new URL(window.location.href);
     url.searchParams.set('tab', tab);
     window.history.replaceState({}, '', url);
@@ -271,6 +272,169 @@
     }
   }
 
+  async function clearAllProgramData() {
+    const ok = await CasePMDialog?.confirm(
+      'This permanently deletes all projects, users, documents, uploads, and settings.\n\nA safety backup is created first, then the program is reset to a fresh install with the default admin account.',
+      { title: 'Clear all program data', confirmLabel: 'Continue', danger: true }
+    );
+    if (!ok) return;
+    const typed = await CasePMDialog?.prompt(
+      'Type DELETE ALL to confirm clearing everything.',
+      { title: 'Final confirmation', defaultValue: '', submitLabel: 'Clear everything', label: 'Confirmation text' }
+    );
+    if ((typed || '').trim().toUpperCase() !== 'DELETE ALL') {
+      CasePMDialog?.alert('Clear cancelled — confirmation text did not match.', 'info');
+      return;
+    }
+    try {
+      const json = await api('/api/developer/maintenance/clear-all-program', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ confirm: 'DELETE ALL' }),
+      });
+      const safety = json.result?.safety_backup;
+      const login = json.default_login || { email: 'admin@casepm.local', password: 'admin123' };
+      await CasePMDialog?.alert(
+        `All program data has been cleared.${safety ? `\n\nSafety backup: ${safety}` : ''}\n\nDefault login:\n${login.email}\n${login.password}\n\nYou will now be signed out.`,
+        'success'
+      );
+      window.location.href = '/logout?next=/login';
+    } catch (err) {
+      CasePMDialog?.alert(err.message || 'Clear failed.', 'error');
+    }
+  }
+
+  let maintCatalog = null;
+
+  function maintScopeAll() {
+    return document.getElementById('devMaintScopeAll')?.checked !== false;
+  }
+
+  function selectedMaintProjectIds() {
+    const boxes = document.querySelectorAll('.dev-maint-project-cb:checked');
+    return Array.from(boxes).map((el) => parseInt(el.value, 10)).filter((n) => !Number.isNaN(n));
+  }
+
+  function updateMaintScopeSummary() {
+    const el = document.getElementById('devMaintScopeSummary');
+    if (!el) return;
+    if (maintScopeAll()) {
+      el.textContent = 'All projects — every clear action applies program-wide for the selected module.';
+      return;
+    }
+    const ids = selectedMaintProjectIds();
+    if (!ids.length) {
+      el.textContent = 'No projects selected — pick one or more jobs below.';
+      return;
+    }
+    const labels = ids.map((id) => {
+      const p = (maintCatalog?.projects || []).find((row) => row.id === id);
+      return p?.label || `Project ${id}`;
+    });
+    el.textContent = `Selected: ${labels.join('; ')}`;
+  }
+
+  function onMaintScopeChange() {
+    const list = document.getElementById('devMaintProjectList');
+    const all = maintScopeAll();
+    if (list) list.classList.toggle('hidden', all);
+    updateMaintScopeSummary();
+  }
+
+  function renderMaintProjectList(projects) {
+    const host = document.getElementById('devMaintProjectList');
+    if (!host) return;
+    if (!projects?.length) {
+      host.innerHTML = '<div class="text-sm text-zinc-500 py-4 text-center">No projects in the database.</div>';
+      return;
+    }
+    host.innerHTML = projects.map((p) => `
+      <label class="dev-maint-project cursor-pointer">
+        <input type="checkbox" class="dev-maint-project-cb accent-red-600" value="${p.id}" onchange="CasePMDeveloperConsole.updateMaintScopeSummary()">
+        <span class="text-zinc-200 truncate">${escapeHtml(p.label)}</span>
+        ${p.status ? `<span class="text-xs text-zinc-500 ml-auto flex-shrink-0">${escapeHtml(p.status)}</span>` : ''}
+      </label>`).join('');
+  }
+
+  function renderMaintModuleGrid(modules) {
+    const host = document.getElementById('devMaintModuleGrid');
+    if (!host) return;
+    host.innerHTML = (modules || []).map((m) => `
+      <div class="dev-maint-module ${m.danger ? 'danger' : ''}">
+        <div class="flex items-start gap-2">
+          <i class="fa-solid ${escapeHtml(m.icon || 'fa-database')} ${escapeHtml(m.color || 'text-zinc-400')} w-5 mt-0.5"></i>
+          <div class="min-w-0 flex-1">
+            <div class="font-medium text-sm text-white">${escapeHtml(m.label)}</div>
+            <div class="text-xs text-zinc-500 mt-0.5">${escapeHtml(m.description)}</div>
+            ${m.scope === 'global' ? '<div class="text-[10px] uppercase tracking-wide text-amber-500/90 mt-1">Program-wide</div>' : ''}
+          </div>
+        </div>
+        <button type="button" class="dev-tool-btn danger !w-full text-xs mt-1"
+                onclick="CasePMDeveloperConsole.clearModuleData(${JSON.stringify(m.key)}, ${JSON.stringify(m.label)}, ${!!m.danger})">
+          <i class="fa-solid fa-eraser"></i><span>Clear ${escapeHtml(m.label)}</span>
+        </button>
+      </div>`).join('');
+  }
+
+  async function loadMaintenancePanel() {
+    const grid = document.getElementById('devMaintModuleGrid');
+    if (grid) grid.innerHTML = '<div class="text-sm text-zinc-500 py-6 text-center col-span-full">Loading modules…</div>';
+    try {
+      const data = await api('/api/developer/maintenance/catalog');
+      maintCatalog = data;
+      renderMaintProjectList(data.projects || []);
+      renderMaintModuleGrid(data.modules || []);
+      onMaintScopeChange();
+    } catch (err) {
+      if (grid) grid.innerHTML = `<div class="text-sm text-red-400 py-6 text-center col-span-full">${escapeHtml(err.message)}</div>`;
+    }
+  }
+
+  async function clearModuleData(moduleKey, moduleLabel, isDanger) {
+    const allProjects = maintScopeAll();
+    const projectIds = allProjects ? [] : selectedMaintProjectIds();
+    if (!allProjects && !projectIds.length) {
+      CasePMDialog?.alert('Select at least one project, or choose All Projects.', 'info');
+      return;
+    }
+    const scopeText = allProjects ? 'ALL projects' : `${projectIds.length} selected project(s)`;
+    const ok = await CasePMDialog?.confirm(
+      `Clear ${moduleLabel} data for ${scopeText}?\n\nThis permanently deletes database records and uploaded files for this module. This cannot be undone.`,
+      { title: `Clear ${moduleLabel}`, confirmLabel: 'Continue', danger: true }
+    );
+    if (!ok) return;
+    const typed = await CasePMDialog?.prompt(
+      'Type CLEAR to confirm.',
+      { title: 'Confirm clear', defaultValue: '', submitLabel: 'Clear data', label: 'Confirmation text' }
+    );
+    if ((typed || '').trim().toUpperCase() !== 'CLEAR') {
+      CasePMDialog?.alert('Clear cancelled — confirmation text did not match.', 'info');
+      return;
+    }
+    try {
+      const json = await api('/api/developer/maintenance/clear', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          module: moduleKey,
+          all_projects: allProjects,
+          project_ids: projectIds,
+          confirm: 'CLEAR',
+        }),
+      });
+      const stats = json.result && typeof json.result === 'object'
+        ? Object.entries(json.result).map(([k, v]) => `${k}: ${v}`).join('\n')
+        : '';
+      CasePMDialog?.alert(
+        `${moduleLabel} data cleared for ${scopeText}.${stats ? `\n\n${stats}` : ''}`,
+        'success'
+      );
+      if (moduleKey === 'projects') await loadMaintenancePanel();
+    } catch (err) {
+      CasePMDialog?.alert(err.message || 'Clear failed.', 'error');
+    }
+  }
+
   function initDevTabs() {
     const params = new URLSearchParams(window.location.search);
     const tab = params.get('tab') || 'overview';
@@ -280,6 +444,11 @@
   global.CasePMDeveloperConsole = {
     switchDevTab,
     loadUpdatesPanel,
+    loadMaintenancePanel,
+    onMaintScopeChange,
+    updateMaintScopeSummary,
+    clearModuleData,
+    clearAllProgramData,
     saveSnapshotFolder,
     createSnapshot,
     restoreSnapshot,
