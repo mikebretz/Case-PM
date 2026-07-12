@@ -252,7 +252,7 @@ def user_module_perms(user, module):
 
 def user_has_module_access(user, module, min_access='view'):
     from permissions_catalog import ACCESS_RANK
-    if user.role == 'Admin':
+    if user.role in ('Admin', 'Developer'):
         return True
     mp = user_module_perms(user, module)
     level = mp.get('access', 'none')
@@ -262,7 +262,7 @@ def user_has_module_access(user, module, min_access='view'):
 def user_can_approve(user, module, action='approve'):
     if not user:
         return False
-    if user.role == 'Admin':
+    if user.role in ('Admin', 'Developer'):
         return True
     perms = get_role_permissions(user)
     approve = perms.get('approve', [])

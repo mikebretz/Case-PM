@@ -133,7 +133,8 @@ CURRENT_PROJECT_SESSION_KEY = 'current_project_id'
 def admin_required(f):
     @wraps(f)
     def decorated_function(*args, **kwargs):
-        if not current_user.is_authenticated or current_user.role != 'Admin':
+        from developer_tools import is_admin_or_developer
+        if not current_user.is_authenticated or not is_admin_or_developer(current_user):
             flash("You do not have permission to access this page.", "error")
             return redirect(url_for('dashboard'))
         return f(*args, **kwargs)
@@ -469,7 +470,7 @@ class User(db.Model, UserMixin):
         return f"{self.first_name} {self.last_name}"
 
     def has_permission(self, permission):
-        if self.role == 'Admin':
+        if self.role in ('Admin', 'Developer'):
             return True
         try:
             from case_workflow import user_has_module_access, user_can_approve, _resolve_module_key
@@ -743,6 +744,7 @@ def inject_developer_flag():
         dev = False
         unlock = False
     is_admin = getattr(current_user, 'role', None) == 'Admin'
+    is_privileged = is_admin or dev
     flags = {'hide_financials': False, 'client_portal_only': False}
     security_settings = {'session_timeout_minutes': 60, 'warn_before_logout_minutes': 5}
     try:
@@ -756,14 +758,14 @@ def inject_developer_flag():
         from permissions_catalog import all_module_keys
         flags = user_global_flags(current_user)
         def can_access_module(module_key, min_access='view'):
-            if is_admin:
+            if is_privileged:
                 return True
             if flags.get('hide_financials') and module_key in FINANCIAL_MODULES:
                 return False
             return user_has_module_access(current_user, module_key, min_access)
         allowed_modules = (
             {k: True for k in all_module_keys()}
-            if is_admin else
+            if is_privileged else
             {k: can_access_module(k, 'view') for k in all_module_keys()}
         )
     except Exception:
@@ -774,7 +776,7 @@ def inject_developer_flag():
         'is_developer': dev,
         'developer_unlock_mode': unlock,
         'page_module': page_module,
-        'is_admin_user': is_admin,
+        'is_admin_user': is_privileged,
         'can_access_module': can_access_module,
         'allowed_modules': allowed_modules,
         'user_security_flags': flags,
@@ -1906,6 +1908,7 @@ def recovery_enter():
 @app.route('/logout')
 @login_required
 def logout():
+    session.pop('_flashes', None)
     logout_user()
     flash('You have been logged out successfully.', 'info')
     nxt = (request.args.get('next') or '').strip()

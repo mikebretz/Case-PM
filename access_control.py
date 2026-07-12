@@ -241,6 +241,12 @@ def users_module_admin(user) -> bool:
     if getattr(user, 'role', None) == 'Admin':
         return True
     try:
+        from developer_tools import is_developer
+        if is_developer(user):
+            return True
+    except Exception:
+        pass
+    try:
         from case_workflow import user_has_module_access
         return user_has_module_access(user, 'users', 'admin')
     except Exception:
