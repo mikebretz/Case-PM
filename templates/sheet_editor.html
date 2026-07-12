@@ -12,18 +12,19 @@
 <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
 
 <style>
-.sheet-page { display: flex; flex-direction: column; flex: 1; min-height: 0; width: 100%; padding: 0.5rem 0.5rem 0; box-sizing: border-box; }
+  #mainContent { display: flex !important; flex-direction: column !important; min-height: 0 !important; overflow: hidden !important; padding: 0.5rem !important; }
+.sheet-page { display: flex; flex-direction: column; flex: 1; min-height: 0; width: 100%; height: 100%; box-sizing: border-box; }
   .sheet-toolbar { display: flex; align-items: center; gap: 0.5rem; flex-wrap: wrap; flex-shrink: 0; margin-bottom: 0.5rem; }
   .sheet-btn { display: inline-flex; align-items: center; gap: 0.4rem; padding: 0.45rem 0.8rem; border-radius: 0.375rem; font-size: 0.85rem; font-weight: 500; background: #27272a; border: 1px solid #3f3f46; color: #fff; }
   .sheet-btn:hover { background: #3f3f46; }
   .sheet-btn.primary { background: #059669; border-color: #059669; }
   .sheet-btn.primary:hover { background: #10b981; }
   #sheetNameInput { background: #18181b; border: 1px solid #3f3f46; border-radius: 0.375rem; padding: 0.4rem 0.7rem; color: #fff; font-size: 0.9rem; min-width: 240px; }
-  #luckysheetHost { position: relative; flex: 1; min-height: 0; width: 100%; }
+  #luckysheetHost { position: relative; flex: 1; min-height: 360px; height: 0; width: 100%; background: #fff; border: 1px solid #3f3f46; border-radius: 0.375rem; overflow: hidden; }
   /* Luckysheet needs an absolutely-positioned container */
-  #luckysheet { position: absolute; inset: 0; }
+  #luckysheet { position: absolute; inset: 0; background: #fff; }
   #sheetStatus { font-size: 0.75rem; color: #71717a; margin-left: auto; }
-  #sheetLoading { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; background: #09090b; z-index: 5; color: #a1a1aa; }
+  #sheetLoading { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; background: #f4f4f5; z-index: 5; color: #52525b; }
   .sheet-zoom { display: inline-flex; align-items: center; gap: 0.35rem; background: #18181b; border: 1px solid #3f3f46; border-radius: 0.375rem; padding: 0.2rem 0.4rem; }
   .sheet-zoom-btn { color: #d4d4d8; padding: 0.15rem 0.35rem; border-radius: 0.25rem; }
   .sheet-zoom-btn:hover { background: #3f3f46; }
@@ -51,6 +52,7 @@
   .luckysheet-wa-editor .luckysheet-toolbar-button-inner-box i,
   .luckysheet-wa-editor .luckysheet-toolbar-menu-button-inner-box i { font-size: 16px !important; }
   .luckysheet-wa-editor .luckysheet-toolbar-button { min-width: 26px; }
+  .luckysheet-grid-window, .luckysheet-cell-main { background: #fff !important; }
 </style>
 
 <div class="sheet-page">
@@ -393,9 +395,22 @@
     if (dirty) { e.preventDefault(); e.returnValue = ''; }
   });
 
+  function resizeSheetHost() {
+    const host = document.getElementById('luckysheetHost');
+    if (!host) return;
+    const toolbarH = document.querySelector('.sheet-toolbar')?.offsetHeight || 48;
+    const available = Math.max(360, window.innerHeight - toolbarH - 120);
+    host.style.minHeight = available + 'px';
+    if (window.luckysheet && window.luckysheet.resize) {
+      try { window.luckysheet.resize(); } catch (_) {}
+    }
+  }
+
   waitForLuckysheet(() => {
     if (docId) loadExisting(); else createEmpty();
     bindZoom();
+    resizeSheetHost();
+    window.addEventListener('resize', resizeSheetHost);
   });
 })();
 </script>

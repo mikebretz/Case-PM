@@ -27,6 +27,7 @@
     versionUploadId: null,
     bulkSelected: new Set(),
     bulkMode: false,
+    iconSize: 'md',
   };
 
   function devUnlock() {
@@ -83,6 +84,111 @@
     if (mime.startsWith('image/') || ['png', 'jpg', 'jpeg', 'gif', 'webp', 'bmp'].includes(ext)) return 'image';
     if (mime.includes('pdf') || ext === 'pdf') return 'pdf';
     return null;
+  }
+
+  function previewKind(doc) {
+    const base = isPreviewable(doc);
+    if (base) return base;
+    if (doc?.editor_kind === 'sheet') return 'sheet';
+    if (doc?.editor_kind === 'doc') return 'doc';
+    return null;
+  }
+
+  function applyIconSize(size) {
+    state.iconSize = size || 'md';
+    try { localStorage.setItem('casepm_docs_icon_size', state.iconSize); } catch (_) {}
+    const wrap = document.getElementById('docsGridWrap');
+    wrap?.classList.remove('icon-sm', 'icon-md', 'icon-lg', 'icon-xl');
+    wrap?.classList.add(`icon-${state.iconSize}`);
+    const sel = document.getElementById('docsIconSize');
+    if (sel) sel.value = state.iconSize;
+  }
+
+  function renderFolderThumb(folder) {
+    const thumbs = folder.preview_thumbs || [];
+    if (!thumbs.length) {
+      return '<div class="docs-item-icon"><i class="fa-solid fa-folder"></i></div>';
+    }
+    const mini = thumbs.map((t) => {
+      if (t.type === 'image') return `<img src="${esc(t.url)}" alt="">`;
+      if (t.type === 'pdf') return '<div class="docs-folder-mini pdf"><i class="fa-solid fa-file-pdf"></i></div>';
+      if (t.type === 'sheet') return '<div class="docs-folder-mini sheet"><i class="fa-solid fa-file-excel"></i></div>';
+      if (t.type === 'doc') return '<div class="docs-folder-mini doc"><i class="fa-solid fa-file-word"></i></div>';
+      return '';
+    }).join('');
+    return `<div class="docs-folder-thumb"><div class="docs-folder-back"></div><div class="docs-folder-front">${mini}</div></div>`;
+  }
+
+  function renderFileThumb(f, fi) {
+    if (fi.cls === 'file-img' && f.file_url) {
+      return `<div class="docs-file-thumb"><img src="${esc(f.file_url)}" alt=""></div>`;
+    }
+    return `<div class="docs-file-thumb"><i class="fa-solid ${fi.icon} ${fi.cls}"></i></div>`;
+  }
+
+  function sheetTableFromAoa(aoa, maxR = 20, maxC = 10) {
+    const rows = (aoa || []).slice(0, maxR);
+    let html = '<div class="docs-preview-office sheet"><table><tbody>';
+    rows.forEach((row) => {
+      html += '<tr>';
+      for (let c = 0; c < maxC; c++) {
+        const val = row && row[c] != null ? row[c] : '';
+        html += `<td>${esc(String(val))}</td>`;
+      }
+      html += '</tr>';
+    });
+    html += '</tbody></table></div>';
+    return html;
+  }
+
+  function sheetTableFromLuckysheet(sheets) {
+    const s = (sheets && sheets[0]) || {};
+    const grid = s.data || [];
+    const celldata = s.celldata || [];
+    if (!grid.length && celldata.length) {
+      const aoa = [];
+      celldata.forEach((c) => {
+        aoa[c.r] = aoa[c.r] || [];
+        const v = c.v && (c.v.m != null ? c.v.m : c.v.v);
+        aoa[c.r][c.c] = v;
+      });
+      return sheetTableFromAoa(aoa);
+    }
+    const aoa = grid.map((row) => (row || []).map((cell) => {
+      if (cell == null) return '';
+      if (typeof cell === 'object') return cell.m != null ? cell.m : (cell.v != null ? cell.v : '');
+      return cell;
+    }));
+    return sheetTableFromAoa(aoa);
+  }
+
+  async function buildOfficePreviewHtml(doc) {
+    const json = await api(`/api/documents/${doc.id}/editor-content`);
+    const kind = doc.editor_kind || json.editor_kind;
+    if (kind === 'doc') {
+      let html = json.editor_content || '';
+      if (!html && json.download_url) {
+        html = '<p style="color:#71717a;font-size:0.8rem;">No saved content yet. Double-click to open in the Word editor.</p>';
+      }
+      return `<div class="docs-preview-office doc">${html}</div>`;
+    }
+    if (kind === 'sheet') {
+      if (json.editor_content) {
+        try {
+          return sheetTableFromLuckysheet(JSON.parse(json.editor_content));
+        } catch (_) { /* fall through */ }
+      }
+      if (json.download_url && global.XLSX) {
+        const dl = await fetch(json.download_url, { credentials: 'same-origin' });
+        const buf = await dl.arrayBuffer();
+        const wb = global.XLSX.read(buf, { type: 'array' });
+        const name = wb.SheetNames[0];
+        const aoa = global.XLSX.utils.sheet_to_json(wb.Sheets[name], { header: 1 });
+        return sheetTableFromAoa(aoa);
+      }
+      return '<div class="docs-preview-office sheet"><p style="color:#71717a;">Open in the spreadsheet editor to view this file.</p></div>';
+    }
+    return '';
   }
 
   function ensureExpandedDefaults() {
@@ -261,6 +367,7 @@
       if (empty) empty.innerHTML = '<p class="text-zinc-500">No matches found.</p>';
       gridWrap?.classList.add('hidden');
       updateDownloadZipButton();
+      syncSelectAllCheckbox();
       return;
     }
     empty?.classList.add('hidden');
@@ -268,6 +375,7 @@
     if (state.viewMode === 'list') renderList(folders, files);
     else renderGrid(folders, files);
     updateDownloadZipButton();
+    syncSelectAllCheckbox();
   }
 
   async function loadTrash() {
@@ -347,7 +455,7 @@
       const lock = f.is_system ? '<span class="docs-item-badge">System</span>' : '';
       html += `<div class="docs-item folder${sel}" data-kind="folder" data-id="${f.id}" data-system="${f.is_system ? '1' : ''}" data-drop-folder="${f.id}">
         ${lock}
-        <div class="docs-item-icon"><i class="fa-solid fa-folder"></i></div>
+        ${renderFolderThumb(f)}
         <div class="docs-item-name">${esc(f.name)}</div>
         <div class="docs-item-meta">${f.file_count || 0} files</div>
       </div>`;
@@ -360,7 +468,7 @@
       const bulk = state.browseMode === 'normal' ? `<input type="checkbox" class="docs-bulk-cb" data-bulk-id="${f.id}" ${state.bulkSelected.has(f.id) ? 'checked' : ''}>` : '';
       html += `<div class="docs-item file ${fi.cls}${sel}" data-kind="file" data-id="${f.id}" data-locked="${f.is_system_locked && !devUnlock() ? '1' : ''}" data-edit-locked="${f.is_edit_locked && !devUnlock() ? '1' : ''}" draggable="${(f.is_system_locked || f.is_edit_locked) && !devUnlock() ? 'false' : 'true'}">
         ${lock}${co}${bulk}
-        <div class="docs-item-icon"><i class="fa-solid ${fi.icon}"></i></div>
+        ${renderFileThumb(f, fi)}
         <div class="docs-item-name">${esc(f.name)}</div>
         <div class="docs-item-meta">${esc(f.size || '')}</div>
       </div>`;
@@ -415,6 +523,7 @@
       empty?.classList.remove('hidden');
       gridWrap?.classList.add('hidden');
       updateDownloadZipButton();
+      syncSelectAllCheckbox();
       return;
     }
     empty?.classList.add('hidden');
@@ -422,6 +531,7 @@
     if (state.viewMode === 'list') renderList(folders, files);
     else renderGrid(folders, files);
     updateDownloadZipButton();
+    syncSelectAllCheckbox();
   }
 
   function bindItemEvents(container) {
@@ -568,8 +678,26 @@
           ).join('')}
         </div>`;
       let content = '';
-      if (state.previewTab === 'details') content = renderPreviewDetails(doc);
-      else if (state.previewTab === 'versions') content = await renderPreviewVersions(fileId, doc);
+      if (state.previewTab === 'details') {
+        content = renderPreviewDetails(doc);
+        body.innerHTML = tabs + content;
+        body.querySelectorAll('[data-ptab]').forEach(btn => {
+          btn.addEventListener('click', () => loadPreview(fileId, btn.dataset.ptab));
+        });
+        bindPreviewActions(doc);
+        const kind = previewKind(doc);
+        if (kind === 'doc' || kind === 'sheet') {
+          const host = document.getElementById('docsOfficePreviewHost');
+          try {
+            const html = await buildOfficePreviewHtml(doc);
+            if (host) host.outerHTML = html;
+          } catch (err) {
+            if (host) host.innerHTML = `<p class="text-red-400 text-sm">${esc(err.message)}</p>`;
+          }
+        }
+        return;
+      }
+      if (state.previewTab === 'versions') content = await renderPreviewVersions(fileId, doc);
       else if (state.previewTab === 'comments') content = await renderPreviewComments(fileId);
       else content = await renderPreviewActivity(fileId);
       body.innerHTML = tabs + content;
@@ -583,16 +711,21 @@
   }
 
   function renderPreviewDetails(doc) {
-    const kind = isPreviewable(doc);
+    const kind = previewKind(doc);
     let media = '';
     if (kind === 'image') {
       media = `<img class="docs-preview-media" src="${esc(doc.file_url)}" alt="${esc(doc.name)}">`;
     } else if (kind === 'pdf') {
       media = `<iframe class="docs-preview-frame" src="${esc(doc.file_url)}" title="${esc(doc.name)}"></iframe>`;
+    } else if (kind === 'doc' || kind === 'sheet') {
+      media = '<div id="docsOfficePreviewHost" class="docs-preview-loading"><i class="fa-solid fa-spinner fa-spin mr-2"></i>Loading preview…</div>';
     } else {
       const fi = fileIcon(doc.name, doc.mime_type);
       media = `<div class="text-center py-8"><i class="fa-solid ${fi.icon} text-5xl ${fi.cls} text-amber-400"></i><p class="text-sm text-zinc-400 mt-3">No preview for this file type</p></div>`;
     }
+    const openLabel = kind === 'doc' || kind === 'sheet'
+      ? 'Open in editor'
+      : (kind ? 'Open &amp; markup' : '');
     return `
       ${media}
       <h3 class="text-sm font-semibold text-white mt-3 break-words">${esc(doc.name)}</h3>
@@ -610,7 +743,7 @@
         ${(doc.tags || []).length ? `<dt>Tags</dt><dd>${esc((doc.tags || []).join(', '))}</dd>` : ''}
       </dl>
       <div class="docs-preview-actions">
-        ${kind ? '<button type="button" class="docs-btn docs-btn-primary" id="docsPreviewOpen"><i class="fa-solid fa-pen-ruler"></i> Open &amp; markup</button>' : ''}
+        ${kind ? `<button type="button" class="docs-btn docs-btn-primary" id="docsPreviewOpen"><i class="fa-solid fa-${kind === 'doc' ? 'file-word' : kind === 'sheet' ? 'file-excel' : 'pen-ruler'}"></i> ${openLabel}</button>` : ''}
         <button type="button" class="docs-btn docs-btn-secondary" id="docsPreviewDownload"><i class="fa-solid fa-download"></i> Download</button>
         <button type="button" class="docs-btn docs-btn-secondary" id="docsPreviewShare"><i class="fa-solid fa-link"></i> Share</button>
         ${doc.can_check_out ? '<button type="button" class="docs-btn docs-btn-secondary" id="docsPreviewCheckout"><i class="fa-solid fa-lock"></i> Check out</button>' : ''}
@@ -1021,10 +1154,39 @@
     await loadBrowse(state.folderId);
   }
 
+  function selectableFileIds() {
+    if (state.browseMode !== 'normal') return [];
+    return filteredItems().files.map((f) => f.id);
+  }
+
+  function syncSelectAllCheckbox() {
+    const ids = selectableFileIds();
+    const allSelected = ids.length > 0 && ids.every((id) => state.bulkSelected.has(id));
+    const someSelected = ids.some((id) => state.bulkSelected.has(id));
+    ['docsSelectAll', 'docsSelectAllList'].forEach((id) => {
+      const el = document.getElementById(id);
+      if (!el) return;
+      el.checked = allSelected;
+      el.indeterminate = !allSelected && someSelected;
+      el.disabled = !ids.length;
+    });
+    document.getElementById('docsSelectAllWrap')?.classList.toggle('hidden', state.browseMode !== 'normal');
+  }
+
+  function toggleSelectAll(checked) {
+    const ids = selectableFileIds();
+    if (checked) ids.forEach((id) => state.bulkSelected.add(id));
+    else ids.forEach((id) => state.bulkSelected.delete(id));
+    updateBulkToolbar();
+    syncSelectAllCheckbox();
+    render();
+  }
+
   function toggleBulkSelect(id, checked) {
     if (checked) state.bulkSelected.add(id);
     else state.bulkSelected.delete(id);
     updateBulkToolbar();
+    syncSelectAllCheckbox();
   }
 
   function updateBulkToolbar() {
@@ -1317,6 +1479,11 @@
   }
 
   function bindUi() {
+    applyIconSize(localStorage.getItem('casepm_docs_icon_size') || 'md');
+    document.getElementById('docsIconSize')?.addEventListener('change', (e) => applyIconSize(e.target.value));
+    ['docsSelectAll', 'docsSelectAllList'].forEach((id) => {
+      document.getElementById(id)?.addEventListener('change', (e) => toggleSelectAll(e.target.checked));
+    });
     document.getElementById('docsBtnUpload')?.addEventListener('click', () => {
       document.getElementById('docsFileInput')?.click();
     });
@@ -1348,6 +1515,7 @@
     document.getElementById('docsBulkClear')?.addEventListener('click', () => {
       state.bulkSelected.clear();
       updateBulkToolbar();
+      syncSelectAllCheckbox();
       render();
     });
     document.getElementById('docsShareLinksAdminClose')?.addEventListener('click', () => {
@@ -1360,8 +1528,13 @@
     });
     document.getElementById('docsSearchAll')?.addEventListener('change', e => {
       state.searchAll = e.target.checked;
-      if (state.searchAll && state.search.trim()) runGlobalSearch();
-      else { state.browseMode = 'normal'; render(); }
+      if (state.searchAll) {
+        if (state.search.trim()) runGlobalSearch();
+        else toast('Type a search term to search all folders');
+      } else {
+        state.browseMode = 'normal';
+        loadBrowse(state.folderId);
+      }
     });
     document.getElementById('docsViewGrid')?.addEventListener('click', () => setViewMode('grid'));
     document.getElementById('docsViewList')?.addEventListener('click', () => setViewMode('list'));

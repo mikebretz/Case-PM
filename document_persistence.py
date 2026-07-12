@@ -368,7 +368,7 @@ def verify_share_password(password_hash: str | None, password: str | None) -> bo
     return check_password_hash(password_hash, str(password).strip())
 
 
-def folder_to_dict(folder, child_count: int = 0, file_count: int = 0) -> dict[str, Any]:
+def folder_to_dict(folder, child_count: int = 0, file_count: int = 0, preview_thumbs: list | None = None) -> dict[str, Any]:
     return {
         'id': folder.id,
         'project_id': folder.project_id,
@@ -380,6 +380,7 @@ def folder_to_dict(folder, child_count: int = 0, file_count: int = 0) -> dict[st
         'can_rename': not folder.is_system,
         'child_count': child_count,
         'file_count': file_count,
+        'preview_thumbs': preview_thumbs or [],
         'created_at': folder.created_at.isoformat() if folder.created_at else None,
         'deleted_at': folder.deleted_at.isoformat() if getattr(folder, 'deleted_at', None) else None,
     }
