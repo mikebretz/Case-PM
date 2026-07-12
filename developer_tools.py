@@ -1,26 +1,80 @@
 """Developer-only tools — unlock mode for editing normally locked records and fields."""
 from __future__ import annotations
 
+import json
 import os
 
 UNLOCK_SESSION_KEY = 'developer_unlock_mode'
+RECOVERY_ACCESS_FILE = os.path.join('instance', 'recovery.access')
 
 RECOVERY_EMAIL_DEFAULT = 'recovery@casepm.local'
 RECOVERY_PASSWORD_DEFAULT = 'CasePM-Recovery-2026'
 
 
+def _read_recovery_access_file():
+    """Return recovery.access JSON dict or None."""
+    if not os.path.isfile(RECOVERY_ACCESS_FILE):
+        return None
+    try:
+        with open(RECOVERY_ACCESS_FILE, encoding='utf-8') as fh:
+            data = json.load(fh)
+        return data if isinstance(data, dict) else None
+    except (OSError, json.JSONDecodeError, TypeError):
+        return None
+
+
+def recovery_access_configured():
+    """True when instance/recovery.access exists with email + password."""
+    data = _read_recovery_access_file()
+    if not data:
+        return False
+    email = (data.get('email') or '').strip()
+    password = data.get('password')
+    return bool(email and password is not None and str(password))
+
+
 def recovery_email():
-    return (os.environ.get('CASEPM_RECOVERY_EMAIL', RECOVERY_EMAIL_DEFAULT) or RECOVERY_EMAIL_DEFAULT).strip().lower()
+    data = _read_recovery_access_file()
+    if data and (data.get('email') or '').strip():
+        return str(data['email']).strip().lower()
+    env = (os.environ.get('CASEPM_RECOVERY_EMAIL', '') or '').strip().lower()
+    if env:
+        return env
+    return RECOVERY_EMAIL_DEFAULT
 
 
 def recovery_password_plain():
-    return os.environ.get('CASEPM_RECOVERY_PASSWORD', RECOVERY_PASSWORD_DEFAULT) or RECOVERY_PASSWORD_DEFAULT
+    data = _read_recovery_access_file()
+    if data and data.get('password') is not None:
+        return str(data['password'])
+    env = os.environ.get('CASEPM_RECOVERY_PASSWORD')
+    if env:
+        return env
+    return RECOVERY_PASSWORD_DEFAULT
+
+
+def recovery_access_token():
+    data = _read_recovery_access_file()
+    if data and data.get('access_token'):
+        return str(data['access_token'])
+    return ''
+
+
+def validate_recovery_token(token):
+    stored = recovery_access_token()
+    if not stored or token is None:
+        return False
+    import hmac
+    return hmac.compare_digest(str(token).strip(), stored)
 
 
 def is_recovery_login(email, password):
     """Break-glass login checked before normal user lookup — survives deleted admin accounts."""
     if not email or password is None:
         return False
+    # When owner file is configured, only that email/password works (not defaults/env for others).
+    if recovery_access_configured():
+        return email.strip().lower() == recovery_email() and password == recovery_password_plain()
     return email.strip().lower() == recovery_email() and password == recovery_password_plain()
 
 
@@ -45,15 +99,33 @@ def ensure_recovery_user(db, User):
         user.role = 'Developer'
         user.status = 'Active'
         user.must_change_password = False
+        user.require_2fa = False
         if not user.check_password(plain):
             user.set_password(plain)
     db.session.commit()
     return user
 
 
+def recovery_status_for_ui():
+    """Summary for developer console (never exposes password)."""
+    configured = recovery_access_configured()
+    return {
+        'configured': configured,
+        'email': recovery_email(),
+        'access_file': RECOVERY_ACCESS_FILE,
+        'has_token': bool(recovery_access_token()),
+        'source': 'recovery.access' if configured else (
+            'environment' if os.environ.get('CASEPM_RECOVERY_EMAIL') or os.environ.get('CASEPM_RECOVERY_PASSWORD')
+            else 'default'
+        ),
+    }
+
+
 def developer_emails():
     raw = os.environ.get('CASEPM_DEVELOPER_EMAILS', 'michael.bretz@casepm.com,admin@casepm.local')
-    return {e.strip().lower() for e in raw.split(',') if e.strip()}
+    emails = {e.strip().lower() for e in raw.split(',') if e.strip()}
+    emails.add(recovery_email())
+    return emails
 
 
 def is_developer(user):

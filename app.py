@@ -97,6 +97,8 @@ PROJECT_AGNOSTIC_ENDPOINTS = frozenset({
     'safety_page',
     'login',
     'logout',
+    'recovery_login',
+    'recovery_enter',
     'force_change_password',
     'static',
     'favicon',
@@ -1616,6 +1618,7 @@ def login():
             login_user(user, remember=remember)
             user.last_login = datetime.utcnow()
             db.session.commit()
+            write_audit('RECOVERY_LOGIN', 'Recovery access via normal login', module='recovery', commit=True)
             flash('Recovery access granted.', 'warning')
             return redirect(url_for('developer_console'))
 
@@ -1645,6 +1648,82 @@ def login():
         return redirect(url_for('dashboard'))
 
     return render_template('login.html')
+
+
+def _complete_recovery_login(user, *, via='recovery'):
+    remember = True
+    login_user(user, remember=remember)
+    user.last_login = datetime.utcnow()
+    db.session.commit()
+    write_audit('RECOVERY_LOGIN', f'Break-glass access ({via})', module='recovery', commit=True)
+    flash('Recovery access granted — Developer Console.', 'warning')
+    return redirect(url_for('developer_console'))
+
+
+@app.route('/recovery', methods=['GET', 'POST'])
+def recovery_login():
+    """Separate owner break-glass login — not linked from the normal sign-in page."""
+    if current_user.is_authenticated:
+        try:
+            from developer_tools import is_developer
+            if is_developer(current_user):
+                return redirect(url_for('developer_console'))
+        except Exception:
+            pass
+        return redirect(url_for('dashboard'))
+
+    from developer_tools import (
+        ensure_recovery_user,
+        is_recovery_login,
+        recovery_access_configured,
+        recovery_email,
+    )
+
+    if request.method == 'POST':
+        if not recovery_access_configured():
+            flash('Recovery access is not configured. Run SETUP-RECOVERY-ACCESS.bat on this PC.', 'error')
+            return redirect(url_for('recovery_login'))
+        email = request.form.get('email', '').strip().lower()
+        password = request.form.get('password')
+        remember = bool(request.form.get('remember'))
+        if not is_recovery_login(email, password):
+            flash('Recovery credentials did not match.', 'error')
+            return render_template(
+                'recovery_login.html',
+                configured=True,
+                recovery_email_hint=recovery_email(),
+            )
+        user = ensure_recovery_user(db, User)
+        login_user(user, remember=remember)
+        user.last_login = datetime.utcnow()
+        db.session.commit()
+        write_audit('RECOVERY_LOGIN', 'Break-glass access (recovery page)', module='recovery', commit=True)
+        flash('Recovery access granted — Developer Console.', 'warning')
+        return redirect(url_for('developer_console'))
+
+    return render_template(
+        'recovery_login.html',
+        configured=recovery_access_configured(),
+        recovery_email_hint=recovery_email() if recovery_access_configured() else '',
+    )
+
+
+@app.route('/recovery/enter')
+def recovery_enter():
+    """One-click local recovery entry using token from instance/recovery.access."""
+    from developer_tools import ensure_recovery_user, validate_recovery_token, recovery_access_configured
+
+    if not recovery_access_configured():
+        flash('Run SETUP-RECOVERY-ACCESS.bat to configure recovery access.', 'error')
+        return redirect(url_for('recovery_login'))
+
+    token = (request.args.get('token') or '').strip()
+    if not validate_recovery_token(token):
+        flash('Invalid recovery token. Use RECOVERY-ACCESS.bat on the owner PC or sign in manually.', 'error')
+        return redirect(url_for('recovery_login'))
+
+    user = ensure_recovery_user(db, User)
+    return _complete_recovery_login(user, via='recovery token')
 
 
 @app.route('/logout')
@@ -10950,12 +11029,13 @@ def program_settings():
 @developer_required
 def developer_console():
     from program_settings_persistence import load_program_settings
-    from developer_tools import developer_unlock_active, recovery_email
+    from developer_tools import developer_unlock_active, recovery_email, recovery_status_for_ui
     return render_template(
         'developer.html',
         raw_settings=load_program_settings(),
         unlock_mode=developer_unlock_active(current_user),
         recovery_email=recovery_email(),
+        recovery_status=recovery_status_for_ui(),
     )
 
 
