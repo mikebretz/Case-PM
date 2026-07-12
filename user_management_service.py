@@ -141,11 +141,15 @@ def _resolve_company(db, Company, company_name: str | None, company_id: int | No
 
 
 def generate_temp_password(length: int = 14) -> str:
-    alphabet = string.ascii_letters + string.digits + '!@#$%&*'
+    from password_policy import MIN_LENGTH
+    length = max(length, MIN_LENGTH)
+    special = '!@#$%&*'
+    alphabet = string.ascii_letters + string.digits + special
     while True:
         pwd = ''.join(secrets.choice(alphabet) for _ in range(length))
         if (any(c.islower() for c in pwd) and any(c.isupper() for c in pwd)
-                and any(c.isdigit() for c in pwd)):
+                and any(c.isdigit() for c in pwd)
+                and any(c in special for c in pwd)):
             return pwd
 
 
@@ -173,8 +177,8 @@ def create_user(db, User, Company, body: dict, *, actor_id: int | None = None, a
     if not temp_password:
         temp_password = generate_temp_password()
         generated = temp_password
-    from password_policy import validate_password
-    ok, msg = validate_password(temp_password, email=email, names=(first, last))
+    from password_policy import validate_temporary_password
+    ok, msg = validate_temporary_password(temp_password)
     if not ok:
         raise ValueError(msg)
 
@@ -258,12 +262,8 @@ def update_user(db, User, Company, user, body: dict, *, actor=None) -> object:
 
     temp_password = (body.get('tempPassword') or body.get('temp_password') or '').strip()
     if temp_password:
-        from password_policy import validate_password
-        ok, msg = validate_password(
-            temp_password,
-            email=user.email,
-            names=(user.first_name, user.last_name),
-        )
+        from password_policy import validate_temporary_password
+        ok, msg = validate_temporary_password(temp_password)
         if not ok:
             raise ValueError(msg)
         user.set_password(temp_password)
@@ -281,8 +281,8 @@ def update_user(db, User, Company, user, body: dict, *, actor=None) -> object:
 
 def reset_user_password(user, password: str | None = None) -> str:
     pwd = (password or '').strip() or generate_temp_password()
-    from password_policy import validate_password
-    ok, msg = validate_password(pwd, email=user.email, names=(user.first_name, user.last_name))
+    from password_policy import validate_temporary_password
+    ok, msg = validate_temporary_password(pwd)
     if not ok:
         raise ValueError(msg)
     user.set_password(pwd)

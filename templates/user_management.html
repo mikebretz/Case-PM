@@ -243,6 +243,7 @@
                                 <button type="button" onclick="resetUserPassword()" class="px-4 py-2 text-xs bg-amber-600 hover:bg-amber-500 rounded whitespace-nowrap text-white font-medium">Reset Password</button>
                             </div>
                             <div id="passwordResetNote" class="text-[10px] text-amber-400 mt-1 hidden">New temporary password generated. User should change on first login.</div>
+                            <p class="text-[10px] text-zinc-500 mt-1">Leave blank to auto-generate. Simple initial passwords (e.g. admin123) are fine — users are prompted to choose a strong password on first login.</p>
                         </div>
 
                         <div>
@@ -1096,6 +1097,14 @@
         }
     }
 
+    function validateTempPassword(password) {
+        const pwd = (password || '').trim();
+        if (!pwd) return null;
+        if (pwd.length < 4) return 'Initial password must be at least 4 characters.';
+        if (pwd.length > 128) return 'Password is too long.';
+        return null;
+    }
+
     // ==================== SAVE USER (FIXED + VALIDATION) ====================
     async function saveUser(e) {
         e.preventDefault();
@@ -1174,6 +1183,13 @@
                 notes: document.getElementById('notes').value.trim(),
             };
             const tempPass = document.getElementById('tempPassword').value.trim();
+            const passwordError = validateTempPassword(tempPass);
+            if (passwordError) {
+                showCenteredAlert(passwordError, 'warning');
+                switchTab('general');
+                document.getElementById('tempPassword').focus();
+                return;
+            }
             if (tempPass) formPayload.tempPassword = tempPass;
 
             const apiPayload = CasePMUserMgmtServer.buildUserPayload(formPayload);
@@ -1224,7 +1240,7 @@
 
         } catch (err) {
             console.error("Save User Error:", err);
-            showCenteredAlert("Failed to save user. Check console for details.");
+            showCenteredAlert(err.message || "Failed to save user. Check console for details.", 'error');
         }
     }
 
