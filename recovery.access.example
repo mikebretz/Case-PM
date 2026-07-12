@@ -1,0 +1,6 @@
+{
+  "email": "you@yourcompany.com",
+  "password": "choose-a-long-unique-password",
+  "access_token": "generated-when-you-run-SETUP-RECOVERY-ACCESS.bat",
+  "note": "Copy setup instructions: run SETUP-RECOVERY-ACCESS.bat once. This creates instance/recovery.access (never commit that file)."
+}
