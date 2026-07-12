@@ -11318,6 +11318,113 @@ def api_developer_unlock_change_order():
     return jsonify({'ok': True, 'change_order': co_to_dict(co, allocs)})
 
 
+def _developer_actor():
+    return (getattr(current_user, 'email', None) or 'developer').strip()
+
+
+@app.route('/api/developer/updates/status', methods=['GET'])
+@login_required
+@developer_required
+def api_developer_updates_status():
+    from program_updates import get_status, get_history, list_snapshots
+    status = get_status()
+    status['history'] = get_history(20)
+    status['snapshots'] = list_snapshots()
+    return jsonify({'ok': True, **status})
+
+
+@app.route('/api/developer/updates/settings', methods=['PUT'])
+@login_required
+@developer_required
+def api_developer_updates_settings():
+    from program_updates import save_snapshot_folder, snapshot_dir
+    body = request.get_json(silent=True) or {}
+    folder = save_snapshot_folder(body.get('snapshot_folder'))
+    write_audit('dev_update_settings', f'Snapshot folder set to {folder}', module='developer', commit=True)
+    return jsonify({'ok': True, 'snapshot_folder': snapshot_dir()})
+
+
+@app.route('/api/developer/updates/snapshot', methods=['POST'])
+@login_required
+@developer_required
+def api_developer_updates_snapshot():
+    from program_updates import create_snapshot, list_snapshots
+    body = request.get_json(silent=True) or {}
+    try:
+        result = create_snapshot(
+            label=body.get('label') or '',
+            note=body.get('note') or '',
+            actor=_developer_actor(),
+        )
+        write_audit('dev_code_snapshot', result.get('filename') or 'snapshot', module='developer', commit=True)
+        return jsonify({'ok': True, 'result': result, 'snapshots': list_snapshots()})
+    except (OSError, ValueError) as exc:
+        return jsonify({'ok': False, 'error': str(exc)}), 400
+
+
+@app.route('/api/developer/updates/restore', methods=['POST'])
+@login_required
+@developer_required
+def api_developer_updates_restore():
+    from program_updates import restore_snapshot, list_snapshots, get_history
+    body = request.get_json(silent=True) or {}
+    filename = (body.get('filename') or '').strip()
+    if not filename:
+        return jsonify({'error': 'filename required'}), 400
+    try:
+        result = restore_snapshot(filename, actor=_developer_actor())
+        write_audit('dev_code_rollback', filename, module='developer', commit=True)
+        return jsonify({
+            'ok': True,
+            'result': result,
+            'snapshots': list_snapshots(),
+            'history': get_history(20),
+        })
+    except (OSError, ValueError) as exc:
+        return jsonify({'ok': False, 'error': str(exc)}), 400
+
+
+@app.route('/api/developer/updates/install', methods=['POST'])
+@login_required
+@developer_required
+def api_developer_updates_install():
+    from program_updates import apply_update_zip, list_snapshots, get_history
+    upload = request.files.get('file')
+    if not upload:
+        return jsonify({'error': 'file required'}), 400
+    try:
+        result = apply_update_zip(
+            upload,
+            label=request.form.get('label') or '',
+            note=request.form.get('note') or '',
+            actor=_developer_actor(),
+        )
+        write_audit('dev_code_install', result.get('upload_name') or 'update zip', module='developer', commit=True)
+        return jsonify({
+            'ok': True,
+            'result': result,
+            'snapshots': list_snapshots(),
+            'history': get_history(20),
+        })
+    except (OSError, ValueError) as exc:
+        return jsonify({'ok': False, 'error': str(exc)}), 400
+
+
+@app.route('/api/developer/updates/git-pull', methods=['POST'])
+@login_required
+@developer_required
+def api_developer_updates_git_pull():
+    from program_updates import git_pull_update, get_status, get_history
+    try:
+        result = git_pull_update(actor=_developer_actor())
+        write_audit('dev_git_pull', result.get('git_after', {}).get('commit') or 'git pull', module='developer', commit=True)
+        status = get_status()
+        status['history'] = get_history(20)
+        return jsonify({'ok': True, 'result': result, 'status': status})
+    except (OSError, ValueError) as exc:
+        return jsonify({'ok': False, 'error': str(exc)}), 400
+
+
 @app.route('/api/program-settings/sage', methods=['GET'])
 @login_required
 @admin_required

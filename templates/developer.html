@@ -1,9 +1,14 @@
 {% extends "base.html" %}
 
 {% block content %}
+<script src="{{ url_for('static', filename='js/developer-console-app.js') }}"></script>
 <style>
-.dev-page { max-width: 1100px; margin: 0 auto; padding: 1rem; }
-.dev-card { background: #18181b; border: 1px solid #3f3f46; border-radius: 1rem; padding: 1.5rem; margin-bottom: 1rem; }
+.dev-page { display: flex; flex-direction: column; flex: 1; min-height: 0; width: 100%; padding: 1rem 1rem 0; overflow: hidden; box-sizing: border-box; }
+.dev-stack { display: flex; flex-direction: column; flex: 1; min-height: 0; overflow: hidden; max-width: 1200px; margin: 0 auto; width: 100%; }
+.dev-card { background: #18181b; border: 1px solid #3f3f46; border-radius: 0.75rem; padding: 1.25rem; margin-bottom: 1rem; }
+.dev-tab-btn { padding: 0.5rem 1.25rem; font-size: 0.875rem; font-weight: 500; color: #a1a1aa; white-space: nowrap; }
+.dev-tab-btn:hover { color: #fff; }
+.dev-tab-btn.active { color: #fff; border-bottom: 3px solid #dc2626; }
 .dev-switch { position: relative; width: 3.5rem; height: 2rem; }
 .dev-switch input { opacity: 0; width: 0; height: 0; }
 .dev-slider {
@@ -17,130 +22,223 @@
 .dev-switch input:checked + .dev-slider { background: #dc2626; }
 .dev-switch input:checked + .dev-slider:before { transform: translateX(1.5rem); }
 .dev-module-link, .dev-tool-btn {
-    display: flex; align-items: center; gap: 0.75rem; padding: 0.75rem 1rem;
+    display: inline-flex; align-items: center; gap: 0.75rem; padding: 0.75rem 1rem;
     background: #09090b; border: 1px solid #27272a; border-radius: 0.75rem;
     color: #e4e4e7; font-size: 0.875rem; transition: border-color .15s, background .15s;
-    text-align: left; width: 100%;
+    text-align: left;
 }
+.dev-module-link { width: 100%; }
 .dev-module-link:hover, .dev-tool-btn:hover { border-color: #52525b; background: #18181b; }
 .dev-tool-btn.danger { border-color: #7f1d1d; color: #fecaca; }
 .dev-tool-btn.danger:hover { background: #450a0a; }
+.dev-input { width: 100%; background: #27272a; border: 1px solid #3f3f46; border-radius: 0.375rem; padding: 0.625rem 1rem; font-size: 0.875rem; }
+.dev-input:focus { outline: none; border-color: #dc2626; }
 </style>
 
-<div class="dev-page">
-    <div class="mb-6 flex items-center justify-between flex-wrap gap-3">
+<div class="dev-page"><div class="dev-stack">
+
+    <div class="mb-4 flex-shrink-0 flex items-start justify-between gap-4 flex-wrap">
         <div>
-            <h1 class="text-2xl font-semibold text-red-400"><i class="fa-solid fa-code mr-2"></i>Developer Console</h1>
-            <p class="text-sm text-zinc-400 mt-1">Unlock editing, run maintenance tools, and access break-glass recovery.</p>
+            <h1 class="text-2xl font-semibold tracking-tight text-red-400"><i class="fa-solid fa-code mr-2"></i>Developer Console</h1>
+            <p class="text-zinc-400 text-sm mt-1">Unlock editing, run maintenance tools, manage program updates, and access break-glass recovery.</p>
         </div>
-        <a href="{{ url_for('dashboard') }}" class="text-sm text-emerald-400 hover:underline">← Dashboard</a>
+        <a href="{{ url_for('dashboard') }}" class="text-sm text-emerald-400 hover:underline flex-shrink-0">← Dashboard</a>
     </div>
 
-    <div class="dev-card border-amber-900/40">
-        <h2 class="font-semibold text-lg text-amber-300 mb-2"><i class="fa-solid fa-shield-halved mr-2"></i>Recovery Access</h2>
-        <p class="text-sm text-zinc-400 mb-3">If normal logins are unavailable, sign in at the login page with the recovery account. This account is always recreated on startup.</p>
-        <div class="text-sm font-mono bg-zinc-950 border border-zinc-800 rounded-lg p-3 space-y-1">
-            <div>Email: <span class="text-emerald-400">{{ recovery_email }}</span></div>
-            <div>Password: set via <span class="text-zinc-300">CASEPM_RECOVERY_PASSWORD</span> environment variable</div>
-            <div class="text-xs text-zinc-500 mt-2">Default password is only used when the environment variable is not set. Change it before production deployment.</div>
-        </div>
+    <div class="flex border-b border-zinc-700 mb-4 flex-shrink-0 overflow-x-auto">
+        <button type="button" onclick="CasePMDeveloperConsole.switchDevTab('overview')" id="dev-tab-overview" class="dev-tab-btn active">Overview</button>
+        <button type="button" onclick="CasePMDeveloperConsole.switchDevTab('tools')" id="dev-tab-tools" class="dev-tab-btn">Maintenance</button>
+        <button type="button" onclick="CasePMDeveloperConsole.switchDevTab('updates')" id="dev-tab-updates" class="dev-tab-btn">Program Updates</button>
+        <button type="button" onclick="CasePMDeveloperConsole.switchDevTab('modules')" id="dev-tab-modules" class="dev-tab-btn">Modules</button>
+        <button type="button" onclick="CasePMDeveloperConsole.switchDevTab('settings')" id="dev-tab-settings" class="dev-tab-btn">Settings</button>
     </div>
 
-    <div class="dev-card border-red-900/40">
-        <div class="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
-            <div>
-                <h2 class="font-semibold text-lg text-zinc-100">Unlock Edit Mode</h2>
-                <p class="text-sm text-zinc-400 mt-1 max-w-xl">
-                    Edit sequential IDs, approved records, locked SOV tables, system-locked documents, and move or delete protected files.
-                </p>
-                <p id="devUnlockStatus" class="text-xs mt-2 font-medium {{ 'text-red-400' if unlock_mode else 'text-zinc-500' }}">
-                    {{ 'ACTIVE — locked fields are editable across the app' if unlock_mode else 'OFF — normal business rules apply' }}
-                </p>
+    <div class="flex-1 min-h-0 overflow-auto mb-2">
+
+    <!-- Overview -->
+    <div id="dev-tab-content-overview">
+        <div class="dev-card border-amber-900/40">
+            <h2 class="font-semibold text-lg text-amber-300 mb-2"><i class="fa-solid fa-shield-halved mr-2"></i>Recovery Access</h2>
+            <p class="text-sm text-zinc-400 mb-3">If normal logins are unavailable, sign in at the login page with the recovery account. This account is always recreated on startup.</p>
+            <div class="text-sm font-mono bg-zinc-950 border border-zinc-800 rounded-lg p-3 space-y-1">
+                <div>Email: <span class="text-emerald-400">{{ recovery_email }}</span></div>
+                <div>Password: set via <span class="text-zinc-300">CASEPM_RECOVERY_PASSWORD</span> environment variable</div>
+                <div class="text-xs text-zinc-500 mt-2">Default password is only used when the environment variable is not set. Change it before production deployment.</div>
             </div>
-            <label class="dev-switch flex-shrink-0" title="Toggle unlock edit mode">
-                <input type="checkbox" id="devUnlockToggle" {{ 'checked' if unlock_mode else '' }} onchange="toggleDevUnlockMode(this.checked)">
-                <span class="dev-slider"></span>
-            </label>
+        </div>
+
+        <div class="dev-card border-red-900/40">
+            <div class="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
+                <div>
+                    <h2 class="font-semibold text-lg text-zinc-100">Unlock Edit Mode</h2>
+                    <p class="text-sm text-zinc-400 mt-1 max-w-xl">
+                        Edit sequential IDs, approved records, locked SOV tables, system-locked documents, and move or delete protected files.
+                    </p>
+                    <p id="devUnlockStatus" class="text-xs mt-2 font-medium {{ 'text-red-400' if unlock_mode else 'text-zinc-500' }}">
+                        {{ 'ACTIVE — locked fields are editable across the app' if unlock_mode else 'OFF — normal business rules apply' }}
+                    </p>
+                </div>
+                <label class="dev-switch flex-shrink-0" title="Toggle unlock edit mode">
+                    <input type="checkbox" id="devUnlockToggle" {{ 'checked' if unlock_mode else '' }} onchange="toggleDevUnlockMode(this.checked)">
+                    <span class="dev-slider"></span>
+                </label>
+            </div>
+        </div>
+
+        <div class="dev-card">
+            <h2 class="font-semibold mb-3">What unlock mode opens up</h2>
+            <ul class="text-sm text-zinc-400 space-y-2 list-disc pl-5">
+                <li>Change order and PCO numbers, status, and allocation tables on approved records</li>
+                <li>Executed change orders — edit without separate unlock actions</li>
+                <li>Project numbers when sequential or already assigned</li>
+                <li>Pay application SOV lines when contractor SOV is locked</li>
+                <li>System-locked documents — rename, move, delete</li>
+                <li>Force-delete approved change orders</li>
+            </ul>
         </div>
     </div>
 
-    <div class="dev-card">
-        <h2 class="font-semibold mb-3">Maintenance Tools</h2>
-        <p class="text-sm text-zinc-500 mb-4">Test and reset actions removed from production screens. Run from here — you will be taken to the module and the action runs once.</p>
-        <div class="grid grid-cols-1 sm:grid-cols-2 gap-2">
-            <button type="button" class="dev-tool-btn danger" onclick="devQueue('payapps-reset-period', {{ url_for('pay_applications_page')|tojson }})">
-                <i class="fa-solid fa-fast-forward text-amber-400 w-5"></i>
-                <span>Pay Apps — advance to next period</span>
-            </button>
-            <button type="button" class="dev-tool-btn danger" onclick="devQueue('payapps-nuclear-g703', {{ url_for('pay_applications_page')|tojson }})">
-                <i class="fa-solid fa-trash-can text-red-400 w-5"></i>
-                <span>Pay Apps — reset G703 &amp; previous periods</span>
-            </button>
-            <button type="button" class="dev-tool-btn danger" onclick="devQueue('payapps-clear-subs', {{ url_for('pay_applications_page')|tojson }})">
-                <i class="fa-solid fa-users-slash text-orange-400 w-5"></i>
-                <span>Pay Apps — clear all subcontractors</span>
-            </button>
-            <button type="button" class="dev-tool-btn" onclick="devQueue('payapps-repair-tracker', {{ url_for('pay_applications_page')|tojson }})">
-                <i class="fa-solid fa-wrench text-sky-400 w-5"></i>
-                <span>Pay Apps — repair tracker sync</span>
-            </button>
-            <button type="button" class="dev-tool-btn danger" onclick="devQueue('payapps-clear-sub-data', {{ url_for('pay_applications_page')|tojson }})">
-                <i class="fa-solid fa-database text-red-400 w-5"></i>
-                <span>Pay Apps — clear all sub pay app data</span>
-            </button>
-            <button type="button" class="dev-tool-btn" onclick="devQueue('payapps-push-previous', {{ url_for('pay_applications_page')|tojson }})">
-                <i class="fa-solid fa-history text-violet-400 w-5"></i>
-                <span>Pay Apps — push to previous sub pay apps</span>
-            </button>
-            <button type="button" class="dev-tool-btn danger" onclick="devQueue('submittals-clear-log', {{ url_for('submittals_page')|tojson }})">
-                <i class="fa-solid fa-clipboard text-pink-400 w-5"></i>
-                <span>Submittals — clear entire log</span>
-            </button>
-            <button type="button" class="dev-tool-btn" onclick="devQueue('safety-voice-test', {{ url_for('safety_page')|tojson }})">
-                <i class="fa-solid fa-microphone text-yellow-400 w-5"></i>
-                <span>Safety — voice recognition test</span>
-            </button>
-            <button type="button" class="dev-tool-btn danger" onclick="devClearBrowserStorage()">
-                <i class="fa-solid fa-broom text-zinc-400 w-5"></i>
-                <span>Clear all browser storage for this site</span>
-            </button>
+    <!-- Maintenance -->
+    <div id="dev-tab-content-tools" class="hidden">
+        <div class="dev-card">
+            <h2 class="font-semibold mb-3">Maintenance Tools</h2>
+            <p class="text-sm text-zinc-500 mb-4">Test and reset actions removed from production screens. Run from here — you will be taken to the module and the action runs once.</p>
+            <div class="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                <button type="button" class="dev-tool-btn danger w-full" onclick="devQueue('payapps-reset-period', {{ url_for('pay_applications_page')|tojson }})">
+                    <i class="fa-solid fa-fast-forward text-amber-400 w-5"></i><span>Pay Apps — advance to next period</span>
+                </button>
+                <button type="button" class="dev-tool-btn danger w-full" onclick="devQueue('payapps-nuclear-g703', {{ url_for('pay_applications_page')|tojson }})">
+                    <i class="fa-solid fa-trash-can text-red-400 w-5"></i><span>Pay Apps — reset G703 &amp; previous periods</span>
+                </button>
+                <button type="button" class="dev-tool-btn danger w-full" onclick="devQueue('payapps-clear-subs', {{ url_for('pay_applications_page')|tojson }})">
+                    <i class="fa-solid fa-users-slash text-orange-400 w-5"></i><span>Pay Apps — clear all subcontractors</span>
+                </button>
+                <button type="button" class="dev-tool-btn w-full" onclick="devQueue('payapps-repair-tracker', {{ url_for('pay_applications_page')|tojson }})">
+                    <i class="fa-solid fa-wrench text-sky-400 w-5"></i><span>Pay Apps — repair tracker sync</span>
+                </button>
+                <button type="button" class="dev-tool-btn danger w-full" onclick="devQueue('payapps-clear-sub-data', {{ url_for('pay_applications_page')|tojson }})">
+                    <i class="fa-solid fa-database text-red-400 w-5"></i><span>Pay Apps — clear all sub pay app data</span>
+                </button>
+                <button type="button" class="dev-tool-btn w-full" onclick="devQueue('payapps-push-previous', {{ url_for('pay_applications_page')|tojson }})">
+                    <i class="fa-solid fa-history text-violet-400 w-5"></i><span>Pay Apps — push to previous sub pay apps</span>
+                </button>
+                <button type="button" class="dev-tool-btn danger w-full" onclick="devQueue('submittals-clear-log', {{ url_for('submittals_page')|tojson }})">
+                    <i class="fa-solid fa-clipboard text-pink-400 w-5"></i><span>Submittals — clear entire log</span>
+                </button>
+                <button type="button" class="dev-tool-btn w-full" onclick="devQueue('safety-voice-test', {{ url_for('safety_page')|tojson }})">
+                    <i class="fa-solid fa-microphone text-yellow-400 w-5"></i><span>Safety — voice recognition test</span>
+                </button>
+                <button type="button" class="dev-tool-btn danger w-full" onclick="devClearBrowserStorage()">
+                    <i class="fa-solid fa-broom text-zinc-400 w-5"></i><span>Clear all browser storage for this site</span>
+                </button>
+            </div>
         </div>
     </div>
 
-    <div class="dev-card">
-        <h2 class="font-semibold mb-3">What unlock mode opens up</h2>
-        <ul class="text-sm text-zinc-400 space-y-2 list-disc pl-5">
-            <li>Change order and PCO numbers, status, and allocation tables on approved records</li>
-            <li>Executed change orders — edit without separate unlock actions</li>
-            <li>Project numbers when sequential or already assigned</li>
-            <li>Pay application SOV lines when contractor SOV is locked</li>
-            <li>System-locked documents — rename, move, delete</li>
-            <li>Force-delete approved change orders</li>
-        </ul>
-    </div>
+    <!-- Program Updates -->
+    <div id="dev-tab-content-updates" class="hidden space-y-4">
+        <div class="dev-card border-emerald-900/30">
+            <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+                <div class="bg-zinc-900 border border-zinc-700 rounded-lg p-4">
+                    <div class="text-sm text-zinc-400">Current Version</div>
+                    <div id="devUpdateVersion" class="text-2xl font-semibold mt-1 text-emerald-400">—</div>
+                </div>
+                <div class="bg-zinc-900 border border-zinc-700 rounded-lg p-4">
+                    <div class="text-sm text-zinc-400">Saved Snapshots</div>
+                    <div id="devSnapshotCount" class="text-2xl font-semibold mt-1">0</div>
+                </div>
+                <div class="bg-zinc-900 border border-zinc-700 rounded-lg p-4">
+                    <div class="text-sm text-zinc-400">User Data Protected</div>
+                    <div id="devProtectedPaths" class="text-xs font-mono mt-2 text-zinc-300">instance/, uploads/</div>
+                </div>
+            </div>
+            <p class="text-xs text-zinc-500 mt-4">
+                Program updates change <strong class="text-zinc-400">application code only</strong> (Python, templates, static files).
+                Your database, uploads, and program settings in <code class="text-emerald-400/90">instance/</code> are never included or overwritten.
+                Use <a href="{{ url_for('program_settings') }}?tab=backup" class="text-emerald-400 hover:underline">Program Settings → Backup</a> for user data backups.
+            </p>
+        </div>
 
-    <div class="dev-card">
-        <h2 class="font-semibold mb-3">Go to a module</h2>
-        <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2">
-            <a href="{{ url_for('change_orders_page') }}" class="dev-module-link"><i class="fa-solid fa-file-contract text-emerald-500 w-5"></i> Change Orders</a>
-            <a href="{{ url_for('projects_page') }}" class="dev-module-link"><i class="fa-solid fa-building text-sky-500 w-5"></i> Projects</a>
-            <a href="{{ url_for('pay_applications_page') }}" class="dev-module-link"><i class="fa-solid fa-file-invoice-dollar text-amber-500 w-5"></i> Pay Applications</a>
-            <a href="{{ url_for('documents_page') }}" class="dev-module-link"><i class="fa-solid fa-folder-open text-violet-500 w-5"></i> Documents</a>
-            <a href="{{ url_for('commitments_page') }}" class="dev-module-link"><i class="fa-solid fa-handshake text-orange-500 w-5"></i> Commitments</a>
-            <a href="{{ url_for('budget_page') }}" class="dev-module-link"><i class="fa-solid fa-chart-pie text-teal-500 w-5"></i> Budget</a>
-            <a href="{{ url_for('rfis_page') }}" class="dev-module-link"><i class="fa-solid fa-circle-question text-blue-500 w-5"></i> RFIs</a>
-            <a href="{{ url_for('submittals_page') }}" class="dev-module-link"><i class="fa-solid fa-clipboard-check text-pink-500 w-5"></i> Submittals</a>
-            <a href="{{ url_for('audit_log_page') }}" class="dev-module-link"><i class="fa-solid fa-list-check text-zinc-400 w-5"></i> Audit Log</a>
-            <a href="{{ url_for('user_management') }}" class="dev-module-link"><i class="fa-solid fa-users text-zinc-300 w-5"></i> User Management</a>
-            <a href="{{ url_for('program_settings') }}" class="dev-module-link"><i class="fa-solid fa-cog text-zinc-300 w-5"></i> Program Settings</a>
+        <div class="dev-card">
+            <h2 class="font-semibold mb-2">Snapshot Folder</h2>
+            <p class="text-sm text-zinc-500 mb-3">Where code snapshots are saved (local disk or OneDrive/NAS path).</p>
+            <div class="flex flex-col sm:flex-row gap-2">
+                <input type="text" id="devSnapshotFolder" class="dev-input font-mono flex-1" placeholder="instance/code_snapshots">
+                <button type="button" class="dev-tool-btn !w-auto flex-shrink-0" onclick="CasePMDeveloperConsole.saveSnapshotFolder()">
+                    <i class="fa-solid fa-folder-open"></i><span>Save folder</span>
+                </button>
+            </div>
+        </div>
+
+        <div class="grid grid-cols-1 lg:grid-cols-2 gap-4">
+            <div class="dev-card space-y-3">
+                <h2 class="font-semibold">Save Current Version</h2>
+                <p class="text-sm text-zinc-500">Create a manual snapshot before making changes.</p>
+                <input type="text" id="devSnapshotLabel" class="dev-input" placeholder="Label (e.g. Before v57 deploy)">
+                <input type="text" id="devSnapshotNote" class="dev-input" placeholder="Optional note">
+                <button type="button" class="dev-tool-btn w-full border-emerald-900 text-emerald-300" onclick="CasePMDeveloperConsole.createSnapshot()">
+                    <i class="fa-solid fa-camera text-emerald-400"></i><span>Save Code Snapshot</span>
+                </button>
+            </div>
+
+            <div class="dev-card space-y-3">
+                <h2 class="font-semibold">Install Update</h2>
+                <p class="text-sm text-zinc-500">Upload a code zip or pull from GitHub. A safety snapshot is created automatically first.</p>
+                <input type="text" id="devInstallLabel" class="dev-input" placeholder="Update label (optional)">
+                <input type="text" id="devInstallNote" class="dev-input" placeholder="Optional note">
+                <label class="dev-tool-btn w-full cursor-pointer border-emerald-900 text-emerald-300">
+                    <i class="fa-solid fa-file-zipper text-emerald-400"></i><span>Upload Update .zip</span>
+                    <input type="file" accept=".zip,application/zip" class="hidden" onchange="CasePMDeveloperConsole.installUpdateZip(this)">
+                </label>
+                <div id="devUpdateGitInfo" class="text-xs text-zinc-500 font-mono break-all">Checking git…</div>
+                <div id="devGitPullStatus" class="text-xs text-zinc-500"></div>
+                <button type="button" id="devGitPullBtn" class="dev-tool-btn w-full" onclick="CasePMDeveloperConsole.gitPullUpdate()">
+                    <i class="fa-brands fa-github text-zinc-300"></i><span>Pull from GitHub (origin/main)</span>
+                </button>
+            </div>
+        </div>
+
+        <div class="dev-card p-0 overflow-hidden">
+            <div class="px-4 py-3 border-b border-zinc-700 bg-zinc-800 font-medium">Saved Code Versions</div>
+            <div id="devSnapshotList" class="p-4 text-sm text-zinc-500">Loading…</div>
+        </div>
+
+        <div class="dev-card p-0 overflow-hidden">
+            <div class="px-4 py-3 border-b border-zinc-700 bg-zinc-800 font-medium">Update History</div>
+            <div id="devUpdateHistory" class="p-4 text-sm text-zinc-500">Loading…</div>
         </div>
     </div>
 
-    <div class="dev-card">
-        <h2 class="font-semibold mb-3">System settings (read-only)</h2>
-        <pre class="text-xs text-zinc-400 overflow-auto max-h-64 bg-zinc-950 p-3 rounded-lg border border-zinc-800">{{ raw_settings | tojson(indent=2) }}</pre>
+    <!-- Modules -->
+    <div id="dev-tab-content-modules" class="hidden">
+        <div class="dev-card">
+            <h2 class="font-semibold mb-3">Go to a module</h2>
+            <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2">
+                <a href="{{ url_for('change_orders_page') }}" class="dev-module-link"><i class="fa-solid fa-file-contract text-emerald-500 w-5"></i> Change Orders</a>
+                <a href="{{ url_for('projects_page') }}" class="dev-module-link"><i class="fa-solid fa-building text-sky-500 w-5"></i> Projects</a>
+                <a href="{{ url_for('pay_applications_page') }}" class="dev-module-link"><i class="fa-solid fa-file-invoice-dollar text-amber-500 w-5"></i> Pay Applications</a>
+                <a href="{{ url_for('documents_page') }}" class="dev-module-link"><i class="fa-solid fa-folder-open text-violet-500 w-5"></i> Documents</a>
+                <a href="{{ url_for('commitments_page') }}" class="dev-module-link"><i class="fa-solid fa-handshake text-orange-500 w-5"></i> Commitments</a>
+                <a href="{{ url_for('budget_page') }}" class="dev-module-link"><i class="fa-solid fa-chart-pie text-teal-500 w-5"></i> Budget</a>
+                <a href="{{ url_for('rfis_page') }}" class="dev-module-link"><i class="fa-solid fa-circle-question text-blue-500 w-5"></i> RFIs</a>
+                <a href="{{ url_for('submittals_page') }}" class="dev-module-link"><i class="fa-solid fa-clipboard-check text-pink-500 w-5"></i> Submittals</a>
+                <a href="{{ url_for('audit_log_page') }}" class="dev-module-link"><i class="fa-solid fa-list-check text-zinc-400 w-5"></i> Audit Log</a>
+                <a href="{{ url_for('user_management') }}" class="dev-module-link"><i class="fa-solid fa-users text-zinc-300 w-5"></i> User Management</a>
+                <a href="{{ url_for('program_settings') }}" class="dev-module-link"><i class="fa-solid fa-cog text-zinc-300 w-5"></i> Program Settings</a>
+            </div>
+        </div>
     </div>
-</div>
+
+    <!-- Settings -->
+    <div id="dev-tab-content-settings" class="hidden">
+        <div class="dev-card">
+            <h2 class="font-semibold mb-3">System settings (read-only)</h2>
+            <pre class="text-xs text-zinc-400 overflow-auto max-h-[28rem] bg-zinc-950 p-3 rounded-lg border border-zinc-800">{{ raw_settings | tojson(indent=2) }}</pre>
+        </div>
+    </div>
+
+    </div>
+</div></div>
 
 <script>
 function devQueue(action, path) {
@@ -186,5 +284,11 @@ async function toggleDevUnlockMode(active) {
         if (toggle) toggle.checked = !active;
     }
 }
+
+document.addEventListener('DOMContentLoaded', function () {
+    if (typeof CasePMDeveloperConsole !== 'undefined') {
+        CasePMDeveloperConsole.initDevTabs();
+    }
+});
 </script>
 {% endblock %}
