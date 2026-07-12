@@ -147,6 +147,9 @@ document.addEventListener('DOMContentLoaded', async function() {
     CasePMEmail.init({
         userName: {{ current_user.full_name|tojson }},
         userEmail: {{ current_user.email|tojson }},
+        currentUserId: {{ current_user.id }},
+        canBrowseOtherMailboxes: {{ email_mailbox_ctx.can_browse_other_mailboxes|tojson }},
+        mailboxOwners: {{ email_mailbox_ctx.mailbox_owners|tojson }},
         projectName: {{ (active_project.name if active_project else '')|tojson }},
         users: {{ users|default([])|tojson }}
     });

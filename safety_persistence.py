@@ -216,6 +216,7 @@ def serialize_report(r, User=None, url_helpers=None, summary=False):
         'due_date': r.due_date.isoformat() if r.due_date else None,
         'report_date': rdate.isoformat() if rdate else None,
         'reported_by': author,
+        'reported_by_id': r.reported_by_id,
         'created_at': r.created_at.isoformat() if r.created_at else None,
         'photo_count': len(photos),
     }

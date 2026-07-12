@@ -427,6 +427,11 @@ def _bootstrap_user_schema(db):
         ensure_totp_schema(db)
     except Exception as exc:
         print(f'TOTP schema warning: {exc}')
+    try:
+        from email_mailbox_persistence import ensure_email_mailbox_schema
+        ensure_email_mailbox_schema(db)
+    except Exception as exc:
+        print(f'Email mailbox schema warning: {exc}')
 class User(db.Model, UserMixin):
     id = db.Column(db.Integer, primary_key=True)
     first_name = db.Column(db.String(80), nullable=False)
@@ -483,6 +488,26 @@ class User(db.Model, UserMixin):
 
     def __repr__(self):
         return f'<User {self.email}>'
+
+
+class UserEmailMailbox(db.Model):
+    __tablename__ = 'user_email_mailbox'
+    user_id = db.Column(db.Integer, db.ForeignKey('user.id'), primary_key=True)
+    messages_json = db.Column(db.Text)
+    meta_json = db.Column(db.Text)
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+
+class EmailMailboxAccess(db.Model):
+    __tablename__ = 'email_mailbox_access'
+    id = db.Column(db.Integer, primary_key=True)
+    owner_user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False, index=True)
+    grantee_user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False, index=True)
+    can_send = db.Column(db.Boolean, default=False)
+    granted_by_id = db.Column(db.Integer, db.ForeignKey('user.id'))
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    revoked_at = db.Column(db.DateTime)
+    notes = db.Column(db.String(300))
 
 
 @login_manager.user_loader
@@ -4552,12 +4577,21 @@ def safety_page():
     from developer_tools import is_admin_or_developer
     projects = Project.query.order_by(Project.name).all()
     active = [p for p in projects if (getattr(p, 'status', None) or 'Active') == 'Active']
+    can_browse = is_admin_or_developer(current_user)
+    personnel = []
+    if can_browse:
+        personnel = [
+            {'id': u.id, 'name': u.full_name, 'email': u.email}
+            for u in User.query.filter_by(status='Active').order_by(User.last_name, User.first_name).all()
+        ]
     return render_template(
         'safety.html',
         projects=projects,
         active_projects=active or projects,
         active_project=get_active_project(),
         is_admin_user=is_admin_or_developer(current_user),
+        can_browse_user_safety=can_browse,
+        safety_personnel=personnel,
     )
 
 
@@ -4589,6 +4623,12 @@ def api_safety_reports_list():
     q = SafetyReport.query
     if project_id:
         q = q.filter_by(project_id=int(project_id))
+    reported_by = request.args.get('reported_by_id', type=int)
+    if reported_by:
+        from developer_tools import is_admin_or_developer
+        if not is_admin_or_developer(current_user):
+            return jsonify({'error': 'Permission denied'}), 403
+        q = q.filter_by(reported_by_id=reported_by)
     rows = q.order_by(SafetyReport.created_at.desc()).limit(300).all()
     return jsonify({
         'ok': True,
@@ -12536,11 +12576,147 @@ def api_audit_log_modules():
 @app.route('/email')
 @login_required
 def email_page():
+    from developer_tools import is_admin_or_developer, is_developer
+    from email_mailbox_persistence import list_mailbox_owners_for_actor
     users = User.query.filter_by(status='Active').order_by(User.last_name, User.first_name).all()
+    mailbox_owners = list_mailbox_owners_for_actor(
+        current_user, User=User, EmailMailboxAccess=EmailMailboxAccess,
+    )
     return render_template(
         'email.html',
         users=[{'name': u.full_name, 'email': u.email} for u in users],
+        email_mailbox_ctx={
+            'current_user_id': current_user.id,
+            'can_browse_other_mailboxes': is_admin_or_developer(current_user),
+            'is_developer': is_developer(current_user),
+            'mailbox_owners': mailbox_owners,
+        },
     )
+
+
+def _email_mailbox_user_id():
+    from email_mailbox_persistence import resolve_mailbox_user_id
+    requested = request.args.get('user_id', type=int)
+    if request.method in ('PUT', 'POST', 'DELETE'):
+        body = request.get_json(silent=True) or {}
+        requested = requested or body.get('user_id')
+    try:
+        return resolve_mailbox_user_id(
+            current_user, requested, User=User, EmailMailboxAccess=EmailMailboxAccess,
+        )
+    except PermissionError:
+        return None
+
+
+@app.route('/api/email/mailbox-owners')
+@login_required
+def api_email_mailbox_owners():
+    from email_mailbox_persistence import list_mailbox_owners_for_actor
+    owners = list_mailbox_owners_for_actor(
+        current_user, User=User, EmailMailboxAccess=EmailMailboxAccess,
+    )
+    return jsonify({'ok': True, 'owners': owners, 'current_user_id': current_user.id})
+
+
+@app.route('/api/email/mailbox', methods=['GET', 'PUT'])
+@login_required
+def api_email_mailbox():
+    from email_mailbox_persistence import load_user_mailbox, save_user_mailbox
+    try:
+        uid = _email_mailbox_user_id()
+    except Exception:
+        return jsonify({'error': 'Mailbox access denied'}), 403
+    if uid is None:
+        return jsonify({'error': 'Mailbox access denied'}), 403
+    if request.method == 'GET':
+        payload = load_user_mailbox(uid, UserEmailMailbox=UserEmailMailbox)
+        return jsonify({
+            'ok': True,
+            'user_id': uid,
+            'messages': payload.get('messages') or [],
+            'meta': payload.get('meta') or {},
+            'updated_at': payload.get('updated_at'),
+        })
+    body = request.get_json(silent=True) or {}
+    messages = body.get('messages')
+    meta = body.get('meta')
+    if messages is None:
+        return jsonify({'error': 'messages required'}), 400
+    from email_mailbox_persistence import can_send_as_mailbox
+    if uid != current_user.id and not can_send_as_mailbox(
+        current_user, uid, EmailMailboxAccess=EmailMailboxAccess,
+    ):
+        return jsonify({'error': 'Send/edit access denied for this mailbox'}), 403
+    saved = save_user_mailbox(uid, messages, meta or {}, db=db, UserEmailMailbox=UserEmailMailbox)
+    return jsonify({'ok': True, 'user_id': uid, **saved})
+
+
+@app.route('/api/email/mailbox-access')
+@login_required
+@admin_required
+def api_email_mailbox_access_list():
+    from email_mailbox_persistence import list_mailbox_access
+    owner_id = request.args.get('owner_user_id', type=int)
+    if not owner_id:
+        return jsonify({'error': 'owner_user_id required'}), 400
+    rows = list_mailbox_access(owner_id, EmailMailboxAccess=EmailMailboxAccess, User=User)
+    return jsonify({'ok': True, 'access': rows})
+
+
+@app.route('/api/email/mailbox-access', methods=['POST'])
+@login_required
+@admin_required
+def api_email_mailbox_access_grant():
+    from email_mailbox_persistence import grant_mailbox_access
+    body = request.get_json(silent=True) or {}
+    owner_id = body.get('owner_user_id')
+    grantee_id = body.get('grantee_user_id')
+    if not owner_id or not grantee_id:
+        return jsonify({'error': 'owner_user_id and grantee_user_id required'}), 400
+    try:
+        row = grant_mailbox_access(
+            owner_id, grantee_id,
+            can_send=bool(body.get('can_send')),
+            granted_by_id=current_user.id,
+            notes=body.get('notes') or '',
+            db=db, EmailMailboxAccess=EmailMailboxAccess, User=User,
+        )
+    except ValueError as exc:
+        return jsonify({'error': str(exc)}), 400
+    return jsonify({'ok': True, 'id': row.id})
+
+
+@app.route('/api/email/mailbox-access/<int:access_id>', methods=['DELETE'])
+@login_required
+@admin_required
+def api_email_mailbox_access_revoke(access_id):
+    from email_mailbox_persistence import revoke_mailbox_access
+    if not revoke_mailbox_access(access_id, db=db, EmailMailboxAccess=EmailMailboxAccess):
+        return jsonify({'error': 'Access grant not found'}), 404
+    return jsonify({'ok': True})
+
+
+@app.route('/api/email/mailbox-transfer', methods=['POST'])
+@login_required
+@admin_required
+def api_email_mailbox_transfer():
+    from email_mailbox_persistence import transfer_mailbox
+    from case_workflow import InternalMessage
+    body = request.get_json(silent=True) or {}
+    from_id = body.get('from_user_id')
+    to_id = body.get('to_user_id')
+    if not from_id or not to_id:
+        return jsonify({'error': 'from_user_id and to_user_id required'}), 400
+    try:
+        result = transfer_mailbox(
+            from_id, to_id,
+            include_internal=bool(body.get('include_internal', True)),
+            clear_source=bool(body.get('clear_source', False)),
+            db=db, UserEmailMailbox=UserEmailMailbox, InternalMessage=InternalMessage,
+        )
+    except ValueError as exc:
+        return jsonify({'error': str(exc)}), 400
+    return jsonify({'ok': True, **result})
 
 
 # ==================== NOTIFICATIONS ====================

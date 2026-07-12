@@ -273,6 +273,29 @@
                             <label class="block text-sm mb-1.5 text-zinc-300">Notes / Internal Log</label>
                             <textarea id="notes" rows="3" class="w-full bg-zinc-800 border border-zinc-700 rounded-md px-4 py-2 text-sm" placeholder="Internal notes about this user, access history, etc."></textarea>
                         </div>
+
+                        <div id="mailboxAccessSection" class="md:col-span-2 hidden border-t border-zinc-700 pt-4 mt-1">
+                            <h4 class="text-sm font-semibold text-white mb-1">Shared mailbox access</h4>
+                            <p class="text-[10px] text-zinc-500 mb-3">Let another user switch to this mailbox in Email (view-only or send). Does not merge messages unless you transfer.</p>
+                            <div id="mailboxAccessList" class="space-y-2 mb-3 text-sm"></div>
+                            <div class="flex flex-wrap gap-2 items-end">
+                                <div class="flex-1 min-w-[200px]">
+                                    <label class="text-xs text-zinc-400 block mb-1">Grant access to</label>
+                                    <select id="mailboxGranteeSelect" class="w-full bg-zinc-800 border border-zinc-700 rounded-md px-3 py-2 text-sm"></select>
+                                </div>
+                                <label class="flex items-center gap-2 text-xs text-zinc-300 pb-2 whitespace-nowrap">
+                                    <input type="checkbox" id="mailboxGrantCanSend" class="accent-emerald-600"> Can send from mailbox
+                                </label>
+                                <button type="button" onclick="grantMailboxAccess()" class="px-3 py-2 bg-emerald-600 hover:bg-emerald-500 rounded text-sm font-medium">Grant access</button>
+                            </div>
+                            <div class="mt-4 pt-3 border-t border-zinc-800">
+                                <p class="text-[10px] text-zinc-500 mb-2">Transfer all mail and internal messages to another user (offboarding).</p>
+                                <div class="flex flex-wrap gap-2">
+                                    <select id="mailboxTransferTo" class="bg-zinc-800 border border-zinc-700 rounded-md px-3 py-2 text-sm flex-1 min-w-[200px]"></select>
+                                    <button type="button" onclick="transferMailbox()" class="px-3 py-2 bg-amber-700 hover:bg-amber-600 rounded text-sm font-medium">Transfer mailbox</button>
+                                </div>
+                            </div>
+                        </div>
                     </div>
                 </div>
             </div>
@@ -593,6 +616,116 @@
         }
     }
 
+    async function loadMailboxAccessForUser(userId) {
+        const section = document.getElementById('mailboxAccessSection');
+        if (!section) return;
+        if (!userId) {
+            section.classList.add('hidden');
+            return;
+        }
+        section.classList.remove('hidden');
+        const granteeSel = document.getElementById('mailboxGranteeSelect');
+        const transferSel = document.getElementById('mailboxTransferTo');
+        const owner = users.find(u => u.id == userId);
+        const choices = users.filter(u => u.id != userId && u.status !== 'Inactive');
+        const choiceHtml = '<option value="">Select user…</option>' + choices.map(u => {
+            const name = `${u.firstName || ''} ${u.lastName || ''}`.trim();
+            return `<option value="${u.id}">${name} (${u.email || ''})</option>`;
+        }).join('');
+        if (granteeSel) granteeSel.innerHTML = choiceHtml;
+        if (transferSel) transferSel.innerHTML = choiceHtml;
+        const list = document.getElementById('mailboxAccessList');
+        if (list) list.innerHTML = '<div class="text-xs text-zinc-500">Loading…</div>';
+        try {
+            const res = await fetch(`/api/email/mailbox-access?owner_user_id=${userId}`);
+            const data = await res.json();
+            const rows = data.access || [];
+            if (!rows.length) {
+                list.innerHTML = '<div class="text-xs text-zinc-500">No shared access granted yet.</div>';
+            } else {
+                list.innerHTML = rows.map(r => `
+                    <div class="flex items-center justify-between gap-2 bg-zinc-800/60 border border-zinc-700 rounded px-3 py-2">
+                        <div>
+                            <div class="text-zinc-200">${r.grantee_name || 'User'}</div>
+                            <div class="text-[10px] text-zinc-500">${r.grantee_email || ''} · ${r.can_send ? 'View + send' : 'View only'}</div>
+                        </div>
+                        <button type="button" onclick="revokeMailboxAccess(${r.id})" class="text-xs px-2 py-1 bg-zinc-700 hover:bg-red-700 rounded">Revoke</button>
+                    </div>`).join('');
+            }
+        } catch (e) {
+            if (list) list.innerHTML = '<div class="text-xs text-red-400">Could not load mailbox access.</div>';
+        }
+    }
+
+    async function grantMailboxAccess() {
+        const ownerId = parseInt(document.getElementById('userId').value, 10);
+        const granteeId = parseInt(document.getElementById('mailboxGranteeSelect').value, 10);
+        if (!ownerId || !granteeId) {
+            showCenteredAlert('Select a user to grant access.', 'warning');
+            return;
+        }
+        try {
+            const res = await fetch('/api/email/mailbox-access', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    owner_user_id: ownerId,
+                    grantee_user_id: granteeId,
+                    can_send: document.getElementById('mailboxGrantCanSend').checked,
+                }),
+            });
+            const data = await res.json();
+            if (!res.ok) throw new Error(data.error || 'Grant failed');
+            document.getElementById('mailboxGrantCanSend').checked = false;
+            await loadMailboxAccessForUser(ownerId);
+            showCenteredAlert('Mailbox access granted. The user can switch to this mailbox in Email.', 'success');
+        } catch (e) {
+            showCenteredAlert(e.message || 'Could not grant access.', 'error');
+        }
+    }
+
+    async function revokeMailboxAccess(accessId) {
+        if (!confirm('Revoke this mailbox access?')) return;
+        const ownerId = parseInt(document.getElementById('userId').value, 10);
+        try {
+            const res = await fetch(`/api/email/mailbox-access/${accessId}`, { method: 'DELETE' });
+            const data = await res.json();
+            if (!res.ok) throw new Error(data.error || 'Revoke failed');
+            await loadMailboxAccessForUser(ownerId);
+        } catch (e) {
+            showCenteredAlert(e.message || 'Could not revoke access.', 'error');
+        }
+    }
+
+    async function transferMailbox() {
+        const fromId = parseInt(document.getElementById('userId').value, 10);
+        const toId = parseInt(document.getElementById('mailboxTransferTo').value, 10);
+        if (!fromId || !toId) {
+            showCenteredAlert('Select a destination user for the transfer.', 'warning');
+            return;
+        }
+        const ok = confirm('Transfer all mail and internal messages to the selected user? The source mailbox will be cleared.');
+        if (!ok) return;
+        try {
+            const res = await fetch('/api/email/mailbox-transfer', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    from_user_id: fromId,
+                    to_user_id: toId,
+                    include_internal: true,
+                    clear_source: true,
+                }),
+            });
+            const data = await res.json();
+            if (!res.ok) throw new Error(data.error || 'Transfer failed');
+            showCenteredAlert(`Transferred ${data.messages_merged || 0} mail message(s) and ${data.internal_moved || 0} internal message(s).`, 'success');
+            await loadMailboxAccessForUser(fromId);
+        } catch (e) {
+            showCenteredAlert(e.message || 'Transfer failed.', 'error');
+        }
+    }
+
     // ==================== SIGNATURE CANVAS (widened) ====================
     let signatureCanvas = null;
     let signatureCtx = null;
@@ -825,6 +958,7 @@
         currentCertificateFileName = null;
         currentEditingUserId = null;
         phoneNumbers = [];
+        loadMailboxAccessForUser(null);
 
         // Populate company dropdown from Companies page
         populateCompanyDropdown();
@@ -883,6 +1017,7 @@
         document.getElementById('status').value = user.status || 'Active';
         document.getElementById('tempPassword').value = ''; // Never show existing password
         document.getElementById('notes').value = user.notes || '';
+        loadMailboxAccessForUser(user.id);
 
         // Set Role
         const roleSelect = document.getElementById('role');
