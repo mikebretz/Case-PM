@@ -56,10 +56,20 @@
                 <button type="button" id="docsViewGrid" class="docs-icon-btn active" title="Icon view"><i class="fa-solid fa-grip"></i></button>
                 <button type="button" id="docsViewList" class="docs-icon-btn" title="List view"><i class="fa-solid fa-list"></i></button>
             </div>
+            <label id="docsSelectAllWrap" class="flex items-center gap-1.5 text-xs text-zinc-400 cursor-pointer whitespace-nowrap" title="Select all files in this folder">
+                <input type="checkbox" id="docsSelectAll" class="rounded border-zinc-600 accent-emerald-500">
+                Select all
+            </label>
+            <select id="docsIconSize" class="docs-select text-xs" title="Folder and file icon size">
+                <option value="sm">Small icons</option>
+                <option value="md" selected>Medium icons</option>
+                <option value="lg">Large icons</option>
+                <option value="xl">Extra large</option>
+            </select>
             <input type="search" id="docsSearch" class="docs-search" placeholder="Search this folder…">
-            <label class="flex items-center gap-1.5 text-xs text-zinc-400 cursor-pointer whitespace-nowrap">
-                <input type="checkbox" id="docsSearchAll" class="rounded border-zinc-600">
-                All folders
+            <label class="flex items-center gap-1.5 text-xs text-zinc-400 cursor-pointer whitespace-nowrap" title="Search across every folder in this project">
+                <input type="checkbox" id="docsSearchAll" class="rounded border-zinc-600 accent-emerald-500">
+                Search all folders
             </label>
         </div>
         <div id="docsBulkBar" class="docs-bulk-bar hidden flex flex-wrap items-center gap-2 mb-2 p-2 bg-zinc-800/80 border border-zinc-700 rounded-md text-sm">
@@ -72,12 +82,14 @@
 
         <div class="docs-file-panel flex flex-col flex-1 min-h-0 border border-zinc-700 rounded-md bg-zinc-900 overflow-hidden">
             <div id="docsDropZone" class="docs-dropzone flex-1 min-h-0 overflow-hidden flex flex-col">
-                <div id="docsGridWrap" class="docs-grid-wrap view-grid flex-1 min-h-0 overflow-auto p-3">
+                <div id="docsGridWrap" class="docs-grid-wrap view-grid icon-md flex-1 min-h-0 overflow-auto p-3">
                     <div id="docsGrid" class="docs-grid"></div>
                     <table id="docsTable" class="docs-table w-full text-sm">
                         <thead class="bg-zinc-800 sticky top-0 z-10 border-b border-zinc-700">
                             <tr>
-                                <th class="docs-th w-10"></th>
+                                <th class="docs-th w-10 text-center">
+                                    <input type="checkbox" id="docsSelectAllList" class="docs-bulk-cb" title="Select all files">
+                                </th>
                                 <th class="docs-th text-left">Name</th>
                                 <th class="docs-th text-left w-24">Type</th>
                                 <th class="docs-th text-left w-24">Size</th>
@@ -184,6 +196,7 @@
 
 <input type="file" id="docsVersionInput" class="hidden">
 
+<script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
 <script>
   window.CASEPM_CURRENT_USER_ID = {{ current_user.id }};
 </script>

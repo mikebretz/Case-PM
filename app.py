@@ -6363,6 +6363,38 @@ def api_document_folders_delete(folder_id):
     return jsonify({'ok': True})
 
 
+def _folder_preview_thumbs(folder_id, project_id, limit=3):
+    """Up to three miniature preview items for Windows-style folder thumbnails."""
+    from document_persistence import _editor_kind_for
+    docs = (
+        _active_documents()
+        .filter_by(folder_id=folder_id, project_id=project_id)
+        .order_by(Document.updated_at.desc())
+        .limit(24)
+        .all()
+    )
+    thumbs = []
+    for doc in docs:
+        if len(thumbs) >= limit:
+            break
+        mime = (doc.mime_type or '').lower()
+        name = (doc.original_filename or doc.filename or doc.name or '').lower()
+        kind = _editor_kind_for(doc)
+        if mime.startswith('image/') or any(name.endswith(x) for x in ('.png', '.jpg', '.jpeg', '.gif', '.webp', '.bmp')):
+            thumbs.append({
+                'type': 'image',
+                'url': f'/uploads/documents/{doc.project_id}/{doc.filename}',
+                'name': doc.name,
+            })
+        elif 'pdf' in mime or name.endswith('.pdf'):
+            thumbs.append({'type': 'pdf', 'doc_id': doc.id, 'name': doc.name})
+        elif kind == 'sheet':
+            thumbs.append({'type': 'sheet', 'doc_id': doc.id, 'name': doc.name})
+        elif kind == 'doc':
+            thumbs.append({'type': 'doc', 'doc_id': doc.id, 'name': doc.name})
+    return thumbs
+
+
 @app.route('/api/documents/browse', methods=['GET'])
 @login_required
 def api_documents_browse():
@@ -6394,7 +6426,8 @@ def api_documents_browse():
             continue
         child_count = _active_folders().filter_by(parent_id=f.id).count()
         file_count = _active_documents().filter_by(folder_id=f.id).count()
-        folder_nodes.append(folder_to_dict(f, child_count, file_count))
+        preview_thumbs = _folder_preview_thumbs(f.id, f.project_id)
+        folder_nodes.append(folder_to_dict(f, child_count, file_count, preview_thumbs))
 
     dq = _active_documents().filter_by(project_id=int(project_id))
     if folder_id in (None, '', 'null'):
