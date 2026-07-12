@@ -579,7 +579,7 @@
       if (state.pdfNumPages > 1 && state.pdfViewMode === 'single') {
         hintEl.textContent = `Page ${state.pdfPage} of ${state.pdfNumPages} · ${meta.hint || 'Drag to pan · scroll to zoom'}`;
       } else if (state.pdfNumPages > 1 && state.pdfViewMode === 'continuous') {
-        hintEl.textContent = `${state.pdfNumPages} pages · scroll to browse · ${meta.hint || 'Drag to pan · scroll to zoom'}`;
+        hintEl.textContent = `${state.pdfNumPages} pages · scroll wheel to browse · Page ${state.pdfPage}`;
       } else {
         hintEl.textContent = meta.hint || '';
       }
@@ -682,6 +682,7 @@
     pageThumbCache: {},
     continuousPageOffsets: [],
     pageGap: 12,
+    continuousObserver: null,
     renderTask: null,
     drawing: false,
     drawStart: null,
@@ -782,8 +783,63 @@
     state.showPageThumbs = true;
     state.pageThumbCache = {};
     state.continuousPageOffsets = [];
+    if (state.continuousObserver) {
+      state.continuousObserver.disconnect();
+      state.continuousObserver = null;
+    }
     const list = document.getElementById('drawPageThumbList');
     if (list) delete list.dataset.pages;
+    const cont = document.getElementById('drawContinuousPages');
+    if (cont) {
+      cont.innerHTML = '';
+      delete cont.dataset.built;
+      delete cont.dataset.width;
+    }
+    setViewerLayoutMode();
+  }
+
+  function setViewerLayoutMode() {
+    const wrap = document.getElementById('drawViewerWrap');
+    const printArea = document.getElementById('drawPrintArea');
+    const scroller = document.getElementById('drawContinuousScroller');
+    const continuous = state.pdfViewMode === 'continuous' && state.pdfNumPages > 1;
+    wrap?.classList.toggle('draw-viewer-continuous', continuous);
+    printArea?.classList.toggle('hidden', continuous);
+    scroller?.classList.toggle('hidden', !continuous);
+  }
+
+  function scrollContinuousPageIntoView(pageNum) {
+    document.getElementById(`drawContinuousPage-${pageNum}`)
+      ?.scrollIntoView({ block: 'start', behavior: 'smooth' });
+  }
+
+  function syncContinuousPageObserver() {
+    if (state.continuousObserver) {
+      state.continuousObserver.disconnect();
+      state.continuousObserver = null;
+    }
+    const root = document.getElementById('drawContinuousScroller');
+    const container = document.getElementById('drawContinuousPages');
+    if (!root || !container) return;
+    const pages = container.querySelectorAll('.draw-continuous-page');
+    if (!pages.length) return;
+    state.continuousObserver = new IntersectionObserver((entries) => {
+      let best = null;
+      let bestRatio = 0;
+      entries.forEach(entry => {
+        if (entry.isIntersecting && entry.intersectionRatio >= bestRatio) {
+          bestRatio = entry.intersectionRatio;
+          best = entry.target;
+        }
+      });
+      if (!best || bestRatio < 0.2) return;
+      const p = parseInt(best.dataset.pdfPage, 10);
+      if (p && p !== state.pdfPage) {
+        state.pdfPage = p;
+        updatePageNavChrome();
+      }
+    }, { root, threshold: [0.2, 0.35, 0.5, 0.65, 0.8] });
+    pages.forEach(el => state.continuousObserver.observe(el));
   }
 
   function updatePageNavChrome() {
@@ -804,8 +860,7 @@
     document.getElementById('pdfViewModeSingle')?.classList.toggle('active', state.pdfViewMode === 'single');
     document.getElementById('pdfViewModeContinuous')?.classList.toggle('active', state.pdfViewMode === 'continuous');
     const thumbBtn = document.getElementById('btnTogglePageThumbs');
-    thumbBtn?.classList.toggle('active', state.showPageThumbs && state.pdfViewMode === 'single');
-    thumbBtn?.classList.toggle('hidden', state.pdfViewMode === 'continuous');
+    thumbBtn?.classList.toggle('active', state.showPageThumbs);
     const hidePageBtns = state.pdfViewMode === 'continuous';
     document.getElementById('btnPdfPrevPage')?.classList.toggle('hidden', hidePageBtns);
     document.getElementById('btnPdfNextPage')?.classList.toggle('hidden', hidePageBtns);
@@ -831,7 +886,6 @@
     const list = document.getElementById('drawPageThumbList');
     if (!sidebar || !list) return;
     const show = state.pdfNumPages > 1
-      && state.pdfViewMode === 'single'
       && state.showPageThumbs
       && !!state.pdfDoc;
     if (!show) {
@@ -869,7 +923,8 @@
     if (n === state.pdfPage && state.pdfViewMode === 'single') return;
     state.pdfPage = n;
     if (state.pdfViewMode === 'continuous') {
-      setPdfViewMode('single');
+      scrollContinuousPageIntoView(n);
+      updatePageNavChrome();
       return;
     }
     renderPdf(false);
@@ -892,7 +947,9 @@
     if (mode === 'continuous') {
       state.compareOverlayActive = false;
       document.getElementById('drawDiffCanvas')?.classList.add('hidden');
+      clearSearchHighlight();
     }
+    setViewerLayoutMode();
     updatePageNavChrome();
     renderPdf(true);
   }
@@ -1721,11 +1778,17 @@
       const sub = state.searchMode === 'shape'
         ? `${Math.round((r.score || 0) * 100)}% match`
         : esc(r.snippet || r.line_text || '');
+      const pageLabel = r.page_num
+        ? `Page ${r.page_num}`
+        : esc(r.sheet_number || '');
+      const titleLine = r.page_num
+        ? esc(r.title || state.openDocument?.name || '')
+        : esc(r.title || '');
       return `<button type="button" class="draw-search-result${active}" data-search-idx="${i}" onclick="CasePMDrawings.jumpToSearchResult(${i})">
         ${thumb}
         <div class="min-w-0 flex-1">
-          <div class="font-mono text-sky-400 text-[11px] truncate">${esc(r.sheet_number || '')}</div>
-          <div class="text-[10px] text-zinc-500 truncate">${esc(r.title || '')}</div>
+          <div class="font-mono text-sky-400 text-[11px] truncate">${pageLabel}</div>
+          <div class="text-[10px] text-zinc-500 truncate">${titleLine}</div>
           <div class="text-[10px] text-zinc-300 mt-0.5 line-clamp-2">${sub}</div>
         </div>
       </button>`;
@@ -1767,6 +1830,24 @@
     state.selectedSearchIdx = idx;
     state.searchHighlight = r;
     renderSearchResults();
+
+    if (isDocumentViewer() || r.page_num) {
+      const pageNum = r.page_num || 1;
+      if (state.pdfViewMode === 'continuous') {
+        state.pdfViewMode = 'single';
+        setViewerLayoutMode();
+      }
+      if (pageNum !== state.pdfPage) {
+        state.pdfPage = pageNum;
+        await renderPdf(false);
+      }
+      const cx = (r.nx || 0) + (r.nw || 0.02) / 2;
+      const cy = (r.ny || 0) + (r.nh || 0.02) / 2;
+      focusOnPoint(cx, cy);
+      renderSearchHighlight();
+      return;
+    }
+
     if (!state.openDrawing || state.openDrawing.id !== r.drawing_id) {
       await openViewer(r.drawing_id);
     }
@@ -1781,11 +1862,122 @@
     renderMarkupOverlay();
   }
 
+  async function searchPdfTextInDocument(query) {
+    if (!state.pdfDoc) return [];
+    const qLower = query.toLowerCase();
+    const docName = state.openDocument?.name || 'Document';
+    const results = [];
+    const tolerance = 4;
+
+    for (let p = 1; p <= state.pdfNumPages; p++) {
+      const page = await state.pdfDoc.getPage(p);
+      const vp = page.getViewport({ scale: 1, rotation: page.rotate });
+      const pw = vp.width;
+      const ph = vp.height;
+      const content = await page.getTextContent();
+      const items = (content.items || [])
+        .filter(it => it.str && String(it.str).trim())
+        .map(it => ({
+          str: String(it.str).trim(),
+          x: it.transform[4],
+          y: it.transform[5],
+          w: it.width || String(it.str).length * 5,
+          h: itemHeight(it),
+        }));
+
+      const lines = [];
+      let bucket = [];
+      let lastY = null;
+      items.forEach(item => {
+        if (lastY === null || Math.abs(item.y - lastY) > tolerance) {
+          if (bucket.length) lines.push(bucket);
+          bucket = [item];
+          lastY = item.y;
+        } else {
+          bucket.push(item);
+        }
+      });
+      if (bucket.length) lines.push(bucket);
+
+      lines.forEach(lineItems => {
+        const lineText = lineItems.map(it => it.str).join(' ').trim();
+        if (!lineText || !lineText.toLowerCase().includes(qLower)) return;
+        const x0 = Math.min(...lineItems.map(it => it.x));
+        const y0 = Math.min(...lineItems.map(it => it.y));
+        const x1 = Math.max(...lineItems.map(it => it.x + it.w));
+        const y1 = Math.max(...lineItems.map(it => it.y + it.h));
+        const nx = x0 / pw;
+        const ny = 1 - (y1 / ph);
+        const nw = Math.max(0.01, (x1 - x0) / pw);
+        const nh = Math.max(0.01, (y1 - y0) / ph);
+        results.push({
+          page_num: p,
+          document_id: state.openDocument?.id,
+          sheet_number: `p.${p}`,
+          title: docName,
+          snippet: lineText,
+          line_text: lineText,
+          nx, ny, nw, nh,
+        });
+      });
+
+      items.forEach(item => {
+        if (!item.str.toLowerCase().includes(qLower)) return;
+        const already = results.some(r => r.page_num === p && r.snippet === item.str);
+        if (already) return;
+        const nx = item.x / pw;
+        const ny = 1 - ((item.y + item.h) / ph);
+        results.push({
+          page_num: p,
+          document_id: state.openDocument?.id,
+          sheet_number: `p.${p}`,
+          title: docName,
+          snippet: item.str,
+          line_text: item.str,
+          nx,
+          ny,
+          nw: Math.max(0.01, item.w / pw),
+          nh: Math.max(0.01, item.h / ph),
+        });
+      });
+    }
+    return results.slice(0, 250);
+  }
+
+  function itemHeight(item) {
+    return item.height || Math.abs(item.transform?.[3] || 12) || 12;
+  }
+
+  async function runDocumentTextSearch(query) {
+    if (!state.pdfDoc) {
+      toast('PDF is still loading — try again in a moment');
+      return;
+    }
+    setSearchStatus('Searching this document…', true);
+    state.searchBusy = true;
+    state.searchHighlight = null;
+    state.selectedSearchIdx = null;
+    try {
+      state.searchResults = await searchPdfTextInDocument(query);
+      state.selectedSearchIdx = null;
+      setSearchStatus(`${state.searchResults.length} match${state.searchResults.length === 1 ? '' : 'es'} found`, false);
+      renderSearchResults();
+      if (!state.searchResults.length) toast('No text matches found in this document');
+    } catch (e) {
+      setSearchStatus('', false);
+      toastError(e.message || 'Text search failed');
+    }
+    state.searchBusy = false;
+  }
+
   async function runTextSearch() {
     const query = document.getElementById('drawSearchTextInput')?.value?.trim();
     if (!query || query.length < 2) {
       toast('Enter at least 2 characters to search');
       return;
+    }
+    if (isDocumentViewer()) {
+      return runDocumentTextSearch(query);
     }
     if (state.searchScope === 'sheet' && !state.openDrawing) {
       toast('Open a sheet first, or search all drawings');
@@ -2356,6 +2548,9 @@
     bindViewerEvents();
     bindTextDialog();
     bindDocSnipDialog();
+    bindSearchPanel();
+    state.searchMode = 'text';
+    state.searchScope = 'sheet';
     document.addEventListener('fullscreenchange', onFullscreenChange);
     document.addEventListener('click', e => {
       if (!e.target.closest('#printMenu') && !e.target.closest('#btnPrintMenu')) {
@@ -3004,6 +3199,7 @@
   }
 
   async function renderPdfSinglePage(forceReload, opts, gen) {
+    setViewerLayoutMode();
     const qualityOnly = opts?.qualityOnly;
     const canvas = document.getElementById('drawPdfCanvas');
     const wrap = document.getElementById('drawViewerWrap');
@@ -3059,87 +3255,83 @@
   }
 
   async function renderPdfContinuous(forceReload, opts, gen) {
-    const qualityOnly = opts?.qualityOnly;
-    const canvas = document.getElementById('drawPdfCanvas');
+    setViewerLayoutMode();
     const wrap = document.getElementById('drawViewerWrap');
-    if (!canvas || !wrap || !state.pdfDoc) return;
+    const container = document.getElementById('drawContinuousPages');
+    if (!wrap || !container || !state.pdfDoc) return;
+    if (opts?.qualityOnly) return;
 
     const numPages = state.pdfNumPages;
-    const gap = state.pageGap || 12;
-    const pageMetas = [];
-    let maxW = 0;
-    for (let i = 1; i <= numPages; i++) {
-      const page = await state.pdfDoc.getPage(i);
-      if (gen !== state.renderGen) return;
-      const unscaled = page.getViewport({ scale: 1, rotation: page.rotate });
-      pageMetas.push({ pageNum: i, page, unscaled });
-      maxW = Math.max(maxW, unscaled.width);
+    const pad = 24;
+    const targetW = Math.max(320, wrap.clientWidth - pad);
+    const builtKey = `${numPages}:${Math.round(targetW)}`;
+
+    if (!forceReload && container.dataset.built === builtKey) {
+      syncContinuousPageObserver();
+      updatePageNavChrome();
+      return;
     }
-
-    const renderScale = computePdfRenderScale({ width: maxW, height: pageMetas[0].unscaled.height }, wrap);
-    if (qualityOnly && Math.abs(renderScale - state.lastPdfRenderScale) < 0.15) return;
-
-    state.lastPdfRenderScale = renderScale;
-    state.pdfPageWidthPts = pageMetas[0].unscaled.width;
-    state.continuousPageOffsets = [];
-    let totalH = 0;
-    for (let i = 0; i < pageMetas.length; i++) {
-      const h = pageMetas[i].unscaled.height * renderScale;
-      state.continuousPageOffsets.push({ page: pageMetas[i].pageNum, y: totalH, height: h });
-      totalH += h + (i < pageMetas.length - 1 ? gap : 0);
-    }
-
-    const canvasW = Math.ceil(maxW * renderScale);
-    canvas.width = canvasW;
-    canvas.height = Math.ceil(totalH);
-    state.baseCanvasSize = { w: canvas.width, h: canvas.height };
-
-    const ctx = canvas.getContext('2d');
-    ctx.setTransform(1, 0, 0, 1, 0, 0);
-    ctx.fillStyle = '#18181b';
-    ctx.fillRect(0, 0, canvas.width, canvas.height);
 
     if (state.renderTask) {
       try { await state.renderTask.cancel(); } catch { /* cancelled */ }
       state.renderTask = null;
     }
+    if (state.continuousObserver) {
+      state.continuousObserver.disconnect();
+      state.continuousObserver = null;
+    }
 
-    for (let i = 0; i < pageMetas.length; i++) {
+    container.innerHTML = '';
+    container.dataset.built = builtKey;
+    state.continuousPageOffsets = [];
+
+    for (let i = 1; i <= numPages; i++) {
       if (gen !== state.renderGen) return;
-      const meta = pageMetas[i];
-      const viewport = meta.page.getViewport({ scale: renderScale, rotation: meta.page.rotate });
-      const offsetY = state.continuousPageOffsets[i].y;
-      ctx.save();
-      ctx.translate(0, offsetY);
-      const task = meta.page.render({ canvasContext: ctx, viewport });
+      const page = await state.pdfDoc.getPage(i);
+      const unscaled = page.getViewport({ scale: 1, rotation: page.rotate });
+      const scale = targetW / unscaled.width;
+      const viewport = page.getViewport({ scale, rotation: page.rotate });
+
+      const pageEl = document.createElement('div');
+      pageEl.className = 'draw-continuous-page';
+      pageEl.dataset.pdfPage = String(i);
+      pageEl.id = `drawContinuousPage-${i}`;
+
+      const canvas = document.createElement('canvas');
+      canvas.width = Math.ceil(viewport.width);
+      canvas.height = Math.ceil(viewport.height);
+
+      const label = document.createElement('div');
+      label.className = 'draw-continuous-page-label';
+      label.textContent = `Page ${i} of ${numPages}`;
+
+      pageEl.appendChild(canvas);
+      pageEl.appendChild(label);
+      container.appendChild(pageEl);
+
+      state.continuousPageOffsets.push({ page: i, y: 0, height: viewport.height });
+
+      const task = page.render({ canvasContext: canvas.getContext('2d'), viewport });
       state.renderTask = task;
       try {
         await task.promise;
       } catch (err) {
-        ctx.restore();
         if (err?.name === 'RenderingCancelledException') return;
         console.warn('PDF page render failed', err);
         return;
       }
-      ctx.restore();
     }
     if (gen !== state.renderGen) return;
     state.renderTask = null;
 
-    syncViewerOverlaySizes(canvas.width, canvas.height);
-    if (!qualityOnly) {
-      fitToView();
-      renderMarkupOverlay();
-      if (!isDocumentViewer()) {
-        if (state.pixelsPerUnit && state.scalePdfPointsPerFoot) {
-          applyScalePdfPtsPerFoot(state.scalePdfPointsPerFoot, state.scaleLabel, true);
-        } else {
-          await tryAutoDetectScale();
-        }
-      }
-    } else {
-      renderMarkupOverlay();
-    }
+    const curPage = await state.pdfDoc.getPage(state.pdfPage || 1);
+    const curUnscaled = curPage.getViewport({ scale: 1, rotation: curPage.rotate });
+    const curScale = targetW / curUnscaled.width;
+    state.pdfPageWidthPts = curUnscaled.width;
+    state.baseCanvasSize = { w: targetW, h: curUnscaled.height * curScale };
+
+    syncContinuousPageObserver();
+    requestAnimationFrame(() => scrollContinuousPageIntoView(state.pdfPage || 1));
     updatePageNavChrome();
   }
 
@@ -3953,7 +4145,7 @@
       return;
     }
     if (e.altKey || e.ctrlKey || e.metaKey) return;
-    if (state.pdfNumPages > 1 && state.pdfViewMode === 'single') {
+    if (state.pdfNumPages > 1) {
       if (e.key === 'PageDown' || e.key === 'ArrowDown' || e.key === 'ArrowRight') {
         e.preventDefault();
         pdfNextPage();
@@ -4040,7 +4232,9 @@
   }
 
   function onViewerWheel(e) {
-    if (!state.openDrawing) return;
+    if (!viewerIsOpen()) return;
+    if (state.pdfViewMode === 'continuous' && state.pdfNumPages > 1) return;
+    if (!state.openDrawing && !state.openDocument) return;
     e.preventDefault();
     const wrap = document.getElementById('drawViewerWrap');
     const rect = wrap.getBoundingClientRect();
@@ -4070,6 +4264,9 @@
 
   async function onViewerDown(evt) {
     if (evt.button !== 0) return;
+    if (state.pdfViewMode === 'continuous' && state.pdfNumPages > 1) {
+      if (state.tool === 'pan' || evt.altKey) return;
+    }
     if (isViewerSnipping()) {
       evt.preventDefault();
       state.drawing = true;

@@ -50,6 +50,7 @@
             <div class="draw-tool-group-label">Nav</div>
             <button type="button" id="tool-pan" onclick="CasePMDrawings.setTool('pan')" class="tool-btn" title="Pan (H)"><i class="fa-solid fa-hand"></i></button>
             <button type="button" id="tool-select" onclick="CasePMDrawings.setTool('select')" class="tool-btn" title="Select (V)"><i class="fa-solid fa-arrow-pointer"></i></button>
+            <button type="button" id="btnSearchPanel" onclick="CasePMDrawings.toggleSearchPanel()" class="tool-btn text-sky-400" title="Search text in document"><i class="fa-solid fa-magnifying-glass"></i></button>
             <div class="draw-tool-divider"></div>
             <div class="draw-tool-group-label">Draw</div>
             <button type="button" id="tool-line" onclick="CasePMDrawings.setTool('line')" class="tool-btn" title="Line"><i class="fa-solid fa-minus"></i></button>
@@ -74,6 +75,18 @@
             <button type="button" id="tool-count" onclick="CasePMDrawings.setTool('count')" class="tool-btn" title="Count"><i class="fa-solid fa-hashtag"></i></button>
             <button type="button" id="tool-calibrate" onclick="CasePMDrawings.setTool('calibrate')" class="tool-btn" title="Calibrate"><i class="fa-solid fa-ruler-combined"></i></button>
         </div>
+        <aside id="drawSearchPanel" class="draw-search-panel draw-search-panel-doc hidden no-print">
+            <div class="flex items-center justify-between px-2 py-2 border-b border-zinc-800 shrink-0">
+                <span class="text-[10px] uppercase tracking-wide text-sky-400 font-semibold"><i class="fa-solid fa-magnifying-glass mr-1"></i>Search</span>
+                <button type="button" onclick="CasePMDrawings.toggleSearchPanel(false)" class="text-zinc-500 hover:text-white text-sm">&times;</button>
+            </div>
+            <div id="drawSearchTextPane" class="px-2 py-2 border-b border-zinc-800 shrink-0 space-y-2">
+                <input type="text" id="drawSearchTextInput" placeholder="Search text in this document…" class="w-full bg-zinc-900 border border-zinc-700 rounded px-2 py-1.5 text-xs text-white" onkeydown="if(event.key==='Enter')CasePMDrawings.runTextSearch()">
+                <button type="button" onclick="CasePMDrawings.runTextSearch()" class="w-full py-1.5 bg-sky-700 hover:bg-sky-600 rounded text-xs font-medium">Search text</button>
+            </div>
+            <div id="drawSearchStatus" class="px-2 py-1 text-[10px] text-zinc-500 border-b border-zinc-800 shrink-0 hidden"></div>
+            <div id="drawSearchResults" class="flex-1 overflow-auto p-2 space-y-1.5 min-h-0"></div>
+        </aside>
         <div class="flex flex-col flex-1 min-h-0 min-w-0">
             <div id="drawViewerWrap" class="flex-1 cursor-grab min-h-0">
                 <div id="drawPrintArea">
@@ -88,6 +101,9 @@
                             </defs>
                         </svg>
                     </div>
+                </div>
+                <div id="drawContinuousScroller" class="draw-continuous-scroller hidden">
+                    <div id="drawContinuousPages" class="draw-continuous-pages"></div>
                 </div>
             </div>
             <div id="drawViewerStatus" class="draw-viewer-status no-print">
