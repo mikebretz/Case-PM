@@ -131,14 +131,144 @@
     if (!host) return;
     const { backups } = await api('/api/program-settings/backup/list');
     if (!backups?.length) {
-      host.innerHTML = '<div class="text-sm text-zinc-500">No backups yet.</div>';
+      host.innerHTML = '<div class="text-sm text-zinc-500">No backups yet. Run a backup first, or upload a backup file below.</div>';
       return;
     }
     host.innerHTML = backups.map(b => `
-      <div class="flex justify-between items-center py-2 border-b border-zinc-800 text-sm">
-        <span class="font-mono text-emerald-400">${b.filename}</span>
-        <span class="text-zinc-500">${(b.size_bytes / 1024 / 1024).toFixed(2)} MB · ${b.created_at?.slice(0, 19) || ''}</span>
+      <div class="flex flex-wrap justify-between items-center gap-2 py-2 border-b border-zinc-800 text-sm">
+        <div class="min-w-0">
+          <div class="font-mono text-emerald-400 truncate">${escapeHtml(b.filename)}</div>
+          <div class="text-xs text-zinc-500">${(b.size_bytes / 1024 / 1024).toFixed(2)} MB · ${escapeHtml((b.created_at || '').slice(0, 19).replace('T', ' '))}</div>
+        </div>
+        <button type="button" class="px-3 py-1.5 bg-emerald-700 hover:bg-emerald-600 rounded-xl text-xs font-medium whitespace-nowrap"
+                onclick="CasePMProgramSettings.installBackup(${JSON.stringify(b.filename)})">
+          <i class="fa-solid fa-rotate-left mr-1"></i> Install
+        </button>
       </div>`).join('');
+  }
+
+  function escapeHtml(value) {
+    return String(value ?? '')
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;');
+  }
+
+  async function installBackup(filename) {
+    const ok = await CasePMDialog?.confirm(
+      `Install backup "${filename}"?\n\nThis replaces your current database, settings, and uploads. A safety backup is created first.`,
+      { title: 'Install backup', confirmLabel: 'Install', danger: true }
+    );
+    if (!ok) return;
+    try {
+      const json = await api('/api/program-settings/backup/restore', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ filename }),
+      });
+      const safety = json.result?.safety_backup;
+      await CasePMDialog?.alert(
+        `Backup installed successfully.${safety ? `\n\nSafety copy saved as: ${safety}` : ''}\n\nYou will now be signed out so the restored database can load cleanly.`,
+        'success'
+      );
+      window.location.href = '/logout?next=/login';
+    } catch (err) {
+      CasePMDialog?.alert(err.message || 'Backup install failed.', 'error');
+    }
+  }
+
+  async function chooseBackupToInstall() {
+    const { backups } = await api('/api/program-settings/backup/list');
+    if (!backups?.length) {
+      CasePMDialog?.alert('No backups available yet. Run a backup or upload a .zip file first.', 'info');
+      return;
+    }
+    const picked = await CasePMDialog?.select({
+      title: 'Install from backup',
+      message: 'Select the backup to install. Your current data is saved automatically before replacing it.',
+      items: backups.map(b => ({
+        value: b.filename,
+        label: `${b.filename} — ${(b.size_bytes / 1024 / 1024).toFixed(2)} MB · ${(b.created_at || '').slice(0, 19).replace('T', ' ')}`,
+      })),
+      submitLabel: 'Install selected backup',
+      emptyLabel: 'No backups found',
+    });
+    if (!picked?.value) return;
+    await installBackup(picked.value);
+  }
+
+  async function uploadBackupFile(input) {
+    const file = input?.files?.[0];
+    if (!file) return;
+    if (!/\.zip$/i.test(file.name)) {
+      CasePMDialog?.alert('Please choose a .zip backup file.', 'warning');
+      input.value = '';
+      return;
+    }
+    const ok = await CasePMDialog?.confirm(
+      `Upload backup file "${file.name}" to the backup library?`,
+      { title: 'Upload backup', confirmLabel: 'Upload' }
+    );
+    if (!ok) {
+      input.value = '';
+      return;
+    }
+    try {
+      const form = new FormData();
+      form.append('backup', file);
+      const res = await fetch('/api/program-settings/backup/upload', {
+        method: 'POST',
+        credentials: 'same-origin',
+        body: form,
+      });
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(json.error || res.statusText);
+      await refreshBackupList();
+      const installNow = await CasePMDialog?.confirm(
+        `Uploaded ${json.backup?.filename || file.name}.\n\nInstall this backup now?`,
+        { title: 'Install uploaded backup', confirmLabel: 'Install now' }
+      );
+      if (installNow && json.backup?.filename) {
+        await installBackup(json.backup.filename);
+      }
+    } catch (err) {
+      CasePMDialog?.alert(err.message || 'Upload failed.', 'error');
+    } finally {
+      input.value = '';
+    }
+  }
+
+  async function clearAllProgramData() {
+    const ok = await CasePMDialog?.confirm(
+      'This permanently deletes all projects, users, documents, uploads, and settings.\n\nA safety backup is created first, then the program is reset to a fresh install with the default admin account.',
+      { title: 'Clear all program data', confirmLabel: 'Continue', danger: true }
+    );
+    if (!ok) return;
+    const typed = await CasePMDialog?.prompt(
+      'Type DELETE ALL to confirm clearing everything.',
+      { title: 'Final confirmation', defaultValue: '', submitLabel: 'Clear everything', label: 'Confirmation text' }
+    );
+    if ((typed || '').trim().toUpperCase() !== 'DELETE ALL') {
+      CasePMDialog?.alert('Clear cancelled — confirmation text did not match.', 'info');
+      return;
+    }
+    try {
+      const json = await api('/api/program-settings/backup/clear-all', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ confirm: 'DELETE ALL' }),
+      });
+      const safety = json.result?.safety_backup;
+      const login = json.default_login || { email: 'admin@casepm.local', password: 'admin123' };
+      await CasePMDialog?.alert(
+        `All program data has been cleared.${safety ? `\n\nSafety backup: ${safety}` : ''}\n\nDefault login:\n${login.email}\n${login.password}\n\nYou will now be signed out.`,
+        'success'
+      );
+      window.location.href = '/logout?next=/login';
+    } catch (err) {
+      CasePMDialog?.alert(err.message || 'Clear failed.', 'error');
+    }
   }
 
   function setSageMode(mode) {
@@ -288,7 +418,9 @@
 
   global.CasePMProgramSettings = {
     loadCompanyForm, saveCompanyForm, loadBackupForm, saveBackupForm,
-    runBackupNow, refreshBackupList, setSageMode, testSageConnection,
+    runBackupNow, refreshBackupList, chooseBackupToInstall, installBackup,
+    uploadBackupFile, clearAllProgramData,
+    setSageMode, testSageConnection,
     syncEmailFromServer, pushEmailToServer,
     loadNumberingForm, saveNumberingForm, loadPayAppsForm, savePayAppsForm,
     loadPayAppDefaultsForModule,

@@ -312,6 +312,29 @@
             </div>
             <div id="backupHistoryList" class="bg-zinc-950 border border-zinc-800 rounded-xl p-4 text-sm text-zinc-500">Loading…</div>
 
+            <div class="mt-8 bg-zinc-800/50 border border-emerald-900/50 rounded-2xl p-5">
+                <h3 class="font-medium text-emerald-300 mb-2"><i class="fa-solid fa-rotate-left mr-2"></i>Install from Backup</h3>
+                <p class="text-sm text-zinc-400 mb-4">Replace the current database, settings, and uploads with a saved backup. Case PM creates a safety backup automatically before installing.</p>
+                <div class="flex flex-wrap gap-3 mb-4">
+                    <button type="button" onclick="CasePMProgramSettings.chooseBackupToInstall()" class="px-4 py-2.5 bg-emerald-600 hover:bg-emerald-500 rounded-2xl text-sm font-medium">
+                        <i class="fa-solid fa-list mr-1"></i> Choose Backup to Install
+                    </button>
+                    <label class="px-4 py-2.5 bg-zinc-700 hover:bg-zinc-600 rounded-2xl text-sm font-medium cursor-pointer">
+                        <i class="fa-solid fa-file-arrow-up mr-1"></i> Upload Backup File
+                        <input type="file" id="backupUploadInput" accept=".zip,application/zip" class="hidden" onchange="CasePMProgramSettings.uploadBackupFile(this)">
+                    </label>
+                </div>
+                <p class="text-xs text-zinc-500">After installing, you will be signed out and redirected to log in again with the restored accounts.</p>
+            </div>
+
+            <div class="mt-8 bg-red-950/30 border border-red-900/60 rounded-2xl p-5">
+                <h3 class="font-medium text-red-300 mb-2"><i class="fa-solid fa-triangle-exclamation mr-2"></i>Clear All Program Data</h3>
+                <p class="text-sm text-zinc-400 mb-4">Delete all projects, users, documents, uploads, and settings. A safety backup is created first. The default admin account is recreated afterward.</p>
+                <button type="button" onclick="CasePMProgramSettings.clearAllProgramData()" class="px-4 py-2.5 bg-red-700 hover:bg-red-600 rounded-2xl text-sm font-medium">
+                    <i class="fa-solid fa-trash-can mr-1"></i> Clear Everything and Start Fresh
+                </button>
+            </div>
+
             <div class="mt-6 flex justify-end">
                 <button type="button" onclick="saveBackupSettings()" class="px-6 py-2.5 bg-emerald-600 hover:bg-emerald-500 rounded-2xl text-sm font-medium">Save Backup Settings</button>
             </div>
