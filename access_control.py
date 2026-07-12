@@ -97,16 +97,7 @@ def _login_limits():
 
 
 def configure_app_security(app):
-    """Apply production-oriented Flask session and cookie settings."""
-    secret = os.environ.get('CASEPM_SECRET_KEY') or os.environ.get('SECRET_KEY')
-    if secret:
-        app.config['SECRET_KEY'] = secret
-
-    app.config.setdefault('SESSION_COOKIE_HTTPONLY', True)
-    app.config.setdefault('SESSION_COOKIE_SAMESITE', 'Lax')
-    if os.environ.get('CASEPM_HTTPS', '').lower() in ('1', 'true', 'yes'):
-        app.config['SESSION_COOKIE_SECURE'] = True
-
+    """Legacy hook — session lifetime; secret key handled by security_platform."""
     lifetime = int(os.environ.get('CASEPM_SESSION_HOURS', '12'))
     app.config['PERMANENT_SESSION_LIFETIME'] = lifetime * 3600
 

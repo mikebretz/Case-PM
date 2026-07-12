@@ -91,6 +91,14 @@ SECURITY_DEFAULTS = {
     'require_strong_passwords': True,
     'max_login_attempts': 8,
     'lockout_minutes': 15,
+    'deployment_mode': 'on_prem',
+    'behind_reverse_proxy': False,
+    'force_https': False,
+    'trust_x_forwarded_proto': False,
+    'hsts_max_age': 0,
+    'allowed_hosts': '',
+    'enforce_project_membership': False,
+    'require_2fa_for_admins': False,
 }
 
 
@@ -326,6 +334,19 @@ def load_security_settings():
     except (TypeError, ValueError):
         out['lockout_minutes'] = 15
     out['require_strong_passwords'] = bool(out.get('require_strong_passwords', True))
+    out['deployment_mode'] = (out.get('deployment_mode') or 'on_prem').strip().lower()
+    if out['deployment_mode'] not in ('on_prem', 'cloud'):
+        out['deployment_mode'] = 'on_prem'
+    out['behind_reverse_proxy'] = bool(out.get('behind_reverse_proxy', False))
+    out['force_https'] = bool(out.get('force_https', False))
+    out['trust_x_forwarded_proto'] = bool(out.get('trust_x_forwarded_proto', out['behind_reverse_proxy']))
+    try:
+        out['hsts_max_age'] = max(0, int(out.get('hsts_max_age') or 0))
+    except (TypeError, ValueError):
+        out['hsts_max_age'] = 0
+    out['allowed_hosts'] = (out.get('allowed_hosts') or '').strip()
+    out['enforce_project_membership'] = bool(out.get('enforce_project_membership', False))
+    out['require_2fa_for_admins'] = bool(out.get('require_2fa_for_admins', False))
     return out
 
 
@@ -338,6 +359,14 @@ def save_security_settings(payload):
         'require_strong_passwords': bool(payload.get('require_strong_passwords', True)),
         'max_login_attempts': max(3, min(int(payload.get('max_login_attempts') or 8), 20)),
         'lockout_minutes': max(5, min(int(payload.get('lockout_minutes') or 15), 120)),
+        'deployment_mode': (payload.get('deployment_mode') or 'on_prem').strip().lower(),
+        'behind_reverse_proxy': bool(payload.get('behind_reverse_proxy')),
+        'force_https': bool(payload.get('force_https')),
+        'trust_x_forwarded_proto': bool(payload.get('trust_x_forwarded_proto')),
+        'hsts_max_age': max(0, int(payload.get('hsts_max_age') or 0)),
+        'allowed_hosts': (payload.get('allowed_hosts') or '').strip(),
+        'enforce_project_membership': bool(payload.get('enforce_project_membership')),
+        'require_2fa_for_admins': bool(payload.get('require_2fa_for_admins')),
     }, SECURITY_DEFAULTS)
 
 

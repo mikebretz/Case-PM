@@ -435,6 +435,69 @@
                             Require strong passwords on user create / reset
                         </label>
                     </div>
+                    <div class="md:col-span-2">
+                        <label class="flex items-center gap-2 text-sm text-zinc-300">
+                            <input type="checkbox" id="require_2fa_for_admins" class="accent-emerald-600"
+                                   {{ 'checked' if security_settings.get('require_2fa_for_admins') else '' }}>
+                            Require two-factor authentication for Admin accounts
+                        </label>
+                    </div>
+                    <div class="md:col-span-2">
+                        <label class="flex items-center gap-2 text-sm text-zinc-300">
+                            <input type="checkbox" id="enforce_project_membership" class="accent-emerald-600"
+                                   {{ 'checked' if security_settings.get('enforce_project_membership') else '' }}>
+                            Enforce project membership (users only see assigned jobs)
+                        </label>
+                    </div>
+                </div>
+
+                <h3 class="text-lg font-semibold mt-8 mb-3">Remote Access (On-Premises or Cloud)</h3>
+                <p class="text-sm text-zinc-500 mb-4">Use these when Case PM is reachable from outside your office — company server with VPN/port forward, or cloud hosting (AWS, Azure, etc.). See <code class="text-amber-300/90">security.env.example</code> in the program folder.</p>
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                    <div>
+                        <label class="block text-sm text-zinc-400 mb-1.5">Deployment mode</label>
+                        <select id="deployment_mode" class="settings-input">
+                            <option value="on_prem" {{ 'selected' if security_settings.get('deployment_mode', 'on_prem') == 'on_prem' else '' }}>On-premises (company server)</option>
+                            <option value="cloud" {{ 'selected' if security_settings.get('deployment_mode') == 'cloud' else '' }}>Cloud (load balancer / reverse proxy)</option>
+                        </select>
+                    </div>
+                    <div>
+                        <label class="block text-sm text-zinc-400 mb-1.5">Allowed hostnames</label>
+                        <input type="text" id="allowed_hosts" class="settings-input"
+                               value="{{ security_settings.get('allowed_hosts', '') }}"
+                               placeholder="casepm.company.com, app.example.com">
+                    </div>
+                    <div class="md:col-span-2 flex flex-col gap-2">
+                        <label class="flex items-center gap-2 text-sm text-zinc-300">
+                            <input type="checkbox" id="behind_reverse_proxy" class="accent-emerald-600"
+                                   {{ 'checked' if security_settings.get('behind_reverse_proxy') else '' }}>
+                            Behind reverse proxy (nginx, IIS, cloud load balancer)
+                        </label>
+                        <label class="flex items-center gap-2 text-sm text-zinc-300">
+                            <input type="checkbox" id="force_https" class="accent-emerald-600"
+                                   {{ 'checked' if security_settings.get('force_https') else '' }}>
+                            Force HTTPS (redirect HTTP → HTTPS)
+                        </label>
+                        <label class="flex items-center gap-2 text-sm text-zinc-300">
+                            <input type="checkbox" id="trust_x_forwarded_proto" class="accent-emerald-600"
+                                   {{ 'checked' if security_settings.get('trust_x_forwarded_proto') else '' }}>
+                            Trust X-Forwarded-Proto header (required for most cloud SSL termination)
+                        </label>
+                    </div>
+                    <div>
+                        <label class="block text-sm text-zinc-400 mb-1.5">HSTS max-age (seconds, 0 = off)</label>
+                        <input type="number" id="hsts_max_age" min="0" max="63072000"
+                               value="{{ security_settings.get('hsts_max_age', 0) }}"
+                               class="settings-input">
+                    </div>
+                </div>
+
+                <div class="settings-card mt-8">
+                    <div class="flex items-center justify-between gap-4 mb-3">
+                        <h3 class="font-semibold">Security Audit Review</h3>
+                        <a href="{{ url_for('audit_log_page') }}" class="text-sm text-emerald-400 hover:underline">Full audit log →</a>
+                    </div>
+                    <div id="securityAuditSummary" class="text-sm text-zinc-400">Loading security events…</div>
                 </div>
                 <div class="mt-6 flex justify-end">
                     <button type="submit" class="settings-btn settings-btn-primary">

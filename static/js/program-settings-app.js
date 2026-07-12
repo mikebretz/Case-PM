@@ -584,6 +584,38 @@
     set('max_login_attempts', s.max_login_attempts);
     set('lockout_minutes', s.lockout_minutes);
     setChk('require_strong_passwords', s.require_strong_passwords);
+    setChk('require_2fa_for_admins', s.require_2fa_for_admins);
+    setChk('enforce_project_membership', s.enforce_project_membership);
+    set('deployment_mode', s.deployment_mode || 'on_prem');
+    set('allowed_hosts', s.allowed_hosts || '');
+    setChk('behind_reverse_proxy', s.behind_reverse_proxy);
+    setChk('force_https', s.force_https);
+    setChk('trust_x_forwarded_proto', s.trust_x_forwarded_proto);
+    set('hsts_max_age', s.hsts_max_age || 0);
+    loadSecurityAuditSummary();
+  }
+
+  async function loadSecurityAuditSummary() {
+    const host = document.getElementById('securityAuditSummary');
+    if (!host) return;
+    try {
+      const json = await api('/api/audit-log/security-summary');
+      const c = json.summary?.counts || {};
+      const recent = json.summary?.recent || [];
+      const lines = recent.slice(0, 8).map((e) => {
+        const t = (e.timestamp || '').replace('T', ' ').slice(0, 19);
+        return `<div class="py-1 border-b border-zinc-800"><span class="text-zinc-500">${escapeHtml(t)}</span> <span class="text-amber-300">${escapeHtml(e.action || '')}</span> — ${escapeHtml(e.detail || e.user_email || '')}</div>`;
+      }).join('');
+      host.innerHTML = `
+        <div class="grid grid-cols-3 gap-3 mb-4 text-center">
+          <div class="bg-zinc-950 rounded p-2"><div class="text-lg font-semibold text-red-400">${c.failed_logins || 0}</div><div class="text-xs">Failed logins</div></div>
+          <div class="bg-zinc-950 rounded p-2"><div class="text-lg font-semibold text-amber-400">${c.twofa_failures || 0}</div><div class="text-xs">2FA failures</div></div>
+          <div class="bg-zinc-950 rounded p-2"><div class="text-lg font-semibold text-orange-400">${c.csrf_blocked || 0}</div><div class="text-xs">CSRF blocks</div></div>
+        </div>
+        ${lines || '<p class="text-zinc-500">No security events yet.</p>'}`;
+    } catch (err) {
+      host.textContent = 'Could not load security summary.';
+    }
   }
 
   async function saveSecurityForm(e) {
@@ -594,13 +626,25 @@
       max_login_attempts: parseInt(document.getElementById('max_login_attempts')?.value || '8', 10),
       lockout_minutes: parseInt(document.getElementById('lockout_minutes')?.value || '15', 10),
       require_strong_passwords: document.getElementById('require_strong_passwords')?.checked,
+      require_2fa_for_admins: document.getElementById('require_2fa_for_admins')?.checked,
+      enforce_project_membership: document.getElementById('enforce_project_membership')?.checked,
+      deployment_mode: document.getElementById('deployment_mode')?.value || 'on_prem',
+      allowed_hosts: document.getElementById('allowed_hosts')?.value?.trim() || '',
+      behind_reverse_proxy: document.getElementById('behind_reverse_proxy')?.checked,
+      force_https: document.getElementById('force_https')?.checked,
+      trust_x_forwarded_proto: document.getElementById('trust_x_forwarded_proto')?.checked,
+      hsts_max_age: parseInt(document.getElementById('hsts_max_age')?.value || '0', 10),
     };
+    if (payload.deployment_mode === 'cloud') {
+      payload.behind_reverse_proxy = true;
+      if (!payload.trust_x_forwarded_proto) payload.trust_x_forwarded_proto = true;
+    }
     await api('/api/program-settings/security', {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(payload),
     });
-    CasePMDialog?.alert('Security settings saved.', 'success');
+    CasePMDialog?.alert('Security settings saved. Restart the server if you changed HTTPS/proxy options.', 'success');
   }
 
   global.CasePMProgramSettings = {
