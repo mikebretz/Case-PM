@@ -169,12 +169,13 @@ def list_backups(config=None):
 def _add_excel_exports_to_zip(zf, manifest, progress_cb=None):
     """Add excel_exports/ portability spreadsheets (supplementary — not used on restore)."""
     try:
-        from flask import has_request_context
-        if not has_request_context():
-            manifest['excel_exports'] = {'skipped': True, 'reason': 'no app context'}
+        from flask import has_app_context
+        if not has_app_context():
+            manifest['excel_exports'] = {'skipped': True, 'reason': 'no Flask app context'}
             return
         from backup_excel_exports import EXCEL_ROOT, build_excel_exports_to_dir, get_backup_export_models
         from app import db
+        _notify_progress(progress_cb, 57, 'Building Excel portability exports…')
         with tempfile.TemporaryDirectory(prefix='casepm_excel_export_') as td:
             export_root = os.path.join(td, EXCEL_ROOT)
             summary = build_excel_exports_to_dir(export_root, get_backup_export_models(), progress_cb, db=db)
@@ -192,6 +193,15 @@ def _add_excel_exports_to_zip(zf, manifest, progress_cb=None):
                 'projects': summary.get('projects', 0),
                 'note': 'Portability copies only — restore uses case_pm.db and uploads/',
             }
+            if summary.get('program_lists_error') or summary.get('project_errors'):
+                manifest['excel_exports']['warnings'] = {
+                    k: summary[k] for k in ('program_lists_error', 'project_errors') if summary.get(k)
+                }
+    except ImportError as exc:
+        manifest['excel_exports'] = {
+            'included': False,
+            'error': f'Missing dependency: {exc}. Run pip install -r requirements.txt (openpyxl).',
+        }
     except Exception as exc:
         manifest['excel_exports'] = {'included': False, 'error': str(exc)}
 
@@ -251,6 +261,7 @@ def create_local_backup(note='', config=None, progress_cb=None):
         'created_at_display': format_display_time(created_iso),
         'location': 'local',
         'local_folder': os.path.abspath(dir_path),
+        'excel_exports': manifest.get('excel_exports'),
     }
 
 

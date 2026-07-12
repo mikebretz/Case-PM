@@ -227,6 +227,21 @@
     await loadBackupForm();
   }
 
+  function excelExportBackupNote(result) {
+    const info = result?.excel_exports;
+    if (!info) return '';
+    if (info.included && info.file_count) {
+      return `\n\nExcel exports: ${info.file_count} spreadsheet(s) in excel_exports/ inside the zip (open the .zip — not a separate uploads folder).`;
+    }
+    if (info.skipped) {
+      return `\n\nExcel exports were skipped: ${info.reason || 'unknown reason'}.`;
+    }
+    if (info.error) {
+      return `\n\nExcel exports failed: ${info.error}`;
+    }
+    return '';
+  }
+
   async function runBackupNow() {
     const backup = collectBackupSettingsFromForm();
     const mirrorPath = backup.cloud?.local_mirror_path || '';
@@ -268,6 +283,7 @@
       } else if (result.cloud_mirror_skipped) {
         detail += `\n\nOff-site copy skipped: ${result.cloud_mirror_skipped}`;
       }
+      detail += excelExportBackupNote(result);
       CasePMDialog?.alert(detail, result.cloud_mirror_status === 'success' ? 'success' : 'info');
       hideBackupProgressPanel();
       if (job.backups) {
