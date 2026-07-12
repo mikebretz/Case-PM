@@ -1188,13 +1188,25 @@
     }
 
     const html = global.CasePMPrint.buildPrintDocument({ meta, sections, rowsPerPage: 26 });
+    if (global.CasePMOutput) {
+      await global.CasePMOutput.deliverHtml({
+        title: 'Change Order Log',
+        html,
+        filenameBase: `Change_Orders_${projectId() || 'project'}`,
+        sourceModule: 'change_orders',
+        systemFolderKey: 'contracts',
+        subfolder: 'Exports',
+        printOptions: { bodyHtml: html, containerId: 'coPrintSheet', bodyClass: 'printing-co-log' },
+      });
+      return;
+    }
     global.CasePMPrint.triggerPrintPreview(html, {
       containerId: 'coPrintSheet',
       bodyClass: 'printing-co-log',
     });
   }
 
-  function exportExcel() {
+  async function exportExcel() {
     if (typeof XLSX === 'undefined') { alert('Excel library not loaded'); return; }
     const data = state.changeOrders.map(co => ({
       Number: co.number, Date: co.date, Title: co.title, Company: co.company_name,
@@ -1204,7 +1216,23 @@
     const ws = XLSX.utils.json_to_sheet(data);
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, 'Change Orders');
-    XLSX.writeFile(wb, `Change_Orders_${projectId() || 'project'}.xlsx`);
+    const filename = `Change_Orders_${projectId() || 'project'}.xlsx`;
+    if (global.CasePMOutput) {
+      const buf = XLSX.write(wb, { bookType: 'xlsx', type: 'array' });
+      await global.CasePMOutput.deliverBlob({
+        title: 'Export Change Orders',
+        blob: new Blob([buf], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' }),
+        mimeType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+        filename,
+        filenameBase: `Change_Orders_${projectId() || 'project'}`,
+        sourceModule: 'change_orders',
+        systemFolderKey: 'contracts',
+        subfolder: 'Exports',
+        fileLabel: 'Excel (.xlsx)',
+      });
+      return;
+    }
+    XLSX.writeFile(wb, filename);
   }
 
   function openSageLog() {

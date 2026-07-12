@@ -4611,12 +4611,40 @@
       return;
     }
     if (state.view !== 'viewer') switchView('viewer');
-    const modeClass = withMarkups ? 'printing-drawing-markup' : 'printing-drawing-clean';
-    document.body.classList.add('printing-drawing-sheet', modeClass);
-    const cleanup = () => document.body.classList.remove('printing-drawing-sheet', 'printing-drawing-markup', 'printing-drawing-clean');
-    window.addEventListener('afterprint', cleanup, { once: true });
-    setTimeout(cleanup, 4000);
-    window.print();
+    const runPrint = () => {
+      const modeClass = withMarkups ? 'printing-drawing-markup' : 'printing-drawing-clean';
+      document.body.classList.add('printing-drawing-sheet', modeClass);
+      const cleanup = () => document.body.classList.remove('printing-drawing-sheet', 'printing-drawing-markup', 'printing-drawing-clean');
+      window.addEventListener('afterprint', cleanup, { once: true });
+      setTimeout(cleanup, 4000);
+      window.print();
+    };
+    if (global.CasePMOutput) {
+      const sheet = state.openDrawing.sheet_number || state.openDrawing.title || 'Drawing';
+      global.CasePMOutput.showOutputDialog({
+        title: `Print ${sheet}`,
+        note: 'Print sends the current sheet view to your printer (choose Save as PDF in the print dialog for a file). Save to Documents files an HTML snapshot; use Export to Documents on the sheet for the PDF.',
+        modes: ['print', 'documents'],
+      }).then((choice) => {
+        if (choice === 'print') runPrint();
+        else if (choice === 'documents') {
+          const host = document.getElementById('drawViewerCanvas')?.parentElement || document.getElementById('drawPanelViewer');
+          if (host) {
+            global.CasePMOutput.deliverHtml({
+              title: `Drawing ${sheet}`,
+              html: global.CasePMOutput.htmlFromElement(host, `Drawing ${sheet}`),
+              filenameBase: `Drawing_${sheet}`.replace(/[<>:"/\\|?*]+/g, '_'),
+              sourceModule: 'drawings',
+              systemFolderKey: 'drawings',
+              subfolder: 'Prints',
+              modes: ['file', 'documents'],
+            });
+          }
+        }
+      });
+      return;
+    }
+    runPrint();
   }
 
   function toggleFullscreen() {

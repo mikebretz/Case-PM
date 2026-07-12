@@ -3437,10 +3437,24 @@
             }));
         });
         const csv = rows.map(r => r.map(v => `"${String(v).replace(/"/g, '""')}"`).join(',')).join('\n');
+        const filename = `schedule_${CasePMSchedule.formatDate(new Date())}.csv`;
+        if (typeof CasePMOutput !== 'undefined') {
+            CasePMOutput.deliverBlob({
+                title: 'Export Schedule',
+                blob: new Blob([csv], { type: 'text/csv' }),
+                mimeType: 'text/csv',
+                filename,
+                filenameBase: `schedule_${CasePMSchedule.formatDate(new Date())}`,
+                sourceModule: 'schedule',
+                systemFolderKey: 'printed-output',
+                fileLabel: 'CSV',
+            });
+            return;
+        }
         const blob = new Blob([csv], { type: 'text/csv' });
         const a = document.createElement('a');
         a.href = URL.createObjectURL(blob);
-        a.download = `schedule_${CasePMSchedule.formatDate(new Date())}.csv`;
+        a.download = filename;
         a.click();
     }
 
@@ -4386,25 +4400,56 @@
             showScheduleAlert('Nothing to print — add activities first.', 'warning');
             return;
         }
-        document.body.classList.toggle('printing-gantt-show-footer', sheet.dataset.printFooter === '1');
-        document.body.classList.add('printing-gantt');
-        setTimeout(() => {
-            window.print();
-            setTimeout(() => document.body.classList.remove('printing-gantt', 'printing-gantt-show-footer'), 600);
-        }, 150);
+        const deliver = () => {
+            document.body.classList.toggle('printing-gantt-show-footer', sheet.dataset.printFooter === '1');
+            document.body.classList.add('printing-gantt');
+            setTimeout(() => {
+                window.print();
+                setTimeout(() => document.body.classList.remove('printing-gantt', 'printing-gantt-show-footer'), 600);
+            }, 150);
+        };
+        if (typeof CasePMOutput !== 'undefined') {
+            const html = CasePMOutput.wrapHtmlDocument('Schedule Gantt', sheet.innerHTML);
+            CasePMOutput.deliverHtml({
+                title: 'Schedule Gantt',
+                html,
+                filenameBase: 'Schedule_Gantt',
+                sourceModule: 'schedule',
+                systemFolderKey: 'printed-output',
+                onPrint: async () => deliver(),
+            });
+            return;
+        }
+        deliver();
     }
 
     function printLookAhead() {
         renderLookAhead();
-        document.body.classList.add('printing-lookahead');
-        document.getElementById('lookaheadViewPanel')?.classList.add('print-active');
-        setTimeout(() => {
-            window.print();
+        const panel = document.getElementById('lookaheadViewPanel');
+        const deliver = () => {
+            document.body.classList.add('printing-lookahead');
+            panel?.classList.add('print-active');
             setTimeout(() => {
-                document.body.classList.remove('printing-lookahead');
-                document.getElementById('lookaheadViewPanel')?.classList.remove('print-active');
-            }, 500);
-        }, 200);
+                window.print();
+                setTimeout(() => {
+                    document.body.classList.remove('printing-lookahead');
+                    panel?.classList.remove('print-active');
+                }, 500);
+            }, 200);
+        };
+        if (typeof CasePMOutput !== 'undefined' && panel) {
+            const html = CasePMOutput.wrapHtmlDocument('Schedule Look-Ahead', panel.innerHTML);
+            CasePMOutput.deliverHtml({
+                title: 'Schedule Look-Ahead',
+                html,
+                filenameBase: 'Schedule_LookAhead',
+                sourceModule: 'schedule',
+                systemFolderKey: 'printed-output',
+                onPrint: async () => deliver(),
+            });
+            return;
+        }
+        deliver();
     }
 
     function showAllOptionalColumns() {

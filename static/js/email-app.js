@@ -2093,9 +2093,20 @@
       <div>${m.body || esc(m.preview)}</div></body></html>`;
   }
 
-  function printMessage(id) {
+  async function printMessage(id) {
     const m = getMessage(id);
     if (!m) return;
+    const html = buildPrintDocument(m);
+    if (global.CasePMOutput) {
+      await global.CasePMOutput.deliverHtml({
+        title: m.subject || 'Email',
+        html,
+        filenameBase: (m.subject || 'email').replace(/[<>:"/\\|?*]+/g, '_').slice(0, 80),
+        sourceModule: 'email',
+        systemFolderKey: 'printed-output',
+      });
+      return;
+    }
     let frame = document.getElementById('emailPrintFrame');
     if (!frame) {
       frame = document.createElement('iframe');
