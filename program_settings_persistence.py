@@ -55,6 +55,36 @@ MAINTENANCE_DEFAULTS = {
     'notify_admin_on_backup_failure': True,
 }
 
+# Document / record numbering — prefix, zero-pad width, scope (global|project)
+NUMBERING_DEFAULTS = {
+    'project': {'label': 'Projects', 'prefix': 'PRJ', 'pad': 3, 'scope': 'global'},
+    'rfi': {'label': 'RFIs', 'prefix': 'RFI', 'pad': 3, 'scope': 'global'},
+    'change_order': {'label': 'Change Orders', 'prefix': 'CO', 'pad': 3, 'scope': 'global'},
+    'pco': {'label': 'Potential Change Orders', 'prefix': 'PCO', 'pad': 3, 'scope': 'global'},
+    'submittal': {'label': 'Submittals', 'prefix': 'SUB', 'pad': 3, 'scope': 'global'},
+    'punch': {'label': 'Punch List', 'prefix': 'PL', 'pad': 3, 'scope': 'global'},
+    'safety': {'label': 'Safety Reports', 'prefix': 'SAF', 'pad': 3, 'scope': 'global'},
+    'inspection': {'label': 'Permits & Inspections', 'prefix': 'INSP', 'pad': 3, 'scope': 'project'},
+    'delivery': {'label': 'Deliveries', 'prefix': 'DEL', 'pad': 3, 'scope': 'project'},
+    'meeting': {'label': 'Meeting Minutes', 'prefix': 'MM', 'pad': 3, 'scope': 'project'},
+    'toolbox': {'label': 'Toolbox Meetings', 'prefix': 'TB', 'pad': 3, 'scope': 'project'},
+    'commitment_po': {'label': 'Purchase Orders', 'prefix': 'PO', 'pad': 3, 'scope': 'project'},
+    'commitment_sc': {'label': 'Subcontracts', 'prefix': 'SC', 'pad': 3, 'scope': 'project'},
+    'commitment_ms': {'label': 'Material Supply', 'prefix': 'MS', 'pad': 3, 'scope': 'project'},
+    'commitment_sa': {'label': 'Service Agreements', 'prefix': 'SA', 'pad': 3, 'scope': 'project'},
+    'commitment_com': {'label': 'Other Commitments', 'prefix': 'COM', 'pad': 3, 'scope': 'project'},
+}
+
+PAY_APP_DEFAULTS = {
+    'default_retainage_percent': 10,
+    'require_lien_waiver_on_sub_pay_app': True,
+    'require_all_sub_pay_apps_before_g702': False,
+    'allow_zero_dollar_sub_pay_apps': False,
+    'require_submission_deadline': False,
+    'submission_deadline_day': 20,
+    'sage_sync_auto_enabled': False,
+}
+
 
 def _settings_path():
     return os.path.join('instance', 'program_settings.json')
@@ -184,6 +214,86 @@ def save_email_settings_mirror(payload):
     return save_section('email', clean)
 
 
+def load_numbering_config():
+    raw = get_section('numbering', {})
+    out = {}
+    for key, defaults in NUMBERING_DEFAULTS.items():
+        entry = dict(defaults)
+        if key in raw and isinstance(raw[key], dict):
+            entry.update({k: v for k, v in raw[key].items() if k in ('prefix', 'pad', 'scope')})
+        entry['prefix'] = (entry.get('prefix') or defaults['prefix']).strip().upper()
+        try:
+            entry['pad'] = max(1, min(6, int(entry.get('pad') or defaults['pad'])))
+        except (TypeError, ValueError):
+            entry['pad'] = defaults['pad']
+        entry['scope'] = entry.get('scope') or defaults['scope']
+        out[key] = entry
+    return out
+
+
+def save_numbering_config(payload):
+    if not isinstance(payload, dict):
+        return load_numbering_config()
+    clean = {}
+    for key, defaults in NUMBERING_DEFAULTS.items():
+        src = payload.get(key) if isinstance(payload.get(key), dict) else {}
+        prefix = (src.get('prefix') or defaults['prefix']).strip().upper()
+        try:
+            pad = max(1, min(6, int(src.get('pad') or defaults['pad'])))
+        except (TypeError, ValueError):
+            pad = defaults['pad']
+        scope = src.get('scope') if src.get('scope') in ('global', 'project') else defaults['scope']
+        clean[key] = {'prefix': prefix, 'pad': pad, 'scope': scope}
+    return save_section('numbering', clean, NUMBERING_DEFAULTS)
+
+
+def get_numbering_prefix(doc_type, project_id=None):
+    """Return (prefix, pad) for a document type key."""
+    cfg = load_numbering_config().get(doc_type) or NUMBERING_DEFAULTS.get(doc_type, {})
+    prefix = (cfg.get('prefix') or 'DOC').strip().upper()
+    pad = int(cfg.get('pad') or 3)
+    return prefix, pad
+
+
+def format_document_number(prefix, seq, pad=3):
+    return f'{prefix}-{int(seq):0{pad}d}'
+
+
+def load_pay_app_defaults():
+    section = get_section('pay_apps', PAY_APP_DEFAULTS)
+    out = dict(PAY_APP_DEFAULTS)
+    out.update(section)
+    try:
+        out['default_retainage_percent'] = int(out.get('default_retainage_percent') or 10)
+    except (TypeError, ValueError):
+        out['default_retainage_percent'] = 10
+    try:
+        out['submission_deadline_day'] = int(out.get('submission_deadline_day') or 20)
+    except (TypeError, ValueError):
+        out['submission_deadline_day'] = 20
+    for key in (
+        'require_lien_waiver_on_sub_pay_app', 'require_all_sub_pay_apps_before_g702',
+        'allow_zero_dollar_sub_pay_apps', 'require_submission_deadline', 'sage_sync_auto_enabled',
+    ):
+        out[key] = bool(out.get(key))
+    return out
+
+
+def save_pay_app_defaults(payload):
+    if not isinstance(payload, dict):
+        return load_pay_app_defaults()
+    clean = {
+        'default_retainage_percent': int(payload.get('default_retainage_percent') or 10),
+        'require_lien_waiver_on_sub_pay_app': bool(payload.get('require_lien_waiver_on_sub_pay_app', True)),
+        'require_all_sub_pay_apps_before_g702': bool(payload.get('require_all_sub_pay_apps_before_g702')),
+        'allow_zero_dollar_sub_pay_apps': bool(payload.get('allow_zero_dollar_sub_pay_apps')),
+        'require_submission_deadline': bool(payload.get('require_submission_deadline')),
+        'submission_deadline_day': int(payload.get('submission_deadline_day') or 20),
+        'sage_sync_auto_enabled': bool(payload.get('sage_sync_auto_enabled')),
+    }
+    return save_section('pay_apps', clean, PAY_APP_DEFAULTS)
+
+
 def merge_sage_context(project_details, sage_defaults=None):
     defaults = sage_defaults if sage_defaults is not None else load_sage_defaults()
     details = project_details or {}
@@ -197,11 +307,26 @@ def merge_sage_context(project_details, sage_defaults=None):
 
 def settings_summary_for_ui():
     settings = load_program_settings()
+    numbering = load_numbering_config()
+    numbering_ui = []
+    for key, entry in numbering.items():
+        defaults = NUMBERING_DEFAULTS.get(key, {})
+        numbering_ui.append({
+            'key': key,
+            'label': defaults.get('label', key),
+            'prefix': entry.get('prefix'),
+            'pad': entry.get('pad'),
+            'scope': entry.get('scope'),
+            'example': format_document_number(entry.get('prefix', 'DOC'), 1, entry.get('pad', 3)),
+        })
     return {
         'company': load_company_info(),
         'sage': load_sage_defaults(),
         'backup': load_backup_settings(),
         'maintenance': load_maintenance_settings(),
         'email': load_email_settings_mirror(),
+        'numbering': numbering,
+        'numbering_catalog': numbering_ui,
+        'pay_apps': load_pay_app_defaults(),
         'updated_at': settings.get('updated_at'),
     }

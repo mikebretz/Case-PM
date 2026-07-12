@@ -11,7 +11,7 @@
     <div class="mb-4 flex-shrink-0 flex items-start justify-between gap-4">
         <div>
             <h1 class="text-2xl font-semibold tracking-tight">Program Settings</h1>
-            <p class="text-zinc-400 text-sm mt-1">Admin-only: company profile, backups, email, Sage 300, and permissions</p>
+            <p class="text-zinc-400 text-sm mt-1">Admin-only: company profile, document numbering, pay applications, backups, email, and Sage 300. Per-user permissions are managed in <a href="{{ url_for('user_management') }}" class="text-emerald-400 hover:underline">User Management</a>.</p>
         </div>
         <div class="flex items-center gap-2 flex-shrink-0">
             {% if is_developer %}
@@ -26,8 +26,10 @@
     <div class="flex border-b border-zinc-800 mb-4 flex-shrink-0 overflow-x-auto">
         <button onclick="switchSettingsTab('company')" id="tab-company"
                 class="settings-tab-btn px-6 py-3 text-sm font-medium border-b-2 border-emerald-500 text-white whitespace-nowrap">Company Info</button>
-        <button onclick="switchSettingsTab('permissions')" id="tab-permissions"
-                class="settings-tab-btn px-6 py-3 text-sm font-medium text-zinc-400 hover:text-white whitespace-nowrap">User Permissions</button>
+        <button onclick="switchSettingsTab('numbering')" id="tab-numbering"
+                class="settings-tab-btn px-6 py-3 text-sm font-medium text-zinc-400 hover:text-white whitespace-nowrap">Document Numbering</button>
+        <button onclick="switchSettingsTab('payapps')" id="tab-payapps"
+                class="settings-tab-btn px-6 py-3 text-sm font-medium text-zinc-400 hover:text-white whitespace-nowrap">Pay Applications</button>
         <button onclick="switchSettingsTab('backup')" id="tab-backup"
                 class="settings-tab-btn px-6 py-3 text-sm font-medium text-zinc-400 hover:text-white whitespace-nowrap">Backup & Maintenance</button>
         <button onclick="switchSettingsTab('email')" id="tab-email"
@@ -130,6 +132,78 @@
         </div>
     </div>
 
+    <div id="tab-content-numbering" class="hidden">
+        <div class="bg-zinc-900 border border-zinc-800 rounded-3xl p-8">
+            <h2 class="text-xl font-semibold mb-2">Document Numbering</h2>
+            <p class="text-sm text-zinc-500 mb-6">Set the prefix and digit width for each record type. Examples: <span class="font-mono text-emerald-400">CO-001</span>, <span class="font-mono text-emerald-400">PRJ-042</span>, <span class="font-mono text-emerald-400">RFI-015</span>. Project-scoped types restart numbering per project.</p>
+            <form id="numberingForm" onsubmit="saveNumberingSettings(event)">
+                <div class="overflow-x-auto">
+                    <table class="w-full text-sm">
+                        <thead>
+                            <tr class="border-b border-zinc-800 text-zinc-500 text-xs uppercase">
+                                <th class="text-left py-2 px-2">Document Type</th>
+                                <th class="text-left py-2 px-2">Prefix</th>
+                                <th class="text-left py-2 px-2">Digits</th>
+                                <th class="text-left py-2 px-2">Scope</th>
+                                <th class="text-left py-2 px-2">Preview</th>
+                            </tr>
+                        </thead>
+                        <tbody id="numberingTableBody" class="divide-y divide-zinc-800"></tbody>
+                    </table>
+                </div>
+                <div class="mt-8 flex justify-end">
+                    <button type="submit" class="px-8 py-2.5 bg-emerald-600 hover:bg-emerald-500 rounded-2xl text-sm font-medium">Save Numbering</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <div id="tab-content-payapps" class="hidden">
+        <div class="bg-zinc-900 border border-zinc-800 rounded-3xl p-8 max-w-2xl">
+            <h2 class="text-xl font-semibold mb-2">Pay Applications Defaults</h2>
+            <p class="text-sm text-zinc-500 mb-6">Program-wide defaults for retainage, subcontractor workflow, and Sage sync. Projects inherit these unless overridden on the Pay Applications page.</p>
+            <form id="payAppsForm" onsubmit="savePayAppsSettings(event)" class="space-y-5 text-sm">
+                <div>
+                    <label class="block text-zinc-300 mb-1.5 font-medium">Default Retainage %</label>
+                    <select id="paRetainage" class="w-full bg-zinc-800 border border-zinc-700 rounded-xl px-4 py-2.5 text-sm">
+                        <option value="5">5%</option>
+                        <option value="10">10%</option>
+                        <option value="15">15%</option>
+                    </select>
+                </div>
+                <label class="flex items-center justify-between cursor-pointer border border-zinc-800 rounded-xl p-4">
+                    <span class="text-zinc-300">Require lien waiver with sub pay app submission</span>
+                    <input type="checkbox" id="paLienWaiver" class="accent-emerald-600">
+                </label>
+                <label class="flex items-center justify-between cursor-pointer border border-zinc-800 rounded-xl p-4">
+                    <span class="text-zinc-300">Require all subs with approved SOVs before G702 submit</span>
+                    <input type="checkbox" id="paRequireAllSubs" class="accent-emerald-600">
+                </label>
+                <label class="flex items-center justify-between cursor-pointer border border-zinc-800 rounded-xl p-4">
+                    <span class="text-zinc-300">Allow zero-dollar sub pay apps (compliance only)</span>
+                    <input type="checkbox" id="paZeroDollar" class="accent-emerald-600">
+                </label>
+                <label class="flex items-center justify-between cursor-pointer border border-zinc-800 rounded-xl p-4">
+                    <span class="text-zinc-300">Auto-queue Sage sync on pay app milestones</span>
+                    <input type="checkbox" id="paSageAuto" class="accent-emerald-600">
+                </label>
+                <div class="border border-zinc-800 rounded-xl p-4 space-y-3">
+                    <label class="flex items-center justify-between cursor-pointer">
+                        <span class="text-zinc-300">Sub pay app submission deadline reminder</span>
+                        <input type="checkbox" id="paDeadlineEnabled" class="accent-emerald-600" onchange="document.getElementById('paDeadlineDayWrap').classList.toggle('hidden', !this.checked)">
+                    </label>
+                    <div id="paDeadlineDayWrap" class="hidden">
+                        <label class="block text-xs text-zinc-400 mb-1">Day of month to notify subs</label>
+                        <select id="paDeadlineDay" class="w-full bg-zinc-800 border border-zinc-700 rounded-xl px-3 py-2 text-sm"></select>
+                    </div>
+                </div>
+                <div class="flex justify-end">
+                    <button type="submit" class="px-8 py-2.5 bg-emerald-600 hover:bg-emerald-500 rounded-2xl text-sm font-medium">Save Pay App Defaults</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
     <div id="tab-content-email" class="hidden">
         <div class="bg-zinc-900 border border-zinc-800 rounded-3xl p-8">
             <div class="flex items-center justify-between mb-6">
@@ -145,37 +219,6 @@
         </div>
     </div>
 
-    <div id="tab-content-permissions" class="hidden">
-        <div class="bg-zinc-900 border border-zinc-800 rounded-3xl p-8">
-            <div class="flex items-center justify-between mb-6">
-                <div>
-                    <h2 class="text-xl font-semibold">User Permissions</h2>
-                    <p class="text-sm text-zinc-400 mt-1">Manage users and roles in <a href="{{ url_for('user_management') }}" class="text-emerald-400 hover:underline">User Management</a></p>
-                </div>
-                <a href="{{ url_for('user_management') }}" class="px-4 py-2 bg-emerald-600 hover:bg-emerald-500 rounded-2xl text-sm font-medium">
-                    <i class="fa-solid fa-users mr-1"></i> User Management
-                </a>
-            </div>
-            <div class="overflow-x-auto">
-                <table class="w-full">
-                    <thead>
-                        <tr class="border-b border-zinc-800">
-                            <th class="text-left px-4 py-3 text-sm font-medium text-zinc-400">Role</th>
-                            <th class="text-left px-4 py-3 text-sm font-medium text-zinc-400">Description</th>
-                            <th class="text-center px-4 py-3 text-sm font-medium text-zinc-400">Access</th>
-                        </tr>
-                    </thead>
-                    <tbody class="divide-y divide-zinc-800 text-sm">
-                        <tr><td class="px-4 py-3 font-medium">Admin</td><td class="px-4 py-3 text-zinc-400">Full access including Program Settings</td><td class="px-4 py-3 text-center text-emerald-400">All modules</td></tr>
-                        <tr><td class="px-4 py-3 font-medium">Project Manager</td><td class="px-4 py-3 text-zinc-400">Projects, RFIs, COs, daily logs, financials</td><td class="px-4 py-3 text-center text-zinc-400">Staff</td></tr>
-                        <tr><td class="px-4 py-3 font-medium">Superintendent</td><td class="px-4 py-3 text-zinc-400">Field logs, punch list, safety, photos</td><td class="px-4 py-3 text-center text-zinc-400">Field</td></tr>
-                    </tbody>
-                </table>
-            </div>
-        </div>
-    </div>
-
-    <!-- Backup & Maintenance Tab -->
     <div id="tab-content-backup" class="hidden">
         <div class="bg-zinc-900 border border-zinc-800 rounded-3xl p-8">
             <h2 class="text-xl font-semibold mb-2">Backup & Maintenance</h2>
@@ -424,6 +467,16 @@
         }
         if (tab === 'email') renderProgramEmailSettings();
         if (tab === 'backup' && window.CasePMProgramSettings) CasePMProgramSettings.loadBackupForm();
+        if (tab === 'numbering' && window.CasePMProgramSettings) CasePMProgramSettings.loadNumberingForm();
+        if (tab === 'payapps' && window.CasePMProgramSettings) CasePMProgramSettings.loadPayAppsForm();
+    }
+
+    async function saveNumberingSettings(e) {
+        if (window.CasePMProgramSettings) await CasePMProgramSettings.saveNumberingForm(e);
+    }
+
+    async function savePayAppsSettings(e) {
+        if (window.CasePMProgramSettings) await CasePMProgramSettings.savePayAppsForm(e);
     }
 
     async function renderProgramEmailSettings() {

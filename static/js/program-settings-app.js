@@ -174,9 +174,120 @@
     });
   }
 
+  async function pushEmailToServer(settings) {
+    if (!settings) return;
+    await api('/api/program-settings/email', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email: settings }),
+    });
+  }
+
+  function previewNumber(key, prefix, pad) {
+    const p = (prefix || 'DOC').toUpperCase();
+    const width = Math.max(1, Math.min(6, parseInt(pad, 10) || 3));
+    return `${p}-${String(1).padStart(width, '0')}`;
+  }
+
+  async function loadNumberingForm() {
+    const { catalog } = await api('/api/program-settings/numbering');
+    const body = document.getElementById('numberingTableBody');
+    if (!body) return;
+    body.innerHTML = (catalog || []).map(row => `
+      <tr data-num-key="${row.key}">
+        <td class="py-2 px-2 text-zinc-300">${row.label}</td>
+        <td class="py-2 px-2"><input type="text" class="num-prefix w-24 bg-zinc-800 border border-zinc-700 rounded-lg px-2 py-1 font-mono text-sm uppercase" value="${row.prefix || ''}" maxlength="12"></td>
+        <td class="py-2 px-2"><input type="number" class="num-pad w-16 bg-zinc-800 border border-zinc-700 rounded-lg px-2 py-1 text-sm" value="${row.pad || 3}" min="1" max="6"></td>
+        <td class="py-2 px-2">
+          <select class="num-scope bg-zinc-800 border border-zinc-700 rounded-lg px-2 py-1 text-xs">
+            <option value="global" ${row.scope === 'global' ? 'selected' : ''}>Company-wide</option>
+            <option value="project" ${row.scope === 'project' ? 'selected' : ''}>Per project</option>
+          </select>
+        </td>
+        <td class="py-2 px-2 font-mono text-emerald-400 text-xs num-preview">${row.example || ''}</td>
+      </tr>`).join('');
+    body.querySelectorAll('tr').forEach(tr => {
+      const update = () => {
+        const prefix = tr.querySelector('.num-prefix')?.value;
+        const pad = tr.querySelector('.num-pad')?.value;
+        const el = tr.querySelector('.num-preview');
+        if (el) el.textContent = previewNumber(tr.dataset.numKey, prefix, pad);
+      };
+      tr.querySelectorAll('input, select').forEach(el => el.addEventListener('input', update));
+    });
+  }
+
+  async function saveNumberingForm(e) {
+    e.preventDefault();
+    const numbering = {};
+    document.querySelectorAll('#numberingTableBody tr[data-num-key]').forEach(tr => {
+      const key = tr.dataset.numKey;
+      numbering[key] = {
+        prefix: tr.querySelector('.num-prefix')?.value?.trim().toUpperCase(),
+        pad: parseInt(tr.querySelector('.num-pad')?.value || '3', 10),
+        scope: tr.querySelector('.num-scope')?.value || 'global',
+      };
+    });
+    await api('/api/program-settings/numbering', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ numbering }),
+    });
+    CasePMDialog?.alert('Document numbering saved.', 'success');
+  }
+
+  async function loadPayAppsForm() {
+    const { pay_apps: p } = await api('/api/program-settings/pay-apps');
+    if (!p) return;
+    const set = (id, val) => { const el = document.getElementById(id); if (el) el.value = val; };
+    const setChk = (id, val) => { const el = document.getElementById(id); if (el) el.checked = !!val; };
+    set('paRetainage', p.default_retainage_percent || 10);
+    setChk('paLienWaiver', p.require_lien_waiver_on_sub_pay_app);
+    setChk('paRequireAllSubs', p.require_all_sub_pay_apps_before_g702);
+    setChk('paZeroDollar', p.allow_zero_dollar_sub_pay_apps);
+    setChk('paSageAuto', p.sage_sync_auto_enabled);
+    setChk('paDeadlineEnabled', p.require_submission_deadline);
+    const daySel = document.getElementById('paDeadlineDay');
+    if (daySel && !daySel.options.length) {
+      for (let d = 15; d <= 28; d++) daySel.add(new Option(`${d}`, d));
+    }
+    if (daySel) daySel.value = p.submission_deadline_day || 20;
+    document.getElementById('paDeadlineDayWrap')?.classList.toggle('hidden', !p.require_submission_deadline);
+  }
+
+  async function savePayAppsForm(e) {
+    e.preventDefault();
+    const payload = {
+      default_retainage_percent: parseInt(document.getElementById('paRetainage')?.value || '10', 10),
+      require_lien_waiver_on_sub_pay_app: document.getElementById('paLienWaiver')?.checked,
+      require_all_sub_pay_apps_before_g702: document.getElementById('paRequireAllSubs')?.checked,
+      allow_zero_dollar_sub_pay_apps: document.getElementById('paZeroDollar')?.checked,
+      sage_sync_auto_enabled: document.getElementById('paSageAuto')?.checked,
+      require_submission_deadline: document.getElementById('paDeadlineEnabled')?.checked,
+      submission_deadline_day: parseInt(document.getElementById('paDeadlineDay')?.value || '20', 10),
+    };
+    await api('/api/program-settings/pay-apps', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    });
+    CasePMDialog?.alert('Pay application defaults saved.', 'success');
+  }
+
+  async function loadPayAppDefaultsForModule() {
+    try {
+      const { pay_apps: p } = await api('/api/program-settings/pay-apps');
+      return p || {};
+    } catch (_) {
+      return {};
+    }
+  }
+
   global.CasePMProgramSettings = {
     loadCompanyForm, saveCompanyForm, loadBackupForm, saveBackupForm,
     runBackupNow, refreshBackupList, setSageMode, testSageConnection,
     syncEmailFromServer, pushEmailToServer,
+    loadNumberingForm, saveNumberingForm, loadPayAppsForm, savePayAppsForm,
+    loadPayAppDefaultsForModule,
   };
 })(window);

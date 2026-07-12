@@ -386,7 +386,10 @@
     <div class="p-6">
         <div class="flex justify-between items-center mb-6">
             <h3 class="text-xl font-semibold">Pay Applications Settings</h3>
-            <button onclick="document.getElementById('settingsModal').close()" class="text-zinc-400 hover:text-white"><i class="fa-solid fa-times text-xl"></i></button>
+            <div class="flex items-center gap-2">
+                <a href="/program-settings?tab=payapps" class="text-xs text-emerald-400 hover:underline">Edit program defaults</a>
+                <button onclick="document.getElementById('settingsModal').close()" class="text-zinc-400 hover:text-white"><i class="fa-solid fa-times text-xl"></i></button>
+            </div>
         </div>
         <div class="space-y-5 text-sm">
             <div>
@@ -8952,6 +8955,41 @@ function printSubcontractorG703(companyId) {
     }
 
     // ==================== INITIALIZATION ====================
+    async function applyProgramPayAppDefaults() {
+        try {
+            const res = await fetch('/api/program-settings/pay-apps', { credentials: 'same-origin' });
+            const json = await res.json();
+            const p = json.pay_apps || {};
+            if (casepmStore.getItem('payAppRetainagePercent') == null && p.default_retainage_percent != null) {
+                defaultRetainagePercent = parseFloat(p.default_retainage_percent) || 10;
+                casepmStore.setItem('payAppRetainagePercent', String(defaultRetainagePercent));
+            }
+            if (casepmStore.getItem('requireLienWaiverOnSubPayApp') == null) {
+                requireLienWaiverOnSubPayApp = p.require_lien_waiver_on_sub_pay_app !== false;
+                casepmStore.setItem('requireLienWaiverOnSubPayApp', requireLienWaiverOnSubPayApp);
+            }
+            if (casepmStore.getItem('requireAllSubPayAppsBeforeG702Submit') == null) {
+                requireAllSubPayAppsBeforeG702Submit = p.require_all_sub_pay_apps_before_g702 !== false;
+                casepmStore.setItem('requireAllSubPayAppsBeforeG702Submit', requireAllSubPayAppsBeforeG702Submit);
+            }
+            if (casepmStore.getItem('allowZeroDollarSubPayApps') == null) {
+                allowZeroDollarSubPayApps = !!p.allow_zero_dollar_sub_pay_apps;
+                casepmStore.setItem('allowZeroDollarSubPayApps', allowZeroDollarSubPayApps);
+            }
+            if (casepmStore.getItem('sageSyncAutoEnabled') == null && p.sage_sync_auto_enabled != null) {
+                casepmStore.setItem('sageSyncAutoEnabled', !!p.sage_sync_auto_enabled);
+            }
+            if (casepmStore.getItem('requireSubmissionDeadline') == null) {
+                requireSubmissionDeadline = !!p.require_submission_deadline;
+                casepmStore.setItem('requireSubmissionDeadline', requireSubmissionDeadline);
+            }
+            if (casepmStore.getItem('submissionDeadlineDay') == null && p.submission_deadline_day) {
+                submissionDeadlineDay = String(p.submission_deadline_day);
+                casepmStore.setItem('submissionDeadlineDay', submissionDeadlineDay);
+            }
+        } catch (_) { /* use local defaults */ }
+    }
+
     function initializePayApplications() {
         const boot = async () => {
             if (typeof CasePMAccountingReconcile !== 'undefined') {
@@ -8961,6 +8999,7 @@ function printSubcontractorG703(companyId) {
             } else if (typeof CasePMWorkflow !== 'undefined') {
                 CasePMWorkflow.loadPortal().catch(() => {});
             }
+            await applyProgramPayAppDefaults();
             seedProjectContractDefaults();
             await refreshProjectFinancialSummary();
             reloadPayAppStateFromStorage();
@@ -9175,18 +9214,10 @@ function printSubcontractorG703(companyId) {
 
         // Summary cards (purple pill for period)
         cardsContainer.innerHTML = `
-            <div class="grid grid-cols-2 md:grid-cols-6 gap-2">
-                <div class="summary-metric-card bg-zinc-800 border border-zinc-700 rounded-md flex flex-col justify-center">
-                    <div class="text-xs text-zinc-400 mb-1">Contractor Pay Period</div>
-                    <div>
-                        <span class="inline-flex items-center justify-center px-5 py-1 rounded-full bg-purple-600 text-white text-2xl font-bold font-mono tracking-[1px] shadow-sm" style="min-width: 72px; height: 42px;">
-                            ${currentPayAppPeriod ? currentPayAppPeriod.periodNumber : '—'}
-                        </span>
-                    </div>
-                </div>
-                <div class="summary-metric-card bg-zinc-800 border border-zinc-700 rounded-md">
-                    <div class="text-xs text-zinc-400">Approved SOV Subs</div>
-                    <div class="text-3xl font-semibold metric-value text-emerald-400">${approvedSOVSubs.length}</div>
+            <div class="grid grid-cols-2 md:grid-cols-5 gap-2">
+                <div class="summary-metric-card bg-zinc-800 border border-zinc-700 rounded-md flex items-center justify-between gap-2 px-3">
+                    <span class="text-xs text-zinc-400">Contractor Pay Period</span>
+                    <span class="inline-flex items-center justify-center px-4 py-1 rounded-full bg-purple-600 text-white text-xl font-bold font-mono tracking-wide">${currentPayAppPeriod ? currentPayAppPeriod.periodNumber : '—'}</span>
                 </div>
                 <div class="summary-metric-card bg-zinc-800 border border-zinc-700 rounded-md">
                     <div class="text-xs text-zinc-400">Submitted This Period</div>
@@ -9231,9 +9262,9 @@ function printSubcontractorG703(companyId) {
         if (!trackerSplit) return;
         trackerSplit.innerHTML = `
             <div class="tracker-sub-list-panel bg-zinc-900 border border-zinc-700 rounded-md overflow-hidden">
-                <div class="px-3 py-2 bg-zinc-800 border-b border-zinc-700 flex items-center justify-between flex-shrink-0">
-                    <div class="text-xs font-semibold text-zinc-300 tracking-wide">SUBCONTRACTORS — Period ${currentPeriodNum}</div>
-                    <div class="text-[10px] text-zinc-500">${approvedSOVSubs.length} approved SOV</div>
+                <div class="px-3 py-2 bg-zinc-800 border-b border-zinc-700 flex-shrink-0">
+                    <div class="text-xs font-semibold text-zinc-200 tracking-wide">Subcontractors — Period ${currentPeriodNum}</div>
+                    <div class="text-[10px] text-zinc-500 mt-1">${approvedSOVSubs.length} approved schedule value${approvedSOVSubs.length === 1 ? '' : 's'}</div>
                 </div>
                 <div id="trackerSubList" class="overflow-auto flex-1 p-1 text-sm min-h-0"></div>
             </div>
