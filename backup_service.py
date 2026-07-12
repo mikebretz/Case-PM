@@ -166,6 +166,36 @@ def list_backups(config=None):
     return rows
 
 
+def _add_excel_exports_to_zip(zf, manifest, progress_cb=None):
+    """Add excel_exports/ portability spreadsheets (supplementary — not used on restore)."""
+    try:
+        from flask import has_request_context
+        if not has_request_context():
+            manifest['excel_exports'] = {'skipped': True, 'reason': 'no app context'}
+            return
+        from backup_excel_exports import EXCEL_ROOT, build_excel_exports_to_dir, get_backup_export_models
+        from app import db
+        with tempfile.TemporaryDirectory(prefix='casepm_excel_export_') as td:
+            export_root = os.path.join(td, EXCEL_ROOT)
+            summary = build_excel_exports_to_dir(export_root, get_backup_export_models(), progress_cb, db=db)
+            added = 0
+            for root, _, files in os.walk(export_root):
+                for fn in files:
+                    full = os.path.join(root, fn)
+                    arc = os.path.relpath(full, td).replace('\\', '/')
+                    zf.write(full, arc)
+                    manifest['files'].append(arc)
+                    added += 1
+            manifest['excel_exports'] = {
+                'included': True,
+                'file_count': added,
+                'projects': summary.get('projects', 0),
+                'note': 'Portability copies only — restore uses case_pm.db and uploads/',
+            }
+    except Exception as exc:
+        manifest['excel_exports'] = {'included': False, 'error': str(exc)}
+
+
 def create_local_backup(note='', config=None, progress_cb=None):
     dir_path = backup_dir(config)
     os.makedirs(dir_path, exist_ok=True)
@@ -207,6 +237,7 @@ def create_local_backup(note='', config=None, progress_cb=None):
                 _notify_progress(progress_cb, pct, f'Adding uploads ({idx}/{total_uploads})…', arc)
         else:
             _notify_progress(progress_cb, 55, 'No upload files to include')
+        _add_excel_exports_to_zip(zf, manifest, progress_cb)
         _notify_progress(progress_cb, 88, 'Writing manifest and finishing zip…', filename)
         zf.writestr('manifest.json', json.dumps(manifest, indent=2))
 
