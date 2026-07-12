@@ -2755,15 +2755,42 @@ def api_update_rfi(rfi_id):
 @login_required
 def api_rfi_workflow(rfi_id):
     from rfi_persistence import workflow_rfi, rfi_to_dict, add_response, get_linked_records
+    from workflow_responder import execute_rfi_action, get_rfi_responder_context, notify_rfi_ball_in_court, notify_rfi_update
     rfi = RFI.query.get_or_404(rfi_id)
     body = request.get_json(silent=True) or {}
     action = body.get('action')
     user_name = f'{current_user.first_name} {current_user.last_name}'.strip() or current_user.email
     try:
         if action == 'respond':
-            add_response(rfi, body, current_user.id, user_name)
+            execute_rfi_action(rfi, 'respond', current_user, User, {
+                'comment': body.get('body', ''),
+                'is_official': bool(body.get('is_official')),
+                'attachments': body.get('attachments') or [],
+            })
         else:
             workflow_rfi(rfi, action, user_name)
+            if action == 'submit':
+                notify_rfi_ball_in_court(
+                    rfi, User,
+                    title=f'{rfi.number} — response needed',
+                    description=rfi.question or rfi.subject or 'Please review and respond to this RFI.',
+                )
+                notify_rfi_update(
+                    rfi, User,
+                    title=f'{rfi.number} — submitted for review',
+                    description='This RFI was sent for review.',
+                    actor_id=current_user.id,
+                    event='submit',
+                )
+            elif action == 'close':
+                notify_rfi_update(
+                    rfi, User,
+                    title=f'{rfi.number} — closed',
+                    description=rfi.official_answer or 'This RFI has been closed.',
+                    actor_id=current_user.id,
+                )
+            elif action in ('return_to_assignee', 'return_to_manager'):
+                notify_rfi_ball_in_court(rfi, User)
         db.session.commit()
         linked_cos, linked_pcos = get_linked_records(rfi.id, ChangeOrder, PotentialChangeOrder)
         return jsonify({'ok': True, 'rfi': rfi_to_dict(rfi, linked_cos, linked_pcos)})
@@ -3155,7 +3182,7 @@ def update_change_order_status(co_id):
                 entity_id=co.id,
                 title=f'Change Order {co.number or co.id} requires approval',
                 description=co.description or '',
-                action_url=f'/change-orders?project_id={co.project_id}',
+                action_url=f'/change-orders?project_id={co.project_id}&open=1&respond=1&co_id={co.id}',
                 payload={'amount': co.amount, 'status': new_status},
             )
         except Exception:
@@ -11783,7 +11810,7 @@ def api_change_order_workflow(co_id):
                 entity_id=co.id,
                 title=f'Change Order {co.number} submitted — {co.ball_in_court_role} review',
                 description=co.description or '',
-                action_url=f'/change-orders?project_id={co.project_id}',
+                action_url=f'/change-orders?project_id={co.project_id}&open=1&respond=1&co_id={co.id}',
                 payload={'amount': co.amount, 'status': new_status, 'ball_in_court': co.ball_in_court_role},
                 assignee_role=co.ball_in_court_role,
             )
@@ -11850,7 +11877,7 @@ def api_change_order_workflow(co_id):
                     entity_id=co.id,
                     title=f'Change Order {co.number} — {co.ball_in_court_role} approval',
                     description=co.description or '',
-                    action_url=f'/change-orders?project_id={co.project_id}',
+                    action_url=f'/change-orders?project_id={co.project_id}&open=1&respond=1&co_id={co.id}',
                     payload={'amount': co.amount, 'status': new_status},
                     assignee_role=co.ball_in_court_role,
                 )
@@ -12160,6 +12187,10 @@ with app.app_context():
             'Notification': Notification,
             'AuditLog': AuditLog,
             'login_required': login_required,
+            'RFI': RFI,
+            'ChangeOrder': ChangeOrder,
+            'ChangeOrderAllocation': ChangeOrderAllocation,
+            'PotentialChangeOrder': PotentialChangeOrder,
         })
         db.create_all()
         cw.ensure_workflow_schema(db.engine)

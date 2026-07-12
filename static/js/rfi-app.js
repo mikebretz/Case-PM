@@ -30,6 +30,26 @@
     allocationRows: [],
   };
 
+  function isStaffPortal() {
+    if (typeof global.CasePMApprovalResponder !== 'undefined' && global.CasePMApprovalResponder.isStaffPortal) {
+      return global.CasePMApprovalResponder.isStaffPortal();
+    }
+    const p = global.CASEPM_PORTAL;
+    return !p || p.portal === 'staff' || p.role === 'Admin';
+  }
+
+  async function openResponder(id) {
+    if (typeof global.CasePMApprovalResponder !== 'undefined') {
+      await global.CasePMApprovalResponder.open('rfi', id);
+      return;
+    }
+    await respond(id);
+  }
+
+  async function refresh() {
+    await Promise.all([loadRfis(), loadDashboard()]);
+  }
+
   function fmtFileSize(bytes) {
     if (!bytes && bytes !== 0) return '';
     if (bytes < 1024) return `${bytes} B`;
@@ -291,7 +311,10 @@
     const docsBtn = document.getElementById('rfiBrowseDocumentsBtn');
 
     browseBtn?.addEventListener('click', e => { e.stopPropagation(); fileInput?.click(); });
-    docsBtn?.addEventListener('click', e => { e.stopPropagation(); openDocumentPicker(); });
+    if (docsBtn) {
+      docsBtn.classList.toggle('hidden', !isStaffPortal());
+      docsBtn.addEventListener('click', e => { e.stopPropagation(); openDocumentPicker(); });
+    }
     dropZone?.addEventListener('click', e => {
       if (e.target.closest('button')) return;
       fileInput?.click();
@@ -617,8 +640,8 @@
         <td class="px-4 py-3 text-center text-xs">${attCell}</td>
         <td class="px-4 py-3 text-center" onclick="event.stopPropagation()">
           <div class="flex items-center justify-center gap-1">
-            <button onclick="CasePMRfis.respond(${r.id})" class="p-1.5 text-emerald-400 hover:bg-zinc-800 rounded" title="Respond"><i class="fa-solid fa-reply"></i></button>
-            <button onclick="CasePMRfis.edit(${r.id})" class="p-1.5 text-zinc-400 hover:bg-zinc-800 rounded" title="Edit"><i class="fa-solid fa-edit"></i></button>
+            <button onclick="CasePMRfis.openResponder(${r.id})" class="p-1.5 text-emerald-400 hover:bg-zinc-800 rounded" title="Review &amp; Respond"><i class="fa-solid fa-reply"></i></button>
+            ${isStaffPortal() ? `<button onclick="CasePMRfis.edit(${r.id})" class="p-1.5 text-zinc-400 hover:bg-zinc-800 rounded" title="Edit"><i class="fa-solid fa-edit"></i></button>` : ''}
           </div>
         </td>
       </tr>`;
@@ -873,7 +896,7 @@
         </div>
         <div id="rfiDrawerDropZone" class="border-2 border-dashed border-emerald-700/40 hover:border-emerald-500 rounded-lg p-3 text-center cursor-pointer bg-zinc-950/50 mb-2 transition-all">
           <div class="text-xs text-zinc-400"><i class="fa-solid fa-cloud-arrow-up text-emerald-500 mr-1"></i>Drop files here or click to upload</div>
-          <button type="button" data-drawer-docs class="mt-2 text-xs px-2 py-1 rounded bg-sky-900/50 text-sky-200 border border-sky-700/50 hover:bg-sky-800/60">Browse Documents</button>
+          ${isStaffPortal() ? '<button type="button" data-drawer-docs class="mt-2 text-xs px-2 py-1 rounded bg-sky-900/50 text-sky-200 border border-sky-700/50 hover:bg-sky-800/60">Browse Documents</button>' : ''}
         </div>
         <div class="space-y-1">${attList || '<p class="text-zinc-500 text-xs px-1">No files attached yet</p>'}</div>
       </div>
@@ -892,28 +915,18 @@
         <div class="space-y-1">${linked}</div>
       </div>
       <div class="flex flex-wrap gap-2 pt-3 border-t border-zinc-700">
-        <button onclick="CasePMRfis.respond(${r.id})" class="px-3 py-1.5 text-xs bg-emerald-700 hover:bg-emerald-600 rounded-md"><i class="fa-solid fa-reply mr-1"></i>Respond</button>
-        <button onclick="CasePMRfis.workflow(${r.id}, 'submit')" class="px-3 py-1.5 text-xs bg-sky-800 hover:bg-sky-700 rounded-md">Submit / Open</button>
-        <button onclick="CasePMRfis.workflow(${r.id}, 'return_to_assignee')" class="px-3 py-1.5 text-xs bg-zinc-800 hover:bg-zinc-700 rounded-md">Ball → Assignee</button>
-        <button onclick="CasePMRfis.workflow(${r.id}, 'return_to_manager')" class="px-3 py-1.5 text-xs bg-zinc-800 hover:bg-zinc-700 rounded-md">Ball → Manager</button>
-        <button onclick="CasePMRfis.workflow(${r.id}, 'close')" class="px-3 py-1.5 text-xs bg-zinc-800 hover:bg-zinc-700 rounded-md">Close</button>
+        <button onclick="CasePMRfis.openResponder(${r.id})" class="px-4 py-2 text-sm bg-emerald-600 hover:bg-emerald-500 rounded-md font-semibold"><i class="fa-solid fa-reply mr-1"></i>Review &amp; Respond</button>
+        ${isStaffPortal() ? `
+        <button onclick="CasePMRfis.workflow(${r.id}, 'submit')" class="px-3 py-1.5 text-xs bg-sky-800 hover:bg-sky-700 rounded-md">Send for Review</button>
+        <button onclick="CasePMRfis.workflow(${r.id}, 'close')" class="px-3 py-1.5 text-xs bg-zinc-800 hover:bg-zinc-700 rounded-md">Close RFI</button>
         <button onclick="CasePMRfis.promotePco(${r.id})" class="px-3 py-1.5 text-xs bg-violet-800 hover:bg-violet-700 rounded-md"><i class="fa-solid fa-lightbulb mr-1"></i>Create PCO</button>
-        <button onclick="CasePMRfis.edit(${r.id})" class="px-3 py-1.5 text-xs bg-zinc-800 hover:bg-zinc-700 rounded-md"><i class="fa-solid fa-edit mr-1"></i>Edit</button>
+        <button onclick="CasePMRfis.edit(${r.id})" class="px-3 py-1.5 text-xs bg-zinc-800 hover:bg-zinc-700 rounded-md"><i class="fa-solid fa-edit mr-1"></i>Edit</button>` : ''}
       </div>`;
     bindDrawerAttachmentHandlers(r.id);
   }
 
   async function respond(id) {
-    const body = prompt('Enter your RFI response:');
-    if (!body) return;
-    const official = confirm('Mark this as the official answer?');
-    try {
-      await api(`/api/rfis/${id}/workflow`, { method: 'POST', body: JSON.stringify({ action: 'respond', body, is_official: official }) });
-      toast('Response posted');
-      await Promise.all([loadRfis(), loadDashboard()]);
-      if (state.drawerRecord?.id === id) view(id);
-      if (typeof CasePMWorkflow !== 'undefined') CasePMWorkflow.onRFIStatusChange?.({ rfiId: id, status: official ? 'Answered' : 'Under Review' });
-    } catch (e) { alert(e.message); }
+    await openResponder(id);
   }
 
   async function workflow(id, action) {
@@ -1089,8 +1102,16 @@
     bindFilters();
     bindAttachmentHandlers();
     await Promise.all([loadDashboard(), loadRfis(), loadLinkOptions()]);
+    global.addEventListener('casepm:approval-responded', () => refresh());
     const params = new URLSearchParams(window.location.search);
-    if (params.get('open') === '1' && params.get('rfi_id')) {
+    if (params.get('respond') === '1' && params.get('rfi_id')) {
+      const id = parseInt(params.get('rfi_id'), 10);
+      if (id && typeof global.CasePMApprovalResponder !== 'undefined') {
+        await global.CasePMApprovalResponder.open('rfi', id);
+      } else if (id) {
+        await view(id);
+      }
+    } else if (params.get('open') === '1' && params.get('rfi_id')) {
       const id = parseInt(params.get('rfi_id'), 10);
       if (id) await view(id);
     }
@@ -1107,6 +1128,8 @@
     view,
     edit,
     respond,
+    openResponder,
+    refresh,
     workflow,
     promotePco,
     addPlanPin,

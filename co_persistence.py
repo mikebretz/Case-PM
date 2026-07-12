@@ -554,7 +554,7 @@ def notify_ball_in_court(project_id, co, User, title=None, description=None):
         return
     try:
         import case_workflow as cw
-        action_url = f'/change-orders?project_id={project_id}'
+        action_url = f'/change-orders?project_id={project_id}&open=1&respond=1&co_id={co.id}'
         title = title or f'{co.number} — ball in court: {role}'
         description = description or (co.description or getattr(co, 'title', None) or '')
         users = User.query.filter_by(status='Active').all()
