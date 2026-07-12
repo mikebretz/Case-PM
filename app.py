@@ -9743,6 +9743,9 @@ def _apply_permit_inspection_item(item, body):
             item.scheduled_date = None
     if 'details' in body:
         item.details_json = json.dumps(body['details'] or {})
+    if any(k in body for k in ('notify_user_ids', 'notify_user_id', 'notify_creator', 'reminder_offsets')):
+        from inspection_reminders import apply_notification_settings
+        apply_notification_settings(item, body)
 
 
 def _sync_permit_inspection_to_schedule(item):
@@ -9801,7 +9804,13 @@ def api_permits_inspections_directory():
 def api_permits_inspections_list():
     from permits_inspections_persistence import serialize_item, compute_stats, STATUSES
     from florida_permit_catalog import PERMIT_TRADES
+    from inspection_reminders import process_due_reminders, REMINDER_OPTIONS
     project_id = request.args.get('project_id', type=int) or get_current_project_id()
+    try:
+        process_due_reminders(PermitInspectionItem, User, project_id=project_id)
+        db.session.commit()
+    except Exception:
+        db.session.rollback()
     q = PermitInspectionItem.query
     if project_id:
         q = q.filter_by(project_id=int(project_id))
@@ -9815,14 +9824,16 @@ def api_permits_inspections_list():
     if kind:
         q = q.filter_by(record_kind=kind)
     rows = q.order_by(PermitInspectionItem.scheduled_date.asc(), PermitInspectionItem.id.asc()).all()
+    users = User.query.filter_by(status='Active').order_by(User.last_name, User.first_name).all()
     return jsonify({
         'ok': True,
         'items': [serialize_item(r) for r in rows],
         'stats': compute_stats(PermitInspectionItem, project_id),
         'statuses': list(STATUSES),
         'trades': PERMIT_TRADES,
-        'project_id': project_id,
-        'schedule_url': url_for('schedule_page'),
+        'users': [{'id': u.id, 'name': u.full_name, 'email': u.email, 'role': u.role} for u in users],
+        'reminder_options': REMINDER_OPTIONS,
+        'schedule_url': url_for('schedule_page') + (f'?project_id={project_id}' if project_id else ''),
     })
 
 
@@ -9880,6 +9891,7 @@ def api_permits_inspections_from_template():
 @login_required
 def api_permits_inspections_create():
     from permits_inspections_persistence import serialize_item
+    from inspection_reminders import notify_scheduled
     body = request.get_json(silent=True) or {}
     project_id = body.get('project_id') or get_current_project_id()
     title = (body.get('title') or '').strip()
@@ -9893,6 +9905,12 @@ def api_permits_inspections_create():
     )
     _apply_permit_inspection_item(item, body)
     db.session.add(item)
+    db.session.flush()
+    if body.get('send_notifications', True) and item.scheduled_date:
+        try:
+            notify_scheduled(item, User, actor_id=current_user.id)
+        except Exception:
+            pass
     db.session.commit()
     if body.get('push_to_schedule') and item.scheduled_date:
         try:
@@ -9906,10 +9924,23 @@ def api_permits_inspections_create():
 @login_required
 def api_permits_inspections_update(item_id):
     from permits_inspections_persistence import serialize_item
+    from inspection_reminders import notify_scheduled, clear_reminders_sent
     item = PermitInspectionItem.query.get_or_404(item_id)
     body = request.get_json(silent=True) or {}
+    old_date = item.scheduled_date
+    old_time = item.scheduled_time
     _apply_permit_inspection_item(item, body)
     item.updated_at = datetime.utcnow()
+    schedule_changed = (
+        item.scheduled_date != old_date or (item.scheduled_time or '') != (old_time or '')
+    )
+    if schedule_changed:
+        clear_reminders_sent(item)
+    if body.get('send_notifications', schedule_changed) and item.scheduled_date:
+        try:
+            notify_scheduled(item, User, actor_id=current_user.id)
+        except Exception:
+            pass
     db.session.commit()
     if body.get('push_to_schedule') or item.schedule_task_id:
         try:
@@ -9917,6 +9948,21 @@ def api_permits_inspections_update(item_id):
         except Exception:
             pass
     return jsonify({'ok': True, 'item': serialize_item(item)})
+
+
+@app.route('/api/permits-inspections/<int:item_id>/notify', methods=['POST'])
+@login_required
+def api_permits_inspections_notify(item_id):
+    from permits_inspections_persistence import serialize_item
+    from inspection_reminders import notify_manual
+    item = PermitInspectionItem.query.get_or_404(item_id)
+    body = request.get_json(silent=True) or {}
+    user_ids = body.get('notify_user_ids')
+    if user_ids is not None:
+        user_ids = [int(x) for x in user_ids if x]
+    targets = notify_manual(item, User, actor_id=current_user.id, user_ids=user_ids)
+    db.session.commit()
+    return jsonify({'ok': True, 'notified': len(targets), 'item': serialize_item(item)})
 
 
 @app.route('/api/permits-inspections/<int:item_id>', methods=['DELETE'])

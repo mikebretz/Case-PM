@@ -185,6 +185,22 @@ window.CASEPM_PERMITS_CTX = {
     </div>
     <div><label class="block text-xs text-zinc-400 mb-1">Result notes</label><textarea id="piResultNotes" rows="2" class="pi-input resize-y"></textarea></div>
     <div><label class="block text-xs text-zinc-400 mb-1">Corrections / re-inspection notes</label><textarea id="piCorrectionNotes" rows="2" class="pi-input resize-y"></textarea></div>
+    <div class="border border-zinc-700 rounded-md p-3 space-y-3 bg-zinc-950/50">
+      <div class="flex items-center justify-between gap-2">
+        <div class="text-xs text-zinc-500 uppercase tracking-wide">Reminders &amp; notifications</div>
+        <button type="button" id="piNotifyNow" class="text-xs px-2 py-1 rounded bg-sky-900/50 text-sky-200 border border-sky-700/50 hover:bg-sky-800/60 hidden">Send reminder now</button>
+      </div>
+      <label class="flex items-center gap-2 text-sm cursor-pointer"><input type="checkbox" id="piNotifyCreator" class="accent-emerald-500" checked> <span>Notify me when saved</span></label>
+      <div>
+        <label class="block text-xs text-zinc-400 mb-1">Also notify team members</label>
+        <select id="piNotifyUsers" class="pi-input" multiple size="4"></select>
+        <p class="text-[10px] text-zinc-500 mt-1">Hold Ctrl/Cmd to select foreman, superintendent, PM, etc. They receive internal messages in Email › Internal.</p>
+      </div>
+      <div>
+        <label class="block text-xs text-zinc-400 mb-2">Automatic reminders</label>
+        <div id="piReminderOffsets" class="grid grid-cols-1 sm:grid-cols-2 gap-2 text-sm"></div>
+      </div>
+    </div>
     <label class="flex items-center gap-2 text-sm cursor-pointer"><input type="checkbox" id="piPush" class="accent-sky-500"> <span>Push to Schedule as milestone / line item</span> <span id="piSyncedBadge" class="pi-chip bg-violet-500/15 text-violet-400 hidden">On schedule</span></label>
   </div>
   <div class="px-5 py-3 border-t border-zinc-700 flex items-center justify-between">
