@@ -138,20 +138,45 @@
 
 .docs-item {
   position: relative;
-  border: 1px solid #3f3f46;
-  border-radius: 0.375rem;
-  background: #18181b;
-  padding: 0.65rem 0.45rem;
+  border: 1px solid #27272a;
+  border-radius: 0.5rem;
+  background: #141416;
+  padding: 0.7rem 0.5rem 0.55rem;
   text-align: center;
   cursor: pointer;
-  transition: border-color 0.15s, background 0.15s;
+  transition: border-color 0.15s, background 0.15s, box-shadow 0.15s;
 }
-.docs-item:hover { border-color: #52525b; background: #27272a; }
-.docs-item.selected { border-color: #38bdf8; background: rgba(12, 74, 110, 0.35); }
+.docs-item:hover {
+  border-color: #3f3f46;
+  background: #1a1a1e;
+  box-shadow: 0 1px 0 rgba(255, 255, 255, 0.04);
+}
+.docs-item.selected {
+  border-color: #38bdf8;
+  background: rgba(12, 74, 110, 0.28);
+  box-shadow: 0 0 0 1px rgba(56, 189, 248, 0.25);
+}
 .docs-item.dragging { opacity: 0.45; }
 .docs-item.drop-target { outline: 2px dashed #34d399; background: rgba(52, 211, 153, 0.08); }
 
-.docs-item-icon { font-size: var(--docs-icon-size, 1.85rem); margin-bottom: 0.3rem; color: #fbbf24; }
+.docs-item-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: var(--docs-icon-size, 2.75rem);
+  height: var(--docs-icon-size, 2.75rem);
+  margin: 0 auto 0.4rem;
+  font-size: calc(var(--docs-icon-size, 2.75rem) * 0.68);
+  line-height: 1;
+}
+.docs-item-icon-folder { color: #fbbf24; }
+.docs-item-icon-file.file-pdf { color: #f87171; }
+.docs-item-icon-file.file-img { color: #a78bfa; }
+.docs-item-icon-file.file-doc { color: #38bdf8; }
+.docs-item-icon-file:not(.file-pdf):not(.file-img):not(.file-doc) { color: #a1a1aa; }
+
+/* Legacy thumb blocks (unused in grid; kept for any older markup) */
+.docs-item-icon.legacy { font-size: var(--docs-icon-size, 1.85rem); margin-bottom: 0.3rem; color: #fbbf24; }
 .docs-item.folder .docs-item-icon { color: #fbbf24; }
 .docs-item.file-pdf .docs-item-icon { color: #f87171; }
 .docs-item.file-img .docs-item-icon { color: #a78bfa; }
@@ -235,10 +260,11 @@
 
 .docs-item-name {
   font-size: 0.72rem;
-  line-height: 1.2;
+  line-height: 1.25;
   word-break: break-word;
+  color: #e4e4e7;
 }
-.docs-item-meta { font-size: 0.6rem; color: #71717a; margin-top: 0.15rem; }
+.docs-item-meta { font-size: 0.6rem; color: #71717a; margin-top: 0.2rem; }
 
 .docs-item-badge {
   position: absolute;

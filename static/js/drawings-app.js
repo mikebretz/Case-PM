@@ -576,12 +576,13 @@
       }
     }
     if (hintEl) {
+      const zoomHint = isDocumentViewer() ? 'Ctrl+scroll to zoom · ' : '';
       if (state.pdfNumPages > 1 && state.pdfViewMode === 'single') {
-        hintEl.textContent = `Page ${state.pdfPage} of ${state.pdfNumPages} · ${meta.hint || 'Drag to pan · scroll to zoom'}`;
+        hintEl.textContent = `${zoomHint}Page ${state.pdfPage} of ${state.pdfNumPages} · ${meta.hint || 'Drag to pan'}`;
       } else if (state.pdfNumPages > 1 && state.pdfViewMode === 'continuous') {
-        hintEl.textContent = `${state.pdfNumPages} pages · scroll wheel to browse · Page ${state.pdfPage}`;
+        hintEl.textContent = `${zoomHint}Scroll to browse · Page ${state.pdfPage} of ${state.pdfNumPages}`;
       } else {
-        hintEl.textContent = meta.hint || '';
+        hintEl.textContent = (isDocumentViewer() ? 'Ctrl+scroll to zoom · ' : '') + (meta.hint || '');
       }
     }
   }
@@ -683,6 +684,8 @@
     continuousPageOffsets: [],
     pageGap: 12,
     continuousObserver: null,
+    continuousScrollLock: false,
+    continuousPendingScroll: null,
     renderTask: null,
     drawing: false,
     drawStart: null,
@@ -783,6 +786,8 @@
     state.showPageThumbs = true;
     state.pageThumbCache = {};
     state.continuousPageOffsets = [];
+    state.continuousScrollLock = false;
+    state.continuousPendingScroll = null;
     if (state.continuousObserver) {
       state.continuousObserver.disconnect();
       state.continuousObserver = null;
@@ -809,37 +814,53 @@
   }
 
   function scrollContinuousPageIntoView(pageNum) {
-    document.getElementById(`drawContinuousPage-${pageNum}`)
-      ?.scrollIntoView({ block: 'start', behavior: 'smooth' });
+    const root = document.getElementById('drawContinuousScroller');
+    const el = document.getElementById(`drawContinuousPage-${pageNum}`);
+    if (!root || !el) return;
+    state.continuousScrollLock = true;
+    root.scrollTo({ top: Math.max(0, el.offsetTop - 8), behavior: 'smooth' });
+    clearTimeout(scrollContinuousPageIntoView._unlock);
+    scrollContinuousPageIntoView._unlock = setTimeout(() => {
+      state.continuousScrollLock = false;
+    }, 450);
+  }
+
+  function updateContinuousPageFromScroll() {
+    if (state.continuousScrollLock) return;
+    const root = document.getElementById('drawContinuousScroller');
+    const pages = document.querySelectorAll('.draw-continuous-page');
+    if (!root || !pages.length) return;
+    const centerY = root.scrollTop + root.clientHeight * 0.35;
+    let best = state.pdfPage;
+    let bestDist = Infinity;
+    pages.forEach(el => {
+      const mid = el.offsetTop + el.offsetHeight / 2;
+      const dist = Math.abs(mid - centerY);
+      if (dist < bestDist) {
+        bestDist = dist;
+        best = parseInt(el.dataset.pdfPage, 10);
+      }
+    });
+    if (best && best !== state.pdfPage) {
+      state.pdfPage = best;
+      updatePageNavChrome();
+    }
+  }
+
+  function bindContinuousScrollSync() {
+    const root = document.getElementById('drawContinuousScroller');
+    if (!root || root._scrollSyncBound) return;
+    root._scrollSyncBound = true;
+    root.addEventListener('scroll', () => {
+      if (state.continuousScrollLock) return;
+      clearTimeout(bindContinuousScrollSync._t);
+      bindContinuousScrollSync._t = setTimeout(updateContinuousPageFromScroll, 80);
+    }, { passive: true });
   }
 
   function syncContinuousPageObserver() {
-    if (state.continuousObserver) {
-      state.continuousObserver.disconnect();
-      state.continuousObserver = null;
-    }
-    const root = document.getElementById('drawContinuousScroller');
-    const container = document.getElementById('drawContinuousPages');
-    if (!root || !container) return;
-    const pages = container.querySelectorAll('.draw-continuous-page');
-    if (!pages.length) return;
-    state.continuousObserver = new IntersectionObserver((entries) => {
-      let best = null;
-      let bestRatio = 0;
-      entries.forEach(entry => {
-        if (entry.isIntersecting && entry.intersectionRatio >= bestRatio) {
-          bestRatio = entry.intersectionRatio;
-          best = entry.target;
-        }
-      });
-      if (!best || bestRatio < 0.2) return;
-      const p = parseInt(best.dataset.pdfPage, 10);
-      if (p && p !== state.pdfPage) {
-        state.pdfPage = p;
-        updatePageNavChrome();
-      }
-    }, { root, threshold: [0.2, 0.35, 0.5, 0.65, 0.8] });
-    pages.forEach(el => state.continuousObserver.observe(el));
+    bindContinuousScrollSync();
+    updateContinuousPageFromScroll();
   }
 
   function updatePageNavChrome() {
@@ -948,6 +969,10 @@
       state.compareOverlayActive = false;
       document.getElementById('drawDiffCanvas')?.classList.add('hidden');
       clearSearchHighlight();
+      state.viewScale = 1;
+      state.panX = 0;
+      state.panY = 0;
+      state.continuousPendingScroll = state.pdfPage || 1;
     }
     setViewerLayoutMode();
     updatePageNavChrome();
@@ -2542,6 +2567,8 @@
     }
     state.documentViewerPage = true;
     state.viewerContext = 'document';
+    document.getElementById('mainContent')?.classList.add('main-content-doc-viewer');
+    document.body.classList.add('doc-viewer-active');
     if (global.pdfjsLib) {
       pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
     }
@@ -2753,7 +2780,10 @@
   }
 
   function applyViewTransform() {
-    const stage = document.getElementById('drawViewerStage');
+    const continuous = state.pdfViewMode === 'continuous' && state.pdfNumPages > 1;
+    const stage = continuous
+      ? document.getElementById('drawContinuousStage')
+      : document.getElementById('drawViewerStage');
     if (!stage) return;
     stage.style.transform = `translate(${state.panX}px, ${state.panY}px) scale(${state.viewScale})`;
   }
@@ -3331,7 +3361,12 @@
     state.baseCanvasSize = { w: targetW, h: curUnscaled.height * curScale };
 
     syncContinuousPageObserver();
-    requestAnimationFrame(() => scrollContinuousPageIntoView(state.pdfPage || 1));
+    if (state.continuousPendingScroll) {
+      const p = state.continuousPendingScroll;
+      state.continuousPendingScroll = null;
+      requestAnimationFrame(() => scrollContinuousPageIntoView(p));
+    }
+    applyViewTransform();
     updatePageNavChrome();
   }
 
@@ -4233,13 +4268,25 @@
 
   function onViewerWheel(e) {
     if (!viewerIsOpen()) return;
-    if (state.pdfViewMode === 'continuous' && state.pdfNumPages > 1) return;
+    const isContinuous = state.pdfViewMode === 'continuous' && state.pdfNumPages > 1;
+    const zoomIntent = e.ctrlKey || e.metaKey;
+
+    if (isDocumentViewer()) {
+      if (!zoomIntent) {
+        if (isContinuous) return;
+        return;
+      }
+    } else if (isContinuous) {
+      return;
+    }
+
     if (!state.openDrawing && !state.openDocument) return;
     e.preventDefault();
     const wrap = document.getElementById('drawViewerWrap');
-    const rect = wrap.getBoundingClientRect();
+    const scrollRoot = isContinuous ? document.getElementById('drawContinuousScroller') : wrap;
+    const rect = (scrollRoot || wrap).getBoundingClientRect();
     const mx = e.clientX - rect.left;
-    const my = e.clientY - rect.top;
+    const my = e.clientY - rect.top + (isContinuous ? scrollRoot.scrollTop : 0);
     const factor = e.deltaY < 0 ? 1.08 : 1 / 1.08;
     const pending = state.wheelPending || { mx, my, factor: 1 };
     pending.mx = mx;
@@ -4258,7 +4305,7 @@
       state.panY = p.my - ((p.my - state.panY) * newScale) / oldScale;
       state.viewScale = newScale;
       applyViewTransform();
-      schedulePdfQualityRerender();
+      if (!isContinuous) schedulePdfQualityRerender();
     });
   }
 
