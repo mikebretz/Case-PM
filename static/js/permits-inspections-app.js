@@ -27,6 +27,7 @@
 
   const state = {
     items: [], stats: {}, statuses: [], trades: [], catalog: null,
+    users: [], reminderOptions: [],
     view: 'cal', panel: 'tracker', editId: null, month: new Date(),
     selectedJurisdiction: null, dirResults: [],
   };
@@ -57,14 +58,23 @@
       state.stats = j.stats || {};
       state.statuses = j.statuses || [];
       state.trades = j.trades || state.catalog?.trades || [];
+      state.users = j.users || [];
+      state.reminderOptions = j.reminder_options || [];
       ctx.scheduleUrl = j.schedule_url || ctx.scheduleUrl;
       const badge = el('piProjectBadge');
       if (badge) badge.textContent = ctx.projectName || 'Select a project';
       populateFilters();
+      renderReminderOptions();
+      populateNotifyUsers();
       renderStats();
       render();
       el('piUpdatedAt').textContent = `Updated ${new Date().toLocaleTimeString()}`;
       el('piStatusText').textContent = `${state.items.length} item(s) · ${state.stats.synced || 0} on schedule · ${state.stats.passed || 0} passed`;
+      const params = new URLSearchParams(window.location.search);
+      if (params.get('open') === '1' && params.get('item_id')) {
+        const id = parseInt(params.get('item_id'), 10);
+        if (id) openEdit(id);
+      }
     } catch (e) { el('piStatusText').textContent = 'Error: ' + e.message; }
   }
 
@@ -245,6 +255,54 @@
     render();
   }
 
+  function populateNotifyUsers() {
+    const sel = el('piNotifyUsers');
+    if (!sel) return;
+    const selected = new Set([...(sel.selectedOptions || [])].map(o => o.value));
+    sel.innerHTML = state.users.map((u) =>
+      `<option value="${u.id}">${esc(u.name)}${u.role ? ` (${esc(u.role)})` : ''}</option>`
+    ).join('');
+    [...sel.options].forEach((o) => { o.selected = selected.has(o.value); });
+  }
+
+  function renderReminderOptions() {
+    const host = el('piReminderOffsets');
+    if (!host) return;
+    const opts = state.reminderOptions.length ? state.reminderOptions : [
+      { key: 'morning_of', label: 'Morning of (8:00 AM)' },
+      { key: '1d', label: '1 day before' },
+      { key: '1h', label: '1 hour before' },
+      { key: '15m', label: '15 minutes before' },
+    ];
+    host.innerHTML = opts.map((o) => `
+      <label class="flex items-center gap-2 cursor-pointer bg-zinc-900 border border-zinc-800 rounded px-2 py-1.5">
+        <input type="checkbox" class="pi-reminder-offset accent-emerald-500" value="${esc(o.key)}" ${['morning_of', '1h'].includes(o.key) ? 'checked' : ''}>
+        <span>${esc(o.label)}</span>
+      </label>`).join('');
+  }
+
+  function getSelectedReminderOffsets() {
+    return [...document.querySelectorAll('.pi-reminder-offset:checked')].map((n) => n.value);
+  }
+
+  function setReminderOffsets(offsets) {
+    const set = new Set(offsets || []);
+    document.querySelectorAll('.pi-reminder-offset').forEach((n) => { n.checked = set.has(n.value); });
+  }
+
+  function getSelectedNotifyUserIds() {
+    const sel = el('piNotifyUsers');
+    if (!sel) return [];
+    return [...sel.selectedOptions].map((o) => parseInt(o.value, 10)).filter(Boolean);
+  }
+
+  function setSelectedNotifyUserIds(ids) {
+    const sel = el('piNotifyUsers');
+    if (!sel) return;
+    const set = new Set((ids || []).map(String));
+    [...sel.options].forEach((o) => { o.selected = set.has(o.value); });
+  }
+
   function resetModal() {
     state.editId = null;
     el('piModalTitle').textContent = 'New Permit / Inspection';
@@ -263,6 +321,10 @@
     el('piPush').checked = false;
     el('piSyncedBadge').classList.add('hidden');
     el('piDelete').classList.add('hidden');
+    el('piNotifyNow')?.classList.add('hidden');
+    if (el('piNotifyCreator')) el('piNotifyCreator').checked = true;
+    setSelectedNotifyUserIds([]);
+    setReminderOffsets(['morning_of', '1h']);
     if (state.selectedJurisdiction) {
       el('piJurisdictionName').value = state.selectedJurisdiction.display || state.selectedJurisdiction.name || '';
       el('piAuthorityName').value = state.selectedJurisdiction.building_dept || '';
@@ -306,6 +368,10 @@
     el('piPush').checked = it.synced_to_schedule;
     el('piSyncedBadge').classList.toggle('hidden', !it.synced_to_schedule);
     el('piDelete').classList.remove('hidden');
+    el('piNotifyNow')?.classList.remove('hidden');
+    if (el('piNotifyCreator')) el('piNotifyCreator').checked = it.notify_creator !== false;
+    setSelectedNotifyUserIds(it.notify_user_ids || []);
+    setReminderOffsets(it.reminder_offsets || ['morning_of', '1h']);
     el('piModal').showModal();
   }
 
@@ -342,7 +408,28 @@
       result_notes: el('piResultNotes').value.trim(),
       correction_notes: el('piCorrectionNotes').value.trim(),
       push_to_schedule: el('piPush').checked,
+      notify_creator: el('piNotifyCreator')?.checked !== false,
+      notify_user_ids: getSelectedNotifyUserIds(),
+      reminder_offsets: getSelectedReminderOffsets(),
+      send_notifications: true,
     };
+  }
+
+  async function notifyNow() {
+    if (!state.editId) return;
+    const btn = el('piNotifyNow');
+    if (btn) { btn.disabled = true; btn.textContent = 'Sending…'; }
+    try {
+      const j = await api(`/api/permits-inspections/${state.editId}/notify`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ notify_user_ids: getSelectedNotifyUserIds() }),
+      });
+      if (global.showToast) global.showToast(`Reminder sent to ${j.notified || 0} person(s)`);
+    } catch (e) { alert(e.message); }
+    finally {
+      if (btn) { btn.disabled = false; btn.textContent = 'Send reminder now'; }
+    }
   }
 
   async function save() {
@@ -444,6 +531,7 @@
     el('piCancel').addEventListener('click', () => el('piModal').close());
     el('piSave').addEventListener('click', save);
     el('piDelete').addEventListener('click', del);
+    el('piNotifyNow')?.addEventListener('click', notifyNow);
     ['piSearch', 'piStatusFilter', 'piTradeFilter', 'piKindFilter'].forEach((id) => {
       const node = el(id);
       if (!node) return;

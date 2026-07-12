@@ -27,7 +27,7 @@ def _d(dt):
 
 
 def serialize_item(item, User=None):
-    return {
+    data = {
         'id': item.id,
         'project_id': item.project_id,
         'item_number': item.item_number,
@@ -59,6 +59,12 @@ def serialize_item(item, User=None):
         'created_at': item.created_at.isoformat() if item.created_at else None,
         'updated_at': item.updated_at.isoformat() if item.updated_at else None,
     }
+    try:
+        from inspection_reminders import serialize_notification_fields
+        data.update(serialize_notification_fields(item))
+    except Exception:
+        pass
+    return data
 
 
 def _parse_json(raw, default):
