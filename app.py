@@ -11067,7 +11067,16 @@ def api_run_program_backup_status(job_id):
 def api_list_program_backups():
     from backup_service import list_backups
     from program_settings_persistence import load_backup_settings
-    return jsonify({'ok': True, 'backups': list_backups(load_backup_settings())})
+    try:
+        backups = list_backups(load_backup_settings())
+        return jsonify({'ok': True, 'backups': backups})
+    except Exception as exc:
+        app.logger.exception('Failed to list program backups')
+        return jsonify({
+            'ok': False,
+            'error': str(exc) or 'Unable to list backups',
+            'backups': [],
+        }), 200
 
 
 def _migrate_program_schemas():

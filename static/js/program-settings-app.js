@@ -198,7 +198,14 @@
       const mirror = (b.cloud?.local_mirror_path || '').trim();
       mirrorPathEl.textContent = mirror || (b.cloud?.enabled ? 'Enabled — path missing' : 'Not configured');
     }
-    await refreshBackupList();
+    try {
+      await refreshBackupList();
+    } catch (err) {
+      const host = document.getElementById('backupHistoryList');
+      if (host) {
+        host.innerHTML = `<div class="text-sm text-red-400 py-4 text-center">Could not load backup history: ${escapeHtml(err.message || 'Unknown error')}</div>`;
+      }
+    }
   }
 
   async function saveBackupForm() {
@@ -301,8 +308,17 @@
   async function refreshBackupList() {
     const host = document.getElementById('backupHistoryList');
     if (!host) return;
-    const { backups } = await api('/api/program-settings/backup/list');
-    renderBackupHistory(backups);
+    try {
+      const json = await api('/api/program-settings/backup/list');
+      if (json.ok === false && json.error) {
+        host.innerHTML = `<div class="text-sm text-amber-400 py-4 text-center">${escapeHtml(json.error)}</div>`;
+        return;
+      }
+      renderBackupHistory(json.backups || []);
+    } catch (err) {
+      host.innerHTML = `<div class="text-sm text-red-400 py-4 text-center">Could not load backup history: ${escapeHtml(err.message || 'Unknown error')}</div>`;
+      throw err;
+    }
   }
 
   function escapeHtml(value) {
