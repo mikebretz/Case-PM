@@ -141,11 +141,15 @@ def _resolve_company(db, Company, company_name: str | None, company_id: int | No
 
 
 def generate_temp_password(length: int = 14) -> str:
-    alphabet = string.ascii_letters + string.digits + '!@#$%&*'
+    from password_policy import MIN_LENGTH
+    length = max(length, MIN_LENGTH)
+    special = '!@#$%&*'
+    alphabet = string.ascii_letters + string.digits + special
     while True:
         pwd = ''.join(secrets.choice(alphabet) for _ in range(length))
         if (any(c.islower() for c in pwd) and any(c.isupper() for c in pwd)
-                and any(c.isdigit() for c in pwd)):
+                and any(c.isdigit() for c in pwd)
+                and any(c in special for c in pwd)):
             return pwd
 
 
