@@ -1,6 +1,7 @@
 {% extends "base.html" %}
 
 {% block content %}
+<script src="{{ url_for('static', filename='js/user-management-server.js') }}"></script>
 <script src="{{ url_for('static', filename='js/casepm-esign.js') }}"></script>
 <script src="{{ url_for('static', filename='js/user-permissions-ui.js') }}"></script>
 <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
@@ -86,6 +87,7 @@
         <option value="Owner">Owner</option>
         <option value="Contractor Accounting">Contractor Accounting</option>
         <option value="Company User">Company User</option>
+        <option value="Viewer">Viewer</option>
     </select>
 
     <select id="statusFilter" class="bg-zinc-900 border border-zinc-700 rounded-md px-4 py-2.5 text-sm focus:border-emerald-600" onchange="filterUsers()">
@@ -377,19 +379,19 @@
 
 <script>
     // ==================== DATA & STATE ====================
-    let users = JSON.parse(localStorage.getItem('users')) || [];
-    let companies = JSON.parse(localStorage.getItem('casepm_companies')) || [];
+    let users = {{ server_users_for_js|tojson }};
+    let companies = [];
     let currentSignatureDataURL = null;
     let currentCertificateFileName = null;
     let currentEditingUserId = null;
-    let phoneNumbers = []; // For dynamic phone rows
-    let userAuditLog = JSON.parse(localStorage.getItem('userAuditLog')) || [];
+    let phoneNumbers = [];
+    let userAuditLog = [];
 
     const CASEPM_CURRENT_USER = {{ current_user_payload|tojson }};
     const CASEPM_SERVER_USERS = {{ server_users_for_js|tojson }};
     const CASEPM_PERMISSIONS_CATALOG = {{ permissions_catalog|tojson }};
     const CASEPM_IS_ADMIN = true;
-    let currentUserEmail = CASEPM_CURRENT_USER.email || "michael.bretz@casepm.com";
+    let currentUserEmail = CASEPM_CURRENT_USER.email || "";
 
     function resolveServerUserId(localUser) {
         if (!localUser) return null;
@@ -419,12 +421,11 @@
             timestamp: new Date().toISOString(),
             action: action,
             targetUserId: targetUserId,
-            performedBy: "Michael Bretz",
+            performedBy: CASEPM_CURRENT_USER.full_name || CASEPM_CURRENT_USER.email,
             details: details
         };
         userAuditLog.unshift(entry);
-        if (userAuditLog.length > 2000) userAuditLog.length = 2000;
-        localStorage.setItem('userAuditLog', JSON.stringify(userAuditLog));
+        if (userAuditLog.length > 200) userAuditLog.length = 200;
     }
 
     const modules = []; // legacy — matrix uses permissions_catalog
@@ -489,16 +490,9 @@
     function populateCompanyDropdown(selectedCompanyName = '') {
         const select = document.getElementById('companySelect');
         if (!select) return;
-
-        // Always read fresh from localStorage in case Companies page was updated in another tab
-        const freshCompanies = JSON.parse(localStorage.getItem('casepm_companies')) || [];
-        companies = freshCompanies; // keep global in sync
-
         select.innerHTML = '<option value="">-- No Company / Internal --</option>';
-
-        freshCompanies.forEach(company => {
-            // Companies page primarily uses "company_name"
-            const name = company.company_name || company.name || company.companyName || company.Company_Name || '';
+        companies.forEach(company => {
+            const name = company.company_name || company.name || company.companyName || '';
             if (!name) return;
             const opt = document.createElement('option');
             opt.value = name;
@@ -783,17 +777,26 @@
     }
 
     // ==================== PASSWORD RESET ====================
-    function resetUserPassword() {
-        const newPass = 'Temp' + Math.random().toString(36).slice(2, 10) + '!';
+    async function resetUserPassword() {
+        const userId = parseInt(document.getElementById('userId')?.value || '0', 10);
         const passInput = document.getElementById('tempPassword');
-        if (passInput) passInput.value = newPass;
-        
         const note = document.getElementById('passwordResetNote');
-        if (note) note.classList.remove('hidden');
-        
-        showCenteredAlert('New temporary password generated: ' + newPass + '\n\nUser must change it on first login. (Demo only - not stored securely yet)', 'warning');
-        
-        // In real system: call backend to set temp password and force change flag
+        if (!userId) {
+            const newPass = 'Temp' + Math.random().toString(36).slice(2, 10) + '!';
+            if (passInput) passInput.value = newPass;
+            if (note) note.classList.remove('hidden');
+            showCenteredAlert('Temporary password set for new user. It will be saved when you click Save User.', 'success');
+            return;
+        }
+        try {
+            const result = await CasePMUserMgmtServer.resetPassword(userId);
+            if (passInput) passInput.value = result.temp_password;
+            if (note) note.classList.remove('hidden');
+            showCenteredAlert(`Password reset. Temporary password: ${result.temp_password}\n\nUser must change it on next login.`, 'warning');
+            logUserAudit('PASSWORD_RESET', userId, {});
+        } catch (err) {
+            showCenteredAlert(err.message || 'Password reset failed', 'error');
+        }
     }
 
     // ==================== ACCESS TOGGLE SYNC ====================
@@ -936,14 +939,19 @@
     }
 
     // ==================== DELETE ====================
-    function deleteUser(id) {
+    async function deleteUser(id) {
         if (!confirm('Delete this user permanently?')) return;
         const deletedUser = users.find(u => u.id == id);
-        users = users.filter(u => u.id != id);
-        localStorage.setItem('users', JSON.stringify(users));
-        logUserAudit('USER_DELETED', id, { name: deletedUser ? `${deletedUser.firstName} ${deletedUser.lastName}` : 'Unknown' });
-        renderUsersTable();
-        showCenteredAlert('User deleted.', 'success');
+        const serverId = resolveServerUserId(deletedUser) || id;
+        try {
+            await CasePMUserMgmtServer.deleteUserById(serverId);
+            users = users.filter(u => u.id != id);
+            logUserAudit('USER_DELETED', id, { name: deletedUser ? `${deletedUser.firstName} ${deletedUser.lastName}` : 'Unknown' });
+            renderUsersTable();
+            showCenteredAlert('User deleted.', 'success');
+        } catch (err) {
+            showCenteredAlert(err.message || 'Delete failed', 'error');
+        }
     }
 
     // ==================== SAVE USER (FIXED + VALIDATION) ====================
@@ -1008,13 +1016,12 @@
                 oldUserForLog = users.find(u => u.id == id);
             }
 
-            const userData = {
-                id: id ? parseInt(id) : Date.now(),
+            const formPayload = {
                 firstName: document.getElementById('firstName').value.trim(),
                 lastName: document.getElementById('lastName').value.trim(),
                 email: email,
                 jobTitle: document.getElementById('jobTitle').value.trim(),
-                role: document.getElementById('role') ? document.getElementById('role').value : 'Company User',
+                role: document.getElementById('role') ? document.getElementById('role').value : 'Viewer',
                 company: companyName,
                 address: document.getElementById('address').value.trim(),
                 phones: phones,
@@ -1022,107 +1029,56 @@
                 accessEnabled: accessEnabled,
                 twoFactorEnabled: document.getElementById('twoFactorEnabled') ? document.getElementById('twoFactorEnabled').checked : false,
                 permissions: permissions,
-                permissions_v2: permissions,
-                profileImage: document.getElementById('profileImg').src,
                 notes: document.getElementById('notes').value.trim(),
-                lastUpdated: new Date().toISOString()
             };
-
-            // Signatures are NEVER saved via admin Save User — only via saveSignatureToServer() by the user themselves
-            if (oldUserForLog) {
-                userData.signatureDataURL = oldUserForLog.signatureDataURL;
-                userData.signature_hash = oldUserForLog.signature_hash;
-                userData.certificateFileName = oldUserForLog.certificateFileName;
-            }
-
-            // Password handling (never store plain if possible, but for demo we store temp only if newly set)
             const tempPass = document.getElementById('tempPassword').value.trim();
-            if (tempPass) {
-                userData.tempPassword = tempPass; // In real app: hash + force change flag
-            }
+            if (tempPass) formPayload.tempPassword = tempPass;
 
-            const existingIndex = users.findIndex(u => u.id == userData.id);
-            if (existingIndex > -1) {
-                users[existingIndex] = { ...users[existingIndex], ...userData };
+            const apiPayload = CasePMUserMgmtServer.buildUserPayload(formPayload);
+            let saved;
+            if (id) {
+                const serverId = resolveServerUserId(oldUserForLog) || parseInt(id, 10);
+                saved = await CasePMUserMgmtServer.updateUser(serverId, apiPayload);
             } else {
-                users.push(userData);
+                saved = await CasePMUserMgmtServer.createUser(apiPayload);
             }
 
-            // === COMPANIES SYNC: Add/Update contact in selected company ===
-            if (companyName) {
-                syncUserToCompany(userData, companyName);
-            }
-
-            localStorage.setItem('users', JSON.stringify(users));
-
-            const serverId = resolveServerUserId(userData);
-            if (serverId && permissions && permissions.version === 2 && typeof CasePMPermissionsUI !== 'undefined') {
+            const savedUser = saved.user || saved;
+            if (permissions && permissions.version === 2 && savedUser.id && typeof CasePMPermissionsUI !== 'undefined') {
                 try {
-                    await CasePMPermissionsUI.saveForUser(serverId, permissions);
+                    await CasePMPermissionsUI.saveForUser(savedUser.id, permissions);
                 } catch (permErr) {
                     console.warn('Permissions server sync:', permErr);
-                    showCenteredAlert('User saved locally but permissions sync failed: ' + permErr.message, 'warning');
                 }
             }
 
-            // Log the action with DETAILED field-by-field changes (old → new)
+            const existingIndex = users.findIndex(u => u.id == (id || savedUser.id));
+            if (existingIndex > -1) {
+                users[existingIndex] = { ...users[existingIndex], ...savedUser };
+            } else {
+                users.push(savedUser);
+            }
+
             const actionType = id ? 'USER_EDITED' : 'USER_CREATED';
             let logDetails = { company: companyName || 'None' };
-
             if (id && oldUserForLog) {
-                const changes = {};
-                const fieldsToCheck = ['firstName', 'lastName', 'email', 'jobTitle', 'role', 'company', 'address', 'status', 'notes'];
-                
-                fieldsToCheck.forEach(field => {
-                    const oldVal = oldUserForLog[field] != null ? String(oldUserForLog[field]) : '';
-                    const newVal = userData[field] != null ? String(userData[field]) : '';
-                    if (oldVal !== newVal) {
-                        changes[field] = { old: oldVal, new: newVal };
-                    }
-                });
-
-                // Boolean / toggle fields
-                if (oldUserForLog.accessEnabled !== userData.accessEnabled) {
-                    changes.accessEnabled = { old: !!oldUserForLog.accessEnabled, new: !!userData.accessEnabled };
-                }
-                if (oldUserForLog.twoFactorEnabled !== userData.twoFactorEnabled) {
-                    changes.twoFactorEnabled = { old: !!oldUserForLog.twoFactorEnabled, new: !!userData.twoFactorEnabled };
-                }
-
-                // Complex fields - note that they changed (full diff would be too noisy for phones/permissions)
-                const oldPhonesStr = JSON.stringify(oldUserForLog.phones || []);
-                const newPhonesStr = JSON.stringify(userData.phones || []);
-                if (oldPhonesStr !== newPhonesStr) {
-                    changes.phones = 'updated';
-                }
-
-                const oldPermsStr = JSON.stringify(oldUserForLog.permissions || {});
-                const newPermsStr = JSON.stringify(userData.permissions || {});
-                if (oldPermsStr !== newPermsStr) {
-                    changes.permissions = 'updated';
-                }
-
-                if (userData.signatureDataURL && userData.signatureDataURL !== oldUserForLog.signatureDataURL) {
-                    changes.signature = 'updated';
-                }
-                if (userData.certificateFileName && userData.certificateFileName !== oldUserForLog.certificateFileName) {
-                    changes.certificate = userData.certificateFileName;
-                }
-                if (userData.profileImage && userData.profileImage !== oldUserForLog.profileImage) {
-                    changes.profileImage = 'updated';
-                }
-
-                logDetails.changes = changes;
+                logDetails.changes = 'updated';
             } else {
                 logDetails.changedFields = 'New user profile created';
+                if (saved.generated_password || savedUser.generated_password) {
+                    logDetails.temp_password = saved.generated_password || savedUser.generated_password;
+                }
             }
-
-            logUserAudit(actionType, userData.id, logDetails);
+            logUserAudit(actionType, savedUser.id, logDetails);
 
             closeUserModal();
             renderUsersTable();
             updateSummaryCards();
-            showCenteredAlert(id ? 'User updated successfully!' : 'New user created successfully!', 'success');
+            let msg = id ? 'User updated successfully!' : 'New user created successfully!';
+            if (saved.generated_password || savedUser.generated_password) {
+                msg += ` Temporary password: ${saved.generated_password || savedUser.generated_password}`;
+            }
+            showCenteredAlert(msg, 'success');
 
         } catch (err) {
             console.error("Save User Error:", err);
@@ -1667,24 +1623,17 @@
     });
 
     // ==================== INITIALIZATION ====================
-    function initializeUserManagement() {
-        // Seed demo data if empty
-        if (users.length === 0) {
-            users = [
-                { id: 1, firstName: "Michael", lastName: "Bretz", email: "michael.bretz@casepm.com", role: "Admin", status: "Active", accessEnabled: true, twoFactorEnabled: true, jobTitle: "Project Manager", phones: [{type:"Mobile", number:"(412) 555-0101"}], permissions: {} },
-                { id: 2, firstName: "Sarah", lastName: "Chen", email: "sarah.chen@casepm.com", role: "Project Manager", status: "Active", accessEnabled: true, jobTitle: "Senior Estimator", company: "RDJ Construction", permissions: {} },
-                { id: 3, firstName: "David", lastName: "Rodriguez", email: "david@aluminumfab.com", role: "Company User", status: "Active", accessEnabled: true, company: "Aluminum Fabricators Inc", jobTitle: "Project Manager", phones: [{type:"Office", number:"(727) 555-9876"}], permissions: {} }
-            ];
-            localStorage.setItem('users', JSON.stringify(users));
+    async function initializeUserManagement() {
+        try {
+            users = await CasePMUserMgmtServer.fetchUsers();
+        } catch (err) {
+            console.warn('User load:', err);
+            users = CASEPM_SERVER_USERS || [];
         }
-
-        // Load companies if not present (demo)
-        if (companies.length === 0) {
-            companies = [
-                { id: 101, name: "RDJ Construction", address: "4500 Lakeland Blvd, Lakeland, FL 33801", contacts: [] },
-                { id: 102, name: "Aluminum Fabricators Inc", address: "1200 Industrial Way, Tampa, FL 33619", contacts: [] }
-            ];
-            localStorage.setItem('casepm_companies', JSON.stringify(companies));
+        try {
+            companies = await CasePMUserMgmtServer.fetchCompanies();
+        } catch (_) {
+            companies = [];
         }
 
         syncLocalUsersWithServer();
@@ -1692,7 +1641,6 @@
         window.renderUsersTable = renderUsersTable;
         updateSummaryCards();
 
-        // Filter listeners
         const searchInput = document.getElementById('searchInput');
         const roleFilter = document.getElementById('roleFilter');
         const statusFilter = document.getElementById('statusFilter');
@@ -1701,36 +1649,10 @@
         if (statusFilter) statusFilter.addEventListener('change', filterUsers);
         const accessFilter = document.getElementById('accessFilter');
         if (accessFilter) accessFilter.addEventListener('change', filterUsers);
-
-        // Self-auditing: If a user's company is deleted or inactive, turn off their software access automatically
-        runCompanyAccessSelfAudit();
-
-        console.log('%c[Case PM] User Management updated - wider self-profile, company shown (admin-only), notes removed from profile, certificate upload added, status/access filters, self-audit for company changes', 'color:#10b981');
     }
 
     function runCompanyAccessSelfAudit() {
-        const freshCompanies = JSON.parse(localStorage.getItem('casepm_companies')) || [];
-        let changed = false;
-
-        users.forEach(user => {
-            if (user.company && user.accessEnabled !== false) {
-                const company = freshCompanies.find(c => 
-                    (c.company_name || c.name || c.companyName || c.Company_Name) === user.company
-                );
-                const isInactive = !company || company.status === 'Inactive' || company.active === false;
-                if (isInactive) {
-                    user.accessEnabled = false;
-                    if (user.status !== 'Inactive') user.status = 'Inactive';
-                    changed = true;
-                    logUserAudit('ACCESS_AUTO_DISABLED', user.id, { reason: 'Company deleted or set inactive', company: user.company });
-                }
-            }
-        });
-
-        if (changed) {
-            localStorage.setItem('users', JSON.stringify(users));
-            renderUsersTable(); // Refresh main table so Status and Access columns update immediately
-        }
+        // Server accounts use status/accessEnabled — no localStorage company sync required.
     }
 
     window.onload = initializeUserManagement;

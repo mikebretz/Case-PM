@@ -32,12 +32,15 @@ def format_usd_filter(value, cents=True):
     if cents:
         return f'${n:,.2f}'
     return f'${n:,.0f}'
-app.config['SECRET_KEY'] = 'case-pm-ultimate-secret-key-2026'
+app.config['SECRET_KEY'] = os.environ.get('CASEPM_SECRET_KEY') or os.environ.get('SECRET_KEY') or 'case-pm-ultimate-secret-key-2026'
 app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///case_pm.db'
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 app.config['SQLALCHEMY_ENGINE_OPTIONS'] = {
     'connect_args': {'timeout': 60},
 }
+
+from access_control import configure_app_security
+configure_app_security(app)
 
 from db_sqlite import commit_with_retry, register_sqlite_pragmas
 register_sqlite_pragmas()
@@ -132,6 +135,18 @@ def developer_required(f):
     return decorated_function
 
 
+def users_module_required(f):
+    """User management — Admin or users module admin permission."""
+    @wraps(f)
+    def decorated_function(*args, **kwargs):
+        from access_control import users_module_admin
+        if not current_user.is_authenticated or not users_module_admin(current_user):
+            flash("You do not have permission to manage users.", "error")
+            return redirect(url_for('dashboard'))
+        return f(*args, **kwargs)
+    return decorated_function
+
+
 def _developer_unlock_bypass():
     from developer_tools import developer_unlock_active
     return developer_unlock_active()
@@ -198,6 +213,19 @@ def _migrate_user_signature_schema():
 
 
 @app.before_request
+def _guard_api_module_access():
+    if not current_user.is_authenticated:
+        return
+    try:
+        from access_control import guard_api_request
+        blocked = guard_api_request(current_user)
+        if blocked is not None:
+            return blocked
+    except Exception:
+        return
+
+
+@app.before_request
 def _guard_module_route_access():
     if not current_user.is_authenticated:
         return
@@ -214,7 +242,19 @@ def _guard_module_route_access():
     except Exception:
         pass
     try:
+        from access_control import FINANCIAL_MODULES, user_global_flags
         from case_workflow import user_has_module_access
+        flags = user_global_flags(current_user)
+        if flags.get('hide_financials') and module_key in FINANCIAL_MODULES:
+            flash('Financial modules are not available for your account.', 'error')
+            return redirect(url_for('dashboard'))
+        if flags.get('client_portal_only') and module_key in (
+            'budget', 'forecast', 'commitments', 'users', 'program_settings', 'audit_log',
+            'companies', 'safety', 'daily_log', 'punch_list', 'inspections', 'deliveries',
+            'meeting_minutes', 'weekly_report', 'photos',
+        ):
+            flash('Client portal access only — module not available.', 'error')
+            return redirect(url_for('dashboard'))
         if not user_has_module_access(current_user, module_key, 'view'):
             if request.path.startswith('/api/'):
                 return jsonify({'error': 'You do not have permission to access this module.'}), 403
@@ -303,6 +343,11 @@ def _bootstrap_user_schema(db):
         })
     except Exception as exc:
         print(f'User profile schema warning: {exc}')
+    try:
+        from user_management_service import ensure_user_admin_schema
+        ensure_user_admin_schema(db)
+    except Exception as exc:
+        print(f'User admin schema warning: {exc}')
 
 
 # ==================== USER MODEL ====================
@@ -330,6 +375,9 @@ class User(db.Model, UserMixin):
     signature_set_at = db.Column(db.DateTime)
     signature_audit_json = db.Column(db.Text)
     certificate_meta_json = db.Column(db.Text)
+    phones_json = db.Column(db.Text)
+    notes = db.Column(db.Text)
+    access_enabled = db.Column(db.Boolean, default=True)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     last_login = db.Column(db.DateTime)
 
@@ -602,17 +650,22 @@ def inject_developer_flag():
         dev = False
         unlock = False
     is_admin = getattr(current_user, 'role', None) == 'Admin' or dev
+    flags = {'hide_financials': False, 'client_portal_only': False}
     try:
+        from access_control import FINANCIAL_MODULES, user_global_flags
         from case_workflow import user_has_module_access
         from permissions_catalog import all_module_keys
+        flags = user_global_flags(current_user)
         def can_access_module(module_key, min_access='view'):
             if is_admin:
                 return True
+            if flags.get('hide_financials') and module_key in FINANCIAL_MODULES:
+                return False
             return user_has_module_access(current_user, module_key, min_access)
         allowed_modules = (
             {k: True for k in all_module_keys()}
             if is_admin else
-            {k: user_has_module_access(current_user, k, 'view') for k in all_module_keys()}
+            {k: can_access_module(k, 'view') for k in all_module_keys()}
         )
     except Exception:
         def can_access_module(module_key, min_access='view'):
@@ -625,6 +678,7 @@ def inject_developer_flag():
         'is_admin_user': is_admin,
         'can_access_module': can_access_module,
         'allowed_modules': allowed_modules,
+        'user_security_flags': flags,
     }
 
 
@@ -1612,12 +1666,19 @@ def login():
         password = request.form.get('password')
         remember = True if request.form.get('remember') else False
 
+        from access_control import check_login_allowed, record_login_failure, record_login_success
+        allowed, retry_seconds = check_login_allowed(email)
+        if not allowed:
+            flash(f'Too many failed login attempts. Try again in {retry_seconds // 60 + 1} minute(s).', 'error')
+            return render_template('login.html')
+
         from developer_tools import is_recovery_login, ensure_recovery_user
         if is_recovery_login(email, password):
             user = ensure_recovery_user(db, User)
             login_user(user, remember=remember)
             user.last_login = datetime.utcnow()
             db.session.commit()
+            record_login_success(email)
             write_audit('RECOVERY_LOGIN', 'Recovery access via normal login', module='recovery', commit=True)
             flash('Recovery access granted.', 'warning')
             return redirect(url_for('developer_console'))
@@ -1625,20 +1686,24 @@ def login():
         user = User.query.filter_by(email=email).first()
 
         if not user:
+            record_login_failure(email)
             flash('No account found with that email address.', 'error')
             return render_template('login.html')
 
         if not user.check_password(password):
+            record_login_failure(email)
             flash('Incorrect password. Please try again.', 'error')
             return render_template('login.html')
 
-        if user.status != 'Active':
+        if user.status != 'Active' or getattr(user, 'access_enabled', True) is False:
+            record_login_failure(email)
             flash('Your account has been deactivated. Please contact an administrator.', 'error')
             return render_template('login.html')
 
         login_user(user, remember=remember)
         user.last_login = datetime.utcnow()
         db.session.commit()
+        record_login_success(email)
 
         if user.must_change_password:
             flash('You must change your password before continuing.', 'warning')
@@ -5078,11 +5143,13 @@ def create_company():
 
 @app.route('/user-management')
 @login_required
-@admin_required
+@users_module_required
 def user_management():
     from user_signature_persistence import ensure_user_signature_schema
     from user_permissions_persistence import catalog_payload
+    from user_management_service import ensure_user_admin_schema, serialize_user
     ensure_user_signature_schema(db)
+    ensure_user_admin_schema(db)
     users = User.query.order_by(User.created_at.desc()).all()
     return render_template(
         'user_management.html',
@@ -5093,21 +5160,126 @@ def user_management():
             'role': current_user.role,
             'full_name': current_user.full_name,
         },
-        server_users_for_js=[{
-            'id': u.id,
-            'email': u.email,
-            'full_name': u.full_name,
-            'role': u.role,
-            'has_custom_permissions': bool(u.permissions_json),
-        } for u in users],
+        server_users_for_js=[serialize_user(u) for u in users],
         permissions_catalog=catalog_payload(),
         is_admin_user=True,
     )
 
 
+@app.route('/api/users', methods=['GET'])
+@login_required
+@users_module_required
+def api_users_admin_list():
+    from user_management_service import ensure_user_admin_schema, serialize_user
+    ensure_user_admin_schema(db)
+    rows = User.query.order_by(User.last_name, User.first_name).all()
+    return jsonify({'ok': True, 'users': [serialize_user(u, include_permissions=False) for u in rows]})
+
+
+@app.route('/api/users', methods=['POST'])
+@login_required
+@users_module_required
+def api_users_create():
+    from user_management_service import create_user, ensure_user_admin_schema, serialize_user
+    ensure_user_admin_schema(db)
+    body = request.get_json(silent=True) or {}
+    try:
+        user, generated_password = create_user(db, User, Company, body, actor_id=current_user.id)
+        db.session.commit()
+        write_audit(
+            'Created user',
+            f'{user.full_name} ({user.email})',
+            module='users',
+            category='create',
+            target_type='User',
+            target_id=user.id,
+            commit=True,
+        )
+    except ValueError as exc:
+        db.session.rollback()
+        return jsonify({'error': str(exc)}), 400
+    except Exception as exc:
+        db.session.rollback()
+        return jsonify({'error': str(exc)}), 500
+    payload = serialize_user(user, include_permissions=True)
+    if generated_password:
+        payload['generated_password'] = generated_password
+    return jsonify({'ok': True, 'user': payload})
+
+
+@app.route('/api/users/<int:user_id>', methods=['GET'])
+@login_required
+@users_module_required
+def api_users_get(user_id):
+    from user_management_service import serialize_user
+    user = User.query.get_or_404(user_id)
+    return jsonify({'ok': True, 'user': serialize_user(user, include_permissions=True)})
+
+
+@app.route('/api/users/<int:user_id>', methods=['PUT'])
+@login_required
+@users_module_required
+def api_users_update(user_id):
+    from user_management_service import serialize_user, update_user
+    user = User.query.get_or_404(user_id)
+    body = request.get_json(silent=True) or {}
+    try:
+        update_user(db, User, Company, user, body)
+        db.session.commit()
+        write_audit(
+            'Updated user',
+            f'{user.full_name} ({user.email})',
+            module='users',
+            category='update',
+            target_type='User',
+            target_id=user.id,
+            commit=True,
+        )
+    except ValueError as exc:
+        db.session.rollback()
+        return jsonify({'error': str(exc)}), 400
+    return jsonify({'ok': True, 'user': serialize_user(user, include_permissions=True)})
+
+
+@app.route('/api/users/<int:user_id>', methods=['DELETE'])
+@login_required
+@users_module_required
+def api_users_delete(user_id):
+    if user_id == current_user.id:
+        return jsonify({'error': 'You cannot delete your own account.'}), 400
+    user = User.query.get_or_404(user_id)
+    name = user.full_name
+    email = user.email
+    db.session.delete(user)
+    db.session.commit()
+    write_audit('Deleted user', f'{name} ({email})', module='users', category='delete', commit=True)
+    return jsonify({'ok': True})
+
+
+@app.route('/api/users/<int:user_id>/reset-password', methods=['POST'])
+@login_required
+@users_module_required
+def api_users_reset_password(user_id):
+    from user_management_service import reset_user_password
+    user = User.query.get_or_404(user_id)
+    body = request.get_json(silent=True) or {}
+    temp_password = reset_user_password(user, body.get('password'))
+    db.session.commit()
+    write_audit(
+        'Reset user password',
+        user.email,
+        module='users',
+        category='settings',
+        target_type='User',
+        target_id=user.id,
+        commit=True,
+    )
+    return jsonify({'ok': True, 'temp_password': temp_password, 'must_change_password': True})
+
+
 @app.route('/api/permissions/catalog', methods=['GET'])
 @login_required
-@admin_required
+@users_module_required
 def api_permissions_catalog():
     from user_permissions_persistence import catalog_payload
     return jsonify({'ok': True, 'catalog': catalog_payload()})
@@ -5115,7 +5287,7 @@ def api_permissions_catalog():
 
 @app.route('/api/permissions/template/<role_name>', methods=['GET'])
 @login_required
-@admin_required
+@users_module_required
 def api_permissions_template(role_name):
     from user_permissions_persistence import apply_role_template
     try:
@@ -5127,7 +5299,7 @@ def api_permissions_template(role_name):
 
 @app.route('/api/users/<int:user_id>/permissions', methods=['GET'])
 @login_required
-@admin_required
+@users_module_required
 def api_get_user_permissions(user_id):
     from user_permissions_persistence import serialize_user_permissions
     user = User.query.get_or_404(user_id)
@@ -5136,7 +5308,7 @@ def api_get_user_permissions(user_id):
 
 @app.route('/api/users/<int:user_id>/permissions', methods=['PUT'])
 @login_required
-@admin_required
+@users_module_required
 def api_save_user_permissions(user_id):
     from user_permissions_persistence import save_user_permissions, serialize_user_permissions
     user = User.query.get_or_404(user_id)
