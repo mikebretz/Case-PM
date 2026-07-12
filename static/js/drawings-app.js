@@ -973,10 +973,13 @@
       state.panX = 0;
       state.panY = 0;
       state.continuousPendingScroll = state.pdfPage || 1;
+    } else {
+      state.viewScale = 1;
+      state.panX = 0;
+      state.panY = 0;
     }
-    setViewerLayoutMode();
     updatePageNavChrome();
-    renderPdf(true);
+    renderPdf(false);
   }
 
   function togglePageThumbs(force) {
@@ -1205,11 +1208,13 @@
     const dpr = global.devicePixelRatio || 1;
     const minQuality = 200 / 72;
     const zoomBoost = Math.max(1, state.viewScale * 0.9);
-    return Math.min(8, Math.max(minQuality, fitScale * dpr * zoomBoost, 2.5));
+    const floor = isDocumentViewer() ? 2.75 : 2.5;
+    return Math.min(8, Math.max(minQuality, fitScale * dpr * zoomBoost, floor));
   }
 
   function schedulePdfQualityRerender() {
     if (!viewerIsOpen() || !state.pdfDoc) return;
+    if (isDocumentViewer()) return;
     clearTimeout(state.pdfRerenderTimer);
     state.pdfRerenderTimer = setTimeout(() => {
       state.pdfRerenderTimer = null;
@@ -3062,6 +3067,25 @@
     return vp;
   }
 
+  /** Render to an offscreen canvas first, then blit — avoids clearing the visible canvas mid-render. */
+  async function renderPdfPageToDisplay(page, canvas, viewport) {
+    const w = Math.ceil(viewport.width);
+    const h = Math.ceil(viewport.height);
+    const off = document.createElement('canvas');
+    off.width = w;
+    off.height = h;
+    const offCtx = off.getContext('2d');
+    const task = page.render({ canvasContext: offCtx, viewport });
+    state.renderTask = task;
+    await task.promise;
+    if (canvas.width !== w) canvas.width = w;
+    if (canvas.height !== h) canvas.height = h;
+    const ctx = canvas.getContext('2d');
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
+    ctx.drawImage(off, 0, 0);
+    return task;
+  }
+
   function pixelDiff(oldCtx, newCtx, width, height, opacity) {
     const oldData = oldCtx.getImageData(0, 0, width, height).data;
     const newData = newCtx.getImageData(0, 0, width, height).data;
@@ -3229,7 +3253,6 @@
   }
 
   async function renderPdfSinglePage(forceReload, opts, gen) {
-    setViewerLayoutMode();
     const qualityOnly = opts?.qualityOnly;
     const canvas = document.getElementById('drawPdfCanvas');
     const wrap = document.getElementById('drawViewerWrap');
@@ -3246,18 +3269,14 @@
 
     state.lastPdfRenderScale = renderScale;
     state.lastViewport = viewport;
-    canvas.width = viewport.width;
-    canvas.height = viewport.height;
     state.baseCanvasSize = { w: viewport.width, h: viewport.height };
 
-    const ctx = canvas.getContext('2d');
-    ctx.setTransform(1, 0, 0, 1, 0, 0);
     if (state.renderTask) {
       try { await state.renderTask.cancel(); } catch { /* cancelled */ }
+      state.renderTask = null;
     }
-    state.renderTask = page.render({ canvasContext: ctx, viewport });
     try {
-      await state.renderTask.promise;
+      await renderPdfPageToDisplay(page, canvas, viewport);
     } catch (err) {
       if (err?.name === 'RenderingCancelledException') return;
       console.warn('PDF render failed', err);
@@ -3267,6 +3286,7 @@
     state.renderTask = null;
 
     syncViewerOverlaySizes(viewport.width, viewport.height);
+    setViewerLayoutMode();
     if (!qualityOnly) {
       fitToView();
       renderMarkupOverlay();
@@ -3285,7 +3305,6 @@
   }
 
   async function renderPdfContinuous(forceReload, opts, gen) {
-    setViewerLayoutMode();
     const wrap = document.getElementById('drawViewerWrap');
     const container = document.getElementById('drawContinuousPages');
     if (!wrap || !container || !state.pdfDoc) return;
@@ -3297,7 +3316,14 @@
     const builtKey = `${numPages}:${Math.round(targetW)}`;
 
     if (!forceReload && container.dataset.built === builtKey) {
+      setViewerLayoutMode();
       syncContinuousPageObserver();
+      if (state.continuousPendingScroll) {
+        const p = state.continuousPendingScroll;
+        state.continuousPendingScroll = null;
+        requestAnimationFrame(() => scrollContinuousPageIntoView(p));
+      }
+      applyViewTransform();
       updatePageNavChrome();
       return;
     }
@@ -3306,13 +3332,8 @@
       try { await state.renderTask.cancel(); } catch { /* cancelled */ }
       state.renderTask = null;
     }
-    if (state.continuousObserver) {
-      state.continuousObserver.disconnect();
-      state.continuousObserver = null;
-    }
 
-    container.innerHTML = '';
-    container.dataset.built = builtKey;
+    const fragment = document.createDocumentFragment();
     state.continuousPageOffsets = [];
 
     for (let i = 1; i <= numPages; i++) {
@@ -3328,23 +3349,18 @@
       pageEl.id = `drawContinuousPage-${i}`;
 
       const canvas = document.createElement('canvas');
-      canvas.width = Math.ceil(viewport.width);
-      canvas.height = Math.ceil(viewport.height);
-
       const label = document.createElement('div');
       label.className = 'draw-continuous-page-label';
       label.textContent = `Page ${i} of ${numPages}`;
 
       pageEl.appendChild(canvas);
       pageEl.appendChild(label);
-      container.appendChild(pageEl);
+      fragment.appendChild(pageEl);
 
       state.continuousPageOffsets.push({ page: i, y: 0, height: viewport.height });
 
-      const task = page.render({ canvasContext: canvas.getContext('2d'), viewport });
-      state.renderTask = task;
       try {
-        await task.promise;
+        await renderPdfPageToDisplay(page, canvas, viewport);
       } catch (err) {
         if (err?.name === 'RenderingCancelledException') return;
         console.warn('PDF page render failed', err);
@@ -3354,12 +3370,17 @@
     if (gen !== state.renderGen) return;
     state.renderTask = null;
 
+    container.replaceChildren();
+    container.appendChild(fragment);
+    container.dataset.built = builtKey;
+
     const curPage = await state.pdfDoc.getPage(state.pdfPage || 1);
     const curUnscaled = curPage.getViewport({ scale: 1, rotation: curPage.rotate });
     const curScale = targetW / curUnscaled.width;
     state.pdfPageWidthPts = curUnscaled.width;
     state.baseCanvasSize = { w: targetW, h: curUnscaled.height * curScale };
 
+    setViewerLayoutMode();
     syncContinuousPageObserver();
     if (state.continuousPendingScroll) {
       const p = state.continuousPendingScroll;
