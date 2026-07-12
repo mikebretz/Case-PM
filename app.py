@@ -11186,30 +11186,9 @@ def api_upload_program_backup():
 @login_required
 @admin_required
 def api_clear_all_program_data():
-    from backup_service import clear_all_program_data, list_backups
-    from program_settings_persistence import load_backup_settings
-    body = request.get_json(silent=True) or {}
-    if (body.get('confirm') or '').strip().upper() != 'DELETE ALL':
-        return jsonify({'error': 'Type DELETE ALL to confirm clearing all program data.'}), 400
-    cfg = load_backup_settings()
-    try:
-        result = clear_all_program_data(backup_config=cfg, db=db)
-        _seed_fresh_program_database()
-        write_audit(
-            'PROGRAM_DATA_CLEARED',
-            detail='All program data cleared and database reinitialized',
-            module='program_settings',
-            commit=True,
-        )
-        return jsonify({
-            'ok': True,
-            'result': result,
-            'backups': list_backups(cfg),
-            'default_login': {'email': 'admin@casepm.local', 'password': 'admin123'},
-        })
-    except Exception as exc:
-        db.session.rollback()
-        return jsonify({'error': str(exc)}), 500
+    return jsonify({
+        'error': 'Clear All Program Data has moved to Developer Console → Maintenance.',
+    }), 403
 
 
 @app.route('/api/program-settings/email', methods=['GET', 'PUT'])
@@ -11423,6 +11402,149 @@ def api_developer_updates_git_pull():
         return jsonify({'ok': True, 'result': result, 'status': status})
     except (OSError, ValueError) as exc:
         return jsonify({'ok': False, 'error': str(exc)}), 400
+
+
+def _maintenance_models_dict():
+    from developer_data_maintenance import build_models_dict
+    return build_models_dict({
+        'Project': Project,
+        'Document': Document,
+        'DocumentFolder': DocumentFolder,
+        'DocumentShareLink': DocumentShareLink,
+        'DocumentFolderShareLink': DocumentFolderShareLink,
+        'DocumentVersion': DocumentVersion,
+        'DocumentComment': DocumentComment,
+        'DocumentActivity': DocumentActivity,
+        'DocumentMarkup': DocumentMarkup,
+        'DocumentFolderPermission': DocumentFolderPermission,
+        'Drawing': Drawing,
+        'DrawingRevision': DrawingRevision,
+        'DrawingMarkup': DrawingMarkup,
+        'RFI': RFI,
+        'ChangeOrder': ChangeOrder,
+        'ChangeOrderAllocation': ChangeOrderAllocation,
+        'ChangeOrderRevision': ChangeOrderRevision,
+        'PotentialChangeOrder': PotentialChangeOrder,
+        'PCOAllocation': PCOAllocation,
+        'Commitment': Commitment,
+        'CommitmentAllocation': CommitmentAllocation,
+        'BudgetProjectState': BudgetProjectState,
+        'PayAppProjectState': PayAppProjectState,
+        'Submittal': Submittal,
+        'PunchItem': PunchItem,
+        'DailyLog': DailyLog,
+        'ManpowerEntry': ManpowerEntry,
+        'EquipmentEntry': EquipmentEntry,
+        'WeeklyReport': WeeklyReport,
+        'SafetyReport': SafetyReport,
+        'SafetyCertification': SafetyCertification,
+        'SafetyTrainingEvent': SafetyTrainingEvent,
+        'ScheduleData': ScheduleData,
+        'ScheduleTask': ScheduleTask,
+        'Delivery': Delivery,
+        'PermitInspectionItem': PermitInspectionItem,
+        'MeetingMinute': MeetingMinute,
+        'MeetingActionItem': MeetingActionItem,
+        'Photo': Photo,
+        'SageSyncEvent': SageSyncEvent,
+        'Company': Company,
+        'COI': COI,
+        'AuditLog': AuditLog,
+    })
+
+
+@app.route('/api/developer/maintenance/catalog', methods=['GET'])
+@login_required
+@developer_required
+def api_developer_maintenance_catalog():
+    from developer_data_maintenance import maintenance_catalog_for_api
+    return jsonify({'ok': True, **maintenance_catalog_for_api(Project)})
+
+
+@app.route('/api/developer/maintenance/clear', methods=['POST'])
+@login_required
+@developer_required
+def api_developer_maintenance_clear():
+    from developer_data_maintenance import resolve_project_ids, clear_module_data, MODULE_CATALOG
+    body = request.get_json(silent=True) or {}
+    module_key = (body.get('module') or '').strip().lower()
+    all_projects = bool(body.get('all_projects'))
+    project_ids_raw = body.get('project_ids') or []
+    confirm = (body.get('confirm') or '').strip().upper()
+
+    valid_keys = {m['key'] for m in MODULE_CATALOG}
+    if module_key not in valid_keys:
+        return jsonify({'error': f'Unknown module: {module_key or "(empty)"}'}), 400
+
+    project_ids, err = resolve_project_ids(db, Project, all_projects=all_projects, project_ids=project_ids_raw)
+    if err:
+        return jsonify({'error': err}), 400
+
+    module_meta = next(m for m in MODULE_CATALOG if m['key'] == module_key)
+    if module_meta.get('scope') == 'global' and not all_projects:
+        return jsonify({'error': 'Companies & COI can only be cleared when All Projects is selected.'}), 400
+
+    if module_key in ('projects', 'companies') or module_meta.get('danger'):
+        if confirm != 'CLEAR':
+            return jsonify({'error': 'Type CLEAR to confirm this action.'}), 400
+    elif confirm != 'CLEAR':
+        return jsonify({'error': 'Type CLEAR to confirm clearing module data.'}), 400
+
+    upload_root = app.config.get('UPLOAD_FOLDER', 'uploads')
+    models = _maintenance_models_dict()
+    try:
+        result = clear_module_data(
+            db, module_key, project_ids, upload_root, models, all_projects=all_projects,
+        )
+        db.session.commit()
+        scope_label = 'all projects' if all_projects else f'project(s) {", ".join(str(p) for p in project_ids)}'
+        write_audit(
+            'DEV_DATA_CLEARED',
+            detail=f'Cleared {module_key} for {scope_label}',
+            module='developer',
+            project_id=project_ids[0] if len(project_ids) == 1 else None,
+            commit=True,
+        )
+        return jsonify({
+            'ok': True,
+            'module': module_key,
+            'all_projects': all_projects,
+            'project_ids': project_ids,
+            'result': result,
+        })
+    except Exception as exc:
+        db.session.rollback()
+        return jsonify({'error': str(exc)}), 500
+
+
+@app.route('/api/developer/maintenance/clear-all-program', methods=['POST'])
+@login_required
+@developer_required
+def api_developer_clear_all_program_data():
+    from backup_service import clear_all_program_data, list_backups
+    from program_settings_persistence import load_backup_settings
+    body = request.get_json(silent=True) or {}
+    if (body.get('confirm') or '').strip().upper() != 'DELETE ALL':
+        return jsonify({'error': 'Type DELETE ALL to confirm clearing all program data.'}), 400
+    cfg = load_backup_settings()
+    try:
+        result = clear_all_program_data(backup_config=cfg, db=db)
+        _seed_fresh_program_database()
+        write_audit(
+            'PROGRAM_DATA_CLEARED',
+            detail='All program data cleared via Developer Console',
+            module='developer',
+            commit=True,
+        )
+        return jsonify({
+            'ok': True,
+            'result': result,
+            'backups': list_backups(cfg),
+            'default_login': {'email': 'admin@casepm.local', 'password': 'admin123'},
+        })
+    except Exception as exc:
+        db.session.rollback()
+        return jsonify({'error': str(exc)}), 500
 
 
 @app.route('/api/program-settings/sage', methods=['GET'])

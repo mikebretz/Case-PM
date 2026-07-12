@@ -413,38 +413,6 @@
     }
   }
 
-  async function clearAllProgramData() {
-    const ok = await CasePMDialog?.confirm(
-      'This permanently deletes all projects, users, documents, uploads, and settings.\n\nA safety backup is created first, then the program is reset to a fresh install with the default admin account.',
-      { title: 'Clear all program data', confirmLabel: 'Continue', danger: true }
-    );
-    if (!ok) return;
-    const typed = await CasePMDialog?.prompt(
-      'Type DELETE ALL to confirm clearing everything.',
-      { title: 'Final confirmation', defaultValue: '', submitLabel: 'Clear everything', label: 'Confirmation text' }
-    );
-    if ((typed || '').trim().toUpperCase() !== 'DELETE ALL') {
-      CasePMDialog?.alert('Clear cancelled — confirmation text did not match.', 'info');
-      return;
-    }
-    try {
-      const json = await api('/api/program-settings/backup/clear-all', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ confirm: 'DELETE ALL' }),
-      });
-      const safety = json.result?.safety_backup;
-      const login = json.default_login || { email: 'admin@casepm.local', password: 'admin123' };
-      await CasePMDialog?.alert(
-        `All program data has been cleared.${safety ? `\n\nSafety backup: ${safety}` : ''}\n\nDefault login:\n${login.email}\n${login.password}\n\nYou will now be signed out.`,
-        'success'
-      );
-      window.location.href = '/logout?next=/login';
-    } catch (err) {
-      CasePMDialog?.alert(err.message || 'Clear failed.', 'error');
-    }
-  }
-
   function setSageMode(mode) {
     document.getElementById('sageQuickPanel')?.classList.toggle('hidden', mode !== 'quick');
     document.getElementById('sageDetailedPanel')?.classList.toggle('hidden', mode !== 'detailed');
@@ -593,7 +561,7 @@
   global.CasePMProgramSettings = {
     loadCompanyForm, saveCompanyForm, loadBackupForm, saveBackupForm,
     runBackupNow, refreshBackupList, chooseBackupToInstall, installBackup,
-    uploadBackupFile, clearAllProgramData, updateCloudProviderFields,
+    uploadBackupFile, updateCloudProviderFields,
     setSageMode, testSageConnection,
     syncEmailFromServer, pushEmailToServer,
     loadNumberingForm, saveNumberingForm, loadPayAppsForm, savePayAppsForm,

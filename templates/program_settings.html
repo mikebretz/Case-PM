@@ -389,14 +389,7 @@
                 </label>
             </div>
             <p class="text-xs text-zinc-500 mt-3">You will be signed out after installing so the restored database loads cleanly.</p>
-        </div>
-
-        <div class="settings-panel border-red-900/50 bg-red-950/20">
-            <h3 class="font-medium text-red-300 mb-2"><i class="fa-solid fa-triangle-exclamation mr-2"></i>Clear All Program Data</h3>
-            <p class="text-sm text-zinc-400 mb-4">Delete all projects, users, documents, uploads, and settings. A safety backup is created first; default admin is recreated afterward.</p>
-            <button type="button" onclick="CasePMProgramSettings.clearAllProgramData()" class="settings-btn settings-btn-danger">
-                <i class="fa-solid fa-trash-can"></i><span>Clear Everything and Start Fresh</span>
-            </button>
+            <p class="text-xs text-zinc-500 mt-2">To wipe all program data and start fresh, use <a href="{{ url_for('developer_console') }}?tab=tools" class="text-emerald-400 hover:underline">Developer Console → Maintenance → Clear All Program Data</a>.</p>
         </div>
     </div>
 
