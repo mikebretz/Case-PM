@@ -10980,13 +10980,29 @@ def api_program_settings_backup():
 def api_run_program_backup():
     from backup_service import run_configured_backup, list_backups
     from program_settings_persistence import load_backup_settings, save_backup_settings
+    body = request.get_json(silent=True) or {}
     cfg = load_backup_settings()
-    try:
-        result = run_configured_backup(cfg)
-        cfg['last_run_at'] = result.get('created_at', '')
-        cfg['last_run_status'] = 'success'
+    if isinstance(body.get('backup'), dict):
+        incoming = body['backup']
+        cloud = incoming.get('cloud') if isinstance(incoming.get('cloud'), dict) else {}
+        cfg = {
+            **cfg,
+            **{k: incoming[k] for k in ('auto_enabled', 'frequency', 'retention_days', 'local_path', 'maintenance_window') if k in incoming},
+            'cloud': {**(cfg.get('cloud') or {}), **cloud},
+        }
         save_backup_settings(cfg)
-        return jsonify({'ok': True, 'result': result, 'backups': list_backups()})
+        cfg = load_backup_settings()
+    try:
+        result = run_configured_backup(cfg, manual=True)
+        status = 'success'
+        if result.get('cloud_mirror_status') == 'success':
+            status = f"success — copied to {result.get('cloud_mirror')}"
+        elif result.get('cloud_mirror_skipped'):
+            status = f"success (local only) — {result.get('cloud_mirror_skipped')}"
+        cfg['last_run_at'] = result.get('created_at', '')
+        cfg['last_run_status'] = status
+        save_backup_settings(cfg)
+        return jsonify({'ok': True, 'result': result, 'backups': list_backups(cfg)})
     except Exception as exc:
         cfg['last_run_status'] = f'error: {exc}'
         save_backup_settings(cfg)

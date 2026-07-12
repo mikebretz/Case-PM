@@ -229,17 +229,77 @@ def clear_all_program_data(backup_config=None, db=None):
     }
 
 
-def run_configured_backup(backup_config):
-    """Run local backup and optionally copy to cloud folder."""
+def normalize_mirror_path(path):
+    """Normalize a local mirror folder path (OneDrive sync folder, NAS, etc.)."""
+    cleaned = (path or '').strip().strip('"').strip("'")
+    if not cleaned:
+        return ''
+    if cleaned.lower().startswith(('http://', 'https://', 'onedrive://')):
+        raise ValueError(
+            'Use the local OneDrive folder on your PC (for example '
+            'C:\\Users\\YourName\\OneDrive\\CasePM-Backups), not a web link.'
+        )
+    cleaned = os.path.expanduser(cleaned)
+    cleaned = os.path.expandvars(cleaned)
+    return os.path.normpath(cleaned)
+
+
+def _mirror_backup_to_cloud(result, cloud, *, manual=False):
+    """Copy the local backup zip to an off-site mirror folder when configured."""
+    cloud = cloud or {}
+    provider = (cloud.get('provider') or 'local_folder').strip().lower()
+    mirror_raw = (cloud.get('local_mirror_path') or '').strip()
+    enabled = bool(cloud.get('enabled'))
+
+    if provider not in ('local_folder', 'folder', 'onedrive', 'nas', ''):
+        return {
+            'cloud_mirror_attempted': False,
+            'cloud_mirror_skipped': f'Provider "{provider}" is not wired up yet — use Network / NAS folder for OneDrive.',
+            'cloud_provider': provider,
+        }
+
+    if not mirror_raw:
+        return {
+            'cloud_mirror_attempted': False,
+            'cloud_mirror_skipped': 'No mirror folder path configured.',
+            'cloud_provider': provider or 'local_folder',
+        }
+
+    if not enabled and not manual:
+        return {
+            'cloud_mirror_attempted': False,
+            'cloud_mirror_skipped': 'Cloud mirror is disabled.',
+            'cloud_provider': provider or 'local_folder',
+        }
+
+    mirror = normalize_mirror_path(mirror_raw)
+    dest_file = os.path.join(mirror, result['filename'])
+    try:
+        os.makedirs(mirror, exist_ok=True)
+        shutil.copy2(result['path'], dest_file)
+    except OSError as exc:
+        raise ValueError(
+            f'Could not copy backup to mirror folder "{mirror}": {exc}'
+        ) from exc
+
+    if not os.path.isfile(dest_file):
+        raise ValueError(f'Backup copy failed — file not found at "{dest_file}"')
+
+    return {
+        'cloud_mirror_attempted': True,
+        'cloud_mirror': mirror,
+        'cloud_mirror_file': dest_file,
+        'cloud_mirror_status': 'success',
+        'cloud_provider': provider or 'local_folder',
+    }
+
+
+def run_configured_backup(backup_config, *, manual=False):
+    """Run local backup and optionally copy to a configured mirror folder."""
     cfg = backup_config or {}
     result = create_local_backup(note=cfg.get('last_run_note') or 'manual', config=cfg)
     cloud = cfg.get('cloud') or {}
-    if cloud.get('enabled') and cloud.get('local_mirror_path'):
-        mirror = cloud['local_mirror_path'].strip()
-        if mirror:
-            os.makedirs(mirror, exist_ok=True)
-            shutil.copy2(result['path'], os.path.join(mirror, result['filename']))
-            result['cloud_mirror'] = mirror
-    result['cloud_configured'] = bool(cloud.get('enabled'))
-    result['cloud_provider'] = cloud.get('provider') or 'none'
+    mirror_info = _mirror_backup_to_cloud(result, cloud, manual=manual)
+    result.update(mirror_info)
+    result['cloud_configured'] = bool(cloud.get('enabled') or (cloud.get('local_mirror_path') or '').strip())
     return result
