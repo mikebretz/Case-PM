@@ -33,7 +33,6 @@
       const j = await api(`/api/deliveries${pid ? `?project_id=${pid}` : ''}`);
       state.deliveries = j.deliveries || []; state.stats = j.stats || {}; state.statuses = j.statuses || [];
       if (el('delStatusFilter').options.length <= 1) state.statuses.forEach((s) => el('delStatusFilter').add(new Option(s, s)));
-      const badge = el('delProjectBadge'); if (badge) badge.textContent = ctx.projectName || 'All projects';
       renderStats(); render();
       el('delUpdatedAt').textContent = `Updated ${new Date().toLocaleTimeString()}`;
       el('delStatusText').textContent = `${state.deliveries.length} delivery(s) · ${state.stats.synced || 0} on schedule`;

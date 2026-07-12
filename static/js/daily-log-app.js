@@ -99,6 +99,7 @@
 
   const state = {
     logs: [], stats: {}, editingId: null,
+    viewingLog: null,
     pendingPhotos: [],   // {id, blob, url, name}
     existingPhotos: [],
     armedPhoto: null,    // {blob, url}
@@ -570,6 +571,127 @@
     finally { saveBtn.disabled = false; saveBtn.textContent = 'Save Daily Log'; }
   }
 
+  // ---------------- Print ----------------
+  const DLOG_PRINT_COLUMNS = [
+    { key: 'date', label: 'Date', width: '8%', align: 'center' },
+    { key: 'weather', label: 'Weather', width: '10%' },
+    { key: 'crew', label: 'Crew', width: '5%', align: 'center' },
+    { key: 'hours', label: 'Hours', width: '5%', align: 'center' },
+    { key: 'work', label: 'Work<br>Performed', width: '38%' },
+    { key: 'photos', label: 'Photos', width: '5%', align: 'center' },
+    { key: 'status', label: 'Status', width: '8%', align: 'center' },
+  ];
+
+  function getPrintMeta() {
+    const nameEl = document.getElementById('currentProjectName');
+    return {
+      name: ctx.projectName || (nameEl?.textContent || '').trim() || 'Project',
+      number: projectId() || '',
+      location: '',
+    };
+  }
+
+  function logRegisterRow(l) {
+    return {
+      date: fmtDate(l.date),
+      weather: l.weather || '—',
+      crew: l.total_workers ?? '—',
+      hours: l.total_hours ?? '—',
+      work: l.work_performed || '—',
+      photos: l.photo_count ?? 0,
+      status: l.status || 'Submitted',
+    };
+  }
+
+  async function triggerDailyPrint(html) {
+    if (global.CasePMOutput) {
+      await global.CasePMOutput.deliverHtml({
+        title: 'Daily Log',
+        html,
+        filenameBase: `Daily_Log_${projectId() || 'project'}`,
+        sourceModule: 'daily_log',
+        systemFolderKey: 'daily-logs',
+        subfolder: 'Exports',
+        printOptions: { bodyHtml: html, containerId: 'dlogPrintSheet', bodyClass: 'printing-daily-log' },
+      });
+      return;
+    }
+    global.CasePMPrint.triggerPrintPreview(html, { containerId: 'dlogPrintSheet', bodyClass: 'printing-daily-log' });
+  }
+
+  async function printLog() {
+    if (typeof global.CasePMPrint === 'undefined') {
+      alert('Print module not loaded.');
+      return;
+    }
+    const rows = filteredLogs().map(logRegisterRow);
+    const html = global.CasePMPrint.buildPrintDocument({
+      meta: getPrintMeta(),
+      sections: [{ title: 'DAILY LOG REGISTER', columns: DLOG_PRINT_COLUMNS, rows, emptyMessage: 'No daily logs to print.' }],
+      rowsPerPage: 24,
+    });
+    await triggerDailyPrint(html);
+  }
+
+  function buildDailyReportBody(log) {
+    const d = log.details || {};
+    const block = (title, rows, render) => (rows && rows.length)
+      ? `<div><h3>${esc(title)}</h3>${rows.map(render).join('')}</div>` : '';
+    const photos = (log.photos || []).map((p) => `<div style="display:inline-block;width:120px;margin:4px 8px 4px 0;vertical-align:top;"><img src="${esc(p.url || '')}" alt="" style="width:100%;height:80px;object-fit:cover;border:1px solid #ccc;"><div style="font-size:7pt;margin-top:2px;">${esc(p.original_name || p.filename || '')}</div></div>`).join('');
+    return `
+      <div class="casepm-log-meta">
+        <span><strong>Status:</strong> ${esc(log.status || 'Submitted')}</span>
+        <span><strong>Weather:</strong> ${esc(log.weather || '—')}</span>
+        <span><strong>Crew:</strong> ${log.total_workers || 0}</span>
+        <span><strong>Hours:</strong> ${log.total_hours || 0}</span>
+        ${log.author ? `<span><strong>By:</strong> ${esc(log.author)}</span>` : ''}
+      </div>
+      <div><h3>Work Performed</h3><div class="casepm-log-block">${esc(log.work_performed || '—')}</div></div>
+      ${log.notes ? `<div><h3>Notes</h3><div class="casepm-log-block">${esc(log.notes)}</div></div>` : ''}
+      ${block('Manpower', log.manpower, (m) => `<div class="casepm-log-line">• ${esc(m.company || '—')} — ${m.personnel_count || 0} × ${m.hours || 0}h ${m.work_performed ? '· ' + esc(m.work_performed) : ''}</div>`)}
+      ${block('Equipment', log.equipment, (e) => `<div class="casepm-log-line">• ${esc(e.equipment_name)} (${e.quantity || 1}) ${e.condition ? '· ' + esc(e.condition) : ''}</div>`)}
+      ${block('Deliveries', d.deliveries, (x) => `<div class="casepm-log-line">• ${esc(x.item)} ${x.supplier ? 'from ' + esc(x.supplier) : ''} ${x.quantity ? '· ' + esc(x.quantity) : ''}</div>`)}
+      ${block('Materials', d.materials, (x) => `<div class="casepm-log-line">• ${esc(x.material)} ${x.quantity ? esc(x.quantity) + ' ' + esc(x.unit || '') : ''} ${x.location ? '@ ' + esc(x.location) : ''}</div>`)}
+      ${block('Delays', d.delays, (x) => `<div class="casepm-log-line">• [${esc(x.type)}] ${esc(x.description)} ${x.hours_lost ? '· ' + esc(x.hours_lost) + 'h lost' : ''}</div>`)}
+      ${block('Visitors', d.visitors, (x) => `<div class="casepm-log-line">• ${esc(x.name)} ${x.company ? '(' + esc(x.company) + ')' : ''} ${x.purpose ? '· ' + esc(x.purpose) : ''}</div>`)}
+      ${block('Phone Calls', d.phone_calls, (x) => `<div class="casepm-log-line">• ${esc(x.contact)} ${x.company ? '(' + esc(x.company) + ')' : ''} — ${esc(x.subject || '')}</div>`)}
+      ${block('Inspections', d.inspections, (x) => `<div class="casepm-log-line">• ${esc(x.type)} ${x.agency ? '(' + esc(x.agency) + ')' : ''} — ${esc(x.result || '')} ${x.notes ? '· ' + esc(x.notes) : ''}</div>`)}
+      ${block('Safety', d.safety, (x) => `<div class="casepm-log-line">• [${esc(x.type)}] ${esc(x.description)} ${x.action ? '→ ' + esc(x.action) : ''}</div>`)}
+      ${block('Accidents', d.accidents, (x) => `<div class="casepm-log-line">• ${esc(x.person)} ${x.company ? '(' + esc(x.company) + ')' : ''} — ${esc(x.description || '')}</div>`)}
+      ${block('Quantities', d.quantities, (x) => `<div class="casepm-log-line">• ${esc(x.description)} — ${esc(x.quantity || '')} ${esc(x.unit || '')} ${x.cost_code ? '· ' + esc(x.cost_code) : ''}</div>`)}
+      ${block('Dumpster / Waste', d.dumpsters, (x) => `<div class="casepm-log-line">• ${esc(x.type)} ${x.size ? '(' + esc(x.size) + ')' : ''} ${x.hauls ? '· ' + esc(x.hauls) + ' hauls' : ''}</div>`)}
+      ${block('Scheduled Work', d.scheduled_work, (x) => `<div class="casepm-log-line">• ${esc(x.activity)} — ${esc(x.status || '')} ${x.notes ? '· ' + esc(x.notes) : ''}</div>`)}
+      ${photos ? `<div><h3>Photos</h3><div>${photos}</div></div>` : ''}
+    `;
+  }
+
+  async function printDetail() {
+    if (!state.viewingLog) return;
+    if (typeof global.CasePMPrint === 'undefined') {
+      alert('Print module not loaded.');
+      return;
+    }
+    const meta = getPrintMeta();
+    const printedOn = new Date().toLocaleDateString(undefined, { month: 'numeric', day: 'numeric', year: 'numeric' });
+    const title = `DAILY LOG — ${fmtDate(state.viewingLog.date)}`;
+    const html = `<div class="casepm-print-page">
+      <div class="casepm-print-header">
+        <div><div class="casepm-print-title">${esc(title)}</div></div>
+        <div class="casepm-print-meta">
+          ${meta.number ? `<div><span class="label">PROJECT ID</span><br>${esc(meta.number)}</div>` : ''}
+          ${meta.name ? `<div style="margin-top:4px"><span class="label">PROJECT NAME</span><br>${esc(meta.name)}</div>` : ''}
+        </div>
+      </div>
+      <div class="casepm-log-report">${buildDailyReportBody(state.viewingLog)}</div>
+      <div class="casepm-print-footer">
+        <span>Confidential</span>
+        <span class="center">${esc(printedOn)}</span>
+        <span class="right">Page 1</span>
+      </div>
+    </div>`;
+    await triggerDailyPrint(html);
+  }
+
   // ---------------- Detail ----------------
   async function openDetail(id) {
     try {
@@ -577,6 +699,7 @@
       const json = await res.json();
       if (!res.ok) throw new Error(json.error || 'Failed');
       const log = json.log;
+      state.viewingLog = log;
       const d = log.details || {};
       el('dlogDetailTitle').textContent = `Daily Log — ${fmtDate(log.date)}`;
       const block = (title, rows, render) => (rows && rows.length) ? `<div><div class="text-xs uppercase tracking-wide text-zinc-500 mb-1">${title}</div>${rows.map(render).join('')}</div>` : '';
@@ -607,6 +730,7 @@
         ${photos ? `<div><div class="text-xs uppercase tracking-wide text-zinc-500 mb-1">Photos</div><div class="grid grid-cols-3 md:grid-cols-4 gap-2">${photos}</div></div>` : ''}
       `;
       el('dlogDetailEdit').onclick = () => openEdit(id);
+      el('dlogDetailPrint').onclick = () => printDetail();
       el('dlogDetailModal').showModal();
     } catch (e) { alert(e.message || 'Could not load'); }
   }
@@ -633,6 +757,7 @@
 
   function bind() {
     el('dlogBtnNew').addEventListener('click', openCreate);
+    el('dlogBtnPrint')?.addEventListener('click', printLog);
     el('dlogBtnRefresh')?.addEventListener('click', loadList);
     el('dlogModalClose').addEventListener('click', () => el('dlogModal').close());
     el('dlogCancel').addEventListener('click', () => el('dlogModal').close());
@@ -686,7 +811,7 @@
     loadCompanies();
   }
 
-  global.CasePMDailyLog = { refresh: loadList, openCreate };
+  global.CasePMDailyLog = { refresh: loadList, openCreate, printLog, printDetail };
 
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', init);
   else init();

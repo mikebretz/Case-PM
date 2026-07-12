@@ -220,19 +220,124 @@
   }
 
   async function printReport() {
-    const root = document.querySelector('.forecast-page') || document.getElementById('mainContent');
-    if (global.CasePMOutput && root) {
+    if (!summary) {
+      try { await refresh(); } catch (err) { alert(err.message); return; }
+    }
+    if (typeof global.CasePMPrint === 'undefined' || !global.CasePMPrint.printHtmlInIframe) {
+      alert('Print module not loaded.');
+      return;
+    }
+
+    const data = summary;
+    const projectName = (document.getElementById('currentProjectName')?.textContent || '').trim() || 'Project';
+    const rows = data.monthly_trends || (data.progress_report ? [data.progress_report] : []);
+    const asOf = data.progress_report ? fmtDate(data.progress_report.as_of_date) : '—';
+    const printedOn = new Date().toLocaleDateString(undefined, { month: 'numeric', day: 'numeric', year: 'numeric' });
+
+    const tableRows = rows.length
+      ? rows.map((r) => `<tr>
+          <td class="left">${esc(r.month)}</td>
+          <td class="left">${esc(fmtDate(r.as_of_date))}</td>
+          <td class="mono">${esc(fmt(r.subtotal_budget))}</td>
+          <td class="mono">${esc(fmt(r.subtotal_projected))}</td>
+          <td class="mono">${esc(fmt(r.cost_to_date))}</td>
+          <td class="mono">${esc(fmt(r.approved_changes))}</td>
+          <td class="mono">${esc(fmt(r.revised_contract))}</td>
+          <td class="mono">${esc(fmt(r.payments_received))}</td>
+          <td class="mono">${esc(fmt(r.payments_pending))}</td>
+          <td class="mono"><strong>${esc(fmt(r.total_payments))}</strong></td>
+          <td class="center">${esc(r.pct_complete || 0)}%</td>
+          <td class="left notes">${esc(r.notes || '')}</td>
+        </tr>`).join('')
+      : '<tr><td colspan="12" class="center" style="padding:16px;">No progress history yet.</td></tr>';
+
+    let chartBlock = '';
+    const canvas = document.getElementById('forecastTrendChart');
+    if (canvas && trendChart && rows.length) {
+      try {
+        chartBlock = `
+          <div class="section">
+            <h2>Cost to Date vs Payments Over Time</h2>
+            <p class="subtitle">Monthly escalation trend</p>
+            <img src="${canvas.toDataURL('image/png')}" alt="Forecast trend chart" class="chart-img">
+          </div>`;
+      } catch (_) { /* ignore canvas export errors */ }
+    }
+
+    const printHTML = `<!DOCTYPE html><html><head><title>Financial Forecast — ${esc(projectName)}</title>
+      <style>
+        @page { size: letter landscape; margin: 0.3in 0.35in; }
+        html, body { margin: 0; padding: 0; width: 100%; box-sizing: border-box; }
+        body { font-family: Arial, Helvetica, sans-serif; font-size: 8pt; color: #111; padding: 10px 12px; }
+        @media print { body { -webkit-print-color-adjust: exact; print-color-adjust: exact; } }
+        .header { display: flex; justify-content: space-between; align-items: flex-start; border-bottom: 2px solid #222; padding-bottom: 8px; margin-bottom: 12px; }
+        .header h1 { font-size: 14pt; margin: 0 0 4px; }
+        .header .meta { text-align: right; font-size: 8pt; line-height: 1.4; }
+        .section h2 { font-size: 11pt; margin: 0 0 4px; }
+        .subtitle { font-size: 8pt; color: #555; margin: 0 0 8px; }
+        table { width: 100%; border-collapse: collapse; table-layout: fixed; font-size: 7pt; }
+        th, td { border: 1px solid #333; padding: 3px 4px; vertical-align: top; word-wrap: break-word; overflow-wrap: anywhere; }
+        th { background: #ececec; font-weight: 700; text-align: center; font-size: 6.5pt; line-height: 1.15; }
+        td.mono { font-family: "Courier New", Courier, monospace; text-align: right; }
+        td.left, th.left { text-align: left; }
+        td.center, th.center { text-align: center; }
+        td.notes { font-size: 6.5pt; color: #444; }
+        .chart-img { width: 100%; max-width: 100%; height: auto; display: block; margin-top: 6px; }
+        .footer { margin-top: 10px; padding-top: 6px; border-top: 1px solid #999; font-size: 7pt; color: #555; display: flex; justify-content: space-between; }
+      </style>
+      </head><body>
+        <div class="header">
+          <div>
+            <h1>Monthly Financial Progress</h1>
+            <div class="subtitle">Cost to date, contract changes, and payments over time</div>
+          </div>
+          <div class="meta">
+            <div><strong>Project:</strong> ${esc(projectName)}</div>
+            <div><strong>As of:</strong> ${esc(asOf)}</div>
+            <div><strong>Printed:</strong> ${esc(printedOn)}</div>
+          </div>
+        </div>
+        <table>
+          <thead>
+            <tr>
+              <th class="left" style="width:7%;">Month</th>
+              <th class="left" style="width:7%;">As of</th>
+              <th style="width:8%;">Subtotal<br>Budget</th>
+              <th style="width:8%;">Subtotal<br>Projected</th>
+              <th style="width:8%;">Cost to<br>Date</th>
+              <th style="width:7%;">Approved<br>COs</th>
+              <th style="width:8%;">Revised<br>Contract</th>
+              <th style="width:8%;">Payments<br>Received</th>
+              <th style="width:7%;">Payments<br>Pending</th>
+              <th style="width:8%;">Total<br>Payments</th>
+              <th style="width:5%;">%<br>Complete</th>
+              <th class="left" style="width:19%;">Notes</th>
+            </tr>
+          </thead>
+          <tbody>${tableRows}</tbody>
+        </table>
+        ${chartBlock}
+        <div class="footer">
+          <span>Confidential</span>
+          <span>Financial Forecast</span>
+          <span>${esc(printedOn)}</span>
+        </div>
+      </body></html>`;
+
+    if (global.CasePMOutput) {
       await global.CasePMOutput.deliverHtml({
         title: 'Financial Forecast',
-        html: global.CasePMOutput.htmlFromElement(root, 'Financial Forecast'),
-        filenameBase: 'Financial_Forecast',
+        html: printHTML,
+        filenameBase: `Financial_Forecast_${projectId() || 'project'}`,
         sourceModule: 'forecast',
         systemFolderKey: 'printed-output',
-        onPrint: async () => { window.print(); },
+        onPrint: async () => {
+          global.CasePMPrint.printHtmlInIframe(printHTML, { landscape: true, delay: 500 });
+        },
       });
       return;
     }
-    window.print();
+    global.CasePMPrint.printHtmlInIframe(printHTML, { landscape: true, delay: 500 });
   }
 
   async function init() {

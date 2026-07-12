@@ -55,7 +55,6 @@
       state.meetings = j.meetings || [];
       state.stats = j.stats || {};
       ctx.scheduleUrl = j.schedule_url || ctx.scheduleUrl;
-      if (el('mmProjectBadge')) el('mmProjectBadge').textContent = ctx.projectName || 'Select a project';
       populateFilters();
       renderStats();
       renderList();

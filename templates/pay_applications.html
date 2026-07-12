@@ -7300,6 +7300,7 @@ function printSubcontractorG703(companyId) {
                 table { width: 100%; border-collapse: collapse; font-size: 8pt; table-layout: fixed; }
                 th, td { border:1px solid #222; padding:3px 4px; vertical-align: top; }
                 th { background:#e8e8e8; font-weight:700; font-size: 8px; text-align:center; }
+                th.col-j { font-size: 6.5px; line-height: 1.08; padding: 2px 1px; word-wrap: break-word; }
                 .right { text-align:right; font-family: "Courier New", monospace; }
                 .center { text-align:center; }
                 .section-header { font-weight:700; background:#f3f4f6; }
@@ -7324,15 +7325,15 @@ function printSubcontractorG703(companyId) {
                     <thead>
                         <tr>
                             <th style="width:6%;">A<br>ITEM No.</th>
-                            <th style="width:22%;">B<br>DESCRIPTION OF WORK</th>
+                            <th style="width:21%;">B<br>DESCRIPTION OF WORK</th>
                             <th style="width:11%;">C<br>SCHEDULED VALUE</th>
                             <th style="width:11%;">D<br>WORK COMPLETED<br>FROM PREVIOUS APPLICATION<br>(D+E)</th>
                             <th style="width:10%;">E<br>WORK COMPLETED<br>THIS PERIOD</th>
                             <th style="width:11%;">F<br>MATERIALS PRESENTLY STORED<br>(NOT IN D or E)</th>
                             <th style="width:11%;">G<br>TOTAL COMPLETED AND STORED<br>TO DATE (D+E+F)</th>
-                            <th style="width:5%;">H<br>%<br>(G/C)</th>
-                            <th style="width:8%;">I<br>BALANCE TO FINISH<br>(C-G)</th>
-                            <th style="width:5%;">J<br>RETAINAGE<br>IF VARIABLE RATE</th>
+                            <th style="width:4%;">H<br>%<br>(G/C)</th>
+                            <th style="width:7%;">I<br>BALANCE TO FINISH<br>(C-G)</th>
+                            <th class="col-j" style="width:8%;">J<br>RETAINAGE<br>IF VAR. RATE</th>
                         </tr>
                     </thead>
                     <tbody>
