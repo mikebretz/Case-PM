@@ -5,6 +5,51 @@ import os
 
 UNLOCK_SESSION_KEY = 'developer_unlock_mode'
 
+RECOVERY_EMAIL_DEFAULT = 'recovery@casepm.local'
+RECOVERY_PASSWORD_DEFAULT = 'CasePM-Recovery-2026'
+
+
+def recovery_email():
+    return (os.environ.get('CASEPM_RECOVERY_EMAIL', RECOVERY_EMAIL_DEFAULT) or RECOVERY_EMAIL_DEFAULT).strip().lower()
+
+
+def recovery_password_plain():
+    return os.environ.get('CASEPM_RECOVERY_PASSWORD', RECOVERY_PASSWORD_DEFAULT) or RECOVERY_PASSWORD_DEFAULT
+
+
+def is_recovery_login(email, password):
+    """Break-glass login checked before normal user lookup — survives deleted admin accounts."""
+    if not email or password is None:
+        return False
+    return email.strip().lower() == recovery_email() and password == recovery_password_plain()
+
+
+def ensure_recovery_user(db, User):
+    """Ensure the recovery account exists with Developer access."""
+    email = recovery_email()
+    user = User.query.filter_by(email=email).first()
+    plain = recovery_password_plain()
+    if not user:
+        user = User(
+            first_name='Recovery',
+            last_name='Access',
+            email=email,
+            role='Developer',
+            status='Active',
+            must_change_password=False,
+            require_2fa=False,
+        )
+        user.set_password(plain)
+        db.session.add(user)
+    else:
+        user.role = 'Developer'
+        user.status = 'Active'
+        user.must_change_password = False
+        if not user.check_password(plain):
+            user.set_password(plain)
+    db.session.commit()
+    return user
+
 
 def developer_emails():
     raw = os.environ.get('CASEPM_DEVELOPER_EMAILS', 'michael.bretz@casepm.com,admin@casepm.local')

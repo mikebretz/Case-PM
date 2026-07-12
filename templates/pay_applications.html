@@ -643,7 +643,7 @@ let mainLienWaiver = JSON.parse(casepmStore.getItem('mainLienWaiver') || '{}'); 
             console.error('localStorage save failed:', key, e);
             if (e && (e.name === 'QuotaExceededError' || e.code === 22)) {
                 showCenteredAlert(
-                    'Browser storage is full (usually from uploaded lien waiver PDFs). The save could not complete.\n\nTry Sub Pay App Tracker → "Clear All Sub Data (Debug)", or remove old lien waiver uploads.',
+                    'Browser storage is full (usually from uploaded lien waiver PDFs). The save could not complete.\n\nUse Developer Console → Pay Apps maintenance tools, or remove old lien waiver uploads.',
                     'error'
                 );
             } else {
@@ -3087,10 +3087,6 @@ let mainLienWaiver = JSON.parse(casepmStore.getItem('mainLienWaiver') || '{}'); 
             workflowHTML += `<span class="px-4 py-1.5 bg-emerald-900/60 text-emerald-400 text-sm rounded-md font-medium">Approved — Payment can be processed</span>`;
         }
 
-        // Test button to advance period (for testing submission and previous pay apps flow)
-        workflowHTML += `<button onclick="resetToNextPeriodForTesting()" class="ml-auto px-3 py-1.5 bg-zinc-700 hover:bg-zinc-600 rounded-md text-xs font-medium flex items-center gap-1.5 border border-zinc-600" title="Advance to next period for testing">
-            <i class="fa-solid fa-fast-forward"></i> <span>Reset to Next Period (Test)</span>
-        </button>`;
         workflowHTML += `</div>`;
         workflowBar.innerHTML = workflowHTML;
 
@@ -3996,12 +3992,6 @@ let mainLienWaiver = JSON.parse(casepmStore.getItem('mainLienWaiver') || '{}'); 
                     <i class="fa-solid fa-plus"></i> <span>Add SOV Line</span>
                 </button>
                 ${lockBtnHTML}
-                <button onclick="resetContractorG703AndPreviousPeriods()" 
-                        class="px-4 py-2 bg-red-700 hover:bg-red-600 rounded-md text-sm flex items-center gap-2 border border-red-500/50"
-                        title="Nuclear reset: Clears ALL Contractor G703 lines AND empties the 'Select Previous Period' dropdown. Use to start a brand new project from scratch.">
-                    <i class="fa-solid fa-trash-can"></i> 
-                    <span>Reset G703 + Previous Periods (Start Fresh)</span>
-                </button>
             </div>
         `;
 
@@ -4963,9 +4953,6 @@ let mainLienWaiver = JSON.parse(casepmStore.getItem('mainLienWaiver') || '{}'); 
                     <button onclick="submitSubSOVForApproval()" class="ml-auto px-4 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded text-xs font-medium flex items-center gap-1.5">
                         <i class="fa-solid fa-paper-plane"></i> <span>Submit SOV for Approval</span>
                     </button>
-                    <button onclick="clearAllSubcontractorsForFreshJob()" class="px-3 py-1.5 bg-amber-600 hover:bg-amber-500 text-white rounded text-xs font-medium flex items-center gap-1.5" title="TEST BUTTON: Clear ALL subcontractors from this job to start completely fresh (empties the Select Subcontractor dropdown)">
-                        <i class="fa-solid fa-trash-can"></i> <span>Clear All Subs (Test)</span>
-                    </button>
                 </div>
             `;
         } else if (currentStatus === 'Pending Approval') {
@@ -5411,7 +5398,7 @@ let mainLienWaiver = JSON.parse(casepmStore.getItem('mainLienWaiver') || '{}'); 
 
     async function clearAllSubcontractorsForFreshJob() {
         if (!await payAppConfirm(
-            '⚠️ CLEAR ALL SUBCONTRACTORS FOR FRESH JOB (TEST BUTTON)\n\nThis will permanently delete:\n• All subcontractor SOV line items\n• All pay app history & G703 snapshots\n• All lien waivers\n• Pending submissions & counters\n\nThis is for starting a completely new/fresh job with an EMPTY subcontractor dropdown.\nYou will need to use "Add New" to add subcontractors back for this project.\n\nContinue?',
+            '⚠️ CLEAR ALL SUBCONTRACTORS\n\nThis will permanently delete:\n• All subcontractor SOV line items\n• All pay app history & G703 snapshots\n• All lien waivers\n• Pending submissions & counters\n\nContinue?',
             { title: 'Clear All Subcontractors', danger: true }
         )) {
             return;
@@ -6405,7 +6392,7 @@ let mainLienWaiver = JSON.parse(casepmStore.getItem('mainLienWaiver') || '{}'); 
         if (hasActiveSubPayAppInTracker(companyId)) {
             showCenteredAlert(
                 `BLOCKED: This subcontractor has a pay application still open from a PRIOR billing period.\n\n` +
-                `Approve the main Pay Application (G702) for that prior period to archive it, or use Sub Pay App Tracker → "Push to Previous Sub Pay Apps (Debug)" to clear it.`,
+                `Approve the main Pay Application (G702) for that prior period to archive it, or use Developer Console → Pay Apps → push to previous sub pay apps.`,
                 'error'
             );
             return;
@@ -6425,7 +6412,7 @@ let mainLienWaiver = JSON.parse(casepmStore.getItem('mainLienWaiver') || '{}'); 
                 const prevNum = prevNums.length > 0 ? prevNums[0] : (currentPeriodNum - 1);
                 showCenteredAlert(
                     `BLOCKED: Cannot submit Pay App #${currentPeriodNum} while Pay App #${prevNum} is still active in the Sub Pay App Tracker.\n\n` +
-                    `Please go to the Sub Pay App Tracker tab, find the #${prevNum} row, and click "Push to Previous Sub Pay Apps (Debug)" to archive it first.\n\n` +
+                    `Use Developer Console → Pay Apps → push to previous sub pay apps to archive period #${prevNum} first.\n\n` +
                     `This ensures each pay app is properly closed out before the next one is created, matching standard construction pay app workflow.`,
                     'error'
                 );
@@ -9240,20 +9227,8 @@ function printSubcontractorG703(companyId) {
             </div>
         `;
 
-        // Workflow bar (debug buttons preserved)
-        workflowBar.innerHTML = `
-            <div class="workflow-bar px-4 py-3 flex items-center justify-end gap-3 text-sm">
-                <button onclick="reconcileSubPayAppTrackerState(); renderPayAppContent();" class="px-3 py-1 bg-sky-700 hover:bg-sky-600 text-white text-xs rounded font-medium flex items-center gap-1.5 border border-sky-600" title="Repair stuck/orphaned sub pay app records so Tracker and Sub SOV stay in sync.">
-                    <i class="fa-solid fa-wrench"></i> <span>Repair Tracker Sync</span>
-                </button>
-                <button onclick="clearAllSubPayAppData()" class="px-3 py-1 bg-red-700 hover:bg-red-600 text-white text-xs rounded font-medium flex items-center gap-1.5 border border-red-600" title="Nuclear reset for all subcontractor pay app data, numbers, history, pending papers, and lien waivers. Use when numbers get stuck.">
-                    <i class="fa-solid fa-trash"></i> <span>Clear All Sub Data (Debug)</span>
-                </button>
-                <button onclick="forcePushLatestApprovedToPreviousSubPayApps()" class="ml-2 px-3 py-1 bg-violet-700 hover:bg-violet-600 text-white text-xs rounded font-medium flex items-center gap-1.5 border border-violet-600" title="Push ALL active Sub Pay Apps currently shown in this Tracker to Previous Sub Pay Apps (archives them so they disappear from Tracker and become available in history). Use this to clear the Tracker and enable the next pay app cycle.">
-                    <i class="fa-solid fa-history"></i> <span>Push to Previous Sub Pay Apps (Debug)</span>
-                </button>
-            </div>
-        `;
+        // Workflow bar (production — maintenance tools are in Developer Console)
+        workflowBar.innerHTML = `<div class="workflow-bar px-4 py-3 flex items-center justify-end gap-3 text-sm"></div>`;
 
         // Clear old table completely for this tab
         thead.innerHTML = '';
@@ -9754,7 +9729,19 @@ function printSubcontractorG703(companyId) {
         // Success feedback removed per user request (note saved visibly)
     }
 
-    window.onload = initializePayApplications;
+    window.onload = function () {
+        initializePayApplications();
+        if (typeof CasePMDevActions !== 'undefined') {
+            CasePMDevActions.consumeAny({
+                'payapps-reset-period': () => resetToNextPeriodForTesting(),
+                'payapps-nuclear-g703': () => resetContractorG703AndPreviousPeriods(),
+                'payapps-clear-subs': () => clearAllSubcontractorsForFreshJob(),
+                'payapps-repair-tracker': () => { reconcileSubPayAppTrackerState(); renderPayAppContent(); },
+                'payapps-clear-sub-data': () => clearAllSubPayAppData(),
+                'payapps-push-previous': () => forcePushLatestApprovedToPreviousSubPayApps(),
+            });
+        }
+    };
 </script>
 
 {% endblock %}

@@ -979,7 +979,6 @@
     el('tbAutoDetect')?.addEventListener('change', (e) => voice().setAutoDetect(e.target.checked));
     el('tbRetrain')?.addEventListener('click', reprocessAll);
     el('tbTrainReview')?.addEventListener('click', trainFromReview);
-    el('tbVoiceTest')?.addEventListener('click', runVoiceTest);
     el('tbStartMeeting')?.addEventListener('click', startMeeting);
     el('tbRunEnd')?.addEventListener('click', endMeeting);
     el('tbRunPrev')?.addEventListener('click', () => goRunStep(-1));
@@ -997,6 +996,9 @@
     if (!el('tbList')) return;
     bind();
     loadCatalog().then(refresh);
+    if (typeof global.CasePMDevActions !== 'undefined') {
+      global.CasePMDevActions.consume('safety-voice-test', runVoiceTest);
+    }
   }
 
   global.CasePMSafetyToolbox = { refresh, openCreate, openMeeting, setScope, adoptMeeting };

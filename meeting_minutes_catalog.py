@@ -1,8 +1,5 @@
 """
 Meeting minutes catalog — types, statuses, agenda templates.
-
-Patterns from common construction meeting workflows,
-e-Builder, Viewpoint, Smartsheet, Monday.com, and Microsoft Project.
 """
 
 MEETING_TYPES = [
@@ -259,7 +256,7 @@ TOOLBOX_AGENDA_BRIEFINGS = {
 }
 
 
-# OSHA / Cal-OSHA aligned toolbox talk reference library (Procore / Autodesk-style topic picker).
+# OSHA / Cal-OSHA aligned toolbox talk reference library.
 TOOLBOX_COMPLIANCE = {
     'title': 'Toolbox / Tailgate Safety Meeting',
     'osha_refs': [

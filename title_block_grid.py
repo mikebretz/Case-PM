@@ -13,7 +13,7 @@ Typical architectural title block (bottom-right inside frame):
   │               │         Drawing No.        │
   └──────────────┴───────────────────────────┘
 
-Detection strategy (Bluebeam region + spatial index):
+Detection strategy (region + spatial index):
 1. Parse the full bottom-right title block (not just the narrow sheet column)
 2. Split metadata left column vs identifier right column
 3. Drawing name from full-width top band with "Drawing Name:" label at bottom
@@ -1419,7 +1419,7 @@ def _ocr_title_block(pdf_path: str, page_index: int) -> list[LabeledCell]:
 
 
 def analyze_title_block_grid(pdf_path: str, page_index: int = 0) -> dict[str, Any]:
-    """Bluebeam-style title block extraction from full name band + right column."""
+    """Title block extraction from full name band + right column."""
     result: dict[str, Any] = {
         'sheet_number': None,
         'drawing_name': '',
