@@ -1423,16 +1423,20 @@ def save_uploaded_file(file, folder='photos'):
 
 # ==================== HELPER FUNCTIONS ====================
 
-def generate_next_number(prefix, model_class):
-    """Generate next sequential number (e.g. RFI-001, CO-042, PL-007)"""
+def generate_next_number(prefix, model_class, doc_type=None):
+    """Generate next sequential number (e.g. RFI-001, CO-042) using program settings when doc_type is set."""
+    from program_settings_persistence import get_numbering_prefix, format_document_number
+    pad = 3
+    if doc_type:
+        prefix, pad = get_numbering_prefix(doc_type)
     last_record = model_class.query.order_by(model_class.number.desc()).first()
     if last_record and last_record.number:
         try:
-            last_num = int(last_record.number.split('-')[-1])
-            return f"{prefix}-{last_num + 1:03d}"
-        except:
+            last_num = int(str(last_record.number).split('-')[-1])
+            return format_document_number(prefix, last_num + 1, pad)
+        except (ValueError, TypeError):
             pass
-    return f"{prefix}-001"
+    return format_document_number(prefix, 1, pad)
 
 
 def get_dashboard_stats():
@@ -2110,7 +2114,9 @@ def create_project():
             return redirect(url_for('projects_page'))
 
         next_num = Project.query.count() + 1
-        raw_number = request.form.get('number') or f"PRJ-{next_num:03d}"
+        from program_settings_persistence import get_numbering_prefix, format_document_number
+        prj_prefix, prj_pad = get_numbering_prefix('project')
+        raw_number = request.form.get('number') or format_document_number(prj_prefix, next_num, prj_pad)
         number = _normalize_project_number(raw_number)
         conflict = _project_number_conflict(number)
         if conflict and not _developer_unlock_bypass():
@@ -2604,7 +2610,7 @@ def create_rfi():
         due_date = request.form.get('due_date')
         rfi = RFI(
             project_id=int(project_id),
-            number=generate_next_number('RFI', RFI),
+            number=generate_next_number('RFI', RFI, doc_type='rfi'),
             subject=subject,
             question=request.form.get('question'),
             priority=request.form.get('priority', 'Medium'),
@@ -2717,7 +2723,7 @@ def api_create_rfi():
         status = body.get('status') or 'Draft'
         rfi = RFI(
             project_id=int(project_id),
-            number=generate_next_number('RFI', RFI),
+            number=generate_next_number('RFI', RFI, doc_type='rfi'),
             subject=subject,
             question=body.get('question'),
             priority=body.get('priority') or 'Medium',
@@ -3030,7 +3036,7 @@ def api_rfi_promote_pco(rfi_id):
     body = request.get_json(silent=True) or {}
     pco = PotentialChangeOrder(
         project_id=rfi.project_id,
-        number=generate_next_number('PCO', PotentialChangeOrder),
+        number=generate_next_number('PCO', PotentialChangeOrder, doc_type='pco'),
         title=body.get('title') or f'PCO from {rfi.number}: {rfi.subject}',
         description=body.get('description') or rfi.official_answer or rfi.question,
         estimated_amount=float(body.get('estimated_amount') or rfi.cost_impact_amount or 0),
@@ -3121,7 +3127,7 @@ def create_change_order():
             flash('Description and Project are required.', 'error')
             return redirect_with_project('change_orders_page')
 
-        number = generate_next_number('CO', ChangeOrder)
+        number = generate_next_number('CO', ChangeOrder, doc_type='change_order')
         co = ChangeOrder(
             number=number,
             created_by_id=current_user.id,
@@ -3245,7 +3251,7 @@ def create_submittal():
             flash('Description and Project are required.', 'error')
             return redirect_with_project('submittals_page')
 
-        number = generate_next_number('SUB', Submittal)
+        number = generate_next_number('SUB', Submittal, doc_type='submittal')
 
         submittal = Submittal(
             project_id=int(project_id),
@@ -3786,7 +3792,7 @@ def api_punch_items_create():
         return jsonify({'error': 'project_id and description required'}), 400
     item = PunchItem(
         project_id=int(project_id),
-        number=generate_next_number('PL', PunchItem),
+        number=generate_next_number('PL', PunchItem, doc_type='punch'),
         description=description,
         priority=body.get('priority') or 'Medium',
         status=body.get('status') or 'Open',
@@ -3927,7 +3933,7 @@ def create_punch_item():
             flash('Description and Project are required.', 'error')
             return redirect_with_project('punch_list_page')
 
-        number = generate_next_number('PL', PunchItem)
+        number = generate_next_number('PL', PunchItem, doc_type='punch')
 
         item = PunchItem(
             project_id=int(project_id),
@@ -4054,7 +4060,7 @@ def api_safety_reports_create():
         return jsonify({'error': 'project_id and description required'}), 400
     r = SafetyReport(
         project_id=int(project_id),
-        number=generate_next_number('SAF', SafetyReport),
+        number=generate_next_number('SAF', SafetyReport, doc_type='safety'),
         type=body.get('type') or 'Observation',
         description=description,
         severity=body.get('severity') or 'Medium',
@@ -4478,7 +4484,7 @@ def create_safety_report():
             flash('Description and Project are required.', 'error')
             return redirect_with_project('safety_page')
 
-        number = generate_next_number('SAF', SafetyReport)
+        number = generate_next_number('SAF', SafetyReport, doc_type='safety')
 
         report = SafetyReport(
             project_id=int(project_id),
@@ -8974,7 +8980,14 @@ def commitments_page():
 
 def generate_commitment_number(commitment_type, project_id):
     from commitment_persistence import prefix_for_type
+    from program_settings_persistence import format_document_number, load_numbering_config
     prefix = prefix_for_type(commitment_type or 'Purchase Order')
+    cfg = load_numbering_config()
+    pad = 3
+    for entry in cfg.values():
+        if entry.get('prefix') == prefix:
+            pad = entry.get('pad', 3)
+            break
     last = (
         Commitment.query.filter_by(project_id=int(project_id))
         .filter(Commitment.number.like(f'{prefix}-%'))
@@ -8984,10 +8997,10 @@ def generate_commitment_number(commitment_type, project_id):
     if last and last.number:
         try:
             n = int(last.number.split('-')[-1])
-            return f'{prefix}-{n + 1:03d}'
+            return format_document_number(prefix, n + 1, pad)
         except (TypeError, ValueError):
             pass
-    return f'{prefix}-001'
+    return format_document_number(prefix, 1, pad)
 
 
 def _parse_commitment_date(value):
@@ -9704,7 +9717,12 @@ def inspections_page():
     return render_template('inspections.html', active_project=get_active_project())
 
 
-def _next_permit_inspection_number(project_id, prefix='INSP'):
+def _next_permit_inspection_number(project_id, prefix=None):
+    from program_settings_persistence import get_numbering_prefix, format_document_number
+    if not prefix:
+        prefix, pad = get_numbering_prefix('inspection')
+    else:
+        _, pad = get_numbering_prefix('inspection')
     from sqlalchemy import func
     q = PermitInspectionItem.query.filter_by(project_id=int(project_id))
     last = q.order_by(PermitInspectionItem.id.desc()).first()
@@ -9714,7 +9732,7 @@ def _next_permit_inspection_number(project_id, prefix='INSP'):
             n = int(str(last.item_number).split('-')[-1]) + 1
         except (ValueError, IndexError):
             n = (last.id or 0) + 1
-    return f'{prefix}-{n:03d}'
+    return format_document_number(prefix, n, pad)
 
 
 def _apply_permit_inspection_item(item, body):
@@ -10080,12 +10098,19 @@ def meeting_minutes_page():
     return render_template('meeting_minutes.html', active_project=get_active_project())
 
 
-def _next_meeting_number(project_id, prefix='MM'):
+def _next_meeting_number(project_id, prefix=None):
+    from program_settings_persistence import get_numbering_prefix, format_document_number
     if project_id is None:
         q = MeetingMinute.query.filter(MeetingMinute.project_id.is_(None))
-        prefix = 'TB-CO'
+        prefix, pad = get_numbering_prefix('toolbox')
+        prefix = f'{prefix}-CO'
+        pad = 3
     else:
         q = MeetingMinute.query.filter_by(project_id=int(project_id))
+        if not prefix:
+            prefix, pad = get_numbering_prefix('meeting')
+        else:
+            _, pad = get_numbering_prefix('meeting')
     last = q.order_by(MeetingMinute.id.desc()).first()
     n = 1
     if last and last.meeting_number:
@@ -10093,7 +10118,7 @@ def _next_meeting_number(project_id, prefix='MM'):
             n = int(str(last.meeting_number).split('-')[-1]) + 1
         except (ValueError, IndexError):
             n = (last.id or 0) + 1
-    return f'{prefix}-{n:03d}'
+    return format_document_number(prefix, n, pad)
 
 
 def _meeting_upload_folder(m):
@@ -10860,6 +10885,41 @@ def api_program_settings_email():
     return jsonify({'ok': True, 'email': email})
 
 
+@app.route('/api/program-settings/numbering', methods=['GET', 'PUT'])
+@login_required
+def api_program_settings_numbering():
+    from program_settings_persistence import load_numbering_config, save_numbering_config, NUMBERING_DEFAULTS, format_document_number
+    if request.method == 'GET':
+        cfg = load_numbering_config()
+        catalog = [{
+            'key': key,
+            'label': defaults.get('label', key),
+            'prefix': cfg[key].get('prefix'),
+            'pad': cfg[key].get('pad'),
+            'scope': cfg[key].get('scope'),
+            'example': format_document_number(cfg[key].get('prefix', 'DOC'), 1, cfg[key].get('pad', 3)),
+        } for key, defaults in NUMBERING_DEFAULTS.items()]
+        return jsonify({'ok': True, 'numbering': cfg, 'catalog': catalog})
+    if current_user.role != 'Admin':
+        return jsonify({'error': 'Admin only'}), 403
+    body = request.get_json(silent=True) or {}
+    saved = save_numbering_config(body.get('numbering') or body)
+    return jsonify({'ok': True, 'numbering': saved})
+
+
+@app.route('/api/program-settings/pay-apps', methods=['GET', 'PUT'])
+@login_required
+def api_program_settings_pay_apps():
+    from program_settings_persistence import load_pay_app_defaults, save_pay_app_defaults
+    if request.method == 'GET':
+        return jsonify({'ok': True, 'pay_apps': load_pay_app_defaults()})
+    if current_user.role != 'Admin':
+        return jsonify({'error': 'Admin only'}), 403
+    body = request.get_json(silent=True) or {}
+    saved = save_pay_app_defaults(body.get('pay_apps') or body)
+    return jsonify({'ok': True, 'pay_apps': saved})
+
+
 @app.route('/api/program-settings/sage/test', methods=['POST'])
 @login_required
 @admin_required
@@ -11554,7 +11614,7 @@ def api_create_change_order():
         allocations = body.get('allocations') or []
         if status != 'Draft':
             allocations = validate_allocations(allocations, require_rows=True, require_amount=True)
-        number = generate_next_number('CO', ChangeOrder)
+        number = generate_next_number('CO', ChangeOrder, doc_type='change_order')
         co = ChangeOrder(
             project_id=int(project_id),
             number=number,
@@ -12091,7 +12151,7 @@ def api_create_pco():
             allocations = validate_allocations(allocations, require_rows=True, require_amount=True)
         pco = PotentialChangeOrder(
             project_id=int(project_id),
-            number=generate_next_number('PCO', PotentialChangeOrder),
+            number=generate_next_number('PCO', PotentialChangeOrder, doc_type='pco'),
             title=title,
             description=body.get('description') or title,
             status=status,

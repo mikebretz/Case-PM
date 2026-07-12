@@ -122,13 +122,17 @@ def _parse_json(raw, default):
 
 
 def prefix_for_type(commitment_type):
+    from program_settings_persistence import load_numbering_config
     mapping = {
-        'Purchase Order': 'PO',
-        'Subcontract': 'SC',
-        'Material Supply': 'MS',
-        'Service Agreement': 'SA',
+        'Purchase Order': 'commitment_po',
+        'Subcontract': 'commitment_sc',
+        'Material Supply': 'commitment_ms',
+        'Service Agreement': 'commitment_sa',
     }
-    return mapping.get(commitment_type, 'COM')
+    key = mapping.get(commitment_type, 'commitment_com')
+    cfg = load_numbering_config().get(key, {})
+    fallback = {'commitment_po': 'PO', 'commitment_sc': 'SC', 'commitment_ms': 'MS', 'commitment_sa': 'SA', 'commitment_com': 'COM'}
+    return cfg.get('prefix') or fallback.get(key, 'COM')
 
 
 def commitment_to_dict(commitment, allocations=None):
