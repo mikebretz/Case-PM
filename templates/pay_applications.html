@@ -581,6 +581,11 @@ let requireAllSubPayAppsBeforeG702Submit = casepmStore.getItem('requireAllSubPay
     function devUnlockActive() {
         return typeof CasePMDeveloperUnlock !== 'undefined' && CasePMDeveloperUnlock.isActive();
     }
+
+    /** Safe value for inline onclick/oninput handlers (string company IDs must be quoted). */
+    function jsArg(val) {
+        return JSON.stringify(val == null ? '' : val);
+    }
     function contractorSovIsLocked() {
         return casepmStore.getItem('contractorSOVLocked') === 'true' && !devUnlockActive();
     }
@@ -2334,7 +2339,7 @@ let mainLienWaiver = JSON.parse(casepmStore.getItem('mainLienWaiver') || '{}'); 
             subtitle: `Period ${periodNum} • ${waiver.uploadedDate || 'Unknown date'}`,
             dataUrl: waiver.dataUrl,
             filename: waiver.filename,
-            footerLeftHtml: `<button type="button" onclick="removeLienWaiver(${companyId}); closeDocumentViewer(this)" class="text-red-400 hover:underline">Remove This File</button>`
+            footerLeftHtml: `<button type="button" onclick="removeLienWaiver(${jsArg(companyId)}); closeDocumentViewer(this)" class="text-red-400 hover:underline">Remove This File</button>`
         });
     }
 
@@ -5019,12 +5024,12 @@ let mainLienWaiver = JSON.parse(casepmStore.getItem('mainLienWaiver') || '{}'); 
                 statusMessage = 'Pay Application Submitted — Awaiting Approval';
                 if (isCurrentUserApprover()) {
                     buttonsHTML = `
-                        <button onclick="approveSubPayApp(${selectedSubCompanyId})" 
+                        <button onclick="approveSubPayApp(${jsArg(selectedSubCompanyId)})" 
                                 class="ml-3 px-6 py-2 bg-red-600 hover:bg-red-500 text-white rounded text-sm font-bold flex items-center gap-2 shadow-lg ring-2 ring-red-400/50">
                             <i class="fa-solid fa-check-double"></i> 
                             <span>Approve Application</span>
                         </button>
-                        <button onclick="requestRevisionSubPayApp(${selectedSubCompanyId})" 
+                        <button onclick="requestRevisionSubPayApp(${jsArg(selectedSubCompanyId)})" 
                                 class="px-5 py-2 bg-yellow-600 hover:bg-yellow-500 text-white rounded text-sm font-medium flex items-center gap-2">
                             <i class="fa-solid fa-redo"></i> 
                             <span>Request Revision</span>
@@ -5033,9 +5038,9 @@ let mainLienWaiver = JSON.parse(casepmStore.getItem('mainLienWaiver') || '{}'); 
                             <div class="inline-flex items-center gap-1.5 px-3 py-1.5 bg-emerald-900/60 border border-emerald-600 rounded-md text-sm ml-2">
                                 <i class="fa-solid fa-file-contract text-emerald-400"></i>
                                 <span class="text-emerald-300 max-w-[160px] truncate" title="${waiverForPill.filename || 'Lien Waiver'}">${waiverForPill.filename || 'Lien Waiver'}</span>
-                                <button onclick="viewLienWaiver(${selectedSubCompanyId}); event.stopImmediatePropagation();" class="px-2.5 py-0.5 bg-emerald-700 hover:bg-emerald-600 text-white rounded text-xs">View</button>
-                                <button onclick="removeLienWaiver(${selectedSubCompanyId}); event.stopImmediatePropagation();" class="px-2.5 py-0.5 bg-red-600 hover:bg-red-500 text-white rounded text-xs">Remove</button>
-                                <button onclick="uploadLienWaiver(${selectedSubCompanyId}); event.stopImmediatePropagation();" class="px-2.5 py-0.5 bg-sky-600 hover:bg-sky-500 text-white rounded text-xs">Re-upload</button>
+                                <button onclick="viewLienWaiver(${jsArg(selectedSubCompanyId)}); event.stopImmediatePropagation();" class="px-2.5 py-0.5 bg-emerald-700 hover:bg-emerald-600 text-white rounded text-xs">View</button>
+                                <button onclick="removeLienWaiver(${jsArg(selectedSubCompanyId)}); event.stopImmediatePropagation();" class="px-2.5 py-0.5 bg-red-600 hover:bg-red-500 text-white rounded text-xs">Remove</button>
+                                <button onclick="uploadLienWaiver(${jsArg(selectedSubCompanyId)}); event.stopImmediatePropagation();" class="px-2.5 py-0.5 bg-sky-600 hover:bg-sky-500 text-white rounded text-xs">Re-upload</button>
                             </div>
                         ` : ''}
                     `;
@@ -5058,14 +5063,14 @@ let mainLienWaiver = JSON.parse(casepmStore.getItem('mainLienWaiver') || '{}'); 
 
                 if (canSubmit) {
                     buttonsHTML = `
-                        <button onclick="submitSubPayAppForApproval(${selectedSubCompanyId})" 
+                        <button onclick="submitSubPayAppForApproval(${jsArg(selectedSubCompanyId)})" 
                                 class="ml-3 px-5 py-2 bg-emerald-600 hover:bg-emerald-500 text-white rounded text-sm font-semibold flex items-center gap-2">
                             <i class="fa-solid fa-paper-plane"></i> <span>Submit Application</span>
                         </button>
                     `;
                 } else {
                     buttonsHTML = `
-                        <button onclick="submitSubPayAppForApproval(${selectedSubCompanyId})" 
+                        <button onclick="submitSubPayAppForApproval(${jsArg(selectedSubCompanyId)})" 
                                 class="ml-3 px-5 py-2 bg-zinc-600 text-white rounded text-sm font-semibold flex items-center gap-2 opacity-60 cursor-not-allowed" disabled 
                                 title="Lien Waiver is required before you can submit">
                             <i class="fa-solid fa-paper-plane"></i> <span>Submit Application</span>
@@ -5080,15 +5085,15 @@ let mainLienWaiver = JSON.parse(casepmStore.getItem('mainLienWaiver') || '{}'); 
                         <div class="inline-flex items-center gap-1.5 px-3 py-1.5 bg-emerald-900/60 border border-emerald-600 rounded-md text-sm">
                             <i class="fa-solid fa-file-contract text-emerald-400"></i>
                             <span class="text-emerald-300 max-w-[180px] truncate" title="${waiverForPill.filename || ''}">${waiverForPill.filename || 'Lien Waiver'}</span>
-                            <button onclick="viewLienWaiver(${selectedSubCompanyId}); event.stopImmediatePropagation();" class="px-2.5 py-0.5 bg-emerald-700 hover:bg-emerald-600 text-white rounded text-xs">View</button>
-                            <button onclick="removeLienWaiver(${selectedSubCompanyId}); event.stopImmediatePropagation();" class="px-2.5 py-0.5 bg-red-600 hover:bg-red-500 text-white rounded text-xs">Remove</button>
-                            <button onclick="uploadLienWaiver(${selectedSubCompanyId}); event.stopImmediatePropagation();" class="px-2.5 py-0.5 bg-sky-600 hover:bg-sky-500 text-white rounded text-xs">Re-upload</button>
+                            <button onclick="viewLienWaiver(${jsArg(selectedSubCompanyId)}); event.stopImmediatePropagation();" class="px-2.5 py-0.5 bg-emerald-700 hover:bg-emerald-600 text-white rounded text-xs">View</button>
+                            <button onclick="removeLienWaiver(${jsArg(selectedSubCompanyId)}); event.stopImmediatePropagation();" class="px-2.5 py-0.5 bg-red-600 hover:bg-red-500 text-white rounded text-xs">Remove</button>
+                            <button onclick="uploadLienWaiver(${jsArg(selectedSubCompanyId)}); event.stopImmediatePropagation();" class="px-2.5 py-0.5 bg-sky-600 hover:bg-sky-500 text-white rounded text-xs">Re-upload</button>
                         </div>
                     `;
                 } else {
                     buttonsHTML += `
                         <div class="flex items-center gap-3 flex-wrap">
-                            <button onclick="uploadLienWaiver(${selectedSubCompanyId})" class="px-4 py-2 bg-sky-600 hover:bg-sky-500 text-white rounded text-sm flex items-center gap-1.5">
+                            <button onclick="uploadLienWaiver(${jsArg(selectedSubCompanyId)})" class="px-4 py-2 bg-sky-600 hover:bg-sky-500 text-white rounded text-sm flex items-center gap-1.5">
                                 <i class="fa-solid fa-upload"></i> <span>Upload Lien Waiver ${requireLienWaiverOnSubPayApp ? '(Required)' : '(Optional)'}</span>
                             </button>
                             <div id="sub-lien-drop-zone" 
@@ -5108,7 +5113,7 @@ let mainLienWaiver = JSON.parse(casepmStore.getItem('mainLienWaiver') || '{}'); 
                     <span class="text-emerald-400 font-medium">${statusMessage}</span>
                     ${buttonsHTML}
                     
-                    <button onclick="unlockSubSOV(${selectedSubCompanyId})" class="ml-auto px-4 py-1.5 bg-amber-600 hover:bg-amber-500 text-white rounded text-xs font-medium flex items-center gap-1.5">
+                    <button onclick="unlockSubSOV(${jsArg(selectedSubCompanyId)})" class="ml-auto px-4 py-1.5 bg-amber-600 hover:bg-amber-500 text-white rounded text-xs font-medium flex items-center gap-1.5">
                         <i class="fa-solid fa-unlock"></i> <span>Unlock SOV (Admin)</span>
                     </button>
                     <button onclick="viewSubSOVAudit()" class="px-4 py-1.5 bg-zinc-700 hover:bg-zinc-600 text-white rounded text-xs font-medium flex items-center gap-1.5">
@@ -5284,8 +5289,8 @@ let mainLienWaiver = JSON.parse(casepmStore.getItem('mainLienWaiver') || '{}'); 
                 <td class="px-3 py-2 text-right text-red-400 font-mono text-sm">${formatCurrency(retainageAmount)}</td>
                 <td class="px-4 py-2 text-[15px] text-zinc-400 notes-cell" title="${(line.notes || '').replace(/"/g, '&quot;')}">${line.notes || ''}</td>
                 <td class="px-3 py-2 text-center">
-                    <button onclick="event.stopImmediatePropagation(); showSOVLineAudit(${line.id}, 'sub', ${selectedSubCompanyId})" class="text-sky-400 hover:text-sky-300 p-1" title="Line Audit Log"><i class="fa-solid fa-history"></i></button>
-                    ${!isSubApprovedLocked ? `<button onclick="event.stopImmediatePropagation(); deleteSubSOVLine(${selectedSubCompanyId}, ${line.id})" class="text-red-400 hover:text-red-300 p-1 ml-1" title="Delete"><i class="fa-solid fa-trash"></i></button>` : ''}
+                    <button onclick="event.stopImmediatePropagation(); showSOVLineAudit(${line.id}, 'sub', ${jsArg(selectedSubCompanyId)})" class="text-sky-400 hover:text-sky-300 p-1" title="Line Audit Log"><i class="fa-solid fa-history"></i></button>
+                    ${!isSubApprovedLocked ? `<button onclick="event.stopImmediatePropagation(); deleteSubSOVLine(${jsArg(selectedSubCompanyId)}, ${line.id})" class="text-red-400 hover:text-red-300 p-1 ml-1" title="Delete"><i class="fa-solid fa-trash"></i></button>` : ''}
                 </td>
             `;
             tbody.appendChild(row);
@@ -5295,7 +5300,7 @@ let mainLienWaiver = JSON.parse(casepmStore.getItem('mainLienWaiver') || '{}'); 
         if (isPrimaryContact) {
             workflowBar.innerHTML = `
                 <div class="workflow-bar px-4 py-3 flex items-center gap-3">
-                    <button onclick="submitSubSOVForApproval(${selectedSubCompanyId})" class="px-5 py-2 bg-emerald-600 hover:bg-emerald-500 rounded-md text-sm font-medium flex items-center gap-2">
+                    <button onclick="submitSubSOVForApproval(${jsArg(selectedSubCompanyId)})" class="px-5 py-2 bg-emerald-600 hover:bg-emerald-500 rounded-md text-sm font-medium flex items-center gap-2">
                         <i class="fa-solid fa-paper-plane"></i> <span>Submit My SOV for Approval</span>
                     </button>
                     <span class="text-xs text-zinc-400 ml-3">Changes saved automatically. Submit when ready for GC review.</span>
@@ -5507,7 +5512,7 @@ let mainLienWaiver = JSON.parse(casepmStore.getItem('mainLienWaiver') || '{}'); 
 
             <div class="flex justify-end gap-3 mt-6">
                 <button onclick="document.getElementById('editSubSOVModal').close()" class="px-6 py-2.5 bg-zinc-700 hover:bg-zinc-600 rounded-md text-sm">Cancel</button>
-                <button onclick="saveSubSOVLine(${companyId}, ${lineId || 'null'}, this)" class="px-8 py-2.5 bg-emerald-600 hover:bg-emerald-500 rounded-md text-sm font-semibold">Save Line</button>
+                <button onclick="saveSubSOVLine(${jsArg(companyId)}, ${lineId || 'null'}, this)" class="px-8 py-2.5 bg-emerald-600 hover:bg-emerald-500 rounded-md text-sm font-semibold">Save Line</button>
             </div>
         `;
         modal.showModal();
@@ -5651,7 +5656,7 @@ let mainLienWaiver = JSON.parse(casepmStore.getItem('mainLienWaiver') || '{}'); 
                         <label class="block text-xs text-amber-300 mb-1">Change Order Work This Period</label>
                         <input type="text" id="subCoWorkThisPeriodInput" value="${moneyInputValue(line.co_billed_this_period || 0)}"
                                class="w-full bg-zinc-800 border border-amber-500 rounded-md px-4 py-2 text-sm font-mono casepm-money-input text-right"
-                               oninput="updateSubCOLiveCalculations(${companyId}, ${lineId}, this.value)">
+                               oninput="updateSubCOLiveCalculations(${jsArg(companyId)}, ${lineId}, this.value)">
                         <div class="text-[10px] text-amber-400 mt-0.5">Affects CO remaining only. Does not affect Original Contract remaining.</div>
                         
                         <div class="grid grid-cols-2 gap-3 mt-2">
@@ -5671,7 +5676,7 @@ let mainLienWaiver = JSON.parse(casepmStore.getItem('mainLienWaiver') || '{}'); 
 
             <div class="flex justify-end gap-3 mt-6">
                 <button onclick="document.getElementById('editBillingModal').close()" class="px-6 py-2.5 bg-zinc-700 hover:bg-zinc-600 rounded-md text-sm">Cancel</button>
-                <button onclick="saveSubSOVBillingLine(${companyId}, ${lineId}, this)" class="px-8 py-2.5 bg-emerald-600 hover:bg-emerald-500 rounded-md text-sm font-semibold">Save Billing</button>
+                <button onclick="saveSubSOVBillingLine(${jsArg(companyId)}, ${lineId}, this)" class="px-8 py-2.5 bg-emerald-600 hover:bg-emerald-500 rounded-md text-sm font-semibold">Save Billing</button>
             </div>
         `;
 
@@ -6826,7 +6831,7 @@ let mainLienWaiver = JSON.parse(casepmStore.getItem('mainLienWaiver') || '{}'); 
                 </div>
                 <div class="max-h-[320px] overflow-auto border border-zinc-700 rounded-md p-2 bg-zinc-900/50">${html}</div>
                 <div class="mt-4 flex justify-between items-center">
-                    <button onclick="exportSubSOVApprovalHistory(${selectedSubCompanyId}, this)" class="px-4 py-2 bg-emerald-600 hover:bg-emerald-500 rounded-md text-sm flex items-center gap-2">
+                    <button onclick="exportSubSOVApprovalHistory(${jsArg(selectedSubCompanyId)}, this)" class="px-4 py-2 bg-emerald-600 hover:bg-emerald-500 rounded-md text-sm flex items-center gap-2">
                         <i class="fa-solid fa-file-excel"></i> <span>Export to Excel</span>
                     </button>
                     <button onclick="this.closest('dialog').close(); this.closest('dialog').remove()" class="px-5 py-2 bg-zinc-700 hover:bg-zinc-600 rounded-md text-sm">Close</button>
@@ -9296,7 +9301,7 @@ function printSubcontractorG703(companyId) {
                 <div class="flex items-center gap-1.5 flex-shrink-0">
                     ${waiverHTML}
                     ${statusHTML}
-                    <button onclick="event.stopImmediatePropagation(); sendSubPayAppNotification(${companyId});" 
+                    <button onclick="event.stopImmediatePropagation(); sendSubPayAppNotification(${jsArg(companyId)});" 
                             class="px-1.5 py-0.5 bg-emerald-700 hover:bg-emerald-600 text-white rounded text-[10px]" title="Notify this sub about ${statusForPeriod.status} for Period ${currentPeriodNum}">
                         <i class="fa-solid fa-envelope text-xs"></i>
                     </button>
@@ -9421,7 +9426,7 @@ function printSubcontractorG703(companyId) {
                 <div class="inline-flex items-center gap-1.5 px-3 py-1 bg-emerald-900/60 border border-emerald-600 rounded text-xs">
                     <i class="fa-solid fa-file-contract text-emerald-400"></i>
                     <span class="text-emerald-300">${waiverFilename || 'Lien Waiver'}</span>
-                    <button onclick="viewLienWaiver(${companyId}, ${currentPeriodNum});" class="ml-1 px-2 py-0 bg-emerald-700 hover:bg-emerald-600 text-white rounded text-[10px]">View</button>
+                    <button onclick="viewLienWaiver(${jsArg(companyId)}, ${currentPeriodNum});" class="ml-1 px-2 py-0 bg-emerald-700 hover:bg-emerald-600 text-white rounded text-[10px]">View</button>
                 </div>`;
         } else {
             lienHTML = `<span class="text-red-400 text-xs"><i class="fa-solid fa-exclamation-circle mr-1"></i>Missing Lien Waiver</span>`;
@@ -9477,7 +9482,7 @@ function printSubcontractorG703(companyId) {
             <div class="mb-4">
                 <div class="flex items-center justify-between mb-1">
                     <div class="text-xs text-zinc-400">Notes (PM Internal — visible only here)</div>
-                    <button onclick="saveTrackerDetailNote(${companyId}, this)" 
+                    <button onclick="saveTrackerDetailNote(${jsArg(companyId)}, this)" 
                             class="px-3 py-0.5 text-xs bg-emerald-600 hover:bg-emerald-500 text-white rounded font-medium">Save Note</button>
                 </div>
                 <textarea id="trackerDetailNote_${companyId}" class="w-full bg-zinc-950 border border-zinc-700 rounded-md px-3 py-2 text-sm text-white focus:outline-none focus:border-emerald-600" rows="3" placeholder="Add internal note about this sub's pay app for this period...">${notesText}</textarea>
@@ -9485,20 +9490,20 @@ function printSubcontractorG703(companyId) {
 
             <div class="flex flex-wrap gap-2 pt-2 border-t border-zinc-700">
                 ${canRequestRevision ? `
-                    <button onclick="requestRevisionSubPayApp(${companyId}${revisionArg});" 
+                    <button onclick="requestRevisionSubPayApp(${jsArg(companyId)}${revisionArg});" 
                             class="px-4 py-1.5 bg-amber-600 hover:bg-amber-500 text-white text-xs rounded font-medium flex items-center gap-1.5">
                         <i class="fa-solid fa-redo"></i> <span>Request Revision (Push back to Sub SOV)</span>
                     </button>
                 ` : ''}
-                <button onclick="sendSubPayAppNotification(${companyId});" 
+                <button onclick="sendSubPayAppNotification(${jsArg(companyId)});" 
                         class="px-4 py-1.5 bg-emerald-700 hover:bg-emerald-600 text-white text-xs rounded font-medium flex items-center gap-1.5">
                     <i class="fa-solid fa-envelope"></i> <span>Notify Sub</span>
                 </button>
-                <button onclick="showSubPayAppLog(${companyId});" 
+                <button onclick="showSubPayAppLog(${jsArg(companyId)});" 
                         class="px-4 py-1.5 bg-sky-700 hover:bg-sky-600 text-white text-xs rounded font-medium flex items-center gap-1.5">
                     <i class="fa-solid fa-history"></i> <span>View Log</span>
                 </button>
-                <button onclick="switchPayAppTab('sub-sov'); selectedSubCompanyId = ${companyId}; casepmStore.setItem('lastSelectedSubSOV', ${companyId}); renderPayAppContent();" 
+                <button onclick="switchPayAppTab('sub-sov'); selectedSubCompanyId = ${jsArg(companyId)}; casepmStore.setItem('lastSelectedSubSOV', ${jsArg(companyId)}); renderPayAppContent();" 
                         class="ml-auto px-4 py-1.5 bg-zinc-700 hover:bg-zinc-600 text-white text-xs rounded font-medium">
                     Open in Sub SOV Tab
                 </button>
@@ -9701,7 +9706,7 @@ function printSubcontractorG703(companyId) {
             <div class="flex items-center gap-2">
                 <input type="text" id="noteInput_${companyId}" value="${currentNote.replace(/"/g,'&quot;')}" 
                        class="flex-1 bg-zinc-950 border border-emerald-600 rounded px-3 py-1 text-sm text-white focus:outline-none" style="min-width:220px;">
-                <button onclick="event.stopImmediatePropagation(); saveSubTrackerNote(${companyId}, this)" 
+                <button onclick="event.stopImmediatePropagation(); saveSubTrackerNote(${jsArg(companyId)}, this)" 
                         class="px-3 py-1 bg-emerald-600 hover:bg-emerald-500 text-xs rounded font-medium">Save</button>
                 <button onclick="event.stopImmediatePropagation(); this.closest('td').innerHTML = \`${originalHTML.replace(/`/g,'\\`')}\`" 
                         class="px-2 py-1 bg-zinc-700 hover:bg-zinc-600 text-xs rounded">Cancel</button>
