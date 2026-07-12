@@ -253,7 +253,7 @@
                             <input type="time" id="backup_maintenance_window" class="w-full bg-zinc-800 border border-zinc-700 rounded-xl px-3 py-2 text-sm">
                         </div>
                     </div>
-                    <button type="button" onclick="createManualBackup()" class="w-full py-2.5 bg-emerald-600 hover:bg-emerald-500 rounded-2xl text-sm font-medium">
+                    <button type="button" data-backup-run-btn onclick="createManualBackup()" class="w-full py-2.5 bg-emerald-600 hover:bg-emerald-500 rounded-2xl text-sm font-medium">
                         <i class="fa-solid fa-database mr-1"></i> Run Backup Now
                     </button>
                 </div>
@@ -311,6 +311,20 @@
                 <h3 class="font-medium">Backup History</h3>
                 <button type="button" onclick="CasePMProgramSettings.refreshBackupList()" class="text-xs text-emerald-400 hover:underline">Refresh</button>
             </div>
+
+            <div id="backupProgressPanel" class="hidden mb-4 bg-zinc-950 border border-emerald-900/50 rounded-xl p-4">
+                <div class="flex items-center justify-between gap-3 mb-2">
+                    <div class="text-sm font-medium text-emerald-300"><i class="fa-solid fa-spinner fa-spin mr-2"></i><span id="backupProgressStep">Preparing backup…</span></div>
+                    <span id="backupProgressPercent" class="text-xs text-zinc-400 font-mono">0%</span>
+                </div>
+                <div class="h-2 bg-zinc-800 rounded-full overflow-hidden mb-3">
+                    <div id="backupProgressBar" class="h-full bg-emerald-500 rounded-full transition-all duration-300" style="width:0%"></div>
+                </div>
+                <div id="backupProgressFile" class="text-xs text-zinc-500 font-mono truncate mb-3"></div>
+                <div class="text-xs text-zinc-500 uppercase tracking-wide mb-1">Saving to</div>
+                <div id="backupProgressDestinations" class="space-y-1 text-sm"></div>
+            </div>
+
             <div id="backupHistoryList" class="bg-zinc-950 border border-zinc-800 rounded-xl p-4 text-sm text-zinc-500">Loading…</div>
 
             <div class="mt-8 bg-zinc-800/50 border border-emerald-900/50 rounded-2xl p-5">
