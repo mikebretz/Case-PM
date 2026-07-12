@@ -8,14 +8,18 @@ import tempfile
 import threading
 import uuid
 import zipfile
-from datetime import datetime, timezone
-from zoneinfo import ZoneInfo
+from datetime import datetime, timedelta, timezone
+
+try:
+    from zoneinfo import ZoneInfo
+except ImportError:  # pragma: no cover - Python < 3.9
+    ZoneInfo = None  # type: ignore[misc, assignment]
 
 DEFAULT_BACKUP_DIR = os.path.join('instance', 'backups')
 DB_PATH = os.path.join('instance', 'case_pm.db')
 SETTINGS_PATH = os.path.join('instance', 'program_settings.json')
 UPLOADS_DIR = 'uploads'
-DISPLAY_TZ = ZoneInfo('America/New_York')
+_DISPLAY_TZ = None
 
 _BACKUP_JOBS = {}
 _BACKUP_JOBS_LOCK = threading.Lock()
@@ -25,27 +29,42 @@ def utc_now_iso():
     return datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace('+00:00', 'Z')
 
 
+def get_display_tz():
+    """Resolve US Eastern timezone; fall back to fixed UTC-5 when tzdata is unavailable."""
+    global _DISPLAY_TZ
+    if _DISPLAY_TZ is not None:
+        return _DISPLAY_TZ
+    if ZoneInfo is not None:
+        try:
+            _DISPLAY_TZ = ZoneInfo('America/New_York')
+            return _DISPLAY_TZ
+        except Exception:
+            pass
+    _DISPLAY_TZ = timezone(timedelta(hours=-5), name='EST')
+    return _DISPLAY_TZ
+
+
 def format_display_time(dt_or_iso):
     """Format a UTC timestamp for display in US Eastern time (EST/EDT)."""
     if not dt_or_iso:
         return ''
-    if isinstance(dt_or_iso, str):
-        dt = datetime.fromisoformat(dt_or_iso.replace('Z', '+00:00'))
-    else:
-        dt = dt_or_iso
-    if dt.tzinfo is None:
-        dt = dt.replace(tzinfo=timezone.utc)
-    local = dt.astimezone(DISPLAY_TZ)
-    tz_label = local.strftime('%Z')
-    return local.strftime(f'%b %d, %Y %I:%M %p {tz_label}')
+    try:
+        if isinstance(dt_or_iso, str):
+            dt = datetime.fromisoformat(dt_or_iso.replace('Z', '+00:00'))
+        else:
+            dt = dt_or_iso
+        if dt.tzinfo is None:
+            dt = dt.replace(tzinfo=timezone.utc)
+        local = dt.astimezone(get_display_tz())
+        tz_label = local.strftime('%Z') or 'ET'
+        return local.strftime(f'%b %d, %Y %I:%M %p {tz_label}')
+    except (TypeError, ValueError, OverflowError):
+        return str(dt_or_iso)
 
 
 def _notify_progress(progress_cb, percent, message, current_file=''):
     if progress_cb:
         progress_cb(int(max(0, min(100, percent))), message, current_file)
-DB_PATH = os.path.join('instance', 'case_pm.db')
-SETTINGS_PATH = os.path.join('instance', 'program_settings.json')
-UPLOADS_DIR = 'uploads'
 
 
 def backup_dir(config=None):
@@ -118,11 +137,15 @@ def plan_backup_destinations(config=None):
 
 
 def list_backups(config=None):
-    dir_path = backup_dir(config)
-    if not os.path.isdir(dir_path):
+    try:
+        dir_path = (backup_dir(config) or '').strip()
+        if not dir_path or not os.path.isdir(dir_path):
+            return []
+        names = os.listdir(dir_path)
+    except OSError:
         return []
     rows = []
-    for name in sorted(os.listdir(dir_path), reverse=True):
+    for name in sorted(names, reverse=True):
         if not name.endswith('.zip'):
             continue
         path = os.path.join(dir_path, name)

@@ -4,45 +4,60 @@
 <link rel="stylesheet" href="{{ url_for('static', filename='css/email-client.css') }}">
 <style>
 .settings-page { display: flex; flex-direction: column; flex: 1; min-height: 0; width: 100%; padding: 1rem 1rem 0; overflow: hidden; box-sizing: border-box; }
-.settings-stack { display: flex; flex-direction: column; flex: 1; min-height: 0; overflow: hidden; max-width: 1200px; margin: 0 auto; width: 100%; }
+.settings-stack { display: flex; flex-direction: column; flex: 1; min-height: 0; overflow: hidden; max-width: 1600px; margin: 0 auto; width: 100%; }
+.settings-panel { background: #18181b; border: 1px solid #3f3f46; border-radius: 0.375rem; padding: 1rem; }
+@media (min-width: 768px) { .settings-panel { padding: 1.25rem; } }
+.settings-card { background: #27272a; border: 1px solid #3f3f46; border-radius: 0.375rem; padding: 1rem; }
+.settings-input { width: 100%; background: #27272a; border: 1px solid #3f3f46; border-radius: 0.375rem; padding: 0.625rem 1rem; font-size: 0.875rem; }
+.settings-input:focus { outline: none; border-color: #059669; }
+.settings-tab-btn { padding: 0.5rem 1.5rem; font-size: 0.875rem; font-weight: 500; color: #a1a1aa; white-space: nowrap; }
+.settings-tab-btn:hover { color: #fff; }
+.settings-tab-btn.active { color: #fff; border-bottom: 3px solid #10b981; }
+.settings-btn { display: inline-flex; align-items: center; gap: 0.5rem; padding: 0 1rem; height: 38px; border-radius: 0.375rem; font-size: 0.875rem; font-weight: 500; transition: background-color 0.15s; }
+.settings-btn-secondary { background: #27272a; color: #fff; }
+.settings-btn-secondary:hover { background: #3f3f46; }
+.settings-btn-primary { background: #059669; color: #fff; font-weight: 600; }
+.settings-btn-primary:hover { background: #10b981; }
+.settings-btn-danger { background: #b91c1c; color: #fff; }
+.settings-btn-danger:hover { background: #dc2626; }
 </style>
 <div class="settings-page"><div class="settings-stack">
 
-    <div class="mb-4 flex-shrink-0 flex items-start justify-between gap-4">
+    <div class="mb-4 flex-shrink-0 flex items-start justify-between gap-4 flex-wrap">
         <div>
-            <h1 class="text-2xl font-semibold tracking-tight">Program Settings</h1>
-            <p class="text-zinc-400 text-sm mt-1">Admin-only: company profile, document numbering, pay applications, backups, email, and Sage 300. Per-user permissions are managed in <a href="{{ url_for('user_management') }}" class="text-emerald-400 hover:underline">User Management</a>.</p>
+            <h1 class="text-2xl font-semibold tracking-tight text-white">Program Settings</h1>
+            <p class="text-zinc-400 text-sm mt-1">Company info, document numbering, pay apps, backups, email, and Sage 300 defaults.</p>
         </div>
-        <div class="flex items-center gap-2 flex-shrink-0">
+        <div class="flex items-center gap-2 flex-shrink-0 flex-wrap justify-end">
             {% if is_developer %}
-            <a href="{{ url_for('developer_console') }}" class="px-3 py-1.5 bg-red-900/40 border border-red-800 text-red-300 hover:bg-red-900/60 rounded-xl text-xs font-medium">
-                <i class="fa-solid fa-code mr-1"></i> Developer Console
+            <a href="{{ url_for('developer_console') }}" class="settings-btn settings-btn-secondary border border-red-900 text-red-300 hover:bg-red-950/40">
+                <i class="fa-solid fa-code"></i><span>Developer Console</span>
             </a>
             {% endif %}
-            <span class="px-2 py-1 bg-amber-900/30 border border-amber-800 text-amber-300 rounded-lg text-[10px] uppercase tracking-wide">Admin</span>
+            <span class="px-2 py-1 bg-amber-900/30 border border-amber-800 text-amber-300 rounded-md text-[10px] uppercase tracking-wide">Admin</span>
         </div>
     </div>
 
-    <div class="flex border-b border-zinc-800 mb-4 flex-shrink-0 overflow-x-auto">
+    <div class="flex border-b border-zinc-700 mb-4 flex-shrink-0 overflow-x-auto">
         <button onclick="switchSettingsTab('company')" id="tab-company"
-                class="settings-tab-btn px-6 py-3 text-sm font-medium border-b-2 border-emerald-500 text-white whitespace-nowrap">Company Info</button>
+                class="settings-tab-btn active">Company Info</button>
         <button onclick="switchSettingsTab('numbering')" id="tab-numbering"
-                class="settings-tab-btn px-6 py-3 text-sm font-medium text-zinc-400 hover:text-white whitespace-nowrap">Document Numbering</button>
+                class="settings-tab-btn">Document Numbering</button>
         <button onclick="switchSettingsTab('payapps')" id="tab-payapps"
-                class="settings-tab-btn px-6 py-3 text-sm font-medium text-zinc-400 hover:text-white whitespace-nowrap">Pay Applications</button>
+                class="settings-tab-btn">Pay Applications</button>
         <button onclick="switchSettingsTab('backup')" id="tab-backup"
-                class="settings-tab-btn px-6 py-3 text-sm font-medium text-zinc-400 hover:text-white whitespace-nowrap">Backup & Maintenance</button>
+                class="settings-tab-btn">Backup & Maintenance</button>
         <button onclick="switchSettingsTab('email')" id="tab-email"
-                class="settings-tab-btn px-6 py-3 text-sm font-medium text-zinc-400 hover:text-white whitespace-nowrap">Email Settings</button>
+                class="settings-tab-btn">Email Settings</button>
         <button onclick="switchSettingsTab('sage')" id="tab-sage"
-                class="settings-tab-btn px-6 py-3 text-sm font-medium text-zinc-400 hover:text-white whitespace-nowrap">Sage 300</button>
+                class="settings-tab-btn">Sage 300</button>
     </div>
 
     <div class="flex-1 min-h-0 overflow-auto mb-2">
 
     <!-- Company Info Tab -->
     <div id="tab-content-company">
-        <div class="bg-zinc-900 border border-zinc-800 rounded-3xl p-8">
+        <div class="settings-panel">
             <h2 class="text-xl font-semibold mb-2">Company Information</h2>
             <p class="text-sm text-zinc-500 mb-6">Used on pay applications, letters, and Sage company defaults. Also see <a href="{{ url_for('companies_page') }}" class="text-emerald-400 hover:underline">Companies / Vendors</a> for client records.</p>
 
@@ -51,53 +66,53 @@
                     <div class="md:col-span-2">
                         <label class="block text-sm text-zinc-400 mb-1.5">Legal Company Name</label>
                         <input type="text" id="company_name" value="{{ company_info.get('company_name', 'Case Construction') }}" required
-                               class="w-full bg-zinc-800 border border-zinc-700 rounded-2xl px-4 py-2.5 text-sm focus:outline-none focus:border-emerald-600">
+                               class="w-full bg-zinc-800 border border-zinc-700 rounded-md px-4 py-2.5 text-sm focus:outline-none focus:border-emerald-600">
                     </div>
                     <div>
                         <label class="block text-sm text-zinc-400 mb-1.5">DBA / Trade Name</label>
                         <input type="text" id="dba_name" value="{{ company_info.get('dba_name', '') }}"
-                               class="w-full bg-zinc-800 border border-zinc-700 rounded-2xl px-4 py-2.5 text-sm focus:outline-none focus:border-emerald-600">
+                               class="w-full bg-zinc-800 border border-zinc-700 rounded-md px-4 py-2.5 text-sm focus:outline-none focus:border-emerald-600">
                     </div>
                     <div>
                         <label class="block text-sm text-zinc-400 mb-1.5">Tax ID / EIN</label>
                         <input type="text" id="tax_id" value="{{ company_info.get('tax_id', '') }}" placeholder="XX-XXXXXXX"
-                               class="w-full bg-zinc-800 border border-zinc-700 rounded-2xl px-4 py-2.5 text-sm focus:outline-none focus:border-emerald-600">
+                               class="w-full bg-zinc-800 border border-zinc-700 rounded-md px-4 py-2.5 text-sm focus:outline-none focus:border-emerald-600">
                     </div>
                     <div>
                         <label class="block text-sm text-zinc-400 mb-1.5">Contractor License #</label>
                         <input type="text" id="company_license" value="{{ company_info.get('company_license', '') }}"
-                               class="w-full bg-zinc-800 border border-zinc-700 rounded-2xl px-4 py-2.5 text-sm focus:outline-none focus:border-emerald-600">
+                               class="w-full bg-zinc-800 border border-zinc-700 rounded-md px-4 py-2.5 text-sm focus:outline-none focus:border-emerald-600">
                     </div>
                     <div>
                         <label class="block text-sm text-zinc-400 mb-1.5">Phone Number</label>
                         <input type="tel" id="company_phone" value="{{ company_info.get('company_phone', '') }}"
-                               class="w-full bg-zinc-800 border border-zinc-700 rounded-2xl px-4 py-2.5 text-sm focus:outline-none focus:border-emerald-600">
+                               class="w-full bg-zinc-800 border border-zinc-700 rounded-md px-4 py-2.5 text-sm focus:outline-none focus:border-emerald-600">
                     </div>
                     <div>
                         <label class="block text-sm text-zinc-400 mb-1.5">Website</label>
                         <input type="url" id="company_website" value="{{ company_info.get('company_website', '') }}" placeholder="https://"
-                               class="w-full bg-zinc-800 border border-zinc-700 rounded-2xl px-4 py-2.5 text-sm focus:outline-none focus:border-emerald-600">
+                               class="w-full bg-zinc-800 border border-zinc-700 rounded-md px-4 py-2.5 text-sm focus:outline-none focus:border-emerald-600">
                     </div>
                     <div class="md:col-span-2">
                         <label class="block text-sm text-zinc-400 mb-1.5">Street Address</label>
                         <input type="text" id="company_address" value="{{ company_info.get('company_address', '') }}"
-                               class="w-full bg-zinc-800 border border-zinc-700 rounded-2xl px-4 py-2.5 text-sm focus:outline-none focus:border-emerald-600">
+                               class="w-full bg-zinc-800 border border-zinc-700 rounded-md px-4 py-2.5 text-sm focus:outline-none focus:border-emerald-600">
                     </div>
                     <div>
                         <label class="block text-sm text-zinc-400 mb-1.5">City</label>
                         <input type="text" id="company_city" value="{{ company_info.get('company_city', '') }}"
-                               class="w-full bg-zinc-800 border border-zinc-700 rounded-2xl px-4 py-2.5 text-sm focus:outline-none focus:border-emerald-600">
+                               class="w-full bg-zinc-800 border border-zinc-700 rounded-md px-4 py-2.5 text-sm focus:outline-none focus:border-emerald-600">
                     </div>
                     <div class="grid grid-cols-2 gap-4">
                         <div>
                             <label class="block text-sm text-zinc-400 mb-1.5">State</label>
                             <input type="text" id="company_state" value="{{ company_info.get('company_state', '') }}"
-                                   class="w-full bg-zinc-800 border border-zinc-700 rounded-2xl px-4 py-2.5 text-sm focus:outline-none focus:border-emerald-600">
+                                   class="w-full bg-zinc-800 border border-zinc-700 rounded-md px-4 py-2.5 text-sm focus:outline-none focus:border-emerald-600">
                         </div>
                         <div>
                             <label class="block text-sm text-zinc-400 mb-1.5">ZIP Code</label>
                             <input type="text" id="company_zip" value="{{ company_info.get('company_zip', '') }}"
-                                   class="w-full bg-zinc-800 border border-zinc-700 rounded-2xl px-4 py-2.5 text-sm focus:outline-none focus:border-emerald-600">
+                                   class="w-full bg-zinc-800 border border-zinc-700 rounded-md px-4 py-2.5 text-sm focus:outline-none focus:border-emerald-600">
                         </div>
                     </div>
                 </div>
@@ -105,7 +120,7 @@
                 <div class="mt-8">
                     <label class="block text-sm text-zinc-400 mb-2">Company Logo</label>
                     <div class="flex items-center gap-6">
-                        <div class="w-24 h-24 bg-zinc-800 border border-zinc-700 rounded-2xl flex items-center justify-center overflow-hidden">
+                        <div class="w-24 h-24 bg-zinc-800 border border-zinc-700 rounded-md flex items-center justify-center overflow-hidden">
                             <img id="logoPreview" src="" class="max-h-full max-w-full object-contain hidden">
                             <div id="logoPlaceholder" class="text-center">
                                 <i class="fa-solid fa-image text-3xl text-zinc-500"></i>
@@ -115,7 +130,7 @@
                         <div>
                             <input type="file" id="logoUpload" accept="image/*" class="hidden" onchange="previewLogo(event)">
                             <button type="button" onclick="document.getElementById('logoUpload').click()"
-                                    class="px-4 py-2 bg-zinc-800 hover:bg-zinc-700 border border-zinc-700 rounded-2xl text-sm">
+                                    class="px-4 py-2 bg-zinc-800 hover:bg-zinc-700 border border-zinc-700 rounded-md text-sm">
                                 Upload Logo
                             </button>
                             <p class="text-xs text-zinc-500 mt-1">Recommended: 200×200px PNG or JPG</p>
@@ -124,7 +139,7 @@
                 </div>
 
                 <div class="mt-8 flex justify-end">
-                    <button type="submit" class="px-8 py-2.5 bg-emerald-600 hover:bg-emerald-500 rounded-2xl text-sm font-medium transition-colors">
+                    <button type="submit" class="px-8 py-2.5 bg-emerald-600 hover:bg-emerald-500 rounded-md text-sm font-medium transition-colors">
                         Save Company Info
                     </button>
                 </div>
@@ -133,7 +148,7 @@
     </div>
 
     <div id="tab-content-numbering" class="hidden">
-        <div class="bg-zinc-900 border border-zinc-800 rounded-3xl p-8">
+        <div class="settings-panel">
             <h2 class="text-xl font-semibold mb-2">Document Numbering</h2>
             <p class="text-sm text-zinc-500 mb-6">Set the prefix and digit width for each record type. Examples: <span class="font-mono text-emerald-400">CO-001</span>, <span class="font-mono text-emerald-400">PRJ-042</span>, <span class="font-mono text-emerald-400">RFI-015</span>. Project-scoped types restart numbering per project.</p>
             <form id="numberingForm" onsubmit="saveNumberingSettings(event)">
@@ -152,66 +167,66 @@
                     </table>
                 </div>
                 <div class="mt-8 flex justify-end">
-                    <button type="submit" class="px-8 py-2.5 bg-emerald-600 hover:bg-emerald-500 rounded-2xl text-sm font-medium">Save Numbering</button>
+                    <button type="submit" class="px-8 py-2.5 bg-emerald-600 hover:bg-emerald-500 rounded-md text-sm font-medium">Save Numbering</button>
                 </div>
             </form>
         </div>
     </div>
 
     <div id="tab-content-payapps" class="hidden">
-        <div class="bg-zinc-900 border border-zinc-800 rounded-3xl p-8 max-w-2xl">
+        <div class="settings-panel max-w-2xl">
             <h2 class="text-xl font-semibold mb-2">Pay Applications Defaults</h2>
             <p class="text-sm text-zinc-500 mb-6">Program-wide defaults for retainage, subcontractor workflow, and Sage sync. Projects inherit these unless overridden on the Pay Applications page.</p>
             <form id="payAppsForm" onsubmit="savePayAppsSettings(event)" class="space-y-5 text-sm">
                 <div>
                     <label class="block text-zinc-300 mb-1.5 font-medium">Default Retainage %</label>
-                    <select id="paRetainage" class="w-full bg-zinc-800 border border-zinc-700 rounded-xl px-4 py-2.5 text-sm">
+                    <select id="paRetainage" class="w-full bg-zinc-800 border border-zinc-700 rounded-md px-4 py-2.5 text-sm">
                         <option value="5">5%</option>
                         <option value="10">10%</option>
                         <option value="15">15%</option>
                     </select>
                 </div>
-                <label class="flex items-center justify-between cursor-pointer border border-zinc-800 rounded-xl p-4">
+                <label class="flex items-center justify-between cursor-pointer border border-zinc-800 rounded-md p-4">
                     <span class="text-zinc-300">Require lien waiver with sub pay app submission</span>
                     <input type="checkbox" id="paLienWaiver" class="accent-emerald-600">
                 </label>
-                <label class="flex items-center justify-between cursor-pointer border border-zinc-800 rounded-xl p-4">
+                <label class="flex items-center justify-between cursor-pointer border border-zinc-800 rounded-md p-4">
                     <span class="text-zinc-300">Require all subs with approved SOVs before G702 submit</span>
                     <input type="checkbox" id="paRequireAllSubs" class="accent-emerald-600">
                 </label>
-                <label class="flex items-center justify-between cursor-pointer border border-zinc-800 rounded-xl p-4">
+                <label class="flex items-center justify-between cursor-pointer border border-zinc-800 rounded-md p-4">
                     <span class="text-zinc-300">Allow zero-dollar sub pay apps (compliance only)</span>
                     <input type="checkbox" id="paZeroDollar" class="accent-emerald-600">
                 </label>
-                <label class="flex items-center justify-between cursor-pointer border border-zinc-800 rounded-xl p-4">
+                <label class="flex items-center justify-between cursor-pointer border border-zinc-800 rounded-md p-4">
                     <span class="text-zinc-300">Auto-queue Sage sync on pay app milestones</span>
                     <input type="checkbox" id="paSageAuto" class="accent-emerald-600">
                 </label>
-                <div class="border border-zinc-800 rounded-xl p-4 space-y-3">
+                <div class="border border-zinc-800 rounded-md p-4 space-y-3">
                     <label class="flex items-center justify-between cursor-pointer">
                         <span class="text-zinc-300">Sub pay app submission deadline reminder</span>
                         <input type="checkbox" id="paDeadlineEnabled" class="accent-emerald-600" onchange="document.getElementById('paDeadlineDayWrap').classList.toggle('hidden', !this.checked)">
                     </label>
                     <div id="paDeadlineDayWrap" class="hidden">
                         <label class="block text-xs text-zinc-400 mb-1">Day of month to notify subs</label>
-                        <select id="paDeadlineDay" class="w-full bg-zinc-800 border border-zinc-700 rounded-xl px-3 py-2 text-sm"></select>
+                        <select id="paDeadlineDay" class="w-full bg-zinc-800 border border-zinc-700 rounded-md px-3 py-2 text-sm"></select>
                     </div>
                 </div>
                 <div class="flex justify-end">
-                    <button type="submit" class="px-8 py-2.5 bg-emerald-600 hover:bg-emerald-500 rounded-2xl text-sm font-medium">Save Pay App Defaults</button>
+                    <button type="submit" class="px-8 py-2.5 bg-emerald-600 hover:bg-emerald-500 rounded-md text-sm font-medium">Save Pay App Defaults</button>
                 </div>
             </form>
         </div>
     </div>
 
     <div id="tab-content-email" class="hidden">
-        <div class="bg-zinc-900 border border-zinc-800 rounded-3xl p-8">
+        <div class="settings-panel">
             <div class="flex items-center justify-between mb-6">
                 <div>
                     <h2 class="text-xl font-semibold">Email Settings</h2>
                     <p class="text-sm text-zinc-400 mt-1">Synced with the <a href="{{ url_for('email_page') }}?settings=1" class="text-emerald-400 hover:underline">Email</a> module — changes here apply everywhere mail is sent.</p>
                 </div>
-                <a href="{{ url_for('email_page') }}?settings=1" class="px-4 py-2 bg-zinc-800 hover:bg-zinc-700 border border-zinc-700 rounded-2xl text-sm">
+                <a href="{{ url_for('email_page') }}?settings=1" class="px-4 py-2 bg-zinc-800 hover:bg-zinc-700 border border-zinc-700 rounded-md text-sm">
                     <i class="fa-solid fa-envelope mr-1"></i> Open Email
                 </a>
             </div>
@@ -219,146 +234,175 @@
         </div>
     </div>
 
-    <div id="tab-content-backup" class="hidden">
-        <div class="bg-zinc-900 border border-zinc-800 rounded-3xl p-8">
-            <h2 class="text-xl font-semibold mb-2">Backup & Maintenance</h2>
-            <p id="backupLastRunStatus" class="text-sm text-zinc-500 mb-6">Loading…</p>
-
-            <div class="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-8">
-                <div class="bg-zinc-800/50 border border-zinc-700 rounded-2xl p-5 space-y-4">
-                    <h3 class="font-medium">Local Backup</h3>
-                    <label class="flex items-center justify-between cursor-pointer">
-                        <span class="text-sm text-zinc-400">Enable automatic backups</span>
-                        <input type="checkbox" id="backup_auto_enabled" class="accent-emerald-600">
-                    </label>
-                    <div>
-                        <label class="block text-xs text-zinc-400 mb-1">Frequency</label>
-                        <select id="backup_frequency" class="w-full bg-zinc-800 border border-zinc-700 rounded-xl px-3 py-2 text-sm">
-                            <option value="daily">Daily</option>
-                            <option value="12h">Every 12 hours</option>
-                            <option value="weekly">Weekly</option>
-                        </select>
-                    </div>
-                    <div>
-                        <label class="block text-xs text-zinc-400 mb-1">Local backup folder</label>
-                        <input type="text" id="backup_local_path" class="w-full bg-zinc-800 border border-zinc-700 rounded-xl px-3 py-2 text-sm font-mono" placeholder="instance/backups">
-                    </div>
-                    <div class="grid grid-cols-2 gap-3">
-                        <div>
-                            <label class="block text-xs text-zinc-400 mb-1">Retention (days)</label>
-                            <input type="number" id="backup_retention_days" min="7" max="365" class="w-full bg-zinc-800 border border-zinc-700 rounded-xl px-3 py-2 text-sm">
-                        </div>
-                        <div>
-                            <label class="block text-xs text-zinc-400 mb-1">Maintenance window</label>
-                            <input type="time" id="backup_maintenance_window" class="w-full bg-zinc-800 border border-zinc-700 rounded-xl px-3 py-2 text-sm">
-                        </div>
-                    </div>
-                    <button type="button" data-backup-run-btn onclick="createManualBackup()" class="w-full py-2.5 bg-emerald-600 hover:bg-emerald-500 rounded-2xl text-sm font-medium">
-                        <i class="fa-solid fa-database mr-1"></i> Run Backup Now
-                    </button>
-                </div>
-
-                <div class="bg-zinc-800/50 border border-zinc-700 rounded-2xl p-5 space-y-4">
-                    <h3 class="font-medium">Cloud / Off-site Copy</h3>
-                    <p class="text-xs text-zinc-500">For OneDrive, use the <strong class="text-zinc-400">local sync folder</strong> on your PC (for example <code class="text-emerald-400/90">C:\Users\You\OneDrive\CasePM-Backups</code>). Bucket and region are <strong class="text-zinc-400">not needed</strong> for OneDrive.</p>
-                    <label class="flex items-center justify-between cursor-pointer">
-                        <span class="text-sm text-zinc-400">Enable cloud mirror after local backup</span>
-                        <input type="checkbox" id="cloud_backup_enabled" class="accent-emerald-600">
-                    </label>
-                    <div>
-                        <label class="block text-xs text-zinc-400 mb-1">Provider</label>
-                        <select id="cloud_provider" class="w-full bg-zinc-800 border border-zinc-700 rounded-xl px-3 py-2 text-sm" onchange="CasePMProgramSettings.updateCloudProviderFields()">
-                            <option value="local_folder">Network / NAS / OneDrive folder (mirror)</option>
-                            <option value="s3">Amazon S3 (configure via env)</option>
-                            <option value="azure">Azure Blob (configure via env)</option>
-                        </select>
-                    </div>
-                    <div id="cloudMirrorPathWrap">
-                        <label class="block text-xs text-zinc-400 mb-1">Mirror path (local OneDrive or NAS folder)</label>
-                        <input type="text" id="cloud_mirror_path" class="w-full bg-zinc-800 border border-zinc-700 rounded-xl px-3 py-2 text-sm font-mono" placeholder="C:\Users\You\OneDrive\CasePM-Backups">
-                    </div>
-                    <div id="cloudBucketRegionFields" class="grid grid-cols-2 gap-3 hidden">
-                        <div>
-                            <label class="block text-xs text-zinc-400 mb-1">Bucket / container</label>
-                            <input type="text" id="cloud_bucket" class="w-full bg-zinc-800 border border-zinc-700 rounded-xl px-3 py-2 text-sm">
-                        </div>
-                        <div>
-                            <label class="block text-xs text-zinc-400 mb-1">Region</label>
-                            <input type="text" id="cloud_region" class="w-full bg-zinc-800 border border-zinc-700 rounded-xl px-3 py-2 text-sm">
-                        </div>
-                    </div>
-                </div>
+    <div id="tab-content-backup" class="hidden space-y-4">
+        <!-- Toolbar -->
+        <div class="flex items-center justify-between flex-shrink-0 gap-3 flex-wrap">
+            <div>
+                <div class="text-lg font-semibold text-white">Backup & Maintenance</div>
+                <p class="text-xs text-zinc-500 mt-0.5">Local backups, OneDrive mirror, restore, and database maintenance</p>
             </div>
-
-            <div class="bg-zinc-800/50 border border-zinc-700 rounded-2xl p-5 mb-6">
-                <h3 class="font-medium mb-4">Database Maintenance</h3>
-                <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
-                    <label class="flex items-center gap-2 text-sm cursor-pointer">
-                        <input type="checkbox" id="maint_db_vacuum" class="accent-emerald-600"> Run SQLite vacuum during maintenance window
-                    </label>
-                    <div>
-                        <label class="block text-xs text-zinc-400 mb-1">Log retention (days)</label>
-                        <input type="number" id="maint_log_retention" min="30" class="w-full bg-zinc-800 border border-zinc-700 rounded-xl px-3 py-2 text-sm">
-                    </div>
-                    <div>
-                        <label class="block text-xs text-zinc-400 mb-1">Temp upload cleanup (days)</label>
-                        <input type="number" id="maint_temp_cleanup" min="7" class="w-full bg-zinc-800 border border-zinc-700 rounded-xl px-3 py-2 text-sm">
-                    </div>
-                </div>
-            </div>
-
-            <div class="flex justify-between items-center mb-3">
-                <h3 class="font-medium">Backup History</h3>
-                <button type="button" onclick="CasePMProgramSettings.refreshBackupList()" class="text-xs text-emerald-400 hover:underline">Refresh</button>
-            </div>
-
-            <div id="backupProgressPanel" class="hidden mb-4 bg-zinc-950 border border-emerald-900/50 rounded-xl p-4">
-                <div class="flex items-center justify-between gap-3 mb-2">
-                    <div class="text-sm font-medium text-emerald-300"><i class="fa-solid fa-spinner fa-spin mr-2"></i><span id="backupProgressStep">Preparing backup…</span></div>
-                    <span id="backupProgressPercent" class="text-xs text-zinc-400 font-mono">0%</span>
-                </div>
-                <div class="h-2 bg-zinc-800 rounded-full overflow-hidden mb-3">
-                    <div id="backupProgressBar" class="h-full bg-emerald-500 rounded-full transition-all duration-300" style="width:0%"></div>
-                </div>
-                <div id="backupProgressFile" class="text-xs text-zinc-500 font-mono truncate mb-3"></div>
-                <div class="text-xs text-zinc-500 uppercase tracking-wide mb-1">Saving to</div>
-                <div id="backupProgressDestinations" class="space-y-1 text-sm"></div>
-            </div>
-
-            <div id="backupHistoryList" class="bg-zinc-950 border border-zinc-800 rounded-xl p-4 text-sm text-zinc-500">Loading…</div>
-
-            <div class="mt-8 bg-zinc-800/50 border border-emerald-900/50 rounded-2xl p-5">
-                <h3 class="font-medium text-emerald-300 mb-2"><i class="fa-solid fa-rotate-left mr-2"></i>Install from Backup</h3>
-                <p class="text-sm text-zinc-400 mb-4">Replace the current database, settings, and uploads with a saved backup. Case PM creates a safety backup automatically before installing.</p>
-                <div class="flex flex-wrap gap-3 mb-4">
-                    <button type="button" onclick="CasePMProgramSettings.chooseBackupToInstall()" class="px-4 py-2.5 bg-emerald-600 hover:bg-emerald-500 rounded-2xl text-sm font-medium">
-                        <i class="fa-solid fa-list mr-1"></i> Choose Backup to Install
-                    </button>
-                    <label class="px-4 py-2.5 bg-zinc-700 hover:bg-zinc-600 rounded-2xl text-sm font-medium cursor-pointer">
-                        <i class="fa-solid fa-file-arrow-up mr-1"></i> Upload Backup File
-                        <input type="file" id="backupUploadInput" accept=".zip,application/zip" class="hidden" onchange="CasePMProgramSettings.uploadBackupFile(this)">
-                    </label>
-                </div>
-                <p class="text-xs text-zinc-500">After installing, you will be signed out and redirected to log in again with the restored accounts.</p>
-            </div>
-
-            <div class="mt-8 bg-red-950/30 border border-red-900/60 rounded-2xl p-5">
-                <h3 class="font-medium text-red-300 mb-2"><i class="fa-solid fa-triangle-exclamation mr-2"></i>Clear All Program Data</h3>
-                <p class="text-sm text-zinc-400 mb-4">Delete all projects, users, documents, uploads, and settings. A safety backup is created first. The default admin account is recreated afterward.</p>
-                <button type="button" onclick="CasePMProgramSettings.clearAllProgramData()" class="px-4 py-2.5 bg-red-700 hover:bg-red-600 rounded-2xl text-sm font-medium">
-                    <i class="fa-solid fa-trash-can mr-1"></i> Clear Everything and Start Fresh
+            <div class="flex items-center gap-2 flex-wrap">
+                <button type="button" onclick="CasePMProgramSettings.refreshBackupList()" class="settings-btn settings-btn-secondary">
+                    <i class="fa-solid fa-rotate"></i><span>Refresh</span>
+                </button>
+                <button type="button" data-backup-run-btn onclick="createManualBackup()" class="settings-btn settings-btn-primary">
+                    <i class="fa-solid fa-database"></i><span>Run Backup Now</span>
+                </button>
+                <button type="button" onclick="saveBackupSettings()" class="settings-btn settings-btn-primary">
+                    <i class="fa-solid fa-floppy-disk"></i><span>Save Settings</span>
                 </button>
             </div>
+        </div>
 
-            <div class="mt-6 flex justify-end">
-                <button type="button" onclick="saveBackupSettings()" class="px-6 py-2.5 bg-emerald-600 hover:bg-emerald-500 rounded-2xl text-sm font-medium">Save Backup Settings</button>
+        <!-- Summary cards (matches User Management / Budget KPI row) -->
+        <div class="settings-panel flex-shrink-0">
+            <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+                <div class="settings-card">
+                    <div class="text-sm text-zinc-400">Last Backup</div>
+                    <div id="backupLastRunSummary" class="text-sm font-medium mt-1 text-emerald-400">—</div>
+                    <div id="backupLastRunStatus" class="text-xs text-zinc-500 mt-1">Loading…</div>
+                </div>
+                <div class="settings-card">
+                    <div class="text-sm text-zinc-400">Local Folder</div>
+                    <div id="backupLocalPathSummary" class="text-xs font-mono mt-1 text-zinc-300 break-all">instance/backups</div>
+                </div>
+                <div class="settings-card">
+                    <div class="text-sm text-zinc-400">Off-site Mirror</div>
+                    <div id="backupMirrorPathSummary" class="text-xs font-mono mt-1 text-zinc-300 break-all">Not configured</div>
+                </div>
             </div>
+        </div>
+
+        <div class="grid grid-cols-1 lg:grid-cols-2 gap-4">
+            <div class="settings-panel space-y-4">
+                <h3 class="font-medium text-white">Local Backup</h3>
+                <label class="flex items-center justify-between cursor-pointer text-sm">
+                    <span class="text-zinc-400">Enable automatic backups</span>
+                    <input type="checkbox" id="backup_auto_enabled" class="accent-emerald-600">
+                </label>
+                <div>
+                    <label class="block text-xs text-zinc-400 mb-1">Frequency</label>
+                    <select id="backup_frequency" class="settings-input">
+                        <option value="daily">Daily</option>
+                        <option value="12h">Every 12 hours</option>
+                        <option value="weekly">Weekly</option>
+                    </select>
+                </div>
+                <div>
+                    <label class="block text-xs text-zinc-400 mb-1">Local backup folder</label>
+                    <input type="text" id="backup_local_path" class="settings-input font-mono" placeholder="instance/backups">
+                </div>
+                <div class="grid grid-cols-2 gap-3">
+                    <div>
+                        <label class="block text-xs text-zinc-400 mb-1">Retention (days)</label>
+                        <input type="number" id="backup_retention_days" min="7" max="365" class="settings-input">
+                    </div>
+                    <div>
+                        <label class="block text-xs text-zinc-400 mb-1">Maintenance window</label>
+                        <input type="time" id="backup_maintenance_window" class="settings-input">
+                    </div>
+                </div>
+            </div>
+
+            <div class="settings-panel space-y-4">
+                <h3 class="font-medium text-white">Cloud / Off-site Copy</h3>
+                <p class="text-xs text-zinc-500">For OneDrive, use the <strong class="text-zinc-400">local sync folder</strong> on your PC (e.g. <code class="text-emerald-400/90">C:\Users\You\OneDrive\CasePM-Backups</code>). Bucket and region are <strong class="text-zinc-400">not needed</strong>.</p>
+                <label class="flex items-center justify-between cursor-pointer text-sm">
+                    <span class="text-zinc-400">Enable cloud mirror after local backup</span>
+                    <input type="checkbox" id="cloud_backup_enabled" class="accent-emerald-600">
+                </label>
+                <div>
+                    <label class="block text-xs text-zinc-400 mb-1">Provider</label>
+                    <select id="cloud_provider" class="settings-input" onchange="CasePMProgramSettings.updateCloudProviderFields()">
+                        <option value="local_folder">Network / NAS / OneDrive folder (mirror)</option>
+                        <option value="s3">Amazon S3 (configure via env)</option>
+                        <option value="azure">Azure Blob (configure via env)</option>
+                    </select>
+                </div>
+                <div id="cloudMirrorPathWrap">
+                    <label class="block text-xs text-zinc-400 mb-1">Mirror path (local OneDrive or NAS folder)</label>
+                    <input type="text" id="cloud_mirror_path" class="settings-input font-mono" placeholder="C:\Users\You\OneDrive\CasePM-Backups">
+                </div>
+                <div id="cloudBucketRegionFields" class="grid grid-cols-2 gap-3 hidden">
+                    <div>
+                        <label class="block text-xs text-zinc-400 mb-1">Bucket / container</label>
+                        <input type="text" id="cloud_bucket" class="settings-input">
+                    </div>
+                    <div>
+                        <label class="block text-xs text-zinc-400 mb-1">Region</label>
+                        <input type="text" id="cloud_region" class="settings-input">
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="settings-panel">
+            <h3 class="font-medium text-white mb-4">Database Maintenance</h3>
+            <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+                <label class="flex items-center gap-2 text-sm cursor-pointer">
+                    <input type="checkbox" id="maint_db_vacuum" class="accent-emerald-600"> Run SQLite vacuum during maintenance window
+                </label>
+                <div>
+                    <label class="block text-xs text-zinc-400 mb-1">Log retention (days)</label>
+                    <input type="number" id="maint_log_retention" min="30" class="settings-input">
+                </div>
+                <div>
+                    <label class="block text-xs text-zinc-400 mb-1">Temp upload cleanup (days)</label>
+                    <input type="number" id="maint_temp_cleanup" min="7" class="settings-input">
+                </div>
+            </div>
+        </div>
+
+        <!-- Progress panel -->
+        <div id="backupProgressPanel" class="hidden settings-panel border-emerald-900/50">
+            <div class="flex items-center justify-between gap-3 mb-2">
+                <div class="text-sm font-medium text-emerald-300"><i class="fa-solid fa-spinner fa-spin mr-2"></i><span id="backupProgressStep">Preparing backup…</span></div>
+                <span id="backupProgressPercent" class="text-xs text-zinc-400 font-mono">0%</span>
+            </div>
+            <div class="h-2 bg-zinc-800 rounded-md overflow-hidden mb-3">
+                <div id="backupProgressBar" class="h-full bg-emerald-500 rounded-md transition-all duration-300" style="width:0%"></div>
+            </div>
+            <div id="backupProgressFile" class="text-xs text-zinc-500 font-mono truncate mb-3"></div>
+            <div class="text-xs text-zinc-500 uppercase tracking-wide mb-1">Saving to</div>
+            <div id="backupProgressDestinations" class="space-y-1 text-sm"></div>
+        </div>
+
+        <!-- Backup history table -->
+        <div class="settings-panel p-0 overflow-hidden">
+            <div class="px-4 py-3 border-b border-zinc-700 bg-zinc-800 flex items-center justify-between">
+                <span class="font-medium text-white">Backup History</span>
+                <span class="text-xs text-zinc-500">Times shown in US Eastern (EST/EDT)</span>
+            </div>
+            <div id="backupHistoryList" class="p-4 text-sm text-zinc-500">Loading…</div>
+        </div>
+
+        <div class="settings-panel border-emerald-900/40">
+            <h3 class="font-medium text-emerald-300 mb-2"><i class="fa-solid fa-rotate-left mr-2"></i>Install from Backup</h3>
+            <p class="text-sm text-zinc-400 mb-4">Replace the current database, settings, and uploads with a saved backup. A safety backup is created automatically first.</p>
+            <div class="flex flex-wrap gap-2">
+                <button type="button" onclick="CasePMProgramSettings.chooseBackupToInstall()" class="settings-btn settings-btn-primary">
+                    <i class="fa-solid fa-list"></i><span>Choose Backup to Install</span>
+                </button>
+                <label class="settings-btn settings-btn-secondary cursor-pointer">
+                    <i class="fa-solid fa-file-arrow-up"></i><span>Upload Backup File</span>
+                    <input type="file" id="backupUploadInput" accept=".zip,application/zip" class="hidden" onchange="CasePMProgramSettings.uploadBackupFile(this)">
+                </label>
+            </div>
+            <p class="text-xs text-zinc-500 mt-3">You will be signed out after installing so the restored database loads cleanly.</p>
+        </div>
+
+        <div class="settings-panel border-red-900/50 bg-red-950/20">
+            <h3 class="font-medium text-red-300 mb-2"><i class="fa-solid fa-triangle-exclamation mr-2"></i>Clear All Program Data</h3>
+            <p class="text-sm text-zinc-400 mb-4">Delete all projects, users, documents, uploads, and settings. A safety backup is created first; default admin is recreated afterward.</p>
+            <button type="button" onclick="CasePMProgramSettings.clearAllProgramData()" class="settings-btn settings-btn-danger">
+                <i class="fa-solid fa-trash-can"></i><span>Clear Everything and Start Fresh</span>
+            </button>
         </div>
     </div>
 
     <!-- Sage 300 Tab -->
     <div id="tab-content-sage" class="hidden">
-        <div class="bg-zinc-900 border border-zinc-800 rounded-3xl p-8">
+        <div class="settings-panel">
             <div class="mb-6">
                 <h2 class="text-xl font-semibold">Sage 300 CRE</h2>
                 <p class="text-sm text-zinc-400 mt-1">Quick database connect for most setups, or detailed GL/account mapping. Projects inherit these defaults; each job only needs its own <strong class="text-zinc-300">Sage job number</strong> unless overridden.</p>
@@ -367,10 +411,10 @@
 
             <div class="flex gap-2 mb-6">
                 <button type="button" data-sage-mode="quick" onclick="CasePMProgramSettings.setSageMode('quick')"
-                        class="px-4 py-2 rounded-xl text-sm font-medium bg-emerald-600 text-white">Quick Connect</button>
+                        class="px-4 py-2 rounded-md text-sm font-medium bg-emerald-600 text-white">Quick Connect</button>
                 <button type="button" data-sage-mode="detailed" onclick="CasePMProgramSettings.setSageMode('detailed')"
-                        class="px-4 py-2 rounded-xl text-sm font-medium bg-zinc-800 text-zinc-300 hover:bg-zinc-700">Detailed Setup</button>
-                <button type="button" onclick="CasePMProgramSettings.testSageConnection()" class="ml-auto px-4 py-2 bg-zinc-800 hover:bg-zinc-700 border border-zinc-700 rounded-xl text-sm">
+                        class="px-4 py-2 rounded-md text-sm font-medium bg-zinc-800 text-zinc-300 hover:bg-zinc-700">Detailed Setup</button>
+                <button type="button" onclick="CasePMProgramSettings.testSageConnection()" class="ml-auto px-4 py-2 bg-zinc-800 hover:bg-zinc-700 border border-zinc-700 rounded-md text-sm">
                     <i class="fa-solid fa-plug mr-1"></i> Test Connection
                 </button>
             </div>
@@ -382,24 +426,24 @@
                     <div>
                         <label class="block text-sm text-zinc-400 mb-1.5">Sage Database</label>
                         <input type="text" id="sage_database" name="sage_database" value="{{ sage_defaults.get('sage_database', '') }}"
-                               class="w-full bg-zinc-800 border border-zinc-700 rounded-xl px-4 py-2.5 text-sm font-mono focus:outline-none focus:border-emerald-600"
+                               class="w-full bg-zinc-800 border border-zinc-700 rounded-md px-4 py-2.5 text-sm font-mono focus:outline-none focus:border-emerald-600"
                                placeholder="e.g. CASE_CONSTRUCTION">
                     </div>
                     <div>
                         <label class="block text-sm text-zinc-400 mb-1.5">Sage Company Code</label>
                         <input type="text" id="sage_company_code" name="sage_company_code" value="{{ sage_defaults.get('sage_company_code', '') }}"
-                               class="w-full bg-zinc-800 border border-zinc-700 rounded-xl px-4 py-2.5 text-sm font-mono focus:outline-none focus:border-emerald-600">
+                               class="w-full bg-zinc-800 border border-zinc-700 rounded-md px-4 py-2.5 text-sm font-mono focus:outline-none focus:border-emerald-600">
                     </div>
                     <div>
                         <label class="block text-sm text-zinc-400 mb-1.5">Job Number Prefix</label>
                         <input type="text" id="sage_job_prefix" name="sage_job_prefix" value="{{ sage_defaults.get('sage_job_prefix', '') }}"
-                               class="w-full bg-zinc-800 border border-zinc-700 rounded-xl px-4 py-2.5 text-sm font-mono focus:outline-none focus:border-emerald-600"
+                               class="w-full bg-zinc-800 border border-zinc-700 rounded-md px-4 py-2.5 text-sm font-mono focus:outline-none focus:border-emerald-600"
                                placeholder="e.g. 26-">
                     </div>
                     <div>
                         <label class="block text-sm text-zinc-400 mb-1.5">API URL (optional override)</label>
                         <input type="text" id="sage_api_url" name="sage_api_url" value="{{ sage_defaults.get('sage_api_url', '') }}"
-                               class="w-full bg-zinc-800 border border-zinc-700 rounded-xl px-4 py-2.5 text-sm font-mono focus:outline-none focus:border-emerald-600"
+                               class="w-full bg-zinc-800 border border-zinc-700 rounded-md px-4 py-2.5 text-sm font-mono focus:outline-none focus:border-emerald-600"
                                placeholder="https://sage-bridge.internal/api">
                     </div>
                 </div>
@@ -408,11 +452,11 @@
                     <div>
                         <label class="block text-sm text-zinc-400 mb-1.5">Account Set</label>
                         <input type="text" id="sage_account_set" name="sage_account_set" value="{{ sage_defaults.get('sage_account_set', '') }}"
-                               class="w-full bg-zinc-800 border border-zinc-700 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:border-emerald-600">
+                               class="w-full bg-zinc-800 border border-zinc-700 rounded-md px-4 py-2.5 text-sm focus:outline-none focus:border-emerald-600">
                     </div>
                     <div>
                         <label class="block text-sm text-zinc-400 mb-1.5">Accounting Method</label>
-                        <select id="sage_accounting_method" name="sage_accounting_method" class="w-full bg-zinc-800 border border-zinc-700 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:border-emerald-600">
+                        <select id="sage_accounting_method" name="sage_accounting_method" class="w-full bg-zinc-800 border border-zinc-700 rounded-md px-4 py-2.5 text-sm focus:outline-none focus:border-emerald-600">
                             <option value="">— Select —</option>
                             {% for m in ['Completed Contract', 'Percentage of Completion', 'Billings and Costs', 'Accrual-Basis'] %}
                             <option value="{{ m }}" {% if sage_defaults.get('sage_accounting_method') == m %}selected{% endif %}>{{ m }}</option>
@@ -422,46 +466,46 @@
                     <div>
                         <label class="block text-sm text-zinc-400 mb-1.5">Billings Account</label>
                         <input type="text" id="sage_billings_account" name="sage_billings_account" value="{{ sage_defaults.get('sage_billings_account', '') }}"
-                               class="w-full bg-zinc-800 border border-zinc-700 rounded-xl px-4 py-2.5 text-sm font-mono focus:outline-none focus:border-emerald-600">
+                               class="w-full bg-zinc-800 border border-zinc-700 rounded-md px-4 py-2.5 text-sm font-mono focus:outline-none focus:border-emerald-600">
                     </div>
                     <div>
                         <label class="block text-sm text-zinc-400 mb-1.5">Work in Progress Account</label>
                         <input type="text" id="sage_wip_account" name="sage_wip_account" value="{{ sage_defaults.get('sage_wip_account', '') }}"
-                               class="w-full bg-zinc-800 border border-zinc-700 rounded-xl px-4 py-2.5 text-sm font-mono focus:outline-none focus:border-emerald-600">
+                               class="w-full bg-zinc-800 border border-zinc-700 rounded-md px-4 py-2.5 text-sm font-mono focus:outline-none focus:border-emerald-600">
                     </div>
                     <div>
                         <label class="block text-sm text-zinc-400 mb-1.5">Revenue Account</label>
                         <input type="text" id="sage_revenue_account" name="sage_revenue_account" value="{{ sage_defaults.get('sage_revenue_account', '') }}"
-                               class="w-full bg-zinc-800 border border-zinc-700 rounded-xl px-4 py-2.5 text-sm font-mono focus:outline-none focus:border-emerald-600">
+                               class="w-full bg-zinc-800 border border-zinc-700 rounded-md px-4 py-2.5 text-sm font-mono focus:outline-none focus:border-emerald-600">
                     </div>
                     <div>
                         <label class="block text-sm text-zinc-400 mb-1.5">Subcontract Liability Account</label>
                         <input type="text" id="sage_subcontract_liability_account" name="sage_subcontract_liability_account" value="{{ sage_defaults.get('sage_subcontract_liability_account', '') }}"
-                               class="w-full bg-zinc-800 border border-zinc-700 rounded-xl px-4 py-2.5 text-sm font-mono focus:outline-none focus:border-emerald-600">
+                               class="w-full bg-zinc-800 border border-zinc-700 rounded-md px-4 py-2.5 text-sm font-mono focus:outline-none focus:border-emerald-600">
                     </div>
                     <div>
                         <label class="block text-sm text-zinc-400 mb-1.5">Default A/R Customer Code</label>
                         <input type="text" id="sage_ar_customer_code" name="sage_ar_customer_code" value="{{ sage_defaults.get('sage_ar_customer_code', '') }}"
-                               class="w-full bg-zinc-800 border border-zinc-700 rounded-xl px-4 py-2.5 text-sm font-mono focus:outline-none focus:border-emerald-600">
+                               class="w-full bg-zinc-800 border border-zinc-700 rounded-md px-4 py-2.5 text-sm font-mono focus:outline-none focus:border-emerald-600">
                     </div>
                     <div>
                         <label class="block text-sm text-zinc-400 mb-1.5">Default Tax Group</label>
                         <input type="text" id="sage_default_tax_group" name="sage_default_tax_group" value="{{ sage_defaults.get('sage_default_tax_group', '') }}"
-                               class="w-full bg-zinc-800 border border-zinc-700 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:border-emerald-600">
+                               class="w-full bg-zinc-800 border border-zinc-700 rounded-md px-4 py-2.5 text-sm focus:outline-none focus:border-emerald-600">
                     </div>
                     <div>
                         <label class="block text-sm text-zinc-400 mb-1.5">AP Vendor Prefix</label>
                         <input type="text" id="sage_ap_vendor_prefix" name="sage_ap_vendor_prefix" value="{{ sage_defaults.get('sage_ap_vendor_prefix', '') }}"
-                               class="w-full bg-zinc-800 border border-zinc-700 rounded-xl px-4 py-2.5 text-sm font-mono focus:outline-none focus:border-emerald-600">
+                               class="w-full bg-zinc-800 border border-zinc-700 rounded-md px-4 py-2.5 text-sm font-mono focus:outline-none focus:border-emerald-600">
                     </div>
                     <div>
                         <label class="block text-sm text-zinc-400 mb-1.5">Cost Code Prefix</label>
                         <input type="text" id="sage_cost_code_prefix" name="sage_cost_code_prefix" value="{{ sage_defaults.get('sage_cost_code_prefix', '') }}"
-                               class="w-full bg-zinc-800 border border-zinc-700 rounded-xl px-4 py-2.5 text-sm font-mono focus:outline-none focus:border-emerald-600">
+                               class="w-full bg-zinc-800 border border-zinc-700 rounded-md px-4 py-2.5 text-sm font-mono focus:outline-none focus:border-emerald-600">
                     </div>
                     <div>
                         <label class="block text-sm text-zinc-400 mb-1.5">Default Cost Type</label>
-                        <select id="sage_default_cost_type" name="sage_default_cost_type" class="w-full bg-zinc-800 border border-zinc-700 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:border-emerald-600">
+                        <select id="sage_default_cost_type" name="sage_default_cost_type" class="w-full bg-zinc-800 border border-zinc-700 rounded-md px-4 py-2.5 text-sm focus:outline-none focus:border-emerald-600">
                             <option value="">—</option>
                             {% for ct in ['Labor', 'Material', 'Subcontract', 'Equipment', 'Other'] %}
                             <option value="{{ ct }}" {% if sage_defaults.get('sage_default_cost_type') == ct %}selected{% endif %}>{{ ct }}</option>
@@ -478,7 +522,7 @@
                 </div>
                 <div class="mt-8 flex justify-end gap-3">
                     <a href="{{ url_for('companies_page') }}" class="px-4 py-2.5 text-sm text-zinc-400 hover:text-white">Companies → Sage lookup</a>
-                    <button type="submit" class="px-6 py-2.5 bg-emerald-600 hover:bg-emerald-500 rounded-2xl text-sm font-medium">Save Sage Settings</button>
+                    <button type="submit" class="px-6 py-2.5 bg-emerald-600 hover:bg-emerald-500 rounded-md text-sm font-medium">Save Sage Settings</button>
                 </div>
             </form>
         </div>
@@ -494,15 +538,9 @@
         document.querySelectorAll('[id^="tab-content-"]').forEach(el => el.classList.add('hidden'));
         const content = document.getElementById('tab-content-' + tab);
         if (content) content.classList.remove('hidden');
-        document.querySelectorAll('.settings-tab-btn').forEach(el => {
-            el.classList.remove('border-b-2', 'border-emerald-500', 'text-white');
-            el.classList.add('text-zinc-400');
-        });
+        document.querySelectorAll('.settings-tab-btn').forEach(el => el.classList.remove('active'));
         const activeTab = document.getElementById('tab-' + tab);
-        if (activeTab) {
-            activeTab.classList.add('border-b-2', 'border-emerald-500', 'text-white');
-            activeTab.classList.remove('text-zinc-400');
-        }
+        if (activeTab) activeTab.classList.add('active');
         if (tab === 'email') renderProgramEmailSettings();
         if (tab === 'backup' && window.CasePMProgramSettings) CasePMProgramSettings.loadBackupForm();
         if (tab === 'numbering' && window.CasePMProgramSettings) CasePMProgramSettings.loadNumberingForm();
