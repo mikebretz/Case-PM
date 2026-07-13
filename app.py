@@ -1881,7 +1881,7 @@ def download_casepm_connector():
         buf,
         mimetype='application/octet-stream',
         as_attachment=True,
-        download_name='Install Case PM Connector.bat',
+        download_name='Case PM Connector.bat',
     )
 
 
