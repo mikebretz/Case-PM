@@ -18,6 +18,14 @@ REMINDER_OPTIONS = (
 DEFAULT_REMINDER_OFFSETS = ('morning_of', '1h')
 
 
+def _program_inspection_defaults():
+    try:
+        from program_settings_persistence import load_inspection_defaults
+        return load_inspection_defaults()
+    except Exception:
+        return {}
+
+
 def _parse_json(raw, default):
     if not raw:
         return default
@@ -29,14 +37,18 @@ def _parse_json(raw, default):
 
 
 def get_notification_settings(item):
+    program = _program_inspection_defaults()
+    default_offsets = program.get('reminder_offsets') or list(DEFAULT_REMINDER_OFFSETS)
     details = _parse_json(getattr(item, 'details_json', None), {})
     notif = details.get('notifications') if isinstance(details.get('notifications'), dict) else {}
-    offsets = notif.get('reminder_offsets') or list(DEFAULT_REMINDER_OFFSETS)
+    offsets = notif.get('reminder_offsets') or default_offsets
+    notify_creator = notif.get('notify_creator') if 'notify_creator' in notif else program.get('notify_creator', True)
     return {
         'notify_user_ids': [int(x) for x in (notif.get('notify_user_ids') or []) if x],
-        'notify_creator': notif.get('notify_creator', True),
+        'notify_creator': bool(notify_creator),
         'reminder_offsets': [str(x) for x in offsets if x],
         'reminders_sent': notif.get('reminders_sent') if isinstance(notif.get('reminders_sent'), dict) else {},
+        'default_notify_pm': bool(program.get('default_notify_pm', True)),
     }
 
 
@@ -57,7 +69,8 @@ def apply_notification_settings(item, body):
     notify_creator = body.get('notify_creator') if 'notify_creator' in body else old['notify_creator']
     reminder_offsets = body.get('reminder_offsets') if body.get('reminder_offsets') is not None else old['reminder_offsets']
     if not reminder_offsets:
-        reminder_offsets = list(DEFAULT_REMINDER_OFFSETS)
+        program = _program_inspection_defaults()
+        reminder_offsets = program.get('reminder_offsets') or list(DEFAULT_REMINDER_OFFSETS)
     reminders_sent = old['reminders_sent']
     details['notifications'] = {
         'notify_user_ids': notify_user_ids,

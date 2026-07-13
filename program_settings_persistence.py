@@ -106,6 +106,43 @@ SECURITY_DEFAULTS = {
     'allowed_hosts': '',
     'enforce_project_membership': False,
     'require_2fa_for_admins': False,
+    'session_cookie_hours': 12,
+}
+
+DOCUMENT_DEFAULTS = {
+    'share_requires_approval': False,
+    'default_share_expiry_days': 30,
+    'max_share_expiry_days': 365,
+    'retention_years': 7,
+}
+
+ESTIMATING_DEFAULTS = {
+    'rfp_notify_mode': 'both',
+    'award_auto_commitment': False,
+    'reminder_hours_before': 48,
+    'budget_mapping_auto': True,
+    'ai_scope_enabled': True,
+    'fee_breakdown_visible': True,
+}
+
+INSPECTION_DEFAULTS = {
+    'reminder_offsets': ['morning_of', '1h'],
+    'notify_creator': True,
+    'default_notify_pm': True,
+}
+
+REGIONAL_DEFAULTS = {
+    'default_locale': 'en-US',
+    'default_date_format': 'MDY',
+    'default_timezone': 'America/New_York',
+}
+
+WORKFLOW_DEFAULTS = {
+    'require_daily_log_weather': False,
+    'require_manpower_on_daily_log': False,
+    'auto_archive_inactive_users_days': 0,
+    'default_new_user_role': 'Company User',
+    'default_license_tier': '',
 }
 
 
@@ -354,6 +391,10 @@ def load_security_settings():
     out['allowed_hosts'] = (out.get('allowed_hosts') or '').strip()
     out['enforce_project_membership'] = bool(out.get('enforce_project_membership', False))
     out['require_2fa_for_admins'] = bool(out.get('require_2fa_for_admins', False))
+    try:
+        out['session_cookie_hours'] = max(1, min(int(out.get('session_cookie_hours') or 12), 168))
+    except (TypeError, ValueError):
+        out['session_cookie_hours'] = 12
     return out
 
 
@@ -374,7 +415,186 @@ def save_security_settings(payload):
         'allowed_hosts': (payload.get('allowed_hosts') or '').strip(),
         'enforce_project_membership': bool(payload.get('enforce_project_membership')),
         'require_2fa_for_admins': bool(payload.get('require_2fa_for_admins')),
+        'session_cookie_hours': max(1, min(int(payload.get('session_cookie_hours') or 12), 168)),
     }, SECURITY_DEFAULTS)
+
+
+def load_document_defaults():
+    section = get_section('documents', DOCUMENT_DEFAULTS)
+    out = dict(DOCUMENT_DEFAULTS)
+    out.update(section)
+    out['share_requires_approval'] = bool(out.get('share_requires_approval'))
+    try:
+        out['default_share_expiry_days'] = max(1, min(int(out.get('default_share_expiry_days') or 30), 365))
+    except (TypeError, ValueError):
+        out['default_share_expiry_days'] = 30
+    try:
+        out['max_share_expiry_days'] = max(1, min(int(out.get('max_share_expiry_days') or 365), 365))
+    except (TypeError, ValueError):
+        out['max_share_expiry_days'] = 365
+    try:
+        out['retention_years'] = max(1, min(int(out.get('retention_years') or 7), 99))
+    except (TypeError, ValueError):
+        out['retention_years'] = 7
+    return out
+
+
+def save_document_defaults(payload):
+    if not isinstance(payload, dict):
+        return load_document_defaults()
+    return save_section('documents', {
+        'share_requires_approval': bool(payload.get('share_requires_approval')),
+        'default_share_expiry_days': int(payload.get('default_share_expiry_days') or 30),
+        'max_share_expiry_days': int(payload.get('max_share_expiry_days') or 365),
+        'retention_years': int(payload.get('retention_years') or 7),
+    }, DOCUMENT_DEFAULTS)
+
+
+def load_notification_defaults():
+    from user_extended_prefs import default_notification_prefs, merge_notification_prefs
+    raw = get_section('notifications', {})
+    if raw:
+        return merge_notification_prefs(raw)
+    return default_notification_prefs()
+
+
+def save_notification_defaults(payload):
+    from user_extended_prefs import merge_notification_prefs
+    merged = merge_notification_prefs(payload or {})
+    return save_section('notifications', merged)
+
+
+def load_estimating_defaults():
+    section = get_section('estimating', ESTIMATING_DEFAULTS)
+    out = dict(ESTIMATING_DEFAULTS)
+    out.update(section)
+    mode = str(out.get('rfp_notify_mode') or 'both').lower()
+    if mode not in ('both', 'in_app', 'email', 'none'):
+        mode = 'both'
+    out['rfp_notify_mode'] = mode
+    out['award_auto_commitment'] = bool(out.get('award_auto_commitment'))
+    out['budget_mapping_auto'] = bool(out.get('budget_mapping_auto', True))
+    out['ai_scope_enabled'] = bool(out.get('ai_scope_enabled', True))
+    out['fee_breakdown_visible'] = bool(out.get('fee_breakdown_visible', True))
+    try:
+        out['reminder_hours_before'] = max(1, min(int(out.get('reminder_hours_before') or 48), 168))
+    except (TypeError, ValueError):
+        out['reminder_hours_before'] = 48
+    return out
+
+
+def save_estimating_defaults(payload):
+    if not isinstance(payload, dict):
+        return load_estimating_defaults()
+    mode = str(payload.get('rfp_notify_mode') or 'both').lower()
+    if mode not in ('both', 'in_app', 'email', 'none'):
+        mode = 'both'
+    return save_section('estimating', {
+        'rfp_notify_mode': mode,
+        'award_auto_commitment': bool(payload.get('award_auto_commitment')),
+        'reminder_hours_before': int(payload.get('reminder_hours_before') or 48),
+        'budget_mapping_auto': bool(payload.get('budget_mapping_auto', True)),
+        'ai_scope_enabled': bool(payload.get('ai_scope_enabled', True)),
+        'fee_breakdown_visible': bool(payload.get('fee_breakdown_visible', True)),
+    }, ESTIMATING_DEFAULTS)
+
+
+def load_inspection_defaults():
+    section = get_section('inspections', INSPECTION_DEFAULTS)
+    out = dict(INSPECTION_DEFAULTS)
+    out.update(section)
+    offsets = out.get('reminder_offsets') or list(INSPECTION_DEFAULTS['reminder_offsets'])
+    if not isinstance(offsets, list):
+        offsets = list(INSPECTION_DEFAULTS['reminder_offsets'])
+    out['reminder_offsets'] = [str(x) for x in offsets if x]
+    out['notify_creator'] = bool(out.get('notify_creator', True))
+    out['default_notify_pm'] = bool(out.get('default_notify_pm', True))
+    return out
+
+
+def save_inspection_defaults(payload):
+    if not isinstance(payload, dict):
+        return load_inspection_defaults()
+    offsets = payload.get('reminder_offsets') or []
+    if not isinstance(offsets, list):
+        offsets = []
+    return save_section('inspections', {
+        'reminder_offsets': [str(x) for x in offsets if x],
+        'notify_creator': bool(payload.get('notify_creator', True)),
+        'default_notify_pm': bool(payload.get('default_notify_pm', True)),
+    }, INSPECTION_DEFAULTS)
+
+
+def load_regional_defaults():
+    section = get_section('regional', REGIONAL_DEFAULTS)
+    out = dict(REGIONAL_DEFAULTS)
+    out.update(section)
+    out['default_locale'] = (out.get('default_locale') or 'en-US').strip() or 'en-US'
+    out['default_date_format'] = (out.get('default_date_format') or 'MDY').strip() or 'MDY'
+    out['default_timezone'] = (out.get('default_timezone') or 'America/New_York').strip() or 'America/New_York'
+    return out
+
+
+def save_regional_defaults(payload):
+    if not isinstance(payload, dict):
+        return load_regional_defaults()
+    return save_section('regional', {
+        'default_locale': (payload.get('default_locale') or 'en-US').strip(),
+        'default_date_format': (payload.get('default_date_format') or 'MDY').strip(),
+        'default_timezone': (payload.get('default_timezone') or 'America/New_York').strip(),
+    }, REGIONAL_DEFAULTS)
+
+
+def load_workflow_defaults():
+    section = get_section('workflow', WORKFLOW_DEFAULTS)
+    out = dict(WORKFLOW_DEFAULTS)
+    out.update(section)
+    out['require_daily_log_weather'] = bool(out.get('require_daily_log_weather'))
+    out['require_manpower_on_daily_log'] = bool(out.get('require_manpower_on_daily_log'))
+    try:
+        out['auto_archive_inactive_users_days'] = max(0, int(out.get('auto_archive_inactive_users_days') or 0))
+    except (TypeError, ValueError):
+        out['auto_archive_inactive_users_days'] = 0
+    out['default_new_user_role'] = (out.get('default_new_user_role') or 'Company User').strip()
+    out['default_license_tier'] = (out.get('default_license_tier') or '').strip()
+    return out
+
+
+def save_workflow_defaults(payload):
+    if not isinstance(payload, dict):
+        return load_workflow_defaults()
+    return save_section('workflow', {
+        'require_daily_log_weather': bool(payload.get('require_daily_log_weather')),
+        'require_manpower_on_daily_log': bool(payload.get('require_manpower_on_daily_log')),
+        'auto_archive_inactive_users_days': max(0, int(payload.get('auto_archive_inactive_users_days') or 0)),
+        'default_new_user_role': (payload.get('default_new_user_role') or 'Company User').strip(),
+        'default_license_tier': (payload.get('default_license_tier') or '').strip(),
+    }, WORKFLOW_DEFAULTS)
+
+
+def integrations_status():
+    import os
+    sage_url = (os.environ.get('SAGE_API_URL') or '').strip()
+    sage_key = bool((os.environ.get('SAGE_API_KEY') or '').strip())
+    try:
+        from aia_service import integration_info as aia_info
+        aia = aia_info()
+    except Exception:
+        aia = {'configured': False}
+    try:
+        from docusign_service import integration_info as docusign_info
+        docusign = docusign_info()
+    except Exception:
+        docusign = {'configured': False}
+    return {
+        'sage_api_url_set': bool(sage_url),
+        'sage_api_key_set': sage_key,
+        'sage_live': bool(sage_url and sage_key),
+        'aia': aia,
+        'docusign': docusign,
+        'secret_key_from_env': bool(os.environ.get('CASEPM_SECRET_KEY', '').strip()),
+        'deployment_env': (os.environ.get('CASEPM_DEPLOYMENT') or '').strip() or None,
+    }
 
 
 def merge_sage_context(project_details, sage_defaults=None):
@@ -412,5 +632,12 @@ def settings_summary_for_ui():
         'numbering_catalog': numbering_ui,
         'pay_apps': load_pay_app_defaults(),
         'security': load_security_settings(),
+        'documents': load_document_defaults(),
+        'notifications': load_notification_defaults(),
+        'estimating': load_estimating_defaults(),
+        'inspections': load_inspection_defaults(),
+        'regional': load_regional_defaults(),
+        'workflow': load_workflow_defaults(),
+        'integrations': integrations_status(),
         'updated_at': settings.get('updated_at'),
     }
