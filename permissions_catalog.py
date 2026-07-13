@@ -47,6 +47,14 @@ MODULE_SUBMODULES = {
         ('change_orders_cpco', 'Commitment PCOs (CPCO)'),
         ('change_orders_erp', 'ERP Accounting Queue'),
     ],
+    'estimating': [
+        ('estimating_summary', 'Summary'),
+        ('estimating_worksheet', 'Worksheet'),
+        ('estimating_rfp', 'Bid Packages / RFPs'),
+        ('estimating_takeoff', 'Takeoff'),
+        ('estimating_leveling', 'Bid Leveling'),
+        ('estimating_award', 'Award & Budget'),
+    ],
     'safety': [
         ('safety_reports', 'Observations & Incidents'),
         ('safety_training', 'Training & Certifications'),
@@ -94,6 +102,7 @@ MODULE_GROUPS = [
             ('rfis', 'RFIs'),
             ('submittals', 'Submittals'),
             ('change_orders', 'Change Orders'),
+            ('estimating', 'Estimating'),
             ('documents', 'Documents'),
             ('drawings', 'Drawings'),
         ],
@@ -132,7 +141,9 @@ APPROVAL_MODULES = frozenset({
 FINANCIAL_MODULE_KEYS = frozenset({
     'budget', 'forecast', 'commitments', 'pay_applications',
     'pay_applications_gc', 'pay_applications_sub', 'pay_applications_lien_waivers',
-    'companies',
+    'companies', 'estimating',
+    'estimating_summary', 'estimating_worksheet', 'estimating_rfp',
+    'estimating_takeoff', 'estimating_leveling', 'estimating_award',
 })
 
 # Map legacy display names → module keys
@@ -148,6 +159,7 @@ LEGACY_MODULE_MAP = {
     'RFIs': 'rfis',
     'Submittals': 'submittals',
     'Change Orders': 'change_orders',
+    'Estimating': 'estimating',
     'Punch List': 'punch_list',
     'Safety': 'safety',
     'Schedule': 'schedule',
@@ -170,6 +182,7 @@ WORKFLOW_MODULE_MAP = {
     'Pay Applications': 'pay_applications',
     'Change Orders': 'change_orders',
     'Commitments': 'commitments',
+    'Estimating': 'estimating',
     'Submittals': 'submittals',
     'RFIs': 'rfis',
     'Budget': 'budget',
@@ -255,6 +268,13 @@ ROLE_TEMPLATES = {
             'change_orders_cor': ('edit', 'approve_reject'),
             'change_orders_cpco': ('edit', 'approve_reject'),
             'change_orders_erp': ('edit', 'approve_reject'),
+            'estimating': ('edit', 'approve_reject'),
+            'estimating_summary': ('edit', 'approve_reject'),
+            'estimating_worksheet': ('edit', 'approve_reject'),
+            'estimating_rfp': ('edit', 'approve_reject'),
+            'estimating_takeoff': ('edit', 'approve_reject'),
+            'estimating_leveling': ('edit', 'approve_reject'),
+            'estimating_award': ('edit', 'approve_reject'),
             'budget': ('edit', 'approve_reject'),
             'commitments': ('edit', 'approve_reject'),
             'pay_applications': ('edit', 'approve_reject'),

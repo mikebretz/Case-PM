@@ -16,7 +16,7 @@ SESSION_ACTIVITY_KEY = 'casepm_last_activity'
 FINANCIAL_MODULES = frozenset({
     'budget', 'forecast', 'commitments', 'pay_applications',
     'pay_applications_gc', 'pay_applications_sub', 'pay_applications_lien_waivers',
-    'companies',
+    'companies', 'estimating',
 })
 
 # Longest prefixes first so specific rules win over general ones.
@@ -28,6 +28,7 @@ API_PREFIX_MODULE = [
     ('/api/pcos', 'change_orders'),
     ('/api/change-events', 'change_orders'),
     ('/api/rfqs', 'change_orders'),
+    ('/api/estimates', 'estimating'),
     ('/api/cors', 'change_orders'),
     ('/api/daily-logs', 'daily_log'),
     ('/api/weekly-reports', 'weekly_report'),
