@@ -63,6 +63,8 @@ NUMBERING_DEFAULTS = {
     'sub_change_order': {'label': 'Subcontractor Change Orders', 'prefix': 'SCO', 'pad': 3, 'scope': 'project'},
     'change_event': {'label': 'Change Events', 'prefix': 'CE', 'pad': 3, 'scope': 'project'},
     'rfq': {'label': 'Subcontractor RFQs', 'prefix': 'RFQ', 'pad': 3, 'scope': 'project'},
+    'estimate': {'label': 'Estimates', 'prefix': 'EST', 'pad': 3, 'scope': 'project'},
+    'bid_package': {'label': 'Bid Packages / RFPs', 'prefix': 'RFP', 'pad': 3, 'scope': 'project'},
     'cor': {'label': 'Change Order Requests', 'prefix': 'COR', 'pad': 3, 'scope': 'project'},
     'cpco': {'label': 'Commitment PCOs', 'prefix': 'CPCO', 'pad': 3, 'scope': 'project'},
     'pco': {'label': 'Potential Change Orders', 'prefix': 'PCO', 'pad': 3, 'scope': 'global'},

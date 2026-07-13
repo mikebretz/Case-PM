@@ -503,6 +503,16 @@
                     <div class="section-header px-2 mb-0.5">Financial</div>
                 </div>
 
+                <a href="{{ url_for('estimating_page', project_id=active_project.id) if active_project else url_for('estimating_page') }}" data-nav-module="estimating" class="nav-link nav-staff-only flex items-center gap-2.5 px-3 py-1.5 rounded-xl mb-0.5 {% if request.endpoint == 'estimating_page' %}active{% endif %}">
+                    <i class="fa-solid fa-calculator w-5"></i>
+                    <span>Estimating</span>
+                </a>
+
+                <a href="{{ url_for('estimate_portal_page', project_id=active_project.id) if active_project else url_for('estimate_portal_page') }}" data-nav-module="estimating" class="nav-link nav-sub-only hidden flex items-center gap-2.5 px-3 py-1.5 rounded-xl mb-0.5 {% if request.endpoint == 'estimate_portal_page' %}active{% endif %}">
+                    <i class="fa-solid fa-envelope-open-text w-5"></i>
+                    <span>Bid Portal</span>
+                </a>
+
                 <a href="{{ url_for('budget_page', project_id=active_project.id) if active_project else url_for('budget_page') }}" data-nav-module="budget" class="nav-link nav-staff-only flex items-center gap-2.5 px-3 py-1.5 rounded-xl mb-0.5 {% if request.endpoint == 'budget_page' %}active{% endif %}">
                     <i class="fa-solid fa-chart-pie w-5"></i>
                     <span>Budget</span>

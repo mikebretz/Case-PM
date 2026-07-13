@@ -1,0 +1,176 @@
+{% extends "base.html" %}
+
+{% block title %}Estimating{% endblock %}
+
+{% block content %}
+<script>
+window.CASEPM_ESTIMATE_CTX = {
+  projectId: {{ active_project.id if active_project else 'null' }},
+  projectName: {{ (active_project.name if active_project else '')|tojson }},
+};
+</script>
+<script src="{{ url_for('static', filename='js/budget-sync.js') }}"></script>
+<script src="{{ url_for('static', filename='js/estimating-app.js') }}"></script>
+
+<style>
+.est-page { display:flex; flex-direction:column; flex:1; min-height:0; width:100%; padding:1rem 1rem 0; overflow:hidden; box-sizing:border-box; }
+.est-tabs button.active { background:#27272a; color:#fff; border-color:#52525b; }
+.est-sheet-wrap { overflow:auto; border:1px solid #3f3f46; border-radius:0.375rem; }
+.est-sheet { width:100%; border-collapse:collapse; font-size:12px; min-width:1100px; }
+.est-sheet th, .est-sheet td { border:1px solid #3f3f46; padding:0; }
+.est-sheet thead th { position:sticky; top:0; z-index:2; background:#27272a; color:#a1a1aa; font-size:10px; text-transform:uppercase; padding:0.5rem; text-align:left; }
+.est-sheet input, .est-sheet select { width:100%; background:#18181b; border:0; color:#fff; padding:0.4rem 0.5rem; font-size:12px; outline:none; }
+.est-sheet input:focus { background:rgba(16,185,129,0.08); box-shadow:inset 0 0 0 1px rgba(16,185,129,0.35); }
+.est-sheet .num { text-align:right; font-family:ui-monospace,monospace; }
+.level-grid { display:grid; gap:0.5rem; }
+.level-card { border:1px solid #3f3f46; border-radius:0.5rem; background:#18181b; padding:1rem; }
+.level-low { outline:2px solid rgba(16,185,129,0.5); }
+</style>
+
+<div class="est-page">
+  <div class="flex items-center justify-between flex-shrink-0 mb-4 gap-3 flex-wrap">
+    <div>
+      <div class="text-2xl font-semibold text-white">Estimating</div>
+      <div class="text-xs text-zinc-500 mt-0.5">Worksheet · RFPs · Takeoff · Bid leveling · Award → Budget</div>
+    </div>
+    <div class="flex items-center gap-2 flex-wrap">
+      <select id="estEstimateSelect" class="bg-zinc-900 border border-zinc-700 rounded-md px-3 py-2 text-sm min-w-[200px]"></select>
+      <button type="button" id="estNewBtn" class="px-4 py-2 bg-white text-zinc-900 hover:bg-zinc-100 rounded-md text-sm font-semibold">
+        <i class="fa-solid fa-plus mr-1"></i>New Estimate
+      </button>
+    </div>
+  </div>
+
+  <div id="estSummaryBar" class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3 mb-4 flex-shrink-0">
+    <div class="bg-zinc-900 border border-zinc-700 rounded-md p-3"><div class="text-xs text-zinc-400">Direct Cost</div><div id="estDirectTotal" class="text-lg font-semibold mt-1">$0</div></div>
+    <div class="bg-zinc-900 border border-zinc-700 rounded-md p-3"><div class="text-xs text-zinc-400">Loaded Total</div><div id="estLoadedTotal" class="text-lg font-semibold mt-1 text-emerald-400">$0</div></div>
+    <div class="bg-zinc-900 border border-zinc-700 rounded-md p-3"><div class="text-xs text-zinc-400">Bid Packages</div><div id="estPkgCount" class="text-lg font-semibold mt-1">0</div></div>
+    <div class="bg-zinc-900 border border-zinc-700 rounded-md p-3"><div class="text-xs text-zinc-400">Invites Sent</div><div id="estInviteCount" class="text-lg font-semibold mt-1">0</div></div>
+    <div class="bg-zinc-900 border border-zinc-700 rounded-md p-3"><div class="text-xs text-zinc-400">Quotes Received</div><div id="estQuoteCount" class="text-lg font-semibold mt-1 text-sky-400">0</div></div>
+    <div class="bg-zinc-900 border border-zinc-700 rounded-md p-3"><div class="text-xs text-zinc-400">Status</div><div id="estStatusBadge" class="text-sm font-medium mt-1">—</div></div>
+  </div>
+
+  <div class="est-tabs flex gap-1 flex-wrap mb-3 flex-shrink-0" id="estTabBar">
+    <button type="button" data-tab="summary" class="active px-4 py-2 text-sm border border-zinc-700 rounded-md text-zinc-400">Summary</button>
+    <button type="button" data-tab="worksheet" class="px-4 py-2 text-sm border border-zinc-700 rounded-md text-zinc-400">Worksheet</button>
+    <button type="button" data-tab="rfp" class="px-4 py-2 text-sm border border-zinc-700 rounded-md text-zinc-400">Bid Packages / RFPs</button>
+    <button type="button" data-tab="takeoff" class="px-4 py-2 text-sm border border-zinc-700 rounded-md text-zinc-400">Takeoff</button>
+    <button type="button" data-tab="leveling" class="px-4 py-2 text-sm border border-zinc-700 rounded-md text-zinc-400">Bid Leveling</button>
+    <button type="button" data-tab="award" class="px-4 py-2 text-sm border border-zinc-700 rounded-md text-zinc-400">Award & Budget</button>
+  </div>
+
+  <div id="estPanelSummary" class="est-panel flex-1 min-h-0 overflow-auto mb-20">
+    <div class="grid md:grid-cols-2 gap-4">
+      <div class="bg-zinc-900 border border-zinc-700 rounded-md p-4">
+        <h3 class="font-medium mb-3">Estimate Details</h3>
+        <div class="space-y-3 text-sm">
+          <div><label class="text-zinc-500 text-xs">Title</label><input id="estTitle" class="w-full bg-zinc-800 border border-zinc-700 rounded px-3 py-2 mt-1"></div>
+          <div><label class="text-zinc-500 text-xs">Description</label><textarea id="estDescription" rows="3" class="w-full bg-zinc-800 border border-zinc-700 rounded px-3 py-2 mt-1"></textarea></div>
+          <div class="grid grid-cols-2 gap-3">
+            <div><label class="text-zinc-500 text-xs">Type</label><select id="estType" class="w-full bg-zinc-800 border border-zinc-700 rounded px-3 py-2 mt-1"><option>Hard Bid</option><option>Budget Estimate</option><option>Design-Build</option><option>ROM</option></select></div>
+            <div><label class="text-zinc-500 text-xs">Status</label><select id="estStatus" class="w-full bg-zinc-800 border border-zinc-700 rounded px-3 py-2 mt-1"><option>Draft</option><option>In Progress</option><option>Out for Bid</option><option>Leveling</option><option>Awarded</option><option>Archived</option><option>Lost</option></select></div>
+            <div><label class="text-zinc-500 text-xs">Bid Date</label><input type="date" id="estBidDate" class="w-full bg-zinc-800 border border-zinc-700 rounded px-3 py-2 mt-1"></div>
+            <div><label class="text-zinc-500 text-xs">Due Date</label><input type="date" id="estDueDate" class="w-full bg-zinc-800 border border-zinc-700 rounded px-3 py-2 mt-1"></div>
+          </div>
+          <button type="button" id="estSaveSummary" class="px-4 py-2 bg-emerald-600 hover:bg-emerald-500 rounded-md text-sm">Save Details</button>
+        </div>
+      </div>
+      <div class="bg-zinc-900 border border-zinc-700 rounded-md p-4">
+        <h3 class="font-medium mb-3">Markups</h3>
+        <div class="grid grid-cols-2 gap-3 text-sm">
+          <div><label class="text-zinc-500 text-xs">Contingency %</label><input type="number" step="0.1" id="estContingency" class="w-full bg-zinc-800 border border-zinc-700 rounded px-3 py-2 mt-1"></div>
+          <div><label class="text-zinc-500 text-xs">Overhead %</label><input type="number" step="0.1" id="estOverhead" class="w-full bg-zinc-800 border border-zinc-700 rounded px-3 py-2 mt-1"></div>
+          <div><label class="text-zinc-500 text-xs">Profit %</label><input type="number" step="0.1" id="estProfit" class="w-full bg-zinc-800 border border-zinc-700 rounded px-3 py-2 mt-1"></div>
+          <div><label class="text-zinc-500 text-xs">Tax %</label><input type="number" step="0.1" id="estTax" class="w-full bg-zinc-800 border border-zinc-700 rounded px-3 py-2 mt-1"></div>
+        </div>
+        <p class="text-xs text-zinc-500 mt-4">Workflow mirrors Procore, Buildertrend, Sage Estimating, and CoConstruct: precon estimate → bid packages → vendor quotes → award → original budget.</p>
+        <div class="flex gap-2 mt-4 flex-wrap">
+          <a href="/drawings" class="text-sm text-sky-400 hover:underline">Open Drawings for takeoff →</a>
+          <a href="/documents" class="text-sm text-sky-400 hover:underline">Specs & drawings in Documents →</a>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div id="estPanelWorksheet" class="est-panel hidden flex-1 min-h-0 flex flex-col mb-20">
+    <div class="flex gap-2 mb-2 flex-wrap flex-shrink-0">
+      <input type="text" id="estLineSearch" placeholder="Search cost code, spec, description…" class="flex-1 bg-zinc-900 border border-zinc-700 rounded-md px-3 py-2 text-sm min-w-[200px]">
+      <button type="button" id="estAddLine" class="px-4 py-2 bg-zinc-800 hover:bg-zinc-700 rounded-md text-sm">Add Line</button>
+      <button type="button" id="estSaveLines" class="px-4 py-2 bg-emerald-600 hover:bg-emerald-500 rounded-md text-sm">Save Worksheet</button>
+    </div>
+    <div class="est-sheet-wrap flex-1 min-h-0">
+      <table class="est-sheet">
+        <thead><tr>
+          <th>Cost Code</th><th>Spec</th><th>Description</th><th>Cost Type</th><th>Qty</th><th>Unit</th><th>Unit Cost</th><th>Extended</th><th>Source</th><th></th>
+        </tr></thead>
+        <tbody id="estWorksheetBody"></tbody>
+        <tfoot><tr><td colspan="7" class="px-3 py-2 text-right font-semibold">Direct Total</td><td id="estWsDirect" class="px-3 py-2 num font-semibold text-emerald-400">$0</td><td colspan="2"></td></tr></tfoot>
+      </table>
+    </div>
+  </div>
+
+  <div id="estPanelRfp" class="est-panel hidden flex-1 min-h-0 overflow-auto mb-20">
+    <div class="flex justify-between items-center mb-3 flex-wrap gap-2">
+      <div class="text-sm text-zinc-400">Create RFP packages by spec section · mass-invite matching vendors/subs</div>
+      <button type="button" id="estNewPackage" class="px-4 py-2 bg-white text-zinc-900 rounded-md text-sm font-semibold">New Bid Package</button>
+    </div>
+    <div id="estPackagesList" class="space-y-3"></div>
+  </div>
+
+  <div id="estPanelTakeoff" class="est-panel hidden flex-1 min-h-0 flex flex-col mb-20">
+    <div class="flex gap-2 mb-2 flex-wrap flex-shrink-0">
+      <input type="text" id="estTakeoffSearch" placeholder="Search takeoff items…" class="flex-1 bg-zinc-900 border border-zinc-700 rounded-md px-3 py-2 text-sm">
+      <button type="button" id="estRefreshTakeoff" class="px-4 py-2 bg-zinc-800 rounded-md text-sm">Refresh</button>
+      <button type="button" id="estImportTakeoff" class="px-4 py-2 bg-emerald-600 hover:bg-emerald-500 rounded-md text-sm">Import to Worksheet</button>
+    </div>
+    <div class="flex-1 overflow-auto border border-zinc-700 rounded-md bg-zinc-900">
+      <table class="w-full text-sm">
+        <thead class="bg-zinc-800 sticky top-0"><tr>
+          <th class="px-3 py-2 text-left text-zinc-400">Sheet</th>
+          <th class="px-3 py-2 text-left text-zinc-400">Description</th>
+          <th class="px-3 py-2 text-right text-zinc-400">Qty</th>
+          <th class="px-3 py-2 text-left text-zinc-400">Unit</th>
+        </tr></thead>
+        <tbody id="estTakeoffBody" class="divide-y divide-zinc-800"></tbody>
+      </table>
+    </div>
+  </div>
+
+  <div id="estPanelLeveling" class="est-panel hidden flex-1 min-h-0 overflow-auto mb-20">
+    <div class="flex justify-between mb-3"><span class="text-sm text-zinc-400">Compare vendor quotes side-by-side</span><button type="button" id="estRefreshLeveling" class="px-3 py-1.5 bg-zinc-800 rounded text-sm">Refresh</button></div>
+    <div id="estLevelingGrid" class="level-grid"></div>
+  </div>
+
+  <div id="estPanelAward" class="est-panel hidden flex-1 min-h-0 overflow-auto mb-20">
+    <div class="bg-zinc-900 border border-zinc-700 rounded-md p-5 max-w-2xl">
+      <h3 class="text-lg font-semibold mb-2">Award Estimate → Budget</h3>
+      <p class="text-sm text-zinc-400 mb-4">When the project is awarded, push estimate lines (and optionally awarded bid quotes) into the project budget as original budget amounts.</p>
+      <label class="flex items-center gap-2 text-sm mb-4"><input type="checkbox" id="estUseBidAwards" class="rounded"> Include awarded bid package quotes</label>
+      <div class="flex gap-2 flex-wrap">
+        <button type="button" id="estAwardBudget" class="px-5 py-2 bg-emerald-600 hover:bg-emerald-500 rounded-md font-semibold">Push to Budget</button>
+        <a href="/budget" class="px-5 py-2 bg-zinc-800 hover:bg-zinc-700 rounded-md text-sm inline-flex items-center">Open Budget</a>
+      </div>
+      <p id="estAwardResult" class="text-sm text-emerald-400 mt-4 hidden"></p>
+    </div>
+  </div>
+</div>
+
+<dialog id="estPackageModal" class="modal rounded-md w-full max-w-lg p-0 text-white" style="background:#18181b;border:1px solid #3f3f46;">
+  <form id="estPackageForm" class="p-5">
+    <h3 class="text-lg font-semibold mb-4">Bid Package / RFP</h3>
+    <div class="space-y-3 text-sm">
+      <div><label class="text-zinc-400">Title</label><input name="title" required class="w-full bg-zinc-800 border border-zinc-700 rounded px-3 py-2 mt-1"></div>
+      <div class="grid grid-cols-2 gap-3">
+        <div><label class="text-zinc-400">Spec Section</label><input name="spec_section" placeholder="07 92 00" class="w-full bg-zinc-800 border border-zinc-700 rounded px-3 py-2 mt-1"></div>
+        <div><label class="text-zinc-400">Division</label><input name="division" placeholder="07" class="w-full bg-zinc-800 border border-zinc-700 rounded px-3 py-2 mt-1"></div>
+      </div>
+      <div><label class="text-zinc-400">Due Date</label><input type="date" name="due_date" class="w-full bg-zinc-800 border border-zinc-700 rounded px-3 py-2 mt-1"></div>
+      <div><label class="text-zinc-400">Scope / Instructions</label><textarea name="scope_notes" rows="3" class="w-full bg-zinc-800 border border-zinc-700 rounded px-3 py-2 mt-1"></textarea></div>
+    </div>
+    <div class="flex justify-end gap-2 mt-5">
+      <button type="button" id="estPackageCancel" class="px-4 py-2 bg-zinc-800 rounded-md">Cancel</button>
+      <button type="submit" class="px-4 py-2 bg-emerald-600 rounded-md font-medium">Create Package</button>
+    </div>
+  </form>
+</dialog>
+{% endblock %}

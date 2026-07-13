@@ -1257,6 +1257,106 @@ class BudgetProjectState(db.Model):
     updated_by_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=True)
 
 
+class Estimate(db.Model):
+    __tablename__ = 'estimate'
+    id = db.Column(db.Integer, primary_key=True)
+    project_id = db.Column(db.Integer, db.ForeignKey('project.id'), nullable=False)
+    number = db.Column(db.String(30))
+    title = db.Column(db.String(200))
+    description = db.Column(db.Text)
+    status = db.Column(db.String(30), default='Draft')
+    estimate_type = db.Column(db.String(40), default='Hard Bid')
+    bid_date = db.Column(db.Date)
+    due_date = db.Column(db.Date)
+    contingency_pct = db.Column(db.Float, default=5.0)
+    overhead_pct = db.Column(db.Float, default=10.0)
+    profit_pct = db.Column(db.Float, default=10.0)
+    tax_pct = db.Column(db.Float, default=0.0)
+    direct_cost_total = db.Column(db.Float, default=0)
+    total_amount = db.Column(db.Float, default=0)
+    awarded_at = db.Column(db.DateTime)
+    pushed_to_budget_at = db.Column(db.DateTime)
+    pushed_to_budget_by_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=True)
+    assumptions_json = db.Column(db.Text)
+    attachments_json = db.Column(db.Text)
+    created_by_id = db.Column(db.Integer, db.ForeignKey('user.id'))
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+
+class BidPackage(db.Model):
+    __tablename__ = 'bid_package'
+    id = db.Column(db.Integer, primary_key=True)
+    estimate_id = db.Column(db.Integer, db.ForeignKey('estimate.id'), nullable=False)
+    project_id = db.Column(db.Integer, db.ForeignKey('project.id'), nullable=False)
+    number = db.Column(db.String(30))
+    title = db.Column(db.String(200))
+    spec_section = db.Column(db.String(30))
+    division = db.Column(db.String(20))
+    description = db.Column(db.Text)
+    scope_notes = db.Column(db.Text)
+    status = db.Column(db.String(30), default='Draft')
+    due_date = db.Column(db.Date)
+    awarded_invitation_id = db.Column(db.Integer, nullable=True)
+    drawing_refs_json = db.Column(db.Text)
+    spec_refs_json = db.Column(db.Text)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+
+class EstimateLine(db.Model):
+    __tablename__ = 'estimate_line'
+    id = db.Column(db.Integer, primary_key=True)
+    estimate_id = db.Column(db.Integer, db.ForeignKey('estimate.id'), nullable=False)
+    bid_package_id = db.Column(db.Integer, db.ForeignKey('bid_package.id'), nullable=True)
+    sort_order = db.Column(db.Integer, default=0)
+    cost_code = db.Column(db.String(30))
+    division = db.Column(db.String(20))
+    spec_section = db.Column(db.String(30))
+    description = db.Column(db.String(500))
+    cost_type = db.Column(db.String(80), default='Subcontract')
+    unit = db.Column(db.String(30), default='EA')
+    quantity = db.Column(db.Float, default=0)
+    unit_cost = db.Column(db.Float, default=0)
+    extended_cost = db.Column(db.Float, default=0)
+    source = db.Column(db.String(40), default='manual')
+    source_ref = db.Column(db.String(120))
+    notes = db.Column(db.Text)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+
+class BidInvitation(db.Model):
+    __tablename__ = 'bid_invitation'
+    id = db.Column(db.Integer, primary_key=True)
+    bid_package_id = db.Column(db.Integer, db.ForeignKey('bid_package.id'), nullable=False)
+    company_id = db.Column(db.String(64))
+    company_name = db.Column(db.String(200))
+    contact_email = db.Column(db.String(200))
+    contact_name = db.Column(db.String(150))
+    status = db.Column(db.String(30), default='Draft')
+    sent_at = db.Column(db.DateTime)
+    responded_at = db.Column(db.DateTime)
+    quote_amount = db.Column(db.Float, default=0)
+    quote_notes = db.Column(db.Text)
+    decline_reason = db.Column(db.Text)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+
+class BidQuoteLine(db.Model):
+    __tablename__ = 'bid_quote_line'
+    id = db.Column(db.Integer, primary_key=True)
+    invitation_id = db.Column(db.Integer, db.ForeignKey('bid_invitation.id'), nullable=False)
+    cost_code = db.Column(db.String(30))
+    description = db.Column(db.String(500))
+    amount = db.Column(db.Float, default=0)
+    quantity = db.Column(db.Float, default=0)
+    unit = db.Column(db.String(30))
+    unit_cost = db.Column(db.Float, default=0)
+    notes = db.Column(db.Text)
+
+
 class SageSyncEvent(db.Model):
     __tablename__ = 'sage_sync_event'
     id = db.Column(db.Integer, primary_key=True)
@@ -3849,6 +3949,18 @@ def change_orders_page():
 @login_required
 def rfq_portal_page():
     return render_template('rfq_portal.html')
+
+
+@app.route('/estimating')
+@login_required
+def estimating_page():
+    return render_template('estimating.html', active_project=get_active_project())
+
+
+@app.route('/estimate-portal')
+@login_required
+def estimate_portal_page():
+    return render_template('estimate_portal.html', active_project=get_active_project())
 
 
 @app.route('/api/rfqs/portal', methods=['GET'])
@@ -14166,6 +14278,28 @@ register_change_event_routes(app, {
     'PayAppProjectState': PayAppProjectState,
     'User': User,
     'user_portal_type_fn': lambda u: __import__('case_workflow').user_portal_type(u),
+})
+
+from estimate_routes import register_estimate_routes
+register_estimate_routes(app, {
+    'db': db,
+    'request': request,
+    'jsonify': jsonify,
+    'login_required': login_required,
+    'current_user': current_user,
+    'get_current_project_id': get_current_project_id,
+    'generate_next_number': generate_next_number,
+    'Estimate': Estimate,
+    'EstimateLine': EstimateLine,
+    'BidPackage': BidPackage,
+    'BidInvitation': BidInvitation,
+    'BidQuoteLine': BidQuoteLine,
+    'BudgetProjectState': BudgetProjectState,
+    'Company': Company,
+    'Drawing': Drawing,
+    'DrawingMarkup': DrawingMarkup,
+    'User': User,
+    'Project': Project,
 })
 
 
