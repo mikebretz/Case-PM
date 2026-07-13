@@ -463,6 +463,12 @@ class User(db.Model, UserMixin):
     phones_json = db.Column(db.Text)
     notes = db.Column(db.Text)
     access_enabled = db.Column(db.Boolean, default=True)
+    department = db.Column(db.String(120))
+    employee_id = db.Column(db.String(80))
+    license_tier = db.Column(db.String(40))
+    timezone = db.Column(db.String(80))
+    emergency_contact_json = db.Column(db.Text)
+    certifications_json = db.Column(db.Text)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     last_login = db.Column(db.DateTime)
 
@@ -5989,6 +5995,8 @@ def user_management():
     ensure_user_signature_schema(db)
     ensure_user_admin_schema(db)
     users = filter_users_for_actor(User.query.order_by(User.created_at.desc()).all(), current_user)
+    projects = Project.query.order_by(Project.name).all()
+    projects_for_js = [{'id': p.id, 'name': p.name, 'number': p.number or '', 'status': p.status or ''} for p in projects]
     return render_template(
         'user_management.html',
         users=users,
@@ -5999,6 +6007,7 @@ def user_management():
             'full_name': current_user.full_name,
         },
         server_users_for_js=[u for u in (serialize_user(x, actor=current_user) for x in users) if u],
+        projects_for_js=projects_for_js,
         permissions_catalog=catalog_payload(),
         is_admin_user=True,
         can_assign_developer_role=can_assign_developer_role(current_user),

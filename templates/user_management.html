@@ -24,11 +24,19 @@
   }
   /* Slightly taller rows for better readability (tiny increase) */
   #usersTableBody tr td {
-    padding-top: 10px !important;
-    padding-bottom: 10px !important;
+    padding-top: 8px !important;
+    padding-bottom: 8px !important;
   }
 .um-page { display: flex; flex-direction: column; flex: 1; min-height: 0; width: 100%; padding: 1rem 1rem 0; overflow: hidden; box-sizing: border-box; }
-  .um-stack { display: flex; flex-direction: column; flex: 1; min-height: 0; overflow: hidden; max-width: 1600px; margin: 0 auto; width: 100%; }
+  .um-stack { display: flex; flex-direction: column; flex: 1; min-height: 0; overflow: hidden; width: 100%; max-width: none; }
+  #usersTableWrap { width: 100%; }
+  #usersTableWrap table { width: 100%; table-layout: auto; }
+  #usersTableWrap thead th { position: sticky; top: 0; z-index: 10; background: #27272a; }
+  #usersTableWrap .col-login { min-width: 7rem; white-space: nowrap; }
+  #usersTableWrap .col-projects { min-width: 4.5rem; text-align: center; }
+  #usersTableWrap .col-2fa { min-width: 3.5rem; text-align: center; }
+  #usersTableWrap .col-license { min-width: 5.5rem; white-space: nowrap; }
+  #usersTableWrap .col-portal { min-width: 5rem; white-space: nowrap; }
 </style>
 
 <div class="um-page"><div class="um-stack">
@@ -105,22 +113,27 @@
     <button onclick="clearUserFilters()" class="px-4 py-2.5 bg-zinc-800 hover:bg-zinc-700 rounded-md text-sm">Clear Filters</button>
 </div>
 
-<!-- USERS TABLE (rows shrunk) -->
-<div class="mb-6 flex-1 min-h-0 overflow-hidden flex flex-col border border-zinc-700 rounded-md bg-zinc-900">
+<!-- USERS TABLE -->
+<div id="usersTableWrap" class="mb-6 flex-1 min-h-0 overflow-hidden flex flex-col border border-zinc-700 rounded-md bg-zinc-900">
     <div class="flex-1 min-h-0 overflow-auto">
         <table class="w-full text-sm">
             <thead class="bg-zinc-800 sticky top-0 z-20 border-b border-zinc-700">
                 <tr>
-                    <th class="px-5 py-2 text-left font-medium text-zinc-400">Name</th>
-                    <th class="px-5 py-2 text-left font-medium text-zinc-400">Email</th>
-                    <th class="px-4 py-2 text-left font-medium text-zinc-400">Phone</th>
-                    <th class="px-4 py-2 text-left font-medium text-zinc-400">Job Title</th>
-                    <th class="px-4 py-2 text-left font-medium text-zinc-400">Role</th>
-                    <th class="px-4 py-2 text-left font-medium text-zinc-400">Company</th>
-                    <th class="px-5 py-2 text-left font-medium text-zinc-400 flex-1 min-w-[200px]">Address</th>
-                    <th class="px-3 py-2 text-center font-medium text-zinc-400 w-16">Status</th>
-                    <th class="px-3 py-2 text-center font-medium text-zinc-400 w-16">Access</th>
-                    <th class="px-3 py-2 text-center font-medium text-zinc-400 min-w-[130px]">Permissions</th>
+                    <th class="px-4 py-2 text-left font-medium text-zinc-400">Name</th>
+                    <th class="px-4 py-2 text-left font-medium text-zinc-400">Email</th>
+                    <th class="px-3 py-2 text-left font-medium text-zinc-400">Phone</th>
+                    <th class="px-3 py-2 text-left font-medium text-zinc-400">Department</th>
+                    <th class="px-3 py-2 text-left font-medium text-zinc-400">Job Title</th>
+                    <th class="px-3 py-2 text-left font-medium text-zinc-400">Role</th>
+                    <th class="px-3 py-2 text-left font-medium text-zinc-400 col-portal">Portal</th>
+                    <th class="px-3 py-2 text-left font-medium text-zinc-400">Company</th>
+                    <th class="px-3 py-2 text-left font-medium text-zinc-400 col-license">License</th>
+                    <th class="px-3 py-2 text-center font-medium text-zinc-400 col-projects">Projects</th>
+                    <th class="px-3 py-2 text-left font-medium text-zinc-400 col-login">Last Login</th>
+                    <th class="px-2 py-2 text-center font-medium text-zinc-400 col-2fa">2FA</th>
+                    <th class="px-2 py-2 text-center font-medium text-zinc-400 w-16">Status</th>
+                    <th class="px-2 py-2 text-center font-medium text-zinc-400 w-16">Access</th>
+                    <th class="px-2 py-2 text-center font-medium text-zinc-400 min-w-[110px]">Permissions</th>
                     <th class="px-2 py-2 text-center font-medium text-zinc-400 w-[90px]">Actions</th>
                 </tr>
             </thead>
@@ -134,7 +147,7 @@
 </div></div>
 
 <!-- ADD / EDIT USER MODAL -->
-<dialog id="userModal" class="modal rounded-md w-full max-w-3xl p-0 text-white" style="background-color: #18181b; border: 1px solid #3f3f46;">
+<dialog id="userModal" class="modal rounded-md w-full max-w-4xl p-0 text-white" style="background-color: #18181b; border: 1px solid #3f3f46;">
     <div class="p-6">
         <div class="flex justify-between items-center mb-6">
             <h3 id="modalTitle" class="text-xl font-semibold">Add New User</h3>
@@ -144,12 +157,18 @@
         </div>
 
         <!-- TABS -->
-        <div class="flex border-b border-zinc-700 mb-6">
-            <button onclick="switchTab('general')" id="tab-general" class="px-6 py-3 text-sm font-medium border-b-2 border-emerald-500 text-white">General</button>
-            <button onclick="switchTab('permissions')" id="tab-permissions" class="px-6 py-3 text-sm font-medium text-zinc-400 hover:text-white">
+        <div class="flex border-b border-zinc-700 mb-6 overflow-x-auto">
+            <button onclick="switchTab('general')" id="tab-general" class="px-6 py-3 text-sm font-medium border-b-2 border-emerald-500 text-white whitespace-nowrap">General</button>
+            <button onclick="switchTab('projects')" id="tab-projects" class="px-6 py-3 text-sm font-medium text-zinc-400 hover:text-white whitespace-nowrap">
+                <i class="fa-solid fa-diagram-project mr-1 text-sky-400/80"></i> Projects &amp; Access
+            </button>
+            <button onclick="switchTab('certifications')" id="tab-certifications" class="px-6 py-3 text-sm font-medium text-zinc-400 hover:text-white whitespace-nowrap">
+                <i class="fa-solid fa-id-card mr-1 text-violet-400/80"></i> Certifications
+            </button>
+            <button onclick="switchTab('permissions')" id="tab-permissions" class="px-6 py-3 text-sm font-medium text-zinc-400 hover:text-white whitespace-nowrap">
                 <i class="fa-solid fa-shield-halved mr-1 text-amber-400/80"></i> Permissions <span class="text-[9px] uppercase text-amber-500/90 ml-1">Admin</span>
             </button>
-            <button onclick="switchTab('signature')" id="tab-signature" class="px-6 py-3 text-sm font-medium text-zinc-400 hover:text-white">Signature &amp; Certificate</button>
+            <button onclick="switchTab('signature')" id="tab-signature" class="px-6 py-3 text-sm font-medium text-zinc-400 hover:text-white whitespace-nowrap">Signature &amp; Certificate</button>
         </div>
 
         <form id="userForm" onsubmit="saveUser(event)" novalidate>
@@ -185,6 +204,41 @@
                         <div>
                             <label class="block text-sm mb-1.5 text-zinc-300">Job Title</label>
                             <input type="text" id="jobTitle" class="w-full bg-zinc-800 border border-zinc-700 rounded-md px-4 py-2 text-sm" placeholder="e.g. Senior Estimator">
+                        </div>
+
+                        <div>
+                            <label class="block text-sm mb-1.5 text-zinc-300">Department / Crew</label>
+                            <input type="text" id="department" class="w-full bg-zinc-800 border border-zinc-700 rounded-md px-4 py-2 text-sm" placeholder="e.g. Preconstruction, Field Ops">
+                        </div>
+
+                        <div>
+                            <label class="block text-sm mb-1.5 text-zinc-300">Employee ID</label>
+                            <input type="text" id="employeeId" class="w-full bg-zinc-800 border border-zinc-700 rounded-md px-4 py-2 text-sm" placeholder="HR / payroll ID">
+                        </div>
+
+                        <div>
+                            <label class="block text-sm mb-1.5 text-zinc-300">License / Seat Tier</label>
+                            <select id="licenseTier" class="w-full bg-zinc-800 border border-zinc-700 rounded-md px-4 py-2 text-sm">
+                                <option value="">Default (from role)</option>
+                                <option value="Full">Full — all modules</option>
+                                <option value="Field">Field — site tools</option>
+                                <option value="Accounting">Accounting — financial</option>
+                                <option value="View Only">View Only</option>
+                                <option value="External">External / portal</option>
+                            </select>
+                        </div>
+
+                        <div>
+                            <label class="block text-sm mb-1.5 text-zinc-300">Time Zone</label>
+                            <select id="timezone" class="w-full bg-zinc-800 border border-zinc-700 rounded-md px-4 py-2 text-sm">
+                                <option value="">System default</option>
+                                <option value="America/New_York">Eastern (US)</option>
+                                <option value="America/Chicago">Central (US)</option>
+                                <option value="America/Denver">Mountain (US)</option>
+                                <option value="America/Los_Angeles">Pacific (US)</option>
+                                <option value="America/Phoenix">Arizona</option>
+                                <option value="Pacific/Honolulu">Hawaii</option>
+                            </select>
                         </div>
 
                         <!-- Role Dropdown -->
@@ -270,6 +324,24 @@
                             </label>
                         </div>
 
+                        <div class="md:col-span-2 border-t border-zinc-700 pt-4">
+                            <div class="text-sm font-medium text-zinc-300 mb-2">Emergency Contact</div>
+                            <div class="grid grid-cols-1 md:grid-cols-3 gap-3">
+                                <input type="text" id="emergencyName" class="bg-zinc-800 border border-zinc-700 rounded-md px-3 py-2 text-sm" placeholder="Contact name">
+                                <input type="text" id="emergencyPhone" class="bg-zinc-800 border border-zinc-700 rounded-md px-3 py-2 text-sm" placeholder="Phone">
+                                <input type="text" id="emergencyRelationship" class="bg-zinc-800 border border-zinc-700 rounded-md px-3 py-2 text-sm" placeholder="Relationship">
+                            </div>
+                        </div>
+
+                        <div class="md:col-span-2 border-t border-zinc-700 pt-4">
+                            <div class="text-sm font-medium text-zinc-300 mb-1">Account Activity</div>
+                            <div class="grid grid-cols-1 md:grid-cols-3 gap-3 text-xs text-zinc-400">
+                                <div><span class="text-zinc-500">Last login:</span> <span id="activityLastLogin" class="text-zinc-300">—</span></div>
+                                <div><span class="text-zinc-500">Created:</span> <span id="activityCreated" class="text-zinc-300">—</span></div>
+                                <div><span class="text-zinc-500">Portal type:</span> <span id="activityPortal" class="text-zinc-300">—</span></div>
+                            </div>
+                        </div>
+
                         <!-- Notes -->
                         <div class="md:col-span-2">
                             <label class="block text-sm mb-1.5 text-zinc-300">Notes / Internal Log</label>
@@ -300,6 +372,32 @@
                         </div>
                     </div>
                 </div>
+            </div>
+
+            <!-- PROJECTS TAB -->
+            <div id="tab-content-projects" class="hidden">
+                <div class="rounded-lg border border-sky-900/40 bg-sky-950/20 px-4 py-3 mb-4 text-xs text-sky-200/90">
+                    <strong>Project assignments.</strong> When project membership enforcement is enabled in Security settings, users only see projects listed here (Admins always see all).
+                </div>
+                <div class="mb-3 flex gap-2">
+                    <input type="text" id="projectMembershipSearch" placeholder="Filter projects…" class="flex-1 bg-zinc-800 border border-zinc-700 rounded-md px-3 py-2 text-sm" oninput="filterProjectMembershipList()">
+                    <button type="button" onclick="selectAllVisibleProjects(true)" class="px-3 py-2 text-xs bg-zinc-700 hover:bg-zinc-600 rounded">Select all</button>
+                    <button type="button" onclick="selectAllVisibleProjects(false)" class="px-3 py-2 text-xs bg-zinc-700 hover:bg-zinc-600 rounded">Clear</button>
+                </div>
+                <div id="projectMembershipList" class="max-h-[52vh] overflow-auto border border-zinc-700 rounded-md divide-y divide-zinc-800">
+                    <div class="text-sm text-zinc-500 py-8 text-center">Save the user first to assign projects, or open an existing user.</div>
+                </div>
+            </div>
+
+            <!-- CERTIFICATIONS TAB -->
+            <div id="tab-content-certifications" class="hidden">
+                <div class="rounded-lg border border-violet-900/40 bg-violet-950/20 px-4 py-3 mb-4 text-xs text-violet-200/90">
+                    <strong>Licenses &amp; certifications.</strong> OSHA cards, trade licenses, PE stamps, safety training — with optional expiry for renewal tracking.
+                </div>
+                <div id="certificationsContainer" class="space-y-2 mb-3"></div>
+                <button type="button" onclick="addCertificationRow()" class="text-xs px-3 py-1.5 bg-zinc-700 hover:bg-zinc-600 rounded flex items-center gap-1">
+                    <i class="fa-solid fa-plus"></i> Add certification
+                </button>
             </div>
 
             <!-- PERMISSIONS TAB (admin only — this page is admin-restricted) -->
@@ -423,7 +521,9 @@
     const CASEPM_PERMISSIONS_CATALOG = {{ permissions_catalog|tojson }};
     const CASEPM_IS_ADMIN = true;
     const CASEPM_CAN_ASSIGN_DEVELOPER = {{ can_assign_developer_role|tojson }};
+    const CASEPM_PROJECTS = {{ projects_for_js|tojson }};
     let currentUserEmail = CASEPM_CURRENT_USER.email || "";
+    let selectedProjectIds = [];
 
     function resolveServerUserId(localUser) {
         if (!localUser) return null;
@@ -615,6 +715,162 @@
         if (tab === 'permissions') {
             const localUser = currentEditingUserId ? users.find(u => u.id == currentEditingUserId) : null;
             renderPermissionsTab(localUser);
+        }
+        if (tab === 'projects') {
+            renderProjectMembershipList();
+        }
+    }
+
+    const PORTAL_LABELS = { staff: 'Staff', consultant: 'Consultant', sub: 'Sub / Vendor' };
+
+    function formatShortDate(iso) {
+        if (!iso) return '—';
+        try {
+            const d = new Date(iso);
+            if (Number.isNaN(d.getTime())) return '—';
+            return d.toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' });
+        } catch (_) {
+            return '—';
+        }
+    }
+
+    function formatDateTime(iso) {
+        if (!iso) return '—';
+        try {
+            const d = new Date(iso);
+            if (Number.isNaN(d.getTime())) return '—';
+            return d.toLocaleString(undefined, { month: 'short', day: 'numeric', year: 'numeric', hour: 'numeric', minute: '2-digit' });
+        } catch (_) {
+            return '—';
+        }
+    }
+
+    function setActivityFields(user) {
+        const lastEl = document.getElementById('activityLastLogin');
+        const createdEl = document.getElementById('activityCreated');
+        const portalEl = document.getElementById('activityPortal');
+        if (lastEl) lastEl.textContent = formatDateTime(user?.last_login);
+        if (createdEl) createdEl.textContent = formatShortDate(user?.created_at);
+        if (portalEl) portalEl.textContent = PORTAL_LABELS[user?.portalType] || user?.portalType || '—';
+    }
+
+    function addCertificationRow(name = '', number = '', expires = '') {
+        const container = document.getElementById('certificationsContainer');
+        if (!container) return;
+        const row = document.createElement('div');
+        row.className = 'grid grid-cols-1 md:grid-cols-12 gap-2 items-center bg-zinc-800/40 border border-zinc-700 rounded px-3 py-2';
+        row.innerHTML = `
+            <input type="text" data-cert-name class="md:col-span-5 bg-zinc-800 border border-zinc-700 rounded px-3 py-1.5 text-sm" placeholder="Certification name" value="${(name || '').replace(/"/g, '&quot;')}">
+            <input type="text" data-cert-number class="md:col-span-3 bg-zinc-800 border border-zinc-700 rounded px-3 py-1.5 text-sm" placeholder="License #" value="${(number || '').replace(/"/g, '&quot;')}">
+            <input type="date" data-cert-expires class="md:col-span-3 bg-zinc-800 border border-zinc-700 rounded px-3 py-1.5 text-sm" value="${expires || ''}">
+            <button type="button" onclick="this.closest('div').remove()" class="md:col-span-1 text-red-400 hover:text-red-300 text-xs justify-self-end"><i class="fa-solid fa-trash"></i></button>
+        `;
+        container.appendChild(row);
+    }
+
+    function setCertificationsToUI(certs = []) {
+        const container = document.getElementById('certificationsContainer');
+        if (!container) return;
+        container.innerHTML = '';
+        if (!certs.length) addCertificationRow();
+        else certs.forEach(c => addCertificationRow(c.name, c.number, c.expires));
+    }
+
+    function getCertificationsFromUI() {
+        const rows = document.querySelectorAll('#certificationsContainer > div');
+        const certs = [];
+        rows.forEach(row => {
+            const name = row.querySelector('[data-cert-name]')?.value?.trim();
+            if (!name) return;
+            certs.push({
+                name,
+                number: row.querySelector('[data-cert-number]')?.value?.trim() || '',
+                expires: row.querySelector('[data-cert-expires]')?.value || '',
+            });
+        });
+        return certs;
+    }
+
+    async function loadProjectMembershipsForUser(userId) {
+        selectedProjectIds = [];
+        if (!userId) {
+            renderProjectMembershipList();
+            return;
+        }
+        try {
+            const res = await fetch(`/api/users/${userId}/project-memberships`, { credentials: 'same-origin' });
+            const data = await res.json();
+            if (res.ok && data.memberships) {
+                selectedProjectIds = data.memberships.map(m => m.project_id);
+            }
+        } catch (e) {
+            console.warn('Project memberships:', e);
+        }
+        renderProjectMembershipList();
+    }
+
+    function renderProjectMembershipList() {
+        const list = document.getElementById('projectMembershipList');
+        if (!list) return;
+        const userId = parseInt(document.getElementById('userId')?.value || '0', 10);
+        const q = (document.getElementById('projectMembershipSearch')?.value || '').trim().toLowerCase();
+        const projects = (CASEPM_PROJECTS || []).filter(p => {
+            if (!q) return true;
+            const hay = `${p.name || ''} ${p.number || ''} ${p.status || ''}`.toLowerCase();
+            return hay.includes(q);
+        });
+        if (!userId) {
+            list.innerHTML = '<div class="text-sm text-zinc-500 py-8 text-center">Save the user first, then reopen to assign projects.</div>';
+            return;
+        }
+        if (!projects.length) {
+            list.innerHTML = '<div class="text-sm text-zinc-500 py-8 text-center">No projects match your filter.</div>';
+            return;
+        }
+        list.innerHTML = projects.map(p => {
+            const checked = selectedProjectIds.includes(p.id) ? 'checked' : '';
+            const status = p.status ? `<span class="text-[10px] text-zinc-500 ml-2">${p.status}</span>` : '';
+            return `
+                <label class="flex items-center gap-3 px-4 py-2.5 hover:bg-zinc-800/50 cursor-pointer text-sm">
+                    <input type="checkbox" class="accent-emerald-600 project-membership-cb" data-project-id="${p.id}" ${checked} onchange="toggleProjectMembership(${p.id}, this.checked)">
+                    <span class="font-medium text-zinc-200">${p.name || 'Project'}</span>
+                    <span class="text-xs text-zinc-500">${p.number || ''}</span>${status}
+                </label>`;
+        }).join('');
+    }
+
+    function filterProjectMembershipList() {
+        renderProjectMembershipList();
+    }
+
+    function toggleProjectMembership(projectId, checked) {
+        const id = parseInt(projectId, 10);
+        if (checked) {
+            if (!selectedProjectIds.includes(id)) selectedProjectIds.push(id);
+        } else {
+            selectedProjectIds = selectedProjectIds.filter(x => x !== id);
+        }
+    }
+
+    function selectAllVisibleProjects(select) {
+        const boxes = document.querySelectorAll('.project-membership-cb');
+        boxes.forEach(cb => {
+            cb.checked = select;
+            toggleProjectMembership(parseInt(cb.dataset.projectId, 10), select);
+        });
+    }
+
+    async function saveProjectMemberships(userId) {
+        if (!userId) return;
+        try {
+            await fetch(`/api/users/${userId}/project-memberships`, {
+                method: 'PUT',
+                credentials: 'same-origin',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ project_ids: selectedProjectIds }),
+            });
+        } catch (e) {
+            console.warn('Could not save project memberships:', e);
         }
     }
 
@@ -980,6 +1236,11 @@
         const roleSelect = document.getElementById('role');
         if (roleSelect) roleSelect.value = 'Company User';
 
+        setCertificationsToUI([]);
+        selectedProjectIds = [];
+        setActivityFields(null);
+        renderProjectMembershipList();
+
         switchTab('general');
         document.getElementById('userModal').showModal();
 
@@ -1016,6 +1277,17 @@
         document.getElementById('email').value = user.email || '';
         document.getElementById('jobTitle').value = user.jobTitle || '';
         document.getElementById('address').value = user.address || '';
+        document.getElementById('department').value = user.department || '';
+        document.getElementById('employeeId').value = user.employeeId || '';
+        document.getElementById('licenseTier').value = user.licenseTier || '';
+        document.getElementById('timezone').value = user.timezone || '';
+        const ec = user.emergencyContact || {};
+        document.getElementById('emergencyName').value = ec.name || '';
+        document.getElementById('emergencyPhone').value = ec.phone || '';
+        document.getElementById('emergencyRelationship').value = ec.relationship || '';
+        setCertificationsToUI(user.certifications || []);
+        setActivityFields(user);
+        loadProjectMembershipsForUser(user.id);
         document.getElementById('status').value = user.status || 'Active';
         document.getElementById('tempPassword').value = ''; // Never show existing password
         document.getElementById('notes').value = user.notes || '';
@@ -1173,6 +1445,16 @@
                 lastName: document.getElementById('lastName').value.trim(),
                 email: email,
                 jobTitle: document.getElementById('jobTitle').value.trim(),
+                department: document.getElementById('department').value.trim(),
+                employeeId: document.getElementById('employeeId').value.trim(),
+                licenseTier: document.getElementById('licenseTier').value,
+                timezone: document.getElementById('timezone').value,
+                emergencyContact: {
+                    name: document.getElementById('emergencyName').value.trim(),
+                    phone: document.getElementById('emergencyPhone').value.trim(),
+                    relationship: document.getElementById('emergencyRelationship').value.trim(),
+                },
+                certifications: getCertificationsFromUI(),
                 role: document.getElementById('role') ? document.getElementById('role').value : 'Viewer',
                 company: companyName,
                 address: document.getElementById('address').value.trim(),
@@ -1217,6 +1499,9 @@
             } else {
                 users.push(savedUser);
             }
+
+            await saveProjectMemberships(savedUser.id);
+            savedUser.projectCount = selectedProjectIds.length;
 
             const actionType = id ? 'USER_EDITED' : 'USER_CREATED';
             let logDetails = { company: companyName || 'None' };
@@ -1324,7 +1609,7 @@
         const data = filtered || users;
 
         if (data.length === 0) {
-            tbody.innerHTML = `<tr><td colspan="11" class="px-6 py-8 text-center text-zinc-500">No users found. Click "Add New User" to begin.</td></tr>`;
+            tbody.innerHTML = `<tr><td colspan="16" class="px-6 py-8 text-center text-zinc-500">No users found. Click "Add New User" to begin.</td></tr>`;
             updateSummaryCards();
             return;
         }
@@ -1332,32 +1617,20 @@
         data.forEach(user => {
             const row = document.createElement('tr');
             row.className = 'hover:bg-zinc-800/60 transition-colors cursor-pointer';
-            
-            // Double-click to edit - FIXED
             row.ondblclick = () => editUser(user.id);
 
-            const hasAccess = user.accessEnabled !== false ? 
-                `<span class="px-2.5 py-0.5 text-xs rounded-full bg-emerald-900/60 text-emerald-400">Enabled</span>` : 
-                `<span class="px-2.5 py-0.5 text-xs rounded-full bg-red-900/60 text-red-400">Disabled</span>`;
-
-            const roleTitle = user.jobTitle ? `${user.role || 'User'}<br><span class="text-xs text-zinc-500">${user.jobTitle}</span>` : (user.role || 'User');
-
-            // Primary phone and address for table display
             let primaryPhone = '';
             if (user.phones && user.phones.length > 0) {
                 primaryPhone = user.phones[0].number || user.phones[0] || '';
             } else if (user.phone) {
                 primaryPhone = user.phone;
             }
-            const displayAddress = user.address || '';
 
-            const roleTitleHtml = `<div class="text-xs"><div class="font-medium">${user.role || 'User'}</div><div class="text-[10px] text-zinc-500">${user.jobTitle || ''}</div></div>`;
-            const hasAccessHtml = user.accessEnabled !== false 
-                ? `<span class="px-2 py-0.5 text-[10px] rounded-full bg-emerald-900/60 text-emerald-400">On</span>` 
+            const hasAccessHtml = user.accessEnabled !== false
+                ? `<span class="px-2 py-0.5 text-[10px] rounded-full bg-emerald-900/60 text-emerald-400">On</span>`
                 : `<span class="px-2 py-0.5 text-[10px] rounded-full bg-zinc-700 text-zinc-400">Off</span>`;
             const statusHtml = `<span class="px-2 py-0.5 text-[10px] rounded-full ${user.status === 'Active' ? 'bg-emerald-900/60 text-emerald-400' : 'bg-zinc-700 text-zinc-400'}">${user.status || 'Active'}</span>`;
 
-            // Simplified Permissions display for main table
             let permDisplay = user.role || 'User';
             const pMatrix = user.permissions_v2 || (user.permissions?.version === 2 ? user.permissions : null);
             if (pMatrix && typeof CasePMPermissionsUI !== 'undefined') {
@@ -1370,17 +1643,30 @@
             }
             const permHtml = `<span class="px-2 py-0.5 text-[10px] rounded-full bg-zinc-700 text-emerald-300">${permDisplay}</span>`;
 
+            const portalLabel = PORTAL_LABELS[user.portalType] || user.portalType || '—';
+            const licenseLabel = user.licenseTier || '—';
+            const projectCount = user.projectCount != null ? user.projectCount : '—';
+            const lastLogin = formatDateTime(user.last_login);
+            const twoFaHtml = (user.twoFactorEnabled || user.totpEnabled)
+                ? '<span class="text-emerald-400" title="2FA enabled"><i class="fa-solid fa-shield-check"></i></span>'
+                : '<span class="text-zinc-600" title="2FA off"><i class="fa-solid fa-shield"></i></span>';
+
             row.innerHTML = `
-                <td class="px-5 py-2 font-medium">${user.firstName || ''} ${user.lastName || ''}</td>
-                <td class="px-5 py-2 text-zinc-400 text-sm">${user.email || ''}</td>
-                <td class="px-4 py-2 text-zinc-400 text-sm">${primaryPhone}</td>
-                <td class="px-4 py-2 text-zinc-300 text-sm">${user.jobTitle || ''}</td>
-                <td class="px-4 py-2 text-sm"><span class="px-2.5 py-0.5 text-xs rounded-full bg-zinc-700 text-zinc-300">${user.role || 'User'}</span></td>
-                <td class="px-4 py-2 text-sm text-zinc-400">${user.company || ''}</td>
-                <td class="px-5 py-2 text-zinc-400 text-sm">${displayAddress}</td>
-                <td class="px-3 py-2 text-center">${statusHtml}</td>
-                <td class="px-3 py-2 text-center">${hasAccessHtml}</td>
-                <td class="px-3 py-2 text-center">${permHtml}</td>
+                <td class="px-4 py-2 font-medium whitespace-nowrap">${user.firstName || ''} ${user.lastName || ''}</td>
+                <td class="px-4 py-2 text-zinc-400 text-sm">${user.email || ''}</td>
+                <td class="px-3 py-2 text-zinc-400 text-sm whitespace-nowrap">${primaryPhone}</td>
+                <td class="px-3 py-2 text-zinc-400 text-sm">${user.department || ''}</td>
+                <td class="px-3 py-2 text-zinc-300 text-sm">${user.jobTitle || ''}</td>
+                <td class="px-3 py-2 text-sm"><span class="px-2 py-0.5 text-[10px] rounded-full bg-zinc-700 text-zinc-300 whitespace-nowrap">${user.role || 'User'}</span></td>
+                <td class="px-3 py-2 text-xs text-zinc-400 col-portal">${portalLabel}</td>
+                <td class="px-3 py-2 text-sm text-zinc-400">${user.company || ''}</td>
+                <td class="px-3 py-2 text-xs text-zinc-400 col-license">${licenseLabel}</td>
+                <td class="px-3 py-2 text-center text-zinc-300 col-projects">${projectCount}</td>
+                <td class="px-3 py-2 text-xs text-zinc-500 col-login whitespace-nowrap">${lastLogin}</td>
+                <td class="px-2 py-2 text-center col-2fa">${twoFaHtml}</td>
+                <td class="px-2 py-2 text-center">${statusHtml}</td>
+                <td class="px-2 py-2 text-center">${hasAccessHtml}</td>
+                <td class="px-2 py-2 text-center">${permHtml}</td>
                 <td class="px-2 py-2 text-center">
                     <div class="flex justify-center gap-2 flex-nowrap items-center">
                         <button onclick="event.stopImmediatePropagation(); showUserLog(${user.id})" class="text-sky-400 hover:text-sky-300 p-1" title="View Log">
