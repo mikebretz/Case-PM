@@ -226,6 +226,29 @@ def _has_sub_lien_waiver(state, company_key, period_num, entry=None):
     return False
 
 
+def _sub_has_period_billing(state, company_key, period_num):
+    """True when subcontractor SOV or pay app entry shows billing this period."""
+    sub_sov = state.get('subcontractorSOV') or {}
+    for k in (company_key, str(company_key)):
+        lines = sub_sov.get(k) or []
+        for line in lines:
+            if not isinstance(line, dict):
+                continue
+            if float(line.get('work_this_period') or line.get('workThisPeriod') or 0) > 0:
+                return True
+    entry = _sub_pay_app_entry_for_period(state, company_key, period_num)
+    if isinstance(entry, dict):
+        billed = float(
+            entry.get('totalBilledThisPeriod')
+            or entry.get('workThisPeriod')
+            or entry.get('work_this_period')
+            or 0
+        )
+        if billed > 0:
+            return True
+    return False
+
+
 def validate_g702_submit_gates(state):
     """Server-side enforcement for pay app compliance gates before G702 submit."""
     state = state or {}
@@ -237,9 +260,12 @@ def validate_g702_submit_gates(state):
     require_all_subs = state.get('requireAllSubPayAppsBeforeG702Submit')
     if require_all_subs is None:
         require_all_subs = True
+    if not require_all_subs:
+        return
     require_lien = state.get('requireLienWaiverOnSubPayApp')
     if require_lien is None:
         require_lien = True
+    gate_scope = (state.get('g702PayAppGateScope') or 'all_approved_subs').strip()
 
     sub_sov = state.get('subcontractorSOV') or {}
     missing_pay_apps = []
@@ -248,10 +274,11 @@ def validate_g702_submit_gates(state):
     for company_key in sub_sov.keys():
         if _sub_sov_status(state, company_key) != 'Approved':
             continue
+        if gate_scope == 'billed_this_period' and not _sub_has_period_billing(state, company_key, period_num):
+            continue
         entry = _sub_pay_app_entry_for_period(state, company_key, period_num)
-        if require_all_subs:
-            if not entry or (entry.get('status') or 'Draft') in ('Draft', 'Rejected', 'Void'):
-                missing_pay_apps.append(str(company_key))
+        if not entry or (entry.get('status') or 'Draft') in ('Draft', 'Rejected', 'Void'):
+            missing_pay_apps.append(str(company_key))
         if require_lien and entry and (entry.get('status') or '') not in ('', 'Draft', 'Rejected', 'Void'):
             if not _has_sub_lien_waiver(state, company_key, period_num, entry):
                 missing_waivers.append(str(company_key))
@@ -259,8 +286,9 @@ def validate_g702_submit_gates(state):
     if missing_pay_apps:
         names = ', '.join(missing_pay_apps[:8])
         extra = f' (+{len(missing_pay_apps) - 8} more)' if len(missing_pay_apps) > 8 else ''
+        scope_note = ' (billed subs only)' if gate_scope == 'billed_this_period' else ''
         raise ValueError(
-            f'Cannot submit G702: subcontractors with approved SOVs missing pay applications for period {period_num}: {names}{extra}'
+            f'Cannot submit G702: subcontractors with approved SOVs missing pay applications for period {period_num}{scope_note}: {names}{extra}'
         )
     if missing_waivers:
         names = ', '.join(missing_waivers[:8])

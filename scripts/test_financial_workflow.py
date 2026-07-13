@@ -134,6 +134,46 @@ class PutBypassTests(unittest.TestCase):
             assert_draft_create_status('Approved')
 
 
+class G702GateScopeTests(unittest.TestCase):
+    def test_billed_scope_ignores_unbilled_subs(self):
+        from pay_app_workflow import validate_g702_submit_gates
+        state = {
+            'currentPayAppPeriod': {'periodNumber': 1, 'status': 'Draft'},
+            'requireAllSubPayAppsBeforeG702Submit': True,
+            'requireLienWaiverOnSubPayApp': False,
+            'g702PayAppGateScope': 'billed_this_period',
+            'subcontractorSOV': {
+                '101': [{'cost_code': '03-300', 'work_this_period': 5000}],
+                '102': [{'cost_code': '09-250', 'work_this_period': 0}],
+            },
+            'subSOVStatus': {'101': {'status': 'Approved'}, '102': {'status': 'Approved'}},
+            'subPayAppHistory': {
+                '101': {'1': {'periodNumber': 1, 'status': 'Approved', 'totalBilledThisPeriod': 5000}},
+            },
+        }
+        validate_g702_submit_gates(state)
+
+    def test_all_subs_scope_blocks_unbilled(self):
+        from pay_app_workflow import validate_g702_submit_gates
+        state = {
+            'currentPayAppPeriod': {'periodNumber': 1, 'status': 'Draft'},
+            'requireAllSubPayAppsBeforeG702Submit': True,
+            'requireLienWaiverOnSubPayApp': False,
+            'g702PayAppGateScope': 'all_approved_subs',
+            'subcontractorSOV': {
+                '101': [{'cost_code': '03-300'}],
+                '102': [{'cost_code': '09-250'}],
+            },
+            'subSOVStatus': {'101': {'status': 'Approved'}, '102': {'status': 'Approved'}},
+            'subPayAppHistory': {
+                '101': {'1': {'periodNumber': 1, 'status': 'Approved', 'totalBilledThisPeriod': 5000}},
+            },
+        }
+        with self.assertRaises(ValueError) as ctx:
+            validate_g702_submit_gates(state)
+        self.assertIn('missing pay applications', str(ctx.exception).lower())
+
+
 class ChangeOrderNumberScopeTests(unittest.TestCase):
     def test_same_co_number_allowed_on_different_projects(self):
         import app as app_module

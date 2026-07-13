@@ -23,3 +23,5 @@ jobs:
         run: python3 -m unittest discover -s tests -p 'test_*.py' -v
       - name: Financial lifecycle simulation
         run: python3 scripts/simulate_financial_project.py
+      - name: Phased stress suite (G702 gate + accounting + workflows)
+        run: python3 scripts/simulate_stress_suite.py --phase all
