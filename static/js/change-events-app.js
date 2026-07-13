@@ -54,6 +54,116 @@
     return `<span class="text-xs">${esc(status)}</span>`;
   }
 
+  function reviewButtonHtml(onclick, label) {
+    const text = label || 'Review & Respond';
+    return `<button type="button" onclick="${onclick}" class="px-4 py-2 bg-emerald-600 hover:bg-emerald-500 rounded-md text-sm font-semibold whitespace-nowrap shadow-md"><i class="fa-solid fa-clipboard-check mr-1"></i>${text}</button>`;
+  }
+
+  function canActOnBall(role) {
+    if (!role) return false;
+    if (typeof CO.canActOnBall === 'function') return CO.canActOnBall(role);
+    return true;
+  }
+
+  function openCorReviewModal(id) {
+    const c = ext.cors.find(x => x.id === id);
+    if (!c || typeof global.CasePMApprovalResponder === 'undefined') {
+      corWorkflow(id, 'approve', c?.status === 'Pending Accounting');
+      return;
+    }
+    const promotePco = c.status === 'Pending Accounting';
+    global.CasePMApprovalResponder.openLocal({
+      module: 'COR',
+      entityId: id,
+      title: `${c.number} — ${c.title || 'Change Order Request'}`,
+      status: c.status,
+      ball: c.ball_in_court_role,
+      summaryHtml: `
+        <div class="flex justify-between text-sm"><span class="text-zinc-500">Amount</span><span class="font-mono text-emerald-400">${fmt(c.amount)}</span></div>
+        <div class="flex justify-between text-sm"><span class="text-zinc-500">Drawing</span><span>${esc(c.drawing_revision || '—')}</span></div>
+        <div class="flex justify-between text-sm"><span class="text-zinc-500">Schedule impact</span><span>${c.schedule_impact_days || 0} days</span></div>
+        <div class="flex justify-between text-sm"><span class="text-zinc-500">Status</span><span>${statusBadge(c.status)}</span></div>
+        ${c.description ? `<div class="mt-3"><div class="text-[10px] uppercase tracking-wide text-zinc-500 mb-1">Description</div><p class="text-sm whitespace-pre-wrap">${esc(c.description)}</p></div>` : ''}`,
+      actions: [
+        { action: 'approve', label: promotePco ? 'Approve → PCO' : 'Approve Step', style: 'primary' },
+        { action: 'reject', label: 'Reject', requires_comment: true, style: 'danger' },
+      ],
+      onSubmit: async (action, comment) => {
+        await api(`/api/cors/${id}/workflow`, {
+          method: 'POST',
+          body: JSON.stringify({ action, promote_pco: promotePco && action === 'approve', comments: comment }),
+        });
+        await Promise.all([loadCors(), CO.loadPcos ? CO.loadPcos() : null]);
+        if (promotePco && action === 'approve' && CO.switchTab) CO.switchTab('pcos');
+      },
+    });
+  }
+
+  async function openCeReviewModal(id) {
+    let e = ext.changeEvents.find(x => x.id === id);
+    if (!e) {
+      try { e = await api(`/api/change-events/${id}`); } catch { return; }
+    }
+    if (!e || typeof global.CasePMApprovalResponder === 'undefined') {
+      ceWorkflow(id, 'approve');
+      return;
+    }
+    global.CasePMApprovalResponder.openLocal({
+      module: 'Change Events',
+      entityId: id,
+      title: `${e.number} — ${e.title || 'Change Event'}`,
+      status: e.status,
+      summaryHtml: `
+        <div class="flex justify-between text-sm"><span class="text-zinc-500">ROM</span><span class="font-mono text-emerald-400">${fmt(e.rom_amount)}</span></div>
+        <div class="flex justify-between text-sm"><span class="text-zinc-500">Schedule impact</span><span>${e.schedule_impact_days || 0} days</span></div>
+        <div class="flex justify-between text-sm"><span class="text-zinc-500">Drawing</span><span>${esc(e.drawing_revision || '—')}</span></div>
+        <div class="flex justify-between text-sm"><span class="text-zinc-500">Status</span><span>${statusBadge(e.status)}</span></div>
+        ${e.description ? `<div class="mt-3"><div class="text-[10px] uppercase tracking-wide text-zinc-500 mb-1">Description</div><p class="text-sm whitespace-pre-wrap">${esc(e.description)}</p></div>` : ''}`,
+      actions: [
+        { action: 'approve', label: 'Advance Workflow', style: 'primary' },
+        { action: 'reject', label: 'Void Event', requires_comment: true, style: 'danger' },
+      ],
+      onSubmit: async (action, comment) => {
+        await api(`/api/change-events/${id}/workflow`, {
+          method: 'POST',
+          body: JSON.stringify({ action, comments: comment }),
+        });
+        await loadChangeEvents();
+        if (action === 'reject') CO.closeDrawer();
+        else await viewChangeEvent(id);
+      },
+    });
+  }
+
+  function openErpReviewModal(id) {
+    const ev = ext.erpEvents.find(x => x.id === id);
+    if (!ev || typeof global.CasePMApprovalResponder === 'undefined') {
+      erpReview(id, 'accept');
+      return;
+    }
+    global.CasePMApprovalResponder.openLocal({
+      module: 'ERP / Sage',
+      entityId: id,
+      title: `${ev.event_type || 'ERP Event'} — Accounting Review`,
+      status: ev.accounting_status || ev.status,
+      summaryHtml: `
+        <div class="flex justify-between text-sm"><span class="text-zinc-500">Event</span><span class="font-mono text-xs">${esc(ev.event_type)}</span></div>
+        <div class="flex justify-between text-sm"><span class="text-zinc-500">Created</span><span class="text-xs">${ev.created_at ? new Date(ev.created_at).toLocaleString() : '—'}</span></div>
+        <div class="mt-3"><div class="text-[10px] uppercase tracking-wide text-zinc-500 mb-1">Message</div><p class="text-sm whitespace-pre-wrap">${esc(ev.message || '—')}</p></div>`,
+      actions: [
+        { action: 'approve', label: 'Accept & Post', style: 'primary' },
+        { action: 'reject', label: 'Reject', requires_comment: true, style: 'danger' },
+      ],
+      onSubmit: async (action, comment) => {
+        await api(`/api/sage/sync-events/${id}/accounting`, {
+          method: 'POST',
+          body: JSON.stringify({ action: action === 'approve' ? 'accept' : 'reject', notes: comment }),
+        });
+        await loadErpQueue();
+      },
+    });
+  }
+
   async function loadChangeEvents() {
     const id = pid();
     if (!id) return;
@@ -168,8 +278,8 @@
         <td class="px-4 py-3 text-xs">${esc(c.drawing_revision || '—')}</td>
         <td class="px-4 py-3 text-center text-[10px]">${esc(c.ball_in_court_role || '—')}</td>
         <td class="px-4 py-3 text-center flex gap-1 justify-center flex-wrap">
-          ${c.status === 'Draft' ? `<button onclick="CasePMChangeOrdersExt.corWorkflow(${c.id},'submit')" class="text-amber-400 text-xs">Submit</button>` : ''}
-          ${['Submitted', 'Under Review', 'Pending Owner', 'Pending Accounting'].includes(c.status) ? `<button onclick="CasePMChangeOrdersExt.corWorkflow(${c.id},'approve',${c.status === 'Pending Accounting'})" class="text-emerald-400 text-xs">${c.status === 'Pending Accounting' ? 'Approve→PCO' : 'Approve'}</button>` : ''}
+          ${c.status === 'Draft' ? `<button onclick="CasePMChangeOrdersExt.corWorkflow(${c.id},'submit')" class="px-3 py-1.5 bg-amber-600 hover:bg-amber-500 rounded-md text-xs font-medium">Submit</button>` : ''}
+          ${['Submitted', 'Under Review', 'Pending Owner', 'Pending Accounting'].includes(c.status) && canActOnBall(c.ball_in_court_role) ? reviewButtonHtml(`event.stopPropagation(); CasePMChangeOrdersExt.openCorReviewModal(${c.id})`, c.status === 'Pending Accounting' ? 'Review → PCO' : 'Review COR') : ''}
         </td>
       </tr>`).join('');
   }
@@ -210,8 +320,7 @@
         <td class="px-4 py-2 text-xs">${esc(e.message || '')}</td>
         <td class="px-4 py-2 text-center">
           ${e.accounting_status === 'pending_review' ? `
-            <button onclick="CasePMChangeOrdersExt.erpReview(${e.id},'accept')" class="text-emerald-400 text-xs mr-2">Accept</button>
-            <button onclick="CasePMChangeOrdersExt.erpReview(${e.id},'reject')" class="text-red-400 text-xs">Reject</button>` : esc(e.status)}
+            ${reviewButtonHtml(`CasePMChangeOrdersExt.openErpReviewModal(${e.id})`, 'Review ERP')}` : esc(e.status)}
         </td>
       </tr>`).join('');
   }
@@ -332,7 +441,16 @@
     const rfqRows = (e.rfqs || []).map(r => `<tr class="border-b border-zinc-800"><td class="py-1 font-mono text-sky-400">${esc(r.number)}</td><td class="py-1">${esc(r.company_name || '—')}</td><td class="py-1 text-center">${statusBadge(r.status)}</td><td class="py-1 text-right font-mono">${fmt(r.quoted_amount)}</td></tr>`).join('') || '<tr><td colspan="4" class="py-3 text-zinc-500">None</td></tr>';
     const corRows = (e.cors || []).map(c => `<tr class="border-b border-zinc-800"><td class="py-1 font-mono text-indigo-400">${esc(c.number)}</td><td class="py-1">${esc(c.title)}</td><td class="py-1 text-center">${statusBadge(c.status)}</td><td class="py-1 text-right font-mono">${fmt(c.amount)}</td></tr>`).join('') || '<tr><td colspan="4" class="py-3 text-zinc-500">None</td></tr>';
     const pcoRows = (e.pcos || []).map(p => `<tr class="border-b border-zinc-800"><td class="py-1 font-mono text-amber-400">${esc(p.number)}</td><td class="py-1">${esc(p.title)}</td><td class="py-1 text-center">${statusBadge(p.status)}</td><td class="py-1 text-right font-mono">${fmt(p.estimated_amount)}</td></tr>`).join('') || '<tr><td colspan="4" class="py-3 text-zinc-500">None</td></tr>';
-    document.getElementById('drawerBody').innerHTML = `
+    const canWorkflow = ['Open', 'Pricing', 'Pending Review'].includes(e.status);
+    const reviewBanner = canWorkflow && e.status !== 'Open' ? `
+      <div class="mb-6 p-4 rounded-lg bg-emerald-950/50 border-2 border-emerald-600 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+        <div>
+          <div class="text-emerald-400 font-semibold">Workflow action needed</div>
+          <div class="text-xs text-zinc-400 mt-1">Status: ${esc(e.status)}</div>
+        </div>
+        ${reviewButtonHtml(`CasePMChangeOrdersExt.openCeReviewModal(${e.id})`, 'Review & Advance')}
+      </div>` : '';
+    document.getElementById('drawerBody').innerHTML = reviewBanner + `
       <div class="space-y-2">
         <p><span class="text-zinc-500">Status</span><br>${statusBadge(e.status)}</p>
         <p><span class="text-zinc-500">ROM</span><br><span class="font-mono text-lg">${fmt(e.rom_amount)}</span></p>
@@ -344,13 +462,10 @@
       <div class="mt-4"><div class="text-xs text-zinc-500 uppercase mb-2">RFQs</div><table class="w-full text-xs"><thead><tr class="text-zinc-500"><th class="text-left">#</th><th class="text-left">Sub</th><th class="text-center">Status</th><th class="text-right">Quote</th></tr></thead><tbody>${rfqRows}</tbody></table></div>
       <div class="mt-4"><div class="text-xs text-zinc-500 uppercase mb-2">CORs</div><table class="w-full text-xs"><thead><tr class="text-zinc-500"><th class="text-left">#</th><th class="text-left">Title</th><th class="text-center">Status</th><th class="text-right">Amount</th></tr></thead><tbody>${corRows}</tbody></table></div>
       <div class="mt-4"><div class="text-xs text-zinc-500 uppercase mb-2">PCOs</div><table class="w-full text-xs"><thead><tr class="text-zinc-500"><th class="text-left">#</th><th class="text-left">Title</th><th class="text-center">Status</th><th class="text-right">ROM</th></tr></thead><tbody>${pcoRows}</tbody></table></div>`;
-    const canWorkflow = ['Open', 'Pricing', 'Pending Review'].includes(e.status);
     document.getElementById('drawerActions').innerHTML = `
       ${e.status === 'Open' ? `<button type="button" onclick="CasePMChangeOrdersExt.ceWorkflow(${e.id},'submit')" class="px-4 py-2 bg-amber-600 hover:bg-amber-500 rounded-md text-sm">Submit for Pricing</button>` : ''}
-      ${canWorkflow && e.status !== 'Open' ? `<button type="button" onclick="CasePMChangeOrdersExt.ceWorkflow(${e.id},'approve')" class="px-4 py-2 bg-emerald-600 hover:bg-emerald-500 rounded-md text-sm">Advance Workflow</button>` : ''}
-      ${canWorkflow ? `<button type="button" onclick="CasePMChangeOrdersExt.ceWorkflow(${e.id},'reject')" class="px-4 py-2 bg-red-950 hover:bg-red-900 border border-red-800 rounded-md text-sm text-red-300">Void</button>` : ''}
       <button type="button" onclick="CasePMChangeOrdersExt.editChangeEvent(${e.id})" class="px-4 py-2 bg-zinc-800 hover:bg-zinc-700 rounded-md text-sm">Edit</button>
-      <button type="button" onclick="CasePMChangeOrders.closeDrawer()" class="px-4 py-2 bg-zinc-800 hover:bg-zinc-700 rounded-md text-sm">Close</button>`;
+      <button type="button" onclick="CasePMChangeOrders.closeDrawer()" class="px-4 py-2 bg-zinc-800 hover:bg-zinc-700 rounded-md text-sm text-zinc-400">Close</button>`;
   }
 
   async function editChangeEvent(id) {
@@ -435,7 +550,7 @@
 
   global.CasePMChangeOrdersExt = {
     loadChangeEvents, loadRfqs, loadCors, loadCpcos, loadErpQueue, loadBillingVariance,
-    newChangeEvent, newRfq, newCor, openCeModal, saveCeModal, rfqWorkflow, openRfqQuote, corWorkflow, promoteCpco,
+    newChangeEvent, newRfq, newCor, openCeModal, saveCeModal, rfqWorkflow, openRfqQuote, corWorkflow, openCorReviewModal, openCeReviewModal, openErpReviewModal, promoteCpco,
     erpReview, viewChangeEvent, editChangeEvent, ceWorkflow, portalRfqQuote, switchExtTab, ext,
   };
 })(window);

@@ -3222,11 +3222,9 @@ let mainLienWaiver = JSON.parse(casepmStore.getItem('mainLienWaiver') || '{}'); 
             }
         } else if ((typeof CasePMPayAppWorkflow !== 'undefined' ? CasePMPayAppWorkflow.g702ApprovableStatuses() : ['Submitted', 'Under Review', 'Pending Owner', 'Pending Accounting']).includes(status)) {
             if (isCurrentUserApprover()) {
-                const finalStep = status === 'Pending Accounting';
-                workflowHTML += `<button onclick="approvePayApplication()" class="px-5 py-2 bg-red-600 hover:bg-red-500 rounded-md text-sm font-medium flex items-center gap-2"><i class="fa-solid fa-check"></i> ${finalStep ? 'Final Approve' : 'Approve Step'}</button>`;
-                workflowHTML += `<button onclick="requestRevisionPayApplication()" class="px-5 py-2 bg-amber-600 hover:bg-amber-500 rounded-md text-sm font-medium flex items-center gap-2"><i class="fa-solid fa-redo"></i> Request Revision</button>`;
+                workflowHTML += `<button onclick="openPayAppReviewModal()" class="px-6 py-3 bg-emerald-600 hover:bg-emerald-500 rounded-lg text-base font-semibold flex items-center gap-2 shadow-md shadow-emerald-900/30"><i class="fa-solid fa-clipboard-check"></i> Review &amp; Respond</button>`;
             } else {
-                workflowHTML += `<span class="px-4 py-1.5 bg-sky-900/60 text-sky-300 text-sm rounded-md">Awaiting ${ball || 'approver'} review (${status})</span>`;
+                workflowHTML += `<span class="px-4 py-2 bg-sky-900/60 text-sky-300 text-sm rounded-md">Awaiting ${ball || 'approver'} review</span>`;
             }
         } else if (status === 'Approved') {
             workflowHTML += `<span class="px-4 py-1.5 bg-emerald-900/60 text-emerald-400 text-sm rounded-md font-medium">Approved — Payment can be processed</span>`;
@@ -3846,12 +3844,7 @@ let mainLienWaiver = JSON.parse(casepmStore.getItem('mainLienWaiver') || '{}'); 
         }
     }
 
-    async function approvePayApplication() {
-        if (!currentPayAppPeriod) return;
-
-        // Create a historical snapshot of the current billing state
-        // We capture the FINAL displayed values (including Sub Pay App Tracker minimum enforcement)
-        // so that when viewing history, it shows exactly what was on the G702 screen at approval time.
+    function buildPayAppApprovalSnapshot() {
         const finalBillingForSnapshot = {};
         contractorSOV.forEach(line => {
             const billing = payAppBillingLines[line.id] || { workThisPeriod: 0, materialsStored: 0 };
@@ -3864,15 +3857,13 @@ let mainLienWaiver = JSON.parse(casepmStore.getItem('mainLienWaiver') || '{}'); 
                 coWorkThisPeriod: billing.coWorkThisPeriod || 0
             };
         });
-
-        const snapshot = {
+        return {
             period: JSON.parse(JSON.stringify(currentPayAppPeriod)),
-            billingLines: finalBillingForSnapshot, // Use the final calculated values (with sub min applied)
+            billingLines: finalBillingForSnapshot,
             contractorSOVSnapshot: JSON.parse(JSON.stringify(contractorSOV || [])),
             approvedAt: new Date().toISOString(),
-            // Calculated at approval time for accurate historical % and CO billed
             lineMetrics: contractorSOV.map(line => {
-            const currentAmount = (line.original || 0) + (line.co_amount || 0);
+                const currentAmount = (line.original || 0) + (line.co_amount || 0);
                 const billing = finalBillingForSnapshot[line.id] || { workThisPeriod: 0, materialsStored: 0, coWorkThisPeriod: 0 };
                 const previousBilled = (line.billed_to_date || 0) + (line.co_billed_to_date || 0);
                 const thisPeriodTotal = (billing.workThisPeriod || 0) + (billing.materialsStored || 0) + (billing.coWorkThisPeriod || 0);
@@ -3883,66 +3874,109 @@ let mainLienWaiver = JSON.parse(casepmStore.getItem('mainLienWaiver') || '{}'); 
                     percentComplete: pctComplete,
                     coBilledThisPeriod: (billing.coWorkThisPeriod || 0)
                 };
-            })
+            }),
+            finalBillingForSnapshot
         };
+    }
 
-        const approvedRollup = computeG703Rollup();
+    async function finalizePayAppApproval(snapshotData) {
         const periodNum = currentPayAppPeriod.periodNumber;
-
-        try {
-            const wfResult = await CasePMPayAppWorkflow.workflow('g702', 'approve', {
-                entity_key: periodNum,
-                rollup: approvedRollup,
-                amount_due: approvedRollup.grand.thisPeriod + approvedRollup.grand.materials + approvedRollup.changeOrders.thisPeriod - approvedRollup.grand.retainage,
+        const finalBillingForSnapshot = snapshotData.finalBillingForSnapshot;
+        const snapshot = { ...snapshotData };
+        delete snapshot.finalBillingForSnapshot;
+        const existingIndex = payAppHistory.findIndex(p => p.periodNumber === periodNum);
+        if (existingIndex === -1) {
+            payAppHistory.unshift({
+                id: Date.now(),
+                periodNumber: periodNum,
+                periodStart: currentPayAppPeriod.periodStart,
+                periodEnd: currentPayAppPeriod.periodEnd,
+                status: 'Approved',
+                snapshot: snapshot,
             });
-            reloadPayAppStateFromStorage();
-
-            if (!wfResult.final_approved) {
-                renderPayAppContent();
-                return;
-            }
-
-            const existingIndex = payAppHistory.findIndex(p => p.periodNumber === periodNum);
-            if (existingIndex === -1) {
-                payAppHistory.unshift({
-                    id: Date.now(),
-                    periodNumber: periodNum,
-                    periodStart: currentPayAppPeriod.periodStart,
-                    periodEnd: currentPayAppPeriod.periodEnd,
-                    status: 'Approved',
-                    snapshot: snapshot,
-                });
-            } else {
-                payAppHistory[existingIndex].snapshot = snapshot;
-                payAppHistory[existingIndex].status = 'Approved';
-            }
-            casepmStore.setItem('payAppHistory', JSON.stringify(payAppHistory));
-            logPayAppAudit('APPLICATION_APPROVED', { periodNumber: periodNum });
-
-            setTimeout(() => { switchPayAppTab('previous-payapps'); }, 800);
-            pushActiveSubPayAppsToPrevious(periodNum);
-
-            contractorSOV.forEach(line => {
-                const finalBilling = finalBillingForSnapshot[line.id] || { workThisPeriod: 0, materialsStored: 0, coWorkThisPeriod: 0 };
-                const contractCompleted = (finalBilling.workThisPeriod || 0) + (finalBilling.materialsStored || 0);
-                const coCompleted = finalBilling.coWorkThisPeriod || 0;
-                if (!line.billed_to_date) line.billed_to_date = 0;
-                if (!line.co_billed_to_date) line.co_billed_to_date = 0;
-                line.billed_to_date += contractCompleted;
-                line.co_billed_to_date += coCompleted;
-            });
-            casepmStore.setItem('contractorSOV', JSON.stringify(contractorSOV));
-
-            const approvedPeriod = JSON.parse(JSON.stringify(currentPayAppPeriod));
-            createNextPeriodAfterApproval(approvedPeriod);
-
-            setTimeout(() => {
-                switchPayAppTab('payapp');
-                renderPayAppContent();
-            }, 600);
-        } catch (err) {
-            showCenteredAlert(err.message || 'Approval failed', 'error');
+        } else {
+            payAppHistory[existingIndex].snapshot = snapshot;
+            payAppHistory[existingIndex].status = 'Approved';
         }
+        casepmStore.setItem('payAppHistory', JSON.stringify(payAppHistory));
+        logPayAppAudit('APPLICATION_APPROVED', { periodNumber: periodNum });
+        setTimeout(() => { switchPayAppTab('previous-payapps'); }, 800);
+        pushActiveSubPayAppsToPrevious(periodNum);
+        contractorSOV.forEach(line => {
+            const finalBilling = finalBillingForSnapshot[line.id] || { workThisPeriod: 0, materialsStored: 0, coWorkThisPeriod: 0 };
+            const contractCompleted = (finalBilling.workThisPeriod || 0) + (finalBilling.materialsStored || 0);
+            const coCompleted = finalBilling.coWorkThisPeriod || 0;
+            if (!line.billed_to_date) line.billed_to_date = 0;
+            if (!line.co_billed_to_date) line.co_billed_to_date = 0;
+            line.billed_to_date += contractCompleted;
+            line.co_billed_to_date += coCompleted;
+        });
+        casepmStore.setItem('contractorSOV', JSON.stringify(contractorSOV));
+        const approvedPeriod = JSON.parse(JSON.stringify(currentPayAppPeriod));
+        createNextPeriodAfterApproval(approvedPeriod);
+        setTimeout(() => {
+            switchPayAppTab('payapp');
+            renderPayAppContent();
+        }, 600);
+    }
+
+    function openPayAppReviewModal() {
+        if (!currentPayAppPeriod || typeof CasePMApprovalResponder === 'undefined') {
+            approvePayApplication();
+            return;
+        }
+        const status = currentPayAppPeriod.status;
+        const ball = currentPayAppPeriod.ball_in_court_role;
+        const rollup = computeG703Rollup();
+        const amountDue = rollup.grand.thisPeriod + rollup.grand.materials + rollup.grand.changeOrders.thisPeriod - rollup.grand.retainage;
+        const finalStep = status === 'Pending Accounting';
+        CasePMApprovalResponder.openLocal({
+            module: 'Pay Applications',
+            entityId: currentPayAppPeriod.periodNumber,
+            title: `Pay Application #${currentPayAppPeriod.periodNumber}`,
+            status: status,
+            ball: ball,
+            summaryHtml: `
+                <div class="flex justify-between text-sm"><span class="text-zinc-500">Period</span><span class="font-mono">#${currentPayAppPeriod.periodNumber}</span></div>
+                <div class="flex justify-between text-sm"><span class="text-zinc-500">Dates</span><span class="text-xs">${currentPayAppPeriod.periodStart} — ${currentPayAppPeriod.periodEnd}</span></div>
+                <div class="flex justify-between text-sm"><span class="text-zinc-500">Payment due</span><span class="font-mono text-emerald-400">${formatCurrency(amountDue)}</span></div>
+                <div class="flex justify-between text-sm"><span class="text-zinc-500">Status</span><span>${status}</span></div>`,
+            actions: [
+                { action: 'approve', label: finalStep ? 'Final Approve' : 'Approve Step', style: 'primary' },
+                { action: 'reject', label: 'Request Revision', requires_comment: true, style: 'danger' },
+            ],
+            onSubmit: async (action, comment) => {
+                const periodNum = currentPayAppPeriod.periodNumber;
+                if (action === 'reject') {
+                    await CasePMPayAppWorkflow.workflow('g702', 'reject', {
+                        entity_key: periodNum,
+                        comments: comment,
+                    });
+                    reloadPayAppStateFromStorage();
+                    logPayAppAudit('REVISION_REQUESTED', { periodNumber: periodNum });
+                    renderPayAppContent();
+                    return;
+                }
+                const snapshotData = buildPayAppApprovalSnapshot();
+                const wfResult = await CasePMPayAppWorkflow.workflow('g702', 'approve', {
+                    entity_key: periodNum,
+                    rollup: rollup,
+                    amount_due: amountDue,
+                    comments: comment,
+                });
+                reloadPayAppStateFromStorage();
+                if (!wfResult.final_approved) {
+                    renderPayAppContent();
+                    return;
+                }
+                await finalizePayAppApproval(snapshotData);
+            },
+        });
+    }
+
+    async function approvePayApplication() {
+        if (!currentPayAppPeriod) return;
+        openPayAppReviewModal();
     }
 
     // NEW: Create next period as Draft after approval (auto-advance for workflow continuity)
@@ -3984,19 +4018,7 @@ let mainLienWaiver = JSON.parse(casepmStore.getItem('mainLienWaiver') || '{}'); 
 
     async function requestRevisionPayApplication() {
         if (!currentPayAppPeriod) return;
-        const comments = prompt('Revision reason (required):') || '';
-        if (!comments.trim()) return;
-        try {
-            await CasePMPayAppWorkflow.workflow('g702', 'reject', {
-                entity_key: currentPayAppPeriod.periodNumber,
-                comments: comments.trim(),
-            });
-            reloadPayAppStateFromStorage();
-            logPayAppAudit('REVISION_REQUESTED', { periodNumber: currentPayAppPeriod.periodNumber });
-            renderPayAppContent();
-        } catch (err) {
-            showCenteredAlert(err.message || 'Could not request revision', 'error');
-        }
+        openPayAppReviewModal();
     }
 
     // ==================== CONTRACTOR SOV LOCK / UNLOCK (Admin Only) ====================
@@ -9184,6 +9206,24 @@ function printSubcontractorG703(companyId) {
         window.addEventListener('casepm:payapp-state-refreshed', () => {
             reloadPayAppStateFromStorage();
             renderPayAppContent();
+        });
+        window.addEventListener('casepm:approval-responded', async (e) => {
+            const d = e.detail || {};
+            if (d.local || d.module !== 'Pay Applications') return;
+            reloadPayAppStateFromStorage();
+            if (d.action === 'approve' && d.final_approved && typeof buildPayAppApprovalSnapshot === 'function') {
+                try {
+                    await finalizePayAppApproval(buildPayAppApprovalSnapshot());
+                } catch (err) {
+                    showCenteredAlert(err.message || 'Could not finalize approval', 'error');
+                    renderPayAppContent();
+                }
+            } else if (d.action === 'reject') {
+                logPayAppAudit('REVISION_REQUESTED', { periodNumber: currentPayAppPeriod?.periodNumber });
+                renderPayAppContent();
+            } else {
+                renderPayAppContent();
+            }
         });
 
         // Keyboard shortcuts

@@ -499,16 +499,20 @@
         <td class="px-4 py-3 text-center">${ballBadge(co.ball_in_court_role)}</td>
         <td class="px-4 py-3 text-center text-[10px] ${co.sov_synced_at ? 'text-emerald-400' : 'text-zinc-500'}">${co.sov_synced_at ? 'SOV ✓' : (co.sage_sync_status || '—')}</td>
         <td class="px-4 py-3 text-center" onclick="event.stopPropagation()">
-          <div class="flex items-center justify-center gap-1">
-            ${showSubmit ? `<button onclick="CasePMChangeOrders.workflowCo(${co.id},'submit')" class="p-1.5 text-amber-400 hover:bg-zinc-800 rounded" title="Submit"><i class="fa-solid fa-paper-plane"></i></button>` : ''}
-            ${showApprove ? `<button onclick="CasePMChangeOrders.openApprovalModal(${co.id},'approve')" class="p-1.5 text-emerald-400 hover:bg-zinc-800 rounded" title="Approve"><i class="fa-solid fa-check"></i></button>` : ''}
-            ${showReject ? `<button onclick="CasePMChangeOrders.openApprovalModal(${co.id},'reject')" class="p-1.5 text-red-400 hover:bg-zinc-800 rounded" title="Reject"><i class="fa-solid fa-times"></i></button>` : ''}
-            <button onclick="CasePMChangeOrders.editSubCo(${co.id})" class="p-1.5 text-zinc-400 hover:bg-zinc-800 rounded"><i class="fa-solid fa-edit"></i></button>
-            <button onclick="CasePMChangeOrders.deleteCo(${co.id})" class="p-1.5 text-red-400 hover:bg-zinc-800 rounded" title="Delete"><i class="fa-solid fa-trash"></i></button>
+          <div class="flex items-center justify-center gap-2 flex-wrap">
+            ${showSubmit ? `<button onclick="CasePMChangeOrders.workflowCo(${co.id},'submit')" class="px-3 py-1.5 bg-amber-600 hover:bg-amber-500 rounded-md text-xs font-medium">Submit</button>` : ''}
+            ${showApprove ? reviewButtonHtml(co.id) : ''}
+            <button onclick="CasePMChangeOrders.editSubCo(${co.id})" class="p-1.5 text-zinc-400 hover:bg-zinc-800 rounded" title="Edit"><i class="fa-solid fa-edit"></i></button>
           </div>
         </td>
       </tr>`;
     }).join('');
+  }
+
+  function reviewButtonHtml(coId, label, handler) {
+    const text = label || 'Review & Respond';
+    const fn = handler || 'openApprovalModal';
+    return `<button type="button" onclick="event.stopPropagation(); CasePMChangeOrders.${fn}(${coId},'approve')" class="px-4 py-2 bg-emerald-600 hover:bg-emerald-500 rounded-md text-sm font-semibold whitespace-nowrap shadow-md"><i class="fa-solid fa-clipboard-check mr-1"></i>${text}</button>`;
   }
 
   function renderCoTable() {
@@ -538,12 +542,10 @@
         <td class="px-4 py-3 text-center">${ballBadge(co.ball_in_court_role)}</td>
         <td class="px-4 py-3 text-center text-[10px] ${co.sov_synced_at ? 'text-emerald-400' : 'text-zinc-500'}">${co.sov_synced_at ? 'SOV ✓' : (co.sage_sync_status || '—')}</td>
         <td class="px-4 py-3 text-center" onclick="event.stopPropagation()">
-          <div class="flex items-center justify-center gap-1">
-            ${showSubmit ? `<button onclick="CasePMChangeOrders.workflowCo(${co.id},'submit')" class="p-1.5 text-amber-400 hover:bg-zinc-800 rounded" title="Submit"><i class="fa-solid fa-paper-plane"></i></button>` : ''}
-            ${showApprove ? `<button onclick="CasePMChangeOrders.openApprovalModal(${co.id},'approve')" class="p-1.5 text-emerald-400 hover:bg-zinc-800 rounded" title="${approveLabel}"><i class="fa-solid fa-check"></i></button>` : ''}
-            ${showReject ? `<button onclick="CasePMChangeOrders.openApprovalModal(${co.id},'reject')" class="p-1.5 text-red-400 hover:bg-zinc-800 rounded" title="Reject"><i class="fa-solid fa-times"></i></button>` : ''}
-            <button onclick="CasePMChangeOrders.editCo(${co.id})" class="p-1.5 text-zinc-400 hover:bg-zinc-800 rounded"><i class="fa-solid fa-edit"></i></button>
-            <button onclick="CasePMChangeOrders.deleteCo(${co.id})" class="p-1.5 text-red-400 hover:bg-zinc-800 rounded" title="Delete (testing)"><i class="fa-solid fa-trash"></i></button>
+          <div class="flex items-center justify-center gap-2 flex-wrap">
+            ${showSubmit ? `<button onclick="CasePMChangeOrders.workflowCo(${co.id},'submit')" class="px-3 py-1.5 bg-amber-600 hover:bg-amber-500 rounded-md text-xs font-medium">Submit</button>` : ''}
+            ${showApprove ? reviewButtonHtml(co.id, approveLabel) : ''}
+            <button onclick="CasePMChangeOrders.editCo(${co.id})" class="p-1.5 text-zinc-400 hover:bg-zinc-800 rounded" title="Edit"><i class="fa-solid fa-edit"></i></button>
           </div>
         </td>
       </tr>`;
@@ -568,8 +570,8 @@
         <td class="px-4 py-3 text-center">${ballBadge(p.ball_in_court_role)}</td>
         <td class="px-4 py-3 text-center" onclick="event.stopPropagation()">
           <div class="flex items-center justify-center gap-1">
-            ${p.status === 'Open' ? `<button onclick="CasePMChangeOrders.pcoWorkflow(${p.id},'submit')" class="p-1.5 text-amber-400 hover:bg-zinc-800 rounded" title="Submit"><i class="fa-solid fa-paper-plane"></i></button>` : ''}
-            ${['Pricing', 'Pending Review'].includes(p.status) ? `<button onclick="CasePMChangeOrders.pcoWorkflow(${p.id},'approve')" class="p-1.5 text-emerald-400 hover:bg-zinc-800 rounded" title="Approve step"><i class="fa-solid fa-check"></i></button>` : ''}
+            ${p.status === 'Open' ? `<button onclick="CasePMChangeOrders.pcoWorkflow(${p.id},'submit')" class="px-3 py-1.5 bg-amber-600 hover:bg-amber-500 rounded-md text-xs font-medium">Submit</button>` : ''}
+            ${['Pricing', 'Pending Review'].includes(p.status) && canActOnBall(p.ball_in_court_role) ? reviewButtonHtml(p.id, 'Review PCO', 'openPcoReviewModal') : ''}
             ${p.status !== 'Promoted' && p.status !== 'Void' ? `<button onclick="CasePMChangeOrders.promotePco(${p.id})" class="p-1.5 text-emerald-400 hover:bg-zinc-800 rounded" title="Promote to CO"><i class="fa-solid fa-arrow-right"></i></button>` : ''}
             ${p.change_order_id ? `<span class="text-[10px] text-emerald-400">→ CO</span>` : ''}
             <button onclick="CasePMChangeOrders.editPco(${p.id})" class="p-1.5 text-zinc-400 hover:bg-zinc-800 rounded"><i class="fa-solid fa-edit"></i></button>
@@ -1177,13 +1179,24 @@
 
   function renderDrawerCo(co) {
     document.getElementById('drawerTitle').textContent = `${co.number} — ${co.title || 'Change Order'}`;
+    const showSubmit = co.status === 'Draft';
+    const showApprove = (isSubCo(co) ? subCoApproveStatuses() : ['Submitted', 'Pending Architect', 'Pending Owner', 'Pending Accounting']).includes(co.status) && canActOnBall(co.ball_in_court_role);
+    const approveLabel = co.status === 'Pending Owner' ? 'Review & Final Approve' : 'Review & Respond';
+    const reviewBanner = showApprove ? `
+      <div class="mb-6 p-4 rounded-lg bg-emerald-950/50 border-2 border-emerald-600 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+        <div>
+          <div class="text-emerald-400 font-semibold">Your review is needed</div>
+          <div class="text-xs text-zinc-400 mt-1">Ball in court: ${esc(co.ball_in_court_role || '—')} · Status: ${esc(co.status)}</div>
+        </div>
+        ${reviewButtonHtml(co.id, approveLabel)}
+      </div>` : '';
     const allocs = (co.allocations || []).map(a =>
       `<tr class="border-b border-zinc-800"><td class="py-2 font-mono text-xs">${esc(a.cost_code)}</td><td class="py-2 text-xs text-zinc-400">${esc(a.cost_type || '—')}</td><td class="py-2">${esc(a.description || '')}</td><td class="py-2 text-right font-mono">${fmt(a.amount)}</td></tr>`
     ).join('');
     const atts = (co.attachments || []).map(a =>
       `<a href="${attachmentHref(co.id, a)}" target="_blank" rel="noopener" class="text-emerald-400 hover:underline">${attachmentLabel(a)}</a>`
     ).join(' · ') || '—';
-    document.getElementById('drawerBody').innerHTML = `
+    const bodyHtml = `
       <div class="space-y-2">
         <p><span class="text-zinc-500">Status</span><br>${statusBadge(co.status)}</p>
         <p><span class="text-zinc-500">Ball in court</span><br>${ballBadge(co.ball_in_court_role)}</p>
@@ -1217,26 +1230,36 @@
         <div class="text-xs text-zinc-500 uppercase tracking-wide mb-2">Attachments</div>
         <p>${atts}</p>
       </div>`;
-    const showSubmit = co.status === 'Draft';
-    const showApprove = (isSubCo(co) ? subCoApproveStatuses() : ['Submitted', 'Pending Architect', 'Pending Owner', 'Pending Accounting']).includes(co.status) && canActOnBall(co.ball_in_court_role);
+    document.getElementById('drawerBody').innerHTML = reviewBanner + bodyHtml;
     document.getElementById('drawerActions').innerHTML = `
       ${showSubmit ? `<button type="button" onclick="CasePMChangeOrders.workflowCo(${co.id},'submit')" class="px-4 py-2 bg-amber-600 hover:bg-amber-500 rounded-md text-sm">Submit for Approval</button>` : ''}
-      ${showApprove ? `<button type="button" onclick="CasePMChangeOrders.openApprovalModal(${co.id},'approve')" class="px-4 py-2 bg-emerald-600 hover:bg-emerald-500 rounded-md text-sm font-semibold">Review &amp; Approve</button>` : ''}
-      ${co.status === 'Approved' ? `<button type="button" onclick="CasePMChangeOrders.resyncSov(${co.id})" class="px-4 py-2 bg-violet-800 hover:bg-violet-700 rounded-md text-sm">Re-sync to Pay App / Sub SOV</button>` : ''}
       ${canApprove() ? `<button type="button" onclick="CasePMChangeOrders.${isSubCo(co) ? 'editSubCo' : 'editCo'}(${co.id})" class="px-4 py-2 bg-zinc-800 hover:bg-zinc-700 rounded-md text-sm">Edit</button>
-      <button type="button" onclick="CasePMChangeOrders.deleteCo(${co.id})" class="px-4 py-2 bg-red-950 hover:bg-red-900 border border-red-800 rounded-md text-sm text-red-300">Delete</button>` : ''}`;
+      <button type="button" onclick="CasePMChangeOrders.deleteCo(${co.id})" class="px-4 py-2 bg-red-950 hover:bg-red-900 border border-red-800 rounded-md text-sm text-red-300">Delete</button>` : ''}
+      <button type="button" onclick="CasePMChangeOrders.closeDrawer()" class="px-4 py-2 bg-zinc-800 hover:bg-zinc-700 rounded-md text-sm text-zinc-400">Close</button>`;
     openDrawer();
+    if (showApprove && new URLSearchParams(location.search).get('respond') === '1') {
+      setTimeout(() => openApprovalModal(co.id, 'approve'), 300);
+    }
   }
 
   function renderDrawerPco(p) {
     document.getElementById('drawerTitle').textContent = `${p.number} — ${p.title || 'PCO'}`;
+    const showApprove = ['Pricing', 'Pending Review'].includes(p.status) && canActOnBall(p.ball_in_court_role);
+    const reviewBanner = showApprove ? `
+      <div class="mb-6 p-4 rounded-lg bg-emerald-950/50 border-2 border-emerald-600 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+        <div>
+          <div class="text-emerald-400 font-semibold">PCO review needed</div>
+          <div class="text-xs text-zinc-400 mt-1">Ball in court: ${esc(p.ball_in_court_role || '—')} · ${esc(p.status)}</div>
+        </div>
+        ${reviewButtonHtml(p.id, 'Review PCO', 'openPcoReviewModal')}
+      </div>` : '';
     const allocs = (p.allocations || []).map(a =>
       `<tr class="border-b border-zinc-800"><td class="py-2 font-mono text-xs">${esc(a.cost_code)}</td><td class="py-2 text-xs text-zinc-400">${esc(a.cost_type || '—')}</td><td class="py-2">${esc(a.description || '')}</td><td class="py-2 text-right font-mono">${fmt(a.amount)}</td></tr>`
     ).join('');
     const atts = (p.attachments || []).map(a =>
       `<a href="${attachmentHref(p.id, a, 'pco')}" target="_blank" rel="noopener" class="text-emerald-400 hover:underline">${attachmentLabel(a)}</a>`
     ).join(' · ') || '—';
-    document.getElementById('drawerBody').innerHTML = `
+    const bodyHtml = `
       <div class="space-y-2">
         <p><span class="text-zinc-500">Status</span><br>${statusBadge(p.status)}</p>
         <p><span class="text-zinc-500">ROM</span><br><span class="font-mono text-lg">${fmt(p.estimated_amount)}</span></p>
@@ -1259,12 +1282,52 @@
           Upload file
         </label>
       </div>`;
+    document.getElementById('drawerBody').innerHTML = reviewBanner + bodyHtml;
     document.getElementById('drawerActions').innerHTML = `
       ${p.status === 'Open' ? `<button type="button" onclick="CasePMChangeOrders.pcoWorkflow(${p.id},'submit')" class="px-4 py-2 bg-amber-600 hover:bg-amber-500 rounded-md text-sm">Submit</button>` : ''}
-      ${['Pricing', 'Pending Review'].includes(p.status) ? `<button type="button" onclick="CasePMChangeOrders.pcoWorkflow(${p.id},'approve')" class="px-4 py-2 bg-emerald-600 hover:bg-emerald-500 rounded-md text-sm">Approve Step</button>` : ''}
       ${p.status !== 'Promoted' && p.status !== 'Void' ? `<button type="button" onclick="CasePMChangeOrders.promotePco(${p.id})" class="px-4 py-2 bg-emerald-600 hover:bg-emerald-500 rounded-md text-sm">Promote to CO</button>` : ''}
-      <button type="button" onclick="CasePMChangeOrders.editPco(${p.id})" class="px-4 py-2 bg-zinc-800 hover:bg-zinc-700 rounded-md text-sm">Edit</button>`;
+      <button type="button" onclick="CasePMChangeOrders.editPco(${p.id})" class="px-4 py-2 bg-zinc-800 hover:bg-zinc-700 rounded-md text-sm">Edit</button>
+      <button type="button" onclick="CasePMChangeOrders.closeDrawer()" class="px-4 py-2 bg-zinc-800 hover:bg-zinc-700 rounded-md text-sm text-zinc-400">Close</button>`;
     openDrawer();
+  }
+
+  function openPcoReviewModal(pcoId) {
+    const p = state.pcos.find(x => x.id === pcoId) || (state.drawerRecord?.id === pcoId ? state.drawerRecord : null);
+    if (!p) return;
+    if (typeof global.CasePMApprovalResponder === 'undefined') {
+      pcoWorkflow(pcoId, 'approve');
+      return;
+    }
+    const allocLines = (p.allocations || []).map(a =>
+      `<div class="flex justify-between gap-3 text-xs"><span class="font-mono text-emerald-400">${esc(a.cost_code)}</span><span class="text-zinc-400">${esc(a.cost_type || '')}</span><span class="font-mono">${fmt(a.amount)}</span></div>`
+    ).join('') || '<div class="text-zinc-500 text-xs">No allocations</div>';
+    global.CasePMApprovalResponder.openLocal({
+      module: 'PCO',
+      entityId: pcoId,
+      title: `${p.number} — ${p.title || 'Potential Change Order'}`,
+      status: p.status,
+      ball: p.ball_in_court_role,
+      summaryHtml: `
+        <div class="flex justify-between text-sm"><span class="text-zinc-500">ROM</span><span class="font-mono text-emerald-400">${fmt(p.estimated_amount)}</span></div>
+        <div class="flex justify-between text-sm"><span class="text-zinc-500">Company</span><span>${esc(p.company_name || '—')}</span></div>
+        <div class="flex justify-between text-sm"><span class="text-zinc-500">Status</span><span>${statusBadge(p.status)}</span></div>
+        <div class="pt-2 border-t border-zinc-800 mt-2"><div class="text-[10px] uppercase tracking-wide text-zinc-500 mb-1">Allocations</div>${allocLines}</div>
+        ${p.description ? `<div class="mt-3"><div class="text-[10px] uppercase tracking-wide text-zinc-500 mb-1">Description</div><p class="text-sm whitespace-pre-wrap">${esc(p.description)}</p></div>` : ''}`,
+      attachments: p.attachments || [],
+      actions: [
+        { action: 'approve', label: 'Approve Step', style: 'primary' },
+        { action: 'reject', label: 'Reject', requires_comment: true, style: 'danger' },
+      ],
+      onSubmit: async (action, comment) => {
+        if (action === 'reject') {
+          await api(`/api/pcos/${pcoId}/workflow`, { method: 'POST', body: JSON.stringify({ action, comments: comment }) });
+        } else {
+          await api(`/api/pcos/${pcoId}/workflow`, { method: 'POST', body: JSON.stringify({ action }) });
+        }
+        await loadPcos();
+        closeDrawer();
+      },
+    });
   }
 
   async function pcoWorkflow(id, action) {
@@ -1661,7 +1724,7 @@
     saveModal,
     editCo: id => api(`/api/change-orders/${id}`).then(openModal.bind(null, 'co')).catch(e => alert(e.message)),
     editPco: id => api(`/api/pcos/${id}`).then(openModal.bind(null, 'pco')).catch(e => alert(e.message)),
-    viewCo, viewPco, workflowCo, pcoWorkflow, resyncSov, openApprovalModal, confirmApprovalAction, closeDrawer, promotePco, deleteCo,
+    viewCo, viewPco, workflowCo, pcoWorkflow, openPcoReviewModal, resyncSov, openApprovalModal, confirmApprovalAction, closeDrawer, promotePco, deleteCo,
     uploadPcoAttachment, uploadPcoDrawerAttachment,
     addAllocRow: () => { state.allocationRows.push({ cost_code: '', cost_type: '', amount: 0, description: '' }); renderAllocationRows(); },
     removeAllocRow: idx => { state.allocationRows.splice(idx, 1); renderAllocationRows(); },

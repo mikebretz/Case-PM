@@ -291,6 +291,11 @@
     return `<span class="text-[10px] ${map[st] || 'text-zinc-500'}">${label}</span>`;
   }
 
+  function reviewButtonHtml(id, label) {
+    const text = label || 'Review & Respond';
+    return `<button type="button" onclick="event.stopPropagation(); CasePMCommitments.openReviewModal(${id})" class="px-4 py-2 bg-emerald-600 hover:bg-emerald-500 rounded-md text-sm font-semibold whitespace-nowrap shadow-md"><i class="fa-solid fa-clipboard-check mr-1"></i>${text}</button>`;
+  }
+
   function renderTable() {
     const tbody = document.getElementById('comTableBody');
     if (!tbody) return;
@@ -317,9 +322,8 @@
         <td class="px-4 py-3 text-center" onclick="event.stopPropagation()">
           <div class="flex items-center justify-center gap-1">
             <button onclick="CasePMCommitments.printCommitment(${c.id})" class="p-1.5 text-sky-400 hover:bg-zinc-800 rounded" title="Print"><i class="fa-solid fa-print"></i></button>
-            ${showSubmit ? `<button onclick="CasePMCommitments.workflow(${c.id},'submit')" class="p-1.5 text-amber-400 hover:bg-zinc-800 rounded" title="Submit"><i class="fa-solid fa-paper-plane"></i></button>` : ''}
-            ${showApprove ? `<button onclick="CasePMCommitments.workflow(${c.id},'approve')" class="p-1.5 text-emerald-400 hover:bg-zinc-800 rounded" title="Approve"><i class="fa-solid fa-check"></i></button>
-            <button onclick="CasePMCommitments.workflow(${c.id},'reject')" class="p-1.5 text-red-400 hover:bg-zinc-800 rounded" title="Reject"><i class="fa-solid fa-times"></i></button>` : ''}
+            ${showSubmit ? `<button onclick="CasePMCommitments.workflow(${c.id},'submit')" class="px-3 py-1.5 bg-amber-600 hover:bg-amber-500 rounded-md text-xs font-medium">Submit</button>` : ''}
+            ${showApprove ? reviewButtonHtml(c.id) : ''}
             <button onclick="CasePMCommitments.edit(${c.id})" class="p-1.5 text-zinc-400 hover:bg-zinc-800 rounded"><i class="fa-solid fa-edit"></i></button>
             ${isAdmin() ? `<button onclick="CasePMCommitments.deleteCommitment(${c.id})" class="p-1.5 text-red-400 hover:bg-zinc-800 rounded" title="Delete (Admin)"><i class="fa-solid fa-trash"></i></button>` : ''}
           </div>
@@ -881,13 +885,14 @@
     if (id) deleteCommitment(parseInt(id, 10));
   }
 
-  async function workflow(id, action) {
+  async function applyCommitmentWorkflow(id, action, comments) {
     const c = state.commitments.find(x => x.id === id);
     if (!c) return;
-    const verb = action === 'submit' ? 'Submit' : action === 'reject' ? 'Reject' : 'Approve';
-    if (!confirm(`${verb} ${c.number}?`)) return;
     try {
-      const json = await api(`/api/commitments/${id}/workflow`, { method: 'POST', body: JSON.stringify({ action }) });
+      const json = await api(`/api/commitments/${id}/workflow`, {
+        method: 'POST',
+        body: JSON.stringify({ action, comments: comments || '' }),
+      });
       logCommitmentAudit(`COMMITMENT_${action.toUpperCase()}`, { number: c.number, new_status: json.new_status });
       if (typeof CasePMAccountingReconcile !== 'undefined') {
         CasePMAccountingReconcile.applyReconcileResult({
@@ -908,9 +913,59 @@
         renderDrawer(json.commitment);
       }
       toast(json.final_approved ? `${c.number} approved — synced to budget & SOV` : `${c.number} → ${json.new_status}`);
+      if (action === 'approve' || action === 'reject') closeDrawer();
     } catch (err) {
       alert(err.message);
+      throw err;
     }
+  }
+
+  function openReviewModal(id) {
+    const c = state.commitments.find(x => x.id === id) || (state.drawerRecord?.id === id ? state.drawerRecord : null);
+    if (!c) {
+      view(id).then(() => openReviewModal(id));
+      return;
+    }
+    if (typeof global.CasePMApprovalResponder === 'undefined') {
+      applyCommitmentWorkflow(id, 'approve');
+      return;
+    }
+    const allocLines = (c.allocations || []).map(a =>
+      `<div class="flex justify-between gap-3 text-xs"><span class="font-mono text-emerald-400">${esc(a.cost_code)}</span><span class="truncate text-zinc-400">${esc(a.description || '')}</span><span class="font-mono">${fmt(a.amount)}</span></div>`
+    ).join('') || '<div class="text-zinc-500 text-xs">No allocations</div>';
+    global.CasePMApprovalResponder.openLocal({
+      module: 'Commitments',
+      entityId: id,
+      title: `${c.number} — ${c.title || c.description || 'Commitment'}`,
+      status: c.status,
+      ball: c.ball_in_court_role,
+      summaryHtml: `
+        <div class="flex justify-between text-sm"><span class="text-zinc-500">Type</span><span>${esc(c.commitment_type)} · ${esc(c.aia_form || '—')}</span></div>
+        <div class="flex justify-between text-sm"><span class="text-zinc-500">Vendor</span><span>${esc(c.company_name || '—')}</span></div>
+        <div class="flex justify-between text-sm"><span class="text-zinc-500">Amount</span><span class="font-mono text-emerald-400">${fmt(c.current_amount)}</span></div>
+        <div class="flex justify-between text-sm"><span class="text-zinc-500">Status</span><span>${statusBadge(c.status)}</span></div>
+        <div class="pt-2 border-t border-zinc-800 mt-2"><div class="text-[10px] uppercase tracking-wide text-zinc-500 mb-1">Schedule of Values</div>${allocLines}</div>
+        ${c.scope_of_work || c.description ? `<div class="mt-3"><div class="text-[10px] uppercase tracking-wide text-zinc-500 mb-1">Scope</div><p class="text-sm whitespace-pre-wrap">${esc(c.scope_of_work || c.description)}</p></div>` : ''}`,
+      actions: [
+        { action: 'approve', label: 'Approve', style: 'primary' },
+        { action: 'reject', label: 'Reject', requires_comment: true, style: 'danger' },
+      ],
+      onSubmit: async (action, comment) => {
+        await applyCommitmentWorkflow(id, action, comment);
+      },
+    });
+  }
+
+  async function workflow(id, action) {
+    const c = state.commitments.find(x => x.id === id);
+    if (!c) return;
+    if (action === 'approve' || action === 'reject') {
+      openReviewModal(id);
+      return;
+    }
+    const verb = action === 'submit' ? 'Submit' : action;
+    if (!confirm(`${verb} ${c.number}?`)) return;
+    await applyCommitmentWorkflow(id, action);
   }
 
   async function sendDocuSign(id) {
@@ -964,13 +1019,23 @@
 
   function renderDrawer(c) {
     document.getElementById('drawerTitle').textContent = `${c.number} — ${c.title || c.description}`;
+    const showSubmit = c.status === 'Draft';
+    const showApprove = ['Submitted', 'Pending PM', 'Pending Accounting', 'Pending Owner'].includes(c.status) && canActOnBall(c.ball_in_court_role);
+    const reviewBanner = showApprove ? `
+      <div class="mb-6 p-4 rounded-lg bg-emerald-950/50 border-2 border-emerald-600 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+        <div>
+          <div class="text-emerald-400 font-semibold">Your review is needed</div>
+          <div class="text-xs text-zinc-400 mt-1">Ball in court: ${esc(c.ball_in_court_role || '—')} · ${esc(c.status)}</div>
+        </div>
+        ${reviewButtonHtml(c.id)}
+      </div>` : '';
     const allocs = (c.allocations || []).map(a =>
       `<tr class="border-b border-zinc-800"><td class="py-2 font-mono text-xs">${esc(a.cost_code)}</td><td class="py-2">${esc(a.description || '')}</td><td class="py-2 text-right font-mono">${fmt(a.amount)}</td></tr>`
     ).join('');
     const sigs = (c.certified_signatures || []).map(s =>
       `<div class="text-xs text-zinc-400">${esc(s.signed_by_name)} · ${fmtDate(s.signed_at)} · ${esc(s.method)}</div>`
     ).join('') || '<span class="text-zinc-500">No signatures yet</span>';
-    document.getElementById('drawerBody').innerHTML = `
+    const bodyHtml = `
       <div class="space-y-2 text-sm">
         <p><span class="text-zinc-500">Type</span><br>${esc(c.commitment_type)} · ${statusBadge(c.status)}</p>
         <p><span class="text-zinc-500">Vendor</span><br>${esc(c.company_name || '—')}</p>
@@ -993,8 +1058,7 @@
       <table class="w-full text-xs"><thead><tr class="text-zinc-500"><th class="text-left py-1">Code</th><th class="text-left py-1">Description</th><th class="text-right py-1">Amount</th></tr></thead>
       <tbody>${allocs || '<tr><td colspan="3" class="py-3 text-zinc-500">No allocations</td></tr>'}</tbody></table></div>
       <div class="mt-4"><div class="text-xs text-zinc-500 uppercase mb-2">Signatures</div>${sigs}</div>`;
-    const showSubmit = c.status === 'Draft';
-    const showApprove = ['Submitted', 'Pending PM', 'Pending Accounting', 'Pending Owner'].includes(c.status) && canActOnBall(c.ball_in_court_role);
+    document.getElementById('drawerBody').innerHTML = reviewBanner + bodyHtml;
     const showAdminDelete = canDeleteRecord(c);
     document.getElementById('drawerActions').innerHTML = `
       <button type="button" onclick="CasePMCommitments.printCommitment(${c.id})" class="px-4 py-2 bg-sky-700 hover:bg-sky-600 rounded-md text-sm"><i class="fa-solid fa-print mr-1"></i>Print</button>
@@ -1003,8 +1067,6 @@
       <button type="button" onclick="CasePMCommitments.registerAiaDocument(${c.id})" class="px-4 py-2 bg-violet-900/60 hover:bg-violet-800 rounded-md text-sm">Link AIA Document</button>
       <button type="button" onclick="CasePMCommitments.syncSageForCommitment(${c.id})" class="px-4 py-2 bg-amber-800 hover:bg-amber-700 rounded-md text-sm" title="Sync to Sage 300"><i class="fa-solid fa-rotate mr-1"></i>Sage Sync</button>
       ${showSubmit ? `<button type="button" onclick="CasePMCommitments.workflow(${c.id},'submit')" class="px-4 py-2 bg-amber-600 hover:bg-amber-500 rounded-md text-sm">Submit</button>` : ''}
-      ${showApprove ? `<button type="button" onclick="CasePMCommitments.workflow(${c.id},'approve')" class="px-4 py-2 bg-emerald-600 hover:bg-emerald-500 rounded-md text-sm">Approve</button>
-      <button type="button" onclick="CasePMCommitments.workflow(${c.id},'reject')" class="px-4 py-2 bg-zinc-800 text-red-400 rounded-md text-sm">Reject</button>` : ''}
       ${c.status === 'Approved' && c.signature_status !== 'fully_executed' ? `
         <button type="button" onclick="CasePMCommitments.signInternal(${c.id})" class="px-4 py-2 bg-sky-700 hover:bg-sky-600 rounded-md text-sm" title="Sign with your User Management e-signature">E-Sign (My Signature)</button>
         <button type="button" onclick="CasePMCommitments.sendDocuSign(${c.id})" class="px-4 py-2 bg-indigo-700 hover:bg-indigo-600 rounded-md text-sm" title="Send via DocuSign for third-party certified signing"><i class="fa-solid fa-file-signature mr-1"></i>DocuSign</button>` : ''}
@@ -1280,6 +1342,7 @@
     view,
     closeDrawer,
     workflow,
+    openReviewModal,
     sendDocuSign,
     signInternal,
     deleteCommitment,

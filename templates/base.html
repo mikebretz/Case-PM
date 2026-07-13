@@ -88,6 +88,50 @@
             background: rgba(0, 0, 0, 0.72);
         }
 
+        #casepmApprovalResponder {
+            width: min(56rem, calc(100vw - 1.5rem));
+            max-width: none;
+            max-height: min(94vh, 920px);
+            padding: 0;
+            border: 1px solid #52525b;
+            box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.65);
+        }
+        #casepmApprovalResponder .apr-shell {
+            display: flex;
+            flex-direction: column;
+            max-height: min(94vh, 920px);
+        }
+        #casepmApprovalResponder .apr-body {
+            flex: 1;
+            overflow: auto;
+            padding: 1.5rem 1.75rem;
+        }
+        #casepmApprovalResponder .apr-footer {
+            flex-shrink: 0;
+            padding: 1rem 1.75rem 1.25rem;
+            border-top: 1px solid #3f3f46;
+            background: #141416;
+        }
+        #casepmApprovalResponder #aprActions {
+            display: flex;
+            flex-wrap: wrap;
+            justify-content: center;
+            gap: 0.75rem;
+        }
+        #casepmApprovalResponder #aprActions button {
+            min-width: 9rem;
+            padding: 0.85rem 1.5rem;
+            font-size: 0.95rem;
+            font-weight: 600;
+            border-radius: 0.5rem;
+        }
+        #casepmApprovalResponder #aprActions button[data-apr-action="approve"],
+        #casepmApprovalResponder #aprActions button[data-apr-action="submit_answer"],
+        #casepmApprovalResponder #aprActions button[data-apr-action="close"],
+        #casepmApprovalResponder #aprActions button[data-apr-action="submit"] {
+            min-width: 11rem;
+        }
+
         @keyframes dialogPop {
             from {
                 opacity: 0;
@@ -815,40 +859,45 @@
         </div>
     </dialog>
 
-    <!-- Unified approval responder (RFI, Change Order, etc.) -->
-    <dialog id="casepmApprovalResponder" class="modal rounded-lg w-full max-w-2xl p-0 text-white" style="background:#18181b;border:1px solid #3f3f46;">
-        <div class="p-6 max-h-[min(92vh,880px)] overflow-auto">
-            <div class="flex justify-between items-start mb-4">
-                <div>
-                    <p class="text-[10px] uppercase tracking-widest text-emerald-500 font-semibold mb-1">Review &amp; Respond</p>
-                    <h2 id="aprTitle" class="text-2xl font-semibold leading-tight">Review Item</h2>
-                    <p id="aprSubtitle" class="text-sm text-zinc-400 mt-1"></p>
-                </div>
-                <button type="button" id="aprCloseBtn" class="text-zinc-400 hover:text-white text-2xl leading-none">&times;</button>
-            </div>
-            <div id="aprSummary" class="bg-zinc-900 border border-zinc-700 rounded-md p-4 mb-4"></div>
-            <div class="mb-4">
-                <h3 class="text-xs uppercase text-zinc-500 mb-2 tracking-wide">Attachments</h3>
-                <div id="aprAttachments" class="space-y-1 mb-2"></div>
-                <div id="aprUploadSection">
-                    <div id="aprDropZone" class="border-2 border-dashed border-zinc-700 hover:border-emerald-600 rounded-lg p-4 text-center cursor-pointer bg-zinc-950/50 transition-colors">
-                        <div class="text-sm text-zinc-400"><i class="fa-solid fa-cloud-arrow-up text-emerald-500 mr-1"></i>Drop files here or click to upload</div>
-                        <button type="button" id="aprBrowseDocs" class="mt-2 text-xs px-3 py-1.5 rounded bg-sky-900/50 text-sky-200 border border-sky-700/50 hover:bg-sky-800/60 hidden">Browse Documents</button>
-                        <input type="file" id="aprFileInput" class="hidden" multiple>
+    <!-- Unified approval responder (RFI, Change Order, Pay App, etc.) -->
+    <dialog id="casepmApprovalResponder" class="modal rounded-xl p-0 text-white" style="background:#18181b;">
+        <div class="apr-shell">
+            <div class="apr-body">
+                <div class="flex justify-between items-start gap-4 mb-4">
+                    <div class="min-w-0">
+                        <p class="text-[10px] uppercase tracking-widest text-emerald-500 font-semibold mb-1">Review &amp; Respond</p>
+                        <h2 id="aprTitle" class="text-2xl md:text-3xl font-semibold leading-tight">Review Item</h2>
+                        <p id="aprSubtitle" class="text-sm text-zinc-400 mt-1"></p>
+                        <span id="aprBallBadge" class="hidden inline-flex mt-2 px-3 py-1 rounded-full text-xs font-medium bg-sky-950 text-sky-300 border border-sky-800"></span>
                     </div>
-                    <div id="aprPendingFiles" class="space-y-1 mt-2"></div>
+                    <button type="button" id="aprCloseBtn" class="text-zinc-400 hover:text-white text-3xl leading-none shrink-0" aria-label="Close">&times;</button>
                 </div>
+                <div id="aprSummary" class="bg-zinc-900 border border-zinc-700 rounded-lg p-4 mb-4 text-sm"></div>
+                <div id="aprAttachmentsSection" class="mb-4">
+                    <h3 class="text-xs uppercase text-zinc-500 mb-2 tracking-wide">Attachments</h3>
+                    <div id="aprAttachments" class="flex flex-wrap gap-2 mb-2"></div>
+                    <div id="aprUploadSection">
+                        <div id="aprDropZone" class="border-2 border-dashed border-zinc-700 hover:border-emerald-600 rounded-lg p-4 text-center cursor-pointer bg-zinc-950/50 transition-colors">
+                            <div class="text-sm text-zinc-400"><i class="fa-solid fa-cloud-arrow-up text-emerald-500 mr-1"></i>Drop files here or click to upload</div>
+                            <button type="button" id="aprBrowseDocs" class="mt-2 text-xs px-3 py-1.5 rounded bg-sky-900/50 text-sky-200 border border-sky-700/50 hover:bg-sky-800/60 hidden">Browse Documents</button>
+                            <input type="file" id="aprFileInput" class="hidden" multiple>
+                        </div>
+                        <div id="aprPendingFiles" class="space-y-1 mt-2"></div>
+                    </div>
+                </div>
+                <div class="mb-4">
+                    <h3 class="text-xs uppercase text-zinc-500 mb-2 tracking-wide">History &amp; Comments</h3>
+                    <div id="aprThread" class="space-y-2 max-h-48 overflow-auto mb-3 bg-zinc-950/40 rounded-lg p-3 border border-zinc-800"></div>
+                    <label for="aprComment" class="block text-sm text-zinc-300 mb-1.5 font-medium">Your response</label>
+                    <textarea id="aprComment" rows="4" placeholder="Add approval notes, official answer, or rejection reason…" class="w-full bg-zinc-800 border border-zinc-600 rounded-lg px-4 py-3 text-sm text-white placeholder:text-zinc-600"></textarea>
+                </div>
+                <div id="aprSignPanel" class="mb-2 hidden"></div>
             </div>
-            <div class="mb-4">
-                <h3 class="text-xs uppercase text-zinc-500 mb-2 tracking-wide">Comments</h3>
-                <div id="aprThread" class="space-y-2 max-h-40 overflow-auto mb-3"></div>
-                <label for="aprComment" class="block text-sm text-zinc-400 mb-1.5">Your response</label>
-                <textarea id="aprComment" rows="4" placeholder="Type your answer or comment here…" class="w-full bg-zinc-800 border border-zinc-700 rounded-md px-3 py-2.5 text-sm text-white placeholder:text-zinc-600"></textarea>
-            </div>
-            <div id="aprSignPanel" class="mb-4 hidden"></div>
-            <div id="aprActions" class="flex flex-wrap justify-end gap-3 pt-2 border-t border-zinc-800"></div>
-            <div class="flex justify-end mt-3">
-                <button type="button" id="aprCancelBtn" class="px-5 py-2.5 bg-zinc-800 hover:bg-zinc-700 rounded-md text-sm text-zinc-300">Cancel</button>
+            <div class="apr-footer">
+                <div id="aprActions"></div>
+                <div class="flex justify-center mt-3">
+                    <button type="button" id="aprCancelBtn" class="text-sm text-zinc-500 hover:text-zinc-300 underline">Cancel and close</button>
+                </div>
             </div>
         </div>
     </dialog>
