@@ -240,7 +240,7 @@ def guard_api_request(current_user):
                 'required_access': min_access,
             }), 403
     except Exception:
-        return None
+        return jsonify({'error': 'Permission check failed. Access denied.'}), 403
     return None
 
 
