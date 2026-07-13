@@ -1,77 +1,76 @@
-"""Generate Case PM icons matching the login header (w-9 emerald tile + fa-hard-hat)."""
+"""Generate Case PM icons — browser-quality match to the login header tile."""
 from __future__ import annotations
 
 import os
 import sys
-import urllib.request
+from pathlib import Path
 
-from PIL import Image, ImageDraw, ImageFont
+from PIL import Image
 
-# Login header: w-9 h-9 (36px), bg-emerald-600, rounded-lg (8px), fa-hard-hat text-base (16px)
-TILE_PX = 36
-RADIUS_PX = 8
-GLYPH_PX = 16
-EMERALD = '#059669'
-WHITE = '#ffffff'
-HARD_HAT = '\uf807'  # Font Awesome 6 solid hard-hat
-
-
-def _font_path(root: str) -> str:
-    path = os.path.join(root, 'static', 'fonts', 'fa-solid-900.ttf')
-    if os.path.isfile(path):
-        return path
-    os.makedirs(os.path.dirname(path), exist_ok=True)
-    url = 'https://github.com/FortAwesome/Font-Awesome/raw/6.5.2/webfonts/fa-solid-900.ttf'
-    print(f'Downloading Font Awesome font to {path} ...')
-    urllib.request.urlretrieve(url, path)
-    return path
+# Login header: w-9 h-9 (36px), rounded-lg (8px), fa-hard-hat text-base (16px)
+HEADER_TILE_PX = 36
+HEADER_RADIUS_PX = 8
+HEADER_GLYPH_PX = 16
+MASTER_PX = 1024
+ICO_SIZES = [16, 24, 32, 48, 64, 128, 256]
 
 
-def render_tile(size: int, font_path: str) -> Image.Image:
-    """Render the login-header icon scaled to size x size pixels."""
-    img = Image.new('RGBA', (size, size), (0, 0, 0, 0))
-    draw = ImageDraw.Draw(img)
-    scale = size / TILE_PX
-    radius = max(1, round(RADIUS_PX * scale))
-    draw.rounded_rectangle([0, 0, size - 1, size - 1], radius=radius, fill=EMERALD)
+def _template_path(root: Path) -> Path:
+    return root / 'scripts' / 'casepm-icon-template.html'
 
-    font_size = max(8, round(GLYPH_PX * scale))
-    font = ImageFont.truetype(font_path, font_size)
-    bbox = draw.textbbox((0, 0), HARD_HAT, font=font)
-    gw = bbox[2] - bbox[0]
-    gh = bbox[3] - bbox[1]
-    x = (size - gw) // 2 - bbox[0]
-    y = (size - gh) // 2 - bbox[1]
-    draw.text((x, y), HARD_HAT, font=font, fill=WHITE)
-    return img
+
+def _render_master_playwright(root: Path) -> Image.Image:
+    from playwright.sync_api import sync_playwright
+
+    size = MASTER_PX
+    radius = round(HEADER_RADIUS_PX * size / HEADER_TILE_PX)
+    glyph = round(HEADER_GLYPH_PX * size / HEADER_TILE_PX)
+    template = _template_path(root).read_text(encoding='utf-8')
+    html = (
+        template.replace('{{SIZE}}', str(size))
+        .replace('{{RADIUS}}', str(radius))
+        .replace('{{GLYPH}}', str(glyph))
+    )
+
+    with sync_playwright() as p:
+        browser = p.chromium.launch()
+        page = browser.new_page(viewport={'width': size, 'height': size}, device_scale_factor=1)
+        page.set_content(html, wait_until='networkidle')
+        page.wait_for_timeout(400)
+        png_bytes = page.screenshot(omit_background=True, type='png')
+        browser.close()
+
+    from io import BytesIO
+    return Image.open(BytesIO(png_bytes)).convert('RGBA')
+
+
+def _downscale(master: Image.Image, size: int) -> Image.Image:
+    if master.size[0] == size:
+        return master.copy()
+    return master.resize((size, size), Image.Resampling.LANCZOS)
 
 
 def write_icons(root: str | None = None) -> None:
-    root = root or os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-    font_path = _font_path(root)
-    static_img = os.path.join(root, 'static', 'img')
-    connector_dir = os.path.join(root, 'connector')
-    os.makedirs(static_img, exist_ok=True)
-    os.makedirs(connector_dir, exist_ok=True)
+    root_path = Path(root or Path(__file__).resolve().parents[1])
+    static_img = root_path / 'static' / 'img'
+    connector_dir = root_path / 'connector'
+    static_img.mkdir(parents=True, exist_ok=True)
+    connector_dir.mkdir(parents=True, exist_ok=True)
 
-    sizes = [16, 32, 48, 64, 128, 256]
-    icons = [render_tile(s, font_path) for s in sizes]
-    icons[-1].save(os.path.join(static_img, 'casepm-icon.png'), 'PNG')
-    icons[4].save(os.path.join(static_img, 'casepm-icon-64.png'), 'PNG')
-    ico_sizes = [(s, s) for s in sizes]
-    icons[-1].save(
-        os.path.join(static_img, 'casepm-icon.ico'),
-        format='ICO',
-        sizes=ico_sizes,
-        append_images=icons[:-1],
-    )
-    icons[-1].save(
-        os.path.join(connector_dir, 'casepm-icon.ico'),
-        format='ICO',
-        sizes=ico_sizes,
-        append_images=icons[:-1],
-    )
-    print('Wrote Case PM icons (login-header match) to static/img and connector/')
+    print(f'Rendering login-header icon at {MASTER_PX}px via headless browser...')
+    master = _render_master_playwright(root_path)
+    icons = [_downscale(master, s) for s in ICO_SIZES]
+
+    master.save(static_img / 'casepm-icon.png', 'PNG')
+    icons[ICO_SIZES.index(64)].save(static_img / 'casepm-icon-64.png', 'PNG')
+
+    ico_path_static = static_img / 'casepm-icon.ico'
+    ico_path_connector = connector_dir / 'casepm-icon.ico'
+    ico_sizes = [(s, s) for s in ICO_SIZES]
+    icons[-1].save(ico_path_static, format='ICO', sizes=ico_sizes, append_images=icons[:-1])
+    icons[-1].save(ico_path_connector, format='ICO', sizes=ico_sizes, append_images=icons[:-1])
+
+    print(f'Wrote {ico_path_static} and {ico_path_connector}')
 
 
 if __name__ == '__main__':

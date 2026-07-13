@@ -1,0 +1,37 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    html, body {
+      width: {{SIZE}}px;
+      height: {{SIZE}}px;
+      background: transparent;
+      overflow: hidden;
+    }
+    /* Exact match: login header tile next to "Case PM / Construction OS" */
+    .login-header-icon {
+      width: {{SIZE}}px;
+      height: {{SIZE}}px;
+      background: #059669;
+      border-radius: {{RADIUS}}px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      box-shadow: 0 10px 15px -3px rgba(6, 78, 59, 0.3), 0 4px 6px -4px rgba(6, 78, 59, 0.3);
+    }
+    .login-header-icon i {
+      color: #ffffff;
+      font-size: {{GLYPH}}px;
+      line-height: 1;
+    }
+  </style>
+</head>
+<body>
+  <div class="login-header-icon">
+    <i class="fa-solid fa-hard-hat"></i>
+  </div>
+</body>
+</html>
