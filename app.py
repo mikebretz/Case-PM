@@ -4261,7 +4261,12 @@ def api_upload_spec_book():
 def api_set_spec_book_from_document():
     """Copy a PDF from project Documents to the specifications book slot."""
     body = request.get_json(silent=True) or {}
-    project_id = body.get('project_id', type=int) or get_current_project_id()
+    try:
+        project_id = int(body.get('project_id')) if body.get('project_id') is not None else None
+    except (TypeError, ValueError):
+        project_id = None
+    if not project_id:
+        project_id = get_current_project_id()
     if not project_id:
         return jsonify({'error': 'project_id required'}), 400
     try:
@@ -4293,13 +4298,19 @@ def api_set_spec_book_from_document():
         return jsonify({'error': 'Invalid PDF file'}), 400
 
     display_name = doc.original_filename or doc.name or doc.filename
-    meta = _save_spec_book_bytes(
-        project_id,
-        file_bytes,
-        display_name,
-        doc.original_filename or doc.filename,
-        source_document_id=doc.id,
-    )
+    try:
+        meta = _save_spec_book_bytes(
+            project_id,
+            file_bytes,
+            display_name,
+            doc.original_filename or doc.filename,
+            source_document_id=doc.id,
+        )
+    except ValueError as exc:
+        return jsonify({'error': str(exc)}), 400
+    except Exception:
+        app.logger.exception('spec book from-document failed for project %s doc %s', project_id, document_id)
+        return jsonify({'error': 'Could not use document as specifications book'}), 500
     return jsonify(meta)
 
 

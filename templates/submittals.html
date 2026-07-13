@@ -862,7 +862,11 @@ function initDraggableSubmittalPanel(overlayId) {
 }
 
 function showCenteredAlert(message, type = 'info') {
-    return window.showCenteredAlert(message, type);
+    if (window.CasePMDialog?.alert) {
+        return window.CasePMDialog.alert(message, type);
+    }
+    alert(String(message ?? ''));
+    return Promise.resolve(true);
 }
 
 function showCenteredConfirm(message, options = {}) {
