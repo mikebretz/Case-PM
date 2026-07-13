@@ -15,6 +15,21 @@ SUB_CO_STATUSES = (
 PCO_STATUSES = (
     'Open', 'Pricing', 'Pending Review', 'Approved for CO', 'Promoted', 'Void', 'Closed',
 )
+OWNER_CO_APPROVAL_THRESHOLD = 50000.0
+PCO_BALL_IN_COURT_MAP = {
+    'Open': 'Creator',
+    'Pricing': 'Project Manager',
+    'Pending Review': 'Project Manager',
+    'Approved for CO': 'Project Manager',
+    'Promoted': None,
+    'Void': None,
+    'Closed': None,
+}
+PCO_APPROVAL_CHAIN = (
+    {'from_status': 'Open', 'role': 'Project Manager', 'next_status': 'Pricing'},
+    {'from_status': 'Pricing', 'role': 'Project Manager', 'next_status': 'Pending Review'},
+    {'from_status': 'Pending Review', 'role': 'Project Manager', 'next_status': 'Approved for CO'},
+)
 BALL_IN_COURT_MAP = {
     'Draft': 'Creator',
     'Submitted': 'Project Manager',
@@ -312,6 +327,7 @@ def pco_to_dict(pco, allocations=None):
         'change_order_id': pco.change_order_id,
         'linked_rfi_id': getattr(pco, 'linked_rfi_id', None),
         'linked_commitment_ref': getattr(pco, 'linked_commitment_ref', None),
+        'attachments': _parse_json(getattr(pco, 'attachments_json', None), []),
         'allocations': [{
             'cost_code': a.cost_code,
             'cost_type': getattr(a, 'cost_type', None) or '',
@@ -672,6 +688,30 @@ def get_next_approval_step(current_status, co=None):
     return None
 
 
+def get_next_pco_approval_step(current_status):
+    for step in PCO_APPROVAL_CHAIN:
+        if step['from_status'] == current_status:
+            return step
+    return None
+
+
+def _resolve_co_next_status(co, default_next):
+    """Skip Owner approval for owner COs below threshold (Procore-style)."""
+    if is_subcontract_co(co):
+        return default_next
+    amount = float(co.amount or 0)
+    if default_next == 'Pending Owner' and amount < OWNER_CO_APPROVAL_THRESHOLD:
+        return 'Pending Accounting'
+    if default_next == 'Pending Accounting' and amount < OWNER_CO_APPROVAL_THRESHOLD:
+        return 'Approved'
+    return default_next
+
+
+def set_pco_ball_in_court(pco, status=None):
+    status = status or pco.status
+    pco.ball_in_court_role = PCO_BALL_IN_COURT_MAP.get(status, pco.ball_in_court_role)
+
+
 def set_ball_in_court(co, status=None):
     status = status or co.status
     court_map = co_ball_in_court_map(co)
@@ -692,21 +732,14 @@ def notify_ball_in_court(project_id, co, User, title=None, description=None):
         if not targets:
             targets = cw.find_assignees(project_id, 'Change Orders')
         for u in targets:
-            cw.notify_user(u.id, title, description, action_url)
-            cw.create_internal_message(
-                u.id,
-                folder='action-required',
-                msg_type='alert',
-                subject=title,
-                preview=description[:500],
-                body=f'<p>{description}</p><p><strong>Ball in court:</strong> {role}</p>',
-                project_id=project_id,
-                from_label='Change Orders',
-                module='Change Orders',
+            from email_notifications import notify_user_workflow
+            notify_user_workflow(
+                u,
+                title=title,
+                description=description,
                 action_url=action_url,
-                action_label='Review Change Order',
-                priority='high',
-                requires_action=True,
+                project_id=project_id,
+                module='Change Orders',
             )
     except Exception:
         pass
@@ -768,7 +801,7 @@ def co_workflow_action(co, action, user, User, allocations=None):
         step = get_next_approval_step(co.status, co)
         if not step:
             raise ValueError('No approval step for current status')
-        next_status = step['next_status']
+        next_status = _resolve_co_next_status(co, step['next_status'])
         co.status = next_status
         co.approval_stage = (co.approval_stage or 0) + 1
         set_ball_in_court(co)
@@ -794,6 +827,93 @@ def append_attachment(co, record):
     items.append(record)
     co.attachments_json = json.dumps(items)
     return items
+
+
+def append_pco_attachment(pco, record):
+    items = _parse_json(getattr(pco, 'attachments_json', None), [])
+    items.append(record)
+    pco.attachments_json = json.dumps(items)
+    return items
+
+
+def pco_workflow_action(pco, action, user, User, allocations=None):
+    action = (action or '').lower()
+    if action in ('submit', 'approve'):
+        validate_allocations(allocations or [], require_rows=False, require_amount=False)
+    if action == 'submit':
+        if pco.status != 'Open':
+            raise ValueError('Only open PCOs can be submitted')
+        pco.status = 'Pricing'
+        set_pco_ball_in_court(pco)
+        return pco.status, False
+    if action == 'reject':
+        pco.status = 'Void'
+        pco.ball_in_court_role = None
+        return pco.status, False
+    if action == 'approve':
+        role = pco.ball_in_court_role or 'Project Manager'
+        if not user_can_act_on_ball_in_court(user, role):
+            raise ValueError(f'Your role cannot approve while ball is with {role}')
+        step = get_next_pco_approval_step(pco.status)
+        if not step:
+            raise ValueError('No approval step for current PCO status')
+        pco.status = step['next_status']
+        set_pco_ball_in_court(pco)
+        if pco.status == 'Approved for CO':
+            return pco.status, True
+        return pco.status, False
+    raise ValueError('action must be submit, approve, or reject')
+
+
+def process_pco_workflow(pco, action, user, User, body, *, SageSyncEvent, Project, db):
+    """Unified PCO workflow with Sage queue and notifications."""
+    body = body or {}
+    action = (action or '').lower()
+    comments = (body.get('comments') or body.get('comment') or '').strip()
+    if action == 'reject' and not comments:
+        raise ValueError('Rejection requires a comment.')
+    old_status = pco.status
+    allocs = body.get('allocations') or []
+    new_status, final = pco_workflow_action(pco, action, user, User, allocs)
+    if action == 'submit' or (action == 'approve' and new_status == 'Pending Review'):
+        from sage_service import create_and_process_sage_event
+        create_and_process_sage_event(
+            SageSyncEvent, Project, db, pco.project_id,
+            'PCOSubmitted',
+            message=f'PCO {pco.number} — {new_status}',
+            payload={'pco_id': pco.id, 'estimated_amount': pco.estimated_amount, 'idempotency_key': f'pco-{pco.id}-submit'},
+            user_id=user.id,
+        )
+    if final:
+        from sage_service import create_and_process_sage_event
+        create_and_process_sage_event(
+            SageSyncEvent, Project, db, pco.project_id,
+            'PCOSubmitted',
+            message=f'PCO {pco.number} approved for CO',
+            payload={'pco_id': pco.id, 'estimated_amount': pco.estimated_amount, 'approved_for_co': True, 'idempotency_key': f'pco-{pco.id}-approved'},
+            user_id=user.id,
+        )
+    if pco.ball_in_court_role and action in ('submit', 'approve') and not final:
+        _notify_pco_ball(pco, User)
+    return {'new_status': new_status, 'final_approved': final, 'old_status': old_status}
+
+
+def _notify_pco_ball(pco, User):
+    try:
+        from email_notifications import notify_role_workflow
+        action_url = f'/change-orders?project_id={pco.project_id}&tab=pcos'
+        notify_role_workflow(
+            User,
+            pco.ball_in_court_role,
+            title=f'PCO {pco.number} — review required',
+            description=pco.description or pco.title or '',
+            action_url=action_url,
+            project_id=pco.project_id,
+            module='Change Orders',
+            can_act_fn=user_can_act_on_ball_in_court,
+        )
+    except Exception:
+        pass
 
 
 def delete_change_order(

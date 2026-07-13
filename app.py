@@ -2375,6 +2375,8 @@ def api_dashboard_summary():
         forecast_summary=forecast_summary,
         commitment_stats=commitment_stats,
         co_stats=co_stats,
+        SageSyncEvent=SageSyncEvent,
+        PayAppProjectState=PayAppProjectState,
     )
     return jsonify(payload)
 
@@ -3867,6 +3869,31 @@ def api_rfi_link_options():
 @login_required
 def change_orders_page():
     return render_template('change_orders.html')
+
+
+@app.route('/rfq-portal')
+@login_required
+def rfq_portal_page():
+    return render_template('rfq_portal.html')
+
+
+@app.route('/api/rfqs/portal', methods=['GET'])
+@login_required
+def api_rfq_portal_list():
+    from change_event_persistence import rfq_to_dict
+    project_id = request.args.get('project_id', type=int) or get_current_project_id()
+    if not project_id:
+        return jsonify({'error': 'project_id required'}), 400
+    rfqs = SubcontractorRFQ.query.filter_by(project_id=int(project_id)).order_by(SubcontractorRFQ.created_at.desc()).all()
+    cid = str(getattr(current_user, 'company_id', '') or '')
+    cname = (getattr(current_user, 'company', '') or '').strip()
+    if current_user.role not in ('Admin', 'Project Manager') and cid:
+        rfqs = [r for r in rfqs if str(getattr(r, 'company_id', '') or '') == cid or (r.company_name or '').strip() == cname]
+    result = []
+    for r in rfqs:
+        allocs = RFQAllocation.query.filter_by(rfq_id=r.id).all()
+        result.append(rfq_to_dict(r, allocs))
+    return jsonify({'rfqs': result})
 
 
 def _parse_change_order_date(value):
@@ -13751,7 +13778,7 @@ def api_upload_co_attachment(co_id):
 @app.route('/api/pcos/<int:pco_id>/attachments', methods=['POST'])
 @login_required
 def api_upload_pco_attachment(pco_id):
-    from co_persistence import pco_to_dict
+    from co_persistence import pco_to_dict, append_pco_attachment, attachment_record
     pco = PotentialChangeOrder.query.get_or_404(pco_id)
     file = request.files.get('file')
     if not file or not file.filename:
@@ -13759,6 +13786,8 @@ def api_upload_pco_attachment(pco_id):
     saved = save_uploaded_file(file, folder=f'change_orders/pco_{pco_id}')
     if not saved:
         return jsonify({'error': 'invalid file type'}), 400
+    record = attachment_record(saved, file.filename, current_user.id)
+    append_pco_attachment(pco, record)
     try:
         full_path = os.path.join(app.config['UPLOAD_FOLDER'], 'change_orders', f'pco_{pco_id}', saved)
         if os.path.isfile(full_path):
@@ -13776,13 +13805,10 @@ def api_upload_pco_attachment(pco_id):
             )
     except Exception:
         pass
-    # Store PCO attachments in notes/metadata via a simple JSON file list on pco notes field - use attachments on promote
-    # For now store in pco notes append - better: add attachments_json to PCO
-    folder_path = os.path.join(app.config['UPLOAD_FOLDER'], 'change_orders', f'pco_{pco_id}')
     allocs = PCOAllocation.query.filter_by(pco_id=pco.id).all()
     return jsonify({
         'ok': True,
-        'attachment': {'filename': saved, 'original_name': file.filename, 'path': f'change_orders/pco_{pco_id}/{saved}'},
+        'attachment': record,
         'pco': pco_to_dict(pco, allocs),
     })
 
@@ -13901,6 +13927,24 @@ def api_update_pco(pco_id):
         return jsonify({'error': str(exc)}), 400
     allocs = PCOAllocation.query.filter_by(pco_id=pco.id).all()
     return jsonify({'ok': True, 'pco': pco_to_dict(pco, allocs)})
+
+
+@app.route('/api/pcos/<int:pco_id>/workflow', methods=['POST'])
+@login_required
+def api_pco_workflow(pco_id):
+    from co_persistence import process_pco_workflow, pco_to_dict
+    pco = PotentialChangeOrder.query.get_or_404(pco_id)
+    body = request.get_json(silent=True) or {}
+    try:
+        result = process_pco_workflow(
+            pco, body.get('action'), current_user, User, body,
+            SageSyncEvent=SageSyncEvent, Project=Project, db=db,
+        )
+    except ValueError as exc:
+        return jsonify({'error': str(exc)}), 400
+    db.session.commit()
+    allocs = PCOAllocation.query.filter_by(pco_id=pco.id).all()
+    return jsonify({'ok': True, 'pco': pco_to_dict(pco, allocs), **result})
 
 
 @app.route('/api/pcos/<int:pco_id>/update-status', methods=['POST'])

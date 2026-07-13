@@ -61,6 +61,7 @@ ENDPOINT_TO_MODULE = {
     'weekly_report': 'weekly_report',
     'rfis_page': 'rfis',
     'change_orders_page': 'change_orders',
+    'rfq_portal_page': 'change_orders',
     'update_change_order_status': 'change_orders',
     'submittals_page': 'submittals',
     'punch_list_page': 'punch_list',

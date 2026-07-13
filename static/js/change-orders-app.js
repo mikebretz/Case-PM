@@ -112,11 +112,12 @@
       .replace(/"/g, '&quot;');
   }
 
-  function attachmentHref(parentId, att) {
+  function attachmentHref(parentId, att, kind) {
     if (att.document_id || att.linked_from_documents) {
       return `/api/documents/${att.document_id}/download`;
     }
-    return `/uploads/change_orders/${parentId}/${att.filename}`;
+    const folder = kind === 'pco' ? `pco_${parentId}` : String(parentId);
+    return `/uploads/change_orders/${folder}/${att.filename}`;
   }
 
   function attachmentLabel(att) {
@@ -567,6 +568,8 @@
         <td class="px-4 py-3 text-center">${ballBadge(p.ball_in_court_role)}</td>
         <td class="px-4 py-3 text-center" onclick="event.stopPropagation()">
           <div class="flex items-center justify-center gap-1">
+            ${p.status === 'Open' ? `<button onclick="CasePMChangeOrders.pcoWorkflow(${p.id},'submit')" class="p-1.5 text-amber-400 hover:bg-zinc-800 rounded" title="Submit"><i class="fa-solid fa-paper-plane"></i></button>` : ''}
+            ${['Pricing', 'Pending Review'].includes(p.status) ? `<button onclick="CasePMChangeOrders.pcoWorkflow(${p.id},'approve')" class="p-1.5 text-emerald-400 hover:bg-zinc-800 rounded" title="Approve step"><i class="fa-solid fa-check"></i></button>` : ''}
             ${p.status !== 'Promoted' && p.status !== 'Void' ? `<button onclick="CasePMChangeOrders.promotePco(${p.id})" class="p-1.5 text-emerald-400 hover:bg-zinc-800 rounded" title="Promote to CO"><i class="fa-solid fa-arrow-right"></i></button>` : ''}
             ${p.change_order_id ? `<span class="text-[10px] text-emerald-400">→ CO</span>` : ''}
             <button onclick="CasePMChangeOrders.editPco(${p.id})" class="p-1.5 text-zinc-400 hover:bg-zinc-800 rounded"><i class="fa-solid fa-edit"></i></button>
@@ -779,22 +782,25 @@
     if (input) input.value = '';
     if (!el) return;
     const atts = (record && record.attachments) || [];
-    if (mode !== 'co' || !atts.length) {
+    if ((mode !== 'co' && mode !== 'pco') || !atts.length) {
       el.innerHTML = '<span class="text-zinc-500">No files yet — save first, then upload on edit</span>';
       return;
     }
+    const kind = mode === 'pco' ? 'pco' : 'co';
     el.innerHTML = atts.map(a =>
-      `<a href="${attachmentHref(record.id, a)}" target="_blank" rel="noopener" class="text-emerald-400 hover:underline">${attachmentLabel(a)}</a>`
+      `<a href="${attachmentHref(record.id, a, kind)}" target="_blank" rel="noopener" class="text-emerald-400 hover:underline">${attachmentLabel(a)}</a>`
     ).join(' · ');
   }
 
   async function refreshModalAttachments() {
     const mode = document.getElementById('modalMode')?.value;
     const id = document.getElementById('modalRecordId')?.value;
-    if (mode !== 'co' || !id) return;
+    if (!id || (mode !== 'co' && mode !== 'sub' && mode !== 'pco')) return;
     try {
-      const json = await api(`/api/change-orders/${id}`);
-      renderModalAttachmentList(json.change_order, mode);
+      const path = mode === 'pco' ? `/api/pcos/${id}` : `/api/change-orders/${id}`;
+      const json = await api(path);
+      const record = mode === 'pco' ? json : json.change_order;
+      renderModalAttachmentList(record, mode === 'sub' ? 'co' : mode);
     } catch (e) {
       console.warn('Could not refresh attachments', e);
     }
@@ -821,13 +827,16 @@
     });
   }
 
-  async function uploadModalAttachments(coId) {
+  async function uploadModalAttachments(parentId, kind) {
     const input = document.getElementById('modalAttachmentInput');
     if (!input?.files?.length) return;
+    const url = kind === 'pco'
+      ? `/api/pcos/${parentId}/attachments`
+      : `/api/change-orders/${parentId}/attachments`;
     for (const file of input.files) {
       const fd = new FormData();
       fd.append('file', file);
-      const res = await fetch(`/api/change-orders/${coId}/attachments`, { method: 'POST', body: fd, credentials: 'same-origin' });
+      const res = await fetch(url, { method: 'POST', body: fd, credentials: 'same-origin' });
       const json = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(json.error || 'Attachment upload failed');
     }
@@ -940,6 +949,8 @@
         const json = id
           ? await api(`/api/pcos/${id}`, { method: 'PUT', body: JSON.stringify(payload) })
           : await api('/api/pcos', { method: 'POST', body: JSON.stringify(payload) });
+        const pcoId = id || json.pco?.id || json.id;
+        if (pcoId) await uploadModalAttachments(pcoId, 'pco');
         await loadPcos();
         await loadDashboard();
         document.getElementById('coModal').close();
@@ -949,7 +960,7 @@
           ? await api(`/api/change-orders/${id}`, { method: 'PUT', body: JSON.stringify(payload) })
           : await api('/api/change-orders', { method: 'POST', body: JSON.stringify(payload) });
         const coId = id || json.change_order?.id;
-        if (coId) await uploadModalAttachments(coId);
+        if (coId) await uploadModalAttachments(coId, 'co');
         await applyCoSync(json);
         await loadChangeOrders();
         await loadDashboard();
@@ -1222,6 +1233,9 @@
     const allocs = (p.allocations || []).map(a =>
       `<tr class="border-b border-zinc-800"><td class="py-2 font-mono text-xs">${esc(a.cost_code)}</td><td class="py-2 text-xs text-zinc-400">${esc(a.cost_type || '—')}</td><td class="py-2">${esc(a.description || '')}</td><td class="py-2 text-right font-mono">${fmt(a.amount)}</td></tr>`
     ).join('');
+    const atts = (p.attachments || []).map(a =>
+      `<a href="${attachmentHref(p.id, a, 'pco')}" target="_blank" rel="noopener" class="text-emerald-400 hover:underline">${attachmentLabel(a)}</a>`
+    ).join(' · ') || '—';
     document.getElementById('drawerBody').innerHTML = `
       <div class="space-y-2">
         <p><span class="text-zinc-500">Status</span><br>${statusBadge(p.status)}</p>
@@ -1236,11 +1250,57 @@
         <div class="text-xs text-zinc-500 uppercase tracking-wide mb-2">Allocations</div>
         <table class="w-full text-xs"><thead><tr class="text-zinc-500"><th class="text-left py-1">Code</th><th class="text-left py-1">Type</th><th class="text-left py-1">Description</th><th class="text-right py-1">Amount</th></tr></thead>
         <tbody>${allocs || '<tr><td colspan="4" class="py-3 text-zinc-500">No allocations</td></tr>'}</tbody></table>
+      </div>
+      <div class="mt-4">
+        <div class="text-xs text-zinc-500 uppercase tracking-wide mb-2">Attachments</div>
+        <p class="text-xs">${atts}</p>
+        <label class="mt-2 inline-flex items-center gap-2 text-xs text-zinc-400 cursor-pointer">
+          <input type="file" id="pcoDrawerAttachmentInput" class="text-xs file:mr-2 file:px-2 file:py-1 file:rounded file:border-0 file:bg-zinc-700 file:text-white" onchange="CasePMChangeOrders.uploadPcoDrawerAttachment(${p.id})">
+          Upload file
+        </label>
       </div>`;
     document.getElementById('drawerActions').innerHTML = `
+      ${p.status === 'Open' ? `<button type="button" onclick="CasePMChangeOrders.pcoWorkflow(${p.id},'submit')" class="px-4 py-2 bg-amber-600 hover:bg-amber-500 rounded-md text-sm">Submit</button>` : ''}
+      ${['Pricing', 'Pending Review'].includes(p.status) ? `<button type="button" onclick="CasePMChangeOrders.pcoWorkflow(${p.id},'approve')" class="px-4 py-2 bg-emerald-600 hover:bg-emerald-500 rounded-md text-sm">Approve Step</button>` : ''}
       ${p.status !== 'Promoted' && p.status !== 'Void' ? `<button type="button" onclick="CasePMChangeOrders.promotePco(${p.id})" class="px-4 py-2 bg-emerald-600 hover:bg-emerald-500 rounded-md text-sm">Promote to CO</button>` : ''}
       <button type="button" onclick="CasePMChangeOrders.editPco(${p.id})" class="px-4 py-2 bg-zinc-800 hover:bg-zinc-700 rounded-md text-sm">Edit</button>`;
     openDrawer();
+  }
+
+  async function pcoWorkflow(id, action) {
+    if (action === 'reject') {
+      const comments = await coPrompt('Rejection reason:', '', { title: 'Reject PCO' });
+      if (!comments) return;
+      await api(`/api/pcos/${id}/workflow`, { method: 'POST', body: JSON.stringify({ action, comments }) });
+    } else {
+      await api(`/api/pcos/${id}/workflow`, { method: 'POST', body: JSON.stringify({ action }) });
+    }
+    await loadPcos();
+    toast(`PCO ${action} complete`);
+  }
+
+  async function uploadPcoAttachment(pcoId, file) {
+    const fd = new FormData();
+    fd.append('file', file);
+    const res = await fetch(`/api/pcos/${pcoId}/attachments`, { method: 'POST', body: fd, credentials: 'same-origin' });
+    const json = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(json.error || 'Upload failed');
+    return json;
+  }
+
+  async function uploadPcoDrawerAttachment(pcoId) {
+    const input = document.getElementById('pcoDrawerAttachmentInput');
+    if (!input?.files?.length) return;
+    try {
+      for (const file of input.files) {
+        await uploadPcoAttachment(pcoId, file);
+      }
+      input.value = '';
+      await viewPco(pcoId);
+      toast('Attachment uploaded');
+    } catch (err) {
+      alert(err.message);
+    }
   }
 
   async function promotePco(id) {
@@ -1601,7 +1661,8 @@
     saveModal,
     editCo: id => api(`/api/change-orders/${id}`).then(openModal.bind(null, 'co')).catch(e => alert(e.message)),
     editPco: id => api(`/api/pcos/${id}`).then(openModal.bind(null, 'pco')).catch(e => alert(e.message)),
-    viewCo, viewPco, workflowCo, resyncSov, openApprovalModal, confirmApprovalAction, closeDrawer, promotePco, deleteCo,
+    viewCo, viewPco, workflowCo, pcoWorkflow, resyncSov, openApprovalModal, confirmApprovalAction, closeDrawer, promotePco, deleteCo,
+    uploadPcoAttachment, uploadPcoDrawerAttachment,
     addAllocRow: () => { state.allocationRows.push({ cost_code: '', cost_type: '', amount: 0, description: '' }); renderAllocationRows(); },
     removeAllocRow: idx => { state.allocationRows.splice(idx, 1); renderAllocationRows(); },
     onCompanyChange, onContactChange, onAllocCostCodeChange, updateAllocationTotal, exportExcel, printLog, openSageLog,

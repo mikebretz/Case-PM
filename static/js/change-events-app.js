@@ -167,9 +167,9 @@
         <td class="px-4 py-3 text-center">${statusBadge(c.status)}</td>
         <td class="px-4 py-3 text-xs">${esc(c.drawing_revision || '—')}</td>
         <td class="px-4 py-3 text-center text-[10px]">${esc(c.ball_in_court_role || '—')}</td>
-        <td class="px-4 py-3 text-center flex gap-1 justify-center">
+        <td class="px-4 py-3 text-center flex gap-1 justify-center flex-wrap">
           ${c.status === 'Draft' ? `<button onclick="CasePMChangeOrdersExt.corWorkflow(${c.id},'submit')" class="text-amber-400 text-xs">Submit</button>` : ''}
-          ${['Submitted','Under Review'].includes(c.status) ? `<button onclick="CasePMChangeOrdersExt.corWorkflow(${c.id},'approve',true)" class="text-emerald-400 text-xs">Approve→PCO</button>` : ''}
+          ${['Submitted', 'Under Review', 'Pending Owner', 'Pending Accounting'].includes(c.status) ? `<button onclick="CasePMChangeOrdersExt.corWorkflow(${c.id},'approve',${c.status === 'Pending Accounting'})" class="text-emerald-400 text-xs">${c.status === 'Pending Accounting' ? 'Approve→PCO' : 'Approve'}</button>` : ''}
         </td>
       </tr>`).join('');
   }
@@ -217,43 +217,75 @@
   }
 
   async function newChangeEvent() {
-    const title = await cePrompt('Change Event title:', '', { title: 'New Change Event' });
-    if (!title) return;
-    const rom = parseFloat((await cePrompt('ROM amount (owner estimate):', '0', { title: 'New Change Event' })) || '0') || 0;
-    await api('/api/change-events', { method: 'POST', body: JSON.stringify({ project_id: pid(), title, rom_amount: rom }) });
-    await loadChangeEvents();
+    openCeModal('event');
   }
 
   async function newRfq() {
-    const title = await cePrompt('RFQ title:', '', { title: 'New RFQ' });
-    if (!title) return;
-    const company = (await cePrompt('Subcontractor company name:', '', { title: 'New RFQ' })) || '';
-    const commitment = (await cePrompt('Linked commitment # (optional):', '', { title: 'New RFQ' })) || '';
-    const costCode = (await cePrompt('Cost code:', '', { title: 'New RFQ' })) || '';
-    const amount = parseFloat((await cePrompt('Estimated amount:', '0', { title: 'New RFQ' })) || '0') || 0;
-    await api('/api/rfqs', {
-      method: 'POST',
-      body: JSON.stringify({
-        project_id: pid(), title, company_name: company, linked_commitment_ref: commitment,
-        allocations: costCode ? [{ cost_code: costCode, cost_type: 'Subcontract', amount }] : [],
-      }),
-    });
-    await loadRfqs();
+    openCeModal('rfq');
   }
 
   async function newCor() {
-    const title = await cePrompt('COR title:', '', { title: 'New COR' });
-    if (!title) return;
-    const amount = parseFloat((await cePrompt('Amount:', '0', { title: 'New COR' })) || '0') || 0;
-    const drawing = (await cePrompt('Drawing revision (optional):', '', { title: 'New COR' })) || '';
-    await api('/api/cors', {
-      method: 'POST',
-      body: JSON.stringify({
-        project_id: pid(), title, amount, drawing_revision: drawing,
-        allocations: [{ cost_code: '01-0000', cost_type: 'Other', amount }],
-      }),
-    });
-    await loadCors();
+    openCeModal('cor');
+  }
+
+  function openCeModal(mode, record) {
+    const modal = document.getElementById('ceModal');
+    if (!modal) return;
+    document.getElementById('ceModalMode').value = mode;
+    document.getElementById('ceModalId').value = record?.id || '';
+    const titles = { event: 'Change Event', rfq: 'RFQ', cor: 'COR' };
+    document.getElementById('ceModalTitle').textContent = record ? `Edit ${titles[mode]}` : `New ${titles[mode]}`;
+    document.getElementById('ceModalTitleInput').value = record?.title || '';
+    document.getElementById('ceModalRom').value = record?.rom_amount ?? record?.amount ?? record?.estimated_amount ?? 0;
+    document.getElementById('ceModalSchedule').value = record?.schedule_impact_days ?? 0;
+    document.getElementById('ceModalDrawing').value = record?.drawing_revision || '';
+    document.getElementById('ceModalContingency').value = record?.contingency_release_amount ?? 0;
+    document.getElementById('ceModalDescription').value = record?.description || '';
+    document.getElementById('ceRfqFields')?.classList.toggle('hidden', mode !== 'rfq');
+    document.getElementById('ceModalContingencyRow')?.classList.toggle('hidden', mode !== 'event');
+    document.getElementById('ceModalDrawingRow')?.classList.toggle('hidden', mode === 'rfq');
+    if (mode === 'rfq') {
+      document.getElementById('ceModalRfqCompany').value = record?.company_name || '';
+      document.getElementById('ceModalRfqCommitment').value = record?.linked_commitment_ref || '';
+      document.getElementById('ceModalRfqCostCode').value = record?.allocations?.[0]?.cost_code || '';
+    }
+    if (global.CasePMChangeOrders?.openDialog) global.CasePMChangeOrders.openDialog(modal);
+    else modal.showModal();
+  }
+
+  async function saveCeModal(e) {
+    e.preventDefault();
+    const mode = document.getElementById('ceModalMode').value;
+    const id = document.getElementById('ceModalId').value;
+    const title = document.getElementById('ceModalTitleInput').value.trim();
+    const rom = parseFloat(document.getElementById('ceModalRom').value) || 0;
+    const schedule = parseInt(document.getElementById('ceModalSchedule').value, 10) || 0;
+    const drawing = document.getElementById('ceModalDrawing').value.trim();
+    const contingency = parseFloat(document.getElementById('ceModalContingency').value) || 0;
+    const description = document.getElementById('ceModalDescription').value.trim();
+    const project_id = pid();
+    if (mode === 'event') {
+      if (id) {
+        await api(`/api/change-events/${id}`, { method: 'PUT', body: JSON.stringify({ title, rom_amount: rom, schedule_impact_days: schedule, drawing_revision: drawing, contingency_release_amount: contingency, description }) });
+      } else {
+        await api('/api/change-events', { method: 'POST', body: JSON.stringify({ project_id, title, rom_amount: rom, schedule_impact_days: schedule, drawing_revision: drawing, contingency_release_amount: contingency, description }) });
+      }
+      await loadChangeEvents();
+    } else if (mode === 'rfq') {
+      const company = document.getElementById('ceModalRfqCompany')?.value?.trim() || '';
+      const commitment = document.getElementById('ceModalRfqCommitment')?.value?.trim() || '';
+      const costCode = document.getElementById('ceModalRfqCostCode')?.value?.trim() || '';
+      if (!company) {
+        alert('Subcontractor company is required for RFQs.');
+        return;
+      }
+      await api('/api/rfqs', { method: 'POST', body: JSON.stringify({ project_id, title, company_name: company, linked_commitment_ref: commitment, allocations: costCode ? [{ cost_code: costCode, cost_type: 'Subcontract', amount: rom }] : [] }) });
+      await loadRfqs();
+    } else if (mode === 'cor') {
+      await api('/api/cors', { method: 'POST', body: JSON.stringify({ project_id, title, amount: rom, drawing_revision: drawing, description, schedule_impact_days: schedule, allocations: [{ cost_code: '01-0000', cost_type: 'Other', amount: rom }] }) });
+      await loadCors();
+    }
+    document.getElementById('ceModal').close();
   }
 
   async function rfqWorkflow(id, action, promoteCpco) {
@@ -317,7 +349,18 @@
       ${e.status === 'Open' ? `<button type="button" onclick="CasePMChangeOrdersExt.ceWorkflow(${e.id},'submit')" class="px-4 py-2 bg-amber-600 hover:bg-amber-500 rounded-md text-sm">Submit for Pricing</button>` : ''}
       ${canWorkflow && e.status !== 'Open' ? `<button type="button" onclick="CasePMChangeOrdersExt.ceWorkflow(${e.id},'approve')" class="px-4 py-2 bg-emerald-600 hover:bg-emerald-500 rounded-md text-sm">Advance Workflow</button>` : ''}
       ${canWorkflow ? `<button type="button" onclick="CasePMChangeOrdersExt.ceWorkflow(${e.id},'reject')" class="px-4 py-2 bg-red-950 hover:bg-red-900 border border-red-800 rounded-md text-sm text-red-300">Void</button>` : ''}
+      <button type="button" onclick="CasePMChangeOrdersExt.editChangeEvent(${e.id})" class="px-4 py-2 bg-zinc-800 hover:bg-zinc-700 rounded-md text-sm">Edit</button>
       <button type="button" onclick="CasePMChangeOrders.closeDrawer()" class="px-4 py-2 bg-zinc-800 hover:bg-zinc-700 rounded-md text-sm">Close</button>`;
+  }
+
+  async function editChangeEvent(id) {
+    const cached = ext.changeEvents.find(x => x.id === id);
+    if (cached) {
+      openCeModal('event', cached);
+      return;
+    }
+    const e = await api(`/api/change-events/${id}`);
+    openCeModal('event', e);
   }
 
   async function ceWorkflow(id, action) {
@@ -392,7 +435,7 @@
 
   global.CasePMChangeOrdersExt = {
     loadChangeEvents, loadRfqs, loadCors, loadCpcos, loadErpQueue, loadBillingVariance,
-    newChangeEvent, newRfq, newCor, rfqWorkflow, openRfqQuote, corWorkflow, promoteCpco,
-    erpReview, viewChangeEvent, ceWorkflow, portalRfqQuote, switchExtTab, ext,
+    newChangeEvent, newRfq, newCor, openCeModal, saveCeModal, rfqWorkflow, openRfqQuote, corWorkflow, promoteCpco,
+    erpReview, viewChangeEvent, editChangeEvent, ceWorkflow, portalRfqQuote, switchExtTab, ext,
   };
 })(window);

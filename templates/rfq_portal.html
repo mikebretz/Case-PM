@@ -1,0 +1,14 @@
+{% extends "base.html" %}
+{% block content %}
+<script src="{{ url_for('static', filename='js/rfq-portal-app.js') }}"></script>
+<div class="max-w-4xl mx-auto p-6">
+  <div class="flex items-center justify-between mb-6">
+    <div>
+      <h1 class="text-2xl font-semibold text-white">RFQ Portal</h1>
+      <p class="text-sm text-zinc-400 mt-1">Submit quotes for pricing requests assigned to your company.</p>
+    </div>
+    <a href="/change-orders?tab=rfqs" class="text-sm text-emerald-400 hover:underline">Staff change orders →</a>
+  </div>
+  <div id="rfqPortalList" class="space-y-3"></div>
+</div>
+{% endblock %}

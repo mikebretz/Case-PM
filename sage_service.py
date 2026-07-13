@@ -167,6 +167,24 @@ def create_and_process_sage_event(
 ):
     ctx = _project_sage_context(Project, project_id)
     sage_payload = build_sage_payload(event_type, ctx, payload)
+    data = payload or {}
+    idempotency_key = data.get('idempotency_key')
+    if idempotency_key and SageSyncEvent is not None:
+        recent = (
+            SageSyncEvent.query
+            .filter_by(project_id=project_id, event_type=event_type)
+            .order_by(SageSyncEvent.created_at.desc())
+            .limit(25)
+            .all()
+        )
+        for ev in recent:
+            try:
+                pl = json.loads(ev.payload_json or '{}')
+                inner = pl.get('data') if isinstance(pl.get('data'), dict) else pl
+                if (inner or {}).get('idempotency_key') == idempotency_key and ev.status in ('posted', 'simulated', 'queued'):
+                    return ev
+            except (TypeError, json.JSONDecodeError):
+                continue
 
     financial_events = {
         'ChangeOrderApproved', 'CommitmentChangeOrderApproved', 'CommitmentApproved',
