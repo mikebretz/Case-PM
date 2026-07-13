@@ -244,7 +244,7 @@
     const body = document.getElementById('estTakeoffBody');
     if (!body) return;
     if (!state.takeoffItems.length) {
-      body.innerHTML = '<tr><td colspan="4" class="px-4 py-8 text-center text-zinc-500">No takeoff markups on drawings. Open Drawings and add measure/area markups first.</td></tr>';
+      body.innerHTML = '<tr><td colspan="4" class="px-4 py-8 text-center text-zinc-500">No takeoff markups yet. Use the measure/area tools in the viewer above.</td></tr>';
       return;
     }
     body.innerHTML = state.takeoffItems.map(i => `
@@ -400,7 +400,7 @@
       const json = await api(`/api/estimates/${state.current.id}/takeoff-preview`);
       const n = json.count || 0;
       if (countEl) countEl.textContent = n ? `${n} takeoff item(s) available to import.` : 'No takeoff markups found on drawings.';
-      if (!n) return estAlert('No takeoff measurements found. Add measure/area markups in Drawings first.', 'warning');
+      if (!n) return estAlert('No takeoff measurements found. Add measure/area markups in the takeoff viewer first.', 'warning');
     } catch (e) {
       if (countEl) countEl.textContent = '';
     }

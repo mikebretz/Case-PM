@@ -4057,6 +4057,18 @@ def estimating_page():
     return render_template('estimating.html', active_project=get_active_project())
 
 
+@app.route('/estimating/takeoff-popout')
+@login_required
+def estimating_takeoff_popout():
+    return render_template(
+        'estimating_takeoff_popout.html',
+        active_project=get_active_project(),
+        project_id=request.args.get('project_id', type=int) or get_current_project_id(),
+        estimate_id=request.args.get('estimate_id', type=int),
+        drawing_id=request.args.get('drawing_id', type=int),
+    )
+
+
 @app.route('/estimate-portal')
 @login_required
 def estimate_portal_page():
@@ -14396,6 +14408,9 @@ register_estimate_routes(app, {
     'BidQuoteLine': BidQuoteLine,
     'BudgetProjectState': BudgetProjectState,
     'EstimateBudgetMapping': EstimateBudgetMapping,
+    'EstimateAlternate': EstimateAlternate,
+    'Commitment': Commitment,
+    'CommitmentAllocation': CommitmentAllocation,
     'Company': Company,
     'Drawing': Drawing,
     'DrawingMarkup': DrawingMarkup,

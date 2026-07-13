@@ -55,11 +55,7 @@ DEFAULT_ASSEMBLIES = [
     },
 ]
 
-RSMEANS_SAMPLE = {
-    '09 21 00': {'unit': 'SF', 'unit_cost': 4.85, 'description': 'Gypsum board assemblies'},
-    '03 30 00': {'unit': 'SF', 'unit_cost': 8.20, 'description': 'Cast-in-place concrete slab'},
-    '07 92 00': {'unit': 'SF', 'unit_cost': 1.45, 'description': 'Joint sealants'},
-}
+RFP_NOTIFY_MODES = ('both', 'in_app', 'email', 'none')
 
 
 def ensure_estimate_schema(engine, db):
@@ -98,11 +94,18 @@ def get_estimate_settings(est):
         'contingency_remaining': None,
         'rfp_email_template': DEFAULT_RFP_TEMPLATE,
         'budget_mapping_auto': True,
-        'rsmeans_enabled': True,
+        'award_auto_commitment': False,
+        'rfp_notify_mode': 'both',
         'ai_scope_enabled': True,
         'reminder_hours_before': 48,
     }
-    base.update(_parse_json(getattr(est, 'settings_json', None), {}))
+    merged = _parse_json(getattr(est, 'settings_json', None), {})
+    base.update(merged)
+    mode = str(base.get('rfp_notify_mode') or 'both').lower()
+    if mode not in RFP_NOTIFY_MODES:
+        mode = 'both'
+    base['rfp_notify_mode'] = mode
+    base['award_auto_commitment'] = bool(base.get('award_auto_commitment'))
     return base
 
 
@@ -139,8 +142,33 @@ def apply_line_extended_fields(line, data):
         line.meta_json = json.dumps(data['meta'] or {})
 
 
-def compute_fee_breakdown(est, lines):
-    direct = sum(float(l.extended_cost or 0) for l in lines if (getattr(l, 'line_kind', 'base') or 'base') == 'base')
+def included_alternate_keys(EstimateAlternate, estimate_id):
+    rows = EstimateAlternate.query.filter_by(estimate_id=estimate_id, include_in_base=True).all()
+    return {r.alt_key for r in rows if r.alt_key}
+
+
+def line_counts_in_base(line, included_alt_keys):
+    """Base total includes only alternates/allowances the owner marked include_in_base."""
+    kind = (getattr(line, 'line_kind', None) or 'base').lower()
+    alt_key = (getattr(line, 'alternate_key', None) or '').strip()
+    if kind in ('alternate', 'allowance') or alt_key:
+        return alt_key in included_alt_keys
+    return True
+
+
+def compute_fee_breakdown(est, lines, EstimateAlternate=None):
+    estimate_id = getattr(est, 'id', None)
+    included = included_alternate_keys(EstimateAlternate, estimate_id) if EstimateAlternate and estimate_id else set()
+    direct = sum(
+        float(l.extended_cost or 0)
+        for l in lines
+        if line_counts_in_base(l, included)
+    )
+    alternates_total = sum(
+        float(l.extended_cost or 0)
+        for l in lines
+        if not line_counts_in_base(l, included)
+    )
     cont_pct = float(est.contingency_pct or 0)
     oh_pct = float(est.overhead_pct or 0)
     profit_pct = float(est.profit_pct or 0)
@@ -153,6 +181,7 @@ def compute_fee_breakdown(est, lines):
     tax = pre_tax * tax_pct / 100.0
     return {
         'direct_cost': round(direct, 2),
+        'alternates_total': round(alternates_total, 2),
         'contingency': round(contingency, 2),
         'overhead': round(overhead, 2),
         'profit': round(profit, 2),
@@ -388,9 +417,10 @@ def render_rfp_email(template, project, package, portal_url):
     return subj, body
 
 
-def send_bid_reminders(BidPackage, BidInvitation, Project, User, db, hours_before=48):
+def send_bid_reminders(BidPackage, BidInvitation, Project, User, db, hours_before=48, Estimate=None):
     """Notify vendors approaching due date and staff on overdue quotes."""
     from estimate_persistence import notify_bid_invitations
+    from estimate_features import get_estimate_settings
     now = datetime.utcnow()
     sent = 0
     packages = BidPackage.query.filter(BidPackage.status == 'Open').all()
@@ -403,10 +433,14 @@ def send_bid_reminders(BidPackage, BidInvitation, Project, User, db, hours_befor
         if 0 < hours_left <= hours_before:
             pending = [i for i in invitations if not i.reminder_sent_at]
             if pending:
-                project = Project.query.get(pkg.project_id)
+                est = Estimate.query.get(pkg.estimate_id) if Estimate and getattr(pkg, 'estimate_id', None) else None
+                notify_mode = get_estimate_settings(est).get('rfp_notify_mode') if est else 'both'
                 notify_bid_invitations(
                     pkg.project_id, pending, pkg, User,
                     title=f'Reminder: {pkg.number} due {pkg.due_date}',
+                    notify_mode=notify_mode,
+                    estimate=est,
+                    Project=Project,
                 )
                 for inv in pending:
                     inv.reminder_sent_at = now
@@ -452,14 +486,6 @@ def lookup_historical_cost(EstimateCostHistory, cost_code=None, trade=None, unit
         'source_project_name': r.source_project_name,
         'recorded_at': r.recorded_at.isoformat() if r.recorded_at else None,
     } for r in rows[:20]]
-
-
-def lookup_rsmeans(spec_section):
-    key = re.sub(r'\s+', ' ', (spec_section or '').strip())
-    for k, v in RSMEANS_SAMPLE.items():
-        if k.replace(' ', '') == key.replace(' ', ''):
-            return {**v, 'source': 'rsmeans', 'spec_section': k}
-    return None
 
 
 def ai_extract_scope_from_spec(text_content, spec_section=None):

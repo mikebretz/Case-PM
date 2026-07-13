@@ -27,13 +27,19 @@ def _line_extended(qty, unit_cost):
     return round(float(qty or 0) * float(unit_cost or 0), 2)
 
 
-def recalc_estimate_totals(Estimate, EstimateLine, estimate_id):
+def recalc_estimate_totals(Estimate, EstimateLine, estimate_id, EstimateAlternate=None):
     """Recompute direct cost and loaded total from worksheet lines + markups."""
     est = Estimate.query.get(estimate_id)
     if not est:
         return None
+    from estimate_features import included_alternate_keys, line_counts_in_base
+    included = included_alternate_keys(EstimateAlternate, estimate_id) if EstimateAlternate else set()
     lines = EstimateLine.query.filter_by(estimate_id=estimate_id).all()
-    direct = sum(float(l.extended_cost or 0) for l in lines)
+    direct = sum(
+        float(l.extended_cost or 0)
+        for l in lines
+        if line_counts_in_base(l, included)
+    )
     est.direct_cost_total = direct
     cont = float(est.contingency_pct or 0) / 100.0
     oh = float(est.overhead_pct or 0) / 100.0
@@ -105,8 +111,8 @@ def bid_package_to_dict(pkg, invitations=None, lines=None):
     }
 
 
-def estimate_to_dict(est, lines=None, bid_packages=None):
-    return {
+def estimate_to_dict(est, lines=None, bid_packages=None, settings=None):
+    payload = {
         'id': est.id,
         'project_id': est.project_id,
         'number': est.number or '',
@@ -131,6 +137,9 @@ def estimate_to_dict(est, lines=None, bid_packages=None):
         'lines': lines or [],
         'bid_packages': bid_packages or [],
     }
+    if settings is not None:
+        payload['settings'] = settings
+    return payload
 
 
 def apply_estimate_fields(est, data):
@@ -388,37 +397,82 @@ def bid_leveling_matrix(BidPackage, BidInvitation, estimate_id):
     return matrix
 
 
-def notify_bid_invitations(project_id, invitations, bid_package, User, title=None):
-    """Mass-notify vendors/subs for an RFP bid package."""
+def notify_bid_invitations(
+    project_id,
+    invitations,
+    bid_package,
+    User,
+    title=None,
+    notify_mode='both',
+    estimate=None,
+    Project=None,
+):
+    """Mass-notify vendors/subs for an RFP bid package (in-app, email, both, or none)."""
+    mode = (notify_mode or 'both').lower()
+    if mode not in ('both', 'in_app', 'email', 'none'):
+        mode = 'both'
+    if mode == 'none' or not invitations:
+        return
     try:
-        from email_notifications import notify_user_workflow
+        from email_notifications import notify_user_workflow, send_workflow_email
+        from estimate_features import get_estimate_settings, render_rfp_email
+
         action_url = f'/estimate-portal?project_id={project_id}&package_id={bid_package.id}'
         title = title or f'{bid_package.number} — RFP invitation: {bid_package.title}'
+        description = bid_package.description or bid_package.scope_notes or 'Please review and submit your bid.'
+        send_in_app = mode in ('both', 'in_app')
+        send_email = mode in ('both', 'email')
         users = User.query.filter_by(status='Active').all()
+        project = Project.query.get(project_id) if Project and project_id else None
+        template = get_estimate_settings(estimate).get('rfp_email_template') if estimate else None
+        portal_url = action_url if action_url.startswith('http') else None
+        if portal_url is None:
+            try:
+                from email_notifications import _base_url
+                portal_url = f'{_base_url()}{action_url}'
+            except Exception:
+                portal_url = action_url
+        if template and project:
+            email_subj, email_body = render_rfp_email(template, project, bid_package, portal_url)
+        else:
+            email_subj, email_body = title, description
+
+        emailed = set()
         for inv in invitations:
-            targets = []
             cid = str(getattr(inv, 'company_id', '') or '').strip()
             cname = (getattr(inv, 'company_name', '') or '').strip()
-            email = (getattr(inv, 'contact_email', '') or '').strip()
+            email = (getattr(inv, 'contact_email', '') or '').strip().lower()
+            targets = []
             for u in users:
                 if cid and str(getattr(u, 'company_id', '') or '') == cid:
                     targets.append(u)
                 elif cname and (getattr(u, 'company', '') or '').strip() == cname:
                     targets.append(u)
-                elif email and u.email == email:
+                elif email and (getattr(u, 'email', '') or '').strip().lower() == email:
                     targets.append(u)
-            seen = set()
-            for u in targets:
-                if u.id in seen:
-                    continue
-                seen.add(u.id)
-                notify_user_workflow(
-                    u,
-                    title=title,
-                    description=bid_package.description or bid_package.scope_notes or 'Please review and submit your bid.',
-                    action_url=action_url,
-                    project_id=project_id,
-                    module='Estimating',
+            if send_in_app:
+                seen = set()
+                for u in targets:
+                    if u.id in seen:
+                        continue
+                    seen.add(u.id)
+                    notify_user_workflow(
+                        u,
+                        title=title,
+                        description=description,
+                        action_url=action_url,
+                        project_id=project_id,
+                        module='Estimating',
+                        send_email=False,
+                    )
+            if send_email and email and email not in emailed:
+                emailed.add(email)
+                send_workflow_email(
+                    email,
+                    email_subj,
+                    f'<div style="font-family:sans-serif"><p>{email_body.replace(chr(10), "<br>")}</p>'
+                    f'<p><a href="{portal_url}">Open bid portal</a></p></div>',
+                    email_body,
                 )
     except Exception:
         pass

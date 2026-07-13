@@ -86,7 +86,7 @@ def register_estimate_feature_routes(app, deps):
             line.extended_cost = float(line.quantity or 0) * float(line.unit_cost or 0)
             db.session.add(line)
             created.append(line)
-        recalc_estimate_totals(Estimate, EstimateLine, estimate_id)
+        recalc_estimate_totals(Estimate, EstimateLine, estimate_id, EstimateAlternate)
         db.session.commit()
         return deps['jsonify']({'ok': True, 'lines': [line_to_dict_extended(l) for l in created]})
 
@@ -127,7 +127,7 @@ def register_estimate_feature_routes(app, deps):
     @app.route('/api/estimates/<int:estimate_id>/alternates', methods=['POST'])
     @login_required
     def api_save_alternates(estimate_id):
-        from estimate_features import alternate_to_dict
+        from estimate_features import alternate_to_dict, recalc_alternate_amounts
         body = deps['request'].get_json(silent=True) or {}
         EstimateAlternate.query.filter_by(estimate_id=estimate_id).delete()
         for row in body.get('alternates') or []:
@@ -140,6 +140,10 @@ def register_estimate_feature_routes(app, deps):
                 notes=row.get('notes'),
             )
             db.session.add(alt)
+        recalc_alternate_amounts(EstimateLine, EstimateAlternate, estimate_id)
+        db.session.commit()
+        from estimate_persistence import recalc_estimate_totals
+        recalc_estimate_totals(Estimate, EstimateLine, estimate_id, EstimateAlternate)
         db.session.commit()
         rows = EstimateAlternate.query.filter_by(estimate_id=estimate_id).all()
         return deps['jsonify']({'ok': True, 'alternates': [alternate_to_dict(a) for a in rows]})
@@ -152,7 +156,7 @@ def register_estimate_feature_routes(app, deps):
         lines = [line_to_dict_extended(l) for l in EstimateLine.query.filter_by(estimate_id=estimate_id).all()]
         alts = [alternate_to_dict(a) for a in EstimateAlternate.query.filter_by(estimate_id=estimate_id).all()]
         est = Estimate.query.get_or_404(estimate_id)
-        fee = compute_fee_breakdown(est, EstimateLine.query.filter_by(estimate_id=estimate_id).all())
+        fee = compute_fee_breakdown(est, EstimateLine.query.filter_by(estimate_id=estimate_id).all(), EstimateAlternate)
         buf = export_worksheet_excel(lines, alts, fee)
         return send_file(buf, as_attachment=True, download_name=f'estimate-{est.number or estimate_id}.xlsx',
                          mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
@@ -167,7 +171,7 @@ def register_estimate_feature_routes(app, deps):
             return deps['jsonify']({'error': 'file required'}), 400
         rows = import_worksheet_excel(f)
         save_estimate_lines(EstimateLine, estimate_id, rows, db)
-        recalc_estimate_totals(Estimate, EstimateLine, estimate_id)
+        recalc_estimate_totals(Estimate, EstimateLine, estimate_id, EstimateAlternate)
         db.session.commit()
         return deps['jsonify']({'ok': True, 'imported': len(rows)})
 
@@ -282,7 +286,7 @@ def register_estimate_feature_routes(app, deps):
     def api_run_reminders():
         from estimate_features import send_bid_reminders
         body = deps['request'].get_json(silent=True) or {}
-        sent = send_bid_reminders(BidPackage, BidInvitation, Project, deps['User'], db, hours_before=int(body.get('hours') or 48))
+        sent = send_bid_reminders(BidPackage, BidInvitation, Project, deps['User'], db, hours_before=int(body.get('hours') or 48), Estimate=Estimate)
         return deps['jsonify']({'ok': True, 'reminders_sent': sent})
 
     # --- Leveling notes / scope gaps (#15) ---
@@ -359,7 +363,7 @@ def register_estimate_feature_routes(app, deps):
         from estimate_features import compute_fee_breakdown
         est = Estimate.query.get_or_404(estimate_id)
         lines = EstimateLine.query.filter_by(estimate_id=estimate_id).all()
-        return deps['jsonify'](compute_fee_breakdown(est, lines))
+        return deps['jsonify'](compute_fee_breakdown(est, lines, EstimateAlternate))
 
     # --- Cost history (#27) ---
     @app.route('/api/estimates/cost-history', methods=['GET', 'POST'])
@@ -389,16 +393,29 @@ def register_estimate_feature_routes(app, deps):
         db.session.commit()
         return deps['jsonify']({'ok': True, 'id': row.id})
 
-    # --- RSMeans stub (#28) ---
-    @app.route('/api/estimates/rsmeans-lookup', methods=['GET'])
+    # --- Estimate settings ---
+    @app.route('/api/estimates/<int:estimate_id>/settings', methods=['GET', 'PUT'])
     @login_required
-    def api_rsmeans_lookup():
-        from estimate_features import lookup_rsmeans
-        spec = deps['request'].args.get('spec_section') or deps['request'].args.get('cost_code')
-        result = lookup_rsmeans(spec)
-        if not result:
-            return deps['jsonify']({'found': False})
-        return deps['jsonify']({'found': True, **result})
+    def api_estimate_settings(estimate_id):
+        from estimate_features import get_estimate_settings, save_estimate_settings, RFP_NOTIFY_MODES
+        est = Estimate.query.get_or_404(estimate_id)
+        if deps['request'].method == 'GET':
+            return deps['jsonify'](get_estimate_settings(est))
+        body = deps['request'].get_json(silent=True) or {}
+        patch = {}
+        if 'award_auto_commitment' in body:
+            patch['award_auto_commitment'] = bool(body['award_auto_commitment'])
+        if 'rfp_notify_mode' in body:
+            mode = str(body['rfp_notify_mode'] or 'both').lower()
+            patch['rfp_notify_mode'] = mode if mode in RFP_NOTIFY_MODES else 'both'
+        for key in ('fee_breakdown_visible', 'budget_mapping_auto', 'ai_scope_enabled', 'reminder_hours_before'):
+            if key in body:
+                patch[key] = body[key]
+        if 'rfp_email_template' in body:
+            patch['rfp_email_template'] = body['rfp_email_template']
+        save_estimate_settings(est, patch)
+        db.session.commit()
+        return deps['jsonify']({'ok': True, 'settings': get_estimate_settings(est)})
 
     # --- AI scope stub (#29) ---
     @app.route('/api/estimates/<int:estimate_id>/ai-scope', methods=['POST'])
@@ -423,7 +440,7 @@ def register_estimate_feature_routes(app, deps):
                 db.session.add(line)
                 created.append(line)
             from estimate_persistence import recalc_estimate_totals
-            recalc_estimate_totals(Estimate, EstimateLine, estimate_id)
+            recalc_estimate_totals(Estimate, EstimateLine, estimate_id, EstimateAlternate)
             db.session.commit()
             return deps['jsonify']({'ok': True, 'lines': [line_to_dict_extended(l) for l in created]})
         return deps['jsonify']({'suggestions': suggestions})
@@ -474,7 +491,7 @@ def register_estimate_feature_routes(app, deps):
             apply_line_extended_fields(line, patch)
             updated += 1
         from estimate_persistence import recalc_estimate_totals
-        recalc_estimate_totals(Estimate, EstimateLine, estimate_id)
+        recalc_estimate_totals(Estimate, EstimateLine, estimate_id, EstimateAlternate)
         db.session.commit()
         return deps['jsonify']({'ok': True, 'updated': updated})
 
@@ -486,4 +503,15 @@ def register_estimate_feature_routes(app, deps):
         est = Estimate.query.get_or_404(estimate_id)
         drawing_id = deps['request'].args.get('drawing_id', type=int)
         items = collect_takeoff_items(deps['DrawingMarkup'], deps['Drawing'], est.project_id, drawing_id)
-        return deps['jsonify']({'items': items, 'drawings_url': f'/drawings?project_id={est.project_id}'})
+        drawings = deps['Drawing'].query.filter_by(project_id=est.project_id).order_by(deps['Drawing'].sheet_number).all()
+        return deps['jsonify']({
+            'items': items,
+            'drawings': [{
+                'id': d.id,
+                'sheet_number': d.sheet_number,
+                'title': d.title,
+                'file_url': f'/api/drawings/{d.id}/file',
+            } for d in drawings],
+            'project_id': est.project_id,
+            'estimate_id': estimate_id,
+        })
