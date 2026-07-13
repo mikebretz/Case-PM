@@ -68,6 +68,8 @@
       drawingId: opts.drawingId || null,
       drawings: [],
       markups: [],
+      finishTemplates: [],
+      finishTemplateId: 'int_wall_9',
       tool: 'pan',
       scale: 1,
       panX: 0,
@@ -96,6 +98,7 @@
           <button type="button" data-tool="measure" class="ett-tool px-2 py-1.5 rounded text-xs bg-zinc-800" title="Measure"><i class="fa-solid fa-ruler"></i></button>
           <button type="button" data-tool="rect" class="ett-tool px-2 py-1.5 rounded text-xs bg-zinc-800" title="Area rectangle"><i class="fa-solid fa-vector-square"></i></button>
           <button type="button" data-tool="calibrate" class="ett-tool px-2 py-1.5 rounded text-xs bg-zinc-800" title="Calibrate scale"><i class="fa-solid fa-ruler-combined"></i></button>
+          <select class="ett-finish-template bg-zinc-800 border border-zinc-700 rounded px-2 py-1.5 text-xs max-w-[200px]" title="Finish template — expands LF into drywall, paint, base, etc."></select>
           <span class="ett-scale text-xs text-zinc-500 ml-1">Scale: not set</span>
           ${opts.popout ? '' : '<button type="button" class="ett-popout px-2 py-1.5 rounded text-xs bg-sky-800 hover:bg-sky-700 ml-auto" title="Open on second monitor"><i class="fa-solid fa-up-right-from-square mr-1"></i>Pop Out</button>'}
         </div>
@@ -115,6 +118,41 @@
     const ctx = canvas.getContext('2d');
     const select = root.querySelector('.ett-drawing-select');
     const scaleEl = root.querySelector('.ett-scale');
+    const finishSel = root.querySelector('.ett-finish-template');
+
+    async function loadFinishTemplates(trigger) {
+      const q = trigger ? `?trigger=${encodeURIComponent(trigger)}` : '';
+      const json = await api(`/api/estimates/takeoff-finish-templates${q}`);
+      state.finishTemplates = json.templates || [];
+      if (finishSel) {
+        finishSel.innerHTML = state.finishTemplates.map(t =>
+          `<option value="${esc(t.id)}">${esc(t.label)}</option>`,
+        ).join('');
+        if (!state.finishTemplates.find(t => t.id === state.finishTemplateId)) {
+          state.finishTemplateId = state.finishTemplates[0]?.id || 'measure_only';
+        }
+        finishSel.value = state.finishTemplateId;
+      }
+    }
+
+    async function expandAndBroadcast(markup, quantity, unit) {
+      if (!state.estimateId || !quantity) return;
+      const sheet = state.drawings.find(d => d.id === state.drawingId);
+      const json = await api(`/api/estimates/${state.estimateId}/takeoff-expand`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          template_id: state.finishTemplateId,
+          quantity,
+          unit,
+          markup_id: markup?.id,
+          sheet_number: sheet?.sheet_number || '',
+        }),
+      });
+      if (json.lines?.length) {
+        broadcast('takeoff-lines', { lines: json.lines, markup_id: markup?.id });
+      }
+    }
 
     function broadcast(type, data) {
       try {
@@ -132,6 +170,8 @@
       });
       viewport.classList.toggle('cursor-crosshair', tool !== 'pan');
       viewport.classList.toggle('cursor-grab', tool === 'pan');
+      const trig = tool === 'rect' ? 'area_sf' : (tool === 'measure' ? 'linear_ft' : null);
+      if (trig) loadFinishTemplates(trig).catch(() => {});
     }
 
     function applyTransform() {
@@ -240,7 +280,7 @@
       const pxLen = Math.hypot(x2 - x1, y2 - y1);
       if (pxLen < 3) return;
       const info = measureFromPx(pxLen, state.pixelsPerUnit);
-      await saveMarkup({
+      const markup = await saveMarkup({
         markup_type: 'measure',
         geometry: { points: [x1, y1, x2, y2], offset: 0 },
         measurement_value: info.value,
@@ -248,6 +288,8 @@
         style: { color: '#22c55e', lineWidth: 2 },
         label: info.display,
       });
+      const qty = info.unit === 'ft' ? info.value : (state.pixelsPerUnit ? pxLen / state.pixelsPerUnit : info.value);
+      await expandAndBroadcast(markup, qty, 'LF');
     }
 
     async function finishRect(x1, y1, x2, y2) {
@@ -257,7 +299,7 @@
       const h = Math.abs(y2 - y1);
       if (w < 3 || h < 3) return;
       const info = areaFromPx(w * h, state.pixelsPerUnit);
-      await saveMarkup({
+      const markup = await saveMarkup({
         markup_type: 'rect',
         geometry: { x, y, w, h },
         measurement_value: info.value,
@@ -265,6 +307,8 @@
         style: { color: '#22c55e', lineWidth: 2, fillOpacity: 0.15 },
         label: info.display,
       });
+      const qty = info.unit === 'sf' ? info.value : (state.pixelsPerUnit ? (w * h) / (state.pixelsPerUnit * state.pixelsPerUnit) : info.value);
+      await expandAndBroadcast(markup, qty, 'SF');
     }
 
     async function finishCalibrate(x1, y1, x2, y2) {
@@ -349,6 +393,7 @@
     root.querySelectorAll('.ett-tool').forEach(btn => {
       btn.addEventListener('click', () => setTool(btn.dataset.tool));
     });
+    finishSel?.addEventListener('change', () => { state.finishTemplateId = finishSel.value; });
     select.addEventListener('change', () => loadDrawing(parseInt(select.value, 10)).catch(err => {
       root.querySelector('.ett-status').textContent = err.message;
     }));
@@ -378,8 +423,12 @@
           if (msg.type === 'refresh-takeoff') {
             loadDrawing(state.drawingId).catch(() => {});
           }
+          if (msg.type === 'takeoff-lines') {
+            /* handled by parent window */
+          }
         };
       }
+      await loadFinishTemplates('linear_ft');
       const live = await api(`/api/estimates/${state.estimateId}/takeoff-live`);
       state.drawings = live.drawings || [];
       select.innerHTML = state.drawings.map(d =>

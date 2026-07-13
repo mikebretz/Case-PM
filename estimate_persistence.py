@@ -478,16 +478,23 @@ def notify_bid_invitations(
         pass
 
 
-def companies_for_spec_trade(Company, spec_section=None, trade=None):
-    """Find vendor companies matching spec section or trade."""
-    q = Company.query
-    companies = q.order_by(Company.name).all()
+def companies_for_spec_trade(Company, spec_section=None, trade=None, require_active=True, require_bidding=True):
+    """Find vendor companies matching spec section or trade for RFP mass-invite."""
+    companies = Company.query.order_by(Company.name).all()
     spec = (spec_section or '').replace(' ', '').upper()
     trade_q = (trade or '').strip().lower()
     results = []
     for c in companies:
-        ctrade = (c.trade or '').strip().lower()
+        ctype = (c.type or '').strip()
+        if ctype not in ('Subcontractor', 'Supplier'):
+            continue
         details = _parse_json(c.details_json, {})
+        status = (details.get('status') or 'Active').strip()
+        if require_active and status != 'Active':
+            continue
+        if require_bidding and details.get('actively_bidding') is False:
+            continue
+        ctrade = (c.trade or '').strip().lower()
         trades = [t.lower() for t in (details.get('trades') or [])]
         spec_sections = [s.replace(' ', '').upper() for s in (details.get('spec_sections') or [])]
         if spec and spec in spec_sections:

@@ -495,6 +495,54 @@ def register_estimate_feature_routes(app, deps):
         db.session.commit()
         return deps['jsonify']({'ok': True, 'updated': updated})
 
+    # --- Takeoff finish templates & live expansion ---
+    @app.route('/api/estimates/takeoff-finish-templates', methods=['GET'])
+    @login_required
+    def api_takeoff_finish_templates():
+        from takeoff_templates import list_finish_templates
+        trigger = deps['request'].args.get('trigger')
+        return deps['jsonify']({'templates': list_finish_templates(trigger)})
+
+    @app.route('/api/estimates/<int:estimate_id>/takeoff-expand', methods=['POST'])
+    @login_required
+    def api_takeoff_expand(estimate_id):
+        from takeoff_templates import expand_takeoff_template
+        from estimate_features import line_to_dict_extended
+        import json
+        Estimate.query.get_or_404(estimate_id)
+        body = deps['request'].get_json(silent=True) or {}
+        lines = expand_takeoff_template(
+            body.get('template_id'),
+            body.get('quantity'),
+            unit=body.get('unit') or 'LF',
+            markup_id=body.get('markup_id'),
+            sheet_number=body.get('sheet_number') or '',
+        )
+        if body.get('apply'):
+            sort_base = EstimateLine.query.filter_by(estimate_id=estimate_id).count()
+            created = []
+            for i, row in enumerate(lines):
+                line = EstimateLine(estimate_id=estimate_id, sort_order=sort_base + i)
+                line.cost_code = row.get('cost_code', '01-000')
+                line.spec_section = row.get('spec_section', '')
+                line.description = row.get('description', '')
+                line.quantity = row.get('quantity', 0)
+                line.unit = row.get('unit', 'EA')
+                line.unit_cost = row.get('unit_cost', 0)
+                line.extended_cost = round(float(line.quantity or 0) * float(line.unit_cost or 0), 2)
+                line.source = row.get('source', 'takeoff')
+                line.source_ref = row.get('source_ref', '')
+                line.markup_id = row.get('markup_id')
+                line.group_key = row.get('group_key', '')
+                line.meta_json = json.dumps(row.get('meta') or {})
+                db.session.add(line)
+                created.append(line)
+            from estimate_persistence import recalc_estimate_totals
+            recalc_estimate_totals(Estimate, EstimateLine, estimate_id, EstimateAlternate)
+            db.session.commit()
+            return deps['jsonify']({'ok': True, 'lines': [line_to_dict_extended(l) for l in created]})
+        return deps['jsonify']({'lines': lines})
+
     # --- Live takeoff data (#6) ---
     @app.route('/api/estimates/<int:estimate_id>/takeoff-live', methods=['GET'])
     @login_required

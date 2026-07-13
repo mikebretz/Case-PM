@@ -156,7 +156,61 @@
     await alert('Budget mappings saved.', 'success');
   }
 
-  async function loadTakeoffLive() {
+  const liveTakeoffLines = [];
+
+  function renderLiveTakeoffLines() {
+    const body = document.getElementById('estTakeoffLiveLinesBody');
+    if (!body) return;
+    if (!liveTakeoffLines.length) {
+      body.innerHTML = '<tr><td colspan="3" class="p-2 text-zinc-600">Measure on drawing to see lines here</td></tr>';
+      return;
+    }
+    body.innerHTML = liveTakeoffLines.map((l, i) => `
+      <tr class="hover:bg-zinc-800">
+        <td class="px-2 py-1 text-zinc-300">${esc(l.description)}</td>
+        <td class="px-2 py-1 text-right font-mono text-emerald-400">${l.quantity}</td>
+        <td class="px-2 py-1 text-zinc-500">${esc(l.unit)}</td>
+      </tr>`).join('');
+  }
+
+  function bindTakeoffChannel() {
+    const id = estId();
+    if (!id || typeof BroadcastChannel === 'undefined') return;
+    if (global._estTakeoffChannel) return;
+    global._estTakeoffChannel = new BroadcastChannel(global.CasePMEstimateTakeoff?.channelName(id) || `casepm-est-takeoff-${id}`);
+    global._estTakeoffChannel.onmessage = ev => {
+      const msg = ev.data || {};
+      if (msg.type === 'takeoff-lines' && msg.lines?.length) {
+        liveTakeoffLines.push(...msg.lines);
+        renderLiveTakeoffLines();
+        loadTakeoffLive().catch(() => {});
+      }
+      if (msg.type === 'markup-saved') loadTakeoffLive().catch(() => {});
+    };
+  }
+
+  async function applyLiveTakeoffLines() {
+    if (!liveTakeoffLines.length || !estId()) return alert('No live takeoff lines to add.', 'warning');
+    const added = liveTakeoffLines.length;
+    const lines = [...(EST()?.state?.current?.lines || []), ...liveTakeoffLines.map(row => ({
+      cost_code: row.cost_code || row.spec_section || '01-000',
+      spec_section: row.spec_section || '',
+      description: row.description || '',
+      cost_type: row.cost_type || 'Subcontract',
+      quantity: row.quantity || 0,
+      unit: row.unit || 'EA',
+      unit_cost: row.unit_cost || 0,
+      source: 'takeoff',
+      source_ref: row.source_ref || '',
+      group_key: row.group_key || '',
+    }))];
+    await apiJson(`/api/estimates/${estId()}`, { method: 'PUT', body: JSON.stringify({ lines }) });
+    liveTakeoffLines.length = 0;
+    renderLiveTakeoffLines();
+    await EST().loadCurrent();
+    await alert(`Added ${added} takeoff line(s) to worksheet.`, 'success');
+    EST().setTab('worksheet');
+  }
     const list = document.getElementById('estTakeoffLiveList');
     if (!estId()) return;
     const data = await apiJson(`/api/estimates/${estId()}/takeoff-live`);
@@ -177,6 +231,7 @@
       }));
     }
     initTakeoffViewer(data);
+    bindTakeoffChannel();
   }
 
   function initTakeoffViewer(liveData) {
@@ -359,6 +414,7 @@
       loadTakeoffLive().catch(() => {});
       EST()?.loadTakeoffPreview?.();
     });
+    document.getElementById('estApplyLiveTakeoff')?.addEventListener('click', () => applyLiveTakeoffLines().catch(e => alert(e.message, 'error')));
     document.getElementById('estPopoutTakeoff')?.addEventListener('click', () => {
       const q = new URLSearchParams({ project_id: pid(), estimate_id: estId() });
       const sel = document.querySelector('.ett-drawing-select');
@@ -375,6 +431,8 @@
     if (tab === 'award') loadMappings();
     if (tab === 'takeoff') {
       global._estTakeoffViewer = null;
+      liveTakeoffLines.length = 0;
+      renderLiveTakeoffLines();
       loadTakeoffLive();
       EST()?.loadTakeoffPreview?.();
     }

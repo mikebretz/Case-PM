@@ -71,6 +71,14 @@ def apply_company_payload(company, body):
     for key in COMPANY_DETAIL_FIELDS:
         if key in body:
             details[key] = body[key]
+    if 'spec_sections' in body:
+        details['spec_sections'] = [str(s).strip() for s in (body.get('spec_sections') or []) if str(s).strip()]
+    if 'trades' in body:
+        details['trades'] = [str(t).strip() for t in (body.get('trades') or []) if str(t).strip()]
+    if 'actively_bidding' in body:
+        details['actively_bidding'] = bool(body.get('actively_bidding'))
+    elif 'actively_bidding' not in details and details.get('status', 'Active') == 'Active':
+        details.setdefault('actively_bidding', True)
     details['status'] = body.get('status') or details.get('status') or 'Active'
     details['external_id'] = body.get('external_id') or details.get('external_id') or ''
     company.details_json = json.dumps(details)
@@ -129,6 +137,9 @@ def serialize_company(company, projects=None):
         'wc_expiration': details.get('wc_expiration') or '',
         'cois': details.get('cois') or [],
         'notes': details.get('notes') or '',
+        'spec_sections': details.get('spec_sections') or [],
+        'trades': details.get('trades') or [],
+        'actively_bidding': details.get('actively_bidding', True) if details.get('status', 'Active') == 'Active' else False,
         'projects': projects or [],
     }
 
