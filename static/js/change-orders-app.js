@@ -1572,6 +1572,7 @@
   global.CasePMChangeOrders = {
     init,
     switchTab,
+    projectId,
     openModal,
     saveModal,
     editCo: id => api(`/api/change-orders/${id}`).then(openModal.bind(null, 'co')).catch(e => alert(e.message)),
